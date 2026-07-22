@@ -44,4 +44,5 @@ yarn.lock
 GoogleConfig.json
 
 # cesiumrust
+/cesiumrust/.mimocode/
 /cesiumrust/target/
