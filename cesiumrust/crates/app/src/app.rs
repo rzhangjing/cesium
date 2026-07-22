@@ -40,11 +40,7 @@ pub fn run() {
             },
             |_window, cx| {
                 let workspace = cx.new(|cx| {
-                    let mut ws = Workspace::new("CesiumRust", cx);
-                    ws.add_tab("main.rs", cx);
-                    ws.add_tab("lib.rs", cx);
-                    ws.add_tab("Cargo.toml", cx);
-                    ws
+                    Workspace::new("CesiumRust", cx)
                 });
                 cx.new(|_cx| AppView { workspace })
             },

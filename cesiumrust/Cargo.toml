@@ -7,6 +7,7 @@ members = [
     "crates/actions",
     "crates/theme",
     "crates/util",
+    "crates/bevy_demo",
 ]
 default-members = ["crates/app"]
 
@@ -20,6 +21,9 @@ publish = false
 # GPUI framework (published on crates.io)
 gpui = "0.2.2"
 
+# Bevy game engine (minimal features, no audio)
+bevy = { version = "0.15", default-features = false }
+
 # Internal crates
 app = { path = "crates/app" }
 workspace_crate = { path = "crates/workspace", package = "workspace" }
@@ -27,6 +31,7 @@ ui = { path = "crates/ui" }
 actions_crate = { path = "crates/actions", package = "actions" }
 theme = { path = "crates/theme" }
 util = { path = "crates/util" }
+bevy_demo = { path = "crates/bevy_demo" }
 
 # Common dependencies
 anyhow = "1"
