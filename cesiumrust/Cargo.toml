@@ -1,0 +1,46 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/app",
+    "crates/workspace",
+    "crates/ui",
+    "crates/actions",
+    "crates/theme",
+    "crates/util",
+]
+default-members = ["crates/app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+# GPUI framework (published on crates.io)
+gpui = "0.2.2"
+
+# Internal crates
+app = { path = "crates/app" }
+workspace_crate = { path = "crates/workspace", package = "workspace" }
+ui = { path = "crates/ui" }
+actions_crate = { path = "crates/actions", package = "actions" }
+theme = { path = "crates/theme" }
+util = { path = "crates/util" }
+
+# Common dependencies
+anyhow = "1"
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+log = "0.4"
+env_logger = "0.11"
+thiserror = "2"
+
+[profile.dev]
+split-debuginfo = "unpacked"
+incremental = true
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+debug = "limited"
