@@ -8,4 +8,6 @@ scope:
     - cesiumrust/domain/provider/src/terrain_provider.rs
 source_files: []
 depends_on: []
-related_to: []
+related_to:
+    - path: crs
+    - path: styling

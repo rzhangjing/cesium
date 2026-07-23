@@ -1,0 +1,7 @@
+[2m2026-07-23T18:07:40.909559Z[0m [33m WARN[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m InstanceFlags::VALIDATION requested, but unable to find layer: VK_LAYER_KHRONOS_validation
+[2m2026-07-23T18:07:40.910784Z[0m [33m WARN[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m GENERAL [Loader Message (0x0)]
+	windows_read_data_files_in_registry: Registry lookup failed to get layer manifest files.
+[2m2026-07-23T18:07:40.911223Z[0m [33m WARN[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m 	objects: (type: INSTANCE, hndl: 0x246939157b0, name: ?)
+[2m2026-07-23T18:07:41.101330Z[0m [32m INFO[0m [2mbevy_render::renderer[0m[2m:[0m AdapterInfo { name: "NVIDIA GeForce RTX 3080", vendor: 4318, device: 8710, device_type: DiscreteGpu, driver: "NVIDIA", driver_info: "591.59", backend: Vulkan }
+[2m2026-07-23T18:07:41.678286Z[0m [33m WARN[0m [2mwgpu_hal::vulkan::conv[0m[2m:[0m Unrecognized present mode 1000361000
+[2m2026-07-23T18:07:41.680608Z[0m [33m WARN[0m [2mwgpu_hal::vulkan::conv[0m[2m:[0m Unrecognized present mode 1000361000

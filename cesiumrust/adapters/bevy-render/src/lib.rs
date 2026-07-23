@@ -48,7 +48,7 @@ pub fn geometry_to_mesh(geometry: &GeometryData) -> Mesh {
     // Create mesh with triangle topology (default for our geometry)
     let mut mesh = Mesh::new(
         bevy::render::mesh::PrimitiveTopology::TriangleList,
-        bevy::render::render_asset::RenderAssetUsages::MAIN_WORLD,
+        bevy::render::render_asset::RenderAssetUsages::default(),
     );
 
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
@@ -101,7 +101,7 @@ pub fn terrain_mesh_to_bevy(terrain: &TerrainMesh) -> Mesh {
 
     let mut mesh = Mesh::new(
         bevy::render::mesh::PrimitiveTopology::TriangleList,
-        bevy::render::render_asset::RenderAssetUsages::MAIN_WORLD,
+        bevy::render::render_asset::RenderAssetUsages::default(),
     );
 
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
@@ -137,7 +137,7 @@ pub fn create_imagery_texture(width: u32, height: u32, rgba_data: Vec<u8>) -> Im
         bevy::render::render_resource::TextureDimension::D2,
         rgba_data,
         bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
-        bevy::render::render_asset::RenderAssetUsages::MAIN_WORLD,
+        bevy::render::render_asset::RenderAssetUsages::default(),
     )
 }
 
@@ -216,7 +216,7 @@ pub fn create_bounding_box_wireframe(
 
     let mut mesh = Mesh::new(
         bevy::render::mesh::PrimitiveTopology::LineList,
-        bevy::render::render_asset::RenderAssetUsages::MAIN_WORLD,
+        bevy::render::render_asset::RenderAssetUsages::default(),
     );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, corners);
     mesh.insert_indices(bevy::render::mesh::Indices::U32(indices));
@@ -267,7 +267,7 @@ pub fn create_bounding_sphere_wireframe(
 
     let mut mesh = Mesh::new(
         bevy::render::mesh::PrimitiveTopology::LineList,
-        bevy::render::render_asset::RenderAssetUsages::MAIN_WORLD,
+        bevy::render::render_asset::RenderAssetUsages::default(),
     );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_indices(bevy::render::mesh::Indices::U32(indices));
@@ -306,6 +306,12 @@ impl Plugin for CesiumRenderPlugin {
     }
 }
 
+/// Render-scale factor: domain works in meters (f64), GPU renders in f32.
+/// Earth-scale coordinates (~6.4e6 m) exceed f32 depth/frustum precision,
+/// so the adapter scales the world down to a unit sphere for rendering.
+/// 1 render unit = 6378137 meters (WGS84 semi-major axis).
+pub const METERS_PER_RENDER_UNIT: f64 = 6378137.0;
+
 /// System that spawns the globe entity
 fn setup_globe(
     mut commands: Commands,
@@ -313,8 +319,11 @@ fn setup_globe(
     mut materials: ResMut<Assets<StandardMaterial>>,
     config: Res<EllipsoidConfig>,
 ) {
-    // Create the ellipsoid mesh
+    // Create the ellipsoid mesh (positions in meters, f32)
     let mesh = create_ellipsoid_mesh(config.stacks, config.slices);
+
+    // Scale factor: meters -> render units (globe renders as a unit sphere)
+    let scale = (1.0 / METERS_PER_RENDER_UNIT) as f32;
 
     // Spawn the globe with a solid color material (Earth-like blue)
     commands.spawn((
@@ -324,15 +333,14 @@ fn setup_globe(
             base_color: Color::srgb(0.2, 0.4, 0.7), // Ocean blue
             ..default()
         })),
-        Transform::from_xyz(0.0, 0.0, 0.0),
+        Transform::from_scale(Vec3::splat(scale)),
     ));
 
-    // Spawn a camera looking at the globe from a distance
-    // WGS84 semi-major axis is ~6378137 meters, so we position camera at ~3x that distance
-    let camera_distance = 6378137.0 * 3.0;
+    // Spawn a camera looking at the (now unit-sized) globe from 3 render units away.
+    // Default projection (near=0.1, far=1000) has plenty of precision at this scale.
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0.0, 0.0, camera_distance as f32).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(0.0, 0.0, 3.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
     // Add a directional light (sun)
