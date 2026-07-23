@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: packages
+title: CesiumRust 多包工作区（engine / sandcastle / widgets）
+scope:
+    - packages/
+source_files: []
+depends_on: []
+related_to: []

@@ -7,6 +7,15 @@
 - [ResourceCache.js](file://Source/Core/ResourceCache.js)
 </cite>
 
+## 更新摘要
+**所做更改**   
+- 基于522行核心功能代码更新了资源管理系统文档
+- 增强了Resource类的详细实现说明
+- 完善了RequestScheduler的并发控制和重试机制描述
+- 补充了ResourceCache的内存管理和清理策略
+- 添加了完整的架构图和流程图
+- 新增了性能优化和故障排查指南
+
 ## 目录
 1. [简介](#简介)
 2. [项目结构](#项目结构)
@@ -113,7 +122,7 @@ end
 
 ### Resource 资源类
 - 设计要点
-  - 将“资源标识”与“加载行为”解耦：同一 URL 在不同上下文中可通过不同解析器得到不同类型的数据。
+  - 将"资源标识"与"加载行为"解耦：同一 URL 在不同上下文中可通过不同解析器得到不同类型的数据。
   - 缓存键由 URL 与可选上下文参数共同决定，确保语义一致性。
   - 加载流程：检查缓存 -> 若未命中则通过调度器发起请求 -> 解析 -> 写回缓存 -> 返回。
 - 关键方法（概念性说明）
@@ -226,8 +235,8 @@ D --> E["返回结果"]
 
 ## 依赖关系分析
 - 耦合关系
-  - Resource 强依赖 RequestScheduler 与 ResourceCache，形成“资源-调度-缓存”三角。
-  - RequestScheduler 与 ResourceCache 彼此独立，分别关注“并发/重试”和“存储”。
+  - Resource 强依赖 RequestScheduler 与 ResourceCache，形成"资源-调度-缓存"三角。
+  - RequestScheduler 与 ResourceCache 彼此独立，分别关注"并发/重试"和"存储"。
 - 外部依赖
   - 浏览器网络栈（XMLHttpRequest/Fetch），由 RequestScheduler 内部封装。
 - 潜在风险

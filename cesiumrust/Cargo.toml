@@ -9,6 +9,14 @@ members = [
     "domain/resource",
     "domain/terrain",
     "domain/imagery",
+    "domain/tileset",
+    "domain/gltf",
+    "domain/scene",
+    "domain/datasource",
+    "domain/atmosphere",
+    "domain/interaction",
+    "domain/effects",
+    "domain/shadow",
     # Ports layer (trait contracts)
     "ports/driven",
     "ports/driving",
@@ -52,6 +60,14 @@ cesium-event = { path = "domain/event" }
 cesium-resource = { path = "domain/resource" }
 cesium-terrain = { path = "domain/terrain" }
 cesium-imagery = { path = "domain/imagery" }
+cesium-tileset = { path = "domain/tileset" }
+cesium-gltf = { path = "domain/gltf" }
+cesium-scene = { path = "domain/scene" }
+cesium-datasource = { path = "domain/datasource" }
+cesium-atmosphere = { path = "domain/atmosphere" }
+cesium-interaction = { path = "domain/interaction" }
+cesium-effects = { path = "domain/effects" }
+cesium-shadow = { path = "domain/shadow" }
 
 # Internal port crates
 cesium-ports-driven = { path = "ports/driven" }

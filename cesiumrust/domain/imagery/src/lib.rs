@@ -12,12 +12,14 @@ pub mod imagery_state;
 pub mod tile_imagery;
 pub mod layer_collection;
 pub mod tile_request;
+pub mod blending;
 
 pub use imagery_layer::ImageryLayer;
 pub use imagery_state::ImageryState;
 pub use tile_imagery::TileImagery;
 pub use layer_collection::ImageryLayerCollection;
 pub use tile_request::{ImageryTileRequest, compute_tile_requests, compute_texture_mapping};
+pub use blending::{PixelColor, blend_pixel, composite_layers, compute_effective_alpha, apply_color_adjustments};
 
 use serde::{Deserialize, Serialize};
 

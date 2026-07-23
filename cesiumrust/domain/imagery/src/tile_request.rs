@@ -3,6 +3,7 @@
 //! Computes which imagery tiles need to be requested for a given terrain tile
 //! based on the tiling scheme and layer configuration.
 
+use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::rectangle::Rectangle;
 use cesium_geospatial::tiling_scheme::TilingScheme;
 
@@ -67,16 +68,26 @@ pub fn compute_tile_requests(
     };
 
     // Get the tile range that covers the intersection rectangle
-    let (x_min, y_min) = tiling_scheme.position_to_tile(
-        intersection.west,
-        intersection.north,
-        imagery_level,
-    );
-    let (x_max, y_max) = tiling_scheme.position_to_tile(
-        intersection.east,
-        intersection.south,
-        imagery_level,
-    );
+    // Clamp positions slightly inward to handle exact boundary cases
+    let (num_x_tiles, num_y_tiles) = tiling_scheme.tiles_at_level(imagery_level);
+    let scheme_rect = tiling_scheme.rectangle();
+    let epsilon = 1e-12;
+
+    let nw_lon = intersection.west.max(scheme_rect.west);
+    let nw_lat = intersection.north.min(scheme_rect.north);
+    let se_lon = intersection.east.min(scheme_rect.east - epsilon);
+    let se_lat = intersection.south.max(scheme_rect.south + epsilon);
+
+    let nw_carto = Cartographic::from_radians(nw_lon, nw_lat, 0.0);
+    let se_carto = Cartographic::from_radians(se_lon, se_lat, 0.0);
+
+    let (x_min, y_min) = tiling_scheme
+        .position_to_tile(&nw_carto, imagery_level)
+        .unwrap_or_default();
+    let (x_max, y_max) = match tiling_scheme.position_to_tile(&se_carto, imagery_level) {
+        Some(tile) => tile,
+        None => (num_x_tiles.saturating_sub(1), num_y_tiles.saturating_sub(1)),
+    };
 
     // Handle potential wrap-around or invalid coordinates
     let (x_min, x_max) = if x_min <= x_max {
@@ -89,9 +100,6 @@ pub fn compute_tile_requests(
     } else {
         (y_max, y_min)
     };
-
-    // Get the number of tiles at this level
-    let (num_x_tiles, num_y_tiles) = tiling_scheme.number_of_tiles_at_level(imagery_level);
 
     // Clamp to valid tile range
     let x_min = x_min.min(num_x_tiles.saturating_sub(1));
@@ -140,12 +148,11 @@ pub fn compute_texture_mapping(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cesium_geospatial::projection::GeographicProjection;
-    use cesium_geospatial::tiling_scheme::TilingScheme;
     use cesium_geospatial::ellipsoid::Ellipsoid;
+    use cesium_geospatial::tiling_scheme::TilingScheme;
 
     fn create_geographic_tiling_scheme() -> TilingScheme {
-        TilingScheme::new_geographic(Ellipsoid::WGS84)
+        TilingScheme::geographic(Ellipsoid::WGS84)
     }
 
     #[test]

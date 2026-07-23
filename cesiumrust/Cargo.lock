@@ -1457,12 +1457,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesium-atmosphere"
+version = "0.1.0"
+dependencies = [
+ "cesium-geospatial",
+ "glam",
+]
+
+[[package]]
 name = "cesium-bevy-render"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "cesium-datasource",
  "cesium-geospatial",
+ "cesium-imagery",
  "cesium-ports-driven",
+ "cesium-scene",
+ "cesium-terrain",
+ "cesium-tileset",
+ "glam",
 ]
 
 [[package]]
@@ -1476,6 +1490,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesium-datasource"
+version = "0.1.0"
+dependencies = [
+ "cesium-geospatial",
+ "glam",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "cesium-decoders"
 version = "0.1.0"
 dependencies = [
@@ -1483,6 +1508,14 @@ dependencies = [
  "cesium-terrain",
  "glam",
  "thiserror 2.0.19",
+]
+
+[[package]]
+name = "cesium-effects"
+version = "0.1.0"
+dependencies = [
+ "cesium-geospatial",
+ "glam",
 ]
 
 [[package]]
@@ -1499,6 +1532,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesium-gltf"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "cesium-imagery"
 version = "0.1.0"
 dependencies = [
@@ -1506,6 +1549,15 @@ dependencies = [
  "glam",
  "serde",
  "thiserror 2.0.19",
+]
+
+[[package]]
+name = "cesium-interaction"
+version = "0.1.0"
+dependencies = [
+ "cesium-camera",
+ "cesium-geospatial",
+ "glam",
 ]
 
 [[package]]
@@ -1545,6 +1597,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesium-scene"
+version = "0.1.0"
+dependencies = [
+ "cesium-camera",
+ "cesium-geospatial",
+ "glam",
+ "serde",
+]
+
+[[package]]
+name = "cesium-shadow"
+version = "0.1.0"
+dependencies = [
+ "cesium-camera",
+ "cesium-geospatial",
+ "glam",
+]
+
+[[package]]
 name = "cesium-terrain"
 version = "0.1.0"
 dependencies = [
@@ -1552,6 +1623,16 @@ dependencies = [
  "glam",
  "serde",
  "thiserror 2.0.19",
+]
+
+[[package]]
+name = "cesium-tileset"
+version = "0.1.0"
+dependencies = [
+ "cesium-geospatial",
+ "glam",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

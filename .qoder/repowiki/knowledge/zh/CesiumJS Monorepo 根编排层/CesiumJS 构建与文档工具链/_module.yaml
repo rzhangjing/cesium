@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: build_tools
+title: CesiumJS 构建与文档工具链
+scope:
+    - Tools/
+    - scripts/
+    - launches/
+source_files: []
+depends_on: []
+related_to: []

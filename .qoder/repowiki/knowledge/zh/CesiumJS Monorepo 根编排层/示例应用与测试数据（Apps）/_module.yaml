@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: apps_and_samples
+title: 示例应用与测试数据（Apps）
+scope:
+    - Apps/
+source_files: []
+depends_on: []
+related_to: []
