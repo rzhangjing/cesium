@@ -1442,6 +1442,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesium-animation"
+version = "0.1.0"
+dependencies = [
+ "cesium-time",
+ "glam",
+]
+
+[[package]]
 name = "cesium-app"
 version = "0.1.0"
 dependencies = [
@@ -1540,6 +1548,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesium-globe"
+version = "0.1.0"
+dependencies = [
+ "cesium-geospatial",
+ "glam",
+]
+
+[[package]]
 name = "cesium-gltf"
 version = "0.1.0"
 dependencies = [
@@ -1566,6 +1582,14 @@ dependencies = [
  "glam",
  "serde",
  "thiserror 2.0.19",
+]
+
+[[package]]
+name = "cesium-implicit-tiling"
+version = "0.1.0"
+dependencies = [
+ "cesium-geospatial",
+ "glam",
 ]
 
 [[package]]
@@ -1599,6 +1623,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesium-performance"
+version = "0.1.0"
+dependencies = [
+ "glam",
+]
+
+[[package]]
 name = "cesium-ports-driven"
 version = "0.1.0"
 dependencies = [
@@ -1617,9 +1648,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesium-primitives"
+version = "0.1.0"
+dependencies = [
+ "cesium-geospatial",
+ "glam",
+]
+
+[[package]]
 name = "cesium-provider"
 version = "0.1.0"
 dependencies = [
+ "cesium-geospatial",
+ "glam",
+]
+
+[[package]]
+name = "cesium-quadtree"
+version = "0.1.0"
+dependencies = [
+ "cesium-camera",
  "cesium-geospatial",
  "glam",
 ]
@@ -1640,6 +1688,14 @@ dependencies = [
  "cesium-geospatial",
  "glam",
  "serde",
+]
+
+[[package]]
+name = "cesium-scene-mode"
+version = "0.1.0"
+dependencies = [
+ "cesium-geospatial",
+ "glam",
 ]
 
 [[package]]
@@ -1685,6 +1741,14 @@ dependencies = [
  "glam",
  "serde",
  "thiserror 2.0.19",
+]
+
+[[package]]
+name = "cesium-vector"
+version = "0.1.0"
+dependencies = [
+ "cesium-geospatial",
+ "glam",
 ]
 
 [[package]]

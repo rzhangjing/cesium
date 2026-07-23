@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: provider
+title: 影像与地形瓦片提供者（Provider 限界上下文）
+scope:
+    - cesiumrust/domain/provider/Cargo.toml
+    - cesiumrust/domain/provider/src/imagery_provider.rs
+    - cesiumrust/domain/provider/src/lib.rs
+    - cesiumrust/domain/provider/src/terrain_provider.rs
+source_files: []
+depends_on: []
+related_to: []

@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: kml
+title: KML 数据源解析器
+scope:
+    - cesiumrust/domain/kml/Cargo.toml
+    - cesiumrust/domain/kml/src/lib.rs
+    - cesiumrust/domain/kml/src/parser.rs
+source_files: []
+depends_on: []
+related_to: []

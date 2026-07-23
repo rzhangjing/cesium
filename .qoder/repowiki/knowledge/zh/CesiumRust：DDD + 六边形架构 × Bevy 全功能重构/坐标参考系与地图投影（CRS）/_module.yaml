@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: crs
+title: 坐标参考系与地图投影（CRS）
+scope:
+    - cesiumrust/domain/crs/Cargo.toml
+    - cesiumrust/domain/crs/src/datum.rs
+    - cesiumrust/domain/crs/src/lib.rs
+    - cesiumrust/domain/crs/src/projections.rs
+source_files: []
+depends_on: []
+related_to: []

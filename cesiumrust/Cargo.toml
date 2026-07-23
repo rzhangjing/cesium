@@ -22,6 +22,14 @@ members = [
     "domain/gpx",
     "domain/provider",
     "domain/styling",
+    "domain/globe",
+    "domain/quadtree",
+    "domain/primitives",
+    "domain/animation",
+    "domain/implicit-tiling",
+    "domain/vector",
+    "domain/scene-mode",
+    "domain/performance",
     # Ports layer (trait contracts)
     "ports/driven",
     "ports/driving",
@@ -78,6 +86,14 @@ cesium-kml = { path = "domain/kml" }
 cesium-gpx = { path = "domain/gpx" }
 cesium-provider = { path = "domain/provider" }
 cesium-styling = { path = "domain/styling" }
+cesium-globe = { path = "domain/globe" }
+cesium-quadtree = { path = "domain/quadtree" }
+cesium-primitives = { path = "domain/primitives" }
+cesium-animation = { path = "domain/animation" }
+cesium-implicit-tiling = { path = "domain/implicit-tiling" }
+cesium-vector = { path = "domain/vector" }
+cesium-scene-mode = { path = "domain/scene-mode" }
+cesium-performance = { path = "domain/performance" }
 
 # Internal port crates
 cesium-ports-driven = { path = "ports/driven" }

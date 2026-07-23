@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: styling
+title: 3D Tiles 样式与分类（styling）
+scope:
+    - cesiumrust/domain/styling/Cargo.toml
+    - cesiumrust/domain/styling/src/classification.rs
+    - cesiumrust/domain/styling/src/lib.rs
+    - cesiumrust/domain/styling/src/tile_style.rs
+source_files: []
+depends_on: []
+related_to: []
