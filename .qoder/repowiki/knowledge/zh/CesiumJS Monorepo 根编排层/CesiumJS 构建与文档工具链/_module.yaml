@@ -7,4 +7,5 @@ scope:
     - launches/
 source_files: []
 depends_on: []
-related_to: []
+related_to:
+    - path: specs_and_tests

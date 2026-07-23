@@ -7,4 +7,6 @@ scope:
     - index.html
 source_files: []
 depends_on: []
-related_to: []
+related_to:
+    - path: apps_and_samples
+    - path: specs_and_tests

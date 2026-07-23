@@ -1490,6 +1490,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesium-crs"
+version = "0.1.0"
+dependencies = [
+ "cesium-geospatial",
+ "glam",
+]
+
+[[package]]
 name = "cesium-datasource"
 version = "0.1.0"
 dependencies = [
@@ -1542,6 +1550,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesium-gpx"
+version = "0.1.0"
+dependencies = [
+ "cesium-datasource",
+ "cesium-geospatial",
+ "glam",
+]
+
+[[package]]
 name = "cesium-imagery"
 version = "0.1.0"
 dependencies = [
@@ -1558,6 +1575,17 @@ dependencies = [
  "cesium-camera",
  "cesium-geospatial",
  "glam",
+]
+
+[[package]]
+name = "cesium-kml"
+version = "0.1.0"
+dependencies = [
+ "cesium-datasource",
+ "cesium-geospatial",
+ "glam",
+ "serde",
+ "serde-xml-rs",
 ]
 
 [[package]]
@@ -1589,6 +1617,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesium-provider"
+version = "0.1.0"
+dependencies = [
+ "cesium-geospatial",
+ "glam",
+]
+
+[[package]]
 name = "cesium-resource"
 version = "0.1.0"
 dependencies = [
@@ -1612,6 +1648,13 @@ version = "0.1.0"
 dependencies = [
  "cesium-camera",
  "cesium-geospatial",
+ "glam",
+]
+
+[[package]]
+name = "cesium-styling"
+version = "0.1.0"
+dependencies = [
  "glam",
 ]
 
@@ -4004,6 +4047,18 @@ checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
 dependencies = [
  "serde_core",
  "serde_derive",
+]
+
+[[package]]
+name = "serde-xml-rs"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb3aa78ecda1ebc9ec9847d5d3aba7d618823446a049ba2491940506da6e2782"
+dependencies = [
+ "log",
+ "serde",
+ "thiserror 1.0.69",
+ "xml-rs",
 ]
 
 [[package]]

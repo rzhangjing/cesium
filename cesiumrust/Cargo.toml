@@ -17,6 +17,11 @@ members = [
     "domain/interaction",
     "domain/effects",
     "domain/shadow",
+    "domain/crs",
+    "domain/kml",
+    "domain/gpx",
+    "domain/provider",
+    "domain/styling",
     # Ports layer (trait contracts)
     "ports/driven",
     "ports/driving",
@@ -68,6 +73,11 @@ cesium-atmosphere = { path = "domain/atmosphere" }
 cesium-interaction = { path = "domain/interaction" }
 cesium-effects = { path = "domain/effects" }
 cesium-shadow = { path = "domain/shadow" }
+cesium-crs = { path = "domain/crs" }
+cesium-kml = { path = "domain/kml" }
+cesium-gpx = { path = "domain/gpx" }
+cesium-provider = { path = "domain/provider" }
+cesium-styling = { path = "domain/styling" }
 
 # Internal port crates
 cesium-ports-driven = { path = "ports/driven" }
