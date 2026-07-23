@@ -1,0 +1,12 @@
+[package]
+name = "cesium-decoders"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+cesium-geospatial.workspace = true
+cesium-terrain.workspace = true
+glam.workspace = true
+thiserror.workspace = true

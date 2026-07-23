@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: cesiumrust
+title: CesiumRust：DDD + 六边形架构 × Bevy 重构工程
+scope:
+    - cesiumrust/Cargo.lock
+    - cesiumrust/Cargo.toml
+    - cesiumrust/crates/
+source_files: []
+depends_on: []
+related_to:
+    - path: specs

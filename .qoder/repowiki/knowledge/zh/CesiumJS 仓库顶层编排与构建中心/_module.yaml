@@ -1,0 +1,42 @@
+schema_version: 1
+module_path: ""
+title: CesiumJS 仓库顶层编排与构建中心
+scope:
+    - README.md
+    - CONTRIBUTING.md
+    - CODE_OF_CONDUCT.md
+    - CONTRIBUTORS.md
+    - .editorconfig
+    - .gitignore
+    - .npmrc
+    - .markdownlint.json
+    - eslint.config.js
+    - gulpfile.js
+    - gulpfile.apps.js
+    - gulpfile.makezip.js
+    - index.cjs
+    - index.html
+    - index.release.html
+    - package.json
+    - server.js
+    - tsconfig.json
+    - ThirdParty.json
+    - ThirdParty.extra.json
+    - .git-blame-ignore-revs
+    - .gitattributes
+    - .markdownlintignore
+    - .npmignore
+    - .prettierignore
+    - .prettierrc
+    - .project
+    - CHANGES.md
+    - LICENSE.md
+    - eslint.seatbelt.tsv
+    - favicon.ico
+    - greenkeeper.json
+    - lint-staged.config.js
+    - sgconfig.yml
+    - web.config
+source_files: []
+depends_on: []
+related_to: []

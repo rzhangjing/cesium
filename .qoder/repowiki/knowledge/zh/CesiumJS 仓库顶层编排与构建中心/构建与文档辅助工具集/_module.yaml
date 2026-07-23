@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: tools
+title: 构建与文档辅助工具集
+scope:
+    - Tools/
+source_files: []
+depends_on: []
+related_to:
+    - path: documentation
