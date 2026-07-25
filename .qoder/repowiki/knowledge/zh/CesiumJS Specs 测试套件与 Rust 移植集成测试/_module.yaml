@@ -1,6 +1,6 @@
 schema_version: 1
 module_path: ""
-title: CesiumJS 引擎与 CesiumRust DDD 重构双栈根仓库
+title: CesiumJS Specs 测试套件与 Rust 移植集成测试
 scope: []
 source_files: []
 depends_on: []

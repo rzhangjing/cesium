@@ -32,21 +32,8 @@ fn setup_geometry_showcase(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // Camera.
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(0.0, 5.0, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
-
-    // Light.
-    commands.spawn((
-        DirectionalLight {
-            illuminance: 10000.0,
-            shadows_enabled: true,
-            ..default()
-        },
-        Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.8, 0.4, 0.0)),
-    ));
+    // NOTE: Camera and Light are provided by CesiumRenderPlugin;
+    // do NOT spawn duplicates here to avoid order-ambiguity warnings.
 
     let ell = Ellipsoid::WGS84;
     let vf = VertexFormat::ALL;

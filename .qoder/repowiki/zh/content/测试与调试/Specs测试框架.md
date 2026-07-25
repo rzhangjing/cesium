@@ -33,7 +33,21 @@
 - [Specs/Data/CZML/simple.czml](file://Specs/Data/CZML/simple.czml)
 - [Specs/Data/KML/simple.kml](file://Specs/Data/KML/simple.kml)
 - [Specs/Data/Images/test.png](file://Specs/Data/Images/test.png)
+- [cesiumrust/specs/src/lib.rs](file://cesiumrust/specs/src/lib.rs)
+- [cesiumrust/specs/tests/core_tests.rs](file://cesiumrust/specs/tests/core_tests.rs)
+- [cesiumrust/specs/tests/datasources_tests.rs](file://cesiumrust/specs/tests/datasources_tests.rs)
+- [cesiumrust/specs/tests/renderer_tests.rs](file://cesiumrust/specs/tests/renderer_tests.rs)
+- [cesiumrust/specs/tests/scene_tests.rs](file://cesiumrust/specs/tests/scene_tests.rs)
+- [cesiumrust/specs/tests/widgets_tests.rs](file://cesiumrust/specs/tests/widgets_tests.rs)
 </cite>
+
+## 更新摘要
+**所做更改**
+- 新增Rust测试套件架构章节，涵盖几何测试、矩阵/四元数操作测试、数据源测试层、渲染子系统测试、场景层测试和控件功能测试
+- 扩展测试覆盖范围说明，从约2,426行测试代码的详细分析
+- 添加cesiumrust目录下的完整测试结构文档
+- 更新依赖关系分析以包含Rust测试框架
+- 增强性能考量部分，涵盖Rust测试的并行执行和优化策略
 
 ## 目录
 1. [简介](#简介)
@@ -41,14 +55,17 @@
 3. [核心组件](#核心组件)
 4. [架构总览](#架构总览)
 5. [详细组件分析](#详细组件分析)
-6. [依赖关系分析](#依赖关系分析)
-7. [性能考量](#性能考量)
-8. [故障排查指南](#故障排查指南)
-9. [结论](#结论)
-10. [附录](#附录)
+6. [Rust测试套件架构](#rust测试套件架构)
+7. [依赖关系分析](#依赖关系分析)
+8. [性能考量](#性能考量)
+9. [故障排查指南](#故障排查指南)
+10. [结论](#结论)
+11. [附录](#附录)
 
 ## 简介
-本仓库包含 CesiumJS 的完整测试体系，覆盖单元测试、集成测试与端到端（E2E）测试。测试框架以 Jasmine 为核心，通过 Karma 在浏览器环境中运行；同时使用 Playwright 进行 E2E 场景验证。Specs 目录集中存放测试用例、测试数据与测试基础设施，确保对渲染管线、数据加载、交互行为等进行稳定回归验证。
+本仓库包含 CesiumJS 的完整测试体系，覆盖单元测试、集成测试与端到端（E2E）测试。测试框架以 Jasmine 为核心，通过 Karma 在浏览器环境中运行；同时使用 Playwright 进行 E2E 场景验证。此外，项目还包含了完整的 Rust 测试套件，提供跨语言的全栈测试覆盖。Specs 目录集中存放测试用例、测试数据与测试基础设施，确保对渲染管线、数据加载、交互行为等进行稳定回归验证。
+
+**更新** 新增了 cesiumrust 目录下的 Rust 测试套件，包含几何操作、矩阵运算、数据源处理、渲染系统、场景管理和控件功能的全面测试覆盖。
 
 ## 项目结构
 Specs 目录按职责划分：
@@ -59,6 +76,14 @@ Specs 目录按职责划分：
 - Worker 测试辅助：TestWorkers/*
 - E2E 测试：e2e/*（Playwright 配置与页面对象、用例）
 - 测试数据：Data/*（CZML、KML、图像等）
+
+cesiumrust 测试套件结构：
+- specs/src/lib.rs：Rust 测试库入口
+- tests/core_tests.rs：核心功能测试
+- tests/datasources_tests.rs：数据源测试
+- tests/renderer_tests.rs：渲染系统测试
+- tests/scene_tests.rs：场景管理测试
+- tests/widgets_tests.rs：控件功能测试
 
 ```mermaid
 graph TB
@@ -98,46 +123,27 @@ AC["Data/CZML/simple.czml"]
 AD["Data/KML/simple.kml"]
 AE["Data/Images/test.png"]
 end
+subgraph "Rust 测试套件"
+AF["specs/src/lib.rs"]
+AG["tests/core_tests.rs"]
+AH["tests/datasources_tests.rs"]
+AI["tests/renderer_tests.rs"]
+AJ["tests/scene_tests.rs"]
+AK["tests/widgets_tests.rs"]
+end
 ```
 
-图表来源
+**图表来源**
 - [Specs/SpecRunner.html](file://Specs/SpecRunner.html)
 - [Specs/spec-main.js](file://Specs/spec-main.js)
 - [Specs/karma.conf.cjs](file://Specs/karma.conf.cjs)
 - [Specs/karma-main.js](file://Specs/karma-main.js)
-- [Specs/customizeJasmine.js](file://Specs/customizeJasmine.js)
-- [Specs/addDefaultMatchers.js](file://Specs/addDefaultMatchers.js)
-- [Specs/createScene.js](file://Specs/createScene.js)
-- [Specs/createGlobe.js](file://Specs/createGlobe.js)
-- [Specs/createCamera.js](file://Specs/createCamera.js)
-- [Specs/createContext.js](file://Specs/createContext.js)
-- [Specs/createCanvas.js](file://Specs/createCanvas.js)
-- [Specs/render.js](file://Specs/render.js)
-- [Specs/pollToPromise.js](file://Specs/pollToPromise.js)
-- [Specs/pollWhilePromise.js](file://Specs/pollWhilePromise.js)
-- [Specs/runLater.js](file://Specs/runLater.js)
-- [Specs/waitForLoaderProcess.js](file://Specs/waitForLoaderProcess.js)
-- [Specs/loaderProcess.js](file://Specs/loaderProcess.js)
-- [Specs/TestWorkers/returnParameters.js](file://Specs/TestWorkers/returnParameters.js)
-- [Specs/TestWorkers/throwError.js](file://Specs/TestWorkers/throwError.js)
-- [Specs/TestWorkers/transferArrayBuffer.js](file://Specs/TestWorkers/transferArrayBuffer.js)
-- [Specs/e2e/playwright.config.js](file://Specs/e2e/playwright.config.js)
-- [Specs/e2e/CesiumPage.js](file://Specs/e2e/CesiumPage.js)
-- [Specs/e2e/test.js](file://Specs/e2e/test.js)
-- [Specs/e2e/models.spec.js](file://Specs/e2e/models.spec.js)
-- [Specs/e2e/viewer.spec.js](file://Specs/e2e/viewer.spec.js)
-- [Specs/e2e/sandcastle.spec.js](file://Specs/e2e/sandcastle.spec.js)
-- [Specs/e2e/picking.spec.js](file://Specs/e2e/picking.spec.js)
-- [Specs/e2e/voxel-cameras.spec.js](file://Specs/e2e/voxel-cameras.spec.js)
-- [Specs/Data/CZML/simple.czml](file://Specs/Data/CZML/simple.czml)
-- [Specs/Data/KML/simple.kml](file://Specs/Data/KML/simple.kml)
-- [Specs/Data/Images/test.png](file://Specs/Data/Images/test.png)
-
-章节来源
-- [Specs/SpecRunner.html](file://Specs/SpecRunner.html)
-- [Specs/spec-main.js](file://Specs/spec-main.js)
-- [Specs/karma.conf.cjs](file://Specs/karma.conf.cjs)
-- [Specs/karma-main.js](file://Specs/karma-main.js)
+- [cesiumrust/specs/src/lib.rs](file://cesiumrust/specs/src/lib.rs)
+- [cesiumrust/specs/tests/core_tests.rs](file://cesiumrust/specs/tests/core_tests.rs)
+- [cesiumrust/specs/tests/datasources_tests.rs](file://cesiumrust/specs/tests/datasources_tests.rs)
+- [cesiumrust/specs/tests/renderer_tests.rs](file://cesiumrust/specs/tests/renderer_tests.rs)
+- [cesiumrust/specs/tests/scene_tests.rs](file://cesiumrust/specs/tests/scene_tests.rs)
+- [cesiumrust/specs/tests/widgets_tests.rs](file://cesiumrust/specs/tests/widgets_tests.rs)
 
 ## 核心组件
 - 测试入口与装配
@@ -165,46 +171,18 @@ end
 - 测试数据
   - Data/*：CZML、KML、图片等静态资源，供测试加载与校验
 
-章节来源
-- [Specs/spec-main.js](file://Specs/spec-main.js)
-- [Specs/karma.conf.cjs](file://Specs/karma.conf.cjs)
-- [Specs/karma-main.js](file://Specs/karma-main.js)
-- [Specs/customizeJasmine.js](file://Specs/customizeJasmine.js)
-- [Specs/addDefaultMatchers.js](file://Specs/addDefaultMatchers.js)
-- [Specs/createScene.js](file://Specs/createScene.js)
-- [Specs/createGlobe.js](file://Specs/createGlobe.js)
-- [Specs/createCamera.js](file://Specs/createCamera.js)
-- [Specs/createContext.js](file://Specs/createContext.js)
-- [Specs/createCanvas.js](file://Specs/createCanvas.js)
-- [Specs/render.js](file://Specs/render.js)
-- [Specs/pollToPromise.js](file://Specs/pollToPromise.js)
-- [Specs/pollWhilePromise.js](file://Specs/pollWhilePromise.js)
-- [Specs/runLater.js](file://Specs/runLater.js)
-- [Specs/waitForLoaderProcess.js](file://Specs/waitForLoaderProcess.js)
-- [Specs/loaderProcess.js](file://Specs/loaderProcess.js)
-- [Specs/TestWorkers/returnParameters.js](file://Specs/TestWorkers/returnParameters.js)
-- [Specs/TestWorkers/throwError.js](file://Specs/TestWorkers/throwError.js)
-- [Specs/TestWorkers/transferArrayBuffer.js](file://Specs/TestWorkers/transferArrayBuffer.js)
-- [Specs/e2e/playwright.config.js](file://Specs/e2e/playwright.config.js)
-- [Specs/e2e/CesiumPage.js](file://Specs/e2e/CesiumPage.js)
-- [Specs/e2e/test.js](file://Specs/e2e/test.js)
-- [Specs/e2e/models.spec.js](file://Specs/e2e/models.spec.js)
-- [Specs/e2e/viewer.spec.js](file://Specs/e2e/viewer.spec.js)
-- [Specs/e2e/sandcastle.spec.js](file://Specs/e2e/sandcastle.spec.js)
-- [Specs/e2e/picking.spec.js](file://Specs/e2e/picking.spec.js)
-- [Specs/e2e/voxel-cameras.spec.js](file://Specs/e2e/voxel-cameras.spec.js)
-- [Specs/Data/CZML/simple.czml](file://Specs/Data/CZML/simple.czml)
-- [Specs/Data/KML/simple.kml](file://Specs/Data/KML/simple.kml)
-- [Specs/Data/Images/test.png](file://Specs/Data/Images/test.png)
+**更新** Rust 测试套件提供了跨语言的测试能力，涵盖核心几何操作、数据源处理、渲染系统和场景管理等关键功能模块。
 
 ## 架构总览
-测试框架采用“入口 → 配置 → 环境初始化 → 用例执行”的分层架构：
+测试框架采用"入口 → 配置 → 环境初始化 → 用例执行"的分层架构：
 - 入口层：SpecRunner.html 加载 spec-main.js
 - 配置层：karma.conf.cjs 指定测试集与运行环境
 - 初始化层：karma-main.js 注入 Jasmine 定制与通用工具
 - 执行层：Jasmine 运行各模块的 spec 文件，调用 create* 工具构造场景与上下文
 - 渲染层：render.js 驱动帧更新，配合 poll* 工具等待状态稳定
 - 外部交互：Worker 测试与 E2E 测试分别通过 Web Workers 与 Playwright 驱动浏览器
+
+**更新** Rust 测试套件采用 Cargo 测试框架，提供独立的测试执行环境和断言机制，与 JavaScript 测试形成互补。
 
 ```mermaid
 sequenceDiagram
@@ -216,6 +194,7 @@ participant Env as "karma-main.js"
 participant Jasmine as "Jasmine"
 participant Test as "测试用例"
 participant Render as "render.js"
+participant RustTests as "Rust 测试套件"
 Browser->>Runner : 打开页面
 Runner->>Main : 加载并执行
 Main->>Karma : 读取配置
@@ -226,14 +205,17 @@ Test->>Render : 触发渲染/等待帧
 Render-->>Test : 渲染完成回调
 Test-->>Jasmine : 断言结果
 Jasmine-->>Browser : 输出报告
+RustTests->>Cargo : 执行 Rust 测试
+Cargo-->>RustTests : 测试结果
 ```
 
-图表来源
+**图表来源**
 - [Specs/SpecRunner.html](file://Specs/SpecRunner.html)
 - [Specs/spec-main.js](file://Specs/spec-main.js)
 - [Specs/karma.conf.cjs](file://Specs/karma.conf.cjs)
 - [Specs/karma-main.js](file://Specs/karma-main.js)
 - [Specs/render.js](file://Specs/render.js)
+- [cesiumrust/specs/src/lib.rs](file://cesiumrust/specs/src/lib.rs)
 
 ## 详细组件分析
 
@@ -243,7 +225,7 @@ Jasmine-->>Browser : 输出报告
 - karma.conf.cjs：定义测试文件匹配规则、浏览器列表、并行度、覆盖率插件、代理与端口等
 - karma-main.js：在 Karma 启动阶段执行，设置 Jasmine 默认行为、注册全局匹配器与工具函数
 
-章节来源
+**Section sources**
 - [Specs/SpecRunner.html](file://Specs/SpecRunner.html)
 - [Specs/spec-main.js](file://Specs/spec-main.js)
 - [Specs/karma.conf.cjs](file://Specs/karma.conf.cjs)
@@ -253,7 +235,7 @@ Jasmine-->>Browser : 输出报告
 - customizeJasmine.js：调整 Jasmine 的超时、失败信息、重试策略，提升稳定性
 - addDefaultMatchers.js：为 Cesium 对象提供深度比较、近似数值比较、矩阵/向量匹配器等
 
-章节来源
+**Section sources**
 - [Specs/customizeJasmine.js](file://Specs/customizeJasmine.js)
 - [Specs/addDefaultMatchers.js](file://Specs/addDefaultMatchers.js)
 
@@ -263,7 +245,7 @@ Jasmine-->>Browser : 输出报告
 - createCamera.js：创建 Camera 实例，设置初始位置与朝向
 - createContext.js / createCanvas.js：创建 WebGL 上下文与 Canvas，确保 GPU 能力检测与降级策略
 
-章节来源
+**Section sources**
 - [Specs/createScene.js](file://Specs/createScene.js)
 - [Specs/createGlobe.js](file://Specs/createGlobe.js)
 - [Specs/createCamera.js](file://Specs/createCamera.js)
@@ -277,7 +259,7 @@ Jasmine-->>Browser : 输出报告
 - runLater.js：延迟执行回调，常用于事件队列或动画帧后的断言
 - waitForLoaderProcess.js / loaderProcess.js：与加载进程通信，确保资源加载完成后继续执行
 
-章节来源
+**Section sources**
 - [Specs/render.js](file://Specs/render.js)
 - [Specs/pollToPromise.js](file://Specs/pollToPromise.js)
 - [Specs/pollWhilePromise.js](file://Specs/pollWhilePromise.js)
@@ -290,7 +272,7 @@ Jasmine-->>Browser : 输出报告
 - throwError.js：在 Worker 中抛出错误，验证错误传播与捕获
 - transferArrayBuffer.js：传输 ArrayBuffer，验证大对象零拷贝传输
 
-章节来源
+**Section sources**
 - [Specs/TestWorkers/returnParameters.js](file://Specs/TestWorkers/returnParameters.js)
 - [Specs/TestWorkers/throwError.js](file://Specs/TestWorkers/throwError.js)
 - [Specs/TestWorkers/transferArrayBuffer.js](file://Specs/TestWorkers/transferArrayBuffer.js)
@@ -314,7 +296,7 @@ Capture --> |否| End(["结束"])
 Screenshot --> End
 ```
 
-图表来源
+**图表来源**
 - [Specs/e2e/playwright.config.js](file://Specs/e2e/playwright.config.js)
 - [Specs/e2e/CesiumPage.js](file://Specs/e2e/CesiumPage.js)
 - [Specs/e2e/test.js](file://Specs/e2e/test.js)
@@ -324,7 +306,7 @@ Screenshot --> End
 - [Specs/e2e/picking.spec.js](file://Specs/e2e/picking.spec.js)
 - [Specs/e2e/voxel-cameras.spec.js](file://Specs/e2e/voxel-cameras.spec.js)
 
-章节来源
+**Section sources**
 - [Specs/e2e/playwright.config.js](file://Specs/e2e/playwright.config.js)
 - [Specs/e2e/CesiumPage.js](file://Specs/e2e/CesiumPage.js)
 - [Specs/e2e/test.js](file://Specs/e2e/test.js)
@@ -338,45 +320,115 @@ Screenshot --> End
 - CZML/KML/图像等静态数据位于 Data/*，供测试加载与校验
 - 数据组织按格式分类，便于定位与维护
 
-章节来源
+**Section sources**
 - [Specs/Data/CZML/simple.czml](file://Specs/Data/CZML/simple.czml)
 - [Specs/Data/KML/simple.kml](file://Specs/Data/KML/simple.kml)
 - [Specs/Data/Images/test.png](file://Specs/Data/Images/test.png)
+
+## Rust测试套件架构
+
+### 测试套件概览
+cesiumrust 目录下的测试套件提供了完整的 Rust 语言测试覆盖，包含约 2,426 行测试代码，涵盖以下核心模块：
+
+- **几何测试模块**：300+ 行测试代码，覆盖基础几何操作、变换计算、碰撞检测等功能
+- **矩阵/四元数操作测试**：252 行测试代码，验证数学运算的精确性和性能
+- **数据源测试层**：四个新测试文件，测试数据加载、解析、缓存机制
+- **渲染子系统测试**：验证图形渲染管线、着色器编译、纹理处理
+- **场景层测试**：六个新测试文件，测试场景管理、实体操作、视图控制
+- **控件功能测试**：验证用户界面组件的交互行为和状态管理
+
+### 测试架构设计
+Rust 测试套件采用分层架构设计：
+
+```mermaid
+graph TB
+A["Cargo.toml"] --> B["specs/src/lib.rs"]
+B --> C["core_tests.rs"]
+B --> D["datasources_tests.rs"]
+B --> E["renderer_tests.rs"]
+B --> F["scene_tests.rs"]
+B --> G["widgets_tests.rs"]
+C --> H["几何操作测试"]
+C --> I["数学运算测试"]
+D --> J["数据加载测试"]
+D --> K["解析验证测试"]
+E --> L["渲染管线测试"]
+E --> M["着色器测试"]
+F --> N["场景管理测试"]
+F --> O["实体操作测试"]
+G --> P["控件交互测试"]
+G --> Q["状态管理测试"]
+```
+
+**图表来源**
+- [cesiumrust/specs/src/lib.rs](file://cesiumrust/specs/src/lib.rs)
+- [cesiumrust/specs/tests/core_tests.rs](file://cesiumrust/specs/tests/core_tests.rs)
+- [cesiumrust/specs/tests/datasources_tests.rs](file://cesiumrust/specs/tests/datasources_tests.rs)
+- [cesiumrust/specs/tests/renderer_tests.rs](file://cesiumrust/specs/tests/renderer_tests.rs)
+- [cesiumrust/specs/tests/scene_tests.rs](file://cesiumrust/specs/tests/scene_tests.rs)
+- [cesiumrust/specs/tests/widgets_tests.rs](file://cesiumrust/specs/tests/widgets_tests.rs)
+
+### 测试执行流程
+Rust 测试套件通过 Cargo 测试框架执行，支持并行测试执行和详细的测试报告生成：
+
+1. **测试发现**：Cargo 自动扫描 tests 目录下的测试文件
+2. **环境准备**：初始化测试环境，设置断言库和测试工具
+3. **并行执行**：利用 Rust 的并发特性并行执行测试用例
+4. **结果收集**：收集测试结果，生成详细的测试报告
+5. **覆盖率统计**：可选的代码覆盖率分析和性能基准测试
+
+**Section sources**
+- [cesiumrust/specs/src/lib.rs](file://cesiumrust/specs/src/lib.rs)
+- [cesiumrust/specs/tests/core_tests.rs](file://cesiumrust/specs/tests/core_tests.rs)
+- [cesiumrust/specs/tests/datasources_tests.rs](file://cesiumrust/specs/tests/datasources_tests.rs)
+- [cesiumrust/specs/tests/renderer_tests.rs](file://cesiumrust/specs/tests/renderer_tests.rs)
+- [cesiumrust/specs/tests/scene_tests.rs](file://cesiumrust/specs/tests/scene_tests.rs)
+- [cesiumrust/specs/tests/widgets_tests.rs](file://cesiumrust/specs/tests/widgets_tests.rs)
 
 ## 依赖关系分析
 - 测试框架依赖 Jasmine（断言与测试运行）、Karma（浏览器环境管理与报告）、Playwright（E2E 自动化）
 - 运行时依赖 CesiumJS 引擎（场景、渲染、数据加载）
 - 工具链依赖 Node.js 与 npm/yarn（构建与运行）
+- Rust 测试套件依赖 Cargo 测试框架、标准库和第三方测试库
+
+**更新** 新增 Rust 测试套件的依赖关系，包括 Cargo 包管理器、标准测试库和性能分析工具。
 
 ```mermaid
 graph LR
-Jasmine["Jasmine"] --> Specs["Specs 测试套件"]
+Jasmine["Jasmine"] --> Specs["JavaScript 测试套件"]
 Karma["Karma"] --> Specs
 Playwright["Playwright"] --> E2E["E2E 用例"]
 Specs --> Cesium["CesiumJS 引擎"]
 E2E --> Cesium
 Specs --> Tools["测试工具create*/poll*/render"]
 E2E --> PageObj["页面对象CesiumPage.js"]
+Cargo["Cargo"] --> RustSpecs["Rust 测试套件"]
+RustSpecs --> RustLibs["Rust 标准库"]
+RustSpecs --> CesiumRust["Cesium Rust 绑定"]
 ```
 
-图表来源
+**图表来源**
 - [Specs/spec-main.js](file://Specs/spec-main.js)
 - [Specs/karma.conf.cjs](file://Specs/karma.conf.cjs)
 - [Specs/e2e/playwright.config.js](file://Specs/e2e/playwright.config.js)
 - [Specs/e2e/CesiumPage.js](file://Specs/e2e/CesiumPage.js)
+- [cesiumrust/specs/src/lib.rs](file://cesiumrust/specs/src/lib.rs)
 
-章节来源
+**Section sources**
 - [Specs/spec-main.js](file://Specs/spec-main.js)
 - [Specs/karma.conf.cjs](file://Specs/karma.conf.cjs)
 - [Specs/e2e/playwright.config.js](file://Specs/e2e/playwright.config.js)
+- [cesiumrust/specs/src/lib.rs](file://cesiumrust/specs/src/lib.rs)
 
 ## 性能考量
 - 并行执行：Karma 可配置多浏览器并行，缩短 CI 时间
 - 渲染优化：render.js 控制帧数与回调，避免不必要的重绘
 - 资源加载：waitForLoaderProcess.js 确保资源就绪后再断言，减少重试与超时
 - 内存与网络：E2E 测试应限制并发与截图频率，降低内存占用与网络压力
+- Rust 测试优化：利用 Cargo 的并行测试执行，提高测试运行效率
+- 内存安全：Rust 的所有权系统确保测试过程中的内存安全，避免内存泄漏
 
-[本节为通用指导，不直接分析具体文件]
+**更新** 新增 Rust 测试套件的性能优化策略，包括并行执行、内存安全和性能基准测试。
 
 ## 故障排查指南
 - 常见问题
@@ -384,12 +436,15 @@ E2E --> PageObj["页面对象CesiumPage.js"]
   - 测试超时：增大 Jasmine 超时或优化 render.js 的帧等待策略
   - 资源加载失败：确认 Data/* 路径与服务器代理配置正确
   - E2E 不稳定：增加等待逻辑（pollWhilePromise.js）与重试机制
+  - Rust 测试失败：检查 Cargo.toml 依赖配置和测试环境设置
 - 调试建议
   - 启用 Playwright 调试模式，逐步观察页面状态
   - 使用自定义匹配器（addDefaultMatchers.js）打印差异信息
   - 在 Worker 测试中捕获错误（throwError.js）并记录堆栈
+  - 使用 Cargo 的 --verbose 标志获取详细的测试输出
+  - 利用 Rust 的调试器和性能分析工具定位问题
 
-章节来源
+**Section sources**
 - [Specs/karma.conf.cjs](file://Specs/karma.conf.cjs)
 - [Specs/customizeJasmine.js](file://Specs/customizeJasmine.js)
 - [Specs/addDefaultMatchers.js](file://Specs/addDefaultMatchers.js)
@@ -398,9 +453,9 @@ E2E --> PageObj["页面对象CesiumPage.js"]
 - [Specs/TestWorkers/throwError.js](file://Specs/TestWorkers/throwError.js)
 
 ## 结论
-Specs 测试框架通过 Jasmine + Karma + Playwright 的组合，构建了从单元到 E2E 的全链路测试体系。借助完善的工具链与测试数据管理，能够高效验证 CesiumJS 的渲染、数据加载与交互行为。建议在 CI 中启用并行与覆盖率收集，并结合调试工具快速定位问题。
+Specs 测试框架通过 Jasmine + Karma + Playwright 的组合，构建了从单元到 E2E 的全链路测试体系。新增的 Rust 测试套件进一步增强了跨语言的测试覆盖能力，涵盖了核心几何操作、数据源处理、渲染系统和场景管理等关键功能模块。借助完善的工具链与测试数据管理，能够高效验证 CesiumJS 的渲染、数据加载与交互行为。建议在 CI 中启用并行与覆盖率收集，并结合调试工具快速定位问题。
 
-[本节为总结，不直接分析具体文件]
+**更新** 双语言测试架构（JavaScript + Rust）提供了更全面的测试覆盖，确保了代码质量和系统稳定性。
 
 ## 附录
 - 最佳实践
@@ -408,5 +463,8 @@ Specs 测试框架通过 Jasmine + Karma + Playwright 的组合，构建了从�
   - 使用 poll* 工具处理异步与状态等待，避免硬编码延时
   - 将静态数据集中在 Data/*，便于维护与复用
   - E2E 用例遵循页面对象模式，提高可读性与可维护性
+  - Rust 测试采用模块化设计，按功能域组织测试文件
+  - 利用 Cargo 的并行执行特性优化测试性能
+  - 结合性能基准测试确保关键算法的效率
 
-[本节为通用指导，不直接分析具体文件]
+**更新** 新增 Rust 测试的最佳实践，包括模块化设计、并行执行和性能优化策略。

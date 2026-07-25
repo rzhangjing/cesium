@@ -1,29 +1,41 @@
-//! cesium-app: Bevy App assembly, System orchestration, plugin registration
+//! cesium-app: CesiumRust Globe Viewer
 //!
-//! This is the application layer that orchestrates domain and adapters.
-//! It sets up the Bevy app with the CesiumRust rendering plugin.
+//! An interactive 3D globe application mimicking CesiumJS Hello World:
+//! - Procedural Earth texture (oceans, continents, ice caps)
+//! - Atmospheric limb glow
+//! - Starfield background
+//! - Orbit camera (drag to rotate, scroll to zoom)
 
 use bevy::prelude::*;
 use cesium_bevy_render::CesiumRenderPlugin;
 
-mod material_showcase;
-use material_showcase::MaterialShowcasePlugin;
+mod orbit_camera;
+mod starfield;
+mod atmosphere_glow;
 
-mod geometry_showcase;
-use geometry_showcase::GeometryShowcasePlugin;
+use orbit_camera::OrbitCameraPlugin;
+use starfield::StarfieldPlugin;
+use atmosphere_glow::AtmosphereGlowPlugin;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "CesiumRust - DDD + Hexagonal Architecture × Bevy".to_string(),
+                title: "CesiumRust Globe Viewer".to_string(),
                 resolution: (1280.0, 720.0).into(),
                 ..default()
             }),
             ..default()
         }))
+        // Black space background
+        .insert_resource(ClearColor(Color::BLACK))
+        // Core: globe mesh + sun light
         .add_plugins(CesiumRenderPlugin)
-        .add_plugins(MaterialShowcasePlugin)
-        .add_plugins(GeometryShowcasePlugin)
+        // Interactive orbit camera
+        .add_plugins(OrbitCameraPlugin)
+        // Starfield background
+        .add_plugins(StarfieldPlugin)
+        // Atmosphere rim glow
+        .add_plugins(AtmosphereGlowPlugin)
         .run();
 }

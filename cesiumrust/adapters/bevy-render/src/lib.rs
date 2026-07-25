@@ -318,11 +318,12 @@ impl Plugin for CesiumRenderPlugin {
 /// 1 render unit = 6378137 meters (WGS84 semi-major axis).
 pub const METERS_PER_RENDER_UNIT: f64 = 6378137.0;
 
-/// System that spawns the globe entity
+/// System that spawns the globe entity with a procedural Earth texture.
 fn setup_globe(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     config: Res<EllipsoidConfig>,
 ) {
     // Create the ellipsoid mesh (positions in meters, f32)
@@ -331,33 +332,120 @@ fn setup_globe(
     // Scale factor: meters -> render units (globe renders as a unit sphere)
     let scale = (1.0 / METERS_PER_RENDER_UNIT) as f32;
 
-    // Spawn the globe with a solid color material (Earth-like blue)
+    // Generate procedural Earth texture
+    let earth_texture = generate_earth_texture(512, 256);
+    let texture_handle = images.add(earth_texture);
+
+    // Spawn the globe with textured material
     commands.spawn((
         Globe,
         Mesh3d(meshes.add(mesh)),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb(0.2, 0.4, 0.7), // Ocean blue
+            base_color_texture: Some(texture_handle),
+            perceptual_roughness: 0.9,
             ..default()
         })),
         Transform::from_scale(Vec3::splat(scale)),
     ));
 
-    // Spawn a camera looking at the (now unit-sized) globe from 3 render units away.
-    // Default projection (near=0.1, far=1000) has plenty of precision at this scale.
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(0.0, 0.0, 3.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
-
-    // Add a directional light (sun)
+    // Sun directional light (fixed angle simulating sunlight)
     commands.spawn((
         DirectionalLight {
-            illuminance: 10000.0,
-            shadows_enabled: true,
+            illuminance: light_consts::lux::AMBIENT_DAYLIGHT,
+            shadows_enabled: false,
             ..default()
         },
-        Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.8, 0.4, 0.0)),
+        Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.4, 0.6, 0.0)),
     ));
+}
+
+/// Generates a procedural Earth-like texture (equirectangular projection).
+/// Blue oceans, green/brown landmasses, white polar ice caps.
+fn generate_earth_texture(width: u32, height: u32) -> Image {
+    let mut data = Vec::with_capacity((width * height * 4) as usize);
+
+    for y in 0..height {
+        for x in 0..width {
+            let lon = (x as f64 / width as f64) * 360.0 - 180.0; // -180..180
+            let lat = 90.0 - (y as f64 / height as f64) * 180.0; // 90..-90
+
+            let (r, g, b) = earth_color_at(lat, lon);
+            data.push((r * 255.0) as u8);
+            data.push((g * 255.0) as u8);
+            data.push((b * 255.0) as u8);
+            data.push(255u8);
+        }
+    }
+
+    create_imagery_texture(width, height, data)
+}
+
+/// Simple value noise for continent generation.
+fn value_noise(x: f64, y: f64, seed: f64) -> f64 {
+    let n = (x * 12.9898 + y * 78.233 + seed * 43758.5453).sin();
+    (n * 43758.5453).fract().abs()
+}
+
+/// Fractal noise (3 octaves) for more natural coastlines.
+fn fractal_noise(lon: f64, lat: f64) -> f64 {
+    let mut val = 0.0;
+    let mut amp = 1.0;
+    let mut freq = 1.0;
+    for i in 0..4 {
+        let nx = lon * freq / 60.0;
+        let ny = lat * freq / 60.0;
+        val += value_noise(nx, ny, i as f64 * 7.3) * amp;
+        amp *= 0.5;
+        freq *= 2.0;
+    }
+    val / 1.875 // normalize to ~[0, 1]
+}
+
+/// Returns (r, g, b) in [0,1] for a given lat/lon.
+fn earth_color_at(lat: f64, lon: f64) -> (f64, f64, f64) {
+    // Polar ice caps
+    if lat.abs() > 70.0 {
+        let ice_factor = ((lat.abs() - 70.0) / 20.0).clamp(0.0, 1.0);
+        return (
+            0.85 + 0.1 * ice_factor,
+            0.88 + 0.08 * ice_factor,
+            0.92 + 0.05 * ice_factor,
+        );
+    }
+
+    // Continent mask via fractal noise
+    let n = fractal_noise(lon, lat);
+    // Bias: more ocean than land (~30% land)
+    let is_land = n > 0.52;
+
+    if is_land {
+        // Land: green lowlands → brown highlands
+        let elevation = (n - 0.52) / 0.48; // 0..1
+        if lat.abs() > 55.0 {
+            // Tundra/boreal
+            (0.35 + 0.1 * elevation, 0.4 + 0.05 * elevation, 0.25)
+        } else if lat.abs() < 25.0 {
+            // Tropical/desert mix
+            if n > 0.68 {
+                // Desert
+                (0.76, 0.65, 0.42)
+            } else {
+                // Tropical green
+                (0.15 + 0.1 * elevation, 0.5 + 0.15 * elevation, 0.12)
+            }
+        } else {
+            // Temperate
+            (0.2 + 0.25 * elevation, 0.45 + 0.1 * elevation, 0.15 + 0.05 * elevation)
+        }
+    } else {
+        // Ocean: deep blue with slight depth variation
+        let depth = n / 0.52; // 0..1 (closer to 1 = shallower)
+        (
+            0.02 + 0.05 * depth,
+            0.08 + 0.12 * depth,
+            0.35 + 0.2 * depth,
+        )
+    }
 }
 
 #[cfg(test)]

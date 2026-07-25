@@ -1454,6 +1454,7 @@ name = "cesium-app"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "cesium-atmosphere",
  "cesium-bevy-render",
  "cesium-camera",
  "cesium-event",
