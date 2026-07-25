@@ -463,6 +463,262 @@ impl BingMapsImageryProvider {
     }
 }
 
+/// A unified imagery provider descriptor with tiling scheme.
+///
+/// Maps to CesiumJS `ImageryProvider` base interface
+#[derive(Debug, Clone)]
+pub struct ImageryProviderDescriptor {
+    /// The provider kind.
+    pub kind: ImageryProviderKind,
+    /// The tiling scheme used by this provider.
+    pub tiling_scheme: crate::tiling_scheme::TilingScheme,
+    /// Minimum zoom level.
+    pub minimum_level: u32,
+    /// Maximum zoom level.
+    pub maximum_level: u32,
+    /// Tile width in pixels.
+    pub tile_width: u32,
+    /// Tile height in pixels.
+    pub tile_height: u32,
+    /// Credit/attribution.
+    pub credit: Option<String>,
+    /// Whether the provider supports time-dynamic imagery.
+    pub has_time_dynamic: bool,
+}
+
+/// The kind of imagery provider.
+#[derive(Debug, Clone)]
+pub enum ImageryProviderKind {
+    /// URL template provider.
+    UrlTemplate(UrlTemplateImageryProvider),
+    /// WMTS provider.
+    Wmts(WmtsImageryProvider),
+    /// WMS provider.
+    Wms(WmsImageryProvider),
+    /// TMS provider.
+    Tms(TmsImageryProvider),
+    /// OpenStreetMap provider.
+    Osm(OpenStreetMapImageryProvider),
+    /// Bing Maps provider.
+    Bing(BingMapsImageryProvider),
+}
+
+impl ImageryProviderDescriptor {
+    /// Creates a descriptor from a URL template provider.
+    pub fn url_template(provider: UrlTemplateImageryProvider) -> Self {
+        let max_level = provider.maximum_level;
+        Self {
+            tiling_scheme: crate::tiling_scheme::TilingScheme::web_mercator(),
+            minimum_level: provider.minimum_level,
+            maximum_level: max_level,
+            tile_width: provider.tile_width,
+            tile_height: provider.tile_height,
+            credit: provider.credit.clone(),
+            has_time_dynamic: false,
+            kind: ImageryProviderKind::UrlTemplate(provider),
+        }
+    }
+
+    /// Creates a descriptor from a WMTS provider.
+    pub fn wmts(provider: WmtsImageryProvider) -> Self {
+        let max_level = provider.maximum_level;
+        Self {
+            tiling_scheme: crate::tiling_scheme::TilingScheme::web_mercator(),
+            minimum_level: provider.minimum_level,
+            maximum_level: max_level,
+            tile_width: provider.tile_width,
+            tile_height: provider.tile_height,
+            credit: provider.credit.clone(),
+            has_time_dynamic: false,
+            kind: ImageryProviderKind::Wmts(provider),
+        }
+    }
+
+    /// Creates a descriptor from a WMS provider.
+    pub fn wms(provider: WmsImageryProvider) -> Self {
+        Self {
+            tiling_scheme: crate::tiling_scheme::TilingScheme::geographic(),
+            minimum_level: 0,
+            maximum_level: 25,
+            tile_width: provider.tile_width,
+            tile_height: provider.tile_height,
+            credit: provider.credit.clone(),
+            has_time_dynamic: false,
+            kind: ImageryProviderKind::Wms(provider),
+        }
+    }
+
+    /// Creates a descriptor from an OSM provider.
+    pub fn osm(provider: OpenStreetMapImageryProvider) -> Self {
+        let max_level = provider.maximum_level;
+        Self {
+            tiling_scheme: crate::tiling_scheme::TilingScheme::web_mercator(),
+            minimum_level: 0,
+            maximum_level: max_level,
+            tile_width: 256,
+            tile_height: 256,
+            credit: provider.credit.clone(),
+            has_time_dynamic: false,
+            kind: ImageryProviderKind::Osm(provider),
+        }
+    }
+
+    /// Gets the tile URL for a given coordinate.
+    pub fn get_tile_url(&self, coord: &TileCoord, subdomain_index: usize) -> String {
+        match &self.kind {
+            ImageryProviderKind::UrlTemplate(p) => p.get_tile_url(coord, subdomain_index),
+            ImageryProviderKind::Wmts(p) => p.get_tile_url_kvp(coord),
+            ImageryProviderKind::Wms(p) => p.get_tile_url(coord),
+            ImageryProviderKind::Tms(p) => p.get_tile_url(coord),
+            ImageryProviderKind::Osm(p) => p.get_tile_url(coord),
+            ImageryProviderKind::Bing(p) => p.get_tile_url(coord),
+        }
+    }
+
+    /// Checks if a tile is available at the given level.
+    pub fn is_available(&self, level: u32) -> bool {
+        level >= self.minimum_level && level <= self.maximum_level
+    }
+}
+
+/// Time-dynamic imagery interval.
+/// Maps to CesiumJS time-dynamic imagery support
+#[derive(Debug, Clone)]
+pub struct TimeDynamicInterval {
+    /// Start time (seconds since epoch).
+    pub start: f64,
+    /// Stop time (seconds since epoch).
+    pub stop: f64,
+    /// URL template for this interval (may include {time} placeholder).
+    pub url_template: String,
+}
+
+/// Time-dynamic imagery provider.
+///
+/// Maps to CesiumJS `TimeDynamicImagery`
+#[derive(Debug, Clone)]
+pub struct TimeDynamicImagery {
+    /// Time intervals with associated URLs.
+    pub intervals: Vec<TimeDynamicInterval>,
+    /// Whether to interpolate between intervals.
+    pub interpolate: bool,
+}
+
+impl TimeDynamicImagery {
+    /// Creates a new time-dynamic imagery provider.
+    pub fn new() -> Self {
+        Self {
+            intervals: Vec::new(),
+            interpolate: false,
+        }
+    }
+
+    /// Adds a time interval.
+    pub fn add_interval(&mut self, start: f64, stop: f64, url_template: impl Into<String>) {
+        self.intervals.push(TimeDynamicInterval {
+            start,
+            stop,
+            url_template: url_template.into(),
+        });
+    }
+
+    /// Gets the URL for a given time and tile coordinate.
+    pub fn get_tile_url(&self, time: f64, coord: &TileCoord) -> Option<String> {
+        // Find the interval containing this time
+        let interval = self.intervals.iter().find(|i| time >= i.start && time <= i.stop)?;
+
+        // Replace placeholders
+        let mut url = interval.url_template.clone();
+        url = url.replace("{x}", &coord.x.to_string());
+        url = url.replace("{y}", &coord.y.to_string());
+        url = url.replace("{z}", &coord.level.to_string());
+        url = url.replace("{time}", &time.to_string());
+
+        Some(url)
+    }
+
+    /// Returns the number of intervals.
+    pub fn interval_count(&self) -> usize {
+        self.intervals.len()
+    }
+}
+
+impl Default for TimeDynamicImagery {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// WMS GetFeatureInfo request builder.
+///
+/// Maps to CesiumJS WMS GetFeatureInfo support
+#[derive(Debug, Clone)]
+pub struct WmsGetFeatureInfo {
+    /// Base URL of the WMS service.
+    pub url: String,
+    /// Comma-separated layer names.
+    pub layers: String,
+    /// Info format (e.g., "application/json", "text/html").
+    pub info_format: String,
+    /// CRS/SRS identifier.
+    pub crs: String,
+    /// Feature count limit.
+    pub feature_count: u32,
+}
+
+impl WmsGetFeatureInfo {
+    /// Creates a new GetFeatureInfo builder.
+    pub fn new(url: impl Into<String>, layers: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            layers: layers.into(),
+            info_format: "application/json".to_string(),
+            crs: "EPSG:4326".to_string(),
+            feature_count: 10,
+        }
+    }
+
+    /// Sets the info format.
+    pub fn with_info_format(mut self, format: impl Into<String>) -> Self {
+        self.info_format = format.into();
+        self
+    }
+
+    /// Generates a GetFeatureInfo request URL.
+    ///
+    /// # Arguments
+    /// * `bbox` - Bounding box [west, south, east, north] in degrees
+    /// * `width` - Image width in pixels
+    /// * `height` - Image height in pixels
+    /// * `x` - Click x coordinate in pixels
+    /// * `y` - Click y coordinate in pixels
+    pub fn get_url(
+        &self,
+        bbox: [f64; 4],
+        width: u32,
+        height: u32,
+        x: u32,
+        y: u32,
+    ) -> String {
+        let separator = if self.url.contains('?') { "&" } else { "?" };
+        format!(
+            "{}{}service=WMS&version=1.3.0&request=GetFeatureInfo&layers={}&query_layers={}&crs={}&bbox={},{},{},{}&width={}&height={}&i={}&j={}&feature_count={}&info_format={}",
+            self.url,
+            separator,
+            self.layers,
+            self.layers,
+            self.crs,
+            bbox[1], bbox[0], bbox[3], bbox[2],
+            width,
+            height,
+            x,
+            y,
+            self.feature_count,
+            self.info_format,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -607,5 +863,96 @@ mod tests {
         let url = provider.get_tile_url(&TileCoord::new(1, 1, 1));
         assert!(url.contains("tiles.virtualearth.net"));
         assert!(url.contains("aerial3"));
+    }
+
+    #[test]
+    fn test_imagery_descriptor_url_template() {
+        let provider = UrlTemplateImageryProvider::new("https://example.com/{z}/{x}/{y}.png")
+            .with_max_level(18);
+        let desc = ImageryProviderDescriptor::url_template(provider);
+
+        assert_eq!(desc.maximum_level, 18);
+        assert!(desc.is_available(10));
+        assert!(!desc.is_available(19));
+        assert!(!desc.has_time_dynamic);
+
+        let url = desc.get_tile_url(&TileCoord::new(1, 2, 3), 0);
+        assert_eq!(url, "https://example.com/3/1/2.png");
+    }
+
+    #[test]
+    fn test_imagery_descriptor_wmts() {
+        let provider = WmtsImageryProvider::new("https://wmts.example.com", "satellite");
+        let desc = ImageryProviderDescriptor::wmts(provider);
+
+        assert_eq!(desc.maximum_level, 25);
+        let url = desc.get_tile_url(&TileCoord::new(1, 2, 3), 0);
+        assert!(url.contains("service=WMTS"));
+    }
+
+    #[test]
+    fn test_imagery_descriptor_wms() {
+        let provider = WmsImageryProvider::new("https://wms.example.com", "roads");
+        let desc = ImageryProviderDescriptor::wms(provider);
+
+        let url = desc.get_tile_url(&TileCoord::new(0, 0, 0), 0);
+        assert!(url.contains("service=WMS"));
+        assert!(url.contains("request=GetMap"));
+    }
+
+    #[test]
+    fn test_imagery_descriptor_osm() {
+        let provider = OpenStreetMapImageryProvider::new();
+        let desc = ImageryProviderDescriptor::osm(provider);
+
+        assert_eq!(desc.maximum_level, 19);
+        let url = desc.get_tile_url(&TileCoord::new(1, 2, 3), 0);
+        assert_eq!(url, "https://tile.openstreetmap.org/3/1/2.png");
+    }
+
+    #[test]
+    fn test_time_dynamic_imagery() {
+        let mut td = TimeDynamicImagery::new();
+        td.add_interval(0.0, 100.0, "https://example.com/{time}/{z}/{x}/{y}.png");
+        td.add_interval(100.0, 200.0, "https://example.com/late/{z}/{x}/{y}.png");
+
+        assert_eq!(td.interval_count(), 2);
+
+        // Time within first interval
+        let url = td.get_tile_url(50.0, &TileCoord::new(1, 2, 3)).unwrap();
+        assert!(url.contains("50"));
+        assert!(url.contains("/3/1/2.png"));
+
+        // Time within second interval
+        let url = td.get_tile_url(150.0, &TileCoord::new(1, 2, 3)).unwrap();
+        assert!(url.contains("late"));
+
+        // Time outside all intervals
+        let url = td.get_tile_url(300.0, &TileCoord::new(1, 2, 3));
+        assert!(url.is_none());
+    }
+
+    #[test]
+    fn test_wms_get_feature_info() {
+        let gfi = WmsGetFeatureInfo::new("https://wms.example.com", "roads,cities")
+            .with_info_format("text/html");
+
+        let url = gfi.get_url([-180.0, -90.0, 180.0, 90.0], 256, 256, 128, 128);
+
+        assert!(url.contains("request=GetFeatureInfo"));
+        assert!(url.contains("query_layers=roads,cities"));
+        assert!(url.contains("i=128"));
+        assert!(url.contains("j=128"));
+        assert!(url.contains("info_format=text/html"));
+        assert!(url.contains("feature_count=10"));
+    }
+
+    #[test]
+    fn test_wms_get_feature_info_bbox() {
+        let gfi = WmsGetFeatureInfo::new("https://wms.example.com", "layer1");
+        let url = gfi.get_url([10.0, 20.0, 30.0, 40.0], 512, 512, 256, 256);
+
+        // BBOX should be south,west,north,east for WMS 1.3.0
+        assert!(url.contains("bbox=20,10,40,30"));
     }
 }

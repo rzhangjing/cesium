@@ -152,6 +152,13 @@ pub fn factorial(n: u32) -> u64 {
     (1..=n as u64).product()
 }
 
+/// Computes the chord length of a circle given an angle and radius.
+/// Maps to CesiumMath.chordLength
+#[inline]
+pub fn chord_length(angle: f64, radius: f64) -> f64 {
+    2.0 * radius * (angle * 0.5).sin()
+}
+
 /// Computes the cosine of the angle between two vectors given their magnitudes and dot product.
 #[inline]
 pub fn cos_angle(dot: f64, mag_a: f64, mag_b: f64) -> f64 {

@@ -1,9 +1,0 @@
-schema_version: 1
-module_path: globe
-title: Globe 地理球体领域模型
-scope:
-    - cesiumrust/domain/globe/Cargo.toml
-source_files: []
-depends_on: []
-related_to:
-    - path: crs

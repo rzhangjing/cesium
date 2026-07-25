@@ -396,6 +396,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::excessive_precision)]
     fn test_wgs84_radii() {
         let ell = Ellipsoid::WGS84;
         assert_eq!(ell.radii().x, 6378137.0);

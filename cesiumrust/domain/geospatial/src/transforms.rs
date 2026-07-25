@@ -266,6 +266,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::excessive_precision)]
     fn test_enu_at_north_pole() {
         let ellipsoid = Ellipsoid::WGS84;
         let origin = DVec3::new(0.0, 0.0, 6356752.3142451793);

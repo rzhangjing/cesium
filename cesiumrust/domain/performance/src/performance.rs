@@ -382,7 +382,7 @@ mod tests {
         let mut scheduler = RequestScheduler::new(2);
         assert!(scheduler.has_capacity());
 
-        let id1 = scheduler.schedule(RequestPriority::Normal, 1);
+        let _id1 = scheduler.schedule(RequestPriority::Normal, 1);
         let id2 = scheduler.schedule(RequestPriority::High, 1);
 
         assert_eq!(scheduler.pending_count(), 2);

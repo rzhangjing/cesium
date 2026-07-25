@@ -12,10 +12,11 @@
 
 pub mod scene_pipeline;
 pub mod entity_render;
+pub mod fabric_material;
 
 use bevy::prelude::*;
 use cesium_geospatial::ellipsoid::Ellipsoid;
-use cesium_geospatial::geometry::{self, GeometryData, VertexFormat};
+use cesium_geospatial::geometry::{self, GeometryData, PrimitiveType, VertexFormat};
 use cesium_imagery::blending::PixelColor;
 use cesium_terrain::terrain_mesh::TerrainMesh;
 
@@ -45,9 +46,14 @@ pub fn geometry_to_mesh(geometry: &GeometryData) -> Mesh {
     // Indices are already u32
     let indices = geometry.indices.clone();
 
-    // Create mesh with triangle topology (default for our geometry)
+    // Determine topology based on primitive type.
+    let topology = match geometry.primitive_type {
+        PrimitiveType::Triangles => bevy::render::mesh::PrimitiveTopology::TriangleList,
+        PrimitiveType::Lines => bevy::render::mesh::PrimitiveTopology::LineList,
+    };
+
     let mut mesh = Mesh::new(
-        bevy::render::mesh::PrimitiveTopology::TriangleList,
+        topology,
         bevy::render::render_asset::RenderAssetUsages::default(),
     );
 

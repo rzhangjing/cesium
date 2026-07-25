@@ -310,9 +310,7 @@ mod tests {
         data.extend_from_slice(&GLB_CHUNK_JSON.to_le_bytes());
         data.extend_from_slice(json_bytes);
         // Padding
-        for _ in json_length..json_padded_length {
-            data.push(0x20); // Space padding for JSON
-        }
+        data.extend(std::iter::repeat_n(0x20u8, (json_padded_length - json_length) as usize));
 
         data
     }
@@ -391,9 +389,7 @@ mod tests {
         data.extend_from_slice(&json_padded_length.to_le_bytes());
         data.extend_from_slice(&GLB_CHUNK_JSON.to_le_bytes());
         data.extend_from_slice(json_bytes);
-        for _ in json_length..json_padded_length {
-            data.push(0x20);
-        }
+        data.extend(std::iter::repeat_n(0x20u8, (json_padded_length - json_length) as usize));
 
         // BIN chunk
         data.extend_from_slice(&bin_length.to_le_bytes());

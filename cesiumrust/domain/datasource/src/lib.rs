@@ -15,15 +15,26 @@
 //! - CZML parsing (basic)
 
 pub mod property;
+pub mod property_system;
 pub mod entity;
 pub mod entity_collection;
 pub mod geojson;
 pub mod czml;
+pub mod geometry_updater;
+pub mod visualizer;
+pub mod primitives;
+pub mod datasource_display;
+pub mod cluster;
+pub mod animation;
 
 pub use property::{Color, Property, PositionProperty, ColorProperty, NumberProperty, BoolProperty, StringProperty};
 pub use entity::{
     Entity, PointGraphics, PolylineGraphics, PolygonGraphics,
     BillboardGraphics, LabelGraphics, ModelGraphics, EllipseGraphics,
+    BoxGraphics, CylinderGraphics, CorridorGraphics, RectangleGraphics,
+    WallGraphics, EllipsoidGraphics, PlaneGraphics, PathGraphics,
+    PolylineVolumeGraphics, HeightReference, CornerType, ClassificationType,
+    ShadowMode, PlaneDef,
 };
 pub use entity_collection::{EntityCollection, DataSource};
 pub use geojson::{parse_geojson, GeoJsonOptions, GeoJsonError};

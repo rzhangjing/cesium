@@ -329,6 +329,49 @@ impl<'de> Deserialize<'de> for PrimitiveMode {
     }
 }
 
+/// Sparse accessor data for overriding specific elements.
+///
+/// Maps to glTF 2.0 `accessor.sparse`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessorSparse {
+    /// Number of elements overridden.
+    pub count: usize,
+
+    /// Indices of elements to override.
+    pub indices: AccessorSparseIndices,
+
+    /// Replacement values.
+    pub values: AccessorSparseValues,
+}
+
+/// Sparse accessor indices.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessorSparseIndices {
+    /// Index of the buffer view.
+    pub buffer_view: usize,
+
+    /// Byte offset into the buffer view.
+    #[serde(default)]
+    pub byte_offset: usize,
+
+    /// Component type of indices (5121=u8, 5123=u16, 5125=u32).
+    pub component_type: ComponentType,
+}
+
+/// Sparse accessor values.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessorSparseValues {
+    /// Index of the buffer view.
+    pub buffer_view: usize,
+
+    /// Byte offset into the buffer view.
+    #[serde(default)]
+    pub byte_offset: usize,
+}
+
 /// An accessor for buffer data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -366,6 +409,10 @@ pub struct Accessor {
     /// Minimum values.
     #[serde(default)]
     pub min: Vec<f64>,
+
+    /// Sparse accessor overrides.
+    #[serde(default)]
+    pub sparse: Option<AccessorSparse>,
 }
 
 impl Accessor {
@@ -394,6 +441,204 @@ impl Accessor {
     /// Returns the total byte stride for one element.
     pub fn element_byte_size(&self) -> usize {
         self.components_per_element() * self.component_byte_size()
+    }
+
+    /// Returns true if this accessor has sparse overrides.
+    pub fn is_sparse(&self) -> bool {
+        self.sparse.is_some()
+    }
+
+    /// Reads f32 data from a binary buffer using this accessor.
+    ///
+    /// Maps to CesiumJS `GltfLoaderUtility.getAccessorData`
+    pub fn read_f32_data(&self, buffers: &[Vec<u8>], buffer_views: &[BufferView]) -> Vec<f32> {
+        let total_components = self.count * self.components_per_element();
+        let mut data = vec![0.0f32; total_components];
+
+        // Read base data from buffer view
+        if let Some(bv_idx) = self.buffer_view {
+            if let Some(bv) = buffer_views.get(bv_idx) {
+                if let Some(buffer) = buffers.get(bv.buffer) {
+                    let stride = bv.byte_stride.unwrap_or(self.element_byte_size());
+                    let base_offset = bv.byte_offset + self.byte_offset;
+
+                    for i in 0..self.count {
+                        let elem_offset = base_offset + i * stride;
+                        for c in 0..self.components_per_element() {
+                            let byte_pos = elem_offset + c * 4;
+                            if byte_pos + 4 <= buffer.len() {
+                                let bytes = [
+                                    buffer[byte_pos],
+                                    buffer[byte_pos + 1],
+                                    buffer[byte_pos + 2],
+                                    buffer[byte_pos + 3],
+                                ];
+                                data[i * self.components_per_element() + c] =
+                                    f32::from_le_bytes(bytes);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Apply sparse overrides
+        if let Some(ref sparse) = self.sparse {
+            self.apply_sparse_f32(&mut data, sparse, buffers, buffer_views);
+        }
+
+        data
+    }
+
+    /// Reads u16 index data from a binary buffer.
+    pub fn read_u16_data(&self, buffers: &[Vec<u8>], buffer_views: &[BufferView]) -> Vec<u16> {
+        let mut data = vec![0u16; self.count];
+
+        if let Some(bv_idx) = self.buffer_view {
+            if let Some(bv) = buffer_views.get(bv_idx) {
+                if let Some(buffer) = buffers.get(bv.buffer) {
+                    let stride = bv.byte_stride.unwrap_or(2);
+                    let base_offset = bv.byte_offset + self.byte_offset;
+
+                    for (i, item) in data.iter_mut().enumerate().take(self.count) {
+                        let byte_pos = base_offset + i * stride;
+                        if byte_pos + 2 <= buffer.len() {
+                            *item = u16::from_le_bytes([
+                                buffer[byte_pos],
+                                buffer[byte_pos + 1],
+                            ]);
+                        }
+                    }
+                }
+            }
+        }
+
+        data
+    }
+
+    /// Reads u32 index data from a binary buffer.
+    pub fn read_u32_data(&self, buffers: &[Vec<u8>], buffer_views: &[BufferView]) -> Vec<u32> {
+        let mut data = vec![0u32; self.count];
+
+        if let Some(bv_idx) = self.buffer_view {
+            if let Some(bv) = buffer_views.get(bv_idx) {
+                if let Some(buffer) = buffers.get(bv.buffer) {
+                    let stride = bv.byte_stride.unwrap_or(4);
+                    let base_offset = bv.byte_offset + self.byte_offset;
+
+                    for (i, item) in data.iter_mut().enumerate().take(self.count) {
+                        let byte_pos = base_offset + i * stride;
+                        if byte_pos + 4 <= buffer.len() {
+                            *item = u32::from_le_bytes([
+                                buffer[byte_pos],
+                                buffer[byte_pos + 1],
+                                buffer[byte_pos + 2],
+                                buffer[byte_pos + 3],
+                            ]);
+                        }
+                    }
+                }
+            }
+        }
+
+        data
+    }
+
+    /// Applies sparse overrides to f32 data.
+    fn apply_sparse_f32(
+        &self,
+        data: &mut [f32],
+        sparse: &AccessorSparse,
+        buffers: &[Vec<u8>],
+        buffer_views: &[BufferView],
+    ) {
+        // Read sparse indices
+        let indices = self.read_sparse_indices(sparse, buffers, buffer_views);
+
+        // Read sparse values
+        if let Some(values_bv) = buffer_views.get(sparse.values.buffer_view) {
+            if let Some(buffer) = buffers.get(values_bv.buffer) {
+                let components = self.components_per_element();
+                let base_offset = values_bv.byte_offset + sparse.values.byte_offset;
+
+                for (sparse_idx, &target_idx) in indices.iter().enumerate() {
+                    if target_idx >= self.count {
+                        continue;
+                    }
+                    for c in 0..components {
+                        let byte_pos =
+                            base_offset + sparse_idx * components * 4 + c * 4;
+                        if byte_pos + 4 <= buffer.len() {
+                            let bytes = [
+                                buffer[byte_pos],
+                                buffer[byte_pos + 1],
+                                buffer[byte_pos + 2],
+                                buffer[byte_pos + 3],
+                            ];
+                            let target = target_idx * components + c;
+                            if target < data.len() {
+                                data[target] = f32::from_le_bytes(bytes);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Reads sparse indices as usize values.
+    fn read_sparse_indices(
+        &self,
+        sparse: &AccessorSparse,
+        buffers: &[Vec<u8>],
+        buffer_views: &[BufferView],
+    ) -> Vec<usize> {
+        let mut indices = Vec::with_capacity(sparse.count);
+
+        if let Some(bv) = buffer_views.get(sparse.indices.buffer_view) {
+            if let Some(buffer) = buffers.get(bv.buffer) {
+                let base_offset = bv.byte_offset + sparse.indices.byte_offset;
+
+                for i in 0..sparse.count {
+                    let idx = match sparse.indices.component_type {
+                        ComponentType::U8 => {
+                            let pos = base_offset + i;
+                            if pos < buffer.len() {
+                                buffer[pos] as usize
+                            } else {
+                                0
+                            }
+                        }
+                        ComponentType::U16 => {
+                            let pos = base_offset + i * 2;
+                            if pos + 2 <= buffer.len() {
+                                u16::from_le_bytes([buffer[pos], buffer[pos + 1]])
+                                    as usize
+                            } else {
+                                0
+                            }
+                        }
+                        ComponentType::U32 => {
+                            let pos = base_offset + i * 4;
+                            if pos + 4 <= buffer.len() {
+                                u32::from_le_bytes([
+                                    buffer[pos],
+                                    buffer[pos + 1],
+                                    buffer[pos + 2],
+                                    buffer[pos + 3],
+                                ]) as usize
+                            } else {
+                                0
+                            }
+                        }
+                        _ => 0,
+                    };
+                    indices.push(idx);
+                }
+            }
+        }
+
+        indices
     }
 }
 
@@ -875,6 +1120,7 @@ mod tests {
             accessor_type: AccessorType::Vec3,
             max: vec![],
             min: vec![],
+            sparse: None,
         };
 
         assert_eq!(accessor.components_per_element(), 3);
@@ -919,5 +1165,310 @@ mod tests {
 
         assert_eq!(model.asset.version, reparsed.asset.version);
         assert_eq!(model.nodes.len(), reparsed.nodes.len());
+    }
+
+    #[test]
+    fn test_accessor_read_f32_data() {
+        // Create a buffer with 3 f32 values: 1.0, 2.0, 3.0
+        let mut buffer = Vec::new();
+        buffer.extend_from_slice(&1.0f32.to_le_bytes());
+        buffer.extend_from_slice(&2.0f32.to_le_bytes());
+        buffer.extend_from_slice(&3.0f32.to_le_bytes());
+
+        let buffers = vec![buffer];
+        let buffer_views = vec![BufferView {
+            name: None,
+            buffer: 0,
+            byte_offset: 0,
+            byte_length: 12,
+            byte_stride: None,
+            target: None,
+        }];
+
+        let accessor = Accessor {
+            name: None,
+            buffer_view: Some(0),
+            byte_offset: 0,
+            component_type: ComponentType::F32,
+            normalized: false,
+            count: 3,
+            accessor_type: AccessorType::Scalar,
+            max: vec![],
+            min: vec![],
+            sparse: None,
+        };
+
+        let data = accessor.read_f32_data(&buffers, &buffer_views);
+        assert_eq!(data.len(), 3);
+        assert!((data[0] - 1.0).abs() < 1e-6);
+        assert!((data[1] - 2.0).abs() < 1e-6);
+        assert!((data[2] - 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_accessor_read_f32_vec3() {
+        // 2 VEC3 elements: (1,2,3) and (4,5,6)
+        let mut buffer = Vec::new();
+        for v in [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0] {
+            buffer.extend_from_slice(&v.to_le_bytes());
+        }
+
+        let buffers = vec![buffer];
+        let buffer_views = vec![BufferView {
+            name: None,
+            buffer: 0,
+            byte_offset: 0,
+            byte_length: 24,
+            byte_stride: None,
+            target: None,
+        }];
+
+        let accessor = Accessor {
+            name: None,
+            buffer_view: Some(0),
+            byte_offset: 0,
+            component_type: ComponentType::F32,
+            normalized: false,
+            count: 2,
+            accessor_type: AccessorType::Vec3,
+            max: vec![],
+            min: vec![],
+            sparse: None,
+        };
+
+        let data = accessor.read_f32_data(&buffers, &buffer_views);
+        assert_eq!(data.len(), 6);
+        assert!((data[0] - 1.0).abs() < 1e-6);
+        assert!((data[3] - 4.0).abs() < 1e-6);
+        assert!((data[5] - 6.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_accessor_read_u16_data() {
+        let mut buffer = Vec::new();
+        for v in [10u16, 20, 30, 40] {
+            buffer.extend_from_slice(&v.to_le_bytes());
+        }
+
+        let buffers = vec![buffer];
+        let buffer_views = vec![BufferView {
+            name: None,
+            buffer: 0,
+            byte_offset: 0,
+            byte_length: 8,
+            byte_stride: None,
+            target: None,
+        }];
+
+        let accessor = Accessor {
+            name: None,
+            buffer_view: Some(0),
+            byte_offset: 0,
+            component_type: ComponentType::U16,
+            normalized: false,
+            count: 4,
+            accessor_type: AccessorType::Scalar,
+            max: vec![],
+            min: vec![],
+            sparse: None,
+        };
+
+        let data = accessor.read_u16_data(&buffers, &buffer_views);
+        assert_eq!(data, vec![10, 20, 30, 40]);
+    }
+
+    #[test]
+    fn test_accessor_read_u32_data() {
+        let mut buffer = Vec::new();
+        for v in [100u32, 200, 300] {
+            buffer.extend_from_slice(&v.to_le_bytes());
+        }
+
+        let buffers = vec![buffer];
+        let buffer_views = vec![BufferView {
+            name: None,
+            buffer: 0,
+            byte_offset: 0,
+            byte_length: 12,
+            byte_stride: None,
+            target: None,
+        }];
+
+        let accessor = Accessor {
+            name: None,
+            buffer_view: Some(0),
+            byte_offset: 0,
+            component_type: ComponentType::U32,
+            normalized: false,
+            count: 3,
+            accessor_type: AccessorType::Scalar,
+            max: vec![],
+            min: vec![],
+            sparse: None,
+        };
+
+        let data = accessor.read_u32_data(&buffers, &buffer_views);
+        assert_eq!(data, vec![100, 200, 300]);
+    }
+
+    #[test]
+    fn test_accessor_sparse() {
+        // Base data: [0.0, 0.0, 0.0] (3 scalars)
+        // Sparse: override index 1 with value 5.0
+        let mut base_buffer = Vec::new();
+        base_buffer.extend_from_slice(&0.0f32.to_le_bytes());
+        base_buffer.extend_from_slice(&0.0f32.to_le_bytes());
+        base_buffer.extend_from_slice(&0.0f32.to_le_bytes());
+
+        // Sparse indices buffer: [1u16]
+        let mut idx_buffer = Vec::new();
+        idx_buffer.extend_from_slice(&1u16.to_le_bytes());
+
+        // Sparse values buffer: [5.0f32]
+        let mut val_buffer = Vec::new();
+        val_buffer.extend_from_slice(&5.0f32.to_le_bytes());
+
+        let buffers = vec![base_buffer, idx_buffer, val_buffer];
+        let buffer_views = vec![
+            BufferView {
+                name: None,
+                buffer: 0,
+                byte_offset: 0,
+                byte_length: 12,
+                byte_stride: None,
+                target: None,
+            },
+            BufferView {
+                name: None,
+                buffer: 1,
+                byte_offset: 0,
+                byte_length: 2,
+                byte_stride: None,
+                target: None,
+            },
+            BufferView {
+                name: None,
+                buffer: 2,
+                byte_offset: 0,
+                byte_length: 4,
+                byte_stride: None,
+                target: None,
+            },
+        ];
+
+        let accessor = Accessor {
+            name: None,
+            buffer_view: Some(0),
+            byte_offset: 0,
+            component_type: ComponentType::F32,
+            normalized: false,
+            count: 3,
+            accessor_type: AccessorType::Scalar,
+            max: vec![],
+            min: vec![],
+            sparse: Some(AccessorSparse {
+                count: 1,
+                indices: AccessorSparseIndices {
+                    buffer_view: 1,
+                    byte_offset: 0,
+                    component_type: ComponentType::U16,
+                },
+                values: AccessorSparseValues {
+                    buffer_view: 2,
+                    byte_offset: 0,
+                },
+            }),
+        };
+
+        assert!(accessor.is_sparse());
+        let data = accessor.read_f32_data(&buffers, &buffer_views);
+        assert!((data[0] - 0.0).abs() < 1e-6);
+        assert!((data[1] - 5.0).abs() < 1e-6); // overridden
+        assert!((data[2] - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_accessor_with_byte_stride() {
+        // Interleaved: position(3f) + normal(3f) = 24 bytes stride
+        // Only read positions (first 3 floats of each 6-float stride)
+        let mut buffer = Vec::new();
+        // Element 0: pos(1,2,3) + normal(0,0,1)
+        for v in [1.0f32, 2.0, 3.0, 0.0, 0.0, 1.0] {
+            buffer.extend_from_slice(&v.to_le_bytes());
+        }
+        // Element 1: pos(4,5,6) + normal(0,1,0)
+        for v in [4.0f32, 5.0, 6.0, 0.0, 1.0, 0.0] {
+            buffer.extend_from_slice(&v.to_le_bytes());
+        }
+
+        let buffers = vec![buffer];
+        let buffer_views = vec![BufferView {
+            name: None,
+            buffer: 0,
+            byte_offset: 0,
+            byte_length: 48,
+            byte_stride: Some(24), // 6 floats * 4 bytes
+            target: None,
+        }];
+
+        let accessor = Accessor {
+            name: None,
+            buffer_view: Some(0),
+            byte_offset: 0,
+            component_type: ComponentType::F32,
+            normalized: false,
+            count: 2,
+            accessor_type: AccessorType::Vec3,
+            max: vec![],
+            min: vec![],
+            sparse: None,
+        };
+
+        let data = accessor.read_f32_data(&buffers, &buffer_views);
+        assert_eq!(data.len(), 6);
+        assert!((data[0] - 1.0).abs() < 1e-6);
+        assert!((data[1] - 2.0).abs() < 1e-6);
+        assert!((data[2] - 3.0).abs() < 1e-6);
+        assert!((data[3] - 4.0).abs() < 1e-6);
+        assert!((data[4] - 5.0).abs() < 1e-6);
+        assert!((data[5] - 6.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_sparse_accessor_json_parsing() {
+        let json = r#"{
+            "asset": { "version": "2.0" },
+            "accessors": [{
+                "componentType": 5126,
+                "count": 3,
+                "type": "SCALAR",
+                "sparse": {
+                    "count": 1,
+                    "indices": {
+                        "bufferView": 1,
+                        "componentType": 5123
+                    },
+                    "values": {
+                        "bufferView": 2
+                    }
+                }
+            }],
+            "bufferViews": [
+                { "buffer": 0, "byteLength": 12 },
+                { "buffer": 0, "byteLength": 2, "byteOffset": 12 },
+                { "buffer": 0, "byteLength": 4, "byteOffset": 14 }
+            ],
+            "buffers": [{ "byteLength": 18 }]
+        }"#;
+
+        let model = GltfModel::from_json(json).unwrap();
+        let accessor = &model.accessors[0];
+        assert!(accessor.is_sparse());
+
+        let sparse = accessor.sparse.as_ref().unwrap();
+        assert_eq!(sparse.count, 1);
+        assert_eq!(sparse.indices.buffer_view, 1);
+        assert_eq!(sparse.indices.component_type, ComponentType::U16);
+        assert_eq!(sparse.values.buffer_view, 2);
     }
 }

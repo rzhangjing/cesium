@@ -280,6 +280,238 @@ fn extract_json_number(json: &str, key: &str) -> Option<f64> {
     remaining[..end].parse().ok()
 }
 
+/// A unified terrain provider with tiling scheme integration.
+///
+/// Maps to CesiumJS `TerrainProvider` interface
+#[derive(Debug, Clone)]
+pub enum TerrainProviderKind {
+    /// Cesium terrain (quantized-mesh).
+    Cesium(CesiumTerrainProvider),
+    /// Flat ellipsoid terrain.
+    Ellipsoid(EllipsoidTerrainProvider),
+    /// Heightmap terrain.
+    Heightmap(HeightmapTerrainProvider),
+    /// VRTheWorld terrain.
+    VrTheWorld(VrTheWorldTerrainProvider),
+}
+
+/// Terrain provider descriptor with tiling scheme and availability.
+///
+/// Maps to CesiumJS `TerrainProvider` base interface
+#[derive(Debug, Clone)]
+pub struct TerrainProviderDescriptor {
+    /// The provider kind.
+    pub kind: TerrainProviderKind,
+    /// The tiling scheme used by this provider.
+    pub tiling_scheme: crate::tiling_scheme::TilingScheme,
+    /// Whether the provider has vertex normals.
+    pub has_vertex_normals: bool,
+    /// Whether the provider has a water mask.
+    pub has_water_mask: bool,
+    /// Maximum available level.
+    pub maximum_level: u32,
+}
+
+impl TerrainProviderDescriptor {
+    /// Creates a descriptor for a Cesium terrain provider.
+    pub fn cesium(provider: CesiumTerrainProvider, max_level: u32) -> Self {
+        Self {
+            has_vertex_normals: provider.request_vertex_normals,
+            has_water_mask: provider.request_water_mask,
+            kind: TerrainProviderKind::Cesium(provider),
+            tiling_scheme: crate::tiling_scheme::TilingScheme::geographic(),
+            maximum_level: max_level,
+        }
+    }
+
+    /// Creates a descriptor for an ellipsoid terrain provider.
+    pub fn ellipsoid() -> Self {
+        Self {
+            kind: TerrainProviderKind::Ellipsoid(EllipsoidTerrainProvider),
+            tiling_scheme: crate::tiling_scheme::TilingScheme::geographic(),
+            has_vertex_normals: false,
+            has_water_mask: false,
+            maximum_level: 0,
+        }
+    }
+
+    /// Creates a descriptor for a heightmap terrain provider.
+    pub fn heightmap(provider: HeightmapTerrainProvider) -> Self {
+        let max_level = provider.maximum_level;
+        Self {
+            kind: TerrainProviderKind::Heightmap(provider),
+            tiling_scheme: crate::tiling_scheme::TilingScheme::geographic(),
+            has_vertex_normals: false,
+            has_water_mask: false,
+            maximum_level: max_level,
+        }
+    }
+
+    /// Gets the tile URL for a given tile coordinate.
+    pub fn get_tile_url(&self, level: u32, x: u32, y: u32) -> Option<String> {
+        match &self.kind {
+            TerrainProviderKind::Cesium(p) => Some(p.get_tile_url(level, x, y)),
+            TerrainProviderKind::Ellipsoid(_) => None,
+            TerrainProviderKind::Heightmap(p) => Some(p.get_tile_url(level, x, y)),
+            TerrainProviderKind::VrTheWorld(p) => Some(p.get_tile_url(level, x, y)),
+        }
+    }
+
+    /// Checks if a tile is available at the given level.
+    pub fn is_available(&self, level: u32) -> bool {
+        level <= self.maximum_level
+    }
+}
+
+/// Height sampling result.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SampledHeight {
+    /// Longitude in radians.
+    pub longitude: f64,
+    /// Latitude in radians.
+    pub latitude: f64,
+    /// Sampled height in meters (None if no data).
+    pub height: Option<f64>,
+}
+
+/// Parameters for height sampling from a heightmap grid.
+#[derive(Debug, Clone)]
+pub struct HeightmapSampleParams<'a> {
+    /// Height data grid (row-major, height x width).
+    pub heightmap: &'a [f64],
+    /// Number of columns in the heightmap.
+    pub grid_width: usize,
+    /// Number of rows in the heightmap.
+    pub grid_height: usize,
+    /// West edge of the tile (radians).
+    pub tile_west: f64,
+    /// South edge of the tile (radians).
+    pub tile_south: f64,
+    /// East edge of the tile (radians).
+    pub tile_east: f64,
+    /// North edge of the tile (radians).
+    pub tile_north: f64,
+    /// Minimum height value in the grid.
+    pub min_height: f64,
+    /// Maximum height value in the grid.
+    pub max_height: f64,
+}
+
+/// Samples terrain height at a position using bilinear interpolation.
+///
+/// Maps to CesiumJS `sampleTerrain` / `sampleTerrainMostDetailed`
+pub fn sample_height_bilinear(
+    params: &HeightmapSampleParams<'_>,
+    longitude: f64,
+    latitude: f64,
+) -> Option<f64> {
+    let heightmap = params.heightmap;
+    let grid_width = params.grid_width;
+    let grid_height = params.grid_height;
+
+    if heightmap.len() < grid_width * grid_height {
+        return None;
+    }
+
+    // Check bounds
+    if longitude < params.tile_west || longitude > params.tile_east
+        || latitude < params.tile_south || latitude > params.tile_north
+    {
+        return None;
+    }
+
+    // Compute fractional grid position
+    let fx = (longitude - params.tile_west) / (params.tile_east - params.tile_west)
+        * (grid_width - 1) as f64;
+    let fy = (params.tile_north - latitude) / (params.tile_north - params.tile_south)
+        * (grid_height - 1) as f64;
+
+    let x0 = (fx as usize).min(grid_width - 2);
+    let y0 = (fy as usize).min(grid_height - 2);
+    let x1 = x0 + 1;
+    let y1 = y0 + 1;
+
+    let tx = fx - x0 as f64;
+    let ty = fy - y0 as f64;
+
+    // Bilinear interpolation
+    let h00 = heightmap[y0 * grid_width + x0];
+    let h10 = heightmap[y0 * grid_width + x1];
+    let h01 = heightmap[y1 * grid_width + x0];
+    let h11 = heightmap[y1 * grid_width + x1];
+
+    let h = h00 * (1.0 - tx) * (1.0 - ty)
+        + h10 * tx * (1.0 - ty)
+        + h01 * (1.0 - tx) * ty
+        + h11 * tx * ty;
+
+    // Clamp to valid range
+    Some(h.clamp(params.min_height, params.max_height))
+}
+
+/// Parameters for height sampling from quantized mesh data.
+#[derive(Debug, Clone)]
+pub struct QuantizedSampleParams<'a> {
+    /// Quantized vertex data [u0..un, v0..vn, h0..hn].
+    pub quantized_vertices: &'a [u16],
+    /// Number of vertices.
+    pub vertex_count: usize,
+    /// West edge (radians).
+    pub tile_west: f64,
+    /// South edge (radians).
+    pub tile_south: f64,
+    /// East edge (radians).
+    pub tile_east: f64,
+    /// North edge (radians).
+    pub tile_north: f64,
+    /// Minimum height.
+    pub min_height: f64,
+    /// Maximum height.
+    pub max_height: f64,
+}
+
+/// Samples terrain height from quantized mesh data.
+pub fn sample_height_quantized(
+    params: &QuantizedSampleParams<'_>,
+    longitude: f64,
+    latitude: f64,
+) -> Option<f64> {
+    let quantized_vertices = params.quantized_vertices;
+    let vertex_count = params.vertex_count;
+
+    if quantized_vertices.len() < vertex_count * 3 {
+        return None;
+    }
+
+    // Find the nearest vertex
+    let u_query = ((longitude - params.tile_west) / (params.tile_east - params.tile_west)
+        * 32767.0) as u16;
+    let v_query = ((latitude - params.tile_south) / (params.tile_north - params.tile_south)
+        * 32767.0) as u16;
+
+    let mut best_dist = u32::MAX;
+    let mut best_height = 0u16;
+
+    for i in 0..vertex_count {
+        let u = quantized_vertices[i];
+        let v = quantized_vertices[vertex_count + i];
+        let h = quantized_vertices[vertex_count * 2 + i];
+
+        let du = (u as i32 - u_query as i32).unsigned_abs();
+        let dv = (v as i32 - v_query as i32).unsigned_abs();
+        let dist = du + dv;
+
+        if dist < best_dist {
+            best_dist = dist;
+            best_height = h;
+        }
+    }
+
+    // Dequantize height
+    let t = best_height as f64 / 32767.0;
+    Some(params.min_height + t * (params.max_height - params.min_height))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,5 +594,145 @@ mod tests {
         let provider = CesiumTerrainProvider::new("https://example.com");
         assert!(provider.is_available(0));
         assert!(provider.is_available(100)); // All available by default
+    }
+
+    #[test]
+    fn test_terrain_provider_descriptor_cesium() {
+        let provider = CesiumTerrainProvider::new("https://terrain.example.com")
+            .with_vertex_normals()
+            .with_water_mask();
+        let desc = TerrainProviderDescriptor::cesium(provider, 18);
+
+        assert!(desc.has_vertex_normals);
+        assert!(desc.has_water_mask);
+        assert_eq!(desc.maximum_level, 18);
+        assert!(desc.is_available(10));
+        assert!(!desc.is_available(19));
+
+        let url = desc.get_tile_url(5, 10, 15).unwrap();
+        assert!(url.contains("terrain.example.com"));
+    }
+
+    #[test]
+    fn test_terrain_provider_descriptor_ellipsoid() {
+        let desc = TerrainProviderDescriptor::ellipsoid();
+        assert!(!desc.has_vertex_normals);
+        assert!(!desc.has_water_mask);
+        assert_eq!(desc.maximum_level, 0);
+        assert!(desc.get_tile_url(0, 0, 0).is_none());
+    }
+
+    #[test]
+    fn test_terrain_provider_descriptor_heightmap() {
+        let provider = HeightmapTerrainProvider::new("https://hm.example.com");
+        let desc = TerrainProviderDescriptor::heightmap(provider);
+        assert_eq!(desc.maximum_level, 25);
+        let url = desc.get_tile_url(3, 1, 2).unwrap();
+        assert!(url.contains("hm.example.com"));
+    }
+
+    #[test]
+    fn test_sample_height_bilinear_flat() {
+        // 3x3 flat heightmap at 100m
+        let heightmap = vec![100.0; 9];
+        let params = HeightmapSampleParams {
+            heightmap: &heightmap,
+            grid_width: 3,
+            grid_height: 3,
+            tile_west: 0.0,
+            tile_south: 0.0,
+            tile_east: 1.0,
+            tile_north: 1.0,
+            min_height: 0.0,
+            max_height: 200.0,
+        };
+        let h = sample_height_bilinear(&params, 0.5, 0.5);
+        assert!((h.unwrap() - 100.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_sample_height_bilinear_gradient() {
+        // 2x2 heightmap: 0, 100, 0, 100 (west-east gradient)
+        let heightmap = vec![0.0, 100.0, 0.0, 100.0];
+        let params = HeightmapSampleParams {
+            heightmap: &heightmap,
+            grid_width: 2,
+            grid_height: 2,
+            tile_west: 0.0,
+            tile_south: 0.0,
+            tile_east: 1.0,
+            tile_north: 1.0,
+            min_height: 0.0,
+            max_height: 200.0,
+        };
+        let h = sample_height_bilinear(&params, 0.5, 0.5);
+        assert!((h.unwrap() - 50.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_sample_height_bilinear_out_of_bounds() {
+        let heightmap = vec![100.0; 4];
+        let params = HeightmapSampleParams {
+            heightmap: &heightmap,
+            grid_width: 2,
+            grid_height: 2,
+            tile_west: 0.0,
+            tile_south: 0.0,
+            tile_east: 1.0,
+            tile_north: 1.0,
+            min_height: 0.0,
+            max_height: 200.0,
+        };
+        let h = sample_height_bilinear(&params, 2.0, 0.5); // Outside east
+        assert!(h.is_none());
+    }
+
+    #[test]
+    fn test_sample_height_quantized() {
+        // 4 vertices: u=[0, 32767, 0, 32767], v=[0, 0, 32767, 32767], h=[0, 16383, 32767, 16383]
+        let vertices: Vec<u16> = vec![
+            0, 32767, 0, 32767,       // u
+            0, 0, 32767, 32767,       // v
+            0, 16383, 32767, 16383,   // h
+        ];
+        let params = QuantizedSampleParams {
+            quantized_vertices: &vertices,
+            vertex_count: 4,
+            tile_west: 0.0,
+            tile_south: 0.0,
+            tile_east: 1.0,
+            tile_north: 1.0,
+            min_height: 0.0,
+            max_height: 1000.0,
+        };
+
+        // Query at SE corner (lon=1.0, lat=0.0) → u=32767, v=0 → nearest vertex 1 (h=16383)
+        let h = sample_height_quantized(&params, 1.0, 0.0);
+        let height = h.unwrap();
+        // h=16383/32767 * 1000 ≈ 500
+        assert!((height - 500.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_sample_height_quantized_corner() {
+        let vertices: Vec<u16> = vec![
+            0, 32767, 0, 32767,
+            0, 0, 32767, 32767,
+            0, 16383, 32767, 16383,
+        ];
+        let params = QuantizedSampleParams {
+            quantized_vertices: &vertices,
+            vertex_count: 4,
+            tile_west: 0.0,
+            tile_south: 0.0,
+            tile_east: 1.0,
+            tile_north: 1.0,
+            min_height: 0.0,
+            max_height: 1000.0,
+        };
+
+        // Query at SW corner (u=0, v=0) - nearest is vertex 0 (h=0)
+        let h = sample_height_quantized(&params, 0.0, 0.0);
+        assert!(h.unwrap().abs() < 1.0);
     }
 }

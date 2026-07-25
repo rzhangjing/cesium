@@ -364,9 +364,11 @@ mod tests {
 
     #[test]
     fn test_frame_statistics() {
-        let mut stats = FrameStatistics::default();
-        stats.draw_calls = 100;
-        stats.triangles = 50000;
+        let mut stats = FrameStatistics {
+            draw_calls: 100,
+            triangles: 50000,
+            ..Default::default()
+        };
 
         let other = FrameStatistics {
             draw_calls: 50,

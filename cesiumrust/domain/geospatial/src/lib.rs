@@ -14,6 +14,8 @@ pub mod ray;
 pub mod frustum;
 pub mod transforms;
 pub mod geometry;
+pub mod geodesic;
+pub mod polyline_pipeline;
 
 pub use cartographic::Cartographic;
 pub use ellipsoid::Ellipsoid;
@@ -25,3 +27,4 @@ pub use ray::{Intersect, Plane, Ray};
 pub use frustum::{CullingVolume, OrthographicFrustum, PerspectiveFrustum};
 pub use transforms::{HeadingPitchRoll, HeadingPitchRange, TranslationRotationScale};
 pub use geometry::{GeometryData, VertexFormat};
+pub use geodesic::EllipsoidGeodesic;

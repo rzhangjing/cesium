@@ -16,6 +16,7 @@
 
 pub mod celestial;
 pub mod scattering;
+pub mod star_sphere;
 
 pub use celestial::{
     compute_sun_position_eci, compute_sun_position_ecef,
@@ -29,4 +30,8 @@ pub use scattering::{
     AtmosphereParameters, SkyBoxConfig, LightingConfig,
     rayleigh_phase, mie_phase, atmospheric_density,
     compute_sky_color, compute_horizon_glow,
+};
+pub use star_sphere::{
+    DynamicAtmosphereLighting, HsbShift, SkyAtmosphereConfig, SkyBoxState,
+    Star, StarSphere,
 };

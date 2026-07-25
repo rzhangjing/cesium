@@ -13,6 +13,7 @@ members = [
     "domain/gltf",
     "domain/scene",
     "domain/datasource",
+    "domain/material",
     "domain/atmosphere",
     "domain/interaction",
     "domain/effects",
@@ -30,6 +31,8 @@ members = [
     "domain/vector",
     "domain/scene-mode",
     "domain/performance",
+    "domain/voxel",
+    "domain/widgets",
     # Ports layer (trait contracts)
     "ports/driven",
     "ports/driving",
@@ -77,6 +80,7 @@ cesium-tileset = { path = "domain/tileset" }
 cesium-gltf = { path = "domain/gltf" }
 cesium-scene = { path = "domain/scene" }
 cesium-datasource = { path = "domain/datasource" }
+cesium-material = { path = "domain/material" }
 cesium-atmosphere = { path = "domain/atmosphere" }
 cesium-interaction = { path = "domain/interaction" }
 cesium-effects = { path = "domain/effects" }
@@ -94,6 +98,8 @@ cesium-implicit-tiling = { path = "domain/implicit-tiling" }
 cesium-vector = { path = "domain/vector" }
 cesium-scene-mode = { path = "domain/scene-mode" }
 cesium-performance = { path = "domain/performance" }
+cesium-voxel = { path = "domain/voxel" }
+cesium-widgets = { path = "domain/widgets" }
 
 # Internal port crates
 cesium-ports-driven = { path = "ports/driven" }

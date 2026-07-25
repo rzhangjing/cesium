@@ -9,5 +9,9 @@
 pub mod shadow_map;
 pub mod water;
 
-pub use shadow_map::{ShadowCameraParams, ShadowCascade, ShadowMap, ShadowMapConfig, ShadowMapType};
+pub use shadow_map::{
+    PcfConfig, ShadowBias, ShadowBiasType, ShadowCameraParams, ShadowCascade,
+    ShadowLightType, ShadowMap, ShadowMapConfig, ShadowMapType,
+    SHADOW_MAP_MAXIMUM_DISTANCE,
+};
 pub use water::{GerstnerWave, OceanConfig, OceanSurface};

@@ -385,9 +385,11 @@ mod tests {
 
     #[test]
     fn test_globe_lighting_enabled() {
-        let mut lighting = GlobeLighting::default();
-        lighting.enabled = true;
-        lighting.sun_direction = DVec3::new(0.0, 0.0, 1.0);
+        let lighting = GlobeLighting {
+            enabled: true,
+            sun_direction: DVec3::new(0.0, 0.0, 1.0),
+            ..Default::default()
+        };
 
         // Surface facing the sun
         let normal = DVec3::new(0.0, 0.0, 1.0);
@@ -402,9 +404,11 @@ mod tests {
 
     #[test]
     fn test_specular_water() {
-        let mut lighting = GlobeLighting::default();
-        lighting.enabled = true;
-        lighting.sun_direction = DVec3::new(0.0, 0.0, 1.0);
+        let lighting = GlobeLighting {
+            enabled: true,
+            sun_direction: DVec3::new(0.0, 0.0, 1.0),
+            ..Default::default()
+        };
 
         let normal = DVec3::new(0.0, 0.0, 1.0);
         let view = DVec3::new(0.0, 0.0, 1.0);
@@ -415,9 +419,11 @@ mod tests {
 
     #[test]
     fn test_lit_color() {
-        let mut lighting = GlobeLighting::default();
-        lighting.enabled = true;
-        lighting.sun_direction = DVec3::Z;
+        let lighting = GlobeLighting {
+            enabled: true,
+            sun_direction: DVec3::Z,
+            ..Default::default()
+        };
 
         let base = [0.5, 0.5, 0.5];
         let normal = DVec3::Z;

@@ -6,6 +6,12 @@
 use bevy::prelude::*;
 use cesium_bevy_render::CesiumRenderPlugin;
 
+mod material_showcase;
+use material_showcase::MaterialShowcasePlugin;
+
+mod geometry_showcase;
+use geometry_showcase::GeometryShowcasePlugin;
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -17,5 +23,7 @@ fn main() {
             ..default()
         }))
         .add_plugins(CesiumRenderPlugin)
+        .add_plugins(MaterialShowcasePlugin)
+        .add_plugins(GeometryShowcasePlugin)
         .run();
 }

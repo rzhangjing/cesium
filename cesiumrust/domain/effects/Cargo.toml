@@ -7,4 +7,6 @@ publish.workspace = true
 
 [dependencies]
 glam.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 cesium-geospatial.workspace = true

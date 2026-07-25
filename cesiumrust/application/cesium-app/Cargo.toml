@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 bevy.workspace = true
+glam.workspace = true
 cesium-geospatial.workspace = true
 cesium-time.workspace = true
 cesium-camera.workspace = true
@@ -15,3 +16,4 @@ cesium-resource.workspace = true
 cesium-ports-driven.workspace = true
 cesium-ports-driving.workspace = true
 cesium-bevy-render.workspace = true
+cesium-material.workspace = true

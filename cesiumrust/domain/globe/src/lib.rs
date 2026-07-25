@@ -14,4 +14,4 @@ pub mod surface;
 pub use atmosphere::{
     GlobeLighting, GroundAtmosphere, SkyAtmosphereConfig, SkyBoxConfig,
 };
-pub use surface::{GlobeConfig, GlobeSurface, GlobeTranslucency};
+pub use surface::{GlobeConfig, GlobeSurface, GlobeTranslucency, NearFarScalar, ShadowMode};

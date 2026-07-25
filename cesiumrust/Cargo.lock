@@ -1458,10 +1458,12 @@ dependencies = [
  "cesium-camera",
  "cesium-event",
  "cesium-geospatial",
+ "cesium-material",
  "cesium-ports-driven",
  "cesium-ports-driving",
  "cesium-resource",
  "cesium-time",
+ "glam",
 ]
 
 [[package]]
@@ -1480,6 +1482,7 @@ dependencies = [
  "cesium-datasource",
  "cesium-geospatial",
  "cesium-imagery",
+ "cesium-material",
  "cesium-ports-driven",
  "cesium-scene",
  "cesium-terrain",
@@ -1510,6 +1513,7 @@ name = "cesium-datasource"
 version = "0.1.0"
 dependencies = [
  "cesium-geospatial",
+ "cesium-time",
  "glam",
  "serde",
  "serde_json",
@@ -1532,6 +1536,8 @@ version = "0.1.0"
 dependencies = [
  "cesium-geospatial",
  "glam",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1610,6 +1616,16 @@ dependencies = [
  "glam",
  "serde",
  "serde-xml-rs",
+]
+
+[[package]]
+name = "cesium-material"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
@@ -1749,6 +1765,27 @@ version = "0.1.0"
 dependencies = [
  "cesium-geospatial",
  "glam",
+]
+
+[[package]]
+name = "cesium-voxel"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+]
+
+[[package]]
+name = "cesium-widgets"
+version = "0.1.0"
+dependencies = [
+ "cesium-scene-mode",
+ "cesium-time",
+ "glam",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

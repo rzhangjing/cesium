@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// A bounding sphere defined by a center point and radius.
 /// Maps to CesiumJS `BoundingSphere`
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct BoundingSphere {
     /// The center of the sphere.
     pub center: DVec3,

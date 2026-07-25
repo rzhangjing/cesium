@@ -2,13 +2,52 @@
 //!
 //! Maps to CesiumJS `Scene/Camera.js` flight methods:
 //! - `Camera.flyTo`
+//! - `Camera.flyToBoundingSphere`
+//! - `Camera.flyHome`
 //! - `Camera.lookAt`
 //! - `Camera.setView`
 
-use cesium_camera::Camera;
+use cesium_camera::{Camera, EasingFunction};
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
+use cesium_geospatial::{BoundingSphere, HeadingPitchRange};
 use glam::DVec3;
+
+/// Options for a camera flight.
+#[derive(Debug, Clone)]
+pub struct FlightOptions {
+    /// Target position (ECEF).
+    pub destination: DVec3,
+    /// Target heading in radians.
+    pub heading: Option<f64>,
+    /// Target pitch in radians.
+    pub pitch: Option<f64>,
+    /// Target roll in radians.
+    pub roll: Option<f64>,
+    /// Target direction (overrides heading/pitch).
+    pub direction: Option<DVec3>,
+    /// Target up vector.
+    pub up: Option<DVec3>,
+    /// Flight duration in seconds.
+    pub duration: f64,
+    /// Easing function.
+    pub easing: EasingFunction,
+}
+
+impl Default for FlightOptions {
+    fn default() -> Self {
+        Self {
+            destination: DVec3::ZERO,
+            heading: None,
+            pitch: None,
+            roll: None,
+            direction: None,
+            up: None,
+            duration: 3.0,
+            easing: EasingFunction::SinusoidalInOut,
+        }
+    }
+}
 
 /// A camera flight path animation.
 #[derive(Debug, Clone)]
@@ -31,6 +70,8 @@ pub struct CameraFlight {
     pub elapsed: f64,
     /// Whether the flight is complete.
     pub complete: bool,
+    /// Easing function for the flight.
+    pub easing: EasingFunction,
 }
 
 impl CameraFlight {
@@ -64,6 +105,7 @@ impl CameraFlight {
             duration: duration.max(0.001),
             elapsed: 0.0,
             complete: false,
+            easing: EasingFunction::SinusoidalInOut,
         }
     }
 
@@ -98,12 +140,12 @@ impl CameraFlight {
             self.complete = true;
         }
 
-        // Smooth step easing
-        let t_smooth = smoothstep(t);
+        // Apply easing function
+        let t_eased = self.easing.evaluate(t);
 
-        let position = self.start_position.lerp(self.end_position, t_smooth);
-        let direction = self.start_direction.lerp(self.end_direction, t_smooth).normalize();
-        let up = self.start_up.lerp(self.end_up, t_smooth).normalize();
+        let position = self.start_position.lerp(self.end_position, t_eased);
+        let direction = self.start_direction.lerp(self.end_direction, t_eased).normalize();
+        let up = self.start_up.lerp(self.end_up, t_eased).normalize();
 
         Some((position, direction, up))
     }
@@ -124,6 +166,86 @@ impl CameraFlight {
     /// Returns the progress (0.0 to 1.0).
     pub fn progress(&self) -> f64 {
         (self.elapsed / self.duration).clamp(0.0, 1.0)
+    }
+
+    /// Creates a flight from full options.
+    /// Maps to `Camera.flyTo` with full options
+    pub fn fly_to_with_options(camera: &Camera, options: &FlightOptions) -> Self {
+        let end_direction = if let Some(dir) = options.direction {
+            dir.normalize()
+        } else {
+            // Compute from heading/pitch or default to looking at center
+            -options.destination.normalize()
+        };
+        let end_up = options.up.unwrap_or(DVec3::Z).normalize();
+
+        Self {
+            start_position: camera.position,
+            end_position: options.destination,
+            start_direction: camera.direction,
+            end_direction,
+            start_up: camera.up,
+            end_up,
+            duration: options.duration.max(0.001),
+            elapsed: 0.0,
+            complete: false,
+            easing: options.easing,
+        }
+    }
+
+    /// Creates a flight to view a bounding sphere.
+    /// Maps to `Camera.flyToBoundingSphere`
+    pub fn fly_to_bounding_sphere(
+        camera: &Camera,
+        sphere: &BoundingSphere,
+        offset: Option<&HeadingPitchRange>,
+        duration: f64,
+    ) -> Self {
+        let default_offset = HeadingPitchRange::new(0.0, -std::f64::consts::FRAC_PI_4, 0.0);
+        let offset = offset.unwrap_or(&default_offset);
+
+        // Compute range if not specified
+        let range = if offset.range > 0.0 {
+            offset.range
+        } else {
+            // Default: compute from sphere radius and FOV
+            let fov = match &camera.frustum {
+                cesium_camera::Frustum::Perspective(f) => f.fov,
+                cesium_camera::Frustum::Orthographic(_) => std::f64::consts::FRAC_PI_3,
+            };
+            sphere.radius / (fov * 0.5).sin().max(0.001)
+        };
+
+        // Compute destination from sphere center + offset
+        let cos_pitch = offset.pitch.cos();
+        let dest_offset = DVec3::new(
+            range * cos_pitch * offset.heading.cos(),
+            range * cos_pitch * offset.heading.sin(),
+            range * offset.pitch.sin(),
+        );
+        let destination = sphere.center + dest_offset;
+        let direction = (sphere.center - destination).normalize();
+
+        Self {
+            start_position: camera.position,
+            end_position: destination,
+            start_direction: camera.direction,
+            end_direction: direction,
+            start_up: camera.up,
+            end_up: DVec3::Z,
+            duration: duration.max(0.001),
+            elapsed: 0.0,
+            complete: false,
+            easing: EasingFunction::SinusoidalInOut,
+        }
+    }
+
+    /// Creates a flight to the default home view.
+    /// Maps to `Camera.flyHome`
+    pub fn fly_home(camera: &Camera, ellipsoid: &Ellipsoid, duration: f64) -> Self {
+        let destination = Camera::default_home_position(ellipsoid);
+        let direction = -destination.normalize();
+        Self::fly_to(camera, destination, Some(direction), Some(DVec3::Z), duration)
     }
 }
 
@@ -204,14 +326,14 @@ pub fn compute_set_view(
     (position, direction, up)
 }
 
-/// Smooth step interpolation (Hermite).
-fn smoothstep(t: f64) -> f64 {
-    t * t * (3.0 - 2.0 * t)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Smooth step interpolation (Hermite) - test helper.
+    fn smoothstep(t: f64) -> f64 {
+        t * t * (3.0 - 2.0 * t)
+    }
 
     fn create_test_camera() -> Camera {
         Camera::new(

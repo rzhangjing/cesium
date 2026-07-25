@@ -5,6 +5,79 @@
 
 use crate::property::{BoolProperty, Color, ColorProperty, NumberProperty, PositionProperty, Property, StringProperty};
 
+/// Height reference for positioning relative to terrain.
+///
+/// Maps to CesiumJS `Scene/HeightReference.js`
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HeightReference {
+    /// Position is absolute (no terrain adjustment).
+    #[default]
+    None,
+    /// Position is clamped to the terrain surface.
+    ClampToGround,
+    /// Position height is relative to the terrain surface.
+    RelativeToGround,
+    /// Position is clamped to the most detailed 3D Tiles surface.
+    ClampToTileset,
+    /// Position height is relative to the most detailed 3D Tiles surface.
+    RelativeToTileset,
+}
+
+/// Corner style for corridors and polyline volumes.
+///
+/// Maps to CesiumJS `Core/CornerType.js`
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CornerType {
+    /// Rounded corners.
+    #[default]
+    Rounded,
+    /// Mitered (sharp) corners.
+    Mitered,
+    /// Beveled (cut) corners.
+    Beveled,
+}
+
+/// Classification type for ground primitives.
+///
+/// Maps to CesiumJS `Scene/ClassificationType.js`
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ClassificationType {
+    /// Classify both terrain and 3D Tiles.
+    #[default]
+    Both,
+    /// Classify terrain only.
+    Terrain,
+    /// Classify 3D Tiles only.
+    Cesium3DTile,
+}
+
+/// Shadow mode for an entity.
+///
+/// Maps to CesiumJS `Scene/ShadowMode.js`
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ShadowMode {
+    /// Shadows are disabled.
+    #[default]
+    Disabled,
+    /// Casts shadows only.
+    CastOnly,
+    /// Receives shadows only.
+    ReceiveOnly,
+    /// Casts and receives shadows.
+    Enabled,
+}
+
+/// A plane defined by a normal and distance from origin.
+///
+/// Maps to CesiumJS `Core/Plane.js`
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlaneDef {
+    /// Plane normal [x, y, z].
+    pub normal: [f64; 3],
+    /// Signed distance from origin.
+    pub distance: f64,
+}
+
 /// Point graphics properties.
 ///
 /// Maps to CesiumJS `DataSources/PointGraphics.js`
@@ -217,6 +290,14 @@ pub struct EllipseGraphics {
     pub height: NumberProperty,
     /// Extruded height.
     pub extruded_height: NumberProperty,
+    /// Whether the ellipse is filled.
+    pub fill: BoolProperty,
+    /// Whether the outline is shown.
+    pub outline: BoolProperty,
+    /// Outline color.
+    pub outline_color: ColorProperty,
+    /// Outline width.
+    pub outline_width: NumberProperty,
     /// Whether the ellipse is shown.
     pub show: BoolProperty,
 }
@@ -230,6 +311,463 @@ impl Default for EllipseGraphics {
             material: Property::Constant(Color::WHITE),
             height: Property::Constant(0.0),
             extruded_height: Property::Undefined,
+            fill: Property::Constant(true),
+            outline: Property::Constant(false),
+            outline_color: Property::Constant(Color::BLACK),
+            outline_width: Property::Constant(1.0),
+            show: Property::Constant(true),
+        }
+    }
+}
+
+/// Box graphics properties.
+///
+/// Maps to CesiumJS `DataSources/BoxGraphics.js`
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoxGraphics {
+    /// Box dimensions [width, depth, height] in meters.
+    pub dimensions: Property<[f64; 3]>,
+    /// Height reference.
+    pub height_reference: HeightReference,
+    /// Whether the box is filled.
+    pub fill: BoolProperty,
+    /// Fill material color.
+    pub material: ColorProperty,
+    /// Whether the outline is shown.
+    pub outline: BoolProperty,
+    /// Outline color.
+    pub outline_color: ColorProperty,
+    /// Outline width.
+    pub outline_width: NumberProperty,
+    /// Shadow mode.
+    pub shadows: ShadowMode,
+    /// Whether the box is shown.
+    pub show: BoolProperty,
+}
+
+impl Default for BoxGraphics {
+    fn default() -> Self {
+        Self {
+            dimensions: Property::Undefined,
+            height_reference: HeightReference::None,
+            fill: Property::Constant(true),
+            material: Property::Constant(Color::WHITE),
+            outline: Property::Constant(false),
+            outline_color: Property::Constant(Color::BLACK),
+            outline_width: Property::Constant(1.0),
+            shadows: ShadowMode::Disabled,
+            show: Property::Constant(true),
+        }
+    }
+}
+
+/// Cylinder graphics properties.
+///
+/// Maps to CesiumJS `DataSources/CylinderGraphics.js`
+#[derive(Debug, Clone, PartialEq)]
+pub struct CylinderGraphics {
+    /// Length (height) in meters.
+    pub length: NumberProperty,
+    /// Top radius in meters.
+    pub top_radius: NumberProperty,
+    /// Bottom radius in meters.
+    pub bottom_radius: NumberProperty,
+    /// Height reference.
+    pub height_reference: HeightReference,
+    /// Number of vertical lines for the outline.
+    pub number_of_vertical_lines: NumberProperty,
+    /// Number of slices (radial segments).
+    pub slices: NumberProperty,
+    /// Whether the cylinder is filled.
+    pub fill: BoolProperty,
+    /// Fill material color.
+    pub material: ColorProperty,
+    /// Whether the outline is shown.
+    pub outline: BoolProperty,
+    /// Outline color.
+    pub outline_color: ColorProperty,
+    /// Outline width.
+    pub outline_width: NumberProperty,
+    /// Shadow mode.
+    pub shadows: ShadowMode,
+    /// Whether the cylinder is shown.
+    pub show: BoolProperty,
+}
+
+impl Default for CylinderGraphics {
+    fn default() -> Self {
+        Self {
+            length: Property::Undefined,
+            top_radius: Property::Undefined,
+            bottom_radius: Property::Undefined,
+            height_reference: HeightReference::None,
+            number_of_vertical_lines: Property::Constant(16.0),
+            slices: Property::Constant(128.0),
+            fill: Property::Constant(true),
+            material: Property::Constant(Color::WHITE),
+            outline: Property::Constant(false),
+            outline_color: Property::Constant(Color::BLACK),
+            outline_width: Property::Constant(1.0),
+            shadows: ShadowMode::Disabled,
+            show: Property::Constant(true),
+        }
+    }
+}
+
+/// Corridor graphics properties.
+///
+/// Maps to CesiumJS `DataSources/CorridorGraphics.js`
+#[derive(Debug, Clone, PartialEq)]
+pub struct CorridorGraphics {
+    /// Corridor center-line positions (array of [lon, lat, height]).
+    pub positions: Property<Vec<[f64; 3]>>,
+    /// Corridor width in meters.
+    pub width: NumberProperty,
+    /// Height of the corridor.
+    pub height: NumberProperty,
+    /// Height reference.
+    pub height_reference: HeightReference,
+    /// Extruded height.
+    pub extruded_height: NumberProperty,
+    /// Corner type.
+    pub corner_type: CornerType,
+    /// Angular granularity in radians.
+    pub granularity: NumberProperty,
+    /// Whether the corridor is filled.
+    pub fill: BoolProperty,
+    /// Fill material color.
+    pub material: ColorProperty,
+    /// Whether the outline is shown.
+    pub outline: BoolProperty,
+    /// Outline color.
+    pub outline_color: ColorProperty,
+    /// Outline width.
+    pub outline_width: NumberProperty,
+    /// Shadow mode.
+    pub shadows: ShadowMode,
+    /// Classification type.
+    pub classification_type: ClassificationType,
+    /// Z-index for ground corridor ordering.
+    pub z_index: NumberProperty,
+    /// Whether the corridor is shown.
+    pub show: BoolProperty,
+}
+
+impl Default for CorridorGraphics {
+    fn default() -> Self {
+        Self {
+            positions: Property::Undefined,
+            width: Property::Undefined,
+            height: Property::Constant(0.0),
+            height_reference: HeightReference::None,
+            extruded_height: Property::Undefined,
+            corner_type: CornerType::Rounded,
+            granularity: Property::Undefined,
+            fill: Property::Constant(true),
+            material: Property::Constant(Color::WHITE),
+            outline: Property::Constant(false),
+            outline_color: Property::Constant(Color::BLACK),
+            outline_width: Property::Constant(1.0),
+            shadows: ShadowMode::Disabled,
+            classification_type: ClassificationType::Both,
+            z_index: Property::Constant(0.0),
+            show: Property::Constant(true),
+        }
+    }
+}
+
+/// Rectangle graphics properties.
+///
+/// Maps to CesiumJS `DataSources/RectangleGraphics.js`
+#[derive(Debug, Clone, PartialEq)]
+pub struct RectangleGraphics {
+    /// Rectangle coordinates [west, south, east, north] in radians.
+    pub coordinates: Property<[f64; 4]>,
+    /// Height in meters.
+    pub height: NumberProperty,
+    /// Height reference.
+    pub height_reference: HeightReference,
+    /// Extruded height.
+    pub extruded_height: NumberProperty,
+    /// Rotation of the rectangle in radians.
+    pub rotation: NumberProperty,
+    /// Texture coordinate rotation in radians.
+    pub st_rotation: NumberProperty,
+    /// Angular granularity in radians.
+    pub granularity: NumberProperty,
+    /// Whether the rectangle is filled.
+    pub fill: BoolProperty,
+    /// Fill material color.
+    pub material: ColorProperty,
+    /// Whether the outline is shown.
+    pub outline: BoolProperty,
+    /// Outline color.
+    pub outline_color: ColorProperty,
+    /// Outline width.
+    pub outline_width: NumberProperty,
+    /// Shadow mode.
+    pub shadows: ShadowMode,
+    /// Classification type.
+    pub classification_type: ClassificationType,
+    /// Z-index for ground rectangle ordering.
+    pub z_index: NumberProperty,
+    /// Whether the rectangle is shown.
+    pub show: BoolProperty,
+}
+
+impl Default for RectangleGraphics {
+    fn default() -> Self {
+        Self {
+            coordinates: Property::Undefined,
+            height: Property::Constant(0.0),
+            height_reference: HeightReference::None,
+            extruded_height: Property::Undefined,
+            rotation: Property::Constant(0.0),
+            st_rotation: Property::Constant(0.0),
+            granularity: Property::Undefined,
+            fill: Property::Constant(true),
+            material: Property::Constant(Color::WHITE),
+            outline: Property::Constant(false),
+            outline_color: Property::Constant(Color::BLACK),
+            outline_width: Property::Constant(1.0),
+            shadows: ShadowMode::Disabled,
+            classification_type: ClassificationType::Both,
+            z_index: Property::Constant(0.0),
+            show: Property::Constant(true),
+        }
+    }
+}
+
+/// Wall graphics properties.
+///
+/// Maps to CesiumJS `DataSources/WallGraphics.js`
+#[derive(Debug, Clone, PartialEq)]
+pub struct WallGraphics {
+    /// Wall positions (array of [lon, lat, height]).
+    pub positions: Property<Vec<[f64; 3]>>,
+    /// Minimum heights for each position.
+    pub minimum_heights: Property<Vec<f64>>,
+    /// Maximum heights for each position.
+    pub maximum_heights: Property<Vec<f64>>,
+    /// Angular granularity in radians.
+    pub granularity: NumberProperty,
+    /// Whether the wall is filled.
+    pub fill: BoolProperty,
+    /// Fill material color.
+    pub material: ColorProperty,
+    /// Whether the outline is shown.
+    pub outline: BoolProperty,
+    /// Outline color.
+    pub outline_color: ColorProperty,
+    /// Outline width.
+    pub outline_width: NumberProperty,
+    /// Shadow mode.
+    pub shadows: ShadowMode,
+    /// Whether the wall is shown.
+    pub show: BoolProperty,
+}
+
+impl Default for WallGraphics {
+    fn default() -> Self {
+        Self {
+            positions: Property::Undefined,
+            minimum_heights: Property::Undefined,
+            maximum_heights: Property::Undefined,
+            granularity: Property::Undefined,
+            fill: Property::Constant(true),
+            material: Property::Constant(Color::WHITE),
+            outline: Property::Constant(false),
+            outline_color: Property::Constant(Color::BLACK),
+            outline_width: Property::Constant(1.0),
+            shadows: ShadowMode::Disabled,
+            show: Property::Constant(true),
+        }
+    }
+}
+
+/// Ellipsoid graphics properties.
+///
+/// Maps to CesiumJS `DataSources/EllipsoidGraphics.js`
+#[derive(Debug, Clone, PartialEq)]
+pub struct EllipsoidGraphics {
+    /// Outer radii [x, y, z] in meters.
+    pub radii: Property<[f64; 3]>,
+    /// Inner radii for hollow ellipsoid.
+    pub inner_radii: Property<[f64; 3]>,
+    /// Minimum clock angle in radians.
+    pub minimum_clock: NumberProperty,
+    /// Maximum clock angle in radians.
+    pub maximum_clock: NumberProperty,
+    /// Minimum cone angle in radians.
+    pub minimum_cone: NumberProperty,
+    /// Maximum cone angle in radians.
+    pub maximum_cone: NumberProperty,
+    /// Height reference.
+    pub height_reference: HeightReference,
+    /// Number of radial slices.
+    pub slices: NumberProperty,
+    /// Number of stack partitions.
+    pub stack_partitions: NumberProperty,
+    /// Number of slice partitions.
+    pub slice_partitions: NumberProperty,
+    /// Number of subdivisions.
+    pub subdivisions: NumberProperty,
+    /// Whether the ellipsoid is filled.
+    pub fill: BoolProperty,
+    /// Fill material color.
+    pub material: ColorProperty,
+    /// Whether the outline is shown.
+    pub outline: BoolProperty,
+    /// Outline color.
+    pub outline_color: ColorProperty,
+    /// Outline width.
+    pub outline_width: NumberProperty,
+    /// Shadow mode.
+    pub shadows: ShadowMode,
+    /// Whether the ellipsoid is shown.
+    pub show: BoolProperty,
+}
+
+impl Default for EllipsoidGraphics {
+    fn default() -> Self {
+        Self {
+            radii: Property::Undefined,
+            inner_radii: Property::Undefined,
+            minimum_clock: Property::Constant(0.0),
+            maximum_clock: Property::Constant(std::f64::consts::TAU),
+            minimum_cone: Property::Constant(0.0),
+            maximum_cone: Property::Constant(std::f64::consts::PI),
+            height_reference: HeightReference::None,
+            slices: Property::Constant(128.0),
+            stack_partitions: Property::Constant(64.0),
+            slice_partitions: Property::Constant(64.0),
+            subdivisions: Property::Constant(128.0),
+            fill: Property::Constant(true),
+            material: Property::Constant(Color::WHITE),
+            outline: Property::Constant(false),
+            outline_color: Property::Constant(Color::BLACK),
+            outline_width: Property::Constant(1.0),
+            shadows: ShadowMode::Disabled,
+            show: Property::Constant(true),
+        }
+    }
+}
+
+/// Plane graphics properties.
+///
+/// Maps to CesiumJS `DataSources/PlaneGraphics.js`
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlaneGraphics {
+    /// Plane definition (normal + distance).
+    pub plane: Property<PlaneDef>,
+    /// Dimensions [width, height] in meters.
+    pub dimensions: Property<[f64; 2]>,
+    /// Whether the plane is filled.
+    pub fill: BoolProperty,
+    /// Fill material color.
+    pub material: ColorProperty,
+    /// Whether the outline is shown.
+    pub outline: BoolProperty,
+    /// Outline color.
+    pub outline_color: ColorProperty,
+    /// Outline width.
+    pub outline_width: NumberProperty,
+    /// Shadow mode.
+    pub shadows: ShadowMode,
+    /// Whether the plane is shown.
+    pub show: BoolProperty,
+}
+
+impl Default for PlaneGraphics {
+    fn default() -> Self {
+        Self {
+            plane: Property::Undefined,
+            dimensions: Property::Undefined,
+            fill: Property::Constant(true),
+            material: Property::Constant(Color::WHITE),
+            outline: Property::Constant(false),
+            outline_color: Property::Constant(Color::BLACK),
+            outline_width: Property::Constant(1.0),
+            shadows: ShadowMode::Disabled,
+            show: Property::Constant(true),
+        }
+    }
+}
+
+/// Path graphics properties (trail visualization).
+///
+/// Maps to CesiumJS `DataSources/PathGraphics.js`
+#[derive(Debug, Clone, PartialEq)]
+pub struct PathGraphics {
+    /// Lead time in seconds (how far ahead to show).
+    pub lead_time: NumberProperty,
+    /// Trail time in seconds (how far behind to show).
+    pub trail_time: NumberProperty,
+    /// Path width in pixels.
+    pub width: NumberProperty,
+    /// Sampling resolution in seconds.
+    pub resolution: NumberProperty,
+    /// Path material color.
+    pub material: ColorProperty,
+    /// Whether the path is shown.
+    pub show: BoolProperty,
+}
+
+impl Default for PathGraphics {
+    fn default() -> Self {
+        Self {
+            lead_time: Property::Undefined,
+            trail_time: Property::Undefined,
+            width: Property::Constant(1.0),
+            resolution: Property::Constant(60.0),
+            material: Property::Constant(Color::WHITE),
+            show: Property::Constant(true),
+        }
+    }
+}
+
+/// Polyline volume graphics properties.
+///
+/// Maps to CesiumJS `DataSources/PolylineVolumeGraphics.js`
+#[derive(Debug, Clone, PartialEq)]
+pub struct PolylineVolumeGraphics {
+    /// Volume center-line positions (array of [lon, lat, height]).
+    pub positions: Property<Vec<[f64; 3]>>,
+    /// 2D cross-section shape (array of [x, y] in meters).
+    pub shape: Property<Vec<[f64; 2]>>,
+    /// Corner type.
+    pub corner_type: CornerType,
+    /// Angular granularity in radians.
+    pub granularity: NumberProperty,
+    /// Whether the volume is filled.
+    pub fill: BoolProperty,
+    /// Fill material color.
+    pub material: ColorProperty,
+    /// Whether the outline is shown.
+    pub outline: BoolProperty,
+    /// Outline color.
+    pub outline_color: ColorProperty,
+    /// Outline width.
+    pub outline_width: NumberProperty,
+    /// Shadow mode.
+    pub shadows: ShadowMode,
+    /// Whether the volume is shown.
+    pub show: BoolProperty,
+}
+
+impl Default for PolylineVolumeGraphics {
+    fn default() -> Self {
+        Self {
+            positions: Property::Undefined,
+            shape: Property::Undefined,
+            corner_type: CornerType::Rounded,
+            granularity: Property::Undefined,
+            fill: Property::Constant(true),
+            material: Property::Constant(Color::WHITE),
+            outline: Property::Constant(false),
+            outline_color: Property::Constant(Color::BLACK),
+            outline_width: Property::Constant(1.0),
+            shadows: ShadowMode::Disabled,
             show: Property::Constant(true),
         }
     }
@@ -279,6 +817,33 @@ pub struct Entity {
     /// Ellipse graphics.
     pub ellipse: Option<EllipseGraphics>,
 
+    /// Box graphics.
+    pub box_graphics: Option<BoxGraphics>,
+
+    /// Cylinder graphics.
+    pub cylinder: Option<CylinderGraphics>,
+
+    /// Corridor graphics.
+    pub corridor: Option<CorridorGraphics>,
+
+    /// Rectangle graphics.
+    pub rectangle: Option<RectangleGraphics>,
+
+    /// Wall graphics.
+    pub wall: Option<WallGraphics>,
+
+    /// Ellipsoid graphics.
+    pub ellipsoid: Option<EllipsoidGraphics>,
+
+    /// Plane graphics.
+    pub plane: Option<PlaneGraphics>,
+
+    /// Path graphics.
+    pub path: Option<PathGraphics>,
+
+    /// Polyline volume graphics.
+    pub polyline_volume: Option<PolylineVolumeGraphics>,
+
     /// Parent entity ID.
     pub parent: Option<String>,
 
@@ -303,6 +868,15 @@ impl Entity {
             label: None,
             model: None,
             ellipse: None,
+            box_graphics: None,
+            cylinder: None,
+            corridor: None,
+            rectangle: None,
+            wall: None,
+            ellipsoid: None,
+            plane: None,
+            path: None,
+            polyline_volume: None,
             parent: None,
             properties: std::collections::HashMap::new(),
         }
@@ -356,6 +930,60 @@ impl Entity {
         self
     }
 
+    /// Sets box graphics.
+    pub fn with_box(mut self, box_graphics: BoxGraphics) -> Self {
+        self.box_graphics = Some(box_graphics);
+        self
+    }
+
+    /// Sets cylinder graphics.
+    pub fn with_cylinder(mut self, cylinder: CylinderGraphics) -> Self {
+        self.cylinder = Some(cylinder);
+        self
+    }
+
+    /// Sets corridor graphics.
+    pub fn with_corridor(mut self, corridor: CorridorGraphics) -> Self {
+        self.corridor = Some(corridor);
+        self
+    }
+
+    /// Sets rectangle graphics.
+    pub fn with_rectangle(mut self, rectangle: RectangleGraphics) -> Self {
+        self.rectangle = Some(rectangle);
+        self
+    }
+
+    /// Sets wall graphics.
+    pub fn with_wall(mut self, wall: WallGraphics) -> Self {
+        self.wall = Some(wall);
+        self
+    }
+
+    /// Sets ellipsoid graphics.
+    pub fn with_ellipsoid(mut self, ellipsoid: EllipsoidGraphics) -> Self {
+        self.ellipsoid = Some(ellipsoid);
+        self
+    }
+
+    /// Sets plane graphics.
+    pub fn with_plane(mut self, plane: PlaneGraphics) -> Self {
+        self.plane = Some(plane);
+        self
+    }
+
+    /// Sets path graphics.
+    pub fn with_path(mut self, path: PathGraphics) -> Self {
+        self.path = Some(path);
+        self
+    }
+
+    /// Sets polyline volume graphics.
+    pub fn with_polyline_volume(mut self, polyline_volume: PolylineVolumeGraphics) -> Self {
+        self.polyline_volume = Some(polyline_volume);
+        self
+    }
+
     /// Adds a custom property.
     pub fn with_property(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
         self.properties.insert(key.into(), value);
@@ -371,6 +999,15 @@ impl Entity {
             || self.label.is_some()
             || self.model.is_some()
             || self.ellipse.is_some()
+            || self.box_graphics.is_some()
+            || self.cylinder.is_some()
+            || self.corridor.is_some()
+            || self.rectangle.is_some()
+            || self.wall.is_some()
+            || self.ellipsoid.is_some()
+            || self.plane.is_some()
+            || self.path.is_some()
+            || self.polyline_volume.is_some()
     }
 }
 
@@ -449,5 +1086,125 @@ mod tests {
 
         assert_eq!(entity.properties.len(), 2);
         assert_eq!(entity.properties["population"], serde_json::json!(1000000));
+    }
+
+    #[test]
+    fn test_entity_with_box() {
+        let entity = Entity::new("box-1").with_box(BoxGraphics {
+            dimensions: Property::Constant([100.0, 200.0, 300.0]),
+            material: Property::Constant(Color::RED),
+            ..Default::default()
+        });
+        assert!(entity.has_graphics());
+        let bx = entity.box_graphics.unwrap();
+        let dims = bx.dimensions.get_value(0.0).unwrap();
+        assert_eq!(*dims, [100.0, 200.0, 300.0]);
+    }
+
+    #[test]
+    fn test_entity_with_cylinder() {
+        let entity = Entity::new("cyl-1").with_cylinder(CylinderGraphics {
+            length: Property::Constant(500.0),
+            top_radius: Property::Constant(50.0),
+            bottom_radius: Property::Constant(100.0),
+            ..Default::default()
+        });
+        assert!(entity.has_graphics());
+        let cyl = entity.cylinder.unwrap();
+        assert_eq!(*cyl.length.get_value(0.0).unwrap(), 500.0);
+        assert_eq!(*cyl.top_radius.get_value(0.0).unwrap(), 50.0);
+    }
+
+    #[test]
+    fn test_entity_with_corridor() {
+        let entity = Entity::new("cor-1").with_corridor(CorridorGraphics {
+            positions: Property::Constant(vec![[0.0, 0.0, 0.0], [0.1, 0.1, 0.0]]),
+            width: Property::Constant(200.0),
+            corner_type: CornerType::Beveled,
+            ..Default::default()
+        });
+        assert!(entity.has_graphics());
+        let cor = entity.corridor.unwrap();
+        assert_eq!(cor.corner_type, CornerType::Beveled);
+    }
+
+    #[test]
+    fn test_entity_with_rectangle() {
+        let entity = Entity::new("rect-1").with_rectangle(RectangleGraphics {
+            coordinates: Property::Constant([-0.1, -0.1, 0.1, 0.1]),
+            height: Property::Constant(1000.0),
+            ..Default::default()
+        });
+        assert!(entity.has_graphics());
+        let rect = entity.rectangle.unwrap();
+        assert_eq!(*rect.height.get_value(0.0).unwrap(), 1000.0);
+    }
+
+    #[test]
+    fn test_entity_with_wall() {
+        let entity = Entity::new("wall-1").with_wall(WallGraphics {
+            positions: Property::Constant(vec![[0.0, 0.0, 0.0], [0.1, 0.0, 0.0]]),
+            maximum_heights: Property::Constant(vec![500.0, 500.0]),
+            ..Default::default()
+        });
+        assert!(entity.has_graphics());
+        let wall = entity.wall.unwrap();
+        assert_eq!(wall.maximum_heights.get_value(0.0).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_entity_with_ellipsoid() {
+        let entity = Entity::new("ell-1").with_ellipsoid(EllipsoidGraphics {
+            radii: Property::Constant([100.0, 200.0, 300.0]),
+            ..Default::default()
+        });
+        assert!(entity.has_graphics());
+        let ell = entity.ellipsoid.unwrap();
+        assert_eq!(*ell.radii.get_value(0.0).unwrap(), [100.0, 200.0, 300.0]);
+    }
+
+    #[test]
+    fn test_entity_with_plane() {
+        let entity = Entity::new("plane-1").with_plane(PlaneGraphics {
+            plane: Property::Constant(PlaneDef { normal: [0.0, 0.0, 1.0], distance: 0.0 }),
+            dimensions: Property::Constant([500.0, 500.0]),
+            ..Default::default()
+        });
+        assert!(entity.has_graphics());
+        let pl = entity.plane.unwrap();
+        assert_eq!(pl.plane.get_value(0.0).unwrap().normal, [0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn test_entity_with_path() {
+        let entity = Entity::new("path-1").with_path(PathGraphics {
+            lead_time: Property::Constant(3600.0),
+            trail_time: Property::Constant(7200.0),
+            width: Property::Constant(3.0),
+            ..Default::default()
+        });
+        assert!(entity.has_graphics());
+        let path = entity.path.unwrap();
+        assert_eq!(*path.lead_time.get_value(0.0).unwrap(), 3600.0);
+    }
+
+    #[test]
+    fn test_entity_with_polyline_volume() {
+        let entity = Entity::new("pv-1").with_polyline_volume(PolylineVolumeGraphics {
+            positions: Property::Constant(vec![[0.0, 0.0, 0.0], [0.1, 0.0, 0.0]]),
+            shape: Property::Constant(vec![[-50.0, -50.0], [50.0, -50.0], [50.0, 50.0], [-50.0, 50.0]]),
+            ..Default::default()
+        });
+        assert!(entity.has_graphics());
+        let pv = entity.polyline_volume.unwrap();
+        assert_eq!(pv.shape.get_value(0.0).unwrap().len(), 4);
+    }
+
+    #[test]
+    fn test_height_reference_default() {
+        assert_eq!(HeightReference::default(), HeightReference::None);
+        assert_eq!(CornerType::default(), CornerType::Rounded);
+        assert_eq!(ClassificationType::default(), ClassificationType::Both);
+        assert_eq!(ShadowMode::default(), ShadowMode::Disabled);
     }
 }

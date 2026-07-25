@@ -5,10 +5,63 @@
 //! - Depth test against terrain
 //! - Elevation queries
 //! - Globe translucency
+//! - Underground rendering
+//! - Lighting fade distances
+//! - Terrain skirts and back-face culling
 
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_geospatial::cartographic::Cartographic;
+use cesium_geospatial::rectangle::Rectangle;
 use glam::DVec3;
+use std::f64::consts::PI;
+
+/// Shadow mode for globe rendering.
+/// Maps to CesiumJS `Scene/ShadowMode`
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ShadowMode {
+    /// Shadows are disabled.
+    Disabled,
+    /// Globe only receives shadows.
+    #[default]
+    ReceiveOnly,
+    /// Globe only casts shadows.
+    CastOnly,
+    /// Globe both casts and receives shadows.
+    Enabled,
+}
+
+/// Near/far scalar for distance-based interpolation.
+/// Maps to CesiumJS `Core/NearFarScalar`
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NearFarScalar {
+    /// Near distance.
+    pub near: f64,
+    /// Value at near distance.
+    pub near_value: f64,
+    /// Far distance.
+    pub far: f64,
+    /// Value at far distance.
+    pub far_value: f64,
+}
+
+impl NearFarScalar {
+    /// Creates a new near/far scalar.
+    pub fn new(near: f64, near_value: f64, far: f64, far_value: f64) -> Self {
+        Self { near, near_value, far, far_value }
+    }
+
+    /// Interpolates the value at a given distance.
+    pub fn interpolate(&self, distance: f64) -> f64 {
+        if distance <= self.near {
+            return self.near_value;
+        }
+        if distance >= self.far {
+            return self.far_value;
+        }
+        let t = (distance - self.near) / (self.far - self.near);
+        self.near_value + t * (self.far_value - self.near_value)
+    }
+}
 
 /// Globe rendering configuration.
 ///
@@ -29,7 +82,7 @@ pub struct GlobeConfig {
     pub show_ground_atmosphere: bool,
     /// Whether to show the water effect.
     pub show_water_effect: bool,
-    /// Base color when no imagery is available.
+    /// Base color when no imagery is available [r, g, b].
     pub base_color: [f64; 3],
     /// Maximum screen space error for terrain tiles.
     pub maximum_screen_space_error: f64,
@@ -37,10 +90,65 @@ pub struct GlobeConfig {
     pub tile_cache_size: usize,
     /// Whether to enable lighting (day/night).
     pub enable_lighting: bool,
+    /// Loading descendant limit for tile scheduling.
+    pub loading_descendant_limit: u32,
+    /// Whether to preload ancestor tiles.
+    pub preload_ancestors: bool,
+    /// Whether to preload sibling tiles.
+    pub preload_siblings: bool,
+    /// Fill highlight color [r, g, b, a] (None = no highlight).
+    pub fill_highlight_color: Option<[f64; 4]>,
+    /// Lambert diffuse multiplier for terrain lighting.
+    pub lambert_diffuse_multiplier: f64,
+    /// Whether dynamic atmosphere lighting is enabled.
+    pub dynamic_atmosphere_lighting: bool,
+    /// Whether dynamic atmosphere lighting uses sun direction.
+    pub dynamic_atmosphere_lighting_from_sun: bool,
+    /// Atmosphere light intensity.
+    pub atmosphere_light_intensity: f64,
+    /// Rayleigh scattering coefficient [r, g, b].
+    pub atmosphere_rayleigh_coefficient: [f64; 3],
+    /// Mie scattering coefficient [r, g, b].
+    pub atmosphere_mie_coefficient: [f64; 3],
+    /// Rayleigh scale height (meters).
+    pub atmosphere_rayleigh_scale_height: f64,
+    /// Mie scale height (meters).
+    pub atmosphere_mie_scale_height: f64,
+    /// Mie anisotropy factor (-1.0 to 1.0).
+    pub atmosphere_mie_anisotropy: f64,
+    /// Distance where lighting fades out (meters).
+    pub lighting_fade_out_distance: f64,
+    /// Distance where lighting fades in (meters).
+    pub lighting_fade_in_distance: f64,
+    /// Distance where night fades out (meters).
+    pub night_fade_out_distance: f64,
+    /// Distance where night fades in (meters).
+    pub night_fade_in_distance: f64,
+    /// Whether to show terrain skirts.
+    pub show_skirts: bool,
+    /// Whether to cull back-facing terrain.
+    pub back_face_culling: bool,
+    /// Vertex shadow darkness (0.0 to 1.0).
+    pub vertex_shadow_darkness: f64,
+    /// Underground color [r, g, b] (None = disabled).
+    pub underground_color: Option<[f64; 3]>,
+    /// Underground color alpha by distance.
+    pub underground_color_alpha_by_distance: Option<NearFarScalar>,
+    /// Cartographic limit rectangle for rendering.
+    pub cartographic_limit_rectangle: Rectangle,
+    /// Shadow mode.
+    pub shadows: ShadowMode,
+    /// Atmosphere hue shift (-1.0 to 1.0).
+    pub atmosphere_hue_shift: f64,
+    /// Atmosphere saturation shift (-1.0 to 1.0).
+    pub atmosphere_saturation_shift: f64,
+    /// Atmosphere brightness shift (-1.0 to 1.0).
+    pub atmosphere_brightness_shift: f64,
 }
 
 impl Default for GlobeConfig {
     fn default() -> Self {
+        let min_radius = Ellipsoid::WGS84.minimum_radius();
         Self {
             show: true,
             depth_test_against_terrain: false,
@@ -53,6 +161,38 @@ impl Default for GlobeConfig {
             maximum_screen_space_error: 2.0,
             tile_cache_size: 100,
             enable_lighting: false,
+            loading_descendant_limit: 20,
+            preload_ancestors: true,
+            preload_siblings: false,
+            fill_highlight_color: None,
+            lambert_diffuse_multiplier: 0.9,
+            dynamic_atmosphere_lighting: true,
+            dynamic_atmosphere_lighting_from_sun: false,
+            atmosphere_light_intensity: 10.0,
+            atmosphere_rayleigh_coefficient: [5.5e-6, 13.0e-6, 28.4e-6],
+            atmosphere_mie_coefficient: [21e-6, 21e-6, 21e-6],
+            atmosphere_rayleigh_scale_height: 10000.0,
+            atmosphere_mie_scale_height: 3200.0,
+            atmosphere_mie_anisotropy: 0.9,
+            lighting_fade_out_distance: PI * 0.5 * min_radius,
+            lighting_fade_in_distance: PI * min_radius,
+            night_fade_out_distance: PI * 0.5 * min_radius,
+            night_fade_in_distance: 5.0 * PI * 0.5 * min_radius,
+            show_skirts: true,
+            back_face_culling: true,
+            vertex_shadow_darkness: 0.3,
+            underground_color: Some([0.0, 0.0, 0.0]),
+            underground_color_alpha_by_distance: Some(NearFarScalar::new(
+                min_radius / 1000.0,
+                0.0,
+                min_radius / 5.0,
+                1.0,
+            )),
+            cartographic_limit_rectangle: Rectangle::MAX_VALUE,
+            shadows: ShadowMode::ReceiveOnly,
+            atmosphere_hue_shift: 0.0,
+            atmosphere_saturation_shift: 0.0,
+            atmosphere_brightness_shift: 0.0,
         }
     }
 }

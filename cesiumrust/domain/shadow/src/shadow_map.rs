@@ -4,6 +4,10 @@
 //! - Shadow map configuration
 //! - Cascaded shadow mapping for directional lights
 //! - Shadow bias and filtering
+//! - Per-type bias (terrain/primitive/point)
+//! - Point light cube map shadows
+//! - Shadow fading near horizon
+//! - PCF soft shadow filtering
 
 use glam::{DMat4, DVec3};
 
@@ -16,6 +20,167 @@ pub enum ShadowMapType {
     Cascaded,
 }
 
+/// Light source type for shadow mapping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ShadowLightType {
+    /// Directional light (sun) — uses cascaded shadow maps.
+    #[default]
+    Directional,
+    /// Point light — uses cube map (6 faces).
+    Point,
+    /// Spot light — uses single perspective shadow map.
+    Spot,
+}
+
+/// Per-type shadow bias configuration.
+///
+/// Maps to CesiumJS ShadowMap `_terrainBias`, `_primitiveBias`, `_pointBias`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShadowBias {
+    /// Whether polygon offset is enabled.
+    pub polygon_offset: bool,
+    /// Polygon offset factor.
+    pub polygon_offset_factor: f64,
+    /// Polygon offset units.
+    pub polygon_offset_units: f64,
+    /// Whether normal offset is enabled.
+    pub normal_offset: bool,
+    /// Normal offset scale.
+    pub normal_offset_scale: f64,
+    /// Whether normal shading is enabled.
+    pub normal_shading: bool,
+    /// Normal shading smoothness.
+    pub normal_shading_smooth: f64,
+    /// Depth bias.
+    pub depth_bias: f64,
+}
+
+impl ShadowBias {
+    /// Default bias for terrain rendering.
+    pub fn terrain(normal_offset: bool) -> Self {
+        Self {
+            polygon_offset: true,
+            polygon_offset_factor: 1.1,
+            polygon_offset_units: 4.0,
+            normal_offset,
+            normal_offset_scale: 0.5,
+            normal_shading: true,
+            normal_shading_smooth: 0.3,
+            depth_bias: 0.0001,
+        }
+    }
+
+    /// Default bias for primitive (3D model) rendering.
+    pub fn primitive(normal_offset: bool) -> Self {
+        Self {
+            polygon_offset: true,
+            polygon_offset_factor: 1.1,
+            polygon_offset_units: 4.0,
+            normal_offset,
+            normal_offset_scale: 0.1,
+            normal_shading: true,
+            normal_shading_smooth: 0.05,
+            depth_bias: 0.00002,
+        }
+    }
+
+    /// Default bias for point light rendering.
+    pub fn point(normal_offset: bool) -> Self {
+        Self {
+            polygon_offset: false,
+            polygon_offset_factor: 1.1,
+            polygon_offset_units: 4.0,
+            normal_offset,
+            normal_offset_scale: 0.0,
+            normal_shading: true,
+            normal_shading_smooth: 0.1,
+            depth_bias: 0.0005,
+        }
+    }
+
+    /// Computes the effective bias for a given surface normal and light direction.
+    pub fn compute_effective_bias(&self, normal: DVec3, light_dir: DVec3) -> f64 {
+        let mut bias = self.depth_bias;
+        if self.normal_offset {
+            let n_dot_l = normal.dot(-light_dir).abs();
+            let slope_factor = (1.0 - n_dot_l * n_dot_l).sqrt().max(0.0);
+            bias += self.normal_offset_scale * slope_factor;
+        }
+        bias
+    }
+}
+
+/// PCF (Percentage-Closer Filtering) configuration for soft shadows.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PcfConfig {
+    /// Whether PCF is enabled.
+    pub enabled: bool,
+    /// Kernel size (1, 3, 5, 7).
+    pub kernel_size: u32,
+    /// Whether to use Poisson disk sampling instead of grid.
+    pub use_poisson_disk: bool,
+}
+
+impl Default for PcfConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            kernel_size: 3,
+            use_poisson_disk: false,
+        }
+    }
+}
+
+impl PcfConfig {
+    /// Computes the PCF filter result given depth comparisons.
+    ///
+    /// Returns shadow factor in [0.0, 1.0] (0 = fully shadowed, 1 = fully lit).
+    pub fn filter(&self, depth_comparisons: &[f64]) -> f64 {
+        if !self.enabled || depth_comparisons.is_empty() {
+            return if depth_comparisons.first().copied().unwrap_or(1.0) >= 0.0 {
+                1.0
+            } else {
+                0.0
+            };
+        }
+        let lit_count = depth_comparisons.iter().filter(|&&d| d >= 0.0).count();
+        lit_count as f64 / depth_comparisons.len() as f64
+    }
+
+    /// Generates PCF sample offsets for the configured kernel.
+    pub fn sample_offsets(&self) -> Vec<[f64; 2]> {
+        if self.use_poisson_disk {
+            return poisson_disk_samples(self.kernel_size);
+        }
+        let half = (self.kernel_size / 2) as f64;
+        let mut offsets = Vec::new();
+        for y in 0..self.kernel_size {
+            for x in 0..self.kernel_size {
+                let ox = (x as f64 - half) / half.max(1.0);
+                let oy = (y as f64 - half) / half.max(1.0);
+                offsets.push([ox, oy]);
+            }
+        }
+        offsets
+    }
+}
+
+/// Generates Poisson disk sample offsets.
+fn poisson_disk_samples(count: u32) -> Vec<[f64; 2]> {
+    const POISSON_16: [[f64; 2]; 16] = [
+        [-0.9420162, -0.3990622], [0.9455861, -0.7689072],
+        [-0.0941841, -0.9293887], [0.3449594, 0.2938776],
+        [-0.9158858, 0.4577143], [-0.8154423, -0.8791246],
+        [-0.3827754, 0.2767685], [0.9748440, 0.7564838],
+        [0.4432333, -0.9751155], [0.5374298, -0.4737342],
+        [-0.2649691, -0.4189302], [0.7919751, 0.1909019],
+        [-0.2418884, 0.9970651], [-0.8140996, 0.9143759],
+        [0.1998413, 0.7864137], [0.1438316, -0.1410079],
+    ];
+    let n = (count as usize).clamp(1, 16);
+    POISSON_16[..n].to_vec()
+}
+
 /// Shadow map configuration.
 /// Maps to CesiumJS `ShadowMap` options
 #[derive(Debug, Clone)]
@@ -24,6 +189,8 @@ pub struct ShadowMapConfig {
     pub enabled: bool,
     /// Shadow map type.
     pub shadow_map_type: ShadowMapType,
+    /// Light source type.
+    pub light_type: ShadowLightType,
     /// Shadow map resolution (width = height).
     pub resolution: u32,
     /// Number of cascades for CSM.
@@ -34,14 +201,22 @@ pub struct ShadowMapConfig {
     pub normal_bias: f64,
     /// Whether to use soft shadows (PCF).
     pub soft_shadows: bool,
-    /// PCF kernel size (for soft shadows).
-    pub pcf_kernel_size: u32,
+    /// PCF configuration.
+    pub pcf: PcfConfig,
     /// Darkness of shadows (0.0 = fully black, 1.0 = no shadow).
     pub darkness: f64,
     /// Whether the shadow map is fixed (doesn't update with camera).
     pub is_fixed: bool,
     /// Maximum distance for shadows.
     pub maximum_distance: f64,
+    /// Whether normal offset is applied.
+    pub normal_offset: bool,
+    /// Whether shadows fade out near the horizon.
+    pub fading_enabled: bool,
+    /// Point light radius (for point lights).
+    pub point_light_radius: f64,
+    /// Maximum cascade distances [4 values].
+    pub maximum_cascade_distances: [f64; 4],
 }
 
 impl Default for ShadowMapConfig {
@@ -49,15 +224,20 @@ impl Default for ShadowMapConfig {
         Self {
             enabled: true,
             shadow_map_type: ShadowMapType::Cascaded,
+            light_type: ShadowLightType::Directional,
             resolution: 2048,
             cascade_count: 4,
             bias: 0.0005,
             normal_bias: 0.02,
             soft_shadows: true,
-            pcf_kernel_size: 3,
+            pcf: PcfConfig::default(),
             darkness: 0.3,
             is_fixed: false,
-            maximum_distance: 10000.0,
+            maximum_distance: 5000.0,
+            normal_offset: true,
+            fading_enabled: true,
+            point_light_radius: 100.0,
+            maximum_cascade_distances: [25.0, 150.0, 700.0, f64::MAX],
         }
     }
 }
@@ -103,23 +283,122 @@ pub struct ShadowMap {
     pub cascades: Vec<ShadowCascade>,
     /// Whether the shadow map needs to be updated.
     pub needs_update: bool,
+    /// Per-type bias configurations.
+    pub terrain_bias: ShadowBias,
+    /// Primitive bias.
+    pub primitive_bias: ShadowBias,
+    /// Point light bias.
+    pub point_bias: ShadowBias,
+    /// Current fade factor (1.0 = no fade, 0.0 = fully faded).
+    pub fade_factor: f64,
+    /// Whether the light is out of view.
+    pub out_of_view: bool,
 }
+
+/// Global maximum shadow distance.
+pub const SHADOW_MAP_MAXIMUM_DISTANCE: f64 = 20000.0;
 
 impl ShadowMap {
     /// Creates a new shadow map.
     pub fn new(config: ShadowMapConfig, light_direction: DVec3) -> Self {
+        let normal_offset = config.normal_offset;
         Self {
             config,
             light_direction: light_direction.normalize(),
             light_position: DVec3::ZERO,
             cascades: Vec::new(),
             needs_update: true,
+            terrain_bias: ShadowBias::terrain(normal_offset),
+            primitive_bias: ShadowBias::primitive(normal_offset),
+            point_bias: ShadowBias::point(normal_offset),
+            fade_factor: 1.0,
+            out_of_view: false,
         }
     }
 
     /// Creates a shadow map for the sun.
     pub fn for_sun(sun_direction: DVec3) -> Self {
         Self::new(ShadowMapConfig::default(), -sun_direction)
+    }
+
+    /// Creates a shadow map for a point light.
+    pub fn for_point_light(position: DVec3, radius: f64) -> Self {
+        let config = ShadowMapConfig {
+            shadow_map_type: ShadowMapType::Single,
+            light_type: ShadowLightType::Point,
+            cascade_count: 0,
+            point_light_radius: radius,
+            ..Default::default()
+        };
+        let mut map = Self::new(config, DVec3::ZERO);
+        map.light_position = position;
+        map
+    }
+
+    /// Creates a shadow map for a spot light.
+    pub fn for_spot_light(position: DVec3, direction: DVec3) -> Self {
+        let config = ShadowMapConfig {
+            shadow_map_type: ShadowMapType::Single,
+            light_type: ShadowLightType::Spot,
+            cascade_count: 0,
+            ..Default::default()
+        };
+        let mut map = Self::new(config, direction.normalize());
+        map.light_position = position;
+        map
+    }
+
+    /// Computes the shadow fade factor based on light elevation.
+    ///
+    /// Shadows fade out as the light approaches the horizon.
+    ///
+    /// # Arguments
+    /// * `light_elevation` - Light elevation angle in radians (0 = horizon, π/2 = overhead)
+    pub fn compute_fade_factor(&self, light_elevation: f64) -> f64 {
+        if !self.config.fading_enabled {
+            return 1.0;
+        }
+
+        // Fade starts at ~10 degrees above horizon, fully faded at horizon
+        let fade_start = 10.0_f64.to_radians();
+        let fade_end = 0.0_f64.to_radians();
+
+        if light_elevation >= fade_start {
+            1.0
+        } else if light_elevation <= fade_end {
+            0.0
+        } else {
+            (light_elevation - fade_end) / (fade_start - fade_end)
+        }
+    }
+
+    /// Updates the fade factor based on light elevation.
+    pub fn update_fade(&mut self, light_elevation: f64) {
+        self.fade_factor = self.compute_fade_factor(light_elevation);
+    }
+
+    /// Returns the number of shadow passes required.
+    pub fn pass_count(&self) -> usize {
+        match self.config.light_type {
+            ShadowLightType::Point => 6, // Cube map: 6 faces
+            ShadowLightType::Spot => 1,
+            ShadowLightType::Directional => {
+                if self.config.cascade_count > 0 {
+                    self.config.cascade_count as usize
+                } else {
+                    1
+                }
+            }
+        }
+    }
+
+    /// Returns the bias configuration for a given receiver type.
+    pub fn bias_for_type(&self, receiver_type: ShadowBiasType) -> &ShadowBias {
+        match receiver_type {
+            ShadowBiasType::Terrain => &self.terrain_bias,
+            ShadowBiasType::Primitive => &self.primitive_bias,
+            ShadowBiasType::Point => &self.point_bias,
+        }
     }
 
     /// Computes the cascade splits using practical split scheme.
@@ -282,9 +561,21 @@ impl ShadowMap {
 
     /// Applies shadow to a color.
     pub fn apply_shadow(&self, color: DVec3, shadow_factor: f64) -> DVec3 {
-        let factor = self.config.darkness + (1.0 - self.config.darkness) * shadow_factor;
+        let effective_factor = shadow_factor * self.fade_factor;
+        let factor = self.config.darkness + (1.0 - self.config.darkness) * effective_factor;
         color * factor
     }
+}
+
+/// Receiver type for bias selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShadowBiasType {
+    /// Terrain receiver.
+    Terrain,
+    /// Primitive (3D model) receiver.
+    Primitive,
+    /// Point light receiver.
+    Point,
 }
 
 /// Computes the 8 corners of a view frustum slice.
