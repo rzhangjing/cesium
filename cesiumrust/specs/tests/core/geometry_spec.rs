@@ -45,6 +45,44 @@ fn corridor_geometry_produces_positions_and_indices() {
 }
 
 #[test]
+fn corridor_width_affects_geometry() {
+    // Straight corridor along equator (east direction), width = 100km
+    // At lon≈0, lat=0: north direction ≈ z-axis in ECEF
+    // So the z-extent of positions should be approximately equal to width
+    use cesium_geospatial::Cartographic;
+    let e = wgs84();
+    let width = 100_000.0;
+    let opts = CorridorOptions {
+        positions: vec![
+            e.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0)),
+            e.cartographic_to_cartesian(&Cartographic::from_degrees(0.5, 0.0, 0.0)),
+        ],
+        width,
+        corner_type: CornerType::Mitered,
+        ellipsoid: e,
+        granularity: std::f64::consts::PI / 180.0,
+        ..Default::default()
+    };
+    let geo = corridor_geometry(&opts, VertexFormat::POSITION_ONLY);
+    assert!(!geo.positions.is_empty());
+
+    // Compute z-extent (perpendicular to eastward path at equator)
+    let mut min_z = f64::MAX;
+    let mut max_z = f64::MIN;
+    for p in &geo.positions {
+        if p[2] < min_z { min_z = p[2]; }
+        if p[2] > max_z { max_z = p[2]; }
+    }
+    let z_extent = max_z - min_z;
+
+    // z-extent should be approximately equal to width (±30%)
+    assert!(
+        (z_extent - width).abs() < width * 0.3,
+        "corridor z-extent should \u{2248} width: expected ~{width}, got {z_extent}"
+    );
+}
+
+#[test]
 fn corridor_outline_geometry_produces_line_indices() {
     let opts = CorridorOptions {
         positions: sample_positions(),

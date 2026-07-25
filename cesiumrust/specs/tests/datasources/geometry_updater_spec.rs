@@ -163,6 +163,28 @@ fn cartographic_to_cartesian_origin() {
 }
 
 #[test]
+fn cartographic_to_cartesian_lon90() {
+    use std::f64::consts::FRAC_PI_2;
+    let e = wgs84();
+    // lon=90°E, lat=0 → on equator, x≈0, y≈a, z≈0
+    let pos = cartographic_to_cartesian(&[FRAC_PI_2, 0.0, 0.0], &e);
+    assert!(pos.x.abs() < 1.0, "x should be ~0 at lon=90, got {}", pos.x);
+    assert!((pos.y - e.radii().x).abs() < 1.0, "y should be ~a at lon=90, got {}", pos.y);
+    assert!(pos.z.abs() < 1.0, "z should be ~0 at lat=0, got {}", pos.z);
+}
+
+#[test]
+fn cartographic_to_cartesian_north_pole() {
+    use std::f64::consts::FRAC_PI_2;
+    let e = wgs84();
+    // lon=0, lat=90°N → north pole, x≈0, y≈0, z≈b
+    let pos = cartographic_to_cartesian(&[0.0, FRAC_PI_2, 0.0], &e);
+    assert!(pos.x.abs() < 1.0, "x should be ~0 at pole, got {}", pos.x);
+    assert!(pos.y.abs() < 1.0, "y should be ~0 at pole, got {}", pos.y);
+    assert!((pos.z - e.radii().z).abs() < 1.0, "z should be ~b at pole, got {}", pos.z);
+}
+
+#[test]
 fn positions_to_cartesian_multiple() {
     let e = wgs84();
     let positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
