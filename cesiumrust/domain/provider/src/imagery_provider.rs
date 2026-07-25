@@ -991,6 +991,108 @@ impl IonImageryProvider {
     }
 }
 
+/// Google Earth Enterprise imagery provider.
+///
+/// Maps to CesiumJS `Scene/GoogleEarthEnterpriseImageryProvider.js`
+#[derive(Debug, Clone, PartialEq)]
+pub struct GoogleEarthEnterpriseImageryProvider {
+    /// Base URL of the Google Earth Enterprise server.
+    pub url: String,
+    /// The path to the imagery database.
+    pub path: String,
+    /// Channel ID for the imagery.
+    pub channel: u32,
+    /// Tile width in pixels.
+    pub tile_width: u32,
+    /// Tile height in pixels.
+    pub tile_height: u32,
+    /// Maximum zoom level.
+    pub maximum_level: u32,
+    /// Credit/attribution.
+    pub credit: Option<String>,
+}
+
+impl GoogleEarthEnterpriseImageryProvider {
+    /// Create a new Google Earth Enterprise imagery provider.
+    pub fn new(url: &str, path: &str, channel: u32) -> Self {
+        Self {
+            url: url.trim_end_matches('/').to_string(),
+            path: path.to_string(),
+            channel,
+            tile_width: 256,
+            tile_height: 256,
+            maximum_level: 23,
+            credit: None,
+        }
+    }
+
+    /// Set the credit.
+    pub fn with_credit(mut self, credit: &str) -> Self {
+        self.credit = Some(credit.to_string());
+        self
+    }
+
+    /// Get the tile URL for a given tile coordinate.
+    pub fn get_tile_url(&self, level: u32, x: u32, y: u32) -> String {
+        format!(
+            "{}/query?request=ImageryMaps&channel={}&version=1&x={}&y={}&z={}",
+            self.url, self.channel, x, y, level
+        )
+    }
+
+    /// Get the metadata URL.
+    pub fn get_metadata_url(&self) -> String {
+        format!("{}/query?request=DatabaseMetadata&path={}", self.url, self.path)
+    }
+}
+
+/// Google Earth Enterprise Maps imagery provider.
+///
+/// Maps to CesiumJS `Scene/GoogleEarthEnterpriseMapsProvider.js`
+#[derive(Debug, Clone, PartialEq)]
+pub struct GoogleEarthEnterpriseMapsProvider {
+    /// Base URL of the Google Earth Enterprise Maps server.
+    pub url: String,
+    /// Channel ID.
+    pub channel: u32,
+    /// Tile width in pixels.
+    pub tile_width: u32,
+    /// Tile height in pixels.
+    pub tile_height: u32,
+    /// Maximum zoom level.
+    pub maximum_level: u32,
+    /// Credit/attribution.
+    pub credit: Option<String>,
+}
+
+impl GoogleEarthEnterpriseMapsProvider {
+    /// Create a new Google Earth Enterprise Maps provider.
+    pub fn new(url: &str, channel: u32) -> Self {
+        Self {
+            url: url.trim_end_matches('/').to_string(),
+            channel,
+            tile_width: 256,
+            tile_height: 256,
+            maximum_level: 23,
+            credit: None,
+        }
+    }
+
+    /// Set the credit.
+    pub fn with_credit(mut self, credit: &str) -> Self {
+        self.credit = Some(credit.to_string());
+        self
+    }
+
+    /// Get the tile URL for a given tile coordinate.
+    pub fn get_tile_url(&self, level: u32, x: u32, y: u32) -> String {
+        format!(
+            "{}/query?request=ImageryMaps&channel={}&version=1&x={}&y={}&z={}",
+            self.url, self.channel, x, y, level
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1226,5 +1328,42 @@ mod tests {
 
         // BBOX should be south,west,north,east for WMS 1.3.0
         assert!(url.contains("bbox=20,10,40,30"));
+    }
+
+    #[test]
+    fn test_google_earth_enterprise_imagery() {
+        let provider = GoogleEarthEnterpriseImageryProvider::new(
+            "https://gee.example.com",
+            "/dbRoot",
+            100,
+        );
+        assert_eq!(provider.tile_width, 256);
+        assert_eq!(provider.maximum_level, 23);
+
+        let url = provider.get_tile_url(5, 10, 15);
+        assert!(url.contains("request=ImageryMaps"));
+        assert!(url.contains("channel=100"));
+        assert!(url.contains("x=10"));
+        assert!(url.contains("y=15"));
+        assert!(url.contains("z=5"));
+
+        let meta_url = provider.get_metadata_url();
+        assert!(meta_url.contains("request=DatabaseMetadata"));
+        assert!(meta_url.contains("path=/dbRoot"));
+    }
+
+    #[test]
+    fn test_google_earth_enterprise_maps() {
+        let provider = GoogleEarthEnterpriseMapsProvider::new(
+            "https://maps.example.com/",
+            200,
+        ).with_credit("Google Earth Enterprise");
+
+        assert_eq!(provider.channel, 200);
+        assert_eq!(provider.credit, Some("Google Earth Enterprise".to_string()));
+
+        let url = provider.get_tile_url(3, 4, 5);
+        assert!(url.contains("channel=200"));
+        assert!(url.contains("x=4"));
     }
 }

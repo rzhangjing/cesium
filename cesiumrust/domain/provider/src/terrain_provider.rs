@@ -566,6 +566,58 @@ impl ArcGisTerrainProvider {
     }
 }
 
+/// Google Earth Enterprise terrain provider.
+///
+/// Maps to CesiumJS `Scene/GoogleEarthEnterpriseTerrainProvider.js`
+#[derive(Debug, Clone, PartialEq)]
+pub struct GoogleEarthEnterpriseTerrainProvider {
+    /// Base URL of the Google Earth Enterprise server.
+    pub url: String,
+    /// The path to the terrain database.
+    pub path: String,
+    /// Tile width.
+    pub tile_width: u32,
+    /// Tile height.
+    pub tile_height: u32,
+    /// Maximum zoom level.
+    pub maximum_level: u32,
+    /// Credit/attribution.
+    pub credit: Option<String>,
+}
+
+impl GoogleEarthEnterpriseTerrainProvider {
+    /// Create a new Google Earth Enterprise terrain provider.
+    pub fn new(url: &str, path: &str) -> Self {
+        Self {
+            url: url.trim_end_matches('/').to_string(),
+            path: path.to_string(),
+            tile_width: 32,
+            tile_height: 32,
+            maximum_level: 23,
+            credit: None,
+        }
+    }
+
+    /// Set the credit.
+    pub fn with_credit(mut self, credit: &str) -> Self {
+        self.credit = Some(credit.to_string());
+        self
+    }
+
+    /// Get the tile URL for a given tile coordinate.
+    pub fn get_tile_url(&self, level: u32, x: u32, y: u32) -> String {
+        format!(
+            "{}/query?request=TerrainMaps&path={}&version=1&x={}&y={}&z={}",
+            self.url, self.path, x, y, level
+        )
+    }
+
+    /// Get the metadata URL.
+    pub fn get_metadata_url(&self) -> String {
+        format!("{}/query?request=DatabaseMetadata&path={}", self.url, self.path)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -788,5 +840,27 @@ mod tests {
         // Query at SW corner (u=0, v=0) - nearest is vertex 0 (h=0)
         let h = sample_height_quantized(&params, 0.0, 0.0);
         assert!(h.unwrap().abs() < 1.0);
+    }
+
+    #[test]
+    fn test_google_earth_enterprise_terrain() {
+        let provider = GoogleEarthEnterpriseTerrainProvider::new(
+            "https://gee.example.com",
+            "/terrain",
+        ).with_credit("GEE Terrain");
+
+        assert_eq!(provider.tile_width, 32);
+        assert_eq!(provider.maximum_level, 23);
+        assert_eq!(provider.credit, Some("GEE Terrain".to_string()));
+
+        let url = provider.get_tile_url(4, 8, 12);
+        assert!(url.contains("request=TerrainMaps"));
+        assert!(url.contains("path=/terrain"));
+        assert!(url.contains("x=8"));
+        assert!(url.contains("y=12"));
+        assert!(url.contains("z=4"));
+
+        let meta_url = provider.get_metadata_url();
+        assert!(meta_url.contains("request=DatabaseMetadata"));
     }
 }

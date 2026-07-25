@@ -15,6 +15,9 @@
 pub mod scene_graph;
 pub mod culling;
 pub mod draw_command;
+pub mod shader;
+pub mod render_state;
+pub mod debug_inspector;
 
 pub use scene_graph::{SceneGraph, SceneNode, NodeId, RenderableContent};
 pub use culling::{
@@ -23,4 +26,18 @@ pub use culling::{
 };
 pub use draw_command::{
     DrawCommand, RenderCommandList, RenderPass, BlendState, DepthState, FrameStatistics,
+};
+pub use shader::{
+    ShaderStage, ShaderSource, ShaderUniform, ShaderStruct, ShaderFunction,
+    ShaderBuilder, ShaderProgram, ShaderCache,
+};
+pub use render_state::{
+    CullFace, StencilOp, StencilState, PolygonOffsetState, ScissorState,
+    RenderState, DepthFunc, ClearCommand, ComputeCommand, ComputeUniformValue,
+    PassState, PixelFormat, PixelDatatype, TextureFilter, TextureWrap,
+    Texture, Framebuffer, TextureAtlas, TextureAtlasEntry, BufferUsage, GpuBuffer,
+};
+pub use debug_inspector::{
+    DebugInspector, HighlightMode, TileDebugInfo, FrameDebugStats,
+    PerformanceOverlay, TilesetInspector,
 };

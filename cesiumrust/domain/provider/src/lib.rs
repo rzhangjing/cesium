@@ -18,17 +18,19 @@ pub mod terrain_provider;
 pub mod tiling_scheme;
 
 pub use imagery_provider::{
-    ArcGisMapServerImageryProvider, BingMapStyle, BingMapsImageryProvider, ImageryProviderDescriptor,
-    ImageryProviderKind, IonImageryProvider, MapboxImageryProvider, MapboxStyleImageryProvider,
-    OpenStreetMapImageryProvider, SingleTileImageryProvider, SubdomainStrategy,
-    TileCoordinatesImageryProvider, TileCoord, TimeDynamicImagery, TmsImageryProvider,
-    UrlTemplateImageryProvider, WmsGetFeatureInfo, WmsImageryProvider, WmtsImageryProvider,
+    ArcGisMapServerImageryProvider, BingMapStyle, BingMapsImageryProvider,
+    GoogleEarthEnterpriseImageryProvider, GoogleEarthEnterpriseMapsProvider,
+    ImageryProviderDescriptor, ImageryProviderKind, IonImageryProvider,
+    MapboxImageryProvider, MapboxStyleImageryProvider, OpenStreetMapImageryProvider,
+    SingleTileImageryProvider, SubdomainStrategy, TileCoordinatesImageryProvider,
+    TileCoord, TimeDynamicImagery, TmsImageryProvider, UrlTemplateImageryProvider,
+    WmsGetFeatureInfo, WmsImageryProvider, WmtsImageryProvider,
 };
 pub use terrain_provider::{
     ArcGisTerrainProvider, AvailabilityStrategy, CesiumTerrainProvider, EllipsoidTerrainProvider,
-    HeightmapSampleParams, HeightmapTerrainProvider, QuantizedSampleParams, SampledHeight,
-    TerrainLayerConfig, TerrainProviderDescriptor, TerrainProviderKind, VrTheWorldTerrainProvider,
-    sample_height_bilinear, sample_height_quantized,
+    GoogleEarthEnterpriseTerrainProvider, HeightmapSampleParams, HeightmapTerrainProvider,
+    QuantizedSampleParams, SampledHeight, TerrainLayerConfig, TerrainProviderDescriptor,
+    TerrainProviderKind, VrTheWorldTerrainProvider, sample_height_bilinear, sample_height_quantized,
 };
 pub use tiling_scheme::{
     GeographicTilingScheme, TileAvailability, TilingScheme, WebMercatorTilingScheme,
