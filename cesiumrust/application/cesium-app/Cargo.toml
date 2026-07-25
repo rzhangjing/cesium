@@ -18,3 +18,5 @@ cesium-ports-driving.workspace = true
 cesium-bevy-render.workspace = true
 cesium-material.workspace = true
 cesium-atmosphere.workspace = true
+ureq.workspace = true
+image.workspace = true

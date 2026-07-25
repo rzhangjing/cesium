@@ -178,12 +178,13 @@ pub fn ellipsoid_geometry(
         for j in 0..slices {
             let a = i * (slices + 1) + j;
             let b = a + slices + 1;
+            // Counter-clockwise winding when viewed from outside (outward normals)
             indices.push(a);
-            indices.push(b);
-            indices.push(a + 1);
             indices.push(a + 1);
             indices.push(b);
+            indices.push(a + 1);
             indices.push(b + 1);
+            indices.push(b);
         }
     }
 

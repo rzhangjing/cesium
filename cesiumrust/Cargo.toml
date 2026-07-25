@@ -70,6 +70,12 @@ thiserror = "2"
 # Async
 tokio = { version = "1", features = ["full"] }
 
+# HTTP client
+ureq = "2"
+
+# Image decoding
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
 # Internal domain crates
 cesium-geospatial = { path = "domain/geospatial" }
 cesium-time = { path = "domain/time" }
