@@ -1724,6 +1724,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesium-specs"
+version = "0.1.0"
+dependencies = [
+ "cesium-animation",
+ "cesium-atmosphere",
+ "cesium-camera",
+ "cesium-crs",
+ "cesium-datasource",
+ "cesium-effects",
+ "cesium-event",
+ "cesium-geospatial",
+ "cesium-globe",
+ "cesium-gltf",
+ "cesium-gpx",
+ "cesium-imagery",
+ "cesium-implicit-tiling",
+ "cesium-interaction",
+ "cesium-kml",
+ "cesium-material",
+ "cesium-performance",
+ "cesium-primitives",
+ "cesium-provider",
+ "cesium-quadtree",
+ "cesium-resource",
+ "cesium-scene",
+ "cesium-scene-mode",
+ "cesium-shadow",
+ "cesium-styling",
+ "cesium-terrain",
+ "cesium-tileset",
+ "cesium-time",
+ "cesium-vector",
+ "cesium-voxel",
+ "cesium-widgets",
+ "glam",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cesium-styling"
 version = "0.1.0"
 dependencies = [

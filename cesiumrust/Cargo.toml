@@ -42,6 +42,8 @@ members = [
     "adapters/network",
     # Application layer (Bevy App assembly)
     "application/cesium-app",
+    # Integration test suite (ported from CesiumJS Specs)
+    "specs",
 ]
 default-members = ["application/cesium-app"]
 
