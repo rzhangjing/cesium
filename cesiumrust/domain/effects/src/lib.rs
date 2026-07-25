@@ -40,7 +40,7 @@ pub use panorama::{
     CubeMapPanorama, EquirectangularPanorama, PanoramaProvider, DEFAULT_PANORAMA_RADIUS,
 };
 pub use particles::{
-    EmitterShape, Particle, ParticleForce, ParticleSystem, ParticleSystemConfig,
+    EmitterShape, Particle, ParticleBurst, ParticleForce, ParticleSystem, ParticleSystemConfig,
 };
 pub use post_process::{
     AmbientOcclusionConfig, BloomConfig, ColorCorrectionConfig, FogConfig,

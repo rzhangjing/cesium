@@ -16,6 +16,7 @@ pub mod batch_table;
 pub mod bounding_volume;
 pub mod content_decoder;
 pub mod point_cloud;
+pub mod structural_metadata;
 pub mod styling;
 pub mod tile;
 pub mod tileset;
@@ -48,4 +49,9 @@ pub use styling::{
 };
 pub use point_cloud::{
     PointCloud, PointCloudShading, QuantizedPositions, TimeDynamicPointCloud,
+};
+pub use structural_metadata::{
+    MetadataClass, MetadataClassProperty, MetadataComponentType, MetadataEnum, MetadataType,
+    MetadataValue, PropertyAttribute, PropertyAttributeProperty, PropertyTable, PropertyTexture,
+    PropertyTextureProperty, StructuralMetadata,
 };

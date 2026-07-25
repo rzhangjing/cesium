@@ -719,6 +719,278 @@ impl WmsGetFeatureInfo {
     }
 }
 
+// ============================================================================
+// ArcGISMapServerImageryProvider
+// ============================================================================
+
+/// ArcGIS MapServer imagery provider.
+///
+/// Maps to CesiumJS `Scene/ArcGISMapServerImageryProvider.js`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArcGisMapServerImageryProvider {
+    /// Base URL of the ArcGIS MapServer.
+    pub url: String,
+    /// Layer IDs to display (comma-separated).
+    pub layers: Option<String>,
+    /// Tile width in pixels.
+    pub tile_width: u32,
+    /// Tile height in pixels.
+    pub tile_height: u32,
+    /// Maximum zoom level.
+    pub maximum_level: u32,
+    /// Credit/attribution.
+    pub credit: Option<String>,
+    /// Whether to use HTTPS.
+    pub use_https: bool,
+}
+
+impl ArcGisMapServerImageryProvider {
+    /// Create a new ArcGIS MapServer provider.
+    pub fn new(url: &str) -> Self {
+        Self {
+            url: url.trim_end_matches('/').to_string(),
+            layers: None,
+            tile_width: 256,
+            tile_height: 256,
+            maximum_level: 23,
+            credit: None,
+            use_https: true,
+        }
+    }
+
+    /// Set the layers to display.
+    pub fn with_layers(mut self, layers: &str) -> Self {
+        self.layers = Some(layers.to_string());
+        self
+    }
+
+    /// Get the tile URL for a given coordinate.
+    pub fn get_tile_url(&self, coord: &TileCoord) -> String {
+        let layers_param = self
+            .layers
+            .as_ref()
+            .map(|l| format!("&layers=show:{}", l))
+            .unwrap_or_default();
+
+        format!(
+            "{}/tile/{}/{}/{}{}&f=image",
+            self.url, coord.level, coord.y, coord.x, layers_param
+        )
+    }
+}
+
+// ============================================================================
+// MapboxImageryProvider
+// ============================================================================
+
+/// Mapbox imagery provider.
+///
+/// Maps to CesiumJS `Scene/MapboxImageryProvider.js`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MapboxImageryProvider {
+    /// Map ID (e.g., "mapbox.satellite").
+    pub map_id: String,
+    /// Access token.
+    pub access_token: String,
+    /// Tile size (256 or 512).
+    pub tile_size: u32,
+    /// Maximum zoom level.
+    pub maximum_level: u32,
+    /// Credit/attribution.
+    pub credit: Option<String>,
+}
+
+impl MapboxImageryProvider {
+    /// Create a new Mapbox provider.
+    pub fn new(map_id: &str, access_token: &str) -> Self {
+        Self {
+            map_id: map_id.to_string(),
+            access_token: access_token.to_string(),
+            tile_size: 512,
+            maximum_level: 22,
+            credit: Some("© Mapbox © OpenStreetMap".to_string()),
+        }
+    }
+
+    /// Get the tile URL for a given coordinate.
+    pub fn get_tile_url(&self, coord: &TileCoord) -> String {
+        format!(
+            "https://api.mapbox.com/v4/{}/{}/{}/{}.png?access_token={}",
+            self.map_id, coord.level, coord.x, coord.y, self.access_token
+        )
+    }
+}
+
+// ============================================================================
+// MapboxStyleImageryProvider
+// ============================================================================
+
+/// Mapbox Style imagery provider (uses Mapbox Styles API).
+///
+/// Maps to CesiumJS `Scene/MapboxStyleImageryProvider.js`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MapboxStyleImageryProvider {
+    /// Style ID (e.g., "mapbox/streets-v11").
+    pub style_id: String,
+    /// Access token.
+    pub access_token: String,
+    /// Tile size.
+    pub tile_size: u32,
+    /// Maximum zoom level.
+    pub maximum_level: u32,
+    /// Credit/attribution.
+    pub credit: Option<String>,
+}
+
+impl MapboxStyleImageryProvider {
+    /// Create a new Mapbox Style provider.
+    pub fn new(style_id: &str, access_token: &str) -> Self {
+        Self {
+            style_id: style_id.to_string(),
+            access_token: access_token.to_string(),
+            tile_size: 512,
+            maximum_level: 22,
+            credit: Some("© Mapbox © OpenStreetMap".to_string()),
+        }
+    }
+
+    /// Get the tile URL for a given coordinate.
+    pub fn get_tile_url(&self, coord: &TileCoord) -> String {
+        format!(
+            "https://api.mapbox.com/styles/v1/{}/tiles/{}/{}/{}?access_token={}",
+            self.style_id, coord.level, coord.x, coord.y, self.access_token
+        )
+    }
+}
+
+// ============================================================================
+// SingleTileImageryProvider
+// ============================================================================
+
+/// Single tile imagery provider (displays one image over the entire globe).
+///
+/// Maps to CesiumJS `Scene/SingleTileImageryProvider.js`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SingleTileImageryProvider {
+    /// URL of the image.
+    pub url: String,
+    /// Rectangle covered by the image [west, south, east, north] in radians.
+    pub rectangle: [f64; 4],
+    /// Credit/attribution.
+    pub credit: Option<String>,
+}
+
+impl SingleTileImageryProvider {
+    /// Create a new single tile provider.
+    pub fn new(url: &str) -> Self {
+        Self {
+            url: url.to_string(),
+            rectangle: [-std::f64::consts::PI, -std::f64::consts::FRAC_PI_2, std::f64::consts::PI, std::f64::consts::FRAC_PI_2],
+            credit: None,
+        }
+    }
+
+    /// Create with a specific rectangle.
+    pub fn with_rectangle(mut self, rectangle: [f64; 4]) -> Self {
+        self.rectangle = rectangle;
+        self
+    }
+
+    /// Get the image URL (always returns the same URL).
+    pub fn get_tile_url(&self, _coord: &TileCoord) -> String {
+        self.url.clone()
+    }
+}
+
+// ============================================================================
+// TileCoordinatesImageryProvider
+// ============================================================================
+
+/// Debug provider that draws tile coordinates on each tile.
+///
+/// Maps to CesiumJS `Scene/TileCoordinatesImageryProvider.js`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TileCoordinatesImageryProvider {
+    /// Tile width in pixels.
+    pub tile_width: u32,
+    /// Tile height in pixels.
+    pub tile_height: u32,
+    /// Background color [R, G, B, A].
+    pub color: [f64; 4],
+    /// Text color [R, G, B, A].
+    pub text_color: [f64; 4],
+}
+
+impl Default for TileCoordinatesImageryProvider {
+    fn default() -> Self {
+        Self {
+            tile_width: 256,
+            tile_height: 256,
+            color: [0.0, 0.0, 0.0, 0.5],
+            text_color: [1.0, 1.0, 0.0, 1.0],
+        }
+    }
+}
+
+impl TileCoordinatesImageryProvider {
+    /// Create a new tile coordinates provider.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Get the text to display for a tile.
+    pub fn get_tile_text(&self, coord: &TileCoord) -> String {
+        format!("L{}: X{} Y{}", coord.level, coord.x, coord.y)
+    }
+}
+
+// ============================================================================
+// IonImageryProvider
+// ============================================================================
+
+/// Cesium Ion imagery provider.
+///
+/// Maps to CesiumJS `Scene/IonImageryProvider.js`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IonImageryProvider {
+    /// Ion asset ID.
+    pub asset_id: u64,
+    /// Ion access token.
+    pub access_token: Option<String>,
+    /// Ion server URL.
+    pub server: String,
+    /// Credit/attribution.
+    pub credit: Option<String>,
+}
+
+impl IonImageryProvider {
+    /// Create a new Ion imagery provider.
+    pub fn new(asset_id: u64) -> Self {
+        Self {
+            asset_id,
+            access_token: None,
+            server: "https://api.cesium.com".to_string(),
+            credit: None,
+        }
+    }
+
+    /// Set the access token.
+    pub fn with_access_token(mut self, token: &str) -> Self {
+        self.access_token = Some(token.to_string());
+        self
+    }
+
+    /// Get the endpoint URL for this asset.
+    pub fn get_endpoint_url(&self) -> String {
+        let token_param = self
+            .access_token
+            .as_ref()
+            .map(|t| format!("?access_token={}", t))
+            .unwrap_or_default();
+        format!("{}/v1/assets/{}/endpoint{}", self.server, self.asset_id, token_param)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

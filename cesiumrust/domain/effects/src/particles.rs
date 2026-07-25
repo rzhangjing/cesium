@@ -53,6 +53,14 @@ pub struct Particle {
     pub age: f64,
     /// Maximum lifetime in seconds.
     pub lifetime: f64,
+    /// Mass in kilograms.
+    pub mass: f64,
+    /// Start scale.
+    pub start_scale: f64,
+    /// End scale.
+    pub end_scale: f64,
+    /// Image size [width, height] in pixels.
+    pub image_size: [f64; 2],
     /// Whether the particle is alive.
     pub alive: bool,
 }
@@ -68,6 +76,10 @@ impl Particle {
             size: 1.0,
             age: 0.0,
             lifetime,
+            mass: 1.0,
+            start_scale: 1.0,
+            end_scale: 1.0,
+            image_size: [1.0, 1.0],
             alive: true,
         }
     }
@@ -75,6 +87,12 @@ impl Particle {
     /// Returns the normalized age (0.0 to 1.0).
     pub fn normalized_age(&self) -> f64 {
         (self.age / self.lifetime).clamp(0.0, 1.0)
+    }
+
+    /// Returns the interpolated scale at current age.
+    pub fn current_scale(&self) -> f64 {
+        let t = self.normalized_age();
+        self.start_scale + (self.end_scale - self.start_scale) * t
     }
 
     /// Updates the particle by a time delta.
@@ -156,6 +174,38 @@ impl ParticleForce {
     }
 }
 
+/// A burst of particles at a specific time in the system's lifetime.
+///
+/// Maps to CesiumJS `Scene/ParticleBurst.js`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParticleBurst {
+    /// Time in seconds after system start when the burst occurs.
+    pub time: f64,
+    /// Minimum number of particles emitted in the burst.
+    pub minimum: u32,
+    /// Maximum number of particles emitted in the burst.
+    pub maximum: u32,
+    /// Whether this burst has already fired.
+    pub complete: bool,
+}
+
+impl ParticleBurst {
+    /// Creates a new particle burst.
+    pub fn new(time: f64, minimum: u32, maximum: u32) -> Self {
+        Self {
+            time,
+            minimum,
+            maximum,
+            complete: false,
+        }
+    }
+
+    /// Resets the burst for looping.
+    pub fn reset(&mut self) {
+        self.complete = false;
+    }
+}
+
 /// Particle system configuration.
 #[derive(Debug, Clone)]
 pub struct ParticleSystemConfig {
@@ -185,6 +235,26 @@ pub struct ParticleSystemConfig {
     pub looping: bool,
     /// Forces applied to particles.
     pub forces: Vec<ParticleForce>,
+    /// Bursts of particles at specific times.
+    pub bursts: Vec<ParticleBurst>,
+    /// System lifetime in seconds (f64::MAX = infinite).
+    pub system_lifetime: f64,
+    /// Minimum particle mass in kilograms.
+    pub min_mass: f64,
+    /// Maximum particle mass in kilograms.
+    pub max_mass: f64,
+    /// Start scale for particles.
+    pub start_scale: f64,
+    /// End scale for particles.
+    pub end_scale: f64,
+    /// Minimum image size [width, height] in pixels.
+    pub min_image_size: [f64; 2],
+    /// Maximum image size [width, height] in pixels.
+    pub max_image_size: [f64; 2],
+    /// Whether particle size is in meters (true) or pixels (false).
+    pub size_in_meters: bool,
+    /// Image URI for particle billboard.
+    pub image: Option<String>,
 }
 
 impl Default for ParticleSystemConfig {
@@ -205,6 +275,16 @@ impl Default for ParticleSystemConfig {
             forces: vec![ParticleForce::Gravity {
                 acceleration: DVec3::new(0.0, -9.81, 0.0),
             }],
+            bursts: Vec::new(),
+            system_lifetime: f64::MAX,
+            min_mass: 1.0,
+            max_mass: 1.0,
+            start_scale: 1.0,
+            end_scale: 1.0,
+            min_image_size: [1.0, 1.0],
+            max_image_size: [1.0, 1.0],
+            size_in_meters: false,
+            image: None,
         }
     }
 }
@@ -266,6 +346,7 @@ impl ParticleSystem {
                 },
                 ParticleForce::Drag { coefficient: 0.5 },
             ],
+            ..Default::default()
         };
         Self::new(config, emitter_position)
     }
@@ -293,6 +374,7 @@ impl ParticleSystem {
                     velocity: DVec3::new(1.0, 0.0, 0.0),
                 },
             ],
+            ..Default::default()
         };
         Self::new(config, emitter_position)
     }
@@ -322,6 +404,7 @@ impl ParticleSystem {
                     velocity: DVec3::new(0.5, 0.0, 0.3),
                 },
             ],
+            ..Default::default()
         };
         Self::new(config, emitter_position)
     }
@@ -355,6 +438,37 @@ impl ParticleSystem {
             {
                 self.emission_accumulator -= 1.0;
                 self.emit_particle(rng_seed + self.next_id);
+            }
+        }
+
+        // Process bursts
+        let bursts_to_fire: Vec<(usize, u32)> = self
+            .config
+            .bursts
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| !b.complete && self.elapsed_time >= b.time)
+            .map(|(i, b)| (i, b.minimum.max(1)))
+            .collect();
+
+        for (idx, count) in bursts_to_fire {
+            for i in 0..count {
+                if self.particles.len() < self.config.max_particles {
+                    self.emit_particle(rng_seed + self.next_id + i as u64);
+                }
+            }
+            self.config.bursts[idx].complete = true;
+        }
+
+        // Check system lifetime
+        if self.elapsed_time >= self.config.system_lifetime {
+            if self.config.looping {
+                self.elapsed_time = 0.0;
+                for burst in &mut self.config.bursts {
+                    burst.reset();
+                }
+            } else {
+                self.running = false;
             }
         }
     }

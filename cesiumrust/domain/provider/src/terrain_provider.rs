@@ -512,6 +512,60 @@ pub fn sample_height_quantized(
     Some(params.min_height + t * (params.max_height - params.min_height))
 }
 
+// ============================================================================
+// ArcGISTerrainProvider
+// ============================================================================
+
+/// ArcGIS terrain provider (ImageServer or ElevationService).
+///
+/// Maps to CesiumJS `ArcGISTerrainProvider` (not yet in CesiumJS, but common pattern).
+#[derive(Debug, Clone)]
+pub struct ArcGisTerrainProvider {
+    /// Base URL of the ArcGIS terrain service.
+    pub url: String,
+    /// Whether to use HTTPS.
+    pub use_https: bool,
+    /// Tile width in pixels.
+    pub tile_width: u32,
+    /// Tile height in pixels.
+    pub tile_height: u32,
+    /// Maximum zoom level.
+    pub maximum_level: u32,
+    /// Credit/attribution.
+    pub credit: Option<String>,
+}
+
+impl ArcGisTerrainProvider {
+    /// Creates a new ArcGIS terrain provider.
+    pub fn new(url: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            use_https: true,
+            tile_width: 256,
+            tile_height: 256,
+            maximum_level: 23,
+            credit: None,
+        }
+    }
+
+    /// Sets the credit.
+    pub fn with_credit(mut self, credit: impl Into<String>) -> Self {
+        self.credit = Some(credit.into());
+        self
+    }
+
+    /// Gets the tile URL for a given coordinate.
+    pub fn get_tile_url(&self, level: u32, x: u32, y: u32) -> String {
+        format!(
+            "{}/tile/{}/{}/{}",
+            self.url.trim_end_matches('/'),
+            level,
+            y,
+            x
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
