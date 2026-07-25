@@ -4,4 +4,5 @@ mod widgets {
     pub mod pickers_spec;
     pub mod buttons_spec;
     pub mod info_spec;
+    pub mod geocoder_spec;
 }

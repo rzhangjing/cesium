@@ -15,4 +15,6 @@ mod core {
     pub mod terrain_provider_spec;
     pub mod pipeline_spec;
     pub mod misc_spec;
+    pub mod geometry_spec;
+    pub mod matrix_quaternion_spec;
 }

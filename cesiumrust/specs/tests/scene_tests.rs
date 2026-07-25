@@ -15,4 +15,11 @@ mod scene {
     pub mod implicit_tiling_spec;
     pub mod quadtree_spec;
     pub mod scene_graph_spec;
+    pub mod structural_metadata_spec;
+    pub mod tile_content_spec;
+    pub mod clipping_cloud_spec;
+    pub mod post_process_spec;
+    pub mod shadow_spec;
+    pub mod gltf_animation_spec;
+    pub mod imagery_provider_spec;
 }

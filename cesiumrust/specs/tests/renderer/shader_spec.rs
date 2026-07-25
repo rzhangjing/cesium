@@ -3,7 +3,7 @@
 //! → Rust integration tests
 
 use cesium_scene::{
-    ShaderStage, ShaderSource, ShaderUniform, ShaderStruct, ShaderFunction,
+    ShaderStage, ShaderSource, ShaderUniform, ShaderFunction,
     ShaderBuilder, ShaderProgram, ShaderCache,
 };
 
