@@ -9,7 +9,8 @@ use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
 use crate::geodesic::EllipsoidGeodesic;
 use crate::math_utils::chord_length;
-use glam::DVec3;
+use crate::ray::{line_segment_plane, Plane};
+use glam::{DMat4, DVec3};
 
 /// Default granularity: one degree in radians (CesiumJS `RADIANS_PER_DEGREE`).
 pub const DEFAULT_GRANULARITY: f64 = std::f64::consts::PI / 180.0;
@@ -140,6 +141,75 @@ pub fn generate_arc(options: &ArcOptions) -> Vec<DVec3> {
     result.push(ellipsoid.cartographic_to_cartesian(&carto));
 
     result
+}
+
+/// Result of [`wrap_longitude`]: split polyline positions and segment lengths.
+pub struct WrapLongitudeResult {
+    /// The positions, possibly with extra points at the IDL crossing.
+    pub positions: Vec<DVec3>,
+    /// The number of positions in each segment.
+    pub lengths: Vec<usize>,
+}
+
+/// Breaks a polyline into segments such that it does not cross the ±180 degree meridian.
+///
+/// Maps to `PolylinePipeline.wrapLongitude`.
+pub fn wrap_longitude(positions: &[DVec3], model_matrix: Option<&DMat4>) -> WrapLongitudeResult {
+    let mut cartesians: Vec<DVec3> = Vec::new();
+    let mut segments: Vec<usize> = Vec::new();
+
+    if positions.is_empty() {
+        return WrapLongitudeResult {
+            positions: cartesians,
+            lengths: segments,
+        };
+    }
+
+    let model = model_matrix.copied().unwrap_or(DMat4::IDENTITY);
+    let inverse_model = model.inverse();
+
+    let origin = (inverse_model * DVec3::ZERO.extend(1.0)).truncate();
+    let xz_normal = (inverse_model * DVec3::Y.extend(0.0)).truncate().normalize();
+    let xz_plane = Plane::from_point_normal(origin, xz_normal);
+    let yz_normal = (inverse_model * DVec3::X.extend(0.0)).truncate().normalize();
+    let yz_plane = Plane::from_point_normal(origin, yz_normal);
+
+    let mut count = 1usize;
+    cartesians.push(positions[0]);
+    let mut prev = positions[0];
+
+    for i in 1..positions.len() {
+        let cur = positions[i];
+
+        // Intersects the IDL if either endpoint is on the negative side of the yz-plane
+        if yz_plane.point_distance(prev) < 0.0 || yz_plane.point_distance(cur) < 0.0 {
+            // And intersects the xz-plane
+            if let Some(intersection) = line_segment_plane(prev, cur, &xz_plane) {
+                // Move point on the xz-plane slightly away from the plane
+                let mut offset = xz_normal * 5.0e-9;
+                if xz_plane.point_distance(prev) < 0.0 {
+                    offset = -offset;
+                }
+
+                cartesians.push(intersection + offset);
+                segments.push(count + 1);
+
+                cartesians.push(intersection - offset);
+                count = 1;
+            }
+        }
+
+        cartesians.push(cur);
+        count += 1;
+        prev = cur;
+    }
+
+    segments.push(count);
+
+    WrapLongitudeResult {
+        positions: cartesians,
+        lengths: segments,
+    }
 }
 
 #[cfg(test)]

@@ -189,6 +189,8 @@ impl VoxelShape for VoxelBoxShape {
             + (if (render_min.y - render_max.y).abs() < 1e-10 { 1 } else { 0 })
             + (if (render_min.z - render_max.z).abs() < 1e-10 { 1 } else { 0 });
 
+        // CesiumJS: invisible if ANY scale component is zero
+        // ("too annoying to reconstruct rotation matrix")
         if render_min.x > render_max.x
             || render_min.y > render_max.y
             || render_min.z > render_max.z
@@ -335,7 +337,7 @@ mod tests {
     #[test]
     fn test_box_shape_invisible_degenerate() {
         let mut shape = VoxelBoxShape::new();
-        // Zero scale => invisible
+        // Zero scale for any single component => invisible (CesiumJS behavior)
         let matrix = DMat4::from_scale(DVec3::new(0.0, 1.0, 1.0));
         let visible = shape.update(
             matrix,
@@ -345,6 +347,17 @@ mod tests {
             None,
         );
         assert!(!visible);
+
+        // Two zero scales => also invisible
+        let matrix2 = DMat4::from_scale(DVec3::new(0.0, 0.0, 1.0));
+        let visible2 = shape.update(
+            matrix2,
+            BOX_DEFAULT_MIN_BOUNDS,
+            BOX_DEFAULT_MAX_BOUNDS,
+            None,
+            None,
+        );
+        assert!(!visible2);
     }
 
     #[test]

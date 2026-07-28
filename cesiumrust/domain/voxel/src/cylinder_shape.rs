@@ -146,17 +146,28 @@ impl VoxelCylinderShape {
             DVec3::new(0.0, 0.0, 1.0),
         );
 
-        // World center = shape_transform * (rotation * center_local)
+        // CesiumJS algorithm: localMatrix = R(angleMid) * T(center) * S(extent)
+        // globalMatrix = modelMatrix * localMatrix
+        // OBB center = translation of globalMatrix
+        // OBB halfAxes = upper-left 3x3 of globalMatrix
+        // Use full upper-left 3x3 of model matrix (includes scale!)
+        let model_mat3 = DMat3::from_cols(
+            self.shape_transform.col(0).truncate(),
+            self.shape_transform.col(1).truncate(),
+            self.shape_transform.col(2).truncate(),
+        );
+        let combined = model_mat3 * rotation;
+
+        // center = modelMatrix * (rotation * center_local)
         let rotated_center = rotation * center_local;
         let world_center = self.shape_transform.transform_point3(rotated_center);
 
-        // Half axes = shape_rotation * rotation * scale
-        let shape_rotation = extract_rotation(&self.shape_transform);
-        let combined_rotation = shape_rotation * rotation;
+        // halfAxes = 0.5 * modelMat3 * R(angleMid) * diag(extentX, extentY, extentZ)
+        // (CesiumJS OrientedBoundingBox.fromTransformation multiplies by 0.5)
         let half_axes = DMat3::from_cols(
-            combined_rotation.col(0) * extent_x,
-            combined_rotation.col(1) * extent_y,
-            combined_rotation.col(2) * extent_z,
+            combined.col(0) * extent_x * 0.5,
+            combined.col(1) * extent_y * 0.5,
+            combined.col(2) * extent_z * 0.5,
         );
 
         OrientedBoundingBox::new(world_center, half_axes)

@@ -1,7 +1,9 @@
 //! Cartographic - a position defined by longitude, latitude, and height.
 //! Maps to CesiumJS `Core/Cartographic.js`
 
+use crate::ellipsoid::Ellipsoid;
 use crate::math_utils;
+use glam::DVec3;
 use serde::{Deserialize, Serialize};
 
 /// A position defined by longitude, latitude, and height above the ellipsoid.
@@ -51,6 +53,28 @@ impl Cartographic {
         (self.longitude - other.longitude).abs() <= epsilon
             && (self.latitude - other.latitude).abs() <= epsilon
             && (self.height - other.height).abs() <= epsilon
+    }
+
+    /// Creates a new Cartesian3 instance from a Cartographic input.
+    /// Maps to `Cartographic.toCartesian`. The input values are in radians.
+    /// The ellipsoid is passed explicitly (Rust has no `Ellipsoid.default` global).
+    pub fn to_cartesian(cartographic: &Cartographic, ellipsoid: &Ellipsoid) -> DVec3 {
+        ellipsoid.cartographic_to_cartesian(cartographic)
+    }
+
+    /// Creates a new Cartographic instance from a Cartesian position.
+    /// Maps to `Cartographic.fromCartesian`. The resulting values are in radians.
+    /// The ellipsoid is passed explicitly (Rust has no `Ellipsoid.default` global).
+    /// Returns None if the cartesian is at the center of the ellipsoid.
+    pub fn from_cartesian(cartesian: DVec3, ellipsoid: &Ellipsoid) -> Option<Cartographic> {
+        ellipsoid.cartesian_to_cartographic(cartesian)
+    }
+}
+
+impl std::fmt::Display for Cartographic {
+    /// Maps to `Cartographic.toString` → `(longitude, latitude, height)`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {}, {})", self.longitude, self.latitude, self.height)
     }
 }
 

@@ -1,10 +1,29 @@
 //! Frustum and CullingVolume - view frustum definitions and culling.
 //! Maps to CesiumJS `Core/PerspectiveFrustum.js`, `Core/OrthographicFrustum.js`, `Core/CullingVolume.js`
 
-use crate::bounding::BoundingSphere;
+use crate::bounding::{AxisAlignedBoundingBox, BoundingSphere};
 use crate::ray::{Intersect, Plane};
 use glam::{DMat4, DVec3};
 use serde::{Deserialize, Serialize};
+
+/// Trait for bounding volumes that can be tested against culling planes.
+/// Maps to the duck-typed `boundingVolume.intersectPlane(plane)` in CesiumJS.
+pub trait Cullable {
+    /// Determines which side of a plane this bounding volume is located.
+    fn cullable_intersect_plane(&self, plane: &Plane) -> Intersect;
+}
+
+impl Cullable for BoundingSphere {
+    fn cullable_intersect_plane(&self, plane: &Plane) -> Intersect {
+        self.intersect_plane(plane.normal, plane.distance)
+    }
+}
+
+impl Cullable for AxisAlignedBoundingBox {
+    fn cullable_intersect_plane(&self, plane: &Plane) -> Intersect {
+        self.intersect_plane(plane.normal, plane.distance)
+    }
+}
 
 /// A culling volume defined by 6 clipping planes.
 /// Maps to CesiumJS `CullingVolume`
@@ -15,50 +34,89 @@ pub struct CullingVolume {
 }
 
 impl CullingVolume {
-    /// Determines the visibility of a bounding sphere relative to this culling volume.
+    /// The object is entirely outside the culling volume.
+    /// Maps to `CullingVolume.MASK_OUTSIDE`
+    pub const MASK_OUTSIDE: u32 = 0xffffffff;
+    /// The object is entirely inside the culling volume.
+    /// Maps to `CullingVolume.MASK_INSIDE`
+    pub const MASK_INSIDE: u32 = 0x00000000;
+    /// The object may intersect all planes of the culling volume.
+    /// Maps to `CullingVolume.MASK_INDETERMINATE`
+    pub const MASK_INDETERMINATE: u32 = 0x7fffffff;
+
+    /// Constructs a culling volume from a bounding sphere.
+    /// Creates six planes that create a box containing the sphere,
+    /// aligned to the x, y, and z axes in world coordinates.
+    /// Maps to `CullingVolume.fromBoundingSphere`
+    pub fn from_bounding_sphere(sphere: &BoundingSphere) -> Self {
+        let center = sphere.center;
+        let radius = sphere.radius;
+        let faces = [DVec3::X, DVec3::Y, DVec3::Z];
+
+        let mut planes = [Plane::ORIGIN_XY_PLANE; 6];
+        let mut plane_index = 0;
+
+        for face_normal in &faces {
+            // plane0: normal = faceNormal, through (center - faceNormal * radius)
+            let point0 = center - *face_normal * radius;
+            planes[plane_index] = Plane::from_point_normal(point0, *face_normal);
+
+            // plane1: normal = -faceNormal, through (center + faceNormal * radius)
+            let point1 = center + *face_normal * radius;
+            planes[plane_index + 1] = Plane::from_point_normal(point1, -*face_normal);
+
+            plane_index += 2;
+        }
+
+        CullingVolume { planes }
+    }
+
+    /// Determines the visibility of a bounding volume relative to this culling volume.
     /// Maps to `CullingVolume.computeVisibility`
-    pub fn visibility(&self, sphere: &BoundingSphere) -> Intersect {
-        let mut result = Intersect::Inside;
+    pub fn visibility(&self, volume: &impl Cullable) -> Intersect {
+        let mut intersecting = false;
 
         for plane in &self.planes {
-            let distance = plane.point_distance(sphere.center);
-
-            if distance < -sphere.radius {
+            let result = volume.cullable_intersect_plane(plane);
+            if result == Intersect::Outside {
                 return Intersect::Outside;
-            }
-            if distance < sphere.radius {
-                result = Intersect::Intersecting;
+            } else if result == Intersect::Intersecting {
+                intersecting = true;
             }
         }
 
-        result
+        if intersecting {
+            Intersect::Intersecting
+        } else {
+            Intersect::Inside
+        }
     }
 
     /// Computes the visibility with a parent plane mask for hierarchical culling.
     /// Maps to `CullingVolume.computeVisibilityWithPlaneMask`
     pub fn visibility_with_plane_mask(
         &self,
-        sphere: &BoundingSphere,
+        volume: &impl Cullable,
         parent_plane_mask: u32,
     ) -> u32 {
-        if parent_plane_mask == u32::MAX {
+        if parent_plane_mask == Self::MASK_OUTSIDE || parent_plane_mask == Self::MASK_INSIDE {
             return parent_plane_mask;
         }
 
-        let mut mask = 0u32;
-        for (i, plane) in self.planes.iter().enumerate() {
-            let parent_mask = 1u32 << i;
-            if parent_plane_mask & parent_mask != 0 {
-                mask |= parent_mask;
+        let mut mask = Self::MASK_INSIDE;
+
+        for (k, plane) in self.planes.iter().enumerate() {
+            let flag = if k < 31 { 1u32 << k } else { 0 };
+            if k < 31 && (parent_plane_mask & flag) == 0 {
+                // bounding volume is known to be INSIDE this plane
                 continue;
             }
 
-            let distance = plane.point_distance(sphere.center);
-            if distance < -sphere.radius {
-                return u32::MAX; // Completely outside
-            }
-            if distance >= sphere.radius {
-                mask |= parent_mask;
+            let result = volume.cullable_intersect_plane(plane);
+            if result == Intersect::Outside {
+                return Self::MASK_OUTSIDE;
+            } else if result == Intersect::Intersecting {
+                mask |= flag;
             }
         }
 
@@ -200,14 +258,20 @@ impl PerspectiveFrustum {
     }
 
     /// Computes the pixel dimensions at a given distance.
-    /// Maps to `PerspectiveFrustum.getPixelDimensions`
-    pub fn pixel_dimensions(&self, _drawing_buffer_width: f64, drawing_buffer_height: f64, distance: f64) -> (f64, f64) {
-        let fovy_half = self.fov_y_half();
-        let inverse_tan = 1.0 / fovy_half.tan();
-
-        let pixel_height = 2.0 * distance / (drawing_buffer_height * inverse_tan);
-        let pixel_width = pixel_height * self.aspect_ratio;
-
+    /// Maps to `PerspectiveOffCenterFrustum.getPixelDimensions`
+    ///
+    /// # Arguments
+    /// * `drawing_buffer_width` - Width of the drawing buffer in pixels
+    /// * `drawing_buffer_height` - Height of the drawing buffer in pixels
+    /// * `distance` - Distance from the camera to the object
+    /// * `pixel_ratio` - The pixel ratio (default 1.0)
+    ///
+    /// Returns (pixel_width, pixel_height) - the size of a pixel in world units at the given distance.
+    pub fn pixel_dimensions(&self, drawing_buffer_width: f64, drawing_buffer_height: f64, distance: f64, pixel_ratio: f64) -> (f64, f64) {
+        let tan_phi = self.fov_y_half().tan();
+        let tan_theta = tan_phi * self.aspect_ratio;
+        let pixel_width = (2.0 * pixel_ratio * distance * tan_theta) / drawing_buffer_width;
+        let pixel_height = (2.0 * pixel_ratio * distance * tan_phi) / drawing_buffer_height;
         (pixel_width, pixel_height)
     }
 
@@ -285,22 +349,385 @@ impl OrthographicFrustum {
     }
 
     /// Computes the pixel dimensions at a given distance.
-    pub fn pixel_dimensions(&self, drawing_buffer_width: f64, drawing_buffer_height: f64, _distance: f64) -> (f64, f64) {
-        let pixel_width = self.width / drawing_buffer_width;
-        let pixel_height = self.height() / drawing_buffer_height;
+    /// Maps to `OrthographicOffCenterFrustum.getPixelDimensions`
+    ///
+    /// Returns (pixel_width, pixel_height) - the size of a pixel in world units.
+    pub fn pixel_dimensions(&self, drawing_buffer_width: f64, drawing_buffer_height: f64, _distance: f64, pixel_ratio: f64) -> (f64, f64) {
+        let pixel_width = (pixel_ratio * self.width) / drawing_buffer_width;
+        let pixel_height = (pixel_ratio * self.height()) / drawing_buffer_height;
         (pixel_width, pixel_height)
+    }
+}
+
+// --- Off-center frustums ---
+
+/// A perspective frustum defined by six clipping plane distances
+/// (left, right, top, bottom, near, far).
+///
+/// This is the lower-level frustum used by `PerspectiveFrustum`; it allows
+/// off-center (asymmetric) projections. `left`/`right`/`top`/`bottom` are
+/// `Option` because CesiumJS leaves them `undefined` until set, and accessing
+/// the projection matrix before they are set throws a `DeveloperError`.
+/// Maps to CesiumJS `PerspectiveOffCenterFrustum`
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PerspectiveOffCenterFrustum {
+    /// The left clipping plane distance (`undefined` until set).
+    pub left: Option<f64>,
+    /// The right clipping plane distance (`undefined` until set).
+    pub right: Option<f64>,
+    /// The top clipping plane distance (`undefined` until set).
+    pub top: Option<f64>,
+    /// The bottom clipping plane distance (`undefined` until set).
+    pub bottom: Option<f64>,
+    /// The distance of the near plane (default `1.0`).
+    pub near: f64,
+    /// The distance of the far plane (default `500000000.0`).
+    pub far: f64,
+}
+
+impl Default for PerspectiveOffCenterFrustum {
+    fn default() -> Self {
+        Self {
+            left: None,
+            right: None,
+            top: None,
+            bottom: None,
+            near: 1.0,
+            far: 500_000_000.0,
+        }
+    }
+}
+
+impl PerspectiveOffCenterFrustum {
+    /// Creates a default (empty) off-center perspective frustum.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Creates an off-center perspective frustum from explicit bounds.
+    pub fn from_bounds(left: f64, right: f64, bottom: f64, top: f64, near: f64, far: f64) -> Self {
+        Self {
+            left: Some(left),
+            right: Some(right),
+            top: Some(top),
+            bottom: Some(bottom),
+            near,
+            far,
+        }
+    }
+
+    /// Resolves the four lateral bounds, panicking if any is unset
+    /// (mirrors CesiumJS `update()` throwing `DeveloperError`).
+    fn bounds(&self) -> (f64, f64, f64, f64) {
+        let left = self
+            .left
+            .expect("right, left, top, bottom, near, or far parameters are not set.");
+        let right = self
+            .right
+            .expect("right, left, top, bottom, near, or far parameters are not set.");
+        let top = self
+            .top
+            .expect("right, left, top, bottom, near, or far parameters are not set.");
+        let bottom = self
+            .bottom
+            .expect("right, left, top, bottom, near, or far parameters are not set.");
+        (left, right, bottom, top)
+    }
+
+    /// The perspective projection matrix.
+    /// Maps to `PerspectiveOffCenterFrustum.projectionMatrix`
+    pub fn projection_matrix(&self) -> DMat4 {
+        let (left, right, bottom, top) = self.bounds();
+        perspective_off_center(left, right, bottom, top, self.near, self.far)
+    }
+
+    /// The perspective projection matrix with an infinite far plane.
+    /// Maps to `PerspectiveOffCenterFrustum.infiniteProjectionMatrix`
+    pub fn infinite_projection_matrix(&self) -> DMat4 {
+        let (left, right, bottom, top) = self.bounds();
+        infinite_perspective_off_center(left, right, bottom, top, self.near)
+    }
+
+    /// Creates a culling volume for this frustum at the given pose.
+    /// Maps to `PerspectiveOffCenterFrustum.computeCullingVolume`
+    pub fn compute_culling_volume(&self, position: DVec3, direction: DVec3, up: DVec3) -> CullingVolume {
+        let (left, right, bottom, top) = self.bounds();
+        let l = left;
+        let r = right;
+        let b = bottom;
+        let t = top;
+        let n = self.near;
+        let f = self.far;
+
+        let right_vec = direction.cross(up);
+        let near_center = position + direction * n;
+        let far_center = position + direction * f;
+
+        // Left plane: normalize(nearCenter + right*l - position) x up
+        let left_normal = (near_center + right_vec * l - position).cross(up).normalize();
+        let left_plane = Plane::from_point_normal(position, left_normal);
+
+        // Right plane: up x normalize(nearCenter + right*r - position)
+        let right_normal = up.cross(near_center + right_vec * r - position).normalize();
+        let right_plane = Plane::from_point_normal(position, right_normal);
+
+        // Bottom plane: right x normalize(nearCenter + up*b - position)
+        let bottom_normal = right_vec.cross(near_center + up * b - position).normalize();
+        let bottom_plane = Plane::from_point_normal(position, bottom_normal);
+
+        // Top plane: normalize(nearCenter + up*t - position) x right
+        let top_normal = (near_center + up * t - position).cross(right_vec).normalize();
+        let top_plane = Plane::from_point_normal(position, top_normal);
+
+        // Near plane: normal along view direction through near center.
+        let near_plane = Plane::from_point_normal(near_center, direction);
+
+        // Far plane: normal opposite view direction through far center.
+        let far_plane = Plane::from_point_normal(far_center, -direction);
+
+        CullingVolume {
+            planes: [left_plane, right_plane, bottom_plane, top_plane, near_plane, far_plane],
+        }
+    }
+
+    /// Returns the pixel's width and height in meters.
+    /// Maps to `PerspectiveOffCenterFrustum.getPixelDimensions`
+    pub fn pixel_dimensions(
+        &self,
+        drawing_buffer_width: f64,
+        drawing_buffer_height: f64,
+        distance: f64,
+        pixel_ratio: f64,
+    ) -> (f64, f64) {
+        let top = self
+            .top
+            .expect("right, left, top, bottom, near, or far parameters are not set.");
+        let right = self
+            .right
+            .expect("right, left, top, bottom, near, or far parameters are not set.");
+
+        let inverse_near = 1.0 / self.near;
+        let tan_theta = top * inverse_near;
+        let pixel_height = (2.0 * pixel_ratio * distance * tan_theta) / drawing_buffer_height;
+        let tan_theta = right * inverse_near;
+        let pixel_width = (2.0 * pixel_ratio * distance * tan_theta) / drawing_buffer_width;
+        (pixel_width, pixel_height)
+    }
+
+    /// Componentwise equality.
+    /// Maps to `PerspectiveOffCenterFrustum.equals`
+    pub fn equals(&self, other: &Self) -> bool {
+        self.right == other.right
+            && self.left == other.left
+            && self.top == other.top
+            && self.bottom == other.bottom
+            && self.near == other.near
+            && self.far == other.far
+    }
+
+    /// Componentwise equality within a relative/absolute tolerance.
+    /// Maps to `PerspectiveOffCenterFrustum.equalsEpsilon`
+    pub fn equals_epsilon(&self, other: &Self, relative_epsilon: f64, absolute_epsilon: f64) -> bool {
+        crate::math_utils::equals_epsilon(self.right.unwrap_or(f64::NAN), other.right.unwrap_or(f64::NAN), relative_epsilon, absolute_epsilon)
+            && crate::math_utils::equals_epsilon(self.left.unwrap_or(f64::NAN), other.left.unwrap_or(f64::NAN), relative_epsilon, absolute_epsilon)
+            && crate::math_utils::equals_epsilon(self.top.unwrap_or(f64::NAN), other.top.unwrap_or(f64::NAN), relative_epsilon, absolute_epsilon)
+            && crate::math_utils::equals_epsilon(self.bottom.unwrap_or(f64::NAN), other.bottom.unwrap_or(f64::NAN), relative_epsilon, absolute_epsilon)
+            && crate::math_utils::equals_epsilon(self.near, other.near, relative_epsilon, absolute_epsilon)
+            && crate::math_utils::equals_epsilon(self.far, other.far, relative_epsilon, absolute_epsilon)
+    }
+}
+
+/// An orthographic frustum defined by six clipping plane distances
+/// (left, right, top, bottom, near, far).
+/// Maps to CesiumJS `OrthographicOffCenterFrustum`
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct OrthographicOffCenterFrustum {
+    /// The left clipping plane (`undefined` until set).
+    pub left: Option<f64>,
+    /// The right clipping plane (`undefined` until set).
+    pub right: Option<f64>,
+    /// The top clipping plane (`undefined` until set).
+    pub top: Option<f64>,
+    /// The bottom clipping plane (`undefined` until set).
+    pub bottom: Option<f64>,
+    /// The distance of the near plane (default `1.0`).
+    pub near: f64,
+    /// The distance of the far plane (default `500000000.0`).
+    pub far: f64,
+}
+
+impl Default for OrthographicOffCenterFrustum {
+    fn default() -> Self {
+        Self {
+            left: None,
+            right: None,
+            top: None,
+            bottom: None,
+            near: 1.0,
+            far: 500_000_000.0,
+        }
+    }
+}
+
+impl OrthographicOffCenterFrustum {
+    /// Creates a default (empty) off-center orthographic frustum.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Creates an off-center orthographic frustum from explicit bounds.
+    pub fn from_bounds(left: f64, right: f64, bottom: f64, top: f64, near: f64, far: f64) -> Self {
+        Self {
+            left: Some(left),
+            right: Some(right),
+            top: Some(top),
+            bottom: Some(bottom),
+            near,
+            far,
+        }
+    }
+
+    /// Resolves the four lateral bounds, panicking if any is unset
+    /// (mirrors CesiumJS `update()` throwing `DeveloperError`).
+    fn bounds(&self) -> (f64, f64, f64, f64) {
+        let left = self
+            .left
+            .expect("right, left, top, bottom, near, or far parameters are not set.");
+        let right = self
+            .right
+            .expect("right, left, top, bottom, near, or far parameters are not set.");
+        let top = self
+            .top
+            .expect("right, left, top, bottom, near, or far parameters are not set.");
+        let bottom = self
+            .bottom
+            .expect("right, left, top, bottom, near, or far parameters are not set.");
+        (left, right, bottom, top)
+    }
+
+    /// The orthographic projection matrix.
+    /// Maps to `OrthographicOffCenterFrustum.projectionMatrix`
+    pub fn projection_matrix(&self) -> DMat4 {
+        let (left, right, bottom, top) = self.bounds();
+        orthographic_off_center(left, right, bottom, top, self.near, self.far)
+    }
+
+    /// Creates a culling volume for this frustum at the given pose.
+    /// Maps to `OrthographicOffCenterFrustum.computeCullingVolume`
+    pub fn compute_culling_volume(&self, position: DVec3, direction: DVec3, up: DVec3) -> CullingVolume {
+        let (left, right, bottom, top) = self.bounds();
+        let l = left;
+        let r = right;
+        let b = bottom;
+        let t = top;
+        let n = self.near;
+        let f = self.far;
+
+        // Note: the orthographic variant normalizes the right vector.
+        let right_vec = direction.cross(up).normalize();
+        let near_center = position + direction * n;
+
+        // Left plane: normal = right, through nearCenter + right*l.
+        let left_plane = Plane::from_point_normal(near_center + right_vec * l, right_vec);
+        // Right plane: normal = -right, through nearCenter + right*r.
+        let right_plane = Plane::from_point_normal(near_center + right_vec * r, -right_vec);
+        // Bottom plane: normal = up, through nearCenter + up*b.
+        let bottom_plane = Plane::from_point_normal(near_center + up * b, up);
+        // Top plane: normal = -up, through nearCenter + up*t.
+        let top_plane = Plane::from_point_normal(near_center + up * t, -up);
+        // Near plane: normal along view direction through near center.
+        let near_plane = Plane::from_point_normal(near_center, direction);
+        // Far plane: normal opposite view direction through far center.
+        let far_plane = Plane::from_point_normal(position + direction * f, -direction);
+
+        CullingVolume {
+            planes: [left_plane, right_plane, bottom_plane, top_plane, near_plane, far_plane],
+        }
+    }
+
+    /// Returns the pixel's width and height in meters.
+    /// Maps to `OrthographicOffCenterFrustum.getPixelDimensions`
+    pub fn pixel_dimensions(
+        &self,
+        drawing_buffer_width: f64,
+        drawing_buffer_height: f64,
+        _distance: f64,
+        pixel_ratio: f64,
+    ) -> (f64, f64) {
+        let (left, right, bottom, top) = self.bounds();
+        let frustum_width = right - left;
+        let frustum_height = top - bottom;
+        let pixel_width = (pixel_ratio * frustum_width) / drawing_buffer_width;
+        let pixel_height = (pixel_ratio * frustum_height) / drawing_buffer_height;
+        (pixel_width, pixel_height)
+    }
+
+    /// Componentwise equality.
+    /// Maps to `OrthographicOffCenterFrustum.equals`
+    pub fn equals(&self, other: &Self) -> bool {
+        self.right == other.right
+            && self.left == other.left
+            && self.top == other.top
+            && self.bottom == other.bottom
+            && self.near == other.near
+            && self.far == other.far
+    }
+
+    /// Componentwise equality within a relative/absolute tolerance.
+    /// Maps to `OrthographicOffCenterFrustum.equalsEpsilon`
+    pub fn equals_epsilon(&self, other: &Self, relative_epsilon: f64, absolute_epsilon: f64) -> bool {
+        crate::math_utils::equals_epsilon(self.right.unwrap_or(f64::NAN), other.right.unwrap_or(f64::NAN), relative_epsilon, absolute_epsilon)
+            && crate::math_utils::equals_epsilon(self.left.unwrap_or(f64::NAN), other.left.unwrap_or(f64::NAN), relative_epsilon, absolute_epsilon)
+            && crate::math_utils::equals_epsilon(self.top.unwrap_or(f64::NAN), other.top.unwrap_or(f64::NAN), relative_epsilon, absolute_epsilon)
+            && crate::math_utils::equals_epsilon(self.bottom.unwrap_or(f64::NAN), other.bottom.unwrap_or(f64::NAN), relative_epsilon, absolute_epsilon)
+            && crate::math_utils::equals_epsilon(self.near, other.near, relative_epsilon, absolute_epsilon)
+            && crate::math_utils::equals_epsilon(self.far, other.far, relative_epsilon, absolute_epsilon)
     }
 }
 
 // --- Helper functions ---
 
 /// Creates an off-center perspective projection matrix.
+/// Maps to `Matrix4.computePerspectiveOffCenter`
 fn perspective_off_center(left: f64, right: f64, bottom: f64, top: f64, near: f64, far: f64) -> DMat4 {
     DMat4::from_cols_array(&[
         2.0 * near / (right - left), 0.0, 0.0, 0.0,
         0.0, 2.0 * near / (top - bottom), 0.0, 0.0,
         (right + left) / (right - left), (top + bottom) / (top - bottom), -(far + near) / (far - near), -1.0,
         0.0, 0.0, -2.0 * far * near / (far - near), 0.0,
+    ])
+}
+
+/// Creates an off-center perspective projection matrix with an infinite far plane.
+/// Maps to `Matrix4.computeInfinitePerspectiveOffCenter`
+fn infinite_perspective_off_center(left: f64, right: f64, bottom: f64, top: f64, near: f64) -> DMat4 {
+    DMat4::from_cols_array(&[
+        2.0 * near / (right - left), 0.0, 0.0, 0.0,
+        0.0, 2.0 * near / (top - bottom), 0.0, 0.0,
+        (right + left) / (right - left), (top + bottom) / (top - bottom), -1.0, -1.0,
+        0.0, 0.0, -2.0 * near, 0.0,
+    ])
+}
+
+/// Creates an off-center orthographic projection matrix.
+/// Maps to `Matrix4.computeOrthographicOffCenter`
+fn orthographic_off_center(left: f64, right: f64, bottom: f64, top: f64, near: f64, far: f64) -> DMat4 {
+    let mut a = 1.0 / (right - left);
+    let mut b = 1.0 / (top - bottom);
+    let mut c = 1.0 / (far - near);
+
+    let tx = -(right + left) * a;
+    let ty = -(top + bottom) * b;
+    let tz = -(far + near) * c;
+    a *= 2.0;
+    b *= 2.0;
+    c *= -2.0;
+
+    DMat4::from_cols_array(&[
+        a, 0.0, 0.0, 0.0,
+        0.0, b, 0.0, 0.0,
+        0.0, 0.0, c, 0.0,
+        tx, ty, tz, 1.0,
     ])
 }
 
@@ -381,7 +808,7 @@ mod tests {
             1.0,
             1000.0,
         );
-        let (pw, ph) = frustum.pixel_dimensions(1024.0, 1024.0, 100.0);
+        let (pw, ph) = frustum.pixel_dimensions(1024.0, 1024.0, 100.0, 1.0);
         assert!(pw > 0.0);
         assert!(ph > 0.0);
         assert!((pw - ph).abs() < 1e-10); // aspect 1.0 → square pixels

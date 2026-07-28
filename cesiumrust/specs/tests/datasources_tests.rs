@@ -3,7 +3,10 @@
 
 mod datasources {
     pub mod entity_spec;
+    pub mod entity_collection_spec;
     pub mod property_spec;
+    pub mod property_system_spec;
+    pub mod position_property_spec;
     pub mod geojson_spec;
     pub mod czml_spec;
     pub mod material_property_spec;
@@ -11,4 +14,13 @@ mod datasources {
     pub mod geometry_updater_spec;
     pub mod visualizer_cluster_spec;
     pub mod kml_spec;
+    pub mod reference_property_spec;
+    pub mod property_bag_spec;
+    pub mod datasource_collection_spec;
+    pub mod composite_entity_collection_spec;
+    pub mod velocity_vector_property_spec;
+    pub mod velocity_orientation_property_spec;
+    pub mod node_transformation_property_spec;
+    pub mod datasource_clock_spec;
+    pub mod property_array_spec;
 }

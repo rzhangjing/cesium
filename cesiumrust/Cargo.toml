@@ -55,7 +55,12 @@ publish = false
 
 [workspace.dependencies]
 # Math (f64 precision)
-glam = { version = "0.29", features = ["fast-math", "serde"] }
+# NOTE: glam's `fast-math` feature is intentionally DISABLED. It enables FMA
+# (fused multiply-add), which rounds `a*b+c` once instead of twice and produces
+# 1-ulp differences vs CesiumJS's standard IEEE-754 two-rounding arithmetic.
+# Bit-exact fidelity with the original CesiumJS Specs (the ground truth of the
+# verification plan) requires standard rounding. Do not re-enable fast-math.
+glam = { version = "0.29", features = ["serde"] }
 
 # Game engine / rendering
 bevy = "0.15"
@@ -66,6 +71,9 @@ serde_json = "1"
 
 # Error handling
 thiserror = "2"
+
+# Triangulation
+earcut = "0.4"
 
 # Async
 tokio = { version = "1", features = ["full"] }

@@ -3,97 +3,12 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-07-22T16:59:37Z"
+exported_at: "2026-07-25T18:31:31Z"
 modules:
     "":
-        dir_name: CesiumJS 多包工作区与构建编排根
-        title: CesiumJS 多包工作区与构建编排根
-        scope:
-            - README.md
-            - CONTRIBUTING.md
-            - CODE_OF_CONDUCT.md
-            - CONTRIBUTORS.md
-            - .editorconfig
-            - .gitignore
-            - .npmrc
-            - .markdownlint.json
-            - eslint.config.js
-            - gulpfile.js
-            - gulpfile.apps.js
-            - gulpfile.makezip.js
-            - index.cjs
-            - index.html
-            - index.release.html
-            - package.json
-            - server.js
-            - tsconfig.json
-            - ThirdParty.json
-            - ThirdParty.extra.json
-            - .git-blame-ignore-revs
-            - .gitattributes
-            - .markdownlintignore
-            - .npmignore
-            - .prettierignore
-            - .prettierrc
-            - .project
-            - CHANGES.md
-            - LICENSE.md
-            - eslint.seatbelt.tsv
-            - favicon.ico
-            - greenkeeper.json
-            - lint-staged.config.js
-            - sgconfig.yml
-            - web.config
-        source_files: []
-        children:
-            - apps
-            - documentation
-            - scripts
-            - specs
-            - tools
-        depends_on: []
-        related_to: []
-    apps:
-        dir_name: Cesium 浏览器端示例与演示应用
-        title: Cesium 浏览器端示例与演示应用
-        scope:
-            - Apps/
-        source_files: []
-        children: []
-        depends_on: []
-        related_to: []
-    documentation:
-        dir_name: CesiumJS 项目文档与贡献者指南
-        title: CesiumJS 项目文档与贡献者指南
-        scope:
-            - Documentation/
-        source_files: []
-        children: []
-        depends_on: []
-        related_to: []
-    scripts:
-        dir_name: CesiumJS 构建与开发工具脚本集
-        title: CesiumJS 构建与开发工具脚本集
-        scope:
-            - scripts/
-        source_files: []
-        children: []
-        depends_on: []
-        related_to: []
-    specs:
-        dir_name: Cesium.js 测试套件与测试数据
-        title: Cesium.js 测试套件与测试数据
-        scope:
-            - Specs/
-        source_files: []
-        children: []
-        depends_on: []
-        related_to: []
-    tools:
-        dir_name: 构建与文档辅助工具集
-        title: 构建与文档辅助工具集
-        scope:
-            - Tools/
+        dir_name: CesiumJS Specs 测试套件与 Rust 移植集成测试
+        title: CesiumJS Specs 测试套件与 Rust 移植集成测试
+        scope: []
         source_files: []
         children: []
         depends_on: []

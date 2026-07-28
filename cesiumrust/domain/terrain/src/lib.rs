@@ -9,10 +9,12 @@
 pub mod quantized_mesh;
 pub mod terrain_mesh;
 pub mod heightmap;
+pub mod terrain_encoding;
 
 pub use quantized_mesh::QuantizedMeshTerrainData;
 pub use terrain_mesh::TerrainMesh;
 pub use heightmap::HeightmapTerrainData;
+pub use terrain_encoding::{TerrainAttribute, TerrainAttributeLocations, TerrainEncoding};
 
 /// The maximum value for quantized terrain coordinates (u16).
 pub const MAX_SHORT: u16 = 32767;

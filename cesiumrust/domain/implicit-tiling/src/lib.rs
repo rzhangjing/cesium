@@ -8,6 +8,7 @@
 pub mod implicit_tiling;
 
 pub use implicit_tiling::{
-    morton_2d, morton_3d, AvailabilityBitstream, ImplicitTileCoord, ImplicitTilingConfig,
+    morton_2d, morton_3d, decode_morton_2d, decode_morton_3d,
+    AvailabilityBitstream, ImplicitTileCoord, ImplicitTilingConfig,
     SubdivisionScheme, Subtree,
 };

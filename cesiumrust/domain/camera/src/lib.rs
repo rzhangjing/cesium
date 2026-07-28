@@ -247,22 +247,40 @@ impl Camera {
     // Orientation queries
     // ========================================================================
 
-    /// Gets the heading angle in radians.
+    /// Gets the heading angle in radians (simplified for CV/2D mode).
     /// Maps to `Camera.heading`
     pub fn heading(&self) -> f64 {
         get_heading(self.direction, self.up)
     }
 
-    /// Gets the pitch angle in radians.
+    /// Gets the heading in 3D mode using ENU frame at camera position.
+    /// Maps to `Camera.heading` when mode is SCENE3D
+    pub fn heading_3d(&self, ellipsoid: &Ellipsoid) -> f64 {
+        get_heading_3d(self.position, self.direction, self.up, self.right, ellipsoid)
+    }
+
+    /// Gets the pitch angle in radians (simplified for CV/2D mode).
     /// Maps to `Camera.pitch`
     pub fn pitch(&self) -> f64 {
         get_pitch(self.direction)
     }
 
-    /// Gets the roll angle in radians.
+    /// Gets the pitch in 3D mode using surface normal at camera position.
+    /// Maps to `Camera.pitch` when mode is SCENE3D
+    pub fn pitch_3d(&self, ellipsoid: &Ellipsoid) -> f64 {
+        get_pitch_3d(self.position, self.direction, ellipsoid)
+    }
+
+    /// Gets the roll angle in radians (simplified for CV/2D mode).
     /// Maps to `Camera.roll`
     pub fn roll(&self) -> f64 {
         get_roll(self.direction, self.up, self.right)
+    }
+
+    /// Gets the roll in 3D mode using ENU frame at camera position.
+    /// Maps to `Camera.roll` when mode is SCENE3D
+    pub fn roll_3d(&self, ellipsoid: &Ellipsoid) -> f64 {
+        get_roll_3d(self.position, self.direction, self.up, self.right, ellipsoid)
     }
 
     /// Gets the heading, pitch, and roll as a struct.
@@ -322,60 +340,102 @@ impl Camera {
         self.move_along(self.up, -amount);
     }
 
-    /// Rotates the camera around an axis by an angle.
+    /// Rotates the camera around an axis by an angle (orbits position + rotates orientation).
     /// Maps to `Camera.rotate`
     pub fn rotate(&mut self, axis: DVec3, angle: f64) {
-        let rotation = glam::DQuat::from_axis_angle(axis.normalize(), angle);
+        let axis = axis.normalize();
+        // CesiumJS negates the angle: Quaternion.fromAxisAngle(axis, -angle)
+        let rotation = glam::DQuat::from_axis_angle(axis, -angle);
+        self.position = rotation * self.position;
         self.direction = (rotation * self.direction).normalize();
         self.up = (rotation * self.up).normalize();
         self.right = self.direction.cross(self.up).normalize();
+        self.up = self.right.cross(self.direction).normalize();
     }
 
-    /// Rotates the camera around the world up axis.
-    /// Maps to `Camera.rotateUp` / `Camera.rotateDown`
-    pub fn rotate_vertical(&mut self, angle: f64) {
-        self.rotate(self.right, angle);
+    /// Rotates the camera upward (orbits around right axis).
+    /// Maps to `Camera.rotateUp` which calls rotateVertical(this, -angle)
+    pub fn rotate_up(&mut self, angle: f64) {
+        let axis = self.right;
+        self.rotate(axis, -angle);
     }
 
-    /// Rotates the camera horizontally.
-    /// Maps to `Camera.rotateLeft` / `Camera.rotateRight`
-    pub fn rotate_horizontal(&mut self, angle: f64) {
-        self.rotate(self.up, angle);
-    }
-
-    /// Looks along the given axis by an angle (rotates direction and up).
-    /// Maps to `Camera.look`
-    pub fn look(&mut self, axis: DVec3, angle: f64) {
+    /// Rotates the camera downward (orbits around right axis).
+    /// Maps to `Camera.rotateDown` which calls rotateVertical(this, angle)
+    pub fn rotate_down(&mut self, angle: f64) {
+        let axis = self.right;
         self.rotate(axis, angle);
     }
 
+    /// Rotates the camera to the left (orbits around up axis).
+    /// Maps to `Camera.rotateLeft`
+    pub fn rotate_left(&mut self, angle: f64) {
+        let axis = self.up;
+        self.rotate(axis, angle);
+    }
+
+    /// Rotates the camera to the right (orbits around up axis, negative angle).
+    /// Maps to `Camera.rotateRight`
+    pub fn rotate_right(&mut self, angle: f64) {
+        let axis = self.up;
+        self.rotate(axis, -angle);
+    }
+
+    /// Looks along the given axis by an angle (rotates direction and up only, no position change).
+    /// Maps to `Camera.look`
+    pub fn look(&mut self, axis: DVec3, angle: f64) {
+        // CesiumJS negates the angle: Quaternion.fromAxisAngle(axis, -angle)
+        let rotation = glam::DQuat::from_axis_angle(axis.normalize(), -angle);
+        self.direction = (rotation * self.direction).normalize();
+        self.up = (rotation * self.up).normalize();
+        self.right = self.direction.cross(self.up).normalize();
+        self.up = self.right.cross(self.direction).normalize();
+    }
+
     /// Looks left by the given angle.
+    /// Maps to `Camera.lookLeft`
     pub fn look_left(&mut self, angle: Option<f64>) {
         let angle = angle.unwrap_or(self.default_look_amount);
-        self.look(self.up, -angle);
+        let axis = self.up;
+        self.look(axis, -angle);
     }
 
     /// Looks right by the given angle.
+    /// Maps to `Camera.lookRight`
     pub fn look_right(&mut self, angle: Option<f64>) {
         let angle = angle.unwrap_or(self.default_look_amount);
-        self.look(self.up, angle);
+        let axis = self.up;
+        self.look(axis, angle);
     }
 
     /// Looks up by the given angle.
+    /// Maps to `Camera.lookUp`
     pub fn look_up(&mut self, angle: Option<f64>) {
         let angle = angle.unwrap_or(self.default_look_amount);
-        self.look(self.right, -angle);
+        let axis = self.right;
+        self.look(axis, -angle);
     }
 
     /// Looks down by the given angle.
+    /// Maps to `Camera.lookDown`
     pub fn look_down(&mut self, angle: Option<f64>) {
         let angle = angle.unwrap_or(self.default_look_amount);
-        self.look(self.right, angle);
+        let axis = self.right;
+        self.look(axis, angle);
     }
 
-    /// Twists the camera (rolls) by the given angle.
-    pub fn twist(&mut self, angle: f64) {
-        self.look(self.direction, angle);
+    /// Twists the camera left (rolls counterclockwise).
+    /// Maps to `Camera.twistLeft`
+    pub fn twist_left(&mut self, angle: f64) {
+        let axis = self.direction;
+        self.look(axis, angle);
+    }
+
+    /// Twists the camera right (rolls clockwise).
+    /// Maps to `Camera.twistRight`
+    pub fn twist_right(&mut self, angle: f64) {
+        let axis = self.direction;
+        self.look(axis, -angle);
     }
 
     /// Sets the camera to look at a target from the current position.
@@ -401,6 +461,12 @@ impl Camera {
     // ========================================================================
 
     /// Sets the camera position and orientation from heading/pitch/roll at a position.
+    /// Faithfully maps to CesiumJS `setView3D`:
+    /// 1. Compute ENU at position
+    /// 2. Adjust heading: heading -= PI/2 (so heading=0 means North)
+    /// 3. Compute quaternion from adjusted HPR
+    /// 4. direction = rotMat column 0, up = rotMat column 2
+    /// 5. Transform from ENU-local to world
     pub fn set_view_hpr(
         &mut self,
         position: DVec3,
@@ -415,24 +481,36 @@ impl Camera {
         let enu = cesium_geospatial::transforms::east_north_up_to_fixed_frame(position, ellipsoid);
         let east = enu.x_axis.truncate();
         let north = enu.y_axis.truncate();
-        let up = enu.z_axis.truncate();
+        let up_enu = enu.z_axis.truncate();
 
-        // Apply heading (rotation about up), pitch (rotation about east), roll (rotation about direction)
-        let hpr_quat = HeadingPitchRoll::new(heading, pitch, roll).to_quaternion();
+        // CesiumJS setView3D line 1285: hpr.heading = hpr.heading - PI_OVER_TWO
+        let adjusted_heading = heading - std::f64::consts::FRAC_PI_2;
+        let hpr_quat = HeadingPitchRoll::new(adjusted_heading, pitch, roll).to_quaternion();
 
-        // Transform HPR from ENU to world
-        let enu_rotation = glam::DMat3::from_cols(east, north, up);
-        let world_quat = glam::DQuat::from_mat3(&enu_rotation) * hpr_quat;
+        // CesiumJS: direction = Matrix3.getColumn(rotMat, 0) = quat * X
+        //           up = Matrix3.getColumn(rotMat, 2) = quat * Z
+        let local_direction = hpr_quat * DVec3::X;
+        let local_up = hpr_quat * DVec3::Z;
 
-        // In ENU, forward is East, up is Up, right is -North (or South)
-        // After HPR rotation in local frame:
-        // direction starts as East (1,0,0 in ENU)
-        // up starts as Up (0,0,1 in ENU)
-        let local_direction = DVec3::X; // East in ENU
-        let local_up = DVec3::Z; // Up in ENU
+        // Transform from ENU-local to world
+        let enu_rotation = glam::DMat3::from_cols(east, north, up_enu);
+        self.direction = (enu_rotation * local_direction).normalize();
+        self.up = (enu_rotation * local_up).normalize();
+        self.right = self.direction.cross(self.up).normalize();
+        self.up = self.right.cross(self.direction).normalize();
+    }
 
-        self.direction = (world_quat * local_direction).normalize();
-        self.up = (world_quat * local_up).normalize();
+    /// Sets the camera position and orientation from direction/up vectors.
+    /// Maps to CesiumJS `setView3D` with orientation.direction + orientation.up
+    pub fn set_view_direction(
+        &mut self,
+        position: DVec3,
+        direction: DVec3,
+        up: DVec3,
+    ) {
+        self.position = position;
+        self.direction = direction.normalize();
+        self.up = up.normalize();
         self.right = self.direction.cross(self.up).normalize();
         self.up = self.right.cross(self.direction).normalize();
     }
@@ -498,6 +576,12 @@ impl Camera {
         (self.transform * self.right.extend(0.0)).truncate().normalize()
     }
 
+    /// Transforms a Cartesian4 from world coordinates to camera reference frame.
+    /// Maps to `Camera.worldToCameraCoordinates`
+    pub fn world_to_camera_coordinates(&self, cartesian: glam::DVec4) -> glam::DVec4 {
+        self.transform.inverse() * cartesian
+    }
+
     /// Transforms a point from world coordinates to camera reference frame.
     /// Maps to `Camera.worldToCameraCoordinatesPoint`
     pub fn world_to_camera_point(&self, point: DVec3) -> DVec3 {
@@ -508,6 +592,12 @@ impl Camera {
     /// Maps to `Camera.worldToCameraCoordinatesVector`
     pub fn world_to_camera_vector(&self, vector: DVec3) -> DVec3 {
         (self.transform.inverse() * vector.extend(0.0)).truncate()
+    }
+
+    /// Transforms a Cartesian4 from camera reference frame to world coordinates.
+    /// Maps to `Camera.cameraToWorldCoordinates`
+    pub fn camera_to_world_coordinates(&self, cartesian: glam::DVec4) -> glam::DVec4 {
+        self.transform * cartesian
     }
 
     /// Transforms a point from camera reference frame to world coordinates.
@@ -576,14 +666,16 @@ impl Camera {
 
     /// Sets the camera to look at a target with a Cartesian3 offset.
     /// Maps to `Camera.lookAt` with Cartesian3 offset
-    pub fn look_at_offset(&mut self, target: DVec3, offset: DVec3) {
-        let transform = DMat4::from_translation(target);
+    pub fn look_at_offset(&mut self, target: DVec3, offset: DVec3, ellipsoid: &Ellipsoid) {
+        let transform = cesium_geospatial::transforms::east_north_up_to_fixed_frame(target, ellipsoid);
         self.transform = transform;
         self.position = offset;
         self.direction = -offset.normalize();
-        self.right = self.direction.cross(DVec3::Z).normalize();
-        if self.right.length_squared() < 1e-10 {
+        let right = self.direction.cross(DVec3::Z);
+        if right.length_squared() < 1e-10 {
             self.right = DVec3::X;
+        } else {
+            self.right = right.normalize();
         }
         self.up = self.right.cross(self.direction).normalize();
     }
@@ -602,11 +694,34 @@ impl Camera {
 
         self.position = cartesian_offset;
         self.direction = -cartesian_offset.normalize();
-        self.right = self.direction.cross(DVec3::Z).normalize();
-        if self.right.length_squared() < 1e-10 {
+        let right = self.direction.cross(DVec3::Z);
+        if right.length_squared() < 1e-10 {
             self.right = DVec3::X;
+        } else {
+            self.right = right.normalize();
         }
         self.up = self.right.cross(self.direction).normalize();
+    }
+
+    /// Sets the camera transform and positions it with a Cartesian3 offset.
+    /// Maps to `Camera.lookAtTransform` with Cartesian3 offset
+    pub fn look_at_transform_offset(&mut self, transform: DMat4, offset: DVec3) {
+        self.set_transform(transform);
+        self.position = offset;
+        self.direction = -offset.normalize();
+        let right = self.direction.cross(DVec3::Z);
+        if right.length_squared() < 1e-10 {
+            self.right = DVec3::X;
+        } else {
+            self.right = right.normalize();
+        }
+        self.up = self.right.cross(self.direction).normalize();
+    }
+
+    /// Sets the camera transform, preserving current world-space position/orientation.
+    /// Maps to `Camera.lookAtTransform` with no offset
+    pub fn look_at_transform_no_offset(&mut self, transform: DMat4) {
+        self.set_transform(transform);
     }
 
     // ========================================================================
@@ -668,12 +783,149 @@ impl Camera {
         }
     }
 
+    /// Gets the inverse of the reference frame transform.
+    /// Maps to `Camera.inverseTransform`
+    pub fn inverse_transform(&self) -> DMat4 {
+        self.transform.inverse()
+    }
+
+    // ========================================================================
+    // Picking
+    // ========================================================================
+
+    /// Creates a pick ray from a window position using perspective frustum.
+    /// Maps to `Camera.getPickRay` (perspective branch)
+    ///
+    /// # Arguments
+    /// * `window_x` - Window X coordinate (pixels, left=0)
+    /// * `window_y` - Window Y coordinate (pixels, top=0)
+    /// * `canvas_width` - Canvas width in pixels
+    /// * `canvas_height` - Canvas height in pixels
+    pub fn get_pick_ray_perspective(
+        &self,
+        window_x: f64,
+        window_y: f64,
+        canvas_width: f64,
+        canvas_height: f64,
+    ) -> Option<cesium_geospatial::Ray> {
+        let (fovy, aspect_ratio, near) = match &self.frustum {
+            Frustum::Perspective(f) => (f.fovy(), f.aspect_ratio, f.near),
+            Frustum::Orthographic(_) => return None, // Use orthographic version
+        };
+
+        let tan_phi = (fovy * 0.5).tan();
+        let tan_theta = aspect_ratio * tan_phi;
+
+        // NDC coordinates
+        let x = (2.0 / canvas_width) * window_x - 1.0;
+        let y = (2.0 / canvas_height) * (canvas_height - window_y) - 1.0;
+
+        let position = self.position_wc();
+        let direction_wc = self.direction_wc();
+        let right_wc = self.right_wc();
+        let up_wc = self.up_wc();
+
+        // direction = normalize(dir*near + right*(x*near*tanTheta) + up*(y*near*tanPhi))
+        let dir = direction_wc * near
+            + right_wc * (x * near * tan_theta)
+            + up_wc * (y * near * tan_phi);
+
+        Some(cesium_geospatial::Ray::new(position, dir.normalize()))
+    }
+
+    /// Picks the ellipsoid surface at a window position.
+    /// Maps to `Camera.pickEllipsoid` (3D branch)
+    ///
+    /// Returns the intersection point on the ellipsoid, or None if not visible.
+    pub fn pick_ellipsoid(
+        &self,
+        window_x: f64,
+        window_y: f64,
+        canvas_width: f64,
+        canvas_height: f64,
+        ellipsoid: &Ellipsoid,
+    ) -> Option<DVec3> {
+        let ray = self.get_pick_ray_perspective(window_x, window_y, canvas_width, canvas_height)?;
+        let intersection = cesium_geospatial::ray_ellipsoid(&ray, ellipsoid)?;
+        let t = if intersection.0 > 0.0 { intersection.0 } else { intersection.1 };
+        Some(ray.point_at(t))
+    }
+
+    /// Creates a pick ray from a window position using orthographic frustum.
+    /// Maps to `Camera.getPickRay` (orthographic branch)
+    ///
+    /// For orthographic projections, the ray origin is offset by the window position
+    /// in the frustum plane, and the direction is always the camera direction.
+    pub fn get_pick_ray_orthographic(
+        &self,
+        window_x: f64,
+        window_y: f64,
+        canvas_width: f64,
+        canvas_height: f64,
+    ) -> Option<cesium_geospatial::Ray> {
+        let (frustum_width, frustum_height) = match &self.frustum {
+            Frustum::Orthographic(f) => (f.width, f.height()),
+            Frustum::Perspective(_) => return None,
+        };
+
+        // NDC coordinates scaled by frustum half-extents
+        let mut x = (2.0 / canvas_width) * window_x - 1.0;
+        x *= frustum_width * 0.5;
+        let mut y = (2.0 / canvas_height) * (canvas_height - window_y) - 1.0;
+        y *= frustum_height * 0.5;
+
+        let position = self.position_wc();
+        let right_wc = self.right_wc();
+        let up_wc = self.up_wc();
+        let direction_wc = self.direction_wc();
+
+        let origin = position + right_wc * x + up_wc * y;
+
+        Some(cesium_geospatial::Ray::new(origin, direction_wc))
+    }
+
+    /// Creates a pick ray from a window position (dispatches to perspective or orthographic).
+    /// Maps to `Camera.getPickRay`
+    pub fn get_pick_ray(
+        &self,
+        window_x: f64,
+        window_y: f64,
+        canvas_width: f64,
+        canvas_height: f64,
+    ) -> Option<cesium_geospatial::Ray> {
+        match &self.frustum {
+            Frustum::Perspective(_) => self.get_pick_ray_perspective(window_x, window_y, canvas_width, canvas_height),
+            Frustum::Orthographic(_) => self.get_pick_ray_orthographic(window_x, window_y, canvas_width, canvas_height),
+        }
+    }
+
+    /// Computes the pixel size of a bounding sphere at its distance from the camera.
+    /// Maps to `Camera.getPixelSize`
+    ///
+    /// Returns the maximum pixel dimension (width or height) of one pixel
+    /// at the distance to the bounding sphere.
+    pub fn get_pixel_size(
+        &self,
+        sphere: &BoundingSphere,
+        drawing_buffer_width: f64,
+        drawing_buffer_height: f64,
+        pixel_ratio: f64,
+    ) -> f64 {
+        let distance = self.distance_to_bounding_sphere(sphere);
+        let (pixel_width, pixel_height) = match &self.frustum {
+            Frustum::Perspective(f) => f.pixel_dimensions(drawing_buffer_width, drawing_buffer_height, distance, pixel_ratio),
+            Frustum::Orthographic(f) => f.pixel_dimensions(drawing_buffer_width, drawing_buffer_height, distance, pixel_ratio),
+        };
+        pixel_width.max(pixel_height)
+    }
+
     // ========================================================================
     // Constrained rotation
     // ========================================================================
 
     /// Rotates with constrained axis enforcement.
     /// If constrained_axis is set, prevents the up vector from crossing it.
+    /// Maps to `Camera._rotateConstrained`
     pub fn rotate_constrained(&mut self, axis: DVec3, angle: f64) {
         self.rotate(axis, angle);
 
@@ -684,10 +936,35 @@ impl Camera {
                 // Project up onto the plane perpendicular to constrained axis
                 let projected = (self.up - constrained * dot).normalize();
                 self.up = projected;
+                // Re-derive direction to be perpendicular to clamped up
+                self.direction = (self.direction - self.up * self.direction.dot(self.up)).normalize();
                 self.right = self.direction.cross(self.up).normalize();
-                self.up = self.right.cross(self.direction).normalize();
             }
         }
+    }
+
+    /// Rotates up with constrained axis enforcement.
+    pub fn rotate_up_constrained(&mut self, angle: f64) {
+        let axis = self.right;
+        self.rotate_constrained(axis, -angle);
+    }
+
+    /// Rotates down with constrained axis enforcement.
+    pub fn rotate_down_constrained(&mut self, angle: f64) {
+        let axis = self.right;
+        self.rotate_constrained(axis, angle);
+    }
+
+    /// Rotates left with constrained axis enforcement.
+    pub fn rotate_left_constrained(&mut self, angle: f64) {
+        let axis = self.up;
+        self.rotate_constrained(axis, angle);
+    }
+
+    /// Rotates right with constrained axis enforcement.
+    pub fn rotate_right_constrained(&mut self, angle: f64) {
+        let axis = self.up;
+        self.rotate_constrained(axis, -angle);
     }
 
     // ========================================================================
@@ -782,7 +1059,13 @@ fn get_heading(direction: DVec3, up: DVec3) -> f64 {
     } else {
         up.y.atan2(up.x) - std::f64::consts::FRAC_PI_2
     };
-    math_utils::TWO_PI - math_utils::zero_to_two_pi(heading)
+    let result = math_utils::TWO_PI - math_utils::zero_to_two_pi(heading);
+    // Normalize: TWO_PI ≡ 0 (heading range is [0, TWO_PI))
+    if (result - math_utils::TWO_PI).abs() < 1e-15 {
+        0.0
+    } else {
+        result
+    }
 }
 
 /// Computes pitch from direction vector.
@@ -804,12 +1087,98 @@ fn get_roll(direction: DVec3, up: DVec3, right: DVec3) -> f64 {
 
 /// Converts a HeadingPitchRange offset to a Cartesian3 offset in local ENU frame.
 /// Maps to `offsetFromHeadingPitchRange` in Camera.js
+///
+/// Faithfully maps to CesiumJS `offsetFromHeadingPitchRange`:
+/// 1. Clamp pitch to [-PI/2, PI/2]
+/// 2. heading = zeroToTwoPi(heading) - PI/2
+/// 3. pitchQuat = fromAxisAngle(Y, -pitch)
+/// 4. headingQuat = fromAxisAngle(Z, -heading)
+/// 5. rotQuat = headingQuat * pitchQuat
+/// 6. offset = -(rotMatrix * UNIT_X) * range
+///
+/// Equivalent closed-form: uses quaternion product directly (matching CesiumJS).
 fn offset_from_heading_pitch_range(heading: f64, pitch: f64, range: f64) -> DVec3 {
-    let cos_pitch = pitch.cos();
-    let x = range * cos_pitch * heading.cos();
-    let y = range * cos_pitch * heading.sin();
-    let z = range * pitch.sin();
-    DVec3::new(x, y, z)
+    let pitch = pitch.clamp(-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2);
+    // CesiumJS: heading = zeroToTwoPi(heading) - PI_OVER_TWO
+    let heading = math_utils::zero_to_two_pi(heading) - std::f64::consts::FRAC_PI_2;
+    // pitchQuat = fromAxisAngle(Y, -pitch), headingQuat = fromAxisAngle(Z, -heading)
+    // rotQuat = headingQuat * pitchQuat
+    let sp = (-pitch / 2.0).sin();
+    let cp = (-pitch / 2.0).cos();
+    let sh = (-heading / 2.0).sin();
+    let ch = (-heading / 2.0).cos();
+    // rotQuat = (ch*0 - sh*sp, ch*sp + sh*0, ch*0 - sh*0... )
+    let qx = -sh * sp;
+    let qy = ch * sp;
+    let qz = sh * cp;
+    let qw = ch * cp;
+    // rotMatrix column 0 (direction = rotMat * UNIT_X)
+    let m00 = qw * qw + qx * qx - qy * qy - qz * qz;
+    let m10 = 2.0 * (qx * qy + qw * qz);
+    let m20 = 2.0 * (qx * qz - qw * qy);
+    // offset = -(rotMat * UNIT_X) * range
+    DVec3::new(-m00 * range, -m10 * range, -m20 * range)
+}
+
+/// Computes heading in 3D mode using ENU frame at camera position.
+/// Maps to CesiumJS Camera.heading getter (SCENE3D branch):
+/// Transform direction/up to ENU local frame, then:
+/// heading = TWO_PI - zeroToTwoPi(atan2(dir_local.y, dir_local.x) - PI/2)
+/// If |dir_local.z| ≈ 1 (looking straight up/down), use up_local instead.
+fn get_heading_3d(position: DVec3, direction: DVec3, up: DVec3, _right: DVec3, ellipsoid: &Ellipsoid) -> f64 {
+    let enu = cesium_geospatial::transforms::east_north_up_to_fixed_frame(position, ellipsoid);
+    let east = enu.x_axis.truncate();
+    let north = enu.y_axis.truncate();
+    let up_enu = enu.z_axis.truncate();
+
+    // Transform direction to ENU local frame
+    let dir_local = DVec3::new(direction.dot(east), direction.dot(north), direction.dot(up_enu));
+
+    let heading = if (dir_local.z.abs() - 1.0).abs() <= math_utils::EPSILON3 {
+        // Looking nearly straight up or down - use up vector
+        let up_local = DVec3::new(up.dot(east), up.dot(north), up.dot(up_enu));
+        math_utils::TWO_PI - math_utils::zero_to_two_pi(up_local.y.atan2(up_local.x) - std::f64::consts::FRAC_PI_2)
+    } else {
+        math_utils::TWO_PI - math_utils::zero_to_two_pi(dir_local.y.atan2(dir_local.x) - std::f64::consts::FRAC_PI_2)
+    };
+    // Normalize: TWO_PI ≡ 0 (heading range is [0, TWO_PI))
+    if (heading - math_utils::TWO_PI).abs() < 1e-15 {
+        0.0
+    } else {
+        heading
+    }
+}
+
+/// Computes pitch in 3D mode using ENU frame at camera position.
+/// Maps to CesiumJS Camera.pitch getter (SCENE3D branch):
+/// pitch = PI/2 - acosClamped(dir_local.z)
+fn get_pitch_3d(position: DVec3, direction: DVec3, ellipsoid: &Ellipsoid) -> f64 {
+    let enu = cesium_geospatial::transforms::east_north_up_to_fixed_frame(position, ellipsoid);
+    let up_enu = enu.z_axis.truncate();
+
+    // dir_local.z = direction dot ENU up axis (= geodetic surface normal)
+    let dir_local_z = direction.dot(up_enu);
+    std::f64::consts::FRAC_PI_2 - dir_local_z.clamp(-1.0, 1.0).acos()
+}
+
+/// Computes roll in 3D mode using ENU frame at camera position.
+/// Maps to CesiumJS Camera.roll getter (SCENE3D branch):
+/// If |dir_local.z| < 1-EPSILON3: roll = zeroToTwoPi(atan2(-right_local.z, up_local.z) + TWO_PI)
+/// Otherwise: roll = 0
+fn get_roll_3d(position: DVec3, direction: DVec3, up: DVec3, right: DVec3, ellipsoid: &Ellipsoid) -> f64 {
+    let enu = cesium_geospatial::transforms::east_north_up_to_fixed_frame(position, ellipsoid);
+    let up_enu = enu.z_axis.truncate();
+
+    let dir_local_z = direction.dot(up_enu);
+
+    let roll = if (dir_local_z.abs() - 1.0).abs() > math_utils::EPSILON3 {
+        let right_local_z = right.dot(up_enu);
+        let up_local_z = up.dot(up_enu);
+        math_utils::zero_to_two_pi((-right_local_z).atan2(up_local_z) + math_utils::TWO_PI)
+    } else {
+        0.0
+    };
+    roll
 }
 
 #[cfg(test)]
@@ -857,8 +1226,9 @@ mod tests {
     #[test]
     fn test_rotate_horizontal() {
         let mut camera = Camera::default_camera();
-        camera.rotate_horizontal(PI / 2.0); // 90 degrees
-        // After rotating 90° around up (Y), direction should point to -X
+        camera.rotate_right(PI / 2.0); // 90 degrees
+        // After rotating 90° around up (Y) with negative angle:
+        // direction (-Z) rotated by -PI/2 around Y -> -X
         assert!(
             camera.direction.abs_diff_eq(DVec3::new(-1.0, 0.0, 0.0), 1e-10),
             "direction: {:?}",
@@ -885,8 +1255,8 @@ mod tests {
         let mut camera = Camera::default_camera();
         camera.set_view_hpr(position, 0.0, 0.0, 0.0, &ellipsoid);
 
-        // Heading should be 0 (looking north)
-        let heading = camera.heading();
+        // Heading should be 0 (looking north) using 3D getter
+        let heading = camera.heading_3d(&ellipsoid);
         assert!(
             heading.abs() < 0.01 || (heading - math_utils::TWO_PI).abs() < 0.01,
             "heading: {}",
@@ -1013,7 +1383,7 @@ mod tests {
         let target = DVec3::new(0.0, 0.0, 0.0);
         let offset = DVec3::new(1000.0, 0.0, 500.0);
 
-        camera.look_at_offset(target, offset);
+        camera.look_at_offset(target, offset, &Ellipsoid::WGS84);
 
         // Direction should point from offset toward target
         let expected_dir = -offset.normalize();
@@ -1085,13 +1455,17 @@ mod tests {
     #[test]
     fn test_constrained_rotation() {
         let mut camera = Camera::default_camera();
-        camera.constrained_axis = Some(DVec3::Z);
+        camera.constrained_axis = Some(DVec3::Y);
 
-        // Rotate significantly - constrained axis should prevent up from going below
+        // Rotate around right axis (X) - constrained axis Y prevents up from crossing
         camera.rotate_constrained(DVec3::X, PI * 0.8);
 
-        // Up should still have positive Z component (not crossed constrained axis)
-        assert!(camera.up.dot(DVec3::Z) >= -1e-10);
+        // Up should have non-negative Y component (not crossed constrained axis)
+        assert!(camera.up.dot(DVec3::Y) >= -1e-10,
+            "up.dot(Y) = {}", camera.up.dot(DVec3::Y));
+        // Verify orthonormality maintained
+        assert!(camera.direction.dot(camera.up).abs() < 1e-10);
+        assert!(camera.direction.length() > 0.99);
     }
 
     #[test]
@@ -1139,15 +1513,17 @@ mod tests {
 
     #[test]
     fn test_offset_from_heading_pitch_range() {
-        // Heading=0, Pitch=0, Range=1000 -> offset along X
+        // Heading=0, Pitch=0, Range=1000 -> offset along -Y (south in ENU, camera looks north)
+        // CesiumJS: heading adjusted to -PI/2, rotMatrix*X=(0,1,0), negate→(0,-1,0)
         let offset = offset_from_heading_pitch_range(0.0, 0.0, 1000.0);
-        assert!((offset.x - 1000.0).abs() < 1e-10);
-        assert!(offset.y.abs() < 1e-10);
-        assert!(offset.z.abs() < 1e-10);
+        assert!(offset.x.abs() < 1e-10, "x={}", offset.x);
+        assert!((offset.y + 1000.0).abs() < 1e-10, "y={}", offset.y);
+        assert!(offset.z.abs() < 1e-10, "z={}", offset.z);
 
-        // Heading=0, Pitch=PI/2, Range=1000 -> offset along Z (up)
+        // Heading=0, Pitch=PI/2, Range=1000 -> offset along -Z (below plane, camera looks up)
         let offset = offset_from_heading_pitch_range(0.0, PI / 2.0, 1000.0);
-        assert!(offset.x.abs() < 1e-6);
-        assert!((offset.z - 1000.0).abs() < 1e-6);
+        assert!(offset.x.abs() < 1e-6, "x={}", offset.x);
+        assert!(offset.y.abs() < 1e-6, "y={}", offset.y);
+        assert!((offset.z + 1000.0).abs() < 1e-6, "z={}", offset.z);
     }
 }

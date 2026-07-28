@@ -2,8 +2,9 @@
 //! Maps to CesiumJS `Core/Ellipsoid.js` + `Core/scaleToGeodeticSurface.js`
 
 use crate::cartographic::Cartographic;
-use crate::math_utils::{self, EPSILON1, EPSILON12, EPSILON14};
-use glam::DVec3;
+use crate::math_utils::{self, EPSILON1, EPSILON12, EPSILON14, EPSILON15, LUNAR_RADIUS, TWO_PI};
+use crate::rectangle::Rectangle;
+use glam::{DVec2, DVec3};
 use serde::{Deserialize, Serialize};
 
 /// A quadratic surface defined in Cartesian coordinates by the equation
@@ -31,6 +32,21 @@ pub struct Ellipsoid {
     squared_x_over_squared_z: f64,
 }
 
+/// Normalizes a Cartesian3 by dividing each component by its magnitude.
+///
+/// This is a bit-exact port of CesiumJS `Cartesian3.normalize`, which computes
+/// `component / magnitude` (a single correctly-rounded IEEE-754 division per
+/// component). glam's `DVec3::normalize` instead computes
+/// `component * (1.0 / length)` (multiply-by-reciprocal, two roundings), which
+/// can differ from the CesiumJS result by 1 ulp. For verification against the
+/// original CesiumJS Specs (the ground truth), the direct-division form is
+/// required. Use this helper wherever CesiumJS `Cartesian3.normalize` is ported.
+#[inline]
+pub fn normalize_cartesian3(v: DVec3) -> DVec3 {
+    let magnitude = (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();
+    DVec3::new(v.x / magnitude, v.y / magnitude, v.z / magnitude)
+}
+
 impl Ellipsoid {
     /// WGS84 ellipsoid: a = 6378137.0, b = 6378137.0, c = 6356752.3142451793
     #[allow(clippy::excessive_precision)]
@@ -43,11 +59,17 @@ impl Ellipsoid {
     /// Unit sphere (radius 1 in all directions).
     pub const UNIT_SPHERE: Self = Self::from_radii_unchecked(1.0, 1.0, 1.0);
 
-    /// Moon ellipsoid (IAU 2000): a = 1738100.0, b = 1738100.0, c = 1736000.0
-    pub const MOON: Self = Self::from_radii_unchecked(1738100.0, 1738100.0, 1736000.0);
+    /// Moon ellipsoid. Matches CesiumJS `Ellipsoid.MOON`: a sphere of radius
+    /// `CesiumMath.LUNAR_RADIUS` (1737400.0 m). (Note: this is NOT the IAU 2000
+    /// triaxial Moon ellipsoid; CesiumJS models the Moon as a sphere.)
+    pub const MOON: Self = Self::from_radii_unchecked(LUNAR_RADIUS, LUNAR_RADIUS, LUNAR_RADIUS);
+
+    /// Degenerate ellipsoid with all radii zero.
+    /// Maps to CesiumJS `Ellipsoid.ZERO`.
+    pub const ZERO: Self = Self::from_radii_unchecked(0.0, 0.0, 0.0);
 
     /// Creates an Ellipsoid from radii. Const version for static initialization.
-    const fn from_radii_unchecked(x: f64, y: f64, z: f64) -> Self {
+    pub(crate) const fn from_radii_unchecked(x: f64, y: f64, z: f64) -> Self {
         let radii_squared = DVec3::new(x * x, y * y, z * z);
         let radii_to_the_fourth = DVec3::new(x * x * x * x, y * y * y * y, z * z * z * z);
         let one_over_radii = DVec3::new(
@@ -164,7 +186,7 @@ impl Ellipsoid {
         let y = cos_latitude * longitude.sin();
         let z = latitude.sin();
 
-        DVec3::new(x, y, z).normalize()
+        normalize_cartesian3(DVec3::new(x, y, z))
     }
 
     /// Computes the normal of the plane tangent to the surface of the ellipsoid
@@ -176,7 +198,7 @@ impl Ellipsoid {
             return None;
         }
         let result = cartesian * self.one_over_radii_squared;
-        Some(result.normalize())
+        Some(normalize_cartesian3(result))
     }
 
     /// Converts the provided cartographic to Cartesian representation.
@@ -269,25 +291,208 @@ impl Ellipsoid {
     }
 
     /// Computes the intersection of a ray with the ellipsoid.
-    /// Maps to `IntersectionTests.rayEllipsoid` (simplified inline)
+    /// Returns (start, stop) interval of parametric distances along the ray, or None.
+    /// Faithful port of `IntersectionTests.rayEllipsoid`.
     pub fn intersection(&self, ray_origin: DVec3, ray_direction: DVec3) -> Option<(f64, f64)> {
-        let o = ray_origin * self.one_over_radii;
-        let d = ray_direction * self.one_over_radii;
+        let q = ray_origin * self.one_over_radii;
+        let w = ray_direction * self.one_over_radii;
 
-        let a = d.dot(d);
-        let b = 2.0 * o.dot(d);
-        let c = o.dot(o) - 1.0;
+        let q2 = q.length_squared();
+        let qw = q.dot(w);
 
-        let discriminant = b * b - 4.0 * a * c;
-        if discriminant < 0.0 {
+        if q2 > 1.0 {
+            // Outside ellipsoid.
+            if qw >= 0.0 {
+                // Looking outward or tangent (0 intersections).
+                return None;
+            }
+
+            // qw < 0.0
+            let qw2 = qw * qw;
+            let difference = q2 - 1.0; // Positively valued.
+            let w2 = w.length_squared();
+            let product = w2 * difference;
+
+            if qw2 < product {
+                // Imaginary roots (0 intersections).
+                return None;
+            } else if qw2 > product {
+                // Distinct roots (2 intersections).
+                let discriminant = qw * qw - product;
+                let temp = -qw + discriminant.sqrt(); // Avoid cancellation.
+                let root0 = temp / w2;
+                let root1 = difference / temp;
+                if root0 < root1 {
+                    Some((root0, root1))
+                } else {
+                    Some((root1, root0))
+                }
+            } else {
+                // qw2 == product. Repeated roots (2 intersections).
+                let root = (difference / w2).sqrt();
+                Some((root, root))
+            }
+        } else if q2 < 1.0 {
+            // Inside ellipsoid (2 intersections).
+            let difference = q2 - 1.0; // Negatively valued.
+            let w2 = w.length_squared();
+            let product = w2 * difference; // Negatively valued.
+
+            let discriminant = qw * qw - product;
+            let temp = -qw + discriminant.sqrt(); // Positively valued.
+            Some((0.0, temp / w2))
+        } else {
+            // q2 == 1.0. On ellipsoid.
+            if qw < 0.0 {
+                // Looking inward.
+                let w2 = w.length_squared();
+                Some((0.0, -qw / w2))
+            } else {
+                // qw >= 0.0. Looking outward or tangent.
+                None
+            }
+        }
+    }
+
+    /// Transforms a Cartesian X, Y, Z position to the ellipsoid-scaled space by
+    /// multiplying its components by `oneOverRadii`.
+    /// Maps to `Ellipsoid.transformPositionToScaledSpace`
+    pub fn transform_position_to_scaled_space(&self, position: DVec3) -> DVec3 {
+        position * self.one_over_radii
+    }
+
+    /// Transforms a Cartesian X, Y, Z position from the ellipsoid-scaled space by
+    /// multiplying its components by `radii`.
+    /// Maps to `Ellipsoid.transformPositionFromScaledSpace`
+    pub fn transform_position_from_scaled_space(&self, position: DVec3) -> DVec3 {
+        position * self.radii
+    }
+
+    /// Computes the unit vector directed from the center of this ellipsoid toward
+    /// the provided Cartesian position (i.e. the geocentric surface normal).
+    /// Maps to `Ellipsoid.geocentricSurfaceNormal` (= `Cartesian3.normalize`)
+    pub fn geocentric_surface_normal(&self, cartesian: DVec3) -> DVec3 {
+        normalize_cartesian3(cartesian)
+    }
+
+    /// Computes a point which is the intersection of the surface normal with the z-axis.
+    /// Maps to `Ellipsoid.getSurfaceNormalIntersectionWithZAxis`
+    ///
+    /// Returns `None` if the intersection point lies outside the ellipsoid
+    /// (shrunk by `buffer`).
+    ///
+    /// # Panics
+    /// Panics if the ellipsoid is not an ellipsoid of revolution (radii.x != radii.y)
+    /// or if radii.z is not greater than 0.
+    pub fn get_surface_normal_intersection_with_z_axis(
+        &self,
+        position: DVec3,
+        buffer: Option<f64>,
+    ) -> Option<DVec3> {
+        assert!(
+            math_utils::equals_epsilon(self.radii.x, self.radii.y, EPSILON15, 0.0),
+            "Ellipsoid must be an ellipsoid of revolution (radii.x == radii.y)"
+        );
+        assert!(self.radii.z > 0.0, "Ellipsoid.radii.z must be greater than 0");
+
+        let buffer = buffer.unwrap_or(0.0);
+        let squared_x_over_squared_z = self.squared_x_over_squared_z;
+
+        let z = position.z * (1.0 - squared_x_over_squared_z);
+
+        if z.abs() >= self.radii.z - buffer {
             return None;
         }
 
-        let sqrt_disc = discriminant.sqrt();
-        let t0 = (-b - sqrt_disc) / (2.0 * a);
-        let t1 = (-b + sqrt_disc) / (2.0 * a);
+        Some(DVec3::new(0.0, 0.0, z))
+    }
 
-        Some((t0, t1))
+    /// Computes the ellipsoid curvatures at a given position on the surface.
+    /// Maps to `Ellipsoid.getLocalCurvature`
+    /// Returns the local curvature (east, north) as a `DVec2`, or `None` if the
+    /// surface-normal/z-axis intersection is outside the ellipsoid.
+    pub fn get_local_curvature(&self, surface_position: DVec3) -> Option<DVec2> {
+        let prime_vertical_endpoint = self
+            .get_surface_normal_intersection_with_z_axis(surface_position, Some(0.0))?;
+        let prime_vertical_radius = surface_position.distance(prime_vertical_endpoint);
+        // meridional radius = (1 - e^2) * primeVerticalRadius^3 / a^2
+        // where 1 - e^2 = b^2 / a^2, so meridional = b^2 * primeVerticalRadius^3 / a^4
+        //   = (b * primeVerticalRadius / a^2)^2 * primeVertical
+        let radius_ratio =
+            (self.minimum_radius * prime_vertical_radius) / self.maximum_radius.powi(2);
+        let meridional_radius = prime_vertical_radius * radius_ratio.powi(2);
+
+        Some(DVec2::new(
+            1.0 / prime_vertical_radius,
+            1.0 / meridional_radius,
+        ))
+    }
+
+    /// Computes an approximation of the surface area of a rectangle on the surface
+    /// of this ellipsoid using Gauss-Legendre 10th order quadrature.
+    /// Maps to `Ellipsoid.surfaceArea`
+    pub fn surface_area(&self, rectangle: &Rectangle) -> f64 {
+        let min_longitude = rectangle.west;
+        let mut max_longitude = rectangle.east;
+        let min_latitude = rectangle.south;
+        let max_latitude = rectangle.north;
+
+        while max_longitude < min_longitude {
+            max_longitude += TWO_PI;
+        }
+
+        let a2 = self.radii_squared.x;
+        let b2 = self.radii_squared.y;
+        let c2 = self.radii_squared.z;
+        let a2b2 = a2 * b2;
+
+        gauss_legendre_quadrature(min_latitude, max_latitude, |lat| {
+            // phi represents the angle measured from the north pole
+            // sin(phi) = sin(pi / 2 - lat) = cos(lat), cos(phi) is similar
+            let sin_phi = lat.cos();
+            let cos_phi = lat.sin();
+            lat.cos()
+                * gauss_legendre_quadrature(min_longitude, max_longitude, |lon| {
+                    let cos_theta = lon.cos();
+                    let sin_theta = lon.sin();
+                    (a2b2 * cos_phi * cos_phi
+                        + c2
+                            * (b2 * cos_theta * cos_theta + a2 * sin_theta * sin_theta)
+                            * sin_phi
+                            * sin_phi)
+                        .sqrt()
+                })
+        })
+    }
+
+    /// The number of elements used to pack the object into an array.
+    /// Maps to `Ellipsoid.packedLength`
+    pub const PACKED_LENGTH: usize = 3;
+
+    /// Stores the provided instance into the provided array.
+    /// Maps to `Ellipsoid.pack`
+    pub fn pack(&self, array: &mut [f64], starting_index: usize) {
+        array[starting_index] = self.radii.x;
+        array[starting_index + 1] = self.radii.y;
+        array[starting_index + 2] = self.radii.z;
+    }
+
+    /// Retrieves an instance from a packed array.
+    /// Maps to `Ellipsoid.unpack`
+    pub fn unpack(array: &[f64], starting_index: usize) -> Self {
+        Self::new(
+            array[starting_index],
+            array[starting_index + 1],
+            array[starting_index + 2],
+        )
+    }
+}
+
+impl std::fmt::Display for Ellipsoid {
+    /// Formats as `(radii.x, radii.y, radii.z)`.
+    /// Maps to `Ellipsoid.toString`
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {}, {})", self.radii.x, self.radii.y, self.radii.z)
     }
 }
 
@@ -383,6 +588,46 @@ fn scale_to_geodetic_surface(
         position_y * y_multiplier,
         position_z * z_multiplier,
     ))
+}
+
+/// Gauss-Legendre 10th order quadrature abscissas (last element unused, present
+/// to mirror the CesiumJS table layout).
+const GAUSS_LEGENDRE_ABSCISSAS: [f64; 6] = [
+    0.14887433898163,
+    0.43339539412925,
+    0.67940956829902,
+    0.86506336668898,
+    0.97390652851717,
+    0.0,
+];
+
+/// Gauss-Legendre 10th order quadrature weights.
+const GAUSS_LEGENDRE_WEIGHTS: [f64; 6] = [
+    0.29552422471475,
+    0.26926671930999,
+    0.21908636251598,
+    0.14945134915058,
+    0.066671344308684,
+    0.0,
+];
+
+/// Compute the 10th order Gauss-Legendre Quadrature of the given definite integral.
+/// Maps to CesiumJS `gaussLegendreQuadrature` (private helper in Ellipsoid.js).
+fn gauss_legendre_quadrature<F: Fn(f64) -> f64>(a: f64, b: f64, func: F) -> f64 {
+    // The range is half of the normal range since the five weights add to one
+    // (ten weights add to two). The values of the abscissas are multiplied by
+    // two to account for this.
+    let x_mean = 0.5 * (b + a);
+    let x_range = 0.5 * (b - a);
+
+    let mut sum = 0.0;
+    for i in 0..5 {
+        let dx = x_range * GAUSS_LEGENDRE_ABSCISSAS[i];
+        sum += GAUSS_LEGENDRE_WEIGHTS[i] * (func(x_mean + dx) + func(x_mean - dx));
+    }
+
+    // Scale the sum to the range of x.
+    sum * x_range
 }
 
 impl Default for Ellipsoid {

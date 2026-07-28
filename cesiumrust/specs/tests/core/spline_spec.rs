@@ -100,8 +100,8 @@ fn test_hermite_spline_endpoints() {
         DVec3::new(0.0, 0.0, 0.0),
         DVec3::new(1.0, 1.0, 1.0),
     ];
-    let in_tangents = vec![DVec3::new(1.0, 0.0, 0.0), DVec3::new(1.0, 0.0, 0.0)];
-    let out_tangents = vec![DVec3::new(1.0, 0.0, 0.0), DVec3::new(1.0, 0.0, 0.0)];
+    let in_tangents = vec![DVec3::new(1.0, 0.0, 0.0)];
+    let out_tangents = vec![DVec3::new(1.0, 0.0, 0.0)];
     let spline = HermiteSpline::new(times, points, in_tangents, out_tangents);
 
     let p0 = spline.evaluate(0.0);
@@ -130,6 +130,58 @@ fn test_quaternion_spline_slerp() {
     let expected = DQuat::from_rotation_z(std::f64::consts::FRAC_PI_2);
     assert_approx!(q1.z, expected.z, epsilon::EPSILON10);
     assert_approx!(q1.w, expected.w, epsilon::EPSILON10);
+}
+
+fn assert_quat_eq_eps(actual: glam::DQuat, expected: glam::DQuat, eps: f64) {
+    assert!((actual.x - expected.x).abs() < eps, "quat.x: {} vs {}", actual.x, expected.x);
+    assert!((actual.y - expected.y).abs() < eps, "quat.y: {} vs {}", actual.y, expected.y);
+    assert!((actual.z - expected.z).abs() < eps, "quat.z: {} vs {}", actual.z, expected.z);
+    assert!((actual.w - expected.w).abs() < eps, "quat.w: {} vs {}", actual.w, expected.w);
+}
+
+/// Port of "evaluate without result parameter": evaluate at a knot returns the
+/// control point; evaluate at a segment midpoint matches Quaternion.slerp.
+#[test]
+fn test_quaternion_spline_evaluate_knot_and_midpoint() {
+    use glam::DQuat;
+    let pi4 = std::f64::consts::FRAC_PI_4;
+    let points = vec![
+        DQuat::from_axis_angle(DVec3::X, pi4),
+        DQuat::from_axis_angle(DVec3::Z, pi4),
+        DQuat::from_axis_angle(DVec3::X, -pi4),
+        DQuat::from_axis_angle(DVec3::Y, pi4),
+    ];
+    let times = vec![0.0, 1.0, 2.0, 3.0];
+    let spline = QuaternionSpline::new(times.clone(), points.clone());
+
+    // evaluate at first knot returns the first control point
+    let q0 = spline.evaluate(times[0]);
+    assert_quat_eq_eps(q0, points[0], epsilon::EPSILON6);
+
+    // midpoint of segment [times[1], times[2]]
+    let time = (times[2] + times[1]) * 0.5;
+    let t = (time - times[1]) / (times[2] - times[1]);
+    let actual = spline.evaluate(time);
+    let expected = points[1].slerp(points[2], t);
+    assert_quat_eq_eps(actual, expected, epsilon::EPSILON6);
+}
+
+/// Port of "spline with 2 control points defaults to slerp".
+#[test]
+fn test_quaternion_spline_two_points_defaults_to_slerp() {
+    use glam::DQuat;
+    let pi4 = std::f64::consts::FRAC_PI_4;
+    let points = vec![
+        DQuat::from_axis_angle(DVec3::X, pi4),
+        DQuat::from_axis_angle(DVec3::Z, pi4),
+    ];
+    let times = vec![0.0, 1.0];
+    let spline = QuaternionSpline::new(times.clone(), points.clone());
+
+    let t = (times[0] + times[1]) * 0.5;
+    let actual = spline.evaluate(t);
+    let expected = points[0].slerp(points[1], t);
+    assert_quat_eq_eps(actual, expected, epsilon::EPSILON6);
 }
 
 // === SteppedSpline ===

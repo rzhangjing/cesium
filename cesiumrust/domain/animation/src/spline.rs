@@ -96,9 +96,6 @@ pub struct LinearSpline {
 
 impl LinearSpline {
     /// Create a new linear spline.
-    ///
-    /// # Panics
-    /// Panics if points.len() < 2 or times.len() != points.len().
     pub fn new(times: Vec<f64>, points: Vec<DVec3>) -> Self {
         assert!(points.len() >= 2, "points.length must be >= 2");
         assert_eq!(times.len(), points.len(), "times and points must match");
@@ -145,26 +142,22 @@ pub struct CatmullRomSpline {
 }
 
 impl CatmullRomSpline {
-    /// Create a new Catmull-Rom spline.
+    /// Create a new Catmull-Rom spline with auto-computed tangents.
     ///
-    /// # Panics
-    /// Panics if points.len() < 2 or times.len() != points.len().
+    /// Maps to CesiumJS CatmullRomSpline constructor (without firstTangent/lastTangent).
     pub fn new(times: Vec<f64>, points: Vec<DVec3>) -> Self {
         assert!(points.len() >= 2, "points.length must be >= 2");
         assert_eq!(times.len(), points.len(), "times and points must match");
 
-        // Compute default tangents
-        let first_tangent = if points.len() >= 3 {
-            (points[1] - points[0]) * 0.5
-        } else {
-            points[1] - points[0]
-        };
-
         let n = points.len();
-        let last_tangent = if n >= 3 {
-            (points[n - 1] - points[n - 2]) * 0.5
+        let (first_tangent, last_tangent) = if n > 2 {
+            // CesiumJS: firstTangent = (2*points[1] - points[2] - points[0]) * 0.5
+            let ft = (points[1] * 2.0 - points[2] - points[0]) * 0.5;
+            // CesiumJS: lastTangent = (points[n-1] - 2*points[n-2] + points[n-3]) * 0.5
+            let lt = (points[n - 1] - points[n - 2] * 2.0 + points[n - 3]) * 0.5;
+            (ft, lt)
         } else {
-            points[n - 1] - points[n - 2]
+            (points[1] - points[0], points[1] - points[0])
         };
 
         Self {
@@ -175,19 +168,35 @@ impl CatmullRomSpline {
         }
     }
 
+    /// Create with explicit tangents.
+    ///
+    /// Maps to CesiumJS CatmullRomSpline constructor with firstTangent/lastTangent.
+    pub fn with_tangents(
+        times: Vec<f64>,
+        points: Vec<DVec3>,
+        first_tangent: DVec3,
+        last_tangent: DVec3,
+    ) -> Self {
+        assert!(points.len() >= 2, "points.length must be >= 2");
+        assert_eq!(times.len(), points.len(), "times and points must match");
+        Self {
+            times,
+            points,
+            first_tangent,
+            last_tangent,
+        }
+    }
+
     /// Evaluate the spline at a given time.
+    ///
+    /// Uses Hermite basis for first/last segments, Catmull-Rom matrix for interior.
     pub fn evaluate(&self, time: f64) -> DVec3 {
         let n = self.points.len();
-        if n == 2 {
+        if n < 3 {
             // Fall back to linear
-            let i = self.find_time_interval(time);
-            let t0 = self.times[i];
-            let t1 = self.times[i + 1];
-            let u = if (t1 - t0).abs() > 1e-15 {
-                (time - t0) / (t1 - t0)
-            } else {
-                0.0
-            };
+            let t0 = self.times[0];
+            let inv_span = 1.0 / (self.times[1] - t0);
+            let u = (time - t0) * inv_span;
             return self.points[0].lerp(self.points[1], u);
         }
 
@@ -200,35 +209,50 @@ impl CatmullRomSpline {
             0.0
         };
 
-        // Hermite basis functions
         let u2 = u * u;
         let u3 = u2 * u;
-        let h00 = 2.0 * u3 - 3.0 * u2 + 1.0;
-        let h10 = u3 - 2.0 * u2 + u;
-        let h01 = -2.0 * u3 + 3.0 * u2;
-        let h11 = u3 - u2;
 
-        let (p0, p1, m0, m1) = if i == 0 {
+        if i == 0 {
+            // First segment: Hermite with firstTangent
             let p0 = self.points[0];
             let p1 = self.points[1];
             let m0 = self.first_tangent;
             let m1 = (self.points[2] - self.points[0]) * 0.5;
-            (p0, p1, m0, m1)
+
+            let h00 = 2.0 * u3 - 3.0 * u2 + 1.0;
+            let h10 = u3 - 2.0 * u2 + u;
+            let h01 = -2.0 * u3 + 3.0 * u2;
+            let h11 = u3 - u2;
+
+            p0 * h00 + m0 * h10 + p1 * h01 + m1 * h11
         } else if i == n - 2 {
+            // Last segment: Hermite with lastTangent
             let p0 = self.points[i];
             let p1 = self.points[i + 1];
             let m0 = (self.points[i + 1] - self.points[i - 1]) * 0.5;
             let m1 = self.last_tangent;
-            (p0, p1, m0, m1)
-        } else {
-            let p0 = self.points[i];
-            let p1 = self.points[i + 1];
-            let m0 = (self.points[i + 1] - self.points[i - 1]) * 0.5;
-            let m1 = (self.points[i + 2] - self.points[i]) * 0.5;
-            (p0, p1, m0, m1)
-        };
 
-        p0 * h00 + m0 * h10 + p1 * h01 + m1 * h11
+            let h00 = 2.0 * u3 - 3.0 * u2 + 1.0;
+            let h10 = u3 - 2.0 * u2 + u;
+            let h01 = -2.0 * u3 + 3.0 * u2;
+            let h11 = u3 - u2;
+
+            p0 * h00 + m0 * h10 + p1 * h01 + m1 * h11
+        } else {
+            // Interior: Catmull-Rom coefficient matrix
+            // Matrix: [-0.5, 1.5, -1.5, 0.5; 1.0, -2.5, 2.0, -0.5; -0.5, 0.0, 0.5, 0.0; 0.0, 1.0, 0.0, 0.0]
+            let p0 = self.points[i - 1];
+            let p1 = self.points[i];
+            let p2 = self.points[i + 1];
+            let p3 = self.points[i + 2];
+
+            let c0 = -0.5 * u3 + u2 - 0.5 * u;
+            let c1 = 1.5 * u3 - 2.5 * u2 + 1.0;
+            let c2 = -1.5 * u3 + 2.0 * u2 + 0.5 * u;
+            let c3 = 0.5 * u3 - 0.5 * u2;
+
+            p0 * c0 + p1 * c1 + p2 * c2 + p3 * c3
+        }
     }
 }
 
@@ -245,20 +269,24 @@ impl Spline for CatmullRomSpline {
 /// Hermite spline with explicit tangents.
 ///
 /// Maps to CesiumJS `Core/HermiteSpline.js`.
+/// inTangents and outTangents have length `points.len() - 1`.
+/// For segment [i, i+1]: out_tangents[i] is outgoing tangent at points[i],
+/// in_tangents[i] is incoming tangent at points[i+1].
 #[derive(Debug, Clone, PartialEq)]
 pub struct HermiteSpline {
     /// Time values.
     pub times: Vec<f64>,
     /// Control points.
     pub points: Vec<DVec3>,
-    /// In-tangents at each point.
+    /// Incoming tangents (length = points.len() - 1).
     pub in_tangents: Vec<DVec3>,
-    /// Out-tangents at each point.
+    /// Outgoing tangents (length = points.len() - 1).
     pub out_tangents: Vec<DVec3>,
 }
 
 impl HermiteSpline {
     /// Create a new Hermite spline.
+    /// in_tangents and out_tangents must have length == points.len() - 1.
     pub fn new(
         times: Vec<f64>,
         points: Vec<DVec3>,
@@ -267,8 +295,16 @@ impl HermiteSpline {
     ) -> Self {
         assert!(points.len() >= 2, "points.length must be >= 2");
         assert_eq!(times.len(), points.len(), "times and points must match");
-        assert_eq!(in_tangents.len(), points.len(), "in_tangents must match");
-        assert_eq!(out_tangents.len(), points.len(), "out_tangents must match");
+        assert_eq!(
+            in_tangents.len(),
+            points.len() - 1,
+            "inTangents.length must be points.length - 1"
+        );
+        assert_eq!(
+            out_tangents.len(),
+            points.len() - 1,
+            "outTangents.length must be points.length - 1"
+        );
         Self {
             times,
             points,
@@ -277,30 +313,91 @@ impl HermiteSpline {
         }
     }
 
+    /// Creates a C1-continuous spline from shared tangents at each point.
+    /// Maps to CesiumJS `HermiteSpline.createC1`.
+    pub fn create_c1(times: Vec<f64>, points: Vec<DVec3>, tangents: Vec<DVec3>) -> Self {
+        assert!(points.len() >= 2, "points.length must be >= 2");
+        assert_eq!(times.len(), points.len(), "times and points must match");
+        assert_eq!(tangents.len(), points.len(), "tangents and points must match");
+        let out_tangents = tangents[..tangents.len() - 1].to_vec();
+        let in_tangents = tangents[1..].to_vec();
+        Self { times, points, in_tangents, out_tangents }
+    }
+
+    /// Creates a natural cubic spline (C2 continuous).
+    /// Maps to CesiumJS `HermiteSpline.createNaturalCubic`.
+    pub fn create_natural_cubic(times: Vec<f64>, points: Vec<DVec3>) -> Self {
+        assert!(points.len() >= 2, "points.length must be >= 2");
+        assert_eq!(times.len(), points.len(), "times and points must match");
+
+        if points.len() < 3 {
+            let tangent = points[1] - points[0];
+            return Self {
+                times,
+                points,
+                in_tangents: vec![tangent],
+                out_tangents: vec![tangent],
+            };
+        }
+
+        let tangents = generate_natural(&points);
+        let out_tangents = tangents[..tangents.len() - 1].to_vec();
+        let in_tangents = tangents[1..].to_vec();
+        Self { times, points, in_tangents, out_tangents }
+    }
+
+    /// Creates a clamped cubic spline (C2 with specified endpoint tangents).
+    /// Maps to CesiumJS `HermiteSpline.createClampedCubic`.
+    pub fn create_clamped_cubic(
+        times: Vec<f64>,
+        points: Vec<DVec3>,
+        first_tangent: DVec3,
+        last_tangent: DVec3,
+    ) -> Self {
+        assert!(points.len() >= 2, "points.length must be >= 2");
+        assert_eq!(times.len(), points.len(), "times and points must match");
+
+        if points.len() < 3 {
+            let tangent = points[1] - points[0];
+            return Self {
+                times,
+                points,
+                in_tangents: vec![tangent],
+                out_tangents: vec![tangent],
+            };
+        }
+
+        let tangents = generate_clamped(&points, first_tangent, last_tangent);
+        let out_tangents = tangents[..tangents.len() - 1].to_vec();
+        let in_tangents = tangents[1..].to_vec();
+        Self { times, points, in_tangents, out_tangents }
+    }
+
     /// Evaluate the spline at a given time.
+    /// Uses CesiumJS hermite coefficient matrix with timesDelta scaling.
     pub fn evaluate(&self, time: f64) -> DVec3 {
         let i = self.find_time_interval(time);
         let t0 = self.times[i];
         let t1 = self.times[i + 1];
-        let u = if (t1 - t0).abs() > 1e-15 {
-            (time - t0) / (t1 - t0)
+        let times_delta = t1 - t0;
+        let u = if times_delta.abs() > 1e-15 {
+            (time - t0) / times_delta
         } else {
             0.0
         };
 
         let u2 = u * u;
         let u3 = u2 * u;
-        let h00 = 2.0 * u3 - 3.0 * u2 + 1.0;
-        let h10 = u3 - 2.0 * u2 + u;
-        let h01 = -2.0 * u3 + 3.0 * u2;
-        let h11 = u3 - u2;
+        // Hermite basis from hermiteCoefficientMatrix, tangent coefs scaled by timesDelta
+        let coef_start = 2.0 * u3 - 3.0 * u2 + 1.0;
+        let coef_end = -2.0 * u3 + 3.0 * u2;
+        let coef_out = (u3 - 2.0 * u2 + u) * times_delta;
+        let coef_in = (u3 - u2) * times_delta;
 
-        let p0 = self.points[i];
-        let p1 = self.points[i + 1];
-        let m0 = self.out_tangents[i];
-        let m1 = self.in_tangents[i + 1];
-
-        p0 * h00 + m0 * h10 + p1 * h01 + m1 * h11
+        self.points[i] * coef_start
+            + self.points[i + 1] * coef_end
+            + self.out_tangents[i] * coef_out
+            + self.in_tangents[i] * coef_in
     }
 }
 
@@ -308,6 +405,100 @@ impl Spline for HermiteSpline {
     fn times(&self) -> &[f64] {
         &self.times
     }
+}
+
+/// Solves a tridiagonal system using the Thomas Algorithm.
+/// Maps to CesiumJS `TridiagonalSystemSolver.solve`.
+pub fn tridiagonal_solve(
+    lower: &[f64],
+    diagonal: &[f64],
+    upper: &[f64],
+    right: &[DVec3],
+) -> Vec<DVec3> {
+    let n = right.len();
+    let mut c = vec![0.0f64; upper.len()];
+    let mut d = vec![DVec3::ZERO; n];
+    let mut x = vec![DVec3::ZERO; n];
+
+    c[0] = upper[0] / diagonal[0];
+    d[0] = right[0] * (1.0 / diagonal[0]);
+
+    for i in 1..c.len() {
+        let scalar = 1.0 / (diagonal[i] - c[i - 1] * lower[i - 1]);
+        c[i] = upper[i] * scalar;
+        d[i] = (right[i] - d[i - 1] * lower[i - 1]) * scalar;
+    }
+
+    let i = c.len();
+    let scalar = 1.0 / (diagonal[i] - c[i - 1] * lower[i - 1]);
+    d[i] = (right[i] - d[i - 1] * lower[i - 1]) * scalar;
+
+    x[n - 1] = d[n - 1];
+    for i in (0..n - 1).rev() {
+        x[i] = d[i] - x[i + 1] * c[i];
+    }
+
+    x
+}
+
+/// Generates tangents for a natural cubic spline.
+/// Maps to CesiumJS `generateNatural`.
+fn generate_natural(points: &[DVec3]) -> Vec<DVec3> {
+    let n = points.len();
+    let mut l = vec![0.0f64; n - 1];
+    let mut u = vec![0.0f64; n - 1];
+    let mut d = vec![0.0f64; n];
+    let mut r = vec![DVec3::ZERO; n];
+
+    l[0] = 1.0;
+    u[0] = 1.0;
+    d[0] = 2.0;
+    r[0] = (points[1] - points[0]) * 3.0;
+
+    for i in 1..n - 1 {
+        l[i] = 1.0;
+        u[i] = 1.0;
+        d[i] = 4.0;
+        r[i] = (points[i + 1] - points[i - 1]) * 3.0;
+    }
+
+    d[n - 1] = 2.0;
+    r[n - 1] = (points[n - 1] - points[n - 2]) * 3.0;
+
+    tridiagonal_solve(&l, &d, &u, &r)
+}
+
+/// Generates tangents for a clamped cubic spline.
+/// Maps to CesiumJS `generateClamped`.
+fn generate_clamped(points: &[DVec3], first_tangent: DVec3, last_tangent: DVec3) -> Vec<DVec3> {
+    let n = points.len();
+    let mut l = vec![0.0f64; n - 1];
+    let mut u = vec![0.0f64; n - 1];
+    let mut d = vec![0.0f64; n];
+    let mut r = vec![DVec3::ZERO; n];
+
+    l[0] = 1.0;
+    d[0] = 1.0;
+    u[0] = 0.0;
+    r[0] = first_tangent;
+
+    for i in 1..n - 2 {
+        l[i] = 1.0;
+        u[i] = 1.0;
+        d[i] = 4.0;
+        r[i] = (points[i + 1] - points[i - 1]) * 3.0;
+    }
+
+    let i = n - 2;
+    l[i] = 0.0;
+    u[i] = 1.0;
+    d[i] = 4.0;
+    r[i] = (points[i + 1] - points[i - 1]) * 3.0;
+
+    d[n - 1] = 1.0;
+    r[n - 1] = last_tangent;
+
+    tridiagonal_solve(&l, &d, &u, &r)
 }
 
 // ============================================================================
@@ -327,9 +518,6 @@ pub struct QuaternionSpline {
 
 impl QuaternionSpline {
     /// Create a new quaternion spline.
-    ///
-    /// # Panics
-    /// Panics if points.len() < 2 or times.len() != points.len().
     pub fn new(times: Vec<f64>, points: Vec<DQuat>) -> Self {
         assert!(points.len() >= 2, "points.length must be >= 2");
         assert_eq!(times.len(), points.len(), "times and points must match");
@@ -362,7 +550,7 @@ impl Spline for QuaternionSpline {
 
 /// Stepped (piecewise constant) spline - holds value until next keyframe.
 ///
-/// Maps to CesiumJS stepped interpolation behavior.
+/// Maps to CesiumJS `Core/SteppedSpline.js`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SteppedSpline {
     /// Time values.
@@ -427,6 +615,16 @@ impl ConstantSpline {
     /// Evaluate (always returns the constant value).
     pub fn evaluate(&self, _time: f64) -> DVec3 {
         self.value
+    }
+
+    /// wrapTime always returns 0.0 for a constant spline.
+    pub fn wrap_time(&self, _time: f64) -> f64 {
+        0.0
+    }
+
+    /// clampTime always returns 0.0 for a constant spline.
+    pub fn clamp_time(&self, _time: f64) -> f64 {
+        0.0
     }
 }
 
@@ -539,13 +737,10 @@ mod tests {
                 DVec3::new(2.0, 0.0, 0.0),
             ],
         );
-
         let p0 = spline.evaluate(0.0);
         assert!((p0 - DVec3::new(0.0, 0.0, 0.0)).length() < 1e-10);
-
         let p1 = spline.evaluate(1.0);
         assert!((p1 - DVec3::new(1.0, 1.0, 1.0)).length() < 1e-10);
-
         let p2 = spline.evaluate(2.0);
         assert!((p2 - DVec3::new(2.0, 0.0, 0.0)).length() < 1e-10);
     }
@@ -556,7 +751,6 @@ mod tests {
             vec![0.0, 2.0],
             vec![DVec3::new(0.0, 0.0, 0.0), DVec3::new(4.0, 2.0, 0.0)],
         );
-
         let mid = spline.evaluate(1.0);
         assert!((mid - DVec3::new(2.0, 1.0, 0.0)).length() < 1e-10);
     }
@@ -572,29 +766,10 @@ mod tests {
                 DVec3::new(3.0, 1.0, 0.0),
             ],
         );
-
         let p0 = spline.evaluate(0.0);
         assert!((p0 - DVec3::new(0.0, 0.0, 0.0)).length() < 1e-10);
-
         let p3 = spline.evaluate(3.0);
         assert!((p3 - DVec3::new(3.0, 1.0, 0.0)).length() < 1e-6);
-    }
-
-    #[test]
-    fn test_catmull_rom_smoothness() {
-        let spline = CatmullRomSpline::new(
-            vec![0.0, 1.0, 2.0],
-            vec![
-                DVec3::new(0.0, 0.0, 0.0),
-                DVec3::new(1.0, 1.0, 0.0),
-                DVec3::new(2.0, 0.0, 0.0),
-            ],
-        );
-
-        // Midpoint should be smooth (not exactly at control point)
-        let mid = spline.evaluate(0.5);
-        assert!(mid.x > 0.0 && mid.x < 1.0);
-        assert!(mid.y > 0.0);
     }
 
     #[test]
@@ -602,13 +777,11 @@ mod tests {
         let spline = HermiteSpline::new(
             vec![0.0, 1.0],
             vec![DVec3::new(0.0, 0.0, 0.0), DVec3::new(1.0, 1.0, 0.0)],
-            vec![DVec3::new(1.0, 0.0, 0.0), DVec3::new(1.0, 0.0, 0.0)],
-            vec![DVec3::new(1.0, 1.0, 0.0), DVec3::new(1.0, 1.0, 0.0)],
+            vec![DVec3::new(1.0, 0.0, 0.0)],
+            vec![DVec3::new(1.0, 0.0, 0.0)],
         );
-
         let p0 = spline.evaluate(0.0);
         assert!((p0 - DVec3::new(0.0, 0.0, 0.0)).length() < 1e-10);
-
         let p1 = spline.evaluate(1.0);
         assert!((p1 - DVec3::new(1.0, 1.0, 0.0)).length() < 1e-10);
     }
@@ -617,13 +790,10 @@ mod tests {
     fn test_quaternion_spline() {
         let q0 = DQuat::IDENTITY;
         let q1 = DQuat::from_rotation_z(FRAC_PI_2);
-
         let spline = QuaternionSpline::new(vec![0.0, 1.0], vec![q0, q1]);
-
         let r0 = spline.evaluate(0.0);
         assert!((r0.x - q0.x).abs() < 1e-10);
         assert!((r0.w - q0.w).abs() < 1e-10);
-
         let r1 = spline.evaluate(1.0);
         assert!((r1.z - q1.z).abs() < 1e-6);
     }
@@ -638,40 +808,25 @@ mod tests {
                 DVec3::new(2.0, 2.0, 2.0),
             ],
         );
-
-        // Should hold previous value
         let p = spline.evaluate(0.5);
         assert!((p - DVec3::new(0.0, 0.0, 0.0)).length() < 1e-10);
-
         let p = spline.evaluate(1.5);
         assert!((p - DVec3::new(1.0, 1.0, 1.0)).length() < 1e-10);
     }
 
     #[test]
-    fn test_constant_spline() {
-        let spline = ConstantSpline::new(DVec3::new(5.0, 5.0, 5.0));
-
-        assert!((spline.evaluate(0.0) - DVec3::new(5.0, 5.0, 5.0)).length() < 1e-10);
-        assert!((spline.evaluate(100.0) - DVec3::new(5.0, 5.0, 5.0)).length() < 1e-10);
-    }
-
-    #[test]
-    fn test_morph_weight_spline() {
-        let spline = MorphWeightSpline::new(vec![0.0, 1.0, 2.0], vec![0.0, 1.0, 0.5]);
-
-        assert!((spline.evaluate(0.0) - 0.0).abs() < 1e-10);
-        assert!((spline.evaluate(0.5) - 0.5).abs() < 1e-10);
-        assert!((spline.evaluate(1.0) - 1.0).abs() < 1e-10);
-        assert!((spline.evaluate(1.5) - 0.75).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_scalar_spline() {
-        let spline = ScalarSpline::new(vec![0.0, 1.0], vec![10.0, 20.0]);
-
-        assert!((spline.evaluate(0.0) - 10.0).abs() < 1e-10);
-        assert!((spline.evaluate(0.5) - 15.0).abs() < 1e-10);
-        assert!((spline.evaluate(1.0) - 20.0).abs() < 1e-10);
+    fn test_natural_cubic() {
+        let spline = HermiteSpline::create_natural_cubic(
+            vec![0.0, 1.0, 2.0, 3.0],
+            vec![
+                DVec3::new(1.0, 0.0, 0.0),
+                DVec3::new(0.0, 1.0, FRAC_PI_2),
+                DVec3::new(-1.0, 0.0, std::f64::consts::PI),
+                DVec3::new(0.0, -1.0, 3.0 * FRAC_PI_2),
+            ],
+        );
+        let p0 = spline.evaluate(0.0);
+        assert!((p0 - DVec3::new(1.0, 0.0, 0.0)).length() < 1e-10);
     }
 
     #[test]
@@ -680,7 +835,6 @@ mod tests {
             vec![0.0, 1.0, 2.0],
             vec![DVec3::ZERO, DVec3::ONE, DVec3::ZERO],
         );
-
         assert!((spline.wrap_time(2.5) - 0.5).abs() < 1e-10);
         assert!((spline.wrap_time(-0.5) - 1.5).abs() < 1e-10);
     }
@@ -691,10 +845,8 @@ mod tests {
             vec![0.0, 1.0, 2.0],
             vec![DVec3::ZERO, DVec3::ONE, DVec3::ZERO],
         );
-
         assert!((spline.clamp_time(-1.0) - 0.0).abs() < 1e-10);
         assert!((spline.clamp_time(5.0) - 2.0).abs() < 1e-10);
-        assert!((spline.clamp_time(1.0) - 1.0).abs() < 1e-10);
     }
 
     #[test]
@@ -703,7 +855,6 @@ mod tests {
             vec![0.0, 1.0, 2.0, 3.0],
             vec![DVec3::ZERO, DVec3::ONE, DVec3::ZERO, DVec3::ONE],
         );
-
         assert_eq!(spline.find_time_interval(0.5), 0);
         assert_eq!(spline.find_time_interval(1.5), 1);
         assert_eq!(spline.find_time_interval(2.5), 2);

@@ -53,7 +53,7 @@ fn test_perspective_infinite_projection_matrix() {
 #[test]
 fn test_perspective_pixel_dimensions() {
     let frustum = PerspectiveFrustum::new(to_radians(60.0), 1.0, 1.0, 1000.0);
-    let (pw, ph) = frustum.pixel_dimensions(1024.0, 1024.0, 100.0);
+    let (pw, ph) = frustum.pixel_dimensions(1024.0, 1024.0, 100.0, 1.0);
     assert!(pw > 0.0);
     assert!(ph > 0.0);
     // Aspect 1.0 → square pixels
@@ -168,7 +168,7 @@ fn test_orthographic_projection_matrix_valid() {
 #[test]
 fn test_orthographic_pixel_dimensions() {
     let frustum = OrthographicFrustum::new(10.0, 1.0, 0.1, 100.0);
-    let (pw, ph) = frustum.pixel_dimensions(100.0, 100.0, 50.0);
+    let (pw, ph) = frustum.pixel_dimensions(100.0, 100.0, 50.0, 1.0);
     assert_approx!(pw, 0.1, epsilon::EPSILON10);
     assert_approx!(ph, 0.1, epsilon::EPSILON10);
 }

@@ -1551,6 +1551,7 @@ version = "0.1.0"
 name = "cesium-geospatial"
 version = "0.1.0"
 dependencies = [
+ "earcut",
  "glam",
  "serde",
  "thiserror 2.0.19",
@@ -2248,6 +2249,15 @@ name = "dpi"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
+
+[[package]]
+name = "earcut"
+version = "0.4.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f03dd5350900133e14471c90d513eb5ba264004cd833adecab7dfa5fb5a2974"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "either"

@@ -111,6 +111,30 @@ impl EntityCollection {
         self.visible_entities().filter(|e| e.has_graphics())
     }
 
+    /// Gets an entity by ID, or creates and inserts a new one if not present.
+    /// Maps to `EntityCollection.prototype.getOrCreateEntity`.
+    pub fn get_or_create(&mut self, id: &str) -> &Entity {
+        if !self.entities.contains_key(id) {
+            let entity = Entity::new(id.to_string());
+            self.order.push(id.to_string());
+            self.entities.insert(id.to_string(), entity);
+        }
+        self.entities.get(id).unwrap()
+    }
+
+    /// Removes all entities from the collection.
+    /// Maps to `EntityCollection.prototype.removeAll`.
+    pub fn remove_all(&mut self) {
+        self.entities.clear();
+        self.order.clear();
+    }
+
+    /// Removes an entity by ID, returning true if it was present.
+    /// Maps to `EntityCollection.prototype.removeById`.
+    pub fn remove_by_id(&mut self, id: &str) -> bool {
+        self.remove(id).is_some()
+    }
+
     /// Suspends events (placeholder for future event system integration).
     pub fn suspend_events(&mut self) {
         // Placeholder

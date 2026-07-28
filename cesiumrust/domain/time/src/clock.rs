@@ -55,6 +55,28 @@ pub struct Clock {
     last_system_time_secs: f64,
 }
 
+/// Options for constructing a Clock.
+/// Maps to CesiumJS Clock constructor options object.
+#[derive(Debug, Clone, Default)]
+pub struct ClockOptions {
+    /// The start time of the clock.
+    pub start_time: Option<JulianDate>,
+    /// The stop time of the clock.
+    pub stop_time: Option<JulianDate>,
+    /// The current time.
+    pub current_time: Option<JulianDate>,
+    /// Determines how much time advances per tick.
+    pub multiplier: Option<f64>,
+    /// Determines tick behavior.
+    pub clock_step: Option<ClockStep>,
+    /// Determines behavior at start/stop boundaries.
+    pub clock_range: Option<ClockRange>,
+    /// Whether tick can advance time.
+    pub can_animate: Option<bool>,
+    /// Whether tick should attempt to advance time.
+    pub should_animate: Option<bool>,
+}
+
 impl Clock {
     /// Creates a new Clock with the given parameters.
     pub fn new(
@@ -75,11 +97,45 @@ impl Clock {
         }
     }
 
+    /// Creates a Clock from options, faithfully mirroring CesiumJS Clock constructor.
+    /// Derivation rules:
+    /// - currentTime: if not specified → startTime if set, else stopTime - 1 day, else now
+    /// - startTime: if not specified → currentTime (as derived above)
+    /// - stopTime: if not specified → startTime + 1 day
+    pub fn from_options(options: &ClockOptions) -> Self {
+        // Derive currentTime
+        let current_time = if let Some(ct) = options.current_time {
+            ct
+        } else if let Some(st) = options.start_time {
+            st
+        } else if let Some(stop) = options.stop_time {
+            stop.add_days(-1.0)
+        } else {
+            JulianDate::now()
+        };
+
+        // Derive startTime
+        let start_time = options.start_time.unwrap_or(current_time);
+
+        // Derive stopTime
+        let stop_time = options.stop_time.unwrap_or_else(|| start_time.add_days(1.0));
+
+        Self {
+            start_time,
+            stop_time,
+            current_time,
+            multiplier: options.multiplier.unwrap_or(1.0),
+            clock_step: options.clock_step.unwrap_or(ClockStep::SystemClockMultiplier),
+            clock_range: options.clock_range.unwrap_or(ClockRange::Unbounded),
+            can_animate: options.can_animate.unwrap_or(true),
+            should_animate: options.should_animate.unwrap_or(false),
+            last_system_time_secs: Self::get_system_time_secs(),
+        }
+    }
+
     /// Creates a clock with default settings (current time = now).
     pub fn default_now() -> Self {
-        let now = JulianDate::now();
-        let stop = now.add_days(1.0);
-        Self::new(now, stop, now)
+        Self::from_options(&ClockOptions::default())
     }
 
     /// Advances the clock from the current time.

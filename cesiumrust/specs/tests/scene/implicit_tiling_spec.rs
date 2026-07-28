@@ -29,23 +29,23 @@ fn test_subdivision_scheme_default() {
 #[test]
 fn test_morton_2d_basic() {
     assert_eq!(morton_2d(0, 0), 0);
-    assert_eq!(morton_2d(1, 0), 2);
-    assert_eq!(morton_2d(0, 1), 1);
+    assert_eq!(morton_2d(1, 0), 1); // x at even bits
+    assert_eq!(morton_2d(0, 1), 2); // y at odd bits
     assert_eq!(morton_2d(1, 1), 3);
 }
 
 #[test]
 fn test_morton_2d_larger() {
-    assert_eq!(morton_2d(2, 0), 8);
+    assert_eq!(morton_2d(2, 0), 4);
     assert_eq!(morton_2d(3, 3), 15);
 }
 
 #[test]
 fn test_morton_3d_basic() {
     assert_eq!(morton_3d(0, 0, 0), 0);
-    assert_eq!(morton_3d(1, 0, 0), 4);
-    assert_eq!(morton_3d(0, 1, 0), 2);
-    assert_eq!(morton_3d(0, 0, 1), 1);
+    assert_eq!(morton_3d(1, 0, 0), 1); // x at positions 0,3,6...
+    assert_eq!(morton_3d(0, 1, 0), 2); // y at positions 1,4,7...
+    assert_eq!(morton_3d(0, 0, 1), 4); // z at positions 2,5,8...
     assert_eq!(morton_3d(1, 1, 1), 7);
 }
 
@@ -217,6 +217,6 @@ fn test_subtree_local_index() {
     let root = ImplicitTileCoord::quadtree(0, 0, 0);
     let coord = ImplicitTileCoord::quadtree(1, 1, 0);
     let index = Subtree::local_index(&coord, &root, SubdivisionScheme::Quadtree);
-    // Level 1 offset = 1, morton(1,0) = 2
-    assert_eq!(index, 3);
+    // Level 1 offset = 1, morton(1,0) = 1 (CesiumJS: x at even bits)
+    assert_eq!(index, 2);
 }

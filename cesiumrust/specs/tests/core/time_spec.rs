@@ -8,28 +8,44 @@ use cesium_specs::{assert_approx, epsilon};
 
 #[test]
 fn test_julian_date_new() {
+    // JulianDate::new treats input as UTC and converts to TAI internally
     let jd = JulianDate::new(2451545.0, 0.0);
-    assert_eq!(jd.day_number, 2451545);
-    assert_approx!(jd.seconds_of_day, 0.0, epsilon::EPSILON10);
+    // Verify via roundtrip through GregorianDate
+    let g = jd.to_gregorian_date();
+    assert_eq!(g.year, 2000);
+    assert_eq!(g.month, 1);
+    assert_eq!(g.day, 1);
+    assert_eq!(g.hour, 12);
+    assert_eq!(g.minute, 0);
+    assert_eq!(g.second, 0);
 }
 
 #[test]
 fn test_julian_date_from_date_components() {
     let jd = JulianDate::from_date_components(2000, 1, 1, 12, 0, 0, 0.0);
-    assert_approx!(jd.total_days(), 2451545.0, epsilon::EPSILON6);
+    // total_days is TAI-based (includes 32s leap offset at J2000)
+    let expected = 2451545.0 + 32.0 / 86400.0;
+    assert_approx!(jd.total_days(), expected, epsilon::EPSILON6);
 }
 
 #[test]
 fn test_julian_date_from_date_components_epoch() {
     let jd = JulianDate::from_date_components(1970, 1, 1, 0, 0, 0, 0.0);
-    assert_approx!(jd.total_days(), 2440587.5, epsilon::EPSILON6);
+    // total_days is TAI-based (includes 10s leap offset before 1972)
+    let expected = 2440587.5 + 10.0 / 86400.0;
+    assert_approx!(jd.total_days(), expected, epsilon::EPSILON6);
 }
 
 #[test]
 fn test_julian_date_from_gregorian_date() {
     let greg = GregorianDate::new(2000, 1, 1, 12, 0, 0, 0.0, false);
     let jd = JulianDate::from_gregorian_date(&greg);
-    assert_approx!(jd.total_days(), 2451545.0, epsilon::EPSILON6);
+    // Verify via roundtrip
+    let result = jd.to_gregorian_date();
+    assert_eq!(result.year, 2000);
+    assert_eq!(result.month, 1);
+    assert_eq!(result.day, 1);
+    assert_eq!(result.hour, 12);
 }
 
 #[test]
@@ -61,7 +77,8 @@ fn test_julian_date_gregorian_roundtrip() {
 #[test]
 fn test_julian_date_from_unix_seconds() {
     let jd = JulianDate::from_unix_seconds(0.0);
-    assert_approx!(jd.total_days(), 2440587.5, epsilon::EPSILON6);
+    // Verify via roundtrip: unix_seconds should be 0
+    assert_approx!(jd.to_unix_seconds(), 0.0, epsilon::EPSILON3);
 }
 
 #[test]

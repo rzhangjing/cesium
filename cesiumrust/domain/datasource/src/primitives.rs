@@ -87,7 +87,7 @@ impl NearFarScalar {
 
 impl Default for NearFarScalar {
     fn default() -> Self {
-        Self { near: 0.0, near_value: 1.0, far: 1.0, far_value: 1.0 }
+        Self { near: 0.0, near_value: 0.0, far: 1.0, far_value: 0.0 }
     }
 }
 
@@ -103,6 +103,9 @@ pub struct DistanceDisplayCondition {
 }
 
 impl DistanceDisplayCondition {
+    /// The number of elements used to pack the object into an array.
+    pub const PACKED_LENGTH: usize = 2;
+
     /// Creates a new distance display condition.
     pub fn new(near: f64, far: f64) -> Self {
         Self { near, far }
@@ -111,6 +114,31 @@ impl DistanceDisplayCondition {
     /// Returns true if the given distance is within the condition.
     pub fn is_visible(&self, distance: f64) -> bool {
         distance >= self.near && distance <= self.far
+    }
+
+    /// Stores the provided instance into the provided array.
+    ///
+    /// Maps to CesiumJS `DistanceDisplayCondition.pack`
+    pub fn pack(&self, array: &mut [f64], starting_index: usize) {
+        array[starting_index] = self.near;
+        array[starting_index + 1] = self.far;
+    }
+
+    /// Retrieves an instance from a packed array.
+    ///
+    /// Maps to CesiumJS `DistanceDisplayCondition.unpack`
+    pub fn unpack(array: &[f64], starting_index: usize) -> Self {
+        Self {
+            near: array[starting_index],
+            far: array[starting_index + 1],
+        }
+    }
+
+    /// Determines if two distance display conditions are equal.
+    ///
+    /// Maps to CesiumJS `DistanceDisplayCondition.equals`
+    pub fn equals(&self, other: &Self) -> bool {
+        self.near == other.near && self.far == other.far
     }
 }
 

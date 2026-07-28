@@ -70,7 +70,7 @@ impl TimeInterval {
 
     /// Computes the intersection of two intervals.
     /// Maps to `TimeInterval.intersect`
-    pub fn intersect(&self, other: &Self) -> Option<Self> {
+    pub fn intersect(&self, other: &Self) -> Self {
         // Determine the later start
         let (start, is_start_included) = if self.start > other.start {
             (self.start, self.is_start_included)
@@ -91,10 +91,58 @@ impl TimeInterval {
 
         let result = Self::new(start, stop, is_start_included, is_stop_included);
         if result.is_empty() {
-            None
+            Self::EMPTY
         } else {
-            Some(result)
+            result
         }
+    }
+
+    /// An empty interval.
+    pub const EMPTY: Self = Self {
+        start: JulianDate { day_number: 0, seconds_of_day: 0.0 },
+        stop: JulianDate { day_number: 0, seconds_of_day: 0.0 },
+        is_start_included: false,
+        is_stop_included: false,
+    };
+
+    /// Creates a TimeInterval from an ISO 8601 interval string ("start/stop").
+    /// Maps to `TimeInterval.fromIso8601`
+    pub fn from_iso8601(
+        iso8601: &str,
+        is_start_included: bool,
+        is_stop_included: bool,
+    ) -> Option<Self> {
+        let parts: Vec<&str> = iso8601.split('/').collect();
+        if parts.len() != 2 {
+            return None;
+        }
+        let start = JulianDate::from_iso8601(parts[0])?;
+        let stop = JulianDate::from_iso8601(parts[1])?;
+        Some(Self::new(start, stop, is_start_included, is_stop_included))
+    }
+
+    /// Formats this interval as an ISO 8601 interval string.
+    /// Maps to `TimeInterval.toIso8601`
+    pub fn to_iso8601(&self) -> String {
+        format!("{}/{}", self.start.to_iso8601(), self.stop.to_iso8601())
+    }
+
+    /// Formats this interval as an ISO 8601 interval string with specified precision.
+    pub fn to_iso8601_with_precision(&self, precision: Option<usize>) -> String {
+        format!(
+            "{}/{}",
+            self.start.to_iso8601_with_precision(precision),
+            self.stop.to_iso8601_with_precision(precision)
+        )
+    }
+
+    /// Compares two intervals for equality within an epsilon (seconds).
+    /// Maps to `TimeInterval.equalsEpsilon`
+    pub fn equals_epsilon(&self, other: &Self, epsilon: f64) -> bool {
+        self.start.equals_epsilon(&other.start, epsilon)
+            && self.stop.equals_epsilon(&other.stop, epsilon)
+            && self.is_start_included == other.is_start_included
+            && self.is_stop_included == other.is_stop_included
     }
 
     /// The duration of the interval in seconds.
@@ -175,7 +223,7 @@ mod tests {
         let stop2 = JulianDate::from_date_components(2000, 1, 15, 0, 0, 0, 0.0);
         let interval2 = TimeInterval::new(start2, stop2, true, true);
 
-        let intersection = interval1.intersect(&interval2).unwrap();
+        let intersection = interval1.intersect(&interval2);
         assert_eq!(intersection.start, start2);
         assert_eq!(intersection.stop, stop1);
     }
@@ -190,6 +238,6 @@ mod tests {
         let stop2 = JulianDate::from_date_components(2000, 1, 15, 0, 0, 0, 0.0);
         let interval2 = TimeInterval::new(start2, stop2, true, true);
 
-        assert!(interval1.intersect(&interval2).is_none());
+        assert!(interval1.intersect(&interval2).is_empty());
     }
 }

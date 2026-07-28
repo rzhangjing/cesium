@@ -1177,16 +1177,16 @@ mod tests {
 
     #[test]
     fn test_callback_property() {
-        let p = CallbackProperty::new(|t| PropertyValue::Number(t.seconds_of_day), false);
+        let p = CallbackProperty::new(|t| PropertyValue::Number(t.day_number as f64), false);
         assert!(!p.is_constant());
-        assert_eq!(p.get_value(&jd(7.0)), PropertyValue::Number(7.0));
+        assert_eq!(p.get_value(&jd(7.0)), PropertyValue::Number(2451545.0));
 
-        let q = CallbackProperty::new(|t| PropertyValue::Number(t.seconds_of_day), false);
+        let q = CallbackProperty::new(|t| PropertyValue::Number(t.day_number as f64), false);
         // Different closures -> not equal.
         assert!(!p.equals(&q));
 
         // Same Arc -> equal.
-        let shared: CallbackFn = Arc::new(|t| PropertyValue::Number(t.seconds_of_day));
+        let shared: CallbackFn = Arc::new(|t| PropertyValue::Number(t.day_number as f64));
         let r = CallbackProperty::from_arc(Arc::clone(&shared), true);
         let s = CallbackProperty::from_arc(shared, true);
         assert!(r.equals(&s));

@@ -8,6 +8,7 @@
 //! that carry the same data, or splits/truncates existing intervals when the
 //! data differs (the newly added interval's data takes precedence).
 
+use crate::gregorian_date::{days_in_month, is_leap_year, GregorianDate};
 use crate::julian_date::JulianDate;
 use crate::time_interval::TimeInterval;
 use std::cmp::Ordering;
@@ -566,9 +567,9 @@ impl<T> TimeIntervalCollection<T> {
                     same_data,
                 );
                 if same {
-                    if let Some(intersection) =
-                        left_interval.interval.intersect(&right_interval.interval)
-                    {
+                    let intersection =
+                        left_interval.interval.intersect(&right_interval.interval);
+                    if !intersection.is_empty() {
                         result.add_interval(
                             TimeIntervalData {
                                 interval: intersection,
@@ -614,6 +615,384 @@ impl<T> TimeIntervalCollection<T> {
             }
         }
         true
+    }
+}
+
+/// Iso8601.MINIMUM_VALUE equivalent: 0001-01-01T00:00:00Z
+fn iso8601_minimum_value() -> JulianDate {
+    JulianDate::from_iso8601("0001-01-01T00:00:00Z").unwrap()
+}
+
+/// Iso8601.MAXIMUM_VALUE equivalent: 9999-12-31T24:00:00Z
+fn iso8601_maximum_value() -> JulianDate {
+    JulianDate::from_iso8601("9999-12-31T24:00:00Z").unwrap()
+}
+
+/// A duration represented as GregorianDate components.
+/// Maps to the scratch GregorianDate used in CesiumJS `parseDuration` / `addToDate`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Duration {
+    year: f64,
+    month: f64,
+    day: f64,
+    hour: f64,
+    minute: f64,
+    second: f64,
+    millisecond: f64,
+}
+
+impl Duration {
+    fn is_zero(&self) -> bool {
+        self.year == 0.0
+            && self.month == 0.0
+            && self.day == 0.0
+            && self.hour == 0.0
+            && self.minute == 0.0
+            && self.second == 0.0
+            && self.millisecond == 0.0
+    }
+}
+
+/// Parses an ISO8601 duration string (e.g. "P1Y2M3DT1H2M3.5S") or a date-based
+/// duration (e.g. "0001-02-03T01:02:03.5").
+/// Maps to CesiumJS `parseDuration`.
+fn parse_duration(iso8601: Option<&str>) -> Option<Duration> {
+    let iso8601 = iso8601?;
+    if iso8601.is_empty() {
+        return None;
+    }
+
+    let mut result = Duration::default();
+
+    if iso8601.starts_with('P') {
+        // ISO8601 duration format: P[n]Y[n]M[n]W[n]DT[n]H[n]M[n]S
+        let s = &iso8601[1..]; // strip 'P'
+        let (date_part, time_part) = if let Some(idx) = s.find('T') {
+            (&s[..idx], Some(&s[idx + 1..]))
+        } else {
+            (s, None)
+        };
+
+        // Parse date part: [n]Y[n]M[n]W[n]D
+        let mut remaining = date_part;
+        while !remaining.is_empty() {
+            let num_end = remaining
+                .find(|c: char| !c.is_ascii_digit() && c != '.' && c != ',')
+                .unwrap_or(remaining.len());
+            if num_end == 0 {
+                break;
+            }
+            let num_str = remaining[..num_end].replace(',', ".");
+            let num: f64 = num_str.parse().unwrap_or(0.0);
+            let designator = remaining.as_bytes()[num_end] as char;
+            remaining = &remaining[num_end + 1..];
+            match designator {
+                'Y' => result.year = num,
+                'M' => result.month = num,
+                'W' => result.day += num * 7.0,
+                'D' => result.day += num,
+                _ => {}
+            }
+        }
+
+        // Parse time part: [n]H[n]M[n]S
+        if let Some(tp) = time_part {
+            let mut remaining = tp;
+            while !remaining.is_empty() {
+                let num_end = remaining
+                    .find(|c: char| !c.is_ascii_digit() && c != '.' && c != ',')
+                    .unwrap_or(remaining.len());
+                if num_end == 0 {
+                    break;
+                }
+                let num_str = remaining[..num_end].replace(',', ".");
+                let num: f64 = num_str.parse().unwrap_or(0.0);
+                let designator = remaining.as_bytes()[num_end] as char;
+                remaining = &remaining[num_end + 1..];
+                match designator {
+                    'H' => result.hour = num,
+                    'M' => result.minute = num,
+                    'S' => {
+                        result.second = num.floor();
+                        result.millisecond = (num % 1.0) * 1000.0;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    } else {
+        // Date-based duration: parse as a date and extract GregorianDate components
+        let s = if iso8601.ends_with('Z') {
+            iso8601.to_string()
+        } else {
+            format!("{}Z", iso8601)
+        };
+        let jd = JulianDate::from_iso8601(&s)?;
+        let g = jd.to_gregorian_date();
+        result.year = g.year as f64;
+        result.month = g.month as f64;
+        result.day = g.day as f64;
+        result.hour = g.hour as f64;
+        result.minute = g.minute as f64;
+        result.second = g.second as f64;
+        result.millisecond = g.millisecond;
+    }
+
+    if result.is_zero() {
+        None
+    } else {
+        Some(result)
+    }
+}
+
+/// Adds a duration (represented as GregorianDate components) to a JulianDate.
+/// Maps to CesiumJS `addToDate`.
+fn add_to_date(julian_date: &JulianDate, duration: &Duration) -> JulianDate {
+    let g = julian_date.to_gregorian_date();
+
+    let mut millisecond = g.millisecond + duration.millisecond;
+    let mut second = g.second as f64 + duration.second;
+    let mut minute = g.minute as f64 + duration.minute;
+    let mut hour = g.hour as f64 + duration.hour;
+    let mut day = g.day as f64 + duration.day;
+    let mut month = g.month as f64 + duration.month;
+    let mut year = g.year as f64 + duration.year;
+
+    if millisecond >= 1000.0 {
+        second += (millisecond / 1000.0).floor();
+        millisecond %= 1000.0;
+    }
+    if second >= 60.0 {
+        minute += (second / 60.0).floor();
+        second %= 60.0;
+    }
+    if minute >= 60.0 {
+        hour += (minute / 60.0).floor();
+        minute %= 60.0;
+    }
+    if hour >= 24.0 {
+        day += (hour / 24.0).floor();
+        hour %= 24.0;
+    }
+
+    // Adjust days/months/years
+    let mut year_i = year as i32;
+    let mut month_i = month as u32;
+    let mut day_i = day as u32;
+
+    let month_len = |y: i32, m: u32| -> u32 {
+        if m >= 1 && m <= 12 {
+            days_in_month(y, m)
+        } else {
+            31
+        }
+    };
+
+    while day_i > month_len(year_i, month_i) || month_i >= 13 {
+        if month_i >= 13 {
+            month_i -= 1;
+            year_i += (month_i / 12) as i32;
+            month_i = month_i % 12;
+            month_i += 1;
+        }
+        if day_i > month_len(year_i, month_i) {
+            day_i -= month_len(year_i, month_i);
+            month_i += 1;
+        }
+    }
+
+    let result_g = GregorianDate {
+        year: year_i,
+        month: month_i,
+        day: day_i,
+        hour: hour as u32,
+        minute: minute as u32,
+        second: second as u32,
+        millisecond,
+        is_leap_second: false,
+    };
+    JulianDate::from_gregorian_date(&result_g)
+}
+
+/// Options for `from_iso8601` and related constructors.
+pub struct FromIso8601Options {
+    /// The ISO8601 interval string ("start/stop" or "start/stop/duration").
+    pub iso8601: String,
+    /// Whether the start time is included (default true).
+    pub is_start_included: Option<bool>,
+    /// Whether the stop time is included (default true).
+    pub is_stop_included: Option<bool>,
+    /// Add a leading interval from MINIMUM_VALUE to start.
+    pub leading_interval: bool,
+    /// Add a trailing interval from stop to MAXIMUM_VALUE.
+    pub trailing_interval: bool,
+}
+
+impl<T> TimeIntervalCollection<T> {
+    /// Creates a collection from an ISO8601 interval string.
+    /// Maps to `TimeIntervalCollection.fromIso8601`.
+    pub fn from_iso8601<F>(options: &FromIso8601Options, same_data: &F) -> Self
+    where
+        T: Clone + From<usize>,
+        F: Fn(&T, &T) -> bool,
+    {
+        let parts: Vec<&str> = options.iso8601.split('/').collect();
+        let start = JulianDate::from_iso8601(parts[0]).unwrap();
+        let stop = JulianDate::from_iso8601(parts[1]).unwrap();
+
+        let mut julian_dates: Vec<JulianDate> = Vec::new();
+
+        let duration = if parts.len() > 2 {
+            parse_duration(Some(parts[2]))
+        } else {
+            None
+        };
+
+        match duration {
+            None => {
+                julian_dates.push(start);
+                julian_dates.push(stop);
+            }
+            Some(dur) => {
+                let mut date = start;
+                julian_dates.push(date);
+                while date < stop {
+                    date = add_to_date(&date, &dur);
+                    if stop <= date {
+                        date = stop;
+                    }
+                    julian_dates.push(date);
+                }
+            }
+        }
+
+        Self::from_julian_date_array(
+            &julian_dates,
+            options.is_start_included.unwrap_or(true),
+            options.is_stop_included.unwrap_or(true),
+            options.leading_interval,
+            options.trailing_interval,
+            same_data,
+        )
+    }
+
+    /// Creates a collection from an array of JulianDates.
+    /// Maps to `TimeIntervalCollection.fromJulianDateArray`.
+    pub fn from_julian_date_array<F>(
+        julian_dates: &[JulianDate],
+        is_start_included: bool,
+        is_stop_included: bool,
+        leading_interval: bool,
+        trailing_interval: bool,
+        same_data: &F,
+    ) -> Self
+    where
+        T: Clone + From<usize>,
+        F: Fn(&T, &T) -> bool,
+    {
+        let mut result = Self::new();
+        let length = julian_dates.len();
+        if length < 2 {
+            return result;
+        }
+
+        let start_index: usize = if leading_interval { 1 } else { 0 };
+
+        if leading_interval {
+            let interval = TimeIntervalData {
+                interval: TimeInterval::new(
+                    iso8601_minimum_value(),
+                    julian_dates[0],
+                    true,
+                    !is_start_included,
+                ),
+                data: Some(T::from(result.len())),
+            };
+            result.add_interval(interval, same_data);
+        }
+
+        for i in 0..length - 1 {
+            let start_date = julian_dates[i];
+            let end_date = julian_dates[i + 1];
+            let isi = if result.len() == start_index {
+                is_start_included
+            } else {
+                true
+            };
+            let isti = if i == length - 2 {
+                is_stop_included
+            } else {
+                false
+            };
+            let interval = TimeIntervalData {
+                interval: TimeInterval::new(start_date, end_date, isi, isti),
+                data: Some(T::from(result.len())),
+            };
+            result.add_interval(interval, same_data);
+        }
+
+        if trailing_interval {
+            let interval = TimeIntervalData {
+                interval: TimeInterval::new(
+                    julian_dates[length - 1],
+                    iso8601_maximum_value(),
+                    !is_stop_included,
+                    true,
+                ),
+                data: Some(T::from(result.len())),
+            };
+            result.add_interval(interval, same_data);
+        }
+
+        result
+    }
+
+    /// Creates a collection from an array of ISO8601 duration strings relative to an epoch.
+    /// Maps to `TimeIntervalCollection.fromIso8601DurationArray`.
+    pub fn from_iso8601_duration_array<F>(
+        epoch: &JulianDate,
+        iso8601_durations: &[&str],
+        relative_to_previous: bool,
+        is_start_included: bool,
+        is_stop_included: bool,
+        leading_interval: bool,
+        trailing_interval: bool,
+        same_data: &F,
+    ) -> Self
+    where
+        T: Clone + From<usize>,
+        F: Fn(&T, &T) -> bool,
+    {
+        let mut julian_dates: Vec<JulianDate> = Vec::new();
+        let mut previous_date: Option<JulianDate> = None;
+
+        for (i, dur_str) in iso8601_durations.iter().enumerate() {
+            let dur = parse_duration(Some(dur_str));
+            // Allow a duration of 0 on the first iteration (it is just the epoch)
+            if dur.is_some() || i == 0 {
+                let effective_dur = dur.unwrap_or_default();
+                let date = if relative_to_previous {
+                    if let Some(prev) = previous_date {
+                        add_to_date(&prev, &effective_dur)
+                    } else {
+                        add_to_date(epoch, &effective_dur)
+                    }
+                } else {
+                    add_to_date(epoch, &effective_dur)
+                };
+                julian_dates.push(date);
+                previous_date = Some(date);
+            }
+        }
+
+        Self::from_julian_date_array(
+            &julian_dates,
+            is_start_included,
+            is_stop_included,
+            leading_interval,
+            trailing_interval,
+            same_data,
+        )
     }
 }
 

@@ -83,8 +83,9 @@ fn test_ray_plane_behind_no_hit() {
 fn test_ray_sphere_hit() {
     let r = Ray::new(DVec3::new(0.0, 0.0, 5.0), DVec3::new(0.0, 0.0, -1.0));
     let sphere = BoundingSphere::new(DVec3::ZERO, 1.0);
-    let hit = ray_sphere(&r, &sphere).unwrap();
-    assert_approx!(hit.z, 1.0, epsilon::EPSILON10);
+    let (start, stop) = ray_sphere(&r, &sphere).unwrap();
+    assert_approx!(start, 4.0, epsilon::EPSILON10);
+    assert_approx!(stop, 6.0, epsilon::EPSILON10);
 }
 
 #[test]
@@ -98,8 +99,9 @@ fn test_ray_sphere_miss() {
 fn test_ray_sphere_inside() {
     let r = Ray::new(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0));
     let sphere = BoundingSphere::new(DVec3::ZERO, 5.0);
-    let hit = ray_sphere(&r, &sphere).unwrap();
-    assert_approx!(hit.x, 5.0, epsilon::EPSILON10);
+    let (start, stop) = ray_sphere(&r, &sphere).unwrap();
+    assert_approx!(start, 0.0, epsilon::EPSILON10);
+    assert_approx!(stop, 5.0, epsilon::EPSILON10);
 }
 
 // === Ray-Triangle Intersection ===
@@ -110,7 +112,7 @@ fn test_ray_triangle_hit() {
     let v0 = DVec3::new(0.0, 0.0, 0.0);
     let v1 = DVec3::new(1.0, 0.0, 0.0);
     let v2 = DVec3::new(0.0, 1.0, 0.0);
-    let hit = ray_triangle(&r, v0, v1, v2).unwrap();
+    let hit = ray_triangle(&r, v0, v1, v2, false).unwrap();
     assert_approx!(hit.z, 0.0, epsilon::EPSILON10);
 }
 
@@ -120,7 +122,7 @@ fn test_ray_triangle_miss_outside() {
     let v0 = DVec3::new(0.0, 0.0, 0.0);
     let v1 = DVec3::new(1.0, 0.0, 0.0);
     let v2 = DVec3::new(0.0, 1.0, 0.0);
-    assert!(ray_triangle(&r, v0, v1, v2).is_none());
+    assert!(ray_triangle(&r, v0, v1, v2, false).is_none());
 }
 
 // === Ray-Ellipsoid Intersection ===

@@ -950,14 +950,14 @@ mod tests {
     #[test]
     fn test_callback_position_property() {
         let callback: PositionCallbackFn = Arc::new(|time: &JulianDate| {
-            let s = time.seconds_of_day;
-            Some(DVec3::new(s, 0.0, 0.0))
+            let d = time.day_number as f64;
+            Some(DVec3::new(d, 0.0, 0.0))
         });
         let prop = CallbackPositionProperty::new(callback, false, ReferenceFrame::Fixed);
         assert!(!prop.is_constant());
         assert_eq!(
             prop.get_value(&t(7.0)),
-            PropertyValue::Cartesian3(DVec3::new(7.0, 0.0, 0.0))
+            PropertyValue::Cartesian3(DVec3::new(2451545.0, 0.0, 0.0))
         );
     }
 

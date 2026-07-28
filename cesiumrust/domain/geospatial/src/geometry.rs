@@ -850,23 +850,20 @@ pub fn generate_arc(positions: &[DVec3], granularity: f64, ellipsoid: &Ellipsoid
     result
 }
 
-/// Triangulates a 2D polygon using ear clipping.
+/// Triangulates a 2D polygon using the earcut algorithm.
+/// `holes` is an array of starting indices of holes within `positions`.
 /// Maps to `PolygonPipeline.triangulate`
-pub fn triangulate_polygon(positions: &[DVec2], _holes: &[Vec<u32>]) -> Vec<u32> {
-    // Simple ear-clipping for convex/simple polygons
+pub fn triangulate_polygon(positions: &[DVec2], holes: &[u32]) -> Vec<u32> {
     let n = positions.len();
     if n < 3 {
         return Vec::new();
     }
 
-    let mut indices = Vec::new();
-    // Fan triangulation (works for convex polygons)
-    for i in 1..(n as u32 - 1) {
-        indices.push(0);
-        indices.push(i);
-        indices.push(i + 1);
-    }
-    indices
+    let data: Vec<[f64; 2]> = positions.iter().map(|p| [p.x, p.y]).collect();
+    let mut earcut = earcut::Earcut::new();
+    let mut triangles: Vec<u32> = Vec::new();
+    earcut.earcut(data.iter().copied(), holes, &mut triangles);
+    triangles
 }
 
 /// Computes the signed area of a 2D polygon.
@@ -1071,6 +1068,592 @@ pub fn to_wireframe(geo: &mut GeometryData) {
 
     geo.indices = lines;
     geo.primitive_type = PrimitiveType::Lines;
+}
+
+/// Projects 3D positions to 2D using GeographicProjection.
+/// Returns (position3d, position2d) arrays.
+/// Maps to `GeometryPipeline.projectTo2D`
+pub fn project_to_2d(
+    positions: &[[f64; 3]],
+    ellipsoid: &Ellipsoid,
+) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
+    use crate::projection::MapProjection;
+    let projection = crate::projection::GeographicProjection::new(ellipsoid.clone());
+    let pos3d = positions.to_vec();
+    let mut pos2d: Vec<[f64; 3]> = Vec::with_capacity(positions.len());
+
+    for p in positions {
+        let cart = ellipsoid.cartesian_to_cartographic(DVec3::from(*p));
+        match cart {
+            Some(c) => {
+                let projected = projection.project(&c);
+                pos2d.push([projected.x, projected.y, projected.z]);
+            }
+            None => {
+                pos2d.push([0.0, 0.0, 0.0]);
+            }
+        }
+    }
+
+    (pos3d, pos2d)
+}
+
+/// Encodes an f64 value into high and low f32 parts for GPU precision.
+/// Maps to `EncodedCartesian3.encode`
+pub fn encode_f64_to_f32_pair(value: f64) -> (f32, f32) {
+    let high = value as f32;
+    let low = (value - high as f64) as f32;
+    (high, low)
+}
+
+/// Encodes a position attribute (array of [f64;3]) into high/low f32 pairs.
+/// Maps to `GeometryPipeline.encodeAttribute`
+pub fn encode_attribute(
+    positions: &[[f64; 3]],
+) -> (Vec<[f32; 3]>, Vec<[f32; 3]>) {
+    let mut high: Vec<[f32; 3]> = Vec::with_capacity(positions.len());
+    let mut low: Vec<[f32; 3]> = Vec::with_capacity(positions.len());
+
+    for p in positions {
+        let (hx, lx) = encode_f64_to_f32_pair(p[0]);
+        let (hy, ly) = encode_f64_to_f32_pair(p[1]);
+        let (hz, lz) = encode_f64_to_f32_pair(p[2]);
+        high.push([hx, hy, hz]);
+        low.push([lx, ly, lz]);
+    }
+
+    (high, low)
+}
+
+/// Transforms geometry positions and normals by a model matrix.
+/// Maps to `GeometryPipeline.transformToWorldCoordinates`
+pub fn transform_to_world_coordinates(
+    geo: &mut GeometryData,
+    model_matrix: &glam::DMat4,
+) {
+    let normal_matrix = {
+        let m3 = glam::DMat3::from_cols(
+            model_matrix.x_axis.truncate(),
+            model_matrix.y_axis.truncate(),
+            model_matrix.z_axis.truncate(),
+        );
+        let det = m3.determinant();
+        if det.abs() > 1e-10 {
+            m3.inverse().transpose()
+        } else {
+            m3
+        }
+    };
+
+    for p in geo.positions.iter_mut() {
+        let v = model_matrix.transform_point3(DVec3::from(*p));
+        *p = [v.x, v.y, v.z];
+    }
+
+    if let Some(ref mut normals) = geo.normals {
+        for n in normals.iter_mut() {
+            let v = normal_matrix * DVec3::from(*n);
+            let normalized = v.normalize_or(DVec3::ZERO);
+            *n = [normalized.x, normalized.y, normalized.z];
+        }
+    }
+
+    // Update bounding sphere
+    if !geo.positions.is_empty() {
+        let mut center = DVec3::ZERO;
+        for p in &geo.positions {
+            center += DVec3::from(*p);
+        }
+        center /= geo.positions.len() as f64;
+        let mut max_dist_sq = 0.0_f64;
+        for p in &geo.positions {
+            let d = (DVec3::from(*p) - center).length_squared();
+            if d > max_dist_sq {
+                max_dist_sq = d;
+            }
+        }
+        geo.bounding_sphere = BoundingSphere::new(center, max_dist_sq.sqrt());
+    }
+}
+
+/// Compresses vertex normals using oct encoding and packs with texture coordinates.
+/// Maps to `GeometryPipeline.compressVertices`
+pub fn compress_vertices(geo: &GeometryData) -> Option<Vec<u32>> {
+    let normals = geo.normals.as_ref()?;
+    let num_vertices = normals.len();
+
+    // Pack compressed normals (2 u16 per vertex) + optional ST (2 u16 per vertex)
+    let has_st = geo.tex_coords.is_some();
+    let components_per_vertex = if has_st { 4 } else { 2 };
+    let mut compressed: Vec<u32> = Vec::with_capacity(num_vertices * components_per_vertex / 2 + 1);
+
+    let st = geo.tex_coords.as_ref();
+
+    for i in 0..num_vertices {
+        let n = DVec3::from(normals[i]);
+        // Oct encode normal to 2 bytes
+        let oct = crate::attribute_compression::oct_encode(n);
+        let oct_x = (oct.x.round() as u32) & 0xFFFF;
+        let oct_y = (oct.y.round() as u32) & 0xFFFF;
+
+        if let Some(sts) = st {
+            let s = (sts[i][0].clamp(0.0, 1.0) * 65535.0).round() as u32;
+            let t = (sts[i][1].clamp(0.0, 1.0) * 65535.0).round() as u32;
+            // Pack: [normal_xy(u32), st(u32)]
+            let normal_packed = oct_x | (oct_y << 16);
+            let st_packed = s | (t << 16);
+            compressed.push(normal_packed);
+            compressed.push(st_packed);
+        } else {
+            let normal_packed = oct_x | (oct_y << 16);
+            compressed.push(normal_packed);
+        }
+    }
+
+    Some(compressed)
+}
+
+/// Creates line segments for vector attributes (e.g., normals visualization).
+/// Maps to `GeometryPipeline.createLineSegmentsForVectors`
+pub fn create_line_segments_for_vectors(
+    positions: &[[f64; 3]],
+    vectors: &[[f64; 3]],
+    length: f64,
+) -> GeometryData {
+    let mut line_positions: Vec<[f64; 3]> = Vec::with_capacity(positions.len() * 2);
+
+    for i in 0..positions.len() {
+        let p = DVec3::from(positions[i]);
+        let v = DVec3::from(vectors[i]) * length;
+        line_positions.push(positions[i]);
+        let end = p + v;
+        line_positions.push([end.x, end.y, end.z]);
+    }
+
+    let mut indices: Vec<u32> = Vec::with_capacity(positions.len() * 2);
+    for i in 0..positions.len() as u32 {
+        indices.push(i * 2);
+        indices.push(i * 2 + 1);
+    }
+
+    // Bounding sphere: center same as input, radius + length
+    let mut center = DVec3::ZERO;
+    for p in positions {
+        center += DVec3::from(*p);
+    }
+    if !positions.is_empty() {
+        center /= positions.len() as f64;
+    }
+    let mut max_dist_sq = 0.0_f64;
+    for p in positions {
+        let d = (DVec3::from(*p) - center).length_squared();
+        if d > max_dist_sq {
+            max_dist_sq = d;
+        }
+    }
+    let radius = max_dist_sq.sqrt() + length;
+
+    GeometryData {
+        positions: line_positions,
+        normals: None,
+        tex_coords: None,
+        tangents: None,
+        bitangents: None,
+        indices,
+        bounding_sphere: BoundingSphere::new(center, radius),
+        primitive_type: PrimitiveType::Lines,
+    }
+}
+
+/// Reorders geometry indices and attributes for pre-vertex cache optimization.
+/// Maps to `GeometryPipeline.reorderForPreVertexCache`
+pub fn reorder_for_pre_vertex_cache(geo: &mut GeometryData) {
+    if geo.indices.is_empty() {
+        return;
+    }
+
+    let num_vertices = geo.positions.len();
+    let mut used: Vec<bool> = vec![false; num_vertices];
+    let mut remap: Vec<Option<u32>> = vec![None; num_vertices];
+    let mut new_index: u32 = 0;
+
+    // First pass: determine which vertices are used and assign new indices
+    for &idx in &geo.indices {
+        let i = idx as usize;
+        if i < num_vertices && !used[i] {
+            used[i] = true;
+            remap[i] = Some(new_index);
+            new_index += 1;
+        }
+    }
+
+    // Remap indices
+    let new_indices: Vec<u32> = geo.indices.iter().map(|&idx| {
+        remap[idx as usize].unwrap_or(0)
+    }).collect();
+    geo.indices = new_indices;
+
+    // Compact attributes
+    let used_indices: Vec<usize> = (0..num_vertices)
+        .filter(|&i| used[i])
+        .collect();
+
+    geo.positions = used_indices.iter().map(|&i| geo.positions[i]).collect();
+    if let Some(ref mut normals) = geo.normals {
+        *normals = used_indices.iter().map(|&i| normals[i]).collect();
+    }
+    if let Some(ref mut st) = geo.tex_coords {
+        *st = used_indices.iter().map(|&i| st[i]).collect();
+    }
+    if let Some(ref mut tangents) = geo.tangents {
+        *tangents = used_indices.iter().map(|&i| tangents[i]).collect();
+    }
+    if let Some(ref mut bitangents) = geo.bitangents {
+        *bitangents = used_indices.iter().map(|&i| bitangents[i]).collect();
+    }
+}
+
+/// Splits geometry into multiple geometries that fit in u16 indices (65536 vertices max).
+/// Maps to `GeometryPipeline.fitToUnsignedShortIndices`
+pub fn fit_to_unsigned_short_indices(geo: &GeometryData) -> Vec<GeometryData> {
+    const MAX_VERTICES: usize = 65536;
+    let num_vertices = geo.positions.len();
+
+    if num_vertices <= MAX_VERTICES {
+        return vec![geo.clone()];
+    }
+
+    let vertices_per_primitive = match geo.primitive_type {
+        PrimitiveType::Triangles => 3,
+        PrimitiveType::Lines => 2,
+    };
+
+    let mut result: Vec<GeometryData> = Vec::new();
+    let mut current_vertices: Vec<[f64; 3]> = Vec::new();
+    let mut current_normals: Vec<[f64; 3]> = Vec::new();
+    let mut current_st: Vec<[f64; 2]> = Vec::new();
+    let mut current_indices: Vec<u32> = Vec::new();
+    let mut vertex_map: std::collections::HashMap<usize, u32> = std::collections::HashMap::new();
+
+    let num_primitives = geo.indices.len() / vertices_per_primitive;
+
+    for prim in 0..num_primitives {
+        let base = prim * vertices_per_primitive;
+
+        // Check if adding this primitive would exceed limit
+        let mut new_vertices_needed = 0;
+        for k in 0..vertices_per_primitive {
+            let old_idx = geo.indices[base + k] as usize;
+            if !vertex_map.contains_key(&old_idx) {
+                new_vertices_needed += 1;
+            }
+        }
+
+        if current_vertices.len() + new_vertices_needed > MAX_VERTICES && !current_vertices.is_empty() {
+            // Flush current batch
+            result.push(GeometryData {
+                positions: std::mem::take(&mut current_vertices),
+                normals: if geo.normals.is_some() { Some(std::mem::take(&mut current_normals)) } else { None },
+                tex_coords: if geo.tex_coords.is_some() { Some(std::mem::take(&mut current_st)) } else { None },
+                tangents: None,
+                bitangents: None,
+                indices: std::mem::take(&mut current_indices),
+                bounding_sphere: geo.bounding_sphere.clone(),
+                primitive_type: geo.primitive_type,
+            });
+            vertex_map.clear();
+        }
+
+        // Add vertices and indices
+        for k in 0..vertices_per_primitive {
+            let old_idx = geo.indices[base + k] as usize;
+            let new_idx = *vertex_map.entry(old_idx).or_insert_with(|| {
+                let idx = current_vertices.len() as u32;
+                current_vertices.push(geo.positions[old_idx]);
+                if let Some(ref normals) = geo.normals {
+                    current_normals.push(normals[old_idx]);
+                }
+                if let Some(ref st) = geo.tex_coords {
+                    current_st.push(st[old_idx]);
+                }
+                idx
+            });
+            current_indices.push(new_idx);
+        }
+    }
+
+    // Flush remaining
+    if !current_vertices.is_empty() {
+        result.push(GeometryData {
+            positions: current_vertices,
+            normals: if geo.normals.is_some() { Some(current_normals) } else { None },
+            tex_coords: if geo.tex_coords.is_some() { Some(current_st) } else { None },
+            tangents: None,
+            bitangents: None,
+            indices: current_indices,
+            bounding_sphere: geo.bounding_sphere.clone(),
+            primitive_type: geo.primitive_type,
+        });
+    }
+
+    result
+}
+
+/// Splits geometry that crosses the international date line (longitude ±π).
+/// Returns split geometries (west/east halves).
+/// Maps to `GeometryPipeline.splitLongitude`
+pub fn split_longitude(geo: &GeometryData, ellipsoid: &Ellipsoid) -> Vec<GeometryData> {
+    if geo.positions.is_empty() || geo.primitive_type != PrimitiveType::Triangles {
+        return vec![geo.clone()];
+    }
+
+    // Convert positions to cartographic and check if any cross IDL
+    let cartos: Vec<Option<crate::cartographic::Cartographic>> = geo.positions.iter()
+        .map(|p| ellipsoid.cartesian_to_cartographic(DVec3::from(*p)))
+        .collect();
+
+    // Check if geometry crosses the IDL:
+    // 1. Any triangle has vertices with longitude difference > PI, OR
+    // 2. The geometry has vertices on both sides of the IDL (lon > PI/2 and lon < -PI/2)
+    let mut crosses_idl = false;
+    let mut has_far_east = false;  // longitude > PI/2 (90°E)
+    let mut has_far_west = false;  // longitude < -PI/2 (90°W)
+
+    for c in cartos.iter().flatten() {
+        if c.longitude > std::f64::consts::FRAC_PI_2 {
+            has_far_east = true;
+        }
+        if c.longitude < -std::f64::consts::FRAC_PI_2 {
+            has_far_west = true;
+        }
+    }
+    if has_far_east && has_far_west {
+        crosses_idl = true;
+    }
+
+    // Also check for large longitude jumps within triangles
+    if !crosses_idl {
+        for tri in 0..geo.indices.len() / 3 {
+            let i0 = geo.indices[tri * 3] as usize;
+            let i1 = geo.indices[tri * 3 + 1] as usize;
+            let i2 = geo.indices[tri * 3 + 2] as usize;
+
+            if let (Some(c0), Some(c1), Some(c2)) = (&cartos[i0], &cartos[i1], &cartos[i2]) {
+                let lons = [c0.longitude, c1.longitude, c2.longitude];
+                for a in 0..3 {
+                    for b in (a+1)..3 {
+                        if (lons[a] - lons[b]).abs() > std::f64::consts::PI {
+                            crosses_idl = true;
+                            break;
+                        }
+                    }
+                    if crosses_idl { break; }
+                }
+            }
+            if crosses_idl { break; }
+        }
+    }
+
+    if !crosses_idl {
+        return vec![geo.clone()];
+    }
+
+    // For IDL-crossing geometry, split into east (positive) and west (negative) parts
+    // This is a simplified version - full CesiumJS implementation interpolates at the IDL
+    let mut east_positions: Vec<[f64; 3]> = Vec::new();
+    let mut west_positions: Vec<[f64; 3]> = Vec::new();
+    let mut east_indices: Vec<u32> = Vec::new();
+    let mut west_indices: Vec<u32> = Vec::new();
+    let mut east_map: std::collections::HashMap<usize, u32> = std::collections::HashMap::new();
+    let mut west_map: std::collections::HashMap<usize, u32> = std::collections::HashMap::new();
+
+    for tri in 0..geo.indices.len() / 3 {
+        let i0 = geo.indices[tri * 3] as usize;
+        let i1 = geo.indices[tri * 3 + 1] as usize;
+        let i2 = geo.indices[tri * 3 + 2] as usize;
+
+        // Determine which side this triangle belongs to (majority vote)
+        let mut east_count = 0;
+        let mut west_count = 0;
+        for &idx in &[i0, i1, i2] {
+            if let Some(Some(c)) = cartos.get(idx) {
+                if c.longitude >= 0.0 {
+                    east_count += 1;
+                } else {
+                    west_count += 1;
+                }
+            }
+        }
+
+        if east_count >= west_count {
+            // Assign to east
+            for &idx in &[i0, i1, i2] {
+                let new_idx = *east_map.entry(idx).or_insert_with(|| {
+                    let i = east_positions.len() as u32;
+                    east_positions.push(geo.positions[idx]);
+                    i
+                });
+                east_indices.push(new_idx);
+            }
+        } else {
+            // Assign to west
+            for &idx in &[i0, i1, i2] {
+                let new_idx = *west_map.entry(idx).or_insert_with(|| {
+                    let i = west_positions.len() as u32;
+                    west_positions.push(geo.positions[idx]);
+                    i
+                });
+                west_indices.push(new_idx);
+            }
+        }
+    }
+
+    let mut result = Vec::new();
+    if !east_positions.is_empty() {
+        result.push(GeometryData {
+            positions: east_positions,
+            normals: None,
+            tex_coords: None,
+            tangents: None,
+            bitangents: None,
+            indices: east_indices,
+            bounding_sphere: geo.bounding_sphere.clone(),
+            primitive_type: PrimitiveType::Triangles,
+        });
+    }
+    if !west_positions.is_empty() {
+        result.push(GeometryData {
+            positions: west_positions,
+            normals: None,
+            tex_coords: None,
+            tangents: None,
+            bitangents: None,
+            indices: west_indices,
+            bounding_sphere: geo.bounding_sphere.clone(),
+            primitive_type: PrimitiveType::Triangles,
+        });
+    }
+
+    if result.is_empty() {
+        vec![geo.clone()]
+    } else {
+        result
+    }
+}
+
+/// Combines several geometries into one by concatenating attributes,
+/// concatenating and adjusting indices, and creating a bounding sphere
+/// encompassing all inputs.
+///
+/// If the geometries do not all share an optional attribute (normals,
+/// texture coordinates, tangents, bitangents), that attribute is dropped
+/// from the result. Indices are combined only when every input geometry
+/// has a non-empty index list; otherwise the result has no indices.
+///
+/// Maps to CesiumJS `GeometryPipeline.combineInstances` / `combineGeometries`.
+pub fn combine_geometries(geometries: &[GeometryData]) -> GeometryData {
+    assert!(
+        !geometries.is_empty(),
+        "geometries must have length greater than zero"
+    );
+
+    let primitive_type = geometries[0].primitive_type;
+    let have_indices = !geometries[0].indices.is_empty();
+
+    for geo in &geometries[1..] {
+        assert_eq!(
+            geo.primitive_type, primitive_type,
+            "All geometries must have the same primitiveType."
+        );
+        assert_eq!(
+            !geo.indices.is_empty(),
+            have_indices,
+            "All geometries must have an indices or not have one."
+        );
+    }
+
+    // Combine positions.
+    let mut positions: Vec<[f64; 3]> = Vec::new();
+    for geo in geometries {
+        positions.extend_from_slice(&geo.positions);
+    }
+
+    // Combine optional attributes only if present in ALL geometries.
+    let all_have = |f: fn(&GeometryData) -> &Option<Vec<[f64; 3]>>| -> bool {
+        geometries.iter().all(|g| f(g).is_some())
+    };
+
+    let normals = if all_have(|g| &g.normals) {
+        let mut v = Vec::new();
+        for geo in geometries {
+            v.extend_from_slice(geo.normals.as_ref().unwrap());
+        }
+        Some(v)
+    } else {
+        None
+    };
+
+    let tangents = if all_have(|g| &g.tangents) {
+        let mut v = Vec::new();
+        for geo in geometries {
+            v.extend_from_slice(geo.tangents.as_ref().unwrap());
+        }
+        Some(v)
+    } else {
+        None
+    };
+
+    let bitangents = if all_have(|g| &g.bitangents) {
+        let mut v = Vec::new();
+        for geo in geometries {
+            v.extend_from_slice(geo.bitangents.as_ref().unwrap());
+        }
+        Some(v)
+    } else {
+        None
+    };
+
+    let tex_coords = if geometries.iter().all(|g| g.tex_coords.is_some()) {
+        let mut v = Vec::new();
+        for geo in geometries {
+            v.extend_from_slice(geo.tex_coords.as_ref().unwrap());
+        }
+        Some(v)
+    } else {
+        None
+    };
+
+    // Combine index lists with per-geometry vertex offsets.
+    let indices = if have_indices {
+        let mut dest: Vec<u32> = Vec::new();
+        let mut offset: u32 = 0;
+        for geo in geometries {
+            for &idx in &geo.indices {
+                dest.push(offset + idx);
+            }
+            offset += geo.positions.len() as u32;
+        }
+        dest
+    } else {
+        Vec::new()
+    };
+
+    // Create a bounding sphere that includes all geometries.
+    let mut bounding_sphere = geometries[0].bounding_sphere.clone();
+    for geo in &geometries[1..] {
+        bounding_sphere = bounding_sphere.union(&geo.bounding_sphere);
+    }
+
+    GeometryData {
+        positions,
+        normals,
+        tex_coords,
+        tangents,
+        bitangents,
+        indices,
+        bounding_sphere,
+        primitive_type,
+    }
 }
 
 #[cfg(test)]
