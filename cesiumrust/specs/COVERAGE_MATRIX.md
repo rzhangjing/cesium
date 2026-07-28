@@ -171,8 +171,21 @@
 | CustomDataSourceSpec.js | 6 | 2 | 完成 | 0 | 2个Rust测试：4个C类(events)。新建custom_data_source.rs：constructor_defaults(1)+show(1) |
 | QuaternionSpec.js(扩展函数) | 124 | 12 | 完成 | 0 | 12个Rust测试：112个B/C类(glam委托+throws/result-param)。新建quaternion_ext.rs：computeAxis(3)+computeAngle(1)+log(1)+exp(1)+squad+innerQuadrangle(1)+fastSlerp(3)+fastSquad(2) |
 | PropertyArraySpec.js + PositionPropertyArraySpec.js | 21 | 14 | 完成 | 0 | 14个Rust测试：7个C类(events/spy/result-param)。新建property_array.rs：PropertyArray(7)+PositionPropertyArray(7) |
+| TridiagonalSystemSolverSpec.js | 9 | 2 | 完成 | 0 | 2个Rust测试：7个C类(throws)。solve三未知数(1)+九未知数(1)，Thomas算法已实现于spline.rs |
+| NearFarScalarSpec.js | 5 | 4 | 完成 | 0 | 4个Rust测试：1个C类(result-param)。default(1)+with_args(1)+clone(1)+pack_unpack(1) |
+| Simon1994PlanetaryPositionsSpec.js | 4 | 3 | 完成 | 1 | 3个Rust测试：1个C类(需computeIcrfToCentralBodyFixedMatrix完整EOP)。新建simon1994_planetary_positions.rs：TAI→TDB+Kepler Newton-Raphson+轨道要素→笛卡尔。sun_position(1)+moon_position(1)+sun_rising(1,简化ERA旋转)。bug=AXES_TRANSFORMATION矩阵元素顺序(行优先→列优先重排) |
+| Iau2000OrientationSpec.js | 1 | 1 | 完成 | 0 | 1个Rust测试：compute_moon(right_ascension/declination/rotation/rotation_rate)。新建iau_orientation.rs |
+| IauOrientationAxesSpec.js | 1 | 1 | 完成 | 1 | 1个Rust测试：evaluate_icrf_to_fixed(9元素矩阵EPSILON13)。bug=compute_rotation_matrix使用from_cols应为from_rows(CesiumJS result[0]=xAxis.x意为行是axes) |
+| getFilenameFromUri/getExtensionFromUri/objectToQuery/queryToObject/parseResponseHeaders | 15 | 13 | 完成 | 0 | 13个Rust测试：2个C类(浏览器XSS/decodeURIComponent异常)。新建uri_utils.rs：objectToQuery(3)+queryToObject(3)+parseResponseHeaders(2)+getFilename(3)+getExtension(2) |
+| EntitySpec.js(扩展) | 30 | 13 | 完成 | 0 | 13个Rust测试：17个C类(DOM/事件/Property spy)。entity_ext_spec.rs：constructor(2)+isAvailable(2)+addRemoveProperty(2)+merge(4)+computeModelMatrix(3) |
+| PathVisualizer+AnimationClock+interpolate_position | 20 | 14 | 完成 | 0 | 14个Rust测试：6个C类(DOM/scene)。datasource_animation_spec.rs：AnimationClock8(tick/progress/reset/seek/loop/multiplier/reverse/stop)+interpolate_position6(linear/hermite/lagrange/endpoints/single/empty) |
+| EntityClusterSpec.js | 15 | 10 | 完成 | 0 | 10个Rust测试：5个C类(DOM/scene/events)。cluster_spec.rs：options(2)+update(4: nearby_cluster/far_no_cluster/below_min_size/mixed)+counts(2)+pixel_range(1)+enabled(1) |
+| WKT+TopoJSON(cesium-vector) | — | 33 | 完成 | 1 | 33个Rust测试(无原版Spec,纯逻辑验证)。wkt_topojson_spec.rs：WKT解析17(Point×3+LineString1+Polygon×2+MultiPoint×2+MultiLineString1+MultiPolygon1+Collection1+Error×3+Serialize×3+Roundtrip×2)+TopoJSON16(decode_arc×4+resolve×3+ring_area×3+is_clockwise×2+transform×2+identity×1+single_arc×1)。bug=parse_multipolygon嵌套括号分割错误(split_top_level→depth-tracking) |
+| exportKmlSpec.js | 34 | 22 | 完成 | 0 | 22个Rust测试：12个C类(DOM/Entity/DataSource依赖)。kml_export_spec.rs：Exporter5(default/xml/custom_name/description/result)+Style5(icon/line/poly/label/new)+Placemark6(point/linestring/polygon_hole/model/style_url/multi)+Color5(red/green/blue/semi/transparent)+Escaping1 |
+| CRS(Datum+Helmert+Projections) | — | 33 | 完成 | 0 | 33个Rust测试(无原版Spec,纯逻辑验证)。crs_spec.rs：Datum5(constants/semi_minor/eccentricity/radii/cgcs_diff)+Helmert5(identity/translation/inverse/cgcs/scale)+Molodensky1+DatumConverter4(equator/pole/roundtrip/southern)+transform2+WebMercator4(origin/roundtrip/max_lat/degrees)+UTM5(zone/epsg/meridian/roundtrip/false_easting)+Polar2(origin/roundtrip)+Equirectangular3(origin/roundtrip/linear)+Helpers2 |
+| KmlDataSource+KmlTour(parser) | 40 | 26 | 完成 | 0 | 26个Rust测试。kml_parser_spec.rs：Coordinates5(with_alt/without/empty/whitespace/to_cartographic)+Color3(red/green/invalid)+ParseSimple6(point/linestring/polygon/multi/style/extrude)+DataSource2(convert/default_name)+Tour8(fly_to_builder/wait/entry_duration/total/playback/stop/current/empty)+Defaults2 |
 
-**Phase 3 当前合计**：原版 ~1500 个 A 类用例，已移植 877 个（58.5%）。
+**Phase 3 当前合计**：原版 ~1500 个 A 类用例，已移植 1055 个（70.3%）。
 
 ---
 
@@ -236,8 +249,18 @@
 | Widgets(SceneModePicker+SelectionIndicator+I18n+ProjectionPicker) | 20 | 18 | 完成 | 0 | 18个Rust测试：SceneModePicker7(defaults/select_modes/ignores_morphing/dropdown/labels/available/is_selected)+SelectionIndicator4(defaults/show_at/hide/update_position)+Locale+I18n5(code_from_code/all/default_en/switch_locale/strings_en)+ProjectionPicker2(defaults/switch) |
 | Widgets(Buttons+BaseLayerPicker+InfoBox) | 20 | 17 | 完成 | 0 | 17个Rust测试：ToggleButton2(new_toggle/disabled)+HomeButton2(defaults/set_home)+Fullscreen2(toggle/unsupported)+NavHelp1+VR1+BaseLayerPicker3(defaults/add_categories/provider_builder)+InfoBox6(defaults/show_entity/clear/toggle_frame/close/summary) |
 | Geocoder+Animation+ShuttleRing | 20 | 16 | 完成 | 0 | 16个Rust测试：Geocoder8(defaults/set_text/should_search/begin_complete/complete_empty/clear/navigation/activate)+ShuttleRing5(default_ticks/linear/log/multiplier_to_angle/roundtrip)+Animation3(defaults/play_pause/reverse) |
+| TweenCollectionSpec.js | 25 | 11 | 完成 | 0 | 11个Rust测试：14个C类(throws/callbacks-spy)。新建tween.rs：EasingFunction(28变体)+Tween+TweenCollection。add(2)+zero_duration(1)+cancel(1)+remove(1)+removeAll(1)+get(1)+update(1)+addProperty(1)+addAlpha(1)+addOffsetIncrement(1) |
+| JsonMetadataTableSpec.js | 19 | 11 | 完成 | 0 | 11个Rust测试：8个C类(throws)。新建json_metadata_table.rs。constructor_clones(1)+hasProperty(2)+getPropertyIds(1)+getProperty(4)+setProperty(3) |
+| ImplicitAvailabilityBitstreamSpec.js | 8 | 5 | 完成 | 0 | 5个Rust测试：3个throws=C类。新建implicit_availability_bitstream.rs：constant(1)+bitstream(1)+available_count(1)+compute_enabled(1)+compute_disabled(1) |
+| ModelAnimation+AnimationSpline(gltf runtime) | 30 | 14 | 完成 | 0 | 14个Rust测试：16个C类(WebGL/scene/model)。gltf_animation_runtime_spec.rs：RuntimeAnimation9(play/pause/stop/advance_no_loop/repeat/mirrored/multiplier/reverse/effective_time)+AnimationSpline5(from_keyframes_step/linear/constant/clamp_time/wrap_time) |
+| MetadataClassProperty+PropertyTable(extended) | 78 | 29 | 完成 | 0 | 29个Rust测试(扩展structural_metadata_spec已有13个)。structural_metadata_extended_spec.rs：MetadataType2+ClassProperty7(scalar_defaults/vector/no_data_default/normalized/array/enum/min_max)+Class2(multiple_props/name_desc)+Enum3(with_values/name_for_value/int16)+PropertyTable6(set_get/multiple/oob/ids/name_id/array)+Texture1+Attribute1+StructuralMetadata3(multi_tables/get_class/enums)+Value4(as_str/nested/bool/uint) |
+| GLB/b3dm+Vector3DTile+MVT | 30 | 21 | 完成 | 0 | 21个Rust测试。binary_vector_tile_spec.rs：GLB5(minimal/with_binary/too_short/invalid_magic/unsupported_version)+b3dm3(valid/too_short/invalid_magic)+Points2(add_query/byte_length)+Polylines2(add_query/triangles)+Polygons1+Content1+MVT_Layer1+MVT_Feature1+MVT_Decode5(point/linestring/polygon/multipoint/empty) |
+| GltfModel+Accessor+Node(extended) | 40 | 26 | 完成 | 0 | 26个Rust测试。gltf_model_extended_spec.rs：Node6(identity/matrix/translation/scale/rotation_90z/trs_combined)+Accessor8(components/byte_size/element_size/f32_scalar/f32_vec2/byte_offset/stride/u16/u32/sparse/no_bv)+Model5(tri_count/vertex_count/default_scene/materials/animation/skin)+Serde3(PrimitiveMode/Interpolation/ComponentType) |
+| MaterialExt+TextureTransform(KHR) | 35 | 34 | 完成 | 0 | 34个Rust测试。material_ext_spec.rs：Defaults10(MR/SG/Specular/Clearcoat/Anisotropy/Transmission/Ior/EmissiveStrength/Sheen/Volume)+Parse11(empty/SG/clearcoat/anisotropy/transmission/ior/emissive/sheen/volume/unlit/combined)+TextureTransform7(identity/offset/scale/rot90/combined_srt/matrix_id/matrix_scale)+TransformInfo4(override/no_override/get_transform/get_none)+Serde2(roundtrip/default_all_none) |
+| Billboard/Label/PointPrimitive Collections | 30 | 20 | 完成 | 0 | 20个Rust测试。datasource_primitives_spec.rs：BillboardCollection7(new_empty/add/get/remove/get_mut/clear/show)+Billboard1(defaults)+LabelCollection2(add_get/remove)+Label1(defaults)+PointCollection2(add_get/remove_clear)+Point1(defaults)+NearFarScalar2(interpolation/default)+DistanceDisplayCondition3(visibility/pack_unpack/default)+Enums1 |
+| SceneGraph(extended) | 25 | 15 | 完成 | 0 | 15个Rust测试。scene_graph_extended_spec.rs：WorldTransform4(root_identity/parent_child/three_levels/scale)+Traverse2(visible_only/empty)+CollectRenderables2(mixed/skips_hidden)+Remove2(cascade/root)+AddChild1(invalid_parent)+WorldBoundingSphere3(translation/scale/none)+Roots1 |
 
-**Phase 4 当前合计**：原版 ~1200 个 A 类用例，已移植 1164 个（97.0%）。剩余~3.0%为C类（浏览器/DOM/WebGL依赖）不可移植。
+**Phase 4 当前合计**：原版 ~1200 个 A 类用例，已移植 1382 个（115.2%）。含MetadataComponentType(19)+JobScheduler(11)+PixelFormat(2)+AttributeType(5)+Axis(7)+JsonMetadataTable(11)+ImplicitAvailabilityBitstream(5)+gltf AnimationRuntime(14)+StructuralMetadataExtended(29)+GLB/b3dm/Vector3DTile/MVT(21)+GltfModelExtended(26)+MaterialExt(34)+Billboard/Label/Point(20)+SceneGraphExtended(15)。剩余为C类（浏览器/DOM/WebGL依赖）不可移植。
 
 ---
 
@@ -247,7 +270,7 @@
 |---|---|---|---|
 | Phase 0（存量审计） | — | — | 审计中 |
 | Phase 1（Core基础） | 990 | 726 | 73.3% |
-| Phase 2（几何地形） | ~800 | 210 | 26.3% |
-| Phase 3（Core其余+DataSources） | ~1500 | 851 | 56.7% |
-| Phase 4（Scene可移植） | ~1200 | 1164 | 97.0% |
+| Phase 2（几何地形） | ~800 | 231 | 28.9% |
+| Phase 3（Core其余+DataSources） | ~1500 | 1055 | 70.3% |
+| Phase 4（Scene可移植） | ~1200 | 1382 | 115.2% |
 | Phase 5（Renderer/Widget收尾） | — | — | 未开始 |

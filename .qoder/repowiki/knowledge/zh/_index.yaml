@@ -3,7 +3,7 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-07-25T18:31:31Z"
+exported_at: "2026-07-28T12:32:55Z"
 modules:
     "":
         dir_name: CesiumJS Specs 测试套件与 Rust 移植集成测试

@@ -126,17 +126,42 @@ fn parse_multilinestring(wkt: &str) -> Result<WktGeometry, WktError> {
 
 fn parse_multipolygon(wkt: &str) -> Result<WktGeometry, WktError> {
     let inner = extract_parentheses(wkt)?;
-    let polygons = split_top_level(&inner, ')')?;
-    let mut result = Vec::new();
-    for poly_str in polygons {
-        let poly_str = poly_str.trim();
-        if poly_str.is_empty() {
-            continue;
+    // Split at top-level parentheses: each polygon is ((rings))
+    let mut polygons = Vec::new();
+    let mut depth = 0i32;
+    let mut current = String::new();
+
+    for c in inner.chars() {
+        match c {
+            '(' => {
+                depth += 1;
+                if depth == 1 {
+                    current = String::new();
+                } else {
+                    current.push(c);
+                }
+            }
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    let trimmed = current.trim();
+                    if !trimmed.is_empty() {
+                        let full = format!("POLYGON({})", trimmed);
+                        polygons.push(parse_polygon(&full)?);
+                    }
+                } else {
+                    current.push(c);
+                }
+            }
+            _ => {
+                if depth >= 1 {
+                    current.push(c);
+                }
+            }
         }
-        let full = format!("POLYGON({})", poly_str);
-        result.push(parse_polygon(&full)?);
     }
-    Ok(WktGeometry::MultiPolygon(result))
+
+    Ok(WktGeometry::MultiPolygon(polygons))
 }
 
 fn parse_geometry_collection(wkt: &str) -> Result<WktGeometry, WktError> {

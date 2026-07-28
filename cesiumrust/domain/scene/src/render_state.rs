@@ -250,6 +250,41 @@ pub enum PixelFormat {
     DepthStencil,
 }
 
+impl PixelFormat {
+    /// Returns the number of components per pixel for this format.
+    ///
+    /// Maps to CesiumJS `PixelFormat.componentsLength`.
+    pub fn components_per_pixel(&self) -> usize {
+        match self {
+            Self::Rgba => 4,
+            Self::Rgb => 3,
+            Self::Rg => 2,
+            Self::Red => 1,
+            Self::Depth => 1,
+            Self::DepthStencil => 1,
+        }
+    }
+
+    /// Flips pixel data vertically (Y-axis).
+    ///
+    /// Maps to CesiumJS `PixelFormat.flipY`.
+    pub fn flip_y(data: &[u8], format: PixelFormat, width: usize, height: usize) -> Vec<u8> {
+        if height == 1 {
+            return data.to_vec();
+        }
+        let components = format.components_per_pixel();
+        let row_bytes = width * components;
+        let mut result = vec![0u8; data.len()];
+        for row in 0..height {
+            let src_offset = row * row_bytes;
+            let dst_offset = (height - 1 - row) * row_bytes;
+            result[dst_offset..dst_offset + row_bytes]
+                .copy_from_slice(&data[src_offset..src_offset + row_bytes]);
+        }
+        result
+    }
+}
+
 /// Texture data type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum PixelDatatype {

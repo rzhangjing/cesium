@@ -13,6 +13,29 @@ pub enum PrimitiveType {
     TriangleFan,
 }
 
+impl PrimitiveType {
+    /// Returns true if the value is a valid PrimitiveType.
+    ///
+    /// Maps to CesiumJS `PrimitiveType.validate`.
+    pub fn validate(&self) -> bool {
+        true // All enum variants are valid
+    }
+
+    /// Returns true if the primitive type is a line type.
+    ///
+    /// Maps to CesiumJS `PrimitiveType.isLines`.
+    pub fn is_lines(&self) -> bool {
+        matches!(self, Self::Lines | Self::LineLoop | Self::LineStrip)
+    }
+
+    /// Returns true if the primitive type is a triangle type.
+    ///
+    /// Maps to CesiumJS `PrimitiveType.isTriangles`.
+    pub fn is_triangles(&self) -> bool {
+        matches!(self, Self::Triangles | Self::TriangleStrip | Self::TriangleFan)
+    }
+}
+
 /// Returns the number of wireframe indices that will be generated
 /// for the given primitive type and index count.
 pub fn get_wireframe_indices_count(primitive_type: PrimitiveType, index_count: usize) -> usize {

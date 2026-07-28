@@ -15,6 +15,7 @@
 pub mod batch_table;
 pub mod bounding_volume;
 pub mod content_decoder;
+pub mod json_metadata_table;
 pub mod point_cloud;
 pub mod structural_metadata;
 pub mod styling;

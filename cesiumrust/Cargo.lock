@@ -1551,6 +1551,7 @@ version = "0.1.0"
 name = "cesium-geospatial"
 version = "0.1.0"
 dependencies = [
+ "cesium-time",
  "earcut",
  "glam",
  "serde",

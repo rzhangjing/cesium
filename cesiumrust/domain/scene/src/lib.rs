@@ -18,6 +18,11 @@ pub mod draw_command;
 pub mod shader;
 pub mod render_state;
 pub mod debug_inspector;
+pub mod axis;
+pub mod attribute_type;
+pub mod metadata_component_type;
+pub mod job_scheduler;
+pub mod implicit_availability_bitstream;
 
 pub use scene_graph::{SceneGraph, SceneNode, NodeId, RenderableContent};
 pub use culling::{

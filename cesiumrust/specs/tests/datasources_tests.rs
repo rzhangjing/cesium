@@ -23,4 +23,11 @@ mod datasources {
     pub mod node_transformation_property_spec;
     pub mod datasource_clock_spec;
     pub mod property_array_spec;
+    pub mod material_property_extended_spec;
+    pub mod entity_ext_spec;
+    pub mod datasource_animation_spec;
+    pub mod cluster_spec;
+    pub mod kml_export_spec;
+    pub mod kml_parser_spec;
+    pub mod datasource_primitives_spec;
 }

@@ -63,6 +63,7 @@ mod core {
     pub mod misc_phase3_spec;
     pub mod geometry_pipeline_spec;
     pub mod geometry_generators_spec;
+    pub mod geometry_generators_ext_spec;
     pub mod geometry_attributes_spec;
     pub mod geometry_extended_spec;
     pub mod rectangle_geometry_spec;
@@ -81,4 +82,7 @@ mod core {
     pub mod matrix4_extensions_spec;
     pub mod quaternion_ext_spec;
     pub mod misc_core2_spec;
+    pub mod astronomy_spec;
+    pub mod uri_utils_spec;
+    pub mod crs_spec;
 }

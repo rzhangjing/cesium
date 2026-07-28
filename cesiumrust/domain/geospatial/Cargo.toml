@@ -10,3 +10,4 @@ glam.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 earcut.workspace = true
+cesium-time = { path = "../time" }

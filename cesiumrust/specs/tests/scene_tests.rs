@@ -74,4 +74,19 @@ mod scene {
     pub mod widgets_extended_spec;
     pub mod geocoder_animation_spec;
     pub mod tween_collection_spec;
+    pub mod json_metadata_table_spec;
+    pub mod attribute_type_spec;
+    pub mod axis_spec;
+    pub mod metadata_component_type_spec;
+    pub mod job_scheduler_spec;
+    pub mod primitive_pixel_spec;
+    pub mod implicit_bitstream_spec;
+    pub mod gltf_animation_runtime_spec;
+    pub mod wkt_topojson_spec;
+    pub mod structural_metadata_extended_spec;
+    pub mod binary_vector_tile_spec;
+    pub mod gltf_model_extended_spec;
+    pub mod material_ext_spec;
+    pub mod scene_graph_extended_spec;
+    pub mod flight_morph_display_spec;
 }

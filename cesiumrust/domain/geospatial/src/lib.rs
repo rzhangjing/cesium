@@ -45,6 +45,9 @@ pub mod geometry_instance_attribute;
 pub mod cartesian3_ext;
 pub mod matrix4_ext;
 pub mod quaternion_ext;
+pub mod simon1994_planetary_positions;
+pub mod iau_orientation;
+pub mod uri_utils;
 
 pub use cartographic::Cartographic;
 pub use ellipsoid::Ellipsoid;

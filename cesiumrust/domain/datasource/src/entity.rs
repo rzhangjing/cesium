@@ -776,7 +776,7 @@ impl Default for PolylineVolumeGraphics {
 /// An entity in the data source.
 ///
 /// Maps to CesiumJS `DataSources/Entity.js`
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Entity {
     /// Unique identifier.
     pub id: String,
@@ -847,6 +847,9 @@ pub struct Entity {
     /// Parent entity ID.
     pub parent: Option<String>,
 
+    /// Availability interval collection.
+    pub availability: Option<cesium_time::TimeIntervalCollection<()>>,
+
     /// Custom properties (key-value metadata).
     pub properties: std::collections::HashMap<String, serde_json::Value>,
 }
@@ -878,6 +881,7 @@ impl Entity {
             path: None,
             polyline_volume: None,
             parent: None,
+            availability: None,
             properties: std::collections::HashMap::new(),
         }
     }
@@ -1008,6 +1012,118 @@ impl Entity {
             || self.plane.is_some()
             || self.path.is_some()
             || self.polyline_volume.is_some()
+    }
+
+    /// Returns true if the entity is available at the given time.
+    /// If no availability is defined, always returns true.
+    ///
+    /// CesiumJS: `entity.isAvailable(time)`
+    pub fn is_available(&self, time: &cesium_time::JulianDate) -> bool {
+        match &self.availability {
+            None => true,
+            Some(tic) => tic.contains(time),
+        }
+    }
+
+    /// Adds a custom property to the entity.
+    ///
+    /// CesiumJS: `entity.addProperty(name, value)`
+    pub fn add_property(&mut self, name: impl Into<String>, value: serde_json::Value) {
+        self.properties.insert(name.into(), value);
+    }
+
+    /// Removes a custom property from the entity.
+    ///
+    /// CesiumJS: `entity.removeProperty(name)`
+    pub fn remove_property(&mut self, name: &str) -> Option<serde_json::Value> {
+        self.properties.remove(name)
+    }
+
+    /// Merges properties from a source entity into this entity.
+    /// Reserved property names (id, name, show, etc.) are not overwritten.
+    /// Custom properties are merged.
+    ///
+    /// CesiumJS: `entity.merge(source)`
+    pub fn merge(&mut self, source: &Entity) {
+        // Merge name only if not set
+        if self.name.is_none() {
+            self.name = source.name.clone();
+        }
+        // Merge description only if not set
+        if self.description.is_none() {
+            self.description = source.description.clone();
+        }
+        // Merge position only if undefined
+        if matches!(self.position, Property::Undefined) {
+            self.position = source.position.clone();
+        }
+        // Merge orientation only if undefined
+        if matches!(self.orientation, Property::Undefined) {
+            self.orientation = source.orientation.clone();
+        }
+        // Merge graphics only if not set
+        if self.point.is_none() { self.point = source.point.clone(); }
+        if self.polyline.is_none() { self.polyline = source.polyline.clone(); }
+        if self.polygon.is_none() { self.polygon = source.polygon.clone(); }
+        if self.billboard.is_none() { self.billboard = source.billboard.clone(); }
+        if self.label.is_none() { self.label = source.label.clone(); }
+        if self.model.is_none() { self.model = source.model.clone(); }
+        if self.box_graphics.is_none() { self.box_graphics = source.box_graphics.clone(); }
+        if self.cylinder.is_none() { self.cylinder = source.cylinder.clone(); }
+        if self.corridor.is_none() { self.corridor = source.corridor.clone(); }
+        if self.rectangle.is_none() { self.rectangle = source.rectangle.clone(); }
+        if self.wall.is_none() { self.wall = source.wall.clone(); }
+        if self.ellipsoid.is_none() { self.ellipsoid = source.ellipsoid.clone(); }
+        if self.plane.is_none() { self.plane = source.plane.clone(); }
+        if self.path.is_none() { self.path = source.path.clone(); }
+        if self.polyline_volume.is_none() { self.polyline_volume = source.polyline_volume.clone(); }
+        // Merge parent only if not set
+        if self.parent.is_none() {
+            self.parent = source.parent.clone();
+        }
+        // Merge custom properties (source fills in missing keys)
+        for (key, value) in &source.properties {
+            self.properties.entry(key.clone()).or_insert_with(|| value.clone());
+        }
+        // Note: availability is NOT overwritten by merge (CesiumJS behavior)
+    }
+
+    /// Computes the model matrix for this entity at the given time.
+    /// Returns None if position is undefined.
+    /// If orientation is defined, uses it; otherwise computes ENU frame.
+    ///
+    /// CesiumJS: `entity.computeModelMatrix(time, result)`
+    pub fn compute_model_matrix(
+        &self,
+        time: f64,
+        ellipsoid: &cesium_geospatial::Ellipsoid,
+    ) -> Option<glam::DMat4> {
+        // Get position
+        let pos_arr = self.position.get_value(time)?;
+        let cartesian = ellipsoid.cartographic_to_cartesian(
+            &cesium_geospatial::Cartographic::from_radians(pos_arr[0], pos_arr[1], pos_arr[2]),
+        );
+
+        // Get rotation
+        let rotation = if let Some(orient_arr) = self.orientation.get_value(time) {
+            // Orientation is [x, y, z, w] quaternion
+            let quat = glam::DQuat::from_xyzw(orient_arr[0], orient_arr[1], orient_arr[2], orient_arr[3]);
+            glam::DMat3::from_quat(quat)
+        } else {
+            // Compute ENU frame
+            let enu = cesium_geospatial::transforms::east_north_up_to_fixed_frame(cartesian, ellipsoid);
+            // Extract rotation (upper-left 3x3)
+            glam::DMat3::from_cols(
+                enu.col(0).truncate(),
+                enu.col(1).truncate(),
+                enu.col(2).truncate(),
+            )
+        };
+
+        // Build 4x4 model matrix
+        let mut result = glam::DMat4::from_mat3(rotation);
+        result.w_axis = glam::DVec4::new(cartesian.x, cartesian.y, cartesian.z, 1.0);
+        Some(result)
     }
 }
 
