@@ -260,3 +260,118 @@ fn quantized_mesh_uv_coordinates() {
 fn quantized_mesh_max_short_constant() {
     assert_eq!(MAX_SHORT, 32767);
 }
+
+// === HeightmapTerrainData.upsample ===
+
+#[test]
+fn heightmap_upsample_southwest_child() {
+    // 3x3 uniform gradient: heights[row][col] = row*10 + col
+    let heights = vec![
+        0.0, 1.0, 2.0,
+        10.0, 11.0, 12.0,
+        20.0, 21.0, 22.0,
+    ];
+    let parent = HeightmapTerrainData::new(heights, 3, 3, 0.0, 22.0);
+
+    // Upsample to SW child (x=0, y=0, level=1) from parent (x=0, y=0, level=0)
+    let child = parent.upsample(0, 0, 0, 0, 0, 1);
+
+    // SW child covers [0, 0.5] x [0, 0.5] of parent
+    // With 3x3 grid: u=0.5 maps to col_f=1.0 (exact grid point)
+    // Child corner (0,0) = parent (0,0) = 0.0
+    assert!((child.get_height(0, 0).unwrap() - 0.0).abs() < 1e-10);
+    // Child corner (2,0) = parent (0.5, 0) → col_f=1, row_f=0 → h=1.0
+    assert!((child.get_height(2, 0).unwrap() - 1.0).abs() < 1e-10);
+    // Child corner (0,2) = parent (0, 0.5) → col_f=0, row_f=1 → h=10.0
+    assert!((child.get_height(0, 2).unwrap() - 10.0).abs() < 1e-10);
+    // Child corner (2,2) = parent (0.5, 0.5) → col_f=1, row_f=1 → h=11.0
+    assert!((child.get_height(2, 2).unwrap() - 11.0).abs() < 1e-10);
+    assert!(child.created_by_upsampling);
+}
+
+#[test]
+fn heightmap_upsample_eastern_child() {
+    let heights = vec![
+        0.0, 1.0, 2.0,
+        10.0, 11.0, 12.0,
+        20.0, 21.0, 22.0,
+    ];
+    let parent = HeightmapTerrainData::new(heights, 3, 3, 0.0, 22.0);
+
+    // SE child (x=1, y=0)
+    let child = parent.upsample(0, 0, 0, 1, 0, 1);
+
+    // SE child covers [0.5, 1.0] x [0, 0.5] of parent
+    // Child corner (0,0) = parent (0.5, 0) → h=1.0
+    assert!((child.get_height(0, 0).unwrap() - 1.0).abs() < 1e-10);
+    // Child corner (2,0) = parent (1.0, 0) → h=2.0
+    assert!((child.get_height(2, 0).unwrap() - 2.0).abs() < 1e-10);
+    // Child corner (0,2) = parent (0.5, 0.5) → h=11.0
+    assert!((child.get_height(0, 2).unwrap() - 11.0).abs() < 1e-10);
+    // Child corner (2,2) = parent (1.0, 0.5) → h=12.0
+    assert!((child.get_height(2, 2).unwrap() - 12.0).abs() < 1e-10);
+}
+
+#[test]
+fn heightmap_upsample_northwest_child() {
+    let heights = vec![
+        0.0, 1.0, 2.0,
+        10.0, 11.0, 12.0,
+        20.0, 21.0, 22.0,
+    ];
+    let parent = HeightmapTerrainData::new(heights, 3, 3, 0.0, 22.0);
+
+    // NW child (x=0, y=1)
+    let child = parent.upsample(0, 0, 0, 0, 1, 1);
+
+    // NW child covers [0, 0.5] x [0.5, 1.0] of parent
+    // Child corner (0,0) = parent (0, 0.5) → col_f=0, row_f=1 → h=10.0
+    assert!((child.get_height(0, 0).unwrap() - 10.0).abs() < 1e-10);
+    // Child corner (2,0) = parent (0.5, 0.5) → col_f=1, row_f=1 → h=11.0
+    assert!((child.get_height(2, 0).unwrap() - 11.0).abs() < 1e-10);
+    // Child corner (0,2) = parent (0, 1.0) → col_f=0, row_f=2 → h=20.0
+    assert!((child.get_height(0, 2).unwrap() - 20.0).abs() < 1e-10);
+    // Child corner (2,2) = parent (0.5, 1.0) → col_f=1, row_f=2 → h=21.0
+    assert!((child.get_height(2, 2).unwrap() - 21.0).abs() < 1e-10);
+}
+
+#[test]
+fn heightmap_upsample_northeast_child() {
+    let heights = vec![
+        0.0, 1.0, 2.0,
+        10.0, 11.0, 12.0,
+        20.0, 21.0, 22.0,
+    ];
+    let parent = HeightmapTerrainData::new(heights, 3, 3, 0.0, 22.0);
+
+    // NE child (x=1, y=1)
+    let child = parent.upsample(0, 0, 0, 1, 1, 1);
+
+    // NE child covers [0.5, 1.0] x [0.5, 1.0] of parent
+    // Child corner (0,0) = parent (0.5, 0.5) → col_f=1, row_f=1 → h=11.0
+    assert!((child.get_height(0, 0).unwrap() - 11.0).abs() < 1e-10);
+    // Child corner (2,0) = parent (1.0, 0.5) → col_f=2, row_f=1 → h=12.0
+    assert!((child.get_height(2, 0).unwrap() - 12.0).abs() < 1e-10);
+    // Child corner (0,2) = parent (0.5, 1.0) → col_f=1, row_f=2 → h=21.0
+    assert!((child.get_height(0, 2).unwrap() - 21.0).abs() < 1e-10);
+    // Child corner (2,2) = parent (1.0, 1.0) → col_f=2, row_f=2 → h=22.0
+    assert!((child.get_height(2, 2).unwrap() - 22.0).abs() < 1e-10);
+}
+
+#[test]
+fn heightmap_upsample_preserves_dimensions() {
+    let heights = vec![0.0; 12]; // 4x3
+    let parent = HeightmapTerrainData::new(heights, 4, 3, 0.0, 0.0);
+    let child = parent.upsample(0, 0, 0, 0, 0, 1);
+    assert_eq!(child.width, 4);
+    assert_eq!(child.height, 3);
+    assert_eq!(child.heights.len(), 12);
+}
+
+#[test]
+#[should_panic(expected = "upsample can only cross one level")]
+fn heightmap_upsample_rejects_multi_level() {
+    let heights = vec![0.0; 4];
+    let parent = HeightmapTerrainData::new(heights, 2, 2, 0.0, 0.0);
+    parent.upsample(0, 0, 0, 0, 0, 2); // level diff = 2
+}

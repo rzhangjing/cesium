@@ -16,6 +16,7 @@
 pub mod imagery_provider;
 pub mod terrain_provider;
 pub mod tiling_scheme;
+pub mod google_earth_enterprise;
 
 pub use imagery_provider::{
     ArcGisMapServerImageryProvider, BingMapStyle, BingMapsImageryProvider,

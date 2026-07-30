@@ -218,9 +218,10 @@ fn test_request_scheduler_server_throttling() {
         );
         scheduler.schedule(request).unwrap();
     }
+    scheduler.update();
 
-    // Check server has no more open slots
-    assert!(!scheduler.server_has_open_slots("example.com", 1));
+    // Check server has no more open slots (server key includes default port)
+    assert!(!scheduler.server_has_open_slots("example.com:443", 1));
 }
 
 #[test]

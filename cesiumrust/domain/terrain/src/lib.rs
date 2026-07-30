@@ -9,6 +9,7 @@
 pub mod quantized_mesh;
 pub mod terrain_mesh;
 pub mod heightmap;
+pub mod heightmap_tessellator;
 pub mod terrain_encoding;
 
 pub use quantized_mesh::QuantizedMeshTerrainData;

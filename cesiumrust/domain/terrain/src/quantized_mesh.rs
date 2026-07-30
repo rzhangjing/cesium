@@ -120,6 +120,126 @@ impl QuantizedMeshTerrainData {
         (self.child_tile_mask & (1 << child)) != 0
     }
 
+    /// Checks if a child tile is available using tile coordinates.
+    ///
+    /// Maps to CesiumJS `QuantizedMeshTerrainData.isChildAvailable(thisX, thisY, childX, childY)`
+    ///
+    /// # Arguments
+    /// * `this_x` - Parent tile X
+    /// * `this_y` - Parent tile Y
+    /// * `child_x` - Child tile X
+    /// * `child_y` - Child tile Y
+    pub fn is_child_available_coords(
+        &self,
+        this_x: u32,
+        this_y: u32,
+        child_x: u32,
+        child_y: u32,
+    ) -> bool {
+        let relative_x = child_x - this_x * 2;
+        let relative_y = child_y - this_y * 2;
+
+        // CesiumJS tile coordinates: Y increases southward
+        // relative_y=0 → north row, relative_y=1 → south row
+        if relative_y == 0 {
+            if relative_x == 0 {
+                // Northwest child (bit 2)
+                (self.child_tile_mask & 4) != 0
+            } else {
+                // Northeast child (bit 3)
+                (self.child_tile_mask & 8) != 0
+            }
+        } else if relative_x == 0 {
+            // Southwest child (bit 0)
+            (self.child_tile_mask & 1) != 0
+        } else {
+            // Southeast child (bit 1)
+            (self.child_tile_mask & 2) != 0
+        }
+    }
+
+    /// Interpolates height at a given longitude/latitude within the tile rectangle.
+    ///
+    /// Maps to CesiumJS `QuantizedMeshTerrainData.interpolateHeight(rectangle, longitude, latitude)`
+    ///
+    /// Uses barycentric coordinates to find the containing triangle and interpolate.
+    pub fn interpolate_height(&self, rectangle: &Rectangle, longitude: f64, latitude: f64) -> f64 {
+        let vertex_count = self.vertex_count();
+        let u_values = self.u_values();
+        let v_values = self.v_values();
+        let height_values = self.height_values();
+
+        // Clamp to rectangle bounds
+        let lon = longitude.clamp(rectangle.west, rectangle.east);
+        let lat = latitude.clamp(rectangle.south, rectangle.north);
+
+        // Convert to normalized u,v coordinates within the tile
+        let width = rectangle.east - rectangle.west;
+        let height_range = rectangle.north - rectangle.south;
+        let u = if width > 0.0 { (lon - rectangle.west) / width } else { 0.0 };
+        let v = if height_range > 0.0 { (lat - rectangle.south) / height_range } else { 0.0 };
+
+        // Convert u,v to quantized coordinates
+        let target_u = u * MAX_SHORT as f64;
+        let target_v = v * MAX_SHORT as f64;
+
+        // Find the triangle containing this point and interpolate
+        let indices = &self.indices;
+        for tri in indices.chunks(3) {
+            if tri.len() < 3 {
+                break;
+            }
+            let i0 = tri[0] as usize;
+            let i1 = tri[1] as usize;
+            let i2 = tri[2] as usize;
+
+            if i0 >= vertex_count || i1 >= vertex_count || i2 >= vertex_count {
+                continue;
+            }
+
+            let u0 = u_values[i0] as f64;
+            let v0 = v_values[i0] as f64;
+            let u1 = u_values[i1] as f64;
+            let v1 = v_values[i1] as f64;
+            let u2 = u_values[i2] as f64;
+            let v2 = v_values[i2] as f64;
+
+            // Compute barycentric coordinates
+            let denom = (v1 - v2) * (u0 - u2) + (u2 - u1) * (v0 - v2);
+            if denom.abs() < 1e-30 {
+                continue;
+            }
+
+            let a = ((v1 - v2) * (target_u - u2) + (u2 - u1) * (target_v - v2)) / denom;
+            let b = ((v2 - v0) * (target_u - u2) + (u0 - u2) * (target_v - v2)) / denom;
+            let c = 1.0 - a - b;
+
+            // Check if point is inside triangle (with small tolerance)
+            if a >= -1e-10 && b >= -1e-10 && c >= -1e-10 {
+                let h0 = math_utils::lerp(
+                    self.minimum_height,
+                    self.maximum_height,
+                    height_values[i0] as f64 / MAX_SHORT as f64,
+                );
+                let h1 = math_utils::lerp(
+                    self.minimum_height,
+                    self.maximum_height,
+                    height_values[i1] as f64 / MAX_SHORT as f64,
+                );
+                let h2 = math_utils::lerp(
+                    self.minimum_height,
+                    self.maximum_height,
+                    height_values[i2] as f64 / MAX_SHORT as f64,
+                );
+
+                return a * h0 + b * h1 + c * h2;
+            }
+        }
+
+        // Fallback: return average height
+        (self.minimum_height + self.maximum_height) * 0.5
+    }
+
     /// Creates terrain mesh from quantized data.
     ///
     /// This is the main method that converts quantized mesh data into

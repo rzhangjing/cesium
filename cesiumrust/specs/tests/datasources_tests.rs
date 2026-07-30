@@ -30,4 +30,12 @@ mod datasources {
     pub mod kml_export_spec;
     pub mod kml_parser_spec;
     pub mod datasource_primitives_spec;
+    pub mod czml_extended_spec;
+    pub mod interpolation_algorithms_spec;
+    pub mod datasource_display_spec;
+    pub mod geometry_updater_extended_spec;
+    pub mod entity_graphics_spec;
+    pub mod czml_deep_spec;
+    pub mod entity_builder_extended_spec;
+    pub mod visualizer_extended_spec;
 }

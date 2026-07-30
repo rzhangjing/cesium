@@ -77,6 +77,45 @@ impl VertexFormat {
         tangent: false,
         bitangent: false,
     };
+
+    /// Number of elements used to pack this struct.
+    pub const PACKED_LENGTH: usize = 5;
+
+    /// Packs this VertexFormat into a flat array.
+    ///
+    /// Maps to CesiumJS `VertexFormat.pack`
+    pub fn pack(&self, array: &mut [f64], starting_index: usize) {
+        array[starting_index] = if self.position { 1.0 } else { 0.0 };
+        array[starting_index + 1] = if self.normal { 1.0 } else { 0.0 };
+        array[starting_index + 2] = if self.st { 1.0 } else { 0.0 };
+        array[starting_index + 3] = if self.tangent { 1.0 } else { 0.0 };
+        array[starting_index + 4] = if self.bitangent { 1.0 } else { 0.0 };
+    }
+
+    /// Unpacks a VertexFormat from a flat array.
+    ///
+    /// Maps to CesiumJS `VertexFormat.unpack`
+    pub fn unpack(array: &[f64], starting_index: usize) -> Self {
+        Self {
+            position: array[starting_index] != 0.0,
+            normal: array[starting_index + 1] != 0.0,
+            st: array[starting_index + 2] != 0.0,
+            tangent: array[starting_index + 3] != 0.0,
+            bitangent: array[starting_index + 4] != 0.0,
+        }
+    }
+
+    /// Packs this VertexFormat into a new Vec<f64>.
+    pub fn pack_array(&self) -> Vec<f64> {
+        let mut array = vec![0.0; Self::PACKED_LENGTH];
+        self.pack(&mut array, 0);
+        array
+    }
+
+    /// Unpacks a VertexFormat from a Vec<f64>.
+    pub fn unpack_array(array: &[f64]) -> Self {
+        Self::unpack(array, 0)
+    }
 }
 
 impl Default for VertexFormat {

@@ -3,7 +3,7 @@
 //! Maps to CesiumJS `Core/Quaternion.js` extension methods:
 //! computeAxis, computeAngle, log, exp, computeInnerQuadrangle, squad, fastSlerp, fastSquad
 
-use glam::{DQuat, DVec3};
+use glam::{DMat3, DQuat, DVec3};
 
 use crate::math_utils;
 
@@ -246,4 +246,60 @@ pub fn fast_squad(q0: DQuat, q1: DQuat, s0: DQuat, s1: DQuat, t: f64) -> DQuat {
     let slerp0 = fast_slerp(q0, q1, t);
     let slerp1 = fast_slerp(s0, s1, t);
     fast_slerp(slerp0, slerp1, 2.0 * t * (1.0 - t))
+}
+
+/// Computes a Quaternion from the provided rotation matrix (Matrix3).
+/// Maps to `Quaternion.fromRotationMatrix`.
+/// Uses the standard Shepperd's method with correct sign convention.
+pub fn from_rotation_matrix(matrix: &DMat3) -> DQuat {
+    let m00 = matrix.x_axis.x;
+    let m01 = matrix.y_axis.x;
+    let m02 = matrix.z_axis.x;
+    let m10 = matrix.x_axis.y;
+    let m11 = matrix.y_axis.y;
+    let m12 = matrix.z_axis.y;
+    let m20 = matrix.x_axis.z;
+    let m21 = matrix.y_axis.z;
+    let m22 = matrix.z_axis.z;
+    let trace = m00 + m11 + m22;
+
+    if trace > 0.0 {
+        let s = (trace + 1.0).sqrt() * 2.0; // s = 4w
+        let w = 0.25 * s;
+        let inv_s = 1.0 / s;
+        let x = (m21 - m12) * inv_s;
+        let y = (m02 - m20) * inv_s;
+        let z = (m10 - m01) * inv_s;
+        DQuat::from_xyzw(x, y, z, w)
+    } else if m00 > m11 && m00 > m22 {
+        let s = (1.0 + m00 - m11 - m22).sqrt() * 2.0; // s = 4x
+        let w = (m21 - m12) / s;
+        let x = 0.25 * s;
+        let y = (m01 + m10) / s;
+        let z = (m02 + m20) / s;
+        DQuat::from_xyzw(x, y, z, w)
+    } else if m11 > m22 {
+        let s = (1.0 + m11 - m00 - m22).sqrt() * 2.0; // s = 4y
+        let w = (m02 - m20) / s;
+        let x = (m01 + m10) / s;
+        let y = 0.25 * s;
+        let z = (m12 + m21) / s;
+        DQuat::from_xyzw(x, y, z, w)
+    } else {
+        let s = (1.0 + m22 - m00 - m11).sqrt() * 2.0; // s = 4z
+        let w = (m10 - m01) / s;
+        let x = (m02 + m20) / s;
+        let y = (m12 + m21) / s;
+        let z = 0.25 * s;
+        DQuat::from_xyzw(x, y, z, w)
+    }
+}
+
+/// Checks if two quaternions are equal within an epsilon.
+/// Maps to `Quaternion.equalsEpsilon`.
+pub fn equals_epsilon(left: DQuat, right: DQuat, epsilon: f64) -> bool {
+    (left.x - right.x).abs() <= epsilon
+        && (left.y - right.y).abs() <= epsilon
+        && (left.z - right.z).abs() <= epsilon
+        && (left.w - right.w).abs() <= epsilon
 }

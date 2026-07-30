@@ -22,6 +22,7 @@ pub mod styling;
 pub mod tile;
 pub mod tileset;
 pub mod lod_selection;
+pub mod tile_replacement_queue;
 pub mod traversal;
 
 pub use batch_table::{

@@ -62,6 +62,7 @@ mod core {
     pub mod heap_managed_array_spec;
     pub mod misc_phase3_spec;
     pub mod geometry_pipeline_spec;
+    pub mod geometry_utils_spec;
     pub mod geometry_generators_spec;
     pub mod geometry_generators_ext_spec;
     pub mod geometry_attributes_spec;
@@ -85,4 +86,23 @@ mod core {
     pub mod astronomy_spec;
     pub mod uri_utils_spec;
     pub mod crs_spec;
+    pub mod trusted_servers_spec;
+    pub mod request_scheduler_spec;
+    pub mod resource_url_spec;
+    pub mod cartesian2_ext_spec;
+    pub mod cartesian4_ext_spec;
+    pub mod matrix3_ext_spec;
+    pub mod matrix2_ext_spec;
+    pub mod quaternion_from_matrix_spec;
+    pub mod vertex_format_spec;
+    pub mod simple_polyline_geometry_spec;
+    pub mod quantized_mesh_ext_spec;
+    pub mod core_utilities_spec;
+    pub mod heightmap_upsample_spec;
+    pub mod wall_geometry_ext_spec;
+    pub mod corridor_geometry_ext_spec;
+    pub mod ellipse_geometry_ext_spec;
+    pub mod geometry_generators_ext2_spec;
+    pub mod geometry_properties_spec;
+    pub mod geometry_extended2_spec;
 }

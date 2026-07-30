@@ -309,3 +309,252 @@ fn equals_epsilon_outside() {
     let m2 = DMat4::from_translation(DVec3::new(1.0, 0.0, 0.0));
     assert!(!matrix4_ext::equals_epsilon(&m1, &m2, 0.5));
 }
+
+// ─── computeView ────────────────────────────────────────────────────────────
+
+#[test]
+fn compute_view_basic() {
+    // Looking down -Z from origin
+    let position = DVec3::ZERO;
+    let direction = DVec3::new(0.0, 0.0, -1.0);
+    let up = DVec3::Y;
+    let view = matrix4_ext::compute_view(position, direction, up);
+    // Should be identity-like (right=X, up=Y, -direction=Z)
+    let expected = DMat4::from_cols_array(&[
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    ]);
+    assert_mat4_eq(&view, &expected, "compute_view basic");
+}
+
+#[test]
+fn compute_view_with_translation() {
+    let position = DVec3::new(1.0, 2.0, 3.0);
+    let direction = DVec3::new(0.0, 0.0, -1.0);
+    let up = DVec3::Y;
+    let view = matrix4_ext::compute_view(position, direction, up);
+    // Translation column should be -position (since axes are identity)
+    let t = matrix4_ext::get_translation(&view);
+    assert!((t.x - (-1.0)).abs() < EPS);
+    assert!((t.y - (-2.0)).abs() < EPS);
+    assert!((t.z - (-3.0)).abs() < EPS);
+}
+
+// ─── fromTranslationQuaternionRotationScale ─────────────────────────────────
+
+#[test]
+fn from_trs_identity() {
+    let m = matrix4_ext::from_translation_quaternion_rotation_scale(
+        DVec3::new(1.0, 2.0, 3.0),
+        glam::DQuat::IDENTITY,
+        DVec3::ONE,
+    );
+    let expected = DMat4::from_translation(DVec3::new(1.0, 2.0, 3.0));
+    assert_mat4_eq(&m, &expected, "from_trs identity");
+}
+
+#[test]
+fn from_trs_with_scale() {
+    let m = matrix4_ext::from_translation_quaternion_rotation_scale(
+        DVec3::ZERO,
+        glam::DQuat::IDENTITY,
+        DVec3::new(2.0, 3.0, 4.0),
+    );
+    let scale = matrix4_ext::get_scale(&m);
+    assert!((scale.x - 2.0).abs() < EPS);
+    assert!((scale.y - 3.0).abs() < EPS);
+    assert!((scale.z - 4.0).abs() < EPS);
+}
+
+// ─── multiplyTransformation ─────────────────────────────────────────────────
+
+#[test]
+fn multiply_transformation_identity() {
+    let t = DMat4::from_translation(DVec3::new(1.0, 2.0, 3.0));
+    let result = matrix4_ext::multiply_transformation(&t, &DMat4::IDENTITY);
+    assert_mat4_eq(&result, &t, "multiply_transformation identity");
+}
+
+#[test]
+fn multiply_transformation_composed() {
+    let t1 = DMat4::from_translation(DVec3::new(1.0, 0.0, 0.0));
+    let t2 = DMat4::from_translation(DVec3::new(0.0, 2.0, 0.0));
+    let result = matrix4_ext::multiply_transformation(&t1, &t2);
+    let t = matrix4_ext::get_translation(&result);
+    assert!((t.x - 1.0).abs() < EPS);
+    assert!((t.y - 2.0).abs() < EPS);
+    assert!((t.z - 0.0).abs() < EPS);
+    // 4th row should be [0,0,0,1]
+    assert!((result.x_axis.w).abs() < EPS);
+    assert!((result.w_axis.w - 1.0).abs() < EPS);
+}
+
+// ─── multiplyByPointAsVector ────────────────────────────────────────────────
+
+#[test]
+fn multiply_by_point_as_vector_ignores_translation() {
+    let m = DMat4::from_translation(DVec3::new(100.0, 200.0, 300.0));
+    let v = DVec3::new(1.0, 0.0, 0.0);
+    let result = matrix4_ext::multiply_by_point_as_vector(&m, v);
+    // Translation should not affect direction
+    assert!((result.x - 1.0).abs() < EPS);
+    assert!((result.y).abs() < EPS);
+    assert!((result.z).abs() < EPS);
+}
+
+// ─── inverseTransformation ──────────────────────────────────────────────────
+
+#[test]
+fn inverse_transformation_roundtrip() {
+    let rot = DMat3::from_rotation_y(FRAC_PI_4);
+    let m = matrix4_ext::from_rotation_translation(&rot, DVec3::new(1.0, 2.0, 3.0));
+    // First verify glam's own inverse works
+    let glam_inv = m.inverse();
+    let glam_product = m * glam_inv;
+    let gp = glam_product.to_cols_array();
+    for i in 0..16 {
+        let expected = if i % 5 == 0 { 1.0 } else { 0.0 };
+        assert!((gp[i] - expected).abs() < 1e-8,
+            "glam M*M^-1 element {i}: got {} expected {}", gp[i], expected);
+    }
+    // Now verify our inverse matches glam's
+    let inv = matrix4_ext::inverse_transformation(&m);
+    let ic = inv.to_cols_array();
+    let gc = glam_inv.to_cols_array();
+    for i in 0..16 {
+        assert!((ic[i] - gc[i]).abs() < 1e-8,
+            "inverse element {i}: ours={} glam={}", ic[i], gc[i]);
+    }
+}
+
+#[test]
+fn inverse_transformation_translation_only() {
+    let m = DMat4::from_translation(DVec3::new(5.0, -3.0, 7.0));
+    let inv = matrix4_ext::inverse_transformation(&m);
+    let t = matrix4_ext::get_translation(&inv);
+    assert!((t.x - (-5.0)).abs() < EPS);
+    assert!((t.y - 3.0).abs() < EPS);
+    assert!((t.z - (-7.0)).abs() < EPS);
+}
+
+// ─── setRotation / setTranslation / setScale ────────────────────────────────
+
+#[test]
+fn set_rotation_basic() {
+    let m = DMat4::from_translation(DVec3::new(1.0, 2.0, 3.0));
+    let rot = DMat3::from_rotation_z(FRAC_PI_2);
+    let result = matrix4_ext::set_rotation(&m, &rot);
+    // Translation preserved
+    let t = matrix4_ext::get_translation(&result);
+    assert!((t.x - 1.0).abs() < EPS);
+    // Rotation set
+    let r = matrix4_ext::get_rotation(&result);
+    let expected_r = rot;
+    let ra = r.to_cols_array();
+    let ea = expected_r.to_cols_array();
+    for i in 0..9 {
+        assert!((ra[i] - ea[i]).abs() < EPS, "set_rotation element {i}");
+    }
+}
+
+#[test]
+fn set_translation_basic() {
+    let m = DMat4::IDENTITY;
+    let result = matrix4_ext::set_translation(&m, DVec3::new(10.0, 20.0, 30.0));
+    let t = matrix4_ext::get_translation(&result);
+    assert!((t.x - 10.0).abs() < EPS);
+    assert!((t.y - 20.0).abs() < EPS);
+    assert!((t.z - 30.0).abs() < EPS);
+}
+
+#[test]
+fn set_scale_basic() {
+    let m = DMat4::IDENTITY;
+    let result = matrix4_ext::set_scale(&m, DVec3::new(2.0, 3.0, 4.0));
+    let s = matrix4_ext::get_scale(&result);
+    assert!((s.x - 2.0).abs() < EPS);
+    assert!((s.y - 3.0).abs() < EPS);
+    assert!((s.z - 4.0).abs() < EPS);
+}
+
+// ─── computeOrthographicOffCenter ───────────────────────────────────────────
+
+#[test]
+fn compute_orthographic_off_center_basic() {
+    let m = matrix4_ext::compute_orthographic_off_center(-1.0, 1.0, -1.0, 1.0, 0.0, 10.0);
+    // For symmetric [-1,1] x [-1,1], diagonal should be [1, 1, -2/(far-near)]
+    let cols = m.to_cols_array();
+    assert!((cols[0] - 1.0).abs() < EPS); // col0_row0 = 2/(right-left) = 1
+    assert!((cols[5] - 1.0).abs() < EPS); // col1_row1 = 2/(top-bottom) = 1
+    assert!((cols[10] - (-0.2)).abs() < EPS); // col2_row2 = -2/(far-near) = -0.2
+    assert!((cols[14] - (-1.0)).abs() < EPS); // col3_row2 = -(far+near)/(far-near) = -1
+}
+
+// ─── computePerspectiveOffCenter ────────────────────────────────────────────
+
+#[test]
+fn compute_perspective_off_center_basic() {
+    let m = matrix4_ext::compute_perspective_off_center(-1.0, 1.0, -1.0, 1.0, 1.0, 100.0);
+    let cols = m.to_cols_array();
+    // col0_row0 = 2*near/(right-left) = 2*1/2 = 1
+    assert!((cols[0] - 1.0).abs() < EPS);
+    // col1_row1 = 2*near/(top-bottom) = 1
+    assert!((cols[5] - 1.0).abs() < EPS);
+    // col2_row3 = -1
+    assert!((cols[11] - (-1.0)).abs() < EPS);
+}
+
+// ─── computeInfinitePerspectiveOffCenter ────────────────────────────────────
+
+#[test]
+fn compute_infinite_perspective_off_center_basic() {
+    let m = matrix4_ext::compute_infinite_perspective_off_center(-1.0, 1.0, -1.0, 1.0, 1.0);
+    let cols = m.to_cols_array();
+    assert!((cols[0] - 1.0).abs() < EPS);
+    assert!((cols[5] - 1.0).abs() < EPS);
+    // col2_row2 = -1 (infinite far)
+    assert!((cols[10] - (-1.0)).abs() < EPS);
+    // col3_row2 = -2*near = -2
+    assert!((cols[14] - (-2.0)).abs() < EPS);
+}
+
+// ─── computeViewportTransformation ──────────────────────────────────────────
+
+#[test]
+fn compute_viewport_transformation_basic() {
+    let m = matrix4_ext::compute_viewport_transformation(0.0, 0.0, 800.0, 600.0, 0.0, 1.0);
+    let cols = m.to_cols_array();
+    // col0_row0 = width/2 = 400
+    assert!((cols[0] - 400.0).abs() < EPS);
+    // col1_row1 = height/2 = 300
+    assert!((cols[5] - 300.0).abs() < EPS);
+    // col2_row2 = depth/2 = 0.5
+    assert!((cols[10] - 0.5).abs() < EPS);
+    // col3_row0 = x + width/2 = 400
+    assert!((cols[12] - 400.0).abs() < EPS);
+    // col3_row1 = y + height/2 = 300
+    assert!((cols[13] - 300.0).abs() < EPS);
+    // col3_row2 = near + depth/2 = 0.5
+    assert!((cols[14] - 0.5).abs() < EPS);
+}
+
+// ─── abs ────────────────────────────────────────────────────────────────────
+
+#[test]
+fn abs_basic() {
+    let m = DMat4::from_cols_array(&[
+        -1.0, 2.0, -3.0, 4.0,
+        -5.0, 6.0, -7.0, 8.0,
+        -9.0, 10.0, -11.0, 12.0,
+        -13.0, 14.0, -15.0, 16.0,
+    ]);
+    let result = matrix4_ext::abs(&m);
+    let cols = result.to_cols_array();
+    for (i, &v) in cols.iter().enumerate() {
+        assert!(v >= 0.0, "abs element {i} should be non-negative, got {v}");
+    }
+    assert!((cols[0] - 1.0).abs() < EPS);
+    assert!((cols[4] - 5.0).abs() < EPS);
+}

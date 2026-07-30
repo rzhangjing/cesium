@@ -89,4 +89,27 @@ mod scene {
     pub mod material_ext_spec;
     pub mod scene_graph_extended_spec;
     pub mod flight_morph_display_spec;
+    pub mod terrain_mesh_spec;
+    pub mod imagery_provider_extended_spec;
+    pub mod terrain_sampling_spec;
+    pub mod implicit_subtree_extended_spec;
+    pub mod structural_metadata_deep_spec;
+    pub mod gltf_model_deep_spec;
+    pub mod binary_format_spec;
+    pub mod tile_style_extended_spec;
+    pub mod classification_spec;
+    pub mod event_aggregator_spec;
+    pub mod globe_surface_extended_spec;
+    pub mod quadtree_traversal_extended_spec;
+    pub mod terrain_provider_extended_spec;
+    pub mod imagery_url_spec;
+    pub mod content_decoder_extended_spec;
+    pub mod point_cloud_extended_spec;
+    pub mod traversal_extended_spec;
+    pub mod imagery_tile_request_spec;
+    pub mod globe_atmosphere_extended_spec;
+    pub mod morphing_camera_extended_spec;
+    pub mod tile_replacement_queue_spec;
+    pub mod quadtree_tile_adjacency_spec;
+    pub mod heightmap_tessellator_spec;
 }

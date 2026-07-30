@@ -3,6 +3,8 @@
 //!
 //! CesiumJS mapping: `packages/engine/Source/Core/Resource.js`, `RequestScheduler.js`, `Request.js`
 
+pub mod trusted_servers;
+
 use serde::{Deserialize, Serialize};
 use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Ordering;
@@ -169,8 +171,9 @@ impl RequestScheduler {
     }
 
     /// Returns the number of active requests.
+    /// Maps to CesiumJS `RequestScheduler.statistics.numberOfActiveRequests`
     pub fn active_request_count(&self) -> usize {
-        self.active_requests.len()
+        self.active_count_by_server.values().sum()
     }
 
     /// Returns the number of pending requests.
@@ -218,6 +221,7 @@ impl RequestScheduler {
 
         // Add to pending heap if there's room
         if self.pending_heap.len() < self.priority_heap_length {
+            request.state = RequestState::Issued;
             self.pending_heap.push(PrioritizedRequest {
                 id,
                 priority: request.priority,
@@ -323,36 +327,92 @@ impl Default for RequestScheduler {
     }
 }
 
-/// Extracts the server key from a URL.
-fn extract_server_key(url: &str) -> String {
-    // Simple extraction: get host:port from URL
+/// Extracts the server key (host:port) from a URL.
+///
+/// Maps to CesiumJS `RequestScheduler.getServerKey`.
+/// Adds default ports: http→80, https→443.
+pub fn get_server_key(url: &str) -> String {
     if let Some(start) = url.find("://") {
+        let scheme = url[..start].to_lowercase();
         let after_scheme = &url[start + 3..];
         let end = after_scheme.find('/').unwrap_or(after_scheme.len());
-        after_scheme[..end].to_string()
+        let authority = &after_scheme[..end];
+        // Strip credentials (user:pass@)
+        let authority = if let Some(at) = authority.find('@') {
+            &authority[at + 1..]
+        } else {
+            authority
+        };
+        // Add default port if missing
+        if authority.contains(':') {
+            authority.to_lowercase()
+        } else {
+            match scheme.as_str() {
+                "http" => format!("{}:80", authority.to_lowercase()),
+                "https" => format!("{}:443", authority.to_lowercase()),
+                _ => authority.to_lowercase(),
+            }
+        }
     } else {
         url.to_string()
     }
 }
 
+/// Internal alias for backward compatibility.
+fn extract_server_key(url: &str) -> String {
+    get_server_key(url)
+}
+
 /// A resource URL template with query parameters.
-/// Maps to CesiumJS `Resource` (simplified)
+/// Maps to CesiumJS `Resource`
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Resource {
-    /// The base URL.
+    /// The base URL (without query string).
     pub url: String,
     /// Query parameters.
     pub query_parameters: HashMap<String, String>,
+    /// Template values for URL substitution ({key} → value).
+    pub template_values: HashMap<String, String>,
     /// HTTP headers.
     pub headers: HashMap<String, String>,
 }
 
+/// Options for creating a derived resource.
+/// Maps to CesiumJS `Resource.getDerivedResource` options
+#[derive(Debug, Clone, Default)]
+pub struct DeriveResourceOptions {
+    /// Relative or absolute URL to resolve against the parent.
+    pub url: Option<String>,
+    /// Additional query parameters.
+    pub query_parameters: Vec<(String, String)>,
+    /// Additional template values.
+    pub template_values: Vec<(String, String)>,
+    /// Additional headers.
+    pub headers: Vec<(String, String)>,
+}
+
 impl Resource {
     /// Creates a new resource with the given URL.
+    /// Parses query parameters from the URL if present.
+    /// Maps to CesiumJS `new Resource({ url })`
     pub fn new(url: impl Into<String>) -> Self {
+        let raw = url.into();
+        let (base, query_params) = Self::parse_url(&raw);
+        Self {
+            url: base,
+            query_parameters: query_params,
+            template_values: HashMap::new(),
+            headers: HashMap::new(),
+        }
+    }
+
+    /// Creates a resource without parsing query parameters from the URL.
+    /// Maps to CesiumJS `new Resource({ url, parseUrl: false })`
+    pub fn new_unparsed(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
             query_parameters: HashMap::new(),
+            template_values: HashMap::new(),
             headers: HashMap::new(),
         }
     }
@@ -363,28 +423,46 @@ impl Resource {
         self
     }
 
+    /// Adds a template value.
+    pub fn with_template_value(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.template_values.insert(key.into(), value.into());
+        self
+    }
+
     /// Adds a header.
     pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.insert(key.into(), value.into());
         self
     }
 
-    /// Builds the full URL with query parameters.
-    pub fn build_url(&self) -> String {
-        if self.query_parameters.is_empty() {
+    /// Appends a forward slash to the URL if it doesn't already end with one.
+    /// Maps to CesiumJS `Resource.appendForwardSlash`
+    pub fn append_forward_slash(&mut self) {
+        if !self.url.ends_with('/') {
+            self.url.push('/');
+        }
+    }
+
+    /// Gets the URL component, optionally including query parameters.
+    /// Maps to CesiumJS `Resource.getUrlComponent(includeQuery, includeProxy)`
+    pub fn get_url_component(&self, include_query: bool) -> String {
+        if !include_query || self.query_parameters.is_empty() {
             return self.url.clone();
         }
+        format!("{}?{}", self.url, self.build_query_string())
+    }
 
-        let params: Vec<String> = self
-            .query_parameters
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect();
-
-        if self.url.contains('?') {
-            format!("{}&{}", self.url, params.join("&"))
+    /// Builds the full URL with query parameters and template substitution.
+    /// Maps to CesiumJS `Resource.url` getter / `toString()`
+    pub fn build_url(&self) -> String {
+        let base = self.apply_template_values(&self.url);
+        if self.query_parameters.is_empty() {
+            return base;
+        }
+        if base.contains('?') {
+            format!("{}&{}", base, self.build_query_string())
         } else {
-            format!("{}?{}", self.url, params.join("&"))
+            format!("{}?{}", base, self.build_query_string())
         }
     }
 
@@ -393,7 +471,65 @@ impl Resource {
         extract_server_key(&self.url)
     }
 
-    /// Creates a derived resource with a relative path appended.
+    /// Sets query parameters, optionally preserving existing values as defaults.
+    /// Maps to CesiumJS `Resource.setQueryParameters(params, useAsDefault)`
+    pub fn set_query_parameters(&mut self, params: Vec<(String, String)>, use_as_default: bool) {
+        if use_as_default {
+            // Only add keys that don't already exist
+            for (k, v) in params {
+                self.query_parameters.entry(k).or_insert(v);
+            }
+        } else {
+            // Overwrite all
+            self.query_parameters = params.into_iter().collect();
+        }
+    }
+
+    /// Creates a derived resource by resolving a relative URL against this resource.
+    /// Maps to CesiumJS `Resource.getDerivedResource`
+    pub fn get_derived_resource(&self, options: &DeriveResourceOptions) -> Self {
+        let mut derived_url = self.url.clone();
+
+        if let Some(ref rel_url) = options.url {
+            derived_url = Self::resolve_url(&derived_url, rel_url);
+        }
+
+        // Merge query parameters
+        let mut query = self.query_parameters.clone();
+        for (k, v) in &options.query_parameters {
+            query.insert(k.clone(), v.clone());
+        }
+
+        // Parse query from derived URL
+        let (base, url_params) = Self::parse_url(&derived_url);
+        for (k, v) in url_params {
+            query.insert(k, v);
+        }
+
+        // Merge template values
+        let mut templates = self.template_values.clone();
+        for (k, v) in &options.template_values {
+            templates.insert(k.clone(), v.clone());
+        }
+
+        // Merge headers
+        let mut headers = self.headers.clone();
+        for (k, v) in &options.headers {
+            headers.insert(k.clone(), v.clone());
+        }
+
+        // Apply template values to the URL
+        let final_url = Self::apply_template_values_static(&base, &templates);
+
+        Self {
+            url: final_url,
+            query_parameters: query,
+            template_values: templates,
+            headers,
+        }
+    }
+
+    /// Creates a derived resource with a relative path appended (legacy API).
     pub fn derive(&self, relative_path: &str) -> Self {
         let base = if self.url.ends_with('/') {
             &self.url
@@ -406,8 +542,109 @@ impl Resource {
         Self {
             url: format!("{}{}", base, relative_path),
             query_parameters: self.query_parameters.clone(),
+            template_values: self.template_values.clone(),
             headers: self.headers.clone(),
         }
+    }
+
+    // ─── Internal helpers ──────────────────────────────────────────────────────
+
+    /// Parses a URL into base (without query) and query parameters.
+    fn parse_url(raw: &str) -> (String, HashMap<String, String>) {
+        if let Some(qpos) = raw.find('?') {
+            let base = raw[..qpos].to_string();
+            let query_str = &raw[qpos + 1..];
+            let params = Self::parse_query_string(query_str);
+            (base, params)
+        } else {
+            (raw.to_string(), HashMap::new())
+        }
+    }
+
+    /// Parses a query string into key-value pairs.
+    fn parse_query_string(qs: &str) -> HashMap<String, String> {
+        let mut map = HashMap::new();
+        for pair in qs.split('&') {
+            if pair.is_empty() {
+                continue;
+            }
+            if let Some(eq) = pair.find('=') {
+                let key = pair[..eq].to_string();
+                let value = pair[eq + 1..].to_string();
+                map.insert(key, value);
+            } else {
+                map.insert(pair.to_string(), String::new());
+            }
+        }
+        map
+    }
+
+    /// Builds a query string from parameters (sorted for determinism).
+    fn build_query_string(&self) -> String {
+        let mut pairs: Vec<_> = self.query_parameters.iter().collect();
+        pairs.sort_by_key(|(k, _)| k.clone());
+        pairs
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect::<Vec<_>>()
+            .join("&")
+    }
+
+    /// Applies template values to this resource's URL.
+    fn apply_template_values(&self, url: &str) -> String {
+        Self::apply_template_values_static(url, &self.template_values)
+    }
+
+    /// Replaces {key} placeholders in a URL with template values.
+    fn apply_template_values_static(url: &str, templates: &HashMap<String, String>) -> String {
+        if templates.is_empty() {
+            return url.to_string();
+        }
+        let mut result = url.to_string();
+        for (key, value) in templates {
+            let placeholder = format!("{{{}}}", key);
+            // URL-encode the value (encode special chars)
+            let encoded = Self::encode_uri_component(value);
+            result = result.replace(&placeholder, &encoded);
+        }
+        result
+    }
+
+    /// Encodes a URI component (percent-encoding for special characters).
+    fn encode_uri_component(s: &str) -> String {
+        let mut result = String::with_capacity(s.len());
+        for byte in s.bytes() {
+            match byte {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'!' | b'~'
+                | b'*' | b'\'' | b'(' | b')' => {
+                    result.push(byte as char);
+                }
+                _ => {
+                    result.push_str(&format!("%{:02X}", byte));
+                }
+            }
+        }
+        result
+    }
+
+    /// Resolves a relative URL against a base URL.
+    /// Maps to CesiumJS URI resolution logic.
+    fn resolve_url(base: &str, relative: &str) -> String {
+        // If relative is absolute (has scheme), use it directly
+        if relative.contains("://") {
+            return relative.to_string();
+        }
+
+        // Get the directory part of the base URL
+        let directory = if base.ends_with('/') {
+            base.to_string()
+        } else if let Some(pos) = base.rfind('/') {
+            base[..=pos].to_string()
+        } else {
+            base.to_string()
+        };
+
+        format!("{}{}", directory, relative)
     }
 }
 
@@ -444,6 +681,7 @@ mod tests {
             );
             scheduler.schedule(request).unwrap();
         }
+        scheduler.update();
 
         // Third request should be pending (not active)
         let request = Request::throttled(
@@ -453,9 +691,9 @@ mod tests {
         );
         scheduler.schedule(request).unwrap();
 
-        // Only 2 should be active
-        assert!(scheduler.server_has_open_slots("example.com", 0));
-        assert!(!scheduler.server_has_open_slots("example.com", 1));
+        // Only 2 should be active (server key includes default port)
+        assert!(scheduler.server_has_open_slots("example.com:443", 0));
+        assert!(!scheduler.server_has_open_slots("example.com:443", 1));
     }
 
     #[test]

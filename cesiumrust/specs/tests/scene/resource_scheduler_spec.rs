@@ -61,7 +61,8 @@ fn resource_server_key() {
 #[test]
 fn resource_server_key_no_port() {
     let r = Resource::new("https://cdn.example.com/tile.png");
-    assert_eq!(r.server_key(), "cdn.example.com");
+    // Server key now includes default port
+    assert_eq!(r.server_key(), "cdn.example.com:443");
 }
 
 #[test]
@@ -171,6 +172,7 @@ fn scheduler_throttled_pending() {
         1.0,
     );
     scheduler.schedule(r1).unwrap();
+    scheduler.update();
 
     // Second request to same server should be pending
     let r2 = Request::throttled(
@@ -180,7 +182,8 @@ fn scheduler_throttled_pending() {
     );
     scheduler.schedule(r2).unwrap();
 
-    assert!(!scheduler.server_has_open_slots("example.com", 1));
+    // Server key includes default port
+    assert!(!scheduler.server_has_open_slots("example.com:443", 1));
 }
 
 // === Request ===

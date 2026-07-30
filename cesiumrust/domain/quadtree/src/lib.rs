@@ -7,6 +7,7 @@
 //! - Tile loading/caching → cache
 
 pub mod cache;
+pub mod quadtree_tile_adjacency;
 pub mod traversal;
 
 pub use cache::{
