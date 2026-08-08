@@ -579,6 +579,135 @@ fn eval_function(
             }
             EvalResult::Number(0.0)
         }
+        // Trigonometric
+        "cos" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v.cos())
+        }
+        "sin" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v.sin())
+        }
+        "tan" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v.tan())
+        }
+        "acos" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v.acos())
+        }
+        "asin" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v.asin())
+        }
+        "atan" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v.atan())
+        }
+        "atan2" => {
+            if args.len() >= 2 {
+                let y = args[0].evaluate(properties).as_number();
+                let x = args[1].evaluate(properties).as_number();
+                return EvalResult::Number(y.atan2(x));
+            }
+            EvalResult::Number(0.0)
+        }
+        // Angle conversion
+        "radians" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v.to_radians())
+        }
+        "degrees" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v.to_degrees())
+        }
+        // Rounding / sign
+        "sign" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            let s = if v > 0.0 { 1.0 } else if v < 0.0 { -1.0 } else { 0.0 };
+            EvalResult::Number(s)
+        }
+        "floor" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v.floor())
+        }
+        "ceil" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v.ceil())
+        }
+        "round" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v.round())
+        }
+        "fract" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v - v.floor())
+        }
+        // Exponential / logarithmic
+        "exp" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v.exp())
+        }
+        "exp2" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v.exp2())
+        }
+        "log" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v.ln())
+        }
+        "log2" => {
+            let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
+            EvalResult::Number(v.log2())
+        }
+        "pow" => {
+            if args.len() >= 2 {
+                let base = args[0].evaluate(properties).as_number();
+                let exp = args[1].evaluate(properties).as_number();
+                return EvalResult::Number(base.powf(exp));
+            }
+            EvalResult::Number(0.0)
+        }
+        "mod" => {
+            if args.len() >= 2 {
+                let a = args[0].evaluate(properties).as_number();
+                let b = args[1].evaluate(properties).as_number();
+                return EvalResult::Number(if b != 0.0 { a % b } else { 0.0 });
+            }
+            EvalResult::Number(0.0)
+        }
+        // Interpolation
+        "mix" => {
+            if args.len() >= 3 {
+                let a = args[0].evaluate(properties).as_number();
+                let b = args[1].evaluate(properties).as_number();
+                let t = args[2].evaluate(properties).as_number();
+                return EvalResult::Number(a * (1.0 - t) + b * t);
+            }
+            EvalResult::Number(0.0)
+        }
+        // HSL color
+        "hsl" => {
+            if args.len() >= 3 {
+                let h = args[0].evaluate(properties).as_number();
+                let s = args[1].evaluate(properties).as_number();
+                let l = args[2].evaluate(properties).as_number();
+                let rgb = hsl_to_rgb(h, s, l);
+                return EvalResult::Color([rgb[0], rgb[1], rgb[2], 1.0]);
+            }
+            EvalResult::Color([1.0, 1.0, 1.0, 1.0])
+        }
+        "hsla" => {
+            if args.len() >= 4 {
+                let h = args[0].evaluate(properties).as_number();
+                let s = args[1].evaluate(properties).as_number();
+                let l = args[2].evaluate(properties).as_number();
+                let a = args[3].evaluate(properties).as_number();
+                let rgb = hsl_to_rgb(h, s, l);
+                return EvalResult::Color([rgb[0], rgb[1], rgb[2], a]);
+            }
+            EvalResult::Color([1.0, 1.0, 1.0, 1.0])
+        }
         _ => EvalResult::Number(0.0),
     }
 }
@@ -607,6 +736,28 @@ fn parse_color_name(name: &str) -> [f64; 3] {
         "silver" => [0.753, 0.753, 0.753],
         _ => [1.0, 1.0, 1.0], // default white
     }
+}
+
+/// Converts HSL to RGB. h in [0,360], s in [0,1], l in [0,1].
+fn hsl_to_rgb(h: f64, s: f64, l: f64) -> [f64; 3] {
+    let h = ((h % 360.0) + 360.0) % 360.0;
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    let m = l - c / 2.0;
+    let (r1, g1, b1) = if h < 60.0 {
+        (c, x, 0.0)
+    } else if h < 120.0 {
+        (x, c, 0.0)
+    } else if h < 180.0 {
+        (0.0, c, x)
+    } else if h < 240.0 {
+        (0.0, x, c)
+    } else if h < 300.0 {
+        (x, 0.0, c)
+    } else {
+        (c, 0.0, x)
+    };
+    [r1 + m, g1 + m, b1 + m]
 }
 
 /// Converts a JSON value to an EvalResult.

@@ -62,6 +62,7 @@ mod core {
     pub mod heap_managed_array_spec;
     pub mod misc_phase3_spec;
     pub mod geometry_pipeline_spec;
+    pub mod geometry_pipeline_ext_spec;
     pub mod geometry_utils_spec;
     pub mod geometry_generators_spec;
     pub mod geometry_generators_ext_spec;
@@ -105,4 +106,5 @@ mod core {
     pub mod geometry_generators_ext2_spec;
     pub mod geometry_properties_spec;
     pub mod geometry_extended2_spec;
+    pub mod transforms_extended_spec;
 }

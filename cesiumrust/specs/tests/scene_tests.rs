@@ -33,6 +33,7 @@ mod scene {
     pub mod voxel_traversal_spec;
     pub mod frustum_spec;
     pub mod expression_spec;
+    pub mod expression_math_spec;
     pub mod lod_selection_spec;
     pub mod scene_mode_spec;
     pub mod animation_spline_spec;

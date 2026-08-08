@@ -3,12 +3,21 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-07-28T18:32:22Z"
+exported_at: "2026-07-30T23:32:59Z"
 modules:
     "":
         dir_name: CesiumJS Specs 测试套件与 Rust 移植集成测试
         title: CesiumJS Specs 测试套件与 Rust 移植集成测试
         scope: []
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    cesiumrust:
+        dir_name: CesiumRust 三维地球引擎（Bevy 适配层与领域模块）
+        title: CesiumRust 三维地球引擎（Bevy 适配层与领域模块）
+        scope:
+            - cesiumrust/
         source_files: []
         children: []
         depends_on: []

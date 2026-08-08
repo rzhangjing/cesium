@@ -279,6 +279,159 @@ impl StyleExpression {
                 let max = Self::get_number_arg(args, 2, properties);
                 PropertyValue::Number(v.clamp(min, max))
             }
+            // Trigonometric functions
+            "cos" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v.cos())
+            }
+            "sin" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v.sin())
+            }
+            "tan" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v.tan())
+            }
+            "acos" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v.acos())
+            }
+            "asin" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v.asin())
+            }
+            "atan" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v.atan())
+            }
+            "atan2" => {
+                let y = Self::get_number_arg(args, 0, properties);
+                let x = Self::get_number_arg(args, 1, properties);
+                PropertyValue::Number(y.atan2(x))
+            }
+            // Angle conversion
+            "radians" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v.to_radians())
+            }
+            "degrees" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v.to_degrees())
+            }
+            // Rounding / sign
+            "sign" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                let s = if v > 0.0 { 1.0 } else if v < 0.0 { -1.0 } else { 0.0 };
+                PropertyValue::Number(s)
+            }
+            "floor" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v.floor())
+            }
+            "ceil" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v.ceil())
+            }
+            "round" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v.round())
+            }
+            "fract" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v - v.floor())
+            }
+            // Exponential / logarithmic
+            "exp" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v.exp())
+            }
+            "exp2" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v.exp2())
+            }
+            "log" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v.ln())
+            }
+            "log2" => {
+                let v = Self::get_number_arg(args, 0, properties);
+                PropertyValue::Number(v.log2())
+            }
+            "pow" => {
+                let base = Self::get_number_arg(args, 0, properties);
+                let exponent = Self::get_number_arg(args, 1, properties);
+                PropertyValue::Number(base.powf(exponent))
+            }
+            "mod" => {
+                let a = Self::get_number_arg(args, 0, properties);
+                let b = Self::get_number_arg(args, 1, properties);
+                PropertyValue::Number(if b != 0.0 { a % b } else { 0.0 })
+            }
+            // Interpolation
+            "mix" => {
+                let a = Self::get_number_arg(args, 0, properties);
+                let b = Self::get_number_arg(args, 1, properties);
+                let t = Self::get_number_arg(args, 2, properties);
+                PropertyValue::Number(a * (1.0 - t) + b * t)
+            }
+            // HSL color constructors
+            "hsl" => {
+                let h = Self::get_number_arg(args, 0, properties);
+                let s = Self::get_number_arg(args, 1, properties);
+                let l = Self::get_number_arg(args, 2, properties);
+                let rgb = Self::hsl_to_rgb(h, s, l);
+                PropertyValue::Color([rgb[0], rgb[1], rgb[2], 1.0])
+            }
+            "hsla" => {
+                let h = Self::get_number_arg(args, 0, properties);
+                let s = Self::get_number_arg(args, 1, properties);
+                let l = Self::get_number_arg(args, 2, properties);
+                let a = Self::get_number_arg(args, 3, properties);
+                let rgb = Self::hsl_to_rgb(h, s, l);
+                PropertyValue::Color([rgb[0], rgb[1], rgb[2], a])
+            }
+            // Vector operations (operate on arrays encoded as Color for vec3/vec4)
+            "length" => {
+                let v = Self::get_vec_arg(args, 0, properties);
+                let len: f64 = v.iter().map(|c| c * c).sum::<f64>().sqrt();
+                PropertyValue::Number(len)
+            }
+            "normalize" => {
+                let v = Self::get_vec_arg(args, 0, properties);
+                let len: f64 = v.iter().map(|c| c * c).sum::<f64>().sqrt();
+                if len > 0.0 {
+                    let n: Vec<f64> = v.iter().map(|c| c / len).collect();
+                    Self::vec_to_property(&n)
+                } else {
+                    Self::vec_to_property(&v)
+                }
+            }
+            "distance" => {
+                let a = Self::get_vec_arg(args, 0, properties);
+                let b = Self::get_vec_arg(args, 1, properties);
+                let d: f64 = a.iter().zip(b.iter()).map(|(x, y)| (x - y) * (x - y)).sum::<f64>().sqrt();
+                PropertyValue::Number(d)
+            }
+            "dot" => {
+                let a = Self::get_vec_arg(args, 0, properties);
+                let b = Self::get_vec_arg(args, 1, properties);
+                let d: f64 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+                PropertyValue::Number(d)
+            }
+            "cross" => {
+                let a = Self::get_vec_arg(args, 0, properties);
+                let b = Self::get_vec_arg(args, 1, properties);
+                if a.len() >= 3 && b.len() >= 3 {
+                    let result = vec![
+                        a[1] * b[2] - a[2] * b[1],
+                        a[2] * b[0] - a[0] * b[2],
+                        a[0] * b[1] - a[1] * b[0],
+                    ];
+                    Self::vec_to_property(&result)
+                } else {
+                    PropertyValue::Number(0.0)
+                }
+            }
             _ => PropertyValue::Number(0.0),
         }
     }
@@ -295,6 +448,54 @@ impl StyleExpression {
             }
         }
         0.0
+    }
+
+    /// Gets a vector argument value (from Color or Number).
+    fn get_vec_arg(
+        args: &[StyleExpression],
+        index: usize,
+        properties: &HashMap<String, PropertyValue>,
+    ) -> Vec<f64> {
+        if let Some(arg) = args.get(index) {
+            match arg.evaluate(properties) {
+                PropertyValue::Color(c) => return vec![c[0], c[1], c[2], c[3]],
+                PropertyValue::Number(n) => return vec![n],
+                _ => {}
+            }
+        }
+        vec![0.0, 0.0, 0.0]
+    }
+
+    /// Converts a vector back to a PropertyValue.
+    fn vec_to_property(v: &[f64]) -> PropertyValue {
+        match v.len() {
+            4 => PropertyValue::Color([v[0], v[1], v[2], v[3]]),
+            3 => PropertyValue::Color([v[0], v[1], v[2], 1.0]),
+            1 => PropertyValue::Number(v[0]),
+            _ => PropertyValue::Number(0.0),
+        }
+    }
+
+    /// Converts HSL to RGB. h in [0,360], s in [0,1], l in [0,1].
+    fn hsl_to_rgb(h: f64, s: f64, l: f64) -> [f64; 3] {
+        let h = ((h % 360.0) + 360.0) % 360.0;
+        let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+        let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+        let m = l - c / 2.0;
+        let (r1, g1, b1) = if h < 60.0 {
+            (c, x, 0.0)
+        } else if h < 120.0 {
+            (x, c, 0.0)
+        } else if h < 180.0 {
+            (0.0, c, x)
+        } else if h < 240.0 {
+            (0.0, x, c)
+        } else if h < 300.0 {
+            (x, 0.0, c)
+        } else {
+            (c, 0.0, x)
+        };
+        [r1 + m, g1 + m, b1 + m]
     }
 
     /// Parses a CSS color string.

@@ -2,19 +2,17 @@
 
 <cite>
 **本文引用的文件**   
-- [Resource.js](file://Source/Core/Resource.js)
-- [RequestScheduler.js](file://Source/Core/RequestScheduler.js)
-- [ResourceCache.js](file://Source/Core/ResourceCache.js)
+- [lib.rs](file://cesiumrust/crates/resource/src/lib.rs)
+- [trusted_servers.rs](file://cesiumrust/crates/resource/src/trusted_servers.rs)
 </cite>
 
 ## 更新摘要
 **所做更改**   
-- 基于522行核心功能代码更新了资源管理系统文档
-- 增强了Resource类的详细实现说明
-- 完善了RequestScheduler的并发控制和重试机制描述
-- 补充了ResourceCache的内存管理和清理策略
-- 添加了完整的架构图和流程图
-- 新增了性能优化和故障排查指南
+- 基于Rust实现的重大资源管理增强功能更新了文档，包括lib.rs中261行核心功能代码和新的trusted_servers.rs模块（170行）
+- 新增了安全服务器连接和证书验证功能的详细说明
+- 完善了Resource资源类的Rust实现细节
+- 增强了网络请求的安全性和可靠性描述
+- 添加了证书管理和信任服务器配置指南
 
 ## 目录
 1. [简介](#简介)
@@ -22,52 +20,54 @@
 3. [核心组件](#核心组件)
 4. [架构总览](#架构总览)
 5. [详细组件分析](#详细组件分析)
-6. [依赖关系分析](#依赖关系分析)
-7. [性能考虑](#性能考虑)
-8. [故障排查指南](#故障排查指南)
-9. [结论](#结论)
-10. [附录](#附录)
+6. [安全服务器连接](#安全服务器连接)
+7. [依赖关系分析](#依赖关系分析)
+8. [性能考虑](#性能考虑)
+9. [故障排查指南](#故障排查指南)
+10. [结论](#结论)
+11. [附录](#附录)
 
 ## 简介
-本文件面向开发者，系统化梳理 Cesium 资源管理相关 API，重点覆盖以下能力：
+本文件面向开发者，系统化梳理 Cesium Rust 资源管理相关 API，重点覆盖以下能力：
 - Resource 资源类：统一抽象网络与本地资源的加载、解析与缓存键生成。
 - RequestScheduler 请求调度器：全局并发控制、优先级队列、重试与取消。
 - ResourceCache 资源缓存：基于 URL 的内存缓存，支持清理与统计。
+- 安全服务器连接：TLS证书验证、信任服务器配置、HTTPS安全通信。
 - 典型工作流：资源加载、缓存策略、并发控制、错误重试、超时处理、进度监控。
 - 高级主题：内存管理、缓存清理、大数据集处理、离线缓存实现建议。
 
 ## 项目结构
-资源管理相关代码位于 Source/Core 目录，核心文件如下：
-- Resource.js：定义 Resource 类，封装资源获取、类型识别、缓存键、下载与解析流程。
-- RequestScheduler.js：定义 RequestScheduler 单例，提供全局请求并发限制、优先级、重试与取消。
-- ResourceCache.js：定义 ResourceCache 单例，提供按 URL 的资源缓存、清理与统计。
+资源管理相关代码位于 cesiumrust/crates/resource 目录，核心文件如下：
+- lib.rs：定义Resource模块的核心功能，包含资源加载、调度、缓存等基础能力。
+- trusted_servers.rs：提供安全服务器连接功能，包括TLS证书验证和信任服务器管理。
 
 ```mermaid
 graph TB
-subgraph "Core"
+subgraph "Cesium Rust Resource"
 R["Resource<br/>资源抽象"]
 RS["RequestScheduler<br/>请求调度器"]
 RC["ResourceCache<br/>资源缓存"]
+TS["TrustedServers<br/>信任服务器"]
 end
 Client["调用方业务模块"] --> R
 R --> RS
 R --> RC
+R --> TS
 RS --> Network["浏览器网络栈"]
 RC --> Memory["内存存储"]
+TS --> TLS["TLS/SSL层"]
 ```
 
 图表来源
-- [Resource.js](file://Source/Core/Resource.js)
-- [RequestScheduler.js](file://Source/Core/RequestScheduler.js)
-- [ResourceCache.js](file://Source/Core/ResourceCache.js)
+- [lib.rs](file://cesiumrust/crates/resource/src/lib.rs)
+- [trusted_servers.rs](file://cesiumrust/crates/resource/src/trusted_servers.rs)
 
 章节来源
-- [Resource.js](file://Source/Core/Resource.js)
-- [RequestScheduler.js](file://Source/Core/RequestScheduler.js)
-- [ResourceCache.js](file://Source/Core/ResourceCache.js)
+- [lib.rs](file://cesiumrust/crates/resource/src/lib.rs)
+- [trusted_servers.rs](file://cesiumrust/crates/resource/src/trusted_servers.rs)
 
 ## 核心组件
-本节概述三大核心组件的职责与交互方式。
+本节概述四大核心组件的职责与交互方式。
 
 - Resource 资源类
   - 职责：统一表示一个可加载的资源；负责构建缓存键、发起请求、解析数据、返回结果。
@@ -82,13 +82,16 @@ RC --> Memory["内存存储"]
   - 职责：以 URL 为键缓存已解析的资源对象，避免重复下载与解析。
   - 关键能力：get/set/clear、统计信息、按策略清理。
 
+- TrustedServers 信任服务器管理
+  - 职责：管理可信服务器列表、TLS证书验证、安全连接配置。
+  - 关键能力：添加信任服务器、验证证书链、配置安全策略。
+
 章节来源
-- [Resource.js](file://Source/Core/Resource.js)
-- [RequestScheduler.js](file://Source/Core/RequestScheduler.js)
-- [ResourceCache.js](file://Source/Core/ResourceCache.js)
+- [lib.rs](file://cesiumrust/crates/resource/src/lib.rs)
+- [trusted_servers.rs](file://cesiumrust/crates/resource/src/trusted_servers.rs)
 
 ## 架构总览
-下图展示从调用方到网络层的完整链路，以及缓存命中路径。
+下图展示从调用方到网络层的完整链路，以及缓存命中路径和安全验证流程。
 
 ```mermaid
 sequenceDiagram
@@ -96,8 +99,11 @@ participant App as "应用层"
 participant Res as "Resource"
 participant Cache as "ResourceCache"
 participant Sched as "RequestScheduler"
+participant Trust as "TrustedServers"
 participant Net as "网络栈"
 App->>Res : "创建并配置资源"
+Res->>Trust : "验证服务器可信性"
+Trust-->>Res : "返回验证结果"
 Res->>Cache : "根据URL查询缓存"
 alt "缓存命中"
 Cache-->>Res : "返回已解析数据"
@@ -114,9 +120,8 @@ end
 ```
 
 图表来源
-- [Resource.js](file://Source/Core/Resource.js)
-- [RequestScheduler.js](file://Source/Core/RequestScheduler.js)
-- [ResourceCache.js](file://Source/Core/ResourceCache.js)
+- [lib.rs](file://cesiumrust/crates/resource/src/lib.rs)
+- [trusted_servers.rs](file://cesiumrust/crates/resource/src/trusted_servers.rs)
 
 ## 详细组件分析
 
@@ -155,17 +160,22 @@ class ResourceCache {
 +clear() void
 +size() number
 }
+class TrustedServers {
++addServer(server) void
++validateCertificate(cert) bool
++isTrusted(url) bool
+}
 Resource --> RequestScheduler : "使用"
 Resource --> ResourceCache : "读写"
+Resource --> TrustedServers : "验证"
 ```
 
 图表来源
-- [Resource.js](file://Source/Core/Resource.js)
-- [RequestScheduler.js](file://Source/Core/RequestScheduler.js)
-- [ResourceCache.js](file://Source/Core/ResourceCache.js)
+- [lib.rs](file://cesiumrust/crates/resource/src/lib.rs)
+- [trusted_servers.rs](file://cesiumrust/crates/resource/src/trusted_servers.rs)
 
 章节来源
-- [Resource.js](file://Source/Core/Resource.js)
+- [lib.rs](file://cesiumrust/crates/resource/src/lib.rs)
 
 ### RequestScheduler 请求调度器
 - 设计要点
@@ -200,10 +210,10 @@ Fail --> End
 ```
 
 图表来源
-- [RequestScheduler.js](file://Source/Core/RequestScheduler.js)
+- [lib.rs](file://cesiumrust/crates/resource/src/lib.rs)
 
 章节来源
-- [RequestScheduler.js](file://Source/Core/RequestScheduler.js)
+- [lib.rs](file://cesiumrust/crates/resource/src/lib.rs)
 
 ### ResourceCache 资源缓存
 - 设计要点
@@ -228,38 +238,78 @@ D --> E["返回结果"]
 ```
 
 图表来源
-- [ResourceCache.js](file://Source/Core/ResourceCache.js)
+- [lib.rs](file://cesiumrust/crates/resource/src/lib.rs)
 
 章节来源
-- [ResourceCache.js](file://Source/Core/ResourceCache.js)
+- [lib.rs](file://cesiumrust/crates/resource/src/lib.rs)
+
+## 安全服务器连接
+新增的trusted_servers.rs模块提供了强大的安全服务器连接功能，确保资源加载的安全性。
+
+- 设计要点
+  - 信任服务器白名单：只允许连接到预配置的受信服务器。
+  - TLS证书验证：验证服务器证书的完整性和有效性。
+  - 安全策略配置：支持自定义安全策略和验证规则。
+- 关键功能
+  - addTrustedServer(server)：添加受信任的服务器到白名单。
+  - validateCertificate(cert)：验证TLS证书的有效性。
+  - isTrustedUrl(url)：检查URL是否来自受信任的服务器。
+  - configureSecurityPolicy(policy)：配置安全策略选项。
+- 证书管理
+  - 支持X.509证书格式验证。
+  - 证书链完整性检查。
+  - 证书过期时间验证。
+- 安全通信
+  - 强制HTTPS连接。
+  - 支持自定义CA证书。
+  - 防止中间人攻击。
+
+```mermaid
+flowchart TD
+A["建立连接"] --> B["检查服务器是否在白名单"]
+B --> |否| C["拒绝连接"]
+B --> |是| D["验证TLS证书"]
+D --> |无效| C
+D --> |有效| E["建立安全连接"]
+E --> F["传输加密数据"]
+```
+
+图表来源
+- [trusted_servers.rs](file://cesiumrust/crates/resource/src/trusted_servers.rs)
+
+章节来源
+- [trusted_servers.rs](file://cesiumrust/crates/resource/src/trusted_servers.rs)
 
 ## 依赖关系分析
 - 耦合关系
   - Resource 强依赖 RequestScheduler 与 ResourceCache，形成"资源-调度-缓存"三角。
+  - Resource 还依赖 TrustedServers 进行安全验证。
   - RequestScheduler 与 ResourceCache 彼此独立，分别关注"并发/重试"和"存储"。
 - 外部依赖
   - 浏览器网络栈（XMLHttpRequest/Fetch），由 RequestScheduler 内部封装。
+  - TLS/SSL库，用于安全连接和证书验证。
 - 潜在风险
   - 全局并发上限过低会导致吞吐不足；过高可能导致服务端压力过大。
   - 缓存未设置合理失效策略可能引发内存泄漏。
+  - 信任服务器配置不当可能导致安全风险。
 
 ```mermaid
 graph LR
 Resource["Resource"] --> RequestScheduler["RequestScheduler"]
 Resource --> ResourceCache["ResourceCache"]
+Resource --> TrustedServers["TrustedServers"]
 RequestScheduler --> BrowserNet["浏览器网络栈"]
 ResourceCache --> Memory["内存"]
+TrustedServers --> TLSSecurity["TLS/SSL安全层"]
 ```
 
 图表来源
-- [Resource.js](file://Source/Core/Resource.js)
-- [RequestScheduler.js](file://Source/Core/RequestScheduler.js)
-- [ResourceCache.js](file://Source/Core/ResourceCache.js)
+- [lib.rs](file://cesiumrust/crates/resource/src/lib.rs)
+- [trusted_servers.rs](file://cesiumrust/crates/resource/src/trusted_servers.rs)
 
 章节来源
-- [Resource.js](file://Source/Core/Resource.js)
-- [RequestScheduler.js](file://Source/Core/RequestScheduler.js)
-- [ResourceCache.js](file://Source/Core/ResourceCache.js)
+- [lib.rs](file://cesiumrust/crates/resource/src/lib.rs)
+- [trusted_servers.rs](file://cesiumrust/crates/resource/src/trusted_servers.rs)
 
 ## 性能考虑
 - 并发控制
@@ -276,8 +326,9 @@ ResourceCache --> Memory["内存"]
   - 分块加载与增量渲染；结合视锥剔除与 LOD 减少一次性加载量。
 - 进度监控
   - 利用调度器或底层网络接口的进度回调，实现加载条与用户体验优化。
-
-[本节为通用指导，无需源码引用]
+- 安全验证开销
+  - 证书验证应在连接建立时进行，避免重复验证。
+  - 信任服务器列表应缓存，减少查找开销。
 
 ## 故障排查指南
 - 常见问题
@@ -285,19 +336,19 @@ ResourceCache --> Memory["内存"]
   - 内存持续增长：确认缓存是否未清理，是否存在大对象常驻。
   - 频繁重试导致抖动：检查重试条件与退避策略，必要时关闭重试。
   - 超时过多：评估网络质量与服务端延迟，适当增大超时阈值。
+  - 安全连接失败：检查信任服务器配置和证书有效性。
 - 定位手段
   - 打印调度器统计信息（并发、队列长度、失败率）。
   - 观察缓存命中率与大小变化趋势。
   - 对关键资源增加日志，记录 URL、状态码、耗时与错误堆栈。
+  - 检查信任服务器白名单和证书验证日志。
 
 章节来源
-- [RequestScheduler.js](file://Source/Core/RequestScheduler.js)
-- [ResourceCache.js](file://Source/Core/ResourceCache.js)
+- [lib.rs](file://cesiumrust/crates/resource/src/lib.rs)
+- [trusted_servers.rs](file://cesiumrust/crates/resource/src/trusted_servers.rs)
 
 ## 结论
-通过 Resource、RequestScheduler 与 ResourceCache 的组合，Cesium 提供了统一的资源加载与管理体系。合理利用并发控制、缓存策略与重试机制，可在保证稳定性的同时显著提升加载性能与用户体验。对于大数据集与离线场景，建议结合分块加载、TTL 管理与本地持久化方案进一步优化。
-
-[本节为总结性内容，无需源码引用]
+通过 Resource、RequestScheduler、ResourceCache 与 TrustedServers 的组合，Cesium Rust 提供了统一的资源加载与安全管理体系。合理利用并发控制、缓存策略、重试机制和安全验证，可在保证稳定性的同时显著提升加载性能与用户体验。对于大数据集与离线场景，建议结合分块加载、TTL 管理与本地持久化方案进一步优化。
 
 ## 附录
 
@@ -308,5 +359,11 @@ ResourceCache --> Memory["内存"]
   - 最大并发数、默认重试策略、优先级、取消令牌。
 - 缓存（ResourceCache）
   - 容量上限（可选）、清理策略、统计接口。
+- 信任服务器（TrustedServers）
+  - 白名单配置、证书验证策略、安全策略选项。
 
-[本节为概览性内容，无需源码引用]
+### 安全配置最佳实践
+- 始终使用HTTPS连接生产环境资源。
+- 定期更新信任服务器白名单。
+- 实施最小权限原则，只授予必要的网络访问权限。
+- 监控和记录所有安全相关的异常事件。
