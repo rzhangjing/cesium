@@ -3,6 +3,7 @@
 //! An interactive 3D globe application using per-tile rendering (CesiumJS architecture):
 //! - Each Web Mercator tile gets its own mesh patch on the ellipsoid
 //! - Each tile has its own satellite imagery texture
+//! - Dynamic LOD: tiles switch to higher resolution when zooming in
 //! - Atmospheric limb glow
 //! - Starfield background
 //! - Orbit camera (drag to rotate, scroll to zoom)
@@ -14,73 +15,35 @@ mod orbit_camera;
 mod starfield;
 mod atmosphere_glow;
 mod tile_loader;
+mod bing_tile_loader;
 mod tile_mesh;
+mod dynamic_globe;
 
 use orbit_camera::OrbitCameraPlugin;
 use starfield::StarfieldPlugin;
 use atmosphere_glow::AtmosphereGlowPlugin;
-use tile_loader::TileLoaderPlugin;
-use tile_mesh::{create_polar_cap, create_tile_mesh, render_scale, GlobeTile};
+use dynamic_globe::DynamicGlobePlugin;
+use tile_mesh::{create_polar_cap, render_scale};
 
-/// Zoom level for the globe tile grid.
-const GLOBE_ZOOM: u32 = 3;
 /// Mesh subdivisions per tile (16x16 quads = 17x17 vertices).
 const TILE_SEGMENTS: u32 = 16;
 
-/// Plugin that spawns per-tile globe entities.
-struct GlobeTilePlugin;
+/// Plugin that spawns the base sphere and polar caps (non-LOD elements).
+struct BaseSpherePlugin;
 
-impl Plugin for GlobeTilePlugin {
+impl Plugin for BaseSpherePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_globe_tiles);
+        app.add_systems(Startup, spawn_base_sphere);
     }
 }
 
-/// Spawns one entity per Web Mercator tile at the configured zoom level.
-fn spawn_globe_tiles(
+/// Spawns the base sphere and polar caps that underlie the dynamic tiles.
+fn spawn_base_sphere(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let num_tiles = 1u32 << GLOBE_ZOOM;
     let scale = render_scale();
-
-    for ty in 0..num_tiles {
-        for tx in 0..num_tiles {
-            let mesh = create_tile_mesh(tx, ty, GLOBE_ZOOM, TILE_SEGMENTS);
-
-            // Each tile needs its OWN material instance (handles are references,
-            // so sharing one material would make all tiles show the same texture).
-            // base_color starts as ocean blue as a fallback before imagery loads;
-            // it will be reset to white when the texture is applied (since Bevy
-            // multiplies base_color with base_color_texture).
-            let material = materials.add(StandardMaterial {
-                base_color: Color::srgb(0.04, 0.15, 0.4),
-                perceptual_roughness: 0.9,
-                ..default()
-            });
-
-            commands.spawn((
-                Globe,
-                GlobeTile {
-                    x: tx,
-                    y: ty,
-                    z: GLOBE_ZOOM,
-                },
-                Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(material),
-                Transform::from_scale(Vec3::splat(scale)),
-            ));
-        }
-    }
-
-    println!(
-        "[GlobeTile] Spawned {}x{} = {} tile entities at zoom {}",
-        num_tiles,
-        num_tiles,
-        num_tiles * num_tiles,
-        GLOBE_ZOOM
-    );
 
     // --- Base sphere (safety net) ---
     // A slightly-smaller solid ocean-blue sphere underneath the tiles. It is
@@ -117,7 +80,7 @@ fn spawn_globe_tiles(
             Transform::from_scale(Vec3::splat(scale)),
         ));
     }
-    println!("[GlobeTile] Spawned base sphere + 2 polar caps");
+    println!("[BaseSphere] Spawned base sphere + 2 polar caps");
 }
 
 fn main() {
@@ -134,15 +97,15 @@ fn main() {
         .insert_resource(ClearColor(Color::BLACK))
         // Core: lighting
         .add_plugins(CesiumRenderPlugin)
-        // Per-tile globe entities
-        .add_plugins(GlobeTilePlugin)
+        // Base sphere + polar caps (non-LOD)
+        .add_plugins(BaseSpherePlugin)
+        // Dynamic LOD globe tiles with Bing Maps imagery
+        .add_plugins(DynamicGlobePlugin)
         // Interactive orbit camera
         .add_plugins(OrbitCameraPlugin)
         // Starfield background
         .add_plugins(StarfieldPlugin)
         // Atmosphere rim glow
         .add_plugins(AtmosphereGlowPlugin)
-        // Per-tile satellite imagery
-        .add_plugins(TileLoaderPlugin)
         .run();
 }
