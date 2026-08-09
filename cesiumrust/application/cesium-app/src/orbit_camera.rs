@@ -6,6 +6,7 @@
 //! The globe is in ECEF orientation (north pole at +Z, equator in the XY
 //! plane), so the camera orbits around the Z (polar) axis with Z as "up".
 
+use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 
@@ -86,6 +87,10 @@ fn spawn_orbit_camera(mut commands: Commands, state: Res<OrbitState>) {
     };
     commands.spawn((
         Camera3d::default(),
+        // CesiumJS displays imagery as-is without tonemapping; the default
+        // TonyMcMapFace also requires the `tonemapping_luts` feature which is
+        // disabled in this workspace (missing LUT renders everything magenta).
+        Tonemapping::None,
         OrbitCamera,
         Projection::Perspective(projection),
         transform,

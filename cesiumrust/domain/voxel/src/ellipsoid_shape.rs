@@ -236,9 +236,18 @@ impl VoxelShape for VoxelEllipsoidShape {
         self.render_max_bounds = render_max;
 
         // Check visibility
+        let scale = DVec3::new(
+            model_matrix.col(0).truncate().length(),
+            model_matrix.col(1).truncate().length(),
+            model_matrix.col(2).truncate().length(),
+        );
+
         if render_min.x > render_max.x
             || render_min.y > render_max.y
             || render_min.z > render_max.z
+            || scale.x == 0.0
+            || scale.y == 0.0
+            || scale.z == 0.0
         {
             return false;
         }

@@ -10,3 +10,4 @@ cesium-ports-driven.workspace = true
 cesium-resource.workspace = true
 tokio.workspace = true
 thiserror.workspace = true
+ureq.workspace = true

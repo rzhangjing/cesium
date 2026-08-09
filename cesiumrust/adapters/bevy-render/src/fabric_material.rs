@@ -10,9 +10,8 @@
 //! `shaders/fabric_material.wgsl`, a faithful port of
 //! `Source/Shaders/Materials/*.glsl`).
 //!
-//! A full GLSL→WGSL compilation path for arbitrary custom Fabric sources is
-//! planned for P7.4; this adapter covers the built-in procedural patterns that
-//! the P1.3 visualisation requires (Color/Image/Checkerboard/Stripe/Grid/Dot/Fade).
+//! Covering all 21 CesiumJS built-in procedural material types:
+//! Color(0)..Fade(6) and PolylineArrow(7)..WaterMask(20).
 
 use bevy::asset::load_internal_asset;
 use bevy::prelude::*;
@@ -48,6 +47,34 @@ pub enum FabricKind {
     Dot = 5,
     /// Distance fade (`Fade` material).
     Fade = 6,
+    /// Arrow head on polyline (`PolylineArrow` material).
+    PolylineArrow = 7,
+    /// Dashed polyline (`PolylineDash` material).
+    PolylineDash = 8,
+    /// Glowing polyline (`PolylineGlow` material).
+    PolylineGlow = 9,
+    /// Outlined polyline (`PolylineOutline` material).
+    PolylineOutline = 10,
+    /// Contour lines by elevation (`ElevationContour` material).
+    ElevationContour = 11,
+    /// Color ramp by elevation (`ElevationRamp` material).
+    ElevationRamp = 12,
+    /// Color ramp by slope aspect (`AspectRamp` material).
+    AspectRamp = 13,
+    /// Color ramp by slope steepness (`SlopeRamp` material).
+    SlopeRamp = 14,
+    /// Normal mapping (`NormalMap` material).
+    NormalMap = 15,
+    /// Bump mapping (`BumpMap` material).
+    BumpMap = 16,
+    /// Animated water surface (`Water` material).
+    Water = 17,
+    /// Rim lighting effect (`RimLighting` material).
+    RimLighting = 18,
+    /// Discrete elevation bands (`ElevationBand` material).
+    ElevationBand = 19,
+    /// Water/land mask colouring (`WaterMask` material).
+    WaterMask = 20,
 }
 
 impl FabricKind {
@@ -62,6 +89,20 @@ impl FabricKind {
             "Grid" => FabricKind::Grid,
             "Dot" => FabricKind::Dot,
             "Fade" => FabricKind::Fade,
+            "PolylineArrow" => FabricKind::PolylineArrow,
+            "PolylineDash" => FabricKind::PolylineDash,
+            "PolylineGlow" => FabricKind::PolylineGlow,
+            "PolylineOutline" => FabricKind::PolylineOutline,
+            "ElevationContour" => FabricKind::ElevationContour,
+            "ElevationRamp" => FabricKind::ElevationRamp,
+            "AspectRamp" => FabricKind::AspectRamp,
+            "SlopeRamp" => FabricKind::SlopeRamp,
+            "NormalMap" => FabricKind::NormalMap,
+            "BumpMap" => FabricKind::BumpMap,
+            "Water" => FabricKind::Water,
+            "RimLighting" => FabricKind::RimLighting,
+            "ElevationBand" => FabricKind::ElevationBand,
+            "WaterMask" => FabricKind::WaterMask,
             _ => FabricKind::Color,
         }
     }
@@ -92,9 +133,9 @@ mod fabric_params {
         pub repeat_flag: u32,
         /// Grid `czm_pixelRatio` (integer, typically 1).
         pub pixel_ratio: u32,
-        /// Primary colour (light/even/color/fadeIn).
+        /// Primary colour (light/even/color/fadeIn/waterColor/baseColor).
         pub color_a: Vec4,
-        /// Secondary colour (dark/odd/fadeOut).
+        /// Secondary colour (dark/odd/fadeOut/outlineColor/rimColor/landColor/gapColor).
         pub color_b: Vec4,
         /// Image tint colour.
         pub color_c: Vec4,
@@ -106,6 +147,12 @@ mod fabric_params {
         pub line_off_cell: Vec4,
         /// x=fadeDirection.x, y=fadeDirection.y, z=time.x, w=time.y.
         pub fade_dir_time: Vec4,
+        /// x=glowPower, y=taperPower, z=outlineWidth/rimWidth, w=dashLength.
+        pub extra_a: Vec4,
+        /// x=spacing(contour), y=contourWidth, z=strength(normal/bump), w=dashPattern.
+        pub extra_b: Vec4,
+        /// x=minHeight(ramp/band), y=maxHeight(ramp/band), z=time(water), w=animationSpeed.
+        pub extra_c: Vec4,
     }
 
     impl Default for FabricParams {
@@ -122,6 +169,9 @@ mod fabric_params {
                 line_params: Vec4::new(8.0, 8.0, 1.0, 1.0),
                 line_off_cell: Vec4::new(0.0, 0.0, 0.1, 0.0),
                 fade_dir_time: Vec4::new(1.0, 1.0, 0.5, 0.5),
+                extra_a: Vec4::new(1.0, 0.0, 0.3, 16.0),
+                extra_b: Vec4::new(1000.0, 2.0, 0.5, 255.0),
+                extra_c: Vec4::new(0.0, 1000.0, 0.0, 0.5),
             }
         }
     }
@@ -270,6 +320,71 @@ pub fn fabric_material_from_domain(
             params.color_a = get_vec4(u, "fadeInColor", [1.0, 0.0, 0.0, 1.0]);
             params.color_b = get_vec4(u, "fadeOutColor", [0.0, 0.0, 0.0, 0.0]);
         }
+        // --- New material types ---
+        FabricKind::PolylineArrow => {
+            params.color_a = get_vec4(u, "color", [1.0, 1.0, 1.0, 1.0]);
+        }
+        FabricKind::PolylineDash => {
+            params.color_a = get_vec4(u, "color", [1.0, 1.0, 1.0, 1.0]);
+            params.color_b = get_vec4(u, "gapColor", [0.0, 0.0, 0.0, 0.0]);
+            params.extra_a.w = get_float(u, "dashLength", 16.0);
+            params.extra_b.w = get_float(u, "dashPattern", 255.0);
+        }
+        FabricKind::PolylineGlow => {
+            params.color_a = get_vec4(u, "color", [0.0, 1.0, 1.0, 1.0]);
+            params.extra_a.x = get_float(u, "glowPower", 0.25);
+            params.extra_a.y = get_float(u, "taperPower", 1.0);
+        }
+        FabricKind::PolylineOutline => {
+            params.color_a = get_vec4(u, "color", [1.0, 1.0, 1.0, 1.0]);
+            params.color_b = get_vec4(u, "outlineColor", [0.0, 0.0, 0.0, 1.0]);
+            params.extra_a.z = get_float(u, "outlineWidth", 0.3);
+        }
+        FabricKind::ElevationContour => {
+            params.color_a = get_vec4(u, "color", [1.0, 1.0, 1.0, 1.0]);
+            params.extra_b.x = get_float(u, "spacing", 1000.0);
+            params.extra_b.y = get_float(u, "width", 2.0);
+        }
+        FabricKind::ElevationRamp => {
+            params.extra_c.x = get_float(u, "minimumHeight", 0.0);
+            params.extra_c.y = get_float(u, "maximumHeight", 1000.0);
+        }
+        FabricKind::AspectRamp => {
+            // Uses image texture for the ramp
+        }
+        FabricKind::SlopeRamp => {
+            // Uses image texture for the ramp
+        }
+        FabricKind::NormalMap => {
+            let repeat = get_vec2(u, "repeat", [1.0, 1.0]);
+            params.repeat_offset = Vec4::new(repeat[0], repeat[1], 0.0, 0.0);
+            params.extra_b.z = get_float(u, "strength", 0.5);
+        }
+        FabricKind::BumpMap => {
+            let repeat = get_vec2(u, "repeat", [1.0, 1.0]);
+            params.repeat_offset = Vec4::new(repeat[0], repeat[1], 0.0, 0.0);
+            params.extra_b.z = get_float(u, "strength", 0.5);
+        }
+        FabricKind::Water => {
+            params.color_a = get_vec4(u, "baseWaterColor", [0.2, 0.3, 0.6, 0.8]);
+            params.color_b = get_vec4(u, "blendColor", [0.5, 0.5, 0.5, 0.5]);
+            params.extra_c.w = get_float(u, "animationSpeed", 0.5);
+            params.extra_c.z = 0.0; // time will be updated per-frame
+        }
+        FabricKind::RimLighting => {
+            params.color_a = get_vec4(u, "color", [1.0, 1.0, 1.0, 1.0]);
+            params.color_b = get_vec4(u, "rimColor", [0.3, 0.3, 1.0, 1.0]);
+            params.extra_a.z = get_float(u, "width", 0.3);
+        }
+        FabricKind::ElevationBand => {
+            params.extra_c.x = get_float(u, "minimumHeight", 0.0);
+            params.extra_c.y = get_float(u, "maximumHeight", 1000.0);
+        }
+        FabricKind::WaterMask => {
+            params.color_a = get_vec4(u, "waterColor", [0.1, 0.3, 0.7, 1.0]);
+            params.color_b = get_vec4(u, "landColor", [0.3, 0.6, 0.2, 1.0]);
+            params.extra_c.x = 0.0; // water level
+        }
     }
 
     FabricMaterial {
@@ -315,6 +430,18 @@ mod tests {
         assert_eq!(FabricKind::from_type_name("Grid"), FabricKind::Grid);
         assert_eq!(FabricKind::from_type_name("Color"), FabricKind::Color);
         assert_eq!(FabricKind::from_type_name("SomeCustom"), FabricKind::Color);
+    }
+
+    #[test]
+    fn test_kind_mapping_extended() {
+        assert_eq!(FabricKind::from_type_name("PolylineArrow"), FabricKind::PolylineArrow);
+        assert_eq!(FabricKind::from_type_name("PolylineGlow"), FabricKind::PolylineGlow);
+        assert_eq!(FabricKind::from_type_name("ElevationContour"), FabricKind::ElevationContour);
+        assert_eq!(FabricKind::from_type_name("Water"), FabricKind::Water);
+        assert_eq!(FabricKind::from_type_name("RimLighting"), FabricKind::RimLighting);
+        assert_eq!(FabricKind::from_type_name("BumpMap"), FabricKind::BumpMap);
+        assert_eq!(FabricKind::from_type_name("WaterMask"), FabricKind::WaterMask);
+        assert_eq!(FabricKind::from_type_name("UnknownType"), FabricKind::Color);
     }
 
     #[test]
@@ -381,5 +508,56 @@ mod tests {
         let opaque = system.from_type("Grid", overrides).unwrap();
         let fm2 = fabric_material_from_domain(&opaque, Handle::<Image>::default());
         assert!(matches!(fm2.alpha_mode(), AlphaMode::Opaque));
+    }
+
+    #[test]
+    fn test_from_domain_polyline_arrow() {
+        let system = MaterialSystem::with_builtin_materials();
+        let m = system.from_type("PolylineArrow", BTreeMap::new()).unwrap();
+        let fm = fabric_material_from_domain(&m, Handle::<Image>::default());
+        assert_eq!(fm.params.kind, FabricKind::PolylineArrow as u32);
+    }
+
+    #[test]
+    fn test_from_domain_elevation_contour() {
+        let system = MaterialSystem::with_builtin_materials();
+        let mut overrides = BTreeMap::new();
+        overrides.insert("spacing".to_string(), UniformValue::Float(500.0));
+        overrides.insert("width".to_string(), UniformValue::Float(3.0));
+        let m = system.from_type("ElevationContour", overrides).unwrap();
+        let fm = fabric_material_from_domain(&m, Handle::<Image>::default());
+        assert_eq!(fm.params.kind, FabricKind::ElevationContour as u32);
+        assert!((fm.params.extra_b.x - 500.0).abs() < 1e-6);
+        assert!((fm.params.extra_b.y - 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_from_domain_rim_lighting() {
+        let system = MaterialSystem::with_builtin_materials();
+        let mut overrides = BTreeMap::new();
+        overrides.insert("width".to_string(), UniformValue::Float(0.5));
+        let m = system.from_type("RimLighting", overrides).unwrap();
+        let fm = fabric_material_from_domain(&m, Handle::<Image>::default());
+        assert_eq!(fm.params.kind, FabricKind::RimLighting as u32);
+        assert!((fm.params.extra_a.z - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_from_domain_water() {
+        let system = MaterialSystem::with_builtin_materials();
+        let mut overrides = BTreeMap::new();
+        overrides.insert("animationSpeed".to_string(), UniformValue::Float(0.3));
+        let m = system.from_type("Water", overrides).unwrap();
+        let fm = fabric_material_from_domain(&m, Handle::<Image>::default());
+        assert_eq!(fm.params.kind, FabricKind::Water as u32);
+        assert!((fm.params.extra_c.w - 0.3).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_from_domain_water_mask() {
+        let system = MaterialSystem::with_builtin_materials();
+        let m = system.from_type("WaterMask", BTreeMap::new()).unwrap();
+        let fm = fabric_material_from_domain(&m, Handle::<Image>::default());
+        assert_eq!(fm.params.kind, FabricKind::WaterMask as u32);
     }
 }

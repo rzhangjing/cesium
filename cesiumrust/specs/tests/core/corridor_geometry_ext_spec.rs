@@ -530,3 +530,89 @@ fn corridor_with_height_raises_positions() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Granularity affects vertex count
+// ---------------------------------------------------------------------------
+
+#[test]
+fn corridor_granularity_affects_tessellation() {
+    let positions = vec![
+        from_degrees(90.0, -30.0, 0.0),
+        from_degrees(90.0, -35.0, 0.0),
+    ];
+    let opts_fine = CorridorOptions {
+        positions: positions.clone(),
+        width: 30000.0,
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo_fine = corridor_geometry(&opts_fine, VertexFormat::POSITION_ONLY);
+    let opts_coarse = CorridorOptions {
+        positions,
+        width: 30000.0,
+        granularity: std::f64::consts::PI / 6.0,
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo_coarse = corridor_geometry(&opts_coarse, VertexFormat::POSITION_ONLY);
+    assert!(
+        geo_fine.positions.len() > geo_coarse.positions.len(),
+        "fine ({}) > coarse ({})",
+        geo_fine.positions.len(),
+        geo_coarse.positions.len()
+    );
+}
+
+#[test]
+fn corridor_with_height_and_rounded() {
+    let height = 5000.0;
+    let opts = CorridorOptions {
+        positions: vec![
+            from_degrees(90.0, -30.0, 0.0),
+            from_degrees(90.0, -31.0, 0.0),
+            from_degrees(91.0, -31.0, 0.0),
+        ],
+        width: 30000.0,
+        height,
+        corner_type: CornerType::Rounded,
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo = corridor_geometry(&opts, VertexFormat::POSITION_ONLY);
+    assert!(!geo.positions.is_empty());
+}
+
+#[test]
+fn corridor_two_positions_defaults() {
+    let opts = CorridorOptions {
+        positions: vec![
+            from_degrees(-72.0, 35.0, 0.0),
+            from_degrees(-71.0, 35.0, 0.0),
+        ],
+        width: 100000.0,
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo = corridor_geometry(&opts, VertexFormat::POSITION_ONLY);
+    assert!(geo.positions.len() >= 4);
+    assert_eq!(geo.indices.len() % 3, 0);
+}
+
+#[test]
+fn corridor_very_small_width_still_handled() {
+    let geo = corridor_geometry(
+        &CorridorOptions {
+            positions: vec![from_degrees(0.0, 0.0, 0.0), from_degrees(0.0, 1.0, 0.0)],
+            width: 1e-12,
+            ellipsoid: wgs84(),
+            ..Default::default()
+        },
+        VertexFormat::POSITION_ONLY,
+    );
+    if !geo.positions.is_empty() {
+        assert!(geo.indices.len() % 3 == 0);
+    }
+}

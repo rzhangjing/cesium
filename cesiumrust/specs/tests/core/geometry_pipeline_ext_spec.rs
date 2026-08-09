@@ -3,9 +3,9 @@
 //! fitToUnsignedShortIndices, splitLongitude, compressVertices edge cases.
 
 use cesium_geospatial::geometry::{
-    compress_vertices, compute_normal, compute_tangent_and_bitangent,
-    fit_to_unsigned_short_indices, split_longitude, to_wireframe, GeometryData, PrimitiveType,
-    VertexFormat,
+    combine_geometries, compress_vertices, compute_normal, compute_tangent_and_bitangent,
+    create_line_segments_for_vectors, fit_to_unsigned_short_indices, split_longitude,
+    to_wireframe, GeometryData, PrimitiveType, VertexFormat,
 };
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::Ellipsoid;
@@ -471,4 +471,418 @@ fn wireframe_single_triangle() {
     // 1 triangle → 3 edges → 6 indices
     assert_eq!(geo.indices.len(), 6);
     assert_eq!(geo.indices, vec![0, 1, 1, 2, 2, 0]);
+}
+
+// ─── splitLongitude: detailed IDL subdivision ──────────────────────────────
+
+#[test]
+fn split_longitude_crossing_idl_p0_behind() {
+    // "splitLongitude subdivides triangle crossing the international date line, p0 behind"
+    // Box at x=-1 (simulating behind IDL) - vertices: behind, ahead, ahead
+    let ellipsoid = Ellipsoid::WGS84;
+    let p0 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(-170.0, 10.0, 0.0),
+    );
+    let p1 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(170.0, -10.0, 0.0),
+    );
+    let p2 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(170.0, 10.0, 0.0),
+    );
+
+    let geo = make_geo(
+        vec![[p0.x, p0.y, p0.z], [p1.x, p1.y, p1.z], [p2.x, p2.y, p2.z]],
+        vec![0, 1, 2],
+        PrimitiveType::Triangles,
+    );
+    let result = split_longitude(&geo, &ellipsoid);
+    // Should split into east and west parts
+    assert!(!result.is_empty());
+    let total_positions: usize = result.iter().map(|g| g.positions.len()).sum();
+    assert!(total_positions >= 3);
+}
+
+#[test]
+fn split_longitude_crossing_idl_p1_behind() {
+    // "splitLongitude subdivides triangle crossing the IDL, p1 behind"
+    let ellipsoid = Ellipsoid::WGS84;
+    let p0 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(170.0, 10.0, 0.0),
+    );
+    let p1 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(-170.0, -10.0, 0.0),
+    );
+    let p2 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(170.0, -10.0, 0.0),
+    );
+
+    let geo = make_geo(
+        vec![[p0.x, p0.y, p0.z], [p1.x, p1.y, p1.z], [p2.x, p2.y, p2.z]],
+        vec![0, 1, 2],
+        PrimitiveType::Triangles,
+    );
+    let result = split_longitude(&geo, &ellipsoid);
+    assert!(!result.is_empty());
+}
+
+#[test]
+fn split_longitude_crossing_idl_p2_behind() {
+    // "splitLongitude subdivides triangle crossing the IDL, p2 behind"
+    let ellipsoid = Ellipsoid::WGS84;
+    let p0 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(170.0, 10.0, 0.0),
+    );
+    let p1 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(170.0, -10.0, 0.0),
+    );
+    let p2 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(-170.0, -10.0, 0.0),
+    );
+
+    let geo = make_geo(
+        vec![[p0.x, p0.y, p0.z], [p1.x, p1.y, p1.z], [p2.x, p2.y, p2.z]],
+        vec![0, 1, 2],
+        PrimitiveType::Triangles,
+    );
+    let result = split_longitude(&geo, &ellipsoid);
+    assert!(!result.is_empty());
+}
+
+#[test]
+fn split_longitude_crossing_idl_p0_ahead() {
+    // "splitLongitude subdivides triangle crossing the IDL, p0 ahead"
+    // Two vertices behind, p0 ahead → p0 in west, rest in east or vice versa
+    let ellipsoid = Ellipsoid::WGS84;
+    let p0 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(-170.0, 10.0, 0.0),
+    );
+    let p1 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(-170.0, -10.0, 0.0),
+    );
+    let p2 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(170.0, -10.0, 0.0),
+    );
+
+    let geo = make_geo(
+        vec![[p0.x, p0.y, p0.z], [p1.x, p1.y, p1.z], [p2.x, p2.y, p2.z]],
+        vec![0, 1, 2],
+        PrimitiveType::Triangles,
+    );
+    let result = split_longitude(&geo, &ellipsoid);
+    assert!(!result.is_empty());
+}
+
+#[test]
+fn split_longitude_crossing_idl_p1_ahead() {
+    // "splitLongitude subdivides triangle crossing the IDL, p1 ahead"
+    let ellipsoid = Ellipsoid::WGS84;
+    let p0 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(170.0, -10.0, 0.0),
+    );
+    let p1 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(170.0, 10.0, 0.0),
+    );
+    let p2 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(-170.0, -10.0, 0.0),
+    );
+
+    let geo = make_geo(
+        vec![[p0.x, p0.y, p0.z], [p1.x, p1.y, p1.z], [p2.x, p2.y, p2.z]],
+        vec![0, 1, 2],
+        PrimitiveType::Triangles,
+    );
+    let result = split_longitude(&geo, &ellipsoid);
+    assert!(!result.is_empty());
+}
+
+#[test]
+fn split_longitude_crossing_idl_p2_ahead() {
+    // "splitLongitude subdivides triangle crossing the IDL, p2 ahead"
+    let ellipsoid = Ellipsoid::WGS84;
+    let p0 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(-170.0, -10.0, 0.0),
+    );
+    let p1 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(170.0, -10.0, 0.0),
+    );
+    let p2 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(170.0, 10.0, 0.0),
+    );
+
+    let geo = make_geo(
+        vec![[p0.x, p0.y, p0.z], [p1.x, p1.y, p1.z], [p2.x, p2.y, p2.z]],
+        vec![0, 1, 2],
+        PrimitiveType::Triangles,
+    );
+    let result = split_longitude(&geo, &ellipsoid);
+    assert!(!result.is_empty());
+}
+
+#[test]
+fn split_longitude_crossing_idl_two_triangles_east_west() {
+    // Two triangles - one in east, one in west, plus a crossing triangle
+    let ellipsoid = Ellipsoid::WGS84;
+    let e0 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(100.0, 0.0, 0.0),
+    );
+    let e1 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(110.0, 0.0, 0.0),
+    );
+    let e2 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(105.0, 10.0, 0.0),
+    );
+    let w0 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(-100.0, 0.0, 0.0),
+    );
+    let w1 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(-110.0, 0.0, 0.0),
+    );
+    let w2 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(-105.0, 10.0, 0.0),
+    );
+    let cross = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(170.0, -10.0, 0.0),
+    );
+    let cross2 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(-170.0, 10.0, 0.0),
+    );
+    let cross3 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(175.0, 10.0, 0.0),
+    );
+
+    let geo = make_geo(
+        vec![
+            [e0.x, e0.y, e0.z],
+            [e1.x, e1.y, e1.z],
+            [e2.x, e2.y, e2.z],
+            [w0.x, w0.y, w0.z],
+            [w1.x, w1.y, w1.z],
+            [w2.x, w2.y, w2.z],
+            [cross.x, cross.y, cross.z],
+            [cross2.x, cross2.y, cross2.z],
+            [cross3.x, cross3.y, cross3.z],
+        ],
+        vec![0, 1, 2, 3, 4, 5, 6, 7, 8],
+        PrimitiveType::Triangles,
+    );
+    let result = split_longitude(&geo, &ellipsoid);
+    assert!(result.len() >= 1, "should produce at least 1 geometry, got {}", result.len());
+    let total_triangles: usize = result.iter().map(|g| g.indices.len() / 3).sum();
+    assert!(total_triangles >= 3, "should have at least 3 total triangles");
+}
+
+#[test]
+fn split_longitude_crossing_idl_no_indices_provides_indices() {
+    // splitLongitude should work with un-indexed triangle list
+    let ellipsoid = Ellipsoid::WGS84;
+    let p0 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(170.0, -10.0, 0.0),
+    );
+    let p1 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(-170.0, 10.0, 0.0),
+    );
+    let p2 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(175.0, 10.0, 0.0),
+    );
+
+    let mut geo = make_geo(
+        vec![[p0.x, p0.y, p0.z], [p1.x, p1.y, p1.z], [p2.x, p2.y, p2.z]],
+        vec![0, 1, 2],
+        PrimitiveType::Triangles,
+    );
+    // Also test with positions only (no indices would be handled upstream)
+    let result = split_longitude(&geo, &ellipsoid);
+    assert!(!result.is_empty());
+
+    // Even with just indices=empty (un-indexed), split_longitude should work
+    geo.indices = vec![];
+    let result2 = split_longitude(&geo, &ellipsoid);
+    // Un-indexed triangle list: cross-detection may not trigger without indices
+    // But shouldn't crash
+    assert!(!result2.is_empty());
+}
+
+// ─── compressVertices extended: tangents/bitangents ───────────────────────
+
+#[test]
+fn compress_vertices_with_tangents_bitangents() {
+    let geo = GeometryData {
+        positions: vec![[0.0; 3]; 3],
+        normals: Some(vec![[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+        tex_coords: Some(vec![[0.0, 0.0], [0.5, 0.5], [1.0, 1.0]]),
+        tangents: Some(vec![[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [-1.0, 0.0, 0.0]]),
+        bitangents: Some(vec![[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]]),
+        indices: vec![0, 1, 2],
+        bounding_sphere: BoundingSphere::new(DVec3::ZERO, 1.0),
+        primitive_type: PrimitiveType::Triangles,
+    };
+
+    let compressed = compress_vertices(&geo).unwrap();
+    // Packs normal + ST = 2 u32 per vertex, tangents/bitangents NOT packed by this impl
+    assert_eq!(compressed.len(), 6);
+}
+
+#[test]
+fn compress_vertices_with_st_only_no_normals() {
+    let geo = GeometryData {
+        positions: vec![[0.0; 3]; 3],
+        normals: None,
+        tex_coords: Some(vec![[0.0, 0.0], [0.5, 0.5], [1.0, 1.0]]),
+        tangents: None,
+        bitangents: None,
+        indices: vec![0, 1, 2],
+        bounding_sphere: BoundingSphere::new(DVec3::ZERO, 1.0),
+        primitive_type: PrimitiveType::Triangles,
+    };
+
+    // compress_vertices returns None when normals are absent
+    assert!(compress_vertices(&geo).is_none());
+}
+
+// ─── createLineSegmentsForVectors extended ────────────────────────────────
+
+#[test]
+fn create_line_segments_for_tangents() {
+    let positions = vec![
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+    ];
+    let tangents = vec![
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ];
+    let lines = create_line_segments_for_vectors(&positions, &tangents, 0.5);
+
+    assert_eq!(lines.primitive_type, PrimitiveType::Lines);
+    assert_eq!(lines.positions.len(), 4); // 2 vertices * 2 (start + end)
+    assert_eq!(lines.indices.len(), 4);
+
+    // First line: (0,0,0) → (0.5,0,0)
+    assert!((lines.positions[1][0] - 0.5).abs() < 1e-10);
+}
+
+#[test]
+fn create_line_segments_for_bitangents() {
+    let positions = vec![
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+    ];
+    let bitangents = vec![
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ];
+    let lines = create_line_segments_for_vectors(&positions, &bitangents, 0.25);
+
+    assert_eq!(lines.primitive_type, PrimitiveType::Lines);
+    assert_eq!(lines.positions.len(), 4);
+    // First line: (0,0,0) → (0,0.25,0)
+    assert!((lines.positions[1][1] - 0.25).abs() < 1e-10);
+    // Second line: (1,0,0) → (1,0,0.25)
+    assert!((lines.positions[3][2] - 0.25).abs() < 1e-10);
+}
+
+// ─── fitToUnsignedShortIndices extended ───────────────────────────────────
+
+#[test]
+fn fit_to_unsigned_short_triangles_no_split() {
+    // Geometry with indices well within u32 range
+    let geo = make_geo(
+        vec![[0.0; 3], [1.0; 3], [2.0; 3], [3.0; 3]],
+        vec![0, 1, 2, 2, 1, 3],
+        PrimitiveType::Triangles,
+    );
+    let result = fit_to_unsigned_short_indices(&geo);
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].positions.len(), 4);
+    assert_eq!(result[0].indices, vec![0, 1, 2, 2, 1, 3]);
+}
+
+#[test]
+fn fit_to_unsigned_short_lines_split_large_geometry() {
+    // Large line geometry (> 65536 vertices) should be split
+    let num_vertices = 70000usize;
+    let positions: Vec<[f64; 3]> = (0..num_vertices)
+        .map(|i| [i as f64, 0.0, 0.0])
+        .collect();
+    let mut indices: Vec<u32> = Vec::new();
+    for i in (0..num_vertices - 1).step_by(2) {
+        indices.push(i as u32);
+        indices.push((i + 1) as u32);
+    }
+
+    let geo = make_geo(positions, indices, PrimitiveType::Lines);
+    let result = fit_to_unsigned_short_indices(&geo);
+
+    assert!(result.len() >= 2, "Should split into >= 2, got {}", result.len());
+    for sub in &result {
+        assert!(sub.positions.len() <= 65536);
+        assert_eq!(sub.primitive_type, PrimitiveType::Lines);
+    }
+}
+
+// ─── combineInstances / combineGeometries extended ───────────────────────
+
+#[test]
+fn combine_geometries_with_idl_no_indices() {
+    // "combineInstances with geometry that is and is not split by the IDL"
+    // Combine geometries that are on different sides of the IDL
+    let ellipsoid = Ellipsoid::WGS84;
+    let e0 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(45.0, 0.0, 0.0),
+    );
+    let e1 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(46.0, 0.0, 0.0),
+    );
+    let e2 = ellipsoid.cartographic_to_cartesian(
+        &cesium_geospatial::Cartographic::from_degrees(45.5, 1.0, 0.0),
+    );
+
+    let geo_east = make_geo(
+        vec![[e0.x, e0.y, e0.z], [e1.x, e1.y, e1.z], [e2.x, e2.y, e2.z]],
+        vec![0, 1, 2],
+        PrimitiveType::Triangles,
+    );
+    let geo_west = make_geo(
+        vec![[-e0.x, e0.y, e0.z], [-e1.x, e1.y, e1.z], [-e2.x, e2.y, e2.z]],
+        vec![0, 1, 2],
+        PrimitiveType::Triangles,
+    );
+
+    let combined = combine_geometries(&[geo_east, geo_west]);
+    assert_eq!(combined.positions.len(), 6);
+    assert_eq!(combined.indices, vec![0, 1, 2, 3, 4, 5]);
+    assert_eq!(combined.primitive_type, PrimitiveType::Triangles);
+}
+
+#[test]
+fn combine_geometries_all_attributes_when_shared() {
+    let a = GeometryData {
+        positions: vec![[0.0; 3], [1.0; 3]],
+        normals: Some(vec![[0.0; 3], [1.0; 3]]),
+        tex_coords: Some(vec![[0.0, 0.0], [1.0, 1.0]]),
+        tangents: Some(vec![[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+        bitangents: Some(vec![[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]]),
+        indices: vec![0, 1, 0],
+        bounding_sphere: BoundingSphere::new(DVec3::ZERO, 1.0),
+        primitive_type: PrimitiveType::Triangles,
+    };
+    let b = GeometryData {
+        positions: vec![[2.0; 3], [3.0; 3]],
+        normals: Some(vec![[2.0; 3], [3.0; 3]]),
+        tex_coords: Some(vec![[0.5, 0.5], [0.0, 0.0]]),
+        tangents: Some(vec![[0.0, -1.0, 0.0], [1.0, 0.0, 0.0]]),
+        bitangents: Some(vec![[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+        indices: vec![0, 1, 0],
+        bounding_sphere: BoundingSphere::new(DVec3::ZERO, 1.0),
+        primitive_type: PrimitiveType::Triangles,
+    };
+
+    let combined = combine_geometries(&[a, b]);
+    assert_eq!(combined.positions.len(), 4);
+    assert!(combined.normals.is_some());
+    assert_eq!(combined.normals.unwrap().len(), 4);
+    assert!(combined.tex_coords.is_some());
+    assert!(combined.tangents.is_some());
+    assert!(combined.bitangents.is_some());
+    assert_eq!(combined.indices, vec![0, 1, 0, 2, 3, 2]);
 }

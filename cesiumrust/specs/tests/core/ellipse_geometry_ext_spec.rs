@@ -434,3 +434,144 @@ fn ellipse_granularity_affects_tessellation() {
         geo_coarse.positions.len()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Semi-major > semi-minor with rotation = PI
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ellipse_rotation_pi_swaps_axes() {
+    let opts_no_rot = EllipseOptions {
+        center: from_degrees(0.0, 0.0, 0.0),
+        semi_major_axis: 500000.0,
+        semi_minor_axis: 200000.0,
+        rotation: 0.0,
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo_no_rot = ellipse_geometry(&opts_no_rot, VertexFormat::POSITION_ONLY);
+
+    let opts_rot = EllipseOptions {
+        center: from_degrees(0.0, 0.0, 0.0),
+        semi_major_axis: 500000.0,
+        semi_minor_axis: 200000.0,
+        rotation: std::f64::consts::PI,
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo_rot = ellipse_geometry(&opts_rot, VertexFormat::POSITION_ONLY);
+
+    assert_eq!(geo_no_rot.positions.len(), geo_rot.positions.len());
+    // PI rotation should flip the axes (positions differ at some vertices)
+    let mut any_diff = false;
+    for (a, b) in geo_no_rot.positions.iter().zip(geo_rot.positions.iter()) {
+        if (a[0] - b[0]).abs() > 1e-6 || (a[1] - b[1]).abs() > 1e-6 || (a[2] - b[2]).abs() > 1e-6 {
+            any_diff = true;
+            break;
+        }
+    }
+    assert!(any_diff, "PI rotation should change positions");
+}
+
+// ---------------------------------------------------------------------------
+// st_rotation = 0 gives standard texture coordinates
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ellipse_st_rotation_zero_center_uv_at_origin() {
+    let opts = EllipseOptions {
+        center: from_degrees(0.0, 0.0, 0.0),
+        semi_major_axis: 1.0,
+        semi_minor_axis: 1.0,
+        granularity: 0.1,
+        st_rotation: 0.0,
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo = ellipse_geometry(&opts, VertexFormat::POSITION_AND_ST);
+    let st = geo.tex_coords.as_ref().unwrap();
+    assert_eq!(geo.positions.len(), 16);
+    assert_eq!(st.len(), 16);
+    // ST coordinates should be finite
+    for uv in st.iter() {
+        assert!(uv[0].is_finite() && uv[1].is_finite());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ellipse with st_rotation = PI
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ellipse_st_rotation_pi_inverts_texture() {
+    let opts = EllipseOptions {
+        center: from_degrees(0.0, 0.0, 0.0),
+        semi_major_axis: 1.0,
+        semi_minor_axis: 1.0,
+        granularity: 0.1,
+        st_rotation: std::f64::consts::PI,
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo = ellipse_geometry(&opts, VertexFormat::POSITION_AND_ST);
+    assert_eq!(geo.positions.len(), 16);
+    let st = geo.tex_coords.as_ref().unwrap();
+    // With st_rotation=PI, the center uv should be near (0.5, 0.5)
+    for uv in st.iter() {
+        assert!(uv[0] >= -0.5 && uv[0] <= 1.5, "s out of range after PI rotation");
+        assert!(uv[1] >= -0.5 && uv[1] <= 1.5, "t out of range after PI rotation");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ellipse with height and rotation combined
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ellipse_height_with_rotation() {
+    let height = 5000.0;
+    let opts = EllipseOptions {
+        center: from_degrees(-75.59777, 40.03883, 0.0),
+        semi_major_axis: 300000.0,
+        semi_minor_axis: 150000.0,
+        height,
+        rotation: std::f64::consts::FRAC_PI_4,
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo = ellipse_geometry(&opts, VertexFormat::POSITION_ONLY);
+    assert!(!geo.positions.is_empty());
+    let e = wgs84();
+    for p in &geo.positions {
+        let pos = DVec3::new(p[0], p[1], p[2]);
+        let carto = e.cartesian_to_cartographic(pos).unwrap_or_default();
+        assert!((carto.height - height).abs() < 100.0);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ellipse bounding sphere with rotation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ellipse_bounding_sphere_with_rotation() {
+    let opts = EllipseOptions {
+        center: from_degrees(0.0, 0.0, 0.0),
+        semi_major_axis: 300000.0,
+        semi_minor_axis: 100000.0,
+        rotation: std::f64::consts::FRAC_PI_3,
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo = ellipse_geometry(&opts, VertexFormat::POSITION_ONLY);
+    assert!((geo.bounding_sphere.radius - 300000.0).abs() < 1.0);
+    let center = geo.bounding_sphere.center;
+    for p in &geo.positions {
+        let dist = (DVec3::new(p[0], p[1], p[2]) - center).length();
+        assert!(dist <= geo.bounding_sphere.radius + 1.0);
+    }
+}

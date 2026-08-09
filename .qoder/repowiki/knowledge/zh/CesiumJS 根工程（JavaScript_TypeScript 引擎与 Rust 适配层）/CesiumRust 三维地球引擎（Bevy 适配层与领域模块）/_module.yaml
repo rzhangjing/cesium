@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: cesiumrust
-title: CesiumRust 三维地球引擎（Bevy 适配层与领域模块）
-scope:
-    - cesiumrust/
-source_files: []
-depends_on: []
-related_to: []

@@ -10,9 +10,10 @@
 //! C-class omitted: throws, pack/unpack, offsetAttribute (GPU-specific).
 
 use cesium_geospatial::geometry::{
-    coplanar_polygon_geometry, corridor_geometry, corridor_outline_geometry,
-    ellipse_geometry, ellipse_outline_geometry, frustum_geometry,
-    ground_polyline_geometry, polyline_geometry, wall_geometry, wall_outline_geometry,
+    box_geometry, coplanar_polygon_geometry, corridor_geometry, corridor_outline_geometry,
+    cylinder_geometry, ellipse_geometry, ellipse_outline_geometry, ellipsoid_geometry,
+    frustum_geometry, ground_polyline_geometry, polyline_geometry, sphere_geometry,
+    wall_geometry, wall_outline_geometry,
     CoplanarPolygonOptions, CornerType, CorridorOptions, EllipseOptions, FrustumDef,
     GroundPolylineOptions, PolylineOptions, WallOptions,
 };
@@ -398,4 +399,263 @@ fn ground_polyline_computes_positions() {
     let geo = ground_polyline_geometry(&opts, VertexFormat::POSITION_ONLY);
     assert!(geo.positions.len() >= 4);
     assert!(geo.indices.len() >= 6);
+}
+
+// === SphereGeometry detailed ===
+
+#[test]
+fn sphere_computes_positions_exact() {
+    // SphereGeometrySpec: "computes positions" - radius=1, stacks=2, slices=3
+    let geo = sphere_geometry(1.0, 2, 3, VertexFormat::POSITION_ONLY);
+    // (stacks+1) * (slices+1) = 3 * 4 = 12
+    assert_eq!(geo.positions.len(), 12);
+    // 2 stacks * 3 slices * 6 indices = 36
+    assert_eq!(geo.indices.len(), 36);
+    assert!((geo.bounding_sphere.radius - 1.0).abs() < 1e-10);
+}
+
+#[test]
+fn sphere_computes_all_vertex_attributes() {
+    // SphereGeometrySpec: "compute all vertex attributes"
+    let geo = sphere_geometry(1.0, 3, 4, VertexFormat::ALL);
+    let nv = geo.positions.len();
+    assert_eq!(nv, (4) * (5)); // (stacks+1)*(slices+1) = 4*5 = 20
+    assert!(geo.normals.is_some());
+    assert!(geo.tex_coords.is_some());
+    assert_eq!(geo.normals.as_ref().unwrap().len(), nv);
+    assert_eq!(geo.tex_coords.as_ref().unwrap().len(), nv);
+}
+
+#[test]
+fn sphere_unit_sphere_attributes() {
+    // SphereGeometrySpec: "computes attributes for a unit sphere"
+    let geo = sphere_geometry(1.0, 4, 5, VertexFormat::POSITION_AND_NORMAL);
+    let normals = geo.normals.as_ref().unwrap();
+
+    for i in 0..geo.positions.len() {
+        let pos = DVec3::new(geo.positions[i][0], geo.positions[i][1], geo.positions[i][2]);
+        let n = DVec3::new(normals[i][0], normals[i][1], normals[i][2]);
+
+        // Position should be on unit sphere
+        assert!((pos.length() - 1.0).abs() < 1e-10, "pos[{}] not on unit sphere", i);
+        // Normal should equal position (for unit sphere centered at origin)
+        assert!((n - pos).length() < 1e-10, "normal[{}] != position", i);
+        // Normal should be unit length
+        assert!((n.length() - 1.0).abs() < 1e-10, "normal[{}] not unit", i);
+    }
+}
+
+// === CylinderGeometry detailed ===
+
+#[test]
+fn cylinder_top_radius_zero_cone() {
+    // CylinderGeometrySpec: "computes positions with topRadius equals 0"
+    // cylinder_geometry(length, top_radius, bottom_radius, slices, vf)
+    let geo = cylinder_geometry(10.0, 0.0, 5.0, 8, VertexFormat::POSITION_ONLY);
+    assert!(!geo.positions.is_empty());
+    assert!(geo.indices.len() % 3 == 0);
+
+    // Top vertices should be at z = +half_length (tip of the cone)
+    let half = 5.0;
+    let mut has_top_tip = false;
+    for p in &geo.positions {
+        if (p[2] - half).abs() < 1e-6 {
+            // Top positions with radius=0 should collapse to axis (x≈0, y≈0)
+            if p[0].abs() < 1e-6 && p[1].abs() < 1e-6 {
+                has_top_tip = true;
+            }
+        }
+    }
+    assert!(has_top_tip, "cone top should have a vertex at the tip");
+}
+
+#[test]
+fn cylinder_bottom_radius_zero_inverted_cone() {
+    // CylinderGeometrySpec: "computes positions with bottomRadius equals 0"
+    // cylinder_geometry(length, top_radius, bottom_radius, slices, vf)
+    let geo = cylinder_geometry(10.0, 5.0, 0.0, 8, VertexFormat::POSITION_ONLY);
+    assert!(!geo.positions.is_empty());
+    assert!(geo.indices.len() % 3 == 0);
+    assert!(geo.bounding_sphere.radius > 0.0);
+}
+
+#[test]
+fn cylinder_both_radii_zero_degenerate() {
+    // Both radii zero → all vertices on Z axis
+    let geo = cylinder_geometry(10.0, 0.0, 0.0, 8, VertexFormat::POSITION_ONLY);
+    for p in &geo.positions {
+        assert!(p[0].abs() < 1e-10);
+        assert!(p[1].abs() < 1e-10);
+    }
+}
+
+// === EllipsoidGeometry detailed ===
+
+#[test]
+fn ellipsoid_unit_sphere_attributes() {
+    // EllipsoidGeometrySpec: "computes the unit ellipsoid"
+    let geo = ellipsoid_geometry(DVec3::ONE, 4, 5, VertexFormat::POSITION_AND_NORMAL);
+    let normals = geo.normals.as_ref().unwrap();
+    for (i, (p, n)) in geo.positions.iter().zip(normals.iter()).enumerate() {
+        let pos = DVec3::from(*p);
+        let nrm = DVec3::from(*n);
+        assert!((pos.length() - 1.0).abs() < 1e-10, "pos[{}] not on unit sphere", i);
+        assert!((nrm - pos).length() < 1e-10, "normal[{}] != position", i);
+    }
+}
+
+#[test]
+fn ellipsoid_negated_normals_point_inward() {
+    // EllipsoidGeometrySpec: "negates normals on an ellipsoid"
+    // After computing normals, scaling by -1 makes them point inward
+    let radii = DVec3::new(2.0, 1.5, 1.0);
+    let mut geo = ellipsoid_geometry(radii, 4, 6, VertexFormat::POSITION_AND_NORMAL);
+    // Negate normals
+    if let Some(ref mut normals) = geo.normals {
+        for n in normals.iter_mut() {
+            n[0] = -n[0];
+            n[1] = -n[1];
+            n[2] = -n[2];
+        }
+    }
+
+    let normals = geo.normals.as_ref().unwrap();
+    for (p, n) in geo.positions.iter().zip(normals.iter()) {
+        // Inward-pointing normal should have negative dot with position
+        let dot = p[0] * n[0] + p[1] * n[1] + p[2] * n[2];
+        assert!(dot < 0.0, "negated normal should point inward (dot={})", dot);
+    }
+}
+
+#[test]
+fn ellipsoid_scaled_radii_proportioned_correctly() {
+    // Positions should scale correctly with radii
+    let radii = DVec3::new(3.0, 2.0, 1.0);
+    let geo = ellipsoid_geometry(radii, 5, 8, VertexFormat::POSITION_ONLY);
+
+    for p in &geo.positions {
+        let pos = DVec3::from(*p);
+        // Point on scaled ellipsoid satisfies: (x/rx)^2 + (y/ry)^2 + (z/rz)^2 = 1
+        let scaled_len = (pos.x / radii.x).powi(2) + (pos.y / radii.y).powi(2) + (pos.z / radii.z).powi(2);
+        assert!((scaled_len - 1.0).abs() < 1e-10, "position not on ellipsoid surface");
+    }
+}
+
+#[test]
+fn ellipsoid_bounding_sphere_uses_max_radius() {
+    let radii = DVec3::new(1.0, 3.0, 2.0);
+    let geo = ellipsoid_geometry(radii, 3, 4, VertexFormat::POSITION_ONLY);
+    assert!((geo.bounding_sphere.radius - 3.0).abs() < 1e-10);
+}
+
+// === BoxGeometry detailed ===
+
+#[test]
+fn box_geometry_position_only_reuses_vertices() {
+    // BoxGeometrySpec: "constructor creates optimized number of positions for VertexFormat.POSITIONS_ONLY"
+    // With POSITION_ONLY, vertices are shared → 24 vertices (6 faces * 4)
+    let geo = box_geometry(
+        DVec3::new(-1.0, -1.0, -1.0),
+        DVec3::new(1.0, 1.0, 1.0),
+        VertexFormat::POSITION_ONLY,
+    );
+    assert_eq!(geo.positions.len(), 24);
+    assert_eq!(geo.indices.len(), 36);
+    assert!(geo.normals.is_none());
+    assert!(geo.tex_coords.is_none());
+}
+
+#[test]
+fn box_asymmetric_dimensions() {
+    // Asymmetric dimensions (-1 to 2, -1 to 3, -2 to 1)
+    let geo = box_geometry(
+        DVec3::new(-1.0, -1.0, -2.0),
+        DVec3::new(2.0, 3.0, 1.0),
+        VertexFormat::ALL,
+    );
+    assert_eq!(geo.positions.len(), 24);
+    assert_eq!(geo.indices.len(), 36);
+    assert!(geo.normals.is_some());
+    assert!(geo.tex_coords.is_some());
+    // Bounding sphere should encompass the box
+    let diagonal = DVec3::new(3.0, 4.0, 3.0).length();
+    assert!((geo.bounding_sphere.radius - diagonal / 2.0).abs() < 1e-10);
+}
+
+#[test]
+fn box_corner_positions_valid() {
+    // All positions should be at corners of the box (on the surface)
+    let min = DVec3::new(0.0, 0.0, 0.0);
+    let max = DVec3::new(1.0, 1.0, 1.0);
+    let geo = box_geometry(min, max, VertexFormat::POSITION_ONLY);
+
+    for p in &geo.positions {
+        assert!(p[0] >= 0.0 - 1e-10 && p[0] <= 1.0 + 1e-10);
+        assert!(p[1] >= 0.0 - 1e-10 && p[1] <= 1.0 + 1e-10);
+        assert!(p[2] >= 0.0 - 1e-10 && p[2] <= 1.0 + 1e-10);
+        // Each vertex must be at one extreme of the box (on at least one face)
+        let on_face = (p[0].abs() < 1e-10 || (p[0] - 1.0).abs() < 1e-10)
+            || (p[1].abs() < 1e-10 || (p[1] - 1.0).abs() < 1e-10)
+            || (p[2].abs() < 1e-10 || (p[2] - 1.0).abs() < 1e-10);
+        assert!(on_face, "vertex {:?} not on a box face", p);
+    }
+}
+
+// === PolylineGeometry detailed ===
+
+#[test]
+fn polyline_texture_coordinates_monotonic() {
+    let e = wgs84();
+    let p0 = from_degrees(0.0, 0.0, 0.0);
+    let p1 = from_degrees(3.0, 0.0, 0.0);
+    let opts = PolylineOptions {
+        positions: vec![p0, p1],
+        width: 100.0,
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: e,
+    };
+    let geo = polyline_geometry(&opts, VertexFormat::POSITION_AND_ST);
+    let st = geo.tex_coords.as_ref().unwrap();
+    // ST u should go from 0 to 1 monotonically
+    let n = geo.positions.len();
+    assert_eq!(st.len(), n);
+    assert!((st[0][0]).abs() < 1e-6);
+    assert!((st[n - 2][0] - 1.0).abs() < 1e-6);
+    // v should alternate: right=0, left=1
+    for i in 0..n / 2 {
+        assert!((st[i * 2][1]).abs() < 1e-6, "right v should be 0");
+        assert!((st[i * 2 + 1][1] - 1.0).abs() < 1e-6, "left v should be 1");
+    }
+}
+
+// === WallGeometry with variable heights ===
+
+#[test]
+fn wall_from_variable_min_max_heights() {
+    let e = wgs84();
+    let positions: Vec<DVec3> = (0..4).map(|i| from_degrees(i as f64, 0.0, 0.0)).collect();
+    let opts = WallOptions {
+        positions,
+        maximum_heights: Some(vec![4000.0, 3000.0, 2000.0, 1000.0]),
+        minimum_heights: Some(vec![0.0, 500.0, 1000.0, 500.0]),
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: e,
+        ..Default::default()
+    };
+    let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
+    assert!(geo.positions.len() >= 8);
+    assert!(geo.indices.len() >= 6);
+    // Verify that bottom points (even indices) have heights matching minimumHeights
+    // and top points (odd indices) have heights matching maximumHeights
+    let e = wgs84();
+    for i in 0..geo.positions.len() {
+        let carto = e.cartesian_to_cartographic(DVec3::from(geo.positions[i])).unwrap();
+        if i % 2 == 0 {
+            // Bottom - should be near a minimum height
+            assert!(carto.height >= -10.0, "bottom height {} should be >= 0", carto.height);
+        } else {
+            // Top - should be at max of input heights
+            assert!(carto.height > 500.0, "top height {} should be > 0", carto.height);
+        }
+    }
 }

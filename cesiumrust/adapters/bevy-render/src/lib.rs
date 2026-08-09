@@ -10,9 +10,71 @@
 //! - `scene_pipeline`: SceneGraph → Culling → DrawCommands → Bevy entities
 //! - `plugin`: Bevy plugin for CesiumRust rendering
 
-pub mod scene_pipeline;
+pub mod camera;
+pub mod components;
+pub mod datasource;
+pub mod entity;
 pub mod entity_render;
 pub mod fabric_material;
+pub mod imagery;
+pub mod material_system;
+pub mod resources;
+pub mod scene_pipeline;
+pub mod terrain;
+pub mod tileset;
+pub mod atmosphere;
+pub mod effects;
+pub mod voxel;
+pub mod vector;
+pub mod shadow;
+pub mod widgets;
+
+pub use camera::{
+    CesiumCamera, CesiumCameraPlugin, FlyToRequest,
+};
+pub use components::{
+    CesiumGlobe, CesiumImageryLayer, CesiumTerrainTile, CesiumTileNode, CesiumTilesetRoot,
+    TileContent, TileContentState, TilesetLoadingState,
+};
+pub use datasource::{
+    CesiumDataSourcePlugin,
+    czml_loader::{CzmlLoadPlugin, CzmlLoadQueue, load_czml_file},
+    geojson_loader::{GeoJsonLoadPlugin, GeoJsonLoadQueue, load_geojson_file},
+    gpx_loader::{GpxLoadPlugin, GpxLoadQueue, load_gpx_file},
+    kml_loader::{KmlLoadPlugin, KmlLoadQueue, load_kml_file},
+};
+pub use entity::{
+    CesiumEntityPlugin,
+    components::{
+        BillboardGraphicsComponent, BillboardTag, CesiumEntity, EntityWrapper, GlobeEllipsoid,
+        ModelGraphicsComponent, NeedsVisualUpdate, PointGraphicsComponent,
+        PolygonGraphicsComponent, PolylineGraphicsComponent, TimeDynamicProperties,
+        VisualizationBuilt,
+    },
+    time_system::{AnimationClock, entity_visibility_system, time_dynamic_update_system},
+    visualizer::{
+        billboard_face_camera_system, entity_visualizer_system,
+    },
+};
+pub use fabric_material::{FabricKind, FabricMaterial, FabricMaterialPlugin, FabricParams};
+pub use imagery::CesiumImageryPlugin;
+pub use material_system::{
+    CesiumMaterialPlugin, MaterialAnimationTime, MaterialRef, MaterialSystemResource,
+};
+pub use resources::{GlobeConfig, RenderScale, TileLoadStats, METERS_PER_RENDER_UNIT};
+pub use terrain::CesiumTerrainPlugin;
+pub use tileset::CesiumTilesetPlugin;
+pub use tileset::debug_plugin::DebugPlugin;
+pub use tileset::debug_system::DebugConfig;
+pub use tileset::picking::{TilePickEvent, TilePickingPlugin};
+
+pub use atmosphere::CesiumAtmospherePlugin;
+pub use effects::{CesiumEffectsPlugin, PostProcessConfig, CesiumParticlePlugin};
+pub use effects::oit::{OITPlugin, OitConfig, SplitConfig};
+pub use voxel::{CesiumVoxelPlugin, VoxelConfig, VoxelPrimitiveComponent, VoxelPrimitiveType};
+pub use vector::{CesiumVectorTilePlugin, CesiumWktPlugin, VectorTileConfig, WktLoadQueue};
+pub use shadow::{CesiumShadowPlugin, ShadowConfig, ShadowState, ShadowCaster};
+pub use widgets::CesiumWidgetPlugin;
 
 use bevy::prelude::*;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -160,28 +222,6 @@ pub fn create_solid_color_texture(color: PixelColor, size: u32) -> Image {
     create_imagery_texture(size, size, data)
 }
 
-/// Component marking a terrain tile entity with its imagery texture applied.
-#[derive(Component)]
-pub struct TerrainTile {
-    /// Tile X coordinate
-    pub x: u32,
-    /// Tile Y coordinate
-    pub y: u32,
-    /// Tile level
-    pub level: u32,
-}
-
-/// Component for a 3D Tiles tile entity.
-#[derive(Component)]
-pub struct Tile3D {
-    /// Path to the tile in the tileset tree.
-    pub path: Vec<usize>,
-    /// The content URI (if loaded).
-    pub content_uri: Option<String>,
-    /// Screen space error at selection time.
-    pub screen_space_error: f64,
-}
-
 /// Creates a wireframe box mesh for visualizing bounding volumes.
 ///
 /// # Arguments
@@ -280,44 +320,18 @@ pub fn create_bounding_sphere_wireframe(
     mesh
 }
 
-/// Marker component for the globe entity
-#[derive(Component)]
-pub struct Globe;
+/// Plugin that initializes CesiumRust core Bevy resources (GlobeConfig,
+/// RenderScale, TileLoadStats) and sets up scene lighting.
+pub struct CesiumCorePlugin;
 
-/// Resource holding the ellipsoid configuration
-#[derive(Resource)]
-pub struct EllipsoidConfig {
-    pub ellipsoid: Ellipsoid,
-    pub stacks: u32,
-    pub slices: u32,
-}
-
-impl Default for EllipsoidConfig {
-    fn default() -> Self {
-        Self {
-            ellipsoid: Ellipsoid::WGS84,
-            stacks: 64,
-            slices: 128,
-        }
-    }
-}
-
-/// Plugin that sets up the CesiumRust rendering pipeline (lighting only).
-/// Globe tile entities are spawned by the application layer.
-pub struct CesiumRenderPlugin;
-
-impl Plugin for CesiumRenderPlugin {
+impl Plugin for CesiumCorePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<EllipsoidConfig>()
+        app.init_resource::<GlobeConfig>()
+            .init_resource::<RenderScale>()
+            .init_resource::<TileLoadStats>()
             .add_systems(Startup, setup_lighting);
     }
 }
-
-/// Render-scale factor: domain works in meters (f64), GPU renders in f32.
-/// Earth-scale coordinates (~6.4e6 m) exceed f32 depth/frustum precision,
-/// so the adapter scales the world down to a unit sphere for rendering.
-/// 1 render unit = 6378137 meters (WGS84 semi-major axis).
-pub const METERS_PER_RENDER_UNIT: f64 = 6378137.0;
 
 /// System that spawns scene lighting.
 fn setup_lighting(mut commands: Commands) {

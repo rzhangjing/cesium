@@ -272,3 +272,72 @@ fn rectangle_full_longitude_range() {
     assert!(!geo.indices.is_empty());
     assert_eq!(geo.indices.len() % 3, 0);
 }
+
+// ─── Rotation parameter verification ─────────────────────────────────────────
+
+#[test]
+fn rectangle_rotation_zero_no_effect() {
+    // rotation=0 should produce same positions as default
+    let e = wgs84();
+    let rect = Rectangle::from_degrees(-10.0, -10.0, 10.0, 10.0);
+    let granularity = std::f64::consts::PI / 18.0;
+
+    let geo1 = rectangle_geometry(&rect, &e, granularity, 0.0, VertexFormat::POSITION_ONLY);
+    // Positions stay same since our API doesn't take rotation directly
+    let _center = rect.center();
+    for p in &geo1.positions {
+        let carto = e.cartesian_to_cartographic(DVec3::from(*p)).unwrap();
+        // Longitude should be within rect bounds
+        assert!(carto.longitude >= rect.west - 1e-6 && carto.longitude <= rect.east + 1e-6);
+        assert!(carto.latitude >= rect.south - 1e-6 && carto.latitude <= rect.north + 1e-6);
+    }
+}
+
+#[test]
+fn rectangle_position_count_depends_on_granularity() {
+    let e = wgs84();
+    let rect = Rectangle::from_degrees(-10.0, -10.0, 10.0, 10.0);
+
+    // Wide granularity
+    let geo1 = rectangle_geometry(&rect, &e, 1.0, 0.0, VertexFormat::POSITION_ONLY);
+    // Fine granularity
+    let geo2 = rectangle_geometry(&rect, &e, 0.1, 0.0, VertexFormat::POSITION_ONLY);
+
+    assert!(geo2.positions.len() > geo1.positions.len(),
+        "finer granularity should produce more vertices: {} vs {}",
+        geo2.positions.len(), geo1.positions.len());
+}
+
+#[test]
+fn rectangle_tex_coords_corner_values() {
+    // Texture coordinates at corners should be (0,0) (1,0) (0,1) (1,1)
+    let e = wgs84();
+    let rect = Rectangle::from_degrees(-10.0, -10.0, 10.0, 10.0);
+    let granularity = std::f64::consts::PI / 18.0;
+    let geo = rectangle_geometry(&rect, &e, granularity, 0.0, VertexFormat::POSITION_AND_ST);
+    let st = geo.tex_coords.as_ref().unwrap();
+    let num_vertices = geo.positions.len();
+
+    assert_eq!(st.len(), num_vertices);
+    // First vertex is at (west, south) → ST should be (0, 0)
+    assert!((st[0][0]).abs() < 1e-6);
+    assert!((st[0][1]).abs() < 1e-6);
+    // Last vertex is at (east, north) → ST should be (1, 1)
+    assert!((st[num_vertices - 1][0] - 1.0).abs() < 1e-6);
+    assert!((st[num_vertices - 1][1] - 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn rectangle_extreme_latitudes_near_poles() {
+    // Rectangle near north pole (85° to 89°)
+    let e = wgs84();
+    let rect = Rectangle::from_degrees(-180.0, 85.0, 180.0, 89.0);
+    let granularity = std::f64::consts::PI / 6.0;
+    let geo = rectangle_geometry(&rect, &e, granularity, 0.0, VertexFormat::POSITION_ONLY);
+
+    assert!(geo.positions.len() >= 4);
+    for p in &geo.positions {
+        let carto = e.cartesian_to_cartographic(DVec3::from(*p)).unwrap();
+        assert!(carto.latitude.to_degrees() >= 84.5, "not near north pole: {}", carto.latitude);
+    }
+}

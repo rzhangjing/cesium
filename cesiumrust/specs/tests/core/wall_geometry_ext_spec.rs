@@ -482,3 +482,151 @@ fn wall_from_constant_heights_detailed() {
         c3.height
     );
 }
+
+// ---------------------------------------------------------------------------
+// "creates positions with minimum and maximum heights"
+// Variable height arrays (not constant)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn wall_creates_positions_with_variable_minimum_maximum_heights() {
+    let positions = vec![
+        from_degrees(49.0, 18.0, 1000.0),
+        from_degrees(50.0, 18.0, 1000.0),
+    ];
+
+    let opts = WallOptions {
+        positions,
+        minimum_heights: Some(vec![500.0, 300.0]),
+        maximum_heights: Some(vec![1500.0, 1300.0]),
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
+
+    // CesiumJS: numPositions = 4, numTriangles = 2
+    assert_eq!(geo.positions.len(), 4, "expected 4 positions");
+    assert_eq!(geo.indices.len(), 6, "expected 6 indices (2 triangles)");
+
+    // Check that bottom height varies (follows minimum_heights)
+    // Position pattern: bottom0, top0, bottom1, top1
+    let c0 = to_cartographic(geo.positions[0]);
+    assert!((c0.height - 500.0).abs() < EPSILON8, "bottom height at pos0 should be 500");
+
+    let c2 = to_cartographic(geo.positions[2]);
+    assert!((c2.height - 300.0).abs() < EPSILON8, "bottom height at pos2 should be 300");
+
+    let c1 = to_cartographic(geo.positions[1]);
+    assert!((c1.height - 1500.0).abs() < EPSILON8, "top height at pos1 should be 1500");
+
+    let c3 = to_cartographic(geo.positions[3]);
+    assert!((c3.height - 1300.0).abs() < EPSILON8, "top height at pos3 should be 1300");
+}
+
+// ---------------------------------------------------------------------------
+// Wall with granularity larger than arc (minimal subdivision)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn wall_coarse_granularity_minimal_subdivision() {
+    let positions = vec![
+        from_degrees(49.0, 18.0, 1000.0),
+        from_degrees(50.0, 18.0, 1000.0),
+    ];
+
+    let opts = WallOptions {
+        positions,
+        granularity: std::f64::consts::PI / 3.0, // 60 degrees (large)
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
+
+    // With coarse granularity, should still produce valid geometry
+    assert!(geo.positions.len() >= 4, "should produce at least 4 positions");
+    assert!(geo.indices.len() >= 6);
+}
+
+// ---------------------------------------------------------------------------
+// Wall with 3+ positions, non-constant heights
+// ---------------------------------------------------------------------------
+
+#[test]
+fn wall_three_positions_gradient_heights() {
+    let positions = vec![
+        from_degrees(0.0, 0.0, 0.0),
+        from_degrees(1.0, 0.0, 0.0),
+        from_degrees(2.0, 0.0, 0.0),
+    ];
+
+    let opts = WallOptions {
+        positions,
+        minimum_heights: Some(vec![0.0, 1000.0, 0.0]),
+        maximum_heights: Some(vec![5000.0, 6000.0, 5000.0]),
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
+
+    assert!(geo.positions.len() >= 6);
+    assert_eq!(geo.indices.len() % 3, 0);
+    assert!(geo.bounding_sphere.radius > 0.0);
+}
+
+// ---------------------------------------------------------------------------
+// Wall: positions differ by EPSILON10 boundary
+// ---------------------------------------------------------------------------
+
+#[test]
+fn wall_positions_at_epsilon_boundary_survive_cleaning() {
+    // Same as the existing test but verify geometry is produced
+    let p1 = DVec3::new(4347090.215457887, 1061403.4237998386, 4538066.036525028);
+    let p2 = DVec3::new(4348147.589624987, 1043897.8776143644, 4541092.234751661);
+    // p3 differs by ~1.5*EPSILON10 from p2 (should NOT be merged)
+    let p3 = DVec3::new(4348147.58998, 1043897.8780, 4541092.2350);
+
+    let positions = vec![p1, p2, p3];
+
+    let opts = WallOptions {
+        positions,
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
+    assert!(!geo.positions.is_empty(), "should produce geometry");
+}
+
+// ---------------------------------------------------------------------------
+// Wall outline: closed loop
+// ---------------------------------------------------------------------------
+
+#[test]
+fn wall_outline_forms_closed_loop() {
+    use cesium_geospatial::geometry::{wall_outline_geometry, WallOptions};
+
+    let positions = vec![
+        from_degrees(0.0, 0.0, 0.0),
+        from_degrees(1.0, 0.0, 0.0),
+        from_degrees(1.0, 1.0, 0.0),
+        from_degrees(0.0, 1.0, 0.0),
+        from_degrees(0.0, 0.0, 0.0), // closed
+    ];
+
+    let opts = WallOptions {
+        positions,
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo = wall_outline_geometry(&opts);
+    assert!(geo.positions.len() >= 4);
+    assert_eq!(geo.indices.len() % 2, 0);
+    // All indices valid
+    let n = geo.positions.len() as u32;
+    for &idx in &geo.indices {
+        assert!(idx < n);
+    }
+}

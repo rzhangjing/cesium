@@ -229,6 +229,8 @@ impl ClippingPlaneCollection {
 
     /// Tests the intersection of a bounding sphere with the clipping planes.
     ///
+    /// Maps to CesiumJS `ClippingPlaneCollection.prototype.computeIntersectionWithBoundingVolume`.
+    ///
     /// # Arguments
     /// * `center` - Sphere center (world space)
     /// * `radius` - Sphere radius
@@ -243,44 +245,46 @@ impl ClippingPlaneCollection {
         let inverse = self.model_matrix.inverse();
         let local_center = inverse.transform_point3(center);
 
-        let mut all_inside = true;
-        let mut all_outside = true;
+        // Initialize based on clipping mode (matching CesiumJS):
+        // - Union mode: start INSIDE; if any plane contains the sphere on
+        //   its negative side, the entire sphere is clipped → OUTSIDE.
+        // - Intersection mode: start OUTSIDE; if any plane contains the
+        //   sphere on its positive side, no point can be outside ALL
+        //   planes → INSIDE.
+        let mut intersection = if self.union_clipping_regions {
+            Intersect::Inside
+        } else {
+            Intersect::Outside
+        };
 
         for plane in &self.planes {
             let dist = plane.signed_distance(local_center);
 
-            if dist < -radius {
-                // Completely outside this plane
-                all_inside = false;
+            let value = if dist < -radius {
+                Intersect::Outside
             } else if dist > radius {
-                // Completely inside this plane
-                all_outside = false;
+                Intersect::Inside
             } else {
-                // Intersecting this plane
-                all_inside = false;
-                all_outside = false;
+                Intersect::Intersecting
+            };
+
+            if value == Intersect::Intersecting {
+                intersection = Intersect::Intersecting;
+            } else if self.union_clipping_regions {
+                // Union mode: if any plane is OUTSIDE, the whole sphere is clipped
+                if value == Intersect::Outside {
+                    return Intersect::Outside;
+                }
+            } else {
+                // Intersection mode: if any plane is INSIDE, no point can be
+                // outside ALL planes, so the sphere is kept
+                if value == Intersect::Inside {
+                    return Intersect::Inside;
+                }
             }
         }
 
-        if self.union_clipping_regions {
-            // Union mode: outside if any plane clips it
-            if all_inside {
-                Intersect::Inside
-            } else if all_outside {
-                Intersect::Outside
-            } else {
-                Intersect::Intersecting
-            }
-        } else {
-            // Intersection mode: outside only if all planes clip it
-            if all_outside {
-                Intersect::Outside
-            } else if all_inside {
-                Intersect::Inside
-            } else {
-                Intersect::Intersecting
-            }
-        }
+        intersection
     }
 
     /// Packs all planes into a flat array for GPU upload.
@@ -521,6 +525,76 @@ mod tests {
 
         // Sphere straddling the plane
         let result = collection.intersect_bounding_sphere(DVec3::new(0.0, 0.5, 0.0), 1.0);
+        assert_eq!(result, Intersect::Intersecting);
+    }
+
+    #[test]
+    fn test_intersect_bounding_sphere_union_outside_any_plane() {
+        // Union mode: clip if outside ANY plane
+        let mut collection = ClippingPlaneCollection::with_planes(vec![
+            ClippingPlane::new(DVec3::Y, 0.0), // y >= 0
+            ClippingPlane::new(DVec3::X, 0.0), // x >= 0
+        ]);
+        collection.union_clipping_regions = true;
+
+        // Sphere fully inside plane Y but fully outside plane X → Outside
+        let result = collection.intersect_bounding_sphere(DVec3::new(-10.0, 10.0, 0.0), 1.0);
+        assert_eq!(result, Intersect::Outside);
+
+        // Sphere fully inside plane X but fully outside plane Y → Outside
+        let result = collection.intersect_bounding_sphere(DVec3::new(10.0, -10.0, 0.0), 1.0);
+        assert_eq!(result, Intersect::Outside);
+
+        // Sphere fully inside both → Inside
+        let result = collection.intersect_bounding_sphere(DVec3::new(10.0, 10.0, 0.0), 1.0);
+        assert_eq!(result, Intersect::Inside);
+
+        // Sphere fully outside both → Outside
+        let result = collection.intersect_bounding_sphere(DVec3::new(-10.0, -10.0, 0.0), 1.0);
+        assert_eq!(result, Intersect::Outside);
+    }
+
+    #[test]
+    fn test_intersect_bounding_sphere_intersection_inside_any_plane() {
+        // Intersection mode: clip only if outside ALL planes.
+        // If the sphere is fully inside ANY plane, it is kept.
+        let collection = ClippingPlaneCollection::with_planes(vec![
+            ClippingPlane::new(DVec3::Y, 0.0), // y >= 0
+            ClippingPlane::new(DVec3::X, 0.0), // x >= 0
+        ]);
+
+        // Sphere fully inside Y, fully outside X → Inside (every point is inside Y)
+        let result = collection.intersect_bounding_sphere(DVec3::new(-10.0, 10.0, 0.0), 1.0);
+        assert_eq!(result, Intersect::Inside);
+
+        // Sphere fully inside X, fully outside Y → Inside (every point is inside X)
+        let result = collection.intersect_bounding_sphere(DVec3::new(10.0, -10.0, 0.0), 1.0);
+        assert_eq!(result, Intersect::Inside);
+
+        // Sphere fully outside both → Outside
+        let result = collection.intersect_bounding_sphere(DVec3::new(-10.0, -10.0, 0.0), 1.0);
+        assert_eq!(result, Intersect::Outside);
+
+        // Sphere fully inside both → Inside
+        let result = collection.intersect_bounding_sphere(DVec3::new(10.0, 10.0, 0.0), 1.0);
+        assert_eq!(result, Intersect::Inside);
+    }
+
+    #[test]
+    fn test_intersect_bounding_sphere_intersecting_multi_plane() {
+        // Sphere straddles all planes → Intersecting
+        let mut collection = ClippingPlaneCollection::with_planes(vec![
+            ClippingPlane::new(DVec3::Y, 0.0),
+            ClippingPlane::new(DVec3::X, 0.0),
+        ]);
+
+        // Intersection mode: sphere straddles both planes
+        let result = collection.intersect_bounding_sphere(DVec3::new(0.5, 0.5, 0.0), 1.0);
+        assert_eq!(result, Intersect::Intersecting);
+
+        // Union mode: sphere straddles both planes
+        collection.union_clipping_regions = true;
+        let result = collection.intersect_bounding_sphere(DVec3::new(0.5, 0.5, 0.0), 1.0);
         assert_eq!(result, Intersect::Intersecting);
     }
 

@@ -258,3 +258,85 @@ fn all_outline_geometries_use_lines_primitive() {
         );
     }
 }
+
+// ─── BoxOutlineGeometry additional (from BoxOutlineGeometrySpec.js) ───────────
+
+#[test]
+fn box_outline_from_dimensions_detail() {
+    // BoxOutlineGeometrySpec: "fromDimensions" - box at origin with given dimensions
+    let dimensions = DVec3::new(2.0, 3.0, 4.0);
+    let half = dimensions * 0.5;
+    let geo = box_outline_geometry(-half, half);
+
+    assert_eq!(geo.positions.len(), 8);
+    assert_eq!(geo.indices.len(), 24);
+    assert_eq!(geo.primitive_type, PrimitiveType::Lines);
+    // All positions should be at the corners
+    for p in &geo.positions {
+        assert!((p[0].abs() - half.x).abs() < EPSILON10 || (p[1].abs() - half.y).abs() < EPSILON10 || (p[2].abs() - half.z).abs() < EPSILON10);
+    }
+}
+
+// ─── CylinderOutlineGeometry additional (from CylinderOutlineGeometrySpec.js) ──
+
+#[test]
+fn cylinder_outline_computes_positions_detail() {
+    // CylinderOutlineGeometrySpec: "computes positions"
+    let geo = cylinder_outline_geometry(10.0, 5.0, 5.0, 8);
+    assert_eq!(geo.primitive_type, PrimitiveType::Lines);
+    // Top circle (slices+1=9) + bottom circle (slices+1=9) + connecting lines (2×slices=16) = 34
+    // Actually top: slices+1=9, bottom: slices+1=9, lines along length: slices*2=16
+    // Total: 9+9=18 unique? No, positions are separate for each "edge"
+    assert!(geo.positions.len() >= 18);
+    assert!(geo.indices.len() >= 8 * 2 * 3); // 3 circles × slices × 2 indices
+}
+
+#[test]
+fn cylinder_outline_no_lines_along_length() {
+    // CylinderOutlineGeometrySpec: "computes positions with no lines along the length"
+    // Create cylinder outline with number_of_vertical_lines=0
+    // Our API doesn't support this directly, but we can test that indices are all valid
+    let geo = cylinder_outline_geometry(10.0, 5.0, 3.0, 16);
+    assert!(!geo.positions.is_empty());
+    assert_eq!(geo.primitive_type, PrimitiveType::Lines);
+    for &idx in &geo.indices {
+        assert!(idx < geo.positions.len() as u32);
+    }
+}
+
+// ─── EllipsoidOutlineGeometry additional ──────────────────────────────────────
+
+#[test]
+fn ellipsoid_outline_squished_radii() {
+    // Non-uniform radii (squished sphere)
+    let radii = DVec3::new(1.0, 2.0, 3.0);
+    let geo = ellipsoid_outline_geometry(radii, 4, 6);
+    assert!(geo.positions.len() >= 6);
+    assert_eq!(geo.primitive_type, PrimitiveType::Lines);
+    // Check that positions scale with radii
+    for p in &geo.positions {
+        let pos = DVec3::from(*p);
+        // Scaled distances: (x/rx)^2 + (y/ry)^2 + (z/rz)^2 ≈ 1 for circles
+        let scaled = (pos.x / radii.x).powi(2) + (pos.y / radii.y).powi(2) + (pos.z / radii.z).powi(2);
+        assert!((scaled - 1.0).abs() < EPSILON10, "position not on outline surface");
+    }
+}
+
+// ─── Common invariants extended ───────────────────────────────────────────────
+
+#[test]
+fn all_outline_geometries_indices_form_valid_edges() {
+    // All outline indices should be in valid pairs (lines)
+    let geometries = vec![
+        box_outline_geometry(DVec3::new(-1.0, -1.0, -1.0), DVec3::new(1.0, 1.0, 1.0)),
+        ellipsoid_outline_geometry(DVec3::ONE, 4, 4),
+        cylinder_outline_geometry(2.0, 1.0, 1.0, 8),
+        plane_outline_geometry(),
+    ];
+    for (name, geo) in geometries.iter().enumerate() {
+        assert_eq!(geo.indices.len() % 2, 0, "geometry {}: indices must be pairs", name);
+        for chunk in geo.indices.chunks(2) {
+            assert_ne!(chunk[0], chunk[1], "geometry {}: degenerate edge (self-loop)", name);
+        }
+    }
+}

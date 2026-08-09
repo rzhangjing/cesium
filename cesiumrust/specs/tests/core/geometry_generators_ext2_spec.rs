@@ -445,3 +445,213 @@ fn polyline_volume_vertex_count_scales_with_arc() {
         geo_short.positions.len()
     );
 }
+
+// ===========================================================================
+// PolylineVolumeGeometry - corner type and path shape tests
+// ===========================================================================
+
+#[test]
+fn polyline_volume_right_turn() {
+    let shape = vec![[-50.0, -50.0], [50.0, -50.0], [50.0, 50.0], [-50.0, 50.0]];
+    let opts = PolylineVolumeOptions {
+        positions: vec![
+            from_degrees(0.0, 0.0, 0.0),
+            from_degrees(0.0, 1.0, 0.0),
+            from_degrees(1.0, 1.0, 0.0),
+        ],
+        shape,
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: wgs84(),
+    };
+    let geo = polyline_volume_geometry(&opts, VertexFormat::POSITION_ONLY);
+    assert!(geo.positions.len() >= 8);
+    assert_eq!(geo.indices.len() % 3, 0);
+    assert!(geo.bounding_sphere.radius > 0.0);
+}
+
+#[test]
+fn polyline_volume_left_turn() {
+    let shape = vec![[-50.0, -50.0], [50.0, -50.0], [50.0, 50.0], [-50.0, 50.0]];
+    let opts = PolylineVolumeOptions {
+        positions: vec![
+            from_degrees(0.0, 0.0, 0.0),
+            from_degrees(0.0, 1.0, 0.0),
+            from_degrees(-1.0, 1.0, 0.0),
+        ],
+        shape,
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: wgs84(),
+    };
+    let geo = polyline_volume_geometry(&opts, VertexFormat::POSITION_ONLY);
+    assert!(geo.positions.len() >= 8);
+    assert_eq!(geo.indices.len() % 3, 0);
+}
+
+#[test]
+fn polyline_volume_sharp_turns() {
+    let shape = vec![[-50.0, -50.0], [50.0, -50.0], [50.0, 50.0], [-50.0, 50.0]];
+    let opts = PolylineVolumeOptions {
+        positions: vec![
+            from_degrees(2.0, 52.778, 0.0),
+            from_degrees(1.992, 52.776, 0.0),
+            from_degrees(2.013, 52.767, 0.0),
+            from_degrees(1.987, 52.773, 0.0),
+            from_degrees(2.006, 52.765, 0.0),
+        ],
+        shape,
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: wgs84(),
+    };
+    let geo = polyline_volume_geometry(&opts, VertexFormat::POSITION_ONLY);
+    assert!(geo.positions.len() >= 8);
+    assert_eq!(geo.indices.len() % 3, 0);
+}
+
+#[test]
+fn polyline_volume_straight_path() {
+    let shape = vec![[-50.0, -50.0], [50.0, -50.0], [50.0, 50.0], [-50.0, 50.0]];
+    let opts = PolylineVolumeOptions {
+        positions: vec![
+            from_degrees(-67.655, 0.0, 0.0),
+            from_degrees(-67.655, 15.0, 0.0),
+            from_degrees(-67.655, 20.0, 0.0),
+        ],
+        shape,
+        granularity: std::f64::consts::PI / 6.0,
+        ellipsoid: wgs84(),
+    };
+    let geo = polyline_volume_geometry(&opts, VertexFormat::POSITION_ONLY);
+    assert!(geo.positions.len() >= 8);
+    assert_eq!(geo.indices.len() % 3, 0);
+}
+
+#[test]
+fn polyline_volume_triangle_shape() {
+    // Triangular cross-section
+    let shape = vec![[0.0, 0.0], [100.0, 0.0], [50.0, 100.0]];
+    let opts = PolylineVolumeOptions {
+        positions: vec![
+            from_degrees(0.0, 0.0, 0.0),
+            from_degrees(1.0, 0.0, 0.0),
+        ],
+        shape,
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: wgs84(),
+    };
+    let geo = polyline_volume_geometry(&opts, VertexFormat::POSITION_ONLY);
+    assert!(geo.positions.len() >= 6);
+    assert_eq!(geo.indices.len() % 3, 0);
+}
+
+#[test]
+fn polyline_volume_closed_shape() {
+    // Closed shape (first == last in 2D)
+    let shape = vec![
+        [0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0], [0.0, 0.0],
+    ];
+    let opts = PolylineVolumeOptions {
+        positions: vec![
+            from_degrees(0.0, 0.0, 0.0),
+            from_degrees(1.0, 0.0, 0.0),
+        ],
+        shape,
+        granularity: std::f64::consts::PI / 180.0,
+        ellipsoid: wgs84(),
+    };
+    let geo = polyline_volume_geometry(&opts, VertexFormat::POSITION_ONLY);
+    assert!(geo.positions.len() >= 8);
+    assert_eq!(geo.indices.len() % 3, 0);
+}
+
+// ===========================================================================
+// CoplanarPolygonGeometry - additional surface normal verification
+// ===========================================================================
+
+#[test]
+fn coplanar_polygon_normals_point_outward() {
+    let opts = CoplanarPolygonOptions {
+        positions: vec![
+            from_degrees(0.0, 0.0, 0.0),
+            from_degrees(1.0, 0.0, 0.0),
+            from_degrees(1.0, 1.0, 0.0),
+            from_degrees(0.0, 1.0, 0.0),
+        ],
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo = coplanar_polygon_geometry(&opts, VertexFormat::POSITION_AND_NORMAL);
+
+    // "flips normal to roughly match surface normal"
+    // Normals should point roughly outward from the ellipsoid
+    let normals = geo.normals.as_ref().expect("normals should be present");
+    for (p, n) in geo.positions.iter().zip(normals.iter()) {
+        let pos = DVec3::new(p[0], p[1], p[2]);
+        let nrm = DVec3::new(n[0], n[1], n[2]);
+        let dot = pos.normalize().dot(nrm);
+        assert!(dot > -0.1, "normal should point roughly outward");
+    }
+}
+
+#[test]
+fn coplanar_polygon_very_small() {
+    // Very small polygon should still produce valid geometry
+    let opts = CoplanarPolygonOptions {
+        positions: vec![
+            from_degrees(0.0, 0.0, 0.0),
+            from_degrees(0.0001, 0.0, 0.0),
+            from_degrees(0.00005, 0.0001, 0.0),
+        ],
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo = coplanar_polygon_geometry(&opts, VertexFormat::POSITION_ONLY);
+    assert_eq!(geo.positions.len(), 3);
+    assert_eq!(geo.indices.len(), 3);
+}
+
+#[test]
+fn coplanar_polygon_bounding_sphere_valid() {
+    let opts = CoplanarPolygonOptions {
+        positions: vec![
+            from_degrees(-10.0, -10.0, 0.0),
+            from_degrees(10.0, -10.0, 0.0),
+            from_degrees(10.0, 10.0, 0.0),
+            from_degrees(-10.0, 10.0, 0.0),
+        ],
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo = coplanar_polygon_geometry(&opts, VertexFormat::POSITION_ONLY);
+
+    let center = geo.bounding_sphere.center;
+    let radius = geo.bounding_sphere.radius;
+    for p in &geo.positions {
+        let dist = (DVec3::new(p[0], p[1], p[2]) - center).length();
+        assert!(dist <= radius + 1e-6, "position outside bounding sphere");
+    }
+}
+
+// ===========================================================================
+// EllipseGeometry (circle) - extended texture coordinate tests
+// ===========================================================================
+
+#[test]
+fn circle_texture_coordinates_without_rotation() {
+    let opts = EllipseOptions {
+        center: from_degrees(0.0, 0.0, 0.0),
+        semi_major_axis: 1.0,
+        semi_minor_axis: 1.0,
+        granularity: 0.1,
+        st_rotation: 0.0,
+        ellipsoid: wgs84(),
+        ..Default::default()
+    };
+    let geo = ellipse_geometry(&opts, VertexFormat::POSITION_AND_ST);
+    let st = geo.tex_coords.as_ref().unwrap();
+    assert_eq!(geo.positions.len(), 16);
+    assert_eq!(st.len(), 16);
+    // ST coordinates should be finite
+    for uv in st.iter() {
+        assert!(uv[0].is_finite() && uv[1].is_finite());
+    }
+}

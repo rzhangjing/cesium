@@ -120,4 +120,10 @@ mod scene {
     pub mod heightmap_tessellator_spec;
     pub mod globe_math_spec;
     pub mod material_system_spec;
+    pub mod camera_extended3_spec;
+    pub mod voxel_box_shape_extended_spec;
+    pub mod voxel_cylinder_shape_extended_spec;
+    pub mod voxel_ellipsoid_shape_extended_spec;
+    pub mod camera_controller_extended_spec;
+    pub mod clipping_plane_collection_extended_spec;
 }

@@ -427,3 +427,248 @@ fn test_tile_index_round_trip_octree() {
         }
     }
 }
+
+// ============================================================================
+// constructor edge cases & validation
+// ============================================================================
+
+#[test]
+fn test_quadtree_default_z_is_zero() {
+    let coord = qt(5, 3, 7);
+    assert_eq!(coord.z, 0);
+    assert_eq!(coord.subtree_levels, 2);
+}
+
+#[test]
+fn test_octree_default_subtree_levels() {
+    let coord = ot(3, 1, 2, 4);
+    assert_eq!(coord.subtree_levels, 2);
+    assert_eq!(coord.z, 4);
+}
+
+#[test]
+fn test_custom_subtree_levels_quadtree() {
+    let coord = qt_s(2, 3, 1, 5);
+    assert_eq!(coord.level, 2);
+    assert_eq!(coord.x, 3);
+    assert_eq!(coord.y, 1);
+    assert_eq!(coord.subtree_levels, 5);
+}
+
+#[test]
+fn test_custom_subtree_levels_octree() {
+    let coord = ot_s(3, 2, 1, 4, 7);
+    assert_eq!(coord.subtree_levels, 7);
+    assert_eq!(coord.z, 4);
+}
+
+#[test]
+fn test_parent_of_root_is_none() {
+    let coord = qt(0, 0, 0);
+    assert!(coord.parent().is_none());
+}
+
+#[test]
+fn test_children_count_quadtree() {
+    let coord = qt(2, 5, 3);
+    let children = coord.children(SubdivisionScheme::Quadtree);
+    assert_eq!(children.len(), 4);
+    for child in &children {
+        assert_eq!(child.level, 3);
+    }
+}
+
+#[test]
+fn test_children_count_octree() {
+    let coord = ot(2, 3, 5, 1);
+    let children = coord.children(SubdivisionScheme::Octree);
+    assert_eq!(children.len(), 8);
+    for child in &children {
+        assert_eq!(child.level, 3);
+    }
+}
+
+#[test]
+fn test_tiles_at_level_quadtree() {
+    assert_eq!(ImplicitTileCoord::tiles_at_level(0, SubdivisionScheme::Quadtree), 1);
+    assert_eq!(ImplicitTileCoord::tiles_at_level(1, SubdivisionScheme::Quadtree), 4);
+    assert_eq!(ImplicitTileCoord::tiles_at_level(2, SubdivisionScheme::Quadtree), 16);
+    assert_eq!(ImplicitTileCoord::tiles_at_level(3, SubdivisionScheme::Quadtree), 64);
+}
+
+#[test]
+fn test_tiles_at_level_octree() {
+    assert_eq!(ImplicitTileCoord::tiles_at_level(0, SubdivisionScheme::Octree), 1);
+    assert_eq!(ImplicitTileCoord::tiles_at_level(1, SubdivisionScheme::Octree), 8);
+    assert_eq!(ImplicitTileCoord::tiles_at_level(2, SubdivisionScheme::Octree), 64);
+    assert_eq!(ImplicitTileCoord::tiles_at_level(3, SubdivisionScheme::Octree), 512);
+}
+
+// ============================================================================
+// isAncestor edge cases
+// ============================================================================
+
+#[test]
+fn test_is_ancestor_strict_self_not_ancestor() {
+    let a = qt(2, 3, 3);
+    assert!(!a.is_ancestor(&a, SubdivisionScheme::Quadtree));
+}
+
+#[test]
+fn test_is_ancestor_rejects_higher_level() {
+    let ancestor = qt(2, 1, 1);
+    let descendant = qt(1, 2, 2);
+    assert!(!ancestor.is_ancestor(&descendant, SubdivisionScheme::Quadtree));
+}
+
+#[test]
+fn test_is_ancestor_same_level_sibling() {
+    let a = qt(3, 4, 4);
+    let b = qt(3, 5, 4);
+    assert!(!a.is_ancestor(&b, SubdivisionScheme::Quadtree));
+}
+
+// ============================================================================
+// child_index edge cases
+// ============================================================================
+
+#[test]
+fn test_child_index_quadtree_all_children() {
+    let c0 = qt(4, 2, 4); // x=2=0b10, y=4=0b100 → LSB: x=0, y=0 → 0
+    let c1 = qt(4, 3, 4); // x=3=0b11, y=4=0b100 → LSB: x=1, y=0 → 1
+    let c2 = qt(4, 2, 5); // x=2=0b10, y=5=0b101 → LSB: x=0, y=1 → 2
+    let c3 = qt(4, 3, 5); // x=3=0b11, y=5=0b101 → LSB: x=1, y=1 → 3
+
+    assert_eq!(c0.child_index(SubdivisionScheme::Quadtree), 0);
+    assert_eq!(c1.child_index(SubdivisionScheme::Quadtree), 1);
+    assert_eq!(c2.child_index(SubdivisionScheme::Quadtree), 2);
+    assert_eq!(c3.child_index(SubdivisionScheme::Quadtree), 3);
+}
+
+#[test]
+fn test_child_index_octree_even_odd_pattern() {
+    assert_eq!(ot(4, 0, 0, 0).child_index(SubdivisionScheme::Octree), 0);
+    assert_eq!(ot(4, 1, 0, 0).child_index(SubdivisionScheme::Octree), 1);
+    assert_eq!(ot(4, 0, 1, 0).child_index(SubdivisionScheme::Octree), 2);
+    assert_eq!(ot(4, 1, 1, 0).child_index(SubdivisionScheme::Octree), 3);
+    assert_eq!(ot(4, 0, 0, 1).child_index(SubdivisionScheme::Octree), 4);
+    assert_eq!(ot(4, 1, 0, 1).child_index(SubdivisionScheme::Octree), 5);
+    assert_eq!(ot(4, 0, 1, 1).child_index(SubdivisionScheme::Octree), 6);
+    assert_eq!(ot(4, 1, 1, 1).child_index(SubdivisionScheme::Octree), 7);
+}
+
+// ============================================================================
+// get_offset_coordinates edge cases
+// ============================================================================
+
+#[test]
+fn test_get_offset_coordinates_deeper() {
+    let ancestor = qt(0, 0, 0);
+    let descendant = qt(3, 5, 6);
+    let offset = ancestor.get_offset_coordinates(&descendant);
+    assert_eq!(offset.level, 3);
+    assert_eq!(offset.x, 5);
+    assert_eq!(offset.y, 6);
+}
+
+// ============================================================================
+// isSubtreeRoot / isBottomOfSubtree with custom subtree levels
+// ============================================================================
+
+#[test]
+fn test_is_subtree_root_custom_levels() {
+    let coord = qt_s(6, 1, 1, 3);
+    assert!(coord.is_subtree_root());
+}
+
+#[test]
+fn test_is_bottom_of_subtree_custom() {
+    let coord = qt_s(5, 1, 1, 3);
+    assert!(coord.is_bottom_of_subtree());
+}
+
+// ============================================================================
+// fromMortonIndex / fromTileIndex edge cases
+// ============================================================================
+
+#[test]
+fn test_from_morton_index_level_zero() {
+    let coord = ImplicitTileCoord::from_morton_index(SubdivisionScheme::Quadtree, 2, 0, 0);
+    assert_eq!(coord, qt(0, 0, 0));
+}
+
+#[test]
+fn test_from_tile_index_root() {
+    let coord = ImplicitTileCoord::from_tile_index(SubdivisionScheme::Quadtree, 2, 0);
+    assert_eq!(coord, qt(0, 0, 0));
+}
+
+// ============================================================================
+// Morton code boundary values
+// ============================================================================
+
+#[test]
+fn test_morton_2d_max_range() {
+    let encoded = morton_2d(1023, 2047);
+    let (x, y) = decode_morton_2d(encoded);
+    assert_eq!(x, 1023);
+    assert_eq!(y, 2047);
+}
+
+#[test]
+fn test_morton_3d_zero() {
+    let encoded = morton_3d(0, 0, 0);
+    assert_eq!(encoded, 0);
+    let (x, y, z) = decode_morton_3d(0);
+    assert_eq!((x, y, z), (0, 0, 0));
+}
+
+// ============================================================================
+// Properties
+// ============================================================================
+
+#[test]
+fn test_subdivision_scheme_branching() {
+    assert_eq!(SubdivisionScheme::Quadtree.branching_factor(), 4);
+    assert_eq!(SubdivisionScheme::Octree.branching_factor(), 8);
+}
+
+#[test]
+fn test_subdivision_scheme_dimensions() {
+    assert_eq!(SubdivisionScheme::Quadtree.dimensions(), 2);
+    assert_eq!(SubdivisionScheme::Octree.dimensions(), 3);
+}
+
+// ============================================================================
+// getTemplateValues
+// ============================================================================
+
+#[test]
+fn test_get_template_values_quadtree() {
+    // Ported from: "getTemplateValues works as expected for quadtree"
+    let coord = qt(4, 3, 7);
+    let result = coord.get_template_values("tiles/{level}/{x}/{y}.glb");
+    assert_eq!(result, "tiles/4/3/7.glb");
+}
+
+#[test]
+fn test_get_template_values_octree() {
+    // Ported from: "getTemplateValues works as expected for octree"
+    let coord = ot(3, 1, 2, 4);
+    let result = coord.get_template_values("{level}/{x}/{y}/{z}.b3dm");
+    assert_eq!(result, "3/1/2/4.b3dm");
+}
+
+#[test]
+fn test_get_template_values_repeated_placeholders() {
+    let coord = qt(2, 0, 1);
+    let result = coord.get_template_values("{level}-{x}-{level}-{y}");
+    assert_eq!(result, "2-0-2-1");
+}
+
+#[test]
+fn test_get_template_values_quadtree_z_stays_zero() {
+    let coord = qt(1, 0, 0);
+    let result = coord.get_template_values("{level}/{x}/{y}/{z}");
+    assert_eq!(result, "1/0/0/0");
+}

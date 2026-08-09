@@ -3,22 +3,12 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-08-09T00:34:00Z"
+exported_at: "2026-08-09T04:20:15Z"
 modules:
     "":
-        dir_name: CesiumJS 根工程（JavaScript_TypeScript 引擎与 Rust 适配层）
-        title: CesiumJS 根工程（JavaScript/TypeScript 引擎与 Rust 适配层）
+        dir_name: CesiumRust 重构工程（基于 Bevy_GPUI 的 CesiumJS Rust 重写）
+        title: CesiumRust 重构工程（基于 Bevy/GPUI 的 CesiumJS Rust 重写）
         scope: []
-        source_files: []
-        children:
-            - cesiumrust
-        depends_on: []
-        related_to: []
-    cesiumrust:
-        dir_name: CesiumRust 三维地球引擎（Bevy 适配层与领域模块）
-        title: CesiumRust 三维地球引擎（Bevy 适配层与领域模块）
-        scope:
-            - cesiumrust/
         source_files: []
         children: []
         depends_on: []

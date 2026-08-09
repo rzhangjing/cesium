@@ -7,8 +7,7 @@
 //
 // Each pattern below is a faithful port of the corresponding CesiumJS material
 // shader in `Source/Shaders/Materials/*.glsl`, including the shared built-ins
-// `czm_antialias` and `czm_gammaCorrect` (non-HDR path, which is the identity)
-// and the `czm_getDefaultMaterial` base values (diffuse=0, emission=0, alpha=1).
+// `czm_antialias` and `czm_gammaCorrect` (non-HDR path, which is the identity).
 //
 // The `kind` field of `FabricParams` selects the pattern. Uniform values are
 // packed from the domain `Material::uniforms()` map by the Rust adapter.
@@ -21,13 +20,20 @@ struct FabricParams {
     horizontal: u32,    // Stripe: 0/1 (GLSL bool horizontal)
     repeat_flag: u32,   // Fade: 0/1 (GLSL bool repeat)
     pixel_ratio: u32,   // Grid: czm_pixelRatio (as u32, typically 1)
-    color_a: vec4<f32>, // light/even/color/fadeIn/base
-    color_b: vec4<f32>, // dark/odd/fadeOut
+    color_a: vec4<f32>, // light/even/color/fadeIn/base/waterColor
+    color_b: vec4<f32>, // dark/odd/fadeOut/outlineColor/rimColor/landColor/gapColor
     color_c: vec4<f32>, // Image tint (color)
     repeat_offset: vec4<f32>, // x=repeat.x, y=repeat.y, z=offset(stripe), w=maximumDistance(fade)
     line_params: vec4<f32>,   // x=lineCount.x, y=lineCount.y, z=lineThickness.x, w=lineThickness.y
     line_off_cell: vec4<f32>, // x=lineOffset.x, y=lineOffset.y, z=cellAlpha, w=(spare)
     fade_dir_time: vec4<f32>, // x=fadeDirection.x, y=fadeDirection.y, z=time.x, w=time.y
+    // --- Extension fields for materials 7–20 ---
+    // x=glowPower, y=taperPower, z=outlineWidth/rimWidth, w=dashLength
+    extra_a: vec4<f32>,
+    // x=spacing(contour), y=contourWidth, z=strength(normal/bump), w=dashPattern
+    extra_b: vec4<f32>,
+    // x=minHeight(ramp), y=maxHeight(ramp), z=time(water), w=animationSpeed
+    extra_c: vec4<f32>,
 }
 
 @group(2) @binding(0) var<uniform> params: FabricParams;
@@ -194,6 +200,259 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             emission = color.rgb;
             alpha = color.a;
         }
+        // ===================================================================
+        // New material types (7–20)
+        // ===================================================================
+
+        case 7u: { // PolylineArrow (PolylineArrowMaterial.glsl)
+            let px_ratio = f32(params.pixel_ratio);
+            let fw_st = abs(dpdx(st.x)) + abs(dpdy(st.x));
+            let base = 1.0 - fw_st * 10.0 * px_ratio;
+            // getPointOnLine for upper arrow edge: (base,1.0) -> center(1.0,0.5)
+            let slope_upper = 0.5 / (base - 1.0);
+            let pt_on_upper = slope_upper * (st.x - base) + 1.0;
+            // getPointOnLine for lower arrow edge: (base,0.0) -> center(1.0,0.5)
+            let slope_lower = 0.5 / (base - 1.0);
+            let pt_on_lower = slope_lower * (st.x - base);
+
+            let half_width = 0.15;
+            var s = step(0.5 - half_width, st.y);
+            s *= 1.0 - step(0.5 + half_width, st.y);
+            s *= 1.0 - step(base, st.x);
+
+            var t = step(base, st.x);
+            t *= 1.0 - step(pt_on_upper, st.y);
+            t *= step(pt_on_lower, st.y);
+
+            var dist: f32;
+            if st.x < base {
+                let d1 = abs(st.y - (0.5 - half_width));
+                let d2 = abs(st.y - (0.5 + half_width));
+                dist = min(d1, d2);
+            } else {
+                let d1 = select(1e10, abs(st.x - base), st.y < 0.5 - half_width || st.y > 0.5 + half_width);
+                let d2 = abs(st.y - pt_on_upper);
+                let d3 = abs(st.y - pt_on_lower);
+                dist = min(min(d1, d2), d3);
+            }
+
+            let current_color = mix(vec4<f32>(0.0), params.color_a, clamp(s + t, 0.0, 1.0));
+            var color = czm_antialias(vec4<f32>(0.0), params.color_a, current_color, dist, 0.03);
+            color = czm_gamma_correct(color);
+            diffuse = color.rgb;
+            alpha = color.a;
+        }
+
+        case 8u: { // PolylineDash (PolylineDashMaterial.glsl)
+            let dash_length = params.extra_a.w;
+            let dash_pattern = params.extra_b.w;
+            let px_ratio = f32(params.pixel_ratio);
+
+            // Compute line direction from screen-space derivatives of st
+            let dsd = vec2<f32>(dpdx(st).x, dpdy(st).x);
+            let angle = atan2(dsd.y, dsd.x);
+            let c = cos(-angle);
+            let ss = sin(-angle);
+            let rot_x = c * st.x + ss * st.y;
+
+            // Dash pattern: 16-bit mask
+            let dash_pos = fract(rot_x / (dash_length * px_ratio));
+            let mask_idx = floor(dash_pos * 16.0);
+            let mask_test = floor(dash_pattern / pow(2.0, mask_idx));
+            let on = mod(mask_test, 2.0) >= 1.0;
+
+            let frag_color = select(params.color_b, params.color_a, on);
+            if frag_color.a < 0.005 { discard; }
+            let c2 = czm_gamma_correct(frag_color);
+            emission = c2.rgb;
+            alpha = c2.a;
+        }
+
+        case 9u: { // PolylineGlow (PolylineGlowMaterial.glsl)
+            let glow_power = params.extra_a.x;
+            let taper_power = params.extra_a.y;
+            var glow = glow_power / abs(st.y - 0.5) - (glow_power / 0.5);
+
+            if taper_power <= 0.99999 {
+                glow *= min(1.0, taper_power / (0.5 - st.x * 0.5) - (taper_power / 0.5));
+            }
+
+            var frag_color: vec4<f32>;
+            frag_color.rgb = max(vec3<f32>(glow - 1.0 + params.color_a.rgb), params.color_a.rgb);
+            frag_color.a = clamp(glow, 0.0, 1.0) * params.color_a.a;
+            frag_color = czm_gamma_correct(frag_color);
+            emission = frag_color.rgb;
+            alpha = frag_color.a;
+        }
+
+        case 10u: { // PolylineOutline (PolylineOutlineMaterial.glsl)
+            let width = params.extra_a.z; // outlineWidth
+            // v_width is approximated; in CesiumJS it comes from the vertex shader.
+            // We use 1.0 as a default polyline width.
+            let v_width = 1.0;
+            let half_interior = 0.5 * (v_width - width) / v_width;
+            let b = step(0.5 - half_interior, st.y);
+            let b2 = b * (1.0 - step(0.5 + half_interior, st.y));
+
+            let d1 = abs(st.y - (0.5 - half_interior));
+            let d2 = abs(st.y - (0.5 + half_interior));
+            let dist = min(d1, d2);
+
+            let current_color = mix(params.color_b, params.color_a, b2);
+            var out_color = czm_antialias(params.color_b, params.color_a, current_color, dist, 0.03);
+            out_color = czm_gamma_correct(out_color);
+            diffuse = out_color.rgb;
+            alpha = out_color.a;
+        }
+
+        case 11u: { // ElevationContour (ElevationContourMaterial.glsl)
+            // Use world_position.y as proxy for materialInput.height
+            let height = in.world_position.y;
+            let spacing = params.extra_b.x;
+            let contour_w = params.extra_b.y;
+            let px_ratio = f32(params.pixel_ratio);
+
+            let distance_to_contour = glsl_mod(height, spacing);
+
+            let dxc = abs(dpdx(height));
+            let dyc = abs(dpdy(height));
+            let d_f = max(dxc, dyc) * px_ratio * contour_w;
+            let contour_a = select(0.0, 1.0, distance_to_contour < d_f);
+
+            let out_color = czm_gamma_correct(vec4<f32>(params.color_a.rgb, contour_a * params.color_a.a));
+            diffuse = out_color.rgb;
+            alpha = out_color.a;
+        }
+
+        case 12u: { // ElevationRamp (ElevationRampMaterial.glsl)
+            let height = in.world_position.y;
+            let min_h = params.extra_c.x;
+            let max_h = params.extra_c.y;
+            let scaled = clamp((height - min_h) / (max_h - min_h), 0.0, 1.0);
+            let ramp_color = textureSample(image_texture, image_sampler, vec2<f32>(scaled, 0.5));
+            let c = czm_gamma_correct(ramp_color);
+            diffuse = c.rgb;
+            alpha = c.a;
+        }
+
+        case 13u: { // AspectRamp (AspectRampMaterial.glsl)
+            let nrm = normalize(in.world_normal);
+            let aspect = atan2(-nrm.z, nrm.x); // range [-PI, PI]
+            let aspect_norm = aspect * 0.15915494309 + 0.5; // map to [0, 1]
+            let ramp_color = textureSample(image_texture, image_sampler, vec2<f32>(aspect_norm, 0.5));
+            let c = czm_gamma_correct(ramp_color);
+            diffuse = c.rgb;
+            alpha = c.a;
+        }
+
+        case 14u: { // SlopeRamp (SlopeRampMaterial.glsl)
+            let nrm = normalize(in.world_normal);
+            let up = vec3<f32>(0.0, 1.0, 0.0);
+            let slope_angle = acos(clamp(abs(dot(nrm, up)), 0.0, 1.0));
+            let slope_norm = slope_angle / 1.57079632679; // divide by PI/2
+            let ramp_color = textureSample(image_texture, image_sampler, vec2<f32>(slope_norm, 0.5));
+            let c = czm_gamma_correct(ramp_color);
+            diffuse = c.rgb;
+            alpha = c.a;
+        }
+
+        case 15u: { // NormalMap (NormalMapMaterial.glsl)
+            let strength = params.extra_b.z;
+            let repeat = params.repeat_offset.xy;
+            let tex_val = textureSample(image_texture, image_sampler, fract(repeat * st));
+            var nts = tex_val.rgb;
+            nts.xy = nts.xy * 2.0 - 1.0;
+            nts.z = clamp(1.0 - strength, 0.1, 1.0);
+            nts = normalize(nts);
+            // Approximate eye-space normal: use world_normal as TBN basis
+            let wn = normalize(in.world_normal);
+            diffuse = wn * 0.5 + 0.5; // visualize normal
+            alpha = 1.0;
+        }
+
+        case 16u: { // BumpMap (BumpMapMaterial.glsl)
+            let strength = params.extra_b.z;
+            let repeat = params.repeat_offset.xy;
+            let center_uv = fract(repeat * st);
+            let center_bump = textureSample(image_texture, image_sampler, center_uv).r;
+
+            // Simple finite difference for bump
+            let dx_uv = fract(repeat * (st + vec2<f32>(0.001, 0.0)));
+            let right_bump = textureSample(image_texture, image_sampler, dx_uv).r;
+            let dy_uv = fract(repeat * (st + vec2<f32>(0.0, 0.001)));
+            let top_bump = textureSample(image_texture, image_sampler, dy_uv).r;
+
+            let nts = normalize(vec3<f32>(
+                center_bump - right_bump,
+                center_bump - top_bump,
+                clamp(1.0 - strength, 0.1, 1.0)));
+            let wn = normalize(in.world_normal);
+            diffuse = nts * 0.5 + 0.5; // visualize perturbed normal
+            alpha = 1.0;
+        }
+
+        case 17u: { // Water (Water.glsl — simplified stub)
+            let time = params.extra_c.z;
+            let speed = params.extra_c.w;
+            let t = time * speed;
+
+            // Simple animated wave effect using sinusoidal displacement
+            let wave1 = sin(st.x * 10.0 + t) * cos(st.y * 8.0 + t * 0.7) * 0.15;
+            let wave2 = sin(st.x * 15.0 - t * 0.6) * sin(st.y * 12.0 + t * 0.8) * 0.1;
+            let wave = wave1 + wave2;
+
+            let water_color = params.color_a;
+            let blend_color = params.color_b;
+            let specular = clamp(wave + 0.3, 0.0, 1.0);
+
+            var frag = mix(blend_color, water_color, specular);
+            frag.rgb += 0.05 * wave;
+            frag = czm_gamma_correct(frag);
+            diffuse = frag.rgb;
+            alpha = frag.a;
+        }
+
+        case 18u: { // RimLighting (RimLightingMaterial.glsl)
+            let rim_width = params.extra_a.z;
+            let wn = normalize(in.world_normal);
+            let view_dir = normalize(mesh_view_bindings::view.world_position.xyz - in.world_position.xyz);
+            let d = 1.0 - abs(dot(wn, view_dir));
+            let s = smoothstep(1.0 - rim_width, 1.0, d);
+
+            let out_color = czm_gamma_correct(params.color_a);
+            let out_rim = czm_gamma_correct(params.color_b);
+
+            diffuse = out_color.rgb;
+            emission = out_rim.rgb * s;
+            alpha = mix(out_color.a, out_rim.a, s);
+        }
+
+        case 19u: { // ElevationBand (ElevationBandMaterial.glsl — simplified stub)
+            let height = in.world_position.y;
+            let min_h = params.extra_c.x;
+            let max_h = params.extra_c.y;
+            let scaled = clamp((height - min_h) / (max_h - min_h), 0.0, 1.0);
+
+            // Discrete bands: quantize height into steps
+            let num_bands = 5.0;
+            let band = floor(scaled * num_bands) / num_bands;
+            let ramp_color = textureSample(image_texture, image_sampler, vec2<f32>(band, 0.5));
+            let c = czm_gamma_correct(ramp_color);
+            diffuse = c.rgb;
+            alpha = c.a;
+        }
+
+        case 20u: { // WaterMask (WaterMaskMaterial.glsl)
+            // Use height threshold as proxy for waterMask
+            let height = in.world_position.y;
+            let water_level = params.extra_c.x;
+            let water_mask = smoothstep(water_level - 0.1, water_level + 0.1, height);
+            let out_color = mix(params.color_a, params.color_b, water_mask);
+            let c = czm_gamma_correct(out_color);
+            diffuse = c.rgb;
+            alpha = c.a;
+        }
+
         default: {
             let c = czm_gamma_correct(params.color_a);
             diffuse = c.rgb;

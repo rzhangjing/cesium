@@ -59,6 +59,14 @@ pub fn tile_xy_to_rectangle(x: u32, y: u32, z: u32) -> GeoRectangle {
     }
 }
 
+/// Fraction of a tile's extent by which the mesh overlaps its neighbors.
+/// The overlap hides sub-pixel cracks between adjacent tiles; skirt vertices
+/// are tucked slightly below the surface so the overlap never z-fights with
+/// the neighbor's main surface.
+const TILE_MARGIN: f64 = 0.012;
+/// Radial tuck factor applied to skirt (overlap) vertices.
+const SKIRT_TUCK: f64 = 0.9992;
+
 /// Generates a Bevy Mesh for a single tile on the WGS84 ellipsoid surface.
 ///
 /// Follows CesiumJS `HeightmapTessellator.computeVertices`:
@@ -67,17 +75,22 @@ pub fn tile_xy_to_rectangle(x: u32, y: u32, z: u32) -> GeoRectangle {
 /// - Positions: cartographic_to_cartesian on WGS84 ellipsoid
 /// - Normals: geodetic surface normal (normalized position on ellipsoid)
 /// - Triangle winding: counter-clockwise from outside (outward normals)
+/// - A one-vertex overlap skirt per side (tucked below the surface) hides
+///   rasterization cracks between neighboring tiles
 ///
 /// # Arguments
 /// * `x`, `y`, `z` - Tile coordinates in Web Mercator tiling scheme
-/// * `segments` - Number of subdivisions per axis (e.g., 16 means 16x16 quads = 17x17 vertices)
-pub fn create_tile_mesh(x: u32, y: u32, z: u32, segments: u32) -> Mesh {
+/// * `segments` - Number of subdivisions per axis within the true tile extent
+/// * `base_tuck` - Radial scale (< 1.0) placing this tile below finer LOD
+///   levels so overlapping levels never z-fight (1.0 for the finest level)
+pub fn create_tile_mesh(x: u32, y: u32, z: u32, segments: u32, base_tuck: f64) -> Mesh {
     let rect = tile_xy_to_rectangle(x, y, z);
 
     let width = rect.east - rect.west;
     let height = rect.north - rect.south;
 
-    let verts_per_side = segments + 1;
+    // One extra vertex ring per side forms the overlap skirt.
+    let verts_per_side = segments + 3;
     let vertex_count = (verts_per_side * verts_per_side) as usize;
 
     let mut positions: Vec<[f32; 3]> = Vec::with_capacity(vertex_count);
@@ -87,19 +100,22 @@ pub fn create_tile_mesh(x: u32, y: u32, z: u32, segments: u32) -> Mesh {
     // WGS84 radii
     let a = EARTH_RADIUS; // semi-major axis
     let b = 6356752.314245_f64; // semi-minor axis
+    let e2 = 1.0 - (b * b) / (a * a);
 
     for row in 0..verts_per_side {
-        // v goes from 0 (south) to 1 (north)
-        let v = row as f64 / segments as f64;
-        let lat = rect.south + v * height;
+        // v_norm spans [-MARGIN, 1+MARGIN]; 0..1 is the true tile extent.
+        let v_norm = -TILE_MARGIN
+            + (1.0 + 2.0 * TILE_MARGIN) * row as f64 / (verts_per_side - 1) as f64;
+        let lat = rect.south + v_norm.clamp(-0.05, 1.05) * height;
 
         let cos_lat = lat.cos();
         let sin_lat = lat.sin();
 
         for col in 0..verts_per_side {
-            // u goes from 0 (west) to 1 (east)
-            let u = col as f64 / segments as f64;
-            let lon = rect.west + u * width;
+            // u_norm spans [-MARGIN, 1+MARGIN]; 0..1 is the true tile extent.
+            let u_norm = -TILE_MARGIN
+                + (1.0 + 2.0 * TILE_MARGIN) * col as f64 / (verts_per_side - 1) as f64;
+            let lon = rect.west + u_norm * width;
 
             let cos_lon = lon.cos();
             let sin_lon = lon.sin();
@@ -109,36 +125,101 @@ pub fn create_tile_mesh(x: u32, y: u32, z: u32, segments: u32) -> Mesh {
             let ny = cos_lat * sin_lon;
             let nz = sin_lat;
 
-            // Position on ellipsoid surface (cartographic to cartesian)
-            // Using the standard formula:
-            // N = a / sqrt(cos^2(lat) + (b/a)^2 * sin^2(lat))
-            // x = N * cos(lat) * cos(lon)
-            // y = N * cos(lat) * sin(lon)
-            // z = N * (b/a)^2 * sin(lat)
-            let e2 = 1.0 - (b * b) / (a * a);
+            // Position on ellipsoid surface (cartographic to cartesian):
+            // N = a / sqrt(1 - e2*sin^2(lat)); x = N*cos(lat)*cos(lon), etc.
             let n_val = a / (1.0 - e2 * sin_lat * sin_lat).sqrt();
 
-            let px = n_val * cos_lat * cos_lon;
-            let py = n_val * cos_lat * sin_lon;
-            let pz = n_val * (1.0 - e2) * sin_lat;
+            // Skirt vertices (outside the true tile extent) are tucked just
+            // below the surface so overlapping neighbors never z-fight.
+            let skirt = if u_norm < 0.0 || u_norm > 1.0 || v_norm < 0.0 || v_norm > 1.0 {
+                SKIRT_TUCK
+            } else {
+                1.0
+            };
+            let tuck = base_tuck * skirt;
+
+            let px = n_val * cos_lat * cos_lon * tuck;
+            let py = n_val * cos_lat * sin_lon * tuck;
+            let pz = n_val * (1.0 - e2) * sin_lat * tuck;
 
             positions.push([px as f32, py as f32, pz as f32]);
             normals.push([nx as f32, ny as f32, nz as f32]);
-            // Bevy samples UV v=0 at the TOP of the image (row 0 = north for map
-            // tiles). Our loop iterates south (row 0) -> north, so flip v so that
-            // v=0 corresponds to north, matching the texture orientation.
-            uvs.push([u as f32, (1.0 - v) as f32]);
+            // Bevy samples UV v=0 at the TOP of the image (row 0 = north for
+            // map tiles). UVs clamp to [0,1] so the skirt reuses edge texels.
+            uvs.push([
+                u_norm.clamp(0.0, 1.0) as f32,
+                (1.0 - v_norm.clamp(0.0, 1.0)) as f32,
+            ]);
         }
     }
 
     // Generate triangle indices (counter-clockwise winding from outside)
-    let mut indices: Vec<u32> = Vec::with_capacity((segments * segments * 6) as usize);
-    for row in 0..segments {
-        for col in 0..segments {
+    let quads = verts_per_side - 1;
+    let mut indices: Vec<u32> = Vec::with_capacity((quads * quads * 6) as usize);
+    for row in 0..quads {
+        for col in 0..quads {
             let a = row * verts_per_side + col;
             let b = a + verts_per_side;
 
             // Two triangles per quad, CCW from outside
+            indices.push(a);
+            indices.push(a + 1);
+            indices.push(b);
+            indices.push(a + 1);
+            indices.push(b + 1);
+            indices.push(b);
+        }
+    }
+
+    let mut mesh = Mesh::new(
+        bevy::render::mesh::PrimitiveTopology::TriangleList,
+        bevy::render::render_asset::RenderAssetUsages::default(),
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(bevy::render::mesh::Indices::U32(indices));
+
+    mesh
+}
+
+/// Generates a smooth unit-radius UV sphere (used for the base sphere safety
+/// net, whose silhouette is visible at the horizon). Winding matches
+/// `create_tile_mesh` (counter-clockwise from outside, rows south -> north).
+pub fn create_uv_sphere(longitude_segments: u32, latitude_rings: u32) -> Mesh {
+    let verts_x = longitude_segments + 1; // last column duplicates the seam
+    let verts_y = latitude_rings + 1;
+
+    let mut positions: Vec<[f32; 3]> = Vec::with_capacity((verts_x * verts_y) as usize);
+    let mut normals: Vec<[f32; 3]> = Vec::with_capacity((verts_x * verts_y) as usize);
+    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity((verts_x * verts_y) as usize);
+
+    for row in 0..verts_y {
+        // Rows iterate south (-90 deg) -> north (+90 deg), like tile meshes.
+        let lat = -std::f64::consts::FRAC_PI_2
+            + std::f64::consts::PI * row as f64 / latitude_rings as f64;
+        let cos_lat = lat.cos();
+        let sin_lat = lat.sin();
+        for col in 0..verts_x {
+            let lon = 2.0 * std::f64::consts::PI * col as f64 / longitude_segments as f64;
+            let nx = cos_lat * lon.cos();
+            let ny = cos_lat * lon.sin();
+            let nz = sin_lat;
+            positions.push([nx as f32, ny as f32, nz as f32]);
+            normals.push([nx as f32, ny as f32, nz as f32]);
+            uvs.push([
+                col as f32 / longitude_segments as f32,
+                row as f32 / latitude_rings as f32,
+            ]);
+        }
+    }
+
+    let mut indices: Vec<u32> =
+        Vec::with_capacity((longitude_segments * latitude_rings * 6) as usize);
+    for row in 0..latitude_rings {
+        for col in 0..longitude_segments {
+            let a = row * verts_x + col;
+            let b = a + verts_x;
             indices.push(a);
             indices.push(a + 1);
             indices.push(b);
@@ -201,8 +282,12 @@ pub fn create_polar_cap(north: bool, segments: u32) -> Mesh {
     let mut normals: Vec<[f32; 3]> = Vec::with_capacity((segments + 2) as usize);
     let mut uvs: Vec<[f32; 2]> = Vec::with_capacity((segments + 2) as usize);
 
+    // Tuck the cap just below the tile surface so the (overlapping) tile
+    // skirts cover the seam without z-fighting.
+    const CAP_TUCK: f64 = 0.9995;
+
     // Center vertex at the pole (normal points along the polar axis, outward).
-    positions.push([0.0, 0.0, pole_z as f32]);
+    positions.push([0.0, 0.0, (pole_z * CAP_TUCK) as f32]);
     normals.push([0.0, 0.0, if north { 1.0 } else { -1.0 }]);
     uvs.push([0.5, 0.5]);
 
@@ -216,7 +301,11 @@ pub fn create_polar_cap(north: bool, segments: u32) -> Mesh {
         let py = n_ring * cos_ring * sin_lon;
         let pz = n_ring * (1.0 - e2) * sin_ring;
 
-        positions.push([px as f32, py as f32, pz as f32]);
+        positions.push([
+            (px * CAP_TUCK) as f32,
+            (py * CAP_TUCK) as f32,
+            (pz * CAP_TUCK) as f32,
+        ]);
         normals.push([(cos_ring * cos_lon) as f32, (cos_ring * sin_lon) as f32, sin_ring as f32]);
         uvs.push([0.5, 0.5]);
     }

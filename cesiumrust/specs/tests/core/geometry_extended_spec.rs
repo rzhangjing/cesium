@@ -349,3 +349,145 @@ fn coplanar_polygon_bounding_sphere_contains_all_positions() {
         );
     }
 }
+
+// ─── Circle geometry with negative/zero radius ────────────────────────────
+
+#[test]
+fn circle_zero_radius_degenerate() {
+    let e = wgs84();
+    let center = e.cartographic_to_cartesian(&Cartographic::from_degrees(10.0, 20.0, 0.0));
+    let geo = circle_geometry(center, 0.0, &e, 16, VertexFormat::POSITION_ONLY);
+
+    // With radius=0, bounding sphere radius should be 0
+    assert!(geo.bounding_sphere.radius < 1e-10);
+}
+
+#[test]
+fn circle_negative_radius_uses_absolute() {
+    let e = wgs84();
+    let center = e.cartographic_to_cartesian(&Cartographic::from_degrees(10.0, 20.0, 0.0));
+    let geo = circle_geometry(center, -1.0, &e, 16, VertexFormat::POSITION_ONLY);
+
+    // Implementation may handle negative radius differently
+    // But should not crash
+    assert_eq!(geo.positions.len(), 18);
+    assert_eq!(geo.indices.len(), 48);
+}
+
+// ─── Circle geometry with texture coordinates ─────────────────────────────
+
+#[test]
+fn circle_tex_coords_pattern() {
+    let e = wgs84();
+    let center = e.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0));
+    let geo = circle_geometry(center, 5000.0, &e, 16, VertexFormat::POSITION_AND_ST);
+    let st = geo.tex_coords.as_ref().unwrap();
+    let nv = geo.positions.len();
+    assert_eq!(st.len(), nv);
+    // Center vertex (index 0) ST should be near center of texture
+    assert!((st[0][0] - 0.5).abs() < 1e-2);
+    assert!((st[0][1] - 0.5).abs() < 1e-2);
+}
+
+// ─── CoplanarPolygonGeometry: edge cases ──────────────────────────────────
+
+#[test]
+fn coplanar_polygon_with_height() {
+    let e = wgs84();
+    let positions = vec![
+        e.cartographic_to_cartesian(&Cartographic::from_degrees(-1.0, -1.0, 5000.0)),
+        e.cartographic_to_cartesian(&Cartographic::from_degrees(-1.0, 0.0, 5000.0)),
+        e.cartographic_to_cartesian(&Cartographic::from_degrees(-1.0, 1.0, 5000.0)),
+    ];
+    let opts = CoplanarPolygonOptions {
+        positions,
+        ellipsoid: e,
+        ..Default::default()
+    };
+    let geo = coplanar_polygon_geometry(&opts, VertexFormat::POSITION_ONLY);
+
+    assert_eq!(geo.positions.len(), 3);
+    // Positions should be at height ~5000
+    for p in &geo.positions {
+        let carto = e.cartesian_to_cartographic(DVec3::from(*p)).unwrap();
+        assert!((carto.height - 5000.0).abs() < 10.0);
+    }
+}
+
+// ─── PolylineVolumeGeometry: edge cases ───────────────────────────────────
+
+#[test]
+fn polyline_volume_with_corner_shape() {
+    let e = wgs84();
+    let opts = PolylineVolumeOptions {
+        positions: vec![
+            e.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0)),
+            e.cartographic_to_cartesian(&Cartographic::from_degrees(1.0, 0.0, 0.0)),
+            e.cartographic_to_cartesian(&Cartographic::from_degrees(2.0, 1.0, 0.0)),
+        ],
+        shape: vec![
+            [-50.0, -50.0],
+            [50.0, -50.0],
+            [50.0, 50.0],
+            [-50.0, 50.0],
+        ],
+        ellipsoid: e,
+        granularity: std::f64::consts::PI / 180.0,
+        ..Default::default()
+    };
+    let geo = polyline_volume_geometry(&opts, VertexFormat::POSITION_AND_NORMAL);
+    assert!(geo.positions.len() >= 8);
+    if let Some(normals) = &geo.normals {
+        for n in normals {
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            assert!((len - 1.0).abs() < 1e-6, "normal should be unit");
+        }
+    }
+}
+
+// ─── GroundPolylineGeometry: closed vs open ───────────────────────────────
+
+#[test]
+fn ground_polyline_closed_produces_closed_shape() {
+    let e = wgs84();
+    let opts = GroundPolylineOptions {
+        positions: vec![
+            e.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0)),
+            e.cartographic_to_cartesian(&Cartographic::from_degrees(1.0, 0.0, 0.0)),
+            e.cartographic_to_cartesian(&Cartographic::from_degrees(1.0, 1.0, 0.0)),
+        ],
+        width: 5.0,
+        ellipsoid: e,
+        granularity: std::f64::consts::PI / 180.0,
+        closed: true,
+    };
+    let geo = ground_polyline_geometry(&opts, VertexFormat::POSITION_ONLY);
+    assert!(geo.positions.len() >= 4);
+    assert!(!geo.indices.is_empty());
+}
+
+// ─── PlaneGeometry: normal direction ──────────────────────────────────────
+
+#[test]
+fn plane_positions_form_right_handed_quads() {
+    let geo = plane_geometry(VertexFormat::POSITION_AND_NORMAL);
+    let normals = geo.normals.as_ref().unwrap();
+
+    // All normals should point in +Z direction
+    for n in normals {
+        assert!((n[0]).abs() < 1e-10);
+        assert!((n[1]).abs() < 1e-10);
+        assert!((n[2] - 1.0).abs() < 1e-10);
+    }
+
+    // Verify triangle winding produces +Z normals (right-handed)
+    // Triangle 0: positions[0], positions[1], positions[2]
+    let p0 = DVec3::from(geo.positions[geo.indices[0] as usize]);
+    let p1 = DVec3::from(geo.positions[geo.indices[1] as usize]);
+    let p2 = DVec3::from(geo.positions[geo.indices[2] as usize]);
+    let edge1 = p1 - p0;
+    let edge2 = p2 - p0;
+    let face_normal = edge1.cross(edge2);
+    // Face normal should point in +Z (positive z)
+    assert!(face_normal.z > 0.0, "face normal should point +Z");
+}

@@ -1,117 +1,164 @@
 # CesiumRust
 
-A GPUI-based application framework inspired by [Zed](https://zed.dev)'s architecture. Built on [GPUI](https://docs.rs/gpui) — Zed's GPU-accelerated UI framework for Rust.
+A Rust rewrite of [CesiumJS](https://cesium.com) — an open-source 3D globe and geospatial visualization engine.
+
+Uses **hexagonal architecture** (ports & adapters) to separate pure domain logic from framework and IO concerns. The rendering layer is built on [Bevy](https://bevyengine.org), a data-driven game engine for Rust.
+
+> **Architecture deep-dive:** See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a comprehensive 3000+ word architecture document covering design decisions, module reference, dependency graph, data flow, and contributing guide.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  APPLICATION                         │
+│         cesium-app (Bevy App assembly)               │
+├─────────────────────────────────────────────────────┤
+│                     PORTS                            │
+│   driving (app APIs)    ·    driven (IO contracts)   │
+├──────────────────────┬──────────────────────────────┤
+│      ADAPTERS        │           ADAPTERS            │
+│   bevy-render        │   network · decoders          │
+├──────────────────────┴──────────────────────────────┤
+│                     DOMAIN                           │
+│   31 crates  ·  pure Rust  ·  framework-free         │
+│   Bit-exact fidelity with CesiumJS                   │
+└─────────────────────────────────────────────────────┘
+```
+
+| Layer | Crates | Description |
+|-------|--------|-------------|
+| **Domain** | 31 | Pure Rust logic — geometry, time, camera, terrain, imagery, tilesets, glTF, scene graph, materials, atmosphere, CRS, KML, GPX, quadtree, vector data, etc. No framework dependency. |
+| **Ports** | 2 | Trait contracts. `driving` defines application-facing APIs; `driven` defines IO interfaces that adapters implement. |
+| **Adapters** | 3 | `bevy-render` (Bevy ECS + wgpu rendering), `network` (ureq HTTP client), `decoders` (image/terrain decoding). |
+| **Application** | 1 | `cesium-app` — assembles the Bevy app, wires adapters to domain, launches the interactive 3D globe viewer. |
+
+## Plugins
+
+The `cesium-app` integrates 13 plugins from `cesium-bevy-render`, plus local modules:
+
+### Bevy Render Plugins
+
+| Plugin | Purpose |
+|--------|---------|
+| `CesiumCorePlugin` | Initialize GlobeConfig, RenderScale, scene lighting |
+| `CesiumCameraPlugin` | Camera orbit/flight controllers, scene mode switching |
+| `CesiumTilesetPlugin` | 3D Tiles (b3dm, i3dm, pnts) loading & rendering |
+| `CesiumTerrainPlugin` | Heightmap terrain with LOD refinement |
+| `CesiumImageryPlugin` | Imagery layer stack with alpha blending |
+| `CesiumEntityPlugin` | Billboards, polylines, polygons, models, labels |
+| `CesiumMaterialPlugin` | Fabric material system (CesiumJS-compatible) |
+| `CesiumAtmospherePlugin` | Sky atmosphere, celestial bodies |
+| `CesiumEffectsPlugin` | Post-processing effects pipeline |
+| `CesiumWidgetPlugin` | Animation timeline, geocoder, scene mode picker |
+| `DebugPlugin` | Bounding volume wireframes, tile stats (F1-F3 toggles) |
+| `FabricMaterialPlugin` | Fabric shader material management |
+| `CesiumDataSourcePlugin` | CZML, GeoJSON, KML, GPX data source loading |
+
+### Local Plugins
+
+| Plugin | Purpose |
+|--------|---------|
+| `OrbitCameraPlugin` | Mouse orbit/zoom with grab-the-globe tracking |
+| `StarfieldPlugin` | Procedural starfield background |
+| `AtmosphereGlowPlugin` | Atmospheric limb glow around globe edge |
+| `DynamicGlobePlugin` | View-dependent LOD tiles + Bing Maps imagery |
+| `BaseSpherePlugin` | Static base sphere + polar caps safety net |
+
+## Getting Started
+
+```bash
+# Run the interactive 3D globe viewer
+cargo run
+
+# Run the full test suite
+cargo test --workspace
+
+# Check compilation (fast, no binary)
+cargo check
+```
+
+**Prerequisites:** Rust 1.80+, system dependencies for Bevy (libudev, alsa, vulkan). On Ubuntu:
+
+```bash
+sudo apt install libudev-dev libasound2-dev libxkbcommon-dev vulkan-validationlayers
+```
+
+## Controls
+
+| Action | Input |
+|--------|-------|
+| Orbit / rotate globe | Left mouse drag |
+| Zoom in/out | Mouse wheel |
+| Toggle bounding volumes | F1 |
+| Toggle tile stats overlay | F2 |
+| Toggle LOD debug | F3 |
 
 ## Project Structure
 
 ```
 cesiumrust/
-├── Cargo.toml              # Workspace root
-├── crates/
-│   ├── app/                # Main binary — entry point, window setup, keybindings
-│   │   └── src/
-│   │       ├── main.rs     # Binary entry point
-│   │       ├── app.rs      # Root view & Application::run()
-│   │       └── keybindings.rs  # Global keybinding registration
-│   ├── workspace/          # Workspace management (Zed-style)
-│   │   └── src/
-│   │       ├── lib.rs      # Module re-exports
-│   │       ├── workspace.rs    # Top-level workspace layout
-│   │       ├── pane.rs     # Tabbed content pane
-│   │       ├── item.rs     # Item trait for openable content
-│   │       └── dock.rs     # Dockable side/bottom panels
-│   ├── ui/                 # Reusable UI components
-│   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── button.rs   # Button component (RenderOnce)
-│   │       ├── input.rs    # Text input component
-│   │       ├── panel.rs    # Panel container
-│   │       ├── title_bar.rs    # Window title bar
-│   │       ├── tab_bar.rs  # Tab bar + Tab element
-│   │       └── status_bar.rs   # Bottom status bar
-│   ├── actions/            # Action definitions (keyboard shortcuts)
-│   │   └── src/lib.rs      # actions!{} macro declarations
-│   ├── theme/              # Centralized color palette & font sizes
-│   │   └── src/lib.rs      # AppColors, FontSizes
-│   └── util/               # Shared utilities
-│       └── src/lib.rs
+├── Cargo.toml                 # Workspace root (38 crates)
+├── domain/                    # Domain layer — 31 crates
+│   ├── geospatial/            # Cartesian, cartographic, geographic math (f64)
+│   ├── time/                  # Julian date, TAI, UTC
+│   ├── camera/                # Camera controllers, frustum culling
+│   ├── event/                 # Event system
+│   ├── resource/              # Async resource loading
+│   ├── terrain/               # Terrain providers, heightmap sampling
+│   ├── imagery/               # Imagery layer management
+│   ├── tileset/               # 3D Tiles, tile selection
+│   ├── gltf/                  # glTF model loading
+│   ├── scene/                 # Scene graph, culling, rendering primitives
+│   ├── datasource/            # GeoJSON, CZML, KML data sources
+│   ├── material/              # Material system, shader abstractions
+│   ├── atmosphere/            # Sky atmosphere, fog
+│   ├── interaction/           # Mouse/keyboard/touch input
+│   ├── effects/               # Post-processing effects
+│   ├── shadow/                # Shadow maps
+│   ├── crs/                   # Coordinate reference systems
+│   ├── kml/                   # KML parsing
+│   ├── gpx/                   # GPX parsing
+│   ├── provider/              # Data provider abstraction
+│   ├── styling/               # Visual styling, CSS-like properties
+│   ├── globe/                 # Ellipsoid globe surface
+│   ├── quadtree/              # Quadtree tile subdivision
+│   ├── primitives/            # Geometric primitives
+│   ├── animation/             # Keyframe animation
+│   ├── implicit-tiling/       # Implicit tiling (3D Tiles Next)
+│   ├── vector/                # Vector data rendering
+│   ├── scene-mode/            # 2D / 2.5D / 3D scene modes
+│   ├── performance/           # Performance monitoring, metrics
+│   ├── voxel/                 # Voxel rendering
+│   └── widgets/               # UI widgets
+├── ports/
+│   ├── driving/               # Application API trait contracts
+│   └── driven/                # IO trait contracts (renderer, network, loader)
+├── adapters/
+│   ├── bevy-render/           # Bevy ECS + wgpu rendering adapter
+│   ├── decoders/              # Image, terrain, glTF decoders
+│   └── network/               # HTTP client (ureq) adapter
+├── application/
+│   └── cesium-app/            # Bevy App — main binary entry point
+├── docs/
+│   └── ARCHITECTURE.md        # Comprehensive architecture document
+└── specs/                     # Integration tests ported from CesiumJS Specs
 ```
 
-## Architecture (Zed-inspired)
+## Verification
 
-| Concept | Zed | CesiumRust |
-|---------|-----|------------|
-| UI Framework | GPUI | GPUI (crates.io v0.2.2) |
-| Root View | `Workspace` entity | `AppView` → `Workspace` entity |
-| Content Model | `Item` trait | `Item` trait (tab title, save, closeable) |
-| Tab Container | `Pane` | `Pane` |
-| Side Panels | `Dock` | `Dock` (left/right/bottom) |
-| Actions | `actions!{}` + keymap | `actions!{}` + `bind_keys()` |
-| Theme | `Theme` + `SyntaxTheme` | `AppColors` + `FontSizes` |
+The domain layer maintains **bit-exact fidelity** with CesiumJS. Integration tests in `specs/` are ported directly from the CesiumJS Specs test suite and verify identical numerical output at every step.
 
-## Getting Started
+Key design decisions enabling bit-exact fidelity:
+- **f64 precision** throughout the domain layer (f32 only at GPU boundary)
+- **Standard IEEE-754 rounding** (no FMA/fast-math)
+- **Matching algorithm implementations** (same math, same order of operations)
 
-```bash
-# Check (fast, no binary produced)
-cargo check
+## Key Design Decisions
 
-# Build
-cargo build
-
-# Run
-cargo run
-```
-
-## Adding a New View
-
-1. Create a struct implementing `Render`:
-```rust
-pub struct MyView { /* fields */ }
-
-impl Render for MyView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div().child("Hello from MyView")
-    }
-}
-```
-
-2. Create an entity in `app.rs` and add it to the workspace.
-
-## Adding Actions
-
-1. Add the action name to `actions!{}` in `crates/actions/src/lib.rs`:
-```rust
-actions![Quit, Save, MyNewAction];
-```
-
-2. Register keybinding in `crates/app/src/keybindings.rs`:
-```rust
-KeyBinding::new("cmd-shift-n", MyNewAction, None),
-```
-
-3. Handle the action in your view or workspace:
-```rust
-cx.on_action(|_action: &MyNewAction, _cx: &mut App| { /* ... */ });
-```
-
-## Adding UI Components
-
-Follow the `RenderOnce` pattern (zero-cost composition):
-
-```rust
-#[derive(IntoElement)]
-pub struct MyButton { label: SharedString }
-
-impl RenderOnce for MyButton {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        div().child(self.label)
-    }
-}
-```
-
-## Dependencies
-
-- **gpui** `0.2.2` — GPU-accelerated UI framework
-- **anyhow** — Error handling
-- **serde** / **serde_json** — Serialization
-- **log** / **env_logger** — Logging
+| Decision | Rationale |
+|----------|-----------|
+| Hexagonal architecture | Test domain logic without GPU; swap rendering backends |
+| Bevy ECS for rendering | Natural fit for thousands of tile entities |
+| f64 domain / f32 GPU | Sub-mm precision at Earth scale vs GPU hardware limits |
+| Hybrid ECS + traits | ECS for tile rendering, traits for IO decoupling |
+| Bit-exact CesiumJS fidelity | Domain tests ported from CesiumJS Specs |

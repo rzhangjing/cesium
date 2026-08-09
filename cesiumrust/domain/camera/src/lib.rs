@@ -735,10 +735,8 @@ impl Camera {
         rectangle: &Rectangle,
         ellipsoid: &Ellipsoid,
     ) -> DVec3 {
-        // Compute the center of the rectangle
-        let center_lon = (rectangle.west + rectangle.east) * 0.5;
-        let center_lat = (rectangle.south + rectangle.north) * 0.5;
-        let center = Cartographic::from_radians(center_lon, center_lat, 0.0);
+        // Compute the center of the rectangle (handles IDL crossing)
+        let center = rectangle.center();
         let center_ecef = ellipsoid.cartographic_to_cartesian(&center);
 
         // Compute the angular extent

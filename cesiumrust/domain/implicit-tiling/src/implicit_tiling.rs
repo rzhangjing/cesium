@@ -283,6 +283,17 @@ impl ImplicitTileCoord {
         }
     }
 
+    /// Substitutes template placeholders in a URI with coordinate values.
+    /// Replaces `{level}`, `{x}`, `{y}`, `{z}` with actual coordinate values.
+    /// Maps to `ImplicitTileCoordinates.getTemplateValues`
+    pub fn get_template_values(&self, template_uri: &str) -> String {
+        template_uri
+            .replace("{level}", &self.level.to_string())
+            .replace("{x}", &self.x.to_string())
+            .replace("{y}", &self.y.to_string())
+            .replace("{z}", &self.z.to_string())
+    }
+
     /// Creates coordinates from a tile index.
     /// Maps to `ImplicitTileCoordinates.fromTileIndex`
     pub fn from_tile_index(
@@ -690,5 +701,33 @@ mod tests {
         let index = Subtree::local_index(&coord, &root, SubdivisionScheme::Quadtree);
         // Level 1 starts at offset 1, morton(1,0) = 1 (CesiumJS: x at even bits)
         assert_eq!(index, 1 + 1);
+    }
+
+    #[test]
+    fn test_get_template_values_quadtree() {
+        let coord = ImplicitTileCoord::quadtree(4, 3, 7);
+        let result = coord.get_template_values("tiles/{level}/{x}/{y}.glb");
+        assert_eq!(result, "tiles/4/3/7.glb");
+    }
+
+    #[test]
+    fn test_get_template_values_octree() {
+        let coord = ImplicitTileCoord::octree(3, 1, 2, 4);
+        let result = coord.get_template_values("{level}/{x}/{y}/{z}.b3dm");
+        assert_eq!(result, "3/1/2/4.b3dm");
+    }
+
+    #[test]
+    fn test_get_template_values_repeated_placeholders() {
+        let coord = ImplicitTileCoord::quadtree(2, 0, 1);
+        let result = coord.get_template_values("{level}-{x}-{level}-{y}");
+        assert_eq!(result, "2-0-2-1");
+    }
+
+    #[test]
+    fn test_get_template_values_quadtree_z_stays_zero() {
+        let coord = ImplicitTileCoord::quadtree(1, 0, 0);
+        let result = coord.get_template_values("{level}/{x}/{y}/{z}");
+        assert_eq!(result, "1/0/0/0");
     }
 }

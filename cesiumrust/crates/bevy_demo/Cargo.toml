@@ -1,9 +1,0 @@
-[package]
-name = "bevy_demo"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-gpui.workspace = true
-log.workspace = true
-futures-lite = "2"

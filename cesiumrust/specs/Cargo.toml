@@ -49,3 +49,5 @@ cesium-widgets = { workspace = true }
 
 [dev-dependencies]
 glam = { workspace = true }
+cesium-bevy-render = { workspace = true }
+bevy = { workspace = true }
