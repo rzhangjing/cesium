@@ -3,14 +3,15 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-07-30T23:32:59Z"
+exported_at: "2026-08-08T16:34:18Z"
 modules:
     "":
-        dir_name: CesiumJS Specs 测试套件与 Rust 移植集成测试
-        title: CesiumJS Specs 测试套件与 Rust 移植集成测试
+        dir_name: CesiumJS 根工程（JavaScript_TypeScript 引擎与 Rust 适配层）
+        title: CesiumJS 根工程（JavaScript/TypeScript 引擎与 Rust 适配层）
         scope: []
         source_files: []
-        children: []
+        children:
+            - cesiumrust
         depends_on: []
         related_to: []
     cesiumrust:

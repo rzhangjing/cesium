@@ -230,12 +230,12 @@ fn test_distance_to_bounding_sphere_behind() {
     // Sphere behind camera
     let sphere = BoundingSphere::new(DVec3::new(0.0, 0.0, 5.0), 0.5);
     let distance = camera.distance_to_bounding_sphere(&sphere);
-    // to_center = (0,0,4), dot with dir (0,0,-1) = -4
-    // proj_vec = (0,0,-1)*(-4) = (0,0,4), |proj_vec| = 4
-    // distance = max(4 - 0.5, 0) = 3.5
+    // to_center = sphere.center - camera.pos = (0,0,4)
+    // signed dist = (0,0,4) · (0,0,-1) - 0.5 = -4 - 0.5 = -4.5
+    // max(0, -4.5) = 0
     assert!(
-        (distance - 3.5).abs() < EPSILON10,
-        "distance: {}, expected: 3.5",
+        distance.abs() < EPSILON10,
+        "distance: {}, expected: 0 (behind camera)",
         distance
     );
 }

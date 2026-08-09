@@ -11,15 +11,15 @@
 - [VoxelBox3DTiles/tileset.json](file://Apps/SampleData/Cesium3DTiles/Voxel/VoxelBox3DTiles/tileset.json)
 - [ImplicitRootTile/tileset.json](file://Specs/Data/Cesium3DTiles/Implicit/ImplicitRootTile/tileset.json)
 - [Composite/tileset.json](file://Specs/Data/Cesium3DTiles/Composite/Composite/tileset.json)
-- [GaussianSplats/tileset.json](file://Specs/Data/Cesium3DTiles/GaussianSplats/tower/tileset.json)
+- [GaussianSplats/tower/tileset.json](file://Specs/Data/Cesium3DTiles/GaussianSplats/tower/tileset.json)
 </cite>
 
 ## 更新摘要
 **所做更改**   
-- 新增JSON元数据表支持章节，详细说明3D Tiles中JSON元数据表的实现与使用
-- 更新元数据系统章节，补充JSON元数据表的具体应用
-- 增强内容类型支持说明，涵盖JSON元数据表在不同数据类型中的应用
-- 完善性能优化指南，包含JSON元数据表的内存管理与加载策略
+- 新增瓦片样式系统章节，详细说明3D Tiles样式系统的增强功能与渲染能力提升
+- 更新内容类型支持说明，涵盖样式系统在各类瓦片中的应用
+- 完善性能优化指南，包含样式系统的渲染优化策略
+- 增强视觉效果描述，展示样式系统对3D瓦片集渲染能力的提升
 
 ## 目录
 1. [简介](#简介)
@@ -38,7 +38,8 @@
 - tileset.json结构与层级树组织
 - 几何误差、视锥剔除与LOD策略
 - 内容类型支持：Batched、Instanced、PointCloud、Voxel、Gaussian Splatting等
-- 元数据系统：属性表、批处理ID、外部资源引用、**JSON元数据表**
+- 元数据系统：属性表、批处理ID、外部资源引用、JSON元数据表
+- **瓦片样式系统**：动态样式应用、条件渲染、视觉增强
 - 加载流程与性能调优：内存管理、网络请求优化、渲染管线配合
 
 ## 项目结构
@@ -63,6 +64,10 @@ I["ImplicitRootTile/tileset.json"]
 J["Composite/Composite/tileset.json"]
 K["GaussianSplats/tower/tileset.json"]
 end
+subgraph "样式系统"
+L["Style配置<br/>条件样式定义"]
+M["渲染引擎<br/>动态样式应用"]
+end
 B --> E
 B --> F
 B --> G
@@ -70,6 +75,8 @@ B --> H
 B --> I
 B --> J
 B --> K
+B --> L
+B --> M
 ```
 
 图表来源
@@ -99,7 +106,11 @@ B --> K
   - Gaussian Splatting：高斯点云，适用于大规模自然场景表现。
 - 元数据系统
   - 通过batchId、属性表（Batch Table）、外部Schema与内容级元数据，实现丰富的语义标注与查询。
-  - **JSON元数据表**：支持结构化JSON格式的元数据存储，提供更灵活的属性定义与查询能力。
+  - JSON元数据表：支持结构化JSON格式的元数据存储，提供更灵活的属性定义与查询能力。
+- **瓦片样式系统**
+  - **新增增强**：通过样式系统实现动态条件渲染，支持基于属性的可视化表达。
+  - **样式类型**：支持颜色、透明度、大小等多种样式属性的动态调整。
+  - **条件表达式**：支持复杂的条件判断，实现智能化的视觉呈现。
 
 章节来源
 - [tileset.json（示例）:1-200](file://Apps/SampleData/Cesium3DTiles/Tilesets/Tileset/tileset.json#L1-L200)
@@ -119,18 +130,20 @@ sequenceDiagram
 participant App as "应用(index.html)"
 participant Viewer as "CesiumViewer(CesiumViewer.js)"
 participant Tileset as "3D Tiles瓦片集(tileset.json)"
+participant Style as "样式系统"
 participant Content as "内容(模型/点云/体素)"
-participant Metadata as "JSON元数据表"
 participant GPU as "GPU渲染"
 App->>Viewer : 初始化并创建视图
 Viewer->>Tileset : 请求根瓦片集描述
 Tileset-->>Viewer : 返回根瓦片集JSON
+Viewer->>Style : 加载并解析样式配置
+Style-->>Viewer : 返回样式规则
 Viewer->>Tileset : 根据视锥与误差选择子瓦片
 Tileset-->>Viewer : 返回子瓦片列表与内容URL
 Viewer->>Content : 并行下载内容资源
 Content-->>Viewer : 返回解析后的几何/纹理/元数据
-Viewer->>Metadata : 加载JSON元数据表
-Metadata-->>Viewer : 返回结构化元数据
+Viewer->>Style : 应用样式规则到内容
+Style-->>Viewer : 返回样式化后的渲染参数
 Viewer->>GPU : 提交绘制命令(批处理/实例/点云/体素)
 GPU-->>App : 输出帧图像
 ```
@@ -167,7 +180,7 @@ Render --> End(["结束"])
 
 图表来源
 - [ImplicitRootTile/tileset.json:1-200](file://Specs/Data/Cesium3DTiles/Implicit/ImplicitRootTile/tileset.json#L1-L200)
-- [Composite/ContentType/tileset.json:1-200](file://Specs/Data/Cesium3DTiles/Composite/Composite/tileset.json#L1-L200)
+- [Composite/Composite/tileset.json:1-200](file://Specs/Data/Cesium3DTiles/Composite/Composite/tileset.json#L1-L200)
 
 章节来源
 - [ImplicitRootTile/tileset.json:1-200](file://Specs/Data/Cesium3DTiles/Implicit/ImplicitRootTile/tileset.json#L1-L200)
@@ -265,6 +278,49 @@ UseCurrent --> Exit
 章节来源
 - [GaussianSplats/tower/tileset.json:1-200](file://Specs/Data/Cesium3DTiles/GaussianSplats/tower/tileset.json#L1-L200)
 
+### 瓦片样式系统与渲染增强
+- 样式系统架构
+  - **样式定义**：通过样式配置文件定义渲染规则，支持条件表达式和函数。
+  - **动态应用**：运行时根据瓦片属性和上下文动态应用样式规则。
+  - **性能优化**：样式规则预编译与缓存，减少运行时开销。
+- 支持的样式类型
+  - **颜色样式**：基于属性值动态设置顶点或面片颜色。
+  - **透明度样式**：控制瓦片内容的透明度，支持渐变效果。
+  - **大小样式**：调整点云点的大小或模型的显示比例。
+  - **可见性样式**：根据条件控制瓦片的显示与隐藏。
+- 条件表达式
+  - **比较操作符**：支持等于、不等于、大于、小于等比较运算。
+  - **逻辑操作符**：支持AND、OR、NOT等逻辑运算。
+  - **数学函数**：提供常用的数学运算函数。
+- 渲染增强效果
+  - **动态着色**：根据实时数据变化更新瓦片外观。
+  - **层次化显示**：基于LOD自动调整样式复杂度。
+  - **交互响应**：支持鼠标悬停、点击等交互事件的样式反馈。
+
+```mermaid
+flowchart TD
+A["瓦片数据"] --> B["样式规则解析"]
+B --> C{"条件匹配"}
+C --> |匹配| D["应用样式变换"]
+C --> |不匹配| E["跳过样式应用"]
+D --> F["生成渲染参数"]
+E --> F
+F --> G["GPU渲染管线"]
+G --> H["最终画面"]
+```
+
+图表来源
+- [BatchedWithBatchTable/tileset.json:1-200](file://Apps/SampleData/Cesium3DTiles/Batched/BatchedWithBatchTable/tileset.json#L1-L200)
+- [InstancedWithBatchTable/tileset.json:1-200](file://Apps/SampleData/Cesium3DTiles/Instanced/InstancedWithBatchTable/tileset.json#L1-L200)
+- [PointCloudRGB/tileset.json:1-200](file://Apps/SampleData/Cesium3DTiles/PointCloud/PointCloudRGB/tileset.json#L1-L200)
+- [VoxelBox3DTiles/tileset.json:1-200](file://Apps/SampleData/Cesium3DTiles/Voxel/VoxelBox3DTiles/tileset.json#L1-L200)
+
+章节来源
+- [BatchedWithBatchTable/tileset.json:1-200](file://Apps/SampleData/Cesium3DTiles/Batched/BatchedWithBatchTable/tileset.json#L1-L200)
+- [InstancedWithBatchTable/tileset.json:1-200](file://Apps/SampleData/Cesium3DTiles/Instanced/InstancedWithBatchTable/tileset.json#L1-L200)
+- [PointCloudRGB/tileset.json:1-200](file://Apps/SampleData/Cesium3DTiles/PointCloud/PointCloudRGB/tileset.json#L1-L200)
+- [VoxelBox3DTiles/tileset.json:1-200](file://Apps/SampleData/Cesium3DTiles/Voxel/VoxelBox3DTiles/tileset.json#L1-L200)
+
 ### 元数据系统与JSON元数据表
 - 属性表（Batch Table）
   - 为批处理或实例对象提供结构化属性，支持标量、向量、字符串等类型。
@@ -274,11 +330,10 @@ UseCurrent --> Exit
   - 通过外部Schema定义属性结构，内容级元数据绑定具体值，支持跨瓦片一致性。
 - 外部资源引用
   - 瓦片集与内容可引用外部纹理、模型、Schema等资源，提升复用性。
-- **JSON元数据表**
-  - **新增功能**：支持完整的JSON格式元数据存储，提供更灵活的数据结构定义。
-  - **特性优势**：支持嵌套对象、数组、复杂数据类型，便于表达复杂的业务逻辑。
-  - **应用场景**：适用于需要丰富属性信息的建筑模型、地理要素、设备管理等场景。
-  - **性能优化**：采用懒加载策略，仅在需要时加载相关元数据，减少内存占用。
+- JSON元数据表
+  - 支持完整的JSON格式元数据存储，提供更灵活的数据结构定义。
+  - 支持嵌套对象、数组、复杂数据类型，便于表达复杂的业务逻辑。
+  - 采用懒加载策略，仅在需要时加载相关元数据，减少内存占用。
 
 ```mermaid
 classDiagram
@@ -288,16 +343,19 @@ class 瓦片集 {
 +几何误差
 +子瓦片集合
 +JSON元数据表
++样式配置
 }
 class 批处理对象 {
 +batchId
 +属性表
 +JSON元数据
++样式应用
 }
 class 实例对象 {
 +变换矩阵
 +属性表
 +JSON元数据
++样式应用
 }
 class 点云对象 {
 +位置
@@ -305,11 +363,13 @@ class 点云对象 {
 +法线
 +属性表
 +JSON元数据
++样式应用
 }
 class 体素对象 {
 +网格
 +属性通道
 +JSON元数据
++样式应用
 }
 class JSON元数据表 {
 +结构化JSON数据
@@ -317,15 +377,26 @@ class JSON元数据表 {
 +数组类型支持
 +懒加载机制
 }
+class 样式系统 {
++样式规则
++条件表达式
++动态应用
++性能优化
+}
 瓦片集 --> 批处理对象 : "包含"
 瓦片集 --> 实例对象 : "包含"
 瓦片集 --> 点云对象 : "包含"
 瓦片集 --> 体素对象 : "包含"
 瓦片集 --> JSON元数据表 : "关联"
+瓦片集 --> 样式系统 : "配置"
 批处理对象 --> JSON元数据表 : "引用"
 实例对象 --> JSON元数据表 : "引用"
 点云对象 --> JSON元数据表 : "引用"
 体素对象 --> JSON元数据表 : "引用"
+批处理对象 --> 样式系统 : "应用"
+实例对象 --> 样式系统 : "应用"
+点云对象 --> 样式系统 : "应用"
+体素对象 --> 样式系统 : "应用"
 ```
 
 图表来源
@@ -347,7 +418,8 @@ class JSON元数据表 {
 - 数据层依赖
   - tileset.json作为描述文件，指向具体的内容资源（glTF、二进制、纹理等）。
   - 测试数据覆盖隐式分块、复合瓦片、高斯点云等复杂场景。
-  - **JSON元数据表**作为可选的元数据存储，与内容资源分离以提高灵活性。
+  - JSON元数据表作为可选的元数据存储，与内容资源分离以提高灵活性。
+  - **样式配置**：独立的样式定义文件，与瓦片数据解耦，支持动态更新。
 
 ```mermaid
 graph TB
@@ -356,8 +428,11 @@ JS --> JSON["tileset.json"]
 JSON --> GLTF["glTF/二进制/纹理"]
 JSON --> TEST["测试数据(隐式/复合/高斯)"]
 JSON --> METADATA["JSON元数据表"]
+JSON --> STYLE["样式配置"]
 GLTF --> METADATA
 TEST --> METADATA
+STYLE --> GLTF
+STYLE --> METADATA
 ```
 
 图表来源
@@ -377,15 +452,18 @@ TEST --> METADATA
 - 内存管理
   - 控制批次大小与实例数量，避免单瓦片过大导致内存峰值。
   - 使用共享纹理与材质，减少重复资源占用。
-  - **JSON元数据表优化**：采用懒加载策略，仅加载必要的元数据，避免一次性加载大量结构化数据。
+  - JSON元数据表优化：采用懒加载策略，仅加载必要的元数据，避免一次性加载大量结构化数据。
+  - **样式缓存**：对样式规则进行预编译和缓存，减少重复解析开销。
 - 网络请求优化
   - 并行下载瓦片与内容资源，但限制并发数以避免拥塞。
   - 启用缓存与断点续传，提高弱网环境下的稳定性。
-  - **元数据缓存**：对JSON元数据表进行智能缓存，减少重复请求。
+  - 元数据缓存：对JSON元数据表进行智能缓存，减少重复请求。
+  - **样式资源优化**：样式配置文件的压缩与增量更新。
 - 渲染优化
   - 优先使用批处理与实例化渲染，减少Draw Call。
   - 对点云与体素采用压缩与量化格式，降低带宽与解码开销。
-  - **元数据查询优化**：建立索引机制，加速JSON元数据的检索与过滤操作。
+  - 元数据查询优化：建立索引机制，加速JSON元数据的检索与过滤操作。
+  - **样式渲染优化**：批量应用样式规则，减少GPU状态切换。
 
 ## 故障排查指南
 - 瓦片无法加载
@@ -397,19 +475,24 @@ TEST --> METADATA
 - 性能瓶颈
   - 监控Draw Call数量与GPU利用率，调整批次与实例规模。
   - 分析网络带宽与延迟，优化并发与缓存策略。
-- **JSON元数据表问题**
+- JSON元数据表问题
   - 检查JSON格式合法性与Schema定义是否正确。
   - 验证元数据引用关系与外部资源路径。
   - 监控元数据加载性能，避免阻塞主线程。
+- **样式系统问题**
+  - 检查样式配置语法与条件表达式正确性。
+  - 验证样式规则与瓦片属性的匹配关系。
+  - 监控样式应用性能，避免复杂的条件表达式影响渲染效率。
 
 ## 结论
-Cesium对3D Tiles的支持覆盖了从瓦片集描述、层级组织、几何误差与视锥剔除，到多种内容类型与元数据系统的完整链路。**新增的JSON元数据表功能**进一步增强了3D Tiles的表达能力和灵活性，使得复杂业务场景的三维可视化更加便捷。通过合理的LOD策略、内存管理与网络优化，可以在大规模三维场景中实现流畅的可视化体验。建议在实际项目中结合示例与测试数据，逐步验证与调优，以获得最佳性能与视觉效果。
+Cesium对3D Tiles的支持覆盖了从瓦片集描述、层级组织、几何误差与视锥剔除，到多种内容类型与元数据系统的完整链路。**新增的瓦片样式系统**进一步增强了3D Tiles的表达能力和视觉效果，使得复杂业务场景的三维可视化更加便捷和美观。通过合理的LOD策略、内存管理与网络优化，可以在大规模三维场景中实现流畅的可视化体验。建议在实际项目中结合示例与测试数据，逐步验证与调优，以获得最佳性能与视觉效果。
 
 ## 附录
 - 快速上手示例
   - 在index.html中引入Cesium库，并在CesiumViewer.js中初始化视图与加载tileset.json。
   - 参考Batched、Instanced、PointCloud、Voxel与Gaussian Splatting的示例瓦片集，理解不同类型的数据结构与渲染特点。
-  - **JSON元数据表示例**：学习如何在瓦片集中定义和使用JSON格式的元数据表，掌握懒加载与缓存策略。
+  - JSON元数据表示例：学习如何在瓦片集中定义和使用JSON格式的元数据表，掌握懒加载与缓存策略。
+  - **样式系统示例**：学习如何配置和应用样式规则，实现动态条件渲染和视觉效果增强。
 
 章节来源
 - [index.html:1-200](file://index.html#L1-L200)

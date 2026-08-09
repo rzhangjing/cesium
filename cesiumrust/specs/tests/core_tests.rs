@@ -63,13 +63,17 @@ mod core {
     pub mod misc_phase3_spec;
     pub mod geometry_pipeline_spec;
     pub mod geometry_pipeline_ext_spec;
+    pub mod circle_geometry_spec;
     pub mod geometry_utils_spec;
     pub mod geometry_generators_spec;
     pub mod geometry_generators_ext_spec;
+    pub mod geometry_degenerate_spec;
+    pub mod geometry_invariants_spec;
     pub mod geometry_attributes_spec;
     pub mod geometry_extended_spec;
     pub mod rectangle_geometry_spec;
     pub mod outline_geometry_spec;
+    pub mod outline_geometry_ext_spec;
     pub mod tile_availability_spec;
     pub mod terrain_encoding_spec;
     pub mod double_ended_priority_queue_spec;
@@ -108,3 +112,5 @@ mod core {
     pub mod geometry_extended2_spec;
     pub mod transforms_extended_spec;
 }
+
+

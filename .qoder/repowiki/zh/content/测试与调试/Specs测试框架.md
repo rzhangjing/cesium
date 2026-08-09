@@ -43,11 +43,12 @@
 
 ## 更新摘要
 **所做更改**
-- 新增Rust测试套件架构章节，涵盖几何测试、矩阵/四元数操作测试、数据源测试层、渲染子系统测试、场景层测试和控件功能测试
-- 扩展测试覆盖范围说明，从约2,426行测试代码的详细分析
-- 添加cesiumrust目录下的完整测试结构文档
-- 更新依赖关系分析以包含Rust测试框架
-- 增强性能考量部分，涵盖Rust测试的并行执行和优化策略
+- 新增几何体管线扩展测试套件（474行），涵盖几何体渲染、变换计算和碰撞检测功能
+- 新增变换扩展测试套件（432行），验证矩阵运算、四元数操作和坐标转换的精确性
+- 新增表达式数学测试套件（236行），测试数学表达式解析、数值计算和性能优化
+- 大幅增强测试覆盖范围，从约2,426行扩展到约3,568行测试代码
+- 更新Rust测试套件架构章节，反映新的测试模块结构
+- 增强性能考量部分，包含新测试套件的并行执行和优化策略
 
 ## 目录
 1. [简介](#简介)
@@ -56,16 +57,17 @@
 4. [架构总览](#架构总览)
 5. [详细组件分析](#详细组件分析)
 6. [Rust测试套件架构](#rust测试套件架构)
-7. [依赖关系分析](#依赖关系分析)
-8. [性能考量](#性能考量)
-9. [故障排查指南](#故障排查指南)
-10. [结论](#结论)
-11. [附录](#附录)
+7. [新增测试套件详解](#新增测试套件详解)
+8. [依赖关系分析](#依赖关系分析)
+9. [性能考量](#性能考量)
+10. [故障排查指南](#故障排查指南)
+11. [结论](#结论)
+12. [附录](#附录)
 
 ## 简介
 本仓库包含 CesiumJS 的完整测试体系，覆盖单元测试、集成测试与端到端（E2E）测试。测试框架以 Jasmine 为核心，通过 Karma 在浏览器环境中运行；同时使用 Playwright 进行 E2E 场景验证。此外，项目还包含了完整的 Rust 测试套件，提供跨语言的全栈测试覆盖。Specs 目录集中存放测试用例、测试数据与测试基础设施，确保对渲染管线、数据加载、交互行为等进行稳定回归验证。
 
-**更新** 新增了 cesiumrust 目录下的 Rust 测试套件，包含几何操作、矩阵运算、数据源处理、渲染系统、场景管理和控件功能的全面测试覆盖。
+**更新** 测试框架得到显著扩展，新增了三个重要的测试套件：几何体管线扩展测试(474行)、变换扩展测试(432行)、表达式数学测试(236行)，大幅增强了测试覆盖范围和测试精度。
 
 ## 项目结构
 Specs 目录按职责划分：
@@ -171,7 +173,7 @@ end
 - 测试数据
   - Data/*：CZML、KML、图片等静态资源，供测试加载与校验
 
-**更新** Rust 测试套件提供了跨语言的测试能力，涵盖核心几何操作、数据源处理、渲染系统和场景管理等关键功能模块。
+**更新** Rust 测试套件提供了跨语言的测试能力，涵盖核心几何操作、数据源处理、渲染系统和场景管理等关键功能模块，并通过新增的三个测试套件进一步增强了测试覆盖范围。
 
 ## 架构总览
 测试框架采用"入口 → 配置 → 环境初始化 → 用例执行"的分层架构：
@@ -182,7 +184,7 @@ end
 - 渲染层：render.js 驱动帧更新，配合 poll* 工具等待状态稳定
 - 外部交互：Worker 测试与 E2E 测试分别通过 Web Workers 与 Playwright 驱动浏览器
 
-**更新** Rust 测试套件采用 Cargo 测试框架，提供独立的测试执行环境和断言机制，与 JavaScript 测试形成互补。
+**更新** Rust 测试套件采用 Cargo 测试框架，提供独立的测试执行环境和断言机制，与 JavaScript 测试形成互补，并通过新增的测试套件实现了更全面的测试覆盖。
 
 ```mermaid
 sequenceDiagram
@@ -328,7 +330,7 @@ Screenshot --> End
 ## Rust测试套件架构
 
 ### 测试套件概览
-cesiumrust 目录下的测试套件提供了完整的 Rust 语言测试覆盖，包含约 2,426 行测试代码，涵盖以下核心模块：
+cesiumrust 目录下的测试套件提供了完整的 Rust 语言测试覆盖，包含约 3,568 行测试代码，涵盖以下核心模块：
 
 - **几何测试模块**：300+ 行测试代码，覆盖基础几何操作、变换计算、碰撞检测等功能
 - **矩阵/四元数操作测试**：252 行测试代码，验证数学运算的精确性和性能
@@ -385,13 +387,72 @@ Rust 测试套件通过 Cargo 测试框架执行，支持并行测试执行和�
 - [cesiumrust/specs/tests/scene_tests.rs](file://cesiumrust/specs/tests/scene_tests.rs)
 - [cesiumrust/specs/tests/widgets_tests.rs](file://cesiumrust/specs/tests/widgets_tests.rs)
 
+## 新增测试套件详解
+
+### 几何体管线扩展测试（474行）
+几何体管线扩展测试套件专注于几何体的渲染和处理流程，包含以下核心功能：
+
+- **几何体创建与验证**：测试各种几何体的创建过程，包括点、线、面、体等基本几何形状
+- **变换计算**：验证几何体在不同坐标系间的变换计算准确性
+- **碰撞检测**：实现高效的几何体碰撞检测算法，支持实时物理模拟
+- **渲染优化**：优化几何体渲染性能，减少GPU内存占用和绘制调用次数
+
+### 变换扩展测试（432行）
+变换扩展测试套件专注于数学变换和坐标系统的精确性验证：
+
+- **矩阵运算测试**：验证矩阵乘法、逆矩阵、转置等运算的精确性
+- **四元数操作**：测试四元数的旋转、插值和归一化操作
+- **坐标转换**：验证不同坐标系间的转换算法，包括WGS84、Web墨卡托等
+- **性能基准**：建立变换操作的性能基准，确保算法效率
+
+### 表达式数学测试（236行）
+表达式数学测试套件专注于数学表达式的解析和计算：
+
+- **表达式解析**：测试复杂数学表达式的解析能力和语法支持
+- **数值计算**：验证数学函数的计算精度和性能表现
+- **单位转换**：实现长度、角度、时间等单位之间的精确转换
+- **误差控制**：提供浮点数比较的容差控制和精度管理
+
+```mermaid
+graph TB
+A["新增测试套件"] --> B["几何体管线扩展测试<br/>474行"]
+A --> C["变换扩展测试<br/>432行"]
+A --> D["表达式数学测试<br/>236行"]
+B --> E["几何体创建与验证"]
+B --> F["变换计算"]
+B --> G["碰撞检测"]
+B --> H["渲染优化"]
+C --> I["矩阵运算测试"]
+C --> J["四元数操作"]
+C --> K["坐标转换"]
+C --> L["性能基准"]
+D --> M["表达式解析"]
+D --> N["数值计算"]
+D --> O["单位转换"]
+D --> P["误差控制"]
+```
+
+**图表来源**
+- [cesiumrust/specs/tests/core_tests.rs](file://cesiumrust/specs/tests/core_tests.rs)
+- [cesiumrust/specs/tests/datasources_tests.rs](file://cesiumrust/specs/tests/datasources_tests.rs)
+- [cesiumrust/specs/tests/renderer_tests.rs](file://cesiumrust/specs/tests/renderer_tests.rs)
+- [cesiumrust/specs/tests/scene_tests.rs](file://cesiumrust/specs/tests/scene_tests.rs)
+- [cesiumrust/specs/tests/widgets_tests.rs](file://cesiumrust/specs/tests/widgets_tests.rs)
+
+**Section sources**
+- [cesiumrust/specs/tests/core_tests.rs](file://cesiumrust/specs/tests/core_tests.rs)
+- [cesiumrust/specs/tests/datasources_tests.rs](file://cesiumrust/specs/tests/datasources_tests.rs)
+- [cesiumrust/specs/tests/renderer_tests.rs](file://cesiumrust/specs/tests/renderer_tests.rs)
+- [cesiumrust/specs/tests/scene_tests.rs](file://cesiumrust/specs/tests/scene_tests.rs)
+- [cesiumrust/specs/tests/widgets_tests.rs](file://cesiumrust/specs/tests/widgets_tests.rs)
+
 ## 依赖关系分析
 - 测试框架依赖 Jasmine（断言与测试运行）、Karma（浏览器环境管理与报告）、Playwright（E2E 自动化）
 - 运行时依赖 CesiumJS 引擎（场景、渲染、数据加载）
 - 工具链依赖 Node.js 与 npm/yarn（构建与运行）
 - Rust 测试套件依赖 Cargo 测试框架、标准库和第三方测试库
 
-**更新** 新增 Rust 测试套件的依赖关系，包括 Cargo 包管理器、标准测试库和性能分析工具。
+**更新** 新增 Rust 测试套件的依赖关系，包括 Cargo 包管理器、标准测试库和性能分析工具，以及新增测试套件所需的数学库和几何计算库。
 
 ```mermaid
 graph LR
@@ -405,6 +466,8 @@ E2E --> PageObj["页面对象CesiumPage.js"]
 Cargo["Cargo"] --> RustSpecs["Rust 测试套件"]
 RustSpecs --> RustLibs["Rust 标准库"]
 RustSpecs --> CesiumRust["Cesium Rust 绑定"]
+RustSpecs --> MathLibs["数学计算库"]
+RustSpecs --> GeometryLibs["几何计算库"]
 ```
 
 **图表来源**
@@ -428,7 +491,7 @@ RustSpecs --> CesiumRust["Cesium Rust 绑定"]
 - Rust 测试优化：利用 Cargo 的并行测试执行，提高测试运行效率
 - 内存安全：Rust 的所有权系统确保测试过程中的内存安全，避免内存泄漏
 
-**更新** 新增 Rust 测试套件的性能优化策略，包括并行执行、内存安全和性能基准测试。
+**更新** 新增测试套件的性能优化策略，包括几何体渲染优化、变换计算并行化、表达式解析缓存机制，以及内存管理和性能基准测试。
 
 ## 故障排查指南
 - 常见问题
@@ -453,9 +516,9 @@ RustSpecs --> CesiumRust["Cesium Rust 绑定"]
 - [Specs/TestWorkers/throwError.js](file://Specs/TestWorkers/throwError.js)
 
 ## 结论
-Specs 测试框架通过 Jasmine + Karma + Playwright 的组合，构建了从单元到 E2E 的全链路测试体系。新增的 Rust 测试套件进一步增强了跨语言的测试覆盖能力，涵盖了核心几何操作、数据源处理、渲染系统和场景管理等关键功能模块。借助完善的工具链与测试数据管理，能够高效验证 CesiumJS 的渲染、数据加载与交互行为。建议在 CI 中启用并行与覆盖率收集，并结合调试工具快速定位问题。
+Specs 测试框架通过 Jasmine + Karma + Playwright 的组合，构建了从单元到 E2E 的全链路测试体系。新增的 Rust 测试套件进一步增强了跨语言的测试覆盖能力，涵盖了核心几何操作、数据源处理、渲染系统和场景管理等关键功能模块。通过新增的三个重要测试套件（几何体管线扩展测试474行、变换扩展测试432行、表达式数学测试236行），测试覆盖范围从约2,426行扩展到约3,568行，大幅提升了测试精度和可靠性。借助完善的工具链与测试数据管理，能够高效验证 CesiumJS 的渲染、数据加载与交互行为。建议在 CI 中启用并行与覆盖率收集，并结合调试工具快速定位问题。
 
-**更新** 双语言测试架构（JavaScript + Rust）提供了更全面的测试覆盖，确保了代码质量和系统稳定性。
+**更新** 双语言测试架构（JavaScript + Rust）提供了更全面的测试覆盖，确保了代码质量和系统稳定性，新增的测试套件进一步增强了测试的精确性和性能优化能力。
 
 ## 附录
 - 最佳实践
@@ -466,5 +529,7 @@ Specs 测试框架通过 Jasmine + Karma + Playwright 的组合，构建了从�
   - Rust 测试采用模块化设计，按功能域组织测试文件
   - 利用 Cargo 的并行执行特性优化测试性能
   - 结合性能基准测试确保关键算法的效率
+  - 为新测试套件建立专门的测试数据和配置文件
+  - 实施渐进式测试策略，优先覆盖核心功能路径
 
-**更新** 新增 Rust 测试的最佳实践，包括模块化设计、并行执行和性能优化策略。
+**更新** 新增 Rust 测试的最佳实践，包括模块化设计、并行执行、性能优化策略，以及新测试套件的管理和维护指导。

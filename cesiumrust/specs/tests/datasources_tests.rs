@@ -25,6 +25,7 @@ mod datasources {
     pub mod property_array_spec;
     pub mod material_property_extended_spec;
     pub mod entity_ext_spec;
+    pub mod entity_operations_spec;
     pub mod datasource_animation_spec;
     pub mod cluster_spec;
     pub mod kml_export_spec;

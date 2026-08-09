@@ -6,10 +6,12 @@ mod scene {
     pub mod imagery_spec;
     pub mod material_spec;
     pub mod particle_spec;
+    pub mod particle_extended_spec;
     pub mod camera_spec;
     pub mod primitive_spec;
     pub mod voxel_spec;
     pub mod atmosphere_spec;
+    pub mod atmosphere_extended_spec;
     pub mod gltf_spec;
     pub mod vector_spec;
     pub mod implicit_tiling_spec;
@@ -20,12 +22,14 @@ mod scene {
     pub mod clipping_cloud_spec;
     pub mod post_process_spec;
     pub mod shadow_spec;
+    pub mod shadow_extended_spec;
     pub mod gltf_animation_spec;
     pub mod imagery_provider_spec;
     pub mod camera_operations_spec;
     pub mod camera_setview_spec;
     pub mod camera_coords_spec;
     pub mod camera_pick_spec;
+    pub mod camera_extended2_spec;
     pub mod implicit_tile_coordinates_spec;
     pub mod voxel_box_shape_spec;
     pub mod voxel_cylinder_shape_spec;
@@ -83,6 +87,7 @@ mod scene {
     pub mod primitive_pixel_spec;
     pub mod implicit_bitstream_spec;
     pub mod gltf_animation_runtime_spec;
+    pub mod gltf_animation_extended_spec;
     pub mod wkt_topojson_spec;
     pub mod structural_metadata_extended_spec;
     pub mod binary_vector_tile_spec;
@@ -113,4 +118,6 @@ mod scene {
     pub mod tile_replacement_queue_spec;
     pub mod quadtree_tile_adjacency_spec;
     pub mod heightmap_tessellator_spec;
+    pub mod globe_math_spec;
+    pub mod material_system_spec;
 }

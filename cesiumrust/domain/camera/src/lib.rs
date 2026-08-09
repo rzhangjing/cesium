@@ -767,9 +767,11 @@ impl Camera {
     /// Computes the distance from the camera to a bounding sphere.
     /// Maps to `Camera.distanceToBoundingSphere`
     pub fn distance_to_bounding_sphere(&self, sphere: &BoundingSphere) -> f64 {
-        let to_center = self.position - sphere.center;
-        let proj = self.direction * to_center.dot(self.direction);
-        (proj.length() - sphere.radius).max(0.0)
+        // Maps to CesiumJS Camera.distanceToBoundingSphere:
+        // signed distance along view direction minus sphere radius.
+        let to_center = sphere.center - self.position;
+        let distance = to_center.dot(self.direction) - sphere.radius;
+        distance.max(0.0)
     }
 
     /// Gets the magnitude of the camera position based on mode.
