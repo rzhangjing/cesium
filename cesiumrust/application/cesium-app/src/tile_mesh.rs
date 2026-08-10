@@ -64,17 +64,27 @@ pub fn tile_xy_to_rectangle(x: u32, y: u32, z: u32) -> GeoRectangle {
     }
 }
 
-/// Radial drop factor of the hanging skirt ring. Skirt vertices sit at the
-/// EXACT tile boundary (same lat/lon as the edge row, so neighbors share
-/// bit-identical edge vertices) but at this fraction of the surface radius:
-/// a vertical wall hanging below the surface, CesiumJS
-/// `EllipsoidTessellator`-style. The wall only shows through sub-pixel
-/// rasterization cracks and LOD-transition wedges; unlike an outward overlap
-/// band it never paints stretched edge texels over a neighbor's or the
-/// parent's surface (which reads as seam lines). Deep enough to stay below
-/// the coarsest live parent surface despite the per-level radial tuck
-/// (0.0006/level) plus chord sagitta.
-const SKIRT_DROP: f64 = 0.996;
+/// Radial drop factor of the hanging skirt ring for a tile at level `z`.
+/// Skirt vertices sit at the EXACT tile boundary (same lat/lon as the edge
+/// row, so neighbors share bit-identical edge vertices) but at this fraction
+/// of the surface radius: a vertical wall hanging below the surface,
+/// CesiumJS `EllipsoidTessellator`-style. LOD levels render near the same
+/// radius (REPLACE refinement + camera-adaptive radial tuck via entity
+/// scale), so the wall only fills sub-pixel rasterization cracks and the
+/// chord-sagitta crease at LOD boundaries; the depth covers the coarsest
+/// live level's sagitta with margin while staying a small fraction of the
+/// tile size.
+fn skirt_drop(z: u32) -> f64 {
+    1.0 - 3.0 * tuck_step(z)
+}
+
+/// Level-scaled radial step: 15% of the level's tile arc, clamped so coarse
+/// levels keep a usable skirt and ultra-deep levels never degenerate to
+/// zero. Only drives [`skirt_drop`] now that LOD tuck is gone.
+fn tuck_step(z: u32) -> f64 {
+    let arc = 2.0 * std::f64::consts::PI / (1u64 << z.min(24)) as f64;
+    (arc * 0.15).clamp(1.0e-5, 0.0006)
+}
 
 /// Generates a Bevy Mesh for a single tile on the WGS84 ellipsoid surface.
 ///
@@ -170,15 +180,16 @@ pub fn create_tile_mesh_uv(
         }
     }
 
-    // Hanging skirt: duplicate the boundary loop at SKIRT_DROP radius. The
-    // wall hangs straight down from the tile edge, so it can only peek
-    // through cracks, never over a neighbor. Drop alternates slightly with
-    // tile parity so coincident walls of same-level neighbors cannot
-    // z-fight in the cracks.
+    // Hanging skirt: duplicate the boundary loop at the level-scaled drop
+    // radius. The wall hangs straight down from the tile edge, so it can
+    // only peek through cracks, never over a neighbor. Drop alternates
+    // slightly with tile parity so coincident walls of same-level neighbors
+    // cannot z-fight in the cracks.
+    let base_drop = skirt_drop(z);
     let drop = if (x + y + z) & 1 == 0 {
-        SKIRT_DROP
+        base_drop
     } else {
-        SKIRT_DROP - 0.001
+        base_drop - 0.1 * tuck_step(z)
     };
     let mut perim: Vec<u32> = Vec::with_capacity(perimeter_count);
     let last = verts_per_side - 1;

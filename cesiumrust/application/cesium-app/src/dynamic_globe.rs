@@ -115,12 +115,20 @@ struct TileManager {
     solid_tiles: HashSet<TileKey>,
     /// Insertion order of gpu_textures (FIFO eviction order).
     gpu_tex_order: VecDeque<TileKey>,
+    /// Source resolution (width in px) each GPU texture was created from,
+    /// so horizon-filler tiles fetched at 128 px can be re-requested at
+    /// full res once they are projected large.
+    gpu_tex_size: HashMap<TileKey, u32>,
+    /// Tiles with a full-res re-download in flight (dedupe guard).
+    reupload: HashSet<TileKey>,
     /// Insertion order of spawned entities (FIFO eviction order).
     spawn_order: VecDeque<TileKey>,
     /// Set when `view_dependent_update` recomputed the visible set this
     /// frame; cleanup only runs on stable frames so a drag doesn't despawn
     /// tiles that leave and re-enter the visible set frame to frame.
     view_changed_this_frame: bool,
+    /// Current camera-adaptive radial tuck step (see `adaptive_tuck_step`).
+    tuck_step_cur: f64,
 }
 
 impl Default for TileManager {
@@ -144,8 +152,11 @@ impl Default for TileManager {
             effective_tex: HashMap::new(),
             solid_tiles: HashSet::new(),
             gpu_tex_order: VecDeque::new(),
+            gpu_tex_size: HashMap::new(),
+            reupload: HashSet::new(),
             spawn_order: VecDeque::new(),
             view_changed_this_frame: false,
+            tuck_step_cur: 1.0e-4,
         }
     }
 }
@@ -243,6 +254,7 @@ fn initial_spawn(
     enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &visible);
 
     mgr.current_zoom = finest;
+    mgr.tuck_step_cur = adaptive_tuck_step(orbit.distance);
     mgr.last_distance = orbit.distance;
     let (center_tx, center_ty) = geo_to_tile(lat_rad, lon_rad, finest);
     mgr.last_center_x = center_tx as f64;
@@ -272,6 +284,18 @@ fn enqueue_tiles(
     {
         let cache = tex_rx.cache.lock().unwrap();
         for &(key, prio) in tiles {
+            // Resolution upgrade: a tile first fetched as a small horizon
+            // filler (128 px) but now projected large must be re-fetched at
+            // full res, otherwise its stretched texels read as a smeared
+            // comb band right next to crisp tiles at LOD junctions.
+            if !mgr.no_data.contains(&key)
+                && !mgr.reupload.contains(&key)
+                && prio > 256.0
+                && matches!(mgr.gpu_tex_size.get(&key), Some(&sz) if sz < 256)
+            {
+                downloads.push((key, false, prio));
+                mgr.reupload.insert(key);
+            }
             if mgr.tile_entities.contains_key(&key) || mgr.queued.contains(&key) {
                 continue;
             }
@@ -372,18 +396,6 @@ fn view_dependent_update(
     mgr.view_changed_this_frame = true;
 
     if finest_changed {
-        // Re-tuck already-spawned tiles to the new LOD hierarchy so
-        // overlapping levels never z-fight (tuck lives on the entity scale,
-        // not the mesh, which is what makes meshes reusable across zoom
-        // changes).
-        let scale = render_scale();
-        for (&key, &entity) in mgr.tile_entities.iter() {
-            let tuck = level_tuck(key.2, finest);
-            commands
-                .entity(entity)
-                .insert(Transform::from_scale(Vec3::splat(scale * tuck as f32)));
-        }
-
         // Drop tiles far from the new LOD range right away (budgeted):
         // otherwise a multi-level cascade leaves several full zoom levels of
         // overlapping entities alive and inflates the draw-call count.
@@ -391,7 +403,12 @@ fn view_dependent_update(
         let far: Vec<TileKey> = mgr
             .tile_entities
             .keys()
-            .filter(|k| k.2.abs_diff(finest) > 2)
+            .filter(|k| {
+                // Never despawn tiles the current view still needs: opening
+                // a hole at the limb exposes hanging skirt walls as stripe
+                // fins while the replacement loads.
+                !mgr.visible_set.contains(k) && k.2.abs_diff(finest) > 2
+            })
             .copied()
             .collect();
         for key in far {
@@ -401,6 +418,21 @@ fn view_dependent_update(
             mgr.despawn_tile(&key, &mut commands);
             evicted += 1;
         }
+    }
+
+    // Re-tuck spawned tiles whenever the LOD range or the camera altitude
+    // shifts enough: the tuck step is camera-adaptive, so live entities
+    // need a fresh scale or their cliff heights stop tracking screen size.
+    let new_step = adaptive_tuck_step(orbit.distance);
+    if finest_changed || (new_step - mgr.tuck_step_cur).abs() > 0.2 * mgr.tuck_step_cur {
+        let scale = render_scale();
+        for (&key, &entity) in &mgr.tile_entities {
+            let s = scale * level_tuck(key.2, finest, new_step) as f32;
+            commands
+                .entity(entity)
+                .insert(Transform::from_scale(Vec3::splat(s)));
+        }
+        mgr.tuck_step_cur = new_step;
     }
 }
 
@@ -412,6 +444,26 @@ impl TileManager {
             self.textured_tiles.remove(key);
             self.spawn_order.retain(|k| k != key);
         }
+    }
+
+    /// True while any child of `key` that the current view wants is not
+    /// spawned yet. REPLACE refinement: a parent may only be removed once
+    /// its four children fully cover it, otherwise the not-yet-loaded
+    /// child regions would open holes down to the base sphere.
+    fn has_pending_visible_child(&self, key: &TileKey) -> bool {
+        let (x, y, z) = *key;
+        if z >= MAX_ZOOM {
+            return false;
+        }
+        for dy in 0..2u32 {
+            for dx in 0..2u32 {
+                let child = (x * 2 + dx, y * 2 + dy, z + 1);
+                if self.visible_set.contains(&child) && !self.tile_entities.contains_key(&child) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 
@@ -462,6 +514,7 @@ fn process_pipeline(
         }
         if is_fb {
             mgr.gpu_fb_meshes.insert(key, meshes.add(mesh));
+            evict_gpu_cache(&mut mgr);
         } else {
             mgr.gpu_meshes.insert(key, meshes.add(mesh));
             evict_gpu_cache(&mut mgr);
@@ -542,7 +595,6 @@ fn process_pipeline(
                 mat
             };
 
-            let tuck = level_tuck(key.2, finest);
             let entity = commands
                 .spawn((
                     CesiumGlobe,
@@ -553,7 +605,9 @@ fn process_pipeline(
                     },
                     Mesh3d(mesh_handle),
                     MeshMaterial3d(material),
-                    Transform::from_scale(Vec3::splat(scale * tuck as f32)),
+                    Transform::from_scale(Vec3::splat(
+                        scale * level_tuck(key.2, finest, mgr.tuck_step_cur) as f32,
+                    )),
                 ))
                 .id();
 
@@ -608,7 +662,6 @@ fn process_pipeline(
         mgr.gpu_textures.insert(key, tex.clone());
         evict_gpu_cache(&mut mgr);
 
-        let tuck = level_tuck(key.2, finest);
         let entity = commands
             .spawn((
                 CesiumGlobe,
@@ -619,7 +672,9 @@ fn process_pipeline(
                 },
                 Mesh3d(mesh_handle),
                 MeshMaterial3d(material),
-                Transform::from_scale(Vec3::splat(scale * tuck as f32)),
+                Transform::from_scale(Vec3::splat(
+                    scale * level_tuck(key.2, finest, mgr.tuck_step_cur) as f32,
+                )),
             ))
             .id();
 
@@ -640,6 +695,15 @@ fn process_pipeline(
         };
         let key = (result.x, result.y, result.z);
         if result.placeholder {
+            mgr.reupload.remove(&key);
+            if mgr.gpu_textures.contains_key(&key) {
+                // Already displaying real (low-res) imagery for this tile;
+                // a placeholder verdict on the full-res re-fetch must not
+                // flip it to no-data (that would stamp ancestor coverage
+                // over good pixels).
+                tex_uploads += 1;
+                continue;
+            }
             // Permanently no-data tile: inherit the nearest textured
             // ancestor (UV-upsampled) or fall back to solid ocean, so the
             // region never renders as a hole down to the base sphere.
@@ -691,16 +755,25 @@ fn process_pipeline(
         // No CPU-side rgba cache: the GPU texture cache below survives
         // despawn, so keeping full-res bytes in RAM would be pure waste.
 
-        let tex_handle = match mgr.gpu_textures.get(&key) {
-            Some(h) => h.clone(),
-            None => {
-                let h = make_image(&mut images, result.rgba_data, result.width, result.height);
+        let tex_handle = if matches!(
+            (mgr.gpu_textures.get(&key), mgr.gpu_tex_size.get(&key)),
+            (Some(_), Some(&sz)) if sz >= result.width
+        ) {
+            mgr.gpu_textures[&key].clone()
+        } else {
+            // New tile, or a full-res re-download replacing a downscaled
+            // horizon-filler texture: swap the handle so the live entity
+            // sharpens in place without a respawn.
+            let h = make_image(&mut images, result.rgba_data, result.width, result.height);
+            if !mgr.gpu_textures.contains_key(&key) {
                 mgr.gpu_tex_order.push_back(key);
-                mgr.gpu_textures.insert(key, h.clone());
-                evict_gpu_cache(&mut mgr);
-                h
             }
+            mgr.gpu_textures.insert(key, h.clone());
+            mgr.gpu_tex_size.insert(key, result.width);
+            evict_gpu_cache(&mut mgr);
+            h
         };
+        mgr.reupload.remove(&key);
         mgr.effective_tex.insert(key, tex_handle.clone());
 
         if let Some(mat_handle) = mgr.gpu_materials.get(&key) {
@@ -750,7 +823,7 @@ fn process_pipeline(
                 .tile_entities
                 .keys()
                 .copied()
-                .filter(|k| !mgr.visible_set.contains(k))
+                .filter(|k| !mgr.visible_set.contains(k) && !mgr.has_pending_visible_child(k))
                 .map(|k| (pos(&k), k))
                 .collect();
             v.sort();
@@ -825,15 +898,31 @@ fn process_pipeline(
     }
 }
 
-/// FIFO-evict the oldest GPU handle cache entries once over the cap, so a
-/// long panning session can't grow the caches without bound.
+/// FIFO-evict the oldest cached GPU handles once over the cap, so a long
+/// panning session can't grow the caches without bound. Handles of tiles
+/// whose entity is STILL ALIVE are never evicted: freeing the underlying
+/// `Assets` data while a spawned entity keeps referencing it corrupts the
+/// mesh allocator's bookkeeping, and the tile renders as garbage horizontal
+/// stripes (the 花屏 artifact seen during deep zooms). Such entries are
+/// pushed to the back and re-checked later; termination is guaranteed
+/// because spawned entities are capped at `MAX_TILE_ENTITIES`, far below
+/// `MAX_GPU_CACHE_ENTRIES`, so evictable (dead) entries always exist.
 fn evict_gpu_cache(mgr: &mut TileManager) {
     while mgr.gpu_tex_order.len() > MAX_GPU_CACHE_ENTRIES {
-        if let Some(old) = mgr.gpu_tex_order.pop_front() {
-            mgr.gpu_textures.remove(&old);
-            mgr.gpu_materials.remove(&old);
-            mgr.gpu_meshes.remove(&old);
+        let Some(old) = mgr.gpu_tex_order.pop_front() else {
+            break;
+        };
+        if mgr.tile_entities.contains_key(&old) {
+            // Still rendered: defer eviction.
+            mgr.gpu_tex_order.push_back(old);
+            continue;
         }
+        mgr.gpu_textures.remove(&old);
+        mgr.gpu_materials.remove(&old);
+        mgr.gpu_meshes.remove(&old);
+        mgr.gpu_fb_meshes.remove(&old);
+        mgr.effective_tex.remove(&old);
+        mgr.gpu_tex_size.remove(&old);
     }
 }
 
@@ -960,23 +1049,42 @@ fn geo_to_tile(lat_rad: f64, lon_rad: f64, zoom: u32) -> (u32, u32) {
     (tx, ty)
 }
 
-/// Radial tuck per LOD level so coarser tiles sit just below finer tiles,
-/// preventing z-fighting where a coarse tile partially underlaps a finer
-/// one. Applied via entity scale (NOT baked into the mesh) so meshes stay
-/// reusable across zoom changes.
-fn level_tuck(z: u32, finest: u32) -> f64 {
-    1.0 - 0.0006 * finest.saturating_sub(z) as f64
+/// Per-LOD-level radial tuck: coarser tiles sit `step` below per level
+/// difference. `step` adapts to the camera's height above the surface
+/// (~2% of it): the parent/child cliff then stays far below one screen
+/// pixel at every altitude (no smeared skirt band at LOD junctions) while
+/// remaining far above the depth-buffer precision (no z-fighting where a
+/// child overlaps its still-alive parent). The difference is SIGNED: stale
+/// tiles finer than the current finest must sit `step` ABOVE per level too,
+/// otherwise they render coplanar with their coarser replacement and
+/// z-fight (the "images covering each other" artifact seen while
+/// dragging/zooming). Applied via entity scale (NOT baked into the mesh) so
+/// meshes stay reusable across zoom changes.
+fn level_tuck(z: u32, finest: u32, step: f64) -> f64 {
+    1.0 - step * (finest as i64 - z as i64) as f64
 }
 
-/// Smoothness metric: average / max RGB difference between sampled pixel
-/// pairs 4px apart. Real imagery is textured; Bing's no-imagery placeholder
-/// is a smooth synthetic gradient. Measured: placeholder avg ~0.01 (max 6)
-/// or avg 0 (solid), real ocean avg ~1.8 (max 22), real land >> 7.
-fn smoothness_stats(rgba: &image::RgbaImage) -> (f64, u32) {
+/// Camera-adaptive tuck step: 2% of the height above the surface, clamped
+/// so it never vanishes (deep zoom) nor exceeds a small fraction of the
+/// coarsest tile (horizon).
+fn adaptive_tuck_step(distance: f32) -> f64 {
+    (2.0e-5 * (distance as f64 - 1.0)).clamp(1.0e-7, 2.0e-4)
+}
+
+/// Smoothness + palette metric: average / max RGB difference between
+/// sampled pixel pairs 4px apart, plus mean channel levels. Real imagery is
+/// textured (or at least dark ocean / warm salt flats); Bing's no-imagery
+/// placeholder is a smooth BRIGHT COOL-TINTED gradient (measured:
+/// center rgb ~(223,230,238), avg ~0.7, max ~9), while real smooth ocean is
+/// dark teal (rgb ~(6,36,47)) and salt flats are warm white (R > B).
+fn smoothness_stats(rgba: &image::RgbaImage) -> (f64, u32, u32, u32, u32) {
     let (w, h) = rgba.dimensions();
     let mut sum: f64 = 0.0;
     let mut maxd: u32 = 0;
     let mut count: u32 = 0;
+    let mut acc_r: u64 = 0;
+    let mut acc_g: u64 = 0;
+    let mut acc_b: u64 = 0;
     let mut x = 0;
     while x + 4 < w {
         for y in (0..h).step_by(8) {
@@ -989,25 +1097,41 @@ fn smoothness_stats(rgba: &image::RgbaImage) -> (f64, u32) {
             if d > maxd {
                 maxd = d;
             }
+            acc_r += p[0] as u64;
+            acc_g += p[1] as u64;
+            acc_b += p[2] as u64;
             count += 1;
         }
         x += 8;
     }
     if count == 0 {
-        return (f64::MAX, u32::MAX);
+        return (f64::MAX, u32::MAX, 0, 0, 0);
     }
-    (sum / count as f64, maxd)
+    (
+        sum / count as f64,
+        maxd,
+        (acc_r / count as u64) as u32,
+        (acc_g / count as u64) as u32,
+        (acc_b / count as u64) as u32,
+    )
 }
 
-/// True when the decoded image is a smooth synthetic gradient — Bing's
-/// no-imagery placeholder — rather than real satellite imagery.
-fn is_placeholder_tile(rgba: &image::RgbaImage) -> bool {
+/// True when the decoded image is Bing's smooth bright cool-tinted no-imagery
+/// placeholder rather than real satellite imagery. Smoothness alone is not
+/// enough: real ocean is darker than the placeholder and salt flats / pale
+/// sand are warm-tinted, so requiring bright + blue-dominant pixels keeps
+/// those tiles on the real-imagery path (misclassifying them used to stamp
+/// upsampled ancestor coverage over good terrain, reading as smeared bands
+/// at LOD junctions).
+fn is_placeholder_tile(rgba: &image::RgbaImage) -> (bool, f64, u32) {
     let (w, h) = rgba.dimensions();
     if w < 16 || h < 16 {
-        return false;
+        return (false, f64::MAX, u32::MAX);
     }
-    let (avg, maxd) = smoothness_stats(rgba);
-    avg < 0.5 && maxd <= 8
+    let (avg, maxd, r, _g, b) = smoothness_stats(rgba);
+    let bright = (r + b) / 2 > 170;
+    let cool = b >= r;
+    (avg < 1.5 && maxd <= 12 && bright && cool, avg, maxd)
 }
 
 /// Append a box-filtered mip chain (2x2 average per level) to the base
@@ -1219,12 +1343,16 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
                             // coverage, so such tiles are treated as no-data
                             // and inherit ancestor coverage on the main
                             // thread instead.
-                            if is_placeholder_tile(&rgba) {
-                                let (avg, maxd) = smoothness_stats(&rgba);
-                                eprintln!(
-                                    "[DL] placeholder ({},{},{}) avg={:.2} max={}",
-                                    px, py, pz, avg, maxd
-                                );
+                            if {
+                                let (ph, avg, maxd) = is_placeholder_tile(&rgba);
+                                if ph {
+                                    eprintln!(
+                                        "[DL] placeholder ({},{},{}) avg={:.2} max={}",
+                                        px, py, pz, avg, maxd
+                                    );
+                                }
+                                ph
+                            } {
                                 let _ = tx.send(TileDownloadResult {
                                     x: px,
                                     y: py,

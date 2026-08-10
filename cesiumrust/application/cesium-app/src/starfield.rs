@@ -7,6 +7,7 @@
 //! sky costs a single draw call — spawning one entity per star would add
 //! ~1500 draw calls and tank the frame rate.
 
+use bevy::image::{ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
 use cesium_atmosphere::StarSphere;
 
@@ -65,10 +66,50 @@ fn push_star_quad(
     indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
+/// Procedural 64x64 star sprite: bright round core with a soft gaussian
+/// halo fading to fully transparent, so the camera-facing quads read as
+/// round glows instead of solid white squares.
+fn make_star_sprite(images: &mut Assets<Image>) -> Handle<Image> {
+    const N: u32 = 64;
+    let mut data = Vec::with_capacity((N * N * 4) as usize);
+    let c = (N as f32 - 1.0) * 0.5;
+    for y in 0..N {
+        for x in 0..N {
+            let d = (((x as f32 - c).powi(2) + (y as f32 - c).powi(2)).sqrt() / c).min(1.0);
+            // Sharp core + wide faint halo, clamped to 1.
+            let a = (-(d / 0.22).powi(2)).exp() + 0.28 * (-(d / 0.62).powi(2)).exp();
+            let a = a.min(1.0);
+            data.push(255);
+            data.push(255);
+            data.push(255);
+            data.push((a * 255.0) as u8);
+        }
+    }
+    let mut img = Image::new(
+        bevy::render::render_resource::Extent3d {
+            width: N,
+            height: N,
+            depth_or_array_layers: 1,
+        },
+        bevy::render::render_resource::TextureDimension::D2,
+        data,
+        bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+        bevy::render::render_asset::RenderAssetUsages::default(),
+    );
+    img.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        mag_filter: ImageFilterMode::Linear,
+        min_filter: ImageFilterMode::Linear,
+        mipmap_filter: ImageFilterMode::Linear,
+        ..default()
+    });
+    images.add(img)
+}
+
 fn setup_starfield(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     let radius = 50.0_f32;
 
@@ -88,9 +129,10 @@ fn setup_starfield(
             radius * dec.sin(),
             radius * dec.cos() * ra.sin(),
         );
-        // Brighter stars (lower magnitude) → larger size
-        let size = 0.3 + 0.15 * (6.0 - star.magnitude as f32).max(0.0);
-        push_star_quad(&mut positions, &mut normals, &mut uvs, &mut indices, pos, size * 0.5);
+        // Brighter stars (lower magnitude) -> larger glow quad. Sized so the
+        // brightest star spans only a few pixels at the default view.
+        let half = 0.08 + 0.03 * (6.0 - star.magnitude as f32).max(0.0);
+        push_star_quad(&mut positions, &mut normals, &mut uvs, &mut indices, pos, half);
     }
 
     // --- Procedural dim stars (~1500 random points) ---
@@ -104,8 +146,8 @@ fn setup_starfield(
             radius * phi.cos(),
             radius * phi.sin() * theta.sin(),
         );
-        let size = 0.1 + hash_rand(i * 3 + 3) * 0.15;
-        push_star_quad(&mut positions, &mut normals, &mut uvs, &mut indices, pos, size * 0.5);
+        let half = 0.03 + hash_rand(i * 3 + 3) * 0.06;
+        push_star_quad(&mut positions, &mut normals, &mut uvs, &mut indices, pos, half);
     }
 
     let mut mesh = Mesh::new(
@@ -119,8 +161,10 @@ fn setup_starfield(
 
     let star_material = materials.add(StandardMaterial {
         base_color: Color::WHITE,
-        emissive: LinearRgba::new(4.0, 4.0, 4.0, 1.0),
+        base_color_texture: Some(make_star_sprite(&mut images)),
         unlit: true,
+        // Alpha-blended round glow; the quad corners are fully transparent.
+        alpha_mode: AlphaMode::Blend,
         cull_mode: None, // Visible from both sides
         ..default()
     });

@@ -3,14 +3,36 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-08-10T00:27:40Z"
+exported_at: "2026-08-10T13:25:15Z"
 modules:
     "":
-        dir_name: CesiumRust 重构工程（基于 Bevy_GPUI 的 CesiumJS Rust 重写）
-        title: CesiumRust 重构工程（基于 Bevy/GPUI 的 CesiumJS Rust 重写）
-        scope: []
+        dir_name: CesiumJS 工程根（构建_测试_发布编排）
+        title: CesiumJS 工程根（构建/测试/发布编排）
+        scope:
+            - README.md
+            - CONTRIBUTING.md
+            - CODE_OF_CONDUCT.md
+            - CONTRIBUTORS.md
+            - package.json
+            - gulpfile.js
+            - gulpfile.apps.js
+            - gulpfile.makezip.js
+            - server.js
+            - index.html
+            - index.cjs
+            - tsconfig.json
+            - eslint.config.js
+            - .github/
+            - .husky/
+            - launches/
+            - scripts/
         source_files: []
-        children: []
+        children:
+            - build_tools
+            - cesiumrust_port
+            - documentation
+            - sample_apps_and_data
+            - tests_and_specs
         depends_on: []
         related_to: []
     build_tools:
@@ -21,7 +43,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: documentation
     cesiumrust_port:
         dir_name: CesiumRust 3D 地球引擎（Bevy 端口适配器与领域层）
         title: CesiumRust 3D 地球引擎（Bevy 端口适配器与领域层）
@@ -30,7 +53,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: sample_apps_and_data
     documentation:
         dir_name: CesiumJS 项目文档与贡献者指南
         title: CesiumJS 项目文档与贡献者指南
@@ -39,7 +63,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: build_tools
     sample_apps_and_data:
         dir_name: 示例应用与测试数据
         title: 示例应用与测试数据
@@ -48,7 +73,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: cesiumrust_port
     tests_and_specs:
         dir_name: CesiumJS Specs 测试套件与基准数据
         title: CesiumJS Specs 测试套件与基准数据

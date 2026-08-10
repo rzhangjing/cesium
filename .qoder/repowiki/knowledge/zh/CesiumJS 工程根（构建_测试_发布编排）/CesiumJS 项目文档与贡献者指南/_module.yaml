@@ -5,4 +5,5 @@ scope:
     - Documentation/
 source_files: []
 depends_on: []
-related_to: []
+related_to:
+    - path: build_tools
