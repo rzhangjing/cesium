@@ -4,16 +4,39 @@
 //! rendered BACK-FACES ONLY with additive blending, so it appears solely as a
 //! halo ring around the limb. Eight shells with decreasing alpha produce a
 //! soft gradient falloff instead of a single hard edge.
+//!
+//! The back-face trick only works while the camera stays OUTSIDE the shells.
+//! Once a zoom brings the camera inside them, the far hemispheres surround
+//! the view and paint large flat blue regions across the screen. The shells
+//! therefore fade out with camera distance and vanish entirely near the
+//! surface (where no limb halo is visible anyway).
 
 use bevy::prelude::*;
+
+use crate::orbit_camera::OrbitState;
 
 /// Plugin that spawns the atmosphere glow shells.
 pub struct AtmosphereGlowPlugin;
 
 impl Plugin for AtmosphereGlowPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_atmosphere);
+        app.add_systems(Startup, setup_atmosphere)
+            .add_systems(Update, fade_atmosphere_with_distance);
     }
+}
+
+/// Per-shell base additive alpha, restored when the camera is far away.
+#[derive(Component)]
+struct AtmosphereShell {
+    base_alpha: f32,
+}
+
+/// Glow is fully visible from space (distance >= 3 R) and fades to zero as
+/// the camera approaches the surface (<= 1.5 R), so zooming in never shows
+/// blue shell interiors.
+fn glow_fade(distance: f32) -> f32 {
+    let t = ((distance - 1.5) / 1.5).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 fn setup_atmosphere(
@@ -47,6 +70,7 @@ fn setup_atmosphere(
 
     for (scale, alpha) in shells {
         commands.spawn((
+            AtmosphereShell { base_alpha: alpha },
             Mesh3d(mesh.clone()),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: Color::srgba(0.3, 0.6, 1.0, alpha),
@@ -59,5 +83,20 @@ fn setup_atmosphere(
             })),
             Transform::from_scale(Vec3::splat(scale)),
         ));
+    }
+}
+
+/// Scale every shell's additive alpha by the camera-distance fade so the
+/// halo never paints blue regions once the camera dives inside the shells.
+fn fade_atmosphere_with_distance(
+    orbit: Res<OrbitState>,
+    shells: Query<(&AtmosphereShell, &MeshMaterial3d<StandardMaterial>)>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let fade = glow_fade(orbit.distance);
+    for (shell, mat_handle) in &shells {
+        if let Some(mat) = materials.get_mut(mat_handle) {
+            mat.base_color = Color::srgba(0.3, 0.6, 1.0, shell.base_alpha * fade);
+        }
     }
 }

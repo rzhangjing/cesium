@@ -399,6 +399,7 @@ fn view_dependent_update(
         // Drop tiles far from the new LOD range right away (budgeted):
         // otherwise a multi-level cascade leaves several full zoom levels of
         // overlapping entities alive and inflates the draw-call count.
+        let prot = protected_ancestors(&mgr);
         let mut evicted = 0;
         let far: Vec<TileKey> = mgr
             .tile_entities
@@ -406,8 +407,13 @@ fn view_dependent_update(
             .filter(|k| {
                 // Never despawn tiles the current view still needs: opening
                 // a hole at the limb exposes hanging skirt walls as stripe
-                // fins while the replacement loads.
-                !mgr.visible_set.contains(k) && k.2.abs_diff(finest) > 2
+                // fins while the replacement loads. Likewise keep every
+                // ancestor of a not-yet-spawned visible tile (fast zooms
+                // jump several LOD levels at once), otherwise the hole
+                // falls through to the blue base sphere mid-zoom.
+                !mgr.visible_set.contains(k)
+                    && !prot.contains(k)
+                    && k.2.abs_diff(finest) > 2
             })
             .copied()
             .collect();
@@ -445,26 +451,32 @@ impl TileManager {
             self.spawn_order.retain(|k| k != key);
         }
     }
+}
 
-    /// True while any child of `key` that the current view wants is not
-    /// spawned yet. REPLACE refinement: a parent may only be removed once
-    /// its four children fully cover it, otherwise the not-yet-loaded
-    /// child regions would open holes down to the base sphere.
-    fn has_pending_visible_child(&self, key: &TileKey) -> bool {
-        let (x, y, z) = *key;
-        if z >= MAX_ZOOM {
-            return false;
-        }
-        for dy in 0..2u32 {
-            for dx in 0..2u32 {
-                let child = (x * 2 + dx, y * 2 + dy, z + 1);
-                if self.visible_set.contains(&child) && !self.tile_entities.contains_key(&child) {
-                    return true;
-                }
+/// Ancestor keys of every visible tile that has no spawned entity yet.
+/// Fast zooms can jump several LOD levels in one recompute, so protection
+/// must cover the ENTIRE ancestor chain of each pending leaf, not just the
+/// direct parent: any tile in this set is still the only coverage for part
+/// of the view and must not be despawned (removing it opens a hole down to
+/// the blue base sphere).
+fn protected_ancestors(mgr: &TileManager) -> HashSet<TileKey> {
+    let mut prot: HashSet<TileKey> = HashSet::new();
+    for v in mgr
+        .visible_set
+        .iter()
+        .filter(|v| !mgr.tile_entities.contains_key(v))
+    {
+        let (mut x, mut y, mut z) = *v;
+        while z > 0 {
+            x >>= 1;
+            y >>= 1;
+            z -= 1;
+            if !prot.insert((x, y, z)) {
+                break; // higher ancestors were already registered
             }
         }
-        false
     }
+    prot
 }
 
 // ── Budgeted asset pipeline (mesh upload → spawn → texture → cleanup) ──
@@ -563,8 +575,13 @@ fn process_pipeline(
             // No imagery exists for this tile (Bing placeholder or download
             // failure): render it with the nearest ancestor's texture
             // upsampled through a UV-remapped mesh (CesiumJS upsampling
-            // fallback), or as solid deep ocean when no ancestor texture is
-            // available. Either way the globe never shows a hole.
+            // fallback). A solid-blue quad is NEVER spawned while a live
+            // ancestor entity still covers the region: the parent simply
+            // keeps showing until something real replaces it (coverage
+            // repair re-checks this tile every stable frame).
+            if mgr.solid_tiles.contains(&key) && has_live_ancestor(&mgr, &key) {
+                continue;
+            }
             let mesh_handle = if mgr.solid_tiles.contains(&key) {
                 mgr.gpu_meshes[&key].clone()
             } else {
@@ -738,7 +755,30 @@ fn process_pipeline(
                         );
                     }
                 } else {
-                    mgr.solid_tiles.insert(key);
+                    // No textured ancestor: inherit whatever the closest
+                    // LIVE ancestor entity displays (even a solid-ocean
+                    // tile) so this tile never paints a fresh blue block.
+                    let mut ix = key.0;
+                    let mut iy = key.1;
+                    let mut iz = key.2;
+                    let mut inherited = false;
+                    while iz > 0 {
+                        ix >>= 1;
+                        iy >>= 1;
+                        iz -= 1;
+                        if mgr.tile_entities.contains_key(&(ix, iy, iz)) {
+                            if let Some(mat) =
+                                mgr.gpu_materials.get(&(ix, iy, iz)).cloned()
+                            {
+                                mgr.gpu_materials.insert(key, mat);
+                                inherited = true;
+                            }
+                            break;
+                        }
+                    }
+                    if !inherited {
+                        mgr.solid_tiles.insert(key);
+                    }
                 }
             }
             // Make sure the tile (re)enters the spawn queue: it may have
@@ -819,11 +859,12 @@ fn process_pipeline(
                     .position(|o| o == k)
                     .unwrap_or(usize::MAX)
             };
+            let prot = protected_ancestors(&mgr);
             let mut v: Vec<(usize, TileKey)> = mgr
                 .tile_entities
                 .keys()
                 .copied()
-                .filter(|k| !mgr.visible_set.contains(k) && !mgr.has_pending_visible_child(k))
+                .filter(|k| !mgr.visible_set.contains(k) && !prot.contains(k))
                 .map(|k| (pos(&k), k))
                 .collect();
             v.sort();
@@ -841,7 +882,9 @@ fn process_pipeline(
 
         // Still over the hard cap: evict the oldest surplus entities even if
         // visible (draw-call pressure beats coverage; GPU handles stay
-        // cached so they re-spawn instantly if the view returns).
+        // cached so they re-spawn instantly if the view returns). Tiles
+        // with a live ancestor are evicted first: their region stays
+        // covered by the parent, so no blue hole opens.
         if mgr.tile_entities.len() > MAX_TILE_ENTITIES {
             let mut extras: Vec<(usize, TileKey)> = {
                 let pos = |k: &TileKey| {
@@ -854,6 +897,7 @@ fn process_pipeline(
                     .tile_entities
                     .keys()
                     .copied()
+                    .filter(|k| has_live_ancestor(&mgr, k))
                     .map(|k| (pos(&k), k))
                     .collect();
                 v.sort();
@@ -896,6 +940,22 @@ fn process_pipeline(
             mgr.queued.insert(k);
         }
     }
+}
+
+/// True when any ancestor of `key` has a spawned entity still covering its
+/// region, so `key` can be safely skipped/evicted without opening a hole
+/// down to the blue base sphere.
+fn has_live_ancestor(mgr: &TileManager, key: &TileKey) -> bool {
+    let (mut x, mut y, mut z) = *key;
+    while z > 0 {
+        x >>= 1;
+        y >>= 1;
+        z -= 1;
+        if mgr.tile_entities.contains_key(&(x, y, z)) {
+            return true;
+        }
+    }
+    false
 }
 
 /// FIFO-evict the oldest cached GPU handles once over the cap, so a long
