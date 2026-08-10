@@ -3,12 +3,57 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-08-09T04:20:15Z"
+exported_at: "2026-08-10T00:27:40Z"
 modules:
     "":
         dir_name: CesiumRust 重构工程（基于 Bevy_GPUI 的 CesiumJS Rust 重写）
         title: CesiumRust 重构工程（基于 Bevy/GPUI 的 CesiumJS Rust 重写）
         scope: []
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    build_tools:
+        dir_name: 构建与文档生成工具集
+        title: 构建与文档生成工具集
+        scope:
+            - Tools/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    cesiumrust_port:
+        dir_name: CesiumRust 3D 地球引擎（Bevy 端口适配器与领域层）
+        title: CesiumRust 3D 地球引擎（Bevy 端口适配器与领域层）
+        scope:
+            - cesiumrust/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    documentation:
+        dir_name: CesiumJS 项目文档与贡献者指南
+        title: CesiumJS 项目文档与贡献者指南
+        scope:
+            - Documentation/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    sample_apps_and_data:
+        dir_name: 示例应用与测试数据
+        title: 示例应用与测试数据
+        scope:
+            - Apps/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    tests_and_specs:
+        dir_name: CesiumJS Specs 测试套件与基准数据
+        title: CesiumJS Specs 测试套件与基准数据
+        scope:
+            - Specs/
         source_files: []
         children: []
         depends_on: []

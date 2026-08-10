@@ -4,24 +4,25 @@
 **本文引用的文件**   
 - [cesiumrust/adapters/bevy-render/src/lib.rs](file://cesiumrust/adapters/bevy-render/src/lib.rs)
 - [cesiumrust/adapters/bevy-render/Cargo.toml](file://cesiumrust/adapters/bevy-render/Cargo.toml)
-- [cesiumrust/crates/bevy_demo/src/main.rs](file://cesiumrust/crates/bevy_demo/src/main.rs)
-- [cesiumrust/crates/bevy_demo/Cargo.toml](file://cesiumrust/crates/bevy_demo/Cargo.toml)
+- [cesiumrust/application/cesium-app/src/main.rs](file://cesiumrust/application/cesium-app/src/main.rs)
+- [cesiumrust/application/cesium-app/Cargo.toml](file://cesiumrust/application/cesium-app/Cargo.toml)
 - [cesiumrust/domain/scene/src/lib.rs](file://cesiumrust/domain/scene/src/lib.rs)
 - [cesiumrust/domain/tileset/src/lib.rs](file://cesiumrust/domain/tileset/src/lib.rs)
 - [cesiumrust/domain/camera/src/lib.rs](file://cesiumrust/domain/camera/src/lib.rs)
 - [cesiumrust/domain/geospatial/src/lib.rs](file://cesiumrust/domain/geospatial/src/lib.rs)
-- [cesiumrust/domain/material/src/fabric_material.rs](file://cesiumrust/domain/material/src/fabric_material.rs)
-- [cesiumrust/domain/material/shaders/fabric_material.wgsl](file://cesiumrust/domain/material/shaders/fabric_material.wgsl)
+- [cesiumrust/adapters/bevy-render/src/material_system.rs](file://cesiumrust/adapters/bevy-render/src/material_system.rs)
+- [cesiumrust/adapters/bevy-render/src/atmosphere/mod.rs](file://cesiumrust/adapters/bevy-render/src/atmosphere/mod.rs)
+- [cesiumrust/adapters/bevy-render/src/camera/mod.rs](file://cesiumrust/adapters/bevy-render/src/camera/mod.rs)
+- [cesiumrust/docs/ARCHITECTURE.md](file://cesiumrust/docs/ARCHITECTURE.md)
 </cite>
 
 ## 更新摘要
 **变更内容**   
-- 重构了Bevy渲染适配器架构，移除了121行遗留代码，简化了渲染管线
-- 优化了GPU资源管理模块，提升了内存分配和缓冲区管理的效率
-- 改进了着色器编译系统，支持更高效的动态着色器生成和优化
-- 精简了绘制调用流程，减少了状态切换和批处理开销
-- 增强了材质系统集成，包括Fabric材质的完整实现和WGSL着色器集成
-- 通过架构简化显著提升了整体渲染性能和内存使用效率
+- 完成了从GPUI框架到Bevy插件生态系统的完整架构重构，实现了全新的渲染适配器系统
+- 新增了完整的相机系统、瓦片集管理、大气渲染和材质系统等核心功能模块
+- 重构了渲染管线架构，采用模块化插件设计，支持按需启用各种渲染功能
+- 增强了领域层与渲染层的解耦，通过清晰的接口契约实现松耦合集成
+- 优化了资源管理和性能特性，支持大规模地理数据的高效渲染
 
 ## 目录
 1. [简介](#简介)
@@ -29,9 +30,9 @@
 3. [核心组件](#核心组件)
 4. [架构总览](#架构总览)
 5. [详细组件分析](#详细组件分析)
-6. [GPU资源管理增强](#gpu资源管理增强)
-7. [着色器编译优化](#着色器编译优化)
-8. [绘制调用优化](#绘制调用优化)
+6. [插件生态系统](#插件生态系统)
+7. [领域层集成](#领域层集成)
+8. [渲染管线优化](#渲染管线优化)
 9. [材质系统增强](#材质系统增强)
 10. [依赖关系分析](#依赖关系分析)
 11. [性能考量](#性能考量)
@@ -40,557 +41,357 @@
 14. [附录](#附录)
 
 ## 简介
-本文件聚焦于 Cesium Rust 仓库中的 Bevy 渲染适配器，旨在帮助开发者理解如何将 Cesium 的领域能力（场景、瓦片集、相机、地理空间等）与 Bevy 渲染管线集成。文档从系统架构、组件职责、数据流、处理逻辑、集成点、错误处理与性能特性等维度进行系统化说明，并提供可视化图示与可操作的排障建议。
+本文档详细介绍了Cesium Rust仓库中基于Bevy的渲染适配器系统。该系统完成了从GPUI框架到Bevy插件生态系统的重大架构转型，提供了完整的3D地球可视化解决方案。文档从系统架构、组件职责、数据流、处理逻辑、集成点、错误处理与性能特性等维度进行系统化说明，并提供可视化图示与可操作的排障建议。
 
-**更新** 本次更新重点重构了渲染适配器架构，移除了121行遗留代码，简化了渲染管线设计，同时增强了GPU资源管理、着色器编译、绘制调用和材质系统，通过架构优化显著提升了渲染性能和资源利用效率。
+**更新** 本次更新重点反映了完整的架构重构：移除了遗留的GPUI框架代码，构建了全新的Bevy插件生态系统，包括相机系统、瓦片集管理、大气渲染、材质系统等核心功能模块，通过模块化设计显著提升了系统的可扩展性和维护性。
 
 ## 项目结构
-Bevy 渲染适配器位于 cesiumrust/adapters/bevy-render 目录下，主要提供将 Cesium 领域模型映射到 Bevy 实体与系统的适配层；bevy_demo 示例展示了如何在 Bevy App 中注册并运行该适配器。经过重构后，架构更加简洁清晰。
+Bevy渲染适配器位于 `cesiumrust/adapters/bevy-render` 目录下，采用模块化插件架构设计。应用示例位于 `cesiumrust/application/cesium-app` 目录，展示了如何组合使用各个插件来构建完整的3D地球应用。
 
 ```mermaid
 graph TB
-subgraph "适配器层"
-A["bevy-render<br/>src/lib.rs"]
-B["bevy-render<br/>Cargo.toml"]
-C["entity_render.rs<br/>实体渲染精化"]
-D["gpu_resources.rs<br/>GPU资源管理"]
-E["shader_compiler.rs<br/>着色器编译器"]
+subgraph "Bevy渲染适配器"
+A["lib.rs<br/>主入口和工具函数"]
+B["camera/<br/>相机系统"]
+C["tileset/<br/>瓦片集管理"]
+D["atmosphere/<br/>大气渲染"]
+E["material_system.rs<br/>材质系统集成"]
+F["entity/<br/>实体系统"]
+G["imagery/<br/>影像图层"]
+H["terrain/<br/>地形渲染"]
+I["effects/<br/>后处理效果"]
+J["widgets/<br/>UI组件"]
 end
-subgraph "演示应用"
-F["bevy_demo<br/>src/main.rs"]
-G["bevy_demo<br/>Cargo.toml"]
+subgraph "应用示例"
+K["main.rs<br/>应用入口"]
+L["dynamic_globe.rs<br/>动态地球"]
+M["orbit_camera.rs<br/>轨道相机"]
+N["atmosphere_glow.rs<br/>大气光晕"]
+O["starfield.rs<br/>星空背景"]
 end
 subgraph "领域层"
-H["domain/scene<br/>src/lib.rs"]
-I["domain/tileset<br/>src/lib.rs"]
-J["domain/camera<br/>src/lib.rs"]
-K["domain/geospatial<br/>src/lib.rs"]
-L["domain/globe<br/>地球显示模块"]
-M["domain/material<br/>材质系统"]
-N["fabric_material.rs<br/>自定义材质实现"]
-O["fabric_material.wgsl<br/>WGSL着色器"]
+P["domain/scene<br/>场景图"]
+Q["domain/tileset<br/>3D瓦片集"]
+R["domain/camera<br/>相机状态"]
+S["domain/geospatial<br/>地理空间"]
+T["domain/material<br/>材质定义"]
 end
-F --> A
+K --> A
+A --> B
+A --> C
+A --> D
+A --> E
+A --> F
+A --> G
 A --> H
 A --> I
 A --> J
-A --> K
-A --> L
-A --> M
-M --> N
-M --> O
-A --> D
-A --> E
-C --> A
+B --> R
+C --> Q
+D --> T
+E --> T
+F --> P
+G --> S
+H --> S
 ```
 
-图表来源
-- [cesiumrust/adapters/bevy-render/src/lib.rs](file://cesiumrust/adapters/bevy-render/src/lib.rs)
-- [cesiumrust/adapters/bevy-render/Cargo.toml](file://cesiumrust/adapters/bevy-render/Cargo.toml)
-- [cesiumrust/crates/bevy_demo/src/main.rs](file://cesiumrust/crates/bevy_demo/src/main.rs)
-- [cesiumrust/crates/bevy_demo/Cargo.toml](file://cesiumrust/crates/bevy_demo/Cargo.toml)
-- [cesiumrust/domain/scene/src/lib.rs](file://cesiumrust/domain/scene/src/lib.rs)
-- [cesiumrust/domain/tileset/src/lib.rs](file://cesiumrust/domain/tileset/src/lib.rs)
-- [cesiumrust/domain/camera/src/lib.rs](file://cesiumrust/domain/camera/src/lib.rs)
-- [cesiumrust/domain/geospatial/src/lib.rs](file://cesiumrust/domain/geospatial/src/lib.rs)
-- [cesiumrust/domain/material/src/fabric_material.rs](file://cesiumrust/domain/material/src/fabric_material.rs)
-- [cesiumrust/domain/material/shaders/fabric_material.wgsl](file://cesiumrust/domain/material/shaders/fabric_material.wgsl)
+**图表来源**
+- [cesiumrust/adapters/bevy-render/src/lib.rs:13-77](file://cesiumrust/adapters/bevy-render/src/lib.rs#L13-L77)
+- [cesiumrust/application/cesium-app/src/main.rs:13-23](file://cesiumrust/application/cesium-app/src/main.rs#L13-L23)
+- [cesiumrust/domain/scene/src/lib.rs:15-48](file://cesiumrust/domain/scene/src/lib.rs#L15-L48)
 
-章节来源
-- [cesiumrust/adapters/bevy-render/Cargo.toml](file://cesiumrust/adapters/bevy-render/Cargo.toml)
-- [cesiumrust/crates/bevy_demo/Cargo.toml](file://cesiumrust/crates/bevy_demo/Cargo.toml)
+**章节来源**
+- [cesiumrust/adapters/bevy-render/Cargo.toml:8-35](file://cesiumrust/adapters/bevy-render/Cargo.toml#L8-L35)
+- [cesiumrust/application/cesium-app/Cargo.toml:8-23](file://cesiumrust/application/cesium-app/Cargo.toml#L8-L23)
 
 ## 核心组件
-- 渲染适配器模块：负责在 Bevy 世界中创建/更新实体、同步相机状态、驱动场景与瓦片集的帧级更新，并将领域对象转换为渲染所需的数据。**重构后** GPU资源管理系统、着色器编译器和优化的绘制调用机制更加精简高效。
-- 演示应用：初始化 Bevy App，注册适配器插件或系统，加载场景与瓦片集，启动交互与渲染循环。
-- 领域层：
-  - 场景：管理场景图、资源生命周期、渲染队列组织。
-  - 瓦片集：负责 3D Tiles 的加载、细化、裁剪与可见性计算。
-  - 相机：维护视图矩阵、投影矩阵、视锥体与输入驱动的视角变化。
-  - 地理空间：提供坐标转换、椭球体、投影与地理参考框架工具。
-  - **新增** 材质系统：提供材质定义、着色器编译和材质实例化管理。
-  - **新增** Fabric材质：基于Fabric格式的自定义材质实现，支持复杂的材质属性和效果。
+新的Bevy渲染适配器采用了高度模块化的插件架构，每个功能模块都作为独立的插件提供：
 
-章节来源
-- [cesiumrust/adapters/bevy-render/src/lib.rs](file://cesiumrust/adapters/bevy-render/src/lib.rs)
-- [cesiumrust/domain/scene/src/lib.rs](file://cesiumrust/domain/scene/src/lib.rs)
-- [cesiumrust/domain/tileset/src/lib.rs](file://cesiumrust/domain/tileset/src/lib.rs)
-- [cesiumrust/domain/camera/src/lib.rs](file://cesiumrust/domain/camera/src/lib.rs)
-- [cesiumrust/domain/geospatial/src/lib.rs](file://cesiumrust/domain/geospatial/src/lib.rs)
-- [cesiumrust/domain/material/src/fabric_material.rs](file://cesiumrust/domain/material/src/fabric_material.rs)
+- **核心插件**：`CesiumCorePlugin` - 初始化全局配置和资源
+- **相机系统**：`CesiumCameraPlugin` - 提供相机控制、飞行动画和场景模式切换
+- **瓦片集管理**：`CesiumTilesetPlugin` - 3D Tiles加载、遍历和渲染
+- **地形渲染**：`CesiumTerrainPlugin` - 高度图地形LOD和渲染
+- **影像图层**：`CesiumImageryPlugin` - 影像图层栈和混合
+- **实体系统**：`CesiumEntityPlugin` - 广告牌、折线、多边形、模型等实体
+- **材质系统**：`CesiumMaterialPlugin` - Fabric材质系统和动画
+- **大气渲染**：`CesiumAtmospherePlugin` - 天空大气和天体渲染
+- **后处理效果**：`CesiumEffectsPlugin` - 后处理效果管道
+- **UI组件**：`CesiumWidgetPlugin` - 动画时间轴、地理编码器等UI组件
+
+**章节来源**
+- [cesiumrust/adapters/bevy-render/src/lib.rs:32-77](file://cesiumrust/adapters/bevy-render/src/lib.rs#L32-L77)
+- [cesiumrust/docs/ARCHITECTURE.md:303-316](file://cesiumrust/docs/ARCHITECTURE.md#L303-L316)
 
 ## 架构总览
-下图展示从应用入口到渲染输出的关键调用链与数据流向，**重构后** 包含简化的GPU资源管理、着色器编译和材质系统，架构更加清晰。
+下图展示了从应用入口到渲染输出的关键调用链与数据流向，体现了新的模块化插件架构：
 
 ```mermaid
 sequenceDiagram
 participant App as "Bevy应用"
-participant Demo as "演示main"
-participant Adapter as "Bevy渲染适配器"
-participant GPU as "GPU资源管理"
-participant Shader as "着色器编译器"
-participant Material as "材质系统"
+participant Main as "应用main"
+participant Core as "核心插件"
+participant Camera as "相机插件"
+participant Tileset as "瓦片集插件"
+participant Terrain as "地形插件"
+participant Atmosphere as "大气插件"
+participant Material as "材质插件"
 participant Scene as "场景域"
-participant Tileset as "瓦片集域"
-participant Camera as "相机域"
 participant Geo as "地理空间域"
-App->>Demo : 启动App并注册插件/系统
-Demo->>Adapter : 初始化适配器(配置/上下文)
-Adapter->>GPU : 初始化GPU资源管理器
-Adapter->>Shader : 初始化着色器编译器
-Adapter->>Material : 初始化材质系统
-Adapter->>Scene : 创建/加载场景
-Adapter->>Tileset : 加载瓦片集定义与内容
-Adapter->>Camera : 设置初始相机参数
-loop 每帧
-Adapter->>Camera : 读取输入/更新视图
-Adapter->>Scene : 更新场景图与变换
-Adapter->>Tileset : 请求/剔除/细化瓦片
-Adapter->>GPU : 管理GPU资源分配
-Adapter->>Shader : 编译/更新着色器
-Adapter->>Material : 更新材质状态
-Material-->>Adapter : 返回材质渲染数据
-Tileset-->>Adapter : 返回待绘制图元/纹理
-Adapter->>Geo : 坐标/投影转换
-Adapter->>GPU : 提交渲染命令
-GPU-->>App : GPU执行渲染
+App->>Main : 启动应用并注册插件
+Main->>Core : 初始化核心资源
+Core->>Scene : 创建场景图
+Core->>Geo : 初始化地理空间
+Main->>Camera : 注册相机系统
+Main->>Tileset : 注册瓦片集系统
+Main->>Terrain : 注册地形系统
+Main->>Atmosphere : 注册大气系统
+Main->>Material : 注册材质系统
+loop 每帧渲染
+Camera->>Scene : 更新相机状态
+Tileset->>Scene : 遍历瓦片树
+Terrain->>Scene : 计算地形LOD
+Atmosphere->>Scene : 更新天体位置
+Material->>Scene : 更新材质参数
+Scene->>Geo : 坐标转换
+Scene->>App : 提交渲染命令
 end
 ```
 
-图表来源
-- [cesiumrust/crates/bevy_demo/src/main.rs](file://cesiumrust/crates/bevy_demo/src/main.rs)
-- [cesiumrust/adapters/bevy-render/src/lib.rs](file://cesiumrust/adapters/bevy-render/src/lib.rs)
-- [cesiumrust/domain/scene/src/lib.rs](file://cesiumrust/domain/scene/src/lib.rs)
-- [cesiumrust/domain/tileset/src/lib.rs](file://cesiumrust/domain/tileset/src/lib.rs)
-- [cesiumrust/domain/camera/src/lib.rs](file://cesiumrust/domain/camera/src/lib.rs)
-- [cesiumrust/domain/geospatial/src/lib.rs](file://cesiumrust/domain/geospatial/src/lib.rs)
-- [cesiumrust/domain/material/src/fabric_material.rs](file://cesiumrust/domain/material/src/fabric_material.rs)
+**图表来源**
+- [cesiumrust/application/cesium-app/src/main.rs:74-107](file://cesiumrust/application/cesium-app/src/main.rs#L74-L107)
+- [cesiumrust/adapters/bevy-render/src/lib.rs:323-347](file://cesiumrust/adapters/bevy-render/src/lib.rs#L323-L347)
+- [cesiumrust/docs/ARCHITECTURE.md:413-439](file://cesiumrust/docs/ARCHITECTURE.md#L413-L439)
 
 ## 详细组件分析
 
-### 渲染适配器（Bevy 侧）
-- 职责
-  - 在 Bevy 世界中注册系统，订阅输入事件，驱动相机更新。
-  - 将场景与瓦片集的状态同步到 Bevy 实体/组件，或直接向 GPU 提交渲染指令。
-  - 协调帧时序，确保场景、瓦片集与相机更新的顺序正确。
-  - **重构后** GPU资源管理：统一管理顶点缓冲、索引缓冲、纹理和统一缓冲区的分配与释放，架构更加简洁。
-  - **重构后** 着色器编译：动态编译WGSL着色器，支持条件编译和变体生成，编译流程更加高效。
-  - **重构后** 材质系统集成：管理材质资源的加载、编译和更新，协调Fabric材质的渲染流程，集成度更高。
-- 关键流程
-  - 初始化：解析配置、建立与领域层的连接、准备资源缓存、**重构后** 初始化GPU资源管理器、着色器编译器和材质系统，初始化过程更加精简。
-  - 每帧：读取输入→更新相机→更新场景→调度瓦片集更新→**重构后** 管理GPU资源→编译着色器→更新材质状态→提交渲染，流程更加流畅。
-- 错误处理
-  - 对资源加载失败、网络异常、无效几何等进行降级与日志记录。
-  - 在不可恢复错误时回退到安全状态，避免崩溃。
-  - **重构后** GPU资源错误处理：处理内存分配失败、缓冲区溢出和资源泄漏检测，错误处理更加完善。
-  - **重构后** 着色器编译错误处理：处理着色器语法错误、编译失败和运行时错误，错误反馈更加及时。
-  - **重构后** 材质渲染错误处理：处理材质编译失败、着色器错误和材质属性验证，错误恢复机制更加健壮。
+### 核心插件（CesiumCorePlugin）
+核心插件负责初始化全局配置和资源，为其他插件提供基础服务：
 
-**重构后** 渲染适配器现在包含完整的GPU资源管理、着色器编译和材质系统集成，通过新的管理接口来支持高性能渲染，架构更加清晰。
-
-章节来源
-- [cesiumrust/adapters/bevy-render/src/lib.rs](file://cesiumrust/adapters/bevy-render/src/lib.rs)
-
-### 演示应用（Bevy 示例）
-- 职责
-  - 构建 Bevy App，注册适配器插件或系统。
-  - 提供最小可用的场景与瓦片集加载路径，便于验证集成效果。
-  - **重构后** GPU资源管理演示：展示如何启用和使用GPU资源优化功能，配置更加简单。
-  - **重构后** 材质系统演示：展示如何启用和使用Fabric材质功能，使用方法更加直观。
-- 关键点
-  - 插件/系统注册顺序影响初始化与更新行为。
-  - 通过配置项控制调试输出、LOD 阈值、批处理策略等。
-  - **重构后** GPU资源配置：支持内存池大小、缓冲区策略和垃圾回收设置，配置选项更加合理。
-  - **重构后** 材质渲染配置：支持材质质量设置、着色器优化选项和渲染效果的调节，配置更加灵活。
-
-章节来源
-- [cesiumrust/crates/bevy_demo/src/main.rs](file://cesiumrust/crates/bevy_demo/src/main.rs)
-- [cesiumrust/crates/bevy_demo/Cargo.toml](file://cesiumrust/crates/bevy_demo/Cargo.toml)
-
-### 领域层（场景、瓦片集、相机、地理空间、材质）
-- 场景
-  - 管理节点层次、材质与资源引用、渲染队列组织。
-  - 提供遍历与批量更新接口，供适配器在每帧调用。
-- 瓦片集
-  - 解析 tileset.json，按需下载与解码内容，执行视锥剔除与细节级别选择。
-  - 暴露增量更新接口，减少每帧开销。
-- 相机
-  - 维护视图/投影矩阵、视锥体、FOV、近远裁剪面等。
-  - 支持输入驱动的自由飞行或轨道相机模式。
-- 地理空间
-  - 提供 WGS84、WebMercator、ECEF 等坐标体系之间的转换。
-  - 为瓦片集与场景定位提供基准。
-- **新增** 材质系统
-  - 提供材质定义、着色器编译和材质实例化的完整框架。
-  - 支持多种材质类型的统一管理和渲染。
-  - 提供材质属性的序列化、验证和动态更新机制。
-- **新增** Fabric材质
-  - 基于Fabric格式的材质实现，支持复杂的材质属性和效果。
-  - 集成WGSL着色器编译和执行。
-  - 提供材质参数的实时调整和动画支持。
-
-章节来源
-- [cesiumrust/domain/scene/src/lib.rs](file://cesiumrust/domain/scene/src/lib.rs)
-- [cesiumrust/domain/tileset/src/lib.rs](file://cesiumrust/domain/tileset/src/lib.rs)
-- [cesiumrust/domain/camera/src/lib.rs](file://cesiumrust/domain/camera/src/lib.rs)
-- [cesiumrust/domain/geospatial/src/lib.rs](file://cesiumrust/domain/geospatial/src/lib.rs)
-- [cesiumrust/domain/material/src/fabric_material.rs](file://cesiumrust/domain/material/src/fabric_material.rs)
-
-#### 类关系图（概念映射）
-```mermaid
-classDiagram
-class BevyRenderer {
-+初始化()
-+每帧更新()
-+提交渲染()
-+GPU资源管理()
-+着色器编译()
-+材质管理系统()
-}
-class GPUResourceManager {
-+缓冲分配()
-+纹理管理()
-+内存池()
-+垃圾回收()
-}
-class ShaderCompiler {
-+着色器编译()
-+变体生成()
-+缓存管理()
-+错误处理()
-}
-class MaterialSystem {
-+材质加载()
-+材质实例化()
-+材质更新()
-+渲染集成()
-}
-class FabricMaterial {
-+材质属性()
-+着色器生成()
-+参数绑定()
-+渲染()
-}
-class Scene {
-+更新()
-+遍历()
-}
-class Tileset {
-+加载()
-+更新()
-+剔除()
-}
-class Camera {
-+更新()
-+获取视图矩阵()
-+获取投影矩阵()
-}
-class Geospatial {
-+坐标转换()
-+投影()
-}
-BevyRenderer --> GPUResourceManager : "管理"
-BevyRenderer --> ShaderCompiler : "使用"
-BevyRenderer --> MaterialSystem : "管理"
-MaterialSystem --> FabricMaterial : "创建/更新"
-BevyRenderer --> Scene : "驱动"
-BevyRenderer --> Tileset : "驱动"
-BevyRenderer --> Camera : "读取/写入"
-BevyRenderer --> Geospatial : "使用"
-FabricMaterial --> Geospatial : "坐标转换"
-```
-
-图表来源
-- [cesiumrust/adapters/bevy-render/src/lib.rs](file://cesiumrust/adapters/bevy-render/src/lib.rs)
-- [cesiumrust/domain/scene/src/lib.rs](file://cesiumrust/domain/scene/src/lib.rs)
-- [cesiumrust/domain/tileset/src/lib.rs](file://cesiumrust/domain/tileset/src/lib.rs)
-- [cesiumrust/domain/camera/src/lib.rs](file://cesiumrust/domain/camera/src/lib.rs)
-- [cesiumrust/domain/geospatial/src/lib.rs](file://cesiumrust/domain/geospatial/src/lib.rs)
-- [cesiumrust/domain/material/src/fabric_material.rs](file://cesiumrust/domain/material/src/fabric_material.rs)
-
-## GPU资源管理增强
-
-### GPU资源管理器
-GPU资源管理器是重构后的核心组件，负责统一管理所有GPU相关资源的分配、使用和释放，架构更加简洁高效。
-
-- **缓冲区管理**
-  - 顶点缓冲、索引缓冲的统一分配和管理。
-  - 支持动态缓冲和静态缓冲的不同策略。
-  - 提供缓冲区的合并和批处理能力。
-
-- **纹理管理**
-  - 纹理资源的加载、缓存和复用。
-  - 支持多种纹理格式和压缩格式。
-  - 提供纹理采样器和过滤器的统一管理。
-
-- **内存池优化**
-  - 预分配的内存池减少频繁分配开销。
-  - 智能的内存回收和垃圾收集机制。
-  - 支持不同大小的内存块管理。
-
-- **资源监控**
-  - GPU内存使用情况监控。
-  - 资源泄漏检测和报告。
-  - 性能分析和优化建议。
+- **全局资源配置**：初始化 `GlobeConfig`、`RenderScale`、`TileLoadStats` 等全局资源
+- **场景光照设置**：创建默认的方向光源，模拟太阳光照效果
+- **生命周期管理**：在应用启动时执行必要的初始化操作
 
 ```mermaid
 flowchart TD
-Start(["资源分配请求"]) --> CheckPool{"检查内存池"}
-CheckPool --> |有可用| AllocateFromPool["从内存池分配"]
-CheckPool --> |无可用| AllocateNew["分配新内存"]
-AllocateFromPool --> UseResource["使用资源"]
-AllocateNew --> UseResource
-UseResource --> TrackUsage["跟踪使用情况"]
-TrackUsage --> ReleaseRequest{"释放请求?"}
-ReleaseRequest --> |是| ReturnToPool["返回内存池"]
-ReleaseRequest --> |否| Continue["继续使用"]
-Continue --> ReleaseRequest
-ReturnToPool --> End(["完成"])
+Start(["应用启动"]) --> InitCore["初始化核心资源"]
+InitCore --> CreateLight["创建设置光源"]
+CreateLight --> Ready["核心就绪"]
+Ready --> RegisterPlugins["注册其他插件"]
+RegisterPlugins --> FrameLoop["进入渲染循环"]
 ```
 
 **章节来源**
-- [cesiumrust/adapters/bevy-render/src/lib.rs](file://cesiumrust/adapters/bevy-render/src/lib.rs)
+- [cesiumrust/adapters/bevy-render/src/lib.rs:323-347](file://cesiumrust/adapters/bevy-render/src/lib.rs#L323-L347)
 
-## 着色器编译优化
+### 相机系统（CesiumCameraPlugin）
+相机系统提供了完整的相机控制功能，支持多种交互模式：
 
-### 着色器编译器
-着色器编译器提供了重构后的动态WGSL着色器的编译和优化功能，编译流程更加高效。
-
-- **动态编译**
-  - 根据材质属性动态生成着色器代码。
-  - 支持条件编译和宏定义。
-  - 提供着色器变体的自动生成。
-
-- **编译优化**
-  - 自动优化着色器代码结构。
-  - 移除未使用的变量和函数。
-  - 支持着色器级别的常量折叠。
-
-- **缓存机制**
-  - 编译结果的缓存和重用。
-  - 支持着色器的热重载。
-  - 提供编译错误的快速反馈。
-
-- **错误处理**
-  - 详细的编译错误信息。
-  - 支持着色器调试和断点。
-  - 提供兼容性检查和回退机制。
-
-```mermaid
-flowchart TD
-Start(["着色器编译请求"]) --> ParseCode["解析着色器代码"]
-ParseCode --> ValidateSyntax["验证语法"]
-ValidateSyntax --> |有效| GenerateCode["生成目标代码"]
-ValidateSyntax --> |无效| ErrorHandle["错误处理"]
-GenerateCode --> OptimizeCode["优化代码"]
-OptimizeCode --> CacheResult["缓存结果"]
-CacheResult --> LoadIntoGPU["加载到GPU"]
-LoadIntoGPU --> Ready["编译完成"]
-ErrorHandle --> LogError["记录错误"]
-LogError --> Fallback["使用备用着色器"]
-Fallback --> Ready
-```
+- **输入处理**：处理鼠标和键盘输入事件
+- **相机控制器**：提供轨道相机、自由飞行等多种控制模式
+- **飞行动画**：支持平滑的相机飞行和过渡动画
+- **场景模式**：支持2D、3D、哥伦布视图等不同场景模式
 
 **章节来源**
-- [cesiumrust/adapters/bevy-render/src/lib.rs](file://cesiumrust/adapters/bevy-render/src/lib.rs)
+- [cesiumrust/adapters/bevy-render/src/camera/mod.rs:15-31](file://cesiumrust/adapters/bevy-render/src/camera/mod.rs#L15-L31)
 
-## 绘制调用优化
+### 瓦片集管理系统（CesiumTilesetPlugin）
+瓦片集管理系统负责3D Tiles的加载、遍历和渲染：
 
-### 绘制调用优化
-绘制调用优化减少了GPU状态切换和Draw Call的数量，提升渲染性能，优化策略更加精准。
-
-- **批处理优化**
-  - 自动合并相同材质和状态的绘制调用。
-  - 支持顶点数据的批量上传。
-  - 提供索引缓冲的优化和重用。
-
-- **状态管理**
-  - 智能的渲染状态排序和缓存。
-  - 减少不必要的状态切换操作。
-  - 支持渲染通道的批量管理。
-
-- **顶点缓冲优化**
-  - 顶点数据的压缩和格式化。
-  - 支持Instanced Rendering技术。
-  - 提供顶点属性的最佳布局。
-
-- **性能监控**
-  - Draw Call数量统计和分析。
-  - 渲染瓶颈识别和优化建议。
-  - 支持性能指标的实时监控。
+- **瓦片加载**：异步加载b3dm、i3dm、pnts等格式的瓦片内容
+- **遍历算法**：基于屏幕空间误差的LOD选择算法
+- **渲染优化**：视锥剔除、批处理和GPU资源管理
+- **样式系统**：支持3D Tiles样式表达式
 
 **章节来源**
-- [cesiumrust/adapters/bevy-render/src/lib.rs](file://cesiumrust/adapters/bevy-render/src/lib.rs)
+- [cesiumrust/adapters/bevy-render/src/tileset/mod.rs:19-34](file://cesiumrust/adapters/bevy-render/src/tileset/mod.rs#L19-L34)
+
+### 大气渲染系统（CesiumAtmospherePlugin）
+大气渲染系统提供了真实的大气视觉效果：
+
+- **天体系统**：太阳、月亮、星星等天体的位置和渲染
+- **天空大气**：大气散射、瑞利散射等物理效果
+- **光照参数**：根据天体位置计算光照参数
+- **性能优化**：LOD控制和距离裁剪
+
+**章节来源**
+- [cesiumrust/adapters/bevy-render/src/atmosphere/mod.rs:10-18](file://cesiumrust/adapters/bevy-render/src/atmosphere/mod.rs#L10-L18)
+
+## 插件生态系统
+新的架构采用了完整的插件生态系统，每个功能模块都是独立的插件：
+
+| 插件名称 | 功能描述 | 主要系统 |
+|---------|----------|----------|
+| CesiumCorePlugin | 核心资源和光照初始化 | setup_lighting |
+| CesiumCameraPlugin | 相机控制和飞行动画 | camera_controller_system, camera_flight_system |
+| CesiumTilesetPlugin | 3D瓦片集加载和渲染 | tile_traversal_system, tile_render_system |
+| CesiumTerrainPlugin | 地形LOD和渲染 | terrain_lod_system, terrain_render_system |
+| CesiumImageryPlugin | 影像图层管理 | imagery_layer_manager, imagery_blend_system |
+| CesiumEntityPlugin | 实体可视化和动画 | entity_visualizer_system, time_dynamic_update_system |
+| CesiumMaterialPlugin | Fabric材质系统 | apply_fabric_materials, update_material_uniforms |
+| CesiumAtmospherePlugin | 大气和天体渲染 | celestial_system, sky_system |
+| CesiumEffectsPlugin | 后处理效果管道 | post-process systems |
+| CesiumWidgetPlugin | UI组件系统 | animation_widget_system, geocoder_widget_system |
+
+**章节来源**
+- [cesiumrust/docs/ARCHITECTURE.md:303-316](file://cesiumrust/docs/ARCHITECTURE.md#L303-L316)
+
+## 领域层集成
+新的架构通过清晰的接口契约将领域层与渲染层解耦：
+
+### 场景图集成
+- **场景图节点**：管理节点层次结构和变换矩阵
+- **可见性计算**：基于视锥体的早期剔除
+- **绘制命令生成**：将场景图转换为GPU可执行的绘制命令
+
+### 瓦片集集成
+- **瓦片数据结构**：支持tileset.json解析和瓦片树结构
+- **LOD选择**：基于屏幕空间误差的细节级别选择
+- **内容解码**：支持多种瓦片格式的二进制解码
+
+### 相机集成
+- **相机状态**：位置、方向、视锥体等状态管理
+- **坐标转换**：世界坐标、相机坐标、屏幕坐标之间的转换
+- **投影矩阵**：透视投影和正交投影的支持
+
+**章节来源**
+- [cesiumrust/domain/scene/src/lib.rs:15-48](file://cesiumrust/domain/scene/src/lib.rs#L15-L48)
+- [cesiumrust/domain/tileset/src/lib.rs:15-59](file://cesiumrust/domain/tileset/src/lib.rs#L15-L59)
+- [cesiumrust/domain/camera/src/lib.rs:131-163](file://cesiumrust/domain/camera/src/lib.rs#L131-L163)
+
+## 渲染管线优化
+新的渲染管线针对性能进行了全面优化：
+
+### 批处理优化
+- **几何合并**：相同材质和状态的几何体进行批处理
+- **纹理图集**：减少纹理切换开销
+- **索引缓冲优化**：智能的索引缓冲管理和重用
+
+### GPU资源管理
+- **内存池**：预分配的内存池减少分配开销
+- **资源缓存**：纹理、网格等资源的缓存机制
+- **垃圾回收**：智能的资源释放和内存管理
+
+### 并行处理
+- **异步加载**：瓦片内容的异步下载和解码
+- **多线程处理**：利用多核CPU进行并行计算
+- **GPU并行**：充分利用GPU的并行处理能力
+
+**章节来源**
+- [cesiumrust/docs/ARCHITECTURE.md:409-461](file://cesiumrust/docs/ARCHITECTURE.md#L409-L461)
 
 ## 材质系统增强
+新的材质系统提供了丰富的材质功能和优化：
 
-### Fabric材质实现
-Fabric材质是Cesium材质系统的核心实现，提供了丰富的材质属性和渲染效果，实现更加完善。
+### Fabric材质支持
+- **材质定义**：支持CesiumJS兼容的材质类型定义
+- **着色器编译**：动态编译和优化WGSL着色器
+- **材质实例化**：高效的材质实例创建和管理
+- **动画支持**：材质属性的时间动画和插值
 
-- **材质属性管理**
-  - 支持颜色、纹理、透明度、反射率等多种材质属性。
-  - 提供材质属性的插值、动画和动态更新功能。
-  - 支持材质属性的序列化和反序列化。
-
-- **着色器编译与优化**
-  - 基于WGSL的着色器代码自动生成和优化。
-  - 支持条件编译和材质变体生成。
-  - 提供着色器缓存和热重载功能。
-
-- **渲染集成**
-  - 与Bevy渲染管线的深度集成。
-  - 支持多通道渲染和后处理效果。
-  - 提供材质状态的批量更新和GPU缓冲优化。
-
-### WGSL着色器代码
-fabric_material.wgsl文件包含了Fabric材质的WGSL着色器实现，着色器代码更加优化。
-
-- **顶点着色器**
-  - 处理顶点变换和UV坐标计算。
-  - 支持法线变换和切线空间计算。
-  - 集成光照模型的顶点计算。
-
-- **片段着色器**
-  - 实现材质表面的颜色计算。
-  - 支持纹理采样和混合操作。
-  - 集成各种光照模型和阴影效果。
-
-- **计算着色器**
-  - 用于材质属性的预处理和计算。
-  - 支持纹理压缩和解压缩。
-  - 提供材质数据的并行处理能力。
-
-```mermaid
-flowchart TD
-Start(["材质初始化"]) --> LoadDef["加载材质定义"]
-LoadDef --> ParseProps["解析材质属性"]
-ParseProps --> CompileShader["编译WGSL着色器"]
-CompileShader --> CreateInstance["创建设备材质实例"]
-CreateInstance --> BindBuffers["绑定GPU缓冲"]
-BindBuffers --> Ready["材质就绪"]
-Ready --> UpdateLoop{"每帧更新?"}
-UpdateLoop --> |是| UpdateProps["更新材质属性"]
-UpdateProps --> UpdateShader["更新着色器参数"]
-UpdateShader --> Render["执行渲染"]
-Render --> UpdateLoop
-UpdateLoop --> |否| End(["结束"])
-```
+### 材质渲染优化
+- **材质缓存**：已编译材质的缓存机制
+- **批量更新**：材质参数的批量更新
+- **GPU缓冲**：高效的GPU缓冲区管理
 
 **章节来源**
-- [cesiumrust/domain/material/src/fabric_material.rs](file://cesiumrust/domain/material/src/fabric_material.rs)
-- [cesiumrust/domain/material/shaders/fabric_material.wgsl](file://cesiumrust/domain/material/shaders/fabric_material.wgsl)
+- [cesiumrust/adapters/bevy-render/src/material_system.rs:1-159](file://cesiumrust/adapters/bevy-render/src/material_system.rs#L1-L159)
 
 ## 依赖关系分析
-- 适配器对领域层存在直接依赖，用于驱动场景与瓦片集更新、读取相机状态与进行坐标转换。
-- 演示应用仅依赖适配器与领域层，保持最小耦合。
-- 可能的间接依赖包括网络、解码器与 I/O 抽象，由领域层内部封装。
-- **重构后** GPU资源管理器作为独立的系统组件，被渲染适配器直接依赖，依赖关系更加清晰。
-- **重构后** 着色器编译器作为独立的系统组件，被渲染适配器直接依赖，模块化程度更高。
-- **重构后** 材质系统作为独立的领域组件，被渲染适配器直接依赖，Fabric材质依赖于WGSL着色器编译，架构更加合理。
+新的架构采用了清晰的依赖关系设计：
 
 ```mermaid
 graph LR
-Demo["bevy_demo"] --> Adapter["bevy-render"]
-Adapter --> Scene["domain/scene"]
-Adapter --> Tileset["domain/tileset"]
-Adapter --> Camera["domain/camera"]
-Adapter --> Geo["domain/geospatial"]
-Adapter --> Material["domain/material"]
-Adapter --> GPU["GPU资源管理"]
-Adapter --> Shader["着色器编译器"]
-Material --> FabricMat["fabric_material.rs"]
-Material --> WGSL["fabric_material.wgsl"]
+App["cesium-app"] --> Render["cesium-bevy-render"]
+Render --> Scene["cesium-scene"]
+Render --> Tileset["cesium-tileset"]
+Render --> Camera["cesium-camera"]
+Render --> Geospatial["cesium-geospatial"]
+Render --> Material["cesium-material"]
+Render --> Atmosphere["cesium-atmosphere"]
+Render --> Effects["cesium-effects"]
+Render --> Widgets["cesium-widgets"]
+Scene --> Geospatial
+Tileset --> Geospatial
+Camera --> Geospatial
+Material --> Geospatial
 ```
 
-图表来源
-- [cesiumrust/crates/bevy_demo/Cargo.toml](file://cesiumrust/crates/bevy_demo/Cargo.toml)
-- [cesiumrust/adapters/bevy-render/Cargo.toml](file://cesiumrust/adapters/bevy-render/Cargo.toml)
-- [cesiumrust/domain/scene/src/lib.rs](file://cesiumrust/domain/scene/src/lib.rs)
-- [cesiumrust/domain/tileset/src/lib.rs](file://cesiumrust/domain/tileset/src/lib.rs)
-- [cesiumrust/domain/camera/src/lib.rs](file://cesiumrust/domain/camera/src/lib.rs)
-- [cesiumrust/domain/geospatial/src/lib.rs](file://cesiumrust/domain/geospatial/src/lib.rs)
-- [cesiumrust/domain/material/src/fabric_material.rs](file://cesiumrust/domain/material/src/fabric_material.rs)
+**图表来源**
+- [cesiumrust/adapters/bevy-render/Cargo.toml:8-35](file://cesiumrust/adapters/bevy-render/Cargo.toml#L8-L35)
+- [cesiumrust/application/cesium-app/Cargo.toml:8-23](file://cesiumrust/application/cesium-app/Cargo.toml#L8-L23)
 
-章节来源
-- [cesiumrust/adapters/bevy-render/Cargo.toml](file://cesiumrust/adapters/bevy-render/Cargo.toml)
-- [cesiumrust/crates/bevy_demo/Cargo.toml](file://cesiumrust/crates/bevy_demo/Cargo.toml)
+**章节来源**
+- [cesiumrust/adapters/bevy-render/Cargo.toml:8-35](file://cesiumrust/adapters/bevy-render/Cargo.toml#L8-L35)
+- [cesiumrust/application/cesium-app/Cargo.toml:8-23](file://cesiumrust/application/cesium-app/Cargo.toml#L8-L23)
 
 ## 性能考量
-- 瓦片集更新
-  - 采用增量更新与懒加载，仅在需要时请求与解码瓦片内容。
-  - 合理设置几何误差阈值与最大 LOD，平衡质量与吞吐。
-- 批处理与合并
-  - 对同材质/同状态的图元进行批处理，减少状态切换与 Draw Call。
-- 内存与带宽
-  - 复用纹理与缓冲，避免重复分配；对大瓦片进行分块传输与流式解码。
-- 并行与异步
-  - 利用后台线程进行网络与解码，主线程专注调度与渲染提交。
-- 相机与视锥
-  - 基于相机视锥体进行早期剔除，降低无用瓦片的处理量。
-- **重构后** GPU资源管理优化
-  - 内存池预分配减少分配开销。
-  - 智能的资源回收和垃圾收集。
-  - 缓冲区合并和批处理优化。
-- **重构后** 着色器编译优化
-  - 编译结果缓存和重用。
-  - 动态着色器生成和优化。
-  - 支持着色器热重载。
-- **重构后** 绘制调用优化
-  - 减少Draw Call数量和状态切换。
-  - 支持Instanced Rendering技术。
-  - 提供性能监控和分析工具。
+新架构在性能方面进行了全面优化：
 
-[本节为通用指导，不直接分析具体文件]
+### 内存管理
+- **对象池**：复用频繁创建的对象，减少GC压力
+- **内存对齐**：GPU友好的内存布局和对齐
+- **零拷贝**：尽可能避免不必要的数据复制
+
+### 渲染优化
+- **Draw Call合并**：减少GPU状态切换和Draw Call数量
+- **LOD控制**：基于距离和屏幕大小的细节级别控制
+- **视锥剔除**：尽早剔除不可见的几何体
+
+### 网络优化
+- **请求去重**：避免重复的网络请求
+- **并发控制**：合理的并发下载数量限制
+- **缓存策略**：智能的瓦片内容和元数据缓存
+
+**章节来源**
+- [cesiumrust/docs/ARCHITECTURE.md:409-461](file://cesiumrust/docs/ARCHITECTURE.md#L409-L461)
 
 ## 故障排查指南
-- 常见问题
-  - 瓦片无法加载：检查网络可达性与 URL 配置；确认解码器可用。
-  - 渲染空白：确认相机位置与朝向、近远裁剪面是否合理；检查视锥剔除逻辑。
-  - 性能抖动：观察瓦片请求峰值与解码耗时，调整并发与缓存策略。
-  - **重构后** GPU资源问题：检查内存分配失败、缓冲区溢出和资源泄漏。
-  - **重构后** 着色器编译问题：检查着色器语法错误、编译失败和兼容性。
-  - **重构后** 材质系统问题：检查材质定义格式、着色器编译错误和材质属性验证。
-- 诊断步骤
-  - 启用调试日志，关注初始化阶段与每帧更新的关键指标。
-  - 逐步关闭功能（如阴影、后处理）以定位瓶颈。
-  - 使用最小数据集复现问题，隔离外部依赖影响。
-  - **重构后** GPU资源诊断：检查内存使用、缓冲区状态和资源泄漏。
-  - **重构后** 着色器诊断：检查编译日志、错误信息和兼容性。
-  - **重构后** 材质系统诊断：检查材质编译日志、着色器错误信息和材质状态。
-- 错误恢复
-  - 对可恢复错误进行重试与降级；对不可恢复错误记录上下文并安全退出。
-  - **重构后** GPU资源错误恢复：支持资源重新分配、缓冲区重建和内存清理。
-  - **重构后** 着色器错误恢复：支持着色器重新编译、回退到备用着色器。
-  - **重构后** 材质系统错误恢复：支持材质重新编译、着色器热重载和材质状态重置。
+### 常见问题诊断
+- **插件加载失败**：检查插件依赖是否完整，确认Cargo.toml配置正确
+- **相机控制异常**：验证输入事件是否正确传递，检查相机状态更新逻辑
+- **瓦片加载失败**：确认网络连接正常，检查瓦片URL和访问权限
+- **材质渲染问题**：验证材质定义格式，检查着色器编译日志
 
-章节来源
-- [cesiumrust/adapters/bevy-render/src/lib.rs](file://cesiumrust/adapters/bevy-render/src/lib.rs)
-- [cesiumrust/domain/tileset/src/lib.rs](file://cesiumrust/domain/tileset/src/lib.rs)
-- [cesiumrust/domain/camera/src/lib.rs](file://cesiumrust/domain/camera/src/lib.rs)
-- [cesiumrust/domain/material/src/fabric_material.rs](file://cesiumrust/domain/material/src/fabric_material.rs)
+### 性能调试
+- **帧率监控**：使用Bevy的诊断插件监控帧时间和性能指标
+- **内存分析**：定期检查内存使用情况，识别内存泄漏
+- **GPU性能**：使用GPU性能分析工具检测渲染瓶颈
+
+### 错误恢复
+- **降级策略**：在资源不足时自动降级渲染质量
+- **重试机制**：对网络请求和文件加载实现重试逻辑
+- **安全退出**：在不可恢复错误时优雅地关闭应用
+
+**章节来源**
+- [cesiumrust/adapters/bevy-render/src/lib.rs:349-445](file://cesiumrust/adapters/bevy-render/src/lib.rs#L349-L445)
 
 ## 结论
-Bevy 渲染适配器通过清晰的职责划分与稳定的接口契约，将 Cesium 的领域能力无缝接入 Bevy 生态。**重构后** 的架构简化了渲染管线设计，移除了121行遗留代码，同时增强了GPU资源管理、着色器编译、绘制调用和材质系统，通过架构优化显著提升了渲染性能和资源利用效率。借助增量更新、批处理、并行化策略以及新的优化技术，可在大规模地理数据场景中实现高质量与高性能的渲染体验。建议在工程中结合调试与性能分析工具，持续优化瓦片调度、GPU资源管理、着色器编译和整体渲染路径。
+新的Bevy渲染适配器系统通过完整的架构重构，成功地将Cesium的核心能力移植到了Bevy生态系统中。系统采用了高度模块化的插件架构，提供了相机系统、瓦片集管理、大气渲染、材质系统等完整的功能模块。通过清晰的接口契约和松耦合设计，系统具有良好的可扩展性和维护性。
 
-[本节为总结性内容，不直接分析具体文件]
+该架构不仅保留了原有系统的核心功能，还通过Bevy的现代游戏引擎特性获得了更好的性能和开发体验。模块化设计使得开发者可以根据需要选择和组合不同的功能模块，构建定制化的3D地球可视化应用。
+
+未来发展方向包括进一步优化渲染性能、扩展材质系统功能、增强交互体验和提供更好的开发工具支持。
 
 ## 附录
-- 快速上手
-  - 在 bevy_demo 中注册适配器插件，加载一个最小瓦片集，验证相机与场景更新是否正常。
-  - **重构后** 启用GPU资源管理功能，测试内存池和缓冲区优化效果。
-  - **重构后** 启用材质系统功能，测试Fabric材质的渲染效果和材质属性调整。
-- 扩展建议
-  - 增加自定义材质通道、后处理效果与交互系统，进一步丰富可视化能力。
-  - 引入更细粒度的资源池与对象池，提升高负载下的稳定性。
-  - **重构后** 扩展GPU资源管理：支持更多资源类型和优化策略。
-  - **重构后** 扩展着色器系统：支持更多着色器语言和编译优化。
-  - **重构后** 扩展材质系统：支持更多材质类型、自定义着色器和材质动画效果。
-- 性能优化指南
-  - 学习GPU资源管理和内存优化技巧。
-  - 掌握着色器编译优化和性能调优方法。
-  - 了解绘制调用优化和渲染性能分析。
-  - **重构后** 学习Fabric材质格式规范和材质属性定义。
-  - **重构后** 掌握WGSL着色器编写和优化技巧。
-  - **重构后** 了解材质系统与Bevy渲染管线的集成方式。
+### 快速开始
+1. **安装依赖**：确保Cargo.toml中包含所有必要的依赖
+2. **创建应用**：参考cesium-app示例创建基本应用结构
+3. **注册插件**：根据需要注册相应的插件
+4. **配置资源**：设置全局配置和资源路径
+5. **启动应用**：运行应用并验证功能
 
-[本节为补充信息，不直接分析具体文件]
+### 扩展开发
+- **自定义插件**：基于现有插件架构开发自定义功能
+- **材质扩展**：添加新的材质类型和着色器效果
+- **数据源支持**：扩展对其他3D数据格式的支持
+- **交互增强**：添加新的用户交互模式和控件
+
+### 性能调优
+- **资源优化**：合理配置瓦片LOD和纹理压缩
+- **渲染优化**：调整批处理策略和渲染队列
+- **内存优化**：监控和优化内存使用情况
+- **网络优化**：配置合适的并发和缓存策略
+
+**章节来源**
+- [cesiumrust/application/cesium-app/src/main.rs:74-107](file://cesiumrust/application/cesium-app/src/main.rs#L74-L107)
+- [cesiumrust/docs/ARCHITECTURE.md:297-461](file://cesiumrust/docs/ARCHITECTURE.md#L297-L461)

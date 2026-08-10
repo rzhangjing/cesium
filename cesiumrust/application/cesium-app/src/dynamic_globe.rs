@@ -1,41 +1,68 @@
-//! View-dependent dynamic LOD globe tile manager.
+//! Dynamic view-dependent globe tiling with a budgeted async pipeline.
 //!
 //! Key features (CesiumJS-inspired):
-//! - View-dependent loading: only ~121 visible tiles loaded at any time
-//! - Parallel downloads: 8 threads for fast texture loading
-//! - Texture cache: previously downloaded tiles are cached in memory
-//! - Progressive transition: old tiles stay visible until new tiles have textures
-//! - Zoom levels 3-12: from global overview to street-level detail
+//! - Screen-space-error quadtree LOD (the CesiumJS `QuadtreePrimitive`
+//!   strategy): every visible tile is subdivided while its projected screen
+//!   footprint exceeds the SSE budget, so the view center is always crisp and
+//!   resolution falls off continuously toward the limb
+//! - Trilinear-mipmap + anisotropic texture sampling so oblique and minified
+//!   tiles stay crisp instead of shimmering/blurring
+//! - Parallel downloads (8 threads) and parallel mesh generation (8 threads)
+//! - Priority request scheduling: tiles with the largest screen footprint are
+//!   downloaded/spawned first (CesiumJS tile request scheduler role)
+//! - Per-frame budgets: mesh uploads / entity spawns / texture uploads are
+//!   spread across frames so loading never stalls interaction (this is the
+//!   same role CesiumJS's per-frame tile processing budget plays)
+//! - GPU handle caches (mesh / material / texture): revisiting an area
+//!   reuses existing GPU resources instead of re-uploading everything
+//! - Progressive cleanup: stale tiles stay as fallback coverage until the
+//!   new visible set is sufficiently textured
+//! - Zoom levels 3-19: from global overview to street-level detail
 
+use bevy::image::{ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Read;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
-use crate::orbit_camera::OrbitState;
-use crate::tile_mesh::{create_tile_mesh, render_scale, GlobeTile};
+use crate::orbit_camera::{OrbitState, CAMERA_FOV_Y};
+use crate::tile_mesh::{create_tile_mesh, create_tile_mesh_uv, render_scale, GlobeTile};
 use cesium_bevy_render::CesiumGlobe;
 
-// ── Configuration ──────────────────────────────────────────────────
+// ── Configuration ─────────────────────────────────────────────────
 
 const MIN_ZOOM: u32 = 3;
-const MAX_ZOOM: u32 = 12;
-const VIEW_HALF_WINDOW: i32 = 5;
-const VIEW_REFRESH_THRESHOLD: f64 = 2.0;
+const MAX_ZOOM: u32 = 19;
 const BASE_SEGMENTS: u32 = 48;
-/// Multiplicative hysteresis band: zoom in below threshold*0.8, zoom out
-/// above threshold*1.2 (absolute hysteresis would block high zoom levels
-/// whose distance thresholds are smaller than the band).
-/// Number of parallel download threads.
+/// WGS84 semi-major axis (meters), for screen-space-error math.
+const EARTH_RADIUS_M: f64 = 6378137.0;
+/// A 256-px tile may cover at most this many screen pixels before the
+/// quadtree subdivides it — the CesiumJS `maximumScreenSpaceError = 2`
+/// budget (2 px of geometric error per texel).
+/// Number of parallel download / mesh-build worker threads.
 const DOWNLOAD_THREADS: usize = 8;
 
-const ZOOM_IN_THRESHOLDS: [f32; 9] = [
-    6.0, 2.5, 1.2, 0.6, 0.3, 0.15, 0.07, 0.035, 0.018,
-];
-const ZOOM_OUT_THRESHOLDS: [f32; 9] = [
-    7.0, 3.0, 1.5, 0.8, 0.4, 0.2, 0.1, 0.05, 0.025,
-];
+/// Per-frame budgets. Asset work (GPU buffer/texture uploads, entity spawns)
+/// is sliced across frames at these rates so a zoom or pan never produces a
+/// multi-hundred-millisecond hitch; tiles ramp in over a few frames instead.
+const MAX_MESH_UPLOADS_PER_FRAME: usize = 12;
+const MAX_SPAWNS_PER_FRAME: usize = 16;
+const MAX_TEXTURE_UPLOADS_PER_FRAME: usize = 16;
+/// Despawn budget: entity removal costs real CPU (component drops + render
+/// extraction), so bulk cleanup is sliced across frames.
+const MAX_DESPAWNS_PER_FRAME: usize = 24;
+/// Hard cap on live tile entities. Beyond this the draw-call count itself
+/// becomes the bottleneck, so the oldest surplus tiles are evicted even if
+/// still "visible" (their GPU handles stay cached for cheap re-spawn).
+/// Sized above the typical visible-set peak (~750 for the concentric LOD
+/// layout) so a settled view never loses coverage to eviction.
+const MAX_TILE_ENTITIES: usize = 1100;
+/// Upper bound for the per-tile GPU handle caches (textures dominate at
+/// 256 KB each); oldest entries are evicted FIFO.
+const MAX_GPU_CACHE_ENTRIES: usize = 3000;
+
+const MAX_TILE_SCREEN_PX: f64 = 512.0;
 
 type TileKey = (u32, u32, u32);
 
@@ -53,26 +80,72 @@ struct TileManager {
     /// Currently-spawned tile entities.
     tile_entities: HashMap<TileKey, Entity>,
     /// Which of the spawned tiles have textures applied (no longer blue).
-    textured_tiles: std::collections::HashSet<TileKey>,
+    textured_tiles: HashSet<TileKey>,
     current_zoom: u32,
     last_center_x: f64,
     last_center_y: f64,
+    /// Camera distance (globe radii) at the last visible-set recompute;
+    /// a relative change re-triggers the SSE traversal.
+    last_distance: f32,
     initialized: bool,
     /// The last computed visible tile set (all LOD levels). Spawned tiles
     /// outside this set are stale and get cleaned up progressively.
-    visible_set: std::collections::HashSet<TileKey>,
+    visible_set: HashSet<TileKey>,
+    /// Tiles waiting for mesh build + spawn.
+    spawn_queue: VecDeque<TileKey>,
+    /// Mirror of spawn_queue for O(1) duplicate checks.
+    queued: HashSet<TileKey>,
+    /// Reusable GPU handles so revisited tiles never re-upload:
+    /// mesh geometry, material and texture are each created once per tile.
+    gpu_meshes: HashMap<TileKey, Handle<Mesh>>,
+    gpu_materials: HashMap<TileKey, Handle<StandardMaterial>>,
+    gpu_textures: HashMap<TileKey, Handle<Image>>,
+    /// Tiles whose imagery is permanently unavailable (Bing no-imagery
+    /// placeholder or repeated download failure). They inherit the nearest
+    /// textured ancestor's image (UV-remapped mesh) or a solid ocean color,
+    /// so the globe never shows a hole down to the base sphere.
+    no_data: HashSet<TileKey>,
+    /// UV-remapped meshes for no-data tiles inheriting an ancestor texture.
+    gpu_fb_meshes: HashMap<TileKey, Handle<Mesh>>,
+    /// The texture a tile actually displays (its own or an inherited
+    /// ancestor's); doubles as the ancestor-lookup table for deeper no-data
+    /// tiles.
+    effective_tex: HashMap<TileKey, Handle<Image>>,
+    /// No-data tiles with no textured ancestor: rendered as solid ocean.
+    solid_tiles: HashSet<TileKey>,
+    /// Insertion order of gpu_textures (FIFO eviction order).
+    gpu_tex_order: VecDeque<TileKey>,
+    /// Insertion order of spawned entities (FIFO eviction order).
+    spawn_order: VecDeque<TileKey>,
+    /// Set when `view_dependent_update` recomputed the visible set this
+    /// frame; cleanup only runs on stable frames so a drag doesn't despawn
+    /// tiles that leave and re-enter the visible set frame to frame.
+    view_changed_this_frame: bool,
 }
 
 impl Default for TileManager {
     fn default() -> Self {
         Self {
             tile_entities: HashMap::new(),
-            textured_tiles: std::collections::HashSet::new(),
+            textured_tiles: HashSet::new(),
             current_zoom: MIN_ZOOM,
             last_center_x: 0.0,
             last_center_y: 0.0,
+            last_distance: 0.0,
             initialized: false,
-            visible_set: std::collections::HashSet::new(),
+            visible_set: HashSet::new(),
+            spawn_queue: VecDeque::new(),
+            queued: HashSet::new(),
+            gpu_meshes: HashMap::new(),
+            gpu_materials: HashMap::new(),
+            gpu_textures: HashMap::new(),
+            no_data: HashSet::new(),
+            gpu_fb_meshes: HashMap::new(),
+            effective_tex: HashMap::new(),
+            solid_tiles: HashSet::new(),
+            gpu_tex_order: VecDeque::new(),
+            spawn_order: VecDeque::new(),
+            view_changed_this_frame: false,
         }
     }
 }
@@ -81,7 +154,7 @@ impl Default for TileManager {
 struct TextureReceiver {
     tx: mpsc::Sender<TileDownloadResult>,
     rx: Mutex<mpsc::Receiver<TileDownloadResult>>,
-    /// Persistent cache of downloaded tile image data.
+    /// Persistent cache of downloaded tile image data (finest level only).
     cache: Arc<Mutex<HashMap<TileKey, CachedTexture>>>,
 }
 
@@ -103,6 +176,32 @@ struct TileDownloadResult {
     rgba_data: Vec<u8>,
     width: u32,
     height: u32,
+    /// True when the tile has no usable imagery (Bing placeholder or all
+    /// retries failed); the main thread then inherits ancestor coverage.
+    placeholder: bool,
+}
+
+/// Background mesh-generation pipeline: workers build `Mesh` values off the
+/// main thread (the trig-heavy ellipsoid tessellation never blocks rendering);
+/// the main thread only adds the finished meshes to the GPU within budget.
+#[derive(Resource)]
+struct MeshPipeline {
+    tx: mpsc::Sender<(TileKey, Mesh, bool)>,
+    rx: Mutex<mpsc::Receiver<(TileKey, Mesh, bool)>>,
+    /// Finished meshes not yet uploaded to the GPU (budget overflow).
+    /// The bool marks UV-remapped fallback meshes (no-data tiles).
+    backlog: VecDeque<(TileKey, Mesh, bool)>,
+}
+
+impl Default for MeshPipeline {
+    fn default() -> Self {
+        let (tx, rx) = mpsc::channel();
+        Self {
+            tx,
+            rx: Mutex::new(rx),
+            backlog: VecDeque::new(),
+        }
+    }
 }
 
 // ── Plugin ─────────────────────────────────────────────────────────
@@ -113,230 +212,723 @@ impl Plugin for DynamicGlobePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<TileManager>()
             .init_resource::<TextureReceiver>()
+            .init_resource::<MeshPipeline>()
             .add_systems(Startup, initial_spawn)
-            .add_systems(
-                Update,
-                (view_dependent_update, apply_textures_from_downloads),
-            );
+            .add_systems(Update, (view_dependent_update, process_pipeline).chain());
     }
 }
 
 // ── Startup ────────────────────────────────────────────────────────
 
 fn initial_spawn(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     mut mgr: ResMut<TileManager>,
+    mut mesh_pipe: ResMut<MeshPipeline>,
     tex_rx: Res<TextureReceiver>,
     orbit: Res<OrbitState>,
+    windows: Query<&Window>,
 ) {
-    // Spawn directly at the zoom the current camera distance settles on, so
-    // startup doesn't waste bandwidth downloading intermediate zoom levels
-    // that would be replaced immediately.
-    let surface_dist = (orbit.distance - 1.0_f32).max(0.0);
-    let mut zoom = MIN_ZOOM;
-    for _ in 0..(MAX_ZOOM - MIN_ZOOM) as usize {
-        let next = compute_target_zoom(surface_dist, zoom);
-        if next == zoom {
-            break;
-        }
-        zoom = next;
-    }
-
+    // The SSE traversal directly yields the settled LOD layout, so startup
+    // never wastes bandwidth on intermediate zoom levels that would be
+    // replaced immediately.
     let (lat_rad, lon_rad) = compute_sub_camera_point(&orbit);
-    let (center_tx, center_ty) = geo_to_tile(lat_rad, lon_rad, zoom);
-    let visible = compute_lod_tiles(zoom, lat_rad, lon_rad, orbit.distance);
-    mgr.visible_set = visible.iter().copied().collect();
-    spawn_tiles(&mut commands, &mut meshes, &mut materials, &mut mgr, &visible, zoom);
-    start_downloads(&tex_rx, &visible);
-    mgr.current_zoom = zoom;
+    let visible = compute_visible_tiles(
+        lat_rad,
+        lon_rad,
+        orbit.distance as f64,
+        focal_pixels(&windows),
+    );
+    let finest = visible.iter().map(|t| t.0 .2).max().unwrap_or(MIN_ZOOM);
+    mgr.visible_set = visible.iter().map(|&(k, _)| k).collect();
+
+    enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &visible);
+
+    mgr.current_zoom = finest;
+    mgr.last_distance = orbit.distance;
+    let (center_tx, center_ty) = geo_to_tile(lat_rad, lon_rad, finest);
     mgr.last_center_x = center_tx as f64;
     mgr.last_center_y = center_ty as f64;
     mgr.initialized = true;
     println!(
-        "[DynGlobe] Initial: {} tiles at zoom {}",
+        "[DynGlobe] Initial: {} tiles queued, finest zoom {}",
         visible.len(),
-        zoom
+        finest
     );
+}
+
+/// Queue mesh builds + downloads for tiles that need them, highest screen
+/// footprint first (CesiumJS request-scheduler role: the view center
+/// sharpens before horizon filler arrives). Entities are spawned later by
+/// `process_pipeline` within the per-frame budget.
+fn enqueue_tiles(
+    mgr: &mut TileManager,
+    mesh_pipe: &mut MeshPipeline,
+    tex_rx: &TextureReceiver,
+    tiles: &[(TileKey, f32)],
+) {
+    let mut mesh_jobs: Vec<(TileKey, u32, Option<[f32; 4]>)> = Vec::new();
+    let mut downloads: Vec<(TileKey, bool, f32)> = Vec::new();
+    let mut to_spawn: Vec<(TileKey, f32)> = Vec::new();
+
+    {
+        let cache = tex_rx.cache.lock().unwrap();
+        for &(key, prio) in tiles {
+            if mgr.tile_entities.contains_key(&key) || mgr.queued.contains(&key) {
+                continue;
+            }
+            to_spawn.push((key, prio));
+
+            if !mgr.gpu_meshes.contains_key(&key) {
+                mesh_jobs.push((key, compute_segments(key.2), None));
+            }
+            if !cache.contains_key(&key)
+                && !mgr.gpu_textures.contains_key(&key)
+                && !mgr.no_data.contains(&key)
+            {
+                // Tiles projected far below native texel size are pure
+                // horizon filler: downscale on the worker thread so they
+                // never pay full-res decode/upload costs. Threshold stays
+                // well below 256 so a downscaled tile never sits right next
+                // to a full-res one at comparable screen size.
+                downloads.push((key, prio < 160.0, prio));
+            }
+        }
+    }
+
+    to_spawn.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    for (key, _) in to_spawn {
+        mgr.spawn_queue.push_back(key);
+        mgr.queued.insert(key);
+    }
+
+    downloads.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+    let downloads: Vec<(TileKey, bool)> =
+        downloads.into_iter().map(|(k, d, _)| (k, d)).collect();
+
+    if !mesh_jobs.is_empty() {
+        start_mesh_builds(mesh_pipe, mesh_jobs);
+    }
+    if !downloads.is_empty() {
+        start_downloads(tex_rx, &downloads);
+    }
 }
 
 // ── View-dependent update ──────────────────────────────────────────
 
 fn view_dependent_update(
     orbit: Res<OrbitState>,
+    windows: Query<&Window>,
     mut mgr: ResMut<TileManager>,
+    mut mesh_pipe: ResMut<MeshPipeline>,
     tex_rx: Res<TextureReceiver>,
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut images: ResMut<Assets<Image>>,
 ) {
     if !mgr.initialized {
         return;
     }
 
-    let surface_dist = (orbit.distance - 1.0_f32).max(0.0);
-    let target_zoom = compute_target_zoom(surface_dist, mgr.current_zoom);
     let (lat_rad, lon_rad) = compute_sub_camera_point(&orbit);
-    let (center_tx, center_ty) = geo_to_tile(lat_rad, lon_rad, target_zoom);
 
+    // Recompute trigger: sub-camera point moved ~1 tile at a mid reference
+    // zoom, or the camera distance changed enough (>3%) to flip SSE
+    // subdivisions. Reference zoom is clamped so global views refresh often
+    // enough while close-in views simply recompute every drag frame (the
+    // traversal is cheap and GPU caches absorb any churn).
+    let ref_z = mgr.current_zoom.clamp(4, 9);
+    let (center_tx, center_ty) = geo_to_tile(lat_rad, lon_rad, ref_z);
     let dx = (center_tx as f64) - mgr.last_center_x;
     let dy = (center_ty as f64) - mgr.last_center_y;
     let moved = (dx * dx + dy * dy).sqrt();
+    let dist_changed =
+        (orbit.distance - mgr.last_distance).abs() > mgr.last_distance * 0.03;
 
-    let zoom_changed = target_zoom != mgr.current_zoom;
-    let view_changed = moved > VIEW_REFRESH_THRESHOLD;
-
-    if !zoom_changed && !view_changed {
+    if moved <= 1.0 && !dist_changed {
         return;
     }
 
-    if zoom_changed {
-        println!(
-            "[DynGlobe] Zoom {} → {} (dist={:.3})",
-            mgr.current_zoom, target_zoom, surface_dist
-        );
-    }
+    let new_visible = compute_visible_tiles(
+        lat_rad,
+        lon_rad,
+        orbit.distance as f64,
+        focal_pixels(&windows),
+    );
+    let finest = new_visible
+        .iter()
+        .map(|t| t.0 .2)
+        .max()
+        .unwrap_or(mgr.current_zoom);
+    let finest_changed = finest != mgr.current_zoom;
+    let new_set: HashSet<TileKey> = new_visible.iter().map(|&(k, _)| k).collect();
+    mgr.visible_set = new_set;
 
-    let new_visible =
-        compute_lod_tiles(target_zoom, lat_rad, lon_rad, orbit.distance);
-    let new_set: std::collections::HashSet<TileKey> =
-        new_visible.iter().copied().collect();
-    mgr.visible_set = new_set.clone();
-    let old_set: std::collections::HashSet<TileKey> =
-        mgr.tile_entities.keys().copied().collect();
+    // Stale tiles are NOT despawned here: they keep covering the globe while
+    // their replacements load (no holes / no spawn-despawn churn during
+    // drags). `process_pipeline` cleans them up progressively.
+    enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &new_visible);
 
-    let to_add: Vec<TileKey> =
-        new_set.difference(&old_set).copied().collect();
-    let to_remove: Vec<TileKey> =
-        old_set.difference(&new_set).copied().collect();
+    mgr.current_zoom = finest;
+    mgr.last_distance = orbit.distance;
+    mgr.last_center_x = center_tx as f64;
+    mgr.last_center_y = center_ty as f64;
+    mgr.view_changed_this_frame = true;
 
-    // On plain pans, despawn tiles leaving the view immediately. On zoom
-    // changes keep stale tiles as fallback coverage; the progressive cleanup
-    // in `apply_textures_from_downloads` removes them once new tiles load.
-    let immediate_remove: Vec<TileKey> = if zoom_changed {
-        Vec::new()
-    } else {
-        to_remove
-    };
+    if finest_changed {
+        // Re-tuck already-spawned tiles to the new LOD hierarchy so
+        // overlapping levels never z-fight (tuck lives on the entity scale,
+        // not the mesh, which is what makes meshes reusable across zoom
+        // changes).
+        let scale = render_scale();
+        for (&key, &entity) in mgr.tile_entities.iter() {
+            let tuck = level_tuck(key.2, finest);
+            commands
+                .entity(entity)
+                .insert(Transform::from_scale(Vec3::splat(scale * tuck as f32)));
+        }
 
-    // Despawn removed tiles
-    for key in &immediate_remove {
-        if let Some(entity) = mgr.tile_entities.remove(key) {
-            commands.entity(entity).despawn();
-            mgr.textured_tiles.remove(key);
+        // Drop tiles far from the new LOD range right away (budgeted):
+        // otherwise a multi-level cascade leaves several full zoom levels of
+        // overlapping entities alive and inflates the draw-call count.
+        let mut evicted = 0;
+        let far: Vec<TileKey> = mgr
+            .tile_entities
+            .keys()
+            .filter(|k| k.2.abs_diff(finest) > 2)
+            .copied()
+            .collect();
+        for key in far {
+            if evicted >= MAX_DESPAWNS_PER_FRAME {
+                break;
+            }
+            mgr.despawn_tile(&key, &mut commands);
+            evicted += 1;
         }
     }
+}
 
-    // Spawn added tiles
-    let scale = render_scale();
-    let segments = compute_segments(target_zoom);
+impl TileManager {
+    /// Despawn one tile entity; GPU handles stay cached for cheap re-spawn.
+    fn despawn_tile(&mut self, key: &TileKey, commands: &mut Commands) {
+        if let Some(entity) = self.tile_entities.remove(key) {
+            commands.entity(entity).despawn();
+            self.textured_tiles.remove(key);
+            self.spawn_order.retain(|k| k != key);
+        }
+    }
+}
 
-    // Check cache first: if tile is cached, apply texture immediately
-    let cache = tex_rx.cache.lock().unwrap();
+// ── Budgeted asset pipeline (mesh upload → spawn → texture → cleanup) ──
 
-    for &(tx, ty, tz) in &to_add {
-        let mesh = create_tile_mesh(tx, ty, tz, segments, level_tuck(tz, target_zoom));
+fn process_pipeline(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    mut mgr: ResMut<TileManager>,
+    mut mesh_pipe: ResMut<MeshPipeline>,
+    tex_rx: Res<TextureReceiver>,
+) {
+    if !mgr.initialized {
+        return;
+    }
+    let view_changed = mgr.view_changed_this_frame;
+    mgr.view_changed_this_frame = false;
 
-        let (material, has_texture) = if let Some(cached) = cache.get(&(tx, ty, tz)) {
-            let tex_handle = build_gpu_image(
-                &mut images,
-                cached.rgba_data.clone(),
-                cached.width,
-                cached.height,
-                tz,
-                target_zoom,
-            );
-            let mat = materials.add(StandardMaterial {
-                base_color: Color::WHITE,
-                base_color_texture: Some(tex_handle),
-                perceptual_roughness: 0.9,
-                ..default()
-            });
-            (mat, true)
+    // 1) Collect finished background meshes into the backlog.
+    let drained: Vec<(TileKey, Mesh, bool)> = {
+        let rx = mesh_pipe.rx.lock().unwrap();
+        let mut v = Vec::new();
+        while let Ok(item) = rx.try_recv() {
+            v.push(item);
+        }
+        v
+    };
+    for item in drained {
+        mesh_pipe.backlog.push_back(item);
+    }
+
+    // 2) Upload backlog meshes to the GPU within budget.
+    let mut mesh_uploads = 0;
+    while mesh_uploads < MAX_MESH_UPLOADS_PER_FRAME {
+        let Some((key, mesh, is_fb)) = mesh_pipe.backlog.pop_front() else {
+            break;
+        };
+        if (is_fb && mgr.gpu_fb_meshes.contains_key(&key))
+            || (!is_fb && mgr.gpu_meshes.contains_key(&key))
+        {
+            continue;
+        }
+        // Only spend GPU memory on tiles still wanted.
+        if !mgr.visible_set.contains(&key) && !mgr.queued.contains(&key) {
+            continue;
+        }
+        if is_fb {
+            mgr.gpu_fb_meshes.insert(key, meshes.add(mesh));
         } else {
-            let mat = materials.add(StandardMaterial {
-                base_color: Color::srgb(0.04, 0.15, 0.4),
-                perceptual_roughness: 0.9,
-                ..default()
-            });
-            (mat, false)
+            mgr.gpu_meshes.insert(key, meshes.add(mesh));
+            evict_gpu_cache(&mut mgr);
+        }
+        mesh_uploads += 1;
+    }
+
+    // 3) Spawn entities whose mesh handle is ready, within budget.
+    let scale = render_scale();
+    let finest = mgr.current_zoom;
+    let pending: Vec<TileKey> = mgr.spawn_queue.drain(..).collect();
+    let mut still_queued: Vec<TileKey> = Vec::new();
+    let mut spawns = 0;
+
+    let cache = tex_rx.cache.lock().unwrap();
+    for key in pending {
+        let already = mgr.tile_entities.contains_key(&key);
+
+        if already || !mgr.queued.remove(&key) {
+            continue;
+        }
+
+        let nodata = mgr.no_data.contains(&key);
+        let mesh_ready = if nodata {
+            if mgr.solid_tiles.contains(&key) {
+                mgr.gpu_meshes.contains_key(&key)
+            } else {
+                mgr.gpu_fb_meshes.contains_key(&key)
+            }
+        } else {
+            mgr.gpu_meshes.contains_key(&key)
         };
 
+        if !mesh_ready || spawns >= MAX_SPAWNS_PER_FRAME {
+            still_queued.push(key);
+            mgr.queued.insert(key);
+            continue;
+        }
+
+        // Only spawn tiles that are still part of the visible set.
+        if !mgr.visible_set.contains(&key) {
+            continue;
+        }
+
+        if nodata {
+            // No imagery exists for this tile (Bing placeholder or download
+            // failure): render it with the nearest ancestor's texture
+            // upsampled through a UV-remapped mesh (CesiumJS upsampling
+            // fallback), or as solid deep ocean when no ancestor texture is
+            // available. Either way the globe never shows a hole.
+            let mesh_handle = if mgr.solid_tiles.contains(&key) {
+                mgr.gpu_meshes[&key].clone()
+            } else {
+                mgr.gpu_fb_meshes[&key].clone()
+            };
+            let material = if let Some(mat) = mgr.gpu_materials.get(&key) {
+                mat.clone()
+            } else if let Some(tex) = mgr.effective_tex.get(&key).cloned() {
+                let mat = materials.add(StandardMaterial {
+                    base_color: Color::WHITE,
+                    base_color_texture: Some(tex),
+                    perceptual_roughness: 0.9,
+                    // Double-sided so the hanging skirt wall is visible
+                    // through cracks from either side.
+                    cull_mode: None,
+                    ..default()
+                });
+                mgr.gpu_materials.insert(key, mat.clone());
+                mat
+            } else {
+                let mat = materials.add(StandardMaterial {
+                    base_color: Color::srgb(0.01, 0.05, 0.10),
+                    perceptual_roughness: 1.0,
+                    cull_mode: None,
+                    ..default()
+                });
+                mgr.gpu_materials.insert(key, mat.clone());
+                mat
+            };
+
+            let tuck = level_tuck(key.2, finest);
+            let entity = commands
+                .spawn((
+                    CesiumGlobe,
+                    GlobeTile {
+                        x: key.0,
+                        y: key.1,
+                        z: key.2,
+                    },
+                    Mesh3d(mesh_handle),
+                    MeshMaterial3d(material),
+                    Transform::from_scale(Vec3::splat(scale * tuck as f32)),
+                ))
+                .id();
+
+            mgr.tile_entities.insert(key, entity);
+            mgr.spawn_order.push_back(key);
+            mgr.textured_tiles.insert(key);
+            spawns += 1;
+            continue;
+        }
+
+        // Real imagery path. Texture: GPU handle > CPU rgba cache. A tile
+        // whose imagery is not ready yet stays HIDDEN (re-queued) instead of
+        // spawning as a blue placeholder: an opaque blue quad would paint a
+        // hole over the already-textured coarser parent, which reads far
+        // worse than letting the parent show through until the child is
+        // ready (the same rule CesiumJS follows for not-yet-loaded children).
+        let cached_tex = mgr
+            .gpu_textures
+            .get(&key)
+            .cloned()
+            .or_else(|| {
+                cache.get(&key).map(|c| {
+                    make_image(&mut images, c.rgba_data.clone(), c.width, c.height)
+                })
+            });
+        let Some(tex) = cached_tex else {
+            still_queued.push(key);
+            mgr.queued.insert(key);
+            continue;
+        };
+        mgr.effective_tex.insert(key, tex.clone());
+
+        let mesh_handle = mgr.gpu_meshes[&key].clone();
+
+        let material = if let Some(mat) = mgr.gpu_materials.get(&key) {
+            mat.clone()
+        } else {
+            let mat = materials.add(StandardMaterial {
+                base_color: Color::WHITE,
+                base_color_texture: Some(tex.clone()),
+                perceptual_roughness: 0.9,
+                cull_mode: None,
+                ..default()
+            });
+            mgr.gpu_materials.insert(key, mat.clone());
+            mat
+        };
+
+        if !mgr.gpu_textures.contains_key(&key) {
+            mgr.gpu_tex_order.push_back(key);
+        }
+        mgr.gpu_textures.insert(key, tex.clone());
+        evict_gpu_cache(&mut mgr);
+
+        let tuck = level_tuck(key.2, finest);
         let entity = commands
             .spawn((
                 CesiumGlobe,
                 GlobeTile {
-                    x: tx,
-                    y: ty,
-                    z: tz,
+                    x: key.0,
+                    y: key.1,
+                    z: key.2,
                 },
-                Mesh3d(meshes.add(mesh)),
+                Mesh3d(mesh_handle),
                 MeshMaterial3d(material),
-                Transform::from_scale(Vec3::splat(scale)),
+                Transform::from_scale(Vec3::splat(scale * tuck as f32)),
             ))
             .id();
 
-        mgr.tile_entities.insert((tx, ty, tz), entity);
-        if has_texture {
-            mgr.textured_tiles.insert((tx, ty, tz));
+        mgr.tile_entities.insert(key, entity);
+        mgr.spawn_order.push_back(key);
+        mgr.textured_tiles.insert(key);
+        spawns += 1;
+    }
+    drop(cache);
+
+    mgr.spawn_queue = still_queued.into();
+
+    // 4) Apply downloaded textures within budget (rest stays in the channel).
+    let mut tex_uploads = 0;
+    while tex_uploads < MAX_TEXTURE_UPLOADS_PER_FRAME {
+        let Ok(result) = tex_rx.rx.lock().unwrap().try_recv() else {
+            break;
+        };
+        let key = (result.x, result.y, result.z);
+        if result.placeholder {
+            // Permanently no-data tile: inherit the nearest textured
+            // ancestor (UV-upsampled) or fall back to solid ocean, so the
+            // region never renders as a hole down to the base sphere.
+            if mgr.no_data.insert(key) {
+                let (mut ax, mut ay, mut az) = key;
+                let mut ancestor: Option<(TileKey, Handle<Image>)> = None;
+                while az > 0 {
+                    ax >>= 1;
+                    ay >>= 1;
+                    az -= 1;
+                    if let Some(t) = mgr.effective_tex.get(&(ax, ay, az)) {
+                        ancestor = Some(((ax, ay, az), t.clone()));
+                        break;
+                    }
+                }
+                if let Some((anc, tex)) = ancestor {
+                    let dz = key.2 - anc.2;
+                    let side = (1u32 << dz) as f32;
+                    let rx = (key.0 % (1u32 << dz)) as f32;
+                    let ry = (key.1 % (1u32 << dz)) as f32;
+                    let uv = [
+                        rx / side,
+                        ry / side,
+                        (rx + 1.0) / side,
+                        (ry + 1.0) / side,
+                    ];
+                    mgr.effective_tex.insert(key, tex);
+                    if !mgr.gpu_fb_meshes.contains_key(&key) {
+                        start_mesh_builds(
+                            &mut mesh_pipe,
+                            vec![(key, compute_segments(key.2), Some(uv))],
+                        );
+                    }
+                } else {
+                    mgr.solid_tiles.insert(key);
+                }
+            }
+            // Make sure the tile (re)enters the spawn queue: it may have
+            // been dropped from it earlier (e.g. momentarily outside the
+            // visible set), and without a spawn the region would remain a
+            // hole down to the base sphere.
+            if !mgr.tile_entities.contains_key(&key) && !mgr.queued.contains(&key) {
+                mgr.spawn_queue.push_back(key);
+                mgr.queued.insert(key);
+            }
+            tex_uploads += 1;
+            continue;
+        }
+        // No CPU-side rgba cache: the GPU texture cache below survives
+        // despawn, so keeping full-res bytes in RAM would be pure waste.
+
+        let tex_handle = match mgr.gpu_textures.get(&key) {
+            Some(h) => h.clone(),
+            None => {
+                let h = make_image(&mut images, result.rgba_data, result.width, result.height);
+                mgr.gpu_tex_order.push_back(key);
+                mgr.gpu_textures.insert(key, h.clone());
+                evict_gpu_cache(&mut mgr);
+                h
+            }
+        };
+        mgr.effective_tex.insert(key, tex_handle.clone());
+
+        if let Some(mat_handle) = mgr.gpu_materials.get(&key) {
+            if let Some(mat) = materials.get_mut(mat_handle) {
+                mat.base_color_texture = Some(tex_handle);
+                mat.base_color = Color::WHITE;
+            }
+        }
+        if mgr.tile_entities.contains_key(&key) {
+            mgr.textured_tiles.insert(key);
+        }
+        tex_uploads += 1;
+    }
+
+    // 5) Budgeted cleanup. Two rules keep this cheap and churn-free:
+    //    - it only runs on STABLE frames (no visible-set recompute this
+    //      frame), so tiles that briefly leave the set during a drag are not
+    //      despawned only to be re-downloaded a moment later;
+    //    - despawns are capped per frame so removing hundreds of entities
+    //      never produces a CPU spike mid-drag.
+    let finest = mgr.current_zoom;
+    let fine_total = mgr
+        .visible_set
+        .iter()
+        .filter(|(_, _, z)| *z == finest)
+        .count();
+    let fine_textured = mgr
+        .visible_set
+        .iter()
+        .filter(|k| k.2 == finest && mgr.textured_tiles.contains(k))
+        .count();
+    let stable = !view_changed;
+    let warmed_up = fine_total > 0 && fine_textured > fine_total / 5;
+    let over_cap = mgr.tile_entities.len() > MAX_TILE_ENTITIES;
+
+    if over_cap || (stable && warmed_up) {
+        // (insertion position, key) pairs, oldest first. Sorted inside a
+        // block so the borrow of `mgr` ends before despawning begins.
+        let mut stale: Vec<(usize, TileKey)> = {
+            let pos = |k: &TileKey| {
+                mgr.spawn_order
+                    .iter()
+                    .position(|o| o == k)
+                    .unwrap_or(usize::MAX)
+            };
+            let mut v: Vec<(usize, TileKey)> = mgr
+                .tile_entities
+                .keys()
+                .copied()
+                .filter(|k| !mgr.visible_set.contains(k))
+                .map(|k| (pos(&k), k))
+                .collect();
+            v.sort();
+            v
+        };
+
+        let mut removed = 0;
+        for (_, key) in stale.drain(..) {
+            if removed >= MAX_DESPAWNS_PER_FRAME {
+                break;
+            }
+            mgr.despawn_tile(&key, &mut commands);
+            removed += 1;
+        }
+
+        // Still over the hard cap: evict the oldest surplus entities even if
+        // visible (draw-call pressure beats coverage; GPU handles stay
+        // cached so they re-spawn instantly if the view returns).
+        if mgr.tile_entities.len() > MAX_TILE_ENTITIES {
+            let mut extras: Vec<(usize, TileKey)> = {
+                let pos = |k: &TileKey| {
+                    mgr.spawn_order
+                        .iter()
+                        .position(|o| o == k)
+                        .unwrap_or(usize::MAX)
+                };
+                let mut v: Vec<(usize, TileKey)> = mgr
+                    .tile_entities
+                    .keys()
+                    .copied()
+                    .map(|k| (pos(&k), k))
+                    .collect();
+                v.sort();
+                v
+            };
+            for (_, key) in extras.drain(..) {
+                if mgr.tile_entities.len() <= MAX_TILE_ENTITIES
+                    || removed >= MAX_DESPAWNS_PER_FRAME * 2
+                {
+                    break;
+                }
+                mgr.despawn_tile(&key, &mut commands);
+                removed += 1;
+            }
+        }
+
+        if removed > 0 {
+            println!(
+                "[DynGlobe] Cleaned {} tiles, {} remaining",
+                removed,
+                mgr.tile_entities.len()
+            );
         }
     }
 
-    drop(cache);
-
-    mgr.current_zoom = target_zoom;
-    mgr.last_center_x = center_tx as f64;
-    mgr.last_center_y = center_ty as f64;
-
-    if !to_add.is_empty() || !immediate_remove.is_empty() {
-        println!(
-            "[DynGlobe] +{} -{} tiles, {} total",
-            to_add.len(),
-            immediate_remove.len(),
-            mgr.tile_entities.len()
-        );
-    }
-
-    // Filter out cached tiles from download list
-    let need_download: Vec<TileKey> = {
-        let cache = tex_rx.cache.lock().unwrap();
-        to_add
+    // Coverage repair: visible tiles can fall out of the spawn queue through
+    // assorted paths (momentarily outside the set mid-drag, over-cap
+    // eviction of a still-visible tile). On stable frames re-enqueue them so
+    // coverage always converges back to hole-free.
+    if !view_changed {
+        let missing: Vec<TileKey> = mgr
+            .visible_set
             .iter()
-            .filter(|k| !cache.contains_key(k))
+            .filter(|k| !mgr.tile_entities.contains_key(k) && !mgr.queued.contains(k))
             .copied()
-            .collect()
-    };
-
-    if !need_download.is_empty() {
-        start_downloads(&tex_rx, &need_download);
+            .take(32)
+            .collect();
+        for k in missing {
+            mgr.spawn_queue.push_back(k);
+            mgr.queued.insert(k);
+        }
     }
 }
 
-// ── Zoom level computation ─────────────────────────────────────────
-
-fn compute_target_zoom(surface_dist: f32, current_zoom: u32) -> u32 {
-    let idx = current_zoom.saturating_sub(MIN_ZOOM) as usize;
-
-    if current_zoom > MIN_ZOOM {
-        let out_idx = (current_zoom - MIN_ZOOM - 1) as usize;
-        if out_idx < ZOOM_OUT_THRESHOLDS.len()
-            && surface_dist > ZOOM_OUT_THRESHOLDS[out_idx] * 1.2
-        {
-            return current_zoom - 1;
+/// FIFO-evict the oldest GPU handle cache entries once over the cap, so a
+/// long panning session can't grow the caches without bound.
+fn evict_gpu_cache(mgr: &mut TileManager) {
+    while mgr.gpu_tex_order.len() > MAX_GPU_CACHE_ENTRIES {
+        if let Some(old) = mgr.gpu_tex_order.pop_front() {
+            mgr.gpu_textures.remove(&old);
+            mgr.gpu_materials.remove(&old);
+            mgr.gpu_meshes.remove(&old);
         }
     }
+}
 
-    if current_zoom < MAX_ZOOM {
-        if idx < ZOOM_IN_THRESHOLDS.len()
-            && surface_dist < ZOOM_IN_THRESHOLDS[idx] * 0.8
-        {
-            return current_zoom + 1;
+// ── Screen-space-error quadtree LOD (CesiumJS QuadtreePrimitive) ──
+
+/// Vertical focal length in pixels: (H/2) / tan(fov/2).
+fn focal_pixels(windows: &Query<&Window>) -> f64 {
+    let h = windows
+        .get_single()
+        .map(|w| w.height() as f64)
+        .unwrap_or(720.0);
+    (h * 0.5) / ((CAMERA_FOV_Y as f64) * 0.5).tan()
+}
+
+/// CesiumJS-style quadtree traversal: start at the coarsest level and
+/// subdivide every visible tile while its projected screen footprint
+/// exceeds [`MAX_TILE_SCREEN_PX`] (the maximumScreenSpaceError = 2 budget
+/// for 256-px tiles), culling tiles beyond the horizon cap. Returns the
+/// selected tiles together with their screen footprint, which doubles as
+/// request priority. Resolution thus falls off continuously from the view
+/// center to the limb, exactly like CesiumJS globe LOD.
+fn compute_visible_tiles(
+    lat_rad: f64,
+    lon_rad: f64,
+    distance: f64,
+    focal_px: f64,
+) -> Vec<(TileKey, f32)> {
+    let d = distance.max(1.001);
+    let cx = lat_rad.cos() * lon_rad.cos();
+    let cy = lat_rad.cos() * lon_rad.sin();
+    let cz = lat_rad.sin();
+    let cap = (1.0 / d).acos();
+
+    let mut out = Vec::new();
+    let n0 = 1u32 << MIN_ZOOM;
+    for y in 0..n0 {
+        for x in 0..n0 {
+            visit_tile(x, y, MIN_ZOOM, cx, cy, cz, d, cap, focal_px, &mut out);
         }
     }
+    out
+}
 
-    current_zoom
+fn visit_tile(
+    x: u32,
+    y: u32,
+    z: u32,
+    cx: f64,
+    cy: f64,
+    cz: f64,
+    d: f64,
+    cap: f64,
+    focal_px: f64,
+    out: &mut Vec<(TileKey, f32)>,
+) {
+    let n = 1u64 << z;
+    // Tile center geographic coordinates (y row 0 = north, like mesh UVs).
+    let lon = (x as f64 + 0.5) / n as f64 * 2.0 * std::f64::consts::PI
+        - std::f64::consts::PI;
+    let lat = (std::f64::consts::PI * (1.0 - 2.0 * (y as f64 + 0.5) / n as f64))
+        .sinh()
+        .atan()
+        .clamp(-1.4844, 1.4844);
+
+    let tx = lat.cos() * lon.cos();
+    let ty = lat.cos() * lon.sin();
+    let tz = lat.sin();
+
+    // Horizon cull: tile center beyond the visible cap + one tile margin.
+    let dot = (tx * cx + ty * cy + tz * cz).clamp(-1.0, 1.0);
+    let theta = dot.acos();
+    let margin = 2.0 * std::f64::consts::PI / n as f64;
+    if theta > cap + margin {
+        return;
+    }
+
+    // Camera→tile-center chord distance in meters (globe radius = 1 unit).
+    let ex = tx - cx * d;
+    let ey = ty - cy * d;
+    let ez = tz - cz * d;
+    let dist_m = (ex * ex + ey * ey + ez * ez).sqrt() * EARTH_RADIUS_M;
+
+    // Projected screen footprint of the tile's Web Mercator width.
+    let w_m = 2.0 * std::f64::consts::PI * EARTH_RADIUS_M / n as f64;
+    let screen_px = w_m / dist_m * focal_px;
+
+    if screen_px <= MAX_TILE_SCREEN_PX || z >= MAX_ZOOM {
+        out.push(((x, y, z), screen_px as f32));
+    } else {
+        let (x2, y2, z1) = (x * 2, y * 2, z + 1);
+        visit_tile(x2, y2, z1, cx, cy, cz, d, cap, focal_px, out);
+        visit_tile(x2 + 1, y2, z1, cx, cy, cz, d, cap, focal_px, out);
+        visit_tile(x2, y2 + 1, z1, cx, cy, cz, d, cap, focal_px, out);
+        visit_tile(x2 + 1, y2 + 1, z1, cx, cy, cz, d, cap, focal_px, out);
+    }
 }
 
 // ── Sub-camera point ───────────────────────────────────────────────
@@ -356,124 +948,6 @@ fn compute_sub_camera_point(orbit: &OrbitState) -> (f64, f64) {
 
 // ── Visible tile computation ───────────────────────────────────────
 
-/// Float tile coordinates of a geographic point at `zoom` (tile centers at
-/// integer + 0.5).
-fn geo_to_tile_f(lat_rad: f64, lon_rad: f64, zoom: u32) -> (f64, f64) {
-    let n = (1u64 << zoom) as f64;
-    let tx = (lon_rad + std::f64::consts::PI) / (2.0 * std::f64::consts::PI) * n - 0.5;
-    let lat_c = lat_rad.clamp(-1.4844, 1.4844);
-    let ty = (1.0 - lat_c.tan().asinh() / std::f64::consts::PI) / 2.0 * n - 0.5;
-    (tx, ty)
-}
-
-/// Concentric multi-resolution tile selection (CesiumJS-style quadtree LOD
-/// approximation):
-/// - the finest (target) zoom covers the central window;
-/// - progressively coarser zooms fill rings out to the visible horizon cap,
-///   skipping tiles fully covered by a finer window.
-///
-/// From distance `d` (globe radius = 1) the visible cap angular radius is
-/// acos(1/d), so the limb shows imagery instead of the base sphere.
-fn compute_lod_tiles(
-    target_zoom: u32,
-    lat_rad: f64,
-    lon_rad: f64,
-    distance: f32,
-) -> Vec<TileKey> {
-    let d = (distance as f64).max(1.001);
-    let cap_deg = (1.0 / d).acos().to_degrees();
-
-    let mut tiles: std::collections::HashSet<TileKey> = std::collections::HashSet::new();
-    // Coverage rect of the finer window, expressed in current-level coords.
-    let mut finer_rect: Option<(f64, f64, f64, f64)> = None;
-
-    for z in (MIN_ZOOM..=target_zoom).rev() {
-        let n = 1u32 << z;
-        let tile_deg = 360.0 / n as f64;
-        let need = (cap_deg / tile_deg).ceil() as i32 + 1;
-        // Same clamp for all levels: coarse rings only fill the foreshortened
-        // horizon band, where a half-window of 8 of the next-finer level
-        // already reaches the limb at any camera distance.
-        let hw = need.clamp(VIEW_HALF_WINDOW, 8);
-
-        let (cxf, cyf) = geo_to_tile_f(lat_rad, lon_rad, z);
-        let cx = cxf.round() as i32;
-        let cy = cyf.round() as i32;
-
-        for dy in -hw..=hw {
-            let ty = cy + dy;
-            if ty < 0 || ty >= n as i32 {
-                continue;
-            }
-            for dx in -hw..=hw {
-                let tx = cx + dx;
-                // Skip tiles fully covered by the finer window.
-                if let Some((fx0, fx1, fy0, fy1)) = finer_rect {
-                    if (tx as f64) >= fx0
-                        && (tx + 1) as f64 <= fx1
-                        && (ty as f64) >= fy0
-                        && (ty + 1) as f64 <= fy1
-                    {
-                        continue;
-                    }
-                }
-                let tx_w = ((tx % n as i32) + n as i32) as u32 % n;
-                tiles.insert((tx_w, ty as u32, z));
-            }
-        }
-
-        // This level's window becomes the "finer rect" for the next coarser
-        // level (coordinates halve per level).
-        finer_rect = Some((
-            (cx - hw) as f64 * 0.5,
-            (cx + hw + 1) as f64 * 0.5,
-            (cy - hw) as f64 * 0.5,
-            (cy + hw + 1) as f64 * 0.5,
-        ));
-    }
-
-    tiles.into_iter().collect()
-}
-
-/// Radial tuck per LOD level so coarser rings sit just below finer tiles,
-/// preventing z-fighting where a coarse tile partially underlaps the finer
-/// window.
-fn level_tuck(z: u32, finest: u32) -> f64 {
-    1.0 - 0.0006 * finest.saturating_sub(z) as f64
-}
-
-/// Create a GPU texture from raw RGBA data, downscaling to 128x128 for tiles
-/// coarser than the current finest level (they only appear small on screen).
-fn build_gpu_image(
-    images: &mut Assets<Image>,
-    rgba: Vec<u8>,
-    width: u32,
-    height: u32,
-    tile_z: u32,
-    finest: u32,
-) -> Handle<Image> {
-    let (data, w, h) = if tile_z < finest && width > 128 {
-        let img =
-            image::RgbaImage::from_raw(width, height, rgba).expect("rgba buffer size mismatch");
-        let small = image::DynamicImage::ImageRgba8(img)
-            .resize(128, 128, image::imageops::FilterType::Triangle);
-        (small.to_rgba8().into_raw(), 128, 128)
-    } else {
-        (rgba, width, height)
-    };
-    images.add(Image::new(
-        bevy::render::render_resource::Extent3d {
-            width: w,
-            height: h,
-            depth_or_array_layers: 1,
-        },
-        bevy::render::render_resource::TextureDimension::D2,
-        data,
-        bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
-        bevy::render::render_asset::RenderAssetUsages::default(),
-    ))
-}
-
 fn geo_to_tile(lat_rad: f64, lon_rad: f64, zoom: u32) -> (u32, u32) {
     let n = (1u64 << zoom) as f64;
     let tx = ((lon_rad + std::f64::consts::PI) / (2.0 * std::f64::consts::PI) * n)
@@ -486,42 +960,176 @@ fn geo_to_tile(lat_rad: f64, lon_rad: f64, zoom: u32) -> (u32, u32) {
     (tx, ty)
 }
 
-// ── Tile helpers ───────────────────────────────────────────────────
-
-fn spawn_tiles(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
-    mgr: &mut TileManager,
-    tiles: &[TileKey],
-    finest_zoom: u32,
-) {
-    let scale = render_scale();
-    for &(tx, ty, tz) in tiles {
-        let seg = compute_segments(tz);
-        let mesh = create_tile_mesh(tx, ty, tz, seg, level_tuck(tz, finest_zoom));
-        let material = materials.add(StandardMaterial {
-            base_color: Color::srgb(0.04, 0.15, 0.4),
-            perceptual_roughness: 0.9,
-            ..default()
-        });
-        let entity = commands
-            .spawn((
-                CesiumGlobe,
-                GlobeTile { x: tx, y: ty, z: tz },
-                Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(material),
-                Transform::from_scale(Vec3::splat(scale)),
-            ))
-            .id();
-        mgr.tile_entities.insert((tx, ty, tz), entity);
-    }
+/// Radial tuck per LOD level so coarser tiles sit just below finer tiles,
+/// preventing z-fighting where a coarse tile partially underlaps a finer
+/// one. Applied via entity scale (NOT baked into the mesh) so meshes stay
+/// reusable across zoom changes.
+fn level_tuck(z: u32, finest: u32) -> f64 {
+    1.0 - 0.0006 * finest.saturating_sub(z) as f64
 }
+
+/// Smoothness metric: average / max RGB difference between sampled pixel
+/// pairs 4px apart. Real imagery is textured; Bing's no-imagery placeholder
+/// is a smooth synthetic gradient. Measured: placeholder avg ~0.01 (max 6)
+/// or avg 0 (solid), real ocean avg ~1.8 (max 22), real land >> 7.
+fn smoothness_stats(rgba: &image::RgbaImage) -> (f64, u32) {
+    let (w, h) = rgba.dimensions();
+    let mut sum: f64 = 0.0;
+    let mut maxd: u32 = 0;
+    let mut count: u32 = 0;
+    let mut x = 0;
+    while x + 4 < w {
+        for y in (0..h).step_by(8) {
+            let p = rgba.get_pixel(x, y).0;
+            let q = rgba.get_pixel(x + 4, y).0;
+            let d = ((p[0] as i32 - q[0] as i32).abs()
+                + (p[1] as i32 - q[1] as i32).abs()
+                + (p[2] as i32 - q[2] as i32).abs()) as u32;
+            sum += d as f64;
+            if d > maxd {
+                maxd = d;
+            }
+            count += 1;
+        }
+        x += 8;
+    }
+    if count == 0 {
+        return (f64::MAX, u32::MAX);
+    }
+    (sum / count as f64, maxd)
+}
+
+/// True when the decoded image is a smooth synthetic gradient — Bing's
+/// no-imagery placeholder — rather than real satellite imagery.
+fn is_placeholder_tile(rgba: &image::RgbaImage) -> bool {
+    let (w, h) = rgba.dimensions();
+    if w < 16 || h < 16 {
+        return false;
+    }
+    let (avg, maxd) = smoothness_stats(rgba);
+    avg < 0.5 && maxd <= 8
+}
+
+/// Append a box-filtered mip chain (2x2 average per level) to the base
+/// level, returning the full data blob and the mip level count.
+fn build_mip_chain(base: Vec<u8>, width: u32, height: u32) -> (Vec<u8>, u32) {
+    let mut data = base;
+    let mut levels = 1u32;
+    let (mut cw, mut ch) = (width, height);
+    let mut src_off = 0usize;
+    while cw > 1 || ch > 1 {
+        let nw = (cw / 2).max(1);
+        let nh = (ch / 2).max(1);
+        let mut mip = vec![0u8; (nw * nh * 4) as usize];
+        for ry in 0..nh {
+            for rx in 0..nw {
+                let mut acc = [0u32; 4];
+                for dy in 0..2u32 {
+                    for dx in 0..2u32 {
+                        let sx = ((rx * 2 + dx).min(cw - 1)) as usize;
+                        let sy = ((ry * 2 + dy).min(ch - 1)) as usize;
+                        let i = src_off + (sy * cw as usize + sx) * 4;
+                        for c in 0..4 {
+                            acc[c] += data[i + c] as u32;
+                        }
+                    }
+                }
+                let o = ((ry * nw + rx) * 4) as usize;
+                for c in 0..4 {
+                    mip[o + c] = (acc[c] / 4) as u8;
+                }
+            }
+        }
+        src_off += (cw * ch) as usize * 4;
+        data.extend_from_slice(&mip);
+        cw = nw;
+        ch = nh;
+        levels += 1;
+    }
+    (data, levels)
+}
+
+/// Create a GPU texture from raw RGBA data with a full mip chain and the
+/// CesiumJS imagery sampler (trilinear mipmap + anisotropic filtering), so
+/// minified horizon tiles don't shimmer and oblique tiles stay crisp.
+fn make_image(
+    images: &mut Assets<Image>,
+    rgba: Vec<u8>,
+    width: u32,
+    height: u32,
+) -> Handle<Image> {
+    let (data, levels) = build_mip_chain(rgba, width, height);
+    // Image::new asserts data == base extent size, so construct with the
+    // base level only and swap in the full mip chain afterwards (the GPU
+    // upload path honors texture_descriptor.mip_level_count).
+    let base_len = (width * height * 4) as usize;
+    let mut img = Image::new(
+        bevy::render::render_resource::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        bevy::render::render_resource::TextureDimension::D2,
+        data[..base_len].to_vec(),
+        bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+        bevy::render::render_asset::RenderAssetUsages::default(),
+    );
+    img.data = data;
+    img.texture_descriptor.mip_level_count = levels;
+    img.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        mag_filter: ImageFilterMode::Linear,
+        min_filter: ImageFilterMode::Linear,
+        mipmap_filter: ImageFilterMode::Linear,
+        anisotropy_clamp: 8,
+        ..default()
+    });
+    images.add(img)
+}
+
+// ── Tile helpers ───────────────────────────────────────────────────
 
 fn compute_segments(zoom: u32) -> u32 {
     // Coarse tiles still need enough subdivisions to keep the limb
     // silhouette smooth where they meet the horizon.
     (BASE_SEGMENTS >> zoom.saturating_sub(MIN_ZOOM)).max(8)
+}
+
+// ── Background mesh builds (parallel) ──────────────────────────────
+
+/// Build tile meshes on worker threads; results flow back through the
+/// pipeline channel and are uploaded to the GPU within the frame budget.
+fn start_mesh_builds(pipe: &mut MeshPipeline, jobs: Vec<(TileKey, u32, Option<[f32; 4]>)>) {
+    let tx = pipe.tx.clone();
+
+    std::thread::spawn(move || {
+        let chunks: Vec<Vec<(TileKey, u32, Option<[f32; 4]>)>> = {
+            let mut c: Vec<Vec<(TileKey, u32, Option<[f32; 4]>)>> =
+                (0..DOWNLOAD_THREADS).map(|_| Vec::new()).collect();
+            for (i, job) in jobs.into_iter().enumerate() {
+                c[i % DOWNLOAD_THREADS].push(job);
+            }
+            c
+        };
+
+        let mut handles = Vec::new();
+        for chunk in chunks {
+            let tx = tx.clone();
+            handles.push(std::thread::spawn(move || {
+                for (key, segments, uv) in chunk {
+                    let mesh = match uv {
+                        Some(rect) => create_tile_mesh_uv(key.0, key.1, key.2, segments, rect),
+                        None => create_tile_mesh(key.0, key.1, key.2, segments),
+                    };
+                    if tx.send((key, mesh, uv.is_some())).is_err() {
+                        return;
+                    }
+                }
+            }));
+        }
+        for h in handles {
+            let _ = h.join();
+        }
+    });
 }
 
 // ── Bing Maps downloads (parallel) ─────────────────────────────────
@@ -531,25 +1139,32 @@ fn tile_to_quadkey(x: u32, y: u32, level: u32) -> String {
     for i in (0..level).rev() {
         let mut d = 0u8;
         let mask = 1 << i;
-        if (x & mask) != 0 { d |= 1; }
-        if (y & mask) != 0 { d |= 2; }
+        if (x & mask) != 0 {
+            d |= 1;
+        }
+        if (y & mask) != 0 {
+            d |= 2;
+        }
         qk.push_str(&d.to_string());
     }
     qk
 }
 
-/// Start PARALLEL background downloads using a thread pool.
-fn start_downloads(tex_rx: &TextureReceiver, tiles: &[TileKey]) {
-    let tiles_owned: Vec<TileKey> = tiles.to_vec();
+/// Start PARALLEL background downloads using a thread pool. When `downscale`
+/// is set the worker also shrinks the image to 128x128 so coarse filler tiles
+/// never pay full-resolution decode/upload costs.
+fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
+    let tiles_owned: Vec<(TileKey, bool)> = tiles.to_vec();
     let tx = tex_rx.tx.clone();
 
     std::thread::spawn(move || {
         let total = tiles_owned.len();
 
         // Split tiles across DOWNLOAD_THREADS workers
-        let chunks: Vec<Vec<TileKey>> = {
-            let mut c: Vec<Vec<TileKey>> = (0..DOWNLOAD_THREADS).map(|_| Vec::new()).collect();
-            for (i, &tile) in tiles_owned.iter().enumerate() {
+        let chunks: Vec<Vec<(TileKey, bool)>> = {
+            let mut c: Vec<Vec<(TileKey, bool)>> =
+                (0..DOWNLOAD_THREADS).map(|_| Vec::new()).collect();
+            for (i, tile) in tiles_owned.into_iter().enumerate() {
                 c[i % DOWNLOAD_THREADS].push(tile);
             }
             c
@@ -564,32 +1179,103 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[TileKey]) {
                     .timeout(std::time::Duration::from_secs(10))
                     .build();
 
-                for &(px, py, pz) in &chunk {
+                for &((px, py, pz), downscale) in &chunk {
                     let qk = tile_to_quadkey(px, py, pz);
                     let sub = (px + py) % 8;
                     let url = format!(
                         "https://ecn.t{}.tiles.virtualearth.net/tiles/a{}.jpeg?g=14393",
                         sub, qk
                     );
-                    match agent.get(&url).call() {
-                        Ok(resp) => {
-                            let mut reader = resp.into_reader();
-                            let mut data = Vec::new();
-                            if reader.read_to_end(&mut data).is_ok() {
-                                if let Ok(img) = image::load_from_memory(&data) {
-                                    let rgba = img.to_rgba8();
-                                    let (w, h) = rgba.dimensions();
-                                    let _ = tx.send(TileDownloadResult {
-                                        x: px, y: py, z: pz,
-                                        rgba_data: rgba.into_raw(),
-                                        width: w, height: h,
-                                    });
+                    // Retry with backoff: tile servers throttle bursty
+                    // clients (403/429/timeouts); a permanently failed tile
+                    // would otherwise never appear.
+                    let mut delivered = false;
+                    for attempt in 0..3u32 {
+                        if attempt > 0 {
+                            std::thread::sleep(std::time::Duration::from_millis(
+                                250u64 << attempt,
+                            ));
+                        }
+                        let fetched = match agent.get(&url).call() {
+                            Ok(resp) => {
+                                let mut reader = resp.into_reader();
+                                let mut data = Vec::new();
+                                if reader.read_to_end(&mut data).is_ok() {
+                                    image::load_from_memory(&data).ok()
+                                } else {
+                                    None
                                 }
                             }
+                            Err(e) => {
+                                eprintln!("[DL] ({},{},{}): {}", px, py, pz, e);
+                                None
+                            }
+                        };
+                        if let Some(img) = fetched {
+                            let rgba = img.to_rgba8();
+                            // Bing serves smooth gradient placeholder JPEGs
+                            // for tiles without imagery; pasting one would
+                            // stamp an opaque blue hole over the good parent
+                            // coverage, so such tiles are treated as no-data
+                            // and inherit ancestor coverage on the main
+                            // thread instead.
+                            if is_placeholder_tile(&rgba) {
+                                let (avg, maxd) = smoothness_stats(&rgba);
+                                eprintln!(
+                                    "[DL] placeholder ({},{},{}) avg={:.2} max={}",
+                                    px, py, pz, avg, maxd
+                                );
+                                let _ = tx.send(TileDownloadResult {
+                                    x: px,
+                                    y: py,
+                                    z: pz,
+                                    rgba_data: Vec::new(),
+                                    width: 0,
+                                    height: 0,
+                                    placeholder: true,
+                                });
+                                delivered = true;
+                                break;
+                            }
+                            let (rgba, w, h) = if downscale && rgba.width() > 128 {
+                                let small = image::DynamicImage::ImageRgba8(rgba)
+                                    .resize(
+                                        128,
+                                        128,
+                                        image::imageops::FilterType::Triangle,
+                                    );
+                                let r = small.to_rgba8();
+                                let (w, h) = r.dimensions();
+                                (r, w, h)
+                            } else {
+                                let (w, h) = rgba.dimensions();
+                                (rgba, w, h)
+                            };
+                            let _ = tx.send(TileDownloadResult {
+                                x: px,
+                                y: py,
+                                z: pz,
+                                rgba_data: rgba.into_raw(),
+                                width: w,
+                                height: h,
+                                placeholder: false,
+                            });
+                            delivered = true;
+                            break;
                         }
-                        Err(e) => {
-                            eprintln!("[DL] ({},{},{}): {}", px, py, pz, e);
-                        }
+                    }
+                    if !delivered {
+                        // All retries failed: treat as no-data (inherit
+                        // ancestor coverage) instead of leaving a hole.
+                        let _ = tx.send(TileDownloadResult {
+                            x: px,
+                            y: py,
+                            z: pz,
+                            rgba_data: Vec::new(),
+                            width: 0,
+                            height: 0,
+                            placeholder: true,
+                        });
                     }
                 }
             }));
@@ -602,109 +1288,4 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[TileKey]) {
 
         println!("[DL] Batch complete: {} tiles", total);
     });
-}
-
-// ── Texture application + cache storage ────────────────────────────
-
-fn apply_textures_from_downloads(
-    tex_rx: Res<TextureReceiver>,
-    mut mgr: ResMut<TileManager>,
-    mut images: ResMut<Assets<Image>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    tile_query: Query<(&GlobeTile, &MeshMaterial3d<StandardMaterial>)>,
-    mut commands: Commands,
-) {
-    let mut results: Vec<TileDownloadResult> = Vec::new();
-    {
-        let rx = tex_rx.rx.lock().unwrap();
-        while let Ok(r) = rx.try_recv() {
-            results.push(r);
-        }
-    }
-
-    if results.is_empty() {
-        return;
-    }
-
-    let mut cache = tex_rx.cache.lock().unwrap();
-    let finest = mgr.current_zoom;
-
-    for result in results {
-        // Only the finest level is worth caching at full resolution; coarser
-        // tiles are transient filler rings.
-        if result.z == finest {
-            cache.insert(
-                (result.x, result.y, result.z),
-                CachedTexture {
-                    rgba_data: result.rgba_data.clone(),
-                    width: result.width,
-                    height: result.height,
-                },
-            );
-        }
-
-        // Create Bevy texture (downscaled for coarse filler levels)
-        let tex_handle = build_gpu_image(
-            &mut images,
-            result.rgba_data,
-            result.width,
-            result.height,
-            result.z,
-            finest,
-        );
-
-        // Apply to matching entity
-        for (globe_tile, mat_handle) in tile_query.iter() {
-            if globe_tile.x == result.x
-                && globe_tile.y == result.y
-                && globe_tile.z == result.z
-            {
-                if let Some(mat) = materials.get_mut(mat_handle) {
-                    mat.base_color_texture = Some(tex_handle.clone());
-                    mat.base_color = Color::WHITE;
-                }
-                mgr.textured_tiles
-                    .insert((result.x, result.y, result.z));
-                break;
-            }
-        }
-    }
-
-    // Progressive cleanup: once a fifth of the finest visible tiles have
-    // textures, despawn spawned entities that are no longer in the visible
-    // set (stale tiles kept as fallback coverage during zoom transitions).
-    let current_zoom = mgr.current_zoom;
-    let fine_total = mgr
-        .visible_set
-        .iter()
-        .filter(|(_, _, z)| *z == current_zoom)
-        .count();
-    let fine_textured = mgr
-        .visible_set
-        .iter()
-        .filter(|k| k.2 == current_zoom && mgr.textured_tiles.contains(k))
-        .count();
-
-    if fine_total > 0 && fine_textured > fine_total / 5 {
-        let stale: Vec<TileKey> = mgr
-            .tile_entities
-            .keys()
-            .filter(|k| !mgr.visible_set.contains(k))
-            .copied()
-            .collect();
-        if !stale.is_empty() {
-            let removed_count = stale.len();
-            for key in stale {
-                if let Some(entity) = mgr.tile_entities.remove(&key) {
-                    commands.entity(entity).despawn();
-                    mgr.textured_tiles.remove(&key);
-                }
-            }
-            println!(
-                "[DynGlobe] Cleaned {} stale tiles, {} remaining",
-                removed_count,
-                mgr.tile_entities.len()
-            );
-        }
-    }
 }

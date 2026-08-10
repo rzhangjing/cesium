@@ -1,14 +1,28 @@
 # UI组件库
 
 <cite>
-**本文引用的文件**   
-- [CesiumViewer.js](file://Apps/CesiumViewer/CesiumViewer.js)
-- [CesiumViewer.css](file://Apps/CesiumViewer/CesiumViewer.css)
-- [index.html](file://Apps/CesiumViewer/index.html)
-- [HelloWorld.html](file://Apps/HelloWorld.html)
-- [package.json](file://packages/widgets/package.json)
-- [README.md](file://Documentation/Contributors/MobileGuide/README.md)
+**本文引用的文件**
+- [lib.rs](file://cesiumrust/domain/widgets/src/lib.rs)
+- [geocoder.rs](file://cesiumrust/domain/widgets/src/geocoder.rs)
+- [animation.rs](file://cesiumrust/domain/widgets/src/animation.rs)
+- [scene_mode_picker.rs](file://cesiumrust/domain/widgets/src/scene_mode_picker.rs)
+- [timeline.rs](file://cesiumrust/domain/widgets/src/timeline.rs)
+- [buttons.rs](file://cesiumrust/domain/widgets/src/buttons.rs)
+- [info_box.rs](file://cesiumrust/domain/widgets/src/info_box.rs)
+- [mod.rs](file://cesiumrust/adapters/bevy-render/src/widgets/mod.rs)
+- [animation.rs](file://cesiumrust/adapters/bevy-render/src/widgets/animation.rs)
+- [geocoder.rs](file://cesiumrust/adapters/bevy-render/src/widgets/geocoder.rs)
+- [scene_mode_picker.rs](file://cesiumrust/adapters/bevy-render/src/widgets/scene_mode_picker.rs)
+- [minimal.rs](file://cesiumrust/application/cesium-app/examples/minimal.rs)
 </cite>
+
+## 更新摘要
+**变更内容**
+- 移除了基于GPUI的桌面应用框架相关文档，全面转向Bevy小部件系统
+- 新增Bevy渲染适配器中的小部件集成层说明
+- 更新了动画控件、地理编码器和场景模式选择器的实现细节
+- 重构了组件架构，从Web前端迁移到Rust/Bevy生态
+- 添加了时间轴、按钮组和信息框等核心UI组件的技术说明
 
 ## 目录
 1. [简介](#简介)
@@ -23,240 +37,291 @@
 10. [附录：集成示例路径](#附录集成示例路径)
 
 ## 简介
-本技术文档面向使用 Cesium 的开发者，聚焦于“UI 组件库”在仓库中的落地形态与实践方式。内容涵盖：
-- Viewer 组件的架构设计与配置要点
-- 控件系统的扩展机制与自定义控件开发思路
+本技术文档面向使用 CesiumRust 的开发者，聚焦于基于 Bevy 的小部件系统在仓库中的落地形态与实践方式。内容涵盖：
+- 基于 Bevy 的小部件架构设计与配置要点
+- 地理编码器、动画控件、场景模式选择器等核心组件的实现机制
+- 时间轴、信息框、按钮组等内置组件的使用方法
 - 国际化支持与主题定制能力
-- 信息框、工具栏、缩放控件等内置组件的使用说明
-- 响应式设计与移动端适配最佳实践
-- 与其他前端框架的集成方案与参考路径
+- 与其他 Rust 生态组件的集成方案
+- 移动端适配与性能优化最佳实践
 
-由于仓库中未提供独立的 UI 组件包源码，本文以应用示例与 Widgets 包入口为依据，给出可操作的集成与扩展方法，并辅以图示帮助理解。
+由于项目已从 Web 前端迁移到 Rust/Bevy 桌面应用框架，本文档重点介绍新的 Bevy 小部件系统及其在三维地球可视化中的应用。
 
 ## 项目结构
-仓库中与 UI 相关的关键位置包括：
-- Apps/CesiumViewer：一个基于 Cesium 的演示应用，包含初始化脚本、样式与入口页面
-- Apps/HelloWorld.html：最小化示例页面
-- packages/widgets：Widgets 包的元数据与入口（用于定位 UI 组件来源）
-- Documentation/Contributors/MobileGuide：移动端指南，涉及响应式与交互优化
+仓库中与 UI 小部件相关的关键位置包括：
+- cesiumrust/domain/widgets：领域模型层的小部件视图模型
+- cesiumrust/adapters/bevy-render/src/widgets：Bevy 渲染适配器层的小部件实现
+- cesiumrust/application/cesium-app：应用示例，展示小部件的实际使用
 
 ```mermaid
 graph TB
-A["应用入口<br/>Apps/CesiumViewer/index.html"] --> B["应用脚本<br/>Apps/CesiumViewer/CesiumViewer.js"]
-B --> C["样式文件<br/>Apps/CesiumViewer/CesiumViewer.css"]
-B --> D["Cesium Widgets 包入口<br/>packages/widgets/package.json"]
-E["最小示例页面<br/>Apps/HelloWorld.html"] --> F["浏览器渲染"]
-A --> F
+A["领域模型层<br/>domain/widgets"] --> B["渲染适配器层<br/>adapters/bevy-render/widgets"]
+B --> C["应用示例<br/>application/cesium-app"]
+D["Bevy 框架"] --> B
+E["Cesium 核心引擎"] --> A
 ```
 
-图表来源
-- [index.html](file://Apps/CesiumViewer/index.html)
-- [CesiumViewer.js](file://Apps/CesiumViewer/CesiumViewer.js)
-- [CesiumViewer.css](file://Apps/CesiumViewer/CesiumViewer.css)
-- [package.json](file://packages/widgets/package.json)
+**图表来源**
+- [lib.rs:1-50](file://cesiumrust/domain/widgets/src/lib.rs#L1-L50)
+- [mod.rs](file://cesiumrust/adapters/bevy-render/src/widgets/mod.rs)
+- [minimal.rs:1-122](file://cesiumrust/application/cesium-app/examples/minimal.rs#L1-L122)
 
-章节来源
-- [index.html](file://Apps/CesiumViewer/index.html)
-- [CesiumViewer.js](file://Apps/CesiumViewer/CesiumViewer.js)
-- [CesiumViewer.css](file://Apps/CesiumViewer/CesiumViewer.css)
-- [HelloWorld.html](file://Apps/HelloWorld.html)
-- [package.json](file://packages/widgets/package.json)
+**章节来源**
+- [lib.rs:1-50](file://cesiumrust/domain/widgets/src/lib.rs#L1-L50)
+- [minimal.rs:1-122](file://cesiumrust/application/cesium-app/examples/minimal.rs#L1-L122)
 
 ## 核心组件
-本节从“UI 组件库”的角度，梳理与 Viewer 及控件系统相关的核心概念与职责边界：
-- Viewer 容器：负责承载三维场景、图层、相机与用户交互；其 UI 控件通常由 Widgets 注入到 DOM 容器中
-- 控件系统：提供缩放、全屏、信息框、时间轴、地图选择器等常用 UI 元素，支持通过配置项启用/禁用或替换
-- 主题与样式：通过 CSS 变量或覆盖样式实现主题定制
-- 国际化：通过本地化资源与文案键值进行多语言切换（具体实现取决于上层应用或第三方 i18n 库）
+本节从"UI 组件库"的角度，梳理基于 Bevy 的小部件系统的核心概念与职责边界：
+- 领域模型层：提供纯域视图模型，无 UI 框架依赖，包含动画控制、时间轴、地理编码等功能
+- 渲染适配器层：将领域模型转换为 Bevy 可渲染的实体和组件
+- 应用集成层：在 Bevy 应用中组合和使用各种小部件
+- 国际化支持：通过 i18n 模块提供多语言支持
+- 主题定制：通过 Bevy 的资源系统和样式配置实现
 
-章节来源
-- [CesiumViewer.js](file://Apps/CesiumViewer/CesiumViewer.js)
-- [CesiumViewer.css](file://Apps/CesiumViewer/CesiumViewer.css)
-- [package.json](file://packages/widgets/package.json)
+**章节来源**
+- [lib.rs:1-50](file://cesiumrust/domain/widgets/src/lib.rs#L1-L50)
 
 ## 架构总览
-下图展示了应用层、Widgets 与渲染层的交互关系。应用通过入口脚本创建 Viewer，并将 UI 控件挂载到指定 DOM 节点；样式文件对控件外观进行定制；Widgets 包提供控件的实现与默认行为。
+下图展示了基于 Bevy 的小部件系统架构。领域模型层定义小部件的状态和行为，渲染适配器层负责将其转换为 Bevy 实体，应用层进行组合和配置。
 
 ```mermaid
 graph TB
 subgraph "应用层"
-HTML["index.html"]
-APPJS["CesiumViewer.js"]
-CSS["CesiumViewer.css"]
+APP["CesiumRust 应用"]
+PLUGINS["Bevy 插件系统"]
 end
-subgraph "UI 组件层"
-WIDGETS["widgets 包<br/>缩放/信息框/工具栏等"]
+subgraph "渲染适配器层"
+WIDGETS_BEVY["Bevy 小部件适配器"]
+RENDERING["渲染系统"]
 end
-subgraph "渲染层"
-VIEWER["Viewer 实例"]
-SCENE["Scene 渲染"]
+subgraph "领域模型层"
+DOMAIN_MODELS["领域视图模型"]
+ANIMATION["动画控件"]
+GEOCODER["地理编码器"]
+SCENE_PICKER["场景模式选择器"]
+TIMELINE["时间轴"]
+BUTTONS["按钮组"]
+INFOBOX["信息框"]
 end
-HTML --> APPJS
-APPJS --> VIEWER
-APPJS --> WIDGETS
-CSS --> WIDGETS
-VIEWER --> SCENE
+APP --> PLUGINS
+PLUGINS --> WIDGETS_BEVY
+WIDGETS_BEVY --> RENDERING
+WIDGETS_BEVY --> DOMAIN_MODELS
+DOMAIN_MODELS --> ANIMATION
+DOMAIN_MODELS --> GEOCODER
+DOMAIN_MODELS --> SCENE_PICKER
+DOMAIN_MODELS --> TIMELINE
+DOMAIN_MODELS --> BUTTONS
+DOMAIN_MODELS --> INFOBOX
 ```
 
-图表来源
-- [index.html](file://Apps/CesiumViewer/index.html)
-- [CesiumViewer.js](file://Apps/CesiumViewer/CesiumViewer.js)
-- [CesiumViewer.css](file://Apps/CesiumViewer/CesiumViewer.css)
-- [package.json](file://packages/widgets/package.json)
+**图表来源**
+- [lib.rs:1-50](file://cesiumrust/domain/widgets/src/lib.rs#L1-L50)
+- [minimal.rs:1-122](file://cesiumrust/application/cesium-app/examples/minimal.rs#L1-L122)
 
 ## 详细组件分析
 
-### Viewer 组件：架构与配置要点
-- 容器与生命周期
-  - 在入口页面中准备一个固定尺寸的 DOM 容器
-  - 应用脚本初始化 Viewer，绑定事件与控件
-  - 销毁时释放资源，避免内存泄漏
-- 关键配置维度（按常见需求归纳）
-  - 基础显示：是否显示默认控件、地形、影像、动画时钟等
-  - 交互行为：鼠标/触摸手势、拾取、碰撞检测
-  - 性能选项：阴影、雾效、抗锯齿、深度缓冲等
-  - 安全与跨域：CORS、令牌、请求拦截器
-- 与 Widgets 的关系
-  - 通过配置项控制默认控件的显隐
-  - 可通过 API 动态添加/移除控件
-  - 支持将控件挂载到自定义容器，便于布局与主题统一
+### 地理编码器（Geocoder）
+地理编码器提供搜索即输入的地理编码功能，支持自动完成和结果导航。
 
-章节来源
-- [CesiumViewer.js](file://Apps/CesiumViewer/CesiumViewer.js)
-- [CesiumViewer.css](file://Apps/CesiumViewer/CesiumViewer.css)
+**主要特性：**
+- 实时搜索：输入时触发搜索，支持最小字符数配置
+- 结果管理：显示搜索结果列表，支持键盘导航
+- 目标定位：支持矩形区域或点目标的飞行定位
+- 状态管理：搜索状态、结果显示状态、选中项管理
 
-### 控件系统：扩展机制与自定义控件
-- 扩展点
-  - 通过 Widget 工厂或注册表机制扩展新控件
-  - 复用现有控件的基类或样式约定，保证一致性
-- 自定义控件开发步骤（通用流程）
-  - 定义控件 DOM 结构与样式
-  - 封装交互逻辑与状态管理
-  - 暴露统一的 API（显示/隐藏、事件回调、配置项）
-  - 注册到控件管理器，供 Viewer 或业务模块调用
-- 与 Viewer 的集成
-  - 在 Viewer 初始化后挂载控件
-  - 监听 Viewer 事件（如帧更新、相机变化）驱动控件状态同步
+**API 接口：**
+- `set_search_text()`: 设置搜索文本
+- `begin_search()`: 开始搜索操作
+- `complete_search()`: 完成搜索并设置结果
+- `select_previous()/select_next()`: 结果导航
+- `activate_selected()`: 激活选中的结果
 
-章节来源
-- [CesiumViewer.js](file://Apps/CesiumViewer/CesiumViewer.js)
-- [package.json](file://packages/widgets/package.json)
+**章节来源**
+- [geocoder.rs:1-299](file://cesiumrust/domain/widgets/src/geocoder.rs#L1-L299)
 
-### 国际化与主题定制
-- 国际化
-  - 文案集中管理，按语言包加载
-  - 在控件渲染前解析文本键值，支持运行时切换
-- 主题定制
-  - 通过 CSS 变量或覆盖样式调整颜色、尺寸、圆角、阴影
-  - 为不同设备（桌面/平板/手机）提供断点适配
-  - 保持控件层级与 z-index 一致，避免遮挡
+### 动画控件（Animation）
+动画控件提供时间播放控制，包括播放/暂停、速度调节和时间显示。
 
-章节来源
-- [CesiumViewer.css](file://Apps/CesiumViewer/CesiumViewer.css)
+**核心功能：**
+- 播放控制：播放、暂停、反向播放、正向播放
+- 速度调节：通过旋转环控制速度倍数，支持线性和对数刻度
+- 时间格式化：J2000 纪元时间格式化为日期和时间字符串
+- 系统时钟模式：支持使用系统时间作为动画时间源
 
-### 内置组件：信息框、工具栏、缩放控件
-- 信息框（InfoBox）
-  - 用途：展示选中要素的详情、属性与富文本
-  - 行为：打开/关闭、定位到目标、跟随相机移动
-- 工具栏（Toolbar）
-  - 用途：聚合常用操作按钮（测量、截图、图层开关等）
-  - 行为：分组、图标、快捷键、无障碍标签
-- 缩放控件（Zoom）
-  - 用途：快速放大/缩小视图
-  - 行为：点击缩放、滚轮缩放、键盘快捷键
+**旋转环算法：**
+- 角度范围：[-105°, 105°]
+- 线性区域：[-15°, 15°] 对应速度倍数 [-1, 1]
+- 对数区域：超出线性区域使用对数刻度映射
 
-章节来源
-- [CesiumViewer.js](file://Apps/CesiumViewer/CesiumViewer.js)
-- [CesiumViewer.css](file://Apps/CesiumViewer/CesiumViewer.css)
+**章节来源**
+- [animation.rs:1-387](file://cesiumrust/domain/widgets/src/animation.rs#L1-L387)
 
-### 响应式设计与移动端适配
-- 布局策略
-  - 使用视口单位与弹性布局，确保在不同屏幕比例下正常显示
-  - 根据设备类型动态调整控件大小与间距
-- 交互优化
-  - 针对触摸设备优化点击区域与手势冲突
-  - 减少不必要的重绘与复杂动画
-- 性能考量
-  - 降低阴影、雾效等开销较大的效果
-  - 按需加载控件与资源，避免首屏阻塞
+### 场景模式选择器（Scene Mode Picker）
+场景模式选择器允许用户在 3D、2D 和哥伦布视图模式之间切换。
 
-章节来源
-- [README.md](file://Documentation/Contributors/MobileGuide/README.md)
+**支持的场景模式：**
+- Scene3D：三维地球视图
+- Scene2D：二维平面地图视图
+- ColumbusView：2.5D 哥伦布视图
+- Morphing：模式间过渡动画（内部使用）
+
+**功能特性：**
+- 模式切换：支持编程方式和用户界面切换
+- 过渡动画：可配置的过渡持续时间
+- 下拉菜单：展开/收起状态管理
+- 工具提示：为每种模式提供描述性文本
+
+**章节来源**
+- [scene_mode_picker.rs:1-181](file://cesiumrust/domain/widgets/src/scene_mode_picker.rs#L1-L181)
+
+### 时间轴（Timeline）
+时间轴组件用于显示和控制当前场景时间，支持轨道和高亮范围。
+
+**核心数据结构：**
+- TimelineTrack：时间轨道，包含名称、时间范围、颜色和高度
+- TimelineHighlightRange：高亮范围，用于标记重要时间段
+- TimelineTicScale：时间刻度尺，根据时间跨度自动选择合适的刻度
+
+**交互功能：**
+- 时间缩放：以当前时间为中心进行缩放
+- 时间平移：按可见范围的分数进行平移
+- 轨道管理：添加、移除轨道
+- 高亮管理：添加、清除高亮范围
+
+**章节来源**
+- [timeline.rs:1-433](file://cesiumrust/domain/widgets/src/timeline.rs#L1-L433)
+
+### 按钮组（Buttons）
+按钮组包含多种常用操作按钮的视图模型。
+
+**按钮类型：**
+- ToggleButtonViewModel：通用切换按钮
+- HomeButtonViewModel：主页按钮，重置相机到默认视图
+- FullscreenButtonViewModel：全屏按钮，切换浏览器全屏模式
+- NavigationHelpButtonViewModel：导航帮助按钮，显示/隐藏操作指南
+- VRButtonViewModel：VR 模式按钮，切换虚拟现实模式
+
+**功能特性：**
+- 状态管理：启用/禁用、可见性、切换状态
+- 工具提示：动态工具提示文本
+- 环境检测：检查功能支持情况（如全屏、VR）
+
+**章节来源**
+- [buttons.rs:1-354](file://cesiumrust/domain/widgets/src/buttons.rs#L1-L354)
+
+### 信息框（InfoBox）
+信息框用于在面板中显示选中实体的详细信息。
+
+**显示功能：**
+- 实体信息展示：标题和描述内容
+- 框架管理：显示/隐藏详情面板
+- 跟踪模式：跟随实体移动相机
+- 内容摘要：长内容的截断显示
+
+**状态管理：**
+- 可见性控制：整体可见性和框架可见性
+- 内容管理：标题、描述、关闭按钮显示
+- 相机偏移：跟踪模式下的相机视角偏移
+
+**章节来源**
+- [info_box.rs:1-197](file://cesiumrust/domain/widgets/src/info_box.rs#L1-L197)
+
+### Bevy 渲染适配器
+Bevy 渲染适配器将领域模型转换为 Bevy 可渲染的实体和组件。
+
+**适配器功能：**
+- 小部件插件：`CesiumWidgetPlugin` 提供小部件集成功能
+- 渲染系统：将领域模型的状态变化转换为渲染指令
+- 事件处理：处理用户交互事件并更新领域模型状态
+
+**集成方式：**
+- 通过 Bevy 插件系统注册小部件功能
+- 使用 Bevy 的资源系统管理小部件状态
+- 利用 Bevy 的实体组件系统组织 UI 元素
+
+**章节来源**
+- [lib.rs:1-446](file://cesiumrust/adapters/bevy-render/src/lib.rs#L1-L446)
 
 ## 依赖关系分析
-- 应用层依赖
-  - index.html 引入应用脚本与样式
-  - CesiumViewer.js 负责初始化 Viewer 与控件
-  - CesiumViewer.css 提供主题与布局样式
-- 组件层依赖
-  - widgets 包提供控件实现与默认样式
-- 运行期依赖
-  - 浏览器环境、WebGL、网络资源（影像、模型、字体等）
+基于 Bevy 的小部件系统依赖关系如下：
 
 ```mermaid
 graph LR
-HTML["index.html"] --> JS["CesiumViewer.js"]
-JS --> CSS["CesiumViewer.css"]
-JS --> WPKG["widgets 包入口<br/>package.json"]
-WPKG --> WCOMP["控件实现与样式"]
+APP["应用层"] --> BEVY["Bevy 框架"]
+BEVY --> ADAPTER["渲染适配器"]
+ADAPTER --> DOMAIN["领域模型"]
+DOMAIN --> CORE["Cesium 核心引擎"]
+CORE --> GEOMETRY["几何计算"]
+CORE --> RENDERING["渲染管线"]
 ```
 
-图表来源
-- [index.html](file://Apps/CesiumViewer/index.html)
-- [CesiumViewer.js](file://Apps/CesiumViewer/CesiumViewer.js)
-- [CesiumViewer.css](file://Apps/CesiumViewer/CesiumViewer.css)
-- [package.json](file://packages/widgets/package.json)
+**图表来源**
+- [minimal.rs:1-122](file://cesiumrust/application/cesium-app/examples/minimal.rs#L1-L122)
+- [lib.rs:1-50](file://cesiumrust/domain/widgets/src/lib.rs#L1-L50)
 
-章节来源
-- [index.html](file://Apps/CesiumViewer/index.html)
-- [CesiumViewer.js](file://Apps/CesiumViewer/CesiumViewer.js)
-- [CesiumViewer.css](file://Apps/CesiumViewer/CesiumViewer.css)
-- [package.json](file://packages/widgets/package.json)
+**章节来源**
+- [minimal.rs:1-122](file://cesiumrust/application/cesium-app/examples/minimal.rs#L1-L122)
+- [lib.rs:1-50](file://cesiumrust/domain/widgets/src/lib.rs#L1-L50)
 
 ## 性能与响应式建议
-- 首屏优化
-  - 延迟加载非关键控件与资源
-  - 预缓存常用图标与字体
-- 渲染优化
+- **首屏优化**
+  - 延迟加载非关键小部件和资源
+  - 预缓存常用图标和字体资源
+  - 使用 Bevy 的异步任务系统避免阻塞主线程
+
+- **渲染优化**
   - 合理设置阴影、雾效、抗锯齿等级
   - 控制同时可见的要素数量与复杂度
-- 交互优化
-  - 合并频繁的状态更新，减少重排重绘
-  - 为移动端提供更大的触控目标与更少的层级嵌套
-- 监控与诊断
-  - 记录关键指标（FPS、内存占用、绘制调用次数）
-  - 结合浏览器开发者工具定位瓶颈
+  - 使用 Bevy 的批处理和实例化渲染
 
-[本节为通用指导，不直接分析具体文件]
+- **交互优化**
+  - 合并频繁的状态更新，减少重排重绘
+  - 为不同设备提供合适的触控目标和布局
+  - 使用 Bevy 的事件系统优化输入处理
+
+- **内存管理**
+  - 及时释放不再使用的小部件资源
+  - 使用弱引用避免循环引用
+  - 监控内存使用情况，防止内存泄漏
 
 ## 故障排查指南
-- 常见问题
-  - 控件未显示：检查 DOM 容器尺寸、z-index 与样式覆盖
-  - 交互无响应：确认事件绑定顺序与手势冲突
-  - 资源加载失败：核对 CORS 配置与网络可达性
-- 调试技巧
-  - 在控制台输出 Viewer 与控件实例状态
-  - 逐步禁用控件与效果，定位问题范围
-  - 使用最小示例页面验证基础功能是否正常
+- **常见问题**
+  - 小部件未显示：检查 Bevy 插件注册和实体生命周期
+  - 交互无响应：确认事件绑定顺序和手势冲突
+  - 资源加载失败：核对网络配置和资源可达性
+  - 渲染异常：检查 Bevy 渲染管道配置和材质设置
 
-章节来源
-- [HelloWorld.html](file://Apps/HelloWorld.html)
-- [CesiumViewer.js](file://Apps/CesiumViewer/CesiumViewer.js)
-- [CesiumViewer.css](file://Apps/CesiumViewer/CesiumViewer.css)
+- **调试技巧**
+  - 在控制台输出小部件状态和错误信息
+  - 逐步禁用小部件和功能，定位问题范围
+  - 使用 Bevy 的开发工具和日志系统进行调试
+  - 验证基础功能是否正常，使用最小示例进行测试
+
+**章节来源**
+- [minimal.rs:1-122](file://cesiumrust/application/cesium-app/examples/minimal.rs#L1-L122)
 
 ## 结论
-本仓库提供了基于 Cesium 的应用示例与 Widgets 包入口，可作为 UI 组件库集成的起点。通过合理的 Viewer 配置、控件扩展机制、主题与国际化策略，以及响应式与移动端优化，可以在不同平台上获得一致的可视化体验。建议在项目中建立统一的控件注册与样式规范，提升可维护性与可扩展性。
+CesiumRust 项目已成功从 Web 前端迁移到基于 Bevy 的桌面应用框架，提供了完整的 UI 小部件系统。新的架构具有以下优势：
+- **跨平台支持**：基于 Bevy 的跨平台能力
+- **高性能渲染**：利用 Rust 的性能优势和 Bevy 的渲染引擎
+- **类型安全**：Rust 的类型系统确保代码安全性
+- **模块化设计**：清晰的领域模型和渲染适配器分离
+- **丰富的组件**：完整的地理可视化 UI 组件集合
 
-[本节为总结性内容，不直接分析具体文件]
+通过合理的配置、扩展机制、主题定制策略，以及性能优化，可以在不同平台上获得一致的三维地球可视化体验。建议在项目中建立统一的组件注册和样式规范，提升可维护性和可扩展性。
 
 ## 附录：集成示例路径
-- 完整示例入口
-  - [index.html](file://Apps/CesiumViewer/index.html)
-  - [CesiumViewer.js](file://Apps/CesiumViewer/CesiumViewer.js)
-  - [CesiumViewer.css](file://Apps/CesiumViewer/CesiumViewer.css)
-- 最小示例
-  - [HelloWorld.html](file://Apps/HelloWorld.html)
-- Widgets 包入口
-  - [package.json](file://packages/widgets/package.json)
-- 移动端指南
-  - [README.md](file://Documentation/Contributors/MobileGuide/README.md)
+- **完整示例入口**
+  - [minimal.rs](file://cesiumrust/application/cesium-app/examples/minimal.rs)
+- **领域模型层**
+  - [widgets lib.rs](file://cesiumrust/domain/widgets/src/lib.rs)
+  - [geocoder.rs](file://cesiumrust/domain/widgets/src/geocoder.rs)
+  - [animation.rs](file://cesiumrust/domain/widgets/src/animation.rs)
+  - [scene_mode_picker.rs](file://cesiumrust/domain/widgets/src/scene_mode_picker.rs)
+  - [timeline.rs](file://cesiumrust/domain/widgets/src/timeline.rs)
+  - [buttons.rs](file://cesiumrust/domain/widgets/src/buttons.rs)
+  - [info_box.rs](file://cesiumrust/domain/widgets/src/info_box.rs)
+- **Bevy 渲染适配器**
+  - [widgets mod.rs](file://cesiumrust/adapters/bevy-render/src/widgets/mod.rs)
+  - [bevy render lib.rs](file://cesiumrust/adapters/bevy-render/src/lib.rs)

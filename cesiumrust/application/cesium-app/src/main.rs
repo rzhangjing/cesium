@@ -6,6 +6,7 @@
 //! - Orbit camera (mouse drag to rotate, scroll to zoom)
 //! - Atmospheric limb glow + starfield background
 
+use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::prelude::*;
 use cesium_bevy_render::{CesiumCorePlugin, CesiumGlobe};
 
@@ -81,6 +82,9 @@ fn main() {
             ..default()
         }))
         .insert_resource(ClearColor(Color::BLACK))
+        // FPS / frame-time diagnostics (console) for performance validation
+        .add_plugins(FrameTimeDiagnosticsPlugin::default())
+        .add_plugins(LogDiagnosticsPlugin::default())
         // Core: lighting + globe config
         .add_plugins(CesiumCorePlugin)
         // Camera: mouse orbit/zoom

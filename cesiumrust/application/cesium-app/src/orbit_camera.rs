@@ -12,7 +12,7 @@ use bevy::prelude::*;
 
 /// Camera vertical field of view (radians). Kept in sync between the spawned
 /// projection and the drag math so the grab-the-globe tracking is exact.
-const CAMERA_FOV_Y: f32 = std::f32::consts::FRAC_PI_3; // 60 degrees
+pub const CAMERA_FOV_Y: f32 = std::f32::consts::FRAC_PI_3; // 60 degrees
 /// Near clip plane — small enough to see the surface when zoomed in close.
 const CAMERA_NEAR: f32 = 0.002;
 /// Far clip plane — large enough for the starfield (radius ~50).

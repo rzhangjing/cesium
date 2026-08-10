@@ -10,6 +10,11 @@ use cesium_bevy_render::METERS_PER_RENDER_UNIT;
 
 /// WGS84 semi-major axis (meters).
 const EARTH_RADIUS: f64 = 6378137.0;
+/// WGS84 semi-minor axis (meters).
+const EARTH_RADIUS_MINOR: f64 = 6356752.314245;
+/// First eccentricity squared of the WGS84 ellipsoid.
+const E2: f64 =
+    1.0 - (EARTH_RADIUS_MINOR * EARTH_RADIUS_MINOR) / (EARTH_RADIUS * EARTH_RADIUS);
 
 /// Component identifying a globe tile entity by its tiling scheme coordinates.
 #[derive(Component, Clone, Copy, PartialEq, Eq, Hash)]
@@ -59,13 +64,17 @@ pub fn tile_xy_to_rectangle(x: u32, y: u32, z: u32) -> GeoRectangle {
     }
 }
 
-/// Fraction of a tile's extent by which the mesh overlaps its neighbors.
-/// The overlap hides sub-pixel cracks between adjacent tiles; skirt vertices
-/// are tucked slightly below the surface so the overlap never z-fights with
-/// the neighbor's main surface.
-const TILE_MARGIN: f64 = 0.012;
-/// Radial tuck factor applied to skirt (overlap) vertices.
-const SKIRT_TUCK: f64 = 0.9992;
+/// Radial drop factor of the hanging skirt ring. Skirt vertices sit at the
+/// EXACT tile boundary (same lat/lon as the edge row, so neighbors share
+/// bit-identical edge vertices) but at this fraction of the surface radius:
+/// a vertical wall hanging below the surface, CesiumJS
+/// `EllipsoidTessellator`-style. The wall only shows through sub-pixel
+/// rasterization cracks and LOD-transition wedges; unlike an outward overlap
+/// band it never paints stretched edge texels over a neighbor's or the
+/// parent's surface (which reads as seam lines). Deep enough to stay below
+/// the coarsest live parent surface despite the per-level radial tuck
+/// (0.0006/level) plus chord sagitta.
+const SKIRT_DROP: f64 = 0.996;
 
 /// Generates a Bevy Mesh for a single tile on the WGS84 ellipsoid surface.
 ///
@@ -75,46 +84,61 @@ const SKIRT_TUCK: f64 = 0.9992;
 /// - Positions: cartographic_to_cartesian on WGS84 ellipsoid
 /// - Normals: geodetic surface normal (normalized position on ellipsoid)
 /// - Triangle winding: counter-clockwise from outside (outward normals)
-/// - A one-vertex overlap skirt per side (tucked below the surface) hides
-///   rasterization cracks between neighboring tiles
+/// - A hanging skirt ring (boundary loop duplicated at `SKIRT_DROP` radius)
+///   fills rasterization cracks between neighboring tiles without ever
+///   overlapping a neighbor's surface
+///
+/// The mesh is built at full radius (no LOD tuck baked in): the per-LOD-level
+/// radial tuck is applied via the entity's `Transform` scale instead, which
+/// keeps meshes reusable across zoom changes (cached once, spawned many
+/// times without rebuilding the vertex buffers).
 ///
 /// # Arguments
 /// * `x`, `y`, `z` - Tile coordinates in Web Mercator tiling scheme
 /// * `segments` - Number of subdivisions per axis within the true tile extent
-/// * `base_tuck` - Radial scale (< 1.0) placing this tile below finer LOD
-///   levels so overlapping levels never z-fight (1.0 for the finest level)
-pub fn create_tile_mesh(x: u32, y: u32, z: u32, segments: u32, base_tuck: f64) -> Mesh {
+pub fn create_tile_mesh(x: u32, y: u32, z: u32, segments: u32) -> Mesh {
+    create_tile_mesh_uv(x, y, z, segments, [0.0, 0.0, 1.0, 1.0])
+}
+
+/// Same as [`create_tile_mesh`] but remaps UVs into `uv_rect` =
+/// [u0, v0, u1, v1], a sub-rectangle of the texture. Used by no-data tiles
+/// that inherit an ancestor's image: the child samples exactly its own
+/// quadrant region of the ancestor texture (CesiumJS-style upsampling
+/// fallback), so no-imagery regions blend seamlessly with real coverage.
+pub fn create_tile_mesh_uv(
+    x: u32,
+    y: u32,
+    z: u32,
+    segments: u32,
+    uv_rect: [f32; 4],
+) -> Mesh {
     let rect = tile_xy_to_rectangle(x, y, z);
 
     let width = rect.east - rect.west;
     let height = rect.north - rect.south;
 
-    // One extra vertex ring per side forms the overlap skirt.
-    let verts_per_side = segments + 3;
-    let vertex_count = (verts_per_side * verts_per_side) as usize;
+    // Exact [0,1] grid: adjacent tiles share bit-identical edge vertices
+    // (same lat/lon formulas -> same f32 positions), so neighbors meet
+    // without overlap; the hanging skirt ring below fills the remaining
+    // sub-pixel cracks.
+    let verts_per_side = segments + 1;
+    let grid_count = (verts_per_side * verts_per_side) as usize;
+    let perimeter_count = (4 * segments) as usize;
 
-    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(vertex_count);
-    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(vertex_count);
-    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(vertex_count);
-
-    // WGS84 radii
-    let a = EARTH_RADIUS; // semi-major axis
-    let b = 6356752.314245_f64; // semi-minor axis
-    let e2 = 1.0 - (b * b) / (a * a);
+    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(grid_count + perimeter_count);
+    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(grid_count + perimeter_count);
+    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(grid_count + perimeter_count);
 
     for row in 0..verts_per_side {
-        // v_norm spans [-MARGIN, 1+MARGIN]; 0..1 is the true tile extent.
-        let v_norm = -TILE_MARGIN
-            + (1.0 + 2.0 * TILE_MARGIN) * row as f64 / (verts_per_side - 1) as f64;
-        let lat = rect.south + v_norm.clamp(-0.05, 1.05) * height;
+        // v_norm spans [0,1] exactly: the true tile extent, no overlap.
+        let v_norm = row as f64 / (verts_per_side - 1) as f64;
+        let lat = rect.south + v_norm * height;
 
         let cos_lat = lat.cos();
         let sin_lat = lat.sin();
 
         for col in 0..verts_per_side {
-            // u_norm spans [-MARGIN, 1+MARGIN]; 0..1 is the true tile extent.
-            let u_norm = -TILE_MARGIN
-                + (1.0 + 2.0 * TILE_MARGIN) * col as f64 / (verts_per_side - 1) as f64;
+            let u_norm = col as f64 / (verts_per_side - 1) as f64;
             let lon = rect.west + u_norm * width;
 
             let cos_lon = lon.cos();
@@ -127,35 +151,60 @@ pub fn create_tile_mesh(x: u32, y: u32, z: u32, segments: u32, base_tuck: f64) -
 
             // Position on ellipsoid surface (cartographic to cartesian):
             // N = a / sqrt(1 - e2*sin^2(lat)); x = N*cos(lat)*cos(lon), etc.
-            let n_val = a / (1.0 - e2 * sin_lat * sin_lat).sqrt();
+            let n_val = EARTH_RADIUS / (1.0 - E2 * sin_lat * sin_lat).sqrt();
 
-            // Skirt vertices (outside the true tile extent) are tucked just
-            // below the surface so overlapping neighbors never z-fight.
-            let skirt = if u_norm < 0.0 || u_norm > 1.0 || v_norm < 0.0 || v_norm > 1.0 {
-                SKIRT_TUCK
-            } else {
-                1.0
-            };
-            let tuck = base_tuck * skirt;
-
-            let px = n_val * cos_lat * cos_lon * tuck;
-            let py = n_val * cos_lat * sin_lon * tuck;
-            let pz = n_val * (1.0 - e2) * sin_lat * tuck;
-
-            positions.push([px as f32, py as f32, pz as f32]);
+            positions.push([
+                (n_val * nx) as f32,
+                (n_val * ny) as f32,
+                (n_val * (1.0 - E2) * sin_lat) as f32,
+            ]);
             normals.push([nx as f32, ny as f32, nz as f32]);
             // Bevy samples UV v=0 at the TOP of the image (row 0 = north for
-            // map tiles). UVs clamp to [0,1] so the skirt reuses edge texels.
+            // map tiles).
+            let u = u_norm as f32;
+            let v = (1.0 - v_norm) as f32;
             uvs.push([
-                u_norm.clamp(0.0, 1.0) as f32,
-                (1.0 - v_norm.clamp(0.0, 1.0)) as f32,
+                uv_rect[0] + u * (uv_rect[2] - uv_rect[0]),
+                uv_rect[1] + v * (uv_rect[3] - uv_rect[1]),
             ]);
         }
     }
 
+    // Hanging skirt: duplicate the boundary loop at SKIRT_DROP radius. The
+    // wall hangs straight down from the tile edge, so it can only peek
+    // through cracks, never over a neighbor. Drop alternates slightly with
+    // tile parity so coincident walls of same-level neighbors cannot
+    // z-fight in the cracks.
+    let drop = if (x + y + z) & 1 == 0 {
+        SKIRT_DROP
+    } else {
+        SKIRT_DROP - 0.001
+    };
+    let mut perim: Vec<u32> = Vec::with_capacity(perimeter_count);
+    let last = verts_per_side - 1;
+    for col in 0..verts_per_side {
+        perim.push(col); // south edge, west -> east
+    }
+    for row in 1..verts_per_side {
+        perim.push(row * verts_per_side + last); // east edge, south -> north
+    }
+    for col in (0..last).rev() {
+        perim.push(last * verts_per_side + col); // north edge, east -> west
+    }
+    for row in (1..last).rev() {
+        perim.push(row * verts_per_side); // west edge, north -> south
+    }
+    for &g in &perim {
+        let p = positions[g as usize];
+        positions.push([p[0] * drop as f32, p[1] * drop as f32, p[2] * drop as f32]);
+        normals.push(normals[g as usize]);
+        uvs.push(uvs[g as usize]); // skirt reuses the edge texels
+    }
+
     // Generate triangle indices (counter-clockwise winding from outside)
     let quads = verts_per_side - 1;
-    let mut indices: Vec<u32> = Vec::with_capacity((quads * quads * 6) as usize);
+    let mut indices: Vec<u32> =
+        Vec::with_capacity((quads * quads * 6) as usize + perimeter_count * 6);
     for row in 0..quads {
         for col in 0..quads {
             let a = row * verts_per_side + col;
@@ -169,6 +218,20 @@ pub fn create_tile_mesh(x: u32, y: u32, z: u32, segments: u32, base_tuck: f64) -
             indices.push(b + 1);
             indices.push(b);
         }
+    }
+    // Skirt wall strip (double-sided material, winding irrelevant).
+    for i in 0..perimeter_count {
+        let j = (i + 1) % perimeter_count;
+        let g0 = perim[i];
+        let g1 = perim[j];
+        let d0 = grid_count as u32 + i as u32;
+        let d1 = grid_count as u32 + j as u32;
+        indices.push(g0);
+        indices.push(d0);
+        indices.push(d1);
+        indices.push(g0);
+        indices.push(d1);
+        indices.push(g1);
     }
 
     let mut mesh = Mesh::new(

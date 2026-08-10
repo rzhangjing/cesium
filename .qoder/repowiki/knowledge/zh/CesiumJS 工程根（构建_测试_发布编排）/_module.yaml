@@ -1,0 +1,24 @@
+schema_version: 1
+module_path: ""
+title: CesiumJS 工程根（构建/测试/发布编排）
+scope:
+    - README.md
+    - CONTRIBUTING.md
+    - CODE_OF_CONDUCT.md
+    - CONTRIBUTORS.md
+    - package.json
+    - gulpfile.js
+    - gulpfile.apps.js
+    - gulpfile.makezip.js
+    - server.js
+    - index.html
+    - index.cjs
+    - tsconfig.json
+    - eslint.config.js
+    - .github/
+    - .husky/
+    - launches/
+    - scripts/
+source_files: []
+depends_on: []
+related_to: []

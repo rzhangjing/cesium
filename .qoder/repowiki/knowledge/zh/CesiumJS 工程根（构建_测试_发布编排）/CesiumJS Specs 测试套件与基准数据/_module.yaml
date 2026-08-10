@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: tests_and_specs
+title: CesiumJS Specs 测试套件与基准数据
+scope:
+    - Specs/
+source_files: []
+depends_on: []
+related_to: []
