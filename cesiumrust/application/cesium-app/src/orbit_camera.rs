@@ -34,6 +34,10 @@ pub struct OrbitState {
     pub pitch: f32,
     /// Distance from target in render units.
     pub distance: f32,
+    /// Wheel input moves this instantly; `distance` glides toward it each
+    /// frame (exponential easing), giving CesiumJS-style zoom inertia
+    /// instead of a hard 30% jump per wheel notch.
+    pub target_distance: f32,
     /// Orbit target (world space, globe center).
     pub target: Vec3,
     /// Overall rotation sensitivity multiplier (1.0 = exact 1:1 surface
@@ -54,6 +58,7 @@ impl Default for OrbitState {
             heading: 0.0,
             pitch: 0.4, // ~23 deg north of the equator
             distance: 3.0,
+            target_distance: 3.0,
             target: Vec3::ZERO,
             rotate_speed: 1.0, // exact geometric tracking by default
             zoom_speed: 0.3,
@@ -103,6 +108,7 @@ fn orbit_camera_system(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mut motion_events: EventReader<MouseMotion>,
     mut wheel_events: EventReader<MouseWheel>,
+    time: Res<Time>,
     mut query: Query<&mut Transform, With<OrbitCamera>>,
     windows: Query<&Window>,
 ) {
@@ -152,11 +158,20 @@ fn orbit_camera_system(
     for ev in wheel_events.read() {
         let min_surf = state.min_distance - GLOBE_RADIUS;
         let max_surf = state.max_distance - GLOBE_RADIUS;
-        let surface_dist = (state.distance - GLOBE_RADIUS).clamp(min_surf, max_surf);
+        let surface_dist = (state.target_distance - GLOBE_RADIUS).clamp(min_surf, max_surf);
         // ev.y > 0 (scroll up) = zoom in -> shrink the height above the surface.
         let zoom_factor = 1.0 - ev.y * state.zoom_speed;
         let new_surf = (surface_dist * zoom_factor).clamp(min_surf, max_surf);
-        state.distance = GLOBE_RADIUS + new_surf;
+        state.target_distance = GLOBE_RADIUS + new_surf;
+    }
+
+    // Zoom inertia: glide `distance` toward the wheel-set target so the
+    // scene scales continuously (CesiumJS eases zoom the same way; a hard
+    // per-notch jump reads as tile "wobble").
+    let k = 1.0 - (-10.0f32 * time.delta_secs()).exp();
+    state.distance += (state.target_distance - state.distance) * k;
+    if (state.target_distance - state.distance).abs() < 1.0e-5 {
+        state.distance = state.target_distance;
     }
 
     // Apply transform

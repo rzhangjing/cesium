@@ -334,16 +334,20 @@ impl Plugin for CesiumCorePlugin {
 }
 
 /// System that spawns scene lighting.
+///
+/// Uniform ambient illumination only, no directional sun: CesiumJS's default
+/// globe runs with `enableLighting = false`, i.e. the whole planet renders as
+/// full daylight with no day/night terminator, and we match that look here.
+///
+/// Brightness calibration: the PBR ambient pipeline applies an empirical
+/// ~3.18e-4 physical-units scale to `brightness` (measured: 10 000 blew out
+/// to a ~3x overexposed wash, 2.2 rendered black), so `1 / 3.18e-4 ~= 3300`
+/// reproduces the imagery albedo ~1:1 — CesiumJS displays tiles as-is.
 fn setup_lighting(mut commands: Commands) {
-    // Sun directional light (fixed angle simulating sunlight)
-    commands.spawn((
-        DirectionalLight {
-            illuminance: light_consts::lux::AMBIENT_DAYLIGHT,
-            shadows_enabled: false,
-            ..default()
-        },
-        Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.4, 0.6, 0.0)),
-    ));
+    commands.insert_resource(AmbientLight {
+        color: Color::WHITE,
+        brightness: 3300.0,
+    });
 }
 
 #[cfg(test)]

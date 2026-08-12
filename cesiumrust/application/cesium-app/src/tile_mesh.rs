@@ -79,11 +79,15 @@ fn skirt_drop(z: u32) -> f64 {
 }
 
 /// Level-scaled radial step: 15% of the level's tile arc, clamped so coarse
-/// levels keep a usable skirt and ultra-deep levels never degenerate to
-/// zero. Only drives [`skirt_drop`] now that LOD tuck is gone.
+/// levels keep a usable skirt and deep levels never degenerate. The floor
+/// must exceed the MAX runtime LOD cliff: `adaptive_tuck_step` caps at
+/// 2e-4 per level and fast zooms/drag leave live neighbors up to ~4 levels
+/// apart (cliff ~8e-4); a shallower skirt wall leaves a see-through crack
+/// at LOD boundaries that reads as thin stripes during fast motion.
+/// Only drives [`skirt_drop`] now that LOD tuck is applied via entity scale.
 fn tuck_step(z: u32) -> f64 {
     let arc = 2.0 * std::f64::consts::PI / (1u64 << z.min(24)) as f64;
-    (arc * 0.15).clamp(1.0e-5, 0.0006)
+    (arc * 0.15).clamp(5.0e-4, 6.0e-4)
 }
 
 /// Generates a Bevy Mesh for a single tile on the WGS84 ellipsoid surface.

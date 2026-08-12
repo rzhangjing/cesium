@@ -41,7 +41,7 @@ const EARTH_RADIUS_M: f64 = 6378137.0;
 /// quadtree subdivides it — the CesiumJS `maximumScreenSpaceError = 2`
 /// budget (2 px of geometric error per texel).
 /// Number of parallel download / mesh-build worker threads.
-const DOWNLOAD_THREADS: usize = 8;
+const DOWNLOAD_THREADS: usize = 16;
 
 /// Per-frame budgets. Asset work (GPU buffer/texture uploads, entity spawns)
 /// is sliced across frames at these rates so a zoom or pan never produces a
@@ -58,6 +58,11 @@ const MAX_DESPAWNS_PER_FRAME: usize = 24;
 /// Sized above the typical visible-set peak (~750 for the concentric LOD
 /// layout) so a settled view never loses coverage to eviction.
 const MAX_TILE_ENTITIES: usize = 1100;
+/// Coarsest levels kept resident as a permanent global fallback layer
+/// (CesiumJS's base imagery layer role): downloaded once at startup, never
+/// despawned/evicted, so fast pans into never-visited regions show blurry
+/// imagery instead of the black base sphere while fine tiles load.
+const BASE_LAYER_ZOOM: u32 = 3;
 /// Upper bound for the per-tile GPU handle caches (textures dominate at
 /// 256 KB each); oldest entries are evicted FIFO.
 const MAX_GPU_CACHE_ENTRIES: usize = 3000;
@@ -121,14 +126,16 @@ struct TileManager {
     gpu_tex_size: HashMap<TileKey, u32>,
     /// Tiles with a full-res re-download in flight (dedupe guard).
     reupload: HashSet<TileKey>,
+    /// Tiles with any download in flight; dedupes fetches and, together with
+    /// coverage repair, guarantees a queued visible tile can never end up
+    /// without a download backing it.
+    in_flight: HashSet<TileKey>,
     /// Insertion order of spawned entities (FIFO eviction order).
     spawn_order: VecDeque<TileKey>,
     /// Set when `view_dependent_update` recomputed the visible set this
     /// frame; cleanup only runs on stable frames so a drag doesn't despawn
     /// tiles that leave and re-enter the visible set frame to frame.
     view_changed_this_frame: bool,
-    /// Current camera-adaptive radial tuck step (see `adaptive_tuck_step`).
-    tuck_step_cur: f64,
 }
 
 impl Default for TileManager {
@@ -154,9 +161,9 @@ impl Default for TileManager {
             gpu_tex_order: VecDeque::new(),
             gpu_tex_size: HashMap::new(),
             reupload: HashSet::new(),
+            in_flight: HashSet::new(),
             spawn_order: VecDeque::new(),
             view_changed_this_frame: false,
-            tuck_step_cur: 1.0e-4,
         }
     }
 }
@@ -167,6 +174,11 @@ struct TextureReceiver {
     rx: Mutex<mpsc::Receiver<TileDownloadResult>>,
     /// Persistent cache of downloaded tile image data (finest level only).
     cache: Arc<Mutex<HashMap<TileKey, CachedTexture>>>,
+    /// Tiles still worth downloading (queued / visible / spawned). Workers
+    /// check this before every fetch so batches made stale by a fast pan
+    /// release their bandwidth to the current view instead of finishing
+    /// downloads nobody will look at.
+    wanted: Arc<Mutex<HashSet<TileKey>>>,
 }
 
 impl Default for TextureReceiver {
@@ -176,6 +188,7 @@ impl Default for TextureReceiver {
             tx,
             rx: Mutex::new(rx),
             cache: Arc::new(Mutex::new(HashMap::new())),
+            wanted: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 }
@@ -190,6 +203,9 @@ struct TileDownloadResult {
     /// True when the tile has no usable imagery (Bing placeholder or all
     /// retries failed); the main thread then inherits ancestor coverage.
     placeholder: bool,
+    /// True when the worker skipped the fetch because the tile left the
+    /// wanted set (view moved on); the main thread only clears `in_flight`.
+    aborted: bool,
 }
 
 /// Background mesh-generation pipeline: workers build `Mesh` values off the
@@ -225,7 +241,7 @@ impl Plugin for DynamicGlobePlugin {
             .init_resource::<TextureReceiver>()
             .init_resource::<MeshPipeline>()
             .add_systems(Startup, initial_spawn)
-            .add_systems(Update, (view_dependent_update, process_pipeline).chain());
+            .add_systems(Update, (view_dependent_update, process_pipeline, smooth_tuck).chain());
     }
 }
 
@@ -253,8 +269,19 @@ fn initial_spawn(
 
     enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &visible);
 
+    // Permanent coarse fallback layer: every tile up to BASE_LAYER_ZOOM,
+    // fetched downscaled (prio < 160) so the whole globe costs ~5 MB.
+    let mut base: Vec<(TileKey, f32)> = Vec::new();
+    for z in 1..=BASE_LAYER_ZOOM {
+        for y in 0..(1u32 << z) {
+            for x in 0..(1u32 << z) {
+                base.push(((x, y, z), 100.0));
+            }
+        }
+    }
+    enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &base);
+
     mgr.current_zoom = finest;
-    mgr.tuck_step_cur = adaptive_tuck_step(orbit.distance);
     mgr.last_distance = orbit.distance;
     let (center_tx, center_ty) = geo_to_tile(lat_rad, lon_rad, finest);
     mgr.last_center_x = center_tx as f64;
@@ -290,11 +317,12 @@ fn enqueue_tiles(
             // comb band right next to crisp tiles at LOD junctions.
             if !mgr.no_data.contains(&key)
                 && !mgr.reupload.contains(&key)
-                && prio > 256.0
+                && prio > 192.0
                 && matches!(mgr.gpu_tex_size.get(&key), Some(&sz) if sz < 256)
             {
                 downloads.push((key, false, prio));
                 mgr.reupload.insert(key);
+                mgr.in_flight.insert(key);
             }
             if mgr.tile_entities.contains_key(&key) || mgr.queued.contains(&key) {
                 continue;
@@ -307,6 +335,7 @@ fn enqueue_tiles(
             if !cache.contains_key(&key)
                 && !mgr.gpu_textures.contains_key(&key)
                 && !mgr.no_data.contains(&key)
+                && !mgr.in_flight.contains(&key)
             {
                 // Tiles projected far below native texel size are pure
                 // horizon filler: downscale on the worker thread so they
@@ -314,6 +343,7 @@ fn enqueue_tiles(
                 // well below 256 so a downscaled tile never sits right next
                 // to a full-res one at comparable screen size.
                 downloads.push((key, prio < 160.0, prio));
+                mgr.in_flight.insert(key);
             }
         }
     }
@@ -327,6 +357,13 @@ fn enqueue_tiles(
     downloads.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
     let downloads: Vec<(TileKey, bool)> =
         downloads.into_iter().map(|(k, d, _)| (k, d)).collect();
+
+    // Immediately mark the fresh queue as worth downloading so workers that
+    // start before the next end-of-frame `wanted` refresh don't skip it.
+    {
+        let mut w = tex_rx.wanted.lock().unwrap();
+        w.extend(mgr.queued.iter().copied());
+    }
 
     if !mesh_jobs.is_empty() {
         start_mesh_builds(mesh_pipe, mesh_jobs);
@@ -357,7 +394,7 @@ fn view_dependent_update(
     // subdivisions. Reference zoom is clamped so global views refresh often
     // enough while close-in views simply recompute every drag frame (the
     // traversal is cheap and GPU caches absorb any churn).
-    let ref_z = mgr.current_zoom.clamp(4, 9);
+    let ref_z = mgr.current_zoom.clamp(4, 12);
     let (center_tx, center_ty) = geo_to_tile(lat_rad, lon_rad, ref_z);
     let dx = (center_tx as f64) - mgr.last_center_x;
     let dy = (center_ty as f64) - mgr.last_center_y;
@@ -365,7 +402,7 @@ fn view_dependent_update(
     let dist_changed =
         (orbit.distance - mgr.last_distance).abs() > mgr.last_distance * 0.03;
 
-    if moved <= 1.0 && !dist_changed {
+    if moved <= 0.5 && !dist_changed {
         return;
     }
 
@@ -413,6 +450,7 @@ fn view_dependent_update(
                 // falls through to the blue base sphere mid-zoom.
                 !mgr.visible_set.contains(k)
                     && !prot.contains(k)
+                    && k.2 > BASE_LAYER_ZOOM
                     && k.2.abs_diff(finest) > 2
             })
             .copied()
@@ -426,20 +464,8 @@ fn view_dependent_update(
         }
     }
 
-    // Re-tuck spawned tiles whenever the LOD range or the camera altitude
-    // shifts enough: the tuck step is camera-adaptive, so live entities
-    // need a fresh scale or their cliff heights stop tracking screen size.
-    let new_step = adaptive_tuck_step(orbit.distance);
-    if finest_changed || (new_step - mgr.tuck_step_cur).abs() > 0.2 * mgr.tuck_step_cur {
-        let scale = render_scale();
-        for (&key, &entity) in &mgr.tile_entities {
-            let s = scale * level_tuck(key.2, finest, new_step) as f32;
-            commands
-                .entity(entity)
-                .insert(Transform::from_scale(Vec3::splat(s)));
-        }
-        mgr.tuck_step_cur = new_step;
-    }
+    // Radial tuck is re-derived continuously from the camera by
+    // `smooth_tuck` every frame; nothing to do here.
 }
 
 impl TileManager {
@@ -489,6 +515,8 @@ fn process_pipeline(
     mut mgr: ResMut<TileManager>,
     mut mesh_pipe: ResMut<MeshPipeline>,
     tex_rx: Res<TextureReceiver>,
+    orbit: Res<OrbitState>,
+    windows: Query<&Window>,
 ) {
     if !mgr.initialized {
         return;
@@ -536,7 +564,8 @@ fn process_pipeline(
 
     // 3) Spawn entities whose mesh handle is ready, within budget.
     let scale = render_scale();
-    let finest = mgr.current_zoom;
+    let zf = float_zoom(focal_pixels(&windows), orbit.distance);
+    let step = adaptive_tuck_step(orbit.distance);
     let pending: Vec<TileKey> = mgr.spawn_queue.drain(..).collect();
     let mut still_queued: Vec<TileKey> = Vec::new();
     let mut spawns = 0;
@@ -623,7 +652,7 @@ fn process_pipeline(
                     Mesh3d(mesh_handle),
                     MeshMaterial3d(material),
                     Transform::from_scale(Vec3::splat(
-                        scale * level_tuck(key.2, finest, mgr.tuck_step_cur) as f32,
+                        scale * level_tuck(key.2, zf, step) as f32,
                     )),
                 ))
                 .id();
@@ -690,7 +719,7 @@ fn process_pipeline(
                 Mesh3d(mesh_handle),
                 MeshMaterial3d(material),
                 Transform::from_scale(Vec3::splat(
-                    scale * level_tuck(key.2, finest, mgr.tuck_step_cur) as f32,
+                    scale * level_tuck(key.2, zf, step) as f32,
                 )),
             ))
             .id();
@@ -711,6 +740,12 @@ fn process_pipeline(
             break;
         };
         let key = (result.x, result.y, result.z);
+        mgr.in_flight.remove(&key);
+        if result.aborted {
+            // Worker skipped the fetch (tile left the wanted set mid-flight);
+            // nothing to apply, the slot is simply free again.
+            continue;
+        }
         if result.placeholder {
             mgr.reupload.remove(&key);
             if mgr.gpu_textures.contains_key(&key) {
@@ -864,7 +899,7 @@ fn process_pipeline(
                 .tile_entities
                 .keys()
                 .copied()
-                .filter(|k| !mgr.visible_set.contains(k) && !prot.contains(k))
+                .filter(|k| !mgr.visible_set.contains(k) && !prot.contains(k) && k.2 > BASE_LAYER_ZOOM)
                 .map(|k| (pos(&k), k))
                 .collect();
             v.sort();
@@ -897,7 +932,7 @@ fn process_pipeline(
                     .tile_entities
                     .keys()
                     .copied()
-                    .filter(|k| has_live_ancestor(&mgr, k))
+                    .filter(|k| k.2 > BASE_LAYER_ZOOM && has_live_ancestor(&mgr, k))
                     .map(|k| (pos(&k), k))
                     .collect();
                 v.sort();
@@ -926,7 +961,11 @@ fn process_pipeline(
     // Coverage repair: visible tiles can fall out of the spawn queue through
     // assorted paths (momentarily outside the set mid-drag, over-cap
     // eviction of a still-visible tile). On stable frames re-enqueue them so
-    // coverage always converges back to hole-free.
+    // coverage always converges back to hole-free. Re-enqueueing alone is not
+    // enough: tiles that re-enter the queue through this path (or whose
+    // in-flight fetch was aborted by the wanted check) would otherwise wait
+    // forever on a download that was never started, so missing mesh jobs and
+    // downloads are issued here as well.
     if !view_changed {
         let missing: Vec<TileKey> = mgr
             .visible_set
@@ -935,10 +974,65 @@ fn process_pipeline(
             .copied()
             .take(32)
             .collect();
-        for k in missing {
-            mgr.spawn_queue.push_back(k);
-            mgr.queued.insert(k);
+        // Queued visible tiles that have no texture and no download in
+        // flight either (starved by an aborted fetch): re-issue the download.
+        let starved: Vec<TileKey> = {
+            let cache = tex_rx.cache.lock().unwrap();
+            mgr.visible_set
+                .iter()
+                .filter(|k| {
+                    mgr.queued.contains(k)
+                        && !mgr.tile_entities.contains_key(k)
+                        && !mgr.in_flight.contains(k)
+                        && !mgr.no_data.contains(k)
+                        && !mgr.gpu_textures.contains_key(k)
+                        && !cache.contains_key(k)
+                })
+                .copied()
+                .collect()
+        };
+        if !missing.is_empty() || !starved.is_empty() {
+            let mut repair_mesh: Vec<(TileKey, u32, Option<[f32; 4]>)> = Vec::new();
+            let mut repair_dl: Vec<(TileKey, bool)> = Vec::new();
+            {
+                let cache = tex_rx.cache.lock().unwrap();
+                for k in missing.iter().chain(starved.iter()) {
+                    if !mgr.gpu_meshes.contains_key(k)
+                        && !mgr.gpu_fb_meshes.contains_key(k)
+                    {
+                        repair_mesh.push((*k, compute_segments(k.2), None));
+                    }
+                    if !cache.contains_key(k)
+                        && !mgr.gpu_textures.contains_key(k)
+                        && !mgr.no_data.contains(k)
+                        && !mgr.in_flight.contains(k)
+                    {
+                        repair_dl.push((*k, false));
+                        mgr.in_flight.insert(*k);
+                    }
+                }
+            }
+            if !repair_mesh.is_empty() {
+                start_mesh_builds(&mut mesh_pipe, repair_mesh);
+            }
+            if !repair_dl.is_empty() {
+                start_downloads(&tex_rx, &repair_dl);
+            }
+            for k in missing {
+                mgr.spawn_queue.push_back(k);
+                mgr.queued.insert(k);
+            }
         }
+    }
+
+    // Refresh the download-wanted set so workers can drop fetches made stale
+    // by the view moving on; queued / visible / spawned tiles stay wanted.
+    {
+        let mut w = tex_rx.wanted.lock().unwrap();
+        w.clear();
+        w.extend(mgr.queued.iter().copied());
+        w.extend(mgr.visible_set.iter().copied());
+        w.extend(mgr.tile_entities.keys().copied());
     }
 }
 
@@ -972,6 +1066,10 @@ fn evict_gpu_cache(mgr: &mut TileManager) {
         let Some(old) = mgr.gpu_tex_order.pop_front() else {
             break;
         };
+        if old.2 <= BASE_LAYER_ZOOM {
+            // Permanent fallback layer: never evict its GPU handles.
+            continue;
+        }
         if mgr.tile_entities.contains_key(&old) {
             // Still rendered: defer eviction.
             mgr.gpu_tex_order.push_back(old);
@@ -1109,26 +1207,62 @@ fn geo_to_tile(lat_rad: f64, lon_rad: f64, zoom: u32) -> (u32, u32) {
     (tx, ty)
 }
 
-/// Per-LOD-level radial tuck: coarser tiles sit `step` below per level
-/// difference. `step` adapts to the camera's height above the surface
+/// Per-LOD-level radial tuck against a CONTINUOUS zoom anchor: coarser
+/// tiles sit `step` below per (fractional) level difference, finer stale
+/// tiles `step` above (signed, so overlapping levels never render coplanar
+/// and z-fight). `step` adapts to the camera's height above the surface
 /// (~2% of it): the parent/child cliff then stays far below one screen
 /// pixel at every altitude (no smeared skirt band at LOD junctions) while
-/// remaining far above the depth-buffer precision (no z-fighting where a
-/// child overlaps its still-alive parent). The difference is SIGNED: stale
-/// tiles finer than the current finest must sit `step` ABOVE per level too,
-/// otherwise they render coplanar with their coarser replacement and
-/// z-fight (the "images covering each other" artifact seen while
-/// dragging/zooming). Applied via entity scale (NOT baked into the mesh) so
-/// meshes stay reusable across zoom changes.
-fn level_tuck(z: u32, finest: u32, step: f64) -> f64 {
-    1.0 - step * (finest as i64 - z as i64) as f64
+/// remaining far above the depth-buffer precision. The anchor is the
+/// fractional zoom level (`float_zoom`), so entity scales drift smoothly
+/// with the camera instead of jumping at integer finest flips — the discrete
+/// radial jumps read as tile "wobble" while zooming, which CesiumJS never
+/// shows because it has no tuck at all. Applied via entity scale (NOT baked
+/// into the mesh) so meshes stay reusable across zoom changes.
+fn level_tuck(z: u32, z_float: f64, step: f64) -> f64 {
+    1.0 - step * (z_float - z as f64)
+}
+
+/// Fractional LOD level the view center selects right now, mirroring the
+/// `screen_px == MAX_TILE_SCREEN_PX` subdivision threshold of the quadtree
+/// traversal: integer crossings coincide with `finest` flips while values
+/// in between drift continuously with the camera altitude.
+fn float_zoom(focal_px: f64, distance: f32) -> f64 {
+    let alt = (distance as f64 - 1.0).max(1.0e-4);
+    (2.0 * std::f64::consts::PI * focal_px / (MAX_TILE_SCREEN_PX * alt))
+        .log2()
+        .clamp(MIN_ZOOM as f64, MAX_ZOOM as f64)
+}
+
+/// Re-derive every live tile's radial tuck from the continuous zoom anchor
+/// each frame, so scales follow the camera smoothly (no wobble). Writes are
+/// skipped while the value is unchanged to avoid change-detection churn on
+/// idle frames.
+fn smooth_tuck(
+    orbit: Res<OrbitState>,
+    windows: Query<&Window>,
+    mut tiles: Query<(&GlobeTile, &mut Transform)>,
+) {
+    let zf = float_zoom(focal_pixels(&windows), orbit.distance);
+    let step = adaptive_tuck_step(orbit.distance);
+    let scale = render_scale();
+    for (tile, mut tf) in &mut tiles {
+        let s = scale * level_tuck(tile.z, zf, step) as f32;
+        if (tf.scale.x - s).abs() > s * 1.0e-6 {
+            tf.scale = Vec3::splat(s);
+        }
+    }
 }
 
 /// Camera-adaptive tuck step: 2% of the height above the surface, clamped
 /// so it never vanishes (deep zoom) nor exceeds a small fraction of the
 /// coarsest tile (horizon).
 fn adaptive_tuck_step(distance: f32) -> f64 {
-    (2.0e-5 * (distance as f64 - 1.0)).clamp(1.0e-7, 2.0e-4)
+    // Floor 2e-5: the inter-level separation (step * level-delta) must stay
+    // several times above depth-buffer precision at every camera altitude,
+    // otherwise overlapping LOD levels z-fight as diamond patches; 2e-5 is
+    // still sub-pixel (cliff < 0.5 px) down to ~30 km altitude.
+    (2.0e-5 * (distance as f64 - 1.0)).clamp(2.0e-5, 2.0e-4)
 }
 
 /// Smoothness + palette metric: average / max RGB difference between
@@ -1340,6 +1474,7 @@ fn tile_to_quadkey(x: u32, y: u32, level: u32) -> String {
 fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
     let tiles_owned: Vec<(TileKey, bool)> = tiles.to_vec();
     let tx = tex_rx.tx.clone();
+    let wanted = tex_rx.wanted.clone();
 
     std::thread::spawn(move || {
         let total = tiles_owned.len();
@@ -1357,6 +1492,7 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
         let mut handles = Vec::new();
         for chunk in chunks {
             let tx = tx.clone();
+            let wanted = wanted.clone();
             handles.push(std::thread::spawn(move || {
                 let agent = ureq::AgentBuilder::new()
                     .user_agent("Mozilla/5.0 CesiumRust/0.1")
@@ -1364,6 +1500,23 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
                     .build();
 
                 for &((px, py, pz), downscale) in &chunk {
+                    // Fast pans make whole batches stale within a few
+                    // frames; skip fetches nobody will look at so the
+                    // workers and the server connection budget go to the
+                    // current view instead.
+                    if !wanted.lock().unwrap().contains(&(px, py, pz)) {
+                        let _ = tx.send(TileDownloadResult {
+                            x: px,
+                            y: py,
+                            z: pz,
+                            rgba_data: Vec::new(),
+                            width: 0,
+                            height: 0,
+                            placeholder: false,
+                            aborted: true,
+                        });
+                        continue;
+                    }
                     let qk = tile_to_quadkey(px, py, pz);
                     let sub = (px + py) % 8;
                     let url = format!(
@@ -1421,6 +1574,7 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
                                     width: 0,
                                     height: 0,
                                     placeholder: true,
+                                    aborted: false,
                                 });
                                 delivered = true;
                                 break;
@@ -1447,6 +1601,7 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
                                 width: w,
                                 height: h,
                                 placeholder: false,
+                                aborted: false,
                             });
                             delivered = true;
                             break;
@@ -1463,6 +1618,7 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
                             width: 0,
                             height: 0,
                             placeholder: true,
+                            aborted: false,
                         });
                     }
                 }
