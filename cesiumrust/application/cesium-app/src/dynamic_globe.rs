@@ -87,15 +87,19 @@ struct TileManager {
     /// Which of the spawned tiles have textures applied (no longer blue).
     textured_tiles: HashSet<TileKey>,
     current_zoom: u32,
-    last_center_x: f64,
-    last_center_y: f64,
     /// Camera distance (globe radii) at the last visible-set recompute;
     /// a relative change re-triggers the SSE traversal.
     last_distance: f32,
     initialized: bool,
-    /// The last computed visible tile set (all LOD levels). Spawned tiles
-    /// outside this set are stale and get cleaned up progressively.
+    /// The last computed render partition (CesiumJS REPLACE refinement):
+    /// exactly one tile per screen region, no parent/child overlap. Only
+    /// these tiles are drawn (`sync_visibility` hides everything else).
     visible_set: HashSet<TileKey>,
+    /// Tiles that are still loading but NOT in the render partition:
+    /// the four children of a KICK-blocked tile (CesiumJS "continue to load
+    /// them" rule). They are downloaded/spawned here so the quadtree can
+    /// swap the parent out for them as soon as all four are ready.
+    load_set: HashSet<TileKey>,
     /// Tiles waiting for mesh build + spawn.
     spawn_queue: VecDeque<TileKey>,
     /// Mirror of spawn_queue for O(1) duplicate checks.
@@ -144,11 +148,10 @@ impl Default for TileManager {
             tile_entities: HashMap::new(),
             textured_tiles: HashSet::new(),
             current_zoom: MIN_ZOOM,
-            last_center_x: 0.0,
-            last_center_y: 0.0,
             last_distance: 0.0,
             initialized: false,
             visible_set: HashSet::new(),
+            load_set: HashSet::new(),
             spawn_queue: VecDeque::new(),
             queued: HashSet::new(),
             gpu_meshes: HashMap::new(),
@@ -241,7 +244,7 @@ impl Plugin for DynamicGlobePlugin {
             .init_resource::<TextureReceiver>()
             .init_resource::<MeshPipeline>()
             .add_systems(Startup, initial_spawn)
-            .add_systems(Update, (view_dependent_update, process_pipeline, smooth_tuck).chain());
+            .add_systems(Update, (view_dependent_update, process_pipeline, sync_visibility).chain());
     }
 }
 
@@ -258,16 +261,19 @@ fn initial_spawn(
     // never wastes bandwidth on intermediate zoom levels that would be
     // replaced immediately.
     let (lat_rad, lon_rad) = compute_sub_camera_point(&orbit);
-    let visible = compute_visible_tiles(
+    let (visible, load) = compute_visible_tiles(
         lat_rad,
         lon_rad,
         orbit.distance as f64,
         focal_pixels(&windows),
+        &mgr,
     );
     let finest = visible.iter().map(|t| t.0 .2).max().unwrap_or(MIN_ZOOM);
     mgr.visible_set = visible.iter().map(|&(k, _)| k).collect();
+    mgr.load_set = load.iter().map(|&(k, _)| k).collect();
 
     enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &visible);
+    enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &load);
 
     // Permanent coarse fallback layer: every tile up to BASE_LAYER_ZOOM,
     // fetched downscaled (prio < 160) so the whole globe costs ~5 MB.
@@ -283,9 +289,6 @@ fn initial_spawn(
 
     mgr.current_zoom = finest;
     mgr.last_distance = orbit.distance;
-    let (center_tx, center_ty) = geo_to_tile(lat_rad, lon_rad, finest);
-    mgr.last_center_x = center_tx as f64;
-    mgr.last_center_y = center_ty as f64;
     mgr.initialized = true;
     println!(
         "[DynGlobe] Initial: {} tiles queued, finest zoom {}",
@@ -389,28 +392,17 @@ fn view_dependent_update(
 
     let (lat_rad, lon_rad) = compute_sub_camera_point(&orbit);
 
-    // Recompute trigger: sub-camera point moved ~1 tile at a mid reference
-    // zoom, or the camera distance changed enough (>3%) to flip SSE
-    // subdivisions. Reference zoom is clamped so global views refresh often
-    // enough while close-in views simply recompute every drag frame (the
-    // traversal is cheap and GPU caches absorb any churn).
-    let ref_z = mgr.current_zoom.clamp(4, 12);
-    let (center_tx, center_ty) = geo_to_tile(lat_rad, lon_rad, ref_z);
-    let dx = (center_tx as f64) - mgr.last_center_x;
-    let dy = (center_ty as f64) - mgr.last_center_y;
-    let moved = (dx * dx + dy * dy).sqrt();
-    let dist_changed =
-        (orbit.distance - mgr.last_distance).abs() > mgr.last_distance * 0.03;
-
-    if moved <= 0.5 && !dist_changed {
-        return;
-    }
-
-    let new_visible = compute_visible_tiles(
+    // The quadtree re-runs EVERY frame (CesiumJS `QuadtreePrimitive` does
+    // the same): a KICK-blocked parent must swap out the moment all four
+    // children finish spawning, so a settled camera cannot freeze the
+    // partition. The traversal is cheap arithmetic over a few hundred tiles
+    // and the GPU caches absorb the churn.
+    let (new_visible, new_load) = compute_visible_tiles(
         lat_rad,
         lon_rad,
         orbit.distance as f64,
         focal_pixels(&windows),
+        &mgr,
     );
     let finest = new_visible
         .iter()
@@ -419,18 +411,21 @@ fn view_dependent_update(
         .unwrap_or(mgr.current_zoom);
     let finest_changed = finest != mgr.current_zoom;
     let new_set: HashSet<TileKey> = new_visible.iter().map(|&(k, _)| k).collect();
+    let new_load_set: HashSet<TileKey> = new_load.iter().map(|&(k, _)| k).collect();
+    let partition_changed = new_set != mgr.visible_set || new_load_set != mgr.load_set;
     mgr.visible_set = new_set;
+    mgr.load_set = new_load_set;
 
-    // Stale tiles are NOT despawned here: they keep covering the globe while
-    // their replacements load (no holes / no spawn-despawn churn during
-    // drags). `process_pipeline` cleans them up progressively.
+    // Stale tiles are NOT despawned here: they stay as warm fallback while
+    // their replacements load. `sync_visibility` hides them the same frame
+    // (strict partition rendering, no overlap), and `process_pipeline`
+    // cleans them up progressively.
     enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &new_visible);
+    enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &new_load);
 
     mgr.current_zoom = finest;
     mgr.last_distance = orbit.distance;
-    mgr.last_center_x = center_tx as f64;
-    mgr.last_center_y = center_ty as f64;
-    mgr.view_changed_this_frame = true;
+    mgr.view_changed_this_frame = partition_changed;
 
     if finest_changed {
         // Drop tiles far from the new LOD range right away (budgeted):
@@ -442,13 +437,8 @@ fn view_dependent_update(
             .tile_entities
             .keys()
             .filter(|k| {
-                // Never despawn tiles the current view still needs: opening
-                // a hole at the limb exposes hanging skirt walls as stripe
-                // fins while the replacement loads. Likewise keep every
-                // ancestor of a not-yet-spawned visible tile (fast zooms
-                // jump several LOD levels at once), otherwise the hole
-                // falls through to the blue base sphere mid-zoom.
                 !mgr.visible_set.contains(k)
+                    && !mgr.load_set.contains(k)
                     && !prot.contains(k)
                     && k.2 > BASE_LAYER_ZOOM
                     && k.2.abs_diff(finest) > 2
@@ -463,9 +453,6 @@ fn view_dependent_update(
             evicted += 1;
         }
     }
-
-    // Radial tuck is re-derived continuously from the camera by
-    // `smooth_tuck` every frame; nothing to do here.
 }
 
 impl TileManager {
@@ -479,17 +466,18 @@ impl TileManager {
     }
 }
 
-/// Ancestor keys of every visible tile that has no spawned entity yet.
-/// Fast zooms can jump several LOD levels in one recompute, so protection
-/// must cover the ENTIRE ancestor chain of each pending leaf, not just the
-/// direct parent: any tile in this set is still the only coverage for part
-/// of the view and must not be despawned (removing it opens a hole down to
-/// the blue base sphere).
+/// Ancestor keys of every render/load-set tile that has no spawned entity
+/// yet. Fast zooms can jump several LOD levels in one recompute, so
+/// protection must cover the ENTIRE ancestor chain of each pending leaf,
+/// not just the direct parent: any tile in this set is still the only
+/// coverage for part of the view and must not be despawned (removing it
+/// opens a hole down to the blue base sphere).
 fn protected_ancestors(mgr: &TileManager) -> HashSet<TileKey> {
     let mut prot: HashSet<TileKey> = HashSet::new();
     for v in mgr
         .visible_set
         .iter()
+        .chain(mgr.load_set.iter())
         .filter(|v| !mgr.tile_entities.contains_key(v))
     {
         let (mut x, mut y, mut z) = *v;
@@ -515,8 +503,6 @@ fn process_pipeline(
     mut mgr: ResMut<TileManager>,
     mut mesh_pipe: ResMut<MeshPipeline>,
     tex_rx: Res<TextureReceiver>,
-    orbit: Res<OrbitState>,
-    windows: Query<&Window>,
 ) {
     if !mgr.initialized {
         return;
@@ -549,7 +535,10 @@ fn process_pipeline(
             continue;
         }
         // Only spend GPU memory on tiles still wanted.
-        if !mgr.visible_set.contains(&key) && !mgr.queued.contains(&key) {
+        if !mgr.visible_set.contains(&key)
+            && !mgr.load_set.contains(&key)
+            && !mgr.queued.contains(&key)
+        {
             continue;
         }
         if is_fb {
@@ -564,8 +553,6 @@ fn process_pipeline(
 
     // 3) Spawn entities whose mesh handle is ready, within budget.
     let scale = render_scale();
-    let zf = float_zoom(focal_pixels(&windows), orbit.distance);
-    let step = adaptive_tuck_step(orbit.distance);
     let pending: Vec<TileKey> = mgr.spawn_queue.drain(..).collect();
     let mut still_queued: Vec<TileKey> = Vec::new();
     let mut spawns = 0;
@@ -595,8 +582,9 @@ fn process_pipeline(
             continue;
         }
 
-        // Only spawn tiles that are still part of the visible set.
-        if !mgr.visible_set.contains(&key) {
+        // Only spawn tiles still in the render partition or the background
+        // load set (children of a KICK-blocked parent).
+        if !mgr.visible_set.contains(&key) && !mgr.load_set.contains(&key) {
             continue;
         }
 
@@ -651,9 +639,7 @@ fn process_pipeline(
                     },
                     Mesh3d(mesh_handle),
                     MeshMaterial3d(material),
-                    Transform::from_scale(Vec3::splat(
-                        scale * level_tuck(key.2, zf, step) as f32,
-                    )),
+                    Transform::from_scale(Vec3::splat(scale)),
                 ))
                 .id();
 
@@ -718,9 +704,7 @@ fn process_pipeline(
                 },
                 Mesh3d(mesh_handle),
                 MeshMaterial3d(material),
-                Transform::from_scale(Vec3::splat(
-                    scale * level_tuck(key.2, zf, step) as f32,
-                )),
+                Transform::from_scale(Vec3::splat(scale)),
             ))
             .id();
 
@@ -743,7 +727,10 @@ fn process_pipeline(
         mgr.in_flight.remove(&key);
         if result.aborted {
             // Worker skipped the fetch (tile left the wanted set mid-flight);
-            // nothing to apply, the slot is simply free again.
+            // nothing to apply, the slot is simply free again. Clear the
+            // reupload guard too, or a full-res re-fetch aborted once would
+            // never be retried and the tile would stay blurry forever.
+            mgr.reupload.remove(&key);
             continue;
         }
         if result.placeholder {
@@ -899,7 +886,12 @@ fn process_pipeline(
                 .tile_entities
                 .keys()
                 .copied()
-                .filter(|k| !mgr.visible_set.contains(k) && !prot.contains(k) && k.2 > BASE_LAYER_ZOOM)
+                .filter(|k| {
+                    !mgr.visible_set.contains(k)
+                        && !mgr.load_set.contains(k)
+                        && !prot.contains(k)
+                        && k.2 > BASE_LAYER_ZOOM
+                })
                 .map(|k| (pos(&k), k))
                 .collect();
             v.sort();
@@ -919,7 +911,10 @@ fn process_pipeline(
         // visible (draw-call pressure beats coverage; GPU handles stay
         // cached so they re-spawn instantly if the view returns). Tiles
         // with a live ancestor are evicted first: their region stays
-        // covered by the parent, so no blue hole opens.
+        // covered by the parent, so no blue hole opens. NEVER evict tiles
+        // the render partition or the load set still needs: with strict
+        // partition rendering the parent is hidden, so evicting a
+        // partition leaf would open a hole down to the base sphere.
         if mgr.tile_entities.len() > MAX_TILE_ENTITIES {
             let mut extras: Vec<(usize, TileKey)> = {
                 let pos = |k: &TileKey| {
@@ -932,7 +927,12 @@ fn process_pipeline(
                     .tile_entities
                     .keys()
                     .copied()
-                    .filter(|k| k.2 > BASE_LAYER_ZOOM && has_live_ancestor(&mgr, k))
+                    .filter(|k| {
+                        k.2 > BASE_LAYER_ZOOM
+                            && !mgr.visible_set.contains(k)
+                            && !mgr.load_set.contains(k)
+                            && has_live_ancestor(&mgr, k)
+                    })
                     .map(|k| (pos(&k), k))
                     .collect();
                 v.sort();
@@ -970,6 +970,7 @@ fn process_pipeline(
         let missing: Vec<TileKey> = mgr
             .visible_set
             .iter()
+            .chain(mgr.load_set.iter())
             .filter(|k| !mgr.tile_entities.contains_key(k) && !mgr.queued.contains(k))
             .copied()
             .take(32)
@@ -1026,12 +1027,14 @@ fn process_pipeline(
     }
 
     // Refresh the download-wanted set so workers can drop fetches made stale
-    // by the view moving on; queued / visible / spawned tiles stay wanted.
+    // by the view moving on; queued / visible / loaded / spawned tiles stay
+    // wanted.
     {
         let mut w = tex_rx.wanted.lock().unwrap();
         w.clear();
         w.extend(mgr.queued.iter().copied());
         w.extend(mgr.visible_set.iter().copied());
+        w.extend(mgr.load_set.iter().copied());
         w.extend(mgr.tile_entities.keys().copied());
     }
 }
@@ -1095,33 +1098,56 @@ fn focal_pixels(windows: &Query<&Window>) -> f64 {
     (h * 0.5) / ((CAMERA_FOV_Y as f64) * 0.5).tan()
 }
 
-/// CesiumJS-style quadtree traversal: start at the coarsest level and
-/// subdivide every visible tile while its projected screen footprint
-/// exceeds [`MAX_TILE_SCREEN_PX`] (the maximumScreenSpaceError = 2 budget
-/// for 256-px tiles), culling tiles beyond the horizon cap. Returns the
-/// selected tiles together with their screen footprint, which doubles as
-/// request priority. Resolution thus falls off continuously from the view
-/// center to the limb, exactly like CesiumJS globe LOD.
+/// CesiumJS-style KICK-aware quadtree partition (REPLACE refinement,
+/// `QuadtreePrimitive.visitTile` selection): subdivide every visible tile
+/// whose projected screen footprint exceeds [`MAX_TILE_SCREEN_PX`] (the
+/// maximumScreenSpaceError = 2 budget for 256-px tiles), culling tiles
+/// beyond the horizon cap — but only when ALL four children are already
+/// spawned. If any child is missing, the parent stays in the render
+/// partition (all-or-nothing, the CesiumJS KICK rule) and the children
+/// keep loading in the background. Returns (render partition, background
+/// load set); only the render partition is drawn (`sync_visibility`), so
+/// parents and children never overlap and never z-fight — which is what
+/// lets tiles sit at their EXACT ellipsoid positions with no radial tuck.
 fn compute_visible_tiles(
     lat_rad: f64,
     lon_rad: f64,
     distance: f64,
     focal_px: f64,
-) -> Vec<(TileKey, f32)> {
+    mgr: &TileManager,
+) -> (Vec<(TileKey, f32)>, Vec<(TileKey, f32)>) {
     let d = distance.max(1.001);
     let cx = lat_rad.cos() * lon_rad.cos();
     let cy = lat_rad.cos() * lon_rad.sin();
     let cz = lat_rad.sin();
     let cap = (1.0 / d).acos();
 
-    let mut out = Vec::new();
+    let mut render = Vec::new();
+    let mut load = Vec::new();
     let n0 = 1u32 << MIN_ZOOM;
     for y in 0..n0 {
         for x in 0..n0 {
-            visit_tile(x, y, MIN_ZOOM, cx, cy, cz, d, cap, focal_px, &mut out);
+            visit_tile(
+                x, y, MIN_ZOOM, cx, cy, cz, d, cap, focal_px, mgr, &mut render, &mut load,
+            );
         }
     }
-    out
+    (render, load)
+}
+
+/// Traversal outcome of a quadtree subtree — the Rust mirror of CesiumJS
+/// `TraversalDetails.allAreRenderable`. `Ready` means every SELECTED tile
+/// (i.e. not horizon-culled) in the subtree has a live entity and was added
+/// to the render list; `NotReady` means at least one selected tile is still
+/// missing its entity; `Culled` means the whole subtree is beyond the
+/// horizon cap. Culled subtrees are invisible to the parent's
+/// all-or-nothing check (CesiumJS never visits invisible children), so a
+/// child crossing the cull boundary can never bounce the partition between
+/// parent and children.
+enum Visit {
+    Ready,
+    NotReady,
+    Culled,
 }
 
 fn visit_tile(
@@ -1134,8 +1160,10 @@ fn visit_tile(
     d: f64,
     cap: f64,
     focal_px: f64,
-    out: &mut Vec<(TileKey, f32)>,
-) {
+    mgr: &TileManager,
+    render: &mut Vec<(TileKey, f32)>,
+    load: &mut Vec<(TileKey, f32)>,
+) -> Visit {
     let n = 1u64 << z;
     // Tile center geographic coordinates (y row 0 = north, like mesh UVs).
     let lon = (x as f64 + 0.5) / n as f64 * 2.0 * std::f64::consts::PI
@@ -1154,7 +1182,7 @@ fn visit_tile(
     let theta = dot.acos();
     let margin = 2.0 * std::f64::consts::PI / n as f64;
     if theta > cap + margin {
-        return;
+        return Visit::Culled;
     }
 
     // Camera→tile-center chord distance in meters (globe radius = 1 unit).
@@ -1168,13 +1196,91 @@ fn visit_tile(
     let screen_px = w_m / dist_m * focal_px;
 
     if screen_px <= MAX_TILE_SCREEN_PX || z >= MAX_ZOOM {
-        out.push(((x, y, z), screen_px as f32));
+        // Selected leaf. Like CesiumJS (which adds even not-yet-renderable
+        // tiles to the render list so the tree can settle on the deepest
+        // available coverage), the leaf is always added; the outcome only
+        // reports whether its entity is live so the parent can KICK back
+        // to its own level instead of drawing a hole. `sync_visibility`
+        // simply skips unspawned tiles until they appear.
+        render.push(((x, y, z), screen_px as f32));
+        if mgr.tile_entities.contains_key(&(x, y, z)) {
+            Visit::Ready
+        } else {
+            Visit::NotReady
+        }
     } else {
+        // SSE not good enough: refine into the four children, then apply the
+        // CesiumJS all-or-nothing rule on the traversal OUTCOMES — not on
+        // how many render entries the children produced (a child that
+        // successfully refined into its own grandchildren added four
+        // entries and still counts as ready).
+        let start = render.len();
         let (x2, y2, z1) = (x * 2, y * 2, z + 1);
-        visit_tile(x2, y2, z1, cx, cy, cz, d, cap, focal_px, out);
-        visit_tile(x2 + 1, y2, z1, cx, cy, cz, d, cap, focal_px, out);
-        visit_tile(x2, y2 + 1, z1, cx, cy, cz, d, cap, focal_px, out);
-        visit_tile(x2 + 1, y2 + 1, z1, cx, cy, cz, d, cap, focal_px, out);
+        let children = [
+            (x2, y2, z1),
+            (x2 + 1, y2, z1),
+            (x2, y2 + 1, z1),
+            (x2 + 1, y2 + 1, z1),
+        ];
+        let outcomes = [
+            visit_tile(
+                x2, y2, z1, cx, cy, cz, d, cap, focal_px, mgr, render, load,
+            ),
+            visit_tile(
+                x2 + 1, y2, z1, cx, cy, cz, d, cap, focal_px, mgr, render, load,
+            ),
+            visit_tile(
+                x2, y2 + 1, z1, cx, cy, cz, d, cap, focal_px, mgr, render, load,
+            ),
+            visit_tile(
+                x2 + 1, y2 + 1, z1, cx, cy, cz, d, cap, focal_px, mgr, render, load,
+            ),
+        ];
+        let any_selected = outcomes
+            .iter()
+            .any(|o| matches!(o, Visit::Ready | Visit::NotReady));
+        if !any_selected {
+            // Every child was horizon-culled. CesiumJS renders nothing here
+            // (the region sits at the limb); we conservatively render this
+            // tile so a cull-boundary gap can never open down to the base
+            // sphere.
+            render.push(((x, y, z), screen_px as f32));
+            return if mgr.tile_entities.contains_key(&(x, y, z)) {
+                Visit::Ready
+            } else {
+                Visit::NotReady
+            };
+        }
+        let all_ready = outcomes
+            .iter()
+            .all(|o| matches!(o, Visit::Ready | Visit::Culled));
+        if !all_ready {
+            // CesiumJS KICK rule: drop everything the children selected and
+            // render this tile instead — but keep loading the missing
+            // children so the partition swaps down the moment the last one
+            // spawns ("continue to load them though!"). Culled children are
+            // skipped: CesiumJS never visits invisible children, so they
+            // neither block the swap nor consume download bandwidth.
+            render.truncate(start);
+            render.push(((x, y, z), screen_px as f32));
+            for (c, o) in children.iter().zip(outcomes.iter()) {
+                if !matches!(o, Visit::Culled) && !mgr.tile_entities.contains_key(c) {
+                    // Priority = the child's own projected footprint (about
+                    // half the parent's).
+                    load.push((*c, (screen_px * 0.5) as f32));
+                }
+            }
+            // Mirror of CesiumJS `allAreRenderable = tile.renderable` after
+            // a KICK: as far as the parent is concerned this subtree now
+            // reduces to this tile.
+            if mgr.tile_entities.contains_key(&(x, y, z)) {
+                Visit::Ready
+            } else {
+                Visit::NotReady
+            }
+        } else {
+            Visit::Ready
+        }
     }
 }
 
@@ -1195,74 +1301,29 @@ fn compute_sub_camera_point(orbit: &OrbitState) -> (f64, f64) {
 
 // ── Visible tile computation ───────────────────────────────────────
 
-fn geo_to_tile(lat_rad: f64, lon_rad: f64, zoom: u32) -> (u32, u32) {
-    let n = (1u64 << zoom) as f64;
-    let tx = ((lon_rad + std::f64::consts::PI) / (2.0 * std::f64::consts::PI) * n)
-        .floor()
-        .clamp(0.0, n - 1.0) as u32;
-    let lat_c = lat_rad.clamp(-1.4844, 1.4844);
-    let ty = ((1.0 - lat_c.tan().asinh() / std::f64::consts::PI) / 2.0 * n)
-        .floor()
-        .clamp(0.0, n - 1.0) as u32;
-    (tx, ty)
-}
-
-/// Per-LOD-level radial tuck against a CONTINUOUS zoom anchor: coarser
-/// tiles sit `step` below per (fractional) level difference, finer stale
-/// tiles `step` above (signed, so overlapping levels never render coplanar
-/// and z-fight). `step` adapts to the camera's height above the surface
-/// (~2% of it): the parent/child cliff then stays far below one screen
-/// pixel at every altitude (no smeared skirt band at LOD junctions) while
-/// remaining far above the depth-buffer precision. The anchor is the
-/// fractional zoom level (`float_zoom`), so entity scales drift smoothly
-/// with the camera instead of jumping at integer finest flips — the discrete
-/// radial jumps read as tile "wobble" while zooming, which CesiumJS never
-/// shows because it has no tuck at all. Applied via entity scale (NOT baked
-/// into the mesh) so meshes stay reusable across zoom changes.
-fn level_tuck(z: u32, z_float: f64, step: f64) -> f64 {
-    1.0 - step * (z_float - z as f64)
-}
-
-/// Fractional LOD level the view center selects right now, mirroring the
-/// `screen_px == MAX_TILE_SCREEN_PX` subdivision threshold of the quadtree
-/// traversal: integer crossings coincide with `finest` flips while values
-/// in between drift continuously with the camera altitude.
-fn float_zoom(focal_px: f64, distance: f32) -> f64 {
-    let alt = (distance as f64 - 1.0).max(1.0e-4);
-    (2.0 * std::f64::consts::PI * focal_px / (MAX_TILE_SCREEN_PX * alt))
-        .log2()
-        .clamp(MIN_ZOOM as f64, MAX_ZOOM as f64)
-}
-
-/// Re-derive every live tile's radial tuck from the continuous zoom anchor
-/// each frame, so scales follow the camera smoothly (no wobble). Writes are
-/// skipped while the value is unchanged to avoid change-detection churn on
-/// idle frames.
-fn smooth_tuck(
-    orbit: Res<OrbitState>,
-    windows: Query<&Window>,
-    mut tiles: Query<(&GlobeTile, &mut Transform)>,
+/// Strict partition rendering — the CesiumJS "only tiles on the per-frame
+/// render list are drawn" rule: every spawned tile outside the render
+/// partition is hidden the same frame the partition changes, so a parent
+/// and its children NEVER draw together and NEVER z-fight. Hiding instead
+/// of despawning keeps the entity + GPU handles hot, so re-entry when the
+/// view returns is instant.
+fn sync_visibility(
+    mgr: Res<TileManager>,
+    mut tiles: Query<(&GlobeTile, &mut Visibility)>,
 ) {
-    let zf = float_zoom(focal_pixels(&windows), orbit.distance);
-    let step = adaptive_tuck_step(orbit.distance);
-    let scale = render_scale();
-    for (tile, mut tf) in &mut tiles {
-        let s = scale * level_tuck(tile.z, zf, step) as f32;
-        if (tf.scale.x - s).abs() > s * 1.0e-6 {
-            tf.scale = Vec3::splat(s);
+    for (tile, mut vis) in &mut tiles {
+        let in_partition = mgr
+            .visible_set
+            .contains(&(tile.x, tile.y, tile.z));
+        let target = if in_partition {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+        if *vis != target {
+            *vis = target;
         }
     }
-}
-
-/// Camera-adaptive tuck step: 2% of the height above the surface, clamped
-/// so it never vanishes (deep zoom) nor exceeds a small fraction of the
-/// coarsest tile (horizon).
-fn adaptive_tuck_step(distance: f32) -> f64 {
-    // Floor 2e-5: the inter-level separation (step * level-delta) must stay
-    // several times above depth-buffer precision at every camera altitude,
-    // otherwise overlapping LOD levels z-fight as diamond patches; 2e-5 is
-    // still sub-pixel (cliff < 0.5 px) down to ~30 km altitude.
-    (2.0e-5 * (distance as f64 - 1.0)).clamp(2.0e-5, 2.0e-4)
 }
 
 /// Smoothness + palette metric: average / max RGB difference between

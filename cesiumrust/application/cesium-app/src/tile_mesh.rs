@@ -102,10 +102,12 @@ fn tuck_step(z: u32) -> f64 {
 ///   fills rasterization cracks between neighboring tiles without ever
 ///   overlapping a neighbor's surface
 ///
-/// The mesh is built at full radius (no LOD tuck baked in): the per-LOD-level
-/// radial tuck is applied via the entity's `Transform` scale instead, which
-/// keeps meshes reusable across zoom changes (cached once, spawned many
-/// times without rebuilding the vertex buffers).
+/// The mesh is built at the exact ellipsoid radius (no radial offset):
+/// every tile — coarse or fine — sits at its true position, exactly like
+/// CesiumJS terrain meshes. Overlap/z-fighting is impossible because the
+/// render partition (`sync_visibility`) never draws a parent together with
+/// its children, so no radial tuck is needed and no LOD-boundary fin can
+/// form.
 ///
 /// # Arguments
 /// * `x`, `y`, `z` - Tile coordinates in Web Mercator tiling scheme
@@ -197,11 +199,9 @@ pub fn create_tile_mesh_uv(
         base_drop - 0.1 * tuck_step(z)
     };
     let mut perim: Vec<u32> = Vec::with_capacity(perimeter_count);
-    // Per-edge CONSTANT uv for the skirt wall. Finer tiles render radially
-    // higher than coarser neighbors (level_tuck), so during fast LOD
-    // transitions the fine tile's wall peeks above the coarse surface at a
-    // grazing angle; any uv variation along the wall squeezes the edge
-    // column sideways into horizontal stripe fins. Both wall rings therefore
+    // Per-edge CONSTANT uv for the skirt wall: the wall is only ever seen
+    // through sub-pixel cracks, so any uv variation along it would squeeze
+    // the edge column sideways into stripe fins. Both wall rings therefore
     // carry a single mid-edge texel so an exposed wall reads as a plain
     // edge continuation.
     let mid_u = |u: f32, v: f32| {
