@@ -81,8 +81,8 @@ fn skirt_drop(z: u32) -> f64 {
 /// Level-scaled radial step: 15% of the level's tile arc, clamped so coarse
 /// levels keep a usable skirt and deep levels never degenerate. The floor
 /// must exceed the MAX runtime LOD cliff: `adaptive_tuck_step` caps at
-/// 2e-4 per level and fast zooms/drag leave live neighbors up to ~4 levels
-/// apart (cliff ~8e-4); a shallower skirt wall leaves a see-through crack
+/// 1.5e-4 per level and fast zooms/drag leave live neighbors up to ~4 levels
+/// apart (cliff ~6e-4); a shallower skirt wall leaves a see-through crack
 /// at LOD boundaries that reads as thin stripes during fast motion.
 /// Only drives [`skirt_drop`] now that LOD tuck is applied via entity scale.
 fn tuck_step(z: u32) -> f64 {
@@ -139,9 +139,10 @@ pub fn create_tile_mesh_uv(
     let grid_count = (verts_per_side * verts_per_side) as usize;
     let perimeter_count = (4 * segments) as usize;
 
-    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(grid_count + perimeter_count);
-    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(grid_count + perimeter_count);
-    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(grid_count + perimeter_count);
+    let ring_verts = 2 * perimeter_count;
+    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(grid_count + ring_verts);
+    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(grid_count + ring_verts);
+    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(grid_count + ring_verts);
 
     for row in 0..verts_per_side {
         // v_norm spans [0,1] exactly: the true tile extent, no overlap.
@@ -196,24 +197,55 @@ pub fn create_tile_mesh_uv(
         base_drop - 0.1 * tuck_step(z)
     };
     let mut perim: Vec<u32> = Vec::with_capacity(perimeter_count);
+    // Per-edge CONSTANT uv for the skirt wall. Finer tiles render radially
+    // higher than coarser neighbors (level_tuck), so during fast LOD
+    // transitions the fine tile's wall peeks above the coarse surface at a
+    // grazing angle; any uv variation along the wall squeezes the edge
+    // column sideways into horizontal stripe fins. Both wall rings therefore
+    // carry a single mid-edge texel so an exposed wall reads as a plain
+    // edge continuation.
+    let mid_u = |u: f32, v: f32| {
+        [
+            uv_rect[0] + u * (uv_rect[2] - uv_rect[0]),
+            uv_rect[1] + v * (uv_rect[3] - uv_rect[1]),
+        ]
+    };
+    let south_uv = mid_u(0.5, 1.0);
+    let east_uv = mid_u(1.0, 0.5);
+    let north_uv = mid_u(0.5, 0.0);
+    let west_uv = mid_u(0.0, 0.5);
+    let mut perim_uv: Vec<[f32; 2]> = Vec::with_capacity(perimeter_count);
     let last = verts_per_side - 1;
     for col in 0..verts_per_side {
         perim.push(col); // south edge, west -> east
+        perim_uv.push(south_uv);
     }
     for row in 1..verts_per_side {
         perim.push(row * verts_per_side + last); // east edge, south -> north
+        perim_uv.push(east_uv);
     }
     for col in (0..last).rev() {
         perim.push(last * verts_per_side + col); // north edge, east -> west
+        perim_uv.push(north_uv);
     }
     for row in (1..last).rev() {
         perim.push(row * verts_per_side); // west edge, north -> south
+        perim_uv.push(west_uv);
     }
-    for &g in &perim {
+    // Two dedicated wall rings: a TOP ring coincident with the surface edge
+    // (its own vertices because the grid edge vertices must keep their
+    // varying surface uvs) and a BOTTOM ring at the drop radius. Interpolating
+    // constant->constant keeps the whole wall a flat color; interpolating
+    // from the grid edge's varying uvs (as a shared-vertex wall would) is
+    // exactly what produced the stripe fins.
+    for (i, &g) in perim.iter().enumerate() {
         let p = positions[g as usize];
+        positions.push(p); // top ring: coincident with edge, constant uv
+        normals.push(normals[g as usize]);
+        uvs.push(perim_uv[i]);
         positions.push([p[0] * drop as f32, p[1] * drop as f32, p[2] * drop as f32]);
         normals.push(normals[g as usize]);
-        uvs.push(uvs[g as usize]); // skirt reuses the edge texels
+        uvs.push(perim_uv[i]);
     }
 
     // Generate triangle indices (counter-clockwise winding from outside)
@@ -234,19 +266,24 @@ pub fn create_tile_mesh_uv(
             indices.push(b);
         }
     }
-    // Skirt wall strip (double-sided material, winding irrelevant).
+    // Skirt wall strip between the two dedicated rings (double-sided
+    // material, winding irrelevant). Each perimeter point contributed a
+    // top/bottom vertex pair, so ring indices interleave: top = 2*i,
+    // bottom = 2*i + 1 (offset by the grid). Never reference the grid edge
+    // vertices directly: their uvs vary along the edge and would re-create
+    // the stripe fins.
     for i in 0..perimeter_count {
         let j = (i + 1) % perimeter_count;
-        let g0 = perim[i];
-        let g1 = perim[j];
-        let d0 = grid_count as u32 + i as u32;
-        let d1 = grid_count as u32 + j as u32;
-        indices.push(g0);
-        indices.push(d0);
-        indices.push(d1);
-        indices.push(g0);
-        indices.push(d1);
-        indices.push(g1);
+        let t0 = grid_count as u32 + 2 * i as u32;
+        let b0 = t0 + 1;
+        let t1 = grid_count as u32 + 2 * j as u32;
+        let b1 = t1 + 1;
+        indices.push(t0);
+        indices.push(b0);
+        indices.push(b1);
+        indices.push(t0);
+        indices.push(b1);
+        indices.push(t1);
     }
 
     let mut mesh = Mesh::new(

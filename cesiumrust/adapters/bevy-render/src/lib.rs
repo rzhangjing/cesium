@@ -343,10 +343,15 @@ impl Plugin for CesiumCorePlugin {
 /// ~3.18e-4 physical-units scale to `brightness` (measured: 10 000 blew out
 /// to a ~3x overexposed wash, 2.2 rendered black), so `1 / 3.18e-4 ~= 3300`
 /// reproduces the imagery albedo ~1:1 — CesiumJS displays tiles as-is.
+///
+/// Color temperature: the reference CesiumJS whole-globe look is cool-toned
+/// (sage land, medium steel-blue ocean) while raw Bing albedo renders warm
+/// and near-black in the ocean; a cool tint (red cut, blue boost) plus a
+/// slight brightness lift shifts the white balance toward the reference.
 fn setup_lighting(mut commands: Commands) {
     commands.insert_resource(AmbientLight {
-        color: Color::WHITE,
-        brightness: 3300.0,
+        color: Color::srgb(0.79, 0.94, 1.17),
+        brightness: 3800.0,
     });
 }
 

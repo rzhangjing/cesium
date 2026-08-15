@@ -56,16 +56,18 @@ fn setup_atmosphere(
 
     // (scale, additive alpha): innermost brightest, outermost faintest. Eight
     // shells keep the per-shell alpha step small enough that no banding or
-    // hard outer silhouette is perceptible against black space.
+    // hard outer silhouette is perceptible against black space. The stack is
+    // a THIN pale rim (~4% of the radius) hugging the limb, matching the
+    // reference CesiumJS look instead of a wide saturated halo.
     let shells: [(f32, f32); 8] = [
-        (1.012, 0.14),
-        (1.025, 0.095),
-        (1.038, 0.062),
-        (1.052, 0.040),
-        (1.066, 0.025),
-        (1.081, 0.015),
-        (1.096, 0.008),
-        (1.112, 0.004),
+        (1.004, 0.12),
+        (1.008, 0.085),
+        (1.013, 0.058),
+        (1.018, 0.040),
+        (1.023, 0.026),
+        (1.028, 0.016),
+        (1.034, 0.009),
+        (1.040, 0.004),
     ];
 
     for (scale, alpha) in shells {
@@ -73,7 +75,7 @@ fn setup_atmosphere(
             AtmosphereShell { base_alpha: alpha },
             Mesh3d(mesh.clone()),
             MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::srgba(0.3, 0.6, 1.0, alpha),
+                base_color: Color::srgba(0.40, 0.68, 1.0, alpha),
                 unlit: true,
                 alpha_mode: AlphaMode::Add,
                 // Back faces only: the shell's far hemisphere shows up as a
@@ -96,7 +98,7 @@ fn fade_atmosphere_with_distance(
     let fade = glow_fade(orbit.distance);
     for (shell, mat_handle) in &shells {
         if let Some(mat) = materials.get_mut(mat_handle) {
-            mat.base_color = Color::srgba(0.3, 0.6, 1.0, shell.base_alpha * fade);
+            mat.base_color = Color::srgba(0.40, 0.68, 1.0, shell.base_alpha * fade);
         }
     }
 }

@@ -12,17 +12,19 @@
 - [cesiumrust/domain/geospatial/src/lib.rs](file://cesiumrust/domain/geospatial/src/lib.rs)
 - [cesiumrust/adapters/bevy-render/src/material_system.rs](file://cesiumrust/adapters/bevy-render/src/material_system.rs)
 - [cesiumrust/adapters/bevy-render/src/atmosphere/mod.rs](file://cesiumrust/adapters/bevy-render/src/atmosphere/mod.rs)
+- [cesiumrust/adapters/bevy-render/src/atmosphere/celestial_system.rs](file://cesiumrust/adapters/bevy-render/src/atmosphere/celestial_system.rs)
 - [cesiumrust/adapters/bevy-render/src/camera/mod.rs](file://cesiumrust/adapters/bevy-render/src/camera/mod.rs)
+- [cesiumrust/adapters/bevy-render/src/shadow/mod.rs](file://cesiumrust/adapters/bevy-render/src/shadow/mod.rs)
+- [cesiumrust/domain/globe/src/atmosphere.rs](file://cesiumrust/domain/globe/src/atmosphere.rs)
 - [cesiumrust/docs/ARCHITECTURE.md](file://cesiumrust/docs/ARCHITECTURE.md)
 </cite>
 
 ## 更新摘要
 **变更内容**   
-- 完成了从GPUI框架到Bevy插件生态系统的完整架构重构，实现了全新的渲染适配器系统
-- 新增了完整的相机系统、瓦片集管理、大气渲染和材质系统等核心功能模块
-- 重构了渲染管线架构，采用模块化插件设计，支持按需启用各种渲染功能
-- 增强了领域层与渲染层的解耦，通过清晰的接口契约实现松耦合集成
-- 优化了资源管理和性能特性，支持大规模地理数据的高效渲染
+- 完成了光照系统完全重构，从方向光改为环境光照明
+- 移除了昼夜分界线效果以匹配CesiumJS默认配置
+- 更新了核心插件中的光照设置逻辑，采用统一的环境光照方案
+- 优化了大气系统中的光照参数计算，简化了天体位置处理
 
 ## 目录
 1. [简介](#简介)
@@ -41,9 +43,7 @@
 14. [附录](#附录)
 
 ## 简介
-本文档详细介绍了Cesium Rust仓库中基于Bevy的渲染适配器系统。该系统完成了从GPUI框架到Bevy插件生态系统的重大架构转型，提供了完整的3D地球可视化解决方案。文档从系统架构、组件职责、数据流、处理逻辑、集成点、错误处理与性能特性等维度进行系统化说明，并提供可视化图示与可操作的排障建议。
-
-**更新** 本次更新重点反映了完整的架构重构：移除了遗留的GPUI框架代码，构建了全新的Bevy插件生态系统，包括相机系统、瓦片集管理、大气渲染、材质系统等核心功能模块，通过模块化设计显著提升了系统的可扩展性和维护性。
+本文档详细介绍了Cesium Rust仓库中基于Bevy的渲染适配器系统。该系统完成了从GPUI框架到Bevy插件生态系统的重大架构转型，提供了完整的3D地球可视化解决方案。**更新**本次更新重点反映了光照系统的完全重构：从传统的方向光照明改为环境光照明，移除了昼夜分界线效果，以匹配CesiumJS的默认配置行为。
 
 ## 项目结构
 Bevy渲染适配器位于 `cesiumrust/adapters/bevy-render` 目录下，采用模块化插件架构设计。应用示例位于 `cesiumrust/application/cesium-app` 目录，展示了如何组合使用各个插件来构建完整的3D地球应用。
@@ -61,22 +61,24 @@ G["imagery/<br/>影像图层"]
 H["terrain/<br/>地形渲染"]
 I["effects/<br/>后处理效果"]
 J["widgets/<br/>UI组件"]
+K["shadow/<br/>阴影系统"]
 end
 subgraph "应用示例"
-K["main.rs<br/>应用入口"]
-L["dynamic_globe.rs<br/>动态地球"]
-M["orbit_camera.rs<br/>轨道相机"]
-N["atmosphere_glow.rs<br/>大气光晕"]
-O["starfield.rs<br/>星空背景"]
+L["main.rs<br/>应用入口"]
+M["dynamic_globe.rs<br/>动态地球"]
+N["orbit_camera.rs<br/>轨道相机"]
+O["atmosphere_glow.rs<br/>大气光晕"]
+P["starfield.rs<br/>星空背景"]
 end
 subgraph "领域层"
-P["domain/scene<br/>场景图"]
-Q["domain/tileset<br/>3D瓦片集"]
-R["domain/camera<br/>相机状态"]
-S["domain/geospatial<br/>地理空间"]
-T["domain/material<br/>材质定义"]
+Q["domain/scene<br/>场景图"]
+R["domain/tileset<br/>3D瓦片集"]
+S["domain/camera<br/>相机状态"]
+T["domain/geospatial<br/>地理空间"]
+U["domain/material<br/>材质定义"]
+V["domain/globe<br/>地球光照"]
 end
-K --> A
+L --> A
 A --> B
 A --> C
 A --> D
@@ -86,13 +88,15 @@ A --> G
 A --> H
 A --> I
 A --> J
-B --> R
-C --> Q
-D --> T
-E --> T
-F --> P
-G --> S
-H --> S
+A --> K
+B --> S
+C --> R
+D --> V
+E --> U
+F --> Q
+G --> T
+H --> T
+K --> V
 ```
 
 **图表来源**
@@ -107,23 +111,24 @@ H --> S
 ## 核心组件
 新的Bevy渲染适配器采用了高度模块化的插件架构，每个功能模块都作为独立的插件提供：
 
-- **核心插件**：`CesiumCorePlugin` - 初始化全局配置和资源
+- **核心插件**：`CesiumCorePlugin` - 初始化全局配置和资源，**已更新为环境光照明**
 - **相机系统**：`CesiumCameraPlugin` - 提供相机控制、飞行动画和场景模式切换
 - **瓦片集管理**：`CesiumTilesetPlugin` - 3D Tiles加载、遍历和渲染
 - **地形渲染**：`CesiumTerrainPlugin` - 高度图地形LOD和渲染
 - **影像图层**：`CesiumImageryPlugin` - 影像图层栈和混合
 - **实体系统**：`CesiumEntityPlugin` - 广告牌、折线、多边形、模型等实体
 - **材质系统**：`CesiumMaterialPlugin` - Fabric材质系统和动画
-- **大气渲染**：`CesiumAtmospherePlugin` - 天空大气和天体渲染
+- **大气渲染**：`CesiumAtmospherePlugin` - 天空大气和天体渲染，**已移除昼夜分界线**
 - **后处理效果**：`CesiumEffectsPlugin` - 后处理效果管道
 - **UI组件**：`CesiumWidgetPlugin` - 动画时间轴、地理编码器等UI组件
+- **阴影系统**：`CesiumShadowPlugin` - 级联阴影映射，**已适配环境光**
 
 **章节来源**
 - [cesiumrust/adapters/bevy-render/src/lib.rs:32-77](file://cesiumrust/adapters/bevy-render/src/lib.rs#L32-L77)
 - [cesiumrust/docs/ARCHITECTURE.md:303-316](file://cesiumrust/docs/ARCHITECTURE.md#L303-L316)
 
 ## 架构总览
-下图展示了从应用入口到渲染输出的关键调用链与数据流向，体现了新的模块化插件架构：
+下图展示了从应用入口到渲染输出的关键调用链与数据流向，体现了新的模块化插件架构和更新后的光照系统：
 
 ```mermaid
 sequenceDiagram
@@ -141,6 +146,7 @@ App->>Main : 启动应用并注册插件
 Main->>Core : 初始化核心资源
 Core->>Scene : 创建场景图
 Core->>Geo : 初始化地理空间
+Note over Core : 设置环境光照明<br/>移除方向光和昼夜分界线
 Main->>Camera : 注册相机系统
 Main->>Tileset : 注册瓦片集系统
 Main->>Terrain : 注册地形系统
@@ -165,23 +171,25 @@ end
 ## 详细组件分析
 
 ### 核心插件（CesiumCorePlugin）
-核心插件负责初始化全局配置和资源，为其他插件提供基础服务：
+核心插件负责初始化全局配置和资源，为其他插件提供基础服务。**更新**现在采用环境光照明替代方向光：
 
 - **全局资源配置**：初始化 `GlobeConfig`、`RenderScale`、`TileLoadStats` 等全局资源
-- **场景光照设置**：创建默认的方向光源，模拟太阳光照效果
+- **场景光照设置**：**已更新**为环境光照明，模拟均匀的全局光照效果
 - **生命周期管理**：在应用启动时执行必要的初始化操作
 
 ```mermaid
 flowchart TD
 Start(["应用启动"]) --> InitCore["初始化核心资源"]
-InitCore --> CreateLight["创建设置光源"]
+InitCore --> CreateLight["创建设置环境光"]
 CreateLight --> Ready["核心就绪"]
 Ready --> RegisterPlugins["注册其他插件"]
 RegisterPlugins --> FrameLoop["进入渲染循环"]
 ```
 
+**更新** 光照系统已从方向光改为环境光，亮度校准值为3300.0，匹配CesiumJS的默认配置行为。
+
 **章节来源**
-- [cesiumrust/adapters/bevy-render/src/lib.rs:323-347](file://cesiumrust/adapters/bevy-render/src/lib.rs#L323-L347)
+- [cesiumrust/adapters/bevy-render/src/lib.rs:323-351](file://cesiumrust/adapters/bevy-render/src/lib.rs#L323-L351)
 
 ### 相机系统（CesiumCameraPlugin）
 相机系统提供了完整的相机控制功能，支持多种交互模式：
@@ -206,31 +214,43 @@ RegisterPlugins --> FrameLoop["进入渲染循环"]
 - [cesiumrust/adapters/bevy-render/src/tileset/mod.rs:19-34](file://cesiumrust/adapters/bevy-render/src/tileset/mod.rs#L19-L34)
 
 ### 大气渲染系统（CesiumAtmospherePlugin）
-大气渲染系统提供了真实的大气视觉效果：
+大气渲染系统提供了真实的大气视觉效果。**更新**移除了昼夜分界线效果：
 
 - **天体系统**：太阳、月亮、星星等天体的位置和渲染
 - **天空大气**：大气散射、瑞利散射等物理效果
-- **光照参数**：根据天体位置计算光照参数
+- **光照参数**：根据天体位置计算光照参数，**已简化为环境光模式**
 - **性能优化**：LOD控制和距离裁剪
 
 **章节来源**
 - [cesiumrust/adapters/bevy-render/src/atmosphere/mod.rs:10-18](file://cesiumrust/adapters/bevy-render/src/atmosphere/mod.rs#L10-L18)
+- [cesiumrust/adapters/bevy-render/src/atmosphere/celestial_system.rs:1-94](file://cesiumrust/adapters/bevy-render/src/atmosphere/celestial_system.rs#L1-L94)
+
+### 阴影系统（CesiumShadowPlugin）
+阴影系统负责生成和管理级联阴影映射。**更新**已适配新的环境光照明：
+
+- **阴影配置**：支持级联阴影、PCF软阴影等高级特性
+- **阴影更新**：根据光源方向和相机位置动态更新阴影贴图
+- **性能优化**：级联阴影的自适应调整和距离衰减
+
+**章节来源**
+- [cesiumrust/adapters/bevy-render/src/shadow/mod.rs:95-239](file://cesiumrust/adapters/bevy-render/src/shadow/mod.rs#L95-L239)
 
 ## 插件生态系统
 新的架构采用了完整的插件生态系统，每个功能模块都是独立的插件：
 
-| 插件名称 | 功能描述 | 主要系统 |
-|---------|----------|----------|
-| CesiumCorePlugin | 核心资源和光照初始化 | setup_lighting |
-| CesiumCameraPlugin | 相机控制和飞行动画 | camera_controller_system, camera_flight_system |
-| CesiumTilesetPlugin | 3D瓦片集加载和渲染 | tile_traversal_system, tile_render_system |
-| CesiumTerrainPlugin | 地形LOD和渲染 | terrain_lod_system, terrain_render_system |
-| CesiumImageryPlugin | 影像图层管理 | imagery_layer_manager, imagery_blend_system |
-| CesiumEntityPlugin | 实体可视化和动画 | entity_visualizer_system, time_dynamic_update_system |
-| CesiumMaterialPlugin | Fabric材质系统 | apply_fabric_materials, update_material_uniforms |
-| CesiumAtmospherePlugin | 大气和天体渲染 | celestial_system, sky_system |
-| CesiumEffectsPlugin | 后处理效果管道 | post-process systems |
-| CesiumWidgetPlugin | UI组件系统 | animation_widget_system, geocoder_widget_system |
+| 插件名称 | 功能描述 | 主要系统 | 光照相关更新 |
+|---------|----------|----------|-------------|
+| CesiumCorePlugin | 核心资源和光照初始化 | setup_lighting | **已更新为环境光** |
+| CesiumCameraPlugin | 相机控制和飞行动画 | camera_controller_system, camera_flight_system | 无变化 |
+| CesiumTilesetPlugin | 3D瓦片集加载和渲染 | tile_traversal_system, tile_render_system | 无变化 |
+| CesiumTerrainPlugin | 地形LOD和渲染 | terrain_lod_system, terrain_render_system | 无变化 |
+| CesiumImageryPlugin | 影像图层管理 | imagery_layer_manager, imagery_blend_system | 无变化 |
+| CesiumEntityPlugin | 实体可视化和动画 | entity_visualizer_system, time_dynamic_update_system | 无变化 |
+| CesiumMaterialPlugin | Fabric材质系统 | apply_fabric_materials, update_material_uniforms | 无变化 |
+| CesiumAtmospherePlugin | 大气和天体渲染 | celestial_system, sky_system | **移除昼夜分界线** |
+| CesiumEffectsPlugin | 后处理效果管道 | post-process systems | 无变化 |
+| CesiumWidgetPlugin | UI组件系统 | animation_widget_system, geocoder_widget_system | 无变化 |
+| CesiumShadowPlugin | 阴影映射系统 | shadow_update_system, cascade_management | **适配环境光** |
 
 **章节来源**
 - [cesiumrust/docs/ARCHITECTURE.md:303-316](file://cesiumrust/docs/ARCHITECTURE.md#L303-L316)
@@ -253,10 +273,18 @@ RegisterPlugins --> FrameLoop["进入渲染循环"]
 - **坐标转换**：世界坐标、相机坐标、屏幕坐标之间的转换
 - **投影矩阵**：透视投影和正交投影的支持
 
+### 地球光照集成
+**更新** 地球光照系统已调整为环境光模式：
+
+- **光照配置**：`GlobeLighting` 结构体中的 `enabled` 字段默认为false
+- **昼夜分界线**：`show_terminator` 字段保留但不再使用
+- **光照计算**：当光照禁用时，表面颜色直接使用基础颜色
+
 **章节来源**
 - [cesiumrust/domain/scene/src/lib.rs:15-48](file://cesiumrust/domain/scene/src/lib.rs#L15-L48)
 - [cesiumrust/domain/tileset/src/lib.rs:15-59](file://cesiumrust/domain/tileset/src/lib.rs#L15-L59)
 - [cesiumrust/domain/camera/src/lib.rs:131-163](file://cesiumrust/domain/camera/src/lib.rs#L131-L163)
+- [cesiumrust/domain/globe/src/atmosphere.rs:180-205](file://cesiumrust/domain/globe/src/atmosphere.rs#L180-L205)
 
 ## 渲染管线优化
 新的渲染管线针对性能进行了全面优化：
@@ -276,6 +304,13 @@ RegisterPlugins --> FrameLoop["进入渲染循环"]
 - **多线程处理**：利用多核CPU进行并行计算
 - **GPU并行**：充分利用GPU的并行处理能力
 
+### 光照优化
+**更新** 环境光照明带来的性能优势：
+
+- **简化计算**：无需计算方向光的复杂光照模型
+- **减少Draw Call**：统一的照明条件减少状态切换
+- **更好的着色器优化**：环境光着色器更易于GPU优化
+
 **章节来源**
 - [cesiumrust/docs/ARCHITECTURE.md:409-461](file://cesiumrust/docs/ARCHITECTURE.md#L409-L461)
 
@@ -292,6 +327,13 @@ RegisterPlugins --> FrameLoop["进入渲染循环"]
 - **材质缓存**：已编译材质的缓存机制
 - **批量更新**：材质参数的批量更新
 - **GPU缓冲**：高效的GPU缓冲区管理
+
+### 光照适配
+**更新** 材质系统已适配新的环境光照明：
+
+- **PBR材质**：环境光下的物理渲染效果优化
+- **纹理采样**：在全局光照条件下的纹理显示优化
+- **反射计算**：简化了反射和环境光遮蔽计算
 
 **章节来源**
 - [cesiumrust/adapters/bevy-render/src/material_system.rs:1-159](file://cesiumrust/adapters/bevy-render/src/material_system.rs#L1-L159)
@@ -310,10 +352,13 @@ Render --> Material["cesium-material"]
 Render --> Atmosphere["cesium-atmosphere"]
 Render --> Effects["cesium-effects"]
 Render --> Widgets["cesium-widgets"]
+Render --> Shadow["cesium-shadow"]
 Scene --> Geospatial
 Tileset --> Geospatial
 Camera --> Geospatial
 Material --> Geospatial
+Atmosphere --> Globe["cesium-globe"]
+Shadow --> Globe
 ```
 
 **图表来源**
@@ -342,6 +387,13 @@ Material --> Geospatial
 - **并发控制**：合理的并发下载数量限制
 - **缓存策略**：智能的瓦片内容和元数据缓存
 
+### 光照性能优化
+**更新** 环境光照明带来的性能提升：
+
+- **计算复杂度降低**：从方向光的复杂光照计算简化为统一的环境光
+- **着色器优化**：更简单的着色器代码路径
+- **内存带宽优化**：减少了光照数据的传输需求
+
 **章节来源**
 - [cesiumrust/docs/ARCHITECTURE.md:409-461](file://cesiumrust/docs/ARCHITECTURE.md#L409-L461)
 
@@ -351,6 +403,13 @@ Material --> Geospatial
 - **相机控制异常**：验证输入事件是否正确传递，检查相机状态更新逻辑
 - **瓦片加载失败**：确认网络连接正常，检查瓦片URL和访问权限
 - **材质渲染问题**：验证材质定义格式，检查着色器编译日志
+
+### 光照相关问题
+**新增** 光照系统相关的故障排查：
+
+- **环境光强度异常**：检查 `AmbientLight` 的亮度设置，当前默认值为3300.0
+- **昼夜效果消失**：这是预期行为，新架构已移除昼夜分界线以匹配CesiumJS默认配置
+- **阴影渲染问题**：确认阴影系统已正确配置，检查光源方向和相机位置
 
 ### 性能调试
 - **帧率监控**：使用Bevy的诊断插件监控帧时间和性能指标
@@ -363,12 +422,14 @@ Material --> Geospatial
 - **安全退出**：在不可恢复错误时优雅地关闭应用
 
 **章节来源**
-- [cesiumrust/adapters/bevy-render/src/lib.rs:349-445](file://cesiumrust/adapters/bevy-render/src/lib.rs#L349-L445)
+- [cesiumrust/adapters/bevy-render/src/lib.rs:349-450](file://cesiumrust/adapters/bevy-render/src/lib.rs#L349-L450)
 
 ## 结论
-新的Bevy渲染适配器系统通过完整的架构重构，成功地将Cesium的核心能力移植到了Bevy生态系统中。系统采用了高度模块化的插件架构，提供了相机系统、瓦片集管理、大气渲染、材质系统等完整的功能模块。通过清晰的接口契约和松耦合设计，系统具有良好的可扩展性和维护性。
+新的Bevy渲染适配器系统通过完整的架构重构和光照系统优化，成功地将Cesium的核心能力移植到了Bevy生态系统中。**更新** 光照系统从方向光改为环境光照明，移除了昼夜分界线效果，更好地匹配了CesiumJS的默认配置行为。
 
-该架构不仅保留了原有系统的核心功能，还通过Bevy的现代游戏引擎特性获得了更好的性能和开发体验。模块化设计使得开发者可以根据需要选择和组合不同的功能模块，构建定制化的3D地球可视化应用。
+系统采用了高度模块化的插件架构，提供了相机系统、瓦片集管理、大气渲染、材质系统等完整的功能模块。通过清晰的接口契约和松耦合设计，系统具有良好的可扩展性和维护性。
+
+该架构不仅保留了原有系统的核心功能，还通过Bevy的现代游戏引擎特性和优化的光照系统获得了更好的性能和开发体验。模块化设计使得开发者可以根据需要选择和组合不同的功能模块，构建定制化的3D地球可视化应用。
 
 未来发展方向包括进一步优化渲染性能、扩展材质系统功能、增强交互体验和提供更好的开发工具支持。
 
@@ -392,6 +453,14 @@ Material --> Geospatial
 - **内存优化**：监控和优化内存使用情况
 - **网络优化**：配置合适的并发和缓存策略
 
+### 光照配置
+**新增** 环境光照明配置选项：
+
+- **亮度调节**：可通过修改 `AmbientLight` 的 `brightness` 字段调整整体亮度
+- **颜色调节**：可通过修改 `AmbientLight` 的 `color` 字段调整环境光颜色
+- **默认配置**：当前默认值为白色环境光，亮度3300.0，匹配CesiumJS标准
+
 **章节来源**
 - [cesiumrust/application/cesium-app/src/main.rs:74-107](file://cesiumrust/application/cesium-app/src/main.rs#L74-L107)
 - [cesiumrust/docs/ARCHITECTURE.md:297-461](file://cesiumrust/docs/ARCHITECTURE.md#L297-L461)
+- [cesiumrust/adapters/bevy-render/src/lib.rs:346-351](file://cesiumrust/adapters/bevy-render/src/lib.rs#L346-L351)

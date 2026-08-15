@@ -3,7 +3,7 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-08-11T00:23:53Z"
+exported_at: "2026-08-12T17:18:26Z"
 modules:
     "":
         dir_name: CesiumJS 工程根（构建_测试_发布编排）
