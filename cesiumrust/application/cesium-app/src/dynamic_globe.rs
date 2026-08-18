@@ -72,11 +72,12 @@ const MAX_TILE_SCREEN_PX: f64 = 512.0;
 
 type TileKey = (u32, u32, u32);
 
-/// Cached tile image data (raw RGBA bytes + dimensions).
+/// Cached tile image data (mip-chained RGBA bytes + dimensions).
 struct CachedTexture {
     rgba_data: Vec<u8>,
     width: u32,
     height: u32,
+    mip_levels: u32,
 }
 
 // ── Resources ──────────────────────────────────────────────────────
@@ -206,9 +207,12 @@ struct TileDownloadResult {
     x: u32,
     y: u32,
     z: u32,
+    /// Base level + full mip chain (built on the worker thread).
     rgba_data: Vec<u8>,
     width: u32,
     height: u32,
+    /// Number of mip levels packed into `rgba_data` (0 when no data).
+    mip_levels: u32,
     /// True when the tile has no usable imagery (Bing placeholder or all
     /// retries failed); the main thread then inherits ancestor coverage.
     placeholder: bool,
@@ -652,7 +656,13 @@ fn process_pipeline(
             .cloned()
             .or_else(|| {
                 cache.get(&key).map(|c| {
-                    make_image(&mut images, c.rgba_data.clone(), c.width, c.height)
+                    make_image(
+                        &mut images,
+                        c.rgba_data.clone(),
+                        c.width,
+                        c.height,
+                        c.mip_levels,
+                    )
                 })
             });
         let Some(tex) = cached_tex else {
@@ -816,7 +826,13 @@ fn process_pipeline(
             // New tile, or a full-res re-download replacing a downscaled
             // horizon-filler texture: swap the handle so the live entity
             // sharpens in place without a respawn.
-            let h = make_image(&mut images, result.rgba_data, result.width, result.height);
+            let h = make_image(
+                &mut images,
+                result.rgba_data,
+                result.width,
+                result.height,
+                result.mip_levels,
+            );
             if !mgr.gpu_textures.contains_key(&key) {
                 mgr.gpu_tex_order.push_back(key);
             }
@@ -1394,16 +1410,18 @@ fn build_mip_chain(base: Vec<u8>, width: u32, height: u32) -> (Vec<u8>, u32) {
     (data, levels)
 }
 
-/// Create a GPU texture from raw RGBA data with a full mip chain and the
-/// CesiumJS imagery sampler (trilinear mipmap + anisotropic filtering), so
-/// minified horizon tiles don't shimmer and oblique tiles stay crisp.
+/// Create a GPU texture from worker-prepared RGBA data (base level + mip
+/// chain already built off the frame thread) with the CesiumJS imagery
+/// sampler (trilinear mipmap + anisotropic filtering), so minified horizon
+/// tiles don't shimmer and oblique tiles stay crisp. Building the chain on
+/// the download workers keeps fast-zoom frames free of mip CPU spikes.
 fn make_image(
     images: &mut Assets<Image>,
-    rgba: Vec<u8>,
+    data: Vec<u8>,
     width: u32,
     height: u32,
+    levels: u32,
 ) -> Handle<Image> {
-    let (data, levels) = build_mip_chain(rgba, width, height);
     // Image::new asserts data == base extent size, so construct with the
     // base level only and swap in the full mip chain afterwards (the GPU
     // upload path honors texture_descriptor.mip_level_count).
@@ -1537,6 +1555,7 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
                             rgba_data: Vec::new(),
                             width: 0,
                             height: 0,
+                            mip_levels: 0,
                             placeholder: false,
                             aborted: true,
                         });
@@ -1586,6 +1605,7 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
                                     rgba_data: Vec::new(),
                                     width: 0,
                                     height: 0,
+                                    mip_levels: 0,
                                     placeholder: true,
                                     aborted: false,
                                 });
@@ -1606,13 +1626,21 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
                                 let (w, h) = rgba.dimensions();
                                 (rgba, w, h)
                             };
+                            // Build the mip chain on this worker thread:
+                            // the frame thread then only pays the GPU
+                            // upload, keeping fast-zoom frame pacing smooth
+                            // (main-thread mip builds spiked frames mid-
+                            // zoom, reading as image wobble).
+                            let (chain, levels) =
+                                build_mip_chain(rgba.into_raw(), w, h);
                             let _ = tx.send(TileDownloadResult {
                                 x: px,
                                 y: py,
                                 z: pz,
-                                rgba_data: rgba.into_raw(),
+                                rgba_data: chain,
                                 width: w,
                                 height: h,
+                                mip_levels: levels,
                                 placeholder: false,
                                 aborted: false,
                             });
@@ -1630,6 +1658,7 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
                             rgba_data: Vec::new(),
                             width: 0,
                             height: 0,
+                            mip_levels: 0,
                             placeholder: true,
                             aborted: false,
                         });

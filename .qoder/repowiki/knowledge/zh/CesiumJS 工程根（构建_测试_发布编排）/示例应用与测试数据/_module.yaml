@@ -1,9 +1,0 @@
-schema_version: 1
-module_path: sample_apps_and_data
-title: 示例应用与测试数据
-scope:
-    - Apps/
-source_files: []
-depends_on: []
-related_to:
-    - path: cesiumrust_port

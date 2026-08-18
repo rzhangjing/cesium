@@ -1,9 +1,0 @@
-schema_version: 1
-module_path: cesiumrust_port
-title: CesiumRust 3D 地球引擎（Bevy 端口适配器与领域层）
-scope:
-    - cesiumrust/
-source_files: []
-depends_on: []
-related_to:
-    - path: sample_apps_and_data

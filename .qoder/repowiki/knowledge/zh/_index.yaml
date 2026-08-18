@@ -3,83 +3,12 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-08-18T12:51:28Z"
+exported_at: "2026-08-18T13:50:18Z"
 modules:
     "":
-        dir_name: CesiumJS 工程根（构建_测试_发布编排）
-        title: CesiumJS 工程根（构建/测试/发布编排）
-        scope:
-            - README.md
-            - CONTRIBUTING.md
-            - CODE_OF_CONDUCT.md
-            - CONTRIBUTORS.md
-            - package.json
-            - gulpfile.js
-            - gulpfile.apps.js
-            - gulpfile.makezip.js
-            - server.js
-            - index.html
-            - index.cjs
-            - tsconfig.json
-            - eslint.config.js
-            - .github/
-            - .husky/
-            - launches/
-            - scripts/
-        source_files: []
-        children:
-            - build_tools
-            - cesiumrust_port
-            - documentation
-            - sample_apps_and_data
-            - tests_and_specs
-        depends_on: []
-        related_to: []
-    build_tools:
-        dir_name: 构建与文档生成工具集
-        title: 构建与文档生成工具集
-        scope:
-            - Tools/
-        source_files: []
-        children: []
-        depends_on: []
-        related_to:
-            - path: documentation
-    cesiumrust_port:
-        dir_name: CesiumRust 3D 地球引擎（Bevy 端口适配器与领域层）
-        title: CesiumRust 3D 地球引擎（Bevy 端口适配器与领域层）
-        scope:
-            - cesiumrust/
-        source_files: []
-        children: []
-        depends_on: []
-        related_to:
-            - path: sample_apps_and_data
-    documentation:
-        dir_name: CesiumJS 项目文档与贡献者指南
-        title: CesiumJS 项目文档与贡献者指南
-        scope:
-            - Documentation/
-        source_files: []
-        children: []
-        depends_on: []
-        related_to:
-            - path: build_tools
-    sample_apps_and_data:
-        dir_name: 示例应用与测试数据
-        title: 示例应用与测试数据
-        scope:
-            - Apps/
-        source_files: []
-        children: []
-        depends_on: []
-        related_to:
-            - path: cesiumrust_port
-    tests_and_specs:
-        dir_name: CesiumJS Specs 测试套件与基准数据
-        title: CesiumJS Specs 测试套件与基准数据
-        scope:
-            - Specs/
+        dir_name: CesiumJS 3D 地球引擎与 CesiumRust 重写工程根
+        title: CesiumJS 3D 地球引擎与 CesiumRust 重写工程根
+        scope: []
         source_files: []
         children: []
         depends_on: []
