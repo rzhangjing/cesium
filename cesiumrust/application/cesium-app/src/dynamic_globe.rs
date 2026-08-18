@@ -52,12 +52,13 @@ const MAX_TEXTURE_UPLOADS_PER_FRAME: usize = 16;
 /// Despawn budget: entity removal costs real CPU (component drops + render
 /// extraction), so bulk cleanup is sliced across frames.
 const MAX_DESPAWNS_PER_FRAME: usize = 24;
-/// Hard cap on live tile entities. Beyond this the draw-call count itself
-/// becomes the bottleneck, so the oldest surplus tiles are evicted even if
-/// still "visible" (their GPU handles stay cached for cheap re-spawn).
-/// Sized above the typical visible-set peak (~750 for the concentric LOD
-/// layout) so a settled view never loses coverage to eviction.
-const MAX_TILE_ENTITIES: usize = 1100;
+/// Hard cap on live tile entities (visible + hidden warm fallback). Hidden
+/// tiles draw nothing (Visibility::Hidden), so the cap only bounds entity /
+/// handle storage, not draw calls — the visible peak alone is ~750 for the
+/// concentric LOD layout; the extra headroom keeps recently-hidden tiles
+/// alive so a zoom-out re-partitions onto live coarse tiles instead of
+/// flashing down to the base layer.
+const MAX_TILE_ENTITIES: usize = 1800;
 /// Coarsest levels kept resident as a permanent global fallback layer
 /// (CesiumJS's base imagery layer role): downloaded once at startup, never
 /// despawned/evicted, so fast pans into never-visited regions show blurry
@@ -136,6 +137,10 @@ struct TileManager {
     in_flight: HashSet<TileKey>,
     /// Insertion order of spawned entities (FIFO eviction order).
     spawn_order: VecDeque<TileKey>,
+    /// Hidden-tile LRU: tiles in the order they left the render partition.
+    /// They stay alive (hidden, zero draw cost) as warm zoom-out fallback;
+    /// cap pressure evicts the oldest-hidden first.
+    hide_order: VecDeque<TileKey>,
     /// Set when `view_dependent_update` recomputed the visible set this
     /// frame; cleanup only runs on stable frames so a drag doesn't despawn
     /// tiles that leave and re-enter the visible set frame to frame.
@@ -166,6 +171,7 @@ impl Default for TileManager {
             reupload: HashSet::new(),
             in_flight: HashSet::new(),
             spawn_order: VecDeque::new(),
+            hide_order: VecDeque::new(),
             view_changed_this_frame: false,
         }
     }
@@ -379,7 +385,6 @@ fn view_dependent_update(
     mut mgr: ResMut<TileManager>,
     mut mesh_pipe: ResMut<MeshPipeline>,
     tex_rx: Res<TextureReceiver>,
-    mut commands: Commands,
 ) {
     if !mgr.initialized {
         return;
@@ -404,50 +409,37 @@ fn view_dependent_update(
         .map(|t| t.0 .2)
         .max()
         .unwrap_or(mgr.current_zoom);
-    let finest_changed = finest != mgr.current_zoom;
     let new_set: HashSet<TileKey> = new_visible.iter().map(|&(k, _)| k).collect();
     let new_load_set: HashSet<TileKey> = new_load.iter().map(|&(k, _)| k).collect();
     let partition_changed = new_set != mgr.visible_set || new_load_set != mgr.load_set;
     mgr.visible_set = new_set;
     mgr.load_set = new_load_set;
 
-    // Stale tiles are NOT despawned here: they stay as warm fallback while
-    // their replacements load. `sync_visibility` hides them the same frame
-    // (strict partition rendering, no overlap), and `process_pipeline`
-    // cleans them up progressively.
+    // Stale tiles are NOT despawned here: they stay alive but HIDDEN as warm
+    // fallback (zero draw cost under strict partition rendering), so a
+    // zoom-out re-partitions onto live coarse tiles instead of flashing down
+    // to the base layer while replacements re-spawn. Only hard-cap pressure
+    // evicts them, oldest-hidden first (see `process_pipeline`).
     enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &new_visible);
     enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &new_load);
+
+    // Maintain the hidden-tile LRU: drop re-activated / despawned entries,
+    // then append tiles that just left the partition (oldest-hidden first).
+    let (vis, load, ents, hide) = {
+        let m = &mut *mgr;
+        (&m.visible_set, &m.load_set, &m.tile_entities, &mut m.hide_order)
+    };
+    hide.retain(|k| !vis.contains(k) && !load.contains(k) && ents.contains_key(k));
+    let queued_hide: HashSet<TileKey> = hide.iter().copied().collect();
+    for k in ents.keys() {
+        if !vis.contains(k) && !load.contains(k) && !queued_hide.contains(k) {
+            hide.push_back(*k);
+        }
+    }
 
     mgr.current_zoom = finest;
     mgr.last_distance = orbit.distance;
     mgr.view_changed_this_frame = partition_changed;
-
-    if finest_changed {
-        // Drop tiles far from the new LOD range right away (budgeted):
-        // otherwise a multi-level cascade leaves several full zoom levels of
-        // overlapping entities alive and inflates the draw-call count.
-        let prot = protected_ancestors(&mgr);
-        let mut evicted = 0;
-        let far: Vec<TileKey> = mgr
-            .tile_entities
-            .keys()
-            .filter(|k| {
-                !mgr.visible_set.contains(k)
-                    && !mgr.load_set.contains(k)
-                    && !prot.contains(k)
-                    && k.2 > BASE_LAYER_ZOOM
-                    && k.2.abs_diff(finest) > 2
-            })
-            .copied()
-            .collect();
-        for key in far {
-            if evicted >= MAX_DESPAWNS_PER_FRAME {
-                break;
-            }
-            mgr.despawn_tile(&key, &mut commands);
-            evicted += 1;
-        }
-    }
 }
 
 impl TileManager {
@@ -457,6 +449,7 @@ impl TileManager {
             commands.entity(entity).despawn();
             self.textured_tiles.remove(key);
             self.spawn_order.retain(|k| k != key);
+            self.hide_order.retain(|k| k != key);
         }
     }
 }
@@ -845,62 +838,38 @@ fn process_pipeline(
         tex_uploads += 1;
     }
 
-    // 5) Budgeted cleanup. Two rules keep this cheap and churn-free:
-    //    - it only runs on STABLE frames (no visible-set recompute this
-    //      frame), so tiles that briefly leave the set during a drag are not
-    //      despawned only to be re-downloaded a moment later;
-    //    - despawns are capped per frame so removing hundreds of entities
-    //      never produces a CPU spike mid-drag.
-    let finest = mgr.current_zoom;
-    let fine_total = mgr
-        .visible_set
-        .iter()
-        .filter(|(_, _, z)| *z == finest)
-        .count();
-    let fine_textured = mgr
-        .visible_set
-        .iter()
-        .filter(|k| k.2 == finest && mgr.textured_tiles.contains(k))
-        .count();
-    let stable = !view_changed;
-    let warmed_up = fine_total > 0 && fine_textured > fine_total / 5;
-    let over_cap = mgr.tile_entities.len() > MAX_TILE_ENTITIES;
-
-    if over_cap || (stable && warmed_up) {
-        // (insertion position, key) pairs, oldest first. Sorted inside a
-        // block so the borrow of `mgr` ends before despawning begins.
-        let mut stale: Vec<(usize, TileKey)> = {
-            let pos = |k: &TileKey| {
-                mgr.spawn_order
-                    .iter()
-                    .position(|o| o == k)
-                    .unwrap_or(usize::MAX)
-            };
-            let prot = protected_ancestors(&mgr);
-            let mut v: Vec<(usize, TileKey)> = mgr
-                .tile_entities
-                .keys()
-                .copied()
-                .filter(|k| {
-                    !mgr.visible_set.contains(k)
-                        && !mgr.load_set.contains(k)
-                        && !prot.contains(k)
-                        && k.2 > BASE_LAYER_ZOOM
-                })
-                .map(|k| (pos(&k), k))
-                .collect();
-            v.sort();
-            v
-        };
-
-        let mut removed = 0;
-        for (_, key) in stale.drain(..) {
+    // 5) Budgeted cleanup. Hidden tiles stay alive as warm zoom-out fallback
+    //    (they draw nothing under strict partition rendering), so entities
+    //    are only removed when the hard cap is exceeded — and then
+    //    oldest-hidden first (LRU), never touching the render partition, the
+    //    load set, protected ancestors of pending leaves, or the permanent
+    //    base layer. Despawns are capped per frame so bulk eviction never
+    //    produces a CPU spike mid-drag.
+    let mut removed = 0;
+    if mgr.tile_entities.len() > MAX_TILE_ENTITIES {
+        let prot = protected_ancestors(&mgr);
+        // Walk the hidden LRU front-first; rebuild the queue with survivors.
+        let mut remaining: VecDeque<TileKey> = VecDeque::new();
+        while let Some(key) = mgr.hide_order.pop_front() {
+            let evictable = !prot.contains(&key)
+                && !mgr.visible_set.contains(&key)
+                && !mgr.load_set.contains(&key)
+                && key.2 > BASE_LAYER_ZOOM
+                && mgr.tile_entities.contains_key(&key);
+            if !evictable {
+                if mgr.tile_entities.contains_key(&key) {
+                    remaining.push_back(key);
+                }
+                continue;
+            }
             if removed >= MAX_DESPAWNS_PER_FRAME {
-                break;
+                remaining.push_back(key);
+                continue;
             }
             mgr.despawn_tile(&key, &mut commands);
             removed += 1;
         }
+        mgr.hide_order = remaining;
 
         // Still over the hard cap: evict the oldest surplus entities even if
         // visible (draw-call pressure beats coverage; GPU handles stay
