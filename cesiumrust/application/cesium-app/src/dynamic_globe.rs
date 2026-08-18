@@ -122,8 +122,21 @@ struct TileManager {
     /// ancestor's); doubles as the ancestor-lookup table for deeper no-data
     /// tiles.
     effective_tex: HashMap<TileKey, Handle<Image>>,
+    /// UV region of `effective_tex` this tile displays ([0,0,1,1] for tiles
+    /// showing their own texture). Inheritance composes these regions so a
+    /// grandchild upsampling through an already-upsampled parent samples the
+    /// correct part of the grandparent's texture (no shifted-copy seams).
+    effective_uv: HashMap<TileKey, [f32; 4]>,
     /// No-data tiles with no textured ancestor: rendered as solid ocean.
     solid_tiles: HashSet<TileKey>,
+    /// Spawned tiles currently displaying an inherited ancestor texture
+    /// through a UV-remapped mesh (their own full-res imagery is still
+    /// missing or only a downscaled filler). Sharpened in place — mesh and
+    /// texture swapped atomically — once the full-res download lands.
+    upsampled: HashSet<TileKey>,
+    /// UV-remap (fallback) mesh builds currently in flight: dedupe guard so
+    /// spawn retries never spam duplicate jobs into the mesh pipeline.
+    pending_fb_builds: HashSet<TileKey>,
     /// Insertion order of gpu_textures (FIFO eviction order).
     gpu_tex_order: VecDeque<TileKey>,
     /// Source resolution (width in px) each GPU texture was created from,
@@ -136,6 +149,10 @@ struct TileManager {
     /// coverage repair, guarantees a queued visible tile can never end up
     /// without a download backing it.
     in_flight: HashSet<TileKey>,
+    /// Cooldown deadline for tiles whose last download attempt failed
+    /// transiently; fetches are re-issued only after it elapses so a
+    /// throttled tile server is not hammered in a tight loop.
+    retry_after: HashMap<TileKey, std::time::Instant>,
     /// Insertion order of spawned entities (FIFO eviction order).
     spawn_order: VecDeque<TileKey>,
     /// Hidden-tile LRU: tiles in the order they left the render partition.
@@ -166,11 +183,15 @@ impl Default for TileManager {
             no_data: HashSet::new(),
             gpu_fb_meshes: HashMap::new(),
             effective_tex: HashMap::new(),
+            effective_uv: HashMap::new(),
             solid_tiles: HashSet::new(),
+            upsampled: HashSet::new(),
+            pending_fb_builds: HashSet::new(),
             gpu_tex_order: VecDeque::new(),
             gpu_tex_size: HashMap::new(),
             reupload: HashSet::new(),
             in_flight: HashSet::new(),
+            retry_after: HashMap::new(),
             spawn_order: VecDeque::new(),
             hide_order: VecDeque::new(),
             view_changed_this_frame: false,
@@ -180,8 +201,9 @@ impl Default for TileManager {
 
 #[derive(Resource)]
 struct TextureReceiver {
-    tx: mpsc::Sender<TileDownloadResult>,
     rx: Mutex<mpsc::Receiver<TileDownloadResult>>,
+    /// Job feed for the persistent download pool (tile key + downscale flag).
+    job_tx: mpsc::Sender<(TileKey, bool)>,
     /// Persistent cache of downloaded tile image data (finest level only).
     cache: Arc<Mutex<HashMap<TileKey, CachedTexture>>>,
     /// Tiles still worth downloading (queued / visible / spawned). Workers
@@ -194,11 +216,25 @@ struct TextureReceiver {
 impl Default for TextureReceiver {
     fn default() -> Self {
         let (tx, rx) = mpsc::channel();
+        let (job_tx, job_rx) = mpsc::channel::<(TileKey, bool)>();
+        let job_rx = Arc::new(Mutex::new(job_rx));
+        let cache = Arc::new(Mutex::new(HashMap::new()));
+        let wanted = Arc::new(Mutex::new(HashSet::new()));
+        // Persistent worker pool: threads and their ureq agents (including
+        // the HTTP keep-alive connection pool) are created once, so bursty
+        // zooms never spawn a thread storm that starves the frame thread,
+        // and full-res re-fetches reuse warm server connections.
+        for _ in 0..DOWNLOAD_THREADS {
+            let job_rx = job_rx.clone();
+            let tx = tx.clone();
+            let wanted = wanted.clone();
+            std::thread::spawn(move || download_worker(job_rx, tx, wanted));
+        }
         Self {
-            tx,
             rx: Mutex::new(rx),
-            cache: Arc::new(Mutex::new(HashMap::new())),
-            wanted: Arc::new(Mutex::new(HashSet::new())),
+            job_tx,
+            cache,
+            wanted,
         }
     }
 }
@@ -219,6 +255,10 @@ struct TileDownloadResult {
     /// True when the worker skipped the fetch because the tile left the
     /// wanted set (view moved on); the main thread only clears `in_flight`.
     aborted: bool,
+    /// True when every retry failed (transient throttle/timeout): the tile
+    /// is NOT no-data; the main thread cools it down and re-issues the
+    /// fetch later instead of stamping permanent ancestor coverage.
+    failed: bool,
 }
 
 /// Background mesh-generation pipeline: workers build `Mesh` values off the
@@ -328,10 +368,19 @@ fn enqueue_tiles(
             // filler (128 px) but now projected large must be re-fetched at
             // full res, otherwise its stretched texels read as a smeared
             // comb band right next to crisp tiles at LOD junctions.
+            // Upsampled tiles (displaying a stretched ancestor tint) are
+            // exempt from the 192-px gate: horizon tiles never grow that
+            // large, so without the exemption they would keep the ancestor
+            // color forever and form a visible color-block ring at the
+            // filler boundary (and pop-shift when a zoom-in crosses it).
             if !mgr.no_data.contains(&key)
                 && !mgr.reupload.contains(&key)
-                && prio > 192.0
-                && matches!(mgr.gpu_tex_size.get(&key), Some(&sz) if sz < 256)
+                && (prio > 192.0 || mgr.upsampled.contains(&key))
+                && mgr.gpu_tex_size.get(&key).map_or(true, |&sz| sz < 256)
+                && mgr
+                    .retry_after
+                    .get(&key)
+                    .map_or(true, |t| std::time::Instant::now() >= *t)
             {
                 downloads.push((key, false, prio));
                 mgr.reupload.insert(key);
@@ -349,6 +398,10 @@ fn enqueue_tiles(
                 && !mgr.gpu_textures.contains_key(&key)
                 && !mgr.no_data.contains(&key)
                 && !mgr.in_flight.contains(&key)
+                && mgr
+                    .retry_after
+                    .get(&key)
+                    .map_or(true, |t| std::time::Instant::now() >= *t)
             {
                 // Only tiles projected far below native texel size are pure
                 // horizon filler and get downscaled on the worker thread.
@@ -459,6 +512,9 @@ impl TileManager {
         if let Some(entity) = self.tile_entities.remove(key) {
             commands.entity(entity).despawn();
             self.textured_tiles.remove(key);
+            self.upsampled.remove(key);
+            self.pending_fb_builds.remove(key);
+            self.retry_after.remove(key);
             self.spawn_order.retain(|k| k != key);
             self.hide_order.retain(|k| k != key);
         }
@@ -541,6 +597,7 @@ fn process_pipeline(
             continue;
         }
         if is_fb {
+            mgr.pending_fb_builds.remove(&key);
             mgr.gpu_fb_meshes.insert(key, meshes.add(mesh));
             evict_gpu_cache(&mut mgr);
         } else {
@@ -572,7 +629,9 @@ fn process_pipeline(
                 mgr.gpu_fb_meshes.contains_key(&key)
             }
         } else {
-            mgr.gpu_meshes.contains_key(&key)
+            // Full-res path needs the real mesh; the ancestor-upsample path
+            // below displays through a UV-remapped fallback mesh instead.
+            mgr.gpu_meshes.contains_key(&key) || mgr.gpu_fb_meshes.contains_key(&key)
         };
 
         if !mesh_ready || spawns >= MAX_SPAWNS_PER_FRAME {
@@ -649,12 +708,18 @@ fn process_pipeline(
             continue;
         }
 
-        // Real imagery path. Texture: GPU handle > CPU rgba cache. A tile
-        // whose imagery is not ready yet stays HIDDEN (re-queued) instead of
-        // spawning as a blue placeholder: an opaque blue quad would paint a
-        // hole over the already-textured coarser parent, which reads far
-        // worse than letting the parent show through until the child is
-        // ready (the same rule CesiumJS follows for not-yet-loaded children).
+        // Real imagery path. A tile only ever displays its OWN texture once
+        // it is full resolution (>= 256 px): with its own full-res texels it
+        // spawns on the regular mesh. Until then it inherits the nearest
+        // textured ancestor through a UV-remapped mesh (CesiumJS upsampling
+        // fallback) — the child's pixels are then EXACTLY the parent's, so
+        // the KICK partition swap is invisible and a zoom never shows pale
+        // stretched-filler patches next to sharp tiles (the "color patches"
+        // artifact) nor a blur->sharp pop at every level swap (the zoom
+        // shake). The tile sharpens in place once — mesh and texture swapped
+        // atomically — when its own full-res download lands. Base-layer
+        // tiles are exempt: they are the KICK fallback roots and must always
+        // draw (solid deep-ocean default until their download lands).
         let cached_tex = mgr
             .gpu_textures
             .get(&key)
@@ -670,22 +735,147 @@ fn process_pipeline(
                     )
                 })
             });
-        let Some(tex) = cached_tex else {
+        let own_width = mgr
+            .gpu_tex_size
+            .get(&key)
+            .copied()
+            .or_else(|| cache.get(&key).map(|c| c.width));
+        let own_full_res = cached_tex.is_some()
+            && (key.2 <= BASE_LAYER_ZOOM || own_width.map_or(false, |w| w >= 256));
+
+        if !own_full_res {
+            if key.2 <= BASE_LAYER_ZOOM {
+                // Base root without imagery yet: fall through to the solid
+                // deep-ocean spawn below.
+            } else if mgr.upsampled.contains(&key) {
+                // Already displaying an inherited ancestor texture.
+                still_queued.push(key);
+                mgr.queued.insert(key);
+                continue;
+            } else {
+                // Inherit the nearest textured ancestor (same mechanism as
+                // the no-data path).
+                let (mut ax, mut ay, mut az) = key;
+                let mut ancestor: Option<(TileKey, Handle<Image>)> = None;
+                while az > 0 {
+                    ax >>= 1;
+                    ay >>= 1;
+                    az -= 1;
+                    if let Some(t) = mgr.effective_tex.get(&(ax, ay, az)) {
+                        ancestor = Some(((ax, ay, az), t.clone()));
+                        break;
+                    }
+                }
+                let Some((anc, tex)) = ancestor else {
+                    // No textured ancestor yet (base layer still loading):
+                    // stay hidden, coverage repair retries once it settles.
+                    still_queued.push(key);
+                    mgr.queued.insert(key);
+                    continue;
+                };
+                let dz = key.2 - anc.2;
+                let side = (1u32 << dz) as f32;
+                let rx = (key.0 % (1u32 << dz)) as f32;
+                let ry = (key.1 % (1u32 << dz)) as f32;
+                // Compose with the ancestor's own UV region (it may itself
+                // be upsampling a higher ancestor's texture).
+                let [au0, av0, au1, av1] = mgr
+                    .effective_uv
+                    .get(&anc)
+                    .copied()
+                    .unwrap_or([0.0, 0.0, 1.0, 1.0]);
+                let fu = (au1 - au0) / side;
+                let fv = (av1 - av0) / side;
+                let uv = [
+                    au0 + rx * fu,
+                    av0 + ry * fv,
+                    au0 + (rx + 1.0) * fu,
+                    av0 + (ry + 1.0) * fv,
+                ];
+                let mesh_handle = if let Some(h) = mgr.gpu_fb_meshes.get(&key) {
+                    h.clone()
+                } else {
+                    if !mgr.pending_fb_builds.contains(&key) {
+                        mgr.pending_fb_builds.insert(key);
+                        start_mesh_builds(
+                            &mut mesh_pipe,
+                            vec![(key, compute_segments(key.2), Some(uv))],
+                        );
+                    }
+                    still_queued.push(key);
+                    mgr.queued.insert(key);
+                    continue;
+                };
+                let material = if let Some(mat) = mgr.gpu_materials.get(&key) {
+                    mat.clone()
+                } else {
+                    let mat = materials.add(StandardMaterial {
+                        base_color: Color::WHITE,
+                        base_color_texture: Some(tex.clone()),
+                        perceptual_roughness: 0.9,
+                        cull_mode: None,
+                        ..default()
+                    });
+                    mgr.gpu_materials.insert(key, mat.clone());
+                    mat
+                };
+                // Deeper children inherit through this tile from now on.
+                mgr.effective_tex.insert(key, tex);
+                mgr.effective_uv.insert(key, uv);
+
+                let entity = commands
+                    .spawn((
+                        CesiumGlobe,
+                        GlobeTile {
+                            x: key.0,
+                            y: key.1,
+                            z: key.2,
+                        },
+                        Mesh3d(mesh_handle),
+                        MeshMaterial3d(material),
+                        Transform::from_scale(Vec3::splat(scale)),
+                    ))
+                    .id();
+
+                mgr.tile_entities.insert(key, entity);
+                mgr.spawn_order.push_back(key);
+                mgr.textured_tiles.insert(key);
+                mgr.upsampled.insert(key);
+                spawns += 1;
+                continue;
+            }
+        }
+
+        // Own full-res path (or base root): needs the regular mesh handle.
+        let Some(mesh_handle) = mgr.gpu_meshes.get(&key).cloned() else {
             still_queued.push(key);
             mgr.queued.insert(key);
             continue;
         };
-        mgr.effective_tex.insert(key, tex.clone());
 
-        let mesh_handle = mgr.gpu_meshes[&key].clone();
+        if let Some(tex) = &cached_tex {
+            mgr.effective_tex.insert(key, tex.clone());
+            mgr.effective_uv.insert(key, [0.0, 0.0, 1.0, 1.0]);
+        }
 
         let material = if let Some(mat) = mgr.gpu_materials.get(&key) {
             mat.clone()
-        } else {
+        } else if let Some(tex) = cached_tex.clone() {
             let mat = materials.add(StandardMaterial {
                 base_color: Color::WHITE,
-                base_color_texture: Some(tex.clone()),
+                base_color_texture: Some(tex),
                 perceptual_roughness: 0.9,
+                cull_mode: None,
+                ..default()
+            });
+            mgr.gpu_materials.insert(key, mat.clone());
+            mat
+        } else {
+            // Default image for a base tile whose download is still
+            // missing: solid deep ocean, swapped for real imagery in place.
+            let mat = materials.add(StandardMaterial {
+                base_color: Color::srgb(0.01, 0.05, 0.10),
+                perceptual_roughness: 1.0,
                 cull_mode: None,
                 ..default()
             });
@@ -693,11 +883,13 @@ fn process_pipeline(
             mat
         };
 
-        if !mgr.gpu_textures.contains_key(&key) {
-            mgr.gpu_tex_order.push_back(key);
+        if let Some(tex) = cached_tex {
+            if !mgr.gpu_textures.contains_key(&key) {
+                mgr.gpu_tex_order.push_back(key);
+            }
+            mgr.gpu_textures.insert(key, tex);
+            evict_gpu_cache(&mut mgr);
         }
-        mgr.gpu_textures.insert(key, tex.clone());
-        evict_gpu_cache(&mut mgr);
 
         let entity = commands
             .spawn((
@@ -738,6 +930,18 @@ fn process_pipeline(
             mgr.reupload.remove(&key);
             continue;
         }
+        if result.failed {
+            // Transient throttle/timeout: cool down and let the normal
+            // enqueue / coverage-repair paths re-issue the fetch later.
+            // Never stamp no-data here, or the tile keeps the ancestor's
+            // coarse tint forever (the rectangular color-block artifact).
+            mgr.reupload.remove(&key);
+            mgr.retry_after.insert(
+                key,
+                std::time::Instant::now() + std::time::Duration::from_secs(10),
+            );
+            continue;
+        }
         if result.placeholder {
             mgr.reupload.remove(&key);
             if mgr.gpu_textures.contains_key(&key) {
@@ -768,13 +972,23 @@ fn process_pipeline(
                     let side = (1u32 << dz) as f32;
                     let rx = (key.0 % (1u32 << dz)) as f32;
                     let ry = (key.1 % (1u32 << dz)) as f32;
+                    // Compose with the ancestor's own UV region: it may
+                    // itself be upsampling a higher ancestor's texture.
+                    let [au0, av0, au1, av1] = mgr
+                        .effective_uv
+                        .get(&anc)
+                        .copied()
+                        .unwrap_or([0.0, 0.0, 1.0, 1.0]);
+                    let fu = (au1 - au0) / side;
+                    let fv = (av1 - av0) / side;
                     let uv = [
-                        rx / side,
-                        ry / side,
-                        (rx + 1.0) / side,
-                        (ry + 1.0) / side,
+                        au0 + rx * fu,
+                        av0 + ry * fv,
+                        au0 + (rx + 1.0) * fu,
+                        av0 + (ry + 1.0) * fv,
                     ];
                     mgr.effective_tex.insert(key, tex);
+                    mgr.effective_uv.insert(key, uv);
                     if !mgr.gpu_fb_meshes.contains_key(&key) {
                         start_mesh_builds(
                             &mut mesh_pipe,
@@ -847,18 +1061,52 @@ fn process_pipeline(
             h
         };
         mgr.reupload.remove(&key);
-        mgr.effective_tex.insert(key, tex_handle.clone());
+        // A sub-256 filler must never repaint a tile currently upsampling an
+        // ancestor: its stretched texels are exactly the pale-patch artifact.
+        // The handle stays cached (gpu_tex_size records the resolution so the
+        // full-res re-fetch triggers), but the displayed pixels only change
+        // when full-res imagery arrives.
+        let filler = result.width < 256 && key.2 > BASE_LAYER_ZOOM;
+        if !filler {
+            mgr.effective_tex.insert(key, tex_handle.clone());
+            mgr.effective_uv.insert(key, [0.0, 0.0, 1.0, 1.0]);
 
-        if let Some(mat_handle) = mgr.gpu_materials.get(&key) {
-            if let Some(mat) = materials.get_mut(mat_handle) {
-                mat.base_color_texture = Some(tex_handle);
-                mat.base_color = Color::WHITE;
+            if let Some(mat_handle) = mgr.gpu_materials.get(&key) {
+                if let Some(mat) = materials.get_mut(mat_handle) {
+                    mat.base_color_texture = Some(tex_handle);
+                    mat.base_color = Color::WHITE;
+                }
             }
         }
         if mgr.tile_entities.contains_key(&key) {
             mgr.textured_tiles.insert(key);
         }
         tex_uploads += 1;
+    }
+
+    // Sharpen pass: an upsampled tile whose own full-res texture AND real
+    // mesh have both arrived swaps mesh + texture atomically in one frame
+    // (single blur->sharp pop in place, then the fallback UV-remap mesh is
+    // dropped for the exact-ellipsoid geometry).
+    let sharpen: Vec<TileKey> = mgr
+        .upsampled
+        .iter()
+        .filter(|k| {
+            mgr.tile_entities.contains_key(*k)
+                && mgr.gpu_meshes.contains_key(*k)
+                && matches!(mgr.gpu_tex_size.get(*k), Some(&s) if s >= 256)
+        })
+        .copied()
+        .collect();
+    for key in sharpen {
+        let ent = mgr.tile_entities[&key];
+        if let (Some(mesh), Some(mat)) = (
+            mgr.gpu_meshes.get(&key).cloned(),
+            mgr.gpu_materials.get(&key).cloned(),
+        ) {
+            commands.entity(ent).insert((Mesh3d(mesh), MeshMaterial3d(mat)));
+            mgr.upsampled.remove(&key);
+        }
     }
 
     // 5) Budgeted cleanup. Hidden tiles stay alive as warm zoom-out fallback
@@ -994,6 +1242,10 @@ fn process_pipeline(
                         && !mgr.gpu_textures.contains_key(k)
                         && !mgr.no_data.contains(k)
                         && !mgr.in_flight.contains(k)
+                        && mgr
+                            .retry_after
+                            .get(k)
+                            .map_or(true, |t| std::time::Instant::now() >= *t)
                     {
                         repair_dl.push((*k, false));
                         mgr.in_flight.insert(*k);
@@ -1182,15 +1434,22 @@ fn visit_tile(
     let w_m = 2.0 * std::f64::consts::PI * EARTH_RADIUS_M / n as f64;
     let screen_px = w_m / dist_m * focal_px;
 
+    let has_ent = mgr.tile_entities.contains_key(&(x, y, z));
+
     if screen_px <= MAX_TILE_SCREEN_PX || z >= MAX_ZOOM {
         // Selected leaf. Like CesiumJS (which adds even not-yet-renderable
         // tiles to the render list so the tree can settle on the deepest
         // available coverage), the leaf is always added; the outcome only
-        // reports whether its entity is live so the parent can KICK back
-        // to its own level instead of drawing a hole. `sync_visibility`
-        // simply skips unspawned tiles until they appear.
+        // reports whether it is drawable so the parent can KICK back to its
+        // own level instead of drawing a hole. `sync_visibility` simply
+        // skips unspawned tiles until they appear.
         render.push(((x, y, z), screen_px as f32));
-        if mgr.tile_entities.contains_key(&(x, y, z)) {
+        // A tile counts as ready the moment it has a live entity: a child
+        // still upsampling its ancestor's texture is visually IDENTICAL to
+        // the parent's pixels, so swapping the partition onto it is invisible
+        // — no KICK hold-back needed (that only delayed the swap and popped
+        // the whole screen between coarse levels).
+        if has_ent {
             Visit::Ready
         } else {
             Visit::NotReady
@@ -1249,18 +1508,25 @@ fn visit_tile(
             // skipped: CesiumJS never visits invisible children, so they
             // neither block the swap nor consume download bandwidth.
             render.truncate(start);
-            render.push(((x, y, z), screen_px as f32));
             for (c, o) in children.iter().zip(outcomes.iter()) {
-                if !matches!(o, Visit::Culled) && !mgr.tile_entities.contains_key(c) {
-                    // Priority = the child's own projected footprint (about
-                    // half the parent's).
+                if !matches!(o, Visit::Culled)
+                    && (!mgr.tile_entities.contains_key(c)
+                        || mgr
+                            .gpu_tex_size
+                            .get(c)
+                            .map_or(false, |&s| s < 256))
+                {
+                    // Missing child, or child stuck on a downscaled horizon
+                    // filler: keep it in the load set so the full-res
+                    // (re)download is scheduled and the swap can happen.
                     load.push((*c, (screen_px * 0.5) as f32));
                 }
             }
+            render.push(((x, y, z), screen_px as f32));
             // Mirror of CesiumJS `allAreRenderable = tile.renderable` after
             // a KICK: as far as the parent is concerned this subtree now
             // reduces to this tile.
-            if mgr.tile_entities.contains_key(&(x, y, z)) {
+            if has_ent {
                 Visit::Ready
             } else {
                 Visit::NotReady
@@ -1685,160 +1951,158 @@ fn tile_to_quadkey(x: u32, y: u32, level: u32) -> String {
 /// Start PARALLEL background downloads using a thread pool. When `downscale`
 /// is set the worker also shrinks the image to 128x128 so coarse filler tiles
 /// never pay full-resolution decode/upload costs.
+/// Feed download jobs to the persistent worker pool. Non-blocking: jobs queue
+/// up and workers skip stale ones (not in `wanted`) at dequeue time.
 fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
-    let tiles_owned: Vec<(TileKey, bool)> = tiles.to_vec();
-    let tx = tex_rx.tx.clone();
-    let wanted = tex_rx.wanted.clone();
+    for &(key, downscale) in tiles {
+        let _ = tex_rx.job_tx.send((key, downscale));
+    }
+}
 
-    std::thread::spawn(move || {
-        // Split tiles across DOWNLOAD_THREADS workers
-        let chunks: Vec<Vec<(TileKey, bool)>> = {
-            let mut c: Vec<Vec<(TileKey, bool)>> =
-                (0..DOWNLOAD_THREADS).map(|_| Vec::new()).collect();
-            for (i, tile) in tiles_owned.into_iter().enumerate() {
-                c[i % DOWNLOAD_THREADS].push(tile);
-            }
-            c
+/// Persistent download-pool worker: owns one ureq agent for its whole life
+/// (its connection pool keeps tile-server connections warm across fetches,
+/// so full-res re-uploads reuse TLS sessions instead of paying a fresh
+/// handshake per tile) and pulls jobs until the feed closes.
+fn download_worker(
+    job_rx: Arc<Mutex<mpsc::Receiver<(TileKey, bool)>>>,
+    tx: mpsc::Sender<TileDownloadResult>,
+    wanted: Arc<Mutex<HashSet<TileKey>>>,
+) {
+    let agent = ureq::AgentBuilder::new()
+        .user_agent("Mozilla/5.0 CesiumRust/0.1")
+        .timeout(std::time::Duration::from_secs(10))
+        .build();
+
+    loop {
+        let job = job_rx.lock().unwrap().recv();
+        let Ok(((px, py, pz), downscale)) = job else {
+            return;
         };
-
-        let mut handles = Vec::new();
-        for chunk in chunks {
-            let tx = tx.clone();
-            let wanted = wanted.clone();
-            handles.push(std::thread::spawn(move || {
-                let agent = ureq::AgentBuilder::new()
-                    .user_agent("Mozilla/5.0 CesiumRust/0.1")
-                    .timeout(std::time::Duration::from_secs(10))
-                    .build();
-
-                for &((px, py, pz), downscale) in &chunk {
-                    // Fast pans make whole batches stale within a few
-                    // frames; skip fetches nobody will look at so the
-                    // workers and the server connection budget go to the
-                    // current view instead.
-                    if !wanted.lock().unwrap().contains(&(px, py, pz)) {
-                        let _ = tx.send(TileDownloadResult {
-                            x: px,
-                            y: py,
-                            z: pz,
-                            rgba_data: Vec::new(),
-                            width: 0,
-                            height: 0,
-                            mip_levels: 0,
-                            placeholder: false,
-                            aborted: true,
-                        });
-                        continue;
-                    }
-                    let qk = tile_to_quadkey(px, py, pz);
-                    let sub = (px + py) % 8;
-                    let url = format!(
-                        "https://ecn.t{}.tiles.virtualearth.net/tiles/a{}.jpeg?g=14393",
-                        sub, qk
-                    );
-                    // Retry with backoff: tile servers throttle bursty
-                    // clients (403/429/timeouts); a permanently failed tile
-                    // would otherwise never appear.
-                    let mut delivered = false;
-                    for attempt in 0..3u32 {
-                        if attempt > 0 {
-                            std::thread::sleep(std::time::Duration::from_millis(
-                                250u64 << attempt,
-                            ));
-                        }
-                        let fetched = match agent.get(&url).call() {
-                            Ok(resp) => {
-                                let mut reader = resp.into_reader();
-                                let mut data = Vec::new();
-                                if reader.read_to_end(&mut data).is_ok() {
-                                    image::load_from_memory(&data).ok()
-                                } else {
-                                    None
-                                }
-                            }
-                            Err(_) => None
-                        };
-                        if let Some(img) = fetched {
-                            let rgba = img.to_rgba8();
-                            // Bing serves smooth gradient placeholder JPEGs
-                            // for tiles without imagery; pasting one would
-                            // stamp an opaque blue hole over the good parent
-                            // coverage, so such tiles are treated as no-data
-                            // and inherit ancestor coverage on the main
-                            // thread instead.
-                            if is_placeholder_tile(&rgba).0 {
-                                let _ = tx.send(TileDownloadResult {
-                                    x: px,
-                                    y: py,
-                                    z: pz,
-                                    rgba_data: Vec::new(),
-                                    width: 0,
-                                    height: 0,
-                                    mip_levels: 0,
-                                    placeholder: true,
-                                    aborted: false,
-                                });
-                                delivered = true;
-                                break;
-                            }
-                            let (rgba, w, h) = if downscale && rgba.width() > 128 {
-                                let small = image::DynamicImage::ImageRgba8(rgba)
-                                    .resize(
-                                        128,
-                                        128,
-                                        image::imageops::FilterType::Triangle,
-                                    );
-                                let r = small.to_rgba8();
-                                let (w, h) = r.dimensions();
-                                (r, w, h)
-                            } else {
-                                let (w, h) = rgba.dimensions();
-                                (rgba, w, h)
-                            };
-                            // Build the mip chain on this worker thread:
-                            // the frame thread then only pays the GPU
-                            // upload, keeping fast-zoom frame pacing smooth
-                            // (main-thread mip builds spiked frames mid-
-                            // zoom, reading as image wobble).
-                            let (chain, levels) =
-                                build_mip_chain(rgba.into_raw(), w, h);
-                            let _ = tx.send(TileDownloadResult {
-                                x: px,
-                                y: py,
-                                z: pz,
-                                rgba_data: chain,
-                                width: w,
-                                height: h,
-                                mip_levels: levels,
-                                placeholder: false,
-                                aborted: false,
-                            });
-                            delivered = true;
-                            break;
-                        }
-                    }
-                    if !delivered {
-                        // All retries failed: treat as no-data (inherit
-                        // ancestor coverage) instead of leaving a hole.
-                        let _ = tx.send(TileDownloadResult {
-                            x: px,
-                            y: py,
-                            z: pz,
-                            rgba_data: Vec::new(),
-                            width: 0,
-                            height: 0,
-                            mip_levels: 0,
-                            placeholder: true,
-                            aborted: false,
-                        });
+        // Fast pans make whole batches stale within a few frames; skip
+        // fetches nobody will look at so the server connection budget goes
+        // to the current view instead.
+        if !wanted.lock().unwrap().contains(&(px, py, pz)) {
+            let _ = tx.send(TileDownloadResult {
+                x: px,
+                y: py,
+                z: pz,
+                rgba_data: Vec::new(),
+                width: 0,
+                height: 0,
+                mip_levels: 0,
+                placeholder: false,
+                aborted: true,
+                failed: false,
+            });
+            continue;
+        }
+        let qk = tile_to_quadkey(px, py, pz);
+        let sub = (px + py) % 8;
+        let url = format!(
+            "https://ecn.t{}.tiles.virtualearth.net/tiles/a{}.jpeg?g=14393",
+            sub, qk
+        );
+        // Retry with backoff: tile servers throttle bursty clients
+        // (403/429/timeouts); a permanently failed tile would otherwise
+        // never appear.
+        let mut delivered = false;
+        for attempt in 0..3u32 {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(
+                    250u64 << attempt,
+                ));
+            }
+            let fetched = match agent.get(&url).call() {
+                Ok(resp) => {
+                    let mut reader = resp.into_reader();
+                    let mut data = Vec::new();
+                    if reader.read_to_end(&mut data).is_ok() {
+                        image::load_from_memory(&data).ok()
+                    } else {
+                        None
                     }
                 }
-            }));
+                Err(_) => None,
+            };
+            if let Some(img) = fetched {
+                let rgba = img.to_rgba8();
+                // Bing serves smooth gradient placeholder JPEGs for tiles
+                // without imagery; pasting one would stamp an opaque blue
+                // hole over the good parent coverage, so such tiles are
+                // treated as no-data and inherit ancestor coverage on the
+                // main thread instead.
+                let (is_ph, ph_avg, ph_maxd) = is_placeholder_tile(&rgba);
+                if is_ph {
+                    eprintln!(
+                        "[nodata] z{pz} x{px} y{py} verdict=placeholder avg={ph_avg:.2} maxd={ph_maxd}"
+                    );
+                    let _ = tx.send(TileDownloadResult {
+                        x: px,
+                        y: py,
+                        z: pz,
+                        rgba_data: Vec::new(),
+                        width: 0,
+                        height: 0,
+                        mip_levels: 0,
+                        placeholder: true,
+                        aborted: false,
+                        failed: false,
+                    });
+                    delivered = true;
+                    break;
+                }
+                let (rgba, w, h) = if downscale && rgba.width() > 128 {
+                    let small = image::DynamicImage::ImageRgba8(rgba).resize(
+                        128,
+                        128,
+                        image::imageops::FilterType::Triangle,
+                    );
+                    let r = small.to_rgba8();
+                    let (w, h) = r.dimensions();
+                    (r, w, h)
+                } else {
+                    let (w, h) = rgba.dimensions();
+                    (rgba, w, h)
+                };
+                // Build the mip chain on this worker thread: the frame
+                // thread then only pays the GPU upload, keeping fast-zoom
+                // frame pacing smooth (main-thread mip builds spiked frames
+                // mid-zoom, reading as image wobble).
+                let (chain, levels) = build_mip_chain(rgba.into_raw(), w, h);
+                let _ = tx.send(TileDownloadResult {
+                    x: px,
+                    y: py,
+                    z: pz,
+                    rgba_data: chain,
+                    width: w,
+                    height: h,
+                    mip_levels: levels,
+                    placeholder: false,
+                    aborted: false,
+                    failed: false,
+                });
+                delivered = true;
+                break;
+            }
         }
-
-        // Wait for all download threads
-        for h in handles {
-            let _ = h.join();
+        if !delivered {
+            // All retries failed (transient throttle/timeout): NOT no-data.
+            // The main thread cools the tile down and re-issues the fetch;
+            // stamping permanent ancestor coverage here is what turned
+            // throttled tiles into rectangular color blocks.
+            eprintln!("[nodata] z{pz} x{px} y{py} verdict=retries-exhausted");
+            let _ = tx.send(TileDownloadResult {
+                x: px,
+                y: py,
+                z: pz,
+                rgba_data: Vec::new(),
+                width: 0,
+                height: 0,
+                mip_levels: 0,
+                placeholder: false,
+                aborted: false,
+                failed: true,
+            });
         }
-    });
+    }
 }
