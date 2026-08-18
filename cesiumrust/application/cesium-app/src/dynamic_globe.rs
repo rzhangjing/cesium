@@ -281,8 +281,8 @@ fn initial_spawn(
     enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &visible);
     enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &load);
 
-    // Permanent coarse fallback layer: every tile up to BASE_LAYER_ZOOM,
-    // fetched downscaled (prio < 160) so the whole globe costs ~5 MB.
+    // Permanent coarse fallback layer: every tile up to BASE_LAYER_ZOOM
+    // (fetched at full res: the whole globe costs ~30 MB and stays crisp).
     let mut base: Vec<(TileKey, f32)> = Vec::new();
     for z in 1..=BASE_LAYER_ZOOM {
         for y in 0..(1u32 << z) {
@@ -341,12 +341,14 @@ fn enqueue_tiles(
                 && !mgr.no_data.contains(&key)
                 && !mgr.in_flight.contains(&key)
             {
-                // Tiles projected far below native texel size are pure
-                // horizon filler: downscale on the worker thread so they
-                // never pay full-res decode/upload costs. Threshold stays
-                // well below 256 so a downscaled tile never sits right next
-                // to a full-res one at comparable screen size.
-                downloads.push((key, prio < 160.0, prio));
+                // Only tiles projected far below native texel size are pure
+                // horizon filler and get downscaled on the worker thread.
+                // The threshold must stay far below the 192-px full-res
+                // re-upload trigger: a tile fetched downscaled at 100-160 px
+                // would cross the trigger after a couple of zoom notches and
+                // sit blurry next to sharp neighbors until the re-fetch
+                // lands (the smeared band / "tiles shifted" zoom artifact).
+                downloads.push((key, prio < 64.0, prio));
                 mgr.in_flight.insert(key);
             }
         }
@@ -848,28 +850,36 @@ fn process_pipeline(
     let mut removed = 0;
     if mgr.tile_entities.len() > MAX_TILE_ENTITIES {
         let prot = protected_ancestors(&mgr);
-        // Walk the hidden LRU front-first; rebuild the queue with survivors.
-        let mut remaining: VecDeque<TileKey> = VecDeque::new();
-        while let Some(key) = mgr.hide_order.pop_front() {
-            let evictable = !prot.contains(&key)
-                && !mgr.visible_set.contains(&key)
-                && !mgr.load_set.contains(&key)
-                && key.2 > BASE_LAYER_ZOOM
-                && mgr.tile_entities.contains_key(&key);
-            if !evictable {
-                if mgr.tile_entities.contains_key(&key) {
-                    remaining.push_back(key);
-                }
-                continue;
-            }
-            if removed >= MAX_DESPAWNS_PER_FRAME {
-                remaining.push_back(key);
-                continue;
-            }
+        // Evict hidden tiles FINE-LEVEL-FIRST (they cover little area and
+        // re-load cheaply from the GPU cache), oldest-hidden first within a
+        // level. A pure hide-time LRU would eat the coarse tiles first —
+        // exactly the warm pyramid a widening view re-partitions onto —
+        // opening straight-edged holes down to the base sphere mid-zoom
+        // (the "tiles shifted" artifact). Keeping coarse/mid levels alive
+        // makes zoom-out land on live tiles instead.
+        while mgr.tile_entities.len() > MAX_TILE_ENTITIES
+            && removed < MAX_DESPAWNS_PER_FRAME
+        {
+            let len = mgr.hide_order.len();
+            let Some(key) = mgr
+                .hide_order
+                .iter()
+                .enumerate()
+                .filter(|(_, k)| {
+                    mgr.tile_entities.contains_key(*k)
+                        && !prot.contains(*k)
+                        && !mgr.visible_set.contains(*k)
+                        && !mgr.load_set.contains(*k)
+                        && k.2 > BASE_LAYER_ZOOM
+                })
+                .max_by_key(|(idx, k)| (k.2, len - idx))
+                .map(|(_, k)| *k)
+            else {
+                break;
+            };
             mgr.despawn_tile(&key, &mut commands);
             removed += 1;
         }
-        mgr.hide_order = remaining;
 
         // Still over the hard cap: evict the oldest surplus entities even if
         // visible (draw-call pressure beats coverage; GPU handles stay
