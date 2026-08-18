@@ -6,9 +6,7 @@
 //! - Orbit camera (mouse drag to rotate, scroll to zoom)
 //! - Atmospheric limb glow + starfield background
 
-use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::prelude::*;
-use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
 use cesium_bevy_render::{CesiumCorePlugin, CesiumGlobe};
 mod orbit_camera;
 mod starfield;
@@ -16,91 +14,13 @@ mod atmosphere_glow;
 mod tile_mesh;
 mod dynamic_globe;
 
-use orbit_camera::{OrbitCameraPlugin, OrbitState};
+use orbit_camera::OrbitCameraPlugin;
 use starfield::StarfieldPlugin;
 use atmosphere_glow::AtmosphereGlowPlugin;
 use dynamic_globe::DynamicGlobePlugin;
 use tile_mesh::{create_polar_cap, create_uv_sphere, render_scale};
 
 const TILE_SEGMENTS: u32 = 16;
-
-/// Diagnostic autopilot toggle: drives the camera programmatically (rotate
-/// then zoom) while capturing frames straight off the GPU. Used to reproduce
-/// motion artifacts without synthetic OS input, which a remote or sandboxed
-/// session may not deliver to the window.
-const DIAG_AUTOPILOT: bool = true;
-
-/// Spawn one GPU screenshot with a numbered path; the observer saves it when
-/// the renderer delivers the captured frame.
-fn take_screenshot(commands: &mut Commands, idx: &mut u32) {
-    let path = format!("d:/Rust/cesium/shot_{:04}.png", *idx);
-    *idx += 1;
-    commands
-        .spawn(Screenshot::primary_window())
-        .observe(move |trigger: Trigger<ScreenshotCaptured>| {
-            let img = trigger.event().0.clone();
-            if let Ok(dyn_img) = img.try_into_dynamic() {
-                if let Err(e) = dyn_img
-                    .to_rgb8()
-                    .save_with_format(&path, image::ImageFormat::Png)
-                {
-                    println!("[Diag] save failed: {e}");
-                } else {
-                    println!("[Diag] saved {path}");
-                }
-            }
-        });
-}
-
-/// F12 or middle-click: capture one frame from the primary camera straight
-/// off the GPU and save it to disk — bypasses the desktop compositor entirely,
-/// so it works even when the window is occluded or the session is remote.
-/// (Middle-click is the automation fallback: synthetic keyboard events need
-/// window focus, synthetic mouse buttons only need the cursor on the window.)
-fn f12_screenshot(
-    keys: Res<ButtonInput<KeyCode>>,
-    mouse: Res<ButtonInput<MouseButton>>,
-    mut commands: Commands,
-    mut idx: Local<u32>,
-) {
-    if keys.just_pressed(KeyCode::F12) || mouse.just_pressed(MouseButton::Middle) {
-        take_screenshot(&mut commands, &mut idx);
-    }
-}
-
-/// Autopilot timeline: 8 s settle -> 6 s of rotation -> 6 s of zoom-in, with
-/// a GPU capture every 150 ms throughout the motion (and a short tail after
-/// it stops, so post-motion convergence is sampled too).
-fn diag_autopilot(
-    mut orbit: ResMut<OrbitState>,
-    time: Res<Time>,
-    mut t: Local<f32>,
-    mut last_shot: Local<f32>,
-    mut commands: Commands,
-    mut idx: Local<u32>,
-) {
-    if !DIAG_AUTOPILOT {
-        return;
-    }
-    *t += time.delta_secs();
-    let s = *t;
-    if (8.0..14.0).contains(&s) {
-        // Slow continuous rotation, like a steady left drag.
-        orbit.heading += 0.12 * time.delta_secs();
-    }
-    if (14.0..20.0).contains(&s) {
-        // Steady zoom-in through the exponential distance easing.
-        orbit.target_distance =
-            (orbit.target_distance - 0.22 * time.delta_secs()).max(orbit.min_distance);
-    }
-    if (8.0..21.5).contains(&s) {
-        *last_shot += time.delta_secs();
-        if *last_shot >= 0.15 {
-            *last_shot = 0.0;
-            take_screenshot(&mut commands, &mut idx);
-        }
-    }
-}
 
 /// Plugin that spawns the base sphere and polar caps.
 struct BaseSpherePlugin;
@@ -160,7 +80,6 @@ fn spawn_base_sphere(
             Transform::from_scale(Vec3::splat(scale)),
         ));
     }
-    println!("[BaseSphere] Spawned base sphere + 2 polar caps");
 }
 
 fn main() {
@@ -174,10 +93,6 @@ fn main() {
             ..default()
         }))
         .insert_resource(ClearColor(Color::BLACK))
-        // FPS / frame-time diagnostics (console) for performance validation
-        .add_plugins(FrameTimeDiagnosticsPlugin::default())
-        .add_plugins(LogDiagnosticsPlugin::default())
-        .add_systems(Update, (f12_screenshot, diag_autopilot))
         // Core: lighting + globe config
         .add_plugins(CesiumCorePlugin)
         // Camera: mouse orbit/zoom

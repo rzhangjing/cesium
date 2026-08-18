@@ -290,11 +290,6 @@ fn initial_spawn(
     mgr.current_zoom = finest;
     mgr.last_distance = orbit.distance;
     mgr.initialized = true;
-    println!(
-        "[DynGlobe] Initial: {} tiles queued, finest zoom {}",
-        visible.len(),
-        finest
-    );
 }
 
 /// Queue mesh builds + downloads for tiles that need them, highest screen
@@ -948,14 +943,6 @@ fn process_pipeline(
                 removed += 1;
             }
         }
-
-        if removed > 0 {
-            println!(
-                "[DynGlobe] Cleaned {} tiles, {} remaining",
-                removed,
-                mgr.tile_entities.len()
-            );
-        }
     }
 
     // Coverage repair: visible tiles can fall out of the spawn queue through
@@ -1538,8 +1525,6 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
     let wanted = tex_rx.wanted.clone();
 
     std::thread::spawn(move || {
-        let total = tiles_owned.len();
-
         // Split tiles across DOWNLOAD_THREADS workers
         let chunks: Vec<Vec<(TileKey, bool)>> = {
             let mut c: Vec<Vec<(TileKey, bool)>> =
@@ -1604,10 +1589,7 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
                                     None
                                 }
                             }
-                            Err(e) => {
-                                eprintln!("[DL] ({},{},{}): {}", px, py, pz, e);
-                                None
-                            }
+                            Err(_) => None
                         };
                         if let Some(img) = fetched {
                             let rgba = img.to_rgba8();
@@ -1617,16 +1599,7 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
                             // coverage, so such tiles are treated as no-data
                             // and inherit ancestor coverage on the main
                             // thread instead.
-                            if {
-                                let (ph, avg, maxd) = is_placeholder_tile(&rgba);
-                                if ph {
-                                    eprintln!(
-                                        "[DL] placeholder ({},{},{}) avg={:.2} max={}",
-                                        px, py, pz, avg, maxd
-                                    );
-                                }
-                                ph
-                            } {
+                            if is_placeholder_tile(&rgba).0 {
                                 let _ = tx.send(TileDownloadResult {
                                     x: px,
                                     y: py,
@@ -1690,7 +1663,5 @@ fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
         for h in handles {
             let _ = h.join();
         }
-
-        println!("[DL] Batch complete: {} tiles", total);
     });
 }
