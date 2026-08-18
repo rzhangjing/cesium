@@ -253,8 +253,13 @@ impl Plugin for DynamicGlobePlugin {
         app.init_resource::<TileManager>()
             .init_resource::<TextureReceiver>()
             .init_resource::<MeshPipeline>()
+            .init_resource::<BaseSphereComposite>()
             .add_systems(Startup, initial_spawn)
-            .add_systems(Update, (view_dependent_update, process_pipeline, sync_visibility).chain());
+            .add_systems(
+                Update,
+                (view_dependent_update, process_pipeline, sync_visibility).chain(),
+            )
+            .add_systems(Update, base_sphere_composite_system);
     }
 }
 
@@ -1444,6 +1449,170 @@ fn make_image(
         min_filter: ImageFilterMode::Linear,
         mipmap_filter: ImageFilterMode::Linear,
         anisotropy_clamp: 8,
+        ..default()
+    });
+    images.add(img)
+}
+
+// ── Base-sphere whole-globe composite ──────────────────────────────
+
+/// Marker for the non-LOD base sphere so the composite system can find its
+/// material and drape the baked whole-globe texture over it.
+#[derive(Component)]
+pub struct BaseSphereMarker;
+
+const COMPOSITE_TILE: u32 = 128; // per-tile block size inside the composite
+const COMPOSITE_SIZE: u32 = 8 * COMPOSITE_TILE; // z=3: 8x8 tiles = 1024 px
+
+#[derive(Resource, Default)]
+struct BaseSphereComposite {
+    rx: Option<Mutex<mpsc::Receiver<(Vec<u8>, u32)>>>,
+    done: bool,
+}
+
+/// Once every base-layer (z=3) tile has either a texture or a no-data
+/// verdict, bake them into one 1024x1024 Mercator composite and drape it
+/// over the base sphere. Any transient coverage hole or the horizon limb
+/// then shows a blurry earth instead of the flat blue sphere color.
+fn base_sphere_composite_system(
+    mut state: ResMut<BaseSphereComposite>,
+    mgr: Res<TileManager>,
+    mut images: ResMut<Assets<Image>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    sphere: Query<&MeshMaterial3d<StandardMaterial>, With<BaseSphereMarker>>,
+) {
+    if state.done {
+        return;
+    }
+    if let Some(rx) = &state.rx {
+        let Ok((chain, levels)) = rx.lock().unwrap().try_recv() else {
+            return;
+        };
+        let handle =
+            make_clamped_image(&mut images, chain, COMPOSITE_SIZE, COMPOSITE_SIZE, levels);
+        if let Ok(mat) = sphere.get_single() {
+            if let Some(m) = materials.get_mut(&mat.0) {
+                m.base_color = Color::WHITE;
+                m.base_color_texture = Some(handle);
+            }
+        }
+        state.rx = None;
+        state.done = true;
+        return;
+    }
+
+    let keys: Vec<TileKey> = (0..8u32)
+        .flat_map(|x| (0..8u32).map(move |y| (x, y, BASE_LAYER_ZOOM)))
+        .collect();
+    if !keys
+        .iter()
+        .all(|k| mgr.gpu_textures.contains_key(k) || mgr.no_data.contains(k))
+    {
+        return;
+    }
+
+    // Collect 128-px blocks (box-downsampled full-res tiles); tiles with no
+    // imagery become deep-ocean blue.
+    let mut blocks: Vec<(u32, u32, Vec<u8>)> = Vec::with_capacity(keys.len());
+    for k in keys {
+        let block = mgr
+            .gpu_textures
+            .get(&k)
+            .and_then(|h| images.get(h))
+            .map(|img| {
+                let w = img.texture_descriptor.size.width;
+                let h = img.texture_descriptor.size.height;
+                box_downsample(&img.data[..(w * h * 4) as usize], w, COMPOSITE_TILE)
+            })
+            .unwrap_or_else(ocean_block);
+        blocks.push((k.0, k.1, block));
+    }
+
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut comp = vec![0u8; (COMPOSITE_SIZE * COMPOSITE_SIZE * 4) as usize];
+        for (bx, by, blk) in blocks {
+            let x0 = bx * COMPOSITE_TILE;
+            let y0 = by * COMPOSITE_TILE;
+            for row in 0..COMPOSITE_TILE {
+                let src = (row * COMPOSITE_TILE * 4) as usize;
+                let dst = ((y0 + row) * COMPOSITE_SIZE * 4 + x0 * 4) as usize;
+                comp[dst..dst + (COMPOSITE_TILE * 4) as usize]
+                    .copy_from_slice(&blk[src..src + (COMPOSITE_TILE * 4) as usize]);
+            }
+        }
+        let (chain, levels) = build_mip_chain(comp, COMPOSITE_SIZE, COMPOSITE_SIZE);
+        let _ = tx.send((chain, levels));
+    });
+    state.rx = Some(Mutex::new(rx));
+}
+
+/// Box-downsample an RGBA tile of width `w` (power-of-two multiple of the
+/// target) to `target` x `target`.
+fn box_downsample(src: &[u8], w: u32, target: u32) -> Vec<u8> {
+    let factor = (w / target).max(1);
+    let mut out = vec![0u8; (target * target * 4) as usize];
+    for y in 0..target {
+        for x in 0..target {
+            let mut acc = [0u32; 4];
+            for dy in 0..factor {
+                for dx in 0..factor {
+                    let i = (((y * factor + dy) * w + (x * factor + dx)) * 4) as usize;
+                    for c in 0..4 {
+                        acc[c] += src[i + c] as u32;
+                    }
+                }
+            }
+            let n = factor * factor;
+            let o = ((y * target + x) * 4) as usize;
+            for c in 0..4 {
+                out[o + c] = (acc[c] / n) as u8;
+            }
+        }
+    }
+    out
+}
+
+/// Raw (unlit) deep-ocean blue close to Bing imagery water pixels, for
+/// composite blocks whose tile has no imagery.
+fn ocean_block() -> Vec<u8> {
+    let mut v = Vec::with_capacity((COMPOSITE_TILE * COMPOSITE_TILE * 4) as usize);
+    for _ in 0..COMPOSITE_TILE * COMPOSITE_TILE {
+        v.extend_from_slice(&[12, 28, 44, 255]);
+    }
+    v
+}
+
+/// Like `make_image` but clamped at the edges: the composite is a single
+/// whole-globe Mercator image, not a repeating tile.
+fn make_clamped_image(
+    images: &mut Assets<Image>,
+    data: Vec<u8>,
+    width: u32,
+    height: u32,
+    levels: u32,
+) -> Handle<Image> {
+    let base_len = (width * height * 4) as usize;
+    let mut img = Image::new(
+        bevy::render::render_resource::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        bevy::render::render_resource::TextureDimension::D2,
+        data[..base_len].to_vec(),
+        bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+        bevy::render::render_asset::RenderAssetUsages::default(),
+    );
+    img.data = data;
+    img.texture_descriptor.mip_level_count = levels;
+    img.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        mag_filter: ImageFilterMode::Linear,
+        min_filter: ImageFilterMode::Linear,
+        mipmap_filter: ImageFilterMode::Linear,
+        anisotropy_clamp: 8,
+        address_mode_u: bevy::image::ImageAddressMode::ClampToEdge,
+        address_mode_v: bevy::image::ImageAddressMode::ClampToEdge,
         ..default()
     });
     images.add(img)

@@ -356,6 +356,68 @@ pub fn create_uv_sphere(longitude_segments: u32, latitude_rings: u32) -> Mesh {
     mesh
 }
 
+/// UV sphere whose V coordinate follows Web Mercator latitude instead of
+/// linear latitude, so a whole-globe Mercator composite texture (baked at
+/// runtime from the base tile layer) drapes exactly like the tile layer.
+/// Used for the base sphere: any transient coverage hole or the horizon
+/// limb then shows a blurry earth instead of a flat color.
+pub fn create_mercator_uv_sphere(longitude_segments: u32, latitude_rings: u32) -> Mesh {
+    let verts_x = longitude_segments + 1; // last column duplicates the seam
+    let verts_y = latitude_rings + 1;
+
+    let mut positions: Vec<[f32; 3]> = Vec::with_capacity((verts_x * verts_y) as usize);
+    let mut normals: Vec<[f32; 3]> = Vec::with_capacity((verts_x * verts_y) as usize);
+    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity((verts_x * verts_y) as usize);
+
+    for row in 0..verts_y {
+        // Rows iterate south (-90 deg) -> north (+90 deg), like tile meshes.
+        let raw_lat = -std::f64::consts::FRAC_PI_2
+            + std::f64::consts::PI * row as f64 / latitude_rings as f64;
+        let lat = raw_lat.clamp(-MAX_MERCATOR_LAT, MAX_MERCATOR_LAT);
+        let cos_lat = raw_lat.cos();
+        let sin_lat = raw_lat.sin();
+        // Mercator northing in [-PI, PI] -> v in [0, 1] with 0 at north,
+        // matching tile row 0 = north.
+        let t = (std::f64::consts::FRAC_PI_4 + lat / 2.0).tan().ln();
+        let v = (1.0 - t / std::f64::consts::PI) / 2.0;
+        for col in 0..verts_x {
+            let lon = 2.0 * std::f64::consts::PI * col as f64 / longitude_segments as f64;
+            let nx = cos_lat * lon.cos();
+            let ny = cos_lat * lon.sin();
+            let nz = sin_lat;
+            positions.push([nx as f32, ny as f32, nz as f32]);
+            normals.push([nx as f32, ny as f32, nz as f32]);
+            uvs.push([col as f32 / longitude_segments as f32, v as f32]);
+        }
+    }
+
+    let mut indices: Vec<u32> =
+        Vec::with_capacity((longitude_segments * latitude_rings * 6) as usize);
+    for row in 0..latitude_rings {
+        for col in 0..longitude_segments {
+            let a = row * verts_x + col;
+            let b = a + verts_x;
+            indices.push(a);
+            indices.push(a + 1);
+            indices.push(b);
+            indices.push(a + 1);
+            indices.push(b + 1);
+            indices.push(b);
+        }
+    }
+
+    let mut mesh = Mesh::new(
+        bevy::render::mesh::PrimitiveTopology::TriangleList,
+        bevy::render::render_asset::RenderAssetUsages::default(),
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(bevy::render::mesh::Indices::U32(indices));
+
+    mesh
+}
+
 /// Returns the render-scale factor for converting meters to render units.
 pub fn render_scale() -> f32 {
     (1.0 / METERS_PER_RENDER_UNIT) as f32

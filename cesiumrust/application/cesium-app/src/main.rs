@@ -17,8 +17,8 @@ mod dynamic_globe;
 use orbit_camera::OrbitCameraPlugin;
 use starfield::StarfieldPlugin;
 use atmosphere_glow::AtmosphereGlowPlugin;
-use dynamic_globe::DynamicGlobePlugin;
-use tile_mesh::{create_polar_cap, create_uv_sphere, render_scale};
+use dynamic_globe::{BaseSphereMarker, DynamicGlobePlugin};
+use tile_mesh::{create_mercator_uv_sphere, create_polar_cap, render_scale};
 
 const TILE_SEGMENTS: u32 = 16;
 
@@ -38,10 +38,12 @@ fn spawn_base_sphere(
 ) {
     let scale = render_scale();
 
-    // Base sphere — high-subdivision UV sphere so the horizon silhouette is
-    // smooth; slightly smaller to stay below tiles and polar caps. Color
-    // matches the lit ocean so any transient hole reads as sea, not a black
-    // void.
+    // Base sphere — high-subdivision UV sphere (Mercator-mapped V so the
+    // runtime whole-globe composite texture drapes like the tile layer);
+    // slightly smaller to stay below tiles and polar caps. Solid color is
+    // only the pre-composite fallback: once the base tile layer arrives,
+    // dynamic_globe drapes a blurry earth composite over it so transient
+    // holes read as earth, not a flat blue void.
     let base_material = materials.add(StandardMaterial {
         base_color: Color::srgb(0.15, 0.17, 0.19),
         perceptual_roughness: 1.0,
@@ -49,7 +51,8 @@ fn spawn_base_sphere(
     });
     commands.spawn((
         CesiumGlobe,
-        Mesh3d(meshes.add(create_uv_sphere(96, 48))),
+        BaseSphereMarker,
+        Mesh3d(meshes.add(create_mercator_uv_sphere(96, 48))),
         MeshMaterial3d(base_material),
         Transform::from_scale(Vec3::splat(scale * 0.99)),
     ));
