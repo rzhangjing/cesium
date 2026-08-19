@@ -97,6 +97,9 @@ struct TileManager {
     /// exactly one tile per screen region, no parent/child overlap. Only
     /// these tiles are drawn (`sync_visibility` hides everything else).
     visible_set: HashSet<TileKey>,
+    /// Pure quadtree candidate partition (before coarsening-KICK display
+    /// retention); drives spawn/download work and the changed-frame check.
+    partition_set: HashSet<TileKey>,
     /// Tiles that are still loading but NOT in the render partition:
     /// the four children of a KICK-blocked tile (CesiumJS "continue to load
     /// them" rule). They are downloaded/spawned here so the quadtree can
@@ -174,6 +177,7 @@ impl Default for TileManager {
             last_distance: 0.0,
             initialized: false,
             visible_set: HashSet::new(),
+            partition_set: HashSet::new(),
             load_set: HashSet::new(),
             spawn_queue: VecDeque::new(),
             queued: HashSet::new(),
@@ -325,6 +329,7 @@ fn initial_spawn(
     );
     let finest = visible.iter().map(|t| t.0 .2).max().unwrap_or(MIN_ZOOM);
     mgr.visible_set = visible.iter().map(|&(k, _)| k).collect();
+    mgr.partition_set = mgr.visible_set.clone();
     mgr.load_set = load.iter().map(|&(k, _)| k).collect();
 
     enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &visible);
@@ -475,8 +480,92 @@ fn view_dependent_update(
         .unwrap_or(mgr.current_zoom);
     let new_set: HashSet<TileKey> = new_visible.iter().map(|&(k, _)| k).collect();
     let new_load_set: HashSet<TileKey> = new_load.iter().map(|&(k, _)| k).collect();
-    let partition_changed = new_set != mgr.visible_set || new_load_set != mgr.load_set;
-    mgr.visible_set = new_set;
+
+    // CesiumJS-style render-list stability (`allAreRenderable`): the
+    // displayed partition swaps per region ONLY when the replacement is
+    // fully drawable with real pixels. Refinement holds the parent until
+    // ALL covering descendants are ready (otherwise a moving mosaic of
+    // soft/sharp blocks reads as tiles sliding during fast zooms);
+    // coarsening holds sharp children until the coarse leaf is ready.
+    // Not-ready replacements stay hidden (blocked) so parent and children
+    // never overlap and never z-fight; regions without prior coverage
+    // (pans into fresh territory) fill in as soon as their tiles spawn.
+    let old_set = std::mem::take(&mut mgr.visible_set);
+    let mut refine_cover: HashMap<TileKey, Vec<TileKey>> = HashMap::new();
+    for n in &new_set {
+        let (mut ax, mut ay, mut az) = *n;
+        while az > 0 {
+            ax >>= 1;
+            ay >>= 1;
+            az -= 1;
+            let a = (ax, ay, az);
+            if old_set.contains(&a) && !new_set.contains(&a) {
+                refine_cover.entry(a).or_default().push(*n);
+                break;
+            }
+        }
+    }
+    let mut display: HashSet<TileKey> = HashSet::new();
+    let mut blocked: HashSet<TileKey> = HashSet::new();
+    for old in old_set.iter() {
+        if new_set.contains(old) {
+            display.insert(*old);
+            continue;
+        }
+        // Coarsening: nearest ancestor selected by the new partition.
+        let (mut ax, mut ay, mut az) = *old;
+        let mut ancestor: Option<TileKey> = None;
+        while az > 0 {
+            ax >>= 1;
+            ay >>= 1;
+            az -= 1;
+            if new_set.contains(&(ax, ay, az)) {
+                ancestor = Some((ax, ay, az));
+                break;
+            }
+        }
+        if let Some(a) = ancestor {
+            if replacement_ready(&mgr, &a) {
+                display.insert(a);
+            } else {
+                display.insert(*old);
+                blocked.insert(a);
+            }
+            continue;
+        }
+        // Refinement: hold the parent until every covering descendant
+        // (at any depth) is ready; then swap the whole region at once.
+        if let Some(desc) = refine_cover.get(old) {
+            if desc.iter().all(|d| replacement_ready(&mgr, d)) {
+                display.extend(desc.iter().copied());
+            } else {
+                display.insert(*old);
+                blocked.extend(desc.iter().copied());
+            }
+            continue;
+        }
+        // Region left the partition (horizon-culled) — drop it.
+    }
+    // Fresh region with no prior coverage: tiles appear once spawned.
+    for n in &new_set {
+        if blocked.contains(n) || display.contains(n) {
+            continue;
+        }
+        let (mut ax, mut ay, mut az) = *n;
+        let mut covered = old_set.contains(n);
+        while !covered && az > 0 {
+            ax >>= 1;
+            ay >>= 1;
+            az -= 1;
+            covered = old_set.contains(&(ax, ay, az));
+        }
+        if !covered {
+            display.insert(*n);
+        }
+    }
+    let partition_changed = new_set != mgr.partition_set || new_load_set != mgr.load_set;
+    mgr.partition_set = new_set.clone();
+    mgr.visible_set = display;
     mgr.load_set = new_load_set;
 
     // Stale tiles are NOT despawned here: they stay alive but HIDDEN as warm
@@ -641,8 +730,13 @@ fn process_pipeline(
         }
 
         // Only spawn tiles still in the render partition or the background
-        // load set (children of a KICK-blocked parent).
-        if !mgr.visible_set.contains(&key) && !mgr.load_set.contains(&key) {
+        // load set (children of a KICK-blocked parent). Blocked coarsening
+        // ancestors are hidden from the display but must still spawn so
+        // they can become ready and release the retained children.
+        if !mgr.visible_set.contains(&key)
+            && !mgr.load_set.contains(&key)
+            && !mgr.partition_set.contains(&key)
+        {
             continue;
         }
 
@@ -1276,6 +1370,23 @@ fn process_pipeline(
         w.extend(mgr.load_set.iter().copied());
         w.extend(mgr.tile_entities.keys().copied());
     }
+}
+
+/// A partition leaf the display can safely hand over to: a live entity
+/// showing real pixels (own full-res texture, or an intentional solid /
+/// no-data inheritance) — never a stretched-ancestor upsample whose soft
+/// texels would read as a slid/shifted block against the retained children.
+fn replacement_ready(mgr: &TileManager, key: &TileKey) -> bool {
+    if !mgr.tile_entities.contains_key(key) {
+        return false;
+    }
+    if mgr.solid_tiles.contains(key) || mgr.no_data.contains(key) {
+        return true;
+    }
+    if mgr.upsampled.contains(key) {
+        return false;
+    }
+    matches!(mgr.gpu_tex_size.get(key), Some(&s) if s >= 256)
 }
 
 /// True when any ancestor of `key` has a spawned entity still covering its
