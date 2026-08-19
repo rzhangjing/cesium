@@ -68,7 +68,7 @@ const BASE_LAYER_ZOOM: u32 = 3;
 /// 256 KB each); oldest entries are evicted FIFO.
 const MAX_GPU_CACHE_ENTRIES: usize = 3000;
 
-const MAX_TILE_SCREEN_PX: f64 = 512.0;
+const MAX_TILE_SCREEN_PX: f64 = 288.0;
 
 type TileKey = (u32, u32, u32);
 
@@ -1339,8 +1339,10 @@ fn focal_pixels(windows: &Query<&Window>) -> f64 {
 
 /// CesiumJS-style KICK-aware quadtree partition (REPLACE refinement,
 /// `QuadtreePrimitive.visitTile` selection): subdivide every visible tile
-/// whose projected screen footprint exceeds [`MAX_TILE_SCREEN_PX`] (the
-/// maximumScreenSpaceError = 2 budget for 256-px tiles), culling tiles
+/// whose projected screen footprint exceeds [`MAX_TILE_SCREEN_PX`] (~1.1x
+/// native 256-px texel size, so a leaf never stretches enough to read as a
+/// soft/bright block next to its subdivided neighbors — the color-block
+/// seam artifact), culling tiles
 /// beyond the horizon cap — but only when ALL four children are already
 /// spawned. If any child is missing, the parent stays in the render
 /// partition (all-or-nothing, the CesiumJS KICK rule) and the children
