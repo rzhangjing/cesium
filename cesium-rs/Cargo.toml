@@ -1,0 +1,51 @@
+[workspace]
+resolver = "2"
+members = ["crates/*", "specs", "examples/viewer-demo"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+license = "Apache-2.0"
+repository = "https://github.com/CesiumGS/cesium"
+
+[workspace.dependencies]
+# internal crates
+cesium-core = { path = "crates/cesium-core" }
+cesium-shaders = { path = "crates/cesium-shaders" }
+cesium-workers = { path = "crates/cesium-workers" }
+cesium-renderer = { path = "crates/cesium-renderer" }
+cesium-scene = { path = "crates/cesium-scene" }
+cesium-data-sources = { path = "crates/cesium-data-sources" }
+cesium-widgets = { path = "crates/cesium-widgets" }
+cesium-test-utils = { path = "crates/cesium-test-utils" }
+
+# GPU backend (wgpu, NOT Bevy) — webgl feature for legacy WebGL2 fallback on the web
+wgpu = { version = "30", features = ["webgl"] }
+# shader translation/validation (GLSL in, for porting CesiumJS GLSL sources)
+naga = { version = "30", features = ["glsl-in"] }
+
+# concurrency / async
+rayon = "1.10"
+tokio = { version = "1", features = ["rt", "macros", "sync"] }
+futures = "0.3"
+
+# IO / networking
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+image = "0.25"
+
+# serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# testing
+approx = "0.5"
+
+# wasm bindings
+wasm-bindgen = "0.2"
+web-sys = "0.3"
+
+# misc
+uuid = { version = "1", features = ["v4", "js"] }
+log = "0.4"
+regex = "1"

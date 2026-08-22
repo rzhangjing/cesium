@@ -1,0 +1,15 @@
+[package]
+name = "cesium-widgets"
+description = "One-to-one port of packages/engine/Source/Widget + packages/widgets/Source (Viewer, CesiumWidget)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cesium-core = { workspace = true }
+cesium-scene = { workspace = true }
+cesium-data-sources = { workspace = true }
+
+[dev-dependencies]
+cesium-test-utils = { workspace = true }

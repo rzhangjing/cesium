@@ -1,0 +1,13 @@
+[package]
+name = "cesium-shaders"
+description = "One-to-one port of packages/engine/Source/Shaders (GLSL sources as embedded assets)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cesium-core = { workspace = true }
+
+[dev-dependencies]
+cesium-test-utils = { workspace = true }

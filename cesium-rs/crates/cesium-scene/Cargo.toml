@@ -1,0 +1,16 @@
+[package]
+name = "cesium-scene"
+description = "One-to-one port of packages/engine/Source/Scene (globe, primitives, tilesets, camera)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cesium-core = { workspace = true }
+cesium-renderer = { workspace = true }
+cesium-shaders = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+cesium-test-utils = { workspace = true }

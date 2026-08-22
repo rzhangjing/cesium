@@ -1,0 +1,15 @@
+[package]
+name = "viewer-demo"
+description = "Minimal viewer entry point (placeholder; winit + wgpu frame loop lands in M5)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "viewer-demo"
+path = "src/main.rs"
+
+[dependencies]
+cesium-widgets = { workspace = true }

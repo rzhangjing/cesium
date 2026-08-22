@@ -1,0 +1,16 @@
+[package]
+name = "cesium-renderer"
+description = "One-to-one port of packages/engine/Source/Renderer on top of wgpu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cesium-core = { workspace = true }
+cesium-shaders = { workspace = true }
+wgpu = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+cesium-test-utils = { workspace = true }
