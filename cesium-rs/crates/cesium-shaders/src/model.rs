@@ -1,0 +1,42 @@
+﻿//! Auto-generated shader embeddings.
+
+pub const ATMOSPHERE_STAGE_F_S: &str = include_str!("../shaders/Model/AtmosphereStageFS.glsl");
+pub const ATMOSPHERE_STAGE_V_S: &str = include_str!("../shaders/Model/AtmosphereStageVS.glsl");
+pub const CONSTANT_LOD_STAGE_F_S: &str = include_str!("../shaders/Model/ConstantLodStageFS.glsl");
+pub const CONSTANT_LOD_STAGE_V_S: &str = include_str!("../shaders/Model/ConstantLodStageVS.glsl");
+pub const C_P_U_STYLING_STAGE_F_S: &str = include_str!("../shaders/Model/CPUStylingStageFS.glsl");
+pub const C_P_U_STYLING_STAGE_V_S: &str = include_str!("../shaders/Model/CPUStylingStageVS.glsl");
+pub const CUSTOM_SHADER_STAGE_F_S: &str = include_str!("../shaders/Model/CustomShaderStageFS.glsl");
+pub const CUSTOM_SHADER_STAGE_V_S: &str = include_str!("../shaders/Model/CustomShaderStageVS.glsl");
+pub const EDGE_DETECTION_STAGE_F_S: &str = include_str!("../shaders/Model/EdgeDetectionStageFS.glsl");
+pub const EDGE_VISIBILITY_STAGE_F_S: &str = include_str!("../shaders/Model/EdgeVisibilityStageFS.glsl");
+pub const EDGE_VISIBILITY_STAGE_V_S: &str = include_str!("../shaders/Model/EdgeVisibilityStageVS.glsl");
+pub const FEATURE_ID_STAGE_F_S: &str = include_str!("../shaders/Model/FeatureIdStageFS.glsl");
+pub const FEATURE_ID_STAGE_V_S: &str = include_str!("../shaders/Model/FeatureIdStageVS.glsl");
+pub const GEOMETRY_STAGE_F_S: &str = include_str!("../shaders/Model/GeometryStageFS.glsl");
+pub const GEOMETRY_STAGE_V_S: &str = include_str!("../shaders/Model/GeometryStageVS.glsl");
+pub const IMAGE_BASED_LIGHTING_STAGE_F_S: &str = include_str!("../shaders/Model/ImageBasedLightingStageFS.glsl");
+pub const INSTANCING_STAGE_COMMON: &str = include_str!("../shaders/Model/InstancingStageCommon.glsl");
+pub const INSTANCING_STAGE_V_S: &str = include_str!("../shaders/Model/InstancingStageVS.glsl");
+pub const LEGACY_INSTANCING_STAGE_V_S: &str = include_str!("../shaders/Model/LegacyInstancingStageVS.glsl");
+pub const LIGHTING_STAGE_F_S: &str = include_str!("../shaders/Model/LightingStageFS.glsl");
+pub const MATERIAL_STAGE_F_S: &str = include_str!("../shaders/Model/MaterialStageFS.glsl");
+pub const METADATA_STAGE_F_S: &str = include_str!("../shaders/Model/MetadataStageFS.glsl");
+pub const METADATA_STAGE_V_S: &str = include_str!("../shaders/Model/MetadataStageVS.glsl");
+pub const MODEL_CLIPPING_PLANES_STAGE_F_S: &str = include_str!("../shaders/Model/ModelClippingPlanesStageFS.glsl");
+pub const MODEL_CLIPPING_POLYGONS_STAGE_F_S: &str = include_str!("../shaders/Model/ModelClippingPolygonsStageFS.glsl");
+pub const MODEL_CLIPPING_POLYGONS_STAGE_V_S: &str = include_str!("../shaders/Model/ModelClippingPolygonsStageVS.glsl");
+pub const MODEL_COLOR_STAGE_F_S: &str = include_str!("../shaders/Model/ModelColorStageFS.glsl");
+pub const MODEL_F_S: &str = include_str!("../shaders/Model/ModelFS.glsl");
+pub const MODEL_SILHOUETTE_STAGE_F_S: &str = include_str!("../shaders/Model/ModelSilhouetteStageFS.glsl");
+pub const MODEL_SILHOUETTE_STAGE_V_S: &str = include_str!("../shaders/Model/ModelSilhouetteStageVS.glsl");
+pub const MODEL_SPLITTER_STAGE_F_S: &str = include_str!("../shaders/Model/ModelSplitterStageFS.glsl");
+pub const MODEL_V_S: &str = include_str!("../shaders/Model/ModelVS.glsl");
+pub const MORPH_TARGETS_STAGE_V_S: &str = include_str!("../shaders/Model/MorphTargetsStageVS.glsl");
+pub const POINT_CLOUD_STYLING_STAGE_V_S: &str = include_str!("../shaders/Model/PointCloudStylingStageVS.glsl");
+pub const PRIMITIVE_OUTLINE_STAGE_F_S: &str = include_str!("../shaders/Model/PrimitiveOutlineStageFS.glsl");
+pub const PRIMITIVE_OUTLINE_STAGE_V_S: &str = include_str!("../shaders/Model/PrimitiveOutlineStageVS.glsl");
+pub const SELECTED_FEATURE_ID_STAGE_COMMON: &str = include_str!("../shaders/Model/SelectedFeatureIdStageCommon.glsl");
+pub const SKINNING_STAGE_V_S: &str = include_str!("../shaders/Model/SkinningStageVS.glsl");
+pub const VERTICAL_EXAGGERATION_STAGE_V_S: &str = include_str!("../shaders/Model/VerticalExaggerationStageVS.glsl");
+

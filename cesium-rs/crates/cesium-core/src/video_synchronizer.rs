@@ -1,17 +1,15 @@
-//! Ported from `packages/engine/Source/Core/VideoSynchronizer.js`.
-//!
-//! Synchronizes video playback with the scene clock.
+﻿//! Ported from `packages/engine/Source/Core/VideoSynchronizer.js`.
 
-/// Synchronizes video playback with the Cesium scene clock.
-/// Skeleton: requires HTML5 video element.
-pub struct VideoSynchronizer;
+/// Synchronizes video playback with the scene clock.
+pub struct VideoSynchronizer {
+    _private: (),
+}
 
 impl VideoSynchronizer {
-    /// Creates a new video synchronizer.
-    pub fn new() -> Self {
-        Self
-    }
+    /// Creates a new VideoSynchronizer.
+    pub fn new() -> Self { Self { _private: () } }
+}
 
-    /// Destroys the synchronizer.
-    pub fn destroy(&mut self) {}
+impl Default for VideoSynchronizer {
+    fn default() -> Self { Self::new() }
 }

@@ -1,19 +1,15 @@
-//! Ported from `packages/engine/Source/Core/GoogleEarthEnterpriseTileInformation.js`.
-//!
-//! Tile information for Google Earth Enterprise terrain.
+﻿//! Ported from `packages/engine/Source/Core/GoogleEarthEnterpriseTileInformation.js`.
 
-/// Tile information for Google Earth Enterprise terrain.
-/// Skeleton: requires binary parsing.
+/// Tile information for Google Earth Enterprise.
 pub struct GoogleEarthEnterpriseTileInformation {
-    /// Whether the tile has terrain data.
-    pub has_terrain: bool,
-    /// Whether the tile has imagery.
-    pub has_imagery: bool,
+    _private: (),
 }
 
 impl GoogleEarthEnterpriseTileInformation {
-    /// Creates new tile information.
-    pub fn new(has_terrain: bool, has_imagery: bool) -> Self {
-        Self { has_terrain, has_imagery }
-    }
+    /// Creates a new GoogleEarthEnterpriseTileInformation.
+    pub fn new() -> Self { Self { _private: () } }
+}
+
+impl Default for GoogleEarthEnterpriseTileInformation {
+    fn default() -> Self { Self::new() }
 }

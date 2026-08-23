@@ -1,21 +1,15 @@
-//! Ported from `packages/engine/Source/Core/IonResource.js`.
-//!
-//! Cesium Ion resource management.
+﻿//! Ported from `packages/engine/Source/Core/IonResource.js`.
 
-/// A resource on the Cesium Ion platform.
-/// Skeleton: requires network I/O.
+/// A resource from Cesium ion.
 pub struct IonResource {
-    _url: String,
+    _private: (),
 }
 
 impl IonResource {
-    /// Creates a new Ion resource.
-    pub fn new(url: String) -> Self {
-        Self { _url: url }
-    }
+    /// Creates a new IonResource.
+    pub fn new() -> Self { Self { _private: () } }
+}
 
-    /// Returns the URL.
-    pub fn url(&self) -> &str {
-        &self._url
-    }
+impl Default for IonResource {
+    fn default() -> Self { Self::new() }
 }

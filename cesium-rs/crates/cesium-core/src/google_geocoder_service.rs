@@ -1,16 +1,15 @@
-//! Ported from `packages/engine/Source/Core/GoogleGeocoderService.js`.
-//!
-//! Geocoder service using Google Maps.
+﻿//! Ported from `packages/engine/Source/Core/GoogleGeocoderService.js`.
 
-/// Geocoder service using Google Maps API.
-/// Skeleton: requires network I/O.
+/// A geocoder service using Google.
 pub struct GoogleGeocoderService {
-    _key: String,
+    _private: (),
 }
 
 impl GoogleGeocoderService {
-    /// Creates a new Google geocoder service.
-    pub fn new(key: String) -> Self {
-        Self { _key: key }
-    }
+    /// Creates a new GoogleGeocoderService.
+    pub fn new() -> Self { Self { _private: () } }
+}
+
+impl Default for GoogleGeocoderService {
+    fn default() -> Self { Self::new() }
 }

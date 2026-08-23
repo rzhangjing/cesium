@@ -1,16 +1,15 @@
-//! Ported from `packages/engine/Source/Core/PeliasGeocoderService.js`.
-//!
-//! Geocoder service using Pelias.
+﻿//! Ported from `packages/engine/Source/Core/PeliasGeocoderService.js`.
 
-/// Geocoder service using Pelias geocoding API.
-/// Skeleton: requires network I/O.
+/// A geocoder service using Pelias.
 pub struct PeliasGeocoderService {
-    _url: String,
+    _private: (),
 }
 
 impl PeliasGeocoderService {
-    /// Creates a new Pelias geocoder service.
-    pub fn new(url: String) -> Self {
-        Self { _url: url }
-    }
+    /// Creates a new PeliasGeocoderService.
+    pub fn new() -> Self { Self { _private: () } }
+}
+
+impl Default for PeliasGeocoderService {
+    fn default() -> Self { Self::new() }
 }

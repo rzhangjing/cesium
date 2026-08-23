@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: cesium_rs
+title: CesiumJS Rust 移植引擎（cesium-rs）
+scope:
+    - cesium-rs/
+source_files: []
+depends_on: []
+related_to: []

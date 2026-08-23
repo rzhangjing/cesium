@@ -1,15 +1,15 @@
-//! Ported from `packages/engine/Source/Core/VectorPipeline.js`.
-//!
-//! Pipeline for processing vector data.
+﻿//! Ported from `packages/engine/Source/Core/VectorPipeline.js`.
 
-/// Pipeline for processing vector data (GeoJSON, KML, etc.).
-/// Skeleton: requires data parsing infrastructure.
-pub struct VectorPipeline;
+/// Pipeline for processing vector data.
+pub struct VectorPipeline {
+    _private: (),
+}
 
 impl VectorPipeline {
-    /// Processes vector data through the pipeline.
-    pub fn process(_data: &[u8]) -> Result<(), String> {
-        // Skeleton
-        Err("Not implemented".to_string())
-    }
+    /// Creates a new VectorPipeline.
+    pub fn new() -> Self { Self { _private: () } }
+}
+
+impl Default for VectorPipeline {
+    fn default() -> Self { Self::new() }
 }

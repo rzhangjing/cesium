@@ -3,12 +3,22 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-08-19T13:22:04Z"
+exported_at: "2026-08-22T18:01:51Z"
 modules:
     "":
-        dir_name: CesiumJS 3D 地球引擎与 CesiumRust 重写工程根
-        title: CesiumJS 3D 地球引擎与 CesiumRust 重写工程根
+        dir_name: CesiumJS 多语言引擎仓库（JS + Rust 双实现）
+        title: CesiumJS 多语言引擎仓库（JS + Rust 双实现）
         scope: []
+        source_files: []
+        children:
+            - cesium_rs
+        depends_on: []
+        related_to: []
+    cesium_rs:
+        dir_name: CesiumJS Rust 移植引擎（cesium-rs）
+        title: CesiumJS Rust 移植引擎（cesium-rs）
+        scope:
+            - cesium-rs/
         source_files: []
         children: []
         depends_on: []

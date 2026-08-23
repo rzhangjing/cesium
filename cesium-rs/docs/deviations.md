@@ -22,3 +22,11 @@
 | Core | `cartesian3.rs` | `ellipsoid_radii_squared()` / `set_ellipsoid_radii_squared()` 由模块级可变缺省提升为 `pub` 访问器 | JS 中 `Ellipsoid.default` 是模块级可变全局；Rust 需要公开 setter 以便后续 `Ellipsoid` 移植与 spec 镜像模拟 `Ellipsoid.default = Ellipsoid.MOON` | 2026-08-20 |
 | Core (specs) | `core_cartesian2/3/4_spec.rs` | JS typed-array 分支用例（`packArray works with typed arrays` 等）`#[ignore]` 不镜像 | Rust 只有单一 `Vec<f64>` 表示，JS 的 Float64Array/普通数组双分支不存在 | 2026-08-20 |
 | Core (specs) | `core_cartesian2/3/4_spec.rs` | JS `undefined` 实参 DeveloperError 用例镜像为 `#[ignore]` 空体 stub | Rust 静态类型使该错误路径不可达；保留用例名维持 spec 表面一比一 | 2026-08-20 |
+| Widgets | `cesium_widget.rs` | DOM canvas 创建/resize 替换为 winit `Window` + wgpu `Surface` 管理；`render()` 中 Scene 渲染为桩（需 wgpu render pass） | 原生构建无 DOM canvas；wgpu 渲染管线在 viewer-demo 帧循环中组装 | 2026-08-23 |
+| Widgets | `viewer.rs` | UI 控件（Animation/Timeline/Geocoder 等）仅保留开关字段，不创建 DOM 元素；引擎侧逻辑（Scene 管理、DataSource 显示、Entity 跟踪）完整保留 | 原生构建无 Knockout.js/DOM；UI 层由外部应用（如 viewer-demo）提供 | 2026-08-23 |
+| Widgets | `knockout.rs` | Knockout.js 替换为 `DomSurface` trait + `Observable<T>` trait；`MockDomSurface` 供测试 | Rust 无 DOM/Knockout；trait 抽象 winit/web-sys/mock 后端 | 2026-08-23 |
+| Widgets | `command.rs` | `Command` 以 `Arc<dyn Fn()>` + `enabled: bool` 实现（JS 为 Knockout computable + callback） | Rust 无 Knockout 可计算属性；语义等价（条件执行回调） | 2026-08-23 |
+| Widgets | `viewer_*_mixin.rs` (×5) | JS prototype mixin 替换为 Rust trait（`ViewerDragDropMixin` 等） | Rust 无 prototype chain；trait 提供相同的多态扩展能力 | 2026-08-23 |
+| Widgets | `animation_view_model.rs` | shuttle ring 角度/倍速映射表完整保留；play/pause 通过 `Command` 绑定 | 语义不变 | 2026-08-23 |
+| Widgets | `scene_mode_picker_view_model.rs` | `SceneMode` 枚举引用 `cesium-scene`；morph 方法为桩（需 Scene.morphTo 完整实现） | 依赖 Scene 层 morph 管线 | 2026-08-23 |
+| Renderer | `context.rs` | `clear()`/`draw()`/`submit()` 为桩（wgpu 渲染通过 RenderPass 编码，非 imperative 调用） | wgpu 管线模型与 WebGL2 imperative 模型根本不同；实际渲染在 viewer-demo 帧循环中 | 2026-08-23 |

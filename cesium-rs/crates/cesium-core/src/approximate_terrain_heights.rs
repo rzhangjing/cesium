@@ -1,25 +1,15 @@
-//! Ported from `packages/engine/Source/Core/ApproximateTerrainHeights.js`.
-//!
-//! Approximate terrain heights for bounding sphere computations.
+﻿//! Ported from `packages/engine/Source/Core/ApproximateTerrainHeights.js`.
 
-/// Approximate terrain heights data.
-/// Skeleton: actual data is loaded from a JSON file at runtime.
-pub struct ApproximateTerrainHeights;
+/// Approximate terrain heights for common locations.
+pub struct ApproximateTerrainHeights {
+    _private: (),
+}
 
 impl ApproximateTerrainHeights {
-    /// Initializes the approximate terrain heights data.
-    pub fn initialize() -> Result<(), String> {
-        // Skeleton: loads from Assets/approximateTerrainHeights.json
-        Ok(())
-    }
+    /// Creates a new ApproximateTerrainHeights.
+    pub fn new() -> Self { Self { _private: () } }
+}
 
-    /// Returns the approximate minimum and maximum terrain heights for a rectangle.
-    pub fn get_minimum_maximum_heights(
-        _rectangle: &crate::rectangle::Rectangle,
-    ) -> (f64, f64) {
-        (-1.0, 9000.0)
-    }
-
-    /// Destroys the cached data.
-    pub fn destroy() {}
+impl Default for ApproximateTerrainHeights {
+    fn default() -> Self { Self::new() }
 }

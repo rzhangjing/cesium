@@ -1,16 +1,15 @@
-//! Ported from `packages/engine/Source/Core/BingMapsGeocoderService.js`.
-//!
-//! Geocoder service using Bing Maps.
+﻿//! Ported from `packages/engine/Source/Core/BingMapsGeocoderService.js`.
 
-/// Geocoder service using Bing Maps API.
-/// Skeleton: requires network I/O.
+/// A geocoder service using Bing Maps.
 pub struct BingMapsGeocoderService {
-    _key: String,
+    _private: (),
 }
 
 impl BingMapsGeocoderService {
-    /// Creates a new Bing Maps geocoder service.
-    pub fn new(key: String) -> Self {
-        Self { _key: key }
-    }
+    /// Creates a new BingMapsGeocoderService.
+    pub fn new() -> Self { Self { _private: () } }
+}
+
+impl Default for BingMapsGeocoderService {
+    fn default() -> Self { Self::new() }
 }

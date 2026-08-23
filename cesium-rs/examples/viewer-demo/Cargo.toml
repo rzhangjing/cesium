@@ -1,6 +1,6 @@
 [package]
 name = "viewer-demo"
-description = "Minimal viewer entry point (placeholder; winit + wgpu frame loop lands in M5)"
+description = "Minimal viewer entry point: winit + wgpu frame loop replicating Sandcastle HelloWorld"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,3 +13,9 @@ path = "src/main.rs"
 
 [dependencies]
 cesium-widgets = { workspace = true }
+cesium-scene = { workspace = true }
+wgpu = { workspace = true }
+winit = { workspace = true }
+pollster = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }

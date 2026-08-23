@@ -1,19 +1,15 @@
-//! Ported from `packages/engine/Source/Core/ITwinPlatform.js`.
-//!
-//! iTwin platform integration.
+﻿//! Ported from `packages/engine/Source/Core/ITwinPlatform.js`.
 
-/// iTwin platform configuration and utilities.
-/// Skeleton: requires network I/O.
-pub struct ITwinPlatform;
+/// iTwin platform integration.
+pub struct ITwinPlatform {
+    _private: (),
+}
 
 impl ITwinPlatform {
-    /// Sets the access token for iTwin API.
-    pub fn set_access_token(_token: &str) {
-        // Skeleton
-    }
+    /// Creates a new ITwinPlatform.
+    pub fn new() -> Self { Self { _private: () } }
+}
 
-    /// Returns the access token.
-    pub fn get_access_token() -> Option<String> {
-        None
-    }
+impl Default for ITwinPlatform {
+    fn default() -> Self { Self::new() }
 }

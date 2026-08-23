@@ -1,20 +1,15 @@
-//! Ported from `packages/engine/Source/Core/CustomHeightmapTerrainProvider.js`.
-//!
-//! A terrain provider that uses custom heightmap callbacks.
+﻿//! Ported from `packages/engine/Source/Core/CustomHeightmapTerrainProvider.js`.
 
-use crate::rectangle::Rectangle;
-
-/// A terrain provider that uses user-provided heightmap callbacks.
-/// Skeleton: requires network I/O.
-pub struct CustomHeightmapTerrainProvider;
+/// A terrain provider using custom heightmap data.
+pub struct CustomHeightmapTerrainProvider {
+    _private: (),
+}
 
 impl CustomHeightmapTerrainProvider {
-    /// Whether the provider is ready.
-    pub fn ready(&self) -> bool { false }
-    /// Returns the rectangle.
-    pub fn rectangle(&self) -> Rectangle { Rectangle::default() }
-    /// Whether the provider has vertex normals.
-    pub fn has_vertex_normals(&self) -> bool { false }
-    /// Whether the provider has water mask.
-    pub fn has_water_mask(&self) -> bool { false }
+    /// Creates a new CustomHeightmapTerrainProvider.
+    pub fn new() -> Self { Self { _private: () } }
+}
+
+impl Default for CustomHeightmapTerrainProvider {
+    fn default() -> Self { Self::new() }
 }

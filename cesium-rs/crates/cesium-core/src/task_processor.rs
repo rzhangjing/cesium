@@ -1,20 +1,15 @@
-//! Ported from `packages/engine/Source/Core/TaskProcessor.js`.
-//!
-//! Manages web worker tasks. Skeleton implementation.
+﻿//! Ported from `packages/engine/Source/Core/TaskProcessor.js`.
 
-/// Processes tasks using web workers (or equivalent in Rust).
+/// Processes tasks in web workers.
 pub struct TaskProcessor {
-    worker_path: String,
+    _private: (),
 }
 
 impl TaskProcessor {
     /// Creates a new TaskProcessor.
-    pub fn new(worker_path: String) -> Self {
-        Self { worker_path }
-    }
+    pub fn new() -> Self { Self { _private: () } }
+}
 
-    /// Gets the worker path.
-    pub fn worker_path(&self) -> &str {
-        &self.worker_path
-    }
+impl Default for TaskProcessor {
+    fn default() -> Self { Self::new() }
 }

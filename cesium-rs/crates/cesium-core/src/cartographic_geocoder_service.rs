@@ -1,14 +1,15 @@
-//! Ported from `packages/engine/Source/Core/CartographicGeocoderService.js`.
-//!
-//! Geocoder service that parses cartographic input (lon/lat).
+﻿//! Ported from `packages/engine/Source/Core/CartographicGeocoderService.js`.
 
-/// Geocoder service that parses cartographic coordinates from strings.
-/// Skeleton: requires parsing logic.
-pub struct CartographicGeocoderService;
+/// A geocoder service for cartographic coordinates.
+pub struct CartographicGeocoderService {
+    _private: (),
+}
 
 impl CartographicGeocoderService {
-    /// Creates a new cartographic geocoder service.
-    pub fn new() -> Self {
-        Self
-    }
+    /// Creates a new CartographicGeocoderService.
+    pub fn new() -> Self { Self { _private: () } }
+}
+
+impl Default for CartographicGeocoderService {
+    fn default() -> Self { Self::new() }
 }

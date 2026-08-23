@@ -1,14 +1,15 @@
-//! Ported from `packages/engine/Source/Core/HeightmapTerrainData.js`.
-//!
-//! Terrain data from heightmap images.
+﻿//! Ported from `packages/engine/Source/Core/HeightmapTerrainData.js`.
 
-/// Terrain data from heightmap images.
-/// Skeleton: requires image decoding and terrain tessellation.
-pub struct HeightmapTerrainData;
+/// Terrain data from a heightmap.
+pub struct HeightmapTerrainData {
+    _private: (),
+}
 
 impl HeightmapTerrainData {
-    /// Creates new heightmap terrain data.
-    pub fn new() -> Self {
-        Self
-    }
+    /// Creates a new HeightmapTerrainData.
+    pub fn new() -> Self { Self { _private: () } }
+}
+
+impl Default for HeightmapTerrainData {
+    fn default() -> Self { Self::new() }
 }

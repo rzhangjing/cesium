@@ -1,0 +1,44 @@
+﻿//! Auto-generated shader embeddings.
+
+pub const DEGREES_PER_RADIAN: &str = include_str!("../../shaders/Builtin/Constants/degreesPerRadian.glsl");
+pub const DEPTH_RANGE: &str = include_str!("../../shaders/Builtin/Constants/depthRange.glsl");
+pub const EPSILON1: &str = include_str!("../../shaders/Builtin/Constants/epsilon1.glsl");
+pub const EPSILON2: &str = include_str!("../../shaders/Builtin/Constants/epsilon2.glsl");
+pub const EPSILON3: &str = include_str!("../../shaders/Builtin/Constants/epsilon3.glsl");
+pub const EPSILON4: &str = include_str!("../../shaders/Builtin/Constants/epsilon4.glsl");
+pub const EPSILON5: &str = include_str!("../../shaders/Builtin/Constants/epsilon5.glsl");
+pub const EPSILON6: &str = include_str!("../../shaders/Builtin/Constants/epsilon6.glsl");
+pub const EPSILON7: &str = include_str!("../../shaders/Builtin/Constants/epsilon7.glsl");
+pub const INFINITY: &str = include_str!("../../shaders/Builtin/Constants/infinity.glsl");
+pub const ONE_OVER_PI: &str = include_str!("../../shaders/Builtin/Constants/oneOverPi.glsl");
+pub const ONE_OVER_TWO_PI: &str = include_str!("../../shaders/Builtin/Constants/oneOverTwoPi.glsl");
+pub const PASS_CESIUM3_D_TILE: &str = include_str!("../../shaders/Builtin/Constants/passCesium3DTile.glsl");
+pub const PASS_CESIUM3_D_TILE_CLASSIFICATION: &str = include_str!("../../shaders/Builtin/Constants/passCesium3DTileClassification.glsl");
+pub const PASS_CESIUM3_D_TILE_CLASSIFICATION_IGNORE_SHOW: &str = include_str!("../../shaders/Builtin/Constants/passCesium3DTileClassificationIgnoreShow.glsl");
+pub const PASS_CESIUM3_D_TILE_EDGES: &str = include_str!("../../shaders/Builtin/Constants/passCesium3DTileEdges.glsl");
+pub const PASS_CESIUM3_D_TILE_EDGES_DIRECT: &str = include_str!("../../shaders/Builtin/Constants/passCesium3DTileEdgesDirect.glsl");
+pub const PASS_CLASSIFICATION: &str = include_str!("../../shaders/Builtin/Constants/passClassification.glsl");
+pub const PASS_COMPUTE: &str = include_str!("../../shaders/Builtin/Constants/passCompute.glsl");
+pub const PASS_ENVIRONMENT: &str = include_str!("../../shaders/Builtin/Constants/passEnvironment.glsl");
+pub const PASS_GAUSSIAN_SPLATS: &str = include_str!("../../shaders/Builtin/Constants/passGaussianSplats.glsl");
+pub const PASS_GLOBE: &str = include_str!("../../shaders/Builtin/Constants/passGlobe.glsl");
+pub const PASS_OPAQUE: &str = include_str!("../../shaders/Builtin/Constants/passOpaque.glsl");
+pub const PASS_OVERLAY: &str = include_str!("../../shaders/Builtin/Constants/passOverlay.glsl");
+pub const PASS_TERRAIN_CLASSIFICATION: &str = include_str!("../../shaders/Builtin/Constants/passTerrainClassification.glsl");
+pub const PASS_TRANSLUCENT: &str = include_str!("../../shaders/Builtin/Constants/passTranslucent.glsl");
+pub const PASS_VOXELS: &str = include_str!("../../shaders/Builtin/Constants/passVoxels.glsl");
+pub const PI: &str = include_str!("../../shaders/Builtin/Constants/pi.glsl");
+pub const PI_OVER_FOUR: &str = include_str!("../../shaders/Builtin/Constants/piOverFour.glsl");
+pub const PI_OVER_SIX: &str = include_str!("../../shaders/Builtin/Constants/piOverSix.glsl");
+pub const PI_OVER_THREE: &str = include_str!("../../shaders/Builtin/Constants/piOverThree.glsl");
+pub const PI_OVER_TWO: &str = include_str!("../../shaders/Builtin/Constants/piOverTwo.glsl");
+pub const RADIANS_PER_DEGREE: &str = include_str!("../../shaders/Builtin/Constants/radiansPerDegree.glsl");
+pub const SCENE_MODE2_D: &str = include_str!("../../shaders/Builtin/Constants/sceneMode2D.glsl");
+pub const SCENE_MODE3_D: &str = include_str!("../../shaders/Builtin/Constants/sceneMode3D.glsl");
+pub const SCENE_MODE_COLUMBUS_VIEW: &str = include_str!("../../shaders/Builtin/Constants/sceneModeColumbusView.glsl");
+pub const SCENE_MODE_MORPHING: &str = include_str!("../../shaders/Builtin/Constants/sceneModeMorphing.glsl");
+pub const SOLAR_RADIUS: &str = include_str!("../../shaders/Builtin/Constants/solarRadius.glsl");
+pub const THREE_PI_OVER2: &str = include_str!("../../shaders/Builtin/Constants/threePiOver2.glsl");
+pub const TWO_PI: &str = include_str!("../../shaders/Builtin/Constants/twoPi.glsl");
+pub const WEB_MERCATOR_MAX_LATITUDE: &str = include_str!("../../shaders/Builtin/Constants/webMercatorMaxLatitude.glsl");
+

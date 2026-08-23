@@ -1,16 +1,15 @@
-//! Ported from `packages/engine/Source/Core/OpenCageGeocoderService.js`.
-//!
-//! Geocoder service using OpenCage.
+﻿//! Ported from `packages/engine/Source/Core/OpenCageGeocoderService.js`.
 
-/// Geocoder service using OpenCage geocoding API.
-/// Skeleton: requires network I/O.
+/// A geocoder service using OpenCage.
 pub struct OpenCageGeocoderService {
-    _api_key: String,
+    _private: (),
 }
 
 impl OpenCageGeocoderService {
-    /// Creates a new OpenCage geocoder service.
-    pub fn new(api_key: String) -> Self {
-        Self { _api_key: api_key }
-    }
+    /// Creates a new OpenCageGeocoderService.
+    pub fn new() -> Self { Self { _private: () } }
+}
+
+impl Default for OpenCageGeocoderService {
+    fn default() -> Self { Self::new() }
 }

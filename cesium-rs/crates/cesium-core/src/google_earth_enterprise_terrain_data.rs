@@ -1,14 +1,15 @@
-//! Ported from `packages/engine/Source/Core/GoogleEarthEnterpriseTerrainData.js`.
-//!
-//! Terrain data from Google Earth Enterprise.
+﻿//! Ported from `packages/engine/Source/Core/GoogleEarthEnterpriseTerrainData.js`.
 
 /// Terrain data from Google Earth Enterprise.
-/// Skeleton: requires binary parsing infrastructure.
-pub struct GoogleEarthEnterpriseTerrainData;
+pub struct GoogleEarthEnterpriseTerrainData {
+    _private: (),
+}
 
 impl GoogleEarthEnterpriseTerrainData {
-    /// Creates new Google Earth Enterprise terrain data.
-    pub fn new() -> Self {
-        Self
-    }
+    /// Creates a new GoogleEarthEnterpriseTerrainData.
+    pub fn new() -> Self { Self { _private: () } }
+}
+
+impl Default for GoogleEarthEnterpriseTerrainData {
+    fn default() -> Self { Self::new() }
 }

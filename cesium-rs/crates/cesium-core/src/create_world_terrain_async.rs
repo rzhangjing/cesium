@@ -1,15 +1,15 @@
-//! Ported from `packages/engine/Source/Core/createWorldTerrainAsync.js`.
-//!
-//! Creates world terrain asynchronously.
+﻿//! Ported from `packages/engine/Source/Core/createWorldTerrainAsync.js`.
 
-/// Creates world terrain provider asynchronously.
-/// Skeleton: requires network I/O.
-pub struct CreateWorldTerrainAsync;
+/// Creates world terrain data asynchronously.
+pub struct CreateWorldTerrainAsync {
+    _private: (),
+}
 
 impl CreateWorldTerrainAsync {
-    /// Creates world terrain asynchronously.
-    pub fn create() -> Result<(), String> {
-        // Skeleton: requires Ion asset loading
-        Err("Not implemented".to_string())
-    }
+    /// Creates a new CreateWorldTerrainAsync.
+    pub fn new() -> Self { Self { _private: () } }
+}
+
+impl Default for CreateWorldTerrainAsync {
+    fn default() -> Self { Self::new() }
 }

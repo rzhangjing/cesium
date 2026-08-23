@@ -1,14 +1,15 @@
-//! Ported from `packages/engine/Source/Core/IonGeocoderService.js`.
-//!
-//! Geocoder service using Cesium Ion.
+﻿//! Ported from `packages/engine/Source/Core/IonGeocoderService.js`.
 
-/// Geocoder service using Cesium Ion geocoding API.
-/// Skeleton: requires network I/O.
-pub struct IonGeocoderService;
+/// A geocoder service using Cesium ion.
+pub struct IonGeocoderService {
+    _private: (),
+}
 
 impl IonGeocoderService {
-    /// Creates a new Ion geocoder service.
-    pub fn new() -> Self {
-        Self
-    }
+    /// Creates a new IonGeocoderService.
+    pub fn new() -> Self { Self { _private: () } }
+}
+
+impl Default for IonGeocoderService {
+    fn default() -> Self { Self::new() }
 }

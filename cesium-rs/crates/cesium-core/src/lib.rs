@@ -283,6 +283,7 @@ pub mod translation_rotation_scale;
 pub mod tridiagonal_system_solver;
 pub mod transforms;
 pub mod trusted_servers;
+pub mod transcode_ktx2;
 pub(crate) mod urijs;
 pub mod vr_the_world_terrain_provider;
 pub mod vulkan_constants;

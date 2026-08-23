@@ -1,27 +1,15 @@
-//! Ported from `packages/engine/Source/Core/GoogleEarthEnterpriseTerrainProvider.js`.
-//!
-//! Terrain provider using Google Earth Enterprise.
-
-use crate::rectangle::Rectangle;
+﻿//! Ported from `packages/engine/Source/Core/GoogleEarthEnterpriseTerrainProvider.js`.
 
 /// A terrain provider using Google Earth Enterprise.
-/// Skeleton: requires network I/O.
 pub struct GoogleEarthEnterpriseTerrainProvider {
-    _url: String,
+    _private: (),
 }
 
 impl GoogleEarthEnterpriseTerrainProvider {
-    /// Creates a new provider from options.
-    pub fn new(url: String) -> Self {
-        Self { _url: url }
-    }
+    /// Creates a new GoogleEarthEnterpriseTerrainProvider.
+    pub fn new() -> Self { Self { _private: () } }
+}
 
-    /// Whether the provider is ready.
-    pub fn ready(&self) -> bool { false }
-    /// Returns the rectangle.
-    pub fn rectangle(&self) -> Rectangle { Rectangle::default() }
-    /// Whether the provider has vertex normals.
-    pub fn has_vertex_normals(&self) -> bool { false }
-    /// Whether the provider has water mask.
-    pub fn has_water_mask(&self) -> bool { false }
+impl Default for GoogleEarthEnterpriseTerrainProvider {
+    fn default() -> Self { Self::new() }
 }

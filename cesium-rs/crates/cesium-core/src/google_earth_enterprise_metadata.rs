@@ -1,21 +1,15 @@
-//! Ported from `packages/engine/Source/Core/GoogleEarthEnterpriseMetadata.js`.
-//!
-//! Metadata for Google Earth Enterprise terrain tiles.
+﻿//! Ported from `packages/engine/Source/Core/GoogleEarthEnterpriseMetadata.js`.
 
 /// Metadata for Google Earth Enterprise terrain.
-/// Skeleton: requires network I/O and binary parsing.
 pub struct GoogleEarthEnterpriseMetadata {
-    _url: String,
+    _private: (),
 }
 
 impl GoogleEarthEnterpriseMetadata {
-    /// Creates new metadata from options.
-    pub fn new(url: String) -> Self {
-        Self { _url: url }
-    }
+    /// Creates a new GoogleEarthEnterpriseMetadata.
+    pub fn new() -> Self { Self { _private: () } }
+}
 
-    /// Returns the URL.
-    pub fn url(&self) -> &str {
-        &self._url
-    }
+impl Default for GoogleEarthEnterpriseMetadata {
+    fn default() -> Self { Self::new() }
 }

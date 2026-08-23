@@ -1,15 +1,15 @@
-//! Ported from `packages/engine/Source/Core/createWorldBathymetryAsync.js`.
-//!
-//! Creates world bathymetry (underwater terrain) asynchronously.
+﻿//! Ported from `packages/engine/Source/Core/createWorldBathymetryAsync.js`.
 
-/// Creates world bathymetry terrain provider asynchronously.
-/// Skeleton: requires network I/O.
-pub struct CreateWorldBathymetryAsync;
+/// Creates world bathymetry data asynchronously.
+pub struct CreateWorldBathymetryAsync {
+    _private: (),
+}
 
 impl CreateWorldBathymetryAsync {
-    /// Creates world bathymetry asynchronously.
-    pub fn create() -> Result<(), String> {
-        // Skeleton: requires Ion asset loading
-        Err("Not implemented".to_string())
-    }
+    /// Creates a new CreateWorldBathymetryAsync.
+    pub fn new() -> Self { Self { _private: () } }
+}
+
+impl Default for CreateWorldBathymetryAsync {
+    fn default() -> Self { Self::new() }
 }

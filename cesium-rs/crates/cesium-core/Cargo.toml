@@ -14,3 +14,4 @@ regex = { workspace = true }
 
 [dev-dependencies]
 cesium-test-utils = { workspace = true }
+tokio = { workspace = true }

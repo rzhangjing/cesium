@@ -23,7 +23,7 @@ cesium-test-utils = { path = "crates/cesium-test-utils" }
 # GPU backend (wgpu, NOT Bevy) — webgl feature for legacy WebGL2 fallback on the web
 wgpu = { version = "30", features = ["webgl"] }
 # shader translation/validation (GLSL in, for porting CesiumJS GLSL sources)
-naga = { version = "30", features = ["glsl-in"] }
+naga = { version = "30.0.1", features = ["glsl-in", "wgsl-in", "wgsl-out"] }
 
 # concurrency / async
 rayon = "1.10"
@@ -44,6 +44,11 @@ approx = "0.5"
 # wasm bindings
 wasm-bindgen = "0.2"
 web-sys = "0.3"
+
+# windowing / event loop
+winit = "0.30"
+pollster = "0.4"
+env_logger = "0.11"
 
 # misc
 uuid = { version = "1", features = ["v4", "js"] }
