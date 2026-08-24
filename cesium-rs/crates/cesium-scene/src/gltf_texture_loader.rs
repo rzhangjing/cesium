@@ -8,15 +8,19 @@
 //! in-memory glTF (embedded images) or caller supplied external bytes.
 //!
 //! DEVIATION: the glTF sampler parameters (wrap/filter) are recorded on
-//! the created [`Texture`], but the wgpu renderer binds the shared
-//! default sampler at draw time; mipmaps are not generated.
+//! the created [`Texture`] exactly as `GltfLoaderUtil.createSampler`
+//! derives them, but the wgpu renderer binds the shared default sampler
+//! at draw time; mipmaps are not generated.
 
 use std::sync::Arc;
 
 use cesium_core::runtime_error::RuntimeError;
+use cesium_core::webgl_constants::WebGLConstants;
 use cesium_renderer::context::Context;
 use cesium_renderer::sampler::Sampler;
 use cesium_renderer::texture::{Texture, TextureOptions, TextureSource};
+use cesium_renderer::texture_magnification_filter::TextureMagnificationFilter;
+use cesium_renderer::texture_minification_filter::TextureMinificationFilter;
 use cesium_renderer::texture_wrap::TextureWrap;
 
 use crate::gltf_image_loader::GltfImageLoader;
@@ -197,15 +201,26 @@ impl GltfTextureLoader {
         Ok(())
     }
 
-    /// Maps the glTF sampler's wrap modes onto the renderer sampler
-    /// (filter/mipmap parameters fall back to the linear defaults;
-    /// DEVIATION noted in the module docs).
+    /// Maps the glTF sampler onto the renderer sampler, mirroring
+    /// `GltfLoaderUtil.createSampler`: REPEAT wrapping and LINEAR
+    /// filtering by default, overridden by the glTF sampler's
+    /// `wrapS`/`wrapT`/`minFilter`/`magFilter` when present (the
+    /// compressed-texture no-mipmap adjustment is omitted — compressed
+    /// textures are deferred, see module docs).
     fn create_sampler(&self, gltf: &GltfJson) -> Sampler {
         let mut sampler = Sampler::new();
+        sampler.wrap_s = TextureWrap::Repeat;
+        sampler.wrap_t = TextureWrap::Repeat;
         if let Some(sampler_id) = self.sampler_id {
             if let Some(gltf_sampler) = gltf.samplers.get(sampler_id as usize) {
                 sampler.wrap_s = wrap_mode(gltf_sampler.wrap_s);
                 sampler.wrap_t = wrap_mode(gltf_sampler.wrap_t);
+                if let Some(min_filter) = gltf_sampler.min_filter {
+                    sampler.min_filter = minification_filter(min_filter);
+                }
+                if let Some(mag_filter) = gltf_sampler.mag_filter {
+                    sampler.mag_filter = magnification_filter(mag_filter);
+                }
             }
         }
         sampler
@@ -225,11 +240,128 @@ impl GltfTextureLoader {
 }
 
 /// Maps a glTF wrap constant (10497 REPEAT / 33071 CLAMP_TO_EDGE /
-/// 33648 MIRRORED_REPEAT) onto the renderer [`TextureWrap`].
+/// 33648 MIRRORED_REPEAT) onto the renderer [`TextureWrap`]; invalid
+/// constants fall back to REPEAT (mirrors `TextureWrap.validate`).
 fn wrap_mode(mode: u32) -> TextureWrap {
     match mode {
         33071 => TextureWrap::ClampToEdge,
         33648 => TextureWrap::MirroredRepeat,
         _ => TextureWrap::Repeat,
+    }
+}
+
+/// Maps a glTF `minFilter` constant onto the renderer
+/// [`TextureMinificationFilter`] (mirrors `GltfLoaderUtil.createSampler`);
+/// unknown constants fall back to LINEAR.
+fn minification_filter(mode: u32) -> TextureMinificationFilter {
+    match mode {
+        WebGLConstants::NEAREST => TextureMinificationFilter::Nearest,
+        WebGLConstants::NEAREST_MIPMAP_NEAREST => {
+            TextureMinificationFilter::NearestMipmapNearest
+        }
+        WebGLConstants::NEAREST_MIPMAP_LINEAR => {
+            TextureMinificationFilter::NearestMipmapLinear
+        }
+        WebGLConstants::LINEAR_MIPMAP_NEAREST => {
+            TextureMinificationFilter::LinearMipmapNearest
+        }
+        WebGLConstants::LINEAR_MIPMAP_LINEAR => {
+            TextureMinificationFilter::LinearMipmapLinear
+        }
+        _ => TextureMinificationFilter::Linear,
+    }
+}
+
+/// Maps a glTF `magFilter` constant onto the renderer
+/// [`TextureMagnificationFilter`] (mirrors `GltfLoaderUtil.createSampler`);
+/// unknown constants fall back to LINEAR.
+fn magnification_filter(mode: u32) -> TextureMagnificationFilter {
+    match mode {
+        WebGLConstants::NEAREST => TextureMagnificationFilter::Nearest,
+        _ => TextureMagnificationFilter::Linear,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The wrap/filter mapping mirrors `GltfLoaderUtil.createSampler`
+    /// (WebGL constants, invalid values fall back to REPEAT / LINEAR).
+    #[test]
+    fn sampler_mapping_mirrors_create_sampler() {
+        assert_eq!(wrap_mode(33071), TextureWrap::ClampToEdge);
+        assert_eq!(wrap_mode(33648), TextureWrap::MirroredRepeat);
+        assert_eq!(wrap_mode(10497), TextureWrap::Repeat);
+        // Invalid constants fall back to REPEAT (TextureWrap.validate).
+        assert_eq!(wrap_mode(9999), TextureWrap::Repeat);
+
+        assert_eq!(
+            minification_filter(9728),
+            TextureMinificationFilter::Nearest
+        );
+        assert_eq!(
+            minification_filter(9984),
+            TextureMinificationFilter::NearestMipmapNearest
+        );
+        assert_eq!(
+            minification_filter(9985),
+            TextureMinificationFilter::LinearMipmapNearest
+        );
+        assert_eq!(
+            minification_filter(9986),
+            TextureMinificationFilter::NearestMipmapLinear
+        );
+        assert_eq!(
+            minification_filter(9987),
+            TextureMinificationFilter::LinearMipmapLinear
+        );
+        // Unknown constants fall back to LINEAR.
+        assert_eq!(minification_filter(1), TextureMinificationFilter::Linear);
+
+        assert_eq!(
+            magnification_filter(9728),
+            TextureMagnificationFilter::Nearest
+        );
+        assert_eq!(
+            magnification_filter(9729),
+            TextureMagnificationFilter::Linear
+        );
+    }
+
+    /// A texture without a sampler records the JS defaults (REPEAT wrap,
+    /// LINEAR filtering).
+    #[test]
+    fn create_sampler_defaults_to_repeat_linear() {
+        let gltf = GltfJson::default();
+        let loader = GltfTextureLoader {
+            texture_id: 0,
+            cache_key: None,
+            image_loader: unreachable_image_loader(),
+            sampler_id: None,
+            texture: None,
+            state: ResourceLoaderState::Unloaded,
+        };
+        let sampler = loader.create_sampler(&gltf);
+        assert_eq!(sampler.wrap_s, TextureWrap::Repeat);
+        assert_eq!(sampler.wrap_t, TextureWrap::Repeat);
+        assert_eq!(sampler.min_filter, TextureMinificationFilter::Linear);
+        assert_eq!(sampler.mag_filter, TextureMagnificationFilter::Linear);
+    }
+
+    /// An image loader over an empty glTF (never loaded; the sampler
+    /// recording does not touch it).
+    fn unreachable_image_loader() -> GltfImageLoader {
+        GltfImageLoader::try_new(
+            &GltfJson {
+                images: vec![crate::gltf_loader::GltfImage::default()],
+                ..Default::default()
+            },
+            crate::gltf_image_loader::GltfImageLoaderOptions {
+                image_id: 0,
+                cache_key: None,
+            },
+        )
+        .unwrap()
     }
 }

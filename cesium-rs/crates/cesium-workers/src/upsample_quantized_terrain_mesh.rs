@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/upsampleQuantizedTerrainMesh.js`.
+//! Ported from `packages/engine/Source/Workers/upsampleQuantizedTerrainMesh.js`.
 //!
 //! Worker entry point for upsampling a quantized terrain mesh to a higher
 //! resolution. This is used when a terrain tile needs to be displayed at
@@ -9,9 +9,9 @@
 /// In CesiumJS, this receives a quantized terrain mesh and upsamples it
 /// by bilinear interpolation of the height values. The result is a new
 /// quantized mesh with higher resolution vertex grid.
-pub fn upsample_quantized_terrain_mesh(params: &[u8]) -> Vec<u8> {
+pub fn upsample_quantized_terrain_mesh(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("upsampleQuantizedTerrainMesh"))
 }
 
 /// Upsamples a quantized terrain mesh (for in-process use).

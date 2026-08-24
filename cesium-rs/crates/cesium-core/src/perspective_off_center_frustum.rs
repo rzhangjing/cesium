@@ -8,6 +8,7 @@ use crate::culling_volume::CullingVolume;
 use crate::matrix4::Matrix4;
 
 /// A viewing frustum defined by 6 planes (perspective, off-center).
+#[derive(Clone, Debug)]
 pub struct PerspectiveOffCenterFrustum {
     pub left: Option<f64>,
     pub right: Option<f64>,

@@ -18,14 +18,13 @@ pub struct CreateBoxGeometryParameters {
 ///
 /// In CesiumJS, this receives packed parameters from the main thread,
 /// constructs a `BoxGeometry`, calls `createGeometry()`, and returns
-/// the packed result. In Rust, the same pattern applies via byte serialization.
-pub fn create_box_geometry(params: &[u8]) -> Vec<u8> {
-    // DEVIATION: Full pack/unpack requires serde or manual binary format.
-    // The worker contract is: deserialize → BoxGeometry::new → create_geometry → serialize.
-    // For now, return empty to indicate stub; the dispatcher in create_geometry.rs
-    // routes to this function when GeometryType::Box is selected.
+/// the packed result. The Rust packed byte entry is not implemented yet
+/// (no binary pack format for geometry parameters/results), so it
+/// returns an explicit error; use [`create_box_geometry_unpacked`] for
+/// in-process geometry creation.
+pub fn create_box_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createBoxGeometry"))
 }
 
 /// Creates a `BoxGeometry` from unpacked parameters (for in-process use).

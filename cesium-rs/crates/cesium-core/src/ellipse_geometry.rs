@@ -31,6 +31,7 @@ use crate::math::CesiumMath;
 use crate::matrix3::Matrix3;
 use crate::primitive_type::PrimitiveType;
 use crate::quaternion::Quaternion;
+use crate::rectangle::Rectangle;
 use crate::vertex_format::VertexFormat;
 
 /// A description of an ellipse on an ellipsoid.
@@ -83,6 +84,366 @@ impl EllipseGeometry {
             offset_attribute,
         }
     }
+
+    /// The ellipse's center point in the fixed frame.
+    pub fn center(&self) -> &Cartesian3 {
+        &self.center
+    }
+
+    /// The length of the ellipse's semi-major axis in meters.
+    pub fn semi_major_axis(&self) -> f64 {
+        self.semi_major_axis
+    }
+
+    /// The length of the ellipse's semi-minor axis in meters.
+    pub fn semi_minor_axis(&self) -> f64 {
+        self.semi_minor_axis
+    }
+
+    /// The ellipsoid the ellipse will be on.
+    pub fn ellipsoid(&self) -> &Ellipsoid {
+        &self.ellipsoid
+    }
+
+    /// The angle of rotation counter-clockwise from north.
+    pub fn rotation(&self) -> f64 {
+        self.rotation
+    }
+
+    /// The rotation of the texture coordinates counter-clockwise from north.
+    pub fn st_rotation(&self) -> f64 {
+        self.st_rotation
+    }
+
+    /// The distance in meters between the ellipse and the ellipsoid surface.
+    pub fn height(&self) -> f64 {
+        self.height
+    }
+
+    /// The distance in meters between the ellipse's extruded face and the
+    /// ellipsoid surface.
+    pub fn extruded_height(&self) -> f64 {
+        self.extruded_height
+    }
+
+    /// The angular distance between points on the ellipse in radians.
+    pub fn granularity(&self) -> f64 {
+        self.granularity
+    }
+
+    /// The vertex attributes to be computed.
+    pub fn vertex_format(&self) -> &VertexFormat {
+        &self.vertex_format
+    }
+
+    /// Whether the geometry is a shadow volume.
+    pub fn shadow_volume(&self) -> bool {
+        self.shadow_volume
+    }
+
+    /// The offset attribute.
+    pub fn offset_attribute(&self) -> Option<GeometryOffsetAttribute> {
+        self.offset_attribute
+    }
+
+    /// The number of `f64` elements needed to pack/unpack an `EllipseGeometry`.
+    pub const PACKED_LENGTH: usize =
+        Cartesian3::PACKED_LENGTH + Ellipsoid::PACKED_LENGTH + VertexFormat::PACKED_LENGTH + 9;
+
+    /// Packs the ellipse geometry into `array` starting at `starting_index`.
+    pub fn pack(&self, array: &mut [f64], starting_index: Option<usize>) {
+        let mut i = starting_index.unwrap_or(0);
+
+        Cartesian3::pack(&self.center, array, Some(i));
+        i += Cartesian3::PACKED_LENGTH;
+
+        Ellipsoid::pack(&self.ellipsoid, array, Some(i));
+        i += Ellipsoid::PACKED_LENGTH;
+
+        self.vertex_format.pack(array, i);
+        i += VertexFormat::PACKED_LENGTH;
+
+        array[i] = self.semi_major_axis;
+        i += 1;
+        array[i] = self.semi_minor_axis;
+        i += 1;
+        array[i] = self.rotation;
+        i += 1;
+        array[i] = self.st_rotation;
+        i += 1;
+        array[i] = self.height;
+        i += 1;
+        array[i] = self.granularity;
+        i += 1;
+        array[i] = self.extruded_height;
+        i += 1;
+        array[i] = if self.shadow_volume { 1.0 } else { 0.0 };
+        i += 1;
+        array[i] = self.offset_attribute.map_or(-1.0, |o| o as u32 as f64);
+    }
+
+    /// Unpacks an `EllipseGeometry` from `array`.
+    ///
+    /// Mirrors the JS semantics: when `result` is `None` the values run
+    /// through the constructor (re-normalizing height/extruded height);
+    /// when `result` is provided the fields are assigned verbatim.
+    pub fn unpack(
+        array: &[f64],
+        starting_index: Option<usize>,
+        result: Option<&mut Self>,
+    ) -> Self {
+        let mut i = starting_index.unwrap_or(0);
+
+        let center = Cartesian3::unpack_new(array, Some(i));
+        i += Cartesian3::PACKED_LENGTH;
+
+        let ellipsoid = Ellipsoid::unpack(array, Some(i));
+        i += Ellipsoid::PACKED_LENGTH;
+
+        let vertex_format = VertexFormat::unpack(array, i, None);
+        i += VertexFormat::PACKED_LENGTH;
+
+        let semi_major_axis = array[i];
+        i += 1;
+        let semi_minor_axis = array[i];
+        i += 1;
+        let rotation = array[i];
+        i += 1;
+        let st_rotation = array[i];
+        i += 1;
+        let height = array[i];
+        i += 1;
+        let granularity = array[i];
+        i += 1;
+        let extruded_height = array[i];
+        i += 1;
+        let shadow_volume = array[i] == 1.0;
+        i += 1;
+        let offset_raw = array[i];
+        let offset_attribute = if offset_raw == -1.0 {
+            None
+        } else {
+            GeometryOffsetAttribute::try_from_u32(offset_raw as u32)
+        };
+
+        match result {
+            None => Self::new(
+                center,
+                semi_major_axis,
+                semi_minor_axis,
+                Some(ellipsoid),
+                Some(rotation),
+                Some(st_rotation),
+                Some(height),
+                Some(extruded_height),
+                Some(granularity),
+                Some(vertex_format),
+                Some(shadow_volume),
+                offset_attribute,
+            ),
+            Some(r) => {
+                r.center = center;
+                r.ellipsoid = ellipsoid;
+                r.vertex_format = vertex_format;
+                r.semi_major_axis = semi_major_axis;
+                r.semi_minor_axis = semi_minor_axis;
+                r.rotation = rotation;
+                r.st_rotation = st_rotation;
+                r.height = height;
+                r.granularity = granularity;
+                r.extruded_height = extruded_height;
+                r.shadow_volume = shadow_volume;
+                r.offset_attribute = offset_attribute;
+                r.clone()
+            }
+        }
+    }
+
+    /// Computes the bounding rectangle based on the provided options.
+    ///
+    /// Port of `EllipseGeometry.computeRectangle` (static, options-based):
+    /// the JS options object is folded into positional parameters.
+    ///
+    /// # Panics (debug)
+    /// Mirrors the JS `DeveloperError` checks behind `debug_assertions`:
+    /// `semi_major_axis >= semi_minor_axis` and `granularity > 0`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn compute_rectangle_from_options(
+        center: &Cartesian3,
+        semi_major_axis: f64,
+        semi_minor_axis: f64,
+        ellipsoid: Option<&Ellipsoid>,
+        rotation: Option<f64>,
+        granularity: Option<f64>,
+    ) -> Rectangle {
+        let ellipsoid = ellipsoid.cloned().unwrap_or(Ellipsoid::WGS84);
+        let rotation = rotation.unwrap_or(0.0);
+        let granularity = granularity.unwrap_or(CesiumMath::RADIANS_PER_DEGREE);
+
+        if cfg!(debug_assertions) {
+            if semi_major_axis < semi_minor_axis {
+                crate::developer_error::throw_developer_error(
+                    "semiMajorAxis must be greater than or equal to the semiMinorAxis.",
+                );
+            }
+            if granularity <= 0.0 {
+                crate::developer_error::throw_developer_error("granularity must be greater than zero.");
+            }
+        }
+
+        compute_ellipse_rectangle(
+            center,
+            semi_major_axis,
+            semi_minor_axis,
+            rotation,
+            granularity,
+            &ellipsoid,
+        )
+    }
+
+    /// The bounding [`Rectangle`] of this ellipse (JS `rectangle` getter).
+    ///
+    /// DEVIATION: the JS getter caches `_rectangle` on the instance; the
+    /// Rust port recomputes on each call (result is identical).
+    pub fn rectangle(&self) -> Rectangle {
+        compute_ellipse_rectangle(
+            &self.center,
+            self.semi_major_axis,
+            self.semi_minor_axis,
+            self.rotation,
+            self.granularity,
+            &self.ellipsoid,
+        )
+    }
+
+    /// For remapping texture coordinates when rendering EllipseGeometries as
+    /// GroundPrimitives (JS `textureCoordinateRotationPoints` getter).
+    ///
+    /// DEVIATION: the JS getter caches the result; the Rust port recomputes
+    /// on each call (result is identical).
+    pub fn texture_coordinate_rotation_points(&self) -> [f64; 6] {
+        texture_coordinate_rotation_points_for_ellipse(self)
+    }
+
+    /// Port of `EllipseGeometry.createShadowVolume`.
+    pub fn create_shadow_volume<F>(
+        ellipse_geometry: &Self,
+        min_height_func: F,
+        max_height_func: F,
+    ) -> Self
+    where
+        F: Fn(f64, &Ellipsoid) -> f64,
+    {
+        let granularity = ellipse_geometry.granularity;
+        let ellipsoid = ellipse_geometry.ellipsoid.clone();
+
+        let min_height = min_height_func(granularity, &ellipsoid);
+        let max_height = max_height_func(granularity, &ellipsoid);
+
+        Self::new(
+            ellipse_geometry.center,
+            ellipse_geometry.semi_major_axis,
+            ellipse_geometry.semi_minor_axis,
+            Some(ellipsoid),
+            Some(ellipse_geometry.rotation),
+            Some(ellipse_geometry.st_rotation),
+            Some(max_height),
+            Some(min_height),
+            Some(granularity),
+            Some(VertexFormat::position_only()),
+            Some(true),
+            None,
+        )
+    }
+}
+
+/// Port of the module-level `computeRectangle` function.
+fn compute_ellipse_rectangle(
+    center: &Cartesian3,
+    semi_major_axis: f64,
+    semi_minor_axis: f64,
+    rotation: f64,
+    granularity: f64,
+    ellipsoid: &Ellipsoid,
+) -> Rectangle {
+    let cep = EllipseGeometryLibrary::compute_ellipse_positions(
+        &EllipseGeometryOptions {
+            center: *center,
+            semi_major_axis,
+            semi_minor_axis,
+            rotation,
+            granularity,
+        },
+        false,
+        true,
+    );
+    let positions_flat = cep.outer_positions.unwrap_or_default();
+    let positions_count = positions_flat.len() / 3;
+    let mut positions = Vec::with_capacity(positions_count);
+    for i in 0..positions_count {
+        positions.push(Cartesian3::new(
+            positions_flat[i * 3],
+            positions_flat[i * 3 + 1],
+            positions_flat[i * 3 + 2],
+        ));
+    }
+    let mut rectangle = Rectangle::from_cartesian_array(&positions, Some(ellipsoid));
+    // Rectangle width goes beyond 180 degrees when the ellipse crosses a
+    // pole. When this happens, make the rectangle into a "circle" around
+    // the pole.
+    if rectangle.width() > CesiumMath::PI {
+        rectangle.north = if rectangle.north > 0.0 {
+            CesiumMath::PI_OVER_TWO - CesiumMath::EPSILON7
+        } else {
+            rectangle.north
+        };
+        rectangle.south = if rectangle.south < 0.0 {
+            CesiumMath::EPSILON7 - CesiumMath::PI_OVER_TWO
+        } else {
+            rectangle.south
+        };
+        rectangle.east = CesiumMath::PI;
+        rectangle.west = -CesiumMath::PI;
+    }
+    rectangle
+}
+
+/// Port of the module-level `textureCoordinateRotationPoints` function.
+fn texture_coordinate_rotation_points_for_ellipse(ellipse_geometry: &EllipseGeometry) -> [f64; 6] {
+    let st_rotation = -ellipse_geometry.st_rotation;
+    if st_rotation == 0.0 {
+        return [0.0, 0.0, 0.0, 1.0, 1.0, 0.0];
+    }
+
+    let cep = EllipseGeometryLibrary::compute_ellipse_positions(
+        &EllipseGeometryOptions {
+            center: ellipse_geometry.center,
+            semi_major_axis: ellipse_geometry.semi_major_axis,
+            semi_minor_axis: ellipse_geometry.semi_minor_axis,
+            rotation: ellipse_geometry.rotation,
+            granularity: ellipse_geometry.granularity,
+        },
+        false,
+        true,
+    );
+    let positions_flat = cep.outer_positions.unwrap_or_default();
+    let positions_count = positions_flat.len() / 3;
+    let mut positions = Vec::with_capacity(positions_count);
+    for i in 0..positions_count {
+        positions.push(Cartesian3::new(
+            positions_flat[i * 3],
+            positions_flat[i * 3 + 1],
+            positions_flat[i * 3 + 2],
+        ));
+    }
+
+    let bounding_rectangle = ellipse_geometry.rectangle();
+    Geometry::texture_coordinate_rotation_points(
+        &positions,
+        st_rotation,
+        &ellipse_geometry.ellipsoid,
+        &bounding_rectangle,
+    )
 }
 
 /// Options used by internal functions (mirrors JS `options` object).

@@ -11,12 +11,15 @@
 //! GPU-required tests skip gracefully (not fail) when no adapter exists,
 //! mirroring the Track B smoke-test convention.
 
+use std::collections::HashMap;
 use std::io::Cursor;
 
+use cesium_core::index_datatype::IndexDatatype;
+use cesium_core::resource::{ResourceBackend, ResourceError};
 use cesium_renderer::context::Context;
 use cesium_scene::gltf_image_loader::{GltfImageLoader, GltfImageLoaderOptions};
 use cesium_scene::gltf_index_buffer_loader::{
-    GltfIndexBufferLoader, GltfIndexBufferLoaderOptions,
+    GltfIndexBufferLoader, GltfIndexBufferLoaderOptions, IndicesTypedArray,
 };
 use cesium_scene::gltf_loader::{
     GltfAccessor, GltfBuffer, GltfBufferView, GltfImage, GltfJson, GltfSampler,
@@ -313,6 +316,37 @@ fn index_buffer_loader_widens_u8_indices() {
     assert_eq!(index_buffer.buffer().size_in_bytes(), 6);
 }
 
+/// CPU-side fidelity against the JS for componentType 5121: the typed
+/// array keeps the native u8 width and `index_datatype` reports the
+/// accessor's component type unchanged (the JS keeps the native width end
+/// to end; the Rust port only widens at the wgpu GPU boundary).
+#[test]
+fn index_buffer_loader_keeps_native_u8_typed_array() {
+    let gltf = gltf_indices_u8_embedded();
+    let mut loader = GltfIndexBufferLoader::try_new(
+        &gltf,
+        GltfIndexBufferLoaderOptions {
+            accessor_id: 0,
+            draco: None,
+            cache_key: None,
+            load_buffer: false,
+            load_typed_array: true,
+        },
+    )
+    .unwrap();
+    loader.load(&gltf).unwrap();
+    assert_eq!(loader.state(), ResourceLoaderState::Ready);
+    assert_eq!(
+        loader.typed_array(),
+        Some(&IndicesTypedArray::U8(vec![0, 1, 2]))
+    );
+    assert_eq!(loader.index_datatype(), IndexDatatype::UnsignedByte);
+    // IndicesTypedArray bookkeeping mirrors the JS union widths.
+    let typed_array = loader.typed_array().unwrap();
+    assert_eq!(typed_array.len(), 3);
+    assert_eq!(typed_array.byte_length(), 3);
+}
+
 // ---------------------------------------------------------------------------
 // GltfImageLoader (JS: `loads an image from a bufferView` / data URI /
 // external URI branches)
@@ -380,7 +414,8 @@ fn image_loader_decodes_data_uri() {
 }
 
 /// JS: external URIs resolve through the ResourceCache fetch; the Rust
-/// port defers fetching (load_external supplies the bytes instead).
+/// port routes them through `load_uri` with an injected backend (the
+/// synchronous `load` branch stays embedded-only).
 #[test]
 fn image_loader_external_uri_is_deferred() {
     let gltf = GltfJson {
@@ -397,6 +432,94 @@ fn image_loader_external_uri_is_deferred() {
     .unwrap();
     let error = loader.load(&gltf).unwrap_err();
     assert!(error.message.contains("External image URIs"));
+    assert_eq!(loader.state(), ResourceLoaderState::Failed);
+}
+
+/// A backend returning fixed image bytes (mirrors the ResourceCache fetch
+/// the JS `loadFromUri` branch performs).
+struct MockImageBackend {
+    bytes: Vec<u8>,
+}
+
+impl ResourceBackend for MockImageBackend {
+    async fn fetch_bytes(
+        &self,
+        _url: &str,
+        _headers: &HashMap<String, String>,
+    ) -> Result<Vec<u8>, ResourceError> {
+        Ok(self.bytes.clone())
+    }
+
+    async fn fetch_text(
+        &self,
+        _url: &str,
+        _headers: &HashMap<String, String>,
+    ) -> Result<String, ResourceError> {
+        Err(ResourceError::RequestFailed("text unsupported".to_string()))
+    }
+}
+
+/// JS `loadFromUri`: the external URI is fetched (mock backend) and the
+/// image decoded.
+#[test]
+fn image_loader_load_uri_fetches_and_decodes() {
+    let gltf = GltfJson {
+        images: vec![GltfImage {
+            uri: Some("texture.png".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut loader = GltfImageLoader::try_new(
+        &gltf,
+        GltfImageLoaderOptions { image_id: 0, cache_key: None },
+    )
+    .unwrap();
+    let backend = MockImageBackend { bytes: red_png_bytes() };
+    loader.load_uri(&gltf, &backend).unwrap();
+    assert_eq!(loader.state(), ResourceLoaderState::Ready);
+    let image = loader.image().expect("decoded image");
+    assert_eq!((image.width, image.height), (2, 2));
+}
+
+/// `load_uri` surfaces fetch failures as load errors.
+#[test]
+fn image_loader_load_uri_propagates_fetch_error() {
+    struct FailingBackend;
+    impl ResourceBackend for FailingBackend {
+        async fn fetch_bytes(
+            &self,
+            _url: &str,
+            _headers: &HashMap<String, String>,
+        ) -> Result<Vec<u8>, ResourceError> {
+            Err(ResourceError::HttpError {
+                status: 404,
+                message: "not found".to_string(),
+            })
+        }
+
+        async fn fetch_text(
+            &self,
+            _url: &str,
+            _headers: &HashMap<String, String>,
+        ) -> Result<String, ResourceError> {
+            Err(ResourceError::RequestFailed("text unsupported".to_string()))
+        }
+    }
+    let gltf = GltfJson {
+        images: vec![GltfImage {
+            uri: Some("missing.png".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut loader = GltfImageLoader::try_new(
+        &gltf,
+        GltfImageLoaderOptions { image_id: 0, cache_key: None },
+    )
+    .unwrap();
+    let error = loader.load_uri(&gltf, &FailingBackend).unwrap_err();
+    assert!(error.message.starts_with("Failed to load image"));
     assert_eq!(loader.state(), ResourceLoaderState::Failed);
 }
 

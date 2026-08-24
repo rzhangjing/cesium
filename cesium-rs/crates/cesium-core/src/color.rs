@@ -444,11 +444,18 @@ impl Color {
 
     /// Converts a 'float' color component in the range of 0 to 1.0 into
     /// a 'byte' color component in the range of 0 to 255.
-    pub fn float_to_byte(number: f64) -> u8 {
+    ///
+    /// Faithful to `Color.floatToByte`, which returns the JS number
+    /// `number === 1.0 ? 255 : (number * 256) | 0` WITHOUT clamping to
+    /// `[0, 255]`: out-of-range components keep their truncated (possibly
+    /// negative or > 255) value; byte truncation happens later, at the
+    /// typed-array store sites (`toRgba`), mirroring CesiumJS.
+    pub fn float_to_byte(number: f64) -> i32 {
         if number == 1.0 {
             255
         } else {
-            (number * 256.0) as u8
+            // JS `(number * 256.0) | 0`: ToInt32 truncation.
+            to_int32(number * 256.0)
         }
     }
 
@@ -493,20 +500,24 @@ impl Color {
 
     /// Creates a string containing CSS hex string color value for this color.
     pub fn to_css_hex_string(&self) -> String {
-        let r = Self::float_to_byte(self.red);
-        let g = Self::float_to_byte(self.green);
-        let b = Self::float_to_byte(self.blue);
+        let r = js_to_hex16(Self::float_to_byte(self.red));
+        let g = js_to_hex16(Self::float_to_byte(self.green));
+        let b = js_to_hex16(Self::float_to_byte(self.blue));
         if self.alpha < 1.0 {
-            let hex_alpha = Self::float_to_byte(self.alpha);
-            format!("#{r:02x}{g:02x}{b:02x}{hex_alpha:02x}")
+            let hex_alpha = js_to_hex16(Self::float_to_byte(self.alpha));
+            format!("#{r}{g}{b}{hex_alpha}")
         } else {
-            format!("#{r:02x}{g:02x}{b:02x}")
+            format!("#{r}{g}{b}")
         }
     }
 
     /// Converts this color to an array of red, green, blue, and alpha values
     /// that are in the range of 0 to 255.
-    pub fn to_bytes(&self) -> [u8; 4] {
+    ///
+    /// Faithful to `Color#toBytes`: the returned components are the raw
+    /// `float_to_byte` results (JS numbers), NOT clamped to `[0, 255]` for
+    /// out-of-range colors.
+    pub fn to_bytes(&self) -> [i32; 4] {
         [
             Self::float_to_byte(self.red),
             Self::float_to_byte(self.green),
@@ -523,12 +534,16 @@ impl Color {
 
     /// Converts this color to a single numeric unsigned 32-bit RGBA value,
     /// using the little-endian layout (see module-level DEVIATION note).
+    ///
+    /// Faithful to `Color#toRgba`/`bytesToRgba`: the `float_to_byte` results
+    /// are stored into a `Uint8Array` in JS, which wraps out-of-range values
+    /// modulo 256 before they are read back as a `Uint32`.
     pub fn to_rgba(&self) -> u32 {
         Self::bytes_to_rgba(
-            Self::float_to_byte(self.red),
-            Self::float_to_byte(self.green),
-            Self::float_to_byte(self.blue),
-            Self::float_to_byte(self.alpha),
+            wrap_uint8(Self::float_to_byte(self.red)),
+            wrap_uint8(Self::float_to_byte(self.green)),
+            wrap_uint8(Self::float_to_byte(self.blue)),
+            wrap_uint8(Self::float_to_byte(self.alpha)),
         )
     }
 
@@ -1365,4 +1380,45 @@ impl Color {
     pub const YELLOWGREEN: Color = Color::from_hex_triple(0x9A, 0xCD, 0x32);
     /// A completely transparent color (`new Color(0, 0, 0, 0)` in Color.js).
     pub const TRANSPARENT: Color = Color::new(0.0, 0.0, 0.0, 0.0);
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers mirroring JS coercion semantics
+// ---------------------------------------------------------------------------
+
+/// Mirrors the JS `ToInt32` coercion used by `(x) | 0`: non-finite values
+/// map to `0`; finite values are truncated toward zero and wrapped modulo
+/// 2^32 into the signed 32-bit range.
+fn to_int32(value: f64) -> i32 {
+    if !value.is_finite() {
+        return 0;
+    }
+    let m = value.trunc().rem_euclid(4294967296.0);
+    if m >= 2147483648.0 {
+        (m - 4294967296.0) as i32
+    } else {
+        m as i32
+    }
+}
+
+/// Mirrors `Number.prototype.toString(16)` for the integer results of
+/// `float_to_byte`: negative values keep their `-` sign (e.g. `-40`), and
+/// results shorter than two characters are zero-prefixed (`"f" -> "0f"`).
+fn js_to_hex16(value: i32) -> String {
+    let s = if value < 0 {
+        format!("-{:x}", -(value as i64))
+    } else {
+        format!("{:x}", value)
+    };
+    if s.len() < 2 {
+        format!("0{s}")
+    } else {
+        s
+    }
+}
+
+/// Mirrors storing a JS number into a `Uint8Array` element: truncation
+/// followed by wrapping modulo 256.
+fn wrap_uint8(value: i32) -> u8 {
+    value.rem_euclid(256) as u8
 }

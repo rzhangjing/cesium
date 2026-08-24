@@ -8,9 +8,9 @@ use cesium_core::cartesian3::Cartesian3;
 ///
 /// Deserializes center, radius, and ellipsoid from packed bytes.
 /// Constructs `CircleOutlineGeometry` and returns the packed result.
-pub fn create_circle_outline_geometry(params: &[u8]) -> Vec<u8> {
+pub fn create_circle_outline_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createCircleOutlineGeometry"))
 }
 
 /// Creates a circle outline geometry from unpacked parameters (for in-process use).

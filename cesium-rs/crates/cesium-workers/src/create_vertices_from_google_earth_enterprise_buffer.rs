@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/createVerticesFromGoogleEarthEnterpriseBuffer.js`.
+//! Ported from `packages/engine/Source/Workers/createVerticesFromGoogleEarthEnterpriseBuffer.js`.
 //!
 //! Worker entry point for creating terrain vertices from Google Earth Enterprise
 //! terrain buffer data.
@@ -7,9 +7,9 @@
 ///
 /// In CesiumJS, this receives Google Earth Enterprise terrain buffer data,
 /// decodes the proprietary format, and produces vertex positions on the ellipsoid.
-pub fn create_vertices_from_google_earth_enterprise_buffer(params: &[u8]) -> Vec<u8> {
+pub fn create_vertices_from_google_earth_enterprise_buffer(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createVerticesFromGoogleEarthEnterpriseBuffer"))
 }
 
 /// Creates terrain vertices from Google Earth Enterprise buffer (for in-process use).

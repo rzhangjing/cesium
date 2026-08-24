@@ -44,6 +44,56 @@ impl HeadingPitchRoll {
         Self::from_quaternion(quaternion, &mut result);
         result
     }
+
+    /// Compares the provided HeadingPitchRolls componentwise and returns
+    /// `true` if they pass an absolute or relative tolerance test, `false`
+    /// otherwise.
+    ///
+    /// Port of `HeadingPitchRoll.equalsEpsilon`. `None` mirrors JS
+    /// `undefined` (the JS `left === right` identity short-circuit is
+    /// subsumed by the componentwise comparison).
+    pub fn equals_epsilon(
+        left: Option<&Self>,
+        right: Option<&Self>,
+        relative_epsilon: Option<f64>,
+        absolute_epsilon: Option<f64>,
+    ) -> bool {
+        match (left, right) {
+            (Some(left), Some(right)) => {
+                CesiumMath::equals_epsilon(
+                    left.heading,
+                    right.heading,
+                    relative_epsilon,
+                    absolute_epsilon,
+                ) && CesiumMath::equals_epsilon(
+                    left.pitch,
+                    right.pitch,
+                    relative_epsilon,
+                    absolute_epsilon,
+                ) && CesiumMath::equals_epsilon(
+                    left.roll,
+                    right.roll,
+                    relative_epsilon,
+                    absolute_epsilon,
+                )
+            }
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    /// Compares this HeadingPitchRoll against the provided one
+    /// componentwise within the given tolerances.
+    ///
+    /// Port of `HeadingPitchRoll.prototype.equalsEpsilon`.
+    pub fn equals_epsilon_method(
+        &self,
+        right: &Self,
+        relative_epsilon: Option<f64>,
+        absolute_epsilon: Option<f64>,
+    ) -> bool {
+        Self::equals_epsilon(Some(self), Some(right), relative_epsilon, absolute_epsilon)
+    }
 }
 
 impl PartialEq for HeadingPitchRoll {

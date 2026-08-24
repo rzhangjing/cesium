@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/upsampleVerticesFromCesium3DTilesTerrain.js`.
+//! Ported from `packages/engine/Source/Workers/upsampleVerticesFromCesium3DTilesTerrain.js`.
 //!
 //! Worker entry point for upsampling 3D Tiles terrain vertices to higher resolution.
 
@@ -6,9 +6,9 @@
 ///
 /// In CesiumJS, this receives 3D Tiles terrain vertex data and upsamples
 /// it to a higher resolution grid using interpolation.
-pub fn upsample_vertices_from_cesium3_d_tiles_terrain(params: &[u8]) -> Vec<u8> {
+pub fn upsample_vertices_from_cesium3_d_tiles_terrain(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("upsampleVerticesFromCesium3DTilesTerrain"))
 }
 
 /// Upsamples 3D Tiles terrain vertices (for in-process use).

@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/createVectorTileGeometries.js`.
+//! Ported from `packages/engine/Source/Workers/createVectorTileGeometries.js`.
 //!
 //! Worker entry point for creating vector tile generic geometry features.
 
@@ -6,9 +6,9 @@
 ///
 /// In CesiumJS, this receives vector tile data and extracts generic geometry
 /// features (points, lines, polygons) for rendering.
-pub fn create_vector_tile_geometries(params: &[u8]) -> Vec<u8> {
+pub fn create_vector_tile_geometries(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createVectorTileGeometries"))
 }
 
 /// Creates vector tile geometries (for in-process use).

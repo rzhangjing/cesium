@@ -7,8 +7,9 @@
 //! a time-dynamic `Property` object (`ConstantProperty`, `SampledProperty`,
 //! `TimeIntervalCollectionProperty`, `CompositeProperty`, ...). This port
 //! materializes the *constant* subset of CZML directly onto the entity and
-//! graphics structs; sampled (`epoch`/packed time arrays), `interval`-based
-//! and `reference` properties are intentionally skipped.
+//! graphics structs; the full time-dynamic representation (sampled,
+//! interval-based, reference and material data) of the geometry packets is
+//! kept in the sidecar [`crate::czml_geometry::CzmlGeometryStore`].
 
 use serde_json::Value;
 
@@ -26,6 +27,7 @@ use cesium_core::quaternion::Quaternion;
 use cesium_core::time_interval::TimeInterval;
 
 use crate::billboard_graphics::BillboardGraphics;
+use crate::czml_geometry::{process_geometry_packet, CzmlGeometryStore};
 use crate::data_source::DataSource;
 use crate::data_source_clock::DataSourceClock;
 use crate::entity::Entity;
@@ -85,6 +87,10 @@ pub struct CzmlDataSource {
     version: Option<String>,
     entity_collection: EntityCollection,
     credit: Option<Credit>,
+    /// Sidecar store of the time-dynamic geometry data of the 11 CZML
+    /// geometry packet families (plus the polygon hierarchy and polyline
+    /// `followSurface` supplements).
+    czml_geometries: CzmlGeometryStore,
 }
 
 impl CzmlDataSource {
@@ -111,6 +117,7 @@ impl CzmlDataSource {
             version: None,
             entity_collection: EntityCollection::new(),
             credit: None,
+            czml_geometries: CzmlGeometryStore::default(),
         }
     }
 
@@ -148,6 +155,11 @@ impl CzmlDataSource {
     /// Returns the entity collection.
     pub fn entities(&self) -> &EntityCollection {
         &self.entity_collection
+    }
+
+    /// Returns the sidecar store of time-dynamic CZML geometry data.
+    pub fn czml_geometries(&self) -> &CzmlGeometryStore {
+        &self.czml_geometries
     }
 
     /// Returns the `changed` event.
@@ -294,6 +306,7 @@ impl CzmlDataSource {
             self.version = None;
             self.document_packet = DocumentPacket::default();
             self.entity_collection.remove_all();
+            self.czml_geometries.clear();
         }
 
         self.process_czml(czml, source_uri)?;
@@ -354,6 +367,7 @@ impl CzmlDataSource {
 
         if packet.get("delete").and_then(|v| v.as_bool()) == Some(true) {
             self.entity_collection.remove(&object_id);
+            self.czml_geometries.remove(&object_id);
         } else if object_id == "document" {
             self.process_document(packet)?;
         } else {
@@ -388,6 +402,12 @@ impl CzmlDataSource {
             process_billboard(entity, packet, source_uri);
             process_description(entity, packet);
             process_name(entity, packet);
+
+            // The time-dynamic geometry data of the 11 geometry packet
+            // families (box..wall, plus the polygon hierarchy / polyline
+            // followSurface supplements) lives in the sidecar store; the
+            // constant subset is mirrored onto the entity above.
+            process_geometry_packet(&mut self.czml_geometries, &object_id, packet, source_uri);
         }
 
         Ok(())
@@ -1109,7 +1129,7 @@ fn unpack_cartesian_array(array: &[f64]) -> Vec<Cartesian3> {
 
 /// Resolves a relative uri against the source uri (simplified mirror of
 /// `sourceUri.getDerivedResource({ url })` / `combineUris`).
-fn resolve_uri(source_uri: Option<&str>, uri: &str) -> String {
+pub(crate) fn resolve_uri(source_uri: Option<&str>, uri: &str) -> String {
     let Some(source_uri) = source_uri else {
         return uri.to_string();
     };

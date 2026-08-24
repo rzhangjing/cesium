@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/createVectorTilePolylines.js`.
+//! Ported from `packages/engine/Source/Workers/createVectorTilePolylines.js`.
 //!
 //! Worker entry point for creating vector tile polyline features.
 
@@ -6,9 +6,9 @@
 ///
 /// In CesiumJS, this receives vector tile data and extracts polyline features,
 /// creating line geometry for rendering.
-pub fn create_vector_tile_polylines(params: &[u8]) -> Vec<u8> {
+pub fn create_vector_tile_polylines(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createVectorTilePolylines"))
 }
 
 /// Creates vector tile polylines (for in-process use).

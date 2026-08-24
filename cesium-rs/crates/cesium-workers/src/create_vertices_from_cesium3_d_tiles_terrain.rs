@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/createVerticesFromCesium3DTilesTerrain.js`.
+//! Ported from `packages/engine/Source/Workers/createVerticesFromCesium3DTilesTerrain.js`.
 //!
 //! Worker entry point for creating terrain vertices from 3D Tiles terrain data.
 //! This handles the newer 3D Tiles-based terrain format.
@@ -8,9 +8,9 @@
 /// In CesiumJS, this receives 3D Tiles terrain content (mesh data in
 /// a tile-specific format), decodes it, and produces vertex positions
 /// suitable for rendering on the ellipsoid.
-pub fn create_vertices_from_cesium3_d_tiles_terrain(params: &[u8]) -> Vec<u8> {
+pub fn create_vertices_from_cesium3_d_tiles_terrain(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createVerticesFromCesium3DTilesTerrain"))
 }
 
 /// Creates terrain vertices from 3D Tiles terrain data (for in-process use).

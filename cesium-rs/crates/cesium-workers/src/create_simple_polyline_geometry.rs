@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/createSimplePolylineGeometry.js`.
+//! Ported from `packages/engine/Source/Workers/createSimplePolylineGeometry.js`.
 //!
 //! Worker entry point for creating simple (non-geodesic) polyline geometry.
 
@@ -8,9 +8,9 @@ use cesium_core::cartesian3::Cartesian3;
 ///
 /// Deserializes polyline positions and width from packed bytes.
 /// Constructs `SimplePolylineGeometry` and returns the packed result.
-pub fn create_simple_polyline_geometry(params: &[u8]) -> Vec<u8> {
+pub fn create_simple_polyline_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createSimplePolylineGeometry"))
 }
 
 /// Creates a simple polyline geometry from unpacked parameters (for in-process use).

@@ -612,9 +612,9 @@ fn czml_data_source_spec() {}
 #[ignore = "Requires XML parsing KML + network link handling"]
 fn kml_data_source_spec() {}
 
-#[test]
-#[ignore = "Requires XML parsing GPX + track/route handling"]
-fn gpx_data_source_spec() {}
+// GPX specs fully ported to `tests/gpx_data_source_spec.rs`
+// (one `#[test]` per original Jasmine `it()`). The exportKml specs live in
+// `tests/export_kml_spec.rs`.
 
 // Display/Cluster specs (require scene)
 #[test]

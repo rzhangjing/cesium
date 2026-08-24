@@ -84,3 +84,45 @@ fn equals() {
     assert_ne!(hpr, HeadingPitchRoll::new(2.0, 1.0, 3.0));
     assert_ne!(hpr, HeadingPitchRoll::new(1.0, 2.0, 4.0));
 }
+
+#[test]
+fn equals_epsilon_within_relative_tolerance() {
+    // Mirrors the CesiumJS HeadingPitchRoll.equalsEpsilon spec and the
+    // Phase 2 diff golden (hpr.equalsEpsilon.eq).
+    let left = HeadingPitchRoll::new(1.0, 2.0, 3.0);
+    let right = HeadingPitchRoll::new(1.001, 2.001, 2.999);
+    assert!(HeadingPitchRoll::equals_epsilon(
+        Some(&left),
+        Some(&right),
+        Some(0.01),
+        None
+    ));
+}
+
+#[test]
+fn equals_epsilon_outside_tolerance() {
+    // Phase 2 diff golden (hpr.equalsEpsilon.neq).
+    let left = HeadingPitchRoll::new(1.0, 2.0, 3.0);
+    let right = HeadingPitchRoll::new(1.5, 2.0, 3.0);
+    assert!(!HeadingPitchRoll::equals_epsilon(
+        Some(&left),
+        Some(&right),
+        Some(0.01),
+        None
+    ));
+}
+
+#[test]
+fn equals_epsilon_handles_undefined_like_js() {
+    let hpr = HeadingPitchRoll::new(1.0, 2.0, 3.0);
+    assert!(HeadingPitchRoll::equals_epsilon(None, None, Some(0.0), None));
+    assert!(!HeadingPitchRoll::equals_epsilon(Some(&hpr), None, Some(0.0), None));
+    assert!(!HeadingPitchRoll::equals_epsilon(None, Some(&hpr), Some(0.0), None));
+}
+
+#[test]
+fn equals_epsilon_method_variant() {
+    let hpr = HeadingPitchRoll::new(1.0, 2.0, 3.0);
+    assert!(hpr.equals_epsilon_method(&HeadingPitchRoll::new(1.0, 2.0, 3.0), Some(0.0), None));
+    assert!(!hpr.equals_epsilon_method(&HeadingPitchRoll::new(1.0, 2.0, 4.0), Some(0.1), None));
+}

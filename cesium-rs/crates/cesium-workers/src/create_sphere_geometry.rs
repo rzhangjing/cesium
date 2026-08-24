@@ -2,26 +2,38 @@
 //!
 //! Worker entry point for creating sphere geometry.
 
-use cesium_core::cartesian3::Cartesian3;
+use cesium_core::geometry::Geometry;
+use cesium_core::sphere_geometry::SphereGeometry;
+use cesium_core::vertex_format::VertexFormat;
 
 /// Creates sphere geometry in a worker.
 ///
-/// Deserializes sphere radius and center from packed bytes,
-/// constructs `SphereGeometry`, and returns the packed result.
-pub fn create_sphere_geometry(params: &[u8]) -> Vec<u8> {
+/// In CesiumJS, this unpacks a `SphereGeometry` from the packed
+/// parameters and returns `SphereGeometry.createGeometry(...)`.
+/// The Rust packed byte entry is not implemented yet (no binary pack
+/// format for geometry parameters/results), so it returns an explicit
+/// error; use [`create_sphere_geometry_unpacked`] for in-process
+/// geometry creation.
+pub fn create_sphere_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createSphereGeometry"))
 }
 
 /// Creates a sphere geometry from unpacked parameters (for in-process use).
 ///
+/// Mirrors the JS worker body: constructs a `SphereGeometry` and
+/// delegates to the ported `SphereGeometry.createGeometry`.
+/// (CesiumJS `SphereGeometry` is centered at the origin; it has no
+/// center parameter.)
+///
 /// # Arguments
 /// * `radius` - The sphere radius in meters.
-/// * `center` - The sphere center in world coordinates.
-pub fn create_sphere_geometry_unpacked(
-    _radius: f64,
-    _center: &Cartesian3,
-) -> Option<cesium_core::geometry::Geometry> {
-    // DEVIATION: SphereGeometry not yet ported
-    None
+pub fn create_sphere_geometry_unpacked(radius: f64) -> Option<Geometry> {
+    SphereGeometry::new(
+        Some(radius),
+        None,
+        None,
+        Some(VertexFormat::position_only()),
+    )
+    .create_geometry()
 }

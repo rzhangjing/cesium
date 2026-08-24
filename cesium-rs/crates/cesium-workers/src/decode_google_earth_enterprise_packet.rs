@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/decodeGoogleEarthEnterprisePacket.js`.
+//! Ported from `packages/engine/Source/Workers/decodeGoogleEarthEnterprisePacket.js`.
 //!
 //! Worker entry point for decoding Google Earth Enterprise terrain/image packets.
 
@@ -6,9 +6,9 @@
 ///
 /// In CesiumJS, this receives a Google Earth Enterprise packet (containing
 /// compressed terrain or imagery data) and decodes it into usable format.
-pub fn decode_google_earth_enterprise_packet(params: &[u8]) -> Vec<u8> {
+pub fn decode_google_earth_enterprise_packet(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("decodeGoogleEarthEnterprisePacket"))
 }
 
 /// Decodes a Google Earth Enterprise packet (for in-process use).

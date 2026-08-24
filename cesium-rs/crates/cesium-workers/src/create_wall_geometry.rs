@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/createWallGeometry.js`.
+//! Ported from `packages/engine/Source/Workers/createWallGeometry.js`.
 //!
 //! Worker entry point for creating wall geometry on the ellipsoid.
 
@@ -8,9 +8,9 @@ use cesium_core::cartesian3::Cartesian3;
 ///
 /// Deserializes wall positions, maximum/minimum heights, and granularity
 /// from packed bytes. Constructs `WallGeometry` and returns the packed result.
-pub fn create_wall_geometry(params: &[u8]) -> Vec<u8> {
+pub fn create_wall_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createWallGeometry"))
 }
 
 /// Creates a wall geometry from unpacked parameters (for in-process use).

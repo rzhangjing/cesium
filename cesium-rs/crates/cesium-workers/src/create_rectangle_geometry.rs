@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/createRectangleGeometry.js`.
+//! Ported from `packages/engine/Source/Workers/createRectangleGeometry.js`.
 //!
 //! Worker entry point for creating rectangle geometry on the ellipsoid.
 
@@ -9,9 +9,9 @@ use cesium_core::cartographic::Cartographic;
 /// Deserializes rectangle bounds (west, south, east, north), height,
 /// extruded height, granularity, vertex format, and rotation from
 /// packed bytes. Constructs `RectangleGeometry` and returns packed result.
-pub fn create_rectangle_geometry(params: &[u8]) -> Vec<u8> {
+pub fn create_rectangle_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createRectangleGeometry"))
 }
 
 /// Creates a rectangle geometry from unpacked parameters (for in-process use).

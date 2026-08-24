@@ -12,9 +12,9 @@ use cesium_core::ellipsoid::Ellipsoid;
 ///
 /// Deserializes center/radius/ellipsoid from packed bytes, constructs
 /// `CircleGeometry`, and returns the packed geometry result.
-pub fn create_circle_geometry(params: &[u8]) -> Vec<u8> {
+pub fn create_circle_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createCircleGeometry"))
 }
 
 /// Creates a `CircleGeometry` from unpacked parameters (for in-process use).

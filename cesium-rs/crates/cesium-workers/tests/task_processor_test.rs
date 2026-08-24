@@ -168,9 +168,59 @@ fn rejects_unknown_worker_name() {
 fn dispatches_builtin_geometry_worker_by_name() {
     // Built-in table routes CesiumJS module names to ported worker fns.
     let processor = TaskProcessor::new("createBoxGeometry");
-    // The ported create_box_geometry is a pack/unpack stub returning empty.
-    let result = processor.schedule_task(Vec::new()).unwrap().wait().unwrap();
-    assert!(result.is_empty());
+    // The packed byte entry has no Rust pack format yet, so dispatch
+    // must surface an explicit error instead of a silent empty result.
+    let err = processor
+        .schedule_task(Vec::new())
+        .unwrap()
+        .wait()
+        .unwrap_err();
+    assert!(err.contains("createBoxGeometry"), "unexpected error: {err}");
+    assert!(err.contains("not yet ported"), "unexpected error: {err}");
+}
+
+#[test]
+fn unimplemented_business_workers_report_explicit_errors() {
+    // SEM-4: byte entries of workers whose computation is not ported
+    // must fail with a clear error (CesiumJS modules always produce
+    // real data or throw), never a silent Ok(empty).
+    let names = [
+        "createRectangleGeometry",
+        "createPolylineGeometry",
+        "decodeDraco",
+        "transcodeKTX2",
+        "createVerticesFromHeightmap",
+    ];
+    for name in names {
+        let processor = TaskProcessor::new(name);
+        let err = processor
+            .schedule_task(Vec::new())
+            .unwrap()
+            .wait()
+            .unwrap_err();
+        assert!(err.contains(name), "unexpected error for {name}: {err}");
+        assert!(
+            err.contains("not yet ported"),
+            "unexpected error for {name}: {err}"
+        );
+    }
+}
+
+#[test]
+fn implemented_builtin_workers_still_succeed() {
+    // The noop bootstrap worker keeps returning an empty success.
+    let processor = TaskProcessor::new("noop");
+    assert_eq!(
+        processor.schedule_task(Vec::new()).unwrap().wait().unwrap(),
+        Vec::<u8>::new()
+    );
+    // transferTypedArrayTest echoes the input back unchanged.
+    let processor = TaskProcessor::new("transferTypedArrayTest");
+    let input = vec![1u8, 2, 3, 4];
+    assert_eq!(
+        processor.schedule_task(input.clone()).unwrap().wait().unwrap(),
+        input
+    );
 }
 
 #[test]

@@ -8,9 +8,9 @@
 /// In CesiumJS, this receives an array of geometry instances, merges their
 /// vertex attributes and indices into a single combined geometry, and returns
 /// the packed result. This is critical for batching static geometry.
-pub fn combine_geometry(params: &[u8]) -> Vec<u8> {
+pub fn combine_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("combineGeometry"))
 }
 
 /// Combines multiple geometries into one (for in-process use).

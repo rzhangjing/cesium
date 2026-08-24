@@ -66,6 +66,37 @@ fn oct_encode_negative_hemisphere() {
 }
 
 #[test]
+fn decode_rgb565_matches_js_bit_exactly() {
+    // Phase 2 diff golden (ac.decodeRGB565.a0): CesiumJS computes
+    // `component * normalize` in f64 and rounds exactly once into the
+    // Float32Array. Expected values are the f32 bit patterns produced by
+    // the Node golden generator (finding D2 regression guard).
+    let input: [u16; 7] = [0x0000, 0xffff, 0xf800, 0x07e0, 0x001f, 0x1234, 0xabcd];
+    let expected_bits: [[u32; 3]; 7] = [
+        [0x00000000, 0x00000000, 0x00000000],
+        [0x3f800000, 0x3f800000, 0x3f800000],
+        [0x3f800000, 0x00000000, 0x00000000],
+        [0x00000000, 0x3f800000, 0x00000000],
+        [0x00000000, 0x00000000, 0x3f800000],
+        [0x3d842108, 0x3e8a28a3, 0x3f25294a],
+        [0x3f2d6b5b, 0x3ef3cf3d, 0x3ed6b5ad],
+    ];
+    let decoded = AttributeCompression::decode_rgb565(&input);
+    assert_eq!(decoded.len(), 21);
+    for (i, bits) in expected_bits.iter().enumerate() {
+        for c in 0..3 {
+            assert_eq!(
+                decoded[i * 3 + c].to_bits(),
+                bits[c],
+                "pixel {i} channel {c}: got {:08x}, expected {:08x}",
+                decoded[i * 3 + c].to_bits(),
+                bits[c]
+            );
+        }
+    }
+}
+
+#[test]
 fn compress_and_decompress_texture_coordinates() {
     let coords = vec![
         Cartesian2::new(0.0, 0.0),

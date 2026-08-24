@@ -100,6 +100,16 @@ pub struct CesiumWidget {
     canvas_client_width: u32,
     /// Canvas client height in logical pixels.
     canvas_client_height: u32,
+    /// Canvas backing-store width in physical pixels (`canvas.width`).
+    canvas_width: u32,
+    /// Canvas backing-store height in physical pixels (`canvas.height`).
+    canvas_height: u32,
+    /// The current device pixel ratio (`window.devicePixelRatio` in
+    /// CesiumJS; supplied by the host window system in native builds).
+    device_pixel_ratio: f64,
+    /// The device pixel ratio observed at the last resize
+    /// (`this._lastDevicePixelRatio`).
+    last_device_pixel_ratio: f64,
     /// Whether the widget can currently render (non-zero size).
     can_render: bool,
     /// Whether the render loop is running.
@@ -142,6 +152,10 @@ impl CesiumWidget {
             use_browser_recommended_resolution: opts.use_browser_recommended_resolution,
             canvas_client_width: 0,
             canvas_client_height: 0,
+            canvas_width: 0,
+            canvas_height: 0,
+            device_pixel_ratio: 1.0,
+            last_device_pixel_ratio: 1.0,
             can_render: false,
             render_loop_running: false,
             tracked_entity_id: None,
@@ -236,29 +250,83 @@ impl CesiumWidget {
         self.can_render
     }
 
+    /// Returns the current device pixel ratio (`window.devicePixelRatio`
+    /// in CesiumJS).
+    pub fn device_pixel_ratio(&self) -> f64 {
+        self.device_pixel_ratio
+    }
+
+    /// Sets the device pixel ratio. In native builds the host window
+    /// system (winit) reports DPI changes through this setter; in
+    /// CesiumJS the value is read from `window.devicePixelRatio`.
+    pub fn set_device_pixel_ratio(&mut self, ratio: f64) {
+        self.device_pixel_ratio = ratio;
+    }
+
+    /// Returns the canvas backing-store width in physical pixels.
+    pub fn canvas_width(&self) -> u32 {
+        self.canvas_width
+    }
+
+    /// Returns the canvas backing-store height in physical pixels.
+    pub fn canvas_height(&self) -> u32 {
+        self.canvas_height
+    }
+
     /// Resizes the widget.
     ///
-    /// In CesiumJS, this reads canvas.clientWidth/Height and adjusts
-    /// the canvas resolution and camera frustum.
+    /// Port of `CesiumWidget.prototype.resize`: early-outs when neither
+    /// the client size nor the device pixel ratio changed (unless
+    /// `forceResize` is set), then runs `configureCanvasSize` (which
+    /// applies `configurePixelRatio`) and `configureCameraFrustum`,
+    /// updating the canvas resolution and camera aspect ratio.
     ///
     /// In Rust, this is called by the winit event handler on WindowResized.
     pub fn resize(&mut self, width: u32, height: u32) {
+        // CesiumWidget.js resize(): skip when nothing changed.
+        if !self.force_resize
+            && self.canvas_client_width == width
+            && self.canvas_client_height == height
+            && self.last_device_pixel_ratio == self.device_pixel_ratio
+        {
+            return;
+        }
+        self.force_resize = false;
+
+        // configurePixelRatio: browser recommended resolution forces a
+        // ratio of 1.0; otherwise the host-reported device pixel ratio
+        // is used (window.devicePixelRatio in CesiumJS).
         let pixel_ratio = if self.use_browser_recommended_resolution {
             1.0
         } else {
-            1.0 // DEVIATION: window.devicePixelRatio not available in Rust
+            self.device_pixel_ratio
         } * self.resolution_scale;
 
+        // configureCanvasSize
         self.canvas_client_width = width;
         self.canvas_client_height = height;
 
         let physical_width = (width as f64 * pixel_ratio) as u32;
         let physical_height = (height as f64 * pixel_ratio) as u32;
+        self.canvas_width = physical_width;
+        self.canvas_height = physical_height;
 
         self.can_render = physical_width != 0 && physical_height != 0;
+        self.last_device_pixel_ratio = self.device_pixel_ratio;
 
-        // In CesiumJS, this also updates scene.camera.frustum aspect ratio
-        // DEVIATION: Camera frustum update requires camera access
+        // configureCameraFrustum: update the camera aspect ratio from the
+        // new physical canvas size. CesiumJS sets frustum.aspectRatio for
+        // perspective frustums and derives top/bottom from right for
+        // orthographic ones; the Rust Camera models both projections
+        // through its aspect_ratio, so a single update covers both.
+        if physical_width != 0 && physical_height != 0 {
+            self.scene
+                .camera_mut()
+                .set_aspect_ratio(physical_width as f64 / physical_height as f64);
+        }
+
+        // CesiumJS also calls scene.requestRender() here; the Rust Scene
+        // render loop is driven by the host event loop instead.
     }
 
     /// Renders a single frame.

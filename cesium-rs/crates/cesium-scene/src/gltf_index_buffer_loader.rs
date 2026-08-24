@@ -12,8 +12,11 @@
 //! uploads them (the JS uploads through the ResourceCache job queue).
 //!
 //! DEVIATION: wgpu has no 8-bit index format, so `UNSIGNED_BYTE` indices
-//! are widened to 16-bit at GPU upload time (WebGL accepts Uint8 indices
-//! directly).
+//! are widened to 16-bit at GPU upload time (the JS keeps the native
+//! width end to end because WebGL accepts Uint8 indices directly). The
+//! CPU-side decode is faithful to the JS: `typed_array` keeps the native
+//! u8 width and `index_datatype` reports the accessor's component type
+//! (5121) unchanged.
 //!
 //! DEVIATION: the JS loader obtains the buffer view through the
 //! `ResourceCache`; the Rust port composes a [`GltfBufferViewLoader`]
@@ -166,6 +169,10 @@ impl GltfIndexBufferLoader {
     }
 
     /// The index datatype after decode.
+    ///
+    /// Mirrors the JS `indexDatatype` getter: reports the accessor's
+    /// component type unchanged (e.g. `UnsignedByte` for componentType
+    /// 5121), even after the GPU upload widens u8 indices to u16.
     pub fn index_datatype(&self) -> IndexDatatype {
         self.index_datatype
     }
@@ -288,8 +295,10 @@ impl GltfIndexBufferLoader {
     /// call. Consumes the pending indices (the GPU buffer keeps the data,
     /// mirroring the JS `process()` drop).
     ///
-    /// DEVIATION: 8-bit indices are widened to 16-bit (wgpu has no Uint8
-    /// index format).
+    /// DEVIATION: 8-bit indices are widened to 16-bit at this GPU
+    /// boundary only (wgpu has no Uint8 index format; the JS keeps the
+    /// native width because WebGL accepts Uint8 indices). Index values
+    /// are preserved exactly.
     ///
     /// # Errors
     /// Returns a [`RuntimeError`] when no indices are pending a GPU upload
@@ -302,7 +311,7 @@ impl GltfIndexBufferLoader {
         })?;
         let (bytes, index_datatype) = match indices {
             IndicesTypedArray::U8(values) => {
-                // DEVIATION: widen to u16 for wgpu.
+                // DEVIATION: widen u8 → u16 for wgpu (values preserved).
                 let widened: Vec<u8> = values
                     .iter()
                     .flat_map(|value| u16::from(*value).to_le_bytes())

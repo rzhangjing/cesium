@@ -212,7 +212,10 @@ pub fn process_worker_task(worker_name: &str, parameters: &[u8]) -> TaskResult {
     macro_rules! dispatch {
         ($($name:literal => $fun:path,)*) => {
             match worker_name {
-                $($name => return Ok($fun(parameters)),)*
+                // Built-in byte entries return Result themselves: ported
+                // computation yields Ok(data), unported entries yield an
+                // explicit "not yet ported" Err (never a silent empty Ok).
+                $($name => return $fun(parameters),)*
                 _ => {}
             }
         };
@@ -223,6 +226,9 @@ pub fn process_worker_task(worker_name: &str, parameters: &[u8]) -> TaskResult {
     use crate as w;
     if matches!(worker_name, "createTaskProcessorWorker" | "noop") {
         return w::create_task_processor_worker::noop_worker(parameters);
+    }
+    if worker_name == "transferTypedArrayTest" {
+        return w::transfer_typed_array_test::transfer_typed_array_test(parameters);
     }
     dispatch! {
         "createBoxGeometry" => w::create_box_geometry::create_box_geometry,
@@ -266,6 +272,10 @@ pub fn process_worker_task(worker_name: &str, parameters: &[u8]) -> TaskResult {
         "createVerticesFromQuantizedTerrainMesh" => w::create_vertices_from_quantized_terrain_mesh::create_vertices_from_quantized_terrain_mesh,
         "createWallGeometry" => w::create_wall_geometry::create_wall_geometry,
         "createWallOutlineGeometry" => w::create_wall_outline_geometry::create_wall_outline_geometry,
+        "decodeDraco" => w::decode_draco::decode_draco,
+        "decodeGoogleEarthEnterprisePacket" => w::decode_google_earth_enterprise_packet::decode_google_earth_enterprise_packet,
+        "decodeI3S" => w::decode_i3_s::decode_i3_s,
+        "transcodeKTX2" => w::transcode_ktx2::transcode_ktx2,
     }
 
     Err(format!("Unknown worker: {worker_name}"))

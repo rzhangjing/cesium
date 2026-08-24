@@ -9,14 +9,12 @@ use std::sync::Arc;
 use cesium_core::cartesian2::Cartesian2;
 use cesium_core::color::Color;
 use cesium_core::credit::Credit;
-use cesium_core::easing_function::sinusoidal_in_out;
 use cesium_core::ellipsoid::Ellipsoid;
 use cesium_core::event::Event;
 use cesium_core::julian_date::JulianDate;
 use cesium_core::matrix4::Matrix4;
 use cesium_core::cartesian3::Cartesian3;
 use cesium_core::pixel_format::PixelFormat;
-use cesium_core::transforms;
 use cesium_core::webgl_constants::WebGLConstants;
 use cesium_renderer::buffer_usage::BufferUsage;
 use cesium_renderer::clear_command::ClearCommand;
@@ -32,7 +30,9 @@ use cesium_renderer::uniform_state::UniformState;
 use cesium_renderer::vertex_array::{VertexArray, VertexAttribute};
 use cesium_shaders::wgsl;
 use crate::camera::Camera;
-use crate::camera_flight_path::{CameraFlight, CameraFlightChannel};
+use crate::camera_flight_path::{
+    CameraFlightChannel, CameraFlightPath, CameraFlightTweenOptions,
+};
 use crate::credit_display::CreditDisplay;
 use crate::frame_state::FrameState;
 use crate::globe::Globe;
@@ -286,8 +286,10 @@ impl Scene {
     /// the scene because the widgets traits take `&self`).
     ///
     /// Signature: `fly_to(&self, destination: Cartesian3, duration:
-    /// Option<f64>, complete: Option<Box<dyn FnOnce()>>)`. `duration`
-    /// defaults to 3.0 seconds (the JS default); the end orientation looks
+    /// Option<f64>, complete: Option<Box<dyn FnOnce()>>)`. The tween is
+    /// built by [`CameraFlightPath::create_tween`] (the JS
+    /// `CameraFlightPath.createTween` entry point), so `duration` defaults
+    /// to the JS distance-derived value and the end orientation looks
     /// straight down at the destination (the JS `setView` default).
     pub fn fly_to(
         &self,
@@ -295,102 +297,56 @@ impl Scene {
         duration: Option<f64>,
         complete: Option<Box<dyn FnOnce()>>,
     ) {
-        // End orientation: CesiumJS flyTo lands in the setView(destination)
-        // pose — looking straight down from the east-north-up frame.
-        let frame = transforms::east_north_up_to_fixed_frame_new(
-            &destination,
-            Some(&Ellipsoid::WGS84),
+        let tween = CameraFlightPath::create_tween(
+            &self.camera,
+            &self.flight_channel,
+            CameraFlightTweenOptions {
+                destination,
+                duration,
+                easing_function: None,
+                complete,
+                cancel: None,
+            },
         );
-        let e = &frame.elements;
-        let end_up = Cartesian3::new(e[4], e[5], e[6]);
-        let end_direction = Cartesian3::new(-e[8], -e[9], -e[10]);
-        self.fly_to_pose(destination, end_direction, end_up, duration, complete);
+        self.start_flight(tween);
     }
 
     /// Flies the camera to the home view (mirrors CesiumJS `camera.flyHome`):
     /// a position on the +X axis far enough that the whole WGS84 ellipsoid
     /// fits in the vertical field of view, looking at the center.
     ///
-    /// Signature: `fly_home(&self, duration: Option<f64>)`.
+    /// Signature: `fly_home(&self, duration: Option<f64>)`. The home
+    /// destination's straight-down pose (built by
+    /// [`CameraFlightPath::create_tween`]) looks at the ellipsoid center
+    /// (direction -X, up +Z), matching the JS `flyHome` end view.
     pub fn fly_home(&self, duration: Option<f64>) {
         let radius = Ellipsoid::WGS84.maximum_radius();
         let distance = radius / (self.camera.fov() * 0.5).sin();
-        self.fly_to_pose(
-            Cartesian3::new(distance, 0.0, 0.0),
-            Cartesian3::new(-1.0, 0.0, 0.0),
-            Cartesian3::new(0.0, 0.0, 1.0),
-            duration,
-            None,
+        let tween = CameraFlightPath::create_tween(
+            &self.camera,
+            &self.flight_channel,
+            CameraFlightTweenOptions {
+                destination: Cartesian3::new(distance, 0.0, 0.0),
+                duration,
+                easing_function: None,
+                complete: None,
+                cancel: None,
+            },
         );
+        self.start_flight(tween);
     }
 
-    /// Starts a tween-driven camera flight to an explicit end pose. Cancels
-    /// any in-flight flight first (mirrors the JS behavior of starting a new
-    /// tween on the same camera).
-    fn fly_to_pose(
-        &self,
-        end_position: Cartesian3,
-        end_direction: Cartesian3,
-        end_up: Cartesian3,
-        duration: Option<f64>,
-        complete: Option<Box<dyn FnOnce()>>,
-    ) {
-        let duration = duration.unwrap_or(3.0);
-
-        // Replace any previous flight: `remove` (not `cancel`) so the old
-        // tween's cancel callback does not clear the channel the new flight
-        // is about to install (mirrors the JS behavior where a new flyTo
-        // simply supersedes the in-flight tween).
+    /// Installs a flight tween, superseding any in-flight flight first.
+    ///
+    /// Uses `remove` (not `cancel`) on the previous tween so its cancel
+    /// callback does not clear the channel the new flight is about to
+    /// install (mirrors the JS behavior where a new flyTo simply supersedes
+    /// the in-flight tween).
+    fn start_flight(&self, tween: TweenOptions) {
         if let Some(id) = self.current_flight_tween.borrow_mut().take() {
             self.tweens.borrow_mut().remove(id);
         }
-
-        let flight = CameraFlight {
-            start_position: *self.camera.position(),
-            start_direction: *self.camera.direction(),
-            start_up: *self.camera.up(),
-            end_position,
-            end_direction,
-            end_up,
-            t: 0.0,
-            completed: false,
-        };
-        *self.flight_channel.borrow_mut() = Some(flight);
-
-        // Mirrors CesiumJS CameraFlightPath.createTween: a single eased
-        // value channel 0 → 1 with SINUSOIDAL_IN_OUT easing.
-        let mut options = TweenOptions::new(
-            vec![("value".to_string(), 0.0)],
-            vec![("value".to_string(), 1.0)],
-            duration,
-        );
-        options.easing_function = sinusoidal_in_out;
-
-        let update_channel = self.flight_channel.clone();
-        options.update = Some(Box::new(move |values| {
-            if let Some(flight) = update_channel.borrow_mut().as_mut() {
-                flight.t = values[0].1;
-            }
-        }));
-
-        let complete_channel = self.flight_channel.clone();
-        options.complete = Some(Box::new(move || {
-            // Signal the exact end pose; the camera consumes it next update.
-            if let Some(flight) = complete_channel.borrow_mut().as_mut() {
-                flight.completed = true;
-            }
-            if let Some(complete) = complete {
-                complete();
-            }
-        }));
-
-        let cancel_channel = self.flight_channel.clone();
-        options.cancel = Some(Box::new(move || {
-            // An explicit cancel (through `Scene::tweens`) stops the flight.
-            *cancel_channel.borrow_mut() = None;
-        }));
-
-        let id = self.tweens.borrow_mut().add(options);
+        let id = self.tweens.borrow_mut().add(tween);
         *self.current_flight_tween.borrow_mut() = Some(id);
     }
 
@@ -833,8 +789,8 @@ mod tests {
 
     /// Mirrors CameraSpec flyTo semantics through the scene: the camera
     /// animates toward the destination and the complete callback fires when
-    /// the duration elapses (default easing SINUSOIDAL_IN_OUT: t = 0.5 maps
-    /// to 0.5).
+    /// the duration elapses (default easing QUINTIC_IN_OUT: t = 0.5 maps to
+    /// 0.5, so the midpoint assertion holds).
     #[test]
     fn fly_to_animates_camera_and_completes() {
         let mut scene = Scene::new();
@@ -854,7 +810,7 @@ mod tests {
         let start = JulianDate::now();
         scene.render(&start);
 
-        // Half way through the flight: sinusoidal_in_out(0.5) = 0.5, so the
+        // Half way through the flight: quintic_in_out(0.5) = 0.5, so the
         // position is the midpoint of the start (origin) and destination.
         scene.render(&JulianDate::add_seconds_new(&start, 1.0));
         let mid_x = (Ellipsoid::WGS84.maximum_radius() + 1_000_000.0) * 0.5;

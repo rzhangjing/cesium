@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/createSphereOutlineGeometry.js`.
+//! Ported from `packages/engine/Source/Workers/createSphereOutlineGeometry.js`.
 //!
 //! Worker entry point for creating sphere outline geometry.
 
@@ -8,9 +8,9 @@ use cesium_core::cartesian3::Cartesian3;
 ///
 /// Deserializes sphere radius and center from packed bytes.
 /// Constructs `SphereOutlineGeometry` and returns the packed result.
-pub fn create_sphere_outline_geometry(params: &[u8]) -> Vec<u8> {
+pub fn create_sphere_outline_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createSphereOutlineGeometry"))
 }
 
 /// Creates a sphere outline from unpacked parameters (for in-process use).

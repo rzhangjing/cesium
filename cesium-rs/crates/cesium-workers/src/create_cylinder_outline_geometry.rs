@@ -2,25 +2,39 @@
 //!
 //! Worker entry point for creating cylinder outline geometry.
 
-use cesium_core::cartesian3::Cartesian3;
+use cesium_core::cylinder_outline_geometry::CylinderOutlineGeometry;
+use cesium_core::geometry::Geometry;
 
 /// Creates cylinder outline geometry in a worker.
 ///
-/// Deserializes cylinder length, top/bottom radii, and slices from packed bytes.
-/// Constructs `CylinderOutlineGeometry` and returns the packed result.
-pub fn create_cylinder_outline_geometry(params: &[u8]) -> Vec<u8> {
+/// In CesiumJS, this unpacks a `CylinderOutlineGeometry` from the packed
+/// parameters and returns `CylinderOutlineGeometry.createGeometry(...)`.
+/// The Rust packed byte entry is not implemented yet (no binary pack
+/// format for geometry parameters/results), so it returns an explicit
+/// error; use [`create_cylinder_outline_geometry_unpacked`] for
+/// in-process geometry creation.
+pub fn create_cylinder_outline_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createCylinderOutlineGeometry"))
 }
 
 /// Creates a cylinder outline from unpacked parameters (for in-process use).
+///
+/// Mirrors the JS worker body: constructs a `CylinderOutlineGeometry`
+/// and delegates to the ported `CylinderOutlineGeometry.createGeometry`.
 pub fn create_cylinder_outline_geometry_unpacked(
-    _length: f64,
-    _top_radius: f64,
-    _bottom_radius: f64,
-    _slices: u32,
-) -> Option<cesium_core::geometry::Geometry> {
-    // DEVIATION: CylinderOutlineGeometry not yet ported
-    let _ = Cartesian3::ZERO;
-    None
+    length: f64,
+    top_radius: f64,
+    bottom_radius: f64,
+    slices: u32,
+) -> Option<Geometry> {
+    CylinderOutlineGeometry::new(
+        length,
+        top_radius,
+        bottom_radius,
+        Some(slices as usize),
+        None,
+        None,
+    )
+    .create_geometry()
 }

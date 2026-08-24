@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/createVerticesFromQuantizedTerrainMesh.js`.
+//! Ported from `packages/engine/Source/Workers/createVerticesFromQuantizedTerrainMesh.js`.
 //!
 //! Worker entry point for creating terrain vertices from quantized mesh data.
 //! Quantized mesh is a compressed terrain format used by Cesium ion and other
@@ -15,9 +15,9 @@
 /// - u, v, h arrays (uint16) for vertex positions
 /// - Triangle indices
 /// - Edge indices (for stitching adjacent tiles)
-pub fn create_vertices_from_quantized_terrain_mesh(params: &[u8]) -> Vec<u8> {
+pub fn create_vertices_from_quantized_terrain_mesh(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createVerticesFromQuantizedTerrainMesh"))
 }
 
 /// Creates terrain vertices from quantized mesh data (for in-process use).

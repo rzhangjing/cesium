@@ -692,6 +692,57 @@ fn cesium_widget_propagates_options_scene_mode() {
 }
 
 #[test]
+fn cesium_widget_resize_applies_pixel_ratio_and_camera_frustum() {
+    // CesiumWidget.js resize(): configurePixelRatio + configureCanvasSize
+    // + configureCameraFrustum. With the browser recommended resolution
+    // disabled, the physical canvas scales by the device pixel ratio and
+    // the camera aspect ratio follows the physical size.
+    let options = CesiumWidgetOptions {
+        use_browser_recommended_resolution: false,
+        ..Default::default()
+    };
+    let mut widget = CesiumWidget::new(Some(options));
+    widget.set_device_pixel_ratio(2.0);
+
+    widget.resize(100, 50);
+
+    assert!(widget.can_render());
+    assert_eq!(widget.canvas_width(), 200);
+    assert_eq!(widget.canvas_height(), 100);
+    assert!((widget.scene().camera().aspect_ratio() - 2.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn cesium_widget_resize_recomputes_when_pixel_ratio_changes() {
+    // CesiumWidget.js resize() re-runs when the device pixel ratio
+    // changed even if the client size stayed the same
+    // (`_lastDevicePixelRatio` comparison).
+    let options = CesiumWidgetOptions {
+        use_browser_recommended_resolution: false,
+        ..Default::default()
+    };
+    let mut widget = CesiumWidget::new(Some(options));
+    widget.set_device_pixel_ratio(1.0);
+    widget.resize(100, 100);
+    assert_eq!(widget.canvas_width(), 100);
+
+    widget.set_device_pixel_ratio(2.0);
+    widget.resize(100, 100);
+    assert_eq!(widget.canvas_width(), 200);
+    assert_eq!(widget.canvas_height(), 200);
+}
+
+#[test]
+fn cesium_widget_resize_zero_size_cannot_render() {
+    let mut widget = CesiumWidget::new(None);
+    widget.resize(0, 0);
+    assert!(!widget.can_render());
+
+    widget.resize(640, 480);
+    assert!(widget.can_render());
+}
+
+#[test]
 fn viewer_tracked_entity_delegates_to_cesium_widget_and_raises_event() {
     let mut viewer = Viewer::new(None);
 
@@ -733,7 +784,9 @@ fn viewer_destroy_destroys_cesium_widget() {
 #[test]
 fn viewer_options_default_matches_js_defaults() {
     // Subset of JS constructor option defaults relevant to the engine
-    // side (widgets default to enabled, vrButton defaults to false).
+    // side (widgets default to enabled; vrButton and projectionPicker
+    // are opt-in and default to false — Viewer.js checks
+    // `if (options.projectionPicker)` / `if (options.vrButton)`).
     let options = ViewerOptions::default();
     assert!(options.animation);
     assert!(options.base_layer_picker);
@@ -742,7 +795,7 @@ fn viewer_options_default_matches_js_defaults() {
     assert!(options.home_button);
     assert!(options.info_box);
     assert!(options.navigation_help_button);
-    assert!(options.projection_picker);
+    assert!(!options.projection_picker);
     assert!(options.scene_mode_picker);
     assert!(options.selection_indicator);
     assert!(options.timeline);

@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/createGroundPolylineGeometry.js`.
+//! Ported from `packages/engine/Source/Workers/createGroundPolylineGeometry.js`.
 //!
 //! Worker entry point for creating ground-clamped polyline geometry.
 //! This generates geometry that is draped onto the terrain surface.
@@ -9,9 +9,9 @@ use cesium_core::cartesian3::Cartesian3;
 ///
 /// Deserializes polyline positions, width, and arc type from packed bytes.
 /// Constructs `GroundPolylineGeometry` and returns the packed result.
-pub fn create_ground_polyline_geometry(params: &[u8]) -> Vec<u8> {
+pub fn create_ground_polyline_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createGroundPolylineGeometry"))
 }
 
 /// Creates a ground polyline geometry from unpacked parameters (for in-process use).

@@ -8,6 +8,7 @@ use crate::culling_volume::CullingVolume;
 use crate::matrix4::Matrix4;
 
 /// An orthographic off-center viewing frustum.
+#[derive(Clone, Debug)]
 pub struct OrthographicOffCenterFrustum {
     pub left: Option<f64>,
     pub right: Option<f64>,

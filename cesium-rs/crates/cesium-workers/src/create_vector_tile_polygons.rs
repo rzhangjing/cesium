@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/createVectorTilePolygons.js`.
+//! Ported from `packages/engine/Source/Workers/createVectorTilePolygons.js`.
 //!
 //! Worker entry point for creating vector tile polygon features.
 
@@ -6,9 +6,9 @@
 ///
 /// In CesiumJS, this receives vector tile data and extracts polygon features,
 /// triangulating them for rendering.
-pub fn create_vector_tile_polygons(params: &[u8]) -> Vec<u8> {
+pub fn create_vector_tile_polygons(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createVectorTilePolygons"))
 }
 
 /// Creates vector tile polygons (for in-process use).

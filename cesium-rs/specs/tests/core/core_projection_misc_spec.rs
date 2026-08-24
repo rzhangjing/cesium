@@ -81,6 +81,33 @@ fn scale_to_geodetic_surface_on_surface() {
 }
 
 #[test]
+fn scale_to_geodetic_surface_terminates_on_nan_input() {
+    // Phase 2 finding D1 regression guard: CesiumJS's `do/while` exits when
+    // `func` becomes NaN (`NaN > EPSILON12` is false) and returns a result
+    // with NaN components. The Rust port must terminate the same way instead
+    // of looping forever.
+    let ellipsoid = Ellipsoid::WGS84.clone();
+    let radii = ellipsoid.radii();
+    let one_over_radii = Cartesian3::new(1.0 / radii.x, 1.0 / radii.y, 1.0 / radii.z);
+    let one_over_radii_squared = Cartesian3::new(
+        1.0 / (radii.x * radii.x),
+        1.0 / (radii.y * radii.y),
+        1.0 / (radii.z * radii.z),
+    );
+    let cartesian = Cartesian3::new(f64::NAN, 4518528.6, 0.0);
+    let result = scale_to_geodetic_surface_new(
+        &cartesian,
+        &one_over_radii,
+        &one_over_radii_squared,
+        CesiumMath::EPSILON12,
+    );
+    // JS returns a Cartesian3 whose components are all NaN here.
+    assert!(result.is_some());
+    let p = result.unwrap();
+    assert!(p.x.is_nan() && p.y.is_nan() && p.z.is_nan());
+}
+
+#[test]
 fn scale_to_geodetic_surface_in_place() {
     let ellipsoid = Ellipsoid::WGS84.clone();
     let radii = ellipsoid.radii();

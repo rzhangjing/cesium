@@ -1,10 +1,8 @@
 //! Ported from `packages/engine/Source/Core/ColorGeometryInstanceAttribute.js`.
 //!
 //! Per-instance color attribute.
-//!
-//! NOTE: `from_color` and `to_value` require the `Color` type which has not
-//! yet been ported.  The raw constructor and accessors are available now.
 
+use crate::color::Color;
 use crate::component_datatype::ComponentDatatype;
 
 /// Per-instance color attribute (RGBA, stored as f64 components in [0,1]).
@@ -47,6 +45,34 @@ impl ColorGeometryInstanceAttribute {
         left.value == right.value
     }
 
-    // TODO: from_color(color: &Color) — requires Color port
-    // TODO: to_value(color: &Color) -> Vec<u8> — requires Color port
+    /// Creates a new instance from a [`Color`].
+    ///
+    /// Port of `ColorGeometryInstanceAttribute.fromColor`.
+    pub fn from_color(color: &Color) -> Self {
+        Self::new(
+            Some(color.red),
+            Some(color.green),
+            Some(color.blue),
+            Some(color.alpha),
+        )
+    }
+
+    /// Converts a color to a byte array that can be used to assign a color
+    /// attribute.
+    ///
+    /// Port of `ColorGeometryInstanceAttribute.toValue`. Mirrors the JS
+    /// `Uint8Array(color.toBytes())` semantics: byte conversion wraps
+    /// out-of-range values modulo 256 (see `Color::to_bytes`, which returns
+    /// the unclamped JS `floatToByte` results).
+    pub fn to_value(color: &Color, result: Option<&mut [u8; 4]>) -> [u8; 4] {
+        let bytes = color.to_bytes();
+        let mut out = [0u8; 4];
+        for i in 0..4 {
+            out[i] = bytes[i].rem_euclid(256) as u8;
+        }
+        if let Some(r) = result {
+            *r = out;
+        }
+        out
+    }
 }

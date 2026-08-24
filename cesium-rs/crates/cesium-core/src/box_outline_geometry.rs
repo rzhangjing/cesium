@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 
 use crate::bounding_sphere::BoundingSphere;
+use crate::axis_aligned_bounding_box::AxisAlignedBoundingBox;
 use crate::cartesian3::Cartesian3;
 use crate::component_datatype::ComponentDatatype;
 use crate::geometry::Geometry;
@@ -43,6 +44,13 @@ impl BoxOutlineGeometry {
         let half = Cartesian3::multiply_by_scalar_new(dimensions, 0.5);
         let neg_half = Cartesian3::negate_new(&half);
         Self::new(&neg_half, &half, offset_attribute)
+    }
+
+    /// Creates an outline cube that encloses an axis-aligned bounding box.
+    ///
+    /// Port of `BoxOutlineGeometry.fromAxisAlignedBoundingBox`.
+    pub fn from_axis_aligned_bounding_box(bounding_box: &AxisAlignedBoundingBox) -> Self {
+        Self::new(&bounding_box.minimum, &bounding_box.maximum, None)
     }
 
     /// The number of `f64` elements needed to pack/unpack.

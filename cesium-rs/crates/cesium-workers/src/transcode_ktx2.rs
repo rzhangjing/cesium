@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/transcodeKTX2.js`.
+//! Ported from `packages/engine/Source/Workers/transcodeKTX2.js`.
 //!
 //! Worker entry point for transcoding KTX2/Basis Universal compressed textures.
 //! KTX2 is a GPU texture format that supports runtime transcoding to the
@@ -8,9 +8,9 @@
 ///
 /// In CesiumJS, this receives KTX2 texture data and uses the Basis Universal
 /// transcoder to convert it to a GPU-native compressed format.
-pub fn transcode_ktx2(params: &[u8]) -> Vec<u8> {
+pub fn transcode_ktx2(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("transcodeKTX2"))
 }
 
 /// Transcodes KTX2 texture data (for in-process use).

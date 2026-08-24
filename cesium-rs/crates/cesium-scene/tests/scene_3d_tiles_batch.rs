@@ -4,18 +4,22 @@
 //! geometric-error inheritance, screen space error math, traversal helpers
 //! and statistics.
 
+use std::collections::HashMap;
+
 use cesium_core::cartesian3::Cartesian3;
 use cesium_core::matrix4::Matrix4;
 use cesium_core::rectangle::Rectangle;
+use cesium_core::resource::{ResourceBackend, ResourceError};
 
 use cesium_scene::cesium3_d_tile::{
     create_bounding_volume, create_box, create_region, create_sphere, screen_space_error,
     screen_space_error_orthographic, BoundingVolumeHeader, Cesium3DTile, Cesium3DTileHeader,
-    ContentHeader, ParentTileContext,
+    ContentHeader,
 };
 use cesium_scene::cesium3_d_tile_refine::Cesium3DTileRefine;
 use cesium_scene::cesium3_d_tile_content_state::Cesium3DTileContentState;
-use cesium_scene::cesium3_d_tileset::Cesium3DTileset;
+use cesium_scene::cesium3_d_tileset::{Cesium3DTileset, Cesium3DTilesetOptions};
+use cesium_scene::shadow_mode::ShadowMode;
 use cesium_scene::cesium3_d_tileset_statistics::{
     Cesium3DTilesetStatistics, TileContentCounts,
 };
@@ -533,4 +537,116 @@ fn load_tileset_json_throws_for_invalid_json() {
     let mut tileset = Cesium3DTileset::new();
     let error = tileset.load_tileset_json("{ not json").unwrap_err();
     assert!(error.message.starts_with("Failed to load tileset JSON:"));
+}
+
+// ---------------------------------------------------------------------------
+// Cesium3DTileset::from_url (the JS `Cesium3DTileset.fromUrl` static entry
+// point: url fetch → options applied → `_loadTilesetJson` chain)
+// ---------------------------------------------------------------------------
+
+/// A backend returning a fixed JSON payload for every URL (mirrors the
+/// mocked-resource approach of Cesium3DTilesetSpec).
+struct MockTilesetBackend {
+    json: String,
+}
+
+impl ResourceBackend for MockTilesetBackend {
+    async fn fetch_bytes(
+        &self,
+        url: &str,
+        headers: &HashMap<String, String>,
+    ) -> Result<Vec<u8>, ResourceError> {
+        Ok(self.fetch_text(url, headers).await?.into_bytes())
+    }
+
+    async fn fetch_text(
+        &self,
+        _url: &str,
+        _headers: &HashMap<String, String>,
+    ) -> Result<String, ResourceError> {
+        Ok(self.json.clone())
+    }
+}
+
+// fromUrl: loads the Tileset fixture through the offline file backend and
+// records the URL.
+#[test]
+fn from_url_loads_fixture_tileset() {
+    let path = cesium_specs::data_path("Cesium3DTiles/Tilesets/Tileset/tileset.json");
+    assert!(path.exists(), "fixture missing: {}", path.display());
+    let url = path.to_str().unwrap();
+    let tileset = Cesium3DTileset::from_url(url, None).unwrap();
+    assert_eq!(tileset.url.as_deref(), Some(url));
+    assert!(tileset.root().is_some());
+    assert!(tileset.statistics().number_of_tiles_total > 0);
+    // Constructor defaults survive when no options are supplied.
+    assert!(tileset.show);
+    assert!((tileset.maximum_screen_space_error - 16.0).abs() < 1e-12);
+}
+
+// fromUrl: the constructor options are applied to the tileset.
+#[test]
+fn from_url_applies_options() {
+    let backend = MockTilesetBackend {
+        json: r#"{"asset":{"version":"1.1"},"geometricError":100,
+                  "root":{"boundingVolume":{"box":[0,0,0,1,0,0,0,1,0,0,0,1]},
+                          "geometricError":50,"refine":"REPLACE"}}"#
+            .to_string(),
+    };
+    let scale_matrix = Matrix4::from_scale_new(&Cartesian3::new(2.0, 2.0, 2.0));
+    let tileset = Cesium3DTileset::from_url_with_backend(
+        "mock://tileset.json",
+        Some(Cesium3DTilesetOptions {
+            show: Some(false),
+            model_matrix: Some(scale_matrix),
+            shadows: Some(ShadowMode::Disabled),
+            maximum_screen_space_error: Some(8.0),
+            maximum_memory_usage: Some(128.0),
+            preload_when_visible: Some(true),
+        }),
+        &backend,
+    )
+    .unwrap();
+    assert!(!tileset.show);
+    assert_eq!(tileset.model_matrix, scale_matrix);
+    assert!(matches!(tileset.shadows, ShadowMode::Disabled));
+    assert!((tileset.maximum_screen_space_error - 8.0).abs() < 1e-12);
+    assert!((tileset.maximum_memory_usage - 128.0).abs() < 1e-12);
+    assert!(tileset.preload_when_visible);
+}
+
+// fromUrl: the mock backend drives the full load chain (fetch → parse →
+// hierarchy) and the tileset-level geometricError is stored.
+#[test]
+fn from_url_with_backend_builds_hierarchy() {
+    let backend = MockTilesetBackend {
+        json: r#"{"asset":{"version":"1.1"},"geometricError":100,
+                  "root":{"boundingVolume":{"box":[0,0,0,1,0,0,0,1,0,0,0,1]},
+                          "geometricError":50,"refine":"REPLACE"}}"#
+            .to_string(),
+    };
+    let tileset =
+        Cesium3DTileset::from_url_with_backend("mock://tileset.json", None, &backend).unwrap();
+    assert_eq!(tileset.url.as_deref(), Some("mock://tileset.json"));
+    assert!(tileset.root().is_some());
+    assert_eq!(tileset.tiles().len(), 1);
+    assert!((tileset.geometric_error() - 100.0).abs() < 1e-12);
+}
+
+// fromUrl: an unfetchable URL returns a RuntimeError (the JS promise
+// rejects).
+#[test]
+fn from_url_missing_file_errors() {
+    let error = match Cesium3DTileset::from_url("missing/tileset.json", None) {
+        Err(error) => error,
+        Ok(_) => panic!("expected a fetch error"),
+    };
+    assert!(!error.message.is_empty());
+}
+
+// fromUrl: the `url is required` DeveloperError fires in debug builds.
+#[test]
+#[should_panic(expected = "url is required")]
+fn from_url_empty_url_panics_in_debug() {
+    let _ = Cesium3DTileset::from_url("", None);
 }

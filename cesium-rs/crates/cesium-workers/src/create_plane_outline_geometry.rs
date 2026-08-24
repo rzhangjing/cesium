@@ -2,24 +2,26 @@
 //!
 //! Worker entry point for creating plane outline geometry.
 
-use cesium_core::cartesian3::Cartesian3;
+use cesium_core::geometry::Geometry;
+use cesium_core::plane_outline_geometry::PlaneOutlineGeometry;
 
 /// Creates plane outline geometry in a worker.
 ///
-/// Deserializes plane origin and dimensions from packed bytes.
-/// Constructs `PlaneOutlineGeometry` and returns the packed result.
-pub fn create_plane_outline_geometry(params: &[u8]) -> Vec<u8> {
+/// In CesiumJS, this returns `PlaneOutlineGeometry.createGeometry(...)`.
+/// The Rust packed byte entry is not implemented yet (no binary pack
+/// format for geometry parameters/results), so it returns an explicit
+/// error; use [`create_plane_outline_geometry_unpacked`] for in-process
+/// geometry creation.
+pub fn create_plane_outline_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createPlaneOutlineGeometry"))
 }
 
 /// Creates a plane outline from unpacked parameters (for in-process use).
-pub fn create_plane_outline_geometry_unpacked(
-    _origin: &Cartesian3,
-    _normal: &Cartesian3,
-    _width: f64,
-    _height: f64,
-) -> Option<cesium_core::geometry::Geometry> {
-    // DEVIATION: PlaneOutlineGeometry not yet ported
-    None
+///
+/// Mirrors the JS worker body: `PlaneOutlineGeometry.createGeometry()`.
+/// CesiumJS `PlaneOutlineGeometry` takes no parameters (unit plane
+/// outline centered at the origin).
+pub fn create_plane_outline_geometry_unpacked() -> Option<Geometry> {
+    Some(PlaneOutlineGeometry::create_geometry())
 }

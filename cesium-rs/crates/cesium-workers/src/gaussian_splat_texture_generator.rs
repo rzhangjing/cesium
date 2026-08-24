@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/gaussianSplatTextureGenerator.js`.
+//! Ported from `packages/engine/Source/Workers/gaussianSplatTextureGenerator.js`.
 //!
 //! Worker entry point for generating Gaussian splat textures from sorted splat data.
 
@@ -6,9 +6,9 @@
 ///
 /// In CesiumJS, this receives sorted Gaussian splat data and generates
 /// the texture atlases used for rendering (position/opacity/color textures).
-pub fn gaussian_splat_texture_generator(params: &[u8]) -> Vec<u8> {
+pub fn gaussian_splat_texture_generator(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("gaussianSplatTextureGenerator"))
 }
 
 /// Generates Gaussian splat textures (for in-process use).

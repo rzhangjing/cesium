@@ -2,19 +2,27 @@
 //!
 //! Worker entry point for creating cylinder geometry.
 
-use cesium_core::cartesian3::Cartesian3;
+use cesium_core::cylinder_geometry::CylinderGeometry;
+use cesium_core::geometry::Geometry;
+use cesium_core::vertex_format::VertexFormat;
 
 /// Creates cylinder geometry in a worker.
 ///
-/// Deserializes cylinder parameters (length, top radius, bottom radius,
-/// slices, vertex format) from packed bytes, constructs `CylinderGeometry`,
-/// and returns the packed result.
-pub fn create_cylinder_geometry(params: &[u8]) -> Vec<u8> {
+/// In CesiumJS, this unpacks a `CylinderGeometry` from the packed
+/// parameters and returns `CylinderGeometry.createGeometry(...)`.
+/// The Rust packed byte entry is not implemented yet (no binary pack
+/// format for geometry parameters/results), so it returns an explicit
+/// error; use [`create_cylinder_geometry_unpacked`] for in-process
+/// geometry creation.
+pub fn create_cylinder_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createCylinderGeometry"))
 }
 
 /// Creates a cylinder geometry from unpacked parameters (for in-process use).
+///
+/// Mirrors the JS worker body: constructs a `CylinderGeometry` and
+/// delegates to the ported `CylinderGeometry.createGeometry`.
 ///
 /// # Arguments
 /// * `length` - The cylinder length.
@@ -22,12 +30,18 @@ pub fn create_cylinder_geometry(params: &[u8]) -> Vec<u8> {
 /// * `bottom_radius` - Radius at the bottom cap.
 /// * `slices` - Number of radial subdivisions.
 pub fn create_cylinder_geometry_unpacked(
-    _length: f64,
-    _top_radius: f64,
-    _bottom_radius: f64,
-    _slices: u32,
-) -> Option<cesium_core::geometry::Geometry> {
-    // DEVIATION: CylinderGeometry not yet ported
-    let _ = Cartesian3::ZERO;
-    None
+    length: f64,
+    top_radius: f64,
+    bottom_radius: f64,
+    slices: u32,
+) -> Option<Geometry> {
+    CylinderGeometry::new(
+        length,
+        top_radius,
+        bottom_radius,
+        Some(slices as usize),
+        Some(VertexFormat::position_only()),
+        None,
+    )
+    .create_geometry()
 }

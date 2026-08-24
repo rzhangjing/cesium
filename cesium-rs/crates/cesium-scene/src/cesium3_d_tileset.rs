@@ -2,14 +2,18 @@
 //!
 //! A 3D Tiles tileset, containing a hierarchy of tiles with geometric content.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use cesium_core::bounding_sphere::BoundingSphere;
 use cesium_core::matrix4::Matrix4;
+use cesium_core::resource::ResourceBackend;
 use cesium_core::runtime_error::RuntimeError;
 
 use crate::cesium3_d_tile::{Cesium3DTile, Cesium3DTileHeader};
 use crate::cesium3_d_tileset_statistics::Cesium3DTilesetStatistics;
+use crate::file_resource_backend::FileResourceBackend;
 use crate::frame_state::FrameState;
 use crate::shadow_mode::ShadowMode;
 
@@ -48,6 +52,39 @@ pub struct TilesetHeader {
     /// Extensions required by the tileset.
     #[serde(default, rename = "extensionsRequired")]
     pub extensions_required: Vec<String>,
+}
+
+/// Initialization options for [`Cesium3DTileset`], mirroring the subset of
+/// `Cesium3DTileset.ConstructorOptions` consumed by the CPU port.
+///
+/// Every field is optional; `None` keeps the constructor default. The JS
+/// exposes many more (GPU/traversal-tuning) options that the port does not
+/// yet model.
+#[derive(Debug, Clone, Default)]
+pub struct Cesium3DTilesetOptions {
+    /// Whether the tileset is shown (JS `show`, default `true`).
+    pub show: Option<bool>,
+    /// The model matrix applied to the tileset root (JS `modelMatrix`,
+    /// default `Matrix4.IDENTITY`).
+    pub model_matrix: Option<Matrix4>,
+    /// The shadow mode (JS `shadows`, default `ShadowMode.ENABLED`).
+    pub shadows: Option<ShadowMode>,
+    /// The maximum screen-space error driving LOD (JS
+    /// `maximumScreenSpaceError`, default 16).
+    pub maximum_screen_space_error: Option<f64>,
+    /// The maximum memory usage in MB (JS legacy `maximumMemoryUsage`,
+    /// default 512).
+    pub maximum_memory_usage: Option<f64>,
+    /// Whether to preload ancestors of visible tiles (JS
+    /// `preloadWhenHidden`, default `false`).
+    pub preload_when_visible: Option<bool>,
+}
+
+impl Cesium3DTilesetOptions {
+    /// Creates empty options (all constructor defaults).
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 /// A 3D Tiles tileset, containing a hierarchy of tiles with geometric content.
@@ -112,6 +149,78 @@ impl Cesium3DTileset {
             tiles: Vec::new(),
             root: None,
         }
+    }
+
+    /// Creates a tileset from a tileset JSON URL, mirroring the JS static
+    /// entry point `Cesium3DTileset.fromUrl(url, options)`.
+    ///
+    /// The JSON is fetched through a [`FileResourceBackend`] (offline
+    /// `file://` reads, matching the project's no-network policy), the
+    /// constructor `options` are applied, and the tile hierarchy is built
+    /// through [`Self::load_tileset_json`] (the JS `_loadTilesetJson`
+    /// chain). The JS returns a promise that resolves once the tileset is
+    /// ready; the port resolves the whole chain synchronously.
+    ///
+    /// # Errors
+    /// Returns a [`RuntimeError`] when the URL cannot be fetched or the
+    /// tileset JSON is invalid.
+    pub fn from_url(
+        url: &str,
+        options: Option<Cesium3DTilesetOptions>,
+    ) -> Result<Self, RuntimeError> {
+        Self::from_url_with_backend(url, options, &FileResourceBackend::new())
+    }
+
+    /// Same as [`Self::from_url`] with an injected [`ResourceBackend`], so
+    /// tests (and alternative backends) can drive the load path without
+    /// touching the filesystem layout expected by [`FileResourceBackend`].
+    ///
+    /// # Errors
+    /// Returns a [`RuntimeError`] when the URL cannot be fetched or the
+    /// tileset JSON is invalid.
+    pub fn from_url_with_backend<B: ResourceBackend>(
+        url: &str,
+        options: Option<Cesium3DTilesetOptions>,
+        backend: &B,
+    ) -> Result<Self, RuntimeError> {
+        //>> DeveloperError: url is required.
+        debug_assert!(!url.is_empty(), "url is required.");
+
+        let mut tileset = Self::new();
+
+        // Apply the constructor options (mirrors the `options.*` branch of
+        // the JS constructor body).
+        if let Some(options) = options {
+            if let Some(show) = options.show {
+                tileset.show = show;
+            }
+            if let Some(model_matrix) = options.model_matrix {
+                tileset.model_matrix = model_matrix;
+            }
+            if let Some(shadows) = options.shadows {
+                tileset.shadows = shadows;
+            }
+            if let Some(maximum_screen_space_error) = options.maximum_screen_space_error {
+                tileset.maximum_screen_space_error = maximum_screen_space_error;
+            }
+            if let Some(maximum_memory_usage) = options.maximum_memory_usage {
+                tileset.maximum_memory_usage = maximum_memory_usage;
+            }
+            if let Some(preload_when_visible) = options.preload_when_visible {
+                tileset.preload_when_visible = preload_when_visible;
+            }
+        }
+
+        tileset.url = Some(url.to_owned());
+
+        // Mirrors `Resource.fetchJson` → `_loadTilesetJson` (the JS
+        // `fromUrl` promise chain); the offline fetch resolves entirely
+        // through synchronous steps, so a no-op-waker poll loop converges.
+        let json = block_on_sync(backend.fetch_text(url, &HashMap::new()))
+            .map_err(|error| RuntimeError::new(Some(&error.to_string())))?;
+        tileset.load_tileset_json(&json)?;
+
+        Ok(tileset)
     }
 
     /// Parses a tileset.json string and builds the tile hierarchy.
@@ -244,4 +353,25 @@ impl Cesium3DTileset {
 
 impl Default for Cesium3DTileset {
     fn default() -> Self { Self::new() }
+}
+
+/// Drives a future to completion on the current thread without an executor.
+///
+/// The offline fetch chain resolves entirely through synchronous steps
+/// (local file reads), so a no-op-waker poll loop always converges; the
+/// loop is capped defensively against unexpected pending futures. Mirrors
+/// the helper of the same name in `globe_terrain_fetcher.rs`.
+fn block_on_sync<F: std::future::Future>(future: F) -> F::Output {
+    use std::pin::pin;
+    use std::task::{Context, Poll, Waker};
+
+    let mut context = Context::from_waker(Waker::noop());
+    let mut future = pin!(future);
+    for _ in 0..64 {
+        match future.as_mut().poll(&mut context) {
+            Poll::Ready(output) => return output,
+            Poll::Pending => {}
+        }
+    }
+    panic!("block_on_sync: future did not resolve within 64 polls")
 }

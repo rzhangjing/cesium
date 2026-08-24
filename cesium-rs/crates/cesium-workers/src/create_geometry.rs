@@ -43,17 +43,16 @@ pub enum GeometryType {
 /// This is the main entry point called by [`TaskProcessor`](crate::task_processor::TaskProcessor)
 /// when creating geometry on a background thread.
 /// Mirrors CesiumJS `createGeometry` (272 lines).
-pub fn create_geometry(params: &[u8]) -> Vec<u8> {
-    // DEVIATION: In production, this would deserialize params, determine the geometry type,
-    // and dispatch to the appropriate create_*_geometry function.
-    //
-    // The flow is:
-    // 1. Deserialize geometry options from params
-    // 2. Match on geometry type
-    // 3. Call the appropriate geometry creation function
-    // 4. Serialize the result and return
+///
+/// In CesiumJS, this deserializes the geometry subtask name and packed
+/// geometry, then delegates to the matching `create*Geometry` module.
+/// The Rust packed byte entry is not implemented yet (no binary pack
+/// format for geometry parameters/results), so it returns an explicit
+/// error instead of a silent empty result; in-process callers should use
+/// the typed `create_*_geometry_unpacked` entry points directly.
+pub fn create_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createGeometry"))
 }
 
 /// Returns the geometry type name from a string.

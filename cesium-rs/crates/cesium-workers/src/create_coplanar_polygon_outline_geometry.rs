@@ -8,9 +8,9 @@ use cesium_core::cartesian3::Cartesian3;
 ///
 /// Deserializes coplanar polygon positions from packed bytes.
 /// Constructs `CoplanarPolygonOutlineGeometry` and returns the packed result.
-pub fn create_coplanar_polygon_outline_geometry(params: &[u8]) -> Vec<u8> {
+pub fn create_coplanar_polygon_outline_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createCoplanarPolygonOutlineGeometry"))
 }
 
 /// Creates a coplanar polygon outline from unpacked parameters (for in-process use).

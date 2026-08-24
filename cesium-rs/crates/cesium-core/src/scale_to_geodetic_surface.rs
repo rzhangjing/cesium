@@ -100,7 +100,13 @@ pub fn scale_to_geodetic_surface(
 
         correction = func / derivative;
 
-        if func.abs() <= CesiumMath::EPSILON12 {
+        // Faithful mirror of the JS `do/while` condition
+        // `Math.abs(func) > CesiumMath.EPSILON12`: for non-converging /
+        // non-finite inputs `func` becomes `NaN`, and `NaN > EPSILON12`
+        // is false, so CesiumJS exits the loop here and proceeds with the
+        // (NaN) multipliers. The previous `<=` formulation never held for
+        // NaN and looped forever (Phase 2 finding D1).
+        if !(func.abs() > CesiumMath::EPSILON12) {
             break;
         }
     }

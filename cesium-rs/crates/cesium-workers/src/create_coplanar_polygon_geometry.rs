@@ -9,9 +9,9 @@ use cesium_core::cartesian3::Cartesian3;
 ///
 /// Deserializes polygon positions (all assumed coplanar) from packed bytes,
 /// constructs `CoplanarPolygonGeometry`, and returns the packed result.
-pub fn create_coplanar_polygon_geometry(params: &[u8]) -> Vec<u8> {
+pub fn create_coplanar_polygon_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createCoplanarPolygonGeometry"))
 }
 
 /// Creates a coplanar polygon geometry from unpacked parameters (for in-process use).
@@ -19,8 +19,11 @@ pub fn create_coplanar_polygon_geometry(params: &[u8]) -> Vec<u8> {
 /// # Arguments
 /// * `positions` - Coplanar polygon vertex positions.
 pub fn create_coplanar_polygon_geometry_unpacked(
-    _positions: &[Cartesian3],
+    positions: &[Cartesian3],
 ) -> Option<cesium_core::geometry::Geometry> {
-    // DEVIATION: CoplanarPolygonGeometry not yet ported
-    None
+    cesium_core::coplanar_polygon_geometry::CoplanarPolygonGeometry::new(
+        positions.to_vec(),
+        None,
+    )
+    .create_geometry()
 }

@@ -59,6 +59,142 @@ impl CorridorOutlineGeometry {
             offset_attribute,
         }
     }
+
+    /// Accessors.
+    pub fn positions(&self) -> &[Cartesian3] {
+        &self.positions
+    }
+
+    pub fn width(&self) -> f64 {
+        self.width
+    }
+
+    pub fn height(&self) -> f64 {
+        self.height
+    }
+
+    pub fn extruded_height(&self) -> f64 {
+        self.extruded_height
+    }
+
+    pub fn corner_type(&self) -> CornerType {
+        self.corner_type
+    }
+
+    pub fn granularity(&self) -> f64 {
+        self.granularity
+    }
+
+    pub fn ellipsoid(&self) -> &Ellipsoid {
+        &self.ellipsoid
+    }
+
+    /// The number of elements used to pack the object into an array.
+    ///
+    /// DEVIATION: JS `packedLength` is an instance property computed in the
+    /// constructor; Rust exposes it as `packed_length(&self)`.
+    pub fn packed_length(&self) -> usize {
+        1 + self.positions.len() * Cartesian3::PACKED_LENGTH
+            + Ellipsoid::PACKED_LENGTH
+            + 6
+    }
+
+    /// Stores the provided instance into the provided array.
+    pub fn pack(&self, array: &mut [f64], starting_index: Option<usize>) {
+        let mut si = starting_index.unwrap_or(0);
+
+        let positions = &self.positions;
+        array[si] = positions.len() as f64;
+        si += 1;
+
+        for position in positions {
+            Cartesian3::pack(position, array, Some(si));
+            si += Cartesian3::PACKED_LENGTH;
+        }
+
+        Ellipsoid::pack(&self.ellipsoid, array, Some(si));
+        si += Ellipsoid::PACKED_LENGTH;
+
+        array[si] = self.width;
+        si += 1;
+        array[si] = self.height;
+        si += 1;
+        array[si] = self.extruded_height;
+        si += 1;
+        array[si] = self.corner_type as i32 as f64;
+        si += 1;
+        array[si] = self.granularity;
+        si += 1;
+        array[si] = match &self.offset_attribute {
+            Some(v) => *v as u32 as f64,
+            None => -1.0,
+        };
+    }
+
+    /// Retrieves an instance from a packed array.
+    pub fn unpack(array: &[f64], starting_index: Option<usize>, result: Option<&mut Self>) -> Self {
+        let mut si = starting_index.unwrap_or(0);
+
+        let length = array[si] as usize;
+        si += 1;
+        let mut positions = Vec::with_capacity(length);
+        for _ in 0..length {
+            positions.push(Cartesian3::unpack_new(array, Some(si)));
+            si += Cartesian3::PACKED_LENGTH;
+        }
+
+        let ellipsoid = Ellipsoid::unpack(array, Some(si));
+        si += Ellipsoid::PACKED_LENGTH;
+
+        let width = array[si];
+        si += 1;
+        let height = array[si];
+        si += 1;
+        let extruded_height = array[si];
+        si += 1;
+        let corner_type = array[si];
+        si += 1;
+        let granularity = array[si];
+        si += 1;
+        let offset_attribute_raw = array[si];
+
+        let corner_type = match corner_type as i32 {
+            1 => CornerType::Mitered,
+            2 => CornerType::Beveled,
+            _ => CornerType::Rounded,
+        };
+        let offset_attribute = if offset_attribute_raw == -1.0 {
+            None
+        } else {
+            GeometryOffsetAttribute::try_from_u32(offset_attribute_raw as u32)
+        };
+
+        match result {
+            // JS goes through the constructor on this path, which re-applies
+            // the height/extrudedHeight min/max normalization.
+            None => Self::new(
+                positions,
+                width,
+                Some(ellipsoid),
+                Some(height),
+                Some(extruded_height),
+                Some(corner_type),
+                Some(granularity),
+                offset_attribute,
+            ),
+            Some(r) => {
+                r.positions = positions;
+                r.ellipsoid = ellipsoid;
+                r.width = width;
+                r.height = height;
+                r.extruded_height = extruded_height;
+                r.corner_type = corner_type;
+                r.granularity = granularity;
+                r.offset_attribute = offset_attribute;
+                r.clone()
+            }
+        }
+    }
 }
 
 /// Computes the geometric representation of a corridor outline.
@@ -258,7 +394,7 @@ struct CombineResult {
 
 fn combine(
     computed_positions: &crate::corridor_geometry_library::CorridorComputePositionsResult,
-    _corner_type: CornerType,
+    corner_type: CornerType,
 ) -> CombineResult {
     let positions = &computed_positions.positions;
     let corners = &computed_positions.corners;
@@ -422,6 +558,9 @@ fn combine(
                     back -= 3;
                 }
                 wall_indices.push(start - (l.len() / 6) as u32);
+                if corner_type == CornerType::Beveled {
+                    wall_indices.push(((back - 2) as usize / 3 + 1) as u32);
+                }
                 front += 3;
             }
             CorridorCorner::RightPositions(r) => {
@@ -448,6 +587,9 @@ fn combine(
                     front += 3;
                 }
                 wall_indices.push(start + (r.len() / 6) as u32);
+                if corner_type == CornerType::Beveled {
+                    wall_indices.push((front as usize / 3 - 1) as u32);
+                }
                 back -= 3;
             }
         }

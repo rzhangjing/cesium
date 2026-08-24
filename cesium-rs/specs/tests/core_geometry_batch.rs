@@ -54,3 +54,5 @@ mod corridor_outline_geometry_spec;
 mod polyline_volume_outline_geometry_spec;
 #[path = "core_geometry/ellipse_outline_geometry_spec.rs"]
 mod ellipse_outline_geometry_spec;
+#[path = "core_geometry/cz01_pack_unpack_spec.rs"]
+mod cz01_pack_unpack_spec;

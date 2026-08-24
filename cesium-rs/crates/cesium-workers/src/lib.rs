@@ -63,3 +63,17 @@ pub mod wasm_worker;
 // Re-export the WorkerBackend trait for cross-backend usage.
 pub use wasm_worker::WorkerBackend;
 
+/// Builds the standard error returned by worker byte entries whose
+/// computation has not been ported yet.
+///
+/// CesiumJS worker modules always produce real data (geometry / terrain
+/// vertices / decoded buffers) or throw; the Rust byte entries must
+/// therefore surface an explicit failure instead of a silent empty
+/// result, so [`task_processor::process_worker_task`] callers get a
+/// proper error signal.
+pub fn not_yet_ported_error(worker_name: &str) -> String {
+    format!(
+        "{worker_name} worker is not yet ported: the packed byte entry has no Rust implementation"
+    )
+}
+

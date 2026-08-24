@@ -1,6 +1,7 @@
 ﻿//! Ported from `packages/engine/Source/DataSources/ConstantPositionProperty.js`.
 
 use cesium_core::cartesian3::Cartesian3;
+use cesium_core::event::Event;
 use crate::property::{Property, PropertyResult};
 use crate::position_property::{PositionProperty, PositionReferenceFrame};
 
@@ -8,22 +9,46 @@ use crate::position_property::{PositionProperty, PositionReferenceFrame};
 pub struct ConstantPositionProperty {
     value: Cartesian3,
     reference_frame: PositionReferenceFrame,
+    definition_changed: Event<()>,
 }
 
 impl ConstantPositionProperty {
     /// Creates a new constant position property.
     pub fn new(value: Cartesian3) -> Self {
-        Self { value, reference_frame: PositionReferenceFrame::Fixed }
+        Self {
+            value,
+            reference_frame: PositionReferenceFrame::Fixed,
+            definition_changed: Event::new(),
+        }
     }
 
     /// Sets the value of this property.
+    ///
+    /// Port of `ConstantPositionProperty.prototype.setValue`: raises
+    /// `definitionChanged` only when the value actually changes
+    /// (`!Cartesian3.equals(value, this._value)` in CesiumJS).
     pub fn set_value(&mut self, value: Cartesian3) {
-        self.value = value;
+        if self.value != value {
+            self.value = value;
+            self.definition_changed.raise_event(&());
+        }
     }
 
     /// Sets the reference frame.
+    ///
+    /// Port of `ConstantPositionProperty.prototype.setReferenceFrame`:
+    /// raises `definitionChanged` only when the reference frame changes.
     pub fn set_reference_frame(&mut self, reference_frame: PositionReferenceFrame) {
-        self.reference_frame = reference_frame;
+        if self.reference_frame != reference_frame {
+            self.reference_frame = reference_frame;
+            self.definition_changed.raise_event(&());
+        }
+    }
+
+    /// Gets the event that is raised whenever the definition of this
+    /// property changes (port of the `definitionChanged` getter).
+    pub fn definition_changed_event(&self) -> &Event<()> {
+        &self.definition_changed
     }
 }
 
@@ -34,6 +59,10 @@ impl Property for ConstantPositionProperty {
 
     fn is_constant(&self) -> bool { true }
     fn is_destroyed(&self) -> bool { false }
+
+    fn definition_changed(&self) -> Option<&Event<()>> {
+        Some(&self.definition_changed)
+    }
 }
 
 impl PositionProperty for ConstantPositionProperty {

@@ -218,25 +218,31 @@ impl AttributeCompression {
     /// Decodes RGB565-encoded colors into normalized `[0,1]` RGB triples.
     ///
     /// Returns a new `Vec<f32>` of length `typed_array.len() * 3`.
+    ///
+    /// Faithful to `AttributeCompression.decodeRGB565`: JS computes
+    /// `component * normalize` in f64 (`Number`) and rounds exactly once
+    /// when storing into the `Float32Array`. Computing the product in f32
+    /// directly introduces a 1-ULP double-rounding difference (Phase 2
+    /// finding D2).
     pub fn decode_rgb565(typed_array: &[u16]) -> Vec<f32> {
         const MASK5: u16 = (1 << 5) - 1; // 31
         const MASK6: u16 = (1 << 6) - 1; // 63
-        const NORM5: f32 = 1.0 / 31.0;
-        const NORM6: f32 = 1.0 / 63.0;
+        const NORM5: f64 = 1.0 / 31.0;
+        const NORM6: f64 = 1.0 / 63.0;
 
         let count = typed_array.len();
         let mut result = vec![0.0f32; count * 3];
 
         for i in 0..count {
             let value = typed_array[i];
-            let red = (value >> 11) as f32;
-            let green = ((value >> 5) & MASK6) as f32;
-            let blue = (value & MASK5) as f32;
+            let red = (value >> 11) as f64;
+            let green = ((value >> 5) & MASK6) as f64;
+            let blue = (value & MASK5) as f64;
 
             let offset = 3 * i;
-            result[offset] = red * NORM5;
-            result[offset + 1] = green * NORM6;
-            result[offset + 2] = blue * NORM5;
+            result[offset] = (red * NORM5) as f32;
+            result[offset + 1] = (green * NORM6) as f32;
+            result[offset + 2] = (blue * NORM5) as f32;
         }
         result
     }

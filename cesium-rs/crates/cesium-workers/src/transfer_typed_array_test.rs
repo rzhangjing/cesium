@@ -9,9 +9,9 @@
 /// In CesiumJS, this sends a typed array to a worker and back to verify
 /// that the Transferable API is working correctly. In native Rust, this
 /// is a no-op since data is moved by ownership.
-pub fn transfer_typed_array_test(params: &[u8]) -> Vec<u8> {
+pub fn transfer_typed_array_test(params: &[u8]) -> Result<Vec<u8>, String> {
     // Echo back the input to verify round-trip
-    params.to_vec()
+    Ok(params.to_vec())
 }
 
 /// Tests typed array transfer (for in-process use).

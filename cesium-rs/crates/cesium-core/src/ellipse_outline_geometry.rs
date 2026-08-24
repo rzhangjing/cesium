@@ -66,6 +66,144 @@ impl EllipseOutlineGeometry {
     /// The number of elements used to pack the object into an array.
     pub const PACKED_LENGTH: usize =
         Cartesian3::PACKED_LENGTH + Ellipsoid::PACKED_LENGTH + 8;
+
+    /// Packs the ellipse outline geometry into `array` starting at
+    /// `starting_index`.
+    pub fn pack(&self, array: &mut [f64], starting_index: Option<usize>) {
+        let mut i = starting_index.unwrap_or(0);
+
+        Cartesian3::pack(&self.center, array, Some(i));
+        i += Cartesian3::PACKED_LENGTH;
+
+        Ellipsoid::pack(&self.ellipsoid, array, Some(i));
+        i += Ellipsoid::PACKED_LENGTH;
+
+        array[i] = self.semi_major_axis;
+        i += 1;
+        array[i] = self.semi_minor_axis;
+        i += 1;
+        array[i] = self.rotation;
+        i += 1;
+        array[i] = self.height;
+        i += 1;
+        array[i] = self.granularity;
+        i += 1;
+        array[i] = self.extruded_height;
+        i += 1;
+        array[i] = self.number_of_vertical_lines as f64;
+        i += 1;
+        array[i] = self.offset_attribute.map_or(-1.0, |o| o as u32 as f64);
+    }
+
+    /// Unpacks an `EllipseOutlineGeometry` from `array`.
+    ///
+    /// Mirrors the JS semantics: when `result` is `None` the values run
+    /// through the constructor; when `result` is provided the fields are
+    /// assigned verbatim.
+    pub fn unpack(
+        array: &[f64],
+        starting_index: Option<usize>,
+        result: Option<&mut Self>,
+    ) -> Self {
+        let mut i = starting_index.unwrap_or(0);
+
+        let center = Cartesian3::unpack_new(array, Some(i));
+        i += Cartesian3::PACKED_LENGTH;
+
+        let ellipsoid = Ellipsoid::unpack(array, Some(i));
+        i += Ellipsoid::PACKED_LENGTH;
+
+        let semi_major_axis = array[i];
+        i += 1;
+        let semi_minor_axis = array[i];
+        i += 1;
+        let rotation = array[i];
+        i += 1;
+        let height = array[i];
+        i += 1;
+        let granularity = array[i];
+        i += 1;
+        let extruded_height = array[i];
+        i += 1;
+        let number_of_vertical_lines = array[i] as usize;
+        i += 1;
+        let offset_raw = array[i];
+        let offset_attribute = if offset_raw == -1.0 {
+            None
+        } else {
+            GeometryOffsetAttribute::try_from_u32(offset_raw as u32)
+        };
+
+        match result {
+            None => Self::new(
+                center,
+                semi_major_axis,
+                semi_minor_axis,
+                Some(ellipsoid),
+                Some(height),
+                Some(extruded_height),
+                Some(rotation),
+                Some(granularity),
+                Some(number_of_vertical_lines),
+                offset_attribute,
+            ),
+            Some(r) => {
+                r.center = center;
+                r.ellipsoid = ellipsoid;
+                r.semi_major_axis = semi_major_axis;
+                r.semi_minor_axis = semi_minor_axis;
+                r.rotation = rotation;
+                r.height = height;
+                r.granularity = granularity;
+                r.extruded_height = extruded_height;
+                r.number_of_vertical_lines = number_of_vertical_lines;
+                r.offset_attribute = offset_attribute;
+                r.clone()
+            }
+        }
+    }
+
+    /// The ellipse's center point in the fixed frame.
+    pub fn center(&self) -> &Cartesian3 {
+        &self.center
+    }
+
+    /// The length of the ellipse's semi-major axis in meters.
+    pub fn semi_major_axis(&self) -> f64 {
+        self.semi_major_axis
+    }
+
+    /// The length of the ellipse's semi-minor axis in meters.
+    pub fn semi_minor_axis(&self) -> f64 {
+        self.semi_minor_axis
+    }
+
+    /// The ellipsoid the ellipse will be on.
+    pub fn ellipsoid(&self) -> &Ellipsoid {
+        &self.ellipsoid
+    }
+
+    /// The distance in meters between the ellipse and the ellipsoid surface.
+    pub fn height(&self) -> f64 {
+        self.height
+    }
+
+    /// The distance in meters between the ellipse's extruded face and the
+    /// ellipsoid surface.
+    pub fn extruded_height(&self) -> f64 {
+        self.extruded_height
+    }
+
+    /// The angular distance between points on the ellipse in radians.
+    pub fn granularity(&self) -> f64 {
+        self.granularity
+    }
+
+    /// Number of lines to draw between the top and bottom of an extruded
+    /// ellipse.
+    pub fn number_of_vertical_lines(&self) -> usize {
+        self.number_of_vertical_lines
+    }
 }
 
 /// Computes the geometric representation of an outline of an ellipse.

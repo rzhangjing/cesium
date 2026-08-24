@@ -5,14 +5,19 @@
 //!
 //! DEVIATION: the JS loader fetches external image URIs through the
 //! `ResourceCache` (async network); the Rust port decodes embedded
-//! buffer-view images and `data:` URIs synchronously, and accepts
-//! externally fetched bytes via [`GltfImageLoader::load_external`].
-//! External file/http URIs return a load error (fetch deferred).
+//! buffer-view images and `data:` URIs synchronously in
+//! [`GltfImageLoader::load`], and fetches external URIs through an
+//! injected [`ResourceBackend`] in [`GltfImageLoader::load_uri`]
+//! (mirrors `loadFromUri`; the offline `file://` path uses
+//! [`crate::file_resource_backend::FileResourceBackend`]).
 //!
 //! DEVIATION: image decode uses the `image` crate (PNG/JPEG); the JS
 //! delegates to `ImageLoader`/browser decoders (which additionally handle
 //! KTX2 — KTX2 remains deferred).
 
+use std::collections::HashMap;
+
+use cesium_core::resource::ResourceBackend;
 use cesium_core::runtime_error::RuntimeError;
 
 use crate::gltf_buffer_view_loader::GltfBufferViewLoader;
@@ -123,10 +128,10 @@ impl GltfImageLoader {
                 })?;
                 decode_image(&bytes)
             } else {
-                // DEVIATION: external URI fetching is deferred; the caller
-                // supplies the bytes via load_external.
+                // External URIs load through `load_uri` (mirrors the JS
+                // `loadFromUri` branch driven by the ResourceCache fetch).
                 Err(RuntimeError::new(Some(
-                    "Failed to load image\nExternal image URIs must be fetched by the caller and passed to load_external.",
+                    "Failed to load image\nExternal image URIs must be fetched via load_uri (or the bytes supplied to load_external).",
                 )))
             }
         } else {
@@ -134,6 +139,46 @@ impl GltfImageLoader {
                 "Failed to load image\nImage has no bufferView or URI.",
             )))
         };
+
+        match result {
+            Ok(decoded) => {
+                self.image = Some(decoded);
+                self.state = ResourceLoaderState::Ready;
+                Ok(())
+            }
+            Err(error) => {
+                self.unload();
+                self.state = ResourceLoaderState::Failed;
+                Err(error)
+            }
+        }
+    }
+
+    /// Loads the image from its external URI through the given
+    /// [`ResourceBackend`], mirroring `loadFromUri` (fetch the image's
+    /// `uri`, then decode). `data:` URIs are handled by [`Self::load`].
+    ///
+    /// # Errors
+    /// Returns a [`RuntimeError`] when the image has no external URI, the
+    /// fetch fails, or decode fails.
+    pub fn load_uri<B: ResourceBackend>(
+        &mut self,
+        gltf: &GltfJson,
+        backend: &B,
+    ) -> Result<(), RuntimeError> {
+        self.state = ResourceLoaderState::Loading;
+
+        let image_header = &gltf.images[self.image_id as usize];
+        let result = (|| -> Result<DecodedImage, RuntimeError> {
+            let uri = image_header.uri.as_deref().ok_or_else(|| {
+                RuntimeError::new(Some("Failed to load image\nImage has no URI."))
+            })?;
+            let bytes = block_on_sync(backend.fetch_bytes(uri, &HashMap::new()))
+                .map_err(|error| {
+                    RuntimeError::new(Some(&format!("Failed to load image\n{error}")))
+                })?;
+            decode_image(&bytes)
+        })();
 
         match result {
             Ok(decoded) => {
@@ -226,6 +271,25 @@ fn decode_base64(input: &str) -> Option<Vec<u8>> {
         }
     }
     Some(output)
+}
+
+/// Drives a future to completion on the current thread without an
+/// executor. The offline fetch chain resolves entirely through
+/// synchronous steps, so a no-op-waker poll loop always converges; the
+/// loop is capped defensively against unexpected pending futures.
+fn block_on_sync<F: std::future::Future>(future: F) -> F::Output {
+    use std::pin::pin;
+    use std::task::{Context, Poll, Waker};
+
+    let mut context = Context::from_waker(Waker::noop());
+    let mut future = pin!(future);
+    for _ in 0..64 {
+        match future.as_mut().poll(&mut context) {
+            Poll::Ready(output) => return output,
+            Poll::Pending => {}
+        }
+    }
+    panic!("block_on_sync: future did not resolve within 64 polls")
 }
 
 #[cfg(test)]

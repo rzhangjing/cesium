@@ -28,6 +28,25 @@ pub trait Property {
     fn equals(&self, _other: &dyn Property) -> bool {
         false
     }
+
+    /// Gets the event that is raised whenever the definition of this
+    /// property changes.
+    ///
+    /// Port of the `Property.prototype.definitionChanged` getter. The
+    /// definition is considered to have changed if a call to `get_value`
+    /// would return a different result for the same time.
+    ///
+    /// DEVIATION: CesiumJS exposes the `Event` on every Property
+    /// implementation; the Rust trait returns `Option` with a `None`
+    /// default so implementations without a mutable definition (and the
+    /// not-yet-materialized `SampledProperty` /
+    /// `TimeIntervalCollectionProperty` ports) stay compatible. The JS
+    /// event payload is the property itself (`raiseEvent(this)`); the Rust
+    /// event carries `()` since self-referential payloads are not
+    /// expressible. See docs/deviations.md.
+    fn definition_changed(&self) -> Option<&Event<()>> {
+        None
+    }
 }
 
 /// The result of evaluating a property.

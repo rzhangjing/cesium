@@ -134,7 +134,13 @@ impl HermitePolynomialApproximation {
             for i in d..=(highest_non_zero_coef as usize) {
                 let temp_term =
                     calculate_coefficient_term(x, &z_indices, x_table, d, i, &mut vec![]);
-                let dim_two = ((i * (1_usize.wrapping_sub(i))) / 2) + z_indices_length * i;
+                // JS: dimTwo = ((i * (1 - i)) / 2) + zIndicesLength * i;
+                // the intermediate i * (1 - i) is non-positive in JS
+                // numbers, so compute it signed before converting back.
+                let i_signed = i as isize;
+                let dim_two = (z_indices_length as isize * i_signed
+                    + (i_signed * (1 - i_signed)) / 2)
+                    as usize;
 
                 for s in 0..y_stride {
                     let dim_one = s * tmp;
@@ -215,7 +221,11 @@ fn fill_coefficient_list(
         }
 
         for i in 1..z_indices_length {
-            let coef_index_base = ((i * (1_usize.wrapping_sub(i))) / 2) + z_indices_length * i;
+            // JS: coefIndexBase = ((i * (1 - i)) / 2) + zIndicesLength * i;
+            let i_signed = i as isize;
+            let coef_index_base = (z_indices_length as isize * i_signed
+                + (i_signed * (1 - i_signed)) / 2)
+                as usize;
             let mut non_zero_coefficients = false;
             let mut coef_index = 0;
 
@@ -231,8 +241,12 @@ fn fill_coefficient_list(
                     coefficients[dim_one + coef_index_base + coef_index] = coefficient;
                     coef_index += 1;
                 } else {
-                    let dim_two_minus_one =
-                        (((i - 1) * (2 - i)) / 2) + z_indices_length * (i - 1);
+                    // JS: dimTwoMinusOne = (((i - 1) * (2 - i)) / 2) +
+                    //     zIndicesLength * (i - 1);
+                    let im1 = (i - 1) as isize;
+                    let dim_two_minus_one = (z_indices_length as isize * im1
+                        + (im1 * (2 - i as isize)) / 2)
+                        as usize;
                     numerator = coefficients[dim_one + dim_two_minus_one + j + 1]
                         - coefficients[dim_one + dim_two_minus_one + j];
                     let coefficient = numerator / (zn - zj);

@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/createVectorTilePoints.js`.
+//! Ported from `packages/engine/Source/Workers/createVectorTilePoints.js`.
 //!
 //! Worker entry point for creating vector tile point features.
 
@@ -6,9 +6,9 @@
 ///
 /// In CesiumJS, this receives vector tile data and extracts point features,
 /// creating point primitives for rendering.
-pub fn create_vector_tile_points(params: &[u8]) -> Vec<u8> {
+pub fn create_vector_tile_points(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createVectorTilePoints"))
 }
 
 /// Creates vector tile points (for in-process use).

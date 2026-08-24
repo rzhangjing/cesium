@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/gaussianSplatSorter.js`.
+//! Ported from `packages/engine/Source/Workers/gaussianSplatSorter.js`.
 //!
 //! Worker entry point for sorting Gaussian splats by depth.
 //! Gaussian splatting requires front-to-back sorting for correct alpha blending.
@@ -8,9 +8,9 @@
 /// In CesiumJS, this receives Gaussian splat data (positions, colors, opacities)
 /// and the current view matrix, then sorts the splats by depth for correct
 /// rendering order.
-pub fn gaussian_splat_sorter(params: &[u8]) -> Vec<u8> {
+pub fn gaussian_splat_sorter(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("gaussianSplatSorter"))
 }
 
 /// Sorts Gaussian splats by depth (for in-process use).

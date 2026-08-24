@@ -70,7 +70,7 @@ fn ellipse_outline_new() {
 // --- EllipsoidOutlineGeometry ---
 #[test]
 fn ellipsoid_outline_new() {
-    let geo = EllipsoidOutlineGeometry::new(None, None, None, None, None);
+    let geo = EllipsoidOutlineGeometry::new(None, None, None, None, None, None, None, None, None, None);
     let _ = geo;
 }
 

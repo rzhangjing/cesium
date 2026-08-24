@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/createVerticesFromHeightmap.js`.
+//! Ported from `packages/engine/Source/Workers/createVerticesFromHeightmap.js`.
 //!
 //! Worker entry point for creating terrain vertices from heightmap data.
 //! This is the core terrain generation worker that converts heightmap images
@@ -15,9 +15,9 @@
 /// - Vertex positions (Cartesian3[])
 /// - Height values (for lighting/shading)
 /// - Skirt heights (for hiding cracks between LOD levels)
-pub fn create_vertices_from_heightmap(params: &[u8]) -> Vec<u8> {
+pub fn create_vertices_from_heightmap(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createVerticesFromHeightmap"))
 }
 
 /// Creates terrain vertices from heightmap data (for in-process use).

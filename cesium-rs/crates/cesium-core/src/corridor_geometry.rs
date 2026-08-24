@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use crate::array_remove_duplicates::array_remove_duplicates;
 use crate::bounding_sphere::BoundingSphere;
 use crate::cartesian3::Cartesian3;
+use crate::cartographic::Cartographic;
 use crate::component_datatype::ComponentDatatype;
 use crate::corner_type::CornerType;
 use crate::corridor_geometry_library::{
@@ -28,6 +29,7 @@ use crate::index_datatype::{IndexDatatype, IndexStorage};
 use crate::math::CesiumMath;
 use crate::polygon_pipeline::PolygonPipeline;
 use crate::primitive_type::PrimitiveType;
+use crate::rectangle::Rectangle;
 use crate::vertex_format::VertexFormat;
 
 /// A description of a corridor. Corridor geometry can be rendered with both
@@ -75,6 +77,221 @@ impl CorridorGeometry {
             offset_attribute,
         }
     }
+
+    /// The number of elements used to pack the object into an array.
+    ///
+    /// DEVIATION: JS `packedLength` is an instance property computed in the
+    /// constructor; Rust exposes it as `packed_length(&self)`.
+    pub fn packed_length(&self) -> usize {
+        1 + self.positions.len() * Cartesian3::PACKED_LENGTH
+            + Ellipsoid::PACKED_LENGTH
+            + VertexFormat::PACKED_LENGTH
+            + 7
+    }
+
+    /// Stores the provided instance into the provided array.
+    pub fn pack(&self, array: &mut [f64], starting_index: Option<usize>) {
+        let mut si = starting_index.unwrap_or(0);
+
+        let positions = &self.positions;
+        array[si] = positions.len() as f64;
+        si += 1;
+
+        for position in positions {
+            Cartesian3::pack(position, array, Some(si));
+            si += Cartesian3::PACKED_LENGTH;
+        }
+
+        Ellipsoid::pack(&self.ellipsoid, array, Some(si));
+        si += Ellipsoid::PACKED_LENGTH;
+
+        self.vertex_format.pack(array, si);
+        si += VertexFormat::PACKED_LENGTH;
+
+        array[si] = self.width;
+        si += 1;
+        array[si] = self.height;
+        si += 1;
+        array[si] = self.extruded_height;
+        si += 1;
+        array[si] = self.corner_type as i32 as f64;
+        si += 1;
+        array[si] = self.granularity;
+        si += 1;
+        array[si] = if self.shadow_volume { 1.0 } else { 0.0 };
+        si += 1;
+        array[si] = match &self.offset_attribute {
+            Some(v) => *v as i32 as f64,
+            None => -1.0,
+        };
+    }
+
+    /// Retrieves an instance from a packed array.
+    pub fn unpack(array: &[f64], starting_index: Option<usize>, result: Option<&mut Self>) -> Self {
+        let mut si = starting_index.unwrap_or(0);
+
+        let length = array[si] as usize;
+        si += 1;
+        let mut positions = Vec::with_capacity(length);
+        for _ in 0..length {
+            positions.push(Cartesian3::unpack_new(array, Some(si)));
+            si += Cartesian3::PACKED_LENGTH;
+        }
+
+        let ellipsoid = Ellipsoid::unpack(array, Some(si));
+        si += Ellipsoid::PACKED_LENGTH;
+
+        let vertex_format = VertexFormat::unpack(array, si, None);
+        si += VertexFormat::PACKED_LENGTH;
+
+        let width = array[si];
+        si += 1;
+        let height = array[si];
+        si += 1;
+        let extruded_height = array[si];
+        si += 1;
+        let corner_type = array[si];
+        si += 1;
+        let granularity = array[si];
+        si += 1;
+        let shadow_volume = array[si] == 1.0;
+        si += 1;
+        let offset_attribute_raw = array[si];
+
+        let corner_type = match corner_type as i32 {
+            1 => CornerType::Mitered,
+            2 => CornerType::Beveled,
+            _ => CornerType::Rounded,
+        };
+        let offset_attribute = if offset_attribute_raw == -1.0 {
+            None
+        } else {
+            GeometryOffsetAttribute::try_from_u32(offset_attribute_raw as u32)
+        };
+
+        match result {
+            // JS goes through the constructor on this path, which re-applies
+            // the height/extrudedHeight min/max normalization.
+            None => Self::new(
+                positions,
+                width,
+                Some(ellipsoid),
+                Some(vertex_format),
+                Some(height),
+                Some(extruded_height),
+                Some(corner_type),
+                Some(granularity),
+                Some(shadow_volume),
+                offset_attribute,
+            ),
+            Some(r) => {
+                r.positions = positions;
+                r.ellipsoid = ellipsoid;
+                r.vertex_format = vertex_format;
+                r.width = width;
+                r.height = height;
+                r.extruded_height = extruded_height;
+                r.corner_type = corner_type;
+                r.granularity = granularity;
+                r.shadow_volume = shadow_volume;
+                r.offset_attribute = offset_attribute;
+                r.clone()
+            }
+        }
+    }
+
+    /// Computes the bounding rectangle given the provided options
+    /// (JS static `CorridorGeometry.computeRectangle`).
+    pub fn compute_rectangle_from_options(
+        positions: Vec<Cartesian3>,
+        width: f64,
+        ellipsoid: Option<Ellipsoid>,
+        corner_type: Option<CornerType>,
+        result: Option<Rectangle>,
+    ) -> Rectangle {
+        let ellipsoid = ellipsoid.unwrap_or(Ellipsoid::WGS84);
+        let corner_type = corner_type.unwrap_or(CornerType::Rounded);
+        compute_rectangle(positions, &ellipsoid, width, corner_type, result)
+    }
+
+    /// JS `Object.defineProperties` `rectangle` getter (computed lazily in
+    /// JS; recomputed on each call in Rust).
+    pub fn rectangle(&self) -> Rectangle {
+        compute_rectangle(
+            self.positions.clone(),
+            &self.ellipsoid,
+            self.width,
+            self.corner_type,
+            None,
+        )
+    }
+
+    /// For remapping texture coordinates when rendering CorridorGeometries
+    /// as GroundPrimitives. Corridors don't support stRotation, so just
+    /// return the corners of the original system.
+    pub fn texture_coordinate_rotation_points() -> [f64; 6] {
+        [0.0, 0.0, 0.0, 1.0, 1.0, 0.0]
+    }
+
+    /// Creates a shadow volume corridor geometry from this geometry
+    /// (JS private `CorridorGeometry.createShadowVolume`).
+    pub fn create_shadow_volume(
+        corridor_geometry: &Self,
+        min_height_func: &dyn Fn(f64, &Ellipsoid) -> f64,
+        max_height_func: &dyn Fn(f64, &Ellipsoid) -> f64,
+    ) -> Self {
+        let granularity = corridor_geometry.granularity;
+        let ellipsoid = corridor_geometry.ellipsoid.clone();
+
+        let min_height = min_height_func(granularity, &ellipsoid);
+        let max_height = max_height_func(granularity, &ellipsoid);
+
+        Self::new(
+            corridor_geometry.positions.clone(),
+            corridor_geometry.width,
+            Some(ellipsoid),
+            Some(VertexFormat::position_only()),
+            Some(max_height),
+            Some(min_height),
+            Some(corridor_geometry.corner_type),
+            Some(granularity),
+            Some(true),
+            None,
+        )
+    }
+
+    /// Accessors.
+    pub fn positions(&self) -> &[Cartesian3] {
+        &self.positions
+    }
+
+    pub fn width(&self) -> f64 {
+        self.width
+    }
+
+    pub fn height(&self) -> f64 {
+        self.height
+    }
+
+    pub fn extruded_height(&self) -> f64 {
+        self.extruded_height
+    }
+
+    pub fn corner_type(&self) -> CornerType {
+        self.corner_type
+    }
+
+    pub fn granularity(&self) -> f64 {
+        self.granularity
+    }
+
+    pub fn ellipsoid(&self) -> &Ellipsoid {
+        &self.ellipsoid
+    }
+
+    pub fn vertex_format(&self) -> &VertexFormat {
+        &self.vertex_format
+    }
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -85,6 +302,167 @@ fn scale_to_surface(positions: &mut [Cartesian3], ellipsoid: &Ellipsoid) {
         ellipsoid.scale_to_geodetic_surface(pos, &mut scaled);
         *pos = scaled;
     }
+}
+
+/// Mirrors JS `computeOffsetPoints`: expands `min`/`max` cartographic bounds
+/// with the two width-offset points of the segment `position1`->`position2`.
+fn compute_offset_points(
+    position1: &Cartesian3,
+    position2: &Cartesian3,
+    ellipsoid: &Ellipsoid,
+    half_width: f64,
+    min: &mut Cartographic,
+    max: &mut Cartographic,
+) {
+    // Compute direction of offset the point
+    let mut direction = Cartesian3::default();
+    Cartesian3::subtract(position2, position1, &mut direction);
+    let mut tmp = Cartesian3::default();
+    Cartesian3::normalize(&direction, &mut tmp);
+    direction = tmp;
+
+    let mut normal = Cartesian3::default();
+    ellipsoid.geodetic_surface_normal(position1, &mut normal);
+
+    let mut offset_direction = Cartesian3::default();
+    Cartesian3::cross(&direction, &normal, &mut offset_direction);
+    Cartesian3::multiply_by_scalar(&offset_direction, half_width, &mut tmp);
+    offset_direction = tmp;
+
+    let min_lat = min.latitude;
+    let min_lon = min.longitude;
+    let max_lat = max.latitude;
+    let max_lon = max.longitude;
+
+    let mut min_lat = min_lat;
+    let mut min_lon = min_lon;
+    let mut max_lat = max_lat;
+    let mut max_lon = max_lon;
+
+    // Compute 2 offset points
+    let mut offset_point = Cartesian3::default();
+    Cartesian3::add(position1, &offset_direction, &mut offset_point);
+    let mut carto = Cartographic::default();
+    ellipsoid.cartesian_to_cartographic(&offset_point, &mut carto);
+
+    min_lat = min_lat.min(carto.latitude);
+    min_lon = min_lon.min(carto.longitude);
+    max_lat = max_lat.max(carto.latitude);
+    max_lon = max_lon.max(carto.longitude);
+
+    Cartesian3::subtract(position1, &offset_direction, &mut offset_point);
+    ellipsoid.cartesian_to_cartographic(&offset_point, &mut carto);
+
+    min_lat = min_lat.min(carto.latitude);
+    min_lon = min_lon.min(carto.longitude);
+    max_lat = max_lat.max(carto.latitude);
+    max_lon = max_lon.max(carto.longitude);
+
+    min.latitude = min_lat;
+    min.longitude = min_lon;
+    max.latitude = max_lat;
+    max.longitude = max_lon;
+}
+
+/// Mirrors JS module-level `computeRectangle` of CorridorGeometry.js.
+fn compute_rectangle(
+    mut positions: Vec<Cartesian3>,
+    ellipsoid: &Ellipsoid,
+    width: f64,
+    corner_type: CornerType,
+    result: Option<Rectangle>,
+) -> Rectangle {
+    scale_to_surface(&mut positions, ellipsoid);
+    let clean_positions = array_remove_duplicates(
+        &positions,
+        |a: &Cartesian3, b: &Cartesian3, eps: f64| {
+            Cartesian3::equals_epsilon(Some(a), Some(b), Some(eps), None)
+        },
+        false,
+        None,
+    )
+    .unwrap_or(positions);
+
+    let length = clean_positions.len();
+    if length < 2 || width <= 0.0 {
+        return Rectangle::default();
+    }
+    let half_width = width * 0.5;
+
+    let mut min = Cartographic {
+        latitude: f64::INFINITY,
+        longitude: f64::INFINITY,
+        height: 0.0,
+    };
+    let mut max = Cartographic {
+        latitude: f64::NEG_INFINITY,
+        longitude: f64::NEG_INFINITY,
+        height: 0.0,
+    };
+
+    if corner_type == CornerType::Rounded {
+        // Compute start cap
+        let first = clean_positions[0];
+        let mut offset = Cartesian3::default();
+        Cartesian3::subtract(&first, &clean_positions[1], &mut offset);
+        let mut tmp = Cartesian3::default();
+        Cartesian3::normalize(&offset, &mut tmp);
+        offset = tmp;
+        Cartesian3::multiply_by_scalar(&offset, half_width, &mut tmp);
+        offset = tmp;
+        let mut ends = Cartesian3::default();
+        Cartesian3::add(&first, &offset, &mut ends);
+
+        let mut carto = Cartographic::default();
+        ellipsoid.cartesian_to_cartographic(&ends, &mut carto);
+        min.latitude = min.latitude.min(carto.latitude);
+        min.longitude = min.longitude.min(carto.longitude);
+        max.latitude = max.latitude.max(carto.latitude);
+        max.longitude = max.longitude.max(carto.longitude);
+    }
+
+    // Compute the rest
+    for i in 0..length - 1 {
+        compute_offset_points(
+            &clean_positions[i],
+            &clean_positions[i + 1],
+            ellipsoid,
+            half_width,
+            &mut min,
+            &mut max,
+        );
+    }
+
+    // Compute ending point
+    let last = clean_positions[length - 1];
+    let mut offset = Cartesian3::default();
+    Cartesian3::subtract(&last, &clean_positions[length - 2], &mut offset);
+    let mut tmp = Cartesian3::default();
+    Cartesian3::normalize(&offset, &mut tmp);
+    offset = tmp;
+    Cartesian3::multiply_by_scalar(&offset, half_width, &mut tmp);
+    offset = tmp;
+    let mut ends = Cartesian3::default();
+    Cartesian3::add(&last, &offset, &mut ends);
+    compute_offset_points(&last, &ends, ellipsoid, half_width, &mut min, &mut max);
+
+    if corner_type == CornerType::Rounded {
+        // Compute end cap
+        let mut carto = Cartographic::default();
+        ellipsoid.cartesian_to_cartographic(&ends, &mut carto);
+        min.latitude = min.latitude.min(carto.latitude);
+        min.longitude = min.longitude.min(carto.longitude);
+        max.latitude = max.latitude.max(carto.latitude);
+        max.longitude = max.longitude.max(carto.longitude);
+    }
+
+    let mut rectangle = result.unwrap_or_default();
+    rectangle.north = max.latitude;
+    rectangle.south = min.latitude;
+    rectangle.east = max.longitude;
+    rectangle.west = min.longitude;
+
+    rectangle
 }
 
 fn read_index(storage: &IndexStorage, index: usize) -> u32 {

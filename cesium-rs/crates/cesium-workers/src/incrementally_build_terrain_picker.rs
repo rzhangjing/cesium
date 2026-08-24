@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/incrementallyBuildTerrainPicker.js`.
+//! Ported from `packages/engine/Source/Workers/incrementallyBuildTerrainPicker.js`.
 //!
 //! Worker entry point for incrementally building the terrain picking data structure.
 //! This generates a BVH (Bounding Volume Hierarchy) for efficient terrain ray casting.
@@ -8,9 +8,9 @@
 /// In CesiumJS, this receives terrain mesh data and incrementally builds
 /// a spatial index (BVH) for efficient point picking and ray intersection
 /// with terrain tiles.
-pub fn incrementally_build_terrain_picker(params: &[u8]) -> Vec<u8> {
+pub fn incrementally_build_terrain_picker(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("incrementallyBuildTerrainPicker"))
 }
 
 /// Incrementally builds terrain picker data (for in-process use).

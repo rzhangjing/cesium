@@ -78,17 +78,25 @@ fn to_bytes_returns_the_same_values_that_from_bytes_took() {
     let a = 88u8;
     let c = Color::from_bytes(r, g, b, a);
     let bytes = c.to_bytes();
-    assert_eq!(bytes, [r, g, b, a]);
+    assert_eq!(bytes, [r as i32, g as i32, b as i32, a as i32]);
 }
 
 #[test]
 fn to_bytes_works_with_a_result_parameter() {
-    // Rust returns an owned `[u8; 4]`; the JS `result` array identity check
+    // Rust returns an owned `[i32; 4]`; the JS `result` array identity check
     // is folded into the value assertion.
     let color = Color::new(0.1, 0.2, 0.3, 0.4);
-    let expected_result = [25u8, 51, 76, 102];
+    let expected_result = [25i32, 51, 76, 102];
     let returned_result = color.to_bytes();
     assert_eq!(returned_result, expected_result);
+}
+
+#[test]
+fn to_bytes_out_of_range_returns_unclamped_js_values() {
+    // CesiumJS `toBytes` returns raw `floatToByte` JS numbers without
+    // clamping to [0, 255] (Phase 2 golden: color.toBytes.c6).
+    let color = Color::new(1.5, -0.25, 0.3, 2.0);
+    assert_eq!(color.to_bytes(), [384i32, -64, 76, 512]);
 }
 
 #[test]
@@ -103,6 +111,34 @@ fn float_to_byte_works_in_all_cases() {
     assert_eq!(Color::float_to_byte(0.0), 0);
     assert_eq!(Color::float_to_byte(1.0), 255);
     assert_eq!(Color::float_to_byte(127.0 / 255.0), 127);
+}
+
+#[test]
+fn float_to_byte_matches_js_truncation_semantics_out_of_range() {
+    // CesiumJS: `number === 1.0 ? 255 : (number * 256) | 0` — no clamping,
+    // ToInt32 truncation, NaN coerces to 0 (Phase 2 finding D3).
+    assert_eq!(Color::float_to_byte(1.5), 384);
+    assert_eq!(Color::float_to_byte(-0.25), -64);
+    assert_eq!(Color::float_to_byte(0.3), 76);
+    assert_eq!(Color::float_to_byte(2.0), 512);
+    assert_eq!(Color::float_to_byte(f64::NAN), 0);
+    assert_eq!(Color::float_to_byte(0.999), 255);
+}
+
+#[test]
+fn to_css_hex_string_out_of_range_matches_js() {
+    // CesiumJS golden (color.toCssHexString.c6): unclamped components use
+    // `Number.toString(16)` — negatives keep their sign, no byte clamping.
+    let color = Color::new(1.5, -0.25, 0.3, 2.0);
+    assert_eq!(color.to_css_hex_string(), "#180-404c");
+}
+
+#[test]
+fn to_rgba_out_of_range_wraps_like_uint8_array() {
+    // CesiumJS golden (color.toRgba.c6): bytesToRgba stores into a
+    // Uint8Array, wrapping out-of-range floatToByte values mod 256.
+    let color = Color::new(1.5, -0.25, 0.3, 2.0);
+    assert_eq!(color.to_rgba(), 5030016);
 }
 
 #[test]

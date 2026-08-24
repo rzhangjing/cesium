@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/decodeI3S.js`.
+//! Ported from `packages/engine/Source/Workers/decodeI3S.js`.
 //!
 //! Worker entry point for decoding I3S (Indexed 3D Scene) data.
 //! I3S is an OGC standard for streaming 3D content.
@@ -7,9 +7,9 @@
 ///
 /// In CesiumJS, this receives I3S geometry or texture data and decodes
 /// it into a format suitable for rendering.
-pub fn decode_i3_s(params: &[u8]) -> Vec<u8> {
+pub fn decode_i3_s(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("decodeI3S"))
 }
 
 /// Decodes I3S data (for in-process use).

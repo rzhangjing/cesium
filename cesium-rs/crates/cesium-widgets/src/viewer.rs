@@ -29,6 +29,9 @@ pub struct ViewerOptions {
     /// Whether to show the navigation help button.
     pub navigation_help_button: bool,
     /// Whether to show the projection picker.
+    ///
+    /// CesiumJS default is **false** (`Viewer.js`: opt-in via
+    /// `if (options.projectionPicker)`).
     pub projection_picker: bool,
     /// Whether to show the scene mode picker.
     pub scene_mode_picker: bool,
@@ -51,7 +54,7 @@ impl Default for ViewerOptions {
             home_button: true,
             info_box: true,
             navigation_help_button: true,
-            projection_picker: true,
+            projection_picker: false,
             scene_mode_picker: true,
             selection_indicator: true,
             timeline: true,

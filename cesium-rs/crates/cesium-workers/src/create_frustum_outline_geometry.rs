@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/createFrustumOutlineGeometry.js`.
+//! Ported from `packages/engine/Source/Workers/createFrustumOutlineGeometry.js`.
 //!
 //! Worker entry point for creating frustum outline geometry.
 
@@ -8,9 +8,9 @@ use cesium_core::cartesian3::Cartesian3;
 ///
 /// Deserializes frustum parameters (origin, direction, up, fov, near, far)
 /// from packed bytes. Constructs `FrustumOutlineGeometry` and returns packed result.
-pub fn create_frustum_outline_geometry(params: &[u8]) -> Vec<u8> {
+pub fn create_frustum_outline_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createFrustumOutlineGeometry"))
 }
 
 /// Creates a frustum outline from unpacked parameters (for in-process use).

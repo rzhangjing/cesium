@@ -8,9 +8,9 @@ use cesium_core::cartesian3::Cartesian3;
 ///
 /// Deserializes center and radii from packed bytes.
 /// Constructs `EllipsoidOutlineGeometry` and returns the packed result.
-pub fn create_ellipsoid_outline_geometry(params: &[u8]) -> Vec<u8> {
+pub fn create_ellipsoid_outline_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createEllipsoidOutlineGeometry"))
 }
 
 /// Creates an ellipsoid outline from unpacked parameters (for in-process use).

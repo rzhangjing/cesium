@@ -1,4 +1,4 @@
-﻿//! Ported from `packages/engine/Source/Workers/createPolylineGeometry.js`.
+//! Ported from `packages/engine/Source/Workers/createPolylineGeometry.js`.
 //!
 //! Worker entry point for creating polyline geometry on the ellipsoid.
 
@@ -8,9 +8,9 @@ use cesium_core::cartesian3::Cartesian3;
 ///
 /// Deserializes polyline positions, width, colors, and arc type
 /// from packed bytes. Constructs `PolylineGeometry` and returns packed result.
-pub fn create_polyline_geometry(params: &[u8]) -> Vec<u8> {
+pub fn create_polyline_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
     let _ = params;
-    Vec::new()
+    Err(crate::not_yet_ported_error("createPolylineGeometry"))
 }
 
 /// Creates a polyline geometry from unpacked parameters (for in-process use).
