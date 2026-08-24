@@ -1,5 +1,6 @@
 ﻿//! Ported from `packages/engine/Source/DataSources/PolylineGraphics.js`.
 
+use cesium_core::arc_type::ArcType;
 use cesium_core::cartesian3::Cartesian3;
 use cesium_core::color::Color;
 
@@ -18,6 +19,8 @@ pub struct PolylineGraphics {
     pub clamp_to_ground: bool,
     /// Whether the polyline forms a closed loop.
     pub loop_: bool,
+    /// The type of arc used to connect the positions.
+    pub arc_type: ArcType,
 }
 
 impl PolylineGraphics {
@@ -30,6 +33,7 @@ impl PolylineGraphics {
             material_color: Color::new(1.0, 1.0, 1.0, 1.0),
             clamp_to_ground: false,
             loop_: false,
+            arc_type: ArcType::Geodesic,
         }
     }
 }

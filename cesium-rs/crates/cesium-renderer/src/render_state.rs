@@ -345,6 +345,246 @@ impl Default for RenderState {
     fn default() -> Self { Self::new() }
 }
 
+// ── wgpu state mapping ──────────────────────────────────────────────────────
+//
+// DEVIATION: CesiumJS applies RenderState imperatively per draw via GL calls
+// (`gl.depthFunc`, `gl.blendFunc`, ...). In wgpu all of this state is baked
+// into immutable `RenderPipeline` objects; the functions below translate the
+// CesiumJS state model into the corresponding wgpu descriptor fragments.
+
+/// Maps a [`BlendingFactor`] to `wgpu::BlendFactor`.
+pub fn blending_factor_to_wgpu(factor: BlendingFactor) -> wgpu::BlendFactor {
+    match factor {
+        BlendingFactor::Zero => wgpu::BlendFactor::Zero,
+        BlendingFactor::One => wgpu::BlendFactor::One,
+        BlendingFactor::SrcColor => wgpu::BlendFactor::Src,
+        BlendingFactor::OneMinusSrcColor => wgpu::BlendFactor::OneMinusSrc,
+        BlendingFactor::DstColor => wgpu::BlendFactor::Dst,
+        BlendingFactor::OneMinusDstColor => wgpu::BlendFactor::OneMinusDst,
+        BlendingFactor::SrcAlpha => wgpu::BlendFactor::SrcAlpha,
+        BlendingFactor::OneMinusSrcAlpha => wgpu::BlendFactor::OneMinusSrcAlpha,
+        BlendingFactor::DstAlpha => wgpu::BlendFactor::DstAlpha,
+        BlendingFactor::OneMinusDstAlpha => wgpu::BlendFactor::OneMinusDstAlpha,
+        BlendingFactor::ConstantColor | BlendingFactor::ConstantAlpha => {
+            wgpu::BlendFactor::Constant
+        }
+        BlendingFactor::OneMinusConstantColor | BlendingFactor::OneMinusConstantAlpha => {
+            wgpu::BlendFactor::OneMinusConstant
+        }
+        BlendingFactor::SrcAlphaSaturate => wgpu::BlendFactor::SrcAlphaSaturated,
+    }
+}
+
+/// Maps a [`BlendEquation`] to `wgpu::BlendOperation`.
+pub fn blend_equation_to_wgpu(equation: BlendEquation) -> wgpu::BlendOperation {
+    match equation {
+        BlendEquation::FuncAdd => wgpu::BlendOperation::Add,
+        BlendEquation::FuncSubtract => wgpu::BlendOperation::Subtract,
+        BlendEquation::FuncReverseSubtract => wgpu::BlendOperation::ReverseSubtract,
+        BlendEquation::Min => wgpu::BlendOperation::Min,
+        BlendEquation::Max => wgpu::BlendOperation::Max,
+    }
+}
+
+/// Maps a [`DepthFunction`] to `wgpu::CompareFunction`.
+pub fn depth_function_to_wgpu(func: DepthFunction) -> wgpu::CompareFunction {
+    match func {
+        DepthFunction::Never => wgpu::CompareFunction::Never,
+        DepthFunction::Less => wgpu::CompareFunction::Less,
+        DepthFunction::Equal => wgpu::CompareFunction::Equal,
+        DepthFunction::Lequal => wgpu::CompareFunction::LessEqual,
+        DepthFunction::Greater => wgpu::CompareFunction::Greater,
+        DepthFunction::Notequal => wgpu::CompareFunction::NotEqual,
+        DepthFunction::Gequal => wgpu::CompareFunction::GreaterEqual,
+        DepthFunction::Always => wgpu::CompareFunction::Always,
+    }
+}
+
+/// Maps a [`StencilOperation`] to `wgpu::StencilOperation`.
+pub fn stencil_operation_to_wgpu(op: StencilOperation) -> wgpu::StencilOperation {
+    match op {
+        StencilOperation::Zero => wgpu::StencilOperation::Zero,
+        StencilOperation::Keep => wgpu::StencilOperation::Keep,
+        StencilOperation::Replace => wgpu::StencilOperation::Replace,
+        StencilOperation::Incr => wgpu::StencilOperation::IncrementClamp,
+        StencilOperation::Decr => wgpu::StencilOperation::DecrementClamp,
+        StencilOperation::Invert => wgpu::StencilOperation::Invert,
+        StencilOperation::IncrWrap => wgpu::StencilOperation::IncrementWrap,
+        StencilOperation::DecrWrap => wgpu::StencilOperation::DecrementWrap,
+    }
+}
+
+impl RenderState {
+    /// Maps the front-face winding order to `wgpu::FrontFace`.
+    pub fn to_wgpu_front_face(&self) -> wgpu::FrontFace {
+        match self.front_face {
+            FrontFace::Clockwise => wgpu::FrontFace::Cw,
+            FrontFace::CounterClockwise => wgpu::FrontFace::Ccw,
+        }
+    }
+
+    /// Maps the cull configuration to the culled `wgpu::Face`,
+    /// or `None` when culling is disabled.
+    pub fn to_wgpu_cull_mode(&self) -> Option<wgpu::Face> {
+        if !self.cull.enabled {
+            return None;
+        }
+        match self.cull.face {
+            CullFace::Front => Some(wgpu::Face::Front),
+            CullFace::Back => Some(wgpu::Face::Back),
+            // DEVIATION: wgpu has no "cull both faces" mode; emulated by
+            // skipping the draw. Treated as back-face culling here; the
+            // context checks this case and skips such draws.
+            CullFace::FrontAndBack => Some(wgpu::Face::Back),
+        }
+    }
+
+    /// Builds the `wgpu::PrimitiveState` fragment for this render state.
+    pub fn to_wgpu_primitive_state(
+        &self,
+        topology: wgpu::PrimitiveTopology,
+    ) -> wgpu::PrimitiveState {
+        // DEVIATION: CesiumJS applies polygonOffset (gl.polygonOffset) per
+        // render state to bias depth values. wgpu 30's `PrimitiveState` has
+        // no polygon-offset field and the render pass exposes no dynamic
+        // depth bias, so the CesiumJS API field is retained for fidelity but
+        // maps to a no-op here.
+        wgpu::PrimitiveState {
+            topology,
+            strip_index_format: None,
+            front_face: self.to_wgpu_front_face(),
+            cull_mode: self.to_wgpu_cull_mode(),
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        }
+    }
+
+    /// Builds the `wgpu::DepthStencilState` fragment for this render state.
+    ///
+    /// `format` is the depth(-stencil) attachment format of the render pass.
+    pub fn to_wgpu_depth_stencil_state(&self, format: wgpu::TextureFormat) -> wgpu::DepthStencilState {
+        let stencil_op = |config: StencilOperationConfig| wgpu::StencilFaceState {
+            compare: wgpu::CompareFunction::Always,
+            fail_op: stencil_operation_to_wgpu(config.fail),
+            depth_fail_op: stencil_operation_to_wgpu(config.z_fail),
+            pass_op: stencil_operation_to_wgpu(config.z_pass),
+        };
+        wgpu::DepthStencilState {
+            format,
+            depth_write_enabled: Some(self.depth_mask),
+            depth_compare: Some(if self.depth_test.enabled {
+                depth_function_to_wgpu(self.depth_test.func)
+            } else {
+                wgpu::CompareFunction::Always
+            }),
+            stencil: wgpu::StencilState {
+                front: wgpu::StencilFaceState {
+                    compare: if self.stencil_test.enabled {
+                        depth_function_to_wgpu(self.stencil_test.front_function)
+                    } else {
+                        wgpu::CompareFunction::Always
+                    },
+                    ..stencil_op(self.stencil_test.front_operation)
+                },
+                back: wgpu::StencilFaceState {
+                    compare: if self.stencil_test.enabled {
+                        depth_function_to_wgpu(self.stencil_test.back_function)
+                    } else {
+                        wgpu::CompareFunction::Always
+                    },
+                    ..stencil_op(self.stencil_test.back_operation)
+                },
+                read_mask: self.stencil_test.mask,
+                write_mask: self.stencil_mask,
+            },
+            // DEVIATION: CesiumJS sets depthRange (near/far) per draw via
+            // gl.depthRange. wgpu exposes this only as a render-pass-level
+            // `depth_range` in recent versions; the pipeline state keeps the
+            // full [0, 1] range.
+            bias: wgpu::DepthBiasState::default(),
+        }
+    }
+
+    /// Builds the `wgpu::BlendState` for the blending configuration,
+    /// or `None` when blending is disabled.
+    pub fn to_wgpu_blend_state(&self) -> Option<wgpu::BlendState> {
+        if !self.blending.enabled {
+            return None;
+        }
+        Some(wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: blending_factor_to_wgpu(self.blending.function_source_rgb),
+                dst_factor: blending_factor_to_wgpu(self.blending.function_destination_rgb),
+                operation: blend_equation_to_wgpu(self.blending.equation_rgb),
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: blending_factor_to_wgpu(self.blending.function_source_alpha),
+                dst_factor: blending_factor_to_wgpu(self.blending.function_destination_alpha),
+                operation: blend_equation_to_wgpu(self.blending.equation_alpha),
+            },
+        })
+    }
+
+    /// Maps the color mask to `wgpu::ColorWrites`.
+    pub fn to_wgpu_write_mask(&self) -> wgpu::ColorWrites {
+        let mut mask = wgpu::ColorWrites::empty();
+        if self.color_mask.red {
+            mask |= wgpu::ColorWrites::RED;
+        }
+        if self.color_mask.green {
+            mask |= wgpu::ColorWrites::GREEN;
+        }
+        if self.color_mask.blue {
+            mask |= wgpu::ColorWrites::BLUE;
+        }
+        if self.color_mask.alpha {
+            mask |= wgpu::ColorWrites::ALPHA;
+        }
+        mask
+    }
+
+    /// Builds the `wgpu::ColorTargetState` fragment for this render state.
+    ///
+    /// `format` is the color attachment format of the render pass.
+    pub fn to_wgpu_color_target_state(&self, format: wgpu::TextureFormat) -> wgpu::ColorTargetState {
+        wgpu::ColorTargetState {
+            format,
+            blend: self.to_wgpu_blend_state(),
+            write_mask: self.to_wgpu_write_mask(),
+        }
+    }
+
+    /// Builds the `wgpu::MultisampleState` fragment for this render state.
+    ///
+    /// DEVIATION: CesiumJS sample coverage (`gl.sampleCoverage`) has no wgpu
+    /// equivalent; MSAA count is fixed at 1 for the smoke path (multisampled
+    /// attachments will override this when implemented).
+    pub fn to_wgpu_multisample_state(&self) -> wgpu::MultisampleState {
+        wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        }
+    }
+
+    /// Maps the WebGL-style primitive type constant to a
+    /// `wgpu::PrimitiveTopology`, if representable.
+    pub fn primitive_type_to_wgpu_topology(primitive_type: u32) -> Option<wgpu::PrimitiveTopology> {
+        use cesium_core::webgl_constants::WebGLConstants;
+        match primitive_type {
+            WebGLConstants::POINTS => Some(wgpu::PrimitiveTopology::PointList),
+            WebGLConstants::LINES => Some(wgpu::PrimitiveTopology::LineList),
+            WebGLConstants::LINE_STRIP => Some(wgpu::PrimitiveTopology::LineStrip),
+            WebGLConstants::TRIANGLES => Some(wgpu::PrimitiveTopology::TriangleList),
+            WebGLConstants::TRIANGLE_STRIP => Some(wgpu::PrimitiveTopology::TriangleStrip),
+            // DEVIATION: LINE_LOOP and TRIANGLE_FAN have no wgpu equivalent;
+            // callers must convert the geometry (e.g. fan → indexed list).
+            _ => None,
+        }
+    }
+}
+
 impl Hash for RenderState {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.front_face.hash(state);

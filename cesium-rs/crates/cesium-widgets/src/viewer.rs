@@ -2,9 +2,9 @@
 //!
 //! The main Cesium viewer widget.
 
+use cesium_core::clock::Clock;
 use cesium_core::event::Event;
 use cesium_data_sources::data_source_collection::DataSourceCollection;
-use cesium_data_sources::data_source_display::DataSourceDisplay;
 use crate::cesium_widget::{CesiumWidget, CesiumWidgetOptions};
 
 /// Configuration options for creating a Viewer.
@@ -85,8 +85,9 @@ pub struct Viewer {
     is_rendering: bool,
     /// The currently selected entity ID.
     selected_entity_id: Option<String>,
-    /// Event fired when the selected entity changes.
-    selected_entity_changed: Event,
+    /// Event fired when the selected entity changes
+    /// (`selectedEntityChanged`, raised with the new selection).
+    selected_entity_changed: Event<Option<String>>,
     /// Whether the viewer has been destroyed.
     is_destroyed: bool,
 }
@@ -121,12 +122,55 @@ impl Viewer {
         self.selected_entity_id.as_deref()
     }
 
-    /// Sets the selected entity by ID.
+    /// Sets the selected entity by ID, raising
+    /// [`Viewer::selected_entity_changed`] with the new selection when
+    /// it changes (mirrors the knockout observable write on
+    /// `selectedEntity` in CesiumJS).
     pub fn set_selected_entity_id(&mut self, id: Option<String>) {
         if self.selected_entity_id != id {
-            self.selected_entity_id = id;
-            // In CesiumJS, this fires selectedEntityChanged event
+            self.selected_entity_id = id.clone();
+            self.selected_entity_changed.raise_event(&id);
         }
+    }
+
+    /// Returns the `selectedEntityChanged` event.
+    pub fn selected_entity_changed(&self) -> &Event<Option<String>> {
+        &self.selected_entity_changed
+    }
+
+    /// Returns the clock used to control simulation time
+    /// (`viewer.clock`, the cesiumWidget clock).
+    pub fn clock(&self) -> &Clock {
+        self.cesium_widget.clock()
+    }
+
+    /// Returns the data source collection (`viewer.dataSources`).
+    pub fn data_sources(&self) -> &DataSourceCollection {
+        self.cesium_widget.data_sources()
+    }
+
+    /// Returns a mutable reference to the data source collection.
+    pub fn data_sources_mut(&mut self) -> &mut DataSourceCollection {
+        self.cesium_widget.data_sources_mut()
+    }
+
+    /// Returns the currently tracked entity ID (`viewer.trackedEntity`,
+    /// delegated to the cesiumWidget).
+    pub fn tracked_entity_id(&self) -> Option<&str> {
+        self.cesium_widget.tracked_entity_id()
+    }
+
+    /// Sets the tracked entity by ID, delegating to the cesiumWidget
+    /// (mirrors the `viewer.trackedEntity` knockout observable, which
+    /// is literally `cesiumWidget.trackedEntity` in CesiumJS).
+    pub fn set_tracked_entity_id(&mut self, id: Option<String>) {
+        self.cesium_widget.set_tracked_entity_id(id);
+    }
+
+    /// Returns the `trackedEntityChanged` event (delegated to the
+    /// cesiumWidget, as in CesiumJS).
+    pub fn tracked_entity_changed(&self) -> &Event<Option<String>> {
+        self.cesium_widget.tracked_entity_changed()
     }
 
     /// Resizes the viewer.

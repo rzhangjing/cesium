@@ -35,7 +35,7 @@ fn terrain_encoding_basic_stride() {
 #[test]
 fn terrain_encoding_with_normals() {
     let enc = TerrainEncoding::new(true, false, 1.0, 0.0);
-    assert_eq!(enc.stride, 9); // 6 + 3 normals
+    assert_eq!(enc.stride, 8); // 6 + 2 (oct-encoded normal pair)
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn terrain_encoding_with_water_mask() {
 #[test]
 fn terrain_encoding_with_both() {
     let enc = TerrainEncoding::new(true, true, 1.0, 0.0);
-    assert_eq!(enc.stride, 10); // 6 + 3 + 1
+    assert_eq!(enc.stride, 9); // 6 + 2 + 1
 }
 
 // --- TerrainProvider grid functions ---

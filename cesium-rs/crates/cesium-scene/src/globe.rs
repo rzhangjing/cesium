@@ -5,15 +5,17 @@
 use cesium_core::cartesian3::Cartesian3;
 use cesium_core::color::Color;
 use cesium_core::ellipsoid::Ellipsoid;
-use cesium_core::ellipsoid_terrain_provider::EllipsoidTerrainProvider;
 use cesium_core::event::Event;
 use cesium_core::near_far_scalar::NearFarScalar;
 use cesium_core::ray::Ray;
-use cesium_core::rectangle::Rectangle;
+
+use cesium_renderer::context::Context;
+use cesium_renderer::framebuffer::Framebuffer;
 
 use crate::frame_state::FrameState;
 use crate::globe_surface_shader_set::GlobeSurfaceShaderSet;
 use crate::globe_surface_tile_provider::GlobeSurfaceTileProvider;
+use crate::globe_terrain_fetcher::GlobeTerrainFetcher;
 use crate::globe_translucency::GlobeTranslucency;
 use crate::imagery_layer_collection::ImageryLayerCollection;
 use crate::quadtree_primitive::QuadtreePrimitive;
@@ -104,7 +106,10 @@ impl Globe {
     /// Creates a new Globe.
     pub fn new(ellipsoid: Option<Ellipsoid>) -> Self {
         let ellipsoid = ellipsoid.unwrap_or(Ellipsoid::WGS84);
-        let terrain_provider = EllipsoidTerrainProvider::new(None, Some(ellipsoid.clone()));
+        // TODO (B4-5): the terrain provider (Robin's cesium-core
+        // cesium_terrain_provider/custom_heightmap work) plugs in here once
+        // available; the ellipsoid terrain mesh generator is wired through
+        // `globe_tile_geometry` for now.
         let imagery_layer_collection = ImageryLayerCollection::new();
         let surface_shader_set = GlobeSurfaceShaderSet::new();
         let surface_tile_provider = GlobeSurfaceTileProvider::new();
@@ -174,6 +179,38 @@ impl Globe {
         &self.imagery_layer_collection
     }
 
+    /// Gets a mutable reference to the collection of image layers rendered
+    /// on this globe.
+    pub fn imagery_layers_mut(&mut self) -> &mut ImageryLayerCollection {
+        &mut self.imagery_layer_collection
+    }
+
+    /// Diagnostic hook: the quadtree surface primitive (traversal results,
+    /// SSE bookkeeping). Used by the globe smoke tests to assert the LOD
+    /// invariants.
+    pub fn surface(&self) -> &QuadtreePrimitive {
+        &self.surface
+    }
+
+    /// Diagnostic hook: the surface tile provider (terrain tile states,
+    /// upsample bookkeeping). Used by the terrain smoke tests.
+    pub fn surface_tile_provider(&self) -> &GlobeSurfaceTileProvider {
+        &self.surface_tile_provider
+    }
+
+    /// Installs (or clears) the terrain fetcher (B4-5). When `None`, the
+    /// globe renders the ellipsoid terrain grid (CesiumJS's placeholder
+    /// while no terrain provider is installed).
+    pub fn set_terrain_fetcher(&mut self, fetcher: Option<Box<dyn GlobeTerrainFetcher>>) {
+        self.surface_tile_provider.set_terrain_fetcher(fetcher);
+        self.terrain_provider_changed.raise_event(&());
+    }
+
+    /// The installed terrain fetcher, if any.
+    pub fn terrain_fetcher(&self) -> Option<&dyn GlobeTerrainFetcher> {
+        self.surface_tile_provider.terrain_fetcher()
+    }
+
     /// Gets the event raised when the terrain provider is changed.
     pub fn terrain_provider_changed(&self) -> &Event {
         &self.terrain_provider_changed
@@ -240,16 +277,64 @@ impl Globe {
         self.surface_tile_provider.set_vertex_shadow_darkness(self.vertex_shadow_darkness);
         self.surface_tile_provider.set_underground_color(self.underground_color.clone());
         self.surface_tile_provider.set_lambert_diffuse_multiplier(self.lambert_diffuse_multiplier);
+        self.surface_tile_provider.set_tile_cache_size(self.tile_cache_size);
+
+        // Imagery-driven refinement ceiling (B4-4): the traversal never
+        // refines past the shallowest imagery provider's maximum level —
+        // without it the synchronous traversal would refine unboundedly for
+        // a near camera. CesiumJS gets the same ceiling from terrain/
+        // imagery availability (`tileProvider.maximumLevel`).
+        let mut maximum_level: Option<i32> = None;
+        for index in 0..self.imagery_layer_collection.length() {
+            if let Some(layer) = self.imagery_layer_collection.get(index) {
+                if !layer.show {
+                    continue;
+                }
+                if let Some(provider) = layer.provider() {
+                    if let Some(level) = provider.maximum_level() {
+                        maximum_level = Some(match maximum_level {
+                            Some(current) => current.min(level as i32),
+                            None => level as i32,
+                        });
+                    }
+                }
+            }
+        }
+        self.surface.set_maximum_level(maximum_level);
 
         self.surface.begin_frame(frame_state);
     }
 
-    /// Renders the globe.
-    pub fn render(&mut self, frame_state: &FrameState) {
+    /// Renders the globe: one terrain+imagery draw per selected quadtree
+    /// tile into `framebuffer` (the globe offscreen pass with depth).
+    ///
+    /// DEVIATION (B4-3): CesiumJS issues the tile draw commands through the
+    /// `frameState.commandList` inside `QuadtreePrimitive.render`; the wgpu
+    /// port hands them to the collecting [`Context`] directly.
+    pub fn render(
+        &mut self,
+        frame_state: &FrameState,
+        context: &mut Context,
+        framebuffer: Option<std::sync::Arc<Framebuffer>>,
+    ) {
         if !self.show {
             return;
         }
         self.surface.render(frame_state);
+        // B4-5: drive the selected tiles' terrain toward Ready/NoData
+        // (ancestors first) before the tile draws pick their geometry.
+        let tiles = self.surface.tiles_to_render();
+        self.surface_tile_provider
+            .prepare_terrain(tiles, frame_state.frame_number);
+        for tile in self.surface.tiles_to_render() {
+            self.surface_tile_provider.render_tile(
+                tile,
+                &self.imagery_layer_collection,
+                &self.ellipsoid,
+                context,
+                framebuffer.clone(),
+            );
+        }
     }
 
     /// Called at the end of each frame.

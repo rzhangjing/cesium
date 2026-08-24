@@ -3,6 +3,9 @@
 //! A collection of entities with change events.
 
 use cesium_core::event::Event;
+use cesium_core::iso8601::Iso8601;
+use cesium_core::julian_date::JulianDate;
+use cesium_core::time_interval::TimeInterval;
 use crate::entity::Entity;
 use std::collections::HashMap;
 
@@ -17,6 +20,8 @@ pub struct EntityCollection {
     entity_ids: Vec<String>,
     /// Fired when entities are added, removed, or changed.
     pub collection_changed: Event,
+    /// Whether the entities in this collection are shown.
+    pub show: bool,
     /// Whether this collection has been destroyed.
     is_destroyed: bool,
     /// Whether events are suspended (for batch operations).
@@ -43,6 +48,7 @@ impl EntityCollection {
             entities: HashMap::new(),
             entity_ids: Vec::new(),
             collection_changed: Event::new(),
+            show: true,
             is_destroyed: false,
             suspend_depth: 0,
             pending_changes: Vec::new(),
@@ -85,6 +91,62 @@ impl EntityCollection {
     /// Returns a mutable reference to the entity with the given ID.
     pub fn get_by_id_mut(&mut self, id: &str) -> Option<&mut Entity> {
         self.entities.get_mut(id)
+    }
+
+    /// Returns the entity with the given ID, creating it if it does not
+    /// exist (mirror of the internal `getOrCreateEntity` helper used by the
+    /// CZML processing pipeline).
+    pub fn get_or_create_entity(&mut self, id: &str) -> &mut Entity {
+        if !self.entities.contains_key(id) {
+            self.add(Entity::new(id));
+        }
+        self.entities.get_mut(id).unwrap()
+    }
+
+    /// Computes the union of the availability of all entities.
+    ///
+    /// Port of `EntityCollection.computeAvailability`: the result spans from
+    /// the earliest entity availability start to the latest stop. When no
+    /// entity defines availability, the result spans `Iso8601.MINIMUM_VALUE`
+    /// to `Iso8601.MAXIMUM_VALUE`.
+    pub fn compute_availability(&self) -> TimeInterval {
+        // Mirrors `EntityCollection.computeAvailability`: reduce the entity
+        // availability intervals with the empty interval as identity.
+        let mut result: Option<TimeInterval> = None;
+        for id in &self.entity_ids {
+            let Some(entity) = self.entities.get(id) else { continue };
+            for interval in &entity.availability {
+                result = Some(match result {
+                    None => interval.clone(),
+                    Some(acc) => {
+                        // Union of two intervals (outer span); the CZML
+                        // availability intervals only feed the clock
+                        // derivation so the boundary inclusion flags are
+                        // taken from the accumulated span.
+                        TimeInterval::new(
+                            Some(if JulianDate::compare(&interval.start, &acc.start) < 0 {
+                                interval.start.clone()
+                            } else {
+                                acc.start.clone()
+                            }),
+                            Some(if JulianDate::compare(&interval.stop, &acc.stop) > 0 {
+                                interval.stop.clone()
+                            } else {
+                                acc.stop.clone()
+                            }),
+                            None,
+                            None,
+                        )
+                    }
+                });
+            }
+        }
+        result.unwrap_or_else(|| TimeInterval::new(
+            Some(Iso8601::minimum_value().clone()),
+            Some(Iso8601::maximum_value().clone()),
+            None,
+            None,
+        ))
     }
 
     /// Returns whether the collection contains an entity with the given ID.

@@ -10,6 +10,10 @@
 
 use crate::developer_error::throw_developer_error;
 
+// Convenience re-exports so call sites can use `check::number` /
+// `check::object` in addition to the JS-faithful `check::type_of::*` paths.
+pub use type_of::{bool, func, number, object, string};
+
 fn get_undefined_error_message(name: &str) -> String {
     format!("{name} is required, actual value was undefined")
 }
@@ -69,7 +73,7 @@ pub(crate) fn js_number_to_string(v: f64) -> String {
 ///
 /// # Panics
 /// Panics with `DeveloperError` when `test` is `None`.
-pub fn defined<T>(name: &str, test: Option<&T>) {
+pub fn defined<T: ?Sized>(name: &str, test: Option<&T>) {
     if test.is_none() {
         throw_developer_error(&get_undefined_error_message(name));
     }
@@ -176,7 +180,7 @@ pub mod type_of {
     }
 
     /// Throws if test is not typeof 'object'.
-    pub fn object<T>(name: &str, test: Option<&T>) {
+    pub fn object<T: ?Sized>(name: &str, test: Option<&T>) {
         if test.is_none() {
             throw_developer_error(&get_failed_type_error_message(
                 "undefined",

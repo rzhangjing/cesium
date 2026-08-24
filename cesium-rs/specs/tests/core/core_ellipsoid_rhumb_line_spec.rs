@@ -5,6 +5,7 @@ use cesium_core::ellipsoid::Ellipsoid;
 use cesium_core::ellipsoid_rhumb_line::EllipsoidRhumbLine;
 
 const EPSILON8: f64 = 1e-8;
+const EPSILON12: f64 = 1e-12;
 
 fn approx_eq(a: f64, b: f64, eps: f64) -> bool {
     (a - b).abs() < eps
@@ -47,7 +48,9 @@ fn interpolate_using_fraction_at_zero_returns_start() {
     let result = line.interpolate_using_fraction(0.0);
     assert!(approx_eq(result.longitude, start.longitude, EPSILON8));
     assert!(approx_eq(result.latitude, start.latitude, EPSILON8));
-    assert!(approx_eq(result.height, start.height, EPSILON8));
+    // Mirrors JS: `computeProperties` zeroes start/end heights (the rhumb
+    // line is a surface curve), so the distance===0 clone carries height 0.
+    assert!(approx_eq(result.height, 0.0, EPSILON8));
 }
 
 #[test]
@@ -59,19 +62,28 @@ fn interpolate_using_fraction_at_one_returns_end() {
     let result = line.interpolate_using_fraction(1.0);
     assert!(approx_eq(result.longitude, end.longitude, EPSILON8));
     assert!(approx_eq(result.latitude, end.latitude, EPSILON8));
-    assert!(approx_eq(result.height, end.height, EPSILON8));
+    // Mirrors JS: interpolation never carries height (always 0 for
+    // non-zero distance); the original spec never asserts height here.
+    assert!(approx_eq(result.height, 0.0, EPSILON8));
 }
 
 #[test]
 fn interpolate_using_fraction_at_half_returns_midpoint() {
-    let start = Cartographic::new(0.0, 0.0, 0.0);
-    let end = Cartographic::new(2.0, 2.0, 100.0);
+    // Mirrors EllipsoidRhumbLineSpec.js "interpolates midpoint using
+    // fraction": fifteenDegrees -> fortyfiveDegrees longitude at latitude 0
+    // (constant-latitude line). The previous (0,0)->(2,2) radians data used
+    // an invalid latitude (2.0 > PI/2), which yields NaN even in the JS
+    // original.
+    let fifteen_degrees = std::f64::consts::PI / 12.0;
+    let thirty_degrees = std::f64::consts::PI / 6.0;
+    let fortyfive_degrees = std::f64::consts::PI / 4.0;
+    let start = Cartographic::new(fifteen_degrees, 0.0, 0.0);
+    let end = Cartographic::new(fortyfive_degrees, 0.0, 0.0);
     let line = EllipsoidRhumbLine::new(Some(start), Some(end), None, None);
 
     let result = line.interpolate_using_fraction(0.5);
-    assert!(approx_eq(result.longitude, 1.0, EPSILON8));
-    assert!(approx_eq(result.latitude, 1.0, EPSILON8));
-    assert!(approx_eq(result.height, 50.0, EPSILON8));
+    assert!(approx_eq(result.longitude, thirty_degrees, EPSILON12));
+    assert!(approx_eq(result.latitude, 0.0, EPSILON12));
 }
 
 #[test]

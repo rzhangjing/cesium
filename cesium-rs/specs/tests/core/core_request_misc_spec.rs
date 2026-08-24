@@ -18,7 +18,7 @@ use cesium_core::trusted_servers::TrustedServers;
 // urijs module is private; test via public API if available
 use cesium_core::write_text_to_canvas::WriteTextToCanvas;
 use cesium_core::build_module_url::BuildModuleUrl;
-use cesium_core::approximate_terrain_heights::ApproximateTerrainHeights;
+use cesium_core::approximate_terrain_heights;
 
 // --- Request ---
 #[test]
@@ -175,6 +175,11 @@ fn pin_builder_new() {
 
 #[test]
 fn approximate_terrain_heights_new() {
-    let _ = ApproximateTerrainHeights::new();
-    let _ = ApproximateTerrainHeights::default();
+    // DEVIATION: JS `ApproximateTerrainHeights` is a static object (no constructor);
+    // the Rust port mirrors it as free functions + constants, so the stub
+    // `new()/default()` smoke check is replaced by a constants smoke check.
+    use cesium_core::approximate_terrain_heights as ath;
+    assert_eq!(ath::TERRAIN_HEIGHTS_MAX_LEVEL, 6);
+    assert_eq!(ath::DEFAULT_MAX_TERRAIN_HEIGHT, 9000.0);
+    assert_eq!(ath::DEFAULT_MIN_TERRAIN_HEIGHT, -100000.0);
 }

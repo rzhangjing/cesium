@@ -27,6 +27,7 @@ pub fn decode_google_earth_enterprise_data(key: &[u8], data: &mut [u8]) {
 
     let mut dp = 0usize;
     let mut off = 8usize;
+    let mut kp_last = 0usize;
 
     while dp < dpend64 {
         off = (off + 8) % 24;
@@ -35,32 +36,26 @@ pub fn decode_google_earth_enterprise_data(key: &[u8], data: &mut [u8]) {
         while dp < dpend64 && kp < key_length {
             // XOR 8 bytes at a time
             for b in 0..8 {
-                if dp + b < data_length && kp + b < key_length {
-                    data[dp + b] ^= key[kp + b];
-                }
+                data[dp + b] ^= key[kp + b];
             }
             dp += 8;
             kp += 24;
         }
+        kp_last = kp;
     }
 
-    // Remaining 1-7 bytes
+    // Remaining 1-7 bytes (continue with the key position the 64-bit pass
+    // ended on; rotate once more only when the key was exhausted).
     if dp < data_length {
-        if kp_from_off(off, key_length) >= key_length {
+        let mut kp = kp_last;
+        if kp >= key_length {
             off = (off + 8) % 24;
+            kp = off;
         }
-        let mut kp = off;
         while dp < data_length {
-            if kp >= key_length {
-                kp = 0;
-            }
             data[dp] ^= key[kp];
             dp += 1;
             kp += 1;
         }
     }
-}
-
-fn kp_from_off(off: usize, _key_length: usize) -> usize {
-    off
 }

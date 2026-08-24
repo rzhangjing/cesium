@@ -30,3 +30,7 @@
 | Widgets | `animation_view_model.rs` | shuttle ring 角度/倍速映射表完整保留；play/pause 通过 `Command` 绑定 | 语义不变 | 2026-08-23 |
 | Widgets | `scene_mode_picker_view_model.rs` | `SceneMode` 枚举引用 `cesium-scene`；morph 方法为桩（需 Scene.morphTo 完整实现） | 依赖 Scene 层 morph 管线 | 2026-08-23 |
 | Renderer | `context.rs` | `clear()`/`draw()`/`submit()` 为桩（wgpu 渲染通过 RenderPass 编码，非 imperative 调用） | wgpu 管线模型与 WebGL2 imperative 模型根本不同；实际渲染在 viewer-demo 帧循环中 | 2026-08-23 |
+| Core (specs) | `core_math_spec.rs` / `core_is_leap_year_spec.rs` / `core_binary_search_spec.rs` / `core_plane_spec.rs` 等 | JS undefined-argument / non-number DeveloperError 用例镜像为 `#[ignore]` 空体 stub（共 ~158 条） | Rust 静态类型使该错误路径不可达；保留用例名维持 spec 表面一比一。详见 ignored_disposition.md (b) | 2026-08-23 |
+| Core (specs) | `core_cartesian2/3/4_spec.rs` | JS missing-result DeveloperError 用例（`result` 缺省新建对象）镜像为 `#[ignore]` stub（16 条） | Rust 出参 `&mut` 强制必传，无“缺省 result 新建”路径。详见 ignored_disposition.md (b) | 2026-08-23 |
+| Core (specs) | `core_check_spec.rs` | `Check.typeOf.*` 拒绝非目标类型（non-number/string/bool/object/func/bigint）用例镜像为 `#[ignore]` stub（~7 条） | Rust 静态类型已保证传入值类型，动态 typeof 拒绝路径不可达 | 2026-08-23 |
+| Core (specs) | `core_event_spec.rs` | listener 身份/scope 相关用例（`remove_listener` null/undefined、scope 参数）镜像为 `#[ignore]` stub（~6 条） | Rust 以 `ListenerId` 为键，无 JS 函数身份/scope 概念 | 2026-08-23 |

@@ -10,6 +10,7 @@ license.workspace = true
 cesium-core = { workspace = true }
 cesium-scene = { workspace = true }
 cesium-data-sources = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 cesium-test-utils = { workspace = true }

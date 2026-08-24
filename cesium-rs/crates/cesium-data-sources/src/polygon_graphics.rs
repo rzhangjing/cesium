@@ -1,5 +1,6 @@
 ﻿//! Ported from `packages/engine/Source/DataSources/PolygonGraphics.js`.
 
+use cesium_core::arc_type::ArcType;
 use cesium_core::cartesian3::Cartesian3;
 use cesium_core::color::Color;
 
@@ -24,6 +25,15 @@ pub struct PolygonGraphics {
     pub extrude: bool,
     /// Whether to fill the polygon.
     pub fill: bool,
+    /// The width of the outline in pixels.
+    pub outline_width: f64,
+    /// Whether the polygon uses the height of each position
+    /// (mirrors `perPositionHeight`; `None` means unset).
+    pub per_position_height: Option<bool>,
+    /// The holes of the polygon (each hole is a ring of positions).
+    pub holes: Vec<Vec<Cartesian3>>,
+    /// The type of arc used to connect the positions.
+    pub arc_type: ArcType,
 }
 
 impl PolygonGraphics {
@@ -39,6 +49,10 @@ impl PolygonGraphics {
             outline_color: Color::new(0.0, 0.0, 0.0, 1.0),
             extrude: false,
             fill: true,
+            outline_width: 1.0,
+            per_position_height: None,
+            holes: Vec::new(),
+            arc_type: ArcType::Geodesic,
         }
     }
 }

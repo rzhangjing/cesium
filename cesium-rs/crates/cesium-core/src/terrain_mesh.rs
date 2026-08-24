@@ -4,6 +4,7 @@ use crate::bounding_sphere::BoundingSphere;
 use crate::cartesian3::Cartesian3;
 use crate::oriented_bounding_box::OrientedBoundingBox;
 use crate::rectangle::Rectangle;
+use crate::terrain_encoding::TerrainEncoding;
 
 /// A mesh plus related metadata for a single tile of terrain.
 pub struct TerrainMesh {
@@ -29,6 +30,11 @@ pub struct TerrainMesh {
     pub bounding_sphere_3d: BoundingSphere,
     /// The occludee point for horizon culling.
     pub occludee_point_in_scaled_space: Cartesian3,
+    /// Information about how the vertices are encoded.
+    ///
+    /// Mirrors `TerrainMesh.encoding` (the JS constructor takes the encoding
+    /// object; `stride` above mirrors the `vertexStride` result field).
+    pub encoding: TerrainEncoding,
     /// A bounding box that completely contains the tile.
     pub oriented_bounding_box: Option<OrientedBoundingBox>,
     /// Edge indices: west (S→N), south (E→W), east (N→S), north (W→E).

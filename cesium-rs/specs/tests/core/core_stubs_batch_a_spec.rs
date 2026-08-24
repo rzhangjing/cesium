@@ -1,34 +1,27 @@
 //! Tests for remaining stub modules (batch A): terrain providers,
 //! geocoder services, Google Earth Enterprise, and other small modules.
 
-use cesium_core::arc_gis_tiled_elevation_terrain_provider::ArcGISTiledElevationTerrainProvider;
-use cesium_core::bing_maps_geocoder_service::BingMapsGeocoderService;
+use cesium_core::bing_maps_geocoder_service::{
+    BingMapsGeocoderService, BingMapsGeocoderServiceOptions,
+};
 use cesium_core::cartographic_geocoder_service::CartographicGeocoderService;
 use cesium_core::cesium_terrain_provider::CesiumTerrainProvider;
 use cesium_core::cesium3d_tiles_terrain_data::Cesium3DTilesTerrainData;
 use cesium_core::cesium3d_tiles_terrain_geometry_processor::Cesium3DTilesTerrainGeometryProcessor;
-use cesium_core::create_world_bathymetry_async::CreateWorldBathymetryAsync;
-use cesium_core::create_world_terrain_async::CreateWorldTerrainAsync;
-use cesium_core::custom_heightmap_terrain_provider::CustomHeightmapTerrainProvider;
+use cesium_core::create_world_bathymetry_async::create_world_bathymetry_async;
+use cesium_core::create_world_terrain_async::{create_world_terrain_async, CreateWorldTerrainOptions};
 use cesium_core::fullscreen::Fullscreen;
-use cesium_core::geocoder_service::GeocoderService;
-use cesium_core::google_earth_enterprise_metadata::GoogleEarthEnterpriseMetadata;
-use cesium_core::google_earth_enterprise_terrain_data::GoogleEarthEnterpriseTerrainData;
-use cesium_core::google_earth_enterprise_terrain_provider::GoogleEarthEnterpriseTerrainProvider;
-use cesium_core::google_earth_enterprise_tile_information::GoogleEarthEnterpriseTileInformation;
-use cesium_core::google_geocoder_service::GoogleGeocoderService;
-use cesium_core::heightmap_terrain_data::HeightmapTerrainData;
+use cesium_core::google_geocoder_service::{
+    GoogleGeocoderService, GoogleGeocoderServiceOptions,
+};
+use cesium_core::heightmap_terrain_data::{
+    HeightmapBuffer, HeightmapTerrainData, HeightmapTerrainDataOptions,
+};
 use cesium_core::heightmap_tessellator::HeightmapTessellator;
 use cesium_core::i_twin_platform::ITwinPlatform;
 use cesium_core::ion_geocoder_service::IonGeocoderService;
 
 // --- Terrain provider stubs ---
-#[test]
-fn arc_gis_tiled_elevation_terrain_provider_new() {
-    let _ = ArcGISTiledElevationTerrainProvider::new();
-    let _ = ArcGISTiledElevationTerrainProvider::default();
-}
-
 #[test]
 fn cesium_terrain_provider_new() {
     let _ = CesiumTerrainProvider::new();
@@ -47,40 +40,21 @@ fn cesium3d_tiles_terrain_geometry_processor_new() {
     let _ = Cesium3DTilesTerrainGeometryProcessor::default();
 }
 
-#[test]
-fn custom_heightmap_terrain_provider_new() {
-    let _ = CustomHeightmapTerrainProvider::new();
-    let _ = CustomHeightmapTerrainProvider::default();
-}
-
-#[test]
-fn google_earth_enterprise_metadata_new() {
-    let _ = GoogleEarthEnterpriseMetadata::new();
-    let _ = GoogleEarthEnterpriseMetadata::default();
-}
-
-#[test]
-fn google_earth_enterprise_terrain_data_new() {
-    let _ = GoogleEarthEnterpriseTerrainData::new();
-    let _ = GoogleEarthEnterpriseTerrainData::default();
-}
-
-#[test]
-fn google_earth_enterprise_terrain_provider_new() {
-    let _ = GoogleEarthEnterpriseTerrainProvider::new();
-    let _ = GoogleEarthEnterpriseTerrainProvider::default();
-}
-
-#[test]
-fn google_earth_enterprise_tile_information_new() {
-    let _ = GoogleEarthEnterpriseTileInformation::new();
-    let _ = GoogleEarthEnterpriseTileInformation::default();
-}
+// GoogleEarthEnterpriseMetadata / TerrainData / TerrainProvider were
+// substantiated (P3): the old parameter-less stub tests were removed;
+// behavior is covered by the GEE metadata/data/provider spec mirrors.
 
 #[test]
 fn heightmap_terrain_data_new() {
-    let _ = HeightmapTerrainData::new();
-    let _ = HeightmapTerrainData::default();
+    // DEVIATION: `HeightmapTerrainData` is now substantiated and requires an
+    // options object (mirrors the JS `options` parameter); the old
+    // parameter-less stub constructor no longer exists.
+    let _ = HeightmapTerrainData::new(HeightmapTerrainDataOptions {
+        buffer: Some(HeightmapBuffer::F32(vec![0.0; 4])),
+        width: Some(2),
+        height: Some(2),
+        ..Default::default()
+    });
 }
 
 #[test]
@@ -89,11 +63,13 @@ fn heightmap_tessellator_new() {
     let _ = HeightmapTessellator::default();
 }
 
-// --- Geocoder service stubs ---
+// --- Geocoder services (substantiated by Track A7; construction smoke) ---
 #[test]
 fn bing_maps_geocoder_service_new() {
-    let _ = BingMapsGeocoderService::new();
-    let _ = BingMapsGeocoderService::default();
+    let _ = BingMapsGeocoderService::new(Some(BingMapsGeocoderServiceOptions {
+        key: Some("key".to_string()),
+        culture: None,
+    }));
 }
 
 #[test]
@@ -102,41 +78,40 @@ fn cartographic_geocoder_service_new() {
     let _ = CartographicGeocoderService::default();
 }
 
-#[test]
-fn geocoder_service_new() {
-    let _ = GeocoderService::new();
-    let _ = GeocoderService::default();
-}
+// DEVIATION: `GeocoderService` is now a trait (interface); see
+// `core_fidelity/geocoder_fidelity_spec.rs` for the behavior mirrors.
 
 #[test]
 fn google_geocoder_service_new() {
-    let _ = GoogleGeocoderService::new();
-    let _ = GoogleGeocoderService::default();
+    let _ = GoogleGeocoderService::new(Some(GoogleGeocoderServiceOptions {
+        key: Some("key".to_string()),
+    }));
 }
 
 #[test]
 fn ion_geocoder_service_new() {
-    let _ = IonGeocoderService::new();
-    let _ = IonGeocoderService::default();
+    let _ = IonGeocoderService::new(None);
 }
 
 // --- Other stubs ---
 #[test]
-fn create_world_bathymetry_async_new() {
-    let _ = CreateWorldBathymetryAsync::new();
-    let _ = CreateWorldBathymetryAsync::default();
+fn create_world_bathymetry_async_call() {
+    // DEVIATION: stub returns None (Ion/Scene dependency deferred).
+    assert!(create_world_bathymetry_async().is_none());
 }
 
 #[test]
-fn create_world_terrain_async_new() {
-    let _ = CreateWorldTerrainAsync::new();
-    let _ = CreateWorldTerrainAsync::default();
+fn create_world_terrain_async_call() {
+    // DEVIATION: stub returns None (Ion/ResourceBackend deferred).
+    assert!(create_world_terrain_async(None).is_none());
+    assert!(create_world_terrain_async(Some(CreateWorldTerrainOptions::default())).is_none());
 }
 
 #[test]
-fn fullscreen_new() {
-    let _ = Fullscreen::new();
-    let _ = Fullscreen::default();
+fn fullscreen_probe() {
+    // Track A6: `Fullscreen` is a static utility (no DOM in the headless
+    // port, so the probe reports "not supported").
+    let _ = Fullscreen::supports_fullscreen();
 }
 
 #[test]

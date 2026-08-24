@@ -60,6 +60,9 @@ pub enum PropertyResult {
     LabelStyle(u32),
     /// A horizontal/vertical origin pair.
     Origin(u32, u32),
+    /// An arbitrary JSON object or array (mirrors CZML `object`/`array`
+    /// constant custom properties).
+    Json(serde_json::Value),
     /// No value / undefined.
     None,
 }
@@ -129,6 +132,7 @@ impl PartialEq for PropertyResult {
             (Self::Quaternion(x1, y1, z1, w1), Self::Quaternion(x2, y2, z2, w2)) => {
                 x1 == x2 && y1 == y2 && z1 == z2 && w1 == w2
             }
+            (Self::Json(a), Self::Json(b)) => a == b,
             (Self::None, Self::None) => true,
             _ => false,
         }

@@ -60,7 +60,7 @@ fn circle_geometry_new() {
 #[test]
 fn ellipse_geometry_new() {
     let center = Cartesian3::new(0.0, 0.0, 0.0);
-    let ellipse = EllipseGeometry::new(center, 1000.0, 500.0, None, None, None, None, None, None);
+    let ellipse = EllipseGeometry::new(center, 1000.0, 500.0, None, None, None, None, None, None, None, None, None);
     let _ = ellipse;
 }
 
@@ -80,7 +80,7 @@ fn polygon_geometry_new() {
         Cartesian3::new(1.0, 0.0, 0.0),
         Cartesian3::new(0.5, 1.0, 0.0),
     ];
-    let poly = PolygonGeometry::new(positions, None, None, None, None);
+    let poly = PolygonGeometry::new(positions, None, None, None, None, None, None, None, None, None, None, None);
     let _ = poly;
 }
 
@@ -103,7 +103,7 @@ fn corridor_geometry_new() {
         Cartesian3::new(1.0, 0.0, 0.0),
         Cartesian3::new(2.0, 0.0, 0.0),
     ];
-    let corridor = CorridorGeometry::new(positions, 10.0, None, None);
+    let corridor = CorridorGeometry::new(positions, 10.0, None, None, None, None, None, None, None, None);
     let _ = corridor;
 }
 

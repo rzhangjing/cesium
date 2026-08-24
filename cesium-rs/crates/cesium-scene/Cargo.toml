@@ -10,7 +10,14 @@ license.workspace = true
 cesium-core = { workspace = true }
 cesium-renderer = { workspace = true }
 cesium-shaders = { workspace = true }
+image = { workspace = true }
 log = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+wgpu = { workspace = true }
 
 [dev-dependencies]
+cesium-specs = { path = "../../specs" }
 cesium-test-utils = { workspace = true }
+pollster = { workspace = true }

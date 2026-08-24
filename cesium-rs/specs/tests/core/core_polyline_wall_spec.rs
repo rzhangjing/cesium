@@ -6,7 +6,9 @@ use cesium_core::decode_vector_polyline_positions::decode_vector_polyline_positi
 use cesium_core::ellipsoid::Ellipsoid;
 use cesium_core::math::CesiumMath;
 use cesium_core::polyline_geometry::PolylineGeometry;
-use cesium_core::polyline_volume_geometry::{Cartesian2Stub, PolylineVolumeGeometry};
+use cesium_core::cartesian2::Cartesian2;
+use cesium_core::corner_type::CornerType;
+use cesium_core::polyline_volume_geometry::PolylineVolumeGeometry;
 use cesium_core::rectangle::Rectangle;
 use cesium_core::simple_polyline_geometry::ArcType;
 use cesium_core::wall_geometry_library::compute_positions;
@@ -49,27 +51,27 @@ fn polyline_volume_geometry_new() {
         Cartesian3::new(1.0, 0.0, 6378137.0),
     ];
     let shape = vec![
-        Cartesian2Stub { x: -0.5, y: -0.5 },
-        Cartesian2Stub { x: 0.5, y: -0.5 },
-        Cartesian2Stub { x: 0.5, y: 0.5 },
-        Cartesian2Stub { x: -0.5, y: 0.5 },
+        Cartesian2 { x: -0.5, y: -0.5 },
+        Cartesian2 { x: 0.5, y: -0.5 },
+        Cartesian2 { x: 0.5, y: 0.5 },
+        Cartesian2 { x: -0.5, y: 0.5 },
     ];
-    let geom = PolylineVolumeGeometry::new(positions, shape, None, None);
+    let geom = PolylineVolumeGeometry::new(positions, shape, None, None, None, None);
     let _ = geom;
 }
 
 #[test]
 fn polyline_volume_geometry_custom_corner_type() {
     let positions = vec![Cartesian3::new(0.0, 0.0, 6378137.0)];
-    let shape = vec![Cartesian2Stub { x: 0.0, y: 0.0 }];
+    let shape = vec![Cartesian2 { x: 0.0, y: 0.0 }];
     // corner_type: 0=Rounded, 1=Mitered, 2=Beveled
-    let geom = PolylineVolumeGeometry::new(positions, shape, Some(2), Some(0.01));
+    let geom = PolylineVolumeGeometry::new(positions, shape, None, Some(CornerType::Beveled), None, Some(0.01));
     let _ = geom;
 }
 
 #[test]
 fn cartesian2_stub_copy() {
-    let a = Cartesian2Stub { x: 1.0, y: 2.0 };
+    let a = Cartesian2 { x: 1.0, y: 2.0 };
     let b = a; // Copy
     assert_eq!(b.x, 1.0);
     assert_eq!(b.y, 2.0);

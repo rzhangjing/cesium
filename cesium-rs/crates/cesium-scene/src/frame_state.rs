@@ -37,6 +37,9 @@ pub struct FrameState {
     pub drawing_buffer_width: u32,
     /// The drawing buffer height.
     pub drawing_buffer_height: u32,
+    /// The camera frustum's SSE denominator (`2 * tan(fov / 2)` for a
+    /// perspective frustum), mirroring CesiumJS `frustum.sseDenominator`.
+    pub sse_denominator: f64,
     /// The current frame number.
     pub frame_number: u64,
     /// The current context (if available).
@@ -90,6 +93,7 @@ impl FrameState {
             camera_right: Cartesian3::default(),
             drawing_buffer_width: 0,
             drawing_buffer_height: 0,
+            sse_denominator: 2.0 * (std::f64::consts::FRAC_PI_3 * 0.5).tan(),
             frame_number: 0,
             context_ready: false,
             pick_objects: false,

@@ -5,6 +5,7 @@
 use std::fmt;
 
 use crate::check;
+use crate::color::Color;
 use crate::developer_error::throw_developer_error;
 use crate::math::CesiumMath;
 
@@ -77,10 +78,31 @@ impl Cartesian4 {
         Self::new(x, y, z, w)
     }
 
-    /// DEVIATION (deferred): `Cartesian4.fromColor` is not ported yet —
-    /// it depends on `Color` (red/green/blue/alpha map to x/y/z/w),
-    /// which is outside the current batch. Registered in
-    /// `docs/deferred.md`; will be added once `Color` is ported.
+    /// Creates a Cartesian4 instance from a [`Color`]. `red`, `green`,
+    /// `blue`, and `alpha` map to `x`, `y`, `z`, and `w`, respectively.
+    ///
+    /// Port of `Cartesian4.fromColor`. The JS `color` argument is
+    /// runtime-checked via `Check.typeOf.object`; the `Option` mirrors the JS
+    /// "undefined" path so that error case remains spec-mirrorable.
+    pub fn from_color(color: Option<&Color>, result: &mut Self) {
+        //>>includeStart('debug', pragmas.debug);
+        if cfg!(debug_assertions) {
+            check::type_of::object("color", color);
+        }
+        //>>includeEnd('debug');
+        let color = color.expect("color is checked above");
+        result.x = color.red;
+        result.y = color.green;
+        result.z = color.blue;
+        result.w = color.alpha;
+    }
+
+    /// Allocating variant of [`Cartesian4::from_color`].
+    pub fn from_color_new(color: Option<&Color>) -> Self {
+        let mut result = Self::default();
+        Self::from_color(color, &mut result);
+        result
+    }
 
     /// Duplicates a Cartesian4 instance into `result`.
     ///

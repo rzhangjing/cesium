@@ -4,6 +4,8 @@
 
 use cesium_core::cartesian3::Cartesian3;
 use cesium_core::event::Event;
+use cesium_core::julian_date::JulianDate;
+use cesium_core::time_interval::TimeInterval;
 
 use crate::billboard_graphics::BillboardGraphics;
 use crate::label_graphics::LabelGraphics;
@@ -50,59 +52,15 @@ pub struct Entity {
     pub parent_id: Option<String>,
     /// Arbitrary user-defined properties.
     pub properties: PropertyBag,
-    /// The availability interval for this entity.
-    pub availability: Option<TimeInterval>,
+    /// The availability intervals for this entity (mirrors a
+    /// `TimeIntervalCollection`; stored as a plain interval list in this
+    /// simplified value model).
+    pub availability: Vec<TimeInterval>,
+    /// The preferred view offset when framing this entity (mirrors
+    /// `viewFrom`, constant subset of the CZML value model).
+    pub view_from: Option<Cartesian3>,
     /// Fired when a property or sub-property changes.
     pub definition_changed: Event,
-}
-
-/// A simple time interval (start, end) in Julian day numbers.
-#[derive(Debug, Clone, Copy)]
-pub struct TimeInterval {
-    /// The start time (Julian day number).
-    pub start: f64,
-    /// The end time (Julian day number).
-    pub end: f64,
-    /// Whether the start is included.
-    pub is_start_included: bool,
-    /// Whether the end is included.
-    pub is_end_included: bool,
-}
-
-impl TimeInterval {
-    /// Creates a new time interval.
-    pub fn new(start: f64, end: f64) -> Self {
-        Self {
-            start,
-            end,
-            is_start_included: true,
-            is_end_included: true,
-        }
-    }
-
-    /// Returns whether the given time is within this interval.
-    pub fn contains(&self, time: f64) -> bool {
-        let after_start = if self.is_start_included {
-            time >= self.start
-        } else {
-            time > self.start
-        };
-        let before_end = if self.is_end_included {
-            time <= self.end
-        } else {
-            time < self.end
-        };
-        after_start && before_end
-    }
-
-    /// Returns whether this interval is empty.
-    pub fn is_empty(&self) -> bool {
-        if self.start == self.end {
-            !(self.is_start_included && self.is_end_included)
-        } else {
-            self.start > self.end
-        }
-    }
 }
 
 impl Entity {
@@ -123,7 +81,8 @@ impl Entity {
             model: None,
             parent_id: None,
             properties: PropertyBag::new(),
-            availability: None,
+            availability: Vec::new(),
+            view_from: None,
             definition_changed: Event::new(),
         }
     }
@@ -172,19 +131,23 @@ impl Entity {
                 self.properties.set(key, val.clone());
             }
         }
-        if other.availability.is_some() {
-            self.availability = other.availability;
+        if !other.availability.is_empty() {
+            self.availability = other.availability.clone();
+        }
+        if let Some(ref view_from) = other.view_from {
+            self.view_from = Some(*view_from);
         }
     }
 
     /// Returns whether this entity is available at the given time.
     ///
-    /// In CesiumJS, this checks the `availability` TimeInterval.
-    pub fn is_available(&self, time: f64) -> bool {
-        match self.availability {
-            Some(ref interval) => interval.contains(time),
-            None => true, // No availability constraint
+    /// In CesiumJS, this checks the `availability` TimeIntervalCollection;
+    /// an entity without availability is available at all times.
+    pub fn is_available(&self, time: &JulianDate) -> bool {
+        if self.availability.is_empty() {
+            return true; // No availability constraint
         }
+        self.availability.iter().any(|interval| interval.contains(time))
     }
 
     /// Returns whether this entity has any visual representation.

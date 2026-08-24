@@ -126,9 +126,13 @@ impl Texture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu_format,
+            // DEVIATION: CesiumJS textures are implicitly usable as
+            // framebuffer attachments; wgpu requires the explicit
+            // RENDER_ATTACHMENT usage bit.
             usage: wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::COPY_DST
-                | wgpu::TextureUsages::COPY_SRC,
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
 
@@ -204,6 +208,11 @@ impl Texture {
     /// Returns a reference to the underlying wgpu texture.
     pub fn wgpu_texture(&self) -> &wgpu::Texture {
         &self.wgpu_texture
+    }
+
+    /// Returns the wgpu texture format of this texture.
+    pub fn wgpu_format(&self) -> wgpu::TextureFormat {
+        self.wgpu_texture.format()
     }
 
     /// Creates a texture view.

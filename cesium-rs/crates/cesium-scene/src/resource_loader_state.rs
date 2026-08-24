@@ -1,15 +1,18 @@
 ﻿//! Ported from `packages/engine/Source/Scene/ResourceLoaderState.js`.
 
-/// The state of a resource loader.
-pub struct ResourceLoaderState {
-    _private: (),
-}
-
-impl ResourceLoaderState {
-    /// Creates a new ResourceLoaderState.
-    pub fn new() -> Self { Self { _private: () } }
-}
-
-impl Default for ResourceLoaderState {
-    fn default() -> Self { Self::new() }
+/// The state of a resource loader, mirroring the JS constants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceLoaderState {
+    /// The resource is unloaded.
+    Unloaded,
+    /// The resource is loading.
+    Loading,
+    /// The resource is loaded and waiting for processing.
+    Loaded,
+    /// The resource is processing.
+    Processing,
+    /// The resource is ready (fully loaded and processed).
+    Ready,
+    /// The resource failed to load.
+    Failed,
 }

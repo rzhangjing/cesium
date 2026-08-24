@@ -628,9 +628,10 @@ impl Matrix4 {
 
     /// Port of `Matrix4.multiplyByPointAsVector`.
     pub fn multiply_by_point_as_vector(matrix: &Self, cartesian: &Cartesian3, result: &mut Cartesian3) {
-        let x = matrix.elements[0]*cartesian.x + matrix.elements[4]*cartesian.y + matrix.elements[8]*cartesian.z + matrix.elements[12];
-        let y = matrix.elements[1]*cartesian.x + matrix.elements[5]*cartesian.y + matrix.elements[9]*cartesian.z + matrix.elements[13];
-        let z = matrix.elements[2]*cartesian.x + matrix.elements[6]*cartesian.y + matrix.elements[10]*cartesian.z + matrix.elements[14];
+        // JS applies no translation column (w == 0 semantics).
+        let x = matrix.elements[0]*cartesian.x + matrix.elements[4]*cartesian.y + matrix.elements[8]*cartesian.z;
+        let y = matrix.elements[1]*cartesian.x + matrix.elements[5]*cartesian.y + matrix.elements[9]*cartesian.z;
+        let z = matrix.elements[2]*cartesian.x + matrix.elements[6]*cartesian.y + matrix.elements[10]*cartesian.z;
         result.x = x; result.y = y; result.z = z;
     }
 
@@ -642,11 +643,13 @@ impl Matrix4 {
 
     /// Port of `Matrix4.multiplyByPoint`.
     pub fn multiply_by_point(matrix: &Self, cartesian: &Cartesian3, result: &mut Cartesian3) {
+        // Equivalent to multiplyByVector with w == 1; rows 0/1/2 plus the
+        // translation column. CesiumJS performs no perspective division.
         let x = matrix.elements[0]*cartesian.x + matrix.elements[4]*cartesian.y + matrix.elements[8]*cartesian.z + matrix.elements[12];
         let y = matrix.elements[1]*cartesian.x + matrix.elements[5]*cartesian.y + matrix.elements[9]*cartesian.z + matrix.elements[13];
-        let z = matrix.elements[3]*cartesian.x + matrix.elements[7]*cartesian.y + matrix.elements[11]*cartesian.z + matrix.elements[15];
-        result.x = x / z;
-        result.y = y / z;
+        let z = matrix.elements[2]*cartesian.x + matrix.elements[6]*cartesian.y + matrix.elements[10]*cartesian.z + matrix.elements[14];
+        result.x = x;
+        result.y = y;
         result.z = z;
     }
 

@@ -1,13 +1,17 @@
 //! Mirrors packages/engine/Specs/Core/Cartesian3Spec.js
 //!
 //! JS `undefined`-argument DeveloperError cases are statically impossible in
-//! Rust; they are mirrored as `#[ignore]` stubs. Cases that compare against
-//! `ellipsoid.cartographicToCartesian` are `#[ignore]`d until the `Ellipsoid`
-//! port lands. `Ellipsoid.default = Ellipsoid.MOON` is emulated via
+//! Rust; they are mirrored as `#[ignore]` stubs. Scalar `fromDegrees` /
+//! `fromRadians` cases are covered now that `Ellipsoid` is ported; the
+//! `*Array` variants remain `#[ignore]`d until
+//! `Ellipsoid.cartographicArrayToCartesianArray` is backfilled.
+//! `Ellipsoid.default = Ellipsoid.MOON` is emulated via
 //! `set_ellipsoid_radii_squared` (mirrors the JS side effect). Shared
 //! generators `createPackableSpecs` / `createPackableArraySpecs` are inlined.
 
 use cesium_core::cartesian3::{self, Cartesian3};
+use cesium_core::cartographic::Cartographic;
+use cesium_core::ellipsoid::Ellipsoid;
 use cesium_core::math::CesiumMath;
 use cesium_core::spherical::Spherical;
 use cesium_test_utils::{assert_approx_eq_f64, expect_to_throw_dev_error};
@@ -1025,16 +1029,45 @@ fn from_elements_result_param_returns_cartesian3_with_correct_coordinates() {
 }
 
 #[test]
-#[ignore = "deferred: expected computed via Ellipsoid.cartographicToCartesian (Ellipsoid port pending)"]
-fn from_degrees() {}
+fn from_degrees() {
+    let lon = -115.0;
+    let lat = 37.0;
+    let ellipsoid = Ellipsoid::WGS84;
+    let actual = Cartesian3::from_degrees_new(lon, lat, None, None);
+    let cartographic = Cartographic::from_degrees_new(lon, lat, None);
+    let mut expected = Cartesian3::default();
+    ellipsoid.cartographic_to_cartesian(&cartographic, &mut expected);
+    assert_eq!(actual, expected);
+}
 
 #[test]
-#[ignore = "deferred: expected computed via Ellipsoid.cartographicToCartesian (Ellipsoid port pending)"]
-fn from_degrees_with_height() {}
+fn from_degrees_with_height() {
+    let lon = -115.0;
+    let lat = 37.0;
+    let height = 100000.0;
+    let ellipsoid = Ellipsoid::WGS84;
+    let actual = Cartesian3::from_degrees_new(lon, lat, Some(height), None);
+    let cartographic = Cartographic::from_degrees_new(lon, lat, Some(height));
+    let mut expected = Cartesian3::default();
+    ellipsoid.cartographic_to_cartesian(&cartographic, &mut expected);
+    assert_eq!(actual, expected);
+}
 
 #[test]
-#[ignore = "deferred: expected computed via Ellipsoid.cartographicToCartesian (Ellipsoid port pending)"]
-fn from_degrees_with_result() {}
+fn from_degrees_with_result() {
+    let lon = -115.0;
+    let lat = 37.0;
+    let height = 100000.0;
+    let ellipsoid = Ellipsoid::WGS84;
+    let mut result = Cartesian3::default();
+    Cartesian3::from_degrees(lon, lat, Some(height), None, &mut result);
+    let cartographic = Cartographic::from_degrees_new(lon, lat, Some(height));
+    let mut expected = Cartesian3::default();
+    ellipsoid.cartographic_to_cartesian(&cartographic, &mut expected);
+    // JS `expect(actual).toBe(result)` — result-param identity is inherent in
+    // the `&mut` out-param mapping.
+    assert_eq!(result, expected);
+}
 
 #[test]
 #[ignore = "JS undefined-argument DeveloperError; statically impossible in Rust"]
@@ -1060,16 +1093,45 @@ fn from_degrees_works_with_default_ellipsoid() {
 }
 
 #[test]
-#[ignore = "deferred: expected computed via Ellipsoid.cartographicToCartesian (Ellipsoid port pending)"]
-fn from_radians() {}
+fn from_radians() {
+    let lon = CesiumMath::to_radians(150.0);
+    let lat = CesiumMath::to_radians(-40.0);
+    let ellipsoid = Ellipsoid::WGS84;
+    let actual = Cartesian3::from_radians_new(lon, lat, None, None);
+    let cartographic = Cartographic::from_radians_new(lon, lat, None);
+    let mut expected = Cartesian3::default();
+    ellipsoid.cartographic_to_cartesian(&cartographic, &mut expected);
+    assert_eq!(actual, expected);
+}
 
 #[test]
-#[ignore = "deferred: expected computed via Ellipsoid.cartographicToCartesian (Ellipsoid port pending)"]
-fn from_radians_with_height() {}
+fn from_radians_with_height() {
+    let lon = CesiumMath::to_radians(150.0);
+    let lat = CesiumMath::to_radians(-40.0);
+    let height = 100000.0;
+    let ellipsoid = Ellipsoid::WGS84;
+    let actual = Cartesian3::from_radians_new(lon, lat, Some(height), None);
+    let cartographic = Cartographic::from_radians_new(lon, lat, Some(height));
+    let mut expected = Cartesian3::default();
+    ellipsoid.cartographic_to_cartesian(&cartographic, &mut expected);
+    assert_eq!(actual, expected);
+}
 
 #[test]
-#[ignore = "deferred: expected computed via Ellipsoid.cartographicToCartesian (Ellipsoid port pending)"]
-fn from_radians_with_result() {}
+fn from_radians_with_result() {
+    let lon = CesiumMath::to_radians(150.0);
+    let lat = CesiumMath::to_radians(-40.0);
+    let height = 100000.0;
+    let ellipsoid = Ellipsoid::WGS84;
+    let mut result = Cartesian3::default();
+    Cartesian3::from_radians(lon, lat, Some(height), None, &mut result);
+    let cartographic = Cartographic::from_radians_new(lon, lat, Some(height));
+    let mut expected = Cartesian3::default();
+    ellipsoid.cartographic_to_cartesian(&cartographic, &mut expected);
+    // JS `expect(actual).toBe(result)` — result-param identity is inherent in
+    // the `&mut` out-param mapping.
+    assert_eq!(result, expected);
+}
 
 #[test]
 fn from_radians_works_with_default_ellipsoid() {

@@ -67,5 +67,5 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 | 2 | 需 wgpu 上下文的 Renderer/Scene spec | 等待 wgpu 离屏渲染能力 | M4+ | ⏳ pending |
 | 3 | `FeatureDetection.supportsWebgl2(scene)` 及其 spec（`detects_webgl2_support` 当前 #[ignore]） | 依赖 cesium-scene 的 Context（WebGL2/wgpu 探测），Core 层无法独立验证 | M3-S1 | ⏳ pending |
 | 4 | `getAbsoluteUriSpec` 第 3 断言（相对 `document.location.href` 解析，当前 #[ignore]） | 原生构建无 document；`DocumentLike` 注入路径已由 `document_base_uri_is_respected` 覆盖 | 不回填（设计性偏差） | ✅ deferred |
-| 5 | `Cartesian4.fromColor` 及 3 条 spec 用例（`core_cartesian4_spec.rs` 当前 #[ignore]） | 依赖 `Core/Color.js` 移植 | M1 后续批次 | ⏳ pending |
-| 6 | `Cartesian3Spec` 中 6 条 `fromDegrees/fromRadians` 对照 `ellipsoid.cartographicToCartesian` 的用例（当前 #[ignore]） | 依赖 `Core/Ellipsoid.js` 移植 | M1 椭球批次 | ⏳ pending |
+| 5 | `Cartesian4.fromColor` 及 3 条 spec 用例（`core_cartesian4_spec.rs`） | 依赖 `Core/Color.js` 移植 | M1 后续批次 | ✅ 已回填 2026-08-23（`Cartesian4::from_color` 已实现，3 条 spec 解禁并通过） |
+| 6 | `Cartesian3Spec` 中 6 条 `fromDegrees/fromRadians` 对照 `ellipsoid.cartographicToCartesian` 的用例 | 依赖 `Core/Ellipsoid.js` 移植 | M1 椭球批次 | ✅ 已回填 2026-08-23（`Ellipsoid` 已就绪，6 条标量用例解禁并通过；`*Array` 变体仍待 `cartographicArrayToCartesianArray`） |

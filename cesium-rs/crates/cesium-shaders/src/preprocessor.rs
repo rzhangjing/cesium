@@ -497,3 +497,140 @@ pub fn validate_and_emit_wgsl(module: &naga::Module) -> Result<String, String> {
     )
     .map_err(|e| format!("wgsl emit: {:?}", e))
 }
+
+/// Preprocess a shader with an explicit set of `#define` values.
+///
+/// DEVIATION: CesiumJS injects defines via `ShaderSource.defines` before GLSL
+/// compilation. For the naga route the defines are forwarded to naga's GLSL
+/// preprocessor (`Options.defines`) instead of being textually injected.
+pub fn parse_with_defines(
+    source: &str,
+    stage: naga::ShaderStage,
+    defines: &[(String, String)],
+) -> Result<naga::Module, String> {
+    let mut map = naga::FastHashMap::default();
+    for (key, value) in defines {
+        map.insert(key.clone(), value.clone());
+    }
+    let options = naga::front::glsl::Options {
+        stage,
+        defines: map,
+    };
+    let mut parser = naga::front::glsl::Frontend::default();
+    parser.parse(&options, source).map_err(|e| format!("{:?}", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The embedded shader tree (mirrors `packages/engine/Source/Shaders`).
+    fn shaders_dir() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shaders")
+    }
+
+    // ── Builtin header assembly ─────────────────────────────────────
+
+    #[test]
+    fn assemble_builtin_header_contains_marker_sections() {
+        let header = assemble_builtin_header(&shaders_dir());
+        assert!(header.contains("// === CesiumJS Builtin Header (auto-assembled) ==="));
+        assert!(header.contains("// --- Automatic Uniforms ---"));
+        assert!(header.contains("// --- Builtin (topologically sorted) ---"));
+    }
+
+    #[test]
+    fn assemble_builtin_header_emits_automatic_uniform_block() {
+        // AutomaticUniforms.js in the workspace declares ~100 czm_* uniforms;
+        // the assembled header must wrap the non-sampler ones in the
+        // CesiumAutomaticUniforms block.
+        let header = assemble_builtin_header(&shaders_dir());
+        assert!(
+            header.contains("uniform CesiumAutomaticUniforms"),
+            "expected the CesiumAutomaticUniforms block in the assembled header"
+        );
+        assert!(header.contains("czm_viewport"));
+    }
+
+    #[test]
+    fn assemble_builtin_header_includes_builtin_files() {
+        let header = assemble_builtin_header(&shaders_dir());
+        // A well-known Builtin function/struct must appear after topo-sort.
+        assert!(header.contains("czm_material"));
+        // Each included file gets a `// -- name --` marker.
+        assert!(header.contains("// -- "));
+    }
+
+    // ── Shader preprocessing ────────────────────────────────────────
+
+    #[test]
+    fn preprocess_shader_prepends_version_and_header() {
+        let header = "// builtin header sentinel\n";
+        let out = preprocess_shader("void main() {}", naga::ShaderStage::Vertex, header);
+        assert!(out.starts_with("#version 460 core\n"));
+        assert!(out.contains("// builtin header sentinel"));
+    }
+
+    #[test]
+    fn preprocess_shader_injects_frag_color_for_fragment_stage() {
+        let source = "void main() { out_FragColor = vec4(1.0); }";
+        let out = preprocess_shader(source, naga::ShaderStage::Fragment, "");
+        assert!(out.contains("layout(location = 0) out vec4 out_FragColor;"));
+
+        // Vertex stage must not get the injection even if the name appears.
+        let out_vs = preprocess_shader(source, naga::ShaderStage::Vertex, "");
+        assert!(!out_vs.contains("layout(location = 0) out vec4 out_FragColor;"));
+
+        // Already-declared outputs are not injected twice.
+        let source_declared =
+            "layout(location = 0) out vec4 out_FragColor;\nvoid main() { out_FragColor = vec4(1.0); }";
+        let out2 = preprocess_shader(source_declared, naga::ShaderStage::Fragment, "");
+        assert_eq!(out2.matches("out vec4 out_FragColor").count(), 1);
+    }
+
+    #[test]
+    fn preprocess_shader_normalizes_legacy_qualifiers() {
+        let source = "attribute vec3 position;\nvarying vec2 v_uv;\nvoid main() {}";
+        let out = preprocess_shader(source, naga::ShaderStage::Vertex, "");
+        assert!(out.contains("in vec3 position;"));
+        assert!(out.contains("out vec2 v_uv;"));
+        assert!(!out.contains("attribute "));
+        assert!(!out.contains("varying "));
+    }
+
+    #[test]
+    fn preprocess_shader_injects_uniform_block_layouts() {
+        let source = "uniform Globals {\n    vec4 u_color;\n};\nvoid main() {}";
+        let out = preprocess_shader(source, naga::ShaderStage::Vertex, "");
+        assert!(out.contains("layout(binding=0, std140) uniform Globals {"));
+    }
+
+    // ── Define injection ────────────────────────────────────────────
+
+    #[test]
+    fn defines_are_forwarded_to_naga_glsl_frontend() {
+        // The active branch only compiles when COLOR_SCALE is defined.
+        let source = r#"
+            #version 460 core
+            layout(location = 0) out vec4 out_FragColor;
+            void main() {
+                #ifdef COLOR_SCALE
+                out_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+                #else
+                this branch is not valid GLSL and must not compile
+                #endif
+            }
+        "#;
+
+        // Without the define, parsing must fail (inactive branch excluded).
+        assert!(parse_with_defines(source, naga::ShaderStage::Fragment, &[]).is_err());
+
+        // With the define injected, parsing succeeds.
+        let module = parse_with_defines(
+            source,
+            naga::ShaderStage::Fragment,
+            &[("COLOR_SCALE".to_string(), "1".to_string())],
+        );
+        assert!(module.is_ok(), "expected parse success with define: {:?}", module.err());
+    }
+}

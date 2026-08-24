@@ -8,6 +8,7 @@ use crate::intersect::Intersect;
 use crate::math::CesiumMath;
 use crate::matrix4::Matrix4;
 use crate::plane::Plane;
+use crate::rectangle::Rectangle;
 
 /// A bounding sphere with a center and a radius.
 #[derive(Debug, Clone)]
@@ -200,6 +201,30 @@ impl BoundingSphere {
         r.center = Cartesian3::ZERO;
         r.radius = ellipsoid.maximum_radius();
         r
+    }
+
+    /// Computes a bounding sphere from a rectangle in 3D. The bounding sphere
+    /// is created using a subsample of points on the ellipsoid and contained
+    /// in the rectangle.
+    ///
+    /// Mirrors `BoundingSphere.fromRectangle3D`:
+    /// `Rectangle.subsample(rectangle, ellipsoid, surfaceHeight)` followed by
+    /// `BoundingSphere.fromPoints`.
+    pub fn from_rectangle_3d(
+        rectangle: Option<&Rectangle>,
+        ellipsoid: Option<&Ellipsoid>,
+        surface_height: f64,
+        result: Option<Self>,
+    ) -> Self {
+        let Some(rectangle) = rectangle else {
+            let mut r = result.unwrap_or_default();
+            r.center = Cartesian3::ZERO;
+            r.radius = 0.0;
+            return r;
+        };
+
+        let positions = Rectangle::subsample(rectangle, ellipsoid, Some(surface_height));
+        Self::from_points(&positions, result)
     }
 
     /// Computes a bounding sphere that contains both bounding spheres.

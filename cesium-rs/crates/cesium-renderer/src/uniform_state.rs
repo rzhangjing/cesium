@@ -239,9 +239,12 @@ impl UniformState {
     // ---- Lazy matrix accessors ----
 
     /// Returns the model-view matrix, computing it if dirty.
+    ///
+    /// Mirrors CesiumJS `cleanModelView`: modelView = view × model
+    /// (`Matrix4.multiplyTransformation(this._view, this._model, ...)`).
     pub fn model_view(&mut self) -> &Matrix4 {
         if self.model_view_dirty {
-            self.model_view = Matrix4::multiply_new(&self.projection, &self.view);
+            self.model_view = Matrix4::multiply_new(&self.view, &self.model);
             self.model_view_dirty = false;
         }
         &self.model_view

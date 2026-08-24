@@ -18,7 +18,7 @@ use cesium_core::ground_polyline_geometry::GroundPolylineGeometry;
 use cesium_core::plane_geometry::PlaneGeometry;
 use cesium_core::plane_outline_geometry::PlaneOutlineGeometry;
 use cesium_core::polygon_outline_geometry::PolygonOutlineGeometry;
-use cesium_core::polyline_volume_geometry::Cartesian2Stub;
+use cesium_core::cartesian2::Cartesian2;
 use cesium_core::polyline_volume_outline_geometry::PolylineVolumeOutlineGeometry;
 use cesium_core::rectangle::Rectangle;
 use cesium_core::rectangle_outline_geometry::RectangleOutlineGeometry;
@@ -55,7 +55,7 @@ fn corridor_outline_new() {
         Cartesian3::new(0.0, 0.0, 0.0),
         Cartesian3::new(1.0, 0.0, 0.0),
     ];
-    let geo = CorridorOutlineGeometry::new(positions, 10.0, None, None);
+    let geo = CorridorOutlineGeometry::new(positions, 10.0, None, None, None, None, None, None);
     let _ = geo;
 }
 
@@ -63,7 +63,7 @@ fn corridor_outline_new() {
 #[test]
 fn ellipse_outline_new() {
     let center = Cartesian3::new(1.0, 2.0, 3.0);
-    let geo = EllipseOutlineGeometry::new(center, 100.0, 50.0, None, None, None, None, None);
+    let geo = EllipseOutlineGeometry::new(center, 100.0, 50.0, None, None, None, None, None, None, None);
     let _ = geo;
 }
 
@@ -147,7 +147,7 @@ fn polygon_outline_new() {
         Cartesian3::new(1.0, 0.0, 0.0),
         Cartesian3::new(1.0, 1.0, 0.0),
     ];
-    let geo = PolygonOutlineGeometry::new(positions, None, None, None);
+    let geo = PolygonOutlineGeometry::new(positions, None, None, None, None, None, None, None);
     let _ = geo;
 }
 
@@ -164,17 +164,17 @@ fn polyline_volume_outline_new() {
         Cartesian3::new(0.0, 0.0, 0.0),
         Cartesian3::new(0.0, 0.0, 100.0),
     ];
-    let shape: Vec<Cartesian2Stub> = vec![
-        Cartesian2Stub { x: -1.0, y: -1.0 },
-        Cartesian2Stub { x: 1.0, y: -1.0 },
-        Cartesian2Stub { x: 1.0, y: 1.0 },
-        Cartesian2Stub { x: -1.0, y: 1.0 },
+    let shape: Vec<Cartesian2> = vec![
+        Cartesian2 { x: -1.0, y: -1.0 },
+        Cartesian2 { x: 1.0, y: -1.0 },
+        Cartesian2 { x: 1.0, y: 1.0 },
+        Cartesian2 { x: -1.0, y: 1.0 },
     ];
     let positions = vec![
         Cartesian3::new(0.0, 0.0, 0.0),
         Cartesian3::new(0.0, 0.0, 100.0),
     ];
-    let geo = PolylineVolumeOutlineGeometry::new(positions, shape, None, None);
+    let geo = PolylineVolumeOutlineGeometry::new(positions, shape, None, None, None);
     let _ = geo;
 }
 

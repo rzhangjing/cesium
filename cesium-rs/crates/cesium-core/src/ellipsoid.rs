@@ -3,11 +3,39 @@
 //! A quadratic surface defined in Cartesian coordinates by the equation
 //! `(x / a)^2 + (y / b)^2 + (z / c)^2 = 1`. Primarily used to represent
 //! the shape of planetary bodies.
+//!
+//! ## Method-level alignment table (Ellipsoid.js -> ellipsoid.rs)
+//!
+//! | Ellipsoid.js                              | ellipsoid.rs                                | status |
+//! |-------------------------------------------|---------------------------------------------|--------|
+//! | `constructor(x, y, z)` / `initialize`     | `Ellipsoid::new` / `initialize`             | aligned |
+//! | `fromCartesian3`                          | `from_cartesian3`                           | aligned |
+//! | `clone`                                   | `clone_ellipsoid` (also `Clone` derive)     | aligned |
+//! | `pack` / `unpack`                         | `pack` / `unpack`                           | aligned |
+//! | `geocentricSurfaceNormal`                 | `geocentric_surface_normal`                 | aligned |
+//! | `geodeticSurfaceNormalCartographic`       | `geodetic_surface_normal_cartographic`      | aligned |
+//! | `geodeticSurfaceNormal`                   | `geodetic_surface_normal`                   | aligned |
+//! | `cartographicToCartesian`                 | `cartographic_to_cartesian`                 | aligned |
+//! | `cartographicArrayToCartesianArray`       | `cartographic_array_to_cartesian_array`     | aligned |
+//! | `cartesianToCartographic`                 | `cartesian_to_cartographic`                 | aligned |
+//! | `cartesianArrayToCartographicArray`       | `cartesian_array_to_cartographic_array`     | aligned |
+//! | `scaleToGeodeticSurface`                  | `scale_to_geodetic_surface`                 | aligned |
+//! | `scaleToGeocentricSurface`                | `scale_to_geocentric_surface`               | aligned |
+//! | `transformPositionToScaledSpace`          | `transform_position_to_scaled_space`        | aligned |
+//! | `transformPositionFromScaledSpace`        | `transform_position_from_scaled_space`      | aligned |
+//! | `equals` / `toString`                     | `equals` / `to_string_repr` + `Display`     | aligned |
+//! | `getSurfaceNormalIntersectionWithZAxis`   | `get_surface_normal_intersection_with_z_axis` | aligned |
+//! | `getLocalCurvature`                       | `get_local_curvature`                       | aligned |
+//! | `surfaceArea`                             | `surface_area`                              | aligned |
+//! | `gaussLegendreQuadrature` (`@private`)    | `gauss_legendre_quadrature`                 | aligned |
 
 use crate::cartesian2::Cartesian2;
 use crate::cartesian3::Cartesian3;
 use crate::cartographic::{Cartographic, EllipsoidParams};
+use crate::check;
+use crate::developer_error::throw_developer_error;
 use crate::math::CesiumMath;
+use crate::rectangle::Rectangle;
 use crate::scale_to_geodetic_surface::scale_to_geodetic_surface;
 
 /// Internal precomputed data for an Ellipsoid.
@@ -52,6 +80,11 @@ const fn const_init(x: f64, y: f64, z: f64) -> EllipsoidData {
 }
 
 fn initialize(radii: &Cartesian3) -> EllipsoidData {
+    if cfg!(debug_assertions) {
+        check::type_of::number_greater_than_or_equals("x", radii.x, 0.0);
+        check::type_of::number_greater_than_or_equals("y", radii.y, 0.0);
+        check::type_of::number_greater_than_or_equals("z", radii.z, 0.0);
+    }
     const_init(radii.x, radii.y, radii.z)
 }
 
@@ -167,11 +200,21 @@ impl Ellipsoid {
 
     /// Port of `Ellipsoid#geodeticSurfaceNormal`.
     /// Returns `false` if the cartesian is at the center (JS returns `undefined`).
+    ///
+    /// # Panics
+    ///
+    /// Debug builds panic with a `DeveloperError` when the cartesian has a
+    /// NaN component.
     pub fn geodetic_surface_normal(
         &self,
         cartesian: &Cartesian3,
         result: &mut Cartesian3,
     ) -> bool {
+        if cfg!(debug_assertions) {
+            if cartesian.x.is_nan() || cartesian.y.is_nan() || cartesian.z.is_nan() {
+                throw_developer_error("cartesian has a NaN component");
+            }
+        }
         if Cartesian3::equals_epsilon(Some(cartesian), Some(&Cartesian3::ZERO), Some(CesiumMath::EPSILON14), None) {
             return false;
         }
@@ -196,6 +239,31 @@ impl Ellipsoid {
         let n_offset = Cartesian3::multiply_by_scalar_new(&n, cartographic.height);
 
         Cartesian3::add(&k, &n_offset, result);
+    }
+
+    /// Converts the provided array of cartographics to an array of Cartesians.
+    ///
+    /// Port of `Ellipsoid#cartographicArrayToCartesianArray`.
+    pub fn cartographic_array_to_cartesian_array(
+        &self,
+        cartographics: &[Cartographic],
+    ) -> Vec<Cartesian3> {
+        let mut result = vec![Cartesian3::default(); cartographics.len()];
+        self.cartographic_array_to_cartesian_array_into(cartographics, &mut result);
+        result
+    }
+
+    /// Out-parameter variant of [`Ellipsoid::cartographic_array_to_cartesian_array`]
+    /// (mirrors the JS `result` parameter; `result` is resized to match).
+    pub fn cartographic_array_to_cartesian_array_into(
+        &self,
+        cartographics: &[Cartographic],
+        result: &mut Vec<Cartesian3>,
+    ) {
+        result.resize(cartographics.len(), Cartesian3::default());
+        for (i, cartographic) in cartographics.iter().enumerate() {
+            self.cartographic_to_cartesian(cartographic, &mut result[i]);
+        }
     }
 
     /// Port of `Ellipsoid#cartesianToCartographic`.
@@ -226,6 +294,39 @@ impl Ellipsoid {
         result.latitude = n.z.asin();
         result.height = CesiumMath::sign(Cartesian3::dot(&h, cartesian)) * Cartesian3::magnitude(&h);
         true
+    }
+
+    /// Converts the provided array of cartesians to an array of cartographics.
+    ///
+    /// Port of `Ellipsoid#cartesianArrayToCartographicArray`.
+    ///
+    /// DEVIATION: CesiumJS may leave `undefined` entries in the result array
+    /// when a cartesian is at the center of the ellipsoid; the Rust port
+    /// panics with a `DeveloperError`-equivalent message in that case since
+    /// the spec inputs are always convertible.
+    pub fn cartesian_array_to_cartographic_array(
+        &self,
+        cartesians: &[Cartesian3],
+    ) -> Vec<Cartographic> {
+        let mut result = vec![Cartographic::default(); cartesians.len()];
+        self.cartesian_array_to_cartographic_array_into(cartesians, &mut result);
+        result
+    }
+
+    /// Out-parameter variant of [`Ellipsoid::cartesian_array_to_cartographic_array`].
+    pub fn cartesian_array_to_cartographic_array_into(
+        &self,
+        cartesians: &[Cartesian3],
+        result: &mut Vec<Cartographic>,
+    ) {
+        result.resize(cartesians.len(), Cartographic::default());
+        for (i, cartesian) in cartesians.iter().enumerate() {
+            if !self.cartesian_to_cartographic(cartesian, &mut result[i]) {
+                throw_developer_error(
+                    "cartesianToCartographic failed for an array element: cartesian is at the center of the ellipsoid",
+                );
+            }
+        }
     }
 
     /// Port of `Ellipsoid#scaleToGeodeticSurface`.
@@ -287,19 +388,36 @@ impl Ellipsoid {
     }
 
     /// Port of `Ellipsoid#getSurfaceNormalIntersectionWithZAxis`.
-    /// Returns `false` if the intersection is outside the ellipsoid.
+    /// Returns `false` if the intersection is outside the ellipsoid
+    /// (JS returns `undefined`).
+    ///
+    /// # Panics
+    ///
+    /// Debug builds panic with a `DeveloperError` when the ellipsoid is not
+    /// an ellipsoid of revolution (`radii.x != radii.y`) or when
+    /// `radii.z <= 0`.
     pub fn get_surface_normal_intersection_with_z_axis(
         &self,
         position: &Cartesian3,
         buffer: Option<f64>,
         result: &mut Cartesian3,
     ) -> bool {
+        if cfg!(debug_assertions) {
+            if !CesiumMath::equals_epsilon(
+                self.data.radii.x,
+                self.data.radii.y,
+                Some(CesiumMath::EPSILON15),
+                None,
+            ) {
+                throw_developer_error(
+                    "Ellipsoid must be an ellipsoid of revolution (radii.x == radii.y)",
+                );
+            }
+            check::type_of::number_greater_than("Ellipsoid.radii.z", self.data.radii.z, 0.0);
+        }
+
         let buf = buffer.unwrap_or(0.0);
-        let squared_x_over_squared_z = if self.data.radii_squared.z != 0.0 {
-            self.data.radii_squared.x / self.data.radii_squared.z
-        } else {
-            0.0
-        };
+        let squared_x_over_squared_z = self.data.squared_x_over_squared_z;
 
         result.x = 0.0;
         result.y = 0.0;
@@ -341,6 +459,90 @@ impl Ellipsoid {
             center_tolerance_squared: self.data.center_tolerance_squared,
         }
     }
+
+    /// Computes an approximation of the surface area of a rectangle on the
+    /// surface of an ellipsoid using Gauss-Legendre 10th order quadrature.
+    ///
+    /// Port of `Ellipsoid#surfaceArea`.
+    pub fn surface_area(&self, rectangle: &Rectangle) -> f64 {
+        let min_longitude = rectangle.west;
+        let mut max_longitude = rectangle.east;
+        let min_latitude = rectangle.south;
+        let max_latitude = rectangle.north;
+
+        while max_longitude < min_longitude {
+            max_longitude += CesiumMath::TWO_PI;
+        }
+
+        let radii_squared = &self.data.radii_squared;
+        let a2 = radii_squared.x;
+        let b2 = radii_squared.y;
+        let c2 = radii_squared.z;
+        let a2b2 = a2 * b2;
+
+        gauss_legendre_quadrature(min_latitude, max_latitude, |lat| {
+            // phi represents the angle measured from the north pole
+            // sin(phi) = sin(pi / 2 - lat) = cos(lat), cos(phi) is similar
+            let sin_phi = lat.cos();
+            let cos_phi = lat.sin();
+            lat.cos()
+                * gauss_legendre_quadrature(min_longitude, max_longitude, |lon| {
+                    let cos_theta = lon.cos();
+                    let sin_theta = lon.sin();
+                    (a2b2 * cos_phi * cos_phi
+                        + c2
+                            * (b2 * cos_theta * cos_theta + a2 * sin_theta * sin_theta)
+                            * sin_phi
+                            * sin_phi)
+                        .sqrt()
+                })
+        })
+    }
+}
+
+/// The abscissas of the 10th order Gauss-Legendre quadrature (the last entry
+/// is unused and mirrors the trailing `0.0` of the JS array).
+const ABSCISSAS: [f64; 6] = [
+    0.14887433898163,
+    0.43339539412925,
+    0.67940956829902,
+    0.86506336668898,
+    0.97390652851717,
+    0.0,
+];
+
+/// The weights of the 10th order Gauss-Legendre quadrature.
+const WEIGHTS: [f64; 6] = [
+    0.29552422471475,
+    0.26926671930999,
+    0.21908636251598,
+    0.14945134915058,
+    0.066671344308684,
+    0.0,
+];
+
+/// Compute the 10th order Gauss-Legendre Quadrature of the given definite
+/// integral.
+///
+/// Port of the `@private` `gaussLegendreQuadrature` function of Ellipsoid.js.
+fn gauss_legendre_quadrature<F>(a: f64, b: f64, func: F) -> f64
+where
+    F: Fn(f64) -> f64,
+{
+    // The range is half of the normal range since the five weights add to one
+    // (ten weights add to two). The values of the abscissas are multiplied by
+    // two to account for this.
+    let x_mean = 0.5 * (b + a);
+    let x_range = 0.5 * (b - a);
+
+    let mut sum = 0.0;
+    for i in 0..5 {
+        let dx = x_range * ABSCISSAS[i];
+        sum += WEIGHTS[i] * (func(x_mean + dx) + func(x_mean - dx));
+    }
+
+    // Scale the sum to the range of x.
+    sum * x_range
 }
 
 impl PartialEq for Ellipsoid {

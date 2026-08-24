@@ -2,6 +2,9 @@
 //!
 //! Represents a command to the renderer for clearing a framebuffer.
 
+use std::sync::Arc;
+
+use crate::framebuffer::Framebuffer;
 use crate::render_state::RenderState;
 
 /// A command to clear the framebuffer.
@@ -23,9 +26,12 @@ pub struct ClearCommand {
     /// depth mask, and stencil mask.
     pub render_state: Option<RenderState>,
     /// The framebuffer to clear (None = default framebuffer).
-    pub framebuffer: Option<Box<dyn std::any::Any + Send + Sync>>,
+    ///
+    /// DEVIATION (B2.6): CesiumJS stores an untyped Framebuffer reference;
+    /// the Rust port uses the concrete `Arc<Framebuffer>`.
+    pub framebuffer: Option<Arc<Framebuffer>>,
     /// The object who created this command (for debugging).
-    pub owner: Option<Box<dyn std::any::Any + Send + Sync>>,
+    pub owner: Option<String>,
     /// The pass in which to run this command.
     pub pass: Option<u32>,
 }

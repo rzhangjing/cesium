@@ -223,10 +223,12 @@ fn multiply_by_vector_works() {
 
 #[test]
 fn multiply_by_point_as_vector_works() {
+    // JS `multiplyByPointAsVector` applies only the upper-left 3x3 (no
+    // translation); a pure translation leaves the vector unchanged.
     let m = Matrix4::from_translation_new(&Cartesian3::new(10.0, 20.0, 30.0));
     let p = Cartesian3::new(1.0, 2.0, 3.0);
     let result = Matrix4::multiply_by_point_as_vector_new(&m, &p);
-    assert_eq!(result, Cartesian3::new(11.0, 22.0, 33.0));
+    assert_eq!(result, Cartesian3::new(1.0, 2.0, 3.0));
 }
 
 // --- add / subtract ---

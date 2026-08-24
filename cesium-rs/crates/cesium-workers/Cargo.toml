@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 cesium-core = { workspace = true }
+rayon = { workspace = true }
 
 [dev-dependencies]
 cesium-test-utils = { workspace = true }

@@ -1,73 +1,109 @@
 ﻿//! Ported from `packages/widgets/Source/ToggleButtonViewModel.js`.
 //!
-//! A view model for a toggle button.
+//! A view model which exposes the properties of a toggle button.
 
 use crate::command::Command;
 
-/// A view model that tracks a toggled state and exposes a command.
+/// Options for [`ToggleButtonViewModel::new`], mirroring the JS `options`
+/// object (`{ toggled, tooltip }`, both optional). The JS constructor also
+/// accepts knockout computeds for both properties (as `AnimationViewModel`
+/// passes); those are modeled by the `*_computed` fields, which win over
+/// the plain values when present.
+#[derive(Default)]
+pub struct ToggleButtonViewModelOptions {
+    /// A boolean indicating whether the button should be initially toggled
+    /// (`options.toggled`, default `false`).
+    pub toggled: Option<bool>,
+    /// A string containing the button's tooltip (`options.tooltip`,
+    /// default `""`).
+    pub tooltip: Option<String>,
+    /// A knockout computed analogue for `options.toggled`
+    /// (evaluated on read; takes precedence over `toggled`).
+    pub toggled_computed: Option<Box<dyn Fn() -> bool>>,
+    /// A knockout computed analogue for `options.tooltip`
+    /// (evaluated on read; takes precedence over `tooltip`).
+    pub tooltip_computed: Option<Box<dyn Fn() -> String>>,
+}
+
+/// A view model which exposes the properties of a toggle button.
 ///
-/// In CesiumJS, ToggleButtonViewModel wraps a Command and adds a `toggled`
-/// observable property. Many widget buttons use this:
-/// - FullscreenButton
-/// - NavigationHelpButton
-/// - BaseLayerPicker (drop-down toggle)
+/// In CesiumJS the `toggled`/`tooltip` properties are knockout observables
+/// and the constructor also accepts knockout computeds for them (as
+/// `AnimationViewModel` does). The Rust port models both shapes with
+/// `Box<dyn Fn>` providers; static values are wrapped in constant closures.
 pub struct ToggleButtonViewModel {
-    /// The underlying command.
     command: Command,
-    /// Whether the button is currently toggled.
-    toggled: bool,
-    /// The tooltip text.
-    tooltip: String,
+    toggled: Box<dyn Fn() -> bool>,
+    tooltip: Box<dyn Fn() -> String>,
 }
 
 impl ToggleButtonViewModel {
-    /// Creates a new toggle button view model.
-    pub fn new(command: Command, tooltip: &str) -> Self {
+    /// Port of `new ToggleButtonViewModel(command, options)` with plain
+    /// boolean/string option values.
+    ///
+    /// DEVIATION: the JS `command is required.` DeveloperError is enforced
+    /// by the type system (`command` is a required parameter).
+    pub fn new(command: Command, options: ToggleButtonViewModelOptions) -> Self {
+        let toggled_value = options.toggled.unwrap_or(false);
+        let tooltip_value = options.tooltip.unwrap_or_default();
+        let toggled: Box<dyn Fn() -> bool> = match options.toggled_computed {
+            Some(computed) => computed,
+            None => Box::new(move || toggled_value),
+        };
+        let tooltip: Box<dyn Fn() -> String> = match options.tooltip_computed {
+            Some(computed) => computed,
+            None => Box::new(move || tooltip_value.clone()),
+        };
         Self {
             command,
-            toggled: false,
-            tooltip: tooltip.to_string(),
+            toggled,
+            tooltip,
         }
     }
 
-    /// Returns whether the button is toggled.
-    pub fn is_toggled(&self) -> bool {
-        self.toggled
+    /// Variant of [`Self::new`] accepting computed providers, mirroring the
+    /// CesiumJS call sites that pass `knockout.computed(...)` for
+    /// `options.toggled`/`options.tooltip` (e.g. `AnimationViewModel`).
+    pub fn new_with_computed<T, P>(command: Command, toggled: T, tooltip: P) -> Self
+    where
+        T: Fn() -> bool + 'static,
+        P: Fn() -> String + 'static,
+    {
+        Self {
+            command,
+            toggled: Box::new(toggled),
+            tooltip: Box::new(tooltip),
+        }
     }
 
-    /// Sets the toggled state.
-    pub fn set_toggled(&mut self, toggled: bool) {
-        self.toggled = toggled;
+    /// Gets whether the button is currently toggled (mirrors reading the
+    /// `toggled` observable).
+    pub fn toggled(&self) -> bool {
+        (self.toggled)()
     }
 
-    /// Toggles the state.
-    pub fn toggle(&mut self) {
-        self.toggled = !self.toggled;
+    /// Sets the toggled state, replacing any computed provider (mirrors
+    /// writing the `toggled` observable).
+    pub fn set_toggled(&mut self, value: bool) {
+        self.toggled = Box::new(move || value);
     }
 
-    /// Returns the tooltip.
-    pub fn tooltip(&self) -> &str {
-        &self.tooltip
+    /// Gets the button's tooltip (mirrors reading the `tooltip`
+    /// observable).
+    pub fn tooltip(&self) -> String {
+        (self.tooltip)()
     }
 
-    /// Sets the tooltip.
-    pub fn set_tooltip(&mut self, tooltip: &str) {
-        self.tooltip = tooltip.to_string();
+    /// Sets the tooltip, replacing any computed provider (mirrors writing
+    /// the `tooltip` observable).
+    pub fn set_tooltip(&mut self, value: &str) {
+        let value = value.to_string();
+        self.tooltip = Box::new(move || value.clone());
     }
 
-    /// Returns the underlying command.
+    /// Gets the command which will be executed when the button is toggled
+    /// (mirrors the read-only `command` property).
     pub fn command(&self) -> &Command {
         &self.command
-    }
-
-    /// Executes the underlying command if enabled.
-    pub fn execute(&self) {
-        self.command.execute();
-    }
-}
-
-impl Default for ToggleButtonViewModel {
-    fn default() -> Self {
-        Self::new(Command::empty(), "")
     }
 }

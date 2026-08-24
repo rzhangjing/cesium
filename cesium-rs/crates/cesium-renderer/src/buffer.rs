@@ -76,6 +76,9 @@ pub struct Buffer {
     /// Whether this buffer can be destroyed by a VertexArray.
     pub vertex_array_destroyable: bool,
     is_destroyed: bool,
+    /// Initial data awaiting upload (uploaded via the queue once the
+    /// Context is available — wgpu has no synchronous `gl.bufferData`).
+    pending_data: Option<Vec<u8>>,
 }
 
 impl Buffer {
@@ -99,17 +102,22 @@ impl Buffer {
             BufferUsage::DynamicRead => wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
         };
 
+        // DEVIATION: `Queue::write_buffer` copy sizes must respect
+        // `COPY_BUFFER_ALIGNMENT` (4 bytes); WebGL buffers have no such
+        // constraint, so the wgpu port over-allocates the allocation while
+        // `size_in_bytes` keeps the logical (JS-visible) size.
+        let allocated_size = (size_in_bytes + 3) & !3;
+
         let wgpu_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: size_in_bytes,
+            size: allocated_size,
             usage: options.buffer_target.to_wgpu_usage() | usage_bits,
             mapped_at_creation: false,
         });
 
-        // If initial data was provided, upload it via the queue.
+        // If initial data was provided, the upload is deferred until the
+        // Context can provide a queue (see `take_pending_data`).
         // DEVIATION: In JS this is done synchronously via gl.bufferData.
-        // In wgpu we need the queue, which is typically available from the Context.
-        // The actual upload is deferred to Context-level initialization.
 
         Self {
             id: create_guid(),
@@ -119,6 +127,33 @@ impl Buffer {
             usage: options.usage,
             vertex_array_destroyable: true,
             is_destroyed: false,
+            pending_data: typed_array.map(|data| data.to_vec()),
+        }
+    }
+
+    /// Uploads the deferred initial data (if any) and clears it.
+    ///
+    /// Called by the Context right after creation; mirrors the synchronous
+    /// `gl.bufferData` of the JS implementation.
+    pub fn take_pending_data(&mut self) -> Option<Vec<u8>> {
+        self.pending_data.take()
+    }
+
+    /// Uploads the deferred initial data through the given queue, if present.
+    pub fn upload_pending_data(&mut self, queue: &wgpu::Queue) {
+        if let Some(data) = self.pending_data.take() {
+            // Pad to `COPY_BUFFER_ALIGNMENT` (4 bytes) for `write_buffer`;
+            // the allocation was over-sized accordingly and the trailing
+            // padding is outside the logical buffer range.
+            if data.len() % 4 == 0 {
+                queue.write_buffer(&self.wgpu_buffer, 0, &data);
+            } else {
+                let mut padded = data;
+                while padded.len() % 4 != 0 {
+                    padded.push(0);
+                }
+                queue.write_buffer(&self.wgpu_buffer, 0, &padded);
+            }
         }
     }
 
@@ -223,7 +258,7 @@ impl Buffer {
     /// Mirrors `Buffer.prototype.copyFromArrayView(arrayView, offsetInBytes)`.
     pub fn copy_from_array_view(
         &self,
-        _queue: &wgpu::Queue,
+        queue: &wgpu::Queue,
         array_view: &[u8],
         offset_in_bytes: Option<u64>,
     ) {
@@ -232,8 +267,9 @@ impl Buffer {
             offset + array_view.len() as u64 <= self.size_in_bytes,
             "offsetInBytes + arrayView.byteLength must not exceed sizeInBytes"
         );
-        // DEVIATION: wgpu requires queue.write_buffer for uploads
-        // The actual implementation will use queue.write_buffer_with_offset
+        // DEVIATION: wgpu uploads via queue.write_buffer instead of the
+        // synchronous gl.bufferSubData.
+        queue.write_buffer(&self.wgpu_buffer, offset, array_view);
     }
 
     /// Copies data from another buffer into this buffer.
@@ -241,7 +277,7 @@ impl Buffer {
     /// Mirrors `Buffer.prototype.copyFromBuffer(readBuffer, readOffset, writeOffset, sizeInBytes)`.
     pub fn copy_from_buffer(
         &self,
-        _encoder: &mut wgpu::CommandEncoder,
+        encoder: &mut wgpu::CommandEncoder,
         read_buffer: &Buffer,
         read_offset: u64,
         write_offset: u64,
@@ -249,7 +285,13 @@ impl Buffer {
     ) {
         debug_assert!(read_offset + size_in_bytes <= read_buffer.size_in_bytes);
         debug_assert!(write_offset + size_in_bytes <= self.size_in_bytes);
-        // DEVIATION: wgpu uses encoder.copy_buffer_to_buffer
+        encoder.copy_buffer_to_buffer(
+            &read_buffer.wgpu_buffer,
+            read_offset,
+            &self.wgpu_buffer,
+            write_offset,
+            size_in_bytes,
+        );
     }
 
     /// Returns whether this buffer has been destroyed.
@@ -282,6 +324,11 @@ impl IndexBuffer {
         &self.buffer
     }
 
+    /// Returns a mutable reference to the underlying buffer.
+    pub fn buffer_mut(&mut self) -> &mut Buffer {
+        &mut self.buffer
+    }
+
     /// Returns the index datatype.
     pub fn index_datatype(&self) -> IndexDatatype {
         self.index_datatype
@@ -295,6 +342,15 @@ impl IndexBuffer {
     /// Returns the number of indices.
     pub fn number_of_indices(&self) -> u64 {
         self.number_of_indices
+    }
+
+    /// Returns the wgpu index format for this index buffer.
+    pub fn index_format(&self) -> wgpu::IndexFormat {
+        match self.bytes_per_index {
+            2 => wgpu::IndexFormat::Uint16,
+            4 => wgpu::IndexFormat::Uint32,
+            other => panic!("unsupported index size in bytes: {other}"),
+        }
     }
 
     /// Returns the size in bytes.

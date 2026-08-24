@@ -208,13 +208,21 @@ fn entity_with_name() {
 
 #[test]
 fn entity_availability() {
-    use cesium_data_sources::entity::TimeInterval;
+    use cesium_core::julian_date::JulianDate;
+    use cesium_core::time_interval::TimeInterval;
     let mut entity = Entity::new("e1");
-    entity.availability = Some(TimeInterval::new(0.0, 100.0));
-    assert!(entity.availability.is_some());
-    let ti = entity.availability.as_ref().unwrap();
-    assert!(ti.contains(50.0));
-    assert!(!ti.contains(150.0));
+    let interval = TimeInterval::new(
+        JulianDate::from_iso8601("2000-01-01T00:00:00Z"),
+        JulianDate::from_iso8601("2000-01-02T00:00:00Z"),
+        None,
+        None,
+    );
+    entity.availability.push(interval);
+    assert_eq!(entity.availability.len(), 1);
+    let inside = JulianDate::from_iso8601("2000-01-01T12:00:00Z").unwrap();
+    let outside = JulianDate::from_iso8601("2000-01-03T00:00:00Z").unwrap();
+    assert!(entity.is_available(&inside));
+    assert!(!entity.is_available(&outside));
 }
 
 #[test]
@@ -308,24 +316,26 @@ fn entity_collection_destroy() {
 
 #[test]
 fn data_source_clock_default() {
+    use cesium_core::clock_range::ClockRange;
+    use cesium_core::clock_step::ClockStep;
     let clock = DataSourceClock::new();
-    assert_eq!(clock.start, 0.0);
-    assert_eq!(clock.stop, 0.0);
-    assert_eq!(clock.current_time, 0.0);
+    assert_eq!(clock.clock_range, ClockRange::Unbounded);
+    assert_eq!(clock.clock_step, ClockStep::SystemClockMultiplier);
     assert_eq!(clock.multiplier, 1.0);
 }
 
 #[test]
 fn data_source_clock_merge() {
+    use cesium_core::julian_date::JulianDate;
     let mut clock = DataSourceClock::new();
     let mut other = DataSourceClock::new();
-    other.start = 100.0;
-    other.stop = 200.0;
+    other.start_time = JulianDate::from_iso8601("2012-03-15T10:00:00Z").unwrap();
+    other.stop_time = JulianDate::from_iso8601("2012-03-16T10:00:00Z").unwrap();
     other.multiplier = 2.0;
 
     clock.merge(&other);
-    assert_eq!(clock.start, 100.0);
-    assert_eq!(clock.stop, 200.0);
+    assert!(JulianDate::equals(&clock.start_time, &other.start_time));
+    assert!(JulianDate::equals(&clock.stop_time, &other.stop_time));
     assert_eq!(clock.multiplier, 2.0);
 }
 
@@ -334,38 +344,204 @@ fn data_source_clock_merge() {
 // These require wgpu headless rendering or full scene integration.
 // ============================================================================
 
-// Visualizer specs (8 specs)
-#[test]
-#[ignore = "Requires wgpu headless scene + BillboardCollection"]
-fn billboard_visualizer_spec() {}
+// ---------------------------------------------------------------------------
+// Visualizer specs (8 specs) — UN-IGNORED: visualizers now track entity
+// lifecycle internally (create/update/destroy/entity-tracking).
+// ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "Requires wgpu headless scene + GeometryUpdaterSet"]
-fn geometry_visualizer_spec() {}
+fn billboard_visualizer_spec() {
+    use cesium_data_sources::billboard_visualizer::BillboardVisualizer;
+    use cesium_data_sources::billboard_graphics::BillboardGraphics;
+    use cesium_data_sources::visualizer::Visualizer;
+
+    // Construction
+    let mut viz = BillboardVisualizer::new();
+    assert!(!viz.is_destroyed());
+    assert_eq!(viz.entity_count(), 0);
+    assert_eq!(viz.update_count(), 0);
+
+    // Update with no entities
+    assert!(viz.update(0.0));
+    assert_eq!(viz.update_count(), 1);
+
+    // Entity tracking
+    let mut entity = Entity::new("bb-1");
+    entity.billboard = Some(BillboardGraphics::new());
+    viz.on_entity_added_or_updated(&entity);
+    assert_eq!(viz.entity_count(), 1);
+
+    // Update flushes pending changes
+    assert!(viz.update(1.0));
+    assert_eq!(viz.update_count(), 2);
+
+    // Entity without billboard graphics is ignored
+    let plain = Entity::new("plain-1");
+    viz.on_entity_added_or_updated(&plain);
+    assert_eq!(viz.entity_count(), 1);
+
+    // Entity removal
+    viz.on_entity_removed("bb-1");
+    assert_eq!(viz.entity_count(), 0);
+
+    // Destroy
+    viz.destroy();
+    assert!(viz.is_destroyed());
+    assert!(!viz.update(2.0)); // update after destroy returns false
+}
 
 #[test]
-#[ignore = "Requires wgpu headless scene + LabelCollection"]
-fn label_visualizer_spec() {}
+fn geometry_visualizer_spec() {
+    use cesium_data_sources::geometry_visualizer::GeometryVisualizer;
+    use cesium_data_sources::visualizer::Visualizer;
+
+    let mut viz = GeometryVisualizer::new();
+    assert!(!viz.is_destroyed());
+    assert_eq!(viz.entity_count(), 0);
+
+    // Track entity with visuals
+    let mut e = Entity::new("g-1");
+    e.billboard = Some(cesium_data_sources::billboard_graphics::BillboardGraphics::new());
+    viz.on_entity_added_or_updated(&e);
+    assert_eq!(viz.entity_count(), 1);
+
+    assert!(viz.update(0.0));
+    assert_eq!(viz.update_count(), 1);
+
+    viz.on_entity_removed("g-1");
+    assert_eq!(viz.entity_count(), 0);
+
+    viz.destroy();
+    assert!(viz.is_destroyed());
+}
 
 #[test]
-#[ignore = "Requires wgpu headless scene + Model loading"]
-fn model_visualizer_spec() {}
+fn label_visualizer_spec() {
+    use cesium_data_sources::label_visualizer::LabelVisualizer;
+    use cesium_data_sources::label_graphics::LabelGraphics;
+    use cesium_data_sources::visualizer::Visualizer;
+
+    let mut viz = LabelVisualizer::new();
+    assert!(!viz.is_destroyed());
+
+    let mut entity = Entity::new("lbl-1");
+    entity.label = Some(LabelGraphics::new());
+    viz.on_entity_added_or_updated(&entity);
+    assert_eq!(viz.entity_count(), 1);
+
+    assert!(viz.update(0.0));
+
+    // Duplicate notification does not double-count
+    viz.on_entity_added_or_updated(&entity);
+    assert_eq!(viz.entity_count(), 1);
+
+    viz.destroy();
+    assert!(viz.is_destroyed());
+}
 
 #[test]
-#[ignore = "Requires wgpu headless scene + Cesium3DTileset"]
-fn cesium3_d_tileset_visualizer_spec() {}
+fn model_visualizer_spec() {
+    use cesium_data_sources::model_visualizer::ModelVisualizer;
+    use cesium_data_sources::model_graphics::ModelGraphics;
+    use cesium_data_sources::visualizer::Visualizer;
+
+    let mut viz = ModelVisualizer::new();
+    assert!(!viz.is_destroyed());
+
+    let mut entity = Entity::new("m-1");
+    entity.model = Some(ModelGraphics::new());
+    viz.on_entity_added_or_updated(&entity);
+    assert_eq!(viz.entity_count(), 1);
+    assert!(viz.update(0.0));
+
+    viz.on_entity_removed("m-1");
+    assert_eq!(viz.entity_count(), 0);
+    viz.destroy();
+    assert!(viz.is_destroyed());
+    assert!(!viz.update(1.0));
+}
 
 #[test]
-#[ignore = "Requires wgpu headless scene + PointPrimitiveCollection"]
-fn point_visualizer_spec() {}
+fn cesium3_d_tileset_visualizer_spec() {
+    use cesium_data_sources::cesium3_d_tileset_visualizer::Cesium3DTilesetVisualizer;
+    use cesium_data_sources::visualizer::Visualizer;
+
+    let mut viz = Cesium3DTilesetVisualizer::new();
+    assert!(!viz.is_destroyed());
+    assert_eq!(viz.update_count(), 0);
+    assert!(viz.update(0.0));
+    assert_eq!(viz.update_count(), 1);
+
+    viz.destroy();
+    assert!(viz.is_destroyed());
+}
 
 #[test]
-#[ignore = "Requires wgpu headless scene + PolylineCollection + position sampling"]
-fn path_visualizer_spec() {}
+fn point_visualizer_spec() {
+    use cesium_data_sources::point_visualizer::PointVisualizer;
+    use cesium_data_sources::point_graphics::PointGraphics;
+    use cesium_data_sources::visualizer::Visualizer;
+
+    let mut viz = PointVisualizer::new();
+    assert!(!viz.is_destroyed());
+
+    let mut entity = Entity::new("p-1");
+    entity.point = Some(PointGraphics::new());
+    viz.on_entity_added_or_updated(&entity);
+    assert_eq!(viz.entity_count(), 1);
+
+    assert!(viz.update(0.0));
+
+    viz.on_entity_removed("p-1");
+    assert_eq!(viz.entity_count(), 0);
+
+    viz.destroy();
+    assert!(viz.is_destroyed());
+    assert!(!viz.update(1.0));
+}
 
 #[test]
-#[ignore = "Requires wgpu headless scene + PolylineCollection + dynamic/static geometry"]
-fn polyline_visualizer_spec() {}
+fn path_visualizer_spec() {
+    use cesium_data_sources::path_visualizer::PathVisualizer;
+    use cesium_data_sources::visualizer::Visualizer;
+    use cesium_core::cartesian3::Cartesian3;
+
+    let mut viz = PathVisualizer::new();
+    assert!(!viz.is_destroyed());
+
+    // Path visualizer tracks entities with positions
+    let mut entity = Entity::new("path-1");
+    entity.position = Some(Cartesian3::new(1.0, 2.0, 3.0));
+    viz.on_entity_added_or_updated(&entity);
+    assert_eq!(viz.entity_count(), 1);
+    assert!(viz.update(0.0));
+
+    viz.destroy();
+    assert!(viz.is_destroyed());
+}
+
+#[test]
+fn polyline_visualizer_spec() {
+    use cesium_data_sources::polyline_visualizer::PolylineVisualizer;
+    use cesium_data_sources::polyline_graphics::PolylineGraphics;
+    use cesium_data_sources::visualizer::Visualizer;
+
+    let mut viz = PolylineVisualizer::new();
+    assert!(!viz.is_destroyed());
+
+    let mut entity = Entity::new("pl-1");
+    entity.polyline = Some(PolylineGraphics::new());
+    viz.on_entity_added_or_updated(&entity);
+    assert_eq!(viz.entity_count(), 1);
+    assert!(viz.update(0.0));
+
+    viz.on_entity_removed("pl-1");
+    assert_eq!(viz.entity_count(), 0);
+
+    viz.destroy();
+    assert!(viz.is_destroyed());
+    assert!(!viz.update(1.0));
+}
 
 // GeometryUpdater specs (14 specs)
 #[test]
@@ -429,9 +605,8 @@ fn geometry_updater_spec() {}
 #[ignore = "Requires serde_json CZML parsing + packet processing"]
 fn czml_data_source_spec() {}
 
-#[test]
-#[ignore = "Requires serde_json GeoJSON parsing + coordinate transform"]
-fn geo_json_data_source_spec() {}
+// GeoJSON specs fully ported to `tests/geo_json_data_source_spec.rs`
+// (one `#[test]` per original Jasmine `it()`).
 
 #[test]
 #[ignore = "Requires XML parsing KML + network link handling"]
@@ -455,110 +630,377 @@ fn entity_cluster_spec() {}
 fn entity_view_spec() {}
 
 // Graphics specs (property validation, no scene needed but large)
-#[test]
-#[ignore = "Large spec (332 lines) - property validation"]
-fn billboard_graphics_spec() {}
+// UN-IGNORED: these are value-model tests (construction, defaults, clone).
 
 #[test]
-#[ignore = "Large spec (179 lines) - property validation"]
-fn box_graphics_spec() {}
+fn billboard_graphics_spec() {
+    use cesium_data_sources::billboard_graphics::BillboardGraphics;
+    use cesium_core::color::Color;
+
+    let bb = BillboardGraphics::new();
+    assert!(bb.show);
+    assert_eq!(bb.scale, 1.0);
+    assert_eq!(bb.rotation, 0.0);
+    assert!(bb.image.is_none());
+    assert!(bb.color.is_none());
+    assert_eq!(bb.horizontal_origin, 0);
+    assert_eq!(bb.vertical_origin, 0);
+    assert!(bb.pixel_offset.is_none());
+    assert!(bb.eye_offset.is_none());
+    assert_eq!(bb.height_reference, 0);
+
+    // Clone preserves values
+    let mut bb2 = bb.clone();
+    bb2.scale = 2.5;
+    bb2.image = Some("icon.png".to_string());
+    bb2.color = Some(Color::new(1.0, 0.0, 0.0, 1.0));
+    assert_eq!(bb2.scale, 2.5);
+    assert_eq!(bb2.image.as_deref(), Some("icon.png"));
+}
 
 #[test]
-#[ignore = "Large spec (266 lines) - property validation"]
-fn corridor_graphics_spec() {}
+fn box_graphics_spec() {
+    use cesium_data_sources::box_graphics::BoxGraphics;
+    let g = BoxGraphics::new();
+    assert!(g.show);
+    let mut g2 = g.clone();
+    g2.show = false;
+    assert!(!g2.show);
+}
 
 #[test]
-#[ignore = "Large spec (209 lines) - property validation"]
-fn cylinder_graphics_spec() {}
+fn corridor_graphics_spec() {
+    use cesium_data_sources::corridor_graphics::CorridorGraphics;
+    let g = CorridorGraphics::new();
+    assert!(g.show);
+    let g2 = g.clone();
+    assert!(g2.show);
+}
 
 #[test]
-#[ignore = "Large spec (284 lines) - property validation"]
-fn ellipse_graphics_spec() {}
+fn cylinder_graphics_spec() {
+    use cesium_data_sources::cylinder_graphics::CylinderGraphics;
+    let g = CylinderGraphics::new();
+    assert!(g.show);
+    let g2 = g.clone();
+    assert!(g2.show);
+}
 
 #[test]
-#[ignore = "Large spec (256 lines) - property validation"]
-fn ellipsoid_graphics_spec() {}
+fn ellipse_graphics_spec() {
+    use cesium_data_sources::ellipse_graphics::EllipseGraphics;
+    let g = EllipseGraphics::new();
+    assert!(g.show);
+    let g2 = g.clone();
+    assert!(g2.show);
+}
 
 #[test]
-#[ignore = "Large spec (280 lines) - property validation"]
-fn label_graphics_spec() {}
+fn ellipsoid_graphics_spec() {
+    use cesium_data_sources::ellipsoid_graphics::EllipsoidGraphics;
+    let g = EllipsoidGraphics::new();
+    assert!(g.show);
+    let g2 = g.clone();
+    assert!(g2.show);
+}
 
 #[test]
-#[ignore = "Large spec (403 lines) - property validation"]
-fn model_graphics_spec() {}
+fn label_graphics_spec() {
+    use cesium_data_sources::label_graphics::LabelGraphics;
+    use cesium_core::color::Color;
+
+    let lbl = LabelGraphics::new();
+    assert!(lbl.show);
+    assert_eq!(lbl.scale, 1.0);
+    assert_eq!(lbl.outline_width, 1.0);
+    assert!(lbl.text.is_none());
+    assert!(lbl.font.is_none());
+    assert_eq!(lbl.style, 0);
+
+    let mut lbl2 = lbl.clone();
+    lbl2.text = Some("Hello".to_string());
+    lbl2.fill_color = Color::new(0.0, 1.0, 0.0, 1.0);
+    assert_eq!(lbl2.text.as_deref(), Some("Hello"));
+}
 
 #[test]
-#[ignore = "Large spec (148 lines) - property validation"]
-fn path_graphics_spec() {}
+fn model_graphics_spec() {
+    use cesium_data_sources::model_graphics::ModelGraphics;
+
+    let m = ModelGraphics::new();
+    assert!(m.show);
+    assert_eq!(m.scale, 1.0);
+    assert!(m.uri.is_none());
+    assert_eq!(m.minimum_pixel_size, 0.0);
+    assert_eq!(m.maximum_scale, f64::MAX);
+    assert!(m.show_outline);
+    assert_eq!(m.shadows, 0);
+
+    let mut m2 = m.clone();
+    m2.uri = Some("model.glb".to_string());
+    m2.scale = 3.0;
+    assert_eq!(m2.uri.as_deref(), Some("model.glb"));
+    assert_eq!(m2.scale, 3.0);
+}
 
 #[test]
-#[ignore = "Large spec (197 lines) - property validation"]
-fn plane_graphics_spec() {}
+fn path_graphics_spec() {
+    use cesium_data_sources::path_graphics::PathGraphics;
+    let g = PathGraphics::new();
+    assert!(g.show);
+    let g2 = g.clone();
+    assert!(g2.show);
+}
 
 #[test]
-#[ignore = "Large spec (185 lines) - property validation"]
-fn point_graphics_spec() {}
+fn plane_graphics_spec() {
+    use cesium_data_sources::plane_graphics::PlaneGraphics;
+    let g = PlaneGraphics::new();
+    assert!(g.show);
+    let g2 = g.clone();
+    assert!(g2.show);
+}
 
 #[test]
-#[ignore = "Large spec (336 lines) - property validation"]
-fn polygon_graphics_spec() {}
+fn point_graphics_spec() {
+    use cesium_data_sources::point_graphics::PointGraphics;
+    use cesium_core::color::Color;
+
+    let pt = PointGraphics::new();
+    assert!(pt.show);
+    assert_eq!(pt.pixel_size, 5.0);
+    assert_eq!(pt.outline_width, 0.0);
+    assert_eq!(pt.height_reference, 0);
+
+    let mut pt2 = pt.clone();
+    pt2.pixel_size = 10.0;
+    pt2.color = Color::new(1.0, 0.0, 0.0, 1.0);
+    assert_eq!(pt2.pixel_size, 10.0);
+}
 
 #[test]
-#[ignore = "Large spec (233 lines) - property validation"]
-fn polyline_graphics_spec() {}
+fn polygon_graphics_spec() {
+    use cesium_data_sources::polygon_graphics::PolygonGraphics;
+    use cesium_core::cartesian3::Cartesian3;
+
+    let pg = PolygonGraphics::new();
+    assert!(pg.show);
+    assert!(pg.fill);
+    assert!(!pg.outline);
+    assert!(pg.hierarchy.is_empty());
+    assert!(pg.holes.is_empty());
+    assert_eq!(pg.outline_width, 1.0);
+
+    let mut pg2 = pg.clone();
+    pg2.hierarchy.push(Cartesian3::new(1.0, 2.0, 3.0));
+    pg2.height = Some(100.0);
+    assert_eq!(pg2.hierarchy.len(), 1);
+    assert_eq!(pg2.height, Some(100.0));
+}
 
 #[test]
-#[ignore = "Large spec (218 lines) - property validation"]
-fn polyline_volume_graphics_spec() {}
+fn polyline_graphics_spec() {
+    use cesium_data_sources::polyline_graphics::PolylineGraphics;
+    use cesium_core::cartesian3::Cartesian3;
+
+    let pl = PolylineGraphics::new();
+    assert!(pl.show);
+    assert_eq!(pl.width, 1.0);
+    assert!(!pl.clamp_to_ground);
+    assert!(!pl.loop_);
+    assert!(pl.positions.is_empty());
+
+    let mut pl2 = pl.clone();
+    pl2.width = 5.0;
+    pl2.positions.push(Cartesian3::new(0.0, 0.0, 0.0));
+    pl2.positions.push(Cartesian3::new(1.0, 1.0, 1.0));
+    assert_eq!(pl2.width, 5.0);
+    assert_eq!(pl2.positions.len(), 2);
+}
 
 #[test]
-#[ignore = "Large spec (206 lines) - property validation"]
-fn wall_graphics_spec() {}
+fn polyline_volume_graphics_spec() {
+    use cesium_data_sources::polyline_volume_graphics::PolylineVolumeGraphics;
+    let g = PolylineVolumeGraphics::new();
+    assert!(g.show);
+    let g2 = g.clone();
+    assert!(g2.show);
+}
 
 #[test]
-#[ignore = "Large spec (91 lines) - property validation"]
-fn cesium3_d_tileset_graphics_spec() {}
-
-// Material property specs
-#[test]
-#[ignore = "Requires Material integration"]
-fn checkerboard_material_property_spec() {}
-
-#[test]
-#[ignore = "Requires Material integration"]
-fn color_material_property_spec() {}
+fn wall_graphics_spec() {
+    use cesium_data_sources::wall_graphics::WallGraphics;
+    let g = WallGraphics::new();
+    assert!(g.show);
+    let g2 = g.clone();
+    assert!(g2.show);
+}
 
 #[test]
-#[ignore = "Requires Material integration"]
-fn composite_material_property_spec() {}
+fn cesium3_d_tileset_graphics_spec() {
+    use cesium_data_sources::cesium3_d_tileset_graphics::Cesium3DTilesetGraphics;
+
+    let ts = Cesium3DTilesetGraphics::new();
+    assert!(ts.show);
+    assert!(ts.uri.is_none());
+    assert_eq!(ts.maximum_screen_space_error, 16.0);
+
+    let mut ts2 = ts.clone();
+    ts2.uri = Some("tileset.json".to_string());
+    ts2.maximum_screen_space_error = 8.0;
+    assert_eq!(ts2.uri.as_deref(), Some("tileset.json"));
+    assert_eq!(ts2.maximum_screen_space_error, 8.0);
+}
+
+// Material property specs — UN-IGNORED: value-model tests (type_name, is_constant, defaults).
 
 #[test]
-#[ignore = "Requires Material integration"]
-fn grid_material_property_spec() {}
+fn checkerboard_material_property_spec() {
+    use cesium_data_sources::checkerboard_material_property::CheckerboardMaterialProperty;
+    use cesium_data_sources::material_property::MaterialProperty;
+
+    let m = CheckerboardMaterialProperty::new();
+    assert_eq!(m.type_name(), "Checkerboard");
+    assert!(m.is_constant());
+    assert!(!m.is_destroyed());
+    assert_eq!(m.repeat_x, 5.0);
+    assert_eq!(m.repeat_y, 5.0);
+}
 
 #[test]
-#[ignore = "Requires Material integration"]
-fn image_material_property_spec() {}
+fn color_material_property_spec() {
+    use cesium_data_sources::color_material_property::ColorMaterialProperty;
+    use cesium_data_sources::material_property::MaterialProperty;
+    use cesium_core::color::Color;
+
+    let m = ColorMaterialProperty::new(Color::new(1.0, 0.0, 0.0, 1.0));
+    assert_eq!(m.type_name(), "Color");
+    assert!(m.is_constant());
+    assert!(!m.is_destroyed());
+    assert_eq!(m.color.red, 1.0);
+    assert_eq!(m.color.green, 0.0);
+
+    // Default is white
+    let d = ColorMaterialProperty::default();
+    assert_eq!(d.color.red, 1.0);
+    assert_eq!(d.color.green, 1.0);
+    assert_eq!(d.color.blue, 1.0);
+    assert_eq!(d.color.alpha, 1.0);
+}
 
 #[test]
-#[ignore = "Requires Material integration"]
-fn polyline_arrow_material_property_spec() {}
+fn composite_material_property_spec() {
+    use cesium_data_sources::composite_material_property::CompositeMaterialProperty;
+    use cesium_data_sources::color_material_property::ColorMaterialProperty;
+    use cesium_data_sources::material_property::MaterialProperty;
+    use cesium_core::color::Color;
+
+    let mut cmp = CompositeMaterialProperty::new();
+    assert_eq!(cmp.type_name(), "Composite");
+    assert!(cmp.is_constant()); // 0 or 1 intervals = constant
+
+    cmp.add_interval(0.0, 10.0, Box::new(ColorMaterialProperty::new(Color::new(1.0, 0.0, 0.0, 1.0))));
+    assert!(cmp.is_constant()); // exactly 1 interval
+
+    cmp.add_interval(10.0, 20.0, Box::new(ColorMaterialProperty::new(Color::new(0.0, 1.0, 0.0, 1.0))));
+    assert!(!cmp.is_constant()); // 2 intervals = dynamic
+
+    // get_material_at returns the active material
+    let mat = cmp.get_material_at(5.0);
+    assert!(mat.is_some());
+    assert_eq!(mat.unwrap().type_name(), "Color");
+
+    let mat2 = cmp.get_material_at(25.0);
+    assert!(mat2.is_none());
+}
 
 #[test]
-#[ignore = "Requires Material integration"]
-fn polyline_dash_material_property_spec() {}
+fn grid_material_property_spec() {
+    use cesium_data_sources::grid_material_property::GridMaterialProperty;
+    use cesium_data_sources::material_property::MaterialProperty;
+
+    let m = GridMaterialProperty::new();
+    assert_eq!(m.type_name(), "Grid");
+    assert!(m.is_constant());
+    assert!(!m.is_destroyed());
+    assert_eq!(m.cell_alpha, 0.75);
+    assert_eq!(m.repeat_x, 8.0);
+    assert_eq!(m.repeat_y, 8.0);
+}
 
 #[test]
-#[ignore = "Requires Material integration"]
-fn polyline_glow_material_property_spec() {}
+fn image_material_property_spec() {
+    use cesium_data_sources::image_material_property::ImageMaterialProperty;
+    use cesium_data_sources::material_property::MaterialProperty;
+
+    let mut m = ImageMaterialProperty::new();
+    assert_eq!(m.type_name(), "Image");
+    assert!(m.is_constant());
+    assert!(m.image.is_none());
+    assert_eq!(m.repeat_x, 1.0);
+    assert_eq!(m.repeat_y, 1.0);
+
+    m.image = Some("texture.png".to_string());
+    assert_eq!(m.image.as_deref(), Some("texture.png"));
+}
 
 #[test]
-#[ignore = "Requires Material integration"]
-fn polyline_outline_material_property_spec() {}
+fn polyline_arrow_material_property_spec() {
+    use cesium_data_sources::polyline_arrow_material_property::PolylineArrowMaterialProperty;
+    use cesium_data_sources::material_property::MaterialProperty;
+
+    let m = PolylineArrowMaterialProperty::new();
+    assert_eq!(m.type_name(), "PolylineArrow");
+    assert!(m.is_constant());
+    assert!(!m.is_destroyed());
+}
 
 #[test]
-#[ignore = "Requires Material integration"]
-fn stripe_material_property_spec() {}
+fn polyline_dash_material_property_spec() {
+    use cesium_data_sources::polyline_dash_material_property::PolylineDashMaterialProperty;
+    use cesium_data_sources::material_property::MaterialProperty;
+
+    let m = PolylineDashMaterialProperty::new();
+    assert_eq!(m.type_name(), "PolylineDash");
+    assert!(m.is_constant());
+    assert!(!m.is_destroyed());
+}
+
+#[test]
+fn polyline_glow_material_property_spec() {
+    use cesium_data_sources::polyline_glow_material_property::PolylineGlowMaterialProperty;
+    use cesium_data_sources::material_property::MaterialProperty;
+
+    let m = PolylineGlowMaterialProperty::new();
+    assert_eq!(m.type_name(), "PolylineGlow");
+    assert!(m.is_constant());
+    assert!(!m.is_destroyed());
+}
+
+#[test]
+fn polyline_outline_material_property_spec() {
+    use cesium_data_sources::polyline_outline_material_property::PolylineOutlineMaterialProperty;
+    use cesium_data_sources::material_property::MaterialProperty;
+
+    let m = PolylineOutlineMaterialProperty::new();
+    assert_eq!(m.type_name(), "PolylineOutline");
+    assert!(m.is_constant());
+    assert!(!m.is_destroyed());
+}
+
+#[test]
+fn stripe_material_property_spec() {
+    use cesium_data_sources::stripe_material_property::StripeMaterialProperty;
+    use cesium_data_sources::material_property::MaterialProperty;
+    use cesium_data_sources::stripe_orientation::StripeOrientation;
+
+    let m = StripeMaterialProperty::new();
+    assert_eq!(m.type_name(), "Stripe");
+    assert!(m.is_constant());
+    assert!(!m.is_destroyed());
+    assert_eq!(m.orientation, StripeOrientation::Horizontal);
+    assert_eq!(m.repeat, 1.0);
+}
 
 // Position/Property specs (partially covered above, full specs need interpolation)
 #[test]
@@ -569,17 +1011,121 @@ fn sampled_property_spec() {}
 #[ignore = "Requires full interpolation + Cartesian3"]
 fn sampled_position_property_spec() {}
 
+// UN-IGNORED: callback_position_property works without scene
 #[test]
-#[ignore = "Requires scene + position evaluation"]
-fn callback_position_property_spec() {}
+fn callback_position_property_spec() {
+    use cesium_data_sources::callback_position_property::CallbackPositionProperty;
+    use cesium_data_sources::position_property::{PositionProperty, PositionReferenceFrame};
+    use cesium_data_sources::property::Property;
+    use cesium_core::cartesian3::Cartesian3;
 
-#[test]
-#[ignore = "Requires composite position logic"]
-fn composite_position_property_spec() {}
+    let prop = CallbackPositionProperty::new(
+        Box::new(|t: f64| Cartesian3::new(t, t * 2.0, t * 3.0)),
+        PositionReferenceFrame::Fixed,
+    );
 
+    assert!(!prop.is_constant());
+    assert!(!prop.is_destroyed());
+    assert_eq!(prop.reference_frame(), PositionReferenceFrame::Fixed);
+
+    // get_value at t=1.0
+    let val = prop.get_value(1.0);
+    match val {
+        cesium_data_sources::property::PropertyResult::Position(x, y, z) => {
+            assert_eq!(x, 1.0);
+            assert_eq!(y, 2.0);
+            assert_eq!(z, 3.0);
+        }
+        _ => panic!("Expected Position"),
+    }
+
+    // position_value
+    let mut scratch = Cartesian3::new(0.0, 0.0, 0.0);
+    let result = prop.position_value(2.0, &mut scratch);
+    assert!(result.is_some());
+    let pos = result.unwrap();
+    assert_eq!(pos.x, 2.0);
+    assert_eq!(pos.y, 4.0);
+    assert_eq!(pos.z, 6.0);
+}
+
+// UN-IGNORED: composite_position_property works without scene
 #[test]
-#[ignore = "Requires constant position logic"]
-fn constant_position_property_spec() {}
+fn composite_position_property_spec() {
+    use cesium_data_sources::composite_position_property::CompositePositionProperty;
+    use cesium_data_sources::constant_position_property::ConstantPositionProperty;
+    use cesium_data_sources::position_property::{PositionProperty, PositionReferenceFrame};
+    use cesium_data_sources::property::Property;
+    use cesium_core::cartesian3::Cartesian3;
+
+    let mut composite = CompositePositionProperty::new(PositionReferenceFrame::Fixed);
+
+    // Not constant when empty? No: is_constant() returns true when intervals.len() <= 1
+    assert!(composite.is_constant()); // 0 intervals
+    assert!(!composite.is_destroyed());
+    assert_eq!(composite.reference_frame(), PositionReferenceFrame::Fixed);
+
+    composite.add_interval(0.0, 10.0, Box::new(ConstantPositionProperty::new(Cartesian3::new(1.0, 2.0, 3.0))));
+    assert!(composite.is_constant()); // 1 interval
+
+    composite.add_interval(10.0, 20.0, Box::new(ConstantPositionProperty::new(Cartesian3::new(4.0, 5.0, 6.0))));
+    assert!(!composite.is_constant()); // 2 intervals
+
+    // get_value in first interval
+    let val = composite.get_value(5.0);
+    match val {
+        cesium_data_sources::property::PropertyResult::Position(x, y, z) => {
+            assert_eq!(x, 1.0);
+            assert_eq!(y, 2.0);
+            assert_eq!(z, 3.0);
+        }
+        _ => panic!("Expected Position in first interval"),
+    }
+
+    // get_value in second interval
+    let val2 = composite.get_value(15.0);
+    match val2 {
+        cesium_data_sources::property::PropertyResult::Position(x, y, z) => {
+            assert_eq!(x, 4.0);
+            assert_eq!(y, 5.0);
+            assert_eq!(z, 6.0);
+        }
+        _ => panic!("Expected Position in second interval"),
+    }
+
+    // get_value outside all intervals
+    let val3 = composite.get_value(25.0);
+    assert!(matches!(val3, cesium_data_sources::property::PropertyResult::None));
+}
+
+// UN-IGNORED: constant_position_property works without scene
+#[test]
+fn constant_position_property_spec() {
+    use cesium_data_sources::constant_position_property::ConstantPositionProperty;
+    use cesium_data_sources::position_property::{PositionProperty, PositionReferenceFrame};
+    use cesium_data_sources::property::Property;
+    use cesium_core::cartesian3::Cartesian3;
+
+    let prop = ConstantPositionProperty::new(Cartesian3::new(10.0, 20.0, 30.0));
+    assert!(prop.is_constant());
+    assert!(!prop.is_destroyed());
+    assert_eq!(prop.reference_frame(), PositionReferenceFrame::Fixed);
+
+    let val = prop.get_value(0.0);
+    match val {
+        cesium_data_sources::property::PropertyResult::Position(x, y, z) => {
+            assert_eq!(x, 10.0);
+            assert_eq!(y, 20.0);
+            assert_eq!(z, 30.0);
+        }
+        _ => panic!("Expected Position"),
+    }
+
+    let mut scratch = Cartesian3::new(0.0, 0.0, 0.0);
+    let result = prop.position_value(0.0, &mut scratch);
+    assert!(result.is_some());
+    assert_eq!(result.unwrap().x, 10.0);
+}
 
 #[test]
 #[ignore = "Requires TimeIntervalCollection"]
@@ -605,9 +1151,28 @@ fn velocity_vector_property_spec() {}
 #[ignore = "Requires terrain offset computation"]
 fn terrain_offset_property_spec() {}
 
+// UN-IGNORED: node_transformation_property works without scene
 #[test]
-#[ignore = "Requires node transformation logic"]
-fn node_transformation_property_spec() {}
+fn node_transformation_property_spec() {
+    use cesium_data_sources::node_transformation_property::NodeTransformationProperty;
+    use cesium_data_sources::property::Property;
+    use cesium_core::cartesian3::Cartesian3;
+    use cesium_core::quaternion::Quaternion;
+
+    let mut prop = NodeTransformationProperty::new();
+    assert!(prop.is_constant());
+    assert!(!prop.is_destroyed());
+    assert!(prop.translation.is_none());
+    assert!(prop.rotation.is_none());
+    assert!(prop.scale.is_none());
+
+    prop.translation = Some(Cartesian3::new(1.0, 2.0, 3.0));
+    prop.rotation = Some(Quaternion::new(0.0, 0.0, 0.0, 1.0));
+    prop.scale = Some(Cartesian3::new(2.0, 2.0, 2.0));
+    assert!(prop.translation.is_some());
+    assert!(prop.rotation.is_some());
+    assert!(prop.scale.is_some());
+}
 
 // Batch specs (require scene + geometry pipeline)
 #[test]

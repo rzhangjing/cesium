@@ -1,12 +1,18 @@
 //! Ported from `packages/engine/Source/Core/OrientedBoundingBox.js`.
 
 use crate::cartesian3::Cartesian3;
+use crate::cartographic::Cartographic;
+use crate::check;
+use crate::developer_error::throw_developer_error;
+use crate::ellipsoid::Ellipsoid;
+use crate::ellipsoid_tangent_plane::EllipsoidTangentPlane;
 use crate::intersect::Intersect;
 use crate::interval::Interval;
 use crate::math::CesiumMath;
 use crate::matrix3::Matrix3;
 use crate::matrix4::Matrix4;
 use crate::plane::Plane;
+use crate::rectangle::Rectangle;
 
 /// A closed and convex rectangular cuboid.
 #[derive(Clone, Debug)]
@@ -164,6 +170,269 @@ impl OrientedBoundingBox {
         Matrix3::multiply_by_scale(&rotation, &half_scale, &mut r.half_axes);
 
         r
+    }
+
+    /// Computes an OrientedBoundingBox that bounds a [`Rectangle`] on the
+    /// surface of an [`Ellipsoid`]. There are no guarantees about the
+    /// orientation of the bounding box.
+    ///
+    /// Port of `OrientedBoundingBox.fromRectangle`.
+    pub fn from_rectangle(
+        rectangle: Option<&Rectangle>,
+        minimum_height: Option<f64>,
+        maximum_height: Option<f64>,
+        ellipsoid: Option<Ellipsoid>,
+        result: Option<&mut Self>,
+    ) -> Self {
+        //>>includeStart('debug', pragmas.debug);
+        if cfg!(debug_assertions) {
+            check::defined("rectangle", rectangle);
+            let rectangle = rectangle.unwrap();
+            if rectangle.width() < 0.0 || rectangle.width() > CesiumMath::TWO_PI {
+                throw_developer_error("Rectangle width must be between 0 and 2 * pi");
+            }
+            if rectangle.height() < 0.0 || rectangle.height() > CesiumMath::PI {
+                throw_developer_error("Rectangle height must be between 0 and pi");
+            }
+            if let Some(ellipsoid) = &ellipsoid {
+                if !CesiumMath::equals_epsilon(
+                    ellipsoid.radii().x,
+                    ellipsoid.radii().y,
+                    Some(CesiumMath::EPSILON15),
+                    None,
+                ) {
+                    throw_developer_error(
+                        "Ellipsoid must be an ellipsoid of revolution (radii.x == radii.y)",
+                    );
+                }
+            }
+        }
+        //>>includeEnd('debug');
+
+        let rectangle = rectangle.unwrap();
+        let minimum_height = minimum_height.unwrap_or(0.0);
+        let maximum_height = maximum_height.unwrap_or(0.0);
+        let ellipsoid = ellipsoid.unwrap_or(Ellipsoid::WGS84);
+
+        let mut out = OrientedBoundingBox::default();
+
+        if rectangle.width() <= CesiumMath::PI {
+            // The bounding box will be aligned with the tangent plane at the
+            // center of the rectangle.
+            let tangent_point_cartographic = Rectangle::center(rectangle);
+            let mut tangent_point = Cartesian3::default();
+            ellipsoid.cartographic_to_cartesian(&tangent_point_cartographic, &mut tangent_point);
+            let tangent_plane = EllipsoidTangentPlane::new(&tangent_point, Some(ellipsoid))
+                .unwrap_or_else(|| {
+                    throw_developer_error("the origin must not be at the center of the ellipsoid")
+                });
+            let plane = tangent_plane.plane().clone();
+
+            // If the rectangle spans the equator, CW is instead aligned with
+            // the equator (because it sticks out the farthest at the equator).
+            let lon_center = tangent_point_cartographic.longitude;
+            let lat_center = if rectangle.south < 0.0 && rectangle.north > 0.0 {
+                0.0
+            } else {
+                tangent_point_cartographic.latitude
+            };
+
+            // Compute XY extents using the rectangle at maximum height
+            let perimeter_cartographic_nc =
+                Cartographic::from_radians_new(lon_center, rectangle.north, Some(maximum_height));
+            let perimeter_cartographic_nw = Cartographic::from_radians_new(
+                rectangle.west,
+                rectangle.north,
+                Some(maximum_height),
+            );
+            let perimeter_cartographic_cw =
+                Cartographic::from_radians_new(rectangle.west, lat_center, Some(maximum_height));
+            let perimeter_cartographic_sw = Cartographic::from_radians_new(
+                rectangle.west,
+                rectangle.south,
+                Some(maximum_height),
+            );
+            let perimeter_cartographic_sc =
+                Cartographic::from_radians_new(lon_center, rectangle.south, Some(maximum_height));
+
+            let mut perimeter_cartesian_nc = Cartesian3::default();
+            ellipsoid
+                .cartographic_to_cartesian(&perimeter_cartographic_nc, &mut perimeter_cartesian_nc);
+            let mut perimeter_cartesian_nw = Cartesian3::default();
+            ellipsoid
+                .cartographic_to_cartesian(&perimeter_cartographic_nw, &mut perimeter_cartesian_nw);
+            let mut perimeter_cartesian_cw = Cartesian3::default();
+            ellipsoid
+                .cartographic_to_cartesian(&perimeter_cartographic_cw, &mut perimeter_cartesian_cw);
+            let mut perimeter_cartesian_sw = Cartesian3::default();
+            ellipsoid
+                .cartographic_to_cartesian(&perimeter_cartographic_sw, &mut perimeter_cartesian_sw);
+            let mut perimeter_cartesian_sc = Cartesian3::default();
+            ellipsoid
+                .cartographic_to_cartesian(&perimeter_cartographic_sc, &mut perimeter_cartesian_sc);
+
+            let perimeter_projected_nc = tangent_plane
+                .project_point_to_nearest_tangent_plane(&perimeter_cartesian_nc);
+            let perimeter_projected_nw = tangent_plane
+                .project_point_to_nearest_tangent_plane(&perimeter_cartesian_nw);
+            let perimeter_projected_cw = tangent_plane
+                .project_point_to_nearest_tangent_plane(&perimeter_cartesian_cw);
+            let perimeter_projected_sw = tangent_plane
+                .project_point_to_nearest_tangent_plane(&perimeter_cartesian_sw);
+            let perimeter_projected_sc = tangent_plane
+                .project_point_to_nearest_tangent_plane(&perimeter_cartesian_sc);
+
+            let min_x = perimeter_projected_nw
+                .x
+                .min(perimeter_projected_cw.x)
+                .min(perimeter_projected_sw.x);
+            let max_x = -min_x; // symmetrical
+
+            let max_y = perimeter_projected_nw.y.max(perimeter_projected_nc.y);
+            let min_y = perimeter_projected_sw.y.min(perimeter_projected_sc.y);
+
+            // Compute minimum Z using the rectangle at minimum height, since
+            // it will be deeper than the maximum height
+            let mut perimeter_cartographic_nw = perimeter_cartographic_nw;
+            let mut perimeter_cartographic_sw = perimeter_cartographic_sw;
+            perimeter_cartographic_nw.height = minimum_height;
+            perimeter_cartographic_sw.height = minimum_height;
+            let mut perimeter_cartesian_nw = Cartesian3::default();
+            ellipsoid
+                .cartographic_to_cartesian(&perimeter_cartographic_nw, &mut perimeter_cartesian_nw);
+            let mut perimeter_cartesian_sw = Cartesian3::default();
+            ellipsoid
+                .cartographic_to_cartesian(&perimeter_cartographic_sw, &mut perimeter_cartesian_sw);
+
+            let min_z = Plane::get_point_distance(&plane, &perimeter_cartesian_nw).min(
+                Plane::get_point_distance(&plane, &perimeter_cartesian_sw),
+            );
+            // Since the tangent plane touches the surface at height = 0, this
+            // is okay
+            let max_z = maximum_height;
+
+            from_plane_extents(
+                tangent_plane.origin(),
+                tangent_plane.x_axis(),
+                tangent_plane.y_axis(),
+                &tangent_plane.plane().normal,
+                min_x,
+                max_x,
+                min_y,
+                max_y,
+                min_z,
+                max_z,
+                &mut out,
+            );
+        } else {
+            // Handle the case where rectangle width is greater than PI (wraps
+            // around more than half the ellipsoid).
+            let fully_above_equator = rectangle.south > 0.0;
+            let fully_below_equator = rectangle.north < 0.0;
+            let latitude_nearest_to_equator = if fully_above_equator {
+                rectangle.south
+            } else if fully_below_equator {
+                rectangle.north
+            } else {
+                0.0
+            };
+            let center_longitude = Rectangle::center(rectangle).longitude;
+
+            // Plane is located at the rectangle's center longitude and the
+            // rectangle's latitude that is closest to the equator. It rotates
+            // around the Z axis.
+            let mut plane_origin = Cartesian3::default();
+            Cartesian3::from_radians(
+                center_longitude,
+                latitude_nearest_to_equator,
+                Some(maximum_height),
+                Some(ellipsoid.radii_squared()),
+                &mut plane_origin,
+            );
+            // center the plane on the equator to simplify plane normal
+            // calculation
+            plane_origin.z = 0.0;
+            let is_pole = plane_origin.x.abs() < CesiumMath::EPSILON10
+                && plane_origin.y.abs() < CesiumMath::EPSILON10;
+            let mut plane_normal = Cartesian3::UNIT_X;
+            if !is_pole {
+                Cartesian3::normalize(&plane_origin, &mut plane_normal);
+            }
+            let plane_y_axis = Cartesian3::UNIT_Z;
+            let plane_x_axis = Cartesian3::cross_new(&plane_normal, &plane_y_axis);
+            let plane = Plane::from_point_normal_new(&plane_origin, &plane_normal);
+
+            // Get the horizon point relative to the center. This will be the
+            // farthest extent in the plane's X dimension.
+            let mut horizon_cartesian = Cartesian3::default();
+            Cartesian3::from_radians(
+                center_longitude + CesiumMath::PI_OVER_TWO,
+                latitude_nearest_to_equator,
+                Some(maximum_height),
+                Some(ellipsoid.radii_squared()),
+                &mut horizon_cartesian,
+            );
+            let horizon_projected =
+                Plane::project_point_onto_plane_new(&plane, &horizon_cartesian);
+            let max_x = Cartesian3::dot(&horizon_projected, &plane_x_axis);
+            let min_x = -max_x; // symmetrical
+
+            // Get the min and max Y, using the height that will give the
+            // largest extent
+            let max_y = Cartesian3::from_radians_new(
+                0.0,
+                rectangle.north,
+                Some(if fully_below_equator {
+                    minimum_height
+                } else {
+                    maximum_height
+                }),
+                Some(ellipsoid.radii_squared()),
+            )
+            .z;
+            let min_y = Cartesian3::from_radians_new(
+                0.0,
+                rectangle.south,
+                Some(if fully_above_equator {
+                    minimum_height
+                } else {
+                    maximum_height
+                }),
+                Some(ellipsoid.radii_squared()),
+            )
+            .z;
+
+            let mut far_z = Cartesian3::default();
+            Cartesian3::from_radians(
+                rectangle.east,
+                latitude_nearest_to_equator,
+                Some(maximum_height),
+                Some(ellipsoid.radii_squared()),
+                &mut far_z,
+            );
+            let min_z = Plane::get_point_distance(&plane, &far_z);
+            let max_z = 0.0; // plane origin starts at maxZ already
+
+            // min and max are local to the plane axes
+            from_plane_extents(
+                &plane_origin,
+                &plane_x_axis,
+                &plane_y_axis,
+                &plane_normal,
+                min_x,
+                max_x,
+                min_y,
+                max_y,
+                min_z,
+                max_z,
+                &mut out,
+            );
+        }
+
+        if let Some(result) = result {
+            *result = out.clone();
+        }
+        out
     }
 
     /// Computes an OrientedBoundingBox that bounds an affine transformation.
@@ -528,4 +797,51 @@ impl OrientedBoundingBox {
     pub fn equals(&self, right: Option<&Self>) -> bool {
         Self::equals_static(Some(self), right)
     }
+}
+
+/// Mirrors the private `fromPlaneExtents` function.
+///
+/// DEVIATION: the JS `defined(...)` debug checks on the six extents are
+/// compile-time guaranteed in Rust (`f64` parameters).
+#[allow(clippy::too_many_arguments)]
+fn from_plane_extents(
+    plane_origin: &Cartesian3,
+    plane_x_axis: &Cartesian3,
+    plane_y_axis: &Cartesian3,
+    plane_z_axis: &Cartesian3,
+    minimum_x: f64,
+    maximum_x: f64,
+    minimum_y: f64,
+    maximum_y: f64,
+    minimum_z: f64,
+    maximum_z: f64,
+    result: &mut OrientedBoundingBox,
+) {
+    // JS aliases halfAxes as both source and destination of setColumn; the
+    // Rust port steps through temporaries to keep the borrows disjoint.
+    let half_axes = result.half_axes;
+    let mut step = Matrix3::default();
+    Matrix3::set_column(&half_axes, 0, plane_x_axis, &mut step);
+    let mut half_axes = Matrix3::default();
+    Matrix3::set_column(&step, 1, plane_y_axis, &mut half_axes);
+    Matrix3::set_column(&half_axes, 2, plane_z_axis, &mut step);
+
+    let center_offset = Cartesian3::new(
+        (minimum_x + maximum_x) / 2.0,
+        (minimum_y + maximum_y) / 2.0,
+        (minimum_z + maximum_z) / 2.0,
+    );
+
+    let scale = Cartesian3::new(
+        (maximum_x - minimum_x) / 2.0,
+        (maximum_y - minimum_y) / 2.0,
+        (maximum_z - minimum_z) / 2.0,
+    );
+
+    let mut center_offset = center_offset;
+    let mut transformed_offset = Cartesian3::default();
+    Matrix3::multiply_by_vector(&step, &center_offset, &mut transformed_offset);
+    center_offset = transformed_offset;
+    Cartesian3::add(plane_origin, &center_offset, &mut result.center);
+    Matrix3::multiply_by_scale(&step, &scale, &mut result.half_axes);
 }

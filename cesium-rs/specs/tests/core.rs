@@ -23,6 +23,8 @@ mod core_cartesian4_spec;
 mod core_cartographic_spec;
 #[path = "core/core_catmull_rom_spline_spec.rs"]
 mod core_catmull_rom_spline_spec;
+#[path = "core/core_cesium_terrain_provider_spec.rs"]
+mod core_cesium_terrain_provider_spec;
 #[path = "core/core_check_spec.rs"]
 mod core_check_spec;
 #[path = "core/core_clone_spec.rs"]
@@ -41,6 +43,12 @@ mod core_component_datatype_spec;
 mod core_constant_spline_spec;
 #[path = "core/core_cubic_real_polynomial_spec.rs"]
 mod core_cubic_real_polynomial_spec;
+#[path = "core/core_custom_heightmap_terrain_provider_spec.rs"]
+mod core_custom_heightmap_terrain_provider_spec;
+#[path = "core/core_vr_the_world_terrain_provider_spec.rs"]
+mod core_vr_the_world_terrain_provider_spec;
+#[path = "core/core_arc_gis_tiled_elevation_terrain_provider_spec.rs"]
+mod core_arc_gis_tiled_elevation_terrain_provider_spec;
 #[path = "core/core_create_guid_spec.rs"]
 mod core_create_guid_spec;
 #[path = "core/core_axis_aligned_bounding_box_spec.rs"]
@@ -257,6 +265,12 @@ mod core_point_inside_triangle_spec;
 mod core_subdivide_array_spec;
 #[path = "core/core_decode_google_earth_enterprise_data_spec.rs"]
 mod core_decode_google_earth_enterprise_data_spec;
+#[path = "core/core_google_earth_enterprise_metadata_spec.rs"]
+mod core_google_earth_enterprise_metadata_spec;
+#[path = "core/core_google_earth_enterprise_terrain_data_spec.rs"]
+mod core_google_earth_enterprise_terrain_data_spec;
+#[path = "core/core_google_earth_enterprise_terrain_provider_spec.rs"]
+mod core_google_earth_enterprise_terrain_provider_spec;
 #[path = "core/core_small_geometries_spec.rs"]
 mod core_small_geometries_spec;
 #[path = "core/core_polygon_hierarchy_spec.rs"]

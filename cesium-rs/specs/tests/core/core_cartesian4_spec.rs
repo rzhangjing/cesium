@@ -2,11 +2,13 @@
 //!
 //! JS `undefined`-argument DeveloperError cases are statically impossible in
 //! Rust; they are mirrored as `#[ignore]` stubs to keep the spec surface
-//! one-to-one. `fromColor` cases are `#[ignore]`d until the `Color` port
-//! lands. Shared generators `createPackableSpecs` /
+//! one-to-one. `fromColor` cases are covered now that `Color` is ported
+//! (`Cartesian4::from_color` accepts `Option<&Color>` to mirror the JS
+//! undefined-argument check). Shared generators `createPackableSpecs` /
 //! `createPackableArraySpecs` (repo-root `Specs/`) are inlined below.
 
 use cesium_core::cartesian4::Cartesian4;
+use cesium_core::color::Color;
 use cesium_core::math::CesiumMath;
 use cesium_test_utils::{assert_approx_eq_f64, expect_to_throw_dev_error};
 
@@ -77,16 +79,29 @@ fn from_elements_result_param_returns_cartesian4_with_correct_coordinates() {
 }
 
 #[test]
-#[ignore = "deferred: fromColor depends on the Color port (Scene/Core, later batch)"]
-fn from_color_returns_a_cartesian4_with_correct_coordinates() {}
+fn from_color_returns_a_cartesian4_with_correct_coordinates() {
+    let color = Color::new(1.0, 2.0, 3.0, 4.0);
+    let cartesian4 = Cartesian4::from_color_new(Some(&color));
+    assert_eq!(cartesian4, Cartesian4::new(1.0, 2.0, 3.0, 4.0));
+}
 
 #[test]
-#[ignore = "deferred: fromColor depends on the Color port (Scene/Core, later batch)"]
-fn from_color_result_param_returns_cartesian4_with_correct_coordinates() {}
+fn from_color_result_param_returns_cartesian4_with_correct_coordinates() {
+    let color = Color::new(1.0, 2.0, 3.0, 4.0);
+    let mut cartesian4 = Cartesian4::default();
+    Cartesian4::from_color(Some(&color), &mut cartesian4);
+    // JS `expect(cartesian4).toBe(result)` — result-param identity is inherent
+    // in the `&mut` out-param mapping.
+    assert_eq!(cartesian4, Cartesian4::new(1.0, 2.0, 3.0, 4.0));
+}
 
 #[test]
-#[ignore = "deferred: fromColor depends on the Color port (Scene/Core, later batch)"]
-fn from_color_throws_without_color() {}
+fn from_color_throws_without_color() {
+    expect_to_throw_dev_error(|| {
+        let mut cartesian4 = Cartesian4::default();
+        Cartesian4::from_color(None, &mut cartesian4);
+    });
+}
 
 #[test]
 fn clone_without_a_result_parameter() {

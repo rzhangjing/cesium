@@ -28,6 +28,7 @@ struct RectangleWithLevel {
 
 struct QuadtreeNodeData {
     extent: Rectangle,
+    parent: Option<NodeKey>,
     rectangles: Vec<RectangleWithLevel>,
 }
 
@@ -42,6 +43,14 @@ impl TileAvailability {
         }
     }
 
+    /// The maximum level for which availability is tracked.
+    ///
+    /// Mirrors the JS private `_maximumLevel` field (exposed here because
+    /// `CesiumTerrainProvider.getTileDataAvailable` reads it).
+    pub fn maximum_level(&self) -> i32 {
+        self.maximum_level
+    }
+
     fn get_or_create_node(&mut self, level: i32, x: i32, y: i32) -> NodeKey {
         let key = (level, x, y);
         if !self.nodes.contains_key(&key) {
@@ -52,6 +61,7 @@ impl TileAvailability {
                 key,
                 QuadtreeNodeData {
                     extent,
+                    parent: None,
                     rectangles: Vec::new(),
                 },
             );
@@ -160,6 +170,7 @@ impl TileAvailability {
                         child,
                         QuadtreeNodeData {
                             extent,
+                            parent: Some(current),
                             rectangles: Vec::new(),
                         },
                     );
@@ -221,6 +232,11 @@ impl TileAvailability {
     }
 
     fn find_max_level_from_node(&self, start_node: &NodeKey, position: &Cartographic) -> i32 {
+        // Mirrors `findMaxLevelFromNode(undefined, node, position)`: descend
+        // to the deepest node containing the position, then work back up the
+        // parent chain checking the rectangles stored at every visited node
+        // (positions on tile boundaries may be covered by a rectangle stored
+        // at an ancestor).
         let mut max_level = 0i32;
 
         // Find the deepest quadtree node containing this point.
@@ -240,12 +256,15 @@ impl TileAvailability {
             }
 
             if found_count > 1 {
-                // Position is on a boundary - use recursion for each containing child.
+                // Position is on a boundary - use recursion for each containing
+                // child. Mirrors the JS recursion with `stopNode = node`, so
+                // each sub-search walks back up only to `current`.
                 for idx in 0..4 {
                     let child = Self::child_key(&current, idx);
                     if let Some(child_data) = self.nodes.get(&child) {
                         if rect_contains_cartographic(&child_data.extent, position) {
-                            let sub = self.find_max_level_from_node(&child, position);
+                            let sub =
+                                self.find_max_level_from_node_with_stop(&child, &current, position);
                             max_level = max_level.max(sub);
                         }
                     }
@@ -258,13 +277,86 @@ impl TileAvailability {
             }
         }
 
-        // Check rectangles at the final node.
-        if let Some(node_data) = self.nodes.get(&current) {
+        // Work up the tree until we find a rectangle that contains this
+        // point (JS `stopNode` is undefined here, so walk all the way to
+        // and including the root).
+        let mut node = current;
+        loop {
+            self.check_node_rectangles(&node, position, &mut max_level);
+            let Some(parent) = self.nodes[&node].parent else {
+                break;
+            };
+            node = parent;
+        }
+
+        max_level
+    }
+
+    /// Checks the rectangles of `node` (sorted by level, lowest first)
+    /// against the position, updating `max_level`.
+    fn check_node_rectangles(&self, node: &NodeKey, position: &Cartographic, max_level: &mut i32) {
+        if let Some(node_data) = self.nodes.get(node) {
             for r in node_data.rectangles.iter().rev() {
-                if r.level > max_level && rectangle_with_level_contains_position(r, position) {
-                    max_level = r.level;
+                if r.level <= *max_level {
+                    break;
+                }
+                if rectangle_with_level_contains_position(r, position) {
+                    *max_level = r.level;
                 }
             }
+        }
+    }
+
+    /// Mirrors the JS boundary-recursion `findMaxLevelFromNode(stopNode, node, position)`.
+    fn find_max_level_from_node_with_stop(
+        &self,
+        start_node: &NodeKey,
+        stop_node: &NodeKey,
+        position: &Cartographic,
+    ) -> i32 {
+        let mut max_level = 0i32;
+
+        let mut current = *start_node;
+        loop {
+            let mut found_count = 0u32;
+            let mut found_child = current;
+
+            for idx in 0..4 {
+                let child = Self::child_key(&current, idx);
+                if let Some(child_data) = self.nodes.get(&child) {
+                    if rect_contains_cartographic(&child_data.extent, position) {
+                        found_count += 1;
+                        found_child = child;
+                    }
+                }
+            }
+
+            if found_count > 1 {
+                for idx in 0..4 {
+                    let child = Self::child_key(&current, idx);
+                    if let Some(child_data) = self.nodes.get(&child) {
+                        if rect_contains_cartographic(&child_data.extent, position) {
+                            let sub =
+                                self.find_max_level_from_node_with_stop(&child, &current, position);
+                            max_level = max_level.max(sub);
+                        }
+                    }
+                }
+                break;
+            } else if found_count == 1 {
+                current = found_child;
+            } else {
+                break;
+            }
+        }
+
+        let mut node = current;
+        while node != *stop_node {
+            self.check_node_rectangles(&node, position, &mut max_level);
+            let Some(parent) = self.nodes[&node].parent else {
+                break;
+            };
+            node = parent;
         }
 
         max_level

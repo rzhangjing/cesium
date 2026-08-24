@@ -2,6 +2,7 @@
 //! derived resources, retry, proxy, ion endpoint, error display,
 //! and MockResourceBackend.
 
+use cesium_core::default_proxy::DefaultProxy;
 use cesium_core::resource::{
     MockResourceBackend, Resource, ResourceBackend, ResourceError, RequestOptions, ResponseType,
 };
@@ -17,7 +18,8 @@ fn resource_new_url() {
 #[test]
 fn resource_new_default_retry() {
     let r = Resource::new("https://example.com".to_string());
-    assert_eq!(r.retry_attempts(), 2);
+    // Aligned with CesiumJS: retryAttempts defaults to 0.
+    assert_eq!(r.retry_attempts(), 0);
     assert_eq!(r.retry_count(), 0);
 }
 
@@ -86,7 +88,10 @@ fn resource_clone_resource() {
     r.set_header("X-Key".to_string(), "val".to_string());
     r.set_retry_attempts(5);
     let cloned = r.clone_resource();
-    assert_eq!(cloned.url(), "https://example.com");
+    // Mirrors Resource.js: the `url` property is `getUrlComponent(true, true)`,
+    // so the query string is included; the raw stored url excludes it.
+    assert_eq!(cloned.url(), "https://example.com?a=1");
+    assert_eq!(cloned.raw_url(), "https://example.com");
     assert_eq!(cloned.get_query_parameter("a"), Some("1"));
     assert_eq!(cloned.get_header("X-Key"), Some("val"));
     assert_eq!(cloned.retry_attempts(), 5);
@@ -158,8 +163,8 @@ fn resource_proxy_default_none() {
 #[test]
 fn resource_set_proxy() {
     let mut r = Resource::new("https://example.com".to_string());
-    r.set_proxy("http://proxy.com".to_string());
-    assert_eq!(r.proxy(), Some("http://proxy.com"));
+    r.set_proxy(DefaultProxy::new("http://proxy.com"));
+    assert_eq!(r.proxy().map(|p| p.proxy.as_str()), Some("http://proxy.com"));
 }
 
 // --- Ion endpoint ---

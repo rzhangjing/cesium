@@ -82,8 +82,6 @@ pub struct CesiumWidget {
     scene: Scene,
     /// The clock controlling simulation time.
     clock: Clock,
-    /// The collection of data sources.
-    data_sources: DataSourceCollection,
     /// The data source display for entity visualization.
     data_source_display: DataSourceDisplay,
     /// Whether this widget controls the render loop.
@@ -108,8 +106,9 @@ pub struct CesiumWidget {
     render_loop_running: bool,
     /// The currently tracked entity ID.
     tracked_entity_id: Option<String>,
-    /// Event fired when the tracked entity changes.
-    tracked_entity_changed: Event,
+    /// Event fired when the tracked entity changes
+    /// (`trackedEntityChanged`, raised with the new tracked entity).
+    tracked_entity_changed: Event<Option<String>>,
     /// Whether a tracked entity update is needed.
     need_tracked_entity_update: bool,
     /// Whether a force resize is needed.
@@ -126,7 +125,6 @@ impl CesiumWidget {
     pub fn new(options: Option<CesiumWidgetOptions>) -> Self {
         let opts = options.unwrap_or_default();
         let clock = opts.clock.unwrap_or_else(|| Clock::new(None, None, None, None, None, None, None, None));
-        let data_sources = DataSourceCollection::new();
         let data_source_display = DataSourceDisplay::new(DataSourceCollection::new());
 
         let mut scene = Scene::new();
@@ -135,7 +133,6 @@ impl CesiumWidget {
         Self {
             scene,
             clock,
-            data_sources,
             data_source_display,
             use_default_render_loop: opts.use_default_render_loop,
             target_frame_rate: opts.target_frame_rate,
@@ -176,13 +173,18 @@ impl CesiumWidget {
     }
 
     /// Returns the data source collection.
+    ///
+    /// Delegates to `data_source_display.data_sources()` so that the
+    /// same `DataSourceCollection` is used by both the widget and the
+    /// display (fixes the original bug where an independent empty
+    /// collection was constructed).
     pub fn data_sources(&self) -> &DataSourceCollection {
-        &self.data_sources
+        self.data_source_display.data_sources()
     }
 
     /// Returns a mutable reference to the data source collection.
     pub fn data_sources_mut(&mut self) -> &mut DataSourceCollection {
-        &mut self.data_sources
+        self.data_source_display.data_sources_mut()
     }
 
     /// Returns the data source display.
@@ -205,9 +207,17 @@ impl CesiumWidget {
     /// In CesiumJS, this triggers camera tracking of the entity.
     pub fn set_tracked_entity_id(&mut self, id: Option<String>) {
         if self.tracked_entity_id != id {
-            self.tracked_entity_id = id;
+            self.tracked_entity_id = id.clone();
             self.need_tracked_entity_update = true;
+            // knockout observable write raises trackedEntityChanged
+            self.tracked_entity_changed.raise_event(&id);
         }
+    }
+
+    /// Returns the `trackedEntityChanged` event, raised with the new
+    /// tracked entity ID whenever it changes.
+    pub fn tracked_entity_changed(&self) -> &Event<Option<String>> {
+        &self.tracked_entity_changed
     }
 
     /// Returns the resolution scale.

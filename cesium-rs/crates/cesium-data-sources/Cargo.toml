@@ -9,6 +9,10 @@ license.workspace = true
 [dependencies]
 cesium-core = { workspace = true }
 cesium-scene = { workspace = true }
+serde_json = { workspace = true, features = ["preserve_order"] }
+quick-xml = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 cesium-test-utils = { workspace = true }
+cesium-specs = { path = "../../specs" }

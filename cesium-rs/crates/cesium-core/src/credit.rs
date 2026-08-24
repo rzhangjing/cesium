@@ -69,6 +69,16 @@ impl Credit {
     pub fn clone_credit(&self) -> Self {
         Self::new(&self.html, self.show_on_screen)
     }
+
+    /// Creates a Credit from a geocoder result attribution.
+    ///
+    /// Port of `Credit.getIonCredit`: `showOnScreen` is true only when
+    /// `collapsible` is defined and false.
+    pub fn get_ion_credit(attribution: &crate::geocoder_service::GeocoderAttribution) -> Self {
+        let show_on_screen =
+            attribution.collapsible.is_some() && !attribution.collapsible.unwrap();
+        Self::new(&attribution.html, show_on_screen)
+    }
 }
 
 impl PartialEq for Credit {

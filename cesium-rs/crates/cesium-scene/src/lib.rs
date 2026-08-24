@@ -1,4 +1,4 @@
-﻿//! One-to-one port of `packages/engine/Source/Scene`.
+//! One-to-one port of `packages/engine/Source/Scene`.
 //!
 //! Scene graph: Globe, Camera, Primitives, 3D Tiles, Model/glTF, etc.
 
@@ -129,6 +129,8 @@ pub mod empty3_d_tile_content;
 pub mod equirectangular_panorama;
 pub mod expression;
 pub mod expression_node_type;
+pub mod file_imagery_provider;
+pub mod file_resource_backend;
 pub mod find_content_metadata;
 pub mod find_group_metadata;
 pub mod find_meshopt_extension;
@@ -156,6 +158,8 @@ pub mod globe_depth;
 pub mod globe_surface_shader_set;
 pub mod globe_surface_tile;
 pub mod globe_surface_tile_provider;
+pub mod globe_terrain_fetcher;
+pub mod globe_tile_geometry;
 pub mod globe_translucency;
 pub mod globe_translucency_framebuffer;
 pub mod globe_translucency_state;
@@ -340,6 +344,7 @@ pub mod supported_image_formats;
 pub mod terrain;
 pub mod terrain_fill_mesh;
 pub mod terrain_state;
+pub mod texture_atlas;
 pub mod tile_bounding_region;
 pub mod tile_bounding_s2_cell;
 pub mod tile_bounding_sphere;
@@ -392,6 +397,7 @@ pub mod web_map_service_imagery_provider;
 pub mod web_map_tile_service_imagery_provider;
 pub mod model;
 pub mod gltf_pipeline;
+
 
 
 

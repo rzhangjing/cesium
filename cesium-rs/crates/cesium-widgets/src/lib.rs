@@ -35,6 +35,7 @@ pub mod knockout_3_5_1;
 pub mod knockout_es5;
 pub mod navigation_help_button;
 pub mod navigation_help_button_view_model;
+pub mod observables;
 pub mod performance_watchdog;
 pub mod performance_watchdog_view_model;
 pub mod projection_picker;

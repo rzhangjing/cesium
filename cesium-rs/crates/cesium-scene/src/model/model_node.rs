@@ -19,6 +19,8 @@ pub struct ModelNode {
     pub show: bool,
     /// The index of this node in the scene graph.
     pub node_index: usize,
+    /// The indices of this node's children (glTF `node.children`).
+    pub children: Vec<usize>,
 }
 
 impl ModelNode {
@@ -30,6 +32,7 @@ impl ModelNode {
             matrix: Matrix4::IDENTITY,
             show: true,
             node_index: 0,
+            children: Vec::new(),
         }
     }
 }

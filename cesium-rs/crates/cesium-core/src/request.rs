@@ -1,4 +1,21 @@
-//! Ported from `packages/engine/Source/Core/Request.js`.
+//! Ported from `packages/engine/Source/Core/Request.js` (96 lines).
+//!
+//! Stores information for making a request. Requests are used by
+//! [`crate::request_scheduler::RequestScheduler`] to control the order and
+//! number of active requests.
+//!
+//! # Method-level alignment table (JS `Request` -> Rust)
+//!
+//! | CesiumJS (Request.js)        | Rust                                   |
+//! | ---------------------------- | -------------------------------------- |
+//! | `constructor(options)`       | [`Request::new`] / [`Request::default`]|
+//! | `cancel()`                   | [`Request::cancel`]                    |
+//! | `deferred` / `cancelFunction`| DEVIATION: promise flow not ported     |
+//!
+//! DEVIATION: JS takes a single `options` object; the Rust port uses
+//! positional `Option` parameters with the same defaults (priority 0.0,
+//! throttle false, throttleByServer false, requestType OTHER,
+//! state UNISSUED).
 
 use crate::request_state::RequestState;
 use crate::request_type::RequestType;
@@ -62,5 +79,12 @@ impl Request {
             state: RequestState::Unissued,
             cancelled: false,
         }
+    }
+}
+
+impl Default for Request {
+    /// Mirrors `new Request()` in JS: every option left at its default.
+    fn default() -> Self {
+        Self::new(None, None, None, None, None, None)
     }
 }

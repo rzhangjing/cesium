@@ -41,11 +41,13 @@ fn from_bytes() {
 
 #[test]
 fn from_rgba() {
-    // RGBA = 0xFF8000FF → red=255, green=128, blue=0, alpha=255
+    // Little-endian layout (mirrors CesiumJS ArrayBuffer round-trip on LE
+    // systems): red occupies the least-significant byte.
+    // RGBA = 0xFF8000FF → red=0xFF, green=0x00, blue=0x80, alpha=0xFF
     let c = Color::from_rgba(0xFF8000FF);
     assert!((c.red - 1.0).abs() < CesiumMath::EPSILON14);
-    assert!((c.green - 128.0 / 255.0).abs() < 0.01);
-    assert!((c.blue - 0.0).abs() < CesiumMath::EPSILON14);
+    assert!((c.green - 0.0).abs() < CesiumMath::EPSILON14);
+    assert!((c.blue - 128.0 / 255.0).abs() < 0.01);
     assert!((c.alpha - 1.0).abs() < CesiumMath::EPSILON14);
 }
 

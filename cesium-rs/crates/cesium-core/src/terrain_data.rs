@@ -4,6 +4,9 @@ use crate::rectangle::Rectangle;
 
 /// Terrain data for a single tile. This trait describes the interface
 /// and is not intended to be instantiated directly.
+///
+/// Note: this trait contains an associated const and is therefore not
+/// dyn-compatible (object-safe). Use concrete types or generics.
 pub trait TerrainData {
     /// Computes the terrain height at a specified longitude and latitude.
     fn interpolate_height(&self, rectangle: &Rectangle, longitude: f64, latitude: f64) -> f64;

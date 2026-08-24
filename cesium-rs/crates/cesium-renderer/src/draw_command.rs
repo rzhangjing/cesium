@@ -1,13 +1,21 @@
 ﻿//! Ported from `packages/engine/Source/Renderer/DrawCommand.js`.
 //!
 //! Represents a command to the renderer for drawing. In CesiumJS, this is a
-//! lightweight command object that holds references to shader programs, vertex arrays,
-//! render state, and uniforms. The actual execution is done by the Context.
+//! lightweight command object that holds references to shader programs, vertex
+//! arrays, render state, and uniforms. The actual execution is done by the
+//! Context.
 
-use std::any::Any;
-use cesium_core::bounding_rectangle::BoundingRectangle;
+use std::sync::Arc;
+
+use cesium_core::bounding_sphere::BoundingSphere;
+use cesium_core::matrix4::Matrix4;
+use cesium_core::oriented_bounding_box::OrientedBoundingBox;
+
+use crate::framebuffer::Framebuffer;
 use crate::render_state::RenderState;
 use crate::shader_program::ShaderProgram;
+use crate::texture::Texture;
+use crate::vertex_array::VertexArray;
 
 /// Flags for draw command behavior (mirrors CesiumJS Flags enum).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,22 +50,47 @@ impl Default for DrawCommandFlags {
     fn default() -> Self { Self::new() }
 }
 
+/// A per-draw uniform value bound at group(1) (the material group).
+///
+/// DEVIATION: CesiumJS passes a `uniformMap` object whose function-typed
+/// values are evaluated by the shader program at draw time. The wgpu port
+/// evaluates them ahead of time into concrete values that can be uploaded to
+/// GPU buffers/bind groups.
+///
+/// DEVIATION: no `Debug` derive — `Texture` is not `Debug` (wraps a wgpu
+/// resource).
+#[derive(Clone)]
+pub enum UniformValue {
+    /// A `vec4<f32>` uniform (e.g. material color).
+    Vec4([f32; 4]),
+    /// A `f32` uniform.
+    Float(f32),
+    /// A sampled texture (bound together with a filtering sampler).
+    Texture(Arc<Texture>),
+}
+
 /// A command to draw primitives.
 ///
 /// Mirrors the CesiumJS `DrawCommand` class which holds all the information
 /// needed to draw a primitive, including shader program, vertex array,
 /// render state, and uniform map.
+///
+/// DEVIATION (B2.6): CesiumJS stores loosely-typed references (`Object`) for
+/// vertexArray/framebuffer/modelMatrix/boundingVolume. The Rust port uses the
+/// concrete renderer types (`Arc<VertexArray>`, `Option<Arc<Framebuffer>>`,
+/// `Matrix4`, `BoundingSphere`) so the Context frame orchestration can encode
+/// real wgpu work without downcasting.
 pub struct DrawCommand {
     /// The bounding volume of the geometry in world space.
-    pub bounding_volume: Option<Box<dyn Any + Send + Sync>>,
+    pub bounding_volume: Option<BoundingSphere>,
     /// The oriented bounding box for plane intersection testing.
-    pub oriented_bounding_box: Option<Box<dyn Any + Send + Sync>>,
+    pub oriented_bounding_box: Option<OrientedBoundingBox>,
     /// The model matrix for transforming from model to world space.
-    pub model_matrix: Option<Box<dyn Any + Send + Sync>>,
+    pub model_matrix: Option<Matrix4>,
     /// The primitive type (triangles, lines, points, etc.).
     pub primitive_type: u32,
     /// The vertex array to draw.
-    pub vertex_array: Option<Box<dyn Any + Send + Sync>>,
+    pub vertex_array: Option<Arc<VertexArray>>,
     /// The number of vertices or indices to draw.
     pub count: Option<u32>,
     /// The offset into the vertex array or index buffer.
@@ -65,17 +98,26 @@ pub struct DrawCommand {
     /// The number of instances to draw (for instanced rendering).
     pub instance_count: u32,
     /// The shader program to use.
-    pub shader_program: Option<ShaderProgram>,
-    /// The uniform map function for setting uniform values.
+    pub shader_program: Option<Arc<ShaderProgram>>,
+    /// Retains the CesiumJS `uniformMap` field (a callable evaluated at
+    /// execute time) for API fidelity.
+    ///
+    /// DEVIATION (B2.6): the wgpu frame orchestration evaluates uniforms
+    /// ahead of time via `uniform_overrides` so they can be uploaded to GPU
+    /// buffers/bind groups; this field is therefore kept for parity but is
+    /// not consumed by `Context::execute`.
     pub uniform_map: Option<Box<dyn Fn() + Send + Sync>>,
+    /// Per-draw uniform overrides bound at group(1) (the material group).
+    /// Mirrors the CesiumJS `uniformMap` evaluated at execute time.
+    pub uniform_overrides: Vec<(String, UniformValue)>,
     /// The render state for this command.
     pub render_state: RenderState,
     /// The framebuffer to render to (None = default framebuffer).
-    pub framebuffer: Option<Box<dyn Any + Send + Sync>>,
+    pub framebuffer: Option<Arc<Framebuffer>>,
     /// The pass this command belongs to.
     pub pass: Option<u32>,
     /// The owner of this command (for debugging).
-    pub owner: Option<Box<dyn Any + Send + Sync>>,
+    pub owner: Option<String>,
     /// The pick ID for this command.
     pub pick_id: Option<String>,
     /// Whether pick metadata is allowed.
@@ -106,6 +148,7 @@ impl DrawCommand {
             instance_count: 0,
             shader_program: None,
             uniform_map: None,
+            uniform_overrides: Vec::new(),
             render_state: RenderState::default(),
             framebuffer: None,
             pass: None,
@@ -223,18 +266,19 @@ impl DrawCommand {
         Self {
             bounding_volume: None, // Derived commands don't copy bounding volume
             oriented_bounding_box: None,
-            model_matrix: None,
+            model_matrix: self.model_matrix.clone(),
             primitive_type: self.primitive_type,
-            vertex_array: None,
+            vertex_array: self.vertex_array.clone(),
             count: self.count,
             offset: self.offset,
             instance_count: self.instance_count,
-            shader_program: None,
-            uniform_map: None,
+            shader_program: self.shader_program.clone(),
+            uniform_map: None, // Derived commands rebind their own uniforms
+            uniform_overrides: self.uniform_overrides.clone(),
             render_state: self.render_state.clone(),
-            framebuffer: None,
+            framebuffer: self.framebuffer.clone(),
             pass: self.pass,
-            owner: None,
+            owner: self.owner.clone(),
             pick_id: self.pick_id.clone(),
             pick_metadata_allowed: self.pick_metadata_allowed,
             flags: self.flags,

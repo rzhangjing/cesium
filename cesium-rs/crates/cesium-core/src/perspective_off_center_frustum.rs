@@ -60,11 +60,15 @@ impl PerspectiveOffCenterFrustum {
         let col2w = -1.0;
         let col3z = -2.0 * far * near / (far - near);
 
+        // Mirrors Matrix4.computePerspectiveOffCenter: column2Row0/Row1 land
+        // in elements[8]/[9], column2Row3 (-1) in elements[11] and
+        // column3Row2 in elements[14] (Matrix4::new parameters are
+        // row-ordered, storage is column-major).
         Matrix4::new(
-            col0x, 0.0, 0.0, 0.0,
-            0.0, col1y, 0.0, 0.0,
-            col2x, col2y, col2z, col2w,
-            0.0, 0.0, col3z, 0.0,
+            col0x, 0.0, col2x, 0.0,
+            0.0, col1y, col2y, 0.0,
+            0.0, 0.0, col2z, col3z,
+            0.0, 0.0, col2w, 0.0,
         )
     }
 

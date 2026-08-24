@@ -14,8 +14,11 @@ path = "src/main.rs"
 [dependencies]
 cesium-widgets = { workspace = true }
 cesium-scene = { workspace = true }
+cesium-renderer = { workspace = true }
+cesium-core = { workspace = true }
 wgpu = { workspace = true }
 winit = { workspace = true }
 pollster = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
+image = { workspace = true }

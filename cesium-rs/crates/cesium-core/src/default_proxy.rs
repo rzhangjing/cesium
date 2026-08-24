@@ -2,7 +2,7 @@
 
 /// A simple proxy that appends the desired resource as the sole query parameter
 /// to the given proxy URL.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefaultProxy {
     /// The proxy URL that will be used to request all resources.
     pub proxy: String,

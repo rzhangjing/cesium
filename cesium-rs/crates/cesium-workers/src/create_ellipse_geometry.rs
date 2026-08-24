@@ -22,5 +22,5 @@ pub fn create_ellipse_geometry_unpacked(
     semi_minor_axis: f64,
     ellipsoid: Option<Ellipsoid>,
 ) -> EllipseGeometry {
-    EllipseGeometry::new(center, semi_major_axis, semi_minor_axis, ellipsoid, None, None, None, None, None)
+    EllipseGeometry::new(center, semi_major_axis, semi_minor_axis, ellipsoid, None, None, None, None, None, None, None, None)
 }

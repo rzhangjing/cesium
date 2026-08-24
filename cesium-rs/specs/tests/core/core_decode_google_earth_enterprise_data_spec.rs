@@ -4,8 +4,15 @@ use cesium_core::decode_google_earth_enterprise_data::decode_google_earth_enterp
 
 #[test]
 fn xor_decode_roundtrip() {
-    let key = vec![0xAA, 0xBB, 0xCC, 0xDD];
-    let original = vec![0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
+    // Note: the JS algorithm reads 8-byte (two u32) chunks from the key, so
+    // realistic keys are long (dbRoot keys are 1024 bytes); a 4-byte key
+    // would make the JS DataView reads throw RangeError. The bytes are also
+    // chosen so that neither the plaintext nor the XOR'd form starts with
+    // the compressed magic (which would make the decoder return early,
+    // exactly like the JS implementation).
+    let key: Vec<u8> = (0u8..24).collect();
+    // 20 bytes: two full 8-byte blocks + a 4-byte tail.
+    let original = vec![0x01u8; 20];
     let mut data = original.clone();
 
     // Encode

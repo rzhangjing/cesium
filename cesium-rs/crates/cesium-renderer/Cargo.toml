@@ -10,7 +10,9 @@ license.workspace = true
 cesium-core = { workspace = true }
 cesium-shaders = { workspace = true }
 wgpu = { workspace = true }
+naga = { workspace = true }
 log = { workspace = true }
 
 [dev-dependencies]
 cesium-test-utils = { workspace = true }
+pollster = { workspace = true }

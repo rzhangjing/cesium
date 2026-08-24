@@ -11,6 +11,8 @@ uuid = { workspace = true }
 url = "2"
 serde_json = { workspace = true }
 regex = { workspace = true }
+earcutr = "0.5"
+flate2 = { workspace = true }
 
 [dev-dependencies]
 cesium-test-utils = { workspace = true }
