@@ -2,10 +2,10 @@
 
 CesiumJS → Rust 移植的测试覆盖矩阵。
 
-**统计时间**: 2026-08-23（Phase 0 回填后实测）
+**统计时间**: 2026-08-24（A10 收尾实测）
 **CesiumJS 原版 spec 文件**: 790 (engine 750 + widgets 40)
-**Rust 测试**: 2393 passed, 0 failed, 303 ignored（2026-08-23 18:00 `cargo test --workspace` 全绿实测，EXIT=0）
-**本次回填**: `Cartesian4::from_color` ×3 + `Cartesian3.fromDegrees/fromRadians` ×6，共 9 条解禁（ignored 227→218，passed +9）
+**Rust 测试**: 2844 passed, 0 failed, 326 ignored（2026-08-24 `cargo test --workspace` 全绿实测，EXIT=0）
+**本次变更**: Specs/Data 空壳目录删除（引用指向父仓库 `../../Specs/Data`）+ viewer-demo 3D 模型集成
 
 ---
 
@@ -13,8 +13,8 @@ CesiumJS → Rust 移植的测试覆盖矩阵。
 
 | 模块 | CesiumJS Specs | Rust Passed | Rust Ignored | 覆盖率 |
 |------|--------------:|-----------:|------------:|-------:|
-| Core | 212 | 1877 | 220 | 98/212 文件 + 保真度/几何批次 |
-| DataSources | 92 | 140 | 75 | 27+35+62+16 测试 |
+| Core | 212 | 2101 | 221 | 98/212 文件 + 保真度/几何批次 |
+| DataSources | 92 | 256 | 38 | Entity/Property/CZML/GeoJSON |
 | Renderer | 38 | 23 | 0 | 5/38 文件 (33 GPU-required) + lib 8 |
 | Scene | 332 | 228 | 0 | camera/quadtree/3D Tiles/表达式/glTF 批次 |
 | Model | 73 | 0 | 0 | 0/73 文件（glTF 批次已含部分） |
@@ -25,13 +25,13 @@ CesiumJS → Rust 移植的测试覆盖矩阵。
 | Precision | — | 16 | 0 | f64 精度验证 |
 | Smoke (ViewportQuad) | — | 4 | 0 | Track B 冒烟（scene 2 + specs 2） |
 | Doc-tests | — | 4 | 8 | core 3+6ig / specs 1 / test-utils 1+2ig |
-| **合计** | **790** | **2393** | **303** | — |
+| **合计** | **790** | **2844** | **326** | — |
 
 > 注：逐文件明细表的 Tests 数为 M1-W2 快照，总量以运行时实测为准（Core/Scene/DataSources 后续批次持续新增用例）。
 
 ---
 
-## Core (212 CesiumJS specs → 98 Rust test files, 1660 passed + 218 ignored)
+## Core (212 CesiumJS specs → 98 Rust test files, 2101 passed + 221 ignored)
 
 ### 已覆盖 (98 files)
 
@@ -148,7 +148,7 @@ CesiumJS → Rust 移植的测试覆盖矩阵。
 
 ---
 
-## DataSources (92 CesiumJS specs → 140 passed + 75 ignored)
+## DataSources (92 CesiumJS specs → 256 passed + 38 ignored)
 
 ### 已覆盖 (27 active tests)
 
@@ -318,28 +318,28 @@ CesiumJS → Rust 移植的测试覆盖矩阵。
 
 ---
 
-## Crate 分布（2026-08-23 18:00 `cargo test --workspace` 全绿实测，EXIT=0）
+## Crate 分布（2026-08-24 `cargo test --workspace` 全绿实测，EXIT=0）
 
 | Crate / 测试目标 | Passed | Ignored | 说明 |
 |---|---:|---:|---|
-| cesium-specs `core.rs` | 1660 | 218 | Core specs 镜像（回填 9 条后） |
-| cesium-specs `core_fidelity_batch.rs` | 217 | 2 | Core 保真度批次（Track A） |
-| cesium-specs `core_geometry_batch.rs` | 41 | 0 | Core 几何批次（Track A2/A3） |
+| cesium-specs `core.rs` | 1771 | 219 | Core specs 镜像（回填后） |
+| cesium-specs `core_fidelity_batch.rs` | 266 | 2 | Core 保真度批次（Track A） |
+| cesium-specs `core_geometry_batch.rs` | 64 | 0 | Core 几何批次（Track A2/A3） |
 | cesium-specs `renderer.rs` | 15 | 0 | Renderer 非 GPU specs |
 | cesium-specs `precision_verification.rs` | 16 | 0 | f64 精度验证 |
 | cesium-specs `smoke.rs` + lib | 3 | 0 | ViewportQuad 冒烟 + lib helper |
 | cesium-scene tests（camera/quadtree/3D Tiles/表达式/glTF/smoke） | 228 | 0 | Track B4/A9 批次（12+9+26+165+14+2） |
 | cesium-scene lib | 0 | 0 | 待 wgpu headless |
-| cesium-data-sources（czml/geo_json/display/specs） | 140 | 75 | 35+62+16+27（CZML/GeoJSON 已实质化） |
+| cesium-data-sources（czml/geo_json/display/specs） | 256 | 38 | 16+65+62+86+27（CZML/GeoJSON/Display 已实质化） |
 | cesium-core (lib) | 15 | 0 | 单元测试 |
 | cesium-core Doc-tests | 3 | 6 | 文档示例 |
 | cesium-renderer (lib) | 8 | 0 | wgpu 适配单元测试 |
-| cesium-test-utils | 11 | 2 | 测试基础设施（10 lib + 1 doc） |
+| cesium-test-utils | 45 | 3 | 测试基础设施（lib + doc） |
 | cesium-workers | 18 | 0 | mock_workers 8 + task_processor 10 |
 | cesium-shaders | 17 | 0 | naga/WGSL 验证（14 lib + 2 + 1） |
 | cesium-specs Doc-tests | 1 | 0 | |
 | cesium-widgets | 0 | 0 | 待 DomSurface 集成 |
-| **合计** | **2393** | **303** | 0 failed（ignored = Core 218+2 + DataSources 75 + Doc-tests 8） |
+| **合计** | **2844** | **326** | 0 failed（ignored = Core 219+2 + DataSources 38 + TestUtils 3 + Doc-tests 64） |
 
 ---
 

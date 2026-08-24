@@ -24,7 +24,7 @@ use cesium_core::math::CesiumMath;
 use cesium_core::resource::{MockResourceBackend, Resource};
 
 const GEE_METADATA_FIXTURE: &[u8] =
-    include_bytes!("../../Data/GoogleEarthEnterprise/gee.metadata");
+    include_bytes!("../../../../Specs/Data/GoogleEarthEnterprise/gee.metadata");
 
 const BASE_URL: &str = "http://fake.fake.invalid/";
 
