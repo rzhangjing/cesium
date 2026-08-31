@@ -11,11 +11,15 @@
 //! assertions are mirrored as default-value checks or skipped.
 //!
 //! DEVIATION (browser facilities): specs that require KMZ decoding, URL or
-//! `Resource` fetching, deferred loading, ScreenOverlay DOM nodes,
-//! BalloonStyle HTML rewriting, `PinBuilder` images, NetworkLink timers,
-//! Tour playback, gx:Track/MultiTrack, Model/Point-extrude drop lines,
-//! moon ellipsoid options, external style documents and atom:author/link
-//! metadata are not mirrored (see the module note in `kml_data_source.rs`).
+//! `Resource` fetching, deferred loading, BalloonStyle HTML rewriting,
+//! `PinBuilder` images, NetworkLink refresh timers (the refresh value
+//! model and `refreshEvent` surface are mirrored), Tour playback (the
+//! parsed playlist value model is mirrored), gx:Track/MultiTrack,
+//! Model/Point-extrude drop lines, moon ellipsoid options, external
+//! style documents and atom:author/link metadata are not mirrored (see
+//! the module note in `kml_data_source.rs`). ScreenOverlay specs are
+//! mirrored against the parsed `KmlScreenOverlay` value model instead of
+//! the DOM `<img>` elements.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -26,10 +30,13 @@ use cesium_core::clock_step::ClockStep;
 use cesium_core::color::Color;
 use cesium_core::iso8601::Iso8601;
 use cesium_core::julian_date::JulianDate;
+use cesium_core::math::CesiumMath;
 use cesium_core::near_far_scalar::NearFarScalar;
+use cesium_core::rectangle::Rectangle;
 use cesium_data_sources::data_source::DataSource;
 use cesium_data_sources::entity::Entity;
-use cesium_data_sources::kml_data_source::{KmlDataSource, KmlLoadOptions};
+use cesium_data_sources::kml_data_source::{KmlDataSource, KmlLoadOptions, KmlRefreshMode};
+use cesium_data_sources::kml_tour::{KmlTourEntry, KmlTourView};
 use cesium_data_sources::property::PropertyResult;
 use cesium_scene::height_reference::HeightReference;
 use cesium_scene::horizontal_origin::HorizontalOrigin;
@@ -1915,4 +1922,694 @@ fn when_a_line_string_is_clamped_to_ground_and_tesselated_entity_has_a_polyline_
     let polyline = entity.polyline.as_ref().unwrap();
     assert!(polyline.clamp_to_ground);
     assert_eq!(polyline.material_color, Color::from_bytes(0, 0, 255, 255));
+}
+
+// ============================================================================
+// GroundOverlay specs
+// ============================================================================
+
+#[test]
+fn ground_overlay_sets_defaults() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <GroundOverlay>
+        </GroundOverlay>"#;
+
+    let data_source = load(kml);
+    let entity = first_entity(&data_source);
+    assert!(entity.name.is_none());
+    assert!(entity.availability.is_empty());
+    let rectangle = entity.rectangle.as_ref().expect("rectangle is defined");
+    assert!(rectangle.height.is_none());
+    assert!(rectangle.rotation.is_none());
+    assert!(rectangle.coordinates.is_none());
+    // `material` undefined mirrored as no image and no color.
+    assert!(rectangle.material_image.is_none());
+    assert!(rectangle.material_color.is_none());
+}
+
+#[test]
+fn ground_overlay_sets_rectangle_image_material() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <GroundOverlay>
+            <Icon>
+                <href>http://test.invalid/image.png</href>
+            </Icon>
+        </GroundOverlay>"#;
+
+    let data_source = load(kml);
+    let entity = first_entity(&data_source);
+    let rectangle = entity.rectangle.as_ref().expect("rectangle is defined");
+    assert_eq!(
+        rectangle.material_image.as_deref(),
+        Some("http://test.invalid/image.png")
+    );
+}
+
+#[test]
+fn ground_overlay_sets_rectangle_image_material_with_color() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <GroundOverlay>
+            <color>7F0000FF</color>
+            <Icon>
+                <href>http://test.invalid/image.png</href>
+            </Icon>
+        </GroundOverlay>"#;
+
+    let data_source = load(kml);
+    let entity = first_entity(&data_source);
+    let rectangle = entity.rectangle.as_ref().expect("rectangle is defined");
+    assert_eq!(
+        rectangle.material_image.as_deref(),
+        Some("http://test.invalid/image.png")
+    );
+    assert_eq!(
+        rectangle.material_color,
+        Some(Color::new(1.0, 0.0, 0.0, 127.0 / 255.0))
+    );
+}
+
+#[test]
+fn ground_overlay_sets_rectangle_color_material() {
+    let color = Color::from_bytes(0xcc, 0xdd, 0xee, 0xff);
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <GroundOverlay>
+            <color>ffeeddcc</color>
+        </GroundOverlay>"#;
+
+    let data_source = load(kml);
+    let entity = first_entity(&data_source);
+    let rectangle = entity.rectangle.as_ref().expect("rectangle is defined");
+    assert!(rectangle.material_image.is_none());
+    assert_eq!(rectangle.material_color, Some(color));
+}
+
+#[test]
+fn ground_overlay_sets_rectangle_coordinates_rotation_and_z_index() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <GroundOverlay>
+            <LatLonBox>
+                <west>3</west>
+                <south>1</south>
+                <east>4</east>
+                <north>2</north>
+                <rotation>45</rotation>
+            </LatLonBox>
+            <drawOrder>3</drawOrder>
+        </GroundOverlay>"#;
+
+    let data_source = load(kml);
+    let entity = first_entity(&data_source);
+    assert!(entity.polygon.is_none());
+    let rectangle = entity.rectangle.as_ref().expect("rectangle is defined");
+    let coordinates = rectangle.coordinates.as_ref().expect("coordinates defined");
+    assert!(Rectangle::equals_epsilon(
+        coordinates,
+        &Rectangle::from_degrees(3.0, 1.0, 4.0, 2.0),
+        Some(CesiumMath::EPSILON14),
+    ));
+    assert_eq!(rectangle.rotation, Some(std::f64::consts::PI / 4.0));
+    assert_eq!(rectangle.st_rotation, Some(std::f64::consts::PI / 4.0));
+    assert_eq!(rectangle.z_index, Some(3.0));
+}
+
+#[test]
+fn ground_overlay_handles_wrapping_longitude() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <GroundOverlay>
+            <LatLonBox>
+                <west>-180</west>
+                <south>-90</south>
+                <east>180</east>
+                <north>90</north>
+            </LatLonBox>
+        </GroundOverlay>"#;
+
+    let data_source = load(kml);
+    let entity = first_entity(&data_source);
+    assert!(entity.polygon.is_none());
+    let rectangle = entity.rectangle.as_ref().expect("rectangle is defined");
+    assert_eq!(
+        rectangle.coordinates,
+        Some(Rectangle::from_degrees(-180.0, -90.0, 180.0, 90.0))
+    );
+}
+
+#[test]
+fn ground_overlay_handles_out_of_range_latitudes() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <GroundOverlay>
+            <LatLonBox>
+                <west>-180</west>
+                <south>-100</south>
+                <east>180</east>
+                <north>100</north>
+            </LatLonBox>
+        </GroundOverlay>"#;
+
+    let data_source = load(kml);
+    let entity = first_entity(&data_source);
+    assert!(entity.polygon.is_none());
+    let rectangle = entity.rectangle.as_ref().expect("rectangle is defined");
+    assert_eq!(
+        rectangle.coordinates,
+        Some(Rectangle::from_degrees(-180.0, -90.0, 180.0, 90.0))
+    );
+}
+
+#[test]
+fn ground_overlay_sets_polygon_coordinates_for_gx_lat_lon_quad() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <GroundOverlay xmlns="http://www.opengis.net/kml/2.2"
+                       xmlns:gx="http://www.google.com/kml/ext/2.2">
+            <gx:LatLonQuad>
+                <coordinates>
+                1,2 3,4 5,6 7,8
+                </coordinates>
+            </gx:LatLonQuad>
+        </GroundOverlay>"#;
+
+    let data_source = load(kml);
+    let entity = first_entity(&data_source);
+    assert!(entity.rectangle.is_none());
+    let polygon = entity.polygon.as_ref().expect("polygon is defined");
+    let expected = Cartesian3::from_degrees_array(
+        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+        None,
+        None,
+    );
+    assert_eq!(polygon.hierarchy.len(), expected.len());
+    for (left, right) in polygon.hierarchy.iter().zip(expected.iter()) {
+        assert!(Cartesian3::equals_epsilon(
+            Some(left),
+            Some(right),
+            Some(CesiumMath::EPSILON14),
+            None
+        ));
+    }
+}
+
+/// Mirrors "GroundOverlay: Sets polygon image for gx:LatLonQuad" and
+/// "GroundOverlay: Sets polygon zIndex for gx:LatLonQuad".
+///
+/// DEVIATION: the Rust `PolygonGraphics` value model (shared with the
+/// export_kml specs) has no image material and no zIndex, so the icon
+/// texture projection and the draw order are dropped; only the hierarchy
+/// and color survive.
+#[test]
+fn ground_overlay_gx_lat_lon_quad_drops_image_and_z_index() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <GroundOverlay xmlns="http://www.opengis.net/kml/2.2"
+                       xmlns:gx="http://www.google.com/kml/ext/2.2">
+            <Icon>
+                <href>http://test.invalid/image.png</href>
+            </Icon>
+            <gx:LatLonQuad>
+                <coordinates>
+                1,2 3,4 5,6 7,8
+                </coordinates>
+            </gx:LatLonQuad>
+            <drawOrder>3</drawOrder>
+        </GroundOverlay>"#;
+
+    let data_source = load(kml);
+    let entity = first_entity(&data_source);
+    let polygon = entity.polygon.as_ref().expect("polygon is defined");
+    assert_eq!(polygon.hierarchy.len(), 4);
+}
+
+#[test]
+fn ground_overlay_sets_rectangle_absolute_height() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <GroundOverlay>
+            <altitudeMode>absolute</altitudeMode>
+            <altitude>23</altitude>
+            <drawOrder>3</drawOrder>
+        </GroundOverlay>"#;
+
+    let data_source = load(kml);
+    let entity = first_entity(&data_source);
+    let rectangle = entity.rectangle.as_ref().expect("rectangle is defined");
+    assert_eq!(rectangle.height, Some(23.0));
+    // An absolute height clears the draw order (JS zIndex branch).
+    assert!(rectangle.z_index.is_none());
+}
+
+// ============================================================================
+// ScreenOverlay specs (mirrored against the parsed value model)
+// ============================================================================
+
+#[test]
+fn screen_overlay_single_overlay_image_created() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <ScreenOverlay>
+          <Icon>
+            <href>http://invalid.url/</href>
+          </Icon>
+          <screenXY x="0" y="1" xunits="fraction" yunits="fraction" />
+          <overlayXY x="0" y="1" xunits="fraction" yunits="fraction" />
+          <size x="-1" y="-1" xunits="pixels" yunits="pixels" />
+        </ScreenOverlay>"#;
+
+    let data_source = load(kml);
+    // The JS creates a DOM <img>; no entity is created either way.
+    assert_eq!(data_source.entities().length(), 0);
+    let overlays = data_source.screen_overlays();
+    assert_eq!(overlays.len(), 1);
+    let overlay = &overlays[0];
+    assert_eq!(overlay.icon.as_deref(), Some("http://invalid.url/"));
+    let screen_xy = overlay.screen_xy.as_ref().expect("screenXY defined");
+    assert_eq!(screen_xy.x, Some(0.0));
+    assert_eq!(screen_xy.y, Some(1.0));
+    assert_eq!(screen_xy.x_units.as_deref(), Some("fraction"));
+    assert_eq!(screen_xy.y_units.as_deref(), Some("fraction"));
+    let overlay_xy = overlay.overlay_xy.as_ref().expect("overlayXY defined");
+    assert_eq!(overlay_xy.x, Some(0.0));
+    assert_eq!(overlay_xy.y, Some(1.0));
+    let size = overlay.size.as_ref().expect("size defined");
+    assert_eq!(size.x, Some(-1.0));
+    assert_eq!(size.y, Some(-1.0));
+    assert_eq!(size.x_units.as_deref(), Some("pixels"));
+    assert_eq!(size.y_units.as_deref(), Some("pixels"));
+}
+
+#[test]
+fn screen_overlay_multiple_overlay_images_created() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <Document>
+          <ScreenOverlay>
+            <Icon>
+              <href>http://invalid.url/first</href>
+            </Icon>
+            <screenXY x="0" y="1" xunits="fraction" yunits="fraction" />
+            <overlayXY x="0" y="1" xunits="fraction" yunits="fraction" />
+            <size x="-1" y="-1" xunits="pixels" yunits="pixels" />
+          </ScreenOverlay>
+          <ScreenOverlay>
+            <Icon>
+              <href>http://invalid.url/second</href>
+            </Icon>
+            <screenXY x="0" y="1" xunits="fraction" yunits="fraction" />
+            <overlayXY x="0" y="1" xunits="fraction" yunits="fraction" />
+            <size x="-1" y="-1" xunits="pixels" yunits="pixels" />
+          </ScreenOverlay>
+        </Document>"#;
+
+    let data_source = load(kml);
+    let overlays = data_source.screen_overlays();
+    assert_eq!(overlays.len(), 2);
+    assert_eq!(overlays[0].icon.as_deref(), Some("http://invalid.url/first"));
+    assert_eq!(overlays[1].icon.as_deref(), Some("http://invalid.url/second"));
+}
+
+// ============================================================================
+// Camera / LookAt specs
+// ============================================================================
+
+#[test]
+fn parse_camera_and_look_at_on_features() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Placemark>
+              <LineString>
+                <coordinates>1,2,3
+                         4,5,6
+                </coordinates>
+              </LineString>
+              <Camera></Camera>
+              <LookAt>
+                  <longitude>-120</longitude>
+                  <latitude>40</latitude>
+                  <altitude>100</altitude>
+                  <heading>90</heading>
+                  <tilt>30</tilt>
+                  <range>1250</range>
+              </LookAt>
+            </Placemark>"#;
+
+    let data_source = load(kml);
+    assert_eq!(data_source.entities().length(), 1);
+    let placemark = first_entity(&data_source);
+    let metadata = kml_metadata(placemark);
+
+    // `placemark.kml.camera` is defined (empty Camera defaults).
+    let camera = metadata.get("camera").expect("camera defined");
+    let camera_position = Cartesian3::new(
+        camera["position"]["x"].as_f64().unwrap(),
+        camera["position"]["y"].as_f64().unwrap(),
+        camera["position"]["z"].as_f64().unwrap(),
+    );
+    let expected_camera_position = Cartesian3::from_degrees_new(0.0, 0.0, Some(0.0), None);
+    assert!(position_equals(&camera_position, &expected_camera_position));
+
+    // `placemark.kml.lookAt` position and headingPitchRange.
+    let look_at = metadata.get("lookAt").expect("lookAt defined");
+    let position = Cartesian3::new(
+        look_at["position"]["x"].as_f64().unwrap(),
+        look_at["position"]["y"].as_f64().unwrap(),
+        look_at["position"]["z"].as_f64().unwrap(),
+    );
+    let expected_position = Cartesian3::from_degrees_new(-120.0, 40.0, Some(100.0), None);
+    assert!(position_equals(&position, &expected_position));
+
+    let heading_pitch_range = &look_at["headingPitchRange"];
+    let heading = heading_pitch_range["heading"].as_f64().unwrap();
+    let pitch = heading_pitch_range["pitch"].as_f64().unwrap();
+    let range = heading_pitch_range["range"].as_f64().unwrap();
+    assert!((heading - CesiumMath::to_radians(90.0)).abs() < CesiumMath::EPSILON10);
+    assert!((pitch - CesiumMath::to_radians(30.0 - 90.0)).abs() < CesiumMath::EPSILON10);
+    assert!((range - 1250.0).abs() < CesiumMath::EPSILON10);
+}
+
+// ============================================================================
+// Tour specs
+// ============================================================================
+
+#[test]
+fn tour_reads_gx_tour() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Document xmlns="http://www.opengis.net/kml/2.2"
+                       xmlns:gx="http://www.google.com/kml/ext/2.2">
+              <gx:Tour id="id_123">
+                <name>Tour 1</name>
+                <gx:Playlist>
+                  <gx:Wait>
+                    <gx:duration>2</gx:duration>
+                  </gx:Wait>
+                  <gx:FlyTo>
+                    <gx:duration>3</gx:duration>
+                  </gx:FlyTo>
+                </gx:Playlist>
+              </gx:Tour>
+            </Document>"#;
+
+    let data_source = load(kml);
+    let tours = data_source.kml_tours();
+    assert_eq!(tours.len(), 1);
+    let tour = &tours[0];
+    assert_eq!(tour.name.as_deref(), Some("Tour 1"));
+    assert_eq!(tour.id.as_deref(), Some("id_123"));
+    assert_eq!(tour.playlist.len(), 2);
+
+    match &tour.playlist[0] {
+        KmlTourEntry::Wait(wait) => assert_eq!(wait.duration, Some(2.0)),
+        other => panic!("expected KmlTourWait, got {:?}", other),
+    }
+    match &tour.playlist[1] {
+        KmlTourEntry::FlyTo(fly_to) => assert_eq!(fly_to.duration, Some(3.0)),
+        other => panic!("expected KmlTourFlyTo, got {:?}", other),
+    }
+}
+
+#[test]
+fn tour_reads_look_at_and_camera() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Document xmlns="http://www.opengis.net/kml/2.2"
+                       xmlns:gx="http://www.google.com/kml/ext/2.2">
+              <gx:Tour>
+                <gx:Playlist>
+                  <gx:FlyTo>
+                    <gx:duration>5</gx:duration>
+                    <gx:flyToMode>bounce</gx:flyToMode>
+                    <LookAt>
+                        <longitude>10</longitude>
+                        <latitude>20</latitude>
+                        <altitude>30</altitude>
+                        <range>40</range>
+                        <tilt>50</tilt>
+                        <heading>60</heading>
+                    </LookAt>
+                  </gx:FlyTo>
+                  <gx:FlyTo>
+                    <gx:duration>4.1</gx:duration>
+                    <Camera>
+                      <longitude>170.0</longitude>
+                      <latitude>-43.0</latitude>
+                      <altitude>9700</altitude>
+                      <heading>-10.0</heading>
+                      <tilt>33.5</tilt>
+                      <roll>20</roll>
+                    </Camera>
+                  </gx:FlyTo>
+                </gx:Playlist>
+              </gx:Tour>
+            </Document>"#;
+
+    let data_source = load(kml);
+    let tours = data_source.kml_tours();
+    assert_eq!(tours.len(), 1);
+    let tour = &tours[0];
+    assert_eq!(tour.playlist.len(), 2);
+
+    let fly_to_1 = match &tour.playlist[0] {
+        KmlTourEntry::FlyTo(fly_to) => fly_to,
+        other => panic!("expected KmlTourFlyTo, got {:?}", other),
+    };
+    let fly_to_2 = match &tour.playlist[1] {
+        KmlTourEntry::FlyTo(fly_to) => fly_to,
+        other => panic!("expected KmlTourFlyTo, got {:?}", other),
+    };
+
+    assert_eq!(fly_to_1.fly_to_mode.as_deref(), Some("bounce"));
+    assert_eq!(fly_to_1.duration, Some(5.0));
+    let look_at = match fly_to_1.view.as_ref().expect("view defined") {
+        KmlTourView::LookAt(look_at) => look_at,
+        other => panic!("expected KmlLookAt view, got {:?}", other),
+    };
+    let expected_position = Cartesian3::from_degrees_new(10.0, 20.0, Some(30.0), None);
+    assert!(position_equals(&look_at.position, &expected_position));
+    assert!((look_at.heading_pitch_range.heading - CesiumMath::to_radians(60.0)).abs()
+        < CesiumMath::EPSILON10);
+    assert!(
+        (look_at.heading_pitch_range.pitch
+            - (CesiumMath::to_radians(50.0) - CesiumMath::PI_OVER_TWO))
+        .abs()
+            < CesiumMath::EPSILON10
+    );
+    assert!((look_at.heading_pitch_range.range - 40.0).abs() < CesiumMath::EPSILON10);
+
+    assert_eq!(fly_to_2.duration, Some(4.1));
+    let camera = match fly_to_2.view.as_ref().expect("view defined") {
+        KmlTourView::Camera(camera) => camera,
+        other => panic!("expected KmlCamera view, got {:?}", other),
+    };
+    let expected_position = Cartesian3::from_degrees_new(170.0, -43.0, Some(9700.0), None);
+    assert!(position_equals(&camera.position, &expected_position));
+    assert!((camera.heading_pitch_roll.heading - CesiumMath::to_radians(-10.0)).abs()
+        < CesiumMath::EPSILON10);
+    assert!(
+        (camera.heading_pitch_roll.pitch - CesiumMath::to_radians(33.5 - 90.0)).abs()
+            < CesiumMath::EPSILON10
+    );
+    assert!((camera.heading_pitch_roll.roll - CesiumMath::to_radians(20.0)).abs()
+        < CesiumMath::EPSILON10);
+}
+
+// ============================================================================
+// NetworkLink specs
+//
+// DEVIATION (no fetching): the JS specs fetch the linked document (the
+// `refresh.kml` fixture adds a folder and a placemark, and the refresh
+// cycle is timer driven). This port registers the parsed link value
+// model and raises `refreshEvent` at registration time instead.
+// ============================================================================
+
+#[test]
+fn network_link_on_interval_registers_refresh() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+          <NetworkLink id="link">
+            <Link>
+              <href>./Data/KML/refresh.kml</href>
+              <refreshMode>onInterval</refreshMode>
+              <refreshInterval>1</refreshInterval>
+            </Link>
+          </NetworkLink>"#;
+
+    let data_source = load(kml);
+    let entities = data_source.entities().values();
+    // The JS expects 3 entities (the fetched folder + placemark); only
+    // the NetworkLink feature entity exists without fetching.
+    assert_eq!(entities.len(), 1);
+    assert_eq!(entities[0].id, "link");
+
+    let links = data_source.network_links();
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].entity_id, "link");
+    assert_eq!(links[0].href, "./Data/KML/refresh.kml");
+    assert_eq!(links[0].refresh_mode, Some(KmlRefreshMode::Interval));
+    assert_eq!(links[0].time, 1.0);
+}
+
+#[test]
+fn network_link_on_expire_registers_refresh() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+          <NetworkLink id="link">
+            <Link>
+              <href>./Data/KML/refresh.kml</href>
+              <refreshMode>onExpire</refreshMode>
+            </Link>
+          </NetworkLink>"#;
+
+    let data_source = load(kml);
+    let links = data_source.network_links();
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].href, "./Data/KML/refresh.kml");
+    assert_eq!(links[0].refresh_mode, Some(KmlRefreshMode::Expire));
+}
+
+#[test]
+fn network_link_url_is_correct_on_initial_load() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+          <NetworkLink id="link">
+            <Link>
+              <href>./Data/KML/refresh.kml</href>
+            </Link>
+          </NetworkLink>"#;
+
+    let data_source = load(kml);
+    let links = data_source.network_links();
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].href, "./Data/KML/refresh.kml");
+    // No refresh mode means no update registration in the JS.
+    assert!(links[0].refresh_mode.is_none());
+}
+
+#[test]
+fn network_link_can_accept_invalid_but_common_url_tag_instead_of_link() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+          <NetworkLink id="link">
+            <Url>
+              <href>./Data/KML/refresh.kml</href>
+            </Url>
+          </NetworkLink>"#;
+
+    let data_source = load(kml);
+    let links = data_source.network_links();
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].href, "./Data/KML/refresh.kml");
+}
+
+#[test]
+fn network_link_url_is_correct_on_initial_load_with_on_stop_defaults() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+          <NetworkLink id="link">
+            <Link>
+              <href>./Data/KML/refresh.kml</href>
+              <viewRefreshMode>onStop</viewRefreshMode>
+            </Link>
+          </NetworkLink>"#;
+
+    let data_source = load(kml);
+    let links = data_source.network_links();
+    assert_eq!(links.len(), 1);
+    assert_eq!(
+        links[0].href,
+        "./Data/KML/refresh.kml?BBOX=-180%2C-90%2C180%2C90"
+    );
+    assert_eq!(links[0].refresh_mode, Some(KmlRefreshMode::Stop));
+}
+
+#[test]
+fn network_link_url_is_correct_on_initial_load_with_http_query_without_a_question_mark() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+          <NetworkLink id="link">
+            <Link>
+              <href>./Data/KML/refresh.kml</href>
+              <viewRefreshMode>onInterval</viewRefreshMode>
+              <httpQuery>client=[clientName]-v[clientVersion]&amp;v=[kmlVersion]&amp;lang=[language]</httpQuery>
+            </Link>
+          </NetworkLink>"#;
+
+    let data_source = load(kml);
+    let links = data_source.network_links();
+    assert_eq!(links.len(), 1);
+    assert_eq!(
+        links[0].href,
+        "./Data/KML/refresh.kml?client=Cesium-v1&v=2.2&lang=English"
+    );
+}
+
+#[test]
+fn network_link_url_is_correct_on_initial_load_with_http_query_with_a_question_mark() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+          <NetworkLink id="link">
+            <Link>
+              <href>./Data/KML/refresh.kml</href>
+              <viewRefreshMode>onInterval</viewRefreshMode>
+              <httpQuery>?client=[clientName]-v[clientVersion]&amp;v=[kmlVersion]&amp;lang=[language]</httpQuery>
+            </Link>
+          </NetworkLink>"#;
+
+    let data_source = load(kml);
+    let links = data_source.network_links();
+    assert_eq!(links.len(), 1);
+    assert_eq!(
+        links[0].href,
+        "./Data/KML/refresh.kml?client=Cesium-v1&v=2.2&lang=English"
+    );
+}
+
+#[test]
+fn network_link_with_a_view_refresh_mode_on_region_shows_warning() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+          <NetworkLink id="link">
+            <Link>
+              <href>./Data/KML/simple.kml</href>
+              <viewRefreshMode>onRegion</viewRefreshMode>
+            </Link>
+          </NetworkLink>"#;
+
+    let data_source = load(kml);
+    // The JS warns and still creates the NetworkLink feature entity.
+    assert_eq!(data_source.entities().length(), 1);
+    // DEVIATION: the oneTimeWarning console output is omitted; the early
+    // return is mirrored by the absence of a registered link.
+    assert!(data_source.network_links().is_empty());
+}
+
+#[test]
+fn network_link_refresh_event_is_raised_with_the_refresh_href() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+          <NetworkLink id="link">
+            <Link>
+              <href>./Data/KML/refresh.kml</href>
+              <viewRefreshMode>onStop</viewRefreshMode>
+            </Link>
+          </NetworkLink>"#;
+
+    let mut data_source = KmlDataSource::new();
+    let captured: Rc<Cell<Option<String>>> = Rc::new(Cell::new(None));
+    let spy = captured.clone();
+    let _remove = data_source
+        .refresh_event()
+        .add_listener(move |href: &String| spy.set(Some(href.clone())));
+
+    data_source.load_value(kml, None).unwrap();
+    assert_eq!(
+        captured.take().as_deref(),
+        Some("./Data/KML/refresh.kml?BBOX=-180%2C-90%2C180%2C90")
+    );
+}
+
+// ============================================================================
+// BalloonStyle specs
+// ============================================================================
+
+/// Mirrors the JS internal semantics: `balloonStyle` is a style-only
+/// property used for description rewriting and never ends up on the
+/// final entity.
+#[test]
+fn balloon_style_never_reaches_the_final_entity() {
+    let kml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <Placemark>
+            <Style>
+                <BalloonStyle>
+                    <bgColor>7F0000FF</bgColor>
+                    <textColor>FF000000</textColor>
+                    <text>Hello</text>
+                </BalloonStyle>
+            </Style>
+        </Placemark>"#;
+
+    let data_source = load(kml);
+    let entity = first_entity(&data_source);
+    assert!(entity.properties.get("balloonStyle").is_none());
 }

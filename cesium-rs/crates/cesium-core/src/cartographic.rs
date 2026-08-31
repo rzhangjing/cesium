@@ -272,8 +272,18 @@ impl Default for Cartographic {
 impl fmt::Display for Cartographic {
     /// Port of `Cartographic.prototype.toString` — format
     /// `(longitude, latitude, height)`.
+    ///
+    /// Components are formatted with JavaScript `Number.prototype.toString`
+    /// semantics (e.g. `Infinity`, `NaN`, no trailing `.0`) so the output is
+    /// character-identical to the JS template literal (Phase 2 finding D5).
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({}, {}, {})", self.longitude, self.latitude, self.height)
+        write!(
+            f,
+            "({}, {}, {})",
+            crate::check::js_number_to_string(self.longitude),
+            crate::check::js_number_to_string(self.latitude),
+            crate::check::js_number_to_string(self.height)
+        )
     }
 }
 

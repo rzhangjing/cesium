@@ -34,6 +34,12 @@ impl Property for TimeIntervalCollectionPositionProperty {
 
     fn is_constant(&self) -> bool { self.intervals.len() <= 1 }
     fn is_destroyed(&self) -> bool { false }
+
+    fn as_position_property(
+        &self,
+    ) -> Option<&dyn crate::position_property::PositionProperty> {
+        Some(self)
+    }
 }
 
 impl PositionProperty for TimeIntervalCollectionPositionProperty {

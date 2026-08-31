@@ -18,6 +18,7 @@ pub struct TileAvailability {
 /// A key identifying a quadtree node by its level and tile coordinates.
 type NodeKey = (i32, i32, i32); // (level, x, y)
 
+#[derive(Clone)]
 struct RectangleWithLevel {
     level: i32,
     west: f64,
@@ -176,6 +177,8 @@ impl TileAvailability {
                     );
                 }
                 let child_extent = nodes[&child].extent;
+                // JS: `rectangleFullyContainsRectangle(node.nw.extent, rectangle)`
+                // — descend while the child extent fully contains the rectangle.
                 if rectangle_fully_contains_rect(&child_extent, west, south, east, north) {
                     current = child;
                     placed = true;
@@ -393,6 +396,140 @@ impl TileAvailability {
         }
         mask
     }
+
+    /// Finds the most detailed level that is available _everywhere_ within a
+    /// given rectangle. More detailed tiles may be available in parts of the
+    /// rectangle, but not the whole thing.
+    pub fn compute_best_available_level_over_rectangle(
+        &self,
+        rectangle: &Rectangle,
+    ) -> i32 {
+        let mut rectangles: Vec<Rectangle> = Vec::new();
+
+        if rectangle.east < rectangle.west {
+            // Rectangle crosses the IDL, make it two rectangles.
+            rectangles.push(Rectangle::from_radians(
+                -std::f64::consts::PI,
+                rectangle.south,
+                rectangle.east,
+                rectangle.north,
+            ));
+            rectangles.push(Rectangle::from_radians(
+                rectangle.west,
+                rectangle.south,
+                std::f64::consts::PI,
+                rectangle.north,
+            ));
+        } else {
+            rectangles.push(*rectangle);
+        }
+
+        // Mirrors the sparse JS `remainingToCoverByLevel` array indexed by level.
+        let mut remaining_to_cover_by_level: Vec<Option<Vec<Rectangle>>> = Vec::new();
+
+        let root_keys = self.root_nodes.clone();
+        for root_key in &root_keys {
+            Self::update_coverage_with_node(
+                self,
+                &mut remaining_to_cover_by_level,
+                root_key,
+                &rectangles,
+            );
+        }
+
+        for i in (0..remaining_to_cover_by_level.len()).rev() {
+            if let Some(list) = &remaining_to_cover_by_level[i] {
+                if list.is_empty() {
+                    return i as i32;
+                }
+            }
+        }
+
+        0
+    }
+
+    /// Test support mirroring the JS spec's `checkNodeRectanglesSorted`
+    /// helper, which walks the private `_rootNodes`/`_nw`/`_ne`/`_sw`/`_se`
+    /// fields to verify that every node's rectangle list stays sorted by level.
+    #[doc(hidden)]
+    pub fn debug_check_node_rectangles_sorted(&self) -> bool {
+        for root_key in &self.root_nodes {
+            if !self.debug_check_node_sorted(root_key) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn debug_check_node_sorted(&self, node_key: &NodeKey) -> bool {
+        let Some(node) = self.nodes.get(node_key) else {
+            return true;
+        };
+        let level_rectangles = &node.rectangles;
+        for i in 0..level_rectangles.len() {
+            for j in i..level_rectangles.len() {
+                if !(level_rectangles[i].level <= level_rectangles[j].level) {
+                    return false;
+                }
+            }
+        }
+        for quadrant in 0..4 {
+            let child = Self::child_key(node_key, quadrant);
+            if !self.debug_check_node_sorted(&child) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Mirrors the JS `updateCoverageWithNode` helper. Only children that
+    /// already exist in the quadtree are visited (JS accesses the private
+    /// `_nw`/`_ne`/`_sw`/`_se` fields, which stay `undefined` until created).
+    fn update_coverage_with_node(
+        &self,
+        remaining_to_cover_by_level: &mut Vec<Option<Vec<Rectangle>>>,
+        node_key: &NodeKey,
+        rectangles_to_cover: &[Rectangle],
+    ) {
+        let Some(node) = self.nodes.get(node_key) else {
+            return;
+        };
+
+        let mut any_overlap = false;
+        for rectangle in rectangles_to_cover {
+            any_overlap = any_overlap || rectangles_overlap(&node.extent, rectangle);
+        }
+
+        if !any_overlap {
+            // This node is not applicable to the rectangle(s).
+            return;
+        }
+
+        let rectangles = node.rectangles.clone();
+        for rectangle in &rectangles {
+            let level = rectangle.level as usize;
+            if remaining_to_cover_by_level.len() <= level {
+                remaining_to_cover_by_level.resize(level + 1, None);
+            }
+            if remaining_to_cover_by_level[level].is_none() {
+                remaining_to_cover_by_level[level] = Some(rectangles_to_cover.to_vec());
+            }
+
+            let current = remaining_to_cover_by_level[level].take().unwrap();
+            remaining_to_cover_by_level[level] =
+                Some(subtract_rectangle(&current, rectangle));
+        }
+
+        // Update with child nodes.
+        for quadrant in 0..4 {
+            let child = Self::child_key(node_key, quadrant);
+            self.update_coverage_with_node(
+                remaining_to_cover_by_level,
+                &child,
+                rectangles_to_cover,
+            );
+        }
+    }
 }
 
 fn rect_rectangles_overlap(
@@ -409,6 +546,77 @@ fn rect_rectangles_overlap(
     south < north && west < east
 }
 
+fn rectangles_overlap(rectangle1: &Rectangle, rectangle2: &Rectangle) -> bool {
+    rect_rectangles_overlap(
+        rectangle1,
+        rectangle2.west,
+        rectangle2.south,
+        rectangle2.east,
+        rectangle2.north,
+    )
+}
+
+/// Mirrors the JS `subtractRectangle` helper: splits each rectangle in
+/// `rectangle_list` around `rectangle_to_subtract`.
+fn subtract_rectangle(
+    rectangle_list: &[Rectangle],
+    rectangle_to_subtract: &RectangleWithLevel,
+) -> Vec<Rectangle> {
+    let mut result: Vec<Rectangle> = Vec::new();
+    for rectangle in rectangle_list {
+        let overlaps = rect_rectangles_overlap(
+            rectangle,
+            rectangle_to_subtract.west,
+            rectangle_to_subtract.south,
+            rectangle_to_subtract.east,
+            rectangle_to_subtract.north,
+        );
+        if !overlaps {
+            // Disjoint rectangles. Original rectangle is unmodified.
+            result.push(*rectangle);
+        } else {
+            // rectangleToSubtract partially or completely overlaps rectangle.
+            if rectangle.west < rectangle_to_subtract.west {
+                result.push(Rectangle::new(
+                    rectangle.west,
+                    rectangle.south,
+                    rectangle_to_subtract.west,
+                    rectangle.north,
+                ));
+            }
+            if rectangle.east > rectangle_to_subtract.east {
+                result.push(Rectangle::new(
+                    rectangle_to_subtract.east,
+                    rectangle.south,
+                    rectangle.east,
+                    rectangle.north,
+                ));
+            }
+            if rectangle.south < rectangle_to_subtract.south {
+                result.push(Rectangle::new(
+                    rectangle_to_subtract.west.max(rectangle.west),
+                    rectangle.south,
+                    rectangle_to_subtract.east.min(rectangle.east),
+                    rectangle_to_subtract.south,
+                ));
+            }
+            if rectangle.north > rectangle_to_subtract.north {
+                result.push(Rectangle::new(
+                    rectangle_to_subtract.west.max(rectangle.west),
+                    rectangle_to_subtract.north,
+                    rectangle_to_subtract.east.min(rectangle.east),
+                    rectangle.north,
+                ));
+            }
+        }
+    }
+
+    result
+}
+
+/// Mirrors JS `rectangleFullyContainsRectangle(potentialContainer, rectangleToTest)`:
+/// true when the rectangle (`west..east`, `south..north`) is fully
+/// contained by `container`.
 fn rectangle_fully_contains_rect(
     container: &Rectangle,
     west: f64,
@@ -416,7 +624,10 @@ fn rectangle_fully_contains_rect(
     east: f64,
     north: f64,
 ) -> bool {
-    west >= container.west && east <= container.east && south >= container.south && north <= container.north
+    west >= container.west
+        && east <= container.east
+        && south >= container.south
+        && north <= container.north
 }
 
 fn rect_contains_cartographic(rect: &Rectangle, pos: &Cartographic) -> bool {

@@ -40,6 +40,7 @@ impl Iso8601 {
             stop: Self::maximum_value().clone(),
             is_start_included: true,
             is_stop_included: true,
+            data: None,
         })
     }
 }

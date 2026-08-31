@@ -29,6 +29,40 @@ pub trait Property {
         false
     }
 
+    /// Downcast helper mirroring the CesiumJS `other instanceof X` checks
+    /// used by property `equals` implementations.
+    ///
+    /// DEVIATION: CesiumJS uses `instanceof`; the Rust trait returns `None`
+    /// by default and concrete implementations opt in by returning
+    /// `Some(self)`.
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        None
+    }
+
+    /// Downcast helper mirroring the CesiumJS duck-typed
+    /// `getValueInReferenceFrame` dispatch used by composite position
+    /// properties.
+    ///
+    /// DEVIATION: `dyn Any` cannot downcast to a trait object, so
+    /// [`crate::position_property::PositionProperty`] implementations opt
+    /// in by returning `Some(self)`.
+    fn as_position_property(
+        &self,
+    ) -> Option<&dyn crate::position_property::PositionProperty> {
+        None
+    }
+
+    /// Downcast helper mirroring the CesiumJS duck-typed
+    /// `innerProperty.getType` dispatch used by composite material
+    /// properties: returns the material type name when this property is a
+    /// [`crate::material_property::MaterialProperty`].
+    ///
+    /// DEVIATION: `dyn Any` cannot downcast to a trait object, so material
+    /// implementations opt in by returning `Some(type_name())`.
+    fn material_type_name(&self) -> Option<&'static str> {
+        None
+    }
+
     /// Gets the event that is raised whenever the definition of this
     /// property changes.
     ///
@@ -164,4 +198,37 @@ impl PartialEq for PropertyResult {
 /// when the property's definition changes (not its value over time).
 pub fn create_definition_changed_event() -> Event {
     Event::new()
+}
+
+/// Port of the static `Property.equals(left, right)` comparator: compares
+/// two property trait objects for equality.
+///
+/// DEVIATION: the JS identity fast-path (`left === right`) is not
+/// expressible for trait objects; only the structural `left.equals(right)`
+/// comparison is performed.
+pub fn property_equals(left: &dyn Property, right: &dyn Property) -> bool {
+    left.equals(right)
+}
+
+/// Port of the static `Property.arrayEquals(left, right)` comparator.
+///
+/// DEVIATION: the JS identity fast-path (`left === right`) is not
+/// expressible; `None` mirrors JS `undefined` (two `None` values are
+/// equal, matching `undefined === undefined`).
+pub fn property_array_equals(
+    left: Option<&[std::rc::Rc<dyn Property>]>,
+    right: Option<&[std::rc::Rc<dyn Property>]>,
+) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (None, Some(_)) | (Some(_), None) => false,
+        (Some(left), Some(right)) => {
+            if left.len() != right.len() {
+                return false;
+            }
+            left.iter()
+                .zip(right.iter())
+                .all(|(l, r)| property_equals(l.as_ref(), r.as_ref()))
+        }
+    }
 }

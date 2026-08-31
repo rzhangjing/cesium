@@ -60,6 +60,28 @@ impl Property for ConstantPositionProperty {
     fn is_constant(&self) -> bool { true }
     fn is_destroyed(&self) -> bool { false }
 
+    /// Port of `ConstantPositionProperty.prototype.equals`: compares by
+    /// `Cartesian3.equals` of the value and the reference frame.
+    fn equals(&self, other: &dyn Property) -> bool {
+        other
+            .as_any()
+            .and_then(|any| any.downcast_ref::<ConstantPositionProperty>())
+            .map(|other| {
+                self.value == other.value && self.reference_frame == other.reference_frame
+            })
+            .unwrap_or(false)
+    }
+
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
+    fn as_position_property(
+        &self,
+    ) -> Option<&dyn crate::position_property::PositionProperty> {
+        Some(self)
+    }
+
     fn definition_changed(&self) -> Option<&Event<()>> {
         Some(&self.definition_changed)
     }

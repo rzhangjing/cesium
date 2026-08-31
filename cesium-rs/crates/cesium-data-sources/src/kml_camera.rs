@@ -1,31 +1,23 @@
 ﻿//! Ported from `packages/engine/Source/DataSources/KmlCamera.js`.
 
-/// Represents a camera definition in a KML tour.
+use cesium_core::cartesian3::Cartesian3;
+use cesium_core::heading_pitch_roll::HeadingPitchRoll;
+
+/// Representation of `<Camera>` from KML (mirror of `KmlCamera`).
+#[derive(Clone, Debug)]
 pub struct KmlCamera {
-    /// The longitude in degrees.
-    pub longitude: f64,
-    /// The latitude in degrees.
-    pub latitude: f64,
-    /// The altitude in meters.
-    pub altitude: f64,
-    /// The heading in degrees.
-    pub heading: f64,
-    /// The tilt in degrees.
-    pub tilt: f64,
-    /// The roll in degrees.
-    pub roll: f64,
+    /// The camera position.
+    pub position: Cartesian3,
+    /// The camera orientation.
+    pub heading_pitch_roll: HeadingPitchRoll,
 }
 
 impl KmlCamera {
     /// Creates a new KML camera.
-    pub fn new() -> Self {
+    pub fn new(position: Cartesian3, heading_pitch_roll: HeadingPitchRoll) -> Self {
         Self {
-            longitude: 0.0, latitude: 0.0, altitude: 0.0,
-            heading: 0.0, tilt: 0.0, roll: 0.0,
+            position,
+            heading_pitch_roll,
         }
     }
-}
-
-impl Default for KmlCamera {
-    fn default() -> Self { Self::new() }
 }

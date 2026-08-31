@@ -23,12 +23,21 @@ impl Property for ScaledPositionProperty {
             PropertyResult::Position(x, y, z) => {
                 PropertyResult::Position(x * self.scale, y * self.scale, z * self.scale)
             }
+            PropertyResult::Cartesian3(x, y, z) => {
+                PropertyResult::Cartesian3(x * self.scale, y * self.scale, z * self.scale)
+            }
             other => other,
         }
     }
 
     fn is_constant(&self) -> bool { self.property.is_constant() }
     fn is_destroyed(&self) -> bool { self.property.is_destroyed() }
+
+    fn as_position_property(
+        &self,
+    ) -> Option<&dyn crate::position_property::PositionProperty> {
+        Some(self)
+    }
 }
 
 impl PositionProperty for ScaledPositionProperty {

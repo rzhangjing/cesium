@@ -2,9 +2,9 @@
 
 CesiumJS → Rust 移植的测试覆盖矩阵。
 
-**统计时间**: 2026-08-24（A10 收尾实测）
+**统计时间**: 2026-08-24（A10 收尾实测）；总量经任务 #31（R12）复核刷新
 **CesiumJS 原版 spec 文件**: 790 (engine 750 + widgets 40)
-**Rust 测试**: 2844 passed, 0 failed, 326 ignored（2026-08-24 `cargo test --workspace` 全绿实测，EXIT=0）
+**Rust 测试**: 3187 passed, 0 failed, 330 ignored（修复任务 #33–#37 完成后 workspace 全量实测；#40–#42 在途。2026-08-24 快照为 2844 passed / 326 ignored，EXIT=0）
 **本次变更**: Specs/Data 空壳目录删除（引用指向父仓库 `../../Specs/Data`）+ viewer-demo 3D 模型集成
 
 ---
@@ -19,15 +19,16 @@ CesiumJS → Rust 移植的测试覆盖矩阵。
 | Scene | 332 | 228 | 0 | camera/quadtree/3D Tiles/表达式/glTF 批次 |
 | Model | 73 | 0 | 0 | 0/73 文件（glTF 批次已含部分） |
 | Workers | — | 18 | 0 | 单元 + task_processor 集成 |
-| Widgets | 40 | 0 | 0 | 0/40 文件 |
+| Widgets | 40 | 133 | 54 | ViewModel 镜像 spec 已落地（f9 实测，DomSurface 待集成） |
 | Shaders | — | 17 | 0 | naga/WGSL 验证 |
 | Test Utils | — | 10 | 0 | 基础设施 |
 | Precision | — | 16 | 0 | f64 精度验证 |
 | Smoke (ViewportQuad) | — | 4 | 0 | Track B 冒烟（scene 2 + specs 2） |
 | Doc-tests | — | 4 | 8 | core 3+6ig / specs 1 / test-utils 1+2ig |
-| **合计** | **790** | **2844** | **326** | — |
+| **合计** | **790** | **3187** | **330** | — |
 
 > 注：逐文件明细表的 Tests 数为 M1-W2 快照，总量以运行时实测为准（Core/Scene/DataSources 后续批次持续新增用例）。
+> 总量基线（任务 #31 复核）：3187 passed / 330 ignored = specs 221 ig + widgets 54 ig + data-sources 42 ig + scene 5 ig + doc-tests 8 ig（#40–#42 在途，data-sources 行持续变动）。
 
 ---
 
@@ -293,9 +294,11 @@ CesiumJS → Rust 移植的测试覆盖矩阵。
 
 ---
 
-## Widgets (40 CesiumJS specs → 0 tests)
+## Widgets (40 CesiumJS specs → 133 tests，任务 #31 复核刷新)
 
-### 未覆盖
+> 复核注记（任务 #31 / R12）：A10 批（任务 #15/#17/#18）已移植 ViewModel 镜像 spec，实测 133 passed / 54 ignored（见 ignored_disposition.md widgets 节）；以下清单为该快照时点的未覆盖口径，DOM 面仍属 E 档待 DomSurface 集成。
+
+### 未覆盖（2026-08-24 快照口径）
 
 - Viewer/ViewerSpec.js (925 lines)
 - Viewer/viewerDragDropMixinSpec.js (475 lines)
@@ -338,8 +341,10 @@ CesiumJS → Rust 移植的测试覆盖矩阵。
 | cesium-workers | 18 | 0 | mock_workers 8 + task_processor 10 |
 | cesium-shaders | 17 | 0 | naga/WGSL 验证（14 lib + 2 + 1） |
 | cesium-specs Doc-tests | 1 | 0 | |
-| cesium-widgets | 0 | 0 | 待 DomSurface 集成 |
-| **合计** | **2844** | **326** | 0 failed（ignored = Core 219+2 + DataSources 38 + TestUtils 3 + Doc-tests 64） |
+| cesium-widgets | 133 | 54 | ViewModel 镜像 spec（f9 实测；任务 #31 复核刷新） |
+| **合计** | **3187** | **330** | 0 failed（任务 #31 复核基线；#40–#42 在途，data-sources/scene 行持续变动） |
+
+> 复核注记（任务 #31 / R12）：本表各行为 2026-08-24 快照口径，合计行与 cesium-widgets 行已按最新全量结果（3187 passed / 330 ignored，#33–#37 完成后）刷新；ignored 构成见总览注记。
 
 ---
 

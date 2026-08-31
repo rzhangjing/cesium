@@ -5,6 +5,7 @@
 use crate::cartesian2::Cartesian2;
 use crate::cartesian3::Cartesian3;
 use crate::cartesian4::Cartesian4;
+use crate::developer_error::throw_developer_error;
 use crate::math::CesiumMath;
 
 const RIGHT_SHIFT8: f64 = 1.0 / 256.0;
@@ -24,11 +25,23 @@ impl AttributeCompression {
     ///
     /// Reference: Cigolle et al 2014 – "A Survey of Efficient Representations
     /// of Independent Unit Vectors".
+    /// # Panics
+    /// In debug builds, panics with `DeveloperError` when `vector` is not
+    /// normalized (port of the JS debug guard).
     pub fn oct_encode_in_range<'a>(
         vector: &Cartesian3,
         range_max: f64,
         result: &'a mut Cartesian2,
     ) -> &'a mut Cartesian2 {
+        //>>includeStart('debug', pragmas.debug);
+        if cfg!(debug_assertions) {
+            let mag_squared = Cartesian3::magnitude_squared(vector);
+            if (mag_squared - 1.0).abs() > CesiumMath::EPSILON6 {
+                throw_developer_error("vector must be normalized.");
+            }
+        }
+        //>>includeEnd('debug');
+
         let denom = vector.x.abs() + vector.y.abs() + vector.z.abs();
         result.x = vector.x / denom;
         result.y = vector.y / denom;
@@ -66,12 +79,26 @@ impl AttributeCompression {
     }
 
     /// Decodes a unit-length vector from *oct* encoding in `[0, rangeMax]`.
+    /// # Panics
+    /// In debug builds, panics with `DeveloperError` when `x` or `y` is not
+    /// an unsigned normalized integer in `[0, range_max]`.
     pub fn oct_decode_in_range<'a>(
         x: f64,
         y: f64,
         range_max: f64,
         result: &'a mut Cartesian3,
     ) -> &'a mut Cartesian3 {
+        //>>includeStart('debug', pragmas.debug);
+        if cfg!(debug_assertions) {
+            if x < 0.0 || x > range_max || y < 0.0 || y > range_max {
+                throw_developer_error(&format!(
+                    "x and y must be unsigned normalized integers between 0 and {}",
+                    crate::check::js_number_to_string(range_max)
+                ));
+            }
+        }
+        //>>includeEnd('debug');
+
         result.x = CesiumMath::from_snorm(x, Some(range_max));
         result.y = CesiumMath::from_snorm(y, Some(range_max));
         result.z = 1.0 - (result.x.abs() + result.y.abs());
@@ -82,12 +109,10 @@ impl AttributeCompression {
             result.y = (1.0 - old_vx.abs()) * CesiumMath::sign_not_zero(result.y);
         }
 
-        let mag = (result.x * result.x + result.y * result.y + result.z * result.z).sqrt();
-        if mag > 0.0 {
-            result.x /= mag;
-            result.y /= mag;
-            result.z /= mag;
-        }
+        // Port of `Cartesian3.normalize(result, result)` (copies the input to
+        // satisfy the borrow checker; JS aliases both arguments).
+        let unnormalized = *result;
+        Cartesian3::normalize(&unnormalized, result);
         result
     }
 
@@ -102,6 +127,24 @@ impl AttributeCompression {
         encoded: &Cartesian4,
         result: &'a mut Cartesian3,
     ) -> &'a mut Cartesian3 {
+        //>>includeStart('debug', pragmas.debug);
+        if cfg!(debug_assertions) {
+            if encoded.x < 0.0
+                || encoded.x > 255.0
+                || encoded.y < 0.0
+                || encoded.y > 255.0
+                || encoded.z < 0.0
+                || encoded.z > 255.0
+                || encoded.w < 0.0
+                || encoded.w > 255.0
+            {
+                throw_developer_error(
+                    "x, y, z, and w must be unsigned normalized integers between 0 and 255",
+                );
+            }
+        }
+        //>>includeEnd('debug');
+
         let x_oct16 = encoded.x * LEFT_SHIFT8 + encoded.y;
         let y_oct16 = encoded.z * LEFT_SHIFT8 + encoded.w;
         Self::oct_decode_in_range(x_oct16, y_oct16, 65535.0, result)

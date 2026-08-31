@@ -31,7 +31,7 @@ use cesium_core::tiling_scheme::TilingScheme;
 const BASE_URL: &str = "made/up/url";
 
 const GEE_TERRAIN_FIXTURE: &[u8] =
-    include_bytes!("../../Data/GoogleEarthEnterprise/gee.terrain");
+    include_bytes!("../../../../Specs/Data/GoogleEarthEnterprise/gee.terrain");
 
 /// Mirrors `installMockGetQuadTreePacket` + the intercepted
 /// `GoogleEarthEnterpriseMetadata.fromUrl("made/up/url")`.

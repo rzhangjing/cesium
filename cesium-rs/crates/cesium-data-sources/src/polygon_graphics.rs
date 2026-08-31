@@ -1,8 +1,15 @@
 ﻿//! Ported from `packages/engine/Source/DataSources/PolygonGraphics.js`.
+//!
+//! DEVIATION (simplified value model): the JS time-dynamic `Property`
+//! fields are stored as plain constant values, mirroring the rest of the
+//! data-sources port. Sub-properties `shadows`, `distanceDisplayCondition`,
+//! `classificationType`, `textureCoordinates` and `z` are not materialized;
+//! the updaters apply the JS defaults for them.
 
 use cesium_core::arc_type::ArcType;
 use cesium_core::cartesian3::Cartesian3;
 use cesium_core::color::Color;
+use cesium_scene::height_reference::HeightReference;
 
 /// Graphics properties for a polygon.
 #[derive(Clone)]
@@ -34,6 +41,23 @@ pub struct PolygonGraphics {
     pub holes: Vec<Vec<Cartesian3>>,
     /// The type of arc used to connect the positions.
     pub arc_type: ArcType,
+    /// The sampling granularity (mirrors `granularity`).
+    pub granularity: Option<f64>,
+    /// The texture rotation, in radians (mirrors `stRotation`).
+    pub st_rotation: Option<f64>,
+    /// Whether the top of an extruded polygon is closed (mirrors
+    /// `closeTop`, JS default `true`).
+    pub close_top: bool,
+    /// Whether the bottom of an extruded polygon is closed (mirrors
+    /// `closeBottom`, JS default `true`).
+    pub close_bottom: bool,
+    /// The draw order (mirrors `zIndex`, JS default `0`).
+    pub z_index: Option<f64>,
+    /// The height reference (mirrors `heightReference`, JS default NONE).
+    pub height_reference: HeightReference,
+    /// The extruded height reference (mirrors `extrudedHeightReference`,
+    /// JS default NONE).
+    pub extruded_height_reference: HeightReference,
 }
 
 impl PolygonGraphics {
@@ -53,6 +77,13 @@ impl PolygonGraphics {
             per_position_height: None,
             holes: Vec::new(),
             arc_type: ArcType::Geodesic,
+            granularity: None,
+            st_rotation: None,
+            close_top: true,
+            close_bottom: true,
+            z_index: None,
+            height_reference: HeightReference::None,
+            extruded_height_reference: HeightReference::None,
         }
     }
 }

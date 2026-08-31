@@ -1,8 +1,10 @@
 //! Mirrors packages/engine/Specs/Core/Matrix3Spec.js
 
 use cesium_core::cartesian3::Cartesian3;
+use cesium_core::heading_pitch_roll::HeadingPitchRoll;
 use cesium_core::math::CesiumMath;
 use cesium_core::matrix3::Matrix3;
+use cesium_core::quaternion::Quaternion;
 use cesium_test_utils::assert_approx_eq_f64;
 
 // --- constructor ---
@@ -459,4 +461,104 @@ fn compute_eigen_decomposition_works() {
     Matrix3::multiply(&temp, &ut, &mut reconstructed);
 
     assert!(Matrix3::equals_epsilon(&reconstructed, &m, CesiumMath::EPSILON10));
+}
+
+// --- fromHeadingPitchRoll ---
+// Mirrors Matrix3Spec.js "fromHeadingPitchRoll works without a result
+// parameter" / "... with a result parameter" / "... computed correctly".
+// DEVIATION: the JS "throws without quaternion parameter" case passes
+// `undefined`, which the non-optional Rust parameter cannot express.
+
+#[test]
+fn from_heading_pitch_roll_works_without_result_parameter() {
+    let s_pi_over_4 = CesiumMath::PI_OVER_FOUR.sin();
+    let c_pi_over_4 = CesiumMath::PI_OVER_FOUR.cos();
+    let s_pi_over_2 = CesiumMath::PI_OVER_TWO.sin();
+    let c_pi_over_2 = CesiumMath::PI_OVER_TWO.cos();
+
+    let tmp = Cartesian3::multiply_by_scalar_new(
+        &Cartesian3::new(0.0, 0.0, 1.0),
+        s_pi_over_4,
+    );
+    let quaternion = Quaternion::new(tmp.x, tmp.y, tmp.z, c_pi_over_4);
+    let heading_pitch_roll = HeadingPitchRoll::from_quaternion_new(&quaternion);
+    let expected = Matrix3::new(
+        c_pi_over_2,
+        -s_pi_over_2,
+        0.0,
+        s_pi_over_2,
+        c_pi_over_2,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    );
+
+    let returned_result = Matrix3::from_heading_pitch_roll_new(&heading_pitch_roll);
+    assert!(Matrix3::equals_epsilon(
+        &returned_result,
+        &expected,
+        CesiumMath::EPSILON15
+    ));
+}
+
+#[test]
+fn from_heading_pitch_roll_works_with_result_parameter() {
+    let s_pi_over_4 = CesiumMath::PI_OVER_FOUR.sin();
+    let c_pi_over_4 = CesiumMath::PI_OVER_FOUR.cos();
+    let s_pi_over_2 = CesiumMath::PI_OVER_TWO.sin();
+    let c_pi_over_2 = CesiumMath::PI_OVER_TWO.cos();
+
+    let tmp = Cartesian3::multiply_by_scalar_new(
+        &Cartesian3::new(0.0, 0.0, 1.0),
+        s_pi_over_4,
+    );
+    let quaternion = Quaternion::new(tmp.x, tmp.y, tmp.z, c_pi_over_4);
+    let heading_pitch_roll = HeadingPitchRoll::from_quaternion_new(&quaternion);
+    let expected = Matrix3::new(
+        c_pi_over_2,
+        -s_pi_over_2,
+        0.0,
+        s_pi_over_2,
+        c_pi_over_2,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    );
+
+    let mut result = Matrix3::default();
+    Matrix3::from_heading_pitch_roll(&heading_pitch_roll, &mut result);
+    assert!(Matrix3::equals_epsilon(
+        &result,
+        &expected,
+        CesiumMath::EPSILON15
+    ));
+}
+
+#[test]
+fn from_heading_pitch_roll_computed_correctly() {
+    // Expected generated via STK Components (mirrors the JS spec verbatim).
+    let expected = Matrix3::new(
+        0.754406506735489,
+        0.418940943945763,
+        0.505330889696038,
+        0.133022221559489,
+        0.656295369162553,
+        -0.742685314912828,
+        -0.642787609686539,
+        0.627506871597133,
+        0.439385041770705,
+    );
+
+    let heading_pitch_roll = HeadingPitchRoll::new(
+        -CesiumMath::to_radians(10.0),
+        -CesiumMath::to_radians(40.0),
+        CesiumMath::to_radians(55.0),
+    );
+    let mut result = Matrix3::default();
+    Matrix3::from_heading_pitch_roll(&heading_pitch_roll, &mut result);
+    for i in 0..9 {
+        assert_approx_eq_f64!(result.elements[i], expected.elements[i], CesiumMath::EPSILON15);
+    }
 }

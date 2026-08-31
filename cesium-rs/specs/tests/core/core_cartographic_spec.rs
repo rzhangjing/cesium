@@ -65,6 +65,25 @@ fn equals() {
 }
 
 #[test]
+fn to_string_formats_like_js() {
+    // Mirror: CartographicSpec it("toString")
+    let cartographic = Cartographic::new(1.123, 2.345, 6.789);
+    assert_eq!(cartographic.to_string(), "(1.123, 2.345, 6.789)");
+}
+
+#[test]
+fn to_string_uses_js_number_semantics() {
+    // Phase 2 diff regression (D5, case carto.toString.g6): Infinity must
+    // print as the JS string `Infinity`, not Rust's `inf`, and integer-valued
+    // components must print without a trailing `.0`.
+    let cartographic = Cartographic::new(0.0, f64::INFINITY, 0.0);
+    assert_eq!(cartographic.to_string(), "(0, Infinity, 0)");
+
+    let cartographic = Cartographic::new(f64::NEG_INFINITY, f64::NAN, -0.0);
+    assert_eq!(cartographic.to_string(), "(-Infinity, NaN, 0)");
+}
+
+#[test]
 fn zero_constant() {
     assert_eq!(Cartographic::ZERO.longitude, 0.0);
     assert_eq!(Cartographic::ZERO.latitude, 0.0);

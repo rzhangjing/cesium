@@ -1,18 +1,12 @@
 //! Ported from `packages/engine/Source/Core/PolygonGeometry.js`.
 //!
 //! A description of a polygon on an ellipsoid.
-//!
-//! DEVIATION: JS `createGeometry` uses `EllipsoidTangentPlane` for 2D
-//! projection and `GeometryPipeline.combineInstances` for merging. The
-//! Rust port uses a cartographic (lon/lat) projection and manual merging.
-//!
-//! DEVIATION: JS `createProjectTo2d` has special handling for polygons
-//! spanning large extents or crossing the equator. The Rust port uses a
-//! simple cartographic projection for all cases.
 
 use std::collections::HashMap;
+use std::f64::consts::PI;
 
 use crate::arc_type::ArcType;
+use crate::bounding_rectangle::BoundingRectangle;
 use crate::bounding_sphere::BoundingSphere;
 use crate::cartesian2::Cartesian2;
 use crate::cartesian3::Cartesian3;
@@ -23,21 +17,27 @@ use crate::coplanar_polygon_geometry::{
     unpack_hierarchy_2d_pub, unpack_hierarchy_3d_pub, PolygonHierarchy2D,
 };
 use crate::ellipsoid::Ellipsoid;
+use crate::ellipsoid_tangent_plane::EllipsoidTangentPlane;
 use crate::geometry::Geometry;
 use crate::geometry_attribute::GeometryAttribute;
+use crate::geometry_instance::{GeometryInstance, GeometryInstanceGeometry};
 use crate::geometry_offset_attribute::GeometryOffsetAttribute;
+use crate::geometry_pipeline::GeometryPipeline;
 use crate::geometry_type::GeometryType;
 use crate::index_datatype::{IndexDatatype, IndexStorage};
 use crate::math::CesiumMath;
+use crate::matrix3::Matrix3;
 use crate::polygon_geometry_library::{
-    PolygonGeometryLibrary, PolygonResultEntry,
+    HierarchyResultEntry, PolygonGeometryLibrary, PolygonResultEntry, PolygonTextureCoordinates,
 };
 use crate::polygon_hierarchy::PolygonHierarchy;
 use crate::polygon_pipeline::PolygonPipeline;
 use crate::primitive_type::PrimitiveType;
+use crate::quaternion::Quaternion;
 use crate::rectangle::Rectangle;
 use crate::stereographic::Stereographic;
 use crate::vertex_format::VertexFormat;
+use crate::winding_order::WindingOrder;
 
 /// A description of a polygon on an ellipsoid. Polygon geometry can be
 /// rendered with both `Primitive` and `GroundPrimitive`.
@@ -670,245 +670,1105 @@ fn read_index(storage: &IndexStorage, index: usize) -> u32 {
     }
 }
 
+/// Port of the module-level `adjustPosHeightsForNormal` helper.
+fn adjust_pos_heights_for_normal(
+    position: &Cartesian3,
+    p1: &mut Cartesian3,
+    p2: &mut Cartesian3,
+    ellipsoid: &Ellipsoid,
+) {
+    let mut carto1 = Cartographic::default();
+    ellipsoid.cartesian_to_cartographic(position, &mut carto1);
+    let height = carto1.height;
+
+    let mut p1_carto = Cartographic::default();
+    ellipsoid.cartesian_to_cartographic(p1, &mut p1_carto);
+    p1_carto.height = height;
+    ellipsoid.cartographic_to_cartesian(&p1_carto, p1);
+
+    let mut p2_carto = Cartographic::default();
+    ellipsoid.cartesian_to_cartographic(p2, &mut p2_carto);
+    p2_carto.height = height - 100.0;
+    ellipsoid.cartographic_to_cartesian(&p2_carto, p2);
+}
+
+/// Port of the module-level `getTangentPlane` helper.
+fn get_tangent_plane(
+    rectangle: &Rectangle,
+    positions: &[Cartesian3],
+    ellipsoid: &Ellipsoid,
+) -> Option<EllipsoidTangentPlane> {
+    if rectangle.height() >= PI || rectangle.width() >= PI {
+        let polar = Stereographic::from_cartesian(&positions[0], None);
+        return Some(polar.tangent_plane());
+    }
+
+    // Use a local tangent plane for smaller extents
+    EllipsoidTangentPlane::from_points(positions, Some(ellipsoid.clone()))
+}
+
+/// Port of the module-level `createProjectTo2d` helper; returns the
+/// multi-point projection closure used by `polygonsFromHierarchy`.
+fn create_project_to_2d(
+    rectangle: Rectangle,
+    outer_positions: Vec<Cartesian3>,
+    ellipsoid: Ellipsoid,
+) -> Box<dyn Fn(&[Cartesian3]) -> Option<Vec<Cartesian2>>> {
+    Box::new(move |positions: &[Cartesian3]| -> Option<Vec<Cartesian2>> {
+        // If the polygon positions span a large enough extent, use a
+        // specialized projection
+        if rectangle.height() >= PI || rectangle.width() >= PI {
+            // polygons that cross the equator must use cylindrical
+            // coordinates to correctly compute winding order.
+            if rectangle.south < 0.0 && rectangle.north > 0.0 {
+                let mut results = Vec::with_capacity(positions.len());
+                let mut cartographic = Cartographic::default();
+                for position in positions {
+                    ellipsoid.cartesian_to_cartographic(position, &mut cartographic);
+                    results.push(Cartesian2::new(
+                        cartographic.longitude / PI,
+                        cartographic.latitude / CesiumMath::PI_OVER_TWO,
+                    ));
+                }
+                return Some(results);
+            }
+
+            return Some(
+                Stereographic::from_cartesian_array(positions, None)
+                    .iter()
+                    .map(|s| s.position)
+                    .collect(),
+            );
+        }
+
+        // Use a local tangent plane for smaller extents
+        let tangent_plane =
+            EllipsoidTangentPlane::from_points(&outer_positions, Some(ellipsoid.clone()))?;
+        Some(tangent_plane.project_points_onto_plane(positions))
+    })
+}
+
+/// Port of the module-level `createProjectPositionTo2d` helper; returns the
+/// single-point projection closure used by `computeAttributes`.
+///
+/// DEVIATION: JS returns closures with inconsistent array/point semantics
+/// (`projectPointsOntoPlane` for the tangent plane path, `fromCartesian`
+/// for the stereographic path) which `computeAttributes` calls with a
+/// one-element array; this port normalizes both paths to single-point
+/// semantics producing the same 2D coordinates.
+fn create_project_position_to_2d(
+    rectangle: Rectangle,
+    outer_ring: Vec<Cartesian3>,
+    ellipsoid: Ellipsoid,
+) -> Box<dyn Fn(&Cartesian3) -> Cartesian2> {
+    // If the polygon positions span a large enough extent, use a
+    // specialized projection
+    if rectangle.height() >= PI || rectangle.width() >= PI {
+        return Box::new(move |position: &Cartesian3| -> Cartesian2 {
+            // polygons that cross the equator must use cylindrical
+            // coordinates to correctly compute winding order.
+            if rectangle.south < 0.0 && rectangle.north > 0.0 {
+                let mut cartographic = Cartographic::default();
+                ellipsoid.cartesian_to_cartographic(position, &mut cartographic);
+                return Cartesian2::new(
+                    cartographic.longitude / PI,
+                    cartographic.latitude / CesiumMath::PI_OVER_TWO,
+                );
+            }
+
+            Stereographic::from_cartesian(position, None).position
+        });
+    }
+
+    let tangent_plane =
+        EllipsoidTangentPlane::from_points(&outer_ring, Some(ellipsoid.clone()));
+    Box::new(move |position: &Cartesian3| -> Cartesian2 {
+        // Use a local tangent plane for smaller extents
+        match &tangent_plane {
+            Some(plane) => plane.project_point_onto_plane(position).unwrap_or_default(),
+            None => Cartesian2::default(),
+        }
+    })
+}
+
+/// Port of the module-level `createSplitPolygons` helper.
+fn create_split_polygons(
+    rectangle: Rectangle,
+    ellipsoid: Ellipsoid,
+    arc_type: ArcType,
+    per_position_height: bool,
+) -> Box<dyn Fn(Vec<Vec<Cartesian3>>) -> Vec<Vec<Cartesian3>>> {
+    Box::new(move |polygons: Vec<Vec<Cartesian3>>| -> Vec<Vec<Cartesian3>> {
+        if !per_position_height
+            && (rectangle.height() >= CesiumMath::PI_OVER_TWO
+                || rectangle.width() >= 2.0 * CesiumMath::PI_OVER_THREE)
+        {
+            return PolygonGeometryLibrary::split_polygons_on_equator(
+                &polygons,
+                &ellipsoid,
+                arc_type,
+            );
+        }
+
+        polygons
+    })
+}
+
+/// Port of the module-level `computeBoundingRectangle` helper.
+fn compute_bounding_rectangle(
+    outer_ring: &[Cartesian3],
+    rectangle: &Rectangle,
+    ellipsoid: &Ellipsoid,
+    st_rotation: f64,
+) -> BoundingRectangle {
+    if rectangle.height() >= PI || rectangle.width() >= PI {
+        return BoundingRectangle::from_rectangle(Some(rectangle), None);
+    }
+
+    let tangent_plane =
+        EllipsoidTangentPlane::from_points(outer_ring, Some(ellipsoid.clone()));
+    match tangent_plane {
+        Some(plane) => {
+            let normal = plane.plane().normal;
+            PolygonGeometryLibrary::compute_bounding_rectangle(
+                &normal,
+                &|position: &Cartesian3, result: &mut Cartesian2| {
+                    if let Some(projected) = plane.project_point_onto_plane(position) {
+                        *result = projected;
+                    }
+                },
+                outer_ring,
+                st_rotation,
+            )
+        }
+        None => BoundingRectangle::default(),
+    }
+}
+
+/// Converts a 2D texture-coordinate hierarchy into a 3D hierarchy with
+/// zero heights so it can flow through `polygons_from_hierarchy` (JS
+/// `dummyFunction` identity projection path).
+fn polygon_hierarchy_2d_to_3d(hierarchy: &PolygonHierarchy2D) -> PolygonHierarchy {
+    PolygonHierarchy::new(
+        hierarchy
+            .positions
+            .iter()
+            .map(|p| Cartesian3::new(p.x, p.y, 0.0))
+            .collect(),
+        hierarchy
+            .holes
+            .iter()
+            .map(polygon_hierarchy_2d_to_3d)
+            .collect(),
+    )
+}
+
 /// Computes the geometric representation of a polygon, including vertices,
 /// indices, and a bounding sphere.
 ///
 /// Port of `PolygonGeometry.createGeometry`.
+///
+/// DEVIATION: JS converts the combined position values to a fresh
+/// `Float64Array`; Rust position values are already `f64` (no-op).
 pub fn create_geometry(polygon_geometry: &PolygonGeometry) -> Option<Geometry> {
+    let vertex_format = &polygon_geometry.vertex_format;
     let ellipsoid = &polygon_geometry.ellipsoid;
+    let granularity = polygon_geometry.granularity;
+    let st_rotation = polygon_geometry.st_rotation;
     let polygon_hierarchy = &polygon_geometry.polygon_hierarchy;
     let per_position_height = polygon_geometry.per_position_height;
-    let vertex_format = &polygon_geometry.vertex_format;
+    let close_top = polygon_geometry.close_top;
+    let close_bottom = polygon_geometry.close_bottom;
+    let arc_type = polygon_geometry.arc_type;
+    let texture_coordinates = &polygon_geometry.texture_coordinates;
+
+    let has_texture_coordinates = texture_coordinates.is_some();
 
     let outer_positions = &polygon_hierarchy.positions;
     if outer_positions.len() < 3 {
         return None;
     }
 
-    // Project positions to 2D using cartographic (lon/lat) projection
-    let project_fn = |positions: &[Cartesian3]| -> Option<Vec<Cartesian2>> {
-        let mut result = Vec::with_capacity(positions.len());
-        let mut carto = Cartographic::default();
-        for p in positions {
-            ellipsoid.cartesian_to_cartographic(p, &mut carto);
-            result.push(Cartesian2::new(carto.longitude, carto.latitude));
-        }
-        Some(result)
-    };
-
+    let rectangle = polygon_geometry.rectangle();
+    let project_to_2d = create_project_to_2d(
+        rectangle,
+        outer_positions.clone(),
+        ellipsoid.clone(),
+    );
+    let split_polygons = create_split_polygons(
+        rectangle,
+        ellipsoid.clone(),
+        arc_type,
+        per_position_height,
+    );
+    let split_polygons_ref: &dyn Fn(Vec<Vec<Cartesian3>>) -> Vec<Vec<Cartesian3>> =
+        &*split_polygons;
     let results = PolygonGeometryLibrary::polygons_from_hierarchy(
         polygon_hierarchy,
-        false,
-        &project_fn,
+        has_texture_coordinates,
+        &*project_to_2d,
         !per_position_height,
         ellipsoid,
-        None,
+        Some(split_polygons_ref),
     );
 
-    if results.hierarchy.is_empty() {
+    let hierarchy = &results.hierarchy;
+    let polygons = &results.polygons;
+
+    let dummy_function: &dyn Fn(&[Cartesian3]) -> Option<Vec<Cartesian2>> =
+        &|positions: &[Cartesian3]| {
+            Some(
+                positions
+                    .iter()
+                    .map(|p| Cartesian2::new(p.x, p.y))
+                    .collect(),
+            )
+        };
+
+    let texture_coordinate_polygons: Option<Vec<PolygonTextureCoordinates>> =
+        if has_texture_coordinates {
+            let tc_hierarchy = polygon_hierarchy_2d_to_3d(texture_coordinates.as_ref().unwrap());
+            let tc_results = PolygonGeometryLibrary::polygons_from_hierarchy(
+                &tc_hierarchy,
+                true,
+                dummy_function,
+                false,
+                ellipsoid,
+                None,
+            );
+            Some(
+                tc_results
+                    .polygons
+                    .iter()
+                    .map(|p| PolygonTextureCoordinates {
+                        positions: p.positions_2d.clone(),
+                    })
+                    .collect(),
+            )
+        } else {
+            None
+        };
+
+    if hierarchy.is_empty() {
         return None;
     }
 
+    let outer_ring = &hierarchy[0].outer_ring;
+    let bounding_rectangle =
+        compute_bounding_rectangle(outer_ring, &rectangle, ellipsoid, st_rotation);
+
+    let mut geometries: Vec<GeometryInstance> = Vec::new();
+
     let height = polygon_geometry.height;
     let extruded_height = polygon_geometry.extruded_height;
-    let extrude = !CesiumMath::equals_epsilon(
-        height,
-        extruded_height,
-        Some(0.0),
-        Some(CesiumMath::EPSILON2),
+    let extrude = polygon_geometry.per_position_height_extrude
+        || !CesiumMath::equals_epsilon(
+            height,
+            extruded_height,
+            Some(0.0),
+            Some(CesiumMath::EPSILON2),
+        );
+
+    let rotation_axis_plane = get_tangent_plane(&rectangle, outer_ring, ellipsoid);
+    // DEVIATION: JS would throw when the tangent plane cannot be built
+    // (origin at the ellipsoid center); this port falls back to UNIT_Z.
+    let fallback_axis = Cartesian3::UNIT_Z;
+    let rotation_axis = rotation_axis_plane
+        .as_ref()
+        .map(|p| p.plane().normal)
+        .unwrap_or(fallback_axis);
+    let project_position_to_2d = create_project_position_to_2d(
+        rectangle,
+        outer_ring.clone(),
+        ellipsoid.clone(),
     );
 
-    let polygons = &results.polygons;
-    let mut geometries: Vec<Geometry> = Vec::new();
+    let mut options = ComputeAttributesOptions {
+        per_position_height,
+        vertex_format,
+        shadow_volume: false,
+        rotation_axis: &rotation_axis,
+        project_to_2d: &*project_position_to_2d,
+        bounding_rectangle: &bounding_rectangle,
+        ellipsoid,
+        st_rotation,
+        bottom: false,
+        top: true,
+        wall: false,
+        extrude: false,
+        offset_attribute: polygon_geometry.offset_attribute,
+    };
 
-    for polygon in polygons {
-        let geo = PolygonGeometryLibrary::create_geometry_from_positions(
-            ellipsoid,
-            polygon,
-            None,
-            polygon_geometry.granularity,
-            per_position_height,
-            vertex_format,
-            polygon_geometry.arc_type,
-        );
-        geometries.push(geo);
+    if extrude {
+        options.extrude = true;
+        options.top = close_top;
+        options.bottom = close_bottom;
+        options.shadow_volume = polygon_geometry.shadow_volume;
+        for i in 0..polygons.len() {
+            let mut split_geometry = create_geometry_from_positions_extruded(
+                ellipsoid,
+                &polygons[i],
+                texture_coordinate_polygons.as_ref().map(|t| &t[i]),
+                granularity,
+                &hierarchy[i],
+                per_position_height,
+                close_top,
+                close_bottom,
+                vertex_format,
+                arc_type,
+            );
+
+            if let Some(top_and_bottom) = split_geometry.top_and_bottom.as_mut() {
+                let geo = top_and_bottom.geometry.as_geometry_mut().unwrap();
+                if close_top && close_bottom {
+                    PolygonGeometryLibrary::scale_to_geodetic_height_extruded(
+                        Some(geo),
+                        height,
+                        extruded_height,
+                        Some(ellipsoid.clone()),
+                        per_position_height,
+                    );
+                } else if close_top {
+                    let mut vals = geo
+                        .attributes
+                        .get("position")
+                        .map(|a| a.values.clone())
+                        .unwrap_or_default();
+                    PolygonPipeline::scale_to_geodetic_height(
+                        Some(&mut vals),
+                        Some(height),
+                        Some(ellipsoid),
+                        Some(!per_position_height),
+                    );
+                    if let Some(attr) = geo.attributes.get_mut("position") {
+                        attr.values = vals;
+                    }
+                } else if close_bottom {
+                    let mut vals = geo
+                        .attributes
+                        .get("position")
+                        .map(|a| a.values.clone())
+                        .unwrap_or_default();
+                    PolygonPipeline::scale_to_geodetic_height(
+                        Some(&mut vals),
+                        Some(extruded_height),
+                        Some(ellipsoid),
+                        Some(true),
+                    );
+                    if let Some(attr) = geo.attributes.get_mut("position") {
+                        attr.values = vals;
+                    }
+                }
+                if close_top || close_bottom {
+                    options.wall = false;
+                    compute_attributes(&options, geo);
+                    geometries.push(top_and_bottom.clone());
+                }
+            }
+
+            options.wall = true;
+            for wall in split_geometry.walls.iter_mut() {
+                let geo = wall.geometry.as_geometry_mut().unwrap();
+                PolygonGeometryLibrary::scale_to_geodetic_height_extruded(
+                    Some(geo),
+                    height,
+                    extruded_height,
+                    Some(ellipsoid.clone()),
+                    per_position_height,
+                );
+                compute_attributes(&options, geo);
+                geometries.push(wall.clone());
+            }
+        }
+    } else {
+        for i in 0..polygons.len() {
+            let mut geometry = PolygonGeometryLibrary::create_geometry_from_positions(
+                ellipsoid,
+                &polygons[i],
+                texture_coordinate_polygons.as_ref().map(|t| &t[i]),
+                granularity,
+                per_position_height,
+                vertex_format,
+                arc_type,
+            );
+            let mut vals = geometry
+                .attributes
+                .get("position")
+                .map(|a| a.values.clone())
+                .unwrap_or_default();
+            PolygonPipeline::scale_to_geodetic_height(
+                Some(&mut vals),
+                Some(height),
+                Some(ellipsoid),
+                Some(!per_position_height),
+            );
+            if let Some(attr) = geometry.attributes.get_mut("position") {
+                attr.values = vals;
+            }
+
+            compute_attributes(&options, &mut geometry);
+
+            if polygon_geometry.offset_attribute.is_some() {
+                let length = geometry
+                    .attributes
+                    .get("position")
+                    .map(|a| a.values.len())
+                    .unwrap_or(0);
+                let offset_value =
+                    if polygon_geometry.offset_attribute == Some(GeometryOffsetAttribute::None) {
+                        0
+                    } else {
+                        1
+                    };
+                let apply_offset = vec![offset_value as f64; length / 3];
+                geometry.attributes.insert(
+                    "applyOffset".to_string(),
+                    GeometryAttribute::new(
+                        ComponentDatatype::UnsignedByte,
+                        1,
+                        false,
+                        apply_offset,
+                    ),
+                );
+            }
+
+            geometries.push(GeometryInstance::new(
+                GeometryInstanceGeometry::Geometry(Box::new(geometry)),
+                None,
+                None,
+                None,
+            ));
+        }
     }
 
     if geometries.is_empty() {
         return None;
     }
 
-    // Scale to height (non-extruded case)
-    if !extrude {
-        for geo in &mut geometries {
-            if let Some(pos_attr) = geo.attributes.get_mut("position") {
-                let mut vals = pos_attr.values.clone();
-                PolygonPipeline::scale_to_geodetic_height(
-                    Some(&mut vals),
-                    Some(height),
-                    Some(ellipsoid),
-                    Some(true),
-                );
-                pos_attr.values = vals;
-            }
-        }
+    let mut combined = GeometryPipeline::combine_instances(&geometries);
+    let mut geometry = combined.remove(0);
 
-        // Add offset attribute if needed
-        if let Some(offset_attr) = polygon_geometry.offset_attribute {
-            for geo in &mut geometries {
-                let length = geo.attributes.get("position").map(|a| a.values.len()).unwrap_or(0);
-                let offset_value = if offset_attr == GeometryOffsetAttribute::None { 0 } else { 1 };
-                let apply_offset = vec![offset_value as f64; length / 3];
-                geo.attributes.insert(
-                    "applyOffset".to_string(),
-                    GeometryAttribute::new(
-                        ComponentDatatype::UnsignedByte,
-                        1,
-                        false,
-                        apply_offset,
-                    ),
-                );
-            }
+    // JS: geometry.indices = IndexDatatype.createTypedArray(vertexCount, indices)
+    let position_count = geometry
+        .attributes
+        .get("position")
+        .map(|a| a.values.len() / 3)
+        .unwrap_or(0);
+    if let Some(indices) = &geometry.indices {
+        let mut values = Vec::with_capacity(indices.len());
+        for i in 0..indices.len() {
+            values.push(read_index(indices, i));
         }
-    } else {
-        // Extruded case: scale to geodetic height extruded
-        for geo in &mut geometries {
-            PolygonGeometryLibrary::scale_to_geodetic_height_extruded(
-                Some(geo),
-                height,
-                extruded_height,
-                Some(ellipsoid.clone()),
-                per_position_height,
-            );
-
-            if let Some(offset_attr) = polygon_geometry.offset_attribute {
-                let length = geo.attributes.get("position").map(|a| a.values.len()).unwrap_or(0);
-                let vertex_count = length / 3;
-                let apply_offset: Vec<f64> = if offset_attr == GeometryOffsetAttribute::Top {
-                    let mut v = vec![0.0f64; vertex_count];
-                    for i in 0..vertex_count / 2 {
-                        v[i] = 1.0;
-                    }
-                    v
-                } else {
-                    let ov = if offset_attr == GeometryOffsetAttribute::None { 0 } else { 1 };
-                    vec![ov as f64; vertex_count]
-                };
-                geo.attributes.insert(
-                    "applyOffset".to_string(),
-                    GeometryAttribute::new(
-                        ComponentDatatype::UnsignedByte,
-                        1,
-                        false,
-                        apply_offset,
-                    ),
-                );
-            }
+        let mut storage = IndexDatatype::create_typed_array(position_count, values.len());
+        for (i, &v) in values.iter().enumerate() {
+            write_index(&mut storage, i, v);
         }
+        geometry.indices = Some(storage);
     }
 
-    // Merge geometries if multiple
-    let final_geometry = if geometries.len() == 1 {
-        geometries.into_iter().next().unwrap()
-    } else {
-        merge_geometries(geometries)
-    };
-
-    // Remove position if vertex_format doesn't request it
-    if !vertex_format.position {
-        let mut geo = final_geometry;
-        geo.attributes.remove("position");
-        // Re-add a dummy position for Geometry validity
-        let pos = geo.attributes.values().next();
-        if pos.is_none() {
-            return None;
-        }
-        Some(Geometry::with_all(
-            geo.attributes,
-            geo.indices,
-            Some(geo.primitive_type),
-            geo.bounding_sphere,
-            GeometryType::None,
-            None,
-            polygon_geometry.offset_attribute.map(|_| "applyOffset".to_string()),
-        ))
-    } else {
-        let mut geo = final_geometry;
-        // Update bounding sphere from position
-        let pos_values = geo.attributes.get("position").map(|a| a.values.clone()).unwrap_or_default();
-        let bounding_sphere = BoundingSphere::from_vertices(&pos_values, None, Some(3), None);
-        geo.bounding_sphere = Some(bounding_sphere);
-        geo.offset_attribute = polygon_geometry.offset_attribute.map(|_| "applyOffset".to_string());
-        Some(geo)
-    }
-}
-
-/// Merge multiple geometries into one, combining attributes and indices.
-fn merge_geometries(geometries: Vec<Geometry>) -> Geometry {
-    let mut merged_attrs: HashMap<String, GeometryAttribute> = HashMap::new();
-    let mut merged_indices_vec: Vec<u32> = Vec::new();
-    let mut vertex_offset = 0u32;
-
-    let attr_keys: Vec<String> = geometries
-        .first()
-        .map(|g| g.attributes.keys().cloned().collect())
-        .unwrap_or_default();
-
-    for key in &attr_keys {
-        let mut merged_values = Vec::new();
-        for geo in &geometries {
-            if let Some(attr) = geo.attributes.get(key) {
-                merged_values.extend_from_slice(&attr.values);
-            }
-        }
-        if !merged_values.is_empty() {
-            let (dt, comp) = geometries
-                .first()
-                .and_then(|g| g.attributes.get(key))
-                .map(|a| (a.component_datatype, a.components_per_attribute))
-                .unwrap_or((ComponentDatatype::Double, 3));
-            merged_attrs.insert(
-                key.clone(),
-                GeometryAttribute::new(dt, comp, false, merged_values),
-            );
-        }
-    }
-
-    for geo in &geometries {
-        let pos_len = geo
+    let bounding_sphere = {
+        let pos_values = geometry
             .attributes
             .get("position")
-            .map(|a| a.values.len() / 3)
-            .unwrap_or(0);
-        if let Some(indices) = &geo.indices {
-            for i in 0..indices.len() {
-                let v = read_index(indices, i);
-                merged_indices_vec.push(v + vertex_offset);
-            }
-        }
-        vertex_offset += pos_len as u32;
+            .map(|a| a.values.clone())
+            .unwrap_or_default();
+        BoundingSphere::from_vertices(&pos_values, None, Some(3), None)
+    };
+
+    if !vertex_format.position {
+        geometry.attributes.remove("position");
     }
 
-    let total_vertices = vertex_offset as usize;
-    let mut merged_indices =
-        IndexDatatype::create_typed_array(total_vertices, merged_indices_vec.len());
-    for (i, &v) in merged_indices_vec.iter().enumerate() {
-        write_index(&mut merged_indices, i, v);
-    }
-
-    let pos_values = merged_attrs
-        .get("position")
-        .map(|a| a.values.clone())
-        .unwrap_or_default();
-    let bounding_sphere = BoundingSphere::from_vertices(&pos_values, None, Some(3), None);
-
-    Geometry::with_all(
-        merged_attrs,
-        Some(merged_indices),
-        Some(PrimitiveType::Triangles),
+    Some(Geometry::with_all(
+        geometry.attributes,
+        geometry.indices,
+        Some(geometry.primitive_type),
         Some(bounding_sphere),
         GeometryType::None,
         None,
+        polygon_geometry
+            .offset_attribute
+            .map(|_| "applyOffset".to_string()),
+    ))
+}
+
+/// The options object consumed by [`compute_attributes`] (JS anonymous
+/// `options` object minus the `geometry` field, which is passed separately).
+struct ComputeAttributesOptions<'a> {
+    vertex_format: &'a VertexFormat,
+    shadow_volume: bool,
+    wall: bool,
+    top: bool,
+    bottom: bool,
+    bounding_rectangle: &'a BoundingRectangle,
+    rotation_axis: &'a Cartesian3,
+    project_to_2d: &'a dyn Fn(&Cartesian3) -> Cartesian2,
+    ellipsoid: &'a Ellipsoid,
+    st_rotation: f64,
+    per_position_height: bool,
+    extrude: bool,
+    offset_attribute: Option<GeometryOffsetAttribute>,
+}
+
+/// Port of the module-level `computeAttributes` function.
+fn compute_attributes(options: &ComputeAttributesOptions, geometry: &mut Geometry) {
+    let vertex_format = options.vertex_format;
+    let flat_positions = geometry
+        .attributes
+        .get("position")
+        .map(|a| a.values.clone())
+        .unwrap_or_default();
+    let flat_texcoords = geometry.attributes.get("st").map(|a| a.values.clone());
+
+    let mut length = flat_positions.len();
+    let wall = options.wall;
+    let top = options.top || wall;
+    let bottom = options.bottom || wall;
+    if vertex_format.st
+        || vertex_format.normal
+        || vertex_format.tangent
+        || vertex_format.bitangent
+        || options.shadow_volume
+    {
+        // PERFORMANCE_IDEA: Compute before subdivision, then just interpolate
+        // during subdivision.
+        let bounding_rectangle = options.bounding_rectangle;
+        let ellipsoid = options.ellipsoid;
+
+        let origin = Cartesian2::new(bounding_rectangle.x, bounding_rectangle.y);
+
+        let mut texture_coordinates = if vertex_format.st {
+            vec![0.0; 2 * (length / 3)]
+        } else {
+            Vec::new()
+        };
+        let mut normals: Vec<f64> = if vertex_format.normal {
+            if options.per_position_height && top && !wall {
+                geometry
+                    .attributes
+                    .get("normal")
+                    .map(|a| a.values.clone())
+                    .unwrap_or_default()
+            } else {
+                vec![0.0; length]
+            }
+        } else {
+            Vec::new()
+        };
+        let mut tangents = if vertex_format.tangent {
+            vec![0.0; length]
+        } else {
+            Vec::new()
+        };
+        let mut bitangents = if vertex_format.bitangent {
+            vec![0.0; length]
+        } else {
+            Vec::new()
+        };
+        let mut extrude_normals = if options.shadow_volume {
+            vec![0.0; length]
+        } else {
+            Vec::new()
+        };
+
+        let mut texture_coord_index = 0usize;
+        let mut attr_index = 0usize;
+
+        let mut recompute_normal = true;
+
+        let mut texture_matrix = Matrix3::IDENTITY;
+        let mut tangent_rotation_matrix = Matrix3::IDENTITY;
+        if options.st_rotation != 0.0 {
+            let rotation = Quaternion::from_axis_angle_new(
+                options.rotation_axis,
+                options.st_rotation,
+            );
+            Matrix3::from_quaternion(&rotation, &mut texture_matrix);
+
+            let rotation = Quaternion::from_axis_angle_new(
+                options.rotation_axis,
+                -options.st_rotation,
+            );
+            Matrix3::from_quaternion(&rotation, &mut tangent_rotation_matrix);
+        }
+
+        let mut bottom_offset = 0usize;
+        let mut bottom_offset2 = 0usize;
+
+        if top && bottom {
+            bottom_offset = length / 2;
+            bottom_offset2 = length / 3;
+
+            length /= 2;
+        }
+
+        let mut i = 0usize;
+        while i < length {
+            let position = Cartesian3::new(
+                flat_positions[i],
+                flat_positions[i + 1],
+                flat_positions[i + 2],
+            );
+
+            if vertex_format.st && flat_texcoords.is_none() {
+                let mut p = Cartesian3::default();
+                Matrix3::multiply_by_vector(&texture_matrix, &position, &mut p);
+                let mut scaled = Cartesian3::default();
+                if ellipsoid.scale_to_geodetic_surface(&p, &mut scaled) {
+                    p = scaled;
+                }
+                // DEVIATION: JS calls the projection closure with a
+                // one-element array; this port uses the single-point closure
+                // directly (see `create_project_position_to_2d`).
+                let st = (options.project_to_2d)(&p);
+                let st = Cartesian2::subtract_new(&st, &origin);
+
+                let stx = CesiumMath::clamp(st.x / bounding_rectangle.width, 0.0, 1.0);
+                let sty = CesiumMath::clamp(st.y / bounding_rectangle.height, 0.0, 1.0);
+                if bottom {
+                    texture_coordinates[texture_coord_index + bottom_offset2] = stx;
+                    texture_coordinates[texture_coord_index + 1 + bottom_offset2] = sty;
+                }
+                if top {
+                    texture_coordinates[texture_coord_index] = stx;
+                    texture_coordinates[texture_coord_index + 1] = sty;
+                }
+
+                texture_coord_index += 2;
+            }
+
+            if vertex_format.normal
+                || vertex_format.tangent
+                || vertex_format.bitangent
+                || options.shadow_volume
+            {
+                let attr_index1 = attr_index + 1;
+                let attr_index2 = attr_index + 2;
+
+                let mut normal = Cartesian3::default();
+                let mut tangent = Cartesian3::default();
+                let mut bitangent = Cartesian3::default();
+                let mut per_pos_tangent = Cartesian3::default();
+                let mut per_pos_bitangent = Cartesian3::default();
+
+                if wall {
+                    if i + 3 < length {
+                        let mut p1 = Cartesian3::new(
+                            flat_positions[i + 3],
+                            flat_positions[i + 4],
+                            flat_positions[i + 5],
+                        );
+
+                        if recompute_normal {
+                            let mut p2 = Cartesian3::new(
+                                flat_positions[i + length],
+                                flat_positions[i + length + 1],
+                                flat_positions[i + length + 2],
+                            );
+                            if options.per_position_height {
+                                adjust_pos_heights_for_normal(
+                                    &position, &mut p1, &mut p2, ellipsoid,
+                                );
+                            }
+                            let p1_delta = Cartesian3::subtract_new(&p1, &position);
+                            let p2_delta = Cartesian3::subtract_new(&p2, &position);
+                            normal = Cartesian3::normalize_new(&Cartesian3::cross_new(
+                                &p2_delta, &p1_delta,
+                            ));
+                            // JS reuses the scratch: after the subtract `p1`
+                            // holds the delta vector for the corner check.
+                            p1 = p1_delta;
+                            recompute_normal = false;
+                        }
+
+                        if Cartesian3::equals_epsilon(
+                            Some(&p1),
+                            Some(&position),
+                            Some(CesiumMath::EPSILON10),
+                            None,
+                        ) {
+                            // if we've reached a corner
+                            recompute_normal = true;
+                        }
+                    }
+
+                    if vertex_format.tangent || vertex_format.bitangent {
+                        ellipsoid.geodetic_surface_normal(&position, &mut bitangent);
+                        if vertex_format.tangent {
+                            tangent = Cartesian3::normalize_new(&Cartesian3::cross_new(
+                                &bitangent, &normal,
+                            ));
+                        }
+                    }
+                } else {
+                    ellipsoid.geodetic_surface_normal(&position, &mut normal);
+                    if vertex_format.tangent || vertex_format.bitangent {
+                        if options.per_position_height {
+                            let per_pos_normal = Cartesian3::new(
+                                normals[attr_index],
+                                normals[attr_index + 1],
+                                normals[attr_index + 2],
+                            );
+                            let per_pos_t = Cartesian3::cross_new(
+                                &Cartesian3::UNIT_Z,
+                                &per_pos_normal,
+                            );
+                            let mut rotated = Cartesian3::default();
+                            Matrix3::multiply_by_vector(
+                                &tangent_rotation_matrix,
+                                &per_pos_t,
+                                &mut rotated,
+                            );
+                            per_pos_tangent = Cartesian3::normalize_new(&rotated);
+                            if vertex_format.bitangent {
+                                per_pos_bitangent = Cartesian3::normalize_new(
+                                    &Cartesian3::cross_new(&per_pos_normal, &per_pos_tangent),
+                                );
+                            }
+                        }
+
+                        tangent = Cartesian3::cross_new(&Cartesian3::UNIT_Z, &normal);
+                        let mut rotated = Cartesian3::default();
+                        Matrix3::multiply_by_vector(
+                            &tangent_rotation_matrix,
+                            &tangent,
+                            &mut rotated,
+                        );
+                        tangent = Cartesian3::normalize_new(&rotated);
+                        if vertex_format.bitangent {
+                            bitangent = Cartesian3::normalize_new(&Cartesian3::cross_new(
+                                &normal, &tangent,
+                            ));
+                        }
+                    }
+                }
+
+                if vertex_format.normal {
+                    if options.wall {
+                        normals[attr_index + bottom_offset] = normal.x;
+                        normals[attr_index1 + bottom_offset] = normal.y;
+                        normals[attr_index2 + bottom_offset] = normal.z;
+                    } else if bottom {
+                        normals[attr_index + bottom_offset] = -normal.x;
+                        normals[attr_index1 + bottom_offset] = -normal.y;
+                        normals[attr_index2 + bottom_offset] = -normal.z;
+                    }
+
+                    if (top && !options.per_position_height) || wall {
+                        normals[attr_index] = normal.x;
+                        normals[attr_index1] = normal.y;
+                        normals[attr_index2] = normal.z;
+                    }
+                }
+
+                if options.shadow_volume {
+                    if wall {
+                        ellipsoid.geodetic_surface_normal(&position, &mut normal);
+                    }
+                    extrude_normals[attr_index + bottom_offset] = -normal.x;
+                    extrude_normals[attr_index1 + bottom_offset] = -normal.y;
+                    extrude_normals[attr_index2 + bottom_offset] = -normal.z;
+                }
+
+                if vertex_format.tangent {
+                    if options.wall {
+                        tangents[attr_index + bottom_offset] = tangent.x;
+                        tangents[attr_index1 + bottom_offset] = tangent.y;
+                        tangents[attr_index2 + bottom_offset] = tangent.z;
+                    } else if bottom {
+                        tangents[attr_index + bottom_offset] = -tangent.x;
+                        tangents[attr_index1 + bottom_offset] = -tangent.y;
+                        tangents[attr_index2 + bottom_offset] = -tangent.z;
+                    }
+
+                    if top {
+                        if options.per_position_height {
+                            tangents[attr_index] = per_pos_tangent.x;
+                            tangents[attr_index1] = per_pos_tangent.y;
+                            tangents[attr_index2] = per_pos_tangent.z;
+                        } else {
+                            tangents[attr_index] = tangent.x;
+                            tangents[attr_index1] = tangent.y;
+                            tangents[attr_index2] = tangent.z;
+                        }
+                    }
+                }
+
+                if vertex_format.bitangent {
+                    if bottom {
+                        bitangents[attr_index + bottom_offset] = bitangent.x;
+                        bitangents[attr_index1 + bottom_offset] = bitangent.y;
+                        bitangents[attr_index2 + bottom_offset] = bitangent.z;
+                    }
+                    if top {
+                        if options.per_position_height {
+                            bitangents[attr_index] = per_pos_bitangent.x;
+                            bitangents[attr_index1] = per_pos_bitangent.y;
+                            bitangents[attr_index2] = per_pos_bitangent.z;
+                        } else {
+                            bitangents[attr_index] = bitangent.x;
+                            bitangents[attr_index1] = bitangent.y;
+                            bitangents[attr_index2] = bitangent.z;
+                        }
+                    }
+                }
+                attr_index += 3;
+            }
+            i += 3;
+        }
+
+        if vertex_format.st && flat_texcoords.is_none() {
+            geometry.attributes.insert(
+                "st".to_string(),
+                GeometryAttribute::new(ComponentDatatype::Float, 2, false, texture_coordinates),
+            );
+        }
+
+        if vertex_format.normal {
+            geometry.attributes.insert(
+                "normal".to_string(),
+                GeometryAttribute::new(ComponentDatatype::Float, 3, false, normals),
+            );
+        }
+
+        if vertex_format.tangent {
+            geometry.attributes.insert(
+                "tangent".to_string(),
+                GeometryAttribute::new(ComponentDatatype::Float, 3, false, tangents),
+            );
+        }
+
+        if vertex_format.bitangent {
+            geometry.attributes.insert(
+                "bitangent".to_string(),
+                GeometryAttribute::new(ComponentDatatype::Float, 3, false, bitangents),
+            );
+        }
+
+        if options.shadow_volume {
+            geometry.attributes.insert(
+                "extrudeDirection".to_string(),
+                GeometryAttribute::new(ComponentDatatype::Float, 3, false, extrude_normals),
+            );
+        }
+    }
+
+    if options.extrude && options.offset_attribute.is_some() {
+        let size = flat_positions.len() / 3;
+        let mut offset_attribute = vec![0.0; size];
+
+        if options.offset_attribute == Some(GeometryOffsetAttribute::Top) {
+            if (top && bottom) || wall {
+                for v in offset_attribute.iter_mut().take(size / 2) {
+                    *v = 1.0;
+                }
+            } else if top {
+                for v in offset_attribute.iter_mut() {
+                    *v = 1.0;
+                }
+            }
+        } else {
+            let offset_value =
+                if options.offset_attribute == Some(GeometryOffsetAttribute::None) {
+                    0.0
+                } else {
+                    1.0
+                };
+            offset_attribute.fill(offset_value);
+        }
+
+        geometry.attributes.insert(
+            "applyOffset".to_string(),
+            GeometryAttribute::new(
+                ComponentDatatype::UnsignedByte,
+                1,
+                false,
+                offset_attribute,
+            ),
+        );
+    }
+}
+
+/// Result of [`create_geometry_from_positions_extruded`] (JS `geos` object).
+struct ExtrudedGeometries {
+    top_and_bottom: Option<GeometryInstance>,
+    walls: Vec<GeometryInstance>,
+}
+
+/// Port of the module-level `createGeometryFromPositionsExtruded` function.
+#[allow(clippy::too_many_arguments)]
+fn create_geometry_from_positions_extruded(
+    ellipsoid: &Ellipsoid,
+    polygon: &PolygonResultEntry,
+    texture_coordinates: Option<&PolygonTextureCoordinates>,
+    granularity: f64,
+    hierarchy: &HierarchyResultEntry,
+    per_position_height: bool,
+    close_top: bool,
+    close_bottom: bool,
+    vertex_format: &VertexFormat,
+    arc_type: ArcType,
+) -> ExtrudedGeometries {
+    let mut geos = ExtrudedGeometries {
+        top_and_bottom: None,
+        walls: Vec::new(),
+    };
+
+    if close_top || close_bottom {
+        let mut top_geo = PolygonGeometryLibrary::create_geometry_from_positions(
+            ellipsoid,
+            polygon,
+            texture_coordinates,
+            granularity,
+            per_position_height,
+            vertex_format,
+            arc_type,
+        );
+
+        let edge_points = top_geo
+            .attributes
+            .get("position")
+            .map(|a| a.values.clone())
+            .unwrap_or_default();
+        let indices = top_geo
+            .indices
+            .clone()
+            .unwrap_or(IndexStorage::U32(Vec::new()));
+        let index_count = indices.len();
+
+        if close_top && close_bottom {
+            let mut top_bottom_positions = edge_points.clone();
+            top_bottom_positions.extend_from_slice(&edge_points);
+
+            let num_positions = top_bottom_positions.len() / 3;
+
+            let mut new_indices =
+                IndexDatatype::create_typed_array(num_positions, index_count * 2);
+            // newIndices.set(indices)
+            for i in 0..index_count {
+                write_index(&mut new_indices, i, read_index(&indices, i));
+            }
+
+            let length = num_positions / 2;
+
+            let mut i = 0usize;
+            while i < index_count {
+                let i0 = read_index(&new_indices, i) + length as u32;
+                let i1 = read_index(&new_indices, i + 1) + length as u32;
+                let i2 = read_index(&new_indices, i + 2) + length as u32;
+
+                write_index(&mut new_indices, i + index_count, i2);
+                write_index(&mut new_indices, i + 1 + index_count, i1);
+                write_index(&mut new_indices, i + 2 + index_count, i0);
+                i += 3;
+            }
+
+            if let Some(attr) = top_geo.attributes.get_mut("position") {
+                attr.values = top_bottom_positions.clone();
+            }
+            if per_position_height && vertex_format.normal {
+                let normals = top_geo
+                    .attributes
+                    .get("normal")
+                    .map(|a| a.values.clone())
+                    .unwrap_or_default();
+                let mut new_normals = vec![0.0; top_bottom_positions.len()];
+                new_normals[..normals.len()].copy_from_slice(&normals);
+                if let Some(attr) = top_geo.attributes.get_mut("normal") {
+                    attr.values = new_normals;
+                }
+            }
+
+            if vertex_format.st && texture_coordinates.is_some() {
+                let texcoords = top_geo
+                    .attributes
+                    .get("st")
+                    .map(|a| a.values.clone())
+                    .unwrap_or_default();
+                let mut new_texcoords = texcoords.clone();
+                new_texcoords.extend_from_slice(&texcoords);
+                new_texcoords.truncate(num_positions * 2);
+                if let Some(attr) = top_geo.attributes.get_mut("st") {
+                    attr.values = new_texcoords;
+                }
+            }
+
+            top_geo.indices = Some(new_indices);
+        } else if close_bottom {
+            let num_positions = edge_points.len() / 3;
+            let mut new_indices =
+                IndexDatatype::create_typed_array(num_positions, index_count);
+
+            let mut i = 0usize;
+            while i < index_count {
+                write_index(&mut new_indices, i, read_index(&indices, i + 2));
+                write_index(&mut new_indices, i + 1, read_index(&indices, i + 1));
+                write_index(&mut new_indices, i + 2, read_index(&indices, i));
+                i += 3;
+            }
+
+            top_geo.indices = Some(new_indices);
+        }
+
+        geos.top_and_bottom = Some(GeometryInstance::new(
+            GeometryInstanceGeometry::Geometry(Box::new(top_geo)),
+            None,
+            None,
+            None,
+        ));
+    }
+
+    let mut outer_ring = hierarchy.outer_ring.clone();
+    let tangent_plane =
+        EllipsoidTangentPlane::from_points(&outer_ring, Some(ellipsoid.clone()));
+    if let Some(plane) = &tangent_plane {
+        let positions_2d = plane.project_points_onto_plane(&outer_ring);
+        let winding_order = PolygonPipeline::compute_winding_order_2d(&positions_2d);
+        if winding_order == WindingOrder::Clockwise {
+            outer_ring.reverse();
+        }
+    }
+
+    let wall_geo = PolygonGeometryLibrary::compute_wall_geometry(
+        &outer_ring,
+        texture_coordinates,
+        ellipsoid,
+        granularity,
+        per_position_height,
+        arc_type,
+    );
+    geos.walls.push(GeometryInstance::new(
+        GeometryInstanceGeometry::Geometry(Box::new(wall_geo)),
         None,
-    )
+        None,
+        None,
+    ));
+
+    for hole in &hierarchy.holes {
+        let mut hole_ring = hole.clone();
+        if let Some(plane) = &tangent_plane {
+            let positions_2d = plane.project_points_onto_plane(&hole_ring);
+            let winding_order = PolygonPipeline::compute_winding_order_2d(&positions_2d);
+            if winding_order == WindingOrder::CounterClockwise {
+                hole_ring.reverse();
+            }
+        }
+
+        let wall_geo = PolygonGeometryLibrary::compute_wall_geometry(
+            &hole_ring,
+            texture_coordinates,
+            ellipsoid,
+            granularity,
+            per_position_height,
+            arc_type,
+        );
+        geos.walls.push(GeometryInstance::new(
+            GeometryInstanceGeometry::Geometry(Box::new(wall_geo)),
+            None,
+            None,
+            None,
+        ));
+    }
+
+    geos
 }

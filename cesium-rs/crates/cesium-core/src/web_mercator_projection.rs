@@ -6,6 +6,7 @@
 use crate::cartesian3::Cartesian3;
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
+use crate::map_projection::MapProjection;
 use crate::math::CesiumMath;
 
 /// The map projection used by Google Maps, Bing Maps, and most of ArcGIS
@@ -113,5 +114,19 @@ impl WebMercatorProjection {
         result.latitude =
             Self::mercator_angle_to_geodetic_latitude(cartesian.y * one_over);
         result.height = cartesian.z;
+    }
+}
+
+impl MapProjection for WebMercatorProjection {
+    fn ellipsoid(&self) -> &Ellipsoid {
+        WebMercatorProjection::ellipsoid(self)
+    }
+
+    fn project(&self, cartographic: &Cartographic) -> Cartesian3 {
+        WebMercatorProjection::project(self, cartographic)
+    }
+
+    fn unproject(&self, cartesian: &Cartesian3) -> Cartographic {
+        WebMercatorProjection::unproject(self, cartesian)
     }
 }

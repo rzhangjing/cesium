@@ -30,18 +30,29 @@
 //! DEVIATION: JS executes `request.requestFunction()` promises; the Rust port
 //! tracks the state machine / statistics / throttling decisions only (actual
 //! async execution is driven by callers). `update` promotes queued requests
-//! to ACTIVE without dispatching them.
+//! to ACTIVE without dispatching them. Caller-owned [`Request`] objects are
+//! tracked by [`crate::request::Request::id`] (standing in for JS object
+//! identity); state transitions are observable via
+//! [`RequestScheduler::tracked_request_state`].
 //! DEVIATION: JS is a stateless namespace over module globals; the Rust port
 //! keeps the same global state behind a mutex with instance-style accessors,
 //! plus a retained unit `RequestScheduler` struct for legacy compatibility.
+//! DEVIATION: `requestCompletedEvent` is a JS `Event` (single-threaded);
+//! because the scheduler is a global static shared across threads, the Rust
+//! port exposes a thread-safe listener registry instead
+//! ([`RequestScheduler::add_request_completed_listener`]).
+//! DEVIATION: cancelling a request rejects the JS deferred promise with
+//! `RuntimeError('Request cancelled: "<url>"')`; the Rust port records the
+//! cancellation in the tracked-state table and callers surface it (see
+//! `ResourceError::RequestCancelled`).
 
 use std::collections::{BinaryHeap, HashMap};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use crate::check;
 use crate::is_blob_uri::is_blob_uri;
 use crate::is_data_uri::is_data_uri;
-use crate::request::Request;
+use crate::request::{PriorityFunction, Request};
 use crate::request_state::RequestState;
 
 /// Statistics used by the request scheduler.
@@ -77,19 +88,48 @@ struct SchedulerState {
     maximum_requests_per_server: usize,
     requests_by_server: HashMap<String, usize>,
     throttle_requests: bool,
+    /// Scheduler-observable state of every request it has seen, keyed by
+    /// [`crate::request::Request::id`] (Rust stand-in for the JS shared
+    /// request object whose `state` field is mutated in place).
+    tracked: HashMap<u64, RequestState>,
 }
 
 /// An entry in the priority heap (owned snapshot of a [`Request`]).
-#[derive(Debug, Clone, PartialEq)]
 struct HeapEntry {
+    id: u64,
     priority: f64,
     url: Option<String>,
     throttle_by_server: bool,
     server_key: Option<String>,
     cancelled: bool,
+    priority_function: Option<PriorityFunction>,
+    /// Whether this entry was started (mirrors JS `request.state === ACTIVE`,
+    /// used by [`cancel_request_entry`] to account statistics).
+    active: bool,
+}
+
+impl Clone for HeapEntry {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            priority: self.priority,
+            url: self.url.clone(),
+            throttle_by_server: self.throttle_by_server,
+            server_key: self.server_key.clone(),
+            cancelled: self.cancelled,
+            priority_function: self.priority_function.clone(),
+            active: self.active,
+        }
+    }
 }
 
 impl Eq for HeapEntry {}
+
+impl PartialEq for HeapEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
 
 impl PartialOrd for HeapEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -120,13 +160,56 @@ impl Default for SchedulerState {
             maximum_requests_per_server: 18,
             requests_by_server: HashMap::new(),
             throttle_requests: true,
+            tracked: HashMap::new(),
         }
     }
 }
 
 fn state() -> &'static Mutex<SchedulerState> {
-    static STATE: std::sync::OnceLock<Mutex<SchedulerState>> = std::sync::OnceLock::new();
+    static STATE: OnceLock<Mutex<SchedulerState>> = OnceLock::new();
     STATE.get_or_init(|| Mutex::new(SchedulerState::default()))
+}
+
+// ── requestCompletedEvent (thread-safe listener registry) ────────────
+
+/// Payload passed to `requestCompletedEvent` listeners: `None` mirrors JS
+/// `raiseEvent()` on success, `Some(message)` mirrors `raiseEvent(error)`.
+type CompletedListener = Box<dyn FnMut(Option<String>) + Send>;
+
+struct CompletedListenerEntry {
+    id: u64,
+    listener: CompletedListener,
+}
+
+struct CompletedEvent {
+    listeners: Vec<CompletedListenerEntry>,
+    next_id: u64,
+}
+
+fn completed_event() -> &'static Mutex<CompletedEvent> {
+    static EVENT: OnceLock<Mutex<CompletedEvent>> = OnceLock::new();
+    EVENT.get_or_init(|| {
+        Mutex::new(CompletedEvent {
+            listeners: Vec::new(),
+            next_id: 1,
+        })
+    })
+}
+
+fn raise_request_completed_event(error: Option<String>) {
+    // DEVIATION: JS `Event.raiseEvent` supports listener reentrancy on the
+    // same thread; here the listener list is taken out of the global so
+    // listeners may add/remove listeners (or call back into the scheduler)
+    // without deadlocking, then restored. Listeners added during a raise
+    // are appended after the pre-existing ones.
+    let mut entries = {
+        let mut event = completed_event().lock().unwrap();
+        std::mem::take(&mut event.listeners)
+    };
+    for entry in entries.iter_mut() {
+        (entry.listener)(error.clone());
+    }
+    completed_event().lock().unwrap().listeners.extend(entries);
 }
 
 /// Schedules and prioritizes network requests.
@@ -287,6 +370,9 @@ impl RequestScheduler {
     /// request was accepted (started or queued) and `None` when it does not
     /// have high enough priority / there is no capacity (JS `undefined`).
     /// The request's `state` and `server_key` are updated in place.
+    ///
+    /// DEVIATION: JS debug-checks `request.requestFunction` too; the Rust
+    /// port has no request function (execution is caller-driven).
     pub fn request(request: &mut Request) -> Option<()> {
         //>>includeStart('debug', pragmas.debug);
         if cfg!(debug_assertions) {
@@ -296,6 +382,8 @@ impl RequestScheduler {
 
         let url = request.url.clone().unwrap_or_default();
         if is_data_uri(Some(&url)) || is_blob_uri(Some(&url)) {
+            // Skip the scheduler for data/blob uris.
+            raise_request_completed_event(None);
             request.state = RequestState::Received;
             return Some(());
         }
@@ -326,14 +414,22 @@ impl RequestScheduler {
             return None;
         }
 
+        // updatePriority(request)
+        if let Some(priority_function) = request.priority_function().cloned() {
+            request.priority = priority_function.lock().unwrap()();
+        }
+
         // Insert into the priority heap and see if a request was bumped off.
         // If this request is the lowest priority it will be returned.
         let entry = HeapEntry {
+            id: request.id(),
             priority: request.priority,
             url: request.url.clone(),
             throttle_by_server: request.throttle_by_server,
             server_key: request.server_key.clone(),
             cancelled: false,
+            priority_function: request.priority_function().cloned(),
+            active: false,
         };
 
         let removed = if state.request_heap.len() >= state.priority_heap_length {
@@ -357,9 +453,7 @@ impl RequestScheduler {
         };
 
         if let Some(removed_request) = removed {
-            if removed_request.url == request.url
-                && removed_request.priority == request.priority
-            {
+            if removed_request.id == request.id() {
                 // Request does not have high enough priority to be issued
                 return None;
             }
@@ -367,6 +461,8 @@ impl RequestScheduler {
             // heap, so cancel it
             cancel_request_entry(&mut state, removed_request);
         }
+
+        state.tracked.insert(request.id(), RequestState::Issued);
 
         // issueRequest(request)
         if request.state == RequestState::Unissued {
@@ -396,6 +492,15 @@ impl RequestScheduler {
             }
         }
 
+        // Update priority of issued requests and resort the heap.
+        let mut issued: Vec<HeapEntry> = state.request_heap.drain().collect();
+        for entry in issued.iter_mut() {
+            if let Some(priority_function) = &entry.priority_function {
+                entry.priority = priority_function.lock().unwrap()();
+            }
+        }
+        state.request_heap.extend(issued);
+
         // Get the number of open slots and fill with the highest priority
         // requests.
         let open_slots = state
@@ -403,7 +508,7 @@ impl RequestScheduler {
             .saturating_sub(state.active_requests.len());
         let mut filled_slots = 0;
         while filled_slots < open_slots && !state.request_heap.is_empty() {
-            let request = state.request_heap.pop().unwrap();
+            let mut request = state.request_heap.pop().unwrap();
             if request.cancelled {
                 cancel_request_entry(&mut state, request);
                 continue;
@@ -420,6 +525,8 @@ impl RequestScheduler {
             }
 
             // startRequest: mark active and account statistics.
+            request.active = true;
+            state.tracked.insert(request.id, RequestState::Active);
             state.statistics.number_of_active_requests += 1;
             state.statistics.number_of_active_requests_ever += 1;
             *state
@@ -433,16 +540,47 @@ impl RequestScheduler {
         update_statistics(&mut state);
     }
 
-    /// Marks a tracked active request as received (successful completion),
-    /// freeing its slot.
+    /// Marks a request as cancelled by its [`crate::request::Request::id`].
+    ///
+    /// Rust stand-in for JS `request.cancel()` (the scheduler holds owned
+    /// snapshots, so the flag is applied to the tracked copy); the
+    /// cancellation takes effect on the next [`RequestScheduler::update`],
+    /// mirroring JS.
+    pub fn cancel_request(id: u64) {
+        let mut state = state().lock().unwrap();
+        // BinaryHeap has no mutable iteration; drain, flag, and rebuild.
+        let mut entries: Vec<HeapEntry> = state.request_heap.drain().collect();
+        for entry in entries.iter_mut() {
+            if entry.id == id {
+                entry.cancelled = true;
+            }
+        }
+        state.request_heap.extend(entries);
+        for entry in state.active_requests.iter_mut() {
+            if entry.id == id {
+                entry.cancelled = true;
+            }
+        }
+    }
+
+    /// The scheduler-observable state of a request, by
+    /// [`crate::request::Request::id`]. `None` if the scheduler never saw
+    /// the request (or it was cleared).
+    ///
+    /// DEVIATION: Rust stand-in for reading the shared JS `request.state`.
+    pub fn tracked_request_state(id: u64) -> Option<RequestState> {
+        state().lock().unwrap().tracked.get(&id).copied()
+    }
+
+    /// Marks a tracked request as received (successful completion) by its
+    /// [`crate::request::Request::id`], freeing its slot and raising
+    /// `requestCompletedEvent`.
     ///
     /// DEVIATION: Rust-side helper standing in for the JS
     /// `getRequestReceivedFunction` closure resolution.
-    pub fn complete_request(url: &str) {
+    pub fn complete_request_with_id(id: u64) {
         let mut state = state().lock().unwrap();
-        if let Some(pos) = state.active_requests.iter().position(|e| {
-            e.url.as_deref() == Some(url)
-        }) {
+        if let Some(pos) = state.active_requests.iter().position(|e| e.id == id) {
             let entry = state.active_requests.remove(pos);
             state.statistics.number_of_active_requests =
                 state.statistics.number_of_active_requests.saturating_sub(1);
@@ -454,18 +592,21 @@ impl RequestScheduler {
                     *count = count.saturating_sub(1);
                 }
             }
+            state.tracked.insert(id, RequestState::Received);
+            drop(state);
+            raise_request_completed_event(None);
         }
     }
 
-    /// Marks a tracked active request as failed.
+    /// Marks a tracked request as failed by its
+    /// [`crate::request::Request::id`], raising `requestCompletedEvent`
+    /// with the error.
     ///
     /// DEVIATION: Rust-side helper standing in for the JS
     /// `getRequestFailedFunction` closure resolution.
-    pub fn fail_request(url: &str) {
+    pub fn fail_request_with_id(id: u64, error: &str) {
         let mut state = state().lock().unwrap();
-        if let Some(pos) = state.active_requests.iter().position(|e| {
-            e.url.as_deref() == Some(url)
-        }) {
+        if let Some(pos) = state.active_requests.iter().position(|e| e.id == id) {
             let entry = state.active_requests.remove(pos);
             state.statistics.number_of_failed_requests += 1;
             state.statistics.number_of_active_requests =
@@ -478,7 +619,86 @@ impl RequestScheduler {
                     *count = count.saturating_sub(1);
                 }
             }
+            state.tracked.insert(id, RequestState::Failed);
+            drop(state);
+            raise_request_completed_event(Some(error.to_string()));
         }
+    }
+
+    /// Marks a tracked active request as received (successful completion),
+    /// freeing its slot.
+    ///
+    /// DEVIATION: Rust-side helper standing in for the JS
+    /// `getRequestReceivedFunction` closure resolution.
+    pub fn complete_request(url: &str) {
+        let id = state()
+            .lock()
+            .unwrap()
+            .active_requests
+            .iter()
+            .find(|e| e.url.as_deref() == Some(url))
+            .map(|e| e.id);
+        if let Some(id) = id {
+            Self::complete_request_with_id(id);
+        }
+    }
+
+    /// Marks a tracked active request as failed.
+    ///
+    /// DEVIATION: Rust-side helper standing in for the JS
+    /// `getRequestFailedFunction` closure resolution.
+    pub fn fail_request(url: &str) {
+        let id = state()
+            .lock()
+            .unwrap()
+            .active_requests
+            .iter()
+            .find(|e| e.url.as_deref() == Some(url))
+            .map(|e| e.id);
+        if let Some(id) = id {
+            Self::fail_request_with_id(id, "");
+        }
+    }
+
+    // ── requestCompletedEvent ────────────────────────────────────────
+
+    /// Registers a listener raised whenever a request completes (with
+    /// `Some(error)` when it failed, `None` on success).
+    ///
+    /// Mirrors `RequestScheduler.requestCompletedEvent.addEventListener`.
+    /// Returns the listener id used by
+    /// [`RequestScheduler::remove_request_completed_listener`].
+    pub fn add_request_completed_listener(
+        listener: impl FnMut(Option<String>) + Send + 'static,
+    ) -> u64 {
+        let mut event = completed_event().lock().unwrap();
+        let id = event.next_id;
+        event.next_id += 1;
+        event.listeners.push(CompletedListenerEntry {
+            id,
+            listener: Box::new(listener),
+        });
+        id
+    }
+
+    /// Removes a previously registered `requestCompletedEvent` listener.
+    ///
+    /// Mirrors invoking the `removeCallback` returned by `addEventListener`.
+    pub fn remove_request_completed_listener(id: u64) -> bool {
+        let mut event = completed_event().lock().unwrap();
+        if let Some(pos) = event.listeners.iter().position(|e| e.id == id) {
+            event.listeners.remove(pos);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Number of `requestCompletedEvent` listeners.
+    ///
+    /// Mirrors `requestCompletedEvent.numberOfListeners`.
+    pub fn number_of_request_completed_listeners() -> usize {
+        completed_event().lock().unwrap().listeners.len()
     }
 
     /// For testing only. Clears any requests that may not have completed
@@ -495,9 +715,18 @@ impl RequestScheduler {
             cancel_request_entry(&mut state, request);
         }
         state.number_of_active_requests_by_server.clear();
+        state.tracked.clear();
 
         // Clear stats
         state.statistics = SchedulerStatistics::default();
+    }
+
+    /// For testing only. Clears the per-server throttling overrides.
+    ///
+    /// Mirrors `RequestScheduler.requestsByServer = {}` in the spec
+    /// `beforeEach`.
+    pub fn clear_requests_by_server_for_specs() {
+        state().lock().unwrap().requests_by_server.clear();
     }
 
     /// For testing only: number of active requests for a server key.
@@ -516,6 +745,19 @@ impl RequestScheduler {
     /// For testing only: number of requests currently in the priority heap.
     pub fn request_heap_length() -> usize {
         state().lock().unwrap().request_heap.len()
+    }
+
+    /// For testing only: priorities of the queued heap requests in the
+    /// order they would be popped (best first), without mutating the heap.
+    ///
+    /// Rust stand-in for popping `RequestScheduler.requestHeap` in specs.
+    pub fn request_heap_pop_order_for_specs() -> Vec<f64> {
+        let mut heap = state().lock().unwrap().request_heap.clone();
+        let mut priorities = Vec::with_capacity(heap.len());
+        while let Some(entry) = heap.pop() {
+            priorities.push(entry.priority);
+        }
+        priorities
     }
 
     /// For testing only: number of active requests.
@@ -569,6 +811,7 @@ fn start_request_inner(state: &mut SchedulerState, request: &mut Request, server
         request.state = RequestState::Issued;
     }
     request.state = RequestState::Active;
+    state.tracked.insert(request.id(), RequestState::Active);
     state.statistics.number_of_active_requests += 1;
     state.statistics.number_of_active_requests_ever += 1;
     *state
@@ -576,21 +819,24 @@ fn start_request_inner(state: &mut SchedulerState, request: &mut Request, server
         .entry(server_key.to_string())
         .or_insert(0) += 1;
     state.active_requests.push(HeapEntry {
+        id: request.id(),
         priority: request.priority,
         url: request.url.clone(),
         throttle_by_server: request.throttle_by_server,
         server_key: request.server_key.clone(),
         cancelled: false,
+        priority_function: request.priority_function().cloned(),
+        active: true,
     });
     // DEVIATION: JS calls request.requestFunction() here.
 }
 
 fn cancel_request_entry(state: &mut SchedulerState, request: HeapEntry) {
-    let active = state
-        .active_requests
-        .iter()
-        .any(|e| e.url == request.url && e.priority == request.priority);
+    // JS cancelRequest checks `request.state === RequestState.ACTIVE`; the
+    // Rust entry carries that flag directly.
+    let active = request.active;
     state.statistics.number_of_cancelled_requests += 1;
+    state.tracked.insert(request.id, RequestState::Cancelled);
 
     if active {
         state.statistics.number_of_active_requests =
@@ -603,7 +849,9 @@ fn cancel_request_entry(state: &mut SchedulerState, request: HeapEntry) {
         state.statistics.number_of_cancelled_active_requests += 1;
     }
     // DEVIATION: JS rejects the deferred promise with
-    // RuntimeError(`Request cancelled: "${request.url}"`).
+    // RuntimeError(`Request cancelled: "${request.url}"`) and calls
+    // `request.cancelFunction()`; callers observe the Cancelled tracked
+    // state instead.
 }
 
 fn update_statistics(state: &mut SchedulerState) {

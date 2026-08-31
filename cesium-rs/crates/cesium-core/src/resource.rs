@@ -43,9 +43,9 @@
 //! duck-typed `{ getURL }` object.
 //! DEVIATION: `retryCallback` is a synchronous `Fn(&ResourceError) -> bool`;
 //! JS allows async callbacks returning `Promise<boolean>`.
-//! DEVIATION: `RequestScheduler` throttling is not wired into `fetch` yet
-//! (scheduler materialization is a separate batch); requests are issued
-//! immediately, matching `request.throttle === false`.
+//! DEVIATION: when the request scheduler rejects a fetch (no capacity /
+//! bumped from the priority heap) JS `fetch()` returns `undefined`; the Rust
+//! port returns `Err(ResourceError::RequestThrottled)` instead.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -57,6 +57,8 @@ use crate::get_base_uri::get_base_uri;
 use crate::get_extension_from_uri::get_extension_from_uri;
 use crate::is_blob_uri::is_blob_uri;
 use crate::is_data_uri::is_data_uri;
+use crate::request::Request;
+use crate::request_scheduler::RequestScheduler;
 use crate::request_state::RequestState;
 
 /// Trait abstracting HTTP backend for Resource.
@@ -93,6 +95,16 @@ pub enum ResourceError {
     InvalidUrl(String),
     /// Mirrors JS `RuntimeError("The Resource is already being fetched.")`.
     AlreadyFetching(String),
+    /// The request scheduler rejected the request (no capacity / bumped off
+    /// the priority heap).
+    ///
+    /// DEVIATION: JS `fetch()` returns `undefined` in this case.
+    RequestThrottled,
+    /// The request was cancelled while queued/active.
+    ///
+    /// Mirrors JS deferred rejection with
+    /// `RuntimeError('Request cancelled: "<url>"')`.
+    RequestCancelled(String),
 }
 
 impl std::fmt::Display for ResourceError {
@@ -108,6 +120,10 @@ impl std::fmt::Display for ResourceError {
             }
             Self::InvalidUrl(msg) => write!(f, "Invalid URL: {msg}"),
             Self::AlreadyFetching(msg) => write!(f, "RuntimeError: {msg}"),
+            Self::RequestThrottled => {
+                write!(f, "Request throttled by the request scheduler")
+            }
+            Self::RequestCancelled(msg) => write!(f, "RuntimeError: {msg}"),
         }
     }
 }
@@ -157,6 +173,11 @@ pub struct ResourceOptions {
     pub retry_attempts: Option<u32>,
     /// If true (default), parse the url for query parameters.
     pub parse_url: Option<bool>,
+    /// A [`Request`] used by the request scheduler when fetching.
+    ///
+    /// Mirrors `options.request` (JS `this.request = options.request ?? new
+    /// Request()`).
+    pub scheduler_request: Option<Request>,
 }
 
 /// Options for [`Resource::get_derived_resource_with_options`].
@@ -268,6 +289,11 @@ pub struct Resource {
     retry_count: u32,
     /// Internal request state used by `checkAndResetRequest`.
     request_state: RequestState,
+    /// The scheduler request used when fetching.
+    ///
+    /// Mirrors JS `this.request` (a `Request` instance passed to
+    /// `RequestScheduler.request`).
+    scheduler_request: Request,
 }
 
 impl Resource {
@@ -344,6 +370,7 @@ impl Resource {
             retry_attempts: options.retry_attempts.unwrap_or(0),
             retry_count: 0,
             request_state: RequestState::Unissued,
+            scheduler_request: options.scheduler_request.unwrap_or_default(),
         };
 
         let parse_url = options.parse_url.unwrap_or(true);
@@ -708,6 +735,7 @@ impl Resource {
             retry_attempts: self.retry_attempts,
             retry_count: 0,
             request_state: RequestState::Unissued,
+            scheduler_request: self.scheduler_request.clone_request(),
         }
     }
 
@@ -773,6 +801,15 @@ impl Resource {
         self.request = Some(options);
     }
 
+    /// The scheduler request used when fetching.
+    ///
+    /// Mirrors the public JS `resource.request` (the `Request` instance
+    /// scheduled by `RequestScheduler`; distinct from the Rust
+    /// [`RequestOptions`] HTTP options).
+    pub fn scheduler_request(&self) -> &Request {
+        &self.scheduler_request
+    }
+
     // ── Fetch methods ────────────────────────────────────────────────
 
     /// Asynchronously loads the given resource.
@@ -782,8 +819,15 @@ impl Resource {
     /// - data URI decoding short-circuit (JS `loadWithXhr` dataUriRegex branch)
     /// - headers combine (options headers take precedence over resource headers)
     /// - `retryOnError` -> reset to UNISSUED and re-fetch (loop here)
+    /// - the request is scheduled through [`RequestScheduler::request`];
+    ///   throttled requests wait for promotion by
+    ///   [`RequestScheduler::update`] before the backend fetch runs, and
+    ///   completion/failure releases the scheduler slot
+    ///   (JS `requestFunction`/`getRequestReceivedFunction` /
+    ///   `getRequestFailedFunction` flow).
     ///
-    /// DEVIATION: RequestScheduler throttling is not applied yet.
+    /// DEVIATION: when the scheduler rejects the request (JS returns
+    /// `undefined`), `Err(ResourceError::RequestThrottled)` is returned.
     pub async fn fetch(
         &mut self,
         backend: &(impl ResourceBackend + ?Sized),
@@ -800,17 +844,69 @@ impl Resource {
         }
 
         loop {
+            // JS `_makeRequest`: request.url = resource.url, then
+            // RequestScheduler.request(request).
+            self.scheduler_request.url = Some(self.url());
+            self.scheduler_request.state = RequestState::Unissued;
+            self.scheduler_request.cancelled = false;
+            if RequestScheduler::request(&mut self.scheduler_request).is_none() {
+                // The request did not have high enough priority to be
+                // issued (JS: fetch returns undefined).
+                self.request_state = RequestState::Unissued;
+                return Err(ResourceError::RequestThrottled);
+            }
+
+            let request_id = self.scheduler_request.id();
+            // data/blob uris bypass the scheduler (state == Received).
+            let bypassed_scheduler =
+                self.scheduler_request.state == RequestState::Received;
+
+            if !bypassed_scheduler && self.scheduler_request.state == RequestState::Issued {
+                // Throttled: wait until the scheduler promotes the request
+                // to ACTIVE (JS: the deferred promise resolves when
+                // startRequest runs; Scene drives update() every frame, so
+                // promotion never happens synchronously at request time —
+                // yield first to mirror that frame boundary).
+                loop {
+                    yield_now().await;
+                    RequestScheduler::update();
+                    match RequestScheduler::tracked_request_state(request_id) {
+                        Some(RequestState::Active) => {
+                            self.scheduler_request.state = RequestState::Active;
+                            break;
+                        }
+                        Some(RequestState::Cancelled) => {
+                            self.request_state = RequestState::Unissued;
+                            return Err(ResourceError::RequestCancelled(format!(
+                                "Request cancelled: \"{}\"",
+                                self.url()
+                            )));
+                        }
+                        _ => yield_now().await,
+                    }
+                }
+            }
+
             self.request_state = RequestState::Active;
             let result = self.fetch_once(backend, &params).await;
             match result {
                 Ok(response) => {
+                    if !bypassed_scheduler {
+                        RequestScheduler::complete_request_with_id(request_id);
+                    }
                     self.request_state = RequestState::Received;
                     // Reset so the resource can be fetched again.
                     self.request_state = RequestState::Unissued;
                     return Ok(response);
                 }
                 Err(error) => {
-                    // JS: only retry when request.state === RequestState.FAILED
+                    if !bypassed_scheduler {
+                        // JS: only retry when request.state === RequestState.FAILED
+                        RequestScheduler::fail_request_with_id(
+                            request_id,
+                            &error.to_string(),
+                        );
+                    }
                     self.request_state = RequestState::Failed;
                     if self.retry_on_error(&error) {
                         // Reset request so it can try again
@@ -1102,6 +1198,7 @@ impl Default for Resource {
             retry_attempts: 0,
             retry_count: 0,
             request_state: RequestState::Unissued,
+            scheduler_request: Request::default(),
         }
     }
 }
@@ -1124,6 +1221,35 @@ fn check_and_reset_request(state: &mut RequestState) -> Result<(), ResourceError
     }
     *state = RequestState::Unissued;
     Ok(())
+}
+
+/// A cooperative yield for the throttled-fetch wait loop.
+///
+/// DEVIATION: JS awaits the scheduler's deferred promise; the Rust wait
+/// loop polls `RequestScheduler::update()` and yields to the executor so
+/// other fetches can complete and free slots (tokio is dev-only, so this is
+/// a hand-rolled one-shot yield).
+struct YieldNow(bool);
+
+impl std::future::Future for YieldNow {
+    type Output = ();
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<()> {
+        if self.0 {
+            std::task::Poll::Ready(())
+        } else {
+            self.0 = true;
+            cx.waker().wake_by_ref();
+            std::task::Poll::Pending
+        }
+    }
+}
+
+async fn yield_now() {
+    YieldNow(false).await
 }
 
 // ── Query string helpers (mirror private functions in Resource.js) ───

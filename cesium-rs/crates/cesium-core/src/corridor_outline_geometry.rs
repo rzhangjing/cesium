@@ -537,7 +537,11 @@ fn combine(
             CorridorCorner::LeftPositions(l) => {
                 back -= 3;
                 let start = ((back + 3 - 2) as usize / 3) as u32;
-                wall_indices.push(start - 1);
+                // JS: `wallIndices.push(LR)` — `LR` carries over from the
+                // previous edge loop and equals `front / 3` at corner entry
+                // (CZ-01 differential: pushing `start - 1` here shifted the
+                // first corner's wall index by ±1 relative to CesiumJS).
+                wall_indices.push((front as usize / 3) as u32);
                 for j in 0..l.len() / 3 {
                     let outside_point =
                         Cartesian3::from_array_new(l, Some(j * 3));
@@ -566,7 +570,10 @@ fn combine(
             CorridorCorner::RightPositions(r) => {
                 front += 3;
                 let start = (front as usize / 3 - 1) as u32;
-                wall_indices.push(start);
+                // JS: `wallIndices.push(UR)` — `UR` carries over from the
+                // previous edge loop and equals `(back - 2) / 3` at corner
+                // entry (mirrors the LeftPositions `push(LR)` fix above).
+                wall_indices.push(((back - 2) as usize / 3) as u32);
                 for j in 0..r.len() / 3 {
                     let outside_point =
                         Cartesian3::from_array_new(r, Some(j * 3));

@@ -369,7 +369,7 @@ CesiumJS → cesium-rs 文件级移植状态总台账。
 
 ## widgets（packages/widgets/Source → cesium-widgets）
 
-粗粒度统计：JS 源文件 54 个（Viewer/Animation/Timeline 等）；`crates/cesium-widgets/src` 共 56 个 `.rs` 模块。UI 控件为开关字段桩，引擎侧逻辑保留（见 deviations.md）。
+粗粒度统计：JS 源文件 54 个（Viewer/Animation/Timeline 等）；`crates/cesium-widgets/src` 共 57 个 `.rs` 模块（任务 #31 复核实测）。UI 控件为开关字段桩，引擎侧逻辑保留（见 deviations.md）。
 
 | JS 文件 | Rust 模块 | 状态 | 备注 |
 | --- | --- | --- | --- |
@@ -377,17 +377,19 @@ CesiumJS → cesium-rs 文件级移植状态总台账。
 
 ---
 
-## 完成状态概要（2026-08-24 A10 收尾）
+## 完成状态概要（2026-08-24 A10 收尾；计数经任务 #31 / R12 复核刷新）
+
+> 复核注记（任务 #31）：Rust 模块列按 crate `src/*.rs` 实测刷新（core 310 / scene 524 / widgets 57 / shaders 13）；Spec 测试状态合计行按修复任务 #33–#37 完成后全量结果（3187 passed / 0 failed / 330 ignored）刷新，#40–#42 在途。
 
 | 模块 | JS 源文件 | Rust 模块 | 移植状态 | Spec 测试状态 | 备注 |
 | --- | ---: | ---: | --- | --- | --- |
-| Core | 294 | 294 | tested 132 / ported 42 / not_started 120 | 2101 passed, 221 ignored | 详见 Core 表 |
-| Scene | 385 | 519 | ported | 228 passed (GPU-required 批次) | camera/quadtree/3D Tiles/表达式/glTF |
+| Core | 294 | 310 | tested 132 / ported 42 / not_started 120 | 2101 passed, 221 ignored | 详见 Core 表 |
+| Scene | 385 | 524 | ported | 228 passed (GPU-required 批次) | camera/quadtree/3D Tiles/表达式/glTF |
 | Renderer | 47 | 48 | ported | 23 passed, 33 GPU-required | 5 spec 文件已移植 |
 | DataSources | 109 | 110 | ported | 256 passed, 38 ignored | Entity/Property/CZML/GeoJSON 已实质化 |
-| Shaders | 318 | 12 modules | ported | 17 passed | naga/WGSL 验证 |
+| Shaders | 318 | 13 modules | ported | 17 passed | naga/WGSL 验证 |
 | Workers | 53 | 57 | ported | 18 passed | 纯函数 worker 全覆盖 |
 | Widget (engine) | 3 | 3 | ported | 0 passed | winit/wgpu 替代 DOM |
-| widgets (packages) | 54 | 56 | ported | 0 passed | 待 DomSurface 集成 |
+| widgets (packages) | 54 | 57 | ported | 133 passed, 54 ignored | ViewModel 镜像 spec（f9 实测），DomSurface 待集成 |
 | Model (glTF) | 73 | — | ported | 0 passed (glTF 批次已含部分) | 待 Renderer 集成测试 |
-| **合计** | **1336** | **~1099** | — | **2844 passed, 326 ignored, 0 failed** | — |
+| **合计** | **1336** | **~1119** | — | **3187 passed, 330 ignored, 0 failed** | 任务 #31 复核基线（#40–#42 在途） |

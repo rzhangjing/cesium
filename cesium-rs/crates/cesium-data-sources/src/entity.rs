@@ -15,6 +15,7 @@ use crate::label_graphics::LabelGraphics;
 use crate::point_graphics::PointGraphics;
 use crate::polyline_graphics::PolylineGraphics;
 use crate::polygon_graphics::PolygonGraphics;
+use crate::rectangle_graphics::RectangleGraphics;
 use crate::model_graphics::ModelGraphics;
 use crate::property::PropertyResult;
 use crate::property_bag::PropertyBag;
@@ -127,6 +128,8 @@ pub struct Entity {
     pub polyline: Option<PolylineGraphics>,
     /// The polygon graphics.
     pub polygon: Option<PolygonGraphics>,
+    /// The rectangle graphics.
+    pub rectangle: Option<RectangleGraphics>,
     /// The model graphics.
     pub model: Option<ModelGraphics>,
     /// The parent entity ID.
@@ -167,6 +170,7 @@ impl Entity {
             point: None,
             polyline: None,
             polygon: None,
+            rectangle: None,
             model: None,
             parent_id: None,
             properties: PropertyBag::new(),
@@ -366,6 +370,15 @@ impl Entity {
         }
     }
 
+    /// Sets the rectangle graphics (raises `definitionChanged` on replacement).
+    pub fn set_rectangle(&mut self, value: Option<RectangleGraphics>) {
+        let changed = !matches!((&self.rectangle, &value), (None, None));
+        if changed {
+            self.rectangle = value;
+            self.raise_definition_changed("rectangle", PropertyResult::None, PropertyResult::None);
+        }
+    }
+
     /// Sets the model graphics (raises `definitionChanged` on replacement).
     pub fn set_model(&mut self, value: Option<ModelGraphics>) {
         let changed = !matches!((&self.model, &value), (None, None));
@@ -488,6 +501,9 @@ impl Entity {
         if other.polygon.is_some() {
             self.set_polygon(other.polygon.clone());
         }
+        if other.rectangle.is_some() {
+            self.set_rectangle(other.rectangle.clone());
+        }
         if other.model.is_some() {
             self.set_model(other.model.clone());
         }
@@ -523,6 +539,7 @@ impl Entity {
             || self.point.is_some()
             || self.polyline.is_some()
             || self.polygon.is_some()
+            || self.rectangle.is_some()
             || self.model.is_some()
     }
 }

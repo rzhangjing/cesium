@@ -4,8 +4,11 @@ use cesium_core::cartesian3::Cartesian3;
 use cesium_core::cartesian4::Cartesian4;
 use cesium_core::math::CesiumMath;
 use cesium_core::matrix3::Matrix3;
-use cesium_core::matrix4::Matrix4;
+use cesium_core::matrix4::{CameraView, Matrix4, Viewport};
+use cesium_core::quaternion::Quaternion;
+use cesium_core::translation_rotation_scale::TranslationRotationScale;
 use cesium_test_utils::assert_approx_eq_f64;
+use cesium_test_utils::expect_to_throw_dev_error;
 
 // --- constructor ---
 
@@ -351,4 +354,270 @@ fn identity_is_correct() {
             assert_eq!(Matrix4::IDENTITY.elements[i], 0.0);
         }
     }
+}
+
+// =====================================================================
+// CZ-06: projection matrix family (Matrix4Spec.js)
+// =====================================================================
+
+fn assert_matrix_eq_epsilon(actual: &Matrix4, expected: &Matrix4, epsilon: f64) {
+    for i in 0..16 {
+        assert_approx_eq_f64!(actual.elements[i], expected.elements[i], epsilon);
+    }
+}
+
+#[test]
+fn from_translation_rotation_scale_works_without_a_result_parameter() {
+    let expected = Matrix4::new(
+        7.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 9.0, 2.0,
+        0.0, -8.0, 0.0, 3.0,
+        0.0, 0.0, 0.0, 1.0,
+    );
+
+    let trs = TranslationRotationScale::new(
+        Cartesian3::new(1.0, 2.0, 3.0),
+        Quaternion::from_axis_angle_new(&Cartesian3::UNIT_X, CesiumMath::to_radians(-90.0)),
+        Cartesian3::new(7.0, 8.0, 9.0),
+    );
+
+    let returned_result = Matrix4::from_translation_rotation_scale_new(&trs);
+    assert_matrix_eq_epsilon(&returned_result, &expected, CesiumMath::EPSILON14);
+}
+
+#[test]
+fn from_translation_rotation_scale_works_with_a_result_parameter() {
+    let expected = Matrix4::new(
+        7.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 9.0, 2.0,
+        0.0, -8.0, 0.0, 3.0,
+        0.0, 0.0, 0.0, 1.0,
+    );
+
+    let trs = TranslationRotationScale::new(
+        Cartesian3::new(1.0, 2.0, 3.0),
+        Quaternion::from_axis_angle_new(&Cartesian3::UNIT_X, CesiumMath::to_radians(-90.0)),
+        Cartesian3::new(7.0, 8.0, 9.0),
+    );
+
+    let mut result = Matrix4::default();
+    Matrix4::from_translation_rotation_scale(&trs, &mut result);
+    assert_matrix_eq_epsilon(&result, &expected, CesiumMath::EPSILON14);
+}
+
+#[test]
+fn compute_perspective_field_of_view_works() {
+    let expected = Matrix4::new(
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, -1.222222222222222, -2.222222222222222,
+        0.0, 0.0, -1.0, 0.0,
+    );
+    let mut result = Matrix4::default();
+    Matrix4::compute_perspective_field_of_view(CesiumMath::PI_OVER_TWO, 1.0, 1.0, 10.0, &mut result);
+    assert_matrix_eq_epsilon(&result, &expected, CesiumMath::EPSILON15);
+}
+
+#[test]
+fn from_camera_works_without_a_result_parameter() {
+    let expected = Matrix4::IDENTITY;
+    let returned_result = Matrix4::from_camera_new(&CameraView {
+        position: Cartesian3::ZERO,
+        direction: Cartesian3::negate_new(&Cartesian3::UNIT_Z),
+        up: Cartesian3::UNIT_Y,
+    });
+    assert_eq!(expected, returned_result);
+}
+
+#[test]
+fn from_camera_works_with_a_result_parameter() {
+    let expected = Matrix4::IDENTITY;
+    let mut result = Matrix4::default();
+    Matrix4::from_camera(
+        &CameraView {
+            position: Cartesian3::ZERO,
+            direction: Cartesian3::negate_new(&Cartesian3::UNIT_Z),
+            up: Cartesian3::UNIT_Y,
+        },
+        &mut result,
+    );
+    assert_eq!(expected, result);
+}
+
+#[test]
+fn compute_orthographic_off_center_works() {
+    let expected = Matrix4::new(
+        2.0, 0.0, 0.0, -1.0,
+        0.0, 2.0, 0.0, -5.0,
+        0.0, 0.0, -2.0, -1.0,
+        0.0, 0.0, 0.0, 1.0,
+    );
+    let mut result = Matrix4::default();
+    Matrix4::compute_orthographic_off_center(0.0, 1.0, 2.0, 3.0, 0.0, 1.0, &mut result);
+    assert_eq!(expected, result);
+}
+
+#[test]
+fn compute_viewport_transformation_works_without_a_result_parameter() {
+    let expected = Matrix4::new(
+        2.0, 0.0, 0.0, 2.0,
+        0.0, 3.0, 0.0, 3.0,
+        0.0, 0.0, 1.0, 1.0,
+        0.0, 0.0, 0.0, 1.0,
+    );
+    let returned_result = Matrix4::compute_viewport_transformation_new(
+        Some(&Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: 4.0,
+            height: 6.0,
+        }),
+        Some(0.0),
+        Some(2.0),
+    );
+    assert_eq!(expected, returned_result);
+}
+
+#[test]
+fn compute_viewport_transformation_works_with_a_result_parameter() {
+    let expected = Matrix4::new(
+        2.0, 0.0, 0.0, 2.0,
+        0.0, 3.0, 0.0, 3.0,
+        0.0, 0.0, 1.0, 1.0,
+        0.0, 0.0, 0.0, 1.0,
+    );
+    let mut result = Matrix4::default();
+    Matrix4::compute_viewport_transformation(
+        Some(&Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: 4.0,
+            height: 6.0,
+        }),
+        Some(0.0),
+        Some(2.0),
+        &mut result,
+    );
+    assert_eq!(expected, result);
+}
+
+#[test]
+fn compute_perspective_off_center_works() {
+    let expected = Matrix4::new(
+        2.0, 0.0, 3.0, 0.0,
+        0.0, 2.0, 5.0, 0.0,
+        0.0, 0.0, -3.0, -4.0,
+        0.0, 0.0, -1.0, 0.0,
+    );
+    let mut result = Matrix4::default();
+    Matrix4::compute_perspective_off_center(1.0, 2.0, 2.0, 3.0, 1.0, 2.0, &mut result);
+    assert_eq!(expected, result);
+}
+
+#[test]
+fn compute_infinite_perspective_off_center_works() {
+    let expected = Matrix4::new(
+        2.0, 0.0, 3.0, 0.0,
+        0.0, 2.0, 5.0, 0.0,
+        0.0, 0.0, -1.0, -2.0,
+        0.0, 0.0, -1.0, 0.0,
+    );
+    let mut result = Matrix4::default();
+    Matrix4::compute_infinite_perspective_off_center(1.0, 2.0, 2.0, 3.0, 1.0, &mut result);
+    assert_eq!(expected, result);
+}
+
+#[test]
+fn compute_perspective_field_of_view_throws_with_out_of_range_y_field_of_view() {
+    expect_to_throw_dev_error(|| {
+        let mut result = Matrix4::default();
+        Matrix4::compute_perspective_field_of_view(0.0, 1.0, 2.0, 3.0, &mut result);
+    });
+}
+
+// DEVIATION: the JS "out of range aspect" spec case only throws because the
+// `result` parameter is omitted (Check.typeOf.object); the JS implementation
+// has no aspectRatio range check, and Rust's signature makes the result
+// parameter mandatory, so that case cannot be mirrored.
+
+#[test]
+fn compute_perspective_field_of_view_throws_with_out_of_range_near() {
+    expect_to_throw_dev_error(|| {
+        let mut result = Matrix4::default();
+        Matrix4::compute_perspective_field_of_view(1.0, 1.0, 0.0, 3.0, &mut result);
+    });
+}
+
+#[test]
+fn compute_perspective_field_of_view_throws_with_out_of_range_far() {
+    expect_to_throw_dev_error(|| {
+        let mut result = Matrix4::default();
+        Matrix4::compute_perspective_field_of_view(1.0, 1.0, 2.0, 0.0, &mut result);
+    });
+}
+
+// DEVIATION: the JS "fromCamera throws without camera/position/direction/up"
+// and the "throws without a result parameter" spec cases verify undefined
+// checks that Rust's type system enforces at compile time; not mirrored.
+
+#[test]
+fn pack_array_round_trips_with_unpack_array() {
+    let matrices = vec![
+        Matrix4::new(
+            1.0, 2.0, 3.0, 4.0,
+            5.0, 6.0, 7.0, 8.0,
+            9.0, 10.0, 11.0, 12.0,
+            13.0, 14.0, 15.0, 16.0,
+        ),
+        Matrix4::new(
+            17.0, 18.0, 19.0, 20.0,
+            21.0, 22.0, 23.0, 24.0,
+            25.0, 26.0, 27.0, 28.0,
+            29.0, 30.0, 31.0, 32.0,
+        ),
+    ];
+    let packed = Matrix4::pack_array_new(&matrices);
+    assert_eq!(packed.len(), matrices.len() * 16);
+    let unpacked = Matrix4::unpack_array_new(&packed);
+    assert_eq!(unpacked.len(), matrices.len());
+    assert_eq!(unpacked[0], matrices[0]);
+    assert_eq!(unpacked[1], matrices[1]);
+}
+
+#[test]
+fn unpack_array_throws_when_length_is_not_a_multiple_of_16() {
+    expect_to_throw_dev_error(|| {
+        let array = vec![0.0f64; 17];
+        let _ = Matrix4::unpack_array_new(&array);
+    });
+}
+
+#[test]
+fn pack_array_into_throws_when_result_length_mismatches() {
+    expect_to_throw_dev_error(|| {
+        let matrices = vec![Matrix4::IDENTITY];
+        let mut result = vec![0.0f64; 15];
+        Matrix4::pack_array_into(&matrices, &mut result);
+    });
+}
+
+#[test]
+fn length_returns_packed_length() {
+    let m = Matrix4::IDENTITY;
+    assert_eq!(m.len(), Matrix4::PACKED_LENGTH);
+}
+
+#[test]
+fn equals_array_compares_from_offset() {
+    let m = Matrix4::new(
+        1.0, 2.0, 3.0, 4.0,
+        5.0, 6.0, 7.0, 8.0,
+        9.0, 10.0, 11.0, 12.0,
+        13.0, 14.0, 15.0, 16.0,
+    );
+    let mut array = vec![0.0f64; 17];
+    Matrix4::pack(&m, &mut array, 1);
+    assert!(Matrix4::equals_array(&m, &array, 1));
+    array[1] = 42.0;
+    assert!(!Matrix4::equals_array(&m, &array, 1));
 }

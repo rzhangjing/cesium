@@ -42,6 +42,7 @@ use cesium_core::wrap_function::wrap_function;
 use cesium_core::cartesian3::Cartesian3;
 use cesium_core::ellipsoid::Ellipsoid;
 use cesium_core::geometry_attributes::GeometryAttributes;
+use cesium_test_utils::expect_to_throw_dev_error_containing;
 
 // --- TimeConstants ---
 #[test]
@@ -367,6 +368,30 @@ fn vertical_exaggeration_get_height() {
 fn vertical_exaggeration_get_height_identity() {
     let h = VerticalExaggeration::get_height(100.0, 1.0, 0.0);
     assert_eq!(h, 100.0);
+}
+
+#[test]
+fn vertical_exaggeration_throws_with_non_finite_scale() {
+    // Phase 2 diff regression (D6, case ve.getHeight.h4): mirror of the JS
+    // debug guard `scale must be a finite number.`.
+    expect_to_throw_dev_error_containing(
+        || {
+            let _ = VerticalExaggeration::get_height(100.0, f64::NAN, 0.0);
+        },
+        "scale must be a finite number.",
+    );
+}
+
+#[test]
+fn vertical_exaggeration_throws_with_non_finite_relative_height() {
+    // Phase 2 diff regression (D6, case ve.getHeight.h5): mirror of the JS
+    // debug guard `relativeHeight must be a finite number.`.
+    expect_to_throw_dev_error_containing(
+        || {
+            let _ = VerticalExaggeration::get_height(100.0, 1.0, f64::NEG_INFINITY);
+        },
+        "relativeHeight must be a finite number.",
+    );
 }
 
 // --- ShowGeometryInstanceAttribute ---

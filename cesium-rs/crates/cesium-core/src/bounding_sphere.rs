@@ -263,6 +263,46 @@ impl BoundingSphere {
         r
     }
 
+    /// Computes a tight-fitting bounding sphere enclosing the provided array
+    /// of bounding spheres.
+    ///
+    /// Mirrors `BoundingSphere.fromBoundingSpheres`.
+    pub fn from_bounding_spheres(
+        bounding_spheres: &[Self],
+        result: Option<Self>,
+    ) -> Self {
+        let mut result = result.unwrap_or_default();
+
+        if bounding_spheres.is_empty() {
+            result.center = Cartesian3::ZERO;
+            result.radius = 0.0;
+            return result;
+        }
+
+        let length = bounding_spheres.len();
+        if length == 1 {
+            return bounding_spheres[0].clone();
+        }
+
+        if length == 2 {
+            return Self::union(&bounding_spheres[0], &bounding_spheres[1], Some(result));
+        }
+
+        let positions: Vec<Cartesian3> =
+            bounding_spheres.iter().map(|s| s.center).collect();
+
+        result = Self::from_points(&positions, Some(result));
+
+        let center = result.center;
+        let mut radius = result.radius;
+        for sphere in bounding_spheres {
+            radius = radius.max(Cartesian3::distance(&center, &sphere.center) + sphere.radius);
+        }
+        result.radius = radius;
+
+        result
+    }
+
     /// Determines which side of a plane a sphere is located.
     pub fn intersect_plane(sphere: &Self, plane: &Plane) -> Intersect {
         let distance_to_plane =

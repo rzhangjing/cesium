@@ -39,6 +39,36 @@ impl AxisAlignedBoundingBox {
         }
     }
 
+    /// Port of `AxisAlignedBoundingBox.fromPoints`.
+    ///
+    /// Computes a bounding box enclosing all provided positions.
+    pub fn from_points(positions: Option<&[Cartesian3]>) -> Self {
+        let mut result = Self::default();
+        match positions {
+            None => result,
+            Some(positions) if positions.is_empty() => result,
+            Some(positions) => {
+                let mut minimum = Cartesian3::new(f64::MAX, f64::MAX, f64::MAX);
+                let mut maximum = Cartesian3::new(-f64::MAX, -f64::MAX, -f64::MAX);
+                for p in positions {
+                    minimum.x = minimum.x.min(p.x);
+                    minimum.y = minimum.y.min(p.y);
+                    minimum.z = minimum.z.min(p.z);
+                    maximum.x = maximum.x.max(p.x);
+                    maximum.y = maximum.y.max(p.y);
+                    maximum.z = maximum.z.max(p.z);
+                }
+                let mut center = Cartesian3::ZERO;
+                Cartesian3::midpoint(&minimum, &maximum, &mut center);
+                Self {
+                    minimum,
+                    maximum,
+                    center,
+                }
+            }
+        }
+    }
+
     /// Creates from minimum and maximum corners.
     pub fn from_corners(minimum: &Cartesian3, maximum: &Cartesian3) -> Self {
         let mut center = Cartesian3::ZERO;

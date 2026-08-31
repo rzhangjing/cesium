@@ -21,6 +21,13 @@ pub struct PolylineGraphics {
     pub loop_: bool,
     /// The type of arc used to connect the positions.
     pub arc_type: ArcType,
+    /// The sampling granularity (mirrors `granularity`).
+    pub granularity: Option<f64>,
+    /// The draw order for ground polylines (mirrors `zIndex`).
+    pub z_index: Option<f64>,
+    /// The depth-fail material color (mirrors `depthFailMaterial` as a
+    /// color material; `None` mirrors an unset depth-fail material).
+    pub depth_fail_material_color: Option<Color>,
 }
 
 impl PolylineGraphics {
@@ -34,6 +41,9 @@ impl PolylineGraphics {
             clamp_to_ground: false,
             loop_: false,
             arc_type: ArcType::Geodesic,
+            granularity: None,
+            z_index: None,
+            depth_fail_material_color: None,
         }
     }
 }

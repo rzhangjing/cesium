@@ -8,6 +8,7 @@
 
 use cesium_core::cartesian2::Cartesian2;
 use cesium_core::cartesian3::Cartesian3;
+use cesium_core::cartesian4::Cartesian4;
 use cesium_core::geometry::Geometry;
 use cesium_workers::create_box_geometry::create_box_geometry_unpacked;
 use cesium_workers::create_box_outline_geometry::create_box_outline_geometry_unpacked;
@@ -25,6 +26,19 @@ use cesium_workers::create_polygon_outline_geometry::create_polygon_outline_geom
 use cesium_workers::create_polyline_volume_geometry::create_polyline_volume_geometry_unpacked;
 use cesium_workers::create_polyline_volume_outline_geometry::create_polyline_volume_outline_geometry_unpacked;
 use cesium_workers::create_sphere_geometry::create_sphere_geometry_unpacked;
+use cesium_workers::create_circle_outline_geometry::create_circle_outline_geometry_unpacked;
+use cesium_workers::create_coplanar_polygon_outline_geometry::create_coplanar_polygon_outline_geometry_unpacked;
+use cesium_workers::create_ellipsoid_outline_geometry::create_ellipsoid_outline_geometry_unpacked;
+use cesium_workers::create_frustum_geometry::create_frustum_geometry_unpacked;
+use cesium_workers::create_frustum_outline_geometry::create_frustum_outline_geometry_unpacked;
+use cesium_workers::create_ground_polyline_geometry::create_ground_polyline_geometry_unpacked;
+use cesium_workers::create_polyline_geometry::create_polyline_geometry_unpacked;
+use cesium_workers::create_rectangle_geometry::create_rectangle_geometry_unpacked;
+use cesium_workers::create_rectangle_outline_geometry::create_rectangle_outline_geometry_unpacked;
+use cesium_workers::create_simple_polyline_geometry::create_simple_polyline_geometry_unpacked;
+use cesium_workers::create_sphere_outline_geometry::create_sphere_outline_geometry_unpacked;
+use cesium_workers::create_wall_geometry::create_wall_geometry_unpacked;
+use cesium_workers::create_wall_outline_geometry::create_wall_outline_geometry_unpacked;
 
 /// Every real geometry carries a position attribute with vertex data.
 fn assert_real_geometry(geometry: Option<Geometry>) -> Geometry {
@@ -182,4 +196,115 @@ fn polyline_volume_outline_geometry_worker_produces_geometry() {
 fn sphere_geometry_worker_produces_geometry() {
     let geometry = assert_real_geometry(create_sphere_geometry_unpacked(100.0));
     assert!(geometry.indices.is_some());
+}
+
+// --- WK-01 second-round re-wiring specs (13 remaining create*Geometry
+// --- workers whose core ports landed with the CZ-01 geometry pipeline).
+
+#[test]
+fn wall_geometry_worker_produces_geometry() {
+    let positions = degree_positions();
+    let geometry = assert_real_geometry(create_wall_geometry_unpacked(&positions, 100.0, 0.0));
+    assert!(geometry.indices.is_some());
+}
+
+#[test]
+fn wall_outline_geometry_worker_produces_geometry() {
+    let positions = degree_positions();
+    assert_real_geometry(create_wall_outline_geometry_unpacked(
+        &positions, 100.0, 0.0,
+    ));
+}
+
+#[test]
+fn circle_outline_geometry_worker_produces_geometry() {
+    let center = Cartesian3::from_degrees_new(0.0, 0.0, None, None);
+    assert_real_geometry(create_circle_outline_geometry_unpacked(
+        &center,
+        500_000.0,
+    ));
+}
+
+#[test]
+fn sphere_outline_geometry_worker_produces_geometry() {
+    assert_real_geometry(create_sphere_outline_geometry_unpacked(100.0));
+}
+
+#[test]
+fn ellipsoid_outline_geometry_worker_produces_geometry() {
+    let radii = Cartesian3::new(1_000_000.0, 1_000_000.0, 500_000.0);
+    assert_real_geometry(create_ellipsoid_outline_geometry_unpacked(&radii));
+}
+
+#[test]
+fn coplanar_polygon_outline_geometry_worker_produces_geometry() {
+    let positions = degree_positions();
+    assert_real_geometry(create_coplanar_polygon_outline_geometry_unpacked(
+        &positions,
+    ));
+}
+
+#[test]
+fn simple_polyline_geometry_worker_produces_geometry() {
+    let positions = degree_positions();
+    assert_real_geometry(create_simple_polyline_geometry_unpacked(&positions));
+}
+
+#[test]
+fn ground_polyline_geometry_worker_produces_geometry() {
+    let positions = degree_positions();
+    assert_real_geometry(create_ground_polyline_geometry_unpacked(&positions, 2.0));
+}
+
+#[test]
+fn polyline_geometry_worker_produces_geometry() {
+    let positions = degree_positions();
+    let geometry = assert_real_geometry(create_polyline_geometry_unpacked(
+        &positions, 2.0, true,
+    ));
+    assert!(geometry.indices.is_some());
+}
+
+#[test]
+fn frustum_geometry_worker_produces_geometry() {
+    let origin = Cartesian3::new(0.0, 0.0, 0.0);
+    let orientation = Cartesian4::new(0.0, 0.0, 0.0, 1.0);
+    let geometry = assert_real_geometry(create_frustum_geometry_unpacked(
+        &origin,
+        &orientation,
+        1.0,
+        10.0,
+        std::f64::consts::FRAC_PI_4,
+        1.0,
+    ));
+    assert!(geometry.indices.is_some());
+}
+
+#[test]
+fn frustum_outline_geometry_worker_produces_geometry() {
+    let origin = Cartesian3::new(0.0, 0.0, 0.0);
+    let orientation = Cartesian4::new(0.0, 0.0, 0.0, 1.0);
+    assert_real_geometry(create_frustum_outline_geometry_unpacked(
+        &origin,
+        &orientation,
+        1.0,
+        10.0,
+        std::f64::consts::FRAC_PI_4,
+        1.0,
+    ));
+}
+
+#[test]
+fn rectangle_geometry_worker_produces_geometry() {
+    let geometry = assert_real_geometry(create_rectangle_geometry_unpacked(
+        -0.1, -0.1, 0.1, 0.1, 0.0, None,
+    ));
+    assert!(geometry.indices.is_some());
+}
+
+#[test]
+fn rectangle_outline_geometry_worker_produces_geometry() {
+    assert_real_geometry(create_rectangle_outline_geometry_unpacked(
+        -0.1, -0.1, 0.1, 0.1, 0.0, None,
+    ));
 }

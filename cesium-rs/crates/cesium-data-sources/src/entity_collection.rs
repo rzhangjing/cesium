@@ -6,13 +6,15 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use cesium_core::create_guid::create_guid;
 use cesium_core::developer_error::throw_developer_error;
 use cesium_core::event::{Event, ListenerId};
 use cesium_core::iso8601::Iso8601;
 use cesium_core::julian_date::JulianDate;
 use cesium_core::time_interval::TimeInterval;
 
-use crate::entity::Entity;
+use crate::entity::{Entity, EntityDefinitionChangedArgs};
+use crate::property::PropertyResult;
 
 /// The payload of [`EntityCollection::collection_changed`].
 ///
@@ -145,10 +147,22 @@ pub struct EntityCollection {
     /// subscriptions, keyed by entity id (port of the
     /// `_onEntityDefinitionChanged` listener registration).
     entity_listeners: HashMap<String, ListenerId>,
+    /// A globally unique identifier for this collection (port of `_id`,
+    /// initialized with `createGuid()`).
+    id: String,
     /// Whether the entities in this collection are shown.
+    ///
+    /// DEVIATION: the field stays public for the existing pipeline code;
+    /// prefer [`EntityCollection::set_show`], which mirrors the JS setter's
+    /// `isShowing` notification chain (direct field writes bypass it).
+    /// See docs/deviations.md.
     pub show: bool,
     /// Whether this collection has been destroyed.
     is_destroyed: bool,
+    // DEVIATION: the JS `owner` getter returns the DataSource or
+    // CompositeEntityCollection that created this collection; the Rust
+    // value model omits the back-reference (it would create an ownership
+    // cycle with the owning data source). See docs/deviations.md.
 }
 
 impl EntityCollection {
@@ -159,9 +173,17 @@ impl EntityCollection {
             entity_ids: Vec::new(),
             state: Rc::new(CollectionEventState::new()),
             entity_listeners: HashMap::new(),
+            id: create_guid(),
             show: true,
             is_destroyed: false,
         }
+    }
+
+    /// Gets a globally unique identifier for this collection (port of the
+    /// `id` getter; the value is created with `createGuid()` at
+    /// construction time).
+    pub fn id(&self) -> &str {
+        &self.id
     }
 
     /// Gets the event that is fired when entities are added or removed from
@@ -175,6 +197,56 @@ impl EntityCollection {
     /// Returns the number of entities.
     pub fn length(&self) -> usize {
         self.entities.len()
+    }
+
+    /// Sets whether the entities in this collection are shown.
+    ///
+    /// Port of the `show` setter: when the value changes, the entity
+    /// `isShowing` state is sampled before and after the assignment and a
+    /// `definitionChanged("isShowing")` event is raised for every entity
+    /// whose computed showing state changed, batched through
+    /// `suspendEvents`/`resumeEvents`.
+    ///
+    /// DEVIATION: the JS `Entity.isShowing` getter folds the parent chain
+    /// into the computation; the Rust value model has no entity hierarchy,
+    /// so `isShowing` reduces to `entity.show && collection.show`. See
+    /// docs/deviations.md.
+    pub fn set_show(&mut self, value: bool) {
+        // JS: `if (!defined(value)) throw DeveloperError` — statically
+        // guaranteed in Rust.
+        if value == self.show {
+            return;
+        }
+
+        // Since entity.isShowing includes the EntityCollection.show state
+        // in its calculation, loop over the entities twice: once to get the
+        // old showing value and a second time to raise the changed event.
+        self.suspend_events();
+
+        let mut old_shows: Vec<(String, bool)> = Vec::new();
+        for id in &self.entity_ids {
+            if let Some(entity) = self.entities.get(id) {
+                old_shows.push((id.clone(), entity.show && self.show));
+            }
+        }
+
+        self.show = value;
+
+        for (id, old_show) in old_shows {
+            let Some(entity) = self.entities.get(&id) else {
+                continue;
+            };
+            let is_showing = entity.show && self.show;
+            if old_show != is_showing {
+                entity.definition_changed.raise_event(&EntityDefinitionChangedArgs {
+                    property_name: "isShowing".to_string(),
+                    new_value: PropertyResult::Boolean(is_showing),
+                    old_value: PropertyResult::Boolean(old_show),
+                });
+            }
+        }
+
+        self.resume_events();
     }
 
     /// Returns the number of entities (alias for `length`).
@@ -449,5 +521,62 @@ impl EntityCollection {
 impl Default for EntityCollection {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    // Mirrors EntityCollectionSpec "id" — a new collection exposes a
+    // globally unique identifier.
+    #[test]
+    fn entity_collection_id_is_unique_guid() {
+        let a = EntityCollection::new();
+        let b = EntityCollection::new();
+        assert!(!a.id().is_empty());
+        assert_ne!(a.id(), b.id());
+    }
+
+    // Mirrors EntityCollectionSpec show-setter behavior: setting the same
+    // value is a no-op; a changed value raises `definitionChanged`
+    // ("isShowing") for entities whose computed showing state changed.
+    #[test]
+    fn entity_collection_set_show_raises_is_showing() {
+        let mut collection = EntityCollection::new();
+        collection.add(Entity::new("a"));
+
+        let fired = Rc::new(Cell::new(0usize));
+
+        // Attach directly to the stored entity's definitionChanged.
+        let listener_id = {
+            let entity = collection.get_by_id("a").unwrap();
+            let fired_clone = Rc::clone(&fired);
+            entity.definition_changed.add_listener(move |args| {
+                if args.property_name == "isShowing" {
+                    fired_clone.set(fired_clone.get() + 1);
+                    assert_eq!(args.new_value.as_bool(), Some(false));
+                    assert_eq!(args.old_value.as_bool(), Some(true));
+                }
+            })
+        };
+        let _ = listener_id;
+
+        // Same value: no event.
+        collection.set_show(true);
+        assert_eq!(fired.get(), 0);
+
+        // true -> false: entity isShowing flips true -> false.
+        collection.set_show(false);
+        assert_eq!(fired.get(), 1);
+        assert!(!collection.show);
+
+        // An entity with show = false does not flip when the collection
+        // toggles back on (isShowing stays false).
+        collection.get_by_id_mut("a").unwrap().show = false;
+        collection.set_show(true);
+        assert_eq!(fired.get(), 1);
     }
 }

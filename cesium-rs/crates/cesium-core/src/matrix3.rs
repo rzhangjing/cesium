@@ -8,6 +8,7 @@
 //! ```
 
 use crate::cartesian3::Cartesian3;
+use crate::heading_pitch_roll::HeadingPitchRoll;
 use crate::quaternion::Quaternion;
 
 /// Result of eigen-decomposition.
@@ -198,7 +199,58 @@ impl Matrix3 {
         result
     }
 
-    // DEVIATION: fromHeadingPitchRoll — requires HeadingPitchRoll (now available, pending port)
+    /// Port of `Matrix3.fromHeadingPitchRoll`.
+    ///
+    /// Computes a rotation matrix from a [`HeadingPitchRoll`] orientation,
+    /// mirroring the JS element-wise trigonometric construction verbatim
+    /// (bit-comparable with CesiumJS; earlier revisions routed through
+    /// `Quaternion::fromHeadingPitchRoll`, which introduced floating-point
+    /// deltas against the JS reference).
+    pub fn from_heading_pitch_roll(
+        heading_pitch_roll: &HeadingPitchRoll,
+        result: &mut Self,
+    ) {
+        //>>includeStart('debug', pragmas.debug);
+        // DEVIATION: JS `Check.typeOf.object("headingPitchRoll", ...)` is
+        // statically guaranteed by the non-optional Rust parameter.
+        //>>includeEnd('debug');
+
+        let cos_theta = (-heading_pitch_roll.pitch).cos();
+        let cos_psi = (-heading_pitch_roll.heading).cos();
+        let cos_phi = heading_pitch_roll.roll.cos();
+        let sin_theta = (-heading_pitch_roll.pitch).sin();
+        let sin_psi = (-heading_pitch_roll.heading).sin();
+        let sin_phi = heading_pitch_roll.roll.sin();
+
+        let m00 = cos_theta * cos_psi;
+        let m01 = -cos_phi * sin_psi + sin_phi * sin_theta * cos_psi;
+        let m02 = sin_phi * sin_psi + cos_phi * sin_theta * cos_psi;
+
+        let m10 = cos_theta * sin_psi;
+        let m11 = cos_phi * cos_psi + sin_phi * sin_theta * sin_psi;
+        let m12 = -sin_phi * cos_psi + cos_phi * sin_theta * sin_psi;
+
+        let m20 = -sin_theta;
+        let m21 = sin_phi * cos_theta;
+        let m22 = cos_phi * cos_theta;
+
+        result.elements[0] = m00;
+        result.elements[1] = m10;
+        result.elements[2] = m20;
+        result.elements[3] = m01;
+        result.elements[4] = m11;
+        result.elements[5] = m21;
+        result.elements[6] = m02;
+        result.elements[7] = m12;
+        result.elements[8] = m22;
+    }
+
+    /// Allocating variant of [`Matrix3::from_heading_pitch_roll`].
+    pub fn from_heading_pitch_roll_new(heading_pitch_roll: &HeadingPitchRoll) -> Self {
+        let mut result = Self::default();
+        Self::from_heading_pitch_roll(heading_pitch_roll, &mut result);
+        result
+    }
 
     /// Computes a `Matrix3` representing a non-uniform scale.
     ///

@@ -7,8 +7,10 @@
 //! images, NetworkLink timers and ScreenOverlay DOM nodes. This port parses
 //! the KML text with `quick-xml` into a small internal element tree and
 //! materializes the constant feature/geometry/style subset directly onto the
-//! entities. KMZ archives, NetworkLink, Tour, ScreenOverlay, GroundOverlay,
-//! gx:Track/MultiTrack and pin images are not produced.
+//! entities. KMZ archives and pin images are not produced; NetworkLink,
+//! ScreenOverlay and Tour nodes are parsed into value models
+//! ([`KmlNetworkLinkInfo`], [`KmlScreenOverlay`], [`KmlTour`]) instead of
+//! performing network fetches, DOM layout or camera playback.
 //!
 //! DEVIATION (simplified value model): time-dynamic `Property` objects are
 //! replaced by the stored constant values, mirroring the CZML port.
@@ -22,10 +24,14 @@ use cesium_core::clock_step::ClockStep;
 use cesium_core::color::Color;
 use cesium_core::credit::Credit;
 use cesium_core::event::Event;
+use cesium_core::heading_pitch_range::HeadingPitchRange;
+use cesium_core::heading_pitch_roll::HeadingPitchRoll;
 use cesium_core::iso8601::Iso8601;
 use cesium_core::julian_date::JulianDate;
+use cesium_core::math::CesiumMath;
 use cesium_core::near_far_scalar::NearFarScalar;
 use cesium_core::get_filename_from_uri::get_filename_from_uri;
+use cesium_core::rectangle::Rectangle;
 use cesium_core::time_interval::TimeInterval;
 use cesium_scene::height_reference::HeightReference;
 use cesium_scene::horizontal_origin::HorizontalOrigin;
@@ -36,10 +42,16 @@ use crate::data_source::DataSource;
 use crate::data_source_clock::DataSourceClock;
 use crate::entity::Entity;
 use crate::entity_collection::EntityCollection;
+use crate::kml_camera::KmlCamera;
+use crate::kml_look_at::KmlLookAt;
+use crate::kml_tour::{KmlTour, KmlTourEntry, KmlTourView};
+use crate::kml_tour_fly_to::KmlTourFlyTo;
+use crate::kml_tour_wait::KmlTourWait;
 use crate::label_graphics::LabelGraphics;
 use crate::polygon_graphics::PolygonGraphics;
 use crate::polyline_graphics::PolylineGraphics;
 use crate::property::PropertyResult;
+use crate::rectangle_graphics::RectangleGraphics;
 
 const BILLBOARD_SIZE: f64 = 32.0;
 const BILLBOARD_NEAR_DISTANCE: f64 = 2414016.0;
@@ -500,7 +512,11 @@ pub struct KmlDataSource {
     error_event: Event,
     loading_event: Event,
     unsupported_node_event: Event,
+    refresh_event: Event<String>,
     clock: Option<DataSourceClock>,
+    kml_tours: Vec<KmlTour>,
+    network_links: Vec<KmlNetworkLinkInfo>,
+    screen_overlays: Vec<KmlScreenOverlay>,
 }
 
 impl KmlDataSource {
@@ -518,7 +534,11 @@ impl KmlDataSource {
             error_event: Event::new(),
             loading_event: Event::new(),
             unsupported_node_event: Event::new(),
+            refresh_event: Event::<String>::new(),
             clock: None,
+            kml_tours: Vec::new(),
+            network_links: Vec::new(),
+            screen_overlays: Vec::new(),
         }
     }
 
@@ -634,6 +654,40 @@ impl KmlDataSource {
     /// (mirrors `_unsupportedNode`).
     pub fn unsupported_node_event(&self) -> &Event {
         &self.unsupported_node_event
+    }
+
+    /// Raised when a network link needs to be refreshed (mirror of the
+    /// `refreshEvent` getter; the argument is the refresh href, mirroring
+    /// the second argument of the JS event).
+    ///
+    /// DEVIATION (no fetching): the refresh cycle requires fetching the
+    /// linked document, which this port cannot perform; the event surface
+    /// is kept so consumers can observe the registered links instead.
+    pub fn refresh_event(&self) -> &Event<String> {
+        &self.refresh_event
+    }
+
+    /// The tours parsed from this document (mirror of the `kmlTours`
+    /// getter; playback is not materialized).
+    pub fn kml_tours(&self) -> &[KmlTour] {
+        &self.kml_tours
+    }
+
+    /// The network links parsed from this document.
+    ///
+    /// DEVIATION (no fetching): CesiumJS stores only the links that need
+    /// periodic updates in `_networkLinks` after fetching them; this port
+    /// registers every parsed link with its computed href instead.
+    pub fn network_links(&self) -> &[KmlNetworkLinkInfo] {
+        &self.network_links
+    }
+
+    /// The screen overlays parsed from this document.
+    ///
+    /// DEVIATION (DOM): CesiumJS creates `<img>` elements in a screen
+    /// overlay container; this port keeps the parsed layout parameters.
+    pub fn screen_overlays(&self) -> &[KmlScreenOverlay] {
+        &self.screen_overlays
     }
 
     fn set_loading(&mut self, loading: bool) {
@@ -784,12 +838,395 @@ fn remove_duplicate_namespaces(text: &str) -> String {
 }
 
 // ============================================================================
+// NetworkLink / ScreenOverlay value models and query helpers
+// ============================================================================
+
+/// Mirror of the internal `RefreshMode` enum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KmlRefreshMode {
+    /// `RefreshMode.INTERVAL`
+    Interval,
+    /// `RefreshMode.EXPIRE`
+    Expire,
+    /// `RefreshMode.STOP`
+    Stop,
+}
+
+/// The parsed values of a `<NetworkLink>` (this port's stand-in for the
+/// JS `networkLinkInfo` entries of `_networkLinks`).
+#[derive(Clone, Debug)]
+pub struct KmlNetworkLinkInfo {
+    /// A generated guid (mirrors `createGuid()` for `id`).
+    pub id: String,
+    /// The resolved href with all query placeholders substituted.
+    pub href: String,
+    /// The id of the entity created for the NetworkLink feature.
+    pub entity_id: String,
+    /// The resolved refresh mode (`None` when the link needs no updates).
+    pub refresh_mode: Option<KmlRefreshMode>,
+    /// `networkLinkInfo.time`: the refresh interval for INTERVAL and the
+    /// view refresh time for STOP (the EXPIRE branch stores a JulianDate
+    /// in JS, which is unreachable without fetching the linked document).
+    pub time: f64,
+    /// The `viewBoundScale` of the link.
+    pub view_bound_scale: f64,
+}
+
+/// An x/y pair with units from a ScreenOverlay layout node
+/// (`screenXY`/`overlayXY`/`size`).
+#[derive(Clone, Debug, Default)]
+pub struct KmlOverlayVec2 {
+    /// The x component.
+    pub x: Option<f64>,
+    /// The y component.
+    pub y: Option<f64>,
+    /// The x units (`fraction`/`pixels`/`insetPixels`).
+    pub x_units: Option<String>,
+    /// The y units (`fraction`/`pixels`/`insetPixels`).
+    pub y_units: Option<String>,
+}
+
+/// The parsed values of a `<ScreenOverlay>` (mirror of the values the JS
+/// reads before creating the `<img>` element).
+#[derive(Clone, Debug)]
+pub struct KmlScreenOverlay {
+    /// The resolved icon url.
+    pub icon: Option<String>,
+    /// The `screenXY` layout parameter.
+    pub screen_xy: Option<KmlOverlayVec2>,
+    /// The `overlayXY` layout parameter.
+    pub overlay_xy: Option<KmlOverlayVec2>,
+    /// The `size` layout parameter.
+    pub size: Option<KmlOverlayVec2>,
+}
+
+/// The precomputed camera state consumed by
+/// [`process_network_link_query_string`] (CesiumJS derives these from the
+/// live scene camera, frustum and canvas).
+#[derive(Clone, Debug)]
+pub struct KmlCameraView {
+    /// The last camera view bounding box, in radians.
+    pub bbox: Rectangle,
+    /// The `viewBoundScale` of the link.
+    pub view_bound_scale: f64,
+    /// The view center longitude, in radians.
+    pub center_longitude: f64,
+    /// The view center latitude, in radians.
+    pub center_latitude: f64,
+    /// The view center height, in meters.
+    pub center_height: f64,
+    /// The camera heading, in radians.
+    pub heading: f64,
+    /// The camera pitch, in radians.
+    pub pitch: f64,
+    /// The distance between the camera and the view center, in meters.
+    pub range: f64,
+    /// The camera longitude, in radians.
+    pub camera_longitude: f64,
+    /// The camera latitude, in radians.
+    pub camera_latitude: f64,
+    /// The camera altitude, in meters.
+    pub camera_altitude: f64,
+    /// The frustum field of view, in degrees.
+    pub fov_degrees: Option<f64>,
+    /// The frustum aspect ratio.
+    pub aspect_ratio: Option<f64>,
+}
+
+/// Mirror of `cleanupString`.
+fn cleanup_string(value: &str) -> String {
+    if value.is_empty() {
+        return String::new();
+    }
+    match value.chars().next() {
+        Some('&') | Some('?') => value[1..].to_string(),
+        _ => value.to_string(),
+    }
+}
+
+/// Numeric form of `queryStringAttribute` (used by the ScreenOverlay
+/// layout nodes).
+fn query_numeric_attribute(node: Option<&XmlElement>, name: &str) -> Option<f64> {
+    query_string_attribute(node, name).and_then(|value| value.parse::<f64>().ok())
+}
+
+/// Mirror of the `encodeURIComponent` escape set.
+fn percent_encode_component(value: &str) -> String {
+    let mut out = String::new();
+    for ch in value.chars() {
+        match ch {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '!' | '~' | '*' | '\''
+            | '(' | ')' => out.push(ch),
+            _ => {
+                let mut buf = [0u8; 4];
+                for byte in ch.encode_utf8(&mut buf).as_bytes() {
+                    out.push_str(&format!("%{:02X}", byte));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn hex_digit(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// Mirror of `decodeURIComponent` for query parsing.
+fn percent_decode_component(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out: Vec<u8> = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%'
+            && index + 2 < bytes.len()
+            && hex_digit(bytes[index + 1]).is_some()
+            && hex_digit(bytes[index + 2]).is_some()
+        {
+            out.push(hex_digit(bytes[index + 1]).unwrap() * 16 + hex_digit(bytes[index + 2]).unwrap());
+            index += 3;
+        } else {
+            out.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Mirror of `queryToObject`: parses `a=b&c=d` into (name, value) pairs.
+fn query_to_pairs(query: &str) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    for token in query.split('&') {
+        if token.is_empty() {
+            continue;
+        }
+        match token.find('=') {
+            Some(index) => pairs.push((
+                percent_decode_component(&token[..index]),
+                percent_decode_component(&token[index + 1..]),
+            )),
+            None => pairs.push((percent_decode_component(token), String::new())),
+        }
+    }
+    pairs
+}
+
+/// Mirror of `objectToQuery`, including the `%5B`/`%5D` unescaping that
+/// `processNetworkLinkQueryString` applies right after it.
+fn pairs_to_query(pairs: &[(String, String)]) -> String {
+    pairs
+        .iter()
+        .map(|(key, value)| {
+            format!(
+                "{}={}",
+                percent_encode_component(key),
+                percent_encode_component(value)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("&")
+        .replace("%5B", "[")
+        .replace("%5D", "]")
+}
+
+/// Final url query serialization (mirror of the `Resource` query
+/// encoding used when the request url is built).
+fn encode_query_pairs(pairs: &[(String, String)]) -> String {
+    pairs
+        .iter()
+        .map(|(key, value)| {
+            format!(
+                "{}={}",
+                percent_encode_component(key),
+                percent_encode_component(value)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+/// Mirror of `processNetworkLinkQueryString`: substitutes the
+/// `[bboxXxx]`, `[lookatXxx]`, `[cameraXxx]`, `[horizFov]`, `[vertFov]`,
+/// `[horizPixels]`, `[vertPixels]` and the client constants placeholders
+/// in a query string. `None` mirrors the camera-less (or morphing)
+/// branch. JS `String.prototype.replace` only substitutes the first
+/// occurrence, mirrored with `replacen`.
+///
+/// DEVIATION (no scene): the JS takes the live camera/canvas and the
+/// `pickEllipsoid` center; this port takes the precomputed
+/// [`KmlCameraView`] and always uses the bbox center.
+fn process_network_link_query_string(
+    query: &str,
+    camera: Option<&KmlCameraView>,
+    canvas: Option<(f64, f64)>,
+) -> String {
+    fn fix_latitude(value: f64) -> f64 {
+        if value < -CesiumMath::PI_OVER_TWO {
+            -CesiumMath::PI_OVER_TWO
+        } else if value > CesiumMath::PI_OVER_TWO {
+            CesiumMath::PI_OVER_TWO
+        } else {
+            value
+        }
+    }
+    fn fix_longitude(value: f64) -> f64 {
+        if value > CesiumMath::PI {
+            value - CesiumMath::TWO_PI
+        } else if value < -CesiumMath::PI {
+            value + CesiumMath::TWO_PI
+        } else {
+            value
+        }
+    }
+
+    let mut query_string = query.to_string();
+
+    match camera {
+        Some(view) => {
+            let mut bbox = view.bbox;
+            if !CesiumMath::equals_epsilon(
+                view.view_bound_scale,
+                1.0,
+                Some(CesiumMath::EPSILON9),
+                None,
+            ) {
+                let new_half_width = Rectangle::compute_width(&bbox) * view.view_bound_scale * 0.5;
+                let new_half_height =
+                    Rectangle::compute_height(&bbox) * view.view_bound_scale * 0.5;
+                bbox = Rectangle::new(
+                    fix_longitude(view.center_longitude - new_half_width),
+                    fix_latitude(view.center_latitude - new_half_height),
+                    fix_longitude(view.center_longitude + new_half_width),
+                    fix_latitude(view.center_latitude + new_half_height),
+                );
+            }
+
+            query_string = query_string.replacen(
+                "[bboxWest]",
+                &CesiumMath::to_degrees(bbox.west).to_string(),
+                1,
+            );
+            query_string = query_string.replacen(
+                "[bboxSouth]",
+                &CesiumMath::to_degrees(bbox.south).to_string(),
+                1,
+            );
+            query_string = query_string.replacen(
+                "[bboxEast]",
+                &CesiumMath::to_degrees(bbox.east).to_string(),
+                1,
+            );
+            query_string = query_string.replacen(
+                "[bboxNorth]",
+                &CesiumMath::to_degrees(bbox.north).to_string(),
+                1,
+            );
+
+            let lon = CesiumMath::to_degrees(view.center_longitude).to_string();
+            let lat = CesiumMath::to_degrees(view.center_latitude).to_string();
+            query_string = query_string.replacen("[lookatLon]", &lon, 1);
+            query_string = query_string.replacen("[lookatLat]", &lat, 1);
+            query_string = query_string.replacen(
+                "[lookatTilt]",
+                &CesiumMath::to_degrees(view.pitch).to_string(),
+                1,
+            );
+            query_string = query_string.replacen(
+                "[lookatHeading]",
+                &CesiumMath::to_degrees(view.heading).to_string(),
+                1,
+            );
+            query_string = query_string.replacen("[lookatRange]", &view.range.to_string(), 1);
+            query_string = query_string.replacen("[lookatTerrainLon]", &lon, 1);
+            query_string = query_string.replacen("[lookatTerrainLat]", &lat, 1);
+            query_string =
+                query_string.replacen("[lookatTerrainAlt]", &view.center_height.to_string(), 1);
+
+            query_string = query_string.replacen(
+                "[cameraLon]",
+                &CesiumMath::to_degrees(view.camera_longitude).to_string(),
+                1,
+            );
+            query_string = query_string.replacen(
+                "[cameraLat]",
+                &CesiumMath::to_degrees(view.camera_latitude).to_string(),
+                1,
+            );
+            // Upstream quirk: the JS passes the camera height through
+            // `toDegrees`; mirrored for fidelity.
+            query_string = query_string.replacen(
+                "[cameraAlt]",
+                &CesiumMath::to_degrees(view.camera_altitude).to_string(),
+                1,
+            );
+
+            let mut horiz_fov = String::new();
+            let mut vert_fov = String::new();
+            if let (Some(fov), Some(aspect_ratio)) = (view.fov_degrees, view.aspect_ratio) {
+                if aspect_ratio > 1.0 {
+                    horiz_fov = fov.to_string();
+                    vert_fov = (fov / aspect_ratio).to_string();
+                } else {
+                    vert_fov = fov.to_string();
+                    horiz_fov = (fov * aspect_ratio).to_string();
+                }
+            }
+            query_string = query_string.replacen("[horizFov]", &horiz_fov, 1);
+            query_string = query_string.replacen("[vertFov]", &vert_fov, 1);
+        }
+        None => {
+            query_string = query_string.replacen("[bboxWest]", "-180", 1);
+            query_string = query_string.replacen("[bboxSouth]", "-90", 1);
+            query_string = query_string.replacen("[bboxEast]", "180", 1);
+            query_string = query_string.replacen("[bboxNorth]", "90", 1);
+
+            query_string = query_string.replacen("[lookatLon]", "", 1);
+            query_string = query_string.replacen("[lookatLat]", "", 1);
+            query_string = query_string.replacen("[lookatRange]", "", 1);
+            query_string = query_string.replacen("[lookatTilt]", "", 1);
+            query_string = query_string.replacen("[lookatHeading]", "", 1);
+            query_string = query_string.replacen("[lookatTerrainLon]", "", 1);
+            query_string = query_string.replacen("[lookatTerrainLat]", "", 1);
+            query_string = query_string.replacen("[lookatTerrainAlt]", "", 1);
+
+            query_string = query_string.replacen("[cameraLon]", "", 1);
+            query_string = query_string.replacen("[cameraLat]", "", 1);
+            query_string = query_string.replacen("[cameraAlt]", "", 1);
+            query_string = query_string.replacen("[horizFov]", "", 1);
+            query_string = query_string.replacen("[vertFov]", "", 1);
+        }
+    }
+
+    match canvas {
+        Some((width, height)) => {
+            query_string = query_string.replacen("[horizPixels]", &width.to_string(), 1);
+            query_string = query_string.replacen("[vertPixels]", &height.to_string(), 1);
+        }
+        None => {
+            query_string = query_string.replacen("[horizPixels]", "", 1);
+            query_string = query_string.replacen("[vertPixels]", "", 1);
+        }
+    }
+
+    query_string = query_string.replacen("[terrainEnabled]", "1", 1);
+    query_string = query_string.replacen("[clientVersion]", "1", 1);
+    query_string = query_string.replacen("[kmlVersion]", "2.2", 1);
+    query_string = query_string.replacen("[clientName]", "Cesium", 1);
+    query_string = query_string.replacen("[language]", "English", 1);
+
+    query_string
+}
+
+// ============================================================================
 // Feature / geometry type tables
 // ============================================================================
 
-/// Mirrors the `featureTypes` table keys (NetworkLink/GroundOverlay/
-/// PhotoOverlay/ScreenOverlay/Tour are routed to the unsupported path in
-/// this port, see the module DEVIATION note).
+/// Mirrors the `featureTypes` table keys.
 fn is_feature_type(name: &str) -> bool {
     matches!(
         name,
@@ -1054,6 +1491,32 @@ fn apply_style(style_node: &XmlElement, target: &mut Entity, source_uri: Option<
                 if let Some(outline) = query_boolean_value(Some(node), "outline") {
                     polygon.outline = outline;
                 }
+            }
+            "BalloonStyle" => {
+                // Mirrors the JS internal `balloonStyle` style property:
+                // it is used only during style processing and never ends
+                // up on the final entity.
+                let bg_color = query_string_value(Some(node), "bgColor")
+                    .and_then(|value| parse_color_string(&value))
+                    .unwrap_or(Color::WHITE);
+                let text_color = query_string_value(Some(node), "textColor")
+                    .and_then(|value| parse_color_string(&value))
+                    .unwrap_or(Color::BLACK);
+                let text = query_string_value(Some(node), "text");
+                let mut balloon = serde_json::Map::new();
+                balloon.insert("bgColor".to_string(), color_to_json(&bg_color));
+                balloon.insert("textColor".to_string(), color_to_json(&text_color));
+                if let Some(text) = text {
+                    balloon.insert("text".to_string(), serde_json::Value::String(text));
+                }
+                target.properties.set(
+                    "balloonStyle",
+                    PropertyResult::Json(serde_json::Value::Object(balloon)),
+                );
+            }
+            "ListStyle" => {
+                // DEVIATION: the JS only warns about radioFolder /
+                // checkOffOnly list styles; no value model is produced.
             }
             _ => {}
         }
@@ -1364,6 +1827,117 @@ fn compute_final_style(
 }
 
 // ============================================================================
+// Camera / LookAt processing
+// ============================================================================
+
+/// Mirror of `processCamera`.
+fn process_camera(feature_node: &XmlElement) -> Option<KmlCamera> {
+    let camera = query_first_node(Some(feature_node), "Camera")?;
+    let lon = query_numeric_value(Some(camera), "longitude").unwrap_or(0.0);
+    let lat = query_numeric_value(Some(camera), "latitude").unwrap_or(0.0);
+    let altitude = query_numeric_value(Some(camera), "altitude").unwrap_or(0.0);
+    let heading = query_numeric_value(Some(camera), "heading").unwrap_or(0.0);
+    let tilt = query_numeric_value(Some(camera), "tilt").unwrap_or(0.0);
+    let roll = query_numeric_value(Some(camera), "roll").unwrap_or(0.0);
+
+    let position = Cartesian3::from_degrees_new(lon, lat, Some(altitude), None);
+    // `HeadingPitchRoll.fromDegrees(heading, tilt - 90.0, roll)`.
+    let heading_pitch_roll = HeadingPitchRoll::new(
+        CesiumMath::to_radians(heading),
+        CesiumMath::to_radians(tilt - 90.0),
+        CesiumMath::to_radians(roll),
+    );
+    Some(KmlCamera::new(position, heading_pitch_roll))
+}
+
+/// Mirror of `processLookAt`.
+fn process_look_at(feature_node: &XmlElement) -> Option<KmlLookAt> {
+    let look_at = query_first_node(Some(feature_node), "LookAt")?;
+    let lon = query_numeric_value(Some(look_at), "longitude").unwrap_or(0.0);
+    let lat = query_numeric_value(Some(look_at), "latitude").unwrap_or(0.0);
+    let altitude = query_numeric_value(Some(look_at), "altitude").unwrap_or(0.0);
+    let heading = query_numeric_value(Some(look_at), "heading");
+    let tilt = query_numeric_value(Some(look_at), "tilt");
+    let range = query_numeric_value(Some(look_at), "range").unwrap_or(0.0);
+
+    let tilt = CesiumMath::to_radians(tilt.unwrap_or(0.0));
+    let heading = CesiumMath::to_radians(heading.unwrap_or(0.0));
+
+    let heading_pitch_range =
+        HeadingPitchRange::new(heading, tilt - CesiumMath::PI_OVER_TWO, range);
+    let view_point = Cartesian3::from_degrees_new(lon, lat, Some(altitude), None);
+    Some(KmlLookAt::new(view_point, heading_pitch_range))
+}
+
+fn color_to_json(color: &Color) -> serde_json::Value {
+    serde_json::Value::Array(vec![
+        serde_json::Value::from(color.red),
+        serde_json::Value::from(color.green),
+        serde_json::Value::from(color.blue),
+        serde_json::Value::from(color.alpha),
+    ])
+}
+
+fn cartesian3_to_json(position: &Cartesian3) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    map.insert("x".to_string(), serde_json::Value::from(position.x));
+    map.insert("y".to_string(), serde_json::Value::from(position.y));
+    map.insert("z".to_string(), serde_json::Value::from(position.z));
+    serde_json::Value::Object(map)
+}
+
+/// Projects a [`KmlCamera`] into the entity `kml.camera` metadata shape.
+fn kml_camera_to_json(camera: &KmlCamera) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    map.insert(
+        "position".to_string(),
+        cartesian3_to_json(&camera.position),
+    );
+    let mut hpr = serde_json::Map::new();
+    hpr.insert(
+        "heading".to_string(),
+        serde_json::Value::from(camera.heading_pitch_roll.heading),
+    );
+    hpr.insert(
+        "pitch".to_string(),
+        serde_json::Value::from(camera.heading_pitch_roll.pitch),
+    );
+    hpr.insert(
+        "roll".to_string(),
+        serde_json::Value::from(camera.heading_pitch_roll.roll),
+    );
+    map.insert("headingPitchRoll".to_string(), serde_json::Value::Object(hpr));
+    serde_json::Value::Object(map)
+}
+
+/// Projects a [`KmlLookAt`] into the entity `kml.lookAt` metadata shape.
+fn kml_look_at_to_json(look_at: &KmlLookAt) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    map.insert(
+        "position".to_string(),
+        cartesian3_to_json(&look_at.position),
+    );
+    let mut hpr = serde_json::Map::new();
+    hpr.insert(
+        "heading".to_string(),
+        serde_json::Value::from(look_at.heading_pitch_range.heading),
+    );
+    hpr.insert(
+        "pitch".to_string(),
+        serde_json::Value::from(look_at.heading_pitch_range.pitch),
+    );
+    hpr.insert(
+        "range".to_string(),
+        serde_json::Value::from(look_at.heading_pitch_range.range),
+    );
+    map.insert(
+        "headingPitchRange".to_string(),
+        serde_json::Value::Object(hpr),
+    );
+    serde_json::Value::Object(map)
+}
+
+// ============================================================================
 // Feature processing
 // ============================================================================
 
@@ -1498,6 +2072,12 @@ fn process_feature(
             "extendedData".to_string(),
             serde_json::Value::Object(extended_data),
         );
+    }
+    if let Some(camera) = process_camera(feature_node) {
+        kml_data.insert("camera".to_string(), kml_camera_to_json(&camera));
+    }
+    if let Some(look_at) = process_look_at(feature_node) {
+        kml_data.insert("lookAt".to_string(), kml_look_at_to_json(&look_at));
     }
     if !kml_data.is_empty() {
         entity.properties.set(
@@ -1782,6 +2362,325 @@ fn process_multi_geometry(
 }
 
 // ============================================================================
+// Tour / overlay / NetworkLink feature processing
+// ============================================================================
+
+/// Mirror of `processTour` (playlist parsing; playback is not
+/// materialized, see the [`KmlTour`] DEVIATION note).
+fn process_tour(data_source: &mut KmlDataSource, node: &XmlElement) {
+    let name = query_string_value(Some(node), "name");
+    let id = query_string_attribute(Some(node), "id");
+    let mut tour = KmlTour::new(name, id);
+
+    if let Some(playlist_node) = query_first_node(Some(node), "Playlist") {
+        for entry_node in &playlist_node.children {
+            match entry_node.local_name.as_str() {
+                "FlyTo" => process_tour_fly_to(&mut tour, entry_node),
+                "Wait" => process_tour_wait(&mut tour, entry_node),
+                // DEVIATION: SoundCue/AnimatedUpdate/TourControl only
+                // raise a oneTimeWarning in JS; the warning is omitted.
+                _ => {}
+            }
+        }
+    }
+
+    data_source.kml_tours.push(tour);
+}
+
+/// Mirror of `processTourFlyTo` (the view lookup mirrors the JS
+/// `t.kml.lookAt || t.kml.camera` selection).
+fn process_tour_fly_to(tour: &mut KmlTour, entry_node: &XmlElement) {
+    let duration = query_numeric_value(Some(entry_node), "duration");
+    let fly_to_mode = query_string_value(Some(entry_node), "flyToMode");
+
+    let view = process_look_at(entry_node)
+        .map(KmlTourView::LookAt)
+        .or_else(|| process_camera(entry_node).map(KmlTourView::Camera));
+
+    tour.add_playlist_entry(KmlTourEntry::FlyTo(KmlTourFlyTo::new(
+        duration,
+        fly_to_mode,
+        view,
+    )));
+}
+
+/// Mirror of `processTourWait`.
+fn process_tour_wait(tour: &mut KmlTour, entry_node: &XmlElement) {
+    let duration = query_numeric_value(Some(entry_node), "duration");
+    tour.add_playlist_entry(KmlTourEntry::Wait(KmlTourWait::new(duration)));
+}
+
+/// Mirrors the altitudeMode tail of `processGroundOverlay` (warnings
+/// omitted): returns the overlay height for `absolute` and
+/// gx:`relativeToSeaFloor` modes.
+fn overlay_height_for_altitude_mode(
+    node: &XmlElement,
+    altitude_mode: Option<&str>,
+    gx_altitude_mode: Option<&str>,
+) -> Option<f64> {
+    if let Some(mode) = altitude_mode {
+        if mode == "absolute" {
+            // Use height above ellipsoid until MSL is supported.
+            return query_numeric_value(Some(node), "altitude");
+        }
+        // clampToGround (default 0) and unknown modes keep the default.
+        None
+    } else if let Some(mode) = gx_altitude_mode {
+        if mode == "relativeToSeaFloor" {
+            // JS treats relativeToSeaFloor as absolute (with a warning).
+            return query_numeric_value(Some(node), "altitude");
+        }
+        None
+    } else {
+        None
+    }
+}
+
+/// Mirror of `processGroundOverlay` (warnings omitted).
+fn process_ground_overlay(
+    data_source: &mut KmlDataSource,
+    node: &XmlElement,
+    processing: &ProcessingData,
+) {
+    let (entity_id, _style_entity) = process_feature(data_source, node, processing);
+
+    let positions = read_coordinates(query_first_node(Some(node), "LatLonQuad"));
+    let z_index = query_numeric_value(Some(node), "drawOrder");
+    let href = get_icon_href(query_first_node(Some(node), "Icon"), processing.source_uri);
+    let color = query_color_value(Some(node), "color");
+    let (altitude_mode, gx_altitude_mode) = query_altitude_modes(node);
+
+    let entity = data_source
+        .entity_collection
+        .get_by_id_mut(&entity_id)
+        .expect("entity was just added");
+
+    if let Some(positions) = positions {
+        let mut polygon = create_default_polygon();
+        polygon.hierarchy = positions;
+        // DEVIATION (gx:LatLonQuad): the Rust PolygonGraphics value model
+        // has no zIndex and no image material, so the draw order and the
+        // icon texture projection are dropped (JS warns about the texture
+        // projection too); the color is still applied.
+        if let Some(color) = color {
+            polygon.material_color = color;
+        }
+        polygon.height = overlay_height_for_altitude_mode(
+            node,
+            altitude_mode.as_deref(),
+            gx_altitude_mode.as_deref(),
+        );
+        entity.polygon = Some(polygon);
+    } else {
+        let mut geometry = RectangleGraphics::new();
+        geometry.z_index = z_index;
+
+        if let Some(lat_lon_box) = query_first_node(Some(node), "LatLonBox") {
+            let west = query_numeric_value(Some(lat_lon_box), "west")
+                .map(|value| CesiumMath::negative_pi_to_pi(CesiumMath::to_radians(value)));
+            let south = query_numeric_value(Some(lat_lon_box), "south")
+                .map(|value| CesiumMath::clamp_to_latitude_range(CesiumMath::to_radians(value)));
+            let east = query_numeric_value(Some(lat_lon_box), "east")
+                .map(|value| CesiumMath::negative_pi_to_pi(CesiumMath::to_radians(value)));
+            let north = query_numeric_value(Some(lat_lon_box), "north")
+                .map(|value| CesiumMath::clamp_to_latitude_range(CesiumMath::to_radians(value)));
+            geometry.coordinates = Some(Rectangle::new(
+                west.unwrap_or(0.0),
+                south.unwrap_or(0.0),
+                east.unwrap_or(0.0),
+                north.unwrap_or(0.0),
+            ));
+
+            if let Some(rotation) = query_numeric_value(Some(lat_lon_box), "rotation") {
+                let rotation_radians = CesiumMath::to_radians(rotation);
+                geometry.rotation = Some(rotation_radians);
+                geometry.st_rotation = Some(rotation_radians);
+            }
+        }
+
+        if let Some(href) = href {
+            // DEVIATION: gx:x/gx:y/gx:w/gx:h icon sub-regions only raise a
+            // warning in JS; the warning is omitted.
+            geometry.material_image = Some(href);
+            geometry.material_color = color;
+            geometry.material_transparent = true;
+        } else {
+            geometry.material_color = color;
+        }
+
+        let height = overlay_height_for_altitude_mode(
+            node,
+            altitude_mode.as_deref(),
+            gx_altitude_mode.as_deref(),
+        );
+        if height.is_some() {
+            geometry.z_index = None;
+        }
+        geometry.height = height;
+        entity.rectangle = Some(geometry);
+    }
+}
+
+/// Mirror of `processScreenOverlay`.
+///
+/// DEVIATION (DOM): CesiumJS creates an `<img>` in the
+/// `screenOverlayContainer` and computes CSS layout after the image
+/// loads; this port keeps the parsed icon url and layout parameters in
+/// [`KmlScreenOverlay`] instead.
+fn process_screen_overlay(
+    data_source: &mut KmlDataSource,
+    node: &XmlElement,
+    processing: &ProcessingData,
+) {
+    let icon = get_icon_href(query_first_node(Some(node), "Icon"), processing.source_uri);
+    if icon.is_none() {
+        return;
+    }
+
+    fn read_vec2(node: &XmlElement, tag: &str) -> Option<KmlOverlayVec2> {
+        let vec_node = query_first_node(Some(node), tag)?;
+        Some(KmlOverlayVec2 {
+            x: query_numeric_attribute(Some(vec_node), "x"),
+            y: query_numeric_attribute(Some(vec_node), "y"),
+            x_units: query_string_attribute(Some(vec_node), "xunits"),
+            y_units: query_string_attribute(Some(vec_node), "yunits"),
+        })
+    }
+
+    data_source.screen_overlays.push(KmlScreenOverlay {
+        icon,
+        screen_xy: read_vec2(node, "screenXY"),
+        overlay_xy: read_vec2(node, "overlayXY"),
+        size: read_vec2(node, "size"),
+    });
+}
+
+/// Mirror of `processNetworkLink`.
+///
+/// DEVIATION (no fetching): the linked document is never fetched, so the
+/// JS post-load steps (re-parenting the fetched entities,
+/// NetworkLinkControl cookie/minRefreshPeriod/expires handling, the
+/// refresh timer registration in `_networkLinks`) are replaced by
+/// registering a [`KmlNetworkLinkInfo`] derived from the `<Link>` node
+/// alone. The computed href applies the same viewFormat/httpQuery and
+/// `[placeholder]` substitution pipeline as CesiumJS, with no camera
+/// (the bbox defaults branch).
+fn process_network_link(
+    data_source: &mut KmlDataSource,
+    node: &XmlElement,
+    processing: &ProcessingData,
+) {
+    let (entity_id, _style_entity) = process_feature(data_source, node, processing);
+
+    let link = query_first_node(Some(node), "Link").or_else(|| query_first_node(Some(node), "Url"));
+    let Some(link) = link else { return };
+    let Some(href_value) = query_string_value(Some(link), "href") else {
+        return;
+    };
+
+    let mut href = resolve_href(&href_value, processing.source_uri);
+    // DEVIATION (KMZ): resolveHref cannot produce `data:` uris in this
+    // port, so the KMZ archive branch of the JS is unreachable.
+
+    let view_refresh_mode = query_string_value(Some(link), "viewRefreshMode");
+    if view_refresh_mode.as_deref() == Some("onRegion") {
+        // oneTimeWarning("KML - Unsupported viewRefreshMode: onRegion")
+        return;
+    }
+    let view_bound_scale = query_string_value(Some(link), "viewBoundScale")
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(1.0);
+    let default_view_format = if view_refresh_mode.as_deref() == Some("onStop") {
+        "BBOX=[bboxWest],[bboxSouth],[bboxEast],[bboxNorth]"
+    } else {
+        ""
+    };
+    let view_format = query_string_value(Some(link), "viewFormat")
+        .unwrap_or_else(|| default_view_format.to_string());
+    let http_query = query_string_value(Some(link), "httpQuery");
+
+    // Mirrors `setQueryParameters(queryToObject(cleanupString(...)))`:
+    // existing query pairs are kept, later keys overwrite earlier ones.
+    let (base, existing) = match href.find('?') {
+        Some(index) => (href[..index].to_string(), query_to_pairs(&href[index + 1..])),
+        None => (href.clone(), Vec::new()),
+    };
+    let mut pairs = existing;
+    let merge_pairs = |new_pairs: Vec<(String, String)>, pairs: &mut Vec<(String, String)>| {
+        for (key, value) in new_pairs {
+            if let Some(entry) = pairs.iter_mut().find(|(name, _)| *name == key) {
+                entry.1 = value;
+            } else {
+                pairs.push((key, value));
+            }
+        }
+    };
+    if !view_format.is_empty() {
+        let new_pairs = query_to_pairs(&cleanup_string(&view_format));
+        merge_pairs(new_pairs, &mut pairs);
+    }
+    if let Some(ref http_query) = http_query {
+        let new_pairs = query_to_pairs(&cleanup_string(http_query));
+        merge_pairs(new_pairs, &mut pairs);
+    }
+
+    let query = pairs_to_query(&pairs);
+    // DEVIATION (no scene camera/canvas): the camera-less substitution
+    // branch is used.
+    let query = process_network_link_query_string(&query, None, None);
+    let final_pairs = query_to_pairs(&query);
+    href = if final_pairs.is_empty() {
+        base
+    } else {
+        format!("{}?{}", base, encode_query_pairs(&final_pairs))
+    };
+
+    let refresh_mode_string = query_string_value(Some(link), "refreshMode");
+    let refresh_interval = query_numeric_value(Some(link), "refreshInterval").unwrap_or(0.0);
+
+    let mut info = KmlNetworkLinkInfo {
+        id: create_guid(),
+        href,
+        entity_id,
+        refresh_mode: None,
+        time: 0.0,
+        view_bound_scale,
+    };
+
+    let needs_update = (refresh_mode_string.as_deref() == Some("onInterval")
+        && refresh_interval > 0.0)
+        || refresh_mode_string.as_deref() == Some("onExpire")
+        || view_refresh_mode.as_deref() == Some("onStop");
+
+    if needs_update {
+        if refresh_mode_string.as_deref() == Some("onInterval") {
+            info.refresh_mode = Some(KmlRefreshMode::Interval);
+            info.time = refresh_interval;
+        } else if refresh_mode_string.as_deref() == Some("onExpire") {
+            // DEVIATION: the `expires` date lives in the NetworkLinkControl
+            // of the (unfetched) linked document; the mode is registered
+            // with no expiry time instead of being skipped.
+            info.refresh_mode = Some(KmlRefreshMode::Expire);
+        } else if view_refresh_mode.as_deref() == Some("onStop") {
+            // DEVIATION: the JS requires a `dataSource.camera` for onStop
+            // refreshes and warns otherwise; this port registers the mode
+            // unconditionally.
+            info.refresh_mode = Some(KmlRefreshMode::Stop);
+            info.time = query_numeric_value(Some(link), "viewRefreshTime").unwrap_or(0.0);
+        }
+    }
+
+    data_source.network_links.push(info.clone());
+    // DEVIATION (no fetching): CesiumJS raises `refreshEvent` from the
+    // refresh timer with `(dataSource, href)` when the linked document is
+    // due; without fetching, the event is raised at registration time for
+    // links that need updates so subscribers still observe the href.
+    if info.refresh_mode.is_some() {
+        data_source.refresh_event.raise_event(&info.href);
+    }
+}
+
+// ============================================================================
 // Feature node dispatch
 // ============================================================================
 
@@ -1858,8 +2757,8 @@ fn process_unsupported_feature(data_source: &KmlDataSource, node: &XmlElement) {
     let _ = node;
 }
 
-/// Mirror of `processFeatureNode` (featureTypes dispatch; NetworkLink,
-/// overlays and Tour are routed to the unsupported path in this port).
+/// Mirror of `processFeatureNode` (featureTypes dispatch; PhotoOverlay
+/// and unknown features go through the unsupported path).
 fn process_feature_node(
     data_source: &mut KmlDataSource,
     node: &XmlElement,
@@ -1869,6 +2768,10 @@ fn process_feature_node(
         "Document" => process_document(data_source, node, processing),
         "Folder" => process_folder(data_source, node, processing),
         "Placemark" => process_placemark(data_source, node, processing),
+        "NetworkLink" => process_network_link(data_source, node, processing),
+        "GroundOverlay" => process_ground_overlay(data_source, node, processing),
+        "ScreenOverlay" => process_screen_overlay(data_source, node, processing),
+        "Tour" => process_tour(data_source, node),
         _ => process_unsupported_feature(data_source, node),
     }
 }

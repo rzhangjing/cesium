@@ -15,6 +15,7 @@ pub mod cesium3_d_tileset_visualizer;
 pub mod checkerboard_material_property;
 pub mod color_material_property;
 pub mod composite_entity_collection;
+pub mod composite_intervals;
 pub mod composite_material_property;
 pub mod composite_position_property;
 pub mod composite_property;

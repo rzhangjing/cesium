@@ -155,6 +155,8 @@ mod core_plane_geometry_spec;
 mod core_plane_outline_geometry_spec;
 #[path = "core/core_plane_spec.rs"]
 mod core_plane_spec;
+#[path = "core/core_pixel_format_spec.rs"]
+mod core_pixel_format_spec;
 #[path = "core/core_double_ended_priority_queue_spec.rs"]
 mod core_double_ended_priority_queue_spec;
 #[path = "core/core_ray_spec.rs"]
@@ -291,6 +293,8 @@ mod core_terrain_geometry_spec;
 mod core_projection_misc_spec;
 #[path = "core/core_request_misc_spec.rs"]
 mod core_request_misc_spec;
+#[path = "core/core_request_scheduler_spec.rs"]
+mod core_request_scheduler_spec;
 #[path = "core/core_resource_spec.rs"]
 mod core_resource_spec;
 #[path = "core/core_earth_iau_spec.rs"]

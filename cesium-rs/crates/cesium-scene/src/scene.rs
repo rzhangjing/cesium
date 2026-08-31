@@ -64,6 +64,12 @@ pub struct Scene {
     /// `(transitioner, oldMode, newMode, isMorphing)`, the port raises the
     /// new mode).
     morph_start: Event<SceneMode>,
+    /// The event raised when a morph transition completes (mirrors CesiumJS
+    /// `Scene#morphComplete`, raised by the JS `SceneTransitioner` in
+    /// `completeMorph`; the JS payload is
+    /// `(transitioner, previousMode, newMode)`, the port raises the new
+    /// mode).
+    morph_complete: Event<SceneMode>,
     /// Mirrors the CesiumJS `Scene#useWebVR` flag. DEVIATION: the flag is
     /// stored and readable, but the stereo/VR frustum handling has no
     /// headless analogue.
@@ -125,6 +131,7 @@ impl Scene {
             mode: Cell::new(SceneMode::Scene3D),
             morph_time: Cell::new(1.0),
             morph_start: Event::new(),
+            morph_complete: Event::new(),
             use_web_vr: Cell::new(false),
             background_color: Color::new(0.0, 0.0, 0.0, 1.0),
             viewport_quad: ViewportQuad::with_color([1.0, 0.0, 0.0, 1.0]),
@@ -172,6 +179,25 @@ impl Scene {
     /// Returns the `morphStart` event (mirrors CesiumJS `Scene#morphStart`).
     pub fn morph_start(&self) -> &Event<SceneMode> { &self.morph_start }
 
+    /// Returns the `morphComplete` event (mirrors CesiumJS
+    /// `Scene#morphComplete`).
+    pub fn morph_complete(&self) -> &Event<SceneMode> { &self.morph_complete }
+
+    /// Completes the current morph transition immediately (mirrors CesiumJS
+    /// `Scene#completeMorph`).
+    ///
+    /// DEVIATION: the JS delegates to `SceneTransitioner#completeMorph`,
+    /// which snaps the camera/morph uniforms to the target mode mid-flight;
+    /// the port's morph path already completes synchronously, so this
+    /// resets `morphTime` to the current mode's default and re-raises
+    /// `morphComplete` (the observable state after a JS `completeMorph`).
+    pub fn complete_morph(&self) {
+        let mode = self.mode.get();
+        self.morph_time
+            .set(SceneMode::get_morph_time(mode).unwrap_or(1.0));
+        self.morph_complete.raise_event(&mode);
+    }
+
     /// Starts morphing to 2D (mirrors CesiumJS `Scene#morphTo2D`).
     pub fn morph_to_2d(&self, duration: f64) {
         self.morph(SceneMode::Scene2D, duration);
@@ -196,13 +222,15 @@ impl Scene {
     /// uniforms 0→1); the port completes the transition synchronously: the
     /// mode is set, `morphStart` fires with the new mode and the requested
     /// duration as the morph time, then the morph time returns to the
-    /// mode's default (the JS `completeMorph` behavior).
+    /// mode's default and `morphComplete` fires (the JS `completeMorph`
+    /// behavior).
     fn morph(&self, mode: SceneMode, duration: f64) {
         self.mode.set(mode);
         self.morph_time.set(duration);
         self.morph_start.raise_event(&mode);
         self.morph_time
             .set(SceneMode::get_morph_time(mode).unwrap_or(1.0));
+        self.morph_complete.raise_event(&mode);
     }
 
     /// Returns the `useWebVR` flag (mirrors CesiumJS `Scene#useWebVR`).
@@ -901,6 +929,42 @@ mod tests {
         assert_eq!(scene.mode(), SceneMode::Scene3D);
         // The synchronous transition completed: the morph time returned to
         // the mode default (the JS completeMorph behavior).
+        assert_eq!(
+            scene.morph_time(),
+            SceneMode::get_morph_time(SceneMode::Scene3D).unwrap_or(1.0)
+        );
+    }
+
+    /// Mirrors the JS `SceneTransitioner` completion notification: every
+    /// morph raises `morphComplete` with the new mode once the (synchronous)
+    /// transition finishes, and `completeMorph` re-raises it.
+    #[test]
+    fn morph_transitions_raise_morph_complete() {
+        let scene = Scene::new();
+        let received = Rc::new(Cell::new(None::<SceneMode>));
+        let count = Rc::new(Cell::new(0usize));
+        {
+            let received = received.clone();
+            let count = count.clone();
+            let _ = scene.morph_complete().add_listener(move |mode| {
+                received.set(Some(*mode));
+                count.set(count.get() + 1);
+            });
+        }
+
+        scene.morph_to_2d(1.5);
+        assert_eq!(received.get(), Some(SceneMode::Scene2D));
+        assert_eq!(count.get(), 1);
+
+        scene.morph_to_3d(0.5);
+        assert_eq!(received.get(), Some(SceneMode::Scene3D));
+        assert_eq!(count.get(), 2);
+
+        // completeMorph on an already-completed morph keeps the mode's
+        // default morph time and re-raises morphComplete.
+        scene.complete_morph();
+        assert_eq!(received.get(), Some(SceneMode::Scene3D));
+        assert_eq!(count.get(), 3);
         assert_eq!(
             scene.morph_time(),
             SceneMode::get_morph_time(SceneMode::Scene3D).unwrap_or(1.0)

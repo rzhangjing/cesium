@@ -26,6 +26,12 @@ impl Property for CallbackPositionProperty {
 
     fn is_constant(&self) -> bool { false }
     fn is_destroyed(&self) -> bool { self.is_destroyed }
+
+    fn as_position_property(
+        &self,
+    ) -> Option<&dyn crate::position_property::PositionProperty> {
+        Some(self)
+    }
 }
 
 impl PositionProperty for CallbackPositionProperty {

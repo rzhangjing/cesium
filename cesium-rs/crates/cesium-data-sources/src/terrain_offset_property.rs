@@ -26,6 +26,12 @@ impl Property for TerrainOffsetProperty {
 
     fn is_constant(&self) -> bool { self.position_property.is_constant() }
     fn is_destroyed(&self) -> bool { self.is_destroyed }
+
+    fn as_position_property(
+        &self,
+    ) -> Option<&dyn crate::position_property::PositionProperty> {
+        Some(self)
+    }
 }
 
 impl PositionProperty for TerrainOffsetProperty {

@@ -286,6 +286,11 @@ pub fn compute_options(
         computed_options.gran_y_sin = rotation_options.gran_y_sin;
         computed_options.gran_x_cos = rotation_options.gran_x_cos;
         computed_options.gran_x_sin = rotation_options.gran_x_sin;
+        // JS aliasing: `rotationOptions.nwCorner` IS the same scratch object
+        // as `computedOptions.nwCorner` (`nwCornerResult`), so the in-place
+        // project/rotate/unproject inside `getRotationOptions` already
+        // rotated it. The value port must write the rotated corner back.
+        computed_options.nw_corner = rotation_options.nw_corner;
 
         computed_options.bounding_rectangle.north = north;
         computed_options.bounding_rectangle.south = south;
@@ -311,7 +316,9 @@ pub fn compute_options(
         computed_options.st_gran_x_cos = st_rotation_options.gran_x_cos;
         computed_options.st_gran_y_sin = st_rotation_options.gran_y_sin;
         computed_options.st_gran_x_sin = st_rotation_options.gran_x_sin;
-        computed_options.st_nw_corner = Some(st_nw_corner);
+        // Same JS aliasing as above: `stNwCornerResult` is rotated in place
+        // inside `getRotationOptions`; write the rotated corner back.
+        computed_options.st_nw_corner = Some(st_rotation_options.nw_corner);
         computed_options.st_west = st_rotation_options.west;
         computed_options.st_south = st_rotation_options.south;
     }

@@ -6,6 +6,7 @@
 use crate::cartesian3::Cartesian3;
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
+use crate::map_projection::MapProjection;
 
 /// A simple map projection where longitude and latitude are linearly mapped
 /// to X and Y by multiplying them by the {@link Ellipsoid::maximum_radius}.
@@ -85,5 +86,19 @@ impl GeographicProjection {
         result.longitude = cartesian.x * one_over;
         result.latitude = cartesian.y * one_over;
         result.height = cartesian.z;
+    }
+}
+
+impl MapProjection for GeographicProjection {
+    fn ellipsoid(&self) -> &Ellipsoid {
+        GeographicProjection::ellipsoid(self)
+    }
+
+    fn project(&self, cartographic: &Cartographic) -> Cartesian3 {
+        GeographicProjection::project(self, cartographic)
+    }
+
+    fn unproject(&self, cartesian: &Cartesian3) -> Cartographic {
+        GeographicProjection::unproject(self, cartesian)
     }
 }

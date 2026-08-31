@@ -1,7 +1,9 @@
 use cesium_core::attribute_compression::AttributeCompression;
 use cesium_core::cartesian2::Cartesian2;
 use cesium_core::cartesian3::Cartesian3;
+use cesium_core::cartesian4::Cartesian4;
 use cesium_core::math::CesiumMath;
+use cesium_test_utils::expect_to_throw_dev_error_containing;
 
 #[test]
 fn oct_encode_and_decode_unit_vectors() {
@@ -94,6 +96,136 @@ fn decode_rgb565_matches_js_bit_exactly() {
             );
         }
     }
+}
+
+// --- debug guard mirrors (JS AttributeCompressionSpec `throws ...`) ---
+
+#[test]
+fn throws_oct_encode_non_unit_vector() {
+    // Mirror: it("throws oct encode non unit vector")
+    let non_unit = Cartesian3::new(2.0, 0.0, 0.0);
+    let mut result = Cartesian2::default();
+    expect_to_throw_dev_error_containing(
+        || {
+            AttributeCompression::oct_encode(&non_unit, &mut result);
+        },
+        "vector must be normalized.",
+    );
+}
+
+#[test]
+fn throws_oct_encode_zero_length_vector() {
+    // Mirror: it("throws oct encode zero length vector")
+    let mut result = Cartesian2::default();
+    expect_to_throw_dev_error_containing(
+        || {
+            AttributeCompression::oct_encode(&Cartesian3::ZERO, &mut result);
+        },
+        "vector must be normalized.",
+    );
+}
+
+#[test]
+fn throws_oct_decode_x_out_of_bounds() {
+    // Mirror: it("throws oct decode x out of bounds")
+    let mut result = Cartesian3::default();
+    expect_to_throw_dev_error_containing(
+        || {
+            AttributeCompression::oct_decode(256.0, 0.0, &mut result);
+        },
+        "x and y must be unsigned normalized integers between 0 and 255",
+    );
+}
+
+#[test]
+fn throws_oct_decode_y_out_of_bounds() {
+    // Mirror: it("throws oct decode y out of bounds")
+    let mut result = Cartesian3::default();
+    expect_to_throw_dev_error_containing(
+        || {
+            AttributeCompression::oct_decode(0.0, 256.0, &mut result);
+        },
+        "x and y must be unsigned normalized integers between 0 and 255",
+    );
+}
+
+#[test]
+fn throws_4_component_oct_decode_out_of_bounds() {
+    // Mirror: it("throws 4-component oct decode out of bounds")
+    let mut result = Cartesian3::default();
+    for component in 0..4 {
+        let mut encoded = Cartesian4::new(0.0, 0.0, 0.0, 0.0);
+        match component {
+            0 => encoded.x = 256.0,
+            1 => encoded.y = 256.0,
+            2 => encoded.z = 256.0,
+            _ => encoded.w = 256.0,
+        }
+        expect_to_throw_dev_error_containing(
+            || {
+                AttributeCompression::oct_decode_from_cartesian4(&encoded, &mut result);
+            },
+            "x, y, z, and w must be unsigned normalized integers between 0 and 255",
+        );
+    }
+}
+
+#[test]
+fn throws_oct_decode_float_out_of_range() {
+    // Phase 2 diff regression (D6, cases ac.octDecodeFloat.p2..p6): a packed
+    // value whose decoded x/y escapes [0, 255] must raise the same
+    // DeveloperError as CesiumJS instead of silently returning garbage.
+    let mut result = Cartesian3::default();
+    expect_to_throw_dev_error_containing(
+        || {
+            // 256 * 256 -> x = 256 > 255
+            AttributeCompression::oct_decode_float(65536.0, &mut result);
+        },
+        "x and y must be unsigned normalized integers between 0 and 255",
+    );
+}
+
+#[test]
+fn throws_oct_decode_float_non_numeric_result() {
+    // Phase 2 diff regression (D6, case ac.octDecodeFloat.p5): NaN input
+    // passes the range check and must surface the Cartesian3.normalize
+    // DeveloperError, matching CesiumJS.
+    let mut result = Cartesian3::default();
+    expect_to_throw_dev_error_containing(
+        || {
+            AttributeCompression::oct_decode_float(f64::NAN, &mut result);
+        },
+        "normalized result is not a number",
+    );
+}
+
+#[test]
+fn throws_oct_unpack_out_of_range() {
+    // Phase 2 diff regression (D6, cases ac.octUnpack.p0/p3): packed values
+    // that decode to out-of-range oct components must raise the
+    // DeveloperError, matching CesiumJS.
+    let packed = Cartesian2::new(0.0, 65536.0 * 256.0);
+    let mut v1 = Cartesian3::default();
+    let mut v2 = Cartesian3::default();
+    let mut v3 = Cartesian3::default();
+    expect_to_throw_dev_error_containing(
+        || {
+            AttributeCompression::oct_unpack(&packed, &mut v1, &mut v2, &mut v3);
+        },
+        "x and y must be unsigned normalized integers between 0 and 255",
+    );
+}
+
+#[test]
+fn throws_oct_encode_float_non_unit_vector() {
+    // Phase 2 diff regression (D6, cases ac.octEncodeFloat.r7/r8/r10): the
+    // normalization guard must fire through the float-encoding wrapper.
+    expect_to_throw_dev_error_containing(
+        || {
+            let _ = AttributeCompression::oct_encode_float(&Cartesian3::new(2.0, 0.0, 0.0));
+        },
+        "vector must be normalized.",
+    );
 }
 
 #[test]

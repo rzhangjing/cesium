@@ -3,6 +3,8 @@
 //! Worker entry point for creating frustum geometry.
 
 use cesium_core::cartesian3::Cartesian3;
+use cesium_core::cartesian4::Cartesian4;
+use cesium_core::frustum_geometry::FrustumGeometry;
 
 /// Creates frustum geometry in a worker.
 ///
@@ -15,15 +17,26 @@ pub fn create_frustum_geometry(params: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 /// Creates a frustum geometry from unpacked parameters (for in-process use).
+///
+/// Mirror of the JS worker body: the JS `FrustumGeometry` options are
+/// `frustum`/`origin`/`orientation` (a unit quaternion packed as a
+/// Cartesian4), so the unpacked entry takes the orientation directly and
+/// delegates `createGeometry` to the core port.
 pub fn create_frustum_geometry_unpacked(
-    _origin: &Cartesian3,
-    _direction: &Cartesian3,
-    _up: &Cartesian3,
-    _fov: f64,
-    _aspect_ratio: f64,
-    _near: f64,
-    _far: f64,
+    origin: &Cartesian3,
+    orientation: &Cartesian4,
+    near: f64,
+    far: f64,
+    fov: f64,
+    aspect_ratio: f64,
 ) -> Option<cesium_core::geometry::Geometry> {
-    // DEVIATION: FrustumGeometry not yet ported
-    None
+    let frustum_geometry = FrustumGeometry::new(
+        origin.clone(),
+        orientation.clone(),
+        near,
+        far,
+        fov,
+        aspect_ratio,
+    );
+    FrustumGeometry::create_geometry(&frustum_geometry)
 }

@@ -99,7 +99,7 @@ fn ground_polyline_new() {
         Cartesian3::new(0.0, 0.0, 0.0),
         Cartesian3::new(1.0, 0.0, 0.0),
     ];
-    let geo = GroundPolylineGeometry::new(positions, None, None);
+    let geo = GroundPolylineGeometry::new(positions, None, None, None, None);
     let _ = geo;
 }
 

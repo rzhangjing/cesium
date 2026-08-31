@@ -6,6 +6,7 @@ use crate::cartesian3::Cartesian3;
 use crate::cartesian4::Cartesian4;
 use crate::matrix3::Matrix3;
 use crate::quaternion::Quaternion;
+use crate::translation_rotation_scale::TranslationRotationScale;
 
 /// A 4x4 matrix in column-major order.
 ///
@@ -309,10 +310,421 @@ impl Matrix4 {
         Self::from_translation_quaternion_rotation_scale(translation, rotation, scale, &mut result);
         result
     }
-    // DEVIATION: fromTranslationRotationScale — requires TranslationRotationScale
-    // DEVIATION: fromCamera — requires Camera
-    // DEVIATION: computePerspectiveFieldOfView, computeOrthographicOffCenter, etc. — deferred
-    // DEVIATION: computeViewportTransformation — deferred
+    /// Port of `Matrix4.packArray`.
+    ///
+    /// Rust's `Vec<f64>` mirrors the JS "regular array" branch: it is resized
+    /// to `array.len() * 16`. The JS typed-array branch (DeveloperError when
+    /// the length does not match) is mirrored by `pack_array_into`.
+    pub fn pack_array(array: &[Self], result: &mut Vec<f64>) {
+        let result_length = array.len() * 16;
+        result.resize(result_length, 0.0);
+        for (i, matrix) in array.iter().enumerate() {
+            Self::pack(matrix, result, i * 16);
+        }
+    }
+
+    pub fn pack_array_new(array: &[Self]) -> Vec<f64> {
+        let mut result = Vec::new();
+        Self::pack_array(array, &mut result);
+        result
+    }
+
+    /// Mirrors the JS typed-array branch of `Matrix4.packArray`: `result`
+    /// must have exactly `array.len() * 16` elements, else a DeveloperError
+    /// is thrown (debug_assertions-gated).
+    pub fn pack_array_into(array: &[Self], result: &mut [f64]) {
+        #[cfg(debug_assertions)]
+        if result.len() != array.len() * 16 {
+            crate::developer_error::throw_developer_error(
+                "If result is a typed array, it must have exactly array.length * 16 elements",
+            );
+        }
+        for (i, matrix) in array.iter().enumerate() {
+            Self::pack(matrix, result, i * 16);
+        }
+    }
+
+    /// Port of `Matrix4.unpackArray`.
+    pub fn unpack_array(array: &[f64], result: &mut Vec<Self>) {
+        #[cfg(debug_assertions)]
+        {
+            if array.len() < 16 {
+                crate::developer_error::throw_developer_error("array.length must be greater than or equal to 16.");
+            }
+            if array.len() % 16 != 0 {
+                crate::developer_error::throw_developer_error("array length must be a multiple of 16.");
+            }
+        }
+
+        let length = array.len();
+        result.resize(length / 16, Self::default());
+        let mut i = 0;
+        while i < length {
+            let index = i / 16;
+            Self::unpack(array, i, &mut result[index]);
+            i += 16;
+        }
+    }
+
+    pub fn unpack_array_new(array: &[f64]) -> Vec<Self> {
+        let mut result = Vec::new();
+        Self::unpack_array(array, &mut result);
+        result
+    }
+
+    /// Port of `Matrix4.fromTranslationRotationScale`.
+    pub fn from_translation_rotation_scale(
+        translation_rotation_scale: &TranslationRotationScale,
+        result: &mut Self,
+    ) {
+        Self::from_translation_quaternion_rotation_scale(
+            &translation_rotation_scale.translation,
+            &translation_rotation_scale.rotation,
+            &translation_rotation_scale.scale,
+            result,
+        );
+    }
+
+    pub fn from_translation_rotation_scale_new(
+        translation_rotation_scale: &TranslationRotationScale,
+    ) -> Self {
+        let mut result = Self::default();
+        Self::from_translation_rotation_scale(translation_rotation_scale, &mut result);
+        result
+    }
+
+    /// Port of `Matrix4.fromCamera`.
+    ///
+    /// Note (docs/deferred.md #19, SEM-9): previously recorded as deferred
+    /// because the JS signature takes a Scene `Camera`; now back-filled
+    /// against [`CameraView`], which carries exactly the three fields the JS
+    /// reads (`position`/`direction`/`up`). Ledger file intentionally left
+    /// untouched (ledger updates belong to the follow-up bookkeeping task).
+    pub fn from_camera(camera: &CameraView, result: &mut Self) {
+        let position = &camera.position;
+        let direction = &camera.direction;
+        let up = &camera.up;
+
+        let mut f = Cartesian3::default();
+        Cartesian3::normalize(direction, &mut f);
+        let mut r = Cartesian3::cross_new(&f, up);
+        r = Cartesian3::normalize_new(&r);
+        let mut u = Cartesian3::cross_new(&r, &f);
+        u = Cartesian3::normalize_new(&u);
+
+        let s_x = r.x;
+        let s_y = r.y;
+        let s_z = r.z;
+        let f_x = f.x;
+        let f_y = f.y;
+        let f_z = f.z;
+        let u_x = u.x;
+        let u_y = u.y;
+        let u_z = u.z;
+        let position_x = position.x;
+        let position_y = position.y;
+        let position_z = position.z;
+        let t0 = s_x * -position_x + s_y * -position_y + s_z * -position_z;
+        let t1 = u_x * -position_x + u_y * -position_y + u_z * -position_z;
+        let t2 = f_x * position_x + f_y * position_y + f_z * position_z;
+
+        result.elements[0] = s_x;
+        result.elements[1] = u_x;
+        result.elements[2] = -f_x;
+        result.elements[3] = 0.0;
+        result.elements[4] = s_y;
+        result.elements[5] = u_y;
+        result.elements[6] = -f_y;
+        result.elements[7] = 0.0;
+        result.elements[8] = s_z;
+        result.elements[9] = u_z;
+        result.elements[10] = -f_z;
+        result.elements[11] = 0.0;
+        result.elements[12] = t0;
+        result.elements[13] = t1;
+        result.elements[14] = t2;
+        result.elements[15] = 1.0;
+    }
+
+    pub fn from_camera_new(camera: &CameraView) -> Self {
+        let mut result = Self::default();
+        Self::from_camera(camera, &mut result);
+        result
+    }
+
+    /// Port of `Matrix4.computePerspectiveFieldOfView`.
+    pub fn compute_perspective_field_of_view(
+        fov_y: f64,
+        aspect_ratio: f64,
+        near: f64,
+        far: f64,
+        result: &mut Self,
+    ) {
+        #[cfg(debug_assertions)]
+        {
+            if fov_y <= 0.0 {
+                crate::developer_error::throw_developer_error("fovY must be greater than 0.");
+            }
+            if fov_y >= std::f64::consts::PI {
+                crate::developer_error::throw_developer_error("fovY must be less than PI.");
+            }
+            if near <= 0.0 {
+                crate::developer_error::throw_developer_error("near must be greater than 0.");
+            }
+            if far <= 0.0 {
+                crate::developer_error::throw_developer_error("far must be greater than 0.");
+            }
+        }
+
+        let bottom = (fov_y * 0.5).tan();
+
+        let column1_row1 = 1.0 / bottom;
+        let column0_row0 = column1_row1 / aspect_ratio;
+        let column2_row2 = (far + near) / (near - far);
+        let column3_row2 = (2.0 * far * near) / (near - far);
+
+        result.elements[0] = column0_row0;
+        result.elements[1] = 0.0;
+        result.elements[2] = 0.0;
+        result.elements[3] = 0.0;
+        result.elements[4] = 0.0;
+        result.elements[5] = column1_row1;
+        result.elements[6] = 0.0;
+        result.elements[7] = 0.0;
+        result.elements[8] = 0.0;
+        result.elements[9] = 0.0;
+        result.elements[10] = column2_row2;
+        result.elements[11] = -1.0;
+        result.elements[12] = 0.0;
+        result.elements[13] = 0.0;
+        result.elements[14] = column3_row2;
+        result.elements[15] = 0.0;
+    }
+
+    pub fn compute_perspective_field_of_view_new(
+        fov_y: f64,
+        aspect_ratio: f64,
+        near: f64,
+        far: f64,
+    ) -> Self {
+        let mut result = Self::default();
+        Self::compute_perspective_field_of_view(fov_y, aspect_ratio, near, far, &mut result);
+        result
+    }
+
+    /// Port of `Matrix4.computeOrthographicOffCenter`.
+    pub fn compute_orthographic_off_center(
+        left: f64,
+        right: f64,
+        bottom: f64,
+        top: f64,
+        near: f64,
+        far: f64,
+        result: &mut Self,
+    ) {
+        let mut a = 1.0 / (right - left);
+        let mut b = 1.0 / (top - bottom);
+        let mut c = 1.0 / (far - near);
+
+        let tx = -(right + left) * a;
+        let ty = -(top + bottom) * b;
+        let tz = -(far + near) * c;
+        a *= 2.0;
+        b *= 2.0;
+        c *= -2.0;
+
+        result.elements[0] = a;
+        result.elements[1] = 0.0;
+        result.elements[2] = 0.0;
+        result.elements[3] = 0.0;
+        result.elements[4] = 0.0;
+        result.elements[5] = b;
+        result.elements[6] = 0.0;
+        result.elements[7] = 0.0;
+        result.elements[8] = 0.0;
+        result.elements[9] = 0.0;
+        result.elements[10] = c;
+        result.elements[11] = 0.0;
+        result.elements[12] = tx;
+        result.elements[13] = ty;
+        result.elements[14] = tz;
+        result.elements[15] = 1.0;
+    }
+
+    pub fn compute_orthographic_off_center_new(
+        left: f64,
+        right: f64,
+        bottom: f64,
+        top: f64,
+        near: f64,
+        far: f64,
+    ) -> Self {
+        let mut result = Self::default();
+        Self::compute_orthographic_off_center(left, right, bottom, top, near, far, &mut result);
+        result
+    }
+
+    /// Port of `Matrix4.computePerspectiveOffCenter`.
+    pub fn compute_perspective_off_center(
+        left: f64,
+        right: f64,
+        bottom: f64,
+        top: f64,
+        near: f64,
+        far: f64,
+        result: &mut Self,
+    ) {
+        let column0_row0 = (2.0 * near) / (right - left);
+        let column1_row1 = (2.0 * near) / (top - bottom);
+        let column2_row0 = (right + left) / (right - left);
+        let column2_row1 = (top + bottom) / (top - bottom);
+        let column2_row2 = -(far + near) / (far - near);
+        let column2_row3 = -1.0;
+        let column3_row2 = (-2.0 * far * near) / (far - near);
+
+        result.elements[0] = column0_row0;
+        result.elements[1] = 0.0;
+        result.elements[2] = 0.0;
+        result.elements[3] = 0.0;
+        result.elements[4] = 0.0;
+        result.elements[5] = column1_row1;
+        result.elements[6] = 0.0;
+        result.elements[7] = 0.0;
+        result.elements[8] = column2_row0;
+        result.elements[9] = column2_row1;
+        result.elements[10] = column2_row2;
+        result.elements[11] = column2_row3;
+        result.elements[12] = 0.0;
+        result.elements[13] = 0.0;
+        result.elements[14] = column3_row2;
+        result.elements[15] = 0.0;
+    }
+
+    pub fn compute_perspective_off_center_new(
+        left: f64,
+        right: f64,
+        bottom: f64,
+        top: f64,
+        near: f64,
+        far: f64,
+    ) -> Self {
+        let mut result = Self::default();
+        Self::compute_perspective_off_center(left, right, bottom, top, near, far, &mut result);
+        result
+    }
+
+    /// Port of `Matrix4.computeInfinitePerspectiveOffCenter`.
+    pub fn compute_infinite_perspective_off_center(
+        left: f64,
+        right: f64,
+        bottom: f64,
+        top: f64,
+        near: f64,
+        result: &mut Self,
+    ) {
+        let column0_row0 = (2.0 * near) / (right - left);
+        let column1_row1 = (2.0 * near) / (top - bottom);
+        let column2_row0 = (right + left) / (right - left);
+        let column2_row1 = (top + bottom) / (top - bottom);
+        let column2_row2 = -1.0;
+        let column2_row3 = -1.0;
+        let column3_row2 = -2.0 * near;
+
+        result.elements[0] = column0_row0;
+        result.elements[1] = 0.0;
+        result.elements[2] = 0.0;
+        result.elements[3] = 0.0;
+        result.elements[4] = 0.0;
+        result.elements[5] = column1_row1;
+        result.elements[6] = 0.0;
+        result.elements[7] = 0.0;
+        result.elements[8] = column2_row0;
+        result.elements[9] = column2_row1;
+        result.elements[10] = column2_row2;
+        result.elements[11] = column2_row3;
+        result.elements[12] = 0.0;
+        result.elements[13] = 0.0;
+        result.elements[14] = column3_row2;
+        result.elements[15] = 0.0;
+    }
+
+    pub fn compute_infinite_perspective_off_center_new(
+        left: f64,
+        right: f64,
+        bottom: f64,
+        top: f64,
+        near: f64,
+    ) -> Self {
+        let mut result = Self::default();
+        Self::compute_infinite_perspective_off_center(left, right, bottom, top, near, &mut result);
+        result
+    }
+
+    /// Port of `Matrix4.computeViewportTransformation`.
+    ///
+    /// Note (docs/deferred.md #27, SEM-9): previously recorded as deferred;
+    /// now back-filled. The JS `viewport` plain object (with all fields
+    /// individually defaulting to 0.0) maps to `Option<&Viewport>` where
+    /// `None` mirrors `viewport ?? {}`.
+    pub fn compute_viewport_transformation(
+        viewport: Option<&Viewport>,
+        near_depth_range: Option<f64>,
+        far_depth_range: Option<f64>,
+        result: &mut Self,
+    ) {
+        let empty = Viewport::default();
+        let viewport = viewport.unwrap_or(&empty);
+        let x = viewport.x;
+        let y = viewport.y;
+        let width = viewport.width;
+        let height = viewport.height;
+        let near_depth_range = near_depth_range.unwrap_or(0.0);
+        let far_depth_range = far_depth_range.unwrap_or(1.0);
+
+        let half_width = width * 0.5;
+        let half_height = height * 0.5;
+        let half_depth = (far_depth_range - near_depth_range) * 0.5;
+
+        let column0_row0 = half_width;
+        let column1_row1 = half_height;
+        let column2_row2 = half_depth;
+        let column3_row0 = x + half_width;
+        let column3_row1 = y + half_height;
+        let column3_row2 = near_depth_range + half_depth;
+        let column3_row3 = 1.0;
+
+        result.elements[0] = column0_row0;
+        result.elements[1] = 0.0;
+        result.elements[2] = 0.0;
+        result.elements[3] = 0.0;
+        result.elements[4] = 0.0;
+        result.elements[5] = column1_row1;
+        result.elements[6] = 0.0;
+        result.elements[7] = 0.0;
+        result.elements[8] = 0.0;
+        result.elements[9] = 0.0;
+        result.elements[10] = column2_row2;
+        result.elements[11] = 0.0;
+        result.elements[12] = column3_row0;
+        result.elements[13] = column3_row1;
+        result.elements[14] = column3_row2;
+        result.elements[15] = column3_row3;
+    }
+
+    pub fn compute_viewport_transformation_new(
+        viewport: Option<&Viewport>,
+        near_depth_range: Option<f64>,
+        far_depth_range: Option<f64>,
+    ) -> Self {
+        let mut result = Self::default();
+        Self::compute_viewport_transformation(
+            viewport,
+            near_depth_range,
+            far_depth_range,
+            &mut result,
+        );
+        result
+    }
 
     /// Port of `Matrix4.computeView`.
     pub fn compute_view(
@@ -860,6 +1272,53 @@ impl Matrix4 {
     pub fn clone_new(matrix: &Self) -> Self {
         Self { elements: matrix.elements }
     }
+
+    /// Port of the JS instance getter `length` (returns `packedLength`).
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        Self::PACKED_LENGTH
+    }
+
+    /// Port of `Matrix4.equalsArray` (`@ignore` in the JS source).
+    pub fn equals_array(matrix: &Self, array: &[f64], offset: usize) -> bool {
+        for i in 0..16 {
+            if matrix.elements[i] != array[offset + i] {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+/// Mirrors the plain-object `viewport` parameter accepted by the JS
+/// `computeViewportTransformation` (`{ x, y, width, height }`, all fields
+/// individually defaulting to 0.0 via `??`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Viewport {
+    /// The x coordinate of the viewport's lower-left corner.
+    pub x: f64,
+    /// The y coordinate of the viewport's lower-left corner.
+    pub y: f64,
+    /// The width of the viewport in pixels.
+    pub width: f64,
+    /// The height of the viewport in pixels.
+    pub height: f64,
+}
+
+/// Minimal camera data required by [`Matrix4::from_camera`].
+///
+/// DEVIATION: the JS signature takes the full Scene `Camera`, which lives in
+/// cesium-scene and cannot be referenced from cesium-core; this struct
+/// carries exactly the three fields the JS reads (`position`, `direction`,
+/// `up`).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CameraView {
+    /// The camera's position (`Camera.position`).
+    pub position: Cartesian3,
+    /// The camera's view direction (`Camera.direction`).
+    pub direction: Cartesian3,
+    /// The camera's up direction (`Camera.up`).
+    pub up: Cartesian3,
 }
 
 impl PartialEq for Matrix4 {

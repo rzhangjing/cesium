@@ -14,6 +14,7 @@ use cesium_core::rectangle::Rectangle;
 use cesium_core::runtime_error::RuntimeError;
 
 use crate::cesium3_d_tile_content_state::Cesium3DTileContentState;
+use crate::cesium3_d_tile_optimization_hint::Cesium3DTileOptimizationHint;
 use crate::cesium3_d_tile_refine::Cesium3DTileRefine;
 use crate::tile_bounding_volume::TileBoundingVolume;
 
@@ -226,6 +227,11 @@ pub struct Cesium3DTile {
     /// The tile's center (center of the bounding volume's bounding
     /// sphere).
     pub center: Cartesian3,
+
+    // ---- optimizations ----
+    /// Hint for the `childrenWithinParent` culling optimization (JS
+    /// `_optimChildrenWithinParent`, initialized to `NOT_COMPUTED`).
+    pub optim_children_within_parent: Cesium3DTileOptimizationHint,
 }
 
 impl Cesium3DTile {
@@ -268,6 +274,7 @@ impl Cesium3DTile {
             vertical_exaggeration: 1.0,
             vertical_exaggeration_relative_height: 0.0,
             center: Cartesian3::ZERO,
+            optim_children_within_parent: Cesium3DTileOptimizationHint::NotComputed,
         }
     }
 

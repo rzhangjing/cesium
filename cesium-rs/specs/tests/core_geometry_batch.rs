@@ -29,6 +29,10 @@
 //!     -> `core_geometry/polyline_volume_outline_geometry_spec.rs`
 //! - `packages/engine/Specs/Core/EllipseOutlineGeometrySpec.js`
 //!     -> `core_geometry/ellipse_outline_geometry_spec.rs`
+//! - `packages/engine/Specs/Core/RectangleGeometrySpec.js`
+//!     -> `core_geometry/rectangle_geometry_spec.rs`
+//! - `packages/engine/Specs/Core/GroundPolylineGeometrySpec.js`
+//!     -> `core_geometry/ground_polyline_geometry_spec.rs`
 
 #[path = "core_geometry/polyline_pipeline_spec.rs"]
 mod polyline_pipeline_spec;
@@ -56,3 +60,7 @@ mod polyline_volume_outline_geometry_spec;
 mod ellipse_outline_geometry_spec;
 #[path = "core_geometry/cz01_pack_unpack_spec.rs"]
 mod cz01_pack_unpack_spec;
+#[path = "core_geometry/rectangle_geometry_spec.rs"]
+mod rectangle_geometry_spec;
+#[path = "core_geometry/ground_polyline_geometry_spec.rs"]
+mod ground_polyline_geometry_spec;

@@ -14,4 +14,5 @@ pub mod post_process_stages;
 pub mod voxels;
 pub mod preprocessor;
 pub mod wgsl;
+pub mod builtin_wgsl;
 

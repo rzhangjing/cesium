@@ -3,7 +3,9 @@
 //! A bounding rectangle given by a corner, width and height.
 
 use crate::cartesian2::Cartesian2;
+use crate::geographic_projection::GeographicProjection;
 use crate::intersect::Intersect;
+use crate::rectangle::Rectangle;
 
 /// A bounding rectangle given by a corner, width and height.
 ///
@@ -125,9 +127,29 @@ impl BoundingRectangle {
     ///
     /// Port of `BoundingRectangle.fromRectangle`.
     ///
-    /// DEVIATION (deferred): requires `Rectangle`, `Ellipsoid`,
-    /// `GeographicProjection`; will be enabled once those are ported.
-    // pub fn from_rectangle(...) { ... }
+    /// DEVIATION: JS reuses a module-level `GeographicProjection` and resets
+    /// its ellipsoid to `Ellipsoid.default` when no projection is given;
+    /// this port creates a default `GeographicProjection` locally.
+    pub fn from_rectangle(
+        rectangle: Option<&Rectangle>,
+        projection: Option<&GeographicProjection>,
+    ) -> Self {
+        match rectangle {
+            None => Self::default(),
+            Some(rectangle) => {
+                let default_projection = GeographicProjection::new(None);
+                let proj = projection.unwrap_or(&default_projection);
+                let lower_left = proj.project(&Rectangle::southwest(rectangle));
+                let upper_right = proj.project(&Rectangle::northeast(rectangle));
+                Self {
+                    x: lower_left.x,
+                    y: lower_left.y,
+                    width: upper_right.x - lower_left.x,
+                    height: upper_right.y - lower_left.y,
+                }
+            }
+        }
+    }
 
     /// Duplicates a `BoundingRectangle` instance.
     ///

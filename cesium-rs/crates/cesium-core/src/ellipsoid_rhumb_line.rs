@@ -177,6 +177,111 @@ impl EllipsoidRhumbLine {
         })
     }
 
+    /// Provides the location of a point at the indicated longitude along the
+    /// rhumb line.
+    ///
+    /// If the longitude is outside the range of start and end points, the
+    /// first intersection with the longitude from that start point in the
+    /// direction of the heading is returned. This follows the spiral property
+    /// of a rhumb line.
+    ///
+    /// Returns `None` if there is no intersection or infinite intersections.
+    ///
+    /// Mirrors `EllipsoidRhumbLine.prototype.findIntersectionWithLongitude`.
+    ///
+    /// # Panics
+    /// Panics (debug) if start and end are not distinct.
+    pub fn find_intersection_with_longitude(
+        &self,
+        intersection_longitude: f64,
+    ) -> Option<Cartographic> {
+        //>>includeStart('debug', pragmas.debug);
+        if cfg!(debug_assertions) {
+            if self.distance == 0.0 {
+                throw_developer_error(
+                    "EllipsoidRhumbLine must have distinct start and end set.",
+                );
+            }
+        }
+        //>>includeEnd('debug');
+
+        let ellipticity = self.ellipticity;
+        let heading = self.heading;
+        let abs_heading = heading.abs();
+        let start = &self.start;
+
+        let mut intersection_longitude =
+            CesiumMath::negative_pi_to_pi(intersection_longitude);
+
+        if CesiumMath::equals_epsilon(
+            intersection_longitude.abs(),
+            std::f64::consts::PI,
+            Some(CesiumMath::EPSILON14),
+            None,
+        ) {
+            intersection_longitude = CesiumMath::sign(start.longitude) * std::f64::consts::PI;
+        }
+
+        // If heading is -PI/2 or PI/2, this is an E-W rhumb line
+        // If heading is 0 or PI, this is an N-S rhumb line
+        if (CesiumMath::PI_OVER_TWO - abs_heading).abs() <= CesiumMath::EPSILON8 {
+            return Some(Cartographic {
+                longitude: intersection_longitude,
+                latitude: start.latitude,
+                height: 0.0,
+            });
+        } else if CesiumMath::equals_epsilon(
+            (CesiumMath::PI_OVER_TWO - abs_heading).abs(),
+            CesiumMath::PI_OVER_TWO,
+            Some(CesiumMath::EPSILON8),
+            None,
+        ) {
+            if CesiumMath::equals_epsilon(
+                intersection_longitude,
+                start.longitude,
+                Some(CesiumMath::EPSILON12),
+                None,
+            ) {
+                return None;
+            }
+
+            return Some(Cartographic {
+                longitude: intersection_longitude,
+                latitude: CesiumMath::PI_OVER_TWO
+                    * CesiumMath::sign(CesiumMath::PI_OVER_TWO - heading),
+                height: 0.0,
+            });
+        }
+
+        // Use iterative solver from Equation 9 from
+        // http://edwilliams.org/ellipsoid/ellipsoid.pdf
+        let phi1 = start.latitude;
+        let e_sin_phi1 = ellipticity * phi1.sin();
+        let left_component = (0.5 * (CesiumMath::PI_OVER_TWO + phi1)).tan()
+            * ((intersection_longitude - start.longitude) / heading.tan()).exp();
+        let denominator = (1.0 + e_sin_phi1) / (1.0 - e_sin_phi1);
+
+        let mut new_phi = start.latitude;
+        let mut phi;
+        loop {
+            phi = new_phi;
+            let e_sin_phi = ellipticity * phi.sin();
+            let numerator = (1.0 + e_sin_phi) / (1.0 - e_sin_phi);
+            new_phi = 2.0
+                * (left_component * (numerator / denominator).powf(ellipticity / 2.0)).atan()
+                - CesiumMath::PI_OVER_TWO;
+            if CesiumMath::equals_epsilon(new_phi, phi, Some(CesiumMath::EPSILON12), None) {
+                break;
+            }
+        }
+
+        Some(Cartographic {
+            longitude: intersection_longitude,
+            latitude: new_phi,
+            height: 0.0,
+        })
+    }
+
     /// Mirrors the private JS `computeProperties`.
     fn compute_properties(&mut self, start: &Cartographic, end: &Cartographic) {
         let mut first_cartesian = Cartesian3::default();
