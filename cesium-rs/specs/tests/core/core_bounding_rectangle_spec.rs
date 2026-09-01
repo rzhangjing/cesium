@@ -1,11 +1,13 @@
 //! Mirrors packages/engine/Specs/Core/BoundingRectangleSpec.js
 //!
-//! Tests for `fromRectangle` are `#[ignore]`d (requires Rectangle/Ellipsoid/
-//! GeographicProjection). `createPackableSpecs` is inlined.
+//! `createPackableSpecs` is inlined.
 
 use cesium_core::bounding_rectangle::BoundingRectangle;
 use cesium_core::cartesian2::Cartesian2;
+use cesium_core::ellipsoid::Ellipsoid;
+use cesium_core::geographic_projection::GeographicProjection;
 use cesium_core::intersect::Intersect;
+use cesium_core::rectangle::Rectangle;
 
 // --- constructor ---
 
@@ -113,15 +115,48 @@ fn from_points_creates_empty_rectangle_with_no_positions() {
     assert_eq!(r.height, 0.0);
 }
 
-// --- fromRectangle (deferred) ---
+// --- fromRectangle ---
 
 #[test]
-#[ignore = "deferred: requires Rectangle/Ellipsoid/GeographicProjection"]
-fn from_rectangle_creates_empty_with_no_rectangle() {}
+fn from_rectangle_creates_empty_with_no_rectangle() {
+    let r = BoundingRectangle::from_rectangle(None, None);
+    assert_eq!(r.x, 0.0);
+    assert_eq!(r.y, 0.0);
+    assert_eq!(r.width, 0.0);
+    assert_eq!(r.height, 0.0);
+}
 
 #[test]
-#[ignore = "deferred: requires Rectangle/Ellipsoid/GeographicProjection"]
-fn from_rectangle_creates_bounding_rectangle() {}
+fn from_rectangle_creates_bounding_rectangle() {
+    let rectangle = Rectangle::MAX_VALUE;
+    let projection = GeographicProjection::new(Some(Ellipsoid::UNIT_SPHERE));
+    let expected = BoundingRectangle::new(
+        rectangle.west,
+        rectangle.south,
+        rectangle.east - rectangle.west,
+        rectangle.north - rectangle.south,
+    );
+    assert_eq!(
+        BoundingRectangle::from_rectangle(Some(&rectangle), Some(&projection)),
+        expected
+    );
+}
+
+#[test]
+fn from_rectangle_works_with_a_result_parameter() {
+    let rectangle = Rectangle::MAX_VALUE;
+    let expected = BoundingRectangle::new(
+        rectangle.west,
+        rectangle.south,
+        rectangle.east - rectangle.west,
+        rectangle.north - rectangle.south,
+    );
+    let projection = GeographicProjection::new(Some(Ellipsoid::UNIT_SPHERE));
+
+    let mut result = BoundingRectangle::default();
+    BoundingRectangle::from_rectangle_into(Some(&rectangle), Some(&projection), &mut result);
+    assert_eq!(result, expected);
+}
 
 // --- intersect ---
 

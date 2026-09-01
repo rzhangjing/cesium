@@ -1771,13 +1771,16 @@ fn from_iso8601_handles_leading_interval_option() {
     assert!(!leading.is_stop_included);
     assert_eq!(leading.data, data_callback(leading, 0));
 
-    // The remaining intervals (collection without the leading one)
+    // The remaining intervals (collection without the leading one).
+    // Mirrors JS `fromJulianDateArray`: only the interval at `startIndex`
+    // receives `isStartIncluded` (here `true` for all); `isStopIncluded`
+    // applies to the last interval only (here `false`).
     for i in 0..3 {
         let interval = intervals.get(i + 1).unwrap();
         assert_eq!(JulianDate::compare(&interval.start, &julian_dates[i]), 0);
         assert_eq!(JulianDate::compare(&interval.stop, &julian_dates[i + 1]), 0);
         assert!(interval.is_start_included);
-        assert_eq!(interval.is_stop_included, i == 2);
+        assert!(!interval.is_stop_included);
         assert_eq!(interval.data, data_callback(interval, i + 1));
     }
 }
@@ -1814,13 +1817,16 @@ fn from_iso8601_handles_trailing_interval_option() {
     assert_eq!(JulianDate::compare(&trailing.stop, Iso8601::maximum_value()), 0);
     assert!(!trailing.is_start_included);
     assert!(trailing.is_stop_included);
-    assert_eq!(trailing.data, data_callback(trailing, 4));
+    assert_eq!(trailing.data, data_callback(trailing, 3));
 
+    // Mirrors JS `fromJulianDateArray`: the first interval (at `startIndex`
+    // 0) receives `isStartIncluded` (`false`); later intervals get `true`.
+    // `isStopIncluded` (`true`) applies to the last interval only.
     for i in 0..3 {
         let interval = intervals.get(i).unwrap();
         assert_eq!(JulianDate::compare(&interval.start, &julian_dates[i]), 0);
         assert_eq!(JulianDate::compare(&interval.stop, &julian_dates[i + 1]), 0);
-        assert!(!interval.is_start_included);
+        assert_eq!(interval.is_start_included, i != 0);
         assert_eq!(interval.is_stop_included, i == 2);
         assert_eq!(interval.data, data_callback(interval, i));
     }
@@ -1869,11 +1875,14 @@ fn from_iso8601_handles_leading_and_trailing_interval_options() {
     assert!(trailing.is_stop_included);
     assert_eq!(trailing.data, data_callback(trailing, 4));
 
+    // Mirrors JS `fromJulianDateArray`: only the interval at `startIndex`
+    // receives `isStartIncluded` (`false`); later intervals get `true`.
+    // `isStopIncluded` (`false`) applies to the last interval only.
     for i in 0..3 {
         let interval = intervals.get(i + 1).unwrap();
         assert_eq!(JulianDate::compare(&interval.start, &julian_dates[i]), 0);
         assert_eq!(JulianDate::compare(&interval.stop, &julian_dates[i + 1]), 0);
-        assert!(!interval.is_start_included);
+        assert_eq!(interval.is_start_included, i != 0);
         assert!(!interval.is_stop_included);
         assert_eq!(interval.data, data_callback(interval, i + 1));
     }
@@ -1912,12 +1921,15 @@ fn from_iso8601_date_array_handles_leading_interval_option() {
     assert!(!leading.is_stop_included);
     assert_eq!(leading.data, num(0.0));
 
+    // Mirrors JS `fromJulianDateArray`: only the interval at `startIndex`
+    // receives `isStartIncluded` (`true`); `isStopIncluded` (`false`)
+    // applies to the last interval only.
     for i in 0..3 {
         let interval = intervals.get(i + 1).unwrap();
         assert_eq!(JulianDate::compare(&interval.start, &julian_dates[i]), 0);
         assert_eq!(JulianDate::compare(&interval.stop, &julian_dates[i + 1]), 0);
         assert!(interval.is_start_included);
-        assert_eq!(interval.is_stop_included, i == 2);
+        assert!(!interval.is_stop_included);
         assert_eq!(interval.data, num((i + 1) as f64));
     }
 }
@@ -1951,13 +1963,15 @@ fn from_iso8601_date_array_handles_trailing_interval_option() {
     assert_eq!(JulianDate::compare(&trailing.stop, Iso8601::maximum_value()), 0);
     assert!(!trailing.is_start_included);
     assert!(trailing.is_stop_included);
-    assert_eq!(trailing.data, num(4.0));
+    assert_eq!(trailing.data, num(3.0));
 
+    // Mirrors JS `fromJulianDateArray`: the first interval (at `startIndex`
+    // 0) receives `isStartIncluded` (`false`); later intervals get `true`.
     for i in 0..3 {
         let interval = intervals.get(i).unwrap();
         assert_eq!(JulianDate::compare(&interval.start, &julian_dates[i]), 0);
         assert_eq!(JulianDate::compare(&interval.stop, &julian_dates[i + 1]), 0);
-        assert!(!interval.is_start_included);
+        assert_eq!(interval.is_start_included, i != 0);
         assert_eq!(interval.is_stop_included, i == 2);
         assert_eq!(interval.data, num(i as f64));
     }
@@ -2006,11 +2020,14 @@ fn from_iso8601_duration_array_handles_relative_to_previous_set_to_false() {
     assert!(trailing.is_stop_included);
     assert_eq!(trailing.data, num(4.0));
 
+    // Mirrors JS `fromJulianDateArray`: only the interval at `startIndex`
+    // receives `isStartIncluded` (`false`); later intervals get `true`.
+    // `isStopIncluded` (`false`) applies to the last interval only.
     for i in 0..3 {
         let interval = intervals.get(i + 1).unwrap();
         assert_eq!(JulianDate::compare(&interval.start, &julian_dates[i]), 0);
         assert_eq!(JulianDate::compare(&interval.stop, &julian_dates[i + 1]), 0);
-        assert!(!interval.is_start_included);
+        assert_eq!(interval.is_start_included, i != 0);
         assert!(!interval.is_stop_included);
         assert_eq!(interval.data, num((i + 1) as f64));
     }
@@ -2051,11 +2068,14 @@ fn from_iso8601_duration_array_handles_relative_to_previous_set_to_true() {
     assert_eq!(JulianDate::compare(&trailing.start, &julian_dates[3]), 0);
     assert_eq!(JulianDate::compare(&trailing.stop, Iso8601::maximum_value()), 0);
 
+    // Mirrors JS `fromJulianDateArray`: only the interval at `startIndex`
+    // receives `isStartIncluded` (`false`); later intervals get `true`.
+    // `isStopIncluded` (`false`) applies to the last interval only.
     for i in 0..3 {
         let interval = intervals.get(i + 1).unwrap();
         assert_eq!(JulianDate::compare(&interval.start, &julian_dates[i]), 0);
         assert_eq!(JulianDate::compare(&interval.stop, &julian_dates[i + 1]), 0);
-        assert!(!interval.is_start_included);
+        assert_eq!(interval.is_start_included, i != 0);
         assert!(!interval.is_stop_included);
     }
 }

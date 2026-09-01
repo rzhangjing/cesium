@@ -5,6 +5,9 @@ use std::collections::HashMap;
 /// A collection of key-value pairs that provides hash lookup and array iteration.
 pub struct AssociativeArray<V> {
     array: Vec<V>,
+    /// Parallel to `array`: the key of each stored value, enabling O(1)
+    /// reverse lookup when `swap_remove` moves the last element.
+    keys: Vec<String>,
     hash: HashMap<String, usize>,
 }
 
@@ -12,6 +15,7 @@ impl<V> AssociativeArray<V> {
     pub fn new() -> Self {
         Self {
             array: Vec::new(),
+            keys: Vec::new(),
             hash: HashMap::new(),
         }
     }
@@ -32,10 +36,26 @@ impl<V> AssociativeArray<V> {
     }
 
     /// Associates the provided key with the provided value.
-    pub fn set(&mut self, key: String, value: V) {
+    ///
+    /// Mirrors the JS `set` early-out `if (value !== oldValue)`: setting the
+    /// identical value for an existing key is a no-op.
+    ///
+    /// DEVIATION: JS compares with `!==` (reference identity for objects);
+    /// the Rust port compares with `PartialEq`, which matches JS number and
+    /// string semantics but is structural for object-like payloads.
+    pub fn set(&mut self, key: String, value: V)
+    where
+        V: PartialEq,
+    {
+        if let Some(&index) = self.hash.get(&key) {
+            if self.array[index] == value {
+                return;
+            }
+        }
         self.remove(&key);
         let index = self.array.len();
         self.array.push(value);
+        self.keys.push(key.clone());
         self.hash.insert(key, index);
     }
 
@@ -46,15 +66,13 @@ impl<V> AssociativeArray<V> {
 
     /// Removes a key-value pair from the collection.
     pub fn remove(&mut self, key: &str) -> bool {
-        if let Some(&index) = self.hash.get(key) {
-            self.hash.remove(key);
+        if let Some(index) = self.hash.remove(key) {
             self.array.swap_remove(index);
-            // Fix the index of the swapped element
+            let moved_key = self.keys.swap_remove(index);
+            // The last element was swapped into `index`; keep its hash entry
+            // pointing at the new position (Phase 1 finding SE-1).
             if index < self.array.len() {
-                // The last element was swapped into `index` position.
-                // We need to find its key and update the hash.
-                // Since we can't easily reverse-lookup, we rebuild the hash for simplicity.
-                // For production, a more efficient approach would be used.
+                self.hash.insert(moved_key, index);
             }
             true
         } else {
@@ -66,6 +84,7 @@ impl<V> AssociativeArray<V> {
     pub fn remove_all(&mut self) {
         self.hash.clear();
         self.array.clear();
+        self.keys.clear();
     }
 }
 

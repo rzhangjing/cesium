@@ -5,6 +5,7 @@
 use crate::cartesian2::Cartesian2;
 use crate::cartesian3::Cartesian3;
 use crate::cartesian4::Cartesian4;
+use crate::color::Color;
 use crate::developer_error::throw_developer_error;
 use crate::math::CesiumMath;
 
@@ -75,6 +76,34 @@ impl AttributeCompression {
         result.y = force_uint8(scratch.x);
         result.z = force_uint8(scratch.y * RIGHT_SHIFT8);
         result.w = force_uint8(scratch.y);
+        result
+    }
+
+    /// Encodes RGB values at 8-bit precision into a single float,
+    /// equivalent to `0xFFFFFF` representation in JavaScript (port of
+    /// `encodeRGB8(color)`).
+    #[must_use]
+    pub fn encode_rgb8(color: &Color) -> f64 {
+        // JS `Check.typeOf.object("color", color)` is statically guaranteed.
+        CesiumMath::clamp(color.red * 255.0, 0.0, 255.0).round() * LEFT_SHIFT16
+            + CesiumMath::clamp(color.green * 255.0, 0.0, 255.0).round() * LEFT_SHIFT8
+            + CesiumMath::clamp(color.blue * 255.0, 0.0, 255.0).round()
+    }
+
+    /// Decodes RGB values at 8-bit precision from a single float,
+    /// equivalent to `0xFFFFFF` representation in JavaScript (port of
+    /// `decodeRGB8(encoded, result)`).
+    pub fn decode_rgb8<'a>(encoded: f64, result: &'a mut Color) -> &'a mut Color {
+        // JS `>>` operates on `ToInt32`; mirror it via modular reduction.
+        let encoded = encoded.floor().rem_euclid(4294967296.0) as i64;
+        let encoded = if encoded >= 2147483648 {
+            encoded - 4294967296
+        } else {
+            encoded
+        };
+        result.red = (((encoded >> 16) & 255) as f64) / 255.0;
+        result.green = (((encoded >> 8) & 255) as f64) / 255.0;
+        result.blue = ((encoded & 255) as f64) / 255.0;
         result
     }
 
@@ -227,6 +256,14 @@ impl AttributeCompression {
     /// Decodes delta- and ZigZag-encoded vertex buffers **in place**.
     ///
     /// Used by the quantized-mesh terrain format.
+    ///
+    /// The JS version accumulates in unbounded `Number`s and truncates only
+    /// on the `Uint16Array` store (`ToUint16` = mod 2¹⁶, negatives wrap).
+    /// Rust's `as u16` has identical truncation semantics for integer
+    /// values, and the i32 accumulator covers every realizable sum of
+    /// zig-zag deltas (each ≤ 32767) over a u16-length buffer without
+    /// overflow — so this mirrors the JS semantics exactly (SE-4 verified,
+    /// no wraparound divergence).
     pub fn zig_zag_delta_decode(
         u_buffer: &mut [u16],
         v_buffer: &mut [u16],
@@ -254,9 +291,7 @@ impl AttributeCompression {
         }
     }
 
-    // --- RGB encoding (Color-dependent — stubs until Color is ported) ------
-
-    // encodeRGB8 / decodeRGB8 require the Color type; deferred.
+    // --- RGB encoding ------------------------------------------------------
 
     /// Decodes RGB565-encoded colors into normalized `[0,1]` RGB triples.
     ///
@@ -295,10 +330,14 @@ impl AttributeCompression {
 // Private helpers
 // ---------------------------------------------------------------------------
 
-/// Replicates the JS trick of forcing a value through `Uint8Array` assignment
-/// (clamping + truncation to `[0, 255]` integer).
+/// Replicates the JS trick of forcing a value through `Uint8Array`
+/// assignment: `ToUint8` truncates toward zero and wraps modulo 256
+/// (saturating/clamping would diverge, see Phase 1 finding SE-2).
 fn force_uint8(value: f64) -> f64 {
-    (value.round() as u8) as f64
+    if !value.is_finite() {
+        return 0.0;
+    }
+    value.trunc().rem_euclid(256.0)
 }
 
 /// ZigZag decodes a single unsigned 16-bit value to a signed `i32`.
