@@ -149,110 +149,8 @@ impl State {
         // ── Cesium Viewer ────────────────────────────────────────────
         // In CesiumJS: const viewer = new Cesium.Viewer("cesiumContainer");
         let mut viewer = Viewer::default();
-
-        // ── Globe + offline imagery + offline terrain (B4-3/B4-4/B4-5) ─
-        {
-            let scene = viewer.cesium_widget_mut().scene_mut();
-
-            let imagery_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("assets")
-                .join("offline-imagery");
-            ensure_offline_imagery(&imagery_root);
-            let provider = FileImageryProvider::new(&imagery_root, None);
-            log::info!(
-                "offline imagery root: {} (maximum_level = {:?})",
-                imagery_root.display(),
-                provider.maximum_level()
-            );
-
-            let mut globe = Globe::new(Some(Ellipsoid::WGS84));
-            globe
-                .imagery_layers_mut()
-                .add(ImageryLayer::with_provider(Box::new(provider)));
-
-            // B4-5: offline heightmap terrain through the cesium-core
-            // CesiumTerrainProvider (file:// backend, no network). A load
-            // failure falls back to the ellipsoid terrain path.
-            let terrain_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("assets")
-                .join("offline-terrain");
-            ensure_offline_terrain(&terrain_root);
-            let terrain_url = format!(
-                "file:///{}/layer.json",
-                terrain_root.display().to_string().replace('\\', "/")
-            );
-            match FileTerrainFetcher::from_url(&terrain_url) {
-                Ok(fetcher) => {
-                    log::info!("offline terrain root: {}", terrain_root.display());
-                    globe.set_terrain_fetcher(Some(Box::new(fetcher)));
-                }
-                Err(error) => {
-                    log::warn!("terrain provider load failed ({error:?}); using ellipsoid terrain");
-                }
-            }
-
-            scene.set_globe(Some(globe));
-
-            // ── 3D model (BoxTextured.glb) ───────────────────────────
-            // Loads the fixture from the monorepo Specs/Data path and
-            // places it on the globe surface at (0°N, 0°E) with a
-            // visible scale.
-            {
-                let glb_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("..")
-                    .join("..")
-                    .join("..")
-                    .join("Specs")
-                    .join("Data")
-                    .join("Models")
-                    .join("glTF-2.0")
-                    .join("BoxTextured")
-                    .join("glTF-Binary")
-                    .join("BoxTextured.glb");
-                match std::fs::read(&glb_path) {
-                    Ok(bytes) => match parse_glb(&bytes) {
-                        Ok(gltf) => {
-                            let mut model = Model::from_gltf(gltf);
-                            // Place at (0°N, 0°E) on the ellipsoid surface,
-                            // scaled up to be visible from orbit.
-                            let position = Cartographic::from_degrees_new(0.0, 0.0, None);
-                            let mut ecef = Cartesian3::default();
-                            Ellipsoid::WGS84.cartographic_to_cartesian(&position, &mut ecef);
-                            let enu = transforms::east_north_up_to_fixed_frame_new(
-                                &ecef,
-                                Some(&Ellipsoid::WGS84),
-                            );
-                            model.model_matrix = enu;
-                            model.scale = 200_000.0;
-                            log::info!(
-                                "loaded 3D model: {} ({} nodes)",
-                                glb_path.display(),
-                                model.scene_graph().nodes_count()
-                            );
-                            scene.primitives_mut().add(Box::new(model));
-                        }
-                        Err(e) => {
-                            log::warn!("failed to parse GLB: {}", e.message);
-                        }
-                    },
-                    Err(e) => {
-                        log::warn!("failed to read GLB {}: {}", glb_path.display(), e);
-                    }
-                }
-            }
-
-            // The smoke quad is replaced by the globe path.
-            scene.viewport_quad_mut().show = false;
-            scene.set_background_color(cesium_core::color::Color::new(0.0, 0.0, 0.2, 1.0));
-
-            // Camera: straight-down view from above the equator/prime
-            // meridian (destination-only set_view → ENU orientation,
-            // direction = -surface normal), ~3 ellipsoid radii out.
-            let destination = Cartesian3::new(Ellipsoid::WGS84.maximum_radius() * 3.0, 0.0, 0.0);
-            scene
-                .camera_mut()
-                .set_view(&destination, None, None, &Ellipsoid::WGS84);
-        }
+        configure_scene(viewer.cesium_widget_mut().scene_mut());
+        self.viewer = Some(viewer);
 
         // ── Cesium render context (wgpu frame orchestration) ─────────
         // DEVIATION: CesiumJS creates the Context inside CesiumWidget from
@@ -278,7 +176,6 @@ impl State {
         self.device = Some(device);
         self.queue = Some(queue);
         self.context = Some(context);
-        self.viewer = Some(viewer);
         self.surface_config = Some(surface_config);
     }
 
@@ -288,9 +185,10 @@ impl State {
     /// (background clear → globe offscreen pass → blit → execute), and
     /// presents. Optionally captures a readback screenshot.
     fn render(&mut self) {
-        let surface = self.surface.as_ref().unwrap();
-        let device = self.device.as_ref().unwrap();
-        let config = self.surface_config.as_ref().unwrap();
+        let surface = self.surface.as_ref().unwrap().clone();
+        let device = self.device.as_ref().unwrap().clone();
+        // Owned clone: the frame render below mutably destructures `self`.
+        let config = self.surface_config.clone().unwrap();
 
         let frame = match surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(tex)
@@ -298,12 +196,12 @@ impl State {
             wgpu::CurrentSurfaceTexture::Timeout
             | wgpu::CurrentSurfaceTexture::Occluded => return,
             wgpu::CurrentSurfaceTexture::Outdated => {
-                surface.configure(device, config);
+                surface.configure(&device, &config);
                 return;
             }
             wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Validation => {
                 log::warn!("Surface texture lost or validation error; reconfiguring.");
-                surface.configure(device, config);
+                surface.configure(&device, &config);
                 return;
             }
         };
@@ -314,25 +212,20 @@ impl State {
 
         // Drive the Cesium scene through the wgpu Context: begin_frame →
         // clear → globe pass (offscreen) → blit → execute → end_frame.
+        let time = cesium_core::julian_date::JulianDate::now();
+        let State { context, viewer, .. } = self;
+        let context = context.as_mut().unwrap();
+        let scene = viewer.as_mut().unwrap().cesium_widget_mut().scene_mut();
         let target = cesium_renderer::context::DefaultRenderTarget {
             view: &texture_view,
             format: config.format,
             width: config.width,
             height: config.height,
         };
-        let time = cesium_core::julian_date::JulianDate::now();
-        let context = self.context.as_mut().unwrap();
-        self.viewer
-            .as_mut()
-            .unwrap()
-            .cesium_widget_mut()
-            .scene_mut()
-            .render_with_context(&time, context, Some(target));
+        scene.render_with_context(&time, context, Some(target));
 
         self.frames_rendered += 1;
-        if !self.screenshot_done
-            && self.frames_rendered >= SCREENSHOT_FRAME_DELAY
-        {
+        if !self.screenshot_done && self.frames_rendered >= SCREENSHOT_FRAME_DELAY {
             if let Some(path) = std::env::var_os("CESIUM_DEMO_SCREENSHOT") {
                 let width = config.width;
                 let height = config.height;
@@ -345,7 +238,9 @@ impl State {
         queue.present(frame);
 
         // Update the viewer (clock, data sources) for the next frame
-        self.viewer.as_mut().unwrap().render();
+        if let Some(viewer) = self.viewer.as_mut() {
+            viewer.render();
+        }
     }
 
     /// Copies the presented frame back to CPU and writes it as a PNG
@@ -475,6 +370,107 @@ impl State {
 /// The pattern is a UV-orientation marker: red above +45° latitude, blue
 /// below −45°, green/white checker with a longitude gradient in between —
 /// an upright globe must show red on top and blue at the bottom.
+/// The demo's scene setup: globe + offline imagery + offline terrain +
+/// 3D model + camera.
+fn configure_scene(scene: &mut cesium_scene::scene::Scene) {
+    let imagery_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("assets")
+        .join("offline-imagery");
+    ensure_offline_imagery(&imagery_root);
+    let provider = FileImageryProvider::new(&imagery_root, None);
+    log::info!(
+        "offline imagery root: {} (maximum_level = {:?})",
+        imagery_root.display(),
+        provider.maximum_level()
+    );
+
+    let mut globe = Globe::new(Some(Ellipsoid::WGS84));
+    globe
+        .imagery_layers_mut()
+        .add(ImageryLayer::with_provider(Box::new(provider)));
+
+    // B4-5: offline heightmap terrain through the cesium-core
+    // CesiumTerrainProvider (file:// backend, no network). A load
+    // failure falls back to the ellipsoid terrain path.
+    let terrain_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("assets")
+        .join("offline-terrain");
+    ensure_offline_terrain(&terrain_root);
+    let terrain_url = format!(
+        "file:///{}/layer.json",
+        terrain_root.display().to_string().replace('\\', "/")
+    );
+    match FileTerrainFetcher::from_url(&terrain_url) {
+        Ok(fetcher) => {
+            log::info!("offline terrain root: {}", terrain_root.display());
+            globe.set_terrain_fetcher(Some(Box::new(fetcher)));
+        }
+        Err(error) => {
+            log::warn!("terrain provider load failed ({error:?}); using ellipsoid terrain");
+        }
+    }
+
+    scene.set_globe(Some(globe));
+
+    // ── 3D model (BoxTextured.glb) ─────────────────────────────────
+    // Loads the fixture from the monorepo Specs/Data path and
+    // places it on the globe surface at (0°N, 0°E) with a
+    // visible scale.
+    let glb_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("Specs")
+        .join("Data")
+        .join("Models")
+        .join("glTF-2.0")
+        .join("BoxTextured")
+        .join("glTF-Binary")
+        .join("BoxTextured.glb");
+    match std::fs::read(&glb_path) {
+        Ok(bytes) => match parse_glb(&bytes) {
+            Ok(gltf) => {
+                let mut model = Model::from_gltf(gltf);
+                // Place at (0°N, 0°E) on the ellipsoid surface,
+                // scaled up to be visible from orbit.
+                let position = Cartographic::from_degrees_new(0.0, 0.0, None);
+                let mut ecef = Cartesian3::default();
+                Ellipsoid::WGS84.cartographic_to_cartesian(&position, &mut ecef);
+                let enu = transforms::east_north_up_to_fixed_frame_new(
+                    &ecef,
+                    Some(&Ellipsoid::WGS84),
+                );
+                model.model_matrix = enu;
+                model.scale = 200_000.0;
+                log::info!(
+                    "loaded 3D model: {} ({} nodes)",
+                    glb_path.display(),
+                    model.scene_graph().nodes_count()
+                );
+                scene.primitives_mut().add(Box::new(model));
+            }
+            Err(e) => {
+                log::warn!("failed to parse GLB: {}", e.message);
+            }
+        },
+        Err(e) => {
+            log::warn!("failed to read GLB {}: {}", glb_path.display(), e);
+        }
+    }
+
+    // The smoke quad is replaced by the globe path.
+    scene.viewport_quad_mut().show = false;
+    scene.set_background_color(cesium_core::color::Color::new(0.0, 0.0, 0.2, 1.0));
+
+    // Camera: straight-down view from above the equator/prime
+    // meridian (destination-only set_view → ENU orientation,
+    // direction = -surface normal), ~3 ellipsoid radii out.
+    let destination = Cartesian3::new(Ellipsoid::WGS84.maximum_radius() * 3.0, 0.0, 0.0);
+    scene
+        .camera_mut()
+        .set_view(&destination, None, None, &Ellipsoid::WGS84);
+}
+
 fn ensure_offline_imagery(root: &std::path::Path) {
     if root.join("0").is_dir() {
         return;

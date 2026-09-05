@@ -26,6 +26,7 @@
 
 use cesium_core::color::Color;
 use cesium_core::create_guid::create_guid;
+use cesium_core::matrix4::Matrix4;
 
 use crate::automatic_uniforms::{AutomaticUniformRing, AutomaticUniforms};
 use crate::buffer::{Buffer, IndexBuffer};
@@ -655,10 +656,16 @@ impl Context {
         };
 
         // Per-draw model matrix feeds the automatic uniforms, as in CesiumJS
-        // (`uniformState.model = drawCommand.modelMatrix`).
-        if let Some(model) = &command.model_matrix {
-            self.uniform_state.update_model(model.clone());
-        }
+        // (`context._us.model = drawCommand._modelMatrix ?? Matrix4.IDENTITY`
+        // in `Context.js`). Every command sets it explicitly, falling back to
+        // IDENTITY, so a command without a model matrix never inherits a
+        // stale value left over from a previous command (e.g. the globe's
+        // identity tiles after a model with a large ENU transform).
+        let model = command
+            .model_matrix
+            .clone()
+            .unwrap_or(Matrix4::IDENTITY);
+        self.uniform_state.update_model(model);
 
         // Target formats participate in the pipeline key.
         let (color_format, depth_format) = match &command.framebuffer {

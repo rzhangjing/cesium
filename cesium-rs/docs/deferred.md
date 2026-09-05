@@ -82,8 +82,8 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 |---|---|---|---|---|
 | 7 | `cesium3d_tiles_terrain_data.rs` 整体桩（8 项：构造/credits/waterMask/interpolateHeight/isChildAvailable/createMesh/upsample/wasCreatedByUpsampling）+ `cesium3d_tiles_terrain_geometry_processor.rs` 空壳 unit struct | 依赖 cesium-scene 隐式瓦片/网格类型（代码注释 “Scene dependency, deferred” 未入台账） | Scene 层回填后 | ⏳ pending（来源：f1 §3.4、L529-538/L558 行） |
 | 8 | `create_world_terrain_async.rs` / `create_world_bathymetry_async.rs` 桩（代码注释虚称 “Registered in deferred.md”，本条即为该登记） | 依赖 ion 资源端点与网络栈 | 网络栈就绪 | ⏳ pending（来源：f1 L878/L884 行） |
-| 9 | `attribute_compression.rs` encodeRGB8/decodeRGB8（代码注释 “deferred until Color is ported”，但 Color 已移植，可回填） | 依赖已解除，待实现 | 近期批次 | ⏳ pending（来源：f1） |
-| 10 | `bounding_rectangle.rs` `fromRectangle` 注释占位 + 2 条 `#[ignore]` spec | 依赖 Rectangle 交集语义补全 | 近期批次 | ⏳ pending（来源：f1） |
+| 9 | `attribute_compression.rs` encodeRGB8/decodeRGB8（代码注释 "deferred until Color is ported"，但 Color 已移植，可回填） | 依赖已解除，待实现 | 近期批次 | ✅ 已完成：`encode_rgb8`/`decode_rgb8` 已实现（含 ToInt32 模归约），13 条 spec 全绿（2026-08-31） |
+| 10 | `bounding_rectangle.rs` `fromRectangle` 注释占位 + 2 条 `#[ignore]` spec | 依赖 Rectangle 交集语义补全 | 近期批次 | ✅ 已完成：`from_rectangle` + `from_rectangle_into` 出参变体已实现，2 条 `#[ignore]` 已解禁实化（共 3 条），24 条 spec 全绿（2026-08-31） |
 | 11 | Core A–C C 档 backlog 99 项 | 逐行明细见 f1 报告各文件表 C 档行 | 按批次 | ⏳ pending（来源：f1） |
 | 12 | Core D–Z C 档 backlog 444 项（92 文件；缺口最大：GeometryPipeline 35/TimeIntervalCollection 19 等） | 逐行明细见 f2 报告各文件表 C 档行 | 按批次 | ⏳ pending（来源：f2） |
 | 13 | Core D–Z E-未登记 73 项平台性豁免补登：ScreenSpaceEventHandler 29/TaskProcessor 12/Resource 浏览器族 11/VideoSynchronizer 10/PinBinder 8/KTX2Transcoder 3 | DOM/浏览器专属；家族模式已知但未逐文件登记 | 不回填（平台性） | ✅ 补登即处置（来源：f2） |
@@ -119,6 +119,14 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 | #43/#44 | CZ-01 移交：PolygonGeometry 7 + RectangleGeometry 15 + GroundPolylineGeometry 16（合并 1 条） | #34 |
 
 > 行为性偏差（GPX 5 / exportKml 8 / EntityCluster 6 / CZML 5 / CorridorOutline 1）见 deviations.md 修复轮次二补登节；本轮未涉及 ignored_disposition.md。
+
+---
+
+## Globe 渲染修复轮补登（2026-09-02）
+
+| # | 事项 | 原因 | 回填里程碑 | 状态 |
+|---|---|---|---|---|
+| 35 | viewer-demo 窗口模式 3D 地球自 frame 1 起不显示（globe 离屏 pass 全空） | `Context::resolve_draw` 仅在 `command.model_matrix` 为 `Some` 时写入 `UniformState.model`，而 `next_frame()` 不重置 model；Model 在 frame 0 将 ENU 大矩阵残留进共享 uniform 状态，之后不带 modelMatrix 的 globe tile 命令沿用错误矩阵被变换出视野 | — | ✅ 已修复 2026-09-02：对齐 `Context.js` 1350 行 `drawCommand._modelMatrix ?? Matrix4.IDENTITY` 语义，每个 draw 无条件设置 model（None→IDENTITY）。回归 3726 passed / 0 failed；窗口截图验收 `docs/screenshots/viewer_demo_globe.png`（球体+影像朝向正确） |
 
 ---
 
