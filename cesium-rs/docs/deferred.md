@@ -12,7 +12,7 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 ### 决策汇总
 
 | # | Core 文件 | 逆向引用 | 引用类型 | 决策方案 | 状态 |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | 1 | `AttributeCompression.js` | `Scene/AttributeType.js` | import | **消除**：Rust `AttributeCompression` 不依赖 `AttributeType`，组件数通过参数传递 | ✅ resolved |
 | 2 | `PixelFormat.js` | `Renderer/PixelDatatype.js` | import | **消除**：Rust `PixelFormat` 为独立枚举（`#[repr(i32)]`），不引用 `PixelDatatype` | ✅ resolved |
 | 3 | `TerrainMesh.js` | `Scene/SceneMode.js` | import | **消除**：Rust `TerrainMesh` 为纯数据结构体，不含 `mode` 字段 | ✅ resolved |
@@ -31,7 +31,7 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 | 16 | `VectorPipeline.js` | `Scene/BufferPolyline.js` | import | **消除**：同上 | ✅ resolved |
 | 17 | `VectorPipeline.js` | `Scene/BufferPolylineMaterial.js` | import | **消除**：同上 | ✅ resolved |
 | 18 | `VectorProvider.js` | `Scene/BufferPolylineCollection.js` | import | **消除**：Rust 桩实现，无 Scene 引用 | ✅ resolved |
-| 19 | `Matrix4.js` | `Scene/Camera.js` | JSDoc | **消除**：JSDoc 类型引用，Rust 无需；`fromCamera` 已标注 DEVIATION | ✅ resolved ⚠ f2 SEM-9（2026-08-25）核码未发现 `fromCamera` 的 DEVIATION 标注，与声称不符，待核 |
+| 19 | `Matrix4.js` | `Scene/Camera.js` | JSDoc | **消除**：JSDoc 类型引用，Rust 无需；`fromCamera` 已标注 DEVIATION | ✅ resolved（2026-09-05 复核：`from_camera`/`from_camera_new` 已实现于 matrix4.rs:396/449，2 条 spec 通过，f2 SEM-9 注记闭环） |
 | 20 | `PixelFormat.js` → `PixelFormat` 枚举值 | 与 `PixelDatatype` 语义重叠 | 设计 | **合并**：Core 的 `PixelFormat` 覆盖 WebGL 常量值；Renderer 的 `PixelDatatype` 覆盖数据类型枚举，两者职责分离 | ✅ resolved |
 | 21 | `TerrainMesh.js` → `mode` 字段 | `SceneMode` 用于 2D/Columbus 投影 | 设计 | **消除**：`TerrainMesh` 仅存储 3D 几何数据，`SceneMode` 投影逻辑在 `GlobeSurfaceTileProvider` 中处理 | ✅ resolved |
 | 22 | `TerrainPicker.js` → `SceneMode` 分支 | 不同模式下的拾取逻辑 | 设计 | **消除**：桩实现仅支持 3D，完整实现需在 `cesium-scene` 中 | ✅ resolved |
@@ -39,7 +39,7 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 | 24 | `Cesium3DTilesTerrainProvider.js` → `ready` 逻辑 | 依赖隐式瓦片加载状态 | 设计 | **延迟**：`ready` 字段恒为 `false`，完整逻辑需 Scene 层支持 | ⏳ deferred |
 | 25 | `VectorPipeline.js` → 矢量渲染 | 需要 `Context`/`BufferPrimitive` | 设计 | **消除**：桩实现；完整矢量管线可能整体迁移至 `cesium-scene` | ✅ resolved |
 | 26 | `VectorProvider.js` → 矢量收集 | 需要 `BufferPolylineCollection` | 设计 | **消除**：桩实现；完整逻辑需在 `cesium-scene` 中 | ✅ resolved |
-| 27 | `Matrix4.js` → `computeViewportTransformation` | 需要 `Camera`/`CullingVolume` | 设计 | **延迟**：已标注 DEVIATION，需要 `cesium-scene` 的 Camera 类型 | ⏳ deferred ⚠ f2 SEM-9（2026-08-25）核码未发现对应 DEVIATION 标注，与声称不符，待核 |
+| 27 | `Matrix4.js` → `computeViewportTransformation` | 需要 `Camera`/`CullingVolume` | 设计 | **延迟**：已标注 DEVIATION，需要 `cesium-scene` 的 Camera 类型 | ✅ 已回填 2026-09-05：`compute_viewport_transformation`/`_new` 已实现于 matrix4.rs:663/714（viewport 结构体参数，不依赖 Scene Camera），2 条 spec 通过，f2 SEM-9 注记闭环 |
 
 ### 决策统计
 
@@ -62,10 +62,10 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 ## 其他推迟事项
 
 | # | 事项 | 原因 | 回填里程碑 | 状态 |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | 1 | shader 移植策略定稿 | 等待 M2 GLSL→wgpu 穿刺实验结论（见 shader-strategy.md） | M2 | ✅ resolved |
 | 2 | 需 wgpu 上下文的 Renderer/Scene spec | 等待 wgpu 离屏渲染能力 | M4+ | ⏳ pending |
-| 3 | `FeatureDetection.supportsWebgl2(scene)` 及其 spec（`detects_webgl2_support` 当前 #[ignore]） | 依赖 cesium-scene 的 Context（WebGL2/wgpu 探测），Core 层无法独立验证 | M3-S1 | ⏳ pending |
+| 3 | `FeatureDetection.supportsWebgl2(scene)` 及其 spec（`detects_webgl2_support` 当前 #[ignore]） | 依赖 cesium-scene 的 Context（WebGL2/wgpu 探测），Core 层无法独立验证 | M3-S1 | ✅ 设计性闭环 2026-09-05：JS 实现为 `scene.context.webgl2`，须 Core→Scene 逆向依赖；wgpu 后端本身保证 WebGL2 等价能力集，无独立探测目标。与 #4 同类（设计性偏差，不回填），spec 维持 #[ignore] 并注明 |
 | 4 | `getAbsoluteUriSpec` 第 3 断言（相对 `document.location.href` 解析，当前 #[ignore]） | 原生构建无 document；`DocumentLike` 注入路径已由 `document_base_uri_is_respected` 覆盖 | 不回填（设计性偏差） | ✅ deferred |
 | 5 | `Cartesian4.fromColor` 及 3 条 spec 用例（`core_cartesian4_spec.rs`） | 依赖 `Core/Color.js` 移植 | M1 后续批次 | ✅ 已回填 2026-08-23（`Cartesian4::from_color` 已实现，3 条 spec 解禁并通过） |
 | 6 | `Cartesian3Spec` 中 6 条 `fromDegrees/fromRadians` 对照 `ellipsoid.cartographicToCartesian` 的用例 | 依赖 `Core/Ellipsoid.js` 移植 | M1 椭球批次 | ✅ 已回填 2026-08-23（`Ellipsoid` 已就绪，6 条标量用例解禁并通过；`*Array` 变体仍待 `cartographicArrayToCartesianArray`） |
@@ -79,7 +79,7 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 > 行为性内联 DEVIATION 见 deviations.md 同批补登节；ignored 测试处置见 ignored_disposition.md 补登节。
 
 | # | 事项 | 原因 | 回填里程碑 | 状态 |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | 7 | `cesium3d_tiles_terrain_data.rs` 整体桩（8 项：构造/credits/waterMask/interpolateHeight/isChildAvailable/createMesh/upsample/wasCreatedByUpsampling）+ `cesium3d_tiles_terrain_geometry_processor.rs` 空壳 unit struct | 依赖 cesium-scene 隐式瓦片/网格类型（代码注释 “Scene dependency, deferred” 未入台账） | Scene 层回填后 | ⏳ pending（来源：f1 §3.4、L529-538/L558 行） |
 | 8 | `create_world_terrain_async.rs` / `create_world_bathymetry_async.rs` 桩（代码注释虚称 “Registered in deferred.md”，本条即为该登记） | 依赖 ion 资源端点与网络栈 | 网络栈就绪 | ⏳ pending（来源：f1 L878/L884 行） |
 | 9 | `attribute_compression.rs` encodeRGB8/decodeRGB8（代码注释 "deferred until Color is ported"，但 Color 已移植，可回填） | 依赖已解除，待实现 | 近期批次 | ✅ 已完成：`encode_rgb8`/`decode_rgb8` 已实现（含 ToInt32 模归约），13 条 spec 全绿（2026-08-31） |
@@ -100,7 +100,7 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 | 24 | Workers+Widget E-未登记 11 项：Workers 9（getModule、5×initWorker、generateGaussianSortWorker/generateSplatTextureWorker、transferTypedArrayTest 外壳）+ Widget 2（screenSpaceEventHandler、showErrorPanel） | 平台性豁免补登 | 不回填（平台性） | ✅ 补登即处置（来源：f8） |
 | 25 | Workers+Widget C 档 backlog 101 项（Workers 65：decodeI3S 35 等；Widget 36：属性访问器 17/zoom 族 7/事件族 8/实体跟踪 3/帧配置 1） | 逐行明细见 f8 报告各文件表 | 按批次 | ⏳ pending（来源：f8） |
 | 26 | Inspector 三类 VM 整文件桩化（82 行 B(gpu-limited)）：`cesium_inspector_view_model.rs`（4 字段+new）/ `cesium3_d_tiles_inspector_view_model.rs`（4 字段+new）/ `voxel_inspector_view_model.rs`（1 字段+new），无内联 DEVIATION | GPU Scene 依赖阻塞（43 例 ignore 锚点；ignored 处置见 ignored_disposition.md 补登节） | GPU Scene 依赖解除后 | ⏳ pending（来源：f9 SEM-3） |
-| 27 | `create_default_imagery_provider_view_models.rs` / `create_default_terrain_provider_view_models.rs` creation_function 恒返回空 provider 列表（注释自述 Track B 但本表原无条目） | 等待 provider 实质化回接（Track B4 已完成离线影像/地形，宜尽快回接） | 修复任务 #36 / 近期批次 | ⏳ pending（来源：f9 SEM-5） |
+| 27 | `create_default_imagery_provider_view_models.rs` / `create_default_terrain_provider_view_models.rs` creation_function 恒返回空 provider 列表（注释自述 Track B 但本表原无条目） | 等待 provider 实质化回接（Track B4 已完成离线影像/地形，宜尽快回接） | 修复任务 #36 / 近期批次 | ✅ 已回填 2026-09-05：OpenStreetMap 影像项回接 `OpenStreetMapImageryProvider`、Ellipsoid 地形项回接 `EllipsoidTerrainProvider`（均可同步创建）；Bing/World Terrain 项需 ion 网络端点，保持空列表并注明（来源：f9 SEM-5） |
 | 28 | Widgets E-未登记 82 项（16 个 widget 壳文件 DOM 构造/绑定、Animation/Timeline DOM/SVG 绘制、VR lockScreen/unlockScreen 等平台 API） | DOM/Knockout 平台性豁免补登（家族模式已知但未逐文件登记） | 不回填（平台性） | ✅ 补登即处置（来源：f9 SEM-1） |
 | 29 | Widgets C-未登记 13 项（Timeline 家族整体缺口：zoomTo/zoomFrom/updateFromClock/addTrack/addHighlightRange/TimelineHighlightRange/TimelineTrack 等）+ C-台账不符 39 项（Viewer 委托属性/flyTo/zoomTo/forceResize/_dataSourceAdded 等，与 deviations.md viewer.rs 条目「引擎侧逻辑完整保留」声明不符，属台账与代码不符，待修台账或补齐实现） | Timeline 为整体性缺口；Viewer 侧声明需修订或实现回填 | 按批次 | ⏳ pending（来源：f9 §3） |
 | 30 | Shaders czm_* builtin 143 项缺失（93 函数+41 常量+8 结构体+czm_eyeHeight 半缺失：Rust 有字段但未上传至 336B 缓冲/WGSL 未声明） | shader-strategy.md Batch B/C/D 待办；关键路径保真被其阻塞 | Batch B/C/D | ⏳ pending（来源：f10 ③、Major#2） |
@@ -125,7 +125,7 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 ## Globe 渲染修复轮补登（2026-09-02）
 
 | # | 事项 | 原因 | 回填里程碑 | 状态 |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | 35 | viewer-demo 窗口模式 3D 地球自 frame 1 起不显示（globe 离屏 pass 全空） | `Context::resolve_draw` 仅在 `command.model_matrix` 为 `Some` 时写入 `UniformState.model`，而 `next_frame()` 不重置 model；Model 在 frame 0 将 ENU 大矩阵残留进共享 uniform 状态，之后不带 modelMatrix 的 globe tile 命令沿用错误矩阵被变换出视野 | — | ✅ 已修复 2026-09-02：对齐 `Context.js` 1350 行 `drawCommand._modelMatrix ?? Matrix4.IDENTITY` 语义，每个 draw 无条件设置 model（None→IDENTITY）。回归 3726 passed / 0 failed；窗口截图验收 `docs/screenshots/viewer_demo_globe.png`（球体+影像朝向正确） |
 
 ---
@@ -139,7 +139,7 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 > 行号依据：f5 报告各文件表内 `| E |` 档行（合计 183 行，已对账）。
 
 | # | JS 文件 | E 行数 | 平台性要点（f5 结论摘要） |
-|---|---|---:|---|
+| --- | --- | ---: | --- |
 | 1 | Scene.js | 18 | canvas/DOM 尺寸、WebGL context 属性、drawingBuffer 族 |
 | 2 | Picking.js | 14 | 拾取帧缓冲/canvas 拾取像素读回 |
 | 3 | OIT.js | 12 | 半透明帧缓冲/WebGL 扩展探测 |
@@ -206,4 +206,3 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 | 64 | VoxelShape.js | 1 | voxel 形状 shader 面 |
 | 65 | VoxelTraversal.js | 1 | voxel LOD 绘制面 |
 | **合计** | **65 文件** | **183** | 与 f5 报告 E 行总数对账一致 |
-

@@ -141,7 +141,7 @@ async fn supports_web_p_throws_when_not_initialized_then_detects_after_initializ
 }
 
 #[test]
-#[ignore = "requires a cesium-scene context (WebGL2 probe), ported in M3"]
+#[ignore = "design deviation: JS reads scene.context.webgl2 (Core→Scene reverse dep); wgpu backend guarantees WebGL2-equivalent capability, no standalone probe target (deferred.md #3)"]
 fn detects_webgl2_support() {}
 
 #[test]
