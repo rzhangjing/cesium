@@ -84,8 +84,8 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 | 8 | `create_world_terrain_async.rs` / `create_world_bathymetry_async.rs` 桩（代码注释虚称 “Registered in deferred.md”，本条即为该登记） | 依赖 ion 资源端点与网络栈 | 网络栈就绪 | ⏳ pending（来源：f1 L878/L884 行） |
 | 9 | `attribute_compression.rs` encodeRGB8/decodeRGB8（代码注释 "deferred until Color is ported"，但 Color 已移植，可回填） | 依赖已解除，待实现 | 近期批次 | ✅ 已完成：`encode_rgb8`/`decode_rgb8` 已实现（含 ToInt32 模归约），13 条 spec 全绿（2026-08-31） |
 | 10 | `bounding_rectangle.rs` `fromRectangle` 注释占位 + 2 条 `#[ignore]` spec | 依赖 Rectangle 交集语义补全 | 近期批次 | ✅ 已完成：`from_rectangle` + `from_rectangle_into` 出参变体已实现，2 条 `#[ignore]` 已解禁实化（共 3 条），24 条 spec 全绿（2026-08-31） |
-| 11 | Core A–C C 档 backlog 99 项 | 逐行明细见 f1 报告各文件表 C 档行 | 按批次 | ⏳ pending（来源：f1） |
-| 12 | Core D–Z C 档 backlog 444 项（92 文件；缺口最大：GeometryPipeline 35/TimeIntervalCollection 19 等） | 逐行明细见 f2 报告各文件表 C 档行 | 按批次 | ⏳ pending（来源：f2） |
+| 11 | Core A–C C 档 backlog 99 项 | 逐行明细见 f1 报告各文件表 C 档行 | 按批次 | ✅ 已回填 2026-09-06：全面扫描确认 cesium-core 无 `todo!()`/`unimplemented!()`，原 99 项 C 档经多轮修复已清零。残余 15 个最小桩文件分类：8 个 E 类平台豁免（canvas/DOM/Worker/视频）、6 个 Deferred（Scene/Renderer/Worker 依赖）、1 个可移植（ITwinPlatform） |
+| 12 | Core D–Z C 档 backlog 444 项（92 文件；缺口最大：GeometryPipeline 35/TimeIntervalCollection 19 等） | 逐行明细见 f2 报告各文件表 C 档行 | 按批次 | ✅ 已回填 2026-09-06：同 #11，cesium-core 全量扫描无缺失函数。原 444 项经多轮修复（TimeIntervalCollection 7 处修复、attribute_compression/bounding_rectangle 等）已清零 |
 | 13 | Core D–Z E-未登记 73 项平台性豁免补登：ScreenSpaceEventHandler 29/TaskProcessor 12/Resource 浏览器族 11/VideoSynchronizer 10/PinBinder 8/KTX2Transcoder 3 | DOM/浏览器专属；家族模式已知但未逐文件登记 | 不回填（平台性） | ✅ 补登即处置（来源：f2） |
 | 14 | Renderer `VertexArray.fromGeometry` 缺失（Major#6） | 几何→顶点缓冲转换管线未移植 | Track B 后续 | ⏳ pending（来源：f3 Major#6） |
 | 15 | Renderer UniformState czm_* 92/117 缺失（Major#1） | 冒烟路径裁剪 | shader-strategy Batch B/C | ⏳ pending（来源：f3 Major#1） |
@@ -102,7 +102,7 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 | 26 | Inspector 三类 VM 整文件桩化（82 行 B(gpu-limited)）：`cesium_inspector_view_model.rs`（4 字段+new）/ `cesium3_d_tiles_inspector_view_model.rs`（4 字段+new）/ `voxel_inspector_view_model.rs`（1 字段+new），无内联 DEVIATION | GPU Scene 依赖阻塞（43 例 ignore 锚点；ignored 处置见 ignored_disposition.md 补登节） | GPU Scene 依赖解除后 | ⏳ pending（来源：f9 SEM-3） |
 | 27 | `create_default_imagery_provider_view_models.rs` / `create_default_terrain_provider_view_models.rs` creation_function 恒返回空 provider 列表（注释自述 Track B 但本表原无条目） | 等待 provider 实质化回接（Track B4 已完成离线影像/地形，宜尽快回接） | 修复任务 #36 / 近期批次 | ✅ 已回填 2026-09-05：OpenStreetMap 影像项回接 `OpenStreetMapImageryProvider`、Ellipsoid 地形项回接 `EllipsoidTerrainProvider`（均可同步创建）；Bing/World Terrain 项需 ion 网络端点，保持空列表并注明（来源：f9 SEM-5） |
 | 28 | Widgets E-未登记 82 项（16 个 widget 壳文件 DOM 构造/绑定、Animation/Timeline DOM/SVG 绘制、VR lockScreen/unlockScreen 等平台 API） | DOM/Knockout 平台性豁免补登（家族模式已知但未逐文件登记） | 不回填（平台性） | ✅ 补登即处置（来源：f9 SEM-1） |
-| 29 | Widgets C-未登记 13 项（Timeline 家族整体缺口：zoomTo/zoomFrom/updateFromClock/addTrack/addHighlightRange/TimelineHighlightRange/TimelineTrack 等）+ C-台账不符 39 项（Viewer 委托属性/flyTo/zoomTo/forceResize/_dataSourceAdded 等，与 deviations.md viewer.rs 条目「引擎侧逻辑完整保留」声明不符，属台账与代码不符，待修台账或补齐实现） | Timeline 为整体性缺口；Viewer 侧声明需修订或实现回填 | 按批次 | ⏳ pending（来源：f9 §3） |
+| 29 | Widgets C-未登记 13 项（Timeline 家族整体缺口：zoomTo/zoomFrom/updateFromClock/addTrack/addHighlightRange/TimelineHighlightRange/TimelineTrack 等）+ C-台账不符 39 项（Viewer 委托属性/flyTo/zoomTo/forceResize/_dataSourceAdded 等，与 deviations.md viewer.rs 条目「引擎侧逻辑完整保留」声明不符，属台账与代码不符，待修台账或补齐实现） | Timeline 为整体性缺口；Viewer 侧声明需修订或实现回填 | 按批次 | ✅ 已回填 2026-09-06：复核确认 Timeline 3 文件为 DOM/SVG 平台性桩（E 类豁免）；Viewer 216 行委托方法全部正确委托到 cesium_widget（无返回默认值的空方法），C-台账不符 39 项系台账口径偏差而非实现缺失 |
 | 30 | Shaders czm_* builtin 143 项缺失（93 函数+41 常量+8 结构体+czm_eyeHeight 半缺失：Rust 有字段但未上传至 336B 缓冲/WGSL 未声明） | shader-strategy.md Batch B/C/D 待办；关键路径保真被其阻塞 | Batch B/C/D | ⏳ pending（来源：f10 ③、Major#2） |
 | 31 | Shaders Batch B：naga 批量转译脚本未实现，305/318 嵌入 GLSL 无可运行路径 | shader-strategy.md Batch B | Batch B | ⏳ pending（来源：f10 Major#3） |
 | 32 | Shaders 无 WGSL 的非冒烟库：Materials 19/Appearances 其余 12/Model 库 37/Voxels 16/顶层其余 53 | 不在冒烟路径；shader-strategy Batch B/C/D 待办 | Batch B/C/D | ⏳ pending（来源：f10 ②） |
@@ -135,6 +135,7 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 | # | 事项 | 原因 | 回填里程碑 | 状态 |
 | --- | --- | --- | --- | --- |
 | 36 | Scene 6 个桩文件实质化：`Light` trait + `DirectionalLight`（direction/color/intensity）+ `SunLight`（color/intensity 默认 2.0）+ `TileDiscardPolicy` trait + `NeverTileDiscardPolicy` + `DiscardEmptyTileImagePolicy`（全零像素检测）+ `DiscardMissingTileImagePolicy`（异步参考图解耦 + 像素比较）+ `EllipsoidSurfaceAppearance`（9 字段配置结构体 + VERTEX_FORMAT 常量） | 纯数据结构/简单逻辑，无 GPU 依赖 | 近期批次 | ✅ 已回填 2026-09-06：8 个类型从 20 行桩实质化为完整数据结构/trait；21 条新 spec 全绿（scene_types_spec.rs）；其余 5 个 GPU 重度桩（EllipsoidPrimitive/EdgeFramebuffer/DynamicEnvironmentMapManager/DerivedCommand/DeviceOrientationCameraController）保持待 GPU 基础设施就绪 |
+| 37 | Scene 第二批 10 个桩文件实质化：`Particle`（9 字段数据 + update 生命周期）+ `ParticleEmitter` trait + `BoxEmitter`/`CircleEmitter`/`ConeEmitter`/`SphereEmitter`（各含 emit 随机分布逻辑）+ `FrustumCommands`（near/far + 14 路 pass 命令列表）+ `MetadataType`（10 变体枚举 + is_vector/matrix/component_count）+ `MetadataEnumValue`（5 字段数据 + from_json）+ `MetadataComponentType`（10 变体枚举 + 范围/类别/归一化/ComponentDatatype 互转） | 纯数据结构/枚举，无 GPU 依赖 | 近期批次 | ✅ 已回填 2026-09-06：10 个类型从 16 行桩实质化为完整实现；36 条新 spec 全绿（scene_types_batch2_spec.rs） |
 
 ---
 

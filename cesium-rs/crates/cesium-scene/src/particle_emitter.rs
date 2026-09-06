@@ -1,15 +1,15 @@
 ﻿//! Ported from `packages/engine/Source/Scene/ParticleEmitter.js`.
 
-/// Base class for particle emitters.
-pub struct ParticleEmitter {
-    _private: (),
-}
+use crate::particle::Particle;
 
-impl ParticleEmitter {
-    /// Creates a new ParticleEmitter.
-    pub fn new() -> Self { Self { _private: () } }
-}
-
-impl Default for ParticleEmitter {
-    fn default() -> Self { Self::new() }
+/// Base trait for particle emitters.
+///
+/// This type describes an interface and is not intended to be instantiated
+/// directly.  Use [`BoxEmitter`](crate::box_emitter::BoxEmitter),
+/// [`CircleEmitter`](crate::circle_emitter::CircleEmitter),
+/// [`ConeEmitter`](crate::cone_emitter::ConeEmitter) or
+/// [`SphereEmitter`](crate::sphere_emitter::SphereEmitter) instead.
+pub trait ParticleEmitter {
+    /// Initializes the given [`Particle`] by setting its position and velocity.
+    fn emit(&self, particle: &mut Particle);
 }

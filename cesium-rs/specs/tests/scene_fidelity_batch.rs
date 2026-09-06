@@ -9,9 +9,15 @@
 //! - Light/DirectionalLight/SunLight
 //! - TileDiscardPolicy family
 //! - EllipsoidSurfaceAppearance
+//! - Particle/ParticleEmitter + BoxEmitter/CircleEmitter/ConeEmitter/SphereEmitter
+//! - FrustumCommands
+//! - MetadataType/MetadataEnumValue/MetadataComponentType
 
 #[path = "scene_fidelity/compute_fly_to_location_for_rectangle_spec.rs"]
 mod compute_fly_to_location_for_rectangle_spec;
 
 #[path = "scene_fidelity/scene_types_spec.rs"]
 mod scene_types_spec;
+
+#[path = "scene_fidelity/scene_types_batch2_spec.rs"]
+mod scene_types_batch2_spec;
