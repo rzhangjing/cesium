@@ -1,15 +1,19 @@
 ﻿//! Ported from `packages/engine/Source/Scene/Model/ModelLightingOptions.js`.
 
-/// Lighting options for model rendering.
-pub struct ModelLightingOptions {
-    _private: (),
-}
+use crate::model::lighting_model::LightingModel;
 
-impl ModelLightingOptions {
-    /// Creates a new ModelLightingOptions.
-    pub fn new() -> Self { Self { _private: () } }
+/// Options for configuring the `LightingPipelineStage`.
+#[derive(Debug, Clone)]
+pub struct ModelLightingOptions {
+    /// The lighting model to use, such as Unlit or PBR.
+    /// This is determined by the primitive's material.
+    pub lighting_model: LightingModel,
 }
 
 impl Default for ModelLightingOptions {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self {
+            lighting_model: LightingModel::Unlit,
+        }
+    }
 }

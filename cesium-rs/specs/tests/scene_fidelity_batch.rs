@@ -12,6 +12,12 @@
 //! - Particle/ParticleEmitter + BoxEmitter/CircleEmitter/ConeEmitter/SphereEmitter
 //! - FrustumCommands
 //! - MetadataType/MetadataEnumValue/MetadataComponentType
+//! - MetadataEnum
+//! - UniformType/VaryingType/CustomShaderMode/CustomShaderTranslucencyMode
+//! - StyleCommandsNeeded/BlendingState/SupportedImageFormats
+//! - ImageryFlags/ModelAlphaOptions/ModelLightingOptions/ImageryConfiguration
+//! - get_metadata_class_property/get_metadata_property
+//! - I3dmParser
 
 #[path = "scene_fidelity/compute_fly_to_location_for_rectangle_spec.rs"]
 mod compute_fly_to_location_for_rectangle_spec;
@@ -21,3 +27,6 @@ mod scene_types_spec;
 
 #[path = "scene_fidelity/scene_types_batch2_spec.rs"]
 mod scene_types_batch2_spec;
+
+#[path = "scene_fidelity/scene_types_batch3_spec.rs"]
+mod scene_types_batch3_spec;

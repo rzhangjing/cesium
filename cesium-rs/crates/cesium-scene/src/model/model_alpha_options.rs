@@ -1,15 +1,12 @@
 ﻿//! Ported from `packages/engine/Source/Scene/Model/ModelAlphaOptions.js`.
 
-/// Alpha options for model rendering.
+use cesium_renderer::pass::Pass;
+
+/// Options for configuring the `AlphaPipelineStage`.
+#[derive(Debug, Clone, Default)]
 pub struct ModelAlphaOptions {
-    _private: (),
-}
-
-impl ModelAlphaOptions {
-    /// Creates a new ModelAlphaOptions.
-    pub fn new() -> Self { Self { _private: () } }
-}
-
-impl Default for ModelAlphaOptions {
-    fn default() -> Self { Self::new() }
+    /// Which render pass will render the model.
+    pub pass: Option<Pass>,
+    /// Determines the alpha threshold below which fragments are discarded.
+    pub alpha_cutoff: Option<f32>,
 }

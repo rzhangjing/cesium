@@ -1,24 +1,27 @@
 ﻿//! Ported from `packages/engine/Source/Scene/SupportedImageFormats.js`.
 
-/// The image formats supported by the renderer.
+/// Image formats supported by the browser/renderer.
+#[derive(Debug, Clone)]
 pub struct SupportedImageFormats {
-    /// Whether JPEG is supported.
-    pub jpeg: bool,
-    /// Whether PNG is supported.
-    pub png: bool,
-    /// Whether WebP is supported.
+    /// Whether the browser supports WebP images.
     pub webp: bool,
-    /// Whether Basis Universal is supported.
+    /// Whether the browser supports compressed textures required to view
+    /// KTX2 + Basis Universal images.
     pub basis: bool,
 }
 
 impl SupportedImageFormats {
-    /// Creates a new supported image formats.
-    pub fn new() -> Self {
-        Self { jpeg: true, png: true, webp: false, basis: false }
+    /// Creates a new `SupportedImageFormats` with the given options.
+    pub fn new(webp: bool, basis: bool) -> Self {
+        Self { webp, basis }
     }
 }
 
 impl Default for SupportedImageFormats {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self {
+            webp: false,
+            basis: false,
+        }
+    }
 }
