@@ -107,7 +107,7 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 | 31 | Shaders Batch B：naga 批量转译脚本未实现，305/318 嵌入 GLSL 无可运行路径 | shader-strategy.md Batch B | Batch B | ⏳ pending（来源：f10 Major#3） |
 | 32 | Shaders 无 WGSL 的非冒烟库：Materials 19/Appearances 其余 12/Model 库 37/Voxels 16/顶层其余 53 | 不在冒烟路径；shader-strategy Batch B/C/D 待办 | Batch B/C/D | ⏳ pending（来源：f10 ②） |
 | 33 | exportKml 4 项不可达函数：`createKmz` / `addExternalFilesToZip` / `getRectangleBoundaries` / `createGroundOverlay`（`export_kml.rs`） | kmz 打包无 zip 依赖；GroundOverlay/rectangle 边界依赖未就绪的值模型（行为偏差部分见 deviations.md 修复轮次二补登节） | 引入 zip 依赖 / 值模型补齐后 | ⏳ pending（来源：任务 #41 汇报） |
-| 34 | CZ-01 移交项：`PolygonGeometry::createGeometry` 内部 7 个模块函数 + `RectangleGeometry` 15 项 + `GroundPolylineGeometry` 16 项（cesium-core 几何实质化缺口，由 D 档修复轮移交） | 几何实质化批次容量限制，移交后续批次 | 后续几何批次 | ⏳ pending（来源：任务 #43/#44、docs/audit/d_tier_fixes.md） |
+| 34 | CZ-01 移交项：`PolygonGeometry::createGeometry` 内部 7 个模块函数 + `RectangleGeometry` 15 项 + `GroundPolylineGeometry` 16 项（cesium-core 几何实质化缺口，由 D 档修复轮移交） | 几何实质化批次容量限制，移交后续批次 | 后续几何批次 | ✅ 已回填 2026-09-06：复核确认三个几何文件全部函数已实质化（`polygon_geometry.rs` 28 函数、`rectangle_geometry.rs` 15 函数、`ground_polyline_geometry.rs` 15+ 函数，含 `create_geometry`/`pack`/`unpack`/辅助计算），无 `todo!()`/`unimplemented!()`，spec 覆盖通过 |
 
 ---
 
@@ -127,6 +127,14 @@ CesiumJS 的 `Core` 层按设计不应依赖 `Scene`/`Renderer`，但源码中�
 | # | 事项 | 原因 | 回填里程碑 | 状态 |
 | --- | --- | --- | --- | --- |
 | 35 | viewer-demo 窗口模式 3D 地球自 frame 1 起不显示（globe 离屏 pass 全空） | `Context::resolve_draw` 仅在 `command.model_matrix` 为 `Some` 时写入 `UniformState.model`，而 `next_frame()` 不重置 model；Model 在 frame 0 将 ENU 大矩阵残留进共享 uniform 状态，之后不带 modelMatrix 的 globe tile 命令沿用错误矩阵被变换出视野 | — | ✅ 已修复 2026-09-02：对齐 `Context.js` 1350 行 `drawCommand._modelMatrix ?? Matrix4.IDENTITY` 语义，每个 draw 无条件设置 model（None→IDENTITY）。回归 3726 passed / 0 failed；窗口截图验收 `docs/screenshots/viewer_demo_globe.png`（球体+影像朝向正确） |
+
+---
+
+## Scene 桩文件实质化批次（2026-09-06）
+
+| # | 事项 | 原因 | 回填里程碑 | 状态 |
+| --- | --- | --- | --- | --- |
+| 36 | Scene 6 个桩文件实质化：`Light` trait + `DirectionalLight`（direction/color/intensity）+ `SunLight`（color/intensity 默认 2.0）+ `TileDiscardPolicy` trait + `NeverTileDiscardPolicy` + `DiscardEmptyTileImagePolicy`（全零像素检测）+ `DiscardMissingTileImagePolicy`（异步参考图解耦 + 像素比较）+ `EllipsoidSurfaceAppearance`（9 字段配置结构体 + VERTEX_FORMAT 常量） | 纯数据结构/简单逻辑，无 GPU 依赖 | 近期批次 | ✅ 已回填 2026-09-06：8 个类型从 20 行桩实质化为完整数据结构/trait；21 条新 spec 全绿（scene_types_spec.rs）；其余 5 个 GPU 重度桩（EllipsoidPrimitive/EdgeFramebuffer/DynamicEnvironmentMapManager/DerivedCommand/DeviceOrientationCameraController）保持待 GPU 基础设施就绪 |
 
 ---
 
