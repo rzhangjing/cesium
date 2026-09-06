@@ -1,15 +1,38 @@
 ﻿//! Ported from `packages/engine/Source/Scene/ImplicitSubdivisionScheme.js`.
 
-/// Implicit subdivision scheme.
-pub struct ImplicitSubdivisionScheme {
-    _private: (),
+/// The subdivision scheme for an implicit tileset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ImplicitSubdivisionScheme {
+    /// A quadtree divides a parent tile into four children.
+    Quadtree,
+    /// An octree divides a parent tile into eight children.
+    Octree,
 }
 
 impl ImplicitSubdivisionScheme {
-    /// Creates a new ImplicitSubdivisionScheme.
-    pub fn new() -> Self { Self { _private: () } }
-}
+    /// Returns the string representation.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Quadtree => "QUADTREE",
+            Self::Octree => "OCTREE",
+        }
+    }
 
-impl Default for ImplicitSubdivisionScheme {
-    fn default() -> Self { Self::new() }
+    /// Parses from a string.
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "QUADTREE" => Some(Self::Quadtree),
+            "OCTREE" => Some(Self::Octree),
+            _ => None,
+        }
+    }
+
+    /// Get the branching factor for the given subdivision scheme.
+    /// Returns 4 for QUADTREE or 8 for OCTREE.
+    pub fn get_branching_factor(&self) -> u32 {
+        match self {
+            Self::Quadtree => 4,
+            Self::Octree => 8,
+        }
+    }
 }
