@@ -469,6 +469,17 @@ impl Cesium3DTile {
         self.children.is_empty()
     }
 
+    /// Returns the radius of the tile's bounding sphere, or 0.0 if no
+    /// bounding volume is set.
+    ///
+    /// Used by traversal helpers that need a quick size estimate.
+    pub fn bounding_sphere_radius(&self) -> f64 {
+        self.bounding_volume
+            .as_ref()
+            .map(|v| v.bounding_sphere().radius)
+            .unwrap_or(0.0)
+    }
+
     /// Returns whether the tile has unloaded renderable content, i.e.
     /// content that should eventually be loaded.
     ///

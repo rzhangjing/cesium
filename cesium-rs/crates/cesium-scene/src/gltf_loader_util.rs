@@ -4,6 +4,8 @@
 //! vertex/index buffer loaders and the GPU resource creation path.
 
 use crate::gltf_loader::GltfAccessor;
+use crate::supported_image_formats::SupportedImageFormats;
+use serde_json::Value;
 
 /// glTF accessor component types (WebGL constants used by the schema).
 pub mod component_type {
@@ -115,6 +117,40 @@ impl GltfLoaderUtil {
             // in a single attribute slot.
             _ => None,
         }
+    }
+
+    /// Gets the image ID referenced by a texture in a glTF JSON object.
+    ///
+    /// When the texture has the `EXT_texture_webp` extension and WebP is
+    /// supported, the WebP image ID is returned. Similarly for
+    /// `KHR_texture_basisu` when Basis is supported.
+    ///
+    /// Mirrors `GltfLoaderUtil.getImageIdFromTexture(options)`.
+    pub fn get_image_id_from_texture(
+        gltf: &Value,
+        texture_id: usize,
+        supported_image_formats: &SupportedImageFormats,
+    ) -> Option<usize> {
+        let texture = gltf.get("textures")?.get(texture_id)?;
+
+        if let Some(extensions) = texture.get("extensions") {
+            if supported_image_formats.webp {
+                if let Some(webp) = extensions.get("EXT_texture_webp") {
+                    if let Some(source) = webp.get("source").and_then(|s| s.as_u64()) {
+                        return Some(source as usize);
+                    }
+                }
+            }
+            if supported_image_formats.basis {
+                if let Some(basis) = extensions.get("KHR_texture_basisu") {
+                    if let Some(source) = basis.get("source").and_then(|s| s.as_u64()) {
+                        return Some(source as usize);
+                    }
+                }
+            }
+        }
+
+        texture.get("source").and_then(|s| s.as_u64()).map(|v| v as usize)
     }
 }
 
