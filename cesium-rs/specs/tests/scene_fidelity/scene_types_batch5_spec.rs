@@ -16,6 +16,9 @@ use cesium_scene::get_binary_accessor::{components_per_attribute, get_binary_acc
 use cesium_scene::get_clip_and_style_code::get_clip_and_style_code;
 use cesium_scene::get_mesh_primitives::get_mesh_primitives;
 use cesium_scene::group_metadata::GroupMetadata;
+use cesium_scene::model::cartesian_rectangle::CartesianRectangle;
+use cesium_scene::model::imagery_input::ImageryInput;
+use cesium_scene::model::mapped_positions::MappedPositions;
 use cesium_scene::model::model_type::ModelType;
 use cesium_scene::tile_metadata::TileMetadata;
 
@@ -371,4 +374,71 @@ fn model_type_is_3d_tiles() {
     assert!(ModelType::TileI3dm.is_3d_tiles());
     assert!(ModelType::TilePnts.is_3d_tiles());
     assert!(ModelType::TileGeojson.is_3d_tiles());
+}
+
+// ─── CartesianRectangle ────────────────────────────────────────
+
+#[test]
+fn cartesian_rectangle_new_and_default() {
+    let r = CartesianRectangle::new(1.0, 2.0, 3.0, 4.0);
+    assert!((r.min_x - 1.0).abs() < f64::EPSILON);
+    assert!((r.min_y - 2.0).abs() < f64::EPSILON);
+    assert!((r.max_x - 3.0).abs() < f64::EPSILON);
+    assert!((r.max_y - 4.0).abs() < f64::EPSILON);
+
+    let d = CartesianRectangle::default();
+    assert!((d.min_x - 0.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn cartesian_rectangle_contains() {
+    let r = CartesianRectangle::new(0.0, 0.0, 10.0, 10.0);
+    // Default: includes min, excludes max
+    assert!(r.contains(0.0, 0.0));
+    assert!(r.contains(5.0, 5.0));
+    assert!(!r.contains(10.0, 10.0)); // max excluded
+    assert!(!r.contains(-1.0, 5.0));
+}
+
+#[test]
+fn cartesian_rectangle_contains_exclusive() {
+    let r = CartesianRectangle::new(0.0, 0.0, 10.0, 10.0);
+    assert!(!r.contains_exclusive(0.0, 0.0)); // border excluded
+    assert!(r.contains_exclusive(5.0, 5.0));
+    assert!(!r.contains_exclusive(10.0, 10.0));
+}
+
+#[test]
+fn cartesian_rectangle_contains_inclusive() {
+    let r = CartesianRectangle::new(0.0, 0.0, 10.0, 10.0);
+    assert!(r.contains_inclusive(0.0, 0.0));
+    assert!(r.contains_inclusive(10.0, 10.0)); // border included
+    assert!(!r.contains_inclusive(11.0, 5.0));
+}
+
+// ─── ImageryInput ──────────────────────────────────────────────
+
+#[test]
+fn imagery_input_stores_fields() {
+    let input = ImageryInput::new(
+        serde_json::json!("layer"),
+        serde_json::json!("texture"),
+        serde_json::json!([1.0, 2.0, 3.0, 4.0]),
+        serde_json::json!([0.0, 0.0, 1.0, 1.0]),
+        2,
+    );
+    assert_eq!(input.imagery_tex_coord_attribute_set_index, 2);
+}
+
+// ─── MappedPositions ───────────────────────────────────────────
+
+#[test]
+fn mapped_positions_stores_fields() {
+    let mp = MappedPositions::new(
+        serde_json::json!([[0.1, 0.2], [0.3, 0.4]]),
+        2,
+        serde_json::json!({"west": 0.1, "south": 0.2, "east": 0.3, "north": 0.4}),
+        serde_json::json!("WGS84"),
+    );
+    assert_eq!(mp.num_positions, 2);
 }
