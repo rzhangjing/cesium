@@ -33,3 +33,6 @@ mod scene_types_batch3_spec;
 
 #[path = "scene_fidelity/scene_types_batch4_spec.rs"]
 mod scene_types_batch4_spec;
+
+#[path = "scene_fidelity/scene_types_batch5_spec.rs"]
+mod scene_types_batch5_spec;
