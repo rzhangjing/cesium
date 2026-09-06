@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/DebugInspector.js`.
 
-/// A debug inspector.
+/// Debug inspector.
+///
+/// Provides debugging visualization overlays for scene inspection.
 pub struct DebugInspector {
-    _private: (),
+    /// Whether the inspector is visible.
+    pub show: bool,
 }
 
 impl DebugInspector {
     /// Creates a new DebugInspector.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { show: false } }
 }
 
 impl Default for DebugInspector {

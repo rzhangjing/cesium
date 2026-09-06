@@ -25,6 +25,7 @@ const DYNAMIC_OFFSET_ALIGNMENT: u64 = 256;
 /// These include model-view-projection matrices, camera position,
 /// time values, and other commonly-needed values.
 #[derive(Debug, Clone)]
+#[allow(non_snake_case)]
 pub struct AutomaticUniforms {
     /// The model-view-projection matrix.
     pub czm_modelViewProjection: Matrix4,

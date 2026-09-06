@@ -12,6 +12,7 @@ cesium-renderer = { workspace = true }
 cesium-shaders = { workspace = true }
 image = { workspace = true }
 log = { workspace = true }
+reqwest = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -10,7 +10,6 @@
 use cesium_core::bounding_rectangle::BoundingRectangle;
 use cesium_core::cartesian2::Cartesian2;
 use cesium_core::cartesian3::Cartesian3;
-use cesium_core::cartesian4::Cartesian4;
 use cesium_core::color::Color;
 use cesium_core::ellipsoid::Ellipsoid;
 use cesium_core::matrix3::Matrix3;

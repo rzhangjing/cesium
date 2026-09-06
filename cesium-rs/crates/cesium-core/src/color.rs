@@ -873,7 +873,7 @@ fn parse_rgb_functional(color: &str) -> Option<(f64, f64, f64, f64)> {
     let n = chars.len();
     let lower: Vec<char> = chars.iter().map(|c| c.to_ascii_lowercase()).collect();
 
-    let mut i = 0;
+    let mut i;
     // "rgb" prefix, then optional "a"
     if n < 3 || lower[0] != 'r' || lower[1] != 'g' || lower[2] != 'b' {
         return None;
@@ -985,7 +985,7 @@ fn parse_hsl_functional(color: &str) -> Option<(f64, f64, f64, f64)> {
     let n = chars.len();
     let lower: Vec<char> = chars.iter().map(|c| c.to_ascii_lowercase()).collect();
 
-    let mut i = 0;
+    let mut i;
     if n < 3 || lower[0] != 'h' || lower[1] != 's' || lower[2] != 'l' {
         return None;
     }

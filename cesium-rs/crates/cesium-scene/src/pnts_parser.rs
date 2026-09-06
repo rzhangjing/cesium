@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/PntsParser.js`.
 
-/// Parses point cloud (pnts) tiles.
+/// PNTS parser.
+///
+/// Parses Point Cloud (.pnts) tile content.
 pub struct PntsParser {
-    _private: (),
+    /// Whether parsing is complete.
+    pub complete: bool,
 }
 
 impl PntsParser {
     /// Creates a new PntsParser.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { complete: false } }
 }
 
 impl Default for PntsParser {

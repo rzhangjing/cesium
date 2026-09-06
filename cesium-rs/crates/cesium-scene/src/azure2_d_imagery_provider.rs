@@ -1,13 +1,26 @@
-﻿//! Ported from `packages/engine/Source/Scene/Azure2DImageryProvider.js`.
+﻿//! Ported from `packages/engine/Source/Scene/AzureImageryProvider.js`.
 
-/// An imagery provider for Azure Maps 2D tiles.
+/// Imagery provider for Azure Maps.
+///
+/// Loads map tiles from Azure Maps REST API.
 pub struct Azure2DImageryProvider {
-    _private: (),
+    /// The Azure Maps subscription key.
+    pub subscription_key: Option<String>,
+    /// The tile URL template.
+    pub url: String,
+    /// Whether the provider is ready.
+    pub ready: bool,
 }
 
 impl Azure2DImageryProvider {
     /// Creates a new Azure2DImageryProvider.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self {
+        Self {
+            subscription_key: None,
+            url: "https://atlas.microsoft.com/map/tile".to_string(),
+            ready: false,
+        }
+    }
 }
 
 impl Default for Azure2DImageryProvider {

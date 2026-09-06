@@ -2,7 +2,6 @@
 //!
 //! A description of a polygon on an ellipsoid.
 
-use std::collections::HashMap;
 use std::f64::consts::PI;
 
 use crate::arc_type::ArcType;
@@ -32,7 +31,6 @@ use crate::polygon_geometry_library::{
 };
 use crate::polygon_hierarchy::PolygonHierarchy;
 use crate::polygon_pipeline::PolygonPipeline;
-use crate::primitive_type::PrimitiveType;
 use crate::quaternion::Quaternion;
 use crate::rectangle::Rectangle;
 use crate::stereographic::Stereographic;

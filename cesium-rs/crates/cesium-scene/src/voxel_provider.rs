@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/VoxelProvider.js`.
 
-/// A provider for voxel data.
+/// Voxel data provider.
+///
+/// Interface for providing voxel tile data.
 pub struct VoxelProvider {
-    _private: (),
+    /// Whether the provider is ready.
+    pub ready: bool,
 }
 
 impl VoxelProvider {
     /// Creates a new VoxelProvider.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { ready: false } }
 }
 
 impl Default for VoxelProvider {

@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/PolylineColorAppearance.js`.
 
-/// An appearance for colored polylines.
+/// Polyline color appearance.
+///
+/// Renders polylines with per-vertex colors.
 pub struct PolylineColorAppearance {
-    _private: (),
+    /// Whether the appearance is transparent.
+    pub transparent: bool,
 }
 
 impl PolylineColorAppearance {
     /// Creates a new PolylineColorAppearance.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { transparent: false } }
 }
 
 impl Default for PolylineColorAppearance {

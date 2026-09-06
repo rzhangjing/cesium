@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/Model/ModelPrimitiveImagery.js`.
 
-/// Imagery for a model primitive.
+/// Model primitive imagery.
+///
+/// Manages imagery textures on a model primitive.
 pub struct ModelPrimitiveImagery {
-    _private: (),
+    /// Whether imagery is active.
+    pub active: bool,
 }
 
 impl ModelPrimitiveImagery {
     /// Creates a new ModelPrimitiveImagery.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { active: false } }
 }
 
 impl Default for ModelPrimitiveImagery {

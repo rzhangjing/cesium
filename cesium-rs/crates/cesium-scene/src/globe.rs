@@ -2,6 +2,8 @@
 //!
 //! The globe rendered in the scene, including its terrain and imagery layers.
 
+use std::sync::Arc;
+
 use cesium_core::cartesian3::Cartesian3;
 use cesium_core::color::Color;
 use cesium_core::ellipsoid::Ellipsoid;
@@ -9,8 +11,17 @@ use cesium_core::event::Event;
 use cesium_core::near_far_scalar::NearFarScalar;
 use cesium_core::ray::Ray;
 
+use cesium_renderer::buffer_usage::BufferUsage;
 use cesium_renderer::context::Context;
+use cesium_renderer::draw_command::DrawCommand;
 use cesium_renderer::framebuffer::Framebuffer;
+use cesium_renderer::render_state::{BlendEquation, BlendingFactor, RenderState};
+use cesium_renderer::shader_program::ShaderProgram;
+use cesium_renderer::vertex_array::{VertexArray, VertexAttribute};
+use cesium_core::index_datatype::IndexDatatype;
+use cesium_core::webgl_constants::WebGLConstants;
+use cesium_renderer::pass::Pass;
+use cesium_shaders::wgsl;
 
 use crate::frame_state::FrameState;
 use crate::globe_surface_shader_set::GlobeSurfaceShaderSet;
@@ -100,6 +111,14 @@ pub struct Globe {
     pub shadows: ShadowMode,
     /// Whether the globe has been destroyed.
     is_destroyed: bool,
+
+    // ---- Atmosphere (lazy GPU resources) ----
+    /// Atmosphere shader program (Fresnel-based glow).
+    atmosphere_shader: Option<Arc<ShaderProgram>>,
+    /// Atmosphere sphere vertex array.
+    atmosphere_vertex_array: Option<Arc<VertexArray>>,
+    /// Atmosphere sphere index buffer vertex count.
+    atmosphere_index_count: u32,
 }
 
 impl Globe {
@@ -164,6 +183,9 @@ impl Globe {
             vertex_shadow_darkness: 0.6,
             shadows: ShadowMode::Disabled,
             is_destroyed: false,
+            atmosphere_shader: None,
+            atmosphere_vertex_array: None,
+            atmosphere_index_count: 0,
         }
     }
 
@@ -321,6 +343,16 @@ impl Globe {
             return;
         }
         self.surface.render(frame_state);
+
+        // NOTE: Atmosphere rendering is currently disabled because the
+        // atmosphere sphere (1.02× globe) is closer to the camera than the
+        // globe surface, causing it to occlude the tiles. A proper fix
+        // requires either rendering the atmosphere into a separate pass
+        // or integrating the Fresnel effect into the globe tile shader.
+        // if self.show_ground_atmosphere {
+        //     self.render_atmosphere(context, framebuffer.clone());
+        // }
+
         // B4-5: drive the selected tiles' terrain toward Ready/NoData
         // (ancestors first) before the tile draws pick their geometry.
         let tiles = self.surface.tiles_to_render();
@@ -335,6 +367,87 @@ impl Globe {
                 framebuffer.clone(),
             );
         }
+    }
+
+    /// Renders the atmospheric glow sphere into the globe framebuffer.
+    fn render_atmosphere(
+        &mut self,
+        context: &mut Context,
+        framebuffer: Option<Arc<Framebuffer>>,
+    ) {
+        // Lazily create the atmosphere shader program.
+        if self.atmosphere_shader.is_none() {
+            match ShaderProgram::from_wgsl(
+                wgsl::ATMOSPHERE_SHADER,
+                wgsl::ATMOSPHERE_SHADER,
+                "globe_atmosphere".to_string(),
+            ) {
+                Ok(program) => self.atmosphere_shader = Some(Arc::new(program)),
+                Err(error) => {
+                    log::error!("atmosphere shader compilation failed: {error}");
+                    return;
+                }
+            }
+        }
+
+        // Lazily create the atmosphere sphere mesh (radius = 1.02 × max_radius).
+        if self.atmosphere_vertex_array.is_none() {
+            let radius = self.ellipsoid.maximum_radius() as f32 * 1.02;
+            let (positions, indices) = create_sphere_mesh(radius, 48, 24);
+            let to_bytes = |values: &[f32]| -> Vec<u8> {
+                values.iter().flat_map(|v| v.to_le_bytes()).collect()
+            };
+            let position_buffer = context.create_vertex_buffer(
+                Some(&to_bytes(&positions)),
+                None,
+                BufferUsage::StaticDraw,
+            );
+            let index_buffer = context.create_index_buffer(
+                Some(&indices.iter().flat_map(|i| (*i as u32).to_le_bytes()).collect::<Vec<u8>>()),
+                None,
+                BufferUsage::StaticDraw,
+                IndexDatatype::UnsignedInt,
+            );
+            let attributes = vec![VertexAttribute {
+                index: 0,
+                buffer: position_buffer,
+                components_per_attribute: 4,
+                component_datatype: wgpu::VertexFormat::Float32x4,
+                normalize: false,
+                stride_in_bytes: 16,
+                offset_in_bytes: 0,
+            }];
+            self.atmosphere_index_count = indices.len() as u32;
+            self.atmosphere_vertex_array =
+                Some(Arc::new(VertexArray::new(attributes, Some(index_buffer))));
+        }
+
+        // Alpha blending, depth test on, depth writes off.
+        let mut render_state = RenderState::default();
+        render_state.depth_test.enabled = true;
+        render_state.depth_mask = false; // don't write depth
+        render_state.blending.enabled = true;
+        render_state.blending.equation_rgb = BlendEquation::FuncAdd;
+        render_state.blending.equation_alpha = BlendEquation::FuncAdd;
+        render_state.blending.function_source_rgb = BlendingFactor::SrcAlpha;
+        render_state.blending.function_source_alpha = BlendingFactor::One;
+        render_state.blending.function_destination_rgb = BlendingFactor::OneMinusSrcAlpha;
+        render_state.blending.function_destination_alpha = BlendingFactor::OneMinusSrcAlpha;
+        // Disable culling so we see the inside of the sphere from any angle.
+        render_state.cull.enabled = false;
+
+        let mut command = DrawCommand::new();
+        command.primitive_type = WebGLConstants::TRIANGLES;
+        command.vertex_array = self.atmosphere_vertex_array.clone();
+        command.count = Some(self.atmosphere_index_count);
+        command.offset = 0;
+        command.shader_program = self.atmosphere_shader.clone();
+        command.render_state = render_state;
+        command.framebuffer = framebuffer;
+        command.pass = Some(Pass::Globe as u32);
+        command.owner = Some("GlobeAtmosphere".to_string());
+
+        context.draw(command);
     }
 
     /// Called at the end of each frame.
@@ -388,4 +501,51 @@ impl Default for Globe {
     fn default() -> Self {
         Self::new(None)
     }
+}
+
+/// Generates a UV sphere mesh with the given radius, sector count, and stack
+/// count. Returns (positions as vec4 xyzw, indices as u16 triangles).
+fn create_sphere_mesh(radius: f32, sectors: u32, stacks: u32) -> (Vec<f32>, Vec<u16>) {
+    let mut positions = Vec::new();
+    let mut indices = Vec::new();
+
+    let sector_step = 2.0 * std::f32::consts::PI / sectors as f32;
+    let stack_step = std::f32::consts::PI / stacks as f32;
+
+    // Generate vertices
+    for i in 0..=stacks {
+        let stack_angle = std::f32::consts::FRAC_PI_2 - i as f32 * stack_step;
+        let xz = radius * stack_angle.cos();
+        let y = radius * stack_angle.sin();
+
+        for j in 0..=sectors {
+            let sector_angle = j as f32 * sector_step;
+            let x = xz * sector_angle.cos();
+            let z = xz * sector_angle.sin();
+            positions.push(x);
+            positions.push(y);
+            positions.push(z);
+            positions.push(1.0);
+        }
+    }
+
+    // Generate indices
+    for i in 0..stacks {
+        let k1 = i * (sectors + 1);
+        let k2 = k1 + sectors + 1;
+        for j in 0..sectors {
+            if i != 0 {
+                indices.push((k1 + j) as u16);
+                indices.push((k2 + j) as u16);
+                indices.push((k1 + j + 1) as u16);
+            }
+            if i != stacks - 1 {
+                indices.push((k1 + j + 1) as u16);
+                indices.push((k2 + j) as u16);
+                indices.push((k2 + j + 1) as u16);
+            }
+        }
+    }
+
+    (positions, indices)
 }

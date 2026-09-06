@@ -101,7 +101,7 @@ impl IonGeocoderService {
             search_endpoint.append_query_parameters(&params);
         }
 
-        let mut pelias = PeliasGeocoderService::from_resource(search_endpoint);
+        let pelias = PeliasGeocoderService::from_resource(search_endpoint);
         // geocodeProviderType isn't stored here directly but instead relies
         // on the query parameters of the pelias url; use the setter logic
         // to update the value.

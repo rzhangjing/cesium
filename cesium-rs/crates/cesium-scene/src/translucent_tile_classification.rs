@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/TranslucentTileClassification.js`.
 
-/// Classification of translucent tiles.
+/// Translucent tile classification.
+///
+/// Manages classification rendering for translucent 3D tiles.
 pub struct TranslucentTileClassification {
-    _private: (),
+    /// Whether classification is active.
+    pub active: bool,
 }
 
 impl TranslucentTileClassification {
     /// Creates a new TranslucentTileClassification.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { active: false } }
 }
 
 impl Default for TranslucentTileClassification {

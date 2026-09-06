@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/Model/PrimitiveRenderResources.js`.
 
-/// Rendering resources for a primitive.
+/// Primitive render resources.
+///
+/// Manages GPU resources for a model primitive.
 pub struct PrimitiveRenderResources {
-    _private: (),
+    /// Whether resources are allocated.
+    pub allocated: bool,
 }
 
 impl PrimitiveRenderResources {
     /// Creates a new PrimitiveRenderResources.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { allocated: false } }
 }
 
 impl Default for PrimitiveRenderResources {

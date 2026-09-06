@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/PrimitivePipeline.js`.
 
-/// Pipeline for processing primitive data.
+/// Primitive pipeline.
+///
+/// Processes geometry primitives for GPU rendering.
 pub struct PrimitivePipeline {
-    _private: (),
+    /// Whether the pipeline is active.
+    pub active: bool,
 }
 
 impl PrimitivePipeline {
     /// Creates a new PrimitivePipeline.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { active: false } }
 }
 
 impl Default for PrimitivePipeline {

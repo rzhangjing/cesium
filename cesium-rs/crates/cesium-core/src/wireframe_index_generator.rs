@@ -65,7 +65,7 @@ fn create_wireframe_from_triangles(vertex_count: usize) -> Vec<u32> {
     wireframe
 }
 
-fn create_wireframe_from_triangle_indices(vertex_count: usize, original: &[u32]) -> Vec<u32> {
+fn create_wireframe_from_triangle_indices(_vertex_count: usize, original: &[u32]) -> Vec<u32> {
     let count = original.len();
     let mut wireframe = vec![0u32; count * 2];
     let mut index = 0;

@@ -22,20 +22,17 @@
 use std::sync::Arc;
 
 use cesium_core::cartesian3::Cartesian3;
-use cesium_core::cartographic::Cartographic;
 use cesium_core::ellipsoid::Ellipsoid;
-use cesium_core::transforms;
 use cesium_scene::file_imagery_provider::FileImageryProvider;
 use cesium_scene::globe::Globe;
 use cesium_scene::globe_terrain_fetcher::FileTerrainFetcher;
-use cesium_scene::gltf_pipeline::parse_glb::parse_glb;
 use cesium_scene::imagery_layer::ImageryLayer;
 use cesium_scene::imagery_provider::ImageryProvider;
-use cesium_scene::model::model::Model;
+use cesium_scene::web_mercator_imagery_provider::WebMercatorImageryProvider;
 use cesium_widgets::viewer::Viewer;
 use winit::{
     application::ApplicationHandler,
-    event::WindowEvent,
+    event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     window::{Window, WindowId},
 };
@@ -43,7 +40,7 @@ use winit::{
 /// Number of frames rendered before the optional screenshot is captured.
 /// Terrain tiles stream in over a few frames (fetch → createMesh → geometry
 /// upload), so the delay covers the tileset settling.
-const SCREENSHOT_FRAME_DELAY: u64 = 10;
+const SCREENSHOT_FRAME_DELAY: u64 = 30;
 /// Highest tile level generated for the offline imagery pyramid.
 const OFFLINE_IMAGERY_MAXIMUM_LEVEL: u32 = 3;
 /// Highest tile level generated for the offline heightmap terrain tileset.
@@ -65,6 +62,23 @@ struct State {
     frames_rendered: u64,
     /// Whether the optional screenshot was already captured.
     screenshot_done: bool,
+
+    // ── Orbit camera state ──────────────────────────────────────
+    /// Azimuth angle around the Z axis (radians). 0 = camera on +X.
+    orbit_heading: f64,
+    /// Elevation angle from the XY (equatorial) plane (radians).
+    /// 0 = camera on the equator; +π/2 = above north pole; -π/2 = above south pole.
+    orbit_pitch: f64,
+    /// Distance from the Earth center (meters).
+    orbit_distance: f64,
+    /// Previous mouse cursor position (pixels) for drag delta computation.
+    last_mouse_pos: Option<(f64, f64)>,
+    /// Whether the left mouse button is currently held.
+    left_dragging: bool,
+    /// Whether the right mouse button is currently held.
+    right_dragging: bool,
+    /// Whether the orbit camera parameters changed this frame (needs update).
+    orbit_dirty: bool,
 }
 
 impl State {
@@ -80,6 +94,13 @@ impl State {
             surface_config: None,
             frames_rendered: 0,
             screenshot_done: false,
+            orbit_heading: 0.0,
+            orbit_pitch: 0.3, // ~17° above equator for a classic globe view
+            orbit_distance: 0.0, // set in init_gpu after viewer is created
+            last_mouse_pos: None,
+            left_dragging: false,
+            right_dragging: false,
+            orbit_dirty: false,
         }
     }
 
@@ -150,6 +171,9 @@ impl State {
         // In CesiumJS: const viewer = new Cesium.Viewer("cesiumContainer");
         let mut viewer = Viewer::default();
         configure_scene(viewer.cesium_widget_mut().scene_mut());
+        // Initialize orbit camera distance to 3× Earth radius.
+        self.orbit_distance = Ellipsoid::WGS84.maximum_radius() * 3.0;
+        self.orbit_dirty = true; // need initial camera update
         self.viewer = Some(viewer);
 
         // ── Cesium render context (wgpu frame orchestration) ─────────
@@ -179,17 +203,49 @@ impl State {
         self.surface_config = Some(surface_config);
     }
 
+    /// Updates the Cesium camera from the orbit state (heading/pitch/distance).
+    ///
+    /// The camera orbits the Earth center. Heading rotates around the Z axis
+    /// (polar axis), pitch is the elevation from the XY plane, and distance
+    /// is from the center. The camera always looks at the origin with the
+    /// up vector derived from the ENU frame.
+    fn update_orbit_camera(&mut self) {
+        if !self.orbit_dirty {
+            return;
+        }
+        self.orbit_dirty = false;
+
+        let Some(ref mut viewer) = self.viewer else { return };
+        let scene = viewer.cesium_widget_mut().scene_mut();
+
+        let cos_pitch = self.orbit_pitch.cos();
+        let sin_pitch = self.orbit_pitch.sin();
+        let cos_heading = self.orbit_heading.cos();
+        let sin_heading = self.orbit_heading.sin();
+
+        // Camera position in ECEF.
+        let position = Cartesian3::new(
+            self.orbit_distance * cos_pitch * cos_heading,
+            self.orbit_distance * cos_pitch * sin_heading,
+            self.orbit_distance * sin_pitch,
+        );
+
+        // Use set_view which derives the orientation from the ENU frame,
+        // matching CesiumJS behavior exactly.
+        scene.camera_mut().set_view(&position, None, None, &Ellipsoid::WGS84);
+    }
+
     /// Renders a single frame.
     ///
     /// Acquires the next surface texture, runs the Cesium scene render
     /// (background clear → globe offscreen pass → blit → execute), and
     /// presents. Optionally captures a readback screenshot.
     fn render(&mut self) {
-        let surface = self.surface.as_ref().unwrap().clone();
         let device = self.device.as_ref().unwrap().clone();
         // Owned clone: the frame render below mutably destructures `self`.
         let config = self.surface_config.clone().unwrap();
 
+        let surface = self.surface.as_ref().unwrap();
         let frame = match surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(tex)
             | wgpu::CurrentSurfaceTexture::Suboptimal(tex) => tex,
@@ -212,6 +268,9 @@ impl State {
 
         // Drive the Cesium scene through the wgpu Context: begin_frame →
         // clear → globe pass (offscreen) → blit → execute → end_frame.
+        // Update the orbit camera before rendering (only when dirty).
+        self.update_orbit_camera();
+
         let time = cesium_core::julian_date::JulianDate::now();
         let State { context, viewer, .. } = self;
         let context = context.as_mut().unwrap();
@@ -373,21 +432,58 @@ impl State {
 /// The demo's scene setup: globe + offline imagery + offline terrain +
 /// 3D model + camera.
 fn configure_scene(scene: &mut cesium_scene::scene::Scene) {
-    let imagery_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("assets")
-        .join("offline-imagery");
-    ensure_offline_imagery(&imagery_root);
+    // Imagery source priority:
+    // 1) The NaturalEarthII base map shipped with the original CesiumJS engine
+    //    (a geographic XYZ pyramid — byte-for-byte the format FileImageryProvider
+    //    expects, and the exact default imagery CesiumJS shows with no ion token);
+    // 2) fall back to the procedurally generated checkerboard when the asset is
+    //    absent, so the demo still runs in a stripped/offline checkout.
+    let natural_earth_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("packages")
+        .join("engine")
+        .join("Source")
+        .join("Assets")
+        .join("Textures")
+        .join("NaturalEarthII");
+    let (imagery_root, flip_y) = if natural_earth_root.join("0").is_dir() {
+        // NaturalEarthII ships as TMS (row 0 at the south) → flip to north-first.
+        (natural_earth_root, true)
+    } else {
+        let generated = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets")
+            .join("offline-imagery");
+        ensure_offline_imagery(&generated);
+        (generated, false)
+    };
     let provider = FileImageryProvider::new(&imagery_root, None);
+    let provider = if flip_y { provider.with_flip_y() } else { provider };
     log::info!(
-        "offline imagery root: {} (maximum_level = {:?})",
+        "imagery root: {} (maximum_level = {:?})",
         imagery_root.display(),
         provider.maximum_level()
     );
 
     let mut globe = Globe::new(Some(Ellipsoid::WGS84));
-    globe
-        .imagery_layers_mut()
-        .add(ImageryLayer::with_provider(Box::new(provider)));
+    globe.enable_lighting = true;
+    {
+        let layers = globe.imagery_layers_mut();
+        // Base layer: the local NaturalEarthII (or checkerboard) — always
+        // resolves offline, so the globe is never blank.
+        layers.add(ImageryLayer::with_provider(Box::new(provider)));
+        // Top layer: real satellite imagery streamed from a Web Mercator XYZ
+        // service and re-projected onto the geographic grid on the CPU. Where
+        // the network has no tile the provider reports Transient, so the base
+        // map shows through — graceful degradation when offline. Esri World
+        // Imagery needs no API key; note its {z}/{y}/{x} path ordering.
+        let satellite = WebMercatorImageryProvider::new(
+            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            4,
+        );
+        layers.add(ImageryLayer::with_provider(Box::new(satellite)));
+    }
 
     // B4-5: offline heightmap terrain through the cesium-core
     // CesiumTerrainProvider (file:// backend, no network). A load
@@ -412,59 +508,13 @@ fn configure_scene(scene: &mut cesium_scene::scene::Scene) {
 
     scene.set_globe(Some(globe));
 
-    // ── 3D model (BoxTextured.glb) ─────────────────────────────────
-    // Loads the fixture from the monorepo Specs/Data path and
-    // places it on the globe surface at (0°N, 0°E) with a
-    // visible scale.
-    let glb_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("Specs")
-        .join("Data")
-        .join("Models")
-        .join("glTF-2.0")
-        .join("BoxTextured")
-        .join("glTF-Binary")
-        .join("BoxTextured.glb");
-    match std::fs::read(&glb_path) {
-        Ok(bytes) => match parse_glb(&bytes) {
-            Ok(gltf) => {
-                let mut model = Model::from_gltf(gltf);
-                // Place at (0°N, 0°E) on the ellipsoid surface,
-                // scaled up to be visible from orbit.
-                let position = Cartographic::from_degrees_new(0.0, 0.0, None);
-                let mut ecef = Cartesian3::default();
-                Ellipsoid::WGS84.cartographic_to_cartesian(&position, &mut ecef);
-                let enu = transforms::east_north_up_to_fixed_frame_new(
-                    &ecef,
-                    Some(&Ellipsoid::WGS84),
-                );
-                model.model_matrix = enu;
-                model.scale = 200_000.0;
-                log::info!(
-                    "loaded 3D model: {} ({} nodes)",
-                    glb_path.display(),
-                    model.scene_graph().nodes_count()
-                );
-                scene.primitives_mut().add(Box::new(model));
-            }
-            Err(e) => {
-                log::warn!("failed to parse GLB: {}", e.message);
-            }
-        },
-        Err(e) => {
-            log::warn!("failed to read GLB {}: {}", glb_path.display(), e);
-        }
-    }
-
     // The smoke quad is replaced by the globe path.
     scene.viewport_quad_mut().show = false;
-    scene.set_background_color(cesium_core::color::Color::new(0.0, 0.0, 0.2, 1.0));
+    scene.set_background_color(cesium_core::color::Color::new(0.02, 0.02, 0.08, 1.0));
 
-    // Camera: straight-down view from above the equator/prime
-    // meridian (destination-only set_view → ENU orientation,
-    // direction = -surface normal), ~3 ellipsoid radii out.
+    // Camera is managed by the orbit camera in the viewer-demo State.
+    // Set an initial view so the first frame renders correctly before
+    // the orbit camera takes over.
     let destination = Cartesian3::new(Ellipsoid::WGS84.maximum_radius() * 3.0, 0.0, 0.0);
     scene
         .camera_mut()
@@ -613,7 +663,7 @@ impl ApplicationHandler for State {
                         Window::default_attributes()
                             .with_inner_size(winit::dpi::LogicalSize::new(1280u32, 720u32))
                             .with_min_inner_size(winit::dpi::LogicalSize::new(256u32, 256u32))
-                            .with_title("cesium-rs Viewer Demo"),
+                            .with_title("CesiumRust Globe Viewer"),
                     )
                     .expect("Failed to create window"),
             );
@@ -648,6 +698,89 @@ impl ApplicationHandler for State {
                 if let Some(ref window) = self.window {
                     window.request_redraw();
                 }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let current_pos = (position.x, position.y);
+                if let Some(prev_pos) = self.last_mouse_pos {
+                    let dx = current_pos.0 - prev_pos.0;
+                    let dy = current_pos.1 - prev_pos.1;
+
+                    // Sensitivity: radians per pixel.
+                    const ROTATE_SENSITIVITY: f64 = 0.005;
+
+                    if self.left_dragging {
+                        // Left drag: orbit around the globe.
+                        // Horizontal → heading (rotate around Z / polar axis).
+                        self.orbit_heading -= dx * ROTATE_SENSITIVITY;
+                        // Vertical → pitch (elevation from equatorial plane).
+                        self.orbit_pitch += dy * ROTATE_SENSITIVITY;
+                        self.orbit_pitch = self.orbit_pitch.clamp(-1.5, 1.5);
+                        self.orbit_dirty = true;
+                    }
+
+                    if self.right_dragging {
+                        // Right drag: pan (translate the camera perpendicular
+                        // to the view direction). Approximate by shifting
+                        // the orbit position laterally.
+                        let pan_scale = self.orbit_distance * 0.001;
+                        let cos_h = self.orbit_heading.cos();
+                        let sin_h = self.orbit_heading.sin();
+                        // Right vector at the camera (tangent to the orbit sphere).
+                        let right_x = -sin_h;
+                        let right_y = cos_h;
+                        // Up vector component (tangent toward north pole).
+                        let cos_p = self.orbit_pitch.cos();
+                        let sin_p = self.orbit_pitch.sin();
+                        let up_x = -sin_p * cos_h;
+                        let up_y = -sin_p * sin_h;
+                        let up_z = cos_p;
+
+                        // Shift the virtual "look-at" point (origin) by the
+                        // pan amount. We approximate by adjusting heading and
+                        // pitch to simulate panning.
+                        self.orbit_heading -= dx * pan_scale / self.orbit_distance;
+                        self.orbit_pitch += dy * pan_scale / self.orbit_distance;
+                        self.orbit_pitch = self.orbit_pitch.clamp(-1.5, 1.5);
+                        self.orbit_dirty = true;
+                        let _ = (right_x, right_y, up_x, up_y, up_z);
+                    }
+                }
+                self.last_mouse_pos = Some(current_pos);
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                let pressed = state == ElementState::Pressed;
+                match button {
+                    MouseButton::Left => {
+                        self.left_dragging = pressed;
+                        if !pressed {
+                            self.last_mouse_pos = None;
+                        }
+                    }
+                    MouseButton::Right => {
+                        self.right_dragging = pressed;
+                        if !pressed {
+                            self.last_mouse_pos = None;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                // Zoom: based on surface height (distance - R) for consistent
+                // feel at all altitudes (per memory: avoid "one scroll = crash").
+                let scroll_y = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y as f64,
+                    MouseScrollDelta::PixelDelta(pos) => pos.y / 100.0,
+                };
+                let earth_radius = Ellipsoid::WGS84.maximum_radius();
+                let min_surface = earth_radius * 0.01;
+                let max_surface = earth_radius * 9.0;
+                let surface_dist = (self.orbit_distance - earth_radius).clamp(min_surface, max_surface);
+                let zoom_speed = 0.25;
+                let new_surface = (surface_dist * (1.0 - scroll_y * zoom_speed))
+                    .clamp(min_surface, max_surface);
+                self.orbit_distance = earth_radius + new_surface;
+                self.orbit_dirty = true;
             }
             WindowEvent::RedrawRequested => {
                 self.render();

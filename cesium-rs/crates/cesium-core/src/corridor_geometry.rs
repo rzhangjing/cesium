@@ -1248,8 +1248,6 @@ fn extruded_attributes(
         let mut top_position = Cartesian3::default();
         let mut bottom_position = Cartesian3::default();
         let mut previous_position = Cartesian3::default();
-        let mut normal = Cartesian3::default();
-        let mut tangent = Cartesian3::default();
         let mut bitangent = Cartesian3::default();
 
         let mut attr_index = six_size;
@@ -1269,7 +1267,7 @@ fn extruded_attributes(
             bottom_position = Cartesian3::subtract_new(&bottom_position, &top_position);
             previous_position = Cartesian3::subtract_new(&previous_position, &top_position);
             let cross = Cartesian3::cross_new(&bottom_position, &previous_position);
-            normal = Cartesian3::normalize_new(&cross);
+            let normal = Cartesian3::normalize_new(&cross);
 
             if vertex_format.normal {
                 CorridorGeometryLibrary::add_attribute(&mut normals, &normal, Some(attr_index_offset), None);
@@ -1290,7 +1288,7 @@ fn extruded_attributes(
                 }
                 if vertex_format.tangent {
                     let cross = Cartesian3::cross_new(&bitangent, &normal);
-                    tangent = Cartesian3::normalize_new(&cross);
+                    let tangent = Cartesian3::normalize_new(&cross);
                     CorridorGeometryLibrary::add_attribute(&mut tangents, &tangent, Some(attr_index_offset), None);
                     CorridorGeometryLibrary::add_attribute(&mut tangents, &tangent, Some(attr_index_offset + 3), None);
                     CorridorGeometryLibrary::add_attribute(&mut tangents, &tangent, Some(attr_index), None);

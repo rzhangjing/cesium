@@ -71,6 +71,13 @@ pub const MODEL_TEXTURED_VS: &str = include_str!("../wgsl/model_textured_vs.wgsl
 /// `ModelFS.glsl`; base color texture × factor; see file header).
 pub const MODEL_TEXTURED_FS: &str = include_str!("../wgsl/model_textured_fs.wgsl");
 
+/// Vertex + fragment shader for the skybox starfield sphere (hand-written WGSL).
+/// The same source is used for both stages (from_wgsl picks @vertex/@fragment).
+pub const SKYBOX_SHADER: &str = include_str!("../wgsl/skybox.wgsl");
+
+/// Vertex + fragment shader for the atmospheric glow sphere (hand-written WGSL).
+pub const ATMOSPHERE_SHADER: &str = include_str!("../wgsl/atmosphere.wgsl");
+
 /// Byte size of the `CesiumAutomaticUniforms` buffer declared at group(0)
 /// binding(0): 5 × mat4x4&lt;f32&gt; (64 bytes each) + 1 × vec4&lt;f32&gt;.
 pub const CESIUM_AUTOMATIC_UNIFORMS_SIZE: usize = 5 * 64 + 16;

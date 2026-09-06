@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/Model/ClassificationModelDrawCommand.js`.
 
-/// A draw command for classification models.
+/// Classification model draw command.
+///
+/// Draw command for classification model rendering.
 pub struct ClassificationModelDrawCommand {
-    _private: (),
+    /// Whether the command is active.
+    pub active: bool,
 }
 
 impl ClassificationModelDrawCommand {
     /// Creates a new ClassificationModelDrawCommand.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { active: false } }
 }
 
 impl Default for ClassificationModelDrawCommand {

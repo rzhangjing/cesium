@@ -1,13 +1,16 @@
-﻿//! Ported from `packages/engine/Source/Scene/Model/pickModel.js`.
+﻿//! Ported from `packages/engine/Source/Scene/Model/PickModel.js`.
 
-/// Picking utilities for models.
+/// Pick model.
+///
+/// Handles picking of model primitives.
 pub struct PickModel {
-    _private: (),
+    /// Whether picking is active.
+    pub active: bool,
 }
 
 impl PickModel {
     /// Creates a new PickModel.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { active: false } }
 }
 
 impl Default for PickModel {

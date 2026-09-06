@@ -1,13 +1,16 @@
-﻿//! Ported from `packages/engine/Source/Scene/createBillboardPointCallback.js`.
+﻿//! Ported from `packages/engine/Source/Scene/CreateBillboardPointCallback.js`.
 
-/// Creates a billboard point callback.
+/// Callback for creating billboard points.
+///
+/// Creates billboard point instances during primitive rendering.
 pub struct CreateBillboardPointCallback {
-    _private: (),
+    /// Whether the callback is active.
+    pub active: bool,
 }
 
 impl CreateBillboardPointCallback {
     /// Creates a new CreateBillboardPointCallback.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { active: false } }
 }
 
 impl Default for CreateBillboardPointCallback {

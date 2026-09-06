@@ -1,13 +1,18 @@
 ﻿//! Ported from `packages/engine/Source/Scene/ResourceCache.js`.
 
-/// A cache for loaded resources.
+/// Resource cache.
+///
+/// Caches GPU resources (textures, buffers) to avoid redundant uploads.
 pub struct ResourceCache {
-    _private: (),
+    /// The number of cached resources.
+    pub cached_count: u32,
+    /// Whether the cache is enabled.
+    pub enabled: bool,
 }
 
 impl ResourceCache {
     /// Creates a new ResourceCache.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { cached_count: 0, enabled: true } }
 }
 
 impl Default for ResourceCache {

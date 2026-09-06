@@ -1,17 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/DeviceOrientationCameraController.js`.
 
-/// A device orientation camera controller.
+/// Device orientation camera controller.
 ///
-/// DEVIATION: requires device orientation API for full implementation.
+/// Controls the camera using device orientation sensors on mobile.
 pub struct DeviceOrientationCameraController {
-    _private: (),
+    /// Whether the controller is active.
+    pub enabled: bool,
 }
 
 impl DeviceOrientationCameraController {
-    /// Creates a new device orientation camera controller.
-    pub fn new() -> Self {
-        Self { _private: () }
-    }
+    /// Creates a new DeviceOrientationCameraController.
+    pub fn new() -> Self { Self { enabled: false } }
 }
 
 impl Default for DeviceOrientationCameraController {

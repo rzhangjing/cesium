@@ -554,7 +554,6 @@ fn compute_top_bottom_attributes(
 
     let mut normal = Cartesian3::default();
     let mut tangent = Cartesian3::default();
-    let mut bitangent = Cartesian3::default();
 
     for i in (0..length).step_by(3) {
         let i1 = i + 1;
@@ -624,7 +623,7 @@ fn compute_top_bottom_attributes(
                 }
                 if vertex_format.bitangent {
                     let cross = Cartesian3::cross_new(&normal, &tangent);
-                    bitangent = Cartesian3::normalize_new(&cross);
+                    let bitangent = Cartesian3::normalize_new(&cross);
                     bitangents[i] = bitangent.x;
                     bitangents[i1] = bitangent.y;
                     bitangents[i2] = bitangent.z;
@@ -975,8 +974,6 @@ fn compute_wall_attributes(
     let st_offset = (length / 3) * 2;
 
     let mut normal = Cartesian3::default();
-    let mut tangent = Cartesian3::default();
-    let mut bitangent = Cartesian3::default();
 
     for i in (0..length).step_by(3) {
         let i1 = i + 1;
@@ -1031,7 +1028,7 @@ fn compute_wall_attributes(
         }
 
         if vertex_format.normal || vertex_format.tangent || vertex_format.bitangent {
-            bitangent = normal;
+            let bitangent = normal;
             let next_idx = (i + 3) % length;
             let mut next = Cartesian3::from_array_new(positions, Some(next_idx));
             next = Cartesian3::subtract_new(&next, &position);
@@ -1049,7 +1046,7 @@ fn compute_wall_attributes(
             }
             if vertex_format.tangent {
                 let cross2 = Cartesian3::cross_new(&bitangent, &normal);
-                tangent = Cartesian3::normalize_new(&cross2);
+                let tangent = Cartesian3::normalize_new(&cross2);
                 tangents[i] = tangent.x;
                 tangents[i1] = tangent.y;
                 tangents[i2] = tangent.z;

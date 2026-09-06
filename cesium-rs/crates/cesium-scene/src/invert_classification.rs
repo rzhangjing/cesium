@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/InvertClassification.js`.
 
-/// Invert classification effect.
+/// Invert classification.
+///
+/// Inverts the classification rendering effect.
 pub struct InvertClassification {
-    _private: (),
+    /// Whether inversion is enabled.
+    pub enabled: bool,
 }
 
 impl InvertClassification {
     /// Creates a new InvertClassification.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { enabled: false } }
 }
 
 impl Default for InvertClassification {

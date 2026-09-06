@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/Model/GeoJsonLoader.js`.
 
-/// Loads GeoJSON data for model rendering.
+/// GeoJSON loader.
+///
+/// Loads GeoJSON data and converts to primitives.
 pub struct GeoJsonLoader {
-    _private: (),
+    /// Whether loading is complete.
+    pub complete: bool,
 }
 
 impl GeoJsonLoader {
     /// Creates a new GeoJsonLoader.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { complete: false } }
 }
 
 impl Default for GeoJsonLoader {

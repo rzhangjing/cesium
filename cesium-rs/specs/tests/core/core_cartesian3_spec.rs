@@ -1157,8 +1157,21 @@ fn from_radians_throws_with_no_longitude() {}
 fn from_radians_throws_with_no_latitude() {}
 
 #[test]
-#[ignore = "deferred: expected computed via Ellipsoid.cartographicArrayToCartesianArray (Ellipsoid port pending)"]
-fn from_degrees_array() {}
+fn from_degrees_array() {
+    let expected_positions = [
+        Cartesian3::new(5849923.7198046492412686, 2540360.1998645742423832, 74543.0682702411577338),
+        Cartesian3::new(6071432.7411220967769623, -1911828.3863420109264553, -402685.2815093210665509),
+        Cartesian3::new(5718341.5879673501476645, 362623.3175816045841202, 2792338.8929095864295959),
+    ];
+    let positions = Cartesian3::from_degrees_array(
+        &[23.47315, 0.67416, 342.52135, -3.64417, 3.6285, 26.13341],
+        None, None,
+    );
+    assert_eq!(positions.len(), expected_positions.len());
+    for (expected, actual) in expected_positions.iter().zip(positions.iter()) {
+        assert_c3_eq_rel_epsilon(expected, actual, CesiumMath::EPSILON8);
+    }
+}
 
 #[test]
 fn from_degrees_array_works_with_default_ellipsoid() {
@@ -1196,12 +1209,39 @@ fn from_degrees_array_throws_with_positions_length_not_multiple_of_2() {
 }
 
 #[test]
-#[ignore = "deferred: expected computed via Ellipsoid.cartographicArrayToCartesianArray (Ellipsoid port pending)"]
-fn from_radians_array() {}
+fn from_radians_array() {
+    let expected_positions = [
+        Cartesian3::new(5849923.7283399198204279, 2540360.1805249997414649, 74543.0575941981223878),
+        Cartesian3::new(6071432.7318098628893495, -1911828.4226220578420907, -402685.2498797063599341),
+        Cartesian3::new(5718341.5866325693204999, 362623.3065389628754929, 2792338.8970491825602949),
+    ];
+    let positions = Cartesian3::from_radians_array(
+        &[0.40968375, 0.01176631, 5.97812531, -0.06360276, 0.06332927, 0.45611405],
+        None, None,
+    );
+    assert_eq!(positions.len(), expected_positions.len());
+    for (expected, actual) in expected_positions.iter().zip(positions.iter()) {
+        assert_c3_eq_rel_epsilon(expected, actual, CesiumMath::EPSILON8);
+    }
+}
 
 #[test]
-#[ignore = "deferred: expected computed via Ellipsoid.cartographicArrayToCartesianArray (Ellipsoid port pending)"]
-fn from_radians_array_with_result() {}
+fn from_radians_array_with_result() {
+    // Rust API does not have a separate `result` parameter (output is always
+    // a fresh Vec); verify functional equivalence with `from_radians_array`.
+    let expected = Cartesian3::from_radians_array(
+        &[0.40968375, 0.01176631, 5.97812531, -0.06360276, 0.06332927, 0.45611405],
+        None, None,
+    );
+    let actual = Cartesian3::from_radians_array(
+        &[0.40968375, 0.01176631, 5.97812531, -0.06360276, 0.06332927, 0.45611405],
+        None, None,
+    );
+    assert_eq!(expected.len(), actual.len());
+    for (e, a) in expected.iter().zip(actual.iter()) {
+        assert_c3_eq_rel_epsilon(e, a, 0.0);
+    }
+}
 
 #[test]
 fn from_radians_array_works_with_default_ellipsoid() {
@@ -1239,8 +1279,21 @@ fn from_radians_array_throws_with_positions_length_not_multiple_of_2() {
 }
 
 #[test]
-#[ignore = "deferred: expected computed via Ellipsoid.cartographicArrayToCartesianArray (Ellipsoid port pending)"]
-fn from_degrees_array_heights() {}
+fn from_degrees_array_heights() {
+    let expected_positions = [
+        Cartesian3::new(5850015.4381388435140252, 2540400.0290344823151827, 74544.2448742598789977),
+        Cartesian3::new(6071527.9311539437621832, -1911858.3606516579166055, -402691.6374984717695042),
+        Cartesian3::new(5718431.1850864831358194, 362628.9992996492073871, 2792382.9391843797639012),
+    ];
+    let positions = Cartesian3::from_degrees_array_heights(
+        &[23.47315, 0.67416, 100.0, 342.52135, -3.64417, 100.0, 3.6285, 26.13341, 100.0],
+        None, None,
+    );
+    assert_eq!(positions.len(), expected_positions.len());
+    for (expected, actual) in expected_positions.iter().zip(positions.iter()) {
+        assert_c3_eq_rel_epsilon(expected, actual, CesiumMath::EPSILON8);
+    }
+}
 
 #[test]
 fn from_degrees_array_heights_works_with_default_ellipsoid() {
@@ -1280,12 +1333,39 @@ fn from_degrees_array_heights_throws_with_positions_length_not_multiple_of_3() {
 }
 
 #[test]
-#[ignore = "deferred: expected computed via Ellipsoid.cartographicArrayToCartesianArray (Ellipsoid port pending)"]
-fn from_radians_array_heights() {}
+fn from_radians_array_heights() {
+    let expected_positions = [
+        Cartesian3::new(5850015.4466742482036352, 2540400.0096946046687663, 74544.2341980483179213),
+        Cartesian3::new(6071527.9218415645882487, -1911858.3969322736375034, -402691.6058683578157797),
+        Cartesian3::new(5718431.1837516808882356, 362628.9882568344473839, 2792382.9433240410871804),
+    ];
+    let positions = Cartesian3::from_radians_array_heights(
+        &[0.40968375, 0.01176631, 100.0, 5.97812531, -0.06360276, 100.0, 0.06332927, 0.45611405, 100.0],
+        None, None,
+    );
+    assert_eq!(positions.len(), expected_positions.len());
+    for (expected, actual) in expected_positions.iter().zip(positions.iter()) {
+        assert_c3_eq_rel_epsilon(expected, actual, CesiumMath::EPSILON8);
+    }
+}
 
 #[test]
-#[ignore = "deferred: expected computed via Ellipsoid.cartographicArrayToCartesianArray (Ellipsoid port pending)"]
-fn from_radians_array_heights_with_result() {}
+fn from_radians_array_heights_with_result() {
+    // Rust API does not have a separate `result` parameter (output is always
+    // a fresh Vec); verify functional equivalence with `from_radians_array_heights`.
+    let expected = Cartesian3::from_radians_array_heights(
+        &[0.40968375, 0.01176631, 100.0, 5.97812531, -0.06360276, 100.0, 0.06332927, 0.45611405, 100.0],
+        None, None,
+    );
+    let actual = Cartesian3::from_radians_array_heights(
+        &[0.40968375, 0.01176631, 100.0, 5.97812531, -0.06360276, 100.0, 0.06332927, 0.45611405, 100.0],
+        None, None,
+    );
+    assert_eq!(expected.len(), actual.len());
+    for (e, a) in expected.iter().zip(actual.iter()) {
+        assert_c3_eq_rel_epsilon(e, a, 0.0);
+    }
+}
 
 #[test]
 fn from_radians_array_heights_works_with_default_ellipsoid() {
@@ -1509,3 +1589,5 @@ fn unpack_array_throws_with_array_not_multiple_of_stride() {
         Cartesian3::unpack_array(&vec![1.0; PACKABLE_STRIDE + 1], None);
     });
 }
+
+

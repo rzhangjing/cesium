@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/BufferPolygonMaterial.js`.
 
-/// A material for buffer polygons.
+/// Material for buffer polygons.
+///
+/// Defines the appearance of polygons in a buffer polygon collection.
 pub struct BufferPolygonMaterial {
-    _private: (),
+    /// Whether the material is transparent.
+    pub transparent: bool,
 }
 
 impl BufferPolygonMaterial {
     /// Creates a new BufferPolygonMaterial.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { transparent: false } }
 }
 
 impl Default for BufferPolygonMaterial {

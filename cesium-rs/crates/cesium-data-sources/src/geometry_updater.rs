@@ -2,8 +2,6 @@
 //!
 //! Interface for geometry updaters that create geometry instances from entity data.
 
-use crate::entity::Entity;
-
 /// Interface for updaters that create geometry instances from entity data.
 ///
 /// Each geometry updater handles a specific type of entity geometry

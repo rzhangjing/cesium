@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/VoxelBoundsCollection.js`.
 
-/// A collection of voxel bounds.
+/// Voxel bounds collection.
+///
+/// Collection of voxel bounding volumes.
 pub struct VoxelBoundsCollection {
-    _private: (),
+    /// The number of bounds.
+    pub length: u32,
 }
 
 impl VoxelBoundsCollection {
     /// Creates a new VoxelBoundsCollection.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { length: 0 } }
 }
 
 impl Default for VoxelBoundsCollection {

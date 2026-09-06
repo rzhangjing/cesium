@@ -1,13 +1,18 @@
 ﻿//! Ported from `packages/engine/Source/Scene/RenderBufferPointCollection.js`.
 
-/// A render buffer for point collections.
+/// Render buffer point collection.
+///
+/// GPU-rendered collection of buffer points.
 pub struct RenderBufferPointCollection {
-    _private: (),
+    /// Whether the collection is visible.
+    pub show: bool,
+    /// Whether the collection needs update.
+    pub needs_update: bool,
 }
 
 impl RenderBufferPointCollection {
     /// Creates a new RenderBufferPointCollection.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { show: true, needs_update: false } }
 }
 
 impl Default for RenderBufferPointCollection {

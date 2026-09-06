@@ -2,7 +2,6 @@
 //!
 //! A particle system for visual effects.
 
-use cesium_core::cartesian3::Cartesian3;
 use cesium_core::color::Color;
 use cesium_core::matrix4::Matrix4;
 

@@ -1,13 +1,16 @@
-﻿//! Ported from `packages/engine/Source/Scene/buildVoxelDrawCommands.js`.
+﻿//! Ported from `packages/engine/Source/Scene/BuildVoxelDrawCommands.js`.
 
-/// Builds draw commands for voxel rendering.
+/// Builds voxel draw commands.
+///
+/// Creates draw commands for voxel volume rendering.
 pub struct BuildVoxelDrawCommands {
-    _private: (),
+    /// Whether the build is complete.
+    pub complete: bool,
 }
 
 impl BuildVoxelDrawCommands {
     /// Creates a new BuildVoxelDrawCommands.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { complete: false } }
 }
 
 impl Default for BuildVoxelDrawCommands {

@@ -39,3 +39,18 @@ mod scene_types_batch5_spec;
 
 #[path = "scene_fidelity/scene_types_batch6_spec.rs"]
 mod scene_types_batch6_spec;
+
+#[path = "scene_fidelity/scene_model_batch1_spec.rs"]
+mod scene_model_batch1_spec;
+
+#[path = "scene_fidelity/scene_model_batch2_spec.rs"]
+mod scene_model_batch2_spec;
+
+#[path = "scene_fidelity/scene_model_batch3_spec.rs"]
+mod scene_model_batch3_spec;
+
+#[path = "scene_fidelity/scene_model_batch4_spec.rs"]
+mod scene_model_batch4_spec;
+
+#[path = "scene_fidelity/scene_enum_batch_spec.rs"]
+mod scene_enum_batch_spec;

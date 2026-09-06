@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/BufferPolylineMaterial.js`.
 
-/// A material for buffer polylines.
+/// Material for buffer polylines.
+///
+/// Defines the appearance of polylines in a buffer polyline collection.
 pub struct BufferPolylineMaterial {
-    _private: (),
+    /// Whether the material is transparent.
+    pub transparent: bool,
 }
 
 impl BufferPolylineMaterial {
     /// Creates a new BufferPolylineMaterial.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { transparent: false } }
 }
 
 impl Default for BufferPolylineMaterial {

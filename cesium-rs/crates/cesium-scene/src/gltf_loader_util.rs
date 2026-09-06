@@ -24,13 +24,13 @@ pub mod component_type {
 }
 
 /// glTF loader utilities.
-pub struct GltfLoaderUtil {
-    _private: (),
-}
+///
+/// All methods are static; the struct exists only as a namespace.
+pub struct GltfLoaderUtil;
 
 impl GltfLoaderUtil {
-    /// Creates a new GltfLoaderUtil.
-    pub fn new() -> Self { Self { _private: () } }
+    /// Creates a new GltfLoaderUtil (unit struct; always returns `Self`).
+    pub fn new() -> Self { Self }
 
     /// The number of components of a glTF accessor type string
     /// (`SCALAR`=1, `VEC2`=2, `VEC3`=3, `VEC4`=4, `MAT2`=4, `MAT3`=9,
@@ -155,7 +155,7 @@ impl GltfLoaderUtil {
 }
 
 impl Default for GltfLoaderUtil {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self { Self }
 }
 
 #[cfg(test)]

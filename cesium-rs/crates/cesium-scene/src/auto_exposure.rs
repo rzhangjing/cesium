@@ -1,13 +1,18 @@
 ﻿//! Ported from `packages/engine/Source/Scene/AutoExposure.js`.
 
-/// Auto-exposure tone mapping settings.
+/// Auto exposure.
+///
+/// Automatically adjusts scene exposure based on luminance.
 pub struct AutoExposure {
-    _private: (),
+    /// Whether auto exposure is enabled.
+    pub enabled: bool,
+    /// The exposure compensation value.
+    pub compensation: f32,
 }
 
 impl AutoExposure {
     /// Creates a new AutoExposure.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { enabled: false, compensation: 0.0 } }
 }
 
 impl Default for AutoExposure {

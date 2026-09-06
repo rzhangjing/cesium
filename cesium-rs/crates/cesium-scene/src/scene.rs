@@ -507,10 +507,11 @@ impl Scene {
 
             if globe.show {
                 if let Some(globe_framebuffer) = self.ensure_globe_framebuffer(context) {
-                    // Clear the offscreen globe pass: transparent color
-                    // (blended away outside the globe silhouette) + depth 1.0.
+                    // Clear the offscreen globe pass: dark blue color
+                    // (simulates atmosphere outside the globe silhouette)
+                    // + depth 1.0.
                     let globe_clear = ClearCommand {
-                        color: Some([0.0, 0.0, 0.0, 0.0]),
+                        color: Some([0.02, 0.04, 0.12, 1.0]),
                         depth: Some(1.0),
                         framebuffer: Some(globe_framebuffer.clone()),
                         ..ClearCommand::all()

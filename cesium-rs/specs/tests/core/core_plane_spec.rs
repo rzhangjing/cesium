@@ -183,16 +183,41 @@ fn origin_zx_plane() {
     assert_eq!(Plane::ORIGIN_ZX_PLANE.distance, 0.0);
 }
 
-// --- transform (deferred: requires Matrix4) ---
+// --- transform ---
 
 #[test]
-#[ignore = "deferred: requires Matrix4::inverse_transpose (M1-W2)"]
 fn transforms_a_plane_according_to_a_transform() {
-    // Will be enabled once Matrix4 is ported.
+    use cesium_core::matrix4::Matrix4;
+
+    // Plane: normal = UNIT_X, distance = 0 (the YZ plane through origin).
+    let plane = Plane::new(&Cartesian3::UNIT_X, 0.0);
+    // Translation by (10, 0, 0).
+    let transform = Matrix4::from_translation_new(&Cartesian3::new(10.0, 0.0, 0.0));
+    let result = Plane::transform_new(&plane, &transform);
+
+    // After translation, the normal stays the same but the plane moves.
+    assert!((result.normal.x - 1.0).abs() < 1e-10);
+    assert!(result.normal.y.abs() < 1e-10);
+    assert!(result.normal.z.abs() < 1e-10);
+    // The plane x=0 translated by (10,0,0) becomes x=10, i.e. distance = -10.
+    assert!((result.distance - (-10.0)).abs() < 1e-10);
 }
 
 #[test]
-#[ignore = "deferred: requires Matrix4 (M1-W2)"]
 fn transforms_a_plane_with_non_uniform_scale() {
-    // Will be enabled once Matrix4 is ported.
+    use cesium_core::matrix4::Matrix4;
+
+    // Plane: normal = UNIT_Z, distance = 5.
+    let plane = Plane::new(&Cartesian3::UNIT_Z, 5.0);
+    // Non-uniform scale: (2, 3, 4).
+    let transform = Matrix4::from_scale_new(&Cartesian3::new(2.0, 3.0, 4.0));
+    let result = Plane::transform_new(&plane, &transform);
+
+    // The normal should remain along Z after axis-aligned scaling.
+    assert!(result.normal.x.abs() < 1e-10);
+    assert!(result.normal.y.abs() < 1e-10);
+    assert!((result.normal.z - 1.0).abs() < 1e-10);
+    // Original closest point to origin: (0, 0, 5). Scaled: (0, 0, 20).
+    // distance = -dot(normal, point) = -20.
+    assert!((result.distance - (-20.0)).abs() < 1e-10);
 }

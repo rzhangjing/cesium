@@ -1,13 +1,16 @@
-﻿//! Ported from `packages/engine/Source/Scene/buildVectorGltfFromMvt.js`.
+﻿//! Ported from `packages/engine/Source/Scene/BuildVectorGltfFromMvt.js`.
 
-/// Builds a vector glTF from MVT data.
+/// Builds vector glTF from MVT data.
+///
+/// Converts Mapbox Vector Tile data to glTF primitives.
 pub struct BuildVectorGltfFromMvt {
-    _private: (),
+    /// Whether the build is complete.
+    pub complete: bool,
 }
 
 impl BuildVectorGltfFromMvt {
     /// Creates a new BuildVectorGltfFromMvt.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { complete: false } }
 }
 
 impl Default for BuildVectorGltfFromMvt {

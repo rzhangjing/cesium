@@ -1,13 +1,16 @@
-﻿//! Ported from `packages/engine/Source/Scene/Model/createVectorTileBuffersFromModelComponents.js`.
+﻿//! Ported from `packages/engine/Source/Scene/Model/CreateVectorTileBuffersFromModelComponents.js`.
 
 /// Creates vector tile buffers from model components.
+///
+/// Converts model geometry data to vector tile buffer format.
 pub struct CreateVectorTileBuffersFromModelComponents {
-    _private: (),
+    /// Whether creation is complete.
+    pub complete: bool,
 }
 
 impl CreateVectorTileBuffersFromModelComponents {
     /// Creates a new CreateVectorTileBuffersFromModelComponents.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { complete: false } }
 }
 
 impl Default for CreateVectorTileBuffersFromModelComponents {

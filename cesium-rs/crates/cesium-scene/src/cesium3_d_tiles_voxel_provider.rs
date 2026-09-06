@@ -1,13 +1,18 @@
 ﻿//! Ported from `packages/engine/Source/Scene/Cesium3DTilesVoxelProvider.js`.
 
-/// 3D tiles voxel provider.
+/// Voxel provider for 3D Tiles voxel data.
+///
+/// Loads and provides voxel tile data for volume rendering.
 pub struct Cesium3DTilesVoxelProvider {
-    _private: (),
+    /// Whether the provider is ready.
+    pub ready: bool,
+    /// The number of tiles.
+    pub tile_count: u32,
 }
 
 impl Cesium3DTilesVoxelProvider {
     /// Creates a new Cesium3DTilesVoxelProvider.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { ready: false, tile_count: 0 } }
 }
 
 impl Default for Cesium3DTilesVoxelProvider {

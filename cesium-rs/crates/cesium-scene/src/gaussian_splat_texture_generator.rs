@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/GaussianSplatTextureGenerator.js`.
 
-/// Generates Gaussian splat textures.
+/// Gaussian splat texture generator.
+///
+/// Generates GPU textures from Gaussian splat data.
 pub struct GaussianSplatTextureGenerator {
-    _private: (),
+    /// Whether the generator is ready.
+    pub ready: bool,
 }
 
 impl GaussianSplatTextureGenerator {
     /// Creates a new GaussianSplatTextureGenerator.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { ready: false } }
 }
 
 impl Default for GaussianSplatTextureGenerator {

@@ -1,13 +1,18 @@
 ﻿//! Ported from `packages/engine/Source/Scene/Panorama.js`.
 
-/// A panoramic image.
+/// Base panorama type.
+///
+/// Represents a panoramic image for street-level visualization.
 pub struct Panorama {
-    _private: (),
+    /// The panorama URL.
+    pub url: String,
+    /// Whether the panorama is loaded.
+    pub loaded: bool,
 }
 
 impl Panorama {
     /// Creates a new Panorama.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { url: String::new(), loaded: false } }
 }
 
 impl Default for Panorama {

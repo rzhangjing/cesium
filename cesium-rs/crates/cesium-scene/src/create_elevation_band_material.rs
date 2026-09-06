@@ -1,13 +1,16 @@
-﻿//! Ported from `packages/engine/Source/Scene/createElevationBandMaterial.js`.
+﻿//! Ported from `packages/engine/Source/Scene/CreateElevationBandMaterial.js`.
 
-/// Creates an elevation band material.
+/// Creates elevation band material.
+///
+/// Generates a material for visualizing elevation bands on terrain.
 pub struct CreateElevationBandMaterial {
-    _private: (),
+    /// Whether creation is complete.
+    pub complete: bool,
 }
 
 impl CreateElevationBandMaterial {
     /// Creates a new CreateElevationBandMaterial.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { complete: false } }
 }
 
 impl Default for CreateElevationBandMaterial {

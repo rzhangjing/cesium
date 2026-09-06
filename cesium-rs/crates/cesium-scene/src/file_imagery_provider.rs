@@ -41,6 +41,9 @@ pub struct FileImageryProvider {
     /// Maximum tile level available (derived from the directory contents
     /// unless overridden).
     maximum_level: u32,
+    /// Whether rows are stored TMS-style (`y = 0` at the **south** pole) and
+    /// must be flipped to the pipeline's north-first convention.
+    flip_y: bool,
     /// The rectangle covered by the imagery (full globe by default).
     rectangle: Rectangle,
 }
@@ -65,6 +68,7 @@ impl FileImageryProvider {
             tile_height: 256,
             minimum_level: 0,
             maximum_level,
+            flip_y: false,
             rectangle: Rectangle::new(
                 -std::f64::consts::PI,
                 -std::f64::consts::FRAC_PI_2,
@@ -74,9 +78,29 @@ impl FileImageryProvider {
         }
     }
 
+    /// Enables TMS-style vertical flip (row `y = 0` stored at the **south**
+    /// pole).
+    ///
+    /// The globe's imagery pipeline addresses tiles with a geographic scheme
+    /// whose row 0 is the north. Some on-disk tilesets — notably the CesiumJS
+    /// `NaturalEarthII` asset, generated as TMS — store row 0 at the south and
+    /// must be flipped to line up. The procedural checkerboard fixture and
+    /// standard XYZ tilesets keep row 0 at the north and do not need this.
+    pub fn with_flip_y(mut self) -> Self {
+        self.flip_y = true;
+        self
+    }
+
     /// Resolves the tile file path, probing candidate extensions in order.
     /// Returns `None` when no candidate exists (deterministic no-data).
     fn tile_path(&self, x: u32, y: u32, level: u32) -> Option<PathBuf> {
+        // Geographic pipeline row 0 = north; TMS tilesets (flip_y) store row 0
+        // at the south, so mirror the row within the level's `2^level` rows.
+        let y = if self.flip_y {
+            (1u32 << level).saturating_sub(1).saturating_sub(y)
+        } else {
+            y
+        };
         for extension in TILE_EXTENSIONS {
             let path = self.root.join(format!("{level}/{x}/{y}.{extension}"));
             if path.is_file() {

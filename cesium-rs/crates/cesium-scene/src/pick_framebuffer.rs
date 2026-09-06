@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/PickFramebuffer.js`.
 
-/// Framebuffer for pick rendering.
+/// Pick framebuffer.
+///
+/// Framebuffer for GPU-based object picking.
 pub struct PickFramebuffer {
-    _private: (),
+    /// Whether the framebuffer is allocated.
+    pub allocated: bool,
 }
 
 impl PickFramebuffer {
     /// Creates a new PickFramebuffer.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { allocated: false } }
 }
 
 impl Default for PickFramebuffer {

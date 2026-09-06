@@ -1,17 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/EdgeFramebuffer.js`.
 
-/// Edge framebuffer for edge detection.
+/// Edge framebuffer.
 ///
-/// DEVIATION: stub implementation.
+/// Framebuffer for edge detection rendering.
 pub struct EdgeFramebuffer {
-    _private: (),
+    /// Whether the framebuffer is allocated.
+    pub allocated: bool,
 }
 
 impl EdgeFramebuffer {
-    /// Creates a new edge framebuffer.
-    pub fn new() -> Self {
-        Self { _private: () }
-    }
+    /// Creates a new EdgeFramebuffer.
+    pub fn new() -> Self { Self { allocated: false } }
 }
 
 impl Default for EdgeFramebuffer {

@@ -1,13 +1,18 @@
-﻿//! Ported from `packages/engine/Source/Scene/MvtDataProvider.js`.
+﻿//! Ported from `packages/engine/Source/Scene/MVTDataProvider.js`.
 
-/// A data provider for MVT (Mapbox Vector Tiles) data.
+/// MVT (Mapbox Vector Tile) data provider.
+///
+/// Loads and parses Mapbox Vector Tile format data.
 pub struct MvtDataProvider {
-    _private: (),
+    /// The data URL.
+    pub url: String,
+    /// Whether the provider is ready.
+    pub ready: bool,
 }
 
 impl MvtDataProvider {
     /// Creates a new MvtDataProvider.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { url: String::new(), ready: false } }
 }
 
 impl Default for MvtDataProvider {

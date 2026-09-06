@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/PanoramaProvider.js`.
 
-/// A provider for panoramic images.
+/// Panorama provider.
+///
+/// Interface for loading panoramic images.
 pub struct PanoramaProvider {
-    _private: (),
+    /// Whether the provider is ready.
+    pub ready: bool,
 }
 
 impl PanoramaProvider {
     /// Creates a new PanoramaProvider.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { ready: false } }
 }
 
 impl Default for PanoramaProvider {

@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/VoxelRenderResources.js`.
 
-/// Rendering resources for voxels.
+/// Voxel render resources.
+///
+/// Manages GPU resources for voxel volume rendering.
 pub struct VoxelRenderResources {
-    _private: (),
+    /// Whether resources are allocated.
+    pub allocated: bool,
 }
 
 impl VoxelRenderResources {
     /// Creates a new VoxelRenderResources.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { allocated: false } }
 }
 
 impl Default for VoxelRenderResources {

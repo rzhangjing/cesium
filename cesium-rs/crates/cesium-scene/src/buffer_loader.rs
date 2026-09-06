@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/BufferLoader.js`.
 
-/// Loads GPU buffers from data.
+/// Buffer loader.
+///
+/// Loads vertex and index buffers from glTF data.
 pub struct BufferLoader {
-    _private: (),
+    /// Whether loading is complete.
+    pub complete: bool,
 }
 
 impl BufferLoader {
     /// Creates a new BufferLoader.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { complete: false } }
 }
 
 impl Default for BufferLoader {

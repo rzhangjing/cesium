@@ -164,7 +164,7 @@ impl DataSourceDisplay {
         // Search data source collection
         let ds_count = self.data_sources.length();
         for i in 0..ds_count {
-            if let Some(ds) = self.data_sources.get(i) {
+            if let Some(_ds) = self.data_sources.get(i) {
                 // DEVIATION: We need to check entity containment per data source.
                 // Since DataSourceEntry doesn't hold entities directly, we check
                 // the visualizers which implicitly know their entities.

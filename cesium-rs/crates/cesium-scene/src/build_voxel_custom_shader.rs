@@ -1,13 +1,16 @@
-﻿//! Ported from `packages/engine/Source/Scene/buildVoxelCustomShader.js`.
+﻿//! Ported from `packages/engine/Source/Scene/BuildVoxelCustomShader.js`.
 
-/// Builds a custom shader for voxel rendering.
+/// Builds voxel custom shader.
+///
+/// Generates custom shader code for voxel rendering.
 pub struct BuildVoxelCustomShader {
-    _private: (),
+    /// Whether the build is complete.
+    pub complete: bool,
 }
 
 impl BuildVoxelCustomShader {
     /// Creates a new BuildVoxelCustomShader.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { complete: false } }
 }
 
 impl Default for BuildVoxelCustomShader {

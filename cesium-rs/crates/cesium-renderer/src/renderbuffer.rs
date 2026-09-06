@@ -134,6 +134,5 @@ fn renderbuffer_format_to_wgpu(format: RenderbufferFormat) -> wgpu::TextureForma
         RenderbufferFormat::DepthStencil => wgpu::TextureFormat::Depth24PlusStencil8,
         RenderbufferFormat::Rgba8 => wgpu::TextureFormat::Rgba8Unorm,
         RenderbufferFormat::Srgb8Alpha8 => wgpu::TextureFormat::Rgba8UnormSrgb,
-        _ => wgpu::TextureFormat::Rgba8Unorm, // fallback
     }
 }

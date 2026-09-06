@@ -710,7 +710,7 @@ fn merge_geometries(geometries: Vec<Geometry>) -> Geometry {
     let total_vertices = vertex_offset as usize;
     let mut merged_indices =
         IndexDatatype::create_typed_array(total_vertices, merged_indices_vec.len());
-    for (i, &v) in merged_indices_vec.iter().enumerate() {
+    for (i, &_v) in merged_indices_vec.iter().enumerate() {
         match &mut merged_indices {
             IndexStorage::U16(v) => v[i] = merged_indices_vec[i] as u16,
             IndexStorage::U32(v) => v[i] = merged_indices_vec[i],

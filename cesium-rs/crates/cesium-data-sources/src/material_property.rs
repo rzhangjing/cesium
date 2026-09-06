@@ -1,6 +1,6 @@
 ﻿//! Ported from `packages/engine/Source/DataSources/MaterialProperty.js`.
 
-use crate::property::{Property, PropertyResult};
+use crate::property::Property;
 
 /// A material property defines the appearance of a surface.
 ///

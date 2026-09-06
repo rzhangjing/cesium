@@ -1,13 +1,18 @@
 ﻿//! Ported from `packages/engine/Source/Scene/SpatialNode.js`.
 
-/// A node in a spatial data structure.
+/// Spatial node.
+///
+/// A node in a spatial index (octree/BVH).
 pub struct SpatialNode {
-    _private: (),
+    /// The number of children.
+    pub child_count: u32,
+    /// Whether the node is a leaf.
+    pub is_leaf: bool,
 }
 
 impl SpatialNode {
     /// Creates a new SpatialNode.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { child_count: 0, is_leaf: true } }
 }
 
 impl Default for SpatialNode {

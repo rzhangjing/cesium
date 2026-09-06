@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/ConditionsExpression.js`.
 
-/// A conditions expression.
+/// Conditions expression.
+///
+/// Evaluates conditional style expressions for 3D Tiles styling.
 pub struct ConditionsExpression {
-    _private: (),
+    /// The expression conditions.
+    pub conditions: Vec<(String, String)>,
 }
 
 impl ConditionsExpression {
     /// Creates a new ConditionsExpression.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { conditions: Vec::new() } }
 }
 
 impl Default for ConditionsExpression {

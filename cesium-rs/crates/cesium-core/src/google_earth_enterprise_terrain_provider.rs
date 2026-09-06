@@ -65,6 +65,7 @@ use crate::terrain_provider::TerrainProvider;
 use crate::tiling_scheme::TilingScheme;
 
 /// Mirrors the module-level `TerrainState`.
+#[allow(non_snake_case)]
 pub mod TerrainState {
     /// Terrain availability not yet known.
     pub const UNKNOWN: u32 = 0;

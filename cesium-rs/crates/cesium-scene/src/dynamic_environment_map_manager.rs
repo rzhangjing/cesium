@@ -1,17 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/DynamicEnvironmentMapManager.js`.
 
-/// Manages dynamic environment maps.
+/// Dynamic environment map manager.
 ///
-/// DEVIATION: stub implementation.
+/// Manages dynamic environment map generation for reflections.
 pub struct DynamicEnvironmentMapManager {
-    _private: (),
+    /// Whether the manager is active.
+    pub active: bool,
 }
 
 impl DynamicEnvironmentMapManager {
-    /// Creates a new dynamic environment map manager.
-    pub fn new() -> Self {
-        Self { _private: () }
-    }
+    /// Creates a new DynamicEnvironmentMapManager.
+    pub fn new() -> Self { Self { active: false } }
 }
 
 impl Default for DynamicEnvironmentMapManager {

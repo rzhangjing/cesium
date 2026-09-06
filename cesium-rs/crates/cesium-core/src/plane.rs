@@ -12,6 +12,7 @@ use crate::cartesian3::Cartesian3;
 use crate::cartesian4::Cartesian4;
 use crate::developer_error::throw_developer_error;
 use crate::math::CesiumMath;
+use crate::matrix4::Matrix4;
 
 /// A plane in Hessian Normal Form.
 ///
@@ -183,11 +184,42 @@ impl Plane {
     /// Transforms the plane by the given transformation matrix.
     ///
     /// Port of `Plane.transform`.
-    ///
-    /// DEVIATION (deferred): requires `Matrix4::inverse_transpose` and
-    /// `Matrix4::multiply_by_vector`; will be enabled once `Matrix4` is
-    /// ported. See `docs/deferred.md`.
-    // pub fn transform(plane: &Self, transform: &Matrix4, result: &mut Self) { ... }
+    pub fn transform(plane: &Self, transform: &Matrix4, result: &mut Self) {
+        // Copy inputs to avoid aliasing issues when plane == result.
+        let normal = plane.normal;
+        let distance = plane.distance;
+
+        // Transform the normal using the inverse transpose of the matrix.
+        let mut inverse_transpose = Matrix4::IDENTITY;
+        if Matrix4::inverse_transpose(transform, &mut inverse_transpose) {
+            let mut transformed_normal = Cartesian3::ZERO;
+            Matrix4::multiply_by_point_as_vector(
+                &inverse_transpose, &normal, &mut transformed_normal,
+            );
+            Cartesian3::normalize(&transformed_normal, &mut result.normal);
+        } else {
+            result.normal = normal;
+        }
+
+        // Compute the transformed distance:
+        // Find a point on the original plane, transform it, then project
+        // onto the new normal.
+        let point = Cartesian3::new(
+            normal.x * distance,
+            normal.y * distance,
+            normal.z * distance,
+        );
+        let mut transformed_point = Cartesian3::ZERO;
+        Matrix4::multiply_by_point(transform, &point, &mut transformed_point);
+        result.distance = -Cartesian3::dot(&result.normal, &transformed_point);
+    }
+
+    /// Allocating variant of [`Plane::transform`].
+    pub fn transform_new(plane: &Self, transform: &Matrix4) -> Self {
+        let mut result = Self::new(&Cartesian3::UNIT_X, 0.0);
+        Self::transform(plane, transform, &mut result);
+        result
+    }
 
     /// Duplicates a `Plane` instance.
     ///

@@ -1,17 +1,18 @@
 ﻿//! Ported from `packages/engine/Source/Scene/EllipsoidPrimitive.js`.
 
-/// An ellipsoid primitive.
+/// Ellipsoid primitive.
 ///
-/// DEVIATION: stub implementation.
+/// Renders an ellipsoid shape in the scene.
 pub struct EllipsoidPrimitive {
-    _private: (),
+    /// Whether the primitive is visible.
+    pub show: bool,
+    /// The radii.
+    pub radii: (f64, f64, f64),
 }
 
 impl EllipsoidPrimitive {
-    /// Creates a new ellipsoid primitive.
-    pub fn new() -> Self {
-        Self { _private: () }
-    }
+    /// Creates a new EllipsoidPrimitive.
+    pub fn new() -> Self { Self { show: true, radii: (1.0, 1.0, 1.0) } }
 }
 
 impl Default for EllipsoidPrimitive {

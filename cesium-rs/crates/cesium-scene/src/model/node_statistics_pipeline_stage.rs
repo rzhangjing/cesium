@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/Model/NodeStatisticsPipelineStage.js`.
 
 /// Pipeline stage for node statistics.
+///
+/// Collects per-node rendering statistics for debugging/profiling.
 pub struct NodeStatisticsPipelineStage {
-    _private: (),
+    /// Number of commands processed by this stage.
+    pub process_count: u64,
 }
 
 impl NodeStatisticsPipelineStage {
     /// Creates a new NodeStatisticsPipelineStage.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { process_count: 0 } }
 }
 
 impl Default for NodeStatisticsPipelineStage {

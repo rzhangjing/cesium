@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/GaussianSplatRenderResources.js`.
 
-/// Resources for Gaussian splat rendering.
+/// Gaussian splat render resources.
+///
+/// Manages GPU resources for Gaussian splat rendering.
 pub struct GaussianSplatRenderResources {
-    _private: (),
+    /// Whether resources are allocated.
+    pub allocated: bool,
 }
 
 impl GaussianSplatRenderResources {
     /// Creates a new GaussianSplatRenderResources.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { allocated: false } }
 }
 
 impl Default for GaussianSplatRenderResources {

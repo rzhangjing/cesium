@@ -43,7 +43,7 @@ impl AxisAlignedBoundingBox {
     ///
     /// Computes a bounding box enclosing all provided positions.
     pub fn from_points(positions: Option<&[Cartesian3]>) -> Self {
-        let mut result = Self::default();
+        let result = Self::default();
         match positions {
             None => result,
             Some(positions) if positions.is_empty() => result,

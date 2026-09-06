@@ -2,7 +2,6 @@
 //!
 //! Draws the sky atmosphere (blue sky, sunset colors) around the globe.
 
-use cesium_core::cartesian3::Cartesian3;
 use crate::frame_state::FrameState;
 
 /// Draws the sky atmosphere (blue sky, sunset colors) around the globe.

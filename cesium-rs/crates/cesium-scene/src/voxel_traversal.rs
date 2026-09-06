@@ -1,13 +1,18 @@
 ﻿//! Ported from `packages/engine/Source/Scene/VoxelTraversal.js`.
 
-/// Traversal of a voxel volume.
+/// Voxel traversal.
+///
+/// Traverses voxel data for ray marching and volume rendering.
 pub struct VoxelTraversal {
-    _private: (),
+    /// The maximum number of steps per ray.
+    pub max_steps: u32,
+    /// Whether the traversal is ready.
+    pub ready: bool,
 }
 
 impl VoxelTraversal {
     /// Creates a new VoxelTraversal.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { max_steps: 256, ready: false } }
 }
 
 impl Default for VoxelTraversal {

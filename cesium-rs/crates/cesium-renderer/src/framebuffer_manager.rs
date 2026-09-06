@@ -2,9 +2,6 @@
 //!
 //! Manages framebuffer resources and attachments.
 
-use crate::renderbuffer::Renderbuffer;
-use crate::texture::Texture;
-
 /// Options for creating a `FramebufferManager`.
 pub struct FramebufferManagerOptions {
     /// Number of MSAA samples.

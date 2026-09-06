@@ -1,13 +1,18 @@
 ﻿//! Ported from `packages/engine/Source/Scene/Megatexture.js`.
 
-/// A megatexture.
+/// Megatexture.
+///
+/// Manages a large virtual texture composed of many smaller tiles.
 pub struct Megatexture {
-    _private: (),
+    /// The megatexture size in texels.
+    pub size: u32,
+    /// Whether the megatexture is ready.
+    pub ready: bool,
 }
 
 impl Megatexture {
     /// Creates a new Megatexture.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { size: 0, ready: false } }
 }
 
 impl Default for Megatexture {

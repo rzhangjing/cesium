@@ -1,7 +1,5 @@
 ﻿//! Ported from `packages/engine/Source/DataSources/ModelGraphics.js`.
 
-use cesium_core::cartesian3::Cartesian3;
-
 /// Graphics properties for a 3D model.
 #[derive(Clone)]
 pub struct ModelGraphics {

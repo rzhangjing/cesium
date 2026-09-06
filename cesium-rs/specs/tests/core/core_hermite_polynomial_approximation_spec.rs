@@ -60,7 +60,6 @@ fn get_required_data_points() {
 }
 
 #[test]
-#[ignore = "usize wrapping bug in fill_coefficient_list for i>1"]
 fn higher_order_interpolation() {
     let y_combined = build_y_table_combined();
     let x = 100.0;

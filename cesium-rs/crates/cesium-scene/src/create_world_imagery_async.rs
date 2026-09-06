@@ -1,13 +1,16 @@
-﻿//! Ported from `packages/engine/Source/Scene/createWorldImageryAsync.js`.
+﻿//! Ported from `packages/engine/Source/Scene/CreateWorldImageryAsync.js`.
 
 /// Creates world imagery asynchronously.
+///
+/// Factory for Cesium's default world imagery tileset.
 pub struct CreateWorldImageryAsync {
-    _private: (),
+    /// Whether creation is complete.
+    pub complete: bool,
 }
 
 impl CreateWorldImageryAsync {
     /// Creates a new CreateWorldImageryAsync.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { complete: false } }
 }
 
 impl Default for CreateWorldImageryAsync {

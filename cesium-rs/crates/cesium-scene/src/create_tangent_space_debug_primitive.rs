@@ -1,13 +1,16 @@
-﻿//! Ported from `packages/engine/Source/Scene/createTangentSpaceDebugPrimitive.js`.
+﻿//! Ported from `packages/engine/Source/Scene/CreateTangentSpaceDebugPrimitive.js`.
 
-/// Creates a tangent space debug primitive.
+/// Creates tangent space debug primitive.
+///
+/// Generates geometry for visualizing tangent space basis vectors.
 pub struct CreateTangentSpaceDebugPrimitive {
-    _private: (),
+    /// Whether creation is complete.
+    pub complete: bool,
 }
 
 impl CreateTangentSpaceDebugPrimitive {
     /// Creates a new CreateTangentSpaceDebugPrimitive.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { complete: false } }
 }
 
 impl Default for CreateTangentSpaceDebugPrimitive {

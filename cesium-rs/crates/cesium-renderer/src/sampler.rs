@@ -26,7 +26,6 @@ pub struct Sampler {
 impl Sampler {
     /// Creates a new sampler with default parameters.
     pub fn new() -> Self {
-        use cesium_core::webgl_constants::WebGLConstants;
         Self {
             wrap_s: TextureWrap::ClampToEdge,
             wrap_t: TextureWrap::ClampToEdge,

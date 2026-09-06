@@ -1,13 +1,16 @@
-﻿//! Ported from `packages/engine/Source/Scene/decodeMvt.js`.
+﻿//! Ported from `packages/engine/Source/Scene/DecodeMvt.js`.
 
-/// Decodes MVT data.
+/// MVT decoder.
+///
+/// Decodes Mapbox Vector Tile binary data.
 pub struct DecodeMvt {
-    _private: (),
+    /// Whether decoding is complete.
+    pub complete: bool,
 }
 
 impl DecodeMvt {
     /// Creates a new DecodeMvt.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { complete: false } }
 }
 
 impl Default for DecodeMvt {

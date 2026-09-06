@@ -1,13 +1,18 @@
 ﻿//! Ported from `packages/engine/Source/Scene/BillboardTexture.js`.
 
-/// A texture associated with a billboard.
+/// Billboard texture.
+///
+/// Manages a texture used for billboard rendering.
 pub struct BillboardTexture {
-    _private: (),
+    /// The texture URL.
+    pub url: String,
+    /// Whether the texture is loaded.
+    pub loaded: bool,
 }
 
 impl BillboardTexture {
     /// Creates a new BillboardTexture.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { url: String::new(), loaded: false } }
 }
 
 impl Default for BillboardTexture {

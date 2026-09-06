@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/BufferPointMaterial.js`.
 
-/// A material for buffer points.
+/// Material for buffer points.
+///
+/// Defines the appearance of points in a buffer point collection.
 pub struct BufferPointMaterial {
-    _private: (),
+    /// Whether the material is transparent.
+    pub transparent: bool,
 }
 
 impl BufferPointMaterial {
     /// Creates a new BufferPointMaterial.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { transparent: false } }
 }
 
 impl Default for BufferPointMaterial {

@@ -62,7 +62,7 @@ fn remove_duplicates(
     }
 
     let has_bottom_heights = bottom_heights.is_some();
-    let has_top_heights = top_heights.is_some();
+    let _has_top_heights = top_heights.is_some();
 
     let mut cleaned_positions: Vec<Cartesian3> = Vec::with_capacity(length);
     let mut cleaned_top_heights: Vec<f64> = vec![0.0; length];

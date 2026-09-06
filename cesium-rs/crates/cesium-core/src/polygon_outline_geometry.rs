@@ -26,6 +26,7 @@ use crate::primitive_type::PrimitiveType;
 
 /// A description of the outline of a polygon.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct PolygonOutlineGeometry {
     polygon_hierarchy: PolygonHierarchy,
     ellipsoid: Ellipsoid,

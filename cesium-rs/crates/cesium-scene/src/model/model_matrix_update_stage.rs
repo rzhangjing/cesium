@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/Model/ModelMatrixUpdateStage.js`.
 
-/// Pipeline stage for model matrix updates.
+/// Model matrix update stage.
+///
+/// Updates model matrices each frame.
 pub struct ModelMatrixUpdateStage {
-    _private: (),
+    /// Number of updates processed.
+    pub update_count: u64,
 }
 
 impl ModelMatrixUpdateStage {
     /// Creates a new ModelMatrixUpdateStage.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { update_count: 0 } }
 }
 
 impl Default for ModelMatrixUpdateStage {

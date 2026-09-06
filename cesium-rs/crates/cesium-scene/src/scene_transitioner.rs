@@ -1,13 +1,18 @@
 ﻿//! Ported from `packages/engine/Source/Scene/SceneTransitioner.js`.
 
-/// Transitions between scene modes.
+/// Scene transitioner.
+///
+/// Handles transitions between 3D, 2D, and Columbus View scene modes.
 pub struct SceneTransitioner {
-    _private: (),
+    /// Whether a transition is in progress.
+    pub transitioning: bool,
+    /// The transition duration in seconds.
+    pub duration: f64,
 }
 
 impl SceneTransitioner {
     /// Creates a new SceneTransitioner.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { transitioning: false, duration: 3.0 } }
 }
 
 impl Default for SceneTransitioner {

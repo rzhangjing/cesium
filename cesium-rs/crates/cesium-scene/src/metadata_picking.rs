@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/MetadataPicking.js`.
 
-/// Metadata picking utilities.
+/// Metadata picking.
+///
+/// Provides picking support for structural metadata features.
 pub struct MetadataPicking {
-    _private: (),
+    /// Whether metadata picking is active.
+    pub active: bool,
 }
 
 impl MetadataPicking {
     /// Creates a new MetadataPicking.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { active: false } }
 }
 
 impl Default for MetadataPicking {

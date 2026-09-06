@@ -4,6 +4,7 @@ use crate::entity::Entity;
 use crate::geometry_updater::GeometryUpdater;
 
 /// A geometry updater that creates polyline_volume geometry instances from entity data.
+#[allow(non_camel_case_types)]
 pub struct polyline_volumeGeometryUpdater {
     entity_id: String,
     fill_enabled: bool,

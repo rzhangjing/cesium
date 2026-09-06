@@ -12,7 +12,8 @@ use crate::frame_state::FrameState;
 /// from screen coordinates.
 /// Mirrors CesiumJS `Picking` (630 lines).
 pub struct Picking {
-    _private: (),
+    /// Whether picking is enabled.
+    pub enabled: bool,
 }
 
 /// The result of a pick operation.
@@ -27,7 +28,7 @@ pub struct PickedObject {
 
 impl Picking {
     /// Creates a new Picking.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { enabled: true } }
 
     /// Picks the topmost object at the given window position.
     pub fn pick(&self, _frame_state: &FrameState, _window_position: &Cartesian2) -> Option<PickedObject> {

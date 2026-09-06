@@ -2,7 +2,6 @@
 //!
 //! Dynamically builds shader programs from components.
 
-use crate::shader_destination::ShaderDestination;
 use crate::shader_function::ShaderFunction;
 use crate::shader_struct::ShaderStruct;
 

@@ -36,6 +36,7 @@ struct CesiumAutomaticUniforms {
 struct VSOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) v_textureCoordinates: vec2<f32>,
+    @location(1) v_worldPosition: vec3<f32>,
 };
 
 @vertex
@@ -47,5 +48,8 @@ fn main(
     var position = vec4<f32>(position3DAndHeight.xyz, 1.0);
     out.position = czm.czm_modelViewProjection * position;
     out.v_textureCoordinates = textureCoordAndEncodedNormals.xy;
+    // ECEF world position, forwarded so the fragment stage can derive a
+    // geocentric surface normal for lighting / atmosphere.
+    out.v_worldPosition = position3DAndHeight.xyz;
     return out;
 }

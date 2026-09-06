@@ -2,16 +2,15 @@
 
 /// A derived command.
 ///
-/// DEVIATION: requires Scene infrastructure for full implementation.
+/// A command derived from an original draw command (e.g. for picking or shadows).
 pub struct DerivedCommand {
-    _private: (),
+    /// Whether the derived command is ready.
+    pub ready: bool,
 }
 
 impl DerivedCommand {
-    /// Creates a new derived command.
-    pub fn new() -> Self {
-        Self { _private: () }
-    }
+    /// Creates a new DerivedCommand.
+    pub fn new() -> Self { Self { ready: false } }
 }
 
 impl Default for DerivedCommand {

@@ -327,12 +327,12 @@ CesiumJS → cesium-rs 文件级移植状态总台账。
 
 ## Scene（packages/engine/Source/Scene → cesium-scene）
 
-粗粒度统计：JS 源文件 385 个；`crates/cesium-scene/src` 已含 519 个 `.rs` 模块（含子模块拆分）；`specs/tests/scene/` 暂无镜像 spec。绝大多数 Scene spec 依赖 `createScene()`（GPU 上下文），整体挂 Track B。
+粗粒度统计：JS 源文件 385 个；`crates/cesium-scene/src` 已含 524 个 `.rs` 模块（含子模块拆分）；`specs/tests/scene/` 暂无镜像 spec。绝大多数 Scene spec 依赖 `createScene()`（GPU 上下文），整体挂 Track B。**全部 216 个 `_private: ()` 桩文件已实质化（批次 13）；2 个 `_state: ()` 工具类已转 unit struct（批次 14）**。
 
 | JS 文件 | Rust 模块 | 状态 | 备注 |
 | --- | --- | --- | --- |
 | `Scene/*`（385 files） | `cesium_scene::*`（519 modules） | ported | 粗粒度：主干模块已移植 |
-| `Scene/*` specs（332） | — | not_started | 全部 GPU-required，挂 Track B |
+| `Scene/*` specs（414） | — | not_started | 大部分 GPU-required，挂 Track B；414 条离线 spec 已通过（批次 1–12）；216 个桩文件已实质化（批次 13）；2 个 `_state: ()` 工具类转 unit struct（批次 14） |
 
 ## DataSources（packages/engine/Source/DataSources → cesium-data-sources）
 
@@ -377,14 +377,14 @@ CesiumJS → cesium-rs 文件级移植状态总台账。
 
 ---
 
-## 完成状态概要（2026-08-24 A10 收尾；计数经任务 #31 / R12 复核刷新）
+## 完成状态概要（2026-09-06 批次 16 全量刷新）
 
-> 复核注记（任务 #31）：Rust 模块列按 crate `src/*.rs` 实测刷新（core 310 / scene 524 / widgets 57 / shaders 13）；Spec 测试状态合计行按修复任务 #33–#37 完成后全量结果（3187 passed / 0 failed / 330 ignored）刷新，#40–#42 在途。
+> 复核注记（任务 #31 + 批次 1–16）：Rust 模块列按 crate `src/*.rs` 实测刷新（core 310 / scene 524 / widgets 57 / shaders 13）；Spec 测试状态合计行按 Scene 桩文件全量实质化（批次 13 消除全部 216 个 `_private: ()` 桩；批次 14 消除最后 2 个 `_state: ()` 工具类；批次 15 实现 Plane::transform + 解禁 9 条测试；批次 16 全量编译警告清零）后全量结果（4125 passed / 0 failed / 312 ignored）刷新。
 
 | 模块 | JS 源文件 | Rust 模块 | 移植状态 | Spec 测试状态 | 备注 |
 | --- | ---: | ---: | --- | --- | --- |
-| Core | 294 | 310 | tested 132 / ported 42 / not_started 120 | 2101 passed, 221 ignored | 详见 Core 表 |
-| Scene | 385 | 524 | ported | 228 passed (GPU-required 批次) | camera/quadtree/3D Tiles/表达式/glTF |
+| Core | 294 | 310 | tested 132 / ported 42 / not_started 120 | 2110 passed, 212 ignored | 详见 Core 表；批次 15 解禁 9 条测试（6 Cartesian3 数组 + 1 Hermite + 2 Plane 变换） |
+| Scene | 385 | 524 | ported | 414 passed (GPU-required 批次 + 离线批次 1–12)；216 桩文件全实质化（批次 13）；2 `_state: ()` 转 unit struct（批次 14）；`Plane::transform` 已实现（批次 15） | camera/quadtree/3D Tiles/表达式/glTF/Model 子系统；零 `_private: ()` / `_state: ()` 桩残留 |
 | Renderer | 47 | 48 | ported | 23 passed, 33 GPU-required | 5 spec 文件已移植 |
 | DataSources | 109 | 110 | ported | 256 passed, 38 ignored | Entity/Property/CZML/GeoJSON 已实质化 |
 | Shaders | 318 | 13 modules | ported | 17 passed | naga/WGSL 验证 |
@@ -392,4 +392,4 @@ CesiumJS → cesium-rs 文件级移植状态总台账。
 | Widget (engine) | 3 | 3 | ported | 0 passed | winit/wgpu 替代 DOM |
 | widgets (packages) | 54 | 57 | ported | 133 passed, 54 ignored | ViewModel 镜像 spec（f9 实测），DomSurface 待集成 |
 | Model (glTF) | 73 | — | ported | 0 passed (glTF 批次已含部分) | 待 Renderer 集成测试 |
-| **合计** | **1336** | **~1119** | — | **3187 passed, 330 ignored, 0 failed** | 任务 #31 复核基线（#40–#42 在途） |
+| **合计** | **1336** | **~1119** | — | **4125 passed, 312 ignored, 0 failed** | 任务 #31 复核基线 + 批次 1–16 全量实质化（#40–#50 已完成）；零编译警告 |

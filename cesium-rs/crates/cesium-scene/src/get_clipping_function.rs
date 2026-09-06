@@ -1,13 +1,16 @@
-﻿//! Ported from `packages/engine/Source/Scene/getClippingFunction.js`.
+﻿//! Ported from `packages/engine/Source/Scene/GetClippingFunction.js`.
 
-/// Gets a clipping function.
+/// Gets the clipping function.
+///
+/// Returns the appropriate clipping shader function.
 pub struct GetClippingFunction {
-    _private: (),
+    /// Whether the function is resolved.
+    pub resolved: bool,
 }
 
 impl GetClippingFunction {
     /// Creates a new GetClippingFunction.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { resolved: false } }
 }
 
 impl Default for GetClippingFunction {

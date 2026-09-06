@@ -8,7 +8,7 @@ use crate::cartesian3::Cartesian3;
 use crate::developer_error::throw_developer_error;
 use crate::geometry::Geometry;
 use crate::geometry_attribute::GeometryAttribute;
-use crate::geometry_instance::{GeometryInstance, GeometryInstanceGeometry};
+use crate::geometry_instance::GeometryInstance;
 use crate::index_datatype::{IndexDatatype, IndexStorage};
 use crate::matrix4::Matrix4;
 use crate::primitive_type::PrimitiveType;

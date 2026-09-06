@@ -12,7 +12,7 @@ use crate::component_datatype::ComponentDatatype;
 use crate::geometry::Geometry;
 use crate::geometry_attribute::GeometryAttribute;
 use crate::geometry_type::GeometryType;
-use crate::index_datatype::{IndexDatatype, IndexStorage};
+use crate::index_datatype::IndexDatatype;
 use crate::matrix3::Matrix3;
 use crate::matrix4::Matrix4;
 use crate::orthographic_frustum::OrthographicFrustum;

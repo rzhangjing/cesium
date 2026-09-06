@@ -1,13 +1,16 @@
-﻿//! Ported from `packages/engine/Source/Scene/BRDFLutGenerator.js`.
+﻿//! Ported from `packages/engine/Source/Scene/BrdfLutGenerator.js`.
 
-/// Generates the BRDF lookup table for PBR.
+/// BRDF LUT generator.
+///
+/// Generates the BRDF lookup table for PBR image-based lighting.
 pub struct BrdfLutGenerator {
-    _private: (),
+    /// Whether generation is complete.
+    pub complete: bool,
 }
 
 impl BrdfLutGenerator {
     /// Creates a new BrdfLutGenerator.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { complete: false } }
 }
 
 impl Default for BrdfLutGenerator {

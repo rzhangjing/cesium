@@ -1,13 +1,18 @@
 ﻿//! Ported from `packages/engine/Source/Scene/GeoJsonPrimitive.js`.
 
-/// A GeoJSON primitive.
+/// GeoJSON primitive.
+///
+/// Renders GeoJSON data as a scene primitive.
 pub struct GeoJsonPrimitive {
-    _private: (),
+    /// Whether the primitive is visible.
+    pub show: bool,
+    /// Whether the primitive is ready.
+    pub ready: bool,
 }
 
 impl GeoJsonPrimitive {
     /// Creates a new GeoJsonPrimitive.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { show: true, ready: false } }
 }
 
 impl Default for GeoJsonPrimitive {

@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/Model/ModelDrawCommands.js`.
 
-/// Collection of draw commands for a model.
+/// Model draw commands.
+///
+/// Collection of draw commands for model rendering.
 pub struct ModelDrawCommands {
-    _private: (),
+    /// The number of draw commands.
+    pub length: u32,
 }
 
 impl ModelDrawCommands {
     /// Creates a new ModelDrawCommands.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { length: 0 } }
 }
 
 impl Default for ModelDrawCommands {

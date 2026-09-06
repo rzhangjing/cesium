@@ -1,13 +1,18 @@
 ﻿//! Ported from `packages/engine/Source/Scene/PerInstanceColorAppearance.js`.
 
-/// An appearance that uses per-instance colors.
+/// Per-instance color appearance.
+///
+/// Renders primitives using per-instance color attributes.
 pub struct PerInstanceColorAppearance {
-    _private: (),
+    /// Whether the appearance is transparent.
+    pub transparent: bool,
+    /// Whether the appearance is flat-shaded.
+    pub flat: bool,
 }
 
 impl PerInstanceColorAppearance {
     /// Creates a new PerInstanceColorAppearance.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { transparent: false, flat: false } }
 }
 
 impl Default for PerInstanceColorAppearance {

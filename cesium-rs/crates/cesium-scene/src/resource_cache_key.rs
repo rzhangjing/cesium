@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/ResourceCacheKey.js`.
 
-/// A key for the resource cache.
+/// Resource cache key.
+///
+/// Unique identifier for a cached GPU resource.
 pub struct ResourceCacheKey {
-    _private: (),
+    /// The key string.
+    pub key: String,
 }
 
 impl ResourceCacheKey {
     /// Creates a new ResourceCacheKey.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { key: String::new() } }
 }
 
 impl Default for ResourceCacheKey {

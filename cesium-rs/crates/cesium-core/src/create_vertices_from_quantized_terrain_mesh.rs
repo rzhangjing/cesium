@@ -161,8 +161,8 @@ pub fn create_vertices_from_quantized_terrain_mesh(params: &CreateVerticesParams
 
     // DEVIATION 2: the ENU-space aaBox (`minimum`/`maximum`) only feeds the
     // JS TerrainEncoding constructor; track nothing here.
-    let mut h_min = minimum_height;
-    h_min = h_min.min(find_min_max_skirts(
+    let mut _h_min = minimum_height;
+    _h_min = _h_min.min(find_min_max_skirts(
         &params.west_indices,
         params.west_skirt_height,
         &heights,
@@ -170,7 +170,7 @@ pub fn create_vertices_from_quantized_terrain_mesh(params: &CreateVerticesParams
         &rectangle,
         &ellipsoid,
     ));
-    h_min = h_min.min(find_min_max_skirts(
+    _h_min = _h_min.min(find_min_max_skirts(
         &params.south_indices,
         params.south_skirt_height,
         &heights,
@@ -178,7 +178,7 @@ pub fn create_vertices_from_quantized_terrain_mesh(params: &CreateVerticesParams
         &rectangle,
         &ellipsoid,
     ));
-    h_min = h_min.min(find_min_max_skirts(
+    _h_min = _h_min.min(find_min_max_skirts(
         &params.east_indices,
         params.east_skirt_height,
         &heights,
@@ -186,7 +186,7 @@ pub fn create_vertices_from_quantized_terrain_mesh(params: &CreateVerticesParams
         &rectangle,
         &ellipsoid,
     ));
-    h_min = h_min.min(find_min_max_skirts(
+    _h_min = _h_min.min(find_min_max_skirts(
         &params.north_indices,
         params.north_skirt_height,
         &heights,

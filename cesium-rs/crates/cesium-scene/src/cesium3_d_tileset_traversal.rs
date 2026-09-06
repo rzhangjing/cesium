@@ -33,7 +33,8 @@ pub struct TilePriorityRange {
 /// (base/skip/most-detailed) are wired up with the renderer track. The
 /// pure helpers below are the CPU-portable parts of the module.
 pub struct Cesium3DTilesetTraversal {
-    _private: (),
+    /// Whether the traversal is active.
+    pub active: bool,
 }
 
 impl Cesium3DTilesetTraversal {
@@ -272,5 +273,5 @@ pub struct UpdateTileFlags {
 }
 
 impl Default for Cesium3DTilesetTraversal {
-    fn default() -> Self { Self { _private: () } }
+    fn default() -> Self { Self { active: false } }
 }

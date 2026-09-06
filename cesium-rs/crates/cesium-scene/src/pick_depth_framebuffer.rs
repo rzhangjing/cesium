@@ -1,13 +1,16 @@
 ﻿//! Ported from `packages/engine/Source/Scene/PickDepthFramebuffer.js`.
 
-/// Framebuffer for pick depth rendering.
+/// Pick depth framebuffer.
+///
+/// Framebuffer for storing pick depth values.
 pub struct PickDepthFramebuffer {
-    _private: (),
+    /// Whether the framebuffer is allocated.
+    pub allocated: bool,
 }
 
 impl PickDepthFramebuffer {
     /// Creates a new PickDepthFramebuffer.
-    pub fn new() -> Self { Self { _private: () } }
+    pub fn new() -> Self { Self { allocated: false } }
 }
 
 impl Default for PickDepthFramebuffer {

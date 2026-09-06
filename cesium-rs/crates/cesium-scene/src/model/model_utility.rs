@@ -77,11 +77,14 @@ pub struct AttributeInfo {
 }
 
 /// Utility functions for model processing.
-pub struct ModelUtility {
-    _private: (),
-}
+///
+/// All methods are static; the struct exists only as a namespace.
+pub struct ModelUtility;
 
 impl ModelUtility {
+    /// Creates a new ModelUtility (unit struct; always returns `Self`).
+    pub fn new() -> Self { Self }
+
     /// The glTF extensions supported by the model loader.
     ///
     /// Mirrors `ModelUtility.supportedExtensions`.
@@ -395,5 +398,5 @@ impl ModelUtility {
 }
 
 impl Default for ModelUtility {
-    fn default() -> Self { Self { _private: () } }
+    fn default() -> Self { Self }
 }
