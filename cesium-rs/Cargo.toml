@@ -31,7 +31,10 @@ tokio = { version = "1", features = ["rt", "macros", "sync"] }
 futures = "0.3"
 
 # IO / networking
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+# TLS via rustls (webpki-roots) instead of the platform native-tls/Schannel
+# backend: Schannel aborts handshakes with SEC_E_NO_CREDENTIALS in headless /
+# service sessions where no interactive credential handle is available.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls", "http2"] }
 image = "0.25"
 flate2 = "1"
 

@@ -52,6 +52,7 @@ pub mod camera;
 pub mod camera_event_aggregator;
 pub mod camera_event_type;
 pub mod camera_flight_path;
+pub mod camera_frustum;
 pub mod cesium3_d_content_group;
 pub mod cesium3_d_tile;
 pub mod cesium3_d_tile_batch_table;

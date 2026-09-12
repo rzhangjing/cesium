@@ -14,8 +14,9 @@ use cesium_core::matrix4::Matrix4;
 use crate::uniform_state::UniformState;
 
 /// Byte layout of the `CesiumAutomaticUniforms` WGSL struct (column-major
-/// mat4x4&lt;f32&gt; blocks, then a vec4). Must match `globe_vs.wgsl` exactly.
-pub const AUTOMATIC_UNIFORMS_SIZE: usize = 5 * 64 + 16;
+/// mat4x4&lt;f32&gt; blocks, then two vec4s: viewport + sun direction). Must
+/// match `globe_vs.wgsl` exactly.
+pub const AUTOMATIC_UNIFORMS_SIZE: usize = 5 * 64 + 16 + 16;
 
 /// Dynamic-offset alignment required by wgpu for uniform buffers.
 const DYNAMIC_OFFSET_ALIGNMENT: u64 = 256;
@@ -39,8 +40,10 @@ pub struct AutomaticUniforms {
     pub czm_view: Matrix4,
     /// The viewport rectangle (x, y, width, height).
     pub czm_viewport: [f32; 4],
-    /// The camera eye height.
-    pub czm_eyeHeight: f32,
+    /// The normalized sun direction in world coordinates (xyz; w unused).
+    /// Backs `czm_sunDirectionWC`, consumed by `globe_fs.wgsl` for the
+    /// day/night terminator.
+    pub czm_sunDirectionWC: [f32; 4],
 }
 
 impl AutomaticUniforms {
@@ -53,7 +56,7 @@ impl AutomaticUniforms {
             czm_model: Matrix4::IDENTITY,
             czm_view: Matrix4::IDENTITY,
             czm_viewport: [0.0, 0.0, 1.0, 1.0],
-            czm_eyeHeight: 0.0,
+            czm_sunDirectionWC: [0.0, 0.0, 0.0, 0.0],
         }
     }
 
@@ -66,6 +69,7 @@ impl AutomaticUniforms {
         let model_view = state.model_view().clone();
         let model_view_projection = state.model_view_projection().clone();
         let viewport = state.viewport();
+        let sun_direction = *state.sun_direction_wc();
         Self {
             czm_modelViewProjection: model_view_projection,
             czm_modelView: model_view,
@@ -78,11 +82,16 @@ impl AutomaticUniforms {
                 viewport.width as f32,
                 viewport.height as f32,
             ],
-            czm_eyeHeight: state.camera_position().z as f32,
+            czm_sunDirectionWC: [
+                sun_direction.x as f32,
+                sun_direction.y as f32,
+                sun_direction.z as f32,
+                0.0,
+            ],
         }
     }
 
-    /// Serializes into the exact WGSL struct byte layout (336 bytes).
+    /// Serializes into the exact WGSL struct byte layout (352 bytes).
     pub fn to_bytes(&self) -> [u8; AUTOMATIC_UNIFORMS_SIZE] {
         let mut bytes = [0u8; AUTOMATIC_UNIFORMS_SIZE];
         write_matrix(&mut bytes[0..64], &self.czm_modelViewProjection);
@@ -92,6 +101,9 @@ impl AutomaticUniforms {
         write_matrix(&mut bytes[256..320], &self.czm_model);
         for (i, component) in self.czm_viewport.iter().enumerate() {
             bytes[320 + i * 4..324 + i * 4].copy_from_slice(&component.to_le_bytes());
+        }
+        for (i, component) in self.czm_sunDirectionWC.iter().enumerate() {
+            bytes[336 + i * 4..340 + i * 4].copy_from_slice(&component.to_le_bytes());
         }
         bytes
     }
@@ -222,6 +234,7 @@ mod tests {
     fn serialization_layout_matches_wgsl_struct() {
         let mut uniforms = AutomaticUniforms::new();
         uniforms.czm_viewport = [0.0, 0.0, 800.0, 600.0];
+        uniforms.czm_sunDirectionWC = [0.0, 0.0, 1.0, 0.0];
         let bytes = uniforms.to_bytes();
         assert_eq!(bytes.len(), AUTOMATIC_UNIFORMS_SIZE);
 
@@ -236,6 +249,12 @@ mod tests {
         assert_eq!(read_f32(320), 0.0);
         assert_eq!(read_f32(328), 800.0);
         assert_eq!(read_f32(332), 600.0);
+
+        // Sun direction (vec4) at offset 336.
+        assert_eq!(read_f32(336), 0.0);
+        assert_eq!(read_f32(340), 0.0);
+        assert_eq!(read_f32(344), 1.0);
+        assert_eq!(read_f32(348), 0.0);
     }
 
     #[test]

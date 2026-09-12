@@ -58,6 +58,7 @@ use crate::runtime_error::RuntimeError;
 use crate::terrain_data::TerrainData;
 use crate::terrain_encoding::TerrainEncoding;
 use crate::terrain_mesh::TerrainMesh;
+use crate::terrain_picker::TerrainPicker;
 use crate::tiling_scheme::TilingScheme;
 use crate::transforms;
 
@@ -779,6 +780,10 @@ fn process_buffer(
 
     let _ = &to_enu; // ENU extents feed the JS aaBox only (DEVIATION 2/3)
 
+    // DEVIATION 3 (cont.): the vertices below are absolute ECEF, so the
+    // encoding keeps `center` at ZERO and `TerrainEncoding::decode_position`
+    // (`buffer[i] + center`) reads them back unchanged. The JS stores them
+    // relative to `encoding.center` instead.
     let encoding = TerrainEncoding::new(
         false,
         false,
@@ -837,6 +842,11 @@ fn process_buffer(
         south_indices_east_to_west,
         east_indices_north_to_south,
         north_indices_west_to_east,
+        // The JS constructor's `_transform = new Matrix4()` is the identity,
+        // not this port's zero-valued `Matrix4::default()`.
+        transform: Matrix4::IDENTITY,
+        last_pick_scene_mode: None,
+        terrain_picker: TerrainPicker::new(),
     })
 }
 

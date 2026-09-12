@@ -37,9 +37,15 @@ pub struct FrameState {
     pub drawing_buffer_width: u32,
     /// The drawing buffer height.
     pub drawing_buffer_height: u32,
-    /// The camera frustum's SSE denominator (`2 * tan(fov / 2)` for a
-    /// perspective frustum), mirroring CesiumJS `frustum.sseDenominator`.
+    /// The camera frustum's SSE denominator (`2 * tan(fovy / 2)` for a
+    /// perspective frustum, where `fovy` is the vertical FOV), mirroring
+    /// CesiumJS `frustum.sseDenominator`.
     pub sse_denominator: f64,
+    /// The ratio of the drawing-buffer size to the canvas CSS size (HiDPI
+    /// scaling), mirroring CesiumJS `frameState.pixelRatio`. `screenSpaceError`
+    /// divides by it so a retina display refines one step deeper for the same
+    /// apparent sharpness.
+    pub pixel_ratio: f64,
     /// The current frame number.
     pub frame_number: u64,
     /// The current context (if available).
@@ -93,7 +99,13 @@ impl FrameState {
             camera_right: Cartesian3::default(),
             drawing_buffer_width: 0,
             drawing_buffer_height: 0,
+            // Stand-in until a camera is attached (`Scene::render` overwrites
+            // this with `camera.sse_denominator()`): the default 60° FOV at an
+            // aspect ratio of 1, where `fovy == fov`.
             sse_denominator: 2.0 * (std::f64::consts::FRAC_PI_3 * 0.5).tan(),
+            // CesiumJS defaults `pixelRatio` to 1; `Context.pixelRatio` only
+            // differs when the canvas is HiDPI-scaled.
+            pixel_ratio: 1.0,
             frame_number: 0,
             context_ready: false,
             pick_objects: false,

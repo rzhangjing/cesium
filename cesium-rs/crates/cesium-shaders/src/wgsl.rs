@@ -13,7 +13,8 @@
 //! Shared binding contract:
 //! - group(0) binding(0): `CesiumAutomaticUniforms` uniform buffer
 //!   (mat4x4 f32 column-major: czm_modelViewProjection, czm_modelView,
-//!   czm_projection, czm_view, czm_model; vec4 czm_viewport). Total 336 bytes.
+//!   czm_projection, czm_view, czm_model; vec4 czm_viewport; vec4
+//!   czm_sunDirectionWC). Total 352 bytes.
 //!   Only declared in shaders that actually consume automatic uniforms.
 //! - group(1): per-draw material resources (uniform buffers / textures /
 //!   samplers), assigned by the renderer from `DrawCommand` uniform overrides.
@@ -79,8 +80,9 @@ pub const SKYBOX_SHADER: &str = include_str!("../wgsl/skybox.wgsl");
 pub const ATMOSPHERE_SHADER: &str = include_str!("../wgsl/atmosphere.wgsl");
 
 /// Byte size of the `CesiumAutomaticUniforms` buffer declared at group(0)
-/// binding(0): 5 × mat4x4&lt;f32&gt; (64 bytes each) + 1 × vec4&lt;f32&gt;.
-pub const CESIUM_AUTOMATIC_UNIFORMS_SIZE: usize = 5 * 64 + 16;
+/// binding(0): 5 × mat4x4&lt;f32&gt; (64 bytes each) + 2 × vec4&lt;f32&gt;
+/// (czm_viewport, czm_sunDirectionWC).
+pub const CESIUM_AUTOMATIC_UNIFORMS_SIZE: usize = 5 * 64 + 16 + 16;
 
 #[cfg(test)]
 mod tests {
@@ -170,7 +172,7 @@ mod tests {
 
     #[test]
     fn automatic_uniforms_size_matches_struct_layout() {
-        // 5 mat4x4<f32> + 1 vec4<f32>, mat4 alignment 16 → no padding holes.
-        assert_eq!(CESIUM_AUTOMATIC_UNIFORMS_SIZE, 336);
+        // 5 mat4x4<f32> + 2 vec4<f32>, mat4/vec4 alignment 16 → no padding holes.
+        assert_eq!(CESIUM_AUTOMATIC_UNIFORMS_SIZE, 352);
     }
 }

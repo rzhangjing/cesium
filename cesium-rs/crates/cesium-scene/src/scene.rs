@@ -12,6 +12,8 @@ use cesium_core::credit::Credit;
 use cesium_core::ellipsoid::Ellipsoid;
 use cesium_core::event::Event;
 use cesium_core::julian_date::JulianDate;
+use cesium_core::geographic_projection::GeographicProjection;
+use cesium_core::map_projection::MapProjection;
 use cesium_core::matrix4::Matrix4;
 use cesium_core::cartesian3::Cartesian3;
 use cesium_core::pixel_format::PixelFormat;
@@ -29,16 +31,18 @@ use cesium_renderer::texture::{Texture, TextureOptions};
 use cesium_renderer::uniform_state::UniformState;
 use cesium_renderer::vertex_array::{VertexArray, VertexAttribute};
 use cesium_shaders::wgsl;
-use crate::camera::Camera;
+use crate::camera::{Camera, CameraSceneContext};
 use crate::camera_flight_path::{
     CameraFlightChannel, CameraFlightPath, CameraFlightTweenOptions,
 };
 use crate::credit_display::CreditDisplay;
 use crate::frame_state::FrameState;
 use crate::globe::Globe;
+use crate::map_mode2_d::MapMode2D;
 use crate::primitive_collection::PrimitiveCollection;
 use crate::scene_mode::SceneMode;
 use crate::scene_transforms::SceneTransforms;
+use crate::screen_space_camera_controller::{ScreenSpaceCameraController, SsccSceneContext};
 use crate::tween_collection::{TweenCollection, TweenOptions};
 use crate::viewport_quad::ViewportQuad;
 
@@ -57,6 +61,13 @@ pub struct Scene {
     /// the JS where `morphTo2D/3D/ColumbusView` mutate through the shared
     /// scene reference).
     mode: Cell<SceneMode>,
+    /// The map projection used in 2D and Columbus View modes.
+    ///
+    /// Mirrors CesiumJS `Scene#_mapProjection`, defaulted to
+    /// `new GeographicProjection(this._ellipsoid)` — the port has no scene
+    /// `ellipsoid` field, so `GeographicProjection::new(None)` supplies its
+    /// own WGS84 default.
+    map_projection: Box<dyn MapProjection>,
     /// The morph transition time.
     morph_time: Cell<f64>,
     /// The event raised when a morph transition starts (mirrors CesiumJS
@@ -110,6 +121,18 @@ pub struct Scene {
     flight_channel: CameraFlightChannel,
     /// The id of the active flight tween, if any (a new flight cancels it).
     current_flight_tween: RefCell<Option<u64>>,
+    /// The 2D / Columbus-view map mode (mirrors CesiumJS `Scene#mapMode2D`,
+    /// the source of truth the camera's `_mapMode2D` mirrors).
+    map_mode_2d: Cell<MapMode2D>,
+    /// Mirrors CesiumJS `Scene#verticalExaggeration` (default `1.0`).
+    vertical_exaggeration: f64,
+    /// Mirrors CesiumJS `Scene#verticalExaggerationRelativeHeight` (default
+    /// `0.0`).
+    vertical_exaggeration_relative_height: f64,
+    /// The camera controller (mirrors CesiumJS
+    /// `Scene#screenSpaceCameraController`, constructed in the `Scene`
+    /// constructor and updated in `updateEnvironment` before `camera.update`).
+    screen_space_camera_controller: ScreenSpaceCameraController,
     debug_show_frames_per_second: bool,
     is_destroyed: bool,
 }
@@ -123,12 +146,22 @@ impl Scene {
         let flight_channel: CameraFlightChannel = Rc::new(RefCell::new(None));
         let mut camera = Camera::default();
         camera.set_flight_channel(flight_channel.clone());
+        // CesiumJS `Scene` constructs `new ScreenSpaceCameraController(this)`;
+        // the controller reads `scene.mapProjection` for `_maxCoord` and the
+        // default `_ellipsoid`, and the canvas client width for the aggregator.
+        // The port has no canvas node at construction, so the drawing-buffer
+        // width (still `0` here) seeds it and the per-frame context republishes
+        // the live size.
+        let map_projection: Box<dyn MapProjection> = Box::new(GeographicProjection::new(None));
+        let screen_space_camera_controller =
+            ScreenSpaceCameraController::new(map_projection.as_ref(), 0.0);
         Self {
             camera,
             globe: None,
             frame_state: FrameState::default(),
             credit_display: RefCell::new(CreditDisplay::default()),
             mode: Cell::new(SceneMode::Scene3D),
+            map_projection,
             morph_time: Cell::new(1.0),
             morph_start: Event::new(),
             morph_complete: Event::new(),
@@ -144,6 +177,10 @@ impl Scene {
             tweens: RefCell::new(TweenCollection::new()),
             flight_channel,
             current_flight_tween: RefCell::new(None),
+            map_mode_2d: Cell::new(MapMode2D::InfiniteScroll),
+            vertical_exaggeration: 1.0,
+            vertical_exaggeration_relative_height: 0.0,
+            screen_space_camera_controller,
             debug_show_frames_per_second: false,
             is_destroyed: false,
         }
@@ -164,8 +201,36 @@ impl Scene {
     /// Sets the globe.
     pub fn set_globe(&mut self, globe: Option<Globe>) { self.globe = globe; }
 
+    /// Returns the camera controller (mirrors CesiumJS
+    /// `Scene#screenSpaceCameraController`).
+    pub fn screen_space_camera_controller(&self) -> &ScreenSpaceCameraController {
+        &self.screen_space_camera_controller
+    }
+
+    /// Returns a mutable reference to the camera controller, so a driver can
+    /// feed its aggregator raw input events.
+    pub fn screen_space_camera_controller_mut(&mut self) -> &mut ScreenSpaceCameraController {
+        &mut self.screen_space_camera_controller
+    }
+
+    /// Returns the 2D / Columbus-view map mode (mirrors CesiumJS
+    /// `Scene#mapMode2D`).
+    pub fn map_mode_2d(&self) -> MapMode2D { self.map_mode_2d.get() }
+
+    /// Sets the 2D / Columbus-view map mode. Mirrors the CesiumJS
+    /// `Scene#mapMode2D` setter, which also forwards the value to the camera.
+    pub fn set_map_mode_2d(&mut self, map_mode_2d: MapMode2D) {
+        self.map_mode_2d.set(map_mode_2d);
+        self.camera.set_map_mode_2d(map_mode_2d);
+    }
+
     /// Returns the current scene mode.
     pub fn mode(&self) -> SceneMode { self.mode.get() }
+
+    /// Returns the map projection used in 2D and Columbus View modes.
+    ///
+    /// Mirrors the read-only CesiumJS `Scene#mapProjection` property.
+    pub fn map_projection(&self) -> &dyn MapProjection { self.map_projection.as_ref() }
 
     /// Sets the scene mode.
     pub fn set_mode(&mut self, mode: SceneMode) {
@@ -339,17 +404,26 @@ impl Scene {
         self.start_flight(tween);
     }
 
-    /// Flies the camera to the home view (mirrors CesiumJS `camera.flyHome`):
-    /// a position on the +X axis far enough that the whole WGS84 ellipsoid
-    /// fits in the vertical field of view, looking at the center.
+    /// Flies the camera to the home view: a position on the +X axis far enough
+    /// that the whole WGS84 ellipsoid fits in the vertical field of view,
+    /// looking at the center.
     ///
     /// Signature: `fly_home(&self, duration: Option<f64>)`. The home
     /// destination's straight-down pose (built by
     /// [`CameraFlightPath::create_tween`]) looks at the ellipsoid center
     /// (direction -X, up +Z), matching the JS `flyHome` end view.
+    ///
+    /// DEVIATION: CesiumJS `Camera#flyHome` derives the destination from
+    /// `getRectangleCameraCoordinates(Camera.DEFAULT_VIEW_RECTANGLE)` scaled by
+    /// `Camera.DEFAULT_VIEW_FACTOR`, and branches on the scene mode. Neither
+    /// `getRectangleCameraCoordinates` nor the 2D/Columbus View branches are
+    /// ported yet, so the simpler "ellipsoid fits the vertical FOV" distance is
+    /// kept. Tracked in `docs/deviations.md`.
     pub fn fly_home(&self, duration: Option<f64>) {
         let radius = Ellipsoid::WGS84.maximum_radius();
-        let distance = radius / (self.camera.fov() * 0.5).sin();
+        // The vertical FOV is the binding constraint: with `aspectRatio > 1`
+        // `fov` is the horizontal angle and would place the camera too close.
+        let distance = radius / (self.camera.fovy() * 0.5).sin();
         let tween = CameraFlightPath::create_tween(
             &self.camera,
             &self.flight_channel,
@@ -385,6 +459,10 @@ impl Scene {
         self.frame_state.mode = self.mode.get();
         self.frame_state.morph_time = self.morph_time.get();
 
+        // `camera.update(self._mode)` and the frustum probe below both need the
+        // mode; hoisted because `Scene#mode` borrows the whole scene.
+        let mode = self.mode.get();
+
         // B4-1: refresh the camera matrices and propagate them into the
         // frame state (mirrors CesiumJS `Scene#updateFrameState` reading
         // `camera.viewMatrix` / `camera.frustum.projectionMatrix`).
@@ -396,7 +474,75 @@ impl Scene {
                 self.frame_state.drawing_buffer_height,
             );
         }
-        self.camera.update();
+        // CesiumJS `calculateOrthographicFrustumWidth` reaches through
+        // `camera._scene` for `globe.pickWorldCoordinates(getPickRay(centre))`;
+        // the port keeps `Camera` free of a scene back-reference, so the scene
+        // publishes the result here instead. `_adjustOrthographicFrustum`
+        // returns immediately unless the frustum *is* an `OrthographicFrustum`,
+        // so the probe carries the same guard — the default perspective camera
+        // pays nothing for it.
+        let mut ray_intersection = None;
+        if self.camera.frustum().is_orthographic() {
+            let centre = self.camera.centre_window_position();
+            if let Some(ray) = self.camera.get_pick_ray(&centre) {
+                let projection = self.camera.map_projection();
+                if let Some(globe) = self.globe.as_mut() {
+                    ray_intersection =
+                        globe.pick_world_coordinates(&ray, mode, Some(projection), Some(true));
+                }
+            }
+        }
+        self.camera.set_scene_context(CameraSceneContext {
+            pixel_ratio: 1.0,
+            ray_intersection,
+            // The controller is now wired into the scene (B3-3), so publish its
+            // live zoom-distance clamps (read by `viewBoundingSphere`) instead
+            // of the defaults CesiumJS reaches through
+            // `camera._scene.screenSpaceCameraController`.
+            minimum_zoom_distance: self.screen_space_camera_controller.minimum_zoom_distance,
+            maximum_zoom_distance: self.screen_space_camera_controller.maximum_zoom_distance,
+            ..CameraSceneContext::default()
+        });
+        // CesiumJS `Scene#updateEnvironment` (Scene.js L4256):
+        // `this._screenSpaceCameraController.update()` runs *before*
+        // `camera.update`, consuming any aggregated input and moving the camera;
+        // `camera.update` then refreshes the derived matrices. The context
+        // publishes the scene values the controller reaches through `scene.*` in
+        // CesiumJS (the port keeps no scene back-reference).
+        {
+            let map_mode_2d = self.map_mode_2d.get();
+            let vertical_exaggeration = self.vertical_exaggeration;
+            let vertical_exaggeration_relative_height =
+                self.vertical_exaggeration_relative_height;
+            let canvas_client_width = self.frame_state.drawing_buffer_width as f64;
+            let canvas_client_height = self.frame_state.drawing_buffer_height as f64;
+            let mut ctx = SsccSceneContext {
+                camera: &mut self.camera,
+                globe: self.globe.as_mut(),
+                mode,
+                map_projection: self.map_projection.as_ref(),
+                map_mode_2d,
+                canvas_client_width,
+                canvas_client_height,
+                // DEVIATION: CesiumJS derives `scene.globeHeight` and
+                // `scene.cameraUnderground` from the globe surface each frame;
+                // the port does not model them, so `globeHeight` is `None` (the
+                // terrain-collision height adjustment is skipped) and
+                // `cameraUnderground` is `false`. `pickPositionSupported` is
+                // `false` (no depth-texture picking). Tracked in
+                // `docs/deviations.md`.
+                globe_height: None,
+                pick_position_supported: false,
+                camera_underground: false,
+                vertical_exaggeration,
+                vertical_exaggeration_relative_height,
+            };
+            self.screen_space_camera_controller.update(&mut ctx);
+        }
+        // CesiumJS `Scene#updateEnvironment` (Scene.js L4261-4262):
+        // `this.camera.update(this._mode); this.camera._updateCameraChanged();`
+        self.camera.update(mode);
+        self.camera.update_camera_changed();
         self.frame_state.view_matrix = self.camera.view_matrix().clone();
         self.frame_state.inverse_view_matrix = self.camera.inverse_view_matrix().clone();
         self.frame_state.projection_matrix = self.camera.projection_matrix().clone();
@@ -411,6 +557,16 @@ impl Scene {
         self.frame_state.camera_up = *self.camera.up();
         self.frame_state.camera_right = *self.camera.right();
         self.frame_state.sse_denominator = self.camera.sse_denominator();
+
+        // Mirrors CesiumJS `prePassesUpdate` (Scene.js L4291-4303), which runs
+        // `scene.globe.update(frameState)` after the camera matrices have been
+        // published into the frame state and before `creditDisplay.update()`.
+        // `Globe#update` forwards to the surface tile provider only — the
+        // quadtree traversal itself lives in `Globe#render`, so this must NOT
+        // be confused with tile selection.
+        if let Some(globe) = self.globe.as_mut() {
+            globe.update(&self.frame_state);
+        }
 
         self.credit_display.borrow_mut().begin_frame();
         // DEVIATION: Full update pipeline requires primitive collection traversal
@@ -478,33 +634,43 @@ impl Scene {
             far,
         );
 
-        // Globe update (quadtree traversal) before command collection,
-        // mirroring CesiumJS `Scene#update` calling `globe.update` ahead of
-        // the render passes. `Option::take` splits the borrows so the blit
-        // quad and the offscreen framebuffer (both owned by the scene) stay
-        // accessible while the globe is driven.
-        if let Some(mut globe) = self.globe.take() {
-            // CesiumJS order: beginFrame (clears per-frame traversal state)
-            // → update (quadtree traversal fills tiles_to_render) → render
-            // (draw commands) → endFrame.
+        // Frame order mirrors CesiumJS `render` (Scene.js L4360-4397):
+        //   context.beginFrame()      (L4375)
+        //   globe.beginFrame()        (L4378) — clears the load queues + debug
+        //                                     counters, applies a pending
+        //                                     invalidateAllTiles
+        //   clear + globe.render()    (L3760) — selectTilesForRendering, the
+        //                                     quadtree traversal
+        //   primitives / overlays     (L4382-4386)
+        //   globe.endFrame()          (L4389) — processTileLoadQueue
+        //   context.endFrame()        (L4396)
+        // `globe.update` is NOT here: it belongs to `prePassesUpdate` and runs
+        // in `Scene::update` above.
+        //
+        // `Option::take` splits the borrows so the blit quad and the offscreen
+        // framebuffer (both owned by the scene) stay accessible while the globe
+        // is driven, and so `end_frame` can be deferred past the primitives.
+        context.begin_frame();
+
+        let mut globe = self.globe.take();
+        if let Some(globe) = globe.as_mut() {
             globe.begin_frame(&self.frame_state);
-            globe.update(&self.frame_state);
+        }
 
-            context.begin_frame();
+        // Clear to the scene background color (ClearCommand.ALL analogue).
+        let background = self.background_color.clone();
+        let clear = ClearCommand {
+            color: Some([
+                background.red as f32,
+                background.green as f32,
+                background.blue as f32,
+                background.alpha as f32,
+            ]),
+            ..ClearCommand::all()
+        };
+        context.clear(clear);
 
-            // Clear to the scene background color (ClearCommand.ALL analogue).
-            let background = self.background_color.clone();
-            let clear = ClearCommand {
-                color: Some([
-                    background.red as f32,
-                    background.green as f32,
-                    background.blue as f32,
-                    background.alpha as f32,
-                ]),
-                ..ClearCommand::all()
-            };
-            context.clear(clear);
-
+        if let Some(globe) = globe.as_mut() {
             if globe.show {
                 if let Some(globe_framebuffer) = self.ensure_globe_framebuffer(context) {
                     // Clear the offscreen globe pass: dark blue color
@@ -523,7 +689,6 @@ impl Scene {
                         context,
                         Some(globe_framebuffer.clone()),
                     );
-                    globe.end_frame(&self.frame_state);
 
                     // Composite the globe pass onto the default target.
                     if let Some(color_texture) =
@@ -533,22 +698,6 @@ impl Scene {
                     }
                 }
             }
-
-            self.globe = Some(globe);
-        } else {
-            context.begin_frame();
-
-            let background = self.background_color.clone();
-            let clear = ClearCommand {
-                color: Some([
-                    background.red as f32,
-                    background.green as f32,
-                    background.blue as f32,
-                    background.alpha as f32,
-                ]),
-                ..ClearCommand::all()
-            };
-            context.clear(clear);
         }
 
         // Primitive command collection: the scene's primitive collection
@@ -558,6 +707,22 @@ impl Scene {
         self.viewport_quad.update(&self.frame_state, context);
 
         context.execute(default_target);
+
+        if let Some(globe) = globe.as_mut() {
+            globe.end_frame(&self.frame_state);
+            // CesiumJS follows with (L4391-4393):
+            //   if (!scene.globe.tilesLoaded) { scene._renderRequested = true; }
+            // which keeps the render loop alive while terrain and imagery are
+            // still streaming in.
+            //
+            // DEVIATION: `requestRenderMode` / `_renderRequested` are not ported
+            // (the application drives the loop unconditionally), so the flag has
+            // no consumer here. `Globe::tiles_loaded()` exposes the same
+            // condition for callers that need it. Tracked in
+            // `docs/deviations.md`.
+        }
+        self.globe = globe;
+
         context.end_frame();
 
         self.post_render.raise_event(time);
@@ -612,8 +777,10 @@ impl Scene {
         near: f64,
         far: f64,
     ) {
-        let _ = &inverse_view; // reserved for czm_inverseView when exposed
         uniform_state.update_view(view);
+        // czm_inverseView / czm_viewerPositionWC are derived from the inverse
+        // view matrix (B3.4).
+        uniform_state.update_inverse_view(inverse_view);
         uniform_state.update_projection(projection);
         uniform_state.update_camera_position(camera_position);
         uniform_state.update_frustum(near, far);
@@ -623,7 +790,13 @@ impl Scene {
     pub fn is_destroyed(&self) -> bool { self.is_destroyed }
 
     /// Destroys the scene.
-    pub fn destroy(&mut self) { self.is_destroyed = true; }
+    pub fn destroy(&mut self) {
+        // CesiumJS `Scene#destroy` destroys `this._screenSpaceCameraController`
+        // (releasing its input listeners); the port's controller has no DOM
+        // listeners but mirrors the `destroyObject` flag.
+        self.screen_space_camera_controller.destroy();
+        self.is_destroyed = true;
+    }
 }
 
 impl Default for Scene {
@@ -882,9 +1055,8 @@ mod tests {
         assert!((scene.camera().position().x - 20_000_000.0).abs() < 1e-6);
     }
 
-    /// Mirrors CameraSpec flyHome semantics: the home view positions the
-    /// camera on the +X axis at `radius / sin(fov / 2)` looking at the
-    /// ellipsoid center.
+    /// Mirrors the `flyHome` contract: the home view positions the camera on
+    /// the +X axis at `radius / sin(fovy / 2)` looking at the ellipsoid center.
     #[test]
     fn fly_home_flies_to_the_home_view() {
         let mut scene = Scene::new();
@@ -894,7 +1066,7 @@ mod tests {
         scene.render(&JulianDate::now());
 
         let expected = Ellipsoid::WGS84.maximum_radius()
-            / (scene.camera().fov() * 0.5).sin();
+            / (scene.camera().fovy() * 0.5).sin();
         let position = *scene.camera().position();
         assert!((position.x - expected).abs() / expected < 1e-9);
         assert!(position.y.abs() < 1e-6);

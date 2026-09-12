@@ -73,56 +73,82 @@ impl PerspectiveOffCenterFrustum {
         )
     }
 
-    /// Computes the culling volume.
+    /// Creates a culling volume for this frustum.
+    ///
+    /// Ported 1:1 from `PerspectiveOffCenterFrustum.prototype.computeCullingVolume`.
+    /// The four side planes are built from the near-plane corners measured relative
+    /// to `position`; the left plane normalises twice (the JS does the same) while
+    /// the right/bottom/top planes normalise once after the cross product.
     pub fn compute_culling_volume(
         &mut self,
         position: &Cartesian3,
         direction: &Cartesian3,
         up: &Cartesian3,
     ) -> &CullingVolume {
-        // Simplified culling volume computation
-        let right_dir = Cartesian3::cross_new(direction, up);
-        let _near_center = Cartesian3::add_new(
-            position,
-            &Cartesian3::multiply_by_scalar_new(direction, self.near),
-        );
+        let t = self.top.unwrap_or(0.0);
+        let b = self.bottom.unwrap_or(0.0);
+        let r = self.right.unwrap_or(0.0);
+        let l = self.left.unwrap_or(0.0);
+        let n = self.near;
+        let f = self.far;
 
-        // Compute 6 planes
-        let left_normal = Cartesian3::multiply_by_scalar_new(&right_dir, -1.0);
-        self.culling_volume.planes[0] = Cartesian4::new(
-            left_normal.x, left_normal.y, left_normal.z,
-            -Cartesian3::dot(&left_normal, position),
-        );
+        // `right = direction x up`; CesiumJS does not normalise direction, up or right.
+        let right = Cartesian3::cross_new(direction, up);
 
-        self.culling_volume.planes[1] = Cartesian4::new(
-            right_dir.x, right_dir.y, right_dir.z,
-            -Cartesian3::dot(&right_dir, position),
-        );
+        let near_center =
+            Cartesian3::add_new(position, &Cartesian3::multiply_by_scalar_new(direction, n));
 
-        let down_normal = Cartesian3::multiply_by_scalar_new(up, -1.0);
-        self.culling_volume.planes[2] = Cartesian4::new(
-            down_normal.x, down_normal.y, down_normal.z,
-            -Cartesian3::dot(&down_normal, position),
-        );
+        let far_center =
+            Cartesian3::add_new(position, &Cartesian3::multiply_by_scalar_new(direction, f));
 
-        self.culling_volume.planes[3] = Cartesian4::new(
-            up.x, up.y, up.z,
-            -Cartesian3::dot(up, position),
-        );
+        // Mirrors the JS scratch sequence
+        // `multiplyByScalar(axis, extent, normal)` -> `add(nearCenter, normal)`
+        // -> `subtract(normal, position)`.
+        let corner_from_position = |axis: &Cartesian3, extent: f64| -> Cartesian3 {
+            let corner = Cartesian3::add_new(
+                &near_center,
+                &Cartesian3::multiply_by_scalar_new(axis, extent),
+            );
+            Cartesian3::subtract_new(&corner, position)
+        };
 
-        self.culling_volume.planes[4] = Cartesian4::new(
-            direction.x, direction.y, direction.z,
-            -Cartesian3::dot(direction, position),
-        );
+        // Left plane computation
+        let normal = Cartesian3::normalize_new(&corner_from_position(&right, l));
+        let normal = Cartesian3::normalize_new(&Cartesian3::cross_new(&normal, up));
+        let w = -Cartesian3::dot(&normal, position);
+        self.culling_volume.planes[0] = Cartesian4::new(normal.x, normal.y, normal.z, w);
 
-        let neg_dir = Cartesian3::multiply_by_scalar_new(direction, -1.0);
-        let far_point = Cartesian3::add_new(
-            position,
-            &Cartesian3::multiply_by_scalar_new(direction, self.far),
-        );
+        // Right plane computation
+        let normal = corner_from_position(&right, r);
+        let normal = Cartesian3::normalize_new(&Cartesian3::cross_new(up, &normal));
+        let w = -Cartesian3::dot(&normal, position);
+        self.culling_volume.planes[1] = Cartesian4::new(normal.x, normal.y, normal.z, w);
+
+        // Bottom plane computation
+        let normal = corner_from_position(&up, b);
+        let normal = Cartesian3::normalize_new(&Cartesian3::cross_new(&right, &normal));
+        let w = -Cartesian3::dot(&normal, position);
+        self.culling_volume.planes[2] = Cartesian4::new(normal.x, normal.y, normal.z, w);
+
+        // Top plane computation
+        let normal = corner_from_position(&up, t);
+        let normal = Cartesian3::normalize_new(&Cartesian3::cross_new(&normal, &right));
+        let w = -Cartesian3::dot(&normal, position);
+        self.culling_volume.planes[3] = Cartesian4::new(normal.x, normal.y, normal.z, w);
+
+        // Near plane computation
+        let w = -Cartesian3::dot(direction, &near_center);
+        self.culling_volume.planes[4] =
+            Cartesian4::new(direction.x, direction.y, direction.z, w);
+
+        // Far plane computation (`Cartesian3.negate(direction, normal)`)
+        let neg_direction = Cartesian3::multiply_by_scalar_new(direction, -1.0);
+        let w = -Cartesian3::dot(&neg_direction, &far_center);
         self.culling_volume.planes[5] = Cartesian4::new(
-            neg_dir.x, neg_dir.y, neg_dir.z,
-            -Cartesian3::dot(&neg_dir, &far_point),
+            neg_direction.x,
+            neg_direction.y,
+            neg_direction.z,
+            w,
         );
 
         &self.culling_volume

@@ -2,14 +2,21 @@
 //!
 //! The globe rendered in the scene, including its terrain and imagery layers.
 
+use std::cmp::Ordering;
 use std::sync::Arc;
 
+use cesium_core::bounding_sphere::BoundingSphere;
 use cesium_core::cartesian3::Cartesian3;
+use cesium_core::cartographic::Cartographic;
 use cesium_core::color::Color;
 use cesium_core::ellipsoid::Ellipsoid;
 use cesium_core::event::Event;
+use cesium_core::intersection_tests::IntersectionTests;
+use cesium_core::map_projection::MapProjection;
+use cesium_core::math::js_min;
 use cesium_core::near_far_scalar::NearFarScalar;
 use cesium_core::ray::Ray;
+use cesium_core::rectangle::Rectangle;
 
 use cesium_renderer::buffer_usage::BufferUsage;
 use cesium_renderer::context::Context;
@@ -30,6 +37,10 @@ use crate::globe_terrain_fetcher::GlobeTerrainFetcher;
 use crate::globe_translucency::GlobeTranslucency;
 use crate::imagery_layer_collection::ImageryLayerCollection;
 use crate::quadtree_primitive::QuadtreePrimitive;
+use crate::quadtree_tile::{
+    QuadtreeTile, TileKey, CHILD_NORTHEAST, CHILD_NORTHWEST, CHILD_SOUTHEAST, CHILD_SOUTHWEST,
+};
+use crate::scene_mode::SceneMode;
 use crate::shadow_mode::ShadowMode;
 
 /// The globe rendered in the scene, including its terrain and imagery layers.
@@ -220,6 +231,20 @@ impl Globe {
         &self.surface_tile_provider
     }
 
+    /// Returns `true` when the tile load queue is empty, `false` otherwise.
+    /// When the load queue is empty, all terrain and imagery for the current
+    /// view have been loaded.
+    ///
+    /// Mirrors the CesiumJS `Globe#tilesLoaded` getter (Globe.js L422-433),
+    /// which ANDs the three QuadtreePrimitive queues. `Scene#render` uses it
+    /// to decide whether another frame has to be requested.
+    ///
+    /// DEVIATION: CesiumJS returns `true` when `this._surface` is `undefined`;
+    /// the port always owns a surface, so the guard has no counterpart.
+    pub fn tiles_loaded(&self) -> bool {
+        self.surface.tiles_loaded()
+    }
+
     /// Installs (or clears) the terrain fetcher (B4-5). When `None`, the
     /// globe renders the ellipsoid terrain grid (CesiumJS's placeholder
     /// while no terrain provider is installed).
@@ -301,27 +326,23 @@ impl Globe {
         self.surface_tile_provider.set_lambert_diffuse_multiplier(self.lambert_diffuse_multiplier);
         self.surface_tile_provider.set_tile_cache_size(self.tile_cache_size);
 
-        // Imagery-driven refinement ceiling (B4-4): the traversal never
-        // refines past the shallowest imagery provider's maximum level —
-        // without it the synchronous traversal would refine unboundedly for
-        // a near camera. CesiumJS gets the same ceiling from terrain/
-        // imagery availability (`tileProvider.maximumLevel`).
-        let mut maximum_level: Option<i32> = None;
-        for index in 0..self.imagery_layer_collection.length() {
-            if let Some(layer) = self.imagery_layer_collection.get(index) {
-                if !layer.show {
-                    continue;
-                }
-                if let Some(provider) = layer.provider() {
-                    if let Some(level) = provider.maximum_level() {
-                        maximum_level = Some(match maximum_level {
-                            Some(current) => current.min(level as i32),
-                            None => level as i32,
-                        });
-                    }
-                }
-            }
-        }
+        // Traversal ceiling: CesiumJS drives quadtree refinement through
+        // `terrainProvider.getLevelMaximumGeometricError(level)` — imagery
+        // providers contribute per-tile clamped `request_level` but never
+        // cap the traversal itself (`QuadtreePrimitive` has no imagery-
+        // derived maximum_level; see `Globe.js` / `GlobeSurfaceTileProvider
+        // .getLevelMaximumGeometricError`). The port mirrors that: the
+        // ceiling is the terrain fetcher's own maximumLevel, or `None`
+        // (unbounded) when the terrain has no declared limit (e.g.
+        // `EllipsoidTerrainProvider`). Each imagery provider independently
+        // clamps out-of-range requests back to its own maximum level in
+        // `compose_tile_imagery` (`request_level.min(maximum)`), so a
+        // shallow base map simply reuses its deepest tile while deeper
+        // layers still fill in.
+        let maximum_level = self
+            .terrain_fetcher()
+            .and_then(|fetcher| fetcher.maximum_level())
+            .map(|level| level as i32);
         self.surface.set_maximum_level(maximum_level);
 
         self.surface.begin_frame(frame_state);
@@ -462,26 +483,270 @@ impl Globe {
 
     // ---- Picking ----
 
-    /// Finds an intersection between a ray and the globe surface.
+    /// Finds an intersection between a ray and the globe surface that was
+    /// rendered. The ray must be given in world coordinates.
+    ///
+    /// Mirrors `Globe.prototype.pickWorldCoordinates`. The returned position
+    /// is in projected coordinates for 2D and Columbus View.
+    ///
+    /// DEVIATION: the JS takes the `Scene` and reads only `scene.mode` and
+    /// `scene.mapProjection`; the port takes those two directly because
+    /// `Scene` owns the `Globe`, so a `&Scene` could not be handed to a
+    /// `&mut self` method.
     pub fn pick_world_coordinates(
-        &self,
+        &mut self,
         ray: &Ray,
-        _cull_back_faces: Option<bool>,
+        mode: SceneMode,
+        projection: Option<&dyn MapProjection>,
+        cull_back_faces: Option<bool>,
     ) -> Option<Cartesian3> {
-        // Simplified: in full port, traverses quadtree tiles to find closest intersection
-        let _ = ray;
+        // `cullBackFaces = cullBackFaces ?? true`
+        let cull_back_faces = cull_back_faces.unwrap_or(true);
+
+        // `const sphereIntersections = scratchArray; sphereIntersections.length = 0;`
+        //
+        // The JS pushes the `GlobeSurfaceTile`s and reads their
+        // `pickBoundingSphere` back in the sort comparator; the port carries
+        // the sphere alongside the tile key.
+        let mut sphere_intersections: Vec<(TileKey, BoundingSphere)> = Vec::new();
+
+        // `for (const tile of this._surface._tilesRenderedThisFrame)`. Copied
+        // out up front: `_tilesRenderedThisFrame` holds keys, not live tiles
+        // (the tree is owned by `root_tiles`).
+        let rendered = self.surface.tiles_rendered_this_frame().to_vec();
+        let tiling_scheme = self.surface.tiling_scheme();
+        for key in rendered {
+            // `tile.rectangle`, recomputed the way `QuadtreeTile`'s
+            // constructor does it.
+            let mut rectangle = Rectangle::default();
+            tiling_scheme.tile_xy_to_rectangle(key.x, key.y, key.level, &mut rectangle);
+
+            // The `None` arm is the JS `continue` (3D with no rendered mesh).
+            let Some(bounding_volume) = self.surface_tile_provider.compute_pick_bounding_sphere(
+                key,
+                &rectangle,
+                mode,
+                projection,
+            ) else {
+                continue;
+            };
+
+            // `IntersectionTests.raySphere(ray, boundingVolume,
+            //   scratchSphereIntersectionResult)`
+            if IntersectionTests::ray_sphere(ray, &bounding_volume).is_some() {
+                sphere_intersections.push((key, bounding_volume));
+            }
+        }
+
+        // `sphereIntersections.sort(createComparePickTileFunction(ray.origin))`,
+        // whose comparator is `BoundingSphere.distanceSquaredTo(a.pickBoundingSphere,
+        // rayOrigin) - BoundingSphere.distanceSquaredTo(b.pickBoundingSphere, rayOrigin)`.
+        // Both `Array.prototype.sort` and `sort_by` are stable, so equal
+        // distances keep the rendered-this-frame order.
+        sphere_intersections.sort_by(|a, b| {
+            let a_dist = BoundingSphere::distance_squared_to(&a.1, &ray.origin);
+            let b_dist = BoundingSphere::distance_squared_to(&b.1, &ray.origin);
+            // A NaN difference is treated as equal by `Array.prototype.sort`.
+            a_dist.partial_cmp(&b_dist).unwrap_or(Ordering::Equal)
+        });
+
+        for (key, _) in &sphere_intersections {
+            // `GlobeSurfaceTile.pick`: `if (!defined(this.renderedMesh))
+            // return undefined;` then `this.renderedMesh.pick(ray,
+            // cullBackFaces, mode, projection)`.
+            let Some(mesh) = self.surface_tile_provider.rendered_mesh_mut(*key) else {
+                continue;
+            };
+            // The `None` ellipsoid is the JS's `Ellipsoid.default`, which
+            // `TerrainMesh.computeTransform` uses unconditionally.
+            let intersection = mesh.pick(ray, cull_back_faces, Some(mode), projection, None);
+            // `if (defined(intersection)) break;`
+            if intersection.is_some() {
+                return intersection;
+            }
+        }
+
         None
     }
 
-    /// Picks the globe at the given window position.
-    pub fn pick(&self, ray: &Ray) -> Option<Cartesian3> {
-        self.pick_world_coordinates(ray, None)
+    /// Finds an intersection between a ray and the globe surface that was
+    /// rendered. The ray must be given in world coordinates.
+    ///
+    /// Mirrors `Globe.prototype.pick`; see the DEVIATION note on
+    /// [`Globe::pick_world_coordinates`] about the `scene` argument.
+    ///
+    /// ```ignore
+    /// // find intersection of ray through a pixel and the globe
+    /// let ray = viewer.camera.get_pick_ray(window_coordinates);
+    /// let intersection = globe.pick(&ray, mode, Some(projection));
+    /// ```
+    pub fn pick(
+        &mut self,
+        ray: &Ray,
+        mode: SceneMode,
+        projection: Option<&dyn MapProjection>,
+    ) -> Option<Cartesian3> {
+        // `result = this.pickWorldCoordinates(ray, scene, true, result);`
+        let result = self.pick_world_coordinates(ray, mode, projection, Some(true))?;
+
+        if mode == SceneMode::Scene3D {
+            return Some(result);
+        }
+
+        // `Cartesian3.fromElements(result.y, result.z, result.x, result)` —
+        // aliased in the JS, but every component is read before any is
+        // written, so building a new value is equivalent.
+        let projected = Cartesian3::from_elements_new(result.y, result.z, result.x);
+        // `scene.mapProjection.unproject(result, cartoScratch)`. Unreachable
+        // with `None`: the 2D/Columbus View branch above already needed the
+        // projection to build the pick bounding spheres.
+        let projection = projection
+            .expect("mapProjection is required to pick the globe in 2D or Columbus View");
+        let carto = projection.unproject(&projected);
+        let mut cartesian = Cartesian3::default();
+        self.ellipsoid.cartographic_to_cartesian(&carto, &mut cartesian);
+        Some(cartesian)
     }
 
-    /// Gets the height of the terrain at the given cartographic position.
-    pub fn get_height(&self, _cartographic: &cesium_core::cartographic::Cartographic) -> f64 {
-        // Simplified: in full port, queries terrain provider for actual height
-        0.0
+    /// Gets the height of the surface at a given cartographic.
+    ///
+    /// Mirrors `Globe.prototype.getHeight`; `None` covers every JS
+    /// `return undefined`.
+    pub fn get_height(&mut self, cartographic: &Cartographic) -> Option<f64> {
+        // `this._surface._levelZeroTiles`. The JS returns early when it is
+        // undefined; the port builds the level-zero tiles in the
+        // `QuadtreePrimitive` constructor, so they always exist.
+        let level_zero_tiles = self.surface.root_tiles();
+
+        let mut index = 0;
+        while index < level_zero_tiles.len()
+            && !Rectangle::contains(&level_zero_tiles[index].rectangle, cartographic)
+        {
+            index += 1;
+        }
+        // JS: `if (i >= length) return undefined;` — the loop leaves `i` at
+        // `length` when no tile matched.
+        if index >= level_zero_tiles.len() {
+            return None;
+        }
+
+        // Descend to the deepest tile with a rendered mesh. The JS reads the
+        // *private* `_southwestChild`/... fields rather than the lazy public
+        // getters, so it only follows children the quadtree traversal has
+        // already materialised; `QuadtreeTile::children`, empty until
+        // `ensure_children`, is the same thing.
+        let mut tile_with_mesh = level_zero_tiles[index].key();
+        let mut tile: Option<&QuadtreeTile> = Some(&level_zero_tiles[index]);
+        while let Some(current) = tile {
+            let next =
+                tile_if_contains_cartographic(current.children.get(CHILD_SOUTHWEST), cartographic)
+                    .or_else(|| {
+                        tile_if_contains_cartographic(
+                            current.children.get(CHILD_SOUTHEAST),
+                            cartographic,
+                        )
+                    })
+                    .or_else(|| {
+                        tile_if_contains_cartographic(
+                            current.children.get(CHILD_NORTHWEST),
+                            cartographic,
+                        )
+                    })
+                    // The JS's last operand is `tile._northeastChild` with no
+                    // containment test.
+                    .or_else(|| current.children.get(CHILD_NORTHEAST));
+            tile = next;
+
+            if let Some(next) = next {
+                let key = next.key();
+                // `defined(tile.data) && defined(tile.data.renderedMesh)`
+                if self.surface_tile_provider.rendered_mesh(key).is_some() {
+                    tile_with_mesh = key;
+                }
+            }
+        }
+
+        // "This tile was either rendered or culled." A culled tile is fine —
+        // getting a height to place a billboard on terrain while the camera
+        // looks at that billboard is the motivating case — but it must have a
+        // valid mesh.
+        let key = tile_with_mesh;
+        if self.surface_tile_provider.rendered_mesh(key).is_none() {
+            // Tile was not rendered (culled).
+            return None;
+        }
+
+        let ellipsoid = self.surface.tiling_scheme().ellipsoid();
+
+        // `cartesian` has to be on the ellipsoid surface for
+        // `ellipsoid.geodeticSurfaceNormal`.
+        let mut cartesian = Cartesian3::default();
+        Cartesian3::from_radians(
+            cartographic.longitude,
+            cartographic.latitude,
+            Some(0.0),
+            Some(ellipsoid.radii_squared()),
+            &mut cartesian,
+        );
+
+        let mut ray = Ray::default();
+        // `ellipsoid.geodeticSurfaceNormal(cartesian, ray.direction)` — the
+        // JS's `surfaceNormal` *is* `ray.direction`.
+        ellipsoid.geodetic_surface_normal(&cartesian, &mut ray.direction);
+
+        // Try to find the intersection point between the surface normal and
+        // the z-axis. 11500.0 is the minimum height of the terrain set; the
+        // JS notes this should come from the terrain provider.
+        if !ellipsoid.get_surface_normal_intersection_with_z_axis(
+            &cartesian,
+            Some(11500.0),
+            &mut ray.origin,
+        ) {
+            // Theoretically — not with Earth datums — the intersection point
+            // can be outside the ellipsoid, so try another value.
+            //
+            // DEVIATION: the JS reads
+            // `tile.data.tileBoundingRegion.minimumHeight`; the port has no
+            // `tileBoundingRegion`, and `updateTileBoundingRegion` copies that
+            // height straight off the mesh, so read the mesh instead.
+            let minimum_height = self
+                .surface_tile_provider
+                .rendered_mesh(key)
+                .map(|mesh| mesh.minimum_height);
+            // `Math.min(minimumHeight ?? 0.0, -11500.0)` — `js_min`, not
+            // `f64::min`, for the NaN rule.
+            let magnitude = js_min(minimum_height.unwrap_or(0.0), -11500.0);
+
+            // Multiply by the *positive* value of the magnitude.
+            let mut vector_to_minimum_point = Cartesian3::default();
+            Cartesian3::multiply_by_scalar(
+                &ray.direction,
+                magnitude.abs() + 1.0,
+                &mut vector_to_minimum_point,
+            );
+            Cartesian3::subtract(&cartesian, &vector_to_minimum_point, &mut ray.origin);
+        }
+
+        // Globe height is the same at a given cartographic regardless of the
+        // scene mode, but the ray is constructed via a surface normal (which
+        // assumes 3D), so pick in 3D mode.
+        //
+        // DEVIATION: the JS passes `tilingScheme.projection`; `TerrainMesh`
+        // never reads it on the 3D path — `computeTransform` uses
+        // `Ellipsoid.default` and `getVertexPosition` returns before touching
+        // the projection — so `None` is equivalent.
+        let Some(mesh) = self.surface_tile_provider.rendered_mesh_mut(key) else {
+            return None;
+        };
+        let intersection = mesh.pick(&ray, false, Some(SceneMode::Scene3D), None, None)?;
+
+        let mut height_cartographic = Cartographic::default();
+        if !ellipsoid.cartesian_to_cartographic(&intersection, &mut height_cartographic) {
+            // The JS dereferences the `undefined` and throws; the port reports
+            // "not found" (see `Ellipsoid::cartesian_to_cartographic`).
+            return None;
+        }
+        Some(height_cartographic.height)
     }
 
     // ---- Lifecycle ----
@@ -500,6 +765,19 @@ impl Globe {
 impl Default for Globe {
     fn default() -> Self {
         Self::new(None)
+    }
+}
+
+/// Mirrors the module-level `tileIfContainsCartographic(tile, cartographic)`
+/// in `Globe.js`: `defined(tile) && Rectangle.contains(tile.rectangle,
+/// cartographic) ? tile : undefined`.
+fn tile_if_contains_cartographic<'a>(
+    tile: Option<&'a QuadtreeTile>,
+    cartographic: &Cartographic,
+) -> Option<&'a QuadtreeTile> {
+    match tile {
+        Some(tile) if Rectangle::contains(&tile.rectangle, cartographic) => Some(tile),
+        _ => None,
     }
 }
 

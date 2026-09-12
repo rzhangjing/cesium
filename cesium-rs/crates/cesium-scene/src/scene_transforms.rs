@@ -122,6 +122,7 @@ impl Default for SceneTransforms {
 mod tests {
     use super::*;
     use cesium_core::math::CesiumMath;
+    use cesium_core::scene_mode::SceneMode;
 
     /// A camera at the origin looking down -Z over an 800×600 canvas.
     fn camera_looking_down_z() -> Camera {
@@ -131,7 +132,7 @@ mod tests {
         camera.set_direction(Cartesian3::new(0.0, 0.0, -1.0));
         camera.set_up(Cartesian3::new(0.0, 1.0, 0.0));
         camera.set_right(Cartesian3::new(1.0, 0.0, 0.0));
-        camera.update();
+        camera.update(SceneMode::Scene3D);
         camera
     }
 
@@ -151,11 +152,12 @@ mod tests {
     /// (a point on +right shifts the window x right of center).
     #[test]
     fn projects_lateral_offsets() {
-        let camera = camera_looking_down_z();
-        // At distance d the half-width is d * tan(fov/2) * aspect; use the
-        // half-width itself so the point lands on the right viewport edge.
+        let mut camera = camera_looking_down_z();
+        // At distance d the frustum half-height is `d * tan(fovy / 2)` and the
+        // half-width is that times the aspect ratio; place the point at the
+        // half-width so it lands exactly on the right viewport edge.
         let distance = 100.0;
-        let half_height = distance * (camera.fov() * 0.5).tan();
+        let half_height = distance * (camera.fovy() * 0.5).tan();
         let half_width = half_height * (800.0 / 600.0);
         let position = Cartesian3::new(half_width, 0.0, -distance);
         let window = SceneTransforms::world_to_window_with_camera(&position, &camera)
@@ -177,9 +179,9 @@ mod tests {
     /// top → smaller window y).
     #[test]
     fn window_y_points_down() {
-        let camera = camera_looking_down_z();
+        let mut camera = camera_looking_down_z();
         let distance = 100.0;
-        let half_height = distance * (camera.fov() * 0.5).tan();
+        let half_height = distance * (camera.fovy() * 0.5).tan();
         let up = Cartesian3::new(0.0, half_height, -distance);
         let down = Cartesian3::new(0.0, -half_height, -distance);
         let up_window = SceneTransforms::world_to_window_with_camera(&up, &camera).unwrap();

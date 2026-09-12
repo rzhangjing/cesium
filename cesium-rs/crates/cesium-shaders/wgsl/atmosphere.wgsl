@@ -17,6 +17,7 @@ struct CesiumAutomaticUniforms {
     czm_view: mat4x4<f32>,
     czm_model: mat4x4<f32>,
     czm_viewport: vec4<f32>,
+    czm_sunDirectionWC: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> czm: CesiumAutomaticUniforms;

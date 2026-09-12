@@ -250,6 +250,7 @@ pub mod s2_cell;
 pub mod sample_terrain;
 pub mod sample_terrain_most_detailed;
 pub mod scale_to_geodetic_surface;
+pub mod scene_mode;
 pub mod screen_space_event_type;
 pub mod screen_space_event_handler;
 pub mod show_geometry_instance_attribute;

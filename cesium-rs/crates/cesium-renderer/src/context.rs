@@ -220,7 +220,14 @@ impl Context {
         ContextLimits::set_max_renderbuffer_size(limits.max_texture_dimension_2d);
         ContextLimits::set_max_vertex_attribs(limits.max_vertex_attributes);
 
-        let automatic_ring = AutomaticUniformRing::new(&device, 64);
+        // 4096 slots is the per-frame draw budget for the automatic uniform
+        // ring; the previous 64 was tuned for a hand-scoped smoke scene and
+        // overflowed the moment the quadtree started rendering thousands of
+        // imagery tiles per frame ("automatic uniform ring exhausted; draw
+        // skipped" cascade + apparent UI freeze on drag). Each slot is
+        // AUTOMATIC_UNIFORMS_SIZE bytes; 4096 × ~500B ≈ 2MB of GPU memory,
+        // negligible next to the framebuffers.
+        let automatic_ring = AutomaticUniformRing::new(&device, 4096);
         let material_scratch = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("material scratch"),
             size: MATERIAL_SCRATCH_SIZE,

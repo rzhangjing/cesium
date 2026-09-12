@@ -195,6 +195,12 @@ pub fn create_vertices_from_quantized_terrain_mesh(params: &CreateVerticesParams
         &ellipsoid,
     ));
 
+    // DEVIATION 2 (cont.): the vertices below are absolute ECEF, not relative
+    // to `center` as the JS `TerrainEncoding.encodePosition` produces, so the
+    // encoding deliberately keeps `center` at ZERO. That keeps
+    // `TerrainEncoding::decode_position` (`buffer[i] + center`) correct for
+    // this mesh even though it disagrees with CesiumJS about where the RTC
+    // centre lives.
     let encoding = TerrainEncoding::new(
         has_vertex_normals,
         false,
@@ -315,6 +321,11 @@ pub fn create_vertices_from_quantized_terrain_mesh(params: &CreateVerticesParams
         south_indices_east_to_west,
         east_indices_north_to_south,
         north_indices_west_to_east,
+        // The JS constructor's `_transform = new Matrix4()` is the identity,
+        // not this port's zero-valued `Matrix4::default()`.
+        transform: crate::matrix4::Matrix4::IDENTITY,
+        last_pick_scene_mode: None,
+        terrain_picker: crate::terrain_picker::TerrainPicker::new(),
     }
 }
 

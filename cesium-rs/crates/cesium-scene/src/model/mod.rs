@@ -54,6 +54,7 @@ pub mod model_imagery_mapping;
 pub mod model_lighting_options;
 pub mod model_matrix_update_stage;
 pub mod model_node;
+pub mod model_pipeline_stage;
 pub mod model_primitive_imagery;
 pub mod model_reader;
 pub mod model_render_resources;

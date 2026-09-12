@@ -15,6 +15,7 @@ use cesium_scene::quadtree_primitive::QuadtreePrimitive;
 use cesium_scene::quadtree_tile::{
     QuadtreeTile, CHILD_NORTHEAST, CHILD_NORTHWEST, CHILD_SOUTHEAST, CHILD_SOUTHWEST,
 };
+use cesium_scene::tile_selection_result::TileSelectionResult;
 use cesium_test_utils::assert_approx_eq_f64;
 
 /// Default drawing-buffer height used by the traversal fixtures.
@@ -23,12 +24,31 @@ const BUFFER_HEIGHT: f64 = 600.0;
 const FOV: f64 = std::f64::consts::FRAC_PI_3;
 
 fn frame_state(camera_position: Cartesian3) -> FrameState {
+    frame_state_at(camera_position, 1)
+}
+
+/// Same fixture with an explicit frame number. `selectTilesForRendering` stamps
+/// each visited tile with `frameState.frameNumber` and compares it against
+/// `_lastSelectionFrameNumber`, so a multi-frame test must advance the counter
+/// for the "rendered last frame" bookkeeping to resolve.
+fn frame_state_at(camera_position: Cartesian3, frame_number: u64) -> FrameState {
     let mut frame_state = FrameState::new();
     frame_state.camera_position = camera_position;
     frame_state.drawing_buffer_width = 800;
     frame_state.drawing_buffer_height = BUFFER_HEIGHT as u32;
-    frame_state.frame_number = 1;
+    frame_state.frame_number = frame_number;
     frame_state
+}
+
+/// Drives one full CesiumJS frame in the `Scene` order: `beginFrame` (clears the
+/// three load queues and the debug counters) → `update` (a no-op — CesiumJS only
+/// forwards to `tileProvider.update` here) → `render` (`selectTilesForRendering`,
+/// the traversal) → `endFrame` (`processTileLoadQueue`).
+fn run_frame(quadtree: &mut QuadtreePrimitive, frame_state: &FrameState) {
+    quadtree.begin_frame(frame_state);
+    quadtree.update(frame_state);
+    quadtree.render(frame_state);
+    quadtree.end_frame(frame_state);
 }
 
 /// The level-zero error threshold distance: tiles closer than
@@ -166,7 +186,7 @@ fn far_camera_renders_roots_without_refining() {
     let threshold = level_zero_threshold(&quadtree);
     let camera = camera_for_surface_distance(&quadtree, threshold * 1.5);
 
-    quadtree.update(&frame_state(camera));
+    run_frame(&mut quadtree, &frame_state(camera));
 
     assert_eq!(quadtree.tiles_to_render().len(), 2);
     assert_eq!(quadtree.debug_tiles_visited, 2);
@@ -185,8 +205,8 @@ fn far_camera_renders_roots_without_refining() {
     // Synchronous semantics: nothing left in the load queues.
     assert!(quadtree.tiles_loaded());
 
-    // A second update rebuilds the render list from scratch.
-    quadtree.update(&frame_state(camera));
+    // A second frame rebuilds the render list from scratch.
+    run_frame(&mut quadtree, &frame_state(camera));
     assert_eq!(quadtree.tiles_to_render().len(), 2);
 }
 
@@ -200,7 +220,7 @@ fn near_camera_refines_to_the_maximum_level() {
     let threshold = level_zero_threshold(&quadtree);
     let camera = camera_for_surface_distance(&quadtree, threshold * 0.5);
 
-    quadtree.update(&frame_state(camera));
+    run_frame(&mut quadtree, &frame_state(camera));
 
     assert_eq!(quadtree.tiles_to_render().len(), 8);
     assert_eq!(quadtree.debug_tiles_visited, 10);
@@ -220,13 +240,18 @@ fn near_camera_refines_to_the_maximum_level() {
 /// zero — never to a floor above the camera's actual minimum distance. The
 /// zero distance yields an infinite SSE, forcing refinement all the way to
 /// the maximum level instead of a blurry under-subdivided screen.
+///
+/// CesiumJS reaches that infinity the same way: `screenSpaceError` divides by
+/// `tile._distance` and lets IEEE-754 produce `positive / 0 === Infinity`.
+/// There is no `Number.MAX_VALUE` special case, so the port must not clamp
+/// either — `is_infinite()`, not `== f64::MAX`.
 #[test]
 fn camera_inside_bounding_sphere_clamps_distance_to_zero() {
     let mut quadtree = QuadtreePrimitive::new();
     quadtree.set_maximum_level(Some(2));
 
     // The origin lies inside both geographic root bounding spheres.
-    quadtree.update(&frame_state(Cartesian3::ZERO));
+    run_frame(&mut quadtree, &frame_state(Cartesian3::ZERO));
 
     assert_eq!(quadtree.tiles_to_render().len(), 32); // 2 roots * 4^2
     assert_eq!(quadtree.debug_max_depth_visited, 2);
@@ -238,7 +263,11 @@ fn camera_inside_bounding_sphere_clamps_distance_to_zero() {
     // an infinite screen-space error that drove the refinement.
     for root in quadtree.root_tiles() {
         assert_eq!(root.camera_distance, 0.0);
-        assert_eq!(root.screen_space_error, f64::MAX);
+        assert!(
+            root.screen_space_error.is_infinite(),
+            "positive / 0 must be Infinity, was {}",
+            root.screen_space_error
+        );
     }
 }
 
@@ -254,11 +283,94 @@ fn raising_maximum_screen_space_error_stops_refinement() {
     // At threshold * 0.5 the SSE is twice the default maximum (2.0). Raising
     // the maximum to 4.1 satisfies `sse < maximumScreenSpaceError`.
     quadtree.set_maximum_screen_space_error(4.1);
-    quadtree.update(&frame_state(camera));
+    run_frame(&mut quadtree, &frame_state(camera));
 
     assert_eq!(quadtree.tiles_to_render().len(), 2);
     assert_eq!(quadtree.debug_tiles_visited, 2);
     for tile in quadtree.tiles_to_render() {
         assert_eq!(tile.level, 0);
     }
+}
+
+// ---- Anti-flicker (kick) path ----
+
+/// `visitTile`'s fourth outcome: when the children a tile refined into are not
+/// renderable yet and none of them drew last frame, CesiumJS kicks them out of
+/// the render list and draws the ancestor instead, so the screen never goes
+/// blank while terrain streams in.
+///
+/// This is only reachable with an asynchronous tile provider — the synchronous
+/// stand-in collapses every visited tile to `Done` + `renderable`, so
+/// `allAreRenderable` is always true and the kick branch never fires.
+#[test]
+fn async_provider_falls_back_to_the_ancestor_while_children_load() {
+    let mut quadtree = QuadtreePrimitive::new();
+    quadtree.set_maximum_level(Some(1));
+    quadtree.set_synchronous_tile_provider(false);
+    let threshold = level_zero_threshold(&quadtree);
+    let camera = camera_for_surface_distance(&quadtree, threshold * 0.5);
+
+    // Frame 1: neither root is renderable, so nothing is drawn and both are
+    // queued at High priority (`_debug.tilesWaitingForChildren`).
+    let fs = frame_state_at(camera, 1);
+    quadtree.begin_frame(&fs);
+    quadtree.render(&fs);
+    assert!(
+        quadtree.tiles_to_render().is_empty(),
+        "no tile is renderable yet"
+    );
+    assert_eq!(quadtree.debug_tiles_visited, 0);
+    assert_eq!(quadtree.debug_tiles_waiting_for_children, 2);
+    assert!(!quadtree.tiles_loaded(), "both roots are queued for loading");
+    quadtree.end_frame(&fs);
+
+    // Frame 2: `endFrame` loaded the roots, so the traversal refines — but the
+    // eight level-1 children are still loading. `!allAreRenderable &&
+    // !anyWereRenderedLastFrame` kicks them and renders the two roots.
+    let fs = frame_state_at(camera, 2);
+    quadtree.begin_frame(&fs);
+    quadtree.render(&fs);
+    assert_eq!(quadtree.tiles_to_render().len(), 2);
+    for tile in quadtree.tiles_to_render() {
+        assert_eq!(tile.level, 0, "must fall back to the loaded ancestor");
+    }
+    assert_eq!(quadtree.debug_tiles_waiting_for_children, 2);
+    // The kicked children are still queued, so `endFrame` loads them.
+    assert!(!quadtree.tiles_loaded());
+    quadtree.end_frame(&fs);
+
+    // Frame 3: the children are loaded, refinement sticks and all eight
+    // level-1 tiles render.
+    let fs = frame_state_at(camera, 3);
+    run_frame(&mut quadtree, &fs);
+    assert_eq!(quadtree.tiles_to_render().len(), 8);
+    for tile in quadtree.tiles_to_render() {
+        assert_eq!(tile.level, 1);
+    }
+    assert_eq!(quadtree.debug_max_depth_visited, 1);
+    assert_eq!(quadtree.debug_tiles_waiting_for_children, 0);
+    assert!(quadtree.tiles_loaded());
+}
+
+/// `TileSelectionResult.KICKED` does not exist in CesiumJS, so the kick loop's
+/// `workTile._lastSelectionResult !== TileSelectionResult.KICKED` guard
+/// compares against `undefined` and never breaks early. `kick` is `value | 4`,
+/// which is idempotent, so walking past an already-kicked tile is harmless —
+/// the port omits the dead guard and must stay behaviourally identical.
+#[test]
+fn kick_is_idempotent_so_the_missing_guard_is_harmless() {
+    let kicked = TileSelectionResult::RENDERED.kick();
+    assert_eq!(kicked, TileSelectionResult::RENDERED_AND_KICKED);
+    assert_eq!(kicked.kick(), kicked);
+    assert!(kicked.was_kicked());
+    assert_eq!(kicked.original_result(), TileSelectionResult::RENDERED);
+
+    // `wasKicked` is `value >= RENDERED_AND_KICKED`, a comparison rather than a
+    // membership test, so CULLED_BUT_NEEDED (1 | 8 == 9) also reports true.
+    // `TerrainFillMesh.js` depends on exactly that.
+    assert!(TileSelectionResult::CULLED_BUT_NEEDED.was_kicked());
+    assert_eq!(
+        TileSelectionResult::CULLED_BUT_NEEDED.original_result(),
+        TileSelectionResult::CULLED
+    );
 }

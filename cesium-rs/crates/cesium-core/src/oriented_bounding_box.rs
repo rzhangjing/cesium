@@ -59,17 +59,44 @@ impl OrientedBoundingBox {
         result: Option<&mut Self>,
     ) -> Self {
         let idx = starting_index.unwrap_or(0);
-        let mut r = result.cloned().unwrap_or_default();
-        Cartesian3::unpack(array, Some(idx), &mut r.center);
-        Matrix3::unpack(array, idx + Cartesian3::PACKED_LENGTH, &mut r.half_axes);
-        r
+        let mut out = Self::default();
+        Cartesian3::unpack(array, Some(idx), &mut out.center);
+        Matrix3::unpack(array, idx + Cartesian3::PACKED_LENGTH, &mut out.half_axes);
+        // JS unpacks straight into `result.center` / `result.halfAxes`; those are
+        // the only two fields, so building here and assigning is equivalent —
+        // and unlike the previous `result.cloned()` it actually reaches the
+        // caller's box.
+        match result {
+            Some(r) => {
+                *r = out;
+                r.clone()
+            }
+            None => out,
+        }
     }
 
     /// Computes an OrientedBoundingBox of the given positions.
     /// Implementation of Stefan Gottschalk's Collision Queries using OBB.
+    ///
+    /// When `result` is supplied it is written into *and* returned, matching the
+    /// JS `expect(result).toBe(returnedResult)` identity contract.
     pub fn from_points(positions: Option<&[Cartesian3]>, result: Option<&mut Self>) -> Self {
-        let mut r = result.map(|r| { *r = Self::default(); r }).cloned()
-            .unwrap_or_default();
+        let out = Self::build_from_points(positions);
+        match result {
+            Some(r) => {
+                *r = out;
+                r.clone()
+            }
+            None => out,
+        }
+    }
+
+    /// The body of [`Self::from_points`]. Split out so the public wrapper can
+    /// honour the JS `result` out-parameter on *both* return paths — an earlier
+    /// revision cloned `result`, mutated the clone and never wrote back, which
+    /// left the caller's box zeroed by the `*r = Self::default()` reset.
+    fn build_from_points(positions: Option<&[Cartesian3]>) -> Self {
+        let mut r = Self::default();
 
         let positions = match positions {
             Some(p) if !p.is_empty() => p,
@@ -436,14 +463,21 @@ impl OrientedBoundingBox {
     }
 
     /// Computes an OrientedBoundingBox that bounds an affine transformation.
+    ///
+    /// When `result` is supplied it is written into *and* returned.
     pub fn from_transformation(transformation: &Matrix4, result: Option<&mut Self>) -> Self {
-        let mut r = result.map(|r| { *r = Self::default(); r }).cloned()
-            .unwrap_or_default();
+        let mut out = Self::default();
 
-        r.center = Matrix4::get_translation_new(transformation);
+        out.center = Matrix4::get_translation_new(transformation);
         let half_axes = Matrix4::get_matrix3_new(transformation);
-        Matrix3::multiply_by_scalar(&half_axes, 0.5, &mut r.half_axes);
-        r
+        Matrix3::multiply_by_scalar(&half_axes, 0.5, &mut out.half_axes);
+        match result {
+            Some(r) => {
+                *r = out;
+                r.clone()
+            }
+            None => out,
+        }
     }
 
     /// Duplicates an OrientedBoundingBox instance.

@@ -66,45 +66,77 @@ impl OrthographicOffCenterFrustum {
         )
     }
 
-    /// Computes the culling volume.
+    /// Creates a culling volume for this frustum.
+    ///
+    /// Ported 1:1 from `OrthographicOffCenterFrustum.prototype.computeCullingVolume`.
+    /// Unlike the perspective variant, `right` is normalised here and every side plane
+    /// keeps a constant outward normal (`+right`, `-right`, `+up`, `-up`) whose distance
+    /// is measured against the matching near-plane corner instead of `position`.
     pub fn compute_culling_volume(
         &mut self,
         position: &Cartesian3,
         direction: &Cartesian3,
         up: &Cartesian3,
     ) -> &CullingVolume {
-        let right_dir = Cartesian3::cross_new(direction, up);
-        let left_normal = Cartesian3::multiply_by_scalar_new(&right_dir, -1.0);
-        let down_normal = Cartesian3::multiply_by_scalar_new(up, -1.0);
-        let neg_dir = Cartesian3::multiply_by_scalar_new(direction, -1.0);
+        let t = self.top.unwrap_or(0.0);
+        let b = self.bottom.unwrap_or(0.0);
+        let r = self.right.unwrap_or(0.0);
+        let l = self.left.unwrap_or(0.0);
+        let n = self.near;
+        let f = self.far;
 
-        self.culling_volume.planes[0] = Cartesian4::new(
-            left_normal.x, left_normal.y, left_normal.z,
-            -Cartesian3::dot(&left_normal, position),
-        );
-        self.culling_volume.planes[1] = Cartesian4::new(
-            right_dir.x, right_dir.y, right_dir.z,
-            -Cartesian3::dot(&right_dir, position),
-        );
-        self.culling_volume.planes[2] = Cartesian4::new(
-            down_normal.x, down_normal.y, down_normal.z,
-            -Cartesian3::dot(&down_normal, position),
-        );
-        self.culling_volume.planes[3] = Cartesian4::new(
-            up.x, up.y, up.z,
-            -Cartesian3::dot(up, position),
-        );
-        self.culling_volume.planes[4] = Cartesian4::new(
-            direction.x, direction.y, direction.z,
-            -Cartesian3::dot(direction, position),
-        );
-        let far_point = Cartesian3::add_new(
-            position,
-            &Cartesian3::multiply_by_scalar_new(direction, self.far),
-        );
+        // `right = normalize(direction x up)`; `up` is deliberately left unnormalised.
+        let right = Cartesian3::normalize_new(&Cartesian3::cross_new(direction, up));
+
+        let near_center =
+            Cartesian3::add_new(position, &Cartesian3::multiply_by_scalar_new(direction, n));
+
+        // Mirrors `multiplyByScalar(axis, extent, point)` -> `add(nearCenter, point)`.
+        let corner = |axis: &Cartesian3, extent: f64| -> Cartesian3 {
+            Cartesian3::add_new(
+                &near_center,
+                &Cartesian3::multiply_by_scalar_new(axis, extent),
+            )
+        };
+
+        // Left plane: normal = +right
+        let point = corner(&right, l);
+        let w = -Cartesian3::dot(&right, &point);
+        self.culling_volume.planes[0] = Cartesian4::new(right.x, right.y, right.z, w);
+
+        // Right plane: normal = -right
+        let neg_right = Cartesian3::negate_new(&right);
+        let point = corner(&right, r);
+        let w = -Cartesian3::dot(&neg_right, &point);
+        self.culling_volume.planes[1] =
+            Cartesian4::new(neg_right.x, neg_right.y, neg_right.z, w);
+
+        // Bottom plane: normal = +up
+        let point = corner(up, b);
+        let w = -Cartesian3::dot(up, &point);
+        self.culling_volume.planes[2] = Cartesian4::new(up.x, up.y, up.z, w);
+
+        // Top plane: normal = -up
+        let neg_up = Cartesian3::negate_new(up);
+        let point = corner(up, t);
+        let w = -Cartesian3::dot(&neg_up, &point);
+        self.culling_volume.planes[3] = Cartesian4::new(neg_up.x, neg_up.y, neg_up.z, w);
+
+        // Near plane: normal = direction, offset measured at nearCenter
+        let w = -Cartesian3::dot(direction, &near_center);
+        self.culling_volume.planes[4] =
+            Cartesian4::new(direction.x, direction.y, direction.z, w);
+
+        // Far plane: normal = -direction, offset measured at position + direction * far
+        let neg_direction = Cartesian3::negate_new(direction);
+        let far_point =
+            Cartesian3::add_new(position, &Cartesian3::multiply_by_scalar_new(direction, f));
+        let w = -Cartesian3::dot(&neg_direction, &far_point);
         self.culling_volume.planes[5] = Cartesian4::new(
-            neg_dir.x, neg_dir.y, neg_dir.z,
-            -Cartesian3::dot(&neg_dir, &far_point),
+            neg_direction.x,
+            neg_direction.y,
+            neg_direction.z,
+            w,
         );
 
         &self.culling_volume

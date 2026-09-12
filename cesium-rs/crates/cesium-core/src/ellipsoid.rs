@@ -28,13 +28,20 @@
 //! | `getLocalCurvature`                       | `get_local_curvature`                       | aligned |
 //! | `surfaceArea`                             | `surface_area`                              | aligned |
 //! | `gaussLegendreQuadrature` (`@private`)    | `gauss_legendre_quadrature`                 | aligned |
+//! | `static get/set default` (+ `_default`)   | *not ported*                                | deviation |
+//!
+//! `Ellipsoid.default` is a process-global that CesiumJS also pushes into
+//! `Cartesian3._ellipsoidRadiiSquared` / `Cartographic._ellipsoid*`. The Rust
+//! port threads an explicit [`EllipsoidParams`] (see
+//! [`Ellipsoid::ellipsoid_params`]) through those call sites instead, so there
+//! is no mutable global to mirror. Tracked in `docs/deviations.md`.
 
 use crate::cartesian2::Cartesian2;
 use crate::cartesian3::Cartesian3;
 use crate::cartographic::{Cartographic, EllipsoidParams};
 use crate::check;
 use crate::developer_error::throw_developer_error;
-use crate::math::CesiumMath;
+use crate::math::{js_max, js_min, CesiumMath};
 use crate::rectangle::Rectangle;
 use crate::scale_to_geodetic_surface::scale_to_geodetic_surface;
 
@@ -50,6 +57,11 @@ struct EllipsoidData {
     minimum_radius: f64,
     maximum_radius: f64,
     center_tolerance_squared: f64,
+    /// `_squaredXOverSquaredZ`. CesiumJS only assigns it when
+    /// `_radiiSquared.z !== 0` and otherwise leaves it `undefined`, so
+    /// `position.z * (1 - undefined)` evaluates to `NaN`.
+    /// [`f64::NAN`] reproduces that arithmetic exactly, which a `0.0`
+    /// sentinel would not.
     squared_x_over_squared_z: f64,
 }
 
@@ -63,13 +75,20 @@ const fn const_init(x: f64, y: f64, z: f64) -> EllipsoidData {
     let ooxx = if x == 0.0 { 0.0 } else { 1.0 / xx };
     let ooyy = if y == 0.0 { 0.0 } else { 1.0 / yy };
     let oozz = if z == 0.0 { 0.0 } else { 1.0 / zz };
-    let min_r = if x < y { if x < z { x } else { z } } else { if y < z { y } else { z } };
-    let max_r = if x > y { if x > z { x } else { z } } else { if y > z { y } else { z } };
-    let sqx_over_sqz = if zz != 0.0 { xx / zz } else { 0.0 };
+    let min_r = js_min(js_min(x, y), z);
+    let max_r = js_max(js_max(x, y), z);
+    let sqx_over_sqz = if zz != 0.0 { xx / zz } else { f64::NAN };
     EllipsoidData {
         radii: Cartesian3::new(x, y, z),
         radii_squared: Cartesian3::new(xx, yy, zz),
-        radii_to_the_fourth: Cartesian3::new(xx * xx, yy * yy, zz * zz),
+        // CesiumJS writes `x * x * x * x`, i.e. the left-associated
+        // `((x * x) * x) * x`. `(x * x) * (x * x)` rounds differently once the
+        // fourth power leaves the exact range (WGS84: 1.65e27).
+        radii_to_the_fourth: Cartesian3::new(
+            ((x * x) * x) * x,
+            ((y * y) * y) * y,
+            ((z * z) * z) * z,
+        ),
         one_over_radii: Cartesian3::new(oox, ooy, ooz),
         one_over_radii_squared: Cartesian3::new(ooxx, ooyy, oozz),
         minimum_radius: min_r,
@@ -157,6 +176,11 @@ impl Ellipsoid {
     }
 
     /// Duplicates an Ellipsoid instance.
+    ///
+    /// Port of the `result === undefined` branch of `Ellipsoid.clone`, which
+    /// rebuilds the ellipsoid from its radii. The JS `result`-provided branch
+    /// copies every field *except* `_squaredXOverSquaredZ`; that overload is
+    /// not modelled here since [`Ellipsoid`] is `Copy`.
     pub fn clone_ellipsoid(ellipsoid: &Self) -> Self {
         *ellipsoid
     }
@@ -268,6 +292,11 @@ impl Ellipsoid {
 
     /// Port of `Ellipsoid#cartesianToCartographic`.
     /// Returns `false` if the cartesian is at the center (JS returns `undefined`).
+    ///
+    /// DEVIATION: CesiumJS ignores the `undefined` that `geodeticSurfaceNormal`
+    /// can return and dereferences it, raising a `TypeError`. The port surfaces
+    /// the same condition as `false` and leaves `result` untouched.
+    /// Tracked in `docs/deviations.md`.
     pub fn cartesian_to_cartographic(
         &self,
         cartesian: &Cartesian3,
@@ -391,6 +420,11 @@ impl Ellipsoid {
     /// Returns `false` if the intersection is outside the ellipsoid
     /// (JS returns `undefined`).
     ///
+    /// When `radii.z == 0` CesiumJS leaves `_squaredXOverSquaredZ` undefined,
+    /// so `result.z` becomes `NaN` and the `Math.abs(result.z) >= ...` guard is
+    /// false — the function still returns a result. `squared_x_over_squared_z`
+    /// carries `NaN` here for exactly that reason, so the two agree.
+    ///
     /// # Panics
     ///
     /// Debug builds panic with a `DeveloperError` when the ellipsoid is not
@@ -430,6 +464,11 @@ impl Ellipsoid {
     }
 
     /// Port of `Ellipsoid#getLocalCurvature`.
+    ///
+    /// DEVIATION: CesiumJS ignores the `undefined` that
+    /// `getSurfaceNormalIntersectionWithZAxis` can return and passes it to
+    /// `Cartesian3.distance`, raising a `TypeError`. The port proceeds with the
+    /// partially written endpoint instead. Tracked in `docs/deviations.md`.
     pub fn get_local_curvature(
         &self,
         surface_position: &Cartesian3,
@@ -445,7 +484,10 @@ impl Ellipsoid {
         let prime_vertical_radius = Cartesian3::distance(surface_position, &endpoint);
         let max_r_sq = self.data.maximum_radius * self.data.maximum_radius;
         let radius_ratio = (self.data.minimum_radius * prime_vertical_radius) / max_r_sq;
-        let meridional_radius = prime_vertical_radius * radius_ratio * radius_ratio;
+        // CesiumJS writes `primeVerticalRadius * radiusRatio ** 2`; the power
+        // binds tighter, so the ratio must be squared before the multiply.
+        // Left-associated `pvr * ratio * ratio` rounds differently.
+        let meridional_radius = prime_vertical_radius * (radius_ratio * radius_ratio);
 
         result.x = 1.0 / prime_vertical_radius;
         result.y = 1.0 / meridional_radius;

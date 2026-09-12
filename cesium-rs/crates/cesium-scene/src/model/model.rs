@@ -22,30 +22,23 @@ use cesium_core::bounding_sphere::BoundingSphere;
 use cesium_core::cartesian3::Cartesian3;
 use cesium_core::color::Color;
 use cesium_core::event::Event;
+use cesium_core::math::CesiumMath;
 use cesium_core::matrix4::Matrix4;
 use cesium_core::quaternion::Quaternion;
 use cesium_core::runtime_error::RuntimeError;
-use cesium_core::webgl_constants::WebGLConstants;
-use cesium_renderer::buffer::Buffer;
-use cesium_renderer::buffer_usage::BufferUsage;
 use cesium_renderer::context::Context;
 use cesium_renderer::draw_command::{DrawCommand, UniformValue};
 use cesium_renderer::pass::Pass;
-use cesium_renderer::render_state::{BlendEquation, BlendingFactor, RenderState};
 use cesium_renderer::shader_program::ShaderProgram;
-use cesium_renderer::texture::Texture;
-use cesium_renderer::vertex_array::{VertexArray, VertexAttribute};
 use cesium_shaders::wgsl;
 
 use crate::frame_state::FrameState;
-use crate::gltf_index_buffer_loader::{GltfIndexBufferLoader, GltfIndexBufferLoaderOptions};
-use crate::gltf_loader::{GltfAccessor, GltfJson, GltfNode, GltfPrimitive};
-use crate::gltf_loader_util::GltfLoaderUtil;
-use crate::gltf_texture_loader::{GltfTextureLoader, GltfTextureLoaderOptions};
-use crate::gltf_vertex_buffer_loader::{GltfVertexBufferLoader, GltfVertexBufferLoaderOptions};
+use crate::gltf_loader::{GltfJson, GltfNode, GltfPrimitive};
 use crate::model::model_node::ModelNode;
+use crate::model::model_pipeline_stage::{configure_pipeline, PipelineContext};
 use crate::model::model_runtime_primitive::ModelRuntimePrimitive;
 use crate::model::model_scene_graph::ModelSceneGraph;
+use crate::model::primitive_render_resources::PrimitiveRenderResources;
 use crate::primitive_collection::ScenePrimitive;
 use crate::shadow_mode::ShadowMode;
 
@@ -171,6 +164,23 @@ pub enum ColorBlendMode {
     Mix,
 }
 
+impl ColorBlendMode {
+    /// Computes the color blend factor, mirroring CesiumJS
+    /// `ColorBlendMode.getColorBlend(colorBlendMode, colorBlendAmount)`.
+    ///
+    /// `Highlight` → 0.0, `Replace` → 1.0, `Mix` → the amount clamped to
+    /// `[EPSILON4, 1.0]` (0.0 is reserved for highlight).
+    pub fn get_color_blend(self, color_blend_amount: f64) -> f32 {
+        match self {
+            ColorBlendMode::Highlight => 0.0,
+            ColorBlendMode::Replace => 1.0,
+            ColorBlendMode::Mix => {
+                CesiumMath::clamp(color_blend_amount, CesiumMath::EPSILON4, 1.0) as f32
+            }
+        }
+    }
+}
+
 /// The split direction for a model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitDirection {
@@ -202,26 +212,6 @@ fn node_local_matrix(node: &GltfNode) -> Matrix4 {
         .map(|s| Cartesian3::new(s[0], s[1], s[2]))
         .unwrap_or(Cartesian3::new(1.0, 1.0, 1.0));
     Matrix4::from_translation_quaternion_rotation_scale_new(&translation, &rotation, &scale)
-}
-
-/// The bounding sphere of a POSITION accessor from its glTF `min`/`max`
-/// (zero sphere when the asset omits them).
-fn position_bounding_sphere(accessor: &GltfAccessor) -> BoundingSphere {
-    match (accessor.min.as_deref(), accessor.max.as_deref()) {
-        (Some(min), Some(max)) if min.len() >= 3 && max.len() >= 3 => {
-            let center = Cartesian3::new(
-                (min[0] + max[0]) * 0.5,
-                (min[1] + max[1]) * 0.5,
-                (min[2] + max[2]) * 0.5,
-            );
-            let dx = max[0] - min[0];
-            let dy = max[1] - min[1];
-            let dz = max[2] - min[2];
-            let radius = 0.5 * (dx * dx + dy * dy + dz * dz).sqrt();
-            BoundingSphere::new(center, radius)
-        }
-        _ => BoundingSphere::new(Cartesian3::ZERO, 0.0),
-    }
 }
 
 impl Model {
@@ -387,25 +377,15 @@ impl Model {
                 None,
             );
 
-            // Render state: opaque depth-tested geometry by default;
-            // double-sided materials and the model's backFaceCulling option
-            // control culling; BLEND materials take the translucent path.
-            let mut render_state = RenderState::default();
-            render_state.depth_test.enabled = true;
-            render_state.depth_mask = !primitive.translucent;
-            render_state.cull.enabled = self.back_face_culling && !primitive.double_sided;
-            let pass = if primitive.translucent {
-                render_state.blending.enabled = true;
-                render_state.blending.equation_rgb = BlendEquation::FuncAdd;
-                render_state.blending.equation_alpha = BlendEquation::FuncAdd;
-                render_state.blending.function_source_rgb = BlendingFactor::SrcAlpha;
-                render_state.blending.function_source_alpha = BlendingFactor::One;
-                render_state.blending.function_destination_rgb = BlendingFactor::OneMinusSrcAlpha;
-                render_state.blending.function_destination_alpha = BlendingFactor::OneMinusSrcAlpha;
-                Pass::Translucent as u32
-            } else {
-                Pass::Opaque as u32
-            };
+            // Render state: the alpha stage finalized depth test / depth mask /
+            // blending at build time; back-face culling is derived per-frame
+            // from the model's live backFaceCulling (mirrors the JS per-frame
+            // derived-command cull update). Translucent primitives never cull
+            // (mirrors the JS AlphaPipelineStage).
+            let mut render_state = primitive.render_state.clone();
+            render_state.cull.enabled =
+                !primitive.translucent && self.back_face_culling && !primitive.double_sided;
+            let pass = primitive.pass as u32;
 
             // Base color factor blended with the model color (DEVIATION:
             // colorBlendMode nuances beyond the multiply are deferred).
@@ -514,269 +494,55 @@ impl Model {
         }
     }
 
-    /// Builds the GPU resources of one glTF primitive.
+    /// Builds the GPU resources of one glTF primitive by running the adapted
+    /// pipeline-stage chain.
     ///
-    /// DEVIATION: attributes sharing one bufferView are uploaded as
-    /// separate GPU buffers (the JS interleaves them in a single buffer);
-    /// NORMAL and other non-POSITION/TEXCOORD_0 semantics are skipped
-    /// because the trimmed shader pairs do not consume them (lighting
-    /// deferred).
+    /// Rust analogue of the CesiumJS `ModelRuntimePrimitive` construction:
+    /// [`configure_pipeline`] assembles the ordered stages for this primitive,
+    /// each stage mutates a [`PrimitiveRenderResources`] bag, and the finished
+    /// bag is assembled into the GPU vertex array + [`ModelRuntimePrimitive`].
+    ///
+    /// DEVIATION: attributes sharing one bufferView are uploaded as separate
+    /// GPU buffers (the JS interleaves them in a single buffer); NORMAL and
+    /// other non-POSITION/TEXCOORD_0 semantics are skipped because the trimmed
+    /// shader pairs do not consume them (lighting deferred).
     fn build_runtime_primitive(
-        &mut self,
+        &self,
         gltf: &GltfJson,
         context: &Context,
         primitive: &GltfPrimitive,
         node_index: usize,
     ) -> Result<ModelRuntimePrimitive, RuntimeError> {
-        if primitive.mode != WebGLConstants::TRIANGLES {
-            return Err(RuntimeError::new(Some(&format!(
-                "Primitive mode {} is not supported yet (only TRIANGLES).",
-                primitive.mode
-            ))));
-        }
-
-        let position_id = *primitive.attributes.get("POSITION").ok_or_else(|| {
-            RuntimeError::new(Some("Primitive has no POSITION attribute."))
-        })?;
-        let position = gltf
-            .accessors
-            .get(position_id as usize)
-            .ok_or_else(|| RuntimeError::new(Some("POSITION accessor is out of range.")))?;
-
-        // ---- material resolution (base color factor/texture only) ----
-        let material = primitive
-            .material
-            .and_then(|material_id| gltf.materials.get(material_id as usize));
-        let pbr = material.and_then(|material| material.pbr_metallic_roughness.as_ref());
-        let base_color_factor = match pbr {
-            Some(pbr) => [
-                pbr.base_color_factor[0] as f32,
-                pbr.base_color_factor[1] as f32,
-                pbr.base_color_factor[2] as f32,
-                pbr.base_color_factor[3] as f32,
-            ],
-            None => [1.0, 1.0, 1.0, 1.0],
-        };
-        let double_sided = material.map(|material| material.double_sided).unwrap_or(false);
-        let translucent = material
-            .map(|material| material.alpha_mode == "BLEND")
-            .unwrap_or(false);
-
-        let mut textured = false;
-        let mut base_color_texture: Option<Arc<Texture>> = None;
-        if let Some(pbr) = pbr {
-            if let Some(info) = &pbr.base_color_texture {
-                let texcoord_id = primitive.attributes.get("TEXCOORD_0");
-                if info.tex_coord != 0 {
-                    log::warn!(
-                        "DEVIATION: baseColorTexture texCoord set {} is deferred \
-                         (only TEXCOORD_0 is supported).",
-                        info.tex_coord
-                    );
-                } else if texcoord_id.is_some() {
-                    match Self::load_base_color_texture(gltf, context, info.index) {
-                        Ok(texture) => {
-                            base_color_texture = Some(texture);
-                            textured = true;
-                        }
-                        Err(error) => {
-                            log::warn!(
-                                "model base color texture {} deferred: {}",
-                                info.index,
-                                error.message
-                            );
-                        }
-                    }
-                }
-            }
-        }
-
-        // ---- vertex attributes (POSITION → location 0, TEXCOORD_0 → 1) ----
-        let mut attributes = vec![Self::create_vertex_attribute(
-            gltf, context, "POSITION", position_id, 0,
-        )?];
-        if textured {
-            let texcoord_id = primitive.attributes["TEXCOORD_0"];
-            attributes.push(Self::create_vertex_attribute(
-                gltf, context, "TEXCOORD_0", texcoord_id, 1,
-            )?);
-        }
-
-        // ---- index buffer ----
-        let (index_buffer, count) = match primitive.indices {
-            Some(indices_id) => {
-                let mut loader = GltfIndexBufferLoader::try_new(
-                    gltf,
-                    GltfIndexBufferLoaderOptions {
-                        accessor_id: indices_id,
-                        draco: None,
-                        cache_key: None,
-                        load_buffer: true,
-                        load_typed_array: false,
-                    },
-                )?;
-                loader.load(gltf)?;
-                loader.create_buffer(context)?;
-                let count = gltf
-                    .accessors
-                    .get(indices_id as usize)
-                    .map(|accessor| accessor.count)
-                    .unwrap_or(0);
-                (loader.take_buffer(), count)
-            }
-            None => (None, position.count),
-        };
-
-        Ok(ModelRuntimePrimitive {
-            vertex_array: Some(Arc::new(VertexArray::new(attributes, index_buffer))),
-            count,
-            offset: 0,
-            primitive_type: WebGLConstants::TRIANGLES,
-            base_color_factor,
-            base_color_texture,
-            textured,
-            double_sided,
-            translucent,
-            node_index,
-            bounding_sphere: position_bounding_sphere(position),
-        })
-    }
-
-    /// Creates one GPU vertex attribute from a glTF accessor (buffer view
-    /// bytes uploaded through [`GltfVertexBufferLoader`]).
-    ///
-    /// DEVIATION: when the accessor has a non-zero `byteOffset`, the wgpu
-    /// port slices the buffer data starting at that offset and sets the
-    /// GPU attribute offset to zero. This avoids a wgpu validation pitfall
-    /// where `attribute.offset + format.size()` must not exceed
-    /// `array_stride` — the JS path uses `gl.vertexAttribPointer` which
-    /// accepts arbitrary byte offsets without this constraint.
-    fn create_vertex_attribute(
-        gltf: &GltfJson,
-        context: &Context,
-        semantic: &str,
-        accessor_id: u32,
-        location: u32,
-    ) -> Result<VertexAttribute, RuntimeError> {
-        let accessor = gltf
-            .accessors
-            .get(accessor_id as usize)
-            .ok_or_else(|| RuntimeError::new(Some(&format!(
-                "{semantic} accessor {accessor_id} is out of range."
-            ))))?;
-        let format = GltfLoaderUtil::vertex_format(accessor).ok_or_else(|| {
-            RuntimeError::new(Some(&format!(
-                "{semantic} accessor type {} (componentType {}) has no GPU vertex format.",
-                accessor.gl_type, accessor.component_type
-            )))
-        })?;
-        let buffer_view_id = accessor.buffer_view.ok_or_else(|| {
-            RuntimeError::new(Some(&format!(
-                "{semantic} accessor {accessor_id} has no bufferView."
-            )))
-        })?;
-        let buffer_view = gltf
-            .buffer_views
-            .get(buffer_view_id as usize)
-            .ok_or_else(|| RuntimeError::new(Some(&format!(
-                "{semantic} bufferView {buffer_view_id} is out of range."
-            ))))?;
-        let stride = buffer_view
-            .byte_stride
-            .unwrap_or_else(|| GltfLoaderUtil::accessor_element_stride(accessor));
-
-        let mut loader = GltfVertexBufferLoader::try_new(GltfVertexBufferLoaderOptions {
-            buffer_view_id: Some(buffer_view_id),
-            primitive: None,
-            draco: None,
-            spz: None,
-            attribute_semantic: Some(semantic.to_string()),
-            accessor_id: Some(accessor_id),
-            cache_key: None,
-            load_buffer: true,
-            load_typed_array: true,
-        })?;
-        loader.load(gltf)?;
-
-        // When the accessor has a non-zero byteOffset, slice the pending
-        // bytes starting at that offset so the GPU attribute offset is
-        // zero (satisfies wgpu's offset + format.size() <= stride check).
-        let byte_offset = accessor.byte_offset;
-        if byte_offset > 0 {
-            let full_bytes = loader.typed_array().ok_or_else(|| {
-                RuntimeError::new(Some(&format!(
-                    "Failed to read {semantic} typed array for byte-offset slicing."
-                )))
-            })?;
-            let sliced = full_bytes[byte_offset as usize..].to_vec();
-            // Replace the pending upload bytes with the sliced data.
-            // The typed_array and pending_bytes are both replaced.
-            let _ = loader.take_buffer(); // discard any existing buffer
-            // Re-create with sliced bytes through a fresh buffer.
-            let buffer = Buffer::create_vertex_buffer(
-                context.device(),
-                Some(&sliced),
-                None,
-                BufferUsage::StaticDraw,
-            );
-            // Upload immediately since we have the context's queue.
-            let mut buffer = buffer;
-            buffer.upload_pending_data(context.queue());
-            return Ok(VertexAttribute {
-                index: location,
-                buffer,
-                components_per_attribute: GltfLoaderUtil::number_of_components_for_type(
-                    &accessor.gl_type,
-                ),
-                component_datatype: format,
-                normalize: accessor.normalized,
-                stride_in_bytes: stride,
-                offset_in_bytes: 0,
-            });
-        }
-
-        loader.create_buffer(context)?;
-        let buffer = loader.take_buffer().ok_or_else(|| {
-            RuntimeError::new(Some(&format!(
-                "Failed to create {semantic} vertex buffer."
-            )))
-        })?;
-
-        Ok(VertexAttribute {
-            index: location,
-            buffer,
-            components_per_attribute: GltfLoaderUtil::number_of_components_for_type(
-                &accessor.gl_type,
-            ),
-            component_datatype: format,
-            normalize: accessor.normalized,
-            stride_in_bytes: stride,
-            offset_in_bytes: 0,
-        })
-    }
-
-    /// Loads one base color texture through the [`GltfTextureLoader`] GPU
-    /// path (embedded images only — external URIs stay deferred per the T4
-    /// caller-injection contract).
-    fn load_base_color_texture(
-        gltf: &GltfJson,
-        context: &Context,
-        texture_id: u32,
-    ) -> Result<Arc<Texture>, RuntimeError> {
-        let mut loader = GltfTextureLoader::try_new(
+        let ctx = PipelineContext {
             gltf,
-            GltfTextureLoaderOptions {
-                texture_id,
-                cache_key: None,
-            },
-        )?;
-        loader.load(gltf)?;
-        loader.create_texture(context, gltf)?;
-        loader.texture().ok_or_else(|| {
-            RuntimeError::new(Some(&format!(
-                "Texture {texture_id} produced no GPU texture."
-            )))
-        })
+            primitive,
+            node_index,
+            context,
+            model_color: self.color,
+            color_blend_mode: self.color_blend_mode,
+            color_blend_amount: self.color_blend_amount,
+            enable_lighting: self.enable_lighting,
+            back_face_culling: self.back_face_culling,
+            opaque_pass: Pass::Opaque,
+        };
+
+        // Run the ordered stage chain; each stage mutates the render-resource
+        // bag (mirrors the JS `configurePipeline` → `stage.process` loop).
+        let mut render_resources = PrimitiveRenderResources::new(node_index);
+        for (name, process) in configure_pipeline(&ctx) {
+            process(&mut render_resources, &ctx)
+                .map_err(|error| {
+                    RuntimeError::new(Some(&format!("{name}: {}", error.message)))
+                })?;
+        }
+
+        // Assemble the GPU vertex array from the accumulated attributes +
+        // index buffer, then copy the stage outputs into the runtime primitive.
+        let vertex_array = render_resources.create_vertex_array();
+        Ok(ModelRuntimePrimitive::from_render_resources(
+            &render_resources,
+            vertex_array,
+        ))
     }
 
     /// Returns whether this model has been destroyed.

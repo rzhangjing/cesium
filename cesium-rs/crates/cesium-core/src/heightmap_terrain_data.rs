@@ -46,10 +46,13 @@ use crate::developer_error::throw_developer_error;
 use crate::heightmap_encoding::HeightmapEncoding;
 use crate::heightmap_tessellator::{HeightmapStructure, HeightmapTessellator};
 use crate::math::CesiumMath;
+use crate::matrix4::Matrix4;
+use crate::oriented_bounding_box::OrientedBoundingBox;
 use crate::rectangle::Rectangle;
 use crate::terrain_data::TerrainData;
 use crate::terrain_encoding::TerrainEncoding;
 use crate::terrain_mesh::TerrainMesh;
+use crate::terrain_picker::TerrainPicker;
 use crate::terrain_provider;
 use crate::tiling_scheme::TilingScheme;
 
@@ -370,6 +373,14 @@ impl HeightmapTerrainData {
         self.mesh.as_ref()
     }
 
+    /// Mutable variant of [`HeightmapTerrainData::mesh`].
+    ///
+    /// `Globe.prototype.pick` needs it: `TerrainMesh.pick` grows the
+    /// `TerrainPicker` quadtree and records `_lastPickSceneMode`.
+    pub fn mesh_mut(&mut self) -> Option<&mut TerrainMesh> {
+        self.mesh.as_mut()
+    }
+
     /// Creates a [`TerrainMesh`] from this terrain data.
     ///
     /// Mirrors `createMesh`. Returns `None` when throttling is enabled and
@@ -495,7 +506,12 @@ impl HeightmapTerrainData {
             }
         }
 
-        let encoding = TerrainEncoding::new(
+        // The vertices above are stored relative to `center`, so the encoding
+        // has to carry it: `TerrainEncoding::decode_position` adds it back to
+        // recover a world position (JS `encodePosition` subtracts
+        // `encoding.center`, `decodePosition` adds it).
+        let encoding = TerrainEncoding::new_with_center(
+            &center,
             false,
             false,
             exaggeration,
@@ -506,6 +522,18 @@ impl HeightmapTerrainData {
             &positions_for_sphere,
             Some(&center),
             Some(6),
+            None,
+        );
+
+        // `HeightmapTessellator.computeVertices` (L457-466) derives the box
+        // from the rectangle and the *raw* height range, right after the
+        // bounding sphere. The JS leaves it `undefined` when `options.rectangle`
+        // is absent; here the rectangle always comes from the tiling scheme.
+        let oriented_bounding_box = OrientedBoundingBox::from_rectangle(
+            Some(&rectangle),
+            Some(minimum_height),
+            Some(maximum_height),
+            Some(*ellipsoid),
             None,
         );
 
@@ -530,8 +558,7 @@ impl HeightmapTerrainData {
             // EllipsoidTangentPlane.computeHorizonCullingPoint; left at ZERO.
             occludee_point_in_scaled_space: Cartesian3::default(),
             encoding,
-            // DEVIATION: JS computes an OrientedBoundingBox; left as None.
-            oriented_bounding_box: None,
+            oriented_bounding_box: Some(oriented_bounding_box),
             west_indices_south_to_north: indices_and_edges
                 .west_indices_south_to_north
                 .iter()
@@ -552,6 +579,11 @@ impl HeightmapTerrainData {
                 .iter()
                 .map(|i| *i as u32)
                 .collect(),
+            // The JS constructor's `_transform = new Matrix4()` is the
+            // identity, not this port's zero-valued `Matrix4::default()`.
+            transform: Matrix4::IDENTITY,
+            last_pick_scene_mode: None,
+            terrain_picker: TerrainPicker::new(),
         };
 
         // Free memory received from server after mesh is created.

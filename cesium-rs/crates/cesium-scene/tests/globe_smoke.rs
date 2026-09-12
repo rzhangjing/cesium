@@ -352,8 +352,18 @@ fn quadtree_lod_invariants_sse_and_pixel_cap() {
 
     let sse_denominator = scene.frame_state().sse_denominator;
     let camera_position = scene.frame_state().camera_position;
-    let maximum_level = surface.maximum_level().expect("imagery ceiling set");
-    assert_eq!(maximum_level, MAXIMUM_LEVEL as i32);
+    // CesiumJS semantics: the quadtree traversal ceiling is driven by
+    // `terrainProvider.getLevelMaximumGeometricError(level)`, NOT by imagery.
+    // This scene installs no terrain fetcher, so `maximum_level` is `None`
+    // (unbounded) and refinement stops only when SSE < maxSSE. The imagery
+    // provider's own `request_level.min(maximum)` clamp keeps out-of-range
+    // tile requests from ever reaching the file layer, so `deepest` may
+    // exceed `MAXIMUM_LEVEL` here without breaking anything.
+    let maximum_level = surface.maximum_level();
+    assert!(
+        maximum_level.is_none(),
+        "no terrain installed → traversal ceiling must be None (was {maximum_level:?})"
+    );
 
     // Root tiles must NOT meet the SSE target (otherwise nothing refines).
     for root_tile in surface.root_tiles() {
@@ -371,8 +381,10 @@ fn quadtree_lod_invariants_sse_and_pixel_cap() {
     let mut deepest = 0i32;
     for tile in tiles {
         deepest = deepest.max(tile.level);
-        if tile.level >= maximum_level {
-            continue; // cannot refine further: SSE may exceed the target
+        if let Some(ml) = maximum_level {
+            if tile.level >= ml {
+                continue; // cannot refine further: SSE may exceed the target
+            }
         }
         assert!(
             tile.screen_space_error <= 2.0 + 1e-6,
@@ -442,9 +454,10 @@ fn quadtree_lod_invariants_sse_and_pixel_cap() {
             );
         }
     }
-    assert_eq!(
-        deepest, maximum_level,
-        "refinement must reach the imagery ceiling near the camera"
+    assert!(
+        deepest >= MAXIMUM_LEVEL as i32,
+        "refinement must at least reach the imagery's own max level \
+         (deepest={deepest}, imagery MAXIMUM_LEVEL={MAXIMUM_LEVEL})"
     );
 }
 

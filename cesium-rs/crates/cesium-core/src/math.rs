@@ -551,8 +551,55 @@ fn to_int32(x: f64) -> i32 {
 }
 
 /// `Math.round` semantics: `floor(x + 0.5)` (half towards +infinity).
-fn js_round(x: f64) -> f64 {
+///
+/// Public because any port of a JS `Math.round` call — in any crate — must
+/// come through here rather than `f64::round`, which rounds half *away from
+/// zero* and so disagrees on every negative half-integer (`Math.round(-0.5)`
+/// is `-0`, `(-0.5f64).round()` is `-1`). See
+/// `terrain_picker::get_vertex_position`.
+pub fn js_round(x: f64) -> f64 {
     (x + 0.5).floor()
+}
+
+/// Mirrors the JS built-in `Math.min(a, b)`: any `NaN` operand yields `NaN`,
+/// and `-0.0` wins over `+0.0`. Folding this over three operands reproduces
+/// `Math.min(x, y, z)`.
+///
+/// Rust's `f64::min` is *not* a substitute — it returns the other operand when
+/// one is `NaN`, silently swallowing the poison value. Any port of a JS
+/// `Math.min` must come through here. `const` so callers can use it in
+/// `const fn` initialisers (see `ellipsoid::const_init`).
+pub const fn js_min(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else if a < b {
+        a
+    } else if b < a {
+        b
+    } else if a == 0.0 && (a.is_sign_negative() || b.is_sign_negative()) {
+        -0.0
+    } else {
+        a
+    }
+}
+
+/// Mirrors the JS built-in `Math.max(a, b)`: any `NaN` operand yields `NaN`,
+/// and `+0.0` wins over `-0.0`. Folding this over three operands reproduces
+/// `Math.max(x, y, z)`.
+///
+/// The `f64::max` caveat from [`js_min`] applies symmetrically.
+pub const fn js_max(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else if a > b {
+        a
+    } else if b > a {
+        b
+    } else if a == 0.0 && (a.is_sign_positive() || b.is_sign_positive()) {
+        0.0
+    } else {
+        a
+    }
 }
 
 /// Mirrors the module-level `const factorials = [1]` cache in Math.js.

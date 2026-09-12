@@ -723,8 +723,6 @@ fn interpolate_segment(
         ArcType::Geodesic => EllipsoidLine::Geodesic(EllipsoidGeodesic::new(
             Some(start.clone()),
             Some(end.clone()),
-            None,
-            None,
             Some(ellipsoid.clone()),
         )),
         ArcType::Rhumb => EllipsoidLine::Rhumb(EllipsoidRhumbLine::new(

@@ -703,7 +703,7 @@ mod tests {
         )
         .expect("hand-written WGSL must parse");
 
-        // group(0) binding(0): CesiumAutomaticUniforms, 5*64 + 16 = 336 bytes.
+        // group(0) binding(0): CesiumAutomaticUniforms, 5*64 + 16 + 16 = 352 bytes.
         let czm = program
             .bindings()
             .iter()
@@ -712,7 +712,9 @@ mod tests {
         assert_eq!(czm.kind, BindingKind::UniformBuffer);
         assert_eq!(czm.byte_size, cesium_shaders::wgsl::CESIUM_AUTOMATIC_UNIFORMS_SIZE as u32);
 
-        // group(1): day texture + sampler from the fragment stage.
+        // group(1): day texture + sampler from the fragment stage, plus the
+        // `u_lighting` scalar (`var<uniform>` at binding 2) that the globe
+        // lighting extension added to GlobeFS.
         assert!(program
             .bindings()
             .iter()
@@ -721,6 +723,12 @@ mod tests {
             .bindings()
             .iter()
             .any(|b| b.group == 1 && b.kind == BindingKind::Sampler));
+        let lighting = program
+            .bindings()
+            .iter()
+            .find(|b| b.group == 1 && b.binding == 2)
+            .expect("u_lighting binding");
+        assert_eq!(lighting.kind, BindingKind::UniformBuffer);
 
         // Bind group layout entries are merged per group.
         let layout = program.bind_group_layout_entries();
@@ -728,7 +736,7 @@ mod tests {
         assert_eq!(layout[0].0, 0);
         assert_eq!(layout[0].1.len(), 1);
         assert_eq!(layout[1].0, 1);
-        assert_eq!(layout[1].1.len(), 2);
+        assert_eq!(layout[1].1.len(), 3);
     }
 
     #[test]

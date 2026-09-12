@@ -5,14 +5,18 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
+use cesium_core::bounding_sphere::BoundingSphere;
 use cesium_core::cartesian3::Cartesian3;
 use cesium_core::cesium_terrain_provider::TerrainTileData;
 use cesium_core::color::Color;
 use cesium_core::ellipsoid::Ellipsoid;
 use cesium_core::heightmap_terrain_data::CreateMeshOptions as HeightmapCreateMeshOptions;
 use cesium_core::index_datatype::IndexDatatype;
+use cesium_core::map_projection::MapProjection;
 use cesium_core::near_far_scalar::NearFarScalar;
 use cesium_core::pixel_format::PixelFormat;
+use cesium_core::rectangle::Rectangle;
+use cesium_core::terrain_mesh::TerrainMesh;
 use cesium_core::tiling_scheme::TilingScheme;
 use cesium_core::webgl_constants::WebGLConstants;
 use cesium_renderer::buffer_usage::BufferUsage;
@@ -31,7 +35,8 @@ use crate::globe_terrain_fetcher::{GlobeTerrainFetcher, TerrainGeometryOutcome};
 use crate::globe_tile_geometry::create_ellipsoid_grid;
 use crate::imagery_layer_collection::ImageryLayerCollection;
 use crate::imagery_provider::TileImageAvailability;
-use crate::quadtree_tile::QuadtreeTile;
+use crate::quadtree_tile::{QuadtreeTile, TileKey};
+use crate::scene_mode::SceneMode;
 use crate::shadow_mode::ShadowMode;
 
 /// GPU geometry for one quadtree tile: the ellipsoid longitude/latitude grid
@@ -57,8 +62,13 @@ struct TileSurfaceResources {
 
 /// Outcome of composing the imagery layers for one tile on the CPU.
 enum ComposeOutcome {
-    /// All layers contributed data: upload this RGBA8 image.
-    Data(Vec<u8>, u32, u32),
+    /// All layers contributed data: upload this RGBA8 image. The trailing
+    /// `bool` is `pending`: at least one layer is still resolving (reported
+    /// `Transient`) while others already supplied data, so this composite is
+    /// provisional and MUST NOT be cached — the next frame re-composes it once
+    /// the pending layer lands (e.g. an async satellite tile finishing its
+    /// download over an already-drawn base map).
+    Data(Vec<u8>, u32, u32, bool),
     /// At least one layer deterministically has no data for this tile
     /// (missing file / beyond the provider's maximum level): the tile may
     /// inherit its ancestor texture permanently.
@@ -296,6 +306,89 @@ impl GlobeSurfaceTileProvider {
             .map(|entry| entry.upsampled_from)
     }
 
+    // ---- Picking ----
+
+    /// `GlobeSurfaceTile.renderedMesh` (getter).
+    ///
+    /// The JS getter returns `this.mesh` when the tile has a vertex array and
+    /// its `TerrainFillMesh` otherwise; the port keeps one CPU mesh per tile
+    /// in `terrain_tiles` and has no fill-mesh path, so both cases collapse to
+    /// that mesh.
+    ///
+    /// DEVIATION: the JS hangs a `GlobeSurfaceTile` off each `QuadtreeTile` as
+    /// `tile.data`; the port stores the per-tile terrain here instead, keyed
+    /// by `(level, x, y)`.
+    pub fn rendered_mesh(&self, key: TileKey) -> Option<&TerrainMesh> {
+        self.terrain_tiles
+            .get(&(key.level, key.x, key.y))
+            .and_then(|entry| entry.data.as_ref())
+            .and_then(|data| data.mesh())
+    }
+
+    /// Mutable variant of [`GlobeSurfaceTileProvider::rendered_mesh`].
+    ///
+    /// `Globe.prototype.pick` needs it: `TerrainMesh.pick` grows the
+    /// `TerrainPicker` quadtree and records `_lastPickSceneMode`.
+    pub fn rendered_mesh_mut(&mut self, key: TileKey) -> Option<&mut TerrainMesh> {
+        self.terrain_tiles
+            .get_mut(&(key.level, key.x, key.y))
+            .and_then(|entry| entry.data.as_mut())
+            .and_then(|data| data.mesh_mut())
+    }
+
+    /// The coarse sphere `Globe.prototype.pickWorldCoordinates` ray-tests
+    /// before the exact mesh pick.
+    ///
+    /// Mirrors the body of that function's per-tile loop. DEVIATION: the JS
+    /// writes the sphere back to `surfaceTile.pickBoundingSphere`; that field
+    /// is only a scratch buffer there (recomputed on every call and read back
+    /// solely by the sort comparator), so the port returns it instead of
+    /// caching it.
+    ///
+    /// Returns `None` for the JS `continue` — 3D mode with no rendered mesh.
+    /// In 2D/Columbus View the JS does not test `renderedMesh` here, but a
+    /// mesh-less tile's `GlobeSurfaceTile.pick` returns `undefined`, so
+    /// skipping it cannot change which tile produces the first intersection.
+    pub fn compute_pick_bounding_sphere(
+        &self,
+        key: TileKey,
+        rectangle: &Rectangle,
+        mode: SceneMode,
+        projection: Option<&dyn MapProjection>,
+    ) -> Option<BoundingSphere> {
+        let mesh = self.rendered_mesh(key)?;
+
+        if mode != SceneMode::Scene3D {
+            // `BoundingSphere.fromRectangleWithHeights2D(tile.rectangle,
+            //   projection, surfaceTile.tileBoundingRegion.minimumHeight,
+            //   surfaceTile.tileBoundingRegion.maximumHeight, boundingVolume)`.
+            // `updateTileBoundingRegion` takes both heights straight off the
+            // mesh when one exists.
+            let mut sphere = BoundingSphere::from_rectangle_with_heights2d(
+                Some(rectangle),
+                projection,
+                mesh.minimum_height,
+                mesh.maximum_height,
+                None,
+            );
+            // `Cartesian3.fromElements(center.z, center.x, center.y, center)` —
+            // swizzle into the projected basis. Aliased in the JS, so read the
+            // components out first.
+            let (z, x, y) = (sphere.center.z, sphere.center.x, sphere.center.y);
+            Cartesian3::from_elements(z, x, y, &mut sphere.center);
+            Some(sphere)
+        } else {
+            // `BoundingSphere.clone(surfaceTile.tileBoundingRegion.boundingSphere,
+            //   boundingVolume)`, which `updateTileBoundingRegion` cloned from
+            // `mesh.boundingSphere3D` on its `hasBoundingVolumesFromMesh` path.
+            // DEVIATION: that path is only taken while vertical exaggeration is
+            // 1.0 — with exaggeration the JS recomputes the volumes from the
+            // exaggerated heights instead. The port has no exaggeration
+            // plumbing into the provider, so 1.0 is the only reachable value.
+            Some(mesh.bounding_sphere_3d.clone())
+        }
+    }
+
     // ---- Getters ----
 
     /// Gets the base color used when no imagery is available.
@@ -314,9 +407,15 @@ impl GlobeSurfaceTileProvider {
     // ---- Frame lifecycle ----
 
     /// Called at the beginning of each frame.
-    pub fn begin_frame(&mut self, _frame_state: &FrameState) {
-        // In full port: process tile load queues, start new loads
-    }
+    ///
+    /// DEVIATION (B4-5 · pending 1:1 port): CesiumJS drives tile loading
+    /// through `QuadtreePrimitive#_tileLoadQueue{High,Medium,Low}` with a
+    /// `_loadQueueTimeSlice = 5.0` ms per-frame budget, and
+    /// `GlobeSurfaceTile.processStateMachine` advances each tile through
+    /// EMPTY → LOADING → PROCESSING → COMPLETE across frames. The current
+    /// port composes synchronously inside `render_tile`, so this hook is
+    /// still empty. The tile-cache eviction below is the only real work.
+    pub fn begin_frame(&mut self, _frame_state: &FrameState) {}
 
     /// Renders a single tile: ensures the ellipsoid grid vertex buffers and
     /// the composed imagery day texture exist, then submits a globe draw
@@ -394,10 +493,15 @@ impl GlobeSurfaceTileProvider {
         command.count = Some(index_count);
         command.offset = 0;
         command.shader_program = self.shader_program.clone();
-        command.uniform_overrides = vec![(
-            "u_dayTexture".to_string(),
-            UniformValue::Texture(texture),
-        )];
+        command.uniform_overrides = vec![
+            ("u_dayTexture".to_string(), UniformValue::Texture(texture)),
+            (
+                "u_lighting".to_string(),
+                // 0 → pure day texture (unlit default); 1 → terminator + limb
+                // glow. Drives the globe_fs lighting gate from enable_lighting.
+                UniformValue::Float(if self.enable_lighting { 1.0 } else { 0.0 }),
+            ),
+        ];
         command.render_state = render_state;
         command.framebuffer = framebuffer;
         command.bounding_volume = Some(tile.bounding_sphere.clone());
@@ -755,9 +859,12 @@ impl GlobeSurfaceTileProvider {
         let mut cap = tile.level;
         loop {
             match compose_tile_imagery(tile, layers, cap) {
-                ComposeOutcome::Data(pixels, width, height) => {
+                ComposeOutcome::Data(pixels, width, height, pending) => {
                     let texture = upload_tile_texture(pixels, width, height, context);
-                    return (texture, cap < tile.level, true);
+                    // A provisional composite (pending) is shown this frame but
+                    // left uncached so the still-resolving layer can land next
+                    // frame; a settled composite is cached permanently.
+                    return (texture, cap < tile.level, !pending);
                 }
                 ComposeOutcome::NoData => {
                     if cap > 0 {
@@ -1069,7 +1176,7 @@ fn compose_tile_imagery(
     if transient && !any_data {
         ComposeOutcome::Transient
     } else if any_data {
-        ComposeOutcome::Data(canvas, width, height)
+        ComposeOutcome::Data(canvas, width, height, transient)
     } else {
         // No imagery layers at all: deterministic no-data (the globe shows
         // the base color / ancestor texture).

@@ -39,12 +39,24 @@ use winit::{
 
 /// Number of frames rendered before the optional screenshot is captured.
 /// Terrain tiles stream in over a few frames (fetch → createMesh → geometry
-/// upload), so the delay covers the tileset settling.
-const SCREENSHOT_FRAME_DELAY: u64 = 30;
+/// upload), and the satellite layer downloads asynchronously on a worker
+/// thread. Under AutoVsync (~60fps) this delay is roughly wall-clock time, so
+/// it is set high enough for the background tile downloads to land and the
+/// still-resolving tiles to re-composite before the screenshot fires.
+const SCREENSHOT_FRAME_DELAY: u64 = 1200;
 /// Highest tile level generated for the offline imagery pyramid.
 const OFFLINE_IMAGERY_MAXIMUM_LEVEL: u32 = 3;
 /// Highest tile level generated for the offline heightmap terrain tileset.
-const OFFLINE_TERRAIN_MAXIMUM_LEVEL: u32 = 2;
+///
+/// CesiumJS drives quadtree refinement through the terrain provider's
+/// `getLevelMaximumGeometricError(level)` — imagery providers never cap
+/// the traversal. So the terrain tileset depth here is the *single* knob
+/// that controls how deep the globe subdivides: `level = 4` gives an
+/// effective ~40 km/px view at 3·R orbit (a full-globe pass is 4·16 =
+/// 64 quadtree leaves), while still being small enough to generate on
+/// first run. Raise this to unlock finer satellite imagery without
+/// touching the imagery layers' own `maximum_level`.
+const OFFLINE_TERRAIN_MAXIMUM_LEVEL: u32 = 4;
 /// Heightmap grid width (heightmap-1.0 default).
 const TERRAIN_GRID_SIZE: usize = 65;
 
@@ -473,14 +485,29 @@ fn configure_scene(scene: &mut cesium_scene::scene::Scene) {
         // Base layer: the local NaturalEarthII (or checkerboard) — always
         // resolves offline, so the globe is never blank.
         layers.add(ImageryLayer::with_provider(Box::new(provider)));
-        // Top layer: real satellite imagery streamed from a Web Mercator XYZ
-        // service and re-projected onto the geographic grid on the CPU. Where
-        // the network has no tile the provider reports Transient, so the base
-        // map shows through — graceful degradation when offline. Esri World
-        // Imagery needs no API key; note its {z}/{y}/{x} path ordering.
+        // Top layer: real satellite imagery. Tiles are downloaded on a
+        // background worker thread (the render loop never blocks on the
+        // network) and re-projected onto the geographic grid on the CPU with
+        // bilinear sampling. Results persist in a two-level cache (memory ←
+        // disk): the first online run downloads each tile to disk, and a later
+        // offline run serves those tiles straight from disk. While a tile is
+        // still downloading the provider reports Transient, so the base map
+        // shows through until it lands — graceful degradation when offline.
+        // Esri World Imagery needs no API key; note its {z}/{y}/{x} ordering.
+        let imagery_cache = std::env::temp_dir().join("cesium-rs-esri-imagery");
+        log::info!("satellite tile disk cache root: {}", imagery_cache.display());
+        // CesiumJS semantics: an imagery provider's `maximum_level` is a
+        // per-request clamp (see `compose_tile_imagery`'s
+        // `request_level.min(maximum)`), NOT a quadtree traversal cap. The
+        // traversal ceiling comes from the terrain provider (see
+        // `OFFLINE_TERRAIN_MAXIMUM_LEVEL` above). Satellite is capped at 4
+        // here to match the terrain depth so the CPU bilinear reprojection
+        // cost stays bounded; raise both together when deeper detail is
+        // needed.
         let satellite = WebMercatorImageryProvider::new(
             "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
             4,
+            Some(imagery_cache),
         );
         layers.add(ImageryLayer::with_provider(Box::new(satellite)));
     }
@@ -702,47 +729,102 @@ impl ApplicationHandler for State {
             WindowEvent::CursorMoved { position, .. } => {
                 let current_pos = (position.x, position.y);
                 if let Some(prev_pos) = self.last_mouse_pos {
-                    let dx = current_pos.0 - prev_pos.0;
-                    let dy = current_pos.1 - prev_pos.1;
+                    // CesiumJS `rotate3D` reads movement.startPosition and
+                    // movement.endPosition directly; the port uses prev and
+                    // current cursor position to build the same ratio.
+                    // 1:1 port of CesiumJS `rotate3D` from
+                    // `packages/engine/Source/Scene/ScreenSpaceCameraController.js`
+                    // (lines 2025-2088). The controller exposes:
+                    //   _rotateFactor = 1 / ellipsoid.maximumRadius
+                    //   _rotateRateRangeAdjustment = ellipsoid.maximumRadius
+                    //   _maximumRotateRate = 1.77
+                    //   _minimumRotateRate = 1 / 5000
+                    //   maximumMovementRatio = 0.1
+                    // and `rotate3D` reduces to:
+                    //   rho         = |camera.position|
+                    //   rotateRate  = _rotateFactor * (rho - _rotateRateRangeAdjustment)
+                    //               = (rho - R) / R
+                    //   clamp to [1/5000, 1.77]
+                    //   phiWindowRatio   = (start.x - end.x) / clientWidth
+                    //   thetaWindowRatio = (start.y - end.y) / clientHeight
+                    //   phiWindowRatio   = min(phiWindowRatio,   maxMovementRatio)
+                    //   thetaWindowRatio = min(thetaWindowRatio, maxMovementRatio)
+                    //   deltaPhi   = rotateRate * phiWindowRatio   * 2π
+                    //   deltaTheta = rotateRate * thetaWindowRatio * π
+                    //   camera.rotateRight(deltaPhi); camera.rotateUp(deltaTheta);
+                    //
+                    // The port keeps the orbit-parameterized camera (heading /
+                    // pitch / distance) — see `update_orbit_camera` — so the
+                    // rotation is expressed as increments on those scalars
+                    // rather than a rotation of the camera frame. The sign
+                    // mapping is: rotateRight(+) ⇒ heading(−) (heading grows
+                    // counter-clockwise from +Z), rotateUp(+) ⇒ pitch(+).
+                    let r_earth = Ellipsoid::WGS84.maximum_radius();
+                    const MAX_ROTATE_RATE: f64 = 1.77;
+                    const MIN_ROTATE_RATE: f64 = 1.0 / 5000.0;
+                    const MAX_MOVEMENT_RATIO: f64 = 0.1;
 
-                    // Sensitivity: radians per pixel.
-                    const ROTATE_SENSITIVITY: f64 = 0.005;
+                    let mut rotate_rate = (self.orbit_distance - r_earth) / r_earth;
+                    if rotate_rate > MAX_ROTATE_RATE {
+                        rotate_rate = MAX_ROTATE_RATE;
+                    }
+                    if rotate_rate < MIN_ROTATE_RATE {
+                        rotate_rate = MIN_ROTATE_RATE;
+                    }
+
+                    let (canvas_w, canvas_h) = self
+                        .window
+                        .as_ref()
+                        .map(|w| {
+                            let s = w.inner_size();
+                            (s.width.max(1) as f64, s.height.max(1) as f64)
+                        })
+                        .unwrap_or((1.0, 1.0));
+
+                    // (start.x - end.x) with start=prev_pos and end=current_pos.
+                    let mut phi_window_ratio = (prev_pos.0 - current_pos.0) / canvas_w;
+                    let mut theta_window_ratio = (prev_pos.1 - current_pos.1) / canvas_h;
+                    // CesiumJS uses `Math.min(x, maximumMovementRatio)` —
+                    // only the positive side is clipped, so a very fast drag
+                    // can produce a large negative ratio without clamp.
+                    // Matching exactly to preserve 1:1 behaviour.
+                    if phi_window_ratio > MAX_MOVEMENT_RATIO {
+                        phi_window_ratio = MAX_MOVEMENT_RATIO;
+                    }
+                    if theta_window_ratio > MAX_MOVEMENT_RATIO {
+                        theta_window_ratio = MAX_MOVEMENT_RATIO;
+                    }
+
+                    let delta_phi =
+                        rotate_rate * phi_window_ratio * std::f64::consts::PI * 2.0;
+                    let delta_theta =
+                        rotate_rate * theta_window_ratio * std::f64::consts::PI;
 
                     if self.left_dragging {
-                        // Left drag: orbit around the globe.
-                        // Horizontal → heading (rotate around Z / polar axis).
-                        self.orbit_heading -= dx * ROTATE_SENSITIVITY;
-                        // Vertical → pitch (elevation from equatorial plane).
-                        self.orbit_pitch += dy * ROTATE_SENSITIVITY;
+                        // Left drag: `rotate3D` (rotateRight + rotateUp).
+                        // rotateRight(delta_phi) maps to `heading -= delta_phi`
+                        // (heading grows counter-clockwise, camera.rotateRight
+                        // yaws clockwise from +Z).
+                        self.orbit_heading -= delta_phi;
+                        // rotateUp(delta_theta) maps to `pitch += delta_theta`
+                        // (positive delta_theta means drag up on screen =
+                        // camera moves north = pitch increases).
+                        self.orbit_pitch += delta_theta;
                         self.orbit_pitch = self.orbit_pitch.clamp(-1.5, 1.5);
                         self.orbit_dirty = true;
                     }
 
                     if self.right_dragging {
-                        // Right drag: pan (translate the camera perpendicular
-                        // to the view direction). Approximate by shifting
-                        // the orbit position laterally.
-                        let pan_scale = self.orbit_distance * 0.001;
-                        let cos_h = self.orbit_heading.cos();
-                        let sin_h = self.orbit_heading.sin();
-                        // Right vector at the camera (tangent to the orbit sphere).
-                        let right_x = -sin_h;
-                        let right_y = cos_h;
-                        // Up vector component (tangent toward north pole).
-                        let cos_p = self.orbit_pitch.cos();
-                        let sin_p = self.orbit_pitch.sin();
-                        let up_x = -sin_p * cos_h;
-                        let up_y = -sin_p * sin_h;
-                        let up_z = cos_p;
-
-                        // Shift the virtual "look-at" point (origin) by the
-                        // pan amount. We approximate by adjusting heading and
-                        // pitch to simulate panning.
-                        self.orbit_heading -= dx * pan_scale / self.orbit_distance;
-                        self.orbit_pitch += dy * pan_scale / self.orbit_distance;
+                        // Right drag: same 3D rotation in the current port.
+                        // A full CesiumJS pan3D translates the camera along
+                        // its right/up axes; the orbit-parameterized camera
+                        // cannot translate without losing its look-at-center
+                        // invariant, so panning is aliased to rotation for
+                        // now (documented DEVIATION).
+                        self.orbit_heading -= delta_phi;
+                        self.orbit_pitch += delta_theta;
                         self.orbit_pitch = self.orbit_pitch.clamp(-1.5, 1.5);
                         self.orbit_dirty = true;
-                        let _ = (right_x, right_y, up_x, up_y, up_z);
                     }
                 }
                 self.last_mouse_pos = Some(current_pos);

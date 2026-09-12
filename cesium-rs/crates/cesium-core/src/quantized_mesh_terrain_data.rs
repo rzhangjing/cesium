@@ -332,6 +332,14 @@ impl QuantizedMeshTerrainData {
         self.mesh.as_ref()
     }
 
+    /// Mutable variant of [`QuantizedMeshTerrainData::mesh`].
+    ///
+    /// `Globe.prototype.pick` needs it: `TerrainMesh.pick` grows the
+    /// `TerrainPicker` quadtree and records `_lastPickSceneMode`.
+    pub fn mesh_mut(&mut self) -> Option<&mut TerrainMesh> {
+        self.mesh.as_mut()
+    }
+
     /// Creates a [`TerrainMesh`] from this terrain data.
     ///
     /// Mirrors `createMesh`. Returns `None` when throttling is enabled and

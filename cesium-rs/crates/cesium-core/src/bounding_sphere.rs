@@ -4,9 +4,13 @@
 
 use crate::cartesian3::Cartesian3;
 use crate::ellipsoid::Ellipsoid;
+use crate::geographic_projection::GeographicProjection;
 use crate::intersect::Intersect;
+use crate::map_projection::MapProjection;
 use crate::math::CesiumMath;
+use crate::matrix3::Matrix3;
 use crate::matrix4::Matrix4;
+use crate::oriented_bounding_box::OrientedBoundingBox;
 use crate::plane::Plane;
 use crate::rectangle::Rectangle;
 
@@ -225,6 +229,91 @@ impl BoundingSphere {
 
         let positions = Rectangle::subsample(rectangle, ellipsoid, Some(surface_height));
         Self::from_points(&positions, result)
+    }
+
+    /// Computes a bounding sphere from a rectangle projected in 2D.
+    ///
+    /// Port of `BoundingSphere.fromRectangle2D`, which forwards to
+    /// [`Self::from_rectangle_with_heights2d`] with both heights at zero.
+    pub fn from_rectangle_2d(
+        rectangle: Option<&Rectangle>,
+        projection: Option<&dyn MapProjection>,
+        result: Option<Self>,
+    ) -> Self {
+        Self::from_rectangle_with_heights2d(rectangle, projection, 0.0, 0.0, result)
+    }
+
+    /// Computes a bounding sphere from a rectangle projected in 2D. The
+    /// bounding sphere accounts for the object's minimum and maximum heights
+    /// over the rectangle.
+    ///
+    /// Port of `BoundingSphere.fromRectangleWithHeights2D`.
+    ///
+    /// DEVIATION: the JS falls back to a module-level `GeographicProjection`
+    /// whose ellipsoid it resets to `Ellipsoid.default`; this port builds a
+    /// default `GeographicProjection` locally, matching the existing
+    /// convention in `bounding_rectangle.rs`.
+    pub fn from_rectangle_with_heights2d(
+        rectangle: Option<&Rectangle>,
+        projection: Option<&dyn MapProjection>,
+        minimum_height: f64,
+        maximum_height: f64,
+        result: Option<Self>,
+    ) -> Self {
+        let mut r = result.unwrap_or_default();
+
+        let Some(rectangle) = rectangle else {
+            r.center = Cartesian3::ZERO;
+            r.radius = 0.0;
+            return r;
+        };
+
+        let default_projection = GeographicProjection::new(None);
+        let projection = projection.unwrap_or(&default_projection);
+
+        let mut southwest = Rectangle::southwest(rectangle);
+        southwest.height = minimum_height;
+        let mut northeast = Rectangle::northeast(rectangle);
+        northeast.height = maximum_height;
+
+        let lower_left = projection.project(&southwest);
+        let upper_right = projection.project(&northeast);
+
+        let width = upper_right.x - lower_left.x;
+        let height = upper_right.y - lower_left.y;
+        let elevation = upper_right.z - lower_left.z;
+
+        r.radius = (width * width + height * height + elevation * elevation).sqrt() * 0.5;
+        r.center.x = lower_left.x + width * 0.5;
+        r.center.y = lower_left.y + height * 0.5;
+        r.center.z = lower_left.z + elevation * 0.5;
+        r
+    }
+
+    /// Computes a tight-fitting bounding sphere enclosing the provided
+    /// oriented bounding box.
+    ///
+    /// Port of `BoundingSphere.fromOrientedBoundingBox`: the radius is the
+    /// magnitude of the sum of the three half-axis columns, and the centre is
+    /// the box centre. The JS `Check.defined("orientedBoundingBox", ...)`
+    /// debug guard is enforced by the non-`Option` parameter.
+    pub fn from_oriented_bounding_box(
+        oriented_bounding_box: &OrientedBoundingBox,
+        result: Option<Self>,
+    ) -> Self {
+        let mut r = result.unwrap_or_default();
+
+        let half_axes = &oriented_bounding_box.half_axes;
+        let u = Matrix3::get_column_new(half_axes, 0);
+        let v = Matrix3::get_column_new(half_axes, 1);
+        let w = Matrix3::get_column_new(half_axes, 2);
+
+        // JS: `Cartesian3.add(u, v, u); Cartesian3.add(u, w, u);`
+        let sum = Cartesian3::add_new(&Cartesian3::add_new(&u, &v), &w);
+
+        r.center = oriented_bounding_box.center;
+        r.radius = Cartesian3::magnitude(&sum);
+        r
     }
 
     /// Computes a bounding sphere that contains both bounding spheres.

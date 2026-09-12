@@ -75,7 +75,11 @@ impl OrthographicFrustum {
     }
 
     /// Returns the off-center frustum bounds after `update`.
-    pub(crate) fn off_center_bounds(&mut self) -> (f64, f64, f64, f64) {
+    ///
+    /// Public for the same reason as [`crate::perspective_frustum::PerspectiveFrustum::off_center_bounds`]:
+    /// `cesium-scene`'s `CameraFrustum` union exposes the derived bounds of all
+    /// four variants behind one accessor.
+    pub fn off_center_bounds(&mut self) -> (f64, f64, f64, f64) {
         self.update();
         (
             self.off_center.left.unwrap_or(0.0),

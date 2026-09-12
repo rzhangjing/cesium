@@ -8,8 +8,6 @@
 
 use cesium_core::bounding_sphere::BoundingSphere;
 use cesium_core::cartesian3::Cartesian3;
-use cesium_core::cartographic::Cartographic;
-use cesium_core::ellipsoid::Ellipsoid;
 use cesium_core::matrix3::Matrix3;
 use cesium_core::oriented_bounding_box::OrientedBoundingBox;
 use cesium_core::rectangle::Rectangle;
@@ -69,16 +67,24 @@ impl TileBoundingVolume {
         }
     }
 
-    /// The underlying [`OrientedBoundingBox`], when the volume is a box.
+    /// The underlying [`OrientedBoundingBox`], when the volume has one.
     ///
-    /// Mirrors `TileBoundingVolume.boundingVolume` (getter).
-    #[must_use]
+    /// Mirrors `TileBoundingVolume.boundingVolume` (getter):
+    /// - box: the box itself
+    /// - sphere: none (`TileBoundingSphere.boundingVolume` is `undefined`)
+    /// - region: `TileBoundingRegion.boundingVolume`, i.e. the
+    ///   `_orientedBoundingBox` that `computeBoundingVolumes` builds
     pub fn bounding_box(&self) -> Option<OrientedBoundingBox> {
         match self {
             Self::Box { center, half_axes } => {
                 Some(OrientedBoundingBox::new(Some(center), Some(half_axes)))
             }
-            _ => None,
+            Self::Region {
+                rectangle,
+                minimum_height,
+                maximum_height,
+            } => Some(self.region_oriented_bounding_box(rectangle, *minimum_height, *maximum_height)),
+            Self::Sphere { .. } => None,
         }
     }
 
@@ -90,66 +96,47 @@ impl TileBoundingVolume {
     /// - region: `BoundingSphere.fromOrientedBoundingBox` of
     ///   `OrientedBoundingBox.fromRectangle`
     ///
-    /// DEVIATION: the Core API `OrientedBoundingBox.fromRectangle` is not
-    /// yet ported, so region volumes approximate the bounding sphere from
-    /// the rectangle corners and center sampled at the maximum height.
-    #[must_use]
+    /// The region arm reproduces `TileBoundingRegion.prototype.computeBoundingVolumes`.
+    ///
+    /// DEVIATION: `computeBoundingVolumes` takes an ellipsoid; this getter has
+    /// no way to receive one, so `OrientedBoundingBox.from_rectangle` falls
+    /// back to its own default (`Ellipsoid::WGS84`) — the same ellipsoid the
+    /// previous approximating implementation hard-coded.
     pub fn bounding_sphere(&self) -> BoundingSphere {
         match self {
             Self::Box { center, half_axes } => {
-                // BoundingSphere.fromOrientedBoundingBox: the radius is the
-                // distance from the center to a corner, i.e. the magnitude
-                // of the sum of the three half-axis column vectors.
-                let u = Matrix3::get_column_new(half_axes, 0);
-                let v = Matrix3::get_column_new(half_axes, 1);
-                let w = Matrix3::get_column_new(half_axes, 2);
-                let corner_offset = Cartesian3::new(
-                    u.x + v.x + w.x,
-                    u.y + v.y + w.y,
-                    u.z + v.z + w.z,
-                );
-                BoundingSphere::new(
-                    *center,
-                    Cartesian3::magnitude(&corner_offset),
-                )
+                let obb = OrientedBoundingBox::new(Some(center), Some(half_axes));
+                BoundingSphere::from_oriented_bounding_box(&obb, None)
             }
             Self::Sphere { center, radius } => BoundingSphere::new(*center, *radius),
             Self::Region {
                 rectangle,
+                minimum_height,
                 maximum_height,
-                ..
             } => {
-                let ellipsoid = &Ellipsoid::WGS84;
-                let samples = [
-                    Cartographic::new(rectangle.west, rectangle.south, *maximum_height),
-                    Cartographic::new(rectangle.east, rectangle.south, *maximum_height),
-                    Cartographic::new(rectangle.west, rectangle.north, *maximum_height),
-                    Cartographic::new(rectangle.east, rectangle.north, *maximum_height),
-                    Cartographic::new(
-                        (rectangle.west + rectangle.east) * 0.5,
-                        (rectangle.south + rectangle.north) * 0.5,
-                        *maximum_height,
-                    ),
-                ];
-                let mut center = Cartesian3::ZERO;
-                let mut points = [Cartesian3::ZERO; 5];
-                for (point, cartographic) in points.iter_mut().zip(samples.iter()) {
-                    ellipsoid.cartographic_to_cartesian(cartographic, point);
-                    center.x += point.x;
-                    center.y += point.y;
-                    center.z += point.z;
-                }
-                center.x /= points.len() as f64;
-                center.y /= points.len() as f64;
-                center.z /= points.len() as f64;
-
-                let mut radius = 0.0_f64;
-                for point in &points {
-                    radius = radius.max(Cartesian3::distance(&center, point));
-                }
-                BoundingSphere::new(center, radius)
+                let obb =
+                    self.region_oriented_bounding_box(rectangle, *minimum_height, *maximum_height);
+                BoundingSphere::from_oriented_bounding_box(&obb, None)
             }
         }
+    }
+
+    /// `OrientedBoundingBox.fromRectangle(rectangle, minimumHeight,
+    /// maximumHeight, ellipsoid)` — the first half of
+    /// `TileBoundingRegion.prototype.computeBoundingVolumes`.
+    fn region_oriented_bounding_box(
+        &self,
+        rectangle: &Rectangle,
+        minimum_height: f64,
+        maximum_height: f64,
+    ) -> OrientedBoundingBox {
+        OrientedBoundingBox::from_rectangle(
+            Some(rectangle),
+            Some(minimum_height),
+            Some(maximum_height),
+            None,
+            None,
+        )
     }
 
     /// Gets the distance from the given point to the closest point on this
@@ -160,9 +147,10 @@ impl TileBoundingVolume {
     /// - box: `OrientedBoundingBox.distanceSquaredTo`
     /// - sphere: `Cartesian3.distance(center, position)`
     ///   (mirrors `TileBoundingSphere.distanceToCamera`)
-    /// - region: distance to the approximated bounding sphere center
-    ///   (see the DEVIATION note on [`Self::bounding_sphere`]).
-    #[must_use]
+    /// - region: distance to the bounding sphere's centre. DEVIATION:
+    ///   `TileBoundingRegion.prototype.computeDistanceToCamera` clips against
+    ///   the region's four edge planes and the height range instead; that is
+    ///   not ported.
     pub fn distance_to_point(&self, point: &Cartesian3) -> f64 {
         match self {
             Self::Box { center, half_axes } => {

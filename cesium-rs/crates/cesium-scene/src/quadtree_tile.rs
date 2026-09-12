@@ -10,6 +10,7 @@ use cesium_core::rectangle::Rectangle;
 use cesium_core::tiling_scheme::TilingScheme;
 
 use crate::quadtree_tile_load_state::QuadtreeTileLoadState;
+use crate::tile_selection_result::TileSelectionResult;
 
 /// Child-tile slot indices: mirrors the CesiumJS `northwestChild` /
 /// `northeastChild` / `southwestChild` / `southeastChild` getters.
@@ -17,6 +18,56 @@ pub const CHILD_NORTHWEST: usize = 0;
 pub const CHILD_NORTHEAST: usize = 1;
 pub const CHILD_SOUTHWEST: usize = 2;
 pub const CHILD_SOUTHEAST: usize = 3;
+
+/// Identity of a tile in the quadtree: `(level, x, y)`.
+///
+/// DEVIATION (B4-2): CesiumJS passes tile *references* around — the render
+/// list and the three load queues all hold live `QuadtreeTile` objects, and the
+/// kick loop walks `workTile.parent` back up the tree. The Rust port owns the
+/// whole tree from [`QuadtreePrimitive::root_tiles`](crate::quadtree_primitive::QuadtreePrimitive)
+/// downwards, so a borrow cannot outlive the `&mut` traversal. These keys are
+/// the copyable stand-in: they re-resolve to `&mut QuadtreeTile` through
+/// child-slot navigation, and `parent()` reproduces the `workTile.parent` walk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TileKey {
+    /// The level of the tile (0 = root).
+    pub level: i32,
+    /// The x coordinate of the tile (column).
+    pub x: i32,
+    /// The y coordinate of the tile (row).
+    pub y: i32,
+}
+
+impl TileKey {
+    /// Creates a tile key.
+    pub const fn new(level: i32, x: i32, y: i32) -> Self {
+        Self { level, x, y }
+    }
+
+    /// Returns the key of this tile's parent, or `None` for level zero.
+    ///
+    /// Mirrors the CesiumJS `tile.parent` getter: `level - 1`, `x >> 1`,
+    /// `y >> 1`.
+    pub const fn parent(&self) -> Option<TileKey> {
+        if self.level <= 0 {
+            None
+        } else {
+            Some(Self {
+                level: self.level - 1,
+                x: self.x >> 1,
+                y: self.y >> 1,
+            })
+        }
+    }
+
+    /// Returns the slot this tile occupies in its parent's `children` vector,
+    /// matching the CesiumJS `northwestChild`/`northeastChild`/
+    /// `southwestChild`/`southeastChild` getters: the x bit selects west/east
+    /// and the y bit selects north/south.
+    pub const fn slot_in_parent(&self) -> usize {
+        ((self.x & 1) as usize) | (((self.y & 1) as usize) << 1)
+    }
+}
 
 /// A single tile in the quadtree used for globe surface rendering.
 ///
@@ -51,7 +102,17 @@ pub struct QuadtreeTile {
     pub loading_descendant_count: i32,
 
     /// Whether this tile is eligible for rendering (all imagery loaded, etc.).
+    ///
+    /// Mirrors CesiumJS `tile.renderable`, a plain field the tile provider sets
+    /// once the tile's terrain and imagery are ready.
     pub renderable: bool,
+
+    /// Whether this tile was entirely upsampled from its parent.
+    ///
+    /// Mirrors CesiumJS `tile.upsampledFromParent`: when all four children of a
+    /// parent were upsampled, `visitTile` renders the parent instead of the
+    /// children even if the LOD indicates the children would be preferable.
+    pub upsampled_from_parent: bool,
 
     /// The pick bounding sphere (may differ from bounding_sphere for better picking).
     pub pick_bounding_sphere: BoundingSphere,
@@ -61,6 +122,27 @@ pub struct QuadtreeTile {
     /// Mirrors `GlobeSurfaceTileProvider#getLevelMaximumGeometricError`:
     /// `levelZeroMaximumGeometricError / (1 << level)`.
     pub geometric_error: f64,
+
+    /// The load priority assigned when the tile was queued, mirroring CesiumJS
+    /// `tile._loadPriority` (set by `queueTileLoad` from
+    /// `tileProvider.computeTileLoadPriority`). Lower loads first.
+    pub load_priority: f64,
+
+    /// What happened the last time this tile was visited for selection.
+    ///
+    /// Mirrors CesiumJS `tile._lastSelectionResult`.
+    pub last_selection_result: TileSelectionResult,
+
+    /// The frame number `last_selection_result` refers to.
+    ///
+    /// Mirrors CesiumJS `tile._lastSelectionResultFrame`, which starts as
+    /// `undefined` and is compared against `primitive._lastSelectionFrameNumber`
+    /// (also `undefined` on the first frame). `undefined === undefined` is
+    /// `true` in JavaScript, so a never-visited tile reads back its stored
+    /// result on the very first selection pass — [`TileSelectionResult::NONE`],
+    /// which satisfies `visitTile`'s "culled or not visited last frame"
+    /// renderable condition. `None` models that `undefined`.
+    pub last_selection_result_frame: Option<u64>,
 
     /// Child tiles in `[NW, NE, SW, SE]` order. Empty until
     /// [`QuadtreeTile::ensure_children`] creates them during refinement.
@@ -86,8 +168,12 @@ impl QuadtreeTile {
             was_rendered: false,
             loading_descendant_count: 0,
             renderable: false,
+            upsampled_from_parent: false,
             pick_bounding_sphere: BoundingSphere::default(),
             geometric_error: 0.0,
+            load_priority: 0.0,
+            last_selection_result: TileSelectionResult::NONE,
+            last_selection_result_frame: None,
             children: Vec::new(),
         }
     }
@@ -151,8 +237,12 @@ impl QuadtreeTile {
             was_rendered: false,
             loading_descendant_count: 0,
             renderable: false,
+            upsampled_from_parent: false,
             pick_bounding_sphere: BoundingSphere::default(),
             geometric_error: 0.0,
+            load_priority: 0.0,
+            last_selection_result: TileSelectionResult::NONE,
+            last_selection_result_frame: None,
             children: Vec::new(),
         }
     }
@@ -233,10 +323,29 @@ impl QuadtreeTile {
             was_rendered: self.was_rendered,
             loading_descendant_count: self.loading_descendant_count,
             renderable: self.renderable,
+            upsampled_from_parent: self.upsampled_from_parent,
             pick_bounding_sphere: self.pick_bounding_sphere.clone(),
             geometric_error: self.geometric_error,
+            load_priority: self.load_priority,
+            last_selection_result: self.last_selection_result,
+            last_selection_result_frame: self.last_selection_result_frame,
             children: Vec::new(),
         }
+    }
+
+    /// Returns this tile's identity, used to re-resolve it from the tree while
+    /// an `&mut` traversal borrow is live (see [`TileKey`]).
+    pub const fn key(&self) -> TileKey {
+        TileKey::new(self.level, self.x, self.y)
+    }
+
+    /// Gets a value indicating whether or not this tile needs further loading.
+    ///
+    /// Mirrors CesiumJS `QuadtreeTile#needsLoading`: `state < DONE`. Note the
+    /// comparison is ordered, so a `Failed` tile (3) reports `false` — it is
+    /// never re-queued.
+    pub fn needs_loading(&self) -> bool {
+        self.load_state.as_i32() < QuadtreeTileLoadState::Done.as_i32()
     }
 
     /// Returns whether this tile is done loading (ready for rendering).
@@ -255,10 +364,15 @@ impl QuadtreeTile {
     }
 
     /// Resets the tile state for a new frame.
+    ///
+    /// Mirrors the resource half of CesiumJS `QuadtreeTile#freeResources`
+    /// (`state = START`, `renderable = false`, `upsampledFromParent = false`).
     pub fn reset(&mut self) {
+        self.load_state = QuadtreeTileLoadState::Start;
         self.was_rendered = false;
         self.loading_descendant_count = 0;
         self.renderable = false;
+        self.upsampled_from_parent = false;
         self.screen_space_error = 0.0;
         self.camera_distance = 0.0;
     }

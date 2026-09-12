@@ -113,13 +113,7 @@ fn generate_cartesian_arc_segment(
     ellipsoid.cartesian_to_cartographic(&last, &mut end);
     let heights = subdivide_heights(num_points, h0, h1);
 
-    let geodesic = EllipsoidGeodesic::new(
-        Some(start),
-        Some(end),
-        None,
-        None,
-        Some(ellipsoid.clone()),
-    );
+    let geodesic = EllipsoidGeodesic::new(Some(start), Some(end), Some(ellipsoid.clone()));
     let surface_distance_between_points = geodesic.surface_distance() / num_points as f64;
 
     start.height = h0;

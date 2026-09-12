@@ -4,6 +4,6 @@
   "version": "1.0.0",
   "scheme": "tms",
   "projection": "EPSG:4326",
-  "maxzoom": 2,
+  "maxzoom": 4,
   "tiles": ["{z}/{x}/{y}.terrain"]
 }

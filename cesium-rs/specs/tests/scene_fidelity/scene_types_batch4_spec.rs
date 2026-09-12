@@ -268,32 +268,84 @@ fn primitive_state_from_i32_round_trips() {
 
 #[test]
 fn tile_selection_result_values() {
-    assert_eq!(TileSelectionResult::None.as_i32(), 0);
-    assert_eq!(TileSelectionResult::Culled.as_i32(), 1);
-    assert_eq!(TileSelectionResult::Rendered.as_i32(), 2);
-    assert_eq!(TileSelectionResult::Refined.as_i32(), 3);
-    assert_eq!(TileSelectionResult::RenderedAndKicked.as_i32(), 6);
-    assert_eq!(TileSelectionResult::RefinedAndKicked.as_i32(), 7);
-    assert_eq!(TileSelectionResult::CulledButNeeded.as_i32(), 9);
+    assert_eq!(TileSelectionResult::NONE.as_i32(), 0);
+    assert_eq!(TileSelectionResult::CULLED.as_i32(), 1);
+    assert_eq!(TileSelectionResult::RENDERED.as_i32(), 2);
+    assert_eq!(TileSelectionResult::REFINED.as_i32(), 3);
+    assert_eq!(TileSelectionResult::RENDERED_AND_KICKED.as_i32(), 2 | 4);
+    assert_eq!(TileSelectionResult::REFINED_AND_KICKED.as_i32(), 3 | 4);
+    assert_eq!(TileSelectionResult::CULLED_BUT_NEEDED.as_i32(), 1 | 8);
 }
 
+/// `originalResult: value & 3` strips both the kick bit and the
+/// CULLED_BUT_NEEDED bit.
 #[test]
-fn tile_selection_result_was_rendered() {
-    assert!(!TileSelectionResult::None.was_rendered());
-    assert!(!TileSelectionResult::Culled.was_rendered());
-    assert!(TileSelectionResult::Rendered.was_rendered());
-    assert!(TileSelectionResult::Refined.was_rendered());
-    assert!(TileSelectionResult::RenderedAndKicked.was_rendered());
-    assert!(TileSelectionResult::RefinedAndKicked.was_rendered());
-    assert!(!TileSelectionResult::CulledButNeeded.was_rendered());
+fn tile_selection_result_original_result() {
+    assert_eq!(
+        TileSelectionResult::NONE.original_result(),
+        TileSelectionResult::NONE
+    );
+    assert_eq!(
+        TileSelectionResult::CULLED.original_result(),
+        TileSelectionResult::CULLED
+    );
+    assert_eq!(
+        TileSelectionResult::RENDERED.original_result(),
+        TileSelectionResult::RENDERED
+    );
+    assert_eq!(
+        TileSelectionResult::REFINED.original_result(),
+        TileSelectionResult::REFINED
+    );
+    assert_eq!(
+        TileSelectionResult::RENDERED_AND_KICKED.original_result(),
+        TileSelectionResult::RENDERED
+    );
+    assert_eq!(
+        TileSelectionResult::REFINED_AND_KICKED.original_result(),
+        TileSelectionResult::REFINED
+    );
+    assert_eq!(
+        TileSelectionResult::CULLED_BUT_NEEDED.original_result(),
+        TileSelectionResult::CULLED
+    );
 }
 
+/// `kick: value | 4`. Idempotent, and closed over the whole integer domain —
+/// including values no named constant spells out (9 | 4 == 13).
+#[test]
+fn tile_selection_result_kick() {
+    assert_eq!(
+        TileSelectionResult::RENDERED.kick(),
+        TileSelectionResult::RENDERED_AND_KICKED
+    );
+    assert_eq!(
+        TileSelectionResult::REFINED.kick(),
+        TileSelectionResult::REFINED_AND_KICKED
+    );
+    assert_eq!(TileSelectionResult::NONE.kick().as_i32(), 4);
+    assert_eq!(
+        TileSelectionResult::CULLED_BUT_NEEDED.kick().as_i32(),
+        1 | 8 | 4
+    );
+    assert_eq!(
+        TileSelectionResult::RENDERED_AND_KICKED.kick(),
+        TileSelectionResult::RENDERED_AND_KICKED
+    );
+}
+
+/// `wasKicked: value >= RENDERED_AND_KICKED`. Being a comparison rather than a
+/// membership test, this reports `true` for CULLED_BUT_NEEDED (9 >= 6) — the
+/// CesiumJS quirk `TerrainFillMesh.js` relies on.
 #[test]
 fn tile_selection_result_was_kicked() {
-    assert!(!TileSelectionResult::None.was_kicked());
-    assert!(!TileSelectionResult::Rendered.was_kicked());
-    assert!(TileSelectionResult::RenderedAndKicked.was_kicked());
-    assert!(TileSelectionResult::RefinedAndKicked.was_kicked());
+    assert!(!TileSelectionResult::NONE.was_kicked());
+    assert!(!TileSelectionResult::CULLED.was_kicked());
+    assert!(!TileSelectionResult::RENDERED.was_kicked());
+    assert!(!TileSelectionResult::REFINED.was_kicked());
+    assert!(TileSelectionResult::RENDERED_AND_KICKED.was_kicked());
+    assert!(TileSelectionResult::REFINED_AND_KICKED.was_kicked());
+    assert!(TileSelectionResult::CULLED_BUT_NEEDED.was_kicked());
 }
 
 // ─── SdfSettings ───────────────────────────────────────────────

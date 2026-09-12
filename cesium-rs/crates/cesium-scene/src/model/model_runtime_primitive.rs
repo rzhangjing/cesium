@@ -8,8 +8,13 @@ use std::sync::Arc;
 use cesium_core::bounding_sphere::BoundingSphere;
 use cesium_core::cartesian3::Cartesian3;
 use cesium_core::webgl_constants::WebGLConstants;
+use cesium_renderer::pass::Pass;
+use cesium_renderer::render_state::RenderState;
 use cesium_renderer::texture::Texture;
 use cesium_renderer::vertex_array::VertexArray;
+
+use crate::model::lighting_model::LightingModel;
+use crate::model::primitive_render_resources::PrimitiveRenderResources;
 
 /// A runtime primitive in a model.
 ///
@@ -43,6 +48,19 @@ pub struct ModelRuntimePrimitive {
     /// The bounding sphere of the primitive in model-local coordinates
     /// (derived from the POSITION accessor min/max).
     pub bounding_sphere: BoundingSphere,
+    /// The render state finalized by the alpha stage (depth test / depth mask /
+    /// blending). Back-face culling is applied per-frame in [`Model::update`]
+    /// (it depends on the model's live `backFaceCulling`), mirroring the JS
+    /// per-frame derived-command cull update.
+    pub render_state: RenderState,
+    /// The render pass (Opaque or Translucent) resolved by the alpha stage.
+    pub pass: Pass,
+    /// The resolved lighting model (recorded for fidelity; the static WGSL
+    /// shaders shade unlit — see [`LightingPipelineStage`]).
+    pub lighting_model: LightingModel,
+    /// The `ColorBlendMode.getColorBlend` factor (recorded for fidelity; the
+    /// model color is folded into the base color factor at draw time).
+    pub color_blend: f32,
 }
 
 impl ModelRuntimePrimitive {
@@ -60,6 +78,39 @@ impl ModelRuntimePrimitive {
             translucent: false,
             node_index: 0,
             bounding_sphere: BoundingSphere::new(Cartesian3::ZERO, 0.0),
+            render_state: RenderState::default(),
+            pass: Pass::Opaque,
+            lighting_model: LightingModel::Unlit,
+            color_blend: 0.0,
+        }
+    }
+
+    /// Builds the runtime primitive from a fully-processed
+    /// [`PrimitiveRenderResources`] bag plus the assembled GPU vertex array.
+    ///
+    /// This is the terminal step of the adapted pipeline chain: after every
+    /// stage has mutated the render resources, their outputs are copied into
+    /// the immutable runtime primitive the draw path reads each frame.
+    pub fn from_render_resources(
+        render_resources: &PrimitiveRenderResources,
+        vertex_array: Arc<VertexArray>,
+    ) -> Self {
+        Self {
+            vertex_array: Some(vertex_array),
+            count: render_resources.count,
+            offset: render_resources.offset,
+            primitive_type: render_resources.primitive_type,
+            base_color_factor: render_resources.base_color_factor,
+            base_color_texture: render_resources.base_color_texture.clone(),
+            textured: render_resources.textured,
+            double_sided: render_resources.double_sided,
+            translucent: render_resources.translucent,
+            node_index: render_resources.node_index,
+            bounding_sphere: render_resources.bounding_sphere.clone(),
+            render_state: render_resources.render_state.clone(),
+            pass: render_resources.pass,
+            lighting_model: render_resources.lighting_model,
+            color_blend: render_resources.color_blend,
         }
     }
 

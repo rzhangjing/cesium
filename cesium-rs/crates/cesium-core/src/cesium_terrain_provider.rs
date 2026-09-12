@@ -82,6 +82,7 @@ use crate::resource::{
     DerivedResourceOptions, Resource, ResourceBackend, ResourceError,
 };
 use crate::runtime_error::RuntimeError;
+use crate::terrain_mesh::TerrainMesh;
 use crate::terrain_provider::{
     get_estimated_level_zero_geometric_error_for_a_heightmap, TerrainProvider,
 };
@@ -246,6 +247,29 @@ impl std::fmt::Debug for TerrainTileData {
         match self {
             Self::Heightmap(_) => write!(f, "TerrainTileData::Heightmap(..)"),
             Self::QuantizedMesh(_) => write!(f, "TerrainTileData::QuantizedMesh(..)"),
+        }
+    }
+}
+
+impl TerrainTileData {
+    /// The mesh created by `createMesh`, if any.
+    ///
+    /// Mirrors the `mesh` property both JS terrain-data classes expose.
+    pub fn mesh(&self) -> Option<&TerrainMesh> {
+        match self {
+            Self::Heightmap(heightmap) => heightmap.mesh(),
+            Self::QuantizedMesh(quantized) => quantized.mesh(),
+        }
+    }
+
+    /// Mutable variant of [`TerrainTileData::mesh`].
+    ///
+    /// `Globe.prototype.pick` needs it: `TerrainMesh.pick` grows the
+    /// `TerrainPicker` quadtree and records `_lastPickSceneMode`.
+    pub fn mesh_mut(&mut self) -> Option<&mut TerrainMesh> {
+        match self {
+            Self::Heightmap(heightmap) => heightmap.mesh_mut(),
+            Self::QuantizedMesh(quantized) => quantized.mesh_mut(),
         }
     }
 }

@@ -1,4 +1,5 @@
-//! Headless acceptance tests for the globe terrain upgrade (Track B4-5).
+//! Headless acceptance tests for the globe terrain upgrade (Track B4-5) and the
+//! terrain-pick substantiation (Track B3-1).
 //!
 //! Renders the globe against an offline heightmap-1.0 terrain tileset
 //! (`layer.json` + 65×65 u16 tiles, generated at test time) and asserts the
@@ -10,8 +11,14 @@
 //!   permanent no-data (failed/placeholder discipline),
 //! - level-zero deterministic no-data is the only terminal negative state.
 //!
+//! On the same tileset it then asserts the picking contract:
+//! `Globe.pickWorldCoordinates` / `Globe.pick` / `Globe.getHeight` resolve
+//! against the terrain that was actually rendered, and
+//! `QuadtreePrimitive._tilesRenderedThisFrame` is the deduplicated superset of
+//! the render list that picking iterates.
+//!
 //! The mock-fetcher tests are pure CPU (no GPU required); the end-to-end
-//! render test skips itself when no GPU adapter is available.
+//! render and pick tests skip themselves when no GPU adapter is available.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,6 +27,7 @@ use cesium_core::cartesian3::Cartesian3;
 use cesium_core::cartographic::Cartographic;
 use cesium_core::cesium_terrain_provider::TerrainTileData;
 use cesium_core::ellipsoid::Ellipsoid;
+use cesium_core::geographic_projection::GeographicProjection;
 use cesium_core::geographic_tiling_scheme::GeographicTilingScheme;
 use cesium_core::heightmap_terrain_data::{
     HeightmapBuffer, HeightmapStructureOptions, HeightmapTerrainData,
@@ -27,11 +35,14 @@ use cesium_core::heightmap_terrain_data::{
 };
 use cesium_core::julian_date::JulianDate;
 use cesium_core::pixel_format::PixelFormat;
+use cesium_core::ray::Ray;
 use cesium_core::rectangle::Rectangle;
 use cesium_core::tiling_scheme::TilingScheme;
+use cesium_test_utils::assert_approx_eq_f64;
 use cesium_renderer::context::{Context, DefaultRenderTarget};
 use cesium_renderer::texture::{Texture, TextureOptions};
 use cesium_scene::file_imagery_provider::FileImageryProvider;
+use cesium_scene::frame_state::FrameState;
 use cesium_scene::globe::Globe;
 use cesium_scene::globe_terrain_fetcher::{
     FileTerrainFetcher, GlobeTerrainFetcher, TerrainGeometryOutcome,
@@ -285,6 +296,36 @@ fn file_url(root: &std::path::Path) -> String {
     format!("file:///{}", root.display().to_string().replace('\\', "/"))
 }
 
+/// Bumped whenever the fixture layout changes, so a directory left behind by an
+/// older test binary is never reused. (An earlier layout was missing the
+/// level-zero tiles entirely, which silently turned every level-0 terrain
+/// request into `NoData` and every pick into `None`.)
+const FIXTURE_VERSION: u32 = 2;
+
+/// The offline imagery + terrain tileset roots, generated once per test binary.
+///
+/// `cargo test` runs these tests on parallel threads over the *same*
+/// directories, so generation goes through a `OnceLock`: two threads racing
+/// through the "does `layer.json` exist yet" guard interleave their writes and
+/// leave a half-populated tileset that every later run then reuses.
+fn offline_fixtures() -> &'static (std::path::PathBuf, std::path::PathBuf) {
+    static FIXTURES: std::sync::OnceLock<(std::path::PathBuf, std::path::PathBuf)> =
+        std::sync::OnceLock::new();
+    FIXTURES.get_or_init(|| {
+        let imagery_root = std::env::temp_dir()
+            .join(format!("cesium_rs_globe_terrain_smoke_imagery_v{FIXTURE_VERSION}"));
+        let terrain_root = std::env::temp_dir()
+            .join(format!("cesium_rs_globe_terrain_smoke_terrain_v{FIXTURE_VERSION}"));
+        if !imagery_root.join("0").is_dir() {
+            generate_marker_tiles(&imagery_root);
+        }
+        if !terrain_root.join("layer.json").is_file() {
+            generate_terrain_tiles(&terrain_root);
+        }
+        (imagery_root, terrain_root)
+    })
+}
+
 // ────────────────────────── mock fetcher (CPU tests) ──────────────────────────
 
 /// A scripted [`GlobeTerrainFetcher`] for the failed/placeholder discipline
@@ -470,23 +511,16 @@ fn terrain_heightmap_tileset_renders_and_missing_tile_upsamples() {
         eprintln!("no GPU adapter available; skipping");
         return;
     };
-    let imagery_root = std::env::temp_dir().join("cesium_rs_globe_terrain_smoke_imagery");
-    if !imagery_root.join("0").is_dir() {
-        generate_marker_tiles(&imagery_root);
-    }
-    let terrain_root = std::env::temp_dir().join("cesium_rs_globe_terrain_smoke_terrain");
-    if !terrain_root.join("layer.json").is_file() {
-        generate_terrain_tiles(&terrain_root);
-    }
+    let (imagery_root, terrain_root) = offline_fixtures();
 
-    let fetcher = FileTerrainFetcher::from_url(&file_url(&terrain_root))
+    let fetcher = FileTerrainFetcher::from_url(&file_url(terrain_root))
         .expect("offline layer.json must load");
 
     let mut scene = Scene::new();
     scene.set_background_color(cesium_core::color::Color::new(0.0, 0.0, 0.2, 1.0));
     scene.viewport_quad_mut().show = false;
 
-    let imagery = FileImageryProvider::new(&imagery_root, None);
+    let imagery = FileImageryProvider::new(imagery_root, None);
     let mut globe = Globe::new(Some(Ellipsoid::WGS84));
     globe
         .imagery_layers_mut()
@@ -564,4 +598,214 @@ fn terrain_heightmap_tileset_renders_and_missing_tile_upsamples() {
     }
     let image = image::RgbaImage::from_raw(WIDTH, HEIGHT, small).unwrap();
     image.save(screenshot_dir.join("globe_terrain_smoke.png")).unwrap();
+}
+
+// ─────────────────────── picking (Track B3-1) ───────────────────────
+
+/// The probe point: longitude 90°E, latitude 45°N.
+///
+/// Chosen so it lands exactly on a heightmap grid vertex of the eastern
+/// level-zero root (longitude 0..180°, latitude -90..90°). `generate_terrain_tiles`
+/// ramps height west→east as `100 * level + 300 * u` with `u = column / 64`, so
+/// column 32 of that root is `u = 0.5` → **150 m** at level 0, and row 16 is
+/// latitude 45°N. No interpolation is involved, which is what makes the expected
+/// height an exact fixture constant rather than a guess.
+const PROBE_LON: f64 = std::f64::consts::FRAC_PI_2;
+const PROBE_LAT: f64 = std::f64::consts::FRAC_PI_4;
+/// The fixture height at [`PROBE_LON`] on a level-zero tile.
+const PROBE_HEIGHT: f64 = 150.0;
+
+/// The vertex buffer holds `f32` RTC offsets from the tile's OBB centre, and a
+/// level-zero root's box spans half the globe (~1e7 m), so `f32` resolution
+/// costs roughly a metre. 5 m keeps that slack while still separating 150 m from
+/// every other candidate (0 m for a bare ellipsoid, 250/350 m for levels 1/2).
+const PICK_ABS_EPS: f64 = 5.0;
+/// The same quantisation seen laterally: 5 m at 6.4e6 m is ~8e-7 rad.
+const PICK_RAD_EPS: f64 = 1.0e-5;
+
+/// Installs the offline imagery + heightmap tileset on a fresh scene and looks
+/// straight down at the probe point.
+///
+/// `maximum_screen_space_error` is forwarded to the quadtree by
+/// `Globe::begin_frame`; the SSE test is a strict `<`, so a huge value stops
+/// refinement outright and leaves the two level-zero roots as the only tiles
+/// ever drawn. That is what pins the picked geometry to the level-0 fixture.
+fn install_offline_globe(scene: &mut Scene, maximum_screen_space_error: f64) {
+    let (imagery_root, terrain_root) = offline_fixtures();
+
+    let fetcher = FileTerrainFetcher::from_url(&file_url(terrain_root))
+        .expect("offline layer.json must load");
+
+    scene.viewport_quad_mut().show = false;
+    let imagery = FileImageryProvider::new(imagery_root, None);
+    let mut globe = Globe::new(Some(Ellipsoid::WGS84));
+    globe
+        .imagery_layers_mut()
+        .add(ImageryLayer::with_provider(Box::new(imagery)));
+    globe.set_terrain_fetcher(Some(Box::new(fetcher)));
+    globe.maximum_screen_space_error = maximum_screen_space_error;
+    scene.set_globe(Some(globe));
+
+    let nadir = Cartographic::new(
+        PROBE_LON,
+        PROBE_LAT,
+        Ellipsoid::WGS84.maximum_radius() * 2.0,
+    );
+    let mut destination = Cartesian3::default();
+    Ellipsoid::WGS84.cartographic_to_cartesian(&nadir, &mut destination);
+    scene
+        .camera_mut()
+        .set_view(&destination, None, None, &Ellipsoid::WGS84);
+}
+
+/// A nadir ray through the probe point, starting 1e6 m above the ellipsoid.
+fn probe_nadir_ray() -> (Ray, Cartesian3) {
+    let surface_cartographic = Cartographic::new(PROBE_LON, PROBE_LAT, 0.0);
+    let mut surface = Cartesian3::default();
+    Ellipsoid::WGS84.cartographic_to_cartesian(&surface_cartographic, &mut surface);
+
+    let mut normal = Cartesian3::default();
+    Ellipsoid::WGS84.geodetic_surface_normal(&surface, &mut normal);
+
+    let mut lift = Cartesian3::default();
+    Cartesian3::multiply_by_scalar(&normal, 1.0e6, &mut lift);
+    let mut origin = Cartesian3::default();
+    Cartesian3::add(&surface, &lift, &mut origin);
+
+    let direction = Cartesian3::negate_new(&normal);
+    (Ray::new(Some(&origin), Some(&direction)), normal)
+}
+
+/// `_tilesRenderedThisFrame` is the set `Globe.pickWorldCoordinates` iterates.
+/// CesiumJS keeps it as a `Set` so a tile drawn by several passes in one frame
+/// is visited once while keeping insertion order, and — unlike `_tilesToRender`
+/// — the anti-flicker kick path never splices tiles back out of it, so a kicked
+/// ancestor stays pickable. The port reproduces both properties with a
+/// deduplicating `Vec`.
+#[test]
+fn rendered_this_frame_is_the_deduplicated_superset_of_the_render_list() {
+    let Some(gpu) = try_gpu() else {
+        eprintln!("no GPU adapter available; skipping");
+        return;
+    };
+    let mut scene = Scene::new();
+    install_offline_globe(&mut scene, 1.0e9);
+    render_frames(&gpu, &mut scene, 3, WIDTH);
+
+    let globe = scene.globe().expect("globe installed");
+    let rendered = globe.surface().tiles_rendered_this_frame();
+    assert!(!rendered.is_empty(), "the traversal must have drawn tiles");
+
+    // Insertion-ordered and duplicate-free, exactly like a JS `Set`.
+    let mut seen = Vec::new();
+    for key in rendered {
+        assert!(
+            !seen.contains(key),
+            "tile ({}, {}, {}) was recorded twice",
+            key.level,
+            key.x,
+            key.y
+        );
+        seen.push(*key);
+    }
+
+    // `forEachRenderedTile` walks the same keys in the same order.
+    let mut visited = Vec::new();
+    globe.surface().for_each_rendered_tile(|key| visited.push(key));
+    assert_eq!(visited, seen, "forEachRenderedTile must mirror the set");
+
+    // A superset of the render list. With refinement suppressed nothing is
+    // kicked here, so the two coincide — the assertion is the invariant that
+    // still has to hold when they do not.
+    let to_render = globe.surface().tiles_to_render();
+    assert!(!to_render.is_empty());
+    for tile in to_render {
+        assert!(
+            rendered.contains(&tile.key()),
+            "tile ({}, {}, {}) was drawn but not recorded as rendered",
+            tile.level,
+            tile.x,
+            tile.y
+        );
+    }
+
+    // `beginFrame` clears the set, so a frame in which the globe is hidden must
+    // not leave the previous frame's tiles pickable.
+    let mut hidden = FrameState::new();
+    hidden.passes.main = true;
+    let globe = scene.globe_mut().expect("globe installed");
+    globe.show = false;
+    globe.begin_frame(&hidden);
+    assert!(
+        globe.surface().tiles_rendered_this_frame().is_empty(),
+        "beginFrame must clear the rendered-this-frame set"
+    );
+}
+
+/// `Globe.pickWorldCoordinates` / `Globe.pick` / `Globe.getHeight` end to end:
+/// the whole chain — `_tilesRenderedThisFrame` → the coarse pick bounding sphere
+/// → `IntersectionTests.raySphere` → `TerrainMesh.pick` → the `TerrainPicker`
+/// quadtree — must resolve to the fixture terrain that was actually rendered.
+#[test]
+fn pick_and_get_height_resolve_against_the_rendered_terrain() {
+    let Some(gpu) = try_gpu() else {
+        eprintln!("no GPU adapter available; skipping");
+        return;
+    };
+    let mut scene = Scene::new();
+    install_offline_globe(&mut scene, 1.0e9);
+    render_frames(&gpu, &mut scene, 3, WIDTH);
+
+    // Read the scene-level inputs up front: `Globe::pick*` takes `&mut self`,
+    // and `Scene` owns the globe, so the JS's `scene` argument is split into the
+    // two fields the JS actually reads (see the DEVIATION note on
+    // `Globe::pick_world_coordinates`).
+    let mode = scene.mode();
+    let projection = GeographicProjection::new(None);
+    let (ray, normal) = probe_nadir_ray();
+
+    let globe = scene.globe_mut().expect("globe installed");
+
+    let hit = globe
+        .pick_world_coordinates(&ray, mode, Some(&projection), None)
+        .expect("a nadir ray over a rendered tile must hit the terrain");
+
+    let mut hit_cartographic = Cartographic::default();
+    assert!(
+        Ellipsoid::WGS84.cartesian_to_cartographic(&hit, &mut hit_cartographic),
+        "the hit must convert back to a cartographic"
+    );
+    assert_approx_eq_f64!(hit_cartographic.longitude, PROBE_LON, PICK_RAD_EPS, PICK_RAD_EPS);
+    assert_approx_eq_f64!(hit_cartographic.latitude, PROBE_LAT, PICK_RAD_EPS, PICK_RAD_EPS);
+    assert_approx_eq_f64!(hit_cartographic.height, PROBE_HEIGHT, PICK_ABS_EPS, 0.0);
+
+    // `Globe.pick` is a passthrough in 3D (the 2D/Columbus View unproject branch
+    // is what turns a projected hit back into ECEF).
+    let picked = globe
+        .pick(&ray, mode, Some(&projection))
+        .expect("Globe.pick must resolve in 3D");
+    assert_approx_eq_f64!(picked.x, hit.x, PICK_ABS_EPS, 0.0);
+    assert_approx_eq_f64!(picked.y, hit.y, PICK_ABS_EPS, 0.0);
+    assert_approx_eq_f64!(picked.z, hit.z, PICK_ABS_EPS, 0.0);
+
+    // `Globe.getHeight` builds its own ray along the geodetic surface normal
+    // from the ellipsoid's z-axis intersection, then picks in 3D — so it must
+    // land on the same terrain as the explicit nadir ray.
+    let height = globe
+        .get_height(&Cartographic::new(PROBE_LON, PROBE_LAT, 0.0))
+        .expect("getHeight must resolve over a rendered tile");
+    assert_approx_eq_f64!(height, PROBE_HEIGHT, PICK_ABS_EPS, 0.0);
+    assert_approx_eq_f64!(height, hit_cartographic.height, PICK_ABS_EPS, 0.0);
+
+    // A ray aimed straight *up* from the same origin leaves every triangle
+    // behind it, so `getClosestTriangleInNode`'s `tri_t >= 0` filter rejects all
+    // of them even though the root bounding sphere is hit.
+    let away = Ray::new(Some(&ray.origin), Some(&normal));
+    assert!(
+        globe
+            .pick_world_coordinates(&away, mode, Some(&projection), None)
+            .is_none(),
+        "an upward ray must not hit the terrain"
+    );
+    assert!(globe.pick(&away, mode, Some(&projection)).is_none());
 }
