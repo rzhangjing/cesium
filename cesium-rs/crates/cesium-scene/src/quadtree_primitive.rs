@@ -869,12 +869,29 @@ fn compute_tile_distance(tile: &QuadtreeTile, camera_position: &Cartesian3) -> f
 ///
 /// CesiumJS's `GlobeSurfaceTileProvider.computeTileVisibility` does two jobs:
 /// it stores `tile._distance` (which `screenSpaceError` then reads) and it
-/// frustum/horizon-culls. The port keeps the distance computation and returns
-/// `Visibility::Partial` for the cull — `FrameState` carries no `cullingVolume`
-/// and the primitive holds no `EllipsoidOccluder`. DEVIATION, tracked in
-/// `docs/deviations.md`.
+/// frustum/horizon-culls. The port keeps the distance computation and adds a
+/// conservative back-hemisphere cull: a tile is dropped only when its ENTIRE
+/// bounding sphere lies in the half-space behind the great-circle plane
+/// through the Earth centre perpendicular to the camera, which guarantees
+/// every surface point of the tile is >90° away from the camera (past the
+/// horizon, never a visible pixel).
+///
+/// PITFALL (fixed): testing only the sign of `dot(center, camera)` is WRONG
+/// for large low-LOD tiles — their bounding-sphere centre sits deep INSIDE the
+/// ellipsoid aimed at the patch mid-longitude, so a root tile can have a
+/// "back-side" centre while part of its extent is plainly visible; culling it
+/// deleted half the globe (a straight meridian chord). The radius term below
+/// keeps such straddling tiles.
+///
+/// Full frustum + ellipsoid-occluder culling still needs `FrameState` to carry
+/// a `cullingVolume`; that remains a DEVIATION tracked in `docs/deviations.md`.
 fn compute_tile_visibility(ctx: &Traversal<'_>, tile: &mut QuadtreeTile) -> Visibility {
     tile.camera_distance = compute_tile_distance(tile, &ctx.camera_position);
+    let center_dot = Cartesian3::dot(&tile.bounding_sphere.center, &ctx.camera_position);
+    let camera_distance = Cartesian3::magnitude(&ctx.camera_position);
+    if center_dot + tile.bounding_sphere.radius * camera_distance < 0.0 {
+        return Visibility::None;
+    }
     Visibility::Partial
 }
 

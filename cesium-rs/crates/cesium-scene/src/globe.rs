@@ -386,6 +386,7 @@ impl Globe {
                 &self.ellipsoid,
                 context,
                 framebuffer.clone(),
+                frame_state.frame_number,
             );
         }
     }

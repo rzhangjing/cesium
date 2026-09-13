@@ -91,6 +91,18 @@ struct State {
     right_dragging: bool,
     /// Whether the orbit camera parameters changed this frame (needs update).
     orbit_dirty: bool,
+
+    // ── Diagnostics / perf harness ────────────────────────────────
+    /// Timestamp of the previous rendered frame (for rolling frame-time).
+    last_frame_instant: Option<std::time::Instant>,
+    /// Accumulated frame time (ms) for the current averaging window.
+    frame_time_accum_ms: f64,
+    /// Frames counted in the current averaging window.
+    frame_time_count: u32,
+    /// When set (env `CESIUM_DEMO_AUTO_ORBIT`), advance the orbit heading every
+    /// frame to simulate a continuous drag — a perf harness so the drag path
+    /// (tile streaming + imagery compose) can be measured headlessly.
+    auto_orbit: bool,
 }
 
 impl State {
@@ -113,6 +125,10 @@ impl State {
             left_dragging: false,
             right_dragging: false,
             orbit_dirty: false,
+            last_frame_instant: None,
+            frame_time_accum_ms: 0.0,
+            frame_time_count: 0,
+            auto_orbit: std::env::var_os("CESIUM_DEMO_AUTO_ORBIT").is_some(),
         }
     }
 
@@ -158,10 +174,15 @@ impl State {
 
         // ── Surface configuration ────────────────────────────────────
         let surface_caps = surface.get_capabilities(&adapter);
+        // Prefer a NON-sRGB surface format. The globe day textures are
+        // already sRGB-encoded imagery that the TEXONLY shader writes
+        // through verbatim (no linear-space lighting chain); presenting
+        // those values into an sRGB surface would apply a second sRGB
+        // encode and wash every colour out (dark ocean navy -> pale teal).
         let surface_format = surface_caps
             .formats
             .iter()
-            .find(|f| f.is_srgb())
+            .find(|f| !f.is_srgb())
             .copied()
             .unwrap_or(surface_caps.formats[0]);
 
@@ -253,6 +274,32 @@ impl State {
     /// (background clear → globe offscreen pass → blit → execute), and
     /// presents. Optionally captures a readback screenshot.
     fn render(&mut self) {
+        // ── Frame-time diagnostics (rolling 60-frame average) ──────
+        let now = std::time::Instant::now();
+        if let Some(prev) = self.last_frame_instant {
+            let dt_ms = now.duration_since(prev).as_secs_f64() * 1000.0;
+            self.frame_time_accum_ms += dt_ms;
+            self.frame_time_count += 1;
+            if self.frame_time_count >= 60 {
+                let avg = self.frame_time_accum_ms / self.frame_time_count as f64;
+                log::info!(
+                    "frame time avg over {} frames: {:.2} ms ({:.1} fps)",
+                    self.frame_time_count,
+                    avg,
+                    1000.0 / avg
+                );
+                self.frame_time_accum_ms = 0.0;
+                self.frame_time_count = 0;
+            }
+        }
+        self.last_frame_instant = Some(now);
+
+        // Simulated continuous drag (perf harness only).
+        if self.auto_orbit {
+            self.orbit_heading += 0.01;
+            self.orbit_dirty = true;
+        }
+
         let device = self.device.as_ref().unwrap().clone();
         // Owned clone: the frame render below mutably destructures `self`.
         let config = self.surface_config.clone().unwrap();
@@ -479,7 +526,10 @@ fn configure_scene(scene: &mut cesium_scene::scene::Scene) {
     );
 
     let mut globe = Globe::new(Some(Ellipsoid::WGS84));
-    globe.enable_lighting = true;
+    // TEMP: sun lighting disabled per user request — the day texture is shown
+    // at uniform brightness so rotating the globe never changes tile
+    // brightness (no terminator / limb glow). Re-enable by flipping to true.
+    globe.enable_lighting = false;
     {
         let layers = globe.imagery_layers_mut();
         // Base layer: the local NaturalEarthII (or checkerboard) — always

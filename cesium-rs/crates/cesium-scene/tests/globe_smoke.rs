@@ -12,6 +12,7 @@
 //! Skipped (not failed) when no GPU adapter is available.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use cesium_core::cartesian3::Cartesian3;
 use cesium_core::ellipsoid::Ellipsoid;
@@ -230,6 +231,9 @@ fn render_frames(gpu: &Gpu, scene: &mut Scene, frames: u32, size: u32) -> Textur
         };
         let time = JulianDate::now();
         scene.render_with_context(&time, &mut context, Some(render_target));
+        // Imagery composes run on worker threads (DEVIATION B4-6): give them
+        // wall-clock time to land between frames, like a real event loop.
+        std::thread::sleep(Duration::from_millis(25));
     }
     // Keep the context alive until the queue drains, then drop it.
     target
@@ -264,7 +268,10 @@ fn globe_renders_imaged_ellipsoid_with_upright_uv_orientation() {
     }
     let mut scene = build_scene(&root);
 
-    let target = render_frames(&gpu, &mut scene, 2, WIDTH);
+    // Async imagery compose (DEVIATION B4-6): the first frame spawns worker
+    // composes and shows the base colour; later frames pick the landed
+    // textures up, so render enough frames for the pipeline to settle.
+    let target = render_frames(&gpu, &mut scene, 16, WIDTH);
     let pixels = read_pixels(&gpu, target.wgpu_texture());
 
     // Scan the middle column: first/last non-background pixels are the top

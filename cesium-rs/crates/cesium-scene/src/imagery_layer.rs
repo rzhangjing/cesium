@@ -2,6 +2,8 @@
 //!
 //! An imagery layer that can be added to a Globe's imagery layer collection.
 
+use std::sync::Arc;
+
 use crate::imagery_provider::ImageryProvider;
 
 /// An imagery layer that can be added to a Globe's imagery layer collection.
@@ -14,6 +16,11 @@ use crate::imagery_provider::ImageryProvider;
 /// The Rust port keeps [`ImageryLayer::new`] provider-less (display
 /// properties only, for spec fidelity of the property defaults) and adds
 /// [`ImageryLayer::with_provider`] for the render path.
+///
+/// DEVIATION (B4-6): the provider is held behind an `Arc` (CesiumJS: plain
+/// reference) and the layer is `Clone` so a layer collection can be handed to
+/// a background imagery-compose thread.
+#[derive(Clone)]
 pub struct ImageryLayer {
     /// The alpha blending value of this layer (0.0 = transparent, 1.0 = opaque).
     pub alpha: f64,
@@ -39,7 +46,7 @@ pub struct ImageryLayer {
     pub maximum_texture_ratio: f64,
     /// The imagery provider backing this layer (`None` for property-only
     /// layers created via [`ImageryLayer::new`]).
-    provider: Option<Box<dyn ImageryProvider>>,
+    provider: Option<Arc<dyn ImageryProvider>>,
 }
 
 impl ImageryLayer {
@@ -65,7 +72,7 @@ impl ImageryLayer {
     /// CesiumJS `new ImageryLayer(imageryProvider, options)` constructor.
     pub fn with_provider(provider: Box<dyn ImageryProvider>) -> Self {
         Self {
-            provider: Some(provider),
+            provider: Some(Arc::from(provider)),
             ..Self::new()
         }
     }
@@ -73,11 +80,6 @@ impl ImageryLayer {
     /// Returns the imagery provider backing this layer, if any.
     pub fn provider(&self) -> Option<&dyn ImageryProvider> {
         self.provider.as_deref()
-    }
-
-    /// Returns the imagery provider backing this layer (mutable), if any.
-    pub fn provider_mut(&mut self) -> Option<&mut Box<dyn ImageryProvider>> {
-        self.provider.as_mut()
     }
 }
 

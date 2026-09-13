@@ -43,6 +43,13 @@ use crate::imagery_provider::{ImageryProvider, TileImageAvailability};
 /// and no tiles exist (`atan(sinh(π))`).
 const MERCATOR_MAX_LAT: f64 = 85.0511287798066;
 
+/// Upper bound on cached fully-resolved reprojections before the cache is
+/// cleared. The reprojection (per-texel Mercator math + bilinear sample + PNG
+/// encode) is the provider's hot path; caching the settled result keeps a
+/// throttled re-compose from redoing it. Bounded so a long session cannot grow
+/// it without limit.
+const GEO_CACHE_MAX: usize = 512;
+
 /// A Mercator tile identity: `(zoom, x, y)`.
 type TileKey = (u32, u32, u32);
 
@@ -89,8 +96,13 @@ pub struct WebMercatorImageryProvider {
     shared: Arc<Mutex<SharedState>>,
     /// On-disk tile cache root (raw encoded bytes), when enabled.
     disk_dir: Option<PathBuf>,
-    /// Sends download requests to the worker thread.
-    tx: Sender<TileKey>,
+    /// Sends download requests to the worker thread. Wrapped in a `Mutex`
+    /// because `mpsc::Sender` is `Send` but not `Sync`, while the provider
+    /// must be `Sync` (DEVIATION B4-6: shared with compose threads).
+    tx: Mutex<Sender<TileKey>>,
+    /// Fully-resolved geographic reprojections, keyed by `(level, gx, gy)`.
+    /// Only settled (non-`Transient`) results are stored, so a hit is stable.
+    geo_cache: Mutex<HashMap<TileKey, Vec<u8>>>,
 }
 
 impl WebMercatorImageryProvider {
@@ -125,7 +137,8 @@ impl WebMercatorImageryProvider {
             maximum_level,
             shared,
             disk_dir,
-            tx,
+            tx: Mutex::new(tx),
+            geo_cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -169,7 +182,9 @@ impl WebMercatorImageryProvider {
             }
         }
         if enqueue {
-            let _ = self.tx.send(key);
+            if let Ok(tx) = self.tx.lock() {
+                let _ = tx.send(key);
+            }
         }
     }
 }
@@ -234,10 +249,12 @@ fn download_worker(
     }
 }
 
-/// Bilinearly samples a decoded tile at the fractional pixel coordinate
-/// `(fx, fy)` (pixel centers at integer + 0.5), clamping at the tile edges.
-fn sample_bilinear(tile: &DecodedTile, fx: f64, fy: f64) -> [u8; 4] {
-    let size = tile.size as i64;
+/// Bilinearly samples a rectangular RGBA buffer (`w`×`h`) at the fractional
+/// pixel coordinate `(fx, fy)` (pixel centers at integer + 0.5), clamping at
+/// the buffer edges. Used for the stitched reprojection atlas, which is not
+/// square (per-tile clamped sampling is what produced the seam grid).
+fn sample_rect(pixels: &[u8], w: usize, h: usize, fx: f64, fy: f64) -> [u8; 4] {
+    let (w_i, h_i) = (w as i64, h as i64);
     let gx = fx - 0.5;
     let gy = fy - 0.5;
     let x0 = gx.floor() as i64;
@@ -245,14 +262,14 @@ fn sample_bilinear(tile: &DecodedTile, fx: f64, fy: f64) -> [u8; 4] {
     let frx = gx - x0 as f64;
     let fry = gy - y0 as f64;
     let tap = |ix: i64, iy: i64| -> [f32; 4] {
-        let cx = ix.clamp(0, size - 1) as u32;
-        let cy = iy.clamp(0, size - 1) as u32;
-        let i = ((cy * tile.size + cx) * 4) as usize;
+        let cx = ix.clamp(0, w_i - 1) as usize;
+        let cy = iy.clamp(0, h_i - 1) as usize;
+        let i = (cy * w + cx) * 4;
         [
-            tile.pixels[i] as f32,
-            tile.pixels[i + 1] as f32,
-            tile.pixels[i + 2] as f32,
-            tile.pixels[i + 3] as f32,
+            pixels[i] as f32,
+            pixels[i + 1] as f32,
+            pixels[i + 2] as f32,
+            pixels[i + 3] as f32,
         ]
     };
     let c00 = tap(x0, y0);
@@ -265,8 +282,7 @@ fn sample_bilinear(tile: &DecodedTile, fx: f64, fy: f64) -> [u8; 4] {
     let w11 = (frx * fry) as f32;
     let mut out = [0u8; 4];
     for ch in 0..4 {
-        let v =
-            c00[ch] * w00 + c10[ch] * w10 + c01[ch] * w01 + c11[ch] * w11;
+        let v = c00[ch] * w00 + c10[ch] * w10 + c01[ch] * w01 + c11[ch] * w11;
         out[ch] = v.round().clamp(0.0, 255.0) as u8;
     }
     out
@@ -314,6 +330,15 @@ impl ImageryProvider for WebMercatorImageryProvider {
         gy: u32,
         level: u32,
     ) -> TileImageAvailability {
+        // A previously settled reprojection for this geographic tile is stable
+        // (its covering Mercator tiles stay Ready), so reuse it and skip the
+        // per-texel reprojection + PNG encode entirely.
+        if let Ok(cache) = self.geo_cache.lock() {
+            if let Some(bytes) = cache.get(&(level, gx, gy)) {
+                return TileImageAvailability::Data(bytes.clone());
+            }
+        }
+
         // Geographic tile bounds (degrees): 2^(level+1) columns × 2^level rows,
         // row 0 at the north — matching the pipeline's addressing.
         let columns = (2u32 << level) as f64;
@@ -373,46 +398,76 @@ impl ImageryProvider for WebMercatorImageryProvider {
         // the whole tile (see compose_tile_imagery), which would hide the base
         // map that already rendered underneath this satellite layer.
 
-        // Re-project: bilinearly sample the covering Mercator tiles into the
-        // geographic output (row 0 = north, matching the pipeline's orientation).
+        // Stitch the covering Mercator tiles into one contiguous atlas with a
+        // 1-pixel replicated border. Sampling the atlas (rather than clamping
+        // inside each individual tile) lets the bilinear filter cross internal
+        // Mercator tile boundaries, removing the visible seam grid that
+        // per-tile clamped sampling produced at every tile edge.
+        let atlas_w = cols * size as usize + 2;
+        let atlas_h = rws * size as usize + 2;
+        let mut atlas = vec![0u8; atlas_w * atlas_h * 4];
+        for (idx, tile) in tiles.iter().enumerate() {
+            let col = idx % cols;
+            let row = idx / cols;
+            let Some(tile) = tile else { continue };
+            for y in 0..size as usize {
+                let src_row = (y * tile.size as usize) * 4;
+                let dst_row = ((row * size as usize + y + 1) * atlas_w
+                    + (col * size as usize + 1))
+                    * 4;
+                let copy_len = size as usize * 4;
+                atlas[dst_row..dst_row + copy_len]
+                    .copy_from_slice(&tile.pixels[src_row..src_row + copy_len]);
+            }
+        }
+        // Replicate the outer ring so border taps repeat the edge pixel.
+        for x in 0..atlas_w {
+            for (dst_row, src_row) in [(0usize, 1usize), (atlas_h - 1, atlas_h - 2)] {
+                let d = (dst_row * atlas_w + x) * 4;
+                let s = (src_row * atlas_w + x) * 4;
+                let px = atlas[s..s + 4].to_vec();
+                atlas[d..d + 4].copy_from_slice(&px);
+            }
+        }
+        for y in 0..atlas_h {
+            for (dst_col, src_col) in [(0usize, 1usize), (atlas_w - 1, atlas_w - 2)] {
+                let d = (y * atlas_w + dst_col) * 4;
+                let s = (y * atlas_w + src_col) * 4;
+                let px = atlas[s..s + 4].to_vec();
+                atlas[d..d + 4].copy_from_slice(&px);
+            }
+        }
+
+        // Re-project: bilinearly sample the atlas into the geographic output
+        // (row 0 = north, matching the pipeline's orientation).
         let mut out = RgbaImage::from_pixel(size, size, Rgba([0, 0, 0, 0]));
         for py in 0..size {
             let frac_y = (py as f64 + 0.5) / size as f64;
             let lat = lat_max - frac_y * (lat_max - lat_min);
             let ty_f = merc_y(lat);
-            let ty = ty_f.floor();
-            if ty < 0.0 || ty >= n {
-                continue;
-            }
-            let row = (ty as u32).wrapping_sub(ty0) as usize;
-            if row >= rws {
-                continue;
-            }
+            let ay = (ty_f - ty0 as f64) * size as f64 + 1.0;
             for px in 0..size {
                 let frac_x = (px as f64 + 0.5) / size as f64;
                 let lon = lon_min + frac_x * (lon_max - lon_min);
                 let tx_f = merc_x(lon);
-                let tx = tx_f.floor();
-                if tx < 0.0 || tx >= n {
-                    continue;
-                }
-                let col = (tx as u32).wrapping_sub(tx0) as usize;
-                if col >= cols {
-                    continue;
-                }
-                let Some(tile) = &tiles[row * cols + col] else {
-                    continue;
-                };
-                let fx = (tx_f - tx) * size as f64;
-                let fy = (ty_f - ty) * size as f64;
-                let [r, g, b, a] = sample_bilinear(tile, fx, fy);
+                let ax = (tx_f - tx0 as f64) * size as f64 + 1.0;
+                let [r, g, b, a] = sample_rect(&atlas, atlas_w, atlas_h, ax, ay);
                 out.put_pixel(px, py, Rgba([r, g, b, a]));
             }
         }
 
         let mut buf = Cursor::new(Vec::new());
         match out.write_to(&mut buf, ImageFormat::Png) {
-            Ok(()) => TileImageAvailability::Data(buf.into_inner()),
+            Ok(()) => {
+                let bytes = buf.into_inner();
+                if let Ok(mut cache) = self.geo_cache.lock() {
+                    if cache.len() >= GEO_CACHE_MAX {
+                        cache.clear();
+                    }
+                    cache.insert((level, gx, gy), bytes.clone());
+                }
+                TileImageAvailability::Data(bytes)
+            }
             Err(_) => TileImageAvailability::Transient,
         }
     }

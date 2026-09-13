@@ -27,7 +27,10 @@ pub enum TileImageAvailability {
 /// Base trait for all imagery providers.
 ///
 /// An imagery provider loads image tiles for a specific imagery service.
-pub trait ImageryProvider {
+/// DEVIATION (B4-6): the `Send + Sync` supertraits let providers be shared
+/// with background imagery-compose threads (the async compose pipeline);
+/// CesiumJS needs no such bound because JS is single-threaded.
+pub trait ImageryProvider: Send + Sync {
     /// Returns the URL of the imagery service.
     fn url(&self) -> &str;
 

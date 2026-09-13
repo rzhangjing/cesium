@@ -7,6 +7,10 @@ use crate::imagery_layer::ImageryLayer;
 /// An ordered collection of imagery layers.
 ///
 /// Layers are rendered bottom-to-top (index 0 is the bottom layer).
+///
+/// DEVIATION (B4-6): `Clone` so the collection can be handed to a background
+/// imagery-compose thread (providers are shared via `Arc`).
+#[derive(Clone)]
 pub struct ImageryLayerCollection {
     layers: Vec<ImageryLayer>,
     is_destroyed: bool,

@@ -306,3 +306,84 @@
 
 未覆盖项说明：无。本轮全部清单均已登记；`docs/function_fidelity_matrix.md` 与 `docs/fidelity_review_report.md` 已由用户手动修改，本任务只读未写。
 
+---
+
+## 补登：viewer-demo 交互修复审计（2026-09-07）
+
+> 用户反馈"软件拖动卡死/瓦片不下载/拖拽不跟手"后，之前几轮以运行时现象为驱动做了三处修改（min→max、compose 预算、经验式拖拽公式），审计发现其中两处方向错误、一处是掩盖结构性 DEVIATION 的补丁。本表登记修正后的当前状态与遗留待办。
+
+| 模块 | 文件 | 偏差描述 | 原因 | 状态 |
+| --- | --- | --- | --- | --- |
+| Renderer | `context.rs::AutomaticUniformRing::new(_, 4096)` | ring 容量硬编码 4096 slot（CesiumJS 无对应物，WebGL `gl.uniform*` 每 draw 直接推） | wgpu 端 dynamic-offset uniform buffer 需预分配环形槽位；容量必须 ≥ 单帧最坏 draw 数。level-4 quadtree 半球 ≈ 64 tile × 每 tile ≤ 6 draw ≈ 400，level-6 时可达数千；4096 是当前离线 heightmap 上限（`OFFLINE_TERRAIN_MAXIMUM_LEVEL=4`）下的余量 | 已定案；后续 terrain 层级调整需同步评估；slot 大小 ≈ 500B，4096 × 500B ≈ 2MB GPU |
+| Scene | `globe.rs::begin_frame` traversal ceiling | CesiumJS `QuadtreePrimitive` 无 `maximum_level` 字段，遍历深度由 `terrainProvider.getLevelMaximumGeometricError(level)` 自然收敛（EllipsoidTerrainProvider → `levelZero / (1<<level)` 无硬顶；有界 terrain → 到 max 后几何误差 = 0）。当前 port 用 `terrain_fetcher().maximum_level()` 显式设上限：等价语义但表达方式是硬 clamp 而非几何误差 | 需要把 `surface.get_level_maximum_geometric_error()` 路由到 terrain fetcher 才能完全 1:1；本轮先修正 min/max 方向错误，用 terrain 驱动，行为等价 | 半 1:1（行为等价，实现方式待与 CesiumJS 完全对齐） |
+| Scene | `globe_surface_tile_provider.rs::begin_frame` | 空实现。CesiumJS 走 `_tileLoadQueue{High,Medium,Low}` + `_loadQueueTimeSlice=5.0ms` 三级优先队列 + `GlobeSurfaceTile.processStateMachine`（EMPTY→LOADING→PROCESSING→COMPLETE）跨帧推进 | 当前 port 在 `render_tile` 里同步 compose（B4-2/B4-5 已登记），本批次先前为缓解卡顿加的 `MAX_COMPOSES_PER_FRAME=32` 预算已回退（是掩盖 B4-5 的补丁，不是 1:1） | **待实现**：三级队列 + 5ms 时间片 + 状态机；预计 ~500-800 行 |
+| Scene | `globe_surface_tile_provider.rs::compose_tile_imagery` | CPU 双线性重投影（Web Mercator → geographic）。CesiumJS 用 `WebMercatorTilingScheme` 让 quadtree 原生按 Mercator 遍历，tile 就是 Mercator 单元，无需重投影 | 现有 quadtree 走 geographic 遍历， Mercator 数据必须重投影才对齐 tile 矩形；已在 B4-4 登记 | 已登记（B4-4）；GPU compute 化是后续方向 |
+| Widgets/Examples | `viewer-demo/src/main.rs::update_orbit_camera` + `CursorMoved` | 相机以 (heading, pitch, distance) 三标量参数化，每帧 `set_view` 重建；拖拽按 CesiumJS `ScreenSpaceCameraController#rotate3D` 精确公式：`rotateRate = (rho-R)/R` clamped `[1/5000, 1.77]`，`deltaPhi = rotateRate * (start.x-end.x)/width * 2π`，`deltaTheta = rotateRate * (start.y-end.y)/height * π`。CesiumJS 直接调 `camera.rotateRight/rotateUp` 变换相机帧，且 `pan/tilt/zoom` 由 ScreenSpaceCameraController 完整实现 | 完整 1:1 需删除 orbit 参数化，直接以 `Camera` 为状态源并实现 `ScreenSpaceCameraController` 的 rotate3D/pan3D/tilt3D/zoom 全套（JS 3110 行） | 拖拽公式已 1:1；pan/tilt/zoom 仍为简化 |
+| Examples | `viewer-demo` `OFFLINE_TERRAIN_MAXIMUM_LEVEL=4` | 离线 heightmap 到 level 4；CesiumJS 默认 EllipsoidTerrainProvider 无上限，或有真实 Cesium World Terrain 到 level 15+ | 生成时间/磁盘占用与开发体验折衷；本 demo 只演示离线闭环 | 演示用途定案 |
+| Examples | `viewer-demo` satellite `maximum_level=4` | Web Mercator 卫星层 max level=4；CesiumJS `UrlTemplateImageryProvider` 允许到 20+ | 与 terrain 深度对齐，避免 CPU 重投影压顶；实际 tile 深度受 terrain 驱动 | 演示用途定案 |
+
+---
+
+## 补登：一致性审计三批修复（2026-09-07，第一批/第二批/第三批已全部登记）
+
+> 来源：对 `cesium-rs` 全仓的 1:1 保真度审计（大模型逐函数推理，非脚本比对）产出的三批修复清单。
+> 本节按批次登记修复过程中**新增**的有意偏差；被本轮**消除**的旧偏差在各条目内注明。
+
+### 第三批 · b3-2a0 EllipsoidGeodesic（Vincenty）
+
+| 模块 | 文件 | 偏差描述 | 原因 | 状态 |
+| --- | --- | --- | --- | --- |
+| Core | `ellipsoid_geodesic.rs::vincenty_inverse_formula` | JS `do { … } while (|lambda - lambdaDot| > EPSILON12)` 为**无界**循环；port 以 `MAX_LAMBDA_ITERATIONS = 1000` 封顶，超限时退化为最后一次迭代值而非挂死 | Vincenty 逆解对近对跖点已知不收敛；JS 仅在 debug 构建用 `computeProperties` 里的 `Check` 拦截（release 剥离），Rust 侧同样只在 `cfg!(debug_assertions)` 下 `debug_assert`，故 release 必须有兜底 | 已定案（代码内 `// DEVIATION:` 在案） |
+| Core | `ellipsoid_geodesic.rs::GeodesicConstants` | `tan_u` / `sine_squared_alpha` / `a0`..`a3` 六个字段写入后从不读取，带 `#[allow(dead_code)]` | CesiumJS `setConstants` 同样把 `constants.tanU` / `sineSquaredAlpha` / `a0`..`a3` 存入 constants 袋却无下游读取方；为保持字段集 1:1 不删 | 已定案（JS quirk 刻意保留） |
+| Core | `ellipsoid_geodesic.rs`（**消除**） | ~~① `interpolate_using_surface_distance` 用 lon/lat 线性 lerp 取代 Vincenty **直接解**；② 逆解 `A` 系数写作 `-3u²/64`（JS 展开为 `-3u/64 + 5u²/256 - 175u³/16384`）；③ `B` 系数写作 `-u²/16`（JS 为 `-u²/8`）~~ | 已按 JS L437-521 重写直接解、按 L190-200 重写 A/B；5 组 golden（含 17839 km 长程）距离/双航向/5 个 fraction/绝对距离插值全部与 CesiumJS 逐位一致 | ✅ 已消除（2026-09-07） |
+| Specs | `specs/tests/core_fidelity/golden_ellipsoid_geodesic.mjs` + `ellipsoid_geodesic_fidelity_spec.rs` | 新增 golden 生成器与 8 个保真测试（301 passed）。其中重合端点用例固化了 CesiumJS 的一个 quirk：输入纬度**不做归一化**，`(1.0, 2.0)` 经 `atan((a/b)·tan(theta))` 返回主值 `-1.1415926535904708`（= `2 - π`），port 逐位复现 | 测试基建 + JS quirk 取证，非 port 偏差 | 已定案 |
+
+### 第三批 · b3-1/b3-2 Scene 渲染编排（ViewportQuad + Scene，源码标记 B3.1/B3.2）
+
+| 模块 | 文件 | 偏差描述 | 原因 | 状态 |
+| --- | --- | --- | --- | --- |
+| Scene | `viewport_quad.rs`（B3.1，:51） | CesiumJS 用 `RectangleGeometry` + Fabric 材质（首次 update 编译为 GLSL）构建全屏四边形；port 改用固定两三角 vertex array + 手写 WGSL 颜色材质（`viewport_quad_vs.wgsl` + `viewport_quad_color_fs.wgsl`），`color` 喂入 group(1) `material` uniform | 无 Fabric→GLSL 运行时编译链（shader-strategy.md Batch C 手写 WGSL）；smoke 路径裁剪 | 已定案（代码内 `// DEVIATION:` 在案） |
+| Scene | `scene.rs`（B3.2，:91/:591） | ① CesiumJS 无内置 scene viewport quad（应用自行作为 post-process primitive 添加），port 在 smoke 里程碑直接内置以端到端跑通帧编排（clear→draw→execute）；② `Scene.render(time)` 在 JS 自持 context 与默认 framebuffer，port 由应用注入 context + 每帧默认（surface）target，帧编排镜像 `renderForSpec`（清屏到背景色→收集 primitive 命令→execute） | wgpu 帧编排模型：context/target 由应用注入而非 Scene 自持；smoke 里程碑内置 quad | 已定案（代码内 `// DEVIATION:` 在案） |
+
+### 第三批 · b3-3 ScreenSpaceCameraController（`screen_space_camera_controller.rs`）
+
+| 模块 | 文件 | 偏差描述 | 原因 | 状态 |
+| --- | --- | --- | --- | --- |
+| Scene | `screen_space_camera_controller.rs`（:40/:49） | ① `maintainInertia` 在 JS 用 `new Date()` 打时间戳，port 用 `get_timestamp`（单调毫秒，与 `CameraEventAggregator` 同源替换）——CesiumJS 仅用时间戳**差值**，故单调时钟行为等价且不受墙钟跳变影响；② JS `camera.positionCartographic`/`positionWC`/`directionWC` getter 每次访问都跑 `updateMembers`，port 的 `Camera` 缓存并在 `refresh()` 刷新，控制器在同帧相机可能已移动处读派生 getter 前先调 `ctx.camera.refresh()` 对齐 JS live getter | Rust 无 `Date`/live getter 语义；单调钟 + 显式刷新为行为等价适配 | 已定案（代码内 `// DEVIATION:` 在案） |
+| Scene | `screen_space_camera_controller.rs`（:59/:1060/:2981） | 2D/Columbus-view/3D 运动族（`translate2D`/`zoom2D`/`rotateCV`/`spin3D`…）、`update2D/CV/3D`、`adjustHeightForTerrain` 分阶段落地：2D 族已落地（b3-3d），CV/3D 运动处理器仍为编译期 stub（b3-3d CV / b3-3e 3D），Columbus-view bounce tween 延迟（b3-3f，`_tween` 恒不赋值，与 CesiumJS 创建 tween 前保持 `undefined` 一致）；模块级 `allow(dead_code)` 待全部接线后移除 | 分批落地；stub 保持 foundation（构造态/事件注册/惯性/`reactToInput`/`handleZoom`/`pickPosition`）独立编译绿 | **部分延迟**：CV/3D/tween 待 b3-3d/e/f 后续落地 |
+
+### 第三批 · b3-4 UniformState 太阳方向（`uniform_state.rs`，源码标记 B3.4）
+
+| 模块 | 文件 | 偏差描述 | 原因 | 状态 |
+| --- | --- | --- | --- | --- |
+| Renderer | `uniform_state.rs`（B3.4，:18/:502） | ① CesiumJS 每帧从 Simon1994PlanetaryPositions 星历（`setSunAndMoonDirections`，UniformState.js L1322）推导世界空间太阳方向；该星历未移植（`Sun::update` 为 stub），故 `UniformState` 以固定默认方向 `DEFAULT_SUN_DIRECTION = (0.55, 0.35, 0.5)`（归一化）播种，保持 `czm_sunDirectionWC` 供应链（UniformState→AutomaticUniforms→WGSL）存活、globe 晨昏线受光；② `update_sun_direction` 接收太阳位置为参数（星历未移植），用当前 view rotation 代替 JS 的 `viewRotation3D`（2D/CV 的 3D 等价视图旋转）——3D 下二者相同。默认值与手写 `globe_fs.wgsl` 此前硬编码方向一致，渲染结果不变 | 星历（Simon1994PlanetaryPositions）未移植；固定默认方向维持供应链，星历落地后 `update_sun_direction` 每帧覆写 | 已定案（代码内 `// DEVIATION:` 在案；星历落地后回填） |
+
+### 第三批 · b3-5 Model pipeline stages 实质化（`model/*.rs`，源码标记 B3.5，适配 WGSL）
+
+> 根本性架构阻塞：CesiumJS 每个 pipeline stage 是 GLSL `ShaderBuilder` 生成器（`addDefine`/`addUniform`/`addFragmentLines`），而 port 是 WGSL-only 渲染器（固定手写 shader 对，无运行时 GLSL 生成）。经用户决策“寻找适配的替代方法进行替代”：保留 CesiumJS **结构**（`configure_pipeline` 有序 stage 链，每 stage mutate `PrimitiveRenderResources` 袋），但每 stage 改为配置静态 WGSL 实际消费的值（vertex attributes + index buffer、材质 base color/texture、resolved lighting model、derived render_state/pass），并**实际驱动现有渲染路径**（非死代码）。
+
+| 模块 | 文件 | 偏差描述 | 原因 | 状态 |
+| --- | --- | --- | --- | --- |
+| Scene | `model_pipeline_stage.rs`（B3.5，:4） | `configure_pipeline` 仅接入映射到 ported 渲染路径的 5 个 stage（`Geometry`→`Material`→`ModelColor`→`Lighting`→`Alpha`）；CesiumJS 17 个条件 stage（`Wireframe`/`Classification`/`MorphTargets`/`Skinning`/`PointCloud`/`Dequantization`/`Imagery`/`FeatureId`/`Metadata`/`CustomShader`/`Picking`/`Outline`/`Instancing`/`VerticalExaggeration`/`PrimitiveStatistics`/`SceneMode2D`/`Tileset`）依赖未移植，整体延迟 | 依赖（skinning/morph/metadata/feature-id/custom-shader 等）未移植；仅实质化 base-color 渲染路径所需子集 | **部分延迟**：17 个条件 stage 待依赖落地 |
+| Scene | `model_pipeline_stage.rs::create_vertex_attribute`（:113） | accessor 有非零 `byteOffset` 时，port 从该 offset 切片 buffer 数据并把 GPU attribute offset 置零，规避 wgpu 校验陷阱（`attribute.offset + format.size()` 不得超 `array_stride`）；JS 无此约束 | wgpu vertex buffer 布局校验与 WebGL `vertexAttribPointer` offset 语义差异 | 已定案 |
+| Scene | `primitive_render_resources.rs`（B3.5，:6/:82/:88） | CesiumJS `PrimitiveRenderResources` 从 node resources 继承 `ShaderBuilder`，每 stage 加 GLSL 编译为 per-primitive shader；port 渲染经固定 base-color WGSL 对，故该袋改存静态 WGSL 实际消费的值。`color_blend`/`lighting_model` 字段记录但静态 WGSL 未消费 `model_colorBlend` uniform、未应用 PBR | 无 ShaderBuilder；静态 WGSL 裁剪 | 已定案 |
+| Scene | `geometry_pipeline_stage.rs`（B3.5，:3） | CesiumJS `GeometryPipelineStage` 绑定属性语义到 shader varying 并推 `VertexAttribute` **描述符**（GPU buffer 由 loader 后建）；port 无 ShaderBuilder，该 stage 直接建 GPU buffer（POSITION→location 0、index buffer、count、bounding_sphere） | 无 ShaderBuilder；buffer 直接创建 | 已定案 |
+| Scene | `material_pipeline_stage.rs`（B3.5，:3/:68/:95） | CesiumJS `MaterialPipelineStage` 遍历 glTF 材质 PBR/emissive/normal/occlusion/KHR 扩展并追加对应 GLSL uniform/varying/fragment；port 经固定 base-color 对渲染，仅取 base_color_factor + double_sided + lighting_model(Pbr/Unlit) + alpha_options + baseColorTexture(仅 TEXCOORD_0)。PBR shading 延迟（静态 WGSL unlit）；baseColorTexture 非 0 texCoord set 延迟 | 静态 WGSL 仅 base-color；PBR/多 texCoord set 延迟 | **部分延迟**：PBR shading + 非 0 texCoord set |
+| Scene | `model_color_pipeline_stage.rs`（B3.5，:3） | CesiumJS `ModelColorPipelineStage` 是 *model* 级 stage，加 `HAS_MODEL_COLOR` define + `model_color`(vec4)/`model_colorBlend`(float) fragment uniform，model color 全透明时归零 color mask；port 折叠为 per-primitive 链一环，`color_blend = colorBlendMode.getColorBlend(amount)`（Highlight→0/Replace→1/Mix→clamp），model_color.alpha<1 时强制 `Pass::Translucent`；model color 由 CPU 在 `Model::update` fold 进 base_color_factor | 无 ShaderBuilder/uniform；CPU fold 代替 GPU define+uniform | 已定案（fidelity：alpha<1→Translucent 保留） |
+| Scene | `lighting_pipeline_stage.rs`（B3.5，:3） | CesiumJS `LightingPipelineStage` 发 `LIGHTING_PBR`/`LIGHTING_UNLIT`/`USE_CUSTOM_LIGHT_COLOR` define + `model_lightColorHdr` uniform + `LightingStageFS` fragment；port 仅 resolve `lighting_model`（`enable_lighting`=false→Unlit，否则用 material 记录的 Pbr/Unlit），静态 WGSL base-color shader unlit 着色 | 无静态 WGSL 等价；仅记录 lighting_model | **部分延迟**：PBR shading + `model_lightColorHdr` |
+| Scene | `alpha_pipeline_stage.rs`（B3.5，:3） | CesiumJS `AlphaPipelineStage` 写 derived `renderStateOptions`(cull/depth mask/blending) + `alphaCutoff` 时加 `ALPHA_MODE_MASK` define + `u_alphaCutoff` uniform；port 构建期 bake 具体 `RenderState`+`Pass`（translucent→depth_mask=false + ALPHA_BLEND 因子；opaque→depth_mask=true）。两处适配：① back-face culling 不在此 finalize（依赖 model live `backFaceCulling`，每帧在 `Model::update` 应用，镜像 JS 每帧 derived-command cull）；② `ALPHA_MODE_MASK` discard 记录在 `alphaOptions.alphaCutoff` 但静态 WGSL 无 discard 路径，alpha-test 延迟 | wgpu render state bake 进不可变 pipeline；无 discard 路径 | **部分延迟**：ALPHA_MODE_MASK alpha-test discard |
+| Scene | `model.rs` + `model_runtime_primitive.rs`（B3.5，:14/:390/:505） | ① model.rs 文件头：CesiumJS stage 链（lighting/PBR metallic-roughness/skinning/morph targets/custom shaders/point cloud shading/clipping/silhouette/wireframe）延迟，port 以 base color factor（×base color texture）着色；② base color factor 与 model color 相乘（colorBlendMode 超出乘法的细节延迟）；③ 共享一个 bufferView 的属性上传为独立 GPU buffer（JS 交错进单 buffer），NORMAL 及其他非 POSITION/TEXCOORD_0 语义跳过（裁剪 shader 对不消费）；④ `ModelRuntimePrimitive` 新增 `render_state`/`pass`/`lighting_model`/`color_blend` 字段 + `from_render_resources`，`update()` 用存储 render_state（每帧仅覆写 cull）代替重建 | 静态 WGSL base-color 裁剪；interleave/NORMAL 延迟 | 已定案（fidelity 改进：translucent 现禁用 cull，镜像 CesiumJS AlphaPipelineStage；BoxTextured opaque 无影响） |
+| Specs | `model_pipeline_stage_spec.rs`（B3.5） | 新增 9 个 spec（全绿）镜像 CesiumJS `Scene/Model/{Alpha,Lighting,ModelColor}PipelineStageSpec.js` + `configurePipeline`；用“记录值断言”（color_blend/lighting_model/pass/render_state 因子/bounding radius）代替 ShaderBuilder GLSL 断言（`ShaderBuilderTester.expectHasFragmentDefines` 等无 port 等价） | 无 ShaderBuilder；断言 stage 写入袋的值 | 已定案（9 passed） |
+
+### 第三批补登对账（b3-1 … b3-5）
+
+| 批次项 | 源码标记 | 文件 | deviations.md 新增行数 | 分流/备注 |
+| --- | --- | --- | ---: | --- |
+| b3-1 | B3.1 | `viewport_quad.rs` | 1 | Fabric→GLSL 运行时编译链缺失，手写 WGSL 代替（细化 F5 cesium-scene 范围性登记） |
+| b3-2 | B3.2 | `scene.rs` | 1（合并 2 处） | Scene 帧编排 context/target 注入；b3-2a0 EllipsoidGeodesic 已另节登记 |
+| b3-3 | — | `screen_space_camera_controller.rs` | 2 | Date→单调钟 + live getter→显式 refresh（永久适配）；CV/3D/tween stub 延迟（b3-3d/e/f） |
+| b3-4 | B3.4 | `uniform_state.rs` | 1 | 太阳方向固定默认（星历未移植）；cesium-renderer 新偏差，不在 F3 既有登记内 |
+| b3-5 | B3.5 | `model/*.rs`（8 文件）+ spec | 9 | GLSL ShaderBuilder→静态 WGSL 值配置适配；17 条件 stage + PBR/alpha-test/skinning 等延迟；9 spec 全绿 |
+
+未覆盖项说明：无。第三批全部源码内联 `// DEVIATION:` 标记（B3.1/B3.2/B3.4/B3.5 + SSCC 分阶段注记）均已登记；b3-2a0（EllipsoidGeodesic）见上节。第一批/第二批（B2.2/B2.4/B2.5/B2.6，cesium-renderer）已由 F3 节范围性登记覆盖，本批未新增。全量回归 `cargo test --workspace --no-fail-fast` 唯一失败为 `globe_smoke`/`globe_terrain_smoke` 两个环境性 GPU globe 渲染测试（非本批回归）。
+

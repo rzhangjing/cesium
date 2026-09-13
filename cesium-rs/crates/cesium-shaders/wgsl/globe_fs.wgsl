@@ -69,15 +69,19 @@ fn main(
     // uniform chain rather than hardcoded in the shader.
     let sunDir = normalize(czm.czm_sunDirectionWC.xyz);
     let ndl = max(dot(N, sunDir), 0.0);
-    let diffuse = mix(1.0, clamp(0.28 + ndl, 0.0, 1.15), enabled);
+    // The day texture is an albedo image: scaling it above 1.0 over-brightens
+    // the sunlit hemisphere (blown-out deserts / washed oceans), so the
+    // Lambert term is clamped to [0, 1] — 0.28 keeps the night side readable.
+    let diffuse = mix(1.0, clamp(0.28 + ndl, 0.0, 1.0), enabled);
 
     // Atmospheric limb glow: a Fresnel-style rim evaluated in view space so it
-    // tracks the silhouette as the camera orbits.
+    // tracks the silhouette as the camera orbits. Kept subtle so the rim reads
+    // as a thin atmosphere rather than a haze over the whole disc.
     let viewNormal = normalize((czm.czm_modelView * vec4<f32>(N, 0.0)).xyz);
     let viewPos = (czm.czm_modelView * vec4<f32>(v_worldPosition, 1.0)).xyz;
     let V = normalize(-viewPos);
     let rim = pow(1.0 - max(dot(viewNormal, V), 0.0), 3.0);
-    let atmosphere = enabled * rim * vec3<f32>(0.35, 0.6, 1.0);
+    let atmosphere = enabled * rim * vec3<f32>(0.18, 0.3, 0.5);
 
     let color = texColor.rgb * diffuse + atmosphere;
     return vec4<f32>(color, texColor.a);

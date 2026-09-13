@@ -2,8 +2,9 @@
 //!
 //! Renders a tile of the globe surface.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 use cesium_core::bounding_sphere::BoundingSphere;
 use cesium_core::cartesian3::Cartesian3;
@@ -58,6 +59,15 @@ struct TileSurfaceResources {
     /// Mirrors CesiumJS `TileImagery.usingAncestorTexture`: set when a
     /// deterministic no-data tile inherited its ancestor's texture.
     using_ancestor_texture: bool,
+    /// The composite is provisional: at least one layer was still resolving
+    /// (`Transient`) when it was composed. Such a composite is reused until
+    /// `retry_after_frame` elapses, then re-composed once to pick up data that
+    /// landed in the meantime.
+    pending: bool,
+    /// Frame before which a `pending` composite is reused as-is (throttle).
+    retry_after_frame: u64,
+    /// Last frame this entry was bound for drawing (LRU eviction key).
+    last_used_frame: u64,
 }
 
 /// Outcome of composing the imagery layers for one tile on the CPU.
@@ -110,6 +120,75 @@ struct TileTerrainEntry {
 
 /// Cooldown (in frames) before a transient terrain failure is retried.
 const TERRAIN_RETRY_COOLDOWN_FRAMES: u64 = 30;
+
+/// Cooldown (in frames) before a still-resolving (pending) imagery composite
+/// is re-composed on the CPU.
+///
+/// This bounds the per-frame compose cost while a layer (e.g. an async
+/// satellite tile) is in flight. Without it a provisional composite was
+/// discarded every frame and rebuilt from scratch (PNG decode + Mercator
+/// reprojection + PNG encode + blend), which saturated the render thread the
+/// moment the camera moved and new tiles streamed in — the drag-freeze root
+/// cause. With it the provisional composite is reused until the cooldown
+/// elapses, then re-composed once.
+const IMAGERY_RETRY_COOLDOWN_FRAMES: u64 = 15;
+
+/// Maximum number of SYNCHRONOUS (render-thread) imagery composes per frame
+/// (DEVIATION B4-6). A compose is CPU-heavy (image decode + Mercator
+/// reprojection + blend); allowing more than one per frame lets a burst of
+/// newly visible tiles (camera rotation) stack into a single visible hitch.
+/// Everything beyond the budget is handed to a compose worker thread.
+const MAX_SYNCHRONOUS_COMPOSES_PER_FRAME: u32 = 1;
+
+/// Maximum number of concurrently running off-thread compose jobs.
+const MAX_COMPOSES_IN_FLIGHT: u32 = 6;
+
+/// A completed off-thread imagery compose (DEVIATION B4-6).
+struct ComposeJob {
+    /// `(level, x, y)` of the tile the composite was made for.
+    key: (i32, i32, i32),
+    /// The ancestor cap at which the composite succeeded (`< level` means the
+    /// tile inherited ancestor imagery).
+    level_cap: i32,
+    outcome: ComposeOutcome,
+}
+
+/// A landed off-thread composite awaiting pickup by the render thread.
+struct ComposedResult {
+    level_cap: i32,
+    /// `None` for `NoData` / `Transient` outcomes (base colour fallback).
+    texture: Option<Arc<Texture>>,
+    pending: bool,
+}
+
+/// Off-thread imagery compose worker (DEVIATION B4-6): runs the same compose
+/// + ancestor-inheritance loop as the synchronous path and sends the outcome
+/// back; only the (cheap) texture upload stays on the render thread.
+fn compose_worker(
+    key: (i32, i32, i32),
+    level: i32,
+    rectangle: Rectangle,
+    layers: ImageryLayerCollection,
+    tx: Sender<ComposeJob>,
+) {
+    let mut cap = level;
+    let outcome = loop {
+        match compose_tile_imagery(level, &rectangle, &layers, cap) {
+            ComposeOutcome::Data(pixels, width, height, pending) => {
+                break ComposeOutcome::Data(pixels, width, height, pending);
+            }
+            ComposeOutcome::NoData => {
+                if cap > 0 {
+                    cap -= 1;
+                    continue;
+                }
+                break ComposeOutcome::NoData;
+            }
+            ComposeOutcome::Transient => break ComposeOutcome::Transient,
+        }
+    };
+    let _ = tx.send(ComposeJob { key, level_cap: cap, outcome });
+}
 
 /// Renders a tile of the globe surface.
 ///
@@ -182,12 +261,26 @@ pub struct GlobeSurfaceTileProvider {
     geometry_cache: HashMap<(i32, i32, i32), Arc<TileGeometryResources>>,
     /// Per-tile resources, keyed by `(level, x, y)`.
     tile_resources: HashMap<(i32, i32, i32), TileSurfaceResources>,
-    /// Insertion order for LRU-style eviction against `tile_cache_size`.
-    tile_resource_order: VecDeque<(i32, i32, i32)>,
     /// Tile cache size propagated from `Globe.tile_cache_size`.
     tile_cache_size: i32,
     /// 1×1 base-color texture (lazy), used before imagery is available.
     base_color_texture: Option<Arc<Texture>>,
+
+    // ---- Async imagery compose (B4-6) ----
+    /// Receiver for completed off-thread composites.
+    compose_rx: Receiver<ComposeJob>,
+    /// Cloneable sender handed to compose worker threads.
+    compose_tx: Sender<ComposeJob>,
+    /// Number of compose workers currently running.
+    compose_in_flight: u32,
+    /// Keys whose compose worker was spawned but has not landed yet.
+    compose_spawned: HashSet<(i32, i32, i32)>,
+    /// Landed off-thread composites awaiting pickup, keyed by tile.
+    compose_results: HashMap<(i32, i32, i32), ComposedResult>,
+    /// Frame on which the synchronous compose budget was last reset.
+    compose_budget_frame: u64,
+    /// Synchronous composes already performed on the current frame.
+    compose_budget_used: u32,
 
     // ---- Terrain (B4-5) ----
     /// The terrain tile fetcher (`None` = ellipsoid terrain path).
@@ -207,6 +300,7 @@ pub struct GlobeSurfaceTileProvider {
 impl GlobeSurfaceTileProvider {
     /// Creates a new GlobeSurfaceTileProvider.
     pub fn new() -> Self {
+        let (compose_tx, compose_rx) = channel();
         Self {
             surface_shader_set: GlobeSurfaceShaderSet::new(),
             enable_lighting: false,
@@ -241,9 +335,15 @@ impl GlobeSurfaceTileProvider {
             shader_program: None,
             geometry_cache: HashMap::new(),
             tile_resources: HashMap::new(),
-            tile_resource_order: VecDeque::new(),
             tile_cache_size: 100,
             base_color_texture: None,
+            compose_rx,
+            compose_tx,
+            compose_in_flight: 0,
+            compose_spawned: HashSet::new(),
+            compose_results: HashMap::new(),
+            compose_budget_frame: 0,
+            compose_budget_used: 0,
             terrain_fetcher: None,
             terrain_tiling_scheme: None,
             terrain_tiles: HashMap::new(),
@@ -433,6 +533,7 @@ impl GlobeSurfaceTileProvider {
         ellipsoid: &Ellipsoid,
         context: &mut Context,
         framebuffer: Option<Arc<Framebuffer>>,
+        frame_number: u64,
     ) {
         if self.shader_program.is_none() {
             match ShaderProgram::from_wgsl(
@@ -463,24 +564,42 @@ impl GlobeSurfaceTileProvider {
         } else {
             self.ensure_tile_geometry(tile, ellipsoid, context)
         };
-        let (texture, using_ancestor_texture, cacheable) =
-            self.resolve_tile_texture(tile, layers, context);
+        let (texture, using_ancestor_texture, pending) =
+            self.resolve_tile_texture(tile, layers, context, frame_number);
 
         let vertex_array = geometry.vertex_array.clone();
         let index_count = geometry.index_count;
-        if cacheable {
-            if !self.tile_resources.contains_key(&key) {
-                self.tile_resource_order.push_back(key);
-            }
-            self.tile_resources.insert(
-                key,
-                TileSurfaceResources {
-                    texture: texture.clone(),
-                    using_ancestor_texture,
+        // Always cache the composite, settled or provisional. A provisional
+        // (pending) composite is reused until its retry cooldown elapses, so a
+        // layer that is still downloading can no longer force a full CPU
+        // re-compose (PNG decode + reprojection + encode + blend) on every
+        // single frame — the historical drag-freeze root cause.
+        //
+        // LRU discipline (B4-6): the entry is stamped with the current frame
+        // on EVERY use, and eviction drops the least-recently-used entry.
+        // Insertion-order (FIFO) eviction deleted VISIBLE tiles' entries
+        // while rotating; with async composes the re-land latency then showed
+        // up as base-colour holes across the disc.
+        self.tile_resources.insert(
+            key,
+            TileSurfaceResources {
+                texture: texture.clone(),
+                using_ancestor_texture,
+                pending,
+                retry_after_frame: if pending {
+                    // Stagger the retry by the tile key so pending tiles do
+                    // not all re-compose on the same frame (periodic hitch).
+                    frame_number
+                        + IMAGERY_RETRY_COOLDOWN_FRAMES
+                        + (key.1 as u64).wrapping_add(key.2 as u64)
+                            % IMAGERY_RETRY_COOLDOWN_FRAMES
+                } else {
+                    0
                 },
-            );
-            self.evict_tile_resources();
-        }
+                last_used_frame: frame_number,
+            },
+        );
+        self.evict_tile_resources();
 
         let mut render_state = RenderState::default();
         render_state.depth_test.enabled = true;
@@ -840,48 +959,116 @@ impl GlobeSurfaceTileProvider {
     ///   for this frame only and the request is retried next frame. It is
     ///   never stamped as permanent no-data.
     ///
-    /// Returns `(texture, using_ancestor_imagery, cacheable)`.
+    /// Returns `(texture, using_ancestor_imagery, pending)`.
+    ///
+    /// `pending` is `true` when the returned composite is provisional (a layer
+    /// was still resolving); the caller caches it with a retry cooldown so it
+    /// is reused — not rebuilt — until the cooldown elapses.
     fn resolve_tile_texture(
         &mut self,
         tile: &QuadtreeTile,
         layers: &ImageryLayerCollection,
         context: &mut Context,
+        frame_number: u64,
     ) -> (Arc<Texture>, bool, bool) {
         let key = (tile.level, tile.x, tile.y);
-        if let Some(existing) = self.tile_resources.get(&key) {
-            return (
-                existing.texture.clone(),
-                existing.using_ancestor_texture,
-                true,
+        // Pick up completed off-thread composes (only what has landed; the
+        // rest arrive on later frames). The texture upload happens here so
+        // `Context` never leaves the render thread (DEVIATION B4-6).
+        while self.compose_in_flight > 0 {
+            let Ok(job) = self.compose_rx.try_recv() else { break };
+            self.compose_in_flight -= 1;
+            self.compose_spawned.remove(&job.key);
+            let pending = matches!(job.outcome, ComposeOutcome::Data(_, _, _, true));
+            let texture = match job.outcome {
+                ComposeOutcome::Data(pixels, width, height, _) => {
+                    Some(upload_tile_texture(pixels, width, height, context))
+                }
+                ComposeOutcome::NoData | ComposeOutcome::Transient => None,
+            };
+            self.compose_results.insert(
+                job.key,
+                ComposedResult { level_cap: job.level_cap, texture, pending },
             );
         }
 
-        let mut cap = tile.level;
-        loop {
-            match compose_tile_imagery(tile, layers, cap) {
-                ComposeOutcome::Data(pixels, width, height, pending) => {
-                    let texture = upload_tile_texture(pixels, width, height, context);
-                    // A provisional composite (pending) is shown this frame but
-                    // left uncached so the still-resolving layer can land next
-                    // frame; a settled composite is cached permanently.
-                    return (texture, cap < tile.level, !pending);
+        if let Some(existing) = self.tile_resources.get(&key) {
+            // Settled composites are reused forever. A provisional (pending)
+            // composite is reused until its retry cooldown elapses; once it
+            // does, fall through and re-compose so imagery that landed in the
+            // meantime is picked up.
+            if !existing.pending || frame_number < existing.retry_after_frame {
+                return (
+                    existing.texture.clone(),
+                    existing.using_ancestor_texture,
+                    existing.pending,
+                );
+            }
+        }
+
+        // A landed off-thread composite for this tile?
+        if let Some(result) = self.compose_results.remove(&key) {
+            return match result.texture {
+                Some(texture) => (texture, result.level_cap < tile.level, result.pending),
+                // Transient: base colour meanwhile, throttled retry.
+                None if result.pending => {
+                    (self.ensure_base_color_texture(context), false, true)
                 }
-                ComposeOutcome::NoData => {
-                    if cap > 0 {
-                        // Inherit ancestor imagery: retry one level up.
-                        cap -= 1;
-                        continue;
+                // Deterministic no-data at every level: permanent base.
+                None => (self.ensure_base_color_texture(context), false, false),
+            };
+        }
+
+        // Synchronous compose budget: at most one CPU composite per frame so
+        // a burst of newly visible tiles spreads across frames instead of
+        // stacking into a single hitch.
+        if self.compose_budget_frame != frame_number {
+            self.compose_budget_frame = frame_number;
+            self.compose_budget_used = 0;
+        }
+        if self.compose_budget_used < MAX_SYNCHRONOUS_COMPOSES_PER_FRAME {
+            self.compose_budget_used += 1;
+            let mut cap = tile.level;
+            loop {
+                match compose_tile_imagery(tile.level, &tile.rectangle, layers, cap) {
+                    ComposeOutcome::Data(pixels, width, height, pending) => {
+                        let texture = upload_tile_texture(pixels, width, height, context);
+                        return (texture, cap < tile.level, pending);
                     }
-                    // No imagery at any level: permanent base-color result.
-                    return (self.ensure_base_color_texture(context), false, true);
-                }
-                ComposeOutcome::Transient => {
-                    // Retry next frame; show the base color meanwhile. Never
-                    // cache this outcome (no permanent no-data stamping).
-                    return (self.ensure_base_color_texture(context), false, false);
+                    ComposeOutcome::NoData => {
+                        if cap > 0 {
+                            // Inherit ancestor imagery: retry one level up.
+                            cap -= 1;
+                            continue;
+                        }
+                        // No imagery at any level: permanent base-color result.
+                        return (self.ensure_base_color_texture(context), false, false);
+                    }
+                    ComposeOutcome::Transient => {
+                        // Retry after the cooldown; show the base color meanwhile.
+                        // Marked pending so the caller throttles the re-compose.
+                        return (self.ensure_base_color_texture(context), false, true);
+                    }
                 }
             }
         }
+
+        // Budget exhausted: hand the compose to a worker thread and show the
+        // base colour (pending) until the result lands.
+        if self.compose_in_flight < MAX_COMPOSES_IN_FLIGHT
+            && !self.compose_spawned.contains(&key)
+        {
+            self.compose_in_flight += 1;
+            self.compose_spawned.insert(key);
+            let job_tx = self.compose_tx.clone();
+            let job_layers = layers.clone();
+            let job_rectangle = tile.rectangle;
+            let job_level = tile.level;
+            std::thread::spawn(move || {
+                compose_worker(key, job_level, job_rectangle, job_layers, job_tx);
+            });
+        }
+        (self.ensure_base_color_texture(context), false, true)
     }
 
     /// Returns (creating on first use) the 1×1 base-color texture.
@@ -917,14 +1104,25 @@ impl GlobeSurfaceTileProvider {
         self.base_color_texture.clone().unwrap()
     }
 
-    /// Evicts the oldest tile resources beyond `tile_cache_size`.
+    /// Evicts the least-recently-used tile resources beyond `tile_cache_size`.
     fn evict_tile_resources(&mut self) {
         let limit = (self.tile_cache_size.max(1)) as usize;
         while self.tile_resources.len() > limit {
-            if let Some(oldest) = self.tile_resource_order.pop_front() {
-                self.tile_resources.remove(&oldest);
-            } else {
-                break;
+            let oldest = self
+                .tile_resources
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_used_frame)
+                .map(|(key, _)| *key);
+            match oldest {
+                Some(key) => {
+                    self.tile_resources.remove(&key);
+                    // Drop async bookkeeping too, otherwise an evicted key
+                    // could never re-compose (spawn guard) after being
+                    // revisited.
+                    self.compose_results.remove(&key);
+                    self.compose_spawned.remove(&key);
+                }
+                None => break,
             }
         }
     }
@@ -1083,7 +1281,8 @@ fn upload_tile_texture(
 /// textures on the GPU; this batch samples decoded layer images on the CPU
 /// (nearest) into the geographic tile grid.
 fn compose_tile_imagery(
-    tile: &QuadtreeTile,
+    level: i32,
+    rectangle: &Rectangle,
     layers: &ImageryLayerCollection,
     level_cap: i32,
 ) -> ComposeOutcome {
@@ -1124,7 +1323,7 @@ fn compose_tile_imagery(
         // level when the tile's own level has no imagery).
         let minimum = provider.minimum_level().unwrap_or(0);
         let maximum = provider.maximum_level();
-        let request_level = (tile.level.max(minimum as i32).min(level_cap) as u32)
+        let request_level = (level.max(minimum as i32).min(level_cap) as u32)
             .min(maximum.unwrap_or(u32::MAX));
 
         // Map the tile rectangle center into the provider's own tiling grid
@@ -1132,7 +1331,7 @@ fn compose_tile_imagery(
         // reprojection point for WebMercator providers — DEVIATION B4-4).
         let columns = 2u32 << request_level;
         let rows = 1u32 << request_level;
-        let center = cesium_core::rectangle::Rectangle::center(&tile.rectangle);
+        let center = cesium_core::rectangle::Rectangle::center(rectangle);
         let u = ((center.longitude + std::f64::consts::PI)
             / (2.0 * std::f64::consts::PI))
             .clamp(0.0, 1.0);
