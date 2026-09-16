@@ -47,6 +47,11 @@ pub struct TileLoadStats {
     pub tiles_failed: u32,
     pub tiles_pending: u32,
     pub bytes_downloaded: u64,
+    /// Number of tiles skipped during LOD/culling selection (never requested).
+    /// Additive field: defaults to `0` via `#[derive(Default)]`, so all existing
+    /// construction sites (`TileLoadStats::default()`, `init_resource`) remain
+    /// valid without modification.
+    pub tiles_skipped: u32,
 }
 
 #[cfg(test)]
@@ -93,6 +98,7 @@ mod tests {
         assert_eq!(stats.tiles_failed, 0);
         assert_eq!(stats.tiles_pending, 0);
         assert_eq!(stats.bytes_downloaded, 0);
+        assert_eq!(stats.tiles_skipped, 0);
     }
 
     #[test]
@@ -102,9 +108,11 @@ mod tests {
         stats.tiles_failed += 3;
         stats.tiles_pending = 5;
         stats.bytes_downloaded += 1_000_000;
+        stats.tiles_skipped += 7;
         assert_eq!(stats.tiles_loaded, 42);
         assert_eq!(stats.tiles_failed, 3);
         assert_eq!(stats.tiles_pending, 5);
         assert_eq!(stats.bytes_downloaded, 1_000_000);
+        assert_eq!(stats.tiles_skipped, 7);
     }
 }

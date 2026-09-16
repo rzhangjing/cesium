@@ -18,7 +18,11 @@
 pub mod animation_runtime;
 pub mod binary_format;
 pub mod custom_shader;
+pub mod gltf_binary_stage;
 pub mod gltf_model;
+pub mod gltf_technique_upgrade;
+pub mod gltf_upgrade;
+pub mod gltf_upgrade_util;
 pub mod material_ext;
 
 pub use gltf_model::{
@@ -30,7 +34,7 @@ pub use gltf_model::{
     Texture, TextureInfo,
 };
 pub use binary_format::{
-    B3dmData, B3dmFeatureTable, BinaryFormatError, GlbData, B3DM_MAGIC,
+    parse_glb_container, B3dmData, B3dmFeatureTable, BinaryFormatError, GlbData, B3DM_MAGIC,
     GLB_CHUNK_BIN, GLB_CHUNK_JSON, GLB_MAGIC,
 };
 pub use material_ext::{
@@ -49,4 +53,8 @@ pub use custom_shader::{
     CustomShader, CustomShaderMode, CustomShaderTranslucencyMode,
     ShaderError, UniformDeclaration, UniformType, UniformValue,
     UsedVariables, VaryingType,
+};
+pub use gltf_upgrade::{
+    detect_version, update_version, update_version_with_buffers, GltfUpgradeError, GltfVersion,
+    UpgradeOptions,
 };

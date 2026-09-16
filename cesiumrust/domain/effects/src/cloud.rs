@@ -5,6 +5,8 @@
 //! - `Scene/CloudCollection.js`
 //! - `Scene/CloudType.js`
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::field_reassign_with_default)]
 use glam::DVec3;
 
 /// Cloud type enumeration.

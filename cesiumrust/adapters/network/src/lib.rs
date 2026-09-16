@@ -1,16 +1,49 @@
-//! cesium-network: HTTP network adapter
+//! cesium-network: HTTP + offline disk network adapters
 //!
-//! Implements the TileFetcher port using synchronous HTTP requests via ureq
-//! dispatched through tokio's spawn_blocking.
+//! Implements the `TileFetcher` / `TerrainProvider` driven ports:
+//!
+//! * [`HttpTileFetcher`] — synchronous HTTP requests via ureq dispatched
+//!   through a **tokio-free** `std::thread` + `mpsc` bridge
+//!   ([`resource_backend_impl::spawn_blocking_fetch`]) — rate-limited,
+//!   retrying, cancellable. M8.3 (#66) purged the previous
+//!   `tokio::task::spawn_blocking` / `tokio::time::sleep` / `tokio::sync::Mutex`
+//!   production path in favour of the shared blocking-pool philosophy
+//!   (`adapters/pipeline/src/pool.rs`: 16 workers + keep-alive, no tokio
+//!   Runtime).
+//! * [`FileTileFetcher`] — offline disk-backed imagery tiles (XYZ / quadkey
+//!   layout) with STRICT_OFFLINE semantics (no HTTP fallback).
+//! * [`FileTerrainFetcher`] — offline disk-backed heightmap-1.0 terrain tiles.
+//! * [`MockTileFetcher`] — predefined-response fetcher for tests.
+//! * [`resource_backend_impl`] — the M8.3 [`ResourceBackend`] network adapter
+//!   ([`NetworkResourceBackend`]) + the local env-gate
+//!   ([`resource_fetch_backend_enabled`]) for `CESIUM_ENABLE_RESOURCE_FETCH_BACKEND`.
+//!   When the gate is ON, [`HttpTileFetcher::fetch`] routes through the
+//!   pipeline-managed 16-worker keep-alive pool + hot/warm cache hierarchy;
+//!   when OFF (default), it takes the pre-M8.3 direct-ureq path so the v0
+//!   baseline stays byte-identical.
+
+pub mod file_terrain_fetcher;
+pub mod file_tile_fetcher;
+pub mod resource_backend_impl;
+
+pub use file_terrain_fetcher::{FileTerrainFetcher, TerrainScheme};
+pub use file_tile_fetcher::{FileTileFetcher, FileTileScheme};
+pub use resource_backend_impl::{
+    block_on_noop, gate_from_env_value, resource_fetch_backend_enabled, spawn_blocking_fetch,
+    url_hash, NetworkResourceBackend, ENV_ENABLE_RESOURCE_FETCH_BACKEND,
+};
 
 use cesium_ports_driven::{PortError, PortResult, TileFetcher};
+// M8.4 (#67): the adapter executes the IO-free domain `FetchDescriptor`
+// produced by `Resource::fetch_*`/`post`. domain/resource stays network-free;
+// all HTTP execution lives here in the adapter.
+use cesium_resource::{FetchDescriptor, HttpMethod};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::Mutex;
 
 const DEFAULT_MAX_REQUESTS_PER_SERVER: usize = 6;
 const DEFAULT_RETRY_COUNT: u32 = 3;
@@ -35,17 +68,33 @@ pub enum NetworkError {
 
 /// HTTP-based tile fetcher using ureq for synchronous HTTP/HTTPS requests.
 ///
-/// Requests are dispatched to `tokio::task::spawn_blocking` so that the
-/// synchronous ureq calls do not block the async runtime.
+/// Requests are dispatched to a **tokio-free** `std::thread` + `mpsc` bridge
+/// ([`resource_backend_impl::spawn_blocking_fetch`]) so the synchronous ureq
+/// calls do not block the polling context. When
+/// [`resource_fetch_backend_enabled()`] returns `true` (env gate
+/// `CESIUM_ENABLE_RESOURCE_FETCH_BACKEND`), the fetch is routed through the
+/// shared [`NetworkResourceBackend`] (16-worker keep-alive pool + hot/warm
+/// cache hierarchy + in-flight dedup, all reused from `cesium-pipeline`);
+/// when OFF (default) the pre-M8.3 direct-ureq path runs, preserving the v0
+/// baseline byte-identically.
 pub struct HttpTileFetcher {
     agent: ureq::Agent,
     #[allow(dead_code)]
     base_url: String,
     headers: HashMap<String, String>,
-    active_requests: Arc<Mutex<HashMap<String, usize>>>,
+    /// Per-server in-flight counters (rate-limit gate). M8.3: `tokio::sync::Mutex`
+    /// → `std::sync::Mutex` (blocking wait inside the spawned std::thread;
+    /// never blocks the polling context because the whole rate-limit loop
+    /// runs inside [`spawn_blocking_fetch`]).
+    active_requests: Arc<StdMutex<HashMap<String, usize>>>,
     max_requests_per_server: usize,
     retry_count: u32,
     cancelled: Arc<StdMutex<HashSet<String>>>,
+    /// M8.3 network `ResourceBackend` — consulted only when
+    /// [`resource_fetch_backend_enabled()`] returns `true`. Shared across all
+    /// `HttpTileFetcher` clones so the 16-worker keep-alive pool + hot/warm
+    /// cache hierarchy are amortised process-wide.
+    resource_backend: Arc<NetworkResourceBackend>,
 }
 
 impl HttpTileFetcher {
@@ -59,10 +108,11 @@ impl HttpTileFetcher {
             agent,
             base_url: base_url.to_string(),
             headers: HashMap::new(),
-            active_requests: Arc::new(Mutex::new(HashMap::new())),
+            active_requests: Arc::new(StdMutex::new(HashMap::new())),
             max_requests_per_server: DEFAULT_MAX_REQUESTS_PER_SERVER,
             retry_count: DEFAULT_RETRY_COUNT,
             cancelled: Arc::new(StdMutex::new(HashSet::new())),
+            resource_backend: Arc::new(NetworkResourceBackend::new()),
         }
     }
 
@@ -72,10 +122,11 @@ impl HttpTileFetcher {
             agent,
             base_url: base_url.to_string(),
             headers: HashMap::new(),
-            active_requests: Arc::new(Mutex::new(HashMap::new())),
+            active_requests: Arc::new(StdMutex::new(HashMap::new())),
             max_requests_per_server: DEFAULT_MAX_REQUESTS_PER_SERVER,
             retry_count: DEFAULT_RETRY_COUNT,
             cancelled: Arc::new(StdMutex::new(HashSet::new())),
+            resource_backend: Arc::new(NetworkResourceBackend::new()),
         }
     }
 
@@ -164,13 +215,76 @@ impl HttpTileFetcher {
             PortError::Network("Retry exhausted with no error".to_string())
         }))
     }
+
+    /// M8.4 (#67): execute a domain [`FetchDescriptor`] through the
+    /// gate-guarded adapter path, with the gate decision **injected** so the
+    /// ON/OFF branches are unit-testable without mutating the process env.
+    ///
+    /// Routing (see [`Self::fetch_descriptor_blocking`] for the public contract):
+    /// * `is_data_uri` → short-circuit via the pure domain decoder
+    ///   (`cesium_resource::data_uri::decode_data_uri_bytes`); zero network.
+    /// * non-GET method → `PortError::Network` (the `NetworkBackend::fetch(url)`
+    ///   trait + the legacy `do_fetch` execute GET only; per-request
+    ///   method/body await a trait extension — docs/deferred.md). All five
+    ///   `Resource::fetch_*` builders emit GET, so the common path is covered.
+    /// * `gate_enabled` → `NetworkResourceBackend` (→ `PipelineResourceBackend`
+    ///   → 16-worker keep-alive `WorkerPool` → `UreqBackend`) by url + priority.
+    /// * else → the byte-identical pre-M8.4 direct-ureq path
+    ///   (`do_fetch_with_retry`, fetcher headers merged with descriptor headers,
+    ///   retry count from `descriptor.retry.max_attempts`).
+    fn execute_descriptor_gated(
+        &self,
+        descriptor: &FetchDescriptor,
+        gate_enabled: bool,
+    ) -> PortResult<Vec<u8>> {
+        if descriptor.is_data_uri {
+            return cesium_resource::data_uri::decode_data_uri_bytes(&descriptor.url)
+                .map_err(|e| PortError::Decode(format!("data URI decode failed: {e:?}")));
+        }
+        if !matches!(descriptor.method, HttpMethod::Get) {
+            return Err(PortError::Network(format!(
+                "M8.4 backend executes GET only; {:?} awaits a NetworkBackend trait extension",
+                descriptor.method
+            )));
+        }
+        if gate_enabled {
+            self.resource_backend
+                .fetch_url_blocking(&descriptor.url, descriptor.priority)
+        } else {
+            let mut headers = self.headers.clone();
+            headers.extend(descriptor.headers.clone());
+            Self::do_fetch_with_retry(
+                &self.agent,
+                &descriptor.url,
+                &headers,
+                descriptor.retry.max_attempts,
+            )
+        }
+    }
+
+    /// M8.4 (#67): the adapter-side execution counterpart of the IO-free
+    /// `Resource::fetch_array_buffer`/`fetch_json`/`fetch_text`/`fetch_image`/
+    /// `fetch_blob`/`post` descriptor builders. This closes the M8
+    /// “`Resource::fetch` 全量切换收敛” gate (门④): every descriptor executes
+    /// either through the shared backend (gate ON) or the byte-identical legacy
+    /// direct path (gate OFF) — never through an ad-hoc HTTP call scattered in a
+    /// loader, so 门① (HTTP direct calls confined to the backend abstraction
+    /// layer) is preserved after the switch.
+    ///
+    /// The gate is read once from [`resource_fetch_backend_enabled()`]
+    /// (`CESIUM_ENABLE_RESOURCE_FETCH_BACKEND`). Blocking (like
+    /// [`NetworkResourceBackend::fetch_url_blocking`]); call from a worker
+    /// thread, never the frame thread. domain/resource stays IO-free.
+    pub fn fetch_descriptor_blocking(&self, descriptor: &FetchDescriptor) -> PortResult<Vec<u8>> {
+        self.execute_descriptor_gated(descriptor, resource_fetch_backend_enabled())
+    }
 }
 
 impl TileFetcher for HttpTileFetcher {
     fn fetch<'a>(
         &'a self,
         url: &'a str,
-        _priority: f64,
+        priority: f64,
     ) -> Pin<Box<dyn Future<Output = PortResult<Vec<u8>>> + Send + 'a>> {
         let url_owned = url.to_string();
         let cancelled = Arc::clone(&self.cancelled);
@@ -180,9 +294,22 @@ impl TileFetcher for HttpTileFetcher {
         let max_req = self.max_requests_per_server;
         let retry_count = self.retry_count;
         let server_key = Self::extract_server_key(&url_owned);
+        let backend = Arc::clone(&self.resource_backend);
+        // Snapshot the gate once per fetch so a mid-flight env mutation cannot
+        // tear the rate-limit + fetch decision (matches the pre-M8.3 atomic
+        // behavior where `tokio::task::spawn_blocking` captured the closure
+        // environment at spawn time).
+        let use_backend = resource_fetch_backend_enabled();
 
-        Box::pin(async move {
-            // Check if the request was cancelled
+        // M8.3 tokio purge: the whole rate-limit + fetch + release sequence
+        // runs on a dedicated `std::thread` (via `spawn_blocking_fetch`), not
+        // on a tokio worker. The returned future blocks the polling thread on
+        // `mpsc::recv()` and resolves `Ready` on the first poll, matching the
+        // `PipelineResourceBackend::request_stream` pattern. Callers must
+        // drive this future from an IO/worker context (never the frame
+        // thread) — the same contract `PipelineResourceBackend` publishes.
+        spawn_blocking_fetch(move || {
+            // Cancellation check (byte-identical semantics to pre-M8.3).
             {
                 let cancelled_set = cancelled.lock().unwrap();
                 if cancelled_set.contains(&url_owned) {
@@ -190,10 +317,14 @@ impl TileFetcher for HttpTileFetcher {
                 }
             }
 
-            // Rate-limit: wait until a slot opens for this server
+            // Rate-limit: wait until a slot opens for this server. Was a
+            // `tokio::time::sleep(...).await` loop pre-M8.3; now a blocking
+            // `std::thread::sleep` inside the spawned worker thread. The
+            // observable behavior (slot acquisition order, poll interval,
+            // saturating release) is unchanged.
             loop {
                 let acquired = {
-                    let mut active_map = active.lock().await;
+                    let mut active_map = active.lock().unwrap();
                     let count = active_map.entry(server_key.clone()).or_insert(0);
                     if *count < max_req {
                         *count += 1;
@@ -205,31 +336,29 @@ impl TileFetcher for HttpTileFetcher {
                 if acquired {
                     break;
                 }
-                tokio::time::sleep(Duration::from_millis(RATE_LIMIT_POLL_MS)).await;
+                std::thread::sleep(Duration::from_millis(RATE_LIMIT_POLL_MS));
             }
 
-            // Dispatch the blocking HTTP call to a worker thread
-            let result = tokio::task::spawn_blocking(move || {
+            // Dispatch: gate ON routes through the shared 16-worker keep-alive
+            // pool (NetworkResourceBackend → PipelineResourceBackend →
+            // WorkerPool → UreqBackend); gate OFF takes the pre-M8.3 direct
+            // ureq path (`do_fetch_with_retry`) so the v0 baseline stays
+            // byte-identical.
+            let result = if use_backend {
+                backend.fetch_url_blocking(&url_owned, priority)
+            } else {
                 Self::do_fetch_with_retry(&agent, &url_owned, &headers, retry_count)
-            })
-            .await;
+            };
 
-            // Release the slot
+            // Release the slot (byte-identical semantics to pre-M8.3).
             {
-                let mut active_map = active.lock().await;
+                let mut active_map = active.lock().unwrap();
                 if let Some(count) = active_map.get_mut(&server_key) {
                     *count = count.saturating_sub(1);
                 }
             }
 
-            match result {
-                Ok(Ok(data)) => Ok(data),
-                Ok(Err(e)) => Err(e),
-                Err(join_err) => Err(PortError::Network(format!(
-                    "spawn_blocking join error: {}",
-                    join_err
-                ))),
-            }
+            result
         })
     }
 
@@ -317,6 +446,7 @@ impl TileFetcher for MockTileFetcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cesium_ports_driven::ResourceBackend;
 
     // --- extract_server_key --------------------------------------------------
 
@@ -386,49 +516,78 @@ mod tests {
     }
 
     // --- real fetch (integration-like) ---------------------------------------
+    //
+    // M8.3: `#[tokio::test]` → `#[test]` + `block_on_noop`. The new
+    // `spawn_blocking_fetch` bridge resolves `Ready` on the first poll (the
+    // worker `std::thread` blocks internally on `mpsc::recv`), so a
+    // `Waker::noop()` single-poll driver is sufficient — no tokio Runtime,
+    // matching the production path's tokio-free contract.
 
-    #[tokio::test]
-    async fn test_fetch_invalid_url() {
+    #[test]
+    fn test_fetch_invalid_url() {
         let fetcher = HttpTileFetcher::new("https://invalid.example.invalid");
-        let result = fetcher
-            .fetch("https://invalid.example.invalid/tile.terrain", 1.0)
-            .await;
+        let result = block_on_noop(fetcher.fetch("https://invalid.example.invalid/tile.terrain", 1.0));
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), PortError::Network(_)));
     }
 
-    #[tokio::test]
-    async fn test_fetch_cancelled() {
+    #[test]
+    fn test_fetch_cancelled() {
         let fetcher = HttpTileFetcher::new("https://example.com");
         fetcher.cancel("https://example.com/cancelled.terrain");
 
-        let result = fetcher
-            .fetch("https://example.com/cancelled.terrain", 1.0)
-            .await;
+        let result = block_on_noop(fetcher.fetch("https://example.com/cancelled.terrain", 1.0));
         assert!(matches!(result.unwrap_err(), PortError::Cancelled));
     }
 
     // --- mock ----------------------------------------------------------------
 
-    #[tokio::test]
-    async fn test_mock_tile_fetcher() {
+    #[test]
+    fn test_mock_tile_fetcher() {
         let fetcher =
             MockTileFetcher::new().with_response("http://test.com/tile.terrain", vec![1, 2, 3, 4]);
 
-        let result = fetcher.fetch("http://test.com/tile.terrain", 1.0).await;
+        let result = block_on_noop(fetcher.fetch("http://test.com/tile.terrain", 1.0));
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), vec![1, 2, 3, 4]);
 
-        let result = fetcher.fetch("http://test.com/missing.terrain", 1.0).await;
+        let result = block_on_noop(fetcher.fetch("http://test.com/missing.terrain", 1.0));
         assert!(result.is_err());
     }
 
-    #[tokio::test]
-    async fn test_mock_tile_fetcher_cancel_is_noop() {
+    #[test]
+    fn test_mock_tile_fetcher_cancel_is_noop() {
         let fetcher = MockTileFetcher::new();
         fetcher.cancel("anything");
-        let result = fetcher.fetch("anything", 1.0).await;
+        let result = block_on_noop(fetcher.fetch("anything", 1.0));
         assert!(result.is_err()); // not found, not cancelled — cancel is a noop
+    }
+
+    // --- M8.3 gate branch reachability ----------------------------------------
+    //
+    // Proves the gate-ON branch in `HttpTileFetcher::fetch` is syntactically
+    // reachable and that `NetworkResourceBackend` is wired into the struct.
+    // The end-to-end wiremock-driven assertions live in
+    // `specs/tests/e2e_network/*` (deferred #37, `#[ignore]`-gated until
+    // M11.1 wires the async harness).
+
+    #[test]
+    fn http_tile_fetcher_holds_network_resource_backend() {
+        let fetcher = HttpTileFetcher::new("https://example.com");
+        // The backend is constructed eagerly so the gate-ON branch is a pure
+        // env-var decision at fetch time (no lazy-init race).
+        assert_eq!(fetcher.resource_backend.name(), "cesium-network-resource");
+        assert!(fetcher.resource_backend.is_available());
+    }
+
+    #[test]
+    fn gate_off_takes_direct_ureq_branch() {
+        // Ambient env must have CESIUM_ENABLE_RESOURCE_FETCH_BACKEND unset for
+        // the golden path; assert the observed default so a stray export in
+        // CI would fail loudly here rather than silently flipping the branch.
+        if std::env::var(ENV_ENABLE_RESOURCE_FETCH_BACKEND).is_err() {
+            assert!(!resource_fetch_backend_enabled());
+        }
     }
 
     // --- error mapping -------------------------------------------------------
@@ -438,5 +597,109 @@ mod tests {
         // We can't easily construct ureq::Error::Status without a real response,
         // but we test the logic indirectly via integration tests above.
         // This placeholder documents the expected mapping.
+    }
+
+    // --- M8.4 (#67): FetchDescriptor execution wiring ------------------------
+    //
+    // Proves the M8.4 convergence gate: the IO-free domain descriptors produced
+    // by `Resource::fetch_*`/`post` execute through the gate-guarded adapter
+    // path — data URIs short-circuit (zero network), gate ON routes through
+    // `NetworkResourceBackend`, gate OFF takes the byte-identical direct path.
+    // The gate decision is injected via `execute_descriptor_gated` so both
+    // branches are exercised without mutating the process env (which would race
+    // across parallel tests).
+
+    /// Minimal offline HTTP server (ephemeral 127.0.0.1 port) returning `body`
+    /// for every GET. Mirrors `adapters/pipeline/src/net/mod.rs::test_server`
+    /// (which is `pub(crate)`, hence not reachable cross-crate).
+    fn spawn_test_server(body: &'static [u8]) -> String {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let port = listener.local_addr().expect("local_addr").port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf); // drain the request head
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                if stream.write_all(head.as_bytes()).is_err() {
+                    return;
+                }
+                if stream.write_all(body).is_err() {
+                    return;
+                }
+                let _ = stream.flush();
+            }
+        });
+        format!("http://127.0.0.1:{port}/tile")
+    }
+
+    #[test]
+    fn fetch_descriptor_data_uri_short_circuits_no_network() {
+        let fetcher = HttpTileFetcher::new("https://example.com");
+        // "QUJD" is base64 for "ABC".
+        let resource = cesium_resource::Resource::new("data:application/octet-stream;base64,QUJD");
+        let descriptor = resource.fetch_array_buffer(None);
+        assert!(descriptor.is_data_uri);
+        let before = fetcher.resource_backend.fetch_count();
+        // data URI short-circuits before the gate is even consulted.
+        let out = fetcher
+            .fetch_descriptor_blocking(&descriptor)
+            .expect("data URI decodes");
+        assert_eq!(out, b"ABC");
+        assert_eq!(
+            fetcher.resource_backend.fetch_count(),
+            before,
+            "data URI must not touch the backend"
+        );
+    }
+
+    #[test]
+    fn fetch_descriptor_rejects_non_get_method() {
+        let fetcher = HttpTileFetcher::new("https://example.com");
+        let resource = cesium_resource::Resource::new("https://example.com/api");
+        let descriptor = resource.post(vec![1, 2, 3], None);
+        assert!(matches!(descriptor.method, HttpMethod::Post));
+        let err = fetcher.fetch_descriptor_blocking(&descriptor).unwrap_err();
+        assert!(
+            matches!(err, PortError::Network(_)),
+            "non-GET surfaces a Network error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn fetch_descriptor_gate_off_direct_path_returns_body() {
+        let url = spawn_test_server(b"tiledata");
+        let fetcher = HttpTileFetcher::new("");
+        let resource = cesium_resource::Resource::new(&url);
+        let descriptor = resource.fetch_array_buffer(None);
+        assert!(!descriptor.is_data_uri);
+        // gate OFF (injected) -> byte-identical legacy direct-ureq path.
+        let out = fetcher
+            .execute_descriptor_gated(&descriptor, false)
+            .expect("direct path");
+        assert_eq!(out, b"tiledata");
+    }
+
+    #[test]
+    fn fetch_descriptor_gate_on_backend_path_returns_body() {
+        let url = spawn_test_server(b"tiledata");
+        let fetcher = HttpTileFetcher::new("");
+        let resource = cesium_resource::Resource::new(&url);
+        let descriptor = resource.fetch_array_buffer(None);
+        let before = fetcher.resource_backend.fetch_count();
+        // gate ON (injected) -> NetworkResourceBackend -> WorkerPool -> UreqBackend.
+        let out = fetcher
+            .execute_descriptor_gated(&descriptor, true)
+            .expect("backend path");
+        assert_eq!(out, b"tiledata");
+        assert!(
+            fetcher.resource_backend.fetch_count() > before,
+            "gate ON must route through the backend"
+        );
     }
 }

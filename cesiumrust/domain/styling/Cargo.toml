@@ -7,3 +7,16 @@ publish.workspace = true
 
 [dependencies]
 glam.workspace = true
+# M7-B: the `regExp()` / `=~` / `!~` styling operators need a real regex engine.
+# Leaf manifest only (root Cargo.toml untouched); resolves offline to the
+# already-locked regex 1.13.x in the workspace.
+regex = "1"
+
+# M7-C: performance gate for the styling expression engine (<=1ms/frame
+# @10000 features). Leaf manifest only; criterion 0.5 resolves offline.
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "styling_eval"
+harness = false

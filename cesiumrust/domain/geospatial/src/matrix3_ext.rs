@@ -1,6 +1,8 @@
 //! Matrix3 CesiumJS extension functions.
 //! Maps to CesiumJS `Core/Matrix3.js` static methods that go beyond basic matrix math (glam).
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::manual_memcpy)]
 use glam::{DMat3, DQuat, DVec3};
 
 /// The packed length of a Matrix3: 9.

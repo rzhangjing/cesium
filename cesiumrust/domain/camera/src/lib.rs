@@ -43,6 +43,11 @@ pub enum EasingFunction {
     CubicInOut,
     /// Exponential ease-in-out.
     ExponentialInOut,
+    /// Quintic ease-in-out.
+    ///
+    /// Used for short camera flights (`< 1e6` m) where a gentler start/stop is
+    /// desirable. Maps to CesiumJS `EasingFunction.QUINTIC_IN_OUT`.
+    QuinticInOut,
 }
 
 impl EasingFunction {
@@ -73,6 +78,13 @@ impl EasingFunction {
                     (2.0_f64).powf(20.0 * t - 10.0) / 2.0
                 } else {
                     (2.0 - (2.0_f64).powf(-20.0 * t + 10.0)) / 2.0
+                }
+            }
+            Self::QuinticInOut => {
+                if t < 0.5 {
+                    16.0 * t * t * t * t * t
+                } else {
+                    1.0 - (-2.0 * t + 2.0).powi(5) / 2.0
                 }
             }
         }
@@ -1165,6 +1177,8 @@ fn get_pitch_3d(position: DVec3, direction: DVec3, ellipsoid: &Ellipsoid) -> f64
 /// Maps to CesiumJS Camera.roll getter (SCENE3D branch):
 /// If |dir_local.z| < 1-EPSILON3: roll = zeroToTwoPi(atan2(-right_local.z, up_local.z) + TWO_PI)
 /// Otherwise: roll = 0
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#[allow(clippy::let_and_return)]
 fn get_roll_3d(position: DVec3, direction: DVec3, up: DVec3, right: DVec3, ellipsoid: &Ellipsoid) -> f64 {
     let enu = cesium_geospatial::transforms::east_north_up_to_fixed_frame(position, ellipsoid);
     let up_enu = enu.z_axis.truncate();
@@ -1318,6 +1332,24 @@ mod tests {
 
         // QuadraticOut
         assert!((EasingFunction::QuadraticOut.evaluate(0.5) - 0.75).abs() < 1e-10);
+
+        // QuinticInOut: endpoints pinned, midpoint symmetric at 0.5.
+        assert!((EasingFunction::QuinticInOut.evaluate(0.0)).abs() < 1e-10);
+        assert!((EasingFunction::QuinticInOut.evaluate(0.5) - 0.5).abs() < 1e-10);
+        assert!((EasingFunction::QuinticInOut.evaluate(1.0) - 1.0).abs() < 1e-10);
+        // ease-in branch: 16 * 0.25^5 = 0.015625.
+        assert!((EasingFunction::QuinticInOut.evaluate(0.25) - 0.015625).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_quintic_in_out_is_monotonic() {
+        let easing = EasingFunction::QuinticInOut;
+        let mut previous = -1.0;
+        for i in 0..=100 {
+            let value = easing.evaluate(i as f64 / 100.0);
+            assert!(value >= previous - 1e-12, "quintic ease must not decrease");
+            previous = value;
+        }
     }
 
     #[test]

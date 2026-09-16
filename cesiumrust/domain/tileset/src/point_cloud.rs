@@ -6,6 +6,8 @@
 //! - `Scene/PointCloudEyeDomeLighting.js`
 //! - `Scene/TimeDynamicPointCloud.js`
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::field_reassign_with_default)]
 use crate::batch_table::FeatureTable;
 use glam::DVec3;
 

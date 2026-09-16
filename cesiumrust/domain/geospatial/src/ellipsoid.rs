@@ -1,6 +1,8 @@
 //! Ellipsoid - a quadratic surface defined in Cartesian coordinates.
 //! Maps to CesiumJS `Core/Ellipsoid.js` + `Core/scaleToGeodeticSurface.js`
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::needless_return)]
 use crate::cartographic::Cartographic;
 use crate::math_utils::{self, EPSILON1, EPSILON12, EPSILON14, EPSILON15, LUNAR_RADIUS, TWO_PI};
 use crate::rectangle::Rectangle;

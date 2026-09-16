@@ -10,3 +10,6 @@ glam.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 cesium-geospatial.workspace = true
+# M7-D: JSEP styling engine, consumed by styling.rs behind the
+# CESIUM_ENABLE_STYLING_JSEP gate (double-track delegation).
+cesium-styling.workspace = true

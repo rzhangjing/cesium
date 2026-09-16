@@ -1,6 +1,8 @@
 //! Ray, Plane, and intersection tests.
 //! Maps to CesiumJS `Core/Ray.js`, `Core/Plane.js`, `Core/IntersectionTests.js`, `Core/Intersections2D.js`
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::manual_range_contains, clippy::doc_lazy_continuation)]
 use crate::bounding::{AxisAlignedBoundingBox, BoundingSphere, OrientedBoundingBox};
 use crate::ellipsoid::Ellipsoid;
 use crate::math_utils::{EPSILON15, EPSILON6};

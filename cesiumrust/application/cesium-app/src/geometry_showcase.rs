@@ -51,7 +51,7 @@ fn setup_geometry_showcase(
                          geo: geometry::GeometryData,
                          color: Color,
                          idx: &mut usize| {
-        let mesh = geometry_to_mesh(&geo);
+        let mesh = geometry_to_mesh(&geo, None);
         let row = *idx / cols;
         let col = *idx % cols;
         let x = start_x + col as f32 * spacing;

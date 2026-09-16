@@ -10,7 +10,7 @@ use std::collections::HashSet;
 /// A registry of trusted servers.
 ///
 /// Maps to CesiumJS `TrustedServers`.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct TrustedServers {
     servers: HashSet<String>,
 }
@@ -76,6 +76,8 @@ impl TrustedServers {
         let url = url.trim();
 
         // Handle protocol-relative URLs
+        // deferred.md #14: 手动 strip "//" 前缀，等价 url.strip_prefix("//")；风格问题。
+        #[allow(clippy::manual_strip)]
         if url.starts_with("//") {
             let rest = &url[2..];
             let authority = rest.split('/').next().unwrap_or("");

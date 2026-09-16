@@ -1,6 +1,8 @@
 //! EllipsoidRhumbLine - a rhumb line (loxodrome) on an ellipsoid.
 //! Faithful port of CesiumJS `Source/Core/EllipsoidRhumbLine.js`
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::too_many_arguments, clippy::needless_late_init)]
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
 use crate::math_utils::{equals_epsilon, negative_pi_to_pi, sign, EPSILON10, EPSILON12, EPSILON14, EPSILON8, PI_OVER_TWO};

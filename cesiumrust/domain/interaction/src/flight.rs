@@ -143,9 +143,13 @@ impl CameraFlight {
         // Apply easing function
         let t_eased = self.easing.evaluate(t);
 
-        let position = self.start_position.lerp(self.end_position, t_eased);
-        let direction = self.start_direction.lerp(self.end_direction, t_eased).normalize();
-        let up = self.start_up.lerp(self.end_up, t_eased).normalize();
+        // Great-arc (slerp) interpolation with a parabolic altitude arch, so the
+        // camera sweeps along the globe instead of cutting a straight chord.
+        // Orientation vectors are slerped too, keeping the rotation on the
+        // shortest angular path (CesiumJS `Camera` flight uses quaternion slerp).
+        let position = slerp_great_arc(self.start_position, self.end_position, t_eased);
+        let direction = slerp_unit(self.start_direction, self.end_direction, t_eased);
+        let up = slerp_unit(self.start_up, self.end_up, t_eased);
 
         Some((position, direction, up))
     }
@@ -247,6 +251,29 @@ impl CameraFlight {
         let direction = -destination.normalize();
         Self::fly_to(camera, destination, Some(direction), Some(DVec3::Z), duration)
     }
+
+    /// Creates a great-arc flight whose `duration` and `easing` are derived
+    /// automatically from the travelled distance.
+    ///
+    /// - `duration = clamp(distance / 1e6, 1.0, 5.0)` seconds
+    ///   (see [`compute_flight_duration`]).
+    /// - `easing` = quintic in-out for short hops (`< 1e6` m), cubic in-out
+    ///   otherwise (see [`select_flight_easing`]).
+    ///
+    /// Maps to CesiumJS `Camera.flyTo` when `duration` is omitted
+    /// (`CameraFlightPath.createTween`, L444-449).
+    pub fn fly_to_great_arc(
+        camera: &Camera,
+        destination: DVec3,
+        direction: Option<DVec3>,
+        up: Option<DVec3>,
+    ) -> Self {
+        let distance = (destination - camera.position).length();
+        let duration = compute_flight_duration(distance);
+        let mut flight = Self::fly_to(camera, destination, direction, up, duration);
+        flight.easing = select_flight_easing(distance);
+        flight
+    }
 }
 
 /// Computes a "lookAt" camera orientation.
@@ -320,10 +347,139 @@ pub fn compute_set_view(
     let direction = (-surface_normal * pitch_from_nadir.cos() + tilt_dir * pitch_from_nadir.sin())
         .normalize();
 
-    let right = direction.cross(surface_normal).normalize();
+    // `right` must be perpendicular to the view direction. When looking straight
+    // down/up the direction is (anti)parallel to the surface normal, so the naive
+    // `direction × normal` degenerates to a zero vector (→ NaN after normalize).
+    // Fall back to the heading's tilt direction (horizontal, ⊥ normal), which
+    // yields the natural north-referenced up; a perpendicular axis covers the
+    // remaining degenerate (polar) case where `tilt_dir` itself collapses.
+    let right_ref = if direction.cross(surface_normal).length_squared() < 1e-18 {
+        if tilt_dir.length_squared() < 1e-18 {
+            perpendicular_axis(direction)
+        } else {
+            tilt_dir
+        }
+    } else {
+        surface_normal
+    };
+    let right = direction.cross(right_ref).normalize();
     let up = right.cross(direction).normalize();
 
     (position, direction, up)
+}
+
+/// Peak-radius factor for the flight arch.
+///
+/// Analogous to CesiumJS `createHeightFunction`, which caps the mid-flight
+/// altitude at `getAltitude(...) * 0.2` (`CameraFlightPath.js` L104-107). The
+/// bulge is scaled by the swept angle so collinear endpoints produce no arch.
+const ARC_PEAK_FACTOR: f64 = 0.2;
+
+/// Rotates `v` about `axis` by `angle` (Rodrigues' rotation formula).
+fn rotate_about_axis(v: DVec3, axis: DVec3, angle: f64) -> DVec3 {
+    let cos_a = angle.cos();
+    let sin_a = angle.sin();
+    v * cos_a + axis.cross(v) * sin_a + axis * axis.dot(v) * (1.0 - cos_a)
+}
+
+/// Returns any unit vector perpendicular to `v` (used for the antiparallel
+/// slerp fallback, where the great-arc plane is otherwise ambiguous).
+fn perpendicular_axis(v: DVec3) -> DVec3 {
+    let helper = if v.x.abs() < 0.9 { DVec3::X } else { DVec3::Y };
+    v.cross(helper).normalize()
+}
+
+/// Spherical linear interpolation between two directions, treated as unit
+/// vectors.
+///
+/// Handles the two degenerate cases the plain `sin`-weighted formula divides by
+/// zero on:
+/// - near-parallel (`dot ≈ 1`): returns `start` (the arc has zero sweep);
+/// - near-antiparallel (`dot ≈ -1`): rotates about an arbitrary perpendicular
+///   axis by `π·t`, keeping the sweep continuous and half-way well-defined.
+fn slerp_unit(start: DVec3, end: DVec3, t: f64) -> DVec3 {
+    let a = start.normalize();
+    let b = end.normalize();
+    let dot = a.dot(b).clamp(-1.0, 1.0);
+
+    if dot > 1.0 - 1e-12 {
+        return a;
+    }
+    if dot < -1.0 + 1e-12 {
+        let axis = perpendicular_axis(a);
+        return rotate_about_axis(a, axis, std::f64::consts::PI * t);
+    }
+
+    let omega = dot.acos();
+    let sin_omega = omega.sin();
+    let wa = ((1.0 - t) * omega).sin() / sin_omega;
+    let wb = (t * omega).sin() / sin_omega;
+    (a * wa + b * wb).normalize()
+}
+
+/// CesiumJS `createHeightFunction` (`CameraFlightPath.js` L75-126): a
+/// power-curve arch that peaks at `altitude` when both endpoints sit below it,
+/// otherwise a plain linear interpolation. `power = 8`, `factor = 1e6` exactly
+/// as the source; at `t = 0` and `t = 1` the curve reproduces the endpoint
+/// heights, and it rises smoothly toward `altitude` in between.
+fn arc_height(start_height: f64, end_height: f64, altitude: f64, t: f64) -> f64 {
+    const POWER: i32 = 8;
+    const FACTOR: f64 = 1_000_000.0;
+    let max_height = start_height.max(end_height);
+    if max_height < altitude {
+        let root = 1.0 / f64::from(POWER);
+        let s = -((altitude - start_height) * FACTOR).powf(root);
+        let e = ((altitude - end_height) * FACTOR).powf(root);
+        let x = t * (e - s) + s;
+        return -(x.powi(POWER)) / FACTOR + altitude;
+    }
+    start_height + (end_height - start_height) * t
+}
+
+/// Interpolates a position along the great arc between `start` and `end`.
+///
+/// The direction is slerped about the ellipsoid center (constant-radius sweep),
+/// while the radius follows [`arc_height`] so the path arches outward instead of
+/// cutting a straight chord through the globe. Collinear endpoints (zero swept
+/// angle) yield no bulge and reduce to a radial move.
+fn slerp_great_arc(start: DVec3, end: DVec3, t: f64) -> DVec3 {
+    let start_radius = start.length();
+    let end_radius = end.length();
+    // An endpoint at the center has no direction; fall back to a straight lerp.
+    if start_radius < 1e-9 || end_radius < 1e-9 {
+        return start + (end - start) * t;
+    }
+
+    let start_dir = start / start_radius;
+    let end_dir = end / end_radius;
+    let omega = start_dir.angle_between(end_dir);
+    let direction = slerp_unit(start_dir, end_dir, t);
+
+    let mean_radius = 0.5 * (start_radius + end_radius);
+    let bulge = (omega / std::f64::consts::PI) * mean_radius * ARC_PEAK_FACTOR;
+    let peak_radius = start_radius.max(end_radius) + bulge;
+
+    direction * arc_height(start_radius, end_radius, peak_radius, t)
+}
+
+/// Computes the flight duration from the travelled distance:
+/// `clamp(distance / 1e6, 1.0, 5.0)` seconds.
+///
+/// Short hops get a full second so they do not snap; very long flights cap at
+/// five seconds. Mirrors CesiumJS's distance-scaled `duration` heuristic
+/// (`CameraFlightPath.createTween`, L444-449).
+pub fn compute_flight_duration(distance: f64) -> f64 {
+    (distance / 1_000_000.0).clamp(1.0, 5.0)
+}
+
+/// Selects the flight easing by travelled distance: quintic in-out for short
+/// flights (`< 1e6` m, a gentler start/stop) and cubic in-out for long ones.
+pub fn select_flight_easing(distance: f64) -> EasingFunction {
+    if distance < 1_000_000.0 {
+        EasingFunction::QuinticInOut
+    } else {
+        EasingFunction::CubicInOut
+    }
 }
 
 #[cfg(test)]
@@ -465,5 +621,80 @@ mod tests {
         // End position should be on the ellipsoid at the given cartographic
         let expected_pos = Ellipsoid::WGS84.cartographic_to_cartesian(&dest);
         assert!((flight.end_position - expected_pos).length() < 1.0);
+    }
+
+    #[test]
+    fn test_slerp_unit_endpoints_and_antiparallel() {
+        let a = DVec3::X;
+        let b = DVec3::Y;
+        assert!((slerp_unit(a, b, 0.0) - a).length() < 1e-12);
+        assert!((slerp_unit(a, b, 1.0) - b).length() < 1e-12);
+        // Antiparallel fallback must stay unit-length and continuous.
+        let mid = slerp_unit(DVec3::X, -DVec3::X, 0.5);
+        assert!((mid.length() - 1.0).abs() < 1e-12);
+    }
+
+    /// Task requirement: the great-arc midpoint deviates < 1e-6 rad from the
+    /// geodesic midpoint `normalize(start_dir + end_dir)`.
+    #[test]
+    fn test_great_arc_midpoint_deviation_below_epsilon() {
+        let r = 6378137.0 * 2.0;
+        let camera = Camera::new(DVec3::new(r, 0.0, 0.0), -DVec3::X, DVec3::Z);
+        let destination = DVec3::new(0.0, r, 0.0);
+        let mut flight = CameraFlight::fly_to(&camera, destination, None, None, 2.0);
+
+        // t = 0.5 (SinusoidalInOut(0.5) == 0.5).
+        let (pos, _, _) = flight.update(1.0).unwrap();
+        let expected_dir = (DVec3::X + DVec3::Y).normalize();
+        let deviation = expected_dir.dot(pos.normalize()).clamp(-1.0, 1.0).acos();
+        assert!(
+            deviation < 1e-6,
+            "midpoint angular deviation {deviation} rad exceeds 1e-6"
+        );
+    }
+
+    #[test]
+    fn test_great_arc_bulges_outward() {
+        let r = 6378137.0 * 2.0;
+        let camera = Camera::new(DVec3::new(r, 0.0, 0.0), -DVec3::X, DVec3::Z);
+        let destination = DVec3::new(0.0, r, 0.0);
+        let mut flight = CameraFlight::fly_to(&camera, destination, None, None, 2.0);
+
+        let (pos, _, _) = flight.update(1.0).unwrap();
+        // The arch lifts the mid-flight radius above both endpoints.
+        assert!(pos.length() > r, "arc should bulge: |pos| = {}", pos.length());
+    }
+
+    #[test]
+    fn test_arc_height_reproduces_endpoints() {
+        assert!((arc_height(100.0, 200.0, 500.0, 0.0) - 100.0).abs() < 1e-6);
+        assert!((arc_height(100.0, 200.0, 500.0, 1.0) - 200.0).abs() < 1e-6);
+        let mid = arc_height(100.0, 200.0, 500.0, 0.5);
+        assert!(mid > 200.0 && mid <= 500.0 + 1e-6, "arch peak out of range: {mid}");
+        // altitude below both endpoints ⇒ linear branch.
+        assert!((arc_height(100.0, 200.0, 150.0, 0.5) - 150.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_compute_flight_duration_clamps() {
+        assert!((compute_flight_duration(500_000.0) - 1.0).abs() < 1e-12);
+        assert!((compute_flight_duration(2_500_000.0) - 2.5).abs() < 1e-12);
+        assert!((compute_flight_duration(10_000_000.0) - 5.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_select_flight_easing_by_distance() {
+        assert_eq!(select_flight_easing(500_000.0), EasingFunction::QuinticInOut);
+        assert_eq!(select_flight_easing(2_000_000.0), EasingFunction::CubicInOut);
+    }
+
+    #[test]
+    fn test_fly_to_great_arc_derives_duration_and_easing() {
+        let camera = create_test_camera();
+        let destination = DVec3::new(0.0, 6378137.0 * 3.0, 0.0);
+        let flight = CameraFlight::fly_to_great_arc(&camera, destination, None, None);
+        // |dest - pos| = 3R√2 ≈ 2.7e7 → duration clamped to 5.0, easing cubic.
+        assert!((flight.duration - 5.0).abs() < 1e-9);
+        assert_eq!(flight.easing, EasingFunction::CubicInOut);
     }
 }

@@ -17,6 +17,9 @@ pub struct CesiumEntityPlugin;
 impl Plugin for CesiumEntityPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GlobeEllipsoid>()
+            // AnimationClock is also registered by CesiumCorePlugin (lib.rs).
+            // init_resource is idempotent — dual registration is harmless and
+            // ensures CesiumEntityPlugin works standalone without CesiumCorePlugin.
             .init_resource::<AnimationClock>()
             .add_systems(
                 Update,

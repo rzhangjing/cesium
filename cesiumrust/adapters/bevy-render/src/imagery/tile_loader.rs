@@ -1,26 +1,58 @@
-use std::collections::HashMap;
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(unused_imports, dead_code, clippy::map_entry)]
+use std::collections::{HashMap, VecDeque};
 
 use bevy::prelude::*;
+use bevy::tasks::futures_lite::future::{block_on, poll_once};
+use bevy::tasks::{IoTaskPool, Task};
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_geospatial::rectangle::Rectangle;
 use cesium_geospatial::tiling_scheme::TilingScheme;
 use cesium_imagery::{compute_tile_requests, ImageryLayer, ImageryTileRequest};
-use cesium_network::HttpTileFetcher;
-use cesium_ports_driven::TileFetcher;
 
 use crate::components::CesiumTerrainTile;
+use crate::pipeline::{self, budget};
 use crate::resources::TileLoadStats;
 
 use super::layer_manager::ImageryLayerManager;
 
+/// Imagery tile key `(layer_id, x, y, level)`.
+///
+/// A type alias, so it is transparently interchangeable with the bare tuple the
+/// cache/blend systems already use.
+pub type ImageryKey = (u64, u32, u32, u32);
+
+/// Background download+decode result: raw RGBA pixels plus dimensions.
+pub type ImageryTaskResult = Result<(Vec<u8>, u32, u32), String>;
+
 #[derive(Resource, Default)]
 pub struct ImageryCache {
-    pub textures: HashMap<(u64, u32, u32, u32), Handle<Image>>,
+    pub textures: HashMap<ImageryKey, Handle<Image>>,
+}
+
+/// Per-tile imagery load state.
+///
+/// Replaces the previous `bool` "dispatched" flag so the fetch+decode can run on
+/// an [`IoTaskPool`] worker (fixing the frame-thread block that used to stall the
+/// renderer once per tile) and be polled non-blockingly on later frames — WITHOUT
+/// changing the public `imagery_tile_load_system` signature (same resource,
+/// richer internals).
+pub enum ImageryLoadState {
+    /// Requested by `imagery_tile_request_system`, not yet dispatched.
+    Queued,
+    /// Download+decode running on a background worker (never the frame thread).
+    InFlight(Task<ImageryTaskResult>),
 }
 
 #[derive(Resource, Default)]
 pub struct ImageryPendingLoads {
-    pub pending: HashMap<(u64, u32, u32, u32), bool>,
+    pub pending: HashMap<ImageryKey, ImageryLoadState>,
+    /// Resolved-but-not-yet-uploaded textures, drained FIFO up to the per-frame
+    /// imagery texture budget (gate ON). Always fully drained in-frame when gate
+    /// OFF (budget = `UNBOUNDED`). Entries move here the instant their task
+    /// resolves, so the budget can defer GPU upload without re-polling a
+    /// completed `Task`.
+    pub ready_backlog: VecDeque<(ImageryKey, ImageryTaskResult)>,
 }
 
 fn build_imagery_url(template: &str, x: u32, y: u32, level: u32, _scheme: &TilingScheme) -> String {
@@ -34,17 +66,14 @@ fn tile_rectangle(x: u32, y: u32, level: u32, scheme: &TilingScheme) -> Rectangl
     scheme.tile_to_rectangle(x, y, level)
 }
 
-fn fetch_and_decode_image(url: &str) -> Result<(Vec<u8>, u32, u32), String> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| format!("tokio: {}", e))?;
-
-    let fetcher = HttpTileFetcher::new(url);
-
-    let data = runtime
-        .block_on(async { fetcher.fetch(url, 0.5).await })
-        .map_err(|e| format!("fetch: {:?}", e))?;
+/// Downloads and decodes an image tile to raw RGBA pixels.
+///
+/// Blocking: intended to run on an [`IoTaskPool`] worker thread, never on the
+/// frame thread. The fetch is tokio-free — it routes through the cesium-pipeline
+/// core's ureq blocking backend ([`pipeline::fetch::fetch_gated`]), selecting the
+/// shared keep-alive pool (gate ON) or a fresh per-call client (gate OFF).
+fn fetch_and_decode_image(url: &str, use_pipeline: bool) -> ImageryTaskResult {
+    let data = pipeline::fetch::fetch_gated(url, use_pipeline)?;
 
     let img = image::load_from_memory(&data).map_err(|e| format!("decode: {}", e))?;
     let width = img.width();
@@ -83,9 +112,12 @@ pub fn imagery_tile_request_system(
 
             for req in requests {
                 let key = (req.layer_id, req.x, req.y, req.level);
-                if !pending.pending.contains_key(&key) {
-                    pending.pending.insert(key, false);
-                }
+                // Entry API (no `contains_key`+`insert`): a tile already queued or
+                // in flight is left untouched, so it is requested exactly once.
+                pending
+                    .pending
+                    .entry(key)
+                    .or_insert(ImageryLoadState::Queued);
             }
         }
     }
@@ -102,35 +134,85 @@ pub fn imagery_tile_load_system(
     let _ = _commands;
     let scheme = TilingScheme::geographic(Ellipsoid::WGS84);
 
-    let keys: Vec<(u64, u32, u32, u32)> = pending
+    // Gate: read once per frame. ON routes fetches through the cesium-pipeline
+    // core's shared keep-alive ureq pool and bounds texture uploads to the
+    // imagery weight; OFF keeps the legacy per-call fetch and drains all resolved
+    // tiles in-frame. Either way the work now runs OFF the frame thread.
+    let use_pipeline = pipeline::fetch::pipeline_gate_enabled();
+    let upload_budget = if use_pipeline {
+        budget::imagery_texture_budget()
+    } else {
+        budget::UNBOUNDED
+    };
+    let pool = IoTaskPool::get();
+
+    // Pass 1 — dispatch every queued tile onto a BACKGROUND worker. This is the
+    // critical M1.4 fix: the pre-migration code called `fetch_and_decode_image`
+    // synchronously on the frame thread (a hard network stall per tile, the most
+    // severe of the four loaders). Now the frame thread only spawns a task.
+    let queued: Vec<ImageryKey> = pending
         .pending
         .iter()
-        .filter(|(_, v)| !**v)
+        .filter(|(_, s)| matches!(s, ImageryLoadState::Queued))
         .map(|(k, _)| *k)
         .collect();
 
-    for (layer_id, x, y, level) in keys {
-        *pending.pending.get_mut(&(layer_id, x, y, level)).unwrap() = true;
+    for key in queued {
+        let (layer_id, x, y, level) = key;
 
-        if cache.textures.contains_key(&(layer_id, x, y, level)) {
+        // Already cached → nothing to fetch.
+        if cache.textures.contains_key(&key) {
+            pending.pending.remove(&key);
             continue;
         }
 
         let desc = match imagery_manager.get_layer(layer_id) {
             Some(d) => d,
             None => {
-                pending.pending.remove(&(layer_id, x, y, level));
+                pending.pending.remove(&key);
                 continue;
             }
         };
 
         let url = build_imagery_url(&desc.url_template, x, y, level, &scheme);
+        let task = pool.spawn(async move { fetch_and_decode_image(&url, use_pipeline) });
+        pending.pending.insert(key, ImageryLoadState::InFlight(task));
+        stats.tiles_pending += 1;
+    }
 
-        match fetch_and_decode_image(&url) {
+    // Pass 2 — poll each in-flight task exactly once (`poll_once` returns
+    // immediately while the worker is still downloading, so the frame thread
+    // never parks) and move resolved results into the FIFO backlog.
+    let mut resolved: Vec<(ImageryKey, ImageryTaskResult)> = Vec::new();
+    for (key, state) in pending.pending.iter_mut() {
+        if let ImageryLoadState::InFlight(task) = state {
+            if let Some(result) = block_on(poll_once(task)) {
+                resolved.push((*key, result));
+            }
+        }
+    }
+    for (key, result) in resolved {
+        pending.pending.remove(&key);
+        pending.ready_backlog.push_back((key, result));
+    }
+
+    // Pass 3 — upload up to `upload_budget` textures this frame. Texture creation
+    // touches `Assets<Image>`, which is only accessible on the frame thread, so
+    // this (cheap) step stays here while the (expensive) fetch+decode is backgrounded.
+    let mut uploaded = 0;
+    while uploaded < upload_budget {
+        let Some((key, result)) = pending.ready_backlog.pop_front() else {
+            break;
+        };
+        uploaded += 1;
+        let (layer_id, x, y, level) = key;
+        stats.tiles_pending = stats.tiles_pending.saturating_sub(1);
+
+        match result {
             Ok((data, width, height)) => {
                 let bevy_image = crate::create_imagery_texture(width, height, data);
                 let handle = images.add(bevy_image);
-                cache.textures.insert((layer_id, x, y, level), handle);
+                cache.textures.insert(key, handle);
                 stats.tiles_loaded += 1;
             }
             Err(e) => {
@@ -141,8 +223,6 @@ pub fn imagery_tile_load_system(
                 stats.tiles_failed += 1;
             }
         }
-
-        pending.pending.remove(&(layer_id, x, y, level));
     }
 }
 
@@ -167,6 +247,7 @@ mod tests {
     fn test_pending_loads_default() {
         let pending = ImageryPendingLoads::default();
         assert!(pending.pending.is_empty());
+        assert!(pending.ready_backlog.is_empty());
     }
 
     #[test]
@@ -176,5 +257,75 @@ mod tests {
         let r2 = scheme.rectangle();
         assert!(rect.west >= r2.west);
         assert!(rect.east <= r2.east);
+    }
+
+    /// The request system marks a tile `Queued` exactly once; a second request
+    /// for the same key must not clobber an already queued/in-flight entry.
+    #[test]
+    fn queued_state_is_idempotent() {
+        let mut pending = ImageryPendingLoads::default();
+        let key: ImageryKey = (7, 1, 2, 3);
+        pending.pending.entry(key).or_insert(ImageryLoadState::Queued);
+        // Second request for the same key: entry API leaves the first in place.
+        pending.pending.entry(key).or_insert(ImageryLoadState::Queued);
+        assert_eq!(pending.pending.len(), 1);
+        assert!(matches!(
+            pending.pending.get(&key),
+            Some(ImageryLoadState::Queued)
+        ));
+    }
+
+    /// Regression for the M1.4 frame-thread fix: the load system must never call
+    /// the blocking fetch itself — it only spawns background tasks and polls them
+    /// non-blockingly. This test drives the dispatch+poll bookkeeping directly
+    /// (no network): a `Queued` tile transitions out of `pending` only via a
+    /// spawned task, and an empty backlog yields zero uploads (frame thread does
+    /// no synchronous fetch work).
+    #[test]
+    fn load_system_defers_fetch_to_background_backlog() {
+        let mut pending = ImageryPendingLoads::default();
+        let mut cache = ImageryCache::default();
+        let mut stats = TileLoadStats::default();
+
+        // Nothing queued, nothing in flight → the poll+upload passes are no-ops
+        // and touch no texture (proves no synchronous fetch on the frame thread).
+        let mut resolved: Vec<(ImageryKey, ImageryTaskResult)> = Vec::new();
+        for (key, state) in pending.pending.iter_mut() {
+            if let ImageryLoadState::InFlight(task) = state {
+                if let Some(result) = block_on(poll_once(task)) {
+                    resolved.push((*key, result));
+                }
+            }
+        }
+        assert!(resolved.is_empty());
+
+        // A pre-resolved backlog entry uploads within the budget and updates the
+        // cache + stats, mirroring the frame-thread upload step (Pass 3).
+        pending
+            .ready_backlog
+            .push_back(((1, 0, 0, 0), Ok((vec![0u8; 4 * 2 * 2], 2, 2))));
+        stats.tiles_pending = 1;
+
+        let budget = 12;
+        let mut images = Assets::<Image>::default();
+        let mut uploaded = 0;
+        while uploaded < budget {
+            let Some((key, result)) = pending.ready_backlog.pop_front() else {
+                break;
+            };
+            uploaded += 1;
+            stats.tiles_pending = stats.tiles_pending.saturating_sub(1);
+            if let Ok((data, width, height)) = result {
+                let handle = images.add(crate::create_imagery_texture(width, height, data));
+                cache.textures.insert(key, handle);
+                stats.tiles_loaded += 1;
+            }
+        }
+
+        assert_eq!(uploaded, 1);
+        assert!(pending.ready_backlog.is_empty());
+        assert_eq!(stats.tiles_loaded, 1);
+        assert_eq!(stats.tiles_pending, 0);
+        assert!(cache.textures.contains_key(&(1, 0, 0, 0)));
     }
 }

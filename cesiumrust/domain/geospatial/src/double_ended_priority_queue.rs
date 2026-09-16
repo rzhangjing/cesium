@@ -3,6 +3,8 @@
 //! Array-backed min-max heap implementation of a double-ended priority queue.
 //! This data structure allows for efficient removal of minimum and maximum elements.
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::manual_is_multiple_of)]
 use std::cmp::Ordering;
 
 /// Computes the level of a node in the complete binary tree:

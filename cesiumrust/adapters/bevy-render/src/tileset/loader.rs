@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
-use cesium_network::HttpTileFetcher;
-use cesium_ports_driven::TileFetcher;
+use bevy::tasks::futures_lite::future::{block_on, poll_once};
+use bevy::tasks::{IoTaskPool, Task};
 use cesium_tileset::tileset::{TilesetJson, TilesetState};
 
 use crate::components::{CesiumTilesetRoot, TilesetLoadingState};
+use crate::pipeline;
 use crate::resources::TileLoadStats;
 
 #[derive(Resource, Default)]
@@ -21,8 +22,11 @@ pub struct TilesetFetchState {
     pub pending_urls: HashMap<String, TilesetFetchRequest>,
 }
 
+/// An in-flight `tileset.json` download running on the [`IoTaskPool`].
 pub struct TilesetFetchRequest {
     pub entity: Entity,
+    /// Background fetch + parse. Polled (never blocked on) from the frame thread.
+    pub task: Task<Result<TilesetJson, String>>,
 }
 
 pub fn tileset_load_system(
@@ -32,80 +36,108 @@ pub fn tileset_load_system(
     mut fetch_state: ResMut<TilesetFetchState>,
     mut stats: ResMut<TileLoadStats>,
 ) {
+    // Harvest fetches that resolved since the previous frame. `poll_once` returns
+    // immediately (`None` while the worker is still downloading), so the frame
+    // thread never stalls on the network — previously a synchronous
+    // `block_on(fetcher.fetch(..))` here could freeze the frame for up to 1s.
+    poll_tileset_fetches(&mut commands, &mut fetch_state, &mut loaded, &mut stats);
+
+    // Dispatch a background fetch for every root that has not started loading.
+    // Gate: ON routes through the cesium-pipeline core's shared keep-alive ureq
+    // pool; OFF uses a fresh per-call client. Both are tokio-free and run on the
+    // IO task pool, so the frame thread never stalls on the network.
+    let use_pipeline = pipeline::fetch::pipeline_gate_enabled();
+    let pool = IoTaskPool::get();
     for (entity, root) in tileset_query.iter() {
-        match &root.loading_state {
-            TilesetLoadingState::NotLoaded => {
-                let url = root.url.clone();
-                fetch_state.pending_urls.insert(
-                    url.clone(),
-                    TilesetFetchRequest { entity },
-                );
-                commands.entity(entity).insert(CesiumTilesetRoot {
-                    loading_state: TilesetLoadingState::Loading,
-                    url: root.url.clone(),
+        if !matches!(root.loading_state, TilesetLoadingState::NotLoaded) {
+            continue;
+        }
+
+        // Another entity may already be fetching this exact URL; do not clobber
+        // the in-flight task. This entity just waits in `Loading`.
+        if fetch_state.pending_urls.contains_key(&root.url) {
+            commands.entity(entity).insert(CesiumTilesetRoot {
+                loading_state: TilesetLoadingState::Loading,
+                url: root.url.clone(),
+            });
+            continue;
+        }
+
+        let url = root.url.clone();
+        let task_url = url.clone();
+        let task = pool.spawn(async move { fetch_tileset_json(&task_url, use_pipeline) });
+        fetch_state
+            .pending_urls
+            .insert(url, TilesetFetchRequest { entity, task });
+
+        commands.entity(entity).insert(CesiumTilesetRoot {
+            loading_state: TilesetLoadingState::Loading,
+            url: root.url.clone(),
+        });
+    }
+}
+
+/// Polls every pending `tileset.json` fetch exactly once and applies the ones
+/// that resolved. Runs on the frame thread but never blocks.
+fn poll_tileset_fetches(
+    commands: &mut Commands,
+    fetch_state: &mut TilesetFetchState,
+    loaded: &mut LoadedTileset,
+    stats: &mut TileLoadStats,
+) {
+    // Two passes: the map cannot be mutated while its values are borrowed, so
+    // collect the resolved outcomes first, then drain them.
+    let mut resolved: Vec<(String, Entity, Result<TilesetJson, String>)> = Vec::new();
+    for (url, request) in fetch_state.pending_urls.iter_mut() {
+        if let Some(result) = block_on(poll_once(&mut request.task)) {
+            resolved.push((url.clone(), request.entity, result));
+        }
+    }
+
+    for (url, entity, result) in resolved {
+        fetch_state.pending_urls.remove(&url);
+        match result {
+            Ok(tileset_json) => {
+                let base_path = url
+                    .rsplit_once('/')
+                    .map(|(base, _)| base.to_string())
+                    .unwrap_or_default();
+
+                *loaded = LoadedTileset {
+                    tileset_json: Some(tileset_json),
+                    state: TilesetState::new(&base_path),
+                    url: url.clone(),
+                    root_entity: Some(entity),
+                };
+
+                // `try_insert`: the root may have been despawned while the fetch
+                // was in flight.
+                commands.entity(entity).try_insert(CesiumTilesetRoot {
+                    loading_state: TilesetLoadingState::Ready,
+                    url: url.clone(),
                 });
+
+                stats.tiles_loaded += 1;
             }
-            TilesetLoadingState::Loading => {
-                if let Some(req) = fetch_state.pending_urls.get(&root.url) {
-                    if req.entity != entity {
-                        continue;
-                    }
-                }
-
-                let fetcher = HttpTileFetcher::new(&root.url);
-                let result = fetch_tileset_json_sync(&fetcher, &root.url);
-
-                match result {
-                    Ok(tileset_json) => {
-                        let base_path = root
-                            .url
-                            .rsplit_once('/')
-                            .map(|(base, _)| base.to_string())
-                            .unwrap_or_default();
-
-                        *loaded = LoadedTileset {
-                            tileset_json: Some(tileset_json),
-                            state: TilesetState::new(&base_path),
-                            url: root.url.clone(),
-                            root_entity: Some(entity),
-                        };
-
-                        commands.entity(entity).insert(CesiumTilesetRoot {
-                            loading_state: TilesetLoadingState::Ready,
-                            url: root.url.clone(),
-                        });
-
-                        stats.tiles_loaded += 1;
-                        fetch_state.pending_urls.remove(&root.url);
-                    }
-                    Err(e) => {
-                        error!("Failed to load tileset from {}: {:?}", root.url, e);
-                        commands.entity(entity).insert(CesiumTilesetRoot {
-                            loading_state: TilesetLoadingState::Failed(e.to_string()),
-                            url: root.url.clone(),
-                        });
-                        stats.tiles_failed += 1;
-                        fetch_state.pending_urls.remove(&root.url);
-                    }
-                }
+            Err(e) => {
+                error!("Failed to load tileset from {}: {}", url, e);
+                commands.entity(entity).try_insert(CesiumTilesetRoot {
+                    loading_state: TilesetLoadingState::Failed(e),
+                    url: url.clone(),
+                });
+                stats.tiles_failed += 1;
             }
-            _ => {}
         }
     }
 }
 
-fn fetch_tileset_json_sync(
-    fetcher: &HttpTileFetcher,
-    url: &str,
-) -> Result<TilesetJson, String> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
-
-    let data = runtime
-        .block_on(async { fetcher.fetch(url, 1.0).await })
-        .map_err(|e| format!("Fetch error: {:?}", e))?;
+/// Downloads and parses `tileset.json`.
+///
+/// Runs on an [`IoTaskPool`] worker thread. The fetch is tokio-free — it routes
+/// through the cesium-pipeline core's ureq blocking backend
+/// ([`pipeline::fetch::fetch_gated`]), so it never stalls the frame thread.
+fn fetch_tileset_json(url: &str, use_pipeline: bool) -> Result<TilesetJson, String> {
+    let data = pipeline::fetch::fetch_gated(url, use_pipeline)?;
 
     let json_str = String::from_utf8(data).map_err(|e| format!("Invalid UTF-8: {}", e))?;
     TilesetJson::from_json(&json_str).map_err(|e| format!("JSON parse error: {}", e))

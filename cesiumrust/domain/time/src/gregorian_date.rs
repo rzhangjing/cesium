@@ -48,7 +48,8 @@ impl GregorianDate {
     /// Maps to CesiumJS `new GregorianDate(year, month, day, hour, minute, second, millisecond, isLeapSecond)`
     ///
     /// Validation is debug-only (matches CesiumJS DeveloperError behavior).
-    #[allow(clippy::too_many_arguments)]
+    // deferred.md #13: debug_assert 范围校验 (year/month/day/millisecond) 触发 manual_range_contains，风格问题。
+    #[allow(clippy::too_many_arguments, clippy::manual_range_contains)]
     pub fn new(
         year: i32,
         month: u32,

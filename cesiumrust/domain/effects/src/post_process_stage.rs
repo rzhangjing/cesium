@@ -178,13 +178,37 @@ impl PostProcessStageComposite {
 /// Creates an FXAA (Fast Approximate Anti-Aliasing) stage.
 ///
 /// Maps to CesiumJS `PostProcessStageLibrary.createFXAAStage()`.
+///
+/// # M5-E1 implementation note
+/// The runtime shader is the self-implemented WGSL at
+/// `adapters/bevy-render/shaders/fxaa.wgsl` — a translation of FXAA 3.11
+/// **quality preset 12 only** (`FXAA_QUALITY_PS=5`, `P0=1.0, P1=1.5, P2=2.0,
+/// P3=4.0, P4=12.0`), green-channel-as-luma + early-exit.
+///
+/// Blueprint: `cesium-rs/crates/cesium-shaders/shaders/FXAA3_11.glsl` L102-108
+/// (preset 12 defines) + L261-650 (core algorithm); interface wrapper
+/// `packages/engine/Source/Shaders/PostProcessStages/FXAA.glsl` L1-21.
+///
+/// The three quality params below are **compile-time `const`** in both the
+/// CesiumJS GLSL (FXAA.glsl L5-7) and our WGSL — NOT runtime uniforms. They are
+/// recorded here as `f64` for domain-side introspection / parity assertions.
+/// See `docs/deviations.md#dev-017`.
 pub fn create_fxaa_stage() -> PostProcessStage {
     let mut stage = PostProcessStage::new(
         "czm_fxaa",
-        "// FXAA fragment shader\nuniform sampler2D colorTexture;\nin vec2 v_textureCoordinates;\nvoid main() {\n    out_FragColor = fxaa(colorTexture, v_textureCoordinates);\n}",
+        "// FXAA 3.11, quality preset 12 (self-implemented WGSL).\n\
+         // Runtime shader: adapters/bevy-render/shaders/fxaa.wgsl\n\
+         // const QUALITY_PS=5; P0=1.0 P1=1.5 P2=2.0 P3=4.0 P4=12.0 (FXAA3_11.glsl L102-108)\n\
+         // const SUBPIX_QUALITY=0.5; EDGE_THRESHOLD=0.125; EDGE_THRESHOLD_MIN=0.0833 (FXAA.glsl L5-7)\n\
+         // green-as-luma + early-exit; 5 unrolled edge-search steps; alpha preserved.",
     );
-    stage.enabled = false; // Disabled by default
+    stage.enabled = false; // Disabled by default (enabled via CESIUM_ENABLE_POSTPROCESS gate)
     stage.sample_mode = SampleMode::Linear;
+    // CesiumJS FXAA.glsl L5-7 quality params (compile-time constants upstream;
+    // mirrored as f64 here so the domain descriptor is introspectable/testable).
+    stage.set_uniform("fxaaQualitySubpix", UniformValue::Float(0.5));
+    stage.set_uniform("fxaaQualityEdgeThreshold", UniformValue::Float(0.125));
+    stage.set_uniform("fxaaQualityEdgeThresholdMin", UniformValue::Float(0.0833));
     stage
 }
 
@@ -215,15 +239,43 @@ pub fn create_bloom_composite() -> PostProcessStageComposite {
     composite
 }
 
-/// Creates an Ambient Occlusion composite stage (HBAO).
+/// Creates an Ambient Occlusion composite stage.
 ///
-/// Maps to CesiumJS `PostProcessStageLibrary.createAmbientOcclusionStage()`.
+/// Maps to CesiumJS `PostProcessStageLibrary.createAmbientOcclusionStage()`
+/// (`PostProcessStageLibrary.js` L496) / `isAmbientOcclusionSupported` (L599).
+///
+/// # M5-E2 implementation note
+/// The runtime shader is the self-implemented WGSL at
+/// `adapters/bevy-render/shaders/ao.wgsl` — a **hemisphere 16-sample SSAO**
+/// kernel (`fragment_generate`) + a **4×4 box blur + modulate** pass
+/// (`fragment_blur_modulate`), fed by Bevy's `DepthPrepass` + `NormalPrepass`.
+///
+/// Blueprint (semantic): `packages/engine/Source/Shaders/PostProcessStages/
+/// AmbientOcclusionGenerate.glsl` L1-144 (HBAO ray-march) +
+/// `AmbientOcclusionModulate.glsl` L1-11. Structural/API reference:
+/// `bevy_pbr-0.15.3/src/ssao/{mod.rs,ssao.wgsl}`.
+///
+/// DEVIATION: CesiumJS AO is an HBAO ray-march (directionCount × stepCount);
+/// cesiumrust implements the hemisphere-kernel SSAO family per the M5-E2 plan.
+/// The `directionCount` / `stepCount` uniforms below are therefore retained for
+/// domain-side parity/introspection but are **informational** at runtime (the
+/// WGSL uses a fixed 16-tap hemisphere kernel). The AO parameters
+/// (intensity=3.0, sample_radius=0.5, sample_count=16, bias=0.001,
+/// length_cap=0.26) are f64 here and projected to f32 `const` in `ao.wgsl`.
+/// See `docs/deviations.md#dev-018`.
 pub fn create_ambient_occlusion_composite() -> PostProcessStageComposite {
     let mut composite = PostProcessStageComposite::new("czm_ambient_occlusion");
     composite.enabled = false;
 
-    // AO generation pass
-    let mut ao_pass = PostProcessStage::new("czm_ambient_occlusion_generate", "// HBAO pass");
+    // AO generation pass (hemisphere 16-sample kernel → AO factor texture).
+    let mut ao_pass = PostProcessStage::new(
+        "czm_ambient_occlusion_generate",
+        "// SSAO hemisphere 16-sample kernel (self-implemented WGSL).\n\
+         // Runtime shader: adapters/bevy-render/shaders/ao.wgsl @fragment_generate\n\
+         // const SAMPLE_COUNT=16; AO_INTENSITY=3.0; AO_RADIUS=0.5; AO_BIAS=0.001; AO_LENGTH_CAP=0.26\n\
+         // inputs: DepthPrepass + NormalPrepass (view_from_clip reconstruct, view_from_world normal).\n\
+         // per-pixel TBN + noise decorrelation; range-check + bias; ao = pow(1 - occ/16, intensity).",
+    );
     ao_pass.set_uniform("intensity", UniformValue::Float(3.0));
     ao_pass.set_uniform("bias", UniformValue::Float(0.1));
     ao_pass.set_uniform("lengthCap", UniformValue::Float(0.26));
@@ -232,8 +284,13 @@ pub fn create_ambient_occlusion_composite() -> PostProcessStageComposite {
     ao_pass.set_uniform("ambientOcclusionOnly", UniformValue::Bool(false));
     composite.add_stage(ao_pass);
 
-    // Blur pass for AO
-    let blur_pass = PostProcessStage::new("czm_ambient_occlusion_blur", "// AO blur pass");
+    // Blur + modulate pass (4×4 box blur of the AO factor, multiplied into colour).
+    let blur_pass = PostProcessStage::new(
+        "czm_ambient_occlusion_blur",
+        "// 4x4 box blur + modulate (self-implemented WGSL).\n\
+         // Runtime shader: adapters/bevy-render/shaders/ao.wgsl @fragment_blur_modulate\n\
+         // 16-tap box blur of the AO factor, then colour.rgb *= ao (AmbientOcclusionModulate.glsl L1-11).",
+    );
     composite.add_stage(blur_pass);
 
     composite

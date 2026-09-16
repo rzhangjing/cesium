@@ -1,6 +1,8 @@
 //! Cartesian4 CesiumJS extension functions.
 //! Maps to CesiumJS `Core/Cartesian4.js` static methods that go beyond basic vector math.
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::needless_range_loop)]
 use crate::math_utils;
 use glam::DVec4;
 

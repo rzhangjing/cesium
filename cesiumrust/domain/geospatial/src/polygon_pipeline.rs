@@ -2,6 +2,8 @@
 //! Faithful port of CesiumJS `Source/Core/PolygonPipeline.js`
 //! (computeSubdivision + computeRhumbLineSubdivision)
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::manual_is_multiple_of, clippy::len_zero)]
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
 use crate::ellipsoid_rhumb_line::EllipsoidRhumbLine;

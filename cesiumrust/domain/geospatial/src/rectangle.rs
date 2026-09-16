@@ -6,6 +6,8 @@
 //! `contains`/`subsection` and the `fromCartographicArray`/`fromCartesianArray`
 //! "smallest enclosing rectangle" logic.
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::neg_cmp_op_on_partial_ord)]
 use crate::bounding::BoundingSphere;
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::{self, Ellipsoid};

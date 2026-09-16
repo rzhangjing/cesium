@@ -13,10 +13,11 @@
 //! Covering all 21 CesiumJS built-in procedural material types:
 //! Color(0)..Fade(6) and PolylineArrow(7)..WaterMask(20).
 
-use bevy::asset::load_internal_asset;
+use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy::render::render_resource::{AsBindGroup, Shader, ShaderRef, ShaderType};
 use cesium_material::{Material as DomainMaterial, UniformValue};
+use cesium_shadow::{OceanConfig, OceanSurface};
 use std::collections::BTreeMap;
 
 /// Strong handle to the embedded Fabric material WGSL shader.
@@ -151,8 +152,13 @@ mod fabric_params {
         pub extra_a: Vec4,
         /// x=spacing(contour), y=contourWidth, z=strength(normal/bump), w=dashPattern.
         pub extra_b: Vec4,
-        /// x=minHeight(ramp/band), y=maxHeight(ramp/band), z=time(water), w=animationSpeed.
+        /// x=minHeight(ramp/band), y=maxHeight(ramp/band), z=frameNumber(water), w=animationSpeed.
         pub extra_c: Vec4,
+        /// M5-D Water (Water.glsl): x=frequency, y=amplitude, z=specularIntensity,
+        /// w=fadeFactor. MUST stay the last field so every pre-existing uniform
+        /// offset (kind..extra_c) is unchanged — a mid-struct insert would shift
+        /// the encase layout and corrupt all 21 cases (WGSL/Rust must match).
+        pub water_a: Vec4,
     }
 
     impl Default for FabricParams {
@@ -172,6 +178,9 @@ mod fabric_params {
                 extra_a: Vec4::new(1.0, 0.0, 0.3, 16.0),
                 extra_b: Vec4::new(1000.0, 2.0, 0.5, 255.0),
                 extra_c: Vec4::new(0.0, 1000.0, 0.0, 0.5),
+                // Water.glsl defaults mirror domain/material cache.rs:
+                // frequency=10, amplitude=1, specularIntensity=0.5, fadeFactor=1.
+                water_a: Vec4::new(10.0, 1.0, 0.5, 1.0),
             }
         }
     }
@@ -188,6 +197,18 @@ pub struct FabricMaterial {
     #[texture(1)]
     #[sampler(2)]
     pub image: Handle<Image>,
+    /// M5-D Water `normalMap` (Water.glsl). LINEAR tangent-space data → the
+    /// bound [`Image`] MUST use `TextureFormat::Rgba8Unorm` (never
+    /// `Rgba8UnormSrgb`, which would double-encode the normals). Non-water kinds
+    /// never sample this binding; it falls back to `image`.
+    #[texture(3)]
+    #[sampler(4)]
+    pub normal_map: Handle<Image>,
+    /// M5-D Water `specularMap` (Water.glsl). LINEAR mask data → same
+    /// `Rgba8Unorm` rule as `normal_map`. Sampled as `.r` by case 17u.
+    #[texture(5)]
+    #[sampler(6)]
+    pub specular_map: Handle<Image>,
     /// Whether the material is translucent (drives [`AlphaMode`]).
     /// Mirrors `Material.isTranslucent()` from the domain layer.
     pub translucent: bool,
@@ -259,11 +280,27 @@ fn get_bool(u: &BTreeMap<String, UniformValue>, name: &str, default: bool) -> bo
 /// Builds a renderable [`FabricMaterial`] from a domain [`DomainMaterial`].
 ///
 /// The `image` handle supplies any `Sampler2D` uniform (CesiumJS's
-/// `czm_defaultImage`). Translucency is taken from the domain material's
+/// `czm_defaultImage`) and also backs the Water `normalMap` / `specularMap`
+/// bindings as a fallback. Translucency is taken from the domain material's
 /// `is_translucent()` so the alpha mode matches CesiumJS behaviour.
+///
+/// For Water with real procedurally-generated maps use
+/// [`fabric_material_from_domain_with_maps`] or [`water_material_from_preset`].
 pub fn fabric_material_from_domain(
     domain_material: &DomainMaterial,
     image: Handle<Image>,
+) -> FabricMaterial {
+    fabric_material_from_domain_with_maps(domain_material, image.clone(), image.clone(), image)
+}
+
+/// Like [`fabric_material_from_domain`] but binds explicit Water `normalMap` /
+/// `specularMap` handles (M5-D). Both MUST be linear (`Rgba8Unorm`) images —
+/// see the sRGB red-line. Non-water kinds ignore these bindings.
+pub fn fabric_material_from_domain_with_maps(
+    domain_material: &DomainMaterial,
+    image: Handle<Image>,
+    normal_map: Handle<Image>,
+    specular_map: Handle<Image>,
 ) -> FabricMaterial {
     let u = domain_material.uniforms();
     let kind = FabricKind::from_type_name(domain_material.type_name());
@@ -366,10 +403,18 @@ pub fn fabric_material_from_domain(
             params.extra_b.z = get_float(u, "strength", 0.5);
         }
         FabricKind::Water => {
-            params.color_a = get_vec4(u, "baseWaterColor", [0.2, 0.3, 0.6, 0.8]);
-            params.color_b = get_vec4(u, "blendColor", [0.5, 0.5, 0.5, 0.5]);
-            params.extra_c.w = get_float(u, "animationSpeed", 0.5);
-            params.extra_c.z = 0.0; // time will be updated per-frame
+            // Water.glsl uniforms (defaults mirror domain/material cache.rs).
+            params.color_a = get_vec4(u, "baseWaterColor", [0.2, 0.3, 0.6, 1.0]);
+            params.color_b = get_vec4(u, "blendColor", [0.0, 1.0, 0.699, 1.0]);
+            // extra_c.z = czm_frameNumber (per-frame counter, set by material_system);
+            // extra_c.w = animationSpeed. Water.glsl L18: time = frameNumber * speed.
+            params.extra_c.z = 0.0;
+            params.extra_c.w = get_float(u, "animationSpeed", 0.01);
+            // water_a: frequency / amplitude / specularIntensity / fadeFactor.
+            params.water_a.x = get_float(u, "frequency", 10.0);
+            params.water_a.y = get_float(u, "amplitude", 1.0);
+            params.water_a.z = get_float(u, "specularIntensity", 0.5);
+            params.water_a.w = get_float(u, "fadeFactor", 1.0);
         }
         FabricKind::RimLighting => {
             params.color_a = get_vec4(u, "color", [1.0, 1.0, 1.0, 1.0]);
@@ -390,8 +435,175 @@ pub fn fabric_material_from_domain(
     FabricMaterial {
         params,
         image,
+        normal_map,
+        specular_map,
         translucent: domain_material.is_translucent(),
     }
+}
+
+// ---------------------------------------------------------------------------
+// M5-D: Water normal / specular map generation (domain cesium_shadow → adapter)
+// ---------------------------------------------------------------------------
+
+/// Sea-state presets for the Water material showcase / baselines.
+///
+/// Each preset drives a domain [`OceanSurface`] (Gerstner wave stack from
+/// `cesium_shadow::water`) plus the recommended Water-material uniform
+/// overrides, wiring the previously-unconsumed `OceanConfig` /
+/// `create_default_waves` / `generate_wind_waves` domain code into the render
+/// adapter (M5-D 改动面 4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaterPreset {
+    /// 平静 — light wind, regenerated small-wave spectrum.
+    Calm,
+    /// 中浪 — the domain default 5-wave stack (`create_default_waves`).
+    Medium,
+    /// 大浪 — strong wind, regenerated spectrum.
+    Rough,
+}
+
+impl WaterPreset {
+    /// Short ASCII label for entity naming / baseline file names.
+    pub fn label(&self) -> &'static str {
+        match self {
+            WaterPreset::Calm => "calm",
+            WaterPreset::Medium => "medium",
+            WaterPreset::Rough => "rough",
+        }
+    }
+
+    /// Builds the domain ocean state (consumes `OceanConfig::default()` →
+    /// `create_default_waves`; `generate_wind_waves` for Calm/Rough).
+    pub fn ocean(&self) -> OceanSurface {
+        let mut ocean = OceanSurface::new(OceanConfig::default());
+        match self {
+            // Medium keeps the default create_default_waves() 5-wave stack.
+            WaterPreset::Medium => {}
+            WaterPreset::Calm => {
+                ocean.wind_speed = 5.0;
+                ocean.generate_wind_waves();
+            }
+            WaterPreset::Rough => {
+                ocean.wind_speed = 20.0;
+                ocean.generate_wind_waves();
+            }
+        }
+        ocean
+    }
+
+    /// Water-material uniform overrides (frequency / amplitude /
+    /// animationSpeed / specularIntensity) tuned per sea state.
+    pub fn uniform_overrides(&self) -> Vec<(&'static str, UniformValue)> {
+        match self {
+            WaterPreset::Calm => vec![
+                ("frequency", UniformValue::Float(6.0)),
+                ("amplitude", UniformValue::Float(0.5)),
+                ("animationSpeed", UniformValue::Float(0.004)),
+                ("specularIntensity", UniformValue::Float(0.3)),
+            ],
+            WaterPreset::Medium => vec![
+                ("frequency", UniformValue::Float(10.0)),
+                ("amplitude", UniformValue::Float(1.0)),
+                ("animationSpeed", UniformValue::Float(0.01)),
+                ("specularIntensity", UniformValue::Float(0.5)),
+            ],
+            WaterPreset::Rough => vec![
+                ("frequency", UniformValue::Float(16.0)),
+                ("amplitude", UniformValue::Float(2.5)),
+                ("animationSpeed", UniformValue::Float(0.03)),
+                ("specularIntensity", UniformValue::Float(0.8)),
+            ],
+        }
+    }
+}
+
+/// Generates a tangent-space Water `normalMap` by sampling a domain
+/// [`OceanSurface`] (Gerstner waves) over a UV tile of `tile_size_m` metres.
+///
+/// sRGB red-line: this is LINEAR direction data, so the [`Image`] uses
+/// `TextureFormat::Rgba8Unorm` — never `Rgba8UnormSrgb` (which would
+/// double-encode the normals). 米制换算 red-line: the sampled positions and wave
+/// amplitudes stay in metre-space; the returned normals are dimensionless
+/// directions (slope = m/m), so no `METERS_PER_RENDER_UNIT` division applies
+/// here — that conversion is applied shader-side to Water.glsl's 1e10 fade
+/// divisor (see `shaders/fabric_material.wgsl`).
+pub fn generate_water_normal_map(size: u32, ocean: &OceanSurface, tile_size_m: f64) -> Image {
+    let denom = size.saturating_sub(1).max(1) as f64;
+    let enc = |c: f64| ((c * 0.5 + 0.5).clamp(0.0, 1.0) * 255.0) as u8;
+    let mut data = Vec::with_capacity((size * size * 4) as usize);
+    for y in 0..size {
+        for x in 0..size {
+            let u = x as f64 / denom;
+            let v = y as f64 / denom;
+            let pos = DVec3::new(u * tile_size_m, 0.0, v * tile_size_m);
+            // World-space (Y-up) ocean normal from the Gerstner wave stack.
+            let n = ocean.compute_normal(pos);
+            // Water.glsl tangent space is Z-up; remap Y-up world → Z-up tangent.
+            data.extend_from_slice(&[enc(n.x), enc(n.z), enc(n.y), 255]);
+        }
+    }
+    Image::new(
+        bevy::render::render_resource::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        },
+        bevy::render::render_resource::TextureDimension::D2,
+        data,
+        bevy::render::render_resource::TextureFormat::Rgba8Unorm,
+        bevy::render::render_asset::RenderAssetUsages::default(),
+    )
+}
+
+/// Generates a Water `specularMap` (water/non-water mask, sampled as `.r` by
+/// Water.glsl) from the ocean crest height. LINEAR mask data → `Rgba8Unorm`
+/// (sRGB red-line). Kept bright (≈0.6..1.0) so the water stays visible:
+/// Water.glsl multiplies alpha by this value, so a dark mask would vanish.
+pub fn generate_water_specular_map(size: u32, ocean: &OceanSurface, tile_size_m: f64) -> Image {
+    let denom = size.saturating_sub(1).max(1) as f64;
+    let foam = ocean.config.foam_threshold.max(1e-6);
+    let mut data = Vec::with_capacity((size * size * 4) as usize);
+    for y in 0..size {
+        for x in 0..size {
+            let u = x as f64 / denom;
+            let v = y as f64 / denom;
+            let pos = DVec3::new(u * tile_size_m, 0.0, v * tile_size_m);
+            let h = ocean.compute_height(pos); // metres
+            // Normalise crest height into [0,1], then map to a bright mask band
+            // [0.6, 1.0] so the water stays visible: Water.glsl multiplies alpha by
+            // this value, so a dark mask would make the surface vanish.
+            let crest = ((h / foam) * 0.5 + 0.5).clamp(0.0, 1.0);
+            let mask = 0.6 + 0.4 * crest;
+            let b = (mask * 255.0) as u8;
+            data.extend_from_slice(&[b, b, b, 255]);
+        }
+    }
+    Image::new(
+        bevy::render::render_resource::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        },
+        bevy::render::render_resource::TextureDimension::D2,
+        data,
+        bevy::render::render_resource::TextureFormat::Rgba8Unorm,
+        bevy::render::render_asset::RenderAssetUsages::default(),
+    )
+}
+
+/// Convenience: build a Water [`FabricMaterial`] for `preset`, generating and
+/// inserting its normal/specular maps into `images`. Keeps `cesium_shadow`
+/// usage inside the adapter so application crates need not depend on it.
+pub fn water_material_from_preset(
+    images: &mut Assets<Image>,
+    domain_material: &DomainMaterial,
+    fallback: Handle<Image>,
+    preset: WaterPreset,
+) -> FabricMaterial {
+    let ocean = preset.ocean();
+    let normal_map = images.add(generate_water_normal_map(128, &ocean, 200.0));
+    let specular_map = images.add(generate_water_specular_map(128, &ocean, 200.0));
+    fabric_material_from_domain_with_maps(domain_material, fallback, normal_map, specular_map)
 }
 
 /// Plugin registering the [`FabricMaterial`] with Bevy's asset/pipeline system.
@@ -401,13 +613,35 @@ impl Plugin for FabricMaterialPlugin {
     fn build(&self, app: &mut App) {
         // Embed the WGSL shader into the binary so no external asset path is
         // required by the host application.
-        load_internal_asset!(
+        //
+        // Headless-safe (M5.1): the raw `load_internal_asset!` dereferences
+        // `Assets<Shader>`, which is absent under a `MinimalPlugins` test app (no
+        // `AssetPlugin`) and panics. `try_load_internal_shader` guards on that
+        // resource and degrades to a no-op (`None`) when it is missing, while
+        // inserting the *same* `include_str!`-embedded source at the *same*
+        // `AssetId` on the GPU path (pixel-neutral).
+        // See docs/deviations.md#dev-005 / docs/deferred.md#6 (resolved at M5.1).
+        crate::shader_registry::try_load_internal_shader(
             app,
             FABRIC_MATERIAL_SHADER_HANDLE,
-            "../shaders/fabric_material.wgsl",
-            Shader::from_wgsl
+            include_str!("../shaders/fabric_material.wgsl"),
+            std::path::Path::new(file!())
+                .parent()
+                .unwrap()
+                .join("../shaders/fabric_material.wgsl")
+                .to_string_lossy(),
         );
-        app.add_plugins(MaterialPlugin::<FabricMaterial>::default());
+
+        // `MaterialPlugin::build` calls `init_asset::<M>()`, which dereferences the
+        // `AssetServer` resource and panics when it is absent (headless). Bevy 0.15
+        // already guards the `RenderApp` sub-app portion of `MaterialPlugin` and
+        // `RenderAssetPlugin` (`get_sub_app_mut(RenderApp)`), so the asset backend
+        // is the only unguarded hazard. Skip the whole plugin when the backend is
+        // unavailable; `FabricMaterial` remains usable as a plain CPU-side type
+        // (component / `fabric_material_from_domain`) for headless tests.
+        if crate::shader_registry::asset_backend_available(app) {
+            app.add_plugins(MaterialPlugin::<FabricMaterial>::default());
+        }
     }
 }
 
@@ -559,5 +793,53 @@ mod tests {
         let m = system.from_type("WaterMask", BTreeMap::new()).unwrap();
         let fm = fabric_material_from_domain(&m, Handle::<Image>::default());
         assert_eq!(fm.params.kind, FabricKind::WaterMask as u32);
+    }
+
+    #[test]
+    fn test_from_domain_water_packs_water_a() {
+        // M5-D: Water.glsl frequency/amplitude/specularIntensity/fadeFactor land
+        // in water_a (cache.rs defaults 10 / 1 / 0.5 / 1).
+        let m = build("Water");
+        let fm = fabric_material_from_domain(&m, Handle::<Image>::default());
+        assert!((fm.params.water_a.x - 10.0).abs() < 1e-6);
+        assert!((fm.params.water_a.y - 1.0).abs() < 1e-6);
+        assert!((fm.params.water_a.z - 0.5).abs() < 1e-6);
+        assert!((fm.params.water_a.w - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_water_normal_map_is_linear_rgba8unorm() {
+        // sRGB red-line: tangent-space normals are LINEAR → Rgba8Unorm.
+        let ocean = WaterPreset::Medium.ocean();
+        let img = generate_water_normal_map(16, &ocean, 200.0);
+        assert_eq!(
+            img.texture_descriptor.format,
+            bevy::render::render_resource::TextureFormat::Rgba8Unorm
+        );
+        assert_eq!(img.texture_descriptor.size.width, 16);
+        assert_eq!(img.texture_descriptor.size.height, 16);
+    }
+
+    #[test]
+    fn test_water_specular_map_is_linear_and_bright() {
+        let ocean = WaterPreset::Rough.ocean();
+        let img = generate_water_specular_map(8, &ocean, 200.0);
+        assert_eq!(
+            img.texture_descriptor.format,
+            bevy::render::render_resource::TextureFormat::Rgba8Unorm
+        );
+        // Mask band [0.6, 1.0] keeps water visible → r >= ~153.
+        assert!(img.data.iter().step_by(4).all(|&r| r >= 150));
+    }
+
+    #[test]
+    fn test_water_preset_labels_and_overrides() {
+        assert_eq!(WaterPreset::Calm.label(), "calm");
+        assert_eq!(WaterPreset::Medium.label(), "medium");
+        assert_eq!(WaterPreset::Rough.label(), "rough");
+        assert_eq!(WaterPreset::Rough.uniform_overrides().len(), 4);
+        // Medium consumes create_default_waves() (5 waves); Rough regenerates 8.
+        assert_eq!(WaterPreset::Medium.ocean().config.waves.len(), 5);
+        assert_eq!(WaterPreset::Rough.ocean().config.waves.len(), 8);
     }
 }

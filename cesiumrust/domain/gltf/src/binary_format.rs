@@ -86,58 +86,88 @@ pub struct GlbData {
     pub binary_chunk: Option<Vec<u8>>,
 }
 
+/// The `(json_chunk, binary_chunk)` pair extracted from a GLB container.
+type GlbChunks = (Option<Vec<u8>>, Option<Vec<u8>>);
+
+/// Walks the GLB header + chunks, returning `(json_chunk, binary_chunk)`
+/// without deserializing the JSON. Shared by [`GlbData::from_bytes`] (typed)
+/// and [`parse_glb_container`] (untyped, for the glTF 1.0 → 2.0 upgrade path).
+fn read_glb_chunks(data: &[u8]) -> Result<GlbChunks, BinaryFormatError> {
+    // Minimum header size: 12 bytes
+    if data.len() < 12 {
+        return Err(BinaryFormatError::BufferTooShort {
+            expected: 12,
+            actual: data.len(),
+        });
+    }
+
+    let magic = read_u32_le(&data[0..4]);
+    if magic != GLB_MAGIC {
+        return Err(BinaryFormatError::InvalidMagic {
+            expected: GLB_MAGIC,
+            actual: magic,
+        });
+    }
+
+    let version = read_u32_le(&data[4..8]);
+    if version != 2 {
+        return Err(BinaryFormatError::UnsupportedVersion(version));
+    }
+
+    let _total_length = read_u32_le(&data[8..12]);
+
+    // Parse chunks
+    let mut json_chunk: Option<Vec<u8>> = None;
+    let mut binary_chunk: Option<Vec<u8>> = None;
+    let mut offset = 12;
+
+    while offset + 8 <= data.len() {
+        let chunk_length = read_u32_le(&data[offset..offset + 4]) as usize;
+        let chunk_type = read_u32_le(&data[offset + 4..offset + 8]);
+        offset += 8;
+
+        if offset + chunk_length > data.len() {
+            break;
+        }
+
+        let chunk_data = data[offset..offset + chunk_length].to_vec();
+        offset += chunk_length;
+
+        match chunk_type {
+            GLB_CHUNK_JSON => json_chunk = Some(chunk_data),
+            GLB_CHUNK_BIN => binary_chunk = Some(chunk_data),
+            _ => {
+                // Unknown chunk type, skip
+            }
+        }
+    }
+
+    Ok((json_chunk, binary_chunk))
+}
+
+/// Parses a GLB container into its raw JSON [`serde_json::Value`] + binary
+/// chunk, **without** the typed [`GltfModel`] deserialization
+/// [`GlbData::from_bytes`] performs. This is the entry point for the glTF
+/// 1.0 → 2.0 upgrade path: a 1.0 JSON payload (object-keyed collections)
+/// cannot be deserialized into the array-based typed model until
+/// [`crate::gltf_upgrade::update_version_with_buffers`] has run.
+///
+/// # Errors
+/// Returns the same header/chunk errors as [`GlbData::from_bytes`], plus a JSON
+/// parse error when the JSON chunk is missing or malformed.
+pub fn parse_glb_container(
+    data: &[u8],
+) -> Result<(serde_json::Value, Option<Vec<u8>>), BinaryFormatError> {
+    let (json_chunk, binary_chunk) = read_glb_chunks(data)?;
+    let json_data = json_chunk.ok_or(BinaryFormatError::InvalidChunkType(0))?;
+    let value = serde_json::from_slice(&json_data)?;
+    Ok((value, binary_chunk))
+}
+
 impl GlbData {
     /// Parses a GLB file from bytes.
     pub fn from_bytes(data: &[u8]) -> Result<Self, BinaryFormatError> {
-        // Minimum header size: 12 bytes
-        if data.len() < 12 {
-            return Err(BinaryFormatError::BufferTooShort {
-                expected: 12,
-                actual: data.len(),
-            });
-        }
-
-        let magic = read_u32_le(&data[0..4]);
-        if magic != GLB_MAGIC {
-            return Err(BinaryFormatError::InvalidMagic {
-                expected: GLB_MAGIC,
-                actual: magic,
-            });
-        }
-
-        let version = read_u32_le(&data[4..8]);
-        if version != 2 {
-            return Err(BinaryFormatError::UnsupportedVersion(version));
-        }
-
-        let _total_length = read_u32_le(&data[8..12]);
-
-        // Parse chunks
-        let mut json_chunk: Option<Vec<u8>> = None;
-        let mut binary_chunk: Option<Vec<u8>> = None;
-        let mut offset = 12;
-
-        while offset + 8 <= data.len() {
-            let chunk_length = read_u32_le(&data[offset..offset + 4]) as usize;
-            let chunk_type = read_u32_le(&data[offset + 4..offset + 8]);
-            offset += 8;
-
-            if offset + chunk_length > data.len() {
-                break;
-            }
-
-            let chunk_data = data[offset..offset + chunk_length].to_vec();
-            offset += chunk_length;
-
-            match chunk_type {
-                GLB_CHUNK_JSON => json_chunk = Some(chunk_data),
-                GLB_CHUNK_BIN => binary_chunk = Some(chunk_data),
-                _ => {
-                    // Unknown chunk type, skip
-                }
-            }
-        }
-
+        let (json_chunk, binary_chunk) = read_glb_chunks(data)?;
         let json_data = json_chunk.ok_or(BinaryFormatError::InvalidChunkType(0))?;
         let model = GltfModel::from_bytes(&json_data)?;
 

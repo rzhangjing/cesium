@@ -573,6 +573,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)] // 3.14 is arbitrary test data, not PI; see docs/deferred.md #1
     fn test_metadata_value_as_f64() {
         assert_eq!(MetadataValue::Int(42).as_f64(), Some(42.0));
         assert_eq!(MetadataValue::Uint(10).as_f64(), Some(10.0));

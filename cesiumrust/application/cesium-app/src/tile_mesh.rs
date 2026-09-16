@@ -301,6 +301,8 @@ pub fn create_tile_mesh_uv(
 /// Generates a smooth unit-radius UV sphere (used for the base sphere safety
 /// net, whose silhouette is visible at the horizon). Winding matches
 /// `create_tile_mesh` (counter-clockwise from outside, rows south -> north).
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#[allow(dead_code)]
 pub fn create_uv_sphere(longitude_segments: u32, latitude_rings: u32) -> Mesh {
     let verts_x = longitude_segments + 1; // last column duplicates the seam
     let verts_y = latitude_rings + 1;

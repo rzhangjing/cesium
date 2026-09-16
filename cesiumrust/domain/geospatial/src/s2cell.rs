@@ -3,6 +3,8 @@
 //!
 //! Based on the S2 C++ reference implementation: https://github.com/google/s2geometry
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(dead_code, clippy::too_many_arguments, clippy::unnecessary_cast)]
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
 use glam::DVec3;

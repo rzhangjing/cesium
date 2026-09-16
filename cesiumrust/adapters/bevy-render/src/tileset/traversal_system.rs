@@ -6,6 +6,7 @@ use cesium_tileset::lod_selection::{
 use cesium_tileset::traversal::{TraversalContext, TraversalStrategy};
 
 use super::loader::LoadedTileset;
+use crate::resources::METERS_PER_RENDER_UNIT;
 
 #[derive(Resource, Default)]
 pub struct TileSelection {
@@ -21,6 +22,46 @@ impl TileSelection {
         self.tiles_to_unload.clear();
         self.selected_tiles.clear();
     }
+
+    /// Starts a frame: snapshots the previous frame's selection, *then* clears
+    /// the per-frame queues and bumps the frame counter.
+    ///
+    /// Ordering matters: reading `selected_tiles` after `clear()` yields an
+    /// empty set, so every visible tile would look new on every frame and be
+    /// re-requested forever (the infinite-reload bug this replaces).
+    pub fn begin_frame(&mut self) -> Vec<Vec<usize>> {
+        let prev_tiles = self
+            .selected_tiles
+            .iter()
+            .map(|t| t.path.clone())
+            .collect();
+
+        self.clear();
+        self.frame_number += 1;
+
+        prev_tiles
+    }
+
+    /// Diffs this frame's `selected` tiles against `prev_tiles` and fills the
+    /// load/unload queues with only the differences.
+    pub fn finish_frame(&mut self, prev_tiles: &[Vec<usize>], selected: Vec<SelectedTile>) {
+        let new_tile_paths: Vec<Vec<usize>> =
+            selected.iter().map(|t| t.path.clone()).collect();
+
+        for tile in &selected {
+            if !prev_tiles.contains(&tile.path) {
+                self.tiles_to_load.push(tile.path.clone());
+            }
+        }
+
+        for prev in prev_tiles {
+            if !new_tile_paths.contains(prev) {
+                self.tiles_to_unload.push(prev.clone());
+            }
+        }
+
+        self.selected_tiles = selected;
+    }
 }
 
 pub fn tileset_traversal_system(
@@ -34,8 +75,9 @@ pub fn tileset_traversal_system(
         None => return,
     };
 
-    selection.clear();
-    selection.frame_number += 1;
+    // Snapshot last frame's selection before clearing it; the early returns
+    // below keep the original "always clear at frame start" behaviour.
+    let prev_tiles = selection.begin_frame();
 
     let tileset_json = match &loaded.tileset_json {
         Some(ts) => ts,
@@ -47,13 +89,15 @@ pub fn tileset_traversal_system(
         None => return,
     };
 
-    let mut ctx = TraversalContext::default();
-    ctx.lod_context = LodSelectionContext {
-        maximum_screen_space_error: loaded.state.maximum_screen_space_error,
-        cull_with_frustum: true,
-        skip_level_of_detail: false,
+    let ctx = TraversalContext {
+        lod_context: LodSelectionContext {
+            maximum_screen_space_error: loaded.state.maximum_screen_space_error,
+            cull_with_frustum: true,
+            skip_level_of_detail: false,
+        },
+        strategy: TraversalStrategy::Base,
+        ..Default::default()
     };
-    ctx.strategy = TraversalStrategy::Base;
 
     let ellipsoid = Ellipsoid::WGS84;
     let result = cesium_tileset::traversal::traverse(
@@ -63,31 +107,7 @@ pub fn tileset_traversal_system(
         &ellipsoid,
     );
 
-    let prev_tiles: Vec<Vec<usize>> = selection
-        .selected_tiles
-        .iter()
-        .map(|t| t.path.clone())
-        .collect();
-
-    let new_tile_paths: Vec<Vec<usize>> = result
-        .selected_tiles
-        .iter()
-        .map(|t| t.path.clone())
-        .collect();
-
-    for tile in &result.selected_tiles {
-        if !prev_tiles.contains(&tile.path) {
-            selection.tiles_to_load.push(tile.path.clone());
-        }
-    }
-
-    for prev in &prev_tiles {
-        if !new_tile_paths.contains(prev) {
-            selection.tiles_to_unload.push(prev.clone());
-        }
-    }
-
-    selection.selected_tiles = result.selected_tiles;
+    selection.finish_frame(&prev_tiles, result.selected_tiles);
 }
 
 fn get_camera_state(
@@ -99,10 +119,13 @@ fn get_camera_state(
 
     let viewport_height = window.physical_height() as f64;
 
+    // Camera position is in render units; convert to ECEF metres for the
+    // domain traversal which expects bounding volumes in metres.
+    let t = transform.translation();
     let position = glam::DVec3::new(
-        transform.translation().x as f64,
-        transform.translation().y as f64,
-        transform.translation().z as f64,
+        t.x as f64 * METERS_PER_RENDER_UNIT,
+        t.y as f64 * METERS_PER_RENDER_UNIT,
+        t.z as f64 * METERS_PER_RENDER_UNIT,
     );
 
     let forward = transform.forward();
@@ -173,6 +196,57 @@ mod tests {
         selection.clear();
         assert!(selection.selected_tiles.is_empty());
         assert!(selection.tiles_to_load.is_empty());
+    }
+
+    fn selected(path: Vec<usize>) -> SelectedTile {
+        SelectedTile {
+            path,
+            result: cesium_tileset::lod_selection::TileSelectionResult::Render,
+            screen_space_error: 10.0,
+            distance_to_camera: 1000.0,
+        }
+    }
+
+    /// Regression test for the infinite-reload bug: the previous-frame snapshot
+    /// used to be read *after* `clear()`, so `prev_tiles` was always empty and
+    /// every visible tile looked new on every frame.
+    #[test]
+    fn test_prev_tiles_snapshot_before_clear() {
+        let mut selection = TileSelection::default();
+
+        // Frame 1: nothing was selected before, so everything is new.
+        let prev = selection.begin_frame();
+        assert!(prev.is_empty(), "frame 1 has no previous selection");
+        assert_eq!(selection.frame_number, 1);
+        selection.finish_frame(&prev, vec![selected(vec![0]), selected(vec![0, 1])]);
+        assert_eq!(selection.tiles_to_load, vec![vec![0], vec![0, 1]]);
+        assert!(selection.tiles_to_unload.is_empty());
+
+        // The loader is the sole consumer of `tiles_to_load`; emulate that.
+        selection.tiles_to_load.clear();
+
+        // Frame 2: identical selection. The snapshot must still report last
+        // frame's tiles even though `begin_frame` clears them, otherwise every
+        // tile is re-requested forever.
+        let prev = selection.begin_frame();
+        assert_eq!(
+            prev,
+            vec![vec![0], vec![0, 1]],
+            "snapshot must be taken before clear()"
+        );
+        selection.finish_frame(&prev, vec![selected(vec![0]), selected(vec![0, 1])]);
+        assert!(
+            selection.tiles_to_load.is_empty(),
+            "unchanged selection must not trigger a reload"
+        );
+        assert!(selection.tiles_to_unload.is_empty());
+
+        // Frame 3: one tile leaves the selection -> exactly that tile unloads.
+        let prev = selection.begin_frame();
+        selection.finish_frame(&prev, vec![selected(vec![0, 1])]);
+        assert!(selection.tiles_to_load.is_empty());
+        assert_eq!(selection.tiles_to_unload, vec![vec![0]]);
+        assert_eq!(selection.selected_tiles.len(), 1);
     }
 
     #[test]

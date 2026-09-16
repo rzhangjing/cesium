@@ -373,6 +373,8 @@ fn negative_pi_to_pi(angle: f64) -> f64 {
 }
 
 /// Extract rotation matrix from a transform.
+// deferred.md #15: lib 构建无调用方（仅单元测试引用），保留待 M0.7+ 批次接入或清理。
+#[allow(dead_code)]
 fn extract_rotation(matrix: &DMat4) -> DMat3 {
     let col0 = matrix.col(0).truncate();
     let col1 = matrix.col(1).truncate();

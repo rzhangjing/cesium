@@ -1,10 +1,12 @@
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::unnecessary_cast)]
 use bevy::prelude::*;
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_quadtree::traversal::{QuadtreeConfig, QuadtreePrimitive, QuadtreeTile, TileState};
 
 use crate::components::CesiumTerrainTile;
-use crate::resources::GlobeConfig;
+use crate::resources::{GlobeConfig, METERS_PER_RENDER_UNIT};
 
 #[derive(Resource, Default)]
 pub struct TerrainSelection {
@@ -49,7 +51,12 @@ fn create_root_tiles() -> Vec<QuadtreeTile> {
 }
 
 fn tile_sphere(ellipsoid: &Ellipsoid, x: u32, y: u32, level: u32) -> BoundingSphere {
-    let n = 2u32.pow(level.max(1)) as f64;
+    // Quadtree (CesiumJS) semantics: level L has 2^(L+1) columns x 2^L rows,
+    // so each level doubles the resolution. The exponent is clamped to 31 to
+    // guard the `u32` shift: `saturating_add` alone would still let level >= 31
+    // overflow the shift (debug panic / release wrap to 0 → divide-by-zero NaN).
+    // `.max(2)` keeps the level-0 base grid non-degenerate (n=1 → zero radius).
+    let n = 2u32.pow(level.saturating_add(1).min(31)).max(2) as f64;
     let west = (x as f64 / n) * 360.0 - 180.0;
     let east = ((x as f64 + 1.0) / n) * 360.0 - 180.0;
     let south = (y as f64 / n) * 180.0 - 90.0;
@@ -96,10 +103,17 @@ pub fn terrain_lod_system(
         Err(_) => return,
     };
 
+    // Camera transform is in render units (~1 for an Earth-radius globe); the
+    // tile bounding spheres below are in ECEF metres (~6.4e6). Convert the camera
+    // to metres so camera-tile distances — and thus screen-space error — are
+    // meaningful. Otherwise the ~6.4e6 offset dominates the distance, SSE is
+    // ~constant, and the quadtree never refines past the root tiles (the terrain
+    // "only loaded=2" symptom). Mirrors tileset/traversal_system.rs.
+    let t = transform.translation();
     let camera_position = glam::DVec3::new(
-        transform.translation().x as f64,
-        transform.translation().y as f64,
-        transform.translation().z as f64,
+        t.x as f64 * METERS_PER_RENDER_UNIT,
+        t.y as f64 * METERS_PER_RENDER_UNIT,
+        t.z as f64 * METERS_PER_RENDER_UNIT,
     );
 
     let fov_y = match projection {

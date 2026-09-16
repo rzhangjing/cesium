@@ -2,6 +2,8 @@
 //! Maps to CesiumJS `Core/Matrix4.js` static methods beyond basic glam operations.
 //! Note: CesiumJS stores matrices in column-major order, same as glam DMat4.
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::manual_memcpy)]
 use crate::math_utils;
 use glam::{DMat3, DMat4, DVec3};
 

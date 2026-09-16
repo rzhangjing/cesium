@@ -1,6 +1,8 @@
 //! Geometry generation - all procedural geometry types.
 //! Maps to CesiumJS `Core/*Geometry.js` (20+ files), `Core/PolygonPipeline.js`, `Core/PolylinePipeline.js`
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::clone_on_copy)]
 pub mod coplanar_polygon;
 pub mod corridor;
 pub mod ellipse;

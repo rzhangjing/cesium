@@ -1,6 +1,8 @@
 //! Heightmap terrain data.
 //! Maps to CesiumJS `Core/HeightmapTerrainData.js`
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::too_many_arguments, clippy::needless_range_loop)]
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;

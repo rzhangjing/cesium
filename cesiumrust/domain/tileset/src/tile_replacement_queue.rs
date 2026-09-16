@@ -5,6 +5,8 @@
 //! A priority queue of tiles to be replaced, if necessary, to make room for new tiles.
 //! The queue is implemented as a doubly-linked list with a frame boundary marker.
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(dead_code)]
 use std::collections::HashMap;
 
 /// A unique identifier for a tile in the queue.

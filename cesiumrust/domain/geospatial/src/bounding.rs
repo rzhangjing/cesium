@@ -1,6 +1,8 @@
 //! Bounding volumes - BoundingSphere, OrientedBoundingBox, AxisAlignedBoundingBox.
 //! Maps to CesiumJS `Core/BoundingSphere.js`, `Core/OrientedBoundingBox.js`, `Core/AxisAlignedBoundingBox.js`
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::needless_range_loop, clippy::assign_op_pattern)]
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
 use crate::math_utils::{self, EPSILON10, EPSILON15, EPSILON20, PI_F64, TWO_PI};

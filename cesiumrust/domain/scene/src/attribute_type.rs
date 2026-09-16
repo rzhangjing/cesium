@@ -2,6 +2,8 @@
 //!
 //! Maps to CesiumJS `Scene/AttributeType.js`
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::should_implement_trait)]
 /// An enum describing the attribute types for metadata and custom shaders.
 ///
 /// Maps to CesiumJS `Scene/AttributeType.js`

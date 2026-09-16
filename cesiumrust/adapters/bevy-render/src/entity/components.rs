@@ -5,6 +5,8 @@
 //! Domain types from `cesium_datasource` remain the source of truth;
 //! these are used for GPU-ready rendering state.
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::derivable_impls)]
 use bevy::prelude::*;
 use cesium_datasource::entity::Entity as DomainEntity;
 use cesium_geospatial::ellipsoid::Ellipsoid;

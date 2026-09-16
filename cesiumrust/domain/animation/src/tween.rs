@@ -2,6 +2,8 @@
 //!
 //! Maps to CesiumJS `Scene/TweenCollection.js` + `Core/EasingFunction.js`
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::derivable_impls, clippy::type_complexity, clippy::too_many_arguments, clippy::ptr_eq)]
 use std::collections::HashMap;
 
 /// Easing functions for tween animations.

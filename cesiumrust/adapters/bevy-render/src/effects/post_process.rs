@@ -6,6 +6,9 @@ use cesium_effects::post_process::{
 #[allow(unused_imports)]
 use glam::DVec3;
 
+use super::ao::CesiumAmbientOcclusion;
+use super::fxaa::CesiumFxaa;
+
 #[derive(Resource, Debug, Clone)]
 pub struct PostProcessConfig {
     pub fog_enabled: bool,
@@ -128,14 +131,54 @@ pub fn bloom_system(
 ) {
 }
 
-pub fn ambient_occlusion_system(
-    _config: Res<PostProcessConfig>,
+/// M5-E2: drive the SSAO render-graph node on/off from [`PostProcessConfig`].
+///
+/// Syncs `config.ambient_occlusion_enabled` into every camera's
+/// [`CesiumAmbientOcclusion`] marker component. The marker is extracted to the
+/// render world by `ExtractComponentPlugin<CesiumAmbientOcclusion>` and read by
+/// `AoNode::run` (which early-returns when `enabled == false`, giving zero GPU
+/// cost when off). Mirrors [`fxaa_system`].
+///
+/// The SSAO kernel parameters (intensity=3.0, sample_radius=0.5, sample_count=16,
+/// bias=0.001, length_cap=0.26) are **compile-time f32 constants** baked into
+/// `ao.wgsl` (f64 in domain, projected to f32 at the GPU boundary); there is no
+/// per-frame uniform to upload beyond the view matrix, so the enable toggle is
+/// the runtime control surface. Runs in `Update`, **before**
+/// [`super::ao::setup_ao_prepass`] (which attaches/detaches the depth+normal
+/// prepass according to this flag).
+pub fn ao_system(
+    config: Res<PostProcessConfig>,
+    mut query: Query<&mut CesiumAmbientOcclusion>,
 ) {
+    for mut ao in &mut query {
+        if ao.enabled != config.ambient_occlusion_enabled {
+            ao.enabled = config.ambient_occlusion_enabled;
+        }
+    }
 }
 
+/// M5-E1: drive the FXAA render-graph node on/off from [`PostProcessConfig`].
+///
+/// Syncs `config.fxaa_enabled` into every camera's [`CesiumFxaa`] marker
+/// component. The marker is extracted to the render world by
+/// `ExtractComponentPlugin<CesiumFxaa>` and read by `FxaaNode::run` (which
+/// early-returns when `enabled == false`, giving zero GPU cost when off).
+///
+/// FXAA quality preset 12 parameters (PS=5, P0..P4, subpix=0.5,
+/// edgeThreshold=0.125, edgeThresholdMin=0.0833) are **compile-time constants**
+/// baked into `fxaa.wgsl` — mirroring CesiumJS, which hardcodes the preset in
+/// the GLSL rather than exposing a uniform. There is therefore no per-frame
+/// uniform buffer to upload; the enable toggle is the only runtime control
+/// surface. Runs in `Update`.
 pub fn fxaa_system(
-    _config: Res<PostProcessConfig>,
+    config: Res<PostProcessConfig>,
+    mut query: Query<&mut CesiumFxaa>,
 ) {
+    for mut fxaa in &mut query {
+        if fxaa.enabled != config.fxaa_enabled {
+            fxaa.enabled = config.fxaa_enabled;
+        }
+    }
 }
 
 pub fn color_correction_system(
@@ -150,17 +193,12 @@ pub fn tone_mapping_system(
 
 pub fn post_process_system(
     config: Res<PostProcessConfig>,
-    clear_color: ResMut<ClearColor>,
-    camera_query: Query<&Transform, With<Camera3d>>,
-) {
-    fog_system_inner(&config, clear_color, camera_query);
-}
-
-fn fog_system_inner(
-    config: &PostProcessConfig,
     mut clear_color: ResMut<ClearColor>,
     camera_query: Query<&Transform, With<Camera3d>>,
 ) {
+    // M4.2: folded former `fog_system_inner` (exact duplicate of `fog_system`)
+    // into this unified entry point. The fog logic below is byte-identical to
+    // `fog_system`; the standalone `fog_system` remains for direct scheduling.
     if !config.fog_enabled {
         return;
     }
@@ -195,8 +233,35 @@ pub struct CesiumEffectsPlugin;
 
 impl Plugin for CesiumEffectsPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<PostProcessConfig>()
-            .add_systems(Update, post_process_system);
+        app.init_resource::<PostProcessConfig>();
+
+        // M4.2: fog clear-color system — gated by CESIUM_ENABLE_POSTPROCESS_BUILTIN
+        // (tonemapping / bloom / HDR live on the camera bundle in orbit_camera.rs).
+        // Kept on the BUILTIN gate so it never leaks into the M5-E FXAA comparison.
+        if super::graph::builtin_gate_enabled() {
+            app.add_systems(Update, post_process_system);
+        }
+
+        // M5-E1: FXAA render-graph node — gated by CESIUM_ENABLE_POSTPROCESS.
+        // Gate OFF → no nodes registered → v0 baselines pixel-neutral (PSNR=∞).
+        if super::graph::postprocess_gate_enabled() {
+            // FXAA + SSAO are active whenever the M5-E gate is ON.
+            // fxaa_system / ao_system sync these toggles into each camera's
+            // CesiumFxaa / CesiumAmbientOcclusion markers.
+            {
+                let mut cfg = app.world_mut().resource_mut::<PostProcessConfig>();
+                cfg.fxaa_enabled = true;
+                cfg.ambient_occlusion_enabled = true;
+            }
+            app.add_systems(Update, fxaa_system);
+            // ao_system must run before setup_ao_prepass so the prepass
+            // attach/detach decision sees the reconciled `enabled` flag.
+            app.add_systems(
+                Update,
+                ao_system.before(super::ao::setup_ao_prepass),
+            );
+            super::graph::register_render_graph(app);
+        }
     }
 }
 
@@ -420,4 +485,63 @@ mod tests {
         assert!(pipeline.bloom.enabled);
         assert!((pipeline.bloom.threshold - 0.9).abs() < 1e-10);
     }
+
+    /// M5-E1: `fxaa_system` must sync `PostProcessConfig.fxaa_enabled` into every
+    /// camera's `CesiumFxaa` marker (the node on/off driver). Headless-testable
+    /// because it is a pure ECS system — no GPU / render graph required.
+    #[test]
+    fn test_fxaa_system_syncs_config_to_component() {
+        let mut app = App::new();
+        app.init_resource::<PostProcessConfig>();
+        app.add_systems(Update, fxaa_system);
+
+        // Spawn a camera marker enabled=true; config default is fxaa_enabled=false.
+        let e = app.world_mut().spawn(CesiumFxaa { enabled: true }).id();
+        app.update();
+        assert!(
+            !app.world().get::<CesiumFxaa>(e).unwrap().enabled,
+            "component must follow config (false)"
+        );
+
+        // Flip config on → component follows.
+        app.world_mut().resource_mut::<PostProcessConfig>().fxaa_enabled = true;
+        app.update();
+        assert!(
+            app.world().get::<CesiumFxaa>(e).unwrap().enabled,
+            "component must follow config (true)"
+        );
+    }
+
+    /// M5-E2: `ao_system` must sync `PostProcessConfig.ambient_occlusion_enabled`
+    /// into every camera's `CesiumAmbientOcclusion` marker (the SSAO node on/off
+    /// driver). Headless-testable because it is a pure ECS system — no GPU /
+    /// render graph required. Mirrors `test_fxaa_system_syncs_config_to_component`.
+    #[test]
+    fn test_ao_system_syncs_config_to_component() {
+        let mut app = App::new();
+        app.init_resource::<PostProcessConfig>();
+        app.add_systems(Update, ao_system);
+
+        // Spawn a camera marker enabled=true; config default is ambient_occlusion_enabled=false.
+        let e = app
+            .world_mut()
+            .spawn(CesiumAmbientOcclusion { enabled: true })
+            .id();
+        app.update();
+        assert!(
+            !app.world().get::<CesiumAmbientOcclusion>(e).unwrap().enabled,
+            "component must follow config (false)"
+        );
+
+        // Flip config on → component follows.
+        app.world_mut()
+            .resource_mut::<PostProcessConfig>()
+            .ambient_occlusion_enabled = true;
+        app.update();
+        assert!(
+            app.world().get::<CesiumAmbientOcclusion>(e).unwrap().enabled,
+            "component must follow config (true)"
+        );
+    }
 }
+

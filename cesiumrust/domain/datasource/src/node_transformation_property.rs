@@ -2,6 +2,8 @@
 //!
 //! Maps to CesiumJS `DataSources/NodeTransformationProperty.js`
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::unnecessary_map_or)]
 use crate::property_system::property::DynProperty;
 use crate::property_system::value::PropertyValue;
 use cesium_time::JulianDate;

@@ -8,6 +8,8 @@
 //! that carry the same data, or splits/truncates existing intervals when the
 //! data differs (the newly added interval's data takes precedence).
 
+// deferred.md #13: `is_leap_year` 目前仅由 julian_date.rs 经全路径调用，本文件暂未使用。
+#[allow(unused_imports)]
 use crate::gregorian_date::{days_in_month, is_leap_year, GregorianDate};
 use crate::julian_date::JulianDate;
 use crate::time_interval::TimeInterval;
@@ -664,6 +666,8 @@ fn parse_duration(iso8601: Option<&str>) -> Option<Duration> {
 
     let mut result = Duration::default();
 
+    // deferred.md #13: 手动 strip 'P' 前缀，等价 strip_prefix('P')；风格问题非逻辑错误。
+    #[allow(clippy::manual_strip)]
     if iso8601.starts_with('P') {
         // ISO8601 duration format: P[n]Y[n]M[n]W[n]DT[n]H[n]M[n]S
         let s = &iso8601[1..]; // strip 'P'
@@ -755,7 +759,10 @@ fn add_to_date(julian_date: &JulianDate, duration: &Duration) -> JulianDate {
     let mut minute = g.minute as f64 + duration.minute;
     let mut hour = g.hour as f64 + duration.hour;
     let mut day = g.day as f64 + duration.day;
+    // deferred.md #13: month/year 之后未被重新赋值（改用 month_i/year_i），mut 冗余。
+    #[allow(unused_mut)]
     let mut month = g.month as f64 + duration.month;
+    #[allow(unused_mut)]
     let mut year = g.year as f64 + duration.year;
 
     if millisecond >= 1000.0 {
@@ -780,6 +787,8 @@ fn add_to_date(julian_date: &JulianDate, duration: &Duration) -> JulianDate {
     let mut month_i = month as u32;
     let mut day_i = day as u32;
 
+    // deferred.md #13: 手动范围判断 (m >= 1 && m <= 12)，等价 (1..=12).contains(&m)。
+    #[allow(clippy::manual_range_contains)]
     let month_len = |y: i32, m: u32| -> u32 {
         if m >= 1 && m <= 12 {
             days_in_month(y, m)
@@ -789,6 +798,8 @@ fn add_to_date(julian_date: &JulianDate, duration: &Duration) -> JulianDate {
     };
 
     while day_i > month_len(year_i, month_i) || month_i >= 13 {
+        // deferred.md #13: month_i = month_i % 12 可用 %= 简写（属性置于 if 块，赋值语句不支持属性）。
+        #[allow(clippy::assign_op_pattern)]
         if month_i >= 13 {
             month_i -= 1;
             year_i += (month_i / 12) as i32;
@@ -949,6 +960,8 @@ impl<T> TimeIntervalCollection<T> {
 
     /// Creates a collection from an array of ISO8601 duration strings relative to an epoch.
     /// Maps to `TimeIntervalCollection.fromIso8601DurationArray`.
+    // deferred.md #13: 参数 8/7，保持与 CesiumJS fromIso8601DurationArray 签名一一对应。
+    #[allow(clippy::too_many_arguments)]
     pub fn from_iso8601_duration_array<F>(
         epoch: &JulianDate,
         iso8601_durations: &[&str],

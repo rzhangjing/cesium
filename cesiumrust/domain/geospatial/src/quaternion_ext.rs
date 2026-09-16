@@ -3,6 +3,8 @@
 //! Maps to CesiumJS `Core/Quaternion.js` extension methods:
 //! computeAxis, computeAngle, log, exp, computeInnerQuadrangle, squad, fastSlerp, fastSquad
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::excessive_precision)]
 use glam::{DMat3, DQuat, DVec3};
 
 use crate::math_utils;

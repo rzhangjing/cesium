@@ -20,6 +20,7 @@ pub mod imagery;
 pub mod material_system;
 pub mod resources;
 pub mod scene_pipeline;
+pub mod shader_registry;
 pub mod terrain;
 pub mod tileset;
 pub mod atmosphere;
@@ -28,9 +29,11 @@ pub mod voxel;
 pub mod vector;
 pub mod shadow;
 pub mod widgets;
+pub mod pipeline;
 
 pub use camera::{
-    CesiumCamera, CesiumCameraPlugin, FlyToRequest,
+    camera_control_port_system, CameraControlImpl, CameraControlPort, CameraState, CesiumCamera,
+    CesiumCameraPlugin, FlyToRequest,
 };
 pub use components::{
     CesiumGlobe, CesiumImageryLayer, CesiumTerrainTile, CesiumTileNode, CesiumTilesetRoot,
@@ -75,6 +78,9 @@ pub use voxel::{CesiumVoxelPlugin, VoxelConfig, VoxelPrimitiveComponent, VoxelPr
 pub use vector::{CesiumVectorTilePlugin, CesiumWktPlugin, VectorTileConfig, WktLoadQueue};
 pub use shadow::{CesiumShadowPlugin, ShadowConfig, ShadowState, ShadowCaster};
 pub use widgets::CesiumWidgetPlugin;
+pub use pipeline::CesiumPipelinePlugin;
+
+use bevy::pbr::DirectionalLightShadowMap;
 
 use bevy::prelude::*;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -83,12 +89,28 @@ use cesium_imagery::blending::PixelColor;
 use cesium_terrain::terrain_mesh::TerrainMesh;
 
 /// Convert f64 GeometryData to Bevy Mesh (f32 precision boundary)
-pub fn geometry_to_mesh(geometry: &GeometryData) -> Mesh {
-    // Convert positions: f64 → f32
+///
+/// # RTC (Relative-To-Center) precision bridge
+/// `rtc_center`, when `Some(c)`, shifts every vertex position by `-c` **in f64**
+/// before truncating to f32, producing a tile-local mesh whose coordinates stay
+/// small enough to retain f32 precision even for Earth-scale ECEF inputs. This
+/// is the standard CesiumJS/3D Tiles "RTC center" trick, applied at the single
+/// f64→f32 precision boundary of this adapter.
+///
+/// When `None`, behaviour is byte-for-byte identical to the previous signature:
+/// positions are cast straight from f64 to f32 with no offset applied.
+///
+/// DEVIATION: 公共签名新增 rtc_center: Option<DVec3>（非 additive）；
+/// see docs/deviations.md#dev-013
+pub fn geometry_to_mesh(geometry: &GeometryData, rtc_center: Option<glam::DVec3>) -> Mesh {
+    // Convert positions: f64 → f32, optionally recentered in f64 first (see doc above)
     let positions: Vec<[f32; 3]> = geometry
         .positions
         .iter()
-        .map(|p| [p[0] as f32, p[1] as f32, p[2] as f32])
+        .map(|p| match rtc_center {
+            Some(c) => [(p[0] - c.x) as f32, (p[1] - c.y) as f32, (p[2] - c.z) as f32],
+            None => [p[0] as f32, p[1] as f32, p[2] as f32],
+        })
         .collect();
 
     // Convert normals: f64 → f32 (if present)
@@ -144,15 +166,28 @@ pub fn geometry_to_mesh(geometry: &GeometryData) -> Mesh {
 pub fn create_ellipsoid_mesh(stacks: u32, slices: u32) -> Mesh {
     let radii = Ellipsoid::WGS84.radii();
     let geometry = geometry::ellipsoid_geometry(radii, stacks, slices, VertexFormat::ALL);
-    geometry_to_mesh(&geometry)
+    // Full-ellipsoid mesh is already centered at the origin; no RTC offset needed.
+    geometry_to_mesh(&geometry, None)
 }
 
 /// Convert a domain TerrainMesh (f64) to a Bevy Mesh (f32)
-pub fn terrain_mesh_to_bevy(terrain: &TerrainMesh) -> Mesh {
+///
+/// # RTC (Relative-To-Center) precision bridge
+/// `rtc_center`, when `Some(c)`, shifts every vertex position by `-c` **in f64**
+/// before truncating to f32, producing a tile-local mesh (same rationale and
+/// semantics as [`geometry_to_mesh`]). When `None`, behaviour is byte-for-byte
+/// identical to the previous signature.
+///
+/// DEVIATION: 公共签名新增 rtc_center: Option<DVec3>（非 additive）；
+/// see docs/deviations.md#dev-013
+pub fn terrain_mesh_to_bevy(terrain: &TerrainMesh, rtc_center: Option<glam::DVec3>) -> Mesh {
     let positions: Vec<[f32; 3]> = terrain
         .positions
         .iter()
-        .map(|p| [p[0] as f32, p[1] as f32, p[2] as f32])
+        .map(|p| match rtc_center {
+            Some(c) => [(p[0] - c.x) as f32, (p[1] - c.y) as f32, (p[2] - c.z) as f32],
+            None => [p[0] as f32, p[1] as f32, p[2] as f32],
+        })
         .collect();
 
     let normals: Vec<[f32; 3]> = terrain
@@ -320,8 +355,26 @@ pub fn create_bounding_sphere_wireframe(
     mesh
 }
 
+/// Lighting mode selector — determines which lighting rig `setup_lighting`
+/// spawns. Inserted as a Bevy `Resource` by the application layer (main.rs)
+/// before `CesiumCorePlugin` builds, so the Startup system can read it.
+///
+/// * `FullAmbient` — uniform ambient only (CesiumJS `enableLighting=false`
+///   look). This is the **default** and produces pixel-identical output to
+///   the pre-M4.1 baseline (PSNR=∞).
+/// * `DayNight` — ambient + directional sun light with shadow maps,
+///   driven by `celestial_system` (compute_sun_direction_eci).
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LightingMode {
+    /// Uniform ambient illumination only (v0 baseline, zero-diff).
+    #[default]
+    FullAmbient,
+    /// Directional sun + ambient; activates shadow + atmosphere plugins.
+    DayNight,
+}
+
 /// Plugin that initializes CesiumRust core Bevy resources (GlobeConfig,
-/// RenderScale, TileLoadStats) and sets up scene lighting.
+/// RenderScale, TileLoadStats, AnimationClock) and sets up scene lighting.
 pub struct CesiumCorePlugin;
 
 impl Plugin for CesiumCorePlugin {
@@ -329,11 +382,17 @@ impl Plugin for CesiumCorePlugin {
         app.init_resource::<GlobeConfig>()
             .init_resource::<RenderScale>()
             .init_resource::<TileLoadStats>()
+            .init_resource::<LightingMode>()
+            // M4.1: promote AnimationClock to core so celestial_system can
+            // read it without requiring CesiumEntityPlugin.
+            .init_resource::<AnimationClock>()
             .add_systems(Startup, setup_lighting);
     }
 }
 
-/// System that spawns scene lighting.
+/// System that spawns scene lighting, branching on [`LightingMode`].
+///
+/// ## FullAmbient (default — v0 zero-diff)
 ///
 /// Uniform ambient illumination only, no directional sun: CesiumJS's default
 /// globe runs with `enableLighting = false`, i.e. the whole planet renders as
@@ -348,11 +407,51 @@ impl Plugin for CesiumCorePlugin {
 /// (sage land, medium steel-blue ocean) while raw Bing albedo renders warm
 /// and near-black in the ocean; a cool tint (red cut, blue boost) plus a
 /// slight brightness lift shifts the white balance toward the reference.
-fn setup_lighting(mut commands: Commands) {
-    commands.insert_resource(AmbientLight {
-        color: Color::srgb(0.79, 0.94, 1.17),
-        brightness: 3800.0,
-    });
+///
+/// ## DayNight (M4.1)
+///
+/// Ambient (reduced) + a `DirectionalLight` with illuminance 10 000 lx and
+/// Bevy's built-in `DirectionalLightShadowMap` (4 cascades, 2048 px).
+/// The light direction is driven per-frame by `celestial_system`
+/// (compute_sun_direction_eci → look_to). Shadow cascade computation lives
+/// in `shadow_update_system` which queries the DirectionalLight transform.
+///
+/// Near/far in render units: 0.01 / 100.0 (× METERS_PER_RENDER_UNIT =
+/// 63 781 m … 637 813 700 m) — covers LEO to cislunar without z-fighting
+/// at the globe surface.
+fn setup_lighting(mut commands: Commands, mode: Res<LightingMode>) {
+    match *mode {
+        LightingMode::FullAmbient => {
+            // v0 baseline: ambient only, pixel-identical to pre-M4.1.
+            commands.insert_resource(AmbientLight {
+                color: Color::srgb(0.79, 0.94, 1.17),
+                brightness: 3800.0,
+            });
+        }
+        LightingMode::DayNight => {
+            // Reduced ambient so the directional sun dominates day-side.
+            commands.insert_resource(AmbientLight {
+                color: Color::srgb(0.79, 0.94, 1.17),
+                brightness: 1200.0,
+            });
+
+            // Directional sun light with shadow maps.
+            commands.spawn((
+                DirectionalLight {
+                    illuminance: 10_000.0,
+                    shadows_enabled: true,
+                    ..default()
+                },
+                // Default transform; celestial_system will orient it per-frame.
+                Transform::IDENTITY,
+            ));
+
+            // Bevy built-in shadow map config (4 cascades, 2048 resolution).
+            commands.insert_resource(DirectionalLightShadowMap {
+                size: 2048,
+            });
+        }
+    }
 }
 
 #[cfg(test)]
@@ -364,12 +463,59 @@ mod tests {
     fn test_geometry_to_mesh() {
         let radii = Ellipsoid::WGS84.radii();
         let geometry = geometry::ellipsoid_geometry(radii, 8, 16, VertexFormat::ALL);
-        let mesh = geometry_to_mesh(&geometry);
+        let mesh = geometry_to_mesh(&geometry, None);
 
         // Verify mesh has position attribute
         assert!(mesh.attribute(Mesh::ATTRIBUTE_POSITION).is_some());
         assert!(mesh.attribute(Mesh::ATTRIBUTE_NORMAL).is_some());
         assert!(mesh.attribute(Mesh::ATTRIBUTE_UV_0).is_some());
+    }
+
+    #[test]
+    fn test_geometry_to_mesh_rtc_center_none_matches_legacy() {
+        let geometry = GeometryData {
+            positions: vec![[1.0, 2.0, 3.0], [-4.0, 5.5, -6.25]],
+            normals: None,
+            tex_coords: None,
+            tangents: None,
+            bitangents: None,
+            indices: vec![0, 1, 0],
+            primitive_type: PrimitiveType::Triangles,
+            bounding_sphere: BoundingSphere::new(glam::DVec3::ZERO, 10.0),
+        };
+
+        let mesh = geometry_to_mesh(&geometry, None);
+        let positions = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap();
+        if let bevy::render::mesh::VertexAttributeValues::Float32x3(pos) = positions {
+            assert_eq!(pos[0], [1.0_f32, 2.0_f32, 3.0_f32]);
+            assert_eq!(pos[1], [-4.0_f32, 5.5_f32, -6.25_f32]);
+        } else {
+            panic!("Expected Float32x3 positions");
+        }
+    }
+
+    #[test]
+    fn test_geometry_to_mesh_rtc_center_some_recenters_in_f64() {
+        let geometry = GeometryData {
+            positions: vec![[1.0, 2.0, 3.0], [-4.0, 5.5, -6.25]],
+            normals: None,
+            tex_coords: None,
+            tangents: None,
+            bitangents: None,
+            indices: vec![0, 1, 0],
+            primitive_type: PrimitiveType::Triangles,
+            bounding_sphere: BoundingSphere::new(glam::DVec3::ZERO, 10.0),
+        };
+
+        let center = glam::DVec3::new(1.0, 2.0, 3.0);
+        let mesh = geometry_to_mesh(&geometry, Some(center));
+        let positions = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap();
+        if let bevy::render::mesh::VertexAttributeValues::Float32x3(pos) = positions {
+            assert_eq!(pos[0], [0.0_f32, 0.0_f32, 0.0_f32]);
+            assert_eq!(pos[1], [-5.0_f32, 3.5_f32, -9.25_f32]);
+        } else {
+            panic!("Expected Float32x3 positions");
+        }
     }
 
     #[test]
@@ -390,10 +536,34 @@ mod tests {
             bounding_sphere: BoundingSphere::new(glam::DVec3::ZERO, 1.0),
         };
 
-        let mesh = terrain_mesh_to_bevy(&terrain);
+        let mesh = terrain_mesh_to_bevy(&terrain, None);
         assert!(mesh.attribute(Mesh::ATTRIBUTE_POSITION).is_some());
         assert!(mesh.attribute(Mesh::ATTRIBUTE_NORMAL).is_some());
         assert!(mesh.attribute(Mesh::ATTRIBUTE_UV_0).is_some());
+    }
+
+    #[test]
+    fn test_terrain_mesh_to_bevy_rtc_center_some_recenters_in_f64() {
+        let terrain = TerrainMesh {
+            positions: vec![[10.0, 20.0, 30.0], [11.0, 20.0, 30.0], [10.0, 21.0, 30.0]],
+            normals: None,
+            tex_coords: None,
+            indices: vec![0, 1, 2],
+            minimum_height: 0.0,
+            maximum_height: 0.0,
+            bounding_sphere: BoundingSphere::new(glam::DVec3::ZERO, 1.0),
+        };
+
+        let center = glam::DVec3::new(10.0, 20.0, 30.0);
+        let mesh = terrain_mesh_to_bevy(&terrain, Some(center));
+        let positions = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap();
+        if let bevy::render::mesh::VertexAttributeValues::Float32x3(pos) = positions {
+            assert_eq!(pos[0], [0.0_f32, 0.0_f32, 0.0_f32]);
+            assert_eq!(pos[1], [1.0_f32, 0.0_f32, 0.0_f32]);
+            assert_eq!(pos[2], [0.0_f32, 1.0_f32, 0.0_f32]);
+        } else {
+            panic!("Expected Float32x3 positions");
+        }
     }
 
     #[test]

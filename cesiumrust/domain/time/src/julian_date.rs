@@ -325,6 +325,8 @@ impl JulianDate {
         }
 
         // Validate date components
+        // deferred.md #13: 手动范围判断，等价 !(1..=12).contains(&month)。
+        #[allow(clippy::manual_range_contains)]
         if month < 1 || month > 12 || day < 1 {
             return None;
         }
@@ -900,6 +902,8 @@ fn parse_week_date(s: &str) -> Option<(i32, i32, i32)> {
 fn ordinal_to_month_day(year: i32, day_of_year: i32) -> (i32, i32) {
     let days_in_month_arr: [i32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let mut remaining = day_of_year;
+    // deferred.md #13: 以 m 索引 days_in_month_arr，clippy 建议迭代器；保持索引写法可读性。
+    #[allow(clippy::needless_range_loop)]
     for m in 0..12 {
         let dim = if m == 1 && crate::gregorian_date::is_leap_year(year) {
             29

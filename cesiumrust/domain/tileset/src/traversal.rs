@@ -6,6 +6,8 @@
 //! - `Scene/Cesium3DTilesetMostDetailedTraversal.js`
 //! - `Scene/Cesium3DTilesetBaseTraversal.js`
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::field_reassign_with_default)]
 use crate::lod_selection::{CameraState, LodSelectionContext, SelectedTile, TileSelectionResult};
 use crate::tile::{Tile, TileRefine};
 use cesium_geospatial::ellipsoid::Ellipsoid;

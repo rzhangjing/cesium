@@ -4,6 +4,8 @@
 //! Based on the 2007 SIGGRAPH paper "Fast Triangle Reordering for Vertex Locality
 //! and Reduced Overdraw" by Sander, Nehab, and Barczak.
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::manual_is_multiple_of)]
 /// Calculates the average cache miss ratio (ACMR) for a given set of indices.
 ///
 /// Maps to `Tipsify.calculateACMR`.

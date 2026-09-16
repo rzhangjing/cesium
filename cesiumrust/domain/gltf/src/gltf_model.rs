@@ -95,6 +95,15 @@ impl GltfModel {
         serde_json::from_slice(bytes)
     }
 
+    /// Converts an already-parsed JSON [`serde_json::Value`] into the typed
+    /// model. Used by the glTF 1.0 → 2.0 upgrade path
+    /// ([`crate::gltf_upgrade::update_version_with_buffers`]): the 1.0 JSON is
+    /// upgraded as an untyped value (its object-keyed collections cannot be
+    /// deserialized into this array-based model) and only then converted here.
+    pub fn from_value(value: serde_json::Value) -> Result<Self, serde_json::Error> {
+        serde_json::from_value(value)
+    }
+
     /// Returns the default scene, or the first scene if no default is set.
     pub fn default_scene(&self) -> Option<&Scene> {
         let index = self.scene.unwrap_or(0);
@@ -748,12 +757,108 @@ pub struct BufferView {
 }
 
 /// Buffer target types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// glTF encodes these as the OpenGL enum integers (34962 = ARRAY_BUFFER,
+/// 34963 = ELEMENT_ARRAY_BUFFER), so the (de)serialization is numeric — the
+/// derived string-variant impl would reject every real `bufferView.target`.
+///
+/// DEVIATION(fix): 序列化由 derive 字符串变体改为手写数值 34962/34963，
+/// 未知整数 Err(invalid_value) 不静默降级；see docs/deviations.md#dev-014
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BufferTarget {
     /// Array buffer (34962).
     ArrayBuffer,
     /// Element array buffer (34963).
     ElementArrayBuffer,
+}
+
+impl Serialize for BufferTarget {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let value: u32 = match self {
+            BufferTarget::ArrayBuffer => 34962,
+            BufferTarget::ElementArrayBuffer => 34963,
+        };
+        serializer.serialize_u32(value)
+    }
+}
+
+impl<'de> Deserialize<'de> for BufferTarget {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = u32::deserialize(deserializer)?;
+        match value {
+            34962 => Ok(BufferTarget::ArrayBuffer),
+            34963 => Ok(BufferTarget::ElementArrayBuffer),
+            // An unknown integer means the payload is corrupt or from a glTF
+            // variant we do not model. Fail loudly instead of silently coercing
+            // it to `ArrayBuffer`, which would mask the data corruption and let
+            // a broken `bufferView` flow through as if it were valid.
+            other => Err(serde::de::Error::invalid_value(
+                serde::de::Unexpected::Unsigned(u64::from(other)),
+                &"34962 (ARRAY_BUFFER) or 34963 (ELEMENT_ARRAY_BUFFER)",
+            )),
+        }
+    }
+}
+
+#[cfg(test)]
+mod buffer_target_tests {
+    use super::*;
+
+    fn target_from(json: &str) -> serde_json::Result<BufferTarget> {
+        serde_json::from_str(json)
+    }
+
+    #[test]
+    fn deserializes_array_buffer() {
+        assert_eq!(target_from("34962").unwrap(), BufferTarget::ArrayBuffer);
+    }
+
+    #[test]
+    fn deserializes_element_array_buffer() {
+        assert_eq!(
+            target_from("34963").unwrap(),
+            BufferTarget::ElementArrayBuffer
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_target() {
+        // Unknown integers must surface as data corruption, never silently
+        // degrade to `ArrayBuffer`.
+        assert!(target_from("9999").is_err());
+        assert!(target_from("0").is_err());
+    }
+
+    #[test]
+    fn buffer_view_target_defaults_to_none() {
+        // A `bufferView` with no `target` field must stay `None`, not error.
+        let view: BufferView =
+            serde_json::from_str(r#"{"buffer":0,"byteLength":12}"#).unwrap();
+        assert_eq!(view.target, None);
+    }
+
+    #[test]
+    fn buffer_view_parses_numeric_target() {
+        let view: BufferView =
+            serde_json::from_str(r#"{"buffer":0,"byteLength":12,"target":34963}"#).unwrap();
+        assert_eq!(view.target, Some(BufferTarget::ElementArrayBuffer));
+    }
+
+    #[test]
+    fn serialize_roundtrips_numeric() {
+        let json = serde_json::to_string(&BufferTarget::ElementArrayBuffer).unwrap();
+        assert_eq!(json, "34963");
+        assert_eq!(
+            target_from(&json).unwrap(),
+            BufferTarget::ElementArrayBuffer
+        );
+    }
 }
 
 /// A binary data buffer.

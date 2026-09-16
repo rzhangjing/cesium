@@ -6,6 +6,8 @@
 //! - Morton index computation
 //! - Subtree file parsing
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::manual_is_multiple_of)]
 /// Subdivision scheme for implicit tiling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SubdivisionScheme {

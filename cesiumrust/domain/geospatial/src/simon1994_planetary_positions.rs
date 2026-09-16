@@ -4,6 +4,8 @@
 //! Reference: Simon et al. 1994, "Numerical expressions for precession formulae
 //! and mean elements for the Moon and the planets"
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(dead_code, unused_mut, clippy::neg_multiply)]
 use cesium_time::JulianDate;
 use glam::{DVec3, DMat3};
 

@@ -40,10 +40,14 @@ members = [
     "adapters/bevy-render",
     "adapters/decoders",
     "adapters/network",
+    "adapters/pipeline",
     # Application layer (Bevy App assembly)
     "application/cesium-app",
     # Integration test suite (ported from CesiumJS Specs)
     "specs",
+    # Tools
+    "tools/pixel_diff",
+    "tools/gen_offline_assets",
 ]
 default-members = ["application/cesium-app"]
 
@@ -76,6 +80,7 @@ bevy = { version = "0.15", default-features = false, features = [
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"
 
 # Error handling
 thiserror = "2"
@@ -133,6 +138,7 @@ cesium-ports-driving = { path = "ports/driving" }
 cesium-bevy-render = { path = "adapters/bevy-render" }
 cesium-decoders = { path = "adapters/decoders" }
 cesium-network = { path = "adapters/network" }
+cesium-pipeline = { path = "adapters/pipeline" }
 
 [profile.dev]
 split-debuginfo = "unpacked"

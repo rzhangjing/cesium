@@ -34,11 +34,21 @@ struct FabricParams {
     extra_b: vec4<f32>,
     // x=minHeight(ramp), y=maxHeight(ramp), z=time(water), w=animationSpeed
     extra_c: vec4<f32>,
+    // --- M5-D Water (Water.glsl) uniforms ---
+    // x=frequency, y=amplitude, z=specularIntensity, w=fadeFactor
+    water_a: vec4<f32>,
 }
 
 @group(2) @binding(0) var<uniform> params: FabricParams;
 @group(2) @binding(1) var image_texture: texture_2d<f32>;
 @group(2) @binding(2) var image_sampler: sampler;
+// M5-D: Water multi-texture bindings. normalMap / specularMap are LINEAR data
+// (Rgba8Unorm on the Rust side — never Rgba8UnormSrgb, which would double-encode
+// the tangent-space normals / water mask). Non-water kinds never sample these.
+@group(2) @binding(3) var normal_map: texture_2d<f32>;
+@group(2) @binding(4) var normal_sampler: sampler;
+@group(2) @binding(5) var specular_map: texture_2d<f32>;
+@group(2) @binding(6) var specular_sampler: sampler;
 
 // ---------------------------------------------------------------------------
 // Shared built-ins (ported from Shaders/Builtin/Functions/*.glsl)
@@ -64,6 +74,109 @@ fn glsl_mod(x: f32, y: f32) -> f32 {
 // The domain default is non-HDR, where this is the identity.
 fn czm_gamma_correct(color: vec4<f32>) -> vec4<f32> {
     return color;
+}
+
+// ---------------------------------------------------------------------------
+// M5-D: Water material support (Water.glsl + getWaterNoise.glsl faithful port)
+// ---------------------------------------------------------------------------
+
+// METERS_PER_RENDER_UNIT (cesium-geospatial). Water.glsl works in meters; our
+// world_position is in render units, so meter-valued constants (the 1e10 fade
+// divisor) are divided by this to stay in render-unit space (red-line 米制换算).
+const METERS_PER_RENDER_UNIT: f32 = 6378137.0;
+
+// czm_material equivalent: carries the full component set so the Water case can
+// populate normal / specular / shininess and be lit by czm_phong. This is an
+// *internal* struct — the fragment entry still returns a single vec4 (Bevy's
+// forward FragmentOutput is one @location(0) target, not this struct).
+struct FabricOutput {
+    diffuse: vec3<f32>,
+    emission: vec3<f32>,
+    alpha: f32,
+    normal: vec3<f32>,
+    specular: f32,
+    shininess: f32,
+}
+
+fn fabric_output_default() -> FabricOutput {
+    var o: FabricOutput;
+    o.diffuse = vec3<f32>(0.0);
+    o.emission = vec3<f32>(0.0);
+    o.alpha = 1.0;
+    o.normal = vec3<f32>(0.0, 0.0, 1.0);
+    o.specular = 0.0;
+    o.shininess = 1.0;
+    return o;
+}
+
+// czm_getWaterNoise (Shaders/Builtin/Functions/getWaterNoise.glsl), faithful.
+fn czm_get_water_noise(nmap: texture_2d<f32>, nsamp: sampler, uv: vec2<f32>, time: f32, angle_in_radians: f32) -> vec4<f32> {
+    let cos_angle = cos(angle_in_radians);
+    let sin_angle = sin(angle_in_radians);
+
+    // time dependent sampling directions
+    var s0 = vec2<f32>(1.0 / 17.0, 0.0);
+    var s1 = vec2<f32>(-1.0 / 29.0, 0.0);
+    var s2 = vec2<f32>(1.0 / 101.0, 1.0 / 59.0);
+    var s3 = vec2<f32>(-1.0 / 109.0, -1.0 / 57.0);
+
+    // rotate sampling direction by specified angle
+    s0 = vec2<f32>((cos_angle * s0.x) - (sin_angle * s0.y), (sin_angle * s0.x) + (cos_angle * s0.y));
+    s1 = vec2<f32>((cos_angle * s1.x) - (sin_angle * s1.y), (sin_angle * s1.x) + (cos_angle * s1.y));
+    s2 = vec2<f32>((cos_angle * s2.x) - (sin_angle * s2.y), (sin_angle * s2.x) + (cos_angle * s2.y));
+    s3 = vec2<f32>((cos_angle * s3.x) - (sin_angle * s3.y), (sin_angle * s3.x) + (cos_angle * s3.y));
+
+    var uv0 = (uv / 103.0) + (time * s0);
+    var uv1 = uv / 107.0 + (time * s1) + vec2<f32>(0.23);
+    var uv2 = uv / vec2<f32>(897.0, 983.0) + (time * s2) + vec2<f32>(0.51);
+    var uv3 = uv / vec2<f32>(991.0, 877.0) + (time * s3) + vec2<f32>(0.71);
+
+    uv0 = fract(uv0);
+    uv1 = fract(uv1);
+    uv2 = fract(uv2);
+    uv3 = fract(uv3);
+    let noise = textureSample(nmap, nsamp, uv0)
+        + textureSample(nmap, nsamp, uv1)
+        + textureSample(nmap, nsamp, uv2)
+        + textureSample(nmap, nsamp, uv3);
+
+    // average and scale to between -1 and 1
+    return ((noise / 4.0) - 0.5) * 2.0;
+}
+
+// czm_getLambertDiffuse / czm_getSpecular / czm_phong (Shaders/Builtin/Functions).
+// DEVIATION: CesiumJS evaluates these in eye coordinates (EC) against the
+// czm_lightColor / czm_sceneMode uniforms; we evaluate in world coordinates (WC)
+// with a fixed white light colour and the 3D-mode horizon branch always taken.
+// See docs/deviations.md#dev-019 (M5-D water lighting).
+fn czm_get_lambert_diffuse(light_direction: vec3<f32>, normal: vec3<f32>) -> f32 {
+    return max(dot(normal, light_direction), 0.0);
+}
+
+fn czm_get_specular(light_direction: vec3<f32>, to_eye: vec3<f32>, normal: vec3<f32>, shininess: f32) -> f32 {
+    let to_reflected = reflect(-light_direction, normal);
+    let specular = max(dot(to_reflected, to_eye), 0.0);
+    // pow is undefined when both operands are 0; clamp shininess (phong.glsl).
+    return pow(specular, max(shininess, 0.00001));
+}
+
+fn czm_phong(to_eye: vec3<f32>, mat: FabricOutput, light_direction: vec3<f32>) -> vec4<f32> {
+    let light_color = vec3<f32>(1.0, 1.0, 1.0);
+    // Diffuse from a directional light at the eye (top-down) plus the horizon
+    // term added in 3D scene mode (phong.glsl L33-37).
+    var diffuse = czm_get_lambert_diffuse(vec3<f32>(0.0, 0.0, 1.0), mat.normal);
+    diffuse += czm_get_lambert_diffuse(vec3<f32>(0.0, 1.0, 0.0), mat.normal);
+
+    let specular = czm_get_specular(light_direction, to_eye, mat.normal, mat.shininess);
+
+    // Temporary workaround for adding ambient (phong.glsl L42-47).
+    let material_diffuse = mat.diffuse * 0.5;
+    let ambient = material_diffuse;
+    var color = ambient + mat.emission;
+    color += material_diffuse * diffuse * light_color;
+    color += mat.specular * specular * light_color;
+
+    return vec4<f32>(color, mat.alpha);
 }
 
 // ---------------------------------------------------------------------------
@@ -391,25 +504,75 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             alpha = 1.0;
         }
 
-        case 17u: { // Water (Water.glsl — simplified stub)
-            let time = params.extra_c.z;
-            let speed = params.extra_c.w;
-            let t = time * speed;
-
-            // Simple animated wave effect using sinusoidal displacement
-            let wave1 = sin(st.x * 10.0 + t) * cos(st.y * 8.0 + t * 0.7) * 0.15;
-            let wave2 = sin(st.x * 15.0 - t * 0.6) * sin(st.y * 12.0 + t * 0.8) * 0.1;
-            let wave = wave1 + wave2;
-
-            let water_color = params.color_a;
+        case 17u: { // Water (Water.glsl — faithful port, M5-D)
+            let base_water_color = params.color_a;
             let blend_color = params.color_b;
-            let specular = clamp(wave + 0.3, 0.0, 1.0);
+            let frequency = params.water_a.x;
+            let amplitude = max(params.water_a.y, 1e-4);
+            let specular_intensity = params.water_a.z;
+            let fade_factor = params.water_a.w;
+            let animation_speed = params.extra_c.w;
+            // extra_c.z carries czm_frameNumber (per-frame counter). Water.glsl L18.
+            let time = params.extra_c.z * animation_speed;
 
-            var frag = mix(blend_color, water_color, specular);
-            frag.rgb += 0.05 * wave;
-            frag = czm_gamma_correct(frag);
-            diffuse = frag.rgb;
-            alpha = frag.a;
+            // Water.glsl L21: fade from distance-to-eye. The 1e10 divisor is in
+            // metres; divide by METERS_PER_RENDER_UNIT to match world_position's
+            // render-unit space (red-line 米制换算).
+            let position_to_eye = mesh_view_bindings::view.world_position.xyz - in.world_position.xyz;
+            let fade_divisor = 10000000000.0 / METERS_PER_RENDER_UNIT;
+            let fade = max(1.0, (length(position_to_eye) / fade_divisor) * frequency * fade_factor);
+
+            // Water.glsl L23: specular (water/non-water) mask, .r channel.
+            let specular_map_value = textureSample(specular_map, specular_sampler, st).r;
+
+            // Water.glsl L26-35: animated 4-octave noise → tangent-space normal.
+            let noise = czm_get_water_noise(normal_map, normal_sampler, st * frequency, time, 0.0);
+            var normal_tangent_space = noise.xyz * vec3<f32>(1.0, 1.0, 1.0 / amplitude);
+            normal_tangent_space.xy /= fade;
+            normal_tangent_space = mix(vec3<f32>(0.0, 0.0, 50.0), normal_tangent_space, specular_map_value);
+            normal_tangent_space = normalize(normal_tangent_space);
+
+            // Water.glsl L38: alignment ratio of the perturbed normal with +Z.
+            let ts_perturbation_ratio = clamp(dot(normal_tangent_space, vec3<f32>(0.0, 0.0, 1.0)), 0.0, 1.0);
+
+            // Water.glsl L52: tangentToEyeMatrix * nts. We build a world-space TBN
+            // (DEVIATION: WC not EC — see docs/deviations.md#dev-019). VERTEX_TANGENTS gives
+            // the mesh tangent (w = handedness); otherwise derive an orthonormal basis.
+            let n_world = normalize(in.world_normal);
+            var tangent: vec3<f32>;
+            var bitangent: vec3<f32>;
+#ifdef VERTEX_TANGENTS
+            tangent = normalize(in.world_tangent.xyz);
+            bitangent = cross(n_world, tangent) * in.world_tangent.w;
+#else
+            let helper = select(vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 0.0, 1.0), abs(n_world.y) < 0.99);
+            tangent = normalize(cross(helper, n_world));
+            bitangent = cross(n_world, tangent);
+#endif
+            let world_normal = normalize(
+                tangent * normal_tangent_space.x
+                + bitangent * normal_tangent_space.y
+                + n_world * normal_tangent_space.z);
+
+            // Pack the czm_material equivalent (Water.glsl L41-55).
+            var mat = fabric_output_default();
+            mat.alpha = mix(blend_color.a, base_water_color.a, specular_map_value) * specular_map_value;
+            mat.diffuse = mix(blend_color.rgb, base_water_color.rgb, specular_map_value);
+            mat.diffuse += 0.1 * ts_perturbation_ratio;
+            mat.emission = vec3<f32>(0.0);
+            mat.normal = world_normal;
+            mat.specular = specular_intensity;
+            mat.shininess = 10.0;
+
+            // Light with czm_phong, INLINE for case 17u only so the shared
+            // `return diffuse + emission` path for cases 0-16/18-20 is untouched
+            // (red-line: no visual change to other cases). Showcase sun in WC.
+            let view_dir = normalize(position_to_eye);
+            let light_dir = normalize(vec3<f32>(0.4, 0.85, 0.35));
+            let lit = czm_phong(view_dir, mat, light_dir);
+            diffuse = lit.rgb;
+            emission = vec3<f32>(0.0);
+            alpha = lit.a;
         }
 
         case 18u: { // RimLighting (RimLightingMaterial.glsl)

@@ -3,6 +3,8 @@
 //! Faithful port of CesiumJS `objectToQuery.js`, `queryToObject.js`,
 //! `parseResponseHeaders.js`, `getFilenameFromUri.js`, `getExtensionFromUri.js`.
 
+// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+#![allow(clippy::manual_pattern_char_comparison)]
 use std::collections::HashMap;
 
 /// Converts an object representing URL parameters into a query string.
