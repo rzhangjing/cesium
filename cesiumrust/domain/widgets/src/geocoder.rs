@@ -170,6 +170,7 @@ impl GeocoderViewModel {
 mod tests {
     use super::*;
 
+    #[allow(clippy::approx_constant)] // geographic coords (New Orleans -90°/30°), not math constants; see docs/deferred.md #2
     fn sample_results() -> Vec<GeocoderSearchResult> {
         vec![
             GeocoderSearchResult {

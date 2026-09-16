@@ -50,4 +50,18 @@ cesium-widgets = { workspace = true }
 [dev-dependencies]
 glam = { workspace = true }
 cesium-bevy-render = { workspace = true }
+cesium-ports-driving = { workspace = true }
+# M8.3 (#66): the e2e_network skeleton references `ResourceBackend<u64>` +
+# `TileFetcher` port traits to assert dyn-compatibility of the real adapter.
+cesium-ports-driven = { workspace = true }
 bevy = { workspace = true }
+# M8.3 (#66): the e2e_network skeleton references the real network adapter
+# types (`HttpTileFetcher`, `NetworkResourceBackend`, `resource_fetch_backend_enabled`)
+# at compile time so the `--no-run` build proves the wiring exists. Runtime
+# assertions stay `#[ignore]`d until M11.1 hooks up the async harness.
+cesium-network = { workspace = true }
+# M8 e2e network test skeleton (specs/tests/e2e_network/*). Test-only; keeps
+# HTTP mocking out of the production path. Resolved offline from the local
+# registry cache (wiremock 0.6.5). See docs/deferred.md for the #[ignore]
+# gating rationale (skeleton-only until M11.1 wires the real fetcher).
+wiremock = "0.6"
