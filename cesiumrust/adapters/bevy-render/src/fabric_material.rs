@@ -842,4 +842,153 @@ mod tests {
         assert_eq!(WaterPreset::Medium.ocean().config.waves.len(), 5);
         assert_eq!(WaterPreset::Rough.ocean().config.waves.len(), 8);
     }
+
+    // ------------------------------------------------------------------
+    // Ryan C1 defense line: naga parse + validate `fabric_material.wgsl`.
+    //
+    // The 14 tests above only exercise the Rust-side uniform packing and texture
+    // formats; none of them ran the WGSL through naga, which is why a WGSL
+    // reserved word used as a call (`mod(...)`) slipped through CI green. naga is
+    // the exact front end Bevy compiles with (bevy_render -> naga 23.1), so
+    // driving it here turns that class of defect into a hard failure.
+    // ------------------------------------------------------------------
+
+    /// Stubs for the two `#import`s (naga has no preprocessor). Declares exactly
+    /// the bindings the shader reads: `VertexOutput.world_position` /
+    /// `.world_normal` / `.uv` (forward_io) and `view.world_position`
+    /// (mesh_view_bindings). Everything else is the real shader text, so this
+    /// validates the actual 21-case procedural code.
+    const WGSL_IMPORT_STUBS: &str = "\
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) world_position: vec4<f32>,
+    @location(1) world_normal: vec3<f32>,
+    @location(2) uv: vec2<f32>,
+}
+
+struct View {
+    world_position: vec3<f32>,
+    exposure: f32,
+}
+
+@group(0) @binding(0) var<uniform> view: View;
+";
+
+    /// Rebuild `fabric_material.wgsl` into standalone WGSL naga can parse: strip
+    /// the `#import` lines (replaced by [`WGSL_IMPORT_STUBS`]) and resolve the
+    /// `#ifdef / #else / #endif` blocks. [`FabricMaterial`] sets no custom
+    /// `shader_def` (it does not override `Material::specialize`), so every guarded
+    /// symbol (`VERTEX_UVS_A`) is UNDEFINED → the `#else` branch is taken.
+    fn stubbed_wgsl() -> String {
+        let source = include_str!("../shaders/fabric_material.wgsl").replace("\r\n", "\n");
+        let mut out = String::from(WGSL_IMPORT_STUBS);
+        // Non-nested `#ifdef` with an optional `#else`; all symbols undefined.
+        let mut skipping = false;
+        for line in source.lines() {
+            let t = line.trim_start();
+            if t.starts_with("#import") || t.starts_with("#endif") {
+                skipping = false;
+                continue;
+            }
+            if t.starts_with("#ifdef") {
+                skipping = true; // undefined symbol → drop the #if branch
+                continue;
+            }
+            if t.starts_with("#else") {
+                skipping = false; // keep the fallback branch
+                continue;
+            }
+            if skipping {
+                continue;
+            }
+            out.push_str(line);
+            out.push('\n');
+        }
+        out
+    }
+
+    /// The Ryan C1 regression gate: the whole `fabric_material.wgsl` (all 21 Fabric
+    /// cases) must parse AND type-check under naga. A WGSL reserved word used as a
+    /// call (`mod(...)`, now `glsl_mod(...)`) or an undeclared identifier
+    /// (`in.world_tangent`, `mesh_view_bindings::view`) parses fine but fails
+    /// lowering, silently dropping every pipeline (all 21 cases unrenderable).
+    #[test]
+    fn fabric_material_wgsl_parses_and_validates_under_naga() {
+        let source = stubbed_wgsl();
+        let module = naga::front::wgsl::parse_str(&source).unwrap_or_else(|error| {
+            panic!(
+                "fabric_material.wgsl does not parse:\n{}",
+                error.emit_to_string(&source)
+            )
+        });
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .expect("fabric_material.wgsl does not validate");
+
+        // Single forward `Material` fragment entry, the signature Bevy expects.
+        let entry_points = module
+            .entry_points
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry.stage))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            entry_points,
+            vec![("fragment", naga::ShaderStage::Fragment)],
+            "fabric_material.wgsl must expose exactly one fragment entry point"
+        );
+    }
+
+    /// Fast, precise source-contract assertions for the exact defects this round
+    /// fixed, so a regression is diagnosed even before naga lowering runs.
+    #[test]
+    fn fabric_material_wgsl_avoids_the_known_reserved_word_and_dead_branch_traps() {
+        let source = include_str!("../shaders/fabric_material.wgsl").replace("\r\n", "\n");
+        // Strip `//` line comments first: the explanatory comments for these very
+        // fixes mention `mod()`, `VERTEX_TANGENTS` and `world_tangent` in prose, so
+        // scanning the raw source would false-positive. The contract is about CODE.
+        let code = source
+            .lines()
+            .map(|line| match line.find("//") {
+                Some(idx) => &line[..idx],
+                None => line,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        // Ryan C1: every `mod(` must be the `glsl_mod(` helper — strip those and no
+        // bare `mod(` (a WGSL reserved word) may remain.
+        assert!(
+            !code.replace("glsl_mod(", "").contains("mod("),
+            "fabric_material.wgsl calls the WGSL reserved word `mod`; use glsl_mod"
+        );
+        // Daniel L3: the dead VERTEX_TANGENTS branch read an undeclared
+        // `in.world_tangent`; it must stay removed (no uncompilable path).
+        assert!(
+            !code.contains("VERTEX_TANGENTS"),
+            "dead VERTEX_TANGENTS branch must stay removed"
+        );
+        assert!(
+            !code.contains("world_tangent"),
+            "world_tangent is not declared in this shader's VertexOutput"
+        );
+        // The `view` binding must be referenced unqualified: naga_oil resolves
+        // `#import bevy_pbr::mesh_view_bindings` into global scope, and `::` is not
+        // valid WGSL (raw naga lowering rejects it).
+        assert!(
+            !code.contains("mesh_view_bindings::"),
+            "reference `view`, not the non-WGSL `mesh_view_bindings::view`"
+        );
+        assert!(code.contains("view.world_position"));
+        // WGSL forbids swizzle assignment (`v.rgb = ...`, `v.xy /= ...`); naga
+        // rejects it and the whole shader fails to lower. The four sites this round
+        // fixed are asserted absent here for a fast, precise pre-diagnosis.
+        for pat in [".rgb =", ".rgba =", ".xy =", ".xyz =", ".xy /=", ".xy *="] {
+            assert!(
+                !code.contains(pat),
+                "fabric_material.wgsl uses illegal WGSL swizzle assignment `{pat}`"
+            );
+        }
+    }
 }

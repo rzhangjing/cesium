@@ -194,6 +194,20 @@ where
     }
 }
 
+/// Ceiling on a single retry backoff sleep (L1 review fix). The pre-fix
+/// `backoff_base << attempt` grew without bound, so a large `max_attempts`
+/// could sleep for hours, and `1u32 << attempt` overflowed (panic in debug /
+/// wrap in release) once `attempt >= 32`.
+const MAX_BACKOFF: Duration = Duration::from_secs(30);
+
+/// Computes the backoff for retry `attempt`: `base << min(attempt, 20)`,
+/// saturating and clamped to [`MAX_BACKOFF`]. L1 review fix — the shift is
+/// bounded (no `1u32 << attempt` overflow) and the result has a sane ceiling.
+fn backoff_for(base: Duration, attempt: u32) -> Duration {
+    let shift = attempt.min(20);
+    base.saturating_mul(1u32 << shift).min(MAX_BACKOFF)
+}
+
 /// Worker loop: pull jobs, gate on wanted, fetch with retry, decode, send result.
 ///
 /// Faithfully replicates `dynamic_globe.rs:2153-2284`.
@@ -228,9 +242,11 @@ fn worker_loop<K, Payload>(
         let mut delivered = false;
         for attempt in 0..config.max_attempts {
             if attempt > 0 {
-                // L2188-2190: sleep(250ms << attempt)
-                let backoff = config.backoff_base * (1u32 << attempt);
-                thread::sleep(backoff);
+                // L2188-2190: sleep(250ms << attempt). L1 review fix: cap the
+                // shift (attempt.min(20)) so `1u32 << attempt` can't overflow,
+                // and clamp the product to MAX_BACKOFF so a large max_attempts
+                // can't produce an unbounded (multi-hour) sleep.
+                thread::sleep(backoff_for(config.backoff_base, attempt));
             }
 
             match backend.fetch(&job.url) {
@@ -447,5 +463,21 @@ mod tests {
     fn ureq_backend_is_send_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<UreqBackend>();
+    }
+
+    #[test]
+    fn backoff_for_caps_shift_and_ceiling() {
+        // L1 review fix: bounded shift (no `1u32 << attempt` overflow) + a sane
+        // ceiling so a huge attempt count can't sleep for hours.
+        let base = Duration::from_millis(250);
+        assert_eq!(backoff_for(base, 1), Duration::from_millis(500)); // 250 << 1
+        assert_eq!(backoff_for(base, 2), Duration::from_millis(1000)); // 250 << 2
+        // attempt >= 32 would overflow `1u32 << attempt` pre-fix; now clamped.
+        assert_eq!(backoff_for(base, 40), MAX_BACKOFF);
+        assert_eq!(backoff_for(base, u32::MAX), MAX_BACKOFF);
+        // Never exceeds the ceiling for any attempt.
+        for attempt in 0..64u32 {
+            assert!(backoff_for(base, attempt) <= MAX_BACKOFF);
+        }
     }
 }

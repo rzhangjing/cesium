@@ -20,6 +20,13 @@ cesium-bevy-render.workspace = true
 cesium-pipeline.workspace = true
 cesium-material.workspace = true
 cesium-atmosphere.workspace = true
+# M6 Wave A (task #81): `main.rs` composes the domain value objects that the
+# `CesiumClippingPlanes` / `CesiumIbl` / `CesiumPanorama` camera components are
+# built from (`ClippingPlaneCollection`, `ImageBasedLighting`, `IblMaterial`,
+# `EquirectangularPanorama`). Application-layer composition of domain types is
+# the DDD-correct direction; the adapter still narrows f64 → f32 at its own
+# uniform boundary.
+cesium-effects.workspace = true
 cesium-scene-mode.workspace = true
 ureq.workspace = true
 image.workspace = true
@@ -27,3 +34,17 @@ cesium-network.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 toml.workspace = true
+
+[dev-dependencies]
+# M11.4 (#83): `tests/e2e_render.rs` drives the built `cesium-app` binary in
+# headless offscreen mode and asserts on the captured PNG. These are TEST-ONLY
+# dependencies — no production dependency of `cesium-app` or `cesium-bevy-render`
+# is altered, and the golden startup path is untouched.
+#   • assert_cmd — spawn the binary with a scoped env + timeout, assert exit code.
+#   • tempfile   — isolated per-test output dir (auto-cleaned).
+#   • pixel_diff — PSNR/SSIM comparison for the determinism (same view twice) and
+#                  view-distinctness (different poses differ) pixel取证.
+# `image` is already a production dependency, so integration tests can use it too.
+assert_cmd = "2"
+tempfile = "3"
+pixel_diff = { path = "../../tools/pixel_diff" }

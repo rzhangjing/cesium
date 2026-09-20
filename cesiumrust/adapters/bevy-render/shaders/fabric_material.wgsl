@@ -282,13 +282,15 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 
             // Rim suppression (edges taken from RimLightingMaterial.glsl).
             let n = normalize(in.world_normal);
-            let view_dir = normalize(mesh_view_bindings::view.world_position.xyz - in.world_position.xyz);
+            let view_dir = normalize(view.world_position.xyz - in.world_position.xyz);
             let d_rim = 1.0 - abs(dot(n, view_dir));
             let s_rim = smoothstep(0.8, 1.0, d_rim);
             value = value * (1.0 - s_rim);
 
-            var half_color = vec4<f32>(params.color_a.rgb * 0.5, 0.0);
-            half_color.a = params.color_a.a * (1.0 - ((1.0 - cell_alpha) * value));
+            let half_alpha = params.color_a.a * (1.0 - ((1.0 - cell_alpha) * value));
+            // WGSL forbids swizzle assignment (`half_color.a = ...`); build the vec4
+            // with its final alpha in a single initializer instead (Ryan C1 defense).
+            var half_color = vec4<f32>(params.color_a.rgb * 0.5, half_alpha);
             half_color = czm_gamma_correct(half_color);
             diffuse = half_color.rgb;
             emission = half_color.rgb;
@@ -372,7 +374,12 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             let dash_pos = fract(rot_x / (dash_length * px_ratio));
             let mask_idx = floor(dash_pos * 16.0);
             let mask_test = floor(dash_pattern / pow(2.0, mask_idx));
-            let on = mod(mask_test, 2.0) >= 1.0;
+            // glsl_mod, NOT the bare `mod`: WGSL has no `mod` builtin and `mod`
+            // is a *reserved word* (naga keywords/wgsl.rs RESERVED). Parsing it as
+            // a call silently succeeds, but lowering fails (globals.get("mod")=
+            // None → UnknownIdent), which aborts the whole shader and drops all 21
+            // Fabric cases from pipeline creation. Ryan C1 fix.
+            let on = glsl_mod(mask_test, 2.0) >= 1.0;
 
             let frag_color = select(params.color_b, params.color_a, on);
             if frag_color.a < 0.005 { discard; }
@@ -390,10 +397,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
                 glow *= min(1.0, taper_power / (0.5 - st.x * 0.5) - (taper_power / 0.5));
             }
 
-            var frag_color: vec4<f32>;
-            frag_color.rgb = max(vec3<f32>(glow - 1.0 + params.color_a.rgb), params.color_a.rgb);
-            frag_color.a = clamp(glow, 0.0, 1.0) * params.color_a.a;
-            frag_color = czm_gamma_correct(frag_color);
+            // WGSL forbids swizzle assignment; assemble the vec4 from its rgb and a
+            // parts in a single initializer (Ryan C1 defense).
+            let glow_rgb = max(vec3<f32>(glow - 1.0 + params.color_a.rgb), params.color_a.rgb);
+            let glow_a = clamp(glow, 0.0, 1.0) * params.color_a.a;
+            var frag_color = czm_gamma_correct(vec4<f32>(glow_rgb, glow_a));
             emission = frag_color.rgb;
             alpha = frag_color.a;
         }
@@ -473,9 +481,12 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             let strength = params.extra_b.z;
             let repeat = params.repeat_offset.xy;
             let tex_val = textureSample(image_texture, image_sampler, fract(repeat * st));
-            var nts = tex_val.rgb;
-            nts.xy = nts.xy * 2.0 - 1.0;
-            nts.z = clamp(1.0 - strength, 0.1, 1.0);
+            // WGSL forbids swizzle assignment; build the tangent-space normal in one
+            // initializer: xy unpacked from [0,1] to [-1,1], z from strength (Ryan C1 defense).
+            var nts = vec3<f32>(
+                tex_val.xy * 2.0 - 1.0,
+                clamp(1.0 - strength, 0.1, 1.0),
+            );
             nts = normalize(nts);
             // Approximate eye-space normal: use world_normal as TBN basis
             let wn = normalize(in.world_normal);
@@ -518,7 +529,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             // Water.glsl L21: fade from distance-to-eye. The 1e10 divisor is in
             // metres; divide by METERS_PER_RENDER_UNIT to match world_position's
             // render-unit space (red-line 米制换算).
-            let position_to_eye = mesh_view_bindings::view.world_position.xyz - in.world_position.xyz;
+            let position_to_eye = view.world_position.xyz - in.world_position.xyz;
             let fade_divisor = 10000000000.0 / METERS_PER_RENDER_UNIT;
             let fade = max(1.0, (length(position_to_eye) / fade_divisor) * frequency * fade_factor);
 
@@ -527,8 +538,10 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 
             // Water.glsl L26-35: animated 4-octave noise → tangent-space normal.
             let noise = czm_get_water_noise(normal_map, normal_sampler, st * frequency, time, 0.0);
-            var normal_tangent_space = noise.xyz * vec3<f32>(1.0, 1.0, 1.0 / amplitude);
-            normal_tangent_space.xy /= fade;
+            // WGSL forbids swizzle assignment (`nts.xy /= fade`); fold the fade divide
+            // into the initializer's xy (Ryan C1 defense).
+            let nts_unfaded = noise.xyz * vec3<f32>(1.0, 1.0, 1.0 / amplitude);
+            var normal_tangent_space = vec3<f32>(nts_unfaded.xy / fade, nts_unfaded.z);
             normal_tangent_space = mix(vec3<f32>(0.0, 0.0, 50.0), normal_tangent_space, specular_map_value);
             normal_tangent_space = normalize(normal_tangent_space);
 
@@ -536,19 +549,17 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             let ts_perturbation_ratio = clamp(dot(normal_tangent_space, vec3<f32>(0.0, 0.0, 1.0)), 0.0, 1.0);
 
             // Water.glsl L52: tangentToEyeMatrix * nts. We build a world-space TBN
-            // (DEVIATION: WC not EC — see docs/deviations.md#dev-019). VERTEX_TANGENTS gives
-            // the mesh tangent (w = handedness); otherwise derive an orthonormal basis.
+            // (DEVIATION: WC not EC — see docs/deviations.md#dev-019) by deriving an
+            // orthonormal basis from the world normal. NOTE (Daniel L3): the former
+            // `#ifdef VERTEX_TANGENTS` branch read `in.world_tangent`, a field this
+            // shader's `VertexOutput` never declares. FabricMaterial sets no
+            // VERTEX_TANGENTS shader_def, so naga_oil stripped the branch and it
+            // never compiled — but enabling that def would fail *all 21 cases*. The
+            // dead, uncompilable branch is removed; only the derived basis remains.
             let n_world = normalize(in.world_normal);
-            var tangent: vec3<f32>;
-            var bitangent: vec3<f32>;
-#ifdef VERTEX_TANGENTS
-            tangent = normalize(in.world_tangent.xyz);
-            bitangent = cross(n_world, tangent) * in.world_tangent.w;
-#else
             let helper = select(vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 0.0, 1.0), abs(n_world.y) < 0.99);
-            tangent = normalize(cross(helper, n_world));
-            bitangent = cross(n_world, tangent);
-#endif
+            let tangent = normalize(cross(helper, n_world));
+            let bitangent = cross(n_world, tangent);
             let world_normal = normalize(
                 tangent * normal_tangent_space.x
                 + bitangent * normal_tangent_space.y
@@ -578,7 +589,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         case 18u: { // RimLighting (RimLightingMaterial.glsl)
             let rim_width = params.extra_a.z;
             let wn = normalize(in.world_normal);
-            let view_dir = normalize(mesh_view_bindings::view.world_position.xyz - in.world_position.xyz);
+            let view_dir = normalize(view.world_position.xyz - in.world_position.xyz);
             let d = 1.0 - abs(dot(wn, view_dir));
             let s = smoothstep(1.0 - rim_width, 1.0, d);
 

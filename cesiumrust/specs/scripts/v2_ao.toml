@@ -1,0 +1,86 @@
+# v2_ao.toml — M5-E2 SSAO (hemisphere 16-sample + 4×4 blur) baseline capture script
+# ==================================================================================
+# Six-view capture exercising the self-implemented SSAO render-graph node
+# (CESIUM_ENABLE_POSTPROCESS=1). SSAO darkens crevices / contact edges (globe
+# terrain folds, tile seams, model contact shadows) vs. the v0 baseline, with
+# overall structure fully preserved.
+#
+# GATE SHARING: AO joins the SAME plugin + gate as FXAA (CESIUM_ENABLE_POSTPROCESS).
+# With the gate ON, BOTH FXAA and AO are active. Isolation strategy (poses are
+# IDENTICAL to baseline_v0.toml / v2_fxaa.toml so the ONLY variables are gates):
+#   • gate OFF (default)     : specs/baselines/v0/*.png      → PSNR=∞ (zero diff, non-regression)
+#   • gate ON  (FXAA only)   : specs/baselines/v2_fxaa/*.png → FXAA reference
+#   • gate ON  (FXAA + AO)   : these 6 views (v2_ao)         → target PSNR ≥ 40 dB vs v0
+#   • AO-ONLY delta          : v2_ao ⊖ v2_fxaa               → isolates the AO contribution
+#                              (SSAO is contact darkening: measurable in crevices,
+#                               structure-preserving elsewhere → PSNR ≥ 40 dB vs v0)
+#
+# Run with (gate ON):
+#   CESIUM_ENABLE_POSTPROCESS=1
+#   FIXED_TIME=1
+#   OFFLINE_IMAGERY_ROOT=specs/fixtures/offline-imagery
+#   OFFLINE_TERRAIN_ROOT=specs/fixtures/offline-terrain
+#   STRICT_OFFLINE=1
+#   CESIUM_SCREENSHOT_SCRIPT=specs/scripts/v2_ao.toml
+#   CESIUM_SCREENSHOT_DIR=specs/baselines/v2_ao
+#   CESIUM_GIT_SHA=$(git rev-parse HEAD)
+#   cargo run --release -p cesium-app
+#
+# NOTE: headless CI has no GPU/window, so these 6 PNGs are NOT captured here
+# (specs/baselines/v2_ao/ ships empty). Capture + PSNR + frame-P95 measurement is
+# deferred to the xvfb e2e runner (`.github/workflows/cesiumrust-e2e.yml`, M11.2
+# ready) — see docs/deferred.md. The NormalPrepass added by SSAO is an extra
+# full-scene geometry pass, so its frame-budget cost (target ≤ 2 ms @1280×720,
+# p95 ≤ legacy+5%) is also quantified there. On headless, verification degrades to
+# the compile-time + render-graph structural assertions in
+# adapters/bevy-render/src/effects/{graph,ao}.rs (AO node inserted between
+# PassThrough and Fxaa; DepthPrepass/NormalPrepass attached by setup_ao_prepass).
+#
+# Frame gaps (180) give async tile streaming time to settle between views;
+# the harness exits 30 frames after the last shot for GPU flush.
+
+[meta]
+name = "v2_ao"
+description = "M5-E2 six-view SSAO baseline (hemisphere 16-sample + 4x4 blur, CESIUM_ENABLE_POSTPROCESS=1, FIXED_TIME=1, offline assets)"
+
+[[shot]]
+frame = 180
+name = "ao_globe_default"
+pos = [2.763183, 0.000000, 1.168255]
+quat = [0.390699, 0.390699, 0.589368, 0.589368]
+fov_y = 60.0
+
+[[shot]]
+frame = 360
+name = "ao_pole_north"
+pos = [0.520945, 0.000000, 2.954423]
+quat = [0.061628, 0.061628, 0.704416, 0.704416]
+fov_y = 60.0
+
+[[shot]]
+frame = 540
+name = "ao_pole_south"
+pos = [0.520945, 0.000000, -2.954423]
+quat = [0.704416, 0.704416, 0.061628, 0.061628]
+fov_y = 60.0
+
+[[shot]]
+frame = 720
+name = "ao_zoom_mid"
+pos = [1.841010, 0.000000, 0.781462]
+quat = [0.390278, 0.390278, 0.589646, 0.589646]
+fov_y = 60.0
+
+[[shot]]
+frame = 900
+name = "ao_zoom_close"
+pos = [1.104606, 0.000000, 0.468877]
+quat = [0.390278, 0.390278, 0.589646, 0.589646]
+fov_y = 60.0
+
+[[shot]]
+frame = 1080
+name = "ao_terrain_off"
+pos = [2.763183, 0.000000, 1.168255]
+quat = [0.390699, 0.390699, 0.589368, 0.589368]
+fov_y = 60.0

@@ -161,22 +161,32 @@ impl HttpTileFetcher {
     }
 
     /// Performs a single HTTP GET request and returns the response body.
+    ///
+    /// L2 review fix: returns a [`FetchFailure`] (error + retry classification)
+    /// instead of a bare `PortError`, so `do_fetch_with_retry` retries only
+    /// genuinely transient failures (408/429/5xx/transport) and fails fast on
+    /// permanent 4xx client errors.
     fn do_fetch(
         agent: &ureq::Agent,
         url: &str,
         headers: &HashMap<String, String>,
-    ) -> Result<Vec<u8>, PortError> {
+    ) -> Result<Vec<u8>, FetchFailure> {
         let mut req = agent.get(url);
         for (k, v) in headers {
             req = req.set(k, v);
         }
 
-        let resp = req.call().map_err(map_ureq_error)?;
+        let resp = req.call().map_err(classify_ureq_error)?;
 
         let mut data = Vec::new();
         resp.into_reader()
             .read_to_end(&mut data)
-            .map_err(|e| PortError::Network(format!("Failed to read response body: {}", e)))?;
+            .map_err(|e| FetchFailure {
+                // A mid-body read error (connection reset, truncated response)
+                // is transient — retrying may succeed.
+                err: PortError::Network(format!("Failed to read response body: {}", e)),
+                transient: true,
+            })?;
 
         Ok(data)
     }
@@ -193,15 +203,17 @@ impl HttpTileFetcher {
         for attempt in 0..=retry_count {
             match Self::do_fetch(agent, url, headers) {
                 Ok(data) => return Ok(data),
-                Err(e) => {
-                    let is_transient = matches!(
-                        &e,
-                        PortError::Network(_)
-                    );
-                    if !is_transient {
-                        return Err(e);
+                Err(failure) => {
+                    // L2 review fix: retry only transient failures. The pre-fix
+                    // `matches!(&e, PortError::Network(_))` retried *every*
+                    // non-404 status (map_ureq_error folds them all into
+                    // Network), so a permanent 400/401/403 was retried
+                    // pointlessly. `classify_ureq_error` now flags 408/429/5xx/
+                    // transport as transient and everything else as permanent.
+                    if !failure.transient {
+                        return Err(failure.err);
                     }
-                    last_err = Some(e);
+                    last_err = Some(failure.err);
                     if attempt < retry_count {
                         std::thread::sleep(Duration::from_millis(
                             100 * (attempt as u64 + 1),
@@ -237,17 +249,31 @@ impl HttpTileFetcher {
         descriptor: &FetchDescriptor,
         gate_enabled: bool,
     ) -> PortResult<Vec<u8>> {
-        if descriptor.is_data_uri {
-            return cesium_resource::data_uri::decode_data_uri_bytes(&descriptor.url)
-                .map_err(|e| PortError::Decode(format!("data URI decode failed: {e:?}")));
-        }
+        // L4 review fix: reject a non-GET method *before* the data-URI
+        // short-circuit, so a `data:` descriptor carrying a non-GET method
+        // can't slip past the method guard. (Every `Resource::fetch_*`/`post`
+        // builder that emits a data URI uses GET, so this reorders the guard
+        // without changing golden-path behavior.)
         if !matches!(descriptor.method, HttpMethod::Get) {
             return Err(PortError::Network(format!(
                 "M8.4 backend executes GET only; {:?} awaits a NetworkBackend trait extension",
                 descriptor.method
             )));
         }
-        if gate_enabled {
+        if descriptor.is_data_uri {
+            return cesium_resource::data_uri::decode_data_uri_bytes(&descriptor.url)
+                .map_err(|e| PortError::Decode(format!("data URI decode failed: {e:?}")));
+        }
+        // H2 review fix (interim, option b): the gate-ON backend path
+        // (`NetworkResourceBackend::fetch_url_blocking`) forwards only
+        // url + priority — it drops `descriptor.headers` (which may carry an
+        // Authorization / Ion token) and `descriptor.retry`. Until the
+        // `NetworkBackend` trait grows headers/retry parameters (deferred #41),
+        // route any request that actually carries headers through the
+        // byte-identical direct path so no credential is silently lost. A
+        // header-less request still enjoys the shared pool + cache hierarchy.
+        let has_headers = !descriptor.headers.is_empty() || !self.headers.is_empty();
+        if gate_enabled && !has_headers {
             self.resource_backend
                 .fetch_url_blocking(&descriptor.url, descriptor.priority)
         } else {
@@ -344,7 +370,13 @@ impl TileFetcher for HttpTileFetcher {
             // WorkerPool → UreqBackend); gate OFF takes the pre-M8.3 direct
             // ureq path (`do_fetch_with_retry`) so the v0 baseline stays
             // byte-identical.
-            let result = if use_backend {
+            // H2 review fix (interim, option b): mirror
+            // `execute_descriptor_gated`. The gate-ON backend path forwards only
+            // url + priority, so a fetcher configured with headers (e.g. an
+            // Authorization / Ion token via `with_header`) would lose them.
+            // Route header-bearing fetches through the direct path until the
+            // backend grows a headers parameter (deferred #41).
+            let result = if use_backend && headers.is_empty() {
                 backend.fetch_url_blocking(&url_owned, priority)
             } else {
                 Self::do_fetch_with_retry(&agent, &url_owned, &headers, retry_count)
@@ -386,6 +418,42 @@ fn map_ureq_error(err: ureq::Error) -> PortError {
                 PortError::Network(format!("Transport error: {}", msg))
             }
         }
+    }
+}
+
+/// A fetch failure paired with its retry classification (L2 review fix).
+///
+/// The pre-fix retry loop inferred "transient" from
+/// `matches!(err, PortError::Network(_))`, but [`map_ureq_error`] folds *every*
+/// non-404 HTTP status into `PortError::Network` — so a permanent 4xx (400 bad
+/// request, 401/403 auth) was pointlessly retried. Carrying an explicit
+/// `transient` flag lets [`HttpTileFetcher::do_fetch_with_retry`] retry only
+/// genuinely retryable failures and fail fast on the rest.
+struct FetchFailure {
+    /// The error to surface to the caller.
+    err: PortError,
+    /// Whether the failure is worth retrying.
+    transient: bool,
+}
+
+/// Classifies a ureq error into a [`FetchFailure`] (L2 review fix).
+///
+/// * HTTP 408 (request timeout) / 429 (too many requests) / 5xx → transient.
+/// * HTTP 404 → `PortError::NotFound`, non-transient.
+/// * any other 4xx → `PortError::Network`, non-transient (a client error won't
+///   fix itself on retry).
+/// * transport errors (DNS, connect, read timeout) → transient.
+///
+/// The `err` payload reuses [`map_ureq_error`] so the surfaced error variants
+/// are unchanged from pre-fix; only the retry decision is corrected.
+fn classify_ureq_error(err: ureq::Error) -> FetchFailure {
+    let transient = match &err {
+        ureq::Error::Status(code, _) => *code == 408 || *code == 429 || *code >= 500,
+        ureq::Error::Transport(_) => true,
+    };
+    FetchFailure {
+        err: map_ureq_error(err),
+        transient,
     }
 }
 
@@ -700,6 +768,140 @@ mod tests {
         assert!(
             fetcher.resource_backend.fetch_count() > before,
             "gate ON must route through the backend"
+        );
+    }
+
+    /// Offline HTTP server returning `body` (200) only when the request head
+    /// carries `required_header` (case-insensitive substring match); otherwise
+    /// 403. Proves the H2 fallback actually transmits descriptor headers that
+    /// the gate-ON backend path would drop.
+    fn spawn_header_gate_server(required_header: &'static str, body: &'static [u8]) -> String {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let port = listener.local_addr().expect("local_addr").port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
+                let mut buf = [0u8; 4096];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let head = String::from_utf8_lossy(&buf[..n]).to_lowercase();
+                let (status, payload): (&str, &[u8]) =
+                    if head.contains(&required_header.to_lowercase()) {
+                        ("200 OK", body)
+                    } else {
+                        ("403 Forbidden", b"missing-header")
+                    };
+                let resp_head = format!(
+                    "HTTP/1.1 {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    status,
+                    payload.len()
+                );
+                if stream.write_all(resp_head.as_bytes()).is_err() {
+                    return;
+                }
+                if stream.write_all(payload).is_err() {
+                    return;
+                }
+                let _ = stream.flush();
+            }
+        });
+        format!("http://127.0.0.1:{port}/tile")
+    }
+
+    #[test]
+    fn gate_on_with_headers_falls_back_to_direct_and_sends_them() {
+        // H2 review fix: a descriptor carrying headers must NOT lose them on
+        // the gate-ON path. The server returns the body only when the
+        // `X-Ion-Token` header arrives, so receiving the body proves the
+        // interim fallback to the direct path transmitted it; `fetch_count`
+        // staying put proves the request bypassed the header-dropping backend.
+        let url = spawn_header_gate_server("X-Ion-Token: secret", b"authorized-tile");
+        let fetcher = HttpTileFetcher::new("");
+        let resource = cesium_resource::Resource::new(&url).with_header("X-Ion-Token", "secret");
+        let descriptor = resource.fetch_array_buffer(None);
+        assert!(
+            !descriptor.headers.is_empty(),
+            "descriptor must carry the token header"
+        );
+
+        let before = fetcher.resource_backend.fetch_count();
+        // gate ON (injected) but headers present -> interim fallback to direct.
+        let out = fetcher
+            .execute_descriptor_gated(&descriptor, true)
+            .expect("header-bearing gate-ON request falls back to direct and succeeds");
+        assert_eq!(out, b"authorized-tile");
+        assert_eq!(
+            fetcher.resource_backend.fetch_count(),
+            before,
+            "header-bearing request must bypass the header-dropping backend path"
+        );
+    }
+
+    #[test]
+    fn non_get_data_uri_descriptor_rejected_before_short_circuit() {
+        // L4 review fix: the method guard now runs BEFORE the data-URI
+        // short-circuit, so a non-GET descriptor carrying a `data:` URL is
+        // rejected with a Network error instead of silently decoding. Pre-fix
+        // the data-URI branch fired first and returned the decoded bytes for a
+        // POST. (All `Resource::fetch_*` data-URI builders emit GET; only the
+        // nonsensical `post()`-on-data-URI path reaches this guard.)
+        let fetcher = HttpTileFetcher::new("");
+        let resource = cesium_resource::Resource::new("data:application/octet-stream;base64,QUJD");
+        let descriptor = resource.post(vec![1, 2, 3], None);
+        assert!(descriptor.is_data_uri, "data: URL still flagged");
+        assert!(matches!(descriptor.method, HttpMethod::Post));
+        let err = fetcher
+            .execute_descriptor_gated(&descriptor, false)
+            .unwrap_err();
+        assert!(
+            matches!(err, PortError::Network(_)),
+            "non-GET rejected before the data-URI decode, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn permanent_4xx_fails_fast_without_retry() {
+        // L2 review fix: a permanent 4xx (here 400 Bad Request) is classified
+        // non-transient, so `do_fetch_with_retry` fails fast on the FIRST
+        // attempt instead of retrying `retry_count` times. The server counts
+        // hits; exactly one proves no retry. (408/429/5xx stay transient and
+        // would be retried.)
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let hits = Arc::new(AtomicUsize::new(0));
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let port = listener.local_addr().expect("local_addr").port();
+        let hits_srv = Arc::clone(&hits);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                hits_srv.fetch_add(1, Ordering::SeqCst);
+                let head =
+                    "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                if stream.write_all(head.as_bytes()).is_err() {
+                    return;
+                }
+                let _ = stream.flush();
+            }
+        });
+        let url = format!("http://127.0.0.1:{port}/tile");
+        let agent = ureq::AgentBuilder::new()
+            .timeout_read(Duration::from_secs(5))
+            .build();
+        let headers: HashMap<String, String> = HashMap::new();
+        let err = HttpTileFetcher::do_fetch_with_retry(&agent, &url, &headers, 3).unwrap_err();
+        assert!(
+            matches!(err, PortError::Network(_)),
+            "400 surfaces a Network error, got {err:?}"
+        );
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            1,
+            "permanent 4xx must NOT be retried (exactly one server hit)"
         );
     }
 }

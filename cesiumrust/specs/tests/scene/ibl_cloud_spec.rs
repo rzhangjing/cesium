@@ -81,9 +81,51 @@ fn ibl_compute_diffuse_zero_factor() {
 
 #[test]
 fn ibl_compute_specular_default() {
+    // Value-pin the CURRENT placeholder contract exactly (see the DEVIATION note
+    // on `compute_specular_ibl` / docs/deviations.md#dev-024): a fixed neutral
+    // environment tint `[0.1, 0.1, 0.12]` scaled by the specular factor (1.0).
+    // Deliberately NOT the old weak `result[0] > 0.0`, which the placeholder
+    // passed trivially and which could not distinguish placeholder from a real
+    // prefilter. When deferred #54 lands the real roughness-driven prefilter, the
+    // `#[ignore]`d dependence specs below take over and this pin is replaced.
     let ibl = ImageBasedLighting::default();
     let result = ibl.compute_specular_ibl(DVec3::Y, 0.5);
-    assert!(result[0] > 0.0);
+    assert_eq!(result, [0.1, 0.1, 0.12]);
+}
+
+#[test]
+#[ignore = "awaiting deferred #54 real prefilter — placeholder returns a constant, so roughness/reflection dependence cannot hold yet"]
+fn ibl_compute_specular_scales_linearly_with_specular_factor() {
+    // A real prefiltered sample is linear in the specular IBL factor.
+    let mut ibl = ImageBasedLighting::default();
+    ibl.set_factor(1.0, 0.5);
+    let half = ibl.compute_specular_ibl(DVec3::Y, 0.5);
+    ibl.set_factor(1.0, 1.0);
+    let full = ibl.compute_specular_ibl(DVec3::Y, 0.5);
+    for c in 0..3 {
+        assert!((full[c] - 2.0 * half[c]).abs() < 1e-12, "factor linearity {c}");
+    }
+}
+
+#[test]
+#[ignore = "awaiting deferred #54 real prefilter — placeholder ignores roughness entirely"]
+fn ibl_compute_specular_varies_with_roughness() {
+    // A real prefilter changes with roughness (roughness→mip selection); the
+    // placeholder returns a constant regardless, so this fails today by design.
+    let ibl = ImageBasedLighting::default();
+    let smooth = ibl.compute_specular_ibl(DVec3::Y, 0.05);
+    let rough = ibl.compute_specular_ibl(DVec3::Y, 0.95);
+    assert_ne!(smooth, rough, "specular must depend on roughness");
+}
+
+#[test]
+#[ignore = "awaiting deferred #54 real prefilter — placeholder ignores the reflection direction entirely"]
+fn ibl_compute_specular_varies_with_reflection_direction() {
+    // Different reflection directions sample different parts of the environment.
+    let ibl = ImageBasedLighting::default();
+    let up = ibl.compute_specular_ibl(DVec3::Z, 0.5);
+    let side = ibl.compute_specular_ibl(DVec3::X, 0.5);
+    assert_ne!(up, side, "specular must depend on the reflection direction");
 }
 
 #[test]

@@ -34,7 +34,13 @@ pub use geocoder::{
     GeocodeType, GeocoderAttribution, GeocoderDestination, GeocoderResult,
     GeocoderService, MockGeocoderService, get_credits_from_result,
 };
-pub use ibl::{ImageBasedLighting, default_spherical_harmonics, SH_COEFFICIENT_COUNT};
+pub use ibl::{
+    default_spherical_harmonics, fibonacci_sphere, fresnel_schlick2, ggx_ndf, hammersley2d,
+    importance_sample_ggx, integrate_brdf, prefilter_specular, project_irradiance_to_sh,
+    radical_inverse_vdc, sh_polynomial_basis, smith_visibility_ggx, spherical_harmonics,
+    texture_ibl, IblMaterial, ImageBasedLighting, IRRADIANCE_ZONAL_BY_BAND,
+    SH_COEFFICIENT_COUNT, SH_ORTHONORMAL_CONSTANTS,
+};
 pub use oit::{BlendEquation, BlendFunction, OitCapabilities, OitConfig, OitMode};
 pub use panorama::{
     CubeMapPanorama, EquirectangularPanorama, PanoramaProvider, DEFAULT_PANORAMA_RADIUS,

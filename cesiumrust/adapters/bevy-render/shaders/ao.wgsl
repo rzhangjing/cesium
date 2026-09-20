@@ -37,6 +37,11 @@
 //
 // domain f64 → WGSL f32 boundary; glam fast-math is disabled repo-wide (no reliance
 // on non-IEEE float behaviour here).
+//
+// Bevy reversed-Z: Bevy 0.15.3 uses an infinite-far reversed-Z depth buffer
+// (projection.rs `perspective_infinite_reverse_rh`; `Camera3dDepthLoadOp::default()`
+// = `Clear(0.0)`), so SKY / far plane == depth 0.0 and the near plane == 1.0. The
+// generate pass therefore early-outs on `depth <= 1e-6` (sky), NOT `depth >= 1.0`.
 
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
 #import bevy_render::view::View
@@ -98,14 +103,31 @@ fn hemisphere_kernel(i: i32) -> vec3<f32> {
     return v * scale;
 }
 
+// Integer bit-mix (Wang hash) — avalanche so adjacent pixels decorrelate.
+fn wang_hash(seed: u32) -> u32 {
+    var h = seed;
+    h = (h ^ 61u) ^ (h >> 16u);
+    h = h + (h << 3u);
+    h = h ^ (h >> 4u);
+    h = h * 0x27d4eb2du;
+    h = h ^ (h >> 15u);
+    return h;
+}
+
 // Deterministic per-pixel rotation noise (replaces CesiumJS `randomTexture`,
 // AmbientOcclusionGenerate.glsl L83-86) — avoids a separate noise texture.
+//
+// Ryan L1: the old hash `x*12 + y*57 == 3(4x + 19y)` produced a ~19px diagonal
+// lattice; replaced with coprime primes + a Wang bit-mix.
+// Ryan M4: emits a TRUE 3-D rotation vector (the old z was hard-0, which
+// degenerated the Gram-Schmidt TBN build when the view-space normal lies near the
+// xy-plane — the silhouette / grazing-angle region where AO is most visible).
 fn pixel_noise(pixel: vec2<i32>) -> vec3<f32> {
-    let n = f32(pixel.x * 12 + pixel.y * 57);
-    let r1 = fract(sin(n * 12.9898) * 43758.5453);
-    let r2 = fract(sin(n * 78.2331) * 12543.6789);
-    // Tangent-space rotation vector (z unused → 0); normalised in the TBN build.
-    return vec3<f32>(r1 * 2.0 - 1.0, r2 * 2.0 - 1.0, 0.0);
+    let base = (u32(pixel.x) * 73856093u) ^ (u32(pixel.y) * 19349663u);
+    let r1 = f32(wang_hash(base) & 0xffffu) * (1.0 / 65535.0);
+    let r2 = f32(wang_hash(base + 0x9e3779b9u) & 0xffffu) * (1.0 / 65535.0);
+    let r3 = f32(wang_hash(base + 0x85ebca6bu) & 0xffffu) * (1.0 / 65535.0);
+    return vec3<f32>(r1, r2, r3) * 2.0 - 1.0;
 }
 
 // Reconstruct view-space position from the depth prepass.
@@ -138,9 +160,12 @@ fn fragment_generate(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let uv = in.uv;
 
     let depth = textureSampleLevel(depth_prepass, point_sampler, uv, 0.0);
-    // Sky / far plane → no occlusion (ao = 1.0), matches CesiumJS early-out
-    // (AmbientOcclusionGenerate.glsl L61-65, out_FragColor = vec4(1.0)).
-    if depth >= 1.0 {
+    // Ryan M1 (reversed-Z): sky / infinite far plane == depth 0.0 in Bevy 0.15.3.
+    // Early-out → no occlusion (ao = 1.0), matching CesiumJS
+    // (AmbientOcclusionGenerate.glsl L61-65, out_FragColor = vec4(1.0)). The prior
+    // `depth >= 1.0` predicate was inverted (it fired only on the unreachable near
+    // plane, letting real sky fall through to reconstruct_view_position(0.0)).
+    if depth <= 1.0e-6 {
         return vec4<f32>(1.0, 1.0, 1.0, 1.0);
     }
 
@@ -149,10 +174,28 @@ fn fragment_generate(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
 
     // Build a TBN matrix aligning tangent-space +z with the view-space normal,
     // rotated per-pixel by the noise vector to decorrelate the kernel.
-    var random_vec = pixel_noise(pixel);
-    let tangent = normalize(random_vec - normal * dot(random_vec, normal));
-    let bitangent = cross(normal, tangent);
-    let tbn = mat3x3<f32>(tangent, bitangent, normal);
+    let random_vec = pixel_noise(pixel);
+    // Gram-Schmidt: tangent = random_vec projected onto the plane ⊥ normal.
+    var tangent = random_vec - normal * dot(random_vec, normal);
+    // Ryan M4 degeneracy guard: if random_vec is (near) parallel to normal the
+    // residual collapses and normalize(0) = NaN, which the 4×4 box blur then
+    // spreads to neighbours. Fall back to the Cartesian axis least aligned with
+    // the normal (guarantees a non-degenerate orthogonalisation).
+    if dot(tangent, tangent) < 1e-8 {
+        let an = abs(normal);
+        var helper = vec3<f32>(1.0, 0.0, 0.0);
+        if an.x <= an.y && an.x <= an.z {
+            helper = vec3<f32>(1.0, 0.0, 0.0);
+        } else if an.y <= an.z {
+            helper = vec3<f32>(0.0, 1.0, 0.0);
+        } else {
+            helper = vec3<f32>(0.0, 0.0, 1.0);
+        }
+        tangent = helper - normal * dot(helper, normal);
+    }
+    let tangent_n = normalize(tangent);
+    let bitangent = cross(normal, tangent_n);
+    let tbn = mat3x3<f32>(tangent_n, bitangent, normal);
 
     var occlusion = 0.0;
     for (var i = 0; i < SAMPLE_COUNT; i = i + 1) {
@@ -164,11 +207,20 @@ fn fragment_generate(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         // Project the sample back to screen space.
         let offset = vec4<f32>(sample_pos, 1.0);
         let clip = view.clip_from_view * offset;
+        // Ryan L2: reject samples behind the camera (clip.w <= 0). Without this the
+        // perspective divide flips the UV instead of culling it, sampling the wrong
+        // side of the screen.
+        if clip.w <= 1.0e-6 {
+            continue;
+        }
         var sample_uv = (clip.xy / clip.w) * 0.5 + 0.5;
         sample_uv.y = 1.0 - sample_uv.y;   // flip to texture space
 
-        if sample_uv.x < 0.0 || sample_uv.x > 1.0 || sample_uv.y < 0.0 || sample_uv.y > 1.0 {
-            continue;                       // off-screen → no contribution
+        // Ryan M4/L1 NaN-safe bounds check: a non-finite coordinate fails every
+        // `>=`/`<=` comparison, so negating the conjunction discards NaN/inf samples
+        // as well as genuine off-screen ones.
+        if !(sample_uv.x >= 0.0 && sample_uv.x <= 1.0 && sample_uv.y >= 0.0 && sample_uv.y <= 1.0) {
+            continue;                       // off-screen / non-finite → no contribution
         }
 
         let sample_depth = textureSampleLevel(depth_prepass, point_sampler, sample_uv, 0.0);

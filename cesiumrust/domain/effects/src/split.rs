@@ -103,6 +103,10 @@ impl SplitterConfig {
     /// Modify a fragment shader to include split logic.
     ///
     /// Returns the additional shader code to insert.
+    ///
+    /// **GLSL form** — mirrors upstream `SplitDirection.js` / `czm_splitPosition`,
+    /// using `gl_FragCoord` (pixel space) and `discard`. Kept verbatim for the
+    /// GLSL blueprint parity test.
     pub fn shader_modification(&self) -> &str {
         if self.enabled {
             r#"
@@ -113,6 +117,36 @@ impl SplitterConfig {
     }
     if (v_splitDirection > 0.0 && gl_FragCoord.x <= splitPosition) {
         discard;
+    }
+"#
+        } else {
+            ""
+        }
+    }
+
+    /// WGSL form of [`Self::shader_modification`] for the Bevy/wgpu backend.
+    ///
+    /// Two mechanical differences from the GLSL source, both forced by the
+    /// target language (recorded as `docs/deviations.md#dev-034`):
+    /// - WGSL has no `discard` statement; the idiomatic equivalent is an early
+    ///   `return` from the fragment entry point before the colour output is
+    ///   written (leaves the render-target sample untouched, matching `discard`).
+    /// - `gl_FragCoord` becomes the `@builtin(position)` builtin (also in pixel
+    ///   space, `.xy` from the top-left), and `czm_splitPosition` becomes a plain
+    ///   `split_position_px` scalar (the adapter multiplies the `[0, 1]` fraction
+    ///   by the viewport width before packing it).
+    ///
+    /// `split_direction` is the per-primitive varying (`-1`/`0`/`1`, exactly the
+    /// values [`SplitDirection::to_shader_value`] produces).
+    pub fn wgsl_shader_modification(&self) -> &str {
+        if self.enabled {
+            r#"
+    // Split direction check (WGSL)
+    if (split_direction < 0.0 && position.x > split_position_px) {
+        return;
+    }
+    if (split_direction > 0.0 && position.x <= split_position_px) {
+        return;
     }
 "#
         } else {
@@ -220,6 +254,27 @@ mod tests {
         let shader = enabled.shader_modification();
         assert!(shader.contains("czm_splitPosition"));
         assert!(shader.contains("discard"));
+    }
+
+    #[test]
+    fn test_splitter_wgsl_shader_modification() {
+        // The WGSL variant must be empty when disabled, exactly like the GLSL one.
+        let disabled = SplitterConfig::default();
+        assert_eq!(disabled.wgsl_shader_modification(), "");
+
+        let enabled = SplitterConfig::new(true, 0.5);
+        let shader = enabled.wgsl_shader_modification();
+        // WGSL has no `discard` / `gl_FragCoord` / `czm_` — the whole point of the
+        // variant is that it uses the target-language spellings instead.
+        assert!(!shader.contains("discard"), "WGSL must not use GLSL `discard`");
+        assert!(
+            !shader.contains("gl_FragCoord"),
+            "WGSL must not reference `gl_FragCoord`"
+        );
+        assert!(shader.contains("position.x"), "uses the `position` builtin");
+        assert!(shader.contains("return;"), "early-return replaces `discard`");
+        assert!(shader.contains("split_position_px"));
+        assert!(shader.contains("split_direction"));
     }
 
     #[test]

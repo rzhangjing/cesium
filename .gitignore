@@ -46,3 +46,12 @@ GoogleConfig.json
 # cesiumrust
 /cesiumrust/.mimocode/
 /cesiumrust/target/
+
+# cesiumrust 阶段八工作区清理：根级一次性 spike / 代理转储产物（§6.3 游离产物）。
+# `_m11_3_spike/`（M11.3 可行性 spike，含 target/，目录非删除交后续硬件轮）、
+# `acp/`（代理 ledger 数据库）以及根级 clippy/临时日志：均非交付物，按约定
+# 仅写作用域受限的根锚定模式，不用裸 `*.log`。
+/_m11_3_spike/
+/acp/
+/_adibl.log
+/clippy_*.log

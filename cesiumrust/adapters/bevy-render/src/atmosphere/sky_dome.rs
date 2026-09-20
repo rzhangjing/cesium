@@ -7,8 +7,14 @@
 //! (`czm_computeScattering` + `czm_computeAtmosphereColor`). This module is the
 //! cesiumrust counterpart:
 //!
-//! * [`build_sky_dome_mesh`] — the dome geometry (a UV sphere of
-//!   [`SKY_DOME_RADIUS`] render units, rendered from the inside).
+//! * [`build_sky_dome_mesh`] — the dome geometry: a **geodesic icosphere**
+//!   (`Sphere::ico`, not a UV sphere) of [`SKY_DOME_RADIUS`] render units,
+//!   rendered from the inside. At [`SKY_DOME_SUBDIVISIONS`] = 5 that is
+//!   `20·(s+1)²` = 720 triangles and, by Euler, `10·(s+1)²+2` = **362
+//!   vertices**; the coarse 12° edges are harmless because the fragment shader
+//!   normalises `world_position - camera`, which reproduces the great-circle
+//!   direction exactly from a chord midpoint (residual error is second order in
+//!   the edge angle, ~0.008° ≈ ¼ px on a 1920 px / 60° frame).
 //! * [`SkyDomeMaterial`] — the Bevy `Material` binding
 //!   [`sky_atmosphere.wgsl`](super) at `@group(2) @binding(0)`.
 //! * [`SkyAtmosphereParams`] — the uniform block, holding every physical
@@ -61,9 +67,9 @@
 //! 3. **single shell** — `cull_mode = Some(Face::Front)` (via
 //!    [`SkyDomeMaterial::specialize`]) keeps only the far hemisphere, so the
 //!    scattering integral is never applied twice along a ray. Same trick as
-//!    `atmosphere_glow.rs`.
+//!    `application/cesium-app/src/atmosphere_glow.rs` L83.
 //!
-//! Logged as `docs/deviations.md#dev-018`.
+//! Logged as `docs/deviations.md#dev-021`.
 //!
 //! # Units
 //! `1 render unit = METERS_PER_RENDER_UNIT = 6_378_137 m`. Lengths are divided
@@ -185,6 +191,16 @@ pub const LIGHT_STEPS_MAX: u32 = 4;
 /// the bind group is not dirtied every frame under `FIXED_TIME`.
 const SUN_UNIFORM_EPSILON_SQ: f32 = 1.0e-12;
 
+/// Mirror of `sky_atmosphere.wgsl::DEGENERATE_DIRECTION_EPSILON` (the D9 guard).
+/// At or below this, `direction.dot(direction)` counts as zero and
+/// [`ray_sphere_interval_f32`] reports a miss instead of dividing by `2*a = 0`.
+///
+/// Both production directions reaching that function are normalised first
+/// (`ray_direction` in the fragment head, `sun_direction` in
+/// [`update_sun_direction`]), so the value is either 1.0 or exactly 0.0 and the
+/// threshold only has to separate those two.
+pub const DEGENERATE_DIRECTION_EPSILON: f32 = 1.0e-12;
+
 // ---------------------------------------------------------------------------
 // Uniform block
 // ---------------------------------------------------------------------------
@@ -262,12 +278,23 @@ impl SkyAtmosphereParams {
     /// unit-invariant (see the module docs and
     /// [`tests::unit_invariance_optical_depth_and_density`]).
     ///
-    /// `sun_direction` is left at `Vec3::ZERO` and filled per frame by
+    /// `sun_direction` is seeded to `Vec3::X` — the same value
+    /// [`LightingParams::default()`](super::celestial_system::LightingParams)
+    /// carries — and refreshed per frame by
     /// [`super::sky_system::sky_system`] from `LightingParams`.
+    ///
+    /// It must never be `Vec3::ZERO`. The light-ray sphere intersection divides
+    /// by `2 * dot(direction, direction)`, so a zero direction makes that `0/0 =
+    /// NaN`; `max(interval.y, 0.0)` does not filter it (`NaN < 0.0` is false),
+    /// and under `AlphaMode::Premultiplied` the NaN alpha smears over the whole
+    /// sky before bloom/FXAA spread it further. See the WGSL `D9` note.
+    /// [`ray_sphere_interval_f32`] now guards against it, but seeding a
+    /// *degenerate* value into a field that is divided by was the actual defect:
+    /// the guard is defence in depth, this is the fix.
     pub fn from_domain(p: &AtmosphereParameters) -> Self {
         let mpu = METERS_PER_RENDER_UNIT;
         Self {
-            sun_direction: Vec3::ZERO,
+            sun_direction: Vec3::X,
             // lengths: metres -> render units
             inner_radius: (p.inner_radius / mpu) as f32,
             outer_radius: (p.outer_radius / mpu) as f32,
@@ -317,11 +344,22 @@ impl Material for SkyDomeMaterial {
         ShaderRef::Handle(SKY_ATMOSPHERE_SHADER_HANDLE)
     }
 
-    /// Premultiplied so the fragment's per-channel transmittance composites the
-    /// starfield/globe behind the dome as `dst = radiance + dst * transmittance`
-    /// — the physically-correct single-scattering composite. Also forces
-    /// `depth_write_enabled = false` and routes the mesh into `Transparent3d`,
-    /// which is what lets the opaque globe occlude the dome via the depth test.
+    /// Premultiplied so the fragment's in-scattered radiance composites over the
+    /// starfield/globe behind the dome as `dst = radiance + dst * (1 - alpha)`.
+    ///
+    /// Note what is and is not per-channel here (the WGSL `D3` note carries the
+    /// same correction): the **in-scattering** is per-channel and is added
+    /// unattenuated, which is the physically-correct single-scattering
+    /// composite. The **background attenuation** is not — `Premultiplied` carries
+    /// a *scalar* alpha, so whatever sits behind the dome is extinguished by
+    /// `1 - mean(transmittance)`, one number for all three channels. The
+    /// per-channel transmittance vec3 is computed because the physics says so and
+    /// the CPU mirror/tests check it, but only its arithmetic mean reaches the
+    /// framebuffer.
+    ///
+    /// `Premultiplied` also forces `depth_write_enabled = false` and routes the
+    /// mesh into `Transparent3d`, which is what lets the opaque globe occlude the
+    /// dome via the depth test.
     fn alpha_mode(&self) -> AlphaMode {
         AlphaMode::Premultiplied
     }
@@ -358,7 +396,7 @@ impl Material for SkyDomeMaterial {
 /// `Face::Front` because the camera is always *inside* the dome
 /// ([`SKY_DOME_RADIUS`] > `orbit_camera`'s 20.0 max distance): the near
 /// hemisphere is front-facing and gets culled, leaving exactly one shell along
-/// every ray. Same trick as `atmosphere_glow.rs` L83.
+/// every ray. Same trick as `application/cesium-app/src/atmosphere_glow.rs` L83.
 pub fn sky_dome_cull_mode() -> Option<Face> {
     Some(Face::Front)
 }
@@ -380,8 +418,9 @@ pub struct SkyDome;
 /// and the horizon stays closed for every camera orientation (a fixed hemisphere
 /// would leave a hole whenever the camera looks away from its axis).
 ///
-/// `SphereKind::Ico` is the same builder `atmosphere_glow.rs` already uses, and
-/// emits the attribute set `MeshPipeline::specialize` requests.
+/// `SphereKind::Ico` is the same builder the app-layer glow shell uses
+/// (`application/cesium-app/src/atmosphere_glow.rs`), and it emits the attribute
+/// set `MeshPipeline::specialize` requests.
 pub fn build_sky_dome_mesh(meshes: &mut Assets<Mesh>) -> Handle<Mesh> {
     meshes.add(build_sky_dome_mesh_asset())
 }
@@ -394,7 +433,7 @@ pub fn build_sky_dome_mesh_asset() -> Mesh {
         .ico(SKY_DOME_SUBDIVISIONS)
         // Infallible for these constants: `ico` only rejects a non-finite radius
         // or a subdivision level above 16. Same `.expect` shape as
-        // `atmosphere_glow.rs` L54.
+        // `application/cesium-app/src/atmosphere_glow.rs` L54.
         .expect("sky dome icosphere subdivision failed")
 }
 
@@ -466,6 +505,11 @@ pub fn approximate_tanh_f32(x: f32) -> f32 {
 pub fn ray_sphere_interval_f32(origin: Vec3, direction: Vec3, radius: f32) -> (f32, f32) {
     let oc = origin;
     let a = direction.dot(direction);
+    // D9 (see the WGSL header): `two_a` below would be exactly 0.0, and `b`/`det`
+    // exactly 0.0 too, so `t0 = (-0 - 0) / 0` = NaN. Report a miss instead.
+    if a < DEGENERATE_DIRECTION_EPSILON {
+        return (1.0, -1.0);
+    }
     let b = 2.0 * direction.dot(oc);
     let radius_sq = radius * radius;
     let oc_sq = oc.dot(oc);
@@ -600,8 +644,14 @@ pub struct SkyShading {
     /// In-scattered radiance (`computeAtmosphereColor.glsl` L41), exposure-scaled.
     pub radiance: Vec3,
     /// Per-channel transmittance (the D3 rewrite of `computeScattering.glsl` L148).
+    /// Computed per channel because that is what the physics says, but only its
+    /// mean reaches the framebuffer — see [`SkyShading::alpha`].
     pub transmittance: Vec3,
-    /// `1 - mean(transmittance)`, clamped (the premultiplied-alpha scalar).
+    /// `1 - mean(transmittance)`, clamped. This is the **scalar** the
+    /// `AlphaMode::Premultiplied` blend actually uses to attenuate the background
+    /// (an L1/3 collapse, where blueprint B1 L148 uses the L2 `length()`), so the
+    /// per-channel [`SkyShading::transmittance`] above does *not* extinguish the
+    /// starfield channel by channel.
     pub alpha: f32,
     /// The march that produced it.
     pub march: ScatteringMarch,
@@ -632,10 +682,12 @@ pub fn march_single_scattering_f32(
         return None;
     }
 
-    // L64-65, D2 rewrite: dimensionless camera height.
+    // L64-65, D2 rewrite: dimensionless camera height. D8 floors it at sea
+    // level so the surface case is exactly 0.5 rather than one f32 ulp either
+    // side of it (which would make B1 L66's truncation round 10 down to 9).
     let thickness = params.thickness();
     let origin_radius = ray_origin.length();
-    let camera_height = origin_radius - params.inner_radius;
+    let camera_height = (origin_radius - params.inner_radius).max(0.0);
     let camera_height_norm = camera_height / thickness;
     let w_tanh = approximate_tanh_f32(camera_height_norm);
     let w_inside_atmosphere = 1.0 - 0.5 * (1.0 + w_tanh);
@@ -652,10 +704,15 @@ pub fn march_single_scattering_f32(
     let total_ray_length = stop - ray_position_length;
     let tri = (primary_steps * (primary_steps + 1)) as f32;
     let half_tri = tri * 0.5;
-    let one_minus_w = 1.0 - w_inside_atmosphere;
-    let ramp_numerator = one_minus_w * total_ray_length;
+    let one_minus_w_inside = 1.0 - w_inside_atmosphere;
+    // L74 drives the ramp with `1.0 - w_stop_gt_lprl`, NOT with the camera
+    // altitude weight: see the WGSL comment for why substituting it here would
+    // silently disable the horizon/sky step-split strategy.
+    let one_minus_w_stop = 1.0 - w_stop_gt_lprl;
+    let ramp_numerator = one_minus_w_stop * total_ray_length;
     let ray_step_length_increase = w_inside_atmosphere * (ramp_numerator / half_tri);
-    let base_weight = one_minus_w.max(w_stop_gt_lprl);
+    // L75.
+    let base_weight = one_minus_w_inside.max(w_stop_gt_lprl);
     let base_numerator = base_weight * total_ray_length;
     let base_denominator = (7.0 * w_inside_atmosphere).max(primary_steps as f32);
     let ray_step_length = base_numerator / base_denominator;
@@ -688,20 +745,26 @@ pub fn march_single_scattering_f32(
         let light_direction = params.sun_direction;
         let light_interval =
             ray_sphere_interval_f32(sample_position, light_direction, params.outer_radius);
-        let light_span = (light_interval.1 - light_interval.0).max(0.0);
-        let light_step_length = light_span / light_steps as f32;
+        // L105 divides `.stop` alone, not `stop - start`: the light ray always
+        // starts inside the outer shell, so `start` is negative and subtracting
+        // it would march past the atmosphere boundary. See the WGSL comment.
+        let light_stop = light_interval.1.max(0.0);
+        let light_step_length = light_stop / light_steps as f32;
 
         // L111-130.
         let mut light_optical_depth = Vec2::ZERO;
         let mut light_cursor = 0.0_f32;
         for _ in 0..light_steps {
-            light_cursor += light_step_length;
-            let light_position = sample_position + light_direction * light_cursor;
+            // L120 samples the *midpoint* of each segment.
+            let light_sample_length = light_cursor + light_step_length * 0.5;
+            let light_position = sample_position + light_direction * light_sample_length;
             let light_radius = light_position.length();
             // D7: the light ray crosses the Earth for every shadowed sample.
             let light_height = (light_radius - params.inner_radius).max(0.0);
             let light_neg_h_over_scale = -light_height / height_scale;
             light_optical_depth += light_neg_h_over_scale.exp() * light_step_length;
+            // L129: the cursor advances *after* the sample is taken.
+            light_cursor += light_step_length;
         }
 
         // L133: two-way (primary + light) extinction, per channel.
@@ -717,9 +780,12 @@ pub fn march_single_scattering_f32(
         rayleigh_accumulation += rayleigh_contribution;
         mie_accumulation += mie_contribution;
 
-        // L140.
-        cursor += step_length;
+        // L140: `rayPositionLength += (rayStepLength += rayStepLengthIncrease)`.
+        // The inner `+=` is sequenced first, so the step grows before the cursor
+        // advances by it. The opposite order shifts every sample after the first
+        // by one increment (~5 km cumulative at the surface).
         step_length += ray_step_length_increase;
+        cursor += step_length;
     }
 
     Some(ScatteringMarch {
@@ -760,10 +826,16 @@ pub fn shade_sky_f32(
     let rayleigh_scattered = rayleigh_color * rayleigh_p;
     let mie_scattered = mie_color * mie_p;
     let scattered = rayleigh_scattered + mie_scattered;
+    // Bind the scalar gain first: `scattered * (solar * exposure)`. Multiplying
+    // left-to-right (`(scattered * solar) * exposure`, which is what the WGSL
+    // fragment used to write) is a different f32 rounding — up to 1 ULP apart.
+    // f32 multiplication is commutative but not associative.
     let gain = params.solar_intensity * exposure;
     let radiance = scattered * gain;
 
-    // D3: per-channel transmittance, scalar alpha from its mean.
+    // D3: in-scattering stays per-channel; the *background* attenuation is the
+    // scalar below, because `AlphaMode::Premultiplied` blends with one alpha. L1/3
+    // mean here, L2 `length()` in blueprint B1 L148 — both scalar.
     let total_mie_depth = params.mie_coefficient * march.optical_depth.y;
     let total_rayleigh_depth = betas * march.optical_depth.x;
     let extinction = total_mie_depth + total_rayleigh_depth;
@@ -805,12 +877,55 @@ mod tests {
     /// (`entity/time_system.rs` L67-74). `FIXED_TIME` freezes the clock at its
     /// start, so this Julian date is what *every* `v2_sky` baseline shot is
     /// captured under — the single input the whole capture depends on.
-    const FROZEN_JULIAN_DATE: f64 = 2_460_310.5;
+    ///
+    /// It is read off the clock rather than spelled out as the nominal
+    /// `2_460_310.5` because `JulianDate::from_date_components` converts UTC to
+    /// **TAI** (`domain/time/src/julian_date.rs` L248-249), and TAI-UTC was 37 s
+    /// in 2024, so the clock publishes `2_460_310.5004282407`. That is the number
+    /// `celestial_system` hands to `compute_sun_direction_eci`, and that function
+    /// consumes its argument verbatim (`domain/atmosphere/src/celestial.rs` L29-30
+    /// — no TAI->UTC conversion), so a literal UTC Julian date here would
+    /// desynchronise the `v2_sky` poses from the sky the render actually paints by
+    /// 37 s of solar motion. At the sun's mean ECI rate of 360 deg per tropical
+    /// year that is 7.4e-6 rad, or 4.2e-4 deg — sub-pixel on a 1920 px / 60 deg
+    /// frame, so it would not have been visible, but it would still have been
+    /// *wrong*, and every number derived from it (the CPU reference in
+    /// `gpu_params`, the six TOML poses) would have carried the same offset.
+    /// Reading the clock makes the two co-sourced by construction, and turns the
+    /// epoch assertion below from a tolerance into an exact bit comparison.
+    fn frozen_julian_date() -> f64 {
+        AnimationClock::default().current_time().total_days()
+    }
 
-    /// The sun direction at [`FROZEN_JULIAN_DATE`], spelled out so that any drift
+    /// The sun direction at [`frozen_julian_date`], spelled out so that any drift
     /// in `compute_sun_direction_eci` fails here loudly instead of silently
     /// invalidating all six `specs/scripts/v2_sky.toml` shots.
-    const FROZEN_SUN_DIRECTION: [f64; 3] = [0.174_500_86, -0.903_426_49, -0.391_624_86];
+    ///
+    /// **Reverse anchor for `docs/deferred.md` #46 (domain TAI->UTC, planned M13).**
+    /// This value is baked in *at the adapter boundary* on top of a known domain
+    /// defect: `compute_sun_direction_eci` consumes its Julian-date argument
+    /// verbatim, whereas CesiumJS
+    /// `Simon1994PlanetaryPositions.computeSunPositionInEarthInertialFrame` opens
+    /// with `julianDate = JulianDate.toUtc(julianDate)`. `AnimationClock` hands
+    /// over a **TAI** date (`JulianDate::from_date_components` converts UTC->TAI,
+    /// 37 s in 2024), so every sun direction in this module is systematically
+    /// offset by 37 s of solar motion — 7.4e-6 rad, 4.2e-4 deg, ~0.014 px on a
+    /// 1920 px / 60 deg frame. Visually nil, numerically not zero.
+    ///
+    /// Freezing the *offset* value is precisely what makes `v2_sky` internally
+    /// consistent today: the six TOML poses, the CPU reference in [`gpu_params`]
+    /// and the sky the render paints all share one epoch. The coupling runs both
+    /// ways, so when M13 adds the missing TAI->UTC conversion to
+    /// `domain/atmosphere`, this constant **must be re-derived and the six
+    /// `specs/baselines/v2_sky` shots re-captured in the same change**. Fixing
+    /// only the domain would leave the anchor — and therefore
+    /// [`tests::sky_baseline_poses_encode_the_three_lighting_regimes`] and every
+    /// TOML pose — silently pinned to the pre-fix sky.
+    ///
+    /// The trip-wire is deliberate: [`tests::frozen_sun_direction_is_the_baseline_constant`]
+    /// goes red the moment the domain changes. That red means **"the baseline is
+    /// stale, re-derive and re-capture"**, not "revert the domain fix".
+    const FROZEN_SUN_DIRECTION: [f64; 3] = [0.174_508_36, -0.903_425_27, -0.391_624_33];
 
     /// `orbit_camera`'s distance bounds, restated here because the adapter layer
     /// cannot import the application layer (DDD). Source:
@@ -818,8 +933,8 @@ mod tests {
     const ORBIT_MAX_DISTANCE: f32 = 20.0;
     /// `main.rs`'s perspective far plane.
     const CAMERA_FAR: f32 = 200.0;
-    /// The star sphere radius `atmosphere_glow.rs` spawns; the starfield must
-    /// shell the dome so the dome's transmittance can extinguish it.
+    /// The star sphere radius spawned by `application/cesium-app/src/starfield.rs` L114; the
+    /// starfield must shell the dome so the dome's transmittance can extinguish it.
     const STARFIELD_RADIUS: f32 = 50.0;
 
     /// `sky_atmosphere.wgsl` with CRLF normalised, so multi-line `contains`
@@ -840,7 +955,7 @@ mod tests {
     }
 
     fn frozen_sun() -> DVec3 {
-        compute_sun_direction_eci(FROZEN_JULIAN_DATE)
+        compute_sun_direction_eci(frozen_julian_date())
     }
 
     fn vec3_of(v: DVec3) -> Vec3 {
@@ -986,10 +1101,33 @@ mod tests {
         let domain = AtmosphereParameters::default();
         let gpu = SkyAtmosphereParams::from_domain(&domain);
 
+        // The red line, stated as a *derivation* rather than a decimal literal:
+        // every metre-valued field must arrive divided by METERS_PER_RENDER_UNIT.
+        // `MPU` is restated here instead of read from `crate::resources`, so the
+        // constant itself is pinned by this test too, and `rel_err` gives the
+        // comparison exactly the f32 budget (1 ulp = 6e-8 relative) it needs -- a
+        // hand-rounded decimal literal is coarser than the f32 it is compared to.
+        const MPU: f64 = 6_378_137.0;
+        assert_eq!(domain.inner_radius, 6_378_137.0, "WGS84 semi-major axis");
+        assert_eq!(domain.outer_radius, 6_478_137.0, "inner + ATMOSPHERE_HEIGHT = 100 km");
+        assert_eq!(domain.rayleigh_scale_height, 8_000.0);
+        assert_eq!(domain.mie_scale_height, 1_200.0);
         assert_eq!(gpu.inner_radius, 1.0, "the Earth radius is the render unit by definition");
-        assert!((gpu.outer_radius - 1.015_678_6).abs() < 1.0e-6, "{}", gpu.outer_radius);
-        assert!((gpu.rayleigh_scale_height - 1.254_286e-3).abs() < 1.0e-9, "{}", gpu.rayleigh_scale_height);
-        assert!((gpu.mie_scale_height - 1.881_429e-4).abs() < 1.0e-10, "{}", gpu.mie_scale_height);
+        assert!(
+            rel_err(f64::from(gpu.outer_radius), domain.outer_radius / MPU) < 1.0e-7,
+            "{}",
+            gpu.outer_radius
+        );
+        assert!(
+            rel_err(f64::from(gpu.rayleigh_scale_height), domain.rayleigh_scale_height / MPU) < 1.0e-7,
+            "{}",
+            gpu.rayleigh_scale_height
+        );
+        assert!(
+            rel_err(f64::from(gpu.mie_scale_height), domain.mie_scale_height / MPU) < 1.0e-7,
+            "{}",
+            gpu.mie_scale_height
+        );
         assert!((gpu.rayleigh_coefficient.x - 36.9932).abs() < 1.0e-3, "{}", gpu.rayleigh_coefficient.x);
         assert!((gpu.rayleigh_coefficient.y - 86.1048).abs() < 1.0e-3, "{}", gpu.rayleigh_coefficient.y);
         assert!((gpu.rayleigh_coefficient.z - 211.1165).abs() < 1.0e-2, "{}", gpu.rayleigh_coefficient.z);
@@ -1004,8 +1142,16 @@ mod tests {
         assert_eq!(gpu.mode, MODE_RAYMARCH);
         assert_eq!(gpu.primary_steps_max, PRIMARY_STEPS_MAX);
         assert_eq!(gpu.light_steps_max, LIGHT_STEPS_MAX);
-        // the sun is not `from_domain`'s business
-        assert_eq!(gpu.sun_direction, Vec3::ZERO);
+        // the sun is not `from_domain`'s business, but the seed must not be
+        // degenerate: it is divided by inside `ray_sphere_interval_f32` (WGSL D9),
+        // and `Vec3::X` is what `LightingParams::default()` carries, so a dome
+        // spawned before `sky_system` refreshes the uniform shades a real sky
+        // rather than a NaN one.
+        assert_eq!(gpu.sun_direction, Vec3::X);
+        assert!(
+            gpu.sun_direction.length_squared() >= DEGENERATE_DIRECTION_EPSILON,
+            "the seed must never trip the D9 degenerate-direction guard"
+        );
         // padding stays zero so the 80-byte upload is deterministic
         assert_eq!((gpu.pad0, gpu.pad1, gpu.pad2), (0.0, 0, 0));
     }
@@ -1152,6 +1298,134 @@ mod tests {
         assert!(stop - start < 1.0e-6, "a tangent ray must have a zero-length interval, got ({start}, {stop})");
     }
 
+    /// Ryan H1 / WGSL `D9`. [`ray_sphere_interval_f32`] divides by
+    /// `2 * dot(direction, direction)`, so a zero-length direction makes that
+    /// `0/0`. The un-guarded form is transcribed here verbatim to prove the NaN
+    /// is real rather than theoretical, and the shipped function must return the
+    /// finite miss sentinel instead.
+    ///
+    /// Why a NaN here is catastrophic rather than cosmetic: the light-ray
+    /// interval feeds `max(interval.stop, 0.0)`, and `max` (WGSL and glam alike)
+    /// returns its **first** argument unless `e1 < e2` — `NaN < 0.0` is false, so
+    /// the NaN passes straight through into the step length, the accumulators and
+    /// `radiance`. Under `AlphaMode::Premultiplied` a NaN alpha smears over the
+    /// whole sky, and the bloom / FXAA neighbourhood taps then carry it into
+    /// pixels that never looked at the degenerate ray at all.
+    #[test]
+    fn a_degenerate_direction_returns_the_empty_interval_instead_of_nan() {
+        let outer = gpu_params().outer_radius;
+
+        /// Blueprint B4 (`raySphereIntersectionInterval.glsl`) exactly as written,
+        /// i.e. what this function was before the `D9` guard.
+        fn unguarded(origin: Vec3, direction: Vec3, radius: f32) -> (f32, f32) {
+            let oc = origin;
+            let a = direction.dot(direction);
+            let b = 2.0 * direction.dot(oc);
+            let c = oc.dot(oc) - radius * radius;
+            let det = b * b - 4.0 * a * c;
+            if det < 0.0 {
+                return (1.0, -1.0);
+            }
+            let sqrt_det = det.sqrt();
+            let two_a = 2.0 * a;
+            ((-b - sqrt_det) / two_a, (-b + sqrt_det) / two_a)
+        }
+
+        // Every origin the light ray is ever cast from: inside the shell (all
+        // march samples) and outside it. `a = b = det = 0` for all of them, so the
+        // `det < 0.0` early-out never fires and the division is reached.
+        for origin in [
+            Vec3::ZERO,
+            Vec3::new(0.0, 0.0, 1.001),
+            Vec3::new(0.0, 0.0, 3.0),
+            Vec3::X * (outer + 0.5),
+            -Vec3::Y * (outer * 2.0),
+        ] {
+            let (before_start, before_stop) = unguarded(origin, Vec3::ZERO, outer);
+            assert!(
+                before_start.is_nan() && before_stop.is_nan(),
+                "the un-guarded form must produce the NaN `D9` describes, got ({before_start}, {before_stop})"
+            );
+
+            let (start, stop) = ray_sphere_interval_f32(origin, Vec3::ZERO, outer);
+            assert!(
+                start.is_finite() && stop.is_finite(),
+                "H1 regression: NaN escaped the guard for origin {origin:?}, got ({start}, {stop})"
+            );
+            assert_eq!(
+                (start, stop),
+                (1.0, -1.0),
+                "a degenerate direction has no interval to report, so the caller must read it as a miss"
+            );
+        }
+
+        // The guard must not swallow any *non*-degenerate direction, however short:
+        // `a` is compared against 1e-12, i.e. |direction| < 1e-6, and both
+        // production directions are normalised to |d| = 1.
+        for scale in [1.0e-3_f32, 1.0e-4, 1.0e-5, 1.0] {
+            let direction = Vec3::NEG_Z * scale;
+            assert!(
+                direction.dot(direction) >= DEGENERATE_DIRECTION_EPSILON,
+                "scale {scale} must stay above the guard"
+            );
+            let (start, stop) = ray_sphere_interval_f32(Vec3::new(0.0, 0.0, 3.0), direction, outer);
+            assert!(start.is_finite() && stop.is_finite(), "scale {scale}: ({start}, {stop})");
+            assert!(stop > start, "a merely short direction is still a real ray: ({start}, {stop})");
+        }
+    }
+
+    /// Ryan H1 end to end through the mode-0 pipeline: with
+    /// `sun_direction == Vec3::ZERO` in the uniform — what [`SkyAtmosphereParams::from_domain`]
+    /// used to seed, and what [`update_sun_direction`] still writes through if
+    /// `LightingParams::sun_direction` is ever degenerate (it normalises with
+    /// `normalize_or_zero()`) — every accumulator must stay finite.
+    #[test]
+    fn a_zero_sun_direction_leaves_the_whole_march_finite() {
+        let params = SkyAtmosphereParams {
+            sun_direction: Vec3::ZERO,
+            ..gpu_params()
+        };
+        let origin = Vec3::new(0.0, 0.0, params.inner_radius + 0.001);
+        let direction = Vec3::Y;
+
+        // the primary direction is a genuine unit vector, so the shell is hit and
+        // the march runs; only the *light* ray is degenerate
+        let march = march_single_scattering_f32(origin, direction, SKY_DOME_RADIUS, &params)
+            .expect("the primary ray must still intersect the shell");
+        for value in [
+            march.optical_depth.x,
+            march.optical_depth.y,
+            march.rayleigh_accumulation.x,
+            march.rayleigh_accumulation.y,
+            march.rayleigh_accumulation.z,
+            march.mie_accumulation.x,
+            march.mie_accumulation.y,
+            march.mie_accumulation.z,
+        ] {
+            assert!(value.is_finite(), "H1 regression: NaN escaped the march accumulators");
+        }
+
+        let shading = shade_sky_f32(origin, direction, SKY_DOME_RADIUS, &params, 1.0)
+            .expect("as above");
+        assert!(shading.radiance.is_finite(), "H1 regression: {shading:?}");
+        assert!(shading.transmittance.is_finite(), "H1 regression: {shading:?}");
+        assert!(
+            shading.alpha.is_finite() && (0.0..=1.0).contains(&shading.alpha),
+            "a NaN alpha is what poisons the premultiplied blend: {shading:?}"
+        );
+
+        // The light ray reports a miss, so its optical depth contributes nothing
+        // and the degenerate case degrades to "no shadowing computed" — visibly
+        // wrong, finite, and recoverable on the next frame. That is the whole
+        // point of preferring a sentinel over a NaN.
+        let healthy = shade_sky_f32(origin, direction, SKY_DOME_RADIUS, &gpu_params(), 1.0)
+            .expect("as above");
+        println!(
+            "zero-sun radiance {:?} alpha {:.6} | healthy radiance {:?} alpha {:.6}",
+            shading.radiance, shading.alpha, healthy.radiance, healthy.alpha
+        );
+    }
+
     // -- the shader source contract -------------------------------------------
 
     /// The task's hard requirement (plan L152 + risk table L347): the shader
@@ -1187,7 +1461,7 @@ mod tests {
             assert!(header.contains(line_ref), "the header must cite blueprint line `{line_ref}`");
         }
         // every deliberate departure is documented and numbered
-        for index in 1..=7 {
+        for index in 1..=9 {
             let marker = format!("// D{index} ");
             assert!(header.contains(&marker), "deviation D{index} must be documented in the header");
         }
@@ -1196,7 +1470,7 @@ mod tests {
         // the two maths red lines are stated in the shader itself
         assert!(header.contains("METERS_PER_RENDER_UNIT = 6378137"));
         assert!(header.contains("NO FMA CONTRACTION"));
-        assert!(header.contains("docs/deviations.md#dev-018"));
+        assert!(header.contains("docs/deviations.md#dev-021"));
     }
 
     /// The shader's structural contract with Bevy, plus the no-FMA red line.
@@ -1238,6 +1512,17 @@ mod tests {
         // D7: both density evaluations are floored at sea level
         assert!(source.contains("let sample_height = max(sample_radius - params.inner_radius, 0.0);"));
         assert!(source.contains("let light_height = max(light_radius - params.inner_radius, 0.0);"));
+        // D9 (Ryan H1): the light-ray direction is divided by, so a degenerate one
+        // must be rejected before `2*a` reaches zero
+        assert!(
+            source.contains("const DEGENERATE_DIRECTION_EPSILON: f32 = 1.0e-12;"),
+            "the guard threshold must be a named const, bit-equal to the Rust mirror's"
+        );
+        assert!(source.contains("if (a < DEGENERATE_DIRECTION_EPSILON) {"));
+        assert!(
+            source.contains("let a = dot(direction, direction);"),
+            "the guard must sit on the same `a` that becomes `two_a`"
+        );
     }
 
     /// Stubs for the two `#import`s. naga has no preprocessor, so they are
@@ -1355,7 +1640,7 @@ struct View {
             (12u32, 16u32), // vec3<f32>
             (4, 4), (4, 4), (4, 4), (4, 4), (4, 4),
             (12, 16), // vec3<f32>
-            (4, 4), (4, 4), (4, 4), (4, 4), (4, 4), (4, 4), (4, 4), (4, 4),
+            (4, 4), (4, 4), (4, 4), (4, 4), (4, 4), (4, 4), (4, 4), (4, 4), (4, 4),
         ];
         let mut cursor = 0u32;
         let mut computed = Vec::with_capacity(sizes_aligns.len());
@@ -1402,6 +1687,7 @@ struct View {
             ("RAYLEIGH_PHASE_K", RAYLEIGH_PHASE_K),
             ("MIE_PHASE_K_BLUEPRINT", MIE_PHASE_K_BLUEPRINT),
             ("HORIZON_SPLIT_SHARPNESS", HORIZON_SPLIT_SHARPNESS),
+            ("DEGENERATE_DIRECTION_EPSILON", DEGENERATE_DIRECTION_EPSILON),
         ] {
             let literal = const_literal(&format!("const {name}: f32 ="));
             let wgsl_value: f32 = literal
@@ -1430,19 +1716,128 @@ struct View {
         assert_eq!(MIE_PHASE_K_DOMAIN.to_bits(), ((1.0_f64 / (4.0 * std::f64::consts::PI)) as f32).to_bits());
     }
 
+    /// Ryan M2. `scattered * solar * exposure` associates as
+    /// `(scattered*solar)*exposure`; the Rust mirror binds `gain = solar*exposure`
+    /// first. f32 multiplication is commutative but NOT associative, so the two
+    /// can differ. This pins the WGSL to the mirror's order — so a future
+    /// GPU-vs-CPU parity probe on **mode 0** (which does carry `view.exposure`,
+    /// unlike the mode-1 closed-form probe) cannot produce an unexplained
+    /// last-bit mismatch — and measures how large the discrepancy actually is.
+    #[test]
+    fn the_gain_association_is_pinned_to_the_rust_mirror() {
+        // (1) source contract
+        let source = wgsl();
+        assert!(
+            source.contains("let gain = params.solar_intensity * view.exposure;"),
+            "the fragment tail must bind the scalar gain exactly as shade_sky_f32 does"
+        );
+        assert!(source.contains("let radiance = scattered * gain;"));
+        assert!(
+            !source.contains("scattered * params.solar_intensity * view.exposure"),
+            "the un-associated form must not come back: it is (scattered*solar)*exposure, \
+             a different f32 rounding from the Rust mirror's scattered*(solar*exposure)"
+        );
+        assert!(
+            wgsl_header().contains("not associative"),
+            "the header op-for-op rule must document the association clause"
+        );
+
+        // (2) magnitude: deterministic xorshift64 scan (no RNG, so the witness set
+        //     is identical on every run and every platform) over normal positive
+        //     f32 triples spanning 2^-7 .. 2^5.
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        let mut xorshift = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let normal_f32 = |bits: u64| {
+            let exponent = (bits % 13) << 23; // biased exponent field 120..=132
+            let mantissa = (bits >> 8) & 0x007F_FFFF;
+            f32::from_bits(0x3C00_0000 + exponent as u32 + mantissa as u32)
+        };
+        let mut differing = 0_u64;
+        let mut worst_ulps = 0_i64;
+        let mut worst_rel = 0.0_f64;
+        for _ in 0..200_000 {
+            let scattered = normal_f32(xorshift());
+            let solar = normal_f32(xorshift());
+            let exposure = normal_f32(xorshift());
+            let left_to_right = (scattered * solar) * exposure; // what the WGSL used to write
+            let gain_first = scattered * (solar * exposure); // what shade_sky_f32 writes
+            if left_to_right.to_bits() != gain_first.to_bits() {
+                differing += 1;
+                worst_ulps = worst_ulps.max(
+                    i64::from(left_to_right.to_bits() as i32 - gain_first.to_bits() as i32).abs(),
+                );
+                let rel = (f64::from(left_to_right) - f64::from(gain_first)).abs()
+                    / f64::from(gain_first);
+                worst_rel = worst_rel.max(rel);
+            }
+        }
+        println!(
+            "gain re-association: {differing}/200000 triples differ, worst {worst_ulps} ULP, worst rel {worst_rel:.3e}"
+        );
+        assert!(differing > 0, "the scan must actually find witnesses, or it proves nothing");
+        // Two extra roundings, so the strict bound is 2*f32::EPSILON relative
+        // (= 2^-22), which at the smallest relative ulp (2^-24) is **4 ULP** --
+        // not the 1 ULP the review note estimated. Asserted with margin.
+        assert!(
+            worst_rel <= 3.0 * f64::from(f32::EPSILON),
+            "re-association must cost at most two roundings, got rel {worst_rel:.3e}"
+        );
+        assert!(worst_ulps <= 4, "worst {worst_ulps} ULP exceeds the two-rounding bound");
+    }
+
     // -- geometry / material / gate -------------------------------------------
+
+    /// The radius the *spawned mesh* actually carries, read back off its vertex
+    /// buffer.
+    ///
+    /// Going through the mesh rather than comparing [`SKY_DOME_RADIUS`] against
+    /// the neighbouring constants matters twice over: a const-vs-const
+    /// comparison is folded at compile time (so it asserts nothing at runtime and
+    /// trips `clippy::assertions_on_constants`), and only the vertex buffer can
+    /// catch `build_sky_dome_mesh_asset` drifting away from the documented
+    /// radius.
+    fn dome_mesh_radius() -> f32 {
+        let mesh = build_sky_dome_mesh_asset();
+        let VertexAttributeValues::Float32x3(positions) = mesh
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .expect("the dome mesh must carry positions")
+        else {
+            panic!("dome positions must be Float32x3");
+        };
+        positions
+            .iter()
+            .map(|position| Vec3::from_slice(position).length())
+            .fold(0.0_f32, f32::max)
+    }
 
     #[test]
     fn dome_radius_fits_between_the_camera_and_the_starfield() {
         let gpu = gpu_params();
-        assert!(SKY_DOME_RADIUS > ORBIT_MAX_DISTANCE, "the camera must always be inside the dome");
-        assert!(SKY_DOME_RADIUS < STARFIELD_RADIUS, "the dome must stay inside the starfield so the stars can be extinguished by it");
-        assert!(SKY_DOME_RADIUS < CAMERA_FAR, "the dome must not be clipped by the far plane");
-        assert!(SKY_DOME_RADIUS > gpu.outer_radius, "the dome must geometrically enclose the modelled atmosphere");
+        let mesh_radius = dome_mesh_radius();
+        assert!(mesh_radius > ORBIT_MAX_DISTANCE, "the camera must always be inside the dome");
+        assert!(mesh_radius < STARFIELD_RADIUS, "the dome must stay inside the starfield so the stars can be extinguished by it");
+        assert!(mesh_radius < CAMERA_FAR, "the dome must not be clipped by the far plane");
+        assert!(mesh_radius > gpu.outer_radius, "the dome must geometrically enclose the modelled atmosphere");
+        // not `assert_eq!`: Bevy's geodesic builder normalises each vertex in f32
+        // and *then* scales by the radius, so the buffer overshoots by ~1 ulp
+        // (40.000004 against a documented 40.0).
+        assert!(
+            (mesh_radius - SKY_DOME_RADIUS).abs() < 1.0e-4,
+            "the spawned mesh must carry the documented radius, got {mesh_radius}"
+        );
         // `Transparent3d::sort` is *ascending* on view-space Z (bevy_core_pipeline
         // 0.15 `core_3d/mod.rs` L515-517) and the camera looks down -Z, so
         // ascending == back-to-front and a *positive* bias means "drawn later".
-        assert!(SKY_DOME_DEPTH_BIAS > 0.0, "the bias must be positive to sort the dome after the starfield");
+        // Read through `Material::depth_bias` so the sign check is a runtime fact
+        // about the material the pipeline will actually sort, not a folded const.
+        let bias = SkyDomeMaterial { params: gpu }.depth_bias();
+        assert!(bias > 0.0, "the bias must be positive to sort the dome after the starfield");
+        assert_eq!(bias, SKY_DOME_DEPTH_BIAS);
         assert_eq!(sky_dome_cull_mode(), Some(Face::Front), "only the far shell may be rasterised");
     }
 
@@ -1475,10 +1870,26 @@ struct View {
         else {
             panic!("dome positions must be Float32x3");
         };
+        // Bevy's `ico(s)` is a *geodesic* split -- each of the 20 icosahedral
+        // edges is cut into `s + 1` segments -- so it yields `20 * (s+1)^2`
+        // triangles and, by Euler (`V = F/2 + 2` for a closed triangle shell),
+        // `10 * (s+1)^2 + 2` vertices. Asserting the derivation instead of a
+        // hand-counted literal keeps this honest if the constant is retuned.
+        let segments = SKY_DOME_SUBDIVISIONS + 1;
+        let expected_vertices = 10 * segments * segments + 2;
+        assert_eq!(
+            positions.len(),
+            expected_vertices as usize,
+            "ico({SKY_DOME_SUBDIVISIONS}) must be a closed geodesic shell"
+        );
+        // 12-degree triangle edges, and that is plenty: the fragment shader
+        // normalises `world_position - camera`, and normalising a chord midpoint
+        // reproduces the great-circle direction *exactly*, so the residual
+        // direction error is second order in the edge angle (~0.008 deg, about a
+        // quarter of a pixel on a 1920px / 60deg frame).
         assert!(
-            positions.len() > 1_000,
-            "ico({SKY_DOME_SUBDIVISIONS}) must give a smooth limb, got {} vertices",
-            positions.len()
+            expected_vertices >= 300,
+            "a full-screen dome needs a smooth limb, got {expected_vertices} vertices"
         );
         let mut worst_radius = 0.0_f32;
         for position in positions {
@@ -1822,12 +2233,12 @@ struct View {
     /// numbers here too locks the TOML and the code together: if either drifts,
     /// this test fails and says which shot.
     const BASELINE_SHOT_TABLE: [(&str, u32, [f64; 3], [f32; 4]); 6] = [
-        ("sky_noon_3", 180, [0.523503, -2.710279, -1.174875], [0.0, 0.0, 0.0, 1.0]),
-        ("sky_dusk_3", 360, [0.222810, -1.154279, -0.480657], [0.0, 0.0, 0.0, 1.0]),
-        ("sky_night_3", 540, [-0.523503, 2.710279, 1.174875], [0.0, 0.0, 0.0, 1.0]),
-        ("sky_noon_8", 720, [1.396007, -7.227412, -3.133000], [0.0, 0.0, 0.0, 1.0]),
-        ("sky_dusk_8", 900, [0.594159, -3.078077, -1.281752], [0.0, 0.0, 0.0, 1.0]),
-        ("sky_night_8", 1080, [-1.396007, 7.227412, 3.133000], [0.0, 0.0, 0.0, 1.0]),
+        ("sky_noon_3", 180, [0.523525, -2.710276, -1.174873], [0.830360, 0.079463, 0.052540, 0.549024]),
+        ("sky_dusk_3", 360, [0.222823, -1.153549, 2.760376], [0.127207, 0.154130, -0.623691, 0.755694]),
+        ("sky_night_3", 540, [-0.523525, 2.710276, 1.174873], [-0.052540, 0.549024, 0.830360, -0.079463]),
+        ("sky_noon_8", 720, [1.396067, -7.227402, -3.132995], [0.830360, 0.079463, 0.052540, 0.549024]),
+        ("sky_dusk_8", 900, [0.594195, -3.076132, 7.361002], [0.127207, 0.154130, -0.623691, 0.755694]),
+        ("sky_night_8", 1080, [-1.396067, 7.227402, 3.132995], [-0.052540, 0.549024, 0.830360, -0.079463]),
     ];
 
     #[test]
@@ -1836,6 +2247,10 @@ struct View {
         let sun32 = vec3_of(sun);
         let shots = baseline_shots();
         assert_eq!(shots.len(), 6);
+        // Drift is *collected* rather than asserted in place, so a change to any
+        // of the six poses reports the whole corrected table in one run instead of
+        // failing on the first shot and hiding the other five.
+        let mut drift: Vec<String> = Vec::new();
 
         for (index, (label, frame, distance, position, rotation)) in shots.iter().enumerate() {
             assert_eq!(*frame, 180 * (index as u32 + 1), "{label} must be captured on frame {frame}");
@@ -1865,13 +2280,24 @@ struct View {
 
             // ...and the pose is the one v2_sky.toml carries
             let (toml_label, toml_frame, toml_pos, toml_quat) = BASELINE_SHOT_TABLE[index];
-            assert_eq!(toml_label, label.as_str(), "v2_sky.toml shot {index} name drifted");
-            assert_eq!(toml_frame, *frame, "v2_sky.toml shot {index} frame drifted");
+            let mut drifted = toml_label != label.as_str() || toml_frame != *frame;
             for (axis, want) in [position.x, position.y, position.z].iter().zip(toml_pos) {
-                assert!((axis - want).abs() < 1.0e-6, "{label}: v2_sky.toml pos drifted");
+                drifted |= (axis - want).abs() >= 1.0e-6;
             }
             for (component, want) in [rotation.x, rotation.y, rotation.z, rotation.w].iter().zip(toml_quat) {
-                assert!((component - want).abs() < 1.0e-6, "{label}: v2_sky.toml quat drifted");
+                drifted |= (component - want).abs() >= 1.0e-6;
+            }
+            if drifted {
+                drift.push(format!(
+                    "        (\"{label}\", {frame}, [{:.6}, {:.6}, {:.6}], [{:.6}, {:.6}, {:.6}, {:.6}]),",
+                    position.x,
+                    position.y,
+                    position.z,
+                    rotation.x,
+                    rotation.y,
+                    rotation.z,
+                    rotation.w
+                ));
             }
 
             println!(
@@ -1880,6 +2306,13 @@ struct View {
                 rotation.x, rotation.y, rotation.z, rotation.w
             );
         }
+
+        assert!(
+            drift.is_empty(),
+            "BASELINE_SHOT_TABLE has drifted from the computed poses, so \
+             specs/scripts/v2_sky.toml is stale too. Replace the table rows with:\n{}",
+            drift.join("\n")
+        );
 
         // "dusk" additionally puts the sun on the frame's right axis
         for (label, _, _, _, rotation) in shots.iter().filter(|shot| shot.0.contains("dusk")) {
@@ -1935,6 +2368,24 @@ struct View {
         Color::srgb(r, g, b)
     }
 
+    /// `celestial_system`'s exact publication rule: f64 ECI sun direction ->
+    /// f32 -> renormalise, at the epoch the app's own clock reports.
+    ///
+    /// Deriving the oracle from the *live app* rather than from
+    /// [`frozen_julian_date`] keeps it an oracle for the system, not just for the
+    /// arithmetic: it reproduces `celestial_system`'s publication rule end to end
+    /// (f64 ECI direction -> `as f32` per component -> renormalise), so the
+    /// renormalisation the system performs — and which `vec3_of(frozen_sun())`
+    /// omits — is part of what is being checked. The two now agree on the epoch by
+    /// construction, which is the point of reading the clock in both places.
+    /// Nothing ticks the clock in these headless apps (`time_dynamic_update_system`
+    /// is not part of `CesiumAtmospherePlugin`), so the epoch is stable across
+    /// frames and the value is deterministic.
+    fn published_sun(app: &App) -> Vec3 {
+        let julian_date = app.world().resource::<AnimationClock>().current_time().total_days();
+        vec3_of(compute_sun_direction_eci(julian_date)).normalize_or_zero()
+    }
+
     /// The dev-005 / dev-011 class defect guard: `CesiumAtmospherePlugin` must
     /// build and run frames under `MinimalPlugins` — no `AssetPlugin`, no
     /// `RenderPlugin`, no `Assets<Shader>` — without panicking. That is what
@@ -1973,14 +2424,25 @@ struct View {
         let sky = app.world().resource::<SkyAtmosphere>().clone();
         let clear = app.world().resource::<ClearColor>().0;
 
-        // under the frozen AnimationClock epoch the sun is exactly the v2_sky
-        // baseline sun, which is what makes the capture deterministic
-        let expected_sun = vec3_of(frozen_sun());
+        // `celestial_system` must publish exactly the sun the clock implies...
+        let expected_sun = published_sun(&app);
         assert!(
             (lighting.sun_direction - expected_sun).length() < 1.0e-6,
-            "celestial_system must publish the frozen baseline sun, got {:?} want {:?}",
+            "celestial_system must publish the clock's sun, got {:?} want {:?}",
             lighting.sun_direction,
             expected_sun
+        );
+        // ...and that clock must sit on the v2_sky baseline epoch, which is what
+        // makes a FIXED_TIME capture deterministic and what ties the poses in
+        // `specs/scripts/v2_sky.toml` (built from `frozen_sun()`) to the render.
+        // `frozen_julian_date()` reads `AnimationClock::default()` itself, so this
+        // is exact rather than tolerant: the tolerance is what would let the TOML
+        // poses drift away from the rendered sky unnoticed.
+        let julian_date = app.world().resource::<AnimationClock>().current_time().total_days();
+        assert_eq!(
+            julian_date.to_bits(),
+            frozen_julian_date().to_bits(),
+            "AnimationClock::default() must sit bit-exactly on the v2_sky baseline epoch"
         );
 
         let expected = expected_clear_color(&lighting.sun_direction, &sky.atmosphere_params);
@@ -2022,19 +2484,37 @@ struct View {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         app.add_plugins(AssetPlugin::default());
+        // `AssetPlugin` supplies an `AssetServer` but *not* `Assets<Shader>`; that
+        // storage normally comes from the render stack. `MaterialPlugin` adds
+        // `PrepassPipelinePlugin` internally, whose `build` calls
+        // `load_internal_asset!` and dereferences it unconditionally
+        // (bevy_pbr-0.15.3 `prepass/mod.rs` L70) -- hence the plugin now gates on
+        // `shader_registry::shader_assets_available` too, and this test has to
+        // reproduce what `RenderPlugin` would have inserted. Fully qualified so
+        // no trait import is needed.
+        <App as bevy::asset::AssetApp>::init_asset::<bevy::render::render_resource::Shader>(
+            &mut app,
+        );
+        // `Assets<Mesh>` comes from `MeshPlugin`, likewise part of the render
+        // stack and likewise absent under `AssetPlugin`. `sky_dome_setup` takes it
+        // as `Option<ResMut<_>>` and returns early when it is `None`, so without
+        // this the dome would simply never spawn and the test below would fail on
+        // `dome_count == 1` rather than on the missing storage -- a silent no-op.
+        <App as bevy::asset::AssetApp>::init_asset::<bevy::render::mesh::Mesh>(&mut app);
         app.add_plugins(CesiumAtmospherePlugin);
         app.world_mut().insert_resource(AnimationClock::default());
         app.world_mut().resource_mut::<SkyAtmosphere>().dome = true;
 
         assert!(
             app.world().contains_resource::<Assets<SkyDomeMaterial>>(),
-            "with an AssetServer the plugin must register MaterialPlugin::<SkyDomeMaterial>"
+            "with an AssetServer and Assets<Shader> the plugin must register MaterialPlugin::<SkyDomeMaterial>"
         );
 
         app.update();
         app.update(); // a second frame must not add a second dome
         assert_eq!(dome_count(&app), 1, "exactly one dome must exist");
 
+        let expected_sun = published_sun(&app);
         let handle = dome_material(&app);
         {
             let materials = app.world().resource::<Assets<SkyDomeMaterial>>();
@@ -2043,22 +2523,31 @@ struct View {
             assert_eq!(params.mode, MODE_RAYMARCH, "production must ray-march, not use the parity probe");
             assert_eq!(params.primary_steps_max, PRIMARY_STEPS_MAX);
             assert_eq!(params.light_steps_max, LIGHT_STEPS_MAX);
-            let expected_sun = vec3_of(frozen_sun());
             assert!(
                 (params.sun_direction - expected_sun).length() < 1.0e-6,
-                "sky_system must push the frozen sun, got {:?}",
-                params.sun_direction
+                "sky_system must push the clock's sun into the uniform, got {:?} want {:?}",
+                params.sun_direction,
+                expected_sun
             );
         }
         // re-pushing the same direction must not dirty the material again
         {
             let mut materials = app.world_mut().resource_mut::<Assets<SkyDomeMaterial>>();
-            let expected_sun = vec3_of(frozen_sun());
             assert!(
                 !update_sun_direction(&mut materials, &handle, expected_sun),
-                "FIXED_TIME must leave the bind group untouched after the first frame"
+                "a frozen clock must leave the bind group untouched after the first frame"
             );
             assert!(update_sun_direction(&mut materials, &handle, -expected_sun), "a real change must go through");
+            // The negation above *stuck*, so the stored direction is now
+            // `-expected_sun` and putting it back is itself a real change. Only
+            // once that is done is the stored value `+expected_sun` again, which
+            // is the precondition the rescale check below actually needs --
+            // asserted against `-expected_sun`, `expected_sun * 7.5` normalises to
+            // a direction 2.0 away and is correctly reported as a change.
+            assert!(
+                update_sun_direction(&mut materials, &handle, expected_sun),
+                "restoring the negated direction must go through"
+            );
             assert!(
                 !update_sun_direction(&mut materials, &handle, expected_sun * 7.5),
                 "a rescaled direction normalises to the value already stored"
@@ -2069,6 +2558,121 @@ struct View {
         app.world_mut().resource_mut::<SkyAtmosphere>().dome = false;
         app.update();
         assert_eq!(dome_count(&app), 0, "gate OFF must despawn the dome");
+    }
+
+    // -- Ryan H1 at the app level --------------------------------------------
+
+    /// An app with just enough of the render stack for `MaterialPlugin` to be
+    /// registered: `AssetPlugin` for the `AssetServer`, plus the two `init_asset`
+    /// storages the render stack would normally insert (see
+    /// [`sky_dome_setup_is_idempotent_and_tears_down`] for why both are needed).
+    /// `with_clock = false` reproduces the entry point that has no
+    /// `AnimationClock`, which is the *unbounded* half of Ryan's H1 window.
+    fn asset_backed_app(with_clock: bool) -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.add_plugins(AssetPlugin::default());
+        <App as bevy::asset::AssetApp>::init_asset::<bevy::render::render_resource::Shader>(
+            &mut app,
+        );
+        <App as bevy::asset::AssetApp>::init_asset::<bevy::render::mesh::Mesh>(&mut app);
+        app.add_plugins(CesiumAtmospherePlugin);
+        if with_clock {
+            app.world_mut().insert_resource(AnimationClock::default());
+        }
+        app.world_mut().resource_mut::<SkyAtmosphere>().dome = true;
+        app
+    }
+
+    fn material_params(app: &App, handle: &Handle<SkyDomeMaterial>) -> SkyAtmosphereParams {
+        app.world()
+            .resource::<Assets<SkyDomeMaterial>>()
+            .get(handle)
+            .expect("the dome material must exist")
+            .params
+    }
+
+    /// Ryan H1, spawn frame: the dome material's `sun_direction` must never be
+    /// *observable* in a degenerate state.
+    ///
+    /// Bevy 0.15's `.chain()` applies deferred commands **between** the chained
+    /// systems (bevy_ecs-0.15.4 `schedule/schedule.rs`, the `chain_second` test;
+    /// `chain_ignore_deferred()` is the opt-out), so `sky_system` does see the
+    /// entity `sky_dome_setup` spawned in the same frame and refreshes the uniform
+    /// before render extraction. That is *asserted* here rather than assumed — the
+    /// review note predicted a one-frame `get_single() -> Err` window, and the
+    /// `.chain()` semantics above are what makes that prediction wrong on the
+    /// clocked path. The seed fix (`Vec3::X`) is what covers the routes that do
+    /// remain: a degenerate `LightingParams::sun_direction` passing through
+    /// `normalize_or_zero()`, and the clock-less app below.
+    #[test]
+    fn the_spawn_frame_uniform_is_never_degenerate() {
+        let mut app = asset_backed_app(true);
+        app.update(); // exactly ONE frame
+        assert_eq!(dome_count(&app), 1, "the dome must exist after the first Update");
+        let handle = dome_material(&app);
+        let params = material_params(&app, &handle);
+        let sun = params.sun_direction;
+        assert!(sun.is_finite());
+        assert!(
+            sun.length_squared() >= DEGENERATE_DIRECTION_EPSILON,
+            "the uniform must never be observable in a degenerate state, got {sun:?}"
+        );
+        let expected = published_sun(&app);
+        assert!(
+            (sun - expected).length() < 1.0e-6,
+            "`.chain()` flushes commands between chained systems, so sky_system must already \
+             have refreshed the seed on the spawn frame: got {sun:?} want {expected:?}"
+        );
+        let shading = shade_sky_f32(
+            Vec3::new(0.0, 0.0, params.inner_radius + 0.001),
+            Vec3::Y,
+            SKY_DOME_RADIUS,
+            &params,
+            1.0,
+        )
+        .expect("the zenith ray hits the shell");
+        assert!(
+            shading.radiance.is_finite() && shading.alpha.is_finite(),
+            "spawn-frame sky must be finite: {shading:?}"
+        );
+    }
+
+    /// The **unbounded** half of Ryan H1: with no `AnimationClock`, `sky_system`
+    /// returns at its clock guard (L87-90), so nothing ever refreshes the uniform
+    /// and whatever `from_domain` seeded is what the GPU gets — on *every* frame,
+    /// not for one. Pre-fix that seed was `Vec3::ZERO`, i.e. a permanent NaN sky;
+    /// the seed is now `Vec3::X`, and the D9 guard keeps even a forced ZERO finite.
+    ///
+    /// This is also the gate-toggle case: `SkyAtmosphere::dome` flipping off then
+    /// on despawns and re-spawns through `from_domain`, so the seed is what a
+    /// freshly re-spawned dome carries until the next refresh.
+    #[test]
+    fn without_a_clock_the_seed_survives_and_still_shades_a_finite_sky() {
+        let mut app = asset_backed_app(false);
+        app.update();
+        app.update();
+        app.update();
+        assert_eq!(dome_count(&app), 1);
+        let handle = dome_material(&app);
+        let params = material_params(&app, &handle);
+        assert_eq!(params.sun_direction, Vec3::X, "the seed must survive untouched");
+        assert!(params.sun_direction.length_squared() >= DEGENERATE_DIRECTION_EPSILON);
+        let origin = Vec3::new(0.0, 0.0, params.inner_radius + 0.001);
+        let shading = shade_sky_f32(origin, Vec3::Y, SKY_DOME_RADIUS, &params, 1.0)
+            .expect("the zenith ray hits the shell");
+        assert!(shading.radiance.is_finite(), "got {:?}", shading.radiance);
+        assert!(shading.transmittance.is_finite() && shading.alpha.is_finite());
+
+        // and the pre-fix seed, forced back in, is absorbed by the D9 guard
+        let degenerate = SkyAtmosphereParams {
+            sun_direction: Vec3::ZERO,
+            ..params
+        };
+        let shading = shade_sky_f32(origin, Vec3::Y, SKY_DOME_RADIUS, &degenerate, 1.0)
+            .expect("the primary ray is unaffected by the sun direction");
+        assert!(shading.radiance.is_finite(), "D9 guard regression: {shading:?}");
+        assert!(shading.alpha.is_finite(), "D9 guard regression: {shading:?}");
     }
 }
 

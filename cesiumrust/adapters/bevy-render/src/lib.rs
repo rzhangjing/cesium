@@ -30,6 +30,7 @@ pub mod vector;
 pub mod shadow;
 pub mod widgets;
 pub mod pipeline;
+pub mod headless;
 
 pub use camera::{
     camera_control_port_system, CameraControlImpl, CameraControlPort, CameraState, CesiumCamera,
@@ -73,7 +74,7 @@ pub use tileset::picking::{TilePickEvent, TilePickingPlugin};
 
 pub use atmosphere::CesiumAtmospherePlugin;
 pub use effects::{CesiumEffectsPlugin, PostProcessConfig, CesiumParticlePlugin};
-pub use effects::oit::{OITPlugin, OitConfig, SplitConfig};
+// pub use effects::oit::{OITPlugin, OitConfig, SplitConfig}; // FIX-P0-OIT: isolated.
 pub use voxel::{CesiumVoxelPlugin, VoxelConfig, VoxelPrimitiveComponent, VoxelPrimitiveType};
 pub use vector::{CesiumVectorTilePlugin, CesiumWktPlugin, VectorTileConfig, WktLoadQueue};
 pub use shadow::{CesiumShadowPlugin, ShadowConfig, ShadowState, ShadowCaster};

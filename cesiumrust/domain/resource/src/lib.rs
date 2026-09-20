@@ -164,7 +164,11 @@ struct PrioritizedRequest {
 
 impl PartialEq for PrioritizedRequest {
     fn eq(&self, other: &Self) -> bool {
-        self.priority == other.priority
+        // M1 review fix: use `total_cmp` so `eq` agrees with `Ord::cmp` even
+        // for NaN priorities. The pre-fix impl used `==` here (false for NaN)
+        // while `cmp` used `partial_cmp().unwrap_or(Equal)` (Equal for NaN),
+        // violating the `Ord`/`Eq` consistency law `a.cmp(b) == Equal <=> a == b`.
+        self.priority.total_cmp(&other.priority) == Ordering::Equal
     }
 }
 
@@ -178,11 +182,31 @@ impl PartialOrd for PrioritizedRequest {
 
 impl Ord for PrioritizedRequest {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Reverse ordering for min-heap (lower priority value = higher priority)
-        other
-            .priority
-            .partial_cmp(&self.priority)
-            .unwrap_or(Ordering::Equal)
+        // Reverse ordering for min-heap (lower priority value = higher
+        // priority). M1 review fix: `total_cmp` gives NaN a deterministic
+        // position in the total order (positive NaN sorts above `+inf`), so a
+        // NaN-priority request naturally sinks to the bottom of the min-heap
+        // and can never corrupt the `BinaryHeap` invariant. The pre-fix
+        // `partial_cmp().unwrap_or(Equal)` made NaN compare `Equal` to every
+        // value, breaking the heap's total-order contract.
+        other.priority.total_cmp(&self.priority)
+    }
+}
+
+/// Clamps a priority value for safe heap insertion (M1 review fix).
+///
+/// A NaN priority — reachable in practice when a composite priority sums
+/// `f64::MAX`-magnitude components to `inf` and then `inf + (-inf)` — would
+/// violate the `BinaryHeap` total-order invariant. Mapping NaN to `f64::MAX`
+/// sinks such a request to the *bottom* of the min-heap (lowest priority) so
+/// it never disturbs the ordering of well-formed priorities. Finite values
+/// (including `±inf`) pass through unchanged; combined with the `total_cmp`
+/// `Ord` impl this is defence-in-depth for the NaN path.
+fn sanitize_priority(priority: f64) -> f64 {
+    if priority.is_nan() {
+        f64::MAX
+    } else {
+        priority
     }
 }
 
@@ -343,7 +367,9 @@ impl RequestScheduler {
             request.state = RequestState::Issued;
             self.pending_heap.push(PrioritizedRequest {
                 id,
-                priority: request.priority,
+                // M1 review fix: guard against a NaN priority corrupting the
+                // heap's total order (NaN sinks to the bottom as `f64::MAX`).
+                priority: sanitize_priority(request.priority),
             });
             self.active_requests.insert(id, request);
             Some(id)
@@ -390,7 +416,8 @@ impl RequestScheduler {
             let evicted = entries.remove(worst_idx);
             entries.push(PrioritizedRequest {
                 id,
-                priority: request.priority,
+                // M1 review fix: NaN → f64::MAX sink-to-bottom guard.
+                priority: sanitize_priority(request.priority),
             });
             for e in entries {
                 self.pending_heap.push(e);
@@ -504,23 +531,52 @@ impl RequestScheduler {
         self.statistics.snapshot_last_active();
         self.promote_deferred();
 
-        // Try to activate pending requests
+        // Activate pending requests. Mirrors CesiumJS `RequestScheduler.update`
+        // (packages/engine/Source/Core/RequestScheduler.js L320-340): the loop
+        // TERMINATES only when the GLOBAL slot budget is exhausted. A heap-top
+        // whose OWN server is saturated is SKIPPED — popped and parked back
+        // into the deferred queue for a later frame — and the scan CONTINUES,
+        // so pending requests bound for OTHER servers with open slots are still
+        // activated. The pre-fix code `break`-ed on any `can_activate == false`,
+        // conflating "global budget full" with "this request's server full": a
+        // single saturated server sitting at the heap top then starved every
+        // other server's backlog for the whole frame (H1 review fix).
         while let Some(prioritized) = self.pending_heap.peek() {
+            // Global budget exhausted → nothing more can activate this frame.
+            if !self.global_has_slots() {
+                break;
+            }
             let id = prioritized.id;
-            if let Some(request) = self.active_requests.get(&id) {
-                if self.can_activate(request) {
-                    let request = self.active_requests.get_mut(&id).unwrap();
-                    request.state = RequestState::Active;
-                    let server_key = request.server_key.clone();
-                    let rtype = request.request_type;
-                    self.pending_heap.pop();
-                    *self.active_count_by_server.entry(server_key.clone()).or_insert(0) += 1;
-                    self.statistics.on_activated(&server_key, rtype);
-                } else {
-                    break;
-                }
-            } else {
+            let Some(request) = self.active_requests.get(&id) else {
+                // Stale heap entry (request already cancelled/completed) → drop.
                 self.pending_heap.pop();
+                continue;
+            };
+            if self.server_has_slots(request) {
+                let request = self.active_requests.get_mut(&id).unwrap();
+                request.state = RequestState::Active;
+                let server_key = request.server_key.clone();
+                let rtype = request.request_type;
+                self.pending_heap.pop();
+                *self.active_count_by_server.entry(server_key.clone()).or_insert(0) += 1;
+                self.statistics.on_activated(&server_key, rtype);
+            } else {
+                // This request's server is saturated. Skip it (pop off the
+                // heap) and park it in the deferred queue so `promote_deferred`
+                // re-admits it on a later frame once its server drains, then
+                // keep scanning for other-server requests. Popping — rather
+                // than leaving it at the heap top — is what lets the loop
+                // advance past a saturated server instead of re-peeking it
+                // forever (which is how the pre-fix `break` starved others).
+                self.pending_heap.pop();
+                if let Some(mut req) = self.active_requests.remove(&id) {
+                    req.state = RequestState::Unissued;
+                    if self.deferred.len() < self.maximum_deferred {
+                        self.deferred.push(req);
+                    } else {
+                        self.statistics.on_cancelled_pending();
+                    }
+                }
             }
         }
     }
@@ -542,11 +598,14 @@ impl RequestScheduler {
             for (id, request) in self.active_requests.iter_mut() {
                 if request.state == RequestState::Issued {
                     if let Some(key) = &request.priority_key {
-                        request.priority = pf.compute_priority(key, context);
+                        // M1 review fix: guard the recomputed priority so a NaN
+                        // returned by the priority function can't corrupt the
+                        // rebuilt heap's total order (NaN → f64::MAX sink).
+                        request.priority = sanitize_priority(pf.compute_priority(key, context));
                     }
                     new_entries.push(PrioritizedRequest {
                         id: *id,
-                        priority: request.priority,
+                        priority: sanitize_priority(request.priority),
                     });
                 }
             }
@@ -569,24 +628,28 @@ impl RequestScheduler {
 
     // Internal helpers
 
+    /// Global-slot predicate: `true` while the scheduler has room for *any*
+    /// further active request, regardless of server. Split out from the old
+    /// combined `can_activate` so [`Self::update`] can distinguish "global
+    /// budget exhausted" (terminate the loop) from "this request's server is
+    /// saturated" (skip just that request) — the H1 review fix.
+    fn global_has_slots(&self) -> bool {
+        let active_count = self.active_count_by_server.values().sum::<usize>();
+        active_count < self.maximum_requests
+    }
+
+    /// Per-server predicate: `true` if this request may take a slot on its own
+    /// server (or isn't server-throttled at all).
+    fn server_has_slots(&self, request: &Request) -> bool {
+        !request.throttle_by_server || self.server_has_open_slots(&request.server_key, 1)
+    }
+
+    /// Combined immediate-activation predicate (global AND per-server). Used by
+    /// [`Self::schedule`] for its fast-path check; [`Self::update`] consults
+    /// the two predicates separately so one saturated server can't stall the
+    /// whole activation loop.
     fn can_activate(&self, request: &Request) -> bool {
-        // Check global limit
-        let active_count = self
-            .active_count_by_server
-            .values()
-            .sum::<usize>();
-        if active_count >= self.maximum_requests {
-            return false;
-        }
-
-        // Check per-server limit if throttling by server
-        if request.throttle_by_server
-            && !self.server_has_open_slots(&request.server_key, 1)
-        {
-            return false;
-        }
-
-        true
+        self.global_has_slots() && self.server_has_slots(request)
     }
 
     /// Promotes deferred requests into the priority heap while slots are open.
@@ -598,15 +661,18 @@ impl RequestScheduler {
         if self.deferred.is_empty() {
             return;
         }
-        // Best (lowest priority value) first.
+        // Best (lowest priority value) first. M1 review fix: `total_cmp` keeps
+        // the sort total (NaN gets a deterministic position) instead of the
+        // previous `partial_cmp().unwrap_or(Equal)` which left NaN unordered.
         self.deferred
-            .sort_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap_or(Ordering::Equal));
+            .sort_by(|a, b| a.priority.total_cmp(&b.priority));
 
         let mut remaining: Vec<Request> = Vec::new();
         for mut request in self.deferred.drain(..) {
             if self.pending_heap.len() < self.priority_heap_length {
                 let id = request.id;
-                let priority = request.priority;
+                // M1 review fix: NaN → f64::MAX sink-to-bottom guard.
+                let priority = sanitize_priority(request.priority);
                 request.state = RequestState::Issued;
                 self.active_requests.insert(id, request);
                 self.pending_heap.push(PrioritizedRequest { id, priority });
@@ -1510,6 +1576,155 @@ mod tests {
         scheduler.schedule(r3).unwrap();
 
         assert_eq!(scheduler.pending_request_count(), 2);
+    }
+
+    /// H1 review fix: a saturated server sitting at the top of the priority
+    /// heap must NOT stall activation of pending requests bound for OTHER
+    /// servers with open slots (the pre-fix `break`-on-any-full starved them).
+    #[test]
+    fn update_activates_other_server_when_heap_top_server_is_saturated() {
+        let mut sched = RequestScheduler::new();
+        sched.throttle_requests = true;
+        sched.maximum_requests = 50; // ample global budget
+        sched.maximum_requests_per_server = 1; // one active per server
+        sched.priority_heap_length = 20;
+
+        // Saturate BOTH servers with one active request each.
+        let a1 = sched
+            .schedule(Request::throttled(
+                "https://servera.example/a1".into(),
+                RequestType::Terrain,
+                0.0,
+            ))
+            .unwrap();
+        let b0 = sched
+            .schedule(Request::throttled(
+                "https://serverb.example/b0".into(),
+                RequestType::Terrain,
+                0.0,
+            ))
+            .unwrap();
+        assert_eq!(sched.get_request(a1).unwrap().state, RequestState::Active);
+        assert_eq!(sched.get_request(b0).unwrap().state, RequestState::Active);
+
+        // These two land in the pending heap (both servers currently full).
+        // The serverA request has the BETTER priority (0.0 < 1.0) so it sits at
+        // the heap top — exactly the position that starved others pre-fix.
+        let a2 = sched
+            .schedule(Request::throttled(
+                "https://servera.example/a2".into(),
+                RequestType::Terrain,
+                0.0,
+            ))
+            .unwrap();
+        let b1 = sched
+            .schedule(Request::throttled(
+                "https://serverb.example/b1".into(),
+                RequestType::Terrain,
+                1.0,
+            ))
+            .unwrap();
+        assert_eq!(sched.pending_request_count(), 2);
+
+        // Free serverB (complete b0); serverA stays saturated (a1 still active).
+        assert!(sched.complete(b0));
+
+        sched.update();
+
+        // serverB's pending request (b1) MUST activate even though the heap top
+        // (a2) belongs to the still-saturated serverA.
+        assert_eq!(
+            sched.get_request(b1).map(|r| r.state),
+            Some(RequestState::Active),
+            "serverB pending request must not be starved by a saturated serverA at the heap top"
+        );
+        // serverA's a2 is skipped this frame and parked in the deferred queue.
+        assert!(
+            sched.get_request(a2).is_none(),
+            "a2 leaves the active map (deferred) rather than activating on a full server"
+        );
+        assert_eq!(sched.deferred_count(), 1, "a2 parked in deferred for a later frame");
+        assert_eq!(sched.deferred_requests()[0].id, a2);
+    }
+
+    /// M1 review fix: `Ord::cmp` and `PartialEq::eq` must agree even for NaN
+    /// priorities (`a.cmp(b) == Equal <=> a == b`).
+    #[test]
+    fn prioritized_request_ord_eq_consistent_for_nan() {
+        let nan = f64::NAN;
+        let a = PrioritizedRequest { id: RequestId(1), priority: nan };
+        let b = PrioritizedRequest { id: RequestId(2), priority: nan };
+        assert_eq!(
+            a.cmp(&b) == Ordering::Equal,
+            a == b,
+            "Ord/Eq consistency law must hold for NaN"
+        );
+        // NaN vs a finite value: strictly ordered, never Equal (pre-fix cmp
+        // returned Equal for the NaN comparison, corrupting the heap order).
+        let c = PrioritizedRequest { id: RequestId(3), priority: 0.0 };
+        assert_ne!(a.cmp(&c), Ordering::Equal);
+        assert!(a != c);
+        // sanitize_priority sinks NaN to the bottom value.
+        assert_eq!(sanitize_priority(nan), f64::MAX);
+        assert_eq!(sanitize_priority(2.5), 2.5);
+    }
+
+    /// M1 review fix: a NaN-priority request sinks to the BOTTOM of the
+    /// schedule heap (activated last) without corrupting the ordering of
+    /// well-formed priorities. NaN is reachable via `inf + (-inf)` from a
+    /// composite priority summing `f64::MAX`-magnitude components.
+    #[test]
+    fn nan_priority_request_activates_last_without_corrupting_heap() {
+        let mut sched = RequestScheduler::new();
+        sched.throttle_requests = true;
+        sched.maximum_requests = 1; // drain one-at-a-time → activation order == heap order
+        sched.maximum_requests_per_server = 50;
+        sched.priority_heap_length = 20;
+
+        let nan = f64::INFINITY + f64::NEG_INFINITY;
+        assert!(nan.is_nan());
+
+        let mk = |prio: f64| {
+            let mut r =
+                Request::throttled("https://s.example/t".into(), RequestType::Terrain, prio);
+            r.throttle_by_server = false; // isolate global-budget ordering
+            r
+        };
+
+        // First (5.0) activates (budget 1); the rest pile into the heap.
+        let id_first = sched.schedule(mk(5.0)).unwrap();
+        let id_nan = sched.schedule(mk(nan)).unwrap();
+        let id_low = sched.schedule(mk(1.0)).unwrap();
+        let id_mid = sched.schedule(mk(3.0)).unwrap();
+        assert_eq!(sched.get_request(id_first).unwrap().state, RequestState::Active);
+        assert_eq!(sched.pending_request_count(), 3, "nan/1.0/3.0 all pending");
+
+        // Drain one-at-a-time, recording activation order.
+        let mut order = Vec::new();
+        let mut current = id_first;
+        loop {
+            sched.complete(current);
+            sched.update();
+            let next = [id_low, id_mid, id_nan].into_iter().find(|id| {
+                sched
+                    .get_request(*id)
+                    .map(|r| r.state == RequestState::Active)
+                    .unwrap_or(false)
+            });
+            match next {
+                Some(id) => {
+                    order.push(id);
+                    current = id;
+                }
+                None => break,
+            }
+        }
+        // Best-first heap order: 1.0, 3.0, then NaN sinks to the bottom (last).
+        assert_eq!(
+            order,
+            vec![id_low, id_mid, id_nan],
+            "NaN priority must activate LAST (sunk to heap bottom), well-formed priorities keep their order"
+        );
     }
 
     #[test]

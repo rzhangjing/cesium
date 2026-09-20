@@ -1,0 +1,54 @@
+# v1_draping.toml — M4.3 imagery draping baseline capture script
+# =================================================================
+# Three-view capture exercising the simple imagery draping path
+# (terrain tiles textured via base_color_texture from ImageryCache).
+# Run with:
+#
+#   CESIUM_ENABLE_TERRAIN=1
+#   CESIUM_ENABLE_NEW_CHAINS=1
+#   OFFLINE_IMAGERY_ROOT=specs/fixtures/offline-imagery
+#   OFFLINE_TERRAIN_ROOT=specs/fixtures/offline-terrain
+#   STRICT_OFFLINE=1
+#   FIXED_TIME=1
+#   CESIUM_SCREENSHOT_SCRIPT=specs/scripts/v1_draping.toml
+#   CESIUM_SCREENSHOT_DIR=specs/baselines/v1_draping
+#   CESIUM_GIT_SHA=$(git rev-parse HEAD)
+#   cargo run --release -p cesium-app --offline
+#
+# Imagery draping logic (terrain/render_system.rs):
+#   - ImageryLayerManager.visible_layers().next() → primary_layer_id
+#   - ImageryCache.textures.get(&(layer_id, x, y, level)) → Some(handle)
+#     → StandardMaterial { base_color: WHITE, base_color_texture: Some(handle) }
+#   - None → StandardMaterial { base_color: srgb(0.5, 0.5, 0.5) } (fallback gray)
+#
+# Views:
+#   draping_default  — standard orbit showing terrain tiles (equatorial)
+#   draping_zoom_mid — closer view for texture detail on terrain relief
+#   draping_oblique  — oblique angle to show terrain + texture draping
+#
+# PSNR gate: ≥ 40 dB vs. the committed baselines in specs/baselines/v1_draping/.
+
+[meta]
+name = "v1_draping"
+description = "M4.3 imagery draping three-view baseline (terrain + ImageryCache, offline assets)"
+
+[[shot]]
+frame = 180
+name = "draping_default"
+pos = [2.763183, 0.000000, 1.168255]
+quat = [0.390699, 0.390699, 0.589368, 0.589368]
+fov_y = 60.0
+
+[[shot]]
+frame = 360
+name = "draping_zoom_mid"
+pos = [1.841010, 0.000000, 0.781462]
+quat = [0.390278, 0.390278, 0.589646, 0.589646]
+fov_y = 60.0
+
+[[shot]]
+frame = 540
+name = "draping_oblique"
+pos = [1.500000, 1.500000, 1.800000]
+quat = [0.300000, 0.300000, 0.640000, 0.640000]
+fov_y = 60.0

@@ -260,14 +260,35 @@ pub fn prepare_fxaa_pipelines(
 ///
 /// Called from `register_render_graph` (graph.rs) when the post-process gate is
 /// ON. This function registers the node **but does not create graph edges** —
-/// `register_render_graph` owns the single linear chain
-/// `Tonemapping → PassThrough → Fxaa → EndMainPassPostProcessing` so that the
-/// M5-E0 pass-through and the M5-E1 FXAA node never form a diamond in `Core3d`.
+/// `register_render_graph` owns the single linear chain (Daniel H2, upstream
+/// CesiumJS parity) `EndMainPass → PassThrough → AmbientOcclusion → Tonemapping →
+/// Fxaa → EndMainPassPostProcessing`, so the cesium nodes never form a diamond in
+/// `Core3d`.
 ///
 /// Position rationale: FXAA runs **after** tonemapping (HDR linear → LDR done)
 /// and **before** upscaling, matching CesiumJS where FXAA operates on the final
 /// LDR image. See `docs/deviations.md#dev-017`.
+#[deprecated = "DEV-029 / FIX-REG-FACADE: call `register_fxaa_node_main_world` from `Plugin::build` and `register_fxaa_node_render_world` from `Plugin::finish`; this facade runs the finish half against a possibly device-less render world."]
 pub fn register_fxaa_node(app: &mut App) {
+    register_fxaa_node_main_world(app);
+    // Headless `MinimalPlugins` has no `RenderApp` — degrade gracefully.
+    if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+        register_fxaa_node_render_world(render_app);
+    }
+}
+
+/// `Plugin::build`-time half of [`register_fxaa_node`]: everything that lives in
+/// the **main** world (WGSL shader asset + `ExtractComponentPlugin`).
+///
+/// Split out by task #81 — see `docs/deviations.md#dev-029`. `FxaaPipeline`'s
+/// `FromWorld` reads `RenderDevice`, and Bevy only inserts `RenderDevice` into
+/// the render world in `RenderPlugin::finish` (`bevy_render/src/lib.rs`
+/// L399-430), so calling [`register_fxaa_node_render_world`] from any plugin's
+/// `build` panics with "RenderDevice does not exist in the World". Callers must
+/// therefore run the two halves from `build` and `finish` respectively (the
+/// pattern Bevy itself uses: `bevy_pbr/src/ssao/mod.rs` L54 `build` / L80
+/// `finish`).
+pub fn register_fxaa_node_main_world(app: &mut App) {
     // Register FXAA WGSL shader (headless-safe).
     crate::shader_registry::try_load_internal_shader(
         app,
@@ -278,11 +299,17 @@ pub fn register_fxaa_node(app: &mut App) {
 
     // ExtractComponentPlugin for CesiumFxaa (ExtractSchedule: main→render world).
     app.add_plugins(ExtractComponentPlugin::<CesiumFxaa>::default());
+}
 
-    let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
-        // No render app (headless MinimalPlugins) — degrade gracefully.
+/// `Plugin::finish`-time half of [`register_fxaa_node`]: the render-world
+/// pipeline resources + the `Core3d` node.
+pub fn register_fxaa_node_render_world(render_app: &mut bevy::app::SubApp) {
+    // FIX-REG-FACADE (DEV-029): degrade to a no-op when `RenderDevice` is absent
+    // (finish half reached from `build`, or a bare render world). See
+    // `crate::effects::render_world_missing_device`.
+    if crate::effects::render_world_missing_device(render_app) {
         return;
-    };
+    }
 
     render_app
         .init_resource::<FxaaPipeline>()
@@ -312,6 +339,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         // Should not panic (no RenderApp).
+        #[allow(deprecated)]
         register_fxaa_node(&mut app);
     }
 
@@ -321,6 +349,107 @@ mod tests {
         assert_ne!(
             FXAA_SHADER_HANDLE,
             super::super::graph::PASS_THROUGH_SHADER_HANDLE
+        );
+    }
+
+    // ─── Ryan C1 defence line: headless naga parse + validate + layout parity ──
+
+    /// naga has no preprocessor, so `fxaa.wgsl`'s single `#import`
+    /// (`FullscreenVertexOutput`) is replaced by a stub declaring the field the
+    /// fragment reads (`position`). Everything else is the real shader source.
+    const FXAA_WGSL_IMPORT_STUBS: &str = "\
+struct FullscreenVertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+}
+";
+
+    fn fxaa_stubbed_wgsl() -> String {
+        let mut source = String::from(FXAA_WGSL_IMPORT_STUBS);
+        for line in include_str!("../../shaders/fxaa.wgsl").lines() {
+            if line.starts_with("#import") {
+                continue;
+            }
+            source.push_str(line);
+            source.push('\n');
+        }
+        source
+    }
+
+    /// Headless proof the FXAA shader is real: parsed + type-checked by **naga**
+    /// (the same WGSL front end `bevy_render` compiles it with on the GPU path).
+    /// Device readback still needs xvfb (`.github/workflows/cesiumrust-e2e.yml`).
+    #[test]
+    fn fxaa_wgsl_parses_and_type_checks_under_naga() {
+        let source = fxaa_stubbed_wgsl();
+        let module = naga::front::wgsl::parse_str(&source).unwrap_or_else(|error| {
+            panic!("fxaa.wgsl does not parse:\n{}", error.emit_to_string(&source))
+        });
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .expect("fxaa.wgsl does not validate");
+
+        let entry_points = module
+            .entry_points
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry.stage))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            entry_points,
+            vec![("fragment", naga::ShaderStage::Fragment)],
+            "fxaa.wgsl must expose exactly one fragment entry point"
+        );
+    }
+
+    /// Ryan C1 (catches the **C2** class of bug): every binding the `fragment`
+    /// entry statically uses must be present in the Rust `FxaaPipeline` layout
+    /// (group 0: binding 0 = screen texture, binding 1 = sampler). Guards against a
+    /// silent pipeline-build failure that would no-op FXAA while `pixel_diff`
+    /// reported a false green.
+    #[test]
+    fn fxaa_wgsl_entry_bindings_are_covered_by_the_rust_layout() {
+        let source = fxaa_stubbed_wgsl();
+        let module = naga::front::wgsl::parse_str(&source).unwrap_or_else(|error| {
+            panic!("fxaa.wgsl does not parse:\n{}", error.emit_to_string(&source))
+        });
+
+        let layout: std::collections::BTreeSet<(u32, u32)> =
+            [(0, 0), (0, 1)].into_iter().collect();
+
+        let entry = module
+            .entry_points
+            .iter()
+            .find(|e| e.name == "fragment")
+            .expect("fxaa.wgsl must have a `fragment` entry point");
+
+        let mut used = std::collections::BTreeSet::new();
+        let mut visited = std::collections::HashSet::new();
+        let mut stack: Vec<&naga::Function> = vec![&entry.function];
+        while let Some(func) = stack.pop() {
+            for (_, expr) in func.expressions.iter() {
+                match *expr {
+                    naga::Expression::GlobalVariable(handle) => {
+                        if let Some(binding) = &module.global_variables[handle].binding {
+                            used.insert((binding.group, binding.binding));
+                        }
+                    }
+                    naga::Expression::CallResult(func_handle)
+                        if visited.insert(func_handle) =>
+                    {
+                        stack.push(&module.functions[func_handle]);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let missing: Vec<(u32, u32)> = used.difference(&layout).copied().collect();
+        assert!(
+            missing.is_empty(),
+            "fxaa.wgsl `fragment` statically uses bindings {missing:?} absent from FxaaPipeline's \
+             layout (C2-class regression: the pipeline would fail to build and FXAA would no-op)"
         );
     }
 }

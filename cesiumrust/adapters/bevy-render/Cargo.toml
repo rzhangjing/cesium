@@ -37,6 +37,14 @@ cesium-decoders.workspace = true
 cesium-pipeline.workspace = true
 serde_json.workspace = true
 image.workspace = true
+# M6.4 OIT (FIX-OIT-FULL): the MRT accumulate pass clears two colour
+# attachments each frame via a raw `wgpu::Color`, a type Bevy's `render_resource`
+# re-export does not surface by name (only `ColorTargetState` / `ColorWrites`).
+# Pinned to the exact version Bevy 0.15 already resolves in Cargo.lock (23.0.1)
+# so `wgpu::Color` here is the *same* type instance as the one inside
+# `RenderPassColorAttachment.ops`; cargo unifies to one crate → no ABI split,
+# and it adds nothing to the build graph (wgpu is already compiled for bevy_render).
+wgpu = "23.0.1"
 
 [dev-dependencies]
 # Test-only: naga is the WGSL front end Bevy itself compiles with

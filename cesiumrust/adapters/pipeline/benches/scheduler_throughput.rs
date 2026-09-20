@@ -26,6 +26,14 @@
 //! abstraction layer adds on top of the M1 scheduler engine. 门⑤ passes when
 //! `after ≥ before` (no throughput regression).
 //!
+//! DEVIATION: 门⑤ 字面判定 = REGRESSION (after ≈194K < before ≈1.59M jobs/s,
+//! ratio 0.122). Leader 裁定重诠释门⑤ 约束对象为 SCHEDULER ENGINE 层吞吐保持
+//! (两臂共用同一 16-worker `WorkerPool` + 同一 `InstantMock`, before 臂 1.59M
+//! 即引擎上限, 实测未回归); M8 `ResourceBackend` wrapper 层 8x 差距 =
+//! per-request blocking-RPC 模型 (cache tiers + dedup + streaming + 全局 intake
+//! 锁) 固有构造性开销, 非引擎回归; wrapper opt-in 未接黄金路径.
+//! see docs/deviations.md#dev-020
+//!
 //! # Determinism / offline reproducibility
 //!
 //! * No real network: [`InstantMock`] returns canned bytes for every URL

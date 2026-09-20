@@ -122,6 +122,11 @@ where
     stats: RbStats,
     /// Set on `Drop` to stop the dispatcher thread.
     shutdown: AtomicBool,
+    /// Test-only seam (M2): when set, the dispatcher panics on its next
+    /// non-empty result batch so the `catch_unwind` + waiter-drain recovery in
+    /// [`run_dispatcher_guarded`] can be exercised deterministically.
+    #[cfg(test)]
+    test_panic: AtomicBool,
 }
 
 /// Pipeline-backed [`ResourceBackend`] for bulk asset streaming.
@@ -209,10 +214,12 @@ where
             intake: Mutex::new(()),
             stats: RbStats::new(),
             shutdown: AtomicBool::new(false),
+            #[cfg(test)]
+            test_panic: AtomicBool::new(false),
         });
 
         let disp = Arc::clone(&inner);
-        let dispatcher = thread::spawn(move || dispatcher_loop(disp));
+        let dispatcher = thread::spawn(move || run_dispatcher_guarded(disp));
 
         Self {
             inner,
@@ -282,6 +289,13 @@ where
     /// `GpuCache::order()` for invariant assertions.
     pub fn evict_order_len(&self) -> usize {
         self.inner.cache.lock().unwrap().order().len()
+    }
+
+    /// Test seam (M2): arm the dispatcher to panic on its next non-empty
+    /// result batch, exercising the `catch_unwind` + waiter-drain recovery.
+    #[cfg(test)]
+    fn arm_dispatcher_panic(&self) {
+        self.inner.test_panic.store(true, Ordering::Relaxed);
     }
 }
 
@@ -409,6 +423,49 @@ where
     }
 }
 
+/// Runs [`dispatcher_loop`] under `catch_unwind` and, on ANY exit (panic or
+/// normal shutdown), drains + fails every still-registered waiter.
+///
+/// M2 review fix: if the dispatcher panicked (e.g. a poisoned lock or an
+/// internal bug), the waiters' `Sender`s would otherwise stay alive inside
+/// `Arc<Inner>` forever, leaving every in-flight `request_stream` caller
+/// blocked on `rx.recv()` with no wake-up and no supervisor. Catching the
+/// unwind and explicitly sending each waiter an error unblocks all callers
+/// deterministically (`recv` yields the error, never a hang). On panic the
+/// shutdown flag is also set so `is_available()` reports the backend down.
+fn run_dispatcher_guarded<K>(inner: Arc<Inner<K>>)
+where
+    K: Hash + Eq + Copy + Send + 'static,
+{
+    let cleanup = Arc::clone(&inner);
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        dispatcher_loop(inner)
+    }))
+    .is_err();
+
+    if panicked {
+        // Mark the backend unavailable so callers detect the dead dispatcher
+        // instead of queueing more work onto it.
+        cleanup.shutdown.store(true, Ordering::Relaxed);
+    }
+
+    // Drain every still-registered waiter and fail it so no caller stays
+    // blocked on `rx.recv()` after the dispatcher exits. Recover from a
+    // possibly-poisoned `waiters` lock (the panic may have struck while the
+    // dispatcher held it) via `into_inner`.
+    let mut waiters = cleanup
+        .waiters
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    for (_key, senders) in waiters.drain() {
+        for s in senders {
+            let _ = s.send(Err(PortError::Network(
+                "resource dispatcher exited before delivering this stream".into(),
+            )));
+        }
+    }
+}
+
 /// Background dispatcher: drains worker-pool results, populates the hot cache,
 /// and routes each result to its registered waiters.
 ///
@@ -427,27 +484,42 @@ where
             thread::sleep(Duration::from_millis(1));
             continue;
         }
+        // M2 test seam (cfg(test) only): deterministically panic the dispatcher
+        // once a result is in hand (so a waiter is registered for it) to
+        // exercise the catch_unwind + waiter-drain recovery in
+        // `run_dispatcher_guarded`.
+        #[cfg(test)]
+        if inner.test_panic.load(Ordering::Relaxed) {
+            panic!("test-injected dispatcher panic (M2 recovery path)");
+        }
         for r in results {
-            // Completion is atomic w.r.t. cold-intake: hold `intake` while
-            // clearing the in-flight slot and inserting into the cache, so a
-            // concurrent `request_stream` either sees the key still in-flight
-            // (joins as a waiter) or already cached (hot hit) — never both
-            // miss-and-refetch. Lock order: intake → {dedup, cache}.
-            {
-                let _intake = inner.intake.lock().unwrap();
-                // The stream completed (or aborted) — free the in-flight slot.
-                inner.dedup.remove(&r.key);
-                // Successful streams land in the hot cache (reused GpuCache, so
-                // the FIFO order / base-layer lock / live deferral all apply).
-                if let JobOutcome::Success(ref bytes) = r.outcome {
-                    inner.cache.lock().unwrap().insert(r.key, bytes.clone());
-                    inner.stats.streamed.fetch_add(1, Ordering::Relaxed);
-                }
+            // Completion is atomic w.r.t. cold-intake: hold `intake` across the
+            // in-flight clear + cache insert + WAITER ROUTING, so a concurrent
+            // `request_stream` for the same key can never register a NEW waiter
+            // in the window between the cache write and the waiter drain.
+            //
+            // H3 review fix: pre-fix the `intake` guard was dropped before
+            // `waiters.remove`, so for a Failed/Aborted outcome (cache NOT
+            // written) a caller entering in that window registered a fresh
+            // waiter that this stale result then swept up — the new caller got
+            // the old failure and its own submitted job's result was orphaned.
+            // `mpsc::Sender::send` is non-blocking and acquires no lock, so
+            // holding `intake` across the fan-out is safe. Lock order stays
+            // intake → {dedup, cache, waiters}; only one inner lock is held at
+            // a time (each is a temporary dropped at statement end).
+            let _intake = inner.intake.lock().unwrap();
+            // The stream completed (or aborted) — free the in-flight slot.
+            inner.dedup.remove(&r.key);
+            // Successful streams land in the hot cache (reused GpuCache, so the
+            // FIFO order / base-layer lock / live deferral all apply).
+            if let JobOutcome::Success(ref bytes) = r.outcome {
+                inner.cache.lock().unwrap().insert(r.key, bytes.clone());
+                inner.stats.streamed.fetch_add(1, Ordering::Relaxed);
             }
-
-            // Route the outcome to every waiter for this key.
-            let senders = inner.waiters.lock().unwrap().remove(&r.key);
-            if let Some(senders) = senders {
+            // Route the outcome to every waiter for this key — STILL under
+            // `intake`, making {dedup.remove, cache.insert, waiter routing}
+            // atomic for this key.
+            if let Some(senders) = inner.waiters.lock().unwrap().remove(&r.key) {
                 for s in senders {
                     let msg = match &r.outcome {
                         JobOutcome::Success(b) => Ok(b.clone()),
@@ -714,5 +786,99 @@ mod tests {
         assert_eq!(boxed.name(), "test-resource-backend");
         assert!(boxed.is_available());
         assert_eq!(boxed.cache_tier(&(0, 0, 0)), CacheTier::Cold);
+    }
+
+    /// H3 review fix: the dispatcher routes waiters INSIDE the intake critical
+    /// section, so a re-request for a key whose previous stream FAILED can
+    /// never be swept up by the stale Failed result (pre-fix the waiter routing
+    /// happened after `intake` was released, opening a window where a
+    /// newly-registered waiter was handed the old failure while its own job's
+    /// result was orphaned). Per key: (1) first stream fails deterministically
+    /// (transient + `max_attempts=1` → Failed); (2) flip the backend to succeed;
+    /// (3) re-request the SAME key and assert it receives its OWN fresh Ok
+    /// bytes, not the stale Failed. A multi-key loop shakes out residual races.
+    #[test]
+    fn failed_stream_then_rerequest_gets_fresh_result_not_stale_failure() {
+        struct FlipNet {
+            ok: AtomicBool,
+        }
+        impl NetworkBackend for FlipNet {
+            fn fetch(&self, _url: &str) -> FetchResult {
+                if self.ok.load(Ordering::SeqCst) {
+                    FetchResult::Ok(vec![7, 7, 7])
+                } else {
+                    FetchResult::Transient("fail-first".into())
+                }
+            }
+            fn name(&self) -> &str {
+                "flip"
+            }
+            fn timeout(&self) -> Duration {
+                Duration::from_secs(1)
+            }
+        }
+
+        let net = Arc::new(FlipNet { ok: AtomicBool::new(false) });
+        // max_attempts=1 → a single Transient becomes Failed with no retry.
+        let be = PipelineResourceBackend::with_config(
+            "h3-backend",
+            Arc::clone(&net) as Arc<dyn NetworkBackend>,
+            Arc::new(url_of),
+            zoom_of,
+            BaseLayerGuard::new(),
+            100,
+            PoolConfig {
+                threads: 2,
+                max_attempts: 1,
+                backoff_base: Duration::from_millis(1),
+            },
+        );
+
+        for i in 0..20u32 {
+            let key: TileKey = (i, i, 5);
+            // Fail mode: first request for this key must surface Failed → Network.
+            net.ok.store(false, Ordering::SeqCst);
+            let r1 = block_on(be.request_stream(key, 1.0));
+            assert!(
+                matches!(r1, Err(PortError::Network(_))),
+                "first stream must fail (transient, max_attempts=1); got {r1:?}"
+            );
+            // Success mode: re-request the SAME key → must get its OWN fresh
+            // result, never the stale Failed from the previous job.
+            net.ok.store(true, Ordering::SeqCst);
+            let r2 = block_on(be.request_stream(key, 1.0));
+            assert_eq!(
+                r2.unwrap(),
+                vec![7, 7, 7],
+                "re-request after a failure must get its own fresh result, not the stale Failed"
+            );
+        }
+    }
+
+    /// M2 review fix: if the dispatcher thread dies (panic), every in-flight
+    /// `request_stream` caller must be unblocked with an Err — never left
+    /// blocked forever on `rx.recv()`. We arm the test-only panic seam, then
+    /// issue a cold request; once its result reaches the dispatcher it panics,
+    /// `run_dispatcher_guarded` catches the unwind and drains the waiter with a
+    /// Network error, and marks the backend unavailable.
+    #[test]
+    fn dispatcher_panic_unblocks_waiters_with_error() {
+        let net = Arc::new(MockNet::new());
+        net.add("http://assets/7/3/3", FetchResult::Ok(vec![1, 2, 3]));
+        let be = Arc::new(make_backend(net, 100));
+        be.arm_dispatcher_panic();
+
+        let key: TileKey = (3, 3, 7);
+        let be2 = Arc::clone(&be);
+        // Run on a thread: with the fix the caller is unblocked promptly; a
+        // regression would hang here (observable as a stuck test).
+        let handle = thread::spawn(move || block_on(be2.request_stream(key, 1.0)));
+        let res = handle.join().unwrap();
+        assert!(
+            matches!(res, Err(PortError::Network(_))),
+            "dispatcher death must surface as an Err, not a permanent block; got {res:?}"
+        );
+        // The backend now reports unavailable (shutdown set on dispatcher panic).
+        assert!(!be.is_available(), "dead dispatcher must mark the backend unavailable");
     }
 }

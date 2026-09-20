@@ -93,11 +93,17 @@
 //     which is dimensionless and therefore identical in metres and render units.
 // D3  B1 L148 collapses the per-channel transmittance vec3 to a scalar with
 //     `length()` (an upstream quirk: it is ~sqrt(3)x the per-channel value and is
-//     wavelength-independent). Here the vec3 transmittance is preserved for the
-//     physically-correct premultiplied-alpha composite `dst = radiance +
-//     dst * transmittance` (the starfield behind the dome is extinguished
-//     per-channel), and the scalar alpha is derived from it as
-//     `1 - mean(transmittance)`.
+//     wavelength-independent). Here the vec3 transmittance is computed per
+//     channel and collapsed with the **arithmetic mean** (L1/3) instead, giving
+//     `alpha = 1 - mean(transmittance)` for the premultiplied composite
+//     `dst = src.rgb + dst * (1 - src.a)`. Be precise about what that buys, or
+//     the next maintainer will be misled: `AlphaMode::Premultiplied` carries a
+//     *scalar* alpha, so the background (starfield, globe) is extinguished by one
+//     number and the per-channel vec3 never reaches the framebuffer. The
+//     deviation from B1 is therefore **L1/3 vs L2** (a factor ~sqrt(3) when the
+//     three channels are equal), not per-channel vs scalar — B1 is scalar too.
+//     What genuinely *is* per-channel is the in-scattering (`radiance`), which
+//     the premultiplied blend correctly adds without attenuating it by alpha.
 // D4  B1 L25 uses ATMOSPHERE_THICKNESS = 111e3 m; cesiumrust's authoritative
 //     physical parameter is `constants::ATMOSPHERE_HEIGHT = 100000.0` m
 //     (scattering.rs L16, reaching this shader as `outer_radius - inner_radius`).
@@ -111,7 +117,7 @@
 //     exposed as the `mie_phase_k` uniform and defaults to the domain value
 //     (1/(4*pi)) because the acceptance gate for this task is parity with the
 //     domain f64 reference. `MIE_PHASE_K_BLUEPRINT` below preserves B5's value
-//     for a blueprint-faithful switch. Logged as docs/deviations.md#dev-018.
+//     for a blueprint-faithful switch. Logged as docs/deviations.md#dev-021.
 // D7  B1 L95/L123 compute `sampleHeight = length(samplePosition)
 //     - atmosphereInnerRadius` with NO floor. Both the primary ray (when it
 //     pierces the Earth: B1 only intersects the *outer* shell at L39) and the
@@ -139,6 +145,29 @@
 //     reads a camera inside the Earth as being at sea level — the only sensible
 //     reading, since the atmosphere does not extend underground. Mirrored by
 //     `sky_dome::march_single_scattering_f32`.
+// D9  B4 divides by `2*a` with no guard, where `a = dot(direction, direction)`.
+//     A zero-length direction makes `a = b = det = 0`, so `t0 = (-0 - 0) / 0` =
+//     `0/0` = **NaN**. `max(interval.y, 0.0)` does not filter it: WGSL's `max`
+//     returns its first argument unless `e1 < e2`, and `NaN < 0.0` is false, so
+//     the NaN flows into `lightStepLength`, then the accumulators, then
+//     `radiance` — and under `AlphaMode::Premultiplied` a NaN alpha smears over
+//     the entire sky, which the bloom and FXAA neighbourhood taps then spread
+//     into pixels that never looked at the degenerate ray at all.
+//     Zero directions are reachable, not hypothetical:
+//       (i) `SkyAtmosphereParams::from_domain` used to seed `sun_direction =
+//           Vec3::ZERO`. It now seeds `Vec3::X`, matching
+//           `LightingParams::default()`, which removes the seed itself;
+//      (ii) `sky_dome::update_sun_direction` normalises with
+//           `normalize_or_zero()`, so any degenerate `LightingParams::sun_direction`
+//           (a public resource other systems may write) is pushed through
+//           verbatim;
+//     (iii) `sky_system` returns early when `AnimationClock` is absent, leaving
+//           whatever seed the material was created with in place indefinitely.
+//     (i) is fixed at the source; this guard is the defence in depth that makes
+//     (ii) and (iii) — and every future caller — finite. A degenerate direction
+//     has no interval to report, so the guard returns `EMPTY_INTERVAL`, which
+//     both call sites already read as "miss". Mirrored op-for-op by
+//     `sky_dome::ray_sphere_interval_f32`.
 //
 // ============================================================================
 // UNITS: metres (domain, f64) -> render units (GPU, f32)
@@ -169,6 +198,16 @@
 // named `let`, so `a*b + c` keeps its two roundings and stays bit-comparable
 // with the Rust f32 mirror `sky_dome::closed_form_sky_color_f32` (which itself
 // mirrors domain `compute_sky_color` op-for-op).
+//
+// The same rule covers the *association* of pure products, which is not free in
+// f32 either: multiplication is commutative but not associative, so
+// `scattered * solar * exposure` = `(scattered*solar)*exposure` can land 1 ULP
+// (~1e-7 relative) away from `scattered * (solar*exposure)`. The mode-0 fragment
+// tail therefore binds `let gain = params.solar_intensity * view.exposure;` and
+// then multiplies `scattered * gain`, exactly the order
+// `sky_dome::shade_sky_f32` uses. Every other product site in this file already
+// binds its intermediate (`mie_phase`, `closed_form_radiance`,
+// `march_single_scattering`); the gain binding was the one that did not.
 //
 // ============================================================================
 // BLENDING / PREMULTIPLY
@@ -226,6 +265,12 @@ const MIE_PHASE_K_BLUEPRINT: f32 = 0.11936620731892150;
 const HORIZON_SPLIT_SHARPNESS: f32 = 8.0;
 // Sentinel for "the ray misses the atmosphere sphere": stop < start.
 const EMPTY_INTERVAL: vec2<f32> = vec2<f32>(1.0, -1.0);
+// D9 guard: at or below this, `dot(direction, direction)` counts as zero and the
+// interval is reported empty rather than dividing by it. Both production
+// directions are normalised before they get here (`ray_direction` in the fragment
+// head, `sun_direction` by `update_sun_direction`), so `a` is either 1.0 or
+// exactly 0.0 and the threshold only has to separate those two cases.
+const DEGENERATE_DIRECTION_EPSILON: f32 = 1.0e-12;
 
 // ---------------------------------------------------------------------------
 // B2: czm_approximateTanh — rational approximation, odd, clamped to [-1, 1].
@@ -249,6 +294,12 @@ fn ray_sphere_interval(origin: vec3<f32>, direction: vec3<f32>, radius: f32) -> 
     // oc = origin - center, with center = (0,0,0)
     let oc = origin;
     let a = dot(direction, direction);
+    // D9: `two_a` below would be exactly 0.0, and `b`/`det` exactly 0.0 too, so
+    // `t0 = 0/0 = NaN`. Report a miss instead — see the D9 header note for the
+    // full chain by which that NaN would poison the premultiplied sky.
+    if (a < DEGENERATE_DIRECTION_EPSILON) {
+        return EMPTY_INTERVAL;
+    }
     let b = 2.0 * dot(direction, oc);
     let radius_sq = radius * radius;
     let oc_sq = dot(oc, oc);
@@ -572,10 +623,22 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let rayleigh_scattered = rayleigh_p * rayleigh_color;
     let mie_scattered = mie_p * mie_color;
     let scattered = rayleigh_scattered + mie_scattered;
-    let radiance = scattered * params.solar_intensity * view.exposure;
+    // NO FMA CONTRACTION, and no re-association either: bind the scalar gain
+    // first so this is `scattered * (solar * exposure)`, bit-for-bit what
+    // `sky_dome::shade_sky_f32` computes. Written as
+    // `scattered * solar_intensity * view.exposure` it would associate the other
+    // way and differ by up to 1 ULP.
+    let gain = params.solar_intensity * view.exposure;
+    let radiance = scattered * gain;
 
-    // D3: per-channel transmittance -> premultiplied composite, scalar alpha
-    // from its mean. B1 L148's `length()` collapse is deliberately not used.
+    // D3: the in-scattering above stays per-channel; the background attenuation
+    // does not, because `AlphaMode::Premultiplied` blends
+    // `dst = src.rgb + dst * (1 - src.a)` with a **scalar** `src.a`. That scalar
+    // is the arithmetic mean (L1/3) of the per-channel transmittance. B1 L148
+    // collapses to a scalar too, but with `length()` (L2) — so the deviation is
+    // L1/3 vs L2, not per-channel vs scalar. The per-channel vec3 is still worth
+    // computing: it is what the physics says, and it is what the Rust mirror and
+    // the unit tests check.
     let total_mie_depth = params.mie_coefficient * optical_depth.y;
     let total_rayleigh_depth = params.rayleigh_coefficient * optical_depth.x;
     let transmittance = exp(-(total_mie_depth + total_rayleigh_depth));

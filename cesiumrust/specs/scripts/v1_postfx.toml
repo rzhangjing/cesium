@@ -1,0 +1,72 @@
+# v1_postfx.toml — M4.2 built-in post-process baseline capture script
+# =====================================================================
+# Six-view capture exercising the HDR + AcesFitted tonemapping + Bloom pipeline
+# (CESIUM_ENABLE_POSTPROCESS_BUILTIN=1). Visual output differs significantly from
+# v0 (no tonemapping): expect filmic highlight rolloff, bloom halos on bright
+# limb, and slightly desaturated darks.
+#
+# Run with:
+#   CESIUM_ENABLE_POSTPROCESS_BUILTIN=1
+#   FIXED_TIME=1
+#   OFFLINE_IMAGERY_ROOT=specs/fixtures/offline-imagery
+#   OFFLINE_TERRAIN_ROOT=specs/fixtures/offline-terrain
+#   STRICT_OFFLINE=1
+#   CESIUM_SCREENSHOT_SCRIPT=specs/scripts/v1_postfx.toml
+#   CESIUM_SCREENSHOT_DIR=specs/baselines/v1_postfx
+#   CESIUM_GIT_SHA=$(git rev-parse HEAD)
+#   cargo run --release -p cesium-app
+#
+# Gate OFF (default) → v0 six baselines PSNR=∞ (zero diff, non-regression proof;
+#   specs/baselines/v0/ IS committed, so this comparison is live today).
+# Gate ON  → these 6 views, target PSNR≥40 dB. NOTE: the v1_postfx baselines in
+#   specs/baselines/v1_postfx/ are NOT yet captured (empty on headless CI, no
+#   GPU / window); capture is deferred to a GPU runner — see docs/deferred.md #34.
+#
+# Poses are identical to baseline_v0.toml so the ONLY variable is the
+# post-process pipeline (tonemapping + bloom + HDR framebuffer).
+
+[meta]
+name = "v1_postfx"
+description = "M4.2 six-view post-process baseline (AcesFitted + Bloom + HDR, FIXED_TIME=1, offline assets)"
+
+[[shot]]
+frame = 180
+name = "postfx_globe_default"
+pos = [2.763183, 0.000000, 1.168255]
+quat = [0.390699, 0.390699, 0.589368, 0.589368]
+fov_y = 60.0
+
+[[shot]]
+frame = 360
+name = "postfx_pole_north"
+pos = [0.520945, 0.000000, 2.954423]
+quat = [0.061628, 0.061628, 0.704416, 0.704416]
+fov_y = 60.0
+
+[[shot]]
+frame = 540
+name = "postfx_pole_south"
+pos = [0.520945, 0.000000, -2.954423]
+quat = [0.704416, 0.704416, 0.061628, 0.061628]
+fov_y = 60.0
+
+[[shot]]
+frame = 720
+name = "postfx_zoom_mid"
+pos = [1.841010, 0.000000, 0.781462]
+quat = [0.390278, 0.390278, 0.589646, 0.589646]
+fov_y = 60.0
+
+[[shot]]
+frame = 900
+name = "postfx_zoom_close"
+pos = [1.104606, 0.000000, 0.468877]
+quat = [0.390278, 0.390278, 0.589646, 0.589646]
+fov_y = 60.0
+
+[[shot]]
+frame = 1080
+name = "postfx_terrain_off"
+pos = [2.763183, 0.000000, 1.168255]
+quat = [0.390699, 0.390699, 0.589368, 0.589368]
+fov_y = 60.0

@@ -42,12 +42,37 @@ impl Plugin for CesiumAtmospherePlugin {
             // main.rs L469 inserts — so this cannot perturb the app's own value.
             .init_resource::<ClearColor>();
 
-        // `MaterialPlugin::build` calls `init_asset::<M>()`, which dereferences
-        // `AssetServer` — absent under `MinimalPlugins`. Guarded per
-        // `shader_registry`'s contract; the systems below take
-        // `Option<ResMut<Assets<SkyDomeMaterial>>>` and no-op when it is missing.
-        if crate::shader_registry::asset_backend_available(app) {
+        // `MaterialPlugin::build` needs *two* asset-backend resources, and
+        // guarding only the first is what turns an asset-enabled-but-render-less
+        // app into a panic:
+        //   1. `init_asset::<M>()` dereferences `AssetServer` — absent under
+        //      `MinimalPlugins` (`shader_registry::asset_backend_available`); and
+        //   2. it internally adds `PrepassPipelinePlugin<M>`, whose `build` calls
+        //      `load_internal_asset!` and so dereferences `Assets<Shader>`
+        //      unconditionally (bevy_pbr-0.15.3 `prepass/mod.rs` L70). That
+        //      storage is inserted by the *render* stack, not by `AssetPlugin`, so
+        //      `AssetPlugin` alone is not enough — exactly the resource
+        //      `shader_registry::shader_assets_available` exists to guard on.
+        // On the normal GPU path both hold (`DefaultPlugins` runs first), so the
+        // material registers as before. The systems below take
+        // `Option<ResMut<Assets<SkyDomeMaterial>>>` and no-op when either is not.
+        let asset_backend = crate::shader_registry::asset_backend_available(app);
+        let shader_assets = crate::shader_registry::shader_assets_available(app);
+        if asset_backend && shader_assets {
             app.add_plugins(MaterialPlugin::<SkyDomeMaterial>::default());
+        } else {
+            // The guard above is correct — without it `MaterialPlugin::build`
+            // panics inside `PrepassPipelinePlugin`'s unconditional
+            // `load_internal_asset!` (DEV-021) — but *skipping silently* is a dead
+            // end for anyone who mounts this plugin before `DefaultPlugins` (specs
+            // integration tests, third-party embedding): the dome simply never
+            // appears and nothing says why. The alternative to this log is a
+            // crash, not a working sky, so say which of the two storages is
+            // missing instead of leaving it to guesswork.
+            warn!(
+                "[M5-C] SkyDomeMaterial 未注册：缺 AssetServer 或 Assets<Shader>（需 DefaultPlugins 先行）；sky dome 不可见 \
+                 (asset_backend_available={asset_backend}, shader_assets_available={shader_assets})",
+            );
         }
 
         // Seed the runtime dome flag from this adapter's own read of

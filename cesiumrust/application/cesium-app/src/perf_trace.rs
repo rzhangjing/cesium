@@ -24,7 +24,7 @@
 //! | `--perf-trace=<path>` | `CESIUM_PERF_TRACE` | off | Write CSV trace to `<path>` |
 //! | `--camera-script=<toml>` | `CESIUM_CAMERA_SCRIPT` | off | Play back a keyframed camera trajectory |
 //! | `--trace-interval=<n>` | `CESIUM_TRACE_INTERVAL` | 1 | Emit one CSV row every `n` frames |
-//! | `--headless-frames=<n>` | `CESIUM_HEADLESS_FRAMES` | 3600 | Frames before auto-exit in headless mode (~60 s @ 60 fps) |
+//! | `--headless-frames=<n>` | `CESIUM_HEADLESS_FRAMES` | `feature_flags::DEFAULT_HEADLESS_FRAMES` (120) | Auto-exit cap for the bare `--headless` flag. FIX-HL-FRAMES: single source of truth is `feature_flags`; the `CESIUM_HEADLESS`-env capture path exits via `CesiumHeadlessPlugin`, not this |
 //!
 //! Flags take precedence over env when both are present.
 //!
@@ -90,7 +90,9 @@ pub struct Cli {
     pub camera_script: Option<PathBuf>,
     /// Emit one CSV row every N frames (default 1 = every frame).
     pub trace_interval: u32,
-    /// Frames before auto-exit in headless mode (default 3600 ≈ 60 s @ 60 fps).
+    /// Frames before auto-exit in headless mode. FIX-HL-FRAMES: the default now
+    /// mirrors `feature_flags::DEFAULT_HEADLESS_FRAMES` (single source of truth,
+    /// currently 120) instead of a divergent hard-coded 3600.
     /// This is a **fallback** cap: when a wall-clock target is known (an
     /// explicit `--headless-secs`, or a camera-script's `duration_s`), the
     /// wall-clock target governs the exit instead, so the full trajectory is
@@ -220,7 +222,12 @@ impl Cli {
             cli.trace_interval = 1;
         }
         if cli.headless_frames == 0 {
-            cli.headless_frames = 3600;
+            // FIX-HL-FRAMES: source the fallback from `feature_flags`' single
+            // source of truth rather than a private 3600, so the two modules
+            // agree on `CESIUM_HEADLESS_FRAMES` when it is left unset. Here the
+            // value is the bare-`--headless` auto-exit cap; under
+            // `CESIUM_HEADLESS` the capture plugin owns the exit.
+            cli.headless_frames = crate::feature_flags::DEFAULT_HEADLESS_FRAMES as u32;
         }
         // Headless implies tracing unless explicitly disabled — but we
         // respect an explicit `--perf-trace` absence: headless without a
@@ -790,6 +797,13 @@ fn trace_sampler_system(
 /// Headless auto-exit. When a wall-clock target is known (`exit_after`),
 /// it governs the exit so the full camera trajectory is captured regardless
 /// of frame rate; otherwise fall back to the `headless_frames` cap.
+///
+/// FIX-HL-EXIT: this system is the exit path for the bare `--headless` CLI flag
+/// only. Under the `CESIUM_HEADLESS` env, `main.rs` forces `cli.headless = false`
+/// ("headless mode ownership"), so the early-return below parks this system and
+/// hands exit ownership to `CesiumHeadlessPlugin`'s offscreen capture →
+/// `AppExit::Success` chain. The branch is therefore *conditional*, not dead —
+/// do not remove it.
 fn headless_exit_system(
     state: Res<TraceState>,
     mut exit: EventWriter<AppExit>,
@@ -845,7 +859,11 @@ mod tests {
         assert!(cli.perf_trace.is_none());
         assert!(cli.camera_script.is_none());
         assert_eq!(cli.trace_interval, 1);
-        assert_eq!(cli.headless_frames, 3600);
+        assert_eq!(
+            cli.headless_frames,
+            crate::feature_flags::DEFAULT_HEADLESS_FRAMES as u32,
+            "FIX-HL-FRAMES: perf-trace's unset default must equal feature_flags' single source of truth"
+        );
         assert!(cli.headless_secs.is_none());
         assert!(!cli.active());
     }

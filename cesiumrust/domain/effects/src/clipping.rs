@@ -6,7 +6,7 @@
 //!
 //! Domain layer — pure Rust, f64 precision.
 
-use glam::{DMat4, DVec3};
+use glam::{DMat3, DMat4, DVec3};
 
 /// A single clipping plane defined by a normal and distance.
 ///
@@ -54,16 +54,28 @@ impl ClippingPlane {
     ///
     /// Uses the inverse transpose of the matrix for correct normal transformation.
     pub fn transform(&self, matrix: &DMat4) -> Self {
-        // Transform a point on the plane
+        // Transform a point on the plane (points transform by the full affine M).
         let point_on_plane = self.normal * (-self.distance);
         let transformed_point = matrix.transform_point3(point_on_plane);
 
-        // Transform the normal (using upper-left 3x3, assuming no non-uniform scale)
-        let transformed_normal = DVec3::new(
-            matrix.x_axis.x * self.normal.x + matrix.y_axis.x * self.normal.y + matrix.z_axis.x * self.normal.z,
-            matrix.x_axis.y * self.normal.x + matrix.y_axis.y * self.normal.y + matrix.z_axis.y * self.normal.z,
-            matrix.x_axis.z * self.normal.x + matrix.y_axis.z * self.normal.y + matrix.z_axis.z * self.normal.z,
-        ).normalize();
+        // Normals are covectors: the correct transform is the *inverse transpose* of
+        // the upper-left 3×3, so the plane stays perpendicular to the surface under
+        // non-uniform scale. The previous `Mᵀ`-only form was valid solely for rigid /
+        // uniformly-scaled matrices, contradicting this docstring.
+        // FIX-CLIP-TRANSFORM. Guard the inverse against a singular / non-finite 3×3.
+        let upper = DMat3::from_cols(
+            matrix.x_axis.truncate(),
+            matrix.y_axis.truncate(),
+            matrix.z_axis.truncate(),
+        );
+        let det = upper.determinant();
+        let normal_matrix = if det.is_finite() && det.abs() > 1.0e-12 {
+            upper.inverse().transpose()
+        } else {
+            // Degenerate scale: fall back to the rigid-assumption `Mᵀ` form.
+            upper.transpose()
+        };
+        let transformed_normal = normal_matrix.mul_vec3(self.normal).normalize();
 
         let new_distance = -transformed_normal.dot(transformed_point);
 
@@ -227,6 +239,49 @@ impl ClippingPlaneCollection {
         }
     }
 
+    /// f64 CPU reference for the GPU `apply_clipping_planes` accumulation
+    /// (`adapters/bevy-render/shaders/clipping.wgsl`), entry-for-entry, used to
+    /// cross-validate the f32 shader. Unlike [`Self::is_clipped`] it also returns
+    /// the *signed* clipAmount and uses the blueprint's `<= 0.0` outside test
+    /// (FIX-CLIP-LTE): a point exactly on a plane counts as clipped.
+    ///
+    /// Returns `(clipped, clip_amount)` where `clip_amount` is the signed min over
+    /// planes in union mode (blueprint L59) or the signed max seeded at `0.0` in
+    /// intersection mode (blueprint L64) — the value that drives the edge band.
+    pub fn clip_signed(&self, point: DVec3) -> (bool, f64) {
+        if !self.enabled || self.planes.is_empty() {
+            return (false, 0.0);
+        }
+        let local_point = self.model_matrix.inverse().transform_point3(point);
+
+        let mut any_outside = false;
+        let mut all_outside = true;
+        let mut clip_amount = 0.0;
+        for (i, p) in self.planes.iter().enumerate() {
+            let d = p.signed_distance(local_point);
+            if d <= 0.0 {
+                any_outside = true;
+            } else {
+                all_outside = false;
+            }
+            clip_amount = if self.union_clipping_regions {
+                if i == 0 {
+                    d
+                } else {
+                    d.min(clip_amount)
+                }
+            } else {
+                d.max(clip_amount)
+            };
+        }
+        let clipped = if self.union_clipping_regions {
+            any_outside
+        } else {
+            all_outside
+        };
+        (clipped, clip_amount)
+    }
+
     /// Tests the intersection of a bounding sphere with the clipping planes.
     ///
     /// Maps to CesiumJS `ClippingPlaneCollection.prototype.computeIntersectionWithBoundingVolume`.
@@ -324,6 +379,27 @@ impl ClippingPlaneCollection {
 
         0.0
     }
+
+    /// Returns the planes transformed into world space by [`Self::model_matrix`].
+    ///
+    /// This is the CPU-side equivalent of CesiumJS's per-fragment
+    /// `czm_transformPlane(plane, clippingPlanesMatrix)`
+    /// (`ModelClippingPlanesStageFS.glsl` L14/L35): instead of transforming each
+    /// plane on the GPU every fragment, the collection's `model_matrix` is baked
+    /// into the planes once on the CPU. The two are sign-equivalent — a world
+    /// point `p` is inside `world_planes()[i]` iff `model_matrix.inverse() * p`
+    /// is inside `planes[i]` — which is exactly the invariant [`Self::is_clipped`]
+    /// relies on (see `test_world_planes_transform_equivalence`).
+    ///
+    /// The returned planes stay in **domain metric f64** space (no
+    /// `METERS_PER_RENDER_UNIT` rescaling here — that conversion is applied at the
+    /// adapter/GPU boundary, red line).
+    pub fn world_planes(&self) -> Vec<ClippingPlane> {
+        self.planes
+            .iter()
+            .map(|p| p.transform(&self.model_matrix))
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -398,6 +474,56 @@ mod tests {
         assert!(transformed.is_inside(DVec3::new(0.0, 15.0, 0.0)));
         // A point at y=5 should be outside (below the plane).
         assert!(!transformed.is_inside(DVec3::new(0.0, 5.0, 0.0)));
+    }
+
+    #[test]
+    fn test_plane_transform_inverse_transpose_under_non_uniform_scale() {
+        // FIX-CLIP-TRANSFORM: normals must transform by the inverse-transpose, not
+        // Mᵀ. Plane normal (1,1,0)/√2 under scale(2,1,1):
+        //   correct  (S⁻ᵀ n) ∝ (1/2, 1, 0) -> (0.4472, 0.8944, 0)
+        //   buggy    (Sᵀ  n) ∝ (2,   1, 0) -> (0.8944, 0.4472, 0)
+        let plane = ClippingPlane::new(DVec3::new(1.0, 1.0, 0.0), 0.0);
+        let scaled = DMat4::from_scale(DVec3::new(2.0, 1.0, 1.0));
+        let transformed = plane.transform(&scaled);
+
+        let expected = DVec3::new(0.5, 1.0, 0.0).normalize();
+        assert!(
+            (transformed.normal - expected).length() < 1e-9,
+            "inverse-transpose expected, got {:?}",
+            transformed.normal
+        );
+    }
+
+    #[test]
+    fn test_clip_signed_boundary_on_plane_is_clipped() {
+        // FIX-CLIP-LTE: a point exactly ON a plane (signed distance == 0) counts as
+        // clipped, matching the blueprint `<= 0.0` GPU test.
+        let collection = ClippingPlaneCollection::with_planes(vec![ClippingPlane::new(DVec3::Y, 0.0)]);
+        let (clipped, amount) = collection.clip_signed(DVec3::new(3.0, 0.0, -2.0));
+        assert!(clipped, "point on plane must be clipped");
+        assert!(amount.abs() < 1e-12, "on-plane clip_amount is 0, got {amount}");
+    }
+
+    #[test]
+    fn test_clip_signed_union_vs_intersection() {
+        // Two opposing planes: x >= 0 kept (normal +X, distance 0) and y >= 0 kept.
+        let planes = vec![ClippingPlane::new(DVec3::X, 0.0), ClippingPlane::new(DVec3::Y, 0.0)];
+
+        let mut union = ClippingPlaneCollection::with_planes(planes.clone());
+        union.union_clipping_regions = true;
+        // Outside +X plane (x<0) but inside +Y plane ⇒ union clips (outside ANY).
+        let (u_clipped, u_amt) = union.clip_signed(DVec3::new(-1.0, 2.0, 0.0));
+        assert!(u_clipped, "union clips when outside any plane");
+        assert!(u_amt < 0.0, "union signed min is the most-negative, got {u_amt}");
+
+        let inter = ClippingPlaneCollection::with_planes(planes);
+        // Inside +Y plane ⇒ intersection does NOT clip (needs outside ALL).
+        let (i_clipped, _) = inter.clip_signed(DVec3::new(-1.0, 2.0, 0.0));
+        assert!(!i_clipped, "intersection keeps a point inside any plane");
+        // Outside both ⇒ intersection clips; signed max seeded at 0 ⇒ 0 here.
+        let (i2_clipped, i2_amt) = inter.clip_signed(DVec3::new(-1.0, -1.0, 0.0));
+        assert!(i2_clipped, "intersection clips when outside all planes");
+        assert!(i2_amt >= 0.0, "intersection signed max is floored at 0, got {i2_amt}");
     }
 
     // ─── ClippingPlaneCollection tests ──────────────────────────────────
@@ -646,5 +772,138 @@ mod tests {
         // edge_width = 0 → no edge highlight
         let factor = collection.edge_factor(DVec3::new(0.0, 0.01, 0.0), 0.1);
         assert!((factor).abs() < 1e-10);
+    }
+
+    // ─── M6.2 CPU-reference cross-checks ────────────────────────────────
+    //
+    // Independent brute-force reference implementations of the union /
+    // intersection clip decision, written directly from the upstream CesiumJS
+    // semantics (`ClippingPlaneCollection.js` `unionIntersectFunction` =
+    // `v === OUTSIDE`, `defaultIntersectFunction` = `v === INSIDE`) rather than
+    // reusing the production code paths. These guard `is_clipped` /
+    // `intersect_bounding_sphere` against silent semantic drift, and pin the
+    // CPU-side `world_planes()` baking invariant that the M6.2 bevy-render
+    // adapter relies on when it pre-transforms planes instead of doing a
+    // per-fragment `czm_transformPlane`.
+
+    /// Brute-force reference: transform the point into plane-local space, then
+    /// apply the union (any-outside) / intersection (all-outside) rule directly.
+    fn reference_is_clipped(collection: &ClippingPlaneCollection, point: DVec3) -> bool {
+        if !collection.enabled || collection.is_empty() {
+            return false;
+        }
+        let local = collection.model_matrix.inverse().transform_point3(point);
+        // A point is OUTSIDE a plane when its signed distance is negative.
+        let outside: Vec<bool> = (0..collection.len())
+            .map(|i| {
+                let p = collection.get(i).unwrap();
+                (p.normal.dot(local) + p.distance) < 0.0
+            })
+            .collect();
+        if collection.union_clipping_regions {
+            outside.iter().any(|&o| o)
+        } else {
+            outside.iter().all(|&o| o)
+        }
+    }
+
+    #[test]
+    fn test_is_clipped_matches_cpu_reference() {
+        // A deterministic sweep of points across both modes and a non-identity
+        // model matrix, cross-checked against the brute-force reference.
+        let mut collection = ClippingPlaneCollection::with_planes(vec![
+            ClippingPlane::new(DVec3::Y, 0.0),
+            ClippingPlane::new(DVec3::X, -2.0),
+            ClippingPlane::new(DVec3::new(1.0, 1.0, 0.0), 1.0),
+        ]);
+        collection.model_matrix = DMat4::from_translation(DVec3::new(3.0, -1.0, 2.0));
+
+        let samples = [
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(5.0, 5.0, 5.0),
+            DVec3::new(-4.0, 2.0, 0.0),
+            DVec3::new(2.0, -3.0, 1.0),
+            DVec3::new(-1.0, -1.0, -1.0),
+            DVec3::new(10.0, -2.0, 4.0),
+        ];
+
+        for union in [false, true] {
+            collection.union_clipping_regions = union;
+            for &p in &samples {
+                assert_eq!(
+                    collection.is_clipped(p),
+                    reference_is_clipped(&collection, p),
+                    "is_clipped diverged from CPU reference (union={union}, point={p:?})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_world_planes_transform_equivalence() {
+        // The adapter bakes `model_matrix` into the planes on the CPU via
+        // `world_planes()` instead of transforming per-fragment on the GPU. Prove
+        // the baking is sign-equivalent to `is_clipped`'s local-space test: a
+        // world point is clipped by the collection iff the union/intersection rule
+        // over the *world-space* planes (tested directly against the world point,
+        // no inverse transform) yields the same answer.
+        let mut collection = ClippingPlaneCollection::with_planes(vec![
+            ClippingPlane::new(DVec3::Y, 0.0),
+            ClippingPlane::new(DVec3::X, -2.0),
+        ]);
+        collection.model_matrix = DMat4::from_translation(DVec3::new(1.0, 2.0, -3.0));
+
+        let world = collection.world_planes();
+        assert_eq!(world.len(), collection.len());
+
+        let samples = [
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(3.0, 4.0, 5.0),
+            DVec3::new(-2.0, 1.0, 0.0),
+            DVec3::new(1.0, -5.0, 2.0),
+        ];
+
+        for union in [false, true] {
+            collection.union_clipping_regions = union;
+            let world = collection.world_planes();
+            for &p in &samples {
+                let outside: Vec<bool> = world.iter().map(|pl| pl.signed_distance(p) < 0.0).collect();
+                let clipped_world = if union {
+                    outside.iter().any(|&o| o)
+                } else {
+                    outside.iter().all(|&o| o)
+                };
+                assert_eq!(
+                    collection.is_clipped(p),
+                    clipped_world,
+                    "world_planes() baking diverged from is_clipped (union={union}, point={p:?})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_intersect_bounding_sphere_consistent_with_is_clipped() {
+        // Centre-only sanity: when the sphere radius is ~0 the volume test must
+        // agree with the point test on the centre (Inside ⇒ not clipped,
+        // Outside ⇒ clipped).
+        let collection = ClippingPlaneCollection::with_planes(vec![
+            ClippingPlane::new(DVec3::Y, 0.0),
+        ]);
+        let r = 1e-9;
+
+        let centre_inside = DVec3::new(0.0, 5.0, 0.0);
+        assert_eq!(
+            collection.intersect_bounding_sphere(centre_inside, r),
+            Intersect::Inside
+        );
+        assert!(!collection.is_clipped(centre_inside));
+
+        let centre_outside = DVec3::new(0.0, -5.0, 0.0);
+        assert_eq!(
+            collection.intersect_bounding_sphere(centre_outside, r),
+            Intersect::Outside
+        );
+        assert!(collection.is_clipped(centre_outside));
     }
 }

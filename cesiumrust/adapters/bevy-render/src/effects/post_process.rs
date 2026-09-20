@@ -9,6 +9,33 @@ use glam::DVec3;
 use super::ao::CesiumAmbientOcclusion;
 use super::fxaa::CesiumFxaa;
 
+/// Daniel M2: independent FXAA / AO sub-gate env vars, consumed **only** inside
+/// effects.
+///
+/// **Single source of truth (task #81)**: both names are now registered in the
+/// app-layer `feature_flags` registry (`ENV_ENABLE_FXAA` / `ENV_ENABLE_AO` with
+/// the `fxaa_enabled()` / `ao_enabled()` accessors — the Terry M5-Verify Medium
+/// finding). These two consts are therefore *mirrors*, not owners: they exist
+/// only because `cesium-app` depends on `cesium-bevy-render` (never the reverse),
+/// so this crate cannot import the registry. They are `pub` so
+/// `feature_flags::adapter_gate_mirrors_are_byte_identical_to_the_registry`
+/// can assert byte-equality across the crate boundary and turn a one-sided
+/// rename red.
+pub const ENV_ENABLE_FXAA: &str = "CESIUM_ENABLE_FXAA";
+pub const ENV_ENABLE_AO: &str = "CESIUM_ENABLE_AO";
+
+/// A sub-gate is ON unless its env var is explicitly set to a falsy token
+/// (`0 / false / no / off / ""`). Unset ⇒ ON, so the master
+/// `CESIUM_ENABLE_POSTPROCESS` gate alone still enables both effects (the pre-M2
+/// behaviour). Delegates to the authoritative 4-token truthy parser
+/// (`pipeline::fetch::gate_from_env_value` via `graph`) — no local copy (Daniel H1).
+fn sub_gate_enabled(env: &str) -> bool {
+    match std::env::var(env) {
+        Ok(raw) => super::graph::gate_from_env_value(Some(raw)),
+        Err(_) => true,
+    }
+}
+
 #[derive(Resource, Debug, Clone)]
 pub struct PostProcessConfig {
     pub fog_enabled: bool,
@@ -16,6 +43,11 @@ pub struct PostProcessConfig {
     pub bloom_enabled: bool,
     pub ambient_occlusion_enabled: bool,
     pub fxaa_enabled: bool,
+    /// Daniel M1: when `true` **and** FXAA is enabled, cameras carrying
+    /// [`CesiumFxaa`] are forced to `Msaa::Off` so FXAA and the camera's hardware
+    /// MSAA do not double-smooth the same edges. Recorded on the config so the
+    /// coupling is explicit, discoverable and unit-testable.
+    pub fxaa_forces_msaa_off: bool,
     pub color_correction_enabled: bool,
     pub height_fog_enabled: bool,
     pub fog: FogConfig,
@@ -35,6 +67,7 @@ impl Default for PostProcessConfig {
             bloom_enabled: false,
             ambient_occlusion_enabled: false,
             fxaa_enabled: false,
+            fxaa_forces_msaa_off: true,
             color_correction_enabled: false,
             height_fog_enabled: false,
             fog: FogConfig::default(),
@@ -181,6 +214,56 @@ pub fn fxaa_system(
     }
 }
 
+/// FIX-MSAA-RESTORE: records a camera's user-authored [`Msaa`] that
+/// [`fxaa_msaa_linkage_system`] suppressed to [`Msaa::Off`] while the FXAA↔MSAA
+/// linkage was active, so the original can be restored the moment the linkage
+/// ends instead of leaving the camera stuck at `Off`.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct FxaaSuppressedMsaa(pub Msaa);
+
+/// Daniel M1: FXAA and the camera's hardware MSAA are both anti-aliasing. Running
+/// them together double-smooths edges (and wastes the 4× MSAA resolve that FXAA
+/// then re-blurs). When FXAA is enabled and the linkage is on, force every
+/// `CesiumFxaa` camera to `Msaa::Off`. This lives in effects (a camera-traversal
+/// system), **not** in `orbit_camera.rs` (out of scope for this task). Runs in
+/// `Update`; the coupling is recorded via [`PostProcessConfig::fxaa_forces_msaa_off`].
+///
+/// FIX-MSAA-RESTORE: the suppression is now reversible — the first time a camera
+/// is forced off its original value is remembered in [`FxaaSuppressedMsaa`], and
+/// when the linkage turns off (FXAA disabled or `fxaa_forces_msaa_off` cleared)
+/// the original is restored and the marker dropped. The previous one-way write
+/// left cameras permanently at `Off` even after FXAA was disabled.
+pub fn fxaa_msaa_linkage_system(
+    config: Res<PostProcessConfig>,
+    mut commands: Commands,
+    mut cameras: Query<
+        (Entity, &mut Msaa, Option<&mut FxaaSuppressedMsaa>),
+        With<CesiumFxaa>,
+    >,
+) {
+    let linkage_on = config.fxaa_enabled && config.fxaa_forces_msaa_off;
+    for (cam, mut msaa, suppressed) in &mut cameras {
+        if linkage_on {
+            match suppressed {
+                // Not yet suppressed: remember the authored value (only if there
+                // is one to remember) and force it off.
+                None => {
+                    if *msaa != Msaa::Off {
+                        commands.entity(cam).insert(FxaaSuppressedMsaa(*msaa));
+                        *msaa = Msaa::Off;
+                    }
+                }
+                // Already suppressed: stay forced off while the linkage holds.
+                Some(_) => *msaa = Msaa::Off,
+            }
+        } else if let Some(saved) = suppressed {
+            // Linkage ended: restore the original and clear the marker.
+            *msaa = saved.0;
+            commands.entity(cam).remove::<FxaaSuppressedMsaa>();
+        }
+    }
+}
+
 pub fn color_correction_system(
     _config: Res<PostProcessConfig>,
 ) {
@@ -245,22 +328,45 @@ impl Plugin for CesiumEffectsPlugin {
         // M5-E1: FXAA render-graph node — gated by CESIUM_ENABLE_POSTPROCESS.
         // Gate OFF → no nodes registered → v0 baselines pixel-neutral (PSNR=∞).
         if super::graph::postprocess_gate_enabled() {
-            // FXAA + SSAO are active whenever the M5-E gate is ON.
-            // fxaa_system / ao_system sync these toggles into each camera's
-            // CesiumFxaa / CesiumAmbientOcclusion markers.
+            // Daniel M2: FXAA and AO now have independent sub-gates
+            // (`CESIUM_ENABLE_FXAA` / `CESIUM_ENABLE_AO`). Each defaults to ON when
+            // unset, so the master gate alone still enables both (pre-M2 behaviour);
+            // setting one to a falsy token disables just that effect.
+            let fxaa_enabled = sub_gate_enabled(ENV_ENABLE_FXAA);
+            let ao_enabled = sub_gate_enabled(ENV_ENABLE_AO);
             {
                 let mut cfg = app.world_mut().resource_mut::<PostProcessConfig>();
-                cfg.fxaa_enabled = true;
-                cfg.ambient_occlusion_enabled = true;
+                cfg.fxaa_enabled = fxaa_enabled;
+                cfg.ambient_occlusion_enabled = ao_enabled;
             }
+            // fxaa_system / ao_system sync these toggles into each camera's
+            // CesiumFxaa / CesiumAmbientOcclusion markers.
             app.add_systems(Update, fxaa_system);
+            // Daniel M1: FXAA on ⇒ force the FXAA cameras' MSAA off (no double AA).
+            app.add_systems(Update, fxaa_msaa_linkage_system);
             // ao_system must run before setup_ao_prepass so the prepass
             // attach/detach decision sees the reconciled `enabled` flag.
             app.add_systems(
                 Update,
                 ao_system.before(super::ao::setup_ao_prepass),
             );
-            super::graph::register_render_graph(app);
+            // `build` half only. The render-world half (pipeline `init_resource`,
+            // whose `FromWorld` reads `RenderDevice`) must wait for
+            // `Plugin::finish` below: Bevy inserts `RenderDevice` into the render
+            // world in `RenderPlugin::finish`, never in `build`
+            // (docs/deviations.md#dev-029).
+            super::graph::register_render_graph_main_world(app);
+        }
+    }
+
+    /// `Plugin::finish`: `RenderPlugin::finish` has now created and inserted
+    /// `RenderDevice` / `RenderQueue` / `RenderAdapter` into the render world, so
+    /// the `PassThroughPipeline` / `FxaaPipeline` / `AoPipeline` resources, their
+    /// `Core3d` nodes and Robin #72's H2 chain can be built safely. Gate OFF (the
+    /// default) ⇒ no-op ⇒ v0 baselines pixel-neutral.
+    fn finish(&self, app: &mut App) {
+        if super::graph::postprocess_gate_enabled() {
+            super::graph::finish_render_graph(app);
         }
     }
 }
@@ -542,6 +648,89 @@ mod tests {
             app.world().get::<CesiumAmbientOcclusion>(e).unwrap().enabled,
             "component must follow config (true)"
         );
+    }
+
+    /// Daniel M1: when FXAA is enabled and the linkage is on, every `CesiumFxaa`
+    /// camera is forced to `Msaa::Off` (no double anti-aliasing); disabling the
+    /// linkage leaves the camera's MSAA untouched. Headless — pure ECS.
+    #[test]
+    fn test_fxaa_msaa_linkage_forces_msaa_off() {
+        let mut app = App::new();
+        app.insert_resource(PostProcessConfig {
+            fxaa_enabled: true,
+            ..Default::default()
+        });
+        app.add_systems(Update, fxaa_msaa_linkage_system);
+
+        let cam = app
+            .world_mut()
+            .spawn((Msaa::Sample4, CesiumFxaa { enabled: true }))
+            .id();
+        app.update();
+        assert_eq!(
+            *app.world().get::<Msaa>(cam).unwrap(),
+            Msaa::Off,
+            "FXAA on ⇒ camera MSAA forced off"
+        );
+
+        // Linkage disabled ⇒ the camera's MSAA is left as authored.
+        app.world_mut()
+            .resource_mut::<PostProcessConfig>()
+            .fxaa_forces_msaa_off = false;
+        *app.world_mut().get_mut::<Msaa>(cam).unwrap() = Msaa::Sample4;
+        app.update();
+        assert_eq!(*app.world().get::<Msaa>(cam).unwrap(), Msaa::Sample4);
+    }
+
+    /// FIX-MSAA-RESTORE: disabling FXAA must restore the camera's *original*
+    /// MSAA (remembered when it was forced off), not leave it stuck at `Off`.
+    /// Unlike the test above, the camera's MSAA is never hand-edited, so only a
+    /// real save/restore can make it pass. Headless — pure ECS.
+    #[test]
+    fn test_fxaa_msaa_linkage_restores_original_msaa() {
+        let mut app = App::new();
+        app.insert_resource(PostProcessConfig {
+            fxaa_enabled: true,
+            ..Default::default()
+        });
+        app.add_systems(Update, fxaa_msaa_linkage_system);
+        let cam = app
+            .world_mut()
+            .spawn((Msaa::Sample4, CesiumFxaa { enabled: true }))
+            .id();
+
+        // Linkage on ⇒ forced off, and the authored value is remembered.
+        app.update();
+        assert_eq!(*app.world().get::<Msaa>(cam).unwrap(), Msaa::Off);
+        assert_eq!(
+            app.world().get::<FxaaSuppressedMsaa>(cam).map(|s| s.0),
+            Some(Msaa::Sample4),
+            "original MSAA must be remembered on suppression"
+        );
+
+        // Disable FXAA (no manual MSAA edit) ⇒ original restored, marker dropped.
+        app.world_mut()
+            .resource_mut::<PostProcessConfig>()
+            .fxaa_enabled = false;
+        app.update();
+        assert_eq!(
+            *app.world().get::<Msaa>(cam).unwrap(),
+            Msaa::Sample4,
+            "disabling FXAA must restore the camera's authored MSAA"
+        );
+        assert!(
+            app.world().get::<FxaaSuppressedMsaa>(cam).is_none(),
+            "the suppression marker must be cleared after restoring"
+        );
+    }
+
+    /// Daniel M2: the FXAA / AO sub-gates read distinct env-var names so they can
+    /// be toggled independently under the master `CESIUM_ENABLE_POSTPROCESS` gate.
+    #[test]
+    fn test_sub_gate_env_names_are_distinct() {
+        assert_eq!(ENV_ENABLE_FXAA, "CESIUM_ENABLE_FXAA");
+        assert_eq!(ENV_ENABLE_AO, "CESIUM_ENABLE_AO");
+        assert_ne!(ENV_ENABLE_FXAA, ENV_ENABLE_AO);
     }
 }
 
