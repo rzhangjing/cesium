@@ -162,6 +162,43 @@ pub struct OrbitFlyToRequest {
     pub destination_ecef: DVec3,
 }
 
+// ── FIX-ARCBALL: live trackball orientation ─────────────────────────────────
+
+/// Live arcball (trackball) orientation for the interactive camera.
+///
+/// `engaged` flips to `true` the first time the user drags the left mouse
+/// button in a windowed session and then stays `true` so the pose — including
+/// roll and over-the-pole views — persists between frames. Every deterministic
+/// capture path (`FIXED_CAMERA`, `--camera-script`, the M2.4 neutrality test,
+/// the v0 baselines) never feeds a mouse, so `engaged` stays `false` and
+/// [`orbit_camera_system`] keeps driving the camera through the pure
+/// [`compute_camera_transform`] spherical path → byte-for-byte unchanged.
+#[derive(Resource)]
+struct Arcball {
+    /// Rotation of the camera rig about the target (globe centre).
+    orientation: Quat,
+    /// Whether a real drag has taken over from the spherical path.
+    engaged: bool,
+    /// Geographic anchor: unit vector (target → surface) of the point grabbed
+    /// under the cursor on the current drag. Each frame the rig is rotated so
+    /// this point stays glued to the cursor → exact pointer tracking at any
+    /// grab location / zoom. `None` until a point is picked under the cursor.
+    anchor: Option<Vec3>,
+    /// Left-button state on the previous frame, to detect a fresh press.
+    was_pressed: bool,
+}
+
+impl Default for Arcball {
+    fn default() -> Self {
+        Self {
+            orientation: Quat::IDENTITY,
+            engaged: false,
+            anchor: None,
+            was_pressed: false,
+        }
+    }
+}
+
 // ── M0.1 Camera Seed from Environment ─────────────────────────────────────
 // This is the minimal precursor to M3.3 FIXED_CAMERA; M3.3 will formalize
 // the interface with a proper config struct and validation. For now we read
@@ -233,6 +270,7 @@ impl Plugin for OrbitCameraPlugin {
         app.insert_resource(initial_state)
             .init_resource::<OrbitInertiaState>()
             .init_resource::<OrbitFlightState>()
+            .init_resource::<Arcball>()
             .add_event::<OrbitFlyToRequest>()
             .add_systems(Startup, spawn_orbit_camera)
             .add_systems(
@@ -302,6 +340,7 @@ fn spawn_orbit_camera(mut commands: Commands, state: Res<OrbitState>) {
 /// This is the **original M0 system** — grab-the-globe formulas and zoom
 /// inertia glide are preserved byte-for-byte. Rotation inertia coasting is
 /// handled by [`orbit_inertia_system`] which runs after this.
+#[allow(clippy::too_many_arguments)] // Bevy system: one param per resource/event/query
 fn orbit_camera_system(
     mut state: ResMut<OrbitState>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
@@ -310,42 +349,89 @@ fn orbit_camera_system(
     time: Res<Time>,
     mut query: Query<&mut Transform, With<OrbitCamera>>,
     windows: Query<&Window>,
+    mut arcball: ResMut<Arcball>,
 ) {
-    // Rotation: left mouse drag
-    if mouse_buttons.pressed(MouseButton::Left) {
-        // Exact grab-the-globe tracking from the real camera geometry:
-        //   focal length f = (H/2) / tan(fov/2)   (pixels per radian)
-        //   surface_dist  = distance - R           (camera -> surface at center)
-        // A pitch rotation dPitch moves the surface point R*dPitch world units,
-        // which projects to R*dPitch*f/surface_dist pixels; solving for the
-        // rotation that matches a drag of dy pixels gives dPitch = dy*dist/f.
-        // Heading is the same but divided by cos(pitch) because meridians
-        // converge toward the poles (clamped to avoid runaway spin there).
-        let win_h = windows
-            .get_single()
-            .map(|w| w.height())
-            .unwrap_or(720.0);
+    // Rotation: left mouse drag — cursor-anchored "grab the globe". On press
+    // we pick the geographic point under the pointer (ray → sphere), then each
+    // frame rotate the rig about the target so that same point stays glued to
+    // the cursor as it moves. This tracks the pointer EXACTLY at any grab
+    // location and zoom — the previous per-pixel tangent gain only matched the
+    // single screen-centre point, so grabbing elsewhere felt detached in both
+    // axes. A geometric fallback runs when the OS cursor position is
+    // unavailable, so the feel degrades gracefully instead of locking up.
+    let pressed = mouse_buttons.pressed(MouseButton::Left);
+    if pressed {
+        // Fresh press (new grab): reset the anchor so we re-pick under the
+        // cursor, and latch the spherical pose if this is the first ever drag.
+        if !arcball.was_pressed {
+            if !arcball.engaged {
+                arcball.orientation = arcball_quat_from_spherical(&state);
+                arcball.engaged = true;
+            }
+            arcball.anchor = None;
+        }
+
+        let win = windows.get_single().ok();
+        let win_h = win.map(|w| w.height()).unwrap_or(720.0);
         let focal = (win_h * 0.5) / (CAMERA_FOV_Y * 0.5).tan();
         let surface_dist = (state.distance - GLOBE_RADIUS).max(0.001);
-        let lat_factor = state.pitch.cos().max(0.15);
 
-        for ev in motion_events.read() {
-            // Horizontal drag -> orbit around the globe's polar (Z) axis.
-            // Sign chosen for a "grab the globe" feel: dragging right spins
-            // the surface right, i.e. the camera azimuth decreases.
-            state.heading -=
-                ev.delta.x * state.rotate_speed * surface_dist / (lat_factor * focal);
-            // Vertical drag -> move north/south (change elevation). Dragging
-            // down pulls the surface down, revealing the north (pitch rises).
-            state.pitch += ev.delta.y * state.rotate_speed * surface_dist / focal;
-            // Clamp elevation to avoid gimbal lock directly over the poles
-            // (keep the view direction off the Z axis by ~4 degrees).
-            state.pitch = state.pitch.clamp(-1.5, 1.5);
+        // World-space pick ray through the current cursor position, then the
+        // surface direction it hits.
+        let picked = win
+            .and_then(|w| {
+                cursor_ray_world(w, arcball.orientation, state.distance, state.target)
+            })
+            .and_then(|(o, d)| pick_surface_dir(o, d, state.target, GLOBE_RADIUS));
+
+        match (arcball.anchor, picked) {
+            (Some(anchor), Some(bdir)) => {
+                // Rotate the rig so the grabbed point comes back under the
+                // cursor (exact 1:1). Deltas are irrelevant (absolute cursor).
+                let r = Quat::from_rotation_arc(bdir, anchor);
+                arcball.orientation = (r * arcball.orientation).normalize();
+                motion_events.clear();
+            }
+            (maybe_anchor, Some(bdir)) => {
+                // First picked frame (or cursor re-entered the globe): latch the
+                // anchor to the point under the cursor and DO NOT rotate this
+                // frame. Applying the geometric gain here too would fight the
+                // next frame's pick correction (it rotates the just-latched
+                // point back under the cursor), producing a start-of-drag
+                // teleport. Tracking begins cleanly from the following frame.
+                let _ = maybe_anchor;
+                arcball.anchor = Some(bdir);
+                motion_events.clear();
+            }
+            (_, None) => {
+                // Ray missed the globe (cursor over space) or no cursor
+                // position: drop the anchor so a re-entry re-latches cleanly
+                // (instead of snapping the stale front point to the limb), and
+                // keep the drag alive with the pure geometric gain.
+                arcball.anchor = None;
+                let lat_factor = state.pitch.cos().max(0.15);
+                for ev in motion_events.read() {
+                    let up = (arcball.orientation * Vec3::Y).normalize();
+                    let right = (arcball.orientation * Vec3::X).normalize();
+                    let d_yaw =
+                        -ev.delta.x * state.rotate_speed * surface_dist / (lat_factor * focal);
+                    let d_tilt = ev.delta.y * state.rotate_speed * surface_dist / focal;
+                    let q = Quat::from_axis_angle(up, d_yaw) * Quat::from_axis_angle(right, d_tilt);
+                    arcball.orientation = (q * arcball.orientation).normalize();
+                }
+            }
         }
+
+        // Re-derive heading/pitch (roll intentionally dropped) so the spherical
+        // consumers — globe LOD sub-camera point, inertia capture — stay live.
+        let (h, p) = orbit_from_orientation(arcball.orientation);
+        state.heading = h;
+        state.pitch = p;
     } else {
         // Consume events even when not dragging to avoid accumulation
         motion_events.clear();
     }
+    arcball.was_pressed = pressed;
 
     // Zoom: mouse wheel — scale the height ABOVE THE SURFACE multiplicatively,
     // not the distance from the center. Near the ground, distance-from-center
@@ -373,9 +459,14 @@ fn orbit_camera_system(
         state.distance = state.target_distance;
     }
 
-    // Apply transform
+    // Apply transform: trackball pose while engaged, otherwise the pure
+    // spherical north-up path (byte-identical to the pre-arcball baseline).
     if let Ok(mut transform) = query.get_single_mut() {
-        *transform = compute_camera_transform(&state);
+        *transform = if arcball.engaged {
+            transform_from_arcball(arcball.orientation, state.distance, state.target)
+        } else {
+            compute_camera_transform(&state)
+        };
     }
 }
 
@@ -385,6 +476,7 @@ fn orbit_camera_system(
 /// Runs AFTER [`orbit_camera_system`]. Tracks heading/pitch deltas between
 /// frames; on a quick flick release, captures the velocity and coasts with
 /// exponential decay. Suppressed while a flight is active.
+#[allow(clippy::too_many_arguments)] // Bevy system: one param per resource/event/query
 fn orbit_inertia_system(
     mut state: ResMut<OrbitState>,
     mut inertia: ResMut<OrbitInertiaState>,
@@ -393,6 +485,7 @@ fn orbit_inertia_system(
     flight_state: Res<OrbitFlightState>,
     mut query: Query<&mut Transform, With<OrbitCamera>>,
     windows: Query<&Window>,
+    mut arcball: ResMut<Arcball>,
 ) {
     // Advance the monotonic clock for inertia timing.
     inertia.now_ms += time.delta_secs() as f64 * 1000.0;
@@ -432,8 +525,13 @@ fn orbit_inertia_system(
             inertia.capture_scale_h = scale_h;
             inertia.capture_scale_p = scale_p;
             // capture stores motion = (end - start) * 0.5, so pass end = 2×delta.
-            let motion_px =
-                DVec2::new(heading_delta * scale_h as f64, pitch_delta * scale_p as f64);
+            // `heading` is re-derived via atan2 while trackball-engaged and can
+            // wrap ±π across a pole crossing; normalise the per-frame delta so a
+            // wrap doesn't masquerade as a huge velocity (→ runaway coast).
+            let motion_px = DVec2::new(
+                wrap_pi(heading_delta as f32) as f64 * scale_h as f64,
+                pitch_delta * scale_p as f64,
+            );
             inertia
                 .controller
                 .capture(InertiaState::Spin, DVec2::ZERO, motion_px * 2.0);
@@ -459,10 +557,32 @@ fn orbit_inertia_system(
         let scale_p = inertia.capture_scale_p as f64;
         match inertia.controller.maintain(InertiaState::Spin, &sample) {
             Some(delta_px) => {
-                state.heading += (delta_px.x / scale_h) as f32;
-                state.pitch = (state.pitch + (delta_px.y / scale_p) as f32).clamp(-1.5, 1.5);
-                if let Ok(mut transform) = query.get_single_mut() {
-                    *transform = compute_camera_transform(&state);
+                let d_heading = (delta_px.x / scale_h) as f32;
+                let d_pitch = (delta_px.y / scale_p) as f32;
+                if arcball.engaged {
+                    // Coast the live trackball the same way the drag drove it:
+                    // yaw about the camera up, tilt about the camera right.
+                    let up = (arcball.orientation * Vec3::Y).normalize();
+                    let right = (arcball.orientation * Vec3::X).normalize();
+                    let q = Quat::from_axis_angle(up, d_heading)
+                        * Quat::from_axis_angle(right, d_pitch);
+                    arcball.orientation = (q * arcball.orientation).normalize();
+                    let (h, p) = orbit_from_orientation(arcball.orientation);
+                    state.heading = h;
+                    state.pitch = p;
+                    if let Ok(mut transform) = query.get_single_mut() {
+                        *transform = transform_from_arcball(
+                            arcball.orientation,
+                            state.distance,
+                            state.target,
+                        );
+                    }
+                } else {
+                    state.heading += d_heading;
+                    state.pitch = (state.pitch + d_pitch).clamp(-1.5, 1.5);
+                    if let Ok(mut transform) = query.get_single_mut() {
+                        *transform = compute_camera_transform(&state);
+                    }
                 }
             }
             None => {
@@ -482,19 +602,76 @@ fn orbit_inertia_system(
 /// `INERTIA_STOP_DISTANCE` guard is 0.5 px — so the app boundary converts
 /// rotation deltas from radians to pixels before capture and back to radians
 /// after [`InertiaController::maintain`]. The factors are the exact inverse of
-/// the grab-the-globe gain: `focal = (H/2)/tan(fov/2)`,
-/// `surface_dist = distance - R`, `lat_factor = cos(pitch)` (meridian
-/// convergence clamp). Using the same scale for capture and coast makes the
+/// the geometric grab gain: `focal = (H/2)/tan(fov/2)`,
+/// `surface_dist = distance - R` (the same inverse used by the drag
+/// fallback). Using the same scale for capture and coast makes the
 /// pixel round-trip lossless, so the coasted motion is a clean exponential
 /// decay of the released radian velocity.
 fn inertia_pixel_scale(state: &OrbitState, win_h: f32) -> (f32, f32) {
     let focal = (win_h * 0.5) / (CAMERA_FOV_Y * 0.5).tan();
     let surface_dist = (state.distance - GLOBE_RADIUS).max(0.001);
-    let lat_factor = state.pitch.cos().max(0.15);
-    (
-        lat_factor * focal / surface_dist,
-        focal / surface_dist,
-    )
+    let s = focal / surface_dist;
+    (s, s)
+}
+
+/// Build the world-space pick ray (origin + unit direction) through the OS
+/// cursor for the arcball camera rig. `None` when the cursor position is
+/// unavailable (e.g. pointer outside the window). Uses the custom frustum
+/// (`CAMERA_FOV_Y`) and the window aspect; the camera looks along its local
+/// -Z, sitting at `target + orientation·(Ẑ · distance)`.
+fn cursor_ray_world(
+    window: &Window,
+    orientation: Quat,
+    distance: f32,
+    target: Vec3,
+) -> Option<(Vec3, Vec3)> {
+    let cursor = window.cursor_position()?;
+    let w = window.width().max(1.0);
+    let h = window.height().max(1.0);
+    let aspect = w / h;
+    let x_ndc = (cursor.x / w) * 2.0 - 1.0;
+    let y_ndc = 1.0 - (cursor.y / h) * 2.0;
+    let tan_y = (CAMERA_FOV_Y * 0.5).tan();
+    let tan_x = tan_y * aspect;
+    let dir_cam = Vec3::new(x_ndc * tan_x, y_ndc * tan_y, -1.0).normalize();
+    let origin = target + orientation * (Vec3::Z * distance);
+    let dir = (orientation * dir_cam).normalize();
+    Some((origin, dir))
+}
+
+/// Intersect a world ray with the globe sphere (centre `target`, `radius`) and
+/// return the unit direction from the centre to the hit. Returns `None` when
+/// the ray misses the sphere (cursor over space) or the only intersection is
+/// behind the camera — callers then fall back to geometric gain and reset the
+/// anchor, so dragging past the limb never fires a discontinuous correction
+/// toward a far-side/limb point (which showed up as a mid-drag teleport).
+fn pick_surface_dir(origin: Vec3, dir: Vec3, target: Vec3, radius: f32) -> Option<Vec3> {
+    let oc = origin - target;
+    let b = oc.dot(dir);
+    let c = oc.length_squared() - radius * radius;
+    let disc = b * b - c;
+    if disc <= 0.0 {
+        return None;
+    }
+    let s = disc.sqrt();
+    let t0 = -b - s;
+    let t = if t0 > 0.0 { t0 } else { -b + s };
+    if t <= 0.0 {
+        return None;
+    }
+    let hit = origin + dir * t;
+    (hit - target).try_normalize()
+}
+
+/// Normalise an angle to the (-π, π] interval. Guards the inertia capture
+/// against a ±π azimuth wrap when the trackball crosses a pole.
+fn wrap_pi(a: f32) -> f32 {
+    let two_pi = 2.0 * std::f32::consts::PI;
+    let mut x = (a + std::f32::consts::PI) % two_pi;
+    if x < 0.0 {
+        x += two_pi;
+    }
+    x - std::f32::consts::PI
 }
 
 /// M2.4: Great-arc flight system (delegated to domain [`CameraFlight`]).
@@ -508,9 +685,13 @@ fn orbit_flight_system(
     time: Res<Time>,
     mut query: Query<&mut Transform, With<OrbitCamera>>,
     mut fly_requests: EventReader<OrbitFlyToRequest>,
+    mut arcball: ResMut<Arcball>,
 ) {
-    // Process new fly-to requests.
+    // Process new fly-to requests. A fly-to hands control back to the
+    // deterministic north-up spherical path, so drop the live trackball.
     for request in fly_requests.read() {
+        arcball.engaged = false;
+        arcball.anchor = None;
         orbit_fly_to(&state, request.destination_ecef, &mut flight_state);
     }
 
@@ -601,6 +782,33 @@ fn compute_camera_transform(state: &OrbitState) -> Transform {
 
     let position = state.target + offset;
     Transform::from_translation(position).looking_at(state.target, Vec3::Z)
+}
+
+// ── FIX-ARCBALL helpers ──────────────────────────────────────────────────────
+
+/// Build the arcball orientation that reproduces the legacy north-up polar
+/// pose of the current spherical state. Used to latch the trackball onto the
+/// existing view the instant a drag begins, so engagement is seamless.
+fn arcball_quat_from_spherical(state: &OrbitState) -> Quat {
+    compute_camera_transform(state).rotation
+}
+
+/// Camera `Transform` from an arcball orientation: the camera sits at
+/// `target + orientation·(Ẑ · distance)` and looks back along `-orientation·Ẑ`.
+/// For the orientation produced by [`arcball_quat_from_spherical`] this is
+/// identical to [`compute_camera_transform`] (the rig's +Z axis points from the
+/// target to the camera, so `-Z` — Bevy's camera forward — aims at the target).
+fn transform_from_arcball(orientation: Quat, distance: f32, target: Vec3) -> Transform {
+    let position = target + orientation * (Vec3::Z * distance);
+    Transform::from_translation(position).with_rotation(orientation)
+}
+
+/// Derive `(heading, pitch)` — the view direction only, roll intentionally
+/// dropped — from an arcball orientation, so the spherical consumers (globe
+/// LOD sub-camera point, inertia) stay populated while the trackball is live.
+fn orbit_from_orientation(orientation: Quat) -> (f32, f32) {
+    let dir = orientation * Vec3::Z; // normalize(position - target)
+    (dir.y.atan2(dir.x), dir.z.clamp(-1.0, 1.0).asin())
 }
 
 #[cfg(test)]
@@ -789,6 +997,7 @@ mod tests {
                 .init_resource::<ButtonInput<MouseButton>>()
                 .init_resource::<OrbitInertiaState>()
                 .init_resource::<OrbitFlightState>()
+                .init_resource::<Arcball>()
                 .insert_resource(OrbitState {
                     heading,
                     pitch,
