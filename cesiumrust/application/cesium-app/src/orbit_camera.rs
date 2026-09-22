@@ -29,8 +29,11 @@ use crate::feature_flags::{postprocess_builtin_enabled, postprocess_enabled};
 /// Camera vertical field of view (radians). Kept in sync between the spawned
 /// projection and the drag math so the grab-the-globe tracking is exact.
 pub const CAMERA_FOV_Y: f32 = std::f32::consts::FRAC_PI_3; // 60 degrees
-/// Near clip plane — small enough to see the surface when zoomed in close.
-const CAMERA_NEAR: f32 = 0.002;
+/// Near clip plane — kept below the camera's closest `min_distance` altitude
+/// (≈760 m) so the ground stays visible when fully zoomed in to inspect the
+/// finest tiles. Reversed-Z (wgpu default) tolerates the resulting near:far
+/// ratio without surface z-fighting (same-level tiles never overlap).
+const CAMERA_NEAR: f32 = 0.00005;
 /// Far clip plane — large enough for the starfield (radius ~50).
 const CAMERA_FAR: f32 = 200.0;
 /// Globe (equatorial) radius in render units.
@@ -82,7 +85,7 @@ impl Default for OrbitState {
             target: Vec3::ZERO,
             rotate_speed: 1.0, // exact geometric tracking by default
             zoom_speed: 0.3,
-            min_distance: 1.005, // hover just above the surface
+            min_distance: 1.00012, // descend to ~760 m altitude -> level ~17 tiles
             max_distance: 20.0,
         }
     }
@@ -376,6 +379,11 @@ fn orbit_camera_system(
         let focal = (win_h * 0.5) / (CAMERA_FOV_Y * 0.5).tan();
         let surface_dist = (state.distance - GLOBE_RADIUS).max(0.001);
 
+        // TEMP DRAG DIAGNOSTIC (env-gated; unset ⇒ zero effect, deterministic
+        // paths untouched). Reveals which branch runs at max zoom and whether
+        // the pick ray actually responds to the OS cursor.
+        let drag_dbg = std::env::var_os("CESIUM_DRAG_DEBUG").is_some();
+
         // World-space pick ray through the current cursor position, then the
         // surface direction it hits.
         let picked = win
@@ -386,9 +394,27 @@ fn orbit_camera_system(
 
         match (arcball.anchor, picked) {
             (Some(anchor), Some(bdir)) => {
+                if drag_dbg {
+                    let cur = win.and_then(|w| w.cursor_position());
+                    let sz = win.map(|w| (w.width(), w.height())).unwrap_or((0.0, 0.0));
+                    info!(
+                        "[drag] ANCHOR d={:.5} chord={:.3e} cur={:?} win=({:.0},{:.0}) tgt={:?}",
+                        state.distance,
+                        anchor.distance(bdir),
+                        cur,
+                        sz.0,
+                        sz.1,
+                        state.target
+                    );
+                }
                 // Rotate the rig so the grabbed point comes back under the
                 // cursor (exact 1:1). Deltas are irrelevant (absolute cursor).
-                let r = Quat::from_rotation_arc(bdir, anchor);
+                // NOTE: deliberately NOT `Quat::from_rotation_arc` — it
+                // early-outs to `IDENTITY` when `dot > 1 − ε`, and at max zoom
+                // the anchor and cursor surface directions collapse to within
+                // ~3e-5 rad so their f32 dot rounds to 1.0 → the drag froze at
+                // 0 rotation. `rotation_from_unit_dir` recovers that tiny angle.
+                let r = rotation_from_unit_dir(bdir, anchor);
                 arcball.orientation = (r * arcball.orientation).normalize();
                 motion_events.clear();
             }
@@ -400,6 +426,9 @@ fn orbit_camera_system(
                 // point back under the cursor), producing a start-of-drag
                 // teleport. Tracking begins cleanly from the following frame.
                 let _ = maybe_anchor;
+                if drag_dbg {
+                    info!("[drag] LATCH  d={:.5}", state.distance);
+                }
                 arcball.anchor = Some(bdir);
                 motion_events.clear();
             }
@@ -409,6 +438,10 @@ fn orbit_camera_system(
                 // (instead of snapping the stale front point to the limb), and
                 // keep the drag alive with the pure geometric gain.
                 arcball.anchor = None;
+                if drag_dbg {
+                    let cur = win.and_then(|w| w.cursor_position());
+                    info!("[drag] MISS   d={:.5} cur={:?}", state.distance, cur);
+                }
                 let lat_factor = state.pitch.cos().max(0.15);
                 for ev in motion_events.read() {
                     let up = (arcball.orientation * Vec3::Y).normalize();
@@ -427,6 +460,18 @@ fn orbit_camera_system(
         let (h, p) = orbit_from_orientation(arcball.orientation);
         state.heading = h;
         state.pitch = p;
+        if drag_dbg {
+            let pos = arcball.orientation * (Vec3::Z * state.distance);
+            info!(
+                "[drag] POST eng={} h={:.6} p={:.6} pos=({:.5},{:.5},{:.5})",
+                arcball.engaged,
+                h,
+                p,
+                pos.x,
+                pos.y,
+                pos.z
+            );
+        }
     } else {
         // Consume events even when not dragging to avoid accumulation
         motion_events.clear();
@@ -663,6 +708,40 @@ fn pick_surface_dir(origin: Vec3, dir: Vec3, target: Vec3, radius: f32) -> Optio
     (hit - target).try_normalize()
 }
 
+/// Shortest-arc rotation taking unit direction `from` onto unit direction `to`,
+/// computed as `axis = from × to`, `angle = atan2(|axis|, from·to)`.
+///
+/// This replaces `Quat::from_rotation_arc`, which is unusable for the grab-the-
+/// globe anchor: it bails out to `IDENTITY` whenever `dot > 1 − ε`. At max zoom
+/// (camera ~765 m above the surface) the two geocentric surface directions — the
+/// latched anchor and the current cursor pick — differ by only ~3e-5 rad, so
+/// their f32 dot rounds to 1.0 and the anchored rotation degenerated to the
+/// identity, freezing the drag at 0 px. The cross-product magnitude (~3e-5) is
+/// still orders of magnitude above the f32 subnormal floor, so `atan2` recovers
+/// the true tiny angle and the grabbed point tracks the cursor 1:1 right down to
+/// the surface — while the same absolute-anchor math stays exact (never
+/// over-spins) at wide/whole-globe zooms, unlike a per-pixel gain that scales
+/// with camera height.
+fn rotation_from_unit_dir(from: Vec3, to: Vec3) -> Quat {
+    let axis = from.cross(to);
+    let sin = axis.length();
+    let cos = from.dot(to);
+    if sin < 1.0e-9 {
+        // (Anti)parallel: no meaningful rotation axis.
+        return if cos < 0.0 {
+            // 180° about any unit axis perpendicular to `from`.
+            let perp = if from.x.abs() < from.y.abs() { Vec3::X } else { Vec3::Y };
+            from.cross(perp)
+                .try_normalize()
+                .map(|a| Quat::from_axis_angle(a, std::f32::consts::PI))
+                .unwrap_or(Quat::IDENTITY)
+        } else {
+            Quat::IDENTITY
+        };
+    }
+    Quat::from_axis_angle(axis / sin, sin.atan2(cos))
+}
+
 /// Normalise an angle to the (-π, π] interval. Guards the inertia capture
 /// against a ±π azimuth wrap when the trackball crosses a pole.
 fn wrap_pi(a: f32) -> f32 {
@@ -823,6 +902,85 @@ mod tests {
         assert!((state.distance - 3.0).abs() < 1e-6);
     }
 
+    // TEMP DIAGNOSTIC: measure how far the grabbed point tracks the cursor
+    // through the anchor rotation, at several zooms. Ideal = ~150 px.
+    #[test]
+    fn diag_max_zoom_pick_horizon() {
+        let win_w = 1280.0_f32;
+        let win_h = 720.0_f32;
+        let tan_y = (CAMERA_FOV_Y * 0.5).tan();
+        let tan_x = tan_y * (win_w / win_h);
+        let focal = (win_h * 0.5) / tan_y;
+
+        // Project world point `p` to screen px offset from centre under `o`.
+        let project = |p: Vec3, o: Quat, dist: f32| -> Option<f32> {
+            let origin = o * (Vec3::Z * dist);
+            let to = p - origin;
+            let fwd = o * Vec3::new(0.0, 0.0, -1.0);
+            let right = o * Vec3::X;
+            let depth = to.dot(fwd);
+            if depth <= 0.0 {
+                return None;
+            }
+            Some(to.dot(right) / depth / tan_x * (win_w * 0.5))
+        };
+
+        // screen px -> world ray dir under orientation o
+        let ray = |px: f32, py: f32, o: Quat| -> Vec3 {
+            let nx = px / (win_w * 0.5);
+            let ny = py / (win_h * 0.5);
+            (o * Vec3::new(nx * tan_x, ny * tan_y, -1.0)).normalize()
+        };
+        // world point -> screen (x,y) px under orientation o
+        let project2 = |p: Vec3, o: Quat, dist: f32| -> (f32, f32) {
+            let origin = o * (Vec3::Z * dist);
+            let to = p - origin;
+            let fwd = o * Vec3::new(0.0, 0.0, -1.0);
+            let depth = to.dot(fwd).max(1e-9);
+            (
+                to.dot(o * Vec3::X) / depth / tan_x * (win_w * 0.5),
+                to.dot(o * Vec3::Y) / depth / tan_y * (win_h * 0.5),
+            )
+        };
+
+        let mut rep = String::new();
+        for dist in [1.00012_f32, 3.0] {
+            // Two grabs: dead centre, and off-centre (200,-150).
+            for gp in [(0.0_f32, 0.0_f32), (200.0, -150.0)] {
+                let mut o = arcball_quat_from_spherical(&OrbitState {
+                    heading: 0.0,
+                    pitch: 0.4,
+                    distance: dist,
+                    ..Default::default()
+                });
+                let origin0 = o * (Vec3::Z * dist);
+                let Some(anchor) = pick_surface_dir(origin0, ray(gp.0, gp.1, o), Vec3::ZERO, 1.0) else {
+                    rep.push_str(&format!("\n  dist={dist:.5} grab({gp:?}) MISS"));
+                    continue;
+                };
+                // Horizontal drag cursor +300 px in 8 feedback steps.
+                for i in 1..=8 {
+                    let cx = gp.0 + (300.0 * i as f32) / 8.0;
+                    let oi = o * (Vec3::Z * dist);
+                    if let Some(bdir) = pick_surface_dir(oi, ray(cx, gp.1, o), Vec3::ZERO, 1.0) {
+                        o = (rotation_from_unit_dir(bdir, anchor) * o).normalize();
+                    }
+                }
+                let (ax, ay) = project2(anchor, o, dist);
+                rep.push_str(&format!(
+                    "\n  dist={dist:.5} grab({:.0},{:.0}) +300px -> anchor at ({:.1},{:.1}) (want {:.0},{:.0})",
+                    gp.0,
+                    gp.1,
+                    ax,
+                    ay,
+                    gp.0 + 300.0,
+                    gp.1
+                ));
+            }
+        }
+        panic!("DIAG cont{}", rep);
+    }
+
     #[test]
     fn compute_transform_produces_correct_position() {
         let state = OrbitState {
@@ -928,7 +1086,10 @@ mod tests {
     #[test]
     fn inertia_pixel_scale_matches_grab_the_globe_gain() {
         // The scale must be the exact inverse of the grab-the-globe gain so the
-        // radian→pixel→radian round-trip is lossless.
+        // radian→pixel→radian round-trip is lossless. Both axes use the plain
+        // geometric gain (focal/surface_dist); the old 1/cos(pitch) meridian-
+        // convergence factor belongs to the legacy ECEF-around-Z model and was
+        // dropped when the arcball (camera-relative) tracking took over.
         let state = OrbitState {
             pitch: 0.3,
             distance: 4.0,
@@ -938,8 +1099,7 @@ mod tests {
         let (scale_h, scale_p) = inertia_pixel_scale(&state, win_h);
         let focal = (win_h * 0.5) / (CAMERA_FOV_Y * 0.5).tan();
         let surface_dist = state.distance - GLOBE_RADIUS;
-        let lat_factor = state.pitch.cos();
-        assert!((scale_h - lat_factor * focal / surface_dist).abs() < 1e-3);
+        assert!((scale_h - focal / surface_dist).abs() < 1e-3);
         assert!((scale_p - focal / surface_dist).abs() < 1e-3);
 
         // Round-trip: a radian delta → pixels → radians is identity.

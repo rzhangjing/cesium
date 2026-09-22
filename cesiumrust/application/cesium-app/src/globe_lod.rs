@@ -22,7 +22,7 @@ use crate::orbit_camera::{OrbitState, CAMERA_FOV_Y};
 // ── Constants (golden-path verbatim) ─────────────────────────────────────
 
 pub const MIN_ZOOM: u32 = 3;
-pub const MAX_ZOOM: u32 = 19;
+pub const MAX_ZOOM: u32 = 21;
 pub const BASE_SEGMENTS: u32 = 48;
 /// WGS84 semi-major axis (meters), for screen-space-error math.
 /// METERS_PER_RENDER_UNIT = 6378137 (硬约束).
@@ -92,7 +92,10 @@ pub fn compute_visible_tiles<C: LodContext>(
     focal_px: f64,
     ctx: &C,
 ) -> (Vec<(TileKey, f32)>, Vec<(TileKey, f32)>) {
-    let d = distance.max(1.001);
+    // Floor the LOD distance just below the camera's closest min_distance
+    // (1.00012) so it never binds; a coarser floor here would cap the deepest
+    // reachable tile level no matter how close the camera descends.
+    let d = distance.max(1.0001);
     let cx = lat_rad.cos() * lon_rad.cos();
     let cy = lat_rad.cos() * lon_rad.sin();
     let cz = lat_rad.sin();
