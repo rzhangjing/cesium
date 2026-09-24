@@ -472,7 +472,15 @@ fn orbit_camera_system(
                 let step_cap =
                     (f64::from(MAX_PAN_PX_PER_FRAME) * f64::from(surface_dist / focal))
                         .min(f64::from(MAX_DRAG_STEP_RAD));
-                let r = clamp_rotation_angle(rotation_from_unit_dir(bdir, anchor), step_cap as f32);
+                // Apply the overall sensitivity multiplier `rotate_speed` (1.0
+                // = exact 1:1) by scaling the grab rotation about its own axis,
+                // then clamp per frame. The off-globe fallback used to consume
+                // this; now the anchored path owns it so the field stays live.
+                let (grab_axis, grab_ang) = rotation_from_unit_dir(bdir, anchor).to_axis_angle();
+                let r = clamp_rotation_angle(
+                    DQuat::from_axis_angle(grab_axis, f64::from(state.rotate_speed) * grab_ang),
+                    step_cap as f32,
+                );
                 arcball.orientation = (r * arcball.orientation).normalize();
                 motion_events.clear();
             }
@@ -488,43 +496,15 @@ fn orbit_camera_system(
                 motion_events.clear();
             }
             (_, None) => {
-                // No surface point under the cursor. Two very different cases
-                // must NOT be treated the same way:
-                // Whether the pointer is still inside the window decides only
-                // how HARD we bound the step, not whether we rotate. The
-                // absolute-anchor path only ever consumed motion on the frames
-                // it took the (None) branch, so a stray backlog could flush on
-                // the first cursor-less frame and fling the globe (the old
-                // "鼠标一出窗口就飞速旋转"). Freezing outright was the wrong
-                // cure: at max zoom the cursor reaches the window edge almost
-                // immediately, so a freeze read as "the map won't follow".
-                // Instead KEEP dragging CesiumJS-style from the raw per-frame
-                // mouse motion at the same 1:1 surface gain the anchored path
-                // uses, but bound each frame's pan.
+                // Cursor no longer resolves to a point ON the globe — it has
+                // been dragged off the visible disc into the sky. Per explicit
+                // product decision: do NOT rotate at all, just freeze the drag.
+                // Reset the anchor and drain the mouse-motion backlog so the
+                // view stays put while the cursor is off-globe, and re-latches
+                // cleanly on the next picked frame once the cursor comes back
+                // (no stale-delta fling, no fast off-edge spin).
                 arcball.anchor = None;
-                let lat_factor = state.pitch.cos().max(0.15);
-                // Convert the pixel cap to a zoom-aware angle (a cap expressed
-                // in radians is meaningless at the surface: 0.1 rad at max zoom
-                // is ~100k px of pan) and never exceed the global radian cap.
-                // Same zoom-aware cap whether or not the pointer is in the
-                // window: the pixel bound already tracks the current altitude,
-                // and the radian backstop keeps a near-pole swing sane.
-                let step_cap =
-                    (f64::from(MAX_PAN_PX_PER_FRAME) * f64::from(surface_dist / focal))
-                        .min(f64::from(MAX_DRAG_STEP_RAD)) as f32;
-                for ev in motion_events.read() {
-                    let up = (arcball.orientation * DVec3::Y).normalize();
-                    let right = (arcball.orientation * DVec3::X).normalize();
-                    let d_yaw = -ev.delta.x
-                        * state.rotate_speed
-                        * surface_dist
-                        / (lat_factor * focal);
-                    let d_tilt = ev.delta.y * state.rotate_speed * surface_dist / focal;
-                    let q = DQuat::from_axis_angle(up, f64::from(d_yaw))
-                        * DQuat::from_axis_angle(right, f64::from(d_tilt));
-                    arcball.orientation =
-                        (clamp_rotation_angle(q, step_cap) * arcball.orientation).normalize();
-                }
+                motion_events.clear();
             }
         }
 
