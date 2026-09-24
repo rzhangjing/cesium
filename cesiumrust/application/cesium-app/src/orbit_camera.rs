@@ -29,11 +29,13 @@ use crate::feature_flags::{postprocess_builtin_enabled, postprocess_enabled};
 /// Camera vertical field of view (radians). Kept in sync between the spawned
 /// projection and the drag math so the grab-the-globe tracking is exact.
 pub const CAMERA_FOV_Y: f32 = std::f32::consts::FRAC_PI_3; // 60 degrees
-/// Near clip plane — kept below the camera's closest `min_distance` altitude
-/// (≈760 m) so the ground stays visible when fully zoomed in to inspect the
-/// finest tiles. Reversed-Z (wgpu default) tolerates the resulting near:far
-/// ratio without surface z-fighting (same-level tiles never overlap).
-const CAMERA_NEAR: f32 = 0.00005;
+/// Near clip plane — kept far below the camera's closest `min_distance`
+/// altitude (≈100 m) so the ground directly below stays visible when fully
+/// zoomed in to inspect the finest (sub-metre-per-texel) tiles. Reversed-Z
+/// (wgpu default) tolerates the resulting ~1:6.7e8 near:far ratio without
+/// surface z-fighting (same-level tiles never overlap; skirt drop + tuck step
+/// absorb the remaining depth precision at grazing angles).
+const CAMERA_NEAR: f32 = 0.0000005;
 /// Far clip plane — large enough for the starfield (radius ~50).
 const CAMERA_FAR: f32 = 200.0;
 /// Globe (equatorial) radius in render units.
@@ -120,7 +122,7 @@ impl Default for OrbitState {
             target: Vec3::ZERO,
             rotate_speed: 1.0, // exact geometric tracking by default
             zoom_speed: 0.3,
-            min_distance: 1.00012, // descend to ~760 m altitude -> level ~17 tiles
+            min_distance: 1.0000157, // descend to ~100 m altitude -> level ~20 tiles
             max_distance: 20.0,
         }
     }

@@ -93,9 +93,9 @@ pub fn compute_visible_tiles<C: LodContext>(
     ctx: &C,
 ) -> (Vec<(TileKey, f32)>, Vec<(TileKey, f32)>) {
     // Floor the LOD distance just below the camera's closest min_distance
-    // (1.00012) so it never binds; a coarser floor here would cap the deepest
-    // reachable tile level no matter how close the camera descends.
-    let d = distance.max(1.0001);
+    // (1.0000157 ≈ 100 m) so it never binds; a coarser floor here would cap
+    // the deepest reachable tile level no matter how close the camera descends.
+    let d = distance.max(1.00001);
     let cx = lat_rad.cos() * lon_rad.cos();
     let cy = lat_rad.cos() * lon_rad.sin();
     let cz = lat_rad.sin();
