@@ -18,7 +18,7 @@ use bevy::core_pipeline::bloom::Bloom;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
-use glam::{DVec2, DVec3};
+use glam::{DQuat, DVec2, DVec3};
 use cesium_interaction::{
     CameraFlight, InertiaController, InertiaSample, InertiaState,
     INERTIA_MAX_CLICK_TIME_THRESHOLD, compute_flight_duration, select_flight_easing,
@@ -47,6 +47,15 @@ const GLOBE_RADIUS: f32 = 1.0;
 /// an instant multi-degree teleport into a smooth few-frame catch-up. ~0.1 rad
 /// at 60 fps ≈ 340°/s, far above comfortable drag speed.
 const MAX_DRAG_STEP_RAD: f32 = 0.1;
+
+/// Screen-pan cap (pixels / frame) for the raw-motion drag used when the
+/// pointer leaves the window. A radian cap is zoom-blind — 0.1 rad at max zoom
+/// is ~100k px of pan, so it can't stop a surface-level runaway — hence the
+/// out-of-window step is additionally bounded so a single frame never pans
+/// more than this many pixels (then converted to a zoom-aware angle). Comfort-
+/// ably above any real one-frame mouse motion, so normal drags stay exact 1:1
+/// and only a stray input burst gets reeled in over a couple of frames.
+const MAX_PAN_PX_PER_FRAME: f32 = 600.0;
 
 /// Default inertia decay coefficient for rotation coasting (CesiumJS
 /// `inertiaSpin` default ≈ 0.9).
@@ -187,15 +196,20 @@ pub struct OrbitFlyToRequest {
 /// [`compute_camera_transform`] spherical path → byte-for-byte unchanged.
 #[derive(Resource)]
 struct Arcball {
-    /// Rotation of the camera rig about the target (globe centre).
-    orientation: Quat,
+    /// Rotation of the camera rig about the target (globe centre). Held in
+    /// f64: at max zoom the per-frame grab-the-globe correction is ~1e-7 rad,
+    /// which f32 annihilates (catastrophic cancellation between two O(1) unit
+    /// vectors that differ below ε → a headless probe showed the whole drag
+    /// sweeping 0.0 rad), freezing the drag. f64 keeps that tiny residual
+    /// meaningful; it is narrowed to f32 only for the render pose.
+    orientation: DQuat,
     /// Whether a real drag has taken over from the spherical path.
     engaged: bool,
     /// Geographic anchor: unit vector (target → surface) of the point grabbed
     /// under the cursor on the current drag. Each frame the rig is rotated so
     /// this point stays glued to the cursor → exact pointer tracking at any
     /// grab location / zoom. `None` until a point is picked under the cursor.
-    anchor: Option<Vec3>,
+    anchor: Option<DVec3>,
     /// Left-button state on the previous frame, to detect a fresh press.
     was_pressed: bool,
 }
@@ -203,7 +217,7 @@ struct Arcball {
 impl Default for Arcball {
     fn default() -> Self {
         Self {
-            orientation: Quat::IDENTITY,
+            orientation: DQuat::IDENTITY,
             engaged: false,
             anchor: None,
             was_pressed: false,
@@ -377,7 +391,7 @@ fn orbit_camera_system(
         // cursor, and latch the spherical pose if this is the first ever drag.
         if !arcball.was_pressed {
             if !arcball.engaged {
-                arcball.orientation = arcball_quat_from_spherical(&state);
+                arcball.orientation = arcball_quat_from_spherical(&state).as_dquat();
                 arcball.engaged = true;
             }
             arcball.anchor = None;
@@ -399,7 +413,9 @@ fn orbit_camera_system(
             .and_then(|w| {
                 cursor_ray_world(w, arcball.orientation, state.distance, state.target)
             })
-            .and_then(|(o, d)| pick_surface_dir(o, d, state.target, GLOBE_RADIUS));
+            .and_then(|(o, d)| {
+                pick_surface_dir(o, d, state.target.as_dvec3(), f64::from(GLOBE_RADIUS))
+            });
 
         match (arcball.anchor, picked) {
             (Some(anchor), Some(bdir)) => {
@@ -461,42 +477,39 @@ fn orbit_camera_system(
                     let cur = win.and_then(|w| w.cursor_position());
                     info!("[drag] MISS   d={:.5} present={} cur={:?}", state.distance, cursor_present, cur);
                 }
-                if !cursor_present {
-                    // The pointer LEFT THE WINDOW (or is otherwise unavailable).
-                    // FREEZE: run no rotation at all. The old code still applied
-                    // the geometric-gain fallback here, and because the
-                    // absolute-anchor path never consumed the MouseMotion stream
-                    // (it only clears it on anchored frames), the instant the
-                    // drag crossed a window edge the whole accumulated delta
-                    // burst was applied at once → the globe spun violently
-                    // ("鼠标一出窗口就飞速旋转"). Keep the anchor so re-entry
-                    // resumes the SAME grab; just drain events so nothing leaks.
-                    motion_events.clear();
+                // Whether the pointer is still inside the window decides only
+                // how HARD we bound the step, not whether we rotate. The
+                // absolute-anchor path only ever consumed motion on the frames
+                // it took the (None) branch, so a stray backlog could flush on
+                // the first cursor-less frame and fling the globe (the old
+                // "鼠标一出窗口就飞速旋转"). Freezing outright was the wrong
+                // cure: at max zoom the cursor reaches the window edge almost
+                // immediately, so a freeze read as "the map won't follow".
+                // Instead KEEP dragging CesiumJS-style from the raw per-frame
+                // mouse motion at the same 1:1 surface gain the anchored path
+                // uses, but bound each frame's pan.
+                arcball.anchor = None;
+                let lat_factor = state.pitch.cos().max(0.15);
+                // Convert the pixel cap to a zoom-aware angle (a cap expressed
+                // in radians is meaningless at the surface: 0.1 rad at max zoom
+                // is ~100k px of pan) and never exceed the global radian cap.
+                let step_cap = if cursor_present {
+                    MAX_DRAG_STEP_RAD
                 } else {
-                    // Cursor is inside the window but the ray missed the globe
-                    // (pointer over the space around the limb): keep the drag
-                    // alive with the geometric gain, and reset the anchor so a
-                    // re-entry re-latches cleanly instead of snapping a stale
-                    // front-side point to the limb. Bound each per-frame step so
-                    // a wide-zoom motion burst can't lurch either.
-                    arcball.anchor = None;
-                    let lat_factor = state.pitch.cos().max(0.15);
-                    for ev in motion_events.read() {
-                        let up = (arcball.orientation * Vec3::Y).normalize();
-                        let right = (arcball.orientation * Vec3::X).normalize();
-                        let d_yaw = -ev.delta.x
-                            * state.rotate_speed
-                            * surface_dist
-                            / (lat_factor * focal);
-                        let d_tilt =
-                            ev.delta.y * state.rotate_speed * surface_dist / focal;
-                        let q = Quat::from_axis_angle(up, d_yaw)
-                            * Quat::from_axis_angle(right, d_tilt);
-                        arcball.orientation = (
-                            clamp_rotation_angle(q, MAX_DRAG_STEP_RAD) * arcball.orientation
-                        )
-                        .normalize();
-                    }
+                    (MAX_PAN_PX_PER_FRAME * surface_dist / focal).min(MAX_DRAG_STEP_RAD)
+                };
+                for ev in motion_events.read() {
+                    let up = (arcball.orientation * DVec3::Y).normalize();
+                    let right = (arcball.orientation * DVec3::X).normalize();
+                    let d_yaw = -ev.delta.x
+                        * state.rotate_speed
+                        * surface_dist
+                        / (lat_factor * focal);
+                    let d_tilt = ev.delta.y * state.rotate_speed * surface_dist / focal;
+                    let q = DQuat::from_axis_angle(up, f64::from(d_yaw))
+                        * DQuat::from_axis_angle(right, f64::from(d_tilt));
+                    arcball.orientation =
+                        (clamp_rotation_angle(q, step_cap) * arcball.orientation).normalize();
                 }
             }
         }
@@ -507,7 +520,7 @@ fn orbit_camera_system(
         state.heading = h;
         state.pitch = p;
         if drag_dbg {
-            let pos = arcball.orientation * (Vec3::Z * state.distance);
+            let pos = arcball.orientation * (DVec3::Z * f64::from(state.distance));
             info!(
                 "[drag] POST eng={} h={:.6} p={:.6} pos=({:.5},{:.5},{:.5})",
                 arcball.engaged,
@@ -554,7 +567,7 @@ fn orbit_camera_system(
     // spherical north-up path (byte-identical to the pre-arcball baseline).
     if let Ok(mut transform) = query.get_single_mut() {
         *transform = if arcball.engaged {
-            transform_from_arcball(arcball.orientation, state.distance, state.target)
+            transform_from_arcball(arcball.orientation.as_quat(), state.distance, state.target)
         } else {
             compute_camera_transform(&state)
         };
@@ -653,17 +666,17 @@ fn orbit_inertia_system(
                 if arcball.engaged {
                     // Coast the live trackball the same way the drag drove it:
                     // yaw about the camera up, tilt about the camera right.
-                    let up = (arcball.orientation * Vec3::Y).normalize();
-                    let right = (arcball.orientation * Vec3::X).normalize();
-                    let q = Quat::from_axis_angle(up, d_heading)
-                        * Quat::from_axis_angle(right, d_pitch);
+                    let up = (arcball.orientation * DVec3::Y).normalize();
+                    let right = (arcball.orientation * DVec3::X).normalize();
+                    let q = DQuat::from_axis_angle(up, f64::from(d_heading))
+                        * DQuat::from_axis_angle(right, f64::from(d_pitch));
                     arcball.orientation = (q * arcball.orientation).normalize();
                     let (h, p) = orbit_from_orientation(arcball.orientation);
                     state.heading = h;
                     state.pitch = p;
                     if let Ok(mut transform) = query.get_single_mut() {
                         *transform = transform_from_arcball(
-                            arcball.orientation,
+                            arcball.orientation.as_quat(),
                             state.distance,
                             state.target,
                         );
@@ -712,10 +725,10 @@ fn inertia_pixel_scale(state: &OrbitState, win_h: f32) -> (f32, f32) {
 /// -Z, sitting at `target + orientation·(Ẑ · distance)`.
 fn cursor_ray_world(
     window: &Window,
-    orientation: Quat,
+    orientation: DQuat,
     distance: f32,
     target: Vec3,
-) -> Option<(Vec3, Vec3)> {
+) -> Option<(DVec3, DVec3)> {
     let cursor = window.cursor_position()?;
     let w = window.width().max(1.0);
     let h = window.height().max(1.0);
@@ -724,8 +737,15 @@ fn cursor_ray_world(
     let y_ndc = 1.0 - (cursor.y / h) * 2.0;
     let tan_y = (CAMERA_FOV_Y * 0.5).tan();
     let tan_x = tan_y * aspect;
-    let dir_cam = Vec3::new(x_ndc * tan_x, y_ndc * tan_y, -1.0).normalize();
-    let origin = target + orientation * (Vec3::Z * distance);
+    // Everything downstream (anchor pick + rotation) runs in f64 so the tiny
+    // max-zoom residuals survive; the pixel/FOV inputs are widened exactly.
+    let dir_cam = DVec3::new(
+        f64::from(x_ndc * tan_x),
+        f64::from(y_ndc * tan_y),
+        -1.0,
+    )
+    .normalize();
+    let origin = target.as_dvec3() + orientation * (DVec3::Z * f64::from(distance));
     let dir = (orientation * dir_cam).normalize();
     Some((origin, dir))
 }
@@ -736,7 +756,7 @@ fn cursor_ray_world(
 /// behind the camera — callers then fall back to geometric gain and reset the
 /// anchor, so dragging past the limb never fires a discontinuous correction
 /// toward a far-side/limb point (which showed up as a mid-drag teleport).
-fn pick_surface_dir(origin: Vec3, dir: Vec3, target: Vec3, radius: f32) -> Option<Vec3> {
+fn pick_surface_dir(origin: DVec3, dir: DVec3, target: DVec3, radius: f64) -> Option<DVec3> {
     let oc = origin - target;
     let b = oc.dot(dir);
     let c = oc.length_squared() - radius * radius;
@@ -768,24 +788,24 @@ fn pick_surface_dir(origin: Vec3, dir: Vec3, target: Vec3, radius: f32) -> Optio
 /// the surface — while the same absolute-anchor math stays exact (never
 /// over-spins) at wide/whole-globe zooms, unlike a per-pixel gain that scales
 /// with camera height.
-fn rotation_from_unit_dir(from: Vec3, to: Vec3) -> Quat {
+fn rotation_from_unit_dir(from: DVec3, to: DVec3) -> DQuat {
     let axis = from.cross(to);
     let sin = axis.length();
     let cos = from.dot(to);
-    if sin < 1.0e-9 {
+    if sin < 1.0e-12 {
         // (Anti)parallel: no meaningful rotation axis.
         return if cos < 0.0 {
             // 180° about any unit axis perpendicular to `from`.
-            let perp = if from.x.abs() < from.y.abs() { Vec3::X } else { Vec3::Y };
+            let perp = if from.x.abs() < from.y.abs() { DVec3::X } else { DVec3::Y };
             from.cross(perp)
                 .try_normalize()
-                .map(|a| Quat::from_axis_angle(a, std::f32::consts::PI))
-                .unwrap_or(Quat::IDENTITY)
+                .map(|a| DQuat::from_axis_angle(a, std::f64::consts::PI))
+                .unwrap_or(DQuat::IDENTITY)
         } else {
-            Quat::IDENTITY
+            DQuat::IDENTITY
         };
     }
-    Quat::from_axis_angle(axis / sin, sin.atan2(cos))
+    DQuat::from_axis_angle(axis / sin, sin.atan2(cos))
 }
 
 /// Soft-cap a rotation's angle to at most `max_angle` radians, preserving its
@@ -795,12 +815,13 @@ fn rotation_from_unit_dir(from: Vec3, to: Vec3) -> Quat {
 /// lets it converge smoothly over a few frames instead. A near-identity or
 /// already-small rotation is returned unchanged, so ordinary drags stay
 /// byte-identical (exact 1:1) — only oversized lurches are softened.
-fn clamp_rotation_angle(q: Quat, max_angle: f32) -> Quat {
+fn clamp_rotation_angle(q: DQuat, max_angle: f32) -> DQuat {
     let (axis, angle) = q.to_axis_angle();
+    let max_angle = f64::from(max_angle);
     if angle <= max_angle || axis.length_squared() < 1.0e-12 {
         return q;
     }
-    Quat::from_axis_angle(axis, max_angle)
+    DQuat::from_axis_angle(axis, max_angle)
 }
 
 /// Normalise an angle to the (-π, π] interval. Guards the inertia capture
@@ -946,9 +967,12 @@ fn transform_from_arcball(orientation: Quat, distance: f32, target: Vec3) -> Tra
 /// Derive `(heading, pitch)` — the view direction only, roll intentionally
 /// dropped — from an arcball orientation, so the spherical consumers (globe
 /// LOD sub-camera point, inertia) stay populated while the trackball is live.
-fn orbit_from_orientation(orientation: Quat) -> (f32, f32) {
-    let dir = orientation * Vec3::Z; // normalize(position - target)
-    (dir.y.atan2(dir.x), dir.z.clamp(-1.0, 1.0).asin())
+fn orbit_from_orientation(orientation: DQuat) -> (f32, f32) {
+    let dir = orientation * DVec3::Z; // normalize(position - target)
+    (
+        dir.y.atan2(dir.x) as f32,
+        dir.z.clamp(-1.0, 1.0).asin() as f32,
+    )
 }
 
 #[cfg(test)]
@@ -966,22 +990,22 @@ mod tests {
     #[test]
     fn clamp_rotation_angle_bounds_large_steps_only() {
         // A small rotation (an ordinary drag step) passes through byte-identical.
-        let small = Quat::from_axis_angle(Vec3::Z, 0.02);
+        let small = DQuat::from_axis_angle(DVec3::Z, 0.02);
         assert_eq!(clamp_rotation_angle(small, MAX_DRAG_STEP_RAD), small);
 
         // A huge rotation (a teleport-sized lurch) is capped to the limit while
         // keeping its axis, so the view glides instead of jumping.
-        let big = Quat::from_axis_angle(Vec3::X, 1.2);
+        let big = DQuat::from_axis_angle(DVec3::X, 1.2);
         let (axis, angle) = clamp_rotation_angle(big, MAX_DRAG_STEP_RAD).to_axis_angle();
-        assert!((angle - MAX_DRAG_STEP_RAD).abs() < 1e-5);
-        assert!((axis.abs() - Vec3::X.abs()).length() < 1e-5);
+        assert!((angle - f64::from(MAX_DRAG_STEP_RAD)).abs() < 1e-5);
+        assert!((axis.abs() - DVec3::X.abs()).length() < 1e-5);
     }
 
     #[test]
     fn clamp_rotation_angle_preserves_1to1_tracking_scale() {
         // At whole-globe zoom a normal fast drag step (~0.03 rad) must NOT be
         // clamped, so the grabbed point still lands exactly under the cursor.
-        let typical = Quat::from_axis_angle(Vec3::Y, 0.03);
+        let typical = DQuat::from_axis_angle(DVec3::Y, 0.03);
         assert_eq!(clamp_rotation_angle(typical, MAX_DRAG_STEP_RAD), typical);
     }
 
