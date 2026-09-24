@@ -39,22 +39,39 @@ const CAMERA_FAR: f32 = 200.0;
 /// Globe (equatorial) radius in render units.
 const GLOBE_RADIUS: f32 = 1.0;
 
-/// Max geocentric angle (radians) the "grab the globe" drag may correct in a
-/// single frame. Generous enough that no ordinary drag binds (mid-globe whole-
-/// globe steps ≲ 0.03 rad, max-zoom steps ≲ 1e-4 → still exact 1:1), tight
-/// enough to turn a pathological one-frame residual — a fast flick, a
-/// coalesced input burst, or a near-pole grab where meridians converge — from
-/// an instant multi-degree teleport into a smooth few-frame catch-up. ~0.1 rad
-/// at 60 fps ≈ 340°/s, far above comfortable drag speed.
-const MAX_DRAG_STEP_RAD: f32 = 0.1;
+/// WGS84 ellipsoid semi-axes in render units. The tile renderer tessellates the
+/// ground on the WGS84 ellipsoid — equatorial `ELLIPSOID_A`, polar
+/// `ELLIPSOID_B`, polar axis = local +Z (see `tile_mesh::create_tile_mesh_uv`,
+/// whose vertex `z` carries the `(1 - e²)` factor). The grab-the-globe drag pick
+/// MUST intersect this SAME surface: at deep zoom the camera sits only ~1e-3
+/// render units above the ground, so the ~0.2% radial gap between a unit sphere
+/// and the ellipsoid (largest at mid/high latitude) otherwise inflates into a
+/// large screen-space gain error — the measured ~0.58× "不跟手" undershoot.
+const ELLIPSOID_A: f64 = 1.0; // = GLOBE_RADIUS (EARTH_RADIUS / METERS_PER_RENDER_UNIT)
+const ELLIPSOID_B: f64 = 6356752.314245 / 6378137.0; // ≈ 0.99664719 (polar / equatorial)
 
-/// Screen-pan cap (pixels / frame) for the raw-motion drag used when the
-/// pointer leaves the window. A radian cap is zoom-blind — 0.1 rad at max zoom
-/// is ~100k px of pan, so it can't stop a surface-level runaway — hence the
-/// out-of-window step is additionally bounded so a single frame never pans
-/// more than this many pixels (then converted to a zoom-aware angle). Comfort-
-/// ably above any real one-frame mouse motion, so normal drags stay exact 1:1
-/// and only a stray input burst gets reeled in over a couple of frames.
+/// Absolute geocentric-angle cap (radians) per drag frame — a zoom-blind
+/// backstop only. A pure radian cap is far too tight at deep zoom: 0.1 rad at
+/// `min_distance` corresponds to ≲ 20 px of screen pan, so a ordinary fast
+/// drag bound against it and the map lagged the cursor by 10-20 px every
+/// frame (the measured "不跟手"). The real comfort limit is expressed in
+/// pixels per frame (`MAX_PAN_PX_PER_FRAME`) and converted to a zoom-aware
+/// angle; this radian value only keeps the two caps ordered (px cap ≤ rad
+/// cap at the closest zoom) and guards the raw-motion path from a runaway.
+const MAX_DRAG_STEP_RAD: f32 = 0.5;
+
+/// Screen-pan cap (pixels / frame) for EVERY drag step — both the anchored
+/// grab-the-globe correction and the raw-motion fallback, in-window or not.
+/// A radian cap is zoom-blind — 0.1 rad at max zoom is only ~20 px of pan,
+/// which throttled fast drags at the surface and made the map trail the
+/// cursor — so each frame's rotation is additionally bounded to never pan
+/// more than this many pixels (then converted to a zoom-aware angle via
+/// `px · surface_dist / focal`). Comfortably above any real one-frame mouse
+/// motion (a very fast flick ≈ 150 px/frame), so normal drags stay exact
+/// 1:1 at every zoom; only pathological spikes (coalesced input bursts,
+/// near-pole grabs where meridians converge) get reeled in over a couple of
+/// frames instead of teleporting the view or flinging the camera past the
+/// globe.
 const MAX_PAN_PX_PER_FRAME: f32 = 600.0;
 
 /// Default inertia decay coefficient for rotation coasting (CesiumJS
@@ -375,6 +392,7 @@ fn orbit_camera_system(
     time: Res<Time>,
     mut query: Query<&mut Transform, With<OrbitCamera>>,
     windows: Query<&Window>,
+    cameras: Query<(&Camera, &GlobalTransform), With<OrbitCamera>>,
     mut arcball: ResMut<Arcball>,
 ) {
     // Rotation: left mouse drag — cursor-anchored "grab the globe". On press
@@ -402,36 +420,30 @@ fn orbit_camera_system(
         let focal = (win_h * 0.5) / (CAMERA_FOV_Y * 0.5).tan();
         let surface_dist = (state.distance - GLOBE_RADIUS).max(0.001);
 
-        // TEMP DRAG DIAGNOSTIC (env-gated; unset ⇒ zero effect, deterministic
-        // paths untouched). Reveals which branch runs at max zoom and whether
-        // the pick ray actually responds to the OS cursor.
-        let drag_dbg = std::env::var_os("CESIUM_DRAG_DEBUG").is_some();
-
-        // World-space pick ray through the current cursor position, then the
-        // surface direction it hits.
-        let picked = win
-            .and_then(|w| {
-                cursor_ray_world(w, arcball.orientation, state.distance, state.target)
+        // World-space pick ray through the cursor, then the surface direction
+        // it hits. PREFER the camera's *real* projection (`viewport_to_world`,
+        // i.e. Bevy's actual `clip_from_view` + rendered `GlobalTransform`) so
+        // "the point under the cursor" is by construction the point the user
+        // SEES under the cursor — this removes every hand-model assumption
+        // (frustum math, transform conventions, up-axis). The hand-rolled
+        // `cursor_ray_world` survives only as the fallback for frames where
+        // the camera isn't queryable yet. Both widen to f64 downstream.
+        let bevy_ray = win.and_then(|w| {
+            cameras
+                .get_single()
+                .ok()
+                .and_then(|(cam, ct)| cursor_ray_bevy(cam, ct, w))
+        });
+        let picked = bevy_ray
+            .or_else(|| {
+                win.and_then(|w| {
+                    cursor_ray_world(w, arcball.orientation, state.distance, state.target)
+                })
             })
-            .and_then(|(o, d)| {
-                pick_surface_dir(o, d, state.target.as_dvec3(), f64::from(GLOBE_RADIUS))
-            });
+            .and_then(|(o, d)| pick_surface_dir_ellipsoid(o, d, state.target.as_dvec3()));
 
         match (arcball.anchor, picked) {
             (Some(anchor), Some(bdir)) => {
-                if drag_dbg {
-                    let cur = win.and_then(|w| w.cursor_position());
-                    let sz = win.map(|w| (w.width(), w.height())).unwrap_or((0.0, 0.0));
-                    info!(
-                        "[drag] ANCHOR d={:.5} chord={:.3e} cur={:?} win=({:.0},{:.0}) tgt={:?}",
-                        state.distance,
-                        anchor.distance(bdir),
-                        cur,
-                        sz.0,
-                        sz.1,
-                        state.target
-                    );
-                }
                 // Rotate the rig so the grabbed point comes back under the
                 // cursor (exact 1:1). Deltas are irrelevant (absolute cursor).
                 // NOTE: deliberately NOT `Quat::from_rotation_arc` — it
@@ -440,18 +452,25 @@ fn orbit_camera_system(
                 // ~3e-5 rad so their f32 dot rounds to 1.0 → the drag froze at
                 // 0 rotation. `rotation_from_unit_dir` recovers that tiny angle.
                 //
-                // The correction is then CLAMPED to `MAX_DRAG_STEP_RAD` per
-                // frame. Normal drags never bind (mid-globe chord ≲ 0.03 rad at
-                // whole-globe zoom, ≲ 1e-4 at max zoom → still exact 1:1), but a
-                // large single-frame cursor delta (a flick / coalesced input
+                // The correction is then CLAMPED per frame — but the cap is
+                // ZOOM-AWARE: `MAX_PAN_PX_PER_FRAME` pixels of screen pan
+                // converted to a geocentric angle at the current altitude
+                // (`px · surface_dist / focal`), never exceeding the global
+                // radian backstop. A fixed radian cap looked safe at whole-
+                // globe zoom yet throttled deep zoom into the ground: 0.1 rad
+                // at `min_distance` ≈ 20 px/frame, so every fast drag left a
+                // 10-20 px lag (the "不跟手"). Normal
+                // drags never bind the pixel cap at any zoom (mid-globe chord
+                // ≲ 0.03 rad, max-zoom steps ≲ 1e-4 → still exact 1:1), while
+                // a large single-frame cursor delta (a flick / coalesced input
                 // burst) or a near-pole grab — where meridians converge and a
-                // horizontal mouse move maps to a huge geocentric swing — can
-                // demand ≫ 0.5 rad in one step. Applying it whole teleported the
-                // view ("瞬间大范围漂移") and could fling the camera past the
-                // globe so every later pick missed ("地球没了"). Clamping turns
-                // those spikes into a smooth few-frame catch-up toward the cursor
-                // instead of an instant lurch.
-                let r = clamp_rotation_angle(rotation_from_unit_dir(bdir, anchor), MAX_DRAG_STEP_RAD);
+                // horizontal mouse move maps to a huge geocentric swing — is
+                // reeled in over a few frames instead of teleporting the view
+                // or flinging the camera past the globe ("地球没了").
+                let step_cap =
+                    (f64::from(MAX_PAN_PX_PER_FRAME) * f64::from(surface_dist / focal))
+                        .min(f64::from(MAX_DRAG_STEP_RAD));
+                let r = clamp_rotation_angle(rotation_from_unit_dir(bdir, anchor), step_cap as f32);
                 arcball.orientation = (r * arcball.orientation).normalize();
                 motion_events.clear();
             }
@@ -463,20 +482,12 @@ fn orbit_camera_system(
                 // point back under the cursor), producing a start-of-drag
                 // teleport. Tracking begins cleanly from the following frame.
                 let _ = maybe_anchor;
-                if drag_dbg {
-                    info!("[drag] LATCH  d={:.5}", state.distance);
-                }
                 arcball.anchor = Some(bdir);
                 motion_events.clear();
             }
             (_, None) => {
                 // No surface point under the cursor. Two very different cases
                 // must NOT be treated the same way:
-                let cursor_present = win.and_then(|w| w.cursor_position()).is_some();
-                if drag_dbg {
-                    let cur = win.and_then(|w| w.cursor_position());
-                    info!("[drag] MISS   d={:.5} present={} cur={:?}", state.distance, cursor_present, cur);
-                }
                 // Whether the pointer is still inside the window decides only
                 // how HARD we bound the step, not whether we rotate. The
                 // absolute-anchor path only ever consumed motion on the frames
@@ -493,11 +504,12 @@ fn orbit_camera_system(
                 // Convert the pixel cap to a zoom-aware angle (a cap expressed
                 // in radians is meaningless at the surface: 0.1 rad at max zoom
                 // is ~100k px of pan) and never exceed the global radian cap.
-                let step_cap = if cursor_present {
-                    MAX_DRAG_STEP_RAD
-                } else {
-                    (MAX_PAN_PX_PER_FRAME * surface_dist / focal).min(MAX_DRAG_STEP_RAD)
-                };
+                // Same zoom-aware cap whether or not the pointer is in the
+                // window: the pixel bound already tracks the current altitude,
+                // and the radian backstop keeps a near-pole swing sane.
+                let step_cap =
+                    (f64::from(MAX_PAN_PX_PER_FRAME) * f64::from(surface_dist / focal))
+                        .min(f64::from(MAX_DRAG_STEP_RAD)) as f32;
                 for ev in motion_events.read() {
                     let up = (arcball.orientation * DVec3::Y).normalize();
                     let right = (arcball.orientation * DVec3::X).normalize();
@@ -519,18 +531,6 @@ fn orbit_camera_system(
         let (h, p) = orbit_from_orientation(arcball.orientation);
         state.heading = h;
         state.pitch = p;
-        if drag_dbg {
-            let pos = arcball.orientation * (DVec3::Z * f64::from(state.distance));
-            info!(
-                "[drag] POST eng={} h={:.6} p={:.6} pos=({:.5},{:.5},{:.5})",
-                arcball.engaged,
-                h,
-                p,
-                pos.x,
-                pos.y,
-                pos.z
-            );
-        }
     } else {
         // Consume events even when not dragging to avoid accumulation
         motion_events.clear();
@@ -750,28 +750,57 @@ fn cursor_ray_world(
     Some((origin, dir))
 }
 
-/// Intersect a world ray with the globe sphere (centre `target`, `radius`) and
-/// return the unit direction from the centre to the hit. Returns `None` when
-/// the ray misses the sphere (cursor over space) or the only intersection is
-/// behind the camera — callers then fall back to geometric gain and reset the
-/// anchor, so dragging past the limb never fires a discontinuous correction
-/// toward a far-side/limb point (which showed up as a mid-drag teleport).
-fn pick_surface_dir(origin: DVec3, dir: DVec3, target: DVec3, radius: f64) -> Option<DVec3> {
-    let oc = origin - target;
-    let b = oc.dot(dir);
-    let c = oc.length_squared() - radius * radius;
-    let disc = b * b - c;
+/// Build the world-space pick ray through the OS cursor using the camera's
+/// REAL projection — `Camera::viewport_to_world` composes the actual
+/// `clip_from_view` matrix and the rendered `GlobalTransform`, so the ray it
+/// returns is exactly the line of sight the frame on screen was drawn along.
+/// This is the non-circular replacement for [`cursor_ray_world`]: instead of
+/// assuming our hand-derived frustum matches the renderer, we ask the renderer.
+/// The near-plane `origin` + unit `direction` are widened to f64 immediately
+/// so the downstream anchor rotation keeps the max-zoom tiny-angle precision
+/// (the f32 ray direction carries ~1e-7 rad, well under the ~1e-5 rad signal).
+fn cursor_ray_bevy(
+    camera: &Camera,
+    camera_transform: &GlobalTransform,
+    window: &Window,
+) -> Option<(DVec3, DVec3)> {
+    let cursor = window.cursor_position()?;
+    let ray = camera.viewport_to_world(camera_transform, cursor).ok()?;
+    let origin = ray.origin.as_dvec3();
+    let dir = Vec3::from(ray.direction).as_dvec3();
+    Some((origin, dir))
+}
+
+/// Intersect a world ray with the WGS84 ellipsoid (centred at `center`,
+/// equatorial radius `ELLIPSOID_A` in x/y, polar radius `ELLIPSOID_B` in z —
+/// the SAME surface the tile meshes are tessellated on) and return the unit
+/// direction from the centre to the near hit. `None` on a miss or when the only
+/// intersection is behind the camera. This replaces the old unit-sphere pick
+/// for the grab-the-globe drag so the anchor is the point
+/// the user actually SEES on the ground, not a sphere floating above it — the
+/// radial gap between the two is what made deep-zoom drags undershoot.
+fn pick_surface_dir_ellipsoid(origin: DVec3, dir: DVec3, center: DVec3) -> Option<DVec3> {
+    // Anisotropically scale to unit-sphere space, solve |o + t·d|² = 1, scale
+    // the near hit back to world. `dir` is unit in world but not after scaling,
+    // so keep the general quadratic (a ≠ 1).
+    let s = DVec3::new(1.0 / ELLIPSOID_A, 1.0 / ELLIPSOID_A, 1.0 / ELLIPSOID_B);
+    let os = (origin - center) * s;
+    let ds = dir * s;
+    let a = ds.dot(ds);
+    let half_b = os.dot(ds);
+    let c = os.dot(os) - 1.0;
+    let disc = half_b * half_b - a * c;
     if disc <= 0.0 {
         return None;
     }
-    let s = disc.sqrt();
-    let t0 = -b - s;
-    let t = if t0 > 0.0 { t0 } else { -b + s };
+    let sq = disc.sqrt();
+    let t0 = (-half_b - sq) / a;
+    let t = if t0 > 0.0 { t0 } else { (-half_b + sq) / a };
     if t <= 0.0 {
         return None;
     }
-    let hit = origin + dir * t;
-    (hit - target).try_normalize()
+    let hit = center + (os + ds * t) / s;
+    (hit - center).try_normalize()
 }
 
 /// Shortest-arc rotation taking unit direction `from` onto unit direction `to`,
