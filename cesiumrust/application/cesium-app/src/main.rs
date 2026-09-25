@@ -32,6 +32,7 @@ mod perf_counters;
 mod perf_trace;
 mod capture_script;
 mod offline_check;
+mod map2d;
 mod material_showcase;
 
 use orbit_camera::OrbitCameraPlugin;
@@ -580,6 +581,16 @@ fn main() {
         app.add_plugins(AtmosphereGlowPlugin);
     }
     app.add_plugins(StarfieldPlugin);
+
+    // ── 2D flat-map mode + switch button (windowed only) ─────────────────
+    // Never registered under CESIUM_HEADLESS, so the deterministic offscreen
+    // capture path keeps a single camera, no UI, no extra render pass (v0 /
+    // FIXED_CAMERA / camera-script baselines stay byte-exact). In the default
+    // windowed session MapMode starts as ThreeD, so the 3D orbit path also runs
+    // unchanged until the user clicks the button.
+    if !headless {
+        app.add_plugins(map2d::Map2dPlugin);
+    }
 
     // ── M4.1: shadow plugin (day_night lighting only) ───────────────────
     if lighting == LightingMode::DayNight {

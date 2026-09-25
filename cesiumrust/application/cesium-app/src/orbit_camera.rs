@@ -18,6 +18,7 @@ use bevy::core_pipeline::bloom::Bloom;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
+use bevy::render::view::RenderLayers;
 use glam::{DQuat, DVec2, DVec3};
 use cesium_interaction::{
     CameraFlight, InertiaController, InertiaSample, InertiaState,
@@ -25,6 +26,7 @@ use cesium_interaction::{
 };
 
 use crate::feature_flags::{postprocess_builtin_enabled, postprocess_enabled};
+use crate::map2d::{map_is_3d, MapMode};
 
 /// Camera vertical field of view (radians). Kept in sync between the spawned
 /// projection and the drag math so the grab-the-globe tracking is exact.
@@ -313,6 +315,7 @@ impl Plugin for OrbitCameraPlugin {
         // M0.1: seed initial camera from env (pixel-neutral when unset)
         let initial_state = orbit_state_from_env();
         app.insert_resource(initial_state)
+            .init_resource::<MapMode>()
             .init_resource::<OrbitInertiaState>()
             .init_resource::<OrbitFlightState>()
             .init_resource::<Arcball>()
@@ -320,7 +323,13 @@ impl Plugin for OrbitCameraPlugin {
             .add_systems(Startup, spawn_orbit_camera)
             .add_systems(
                 Update,
-                (orbit_camera_system, orbit_inertia_system, orbit_flight_system).chain(),
+                (orbit_camera_system, orbit_inertia_system, orbit_flight_system)
+                    .chain()
+                    // Gate the whole 3D path on the active map mode. `MapMode`
+                    // defaults to ThreeD, so in the default (and every
+                    // deterministic) session these systems run exactly as before;
+                    // they only stand down once the user switches to the 2D map.
+                    .run_if(map_is_3d),
             );
     }
 }
@@ -358,6 +367,9 @@ fn spawn_orbit_camera(mut commands: Commands, state: Res<OrbitState>) {
             Tonemapping::AcesFitted,
             Bloom::NATURAL,
             OrbitCamera,
+            // Layer 0 = the 3D globe scene, layer 2 = shared UI. The 2D map
+            // camera owns layer 1, so the two never render each other's world.
+            RenderLayers::from_layers(&[0, 2]),
             Projection::Perspective(projection),
             transform,
         ))
@@ -366,6 +378,7 @@ fn spawn_orbit_camera(mut commands: Commands, state: Res<OrbitState>) {
             Camera3d::default(),
             Tonemapping::None,
             OrbitCamera,
+            RenderLayers::from_layers(&[0, 2]),
             Projection::Perspective(projection),
             transform,
         ))
