@@ -1,11 +1,11 @@
 //! 2D flat-map mode + the 2D/3D switch button (see plan `cesium-app_2D_地图模式`).
 //!
-//! ## Scope of this module (P1 skeleton)
+//! ## Scope of this module
 //! A single [`MapMode`] resource decides whether the viewer runs the proven 3D
 //! globe path or a new flat Geographic (equirectangular) map. In 2D the imagery
-//! tiles will (P2) be laid on the XY plane via `x = R·lon, y = R·lat`; for P1 a
-//! procedurally generated lat/lon grid stands in so pan / zoom / switch can be
-//! validated without touching the tile pipeline.
+//! is laid on the XY plane via `x = R·lon, y = R·lat` as a Web Mercator tile
+//! layer; a cell whose exact tile is still downloading falls back to its best
+//! cached ancestor so the view never blanks out.
 //!
 //! ## Determinism contract (hard requirement)
 //! [`MapMode`] defaults to [`MapMode::ThreeD`]. The 3D orbit systems are gated
@@ -16,8 +16,7 @@
 //! UI, no extra render pass.
 
 use bevy::core_pipeline::tonemapping::Tonemapping;
-use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
-use bevy::input::mouse::{MouseMotion, MouseWheel};
+use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
@@ -105,10 +104,6 @@ pub fn map_is_3d(mode: Res<MapMode>) -> bool {
 #[derive(Component)]
 struct Map2dCamera;
 
-/// Marker for the base grid quad, hidden in 3D mode.
-#[derive(Component)]
-struct Map2dPlane;
-
 /// One cell of the 2D/3D segmented switch. Remembers which mode it selects and
 /// its own label entity, so a single system can restyle fill + text together.
 #[derive(Component)]
@@ -173,10 +168,12 @@ struct Map2dTiler {
     job_tx: mpsc::Sender<(u32, u32, u32)>,
     rx: Mutex<mpsc::Receiver<Map2dTileImg>>,
     cache: HashMap<(u32, u32, u32), Handle<Image>>,
-    live: HashMap<(i64, u32), Entity>,
+    /// Live quads keyed by their *placement* — `(raw_col, raw_row, level)`. The
+    /// level is part of the key because one view mixes target tiles with the
+    /// coarser ancestors shown beneath them as fallbacks.
+    live: HashMap<(i64, i64, u32), Entity>,
     in_flight: HashSet<(u32, u32, u32)>,
     unit_quad: Option<Handle<Mesh>>,
-    cur_z: u32,
 }
 
 impl Default for Map2dTiler {
@@ -196,9 +193,17 @@ impl Default for Map2dTiler {
             live: HashMap::new(),
             in_flight: HashSet::new(),
             unit_quad: None,
-            cur_z: 0,
         }
     }
+}
+
+/// Remembers the cursor sample from the previous frame while the left button is
+/// held. Panning diffs two samples taken in the *same* space — `Window::cursor_
+/// position` (logical px, top-left origin) — rather than mixing that with
+/// `MouseMotion` (physical px, y-up), which made 2D drag inverted and non-1:1.
+#[derive(Resource, Default)]
+struct Map2dPanCursor {
+    last: Option<Vec2>,
 }
 
 /// Plugin wiring the 2D map. Registered only on the windowed branch of `main`.
@@ -210,9 +215,10 @@ impl Plugin for Map2dPlugin {
         // here we only add the 2D-specific systems and startup spawns.
         app.add_systems(
             Startup,
-            (spawn_map2d_camera, spawn_map2d_plane, build_mode_ui).chain(),
+            (spawn_map2d_camera, build_mode_ui).chain(),
         )
         .init_resource::<Map2dTiler>()
+        .init_resource::<Map2dPanCursor>()
         .add_systems(
             Update,
             (
@@ -253,8 +259,8 @@ fn spawn_map2d_camera(mut commands: Commands) {
         // (`TonyMcMapFace`) logs an error every frame. An unlit flat map needs
         // no tonemapping at all.
         Tonemapping::None,
-        // Layer 1 = the flat grid, layer 2 = shared UI. It never sees the
-        // globe (layer 0), so switching modes can't leave the 3D scene showing.
+        // Layer 1 = the flat imagery tiles, layer 2 = shared UI. It never sees
+        // the globe (layer 0), so switching modes can't leave the 3D scene showing.
         RenderLayers::from_layers(&[1, 2]),
         Projection::Orthographic(projection),
         Map2dCamera,
@@ -263,30 +269,6 @@ fn spawn_map2d_camera(mut commands: Commands) {
             zoom: ZOOM_DEFAULT,
         },
         Transform::from_xyz(0.0, 0.0, CAM_Z),
-    ));
-}
-
-fn spawn_map2d_plane(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut images: ResMut<Assets<Image>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    let tex = build_grid_texture(&mut images);
-    let mesh = build_grid_mesh();
-    let mat = materials.add(StandardMaterial {
-        base_color_texture: Some(tex),
-        unlit: true,
-        ..default()
-    });
-    commands.spawn((
-        Map2dPlane,
-        Mesh3d(meshes.add(mesh)),
-        MeshMaterial3d(mat),
-        // Layer 1: only the 2D camera (which is `is_active` in 2D mode) sees it.
-        RenderLayers::layer(1),
-        Visibility::Visible,
-        Transform::from_xyz(0.0, 0.0, 0.0),
     ));
 }
 
@@ -432,7 +414,8 @@ fn sync_camera_by_mode(
 }
 
 /// Pin every UI root to the camera that is actually active for the current mode.
-////// bevy_ui binds a UI tree to ONE camera: `TargetCamera`, falling back to
+///
+/// bevy_ui binds a UI tree to ONE camera: `TargetCamera`, falling back to
 /// `DefaultUiCamera` — which is only resolvable when the world has a single
 /// camera. `TargetCamera`'s own doc says as much: *"Optional if there is only
 /// one camera in the world. Required otherwise."* We have at least two (orbit +
@@ -444,10 +427,19 @@ fn sync_camera_by_mode(
 /// Layout is window-derived and identical for both cameras, so re-pointing the
 /// roots is safe. The write is guarded on "already correct" to avoid a change
 /// tick (and a child re-propagation) on every idle frame.
+/// Query filters for [`sync_ui_target_camera`]; factored out to keep clippy's
+/// `type_complexity` happy (nested `Has`/`Or` tuples blow the default budget).
+/// Both `Query` lifetimes (`'w`, `'s`) stay as separate params — collapsing them
+/// into one breaks the `SystemParam` bound Bevy's `.chain()` relies on.
+type ModeCamsQuery<'w, 's> =
+    Query<'w, 's, (Entity, Has<OrbitCamera>, Has<Map2dCamera>), With<Camera>>;
+type UiRootsQuery<'w, 's> =
+    Query<'w, 's, Entity, Or<(With<ModeSwitchRoot>, With<ReadoutRoot>)>>;
+
 fn sync_ui_target_camera(
     mode: Res<MapMode>,
-    cams: Query<(Entity, Has<OrbitCamera>, Has<Map2dCamera>), With<Camera>>,
-    roots: Query<Entity, Or<(With<ModeSwitchRoot>, With<ReadoutRoot>)>>,
+    cams: ModeCamsQuery,
+    roots: UiRootsQuery,
     bound: Query<&TargetCamera>,
     mut commands: Commands,
 ) {
@@ -535,35 +527,33 @@ fn update_mode_segments(
 /// Only mutates [`Map2dCam`]; [`apply_map2d_cam`] writes it to the camera.
 fn map2d_pan_system(
     mouse: Res<ButtonInput<MouseButton>>,
-    mut motion: EventReader<MouseMotion>,
     windows: Query<&Window>,
     read: Query<(&Camera, &GlobalTransform), With<Map2dCamera>>,
     mut write: Query<&mut Map2dCam, With<Map2dCamera>>,
+    mut anchor: ResMut<Map2dPanCursor>,
 ) {
+    // Not dragging: drop the anchor so the next press re-seeds without a jump.
     if !mouse.pressed(MouseButton::Left) {
-        for _ in motion.read() {}
+        anchor.last = None;
         return;
     }
     let Ok(win) = windows.get_single() else { return };
-    let Some(cursor) = win.cursor_position() else {
-        for _ in motion.read() {}
-        return;
-    };
+    // `cursor_position` shares `viewport_to_world_2d`'s space (logical px, top-
+    // left origin), so consecutive samples diff cleanly — no DPI scale, no axis
+    // flip. This is why we no longer read `MouseMotion` here.
+    let Some(cursor) = win.cursor_position() else { return };
     let Ok((cam, ct)) = read.get_single() else { return };
 
-    // Accumulate this frame's motion (usually one event, coalesce any burst).
-    let mut delta = Vec2::ZERO;
-    for m in motion.read() {
-        delta += m.delta;
-    }
-    if delta == Vec2::ZERO {
+    // First frame of a drag: remember where the grab started, don't move yet.
+    let Some(prev) = anchor.last.replace(cursor) else {
+        return;
+    };
+    if cursor == prev {
         return;
     }
 
-    // Grab-the-map: the world point under the previous cursor should land under
-    // the current one. Both samples are absolute world, so their difference is
-    // the exact world-space pan for this frame's pixel delta.
-    let prev = cursor - delta;
+    // Grab-the-map: the world point under the previous sample lands under the
+    // current one, so the imagery tracks the cursor exactly 1:1.
     let (Ok(w_now), Ok(w_prev)) = (
         cam.viewport_to_world_2d(ct, cursor),
         cam.viewport_to_world_2d(ct, prev),
@@ -741,93 +731,6 @@ fn approx_zoom_level(zoom: f32) -> i32 {
     z.max(0.0).round() as i32
 }
 
-// ── Base grid (P1 placeholder) ──────────────────────────────────────────────
-
-/// One full-world RGBA texture with an equirectangular lat/lon grid. Address
-/// mode U = Repeat gives seamless longitude tiling; V = ClampToEdge avoids
-/// repeating the (data-free) polar bands.
-fn build_grid_texture(images: &mut Assets<Image>) -> Handle<Image> {
-    const W: u32 = 768;
-    const H: u32 = 384;
-    let sea = [18u8, 32, 48, 255];
-    let grid = [70u8, 110, 150, 255];
-    let axis = [150u8, 190, 220, 255];
-
-    let mut px = vec![0u8; (W * H * 4) as usize];
-    // 24 meridians (15° apart), 12 parallels (15° apart).
-    let col_lines = 24u32;
-    let row_lines = 12u32;
-    for y in 0..H {
-        for x in 0..W {
-            let m = (x * col_lines) / W;
-            let p = (y * row_lines) / H;
-            let on_meridian = (x - m * (W / col_lines)) < 1;
-            let on_parallel = (y - p * (H / row_lines)) < 1;
-            let is_axis =
-                (x as i32 - (W / 2) as i32).abs() < 1 || (y as i32 - (H / 2) as i32).abs() < 1;
-            let c = if is_axis {
-                axis
-            } else if on_meridian || on_parallel {
-                grid
-            } else {
-                sea
-            };
-            let i = ((y * W + x) * 4) as usize;
-            px[i..i + 4].copy_from_slice(&c);
-        }
-    }
-
-    let mut img = Image::new(
-        Extent3d {
-            width: W,
-            height: H,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        px,
-        TextureFormat::Rgba8UnormSrgb,
-        RenderAssetUsages::default(),
-    );
-    img.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-        mag_filter: ImageFilterMode::Linear,
-        min_filter: ImageFilterMode::Linear,
-        // Repeat in both axes: the placeholder grid tiles seamlessly so the
-        // oversized quad always fills the viewport (no empty pole margins).
-        address_mode_u: ImageAddressMode::Repeat,
-        address_mode_v: ImageAddressMode::Repeat,
-        ..default()
-    });
-    images.add(img)
-}
-
-/// A single oversized quad on the XY plane spanning x ∈ [-4π, 4π],
-/// y ∈ [-3π, 3π] — big enough to fill the viewport at every allowed zoom. UV:
-/// u = x / WORLD_W (one tile per 360°), v = y / π + 0.5 (one tile per 180°), so
-/// the repeating texture reads as a consistent 15° lat/lon grid. Built as two
-/// triangles with position + normal + uv.
-fn build_grid_mesh() -> Mesh {
-    let half_x = 4.0 * std::f32::consts::PI;
-    let half_y = 3.0 * std::f32::consts::PI;
-    // corners: 0 TL, 1 TR, 2 BL, 3 BR
-    let positions = [
-        [-half_x, half_y, 0.0],
-        [half_x, half_y, 0.0],
-        [-half_x, -half_y, 0.0],
-        [half_x, -half_y, 0.0],
-    ];
-    let uvs = positions.map(|p| [p[0] / WORLD_W, p[1] / std::f32::consts::PI + 0.5]);
-    let normals = [[0.0, 0.0, 1.0]; 4];
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions.to_vec());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals.to_vec());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs.to_vec());
-    // Winding for a +Z-facing quad seen from a camera looking down -Z: the
-    // triangles must be CCW as seen from +Z (screen-right = +X, up = +Y), so
-    // the front faces the camera and survives back-face culling.
-    mesh.insert_indices(Indices::U16(vec![0, 2, 3, 0, 3, 1]));
-    mesh
-}
-
 // ── P2: imagery-tile layer ─────────────────────────────────────────────────
 
 /// Pick the Web-Mercator tile level so one native 256px tile covers about
@@ -884,8 +787,8 @@ fn quadkey(x: u32, y: u32, level: u32) -> String {
 }
 
 /// A unit quad in the XY plane (local extent [-0.5, 0.5]), UV filling [0, 1] so
-/// v=0 is the tile's north edge (row 0 of the downloaded image). Same winding
-/// as [`build_grid_mesh`] so the front face points +Z at the top-down camera.
+/// v=0 is the tile's north edge (row 0 of the downloaded image). Wound CCW as
+/// seen from +Z so the front face points at the top-down camera.
 fn build_unit_quad() -> Mesh {
     let positions = [
         [-0.5, 0.5, 0.0],
@@ -903,17 +806,52 @@ fn build_unit_quad() -> Mesh {
     mesh
 }
 
-/// One desired tile: `(placement_key, (canonical_key, rect))` where the rect is
-/// `(centre_x, centre_y, width, height)` in Geographic world units.
-type DesiredTile = HashMap<(i64, u32), ((u32, u32, u32), (f32, f32, f32, f32))>;
+/// One desired tile: `(placement_key, (canonical_key, rect))`. The placement key
+/// is `(raw_col, raw_row, level)` — the level is part of it because one view
+/// mixes target-level tiles with coarser ancestors shown as fallbacks. The rect
+/// is `(centre_x, centre_y, width, height)` in Geographic world units.
+type DesiredTile = HashMap<(i64, i64, u32), ((u32, u32, u32), (f32, f32, f32, f32))>;
+
+/// Decide which tile a target cell `(col, row)` at level `z` should actually
+/// show: the cell's own tile when `has` reports it cached, otherwise the nearest
+/// cached ancestor (walking up one level at a time). When nothing along the
+/// chain is cached it stops at the coarsest level `TILE_Z_MIN`, so the caller
+/// still places a (hidden) placeholder and keeps requesting the exact tile.
+///
+/// Returns `(place_col, place_row, place_level, canonical_key)` — the first three
+/// locate the chosen tile's rectangle via [`tile_rect`], the last is the cache
+/// key to paint from. `col` may lie outside `[0, 2^z)` (longitude wrap); the
+/// `div_euclid`/`rem_euclid` pair keeps ancestor columns consistent with that.
+fn resolve_tile_cell(
+    col: i64,
+    row: i64,
+    z: u32,
+    has: impl Fn((u32, u32, u32)) -> bool,
+) -> (i64, i64, u32, (u32, u32, u32)) {
+    let mut lvl = z;
+    loop {
+        let span = 1i64 << (z - lvl);
+        let acol = col.div_euclid(span);
+        let arow = row.div_euclid(span);
+        let an = 1i64 << lvl;
+        let key = (acol.rem_euclid(an) as u32, arow as u32, lvl);
+        if has(key) || lvl == TILE_Z_MIN as u32 {
+            return (acol, arow, lvl, key);
+        }
+        lvl -= 1;
+    }
+}
 
 /// Maintain the flat-map imagery layer for the current viewport: reconcile the
 /// set of visible tiles (spawn/despawn quads), kick off downloads for tiles we
 /// don't yet have, and paint cached textures onto entities as they land.
 ///
-/// The placeholder grid underneath (layer 1) always covers the frame, so tiles
-/// start `Hidden` and are revealed only once their texture is ready — no white
-/// flash, no holes while streaming.
+/// Each visible cell shows the best imagery it can: its own tile when cached,
+/// otherwise the nearest already-downloaded ancestor tile drawn at the ancestor's
+/// native rectangle. Tiles are stacked by level (finer on top), so zooming in
+/// keeps the coarse imagery visible until the finer tiles arrive — no blank, no
+/// white flash. A cell with nothing cached at any level spawns `Hidden` and is
+/// revealed by the paint step once its image lands.
 #[allow(clippy::too_many_arguments)]
 fn update_map2d_tiles(
     mut commands: Commands,
@@ -964,19 +902,20 @@ fn update_map2d_tiles(
         return;
     };
 
-    // 3. Resolve tile level; a level change invalidates every quad.
+    // 3. Resolve the target level. A level change no longer wipes the layer: a
+    //    cell whose exact tile isn't cached keeps showing its best cached
+    //    ancestor, so zooming in never flashes blank.
     let z = tile_zoom_for(mc.zoom);
-    if z != tiler.cur_z {
-        for (_, e) in tiler.live.drain() {
-            commands.entity(e).despawn();
-        }
-        tiler.cur_z = z;
-    }
     let ni = 1i64 << z;
     let n = ni as f64;
 
-    // 4. Enumerate the visible (raw-col, row) rectangle. Columns run past the
-    //    ±π edges and wrap via `rem_euclid`; rows are clamped to [0, n).
+    // 4. Enumerate the visible target rectangle. Columns run past the ±π edges
+    //    and wrap via `rem_euclid`; rows are clamped to [0, n). Each target cell
+    //    walks up the level ladder to the coarsest cached tile and places *that*
+    //    tile at its own native rectangle. Distinct placements dedup, so one
+    //    cached ancestor stands in for all of its still-missing descendants; a
+    //    finer tile that later lands is drawn on top (higher z) and the ancestor
+    //    drops out once nothing beneath it still needs it.
     let col_start = ((f64::from(tl.x) + PI6) / TAU6 * n).floor() as i64;
     let col_end = ((f64::from(br.x) + PI6) / TAU6 * n).floor() as i64;
     let row_start = lat_to_row(f64::from(tl.y), n).floor().max(0.0) as i64;
@@ -985,16 +924,22 @@ fn update_map2d_tiles(
         .min((ni - 1) as f64) as i64;
 
     let mut desired: DesiredTile = HashMap::new();
+    // Target-level tiles we ask to download; ancestors shown as fallbacks are
+    // cached by construction, so they never need fetching.
+    let mut wants: Vec<(u32, u32, u32)> = Vec::new();
     for row in row_start..=row_end {
         for col in col_start..=col_end {
-            let canon = (col.rem_euclid(ni) as u32, row as u32, z);
-            let rect = tile_rect(col as f64, row as f64, n);
-            desired.insert((col, row as u32), (canon, rect));
+            wants.push((col.rem_euclid(ni) as u32, row as u32, z));
+            let (acol, arow, lvl, akey) =
+                resolve_tile_cell(col, row, z, |k| tiler.cache.contains_key(&k));
+            let arect = tile_rect(acol as f64, arow as f64, (1i64 << lvl) as f64);
+            desired.insert((acol, arow, lvl), (akey, arect));
         }
     }
 
-    // 5. Despawn tiles that left the viewport.
-    let gone: Vec<(i64, u32)> = tiler
+    // 5. Despawn placements no longer wanted (left the viewport, or were
+    //    superseded by a finer tile that just finished downloading).
+    let gone: Vec<(i64, i64, u32)> = tiler
         .live
         .keys()
         .filter(|pk| !desired.contains_key(pk))
@@ -1012,7 +957,9 @@ fn update_map2d_tiles(
     }
     let quad = tiler.unit_quad.clone().unwrap();
 
-    // 7. Spawn new tiles (textured straight from cache when possible).
+    // 7. Spawn new placements. Elevation rises with the level so a finer tile
+    //    always covers the coarser fallback beneath it; a cell with nothing
+    //    cached at any level spawns `Hidden` and is revealed by step 9.
     for (pk, (canon, (cx, cy, w, h))) in &desired {
         if tiler.live.contains_key(pk) {
             continue;
@@ -1034,7 +981,8 @@ fn update_map2d_tiles(
                 Map2dTile { key: *canon },
                 Mesh3d(quad.clone()),
                 MeshMaterial3d(mat),
-                Transform::from_xyz(*cx, *cy, TILE_Z_ELEV).with_scale(Vec3::new(*w, *h, 1.0)),
+                Transform::from_xyz(*cx, *cy, TILE_Z_ELEV + pk.2 as f32)
+                    .with_scale(Vec3::new(*w, *h, 1.0)),
                 RenderLayers::layer(1),
                 vis,
             ))
@@ -1042,8 +990,7 @@ fn update_map2d_tiles(
         tiler.live.insert(*pk, e);
     }
 
-    // 8. Queue downloads for anything not cached / already in flight.
-    let mut wants: Vec<(u32, u32, u32)> = desired.values().map(|(c, _)| *c).collect();
+    // 8. Queue downloads for the target-level tiles we don't have / aren't fetching.
     wants.sort_unstable();
     wants.dedup();
     for key in wants {
@@ -1203,6 +1150,47 @@ mod map2d_tests {
     }
 
     #[test]
+    fn resolve_prefers_exact_then_nearest_ancestor() {
+        use std::collections::HashSet;
+        let exact: HashSet<(u32, u32, u32)> = [(5, 3, 4)].into_iter().collect();
+        assert_eq!(
+            resolve_tile_cell(5, 3, 4, |k| exact.contains(&k)),
+            (5, 3, 4, (5, 3, 4)),
+            "cached exact tile wins"
+        );
+
+        // (5, 3) at z=4 → z=3 parent (2, 1) → z=2 grandparent (1, 0): the one
+        // cached level is chosen even though finer levels were requested.
+        let gp: HashSet<(u32, u32, u32)> = [(1, 0, 2)].into_iter().collect();
+        assert_eq!(
+            resolve_tile_cell(5, 3, 4, |k| gp.contains(&k)),
+            (1, 0, 2, (1, 0, 2)),
+            "falls back to the nearest cached ancestor"
+        );
+    }
+
+    #[test]
+    fn resolve_without_any_cache_stops_at_coarsest() {
+        use std::collections::HashSet;
+        let none: HashSet<(u32, u32, u32)> = HashSet::new();
+        let (c, r, l, k) = resolve_tile_cell(5, 3, 4, |x| none.contains(&x));
+        assert_eq!(l, TILE_Z_MIN as u32, "nothing cached → coarsest level");
+        assert_eq!((c, r, k), (0, 0, (0, 0, TILE_Z_MIN as u32)));
+    }
+
+    #[test]
+    fn resolve_wraps_negative_columns_to_parent() {
+        use std::collections::HashSet;
+        // col -1 at z=2 wraps to canonical x=3; its z=1 parent is x=1, row 3>>1=1.
+        let parent: HashSet<(u32, u32, u32)> = [(1, 1, 1)].into_iter().collect();
+        assert_eq!(
+            resolve_tile_cell(-1, 3, 2, |k| parent.contains(&k)),
+            (-1, 1, 1, (1, 1, 1)),
+            "wrapped column maps to its ancestor on the far side"
+        );
+    }
+
+    #[test]
     fn tile_zoom_grows_with_zoom_and_stays_bounded() {
         assert!(tile_zoom_for(ZOOM_MAX) > tile_zoom_for(ZOOM_MIN));
         for z in [ZOOM_MIN, 500.0, 2000.0, ZOOM_MAX] {
@@ -1234,5 +1222,49 @@ mod map2d_tests {
         assert!((m - 727.0 / std::f32::consts::PI).abs() < 1.0, "m = {m}");
         // A tiny canvas falls back to the fixed floor.
         assert_eq!(min_zoom_for(100.0), ZOOM_MIN);
+    }
+
+    /// Regression guard for "the switch vanishes after entering 2D". With two
+    /// cameras the UI root must be re-pinned to whichever camera is active for
+    /// the current [`MapMode`], or bevy_ui drops its `DefaultCameraView` and the
+    /// whole control stops drawing. Drives the real sync systems over a minimal
+    /// world and checks the root's [`TargetCamera`] tracks the mode.
+    #[test]
+    fn ui_roots_follow_active_camera_in_each_mode() {
+        let mut app = App::new();
+        app.init_resource::<MapMode>();
+        app.add_systems(
+            Update,
+            (sync_camera_by_mode, sync_ui_target_camera).chain(),
+        );
+
+        let orbit;
+        let flat;
+        let switch_root;
+        let readout_root;
+        {
+            let world = app.world_mut();
+            orbit = world.spawn((Camera::default(), OrbitCamera)).id();
+            flat = world.spawn((Camera::default(), Map2dCamera)).id();
+            switch_root = world.spawn(ModeSwitchRoot).id();
+            readout_root = world.spawn(ReadoutRoot).id();
+        }
+
+        // Default (ThreeD): both roots target the orbit camera.
+        app.update();
+        assert_eq!(app.world().get::<TargetCamera>(switch_root).map(|t| t.0), Some(orbit));
+        assert_eq!(app.world().get::<TargetCamera>(readout_root).map(|t| t.0), Some(orbit));
+
+        // Switch to 2D: both roots must re-point to the flat camera — the exact
+        // moment the old build lost the control.
+        *app.world_mut().resource_mut::<MapMode>() = MapMode::TwoD;
+        app.update();
+        assert_eq!(app.world().get::<TargetCamera>(switch_root).map(|t| t.0), Some(flat));
+        assert_eq!(app.world().get::<TargetCamera>(readout_root).map(|t| t.0), Some(flat));
+
+        // And back to 3D.
+        *app.world_mut().resource_mut::<MapMode>() = MapMode::ThreeD;
+        app.update();
+        assert_eq!(app.world().get::<TargetCamera>(switch_root).map(|t| t.0), Some(orbit));
     }
 }
