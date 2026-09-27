@@ -181,10 +181,9 @@ pub const ENV_OFFLINE_SELFCHECK: &str = "CESIUM_OFFLINE_SELFCHECK";
 /// `CESIUM_GIT_SHA` — optional git SHA stamped into screenshot metadata (set
 /// by the capture harness / CI; falls back to `"unknown"` when unset).
 pub const ENV_GIT_SHA: &str = "CESIUM_GIT_SHA";
-/// `CESIUMRST_LEGACY_DYNAMIC_GLOBE` — truthy: fall back to the frozen legacy
-/// dynamic_globe path (pre-M1.5 monolith). Used for A/B pixel-neutrality
-/// verification: the legacy path must produce identical frames/CSV.
-pub const ENV_LEGACY_DYNAMIC_GLOBE: &str = "CESIUMRST_LEGACY_DYNAMIC_GLOBE";
+// (Retired 建议1 / P1-1, 2026-09-27): `CESIUMRST_LEGACY_DYNAMIC_GLOBE` and its
+// frozen legacy monolith were removed after G4 proved the M1.5 thin shell is
+// pixel-neutral with it. See docs/PIPELINE_PROMOTION_PLAN.md + verification_evidence/g4/.
 
 // ── Lighting / post-process mode switches (M4.1) ─────────────────────
 //
@@ -507,11 +506,9 @@ pub fn offline_selfcheck() -> bool {
     env_flag(ENV_OFFLINE_SELFCHECK)
 }
 
-/// Use the frozen legacy `dynamic_globe_legacy.rs` monolith instead of the
-/// M1.5 thin shell? (`CESIUMRST_LEGACY_DYNAMIC_GLOBE`)
-pub fn legacy_dynamic_globe() -> bool {
-    env_flag(ENV_LEGACY_DYNAMIC_GLOBE)
-}
+// (Retired 建议1 / P1-1, 2026-09-27): `legacy_dynamic_globe()` accessor removed
+// together with the frozen `dynamic_globe_legacy.rs` monolith (G4-verified
+// pixel-neutral with the M1.5 thin shell; golden path is now shell-only).
 
 // ── Lighting / post-process accessors (M4.1) ─────────────────────────
 

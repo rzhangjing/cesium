@@ -1,8 +1,9 @@
 //! Texture utilities extracted from the dynamic_globe golden path (M1.5).
 //!
-//! Shared by both the thin-shell `dynamic_globe.rs` and the frozen
-//! `dynamic_globe_legacy.rs`. Every function is a **byte-identical** lift of
-//! the original monolith — no logic changes, only module boundary changes.
+//! Shared by the thin-shell `dynamic_globe.rs` golden path. Every function is
+//! a byte-identical lift of the original monolith (the frozen
+//! `dynamic_globe_legacy.rs` A/B arm was retired 2026-09-27 after G4 proved
+//! shell/legacy pixel-neutrality) — no logic changes, only module boundary changes.
 
 use bevy::image::{ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;

@@ -26,7 +26,6 @@ mod globe_lod;
 mod globe_textures;
 mod globe_pipeline;
 mod dynamic_globe;
-mod dynamic_globe_legacy;
 mod feature_flags;
 mod perf_counters;
 mod perf_trace;
@@ -561,14 +560,12 @@ fn main() {
         // Globe rendering
         .add_plugins(BaseSpherePlugin);
 
-    // M1.5: env-gated legacy fallback — CESIUMRST_LEGACY_DYNAMIC_GLOBE=1
-    // selects the frozen ~2210-line monolith (see PIPELINE_PROMOTION_PLAN.md);
-    // default is the thin shell.
-    if feature_flags::legacy_dynamic_globe() {
-        app.add_plugins(dynamic_globe_legacy::DynamicGlobePlugin);
-    } else {
-        app.add_plugins(dynamic_globe::DynamicGlobePlugin);
-    }
+    // Globe rendering. P1-1/建议1 (2026-09-27): the golden path is the M1.5
+    // thin shell. The frozen legacy monolith (`dynamic_globe_legacy`, the
+    // former CESIUMRST_LEGACY_DYNAMIC_GLOBE A/B arm) was retired after G4
+    // proved it is pixel-neutral with the thin shell (see
+    // PIPELINE_PROMOTION_PLAN.md and verification_evidence/g4/).
+    app.add_plugins(dynamic_globe::DynamicGlobePlugin);
 
     // ── M5-B: AtmosphereGlow ↔ SkyDome mutual exclusion ────────────────
     // The 8-shell glow fallback and the procedural sky dome render overlapping

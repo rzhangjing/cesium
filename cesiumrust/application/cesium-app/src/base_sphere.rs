@@ -2,8 +2,9 @@
 //!
 //! Contains the `BaseSphereMarker` component, the whole-globe composite
 //! resource/helpers, and the image utilities for the non-LOD fallback sphere.
-//! Shared by both the thin-shell `dynamic_globe.rs` and the frozen
-//! `dynamic_globe_legacy.rs` — **byte-identical logic**, only module boundary.
+//! Shared by the thin-shell `dynamic_globe.rs` golden path (the frozen
+//! `dynamic_globe_legacy.rs` A/B arm was retired 2026-09-27 after G4 proved
+//! shell/legacy pixel-neutrality) — byte-identical logic, only module boundary.
 //!
 //! Original locations in `dynamic_globe.rs`:
 //! - `BaseSphereMarker`: L1904-1905
