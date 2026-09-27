@@ -13,7 +13,6 @@ cesium-imagery.workspace = true
 cesium-terrain.workspace = true
 cesium-tileset.workspace = true
 cesium-quadtree.workspace = true
-cesium-scene.workspace = true
 cesium-datasource.workspace = true
 cesium-material.workspace = true
 cesium-kml.workspace = true

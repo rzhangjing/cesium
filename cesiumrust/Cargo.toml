@@ -1,5 +1,10 @@
 [workspace]
 resolver = "2"
+# Vendored third-party clipmap experiment (github.com/kirillsurkov, bevy 0.19 /
+# edition 2024) — incompatible with this workspace (bevy 0.15 / edition 2021) and
+# referenced by nothing. Excluded so `--workspace` builds/lints ignore it; kept
+# on disk only as a rendering reference. Candidate for outright removal.
+exclude = ["bevy-clipmap"]
 members = [
     # Domain layer (pure Rust, no framework dependency)
     "domain/plot",

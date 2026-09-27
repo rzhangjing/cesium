@@ -65,3 +65,49 @@ cesium-network = { workspace = true }
 # registry cache (wiremock 0.6.5). See docs/deferred.md for the #[ignore]
 # gating rationale (skeleton-only until M11.1 wires the real fetcher).
 wiremock = "0.6"
+
+[lints.clippy]
+# `cesium-specs` is the integration suite ported 1:1 from the CesiumJS `Specs/`
+# JS sources. Pure-style lints there add churn without catching bugs, so they are
+# silenced for this test-only crate. Correctness lints that flag *vacuous / wrong*
+# assertions are deliberately LEFT DENIED so a test that can never fail is a hard
+# build error (see the deny list at the bottom).
+correctness = "allow"
+# — cosmetic / style, no behavioural value in ported tests —
+approx_constant = "allow"
+excessive_precision = "allow"
+field_reassign_with_default = "allow"
+needless_update = "allow"
+bool_assert_comparison = "allow"
+needless_range_loop = "allow"
+cloned_ref_to_slice_refs = "allow"
+manual_is_multiple_of = "allow"
+manual_range_contains = "allow"
+useless_vec = "allow"
+clone_on_copy = "allow"
+len_zero = "allow"
+too_many_arguments = "allow"
+same_item_push = "allow"
+doc_lazy_continuation = "allow"
+unnecessary_get_then_check = "allow"
+needless_bool = "allow"
+# — re-enable the deny-by-default correctness lints the group allow turned off —
+overly_complex_bool_expr = "deny"
+absurd_extreme_comparisons = "deny"
+assertions_on_constants = "deny"
+identity_op = "deny"
+if_same_then_else = "deny"
+int_plus_one = "deny"
+eq_op = "deny"
+
+[lints.rust]
+# Structural realities of a suite ported 1:1 from the CesiumJS JS sources — safe
+# to tolerate here, unlike the `unused_*` lints which stay enforced (and are
+# auto-pruned by `cargo clippy --fix`):
+#   * dead_code      — per-file EPSILON_* helpers and forward-ported fixtures
+#   * non_snake_case — test helpers that mirror GLSL identifiers verbatim
+#   * deprecated     — bevy `Events::get_reader` in the M8 skeleton, tracked for
+#                      the M11 async-harness rewrite
+dead_code = "allow"
+non_snake_case = "allow"
+deprecated = "allow"
