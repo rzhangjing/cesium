@@ -4,7 +4,7 @@
 //! UniformValue, TranslucentSpec, and built-in materials.
 
 use cesium_material::{
-    FabricTemplate, MaterialComponents, MaterialError, MaterialOptions, MaterialSystem,
+    FabricTemplate, MaterialComponents, MaterialOptions, MaterialSystem,
     TranslucentSpec, UniformValue,
 };
 use serde_json::json;

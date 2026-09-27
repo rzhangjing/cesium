@@ -8,7 +8,7 @@ use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_geospatial::spherical::Spherical;
 use cesium_geospatial::cartographic::Cartographic;
 use glam::DVec3;
-use std::f64::consts::{FRAC_PI_2, FRAC_PI_3, FRAC_PI_4, PI};
+use std::f64::consts::{FRAC_PI_2, FRAC_PI_3, FRAC_PI_4};
 
 const EPS: f64 = 1e-10;
 

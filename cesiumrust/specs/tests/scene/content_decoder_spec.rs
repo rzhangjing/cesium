@@ -12,7 +12,7 @@
 //! C-class omitted: glTF model loading, Draco decoding, WebGL buffer upload.
 
 use cesium_tileset::content_decoder::{
-    detect_content_type, decode_tile_content, parse_b3dm, parse_pnts, parse_i3dm, parse_cmpt,
+    detect_content_type, decode_tile_content, parse_b3dm, parse_pnts,
     DecodeError, DecodedTile, TileContentType,
 };
 

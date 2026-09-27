@@ -4,7 +4,6 @@
 use cesium_datasource::cluster::{EntityCluster, EntityClusterOptions};
 use cesium_datasource::entity::Entity;
 use cesium_datasource::entity_collection::EntityCollection;
-use cesium_datasource::property::Property;
 
 fn make_collection_with_positions(positions: &[(f64, f64, f64)]) -> EntityCollection {
     let mut collection = EntityCollection::new();

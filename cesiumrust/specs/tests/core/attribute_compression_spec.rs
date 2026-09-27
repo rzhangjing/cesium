@@ -236,7 +236,7 @@ fn compresses_decompresses_values_close_to_1() {
 // --- ZigZag Delta Decode ---
 
 fn zig_zag_encode(value: i32) -> u16 {
-    ((value << 1) ^ (value >> 15)) as u16 & 0xffff
+    ((value << 1) ^ (value >> 15)) as u16
 }
 
 fn delta_zig_zag_encode_u_v(u_buffer: &[u16], v_buffer: &[u16]) -> (Vec<u16>, Vec<u16>) {

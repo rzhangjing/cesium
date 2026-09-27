@@ -5,8 +5,7 @@
 //! uniforms/structs/functions/defines/build, ShaderProgram lifecycle, ShaderCache dedup
 
 use cesium_scene::{
-    ShaderBuilder, ShaderCache, ShaderFunction, ShaderProgram, ShaderSource, ShaderStage,
-    ShaderStruct, ShaderUniform,
+    ShaderBuilder, ShaderCache, ShaderFunction, ShaderProgram, ShaderSource, ShaderStage, ShaderUniform,
 };
 
 // ─── ShaderSource ──────────────────────────────────────────────────────────────

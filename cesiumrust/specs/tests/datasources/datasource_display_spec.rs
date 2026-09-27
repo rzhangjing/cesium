@@ -11,7 +11,6 @@
 use cesium_datasource::datasource_display::{DataSourceDisplay, MultiDataSourceDisplay};
 use cesium_datasource::entity::*;
 use cesium_datasource::entity_collection::{DataSource, EntityCollection};
-use cesium_datasource::geometry_updater::EntityGeometry;
 use cesium_datasource::property::Property;
 use cesium_datasource::visualizer::{
     DynamicGeometryUpdater, GeometryVisualizer, StaticGeometryBatch,

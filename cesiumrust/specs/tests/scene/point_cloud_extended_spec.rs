@@ -2,7 +2,6 @@
 //! Ported from Scene/PointCloudSpec.js (A-class logic paths)
 
 use cesium_tileset::point_cloud::{PointCloud, TimeDynamicPointCloud};
-use glam::DVec3;
 
 fn make_cloud(positions: Vec<[f32; 3]>) -> PointCloud {
     let len = positions.len() as u32;

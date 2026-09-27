@@ -119,26 +119,26 @@ fn particle_force_multiple() {
 #[test]
 fn particle_system_fire_preset() {
     let sys = ParticleSystem::fire(DVec3::ZERO);
-    assert!(sys.particle_count() >= 0);
+    assert_eq!(sys.particle_count(), 0, "a fresh system has not emitted yet");
 }
 
 #[test]
 fn particle_system_smoke_preset() {
     let sys = ParticleSystem::smoke(DVec3::ZERO);
-    assert!(sys.particle_count() >= 0);
+    assert_eq!(sys.particle_count(), 0, "a fresh system has not emitted yet");
 }
 
 #[test]
 fn particle_system_snow_preset() {
     let sys = ParticleSystem::snow(DVec3::ZERO);
-    assert!(sys.particle_count() >= 0);
+    assert_eq!(sys.particle_count(), 0, "a fresh system has not emitted yet");
 }
 
 #[test]
 fn particle_system_new_with_config() {
     let config = ParticleSystemConfig::default();
     let sys = ParticleSystem::new(config, DVec3::ZERO);
-    assert!(sys.particle_count() >= 0);
+    assert_eq!(sys.particle_count(), 0, "a fresh system has not emitted yet");
 }
 
 // ─── ParticleSystem update ───────────────────────────────────────────────────
@@ -163,7 +163,7 @@ fn particle_system_update_advances_age() {
     sys.update(0.5, 43);
     // After 1 second, some particles should have aged
     let count = sys.particle_count();
-    assert!(count >= 0, "should have valid particle count");
+    assert!(count > 0, "fire preset should emit particles after 1s of updates");
 }
 
 #[test]
@@ -206,7 +206,7 @@ fn particle_system_fire_vs_smoke_differ() {
 fn particle_system_emitter_position_matters() {
     let sys1 = ParticleSystem::fire(DVec3::new(0.0, 0.0, 0.0));
     let sys2 = ParticleSystem::fire(DVec3::new(100.0, 0.0, 0.0));
-    // Systems at different positions should both be valid
-    assert!(sys1.particle_count() >= 0);
-    assert!(sys2.particle_count() >= 0);
+    // Systems at different positions should both be valid (fresh, none emitted)
+    assert_eq!(sys1.particle_count(), 0);
+    assert_eq!(sys2.particle_count(), 0);
 }

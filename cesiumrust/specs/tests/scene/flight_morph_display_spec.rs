@@ -52,7 +52,7 @@ fn flight_update_interpolates_position() {
     assert!(!flight.complete);
 
     // Complete
-    let result = flight.update(1.5);
+    let _result = flight.update(1.5);
     assert!(flight.complete);
     assert!((flight.progress() - 1.0).abs() < 1e-10);
 }

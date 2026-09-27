@@ -10,7 +10,7 @@ use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_geospatial::rectangle::Rectangle;
 use cesium_geospatial::transforms::{HeadingPitchRange, east_north_up_to_fixed_frame};
-use glam::{DMat4, DVec3};
+use glam::DVec3;
 use std::f64::consts::PI;
 
 const EPSILON7: f64 = 1e-7;

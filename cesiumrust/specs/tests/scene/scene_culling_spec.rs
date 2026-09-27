@@ -2,8 +2,8 @@
 //! Ported from CesiumJS Scene/SceneSpec.js culling logic
 
 use cesium_scene::{
-    cull_scene, filter_visible, sort_back_to_front, sort_front_to_back,
-    CullResult, CullingContext, NodeId, RenderableContent, SceneGraph, SceneNode,
+    filter_visible, sort_back_to_front, sort_front_to_back,
+    CullResult, CullingContext, NodeId, SceneGraph, SceneNode,
     VisibilityResult,
 };
 use cesium_geospatial::bounding::BoundingSphere;

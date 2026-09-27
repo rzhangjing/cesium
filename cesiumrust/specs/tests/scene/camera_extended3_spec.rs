@@ -5,7 +5,7 @@
 use cesium_camera::{Camera, EasingFunction, Frustum, SceneMode};
 use cesium_geospatial::{Cartographic, Ellipsoid, Rectangle, HeadingPitchRange};
 use cesium_interaction::flight::{CameraFlight, compute_set_view};
-use glam::{DMat4, DVec3};
+use glam::DVec3;
 use std::f64::consts::PI;
 
 const EPSILON6: f64 = 1e-6;

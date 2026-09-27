@@ -1247,14 +1247,10 @@ fn from_iso8601_handles_leading_interval_option() {
         let interval = intervals.get(i + 1).unwrap();
         assert_eq!(interval.interval.start, julian_dates[i]);
         assert_eq!(interval.interval.stop, julian_dates[i + 1]);
-        assert_eq!(
-            interval.interval.is_start_included,
-            if i == 0 { true } else { true }
-        );
-        assert_eq!(
-            interval.interval.is_stop_included,
-            if i == 2 { false } else { false }
-        );
+        // For this option set every main interval includes its start and
+        // excludes its stop, independent of `i`.
+        assert!(interval.interval.is_start_included);
+        assert!(!interval.interval.is_stop_included);
     }
 }
 
@@ -1355,10 +1351,7 @@ fn from_iso8601_handles_leading_and_trailing_interval_options() {
             interval.interval.is_start_included,
             if i == 0 { false } else { true }
         );
-        assert_eq!(
-            interval.interval.is_stop_included,
-            if i == 2 { false } else { false }
-        );
+        assert!(!interval.interval.is_stop_included);
     }
 }
 

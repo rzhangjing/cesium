@@ -2,7 +2,7 @@
 //! 162 original it() blocks. JS-specific tests (undefined params, Date type checks) skipped.
 //! Ported: constructor, fromIso8601, toIso8601, toDate, arithmetic, comparison, computeTaiMinusUtc
 
-use cesium_time::{JulianDate, GregorianDate, TimeStandard};
+use cesium_time::{JulianDate, TimeStandard};
 
 /// Helper: create JulianDate from date components (UTC) - equivalent to JulianDate.fromDate(new Date(Date.UTC(...)))
 fn from_utc(y: i32, m: u32, d: u32, h: u32, min: u32, s: u32, ms: f64) -> JulianDate {

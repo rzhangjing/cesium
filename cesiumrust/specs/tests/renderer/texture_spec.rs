@@ -118,6 +118,6 @@ fn test_texture_atlas_multiple_entries() {
     let e1 = atlas.add_entry(32, 32).unwrap();
     let e2 = atlas.add_entry(32, 32).unwrap();
     // Entries should not overlap
-    assert!(e1.x + e1.width + 1 <= e2.x || e2.x + e2.width + 1 <= e1.x || e1.y != e2.y);
+    assert!(e1.x + e1.width < e2.x || e2.x + e2.width < e1.x || e1.y != e2.y);
     assert_eq!(atlas.entry_count(), 2);
 }

@@ -42,17 +42,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libudev-dev pkg-config
 
-      # 门禁 1（强制、硬失败）: 生产 crate 零新增警告。
+      # 门禁 1（强制、硬失败）: 全 workspace（含 cesium-specs）零警告。
       # cesium-time/resource/voxel 的 pre-existing 债务已逐点加局部 #[allow] + 注释指向
-      # deferred.md #13–#15（已验证 -D warnings 通过）；cesium-specs 因测试 fixture 大量
-      # approx_constant / absurd_extreme_comparisons / logic_bug（deferred.md #3–#5，M3.3 清零）暂 --exclude。
-      # 排除理由与债务清单登记于 deferred.md「CI 门禁处置（C1）」。
-      - name: cargo clippy (production crates, -D warnings)
-        run: cargo clippy --workspace --exclude cesium-specs --all-targets -- -D warnings
-
-      # 目标门禁（M3.3 specs 清零后启用全 workspace）:
-      # - name: cargo clippy (full workspace)
-      #   run: cargo clippy --workspace --all-targets -- -D warnings
+      # deferred.md #13–#15（已验证 -D warnings 通过）。cesium-specs 的假绿/正确性 lint
+      # 债务（deferred.md #3–#5）已于 M3.3 清零：无符号 `>= 0`、`|| true`、恒等运算、
+      # if/else 同分支等 vacuous 断言已改为真实断言，纯风格 lint 经 specs/Cargo.toml 的
+      # [lints.clippy] / [lints.rust] 精确处置（correctness 假绿项仍 deny）。故不再排除
+      # cesium-specs —— specs 漂移将直接阻塞 CI。
+      - name: cargo clippy (full workspace, -D warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
     name: Test (workspace)

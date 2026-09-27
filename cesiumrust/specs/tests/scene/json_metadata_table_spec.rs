@@ -5,7 +5,7 @@
 //!          getProperty(4) + setProperty(3)
 
 use cesium_tileset::json_metadata_table::JsonMetadataTable;
-use serde_json::{json, Value};
+use serde_json::json;
 use std::collections::HashMap;
 
 fn create_test_table() -> JsonMetadataTable {
@@ -40,7 +40,7 @@ fn create_test_table() -> JsonMetadataTable {
 #[test]
 fn test_constructor_clones_properties() {
     let mut table = create_test_table();
-    let old_value = json!({"pointCount": 100});
+    let _old_value = json!({"pointCount": 100});
     let new_value = json!({"lengthBytes": 1024});
 
     table.set_property(0, "sizeInfo", new_value.clone());

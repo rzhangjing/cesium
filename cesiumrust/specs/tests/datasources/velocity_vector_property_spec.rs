@@ -3,7 +3,7 @@
 //! equals, position changes
 
 use cesium_datasource::property_system::position::SampledPositionProperty;
-use cesium_datasource::property_system::value::{PropertyValue, ReferenceFrame};
+use cesium_datasource::property_system::value::ReferenceFrame;
 use cesium_datasource::velocity_vector_property::VelocityVectorProperty;
 use cesium_time::JulianDate;
 use glam::DVec3;

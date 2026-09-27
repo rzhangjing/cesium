@@ -11,7 +11,7 @@ use cesium_geospatial::rectangle::Rectangle;
 use cesium_terrain::heightmap_tessellator::{
     compute_vertices, ComputeVerticesOptions, HeightmapStructure,
 };
-use glam::{DVec2, DVec3};
+use glam::DVec3;
 
 const POS_EPS: f64 = 1.0;
 const UV_EPS: f64 = 1e-7;

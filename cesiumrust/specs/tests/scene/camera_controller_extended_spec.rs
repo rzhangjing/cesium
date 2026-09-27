@@ -259,9 +259,9 @@ fn tilt_up_increases_z_height() {
     );
     let target = DVec3::new(Ellipsoid::WGS84.maximum_radius(), 0.0, 0.0);
 
-    let height_before = camera.position.length();
+    let _height_before = camera.position.length();
     controller.tilt(&mut camera, target, PI / 4.0);
-    let height_after = camera.position.length();
+    let _height_after = camera.position.length();
 
     // After tilting, position length may change — just verify orthonormality
     assert!((camera.direction.length() - 1.0).abs() < EPSILON14);

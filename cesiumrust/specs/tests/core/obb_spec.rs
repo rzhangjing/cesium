@@ -22,9 +22,9 @@
 //! - `isOccluded` (3 cases) is C-class: it depends on `Occluder` (a Scene/rendering
 //!   concept) and is not ported.
 
-use cesium_geospatial::bounding::{Interval, OrientedBoundingBox};
+use cesium_geospatial::bounding::OrientedBoundingBox;
 use cesium_geospatial::ray::{Intersect, Plane};
-use cesium_geospatial::{Cartographic, Ellipsoid, Rectangle};
+use cesium_geospatial::{Ellipsoid, Rectangle};
 use cesium_specs::{
     assert_approx, assert_mat3_epsilon, assert_vec3_epsilon, epsilon, math_consts,
 };

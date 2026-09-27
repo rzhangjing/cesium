@@ -2,7 +2,7 @@
 //! Ported from DataSources/EntitySpec.js (graphics construction paths)
 
 use cesium_datasource::{
-    BillboardGraphics, BoxGraphics, CorridorGraphics, CylinderGraphics, EllipseGraphics,
+    BillboardGraphics, BoxGraphics, CorridorGraphics, CylinderGraphics,
     EllipsoidGraphics, Entity, LabelGraphics, ModelGraphics, PathGraphics, PlaneDef,
     PlaneGraphics, PointGraphics, PolygonGraphics, PolylineGraphics, PolylineVolumeGraphics,
     Property, RectangleGraphics, WallGraphics, CornerType, ShadowMode,

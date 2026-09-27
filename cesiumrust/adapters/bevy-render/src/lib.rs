@@ -7,7 +7,6 @@
 //! - `mesh_conversion`: GeometryData → Bevy Mesh (f64 → f32 precision boundary)
 //! - `ellipsoid_mesh`: WGS84 ellipsoid mesh generation
 //! - `terrain_render`: TerrainMesh → Bevy Mesh with imagery textures
-//! - `scene_pipeline`: SceneGraph → Culling → DrawCommands → Bevy entities
 //! - `plugin`: Bevy plugin for CesiumRust rendering
 
 pub mod camera;
@@ -19,7 +18,6 @@ pub mod fabric_material;
 pub mod imagery;
 pub mod material_system;
 pub mod resources;
-pub mod scene_pipeline;
 pub mod shader_registry;
 pub mod terrain;
 pub mod tileset;

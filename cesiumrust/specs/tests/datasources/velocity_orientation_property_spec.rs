@@ -3,7 +3,7 @@
 //! Original: 14 it() → 7 A-class (7 C-class: events/spy/system-time omitted)
 
 use cesium_datasource::property_system::position::SampledPositionProperty;
-use cesium_datasource::property_system::property::{ConstantProperty, DynProperty};
+use cesium_datasource::property_system::property::ConstantProperty;
 use cesium_datasource::property_system::value::{PropertyValue, ReferenceFrame};
 use cesium_datasource::velocity_orientation_property::VelocityOrientationProperty;
 use cesium_geospatial::cartographic::Cartographic;

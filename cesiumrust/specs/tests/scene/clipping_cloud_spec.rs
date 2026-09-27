@@ -5,7 +5,6 @@
 
 use cesium_effects::{ClippingPlane, ClippingPlaneCollection, CloudCollection, CloudType};
 use glam::{DMat4, DVec3};
-use std::f64::consts::PI;
 
 // ─── ClippingPlane ──────────────────────────────────────────────────────────
 

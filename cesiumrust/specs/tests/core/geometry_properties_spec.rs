@@ -4,13 +4,12 @@
 //! Mathematical property verification tests for geometry generators.
 
 use cesium_geospatial::bounding::BoundingSphere;
-use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_geospatial::geometry::{
-    box_geometry, box_outline_geometry, circle_outline_geometry, combine_geometries,
+    box_geometry, box_outline_geometry, combine_geometries,
     compute_normal, compute_tangent_and_bitangent, create_line_segments_for_vectors,
     cylinder_geometry, cylinder_outline_geometry, ellipsoid_geometry, ellipsoid_outline_geometry,
-    plane_geometry, plane_outline_geometry, rectangle_geometry, rectangle_outline_geometry,
+    plane_geometry, plane_outline_geometry, rectangle_outline_geometry,
     reorder_for_pre_vertex_cache, sphere_geometry, to_wireframe, GeometryData, PrimitiveType,
     VertexFormat,
 };

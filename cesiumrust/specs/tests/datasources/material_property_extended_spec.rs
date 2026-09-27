@@ -372,7 +372,7 @@ fn test_composite_material_get_value() {
 #[test]
 fn test_composite_material_equals() {
     let mut a = CompositeMaterialProperty::new();
-    let mut b = CompositeMaterialProperty::new();
+    let b = CompositeMaterialProperty::new();
     assert!(a.equals(&b));
 
     let color_mat = Arc::new(ColorMaterialProperty::from_color([1.0, 0.0, 0.0, 1.0]))

@@ -84,7 +84,7 @@ fn get_descendant_coordinates_basic() {
     let desc = ancestor.get_descendant_coordinates(&offset);
     assert_eq!(desc.level, 3);
     assert_eq!(desc.x, (1 << 2) + 3); // 7
-    assert_eq!(desc.y, (0 << 2) + 1); // 1
+    assert_eq!(desc.y, 1); // (0 << 2) + 1
 }
 
 #[test]
@@ -103,7 +103,7 @@ fn get_offset_coordinates_basic() {
     let offset = ancestor.get_offset_coordinates(&descendant);
     assert_eq!(offset.level, 2);
     assert_eq!(offset.x, 5 % 4); // 1
-    assert_eq!(offset.y, 2 % 4); // 2
+    assert_eq!(offset.y, 2); // 2 % 4
 }
 
 #[test]

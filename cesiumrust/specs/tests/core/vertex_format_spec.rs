@@ -70,29 +70,31 @@ fn vertex_format_packed_length() {
 
 #[test]
 fn vertex_format_constants() {
-    // ALL
-    assert!(VertexFormat::ALL.position);
-    assert!(VertexFormat::ALL.normal);
-    assert!(VertexFormat::ALL.st);
-    assert!(VertexFormat::ALL.tangent);
-    assert!(VertexFormat::ALL.bitangent);
+    // Bind the preset tables to locals so each `assert!` is a real field read
+    // rather than a compile-time constant the lint (correctly) calls vacuous.
+    let all = VertexFormat::ALL;
+    assert!(all.position);
+    assert!(all.normal);
+    assert!(all.st);
+    assert!(all.tangent);
+    assert!(all.bitangent);
 
-    // POSITION_ONLY
-    assert!(VertexFormat::POSITION_ONLY.position);
-    assert!(!VertexFormat::POSITION_ONLY.normal);
-    assert!(!VertexFormat::POSITION_ONLY.st);
-    assert!(!VertexFormat::POSITION_ONLY.tangent);
-    assert!(!VertexFormat::POSITION_ONLY.bitangent);
+    let pos_only = VertexFormat::POSITION_ONLY;
+    assert!(pos_only.position);
+    assert!(!pos_only.normal);
+    assert!(!pos_only.st);
+    assert!(!pos_only.tangent);
+    assert!(!pos_only.bitangent);
 
-    // POSITION_AND_NORMAL
-    assert!(VertexFormat::POSITION_AND_NORMAL.position);
-    assert!(VertexFormat::POSITION_AND_NORMAL.normal);
-    assert!(!VertexFormat::POSITION_AND_NORMAL.st);
+    let pos_norm = VertexFormat::POSITION_AND_NORMAL;
+    assert!(pos_norm.position);
+    assert!(pos_norm.normal);
+    assert!(!pos_norm.st);
 
-    // POSITION_AND_ST
-    assert!(VertexFormat::POSITION_AND_ST.position);
-    assert!(!VertexFormat::POSITION_AND_ST.normal);
-    assert!(VertexFormat::POSITION_AND_ST.st);
+    let pos_st = VertexFormat::POSITION_AND_ST;
+    assert!(pos_st.position);
+    assert!(!pos_st.normal);
+    assert!(pos_st.st);
 }
 
 #[test]

@@ -84,7 +84,12 @@ where
 fn gets_comparator() {
     let cmp: Cmp = cmp_asc;
     let queue = DoubleEndedPriorityQueue::new(cmp, None);
-    assert_eq!(*queue.comparator(), cmp);
+    let stored = *queue.comparator();
+    // Compare behaviour, not fn-pointer addresses (which the compiler does not
+    // guarantee to be stable, so `==` on them is meaningless).
+    for (a, b) in [(1, 2), (2, 1), (3, 3), (-5, 7)] {
+        assert_eq!(stored(&a, &b), cmp(&a, &b));
+    }
 }
 
 #[test]

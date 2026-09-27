@@ -2,7 +2,7 @@
 //! Ported from CesiumJS Scene/MaterialSpec.js
 
 use cesium_material::{
-    uniform_value_from_json, BUILTIN_MATERIAL_TYPES, CachedMaterial, FabricTemplate,
+    uniform_value_from_json, BUILTIN_MATERIAL_TYPES, FabricTemplate,
     MaterialComponents, MaterialError, MaterialOptions, MaterialSystem, TranslucentSpec,
     UniformValue, COMPONENT_PROPERTIES, TEMPLATE_PROPERTIES,
 };

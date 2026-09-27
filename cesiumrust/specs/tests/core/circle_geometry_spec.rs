@@ -2,8 +2,8 @@
 //!
 //! Tests circle geometry generation on ellipsoid surface.
 
-use cesium_geospatial::geometry::{circle_geometry, GeometryData, PrimitiveType, VertexFormat};
-use cesium_geospatial::{Ellipsoid, Cartographic};
+use cesium_geospatial::geometry::{circle_geometry, VertexFormat};
+use cesium_geospatial::Ellipsoid;
 use glam::DVec3;
 
 const EPSILON10: f64 = 1e-10;

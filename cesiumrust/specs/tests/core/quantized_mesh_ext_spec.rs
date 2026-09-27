@@ -4,7 +4,7 @@
 
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::rectangle::Rectangle;
-use cesium_provider::tiling_scheme::{GeographicTilingScheme, TilingScheme};
+use cesium_provider::tiling_scheme::GeographicTilingScheme;
 use cesium_terrain::QuantizedMeshTerrainData;
 use glam::DVec3;
 

@@ -4,10 +4,9 @@
 //! Accessor component/element sizes, and binary data reading (f32/u16/u32).
 
 use cesium_gltf::{
-    Accessor, AccessorType, BufferView, ComponentType, GltfMesh, GltfModel, Node, Primitive,
+    Accessor, AccessorType, BufferView, ComponentType, GltfModel, Node,
     PrimitiveMode,
 };
-use std::collections::HashMap;
 
 // ─── GltfModel parsing ─────────────────────────────────────────────────────
 

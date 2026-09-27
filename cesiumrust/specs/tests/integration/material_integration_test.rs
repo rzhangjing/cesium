@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use cesium_bevy_render::{
     CesiumMaterialPlugin,
     MaterialAnimationTime, MaterialRef, MaterialSystemResource,
-    FabricKind, FabricMaterial,
+    FabricKind,
 };
 use cesium_material::{MaterialSystem, UniformValue};
 

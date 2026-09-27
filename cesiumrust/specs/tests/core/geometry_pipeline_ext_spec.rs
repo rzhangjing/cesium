@@ -5,7 +5,7 @@
 use cesium_geospatial::geometry::{
     combine_geometries, compress_vertices, compute_normal, compute_tangent_and_bitangent,
     create_line_segments_for_vectors, fit_to_unsigned_short_indices, split_longitude,
-    to_wireframe, GeometryData, PrimitiveType, VertexFormat,
+    to_wireframe, GeometryData, PrimitiveType,
 };
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::Ellipsoid;

@@ -1,5 +1,14 @@
 //! cesium-scene: Scene graph and rendering pipeline domain models
 //!
+//! STATUS (P2 code-health audit, 2026-09-27): implemented and covered by the
+//! `cesium-specs` suite, but **not wired into any production runtime path**. Its
+//! former Bevy bridge (`adapters/bevy-render/src/scene_pipeline.rs`) was deleted
+//! at P1-2 because the golden globe path is the `dynamic_globe` ECS renderer (see
+//! docs/ARCHITECTURE.md "Render Main Path"), so no adapter/application crate
+//! depends on this crate today. Retained as a CesiumJS feature-parity domain
+//! model reserved for a future generic draw-command pipeline; do NOT read it as a
+//! shipped capability. See docs/ARCHITECTURE.md "Test-only domain crates".
+//!
 //! Maps to CesiumJS:
 //! - `Scene/Scene.js`
 //! - `Scene/Primitive.js`

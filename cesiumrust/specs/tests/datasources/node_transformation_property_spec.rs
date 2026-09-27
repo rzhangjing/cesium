@@ -4,7 +4,7 @@
 
 use cesium_datasource::node_transformation_property::NodeTransformationProperty;
 use cesium_datasource::property_system::property::{
-    ConstantProperty, DynProperty, TimeIntervalCollectionProperty,
+    ConstantProperty, TimeIntervalCollectionProperty,
 };
 use cesium_datasource::property_system::value::PropertyValue;
 use cesium_time::{JulianDate, TimeInterval};

@@ -4,7 +4,6 @@
 //! compute_tile_sse, should_refine_tile, get_surface_normal, pick,
 //! compute_lit_color, NearFarScalar interpolation, GlobeLighting, etc.
 
-use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_globe::atmosphere::{GroundAtmosphere, GlobeLighting, SkyAtmosphereConfig};

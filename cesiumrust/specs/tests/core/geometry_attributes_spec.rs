@@ -5,7 +5,7 @@
 //! Tests mathematical properties: heights, widths, normals, positions on surface.
 
 use cesium_geospatial::geometry::{
-    corridor_geometry, corridor_outline_geometry, wall_geometry, wall_outline_geometry,
+    corridor_geometry, wall_geometry, wall_outline_geometry,
     ellipse_geometry, ellipse_outline_geometry, polyline_geometry,
     CornerType, CorridorOptions, EllipseOptions, PolylineOptions, WallOptions,
 };

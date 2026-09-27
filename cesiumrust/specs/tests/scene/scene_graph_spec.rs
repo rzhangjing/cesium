@@ -119,5 +119,8 @@ fn test_render_state_default() {
 #[test]
 fn test_clear_command_default() {
     let cmd = ClearCommand::default();
-    assert!(cmd.color.is_some() || cmd.depth.is_some() || cmd.stencil.is_some() || true);
+    // The default clear targets all three buffers.
+    assert!(cmd.color.is_some());
+    assert!(cmd.depth.is_some());
+    assert!(cmd.stencil.is_some());
 }

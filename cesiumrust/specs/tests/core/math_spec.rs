@@ -3,7 +3,7 @@
 //! Tests for cesium_geospatial::math_utils
 
 use cesium_geospatial::math_utils::*;
-use cesium_specs::{assert_approx, epsilon};
+use cesium_specs::assert_approx;
 use std::f64::consts::PI;
 
 // ============================================================================

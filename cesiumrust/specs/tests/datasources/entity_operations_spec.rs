@@ -4,7 +4,7 @@
 //! remove_property, and merge operations.
 
 use cesium_datasource::entity::{
-    BillboardGraphics, BoxGraphics, CorridorGraphics, CylinderGraphics, EllipseGraphics,
+    BillboardGraphics, BoxGraphics, CorridorGraphics, CylinderGraphics,
     EllipsoidGraphics, Entity, LabelGraphics, ModelGraphics, PathGraphics, PlaneGraphics,
     PointGraphics, PolygonGraphics, PolylineGraphics, PolylineVolumeGraphics,
     RectangleGraphics, WallGraphics,

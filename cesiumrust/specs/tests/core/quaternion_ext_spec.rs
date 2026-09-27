@@ -6,7 +6,7 @@
 use cesium_geospatial::math_utils;
 use cesium_geospatial::quaternion_ext::*;
 use glam::{DQuat, DVec3};
-use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
+use std::f64::consts::{FRAC_PI_4, PI};
 
 fn quat_epsilon_eq(a: DQuat, b: DQuat, epsilon: f64) -> bool {
     (a.x - b.x).abs() <= epsilon

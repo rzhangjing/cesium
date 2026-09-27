@@ -8,7 +8,7 @@ use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_geospatial::frustum::{OrthographicFrustum, PerspectiveFrustum};
 use cesium_geospatial::geometry::{
     circle_outline_geometry, frustum_geometry, frustum_outline_geometry, ground_polyline_geometry,
-    FrustumDef, GeometryData, GroundPolylineOptions, PrimitiveType, VertexFormat,
+    FrustumDef, GroundPolylineOptions, PrimitiveType, VertexFormat,
 };
 use glam::{DQuat, DVec3};
 

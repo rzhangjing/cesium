@@ -10,7 +10,7 @@ use cesium_datasource::entity_collection::DataSource;
 #[test]
 fn dsc_contains_get_length_index_of() {
     let mut collection = DataSourceCollection::new();
-    let source = DataSource::new("source1");
+    let _source = DataSource::new("source1");
 
     assert_eq!(collection.length(), 0);
     assert!(!collection.contains("source1"));

@@ -3,8 +3,7 @@
 //! Ports A-class tests from CesiumJS ExpressionSpec.js for math functions:
 //! trig, rounding, exponential, interpolation, HSL color.
 
-use cesium_tileset::styling::{EvalResult, Expression};
-use serde_json::json;
+use cesium_tileset::styling::Expression;
 use std::collections::HashMap;
 
 fn empty() -> HashMap<String, serde_json::Value> {

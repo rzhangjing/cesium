@@ -8,7 +8,7 @@
 //! quantized mesh vertex accessors/create_mesh/skirts/child_mask.
 //! C-class omitted: Worker creation, ArrayBuffer transfer, upsampling (needs full pipeline).
 
-use cesium_terrain::{HeightmapTerrainData, QuantizedMeshTerrainData, TerrainMesh, MAX_SHORT};
+use cesium_terrain::{HeightmapTerrainData, QuantizedMeshTerrainData, MAX_SHORT};
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_geospatial::rectangle::Rectangle;

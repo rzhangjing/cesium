@@ -1,11 +1,10 @@
 //! Morphing/Camera extended specs - SceneMorph mode transitions + CameraFlight extended
 //! Ported from Scene/SceneSpec.js morphing + Scene/CameraSpec.js flight (A-class)
 
-use cesium_interaction::{SceneMorph, MorphState, CameraFlight, FlightOptions, compute_look_at};
+use cesium_interaction::{SceneMorph, CameraFlight, FlightOptions, compute_look_at};
 use cesium_camera::{Camera, SceneMode};
 use cesium_geospatial::ellipsoid::Ellipsoid;
-use cesium_geospatial::cartographic::Cartographic;
-use cesium_geospatial::{BoundingSphere, HeadingPitchRange};
+use cesium_geospatial::BoundingSphere;
 use glam::DVec3;
 
 fn test_camera() -> Camera {
