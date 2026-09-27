@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     # Domain layer (pure Rust, no framework dependency)
+    "domain/plot",
     "domain/geospatial",
     "domain/time",
     "domain/camera",
@@ -38,6 +39,7 @@ members = [
     "ports/driving",
     # Adapters layer (Bevy/IO implementations)
     "adapters/bevy-render",
+    "adapters/plot-bevy",
     "adapters/decoders",
     "adapters/network",
     "adapters/pipeline",
@@ -99,6 +101,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 
 # Internal domain crates
 cesium-geospatial = { path = "domain/geospatial" }
+cesium-plot = { path = "domain/plot" }
 cesium-time = { path = "domain/time" }
 cesium-camera = { path = "domain/camera" }
 cesium-event = { path = "domain/event" }
@@ -136,6 +139,7 @@ cesium-ports-driving = { path = "ports/driving" }
 
 # Internal adapter crates
 cesium-bevy-render = { path = "adapters/bevy-render" }
+cesium-plot-bevy = { path = "adapters/plot-bevy" }
 cesium-decoders = { path = "adapters/decoders" }
 cesium-network = { path = "adapters/network" }
 cesium-pipeline = { path = "adapters/pipeline" }

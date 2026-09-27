@@ -17,6 +17,7 @@ cesium-resource.workspace = true
 cesium-ports-driven.workspace = true
 cesium-ports-driving.workspace = true
 cesium-bevy-render.workspace = true
+cesium-plot-bevy.workspace = true
 cesium-pipeline.workspace = true
 cesium-material.workspace = true
 cesium-atmosphere.workspace = true
