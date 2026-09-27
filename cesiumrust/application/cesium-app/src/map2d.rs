@@ -23,6 +23,8 @@ use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::render::view::RenderLayers;
 
+use cesium_plot_bevy::{PlotInputCapture, PlotViewCtx, PlotViewMode};
+
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::sync::mpsc;
@@ -224,6 +226,7 @@ impl Plugin for Map2dPlugin {
             (
                 sync_camera_by_mode,
                 sync_ui_target_camera,
+                sync_plot_view_ctx,
                 (map2d_pan_system, map2d_zoom_system).run_if(map_is_2d),
                 apply_map2d_cam.run_if(map_is_2d),
                 update_map2d_tiles.run_if(map_is_2d),
@@ -259,9 +262,10 @@ fn spawn_map2d_camera(mut commands: Commands) {
         // (`TonyMcMapFace`) logs an error every frame. An unlit flat map needs
         // no tonemapping at all.
         Tonemapping::None,
-        // Layer 1 = the flat imagery tiles, layer 2 = shared UI. It never sees
-        // the globe (layer 0), so switching modes can't leave the 3D scene showing.
-        RenderLayers::from_layers(&[1, 2]),
+        // Layer 1 = the flat imagery tiles, layer 2 = shared UI, layer 3 = the
+        // plotting overlay. It never sees the globe (layer 0), so switching modes
+        // can't leave the 3D scene showing; layer 3 is shared with the 3D camera.
+        RenderLayers::from_layers(&[1, 2, 3]),
         Projection::Orthographic(projection),
         Map2dCamera,
         Map2dCam {
@@ -531,7 +535,14 @@ fn map2d_pan_system(
     read: Query<(&Camera, &GlobalTransform), With<Map2dCamera>>,
     mut write: Query<&mut Map2dCam, With<Map2dCamera>>,
     mut anchor: ResMut<Map2dPanCursor>,
+    capture: Option<Res<PlotInputCapture>>,
 ) {
+    // The plot overlay owns the pointer this frame: stand down and drop the
+    // grab anchor so releasing capture can't resume a stale pan.
+    if capture.is_some_and(|c| c.is_captured()) {
+        anchor.last = None;
+        return;
+    }
     // Not dragging: drop the anchor so the next press re-seeds without a jump.
     if !mouse.pressed(MouseButton::Left) {
         anchor.last = None;
@@ -576,7 +587,14 @@ fn map2d_zoom_system(
     mut wheel: EventReader<MouseWheel>,
     windows: Query<&Window>,
     mut cams: Query<(&Camera, &GlobalTransform, &mut Map2dCam), With<Map2dCamera>>,
+    capture: Option<Res<PlotInputCapture>>,
 ) {
+    // Plot overlay has the wheel this frame: consume the events so the camera
+    // doesn't jump when control is handed back, then stand down.
+    if capture.is_some_and(|c| c.is_captured()) {
+        wheel.clear();
+        return;
+    }
     let mut scroll = 0.0f32;
     for w in wheel.read() {
         scroll += w.y;
@@ -619,6 +637,33 @@ fn apply_map2d_cam(
         if let Projection::Orthographic(p) = proj.as_mut() {
             p.scale = 1.0 / mc.zoom;
         }
+    }
+}
+
+/// Mirror the app's view state into the plotting bridge's [`PlotViewCtx`].
+///
+/// The bridge (an adapter) must not import this application layer, so the app
+/// pushes what it owns — the active [`MapMode`], window metrics and flat-map
+/// zoom — into the shared resource each frame. Uses `Option<ResMut>` so the
+/// 2D path stays valid when the plot bridge plugin isn't registered (headless,
+/// or `CESIUM_ENABLE_PLOT=0`): the system is then a harmless no-op.
+fn sync_plot_view_ctx(
+    mode: Res<MapMode>,
+    windows: Query<&Window>,
+    cams: Query<&Map2dCam, With<Map2dCamera>>,
+    ctx: Option<ResMut<PlotViewCtx>>,
+) {
+    let Some(mut ctx) = ctx else { return };
+    ctx.mode = match *mode {
+        MapMode::ThreeD => PlotViewMode::Globe,
+        MapMode::TwoD => PlotViewMode::Flat,
+    };
+    if let Ok(win) = windows.get_single() {
+        ctx.screen_w = win.width();
+        ctx.screen_h = win.height();
+    }
+    if let Ok(mc) = cams.get_single() {
+        ctx.flat_zoom = mc.zoom;
     }
 }
 

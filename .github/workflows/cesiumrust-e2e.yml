@@ -1,0 +1,178 @@
+# cesiumrust e2e / 视觉基线渲染测试 scaffold（M11.2）
+#
+# 目的：为 M5/M6 视觉基线测试提供 CI 侧 headless 渲染能力（当前 CI runner 无 GPU）。
+# 手段：xvfb 虚拟显示 + mesa llvmpipe 软件光栅（LIBGL_ALWAYS_SOFTWARE / GALLIUM_DRIVER），
+#       强制 wgpu 走 GL 后端（WGPU_BACKEND=gl），使 --ignored 的渲染测试能在无 GPU 环境跑起来。
+#
+# 【非阻塞约定】本 workflow 仅由 schedule（nightly）+ workflow_dispatch（手动）触发，
+#   **不含 pull_request 触发**，因此永不阻塞 PR。PR 三门（clippy/test/build）由
+#   cesiumrust-ci.yml 独立强制，本文件不改动其强制性。
+#
+# 【scaffold 现状 · 已知红】当前 `cargo test --workspace -- --ignored` 命中的 12 个 ignored
+#   测试中，5 个在本 workflow 下仍会 FAIL（原因与 xvfb/GPU 无关，属既有 deferred 债务）：
+#     - specs material_integration_test.rs 4 例：create_test_app() 仅用 MinimalPlugins，
+#       无 RenderApp/AssetServer/wgpu device，故 xvfb+软件 GL **无法**解阻（deferred.md #6，M5.1）。
+#     - styling gets_shader_function_deferred：body 为 unimplemented!()，GLSL codegen 推迟的
+#       刻意标记，恒 FAIL（非 GPU / 非显示相关）。
+#   预计 PASS 的 2 例（纯 CPU）：
+#     - pipeline camera_jump_200_full_60s（~60s soak，按设计保留 #[ignore]，白名单见 deferred.md #36）。
+#     - styling does_not_throw_syntax_error_if_regex_constructor_has_invalid_pattern（no-op body）。
+#   FIX-CI-GPU（deferred.md #75）新路由进来的 5 例（application/cesium-app/tests/e2e_render.rs）：
+#     真 GPU 子进程渲染冒烟（globe_default / pole_north 有效性、determinism、distinctness、HDR）。
+#     此前它们**未** #[ignore]，会漏进强制 PR 门 cesiumrust-ci.yml 的 `cargo test --workspace`
+#     （该 runner 无 GPU/adapter → 子进程取不到 wgpu adapter → 挂/红），与该 workflow 头注释
+#     「不含 e2e 渲染测试」的既定意图相悖。本轮给 5 例加 #[ignore] 把它们**路由**到本 workflow
+#     （xvfb + llvmpipe + WGPU_BACKEND=gl，正是为渲染测试准备的 headless 渲染能力）经 `--ignored`
+#     执行。**注**：llvmpipe 软件光栅下这 5 例能否真正 PASS **尚未在有 GPU/llvmpipe 的环境验证**
+#     （离线开发机无 GPU；本地 Windows 靠 WARP 通过，Linux llvmpipe 未测），故仍属本 workflow 的
+#     非阻塞 nightly 取证范畴（continue-on-error），转硬门归 M11.3 / GPU runner。
+#   因此运行步骤设 continue-on-error: true —— scaffold 阶段提供日志与基建，不做虚假硬红门；
+#   编译步骤（--no-run）保持硬门（代码必须可编译）。完整清单与阻塞依赖登记于 docs/deferred.md #36。
+#   最终目标（M11.6「禁止 #[ignore] 逃逸」）：真 headless wgpu offscreen（M11.3）或 GPU runner
+#   就绪后，移除 continue-on-error，转为 --no-ignore 全量硬门。
+#
+# 【像素门 scaffold（M5 收口 Ultra Review Daniel H3 · docs/deferred.md #48）】
+#   末尾新增「Pixel gate v0」步：所有 CESIUM_ENABLE_* gate **不设/OFF** + STRICT_OFFLINE
+#   跑 specs/scripts/baseline_v0.toml 八视图，用 tools/pixel_diff 逐张对比**已纳管**的
+#   specs/baselines/v0，断言 PSNR ≥ 45 dB —— 这是「gate OFF → v0 像素中性」硬约束在 CI 侧
+#   的取证装置。此前 specs/baselines/ 与 verification_evidence/ 整目录 untracked（从未 git add，
+#   .gitignore 未列入），clone 后取证基座静默消失、PSNR 门无参照物；本轮已 git add 纳管，
+#   并为完全空的 v1_postfx/ v1_shadow/ 补 .gitkeep（git 不跟踪空目录）。
+#   该步同样 continue-on-error：llvmpipe 与采集 v0 的真实 GPU 间 f32 舍入/插值差异未标定，
+#   且 v1_*/v2_* 基线尚未回填（#38/#39/#43/#44/#47），故当前只能强制 v0、尚不构成完整
+#   gate 矩阵覆盖。M11.3 就绪后转硬门并扩展至 v1_*/v2_*。
+#   顺序依赖（#49）：v2_ao 基线必须在 effects AO/FXAA render-graph 顺序修复（Daniel H2）
+#   **之后**采集，否则偏差被冻结进基线、后续修复反触发假红。
+
+name: cesiumrust-e2e
+
+on:
+  schedule:
+    # nightly 03:00 UTC（错峰于常规 push CI）
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+# 同一 ref 上被取代的 nightly / 手动运行可取消，避免软件渲染长任务堆积。
+concurrency:
+  group: cesiumrust-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  e2e-linux:
+    name: e2e (xvfb + llvmpipe software GL)
+    runs-on: ubuntu-latest
+    # soak(~60s) + 软件光栅渲染较慢，放宽超时。
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: cesiumrust
+    env:
+      # 软件渲染 fallback：CI 无 GPU，强制 wgpu 走 GL 后端 + mesa llvmpipe 软件光栅。
+      WGPU_BACKEND: gl
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      GALLIUM_DRIVER: llvmpipe
+      RUST_BACKTRACE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cesiumrust
+
+      - name: Install system dependencies (Bevy/Linux + software GL stack)
+        run: |
+          sudo apt-get update
+          # Bevy 构建依赖（对齐 cesiumrust-ci.yml）+ xvfb / mesa 软件渲染栈 + winit x11 依赖。
+          sudo apt-get install -y \
+            libasound2-dev libudev-dev pkg-config \
+            xvfb libgl1-mesa-dri mesa-utils \
+            libgl1 libglx-mesa0 libegl1 \
+            libx11-6 libx11-dev libxkbcommon0 libxkbcommon-dev
+          # ubuntu-24.04(noble) 上 libgl1-mesa-glx 为过渡虚包，可能已不存在；
+          # libgl1 + libglx-mesa0 已提供 GLX。非致命尝试以兼容旧 runner 镜像。
+          sudo apt-get install -y libgl1-mesa-glx \
+            || echo "::warning::libgl1-mesa-glx unavailable (transitional on noble); libgl1 provides GLX"
+
+      # 编译硬门：ignored 测试必须可编译（--no-run 只构建不执行）。
+      - name: Compile ignored tests (hard gate)
+        run: cargo test --workspace --no-run
+
+      # 诊断：确认 xvfb 下 mesa 走 llvmpipe 软件渲染器（非致命，仅日志留证）。
+      - name: Verify software GL renderer (diagnostic)
+        continue-on-error: true
+        run: |
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            glxinfo | grep -iE "OpenGL (renderer|version|vendor)" || true
+
+      # 运行门（scaffold）：xvfb + 软件 GL 下跑全部 ignored 测试。
+      # 单线程串行（--test-threads=1）避免软件渲染资源争用，契合 camera_jump soak 的运行约定。
+      # continue-on-error：已知红集合见文件头与 docs/deferred.md #36；就绪后（M11.3/GPU runner）移除。
+      - name: Run ignored tests under xvfb (scaffold; known-red set -> docs/deferred.md #36)
+        continue-on-error: true
+        run: |
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            cargo test --workspace -- --ignored --nocapture --test-threads=1
+
+      # ── 像素门 scaffold（Daniel H3 · docs/deferred.md #48）───────────────────
+      # gate OFF（默认，任何 CESIUM_ENABLE_* 都不设）→ v0 八视图必须与已纳管的
+      # specs/baselines/v0 逐张 PSNR ≥ 45 dB。确定性前提：STRICT_OFFLINE=1 + 由
+      # tools/gen_offline_assets 现场生成的离线影像/地形 fixture（无网络）+ FIXED_TIME=1
+      # （冻结时钟 → 光照/天体状态确定；见 docs/deviations.md#dev-019 方案 A：
+      # delta_secs()==0 时 Water frame_number 亦冻结）。
+      # continue-on-error：无 GPU 时截图可能缺失、llvmpipe 与真实 GPU 的舍入差异未标定，
+      # scaffold 阶段留日志与装置而不染红 nightly；M11.3 就绪后移除并转硬门。
+      - name: Pixel gate v0 (scaffold; gate OFF -> PSNR >= 45 dB -> docs/deferred.md #48)
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          echo "== 1/4 generate deterministic offline fixtures (no network) =="
+          cargo run --release -p gen_offline_assets
+
+          echo "== 2/4 build pixel_diff + cesium-app (release) =="
+          cargo build --release -p pixel_diff -p cesium-app
+
+          echo "== 3/4 capture v0 candidate shots (all CESIUM_ENABLE_* gates OFF) =="
+          SHOT_DIR="$RUNNER_TEMP/v0_candidate"
+          rm -rf "$SHOT_DIR"; mkdir -p "$SHOT_DIR"
+          # 1920x1080：与 v0 基线的物理帧缓冲尺寸一致（docs/deferred.md #17 DPI 依赖）。
+          xvfb-run -a -s "-screen 0 1920x1080x24" \
+            env CESIUM_SCREENSHOT_SCRIPT=specs/scripts/baseline_v0.toml \
+                CESIUM_SCREENSHOT_DIR="$SHOT_DIR" \
+                STRICT_OFFLINE=1 \
+                OFFLINE_IMAGERY_ROOT=specs/fixtures/offline-imagery \
+                OFFLINE_TERRAIN_ROOT=specs/fixtures/offline-terrain \
+                FIXED_TIME=1 \
+            ./target/release/cesium-app || echo "::warning::cesium-app exited non-zero (no GPU / offscreen unavailable?)"
+          ls -1 "$SHOT_DIR" || true
+
+          echo "== 4/4 pixel_diff each v0 view (threshold 45 dB) =="
+          fail=0
+          compared=0
+          for base in specs/baselines/v0/*.png; do
+            name="$(basename "$base")"
+            cand="$SHOT_DIR/$name"
+            if [ ! -f "$cand" ]; then
+              echo "::warning::pixel gate: missing candidate $name (offscreen capture unavailable)"
+              fail=1
+              continue
+            fi
+            echo "--- $name ---"
+            if ./target/release/pixel_diff "$base" "$cand" --threshold 45 --json; then
+              compared=$((compared + 1))
+            else
+              echo "::warning::pixel gate: $name below PSNR 45 dB"
+              fail=1
+            fi
+          done
+          echo "pixel gate v0: $compared view(s) compared, fail=$fail"
+          if [ "$fail" -ne 0 ]; then
+            echo "::warning::pixel gate v0 NOT satisfied (scaffold stage; see docs/deferred.md #48)"
+            exit 1
+          fi

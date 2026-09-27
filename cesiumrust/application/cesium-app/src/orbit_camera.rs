@@ -19,6 +19,7 @@ use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use bevy::render::view::RenderLayers;
+use cesium_plot_bevy::PlotInputCapture;
 use glam::{DQuat, DVec2, DVec3};
 use cesium_interaction::{
     CameraFlight, InertiaController, InertiaSample, InertiaState,
@@ -367,9 +368,11 @@ fn spawn_orbit_camera(mut commands: Commands, state: Res<OrbitState>) {
             Tonemapping::AcesFitted,
             Bloom::NATURAL,
             OrbitCamera,
-            // Layer 0 = the 3D globe scene, layer 2 = shared UI. The 2D map
-            // camera owns layer 1, so the two never render each other's world.
-            RenderLayers::from_layers(&[0, 2]),
+            // Layer 0 = the 3D globe scene, layer 2 = shared UI, layer 3 = the
+            // plotting overlay. The 2D map camera owns layer 1, so the two never
+            // render each other's world; both cameras pick up layer 3 so plots
+            // show in either mode.
+            RenderLayers::from_layers(&[0, 2, 3]),
             Projection::Perspective(projection),
             transform,
         ))
@@ -378,7 +381,7 @@ fn spawn_orbit_camera(mut commands: Commands, state: Res<OrbitState>) {
             Camera3d::default(),
             Tonemapping::None,
             OrbitCamera,
-            RenderLayers::from_layers(&[0, 2]),
+            RenderLayers::from_layers(&[0, 2, 3]),
             Projection::Perspective(projection),
             transform,
         ))
@@ -409,7 +412,18 @@ fn orbit_camera_system(
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<OrbitCamera>>,
     mut arcball: ResMut<Arcball>,
+    capture: Option<Res<PlotInputCapture>>,
 ) {
+    // The plot overlay owns the pointer this frame: drain the queued motion /
+    // wheel events so they can't accumulate and lurch the camera when control
+    // is handed back, then stand down. `Option<Res>` so the system still runs
+    // when the bridge plugin isn't registered (headless / plot disabled) and in
+    // the minimal unit-test App.
+    if capture.is_some_and(|c| c.is_captured()) {
+        motion_events.clear();
+        wheel_events.clear();
+        return;
+    }
     // Rotation: left mouse drag — cursor-anchored "grab the globe". On press
     // we pick the geographic point under the pointer (ray → sphere), then each
     // frame rotate the rig about the target so that same point stays glued to

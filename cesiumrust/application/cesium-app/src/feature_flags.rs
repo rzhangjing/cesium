@@ -101,6 +101,11 @@ pub const ENV_ENABLE_TILESET: &str = "CESIUM_ENABLE_TILESET";
 /// `CESIUM_ENABLE_NEW_CHAINS` — legacy umbrella: enables BOTH terrain and
 /// tileset. Preserved for `capture_baseline.ps1` compat.
 pub const ENV_ENABLE_NEW_CHAINS: &str = "CESIUM_ENABLE_NEW_CHAINS";
+/// `CESIUM_ENABLE_PLOT` — the 2D/3D situational plotting overlay bridge.
+/// **Windowed-only** (main.rs also requires `!headless`) and **defaults ON**
+/// when unset: `CESIUM_ENABLE_PLOT=0` opts out. Headless never registers it, so
+/// the offscreen baseline is untouched regardless of this flag.
+pub const ENV_ENABLE_PLOT: &str = "CESIUM_ENABLE_PLOT";
 
 // ── Runtime mode switches (M0.5 perf-trace / headless) ─────────────────
 //
@@ -398,6 +403,18 @@ pub fn terrain_enabled() -> bool {
 /// 3D Tiles tileset chain enabled? (`CESIUM_ENABLE_TILESET` OR `CESIUM_ENABLE_NEW_CHAINS`)
 pub fn tileset_enabled() -> bool {
     env_flag(ENV_ENABLE_NEW_CHAINS) || env_flag(ENV_ENABLE_TILESET)
+}
+
+/// Plotting overlay bridge enabled? (`CESIUM_ENABLE_PLOT`, **defaults ON**).
+///
+/// Consumed by `main.rs`'s windowed branch (`!headless && plot_enabled()`) to
+/// register `cesium_plot_bevy::CesiumPlotBridgePlugin`. Uses the same
+/// unset-means-true semantics as the post-process sub-gates so the feature is
+/// live by default in an interactive session while staying opt-outable; it has
+/// no effect on the headless golden path because headless never adds the
+/// plugin. M0 registers resources only — no visible output.
+pub fn plot_enabled() -> bool {
+    sub_gate_flag(ENV_ENABLE_PLOT)
 }
 
 // ── Runtime-mode accessors (M0.5 perf-trace / M11.3 headless) ──────────

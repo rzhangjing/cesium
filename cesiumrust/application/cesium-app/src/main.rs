@@ -592,6 +592,17 @@ fn main() {
         app.add_plugins(map2d::Map2dPlugin);
     }
 
+    // ── cesium-plot overlay bridge (windowed only, M0 scaffold) ──────────
+    // Never registered under CESIUM_HEADLESS, and gated by `plot_enabled()`
+    // (defaults ON when unset, opt out with CESIUM_ENABLE_PLOT=0). M0 adds only
+    // the shared bridge resources (PlotViewCtx / PlotInputCapture) — no systems,
+    // entities or render-layer content — so the 3D golden path and the offscreen
+    // baselines stay byte-exact. Later milestones fill in view sync / picking /
+    // interaction here on render layer 3.
+    if !headless && feature_flags::plot_enabled() {
+        app.add_plugins(cesium_plot_bevy::CesiumPlotBridgePlugin);
+    }
+
     // ── M4.1: shadow plugin (day_night lighting only) ───────────────────
     if lighting == LightingMode::DayNight {
         app.add_plugins(CesiumShadowPlugin);
