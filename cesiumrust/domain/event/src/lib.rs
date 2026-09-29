@@ -1,29 +1,29 @@
-//! cesium-event: Type-safe event system.
-//! Domain layer - pure Rust, no framework dependency.
+//! cesium-event：类型安全的事件系统。
+//! 领域层 —— 纯 Rust，无框架依赖。
 //!
-//! CesiumJS mapping: `packages/engine/Source/Core/Event.js`
+//! CesiumJS 映射：`packages/engine/Source/Core/Event.js`
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-/// A unique identifier for an event listener.
+/// 事件监听器的唯一标识符。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ListenerId(u64);
 
-/// Type alias for the listener map to reduce complexity.
+/// 监听器映射的类型别名，用于降低复杂度。
 type ListenerMap<Args> = HashMap<u64, Box<dyn Fn(&Args)>>;
 
-/// A generic event that can have multiple listeners.
-/// Maps to CesiumJS `Event`
+/// 一个可以有多个监听器的通用事件。
+/// 映射到 CesiumJS 的 `Event`
 ///
-/// Type parameter `Args` is a tuple of argument types passed to listeners.
+/// 类型参数 `Args` 是传递给监听器的参数类型元组。
 pub struct Event<Args: Clone> {
     listeners: RefCell<ListenerMap<Args>>,
     next_id: RefCell<u64>,
 }
 
 impl<Args: Clone> Event<Args> {
-    /// Creates a new empty event.
+    /// 创建一个空事件。
     pub fn new() -> Self {
         Self {
             listeners: RefCell::new(HashMap::new()),
@@ -31,21 +31,21 @@ impl<Args: Clone> Event<Args> {
         }
     }
 
-    /// Returns the number of listeners currently subscribed.
-    /// Maps to `Event.numberOfListeners`
+    /// 返回当前已订阅的监听器数量。
+    /// 映射到 `Event.numberOfListeners`
     pub fn number_of_listeners(&self) -> usize {
         self.listeners.borrow().len()
     }
 
-    /// Returns true if there are no listeners.
+    /// 若没有任何监听器则返回 true。
     pub fn is_empty(&self) -> bool {
         self.listeners.borrow().is_empty()
     }
 
-    /// Registers a callback function to be executed whenever the event is raised.
-    /// Maps to `Event.addEventListener`
+    /// 注册一个回调函数，只要事件被触发就会执行。
+    /// 映射到 `Event.addEventListener`
     ///
-    /// Returns a `ListenerId` that can be used to remove the listener.
+    /// 返回一个可用于移除该监听器的 `ListenerId`。
     pub fn add_listener<F>(&self, listener: F) -> ListenerId
     where
         F: Fn(&Args) + 'static,
@@ -58,16 +58,16 @@ impl<Args: Clone> Event<Args> {
         ListenerId(id)
     }
 
-    /// Unregisters a previously registered callback.
-    /// Maps to `Event.removeEventListener`
+    /// 注销先前已注册的回调。
+    /// 映射到 `Event.removeEventListener`
     ///
-    /// Returns true if the listener was removed.
+    /// 若监听器被移除则返回 true。
     pub fn remove_listener(&self, id: ListenerId) -> bool {
         self.listeners.borrow_mut().remove(&id.0).is_some()
     }
 
-    /// Raises the event by calling each registered listener with the given arguments.
-    /// Maps to `Event.raiseEvent`
+    /// 触发事件：以给定参数依次调用每个已注册的监听器。
+    /// 映射到 `Event.raiseEvent`
     pub fn raise(&self, args: &Args) {
         let listeners = self.listeners.borrow();
         for listener in listeners.values() {
@@ -75,7 +75,7 @@ impl<Args: Clone> Event<Args> {
         }
     }
 
-    /// Removes all listeners.
+    /// 移除所有监听器。
     pub fn clear(&self) {
         self.listeners.borrow_mut().clear();
     }
@@ -95,11 +95,11 @@ impl<Args: Clone> std::fmt::Debug for Event<Args> {
     }
 }
 
-/// A simple event with no arguments.
+/// 一个无参数的简单事件。
 pub type SimpleEvent = Event<()>;
 
 impl SimpleEvent {
-    /// Raises the event with no arguments.
+    /// 以无参数触发事件。
     pub fn raise_simple(&self) {
         self.raise(&());
     }
@@ -159,7 +159,7 @@ mod tests {
 
         assert!(event.remove_listener(id));
         event.raise(&0);
-        assert_eq!(count.get(), 1); // Should not increment
+        assert_eq!(count.get(), 1); // 不应再递增
     }
 
     #[test]

@@ -1,16 +1,17 @@
-//! Polynomial root-finding algorithms.
-//! Maps to CesiumJS `Core/QuadraticRealPolynomial.js`, `Core/CubicRealPolynomial.js`,
+//! 多项式求根算法。
+//! 映射到 CesiumJS `Core/QuadraticRealPolynomial.js`、`Core/CubicRealPolynomial.js`、
 //! `Core/QuarticRealPolynomial.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::ptr_arg, clippy::manual_range_patterns)]
 use crate::math_utils::{sign, EPSILON14, EPSILON15};
 
-// --- Helper ---
+// --- 辅助函数 ---
 
-/// Adds two values with cancellation check.
-/// If left and right have opposite signs and the result is negligibly small relative
-/// to the larger operand, returns 0.0.
+/// 相加两个值并带抵消检查。
+/// 若 left 和 right 符号相反，且结果相对于较大的操作数小到可忽略，
+/// 则返回 0.0。
 fn add_with_cancellation_check(left: f64, right: f64, tolerance: f64) -> f64 {
     let difference = left + right;
     if sign(left) != sign(right)
@@ -25,26 +26,26 @@ fn add_with_cancellation_check(left: f64, right: f64, tolerance: f64) -> f64 {
 // QuadraticRealPolynomial
 // =============================================================================
 
-/// Provides the discriminant of the quadratic equation: b² - 4ac.
-/// Maps to `QuadraticRealPolynomial.computeDiscriminant`
+/// 提供二次方程的判别式：b² - 4ac。
+/// 映射到 `QuadraticRealPolynomial.computeDiscriminant`
 pub fn quadratic_discriminant(a: f64, b: f64, c: f64) -> f64 {
     b * b - 4.0 * a * c
 }
 
-/// Provides the real valued roots of the quadratic polynomial ax² + bx + c = 0.
-/// Returns roots in ascending order.
-/// Maps to `QuadraticRealPolynomial.computeRealRoots`
+/// 提供二次多项式 ax² + bx + c = 0 的实数根。
+/// 以升序返回根。
+/// 映射到 `QuadraticRealPolynomial.computeRealRoots`
 pub fn quadratic_real_roots(a: f64, b: f64, c: f64) -> Vec<f64> {
     if a == 0.0 {
         if b == 0.0 {
-            // Constant function: c = 0.
+            // 常数函数：c = 0。
             return vec![];
         }
-        // Linear function: b * x + c = 0.
+        // 线性函数：b * x + c = 0。
         return vec![-c / b];
     } else if b == 0.0 {
         if c == 0.0 {
-            // 2nd order monomial: a * x^2 = 0.
+            // 二阶单项式：a * x^2 = 0。
             return vec![0.0, 0.0];
         }
 
@@ -55,7 +56,7 @@ pub fn quadratic_real_roots(a: f64, b: f64, c: f64) -> Vec<f64> {
             // c ~= 0.0 → a * x^2 = 0.
             return vec![0.0, 0.0];
         } else if c_magnitude > a_magnitude && a_magnitude / c_magnitude < EPSILON14 {
-            // a ~= 0.0 → Constant function.
+            // a ~= 0.0 → 常数函数。
             return vec![];
         }
 
@@ -95,8 +96,8 @@ pub fn quadratic_real_roots(a: f64, b: f64, c: f64) -> Vec<f64> {
 // CubicRealPolynomial
 // =============================================================================
 
-/// Provides the discriminant of the cubic equation.
-/// Maps to `CubicRealPolynomial.computeDiscriminant`
+/// 提供三次方程的判别式。
+/// 映射到 `CubicRealPolynomial.computeDiscriminant`
 pub fn cubic_discriminant(a: f64, b: f64, c: f64, d: f64) -> f64 {
     let a2 = a * a;
     let b2 = b * b;
@@ -106,7 +107,7 @@ pub fn cubic_discriminant(a: f64, b: f64, c: f64, d: f64) -> f64 {
     18.0 * a * b * c * d + b2 * c2 - 27.0 * a2 * d2 - 4.0 * (a * c2 * c + b2 * b * d)
 }
 
-/// Internal cubic root solver (general case).
+/// 内部的三次方程求根器（一般情况）。
 fn cubic_compute_real_roots_internal(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
     let big_a = a;
     let big_b = b / 3.0;
@@ -138,7 +139,7 @@ fn cubic_compute_real_roots_internal(a: f64, b: f64, c: f64, d: f64) -> Vec<f64>
             d_bar = -big_d * delta2 + 2.0 * big_c * delta3;
         }
 
-        let s = if d_bar < 0.0 { -1.0 } else { 1.0 }; // Not Math.sign!
+        let s = if d_bar < 0.0 { -1.0 } else { 1.0 }; // 不是 Math.sign！
         let temp0 = -s * a_bar.abs() * (-discriminant).sqrt();
         let temp1 = -d_bar + temp0;
 
@@ -207,23 +208,23 @@ fn cubic_compute_real_roots_internal(a: f64, b: f64, c: f64, d: f64) -> Vec<f64>
 
     let root2 = (big_c * f - big_b * g) / (-big_b * f + big_c * e);
 
-    // Sort roots
+    // 排序根
     let mut roots = vec![root1, root2, root3];
     roots.sort_by(|a, b| a.partial_cmp(b).unwrap());
     roots
 }
 
-/// Provides the real valued roots of the cubic polynomial ax³ + bx² + cx + d = 0.
-/// Returns roots in ascending order.
-/// Maps to `CubicRealPolynomial.computeRealRoots`
+/// 提供三次多项式 ax³ + bx² + cx + d = 0 的实数根。
+/// 以升序返回根。
+/// 映射到 `CubicRealPolynomial.computeRealRoots`
 pub fn cubic_real_roots(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
     if a == 0.0 {
-        // Quadratic: b * x^2 + c * x + d = 0.
+        // 二次：b * x^2 + c * x + d = 0。
         return quadratic_real_roots(b, c, d);
     } else if b == 0.0 {
         if c == 0.0 {
             if d == 0.0 {
-                // 3rd order monomial: a * x^3 = 0.
+                // 三阶单项式：a * x^3 = 0。
                 return vec![0.0, 0.0, 0.0];
             }
             // a * x^3 + d = 0
@@ -242,7 +243,7 @@ pub fn cubic_real_roots(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
             }
             return vec![roots[0], 0.0, roots[1]];
         }
-        // Deflated cubic: a * x^3 + c * x + d = 0.
+        // 降阶三次：a * x^3 + c * x + d = 0。
         return cubic_compute_real_roots_internal(a, 0.0, c, d);
     } else if c == 0.0 {
         if d == 0.0 {
@@ -275,8 +276,8 @@ pub fn cubic_real_roots(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
 // QuarticRealPolynomial
 // =============================================================================
 
-/// Provides the discriminant of the quartic equation.
-/// Maps to `QuarticRealPolynomial.computeDiscriminant`
+/// 提供四次方程的判别式。
+/// 映射到 `QuarticRealPolynomial.computeDiscriminant`
 pub fn quartic_discriminant(a: f64, b: f64, c: f64, d: f64, e: f64) -> f64 {
     let a2 = a * a;
     let a3 = a2 * a;
@@ -299,7 +300,7 @@ pub fn quartic_discriminant(a: f64, b: f64, c: f64, d: f64, e: f64) -> f64 {
         + e2 * (144.0 * a * b2 * c - 27.0 * b2 * b2 - 128.0 * a2 * c2 - 192.0 * a2 * b * d)
 }
 
-/// Merges two sorted root arrays into a single sorted array.
+/// 将两个已排序的根数组合并为一个已排序的数组。
 fn merge_roots(roots1: &mut Vec<f64>, roots2: &mut Vec<f64>) -> Vec<f64> {
     if roots1.is_empty() {
         return roots2.clone();
@@ -317,10 +318,10 @@ fn merge_roots(roots1: &mut Vec<f64>, roots2: &mut Vec<f64>) -> Vec<f64> {
         r.extend_from_slice(roots1);
         return r;
     } else if roots1[0] >= roots2[0] && roots1[roots1.len() - 1] <= roots2[roots2.len() - 1] {
-        // roots1 nested inside roots2
+        // roots1 嵌套在 roots2 内部
         return vec![roots2[0], roots1[0], roots1[1], roots2[1]];
     } else if roots2[0] >= roots1[0] && roots2[roots2.len() - 1] <= roots1[roots1.len() - 1] {
-        // roots2 nested inside roots1
+        // roots2 嵌套在 roots1 内部
         return vec![roots1[0], roots2[0], roots2[1], roots1[1]];
     } else if roots1[0] > roots2[0] && roots1[0] < roots2[roots2.len() - 1] {
         return vec![roots2[0], roots1[0], roots2[1], roots1[1]];
@@ -328,7 +329,7 @@ fn merge_roots(roots1: &mut Vec<f64>, roots2: &mut Vec<f64>) -> Vec<f64> {
     vec![roots1[0], roots2[0], roots1[1], roots2[1]]
 }
 
-/// Original quartic solver (Ferrari's method variant).
+/// 原始的四次方程求解器（Ferrari 方法的变体）。
 fn quartic_original(a3: f64, a2: f64, a1: f64, a0: f64) -> Vec<f64> {
     let a3_squared = a3 * a3;
 
@@ -337,7 +338,7 @@ fn quartic_original(a3: f64, a2: f64, a1: f64, a0: f64) -> Vec<f64> {
     let r = a0 - (a1 * a3) / 4.0 + (a2 * a3_squared) / 16.0
         - (3.0 * a3_squared * a3_squared) / 256.0;
 
-    // Find roots of: h^6 + 2p h^4 + (p^2 - 4r) h^2 - q^2 = 0
+    // 求以下方程的根：h^6 + 2p h^4 + (p^2 - 4r) h^2 - q^2 = 0
     let cubic_roots = cubic_real_roots(1.0, 2.0 * p, p * p - 4.0 * r, -q * q);
 
     if !cubic_roots.is_empty() {
@@ -396,7 +397,7 @@ fn quartic_original(a3: f64, a2: f64, a1: f64, a0: f64) -> Vec<f64> {
     vec![]
 }
 
-/// Neumark's quartic solver.
+/// Neumark 的四次方程求解器。
 fn quartic_neumark(a3: f64, a2: f64, a1: f64, a0: f64) -> Vec<f64> {
     let a1_squared = a1 * a1;
     let a2_squared = a2 * a2;
@@ -409,7 +410,7 @@ fn quartic_neumark(a3: f64, a2: f64, a1: f64, a0: f64) -> Vec<f64> {
     let cubic_roots = cubic_real_roots(1.0, p, q, r);
 
     if !cubic_roots.is_empty() {
-        // Use the most positive root
+        // 使用最大正值的那个根
         let y = cubic_roots[0];
 
         let temp = a2 - y;
@@ -481,9 +482,9 @@ fn quartic_neumark(a3: f64, a2: f64, a1: f64, a0: f64) -> Vec<f64> {
     vec![]
 }
 
-/// Provides the real valued roots of the quartic polynomial ax⁴ + bx³ + cx² + dx + e = 0.
-/// Returns roots in ascending order.
-/// Maps to `QuarticRealPolynomial.computeRealRoots`
+/// 提供四次多项式 ax⁴ + bx³ + cx² + dx + e = 0 的实数根。
+/// 以升序返回根。
+/// 映射到 `QuarticRealPolynomial.computeRealRoots`
 pub fn quartic_real_roots(a: f64, b: f64, c: f64, d: f64, e: f64) -> Vec<f64> {
     if a.abs() < EPSILON15 {
         return cubic_real_roots(b, c, d, e);

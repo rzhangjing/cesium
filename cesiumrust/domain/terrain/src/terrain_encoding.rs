@@ -1,9 +1,9 @@
-//! Terrain vertex encoding/decoding.
+//! 地形顶点编码/解码。
 //!
-//! Data used to quantize and pack the terrain mesh. The position can be unpacked
-//! for picking and all attributes are unpacked in the vertex shader.
+//! 用于量化和打包地形网格的数据。位置可被解包以用于拾取，
+//! 所有属性在顶点着色器中解包。
 //!
-//! Maps to CesiumJS `Core/TerrainEncoding.js`
+//! 映射到 CesiumJS `Core/TerrainEncoding.js`
 
 // legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
 #![allow(clippy::assign_op_pattern)]
@@ -19,38 +19,38 @@ use glam::{DMat4, DVec2, DVec3};
 
 const SHIFT_LEFT_12: f64 = 4096.0;
 
-/// Component datatype size in bytes for the vertex buffer (FLOAT = 4 bytes).
+/// 顶点缓冲区中分量的数据类型大小（以字节计）（FLOAT = 4 字节）。
 const FLOAT_SIZE_IN_BYTES: usize = 4;
 
-/// Descriptor of a single attribute stored in the terrain vertex buffer.
+/// 存储在地形顶点缓冲区中单个属性的描述符。
 ///
-/// Maps to the attribute objects returned by `TerrainEncoding.prototype.getAttributes`.
+/// 映射到 `TerrainEncoding.prototype.getAttributes` 返回的属性对象。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TerrainAttribute {
-    /// The attribute index (location) in the shader.
+    /// 着色器中的属性索引（位置）。
     pub index: u32,
-    /// Number of components per vertex attribute.
+    /// 每个顶点属性的分量数。
     pub components_per_attribute: u32,
-    /// Byte offset of this attribute within a vertex.
+    /// 该属性在顶点内的字节偏移。
     pub offset_in_bytes: usize,
-    /// Byte stride between consecutive vertices.
+    /// 相邻顶点之间的字节步长。
     pub stride_in_bytes: usize,
 }
 
-/// Indices pointing to the attribute locations in the vertex buffer.
+/// 指向顶点缓冲区中属性位置的索引。
 ///
-/// Maps to the objects returned by `TerrainEncoding.prototype.getAttributeLocations`.
+/// 映射到 `TerrainEncoding.prototype.getAttributeLocations` 返回的对象。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TerrainAttributeLocations {
-    /// Index of the position 3D + height attribute (NONE quantization).
+    /// position 3D + height 属性的索引（NONE 量化）。
     pub position_3d_and_height: u32,
-    /// Index of the texture coordinate + encoded normals attribute (NONE quantization).
+    /// texture coordinate + encoded normals 属性的索引（NONE 量化）。
     pub texture_coord_and_encoded_normals: u32,
-    /// Index of the compressed0 attribute (BITS12 quantization).
+    /// compressed0 属性的索引（BITS12 量化）。
     pub compressed0: u32,
-    /// Index of the compressed1 attribute (BITS12 quantization).
+    /// compressed1 属性的索引（BITS12 量化）。
     pub compressed1: u32,
-    /// Index of the geodetic surface normal attribute.
+    /// geodetic surface normal 属性的索引。
     pub geodetic_surface_normal: u32,
 }
 
@@ -70,41 +70,38 @@ const ATTRIBUTES_INDICES_BITS12: TerrainAttributeLocations = TerrainAttributeLoc
     geodetic_surface_normal: 2,
 };
 
-/// Data used to quantize and pack the terrain mesh. The position can be unpacked for
-/// picking and all attributes are unpacked in the vertex shader.
+/// 用于量化和打包地形网格的数据。位置可被解包以用于拾取，
+/// 所有属性在顶点着色器中解包。
 ///
-/// Maps to CesiumJS `Core/TerrainEncoding.js`
+/// 映射到 CesiumJS `Core/TerrainEncoding.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct TerrainEncoding {
-    /// How the vertices of the mesh were compressed.
+    /// 网格顶点的压缩方式。
     pub quantization: TerrainQuantization,
-    /// The minimum height of the tile including the skirts.
+    /// 图块的最小高度（含裙边）。
     pub minimum_height: Option<f64>,
-    /// The maximum height of the tile.
+    /// 图块的最大高度。
     pub maximum_height: Option<f64>,
-    /// The center of the tile.
+    /// 图块的中心。
     pub center: Option<DVec3>,
-    /// A matrix that takes a vertex from the tile, transforms it to east-north-up at the
-    /// center and scales it so each component is in the [0, 1] range.
+    /// 一个矩阵，将顶点从图块变换到中心处的 east-north-up 坐标系，
+    /// 并缩放使其每个分量处于 [0, 1] 范围。
     pub to_scaled_enu: Option<DMat4>,
-    /// A matrix that restores a vertex transformed with toScaledENU back to the earth
-    /// fixed reference frame.
+    /// 一个矩阵，将经 toScaledENU 变换的顶点还原回地固参考系。
     pub from_scaled_enu: Option<DMat4>,
-    /// The matrix used to decompress the terrain vertices in the shader for RTE rendering.
+    /// 用于在着色器中为 RTE 渲染解压地形顶点的矩阵。
     pub matrix: Option<DMat4>,
-    /// The terrain mesh contains normals.
+    /// 地形网格包含法线。
     pub has_vertex_normals: bool,
-    /// The terrain mesh contains a vertical texture coordinate following the Web Mercator
-    /// projection.
+    /// 地形网格包含遵循 Web Mercator 投影的垂直纹理坐标。
     pub has_web_mercator_t: bool,
-    /// The terrain mesh contains geodetic surface normals, used for terrain exaggeration.
+    /// 地形网格包含大地测量表面法线，用于地形夸张。
     pub has_geodetic_surface_normals: bool,
-    /// A scalar used to exaggerate terrain.
+    /// 用于夸张地形的标量。
     pub exaggeration: f64,
-    /// The relative height from which terrain is exaggerated.
+    /// 地形夸张所基于的相对高度。
     pub exaggeration_relative_height: f64,
-    /// The number of components in each vertex. This value can differ with different
-    /// quantizations.
+    /// 每个顶点的分量数。该值随不同量化方式而异。
     pub stride: usize,
 
     offset_geodetic_surface_normal: usize,
@@ -136,10 +133,10 @@ impl Default for TerrainEncoding {
 }
 
 impl TerrainEncoding {
-    /// Creates a terrain encoding from an axis aligned bounding box using default
-    /// options (no web mercator T, no geodetic surface normals, exaggeration 1.0).
+    /// 使用默认选项（无 web mercator T、无大地测量表面法线、夸张 1.0）
+    /// 从轴对齐包围盒创建地形编码。
     ///
-    /// Maps to the CesiumJS constructor called with the first six arguments.
+    /// 映射到以前六个参数调用的 CesiumJS 构造函数。
     #[allow(clippy::too_many_arguments)]
     pub fn from_aabb(
         center: DVec3,
@@ -163,9 +160,9 @@ impl TerrainEncoding {
         )
     }
 
-    /// Creates a terrain encoding from an axis aligned bounding box.
+    /// 从轴对齐包围盒创建地形编码。
     ///
-    /// Maps to the CesiumJS `TerrainEncoding` constructor.
+    /// 映射到 CesiumJS `TerrainEncoding` 构造函数。
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         center: DVec3,
@@ -182,8 +179,8 @@ impl TerrainEncoding {
         let minimum = axis_aligned_bounding_box.minimum;
         let maximum = axis_aligned_bounding_box.maximum;
 
-        // Scale and bias from [0,1] to [ENU min, ENU max].
-        // Also compute the inverse of the scale and bias.
+        // 从 [0,1] 到 [ENU min, ENU max] 的缩放和偏移。
+        // 同时计算缩放和偏移的逆。
         let dimensions = maximum - minimum;
         let h_dim = maximum_height - minimum_height;
         let max_dim = dimensions.max_element().max(h_dim);
@@ -233,9 +230,9 @@ impl TerrainEncoding {
         encoding
     }
 
-    /// Calculate the stride and offsets for sampling the vertex buffer.
+    /// 计算采样顶点缓冲区的步长和偏移。
     ///
-    /// Maps to `TerrainEncoding.prototype._calculateStrideAndOffsets`
+    /// 映射到 `TerrainEncoding.prototype._calculateStrideAndOffsets`
     fn calculate_stride_and_offsets(&mut self) {
         let mut vertex_stride = 0usize;
 
@@ -258,13 +255,13 @@ impl TerrainEncoding {
         self.stride = vertex_stride;
     }
 
-    /// Encode information about the terrain at a given position into the vertex buffer.
-    /// Position, texture coordinates, height, and (optionally) normal, projection
-    /// information, and geodetic surface normal are all packed into the same buffer.
+    /// 将给定位置处的地形信息编码进顶点缓冲区。
+    /// 位置、纹理坐标、高度，以及（可选的）法线、投影
+    /// 信息和大地测量表面法线都打包进同一个缓冲区。
     ///
-    /// Values are pushed onto `vertex_buffer`. Returns the new buffer length.
+    /// 值被推入 `vertex_buffer`。返回新的缓冲区长度。
     ///
-    /// Maps to `TerrainEncoding.prototype.encode`
+    /// 映射到 `TerrainEncoding.prototype.encode`
     #[allow(clippy::too_many_arguments)]
     pub fn encode(
         &self,
@@ -332,9 +329,9 @@ impl TerrainEncoding {
         vertex_buffer.len()
     }
 
-    /// Decode a position from the vertex buffer.
+    /// 从顶点缓冲区解码位置。
     ///
-    /// Maps to `TerrainEncoding.prototype.decodePosition`
+    /// 映射到 `TerrainEncoding.prototype.decodePosition`
     pub fn decode_position(&self, buffer: &[f64], index: usize) -> DVec3 {
         let index = index * self.stride;
 
@@ -351,9 +348,9 @@ impl TerrainEncoding {
         result + self.center.unwrap()
     }
 
-    /// Decode a position from the vertex buffer and apply vertical exaggeration.
+    /// 从顶点缓冲区解码位置并应用垂直夸张。
     ///
-    /// Maps to `TerrainEncoding.prototype.getExaggeratedPosition`
+    /// 映射到 `TerrainEncoding.prototype.getExaggeratedPosition`
     pub fn get_exaggerated_position(&self, buffer: &[f64], index: usize) -> DVec3 {
         let mut result = self.decode_position(buffer, index);
 
@@ -369,7 +366,7 @@ impl TerrainEncoding {
                 exaggeration_relative_height,
             ) - raw_height;
 
-            // some math is unrolled for better performance
+            // 部分数学运算被展开以提升性能
             result.x += geodetic_surface_normal.x * height_difference;
             result.y += geodetic_surface_normal.y * height_difference;
             result.z += geodetic_surface_normal.z * height_difference;
@@ -378,9 +375,9 @@ impl TerrainEncoding {
         result
     }
 
-    /// Decode texture coordinates from the vertex buffer.
+    /// 从顶点缓冲区解码纹理坐标。
     ///
-    /// Maps to `TerrainEncoding.prototype.decodeTextureCoordinates`
+    /// 映射到 `TerrainEncoding.prototype.decodeTextureCoordinates`
     pub fn decode_texture_coordinates(&self, buffer: &[f64], index: usize) -> DVec2 {
         let index = index * self.stride;
 
@@ -391,9 +388,9 @@ impl TerrainEncoding {
         DVec2::new(buffer[index + 4], buffer[index + 5])
     }
 
-    /// Decode a height from the vertex buffer.
+    /// 从顶点缓冲区解码高度。
     ///
-    /// Maps to `TerrainEncoding.prototype.decodeHeight`
+    /// 映射到 `TerrainEncoding.prototype.decodeHeight`
     pub fn decode_height(&self, buffer: &[f64], index: usize) -> f64 {
         let index = index * self.stride;
 
@@ -407,9 +404,9 @@ impl TerrainEncoding {
         buffer[index + 3]
     }
 
-    /// Decode a web mercator T coordinate from the vertex buffer.
+    /// 从顶点缓冲区解码 web mercator T 坐标。
     ///
-    /// Maps to `TerrainEncoding.prototype.decodeWebMercatorT`
+    /// 映射到 `TerrainEncoding.prototype.decodeWebMercatorT`
     pub fn decode_web_mercator_t(&self, buffer: &[f64], index: usize) -> f64 {
         let index = index * self.stride;
 
@@ -420,9 +417,9 @@ impl TerrainEncoding {
         buffer[index + 6]
     }
 
-    /// Decode an oct-encoded normal from the vertex buffer.
+    /// 从顶点缓冲区解码 oct 编码的法线。
     ///
-    /// Maps to `TerrainEncoding.prototype.getOctEncodedNormal`
+    /// 映射到 `TerrainEncoding.prototype.getOctEncodedNormal`
     pub fn get_oct_encoded_normal(&self, buffer: &[f64], index: usize) -> DVec2 {
         let index = index * self.stride + self.offset_vertex_normal;
 
@@ -433,19 +430,19 @@ impl TerrainEncoding {
         DVec2::new(x, y)
     }
 
-    /// Decode a geodetic surface normal from the vertex buffer.
+    /// 从顶点缓冲区解码大地测量表面法线。
     ///
-    /// Maps to `TerrainEncoding.prototype.decodeGeodeticSurfaceNormal`
+    /// 映射到 `TerrainEncoding.prototype.decodeGeodeticSurfaceNormal`
     pub fn decode_geodetic_surface_normal(&self, buffer: &[f64], index: usize) -> DVec3 {
         let index = index * self.stride + self.offset_geodetic_surface_normal;
 
         DVec3::new(buffer[index], buffer[index + 1], buffer[index + 2])
     }
 
-    /// Add geodetic surface normals to a terrain vertex buffer.
-    /// The new buffer will be larger than the old buffer.
+    /// 向地形顶点缓冲区添加大地测量表面法线。
+    /// 新缓冲区将比旧缓冲区更大。
     ///
-    /// Maps to `TerrainEncoding.prototype.addGeodeticSurfaceNormals`
+    /// 映射到 `TerrainEncoding.prototype.addGeodeticSurfaceNormals`
     pub fn add_geodetic_surface_normals(
         &mut self,
         old_buffer: &[f64],
@@ -481,9 +478,9 @@ impl TerrainEncoding {
         new_buffer
     }
 
-    /// Remove geodetic surface normals from a terrain vertex buffer.
+    /// 从地形顶点缓冲区移除大地测量表面法线。
     ///
-    /// Maps to `TerrainEncoding.prototype.removeGeodeticSurfaceNormals`
+    /// 映射到 `TerrainEncoding.prototype.removeGeodeticSurfaceNormals`
     pub fn remove_geodetic_surface_normals(&mut self, old_buffer: &[f64]) -> Vec<f64> {
         if !self.has_geodetic_surface_normals {
             return old_buffer.to_vec();
@@ -506,9 +503,9 @@ impl TerrainEncoding {
         new_buffer
     }
 
-    /// Get descriptors of the attributes stored in the vertex buffer.
+    /// 获取存储在顶点缓冲区中属性的描述符。
     ///
-    /// Maps to `TerrainEncoding.prototype.getAttributes`
+    /// 映射到 `TerrainEncoding.prototype.getAttributes`
     pub fn get_attributes(&self) -> Vec<TerrainAttribute> {
         let stride_in_bytes = self.stride * FLOAT_SIZE_IN_BYTES;
         let mut offset_in_bytes = 0usize;
@@ -543,11 +540,11 @@ impl TerrainEncoding {
                 add_attribute(ATTRIBUTES_INDICES_NONE.geodetic_surface_normal, 3);
             }
         } else {
-            // When there is no webMercatorT or vertex normals, the attribute only needs 3
-            // components: x/y, z/h, u/v. WebMercatorT and vertex normals each take up one
-            // component, so if only one of them is present the first attribute gets a 4th
-            // component. If both are present, we need an additional attribute that has 1
-            // component.
+            // 当没有 webMercatorT 或顶点法线时，该属性只需 3 个
+            // 分量：x/y、z/h、u/v。WebMercatorT 和顶点法线各占一个
+            // 分量，因此若只存在其中一个，第一个属性会获得第 4 个
+            // 分量。若两者都存在，我们需要一个额外的、含 1 个
+            // 分量的属性。
             let using_attribute_0_component_4 = self.has_web_mercator_t || self.has_vertex_normals;
             let using_attribute_1_component_1 = self.has_web_mercator_t && self.has_vertex_normals;
             add_attribute(
@@ -567,9 +564,9 @@ impl TerrainEncoding {
         attributes
     }
 
-    /// Get indices pointing to the attribute locations in the vertex buffer.
+    /// 获取指向顶点缓冲区中属性位置的索引。
     ///
-    /// Maps to `TerrainEncoding.prototype.getAttributeLocations`
+    /// 映射到 `TerrainEncoding.prototype.getAttributeLocations`
     pub fn get_attribute_locations(&self) -> TerrainAttributeLocations {
         if self.quantization == TerrainQuantization::None {
             ATTRIBUTES_INDICES_NONE

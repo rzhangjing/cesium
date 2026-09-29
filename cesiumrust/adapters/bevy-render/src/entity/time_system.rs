@@ -1,9 +1,9 @@
-//! Time-dynamic entity update system.
+//! 时间动态实体更新系统。
 //!
-//! Manages the AnimationClock resource and per-frame updates:
-//! - Advances time on the AnimationController
-//! - Updates entities with time-dynamic properties (position, color, orientation)
-//! - Handles availability intervals (show/hide entities based on time)
+//! 管理 AnimationClock 资源与逐帧更新：
+//! - 推进 AnimationController 的时间
+//! - 更新带有时间动态属性的实体（位置、颜色、朝向）
+//! - 处理可用性区间（基于时间显示/隐藏实体）
 
 use bevy::prelude::*;
 use cesium_animation::timeline::AnimationController;
@@ -13,7 +13,7 @@ use cesium_time::julian_date::JulianDate;
 
 use super::components::{CesiumEntity, EntityWrapper, GlobeEllipsoid, TimeDynamicProperties};
 
-/// Resource for controlling animation playback.
+/// 用于控制动画播放的资源。
 #[derive(Resource)]
 pub struct AnimationClock {
     pub controller: AnimationController,
@@ -64,7 +64,7 @@ impl AnimationClock {
     }
 }
 
-/// Default animation clock (epoch to epoch+24h).
+/// 默认动画时钟（从 epoch 到 epoch+24h）。
 impl Default for AnimationClock {
     fn default() -> Self {
         let start = JulianDate::from_date_components(2024, 1, 1, 0, 0, 0, 0.0);
@@ -73,7 +73,7 @@ impl Default for AnimationClock {
     }
 }
 
-/// System that advances the animation clock and updates dynamic entities.
+/// 推进动画时钟并更新动态实体的系统。
 pub fn time_dynamic_update_system(
     time: Res<Time>,
     mut animation_clock: ResMut<AnimationClock>,
@@ -121,7 +121,7 @@ pub fn time_dynamic_update_system(
     }
 }
 
-/// System that applies entity visibility based on the `show` field.
+/// 基于 `show` 字段应用实体可见性的系统。
 pub fn entity_visibility_system(
     mut query: Query<(&CesiumEntity, &mut Visibility)>,
 ) {

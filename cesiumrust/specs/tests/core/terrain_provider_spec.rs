@@ -1,6 +1,6 @@
-//! Core/CesiumTerrainProviderSpec.js, EllipsoidTerrainProviderSpec.js,
-//! HeightmapTerrainProviderSpec.js, VRTheWorldTerrainProviderSpec.js
-//! → Rust integration tests
+//! Core/CesiumTerrainProviderSpec.js、EllipsoidTerrainProviderSpec.js、
+//! HeightmapTerrainProviderSpec.js、VRTheWorldTerrainProviderSpec.js
+//! → Rust 集成测试
 
 use cesium_provider::terrain_provider::{
     AvailabilityStrategy, CesiumTerrainProvider, EllipsoidTerrainProvider,
@@ -83,7 +83,7 @@ fn test_cesium_terrain_provider_availability_tiling_scheme() {
 #[test]
 fn test_ellipsoid_terrain_provider_new() {
     let provider = EllipsoidTerrainProvider::new();
-    // Should always return height 0
+    // 应始终返回高度 0
     assert_approx!(provider.get_height(0.0, 0.0), 0.0, epsilon::EPSILON15);
     assert_approx!(provider.get_height(1.0, 0.5), 0.0, epsilon::EPSILON15);
 }

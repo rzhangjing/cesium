@@ -1,8 +1,8 @@
-//! cesium-scene-mode: Scene modes and morphing.
+//! cesium-scene-mode：场景模式与形态变换。
 //!
-//! Domain layer - pure Rust, f64 precision.
+//! 领域层 —— 纯 Rust，f64 精度。
 //!
-//! CesiumJS mapping:
+//! CesiumJS 映射：
 //! - `Scene/SceneMode.js` → scene_mode
 
 pub mod scene_mode;

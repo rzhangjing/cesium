@@ -1,14 +1,14 @@
-//! Event system specs
-//! Ported from CesiumJS Core/Event.js
+//! 事件系统规范
+//! 移植自 CesiumJS Core/Event.js
 //!
-//! A-class tests: add/remove/raise/clear/number_of_listeners/multiple listeners/
-//! SimpleEvent/typed args
+//! A 类测试：add/remove/raise/clear/number_of_listeners/多监听器/
+//! SimpleEvent/类型化参数
 
 use cesium_event::{Event, SimpleEvent};
 use std::cell::Cell;
 use std::rc::Rc;
 
-// ─── Basic Event ───────────────────────────────────────────────────────────────
+// ─── 基础事件 ───────────────────────────────────────────────────────────────
 
 #[test]
 fn event_new_is_empty() {
@@ -27,7 +27,7 @@ fn event_add_listener_increments_count() {
     let _id2 = event.add_listener(|_| {});
     assert_eq!(event.number_of_listeners(), 2);
 
-    // ListenerId is unique
+    // ListenerId 唯一
     let _ = id1;
 }
 
@@ -89,7 +89,7 @@ fn event_remove_listener() {
     assert_eq!(event.number_of_listeners(), 0);
 
     event.raise(&0);
-    assert_eq!(count.get(), 1); // Not called after removal
+    assert_eq!(count.get(), 1); // 移除后不再被调用
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn event_remove_nonexistent_returns_false() {
     let event: Event<()> = Event::new();
     let id = event.add_listener(|_| {});
     assert!(event.remove_listener(id));
-    // Second removal fails
+    // 第二次移除失败
     assert!(!event.remove_listener(id));
 }
 
@@ -117,7 +117,7 @@ fn event_clear_removes_all() {
 #[test]
 fn event_raise_with_no_listeners_is_noop() {
     let event: Event<String> = Event::new();
-    // Should not panic
+    // 不应 panic
     event.raise(&"hello".to_string());
 }
 
@@ -138,7 +138,7 @@ fn simple_event_raise_simple() {
     assert!(fired.get());
 }
 
-// ─── Typed args ────────────────────────────────────────────────────────────────
+// ─── 类型化参数 ────────────────────────────────────────────────────────────────
 
 #[test]
 fn event_with_tuple_args() {
@@ -161,7 +161,7 @@ fn event_listener_ids_are_unique() {
     let id2 = event.add_listener(|_| {});
     let id3 = event.add_listener(|_| {});
 
-    // All different
+    // 全不相同
     assert_ne!(id1, id2);
     assert_ne!(id2, id3);
     assert_ne!(id1, id3);

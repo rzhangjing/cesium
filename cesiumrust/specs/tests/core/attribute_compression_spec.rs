@@ -1,6 +1,6 @@
-//! Ported from `packages/engine/Specs/Core/AttributeCompressionSpec.js` (66 it(), 31 A-class)
+//! 移植自 `packages/engine/Specs/Core/AttributeCompressionSpec.js`（66 个 it()，31 个 A 类）
 //!
-//! 35 throws tests omitted (C-class: Rust type system enforces valid inputs).
+//! 省略 35 个 throws 测试（C 类：Rust 类型系统强制输入合法）。
 
 use cesium_geospatial::attribute_compression::*;
 use cesium_geospatial::ellipsoid::normalize_cartesian3;
@@ -15,7 +15,7 @@ fn vec3_eq_epsilon(a: DVec3, b: DVec3, eps: f64) -> bool {
     (a.x - b.x).abs() < eps && (a.y - b.y).abs() < eps && (a.z - b.z).abs() < eps
 }
 
-/// The 14 test normals used in roundtrip tests
+/// 往返测试中使用的 14 个测试法线
 fn test_normals() -> Vec<DVec3> {
     vec![
         DVec3::new(0.0, 0.0, 1.0),
@@ -68,13 +68,13 @@ fn oct_encode_unit_z_to_4_components() {
 #[test]
 fn oct_extents_are_equal() {
     let negative_unit_z = DVec3::new(0.0, 0.0, -1.0);
-    // lower left
+    // 左下
     assert!(oct_decode(0.0, 0.0).abs_diff_eq(negative_unit_z, 1e-14));
-    // lower right
+    // 右下
     assert!(oct_decode(255.0, 0.0).abs_diff_eq(negative_unit_z, 1e-14));
-    // upper right
+    // 右上
     assert!(oct_decode(255.0, 255.0).abs_diff_eq(negative_unit_z, 1e-14));
-    // upper left (same as lower right in original spec)
+    // 左上（在原始规格中与右下相同）
     assert!(oct_decode(255.0, 0.0).abs_diff_eq(negative_unit_z, 1e-14));
 }
 
@@ -233,7 +233,7 @@ fn compresses_decompresses_values_close_to_1() {
     );
 }
 
-// --- ZigZag Delta Decode ---
+// --- ZigZag 增量解码 ---
 
 fn zig_zag_encode(value: i32) -> u16 {
     ((value << 1) ^ (value >> 15)) as u16
@@ -259,7 +259,7 @@ fn delta_zig_zag_encode_u_v(u_buffer: &[u16], v_buffer: &[u16]) -> (Vec<u16>, Ve
 
 #[test]
 fn decodes_delta_zigzag_without_height() {
-    // Use deterministic values instead of random
+    // 使用确定性值而非随机值
     let decoded_u: Vec<u16> = vec![100, 5000, 12000, 300, 8000, 20000, 15000, 7777, 32000, 999];
     let decoded_v: Vec<u16> = vec![200, 6000, 11000, 400, 9000, 19000, 14000, 8888, 31000, 1111];
 
@@ -279,7 +279,7 @@ fn decodes_delta_zigzag_with_height() {
     let length = decoded_u.len();
     let (mut u_buffer, mut v_buffer) = delta_zig_zag_encode_u_v(&decoded_u, &decoded_v);
 
-    // Encode height
+    // 编码高度
     let mut h_buffer = vec![0u16; length];
     let mut last_h: i32 = 0;
     for i in 0..length {
@@ -295,7 +295,7 @@ fn decodes_delta_zigzag_with_height() {
     assert_eq!(h_buffer, decoded_h);
 }
 
-// --- Dequantize ---
+// --- 反量化 ---
 
 #[test]
 fn dequantize_works_with_byte() {
@@ -377,19 +377,19 @@ fn dequantize_works_with_int() {
 
 #[test]
 fn dequantize_works_with_unsigned_int() {
-    // Note: u32 max = 4294967295 doesn't fit in i32, so we use i64 internally
-    // For this test, we use values that fit in i32 and verify the formula
+    // 注意：u32 最大值 = 4294967295 无法放入 i32，因此内部使用 i64
+    // 本测试使用能放入 i32 的值并验证公式
     let input: Vec<i32> = vec![0, 0, 0, 2147483647, 2147483647, 2147483647, -1, -1, -1];
-    // -1 as u32 = 4294967295
+    // -1 作为 u32 = 4294967295
     let result = dequantize(&input, ComponentDatatype::UnsignedInt, 3, 3);
     // 0 / 4294967295 = 0
     assert!((result[0] - 0.0).abs() < 1e-10);
     // 2147483647 / 4294967295 ≈ 0.5
     assert!((result[3] - 0.5).abs() < 1e-5);
-    // -1 as i32 cast to f64 = -1.0, / 4294967295 → very small negative → clamped to -1? No.
-    // Actually in JS, Uint32Array stores 4294967295, so typedArray[index] / divisor = 1.0
-    // In Rust, we pass -1 as i32 which becomes -1.0/4294967295 → max(-1) = -1.0...
-    // This doesn't match. Let's just test the first 6 values.
+    // -1 作为 i32 转为 f64 = -1.0，/ 4294967295 → 极小负数 → 会被钳制到 -1？不会。
+    // 实际上在 JS 中，Uint32Array 存储 4294967295，因此 typedArray[index] / divisor = 1.0
+    // 在 Rust 中，我们传入 -1 作为 i32，它变成 -1.0/4294967295 → max(-1) = -1.0...
+    // 这与预期不符。我们只测试前 6 个值。
     assert!((result[1] - 0.0).abs() < 1e-10);
     assert!((result[4] - 0.5).abs() < 1e-5);
 }
@@ -428,7 +428,7 @@ fn encode_rgb8_encodes() {
     assert_eq!(encode_rgb8(0.0, 0.0, 0.0), 0x000000 as f64);
     // RED
     assert_eq!(encode_rgb8(1.0, 0.0, 0.0), 0xff0000 as f64);
-    // GREEN (CesiumJS Color.GREEN = 0x008000, green = 128/255)
+    // GREEN（CesiumJS Color.GREEN = 0x008000，green = 128/255）
     assert_eq!(encode_rgb8(0.0, 128.0 / 255.0, 0.0), 0x008000 as f64);
     // BLUE
     assert_eq!(encode_rgb8(0.0, 0.0, 1.0), 0x0000ff as f64);

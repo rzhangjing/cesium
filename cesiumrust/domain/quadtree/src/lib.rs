@@ -1,10 +1,10 @@
-//! cesium-quadtree: Quadtree traversal and tile scheduling.
+//! cesium-quadtree：四叉树遍历与瓦片调度。
 //!
-//! Domain layer - pure Rust, f64 precision.
+//! 领域层 —— 纯 Rust，f64 精度。
 //!
-//! CesiumJS mapping:
+//! CesiumJS 映射：
 //! - `Scene/QuadtreePrimitive.js` → traversal
-//! - Tile loading/caching → cache
+//! - 瓦片加载/缓存 → cache
 
 pub mod cache;
 pub mod quadtree_tile_adjacency;

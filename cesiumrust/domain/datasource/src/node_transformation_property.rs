@@ -1,8 +1,9 @@
-//! NodeTransformationProperty - composite property for model node TRS transforms.
+//! NodeTransformationProperty - 用于模型节点 TRS 变换的组合属性。
 //!
-//! Maps to CesiumJS `DataSources/NodeTransformationProperty.js`
+//! 映射到 CesiumJS `DataSources/NodeTransformationProperty.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::unnecessary_map_or)]
 use crate::property_system::property::DynProperty;
 use crate::property_system::value::PropertyValue;
@@ -10,14 +11,14 @@ use cesium_time::JulianDate;
 use glam::{DQuat, DVec3};
 use std::sync::Arc;
 
-/// The resolved value of a NodeTransformationProperty at a given time.
+/// NodeTransformationProperty 在给定时间处解析后的值。
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeTransformationValue {
-    /// Translation offset.
+    /// 平移偏移。
     pub translation: DVec3,
-    /// Rotation quaternion.
+    /// 旋转四元数。
     pub rotation: DQuat,
-    /// Scale factors.
+    /// 缩放因子。
     pub scale: DVec3,
 }
 
@@ -31,22 +32,22 @@ impl Default for NodeTransformationValue {
     }
 }
 
-/// A property that represents a model node transformation composed of
-/// translation, rotation, and scale sub-properties.
+/// 一个表示模型节点变换的属性，由平移、
+/// 旋转和缩放子属性组合而成。
 ///
-/// Maps to CesiumJS `DataSources/NodeTransformationProperty.js`
+/// 映射到 CesiumJS `DataSources/NodeTransformationProperty.js`
 #[derive(Clone)]
 pub struct NodeTransformationProperty {
-    /// The translation property.
+    /// 平移属性。
     translation: Option<Arc<dyn DynProperty>>,
-    /// The rotation property.
+    /// 旋转属性。
     rotation: Option<Arc<dyn DynProperty>>,
-    /// The scale property.
+    /// 缩放属性。
     scale: Option<Arc<dyn DynProperty>>,
 }
 
 impl NodeTransformationProperty {
-    /// Creates a new NodeTransformationProperty with no sub-properties.
+    /// 创建一个无子属性的新 NodeTransformationProperty。
     pub fn new() -> Self {
         Self {
             translation: None,
@@ -55,7 +56,7 @@ impl NodeTransformationProperty {
         }
     }
 
-    /// Creates a NodeTransformationProperty with constant values.
+    /// 创建一个具有常量值的 NodeTransformationProperty。
     pub fn with_values(translation: DVec3, rotation: DQuat, scale: DVec3) -> Self {
         use crate::property_system::property::ConstantProperty;
         Self {
@@ -71,7 +72,7 @@ impl NodeTransformationProperty {
         }
     }
 
-    /// Gets whether this property is constant (all sub-properties are constant).
+    /// 获取此属性是否为常量（所有子属性均为常量）。
     pub fn is_constant(&self) -> bool {
         let t_const = self.translation.as_ref().map_or(true, |p| p.is_constant());
         let r_const = self.rotation.as_ref().map_or(true, |p| p.is_constant());
@@ -79,41 +80,41 @@ impl NodeTransformationProperty {
         t_const && r_const && s_const
     }
 
-    /// Gets the translation property.
+    /// 获取平移属性。
     pub fn translation(&self) -> Option<&Arc<dyn DynProperty>> {
         self.translation.as_ref()
     }
 
-    /// Sets the translation property.
+    /// 设置平移属性。
     pub fn set_translation(&mut self, prop: Option<Arc<dyn DynProperty>>) {
         self.translation = prop;
     }
 
-    /// Gets the rotation property.
+    /// 获取旋转属性。
     pub fn rotation(&self) -> Option<&Arc<dyn DynProperty>> {
         self.rotation.as_ref()
     }
 
-    /// Sets the rotation property.
+    /// 设置旋转属性。
     pub fn set_rotation(&mut self, prop: Option<Arc<dyn DynProperty>>) {
         self.rotation = prop;
     }
 
-    /// Gets the scale property.
+    /// 获取缩放属性。
     pub fn scale(&self) -> Option<&Arc<dyn DynProperty>> {
         self.scale.as_ref()
     }
 
-    /// Sets the scale property.
+    /// 设置缩放属性。
     pub fn set_scale(&mut self, prop: Option<Arc<dyn DynProperty>>) {
         self.scale = prop;
     }
 
-    /// Gets the resolved transformation value at the given time.
+    /// 获取变换在给定时间处解析后的值。
     ///
-    /// Defaults: translation=ZERO, rotation=IDENTITY, scale=ONE.
+    /// 默认值：translation=ZERO，rotation=IDENTITY，scale=ONE。
     ///
-    /// Maps to `NodeTransformationProperty.prototype.getValue`
+    /// 映射到 `NodeTransformationProperty.prototype.getValue`
     pub fn get_value(&self, time: &JulianDate) -> NodeTransformationValue {
         let translation = self
             .translation
@@ -149,7 +150,7 @@ impl NodeTransformationProperty {
         }
     }
 
-    /// Compares this property to another.
+    /// 将此属性与另一个属性进行比较。
     pub fn equals(&self, other: &NodeTransformationProperty) -> bool {
         prop_equals(&self.translation, &other.translation)
             && prop_equals(&self.rotation, &other.rotation)

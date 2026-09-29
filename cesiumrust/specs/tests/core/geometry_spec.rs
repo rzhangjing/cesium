@@ -1,6 +1,6 @@
-//! Geometry generation specs - ported from Core/*GeometrySpec.js
-//! Covers: Corridor, Ellipse, Wall, Polyline, PolylineVolume, CoplanarPolygon,
-//! GroundPolyline, Frustum geometry and their outline variants.
+//! 几何生成规格测试 - 移植自 Core/*GeometrySpec.js
+//! 覆盖范围：Corridor、Ellipse、Wall、Polyline、PolylineVolume、CoplanarPolygon、
+//! GroundPolyline、Frustum 几何及其轮廓变体。
 
 use cesium_geospatial::geometry::{
     coplanar_polygon_geometry, corridor_geometry, corridor_outline_geometry,
@@ -46,9 +46,9 @@ fn corridor_geometry_produces_positions_and_indices() {
 
 #[test]
 fn corridor_width_affects_geometry() {
-    // Straight corridor along equator (east direction), width = 100km
-    // At lon≈0, lat=0: north direction ≈ z-axis in ECEF
-    // So the z-extent of positions should be approximately equal to width
+    // 沿赤道的直线走廊（向东方向），宽度 = 100km
+    // 在 lon≈0、lat=0 处：北方向 ≈ ECEF 中的 z 轴
+    // 因此 positions 的 z 范围应近似等于宽度
     use cesium_geospatial::Cartographic;
     let e = wgs84();
     let width = 100_000.0;
@@ -66,7 +66,7 @@ fn corridor_width_affects_geometry() {
     let geo = corridor_geometry(&opts, VertexFormat::POSITION_ONLY);
     assert!(!geo.positions.is_empty());
 
-    // Compute z-extent (perpendicular to eastward path at equator)
+    // 计算 z 范围（在赤道处垂直于向东的路径）
     let mut min_z = f64::MAX;
     let mut max_z = f64::MIN;
     for p in &geo.positions {
@@ -75,7 +75,7 @@ fn corridor_width_affects_geometry() {
     }
     let z_extent = max_z - min_z;
 
-    // z-extent should be approximately equal to width (±30%)
+    // z 范围应近似等于宽度（±30%）
     assert!(
         (z_extent - width).abs() < width * 0.3,
         "corridor z-extent should \u{2248} width: expected ~{width}, got {z_extent}"

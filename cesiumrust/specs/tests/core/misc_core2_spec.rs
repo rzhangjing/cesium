@@ -1,7 +1,7 @@
-//! Core/TridiagonalSystemSolverSpec.js + Core/NearFarScalarSpec.js → Rust integration tests
+//! Core/TridiagonalSystemSolverSpec.js + Core/NearFarScalarSpec.js → Rust 集成测试
 //!
-//! TridiagonalSystemSolver: 9 it() → 2 A-class (7 C-class: throws)
-//! NearFarScalar: 5 it() + createPackableSpecs → 4 A-class (1 C-class: result-param)
+//! TridiagonalSystemSolver：9 个 it() → 2 个 A 类（7 个 C 类：throws）
+//! NearFarScalar：5 个 it() + createPackableSpecs → 4 个 A 类（1 个 C 类：result 参数）
 
 use cesium_animation::tridiagonal_solve;
 use cesium_datasource::primitives::NearFarScalar;
@@ -96,7 +96,7 @@ fn test_near_far_scalar_with_args() {
 #[test]
 fn test_near_far_scalar_clone() {
     let scalar = NearFarScalar::new(1.0, 2.0, 3.0, 4.0);
-    let cloned = scalar; // Copy semantics in Rust
+    let cloned = scalar; // Rust 中的拷贝语义
     assert_eq!(scalar, cloned);
 }
 

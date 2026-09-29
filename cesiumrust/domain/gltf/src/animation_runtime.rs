@@ -1,75 +1,74 @@
-//! Skeletal animation runtime system for glTF 2.0.
+//! 用于 glTF 2.0 的骨骼动画运行时系统。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Scene/Model/ModelAnimation.js`
 //! - `Scene/Model/ModelAnimationChannel.js`
 //! - `Scene/Model/ModelAnimationCollection.js`
 //! - `Scene/Model/ModelSkin.js`
 //! - `Scene/Model/ModelRuntimeNode.js`
 //!
-//! Provides animation evaluation (spline interpolation), skinning (joint matrix
-//! computation), and morph target blending.
+//! 提供动画求值（样条插值）、蒙皮（关节矩阵计算）以及 morph target 混合。
 
 use crate::gltf_model::{Animation, AnimationPath, Interpolation};
 use glam::{DMat4, DQuat, DVec3};
 
-/// Animation playback state.
+/// 动画播放状态。
 ///
-/// Maps to CesiumJS `ModelAnimationState`
+/// 映射到 CesiumJS `ModelAnimationState`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AnimationState {
-    /// Animation is stopped.
+    /// 动画已停止。
     #[default]
     Stopped,
-    /// Animation is playing.
+    /// 动画正在播放。
     Playing,
-    /// Animation is paused.
+    /// 动画已暂停。
     Paused,
 }
 
-/// Animation loop mode.
+/// 动画循环模式。
 ///
-/// Maps to CesiumJS `ModelAnimationLoop`
+/// 映射到 CesiumJS `ModelAnimationLoop`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AnimationLoop {
-    /// Play once and stop.
+    /// 播放一次后停止。
     #[default]
     None,
-    /// Loop continuously.
+    /// 持续循环。
     Repeat,
-    /// Ping-pong (play forward then backward).
+    /// 往复（先正放后倒放）。
     MirroredRepeat,
 }
 
-/// A runtime animation instance with playback control.
+/// 带播放控制的运行时动画实例。
 ///
-/// Maps to CesiumJS `Scene/Model/ModelAnimation.js`
+/// 映射到 CesiumJS `Scene/Model/ModelAnimation.js`
 #[derive(Debug, Clone)]
 pub struct RuntimeAnimation {
-    /// Animation name.
+    /// 动画名称。
     pub name: Option<String>,
-    /// Current playback state.
+    /// 当前播放状态。
     pub state: AnimationState,
-    /// Loop mode.
+    /// 循环模式。
     pub loop_mode: AnimationLoop,
-    /// Playback speed multiplier.
+    /// 播放速度乘数。
     pub multiplier: f64,
-    /// Whether to reverse playback.
+    /// 是否反向播放。
     pub reverse: bool,
-    /// Current local time in seconds.
+    /// 当前本地时间（秒）。
     pub local_time: f64,
-    /// Duration of the animation in seconds.
+    /// 动画时长（秒）。
     pub duration: f64,
-    /// Delay before starting in seconds.
+    /// 开始前的延迟（秒）。
     pub delay: f64,
-    /// Whether to remove when stopped.
+    /// 停止时是否移除。
     pub remove_on_stop: bool,
-    /// Whether to clamp animations to their time range.
+    /// 是否将动画钳制到其时间范围。
     pub clamp_animations: bool,
 }
 
 impl RuntimeAnimation {
-    /// Creates a new runtime animation from a glTF animation.
+    /// 由一个 glTF animation 创建新的运行时动画。
     pub fn from_gltf(animation: &Animation, duration: f64) -> Self {
         Self {
             name: animation.name.clone(),
@@ -85,26 +84,26 @@ impl RuntimeAnimation {
         }
     }
 
-    /// Starts playing the animation.
+    /// 开始播放动画。
     pub fn play(&mut self) {
         self.state = AnimationState::Playing;
     }
 
-    /// Pauses the animation.
+    /// 暂停动画。
     pub fn pause(&mut self) {
         if self.state == AnimationState::Playing {
             self.state = AnimationState::Paused;
         }
     }
 
-    /// Stops the animation and resets time.
+    /// 停止动画并重置时间。
     pub fn stop(&mut self) {
         self.state = AnimationState::Stopped;
         self.local_time = 0.0;
     }
 
-    /// Advances the animation by delta_time seconds.
-    /// Returns true if the animation is still active.
+    /// 将动画推进 delta_time 秒。
+    /// 若动画仍活跃则返回 true。
     pub fn advance(&mut self, delta_time: f64) -> bool {
         if self.state != AnimationState::Playing {
             return self.state != AnimationState::Stopped;
@@ -118,7 +117,7 @@ impl RuntimeAnimation {
 
         self.local_time += effective_delta;
 
-        // Handle looping
+        // 处理循环
         if self.duration > 0.0 {
             match self.loop_mode {
                 AnimationLoop::None => {
@@ -146,7 +145,7 @@ impl RuntimeAnimation {
         true
     }
 
-    /// Gets the effective time (clamped or wrapped based on settings).
+    /// 获取生效时间（根据设置钳制或环绕）。
     pub fn effective_time(&self) -> f64 {
         if self.clamp_animations {
             self.local_time.clamp(0.0, self.duration)
@@ -158,82 +157,82 @@ impl RuntimeAnimation {
     }
 }
 
-/// A keyframe spline for animation interpolation.
+/// 用于动画插值的关键帧样条。
 ///
-/// Maps to CesiumJS spline classes (LinearSpline, QuaternionSpline, HermiteSpline, SteppedSpline)
+/// 映射到 CesiumJS 样条类（LinearSpline、QuaternionSpline、HermiteSpline、SteppedSpline）
 #[derive(Debug, Clone)]
 pub enum AnimationSpline {
-    /// Constant value (single keyframe).
+    /// 常量值（单个关键帧）。
     Constant(ConstantSpline),
-    /// Step interpolation (hold value until next keyframe).
+    /// 阶跃插值（保持值直到下一个关键帧）。
     Step(StepSpline),
-    /// Linear interpolation.
+    /// 线性插值。
     Linear(LinearSpline),
-    /// Quaternion slerp interpolation.
+    /// 四元数 slerp 插值。
     QuaternionSlerp(QuaternionSpline),
-    /// Cubic Hermite spline interpolation.
+    /// 三次 Hermite 样条插值。
     CubicSpline(CubicSpline),
 }
 
-/// Constant spline (single keyframe).
+/// 常量样条（单个关键帧）。
 #[derive(Debug, Clone)]
 pub struct ConstantSpline {
-    /// The constant value.
+    /// 常量值。
     pub value: Vec<f64>,
 }
 
-/// Step spline (no interpolation, holds previous value).
+/// 阶跃样条（无插值，保持上一个值）。
 #[derive(Debug, Clone)]
 pub struct StepSpline {
-    /// Keyframe times.
+    /// 关键帧时间。
     pub times: Vec<f64>,
-    /// Keyframe values (flattened).
+    /// 关键帧值（展平）。
     pub values: Vec<f64>,
-    /// Components per keyframe.
+    /// 每个关键帧的分量数。
     pub components: usize,
 }
 
-/// Linear interpolation spline.
+/// 线性插值样条。
 #[derive(Debug, Clone)]
 pub struct LinearSpline {
-    /// Keyframe times.
+    /// 关键帧时间。
     pub times: Vec<f64>,
-    /// Keyframe values (flattened).
+    /// 关键帧值（展平）。
     pub values: Vec<f64>,
-    /// Components per keyframe.
+    /// 每个关键帧的分量数。
     pub components: usize,
 }
 
-/// Quaternion slerp spline.
+/// 四元数 slerp 样条。
 #[derive(Debug, Clone)]
 pub struct QuaternionSpline {
-    /// Keyframe times.
+    /// 关键帧时间。
     pub times: Vec<f64>,
-    /// Quaternion values [x, y, z, w] per keyframe (flattened).
+    /// 每个关键帧的四元数值 [x, y, z, w]（展平）。
     pub values: Vec<f64>,
 }
 
-/// Cubic Hermite spline.
+/// 三次 Hermite 样条。
 ///
-/// Maps to CesiumJS `HermiteSpline`
+/// 映射到 CesiumJS `HermiteSpline`
 #[derive(Debug, Clone)]
 pub struct CubicSpline {
-    /// Keyframe times.
+    /// 关键帧时间。
     pub times: Vec<f64>,
-    /// Keyframe values (flattened).
+    /// 关键帧值（展平）。
     pub values: Vec<f64>,
-    /// In-tangents (flattened, one fewer than values).
+    /// 入切线（展平，比 values 少一个）。
     pub in_tangents: Vec<f64>,
-    /// Out-tangents (flattened, one fewer than values).
+    /// 出切线（展平，比 values 少一个）。
     pub out_tangents: Vec<f64>,
-    /// Components per keyframe.
+    /// 每个关键帧的分量数。
     pub components: usize,
 }
 
 impl AnimationSpline {
-    /// Creates a spline from keyframe data.
+    /// 由关键帧数据创建样条。
     ///
-    /// Maps to CesiumJS `ModelAnimationChannel.createSpline`
+    /// 映射到 CesiumJS `ModelAnimationChannel.createSpline`
     pub fn from_keyframes(
         times: Vec<f64>,
         values: Vec<f64>,
@@ -269,7 +268,7 @@ impl AnimationSpline {
                 }
             }
             Interpolation::CubicSpline => {
-                // CubicSpline data layout: [inTangent, value, outTangent] per keyframe
+                // CubicSpline 数据布局：每个关键帧 [inTangent, value, outTangent]
                 let num_keys = times.len();
                 let mut cubic_values = Vec::with_capacity(num_keys * components);
                 let mut in_tangents = Vec::with_capacity((num_keys - 1) * components);
@@ -277,18 +276,18 @@ impl AnimationSpline {
 
                 for i in 0..num_keys {
                     let base = i * 3 * components;
-                    // in-tangent
+                    // 入切线
                     if i > 0 && base + components <= values.len() {
                         in_tangents
                             .extend_from_slice(&values[base..base + components]);
                     }
-                    // value
+                    // 值
                     let val_base = base + components;
                     if val_base + components <= values.len() {
                         cubic_values
                             .extend_from_slice(&values[val_base..val_base + components]);
                     }
-                    // out-tangent
+                    // 出切线
                     let out_base = base + 2 * components;
                     if i < num_keys - 1 && out_base + components <= values.len() {
                         out_tangents
@@ -307,8 +306,8 @@ impl AnimationSpline {
         }
     }
 
-    /// Evaluates the spline at time t.
-    /// Returns the interpolated value as a flat vector.
+    /// 在时间 t 处求值样条。
+    /// 将插值结果作为扁平向量返回。
     pub fn evaluate(&self, time: f64) -> Vec<f64> {
         match self {
             Self::Constant(s) => s.value.clone(),
@@ -319,7 +318,7 @@ impl AnimationSpline {
         }
     }
 
-    /// Clamps time to the spline's range.
+    /// 将时间钳制到样条的范围。
     pub fn clamp_time(&self, time: f64) -> f64 {
         let times = self.times();
         if times.is_empty() {
@@ -328,7 +327,7 @@ impl AnimationSpline {
         time.clamp(times[0], *times.last().unwrap())
     }
 
-    /// Wraps time to the spline's range (for looping).
+    /// 将时间环绕到样条的范围（用于循环）。
     pub fn wrap_time(&self, time: f64) -> f64 {
         let times = self.times();
         if times.len() < 2 {
@@ -366,7 +365,7 @@ impl StepSpline {
     }
 
     fn find_keyframe(&self, time: f64) -> usize {
-        // Find the last keyframe with time <= given time
+        // 找到 time <= 给定时间的最后一个关键帧
         let mut idx = 0;
         for (i, &t) in self.times.iter().enumerate() {
             if t <= time {
@@ -486,7 +485,7 @@ impl CubicSpline {
             return vec![0.0; self.components];
         }
 
-        // Hermite interpolation:
+        // Hermite 插值：
         // p(t) = (2t³ - 3t² + 1)p0 + (t³ - 2t² + t)m0 + (-2t³ + 3t²)p1 + (t³ - t²)m1
         let t2 = t * t;
         let t3 = t2 * t;
@@ -496,7 +495,7 @@ impl CubicSpline {
         let h01 = -2.0 * t3 + 3.0 * t2;
         let h11 = t3 - t2;
 
-        // Delta time between keyframes for tangent scaling
+        // 用于切线缩放的关键帧间时间差
         let dt = if i + 1 < self.times.len() {
             self.times[i + 1] - self.times[i]
         } else {
@@ -508,7 +507,7 @@ impl CubicSpline {
             let p0 = self.values[base0 + c];
             let p1 = self.values[base1 + c];
 
-            // out_tangent[i] and in_tangent[i] (offset by one since first in-tangent is unused)
+            // out_tangent[i] 与 in_tangent[i]（因第一个 in-tangent 未使用而错开一位）
             let out_base = i * self.components;
             let in_base = if i > 0 { (i - 1) * self.components } else { 0 };
 
@@ -552,21 +551,21 @@ impl CubicSpline {
     }
 }
 
-/// Runtime skin for skeletal animation.
+/// 用于骨骼动画的运行时 skin。
 ///
-/// Maps to CesiumJS `Scene/Model/ModelSkin.js`
+/// 映射到 CesiumJS `Scene/Model/ModelSkin.js`
 #[derive(Debug, Clone)]
 pub struct RuntimeSkin {
-    /// Joint node indices.
+    /// joint node 索引。
     pub joints: Vec<usize>,
-    /// Inverse bind matrices (one per joint, column-major 4x4).
+    /// 逆变换绑定矩阵（每关节一个，列主序 4x4）。
     pub inverse_bind_matrices: Vec<DMat4>,
-    /// Computed joint matrices (updated each frame).
+    /// 已计算的关节矩阵（每帧更新）。
     pub joint_matrices: Vec<DMat4>,
 }
 
 impl RuntimeSkin {
-    /// Creates a runtime skin from joint indices and inverse bind matrices.
+    /// 由 joint 索引与逆变换绑定矩阵创建运行时 skin。
     pub fn new(joints: Vec<usize>, inverse_bind_matrices: Vec<DMat4>) -> Self {
         let count = joints.len();
         Self {
@@ -576,10 +575,10 @@ impl RuntimeSkin {
         }
     }
 
-    /// Updates joint matrices from node world transforms.
+    /// 由 node 世界变换更新关节矩阵。
     ///
-    /// Maps to CesiumJS `ModelSkin.updateJointMatrices`
-    /// Formula: jointMatrix[i] = nodeWorldTransform[joint[i]] * inverseBindMatrix[i]
+    /// 映射到 CesiumJS `ModelSkin.updateJointMatrices`
+    /// 公式：jointMatrix[i] = nodeWorldTransform[joint[i]] * inverseBindMatrix[i]
     pub fn update_joint_matrices(&mut self, node_world_transforms: &[DMat4]) {
         for (i, &joint_idx) in self.joints.iter().enumerate() {
             if joint_idx < node_world_transforms.len()
@@ -591,9 +590,9 @@ impl RuntimeSkin {
         }
     }
 
-    /// Computes the skinning matrix for a vertex given its joint weights.
+    /// 给定一个顶点的关节权重，计算其蒙皮矩阵。
     ///
-    /// Maps to CesiumJS GPU skinning:
+    /// 映射到 CesiumJS GPU 蒙皮：
     /// `skinningMatrix = sum(weight[i] * jointMatrix[joint[i]])`
     pub fn compute_skinning_matrix(
         &self,
@@ -616,31 +615,31 @@ impl RuntimeSkin {
     }
 }
 
-/// Morph target blending.
+/// morph target 混合。
 ///
-/// Maps to CesiumJS morph target handling in ModelRuntimePrimitive.
+/// 映射到 CesiumJS 在 ModelRuntimePrimitive 中的 morph target 处理。
 #[derive(Debug, Clone, Default)]
 pub struct MorphTargetBlender {
-    /// Current morph weights.
+    /// 当前的 morph 权重。
     pub weights: Vec<f64>,
 }
 
 impl MorphTargetBlender {
-    /// Creates a new morph target blender with the given number of targets.
+    /// 创建一个具有给定 target 数量的新 morph target 混合器。
     pub fn new(target_count: usize) -> Self {
         Self {
             weights: vec![0.0; target_count],
         }
     }
 
-    /// Sets a morph target weight.
+    /// 设置一个 morph target 权重。
     pub fn set_weight(&mut self, index: usize, weight: f64) {
         if index < self.weights.len() {
             self.weights[index] = weight.clamp(0.0, 1.0);
         }
     }
 
-    /// Blends a vertex attribute across morph targets.
+    /// 在各 morph target 之间混合一个顶点属性。
     ///
     /// result = base + sum(weight[i] * target_displacement[i])
     pub fn blend_attribute(
@@ -658,22 +657,22 @@ impl MorphTargetBlender {
     }
 }
 
-/// An animation channel targeting a specific node property.
+/// 一个针对特定 node 属性的 animation channel。
 ///
-/// Maps to CesiumJS `ModelAnimationChannel`
+/// 映射到 CesiumJS `ModelAnimationChannel`
 #[derive(Debug, Clone)]
 pub struct RuntimeChannel {
-    /// Target node index.
+    /// 目标 node 索引。
     pub target_node: usize,
-    /// Target property path.
+    /// 目标属性路径。
     pub path: AnimationPath,
-    /// The interpolation spline.
+    /// 插值样条。
     pub spline: AnimationSpline,
 }
 
 impl RuntimeChannel {
-    /// Evaluates the channel at the given time.
-    /// Returns the animated value as a flat vector.
+    /// 在给定时间求值该 channel。
+    /// 将动画值作为扁平向量返回。
     pub fn evaluate(&self, time: f64, clamp: bool) -> Vec<f64> {
         let t = if clamp {
             self.spline.clamp_time(time)
@@ -683,7 +682,7 @@ impl RuntimeChannel {
         self.spline.evaluate(t)
     }
 
-    /// Evaluates as a translation vector.
+    /// 作为平移向量求值。
     pub fn evaluate_translation(&self, time: f64, clamp: bool) -> DVec3 {
         let v = self.evaluate(time, clamp);
         if v.len() >= 3 {
@@ -693,7 +692,7 @@ impl RuntimeChannel {
         }
     }
 
-    /// Evaluates as a rotation quaternion.
+    /// 作为旋转四元数求值。
     pub fn evaluate_rotation(&self, time: f64, clamp: bool) -> DQuat {
         let v = self.evaluate(time, clamp);
         if v.len() >= 4 {
@@ -703,7 +702,7 @@ impl RuntimeChannel {
         }
     }
 
-    /// Evaluates as a scale vector.
+    /// 作为缩放向量求值。
     pub fn evaluate_scale(&self, time: f64, clamp: bool) -> DVec3 {
         let v = self.evaluate(time, clamp);
         if v.len() >= 3 {
@@ -714,7 +713,7 @@ impl RuntimeChannel {
     }
 }
 
-/// Computes animation duration from keyframe times.
+/// 从关键帧时间计算动画时长。
 pub fn compute_duration(times: &[f64]) -> f64 {
     if times.is_empty() {
         return 0.0;
@@ -756,7 +755,7 @@ mod tests {
         assert!(rt.advance(1.0));
         assert!((rt.local_time - 1.5).abs() < 1e-10);
 
-        // Should stop at end (no loop)
+        // 应在末尾停止（无循环）
         assert!(!rt.advance(1.0));
         assert_eq!(rt.state, AnimationState::Stopped);
     }
@@ -868,7 +867,7 @@ mod tests {
 
     #[test]
     fn test_quaternion_spline() {
-        // Identity to 90° rotation around Z
+        // 从单四元数到绕 Z 轴旋转 90°
         let q0 = DQuat::IDENTITY;
         let q1 = DQuat::from_rotation_z(std::f64::consts::FRAC_PI_2);
 
@@ -892,27 +891,27 @@ mod tests {
 
     #[test]
     fn test_cubic_spline() {
-        // CubicSpline layout: [inTangent0, value0, outTangent0, inTangent1, value1, outTangent1]
+        // CubicSpline 布局：[inTangent0, value0, outTangent0, inTangent1, value1, outTangent1]
         let spline = AnimationSpline::from_keyframes(
             vec![0.0, 1.0],
             vec![
-                0.0, 0.0, 0.0, // in-tangent[0] (unused)
+                0.0, 0.0, 0.0, // in-tangent[0]（未使用）
                 0.0, 0.0, 0.0, // value[0]
                 1.0, 1.0, 1.0, // out-tangent[0]
                 1.0, 1.0, 1.0, // in-tangent[1]
                 10.0, 10.0, 10.0, // value[1]
-                0.0, 0.0, 0.0, // out-tangent[1] (unused)
+                0.0, 0.0, 0.0, // out-tangent[1]（未使用）
             ],
             Interpolation::CubicSpline,
             AnimationPath::Translation,
             3,
         );
 
-        // At t=0, should be value[0]
+        // 在 t=0 时，应为 value[0]
         let v = spline.evaluate(0.0);
         assert!(v[0].abs() < 1e-10);
 
-        // At t=1, should be value[1]
+        // 在 t=1 时，应为 value[1]
         let v = spline.evaluate(1.0);
         assert!((v[0] - 10.0).abs() < 1e-10);
     }
@@ -930,11 +929,11 @@ mod tests {
 
         skin.update_joint_matrices(&transforms);
 
-        // Joint 0: translate(1,0,0) * identity = translate(1,0,0)
+        // 关节 0：translate(1,0,0) * identity = translate(1,0,0)
         let t0 = skin.joint_matrices[0].w_axis.truncate();
         assert!((t0.x - 1.0).abs() < 1e-10);
 
-        // Joint 1: translate(0,2,0) * identity = translate(0,2,0)
+        // 关节 1：translate(0,2,0) * identity = translate(0,2,0)
         let t1 = skin.joint_matrices[1].w_axis.truncate();
         assert!((t1.y - 2.0).abs() < 1e-10);
     }
@@ -951,7 +950,7 @@ mod tests {
         ];
         skin.update_joint_matrices(&transforms);
 
-        // 50/50 blend between joint 0 and joint 1
+        // 关节 0 与关节 1 之间 50/50 混合
         let matrix = skin.compute_skinning_matrix([0, 1, 0, 0], [0.5, 0.5, 0.0, 0.0]);
         let t = matrix.w_axis.truncate();
         assert!((t.x - 1.0).abs() < 1e-10);

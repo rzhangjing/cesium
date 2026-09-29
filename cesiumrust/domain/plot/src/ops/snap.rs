@@ -1,37 +1,37 @@
-//! Coordinate snapping (plan §16 M9 "吸附").
+//! 坐标吸附（计划 §16 M9 “吸附”）。
 //!
-//! Snapping is a **pure**, view-independent fold over the document: given a raw
-//! geographic point (the cursor resolved through `screen_to_geo`) it returns an
-//! adjusted point that either lands on a regular lat/lon grid, latches onto a
-//! nearby existing **vertex**, or projects onto a nearby **edge** (segment) of an
-//! existing geometry. The bridge calls [`snap`] with a [`SnapConfig`] and applies
-//! the result before the draft vertex is committed; the config defaults to
-//! *disabled* so existing behaviour is unchanged until the user turns it on.
+//! 吸附是对文档的一次**纯**、与视图无关的折叠：给定一个原始
+//! 地理点（通过 `screen_to_geo` 解析出的光标），它返回一个调整后的点，
+//! 要么落在规则的经纬网格上，要么卡入一个附近的现有**顶点**，
+//! 要么投影到一个现有几何的附近**边**（线段）上。桥接层
+//! 带着一个 [`SnapConfig`] 调用 [`snap`]，并在草稿顶点被提交前应用
+//! 结果；配置默认为*禁用*，因此在用户开启之前现有行为
+//! 保持不变。
 //!
-//! Thresholds are geographic: vertex / edge distances are measured with
-//! [`GeoPoint::surface_distance`] (metres), grid steps in degrees — enough for
-//! authoring and fully deterministic for headless tests.
+//! 阈值是地理意义上的：顶点 / 边距离用
+//! [`GeoPoint::surface_distance`]（米）度量，网格步长以度为单位 —— 足以
+//! 用于编辑，且对无头测试完全确定。
 
 use crate::geo::GeoPoint;
 use crate::model::document::Document;
 use crate::model::geometry::{Geometry, PathSegment};
 use crate::model::ids::ElementId;
 
-/// Where a snapped coordinate came from (kept for preview / status display).
+/// 一个吸附坐标的来源（保留用于预览 / 状态显示）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SnapResult {
-    /// Nothing matched — the original point is returned unchanged.
+    /// 无匹配 —— 原始点原样返回。
     None(GeoPoint),
-    /// Latched onto an existing vertex of another element.
+    /// 卡入另一个元素的一个现有顶点。
     Vertex(GeoPoint),
-    /// Projected onto an edge (segment) of another element.
+    /// 投影到另一个元素的一条边（线段）上。
     Edge(GeoPoint),
-    /// Rounded onto the snapping grid.
+    /// 舍入到吸附网格上。
     Grid(GeoPoint),
 }
 
 impl SnapResult {
-    /// The (possibly adjusted) coordinate.
+    /// （可能被调整过的）坐标。
     pub fn point(&self) -> GeoPoint {
         match self {
             SnapResult::None(p)
@@ -41,23 +41,23 @@ impl SnapResult {
         }
     }
 
-    /// Whether any adjustment was applied.
+    /// 是否应用了任何调整。
     pub fn snapped(&self) -> bool {
         !matches!(self, SnapResult::None(_))
     }
 }
 
-/// Tunables for a snapping pass. The `Default` is **off** so wiring it into the
-/// interaction FSM never changes existing draw behaviour until explicitly enabled.
+/// 一次吸附遍历的调优参数。`Default` 为**关**，因此将其接入
+/// 交互 FSM 永远不会改变现有绘制行为，直到显式启用。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SnapConfig {
-    /// Master switch. When `false`, [`snap`] always returns [`SnapResult::None`].
+    /// 总开关。为 `false` 时，[`snap`] 总是返回 [`SnapResult::None`]。
     pub enabled: bool,
-    /// Snap to existing vertices within this radius (metres). `0` disables.
+    /// 在此半径（米）内吸附到现有顶点。`0` 禁用。
     pub vertex_threshold_m: f64,
-    /// Snap to existing edges within this radius (metres). `0` disables.
+    /// 在此半径（米）内吸附到现有边。`0` 禁用。
     pub edge_threshold_m: f64,
-    /// Regular lat/lon grid step (degrees). `None` disables grid snapping.
+    /// 规则的经纬网格步长（度）。`None` 禁用网格吸附。
     pub grid_step_deg: Option<f64>,
 }
 
@@ -72,8 +72,8 @@ impl Default for SnapConfig {
     }
 }
 
-/// Round a coordinate onto a regular `step_deg` lat/lon grid. A non-positive or
-/// non-finite step is a no-op.
+/// 将一个坐标舍入到规则的 `step_deg` 经纬网格上。非正或非
+/// 有限的步长为空操作。
 pub fn snap_to_grid(p: GeoPoint, step_deg: f64) -> GeoPoint {
     if !step_deg.is_finite() || step_deg <= 0.0 {
         return p;
@@ -83,9 +83,9 @@ pub fn snap_to_grid(p: GeoPoint, step_deg: f64) -> GeoPoint {
     GeoPoint::new(lon, lat, p.height_m)
 }
 
-/// The nearest existing vertex of any *other* element within `threshold_m`, if any.
-/// `exclude` skips the element currently being edited (so a moving vertex does
-/// not latch onto itself).
+/// `threshold_m` 内任意*其他*元素的最近现有顶点，若有。
+/// `exclude` 跳过当前正在编辑的元素（因此一个移动的顶点不会
+/// 卡入自身）。
 pub fn snap_to_vertex(
     doc: &Document,
     p: GeoPoint,
@@ -110,8 +110,8 @@ pub fn snap_to_vertex(
     best.map(|(_, v)| v)
 }
 
-/// Every line segment of a geometry, as consecutive vertex pairs. Rings are
-/// treated as closed (last → first). Point-like geometries contribute none.
+/// 一个几何的每一条线段，以连续的顶点对表示。环被视为
+/// 闭合（last → first）。点类几何不贡献任何线段。
 fn segments(g: &Geometry) -> Vec<(GeoPoint, GeoPoint)> {
     fn chain(pts: &[GeoPoint], closed: bool, out: &mut Vec<(GeoPoint, GeoPoint)>) {
         for w in pts.windows(2) {
@@ -160,8 +160,8 @@ fn segments(g: &Geometry) -> Vec<(GeoPoint, GeoPoint)> {
     out
 }
 
-/// The closest point on segment `a`–`b` to `p` (planar in lon/lat degrees, a fine
-/// approximation at authoring scales).
+/// 线段 `a`–`b` 上离 `p` 最近的点（在经/纬度上按平面处理，
+/// 在编辑尺度下是一个很好的近似）。
 fn closest_on_segment(a: GeoPoint, b: GeoPoint, p: GeoPoint) -> GeoPoint {
     let dx = b.lon_deg - a.lon_deg;
     let dy = b.lat_deg - a.lat_deg;
@@ -173,7 +173,7 @@ fn closest_on_segment(a: GeoPoint, b: GeoPoint, p: GeoPoint) -> GeoPoint {
     GeoPoint::surface(a.lon_deg + t * dx, a.lat_deg + t * dy)
 }
 
-/// The nearest point on any existing *edge* within `threshold_m`.
+/// `threshold_m` 内任意现有*边*上的最近点。
 pub fn snap_to_edge(
     doc: &Document,
     p: GeoPoint,
@@ -199,8 +199,8 @@ pub fn snap_to_edge(
     best.map(|(_, c)| c)
 }
 
-/// Snap a raw coordinate: **vertex → edge → grid** priority, each gate optional.
-/// Disabled config (the default) returns the point untouched.
+/// 吸附一个原始坐标：**顶点 → 边 → 网格** 优先级，每道关卡可选。
+/// 禁用的配置（默认）原样返回该点。
 pub fn snap(
     doc: &Document,
     p: GeoPoint,
@@ -238,7 +238,7 @@ mod tests {
     fn doc() -> Document {
         let mut d = Document::default();
         let l = d.new_layer("L");
-        // A polyline with an explicit vertex at (1.0, 1.0).
+        // 一个带显式顶点 (1.0, 1.0) 的折线。
         let line = d.make_element(
             "line",
             Geometry::Polyline(Polyline {
@@ -246,7 +246,7 @@ mod tests {
             }),
         );
         d.add_element_to_layer(l, line);
-        // A rectangle far away (its corners are also vertices).
+        // 一个远处的矩形（它的角也是顶点）。
         let rect = d.make_element(
             "rect",
             Geometry::Rectangle(Rectangle {
@@ -277,7 +277,7 @@ mod tests {
             vertex_threshold_m: 20_000.0, // ~0.18°
             ..Default::default()
         };
-        let near = p(1.0005, 1.0005); // just off the (1,1) vertex
+        let near = p(1.0005, 1.0005); // 刚偏离 (1,1) 顶点
         match snap(&d, near, &cfg, None) {
             SnapResult::Vertex(v) => {
                 assert!((v.lon_deg - 1.0).abs() < 1e-9 && (v.lat_deg - 1.0).abs() < 1e-9);
@@ -289,7 +289,7 @@ mod tests {
     #[test]
     fn vertex_snap_respects_exclude() {
         let d = doc();
-        // find the polyline id by name
+        // 按名称找到折线 id
         let line = d
             .elements()
             .find(|e| e.name == "line")
@@ -301,10 +301,10 @@ mod tests {
             edge_threshold_m: 20_000.0,
             grid_step_deg: None,
         };
-        // Excluding every element → nothing to snap to (falls through to None).
+        // 排除每个元素 → 无可吸附项（落到 None）。
         let near = p(1.0005, 1.0005);
         let r = snap(&d, near, &cfg, Some(line));
-        // The rectangle is far, so edge/vertex from the line is suppressed too.
+        // 矩形在远处，因此来自折线的边/顶点也被抑制。
         assert!(matches!(r, SnapResult::None(_)), "exclude should drop the line, got {r:?}");
     }
 
@@ -313,16 +313,16 @@ mod tests {
         let d = doc();
         let cfg = SnapConfig {
             enabled: true,
-            // vertex radius tight so a mid-edge point prefers the edge,
+            // 顶点半径很紧，使一个边中点的点优先选边，
             edge_threshold_m: 15_000.0,
             ..Default::default()
         };
-        // Point near the middle of the (0,0)-(1,1) segment but off it, and far
-        // from any vertex.
+        // 一个靠近 (0,0)-(1,1) 线段中部但偏离它，且
+        // 远离任何顶点的点。
         let off = p(0.5, 0.45);
         match snap(&d, off, &cfg, None) {
             SnapResult::Edge(c) => {
-                // Projection onto the diagonal keeps lon ≈ lat.
+                // 向对角线的投影保持 lon ≈ lat。
                 assert!((c.lon_deg - c.lat_deg).abs() < 1e-6, "{c:?}");
                 assert!(c.lon_deg > 0.3 && c.lon_deg < 0.7, "{c:?}");
             }
@@ -334,7 +334,7 @@ mod tests {
     fn grid_snap_rounds_to_step() {
         assert_eq!(snap_to_grid(p(1.03, 2.98), 0.5), p(1.0, 3.0));
         assert_eq!(snap_to_grid(p(-1.24, 45.6), 1.0), p(-1.0, 46.0));
-        // Non-positive step is a no-op.
+        // 非正的步长为空操作。
         assert_eq!(snap_to_grid(p(1.03, 2.98), 0.0), p(1.03, 2.98));
     }
 
@@ -347,7 +347,7 @@ mod tests {
             edge_threshold_m: 100.0,
             grid_step_deg: Some(0.5),
         };
-        // Far from geometry, off-grid.
+        // 远离几何体，偏离网格。
         let far = p(50.13, -30.44);
         match snap(&d, far, &cfg, None) {
             SnapResult::Grid(g) => assert_eq!(g, p(50.0, -30.5)),
@@ -368,7 +368,7 @@ mod tests {
         );
         let poly_id = poly.id;
         d.add_element_to_layer(l, poly);
-        // A triangle: 2 consecutive + 1 closing = 3 edges (rings are closed).
+        // 一个三角形：2 条连续 + 1 条闭合 = 3 条边（环是闭合的）。
         let segs = segments(&d.element(poly_id).unwrap().geometry);
         assert_eq!(segs.len(), 3);
     }

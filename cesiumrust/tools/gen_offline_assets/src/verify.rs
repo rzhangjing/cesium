@@ -1,15 +1,14 @@
-//! Integration read-back verification.
+//! 集成式读回校验。
 //!
-//! After generation we construct the *real* M3.1 offline fetchers
-//! (`FileTileFetcher` / `FileTerrainFetcher`) and pull a handful of tiles back
-//! through their port methods, asserting they decode successfully. This proves
-//! the generated layout, byte structure, and y-order conventions align exactly
-//! with the fetchers' decode logic — the whole point of the fixture.
+//! 生成之后，我们构造*真实的* M3.1 离线 fetcher
+//! （`FileTileFetcher` / `FileTerrainFetcher`），通过它们的端口方法
+//! 拉回少量瓦片，断言其解码成功。这证明了生成的布局、字节结构和
+//! y 序约定与 fetcher 的解码逻辑完全对齐 —— 这正是 fixture 的意义。
 //!
-//! The port methods return boxed futures, but the offline fetchers resolve them
-//! synchronously on the first poll (plain `std::fs::read`). We drive them with a
-//! minimal [`Waker::noop`]-based [`block_on`] rather than pulling in tokio, so
-//! this tool never starts an async runtime.
+//! 端口方法返回装箱的 future，但离线 fetcher 会在首次 poll 时同步
+//! resolve它们（普通 `std::fs::read`）。我们用一个基于 [`Waker::noop`]
+//! 的最小化 [`block_on`] 来驱动它们，而非引入 tokio，因此
+//! 本工具从不启动异步运行时。
 
 use cesium_network::{FileTerrainFetcher, FileTileFetcher, FileTileScheme, TerrainScheme};
 use cesium_ports_driven::{TerrainProvider, TileFetcher};
@@ -17,11 +16,11 @@ use std::future::Future;
 use std::path::Path;
 use std::task::{Context, Poll, Waker};
 
-/// Drives an immediately-ready future to completion without a runtime.
+/// 无需运行时即可将一个立即就绪的 future 驱动至完成。
 ///
-/// The offline fetchers build futures that are `Ready` on the first poll (they
-/// wrap a synchronous `std::fs::read`). A `Pending` result would mean the
-/// fetcher contract changed, so we fail loudly instead of spinning.
+/// 离线 fetcher 构建的 future 在首次 poll 时就 `Ready`（它们包裹
+/// 一个同步的 `std::fs::read`）。`Pending` 结果意味着 fetcher 契约发生了
+/// 变化，因此我们响亮地失败而非空转。
 fn block_on<F: Future>(fut: F) -> F::Output {
     let mut fut = Box::pin(fut);
     let mut cx = Context::from_waker(Waker::noop());
@@ -34,13 +33,13 @@ fn block_on<F: Future>(fut: F) -> F::Output {
     }
 }
 
-/// Reads back a representative set of imagery and terrain tiles through the
-/// M3.1 fetchers. Returns the number of assertions that passed.
+/// 通过 M3.1 fetcher 读回一批具代表性的影像与地形瓦片。
+/// 返回通过的断言数。
 ///
 /// # Errors
 ///
-/// Returns a human-readable error string on the first tile that fails to read
-/// or decode, so a misaligned fixture surfaces immediately.
+/// 在第块块读取或解码失败的瓦片处返回一个人类可读的错误字符串，
+/// 使布局错位的 fixture 立即暴露。
 pub fn verify(
     imagery_root: &Path,
     terrain_root: &Path,
@@ -48,7 +47,7 @@ pub fn verify(
 ) -> Result<usize, String> {
     let mut checks = 0usize;
 
-    // --- imagery: FileTileFetcher (Xyz) -------------------------------------
+    // --- 影像：FileTileFetcher (Xyz) -------------------------------------
     let imagery = FileTileFetcher::new(imagery_root, FileTileScheme::Xyz);
     for url in ["0/0/0", "0/1/0", "1/0/0", "1/2/1", "3/5/2", "3/15/7"] {
         let data = block_on(imagery.fetch(url, 1.0))
@@ -56,14 +55,14 @@ pub fn verify(
         if data.is_empty() {
             return Err(format!("imagery fetch '{url}' returned empty bytes"));
         }
-        // PNG magic number — proves the file is a real encoded PNG, not garbage.
+        // PNG 魔数 —— 证明文件是真实编码的 PNG，而非乱码。
         if data.len() < 8 || data[..8] != [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A] {
             return Err(format!("imagery fetch '{url}' is not a PNG (bad magic)"));
         }
         checks += 1;
     }
 
-    // --- terrain: FileTerrainFetcher (Tms) via explicit root -----------------
+    // --- 地形：FileTerrainFetcher (Tms)，通过显式 root -----------------
     let terrain = FileTerrainFetcher::new(terrain_root, TerrainScheme::Tms, terrain_max_level);
     for (x, y, level) in [(0u32, 0u32, 0u32), (1, 0, 1), (2, 1, 2), (10, 3, 4)] {
         if !terrain.get_availability(x, y, level) {
@@ -83,7 +82,7 @@ pub fn verify(
         checks += 1;
     }
 
-    // --- terrain: FileTerrainFetcher::from_layer_url (maxzoom wiring) --------
+    // --- 地形：FileTerrainFetcher::from_layer_url（maxzoom 接线） --------
     let layer_url = format!(
         "file:///{}",
         terrain_root

@@ -1,16 +1,16 @@
-//! Core/ComponentDatatypeSpec.js + Core/IndexDatatypeSpec.js → Rust integration tests
+//! Core/ComponentDatatypeSpec.js + Core/IndexDatatypeSpec.js → Rust 集成测试
 //!
-//! ComponentDatatypeSpec.js: 13 original it() blocks → 5 A-class tests ported
-//! IndexDatatypeSpec.js: 14 original it() blocks → 5 A-class tests ported
+//! ComponentDatatypeSpec.js：13 个原始 it() 块 → 移植 5 个 A 类测试
+//! IndexDatatypeSpec.js：14 个原始 it() 块 → 移植 5 个 A 类测试
 //!
-//! Omitted C-class tests (JS typed-array / DeveloperError throws):
-//! - ComponentDatatype: fromTypedArray throws(1), createTypedArray(2), createArrayBufferView(4),
-//!   createTypedArray throws(2), fromName throws(1) = 10 C-class
-//! - IndexDatatype: createTypedArray throws(1), createTypedArrayFromArrayBuffer(4+throws3),
-//!   getSizeInBytes throws(1), fromTypedArray throws(1) = 10 C-class
+//! 省略的 C 类测试（JS 类型化数组 / DeveloperError throws）：
+//! - ComponentDatatype：fromTypedArray throws(1)、createTypedArray(2)、createArrayBufferView(4)、
+//!   createTypedArray throws(2)、fromName throws(1) = 10 个 C 类
+//! - IndexDatatype：createTypedArray throws(1)、createTypedArrayFromArrayBuffer(4+throws3)、
+//!   getSizeInBytes throws(1)、fromTypedArray throws(1) = 10 个 C 类
 //!
-//! Note: JS `fromTypedArray` maps to Rust `from_gl_value` (type inference from WebGL constant).
-//! JS `createTypedArray`/`createArrayBufferView` are C-class (JS-specific typed array creation).
+//! 注意：JS 的 `fromTypedArray` 对应 Rust 的 `from_gl_value`（依据 WebGL 常量推断类型）。
+//! JS 的 `createTypedArray`/`createArrayBufferView` 属于 C 类（JS 特有的类型化数组创建）。
 
 use cesium_geospatial::attribute_compression::{ComponentDatatype, IndexDatatype};
 
@@ -20,7 +20,7 @@ use cesium_geospatial::attribute_compression::{ComponentDatatype, IndexDatatype}
 
 #[test]
 fn component_datatype_from_gl_value_works() {
-    // Maps to "fromTypedArray works" — each JS typed array maps to a GL constant
+    // 对应 "fromTypedArray works" —— 每个 JS 类型化数组都对应一个 GL 常量
     assert_eq!(
         ComponentDatatype::from_gl_value(0x1400),
         Some(ComponentDatatype::Byte)
@@ -53,13 +53,13 @@ fn component_datatype_from_gl_value_works() {
         ComponentDatatype::from_gl_value(0x140A),
         Some(ComponentDatatype::Double)
     );
-    // Invalid value
+    // 非法值
     assert_eq!(ComponentDatatype::from_gl_value(0x9999), None);
 }
 
 #[test]
 fn component_datatype_validate_works() {
-    // All enum variants are valid
+    // 所有枚举变体都合法
     assert!(ComponentDatatype::Byte.validate());
     assert!(ComponentDatatype::UnsignedByte.validate());
     assert!(ComponentDatatype::Short.validate());
@@ -116,13 +116,13 @@ fn component_datatype_from_name_works() {
         ComponentDatatype::from_name("DOUBLE"),
         Some(ComponentDatatype::Double)
     );
-    // Invalid name
+    // 非法名称
     assert_eq!(ComponentDatatype::from_name("INVALID"), None);
 }
 
 #[test]
 fn component_datatype_gl_value_roundtrip() {
-    // Verify gl_value → from_gl_value roundtrip for all variants
+    // 验证所有变体的 gl_value → from_gl_value 往返
     let all = [
         ComponentDatatype::Byte,
         ComponentDatatype::UnsignedByte,
@@ -151,9 +151,9 @@ fn index_datatype_validate_validates_input() {
 
 #[test]
 fn index_datatype_create_typed_array_logic() {
-    // Maps to "createTypedArray creates array":
-    // numberOfVertices < 65536 → UNSIGNED_SHORT (2 bytes)
-    // numberOfVertices >= 65536 → UNSIGNED_INT (4 bytes)
+    // 对应 "createTypedArray creates array"：
+    // numberOfVertices < 65536 → UNSIGNED_SHORT（2 字节）
+    // numberOfVertices >= 65536 → UNSIGNED_INT（4 字节）
     let dt = IndexDatatype::for_vertex_count(3);
     assert_eq!(dt.size_in_bytes(), 2); // Uint16Array.BYTES_PER_ELEMENT
     assert_eq!(dt, IndexDatatype::UnsignedShort);
@@ -201,7 +201,7 @@ fn index_datatype_from_gl_value_works() {
         IndexDatatype::from_gl_value(0x1405),
         Some(IndexDatatype::UnsignedInt)
     );
-    // Invalid
-    assert_eq!(IndexDatatype::from_gl_value(0x1400), None); // BYTE is not an index type
+    // 非法
+    assert_eq!(IndexDatatype::from_gl_value(0x1400), None); // BYTE 不是索引类型
     assert_eq!(IndexDatatype::from_gl_value(0x9999), None);
 }

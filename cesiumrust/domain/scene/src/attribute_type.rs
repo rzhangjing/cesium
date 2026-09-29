@@ -1,34 +1,34 @@
-//! AttributeType enum for 3D Tiles metadata and custom shaders.
+//! 用于 3D Tiles 元数据与自定义着色器的 AttributeType 枚举。
 //!
-//! Maps to CesiumJS `Scene/AttributeType.js`
+//! 映射到 CesiumJS `Scene/AttributeType.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留 CesiumJS 移植风格债（deferred.md #18）；将在 M13 lint 清理，或本文件在其所属里程碑被重写时重新审视
 #![allow(clippy::should_implement_trait)]
-/// An enum describing the attribute types for metadata and custom shaders.
+/// 描述元数据与自定义着色器属性类型的枚举。
 ///
-/// Maps to CesiumJS `Scene/AttributeType.js`
+/// 映射到 CesiumJS `Scene/AttributeType.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AttributeType {
-    /// A single scalar value.
+    /// 单个标量值。
     Scalar,
-    /// A 2D vector.
+    /// 一个二维向量。
     Vec2,
-    /// A 3D vector.
+    /// 一个三维向量。
     Vec3,
-    /// A 4D vector.
+    /// 一个四维向量。
     Vec4,
-    /// A 2x2 matrix.
+    /// 一个 2x2 矩阵。
     Mat2,
-    /// A 3x3 matrix.
+    /// 一个 3x3 矩阵。
     Mat3,
-    /// A 4x4 matrix.
+    /// 一个 4x4 矩阵。
     Mat4,
 }
 
 impl AttributeType {
-    /// Gets the GLSL type string for this attribute type.
+    /// 获取该属性类型的 GLSL 类型字符串。
     ///
-    /// Maps to CesiumJS `AttributeType.getGlslType`.
+    /// 映射到 CesiumJS `AttributeType.getGlslType`。
     pub fn get_glsl_type(&self) -> &'static str {
         match self {
             AttributeType::Scalar => "float",
@@ -41,9 +41,9 @@ impl AttributeType {
         }
     }
 
-    /// Gets the number of components for this attribute type.
+    /// 获取该属性类型的分量数量。
     ///
-    /// Maps to CesiumJS `AttributeType.getNumberOfComponents`.
+    /// 映射到 CesiumJS `AttributeType.getNumberOfComponents`。
     pub fn get_number_of_components(&self) -> usize {
         match self {
             AttributeType::Scalar => 1,
@@ -56,10 +56,10 @@ impl AttributeType {
         }
     }
 
-    /// Gets the number of attribute locations needed for this type.
-    /// Matrices require multiple locations (one per row).
+    /// 获取该类型所需的属性位置数量。
+    /// 矩阵需要多个位置（每行一个）。
     ///
-    /// Maps to CesiumJS `AttributeType.getAttributeLocationCount`.
+    /// 映射到 CesiumJS `AttributeType.getAttributeLocationCount`。
     pub fn get_attribute_location_count(&self) -> usize {
         match self {
             AttributeType::Scalar => 1,
@@ -72,9 +72,9 @@ impl AttributeType {
         }
     }
 
-    /// Gets the math type name for this attribute type.
+    /// 获取该属性类型的数学类型名称。
     ///
-    /// Maps to CesiumJS `AttributeType.getMathType`.
+    /// 映射到 CesiumJS `AttributeType.getMathType`。
     pub fn get_math_type_name(&self) -> &'static str {
         match self {
             AttributeType::Scalar => "Number",
@@ -87,7 +87,7 @@ impl AttributeType {
         }
     }
 
-    /// Parses an attribute type from its string representation.
+    /// 从其字符串表示解析属性类型。
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "SCALAR" => Some(AttributeType::Scalar),

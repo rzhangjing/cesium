@@ -1,39 +1,39 @@
-//! DataSourceClock - clock settings associated with a DataSource.
+//! DataSourceClock - 与 DataSource 关联的时钟设置。
 //!
-//! Maps to CesiumJS `DataSources/DataSourceClock.js`
+//! 映射到 CesiumJS `DataSources/DataSourceClock.js`
 
 use cesium_time::{Clock, ClockOptions, ClockRange, ClockStep, JulianDate};
 
-/// Clock settings associated with a DataSource. Provides merge/clone/getValue
-/// semantics matching CesiumJS DataSourceClock.
+/// 与 DataSource 关联的时钟设置。提供与 CesiumJS DataSourceClock
+/// 相匹配的合并/克隆/取值语义。
 ///
-/// Maps to CesiumJS `DataSources/DataSourceClock.js`
+/// 映射到 CesiumJS `DataSources/DataSourceClock.js`
 #[derive(Debug, Clone, Default)]
 pub struct DataSourceClock {
-    /// The start time of the clock.
+    /// 时钟的起始时间。
     pub start_time: Option<JulianDate>,
-    /// The stop time of the clock.
+    /// 时钟的停止时间。
     pub stop_time: Option<JulianDate>,
-    /// The current time.
+    /// 当前时间。
     pub current_time: Option<JulianDate>,
-    /// Determines how the clock behaves at start/stop boundaries.
+    /// 决定时钟在起始/停止边界处的行为。
     pub clock_range: Option<ClockRange>,
-    /// Determines how time advances per tick.
+    /// 决定时间每次推进的方式。
     pub clock_step: Option<ClockStep>,
-    /// The multiplier for time advancement.
+    /// 时间推进的倍率。
     pub multiplier: Option<f64>,
 }
 
 impl DataSourceClock {
-    /// Creates a new DataSourceClock with all fields unset.
+    /// 创建一个所有字段均未设置的新 DataSourceClock。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Merges unassigned properties from `source` into this clock.
-    /// Properties that are already assigned are not overwritten.
+    /// 将 `source` 中未赋值的属性合并到此时钟。
+    /// 已赋值的属性不会被覆盖。
     ///
-    /// Maps to `DataSourceClock.prototype.merge`
+    /// 映射到 `DataSourceClock.prototype.merge`
     pub fn merge(&mut self, source: &DataSourceClock) {
         if self.start_time.is_none() {
             self.start_time = source.start_time;
@@ -55,10 +55,10 @@ impl DataSourceClock {
         }
     }
 
-    /// Gets the value as a Clock instance. Unset fields use defaults:
-    /// clock_range=UNBOUNDED, clock_step=SYSTEM_CLOCK_MULTIPLIER, multiplier=1.0.
+    /// 以 Clock 实例的形式获取值。未设置的字段使用默认值：
+    /// clock_range=UNBOUNDED，clock_step=SYSTEM_CLOCK_MULTIPLIER，multiplier=1.0。
     ///
-    /// Maps to `DataSourceClock.prototype.getValue`
+    /// 映射到 `DataSourceClock.prototype.getValue`
     pub fn get_value(&self) -> Clock {
         let options = ClockOptions {
             start_time: self.start_time,

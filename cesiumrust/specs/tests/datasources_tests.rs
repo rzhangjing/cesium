@@ -1,5 +1,5 @@
-//! DataSources specs - ported from packages/engine/Specs/DataSources/
-//! Covers: Entity, Property, GeoJSON, CZML, Visualizer, etc.
+//! DataSources 规格测试 - 移植自 packages/engine/Specs/DataSources/
+//! 覆盖范围：Entity、Property、GeoJSON、CZML、Visualizer 等。
 
 mod datasources {
     pub mod entity_spec;

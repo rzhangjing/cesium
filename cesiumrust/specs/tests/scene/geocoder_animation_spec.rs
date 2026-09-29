@@ -1,8 +1,8 @@
-//! Geocoder + Animation widget view model specs
-//! Ported from CesiumJS widgets/Source/Geocoder + Animation
+//! Geocoder + Animation 控件视图模型规范
+//! 移植自 CesiumJS widgets/Source/Geocoder + Animation
 //!
-//! A-class tests: GeocoderViewModel search/results/navigation,
-//! ShuttleRing angle↔multiplier conversion, AnimationViewModel
+//! A 类测试：GeocoderViewModel 搜索/结果/导航、
+//! ShuttleRing 角度↔倍率转换、AnimationViewModel
 
 use cesium_widgets::{AnimationViewModel, GeocoderViewModel, ShuttleRing};
 
@@ -35,10 +35,10 @@ fn geocoder_set_search_text_clears_when_short() {
 fn geocoder_should_search() {
     let mut vm = GeocoderViewModel::new();
     vm.set_search_text("ab");
-    assert!(!vm.should_search()); // Too short
+    assert!(!vm.should_search()); // 太短
 
     vm.set_search_text("abc");
-    assert!(vm.should_search()); // Exactly min_chars
+    assert!(vm.should_search()); // 恰好 min_chars
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn geocoder_begin_and_complete_search() {
     vm.begin_search();
     assert!(vm.is_searching);
 
-    // Complete with results
+    // 带结果完成
     let results = vec![cesium_widgets::geocoder::GeocoderSearchResult {
         display_name: "New York, NY".to_string(),
         destination: cesium_widgets::geocoder::GeocoderSearchDestination::Point {
@@ -121,10 +121,10 @@ fn geocoder_navigation() {
     vm.select_next();
     assert_eq!(vm.selected_index, Some(1));
 
-    vm.select_next(); // Wrap around
+    vm.select_next(); // 环绕
     assert_eq!(vm.selected_index, Some(0));
 
-    vm.select_previous(); // Wrap back
+    vm.select_previous(); // 回绕
     assert_eq!(vm.selected_index, Some(1));
 }
 
@@ -161,7 +161,7 @@ fn shuttle_ring_default_ticks() {
 #[test]
 fn shuttle_ring_angle_to_multiplier_linear() {
     let sr = ShuttleRing::default();
-    // Within ±15° → linear [-1, 1]
+    // 在 ±15° 内 → 线性 [-1, 1]
     assert!((sr.angle_to_multiplier(0.0) - 0.0).abs() < 1e-10);
     assert!((sr.angle_to_multiplier(15.0) - 1.0).abs() < 1e-10);
     assert!((sr.angle_to_multiplier(-15.0) - (-1.0)).abs() < 1e-10);
@@ -171,9 +171,9 @@ fn shuttle_ring_angle_to_multiplier_linear() {
 #[test]
 fn shuttle_ring_angle_to_multiplier_log() {
     let sr = ShuttleRing::default();
-    // Beyond ±15° → logarithmic
-    let m = sr.angle_to_multiplier(105.0); // Max angle
-    assert!(m > 100.0); // Should be near 1000
+    // 超出 ±15° → 对数
+    let m = sr.angle_to_multiplier(105.0); // 最大角度
+    assert!(m > 100.0); // 应接近 1000
 
     let m_neg = sr.angle_to_multiplier(-105.0);
     assert!(m_neg < -100.0);
@@ -182,20 +182,20 @@ fn shuttle_ring_angle_to_multiplier_log() {
 #[test]
 fn shuttle_ring_multiplier_to_angle() {
     let sr = ShuttleRing::default();
-    // multiplier 0 → angle 0
+    // 倍率 0 → 角度 0
     assert!((sr.multiplier_to_angle(0.0, false) - 0.0).abs() < 1e-10);
-    // multiplier 1 → angle 15
+    // 倍率 1 → 角度 15
     assert!((sr.multiplier_to_angle(1.0, false) - 15.0).abs() < 1e-10);
-    // multiplier -1 → angle -15
+    // 倍率 -1 → 角度 -15
     assert!((sr.multiplier_to_angle(-1.0, false) - (-15.0)).abs() < 1e-10);
-    // system clock → always 15
+    // system clock → 总是 15
     assert!((sr.multiplier_to_angle(5.0, true) - 15.0).abs() < 1e-10);
 }
 
 #[test]
 fn shuttle_ring_roundtrip() {
     let sr = ShuttleRing::default();
-    // angle → multiplier → angle should roundtrip
+    // 角度 → 倍率 → 角度应往返一致
     let angle = 60.0;
     let mult = sr.angle_to_multiplier(angle);
     let angle_back = sr.multiplier_to_angle(mult, false);

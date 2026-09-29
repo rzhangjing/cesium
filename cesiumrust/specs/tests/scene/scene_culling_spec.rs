@@ -1,5 +1,5 @@
-//! Scene culling + scene graph specs
-//! Ported from CesiumJS Scene/SceneSpec.js culling logic
+//! 场景剔除 + 场景图规范
+//! 移植自 CesiumJS Scene/SceneSpec.js 剔除逻辑
 
 use cesium_scene::{
     filter_visible, sort_back_to_front, sort_front_to_back,
@@ -35,7 +35,7 @@ fn make_test_context() -> CullingContext {
 #[test]
 fn culling_context_sphere_inside() {
     let ctx = make_test_context();
-    // Sphere directly in front of camera
+    // 球体恰在相机正前方
     let sphere = BoundingSphere::new(DVec3::new(0.0, 0.0, -10.0), 1.0);
     let result = ctx.test_bounding_sphere(&sphere);
     assert!(result.is_visible());
@@ -44,7 +44,7 @@ fn culling_context_sphere_inside() {
 #[test]
 fn culling_context_sphere_outside() {
     let ctx = make_test_context();
-    // Sphere far behind camera
+    // 球体远在相机后方
     let sphere = BoundingSphere::new(DVec3::new(0.0, 0.0, 100.0), 1.0);
     let result = ctx.test_bounding_sphere(&sphere);
     assert_eq!(result, CullResult::Outside);
@@ -54,7 +54,7 @@ fn culling_context_sphere_outside() {
 fn culling_context_disabled() {
     let mut ctx = make_test_context();
     ctx.enabled = false;
-    // When disabled, everything is Inside
+    // 禁用时，所有都为 Inside
     let sphere = BoundingSphere::new(DVec3::new(0.0, 0.0, 100.0), 1.0);
     let result = ctx.test_bounding_sphere(&sphere);
     assert_eq!(result, CullResult::Inside);
@@ -72,10 +72,10 @@ fn culling_context_distance_to() {
 #[test]
 fn culling_context_distance_overlapping() {
     let ctx = make_test_context();
-    // Sphere contains camera
+    // 球体包含相机
     let sphere = BoundingSphere::new(DVec3::ZERO, 100.0);
     let dist = ctx.distance_to(&sphere);
-    assert!((dist - 0.0).abs() < 1e-10); // Clamped to 0
+    assert!((dist - 0.0).abs() < 1e-10); // 被钳制到 0
 }
 
 // ==================== SceneGraph ====================
@@ -116,7 +116,7 @@ fn scene_node_world_bounding_sphere() {
         .with_bounding_volume(BoundingSphere::new(DVec3::ZERO, 10.0))
         .with_transform(glam::DMat4::from_translation(DVec3::new(100.0, 0.0, 0.0)));
 
-    // world_transform is identity by default (not computed), so use it directly
+    // world_transform 默认为单位阵（未计算），因此直接使用它
     let mut node = node;
     node.world_transform = node.local_transform;
 
@@ -131,7 +131,7 @@ fn scene_node_no_bounding_volume() {
     assert!(node.world_bounding_sphere().is_none());
 }
 
-// ==================== Sort + Filter ====================
+// ==================== 排序 + 过滤 ====================
 
 #[test]
 fn sort_front_to_back_order() {
@@ -187,7 +187,7 @@ fn filter_visible_removes_outside() {
     assert_eq!(visible[1].node_id, 3);
 }
 
-// ==================== Helpers ====================
+// ==================== 辅助函数 ====================
 
 fn make_vis_result(id: NodeId, distance: f64) -> VisibilityResult {
     VisibilityResult {

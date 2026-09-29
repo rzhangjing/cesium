@@ -1,23 +1,20 @@
-//! The per-frame view sync: project the [`cesium_plot`] document onto render
-//! layer 3 so every element shows in BOTH the 2D flat map and the 3D globe
-//! (plan §2 / §3). This is the concrete reconciliation between the framework-
-//! free scene model and the Bevy ECS.
+//! 每帧视图同步：将 [`cesium_plot`] 文档投影到渲染层 3，以便每个元素同时显示在
+//! 2D 平面地图和 3D 球体中（计划 §2 / §3）。这是无框架场景模型与
+//! Bevy ECS 之间的具体协调。
 //!
-//! [`sync_visuals`] runs every frame and, in order:
-//!  1. picks the single **active** camera (by projection type matching the view
-//!     mode) and gathers its metrics into a [`ViewMetrics`];
-//!  2. evaluates visibility through the pure [`eval_visibility`] (all ten
-//!     dimensions folded);
-//!  3. reconciles entities against the visible set — despawning stale ones and,
-//!     only when the document content or the projection mode changed, rebuilding
-//!     the mesh / label entities;
-//!  4. writes per-frame geometry: billboard `Transform`s (position, camera
-//!     rotation, constant-pixel scale), polyline ribbon meshes (constant pixel
-//!     width at every depth) and label screen positions.
+//! [`sync_visuals`] 每帧运行并按顺序：
+//!  1. 选择单个**激活**相机（通过投影类型匹配视图模式）
+//!     并将其度量采集到 [`ViewMetrics`]；
+//!  2. 通过纯函数 [`eval_visibility`] 评估可见性（折叠全部十维）；
+//!  3. 对可见集协调实体——销毁过时的，且仅在文档内容或
+//!     投影模式变化时重建网格 / 标签实体；
+//!  4. 写入每帧几何：billboard `Transform`（位置、相机
+//!     旋转、恒定像素缩放）、多段线 ribbon 网格（每深度恒定像素宽）
+//!     和标签屏幕位置。
 //!
-//! All overlay entities carry [`RenderLayers::layer(3)`], the one layer shared by
-//! both cameras, and an unlit [`StandardMaterial`] with the element's effective
-//! colour — so the overlay needs no lighting and is colour-exact.
+//! 所有叠加层实体携带 [`RenderLayers::layer(3)`]（两个相机共享的层）
+//! 和一个使用元素有效颜色的无光照 [`StandardMaterial`]——
+//! 因此叠加层不需要光照且颜色精确。
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -43,33 +40,32 @@ use crate::resources::{
 };
 use crate::shapes;
 
-/// Flat-map overlay elevation. Imagery tiles float at `TILE_Z_ELEV + level`
-/// (≲ 20 world units) under a camera at `z = 100`; the overlay sits well above
-/// every tile so it is never depth-hidden by the basemap.
+/// 平面地图叠加层高度。影像瓦片悬浮在 `TILE_Z_ELEV + level`
+/// （≲ 20 世界单位）位于 `z = 100` 的相机下方；叠加层远高于
+/// 每个瓦片，因此从不被底图深度遮挡。
 const FLAT_OVERLAY_Z: f32 = 50.0;
 
-/// Which layer the whole overlay renders into — shared by the 2D and 3D cameras.
+/// 整个叠加层渲染进入的层—— 2D 和 3D 相机共享。
 pub const OVERLAY_LAYER: usize = 3;
 
-/// Remembers the last synced revision / mode / selection so a rebuild fires only
-/// on real content, projection or selection changes, not on every idle frame.
+/// 记住上次同步的 revision / 模式 / 选择，以便重建只在真正的
+/// 内容、投影或选择变化时触发，而非每个空闲帧。
 #[derive(Resource, Default)]
 pub struct SyncState {
     last_revision: u64,
     last_mode: cesium_plot::model::ViewMode,
     last_selection: BTreeSet<ElementId>,
-    /// Camera pose + viewport signature of the last frame that ran the update
-    /// loop (perf A2: lets a fully static frame skip it entirely).
+    /// 上次运行更新循环的相机位姿 + 视口签名（性能 A2：让完全静止帧
+    /// 可以整体跳过它）。
     last_view: Option<ViewSig>,
-    /// Visible set of that same frame, so a stationary-camera frame can tell the
-    /// ECS already matches the scene and skip the whole reconcile + rewrite pass.
+    /// 同一帧的可见集，以便静止相机帧可以判断 ECS 已经与场景匹配并
+    /// 跳过整个协调 + 重写流程。
     last_visible: BTreeSet<ElementId>,
 }
 
-/// A cheap equality key over everything that changes an element's on-screen
-/// placement *without* a document change: view mode, camera pose, focal length
-/// and viewport. Two frames sharing a signature lay every visible element out
-/// identically, so re-writing their transforms / meshes is redundant.
+/// 一个廉价的等价键，覆盖所有在不改变文档的情况下改变元素屏幕位置的
+/// 内容：视图模式、相机位姿、焦距和视口。共享同一签名的两帧
+/// 会将每个可见元素布局完全相同，因此重写它们的 transform / mesh 是多余的。
 #[derive(Clone, Copy, PartialEq)]
 struct ViewSig {
     mode: cesium_plot::model::ViewMode,
@@ -80,13 +76,11 @@ struct ViewSig {
     zoom: f32,
 }
 
-/// Camera-independent tessellation cache (perf A1). The densified / sampled
-/// vertex chains a line or a face outline draws from depend only on the
-/// element's stored geometry and the view mode — never on the camera — yet they
-/// were recomputed for every visible element on every frame. This map holds them
-/// keyed by element, flushed whenever the document revision or the mode changes
-/// (the same triggers as a rebuild), so a moving camera simply reuses them and
-/// only re-projects / re-ribbons the (now cached) coordinates.
+/// 相机无关的剖分缓存（性能 A1）。线或面轮廓绘制的加密 / 采样
+/// 顶点链只取决于元素存储的几何和视图模式——从不取决于相机——然而它们
+/// 曾经对每个可见元素每帧重新计算。此图以元素为键持有它们，
+/// 在文档 revision 或模式变化时刷新（与 rebuild 相同的触发条件），
+/// 因此移动的相机只复用它们并仅重新投影 / 重新 ribbon（现已缓存的）坐标。
 #[derive(Resource, Default)]
 pub struct PlotShapeCache {
     revision: u64,
@@ -95,10 +89,10 @@ pub struct PlotShapeCache {
     faces: HashMap<ElementId, (Vec<GeoPoint>, Vec<Vec<GeoPoint>>)>,
 }
 
-/// The highlight colour a selected element is drawn in (keeps its alpha).
+/// 已选元素的高亮颜色（保持其 alpha）。
 const SELECTED_TINT: [f32; 3] = [1.0, 0.85, 0.0];
 
-/// The main view-sync system (see module docs).
+/// 主视图同步系统（参见模块文档）。
 #[allow(clippy::too_many_arguments)]
 pub fn sync_visuals(
     mut commands: Commands,
@@ -117,9 +111,8 @@ pub fn sync_visuals(
     bound: Query<&TargetCamera>,
     selection: Option<Res<PlotSelection>>,
 ) {
-    // 1. Active camera + projection metrics. Prefer the `is_active` camera whose
-    //    projection matches the mode (perspective globe / orthographic flat),
-    //    falling back to any active camera.
+    // 1. 激活相机 + 投影度量。优先选择投影匹配模式的 `is_active` 相机
+    //    （透视球体 / 正交平面），回退到任意激活相机。
     let mut exact: Option<Entity> = None;
     let mut fallback: Option<Entity> = None;
     for (e, c, _gt, p) in cams.iter() {
@@ -163,7 +156,7 @@ pub fn sync_visuals(
         cam_pos: ct.translation(),
     };
 
-    // 2. Pure visibility pass.
+    // 2. 纯可见性评估。
     let ppw_rep = match ctx.mode {
         cesium_plot::model::ViewMode::Flat => metrics.pixels_per_world,
         cesium_plot::model::ViewMode::Globe => metrics.pixels_per_world_at(Vec3::ZERO),
@@ -179,7 +172,7 @@ pub fn sync_visuals(
     let result = eval_visibility(&plot_doc.doc, &view, &filters.0);
     let visible: BTreeSet<ElementId> = result.visible;
 
-    // Did any content, mode or selection input change since the last draw?
+    // 自上次绘制以来是否有内容、模式或选择输入变化？
     let cur_sel: BTreeSet<ElementId> = selection
         .as_ref()
         .map(|s| s.0.iter().copied().collect())
@@ -189,13 +182,11 @@ pub fn sync_visuals(
         || state.last_mode != ctx.mode
         || cur_sel != state.last_selection;
 
-    // Perf A2 — stationary-camera fast path. When the document, the mode, the
-    // selection, the camera pose / projection and the resulting visible set are
-    // ALL identical to the last frame that drew, the ECS already mirrors the
-    // scene exactly, so skip the whole reconcile + rewrite pass. Idle (non-
-    // panning) frames then cost ~0 regardless of element count; the moment the
-    // camera moves (or anything changes) `rebuild` or the signature differs and
-    // the normal pass runs (where perf A1 keeps the re-densification cheap).
+    // 性能 A2 —— 静止相机快速路径。当文档、模式、选择、相机位姿 / 投影
+    // 和结果可见集都与上次绘制的帧完全相同时，ECS 已经精确镜像场景，
+    // 因此跳过整个协调 + 重写流程。空闲（非平移）帧代价接近 0
+    // 无论元素数量；当相机移动（或有变化）时 `rebuild` 或签名不同
+    // 则正常流程运行（其中性能 A1 保持重新加密廉价）。
     let vsig = ViewSig {
         mode: ctx.mode,
         translation: ct.translation().to_array(),
@@ -208,8 +199,8 @@ pub fn sync_visuals(
         return;
     }
 
-    // Perf A1 — drop the camera-independent tessellation cache whenever the
-    // content or the projection mode changed, so the loop below re-samples once.
+    // 性能 A1 —— 每当内容或投影模式变化时丢弃相机无关的剖分缓存，
+    // 以便下面的循环重新采样一次。
     if shapes_cache.revision != plot_doc.revision || shapes_cache.mode != Some(ctx.mode) {
         shapes_cache.strokes.clear();
         shapes_cache.faces.clear();
@@ -217,7 +208,7 @@ pub fn sync_visuals(
         shapes_cache.mode = Some(ctx.mode);
     }
 
-    // 3a. Despawn elements that left the visible set.
+    // 3a. 销毁离开可见集的元素。
     let gone: Vec<(ElementId, crate::resources::VisualEntry)> = visuals
         .entries
         .iter()
@@ -237,9 +228,8 @@ pub fn sync_visuals(
         visuals.entries.remove(&id);
     }
 
-    // 3b. Full rebuild only on content / mode / selection change: clear live
-    //     entities so the loop below re-creates them with fresh geometry,
-    //     material and highlight.
+    // 3b. 仅在内容 / 模式 / 选择变化时完全重建：清除活跃实体
+    //     以便下面的循环用新几何、材质和高亮重新创建它们。
     if rebuild {
         let entries: Vec<crate::resources::VisualEntry> =
             visuals.entries.values().cloned().collect();
@@ -251,11 +241,11 @@ pub fn sync_visuals(
         }
     }
 
-    // Lazily-created UI root shared by all labels (only spawned if a label shows).
+    // 懒创建的 UI 根节点，所有标签共享（仅当有标签显示时才创建）。
     let mut root: Option<Entity> = roots.iter().next();
     let mut root_bound = root.and_then(|r| bound.get(r).ok().map(|t| t.0));
 
-    // 4. Per-element draw + per-frame geometry update.
+    // 4. 逐元素绘制 + 每帧几何更新。
     for id in &visible {
         let Some(element) = plot_doc.doc.element(*id) else {
             continue;
@@ -284,8 +274,8 @@ pub fn sync_visuals(
                 );
             }
             Geometry::Polyline(_) | Geometry::Arc(_) | Geometry::Path(_) => {
-                // Perf A1: reuse the cached densified stroke, sampling it once per
-                // content / mode change instead of once per frame.
+                // 性能 A1：复用缓存的加密描边，每次内容 / 模式变化时采样一次
+                // 而非每帧一次。
                 if !shapes_cache.strokes.contains_key(id) {
                     if let Some(pos) = shapes::stroke_positions(&element.geometry, ctx.mode) {
                         shapes_cache.strokes.insert(*id, pos);
@@ -352,7 +342,7 @@ pub fn sync_visuals(
                     );
                 }
             }
-            _ => {} // M4+ geometry kinds (polygon / rect / circle / …) draw later.
+            _ => {} // M4+ 几何类型（多边形 / 矩形 / 圆 / …）稍后绘制。
         }
     }
 
@@ -364,8 +354,8 @@ pub fn sync_visuals(
     state.last_visible = visible;
 }
 
-/// Billboard screen size in px: the point diameter for a point, the icon box for
-/// an icon (defaulting to 32 px when no icon style is set).
+/// Billboard 屏幕尺寸（px）：点的直径用于点元素，图标框尺寸用于图标元素
+/// （未设置图标样式时默认 32 px）。
 fn billboard_size_px(style: &Style, geometry: &Geometry) -> f64 {
     match geometry {
         Geometry::Icon(_) => style.icon.map(|i| i.size_px as f64).unwrap_or(32.0),
@@ -373,8 +363,8 @@ fn billboard_size_px(style: &Style, geometry: &Geometry) -> f64 {
     }
 }
 
-/// The overlay world position of a geographic point (a fixed z lift in the flat
-/// map so it clears the basemap; the ellipsoid surface in the globe).
+/// 地理坐标的叠加层世界位置（平面地图中固定 z 提升以超过底图；
+/// 球体中为椭球表面）。
 fn overlay_world(metrics: &ViewMetrics, geo: GeoPoint) -> Vec3 {
     let mut w = metrics.project(geo);
     if matches!(metrics.mode, cesium_plot::model::ViewMode::Flat) {
@@ -383,8 +373,7 @@ fn overlay_world(metrics: &ViewMetrics, geo: GeoPoint) -> Vec3 {
     w
 }
 
-/// An unlit, blend-material painted with the element's effective colour, or the
-/// selection tint when the element is currently selected (alpha is preserved).
+/// 一个无光照、混合材质，使用元素的有效颜色绘制，或当元素被当前选中时使用选择高亮（alpha 保持不变）。
 fn overlay_material(style: &Style, selected: bool) -> StandardMaterial {
     let c = style.effective_color();
     let rgb = if selected {
@@ -400,8 +389,8 @@ fn overlay_material(style: &Style, selected: bool) -> StandardMaterial {
     }
 }
 
-/// A unit quad in the XY plane (extent `[-0.5, 0.5]`), front face toward +Z, so
-/// a camera-facing billboard scaled by [`billboard_scale`] measures `size_px`.
+/// XY 平面中的单位 quad（范围 `[-0.5, 0.5]`），正面朝 +Z，因此由
+/// [`billboard_scale`] 缩放的面向相机的 billboard 在屏幕上量为 `size_px`。
 fn build_unit_quad() -> Mesh {
     let positions = [[-0.5, -0.5, 0.0], [0.5, -0.5, 0.0], [0.5, 0.5, 0.0], [-0.5, 0.5, 0.0]];
     let uvs = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
@@ -414,7 +403,7 @@ fn build_unit_quad() -> Mesh {
     mesh
 }
 
-/// The shared unit-quad handle, built on first use.
+/// 共享的单位 quad 句柄，首次使用时创建。
 fn ensure_quad(
     visuals: &mut PlotVisuals,
     meshes: &mut Assets<Mesh>,
@@ -427,8 +416,8 @@ fn ensure_quad(
     h
 }
 
-/// Create-or-update a camera-facing billboard for one point / icon element and
-/// write its transform (position, rotation, constant-pixel scale) this frame.
+/// 为单个点 / 图标元素创建或更新面向相机的 billboard 并写入其本帧
+/// transform（位置、旋转、恒定像素缩放）。
 #[allow(clippy::too_many_arguments)]
 fn update_billboard(
     commands: &mut Commands,
@@ -472,8 +461,8 @@ fn update_billboard(
     }
 }
 
-/// Create-or-update a polyline's ribbon mesh and rewrite its vertices this frame
-/// so the stroke keeps a constant pixel width at every depth / zoom.
+/// 创建或更新多段线的 ribbon 网格并重写其本帧顶点，
+/// 以便描边在每个深度 / 缩放下保持恒定像素宽度。
 #[allow(clippy::too_many_arguments)]
 fn update_polyline(
     commands: &mut Commands,
@@ -524,7 +513,7 @@ fn update_polyline(
     }
 }
 
-/// Overwrite a mesh's geometry with the given ribbon vertices + indices.
+/// 用给定的 ribbon 顶点 + 索引覆写网格的几何。
 fn write_ribbon(mesh: &mut Mesh, positions: &[[f32; 3]], indices: &[u32]) {
     let n = positions.len();
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions.to_vec());
@@ -533,8 +522,8 @@ fn write_ribbon(mesh: &mut Mesh, positions: &[[f32; 3]], indices: &[u32]) {
     mesh.insert_indices(Indices::U32(indices.to_vec()));
 }
 
-/// A face material: unlit, blended, double-sided (the winding of an ear-cut
-/// triangle projected onto the sphere is not guaranteed CCW in world space).
+/// 面材质：无光照、混合、双面（耳切三角剖分投影到球面后的绕序
+/// 在世界空间中不保证 CCW）。
 fn face_material(color: Rgba) -> StandardMaterial {
     StandardMaterial {
         base_color: Color::srgba(color[0], color[1], color[2], color[3]),
@@ -545,8 +534,7 @@ fn face_material(color: Rgba) -> StandardMaterial {
     }
 }
 
-/// The fill colour (style fill scaled by opacity), or `None` for an outline-only
-/// face.
+/// 填充颜色（样式 fill 乘以不透明度），或为 `None` 表示纯轮廓面。
 fn fill_color(style: &Style) -> Option<Rgba> {
     style.fill.map(|f| {
         let mut c = f;
@@ -568,7 +556,7 @@ fn outline_style(style: &Style) -> (Rgba, f64) {
     }
 }
 
-/// Paint `c` with the selection tint (alpha preserved) when `selected`.
+/// `selected` 时用选择高亮绘制 `c`（保持 alpha）。
 fn tinted(c: Rgba, selected: bool) -> Rgba {
     if selected {
         [SELECTED_TINT[0], SELECTED_TINT[1], SELECTED_TINT[2], c[3]]
@@ -577,10 +565,9 @@ fn tinted(c: Rgba, selected: bool) -> Rgba {
     }
 }
 
-/// Triangulate a face (outer ring + holes) and build its filled world-space mesh.
-/// Connectivity is computed in lon/lat (a valid plane for a simple face), the
-/// vertices are then projected through the active mode so the same mesh is
-/// correct in 2D and 3D.
+/// 剖分一个面（外环 + 孔）并构建其填充世界空间网格。
+/// 连接性在经纬度中计算（对于简单面是有效平面），
+/// 顶点然后通过激活模式投影以便同一网格在 2D 和 3D 中都正确。
 fn build_face_mesh(
     outer: &[GeoPoint],
     holes: &[Vec<GeoPoint>],
@@ -612,8 +599,8 @@ fn build_face_mesh(
     mesh
 }
 
-/// Build the closed-ring outline ribbon (outer + every hole) as one merged
-/// triangle strip set, `width_px` wide on screen at each vertex's depth.
+/// 构建闭合环轮廓 ribbon（外部 + 每个孔）作为一个合并的
+/// 三角带集，在每个顶点深度处屏幕宽 `width_px`。
 fn build_face_outline(
     outer: &[GeoPoint],
     holes: &[Vec<GeoPoint>],
@@ -631,7 +618,7 @@ fn build_face_outline(
             continue;
         }
         let mut world: Vec<Vec3> = ring.iter().map(|g| overlay_world(metrics, *g)).collect();
-        world.push(world[0]); // close the ring
+        world.push(world[0]); // 闭合环
         let (p, i) = ribbon(&world, &|k| {
             line_half_width(metrics, world[k.min(world.len() - 1)], width_px)
         }, normal);
@@ -642,9 +629,8 @@ fn build_face_outline(
     (pos, idx)
 }
 
-/// Create-or-update a filled face: a static triangulated fill (rebuilt only when
-/// the element / mode / selection changes) plus a screen-constant-width outline
-/// stroke rewritten every frame.
+/// 创建或更新一个填充面：静态三角填充（仅在元素 / 模式 / 选择变化时重建）
+/// 加上每帧重写的屏幕恒定宽轮廓描边。
 #[allow(clippy::too_many_arguments)]
 fn update_face(
     commands: &mut Commands,
@@ -661,7 +647,7 @@ fn update_face(
 ) {
     let entry = visuals.entries.entry(id).or_default();
 
-    // Fill — built once per rebuild (world vertices are fixed for the mode).
+    // 填充 —— 每次 rebuild 构建一次（世界顶点对于模式是固定的）。
     if entry.fill.is_none() {
         if let Some(fc) = fill_color(style) {
             let handle = meshes.add(build_face_mesh(outer, holes, metrics));
@@ -682,7 +668,7 @@ fn update_face(
         }
     }
 
-    // Outline — constant pixel width, rewritten each frame like a polyline.
+    // 轮廓 —— 恒定像素宽度，每帧像多段线一样重写。
     let (oc, ow) = outline_style(style);
     let (pos, idx) = build_face_outline(outer, holes, metrics, rot, ow);
     if pos.is_empty() {
@@ -714,8 +700,8 @@ fn update_face(
     }
 }
 
-/// Create-or-update a label text node and write its absolute screen position
-/// from the projected anchor (glued to the active camera's viewport).
+/// 创建或更新一个标签文本节点并从投影锚点写入其绝对屏幕位置
+/// （粘附到激活相机的视口）。
 #[allow(clippy::too_many_arguments)]
 fn update_label(
     commands: &mut Commands,
@@ -743,7 +729,7 @@ fn update_label(
     }
 }
 
-/// Despawn every entity of a visual entry (mesh, face fill / outline, label).
+/// 销毁视觉条目的所有实体（网格、面填充 / 轮廓、标签）。
 fn despawn_entry(commands: &mut Commands, entry: &crate::resources::VisualEntry) {
     if let Some(m) = entry.mesh {
         commands.entity(m).despawn();
@@ -770,9 +756,8 @@ mod tests {
     use cesium_plot::model::ids::LayerId;
     use cesium_plot::model::Document;
 
-    /// A headless app with just the bridge resources, the sync system and one
-    /// active perspective camera. Returns the app and the camera entity so a
-    /// test can re-point its projection.
+    /// 一个 headless 应用，只包含桥接资源、同步系统和一个激活的透视相机。
+    /// 返回应用和相机实体，以便测试可以重新指向其投影。
     fn globe_app() -> (App, Entity) {
         let mut app = App::new();
         app.init_resource::<Assets<Mesh>>()
@@ -808,7 +793,7 @@ mod tests {
         (app, cam)
     }
 
-    /// Two points, one polyline and one label — the four M2 primitive kinds.
+    /// 两个点、一条多段线和一个标签——四种 M2 图元类型。
     fn seed(doc: &mut Document) -> LayerId {
         let layer = doc.new_layer("L");
         let p1 = doc.make_element("a", Geometry::Point(GeoPoint::surface(0.0, 0.0)));
@@ -839,7 +824,7 @@ mod tests {
         layer
     }
 
-    /// Count live mesh / label entities through the authoritative registry.
+    /// 通过权威注册表统计活跃网格 / 标签实体数量。
     fn counts(app: &App) -> (usize, usize) {
         let v = app.world().resource::<PlotVisuals>();
         let meshes = v.entries.values().filter(|e| e.mesh.is_some()).count();
@@ -847,7 +832,7 @@ mod tests {
         (meshes, labels)
     }
 
-    /// Count live face fill + outline entities (M4 polygonal faces).
+    /// 统计活跃面填充 + 轮廓实体数量（M4 多边形面）。
     fn face_counts(app: &App) -> (usize, usize) {
         let v = app.world().resource::<PlotVisuals>();
         let fills = v.entries.values().filter(|e| e.fill.is_some()).count();
@@ -855,7 +840,7 @@ mod tests {
         (fills, outlines)
     }
 
-    /// A polygon, a rectangle and a circle — the three M4 filled-face kinds.
+    /// 一个多边形、一个矩形和一个圆——三种 M4 填充面类型。
     fn seed_faces(doc: &mut Document) {
         let layer = doc.new_layer("F");
         let poly = doc.make_element(
@@ -907,7 +892,7 @@ mod tests {
             doc.mark_dirty();
         }
         app.update();
-        // 2 points + 1 polyline ribbon as meshes; 1 label as UI text.
+        // 2 点 + 1 多段线 ribbon 作为网格；1 标签作为 UI 文本。
         assert_eq!(counts(&app), (3, 1));
     }
 
@@ -922,7 +907,7 @@ mod tests {
         };
         app.update();
         assert_eq!(counts(&app), (3, 1));
-        // Hide the layer → nothing visible → every entry despawns and is dropped.
+        // 隐藏层 → 无可见内容 → 每个条目销毁并被丢弃。
         {
             let mut doc = app.world_mut().resource_mut::<PlotDocument>();
             doc.doc.layer_mut(layer).unwrap().visible = false;
@@ -942,8 +927,8 @@ mod tests {
         }
         app.update();
         assert_eq!(counts(&app), (3, 1));
-        // Re-point the one camera to an orthographic top-down projection and
-        // switch the mode: a mode change forces a full rebuild in flat space.
+        // 将唯一相机重新指向正交俯视投影并切换模式：
+        // 模式变化强制在平面空间中完全重建。
         {
             let mut p = app.world_mut().get_mut::<Projection>(cam).unwrap();
             *p = Projection::Orthographic(OrthographicProjection {
@@ -973,9 +958,9 @@ mod tests {
             doc.mark_dirty();
         }
         app.update();
-        // Three filled faces → three fills and three outline strokes.
+        // 三个填充面 → 三个填充和三个轮廓描边。
         assert_eq!(face_counts(&app), (3, 3));
-        // Faces carry no plain billboard mesh.
+        // 面不携带普通 billboard 网格。
         assert_eq!(counts(&app), (0, 0));
     }
 
@@ -1000,9 +985,8 @@ mod tests {
         assert_eq!(face_counts(&app), (0, 0), "hide despawns every face entity");
     }
 
-    /// Locks the two Phase-A fast paths: the camera-independent shape cache is
-    /// filled once, survives camera moves, is flushed on content change, and the
-    /// stationary-frame skip never drops or churns entities.
+    /// 锁定两个 Phase-A 快速路径：相机无关的形状缓存只填充一次、
+    /// 存活相机移动、在内容变化时刷新，且静止帧跳过从不丢弃或 churn 实体。
     #[test]
     fn shape_cache_is_reused_across_frames_and_flushed_on_edit() {
         let (mut app, cam) = globe_app();
@@ -1013,7 +997,7 @@ mod tests {
             doc.mark_dirty();
         }
 
-        // First pass samples each line / face exactly once into the cache.
+        // 第一次遍历将每条线 / 面恰好采样一次到缓存中。
         app.update();
         assert_eq!(counts(&app), (3, 1));
         assert_eq!(face_counts(&app), (3, 3));
@@ -1023,15 +1007,14 @@ mod tests {
             assert_eq!(c.faces.len(), 3, "poly + rect + circle sampled once");
         }
 
-        // Perf A2: a fully stationary repeat frame is skipped — entities and the
-        // cache must both stay put (no churn, no re-sample).
+        // 性能 A2：完全静止的重复帧被跳过——实体和缓存都必须保持不变（无 churn、无重采样）。
         app.update();
         assert_eq!(counts(&app), (3, 1));
         assert_eq!(face_counts(&app), (3, 3));
         assert_eq!(app.world().resource::<PlotShapeCache>().strokes.len(), 1);
 
-        // A camera move changes the view signature so the rewrite pass runs
-        // again, yet the cache is camera-independent and must survive intact.
+        // 相机移动改变视图签名因此重写流程再次运行，
+        // 但缓存是相机无关的必须完整存活。
         app.world_mut()
             .entity_mut(cam)
             .insert(GlobalTransform::from_translation(Vec3::new(4.0, 1.0, 2.0)));
@@ -1044,8 +1027,8 @@ mod tests {
             assert_eq!(c.faces.len(), 3);
         }
 
-        // A content change advances the revision, which flushes the cache; the
-        // next pass must transparently re-sample (same counts, same cache size).
+        // 内容变化推进 revision，从而刷新缓存，
+        // 下一遍历必须透明地重新采样（相同计数、相同缓存大小）。
         app.world_mut().resource_mut::<PlotDocument>().mark_dirty();
         app.update();
         assert_eq!(counts(&app), (3, 1));

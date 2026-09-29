@@ -1,14 +1,14 @@
-//! Scene assembler: bootstraps a minimal but complete Cesium scene at startup.
+//! 场景组装器：在启动时引导出一个最小但完整的 Cesium 场景。
 //!
-//! Creates the globe entity, camera, test imagery layer, and test entities
-//! (points, polylines, polygons, billboards) to verify the rendering pipeline.
+//! 创建地球实体、camera、测试影像图层与测试实体
+//! （点、折线、多边形、billboard），以验证渲染管线。
 //!
-//! Keyboard controls:
-//!   R — reset camera to default view
-//!   T — toggle terrain wireframe
-//!   L — cycle through imagery layers
-//!   F — fly to Grand Canyon preset
-//!   H — print scene statistics to console
+//! 键盘控制：
+//!   R —— 将 camera 重置为默认视图
+//!   T —— 切换地形线框
+//!   L —— 循环切换影像图层
+//!   F —— 飞行至 Grand Canyon 预设
+//!   H —— 向控制台打印场景统计
 
 use bevy::prelude::*;
 use cesium_bevy_render::{
@@ -23,7 +23,7 @@ use cesium_scene_mode::SceneMode;
 
 use crate::orbit_camera::OrbitState;
 
-// ── Resources ────────────────────────────────────────────────────────
+// ── 资源 ────────────────────────────────────────────────────────
 
 #[derive(Resource, Default)]
 struct WireframeMode(bool);
@@ -46,7 +46,7 @@ impl Default for SceneStatsTimer {
     }
 }
 
-// ── Plugin ────────────────────────────────────────────────────────────
+// ── 插件 ───────────────────────────────────────────────────────────
 
 pub struct SceneAssemblerPlugin;
 
@@ -67,7 +67,7 @@ impl Plugin for SceneAssemblerPlugin {
     }
 }
 
-// ── Globe spawn ──────────────────────────────────────────────────────
+// ── 地球 spawn ──────────────────────────────────────────────────
 
 fn setup_scene(
     mut commands: Commands,
@@ -78,7 +78,7 @@ fn setup_scene(
 ) {
     let scale = (1.0 / METERS_PER_RENDER_UNIT) as f32;
 
-    // ── Globe entity ──────────────────────────────────────────────
+    // ── 地球实体 ──────────────────────────────────────────────
     let globe_mesh = create_ellipsoid_mesh(64, 128);
     let globe_material = materials.add(StandardMaterial {
         base_color: Color::srgb(0.08, 0.18, 0.35),
@@ -109,14 +109,14 @@ fn setup_scene(
         globe_id
     );
 
-    // ── Configure globe ───────────────────────────────────────────
+    // ── 配置地球 ───────────────────────────────────────────────
     globe_config.ellipsoid = Ellipsoid::WGS84;
     globe_config.imagery_providers.push(
         "https://tile.openstreetmap.org/{z}/{x}/{y}.png".into(),
     );
 
     // ── Camera ────────────────────────────────────────────────────
-    // Position: looking at North America from space (~3x Earth radius away)
+    // 位置：从太空（约 3 倍地球半径外）望向北美
     let camera_position = ellipsoid_position(-95.0, 40.0, 20_000_000.0);
     let look_target = ellipsoid_position(-95.0, 40.0, 0.0);
     let direction = (look_target - camera_position).normalize();
@@ -145,7 +145,7 @@ fn setup_scene(
         -95.0, 40.0, 20_000_000.0
     );
 
-    // ── Imagery layers ────────────────────────────────────────────
+    // ── 影像图层 ───────────────────────────────────────────────
     imagery_mgr.add_layer(
         "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
         1.0,
@@ -173,7 +173,7 @@ fn setup_scene(
     println!("[SceneAssembler] Scene setup complete");
 }
 
-// ── Test entities ────────────────────────────────────────────────────
+// ── 测试实体 ────────────────────────────────────────────────────────
 
 fn setup_entities(
     mut commands: Commands,
@@ -182,7 +182,7 @@ fn setup_entities(
 ) {
     let scale = (1.0 / METERS_PER_RENDER_UNIT) as f32;
 
-    // Point at New York
+    // 纽约处的点
     let ny_pos = ellipsoid_position(-74.006, 40.7128, 1000.0);
     let point_material = materials.add(StandardMaterial {
         base_color: Color::srgb(1.0, 0.0, 0.0),
@@ -204,7 +204,7 @@ fn setup_entities(
         -74.006, 40.7128
     );
 
-    // Polyline from San Francisco to New York
+    // 从旧金山到纽约的折线
     let sf_pos = ellipsoid_position(-122.4194, 37.7749, 1000.0);
     let line_mesh = create_line_mesh(&[sf_pos, ny_pos], scale);
     let line_material = materials.add(StandardMaterial {
@@ -223,7 +223,7 @@ fn setup_entities(
         "37.8N 122.4W", "40.7N 74.0W"
     );
 
-    // Polygon over Texas (approximate bounding rectangle)
+    // 覆盖德克萨斯的多边形（近似包围矩形）
     let texas_points = [
         (-106.5, 36.5),
         (-106.5, 31.5),
@@ -247,7 +247,7 @@ fn setup_entities(
     ));
     println!("[SceneAssembler] Spawned polygon over Texas (4 vertices)");
 
-    // Billboard at London
+    // 伦敦处的 billboard
     let london_pos = ellipsoid_position(-0.1276, 51.5074, 50000.0);
     let billboard_material = materials.add(StandardMaterial {
         base_color: Color::srgb(1.0, 0.84, 0.0),
@@ -267,7 +267,7 @@ fn setup_entities(
     println!("[SceneAssembler] Spawned billboard at London ({:.4}, {:.4})", -0.1276, 51.5074);
 }
 
-// ── Keyboard controls ────────────────────────────────────────────────
+// ── 键盘控制 ────────────────────────────────────────────────────────
 
 fn keyboard_controls(
     keys: Res<ButtonInput<KeyCode>>,
@@ -314,7 +314,7 @@ fn keyboard_controls(
     }
 }
 
-// ── Scene stats ──────────────────────────────────────────────────────
+// ── 场景统计 ───────────────────────────────────────────────────────
 
 fn print_scene_stats(
     time: Res<Time>,
@@ -335,7 +335,7 @@ fn print_scene_stats(
     let imagery_count = imagery_mgr.layer_count();
     let fps = 1.0 / time.delta_secs();
 
-    // Compute approximate camera lat/lon
+    // 计算近似的 camera 经纬度
     let cam_pos = compute_cam_position(&state);
     let ellipsoid = &globe_config.ellipsoid;
     let carto = ellipsoid.cartesian_to_cartographic(cam_pos);
@@ -394,7 +394,7 @@ fn print_concurrent_stats(
     println!("══════════════════════════════════════");
 }
 
-// ── Health check ─────────────────────────────────────────────────────
+// ── 健康检查 ──────────────────────────────────────────────────────
 
 fn print_scene_health_check(
     globe_query: Query<(), With<CesiumGlobe>>,
@@ -446,7 +446,7 @@ fn print_scene_health_check(
     }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────
+// ── 辅助函数 ───────────────────────────────────────────────────────
 
 fn ellipsoid_position(lon_deg: f64, lat_deg: f64, height: f64) -> glam::DVec3 {
     let carto = Cartographic::from_degrees(lon_deg, lat_deg, height);
@@ -485,7 +485,7 @@ fn create_line_mesh(points: &[glam::DVec3], scale: f32) -> Mesh {
 }
 
 fn create_polygon_mesh(points: &[glam::DVec3], scale: f32) -> Mesh {
-    // Simple triangle fan from first vertex
+    // 从首个顶点出发的简单三角扇
     let mut positions: Vec<[f32; 3]> = Vec::new();
     let center = points.iter().fold(glam::DVec3::ZERO, |a, b| a + *b) / points.len() as f64;
 
@@ -517,7 +517,7 @@ fn create_polygon_mesh(points: &[glam::DVec3], scale: f32) -> Mesh {
     mesh
 }
 
-// ── Integration tests ────────────────────────────────────────────────
+// ── 集成测试 ───────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -581,7 +581,7 @@ mod tests {
 
         let positions = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap();
         if let bevy::render::mesh::VertexAttributeValues::Float32x3(pos) = positions {
-            // 4 perimeter vertices + 1 center
+            // 4 个周边顶点 + 1 个中心
             assert_eq!(pos.len(), 5);
         } else {
             panic!("Expected Float32x3 positions");

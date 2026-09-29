@@ -1,30 +1,30 @@
-//! Componentwise math function evaluation for the styling language: the
-//! unary / binary / ternary builtin function tables plus JS coercion helpers.
+//! styling 语言的逐分量数学函数求值：一元 / 二元 / 三元内建函数表，
+//! 外加 JS 强制类型转换辅助函数。
 //!
-//! Ported from `cesium-rs/crates/cesium-scene/src/expression.rs` L1598-1885
-//! (`unary_arg_error` / `binary_arg_error` / `ternary_arg_error` /
+//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs` L1598-1885
+//! （`unary_arg_error` / `binary_arg_error` / `ternary_arg_error` /
 //! `evaluate_unary_function` / `evaluate_binary_function` /
-//! `evaluate_ternary_function`), the Rust port of upstream
+//! `evaluate_ternary_function`），它是上游
 //! `packages/engine/Source/Scene/Expression.js`
-//! (`getEvaluateUnaryComponentwise` / `getEvaluateBinaryComponentwise` /
-//! `getEvaluateTernaryComponentwise`).
+//! （`getEvaluateUnaryComponentwise` / `getEvaluateBinaryComponentwise` /
+//! `getEvaluateTernaryComponentwise`）的 Rust 移植。
 //!
-//! # DEVIATION (deps)
+//! # 偏离（依赖）
 //!
-//! The blueprint uses `cesium_core::{CesiumMath, Cartesian2/3/4}`. This isolated
-//! domain crate only depends on `glam`, so:
-//! * `Cartesian2/3/4` -> `glam::DVec2/DVec3/DVec4` (f64, domain precision).
-//! * `CesiumMath::{to_radians, to_degrees, sign, log2, clamp, lerp}` -> local
+//! blueprint 使用 `cesium_core::{CesiumMath, Cartesian2/3/4}`。这个孤立的
+//! domain crate 只依赖 `glam`，所以：
+//! * `Cartesian2/3/4` -> `glam::DVec2/DVec3/DVec4`（f64，domain 精度）。
+//! * `CesiumMath::{to_radians, to_degrees, sign, log2, clamp, lerp}` -> 本地
 //!   [`js_to_radians`] / [`js_to_degrees`] / [`js_sign`] / [`js_log2`] /
-//!   [`js_clamp`] / [`js_lerp`] with identical ECMAScript/Cesium semantics.
-//! * `Math.round` / `Math.min` / `Math.max` -> `crate::js_math` (M7-A), which
-//!   already encode the JS half-towards-+infinity and NaN-propagation quirks.
+//!   [`js_clamp`] / [`js_lerp`]，语义与 ECMAScript/Cesium 完全一致。
+//! * `Math.round` / `Math.min` / `Math.max` -> `crate::js_math`（M7-A），其
+//!   已编码 JS 的"半值向 +infinity 取整"与 NaN 传播等怪癖。
 //!
-//! # Equality note
+//! # 相等性说明
 //!
-//! The styling language defines only `===` / `!==` (strict); `Value::PartialEq`
-//! and `equals_strict` stay strict. This module does NOT perform loose equality —
-//! it only evaluates the numeric/vector function tables.
+//! styling 语言只定义 `===` / `!==`（严格）；`Value::PartialEq`
+//! 和 `equals_strict` 保持严格。本模块**不**执行宽松相等 ——
+//! 它只求值数值/向量函数表。
 
 use glam::{DVec2, DVec3, DVec4};
 
@@ -32,21 +32,21 @@ use crate::js_math::{js_max, js_min, js_round};
 use crate::value::{runtime_error, RuntimeError, Value};
 
 // ---------------------------------------------------------------------------
-// CesiumMath equivalents (ECMAScript/Cesium semantics, f64)
+// CesiumMath 等价实现（ECMAScript/Cesium 语义，f64）
 // ---------------------------------------------------------------------------
 
-/// `CesiumMath.toRadians` (== JS `x * PI / 180`).
+/// `CesiumMath.toRadians`（== JS `x * PI / 180`）。
 fn js_to_radians(degrees: f64) -> f64 {
     degrees.to_radians()
 }
 
-/// `CesiumMath.toDegrees` (== JS `x * 180 / PI`).
+/// `CesiumMath.toDegrees`（== JS `x * 180 / PI`）。
 fn js_to_degrees(radians: f64) -> f64 {
     radians.to_degrees()
 }
 
-/// `CesiumMath.sign`: `-1` for negatives, `1` for positives, and the input
-/// itself for `0` / `NaN` (neither `< 0` nor `> 0`), matching Cesium.
+/// `CesiumMath.sign`：负数返回 `-1`，正数返回 `1`，而 `0` / `NaN`
+/// 返回输入本身（既不 `< 0` 也不 `> 0`），与 Cesium 一致。
 fn js_sign(value: f64) -> f64 {
     if value < 0.0 {
         -1.0
@@ -57,15 +57,14 @@ fn js_sign(value: f64) -> f64 {
     }
 }
 
-/// `CesiumMath.log2` (== JS `Math.log2`).
+/// `CesiumMath.log2`（== JS `Math.log2`）。
 fn js_log2(value: f64) -> f64 {
     value.log2()
 }
 
-/// `CesiumMath.clamp(value, min, max)`: `value < min ? min : value > max ? max :
-/// value`. NaN falls through both comparisons and is returned unchanged, exactly
-/// like Cesium (and unlike `f64::clamp`, which would also return NaN but panics
-/// when `min > max`).
+/// `CesiumMath.clamp(value, min, max)`：`value < min ? min : value > max ? max :
+/// value`。NaN 两个比较都不成立，原样返回，与 Cesium 完全一致
+/// （也不同于 `f64::clamp`——它虽同样返回 NaN，但在 `min > max` 时会 panic）。
 fn js_clamp(value: f64, min: f64, max: f64) -> f64 {
     if value < min {
         min
@@ -76,13 +75,13 @@ fn js_clamp(value: f64, min: f64, max: f64) -> f64 {
     }
 }
 
-/// `CesiumMath.lerp(start, end, t)` == `(1 - t) * start + t * end`.
+/// `CesiumMath.lerp(start, end, t)` == `(1 - t) * start + t * end`。
 fn js_lerp(start: f64, end: f64, t: f64) -> f64 {
     (1.0 - t) * start + t * end
 }
 
 // ---------------------------------------------------------------------------
-// Argument-shape errors
+// 参数形态错误
 // ---------------------------------------------------------------------------
 
 fn unary_arg_error(call: &str, value: &Value) -> RuntimeError {
@@ -104,12 +103,12 @@ fn ternary_arg_error(call: &str, left: &Value, right: &Value, test: &Value) -> R
 }
 
 // ---------------------------------------------------------------------------
-// Unary function table (mirrors getEvaluateUnaryComponentwise + length/normalize)
+// 一元函数表（镜像 getEvaluateUnaryComponentwise + length/normalize）
 // ---------------------------------------------------------------------------
 
-/// Evaluates a single-argument builtin (`abs`, `sqrt`, trig, `length`,
-/// `normalize`, ...). Componentwise for vectors; `length`/`normalize` are the
-/// two special cases that reduce/reshape.
+/// 求值单参数内建函数（`abs`、`sqrt`、三角函数、`length`、
+/// `normalize` 等）。对向量逐分量执行；`length`/`normalize` 是
+/// 两个做规约/变形的特例。
 pub fn evaluate_unary_function(call: &str, left: Value) -> Result<Value, RuntimeError> {
     if call == "length" {
         return match left {
@@ -179,12 +178,12 @@ pub fn evaluate_unary_function(call: &str, left: Value) -> Result<Value, Runtime
 }
 
 // ---------------------------------------------------------------------------
-// Binary function table (mirrors getEvaluateBinaryComponentwise + distance/dot/cross)
+// 二元函数表（镜像 getEvaluateBinaryComponentwise + distance/dot/cross）
 // ---------------------------------------------------------------------------
 
-/// Evaluates a two-argument builtin (`atan2`, `pow`, `min`, `max`, `distance`,
-/// `dot`, `cross`). `min`/`max` allow a scalar second argument applied
-/// componentwise; `cross` requires `vec3`.
+/// 求值双参数内建函数（`atan2`、`pow`、`min`、`max`、`distance`、
+/// `dot`、`cross`）。`min`/`max` 允许第二个参数为标量并逐分量应用；
+/// `cross` 要求 `vec3`。
 pub fn evaluate_binary_function(
     call: &str,
     left: Value,
@@ -281,11 +280,11 @@ pub fn evaluate_binary_function(
 }
 
 // ---------------------------------------------------------------------------
-// Ternary function table (mirrors getEvaluateTernaryComponentwise: clamp/mix)
+// 三元函数表（镜像 getEvaluateTernaryComponentwise：clamp/mix）
 // ---------------------------------------------------------------------------
 
-/// Evaluates a three-argument builtin (`clamp(value, min, max)` /
-/// `mix(start, end, t)`). A scalar `test` applies componentwise to vectors.
+/// 求值三参数内建函数（`clamp(value, min, max)` /
+/// `mix(start, end, t)`）。标量 `test` 对向量逐分量应用。
 pub fn evaluate_ternary_function(
     call: &str,
     left: Value,
@@ -302,7 +301,7 @@ pub fn evaluate_ternary_function(
         }
     };
 
-    // allowScalar: a scalar `test` applies componentwise.
+    // allowScalar：标量 `test` 逐分量应用。
     if let Value::Number(t) = &test {
         match (&left, &right) {
             (Value::Number(l), Value::Number(r)) => {
@@ -370,7 +369,7 @@ mod tests {
         Value::Number(v)
     }
 
-    // --- CesiumMath equivalents ---
+    // --- CesiumMath 等价实现 ---
 
     #[test]
     fn cesium_math_equivalents() {
@@ -387,7 +386,7 @@ mod tests {
         assert_eq!(js_lerp(0.0, 10.0, 0.5), 5.0);
     }
 
-    // --- unary functions ---
+    // --- 一元函数 ---
 
     #[test]
     fn unary_scalar_functions() {
@@ -395,7 +394,7 @@ mod tests {
         assert_eq!(evaluate_unary_function("sqrt", n(9.0)).unwrap(), n(3.0));
         assert_eq!(evaluate_unary_function("floor", n(1.7)).unwrap(), n(1.0));
         assert_eq!(evaluate_unary_function("ceil", n(1.2)).unwrap(), n(2.0));
-        // JS Math.round(-0.5) == 0 (half towards +infinity).
+        // JS Math.round(-0.5) == 0（半值向 +infinity 取整）。
         assert_eq!(evaluate_unary_function("round", n(-0.5)).unwrap(), n(0.0));
         assert_eq!(evaluate_unary_function("exp2", n(3.0)).unwrap(), n(8.0));
         assert_eq!(evaluate_unary_function("log2", n(8.0)).unwrap(), n(3.0));
@@ -415,7 +414,7 @@ mod tests {
             }
             _ => panic!("expected Cartesian2"),
         }
-        // normalize(number) == 1.
+        // normalize(number) == 1。
         assert_eq!(evaluate_unary_function("normalize", n(7.0)).unwrap(), n(1.0));
     }
 
@@ -439,14 +438,14 @@ mod tests {
         assert!(err.message().contains("Unexpected function call"));
     }
 
-    // --- binary functions ---
+    // --- 二元函数 ---
 
     #[test]
     fn binary_scalar_functions() {
         assert_eq!(evaluate_binary_function("pow", n(2.0), n(3.0)).unwrap(), n(8.0));
         assert_eq!(evaluate_binary_function("min", n(1.0), n(2.0)).unwrap(), n(1.0));
         assert_eq!(evaluate_binary_function("max", n(1.0), n(2.0)).unwrap(), n(2.0));
-        // JS Math.min NaN propagation.
+        // JS Math.min 的 NaN 传播。
         assert!(evaluate_binary_function("min", n(f64::NAN), n(1.0))
             .unwrap()
             .number_conversion()
@@ -466,7 +465,7 @@ mod tests {
             Value::Cartesian3(c) => assert_eq!(c, DVec3::new(0.0, 0.0, 1.0)),
             _ => panic!("expected Cartesian3"),
         }
-        // min with scalar second arg applies componentwise.
+        // min 的第二个参数为标量时逐分量应用。
         let v = Value::Cartesian2(DVec2::new(1.0, 5.0));
         match evaluate_binary_function("min", v, n(3.0)).unwrap() {
             Value::Cartesian2(u) => {
@@ -485,7 +484,7 @@ mod tests {
         assert!(err.message().contains("requires vec3 arguments"));
     }
 
-    // --- ternary functions ---
+    // --- 三元函数 ---
 
     #[test]
     fn ternary_clamp_and_mix() {

@@ -1,10 +1,9 @@
-//! Pure geometric algorithms (plan §6): screen-space hit testing (M3) and the
-//! sampling / tessellation the face + conic primitives need (M4+).
+//! 纯几何算法（计划 §6）：屏幕空间命中测试（M3）以及
+//! 面/圆锥基本体所需的采样 / 细分（M4+）。
 //!
-//! Everything here works in **screen pixels** (`[f64; 2]`, top-left origin) so
-//! it is projection-agnostic: the bridge projects a geometry's `GeoPoint`s to
-//! screen with the active camera and then calls these. That is what makes hit
-//! testing "与像素尺度无关、2D/3D 同构" and unit-testable with no engine.
+//! 这里的一切都在**屏幕像素**中运作（`[f64; 2]`，左上角为原点），因此
+//! 与投影无关：桥接层用活动相机将几何体的 `GeoPoint`s 投影到
+//! 屏幕，然后调用这些函数。正是这一点使命中测试“与像素尺度无关、2D/3D 同构”，且无需引擎即可单元测试。
 
 pub mod hit;
 pub mod sample;

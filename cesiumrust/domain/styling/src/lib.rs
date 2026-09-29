@@ -1,17 +1,16 @@
-//! cesium-styling: 3D Tiles styling and classification.
+//! cesium-styling：3D Tiles 样式与分类。
 //!
-//! STATUS (P2 code-health audit, 2026-09-27): implemented and covered by the
-//! `cesium-specs` suite, but **not wired into any production runtime path** — no
-//! adapter or application crate depends on it (the `CESIUM_ENABLE_STYLING_JSEP`
-//! dual-build is exercised only from specs). Retained as a CesiumJS feature-parity
-//! domain model reserved for future adapter bridging; do NOT read it as a shipped
-//! capability. See docs/ARCHITECTURE.md "Test-only domain crates".
+//! 状态（P2 代码健康审计，2026-09-27）：已实现并被 `cesium-specs` 测试套覆盖，
+//! 但**未接入任何生产运行时路径** —— 没有任何 adapter 或 application crate
+//! 依赖它（`CESIUM_ENABLE_STYLING_JSEP` 双构建仅从 specs 中被演练）。作为
+//! CesiumJS 功能对齐的 domain 模型保留，留待未来的 adapter 桥接；不要把它
+//! 当作一项已交付的能力来解读。见 docs/ARCHITECTURE.md "Test-only domain crates"。
 //!
-//! Domain layer - pure Rust, f64 precision.
+//! Domain 层 —— 纯 Rust，f64 精度。
 //!
-//! CesiumJS mapping:
+//! CesiumJS 映射：
 //! - `Scene/Cesium3DTileStyle.js` → tile_style
-//! - `Scene/Expression.js` → tile_style (legacy AST-only) + ast/value/tokenizer/js_math (M7-A jsep engine base layer)
+//! - `Scene/Expression.js` → tile_style（legacy 仅 AST）+ ast/value/tokenizer/js_math（M7-A jsep 引擎基础层）
 //! - `Scene/ClassificationPrimitive.js` → classification
 //! - `Scene/ClassificationType.js` → classification
 
@@ -37,11 +36,11 @@ pub use tile_style::{
     ArithmeticOp, CompareOp, PropertyValue, StyleExpression, TileStyle,
 };
 
-// M7-A: jsep 1.3.8 expression-engine base layer (Scene/Expression.js port).
-// tokenizer + value + js_math + ast. M7-B adds the Pratt parser (parser),
-// preprocessing (variables), evaluation core (coerce/literal/member_access/
-// runtime), regex support (regex) and the top-level Expression (expression).
-// `tile_style` (legacy) is untouched.
+// M7-A：jsep 1.3.8 表达式引擎基础层（Scene/Expression.js 移植）。
+// tokenizer + value + js_math + ast。M7-B 添加 Pratt 解析器（parser）、
+// 预处理（variables）、求值核心（coerce/literal/member_access/
+// runtime）、正则支持（regex）与顶层 Expression（expression）。
+// `tile_style`（legacy）未改动。
 pub use ast::{
     create_runtime_ast, member_access, vector_component, ExpressionNodeType, JsepLiteral, JsepNode,
     Node, NodeValue, BINARY_OPERATORS, UNARY_OPERATORS,
@@ -50,7 +49,7 @@ pub use js_math::{js_max, js_min, js_round};
 pub use tokenizer::{is_digit, is_identifier_char, is_identifier_start, Token, Tokenizer};
 pub use value::{js_parse_number, number_to_js_string, runtime_error, RuntimeError, Value};
 
-// M7-B: parsing + evaluation core.
+// M7-B：解析 + 求值核心。
 pub use expression::Expression;
 pub use parser::{binary_precedence, Parser, UNARY_PRECEDENCE};
 pub use regex::RegExpValue;

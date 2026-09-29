@@ -1,5 +1,5 @@
-//! EllipsoidTangentPlane - a plane tangent to an ellipsoid at a given origin.
-//! Maps to CesiumJS `Core/EllipsoidTangentPlane.js`
+//! EllipsoidTangentPlane —— 在给定原点处与椭球相切的平面。
+//! 映射到 CesiumJS `Core/EllipsoidTangentPlane.js`
 
 use crate::bounding::AxisAlignedBoundingBox;
 use crate::ellipsoid::Ellipsoid;
@@ -7,11 +7,11 @@ use crate::ray::{ray_plane, Plane, Ray};
 use crate::transforms;
 use glam::{DVec2, DVec3};
 
-/// A plane tangent to the provided ellipsoid at the provided origin.
-/// If origin is not on the surface of the ellipsoid, its surface projection is used.
-/// If origin is at the center of the ellipsoid, construction will panic.
+/// 在给定原点处与给定椭球相切的平面。
+/// 若原点不在椭球表面上，则使用其在表面上的投影。
+/// 若原点位于椭球中心，则构造时会 panic。
 ///
-/// Maps to CesiumJS `EllipsoidTangentPlane`
+/// 映射到 CesiumJS `EllipsoidTangentPlane`
 #[derive(Debug, Clone)]
 pub struct EllipsoidTangentPlane {
     ellipsoid: Ellipsoid,
@@ -22,10 +22,10 @@ pub struct EllipsoidTangentPlane {
 }
 
 impl EllipsoidTangentPlane {
-    /// Creates a new tangent plane at the given origin on the given ellipsoid.
-    /// The origin is projected onto the geodetic surface if not already on it.
+    /// 在给定椭球上的给定原点处创建一个新切平面。
+    /// 若原点尚不在大地表面上，则将其投影到该表面上。
     ///
-    /// Maps to `new EllipsoidTangentPlane(origin, ellipsoid)`
+    /// 映射到 `new EllipsoidTangentPlane(origin, ellipsoid)`
     pub fn new(origin: DVec3, ellipsoid: &Ellipsoid) -> Self {
         let is_degenerate = ellipsoid.radii() == DVec3::ZERO;
 
@@ -59,21 +59,19 @@ impl EllipsoidTangentPlane {
         }
     }
 
-    /// Creates a new instance from the provided ellipsoid and the center
-    /// point of the provided Cartesians.
+    /// 由给定的椭球和给定笛卡尔点的中心点创建一个新实例。
     ///
-    /// Maps to `EllipsoidTangentPlane.fromPoints`
+    /// 映射到 `EllipsoidTangentPlane.fromPoints`
     pub fn from_points(cartesians: &[DVec3], ellipsoid: &Ellipsoid) -> Self {
         let box_ = AxisAlignedBoundingBox::from_points(cartesians);
         Self::new(box_.center, ellipsoid)
     }
 
-    /// Computes the projection of the provided 3D position onto the 2D plane,
-    /// radially outward from the ellipsoid coordinate system origin.
+    /// 计算给定 3D 位置到 2D 平面的投影，方向为从椭球坐标系原点沿径向外指。
     ///
-    /// Returns None if the projection is impossible (ray parallel to plane).
+    /// 若无法投影（射线平行于平面）则返回 None。
     ///
-    /// Maps to `EllipsoidTangentPlane.prototype.projectPointOntoPlane`
+    /// 映射到 `EllipsoidTangentPlane.prototype.projectPointOntoPlane`
     pub fn project_point_onto_plane(&self, cartesian: DVec3) -> Option<DVec2> {
         let direction = crate::ellipsoid::normalize_cartesian3(cartesian);
         let ray = Ray {
@@ -96,11 +94,10 @@ impl EllipsoidTangentPlane {
         })
     }
 
-    /// Computes the projection of the provided 3D positions onto the 2D plane
-    /// (where possible). The resulting array may be shorter than the input -
-    /// if a single projection is impossible it will not be included.
+    /// 计算给定 3D 位置到 2D 平面的投影（在可行的地方）。
+    /// 结果数组可能比输入短——若某个投影无法完成，则不会包含它。
     ///
-    /// Maps to `EllipsoidTangentPlane.prototype.projectPointsOntoPlane`
+    /// 映射到 `EllipsoidTangentPlane.prototype.projectPointsOntoPlane`
     pub fn project_points_onto_plane(&self, cartesians: &[DVec3]) -> Vec<DVec2> {
         cartesians
             .iter()
@@ -108,10 +105,9 @@ impl EllipsoidTangentPlane {
             .collect()
     }
 
-    /// Computes the projection of the provided 3D position onto the 2D plane,
-    /// along the plane normal.
+    /// 计算给定 3D 位置沿平面法线到 2D 平面的投影。
     ///
-    /// Maps to `EllipsoidTangentPlane.prototype.projectPointToNearestOnPlane`
+    /// 映射到 `EllipsoidTangentPlane.prototype.projectPointToNearestOnPlane`
     pub fn project_point_to_nearest_on_plane(&self, cartesian: DVec3) -> DVec2 {
         let ray = Ray {
             origin: cartesian,
@@ -132,10 +128,9 @@ impl EllipsoidTangentPlane {
         DVec2::new(self.x_axis.dot(v), self.y_axis.dot(v))
     }
 
-    /// Computes the projection of the provided 3D positions onto the 2D plane,
-    /// along the plane normal.
+    /// 计算给定 3D 位置沿平面法线到 2D 平面的投影。
     ///
-    /// Maps to `EllipsoidTangentPlane.prototype.projectPointsToNearestOnPlane`
+    /// 映射到 `EllipsoidTangentPlane.prototype.projectPointsToNearestOnPlane`
     pub fn project_points_to_nearest_on_plane(&self, cartesians: &[DVec3]) -> Vec<DVec2> {
         cartesians
             .iter()
@@ -143,9 +138,9 @@ impl EllipsoidTangentPlane {
             .collect()
     }
 
-    /// Computes the projection of the provided 2D position onto the 3D ellipsoid.
+    /// 计算给定 2D 位置到 3D 椭球的投影。
     ///
-    /// Maps to `EllipsoidTangentPlane.prototype.projectPointOntoEllipsoid`
+    /// 映射到 `EllipsoidTangentPlane.prototype.projectPointOntoEllipsoid`
     pub fn project_point_onto_ellipsoid(&self, cartesian: DVec2) -> DVec3 {
         let mut result = self.origin + self.x_axis * cartesian.x + self.y_axis * cartesian.y;
         if let Some(scaled) = self.ellipsoid.scale_to_geocentric_surface(result) {
@@ -154,9 +149,9 @@ impl EllipsoidTangentPlane {
         result
     }
 
-    /// Computes the projection of the provided 2D positions onto the 3D ellipsoid.
+    /// 计算给定 2D 位置到 3D 椭球的投影。
     ///
-    /// Maps to `EllipsoidTangentPlane.prototype.projectPointsOntoEllipsoid`
+    /// 映射到 `EllipsoidTangentPlane.prototype.projectPointsOntoEllipsoid`
     pub fn project_points_onto_ellipsoid(&self, cartesians: &[DVec2]) -> Vec<DVec3> {
         cartesians
             .iter()
@@ -164,72 +159,72 @@ impl EllipsoidTangentPlane {
             .collect()
     }
 
-    // --- Accessors ---
+    // --- 访问器 ---
 
-    /// Gets the ellipsoid.
+    /// 获取椭球。
     #[inline]
     pub fn ellipsoid(&self) -> &Ellipsoid {
         &self.ellipsoid
     }
 
-    /// Gets the origin.
+    /// 获取原点。
     #[inline]
     pub fn origin(&self) -> DVec3 {
         self.origin
     }
 
-    /// Gets the plane which is tangent to the ellipsoid.
+    /// 获取与椭球相切的平面。
     #[inline]
     pub fn plane(&self) -> &Plane {
         &self.plane
     }
 
-    /// Gets the local X-axis (east) of the tangent plane.
+    /// 获取切平面的局部 X 轴（east）。
     #[inline]
     pub fn x_axis(&self) -> DVec3 {
         self.x_axis
     }
 
-    /// Gets the local Y-axis (north) of the tangent plane.
+    /// 获取切平面的局部 Y 轴（north）。
     #[inline]
     pub fn y_axis(&self) -> DVec3 {
         self.y_axis
     }
 
-    /// Gets the local Z-axis (up) of the tangent plane.
+    /// 获取切平面的局部 Z 轴（up）。
     #[inline]
     pub fn z_axis(&self) -> DVec3 {
         self.plane.normal
     }
 
-    // --- Private helpers ---
+    // --- 私有辅助函数 ---
 
-    /// Computes ENU axes for a degenerate (zero-radii) ellipsoid.
-    /// Mirrors the CesiumJS behavior where NaN propagation through cross products
-    /// yields valid axes for non-pole positions.
+    /// 为退化（半径为零）的椭球计算 ENU 轴。
+    /// 模仿 CesiumJS 的行为：NaN 通过叉积传播，
+    /// 对非极点位置仍能得到有效的轴。
     fn degenerate_enu_axes(origin: DVec3) -> (DVec3, DVec3, DVec3) {
         let eps = crate::math_utils::EPSILON14;
         let east = crate::ellipsoid::normalize_cartesian3(DVec3::new(-origin.y, origin.x, 0.0));
 
         if origin.abs_diff_eq(DVec3::ZERO, eps) {
-            // Degenerate: at center
+            // 退化：位于中心
             (DVec3::X, DVec3::Y, DVec3::Z)
         } else if origin.x.abs() <= eps && origin.y.abs() <= eps {
-            // Pole case
+            // 极点情形
             let sign = if origin.z >= 0.0 { 1.0 } else { -1.0 };
             (DVec3::X, DVec3::Y * sign, DVec3::Z * sign)
         } else {
-            // General case: compute up from the ellipsoid formula.
-            // For zero ellipsoid, one_over_radii_squared = (Inf, Inf, Inf),
-            // so the unnormalized normal = (x*Inf, y*Inf, z*Inf).
-            // We use the direction of (x, y, z) weighted toward the largest component
-            // to mimic CesiumJS NaN propagation behavior.
-            // Actually, for any non-degenerate direction, the normalized version of
-            // (x*Inf, y*Inf, z*Inf) in CesiumJS becomes (sign(x), sign(y), sign(z))/len
-            // due to Inf arithmetic. But cross products with east still yield valid results.
+            // 一般情形：由椭球公式计算 up。
+            // 对于零椭球，one_over_radii_squared = (Inf, Inf, Inf)，
+            // 因此未归一化的法线 = (x*Inf, y*Inf, z*Inf)。
+            // 我们使用 (x, y, z) 的方向并偏向最大的分量，
+            // 以模仿 CesiumJS 的 NaN 传播行为。
+            // 实际上，对于任何非退化方向，由于 Inf 运算，
+            // CesiumJS 中 (x*Inf, y*Inf, z*Inf) 的归一化版本会变成 (sign(x), sign(y), sign(z))/len。
+            // 但与 east 的叉积仍能得到有效结果。
             //
-            // Simplified: use normalize(x, y, z) as up direction (geocentric normal).
-            // This gives the same tangent plane axes for the test cases.
+            // 简化处理：使用 normalize(x, y, z) 作为 up 方向（地心法线）。
+            // 对各测试用例，这会给出相同的切平面轴。
             let up = crate::ellipsoid::normalize_cartesian3(origin);
             let north = up.cross(east);
             (east, north, up)

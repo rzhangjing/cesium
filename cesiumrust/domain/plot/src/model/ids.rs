@@ -1,10 +1,10 @@
-//! Numeric identity newtypes for the document tree.
+//! 文档树的数字标识 newtype。
 //!
-//! Ids are allocated monotonically by the [`crate`'s `Document`](super::document::Document)
-//! from a single counter, so they are unique within one document and cheap to
-//! serialise / diff / hash. They are deliberately opaque `u64` wrappers rather
-//! than UUIDs: the document is in-memory authoring state, ids only need to be
-//! stable within a session (and across a GeoJSON round-trip they are re-minted).
+//! Id 由 [`crate` 的 `Document`](super::document::Document)
+//! 从单个计数器单调分配，因此它们在单个文档内唯一，且序列化 / diff / 哈希
+//! 都很廉价。它们是故意做成不透明的 `u64` 包装而非
+//! UUID：文档是内存中的创作态，id 只需在会话内稳定
+//! （且在 GeoJSON 往返中会被重新分配）。
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -17,12 +17,12 @@ macro_rules! id_newtype {
         pub struct $name(pub u64);
 
         impl $name {
-            /// Wrap a raw counter value.
+            /// 包装一个原始计数器值。
             #[inline]
             pub const fn new(v: u64) -> Self {
                 Self(v)
             }
-            /// The underlying value.
+            /// 底层值。
             #[inline]
             pub const fn raw(self) -> u64 {
                 self.0
@@ -38,14 +38,14 @@ macro_rules! id_newtype {
 }
 
 id_newtype!(
-    /// Identity of a [`Element`](super::element::Element) in a document.
+    /// 文档中一个 [`Element`](super::element::Element) 的标识。
     ElementId
 );
 id_newtype!(
-    /// Identity of a [`Group`](super::group::Group) in a document.
+    /// 文档中一个 [`Group`](super::group::Group) 的标识。
     GroupId
 );
 id_newtype!(
-    /// Identity of a [`Layer`](super::layer::Layer) in a document.
+    /// 文档中一个 [`Layer`](super::layer::Layer) 的标识。
     LayerId
 );

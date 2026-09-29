@@ -1,7 +1,7 @@
-//! KML data source loader for Bevy.
+//! 用于 Bevy 的 KML 数据源加载器。
 //!
-//! Parses KML files via `cesium_kml::parser` and converts Placemarks
-//! into appropriate entity types with style inheritance.
+//! 通过 `cesium_kml::parser` 解析 KML 文件，并将 Placemarks
+//! 转为带样式继承的适当实体类型。
 
 use bevy::prelude::*;
 use cesium_datasource::entity::Entity as DomainEntity;
@@ -12,14 +12,14 @@ use crate::entity::components::{
     CesiumEntity, EntityWrapper, NeedsVisualUpdate, TimeDynamicProperties,
 };
 
-/// Resource that tracks pending KML file loads.
+/// 跟踪待处理 KML 文件加载的资源。
 #[derive(Resource, Default)]
 pub struct KmlLoadQueue {
-    /// Files to load (paths to .kml/.kmz files).
+    /// 待加载的文件（指向 .kml/.kmz 文件的路径）。
     pub files: Vec<String>,
 }
 
-/// Plugin for KML data source loading.
+/// 用于 KML 数据源加载的插件。
 pub struct KmlLoadPlugin;
 
 impl Plugin for KmlLoadPlugin {
@@ -29,7 +29,7 @@ impl Plugin for KmlLoadPlugin {
     }
 }
 
-/// System that loads KML files and spawns entities.
+/// 加载 KML 文件并生成实体的系统。
 fn kml_load_system(
     mut commands: Commands,
     mut queue: ResMut<KmlLoadQueue>,
@@ -70,7 +70,7 @@ fn kml_load_system(
     }
 }
 
-/// Spawns a single KML entity into the Bevy ECS.
+/// 将单个 KML 实体生成到 Bevy ECS 中。
 fn spawn_kml_entity(commands: &mut Commands, domain_entity: &DomainEntity) {
     let cesium_entity = CesiumEntity {
         entity_id: domain_entity.id.clone(),
@@ -98,7 +98,7 @@ fn spawn_kml_entity(commands: &mut Commands, domain_entity: &DomainEntity) {
     ));
 }
 
-/// Helper to load a KML file by adding it to the queue.
+/// Helper：通过将 KML 文件加入队列来加载它。
 pub fn load_kml_file(queue: &mut KmlLoadQueue, path: impl Into<String>) {
     queue.files.push(path.into());
 }

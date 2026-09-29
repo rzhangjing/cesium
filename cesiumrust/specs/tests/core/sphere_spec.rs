@@ -1,27 +1,27 @@
-//! Core/BoundingSphereSpec.js → Rust integration tests
+//! Core/BoundingSphereSpec.js → Rust 集成测试
 //!
-//! Faithful port of CesiumJS `Specs/Core/BoundingSphereSpec.js` (94 `it()` cases).
+//! 忠实移植 CesiumJS `Specs/Core/BoundingSphereSpec.js`（94 个 `it()` 用例）。
 //!
-//! ## Platform adaptations
-//! - JS result-parameter variants (`clone(result)`, `fromPoints(p, result)`,
-//!   `fromVertices(.., result)`, `fromCornerPoints(.., result)`, `fromEllipsoid(e, result)`,
-//!   `fromTransformation(t, result)`, `union(l, r, result)`, `expand(s, p, result)`,
-//!   `transform(s, m, result)`, `transformWithoutScale(.., result)`,
-//!   `projectTo2D(.., result)`) are merged into the owned-return tests: Rust returns owned
-//!   values / uses `Copy`.
-//! - JS "throws ..." cases (null/undefined checks and DeveloperError such as
-//!   "fromVertices requires a stride of at least 3") are omitted: Rust's type system makes
-//!   passing `undefined` impossible, and the stride precondition is a `debug_assert!`.
-//! - `createPackableSpecs` (pack/unpack into JS arrays) is omitted: packing is a JS-array
-//!   serialization concern not part of the Rust domain API.
-//! - JS `EncodedCartesian3.fromCartesian` high/low splitting is a GPU double-precision
-//!   emulation technique. Rust `f64` is natively double precision, so the encoded-vertex
-//!   tests feed `high = values`, `low = zeros` (`high + low == value`, mathematically
-//!   identical to the decoded positions).
-//! - Deferred to later tasks: `fromOrientedBoundingBox` (requires
-//!   `OrientedBoundingBox.fromPoints`, ported under t8e), `projectTo2D` (requires the
-//!   `cartesianToCartographic` + `projectTo2D` pipeline), and `isOccluded`
-//!   (Occluder is a C-class rendering dependency).
+//! ## 平台适配
+//! - JS result-parameter 变体（`clone(result)`、`fromPoints(p, result)`、
+//!   `fromVertices(.., result)`、`fromCornerPoints(.., result)`、`fromEllipsoid(e, result)`、
+//!   `fromTransformation(t, result)`、`union(l, r, result)`、`expand(s, p, result)`、
+//!   `transform(s, m, result)`、`transformWithoutScale(.., result)`、
+//!   `projectTo2D(.., result)`）已合并进拥有返回值的测试：Rust 返回拥有
+//!   所有权的值 / 使用 `Copy`。
+//! - JS "throws ..." 用例（null/undefined 检查以及诸如
+//!   "fromVertices requires a stride of at least 3" 的 DeveloperError）已省略：Rust 的类型系统使
+//!   传入 `undefined` 不可能，且 stride 前置条件是一个 `debug_assert!`。
+//! - `createPackableSpecs`（pack/unpack 到 JS 数组）已省略：打包是 JS 数组的
+//!   序列化关注点，不属于 Rust 领域 API。
+//! - JS `EncodedCartesian3.fromCartesian` 的高/低拆分是一种 GPU 双精度
+//!   模拟技术。Rust `f64` 原生就是双精度，因此编码顶点
+//!   测试传入 `high = values`、`low = zeros`（`high + low == value`，从数学上与
+//!   解码后的位置完全相同）。
+//! - 推迟到后续任务：`fromOrientedBoundingBox`（需要
+//!   `OrientedBoundingBox.fromPoints`，在 t8e 下移植）、`projectTo2D`（需要
+//!   `cartesianToCartographic` + `projectTo2D` 管线），以及 `isOccluded`
+//!   （Occluder 是 C 类渲染依赖）。
 
 use cesium_geospatial::bounding::Interval;
 use cesium_geospatial::{
@@ -76,8 +76,8 @@ fn get_positions_as_flat_array_with_stride5() -> Vec<f64> {
     result
 }
 
-/// Asserts every point lies within the sphere's axis-aligned extent (center ± radius),
-/// mirroring the JS `contains all points` checks.
+/// 断言每个点都位于球的轴对齐范围内（中心 ± 半径），
+/// 对应 JS 的 `contains all points` 检查。
 fn assert_sphere_contains_points(sphere: &BoundingSphere, points: &[DVec3]) {
     let r = DVec3::splat(sphere.radius);
     let max = sphere.center + r;
@@ -89,8 +89,8 @@ fn assert_sphere_contains_points(sphere: &BoundingSphere, points: &[DVec3]) {
     }
 }
 
-/// Mirrors JS `expectBoundingSphereToContainPoint`: projects the cartographic point and
-/// checks its distance from the sphere center is within the radius (with EPSILON9 slack).
+/// 对应 JS `expectBoundingSphereToContainPoint`：投影该制图点并
+/// 检查其到球心的距离在半径之内（留有 EPSILON9 容差）。
 fn expect_bounding_sphere_to_contain_point(
     sphere: &BoundingSphere,
     point: Cartographic,
@@ -127,7 +127,7 @@ fn test_bs_constructor() {
 #[test]
 fn test_bs_clone() {
     let sphere = BoundingSphere::new(DVec3::new(1.0, 2.0, 3.0), 4.0);
-    let result = sphere; // Copy semantics == clone()
+    let result = sphere; // Copy 语义 == clone()
     assert!(sphere == result);
 }
 
@@ -267,7 +267,7 @@ fn test_bs_from_encoded_empty() {
 fn test_bs_from_encoded_different_lengths() {
     let high = get_positions_as_flat_array();
     let mut low = vec![0.0; high.len()];
-    low.pop(); // make the lengths differ
+    low.pop(); // 使两长度不同
     let sphere = BoundingSphere::from_encoded_cartesian_vertices(&high, &low);
     assert_vec3_epsilon!(sphere.center, DVec3::ZERO, epsilon::EPSILON15);
     assert_approx!(sphere.radius, 0.0, epsilon::EPSILON15);
@@ -294,9 +294,9 @@ fn test_bs_from_encoded_contains_naive() {
 
 /// `it("fromEncodedCartesianVertices contains all points (ritter)")`
 ///
-/// Note: the JS original iterates `positions.length` where `positions` is a `{high, low}`
-/// object, so its loop body never executes (vacuous). Here we check containment against the
-/// actual decoded positions to keep the test meaningful.
+/// 注：JS 原版遍历 `positions.length`，而 `positions` 是一个 `{high, low}`
+/// 对象，因此其循环体从不执行（空转）。此处我们针对实际解码后的位置
+/// 检查包含关系，以保持测试有意义。
 #[test]
 fn test_bs_from_encoded_contains_ritter() {
     let mut high = get_positions_as_flat_array();
@@ -610,15 +610,15 @@ fn test_bs_from_rectangle_with_heights_2d() {
     ];
 
     let mut test_points: Vec<Cartographic> = Vec::new();
-    // Corners at both height extremes.
+    // 两个高度极值处的角点。
     for c in corners {
         test_points.push(Cartographic::from_radians(c.longitude, c.latitude, min_height));
         test_points.push(Cartographic::from_radians(c.longitude, c.latitude, max_height));
     }
-    // Center at both height extremes.
+    // 两个高度极值处的中心。
     test_points.push(Cartographic::from_radians(center.longitude, center.latitude, min_height));
     test_points.push(Cartographic::from_radians(center.longitude, center.latitude, max_height));
-    // Edge midpoints at both height extremes.
+    // 两个高度极值处的边中点。
     let edge_midpoints = [
         (center.longitude, rectangle.south),
         (center.longitude, rectangle.north),

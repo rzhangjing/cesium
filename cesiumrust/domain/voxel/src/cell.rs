@@ -1,47 +1,47 @@
-//! Voxel cell metadata access.
+//! 体素单元元数据访问。
 //!
-//! Maps to CesiumJS `Scene/VoxelCell.js`.
+//! 映射到 CesiumJS `Scene/VoxelCell.js`。
 
 use std::collections::HashMap;
 
 use crate::shape::OrientedBoundingBox;
 
-/// Metadata value types for voxel cells.
+/// 体素单元的元数据值类型。
 #[derive(Debug, Clone, PartialEq)]
 pub enum VoxelMetadataValue {
-    /// Single f32 value.
+    /// 单个 f32 值。
     Float(f32),
-    /// Single f64 value.
+    /// 单个 f64 值。
     Double(f64),
-    /// Single i32 value.
+    /// 单个 i32 值。
     Int(i32),
-    /// Single u32 value.
+    /// 单个 u32 值。
     Uint(u32),
-    /// Vector of f32 values.
+    /// f32 值向量。
     VecF32(Vec<f32>),
-    /// Vector of f64 values.
+    /// f64 值向量。
     VecF64(Vec<f64>),
-    /// String value.
+    /// 字符串值。
     String(String),
 }
 
-/// A cell from a voxel primitive, providing access to metadata and spatial info.
+/// 来自体素图元的单元，提供对元数据和空间信息的访问。
 ///
-/// Maps to CesiumJS `VoxelCell`.
+/// 映射到 CesiumJS `VoxelCell`。
 #[derive(Debug, Clone)]
 pub struct VoxelCell {
-    /// Index of the tile containing this cell.
+    /// 包含此单元的瓦片索引。
     tile_index: u32,
-    /// Index of the sample within the tile.
+    /// 瓦片内采样点索引。
     sample_index: u32,
-    /// Metadata property map (name -> value).
+    /// 元数据属性映射（名称 -> 值）。
     metadata: HashMap<String, VoxelMetadataValue>,
-    /// Oriented bounding box of the cell.
+    /// 单元的有向包围盒。
     oriented_bounding_box: OrientedBoundingBox,
 }
 
 impl VoxelCell {
-    /// Create a new voxel cell.
+    /// 创建一个新的体素单元。
     pub fn new(tile_index: u32, sample_index: u32) -> Self {
         Self {
             tile_index,
@@ -51,7 +51,7 @@ impl VoxelCell {
         }
     }
 
-    /// Create a cell with metadata and bounding box.
+    /// 创建带元数据和包围盒的单元。
     pub fn with_data(
         tile_index: u32,
         sample_index: u32,
@@ -66,37 +66,37 @@ impl VoxelCell {
         }
     }
 
-    /// Get the tile index.
+    /// 获取瓦片索引。
     pub fn tile_index(&self) -> u32 {
         self.tile_index
     }
 
-    /// Get the sample index within the tile.
+    /// 获取瓦片内的采样点索引。
     pub fn sample_index(&self) -> u32 {
         self.sample_index
     }
 
-    /// Get the oriented bounding box.
+    /// 获取有向包围盒。
     pub fn oriented_bounding_box(&self) -> &OrientedBoundingBox {
         &self.oriented_bounding_box
     }
 
-    /// Check if the cell has a property with the given name.
+    /// 检查单元是否具有给定名称的属性。
     pub fn has_property(&self, name: &str) -> bool {
         self.metadata.contains_key(name)
     }
 
-    /// Get all property names.
+    /// 获取所有属性名称。
     pub fn get_names(&self) -> Vec<&str> {
         self.metadata.keys().map(|s| s.as_str()).collect()
     }
 
-    /// Get a property value by name.
+    /// 按名称获取属性值。
     pub fn get_property(&self, name: &str) -> Option<&VoxelMetadataValue> {
         self.metadata.get(name)
     }
 
-    /// Get a float property value.
+    /// 获取浮点属性值。
     pub fn get_float(&self, name: &str) -> Option<f64> {
         match self.metadata.get(name) {
             Some(VoxelMetadataValue::Float(v)) => Some(*v as f64),
@@ -105,7 +105,7 @@ impl VoxelCell {
         }
     }
 
-    /// Get an integer property value.
+    /// 获取整数属性值。
     pub fn get_int(&self, name: &str) -> Option<i64> {
         match self.metadata.get(name) {
             Some(VoxelMetadataValue::Int(v)) => Some(*v as i64),
@@ -114,19 +114,19 @@ impl VoxelCell {
         }
     }
 
-    /// Set a property value.
+    /// 设置属性值。
     pub fn set_property(&mut self, name: String, value: VoxelMetadataValue) {
         self.metadata.insert(name, value);
     }
 
-    /// Get the number of metadata properties.
+    /// 获取元数据属性数量。
     pub fn property_count(&self) -> usize {
         self.metadata.len()
     }
 
-    /// Convert a sample index to 3D tile coordinates given padded dimensions.
+    /// 在给定填充维度时，将采样点索引转换为 3D 瓦片坐标。
     ///
-    /// Returns (x, y, z) indices within the padded tile.
+    /// 返回填充瓦片内的 (x, y, z) 索引。
     pub fn sample_index_to_tile_coordinate(
         sample_index: u32,
         padded_dim_x: u32,
@@ -197,7 +197,7 @@ mod tests {
 
     #[test]
     fn test_sample_index_to_tile_coordinate() {
-        // 4x4x4 padded dimensions
+        // 4x4x4 填充维度
         let (x, y, z) = VoxelCell::sample_index_to_tile_coordinate(0, 4, 4);
         assert_eq!((x, y, z), (0, 0, 0));
 

@@ -1,4 +1,4 @@
-//! Gzip decompression using flate2.
+//! 使用 flate2 进行 Gzip 解压缩。
 
 use cesium_ports_driven::{PortError, PortResult};
 use flate2::read::GzDecoder;

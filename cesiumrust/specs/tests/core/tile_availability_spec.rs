@@ -1,12 +1,12 @@
-//! TileAvailability specs - ported from Core/TileAvailabilitySpec.js
+//! TileAvailability 规格测试 - 移植自 Core/TileAvailabilitySpec.js
 //!
-//! Original: 12 it() tests. Ported: 11 A-class.
-//! Omitted: 1 (internal _rootNodes structure check → adapted to functional test).
+//! 原始：12 个 it() 测试。移植：11 个 A 类。
+//! 省略：1 个（内部 _rootNodes 结构检查 → 改为功能性测试）。
 //!
-//! Notes:
-//! - `checkNodeRectanglesSorted` (internal quadtree structure validation) is
-//!   C-class (accesses private _rootNodes/_ne/_se/_nw/_sw); replaced with a
-//!   functional equivalent verifying order-independence of addAvailableTileRange.
+//! 说明：
+//! - `checkNodeRectanglesSorted`（内部四叉树结构校验）属于
+//!   C 类（访问私有的 _rootNodes/_ne/_se/_nw/_sw）；改为一个
+//!   等价的功能性测试，用于验证 addAvailableTileRange 与添加顺序无关。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::rectangle::Rectangle;
@@ -59,7 +59,7 @@ fn max_level_returns_higher_level_when_on_boundary_at_level_0() {
         1
     );
 
-    // Make sure it isn't dependent on the order we add the rectangles.
+    // 确保它不依赖于我们添加矩形的顺序。
     let mut availability = create_availability(geographic(), 15);
     availability.add_available_tile_range(1, 1, 0, 1, 0);
     availability.add_available_tile_range(0, 0, 0, 0, 0);
@@ -225,7 +225,7 @@ fn add_range_keeps_availability_sorted_by_level() {
         1
     );
 
-    // We should get the same result adding them in the opposite order.
+    // 以相反顺序添加它们应得到相同结果。
     let mut availability = create_availability(geographic(), 15);
     availability.add_available_tile_range(1, 0, 0, 3, 1);
     availability.add_available_tile_range(0, 0, 0, 1, 0);
@@ -237,8 +237,8 @@ fn add_range_keeps_availability_sorted_by_level() {
 
 #[test]
 fn add_range_boundary_rectangles_sorted_properly() {
-    // Adapted from original: instead of checking internal node structure,
-    // verify functional correctness of boundary-sorted rectangles.
+    // 改编自原始测试：不检查内部节点结构，
+    // 而是验证按边界排序矩形的功能正确性。
     let mut availability = TileAvailability::new(geographic(), 6);
     availability.add_available_tile_range(0, 0, 0, 1, 0);
     availability.add_available_tile_range(1, 0, 0, 2, 0);
@@ -246,16 +246,16 @@ fn add_range_boundary_rectangles_sorted_properly() {
     availability.add_available_tile_range(3, 0, 0, 8, 0);
     availability.add_available_tile_range(0, 0, 0, 1, 0);
 
-    // All levels should be available at a position covered by all ranges.
-    // Level 3 range covers x=0..8, y=0 → longitude -180..22.5E, latitude 67.5..90N
+    // 在所有范围都覆盖的位置，所有层级都应可用。
+    // Level 3 范围覆盖 x=0..8、y=0 → 经度 -180..22.5E、纬度 67.5..90N
     let pos = Cartographic::from_degrees(-90.0, 78.75, 0.0);
     assert_eq!(availability.compute_maximum_level_at_position(&pos), 3);
 
-    // Position only covered up to level 2 (45E,45N is at edge of level-2 range)
+    // 该位置仅覆盖到 level 2（45E,45N 位于 level-2 范围边缘）
     let pos2 = Cartographic::from_degrees(22.5, 56.25, 0.0);
     assert_eq!(availability.compute_maximum_level_at_position(&pos2), 2);
 
-    // isTileAvailable should work for all added levels
+    // isTileAvailable 应对所有已添加的层级生效
     assert!(availability.is_tile_available(0, 0, 0));
     assert!(availability.is_tile_available(1, 1, 0));
     assert!(availability.is_tile_available(2, 2, 0));
@@ -268,16 +268,16 @@ fn compute_child_mask_for_tile_works() {
     let mut availability = create_availability(geographic(), 15);
     availability.add_available_tile_range(1, 0, 0, 3, 1);
 
-    // Level 0 tile (0,0): all four children at level 1 should be available
+    // Level 0 瓦片 (0,0)：level 1 的四个子瓦片都应可用
     // NW=(0,0), NE=(1,0), SW=(0,1), SE=(1,1)
     let mask = availability.compute_child_mask_for_tile(0, 0, 0);
     assert_eq!(mask, 0b1111);
 
-    // Level 0 tile (1,0): children are (2,0),(3,0),(2,1),(3,1) at level 1
+    // Level 0 瓦片 (1,0)：level 1 的子瓦片为 (2,0),(3,0),(2,1),(3,1)
     let mask = availability.compute_child_mask_for_tile(0, 1, 0);
     assert_eq!(mask, 0b1111);
 
-    // At maximum level, mask should be 0
+    // 在最大层级处，掩码应为 0
     let mask = availability.compute_child_mask_for_tile(15, 0, 0);
     assert_eq!(mask, 0);
 }

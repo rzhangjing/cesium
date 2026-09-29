@@ -1,6 +1,6 @@
-//! Particle system: emitters, particles, bursts, and system lifecycle.
+//! 粒子系统：发射器、粒子、爆发与系统生命周期。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Scene/ParticleSystem.js`
 //! - `Scene/Particle.js`
 //! - `Scene/ParticleBurst.js`
@@ -15,30 +15,30 @@ use std::f64::consts::PI;
 const TWO_PI: f64 = 2.0 * PI;
 
 // ============================================================================
-// Emitters
+// 发射器
 // ============================================================================
 
-/// Particle emitter types.
+/// 粒子发射器类型。
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParticleEmitter {
-    /// Emits within a box. Velocity emanates from center.
+    /// 在立方体内发射。速度从中心向外辐射。
     Box {
-        /// Width, height, depth dimensions in meters.
+        /// 宽、高、深尺寸（米）。
         dimensions: DVec3,
     },
-    /// Emits from a circle. Velocity along +Z.
+    /// 从圆发射。速度沿 +Z。
     Circle {
-        /// Radius in meters.
+        /// 半径（米）。
         radius: f64,
     },
-    /// Emits within a sphere. Velocity emanates from center.
+    /// 在球内发射。速度从中心向外辐射。
     Sphere {
-        /// Radius in meters.
+        /// 半径（米）。
         radius: f64,
     },
-    /// Emits from cone tip. Velocity towards base.
+    /// 从圆锥顶点发射。速度指向底面。
     Cone {
-        /// Half-angle of the cone in radians.
+        /// 圆锥半角（弧度）。
         angle: f64,
     },
 }
@@ -50,9 +50,9 @@ impl Default for ParticleEmitter {
 }
 
 impl ParticleEmitter {
-    /// Compute the initial position and velocity for a new particle.
+    /// 计算新粒子的初始位置与速度。
     ///
-    /// Uses a simple deterministic pseudo-random based on seed for reproducibility.
+    /// 使用基于种子的简单确定性伪随机以保证可重现性。
     pub fn emit(&self, seed: f64) -> (DVec3, DVec3) {
         match self {
             Self::Box { dimensions } => {
@@ -104,36 +104,36 @@ impl ParticleEmitter {
 }
 
 // ============================================================================
-// Particle
+// 粒子
 // ============================================================================
 
-/// A single particle in the system.
+/// 系统中的单个粒子。
 #[derive(Debug, Clone)]
 pub struct Particle {
-    /// Mass in kilograms.
+    /// 质量（千克）。
     pub mass: f64,
-    /// Position in world coordinates.
+    /// 世界坐标中的位置。
     pub position: DVec3,
-    /// Velocity in world coordinates (m/s).
+    /// 世界坐标中的速度（m/s）。
     pub velocity: DVec3,
-    /// Total life in seconds.
+    /// 总寿命（秒）。
     pub life: f64,
-    /// Color at birth [R, G, B, A].
+    /// 出生时的颜色 [R, G, B, A]。
     pub start_color: [f64; 4],
-    /// Color at death [R, G, B, A].
+    /// 死亡时的颜色 [R, G, B, A]。
     pub end_color: [f64; 4],
-    /// Scale at birth.
+    /// 出生时的缩放。
     pub start_scale: f64,
-    /// Scale at death.
+    /// 死亡时的缩放。
     pub end_scale: f64,
-    /// Image size [width, height] in pixels.
+    /// 图像尺寸 [宽, 高]，以像素计。
     pub image_size: [f64; 2],
-    /// Current age in seconds.
+    /// 当前年龄（秒）。
     pub age: f64,
 }
 
 impl Particle {
-    /// Create a new particle.
+    /// 创建一个新粒子。
     pub fn new(position: DVec3, velocity: DVec3, life: f64) -> Self {
         Self {
             mass: 1.0,
@@ -149,7 +149,7 @@ impl Particle {
         }
     }
 
-    /// Get normalized age [0, 1].
+    /// 获取归一化年龄 [0, 1]。
     pub fn normalized_age(&self) -> f64 {
         if self.life <= 0.0 {
             return 1.0;
@@ -157,21 +157,21 @@ impl Particle {
         (self.age / self.life).clamp(0.0, 1.0)
     }
 
-    /// Whether the particle is still alive.
+    /// 粒子是否仍存活。
     pub fn is_alive(&self) -> bool {
         self.age < self.life
     }
 
-    /// Update the particle by dt seconds. Returns true if still alive.
+    /// 按 dt 秒更新粒子。若仍存活则返回 true。
     pub fn update(&mut self, dt: f64) -> bool {
-        // Apply velocity
+        // 施加速度
         self.position += self.velocity * dt;
-        // Age
+        // 年龄
         self.age += dt;
         self.age < self.life
     }
 
-    /// Get interpolated color at current age.
+    /// 获取当前年龄处的插值颜色。
     pub fn current_color(&self) -> [f64; 4] {
         let t = self.normalized_age();
         [
@@ -182,7 +182,7 @@ impl Particle {
         ]
     }
 
-    /// Get interpolated scale at current age.
+    /// 获取当前年龄处的插值缩放。
     pub fn current_scale(&self) -> f64 {
         let t = self.normalized_age();
         lerp_signed(self.start_scale, self.end_scale, t)
@@ -190,24 +190,24 @@ impl Particle {
 }
 
 // ============================================================================
-// ParticleBurst
+// ParticleBurst（粒子爆发）
 // ============================================================================
 
-/// A burst of particles at a specific time.
+/// 在特定时刻发生的一批粒子爆发。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParticleBurst {
-    /// Time in seconds after system start.
+    /// 系统启动后的秒数。
     pub time: f64,
-    /// Minimum number of particles.
+    /// 最小粒子数。
     pub minimum: u32,
-    /// Maximum number of particles.
+    /// 最大粒子数。
     pub maximum: u32,
-    /// Whether this burst has fired.
+    /// 本次爆发是否已触发。
     pub complete: bool,
 }
 
 impl ParticleBurst {
-    /// Create a new burst.
+    /// 创建一个新的爆发。
     pub fn new(time: f64, minimum: u32, maximum: u32) -> Self {
         Self {
             time,
@@ -217,74 +217,74 @@ impl ParticleBurst {
         }
     }
 
-    /// Reset the burst for looping.
+    /// 重置爆发以便循环。
     pub fn reset(&mut self) {
         self.complete = false;
     }
 }
 
 // ============================================================================
-// ParticleSystem
+// ParticleSystem（粒子系统）
 // ============================================================================
 
-/// Particle system configuration and state.
+/// 粒子系统的配置与状态。
 #[derive(Debug, Clone)]
 pub struct ParticleSystem {
-    /// Whether the system is visible.
+    /// 系统是否可见。
     pub show: bool,
-    /// Whether to loop bursts.
+    /// 是否循环爆发。
     pub loop: bool,
-    /// The emitter type.
+    /// 发射器类型。
     pub emitter: ParticleEmitter,
-    /// Emission rate (particles per second).
+    /// 发射速率（每秒粒子数）。
     pub emission_rate: f64,
-    /// Bursts configuration.
+    /// 爆发配置。
     pub bursts: Vec<ParticleBurst>,
-    /// Start color [R, G, B, A].
+    /// 起始颜色 [R, G, B, A]。
     pub start_color: [f64; 4],
-    /// End color [R, G, B, A].
+    /// 结束颜色 [R, G, B, A]。
     pub end_color: [f64; 4],
-    /// Start scale.
+    /// 起始缩放。
     pub start_scale: f64,
-    /// End scale.
+    /// 结束缩放。
     pub end_scale: f64,
-    /// Minimum speed (m/s).
+    /// 最小速度（m/s）。
     pub minimum_speed: f64,
-    /// Maximum speed (m/s).
+    /// 最大速度（m/s）。
     pub maximum_speed: f64,
-    /// Minimum particle life (seconds).
+    /// 最小粒子寿命（秒）。
     pub minimum_particle_life: f64,
-    /// Maximum particle life (seconds).
+    /// 最大粒子寿命（秒）。
     pub maximum_particle_life: f64,
-    /// Minimum mass (kg).
+    /// 最小质量（kg）。
     pub minimum_mass: f64,
-    /// Maximum mass (kg).
+    /// 最大质量（kg）。
     pub maximum_mass: f64,
-    /// Minimum image size [w, h].
+    /// 最小图像尺寸 [w, h]。
     pub minimum_image_size: [f64; 2],
-    /// Maximum image size [w, h].
+    /// 最大图像尺寸 [w, h]。
     pub maximum_image_size: [f64; 2],
-    /// Whether size is in meters (vs pixels).
+    /// 尺寸是否以米为单位（而非像素）。
     pub size_in_meters: bool,
-    /// System lifetime in seconds.
+    /// 系统寿命（秒）。
     pub lifetime: f64,
-    /// Model matrix (4x4 column-major).
+    /// 模型矩阵（4x4 列主序）。
     pub model_matrix: [f64; 16],
-    /// Emitter model matrix.
+    /// 发射器模型矩阵。
     pub emitter_model_matrix: [f64; 16],
-    /// Image URI.
+    /// 图像 URI。
     pub image: Option<String>,
 
-    // Runtime state
-    /// Active particles.
+    // 运行时状态
+    /// 活跃粒子。
     particles: Vec<Particle>,
-    /// Current system time.
+    /// 当前系统时间。
     current_time: f64,
-    /// Carry-over fractional particles.
+    /// 累积的小数部分粒子。
     carry_over: f64,
-    /// Whether the system is complete.
+    /// 系统是否已完成。
     is_complete: bool,
-    /// Seed counter for deterministic emission.
+    /// 用于确定性发射的种子计数器。
     seed_counter: f64,
 }
 
@@ -323,32 +323,32 @@ impl Default for ParticleSystem {
 }
 
 impl ParticleSystem {
-    /// Create a new particle system.
+    /// 创建一个新的粒子系统。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Get the active particles.
+    /// 获取活跃粒子。
     pub fn particles(&self) -> &[Particle] {
         &self.particles
     }
 
-    /// Get the number of active particles.
+    /// 获取活跃粒子数量。
     pub fn particle_count(&self) -> usize {
         self.particles.len()
     }
 
-    /// Whether the system has completed its lifetime.
+    /// 系统是否已完成其寿命。
     pub fn is_complete(&self) -> bool {
         self.is_complete
     }
 
-    /// Get the current system time.
+    /// 获取当前系统时间。
     pub fn current_time(&self) -> f64 {
         self.current_time
     }
 
-    /// Update the particle system by dt seconds.
+    /// 按 dt 秒更新粒子系统。
     pub fn update(&mut self, dt: f64) {
         if !self.show || self.is_complete {
             return;
@@ -356,7 +356,7 @@ impl ParticleSystem {
 
         self.current_time += dt;
 
-        // Check lifetime
+        // 检查寿命
         if self.current_time >= self.lifetime {
             if self.loop {
                 self.current_time = 0.0;
@@ -369,7 +369,7 @@ impl ParticleSystem {
             }
         }
 
-        // Emit new particles based on rate
+        // 基于速率发射新粒子
         let to_emit = self.emission_rate * dt + self.carry_over;
         let count = to_emit.floor() as usize;
         self.carry_over = to_emit - count as f64;
@@ -378,7 +378,7 @@ impl ParticleSystem {
             self.emit_particle();
         }
 
-        // Process bursts
+        // 处理爆发
         for burst in &mut self.bursts {
             if !burst.complete && self.current_time >= burst.time {
                 let burst_count = if burst.maximum > burst.minimum {
@@ -395,18 +395,18 @@ impl ParticleSystem {
             }
         }
 
-        // Update existing particles
+        // 更新现有粒子
         self.particles.retain_mut(|p| p.update(dt));
     }
 
-    /// Emit a single particle.
+    /// 发射单个粒子。
     fn emit_particle(&mut self) {
         self.seed_counter += 1.0;
         let seed = self.seed_counter;
 
         let (mut pos, mut vel) = self.emitter.emit(seed);
 
-        // Apply speed
+        // 施加速度
         let speed = lerp_signed(
             self.minimum_speed,
             self.maximum_speed,
@@ -414,7 +414,7 @@ impl ParticleSystem {
         );
         vel *= speed;
 
-        // Apply life
+        // 施加拉命
         let life = lerp_signed(
             self.minimum_particle_life,
             self.maximum_particle_life,
@@ -432,7 +432,7 @@ impl ParticleSystem {
             lerp_signed(self.minimum_image_size[1], self.maximum_image_size[1], frac(seed * 5.17)),
         ];
 
-        // Apply emitter model matrix translation to position
+        // 将发射器模型矩阵的平移施加到位置
         let em = &self.emitter_model_matrix;
         pos = DVec3::new(
             pos.x + em[12],
@@ -444,12 +444,12 @@ impl ParticleSystem {
         self.particles.push(particle);
     }
 
-    /// Remove all particles.
+    /// 移除所有粒子。
     pub fn clear(&mut self) {
         self.particles.clear();
     }
 
-    /// Reset the system to initial state.
+    /// 将系统重置为初始状态。
     pub fn reset(&mut self) {
         self.particles.clear();
         self.current_time = 0.0;
@@ -463,7 +463,7 @@ impl ParticleSystem {
 }
 
 // ============================================================================
-// Helpers
+// 辅助函数
 // ============================================================================
 
 fn lerp_signed(a: f64, b: f64, t: f64) -> f64 {
@@ -484,7 +484,7 @@ fn identity_matrix() -> [f64; 16] {
 }
 
 // ============================================================================
-// Tests
+// 测试
 // ============================================================================
 
 #[cfg(test)]
@@ -535,11 +535,11 @@ mod tests {
             dimensions: DVec3::new(2.0, 2.0, 2.0),
         };
         let (pos, vel) = emitter.emit(0.5);
-        // Position should be within [-1, 1]^3
+        // 位置应处于 [-1, 1]^3 内
         assert!(pos.x.abs() <= 1.0);
         assert!(pos.y.abs() <= 1.0);
         assert!(pos.z.abs() <= 1.0);
-        // Velocity should be normalized
+        // 速度应已归一化
         assert!((vel.length() - 1.0).abs() < 1e-6);
     }
 
@@ -547,11 +547,11 @@ mod tests {
     fn test_circle_emitter() {
         let emitter = ParticleEmitter::Circle { radius: 2.0 };
         let (pos, vel) = emitter.emit(0.3);
-        // Position in XY plane
+        // 位置在 XY 平面
         assert!((pos.z).abs() < 1e-10);
-        // Within radius
+        // 在半径内
         assert!((pos.x * pos.x + pos.y * pos.y).sqrt() <= 2.0 + 1e-10);
-        // Velocity along Z
+        // 速度沿 Z
         assert!((vel - DVec3::Z).length() < 1e-10);
     }
 
@@ -569,9 +569,9 @@ mod tests {
             angle: std::f64::consts::FRAC_PI_4,
         };
         let (pos, vel) = emitter.emit(0.9);
-        // Position at origin
+        // 位置在原点
         assert!(pos.length() < 1e-10);
-        // Velocity has positive Z
+        // 速度的 Z 为正
         assert!(vel.z > 0.0);
         assert!((vel.length() - 1.0).abs() < 1e-6);
     }
@@ -592,7 +592,7 @@ mod tests {
         sys.minimum_particle_life = 1.0;
         sys.maximum_particle_life = 1.0;
 
-        sys.update(0.1); // Should emit ~10 particles
+        sys.update(0.1); // 应发射约 10 个粒子
         assert!(sys.particle_count() >= 9);
         assert!(sys.particle_count() <= 11);
     }
@@ -618,7 +618,7 @@ mod tests {
         sys.loop = true;
         sys.emission_rate = 10.0;
 
-        sys.update(1.5); // Past lifetime, should loop
+        sys.update(1.5); // 超过寿命，应循环
         assert!(!sys.is_complete());
         assert!(sys.current_time() < 1.0);
     }
@@ -626,7 +626,7 @@ mod tests {
     #[test]
     fn test_particle_system_burst() {
         let mut sys = ParticleSystem::new();
-        sys.emission_rate = 0.0; // No continuous emission
+        sys.emission_rate = 0.0; // 无持续发射
         sys.bursts.push(ParticleBurst::new(0.5, 20, 20));
         sys.minimum_particle_life = 10.0;
         sys.maximum_particle_life = 10.0;
@@ -634,7 +634,7 @@ mod tests {
         sys.update(0.3);
         assert_eq!(sys.particle_count(), 0);
 
-        sys.update(0.3); // Now at 0.6, burst at 0.5 should fire
+        sys.update(0.3); // 现在为 0.6，位于 0.5 的爆发应触发
         assert_eq!(sys.particle_count(), 20);
     }
 
@@ -676,16 +676,16 @@ mod tests {
         sys.minimum_particle_life = 0.5;
         sys.maximum_particle_life = 0.5;
 
-        sys.update(0.1); // Emit ~1
+        sys.update(0.1); // 发射约 1 个
         let count_after_emit = sys.particle_count();
         assert!(count_after_emit > 0);
 
-        // Wait for particles to die
+        // 等待粒子死亡
         for _ in 0..10 {
             sys.update(0.1);
         }
-        // Old particles should be dead, new ones emitted
-        // With life=0.5 and 10 updates of 0.1, particles from first frame are dead
+        // 旧粒子应已死亡，新粒子已发射
+        // 在 life=0.5 且 10 次 0.1 更新下，首帧的粒子已死亡
         assert!(sys.particle_count() < count_after_emit + 10);
     }
 }

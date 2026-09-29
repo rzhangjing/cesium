@@ -1,12 +1,12 @@
-//! Screen-space camera controller system.
+//! 屏幕空间相机控制器系统。
 //!
-//! Converts Bevy input events into pixel deltas and delegates **all** camera
-//! math to the domain [`CameraController`]. The pixel→radian conversion is
-//! computed here at the adapter boundary using the window's focal length,
-//! keeping the domain resolution-independent and free of render-unit concerns.
+//! 将 Bevy 输入事件转为像素增量，并把**所有**相机
+//! 数学委派给领域 [`CameraController`]。pixel→radian 转换在适配层
+//! 边界用窗口焦距计算，
+//! 使领域保持分辨率无关且不受 render-unit 事务干扰。
 //!
-//! Zoom is based on **surface height** (`position.length() - ellipsoid.maximum_radius()`),
-//! matching the domain algorithm and orbit_camera's proven feel.
+//! 缩放基于**地表高度**（`position.length() - ellipsoid.maximum_radius()`），
+//! 匹配领域算法与 orbit_camera 已验证的手感。
 
 use bevy::input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
@@ -16,11 +16,11 @@ use cesium_interaction::{CameraController, CameraControllerConfig};
 
 use crate::camera::components::{CameraInputState, CesiumCamera};
 
-/// Screen-space camera controller: orbit, zoom, pan via mouse and touch.
+/// 屏幕空间相机控制器：通过鼠标与触控进行环绕、缩放、平移。
 ///
-/// All computation is delegated to the domain [`CameraController`]; this system
-/// only converts Bevy input events into pixel deltas and computes the
-/// pixel→radian scale factor at the adapter boundary.
+/// 所有计算都委派给领域 [`CameraController`]；本系统
+/// 只将 Bevy 输入事件转为像素增量，并在适配层边界
+/// 计算 pixel→radian 缩放因子。
 pub fn camera_controller_system(
     mut cameras: Query<&mut CesiumCamera>,
     mut input_state: ResMut<CameraInputState>,
@@ -29,18 +29,18 @@ pub fn camera_controller_system(
     mut scroll_events: EventReader<MouseWheel>,
     windows: Query<&Window>,
 ) {
-    // --- Track mouse button state ---
+    // --- 跟踪鼠标按键状态 ---
     input_state.left_mouse_down = mouse_buttons.pressed(MouseButton::Left);
     input_state.right_mouse_down = mouse_buttons.pressed(MouseButton::Right);
     input_state.middle_mouse_down = mouse_buttons.pressed(MouseButton::Middle);
 
-    // --- Accumulate mouse delta (pixels) ---
+    // --- 累加鼠标增量（像素）---
     let mut total_delta = Vec2::ZERO;
     for ev in mouse_motion.read() {
         total_delta += ev.delta;
     }
 
-    // --- Accumulate scroll (normalized to notches) ---
+    // --- 累加滚动（归一化为卡口数）---
     let mut scroll_notches = 0.0_f64;
     for ev in scroll_events.read() {
         match ev.unit {
@@ -54,25 +54,25 @@ pub fn camera_controller_system(
         return;
     }
 
-    // Window height for the pixel→radian focal-length conversion.
+    // 用于 pixel→radian 焦距转换的窗口高度。
     let win_h = windows
         .get_single()
         .map(|w| w.height() as f64)
         .unwrap_or(720.0);
 
-    // Sensitivity multipliers (default to 1.0 when the resource is zero-initialized).
+    // 灵敏度乘数（资源零初始化时默认为 1.0）。
     let orbit_sens = non_zero_or(input_state.orbit_sensitivity, 1.0);
     let zoom_sens = non_zero_or(input_state.zoom_sensitivity, 1.0);
     let pan_sens = non_zero_or(input_state.pan_sensitivity, 1.0);
 
     for mut cesium_cam in cameras.iter_mut() {
-        // Extract config values before borrowing `camera` mutably.
+        // 在对 `camera` 可变借用之前提取配置值。
         let enable_collision = cesium_cam.enable_collision_detection;
         let min_zoom_dist = cesium_cam.minimum_zoom_distance;
         let max_zoom_dist = cesium_cam.maximum_zoom_distance;
         let cam = &mut cesium_cam.camera;
 
-        // Build a domain controller from the component's configuration.
+        // 从组件的配置构建一个领域控制器。
         let config = CameraControllerConfig {
             minimum_zoom_distance: min_zoom_dist,
             maximum_zoom_distance: max_zoom_dist,
@@ -89,54 +89,54 @@ pub fn camera_controller_system(
             ellipsoid: Ellipsoid::WGS84,
         };
 
-        // Surface height (meters above the ellipsoid) — the correct reference
-        // for pixel→radian conversion and zoom/pan scaling.
+        // 地表高度（椭球上方米数）——是 pixel→radian 转换
+        // 与缩放/平移缩放的参考基准。
         let surface_height = (cam.position.length() - Ellipsoid::WGS84.maximum_radius())
             .abs()
             .max(1.0);
 
-        // Focal length in pixels: f = (H/2) / tan(fov/2).
+        // 以像素为单位的焦距：f = (H/2) / tan(fov/2)。
         let fov = match &cam.frustum {
             Frustum::Perspective(f) => f.fov,
             Frustum::Orthographic(_) => std::f64::consts::FRAC_PI_3,
         };
         let focal = (win_h * 0.5) / (fov * 0.5).tan();
 
-        // Pixel → radian at the surface (grab-the-globe scale factor).
+        // 地表处的 pixel → radian（抓地球缩放因子）。
         let pixel_to_radian = surface_height / focal;
 
-        // --- Orbit / Spin (left mouse drag) ---
+        // --- 环绕 / 自转（左键拖拽）---
         if input_state.left_mouse_down && total_delta != Vec2::ZERO {
             let heading = total_delta.x as f64 * pixel_to_radian;
             let pitch = -total_delta.y as f64 * pixel_to_radian;
             ctrl.spin(cam, heading, pitch);
         }
 
-        // --- Zoom (right mouse drag): vertical pixels → fraction of window ---
+        // --- 缩放（右键拖拽）：垂直像素 → 窗口比例 ---
         if input_state.right_mouse_down && total_delta.y != 0.0 {
             let zoom_delta = total_delta.y as f64 / win_h;
             ctrl.zoom(cam, zoom_delta);
         }
 
-        // --- Zoom (scroll wheel): one notch = one zoom unit ---
+        // --- 缩放（滚轮）：一格 = 一个缩放单位 ---
         // At surface height 1e6 m with zoom_speed=1: Δheight = -1e5 m per notch.
         if scroll_notches != 0.0 {
             ctrl.zoom(cam, scroll_notches);
         }
 
-        // --- Pan (middle mouse drag) ---
+        // --- 平移（中键拖拽）---
         if input_state.middle_mouse_down && total_delta != Vec2::ZERO {
             let pan_x = total_delta.x as f64 / focal;
             let pan_y = -total_delta.y as f64 / focal;
             ctrl.pan(cam, pan_x, pan_y);
         }
 
-        // --- Collision detection (delegated to domain) ---
+        // --- 碰撞检测（委派给领域）---
         ctrl.enforce_collision(cam);
     }
 }
 
-/// Returns `value` as f64, or `fallback` when the value is zero.
+/// 返回 `value` 的 f64，当值为零时返回 `fallback`。
 #[inline]
 fn non_zero_or(value: f32, fallback: f64) -> f64 {
     if value != 0.0 {
@@ -160,8 +160,8 @@ mod tests {
         assert!((non_zero_or(0.0, 1.0) - 1.0).abs() < 1e-12);
     }
 
-    /// Verification: at surface height 1e6 m, one scroll notch (delta=1.0)
-    /// with zoom_speed=1.0 produces zoom_amount = height * 0.1 = 1e5 m.
+    /// 验证：在地表高度 1e6 m 处，一个滚轮卡口（delta=1.0）
+    /// 以 zoom_speed=1.0 产生 zoom_amount = height * 0.1 = 1e5 m。
     #[test]
     fn zoom_at_1e6_height_produces_1e5_per_notch() {
         let config = CameraControllerConfig {
@@ -178,11 +178,11 @@ mod tests {
             glam::DVec3::new(0.0, 0.0, 1.0),
         );
         let initial_height = cam.position.length() - Ellipsoid::WGS84.maximum_radius();
-        // Zoom in (positive delta = move toward target).
+        // 向里缩放（正 delta = 向目标靠近）。
         ctrl.zoom(&mut cam, 1.0);
         let new_height = cam.position.length() - Ellipsoid::WGS84.maximum_radius();
         let delta_h = new_height - initial_height;
-        // Should be approximately -1e5 (moved 1e5 closer to the surface).
+        // 应约为 -1e5（向地表靠近了 1e5）。
         assert!(
             (delta_h - (-100_000.0)).abs() < 1.0,
             "expected Δheight ≈ -1e5, got {delta_h}"

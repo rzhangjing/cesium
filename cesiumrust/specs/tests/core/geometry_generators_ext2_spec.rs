@@ -1,6 +1,6 @@
-//! Ported from CesiumJS geometry specs (Polyline/Circle/CoplanarPolygon/PolylineVolume).
+//! 移植自 CesiumJS 几何规格（Polyline/Circle/CoplanarPolygon/PolylineVolume）。
 //!
-//! Expanded A-class tests for geometry generators with existing Rust implementations.
+//! 针对已有 Rust 实现的几何生成器的扩展 A 类测试。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -38,7 +38,7 @@ fn polyline_computes_positions_ribbon() {
     };
     let geo = polyline_geometry(&opts, VertexFormat::POSITION_ONLY);
 
-    // Ribbon: 2 vertices per arc point (left + right)
+    // 带状：每个弧点 2 个顶点（左 + 右）
     assert!(
         geo.positions.len() >= 4,
         "polyline should produce >= 4 positions, got {}",
@@ -77,7 +77,7 @@ fn polyline_all_vertex_attributes() {
 
 #[test]
 fn polyline_returns_empty_for_invalid_input() {
-    // Less than 2 positions
+    // 少于 2 个位置
     let opts1 = PolylineOptions {
         positions: vec![DVec3::new(1.0, 0.0, 0.0)],
         width: 10.0,
@@ -131,8 +131,8 @@ fn polyline_texture_coordinates_pattern() {
     let n = geo.positions.len();
     assert_eq!(st.len(), n);
 
-    // ST u should go from 0 to 1 along the polyline
-    // First pair should have u=0, last pair should have u=1
+    // ST 的 u 应沿折线从 0 到 1
+    // 第一对应为 u=0，最后一点对应为 u=1
     assert!((st[0][0] - 0.0).abs() < 1e-6, "first u should be 0");
     assert!(
         (st[n - 2][0] - 1.0).abs() < 1e-6,
@@ -162,13 +162,13 @@ fn polyline_normals_point_outward() {
 }
 
 // ===========================================================================
-// CircleGeometry (Ellipse with equal axes)
+// CircleGeometry（长短半轴相等的椭圆）
 // ===========================================================================
 
 #[test]
 fn circle_computes_positions_exact() {
-    // CesiumJS CircleGeometry with radius=1, granularity=0.1:
-    // 16 vertices (rows 1+4+6+4+1), 22 triangles, boundingSphere.radius=1
+    // CesiumJS CircleGeometry，radius=1、granularity=0.1：
+    // 16 个顶点（各行 1+4+6+4+1），22 个三角形，boundingSphere.radius=1
     let opts = EllipseOptions {
         center: from_degrees(0.0, 0.0, 0.0),
         semi_major_axis: 1.0,
@@ -241,7 +241,7 @@ fn circle_larger_radius_larger_bounding_sphere() {
 
 #[test]
 fn coplanar_polygon_computes_positions() {
-    // A simple quad on the ellipsoid surface
+    // 椭球表面上的一个简单四边形
     let opts = CoplanarPolygonOptions {
         positions: vec![
             from_degrees(0.0, 0.0, 0.0),
@@ -260,7 +260,7 @@ fn coplanar_polygon_computes_positions() {
         geo.positions.len()
     );
     assert_eq!(geo.indices.len() % 3, 0, "indices must form triangles");
-    // A quad triangulates to 2 triangles = 6 indices
+    // 四边形三角剖分为 2 个三角形 = 6 个索引
     assert!(geo.indices.len() >= 6);
     assert!(geo.bounding_sphere.radius > 0.0);
 }
@@ -299,7 +299,7 @@ fn coplanar_polygon_returns_empty_for_less_than_3_positions() {
 
 #[test]
 fn coplanar_polygon_triangle_single_face() {
-    // A triangle should produce exactly 1 triangle (3 indices)
+    // 三角形应恰好产生 1 个三角形（3 个索引）
     let opts = CoplanarPolygonOptions {
         positions: vec![
             from_degrees(0.0, 0.0, 0.0),
@@ -321,7 +321,7 @@ fn coplanar_polygon_triangle_single_face() {
 
 #[test]
 fn polyline_volume_computes_positions() {
-    // Square cross-section
+    // 方形横截面
     let shape = vec![
         [-50.0, -50.0],
         [50.0, -50.0],
@@ -339,7 +339,7 @@ fn polyline_volume_computes_positions() {
     };
     let geo = polyline_volume_geometry(&opts, VertexFormat::POSITION_ONLY);
 
-    // n arc points × 4 shape vertices
+    // n 个弧点 × 4 个形状顶点
     assert!(
         geo.positions.len() >= 8,
         "polyline volume should have >= 8 positions, got {}",
@@ -381,7 +381,7 @@ fn polyline_volume_all_attributes() {
 fn polyline_volume_returns_empty_for_invalid_input() {
     let shape = vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
 
-    // Less than 2 positions
+    // 少于 2 个位置
     let opts1 = PolylineVolumeOptions {
         positions: vec![from_degrees(0.0, 0.0, 0.0)],
         shape: shape.clone(),
@@ -391,7 +391,7 @@ fn polyline_volume_returns_empty_for_invalid_input() {
     let geo1 = polyline_volume_geometry(&opts1, VertexFormat::POSITION_ONLY);
     assert!(geo1.positions.is_empty(), "<2 positions should return empty");
 
-    // Less than 3 shape points
+    // 少于 3 个形状点
     let opts2 = PolylineVolumeOptions {
         positions: vec![
             from_degrees(0.0, 0.0, 0.0),
@@ -414,7 +414,7 @@ fn polyline_volume_vertex_count_scales_with_arc() {
         [-50.0, 50.0],
     ];
 
-    // Short arc (1 degree)
+    // 短弧（1 度）
     let opts_short = PolylineVolumeOptions {
         positions: vec![
             from_degrees(0.0, 0.0, 0.0),
@@ -426,7 +426,7 @@ fn polyline_volume_vertex_count_scales_with_arc() {
     };
     let geo_short = polyline_volume_geometry(&opts_short, VertexFormat::POSITION_ONLY);
 
-    // Longer arc (5 degrees)
+    // 较长弧（5 度）
     let opts_long = PolylineVolumeOptions {
         positions: vec![
             from_degrees(0.0, 0.0, 0.0),
@@ -447,7 +447,7 @@ fn polyline_volume_vertex_count_scales_with_arc() {
 }
 
 // ===========================================================================
-// PolylineVolumeGeometry - corner type and path shape tests
+// PolylineVolumeGeometry - 拐角类型与路径形状测试
 // ===========================================================================
 
 #[test]
@@ -527,7 +527,7 @@ fn polyline_volume_straight_path() {
 
 #[test]
 fn polyline_volume_triangle_shape() {
-    // Triangular cross-section
+    // 三角形横截面
     let shape = vec![[0.0, 0.0], [100.0, 0.0], [50.0, 100.0]];
     let opts = PolylineVolumeOptions {
         positions: vec![
@@ -545,7 +545,7 @@ fn polyline_volume_triangle_shape() {
 
 #[test]
 fn polyline_volume_closed_shape() {
-    // Closed shape (first == last in 2D)
+    // 闭合形状（二维中 first == last）
     let shape = vec![
         [0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0], [0.0, 0.0],
     ];
@@ -564,7 +564,7 @@ fn polyline_volume_closed_shape() {
 }
 
 // ===========================================================================
-// CoplanarPolygonGeometry - additional surface normal verification
+// CoplanarPolygonGeometry - 额外的表面法线验证
 // ===========================================================================
 
 #[test]
@@ -582,7 +582,7 @@ fn coplanar_polygon_normals_point_outward() {
     let geo = coplanar_polygon_geometry(&opts, VertexFormat::POSITION_AND_NORMAL);
 
     // "flips normal to roughly match surface normal"
-    // Normals should point roughly outward from the ellipsoid
+    // 法线应大致背离椭球朝外
     let normals = geo.normals.as_ref().expect("normals should be present");
     for (p, n) in geo.positions.iter().zip(normals.iter()) {
         let pos = DVec3::new(p[0], p[1], p[2]);
@@ -594,7 +594,7 @@ fn coplanar_polygon_normals_point_outward() {
 
 #[test]
 fn coplanar_polygon_very_small() {
-    // Very small polygon should still produce valid geometry
+    // 极小的多边形仍应产生有效几何
     let opts = CoplanarPolygonOptions {
         positions: vec![
             from_degrees(0.0, 0.0, 0.0),
@@ -632,7 +632,7 @@ fn coplanar_polygon_bounding_sphere_valid() {
 }
 
 // ===========================================================================
-// EllipseGeometry (circle) - extended texture coordinate tests
+// EllipseGeometry（圆）- 扩展纹理坐标测试
 // ===========================================================================
 
 #[test]
@@ -650,7 +650,7 @@ fn circle_texture_coordinates_without_rotation() {
     let st = geo.tex_coords.as_ref().unwrap();
     assert_eq!(geo.positions.len(), 16);
     assert_eq!(st.len(), 16);
-    // ST coordinates should be finite
+    // ST 坐标应为有限值
     for uv in st.iter() {
         assert!(uv[0].is_finite() && uv[1].is_finite());
     }

@@ -1,35 +1,34 @@
-//! Interpolation algorithms for sampled properties.
+//! 采样属性的插值算法。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Core/LinearApproximation.js`
 //! - `Core/LagrangePolynomialApproximation.js`
 //! - `Core/HermitePolynomialApproximation.js`
 //! - `DataSources/ExtrapolationType.js`
 //!
-//! All algorithms operate on packed `f64` tables, exactly like CesiumJS:
-//! - `x_table`: independent variable values (times, in seconds), increasing order.
-//! - `y_table`: dependent values; for `y_stride` components per sample the layout
-//!   is `{p1, q1, w1, p2, q2, w2, ...}`.
+//! 所有算法都在打包的 `f64` 表上操作，与 CesiumJS 完全一致：
+//! - `x_table`：自变量值（时间，以秒计），递增顺序。
+//! - `y_table`：因变量值；当每个样本有 `y_stride` 个分量时，其布局
+//!   为 `{p1, q1, w1, p2, q2, w2, ...}`。
 
 use cesium_geospatial::math_utils::factorial;
 
-/// Determines how an interpolated value is extrapolated when querying outside
-/// the bounds of available data.
+/// 决定当查询超出可用数据边界时，插值的结果如何被外推。
 ///
-/// Maps to CesiumJS `DataSources/ExtrapolationType.js`.
+/// 映射到 CesiumJS `DataSources/ExtrapolationType.js`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ExtrapolationType {
-    /// No extrapolation occurs; values outside the sample range are undefined.
+    /// 不进行外推；在样本范围之外的值为 undefined。
     #[default]
     None,
-    /// The first or last value is used when outside the range of sample data.
+    /// 在样本数据范围之外时使用第一个或最后一个值。
     Hold,
-    /// The value is extrapolated.
+    /// 对外推该值。
     Extrapolate,
 }
 
 impl ExtrapolationType {
-    /// The numeric value used by CesiumJS (NONE=0, HOLD=1, EXTRAPOLATE=2).
+    /// CesiumJS 所使用的数值（NONE=0、HOLD=1、EXTRAPOLATE=2）。
     pub fn to_u32(self) -> u32 {
         match self {
             ExtrapolationType::None => 0,
@@ -38,7 +37,7 @@ impl ExtrapolationType {
         }
     }
 
-    /// Creates an extrapolation type from its CesiumJS numeric value.
+    /// 由 CesiumJS 的数值创建外推类型。
     pub fn from_u32(value: u32) -> Self {
         match value {
             1 => ExtrapolationType::Hold,
@@ -48,31 +47,30 @@ impl ExtrapolationType {
     }
 }
 
-/// An algorithm for interpolating packed dependent-variable tables.
+/// 用于插值打包因变量表的算法。
 ///
-/// Maps to the CesiumJS `InterpolationAlgorithm` interface implemented by
-/// `LinearApproximation`, `LagrangePolynomialApproximation` and
-/// `HermitePolynomialApproximation`.
+/// 映射到 CesiumJS `InterpolationAlgorithm` 接口，由
+/// `LinearApproximation`、`LagrangePolynomialApproximation` 与
+/// `HermitePolynomialApproximation` 实现。
 pub trait InterpolationAlgorithm: Send + Sync {
-    /// The algorithm type name (`"Linear"`, `"Lagrange"`, `"Hermite"`).
+    /// 算法类型名（`"Linear"`、`"Lagrange"`、`"Hermite"`）。
     fn name(&self) -> &'static str;
 
-    /// Given the desired degree, returns the number of data points required
-    /// for interpolation.
+    /// 给定所需次数，返回插值所需的数据点数量。
     ///
-    /// `input_order` is the order of the inputs (0 means just the data,
-    /// 1 means the data and its derivative, etc).
+    /// `input_order` 是输入的阶数（0 表示仅有数据，
+    /// 1 表示数据及其导数，依此类推）。
     fn get_required_data_points(&self, degree: usize, input_order: usize) -> usize;
 
-    /// Whether this algorithm implements `interpolate` (i.e. supports
-    /// derivative inputs/outputs). Only Hermite does in CesiumJS.
+    /// 此算法是否实现 `interpolate`（即支持
+    /// 导数输入/输出）。在 CesiumJS 中仅 Hermite 支持。
     fn supports_derivatives(&self) -> bool {
         false
     }
 
-    /// Interpolates values using the algorithm (order zero, no derivatives).
+    /// 使用该算法插值（零阶，无导数）。
     ///
-    /// Returns a `Vec` of `y_stride` interpolated component values.
+    /// 返回一个包含 `y_stride` 个插值分量的 `Vec`。
     fn interpolate_order_zero(
         &self,
         x: f64,
@@ -81,11 +79,11 @@ pub trait InterpolationAlgorithm: Send + Sync {
         y_stride: usize,
     ) -> Vec<f64>;
 
-    /// Interpolates values with derivative inputs and outputs.
+    /// 使用导数输入与输出进行插值。
     ///
-    /// The default implementation (used by algorithms that do not define
-    /// `interpolate` in CesiumJS) falls back to order-zero interpolation and
-    /// zero-fills the derivative outputs.
+    /// 默认实现（用于那些在 CesiumJS 中未定义
+    /// `interpolate` 的算法）回退到零阶插值，并将导数输出
+    /// 填充为零。
     fn interpolate(
         &self,
         x: f64,
@@ -101,9 +99,9 @@ pub trait InterpolationAlgorithm: Send + Sync {
     }
 }
 
-/// Linear interpolation.
+/// 线性插值。
 ///
-/// Maps to CesiumJS `Core/LinearApproximation.js`.
+/// 映射到 CesiumJS `Core/LinearApproximation.js`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct LinearApproximation;
 
@@ -112,8 +110,8 @@ impl InterpolationAlgorithm for LinearApproximation {
         "Linear"
     }
 
-    /// Since linear interpolation can only generate a first degree polynomial,
-    /// this always returns 2.
+    /// 由于线性插值只能生成一次多项式，
+    /// 因此总是返回 2。
     fn get_required_data_points(&self, _degree: usize, _input_order: usize) -> usize {
         2
     }
@@ -149,9 +147,9 @@ impl InterpolationAlgorithm for LinearApproximation {
     }
 }
 
-/// Lagrange polynomial interpolation.
+/// Lagrange 多项式插值。
 ///
-/// Maps to CesiumJS `Core/LagrangePolynomialApproximation.js`.
+/// 映射到 CesiumJS `Core/LagrangePolynomialApproximation.js`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct LagrangePolynomialApproximation;
 
@@ -190,10 +188,10 @@ impl InterpolationAlgorithm for LagrangePolynomialApproximation {
     }
 }
 
-/// Hermite polynomial interpolation (divided differences with derivative
-/// support).
+/// Hermite 多项式插值（支持导数的
+/// 差商）。
 ///
-/// Maps to CesiumJS `Core/HermitePolynomialApproximation.js`.
+/// 映射到 CesiumJS `Core/HermitePolynomialApproximation.js`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct HermitePolynomialApproximation;
 
@@ -223,8 +221,7 @@ impl InterpolationAlgorithm for HermitePolynomialApproximation {
             return result;
         }
 
-        // coefficients[s][i] holds the divided-difference table rows for
-        // component s.
+        // coefficients[s][i] 为分量 s 保存差商表的行。
         let mut coefficients: Vec<Vec<Vec<f64>>> =
             (0..y_stride).map(|_| (0..length).map(|_| Vec::new()).collect()).collect();
 
@@ -261,10 +258,10 @@ impl InterpolationAlgorithm for HermitePolynomialApproximation {
             }
         }
 
-        // In interpolateOrderZero the outer loop only ever runs with d = 0
-        // (`for (d = 0, len = 0; d <= len; d++)` in CesiumJS).
-        // The explicit index loop mirrors the CesiumJS divided-difference
-        // accumulation and cannot be expressed as a plain iterator zip.
+        // 在 interpolateOrderZero 中，外层循环只会以 d = 0 运行
+        // （在 CesiumJS 中为 `for (d = 0, len = 0; d <= len; d++)`）。
+        // 显式的索引循环模仿 CesiumJS 的差商累加，
+        // 无法用普通的迭代器 zip 表达。
         #[allow(clippy::needless_range_loop)]
         for i in 0..=highest_non_zero_coef {
             let temp_term =
@@ -290,8 +287,8 @@ impl InterpolationAlgorithm for HermitePolynomialApproximation {
         let mut result = vec![0.0; result_length];
 
         let length = x_table.len();
-        // The zIndices array holds copies of the addresses of the xTable values
-        // in the range we're looking at.
+        // zIndices 数组保存我们所查看范围内 xTable 值
+        // 地址的副本。
         let z_len = length * (input_order + 1);
         let mut z_indices = vec![0usize; z_len];
         for i in 0..length {
@@ -338,10 +335,10 @@ impl InterpolationAlgorithm for HermitePolynomialApproximation {
     }
 }
 
-/// Offset of divided-difference row `i` inside the packed coefficient buffer.
+/// 差商行 `i` 在打包系数缓冲区内的偏移。
 ///
-/// Row `i` holds `z_len - i` entries; CesiumJS computes this as
-/// `Math.floor((i * (1 - i)) / 2) + zIndicesLength * i`.
+/// 行 `i` 保存 `z_len - i` 个条目；CesiumJS 将其计算为
+/// `Math.floor((i * (1 - i)) / 2) + zIndicesLength * i`。
 fn row_offset(i: usize, z_len: usize) -> usize {
     let signed = (i as isize) * (1 - i as isize) / 2 + (z_len * i) as isize;
     signed as usize
@@ -402,13 +399,12 @@ fn fill_coefficient_list(
     highest_non_zero
 }
 
-/// Computes one term of the Newton-form coefficient polynomial, or one of its
-/// derivatives.
+/// 计算 Newton 形式系数多项式的一项，或它的某个导数。
 ///
-/// With `deriv_order == 0` this is the product of `(x - xTable[zIndices[i]])`
-/// over all non-reserved `i < term_order`. With `deriv_order > 0` it is the
-/// `deriv_order`-th derivative of that product, computed recursively as the sum
-/// over all ways of reserving one factor at a time.
+/// 当 `deriv_order == 0` 时，这是对所有非保留的 `i < term_order`
+/// 求 `(x - xTable[zIndices[i]])` 的乘积。当 `deriv_order > 0` 时，
+/// 它是该乘积的 `deriv_order` 阶导数，通过递归地
+/// 对所有逐一保留一个因子的方式求和计算得出。
 fn calculate_coefficient_term(
     x: f64,
     z_indices: &[usize],
@@ -445,11 +441,11 @@ fn calculate_coefficient_term(
     result
 }
 
-/// The built-in interpolation algorithms, selectable by value.
+/// 内置的插值算法，可按值选择。
 ///
-/// This enum dispatches to [`LinearApproximation`],
-/// [`LagrangePolynomialApproximation`] and [`HermitePolynomialApproximation`]
-/// and is used by `SampledProperty` to store the selected algorithm.
+/// 此枚举分发到 [`LinearApproximation`]、
+/// [`LagrangePolynomialApproximation`] 与 [`HermitePolynomialApproximation`]，
+/// 并由 `SampledProperty` 用于存储所选的算法。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum InterpolationAlgorithmKind {
     #[default]
@@ -459,7 +455,7 @@ pub enum InterpolationAlgorithmKind {
 }
 
 impl InterpolationAlgorithmKind {
-    /// Returns the algorithm object for this kind.
+    /// 返回此种类对应的算法对象。
     pub fn algorithm(&self) -> &'static dyn InterpolationAlgorithm {
         match self {
             InterpolationAlgorithmKind::Linear => &LinearApproximation,
@@ -468,8 +464,8 @@ impl InterpolationAlgorithmKind {
         }
     }
 
-    /// Parses a CesiumJS algorithm type name (`"Linear"`, `"Lagrange"`,
-    /// `"Hermite"`).
+    /// 解析 CesiumJS 的算法类型名（`"Linear"`、`"Lagrange"`、
+    /// `"Hermite"`）。
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "Linear" => Some(InterpolationAlgorithmKind::Linear),
@@ -544,7 +540,7 @@ mod tests {
 
     #[test]
     fn test_linear_interpolate_midpoint() {
-        // y = 2x + 1 sampled at x = 0 and x = 10 (two components per sample).
+        // y = 2x + 1，在 x = 0 与 x = 10 处采样（每个样本两个分量）。
         let x_table = [0.0, 10.0];
         let y_table = [1.0, -1.0, 21.0, 19.0];
         let result = LinearApproximation.interpolate_order_zero(5.0, &x_table, &y_table, 2);
@@ -564,8 +560,8 @@ mod tests {
 
     #[test]
     fn test_linear_negative_x_extrapolates() {
-        // xTable values are relative (seconds from last sample) and may be
-        // negative; the formula must still hold.
+        // xTable 值是相对的（距最后一个样本的秒数）且可能
+        // 为负；公式仍须成立。
         let x_table = [-10.0, 0.0];
         let y_table = [0.0, 100.0];
         let result = LinearApproximation.interpolate_order_zero(-5.0, &x_table, &y_table, 1);
@@ -582,7 +578,7 @@ mod tests {
 
     #[test]
     fn test_lagrange_quadratic_exact() {
-        // y = x^2 - 2x + 3 sampled at x = -1, 0, 2.
+        // y = x^2 - 2x + 3，在 x = -1、0、2 处采样。
         let x_table = [-1.0, 0.0, 2.0];
         let y_table = [6.0, 3.0, 3.0];
         for &x in &[0.5, 1.0, -0.5, 1.7] {
@@ -599,7 +595,7 @@ mod tests {
 
     #[test]
     fn test_lagrange_multi_component() {
-        // Two components: p = x, q = x^3 at x = 0, 1, 2, 3.
+        // 两个分量：p = x、q = x^3，在 x = 0、1、2、3 处。
         let x_table = [0.0, 1.0, 2.0, 3.0];
         let y_table = [0.0, 0.0, 1.0, 1.0, 2.0, 8.0, 3.0, 27.0];
         let result =
@@ -612,7 +608,7 @@ mod tests {
     fn test_hermite_required_data_points() {
         assert_eq!(HermitePolynomialApproximation.get_required_data_points(1, 0), 2);
         assert_eq!(HermitePolynomialApproximation.get_required_data_points(3, 0), 4);
-        // With derivatives (inputOrder=1): (degree+1)/2 points.
+        // 带导数（inputOrder=1）：(degree+1)/2 个点。
         assert_eq!(HermitePolynomialApproximation.get_required_data_points(3, 1), 2);
         assert_eq!(HermitePolynomialApproximation.get_required_data_points(5, 1), 3);
         assert_eq!(HermitePolynomialApproximation.get_required_data_points(0, 0), 2);
@@ -620,8 +616,8 @@ mod tests {
 
     #[test]
     fn test_hermite_order_zero_matches_lagrange() {
-        // With distinct points and no derivatives, Hermite order zero is
-        // Newton-form polynomial interpolation: exact for cubics with 4 points.
+        // 对于互异的点且无导数时，Hermite 零阶就是
+        // Newton 形式的多项式插值：对 4 个点的三次式精确。
         let x_table = [-3.0, -1.0, 1.0, 2.0];
         let f = |x: f64| 2.0 * x * x * x - x * x + 4.0 * x - 7.0;
         let y_table: Vec<f64> = x_table.iter().map(|&x| f(x)).collect();
@@ -639,7 +635,7 @@ mod tests {
 
     #[test]
     fn test_hermite_order_zero_constant_data() {
-        // All-equal samples: highestNonZeroCoef collapses to 0.
+        // 全相等的样本：highestNonZeroCoef 收缩为 0。
         let x_table = [0.0, 1.0, 2.0];
         let y_table = [5.0, 5.0, 5.0];
         let result =
@@ -649,14 +645,14 @@ mod tests {
 
     #[test]
     fn test_hermite_with_derivatives_cubic() {
-        // Classic cubic Hermite: f(t) = t^3 on [0, 1].
-        // f(0)=0, f'(0)=0, f(1)=1, f'(1)=3.
-        // yTable layout per point: [value, derivative].
+        // 经典的三次 Hermite：f(t) = t^3 于 [0, 1]。
+        // f(0)=0，f'(0)=0，f(1)=1，f'(1)=3。
+        // yTable 每点的布局：[value, derivative]。
         let x_table = [0.0, 1.0];
         let y_table = [0.0, 0.0, 1.0, 3.0];
         let result =
             HermitePolynomialApproximation.interpolate(0.5, &x_table, &y_table, 1, 1, 1);
-        // result[0] = f(0.5) = 0.125, result[1] = f'(0.5) = 0.75.
+        // result[0] = f(0.5) = 0.125，result[1] = f'(0.5) = 0.75。
         assert!(
             (result[0] - 0.125).abs() < 1e-9,
             "value: got {}",
@@ -672,7 +668,7 @@ mod tests {
     #[test]
     fn test_hermite_with_derivatives_at_nodes() {
         let x_table = [-1.0, 2.0];
-        // f(x) = x^2: f(-1)=1, f'(-1)=-2, f(2)=4, f'(2)=4.
+        // f(x) = x^2：f(-1)=1，f'(-1)=-2，f(2)=4，f'(2)=4。
         let y_table = [1.0, -2.0, 4.0, 4.0];
         for &x in &[-1.0, 0.0, 2.0] {
             let result =
@@ -684,7 +680,7 @@ mod tests {
 
     #[test]
     fn test_hermite_three_points_with_derivatives() {
-        // f(x) = x^5 - x sampled at -1, 0, 1 with derivatives.
+        // f(x) = x^5 - x，在 -1、0、1 处连同导数采样。
         let x_table = [-1.0, 0.0, 1.0];
         let f = |x: f64| x.powi(5) - x;
         let df = |x: f64| 5.0 * x.powi(4) - 1.0;
@@ -693,7 +689,7 @@ mod tests {
             y_table.push(f(x));
             y_table.push(df(x));
         }
-        // 3 points * 2 values = 6 z-indices; degree up to 5 → exact for x^5.
+        // 3 个点 * 2 个值 = 6 个 z-index；次数至多 5 → 对 x^5 精确。
         let result =
             HermitePolynomialApproximation.interpolate(0.5, &x_table, &y_table, 1, 1, 1);
         assert!((result[0] - f(0.5)).abs() < 1e-9, "got {}", result[0]);
@@ -721,7 +717,7 @@ mod tests {
 
     #[test]
     fn test_kind_interpolate_fallback_zero_fills_derivatives() {
-        // Non-Hermite algorithms fall back to order-zero and zero-fill.
+        // 非 Hermite 算法回退到零阶并填充零。
         let x_table = [0.0, 10.0];
         let y_table = [1.0, 21.0];
         let result = InterpolationAlgorithmKind::Linear.interpolate(5.0, &x_table, &y_table, 1, 0, 1);

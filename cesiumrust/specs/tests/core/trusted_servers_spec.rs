@@ -1,6 +1,6 @@
-//! TrustedServers spec - ported from packages/engine/Specs/Core/TrustedServersSpec.js
+//! TrustedServers 规格测试 - 移植自 packages/engine/Specs/Core/TrustedServersSpec.js
 //!
-//! A-class tests: 8 (pure logic, no browser/DOM)
+//! A 类测试：8 个（纯逻辑，无浏览器/DOM）
 
 use cesium_resource::trusted_servers::TrustedServers;
 
@@ -32,7 +32,7 @@ mod tests {
         let mut ts = TrustedServers::new();
         assert!(!ts.is_trusted("http://cesiumjs.org:81/index.html"));
         ts.add("cesiumjs.org", 81);
-        // Default port 80 should NOT match explicit port 81
+        // 默认端口 80 不应匹配显式端口 81
         assert!(!ts.is_trusted("http://cesiumjs.org/index.html"));
         assert!(ts.is_trusted("http://cesiumjs.org:81/index.html"));
     }
@@ -43,10 +43,10 @@ mod tests {
         let mut ts = TrustedServers::new();
         ts.add("cesiumjs.org", 81);
         assert!(ts.is_trusted("http://cesiumjs.org:81/index.html"));
-        // Removing wrong port should not affect
+        // 移除错误的端口不应产生影响
         ts.remove("cesiumjs.org", 8080);
         assert!(ts.is_trusted("http://cesiumjs.org:81/index.html"));
-        // Removing correct port
+        // 移除正确的端口
         ts.remove("cesiumjs.org", 81);
         assert!(!ts.is_trusted("http://cesiumjs.org:81/index.html"));
     }
@@ -71,11 +71,11 @@ mod tests {
     fn protocol_relative_urls() {
         let mut ts = TrustedServers::new();
         ts.add("cesiumjs.org", 80);
-        // Protocol-relative URL without port → can't determine default port
-        // CesiumJS uses window.location.protocol, we return false
-        // But with explicit port it should work
+        // 协议相对 URL 且无端口 → 无法确定默认端口
+        // CesiumJS 使用 window.location.protocol，我们返回 false
+        // 但带有显式端口时应可正常工作
         assert!(!ts.is_trusted("//cesiumjs.org/index.html"));
-        // With explicit port
+        // 带有显式端口
         ts.add("cesiumjs.org", 8080);
         assert!(ts.is_trusted("//cesiumjs.org:8080/index.html"));
     }
@@ -88,7 +88,7 @@ mod tests {
         assert!(ts.is_trusted("http://cesiumjs.org/index.html"));
         ts.clear();
         assert!(!ts.is_trusted("http://cesiumjs.org/index.html"));
-        // Can add again after clear
+        // clear 之后可以再次添加
         ts.add("cesiumjs.org", 80);
         assert!(ts.is_trusted("http://cesiumjs.org/index.html"));
     }

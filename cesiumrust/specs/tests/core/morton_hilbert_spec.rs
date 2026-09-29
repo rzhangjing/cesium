@@ -1,8 +1,8 @@
-//! Ported from `packages/engine/Specs/Core/MortonOrderSpec.js` (16 it(), 6 A-class)
-//! and `packages/engine/Specs/Core/HilbertOrderSpec.js` (8 it(), 2 A-class)
+//! 移植自 `packages/engine/Specs/Core/MortonOrderSpec.js`（16 个 it()，6 个 A 类）
+//! 以及 `packages/engine/Specs/Core/HilbertOrderSpec.js`（8 个 it()，2 个 A 类）
 //!
-//! B-class (throws for undefined/out-of-range) tests are omitted since Rust's type
-//! system enforces valid inputs at compile time.
+//! 省略 B 类（针对 undefined/越界的 throws）测试，因为 Rust 的类型系统
+//! 会在编译期强制输入合法。
 
 use cesium_geospatial::morton_hilbert::*;
 
@@ -23,7 +23,7 @@ fn morton_encode_2d_works() {
 
     assert_eq!(morton_encode_2d(7, 5), 55);
 
-    // largest 16-bit unsigned integer inputs → largest 32-bit unsigned integer output
+    // 最大的 16 位无符号整数输入 → 最大的 32 位无符号整数输出
     assert_eq!(morton_encode_2d(65535, 65535), 4294967295);
     assert_eq!(morton_encode_2d(65535, 0), 1431655765);
     assert_eq!(morton_encode_2d(0, 65535), 2863311530);
@@ -42,7 +42,7 @@ fn morton_decode_2d_works() {
 
     assert_eq!(morton_decode_2d(55), (7, 5));
 
-    // largest 32-bit unsigned integer input → largest 16-bit unsigned integer outputs
+    // 最大的 32 位无符号整数输入 → 最大的 16 位无符号整数输出
     assert_eq!(morton_decode_2d(4294967295), (65535, 65535));
     assert_eq!(morton_decode_2d(1431655765), (65535, 0));
     assert_eq!(morton_decode_2d(2863311530), (0, 65535));
@@ -61,7 +61,7 @@ fn morton_encode_3d_works() {
 
     assert_eq!(morton_encode_3d(1, 3, 3), 55);
 
-    // largest 10-bit unsigned integer inputs → largest 30-bit unsigned integer output
+    // 最大的 10 位无符号整数输入 → 最大的 30 位无符号整数输出
     assert_eq!(morton_encode_3d(1023, 1023, 1023), 1073741823);
     assert_eq!(morton_encode_3d(1023, 0, 0), 153391689);
     assert_eq!(morton_encode_3d(0, 1023, 0), 306783378);
@@ -81,7 +81,7 @@ fn morton_decode_3d_works() {
 
     assert_eq!(morton_decode_3d(55), (1, 3, 3));
 
-    // largest 30-bit unsigned integer input → largest 10-bit unsigned integer outputs
+    // 最大的 30 位无符号整数输入 → 最大的 10 位无符号整数输出
     assert_eq!(morton_decode_3d(1073741823), (1023, 1023, 1023));
     assert_eq!(morton_decode_3d(153391689), (1023, 0, 0));
     assert_eq!(morton_decode_3d(306783378), (0, 1023, 0));
@@ -90,7 +90,7 @@ fn morton_decode_3d_works() {
 
 #[test]
 fn morton_decode_2d_roundtrip() {
-    // Encode then decode should return original values
+    // 先编码再解码应返回原始值
     let test_cases: Vec<(u32, u32)> = vec![
         (0, 0),
         (1, 0),

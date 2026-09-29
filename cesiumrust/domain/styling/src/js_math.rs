@@ -1,26 +1,23 @@
-//! JS `Math` helpers with exact ECMAScript semantics.
+//! 带精确 ECMAScript 语义的 JS `Math` 辅助函数。
 //!
-//! Ported from `cesium-rs/crates/cesium-scene/src/expression.rs` L1576-1596,
-//! the Rust port of the `Math.round` / `Math.min` / `Math.max` behaviour used by
-//! upstream `packages/engine/Source/Scene/Expression.js`.
+//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs` L1576-1596，
+//! 它是上游 `packages/engine/Source/Scene/Expression.js` 所用
+//! `Math.round` / `Math.min` / `Math.max` 行为的 Rust 移植。
 //!
-//! These differ from the naive Rust `f64` equivalents in ways the styling
-//! language depends on, so they are ported verbatim rather than replaced by
-//! `f64::round` / `f64::min` / `f64::max`.
+//! 它们与朴素的 Rust `f64` 对应物在 styling 语言所依赖的方式上有所不同，
+//! 因此逐字移植而非用 `f64::round` / `f64::min` / `f64::max` 替代。
 
-/// Mirrors JS `Math.round`: halves round **towards +infinity**.
+/// 镜像 JS `Math.round`：半数**朝 +infinity 方向**舍入。
 ///
-/// `Math.round(-0.5) == 0` (NOT `-1`). This differs from Rust `f64::round`,
-/// which rounds half **away from zero** (`(-0.5f64).round() == -1.0`), so
-/// copying `f64::round` here would be wrong. The JS definition is
-/// `floor(x + 0.5)`.
+/// `Math.round(-0.5) == 0`（不是 `-1`）。这不同于 Rust `f64::round`，
+/// 后者半数**远离零**舍入（`(-0.5f64).round() == -1.0`），所以在此照搬
+/// `f64::round` 会是错的。JS 的定义是 `floor(x + 0.5)`。
 pub fn js_round(value: f64) -> f64 {
     (value + 0.5).floor()
 }
 
-/// Mirrors JS `Math.min` NaN propagation: if either operand is `NaN` the result
-/// is `NaN` (unlike `f64::min`, which ignores `NaN` and returns the other
-/// operand).
+/// 镜像 JS `Math.min` 的 NaN 传播：若任一操作数为 `NaN`，结果
+/// 为 `NaN`（不同于 `f64::min`，它忽略 `NaN` 而返回另一个操作数）。
 pub fn js_min(a: f64, b: f64) -> f64 {
     if a.is_nan() || b.is_nan() {
         f64::NAN
@@ -29,8 +26,8 @@ pub fn js_min(a: f64, b: f64) -> f64 {
     }
 }
 
-/// Mirrors JS `Math.max` NaN propagation: if either operand is `NaN` the result
-/// is `NaN` (unlike `f64::max`, which ignores `NaN`).
+/// 镜像 JS `Math.max` 的 NaN 传播：若任一操作数为 `NaN`，结果
+/// 为 `NaN`（不同于 `f64::max`，它忽略 `NaN`）。
 pub fn js_max(a: f64, b: f64) -> f64 {
     if a.is_nan() || b.is_nan() {
         f64::NAN
@@ -43,14 +40,14 @@ pub fn js_max(a: f64, b: f64) -> f64 {
 mod tests {
     use super::*;
 
-    // --- js_round: the JS half-towards-+infinity quirk vs Rust round ---
+    // --- js_round：JS 半数朝 +infinity 的怪癖 vs Rust round ---
 
     #[test]
     fn js_round_half_goes_up() {
         assert_eq!(js_round(0.5), 1.0);
         assert_eq!(js_round(1.5), 2.0);
         assert_eq!(js_round(2.5), 3.0);
-        // The critical case: Math.round(-0.5) == 0, not -1.
+        // 关键情形：Math.round(-0.5) == 0，而非 -1。
         assert_eq!(js_round(-0.5), 0.0);
         assert_eq!(js_round(-1.5), -1.0);
         assert_eq!(js_round(-2.5), -2.0);
@@ -58,11 +55,11 @@ mod tests {
 
     #[test]
     fn js_round_differs_from_rust_round() {
-        // Direct evidence that copying f64::round would be wrong.
-        assert_eq!((-0.5f64).round(), -1.0); // Rust: half away from zero
-        assert_eq!(js_round(-0.5), 0.0); // JS: half towards +infinity
+        // 直接证据：照搬 f64::round 会是错的。
+        assert_eq!((-0.5f64).round(), -1.0); // Rust：半数远离零
+        assert_eq!(js_round(-0.5), 0.0); // JS：半数朝 +infinity
         assert_ne!(js_round(-0.5), (-0.5f64).round());
-        // They still agree for non-half values.
+        // 对非半数值它们仍然一致。
         assert_eq!(js_round(1.4), 1.0);
         assert_eq!(js_round(1.4), (1.4f64).round());
         assert_eq!(js_round(-1.4), -1.0);
@@ -78,7 +75,7 @@ mod tests {
         assert_eq!(js_round(f64::NEG_INFINITY), f64::NEG_INFINITY);
     }
 
-    // --- js_min / js_max: NaN propagation ---
+    // --- js_min / js_max：NaN 传播 ---
 
     #[test]
     fn js_min_nan_propagates() {
@@ -100,9 +97,9 @@ mod tests {
 
     #[test]
     fn js_min_max_differ_from_rust_on_nan() {
-        // f64::min/max ignore NaN; the JS helpers propagate it.
-        assert_eq!(f64::NAN.min(1.0), 1.0); // Rust ignores NaN
-        assert!(js_min(f64::NAN, 1.0).is_nan()); // JS propagates NaN
+        // f64::min/max 忽略 NaN；这些 JS 辅助函数传播它。
+        assert_eq!(f64::NAN.min(1.0), 1.0); // Rust 忽略 NaN
+        assert!(js_min(f64::NAN, 1.0).is_nan()); // JS 传播 NaN
         assert_eq!(f64::NAN.max(1.0), 1.0);
         assert!(js_max(f64::NAN, 1.0).is_nan());
     }

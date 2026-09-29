@@ -1,12 +1,12 @@
-//! Core/Resource + RequestScheduler → Rust integration tests.
+//! Core/Resource + RequestScheduler → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
-//! - Core/Resource.js (URL building, query parameters, derive)
-//! - Core/RequestScheduler.js (throttling, priority, server limits)
+//! 对应 CesiumJS：
+//! - Core/Resource.js（URL 构建、查询参数、derive）
+//! - Core/RequestScheduler.js（节流、优先级、服务器限制）
 //!
-//! A-class tests: RequestScheduler schedule/complete/cancel/throttle/priority,
+//! A 类测试：RequestScheduler schedule/complete/cancel/throttle/priority、
 //! Resource build_url/derive/server_key/with_query/with_header.
-//! C-class omitted: actual HTTP requests, Promise chains, retry logic.
+//! C 类省略：实际 HTTP 请求、Promise 链、重试逻辑。
 
 use cesium_resource::{Request, RequestScheduler, RequestState, RequestType, Resource};
 
@@ -61,7 +61,7 @@ fn resource_server_key() {
 #[test]
 fn resource_server_key_no_port() {
     let r = Resource::new("https://cdn.example.com/tile.png");
-    // Server key now includes default port
+    // 服务器 key 现包含默认端口
     assert_eq!(r.server_key(), "cdn.example.com:443");
 }
 
@@ -165,7 +165,7 @@ fn scheduler_throttled_pending() {
     let mut scheduler = RequestScheduler::new();
     scheduler.maximum_requests_per_server = 1;
 
-    // First request activates
+    // 第一个请求激活
     let r1 = Request::throttled(
         "https://example.com/1.b3dm".to_string(),
         RequestType::Tiles3D,
@@ -174,7 +174,7 @@ fn scheduler_throttled_pending() {
     scheduler.schedule(r1).unwrap();
     scheduler.update();
 
-    // Second request to same server should be pending
+    // 对同一服务器的第二个请求应处于 pending
     let r2 = Request::throttled(
         "https://example.com/2.b3dm".to_string(),
         RequestType::Tiles3D,
@@ -182,7 +182,7 @@ fn scheduler_throttled_pending() {
     );
     scheduler.schedule(r2).unwrap();
 
-    // Server key includes default port
+    // 服务器 key 包含默认端口
     assert!(!scheduler.server_has_open_slots("example.com:443", 1));
 }
 

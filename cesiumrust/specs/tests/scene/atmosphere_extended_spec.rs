@@ -1,6 +1,6 @@
-//! Atmosphere extended specs - tests for celestial, scattering, and star_sphere modules
+//! Atmosphere 扩展规范 - 测试 celestial、scattering 和 star_sphere 模块
 //!
-//! Covers: sun/moon position computation, atmospheric scattering, star catalog
+//! 覆盖：日/月位置计算、大气散射、星表
 
 use cesium_atmosphere::{
     atmospheric_density, compute_gmst, compute_horizon_glow, compute_moon_direction_eci,
@@ -13,7 +13,7 @@ use glam::DVec3;
 const EPSILON3: f64 = 1e-3;
 const EPSILON6: f64 = 1e-6;
 
-// ─── Celestial computations ─────────────────────────────────────────────────
+// ─── 天体计算 ─────────────────────────────────────────────────
 
 #[test]
 fn sun_position_eci_at_j2000() {
@@ -126,7 +126,7 @@ fn moon_position_ecef_reasonable() {
     );
 }
 
-// ─── Atmospheric scattering ─────────────────────────────────────────────────
+// ─── 大气散射 ─────────────────────────────────────────────────
 
 #[test]
 fn rayleigh_phase_forward() {
@@ -216,7 +216,7 @@ fn horizon_glow_at_horizon() {
 fn horizon_glow_varies_with_elevation() {
     let glow_horizon = compute_horizon_glow(0.0);
     let glow_zenith = compute_horizon_glow(std::f64::consts::FRAC_PI_2);
-    // Glow should differ between horizon and zenith
+    // 辉光在地平线与天顶间应不同
     let diff = ((glow_horizon[0] - glow_zenith[0]).abs()
         + (glow_horizon[1] - glow_zenith[1]).abs()
         + (glow_horizon[2] - glow_zenith[2]).abs())
@@ -229,7 +229,7 @@ fn horizon_glow_varies_with_elevation() {
     );
 }
 
-// ─── Star catalog ────────────────────────────────────────────────────────────
+// ─── 星表 ────────────────────────────────────────────────────────────
 
 #[test]
 fn star_from_degrees() {
@@ -265,13 +265,13 @@ fn star_brightness_scales_correctly() {
 
 #[test]
 fn star_spectral_color_hot_vs_cool() {
-    // Hot blue star
+    // 高温蓝星
     let hot = Star::from_degrees(0.0, 0.0, 1.0);
     let hot_color = hot.spectral_color();
-    // Cool red star
+    // 低温红星
     let cool = Star::from_degrees(0.0, 0.0, 1.0);
     let cool_color = cool.spectral_color();
-    // Both should produce valid colors
+    // 两者都应产生有效颜色
     assert!(
         hot_color[0] >= 0.0 && hot_color[1] >= 0.0 && hot_color[2] >= 0.0,
         "hot star color should be non-negative"
@@ -284,7 +284,7 @@ fn star_spectral_color_hot_vs_cool() {
 
 #[test]
 fn star_brightness_magnitude_relation() {
-    // 5 magnitudes = 100x brightness ratio
+    // 5 个星等 = 100 倍亮度比
     let mag0 = Star::from_degrees(0.0, 0.0, 0.0);
     let mag5 = Star::from_degrees(0.0, 0.0, 5.0);
     let ratio = mag0.brightness() / mag5.brightness();

@@ -1,4 +1,4 @@
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// CesiumJS 移植遗留的风格债（deferred.md #18）；在 M13 lint-cleanup 或本文件在其里程碑被重写时
 #![allow(unused_imports, dead_code, clippy::map_entry)]
 use std::collections::{HashMap, VecDeque};
 
@@ -16,13 +16,13 @@ use crate::resources::TileLoadStats;
 
 use super::layer_manager::ImageryLayerManager;
 
-/// Imagery tile key `(layer_id, x, y, level)`.
+/// Imagery tile 键 `(layer_id, x, y, level)`。
 ///
-/// A type alias, so it is transparently interchangeable with the bare tuple the
-/// cache/blend systems already use.
+/// 这是一个类型别名，因此它与 cache/blend 系统已在使用的裸元组
+/// 可透明地互换。
 pub type ImageryKey = (u64, u32, u32, u32);
 
-/// Background download+decode result: raw RGBA pixels plus dimensions.
+/// 后台下载+解码结果：原始 RGBA 像素加尺寸。
 pub type ImageryTaskResult = Result<(Vec<u8>, u32, u32), String>;
 
 #[derive(Resource, Default)]
@@ -30,28 +30,27 @@ pub struct ImageryCache {
     pub textures: HashMap<ImageryKey, Handle<Image>>,
 }
 
-/// Per-tile imagery load state.
+/// 逐 tile 的 imagery 加载状态。
 ///
-/// Replaces the previous `bool` "dispatched" flag so the fetch+decode can run on
-/// an [`IoTaskPool`] worker (fixing the frame-thread block that used to stall the
-/// renderer once per tile) and be polled non-blockingly on later frames — WITHOUT
-/// changing the public `imagery_tile_load_system` signature (same resource,
-/// richer internals).
+/// 取代此前的 `bool` “已分派”标志，使 fetch+decode 得以前往
+/// 一个 [`IoTaskPool`] worker 上运行（修复了曾每 tile 卡顿一次
+/// 渲染器的帧线程阻塞），并在后续帧上以非阻塞方式轮询——且不
+/// 改变公共的 `imagery_tile_load_system` 签名（同一资源，
+/// 更丰富的内部实现）。
 pub enum ImageryLoadState {
-    /// Requested by `imagery_tile_request_system`, not yet dispatched.
+    /// 由 `imagery_tile_request_system` 请求，尚未分派。
     Queued,
-    /// Download+decode running on a background worker (never the frame thread).
+    /// 下载+解码正在后台 worker 上运行（绝非帧线程）。
     InFlight(Task<ImageryTaskResult>),
 }
 
 #[derive(Resource, Default)]
 pub struct ImageryPendingLoads {
     pub pending: HashMap<ImageryKey, ImageryLoadState>,
-    /// Resolved-but-not-yet-uploaded textures, drained FIFO up to the per-frame
-    /// imagery texture budget (gate ON). Always fully drained in-frame when gate
-    /// OFF (budget = `UNBOUNDED`). Entries move here the instant their task
-    /// resolves, so the budget can defer GPU upload without re-polling a
-    /// completed `Task`.
+    /// 已解析但尚未上传的纹理，按 FIFO 抽取至每帧 imagery 纹理预算
+    /// （门控 ON）。当门控 OFF 时始终在帧内完全抽干
+    /// （预算 = `UNBOUNDED`）。条目在其 task 解析的瞬间就移到这里，
+    /// 因此预算可以推迟 GPU 上传，而无需重新轮询一个已完成的 `Task`。
     pub ready_backlog: VecDeque<(ImageryKey, ImageryTaskResult)>,
 }
 
@@ -66,12 +65,12 @@ fn tile_rectangle(x: u32, y: u32, level: u32, scheme: &TilingScheme) -> Rectangl
     scheme.tile_to_rectangle(x, y, level)
 }
 
-/// Downloads and decodes an image tile to raw RGBA pixels.
+/// 下载并解码一个图像 tile 为原始 RGBA 像素。
 ///
-/// Blocking: intended to run on an [`IoTaskPool`] worker thread, never on the
-/// frame thread. The fetch is tokio-free — it routes through the cesium-pipeline
-/// core's ureq blocking backend ([`pipeline::fetch::fetch_gated`]), selecting the
-/// shared keep-alive pool (gate ON) or a fresh per-call client (gate OFF).
+/// 阻塞式：预期运行在一个 [`IoTaskPool`] worker 线程上，绝不在
+/// 帧线程上。该 fetch 不依赖 tokio——它经由 cesium-pipeline
+/// 核心的 ureq 阻塞后端（[`pipeline::fetch::fetch_gated`]）路由，选用
+/// 共享 keep-alive 池（门控 ON）或每次调用新建的客户端（门控 OFF）。
 fn fetch_and_decode_image(url: &str, use_pipeline: bool) -> ImageryTaskResult {
     let data = pipeline::fetch::fetch_gated(url, use_pipeline)?;
 
@@ -112,8 +111,8 @@ pub fn imagery_tile_request_system(
 
             for req in requests {
                 let key = (req.layer_id, req.x, req.y, req.level);
-                // Entry API (no `contains_key`+`insert`): a tile already queued or
-                // in flight is left untouched, so it is requested exactly once.
+                // Entry API（不用 `contains_key`+`insert`）：已入队或
+                // 在途的 tile 保持不动，因此它恰好被请求一次。
                 pending
                     .pending
                     .entry(key)
@@ -134,10 +133,10 @@ pub fn imagery_tile_load_system(
     let _ = _commands;
     let scheme = TilingScheme::geographic(Ellipsoid::WGS84);
 
-    // Gate: read once per frame. ON routes fetches through the cesium-pipeline
-    // core's shared keep-alive ureq pool and bounds texture uploads to the
-    // imagery weight; OFF keeps the legacy per-call fetch and drains all resolved
-    // tiles in-frame. Either way the work now runs OFF the frame thread.
+    // 门控：每帧读取一次。ON 将 fetch 经由 cesium-pipeline 核心的
+    // 共享 keep-alive ureq 池路由，并把纹理上传限制在 imagery 权重内；
+    // OFF 保留旧式的每次调用 fetch，并在帧内抽干所有已解析的
+    // tile。无论哪种方式，该工作现在都运行在帧线程之外。
     let use_pipeline = pipeline::fetch::pipeline_gate_enabled();
     let upload_budget = if use_pipeline {
         budget::imagery_texture_budget()
@@ -146,10 +145,10 @@ pub fn imagery_tile_load_system(
     };
     let pool = IoTaskPool::get();
 
-    // Pass 1 — dispatch every queued tile onto a BACKGROUND worker. This is the
-    // critical M1.4 fix: the pre-migration code called `fetch_and_decode_image`
-    // synchronously on the frame thread (a hard network stall per tile, the most
-    // severe of the four loaders). Now the frame thread only spawns a task.
+    // Pass 1 —— 将每个入队 tile 分派到一个后台（BACKGROUND）worker。这是
+    // M1.4 的关键修复：迁移前的代码在帧线程上同步调用 `fetch_and_decode_image`
+    // （每 tile 一次硬性网络停顿，是四个 loader 中最严重的）。
+    // 现在帧线程只负责 spawn 一个 task。
     let queued: Vec<ImageryKey> = pending
         .pending
         .iter()
@@ -160,7 +159,7 @@ pub fn imagery_tile_load_system(
     for key in queued {
         let (layer_id, x, y, level) = key;
 
-        // Already cached → nothing to fetch.
+        // 已缓存 → 无需 fetch。
         if cache.textures.contains_key(&key) {
             pending.pending.remove(&key);
             continue;
@@ -180,9 +179,8 @@ pub fn imagery_tile_load_system(
         stats.tiles_pending += 1;
     }
 
-    // Pass 2 — poll each in-flight task exactly once (`poll_once` returns
-    // immediately while the worker is still downloading, so the frame thread
-    // never parks) and move resolved results into the FIFO backlog.
+    // Pass 2 —— 将每个在途 task 恰好轮询一次（`poll_once` 在 worker 仍在下载时
+    // 立即返回，因此帧线程从不挂起），并把已解析结果移入 FIFO 积压队列。
     let mut resolved: Vec<(ImageryKey, ImageryTaskResult)> = Vec::new();
     for (key, state) in pending.pending.iter_mut() {
         if let ImageryLoadState::InFlight(task) = state {
@@ -196,9 +194,9 @@ pub fn imagery_tile_load_system(
         pending.ready_backlog.push_back((key, result));
     }
 
-    // Pass 3 — upload up to `upload_budget` textures this frame. Texture creation
-    // touches `Assets<Image>`, which is only accessible on the frame thread, so
-    // this (cheap) step stays here while the (expensive) fetch+decode is backgrounded.
+    // Pass 3 —— 本帧最多上传 `upload_budget` 个纹理。纹理创建
+    // 触及 `Assets<Image>`，而它只能在帧线程上访问，所以这一（廉价）步骤
+    // 留在这里，而（昂贵的）fetch+decode 已被放到后台。
     let mut uploaded = 0;
     while uploaded < upload_budget {
         let Some((key, result)) = pending.ready_backlog.pop_front() else {
@@ -259,14 +257,14 @@ mod tests {
         assert!(rect.east <= r2.east);
     }
 
-    /// The request system marks a tile `Queued` exactly once; a second request
-    /// for the same key must not clobber an already queued/in-flight entry.
+    /// 请求系统恰好只将 tile 标记一次 `Queued`；对同一 key 的第二次请求
+    /// 不得覆盖已入队/在途的条目。
     #[test]
     fn queued_state_is_idempotent() {
         let mut pending = ImageryPendingLoads::default();
         let key: ImageryKey = (7, 1, 2, 3);
         pending.pending.entry(key).or_insert(ImageryLoadState::Queued);
-        // Second request for the same key: entry API leaves the first in place.
+        // 对同一 key 的第二次请求：entry API 让第一个保持原位。
         pending.pending.entry(key).or_insert(ImageryLoadState::Queued);
         assert_eq!(pending.pending.len(), 1);
         assert!(matches!(
@@ -275,20 +273,19 @@ mod tests {
         ));
     }
 
-    /// Regression for the M1.4 frame-thread fix: the load system must never call
-    /// the blocking fetch itself — it only spawns background tasks and polls them
-    /// non-blockingly. This test drives the dispatch+poll bookkeeping directly
-    /// (no network): a `Queued` tile transitions out of `pending` only via a
-    /// spawned task, and an empty backlog yields zero uploads (frame thread does
-    /// no synchronous fetch work).
+    /// M1.4 帧线程修复的回归测试：加载系统绝不能自己调用阻塞式
+    /// fetch——它只 spawn 后台 task 并以非阻塞方式轮询它们。
+    /// 本测试直接驱动分派+轮询的簿记（无网络）：一个 `Queued` tile
+    /// 只通过一个被 spawn 的 task 才脱离 `pending`，而空积压队列
+    /// 产生零次上传（帧线程不做任何同步 fetch 工作）。
     #[test]
     fn load_system_defers_fetch_to_background_backlog() {
         let mut pending = ImageryPendingLoads::default();
         let mut cache = ImageryCache::default();
         let mut stats = TileLoadStats::default();
 
-        // Nothing queued, nothing in flight → the poll+upload passes are no-ops
-        // and touch no texture (proves no synchronous fetch on the frame thread).
+        // 无入队、无在途 → 轮询+上传各 Pass 皆为空操作
+        // 且不触及任何纹理（证明帧线程上没有同步 fetch）。
         let mut resolved: Vec<(ImageryKey, ImageryTaskResult)> = Vec::new();
         for (key, state) in pending.pending.iter_mut() {
             if let ImageryLoadState::InFlight(task) = state {
@@ -299,8 +296,8 @@ mod tests {
         }
         assert!(resolved.is_empty());
 
-        // A pre-resolved backlog entry uploads within the budget and updates the
-        // cache + stats, mirroring the frame-thread upload step (Pass 3).
+        // 一个预先解析的积压条目在预算内上传并更新缓存 + 统计，
+        // 镜像帧线程的上传步骤（Pass 3）。
         pending
             .ready_backlog
             .push_back(((1, 0, 0, 0), Ok((vec![0u8; 4 * 2 * 2], 2, 2))));

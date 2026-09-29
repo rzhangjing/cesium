@@ -1,18 +1,18 @@
-//! Tile replacement queue: LRU-based tile management.
+//! 瓦片替换队列：基于 LRU 的瓦片管理。
 //!
-//! Maps to CesiumJS `Scene/TileReplacementQueue.js`.
+//! 镜像 CesiumJS `Scene/TileReplacementQueue.js`。
 //!
-//! A priority queue of tiles to be replaced, if necessary, to make room for new tiles.
-//! The queue is implemented as a doubly-linked list with a frame boundary marker.
+//! 一个待替换瓦片的优先队列，必要时为新瓦片腾出空间。
+//! 该队列实现为带帧边界标记的双链表。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格债务（deferred.md #18）；在 M13 lint-cleanup 或本文件在其里程碑被重写时重新审视
 #![allow(dead_code)]
 use std::collections::HashMap;
 
-/// A unique identifier for a tile in the queue.
+/// 队列中瓦片的唯一标识符。
 pub type TileId = u64;
 
-/// Internal node in the doubly-linked list.
+/// 双链表中的内部节点。
 #[derive(Debug, Clone)]
 struct QueueNode {
     tile_id: TileId,
@@ -21,31 +21,31 @@ struct QueueNode {
     next: Option<TileId>,
 }
 
-/// A queue that tracks tile usage for LRU-based replacement.
+/// 跟踪瓦片使用情况以实现基于 LRU 替换的队列。
 ///
-/// Tiles rendered in the current frame are moved to the head.
-/// At the start of each frame, the current head is saved as a marker
-/// (`last_before_start_of_frame`). During trimming, tiles from the tail
-/// up to and including the marker can be removed (if eligible).
+/// 当前帧中渲染的瓦片会被移到头部。
+/// 每帧开始时，当前头部被保存为标记
+/// （`last_before_start_of_frame`）。修剪时，从尾部直到（并包括）
+/// 该标记的瓦片可被移除（若符合条件）。
 ///
-/// Maps to CesiumJS `TileReplacementQueue`.
+/// 映射到 CesiumJS `TileReplacementQueue`。
 #[derive(Debug)]
 pub struct TileReplacementQueue {
-    /// Map from tile ID to node.
+    /// 从瓦片 ID 到节点的映射。
     nodes: HashMap<TileId, QueueNode>,
-    /// Head of the list (most recently used).
+    /// 链表头部（最近使用）。
     head: Option<TileId>,
-    /// Tail of the list (least recently used).
+    /// 链表尾部（最少使用）。
     tail: Option<TileId>,
-    /// The last tile before the start of the current render frame.
-    /// Tiles closer to the head than this were used in the current frame.
+    /// 当前渲染帧开始前的最后一个瓦片。
+    /// 比此标记更靠近 head 的瓦片在当前帧中被使用过。
     last_before_start_of_frame: Option<TileId>,
-    /// Number of tiles in the queue.
+    /// 队列中的瓦片数。
     count: usize,
 }
 
 impl TileReplacementQueue {
-    /// Creates a new empty queue.
+    /// 创建一个空队列。
     pub fn new() -> Self {
         Self {
             nodes: HashMap::new(),
@@ -56,48 +56,48 @@ impl TileReplacementQueue {
         }
     }
 
-    /// Returns the number of tiles in the queue.
+    /// 返回队列中的瓦片数。
     pub fn count(&self) -> usize {
         self.count
     }
 
-    /// Returns the head tile ID (most recently rendered).
+    /// 返回头部瓦片 ID（最近渲染的）。
     pub fn head(&self) -> Option<TileId> {
         self.head
     }
 
-    /// Returns the tail tile ID (least recently rendered).
+    /// 返回尾部瓦片 ID（最少渲染的）。
     pub fn tail(&self) -> Option<TileId> {
         self.tail
     }
 
-    /// Marks the start of a new render frame.
+    /// 标记一个新渲染帧的开始。
     ///
-    /// Saves the current head as the frame boundary marker.
-    /// Tiles before (closer to head) this marker were used in the current frame
-    /// and must not be unloaded.
+    /// 将当前 head 保存为帧边界标记。
+    /// 位于此标记之前（更靠近 head）的瓦片在当前帧中被使用过，
+    /// 不得卸载。
     ///
-    /// Maps to `TileReplacementQueue.markStartOfRenderFrame`.
+    /// 映射到 `TileReplacementQueue.markStartOfRenderFrame`。
     pub fn mark_start_of_render_frame(&mut self) {
         self.last_before_start_of_frame = self.head;
     }
 
-    /// Marks a tile as rendered in the current frame.
+    /// 标记一个瓦片在当前帧中已渲染。
     ///
-    /// Moves the tile to the head of the list (MRU position).
-    /// If the tile is already the head and is the frame marker,
-    /// the marker is advanced to the next tile.
+    /// 将该瓦片移到链表头部（MRU 位置）。
+    /// 若该瓦片已是头部且为帧标记，
+    /// 则将标记推进到下一个瓦片。
     ///
-    /// Maps to `TileReplacementQueue.markTileRendered`.
+    /// 映射到 `TileReplacementQueue.markTileRendered`。
     pub fn mark_tile_rendered(&mut self, tile_id: TileId, eligible_for_unloading: bool) {
         if self.head == Some(tile_id) {
-            // Already at head
+            // 已在 head
             if self.last_before_start_of_frame == Some(tile_id) {
-                // Advance marker to next
+                // 将标记推进到下一个
                 let next = self.nodes[&tile_id].next;
                 self.last_before_start_of_frame = next;
             }
-            // Update eligibility
+            // 更新 eligibility
             if let Some(node) = self.nodes.get_mut(&tile_id) {
                 node.eligible_for_unloading = eligible_for_unloading;
             }
@@ -107,10 +107,10 @@ impl TileReplacementQueue {
         let is_existing = self.nodes.contains_key(&tile_id);
 
         if is_existing {
-            // Tile already in list, unlink from current position (keep in map)
+            // 瓦片已在链表中，从当前位置解除链接（保留在 map 中）
             self.unlink(tile_id);
         } else {
-            // New tile - insert into map
+            // 新瓦片 - 插入 map
             self.count += 1;
             self.nodes.insert(
                 tile_id,
@@ -123,7 +123,7 @@ impl TileReplacementQueue {
             );
         }
 
-        // Insert at head
+        // 在 head 处插入
         let old_head = self.head;
 
         if let Some(node) = self.nodes.get_mut(&tile_id) {
@@ -144,14 +144,13 @@ impl TileReplacementQueue {
         }
     }
 
-    /// Reduces the size of the queue to a specified size by unloading the
-    /// least-recently used tiles.
+    /// 通过将最少使用的瓦片卸载，将队列缩减到指定大小。
     ///
-    /// Tiles from the tail up to and including the frame marker are processed.
-    /// Eligible tiles are removed; ineligible tiles are skipped.
-    /// Trimming stops after processing the marker tile.
+    /// 处理从尾部直到（并包括）帧标记的瓦片。
+    /// 符合条件的瓦片被移除；不符合条件的被跳过。
+    /// 处理完标记瓦片后停止修剪。
     ///
-    /// Maps to `TileReplacementQueue.trimTiles`.
+    /// 映射到 `TileReplacementQueue.trimTiles`。
     pub fn trim_tiles(&mut self, maximum_tiles: usize) {
         let mut tile_to_trim = self.tail;
         let mut keep_trimming = true;
@@ -163,7 +162,7 @@ impl TileReplacementQueue {
         {
             let tile_id = tile_to_trim.unwrap();
 
-            // Stop trimming after we process the last tile not used in the current frame
+            // 处理完当前帧未使用的最后一个瓦片后停止修剪
             keep_trimming = self.last_before_start_of_frame != Some(tile_id);
 
             let previous = self.nodes[&tile_id].prev;
@@ -177,7 +176,7 @@ impl TileReplacementQueue {
         }
     }
 
-    /// Removes a specific tile from the queue.
+    /// 从队列中移除特定瓦片。
     pub fn remove(&mut self, tile_id: TileId) {
         if !self.nodes.contains_key(&tile_id) {
             return;
@@ -185,27 +184,27 @@ impl TileReplacementQueue {
         self.remove_node(tile_id);
     }
 
-    /// Returns whether a tile is in the queue.
+    /// 返回某瓦片是否在队列中。
     pub fn contains(&self, tile_id: TileId) -> bool {
         self.nodes.contains_key(&tile_id)
     }
 
-    // ─── Internal helpers ─────────────────────────────────────────────────────
+    // ─── 内部辅助函数 ─────────────────────────────────────────────────────
 
-    /// Unlinks a node from the doubly-linked list WITHOUT removing it from the map.
-    /// Used when moving a tile to head. Does NOT change count.
+    /// 将节点从双链表中解除链接，但不从 map 中移除。
+    /// 用于将瓦片移到 head 时。不改变 count。
     fn unlink(&mut self, item_id: TileId) {
         let (prev, next) = {
             let node = &self.nodes[&item_id];
             (node.prev, node.next)
         };
 
-        // If unlinking the marker, advance marker to next
+        // 若正在解除链接的是标记，将标记推进到下一个
         if self.last_before_start_of_frame == Some(item_id) {
             self.last_before_start_of_frame = next;
         }
 
-        // Update head
+        // 更新 head
         if self.head == Some(item_id) {
             self.head = next;
         } else if let Some(prev_id) = prev {
@@ -214,7 +213,7 @@ impl TileReplacementQueue {
             }
         }
 
-        // Update tail
+        // 更新 tail
         if self.tail == Some(item_id) {
             self.tail = prev;
         } else if let Some(next_id) = next {
@@ -224,20 +223,20 @@ impl TileReplacementQueue {
         }
     }
 
-    /// Completely removes a node from the list AND the map. Decrements count.
-    /// Faithful to CesiumJS `remove` function.
+    /// 将节点从链表和 map 中完全移除。递减 count。
+    /// 忠于 CesiumJS 的 `remove` 函数。
     fn remove_node(&mut self, item_id: TileId) {
         let (prev, next) = {
             let node = &self.nodes[&item_id];
             (node.prev, node.next)
         };
 
-        // If removing the marker, advance marker to next
+        // 若正在移除的是标记，将标记推进到下一个
         if self.last_before_start_of_frame == Some(item_id) {
             self.last_before_start_of_frame = next;
         }
 
-        // Update head
+        // 更新 head
         if self.head == Some(item_id) {
             self.head = next;
         } else if let Some(prev_id) = prev {
@@ -246,7 +245,7 @@ impl TileReplacementQueue {
             }
         }
 
-        // Update tail
+        // 更新 tail
         if self.tail == Some(item_id) {
             self.tail = prev;
         } else if let Some(next_id) = next {
@@ -294,11 +293,11 @@ mod tests {
         queue.mark_tile_rendered(2, true);
         queue.mark_tile_rendered(3, true);
 
-        // Order: 3 -> 2 -> 1
+        // 顺序：3 -> 2 -> 1
         assert_eq!(queue.head(), Some(3));
         assert_eq!(queue.tail(), Some(1));
 
-        // Move 1 to head
+        // 将 1 移到 head
         queue.mark_tile_rendered(1, true);
         assert_eq!(queue.head(), Some(1));
         assert_eq!(queue.count(), 3);
@@ -321,11 +320,11 @@ mod tests {
     fn test_trim_skips_ineligible() {
         let mut queue = TileReplacementQueue::new();
         queue.mark_tile_rendered(1, true);
-        queue.mark_tile_rendered(2, false); // Not eligible
+        queue.mark_tile_rendered(2, false); // 不符合条件
         queue.mark_tile_rendered(3, true);
         queue.mark_start_of_render_frame();
 
-        // marker=3, trim: 1(remove), 2(skip), 3(marker, remove, stop)
+        // marker=3，trim：1(移除), 2(跳过), 3(marker, 移除, 停止)
         queue.trim_tiles(0);
         assert_eq!(queue.count(), 1);
         assert_eq!(queue.head(), Some(2));

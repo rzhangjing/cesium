@@ -1,7 +1,7 @@
-//! Extended transforms tests ported from CesiumJS TransformsSpec.js.
+//! 移植自 CesiumJS TransformsSpec.js 的扩展变换测试。
 //!
-//! Covers: rotationMatrixFromPositionVelocity, fixedFrameToHeadingPitchRoll,
-//! basisTo2D, ellipsoidTo2DModelMatrix, and additional frame tests.
+//! 覆盖：rotationMatrixFromPositionVelocity, fixedFrameToHeadingPitchRoll,
+//! basisTo2D, ellipsoidTo2DModelMatrix，以及额外的参考系测试。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -25,11 +25,11 @@ fn wgs84() -> Ellipsoid {
 #[test]
 fn rotation_matrix_from_position_velocity_unit_x_y() {
     // CesiumJS: position=UNIT_X, velocity=UNIT_Y
-    // expected = Matrix3(0, 0, 1, 1, 0, 0, 0, 1, 0) (row-major)
+    // 期望 = Matrix3(0, 0, 1, 1, 0, 0, 0, 1, 0)（行主序）
     let matrix = rotation_matrix_from_position_velocity(DVec3::X, DVec3::Y, &wgs84());
 
-    // CesiumJS Matrix3 is row-major: columns are (col0, col1, col2)
-    // Row-major (0,0,1, 1,0,0, 0,1,0) means:
+    // CesiumJS Matrix3 为行主序：列为 (col0, col1, col2)
+    // 行主序 (0,0,1, 1,0,0, 0,1,0) 表示：
     //   col0 = (0, 1, 0), col1 = (0, 0, 1), col2 = (1, 0, 0)
     let expected = DMat3::from_cols(
         DVec3::new(0.0, 1.0, 0.0),
@@ -54,10 +54,10 @@ fn rotation_matrix_from_position_velocity_unit_x_y() {
 #[test]
 fn rotation_matrix_from_position_velocity_unit_x_z() {
     // CesiumJS: position=UNIT_X, velocity=UNIT_Z
-    // expected = Matrix3(0, 0, 1, 0, -1, 0, 1, 0, 0) (row-major)
+    // 期望 = Matrix3(0, 0, 1, 0, -1, 0, 1, 0, 0)（行主序）
     let matrix = rotation_matrix_from_position_velocity(DVec3::X, DVec3::Z, &wgs84());
 
-    // Row-major (0,0,1, 0,-1,0, 1,0,0):
+    // 行主序 (0,0,1, 0,-1,0, 1,0,0)：
     //   col0 = (0, 0, 1), col1 = (0, -1, 0), col2 = (1, 0, 0)
     let expected = DMat3::from_cols(
         DVec3::new(0.0, 0.0, 1.0),
@@ -82,10 +82,10 @@ fn rotation_matrix_from_position_velocity_unit_x_z() {
 #[test]
 fn rotation_matrix_from_position_velocity_unit_y_z() {
     // CesiumJS: position=UNIT_Y, velocity=UNIT_Z
-    // expected = Matrix3(0, 1, 0, 0, 0, 1, 1, 0, 0) (row-major)
+    // 期望 = Matrix3(0, 1, 0, 0, 0, 1, 1, 0, 0)（行主序）
     let matrix = rotation_matrix_from_position_velocity(DVec3::Y, DVec3::Z, &wgs84());
 
-    // Row-major (0,1,0, 0,0,1, 1,0,0):
+    // 行主序 (0,1,0, 0,0,1, 1,0,0)：
     //   col0 = (0, 0, 1), col1 = (1, 0, 0), col2 = (0, 1, 0)
     let expected = DMat3::from_cols(
         DVec3::new(0.0, 0.0, 1.0),
@@ -113,7 +113,7 @@ fn rotation_matrix_columns_are_orthonormal() {
     let vel = DVec3::new(0.0, 1.0, 0.5).normalize();
     let matrix = rotation_matrix_from_position_velocity(pos, vel, &wgs84());
 
-    // Each column should be unit length
+    // 每一列都应为单位长度
     for i in 0..3 {
         let col = matrix.col(i);
         assert!(
@@ -123,7 +123,7 @@ fn rotation_matrix_columns_are_orthonormal() {
             col.length()
         );
     }
-    // Columns should be mutually orthogonal
+    // 各列应相互正交
     assert!(matrix.col(0).dot(matrix.col(1)).abs() < 1e-10);
     assert!(matrix.col(0).dot(matrix.col(2)).abs() < 1e-10);
     assert!(matrix.col(1).dot(matrix.col(2)).abs() < 1e-10);
@@ -135,7 +135,7 @@ fn rotation_matrix_columns_are_orthonormal() {
 
 #[test]
 fn fixed_frame_to_heading_pitch_roll_roundtrip() {
-    // CesiumJS: create transform from HPR, then extract HPR back
+    // CesiumJS：由 HPR 创建变换，再反向提取出 HPR
     let expected = HeadingPitchRoll::new(0.5, 0.6, 0.7);
     let origin = wgs84().cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0));
 
@@ -168,7 +168,7 @@ fn fixed_frame_to_heading_pitch_roll_roundtrip() {
 
 #[test]
 fn fixed_frame_to_heading_pitch_roll_zero_at_identity() {
-    // At identity transform centered at origin, HPR should be zero
+    // 当以原点为中心的单位变换下，HPR 应为零
     let origin = wgs84().cartographic_to_cartesian(&Cartographic::from_degrees(10.0, 20.0, 0.0));
     let enu = east_north_up_to_fixed_frame(origin, &wgs84());
 
@@ -197,7 +197,7 @@ fn basis_to_2d_projects_translation() {
     let model_matrix = heading_pitch_roll_to_fixed_frame(&hpr, origin, &ellipsoid);
     let model_matrix_2d = basis_to_2d(&projection, &model_matrix);
 
-    // Translation column should be the projected position (z, x, y) swizzle
+    // 平移列应为投影位置按 (z, x, y) 重排
     let translation_2d = model_matrix_2d.w_axis.truncate();
     let carto = ellipsoid.cartesian_to_cartographic(origin).unwrap();
     let projected = projection.project(&carto);
@@ -225,7 +225,7 @@ fn basis_to_2d_rotation_is_orthonormal() {
     let model_matrix = heading_pitch_roll_to_fixed_frame(&hpr, origin, &ellipsoid);
     let model_matrix_2d = basis_to_2d(&projection, &model_matrix);
 
-    // The 3x3 rotation part should be orthonormal
+    // 3x3 旋转部分应正交归一
     let rot = DMat3::from_cols(
         model_matrix_2d.x_axis.truncate(),
         model_matrix_2d.y_axis.truncate(),
@@ -260,11 +260,11 @@ fn ellipsoid_to_2d_model_matrix_rotation_matches_basis_to_2d() {
 
     let actual = ellipsoid_to_2d_model_matrix(&projection, origin);
 
-    // Expected: basisTo2D(projection, Matrix4.fromTranslation(origin))
+    // 期望：basisTo2D(projection, Matrix4.fromTranslation(origin))
     let translation_mat = DMat4::from_translation(origin);
     let expected = basis_to_2d(&projection, &translation_mat);
 
-    // Rotation parts should match
+    // 旋转部分应一致
     let actual_rot = DMat3::from_cols(
         actual.x_axis.truncate(),
         actual.y_axis.truncate(),
@@ -296,7 +296,7 @@ fn ellipsoid_to_2d_model_matrix_is_valid_rigid_transform() {
 
     let result = ellipsoid_to_2d_model_matrix(&projection, origin);
 
-    // Rotation part should be orthonormal
+    // 旋转部分应正交归一
     let rot = DMat3::from_cols(
         result.x_axis.truncate(),
         result.y_axis.truncate(),
@@ -314,18 +314,18 @@ fn ellipsoid_to_2d_model_matrix_is_valid_rigid_transform() {
     assert!(rot.col(0).dot(rot.col(2)).abs() < 1e-10);
     assert!(rot.col(1).dot(rot.col(2)).abs() < 1e-10);
 
-    // Translation should be finite
+    // 平移应为有限值
     let t = result.w_axis.truncate();
     assert!(t.x.is_finite() && t.y.is_finite() && t.z.is_finite());
 }
 
 // ===========================================================================
-// Frame functions - additional coverage
+// 参考系函数 - 补充覆盖
 // ===========================================================================
 
 #[test]
 fn north_east_down_frame_at_equator() {
-    // At (lat=0, lon=0): NED frame
+    // 在 (lat=0, lon=0)：NED 参考系
     // North = (0,0,1), East = (0,1,0), Down = (-1,0,0)
     let origin = DVec3::new(6378137.0, 0.0, 0.0);
     let frame = north_east_down_to_fixed_frame(origin, &wgs84());
@@ -341,7 +341,7 @@ fn north_east_down_frame_at_equator() {
 
 #[test]
 fn north_up_east_frame_at_equator() {
-    // At (lat=0, lon=0): NUE frame
+    // 在 (lat=0, lon=0)：NUE 参考系
     // North = (0,0,1), Up = (1,0,0), East = (0,1,0)
     let origin = DVec3::new(6378137.0, 0.0, 0.0);
     let frame = north_up_east_to_fixed_frame(origin, &wgs84());
@@ -357,7 +357,7 @@ fn north_up_east_frame_at_equator() {
 
 #[test]
 fn north_west_up_frame_at_equator() {
-    // At (lat=0, lon=0): NWU frame
+    // 在 (lat=0, lon=0)：NWU 参考系
     // North = (0,0,1), West = (0,-1,0), Up = (1,0,0)
     let origin = DVec3::new(6378137.0, 0.0, 0.0);
     let frame = north_west_up_to_fixed_frame(origin, &wgs84());
@@ -380,17 +380,17 @@ fn enu_frame_columns_are_orthonormal() {
     let north = frame.y_axis.truncate();
     let up = frame.z_axis.truncate();
 
-    // Unit length
+    // 单位长度
     assert!((east.length() - 1.0).abs() < 1e-10);
     assert!((north.length() - 1.0).abs() < 1e-10);
     assert!((up.length() - 1.0).abs() < 1e-10);
 
-    // Orthogonal
+    // 正交
     assert!(east.dot(north).abs() < 1e-10);
     assert!(east.dot(up).abs() < 1e-10);
     assert!(north.dot(up).abs() < 1e-10);
 
-    // Right-handed: east × north = up
+    // 右手系：east × north = up
     let cross = east.cross(north);
     assert!((cross - up).length() < 1e-10, "should be right-handed");
 }
@@ -401,7 +401,7 @@ fn heading_pitch_roll_to_fixed_frame_preserves_origin() {
     let hpr = HeadingPitchRoll::new(0.3, 0.2, 0.1);
     let frame = heading_pitch_roll_to_fixed_frame(&hpr, origin, &wgs84());
 
-    // Translation column should be the origin
+    // 平移列应为原点
     let translation = frame.w_axis.truncate();
     let diff = (translation - origin).length();
     assert!(diff < 1e-6, "translation should be origin, diff={}", diff);

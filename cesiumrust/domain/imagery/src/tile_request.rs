@@ -1,7 +1,6 @@
-//! Imagery tile request calculation.
+//! 影像瓦片请求计算。
 //!
-//! Computes which imagery tiles need to be requested for a given terrain tile
-//! based on the tiling scheme and layer configuration.
+//! 基于瓦片分割方案和图层配置，计算给定地形瓦片需要请求哪些影像瓦片。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::rectangle::Rectangle;
@@ -9,21 +8,21 @@ use cesium_geospatial::tiling_scheme::TilingScheme;
 
 use crate::imagery_layer::ImageryLayer;
 
-/// A request for an imagery tile.
+/// 一个影像瓦片请求。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ImageryTileRequest {
-    /// The imagery layer ID.
+    /// 影像图层 ID。
     pub layer_id: u64,
-    /// The tile X coordinate.
+    /// 瓦片的 X 坐标。
     pub x: u32,
-    /// The tile Y coordinate.
+    /// 瓦片的 Y 坐标。
     pub y: u32,
-    /// The tile level.
+    /// 瓦片的层级。
     pub level: u32,
 }
 
 impl ImageryTileRequest {
-    /// Creates a new imagery tile request.
+    /// 创建一个新的影像瓦片请求。
     pub fn new(layer_id: u64, x: u32, y: u32, level: u32) -> Self {
         Self {
             layer_id,
@@ -34,16 +33,16 @@ impl ImageryTileRequest {
     }
 }
 
-/// Computes the imagery tile requests needed to cover a terrain tile rectangle.
+/// 计算覆盖一个地形瓦片矩形所需的影像瓦片请求。
 ///
-/// # Arguments
-/// * `layer` - The imagery layer configuration
-/// * `terrain_rectangle` - The rectangle of the terrain tile
-/// * `terrain_level` - The level of the terrain tile
-/// * `tiling_scheme` - The tiling scheme used by the imagery provider
+/// # 参数
+/// * `layer` - 影像图层配置
+/// * `terrain_rectangle` - 地形瓦片的矩形区域
+/// * `terrain_level` - 地形瓦片的层级
+/// * `tiling_scheme` - 影像提供者使用的瓦片分割方案
 ///
-/// # Returns
-/// A list of imagery tile requests that cover the terrain tile
+/// # 返回
+/// 覆盖该地形瓦片的影像瓦片请求列表
 pub fn compute_tile_requests(
     layer: &ImageryLayer,
     terrain_rectangle: &Rectangle,
@@ -52,23 +51,23 @@ pub fn compute_tile_requests(
 ) -> Vec<ImageryTileRequest> {
     let mut requests = Vec::new();
 
-    // Check if the layer is visible and the level is valid
+    // 检查图层是否可见且级别有效
     if !layer.show {
         return requests;
     }
 
-    // Compute the imagery level to use
-    // Typically imagery level matches terrain level, but can be clamped
+    // 计算要使用的影像级别
+    // 通常影像级别与地形级别一致，但可被夹取
     let imagery_level = terrain_level.clamp(layer.minimum_level, layer.maximum_level);
 
-    // Check if the terrain rectangle intersects the layer rectangle
+    // 检查地形矩形是否与图层矩形相交
     let intersection = match terrain_rectangle.intersection(&layer.rectangle) {
         Some(rect) => rect,
         None => return requests,
     };
 
-    // Get the tile range that covers the intersection rectangle
-    // Clamp positions slightly inward to handle exact boundary cases
+    // 获取覆盖相交矩形的瓦片范围
+    // 将位置略微向内夹取，以处理精确的边界情况
     let (num_x_tiles, num_y_tiles) = tiling_scheme.tiles_at_level(imagery_level);
     let scheme_rect = tiling_scheme.rectangle();
     let epsilon = 1e-12;
@@ -89,7 +88,7 @@ pub fn compute_tile_requests(
         None => (num_x_tiles.saturating_sub(1), num_y_tiles.saturating_sub(1)),
     };
 
-    // Handle potential wrap-around or invalid coordinates
+    // 处理可能的环绕或无效坐标
     let (x_min, x_max) = if x_min <= x_max {
         (x_min, x_max)
     } else {
@@ -101,13 +100,13 @@ pub fn compute_tile_requests(
         (y_max, y_min)
     };
 
-    // Clamp to valid tile range
+    // 夹取到有效的瓦片范围
     let x_min = x_min.min(num_x_tiles.saturating_sub(1));
     let x_max = x_max.min(num_x_tiles.saturating_sub(1));
     let y_min = y_min.min(num_y_tiles.saturating_sub(1));
     let y_max = y_max.min(num_y_tiles.saturating_sub(1));
 
-    // Generate requests for all tiles in the range
+    // 为范围内的所有瓦片生成请求
     for y in y_min..=y_max {
         for x in x_min..=x_max {
             requests.push(ImageryTileRequest::new(layer.id, x, y, imagery_level));
@@ -117,14 +116,14 @@ pub fn compute_tile_requests(
     requests
 }
 
-/// Computes the texture coordinate mapping from a terrain tile to an imagery tile.
+/// 计算从地形瓦片到影像瓦片的纹理坐标映射。
 ///
-/// # Arguments
-/// * `terrain_rectangle` - The rectangle of the terrain tile
-/// * `imagery_rectangle` - The rectangle of the imagery tile
+/// # 参数
+/// * `terrain_rectangle` - 地形瓦片的矩形区域
+/// * `imagery_rectangle` - 影像瓦片的矩形区域
 ///
-/// # Returns
-/// A tuple of (translation, scale) for texture coordinate mapping
+/// # 返回
+/// 用于纹理坐标映射的 (平移, 缩放) 元组
 pub fn compute_texture_mapping(
     terrain_rectangle: &Rectangle,
     imagery_rectangle: &Rectangle,
@@ -134,11 +133,11 @@ pub fn compute_texture_mapping(
     let imagery_width = imagery_rectangle.width();
     let imagery_height = imagery_rectangle.height();
 
-    // Compute scale: how much of the imagery tile the terrain tile covers
+    // 计算缩放：地形瓦片覆盖影像瓦片的比例
     let scale_x = terrain_width / imagery_width;
     let scale_y = terrain_height / imagery_height;
 
-    // Compute translation: offset of terrain tile within imagery tile
+    // 计算平移：地形瓦片在影像瓦片内的偏移
     let translation_x = (terrain_rectangle.west - imagery_rectangle.west) / imagery_width;
     let translation_y = (terrain_rectangle.south - imagery_rectangle.south) / imagery_height;
 
@@ -163,8 +162,8 @@ mod tests {
 
         let requests = compute_tile_requests(&layer, &terrain_rect, 0, &tiling_scheme);
 
-        // At level 0, geographic tiling scheme has 2x1 tiles
-        // The terrain rect covers the western half, so should request tile (0, 0)
+        // 在 0 级，地理瓦片分割方案有 2x1 个瓦片
+        // 地形矩形覆盖西半球，因此应请求瓦片 (0, 0)
         assert!(!requests.is_empty());
         assert!(requests.iter().all(|r| r.layer_id == 1));
     }
@@ -187,11 +186,11 @@ mod tests {
         let terrain_rect = Rectangle::from_degrees(-10.0, -10.0, 10.0, 10.0);
         let tiling_scheme = create_geographic_tiling_scheme();
 
-        // Request at level 0 should be clamped to level 2
+        // 在 0 级发起的请求应被夹取到 2 级
         let requests = compute_tile_requests(&layer, &terrain_rect, 0, &tiling_scheme);
         assert!(requests.iter().all(|r| r.level == 2));
 
-        // Request at level 10 should be clamped to level 5
+        // 在 10 级发起的请求应被夹取到 5 级
         let requests = compute_tile_requests(&layer, &terrain_rect, 10, &tiling_scheme);
         assert!(requests.iter().all(|r| r.level == 5));
     }
@@ -203,11 +202,11 @@ mod tests {
 
         let (translation, scale) = compute_texture_mapping(&terrain_rect, &imagery_rect);
 
-        // Terrain covers the eastern half of imagery in X
+        // 在 X 方向上，地形覆盖影像的东半球
         assert!((translation[0] - 0.5).abs() < 1e-10);
-        // Terrain covers the middle half of imagery in Y
+        // 在 Y 方向上，地形覆盖影像的中间一半
         assert!((translation[1] - 0.25).abs() < 1e-10);
-        // Scale should be 0.5 in both dimensions
+        // 缩放应在两个维度上均为 0.5
         assert!((scale[0] - 0.5).abs() < 1e-10);
         assert!((scale[1] - 0.5).abs() < 1e-10);
     }

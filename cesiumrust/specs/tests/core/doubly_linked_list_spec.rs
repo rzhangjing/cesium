@@ -1,24 +1,24 @@
-//! DoublyLinkedList specs - ported from:
-//! - packages/engine/Specs/Core/DoublyLinkedListSpec.js (16 it())
+//! DoublyLinkedList 规格测试 - 移植自：
+//! - packages/engine/Specs/Core/DoublyLinkedListSpec.js（16 个 it()）
 //!
-//! A-class tests: 16 (node identity compared via Rc::ptr_eq)
+//! A 类测试：16 个（节点同一性通过 Rc::ptr_eq 比较）
 
 use cesium_geospatial::doubly_linked_list::{DoublyLinkedList, NodeRef};
 use std::rc::Rc;
 
-/// Asserts that the list contains exactly `nodes` in order, verifying head/tail
-/// and every node's next/previous pointers (mirrors the JS `expectOrder` helper).
+/// 断言链表按顺序恰好包含 `nodes`，校验 head/tail
+/// 以及每个节点的 next/previous 指针（复刻 JS 的 `expectOrder` 辅助函数）。
 fn expect_order(list: &DoublyLinkedList<i32>, nodes: &[NodeRef<i32>]) {
     let length = nodes.len();
     assert_eq!(list.length(), length);
 
-    // Verify head and tail pointers.
+    // 校验 head 和 tail 指针。
     let head = list.head().expect("head should be defined");
     let tail = list.tail().expect("tail should be defined");
     assert!(Rc::ptr_eq(&head, &nodes[0]), "head mismatch");
     assert!(Rc::ptr_eq(&tail, &nodes[length - 1]), "tail mismatch");
 
-    // Verify that the linked list has nodes in the expected order.
+    // 校验链表中的节点处于预期顺序。
     let mut node = list.head();
     for i in 0..length {
         let expected = &nodes[i];
@@ -69,7 +69,7 @@ fn adds_items() {
     let mut list = DoublyLinkedList::new();
     let node = list.add(1);
 
-    // head/tail both point to the single node.
+    // head/tail 都指向该唯一节点。
     assert!(Rc::ptr_eq(&list.head().unwrap(), &node));
     assert!(Rc::ptr_eq(&list.tail().unwrap(), &node));
     assert_eq!(list.length(), 1);
@@ -174,7 +174,7 @@ fn splices_next_node_before_node() {
     let node4 = list.add(4);
     let node5 = list.add(5);
 
-    // Move node2 after node4.
+    // 将 node2 移到 node4 之后。
     list.splice(&node4, &node2);
     expect_order(&list, &[node, node3, node4, node2, node5]);
 }
@@ -188,7 +188,7 @@ fn splices_next_node_after_node() {
     let node4 = list.add(4);
     let node5 = list.add(5);
 
-    // Move node4 after node2.
+    // 将 node4 移到 node2 之后。
     list.splice(&node2, &node4);
     expect_order(&list, &[node, node2, node4, node3, node5]);
 }
@@ -201,7 +201,7 @@ fn splices_next_node_immediately_before_node() {
     let node3 = list.add(3);
     let node4 = list.add(4);
 
-    // Move node2 after node3.
+    // 将 node2 移到 node3 之后。
     list.splice(&node3, &node2);
     expect_order(&list, &[node, node3, node2, node4]);
 }
@@ -214,7 +214,7 @@ fn splices_next_node_immediately_after_node() {
     let node3 = list.add(3);
     let node4 = list.add(4);
 
-    // node3 is already immediately after node2: order does not change.
+    // node3 已紧邻 node2 之后：顺序不变。
     list.splice(&node2, &node3);
     expect_order(&list, &[node, node2, node3, node4]);
 }
@@ -226,7 +226,7 @@ fn splices_node_equal_to_next_node() {
     let node2 = list.add(2);
     let node3 = list.add(3);
 
-    // node === nextNode: order does not change.
+    // node === nextNode：顺序不变。
     list.splice(&node2, &node2);
     expect_order(&list, &[node, node2, node3]);
 }

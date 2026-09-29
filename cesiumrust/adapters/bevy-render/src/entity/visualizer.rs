@@ -1,8 +1,8 @@
-//! Entity → Bevy Mesh conversion system.
+//! 实体 → Bevy Mesh 转换系统。
 //!
-//! Maps domain Entity graphics to Bevy meshes, materials, and transforms.
-//! Handles Point (quad), Polyline (extruded line strip), Polygon (fan
-//! triangulation), Billboard (camera-facing quad), and Model (glTF loading).
+//! 将领域 Entity 的图形映射为 Bevy 的 mesh、材质与变换。
+//! 处理 Point（四边形）、Polyline（挤出线串）、Polygon（扇形
+//! 三角剖分）、Billboard（面向相机的四边形）与 Model（glTF 加载）。
 
 use bevy::prelude::*;
 use cesium_datasource::property::{Color, Property};
@@ -19,7 +19,7 @@ use crate::entity_render::{
     entity_position_to_transform,
 };
 
-/// System that converts domain entities to Bevy renderable components.
+/// 将领域实体转为 Bevy 可渲染组件的系统。
 #[allow(clippy::too_many_arguments)]
 pub fn entity_visualizer_system(
     mut commands: Commands,
@@ -299,7 +299,7 @@ pub fn entity_visualizer_system(
     }
 }
 
-/// Updates billboard transforms to face the camera each frame.
+/// 每帧更新 billboard 变换以朝向相机。
 pub fn billboard_face_camera_system(
     camera_query: Query<&Transform, (With<Camera>, Without<BillboardTag>)>,
     mut billboard_query: Query<&mut Transform, With<BillboardTag>>,
@@ -316,7 +316,7 @@ pub fn billboard_face_camera_system(
     }
 }
 
-/// Creates a unit quad mesh for point rendering.
+/// 为点渲染创建一个单位四边形 mesh。
 fn create_point_quad_mesh(pixel_size: f32) -> Mesh {
     let half = pixel_size * 0.5;
     let vertices = vec![
@@ -340,7 +340,7 @@ fn create_point_quad_mesh(pixel_size: f32) -> Mesh {
     mesh
 }
 
-/// Creates a unit quad mesh for billboard rendering.
+/// 为 billboard 渲染创建一个单位四边形 mesh。
 fn create_billboard_quad_mesh() -> Mesh {
     let half = 50_000.0f32;
     let vertices = vec![
@@ -364,7 +364,7 @@ fn create_billboard_quad_mesh() -> Mesh {
     mesh
 }
 
-/// Resolves a color property at the given time.
+/// 在给定时间解析一个颜色属性。
 fn resolve_color(prop: &Property<Color>, default: Color) -> Color {
     prop.get_value(0.0).copied().unwrap_or(default)
 }

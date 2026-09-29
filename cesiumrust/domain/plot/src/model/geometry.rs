@@ -1,20 +1,20 @@
-//! The geometric variants a plot element can take.
+//! 标绘元素可采用的几何变体。
 //!
-//! Every variant stores only [`GeoPoint`]s / metres — the geographic source of
-//! truth (plan §3/§5). Rasterising to vertices and projecting into world space
-//! happens later (`geom` sampling + the render bridge), never here.
-//! [`Geometry::Composite`] is the reserved extension slot for combined /
-//! military-symbol geometries: M1 only guarantees the basic types are modelled,
-//! tree/IO/visibility round-trip through Composite but nothing samples it yet.
+//! 每个变体只存储 [`GeoPoint`] / 米 —— 即地理事实源
+//! （计划 §3/§5）。栅格化为顶点并投影到世界空间是在后面发生的
+//! （`geom` 采样 + 渲染桥接层），绝不在此处。
+//! [`Geometry::Composite`] 是为组合/军标几何预留的扩展槽位：
+//! M1 仅保证基本类型被建模，树/IO/可见性会穿过 Composite
+//! 往返，但目前没有任何东西采样它。
 
 use serde::{Deserialize, Serialize};
 
 use crate::geo::{GeoBounds, GeoPoint};
 
-/// A closed ring: at least 3 points, first == last implied (not stored twice).
+/// 一个闭合环：至少 3 个点，首 == 尾为隐含（不存两遍）。
 pub type Ring = Vec<GeoPoint>;
 
-/// Where a label sits relative to its anchor coordinate.
+/// 标签相对于其锚点坐标的位置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum LabelAnchor {
     #[default]
@@ -25,42 +25,42 @@ pub enum LabelAnchor {
     Bottom,
 }
 
-/// An icon reference: which symbol + the anchor it is placed at.
+/// 一个图标引用：哪个符号 + 它被放置的锚点。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IconGeometry {
-    /// Geographic anchor.
+    /// 地理锚点。
     pub at: GeoPoint,
-    /// Registry key selecting the icon image (resolved by the bridge).
+    /// 选择图标图像的注册表键（由桥接层解析）。
     pub key: String,
 }
 
-/// A text label anchored at a coordinate.
+/// 锚定在坐标上的文本标签。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LabelGeometry {
-    /// Geographic anchor.
+    /// 地理锚点。
     pub at: GeoPoint,
-    /// Text to render (ASCII under the current bundled font).
+    /// 要渲染的文本（在当前内置字体下为 ASCII）。
     pub text: String,
-    /// Anchor alignment.
+    /// 锚点对齐方式。
     pub anchor: LabelAnchor,
-    /// Pixel offset from the projected anchor (x right, y up).
+    /// 从投影锚点起的像素偏移（x 向右，y 向上）。
     pub offset_px: [f32; 2],
 }
 
-/// A connected open line of >= 2 vertices.
+/// 一条由 >= 2 个顶点连接而成的开放线。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Polyline {
     pub positions: Vec<GeoPoint>,
 }
 
-/// A simple polygon: one outer ring + optional holes.
+/// 一个简单多边形：一个外环 + 可选的孔。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Polygon {
     pub outer: Ring,
     pub holes: Vec<Ring>,
 }
 
-/// A lat/lon axis-aligned rectangle.
+/// 一个经/纬度轴对齐的矩形。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Rectangle {
     pub west: f64,
@@ -69,15 +69,15 @@ pub struct Rectangle {
     pub north: f64,
 }
 
-/// A ground circle: centre + radius in metres (sampled later).
+/// 一个地面圆：中心 + 以米为单位的半径（稍后采样）。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Circle {
     pub center: GeoPoint,
     pub radius_m: f64,
 }
 
-/// A ground ellipse: centre, semi-axes (metres) and bearing (degrees, clockwise
-/// from north). Sampled later.
+/// 一个地面椭圆：中心、半轴（米）与方位角（度，自北向
+/// 顺时针）。稍后采样。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Ellipse {
     pub center: GeoPoint,
@@ -86,7 +86,7 @@ pub struct Ellipse {
     pub rotation_deg: f64,
 }
 
-/// A circular arc through three points: start → (via) center → end.
+/// 经过三点的圆弧：起点 → （途经）中心 → 终点。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Arc3 {
     pub start: GeoPoint,
@@ -94,28 +94,28 @@ pub struct Arc3 {
     pub end: GeoPoint,
 }
 
-/// One segment of a [`Path`] (mixed primitive pieces stitched together).
+/// [`Path`] 的一个段（混合的基本体片段拼接在一起）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PathSegment {
     Line(Ring),
     Arc(Arc3),
 }
 
-/// A compound path of mixed straight / arc segments.
+/// 由混合直线 / 圆弧段构成的复合路径。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Path {
     pub segments: Vec<PathSegment>,
 }
 
-/// Reserved classifier for combined / military symbol kinds (M9+).
+/// 为组合 / 军标类型预留的分类器（M9+）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum SymbolKind {
-    /// Untyped composite — just draws its parts.
+    /// 无类型的复合体 —— 仅绘制其各部分。
     #[default]
     Generic,
 }
 
-/// A geometry built from other geometries (extension slot for symbol library).
+/// 由其他几何体构建的几何体（符号库的扩展槽位）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Composite {
     pub kind: SymbolKind,
@@ -123,28 +123,27 @@ pub struct Composite {
 }
 
 impl Composite {
-    /// Assemble a composite symbol from a classifier and its constituent
-    /// geometries. This is the reserved M9+ military-symbol integration point:
-    /// a symbol library resolves a `SymbolKind` to a `Vec<Geometry>` and folds
-    /// them here; everything downstream (tree / IO / visibility / sampling) then
-    /// treats the symbol as a single geometry whose [`vertices`](Geometry::vertices)
-    /// and bounds are the union of its parts.
+    /// 由一个分类器及其组成几何体装配出一个复合符号。这是预留的
+    /// M9+ 军标集成点：符号库将一个 `SymbolKind` 解析为一个 `Vec<Geometry>`
+    /// 并在此折叠它们；随后一切下游（树 / IO / 可见性 / 采样）
+    /// 都把该符号视为单个几何体，其 [`vertices`](Geometry::vertices)
+    /// 与包围盒是各部分的并集。
     pub fn new(kind: SymbolKind, parts: Vec<Geometry>) -> Self {
         Self { kind, parts }
     }
 
-    /// Number of constituent parts.
+    /// 组成部分的数量。
     pub fn len(&self) -> usize {
         self.parts.len()
     }
 
-    /// Whether the composite holds no parts.
+    /// 复合体是否不含有任何部分。
     pub fn is_empty(&self) -> bool {
         self.parts.is_empty()
     }
 }
 
-/// The full geometry union.
+/// 完整的几何并集。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Geometry {
     Point(GeoPoint),
@@ -160,7 +159,7 @@ pub enum Geometry {
     Composite(Composite),
 }
 
-/// Coarse class used by the type-dimension of the visibility filters (§10.5).
+/// 可见性过滤器的类型维度所使用的粗粒度分类（§10.5）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum GeometryKind {
     Point,
@@ -177,8 +176,8 @@ pub enum GeometryKind {
 }
 
 impl GeometryKind {
-    /// Every kind, in a stable display order — the type-dimension filter panel
-    /// (plan §10.5 / §9) offers one toggle per entry.
+    /// 每一种类型，按稳定的展示顺序 —— 类型维度过滤器面板
+    /// （计划 §10.5 / §9）为每个条目提供一个开关。
     pub const ALL: [GeometryKind; 11] = [
         GeometryKind::Point,
         GeometryKind::Icon,
@@ -193,14 +192,14 @@ impl GeometryKind {
         GeometryKind::Composite,
     ];
 
-    /// The full list (see [`GeometryKind::ALL`]).
+    /// 完整列表（见 [`GeometryKind::ALL`]）。
     pub fn all() -> &'static [GeometryKind] {
         &Self::ALL
     }
 }
 
 impl Geometry {
-    /// The visibility-filter class of this geometry.
+    /// 此几何体的可见性过滤器类。
     pub fn kind(&self) -> GeometryKind {
         match self {
             Geometry::Point(_) => GeometryKind::Point,
@@ -217,10 +216,10 @@ impl Geometry {
         }
     }
 
-    /// Every stored vertex, used for a conservative bounds. Circles / ellipses
-    /// only contribute their centre here; the sampling pass (`geom`, M4) is
-    /// responsible for the true extent, so the cached element bounds for those
-    /// are a centre proxy until then.
+    /// 存储的每个顶点，用于保守的包围盒。圆 / 椭圆
+    /// 在此只贡献其中心；采样遍（`geom`，M4）
+    /// 负责真实范围，因此在那之前那些类型的缓存元素包围盒
+    /// 只是一个中心代理。
     pub fn vertices(&self) -> Vec<GeoPoint> {
         match self {
             Geometry::Point(p) => vec![*p],
@@ -253,21 +252,19 @@ impl Geometry {
         }
     }
 
-    /// Conservative geographic bounds that provably contain every vertex the
-    /// sampler ([`crate::geom::sample`]) — and therefore the renderer and the
-    /// picker via `shapes::{stroke_positions, face_rings}` — can produce for this
-    /// geometry. It is deliberately the *globe* (great-circle densified) extent,
-    /// which is a superset of the flat extent, so the same box is a safe
-    /// broad-phase reject in both view modes:
-    ///  * polylines / polygon + hole edges / rectangle edges / path lines are
-    ///    subdivided along their great circles, capturing the poleward bulge a
-    ///    sparse control-point box would miss;
-    ///  * circles / ellipses / arcs use their sampled ring, which already sits at
-    ///    the true outer extent (further subdivision only pulls inward);
-    ///  * point-like kinds reduce to their anchor (the picker adds pixel slack).
+    /// 保守的地理包围盒，可证明包含采样器（[`crate::geom::sample`]）—— 从而
+    /// 也包括渲染器与拾取器经 `shapes::{stroke_positions, face_rings}` ——
+    /// 为此几何体能产生的每一个顶点。它故意取*地球*（大圆加密）的
+    /// 范围，这是平面范围的超集，因此同一个盒子在两种视图模式下
+    /// 都是安全的宽相位剔除：
+    ///  * 折线 / 多边形 + 孔边 / 矩形边 / 路径线会沿其大圆
+    ///    细分，捕获一个稀疏控制点盒子会漏掉的向极凸起；
+    ///  * 圆 / 椭圆 / 圆弧使用其采样环，该环已位于真正的外层
+    ///    范围（进一步细分只会向内收缩）；
+    ///  * 点状类型退化为其锚点（拾取器会加上像素余量）。
     ///
-    /// Computed once per edit ([`Element::set_geometry`](crate::model::element::Element::set_geometry)),
-    /// never on the render / pick hot path.
+    /// 每次编辑计算一次（[`Element::set_geometry`](crate::model::element::Element::set_geometry)），
+    /// 绝不在渲染 / 拾取热路径上计算。
     pub fn bounds(&self) -> GeoBounds {
         use crate::geom::sample::{
             arc_ring, circle_ring, ellipse_ring, rectangle_ring, subdivide_great_circle,
@@ -316,8 +313,8 @@ impl Geometry {
         }
     }
 
-    /// A single representative anchor coordinate for point-like geometries
-    /// (used by label / icon placement and single-vertex moves).
+    /// 点状几何体的单个代表性锚点坐标
+    /// （供标签 / 图标放置与单顶点移动使用）。
     pub fn anchor(&self) -> Option<GeoPoint> {
         match self {
             Geometry::Point(p) => Some(*p),
@@ -330,9 +327,9 @@ impl Geometry {
     }
 }
 
-/// Close a ring (repeat the first vertex at the end) then densify it along great
-/// circles, so the closing edge's poleward bulge is included too. Falls back to
-/// the raw slice for a ring too short to have an edge.
+/// 闭合一个环（在末尾重复第一个顶点）然后沿大圆加密它，
+/// 以便闭边的向极凸起也被包含。对于短到没有边的环，
+/// 回退到原始切片。
 fn subdivide_closed(ring: &[GeoPoint], step_rad: f64) -> Vec<GeoPoint> {
     use crate::geom::sample::subdivide_great_circle;
     if ring.len() < 2 {
@@ -365,9 +362,9 @@ mod tests {
     fn vertices_and_bounds() {
         let rect = Geometry::Rectangle(Rectangle { west: -10.0, south: -20.0, east: 30.0, north: 40.0 });
         let b = rect.bounds();
-        // The E/W sides are meridians (longitude preserved exactly); the N/S
-        // sides are constant-latitude chords whose great circle bulges poleward,
-        // so the conservative box contains the corners and grows north of 40°.
+        // 东/西侧是经线（经度被精确保留）；南/北
+        // 侧是等纬度弦，其大圆向极凸起，
+        // 因此保守盒包含四角并向北超过 40° 成长。
         assert!(
             b.west_deg <= -10.0 && b.east_deg >= 30.0 && b.south_deg <= -20.0 && b.north_deg >= 40.0,
             "corners must be contained: {b:?}",
@@ -378,7 +375,7 @@ mod tests {
             outer: vec![GeoPoint::surface(0.0, 0.0), GeoPoint::surface(1.0, 0.0), GeoPoint::surface(0.0, 1.0)],
             holes: vec![vec![GeoPoint::surface(5.0, 5.0)]],
         });
-        // Holes widen the conservative bounds too.
+        // 孔也会拓宽保守包围盒。
         assert_eq!(poly.vertices().len(), 4);
         assert_eq!(poly.bounds().east_deg, 5.0);
     }
@@ -389,9 +386,9 @@ mod tests {
             circle_ring, ellipse_ring, subdivide_great_circle, DEFAULT_SEGMENTS,
             GREAT_CIRCLE_STEP_RAD,
         };
-        // A long high-latitude east-west line: its densified great circle bulges
-        // poleward past the 60°N control points, and bounds must cover every
-        // vertex the renderer / picker will actually test.
+        // 一条长的高纬度东西线：其加密大圆向极凸起，
+        // 越过 60°N 的控制点，且包围盒必须覆盖渲染器 / 拾取器
+        // 实际会测试的每个顶点。
         let line = Geometry::Polyline(Polyline {
             positions: vec![GeoPoint::surface(0.0, 60.0), GeoPoint::surface(60.0, 60.0)],
         });
@@ -400,14 +397,14 @@ mod tests {
         assert!(dens.iter().all(|p| b.contains(*p)), "bulge vertex outside bounds");
         assert!(b.north_deg > 61.0, "must capture the poleward bulge, got {b:?}");
 
-        // A circle: bounds must span the whole sampled disc, not collapse to the
-        // centre the way the old control-vertex box did.
+        // 一个圆：包围盒必须跨遍整个采样圆盘，而不是像
+        // 旧的控制顶点盒那样收缩到中心。
         let c = Circle { center: GeoPoint::surface(10.0, 50.0), radius_m: 500_000.0 };
         let cb = Geometry::Circle(c).bounds();
         assert!(cb.width_deg() > 1.0 && cb.height_deg() > 1.0, "circle bounds degenerate: {cb:?}");
         assert!(circle_ring(&c, DEFAULT_SEGMENTS).iter().all(|p| cb.contains(*p)));
 
-        // Likewise an oriented ellipse.
+        // 同理，一个带朝向的椭圆。
         let e = Ellipse {
             center: GeoPoint::surface(0.0, 0.0),
             semi_major_m: 800_000.0,

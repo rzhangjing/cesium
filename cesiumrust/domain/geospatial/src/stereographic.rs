@@ -1,5 +1,5 @@
-//! Stereographic projection coordinates.
-//! Maps to CesiumJS `Core/Stereographic.js`
+//! 球极投影坐标。
+//! 映射到 CesiumJS `Core/Stereographic.js`
 
 use crate::ellipsoid::Ellipsoid;
 use crate::ellipsoid_tangent_plane::EllipsoidTangentPlane;
@@ -7,30 +7,30 @@ use crate::math_utils;
 use crate::ray::{ray_plane, Ray};
 use glam::{DVec2, DVec3};
 
-/// An ellipsoid with radii (0.5, 0.5, 0.5).
+/// 半径为 (0.5, 0.5, 0.5) 的椭球。
 pub const HALF_UNIT_SPHERE: Ellipsoid = Ellipsoid::from_radii_unchecked(0.5, 0.5, 0.5);
 
-/// North pole on the half-unit sphere.
+/// 半单位球上的北极。
 pub const NORTH_POLE: DVec3 = DVec3::new(0.0, 0.0, 0.5);
-/// South pole on the half-unit sphere.
+/// 半单位球上的南极。
 pub const SOUTH_POLE: DVec3 = DVec3::new(0.0, 0.0, -0.5);
 
-/// Identifies which pole tangent plane is used.
+/// 标识所使用的极点切平面。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PoleTangentPlane {
     North,
     South,
 }
 
-/// Represents a point in stereographic coordinates, obtained by projecting
-/// a cartesian coordinate from one pole onto a tangent plane at the other pole.
+/// 表示球极坐标中的一个点，通过将笛卡尔坐标从一个极点投影到
+/// 另一个极点处的切平面而得到。
 ///
-/// Maps to CesiumJS `Stereographic`
+/// 映射到 CesiumJS `Stereographic`
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Stereographic {
-    /// The stereographic 2D coordinates.
+    /// 球极 2D 坐标。
     pub position: DVec2,
-    /// Which pole tangent plane was used.
+    /// 所使用的极点切平面。
     pub tangent_plane: PoleTangentPlane,
 }
 
@@ -44,7 +44,7 @@ impl Default for Stereographic {
 }
 
 impl Stereographic {
-    /// Creates a new Stereographic with the given position and tangent plane.
+    /// 以给定的位置和切平面创建一个新的 Stereographic。
     pub fn new(position: DVec2, tangent_plane: PoleTangentPlane) -> Self {
         Self {
             position,
@@ -52,25 +52,25 @@ impl Stereographic {
         }
     }
 
-    /// Gets the x coordinate.
+    /// 获取 x 坐标。
     #[inline]
     pub fn x(&self) -> f64 {
         self.position.x
     }
 
-    /// Gets the y coordinate.
+    /// 获取 y 坐标。
     #[inline]
     pub fn y(&self) -> f64 {
         self.position.y
     }
 
-    /// Gets the ellipsoid (always the half-unit sphere).
+    /// 获取椭球（始终为半单位球）。
     #[inline]
     pub fn ellipsoid(&self) -> &'static Ellipsoid {
         &HALF_UNIT_SPHERE
     }
 
-    /// Computes the conformal latitude (ellipsoidal latitude projected onto an arbitrary sphere).
+    /// 计算共形纬度（将椭球纬度投影到任意球面上）。
     pub fn conformal_latitude(&self) -> f64 {
         let r = self.position.length();
         let d = 2.0 * HALF_UNIT_SPHERE.maximum_radius();
@@ -81,7 +81,7 @@ impl Stereographic {
         sign * (math_utils::PI_OVER_TWO - 2.0 * r.atan2(d))
     }
 
-    /// Computes the longitude.
+    /// 计算经度。
     pub fn longitude(&self) -> f64 {
         let mut longitude = math_utils::PI_OVER_TWO + self.position.y.atan2(self.position.x);
         if longitude > std::f64::consts::PI {
@@ -90,14 +90,14 @@ impl Stereographic {
         longitude
     }
 
-    /// Computes the geodetic latitude on the given ellipsoid.
+    /// 计算在给定椭球上的大地纬度。
     ///
-    /// Maps to `Stereographic.prototype.getLatitude`
+    /// 映射到 `Stereographic.prototype.getLatitude`
     pub fn get_latitude(&self, ellipsoid: &Ellipsoid) -> f64 {
         let conformal_lat = self.conformal_latitude();
         let longitude = self.longitude();
 
-        // Convert conformal latitude on half-unit sphere to cartesian
+        // 将半单位球上的共形纬度转换为笛卡尔坐标
         let cos_lat = conformal_lat.cos();
         let cartesian = DVec3::new(
             HALF_UNIT_SPHERE.maximum_radius() * cos_lat * longitude.cos(),
@@ -105,16 +105,16 @@ impl Stereographic {
             HALF_UNIT_SPHERE.maximum_radius() * conformal_lat.sin(),
         );
 
-        // Convert that cartesian to cartographic on the target ellipsoid
+        // 再将该笛卡尔坐标转换为目标椭球上的测绘坐标
         ellipsoid
             .cartesian_to_cartographic(cartesian)
             .map(|c| c.latitude)
             .unwrap_or(conformal_lat)
     }
 
-    /// Computes the projection of the provided 3D position onto the 2D polar plane.
+    /// 计算给定 3D 位置到 2D 极点平面的投影。
     ///
-    /// Maps to `Stereographic.fromCartesian`
+    /// 映射到 `Stereographic.fromCartesian`
     pub fn from_cartesian(cartesian: DVec3) -> Self {
         let sign = if cartesian.z >= 0.0 { 1.0 } else { -1.0 };
 
@@ -126,7 +126,7 @@ impl Stereographic {
 
         let tangent_plane = Self::get_tangent_plane(tangent_plane_id);
 
-        // Ray from geocentric surface point toward the opposite pole
+        // 从地心表面点射向对面极点的射线
         let surface_point = HALF_UNIT_SPHERE
             .scale_to_geocentric_surface(cartesian)
             .unwrap_or(cartesian);
@@ -149,14 +149,14 @@ impl Stereographic {
         }
     }
 
-    /// Computes the projection of an array of 3D positions.
+    /// 计算一组 3D 位置的投影。
     ///
-    /// Maps to `Stereographic.fromCartesianArray`
+    /// 映射到 `Stereographic.fromCartesianArray`
     pub fn from_cartesian_array(cartesians: &[DVec3]) -> Vec<Self> {
         cartesians.iter().map(|&c| Self::from_cartesian(c)).collect()
     }
 
-    /// Gets the tangent plane for the given pole.
+    /// 获取给定极点的切平面。
     fn get_tangent_plane(pole: PoleTangentPlane) -> EllipsoidTangentPlane {
         match pole {
             PoleTangentPlane::North => EllipsoidTangentPlane::new(NORTH_POLE, &HALF_UNIT_SPHERE),

@@ -1,5 +1,5 @@
-//! Geocoder specs - ported from Widgets/GeocoderSpec, GeocoderViewModelSpec
-//! Covers: GeocoderViewModel, GeocoderSearchResult
+//! Geocoder 规范 - 移植自 Widgets/GeocoderSpec、GeocoderViewModelSpec
+//! 覆盖：GeocoderViewModel、GeocoderSearchResult
 
 use cesium_widgets::geocoder::{GeocoderSearchDestination, GeocoderSearchResult, GeocoderViewModel};
 
@@ -87,15 +87,15 @@ fn geocoder_select_next_previous() {
             destination: GeocoderSearchDestination::Rectangle([1.0, 1.0, 2.0, 2.0]),
         },
     ]);
-    // complete_search sets selected_index to Some(0)
+    // complete_search 将 selected_index 设为 Some(0)
     assert_eq!(vm.selected_index, Some(0));
     vm.select_next();
     assert_eq!(vm.selected_index, Some(1));
     vm.select_next();
-    // wraps around
+    // 环绕
     assert_eq!(vm.selected_index, Some(0));
     vm.select_previous();
-    // wraps to last
+    // 环绕到末尾
     assert_eq!(vm.selected_index, Some(1));
 }
 
@@ -112,7 +112,7 @@ fn geocoder_selected_result() {
             height: Some(100.0),
         },
     }]);
-    // complete_search auto-selects first result
+    // complete_search 自动选择第一个结果
     let result = vm.selected_result().unwrap();
     assert_eq!(result.display_name, "Only Result");
 }

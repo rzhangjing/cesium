@@ -1,10 +1,10 @@
-//! Structural document operations (plan §8 / §14): the draw-tool draft commit
-//! and the [`PlotCommand`]s that mutate the [`Document`].
+//! 结构性文档操作（计划 §8 / §14）：绘图工具草稿提交
+//! 以及会变更 [`Document`] 的 [`PlotCommand`]。
 //!
-//! The command is a *pure* value: applying it to a document is a plain function,
-//! so the same command drives the live bridge and (from M6) the history stack's
-//! undo by carrying an inverse. M5 introduces the add / remove pair used by the
-//! drawing flow; M6 extends with geometry / style / transform / group edits.
+//! 命令是一个*纯* 值：将它应用于文档就是一个普通函数，
+//! 因此同一个命令既驱动实时桥接，也（从 M6 起）通过携带一个逆命令
+//! 驱动历史栈的撤销。M5 引入绘图流程使用的 add / remove 配对；
+//! M6 扩展几何 / 样式 / 变换 / 组编辑。
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -15,25 +15,25 @@ use crate::model::geometry::{Circle, Geometry, Polyline, Polygon, Rectangle};
 use crate::model::ids::{ElementId, LayerId};
 use crate::model::{Document, Element, Style};
 
-/// The primitive the draw tool is producing. Drives how a draft vertex list is
-/// folded into a concrete geometry ([`commit_draft`]) and how many clicks the
-/// tool needs before it can finish.
+/// 绘图工具正在生成的图元类型。决定一份草稿顶点列表如何
+/// 被折叠成一个具体的几何（[`commit_draft`]）以及工具需要
+/// 多少次点击才能完成。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DrawKind {
-    /// A single point marker (1 click).
+    /// 单个点标记（1 次点击）。
     Point,
-    /// A free polyline (≥ 2 clicks, finished by Enter / double-click).
+    /// 一条自由折线（≥ 2 次点击，由 Enter / 双击完成）。
     Polyline,
-    /// A closed polygon (≥ 3 clicks).
+    /// 一个闭合多边形（≥ 3 次点击）。
     Polygon,
-    /// An axis-aligned rectangle from two opposite corners (2 clicks).
+    /// 由两个对角组成的轴对齐矩形（2 次点击）。
     Rectangle,
-    /// A ground circle from centre + a radius point (2 clicks).
+    /// 由中心 + 一个半径点构成的地面圆（2 次点击）。
     Circle,
 }
 
 impl DrawKind {
-    /// Fewest draft vertices that can still form this geometry.
+    /// 仍能构成此几何的最少草稿顶点数。
     #[inline]
     pub fn min_points(self) -> usize {
         match self {
@@ -44,8 +44,8 @@ impl DrawKind {
         }
     }
 
-    /// A fixed click count that auto-completes the draw (rect / circle / point),
-    /// or `None` for open-ended kinds (polyline / polygon) finished by gesture.
+    /// 会自动完成绘制的固定点击数（矩形 / 圆 / 点），
+    /// 或由手势完成的开放式类型（折线 / 多边形）则为 `None`。
     #[inline]
     pub fn fixed_points(self) -> Option<usize> {
         match self {
@@ -56,9 +56,8 @@ impl DrawKind {
     }
 }
 
-/// Fold a completed draft into a concrete geometry, or `None` when there are too
-/// few vertices. Rectangles take the two opposite corners' bounds; circles the
-/// great-circle radius between centre and the radius point.
+/// 将一份完成的草稿折叠成具体几何，或当顶点太少时返回 `None`。矩形取
+/// 两个对角构成的包围盒；圆取中心与半径点之间的大圆距离。
 pub fn commit_draft(kind: DrawKind, draft: &[GeoPoint]) -> Option<Geometry> {
     if draft.len() < kind.min_points() {
         return None;
@@ -92,56 +91,56 @@ pub fn commit_draft(kind: DrawKind, draft: &[GeoPoint]) -> Option<Geometry> {
     }
 }
 
-/// A reversible structural change to the document (plan §14). The bridge applies
-/// it through [`PlotCommand::apply`]; the history stack records it and its
-/// [`PlotCommand::inverse`] so an edit can be undone / redone (M6).
+/// 对文档的一次可逆结构性变更（计划 §14）。桥接层通过
+/// [`PlotCommand::apply`] 应用它；历史栈记录它及其
+/// [`PlotCommand::inverse`]，以便一次编辑可被撤销 / 重做（M6）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlotCommand {
-    /// Insert a finished element into a layer.
+    /// 向一个图层插入一个完成的元素。
     AddElement {
         layer: LayerId,
         element: Box<Element>,
     },
-    /// Delete an element by id (the full element is kept so the op reverses).
+    /// 按 id 删除一个元素（保留完整元素以便操作可逆）。
     RemoveElement {
         element: Box<Element>,
         layer: LayerId,
     },
-    /// Replace an element's geometry (the move / vertex-edit / rotate / scale
-    /// result). Both sides are kept so undo restores the previous shape.
+    /// 替换一个元素的几何（移动 / 顶点编辑 / 旋转 / 缩放
+    /// 的结果）。两侧都保留，以便 undo 恢复之前的形状。
     UpdateGeometry {
         id: ElementId,
         before: Box<Geometry>,
         after: Box<Geometry>,
     },
-    /// Replace an element's whole style bag (property-panel edits).
+    /// 替换一个元素的整个样式包（属性面板编辑）。
     SetStyle {
         id: ElementId,
         before: Box<Style>,
         after: Box<Style>,
     },
-    /// Flip an element's manual visibility toggle (layer / panel eye button).
+    /// 翻转一个元素的手动可见性开关（图层 / 面板眼睛按钮）。
     SetVisibilityFlag {
         id: ElementId,
         before: bool,
         after: bool,
     },
-    /// Replace an element's free-form business attributes (敌我 / 番号 / 状态 …).
-    /// Both maps are kept so undo restores the previous metadata; the agent layer
-    /// (M-agent) emits this for `SetAttributes` merges.
+    /// 替换一个元素的自由形式业务属性（敌我 / 番号 / 状态 …）。
+    /// 两个 map 都保留，以便 undo 恢复之前的元数据；agent 层
+    /// （M-agent）为 `SetAttributes` 合并发出此命令。
     SetAttributes {
         id: ElementId,
         before: Map<String, Value>,
         after: Map<String, Value>,
     },
-    /// A group of commands applied as one undo step (multi-select edits).
+    /// 作为单个 undo 步骤应用的一组命令（多选编辑）。
     Composite {
         steps: Vec<PlotCommand>,
     },
 }
 
 impl PlotCommand {
-    /// Mutate `doc` by this command.
+    /// 通过此命令变更 `doc`。
     pub fn apply(&self, doc: &mut Document) {
         match self {
             PlotCommand::AddElement { layer, element } => {
@@ -182,8 +181,8 @@ impl PlotCommand {
         }
     }
 
-    /// The command that exactly reverses this one (undo). Re-adding an element
-    /// reuses its id, so the redo / undo pair is stable.
+    /// 精确逆转此命令的命令（undo）。重新添加一个元素
+    /// 会复用其 id，因此 redo / undo 配对是稳定的。
     pub fn inverse(&self) -> PlotCommand {
         match self {
             PlotCommand::AddElement { layer, element } => PlotCommand::RemoveElement {
@@ -215,15 +214,15 @@ impl PlotCommand {
                 after: before.clone(),
             },
             PlotCommand::Composite { steps } => PlotCommand::Composite {
-                // Reverse the whole group: undo runs the inverses back-to-front.
+                // 逆转整个组：undo 从后往前运行逆命令。
                 steps: steps.iter().rev().map(PlotCommand::inverse).collect(),
             },
         }
     }
 
-    /// The id this command touches (for change-driven reconcile hints).
-    /// A composite reports its first leaf target; an empty composite reports
-    /// the reserved id `0` (nothing to reconcile).
+    /// 此命令触及的 id（用于变更驱动的调和提示）。
+    /// 一个复合命令报告它的第一个叶子目标；一个空复合命令报告
+    /// 保留 id `0`（无需调和）。
     pub fn target(&self) -> ElementId {
         match self {
             PlotCommand::AddElement { element, .. } => element.id,
@@ -238,8 +237,8 @@ impl PlotCommand {
         }
     }
 
-    /// Every leaf element id this command touches (a composite flattens; the
-    /// bridge uses this to know which visuals to reconcile after an undo).
+    /// 此命令触及的每个叶子元素 id（一个复合命令会扁平化；桥接层
+    /// 用它在 undo 之后知道要调和哪些视觉效果）。
     pub fn targets(&self) -> Vec<ElementId> {
         match self {
             PlotCommand::Composite { steps } => steps.iter().flat_map(PlotCommand::targets).collect(),
@@ -286,7 +285,7 @@ mod tests {
 
     #[test]
     fn rectangle_orders_corners() {
-        // Corners given out of order → west/south are still the minima.
+        // 乱序给出的对角 → west/south 仍为最小值。
         let g = commit_draft(DrawKind::Rectangle, &[p(10.0, 20.0), p(-5.0, 3.0)]).unwrap();
         match g {
             Geometry::Rectangle(r) => {
@@ -299,7 +298,7 @@ mod tests {
 
     #[test]
     fn circle_radius_is_great_circle_distance() {
-        // One degree of longitude on the equator ≈ 111.32 km.
+        // 赤道上经度一度 ≈ 111.32 km。
         let g = commit_draft(
             DrawKind::Circle,
             &[p(0.0, 0.0), p(1.0, 0.0)],
@@ -311,7 +310,7 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-        // Zero-radius circle (two identical clicks) is rejected.
+        // 零半径圆（两次相同点击）被拒绝。
         assert!(commit_draft(DrawKind::Circle, &[p(0.0, 0.0), p(0.0, 0.0)]).is_none());
     }
 
@@ -326,10 +325,10 @@ mod tests {
         };
         add.apply(&mut doc);
         assert!(doc.element(ElementId(99)).is_some());
-        // Its inverse removes it.
+        // 它的逆命令将其移除。
         add.inverse().apply(&mut doc);
         assert!(doc.element(ElementId(99)).is_none());
-        // And the inverse-of-inverse re-adds (redo).
+        // 而逆命令的逆命令重新添加（redo）。
         add.inverse().inverse().apply(&mut doc);
         assert!(doc.element(ElementId(99)).is_some());
     }
@@ -362,7 +361,7 @@ mod tests {
         };
         cmd.apply(&mut doc);
         assert_eq!(doc.element(ElementId(7)).unwrap().geometry, after);
-        // Undo restores the original and refreshes the cached bounds.
+        // Undo 恢复原始值并刷新缓存的包围盒。
         cmd.inverse().apply(&mut doc);
         let e = doc.element(ElementId(7)).unwrap();
         assert_eq!(e.geometry, Geometry::Point(p(0.0, 0.0)));
@@ -414,9 +413,9 @@ mod tests {
         for id in 1..=3u64 {
             assert!(!doc.element(ElementId(id)).unwrap().flags.visible_manual);
         }
-        // targets() flattens across leaves.
+        // targets() 跨叶子扁平化。
         assert_eq!(group.targets(), vec![ElementId(1), ElementId(2), ElementId(3)]);
-        // Undo the group restores every leaf.
+        // 撤销该组会恢复每个叶子。
         group.inverse().apply(&mut doc);
         for id in 1..=3u64 {
             assert!(doc.element(ElementId(id)).unwrap().flags.visible_manual);

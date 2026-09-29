@@ -1,7 +1,7 @@
-//! Ported from CesiumJS `Specs/Scene/HeightmapTessellatorSpec.js`
+//! 移植自 CesiumJS `Specs/Scene/HeightmapTessellatorSpec.js`
 //!
-//! Covers: computeVertices without skirt, with skirt, quantized mesh,
-//! web mercator, multi-element little/big endian heights.
+//! 涵盖：computeVertices 无裙边、带裙边、量化网格、
+//! web mercator、多元素小/大端高度。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -129,14 +129,14 @@ fn check_expected_quantized_vertex(
     );
 }
 
-// ─── creates mesh without skirt ─────────────────────────────────────────────
+// ─── 创建无裙边的网格 ─────────────────────────────────────────────
 
 #[test]
 fn creates_mesh_without_skirt() {
     let width = 3;
     let height = 3;
     let heightmap = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
-    // native_rectangle is in raw degrees (not radians)
+    // native_rectangle 以原始度为单位（非弧度）
     let native_rectangle = Rectangle {
         west: 10.0,
         south: 30.0,
@@ -165,14 +165,14 @@ fn creates_mesh_without_skirt() {
     }
 }
 
-// ─── creates mesh with skirt ────────────────────────────────────────────────
+// ─── 创建带裙边的网格 ────────────────────────────────────────────────
 
 #[test]
 fn creates_mesh_with_skirt() {
     let width = 3;
     let height = 3;
     let heightmap = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
-    // native_rectangle is in raw degrees
+    // native_rectangle 以原始度为单位
     let native_rectangle = Rectangle {
         west: 10.0,
         south: 30.0,
@@ -191,7 +191,7 @@ fn creates_mesh_with_skirt() {
 
     let mut index = 0;
 
-    // Grid vertices
+    // 网格顶点
     for j in 0..height {
         for i in 0..width {
             check_expected_vertex(
@@ -202,7 +202,7 @@ fn creates_mesh_with_skirt() {
         }
     }
 
-    // West edge: south to north
+    // 西边缘：从南到北
     for j in 0..height {
         check_expected_vertex(
             &native_rectangle, 0, height - 1 - j, width, height, index, true,
@@ -211,7 +211,7 @@ fn creates_mesh_with_skirt() {
         index += 1;
     }
 
-    // South edge: east to west
+    // 南边缘：从东到西
     for i in 0..height {
         check_expected_vertex(
             &native_rectangle, width - 1 - i, height - 1, width, height, index, true,
@@ -220,7 +220,7 @@ fn creates_mesh_with_skirt() {
         index += 1;
     }
 
-    // East edge: north to south
+    // 东边缘：从北到南
     for j in 0..height {
         check_expected_vertex(
             &native_rectangle, width - 1, j, width, height, index, true,
@@ -229,7 +229,7 @@ fn creates_mesh_with_skirt() {
         index += 1;
     }
 
-    // North edge: west to east
+    // 北边缘：从西到东
     for i in 0..height {
         check_expected_vertex(
             &native_rectangle, i, 0, width, height, index, true,
@@ -239,14 +239,14 @@ fn creates_mesh_with_skirt() {
     }
 }
 
-// ─── creates quantized mesh ─────────────────────────────────────────────────
+// ─── 创建量化网格 ─────────────────────────────────────────────────
 
 #[test]
 fn creates_quantized_mesh() {
     let width = 3;
     let height = 3;
     let heightmap = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
-    // Very small rectangle to trigger Bits12 quantization
+    // 非常小的矩形以触发 Bits12 量化
     let native_rectangle = Rectangle {
         west: 0.01,
         south: 0.01,
@@ -266,7 +266,7 @@ fn creates_quantized_mesh() {
 
     let mut index = 0;
 
-    // Grid vertices
+    // 网格顶点
     for j in 0..height {
         for i in 0..width {
             check_expected_quantized_vertex(
@@ -277,7 +277,7 @@ fn creates_quantized_mesh() {
         }
     }
 
-    // West edge: south to north
+    // 西边缘：从南到北
     for j in 0..height {
         check_expected_quantized_vertex(
             &native_rectangle, 0, height - 1 - j, width, height, index, true,
@@ -286,7 +286,7 @@ fn creates_quantized_mesh() {
         index += 1;
     }
 
-    // South edge: east to west
+    // 南边缘：从东到西
     for i in 0..height {
         check_expected_quantized_vertex(
             &native_rectangle, width - 1 - i, height - 1, width, height, index, true,
@@ -295,7 +295,7 @@ fn creates_quantized_mesh() {
         index += 1;
     }
 
-    // East edge: north to south
+    // 东边缘：从北到南
     for j in 0..height {
         check_expected_quantized_vertex(
             &native_rectangle, width - 1, j, width, height, index, true,
@@ -304,7 +304,7 @@ fn creates_quantized_mesh() {
         index += 1;
     }
 
-    // North edge: west to east
+    // 北边缘：从西到东
     for i in 0..height {
         check_expected_quantized_vertex(
             &native_rectangle, i, 0, width, height, index, true,
@@ -314,7 +314,7 @@ fn creates_quantized_mesh() {
     }
 }
 
-// ─── tessellates web mercator heightmaps ────────────────────────────────────
+// ─── 对 web mercator 高度图进行曲面化 ────────────────────────────────────
 
 #[test]
 fn tessellates_web_mercator_heightmaps() {
@@ -406,7 +406,7 @@ fn tessellates_web_mercator_heightmaps() {
     }
 }
 
-// ─── supports multi-element little endian heights ───────────────────────────
+// ─── 支持多元素小端高度 ───────────────────────────
 
 #[test]
 fn supports_multi_element_little_endian_heights() {
@@ -418,7 +418,7 @@ fn supports_multi_element_little_endian_heights() {
         7.0, 8.0, 100.0,  9.0, 10.0, 100.0, 11.0, 12.0, 100.0,
         13.0, 14.0, 100.0, 15.0, 16.0, 100.0, 17.0, 18.0, 100.0,
     ];
-    // native_rectangle is in raw degrees
+    // native_rectangle 以原始度为单位
     let native_rectangle = Rectangle {
         west: 10.0,
         south: 30.0,
@@ -457,7 +457,7 @@ fn supports_multi_element_little_endian_heights() {
             let longitude = math_utils::to_radians(longitude);
 
             let height_sample_index = (j * width + i) * 3;
-            // Little endian: low element first
+            // 小端：低元素在前
             let height_sample = heightmap[height_sample_index]
                 + heightmap[height_sample_index + 1] * 10.0;
 
@@ -494,7 +494,7 @@ fn supports_multi_element_little_endian_heights() {
     }
 }
 
-// ─── supports multi-element big endian heights ──────────────────────────────
+// ─── 支持多元素大端高度 ──────────────────────────────
 
 #[test]
 fn supports_multi_element_big_endian_heights() {
@@ -506,7 +506,7 @@ fn supports_multi_element_big_endian_heights() {
         7.0, 8.0, 100.0,  9.0, 10.0, 100.0, 11.0, 12.0, 100.0,
         13.0, 14.0, 100.0, 15.0, 16.0, 100.0, 17.0, 18.0, 100.0,
     ];
-    // native_rectangle is in raw degrees
+    // native_rectangle 以原始度为单位
     let native_rectangle = Rectangle {
         west: 10.0,
         south: 30.0,
@@ -546,7 +546,7 @@ fn supports_multi_element_big_endian_heights() {
             let longitude = math_utils::to_radians(longitude);
 
             let height_sample_index = (j * width + i) * 3;
-            // Big endian: high element first
+            // 大端：高元素在前
             let height_sample = heightmap[height_sample_index] * 10.0
                 + heightmap[height_sample_index + 1];
 

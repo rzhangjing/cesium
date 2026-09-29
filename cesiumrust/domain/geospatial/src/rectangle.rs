@@ -1,12 +1,13 @@
-//! Rectangle - a two-dimensional region defined by west, south, east, north.
-//! Maps to CesiumJS `Core/Rectangle.js`
+//! Rectangle —— 由西、南、东、北定义的一个二维区域。
+//! 映射到 CesiumJS `Core/Rectangle.js`
 //!
-//! Faithful port of the original CesiumJS `Rectangle`, including the
-//! anti-meridian (IDL) crossing logic in `intersection`/`union`/`center`/
-//! `contains`/`subsection` and the `fromCartographicArray`/`fromCartesianArray`
-//! "smallest enclosing rectangle" logic.
+//! 对原版 CesiumJS `Rectangle` 的忠实移植，包含
+//! `intersection`/`union`/`center`/
+//! `contains`/`subsection` 中对反经线（IDL）穿越的处理逻辑，以及
+//! `fromCartographicArray`/`fromCartesianArray` 的"最小外接矩形"逻辑。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::neg_cmp_op_on_partial_ord)]
 use crate::bounding::BoundingSphere;
 use crate::cartographic::Cartographic;
@@ -17,21 +18,21 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
 
-/// A two-dimensional region defined by longitude/latitude bounds (in radians).
+/// 由经度/纬度边界（以弧度计）定义的二维区域。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Rectangle {
-    /// The westernmost longitude in radians [-PI, PI].
+    /// 最西侧经度，弧度制 [-PI, PI]。
     pub west: f64,
-    /// The southernmost latitude in radians [-PI/2, PI/2].
+    /// 最南侧纬度，弧度制 [-PI/2, PI/2]。
     pub south: f64,
-    /// The easternmost longitude in radians [-PI, PI].
+    /// 最东侧经度，弧度制 [-PI, PI]。
     pub east: f64,
-    /// The northernmost latitude in radians [-PI/2, PI/2].
+    /// 最北侧纬度，弧度制 [-PI/2, PI/2]。
     pub north: f64,
 }
 
 impl Rectangle {
-    /// The largest possible rectangle. Maps to `Rectangle.MAX_VALUE`.
+    /// 可能存在的最大矩形。映射到 `Rectangle.MAX_VALUE`。
     pub const MAX_VALUE: Self = Self {
         west: -PI,
         south: -PI_OVER_TWO,
@@ -39,7 +40,7 @@ impl Rectangle {
         north: PI_OVER_TWO,
     };
 
-    /// An empty (all-zero) rectangle, equivalent to CesiumJS `new Rectangle()`.
+    /// 空的（全零）矩形，等价于 CesiumJS 的 `new Rectangle()`。
     pub const EMPTY: Self = Self {
         west: 0.0,
         south: 0.0,
@@ -47,12 +48,12 @@ impl Rectangle {
         north: 0.0,
     };
 
-    /// The number of elements used to pack the object into an array.
-    /// Maps to `Rectangle.packedLength`.
+    /// 将该对象打包进数组时所使用的元素个数。
+    /// 映射到 `Rectangle.packedLength`。
     pub const PACKED_LENGTH: usize = 4;
 
-    /// Creates a new Rectangle from radians.
-    /// Maps to the CesiumJS `Rectangle` constructor.
+    /// 由弧度创建一个新 Rectangle。
+    /// 映射到 CesiumJS `Rectangle` 构造函数。
     pub fn new(west: f64, south: f64, east: f64, north: f64) -> Self {
         Self {
             west,
@@ -62,8 +63,8 @@ impl Rectangle {
         }
     }
 
-    /// Creates a rectangle given the boundary longitude and latitude in degrees.
-    /// Maps to `Rectangle.fromDegrees`
+    /// 给定以度为单位的边界经纬度创建矩形。
+    /// 映射到 `Rectangle.fromDegrees`
     pub fn from_degrees(west: f64, south: f64, east: f64, north: f64) -> Self {
         Self {
             west: math_utils::to_radians(west),
@@ -73,14 +74,14 @@ impl Rectangle {
         }
     }
 
-    /// Creates a rectangle given the boundary longitude and latitude in radians.
-    /// Maps to `Rectangle.fromRadians`
+    /// 给定以弧度为单位的边界经纬度创建矩形。
+    /// 映射到 `Rectangle.fromRadians`
     pub fn from_radians(west: f64, south: f64, east: f64, north: f64) -> Self {
         Self::new(west, south, east, north)
     }
 
-    /// Stores the provided instance into the provided array.
-    /// Maps to `Rectangle.pack`
+    /// 将给定的实例存入给定的数组。
+    /// 映射到 `Rectangle.pack`
     pub fn pack_into(&self, array: &mut [f64], starting_index: usize) {
         array[starting_index] = self.west;
         array[starting_index + 1] = self.south;
@@ -88,13 +89,13 @@ impl Rectangle {
         array[starting_index + 3] = self.north;
     }
 
-    /// Packs this rectangle into a new `[f64; 4]` (`[west, south, east, north]`).
+    /// 将该矩形打包进一个新的 `[f64; 4]`（`[west, south, east, north]`）。
     pub fn pack(&self) -> [f64; 4] {
         [self.west, self.south, self.east, self.north]
     }
 
-    /// Retrieves an instance from a packed array.
-    /// Maps to `Rectangle.unpack`
+    /// 从打包数组中取回一个实例。
+    /// 映射到 `Rectangle.unpack`
     pub fn unpack(array: &[f64], starting_index: usize) -> Self {
         Self {
             west: array[starting_index],
@@ -104,8 +105,8 @@ impl Rectangle {
         }
     }
 
-    /// Computes the width of the rectangle in radians.
-    /// Maps to `Rectangle.computeWidth`
+    /// 以弧度计算矩形的宽度。
+    /// 映射到 `Rectangle.computeWidth`
     pub fn width(&self) -> f64 {
         let mut east = self.east;
         let west = self.west;
@@ -115,15 +116,14 @@ impl Rectangle {
         east - west
     }
 
-    /// Computes the height of the rectangle in radians.
-    /// Maps to `Rectangle.computeHeight`
+    /// 以弧度计算矩形的高度。
+    /// 映射到 `Rectangle.computeHeight`
     pub fn height(&self) -> f64 {
         self.north - self.south
     }
 
-    /// Creates the smallest possible Rectangle that encloses all positions in
-    /// the provided array.
-    /// Maps to `Rectangle.fromCartographicArray`
+    /// 创建能包围给定数组中所有位置的最小可能 Rectangle。
+    /// 映射到 `Rectangle.fromCartographicArray`
     pub fn from_cartographic_array(cartographics: &[Cartographic]) -> Self {
         let mut west = f64::MAX;
         let mut east = f64::MIN;
@@ -167,9 +167,8 @@ impl Rectangle {
         }
     }
 
-    /// Creates the smallest possible Rectangle that encloses all positions in
-    /// the provided array of Cartesian positions.
-    /// Maps to `Rectangle.fromCartesianArray`
+    /// 创建能包围给定的笛卡尔位置数组中所有位置的最小可能 Rectangle。
+    /// 映射到 `Rectangle.fromCartesianArray`
     pub fn from_cartesian_array(cartesians: &[DVec3], ellipsoid: &Ellipsoid) -> Self {
         let mut west = f64::MAX;
         let mut east = f64::MIN;
@@ -216,8 +215,8 @@ impl Rectangle {
         }
     }
 
-    /// Creates a rectangle from a bounding sphere, ignoring height.
-    /// Maps to `Rectangle.fromBoundingSphere`
+    /// 由包围球创建一个矩形，忽略高度。
+    /// 映射到 `Rectangle.fromBoundingSphere`
     pub fn from_bounding_sphere(bounding_sphere: &BoundingSphere, ellipsoid: &Ellipsoid) -> Self {
         let center = bounding_sphere.center;
         let radius = bounding_sphere.radius;
@@ -227,7 +226,7 @@ impl Rectangle {
         }
 
         let from_enu = transforms::east_north_up_to_fixed_frame(center, ellipsoid);
-        // Matrix4.multiplyByPointAsVector: apply only the linear (rotation) part.
+        // Matrix4.multiplyByPointAsVector：仅应用线性（旋转）部分。
         let east = ellipsoid::normalize_cartesian3(from_enu.transform_vector3(DVec3::X));
         let north = ellipsoid::normalize_cartesian3(from_enu.transform_vector3(DVec3::Y));
 
@@ -246,10 +245,9 @@ impl Rectangle {
         Self::from_cartesian_array(&positions, ellipsoid)
     }
 
-    /// Checks the rectangle's properties and returns an error if they are not
-    /// in valid ranges.
-    /// Maps to `Rectangle._validate` (CesiumJS throws `DeveloperError`; Rust
-    /// returns `Err` so the check is testable without panicking).
+    /// 检查矩形的各属性，若它们不在有效范围内则返回错误。
+    /// 映射到 `Rectangle._validate`（CesiumJS 抛出 `DeveloperError`；Rust
+    /// 返回 `Err`，从而使该检查无需 panic 即可测试）。
     pub fn validate(&self) -> Result<(), String> {
         let north = self.north;
         if !(north >= -PI_OVER_TWO) || !(north <= PI_OVER_TWO) {
@@ -274,32 +272,32 @@ impl Rectangle {
         Ok(())
     }
 
-    /// Computes the southwest corner of the rectangle.
-    /// Maps to `Rectangle.southwest`
+    /// 计算矩形的西南角。
+    /// 映射到 `Rectangle.southwest`
     pub fn southwest(&self) -> Cartographic {
         Cartographic::from_radians(self.west, self.south, 0.0)
     }
 
-    /// Computes the northwest corner of the rectangle.
-    /// Maps to `Rectangle.northwest`
+    /// 计算矩形的西北角。
+    /// 映射到 `Rectangle.northwest`
     pub fn northwest(&self) -> Cartographic {
         Cartographic::from_radians(self.west, self.north, 0.0)
     }
 
-    /// Computes the northeast corner of the rectangle.
-    /// Maps to `Rectangle.northeast`
+    /// 计算矩形的东北角。
+    /// 映射到 `Rectangle.northeast`
     pub fn northeast(&self) -> Cartographic {
         Cartographic::from_radians(self.east, self.north, 0.0)
     }
 
-    /// Computes the southeast corner of the rectangle.
-    /// Maps to `Rectangle.southeast`
+    /// 计算矩形的东南角。
+    /// 映射到 `Rectangle.southeast`
     pub fn southeast(&self) -> Cartographic {
         Cartographic::from_radians(self.east, self.south, 0.0)
     }
 
-    /// Computes the center of the rectangle.
-    /// Maps to `Rectangle.center`
+    /// 计算矩形的中心。
+    /// 映射到 `Rectangle.center`
     pub fn center(&self) -> Cartographic {
         let mut east = self.east;
         let west = self.west;
@@ -314,9 +312,8 @@ impl Rectangle {
         Cartographic::from_radians(longitude, latitude, 0.0)
     }
 
-    /// Computes the intersection of two rectangles, taking into account the
-    /// wrapping of longitude at the anti-meridian.
-    /// Maps to `Rectangle.intersection`
+    /// 计算两个矩形的交集，考虑经度在反经线处的环绕。
+    /// 映射到 `Rectangle.intersection`
     pub fn intersection(&self, other: &Self) -> Option<Self> {
         let mut rectangle_east = self.east;
         let mut rectangle_west = self.west;
@@ -358,9 +355,9 @@ impl Rectangle {
         })
     }
 
-    /// Computes a simple intersection of two rectangles, ignoring the
-    /// anti-meridian (usable with projected coordinates).
-    /// Maps to `Rectangle.simpleIntersection`
+    /// 计算两个矩形的简单交集，忽略反经线
+    /// （可用于投影坐标）。
+    /// 映射到 `Rectangle.simpleIntersection`
     pub fn simple_intersection(&self, other: &Self) -> Option<Self> {
         let west = self.west.max(other.west);
         let south = self.south.max(other.south);
@@ -379,9 +376,8 @@ impl Rectangle {
         })
     }
 
-    /// Computes a rectangle that is the union of two rectangles, taking into
-    /// account the wrapping of longitude at the anti-meridian.
-    /// Maps to `Rectangle.union`
+    /// 计算作为两个矩形并集的矩形，考虑经度在反经线处的环绕。
+    /// 映射到 `Rectangle.union`
     pub fn union(&self, other: &Self) -> Self {
         let mut rectangle_east = self.east;
         let mut rectangle_west = self.west;
@@ -412,10 +408,9 @@ impl Rectangle {
         }
     }
 
-    /// Computes a rectangle by enlarging this rectangle until it contains the
-    /// provided cartographic.
-    /// Maps to `Rectangle.expand` (CesiumJS expands to enclose a point; the
-    /// point's height is ignored).
+    /// 通过不断放大本矩形直到其包含给定的测绘坐标，从而计算出一个矩形。
+    /// 映射到 `Rectangle.expand`（CesiumJS 会扩展以包围一个点；
+    /// 该点的高度被忽略）。
     pub fn expand(&self, cartographic: &Cartographic) -> Self {
         Self {
             west: self.west.min(cartographic.longitude),
@@ -425,9 +420,9 @@ impl Rectangle {
         }
     }
 
-    /// Returns true if the cartographic position (longitude/latitude, in
-    /// radians) is on or inside the rectangle, false otherwise.
-    /// Maps to `Rectangle.contains`
+    /// 若测绘位置（经度/纬度，弧度制）位于矩形上或其内部则返回 true，
+    /// 否则返回 false。
+    /// 映射到 `Rectangle.contains`
     pub fn contains(&self, longitude: f64, latitude: f64) -> bool {
         let mut longitude = longitude;
 
@@ -448,11 +443,10 @@ impl Rectangle {
             && latitude <= self.north
     }
 
-    /// Samples the rectangle so that it includes a list of Cartesian points
-    /// suitable for passing to `BoundingSphere.fromPoints`. Sampling is
-    /// necessary to account for rectangles that cover the poles or cross the
-    /// equator.
-    /// Maps to `Rectangle.subsample`
+    /// 对矩形进行采样，使其包含一组适合传给
+    /// `BoundingSphere.fromPoints` 的笛卡尔点。采样对于覆盖极点或
+    /// 跨越赤道的矩形而言是必要的。
+    /// 映射到 `Rectangle.subsample`
     pub fn subsample(&self, ellipsoid: &Ellipsoid, surface_height: f64) -> Vec<DVec3> {
         let mut result = Vec::new();
 
@@ -497,10 +491,9 @@ impl Rectangle {
         result
     }
 
-    /// Computes a subsection of the rectangle from normalized coordinates in
-    /// the range [0.0, 1.0].
-    /// Maps to `Rectangle.subsection` (CesiumJS throws `DeveloperError` for
-    /// out-of-range lerps; Rust returns `Err`).
+    /// 由 [0.0, 1.0] 范围内的归一化坐标计算矩形的一个子区域。
+    /// 映射到 `Rectangle.subsection`（CesiumJS 对超出范围的 lerp 抛出
+    /// `DeveloperError`；Rust 返回 `Err`）。
     pub fn subsection(
         &self,
         west_lerp: f64,
@@ -527,8 +520,8 @@ impl Rectangle {
             return Err("southLerp must be less than or equal to northLerp.".to_string());
         }
 
-        // This function doesn't use lerp because it has floating point precision
-        // problems when the start and end values are the same but t changes.
+        // 本函数不使用 lerp，因为当起始值和结束值相同但 t 变化时，
+        // lerp 会有浮点精度问题。
         let (mut west, mut east) = if self.west <= self.east {
             let width = self.east - self.west;
             (self.west + west_lerp * width, self.west + east_lerp * width)
@@ -543,7 +536,7 @@ impl Rectangle {
         let mut south = self.south + south_lerp * height;
         let mut north = self.south + north_lerp * height;
 
-        // Fix floating point precision problems when t = 1
+        // 修复 t = 1 时的浮点精度问题
         if west_lerp == 1.0 {
             west = self.east;
         }
@@ -565,8 +558,8 @@ impl Rectangle {
         })
     }
 
-    /// Subdivides the rectangle into a grid of smaller rectangles.
-    /// (Rust-side extension; no direct CesiumJS `Rectangle` counterpart.)
+    /// 将该矩形细分为一个小矩形网格。
+    /// （Rust 侧的扩展；没有直接对应的 CesiumJS `Rectangle` 方法。）
     pub fn subdivide(&self, x_segments: u32, y_segments: u32) -> Vec<Self> {
         let mut result = Vec::with_capacity((x_segments * y_segments) as usize);
         let width = self.width();
@@ -589,8 +582,8 @@ impl Rectangle {
         result
     }
 
-    /// Determines if this rectangle equals another within an epsilon.
-    /// Maps to `Rectangle.equalsEpsilon`
+    /// 判断本矩形是否在 epsilon 容差内等于另一个矩形。
+    /// 映射到 `Rectangle.equalsEpsilon`
     pub fn equals_epsilon(&self, other: &Self, epsilon: f64) -> bool {
         (self.west - other.west).abs() <= epsilon
             && (self.south - other.south).abs() <= epsilon

@@ -1,20 +1,19 @@
-//! Base-sphere module extracted from the dynamic_globe golden path (M1.5).
+//! 从 dynamic_globe 黄金路径（M1.5）中抽取出的基础球体模块。
 //!
-//! Contains the `BaseSphereMarker` component, the whole-globe composite
-//! resource/helpers, and the image utilities for the non-LOD fallback sphere.
-//! Shared by the thin-shell `dynamic_globe.rs` golden path (the frozen
-//! `dynamic_globe_legacy.rs` A/B arm was retired 2026-09-27 after G4 proved
-//! shell/legacy pixel-neutrality) — byte-identical logic, only module boundary.
+//! 包含 `BaseSphereMarker` 组件、全球合成 resource/辅助函数，以及
+//! 用于非-LOD 回退球体的图像工具。由薄壳 `dynamic_globe.rs` 黄金路径共享
+//! （冻结的 `dynamic_globe_legacy.rs` A/B 分支已于 2026-09-27 退役，
+//! G4 已证明 shell/legacy 像素中性）—— 逻辑逐字节一致，仅模块边界有别。
 //!
-//! Original locations in `dynamic_globe.rs`:
-//! - `BaseSphereMarker`: L1904-1905
-//! - `COMPOSITE_TILE`/`COMPOSITE_SIZE`: L1907-1908
-//! - `BaseSphereComposite`: L1910-1914
-//! - `box_downsample`: L1995-2017
-//! - `ocean_block`: L2021-2027
-//! - `make_clamped_image`: L2031-2062
+//! 在 `dynamic_globe.rs` 中的原始位置：
+//! - `BaseSphereMarker`：L1904-1905
+//! - `COMPOSITE_TILE`/`COMPOSITE_SIZE`：L1907-1908
+//! - `BaseSphereComposite`：L1910-1914
+//! - `box_downsample`：L1995-2017
+//! - `ocean_block`：L2021-2027
+//! - `make_clamped_image`：L2031-2062
 
-// frozen legacy golden-path style debt; local allow to satisfy strict CI clippy gate
+// 冻结的 legacy 黄金路径风格债；本地 allow 以满足严格的 CI clippy 门
 #![allow(clippy::type_complexity)]
 
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
@@ -23,25 +22,25 @@ use std::sync::{mpsc, Mutex};
 
 use crate::globe_textures::build_mip_chain;
 
-// ── Component ────────────────────────────────────────────────────────────
+// ── 组件 ────────────────────────────────────────────────────────────
 
-/// Marker for the non-LOD base sphere so the composite system can find its
-/// material and drape the baked whole-globe texture over it.
+/// 非-LOD 基础球体的标记，使合成系统能找到它的材质，
+/// 并将烘焙好的全球纹理贴覆其上。
 ///
 /// Original: `dynamic_globe.rs:1904-1905` (逐字节保留).
 #[derive(Component)]
 pub struct BaseSphereMarker;
 
-// ── Constants ────────────────────────────────────────────────────────────
+// ── 常量 ────────────────────────────────────────────────────────────
 
-/// Per-tile block size inside the composite (128 px).
+/// 合成图中的单瓦片块尺寸（128 px）。
 pub const COMPOSITE_TILE: u32 = 128;
-/// Composite texture size: z=3 → 8×8 tiles × 128 px = 1024 px.
+/// 合成纹理尺寸：z=3 → 8×8 瓦片 × 128 px = 1024 px。
 pub const COMPOSITE_SIZE: u32 = 8 * COMPOSITE_TILE;
 
-// ── Resource ─────────────────────────────────────────────────────────────
+// ── 资源 ─────────────────────────────────────────────────────────────
 
-/// Tracks the async whole-globe composite bake state.
+/// 追踪异步全球合成烘焙状态。
 ///
 /// Original: `dynamic_globe.rs:1910-1914` (逐字节保留).
 #[derive(Resource, Default)]
@@ -50,10 +49,10 @@ pub struct BaseSphereComposite {
     pub done: bool,
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────
+// ── 辅助函数 ──────────────────────────────────────────────────────────
 
-/// Box-downsample an RGBA tile of width `w` (power-of-two multiple of the
-/// target) to `target` × `target`.
+/// 将一个宽度为 `w` 的 RGBA 瓦片（target 的 2 的幂次倍数）
+/// 箱式降采样到 `target` × `target`。
 ///
 /// Original: `dynamic_globe.rs:1995-2017` (逐字节保留).
 pub fn box_downsample(src: &[u8], w: u32, target: u32) -> Vec<u8> {
@@ -80,8 +79,8 @@ pub fn box_downsample(src: &[u8], w: u32, target: u32) -> Vec<u8> {
     out
 }
 
-/// Raw (unlit) deep-ocean blue close to Bing imagery water pixels, for
-/// composite blocks whose tile has no imagery.
+/// 接近 Bing 影像水面像素的原始（unlit）深海蓝，用于那些瓦片
+/// 无影像的合成块。
 ///
 /// Original: `dynamic_globe.rs:2021-2027` (逐字节保留).
 pub fn ocean_block() -> Vec<u8> {
@@ -92,8 +91,8 @@ pub fn ocean_block() -> Vec<u8> {
     v
 }
 
-/// Like `make_image` but clamped at the edges: the composite is a single
-/// whole-globe Mercator image, not a repeating tile.
+/// 与 `make_image` 类似，但在边缘处 clamp：合成图是一张单独的
+/// 全球 Mercator 图像，而非重复瓦片。
 ///
 /// Original: `dynamic_globe.rs:2031-2062` (逐字节保留).
 /// sRGB: `Rgba8UnormSrgb` (硬约束).
@@ -130,12 +129,11 @@ pub fn make_clamped_image(
     images.add(img)
 }
 
-/// Assemble the 1024×1024 whole-globe composite from 8×8 base-layer blocks
-/// on a background thread, returning the channel receiver.
+/// 在后台线程上由 8×8 基础层块拼装出 1024×1024 的全球合成图，
+/// 返回通道接收端。
 ///
-/// Original: `dynamic_globe.rs:1974-1990` (the thread-spawn portion of
-/// `base_sphere_composite_system`). Extracted so both thin-shell and legacy
-/// share the identical bake logic.
+/// 原始：`dynamic_globe.rs:1974-1990`（`base_sphere_composite_system` 中
+/// spawn 线程的那部分）。抽取出来，使薄壳与 legacy 共享同一套烘焙逻辑。
 pub fn spawn_composite_bake(blocks: Vec<(u32, u32, Vec<u8>)>) -> Mutex<mpsc::Receiver<(Vec<u8>, u32)>> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {

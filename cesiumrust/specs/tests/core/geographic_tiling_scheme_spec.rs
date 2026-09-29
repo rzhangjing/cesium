@@ -1,25 +1,24 @@
-//! Core/GeographicTilingSchemeSpec.js → Rust integration tests (faithful port).
+//! Core/GeographicTilingSchemeSpec.js → Rust 集成测试（忠实移植）。
 //!
-//! Faithfully ports the original CesiumJS
-//! `packages/engine/Specs/Core/GeographicTilingSchemeSpec.js` (13 `it()` cases).
-//! Reference values are used verbatim so the Rust implementation is verified
-//! against the exact same ground truth as CesiumJS.
+//! 忠实移植原始 CesiumJS
+//! `packages/engine/Specs/Core/GeographicTilingSchemeSpec.js`（13 个 `it()` 用例）。
+//! 参考值逐字使用，因此 Rust 实现针对与 CesiumJS 完全相同的
+//! 基准真值进行验证。
 //!
-//! Platform adaptations (documented, per the verification plan):
-//! - CesiumJS "conforms to TilingScheme interface" uses a dynamic
-//!   `toConformToInterface` matcher. Rust's static typing guarantees interface
-//!   conformance at compile time; the case is ported as a smoke test that
-//!   exercises every member of the tiling-scheme interface.
-//! - The three "uses result parameter" variants (tileXYToRectangle,
-//!   rectangleToNativeRectangle, positionToTileXY) test the JS memory-reuse API
-//!   contract (`result === returnValue`). Rust returns owned values and has no
-//!   result-parameter API, so those variants are subsumed by the owned-return
-//!   tests below (identical computed values, single code path).
-//! - CesiumJS constructs partial options (`{numberOfLevelZeroTilesX: 1}` or
-//!   `{rectangle: ...}`) relying on defaults for the rest. The Rust
-//!   `with_options` takes all four options explicitly, so omitted options are
-//!   passed their CesiumJS defaults (`Ellipsoid.default` = WGS84,
-//!   `Rectangle.MAX_VALUE`, 2 x-tiles, 1 y-tile).
+//! 平台适配（按验证计划记录在案）：
+//! - CesiumJS 的 "conforms to TilingScheme interface" 使用动态的
+//!   `toConformToInterface` 匹配器。Rust 的静态类型在编译期保证接口一致性；
+//!   该用例被移植为一个冒烟测试，逐一检验瓦片方案接口的每个成员。
+//! - 三个 "uses result parameter" 变体（tileXYToRectangle、
+//!   rectangleToNativeRectangle、positionToTileXY）测试 JS 的内存复用 API
+//!   契约（`result === returnValue`）。Rust 返回 owned 值且没有
+//!   结果参数 API，因此这些变体被下面的 owned-返回测试所涵盖
+//!   （计算值相同，单一代码路径）。
+//! - CesiumJS 构造部分选项（`{numberOfLevelZeroTilesX: 1}` 或
+//!   `{rectangle: ...}`）并依赖其余项的默认值。Rust 的
+//!   `with_options` 显式接受全部四个选项，因此省略的选项被
+//!   传入其 CesiumJS 默认值（`Ellipsoid.default` = WGS84、
+//!   `Rectangle.MAX_VALUE`、2 个 x 瓦片、1 个 y 瓦片）。
 
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_geospatial::projection::{GeographicProjection, MapProjection};
@@ -31,8 +30,8 @@ use std::f64::consts::PI;
 // "conforms to TilingScheme interface."
 #[test]
 fn test_conforms_to_tiling_scheme_interface() {
-    // Rust's static typing guarantees interface conformance at compile time;
-    // this smoke test exercises each member of the TilingScheme interface.
+    // Rust 的静态类型在编译期保证接口一致性；
+    // 此冒烟测试逐一检验 TilingScheme 接口的每个成员。
     let scheme = GeographicTilingScheme::new();
     let _ellipsoid: &Ellipsoid = &scheme.ellipsoid;
     let _rectangle: &Rectangle = &scheme.rectangle;

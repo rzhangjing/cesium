@@ -1,26 +1,26 @@
-//! Core/WebMercatorProjectionSpec.js → Rust integration tests (faithful port).
+//! Core/WebMercatorProjectionSpec.js → Rust 集成测试（忠实移植）。
 //!
-//! Faithfully ports the original CesiumJS
-//! `packages/engine/Specs/Core/WebMercatorProjectionSpec.js` (12 `it()` cases).
-//! Reference values are used verbatim so the Rust implementation is verified
-//! against the exact same ground truth as CesiumJS.
+//! 忠实移植原始 CesiumJS
+//! `packages/engine/Specs/Core/WebMercatorProjectionSpec.js`（12 个 `it()` 用例）。
+//! 参考值逐字使用，以便 Rust 实现针对与 CesiumJS 完全相同的
+//! 基准真值进行验证。
 //!
-//! Platform adaptations (documented, per the verification plan):
-//! - CesiumJS "project3" / "unproject1" are "works with a result parameter"
-//!   variants testing the JS memory-reuse API contract (`result === returnValue`).
-//!   Rust returns owned values and has no result-parameter API, so those variants
-//!   are subsumed by the owned-return tests below (identical computed values,
-//!   single code path).
-//! - CesiumJS "project throws without cartesian" actually invokes
-//!   `projection.unproject()` with no argument, testing a runtime null-check.
-//!   Rust's type system makes a missing argument unrepresentable (compile-time
-//!   safety), so that error path has no Rust counterpart and is omitted.
-//! - The "unproject is correct at corners" case passes `Cartesian2` inputs in
-//!   CesiumJS; the Rust `unproject` takes a `DVec3`, so `z` is supplied as 0.0
-//!   (only longitude/latitude are asserted, matching the original).
-//! - `construct0` uses `new WebMercatorProjection()` which defaults to
-//!   `Ellipsoid.default` (WGS84 in the test environment); the Rust equivalent of
-//!   default construction is `WebMercatorProjection::wgs84()`.
+//! 平台适配（依据验证计划，均有文档说明）：
+//! - CesiumJS 的 "project3" / "unproject1" 是 "works with a result parameter"
+//!   变体，测试 JS 的内存复用 API 契约（`result === returnValue`）。
+//!   Rust 返回拥有所有权的值且没有 result-parameter API，因此这些变体
+//!   被下方的拥有返回测试所归并（计算值相同，
+//!   单一代码路径）。
+//! - CesiumJS 的 "project throws without cartesian" 实际调用
+//!   `projection.unproject()` 且不带参数，测试运行时的 null 检查。
+//!   Rust 的类型系统使缺失参数无法表示（编译期
+//!   安全），因此该错误路径没有对应的 Rust 版本，予以省略。
+//! - "unproject is correct at corners" 用例在 CesiumJS 中传入 `Cartesian2`
+//!   输入；Rust 的 `unproject` 接受 `DVec3`，因此 `z` 取 0.0
+//!   （仅断言经度/纬度，与原用例一致）。
+//! - `construct0` 使用 `new WebMercatorProjection()`，其默认值为
+//!   `Ellipsoid.default`（测试环境中为 WGS84）；默认构造的
+//!   Rust 等价写法是 `WebMercatorProjection::wgs84()`。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -31,7 +31,7 @@ use cesium_specs::{assert_approx, epsilon};
 use glam::DVec3;
 use std::f64::consts::PI;
 
-/// Web Mercator projected extent of the (square) world map, in meters.
+/// Web Mercator 世界地图（正方形）的投影范围（以米为单位）。
 const MAX_MERCATOR_EXTENT: f64 = 20037508.342787;
 
 // "construct0"
@@ -62,7 +62,7 @@ fn test_project0() {
 }
 
 // "project1"
-// expected equations from Wolfram MathWorld:
+// 期望方程来自 Wolfram MathWorld：
 // http://mathworld.wolfram.com/MercatorProjection.html
 #[test]
 fn test_project1() {
@@ -204,7 +204,7 @@ fn test_projected_y_is_clamped_to_valid_latitude_range() {
     assert_eq!(north_pole.y, north_limit.y);
 }
 
-/// Component-wise epsilon comparison for projected DVec3 results.
+/// 对投影得到的 DVec3 结果做逐分量的 epsilon 比较。
 fn assert_vec3_epsilon_proj(actual: &DVec3, expected: &DVec3, eps: f64) {
     assert_approx!(actual.x, expected.x, eps);
     assert_approx!(actual.y, expected.y, eps);

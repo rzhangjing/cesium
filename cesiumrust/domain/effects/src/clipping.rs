@@ -1,35 +1,35 @@
-//! Clipping planes for selective rendering disable.
+//! 用于选择性禁用渲染的裁剪平面。
 //!
-//! Maps to CesiumJS:
-//! - `Scene/ClippingPlane.js` — a single clipping plane
-//! - `Scene/ClippingPlaneCollection.js` — collection with union/intersection modes
+//! 映射到 CesiumJS：
+//! - `Scene/ClippingPlane.js` —— 单个裁剪平面
+//! - `Scene/ClippingPlaneCollection.js` —— 带 union/intersection 模式的集合
 //!
-//! Domain layer — pure Rust, f64 precision.
+//! 领域层——纯 Rust，f64 精度。
 
 use glam::{DMat3, DMat4, DVec3};
 
-/// A single clipping plane defined by a normal and distance.
+/// 由一个法线与距离定义的单裁剪平面。
 ///
-/// Maps to CesiumJS `ClippingPlane`.
+/// 映射到 CesiumJS `ClippingPlane`。
 ///
-/// The plane equation is: dot(normal, point) + distance = 0
-/// Points on the positive side (dot + distance > 0) are kept.
-/// Points on the negative side are clipped.
+/// 平面方程为：dot(normal, point) + distance = 0
+/// 位于正侧（dot + distance > 0）的点被保留。
+/// 位于负侧的点被裁剪。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ClippingPlane {
-    /// The plane normal (normalized).
+    /// 平面法线（已归一化）。
     pub normal: DVec3,
-    /// The distance from the origin along the normal.
-    /// Positive distance means the plane is offset in the normal direction.
+    /// 沿法线方向距原点的距离。
+    /// 正距离表示平面沿法线方向偏移。
     pub distance: f64,
 }
 
 impl ClippingPlane {
-    /// Creates a new clipping plane.
+    /// 创建一个新的裁剪平面。
     ///
-    /// # Arguments
-    /// * `normal` - The plane normal (will be normalized)
-    /// * `distance` - The signed distance from origin
+    /// # 参数
+    /// * `normal` - 平面法线（将被归一化）
+    /// * `distance` - 距原点的带符号距离
     pub fn new(normal: DVec3, distance: f64) -> Self {
         Self {
             normal: normal.normalize(),
@@ -37,32 +37,31 @@ impl ClippingPlane {
         }
     }
 
-    /// Computes the signed distance from a point to this plane.
+    /// 计算从一个点到本平面的带符号距离。
     ///
-    /// Positive = point is on the kept side.
-    /// Negative = point is on the clipped side.
+    /// 正 = 点位于保留侧。
+    /// 负 = 点位于裁剪侧。
     pub fn signed_distance(&self, point: DVec3) -> f64 {
         self.normal.dot(point) + self.distance
     }
 
-    /// Returns whether a point is inside (kept) by this plane.
+    /// 返回一个点是否被本平面判定为内部（保留）。
     pub fn is_inside(&self, point: DVec3) -> bool {
         self.signed_distance(point) >= 0.0
     }
 
-    /// Transforms this plane by a 4x4 matrix.
+    /// 用一个 4x4 矩阵变换本平面。
     ///
-    /// Uses the inverse transpose of the matrix for correct normal transformation.
+    /// 使用矩阵的逆转置以获得正确的法线变换。
     pub fn transform(&self, matrix: &DMat4) -> Self {
-        // Transform a point on the plane (points transform by the full affine M).
+        // 变换平面上的一个点（点由完整仿射 M 变换）。
         let point_on_plane = self.normal * (-self.distance);
         let transformed_point = matrix.transform_point3(point_on_plane);
 
-        // Normals are covectors: the correct transform is the *inverse transpose* of
-        // the upper-left 3×3, so the plane stays perpendicular to the surface under
-        // non-uniform scale. The previous `Mᵀ`-only form was valid solely for rigid /
-        // uniformly-scaled matrices, contradicting this docstring.
-        // FIX-CLIP-TRANSFORM. Guard the inverse against a singular / non-finite 3×3.
+        // 法线是余向量：正确的变换是左上角 3×3 的*逆转置*，从而在
+        // 非均匀缩放下平面仍垂直于表面。先前仅用 `Mᵀ` 的形式只对刚性 /
+        // 均匀缩放的矩阵成立，与本函数的文档注释相矛盾。
+        // FIX-CLIP-TRANSFORM。对奇异 / 非有限的 3×3 守护其逆。
         let upper = DMat3::from_cols(
             matrix.x_axis.truncate(),
             matrix.y_axis.truncate(),
@@ -72,7 +71,7 @@ impl ClippingPlane {
         let normal_matrix = if det.is_finite() && det.abs() > 1.0e-12 {
             upper.inverse().transpose()
         } else {
-            // Degenerate scale: fall back to the rigid-assumption `Mᵀ` form.
+            // 退化缩放：回退到刚性假设的 `Mᵀ` 形式。
             upper.transpose()
         };
         let transformed_normal = normal_matrix.mul_vec3(self.normal).normalize();
@@ -85,12 +84,12 @@ impl ClippingPlane {
         }
     }
 
-    /// Packs the plane into a vec4 (normal.xyz, distance) for GPU upload.
+    /// 把平面打包成 vec4（normal.xyz, distance）以便上传 GPU。
     pub fn to_vec4(&self) -> [f64; 4] {
         [self.normal.x, self.normal.y, self.normal.z, self.distance]
     }
 
-    /// Creates a plane from a packed vec4.
+    /// 由一个打包的 vec4 创建平面。
     pub fn from_vec4(v: [f64; 4]) -> Self {
         Self {
             normal: DVec3::new(v[0], v[1], v[2]),
@@ -99,34 +98,34 @@ impl ClippingPlane {
     }
 }
 
-/// Intersection test result.
+/// 相交测试结果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Intersect {
-    /// The object is completely inside (kept).
+    /// 对象完全在内部（保留）。
     Inside,
-    /// The object intersects the plane.
+    /// 对象与平面相交。
     Intersecting,
-    /// The object is completely outside (clipped).
+    /// 对象完全在外部（裁剪）。
     Outside,
 }
 
-/// A collection of clipping planes.
+/// 裁剪平面的集合。
 ///
-/// Maps to CesiumJS `ClippingPlaneCollection`.
+/// 映射到 CesiumJS `ClippingPlaneCollection`。
 #[derive(Debug, Clone)]
 pub struct ClippingPlaneCollection {
-    /// The clipping planes.
+    /// 各裁剪平面。
     planes: Vec<ClippingPlane>,
-    /// Whether clipping is enabled.
+    /// 是否启用裁剪。
     pub enabled: bool,
-    /// Additional transform applied to all planes.
+    /// 应用于所有平面的额外变换。
     pub model_matrix: DMat4,
-    /// If true, clip if outside ANY plane (union).
-    /// If false, clip only if outside ALL planes (intersection).
+    /// 若为 true，则在任一平面之外即裁剪（union）。
+    /// 若为 false，则仅在所有平面之外才裁剪（intersection）。
     pub union_clipping_regions: bool,
-    /// Edge highlight color [R, G, B, A].
+    /// 边缘高亮颜色 [R, G, B, A]。
     pub edge_color: [f64; 4],
-    /// Edge highlight width in pixels.
+    /// 边缘高亮宽度，以像素计。
     pub edge_width: f64,
 }
 
@@ -144,12 +143,12 @@ impl Default for ClippingPlaneCollection {
 }
 
 impl ClippingPlaneCollection {
-    /// Creates a new empty collection.
+    /// 创建一个空集合。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Creates a collection with initial planes.
+    /// 创建带有初始平面的集合。
     pub fn with_planes(planes: Vec<ClippingPlane>) -> Self {
         Self {
             planes,
@@ -157,14 +156,14 @@ impl ClippingPlaneCollection {
         }
     }
 
-    /// Adds a clipping plane.
+    /// 添加一个裁剪平面。
     pub fn add(&mut self, plane: ClippingPlane) {
         self.planes.push(plane);
     }
 
-    /// Removes a plane by index.
+    /// 按索引移除一个平面。
     ///
-    /// Returns the removed plane, or None if index is out of bounds.
+    /// 返回被移除的平面，若索引越界则返回 None。
     pub fn remove(&mut self, index: usize) -> Option<ClippingPlane> {
         if index < self.planes.len() {
             Some(self.planes.remove(index))
@@ -173,38 +172,38 @@ impl ClippingPlaneCollection {
         }
     }
 
-    /// Removes all planes.
+    /// 移除所有平面。
     pub fn remove_all(&mut self) {
         self.planes.clear();
     }
 
-    /// Returns the number of planes.
+    /// 返回平面的数量。
     pub fn len(&self) -> usize {
         self.planes.len()
     }
 
-    /// Returns whether the collection is empty.
+    /// 返回集合是否为空。
     pub fn is_empty(&self) -> bool {
         self.planes.is_empty()
     }
 
-    /// Gets a plane by index.
+    /// 按索引获取一个平面。
     pub fn get(&self, index: usize) -> Option<&ClippingPlane> {
         self.planes.get(index)
     }
 
-    /// Gets a mutable plane by index.
+    /// 按索引获取一个可变平面。
     pub fn get_mut(&mut self, index: usize) -> Option<&mut ClippingPlane> {
         self.planes.get_mut(index)
     }
 
-    /// Returns the clipping planes state value.
+    /// 返回裁剪平面状态值。
     ///
-    /// The sign encodes the clipping mode:
-    /// - Positive = union mode
-    /// - Negative = intersection mode
+    /// 符号编码裁剪模式：
+    /// - 正 = union 模式
+    /// - 负 = intersection 模式
     ///
-    /// Maps to CesiumJS `clippingPlanesState`.
+    /// 映射到 CesiumJS `clippingPlanesState`。
     pub fn clipping_planes_state(&self) -> i32 {
         let count = self.planes.len() as i32;
         if self.union_clipping_regions {
@@ -214,40 +213,40 @@ impl ClippingPlaneCollection {
         }
     }
 
-    /// Tests whether a point is clipped by this collection.
+    /// 测试一个点是否被本集合裁剪。
     ///
-    /// # Arguments
-    /// * `point` - The world-space point to test
+    /// # 参数
+    /// * `point` - 待测试的世界空间点
     ///
-    /// # Returns
-    /// `true` if the point should be clipped (not rendered).
+    /// # 返回
+    /// 若该点应被裁剪（不渲染）则返回 `true`。
     pub fn is_clipped(&self, point: DVec3) -> bool {
         if !self.enabled || self.planes.is_empty() {
             return false;
         }
 
-        // Transform point to clipping plane space
+        // 将点变换到裁剪平面空间
         let inverse = self.model_matrix.inverse();
         let local_point = inverse.transform_point3(point);
 
         if self.union_clipping_regions {
-            // Union: clip if outside ANY plane
+            // Union：在任一平面之外即裁剪
             self.planes.iter().any(|p| !p.is_inside(local_point))
         } else {
-            // Intersection: clip only if outside ALL planes
+            // Intersection：仅在所有平面之外才裁剪
             self.planes.iter().all(|p| !p.is_inside(local_point))
         }
     }
 
-    /// f64 CPU reference for the GPU `apply_clipping_planes` accumulation
-    /// (`adapters/bevy-render/shaders/clipping.wgsl`), entry-for-entry, used to
-    /// cross-validate the f32 shader. Unlike [`Self::is_clipped`] it also returns
-    /// the *signed* clipAmount and uses the blueprint's `<= 0.0` outside test
-    /// (FIX-CLIP-LTE): a point exactly on a plane counts as clipped.
+    /// GPU `apply_clipping_planes` 累加的 f64 CPU 参考
+    /// （`adapters/bevy-render/shaders/clipping.wgsl`），逐条入口，用于
+    /// 交叉验证 f32 shader。与 [`Self::is_clipped`] 不同，它还返回
+    /// *带符号*的 clipAmount，并使用蓝图的 `<= 0.0` 外部测试
+    /// （FIX-CLIP-LTE）：恰好位于平面上的点计为被裁剪。
     ///
-    /// Returns `(clipped, clip_amount)` where `clip_amount` is the signed min over
-    /// planes in union mode (blueprint L59) or the signed max seeded at `0.0` in
-    /// intersection mode (blueprint L64) — the value that drives the edge band.
+    /// 返回 `(clipped, clip_amount)`，其中 `clip_amount` 在 union 模式下是
+    /// 各平面上的带符号 min（蓝图 L59），在 intersection 模式下是以 `0.0`
+    /// 为初值的带符号 max（蓝图 L64）——即驱动边缘光带的值。
     pub fn clip_signed(&self, point: DVec3) -> (bool, f64) {
         if !self.enabled || self.planes.is_empty() {
             return (false, 0.0);
@@ -282,16 +281,16 @@ impl ClippingPlaneCollection {
         (clipped, clip_amount)
     }
 
-    /// Tests the intersection of a bounding sphere with the clipping planes.
+    /// 测试一个包围球与裁剪平面的相交。
     ///
-    /// Maps to CesiumJS `ClippingPlaneCollection.prototype.computeIntersectionWithBoundingVolume`.
+    /// 映射到 CesiumJS `ClippingPlaneCollection.prototype.computeIntersectionWithBoundingVolume`。
     ///
-    /// # Arguments
-    /// * `center` - Sphere center (world space)
-    /// * `radius` - Sphere radius
+    /// # 参数
+    /// * `center` - 球心（世界空间）
+    /// * `radius` - 球半径
     ///
-    /// # Returns
-    /// The intersection result.
+    /// # 返回
+    /// 相交结果。
     pub fn intersect_bounding_sphere(&self, center: DVec3, radius: f64) -> Intersect {
         if !self.enabled || self.planes.is_empty() {
             return Intersect::Inside;
@@ -300,12 +299,12 @@ impl ClippingPlaneCollection {
         let inverse = self.model_matrix.inverse();
         let local_center = inverse.transform_point3(center);
 
-        // Initialize based on clipping mode (matching CesiumJS):
-        // - Union mode: start INSIDE; if any plane contains the sphere on
-        //   its negative side, the entire sphere is clipped → OUTSIDE.
-        // - Intersection mode: start OUTSIDE; if any plane contains the
-        //   sphere on its positive side, no point can be outside ALL
-        //   planes → INSIDE.
+        // 依据裁剪模式初始化（与 CesiumJS 一致）：
+        // - Union 模式：从 INSIDE 开始；若任一平面在
+        //   其负侧包含了球，则整个球被裁剪 → OUTSIDE。
+        // - Intersection 模式：从 OUTSIDE 开始；若任一平面
+        //   在其正侧包含了球，则没有点能位于所有
+        //   平面之外 → INSIDE。
         let mut intersection = if self.union_clipping_regions {
             Intersect::Inside
         } else {
@@ -326,13 +325,13 @@ impl ClippingPlaneCollection {
             if value == Intersect::Intersecting {
                 intersection = Intersect::Intersecting;
             } else if self.union_clipping_regions {
-                // Union mode: if any plane is OUTSIDE, the whole sphere is clipped
+                // Union 模式：若任一平面为 OUTSIDE，则整球被裁剪
                 if value == Intersect::Outside {
                     return Intersect::Outside;
                 }
             } else {
-                // Intersection mode: if any plane is INSIDE, no point can be
-                // outside ALL planes, so the sphere is kept
+                // Intersection 模式：若任一平面为 INSIDE，则没有点能
+                // 位于所有平面之外，故球被保留
                 if value == Intersect::Inside {
                     return Intersect::Inside;
                 }
@@ -342,9 +341,9 @@ impl ClippingPlaneCollection {
         intersection
     }
 
-    /// Packs all planes into a flat array for GPU upload.
+    /// 把所有平面打包进一个扁平数组以便上传 GPU。
     ///
-    /// Each plane is 4 floats: [normal.x, normal.y, normal.z, distance].
+    /// 每个平面为 4 个浮点数：[normal.x, normal.y, normal.z, distance]。
     pub fn pack_planes(&self) -> Vec<f64> {
         let mut packed = Vec::with_capacity(self.planes.len() * 4);
         for plane in &self.planes {
@@ -353,13 +352,13 @@ impl ClippingPlaneCollection {
         packed
     }
 
-    /// Computes the edge highlight factor for a fragment.
+    /// 计算某个片元的边缘高亮因子。
     ///
-    /// Returns a value in [0, 1] indicating how close the fragment is to a clip edge.
+    /// 返回 [0, 1] 内的值，指示该片元离裁剪边缘有多近。
     ///
-    /// # Arguments
-    /// * `point` - The fragment position (world space)
-    /// * `pixel_size` - The world-space size of a pixel at this depth
+    /// # 参数
+    /// * `point` - 片元位置（世界空间）
+    /// * `pixel_size` - 该深度下一个像素的世界空间尺寸
     pub fn edge_factor(&self, point: DVec3, pixel_size: f64) -> f64 {
         if self.edge_width <= 0.0 || !self.enabled || self.planes.is_empty() {
             return 0.0;
@@ -380,20 +379,20 @@ impl ClippingPlaneCollection {
         0.0
     }
 
-    /// Returns the planes transformed into world space by [`Self::model_matrix`].
+    /// 返回由 [`Self::model_matrix`] 变换到世界空间的平面。
     ///
-    /// This is the CPU-side equivalent of CesiumJS's per-fragment
+    /// 这是 CesiumJS 逐片元
     /// `czm_transformPlane(plane, clippingPlanesMatrix)`
-    /// (`ModelClippingPlanesStageFS.glsl` L14/L35): instead of transforming each
-    /// plane on the GPU every fragment, the collection's `model_matrix` is baked
-    /// into the planes once on the CPU. The two are sign-equivalent — a world
-    /// point `p` is inside `world_planes()[i]` iff `model_matrix.inverse() * p`
-    /// is inside `planes[i]` — which is exactly the invariant [`Self::is_clipped`]
-    /// relies on (see `test_world_planes_transform_equivalence`).
+    /// （`ModelClippingPlanesStageFS.glsl` L14/L35）的 CPU 侧等价物：集合的
+    /// `model_matrix` 在 CPU 上被一次性烘焙进平面，而非每个片元都在 GPU 上
+    /// 变换每个平面。两者符号等价——世界点 `p` 位于 `world_planes()[i]`
+    /// 之内，当且仅当 `model_matrix.inverse() * p` 位于 `planes[i]` 之内——
+    /// 这正是 [`Self::is_clipped`] 所依赖的不变式
+    /// （参见 `test_world_planes_transform_equivalence`）。
     ///
-    /// The returned planes stay in **domain metric f64** space (no
-    /// `METERS_PER_RENDER_UNIT` rescaling here — that conversion is applied at the
-    /// adapter/GPU boundary, red line).
+    /// 返回的平面保持在**域内度量 f64** 空间（此处不做
+    /// `METERS_PER_RENDER_UNIT` 重缩放——那一转换在适配器/GPU 边界施加，
+    /// 属红线）。
     pub fn world_planes(&self) -> Vec<ClippingPlane> {
         self.planes
             .iter()
@@ -406,7 +405,7 @@ impl ClippingPlaneCollection {
 mod tests {
     use super::*;
 
-    // ─── ClippingPlane tests ────────────────────────────────────────────
+    // ─── ClippingPlane 测试 ────────────────────────────────────────────
 
     #[test]
     fn test_plane_creation() {
@@ -425,11 +424,11 @@ mod tests {
     fn test_plane_signed_distance() {
         let plane = ClippingPlane::new(DVec3::Y, 0.0);
 
-        // Point above plane
+        // 平面上方的点
         assert!((plane.signed_distance(DVec3::new(0.0, 5.0, 0.0)) - 5.0).abs() < 1e-10);
-        // Point below plane
+        // 平面下方的点
         assert!((plane.signed_distance(DVec3::new(0.0, -3.0, 0.0)) - (-3.0)).abs() < 1e-10);
-        // Point on plane
+        // 平面上的点
         assert!(plane.signed_distance(DVec3::new(1.0, 0.0, 1.0)).abs() < 1e-10);
     }
 
@@ -439,16 +438,16 @@ mod tests {
 
         assert!(plane.is_inside(DVec3::new(0.0, 1.0, 0.0)));
         assert!(!plane.is_inside(DVec3::new(0.0, -1.0, 0.0)));
-        assert!(plane.is_inside(DVec3::ZERO)); // On plane = inside
+        assert!(plane.is_inside(DVec3::ZERO)); // 在平面上 = 内部
     }
 
     #[test]
     fn test_plane_with_offset() {
-        // Plane at y = 5 (normal pointing up, distance = -5)
+        // y = 5 处的平面（法线朝上，distance = -5）
         let plane = ClippingPlane::new(DVec3::Y, -5.0);
 
-        assert!(plane.is_inside(DVec3::new(0.0, 10.0, 0.0))); // Above
-        assert!(!plane.is_inside(DVec3::new(0.0, 3.0, 0.0))); // Below
+        assert!(plane.is_inside(DVec3::new(0.0, 10.0, 0.0))); // 上方
+        assert!(!plane.is_inside(DVec3::new(0.0, 3.0, 0.0))); // 下方
     }
 
     #[test]
@@ -468,20 +467,20 @@ mod tests {
 
         let transformed = plane.transform(&translation);
 
-        // After translating the plane's coordinate system up by 10,
-        // the plane (originally at y=0) is now effectively at y=10 in world space.
-        // A point at y=15 should be inside (above the plane).
+        // 将平面的坐标系上移 10 之后，
+        // 该平面（原本在 y=0）在世界空间中实际位于 y=10。
+        // y=15 处的点应在内部（平面上方）。
         assert!(transformed.is_inside(DVec3::new(0.0, 15.0, 0.0)));
-        // A point at y=5 should be outside (below the plane).
+        // y=5 处的点应在外部（平面下方）。
         assert!(!transformed.is_inside(DVec3::new(0.0, 5.0, 0.0)));
     }
 
     #[test]
     fn test_plane_transform_inverse_transpose_under_non_uniform_scale() {
-        // FIX-CLIP-TRANSFORM: normals must transform by the inverse-transpose, not
-        // Mᵀ. Plane normal (1,1,0)/√2 under scale(2,1,1):
-        //   correct  (S⁻ᵀ n) ∝ (1/2, 1, 0) -> (0.4472, 0.8944, 0)
-        //   buggy    (Sᵀ  n) ∝ (2,   1, 0) -> (0.8944, 0.4472, 0)
+        // FIX-CLIP-TRANSFORM：法线必须用逆转置变换，而非 Mᵀ。
+        // 平面法线 (1,1,0)/√2 在 scale(2,1,1) 下：
+        //   正确  (S⁻ᵀ n) ∝ (1/2, 1, 0) -> (0.4472, 0.8944, 0)
+        //   错误    (Sᵀ  n) ∝ (2,   1, 0) -> (0.8944, 0.4472, 0)
         let plane = ClippingPlane::new(DVec3::new(1.0, 1.0, 0.0), 0.0);
         let scaled = DMat4::from_scale(DVec3::new(2.0, 1.0, 1.0));
         let transformed = plane.transform(&scaled);
@@ -496,8 +495,8 @@ mod tests {
 
     #[test]
     fn test_clip_signed_boundary_on_plane_is_clipped() {
-        // FIX-CLIP-LTE: a point exactly ON a plane (signed distance == 0) counts as
-        // clipped, matching the blueprint `<= 0.0` GPU test.
+        // FIX-CLIP-LTE：恰好位于平面上的点（带符号距离 == 0）计为
+        // 被裁剪，与蓝图的 `<= 0.0` GPU 测试一致。
         let collection = ClippingPlaneCollection::with_planes(vec![ClippingPlane::new(DVec3::Y, 0.0)]);
         let (clipped, amount) = collection.clip_signed(DVec3::new(3.0, 0.0, -2.0));
         assert!(clipped, "point on plane must be clipped");
@@ -506,27 +505,27 @@ mod tests {
 
     #[test]
     fn test_clip_signed_union_vs_intersection() {
-        // Two opposing planes: x >= 0 kept (normal +X, distance 0) and y >= 0 kept.
+        // 两个相对的平面：x >= 0 保留（法线 +X，distance 0），y >= 0 保留。
         let planes = vec![ClippingPlane::new(DVec3::X, 0.0), ClippingPlane::new(DVec3::Y, 0.0)];
 
         let mut union = ClippingPlaneCollection::with_planes(planes.clone());
         union.union_clipping_regions = true;
-        // Outside +X plane (x<0) but inside +Y plane ⇒ union clips (outside ANY).
+        // 在 +X 平面外（x<0）但在 +Y 平面内 ⇒ union 裁剪（任一在外）。
         let (u_clipped, u_amt) = union.clip_signed(DVec3::new(-1.0, 2.0, 0.0));
         assert!(u_clipped, "union clips when outside any plane");
         assert!(u_amt < 0.0, "union signed min is the most-negative, got {u_amt}");
 
         let inter = ClippingPlaneCollection::with_planes(planes);
-        // Inside +Y plane ⇒ intersection does NOT clip (needs outside ALL).
+        // 在 +Y 平面内 ⇒ intersection 不裁剪（需全部在外）。
         let (i_clipped, _) = inter.clip_signed(DVec3::new(-1.0, 2.0, 0.0));
         assert!(!i_clipped, "intersection keeps a point inside any plane");
-        // Outside both ⇒ intersection clips; signed max seeded at 0 ⇒ 0 here.
+        // 两者皆外 ⇒ intersection 裁剪；带符号 max 以 0 为初值 ⇒ 此处为 0。
         let (i2_clipped, i2_amt) = inter.clip_signed(DVec3::new(-1.0, -1.0, 0.0));
         assert!(i2_clipped, "intersection clips when outside all planes");
         assert!(i2_amt >= 0.0, "intersection signed max is floored at 0, got {i2_amt}");
     }
 
-    // ─── ClippingPlaneCollection tests ──────────────────────────────────
+    // ─── ClippingPlaneCollection 测试 ──────────────────────────────────
 
     #[test]
     fn test_collection_default() {
@@ -570,10 +569,10 @@ mod tests {
             ClippingPlane::new(DVec3::X, 0.0),
         ]);
 
-        // Intersection mode (default): negative
+        // Intersection 模式（默认）：负
         assert_eq!(collection.clipping_planes_state(), -2);
 
-        // Union mode: positive
+        // Union 模式：正
         collection.union_clipping_regions = true;
         assert_eq!(collection.clipping_planes_state(), 2);
     }
@@ -590,19 +589,19 @@ mod tests {
 
     #[test]
     fn test_is_clipped_intersection_mode() {
-        // Two planes forming a corner (intersection mode)
+        // 两个平面构成一个角（intersection 模式）
         let collection = ClippingPlaneCollection::with_planes(vec![
-            ClippingPlane::new(DVec3::Y, 0.0), // Keep y >= 0
-            ClippingPlane::new(DVec3::X, 0.0), // Keep x >= 0
+            ClippingPlane::new(DVec3::Y, 0.0), // 保留 y >= 0
+            ClippingPlane::new(DVec3::X, 0.0), // 保留 x >= 0
         ]);
 
-        // Inside both planes
+        // 在两个平面内
         assert!(!collection.is_clipped(DVec3::new(1.0, 1.0, 0.0)));
 
-        // Outside one plane but inside other → NOT clipped (intersection mode)
+        // 在一个平面外但在另一平面内 → 不裁剪（intersection 模式）
         assert!(!collection.is_clipped(DVec3::new(-1.0, 1.0, 0.0)));
 
-        // Outside both planes → clipped
+        // 两个平面皆外 → 裁剪
         assert!(collection.is_clipped(DVec3::new(-1.0, -1.0, 0.0)));
     }
 
@@ -614,10 +613,10 @@ mod tests {
         ]);
         collection.union_clipping_regions = true;
 
-        // Inside both planes
+        // 在两个平面内
         assert!(!collection.is_clipped(DVec3::new(1.0, 1.0, 0.0)));
 
-        // Outside one plane → clipped (union mode)
+        // 在一个平面外 → 裁剪（union 模式）
         assert!(collection.is_clipped(DVec3::new(-1.0, 1.0, 0.0)));
     }
 
@@ -627,7 +626,7 @@ mod tests {
             ClippingPlane::new(DVec3::Y, 0.0),
         ]);
 
-        // Sphere completely above plane
+        // 球完全在平面上方
         let result = collection.intersect_bounding_sphere(DVec3::new(0.0, 10.0, 0.0), 1.0);
         assert_eq!(result, Intersect::Inside);
     }
@@ -638,7 +637,7 @@ mod tests {
             ClippingPlane::new(DVec3::Y, 0.0),
         ]);
 
-        // Sphere completely below plane
+        // 球完全在平面下方
         let result = collection.intersect_bounding_sphere(DVec3::new(0.0, -10.0, 0.0), 1.0);
         assert_eq!(result, Intersect::Outside);
     }
@@ -649,76 +648,76 @@ mod tests {
             ClippingPlane::new(DVec3::Y, 0.0),
         ]);
 
-        // Sphere straddling the plane
+        // 球横跨平面
         let result = collection.intersect_bounding_sphere(DVec3::new(0.0, 0.5, 0.0), 1.0);
         assert_eq!(result, Intersect::Intersecting);
     }
 
     #[test]
     fn test_intersect_bounding_sphere_union_outside_any_plane() {
-        // Union mode: clip if outside ANY plane
+        // Union 模式：任一平面之外即裁剪
         let mut collection = ClippingPlaneCollection::with_planes(vec![
             ClippingPlane::new(DVec3::Y, 0.0), // y >= 0
             ClippingPlane::new(DVec3::X, 0.0), // x >= 0
         ]);
         collection.union_clipping_regions = true;
 
-        // Sphere fully inside plane Y but fully outside plane X → Outside
+        // 球完全在 Y 平面内但完全在 X 平面外 → Outside
         let result = collection.intersect_bounding_sphere(DVec3::new(-10.0, 10.0, 0.0), 1.0);
         assert_eq!(result, Intersect::Outside);
 
-        // Sphere fully inside plane X but fully outside plane Y → Outside
+        // 球完全在 X 平面内但完全在 Y 平面外 → Outside
         let result = collection.intersect_bounding_sphere(DVec3::new(10.0, -10.0, 0.0), 1.0);
         assert_eq!(result, Intersect::Outside);
 
-        // Sphere fully inside both → Inside
+        // 球完全在两者内 → Inside
         let result = collection.intersect_bounding_sphere(DVec3::new(10.0, 10.0, 0.0), 1.0);
         assert_eq!(result, Intersect::Inside);
 
-        // Sphere fully outside both → Outside
+        // 球完全在两者外 → Outside
         let result = collection.intersect_bounding_sphere(DVec3::new(-10.0, -10.0, 0.0), 1.0);
         assert_eq!(result, Intersect::Outside);
     }
 
     #[test]
     fn test_intersect_bounding_sphere_intersection_inside_any_plane() {
-        // Intersection mode: clip only if outside ALL planes.
-        // If the sphere is fully inside ANY plane, it is kept.
+        // Intersection 模式：仅在所有平面之外才裁剪。
+        // 若球完全在任一平面内，则被保留。
         let collection = ClippingPlaneCollection::with_planes(vec![
             ClippingPlane::new(DVec3::Y, 0.0), // y >= 0
             ClippingPlane::new(DVec3::X, 0.0), // x >= 0
         ]);
 
-        // Sphere fully inside Y, fully outside X → Inside (every point is inside Y)
+        // 球完全在 Y 内、完全在 X 外 → Inside（每个点都在 Y 内）
         let result = collection.intersect_bounding_sphere(DVec3::new(-10.0, 10.0, 0.0), 1.0);
         assert_eq!(result, Intersect::Inside);
 
-        // Sphere fully inside X, fully outside Y → Inside (every point is inside X)
+        // 球完全在 X 内、完全在 Y 外 → Inside（每个点都在 X 内）
         let result = collection.intersect_bounding_sphere(DVec3::new(10.0, -10.0, 0.0), 1.0);
         assert_eq!(result, Intersect::Inside);
 
-        // Sphere fully outside both → Outside
+        // 球完全在两者外 → Outside
         let result = collection.intersect_bounding_sphere(DVec3::new(-10.0, -10.0, 0.0), 1.0);
         assert_eq!(result, Intersect::Outside);
 
-        // Sphere fully inside both → Inside
+        // 球完全在两者内 → Inside
         let result = collection.intersect_bounding_sphere(DVec3::new(10.0, 10.0, 0.0), 1.0);
         assert_eq!(result, Intersect::Inside);
     }
 
     #[test]
     fn test_intersect_bounding_sphere_intersecting_multi_plane() {
-        // Sphere straddles all planes → Intersecting
+        // 球横跨所有平面 → Intersecting
         let mut collection = ClippingPlaneCollection::with_planes(vec![
             ClippingPlane::new(DVec3::Y, 0.0),
             ClippingPlane::new(DVec3::X, 0.0),
         ]);
 
-        // Intersection mode: sphere straddles both planes
+        // Intersection 模式：球横跨两个平面
         let result = collection.intersect_bounding_sphere(DVec3::new(0.5, 0.5, 0.0), 1.0);
         assert_eq!(result, Intersect::Intersecting);
 
-        // Union mode: sphere straddles both planes
+        // Union 模式：球横跨两个平面
         collection.union_clipping_regions = true;
         let result = collection.intersect_bounding_sphere(DVec3::new(0.5, 0.5, 0.0), 1.0);
         assert_eq!(result, Intersect::Intersecting);
@@ -732,9 +731,9 @@ mod tests {
         ]);
 
         let packed = collection.pack_planes();
-        assert_eq!(packed.len(), 8); // 2 planes * 4 values
+        assert_eq!(packed.len(), 8); // 2 个平面 * 4 个值
 
-        // First plane: normal Y, distance 5
+        // 第一个平面：法线 Y，distance 5
         assert!((packed[1] - 1.0).abs() < 1e-10);
         assert!((packed[3] - 5.0).abs() < 1e-10);
     }
@@ -745,7 +744,7 @@ mod tests {
             ClippingPlane::new(DVec3::Y, 0.0),
         ]);
 
-        // Point far from edge
+        // 远离边缘的点
         let factor = collection.edge_factor(DVec3::new(0.0, 10.0, 0.0), 0.1);
         assert!((factor).abs() < 1e-10);
     }
@@ -757,7 +756,7 @@ mod tests {
         ]);
         collection.edge_width = 2.0;
 
-        // Point very close to the clipping plane
+        // 非常靠近裁剪平面的点
         let factor = collection.edge_factor(DVec3::new(0.0, 0.05, 0.0), 0.1);
         assert!(factor > 0.0);
         assert!(factor <= 1.0);
@@ -769,31 +768,29 @@ mod tests {
             ClippingPlane::new(DVec3::Y, 0.0),
         ]);
 
-        // edge_width = 0 → no edge highlight
+        // edge_width = 0 → 无边缘高亮
         let factor = collection.edge_factor(DVec3::new(0.0, 0.01, 0.0), 0.1);
         assert!((factor).abs() < 1e-10);
     }
 
-    // ─── M6.2 CPU-reference cross-checks ────────────────────────────────
+    // ─── M6.2 CPU 参考交叉校验 ────────────────────────────────
     //
-    // Independent brute-force reference implementations of the union /
-    // intersection clip decision, written directly from the upstream CesiumJS
-    // semantics (`ClippingPlaneCollection.js` `unionIntersectFunction` =
-    // `v === OUTSIDE`, `defaultIntersectFunction` = `v === INSIDE`) rather than
-    // reusing the production code paths. These guard `is_clipped` /
-    // `intersect_bounding_sphere` against silent semantic drift, and pin the
-    // CPU-side `world_planes()` baking invariant that the M6.2 bevy-render
-    // adapter relies on when it pre-transforms planes instead of doing a
-    // per-fragment `czm_transformPlane`.
+    // 独立地对 union / intersection 裁剪判定做暴力参考实现，直接依据上游
+    // CesiumJS 语义（`ClippingPlaneCollection.js` 的 `unionIntersectFunction` =
+    // `v === OUTSIDE`、`defaultIntersectFunction` = `v === INSIDE`）书写，而非
+    // 复用生产代码路径。它们守护 `is_clipped` / `intersect_bounding_sphere`
+    // 免于静默的语义漂移，并钉住 M6.2 bevy-render 适配器所依赖的、CPU 侧
+    // `world_planes()` 烘焙不变式——该适配器预先变换平面，而非逐片元做
+    // `czm_transformPlane`。
 
-    /// Brute-force reference: transform the point into plane-local space, then
-    /// apply the union (any-outside) / intersection (all-outside) rule directly.
+    /// 暴力参考：先把点变换到平面局部空间，然后直接应用
+    /// union（任一在外）/ intersection（全部在外）规则。
     fn reference_is_clipped(collection: &ClippingPlaneCollection, point: DVec3) -> bool {
         if !collection.enabled || collection.is_empty() {
             return false;
         }
         let local = collection.model_matrix.inverse().transform_point3(point);
-        // A point is OUTSIDE a plane when its signed distance is negative.
+        // 当一个点的带符号距离为负时，它在该平面之外。
         let outside: Vec<bool> = (0..collection.len())
             .map(|i| {
                 let p = collection.get(i).unwrap();
@@ -809,8 +806,8 @@ mod tests {
 
     #[test]
     fn test_is_clipped_matches_cpu_reference() {
-        // A deterministic sweep of points across both modes and a non-identity
-        // model matrix, cross-checked against the brute-force reference.
+        // 在两种模式和一个非单位模型矩阵下对一组确定性点做扫描，
+        // 并与暴力参考交叉对照。
         let mut collection = ClippingPlaneCollection::with_planes(vec![
             ClippingPlane::new(DVec3::Y, 0.0),
             ClippingPlane::new(DVec3::X, -2.0),
@@ -841,12 +838,11 @@ mod tests {
 
     #[test]
     fn test_world_planes_transform_equivalence() {
-        // The adapter bakes `model_matrix` into the planes on the CPU via
-        // `world_planes()` instead of transforming per-fragment on the GPU. Prove
-        // the baking is sign-equivalent to `is_clipped`'s local-space test: a
-        // world point is clipped by the collection iff the union/intersection rule
-        // over the *world-space* planes (tested directly against the world point,
-        // no inverse transform) yields the same answer.
+        // 适配器通过 `world_planes()` 在 CPU 上把 `model_matrix` 烘焙进平面，
+        // 而非在 GPU 上逐片元变换。证明该烘焙与 `is_clipped` 的局部空间
+        // 测试符号等价：一个世界点被集合裁剪，当且仅当对*世界空间*平面
+        // 应用 union/intersection 规则（直接对世界点测试、不做逆变换）
+        // 得到相同的结果。
         let mut collection = ClippingPlaneCollection::with_planes(vec![
             ClippingPlane::new(DVec3::Y, 0.0),
             ClippingPlane::new(DVec3::X, -2.0),
@@ -884,9 +880,8 @@ mod tests {
 
     #[test]
     fn test_intersect_bounding_sphere_consistent_with_is_clipped() {
-        // Centre-only sanity: when the sphere radius is ~0 the volume test must
-        // agree with the point test on the centre (Inside ⇒ not clipped,
-        // Outside ⇒ clipped).
+        // 仅中心的合理性检查：当球半径约为 0 时，体积测试必须与中心点上的
+        // 点测试一致（Inside ⇒ 不裁剪，Outside ⇒ 裁剪）。
         let collection = ClippingPlaneCollection::with_planes(vec![
             ClippingPlane::new(DVec3::Y, 0.0),
         ]);

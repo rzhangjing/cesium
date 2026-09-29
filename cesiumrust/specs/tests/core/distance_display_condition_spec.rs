@@ -55,7 +55,7 @@ fn determines_equality_with_static_function() {
 
 #[test]
 fn determines_equality_with_partial_eq() {
-    // Maps to "determines equality with prototype function"
+    // 映射至 "determines equality with prototype function"
     let dc = DistanceDisplayCondition::new(10.0, 100.0);
     assert_eq!(dc, DistanceDisplayCondition::new(10.0, 100.0));
     assert_ne!(dc, DistanceDisplayCondition::new(11.0, 100.0));
@@ -69,17 +69,17 @@ fn determines_equality_with_partial_eq() {
 #[test]
 fn clones() {
     let dc = DistanceDisplayCondition::new(10.0, 100.0);
-    let result = dc; // Copy semantics = clone
+    let result = dc; // 拷贝语义 = clone
     assert_eq!(dc, result);
 }
 
 #[test]
 fn clone_is_independent() {
-    // Maps to "static clones" — verify cloned value is equal but separate
+    // 映射至 "static clones" —— 验证克隆值相等但相互独立
     let dc = DistanceDisplayCondition::new(10.0, 100.0);
     let mut result = dc;
     result.near = 999.0;
-    assert_ne!(dc.near, result.near); // original unchanged
+    assert_ne!(dc.near, result.near); // 原始值不变
     assert_eq!(dc.near, 10.0);
 }
 

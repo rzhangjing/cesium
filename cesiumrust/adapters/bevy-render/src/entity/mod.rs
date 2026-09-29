@@ -1,6 +1,6 @@
-//! Cesium entity plugin for Bevy.
+//! 用于 Bevy 的 Cesium 实体插件。
 //!
-//! Provides entity rendering, time-dynamic updates, and visualizer systems.
+//! 提供实体渲染、时间动态更新与 visualizer 系统。
 
 pub mod components;
 pub mod time_system;
@@ -17,9 +17,9 @@ pub struct CesiumEntityPlugin;
 impl Plugin for CesiumEntityPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GlobeEllipsoid>()
-            // AnimationClock is also registered by CesiumCorePlugin (lib.rs).
-            // init_resource is idempotent — dual registration is harmless and
-            // ensures CesiumEntityPlugin works standalone without CesiumCorePlugin.
+            // AnimationClock 也由 CesiumCorePlugin（lib.rs）注册。
+            // init_resource 是幂等的 —— 双重注册无害，且
+            // 确保 CesiumEntityPlugin 无需 CesiumCorePlugin 即可独立工作。
             .init_resource::<AnimationClock>()
             .add_systems(
                 Update,

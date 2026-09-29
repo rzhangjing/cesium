@@ -1,16 +1,15 @@
-//! cesium-plot-bevy — the Bevy bridge for the 2D/3D situational plotting
-//! overlay.
+//! cesium-plot-bevy —— 面向 2D/3D 态势标绘
+//! 叠加层的 Bevy 桥接。
 //!
-//! This adapter owns the ECS half of the feature: the shared bridge resources
-//! the app writes each frame ([`resources::PlotViewCtx`],
-//! [`resources::PlotInputCapture`]), and — from later milestones on — the view
-//! sync / reprojection / picking / interaction systems that project the
-//! framework-free [`cesium_plot`] scene document onto render layer 3.
+//! 此适配器拥有该特性的 ECS 一半：应用每帧写入的共享桥接资源
+//! （[`resources::PlotViewCtx`]、[`resources::PlotInputCapture`]），以及——从后续
+//! 里程碑起——将无框架依赖的 [`cesium_plot`] 场景文档投影到渲染层 3 上的
+//! 视图同步 / 重投影 / 拾取 / 交互系统。
 //!
-//! It never depends on the application layer; the app drives it purely through
-//! these resources and the plugin ([`CesiumPlotBridgePlugin`]).
+//! 它从不依赖应用层；应用纯粹通过这些资源与插件
+//! （[`CesiumPlotBridgePlugin`]）来驱动它。
 //!
-//! Design doc: plan `cesium-plot_标绘系统总体设计`.
+//! 设计文档：计划 `cesium-plot_标绘系统总体设计`。
 
 pub mod labels;
 pub mod edit;

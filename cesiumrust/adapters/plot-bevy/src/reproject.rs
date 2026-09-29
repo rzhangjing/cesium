@@ -1,43 +1,42 @@
-//! Pure geographic → world projection maths shared by every bridge view system.
+//! 由所有桥接视图系统共享的纯地理 → 世界投影数学。
 //!
-//! This is the concrete half of the plan's `GeoSurface` abstraction (§3): given
-//! the metrics of the *currently active* camera it turns a [`GeoPoint`] into a
-//! render-space position, and answers the per-depth scale a constant-pixel-size
-//! primitive needs. Everything here is a free function of plain numbers — no ECS,
-//! no `Query` — so the whole 2D/3D projection + sizing contract is unit-testable
-//! headlessly (plan §15) before a single entity is spawned.
+//! 这是计划中 `GeoSurface` 抽象（§3）的具体一半：给定*当前激活*
+//! 相机的度量，它将一个 [`GeoPoint`] 转为渲染空间位置，并回答一个恒定像素
+//! 尺寸图元所需的逐深度缩放。这里的一切都是普通数字的自由函数——无 ECS、
+//! 无 `Query`——因此整个 2D/3D 投影 + 缩放契约在 spawn 第一个
+//! 实体之前就可 headless 单测（计划 §15）。
 //!
-//! Two coordinate systems (plan §3):
-//!  * [`ViewMode::Globe`] — WGS84 ECEF in render units (unit oblate ellipsoid,
-//!    Z-up) via [`geo_to_globe`]; a perspective camera orbits it, so a fixed
-//!    screen size needs a *depth-dependent* world size (`dist / focal`).
-//!  * [`ViewMode::Flat`] — equirectangular world units (`x = lon_rad`,
-//!    `y = lat_rad`) via [`geo_to_flat`]; an orthographic top-down camera makes
-//!    world-per-pixel a single constant (`1 / pixels_per_world`).
+//! 两个坐标系（计划 §3）：
+//!  * [`ViewMode::Globe`] — 渲染单位下的 WGS84 ECEF（单位扁球体，
+//!    Z 向上），通过 [`geo_to_globe`]；一个透视相机环绕它，因此一个固定
+//!    屏幕尺寸需要一个*依赖深度*的世界尺寸（`dist / focal`）。
+//!  * [`ViewMode::Flat`] — 等矩形世界单位（`x = lon_rad`、
+//!    `y = lat_rad`），通过 [`geo_to_flat`]；一个正交俯视相机使每像素世界数
+//!    成为一个常量（`1 / pixels_per_world`）。
 
 use bevy::math::Vec3;
 use cesium_plot::geo::{geo_to_flat, geo_to_globe, GeoPoint, METERS_PER_RENDER_UNIT};
 use cesium_plot::model::ViewMode;
 
-/// Everything the projection needs to know about the active camera, gathered
-/// once per frame by the sync system. Pure data.
+/// 投影需要了解的关于激活相机的一切，由同步系统每帧
+/// 采集一次。纯数据。
 #[derive(Clone, Copy, Debug)]
 pub struct ViewMetrics {
-    /// Active projection mode.
+    /// 当前激活的投影模式。
     pub mode: ViewMode,
-    /// Flat-map pixels per world unit (`Map2dCam.zoom`); ignored for the globe.
+    /// 平面地图的每世界单位像素数（`Map2dCam.zoom`）；对球体忽略。
     pub pixels_per_world: f64,
-    /// Perspective focal length in pixels, `(screen_h / 2) / tan(fov_y / 2)`;
-    /// ignored for the flat map.
+    /// 以像素为单位的透视焦距，`(screen_h / 2) / tan(fov_y / 2)`；
+    /// 对平面地图忽略。
     pub focal_px: f64,
-    /// Active camera position in render-unit world space (for depth sizing).
+    /// 激活相机在渲染单位世界空间中的位置（用于深度缩放）。
     pub cam_pos: Vec3,
 }
 
 impl ViewMetrics {
-    /// Project one geographic coordinate into the active render space. The z
-    /// component is left at `0.0` for the flat map (the caller stacks overlay
-    /// height) and set to the ellipsoid surface for the globe.
+    /// 将一个地理坐标投影到当前激活的渲染空间。对平面地图，z
+    /// 分量保持为 `0.0`（调用方叠加叠加层高度），对球体则设为椭球
+    /// 表面。
     #[inline]
     pub fn project(&self, geo: GeoPoint) -> Vec3 {
         match self.mode {
@@ -52,8 +51,8 @@ impl ViewMetrics {
         }
     }
 
-    /// Camera-to-point distance in render units (globe). The flat map is
-    /// orthographic so its "distance" is meaningless; returns `1.0` there.
+    /// 相机到点的距离（渲染单位，球体）。平面地图是
+    /// 正交的，因此它的“距离”无意义；在那里返回 `1.0`。
     #[inline]
     pub fn depth(&self, world: Vec3) -> f64 {
         match self.mode {
@@ -62,9 +61,8 @@ impl ViewMetrics {
         }
     }
 
-    /// Pixels that span one world unit at the given point's depth. This is the
-    /// master scale metric: its reciprocal gives world-per-pixel, and it feeds
-    /// the §10.7 scale band.
+    /// 在给定点深度下，一个世界单位跨越的像素数。这是
+    /// 主缩放度量：其倒数给出每像素世界数，并为 §10.7 缩放带提供输入。
     #[inline]
     pub fn pixels_per_world_at(&self, world: Vec3) -> f64 {
         match self.mode {
@@ -76,9 +74,9 @@ impl ViewMetrics {
         }
     }
 
-    /// World units covered by one screen pixel at the given point's depth — the
-    /// factor a `size_px`-wide primitive must be scaled by to stay a constant
-    /// size on screen at any zoom (plan §2 / §15, "屏幕恒定尺寸").
+    /// 在给定点深度下，一个屏幕像素覆盖的世界单位数——一个宽度为
+    /// `size_px` 的图元必须乘以该因子，以便在任何缩放下都保持屏幕上的恒定
+    /// 尺寸（计划 §2 / §15，“屏幕恒定尺寸”）。
     #[inline]
     pub fn world_per_px_at(&self, world: Vec3) -> f64 {
         let ppw = self.pixels_per_world_at(world);
@@ -89,8 +87,8 @@ impl ViewMetrics {
         }
     }
 
-    /// Ground metres per screen pixel at the orbit target — the §10.7 metres
-    /// band metric. Flat: `1 world unit == one radian ≈ EARTH_RADIUS` metres.
+    /// 环绕目标处每屏幕像素对应的地面米数——§10.7 米
+    /// 带度量。平面：`1 世界单位 == 一个弧度 ≈ EARTH_RADIUS` 米。
     #[inline]
     pub fn meters_per_pixel(&self) -> f64 {
         match self.mode {
@@ -103,7 +101,7 @@ impl ViewMetrics {
             }
             ViewMode::Globe => {
                 if self.focal_px > 1e-9 {
-                    // Depth to the globe centre is the representative surface.
+                    // 到球心的深度是具代表性的表面。
                     let d = self.cam_pos.length() as f64;
                     (d * METERS_PER_RENDER_UNIT) / self.focal_px
                 } else {
@@ -113,33 +111,31 @@ impl ViewMetrics {
         }
     }
 
-    /// Project a run of coordinates (polyline / ring vertices).
+    /// 投影一段坐标（多段线 / 环顶点）。
     pub fn project_all(&self, pts: &[GeoPoint]) -> Vec<Vec3> {
         pts.iter().map(|p| self.project(*p)).collect()
     }
 }
 
-/// Build a camera-facing billboard [`Vec3`] scale so a unit quad in the XY plane
-/// (extent `[-0.5, 0.5]`, i.e. 1 world unit wide) measures `size_px` on screen at
-/// `world`'s depth.
+/// 构造一个面向相机的 billboard [`Vec3`] 缩放，使 XY 平面中的单位 quad
+/// （范围 `[-0.5, 0.5]`，即宽 1 世界单位）在 `world` 深度下屏幕上量为 `size_px`。
 #[inline]
 pub fn billboard_scale(metrics: &ViewMetrics, world: Vec3, size_px: f64) -> Vec3 {
     let s = metrics.world_per_px_at(world) * size_px;
     Vec3::new(s as f32, s as f32, 1.0)
 }
 
-/// Half-thickness in world units for a line of `width_px` at `world`'s depth.
+/// 在 `world` 深度下，宽度为 `width_px` 的线的半厚度（世界单位）。
 #[inline]
 pub fn line_half_width(metrics: &ViewMetrics, world: Vec3, width_px: f64) -> f64 {
     metrics.world_per_px_at(world) * width_px * 0.5
 }
 
-/// A screen-constant-width ribbon (triangle strip) through `positions`. Each
-/// edge is offset perpendicular to `(edge direction, `normal`) by the half-width
-/// evaluated at that vertex, so a `width_px` line stays `width_px` wide on screen
-/// whatever the zoom. `normal` is the quad-plane normal (`+Z` for the flat map,
-/// the view direction for the globe). Returns interleaved `[left, right]` vertices
-/// plus CCW triangle indices.
+/// 一段穿过 `positions` 的屏幕恒定宽ribbon（三角形带）。每条边都垂直于
+/// `(边方向, `normal`) 偏移半个宽度（在该顶点处求值），因此一条
+/// `width_px` 的线无论缩放如何都保持 `width_px` 宽。`normal` 是 quad 平面
+/// 法线（平面地图为 `+Z`，球体为视方向）。返回交错的 `[left, right]` 顶点
+/// 加上 CCW 三角形索引。
 pub fn ribbon(
     positions: &[Vec3],
     width_px_fn: &dyn Fn(usize) -> f64,
@@ -152,7 +148,7 @@ pub fn ribbon(
     }
     for i in 0..positions.len() {
         let cur = positions[i];
-        // Tangent: average of the adjacent segments, clamped at the endpoints.
+        // 切线：相邻段的平均，在端点处限幅。
         let mut tangent = Vec3::ZERO;
         if i > 0 {
             tangent += (cur - positions[i - 1]).normalize_or_zero();
@@ -161,7 +157,7 @@ pub fn ribbon(
             tangent += (positions[i + 1] - cur).normalize_or_zero();
         }
         let tangent = tangent.normalize_or_zero();
-        // Perpendicular in the quad plane: normal × tangent.
+        // quad 平面内的垂直方向：normal × tangent。
         let side = normal.cross(tangent).normalize_or_zero();
         let half = width_px_fn(i) as f32;
         let l = cur + side * half;
@@ -170,7 +166,7 @@ pub fn ribbon(
         out_pos.push(r.to_array());
         if i > 0 {
             let b = (i * 2) as u32;
-            // quad (b-2,b-1,b,b+1) split into two CCW triangles.
+            // quad (b-2,b-1,b,b+1) 拆分为两个 CCW 三角形。
             idx.extend_from_slice(&[b - 2, b - 1, b, b, b - 1, b + 1]);
         }
     }
@@ -214,7 +210,7 @@ mod tests {
         let m = flat(200.0);
         let w = m.world_per_px_at(Vec3::new(0.1, 0.1, 0.0));
         assert!((w - 1.0 / 200.0).abs() < 1e-9, "{w}");
-        // constant regardless of position (orthographic)
+        // 与位置无关（正交投影）
         let w2 = m.world_per_px_at(Vec3::new(3.0, -2.0, 0.0));
         assert!((w - w2).abs() < 1e-12);
     }
@@ -223,7 +219,7 @@ mod tests {
     fn globe_project_lands_on_unit_ellipsoid() {
         let m = globe(Vec3::new(3.0, 0.0, 0.0), 600.0);
         let world = m.project(GeoPoint::surface(0.0, 0.0));
-        // (0°,0°) → render (1,0,0); back-round-trips to the same geo.
+        // (0°,0°) → 渲染 (1,0,0)；反变换回同一地理坐标。
         let back = globe_to_geo(world.as_dvec3()).unwrap();
         assert!((back.lon_deg - 0.0).abs() < 1e-6);
         assert!((back.lat_deg - 0.0).abs() < 1e-6);
@@ -232,13 +228,13 @@ mod tests {
 
     #[test]
     fn globe_world_per_px_grows_with_depth() {
-        // Same focal, camera further away → bigger world-per-pixel at a fixed
-        // surface point (things shrink on screen), and pixels_per_world shrinks.
+        // 同焦距、相机更远 → 固定表面点的每像素世界数更大
+        // （屏幕上物体缩小），pixels_per_world 也缩小。
         let near = globe(Vec3::new(2.0, 0.0, 0.0), 600.0);
         let far = globe(Vec3::new(6.0, 0.0, 0.0), 600.0);
         let pt = Vec3::new(1.0, 0.0, 0.0);
-        let dpp_near = near.world_per_px_at(pt); // dist 1 → 1/600
-        let dpp_far = far.world_per_px_at(pt); // dist 5 → 5/600
+        let dpp_near = near.world_per_px_at(pt); // 距离 1 → 1/600
+        let dpp_far = far.world_per_px_at(pt); // 距离 5 → 5/600
         assert!((dpp_near - 1.0 / 600.0).abs() < 1e-9, "{dpp_near}");
         assert!((dpp_far - 5.0 / 600.0).abs() < 1e-9, "{dpp_far}");
         assert!(dpp_far > dpp_near);
@@ -247,9 +243,9 @@ mod tests {
 
     #[test]
     fn meters_per_pixel_flat_and_globe() {
-        let f = flat(6378137.0); // 1 px == 1 metre at the equatorial radius scale
+        let f = flat(6378137.0); // 赤道半径缩放下 1 px == 1 米
         assert!((f.meters_per_pixel() - 1.0).abs() < 1e-6);
-        // Globe: camera at 2 render units, focal 1000 → d=2 → 2*6378137/1000.
+        // 球体：相机在 2 渲染单位处，焦距 1000 → d=2 → 2*6378137/1000。
         let g = globe(Vec3::new(2.0, 0.0, 0.0), 1000.0);
         let mpp = g.meters_per_pixel();
         assert!((mpp - 2.0 * 6378137.0 / 1000.0).abs() < 1.0, "{mpp}");
@@ -259,7 +255,7 @@ mod tests {
     fn billboard_scale_matches_requested_px() {
         let m = flat(250.0);
         let s = billboard_scale(&m, Vec3::new(0.0, 0.0, 0.0), 10.0);
-        // 10 px / 250 ppw == 0.04 world units
+        // 10 px / 250 ppw == 0.04 世界单位
         assert!((s.x - 0.04).abs() < 1e-6);
         assert!((s.y - 0.04).abs() < 1e-6);
     }
@@ -272,17 +268,17 @@ mod tests {
             Vec3::new(1.0, 1.0, 0.0),
         ];
         let (pos, idx) = ribbon(&pts, &|_| 0.1, Vec3::Z);
-        assert_eq!(pos.len(), 6); // 2 per vertex
-        assert_eq!(idx.len(), 12); // 2 quads × 6 indices... wait, 2 quads → 12
+        assert_eq!(pos.len(), 6); // 每顶点 2 个
+        assert_eq!(idx.len(), 12); // 2 quad × 6 索引…等等，2 quad → 12
     }
 
     #[test]
     fn ribbon_offsets_perpendicular_to_travel() {
-        // Travelling +X with normal +Z → side = Z×X = +Y, so the left vertex is
-        // above the centreline and the right below.
+        // 沿 +X 行进，法线 +Z → side = Z×X = +Y，因此左顶点
+        // 在中心线上方，右顶点在下方。
         let pts = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0)];
         let (pos, _idx) = ribbon(&pts, &|_| 0.2, Vec3::Z);
-        // first pair = vertex 0: left(0) then right(1)
+        // 第一对 = 顶点 0：左(0) 然后右(1)
         assert!(pos[0][1] > 0.0, "left vertex is +Y: {pos:?}");
         assert!(pos[1][1] < 0.0, "right vertex is -Y: {pos:?}");
     }

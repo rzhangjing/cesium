@@ -1,44 +1,42 @@
-//! Geographic positions and their projection into the two render spaces the
-//! viewer uses.
+//! 地理坐标及其向查看器所用两个渲染空间的投影。
 //!
-//! [`GeoPoint`] (lon/lat in **degrees**, height in **metres** above the WGS84
-//! ellipsoid) is the single source of truth for every plotted coordinate. The
-//! overlay is view-agnostic: it stores `GeoPoint`s and lets the render bridge
-//! project them per active view:
-//!  * [`geo_to_globe`] — 3D ECEF on the WGS84 ellipsoid, scaled into the viewer's
-//!    render units (unit oblate ellipsoid, Z-up, `ECEF_m / METERS_PER_RENDER_UNIT`)
-//!    so it lands exactly on the tile meshes the 3D globe draws.
-//!  * [`geo_to_flat`] — 2D Geographic / equirectangular world units
-//!    (`x = lon_rad`, `y = lat_rad`, R = 1), matching `map2d`'s projection.
+//! [`GeoPoint`]（**度**为单位的经/纬度，**米**为单位高于 WGS84
+//! 椭球体的高度）是每个标绘坐标的单一事实源。覆盖层
+//! 与视图无关：它存储 `GeoPoint` 并让渲染桥接层按活动视图逐个投影：
+//!  * [`geo_to_globe`] —— WGS84 椭球体上的 3D ECEF，缩放到查看器的
+//!    渲染单位（单位扁椭球、Z-up、`ECEF_m / METERS_PER_RENDER_UNIT`），
+//!    因此它与 3D 地球绘制的瓦片网格完全重合。
+//!  * [`geo_to_flat`] —— 2D Geographic / 等距圆柱世界单位
+//!    （`x = lon_rad`、`y = lat_rad`、R = 1），与 `map2d` 的投影匹配。
 //!
-//! Reuses `cesium-geospatial`'s `Cartographic`/`Ellipsoid` for the WGS84 maths so
-//! there is one geodetic implementation across the workspace.
+//! 复用 `cesium-geospatial` 的 `Cartographic`/`Ellipsoid` 做 WGS84 数学，
+//! 因此整个工作区只有一套大地测量实现。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use glam::{DVec2, DVec3};
 use serde::{Deserialize, Serialize};
 
-/// Metres per render unit. Duplicated here (rather than imported from the
-/// `cesium-bevy-render` adapter) to keep this core crate free of the rendering
-/// stack; MUST stay in lockstep with `cesium_bevy_render::METERS_PER_RENDER_UNIT`
-/// and the app's `6378137.0` convention.
+/// 每渲染单位的米数。在此重复定义（而非从
+/// `cesium-bevy-render` 适配器导入）以使本核心 crate 不受渲染
+/// 栈影响；必须与 `cesium_bevy_render::METERS_PER_RENDER_UNIT`
+/// 以及应用的 `6378137.0` 约定保持同步。
 pub const METERS_PER_RENDER_UNIT: f64 = 6_378_137.0;
 
-/// A geographic position: longitude/latitude in degrees, height in metres above
-/// the WGS84 ellipsoid. `height` is ignored by the flat (2D) projection.
+/// 一个地理坐标：以度为单位的经度/纬度，以米为单位的高于
+/// WGS84 椭球体的高度。`height` 被平面（2D）投影忽略。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct GeoPoint {
-    /// Longitude in degrees, east positive ([-180, 180] by convention, not enforced).
+    /// 以度为单位的经度，向东为正（按约定为 [-180, 180]，不强制）。
     pub lon_deg: f64,
-    /// Latitude in degrees, north positive ([-90, 90]).
+    /// 以度为单位的纬度，向北为正（[-90, 90]）。
     pub lat_deg: f64,
-    /// Height in metres above the ellipsoid (0 == on the surface).
+    /// 以米为单位的高于椭球体的高度（0 == 在表面上）。
     pub height_m: f64,
 }
 
 impl GeoPoint {
-    /// Construct from degrees + metre height.
+    /// 由度 + 米高度构建。
     #[inline]
     pub fn new(lon_deg: f64, lat_deg: f64, height_m: f64) -> Self {
         Self {
@@ -48,15 +46,15 @@ impl GeoPoint {
         }
     }
 
-    /// A surface point (height = 0).
+    /// 一个表面点（height = 0）。
     #[inline]
     pub fn surface(lon_deg: f64, lat_deg: f64) -> Self {
         Self::new(lon_deg, lat_deg, 0.0)
     }
 
-    /// Great-circle (spherical) distance to another point in metres, on a sphere
-    /// of radius [`METERS_PER_RENDER_UNIT`]. The reserved geodesic-measure hook
-    /// (plan §6) and the sampling self-checks build on this.
+    /// 到另一点的大圆（球面）距离，以米为单位，基于半径为
+    /// [`METERS_PER_RENDER_UNIT`] 的球。预留的测地线度量钩子
+    /// （计划 §6）与采样自检都建立在此之上。
     #[inline]
     pub fn surface_distance(&self, other: GeoPoint) -> f64 {
         let lat1 = self.lat_deg.to_radians();
@@ -70,35 +68,35 @@ impl GeoPoint {
     }
 }
 
-/// Convert degrees to radians.
+/// 度转弧度。
 #[inline]
 fn to_rad(deg: f64) -> f64 {
     deg.to_radians()
 }
 
-/// Convert radians to degrees.
+/// 弧度转度。
 #[inline]
 fn to_deg(rad: f64) -> f64 {
     rad.to_degrees()
 }
 
-/// Geographic → WGS84 ECEF in metres.
+/// 地理 → 以米为单位的 WGS84 ECEF。
 #[inline]
 pub fn geo_to_ecef_meters(p: GeoPoint) -> DVec3 {
     let c = Cartographic::from_degrees(p.lon_deg, p.lat_deg, p.height_m);
     Ellipsoid::WGS84.cartographic_to_cartesian(&c)
 }
 
-/// Geographic → viewer render units on the globe (Z-up unit oblate ellipsoid).
-/// This is the position a 3D plot vertex must occupy to coincide with the
-/// rendered terrain surface at the same lon/lat.
+/// 地理 → 地球上查看器的渲染单位（Z-up 单位扁椭球）。
+/// 这是一个 3D 标绘顶点必须占据的位置，以在同一经/纬度处与
+/// 渲染的地形表面重合。
 #[inline]
 pub fn geo_to_globe(p: GeoPoint) -> DVec3 {
     geo_to_ecef_meters(p) / METERS_PER_RENDER_UNIT
 }
 
-/// Inverse of [`geo_to_globe`]: render-unit globe position back to geographic.
-/// Returns `None` only for the degenerate ellipsoid-centre case.
+/// [`geo_to_globe`] 的逆：从渲染单位的地球位置回到地理坐标。
+/// 仅在地心退化情形下返回 `None`。
 #[inline]
 pub fn globe_to_geo(v: DVec3) -> Option<GeoPoint> {
     let meters = v * METERS_PER_RENDER_UNIT;
@@ -109,24 +107,23 @@ pub fn globe_to_geo(v: DVec3) -> Option<GeoPoint> {
     })
 }
 
-/// Geographic → 2D flat world units (`x = lon_rad`, `y = lat_rad`, R = 1),
-/// matching `map2d`'s equirectangular layout. Longitude is taken verbatim (no
-/// wrap); the caller may wrap for placement near the antimeridian.
+/// 地理 → 2D 平面世界单位（`x = lon_rad`、`y = lat_rad`、R = 1），
+/// 与 `map2d` 的等距圆柱布局匹配。经度直接取用（不
+/// 回绕）；调用方可为了在反子午线附近的放置而自行回绕。
 #[inline]
 pub fn geo_to_flat(p: GeoPoint) -> DVec2 {
     DVec2::new(to_rad(p.lon_deg), to_rad(p.lat_deg))
 }
 
-/// Inverse of [`geo_to_flat`]: flat world units back to geographic (height 0).
+/// [`geo_to_flat`] 的逆：从平面世界单位回到地理坐标（height 0）。
 #[inline]
 pub fn flat_to_geo(v: DVec2) -> GeoPoint {
     GeoPoint::surface(to_deg(v.x), to_deg(v.y))
 }
 
-/// Axis-aligned geographic bounding box in degrees. `west` may exceed the
-/// [-180, 180] range for boxes straddling the antimeridian; the model keeps the
-/// raw span and only normalises when it needs to. Height is not tracked (2D
-/// culling proxy only).
+/// 以度为单位的轴对齐地理包围盒。对于骑跨反子午线的盒子，`west`
+/// 可超出 [-180, 180] 范围；模型保留原始跨度，仅在有需求时才
+/// 归一化。高度不被跟踪（仅作 2D 裁剪代理）。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct GeoBounds {
     pub west_deg: f64,
@@ -136,7 +133,7 @@ pub struct GeoBounds {
 }
 
 impl GeoBounds {
-    /// A degenerate box at a single point.
+    /// 单个点上的退化盒。
     #[inline]
     pub fn from_point(p: GeoPoint) -> Self {
         Self {
@@ -147,7 +144,7 @@ impl GeoBounds {
         }
     }
 
-    /// Empty/inverted sentinel used as the fold seed for [`GeoBounds::union`].
+    /// 用作 [`GeoBounds::union`] 折叠种子的空/反演哨兵值。
     #[inline]
     pub fn empty() -> Self {
         Self {
@@ -158,14 +155,14 @@ impl GeoBounds {
         }
     }
 
-    /// True when nothing has been folded in yet.
+    /// 当尚未折叠任何内容时为 true。
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.west_deg > self.east_deg || self.south_deg > self.north_deg
     }
 
-    /// Smallest box containing both. Union with an `empty()` box yields the
-    /// other operand, so `iter().fold(empty(), union)` works.
+    /// 同时包含两者的最小盒。与一个 `empty()` 盒求并会得到
+    /// 另一个操作数，因此 `iter().fold(empty(), union)` 可用。
     #[inline]
     pub fn union(self, other: Self) -> Self {
         if other.is_empty() {
@@ -182,29 +179,29 @@ impl GeoBounds {
         }
     }
 
-    /// Bounds over a non-empty point cloud (first seed, then union).
+    /// 非空点云的包围盒（先以首个为种子，然后求并）。
     #[inline]
     pub fn from_points<'a>(pts: impl IntoIterator<Item = &'a GeoPoint>) -> Self {
         pts.into_iter()
             .fold(Self::empty(), |acc, p| acc.union(Self::from_point(*p)))
     }
 
-    /// Longitude span in degrees (0..360).
+    /// 经度跨度（度，0..360）。
     #[inline]
     pub fn width_deg(&self) -> f64 {
         (self.east_deg - self.west_deg).abs()
     }
 
-    /// Latitude span in degrees (0..180).
+    /// 纬度跨度（度，0..180）。
     #[inline]
     pub fn height_deg(&self) -> f64 {
         (self.north_deg - self.south_deg).abs()
     }
 
-    /// Whether `p` lies inside the box (inclusive on every edge). An
-    /// empty / inverted box contains nothing. This is the broad-phase test the
-    /// picker uses to reject a cursor that provably cannot touch an element, so
-    /// it must be paired with a *conservative* box (see `Geometry::bounds`).
+    /// `p` 是否位于盒内（每条边都含边界）。一个
+    /// 空 / 反演的盒不含有任何东西。这是拾取器用来剔除一个可证明
+    /// 无法触及元素的游标的宽相位测试，因此它必须与一个
+    /// *保守* 的盒配套使用（见 `Geometry::bounds`）。
     #[inline]
     pub fn contains(&self, p: GeoPoint) -> bool {
         !self.is_empty()
@@ -225,7 +222,7 @@ mod tests {
 
     #[test]
     fn equator_prime_meridian_is_unit_x() {
-        // (0°, 0°) → ECEF (a,0,0) → render (1,0,0); Z-up leaves north pole on +Z.
+        // (0°, 0°) → ECEF (a,0,0) → 渲染 (1,0,0)；Z-up 使北极位于 +Z。
         let v = geo_to_globe(GeoPoint::surface(0.0, 0.0));
         assert!(approx(v.x, 1.0, 1e-9), "{v}");
         assert!(approx(v.y, 0.0, 1e-9), "{v}");
@@ -235,7 +232,7 @@ mod tests {
     #[test]
     fn north_pole_sits_on_positive_z() {
         let v = geo_to_globe(GeoPoint::surface(0.0, 90.0));
-        // Polar radius b / a ≈ 0.99664719 (oblate), on +Z.
+        // 极半径 b / a ≈ 0.99664719（扁），在 +Z 上。
         assert!(approx(v.x, 0.0, 1e-9) && approx(v.y, 0.0, 1e-9), "{v}");
         assert!(approx(v.z, 0.99664719, 1e-6), "{v}");
         assert!(v.z > 0.0, "north pole must be +Z");
@@ -283,7 +280,7 @@ mod tests {
         let b = GeoBounds::from_point(GeoPoint::surface(-30.0, 40.0));
         let u = a.union(b);
         assert_eq!((u.west_deg, u.east_deg, u.south_deg, u.north_deg), (-30.0, 10.0, 20.0, 40.0));
-        // Folding a cloud matches pairwise union and ignores nothing.
+        // 折叠一个点云与成对求并结果一致且不会遗漏任何点。
         let cloud = vec![
             GeoPoint::surface(0.0, 0.0),
             GeoPoint::surface(5.0, -8.0),
@@ -293,13 +290,13 @@ mod tests {
         assert_eq!((cb.west_deg, cb.east_deg, cb.south_deg, cb.north_deg), (-2.0, 5.0, -8.0, 3.0));
         assert!(approx(cb.width_deg(), 7.0, 1e-12));
         assert!(approx(cb.height_deg(), 11.0, 1e-12));
-        // union with empty is identity.
+        // 与空盒求并是恒等。
         assert_eq!(cb.union(GeoBounds::empty()), cb);
-        // contains: inclusive edges, and an empty box contains nothing.
-        assert!(cb.contains(GeoPoint::surface(-2.0, 3.0))); // corner (west,north)
-        assert!(cb.contains(GeoPoint::surface(0.0, 0.0))); // interior
-        assert!(!cb.contains(GeoPoint::surface(-2.1, 3.0))); // just outside west
-        assert!(!cb.contains(GeoPoint::surface(5.0, 3.1))); // just outside north
+        // contains：含边界，且一个空盒不含有任何东西。
+        assert!(cb.contains(GeoPoint::surface(-2.0, 3.0))); // 角点（west,north）
+        assert!(cb.contains(GeoPoint::surface(0.0, 0.0))); // 内部
+        assert!(!cb.contains(GeoPoint::surface(-2.1, 3.0))); // 西边界外紧邻
+        assert!(!cb.contains(GeoPoint::surface(5.0, 3.1))); // 北边界外紧邻
         assert!(!GeoBounds::empty().contains(GeoPoint::surface(0.0, 0.0)));
     }
 }

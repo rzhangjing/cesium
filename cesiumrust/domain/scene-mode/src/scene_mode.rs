@@ -1,54 +1,54 @@
-//! Scene modes and morphing between them.
+//! 场景模式及它们之间的形态变换。
 //!
-//! Maps to CesiumJS `Scene/SceneMode.js`:
-//! - 3D (globe)
-//! - 2D (flat map)
-//! - Columbus View (2.5D)
-//! - Morphing transitions
+//! 映射到 CesiumJS 的 `Scene/SceneMode.js`：
+//! - 3D（地球）
+//! - 2D（平铺地图）
+//! - Columbus View（2.5D）
+//! - 形态变换过渡
 
 use glam::DVec3;
 use std::f64::consts::PI;
 
-/// Scene rendering mode.
+/// 场景渲染模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SceneMode {
-    /// 3D globe view.
+    /// 3D 地球视图。
     #[default]
     Scene3D,
-    /// 2D flat map (Web Mercator).
+    /// 2D 平铺地图（Web Mercator）。
     Scene2D,
-    /// Columbus View (2.5D perspective on flat map).
+    /// Columbus View（平铺地图上的 2.5D 透视）。
     ColumbusView,
-    /// Morphing between modes.
+    /// 模式之间的形态变换。
     Morphing,
 }
 
 impl SceneMode {
-    /// Returns true if this is a 3D mode.
+    /// 若为 3D 模式则返回 true。
     pub fn is_3d(&self) -> bool {
         matches!(self, Self::Scene3D)
     }
 
-    /// Returns true if this is a 2D mode.
+    /// 若为 2D 模式则返回 true。
     pub fn is_2d(&self) -> bool {
         matches!(self, Self::Scene2D)
     }
 }
 
-/// Morphing state between scene modes.
+/// 场景模式之间的形态变换状态。
 #[derive(Debug, Clone)]
 pub struct MorphState {
-    /// Source mode.
+    /// 起始模式。
     pub from: SceneMode,
-    /// Target mode.
+    /// 目标模式。
     pub to: SceneMode,
-    /// Morph progress (0.0 = from, 1.0 = to).
+    /// 变换进度（0.0 = from，1.0 = to）。
     pub progress: f64,
-    /// Whether morphing is active.
+    /// 形态变换是否正在活动。
     pub active: bool,
-    /// Duration of the morph in seconds.
+    /// 变换时长（秒）。
     pub duration: f64,
-    /// Elapsed time in seconds.
+    /// 已过时间（秒）。
     pub elapsed: f64,
 }
 
@@ -66,7 +66,7 @@ impl Default for MorphState {
 }
 
 impl MorphState {
-    /// Starts a morph transition.
+    /// 启动一次形态变换过渡。
     pub fn start_morph(&mut self, from: SceneMode, to: SceneMode, duration_secs: f64) {
         self.from = from;
         self.to = to;
@@ -76,7 +76,7 @@ impl MorphState {
         self.elapsed = 0.0;
     }
 
-    /// Updates the morph progress.
+    /// 更新变换进度。
     pub fn update(&mut self, delta_secs: f64) {
         if !self.active {
             return;
@@ -88,7 +88,7 @@ impl MorphState {
         }
     }
 
-    /// Returns the current effective mode.
+    /// 返回当前生效的模式。
     pub fn current_mode(&self) -> SceneMode {
         if self.active {
             SceneMode::Morphing
@@ -98,14 +98,14 @@ impl MorphState {
     }
 }
 
-/// Projects a 3D position to 2D map coordinates.
+/// 将一个 3D 位置投影为 2D 地图坐标。
 ///
-/// # Arguments
-/// * `position` - 3D ECEF position
-/// * `ellipsoid_radius` - Ellipsoid semi-major axis
+/// # 参数
+/// * `position` - 3D ECEF 位置
+/// * `ellipsoid_radius` - 椭球长半轴
 ///
-/// # Returns
-/// 2D position (x = longitude * radius, y = latitude * radius)
+/// # 返回
+/// 2D 位置（x = 经度 * 半径，y = 纬度 * 半径）
 pub fn project_to_2d(position: DVec3, ellipsoid_radius: f64) -> DVec3 {
     let lon = position.y.atan2(position.x);
     let lat = (position.z / position.length()).asin();
@@ -117,7 +117,7 @@ pub fn project_to_2d(position: DVec3, ellipsoid_radius: f64) -> DVec3 {
     )
 }
 
-/// Unprojects 2D map coordinates to 3D ECEF position.
+/// 将 2D 地图坐标反投影为 3D ECEF 位置。
 pub fn unproject_from_2d(position_2d: DVec3, ellipsoid_radius: f64) -> DVec3 {
     let lon = position_2d.x / ellipsoid_radius;
     let lat = position_2d.y / ellipsoid_radius;
@@ -131,16 +131,16 @@ pub fn unproject_from_2d(position_2d: DVec3, ellipsoid_radius: f64) -> DVec3 {
     )
 }
 
-/// Projects a 3D position to Columbus View coordinates.
+/// 将一个 3D 位置投影为 Columbus View 坐标。
 ///
-/// Columbus View is a 2.5D projection where the map is flat
-/// but viewed in perspective.
+/// Columbus View 是一种 2.5D 投影：地图是平铺的，
+/// 但以透视方式观察。
 pub fn project_to_columbus_view(position: DVec3, ellipsoid_radius: f64) -> DVec3 {
     let lon = position.y.atan2(position.x);
     let lat = (position.z / position.length()).asin();
     let height = position.length() - ellipsoid_radius;
 
-    // Columbus View: x = lon, y = lat, z = height (but in a plane)
+    // Columbus View：x = lon，y = lat，z = height（但处于一个平面内）
     DVec3::new(
         lon * ellipsoid_radius,
         lat * ellipsoid_radius,
@@ -148,24 +148,24 @@ pub fn project_to_columbus_view(position: DVec3, ellipsoid_radius: f64) -> DVec3
     )
 }
 
-/// Interpolates between 3D and 2D positions for morphing.
+/// 为形态变换在 3D 与 2D 位置之间插值。
 pub fn morph_position(
     position_3d: DVec3,
     position_2d: DVec3,
     progress: f64,
 ) -> DVec3 {
-    // Smooth step for nicer transition
+    // 平滑阶跃，使过渡更自然
     let t = smoothstep(progress);
     position_3d.lerp(position_2d, t)
 }
 
-/// Smooth step function for easing.
+/// 用于缓动的平滑阶跃函数。
 pub fn smoothstep(t: f64) -> f64 {
     let t = t.clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
 
-/// Computes the camera position for a given scene mode.
+/// 计算给定场景模式下的 camera 位置。
 pub fn compute_camera_for_mode(
     mode: SceneMode,
     center_lon: f64,
@@ -197,16 +197,16 @@ pub fn compute_camera_for_mode(
             )
         }
         SceneMode::Morphing => {
-            // Default to 3D during morphing
+            // 变换期间默认采用 3D
             compute_camera_for_mode(SceneMode::Scene3D, center_lon, center_lat, height, ellipsoid_radius)
         }
     }
 }
 
-/// Map projection for 2D mode.
+/// 2D 模式的地图投影。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MapProjection2D {
-    /// Geographic (equirectangular).
+    /// 地理（等距矩形）。
     #[default]
     Geographic,
     /// Web Mercator.
@@ -214,7 +214,7 @@ pub enum MapProjection2D {
 }
 
 impl MapProjection2D {
-    /// Projects geographic coordinates to 2D.
+    /// 将地理坐标投影为 2D。
     pub fn project(&self, lon: f64, lat: f64, radius: f64) -> DVec3 {
         match self {
             Self::Geographic => DVec3::new(lon * radius, lat * radius, 0.0),
@@ -226,7 +226,7 @@ impl MapProjection2D {
         }
     }
 
-    /// Unprojects 2D coordinates to geographic.
+    /// 将 2D 坐标反投影为地理坐标。
     pub fn unproject(&self, x: f64, y: f64, radius: f64) -> (f64, f64) {
         match self {
             Self::Geographic => (x / radius, y / radius),
@@ -301,13 +301,13 @@ mod tests {
 
         assert_eq!(state.current_mode(), SceneMode::Morphing);
 
-        state.update(3.0); // Complete
+        state.update(3.0); // 完成
         assert_eq!(state.current_mode(), SceneMode::Scene2D);
     }
 
     #[test]
     fn test_project_to_2d() {
-        // Point on equator at prime meridian
+        // 本初子午线与赤道的交点
         let pos = DVec3::new(EARTH_RADIUS, 0.0, 0.0);
         let pos_2d = project_to_2d(pos, EARTH_RADIUS);
 
@@ -321,7 +321,7 @@ mod tests {
         let pos_2d = DVec3::new(0.0, 0.0, 1000.0);
         let pos_3d = unproject_from_2d(pos_2d, EARTH_RADIUS);
 
-        // Should be on equator at prime meridian, 1000m up
+        // 应位于本初子午线与赤道的交点，上方 1000m
         let expected_r = EARTH_RADIUS + 1000.0;
         assert!((pos_3d.x - expected_r).abs() < 1.0);
         assert!(pos_3d.y.abs() < 1.0);

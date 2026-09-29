@@ -1,5 +1,5 @@
-//! Tests for Cartesian4 extension functions.
-//! Maps to CesiumJS `Specs/Core/Cartesian4Spec.js` A-class tests.
+//! Cartesian4 扩展函数的测试。
+//! 对应 CesiumJS `Specs/Core/Cartesian4Spec.js` 的 A 类测试。
 
 use cesium_geospatial::cartesian4_ext as c4;
 use cesium_geospatial::math_utils;

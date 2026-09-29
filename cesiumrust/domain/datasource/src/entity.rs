@@ -1,97 +1,97 @@
-//! Entity definition and graphics properties.
+//! Entity 定义与图形属性。
 //!
-//! Maps to CesiumJS `DataSources/Entity.js` and graphics types
-//! (PointGraphics, PolylineGraphics, PolygonGraphics, etc.)
+//! 映射到 CesiumJS `DataSources/Entity.js` 及图形类型
+//! （PointGraphics、PolylineGraphics、PolygonGraphics 等）
 
 use crate::property::{BoolProperty, Color, ColorProperty, NumberProperty, PositionProperty, Property, StringProperty};
 
-/// Height reference for positioning relative to terrain.
+/// 相对于地形定位的高度参考。
 ///
-/// Maps to CesiumJS `Scene/HeightReference.js`
+/// 映射到 CesiumJS `Scene/HeightReference.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HeightReference {
-    /// Position is absolute (no terrain adjustment).
+    /// 位置为绝对值（不做地形调整）。
     #[default]
     None,
-    /// Position is clamped to the terrain surface.
+    /// 位置被钳制到地形表面。
     ClampToGround,
-    /// Position height is relative to the terrain surface.
+    /// 位置高度相对于地形表面。
     RelativeToGround,
-    /// Position is clamped to the most detailed 3D Tiles surface.
+    /// 位置被钳制到最详细的 3D Tiles 表面。
     ClampToTileset,
-    /// Position height is relative to the most detailed 3D Tiles surface.
+    /// 位置高度相对于最详细的 3D Tiles 表面。
     RelativeToTileset,
 }
 
-/// Corner style for corridors and polyline volumes.
+/// corridor 与 polyline volume 的角部样式。
 ///
-/// Maps to CesiumJS `Core/CornerType.js`
+/// 映射到 CesiumJS `Core/CornerType.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CornerType {
-    /// Rounded corners.
+    /// 圆角。
     #[default]
     Rounded,
-    /// Mitered (sharp) corners.
+    /// 斜接（尖锐）角。
     Mitered,
-    /// Beveled (cut) corners.
+    /// 倒角（切角）。
     Beveled,
 }
 
-/// Classification type for ground primitives.
+/// 地面图元的分类类型。
 ///
-/// Maps to CesiumJS `Scene/ClassificationType.js`
+/// 映射到 CesiumJS `Scene/ClassificationType.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ClassificationType {
-    /// Classify both terrain and 3D Tiles.
+    /// 同时分类地形与 3D Tiles。
     #[default]
     Both,
-    /// Classify terrain only.
+    /// 仅分类地形。
     Terrain,
-    /// Classify 3D Tiles only.
+    /// 仅分类 3D Tiles。
     Cesium3DTile,
 }
 
-/// Shadow mode for an entity.
+/// entity 的阴影模式。
 ///
-/// Maps to CesiumJS `Scene/ShadowMode.js`
+/// 映射到 CesiumJS `Scene/ShadowMode.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ShadowMode {
-    /// Shadows are disabled.
+    /// 禁用阴影。
     #[default]
     Disabled,
-    /// Casts shadows only.
+    /// 仅投射阴影。
     CastOnly,
-    /// Receives shadows only.
+    /// 仅接收阴影。
     ReceiveOnly,
-    /// Casts and receives shadows.
+    /// 投射并接收阴影。
     Enabled,
 }
 
-/// A plane defined by a normal and distance from origin.
+/// 由法线与到原点距离定义的平面。
 ///
-/// Maps to CesiumJS `Core/Plane.js`
+/// 映射到 CesiumJS `Core/Plane.js`
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlaneDef {
-    /// Plane normal [x, y, z].
+    /// 平面法线 [x, y, z]。
     pub normal: [f64; 3],
-    /// Signed distance from origin.
+    /// 到原点的带符号距离。
     pub distance: f64,
 }
 
-/// Point graphics properties.
+/// 点图形属性。
 ///
-/// Maps to CesiumJS `DataSources/PointGraphics.js`
+/// 映射到 CesiumJS `DataSources/PointGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct PointGraphics {
-    /// Point color.
+    /// 点颜色。
     pub color: ColorProperty,
-    /// Point pixel size.
+    /// 点的像素尺寸。
     pub pixel_size: NumberProperty,
-    /// Outline color.
+    /// 轮廓颜色。
     pub outline_color: ColorProperty,
-    /// Outline width in pixels.
+    /// 轮廓宽度（像素）。
     pub outline_width: NumberProperty,
-    /// Whether the point is shown.
+    /// 点是否显示。
     pub show: BoolProperty,
 }
 
@@ -107,20 +107,20 @@ impl Default for PointGraphics {
     }
 }
 
-/// Polyline graphics properties.
+/// 折线图形属性。
 ///
-/// Maps to CesiumJS `DataSources/PolylineGraphics.js`
+/// 映射到 CesiumJS `DataSources/PolylineGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct PolylineGraphics {
-    /// Polyline positions (array of [lon, lat, height]).
+    /// 折线位置（[lon, lat, height] 数组）。
     pub positions: Property<Vec<[f64; 3]>>,
-    /// Line width in pixels.
+    /// 线宽（像素）。
     pub width: NumberProperty,
-    /// Line color.
+    /// 线颜色。
     pub color: ColorProperty,
-    /// Whether the polyline is shown.
+    /// 折线是否显示。
     pub show: BoolProperty,
-    /// Whether to clamp to ground.
+    /// 是否鉗制到地面。
     pub clamp_to_ground: BoolProperty,
 }
 
@@ -136,30 +136,30 @@ impl Default for PolylineGraphics {
     }
 }
 
-/// Polygon graphics properties.
+/// 多边形图形属性。
 ///
-/// Maps to CesiumJS `DataSources/PolygonGraphics.js`
+/// 映射到 CesiumJS `DataSources/PolygonGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct PolygonGraphics {
-    /// Polygon hierarchy positions (exterior ring).
+    /// 多边形层级位置（外环）。
     pub positions: Property<Vec<[f64; 3]>>,
-    /// Holes (interior rings).
+    /// 孔洞（内环）。
     pub holes: Vec<Vec<[f64; 3]>>,
-    /// Fill material color.
+    /// 填充材质颜色。
     pub material: ColorProperty,
-    /// Whether the polygon is filled.
+    /// 多边形是否填充。
     pub fill: BoolProperty,
-    /// Whether the outline is shown.
+    /// 是否显示轮廓。
     pub outline: BoolProperty,
-    /// Outline color.
+    /// 轮廓颜色。
     pub outline_color: ColorProperty,
-    /// Outline width.
+    /// 轮廓宽度。
     pub outline_width: NumberProperty,
-    /// Height of the polygon.
+    /// 多边形高度。
     pub height: NumberProperty,
-    /// Extruded height.
+    /// 挤出高度。
     pub extruded_height: NumberProperty,
-    /// Whether the polygon is shown.
+    /// 多边形是否显示。
     pub show: BoolProperty,
 }
 
@@ -180,24 +180,24 @@ impl Default for PolygonGraphics {
     }
 }
 
-/// Billboard graphics properties.
+/// billboard 图形属性。
 ///
-/// Maps to CesiumJS `DataSources/BillboardGraphics.js`
+/// 映射到 CesiumJS `DataSources/BillboardGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct BillboardGraphics {
-    /// Image URI.
+    /// 图像 URI。
     pub image: StringProperty,
-    /// Width in pixels.
+    /// 宽度（像素）。
     pub width: NumberProperty,
-    /// Height in pixels.
+    /// 高度（像素）。
     pub height: NumberProperty,
-    /// Color tint.
+    /// 颜色染色。
     pub color: ColorProperty,
-    /// Rotation in radians.
+    /// 旋转（弧度）。
     pub rotation: NumberProperty,
-    /// Scale factor.
+    /// 缩放因子。
     pub scale: NumberProperty,
-    /// Whether the billboard is shown.
+    /// billboard 是否显示。
     pub show: BoolProperty,
 }
 
@@ -215,22 +215,22 @@ impl Default for BillboardGraphics {
     }
 }
 
-/// Label graphics properties.
+/// label 图形属性。
 ///
-/// Maps to CesiumJS `DataSources/LabelGraphics.js`
+/// 映射到 CesiumJS `DataSources/LabelGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct LabelGraphics {
-    /// Label text.
+    /// label 文本。
     pub text: StringProperty,
-    /// Font (CSS format).
+    /// 字体（CSS 格式）。
     pub font: StringProperty,
-    /// Fill color.
+    /// 填充颜色。
     pub fill_color: ColorProperty,
-    /// Outline color.
+    /// 轮廓颜色。
     pub outline_color: ColorProperty,
-    /// Outline width.
+    /// 轮廓宽度。
     pub outline_width: NumberProperty,
-    /// Whether the label is shown.
+    /// label 是否显示。
     pub show: BoolProperty,
 }
 
@@ -247,18 +247,18 @@ impl Default for LabelGraphics {
     }
 }
 
-/// Model graphics properties.
+/// model 图形属性。
 ///
-/// Maps to CesiumJS `DataSources/ModelGraphics.js`
+/// 映射到 CesiumJS `DataSources/ModelGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelGraphics {
-    /// Model URI (glTF/glb).
+    /// model URI（glTF/glb）。
     pub uri: StringProperty,
-    /// Scale factor.
+    /// 缩放因子。
     pub scale: NumberProperty,
-    /// Minimum pixel size.
+    /// 最小像素尺寸。
     pub minimum_pixel_size: NumberProperty,
-    /// Whether the model is shown.
+    /// model 是否显示。
     pub show: BoolProperty,
 }
 
@@ -273,32 +273,32 @@ impl Default for ModelGraphics {
     }
 }
 
-/// Ellipse graphics properties.
+/// 椭圆图形属性。
 ///
-/// Maps to CesiumJS `DataSources/EllipseGraphics.js`
+/// 映射到 CesiumJS `DataSources/EllipseGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct EllipseGraphics {
-    /// Semi-major axis in meters.
+    /// 半长轴（米）。
     pub semi_major_axis: NumberProperty,
-    /// Semi-minor axis in meters.
+    /// 半短轴（米）。
     pub semi_minor_axis: NumberProperty,
-    /// Rotation in radians.
+    /// 旋转（弧度）。
     pub rotation: NumberProperty,
-    /// Fill material color.
+    /// 填充材质颜色。
     pub material: ColorProperty,
-    /// Height in meters.
+    /// 高度（米）。
     pub height: NumberProperty,
-    /// Extruded height.
+    /// 挤出高度。
     pub extruded_height: NumberProperty,
-    /// Whether the ellipse is filled.
+    /// 椭圆是否填充。
     pub fill: BoolProperty,
-    /// Whether the outline is shown.
+    /// 是否显示轮廓。
     pub outline: BoolProperty,
-    /// Outline color.
+    /// 轮廓颜色。
     pub outline_color: ColorProperty,
-    /// Outline width.
+    /// 轮廓宽度。
     pub outline_width: NumberProperty,
-    /// Whether the ellipse is shown.
+    /// 椭圆是否显示。
     pub show: BoolProperty,
 }
 
@@ -320,28 +320,28 @@ impl Default for EllipseGraphics {
     }
 }
 
-/// Box graphics properties.
+/// 方框图形属性。
 ///
-/// Maps to CesiumJS `DataSources/BoxGraphics.js`
+/// 映射到 CesiumJS `DataSources/BoxGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoxGraphics {
-    /// Box dimensions [width, depth, height] in meters.
+    /// 方框尺寸 [width, depth, height]（米）。
     pub dimensions: Property<[f64; 3]>,
-    /// Height reference.
+    /// 高度参考。
     pub height_reference: HeightReference,
-    /// Whether the box is filled.
+    /// 方框是否填充。
     pub fill: BoolProperty,
-    /// Fill material color.
+    /// 填充材质颜色。
     pub material: ColorProperty,
-    /// Whether the outline is shown.
+    /// 是否显示轮廓。
     pub outline: BoolProperty,
-    /// Outline color.
+    /// 轮廓颜色。
     pub outline_color: ColorProperty,
-    /// Outline width.
+    /// 轮廓宽度。
     pub outline_width: NumberProperty,
-    /// Shadow mode.
+    /// 阴影模式。
     pub shadows: ShadowMode,
-    /// Whether the box is shown.
+    /// 方框是否显示。
     pub show: BoolProperty,
 }
 
@@ -361,36 +361,36 @@ impl Default for BoxGraphics {
     }
 }
 
-/// Cylinder graphics properties.
+/// 圆柱图形属性。
 ///
-/// Maps to CesiumJS `DataSources/CylinderGraphics.js`
+/// 映射到 CesiumJS `DataSources/CylinderGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct CylinderGraphics {
-    /// Length (height) in meters.
+    /// 长度（高度）（米）。
     pub length: NumberProperty,
-    /// Top radius in meters.
+    /// 顶部半径（米）。
     pub top_radius: NumberProperty,
-    /// Bottom radius in meters.
+    /// 底部半径（米）。
     pub bottom_radius: NumberProperty,
-    /// Height reference.
+    /// 高度参考。
     pub height_reference: HeightReference,
-    /// Number of vertical lines for the outline.
+    /// 轮廓的垂直线数量。
     pub number_of_vertical_lines: NumberProperty,
-    /// Number of slices (radial segments).
+    /// 切片数（径向分段）。
     pub slices: NumberProperty,
-    /// Whether the cylinder is filled.
+    /// 圆柱是否填充。
     pub fill: BoolProperty,
-    /// Fill material color.
+    /// 填充材质颜色。
     pub material: ColorProperty,
-    /// Whether the outline is shown.
+    /// 是否显示轮廓。
     pub outline: BoolProperty,
-    /// Outline color.
+    /// 轮廓颜色。
     pub outline_color: ColorProperty,
-    /// Outline width.
+    /// 轮廓宽度。
     pub outline_width: NumberProperty,
-    /// Shadow mode.
+    /// 阴影模式。
     pub shadows: ShadowMode,
-    /// Whether the cylinder is shown.
+    /// 圆柱是否显示。
     pub show: BoolProperty,
 }
 
@@ -414,42 +414,42 @@ impl Default for CylinderGraphics {
     }
 }
 
-/// Corridor graphics properties.
+/// corridor（走廊）图形属性。
 ///
-/// Maps to CesiumJS `DataSources/CorridorGraphics.js`
+/// 映射到 CesiumJS `DataSources/CorridorGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct CorridorGraphics {
-    /// Corridor center-line positions (array of [lon, lat, height]).
+    /// corridor 中心线位置（[lon, lat, height] 数组）。
     pub positions: Property<Vec<[f64; 3]>>,
-    /// Corridor width in meters.
+    /// corridor 宽度（米）。
     pub width: NumberProperty,
-    /// Height of the corridor.
+    /// corridor 高度。
     pub height: NumberProperty,
-    /// Height reference.
+    /// 高度参考。
     pub height_reference: HeightReference,
-    /// Extruded height.
+    /// 挤出高度。
     pub extruded_height: NumberProperty,
-    /// Corner type.
+    /// 角部类型。
     pub corner_type: CornerType,
-    /// Angular granularity in radians.
+    /// 角度细分粒度（弧度）。
     pub granularity: NumberProperty,
-    /// Whether the corridor is filled.
+    /// corridor 是否填充。
     pub fill: BoolProperty,
-    /// Fill material color.
+    /// 填充材质颜色。
     pub material: ColorProperty,
-    /// Whether the outline is shown.
+    /// 是否显示轮廓。
     pub outline: BoolProperty,
-    /// Outline color.
+    /// 轮廓颜色。
     pub outline_color: ColorProperty,
-    /// Outline width.
+    /// 轮廓宽度。
     pub outline_width: NumberProperty,
-    /// Shadow mode.
+    /// 阴影模式。
     pub shadows: ShadowMode,
-    /// Classification type.
+    /// 分类类型。
     pub classification_type: ClassificationType,
-    /// Z-index for ground corridor ordering.
+    /// 地面 corridor 排序用的 z-index。
     pub z_index: NumberProperty,
-    /// Whether the corridor is shown.
+    /// corridor 是否显示。
     pub show: BoolProperty,
 }
 
@@ -476,42 +476,42 @@ impl Default for CorridorGraphics {
     }
 }
 
-/// Rectangle graphics properties.
+/// 矩形图形属性。
 ///
-/// Maps to CesiumJS `DataSources/RectangleGraphics.js`
+/// 映射到 CesiumJS `DataSources/RectangleGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct RectangleGraphics {
-    /// Rectangle coordinates [west, south, east, north] in radians.
+    /// 矩形坐标 [west, south, east, north]（弧度）。
     pub coordinates: Property<[f64; 4]>,
-    /// Height in meters.
+    /// 高度（米）。
     pub height: NumberProperty,
-    /// Height reference.
+    /// 高度参考。
     pub height_reference: HeightReference,
-    /// Extruded height.
+    /// 挤出高度。
     pub extruded_height: NumberProperty,
-    /// Rotation of the rectangle in radians.
+    /// 矩形的旋转（弧度）。
     pub rotation: NumberProperty,
-    /// Texture coordinate rotation in radians.
+    /// 纹理坐标旋转（弧度）。
     pub st_rotation: NumberProperty,
-    /// Angular granularity in radians.
+    /// 角度细分粒度（弧度）。
     pub granularity: NumberProperty,
-    /// Whether the rectangle is filled.
+    /// 矩形是否填充。
     pub fill: BoolProperty,
-    /// Fill material color.
+    /// 填充材质颜色。
     pub material: ColorProperty,
-    /// Whether the outline is shown.
+    /// 是否显示轮廓。
     pub outline: BoolProperty,
-    /// Outline color.
+    /// 轮廓颜色。
     pub outline_color: ColorProperty,
-    /// Outline width.
+    /// 轮廓宽度。
     pub outline_width: NumberProperty,
-    /// Shadow mode.
+    /// 阴影模式。
     pub shadows: ShadowMode,
-    /// Classification type.
+    /// 分类类型。
     pub classification_type: ClassificationType,
-    /// Z-index for ground rectangle ordering.
+    /// 地面矩形排序用的 z-index。
     pub z_index: NumberProperty,
-    /// Whether the rectangle is shown.
+    /// 矩形是否显示。
     pub show: BoolProperty,
 }
 
@@ -538,32 +538,32 @@ impl Default for RectangleGraphics {
     }
 }
 
-/// Wall graphics properties.
+/// 墙（wall）图形属性。
 ///
-/// Maps to CesiumJS `DataSources/WallGraphics.js`
+/// 映射到 CesiumJS `DataSources/WallGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct WallGraphics {
-    /// Wall positions (array of [lon, lat, height]).
+    /// 墙位置（[lon, lat, height] 数组）。
     pub positions: Property<Vec<[f64; 3]>>,
-    /// Minimum heights for each position.
+    /// 每个位置的最低高度。
     pub minimum_heights: Property<Vec<f64>>,
-    /// Maximum heights for each position.
+    /// 每个位置的最高高度。
     pub maximum_heights: Property<Vec<f64>>,
-    /// Angular granularity in radians.
+    /// 角度细分粒度（弧度）。
     pub granularity: NumberProperty,
-    /// Whether the wall is filled.
+    /// 墙是否填充。
     pub fill: BoolProperty,
-    /// Fill material color.
+    /// 填充材质颜色。
     pub material: ColorProperty,
-    /// Whether the outline is shown.
+    /// 是否显示轮廓。
     pub outline: BoolProperty,
-    /// Outline color.
+    /// 轮廓颜色。
     pub outline_color: ColorProperty,
-    /// Outline width.
+    /// 轮廓宽度。
     pub outline_width: NumberProperty,
-    /// Shadow mode.
+    /// 阴影模式。
     pub shadows: ShadowMode,
-    /// Whether the wall is shown.
+    /// 墙是否显示。
     pub show: BoolProperty,
 }
 
@@ -585,46 +585,46 @@ impl Default for WallGraphics {
     }
 }
 
-/// Ellipsoid graphics properties.
+/// 球体图形属性。
 ///
-/// Maps to CesiumJS `DataSources/EllipsoidGraphics.js`
+/// 映射到 CesiumJS `DataSources/EllipsoidGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct EllipsoidGraphics {
-    /// Outer radii [x, y, z] in meters.
+    /// 外半径 [x, y, z]（米）。
     pub radii: Property<[f64; 3]>,
-    /// Inner radii for hollow ellipsoid.
+    /// 空心球体的内半径。
     pub inner_radii: Property<[f64; 3]>,
-    /// Minimum clock angle in radians.
+    /// 最小时钟角（弧度）。
     pub minimum_clock: NumberProperty,
-    /// Maximum clock angle in radians.
+    /// 最大时钟角（弧度）。
     pub maximum_clock: NumberProperty,
-    /// Minimum cone angle in radians.
+    /// 最小锥角（弧度）。
     pub minimum_cone: NumberProperty,
-    /// Maximum cone angle in radians.
+    /// 最大锥角（弧度）。
     pub maximum_cone: NumberProperty,
-    /// Height reference.
+    /// 高度参考。
     pub height_reference: HeightReference,
-    /// Number of radial slices.
+    /// 径向切片数。
     pub slices: NumberProperty,
-    /// Number of stack partitions.
+    /// 纵向分区数。
     pub stack_partitions: NumberProperty,
-    /// Number of slice partitions.
+    /// 切片分区数。
     pub slice_partitions: NumberProperty,
-    /// Number of subdivisions.
+    /// 细分数量。
     pub subdivisions: NumberProperty,
-    /// Whether the ellipsoid is filled.
+    /// 球体是否填充。
     pub fill: BoolProperty,
-    /// Fill material color.
+    /// 填充材质颜色。
     pub material: ColorProperty,
-    /// Whether the outline is shown.
+    /// 是否显示轮廓。
     pub outline: BoolProperty,
-    /// Outline color.
+    /// 轮廓颜色。
     pub outline_color: ColorProperty,
-    /// Outline width.
+    /// 轮廓宽度。
     pub outline_width: NumberProperty,
-    /// Shadow mode.
+    /// 阴影模式。
     pub shadows: ShadowMode,
-    /// Whether the ellipsoid is shown.
+    /// 球体是否显示。
     pub show: BoolProperty,
 }
 
@@ -653,28 +653,28 @@ impl Default for EllipsoidGraphics {
     }
 }
 
-/// Plane graphics properties.
+/// 平面图形属性。
 ///
-/// Maps to CesiumJS `DataSources/PlaneGraphics.js`
+/// 映射到 CesiumJS `DataSources/PlaneGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlaneGraphics {
-    /// Plane definition (normal + distance).
+    /// 平面定义（法线 + 距离）。
     pub plane: Property<PlaneDef>,
-    /// Dimensions [width, height] in meters.
+    /// 尺寸 [width, height]（米）。
     pub dimensions: Property<[f64; 2]>,
-    /// Whether the plane is filled.
+    /// 平面是否填充。
     pub fill: BoolProperty,
-    /// Fill material color.
+    /// 填充材质颜色。
     pub material: ColorProperty,
-    /// Whether the outline is shown.
+    /// 是否显示轮廓。
     pub outline: BoolProperty,
-    /// Outline color.
+    /// 轮廓颜色。
     pub outline_color: ColorProperty,
-    /// Outline width.
+    /// 轮廓宽度。
     pub outline_width: NumberProperty,
-    /// Shadow mode.
+    /// 阴影模式。
     pub shadows: ShadowMode,
-    /// Whether the plane is shown.
+    /// 平面是否显示。
     pub show: BoolProperty,
 }
 
@@ -694,22 +694,22 @@ impl Default for PlaneGraphics {
     }
 }
 
-/// Path graphics properties (trail visualization).
+/// path（轨迹）图形属性（轨迹可视化）。
 ///
-/// Maps to CesiumJS `DataSources/PathGraphics.js`
+/// 映射到 CesiumJS `DataSources/PathGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct PathGraphics {
-    /// Lead time in seconds (how far ahead to show).
+    /// 引导时间（秒）（向前显示多远）。
     pub lead_time: NumberProperty,
-    /// Trail time in seconds (how far behind to show).
+    /// 拖尾时间（秒）（向后显示多远）。
     pub trail_time: NumberProperty,
-    /// Path width in pixels.
+    /// path 宽度（像素）。
     pub width: NumberProperty,
-    /// Sampling resolution in seconds.
+    /// 采样分辨率（秒）。
     pub resolution: NumberProperty,
-    /// Path material color.
+    /// path 材质颜色。
     pub material: ColorProperty,
-    /// Whether the path is shown.
+    /// path 是否显示。
     pub show: BoolProperty,
 }
 
@@ -726,32 +726,32 @@ impl Default for PathGraphics {
     }
 }
 
-/// Polyline volume graphics properties.
+/// polyline volume 图形属性。
 ///
-/// Maps to CesiumJS `DataSources/PolylineVolumeGraphics.js`
+/// 映射到 CesiumJS `DataSources/PolylineVolumeGraphics.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct PolylineVolumeGraphics {
-    /// Volume center-line positions (array of [lon, lat, height]).
+    /// 体中心线位置（[lon, lat, height] 数组）。
     pub positions: Property<Vec<[f64; 3]>>,
-    /// 2D cross-section shape (array of [x, y] in meters).
+    /// 2D 横截面形状（[x, y] 数组，米）。
     pub shape: Property<Vec<[f64; 2]>>,
-    /// Corner type.
+    /// 角部类型。
     pub corner_type: CornerType,
-    /// Angular granularity in radians.
+    /// 角度细分粒度（弧度）。
     pub granularity: NumberProperty,
-    /// Whether the volume is filled.
+    /// 体是否填充。
     pub fill: BoolProperty,
-    /// Fill material color.
+    /// 填充材质颜色。
     pub material: ColorProperty,
-    /// Whether the outline is shown.
+    /// 是否显示轮廓。
     pub outline: BoolProperty,
-    /// Outline color.
+    /// 轮廓颜色。
     pub outline_color: ColorProperty,
-    /// Outline width.
+    /// 轮廓宽度。
     pub outline_width: NumberProperty,
-    /// Shadow mode.
+    /// 阴影模式。
     pub shadows: ShadowMode,
-    /// Whether the volume is shown.
+    /// 体是否显示。
     pub show: BoolProperty,
 }
 
@@ -773,89 +773,89 @@ impl Default for PolylineVolumeGraphics {
     }
 }
 
-/// An entity in the data source.
+/// 数据源中的一个 entity。
 ///
-/// Maps to CesiumJS `DataSources/Entity.js`
+/// 映射到 CesiumJS `DataSources/Entity.js`
 #[derive(Debug, Clone)]
 pub struct Entity {
-    /// Unique identifier.
+    /// 唯一标识符。
     pub id: String,
 
-    /// Human-readable name.
+    /// 可读名称。
     pub name: Option<String>,
 
-    /// Whether the entity is shown.
+    /// entity 是否显示。
     pub show: bool,
 
-    /// Entity description (HTML).
+    /// entity 描述（HTML）。
     pub description: Option<String>,
 
-    /// Position property [longitude_rad, latitude_rad, height_m].
+    /// 位置属性 [longitude_rad, latitude_rad, height_m]。
     pub position: PositionProperty,
 
-    /// Orientation (quaternion [x, y, z, w]).
+    /// 朝向（四元数 [x, y, z, w]）。
     pub orientation: Property<[f64; 4]>,
 
-    /// Point graphics.
+    /// 点图形。
     pub point: Option<PointGraphics>,
 
-    /// Polyline graphics.
+    /// 折线图形。
     pub polyline: Option<PolylineGraphics>,
 
-    /// Polygon graphics.
+    /// 多边形图形。
     pub polygon: Option<PolygonGraphics>,
 
-    /// Billboard graphics.
+    /// billboard 图形。
     pub billboard: Option<BillboardGraphics>,
 
-    /// Label graphics.
+    /// label 图形。
     pub label: Option<LabelGraphics>,
 
-    /// Model graphics.
+    /// model 图形。
     pub model: Option<ModelGraphics>,
 
-    /// Ellipse graphics.
+    /// 椭圆图形。
     pub ellipse: Option<EllipseGraphics>,
 
-    /// Box graphics.
+    /// 方框图形。
     pub box_graphics: Option<BoxGraphics>,
 
-    /// Cylinder graphics.
+    /// 圆柱图形。
     pub cylinder: Option<CylinderGraphics>,
 
-    /// Corridor graphics.
+    /// corridor 图形。
     pub corridor: Option<CorridorGraphics>,
 
-    /// Rectangle graphics.
+    /// 矩形图形。
     pub rectangle: Option<RectangleGraphics>,
 
-    /// Wall graphics.
+    /// 墙图形。
     pub wall: Option<WallGraphics>,
 
-    /// Ellipsoid graphics.
+    /// 球体图形。
     pub ellipsoid: Option<EllipsoidGraphics>,
 
-    /// Plane graphics.
+    /// 平面图形。
     pub plane: Option<PlaneGraphics>,
 
-    /// Path graphics.
+    /// path 图形。
     pub path: Option<PathGraphics>,
 
-    /// Polyline volume graphics.
+    /// polyline volume 图形。
     pub polyline_volume: Option<PolylineVolumeGraphics>,
 
-    /// Parent entity ID.
+    /// 父 entity ID。
     pub parent: Option<String>,
 
-    /// Availability interval collection.
+    /// 可用性区间集合。
     pub availability: Option<cesium_time::TimeIntervalCollection<()>>,
 
-    /// Custom properties (key-value metadata).
+    /// 自定义属性（键值元数据）。
     pub properties: std::collections::HashMap<String, serde_json::Value>,
 }
 
 impl Entity {
-    /// Creates a new entity with the given ID.
+    /// 创建一个带有给定 ID 的新 entity。
     pub fn new(id: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -886,115 +886,115 @@ impl Entity {
         }
     }
 
-    /// Sets the name.
+    /// 设置名称。
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
     }
 
-    /// Sets the position as a constant [lon_rad, lat_rad, height_m].
+    /// 将位置设为常量 [lon_rad, lat_rad, height_m]。
     pub fn with_position(mut self, lon: f64, lat: f64, height: f64) -> Self {
         self.position = Property::Constant([lon, lat, height]);
         self
     }
 
-    /// Sets point graphics.
+    /// 设置点图形。
     pub fn with_point(mut self, point: PointGraphics) -> Self {
         self.point = Some(point);
         self
     }
 
-    /// Sets polyline graphics.
+    /// 设置折线图形。
     pub fn with_polyline(mut self, polyline: PolylineGraphics) -> Self {
         self.polyline = Some(polyline);
         self
     }
 
-    /// Sets polygon graphics.
+    /// 设置多边形图形。
     pub fn with_polygon(mut self, polygon: PolygonGraphics) -> Self {
         self.polygon = Some(polygon);
         self
     }
 
-    /// Sets billboard graphics.
+    /// 设置 billboard 图形。
     pub fn with_billboard(mut self, billboard: BillboardGraphics) -> Self {
         self.billboard = Some(billboard);
         self
     }
 
-    /// Sets label graphics.
+    /// 设置 label 图形。
     pub fn with_label(mut self, label: LabelGraphics) -> Self {
         self.label = Some(label);
         self
     }
 
-    /// Sets model graphics.
+    /// 设置 model 图形。
     pub fn with_model(mut self, model: ModelGraphics) -> Self {
         self.model = Some(model);
         self
     }
 
-    /// Sets box graphics.
+    /// 设置方框图形。
     pub fn with_box(mut self, box_graphics: BoxGraphics) -> Self {
         self.box_graphics = Some(box_graphics);
         self
     }
 
-    /// Sets cylinder graphics.
+    /// 设置圆柱图形。
     pub fn with_cylinder(mut self, cylinder: CylinderGraphics) -> Self {
         self.cylinder = Some(cylinder);
         self
     }
 
-    /// Sets corridor graphics.
+    /// 设置 corridor 图形。
     pub fn with_corridor(mut self, corridor: CorridorGraphics) -> Self {
         self.corridor = Some(corridor);
         self
     }
 
-    /// Sets rectangle graphics.
+    /// 设置矩形图形。
     pub fn with_rectangle(mut self, rectangle: RectangleGraphics) -> Self {
         self.rectangle = Some(rectangle);
         self
     }
 
-    /// Sets wall graphics.
+    /// 设置墙图形。
     pub fn with_wall(mut self, wall: WallGraphics) -> Self {
         self.wall = Some(wall);
         self
     }
 
-    /// Sets ellipsoid graphics.
+    /// 设置球体图形。
     pub fn with_ellipsoid(mut self, ellipsoid: EllipsoidGraphics) -> Self {
         self.ellipsoid = Some(ellipsoid);
         self
     }
 
-    /// Sets plane graphics.
+    /// 设置平面图形。
     pub fn with_plane(mut self, plane: PlaneGraphics) -> Self {
         self.plane = Some(plane);
         self
     }
 
-    /// Sets path graphics.
+    /// 设置 path 图形。
     pub fn with_path(mut self, path: PathGraphics) -> Self {
         self.path = Some(path);
         self
     }
 
-    /// Sets polyline volume graphics.
+    /// 设置 polyline volume 图形。
     pub fn with_polyline_volume(mut self, polyline_volume: PolylineVolumeGraphics) -> Self {
         self.polyline_volume = Some(polyline_volume);
         self
     }
 
-    /// Adds a custom property.
+    /// 添加一个自定义属性。
     pub fn with_property(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
         self.properties.insert(key.into(), value);
         self
     }
 
-    /// Returns true if this entity has any renderable graphics.
+    /// 若此 entity 含有任何可渲染图形则返回 true。
     pub fn has_graphics(&self) -> bool {
         self.point.is_some()
             || self.polyline.is_some()
@@ -1014,8 +1014,8 @@ impl Entity {
             || self.polyline_volume.is_some()
     }
 
-    /// Returns true if the entity is available at the given time.
-    /// If no availability is defined, always returns true.
+    /// 若在给定时间该 entity 可用则返回 true。
+    /// 若未定义可用性，则始终返回 true。
     ///
     /// CesiumJS: `entity.isAvailable(time)`
     pub fn is_available(&self, time: &cesium_time::JulianDate) -> bool {
@@ -1025,43 +1025,43 @@ impl Entity {
         }
     }
 
-    /// Adds a custom property to the entity.
+    /// 为该 entity 添加一个自定义属性。
     ///
     /// CesiumJS: `entity.addProperty(name, value)`
     pub fn add_property(&mut self, name: impl Into<String>, value: serde_json::Value) {
         self.properties.insert(name.into(), value);
     }
 
-    /// Removes a custom property from the entity.
+    /// 从该 entity 移除一个自定义属性。
     ///
     /// CesiumJS: `entity.removeProperty(name)`
     pub fn remove_property(&mut self, name: &str) -> Option<serde_json::Value> {
         self.properties.remove(name)
     }
 
-    /// Merges properties from a source entity into this entity.
-    /// Reserved property names (id, name, show, etc.) are not overwritten.
-    /// Custom properties are merged.
+    /// 将来自源 entity 的属性合并到本 entity。
+    /// 保留的属性名（id、name、show 等）不会被覆盖。
+    /// 自定义属性会被合并。
     ///
     /// CesiumJS: `entity.merge(source)`
     pub fn merge(&mut self, source: &Entity) {
-        // Merge name only if not set
+        // 仅当未设置时合并 name
         if self.name.is_none() {
             self.name = source.name.clone();
         }
-        // Merge description only if not set
+        // 仅当未设置时合并 description
         if self.description.is_none() {
             self.description = source.description.clone();
         }
-        // Merge position only if undefined
+        // 仅当为 Undefined 时合并 position
         if matches!(self.position, Property::Undefined) {
             self.position = source.position.clone();
         }
-        // Merge orientation only if undefined
+        // 仅当为 Undefined 时合并 orientation
         if matches!(self.orientation, Property::Undefined) {
             self.orientation = source.orientation.clone();
         }
-        // Merge graphics only if not set
+        // 仅当未设置时合并图形
         if self.point.is_none() { self.point = source.point.clone(); }
         if self.polyline.is_none() { self.polyline = source.polyline.clone(); }
         if self.polygon.is_none() { self.polygon = source.polygon.clone(); }
@@ -1077,20 +1077,20 @@ impl Entity {
         if self.plane.is_none() { self.plane = source.plane.clone(); }
         if self.path.is_none() { self.path = source.path.clone(); }
         if self.polyline_volume.is_none() { self.polyline_volume = source.polyline_volume.clone(); }
-        // Merge parent only if not set
+        // 仅当未设置时合并 parent
         if self.parent.is_none() {
             self.parent = source.parent.clone();
         }
-        // Merge custom properties (source fills in missing keys)
+        // 合并自定义属性（由源填充缺失的键）
         for (key, value) in &source.properties {
             self.properties.entry(key.clone()).or_insert_with(|| value.clone());
         }
-        // Note: availability is NOT overwritten by merge (CesiumJS behavior)
+        // 注意：availability 不会被 merge 覆盖（CesiumJS 行为）
     }
 
-    /// Computes the model matrix for this entity at the given time.
-    /// Returns None if position is undefined.
-    /// If orientation is defined, uses it; otherwise computes ENU frame.
+    /// 计算在给定时间该 entity 的模型矩阵。
+    /// 若 position 未定义则返回 None。
+    /// 若定义了 orientation 则使用它；否则计算 ENU 坐标系。
     ///
     /// CesiumJS: `entity.computeModelMatrix(time, result)`
     pub fn compute_model_matrix(
@@ -1098,21 +1098,21 @@ impl Entity {
         time: f64,
         ellipsoid: &cesium_geospatial::Ellipsoid,
     ) -> Option<glam::DMat4> {
-        // Get position
+        // 获取位置
         let pos_arr = self.position.get_value(time)?;
         let cartesian = ellipsoid.cartographic_to_cartesian(
             &cesium_geospatial::Cartographic::from_radians(pos_arr[0], pos_arr[1], pos_arr[2]),
         );
 
-        // Get rotation
+        // 获取旋转
         let rotation = if let Some(orient_arr) = self.orientation.get_value(time) {
-            // Orientation is [x, y, z, w] quaternion
+            // orientation 为 [x, y, z, w] 四元数
             let quat = glam::DQuat::from_xyzw(orient_arr[0], orient_arr[1], orient_arr[2], orient_arr[3]);
             glam::DMat3::from_quat(quat)
         } else {
-            // Compute ENU frame
+            // 计算 ENU 坐标系
             let enu = cesium_geospatial::transforms::east_north_up_to_fixed_frame(cartesian, ellipsoid);
-            // Extract rotation (upper-left 3x3)
+            // 提取旋转（左上 3x3）
             glam::DMat3::from_cols(
                 enu.col(0).truncate(),
                 enu.col(1).truncate(),
@@ -1120,7 +1120,7 @@ impl Entity {
             )
         };
 
-        // Build 4x4 model matrix
+        // 构建 4x4 模型矩阵
         let mut result = glam::DMat4::from_mat3(rotation);
         result.w_axis = glam::DVec4::new(cartesian.x, cartesian.y, cartesian.z, 1.0);
         Some(result)

@@ -1,11 +1,11 @@
-//! cesium-specs: Integration test suite ported from CesiumJS Specs.
+//! cesium-specs：从 CesiumJS Specs 移植的集成测试套件。
 //!
-//! This crate provides test helper utilities and re-exports for the
-//! integration test files under `tests/`.
+//! 本 crate 为 `tests/` 下的集成测试文件提供测试辅助工具
+//! 与重导出。
 
-/// Assert that two f64 values are approximately equal within epsilon.
+/// 断言两个 f64 值在 epsilon 容差内近似相等。
 ///
-/// Maps to CesiumJS `toEqualEpsilon(expected, epsilon)`.
+/// 对应 CesiumJS 的 `toEqualEpsilon(expected, epsilon)`。
 #[macro_export]
 macro_rules! assert_approx {
     ($a:expr, $b:expr, $eps:expr) => {
@@ -21,9 +21,9 @@ macro_rules! assert_approx {
     };
 }
 
-/// Assert that two DVec3 values are approximately equal within epsilon.
+/// 断言两个 DVec3 值在 epsilon 容差内近似相等。
 ///
-/// Maps to CesiumJS `toEqualEpsilon` for Cartesian3.
+/// 对应 CesiumJS 中 Cartesian3 的 `toEqualEpsilon`。
 #[macro_export]
 macro_rules! assert_vec3_epsilon {
     ($a:expr, $b:expr, $eps:expr) => {
@@ -39,7 +39,7 @@ macro_rules! assert_vec3_epsilon {
     };
 }
 
-/// Assert that two DVec2 values are approximately equal within epsilon.
+/// 断言两个 DVec2 值在 epsilon 容差内近似相等。
 #[macro_export]
 macro_rules! assert_vec2_epsilon {
     ($a:expr, $b:expr, $eps:expr) => {
@@ -55,7 +55,7 @@ macro_rules! assert_vec2_epsilon {
     };
 }
 
-/// Assert that two DVec4 values are approximately equal within epsilon.
+/// 断言两个 DVec4 值在 epsilon 容差内近似相等。
 #[macro_export]
 macro_rules! assert_vec4_epsilon {
     ($a:expr, $b:expr, $eps:expr) => {
@@ -74,7 +74,7 @@ macro_rules! assert_vec4_epsilon {
     };
 }
 
-/// Assert that two DQuat values are approximately equal within epsilon.
+/// 断言两个 DQuat 值在 epsilon 容差内近似相等。
 #[macro_export]
 macro_rules! assert_quat_epsilon {
     ($a:expr, $b:expr, $eps:expr) => {
@@ -90,7 +90,7 @@ macro_rules! assert_quat_epsilon {
     };
 }
 
-/// Assert that two DMat3 values are approximately equal within epsilon.
+/// 断言两个 DMat3 值在 epsilon 容差内近似相等。
 #[macro_export]
 macro_rules! assert_mat3_epsilon {
     ($a:expr, $b:expr, $eps:expr) => {
@@ -109,7 +109,7 @@ macro_rules! assert_mat3_epsilon {
     };
 }
 
-/// Assert that two DMat4 values are approximately equal within epsilon.
+/// 断言两个 DMat4 值在 epsilon 容差内近似相等。
 #[macro_export]
 macro_rules! assert_mat4_epsilon {
     ($a:expr, $b:expr, $eps:expr) => {
@@ -128,7 +128,7 @@ macro_rules! assert_mat4_epsilon {
     };
 }
 
-/// Common epsilon constants matching CesiumJS Math constants.
+/// 与 CesiumJS Math 常量对应的常用 epsilon 常量。
 pub mod epsilon {
     pub const EPSILON1: f64 = 1e-1;
     pub const EPSILON2: f64 = 1e-2;
@@ -152,7 +152,7 @@ pub mod epsilon {
     pub const EPSILON20: f64 = 1e-20;
 }
 
-/// Common math constants matching CesiumJS Math.
+/// 与 CesiumJS Math 对应的常用数学常量。
 pub mod math_consts {
     pub const PI: f64 = std::f64::consts::PI;
     pub const TWO_PI: f64 = std::f64::consts::TAU;
@@ -164,12 +164,12 @@ pub mod math_consts {
     pub const DEGREES_PER_RADIAN: f64 = 180.0 / std::f64::consts::PI;
 }
 
-/// Helper to convert degrees to radians.
+/// 将角度转换为弧度的辅助函数。
 pub fn to_radians(degrees: f64) -> f64 {
     degrees * math_consts::RADIANS_PER_DEGREE
 }
 
-/// Helper to convert radians to degrees.
+/// 将弧度转换为角度的辅助函数。
 pub fn to_degrees(radians: f64) -> f64 {
     radians * math_consts::DEGREES_PER_RADIAN
 }

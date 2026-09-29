@@ -1,9 +1,9 @@
-//! Geometry updater: converts Entity graphics properties into GeometryData.
+//! 几何更新器：将 Entity 图形属性转换为 GeometryData。
 //!
-//! Maps to CesiumJS `DataSources/*GeometryUpdater.js`
+//! 映射到 CesiumJS `DataSources/*GeometryUpdater.js`
 //!
-//! Each graphics type has an updater function that extracts property values
-//! at a given time and produces fill/outline geometry instances.
+//! 每种图形类型都有一个更新器函数，在给定时间处提取属性值，
+//! 并生成填充/轮廓几何实例。
 
 use glam::DVec3;
 
@@ -26,25 +26,25 @@ use crate::entity::{
 };
 use crate::property::Color;
 
-/// A geometry instance ready for rendering.
+/// 一个准备好用于渲染的几何实例。
 ///
-/// Maps to CesiumJS `Core/GeometryInstance.js`
+/// 映射到 CesiumJS `Core/GeometryInstance.js`
 #[derive(Debug, Clone)]
 pub struct GeometryInstance {
-    /// The geometry data (positions, indices, normals, etc.).
+    /// 几何数据（位置、索引、法线等）。
     pub geometry: GeometryData,
-    /// Model matrix (4x4 column-major, f64).
+    /// 模型矩阵（4x4 列主序，f64）。
     pub model_matrix: [f64; 16],
-    /// Fill color (RGBA 0..1).
+    /// 填充颜色（RGBA 0..1）。
     pub color: Color,
-    /// Whether this is an outline instance.
+    /// 此实例是否为轮廓实例。
     pub is_outline: bool,
-    /// Entity ID that produced this instance.
+    /// 产生此实例的实体 ID。
     pub entity_id: String,
 }
 
 impl GeometryInstance {
-    /// Creates a new geometry instance with identity model matrix.
+    /// 创建一个使用单位模型矩阵的新几何实例。
     pub fn new(geometry: GeometryData, color: Color, is_outline: bool, entity_id: String) -> Self {
         Self {
             geometry,
@@ -60,9 +60,9 @@ impl GeometryInstance {
         }
     }
 
-    /// Sets the model matrix from a translation (position in Cartesian3).
+    /// 由一个平移（以 Cartesian3 表示的位置）设置模型矩阵。
     pub fn with_translation(mut self, translation: DVec3) -> Self {
-        // Column-major 4x4 with translation in last column
+        // 列主序 4x4，平移在最后一列
         self.model_matrix[12] = translation.x;
         self.model_matrix[13] = translation.y;
         self.model_matrix[14] = translation.z;
@@ -70,34 +70,34 @@ impl GeometryInstance {
     }
 }
 
-/// Result of updating an entity's geometry at a given time.
+/// 在给定时间处更新实体几何的结果。
 #[derive(Debug, Clone, Default)]
 pub struct EntityGeometry {
-    /// Fill geometry instances.
+    /// 填充几何实例。
     pub fill_instances: Vec<GeometryInstance>,
-    /// Outline geometry instances.
+    /// 轮廓几何实例。
     pub outline_instances: Vec<GeometryInstance>,
 }
 
 impl EntityGeometry {
-    /// Returns true if there are no geometry instances.
+    /// 若没有任何几何实例则返回 true。
     pub fn is_empty(&self) -> bool {
         self.fill_instances.is_empty() && self.outline_instances.is_empty()
     }
 
-    /// Total number of instances.
+    /// 实例总数。
     pub fn instance_count(&self) -> usize {
         self.fill_instances.len() + self.outline_instances.len()
     }
 }
 
-/// Converts a cartographic position [lon_rad, lat_rad, height_m] to Cartesian3.
+/// 将一个地图投影位置 [lon_rad, lat_rad, height_m] 转换为 Cartesian3。
 pub fn cartographic_to_cartesian(pos: &[f64; 3], ellipsoid: &Ellipsoid) -> DVec3 {
     let carto = Cartographic::from_radians(pos[0], pos[1], pos[2]);
     ellipsoid.cartographic_to_cartesian(&carto)
 }
 
-/// Converts an array of cartographic positions to Cartesian3.
+/// 将一组地图投影位置转换为 Cartesian3。
 pub fn positions_to_cartesian(positions: &[[f64; 3]], ellipsoid: &Ellipsoid) -> Vec<DVec3> {
     positions
         .iter()
@@ -105,9 +105,9 @@ pub fn positions_to_cartesian(positions: &[[f64; 3]], ellipsoid: &Ellipsoid) -> 
         .collect()
 }
 
-/// Updates box graphics for an entity at the given time.
+/// 在给定时间处更新实体的方框图形。
 ///
-/// Maps to CesiumJS `DataSources/BoxGeometryUpdater.js`
+/// 映射到 CesiumJS `DataSources/BoxGeometryUpdater.js`
 pub fn update_box_graphics(
     entity: &Entity,
     graphics: &BoxGraphics,
@@ -157,9 +157,9 @@ pub fn update_box_graphics(
     result
 }
 
-/// Updates cylinder graphics for an entity at the given time.
+/// 在给定时间处更新实体的圆柱图形。
 ///
-/// Maps to CesiumJS `DataSources/CylinderGeometryUpdater.js`
+/// 映射到 CesiumJS `DataSources/CylinderGeometryUpdater.js`
 pub fn update_cylinder_graphics(
     entity: &Entity,
     graphics: &CylinderGraphics,
@@ -211,9 +211,9 @@ pub fn update_cylinder_graphics(
     result
 }
 
-/// Updates ellipse graphics for an entity at the given time.
+/// 在给定时间处更新实体的椭圆图形。
 ///
-/// Maps to CesiumJS `DataSources/EllipseGeometryUpdater.js`
+/// 映射到 CesiumJS `DataSources/EllipseGeometryUpdater.js`
 pub fn update_ellipse_graphics(
     entity: &Entity,
     graphics: &EllipseGraphics,
@@ -277,9 +277,9 @@ pub fn update_ellipse_graphics(
     result
 }
 
-/// Updates corridor graphics for an entity at the given time.
+/// 在给定时间处更新实体的 corridor 图形。
 ///
-/// Maps to CesiumJS `DataSources/CorridorGeometryUpdater.js`
+/// 映射到 CesiumJS `DataSources/CorridorGeometryUpdater.js`
 pub fn update_corridor_graphics(
     entity: &Entity,
     graphics: &CorridorGraphics,
@@ -347,9 +347,9 @@ pub fn update_corridor_graphics(
     result
 }
 
-/// Updates rectangle graphics for an entity at the given time.
+/// 在给定时间处更新实体的矩形图形。
 ///
-/// Maps to CesiumJS `DataSources/RectangleGeometryUpdater.js`
+/// 映射到 CesiumJS `DataSources/RectangleGeometryUpdater.js`
 pub fn update_rectangle_graphics(
     _entity: &Entity,
     graphics: &RectangleGraphics,
@@ -394,9 +394,9 @@ pub fn update_rectangle_graphics(
     result
 }
 
-/// Updates wall graphics for an entity at the given time.
+/// 在给定时间处更新实体的墙体图形。
 ///
-/// Maps to CesiumJS `DataSources/WallGeometryUpdater.js`
+/// 映射到 CesiumJS `DataSources/WallGeometryUpdater.js`
 pub fn update_wall_graphics(
     entity: &Entity,
     graphics: &WallGraphics,
@@ -454,9 +454,9 @@ pub fn update_wall_graphics(
     result
 }
 
-/// Updates ellipsoid graphics for an entity at the given time.
+/// 在给定时间处更新实体的椭球图形。
 ///
-/// Maps to CesiumJS `DataSources/EllipsoidGeometryUpdater.js`
+/// 映射到 CesiumJS `DataSources/EllipsoidGeometryUpdater.js`
 pub fn update_ellipsoid_graphics(
     entity: &Entity,
     graphics: &EllipsoidGraphics,
@@ -516,9 +516,9 @@ pub fn update_ellipsoid_graphics(
     result
 }
 
-/// Updates plane graphics for an entity at the given time.
+/// 在给定时间处更新实体的平面图形。
 ///
-/// Maps to CesiumJS `DataSources/PlaneGeometryUpdater.js`
+/// 映射到 CesiumJS `DataSources/PlaneGeometryUpdater.js`
 pub fn update_plane_graphics(
     entity: &Entity,
     graphics: &PlaneGraphics,
@@ -572,9 +572,9 @@ pub fn update_plane_graphics(
     result
 }
 
-/// Updates polyline graphics for an entity at the given time.
+/// 在给定时间处更新实体的 polyline 图形。
 ///
-/// Maps to CesiumJS `DataSources/PolylineGeometryUpdater.js`
+/// 映射到 CesiumJS `DataSources/PolylineGeometryUpdater.js`
 pub fn update_polyline_graphics(
     entity: &Entity,
     graphics: &PolylineGraphics,
@@ -618,9 +618,9 @@ pub fn update_polyline_graphics(
     result
 }
 
-/// Updates polyline volume graphics for an entity at the given time.
+/// 在给定时间处更新实体的 polyline volume 图形。
 ///
-/// Maps to CesiumJS `DataSources/PolylineVolumeGeometryUpdater.js`
+/// 映射到 CesiumJS `DataSources/PolylineVolumeGeometryUpdater.js`
 pub fn update_polyline_volume_graphics(
     entity: &Entity,
     graphics: &PolylineVolumeGraphics,
@@ -670,10 +670,10 @@ pub fn update_polyline_volume_graphics(
     result
 }
 
-/// Updates all geometry graphics for an entity at the given time.
+/// 在给定时间处更新实体的所有几何图形。
 ///
-/// This is the main entry point that dispatches to the appropriate updater
-/// based on which graphics are defined on the entity.
+/// 这是主入口点，根据实体上定义了哪些图形
+/// 分发到相应的更新器。
 pub fn update_entity_geometry(
     entity: &Entity,
     time: f64,

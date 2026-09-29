@@ -1,29 +1,30 @@
-//! Cartesian2 CesiumJS extension functions.
-//! Maps to CesiumJS `Core/Cartesian2.js` static methods that go beyond basic vector math.
+//! Cartesian2 的 CesiumJS 扩展函数。
+//! 映射到 CesiumJS `Core/Cartesian2.js` 中超越基础向量运算的静态方法。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::needless_range_loop)]
 use crate::math_utils;
 use glam::DVec2;
 
-/// The packed length of a Cartesian2: 2.
+/// 一个 Cartesian2 的打包长度：2。
 pub const PACKED_LENGTH: usize = 2;
 
-/// Packs a Cartesian2 into an array at the given starting index.
-/// Maps to CesiumJS `Cartesian2.pack`
+/// 将一个 Cartesian2 打包到数组中给定的起始索引处。
+/// 映射到 CesiumJS `Cartesian2.pack`
 pub fn pack(value: DVec2, array: &mut [f64], starting_index: usize) {
     array[starting_index] = value.x;
     array[starting_index + 1] = value.y;
 }
 
-/// Unpacks a Cartesian2 from an array at the given starting index.
-/// Maps to CesiumJS `Cartesian2.unpack`
+/// 从数组中给定的起始索引处解包出一个 Cartesian2。
+/// 映射到 CesiumJS `Cartesian2.unpack`
 pub fn unpack(array: &[f64], starting_index: usize) -> DVec2 {
     DVec2::new(array[starting_index], array[starting_index + 1])
 }
 
-/// Flattens an array of Cartesian2s into an array of components.
-/// Maps to CesiumJS `Cartesian2.packArray`
+/// 将一个 Cartesian2 数组展平为一个分量数组。
+/// 映射到 CesiumJS `Cartesian2.packArray`
 pub fn pack_array(array: &[DVec2]) -> Vec<f64> {
     let length = array.len();
     let mut result = vec![0.0f64; length * 2];
@@ -33,8 +34,8 @@ pub fn pack_array(array: &[DVec2]) -> Vec<f64> {
     result
 }
 
-/// Unpacks an array of components into an array of Cartesian2s.
-/// Maps to CesiumJS `Cartesian2.unpackArray`
+/// 将一个分量数组解包为一个 Cartesian2 数组。
+/// 映射到 CesiumJS `Cartesian2.unpackArray`
 pub fn unpack_array(array: &[f64]) -> Vec<DVec2> {
     let length = array.len() / 2;
     let mut result = Vec::with_capacity(length);
@@ -44,70 +45,70 @@ pub fn unpack_array(array: &[f64]) -> Vec<DVec2> {
     result
 }
 
-/// Creates a Cartesian2 from the first two elements of an array at an offset.
-/// Maps to CesiumJS `Cartesian2.fromArray`
+/// 在偏移处从数组的前两个元素创建一个 Cartesian2。
+/// 映射到 CesiumJS `Cartesian2.fromArray`
 pub fn from_array(array: &[f64], starting_index: usize) -> DVec2 {
     DVec2::new(array[starting_index], array[starting_index + 1])
 }
 
-/// Returns the component with the maximum value.
-/// Maps to CesiumJS `Cartesian2.maximumComponent`
+/// 返回具有最大值的分量。
+/// 映射到 CesiumJS `Cartesian2.maximumComponent`
 pub fn maximum_component(cartesian: DVec2) -> f64 {
     cartesian.x.max(cartesian.y)
 }
 
-/// Returns the component with the minimum value.
-/// Maps to CesiumJS `Cartesian2.minimumComponent`
+/// 返回具有最小值的分量。
+/// 映射到 CesiumJS `Cartesian2.minimumComponent`
 pub fn minimum_component(cartesian: DVec2) -> f64 {
     cartesian.x.min(cartesian.y)
 }
 
-/// Computes the provided Cartesian's squared magnitude.
-/// Maps to CesiumJS `Cartesian2.magnitudeSquared`
+/// 计算给定的 Cartesian 的平方量级。
+/// 映射到 CesiumJS `Cartesian2.magnitudeSquared`
 pub fn magnitude_squared(cartesian: DVec2) -> f64 {
     cartesian.x * cartesian.x + cartesian.y * cartesian.y
 }
 
-/// Computes the Cartesian's magnitude (length).
-/// Maps to CesiumJS `Cartesian2.magnitude`
+/// 计算 Cartesian 的量级（长度）。
+/// 映射到 CesiumJS `Cartesian2.magnitude`
 pub fn magnitude(cartesian: DVec2) -> f64 {
     magnitude_squared(cartesian).sqrt()
 }
 
-/// Computes the 2D cross product of two vectors (returns scalar z-component).
-/// Maps to CesiumJS `Cartesian2.cross`
+/// 计算两个向量的 2D 叉积（返回标量的 z 分量）。
+/// 映射到 CesiumJS `Cartesian2.cross`
 pub fn cross(left: DVec2, right: DVec2) -> f64 {
     left.x * right.y - left.y * right.x
 }
 
-/// Computes the distance between two points.
-/// Maps to CesiumJS `Cartesian2.distance`
+/// 计算两点之间的距离。
+/// 映射到 CesiumJS `Cartesian2.distance`
 pub fn distance(left: DVec2, right: DVec2) -> f64 {
     (left - right).length()
 }
 
-/// Computes the squared distance between two points.
-/// Maps to CesiumJS `Cartesian2.distanceSquared`
+/// 计算两点之间的平方距离。
+/// 映射到 CesiumJS `Cartesian2.distanceSquared`
 pub fn distance_squared(left: DVec2, right: DVec2) -> f64 {
     (left - right).length_squared()
 }
 
-/// Computes the linear interpolation or extrapolation at t using the provided cartesians.
-/// Maps to CesiumJS `Cartesian2.lerp`
+/// 使用给定的 cartesians 计算在 t 处的线性插值或外推。
+/// 映射到 CesiumJS `Cartesian2.lerp`
 pub fn lerp(start: DVec2, end: DVec2, t: f64) -> DVec2 {
     start + (end - start) * t
 }
 
-/// Computes the angle between two vectors.
-/// Maps to CesiumJS `Cartesian2.angleBetween`
+/// 计算两个向量之间的夹角。
+/// 映射到 CesiumJS `Cartesian2.angleBetween`
 pub fn angle_between(left: DVec2, right: DVec2) -> f64 {
     let cross_val = cross(left, right);
     let dot_val = left.dot(right);
     cross_val.abs().atan2(dot_val)
 }
 
-/// Returns the axis that is most orthogonal to the provided Cartesian.
-/// Maps to CesiumJS `Cartesian2.mostOrthogonalAxis`
+/// 返回与给定的 Cartesian 最正交的轴。
+/// 映射到 CesiumJS `Cartesian2.mostOrthogonalAxis`
 pub fn most_orthogonal_axis(cartesian: DVec2) -> DVec2 {
     let f = cartesian.normalize_or_zero();
     let f = DVec2::new(f.x.abs(), f.y.abs());
@@ -119,8 +120,8 @@ pub fn most_orthogonal_axis(cartesian: DVec2) -> DVec2 {
     }
 }
 
-/// Returns true if left and right are equal within the provided epsilon.
-/// Maps to CesiumJS `Cartesian2.equalsEpsilon`
+/// 若在给定的 epsilon 范围内 left 与 right 相等则返回 true。
+/// 映射到 CesiumJS `Cartesian2.equalsEpsilon`
 pub fn equals_epsilon(
     left: DVec2,
     right: DVec2,
@@ -131,8 +132,8 @@ pub fn equals_epsilon(
         && math_utils::equals_epsilon(left.y, right.y, relative_epsilon, absolute_epsilon)
 }
 
-/// Constrains each component to the given min/max range.
-/// Maps to CesiumJS `Cartesian2.clamp`
+/// 将每个分量约束到给定的 min/max 范围内。
+/// 映射到 CesiumJS `Cartesian2.clamp`
 pub fn clamp(value: DVec2, min: DVec2, max: DVec2) -> DVec2 {
     DVec2::new(
         math_utils::clamp(value.x, min.x, max.x),
@@ -140,20 +141,20 @@ pub fn clamp(value: DVec2, min: DVec2, max: DVec2) -> DVec2 {
     )
 }
 
-/// Computes a new Cartesian2 with each component set to the absolute value.
-/// Maps to CesiumJS `Cartesian2.abs`
+/// 计算一个新的 Cartesian2，其每个分量都被设为绝对值。
+/// 映射到 CesiumJS `Cartesian2.abs`
 pub fn abs(cartesian: DVec2) -> DVec2 {
     DVec2::new(cartesian.x.abs(), cartesian.y.abs())
 }
 
-/// Computes the componentwise product of two Cartesians.
-/// Maps to CesiumJS `Cartesian2.multiplyComponents`
+/// 计算两个 Cartesian 的按分量乘积。
+/// 映射到 CesiumJS `Cartesian2.multiplyComponents`
 pub fn multiply_components(left: DVec2, right: DVec2) -> DVec2 {
     DVec2::new(left.x * right.x, left.y * right.y)
 }
 
-/// Computes the componentwise quotient of two Cartesians.
-/// Maps to CesiumJS `Cartesian2.divideComponents`
+/// 计算两个 Cartesian 的按分量商。
+/// 映射到 CesiumJS `Cartesian2.divideComponents`
 pub fn divide_components(left: DVec2, right: DVec2) -> DVec2 {
     DVec2::new(left.x / right.x, left.y / right.y)
 }

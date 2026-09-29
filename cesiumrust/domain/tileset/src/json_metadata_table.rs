@@ -1,12 +1,12 @@
-//! JsonMetadataTable - JSON-based metadata table for 3D Tiles.
+//! JsonMetadataTable - 基于 JSON 的 3D Tiles 元数据表。
 //!
-//! Maps to CesiumJS `Scene/JsonMetadataTable.js`
+//! 镜像 CesiumJS `Scene/JsonMetadataTable.js`
 
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// A metadata table backed by JSON values.
-/// Maps to CesiumJS `Scene/JsonMetadataTable.js`
+/// 由 JSON 值支撑的元数据表。
+/// 镜像 CesiumJS `Scene/JsonMetadataTable.js`
 #[derive(Debug, Clone)]
 pub struct JsonMetadataTable {
     count: usize,
@@ -14,34 +14,34 @@ pub struct JsonMetadataTable {
 }
 
 impl JsonMetadataTable {
-    /// Creates a new JsonMetadataTable.
+    /// 创建一个新的 JsonMetadataTable。
     ///
-    /// # Arguments
-    /// * `count` - The number of features in the table.
-    /// * `properties` - A map of property IDs to arrays of values.
+    /// # 参数
+    /// * `count` - 表中 feature 的数量。
+    /// * `properties` - 属性 ID 到值数组的映射。
     pub fn new(count: usize, properties: HashMap<String, Vec<Value>>) -> Self {
         Self { count, properties }
     }
 
-    /// Returns the number of features in the table.
+    /// 返回表中 feature 的数量。
     pub fn count(&self) -> usize {
         self.count
     }
 
-    /// Returns true if the table has the given property.
+    /// 若表含有给定属性则返回 true。
     pub fn has_property(&self, property_id: &str) -> bool {
         self.properties.contains_key(property_id)
     }
 
-    /// Returns a sorted list of property IDs.
+    /// 返回已排序的属性 ID 列表。
     pub fn get_property_ids(&self) -> Vec<String> {
         let mut ids: Vec<String> = self.properties.keys().cloned().collect();
         ids.sort();
         ids
     }
 
-    /// Gets the value of a property at the given index.
-    /// Returns None if the property doesn't exist or index is out of bounds.
+    /// 获取给定索引处的属性值。
+    /// 若属性不存在或索引越界则返回 None。
     pub fn get_property(&self, index: usize, property_id: &str) -> Option<Value> {
         if index >= self.count {
             return None;
@@ -50,8 +50,8 @@ impl JsonMetadataTable {
         values.get(index).cloned()
     }
 
-    /// Sets the value of a property at the given index.
-    /// Creates the property if it doesn't exist.
+    /// 设置给定索引处的属性值。
+    /// 若属性不存在则创建它。
     pub fn set_property(&mut self, index: usize, property_id: &str, value: Value) {
         if index >= self.count {
             return;

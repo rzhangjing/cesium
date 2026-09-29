@@ -1,5 +1,5 @@
-//! PointCloud extended specs - get_world_position/get_color/get_normal/bounding_sphere/TimeDynamic
-//! Ported from Scene/PointCloudSpec.js (A-class logic paths)
+//! PointCloud 扩展规范 - get_world_position/get_color/get_normal/bounding_sphere/TimeDynamic
+//! 移植自 Scene/PointCloudSpec.js（A 类逻辑路径）
 
 use cesium_tileset::point_cloud::{PointCloud, TimeDynamicPointCloud};
 
@@ -81,16 +81,16 @@ fn color_per_point_overrides_constant() {
     let mut cloud = make_cloud(vec![[0.0, 0.0, 0.0]]);
     cloud.colors = Some(vec![[1.0, 0.0, 0.0, 1.0]]);
     cloud.constant_rgba = Some([0.0, 0.0, 1.0, 1.0]);
-    // Per-point takes priority
+    // 逐点颜色优先
     assert_eq!(cloud.get_color(0), [1.0, 0.0, 0.0, 1.0]);
 }
 
 #[test]
 fn color_out_of_range_falls_back_to_constant() {
     let mut cloud = make_cloud(vec![[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]);
-    cloud.colors = Some(vec![[1.0, 0.0, 0.0, 1.0]]); // only 1 color for 2 points
+    cloud.colors = Some(vec![[1.0, 0.0, 0.0, 1.0]]); // 2 个点只有 1 个颜色
     cloud.constant_rgba = Some([0.0, 1.0, 0.0, 1.0]);
-    // Index 1 is out of range for colors, falls back to constant
+    // 索引 1 超出 colors 范围，回退到常量
     assert_eq!(cloud.get_color(1), [0.0, 1.0, 0.0, 1.0]);
 }
 
@@ -186,7 +186,7 @@ fn time_dynamic_frame_index_between() {
         vec![0.0, 1.0, 2.0],
         vec!["a".into(), "b".into(), "c".into()],
     );
-    // Between 0 and 1, should return index 1 (first ts >= time)
+    // 介于 0 和 1 之间，应返回索引 1（首个 ts >= time）
     assert_eq!(td.get_frame_index(0.5), Some(1));
 }
 
@@ -196,7 +196,7 @@ fn time_dynamic_frame_index_after_all() {
         vec![0.0, 1.0, 2.0],
         vec!["a".into(), "b".into(), "c".into()],
     );
-    // After all timestamps, returns last
+    // 超过所有时间戳，返回最后一个
     assert_eq!(td.get_frame_index(5.0), Some(2));
 }
 
@@ -223,7 +223,7 @@ fn time_dynamic_interpolation_disabled() {
         vec![0.0, 1.0, 2.0],
         vec!["a".into(), "b".into(), "c".into()],
     );
-    // interpolate defaults to false
+    // interpolate 默认为 false
     assert!(td.get_interpolation_factor(0.5).is_none());
 }
 
@@ -258,6 +258,6 @@ fn time_dynamic_interpolation_at_boundary() {
 fn time_dynamic_interpolation_single_frame() {
     let mut td = TimeDynamicPointCloud::new(vec![0.0], vec!["a".into()]);
     td.interpolate = true;
-    // Need at least 2 frames for interpolation
+    // 插值至少需要 2 帧
     assert!(td.get_interpolation_factor(0.0).is_none());
 }

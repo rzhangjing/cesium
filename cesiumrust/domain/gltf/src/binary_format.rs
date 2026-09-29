@@ -1,24 +1,24 @@
-//! GLB binary container and b3dm format parsing.
+//! GLB 二进制容器与 b3dm 格式解析。
 //!
-//! Maps to CesiumJS:
-//! - `Scene/GltfLoader.js` (GLB parsing)
-//! - `Scene/Batched3DModel3DTileContent.js` (b3dm)
+//! 映射到 CesiumJS：
+//! - `Scene/GltfLoader.js`（GLB 解析）
+//! - `Scene/Batched3DModel3DTileContent.js`（b3dm）
 //!
-//! # GLB Format
+//! # GLB 格式
 //! ```text
-//! [12-byte header]
+//! [12 字节 header]
 //!   magic: u32 (0x46546C67 = "glTF")
 //!   version: u32 (2)
-//!   length: u32 (total file length)
+//!   length: u32（文件总长度）
 //! [chunks...]
 //!   chunk_length: u32
 //!   chunk_type: u32 (0x4E4F534A = JSON, 0x004E4942 = BIN)
 //!   chunk_data: [u8; chunk_length]
 //! ```
 //!
-//! # b3dm Format
+//! # b3dm 格式
 //! ```text
-//! [28-byte header]
+//! [28 字节 header]
 //!   magic: [u8; 4] ("b3dm")
 //!   version: u32 (1)
 //!   byte_length: u32
@@ -30,70 +30,70 @@
 //! [feature table binary]
 //! [batch table JSON]
 //! [batch table binary]
-//! [GLB data]
+//! [GLB 数据]
 //! ```
 
 use crate::gltf_model::GltfModel;
 use thiserror::Error;
 
-/// Errors that can occur during binary format parsing.
+/// 二进制格式解析期间可能发生的错误。
 #[derive(Debug, Error)]
 pub enum BinaryFormatError {
-    /// Buffer too short for the header.
+    /// 用于 header 的 buffer 太短。
     #[error("Buffer too short: expected at least {expected} bytes, got {actual}")]
     BufferTooShort { expected: usize, actual: usize },
 
-    /// Invalid magic number.
+    /// 无效的 magic 数。
     #[error("Invalid magic: expected {expected:#010X}, got {actual:#010X}")]
     InvalidMagic { expected: u32, actual: u32 },
 
-    /// Unsupported version.
+    /// 不支持的版本。
     #[error("Unsupported version: {0}")]
     UnsupportedVersion(u32),
 
-    /// Invalid chunk type.
+    /// 无效的 chunk 类型。
     #[error("Invalid chunk type: {0:#010X}")]
     InvalidChunkType(u32),
 
-    /// JSON parsing error.
+    /// JSON 解析错误。
     #[error("JSON parse error: {0}")]
     JsonError(#[from] serde_json::Error),
 
-    /// Invalid string encoding.
+    /// 无效的字符串编码。
     #[error("Invalid UTF-8: {0}")]
     Utf8Error(#[from] std::string::FromUtf8Error),
 }
 
-/// GLB magic number: "glTF" in little-endian.
+/// GLB magic 数：小端序的 "glTF"。
 pub const GLB_MAGIC: u32 = 0x46546C67;
 
-/// GLB chunk type for JSON content.
+/// JSON 内容的 GLB chunk 类型。
 pub const GLB_CHUNK_JSON: u32 = 0x4E4F534A;
 
-/// GLB chunk type for binary content.
+/// 二进制内容的 GLB chunk 类型。
 pub const GLB_CHUNK_BIN: u32 = 0x004E4942;
 
-/// b3dm magic: "b3dm" as bytes.
+/// b3dm magic：作为字节的 "b3dm"。
 pub const B3DM_MAGIC: &[u8; 4] = b"b3dm";
 
-/// A parsed GLB file.
+/// 一个已解析的 GLB 文件。
 #[derive(Debug, Clone)]
 pub struct GlbData {
-    /// The glTF JSON model.
+    /// glTF JSON model。
     pub model: GltfModel,
 
-    /// The binary buffer data (if present).
+    /// 二进制 buffer 数据（若存在）。
     pub binary_chunk: Option<Vec<u8>>,
 }
 
-/// The `(json_chunk, binary_chunk)` pair extracted from a GLB container.
+/// 从 GLB 容器提取出的 `(json_chunk, binary_chunk)` 对。
 type GlbChunks = (Option<Vec<u8>>, Option<Vec<u8>>);
 
-/// Walks the GLB header + chunks, returning `(json_chunk, binary_chunk)`
-/// without deserializing the JSON. Shared by [`GlbData::from_bytes`] (typed)
-/// and [`parse_glb_container`] (untyped, for the glTF 1.0 → 2.0 upgrade path).
+/// 遍历 GLB header + chunks，返回 `(json_chunk, binary_chunk)`
+/// 而不反序列化 JSON。由 [`GlbData::from_bytes`]（强类型）
+/// 与 [`parse_glb_container`]（无类型，用于 glTF 1.0 → 2.0 升级路径）共享。
 fn read_glb_chunks(data: &[u8]) -> Result<GlbChunks, BinaryFormatError> {
-    // Minimum header size: 12 bytes
+    // header 最小尺寸：12 字节
     if data.len() < 12 {
         return Err(BinaryFormatError::BufferTooShort {
             expected: 12,
@@ -116,7 +116,7 @@ fn read_glb_chunks(data: &[u8]) -> Result<GlbChunks, BinaryFormatError> {
 
     let _total_length = read_u32_le(&data[8..12]);
 
-    // Parse chunks
+    // 解析 chunks
     let mut json_chunk: Option<Vec<u8>> = None;
     let mut binary_chunk: Option<Vec<u8>> = None;
     let mut offset = 12;
@@ -137,7 +137,7 @@ fn read_glb_chunks(data: &[u8]) -> Result<GlbChunks, BinaryFormatError> {
             GLB_CHUNK_JSON => json_chunk = Some(chunk_data),
             GLB_CHUNK_BIN => binary_chunk = Some(chunk_data),
             _ => {
-                // Unknown chunk type, skip
+                // 未知 chunk 类型，跳过
             }
         }
     }
@@ -145,16 +145,15 @@ fn read_glb_chunks(data: &[u8]) -> Result<GlbChunks, BinaryFormatError> {
     Ok((json_chunk, binary_chunk))
 }
 
-/// Parses a GLB container into its raw JSON [`serde_json::Value`] + binary
-/// chunk, **without** the typed [`GltfModel`] deserialization
-/// [`GlbData::from_bytes`] performs. This is the entry point for the glTF
-/// 1.0 → 2.0 upgrade path: a 1.0 JSON payload (object-keyed collections)
-/// cannot be deserialized into the array-based typed model until
-/// [`crate::gltf_upgrade::update_version_with_buffers`] has run.
+/// 将 GLB 容器解析为其原始 JSON [`serde_json::Value`] + 二进制
+/// chunk，**不**进行 [`GlbData::from_bytes`] 所执行的强类型 [`GltfModel`]
+/// 反序列化。这是 glTF 1.0 → 2.0 升级路径的入口点：
+/// 一个 1.0 的 JSON payload（对象键集合）
+/// 在 [`crate::gltf_upgrade::update_version_with_buffers`] 运行之前无法被反序列化为基于数组的强类型 model。
 ///
-/// # Errors
-/// Returns the same header/chunk errors as [`GlbData::from_bytes`], plus a JSON
-/// parse error when the JSON chunk is missing or malformed.
+/// # 错误
+/// 返回与 [`GlbData::from_bytes`] 相同的 header/chunk 错误，外加当 JSON
+/// chunk 缺失或格式错误时的 JSON 解析错误。
 pub fn parse_glb_container(
     data: &[u8],
 ) -> Result<(serde_json::Value, Option<Vec<u8>>), BinaryFormatError> {
@@ -165,7 +164,7 @@ pub fn parse_glb_container(
 }
 
 impl GlbData {
-    /// Parses a GLB file from bytes.
+    /// 从字节解析一个 GLB 文件。
     pub fn from_bytes(data: &[u8]) -> Result<Self, BinaryFormatError> {
         let (json_chunk, binary_chunk) = read_glb_chunks(data)?;
         let json_data = json_chunk.ok_or(BinaryFormatError::InvalidChunkType(0))?;
@@ -177,48 +176,48 @@ impl GlbData {
         })
     }
 
-    /// Returns true if this GLB has embedded binary data.
+    /// 若此 GLB 包含嵌入式二进制数据则返回 true。
     pub fn has_binary(&self) -> bool {
         self.binary_chunk.is_some()
     }
 }
 
-/// Feature table for b3dm (contains BATCH_LENGTH).
+/// b3dm 的 feature table（包含 BATCH_LENGTH）。
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct B3dmFeatureTable {
-    /// Number of batched features.
+    /// 批量 feature 的数量。
     #[serde(default)]
     pub batch_length: u32,
 
-    /// Optional RTC (Relative-To-Center) center.
+    /// 可选的 RTC（Relative-To-Center）中心。
     #[serde(default)]
     pub rtc_center: Option<[f64; 3]>,
 }
 
-/// A parsed b3dm (Batched 3D Model) file.
+/// 一个已解析的 b3dm（Batched 3D Model）文件。
 #[derive(Debug, Clone)]
 pub struct B3dmData {
-    /// The feature table.
+    /// feature table。
     pub feature_table: B3dmFeatureTable,
 
-    /// Raw feature table binary data.
+    /// 原始的 feature table 二进制数据。
     pub feature_table_binary: Option<Vec<u8>>,
 
-    /// Batch table JSON (arbitrary properties).
+    /// batch table JSON（任意属性）。
     pub batch_table_json: Option<serde_json::Value>,
 
-    /// Raw batch table binary data.
+    /// 原始的 batch table 二进制数据。
     pub batch_table_binary: Option<Vec<u8>>,
 
-    /// The embedded GLB data.
+    /// 嵌入的 GLB 数据。
     pub glb: GlbData,
 }
 
 impl B3dmData {
-    /// Parses a b3dm file from bytes.
+    /// 从字节解析一个 b3dm 文件。
     pub fn from_bytes(data: &[u8]) -> Result<Self, BinaryFormatError> {
-        // Minimum header size: 28 bytes
+        // header 最小尺寸：28 字节
         if data.len() < 28 {
             return Err(BinaryFormatError::BufferTooShort {
                 expected: 28,
@@ -226,11 +225,11 @@ impl B3dmData {
             });
         }
 
-        // Check magic
+        // 检查 magic
         if &data[0..4] != B3DM_MAGIC {
             let magic = read_u32_le(&data[0..4]);
             return Err(BinaryFormatError::InvalidMagic {
-                expected: 0x6D643362, // "b3dm" as u32
+                expected: 0x6D643362, // "b3dm" 作为 u32
                 actual: magic,
             });
         }
@@ -248,7 +247,7 @@ impl B3dmData {
 
         let mut offset = 28;
 
-        // Parse feature table JSON
+        // 解析 feature table JSON
         let feature_table = if ft_json_length > 0 {
             let ft_json_bytes = &data[offset..offset + ft_json_length];
             offset += ft_json_length;
@@ -258,7 +257,7 @@ impl B3dmData {
             B3dmFeatureTable::default()
         };
 
-        // Parse feature table binary
+        // 解析 feature table 二进制
         let feature_table_binary = if ft_binary_length > 0 {
             let ft_bin = data[offset..offset + ft_binary_length].to_vec();
             offset += ft_binary_length;
@@ -267,7 +266,7 @@ impl B3dmData {
             None
         };
 
-        // Parse batch table JSON
+        // 解析 batch table JSON
         let batch_table_json = if bt_json_length > 0 {
             let bt_json_bytes = &data[offset..offset + bt_json_length];
             offset += bt_json_length;
@@ -277,7 +276,7 @@ impl B3dmData {
             None
         };
 
-        // Parse batch table binary
+        // 解析 batch table 二进制
         let batch_table_binary = if bt_binary_length > 0 {
             let bt_bin = data[offset..offset + bt_binary_length].to_vec();
             offset += bt_binary_length;
@@ -286,7 +285,7 @@ impl B3dmData {
             None
         };
 
-        // Remaining data is GLB
+        // 剩余数据是 GLB
         let glb_data = &data[offset..];
         let glb = GlbData::from_bytes(glb_data)?;
 
@@ -299,18 +298,18 @@ impl B3dmData {
         })
     }
 
-    /// Returns the number of batched features.
+    /// 返回批量 feature 的数量。
     pub fn batch_length(&self) -> u32 {
         self.feature_table.batch_length
     }
 
-    /// Returns the RTC center if present.
+    /// 若存在则返回 RTC 中心。
     pub fn rtc_center(&self) -> Option<[f64; 3]> {
         self.feature_table.rtc_center
     }
 }
 
-/// Reads a little-endian u32 from a byte slice.
+/// 从字节切片读取一个小端序 u32。
 fn read_u32_le(bytes: &[u8]) -> u32 {
     u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
 }
@@ -323,14 +322,14 @@ mod tests {
         let json = r#"{"asset":{"version":"2.0"}}"#;
         let json_bytes = json.as_bytes();
         let json_length = json_bytes.len() as u32;
-        // Pad to 4-byte alignment
+        // 填充到 4 字节对齐
         let json_padded_length = (json_length + 3) & !3;
 
         let total_length = 12 + 8 + json_padded_length as usize;
 
         let mut data = Vec::with_capacity(total_length);
 
-        // Header
+        // header
         data.extend_from_slice(&GLB_MAGIC.to_le_bytes());
         data.extend_from_slice(&2u32.to_le_bytes());
         data.extend_from_slice(&(total_length as u32).to_le_bytes());
@@ -339,7 +338,7 @@ mod tests {
         data.extend_from_slice(&json_padded_length.to_le_bytes());
         data.extend_from_slice(&GLB_CHUNK_JSON.to_le_bytes());
         data.extend_from_slice(json_bytes);
-        // Padding
+        // 填充
         data.extend(std::iter::repeat_n(0x20u8, (json_padded_length - json_length) as usize));
 
         data
@@ -355,19 +354,19 @@ mod tests {
 
         let mut data = Vec::with_capacity(total_length);
 
-        // Header
+        // header
         data.extend_from_slice(B3DM_MAGIC);
-        data.extend_from_slice(&1u32.to_le_bytes()); // version
+        data.extend_from_slice(&1u32.to_le_bytes()); // 版本
         data.extend_from_slice(&(total_length as u32).to_le_bytes());
         data.extend_from_slice(&ft_json_length.to_le_bytes());
-        data.extend_from_slice(&0u32.to_le_bytes()); // ft binary length
-        data.extend_from_slice(&0u32.to_le_bytes()); // bt json length
-        data.extend_from_slice(&0u32.to_le_bytes()); // bt binary length
+        data.extend_from_slice(&0u32.to_le_bytes()); // ft 二进制长度
+        data.extend_from_slice(&0u32.to_le_bytes()); // bt json 长度
+        data.extend_from_slice(&0u32.to_le_bytes()); // bt 二进制长度
 
-        // Feature table JSON
+        // feature table JSON
         data.extend_from_slice(ft_json_bytes);
 
-        // GLB
+        // GLB 数据
         data.extend_from_slice(&glb);
 
         data
@@ -410,7 +409,7 @@ mod tests {
 
         let mut data = Vec::with_capacity(total_length);
 
-        // Header
+        // header
         data.extend_from_slice(&GLB_MAGIC.to_le_bytes());
         data.extend_from_slice(&2u32.to_le_bytes());
         data.extend_from_slice(&(total_length as u32).to_le_bytes());

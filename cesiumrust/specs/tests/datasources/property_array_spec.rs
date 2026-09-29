@@ -1,7 +1,7 @@
-//! Tests for PropertyArray and PositionPropertyArray
-//! Ported from PropertyArraySpec.js (10 it()) + PositionPropertyArraySpec.js (11 it())
+//! PropertyArray 与 PositionPropertyArray 的测试
+//! 移植自 PropertyArraySpec.js（10 个 it()）+ PositionPropertyArraySpec.js（11 个 it()）
 //!
-//! A-class: 7 + 7 = 14 tests (C-class: events/spy/result-param omitted)
+//! A 类：7 + 7 = 14 个测试（C 类：events/spy/result-param 已省略）
 
 use cesium_datasource::property_array::{PositionPropertyArray, PropertyArray};
 use cesium_datasource::property_system::property::{ConstantProperty, DynProperty};
@@ -45,7 +45,7 @@ fn test_property_array_undefined_value() {
 
 #[test]
 fn test_property_array_ignores_undefined_property_values() {
-    // A ConstantProperty with Undefined value should be filtered out
+    // 值为 Undefined 的 ConstantProperty 应被过滤掉
     let value: Vec<Arc<dyn DynProperty>> = vec![Arc::new(ConstantProperty::new(
         PropertyValue::Undefined,
     ))];
@@ -88,7 +88,7 @@ fn test_property_array_is_constant() {
     ))]);
     assert!(property.is_constant());
 
-    // Empty is constant
+    // 空即为常量
     let empty = PropertyArray::new();
     assert!(empty.is_constant());
 }

@@ -1,9 +1,9 @@
-//! TileStyle / StyleExpression extended specs - ported from Cesium3DTileStyleSpec.js
-//! and ExpressionSpec.js
+//! TileStyle / StyleExpression 扩展规范 - 移植自 Cesium3DTileStyleSpec.js
+//! 和 ExpressionSpec.js
 //!
-//! Tests all comparison operators, arithmetic operators, built-in functions,
-//! CSS/hex color parsing, property references, truthiness, conditionals,
-//! and TileStyle evaluation.
+//! 测试所有比较运算符、算术运算符、内置函数、
+//! CSS/hex 颜色解析、属性引用、真值性、条件语句、
+//! 以及 TileStyle 求值。
 
 use cesium_styling::{
     ArithmeticOp, CompareOp, PropertyValue, StyleExpression, TileStyle,
@@ -20,7 +20,7 @@ fn props_with_height(h: f64) -> HashMap<String, PropertyValue> {
     m
 }
 
-// ─── Comparison Operators ──────────────────────────────────────────────────
+// ─── 比较运算符 ──────────────────────────────────────────────────
 
 #[test]
 fn compare_equal_true() {
@@ -122,7 +122,7 @@ fn compare_bools() {
     assert_eq!(expr.evaluate(&empty_props()), PropertyValue::Bool(true));
 }
 
-// ─── Arithmetic Operators ──────────────────────────────────────────────────
+// ─── 算术运算符 ──────────────────────────────────────────────────
 
 #[test]
 fn arithmetic_add() {
@@ -171,7 +171,7 @@ fn arithmetic_divide_by_zero() {
         op: ArithmeticOp::Divide,
         right: Box::new(StyleExpression::Number(0.0)),
     };
-    // Division by zero returns 0.0
+    // 除以零返回 0.0
     assert_eq!(expr.evaluate(&empty_props()), PropertyValue::Number(0.0));
 }
 
@@ -185,7 +185,7 @@ fn arithmetic_modulo() {
     assert_eq!(expr.evaluate(&empty_props()), PropertyValue::Number(2.0));
 }
 
-// ─── Built-in Functions ────────────────────────────────────────────────────
+// ─── 内置函数 ────────────────────────────────────────────────────
 
 #[test]
 fn function_abs() {
@@ -278,7 +278,7 @@ fn function_color_rgba_components() {
     }
 }
 
-// ─── Color Parsing ─────────────────────────────────────────────────────────
+// ─── 颜色解析 ─────────────────────────────────────────────────────────
 
 #[test]
 fn css_color_named() {
@@ -324,7 +324,7 @@ fn css_color_hex8_with_alpha() {
     }
 }
 
-// ─── Property References & Truthiness ─────────────────────────────────────
+// ─── 属性引用与真值性 ─────────────────────────────────────
 
 #[test]
 fn property_missing_defaults_to_zero() {
@@ -341,7 +341,7 @@ fn property_reference_number() {
 
 #[test]
 fn truthiness_number_zero_is_false() {
-    // Conditional with number 0 as condition → false branch
+    // 以数字 0 为条件的条件语句 → false 分支
     let expr = StyleExpression::Conditional {
         condition: Box::new(StyleExpression::Number(0.0)),
         true_expr: Box::new(StyleExpression::String("yes".to_string())),
@@ -376,7 +376,7 @@ fn truthiness_empty_string_is_false() {
     assert_eq!(expr.evaluate(&empty_props()), PropertyValue::Number(0.0));
 }
 
-// ─── Logical Operators ─────────────────────────────────────────────────────
+// ─── 逻辑运算符 ─────────────────────────────────────────────────────
 
 #[test]
 fn logical_and_both_true() {
@@ -402,7 +402,7 @@ fn logical_not_false() {
     assert_eq!(expr.evaluate(&empty_props()), PropertyValue::Bool(true));
 }
 
-// ─── TileStyle Evaluation ──────────────────────────────────────────────────
+// ─── TileStyle 求值 ──────────────────────────────────────────────────
 
 #[test]
 fn tile_style_default_show_true() {
@@ -479,7 +479,7 @@ fn tile_style_color_conditional_by_property() {
     assert_eq!(style.evaluate_color(&props), [0.5, 0.5, 0.5, 1.0]);
 }
 
-// ─── Nested / Complex Expressions ─────────────────────────────────────────
+// ─── 嵌套 / 复杂表达式 ─────────────────────────────────────────
 
 #[test]
 fn nested_conditional() {

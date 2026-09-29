@@ -1,28 +1,26 @@
-//! Agent-facing **contract export** (plan P1).
+//! 面向 agent 的**契约导出**（计划 P1）。
 //!
-//! Two jobs an external host needs before it can drive the plot core:
+//! 外部宿主在驱动标绘内核前需要做的两件事：
 //!
-//!  1. a machine-readable description of the [`AgentAction`] wire format, handed
-//!     out as a plain JSON Schema [`Value`] so a tool-caller can feed it straight
-//!     into function-calling / structured-output without any codegen dependency;
-//!  2. a whole-document read / write façade (`export_document_json` /
-//!     [`import_document_json`]) that reuses the lossless GeoJSON path so the
-//!     agent's batch import / export entry point is the same one the rest of the
-//!     system already trusts.
+//!  1. 一份 [`AgentAction`] 线格式的机器可读描述，以纯 JSON Schema [`Value`]
+//!     的形式交付，使工具调用者可以将其直接喂入 function-calling / 结构化
+//!     输出，而无需任何代码生成依赖；
+//!  2. 一个整文档读 / 写门面（`export_document_json` /
+//!     [`import_document_json`]），复用无损 GeoJSON 路径，从而 agent 的批量
+//!     导入 / 导出入口与系统其余部分已经信任的是同一个。
 //!
-//! The schema is written by hand — there is deliberately **no** `schemars` (or
-//! any new) dependency. [`EXAMPLE_ACTION`] is a concrete payload that the tests
-//! parse back into an [`AgentAction`], pinning the schema to the real type so
-//! they cannot silently drift apart.
+//! 该 schema 是手写的 —— 有意**不**引入 `schemars`（或任何新的）依赖。
+//! [`EXAMPLE_ACTION`] 是一个具体负载，测试会将其解析回一个 [`AgentAction`]，
+//! 从而把 schema 钉死在真实类型上，使它们不会悄然偏离。
 
 use serde_json::{json, Value};
 
 use crate::io::{from_geojson, to_geojson, PlotIoError};
 use crate::model::Document;
 
-/// A stable, hand-written JSON Schema (draft 2020-12 subset) describing the
-/// [`AgentAction`] envelope. Externally-tagged serde enums are modelled as
-/// `oneOf` over single-key objects, which is exactly how they serialise.
+/// 一份稳定的、手写的 JSON Schema（draft 2020-12 子集），描述
+/// [`AgentAction`] 信封。外部标签的 serde 枚举被建模为对单键对象的
+/// `oneOf`，这正是它们序列化的方式。
 pub fn action_json_schema() -> Value {
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -268,9 +266,8 @@ pub fn action_json_schema() -> Value {
     })
 }
 
-/// A canonical [`AgentAction`] payload. Doubles as documentation and as the
-/// regression anchor: the test parses this back into the real type, so the
-/// hand-written [`action_json_schema`] cannot silently drift from the enum.
+/// 一份规范的 [`AgentAction`] 负载。既作文档，也作回归锚点：测试把它
+/// 解析回真实类型，因此手写的 [`action_json_schema`] 不会悄然偏离该枚举。
 pub const EXAMPLE_ACTION: &str = r#"{
     "Create": {
         "kind": "Polyline",
@@ -284,17 +281,17 @@ pub const EXAMPLE_ACTION: &str = r#"{
     }
 }"#;
 
-/// Serialise the whole document through the lossless GeoJSON façade.
+/// 通过无损 GeoJSON 门面序列化整个文档。
 ///
-/// In-memory document serialisation is infallible (every field is plain
-/// `Serialize` data and the encoder is total), so this returns a `String`
-/// directly rather than leaking the [`PlotIoError`] the reader can produce.
+/// 内存中文档的序列化是不会失败的（每个字段都是普通的 `Serialize` 数据，
+/// 且编码器是全函数），所以这里直接返回一个 `String`，而不泄露读取器
+/// 可能产生的 [`PlotIoError`]。
 pub fn export_document_json(doc: &Document) -> String {
     to_geojson(doc).expect("document JSON serialisation is infallible")
 }
 
-/// Rebuild a [`Document`] from an [`export_document_json`] payload (or any
-/// GeoJSON `FeatureCollection`, imported best-effort).
+/// 从 [`export_document_json`] 负载（或任何 GeoJSON `FeatureCollection`，
+/// 尽最大努力导入）重建一个 [`Document`]。
 pub fn import_document_json(text: &str) -> Result<Document, PlotIoError> {
     from_geojson(text)
 }
@@ -310,8 +307,8 @@ mod tests {
     #[test]
     fn schema_is_valid_json_with_expected_shape() {
         let schema = action_json_schema();
-        // A `Value` is by construction valid; assert the contract landmarks so a
-        // careless edit that drops them fails loudly.
+        // `Value` 依构造即为有效；断言这些契约地标，使一个把它们删掉的
+        // 粗心编辑会大声失败。
         assert!(schema["$schema"].as_str().unwrap().contains("2020-12"));
         assert_eq!(schema["title"], Value::String("AgentAction".into()));
         let defs = schema["$defs"].as_object().unwrap();
@@ -327,7 +324,7 @@ mod tests {
         let variants = defs["AgentAction"]["oneOf"].as_array().unwrap();
         assert_eq!(variants.len(), 8, "eight action variants");
 
-        // Round-trips through the text JSON encoder without error.
+        // 经由文本 JSON 编码器往返而无错误。
         let text = serde_json::to_string(&schema).unwrap();
         let reparsed: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(schema, reparsed);
@@ -356,7 +353,7 @@ mod tests {
             }
             other => panic!("example did not parse as Create: {other:?}"),
         }
-        // Re-serialising then re-parsing is stable (schema ↔ type do not drift).
+        // 重新序列化再重新解析是稳定的（schema ↔ 类型不偏离）。
         let again: AgentAction =
             serde_json::from_str(&serde_json::to_string(&action).unwrap()).unwrap();
         assert_eq!(action, again);
@@ -391,7 +388,7 @@ mod tests {
         let text = export_document_json(&doc);
         let back = import_document_json(&text).unwrap();
         assert_eq!(back.element_count(), 1);
-        // The lossless `x-plot` payload restores the whole document exactly.
+        // 无损的 `x-plot` 负载精确还原整个文档。
         assert_eq!(back, doc);
     }
 

@@ -1,12 +1,12 @@
-//! Blocking worker pool with keep-alive semantics.
+//! 带 keep-alive 语义的阻塞式工作线程池。
 //!
-//! Mirrors `dynamic_globe.rs:2143-2285` (`download_worker`):
-//! - 16 threads (L48: `DOWNLOAD_THREADS = 16`)
-//! - Shared job queue via `Arc<Mutex<mpsc::Receiver>>`
-//! - ureq agent with keep-alive connection pooling (L2148-2151)
-//! - 3 retries with `250ms << attempt` exponential backoff (L2186-2191)
-//! - Wanted-set gate before fetch (L2161)
-//! - Three-state result: aborted / failed / placeholder / success
+//! 照搬 `dynamic_globe.rs:2143-2285`（`download_worker`）：
+//! - 16 个线程（L48：`DOWNLOAD_THREADS = 16`）
+//! - 通过 `Arc<Mutex<mpsc::Receiver>>` 共享的任务队列
+//! - 带 keep-alive 连接池的 ureq agent（L2148-2151）
+//! - 3 次重试，采用 `250ms << attempt` 指数退避（L2186-2191）
+//! - 抓取前的 wanted 集门控（L2161）
+//! - 三态结果：aborted / failed / placeholder / success
 
 use std::collections::HashSet;
 use std::hash::Hash;
@@ -17,47 +17,47 @@ use std::time::Duration;
 
 use crate::net::{FetchResult, NetworkBackend};
 
-/// A job submitted to the worker pool.
+/// 提交给工作线程池的一个任务。
 #[derive(Debug, Clone)]
 pub struct Job<K> {
-    /// Tile key identifying this job.
+    /// 标识此任务的瓦片键。
     pub key: K,
-    /// URL to fetch.
+    /// 要抓取的 URL。
     pub url: String,
-    /// Priority (higher = fetched sooner when queue is deep).
+    /// 优先级（队列很深时，值越高 = 越早被抓取）。
     pub priority: f64,
 }
 
-/// Result from a completed worker job.
+/// 已完成的工作线程任务的结果。
 #[derive(Debug)]
 pub struct JobResult<K, Payload> {
-    /// Tile key.
+    /// 瓦片键。
     pub key: K,
-    /// Outcome of the fetch.
+    /// 抓取的结果。
     pub outcome: JobOutcome<Payload>,
 }
 
-/// Three-state outcome matching `dynamic_globe.rs:1052-1098` + success.
+/// 与 `dynamic_globe.rs:1052-1098` 对应的三态结果，外加成功态。
 #[derive(Debug)]
 pub enum JobOutcome<Payload> {
-    /// Successful fetch with decoded payload.
+    /// 抓取成功并带有解码后的载荷。
     Success(Payload),
-    /// Tile left wanted set mid-flight (L1052-1060).
+    /// 瓦片在传输途中离开了 wanted 集（L1052-1060）。
     Aborted,
-    /// All retries exhausted — transient failure (L1062-1072).
+    /// 所有重试耗尽——瞬时失败（L1062-1072）。
     Failed,
-    /// No usable imagery — placeholder detected (L1074-1098).
+    /// 无可用的影像——检测到占位符（L1074-1098）。
     Placeholder,
 }
 
-/// Configuration for the worker pool.
+/// 工作线程池的配置。
 #[derive(Debug, Clone)]
 pub struct PoolConfig {
-    /// Number of worker threads (L48: 16).
+    /// 工作线程数量（L48：16）。
     pub threads: usize,
-    /// Max retry attempts per job (L2186: 3).
+    /// 每个任务的最大重试次数（L2186：3）。
     pub max_attempts: u32,
-    /// Base backoff duration (L2189: 250 ms). Actual = base << attempt.
+    /// 退避基准时长（L2189：250 ms）。实际值 = base << attempt。
     pub backoff_base: Duration,
 }
 
@@ -71,21 +71,21 @@ impl Default for PoolConfig {
     }
 }
 
-/// Type-erased decode function: raw bytes → optional Payload.
-/// Returns `None` for placeholder tiles (L2211: `is_placeholder_tile`).
+/// 类型擦除的解码函数：原始字节 → 可选的 Payload。
+/// 对占位符瓦片返回 `None`（L2211：`is_placeholder_tile`）。
 pub type Decoder<Payload> =
     Arc<dyn Fn(&[u8]) -> Option<Payload> + Send + Sync + 'static>;
 
-/// Channel pair for job results (avoids clippy::type_complexity).
+/// 用于任务结果的通道对（规避 clippy::type_complexity）。
 type ResultChannel<K, Payload> = (
     mpsc::Sender<JobResult<K, Payload>>,
     mpsc::Receiver<JobResult<K, Payload>>,
 );
 
-/// Blocking worker pool that processes fetch jobs on N threads.
+/// 在 N 个线程上处理抓取任务的阻塞式工作线程池。
 ///
-/// Corresponds to the thread spawn loop in `dynamic_globe.rs` that creates
-/// `DOWNLOAD_THREADS` (16) workers, each running `download_worker`.
+/// 对应 `dynamic_globe.rs` 中创建 `DOWNLOAD_THREADS`（16）个
+/// worker、每个都运行 `download_worker` 的线程 spawn 循环。
 pub struct WorkerPool<K, Payload>
 where
     K: Hash + Eq + Copy + Send + 'static,
@@ -102,11 +102,11 @@ where
     K: Hash + Eq + Copy + Send + 'static,
     Payload: Send + 'static,
 {
-    /// Spawn a worker pool with the given configuration.
+    /// 以给定配置 spawn 一个工作线程池。
     ///
-    /// `backend`: network implementation (shared across all workers).
-    /// `decode`: closure converting raw bytes → Payload (None = placeholder).
-    /// `config`: thread count, retry policy.
+    /// `backend`：网络实现（在所有 worker 间共享）。
+    /// `decode`：将原始字节 → Payload 的闭包（None = 占位符）。
+    /// `config`：线程数、重试策略。
     pub fn spawn(
         backend: Arc<dyn NetworkBackend>,
         decode: Decoder<Payload>,
@@ -143,15 +143,15 @@ where
         }
     }
 
-    /// Submit a job to the pool. Non-blocking (queued for workers).
+    /// 向线程池提交一个任务。非阻塞（入队等待 worker）。
     pub fn submit(&self, job: Job<K>) {
         let _ = self.job_tx.send(job);
     }
 
-    /// Drain completed results (non-blocking). Returns up to `max` results.
+    /// 排空已完成的结果（非阻塞）。最多返回 `max` 个结果。
     ///
-    /// Corresponds to the `tex_rx.rx.lock().unwrap().try_recv()` drain loop
-    /// at L1047-1048, bounded by `MAX_TEXTURE_UPLOADS_PER_FRAME`.
+    /// 对应 L1047-1048 处的 `tex_rx.rx.lock().unwrap().try_recv()` 排空循环，
+    /// 受 `MAX_TEXTURE_UPLOADS_PER_FRAME` 限制。
     pub fn drain_results(&self, max: usize) -> Vec<JobResult<K, Payload>> {
         let rx = self.result_rx.lock().unwrap();
         let mut results = Vec::new();
@@ -164,53 +164,53 @@ where
         results
     }
 
-    /// Replace the wanted set. Workers check this gate before fetching (L2161).
+    /// 替换 wanted 集。worker 在抓取前会检查此门控（L2161）。
     pub fn refresh_wanted(&self, keys: &[K]) {
         let mut w = self.wanted.lock().unwrap();
         w.clear();
         w.extend(keys.iter().copied());
     }
 
-    /// Add keys to the wanted set without clearing (for immediate injection, L448-451).
+    /// 向 wanted 集添加键而不清空（用于立即注入，L448-451）。
     pub fn extend_wanted(&self, keys: &[K]) {
         let mut w = self.wanted.lock().unwrap();
         w.extend(keys.iter().copied());
     }
 
-    /// Remove a single key from the wanted set.
+    /// 从 wanted 集中移除单个键。
     ///
-    /// Used by `ResourceBackend::cancel` (M8) so the worker gate (L2161) finds
-    /// the key missing and produces an `Aborted` result for that specific key,
-    /// without disturbing the rest of the in-flight wanted set. Additive — the
-    /// golden-path `GenericPipeline` continues to rely on `refresh_wanted`.
+    /// 由 `ResourceBackend::cancel`（M8）使用，以便 worker 门控（L2161）发现
+    /// 该键缺失，并为那个特定键产生一个 `Aborted` 结果，
+    /// 而不扰动其余在途的 wanted 集。这是附加式的——
+    /// 黄金路径的 `GenericPipeline` 仍继续依赖 `refresh_wanted`。
     pub fn remove_wanted(&self, key: &K) {
         self.wanted.lock().unwrap().remove(key);
     }
 
-    /// Close the job channel, signaling workers to exit after draining.
+    /// 关闭任务通道，通知 worker 排空后退出。
     pub fn shutdown(self) {
         drop(self.job_tx);
-        // Workers will exit when job_rx returns Err (channel closed).
+        // 当 job_rx 返回 Err（通道关闭）时 worker 将退出。
     }
 }
 
-/// Ceiling on a single retry backoff sleep (L1 review fix). The pre-fix
-/// `backoff_base << attempt` grew without bound, so a large `max_attempts`
-/// could sleep for hours, and `1u32 << attempt` overflowed (panic in debug /
-/// wrap in release) once `attempt >= 32`.
+/// 单次重试退避休眠的上限（L1 review fix）。修复前的
+/// `backoff_base << attempt` 会无界增长，因此一个较大的 `max_attempts`
+/// 可能休眠数小时，而 `1u32 << attempt` 一旦 `attempt >= 32`
+/// 就会溢出（debug 下 panic / release 下环绕）。
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
 
-/// Computes the backoff for retry `attempt`: `base << min(attempt, 20)`,
-/// saturating and clamped to [`MAX_BACKOFF`]. L1 review fix — the shift is
-/// bounded (no `1u32 << attempt` overflow) and the result has a sane ceiling.
+/// 计算第 `attempt` 次重试的退避：`base << min(attempt, 20)`，
+/// 饱和并限制到 [`MAX_BACKOFF`]。L1 review fix——移位被限制
+/// （不会出现 `1u32 << attempt` 溢出）且结果有一个合理的上限。
 fn backoff_for(base: Duration, attempt: u32) -> Duration {
     let shift = attempt.min(20);
     base.saturating_mul(1u32 << shift).min(MAX_BACKOFF)
 }
 
-/// Worker loop: pull jobs, gate on wanted, fetch with retry, decode, send result.
+/// worker 循环：拉取任务、在 wanted 上门控、带重试地抓取、解码、发送结果。
 ///
-/// Faithfully replicates `dynamic_globe.rs:2153-2284`.
+/// 忠实复刻 `dynamic_globe.rs:2153-2284`。
 fn worker_loop<K, Payload>(
     job_rx: &Arc<Mutex<mpsc::Receiver<Job<K>>>>,
     result_tx: &mpsc::Sender<JobResult<K, Payload>>,
@@ -223,13 +223,13 @@ fn worker_loop<K, Payload>(
     Payload: Send + 'static,
 {
     loop {
-        // Block until a job arrives (L2154: `job_rx.lock().unwrap().recv()`)
+        // 阻塞直到有任务到来（L2154：`job_rx.lock().unwrap().recv()`）
         let job = match job_rx.lock().unwrap().recv() {
             Ok(j) => j,
-            Err(_) => return, // Channel closed — shutdown
+            Err(_) => return, // 通道关闭——shutdown
         };
 
-        // Wanted-set gate (L2161): skip fetches nobody will look at
+        // wanted 集门控（L2161）：跳过没人会看的抓取
         if !wanted.lock().unwrap().contains(&job.key) {
             let _ = result_tx.send(JobResult {
                 key: job.key,
@@ -238,14 +238,14 @@ fn worker_loop<K, Payload>(
             continue;
         }
 
-        // Retry loop with exponential backoff (L2186-2191)
+        // 带指数退避的重试循环（L2186-2191）
         let mut delivered = false;
         for attempt in 0..config.max_attempts {
             if attempt > 0 {
-                // L2188-2190: sleep(250ms << attempt). L1 review fix: cap the
-                // shift (attempt.min(20)) so `1u32 << attempt` can't overflow,
-                // and clamp the product to MAX_BACKOFF so a large max_attempts
-                // can't produce an unbounded (multi-hour) sleep.
+                // L2188-2190：sleep(250ms << attempt)。L1 review fix：限制
+                // 移位（attempt.min(20)）以便 `1u32 << attempt` 不会溢出，
+                // 并将乘积限制到 MAX_BACKOFF，这样一个较大的 max_attempts
+                // 不会产生无界（数小时）的休眠。
                 thread::sleep(backoff_for(config.backoff_base, attempt));
             }
 
@@ -259,7 +259,7 @@ fn worker_loop<K, Payload>(
                             });
                         }
                         None => {
-                            // Decode returned None = placeholder tile (L2211-2229)
+                            // 解码返回 None = 占位符瓦片（L2211-2229）
                             let _ = result_tx.send(JobResult {
                                 key: job.key,
                                 outcome: JobOutcome::Placeholder,
@@ -270,7 +270,7 @@ fn worker_loop<K, Payload>(
                     break;
                 }
                 FetchResult::Permanent(_) => {
-                    // 404 etc: treat as placeholder (tile does not exist)
+                    // 404 等：视为占位符（瓦片不存在）
                     let _ = result_tx.send(JobResult {
                         key: job.key,
                         outcome: JobOutcome::Placeholder,
@@ -279,14 +279,14 @@ fn worker_loop<K, Payload>(
                     break;
                 }
                 FetchResult::Transient(_) => {
-                    // Retry (L2186: `for attempt in 0..3u32`)
+                    // 重试（L2186：`for attempt in 0..3u32`）
                     continue;
                 }
             }
         }
 
         if !delivered {
-            // All retries exhausted (L2265-2283): Failed, NOT placeholder
+            // 所有重试耗尽（L2265-2283）：Failed，而非占位符
             let _ = result_tx.send(JobResult {
                 key: job.key,
                 outcome: JobOutcome::Failed,
@@ -301,7 +301,7 @@ mod tests {
     use crate::net::ureq_backend::UreqBackend;
     use std::collections::HashMap;
 
-    /// Mock backend that returns canned responses for testing.
+    /// 为测试返回固定响应的 mock backend。
     struct MockBackend {
         responses: Mutex<HashMap<String, FetchResult>>,
     }
@@ -384,7 +384,7 @@ mod tests {
             },
         );
 
-        // Don't add to wanted set
+        // 不添加到 wanted 集
         pool.submit(Job {
             key: (9, 9, 9),
             url: "http://tile/9".into(),
@@ -434,7 +434,7 @@ mod tests {
         let mock = Arc::new(MockBackend::new());
         mock.add("http://tile/ph", FetchResult::Ok(vec![0, 0, 0]));
 
-        // Decoder returns None for this data = placeholder
+        // 解码器对此数据返回 None = 占位符
         let decode: Decoder<Vec<u8>> = Arc::new(|_data: &[u8]| None);
         let pool: WorkerPool<TileKey, Vec<u8>> = WorkerPool::spawn(
             mock,
@@ -467,15 +467,15 @@ mod tests {
 
     #[test]
     fn backoff_for_caps_shift_and_ceiling() {
-        // L1 review fix: bounded shift (no `1u32 << attempt` overflow) + a sane
-        // ceiling so a huge attempt count can't sleep for hours.
+        // L1 review fix：受限的移位（不会 `1u32 << attempt` 溢出）+ 合理的
+        // 上限，这样一个巨大的尝试次数不会休眠数小时。
         let base = Duration::from_millis(250);
         assert_eq!(backoff_for(base, 1), Duration::from_millis(500)); // 250 << 1
         assert_eq!(backoff_for(base, 2), Duration::from_millis(1000)); // 250 << 2
-        // attempt >= 32 would overflow `1u32 << attempt` pre-fix; now clamped.
+        // attempt >= 32 在修复前会溢出 `1u32 << attempt`；现在已被限制。
         assert_eq!(backoff_for(base, 40), MAX_BACKOFF);
         assert_eq!(backoff_for(base, u32::MAX), MAX_BACKOFF);
-        // Never exceeds the ceiling for any attempt.
+        // 对任何尝试次数都不超过上限。
         for attempt in 0..64u32 {
             assert!(backoff_for(base, attempt) <= MAX_BACKOFF);
         }

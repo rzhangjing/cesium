@@ -1,8 +1,8 @@
-//! Ground polyline geometry - a polyline clamped to the ellipsoid surface.
+//! 贴地折线几何 - 贴附在椭球表面上的折线。
 //!
-//! Simplified adaptation of CesiumJS `GroundPolylineGeometry.js`. The full
-//! CesiumJS version intersects with terrain/3D Tiles; here we clamp to the
-//! ellipsoid surface and generate a renderable ribbon.
+//! 对 CesiumJS `GroundPolylineGeometry.js` 的简化适配。完整的
+//! CesiumJS 版本会与地形/3D Tiles 相交；这里我们贴附到
+//! 椭球表面并生成一个可渲染的条状体。
 
 use crate::bounding::BoundingSphere;
 use crate::ellipsoid::Ellipsoid;
@@ -11,18 +11,18 @@ use crate::math_utils::EPSILON10;
 use crate::polyline_pipeline::{generate_arc, ArcOptions};
 use glam::DVec3;
 
-/// Options describing a ground polyline.
+/// 描述一条贴地折线的选项。
 #[derive(Debug, Clone)]
 pub struct GroundPolylineOptions {
-    /// The polyline positions (at least 2). Heights are ignored.
+    /// 折线的位置（至少 2 个）。高度会被忽略。
     pub positions: Vec<DVec3>,
-    /// Width in meters.
+    /// 宽度（米）。
     pub width: f64,
-    /// Angular granularity in radians for arc subdivision.
+    /// 用于弧细分的角度粒度（弧度）。
     pub granularity: f64,
-    /// Whether to close the loop (connect last to first).
+    /// 是否闭合环路（连接末尾与首点）。
     pub closed: bool,
-    /// The reference ellipsoid.
+    /// 参考椭球。
     pub ellipsoid: Ellipsoid,
 }
 
@@ -38,21 +38,21 @@ impl Default for GroundPolylineOptions {
     }
 }
 
-/// Generates a ground polyline geometry clamped to the ellipsoid surface.
+/// 生成一个贴附在椭球表面上的贴地折线几何。
 ///
-/// Maps to CesiumJS `GroundPolylineGeometry.createGeometry` (simplified).
+/// 映射到 CesiumJS `GroundPolylineGeometry.createGeometry`（简化版）。
 pub fn ground_polyline_geometry(options: &GroundPolylineOptions, vf: VertexFormat) -> GeometryData {
     let ellipsoid = &options.ellipsoid;
     let width = options.width;
 
-    // Scale positions to surface (ignore heights).
+    // 将位置缩放到表面（忽略高度）。
     let mut positions: Vec<DVec3> = options
         .positions
         .iter()
         .map(|&p| ellipsoid.scale_to_geodetic_surface(p).unwrap_or(p))
         .collect();
 
-    // Remove duplicates.
+    // 去除重复项。
     positions.dedup_by(|a, b| {
         (a.x - b.x).abs() <= EPSILON10
             && (a.y - b.y).abs() <= EPSILON10
@@ -63,12 +63,12 @@ pub fn ground_polyline_geometry(options: &GroundPolylineOptions, vf: VertexForma
         return empty_geometry();
     }
 
-    // Close the loop if requested.
+    // 若请求则闭合环路。
     if options.closed && positions.len() > 2 {
         positions.push(positions[0]);
     }
 
-    // Subdivide into a geodesic arc.
+    // 细分为大地线弧。
     let opts = ArcOptions {
         positions: &positions,
         heights: None,
@@ -84,7 +84,7 @@ pub fn ground_polyline_geometry(options: &GroundPolylineOptions, vf: VertexForma
 
     let half_width = width / 2.0;
 
-    // Generate ribbon vertices.
+    // 生成条状体顶点。
     let mut pos_out: Vec<[f64; 3]> = Vec::with_capacity(n * 2);
     let mut normals_out: Option<Vec<[f64; 3]>> = if vf.normal { Some(Vec::with_capacity(n * 2)) } else { None };
     let mut tangents_out: Option<Vec<[f64; 3]>> = if vf.tangent { Some(Vec::with_capacity(n * 2)) } else { None };
@@ -133,7 +133,7 @@ pub fn ground_polyline_geometry(options: &GroundPolylineOptions, vf: VertexForma
         }
     }
 
-    // Triangulate.
+    // 三角剖分。
     let mut indices: Vec<u32> = Vec::with_capacity((n - 1) * 6);
     for i in 0..n - 1 {
         let r0 = (i * 2) as u32;
@@ -209,12 +209,12 @@ mod tests {
     fn test_ground_polyline_on_surface() {
         let ell = Ellipsoid::WGS84;
         let geo = ground_polyline_geometry(&ground_opts(), VertexFormat::POSITION_ONLY);
-        // All positions should be on the ellipsoid surface (within tolerance).
+        // 所有位置都应位于椭球表面上（在容差范围内）。
         for p in &geo.positions {
             let pos = DVec3::new(p[0], p[1], p[2]);
             let surface = ell.scale_to_geodetic_surface(pos).unwrap_or(pos);
             let dist = (pos - surface).length();
-            // Allow small offset due to width expansion.
+            // 允许由宽度展开带来的小偏移。
             assert!(dist < 5000.0, "position too far from surface: {}", dist);
         }
     }
@@ -235,7 +235,7 @@ mod tests {
         };
         let geo = ground_polyline_geometry(&opts, VertexFormat::POSITION_ONLY);
         assert!(!geo.positions.is_empty());
-        // Loop should have more vertices than non-loop.
+        // 环路应比非环路拥有更多顶点。
         let opts_no_loop = GroundPolylineOptions {
             closed: false,
             ..opts.clone()

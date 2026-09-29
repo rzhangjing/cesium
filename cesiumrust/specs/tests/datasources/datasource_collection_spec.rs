@@ -1,11 +1,11 @@
-//! DataSources/DataSourceCollectionSpec.js → Rust integration tests
-//! Covers: add, remove, contains, indexOf, get, getByName, raise, lower,
-//! raiseToTop, lowerToBottom, removeAll, destroy
+//! DataSources/DataSourceCollectionSpec.js → Rust 集成测试
+//! 覆盖：add、remove、contains、indexOf、get、getByName、raise、lower、
+//! raiseToTop、lowerToBottom、removeAll、destroy
 
 use cesium_datasource::datasource_collection::DataSourceCollection;
 use cesium_datasource::entity_collection::DataSource;
 
-// ─── Basic operations ───────────────────────────────────────────────────────
+// ─── 基本操作 ───────────────────────────────────────────────────────
 
 #[test]
 fn dsc_contains_get_length_index_of() {
@@ -50,7 +50,7 @@ fn dsc_remove_fails_for_non_member() {
     assert!(!collection.remove("nonexistent"));
 }
 
-// ─── Ordering operations ────────────────────────────────────────────────────
+// ─── 排序操作 ────────────────────────────────────────────────────
 
 #[test]
 fn dsc_raise() {
@@ -71,7 +71,7 @@ fn dsc_raise_at_top_no_op() {
     collection.add(DataSource::new("a"));
     collection.add(DataSource::new("b"));
 
-    // Raising the last element should be a no-op
+    // 提升最后一个元素应为空操作
     collection.raise("b");
     assert_eq!(collection.get(0).unwrap().name, "a");
     assert_eq!(collection.get(1).unwrap().name, "b");
@@ -96,7 +96,7 @@ fn dsc_lower_at_bottom_no_op() {
     collection.add(DataSource::new("a"));
     collection.add(DataSource::new("b"));
 
-    // Lowering the first element should be a no-op
+    // 降低第一个元素应为空操作
     collection.lower("a");
     assert_eq!(collection.get(0).unwrap().name, "a");
     assert_eq!(collection.get(1).unwrap().name, "b");

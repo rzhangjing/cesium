@@ -1,48 +1,48 @@
-//! Draw command generation and render pass management.
+//! 绘制命令生成与渲染通道管理。
 //!
-//! Maps to CesiumJS `Renderer/DrawCommand.js` and `Scene/Pass.js`
+//! 映射到 CesiumJS `Renderer/DrawCommand.js` 与 `Scene/Pass.js`
 
 use glam::DMat4;
 use serde::{Deserialize, Serialize};
 
-/// Render pass types.
+/// 渲染通道类型。
 ///
-/// Maps to CesiumJS `Scene/Pass.js`
+/// 映射到 CesiumJS `Scene/Pass.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
 pub enum RenderPass {
-    /// Environment pass (sky, atmosphere).
+    /// 环境通道（天空、大气）。
     Environment = 0,
-    /// 3D Tiles and terrain.
+    /// 3D Tiles 与地形。
     Cesium3DTile = 1,
-    /// Opaque primitives.
+    /// 不透明图元。
     #[default]
     Opaque = 2,
-    /// Translucent primitives.
+    /// 半透明图元。
     Translucent = 3,
-    /// Overlay pass (labels, polylines).
+    /// 叠加通道（标签、多段线）。
     Overlay = 4,
 }
 
-/// Blend state for rendering.
+/// 用于渲染的混合状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum BlendState {
-    /// No blending (opaque).
+    /// 无混合（不透明）。
     #[default]
     Opaque,
-    /// Alpha blending.
+    /// Alpha 混合。
     AlphaBlend,
-    /// Additive blending.
+    /// 叠加混合。
     Additive,
-    /// Premultiplied alpha.
+    /// 预乘 Alpha。
     PremultipliedAlpha,
 }
 
-/// Depth test state.
+/// 深度测试状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DepthState {
-    /// Whether depth testing is enabled.
+    /// 是否启用深度测试。
     pub enabled: bool,
-    /// Whether depth writing is enabled.
+    /// 是否启用深度写入。
     pub write_enabled: bool,
 }
 
@@ -55,48 +55,48 @@ impl Default for DepthState {
     }
 }
 
-/// A draw command representing a single render operation.
+/// 一个表示单次渲染操作的绘制命令。
 ///
-/// Maps to CesiumJS `Renderer/DrawCommand.js`
+/// 映射到 CesiumJS `Renderer/DrawCommand.js`
 #[derive(Debug, Clone)]
 pub struct DrawCommand {
-    /// The render pass this command belongs to.
+    /// 该命令所属的渲染通道。
     pub pass: RenderPass,
 
-    /// Model matrix (local to world).
+    /// 模型矩阵（局部到世界）。
     pub model_matrix: DMat4,
 
-    /// Mesh/geometry asset ID.
+    /// 网格/几何资产 ID。
     pub geometry_id: u64,
 
-    /// Material/shader program ID.
+    /// 材质/着色器程序 ID。
     pub material_id: u64,
 
-    /// Optional texture IDs.
+    /// 可选的纹理 ID。
     pub texture_ids: Vec<u64>,
 
-    /// Blend state.
+    /// 混合状态。
     pub blend_state: BlendState,
 
-    /// Depth state.
+    /// 深度状态。
     pub depth_state: DepthState,
 
-    /// Whether to cull back faces.
+    /// 是否剔除背面。
     pub cull_face: bool,
 
-    /// Sort key for ordering (distance or custom).
+    /// 用于排序的排序键（距离或自定义）。
     pub sort_key: f64,
 
-    /// Instance count (for instanced rendering).
+    /// 实例数量（用于实例化渲染）。
     pub instance_count: u32,
 
-    /// Whether this command casts shadows.
+    /// 该命令是否投射阴影。
     pub casts_shadows: bool,
 
-    /// Whether this command receives shadows.
+    /// 该命令是否接收阴影。
     pub receives_shadows: bool,
 
-    /// Picking ID for object selection.
+    /// 用于对象选择的拾取 ID。
     pub pick_id: Option<u64>,
 }
 
@@ -121,7 +121,7 @@ impl Default for DrawCommand {
 }
 
 impl DrawCommand {
-    /// Creates a new draw command with the given geometry and material.
+    /// 使用给定的几何与材质创建一个新的绘制命令。
     pub fn new(geometry_id: u64, material_id: u64) -> Self {
         Self {
             geometry_id,
@@ -130,92 +130,92 @@ impl DrawCommand {
         }
     }
 
-    /// Sets the model matrix.
+    /// 设置模型矩阵。
     pub fn with_model_matrix(mut self, matrix: DMat4) -> Self {
         self.model_matrix = matrix;
         self
     }
 
-    /// Sets the render pass.
+    /// 设置渲染通道。
     pub fn with_pass(mut self, pass: RenderPass) -> Self {
         self.pass = pass;
         self
     }
 
-    /// Sets the blend state.
+    /// 设置混合状态。
     pub fn with_blend_state(mut self, blend: BlendState) -> Self {
         self.blend_state = blend;
         self
     }
 
-    /// Sets the sort key.
+    /// 设置排序键。
     pub fn with_sort_key(mut self, key: f64) -> Self {
         self.sort_key = key;
         self
     }
 
-    /// Sets the pick ID.
+    /// 设置拾取 ID。
     pub fn with_pick_id(mut self, id: u64) -> Self {
         self.pick_id = Some(id);
         self
     }
 
-    /// Returns true if this is a transparent command.
+    /// 若这是一个透明命令则返回 true。
     pub fn is_transparent(&self) -> bool {
         !matches!(self.blend_state, BlendState::Opaque)
     }
 }
 
-/// A collection of draw commands organized by render pass.
+/// 按渲染通道组织的绘制命令集合。
 #[derive(Debug, Default)]
 pub struct RenderCommandList {
-    /// Commands organized by pass.
+    /// 按通道组织的命令。
     passes: std::collections::BTreeMap<RenderPass, Vec<DrawCommand>>,
 }
 
 impl RenderCommandList {
-    /// Creates a new empty command list.
+    /// 创建一个空的命令列表。
     pub fn new() -> Self {
         Self {
             passes: std::collections::BTreeMap::new(),
         }
     }
 
-    /// Adds a command to the list.
+    /// 向列表添加一个命令。
     pub fn push(&mut self, command: DrawCommand) {
         self.passes.entry(command.pass).or_default().push(command);
     }
 
-    /// Returns the total number of commands.
+    /// 返回命令总数。
     pub fn len(&self) -> usize {
         self.passes.values().map(|v| v.len()).sum()
     }
 
-    /// Returns true if the list is empty.
+    /// 若列表为空则返回 true。
     pub fn is_empty(&self) -> bool {
         self.passes.values().all(|v| v.is_empty())
     }
 
-    /// Returns commands for a specific pass.
+    /// 返回特定通道的命令。
     pub fn commands_for_pass(&self, pass: RenderPass) -> &[DrawCommand] {
         self.passes.get(&pass).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
-    /// Sorts commands within each pass.
+    /// 对每个通道内的命令排序。
     ///
-    /// Opaque passes are sorted front-to-back.
-    /// Transparent passes are sorted back-to-front.
+    /// 不透明通道按从前到后排序。
+    /// 透明通道按从后到前排序。
     pub fn sort(&mut self) {
         for (pass, commands) in self.passes.iter_mut() {
             match pass {
                 RenderPass::Translucent | RenderPass::Overlay => {
-                    // Back-to-front for transparency
+                    // 透明：从后到前
                     commands.sort_by(|a, b| {
                         b.sort_key.partial_cmp(&a.sort_key).unwrap_or(std::cmp::Ordering::Equal)
                     });
                 }
                 _ => {
-                    // Front-to-back for opaque (early-z optimization)
+                    // 不透明：从前到后（early-z 优化）
                     commands.sort_by(|a, b| {
                         a.sort_key.partial_cmp(&b.sort_key).unwrap_or(std::cmp::Ordering::Equal)
                     });
@@ -224,49 +224,49 @@ impl RenderCommandList {
         }
     }
 
-    /// Returns an iterator over all passes and their commands.
+    /// 返回一个遍历所有通道及其命令的迭代器。
     pub fn iter(&self) -> impl Iterator<Item = (&RenderPass, &Vec<DrawCommand>)> {
         self.passes.iter()
     }
 
-    /// Clears all commands.
+    /// 清除所有命令。
     pub fn clear(&mut self) {
         self.passes.clear();
     }
 }
 
-/// Frame statistics for rendering.
+/// 用于渲染的帧统计。
 #[derive(Debug, Clone, Default)]
 pub struct FrameStatistics {
-    /// Number of draw commands executed.
+    /// 已执行的绘制命令数量。
     pub draw_calls: usize,
 
-    /// Number of triangles rendered.
+    /// 已渲染的三角形数量。
     pub triangles: u64,
 
-    /// Number of vertices processed.
+    /// 已处理的顶点数量。
     pub vertices: u64,
 
-    /// Number of texture binds.
+    /// 纹理绑定次数。
     pub texture_binds: usize,
 
-    /// Number of shader switches.
+    /// 着色器切换次数。
     pub shader_switches: usize,
 
-    /// Number of culled objects.
+    /// 被剔除对象的数量。
     pub culled_objects: usize,
 
-    /// Frame time in milliseconds.
+    /// 帧时间（毫秒）。
     pub frame_time_ms: f64,
 }
 
 impl FrameStatistics {
-    /// Resets all statistics.
+    /// 重置所有统计。
     pub fn reset(&mut self) {
         *self = Self::default();
     }
 
-    /// Merges another statistics object into this one.
+    /// 将另一个统计对象合并到本对象中。
     pub fn merge(&mut self, other: &FrameStatistics) {
         self.draw_calls += other.draw_calls;
         self.triangles += other.triangles;
@@ -325,7 +325,7 @@ mod tests {
     fn test_render_command_list_sort() {
         let mut list = RenderCommandList::new();
 
-        // Add opaque commands with different sort keys
+        // 添加排序键不同的不透明命令
         list.push(DrawCommand::new(1, 1).with_pass(RenderPass::Opaque).with_sort_key(100.0));
         list.push(DrawCommand::new(2, 2).with_pass(RenderPass::Opaque).with_sort_key(50.0));
         list.push(DrawCommand::new(3, 3).with_pass(RenderPass::Opaque).with_sort_key(200.0));
@@ -333,7 +333,7 @@ mod tests {
         list.sort();
 
         let opaque = list.commands_for_pass(RenderPass::Opaque);
-        // Front-to-back: 50, 100, 200
+        // 从前到后：50, 100, 200
         assert_eq!(opaque[0].geometry_id, 2);
         assert_eq!(opaque[1].geometry_id, 1);
         assert_eq!(opaque[2].geometry_id, 3);
@@ -349,7 +349,7 @@ mod tests {
         list.sort();
 
         let translucent = list.commands_for_pass(RenderPass::Translucent);
-        // Back-to-front: 100, 50
+        // 从后到前：100, 50
         assert_eq!(translucent[0].geometry_id, 1);
         assert_eq!(translucent[1].geometry_id, 2);
     }

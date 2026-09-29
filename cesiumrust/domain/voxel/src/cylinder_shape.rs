@@ -1,25 +1,25 @@
-//! Cylinder voxel shape implementation.
+//! 圆柱体体素形状实现。
 //!
-//! Maps to CesiumJS `Scene/VoxelCylinderShape.js`.
-//! Bounds are [radius, angle, height] with defaults [0, -π, -1] to [1, π, 1].
+//! 映射到 CesiumJS `Scene/VoxelCylinderShape.js`。
+//! 边界为 [radius, angle, height]，默认从 [0, -π, -1] 到 [1, π, 1]。
 
 use glam::{DMat3, DMat4, DVec3};
 
 use crate::shape::{lerp, BoundingSphere, OrientedBoundingBox, VoxelShape};
 
-/// Default minimum bounds for cylinder shape: (0, -π, -1).
+/// 圆柱体形状的默认最小边界：(0, -π, -1)。
 pub const CYLINDER_DEFAULT_MIN_BOUNDS: DVec3 =
     DVec3::new(0.0, -std::f64::consts::PI, -1.0);
-/// Default maximum bounds for cylinder shape: (1, π, 1).
+/// 圆柱体形状的默认最大边界：(1, π, 1)。
 pub const CYLINDER_DEFAULT_MAX_BOUNDS: DVec3 =
     DVec3::new(1.0, std::f64::consts::PI, 1.0);
 
-/// A cylinder-shaped voxel region.
+/// 圆柱体形状的体素区域。
 ///
-/// Bounds are specified as (radius, angle, height) where:
-/// - radius: [0, ∞)
-/// - angle: [-π, π]
-/// - height: (-∞, ∞)
+/// 边界以 (radius, angle, height) 指定，其中：
+/// - radius（半径）：[0, ∞)
+/// - angle（角度）：[-π, π]
+/// - height（高度）：(-∞, ∞)
 #[derive(Debug, Clone)]
 pub struct VoxelCylinderShape {
     obb: OrientedBoundingBox,
@@ -30,11 +30,11 @@ pub struct VoxelCylinderShape {
     max_bounds: DVec3,
     render_min_bounds: DVec3,
     render_max_bounds: DVec3,
-    /// UV scale: [radial, angle, height].
+    /// UV 缩放：[radial, angle, height]。
     local_to_shape_uv_scale: DVec3,
-    /// UV translate: [radial, angle, height].
+    /// UV 平移：[radial, angle, height]。
     local_to_shape_uv_translate: DVec3,
-    /// Angle range origin for UV mapping.
+    /// 用于 UV 映射的角度范围原点。
     shape_uv_angle_range_origin: f64,
     max_intersections: u32,
 }
@@ -59,32 +59,32 @@ impl Default for VoxelCylinderShape {
 }
 
 impl VoxelCylinderShape {
-    /// Create a new cylinder shape with default bounds.
+    /// 创建具有默认边界的新圆柱体形状。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Get the minimum bounds (radius, angle, height).
+    /// 获取最小边界（半径、角度、高度）。
     pub fn min_bounds(&self) -> DVec3 {
         self.min_bounds
     }
 
-    /// Get the maximum bounds (radius, angle, height).
+    /// 获取最大边界（半径、角度、高度）。
     pub fn max_bounds(&self) -> DVec3 {
         self.max_bounds
     }
 
-    /// Get the render minimum bounds.
+    /// 获取渲染最小边界。
     pub fn render_min_bounds(&self) -> DVec3 {
         self.render_min_bounds
     }
 
-    /// Get the render maximum bounds.
+    /// 获取渲染最大边界。
     pub fn render_max_bounds(&self) -> DVec3 {
         self.render_max_bounds
     }
 
-    /// Compute the OBB for a cylinder chunk.
+    /// 计算圆柱体某个区块的 OBB。
     fn compute_chunk_obb(&self, min_b: DVec3, max_b: DVec3) -> OrientedBoundingBox {
         let radius_start = min_b.x;
         let radius_end = max_b.x;
@@ -100,7 +100,7 @@ impl VoxelCylinderShape {
         let angle_range = angle_end - angle_start;
         let angle_mid = angle_start + angle_range * 0.5;
 
-        // Test angles for bounding box computation
+        // 用于包围盒计算的测试角度
         let mut test_angles = vec![angle_start, angle_end, angle_mid];
         if angle_range > std::f64::consts::PI {
             test_angles.push(angle_mid - std::f64::consts::FRAC_PI_2);
@@ -137,7 +137,7 @@ impl VoxelCylinderShape {
             (height_start + height_end) * 0.5,
         );
 
-        // Rotation around Z by angle_mid
+        // 绕 Z 轴旋转 angle_mid
         let cos_mid = angle_mid.cos();
         let sin_mid = angle_mid.sin();
         let rotation = DMat3::from_cols(
@@ -146,11 +146,11 @@ impl VoxelCylinderShape {
             DVec3::new(0.0, 0.0, 1.0),
         );
 
-        // CesiumJS algorithm: localMatrix = R(angleMid) * T(center) * S(extent)
+        // CesiumJS 算法：localMatrix = R(angleMid) * T(center) * S(extent)
         // globalMatrix = modelMatrix * localMatrix
-        // OBB center = translation of globalMatrix
-        // OBB halfAxes = upper-left 3x3 of globalMatrix
-        // Use full upper-left 3x3 of model matrix (includes scale!)
+        // OBB 中心 = globalMatrix 的平移
+        // OBB halfAxes = globalMatrix 的左上 3x3
+        // 使用模型矩阵完整的左上 3x3（包含缩放！）
         let model_mat3 = DMat3::from_cols(
             self.shape_transform.col(0).truncate(),
             self.shape_transform.col(1).truncate(),
@@ -163,7 +163,7 @@ impl VoxelCylinderShape {
         let world_center = self.shape_transform.transform_point3(rotated_center);
 
         // halfAxes = 0.5 * modelMat3 * R(angleMid) * diag(extentX, extentY, extentZ)
-        // (CesiumJS OrientedBoundingBox.fromTransformation multiplies by 0.5)
+        // （CesiumJS OrientedBoundingBox.fromTransformation 会乘以 0.5）
         let half_axes = DMat3::from_cols(
             combined.col(0) * extent_x * 0.5,
             combined.col(1) * extent_y * 0.5,
@@ -206,20 +206,20 @@ impl VoxelShape for VoxelCylinderShape {
         let clip_min = clip_min_bounds.unwrap_or(min_bounds);
         let clip_max = clip_max_bounds.unwrap_or(max_bounds);
 
-        // Clamp radius to >= 0
+        // 将半径钳制为 >= 0
         let mut min_b = min_bounds;
         let mut max_b = max_bounds;
         min_b.x = min_b.x.max(0.0);
         max_b.x = max_b.x.max(0.0);
 
-        // Normalize angles to [-π, π]
+        // 将角度归一化到 [-π, π]
         min_b.y = negative_pi_to_pi(min_b.y);
         max_b.y = negative_pi_to_pi(max_b.y);
 
         self.min_bounds = min_b;
         self.max_bounds = max_b;
 
-        // Render bounds = intersection of shape bounds and clip bounds
+        // 渲染边界 = 形状边界与裁剪边界的交集
         let render_min = DVec3::new(
             min_b.x.max(clip_min.x),
             min_b.y.max(clip_min.y),
@@ -233,7 +233,7 @@ impl VoxelShape for VoxelCylinderShape {
         self.render_min_bounds = render_min;
         self.render_max_bounds = render_max;
 
-        // Check visibility
+        // 检查可见性
         let scale = DVec3::new(
             model_matrix.col(0).truncate().length(),
             model_matrix.col(1).truncate().length(),
@@ -261,7 +261,7 @@ impl VoxelShape for VoxelCylinderShape {
             self.obb.center.extend(1.0),
         );
 
-        // Compute UV transforms
+        // 计算 UV 变换
         let default_angle_range = std::f64::consts::TAU;
         let shape_is_angle_reversed = max_b.y < min_b.y;
         let shape_angle_range = max_b.y - min_b.y
@@ -293,10 +293,10 @@ impl VoxelShape for VoxelCylinderShape {
         self.local_to_shape_uv_scale = DVec3::new(radial_scale, angle_scale, height_scale);
         self.local_to_shape_uv_translate = DVec3::new(radial_offset, angle_offset, height_offset);
 
-        // Compute intersection count
-        let mut intersection_count = 1u32; // radius max
+        // 计算相交数量
+        let mut intersection_count = 1u32; // 半径最大
         if render_min.x != CYLINDER_DEFAULT_MIN_BOUNDS.x {
-            intersection_count += 1; // radius min
+            intersection_count += 1; // 半径最小
         }
         let render_angle_range = {
             let reversed = render_max.y < render_min.y;
@@ -309,7 +309,7 @@ impl VoxelShape for VoxelCylinderShape {
         {
             intersection_count += 1;
         } else if render_angle_range < half_range - epsilon_angle {
-            // Covers both: angle > epsilon (flipped) and angle <= epsilon (zero range)
+            // 同时涵盖：angle > epsilon（翻转）与 angle <= epsilon（零范围）
             intersection_count += 2;
         }
         self.max_intersections = intersection_count;
@@ -324,7 +324,7 @@ impl VoxelShape for VoxelCylinderShape {
 
         let uv_radius = radius * self.local_to_shape_uv_scale.x + self.local_to_shape_uv_translate.x;
 
-        // Convert angle to UV [0,1]
+        // 将角度转换为 UV [0,1]
         let mut uv_angle = (angle + std::f64::consts::PI) / std::f64::consts::TAU;
         uv_angle -= self.shape_uv_angle_range_origin;
         uv_angle -= uv_angle.floor();
@@ -361,7 +361,7 @@ impl VoxelShape for VoxelCylinderShape {
     }
 }
 
-/// Normalize angle to [-π, π].
+/// 将角度归一化到 [-π, π]。
 fn negative_pi_to_pi(angle: f64) -> f64 {
     let mut a = angle % std::f64::consts::TAU;
     if a > std::f64::consts::PI {
@@ -372,7 +372,7 @@ fn negative_pi_to_pi(angle: f64) -> f64 {
     a
 }
 
-/// Extract rotation matrix from a transform.
+/// 从变换中提取旋转矩阵。
 // deferred.md #15: lib 构建无调用方（仅单元测试引用），保留待 M0.7+ 批次接入或清理。
 #[allow(dead_code)]
 fn extract_rotation(matrix: &DMat4) -> DMat3 {
@@ -444,11 +444,11 @@ mod tests {
             None,
             None,
         );
-        // Point at radius=0.5, angle=0, height=0
+        // 位于 radius=0.5、angle=0、height=0 的点
         let uv = shape.convert_local_to_shape_uv_space(DVec3::new(0.5, 0.0, 0.0));
-        // Radius UV should be 0.5 (midpoint of [0,1])
+        // 半径 UV 应为 0.5（[0,1] 的中点）
         assert!((uv.x - 0.5).abs() < 1e-10);
-        // Height UV should be 0.5 (midpoint of [-1,1])
+        // 高度 UV 应为 0.5（[-1,1] 的中点）
         assert!((uv.z - 0.5).abs() < 1e-10);
     }
 
@@ -462,7 +462,7 @@ mod tests {
             None,
             None,
         );
-        // Level 0 tile should encompass the full cylinder
+        // 级别 0 的瓦片应涵盖整个圆柱体
         let obb = shape.compute_obb_for_tile(0, 0, 0, 0);
         assert!(obb.bounding_sphere_radius() > 0.0);
     }
@@ -474,7 +474,7 @@ mod tests {
         let max_b = DVec3::new(1.0, std::f64::consts::PI, 1.0);
         let visible = shape.update(DMat4::IDENTITY, min_b, max_b, None, None);
         assert!(visible);
-        // Should have radius min intersection
+        // 应包含半径最小相交
         assert!(shape.maximum_intersections_length() >= 2);
     }
 

@@ -1,14 +1,14 @@
-//! Default budget policy — verbatim constants from `dynamic_globe.rs` (L48-73).
+//! 默认预算策略 —— 逐字采用的 `dynamic_globe.rs`（L48-73）常量。
 //!
-//! These values are the **golden-path reference** and must not drift.
-//! Any future tuning should be done via a custom `BudgetPolicy` impl,
-//! not by modifying these defaults.
+//! 这些值是**黄金路径参考**，绝不能偏移。
+//! 任何未来的调优都应通过自定义的 `BudgetPolicy` 实现来完成，
+//! 而不是修改这些默认值。
 
 use cesium_ports_driven::BudgetPolicy;
 
-/// Default budget matching `dynamic_globe.rs` constants exactly.
+/// 与 `dynamic_globe.rs` 常量完全一致的默认预算。
 ///
-/// | Constant | Value | Source line |
+/// | 常量 | 值 | 来源行 |
 /// |----------|-------|-------------|
 /// | `DOWNLOAD_THREADS` | 16 | L48 |
 /// | `MAX_MESH_UPLOADS_PER_FRAME` | 12 | L53 |
@@ -22,21 +22,21 @@ use cesium_ports_driven::BudgetPolicy;
 pub struct DefaultBudget;
 
 impl DefaultBudget {
-    /// `dynamic_globe.rs:48` — parallel download/mesh-build worker threads.
+    /// `dynamic_globe.rs:48` —— 并行下载/网格构建的工作线程数。
     pub const DOWNLOAD_THREADS: usize = 16;
-    /// `dynamic_globe.rs:53` — mesh GPU uploads per frame.
+    /// `dynamic_globe.rs:53` —— 每帧的网格 GPU 上传数。
     pub const MAX_MESH_UPLOADS_PER_FRAME: usize = 12;
-    /// `dynamic_globe.rs:54` — entity spawns per frame.
+    /// `dynamic_globe.rs:54` —— 每帧的实体 spawn 数。
     pub const MAX_SPAWNS_PER_FRAME: usize = 16;
-    /// `dynamic_globe.rs:55` — texture GPU uploads per frame.
+    /// `dynamic_globe.rs:55` —— 每帧的纹理 GPU 上传数。
     pub const MAX_TEXTURE_UPLOADS_PER_FRAME: usize = 16;
-    /// `dynamic_globe.rs:58` — entity despawns per frame.
+    /// `dynamic_globe.rs:58` —— 每帧的实体 despawn 数。
     pub const MAX_DESPAWNS_PER_FRAME: usize = 24;
-    /// `dynamic_globe.rs:65` — hard cap on live tile entities.
+    /// `dynamic_globe.rs:65` —— 存活瓦片实体的硬上限。
     pub const MAX_TILE_ENTITIES: usize = 1800;
-    /// `dynamic_globe.rs:70` — coarsest permanently-resident zoom level.
+    /// `dynamic_globe.rs:70` —— 最粗的常驻 zoom 层级。
     pub const BASE_LAYER_ZOOM: u32 = 3;
-    /// `dynamic_globe.rs:73` — GPU handle cache upper bound.
+    /// `dynamic_globe.rs:73` —— GPU 句柄缓存的上界。
     pub const MAX_GPU_CACHE_ENTRIES: usize = 3000;
 }
 
@@ -107,8 +107,8 @@ mod tests {
 
     #[test]
     fn termination_invariant_holds() {
-        // dynamic_globe.rs L1471-1472: MAX_TILE_ENTITIES << MAX_GPU_CACHE_ENTRIES
-        // guarantees evictable (dead) entries always exist.
+        // dynamic_globe.rs L1471-1472：MAX_TILE_ENTITIES << MAX_GPU_CACHE_ENTRIES
+        // 保证总存在可驱逐（死）的条目。
         let b = DefaultBudget;
         assert!(
             b.max_tile_entities() < b.max_gpu_cache_entries(),

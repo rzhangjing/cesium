@@ -1,11 +1,11 @@
-//! Material property extended specs - dynamic values, isConstant, detailed equals
+//! 材质属性扩展规范 - 动态值、isConstant、详细 equals
 //!
-//! Ported from: GridMaterialPropertySpec.js, CheckerboardMaterialPropertySpec.js,
-//! StripeMaterialPropertySpec.js, ImageMaterialPropertySpec.js,
-//! PolylineDashMaterialPropertySpec.js, PolylineGlowMaterialPropertySpec.js,
-//! PolylineOutlineMaterialPropertySpec.js, CompositeMaterialPropertySpec.js
+//! 移植自：GridMaterialPropertySpec.js、CheckerboardMaterialPropertySpec.js、
+//! StripeMaterialPropertySpec.js、ImageMaterialPropertySpec.js、
+//! PolylineDashMaterialPropertySpec.js、PolylineGlowMaterialPropertySpec.js、
+//! PolylineOutlineMaterialPropertySpec.js、CompositeMaterialPropertySpec.js
 //!
-//! A-class tests: dynamic values(7) + isConstant(7) + equals_detailed(3) +
+//! A 类测试：dynamic values(7) + isConstant(7) + equals_detailed(3) +
 //!                composite(3) + constructor_options(2) = 22
 
 use cesium_datasource::property_system::{
@@ -28,7 +28,7 @@ fn uniform<'a>(uniforms: &'a std::collections::BTreeMap<String, PropertyValue>, 
     uniforms.get(key).unwrap_or_else(|| panic!("missing uniform '{key}'"))
 }
 
-// ─── Grid: dynamic values ──────────────────────────────────────────────────
+// ─── Grid：动态值 ──────────────────────────────────────────────────
 
 #[test]
 fn test_grid_dynamic_values() {
@@ -48,7 +48,7 @@ fn test_grid_dynamic_values() {
     );
     prop.set_cell_alpha_property(Some(Arc::new(tic2)));
 
-    // At time within interval
+    // 位于区间内的时间
     let uniforms = prop.get_value(&t(1.5));
     assert_eq!(
         uniform(&uniforms, "color"),
@@ -56,7 +56,7 @@ fn test_grid_dynamic_values() {
     );
     assert_eq!(uniform(&uniforms, "cellAlpha"), &PropertyValue::Number(1.0));
 
-    // Outside interval → defaults
+    // 区间之外 → 默认值
     let uniforms2 = prop.get_value(&t(5.0));
     assert_eq!(uniform(&uniforms2, "color"), &PropertyValue::Color(COLOR_WHITE));
     assert_eq!(uniform(&uniforms2, "cellAlpha"), &PropertyValue::Number(0.1));
@@ -76,7 +76,7 @@ fn test_grid_is_constant_with_dynamic() {
     assert!(!prop.is_constant());
 }
 
-// ─── Checkerboard: dynamic values ──────────────────────────────────────────
+// ─── Checkerboard：动态值 ──────────────────────────────────────────
 
 #[test]
 fn test_checkerboard_dynamic_values() {
@@ -94,7 +94,7 @@ fn test_checkerboard_dynamic_values() {
         uniform(&uniforms, "lightColor"),
         &PropertyValue::Color([1.0, 0.0, 0.0, 1.0])
     );
-    // oddColor not set → default black
+    // oddColor 未设置 → 默认黑色
     assert_eq!(uniform(&uniforms, "darkColor"), &PropertyValue::Color(COLOR_BLACK));
 }
 
@@ -112,7 +112,7 @@ fn test_checkerboard_is_constant_with_dynamic() {
     assert!(!prop.is_constant());
 }
 
-// ─── Stripe: dynamic values ────────────────────────────────────────────────
+// ─── Stripe：动态值 ────────────────────────────────────────────────
 
 #[test]
 fn test_stripe_dynamic_values() {
@@ -146,7 +146,7 @@ fn test_stripe_is_constant_with_dynamic() {
     assert!(!prop.is_constant());
 }
 
-// ─── Image: dynamic values ─────────────────────────────────────────────────
+// ─── Image：动态值 ─────────────────────────────────────────────────
 
 #[test]
 fn test_image_dynamic_values() {
@@ -180,7 +180,7 @@ fn test_image_is_constant_with_dynamic() {
     assert!(!prop.is_constant());
 }
 
-// ─── PolylineDash: dynamic values ──────────────────────────────────────────
+// ─── PolylineDash：动态值 ──────────────────────────────────────────
 
 #[test]
 fn test_polyline_dash_dynamic_values() {
@@ -214,7 +214,7 @@ fn test_polyline_dash_is_constant_with_dynamic() {
     assert!(!prop.is_constant());
 }
 
-// ─── PolylineGlow: dynamic values ──────────────────────────────────────────
+// ─── PolylineGlow：动态值 ──────────────────────────────────────────
 
 #[test]
 fn test_polyline_glow_dynamic_values() {
@@ -245,7 +245,7 @@ fn test_polyline_glow_is_constant_with_dynamic() {
     assert!(!prop.is_constant());
 }
 
-// ─── PolylineOutline: dynamic values ───────────────────────────────────────
+// ─── PolylineOutline：动态值 ───────────────────────────────────────
 
 #[test]
 fn test_polyline_outline_dynamic_values() {
@@ -276,7 +276,7 @@ fn test_polyline_outline_is_constant_with_dynamic() {
     assert!(!prop.is_constant());
 }
 
-// ─── Detailed equals ───────────────────────────────────────────────────────
+// ─── 详细 equals ───────────────────────────────────────────────────────
 
 #[test]
 fn test_grid_equals_detailed() {
@@ -292,11 +292,11 @@ fn test_grid_equals_detailed() {
 
     assert!(a.equals(&b));
 
-    // Change color → not equal
+    // 改变 color → 不相等
     b.set_color(Some(PropertyValue::Color([0.0, 1.0, 0.0, 1.0])));
     assert!(!a.equals(&b));
 
-    // Restore color, change cellAlpha → not equal
+    // 恢复 color，改变 cellAlpha → 不相等
     b.set_color(Some(PropertyValue::Color([1.0, 0.0, 0.0, 1.0])));
     b.set_cell_alpha(Some(PropertyValue::Number(0.9)));
     assert!(!a.equals(&b));
@@ -351,7 +351,7 @@ fn test_composite_material_get_value() {
     prop.add_interval(TimeInterval::new(t(10.0), t(20.0), true, true), Some(grid_mat));
     assert!(!prop.is_constant());
 
-    // First interval → Color material
+    // 第一个区间 → Color 材质
     assert_eq!(prop.get_type(&t(5.0)), Some("Color".to_string()));
     let uniforms = prop.get_value(&t(5.0));
     assert_eq!(
@@ -359,12 +359,12 @@ fn test_composite_material_get_value() {
         &PropertyValue::Color([1.0, 0.0, 0.0, 1.0])
     );
 
-    // Second interval → Grid material
+    // 第二个区间 → Grid 材质
     assert_eq!(prop.get_type(&t(15.0)), Some("Grid".to_string()));
     let uniforms2 = prop.get_value(&t(15.0));
     assert!(uniforms2.contains_key("cellAlpha"));
 
-    // Outside all intervals
+    // 位于所有区间之外
     assert_eq!(prop.get_type(&t(30.0)), None);
     assert!(prop.get_value(&t(30.0)).is_empty());
 }
@@ -384,7 +384,7 @@ fn test_composite_material_equals() {
 #[test]
 fn test_composite_material_is_constant() {
     let mut prop = CompositeMaterialProperty::new();
-    assert!(prop.is_constant()); // empty → constant
+    assert!(prop.is_constant()); // 空 → 常量
 
     let grid_mat = Arc::new(GridMaterialProperty::new()) as Arc<dyn MaterialProperty>;
     prop.add_interval(TimeInterval::new(t(0.0), t(10.0), true, true), Some(grid_mat));

@@ -1,19 +1,19 @@
-//! Globe tile pipeline internals — extracted from the dynamic_globe golden
-//! path (M1.5). Contains the budgeted process_pipeline body, download worker
-//! (with offline wiring), eviction, mesh builds, and coverage repair.
+//! 地球瓦片管线内部实现 —— 从 dynamic_globe 黄金
+//! 路径中抽取（M1.5）。包含预算化的 process_pipeline 主体、下载 worker
+//! （带离线接线）、淘汰、网格构建与覆盖修复。
 //!
-//! All logic is **byte-identical** to the original monolith; only the module
-//! boundary changed. The three `evict_gpu_cache` invariants are preserved:
-//! - BASE_LAYER (z ≤ 3) permanent exemption (`DefaultBudget::BASE_LAYER_ZOOM`)
-//! - Live-entity push_back deferral (花屏防護核心)
-//! - Termination: `MAX_TILE_ENTITIES(1800) << MAX_GPU_CACHE_ENTRIES(3000)`
+//! 所有逻辑均与原始单体**逐字节一致**；仅模块
+//! 边界改变。`evict_gpu_cache` 的三条不变式被保留：
+//! - BASE_LAYER（z ≤ 3）永久豁免（`DefaultBudget::BASE_LAYER_ZOOM`）
+//! - 活跃实体 push_back 延迟（花屏防護核心）
+//! - 终止性：`MAX_TILE_ENTITIES(1800) << MAX_GPU_CACHE_ENTRIES(3000)`
 //!
-//! ## Offline wiring (M3 gate L127)
-//! `download_worker` checks `feature_flags::offline_imagery_root()`:
-//! - Set → reads `{root}/{z}/{x}/{y}.png` from disk (no network)
-//! - `STRICT_OFFLINE=1` + https URL → synchronous panic (no fallback)
+//! ## 离线接线（M3 门槛 L127）
+//! `download_worker` 检查 `feature_flags::offline_imagery_root()`：
+//! - 已设置 → 从磁盘读取 `{root}/{z}/{x}/{y}.png`（无网络）
+//! - `STRICT_OFFLINE=1` + https URL → 同步 panic（无回退）
 
-// frozen legacy golden-path style debt; local allow to satisfy strict CI clippy gate
+// 冻结的遗留黄金路径风格债务；局部 allow 以满足严格 CI clippy 门槛
 #![allow(clippy::type_complexity, clippy::unnecessary_map_or, clippy::too_many_arguments)]
 
 use bevy::prelude::*;
@@ -35,10 +35,10 @@ use cesium_bevy_render::CesiumGlobe;
 use cesium_pipeline::DefaultBudget;
 use cesium_ports_driven::BudgetPolicy;
 
-// ── Payload type ─────────────────────────────────────────────────────────
+// ── Payload 类型 ─────────────────────────────────────────────────────────
 
-/// Download result from the worker pool (replaces the legacy TileDownloadResult).
-/// Specialized ImageryPayload: RGBA + mip chain + staleness flags.
+/// 来自 worker 池的下载结果（取代遗留的 TileDownloadResult）。
+/// 特化的 ImageryPayload：RGBA + mip 链 + 陈旧标志。
 pub struct TileDownloadResult {
     pub x: u32,
     pub y: u32,
@@ -52,10 +52,10 @@ pub struct TileDownloadResult {
     pub failed: bool,
 }
 
-// ── Enqueue tiles ────────────────────────────────────────────────────────
+// ── 瓦片入队 ────────────────────────────────────────────────────────
 
-/// Queue mesh builds + downloads for tiles that need them, highest screen
-/// footprint first. Original: `dynamic_globe.rs:371-459`.
+/// 为需要的瓦片排队网格构建 + 下载，屏幕占比
+/// 最高者优先。原始：`dynamic_globe.rs:371-459`。
 pub fn enqueue_tiles(
     mgr: &mut TileManager,
     mesh_pipe: &mut MeshPipeline,
@@ -69,7 +69,7 @@ pub fn enqueue_tiles(
     {
         let cache = tex_rx.cache.lock().unwrap();
         for &(key, prio) in tiles {
-            // Resolution upgrade: own_full_res contract (原 L837-841).
+            // 分辨率升级：own_full_res 契约（原 L837-841）。
             if !mgr.no_data.contains(&key)
                 && !mgr.reupload.contains(&key)
                 && (prio > 192.0 || mgr.upsampled.contains(&key))
@@ -112,9 +112,9 @@ pub fn enqueue_tiles(
     if !downloads.is_empty() { start_downloads(tex_rx, &downloads); }
 }
 
-// ── Main pipeline run (process_pipeline body) ────────────────────────────
+// ── 主管线运行（process_pipeline 主体） ────────────────────────────
 
-/// The budgeted asset pipeline. Original: `dynamic_globe.rs:662-1429`.
+/// 预算化资源管线。原始：`dynamic_globe.rs:662-1429`。
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     commands: &mut Commands,
@@ -134,7 +134,7 @@ pub fn run(
     let view_changed = mgr.view_changed_this_frame;
     mgr.view_changed_this_frame = false;
 
-    // 1) Collect finished background meshes into the backlog.
+    // 1) 将已完成的后台网格收集到待上传队列。
     let drained: Vec<(TileKey, Mesh, bool)> = {
         let rx = mesh_pipe.rx.lock().unwrap();
         let mut v = Vec::new();
@@ -143,7 +143,7 @@ pub fn run(
     };
     for item in drained { mesh_pipe.backlog.push_back(item); }
 
-    // 2) Upload backlog meshes to the GPU within budget.
+    // 2) 在预算内将待上传网格上传到 GPU。
     let mut mesh_uploads = 0;
     while mesh_uploads < DefaultBudget.max_mesh_uploads_per_frame() {
         let Some((key, mesh, is_fb)) = mesh_pipe.backlog.pop_front() else { break };
@@ -162,7 +162,7 @@ pub fn run(
         mesh_uploads += 1;
     }
 
-    // 3) Spawn entities whose mesh handle is ready, within budget.
+    // 3) 在预算内生成网格句柄已就绪的实体。
     let scale = render_scale();
     let pending: Vec<TileKey> = mgr.spawn_queue.drain(..).collect();
     let mut still_queued: Vec<TileKey> = Vec::new();
@@ -215,8 +215,8 @@ pub fn run(
             spawns += 1; continue;
         }
 
-        // Real imagery path — own_full_res contract (原 L837-841, L1163):
-        // A tile only displays its OWN texture once full resolution (≥256 px).
+        // 真实影像路径 —— own_full_res 契约（原 L837-841, L1163）：
+        // 瓦片仅在达到全分辨率（≥256 px）后才显示其自身的纹理。
         let cached_tex = mgr.gpu_textures.get(&key).cloned().or_else(|| {
             cache.get(&key).map(|c| make_image(images, c.rgba_data.clone(), c.width, c.height, c.mip_levels))
         });
@@ -227,11 +227,11 @@ pub fn run(
 
         if !own_full_res {
             if key.2 <= BASE_LAYER_ZOOM {
-                // Base root without imagery: fall through to solid spawn.
+                // 无影像的基根：直接落入纯色生成。
             } else if mgr.upsampled.contains(&key) {
                 still_queued.push(key); mgr.queued.insert(key); continue;
             } else {
-                // Inherit nearest textured ancestor (UV-remap).
+                // 继承最近的有纹理祖先（UV 重映射）。
                 let (mut ax, mut ay, mut az) = key;
                 let mut ancestor: Option<(TileKey, Handle<Image>)> = None;
                 while az > 0 {
@@ -279,7 +279,7 @@ pub fn run(
             }
         }
 
-        // Own full-res path (or base root).
+        // 自身全分辨率路径（或基根）。
         let Some(mesh_handle) = mgr.gpu_meshes.get(&key).cloned() else {
             still_queued.push(key); mgr.queued.insert(key); continue;
         };
@@ -318,7 +318,7 @@ pub fn run(
     drop(cache);
     mgr.spawn_queue = still_queued.into();
 
-    // 4) Apply downloaded textures within budget.
+    // 4) 在预算内应用已下载的纹理。
     let mut tex_uploads = 0;
     while tex_uploads < DefaultBudget::MAX_TEXTURE_UPLOADS_PER_FRAME {
         let Ok(result) = tex_rx.rx.lock().unwrap().try_recv() else { break };
@@ -376,7 +376,7 @@ pub fn run(
             tex_uploads += 1; continue;
         }
 
-        // Successful texture download.
+        // 纹理下载成功。
         let tex_handle = if matches!(
             (mgr.gpu_textures.get(&key), mgr.gpu_tex_size.get(&key)),
             (Some(_), Some(&sz)) if sz >= result.width
@@ -391,8 +391,8 @@ pub fn run(
             h
         };
         mgr.reupload.remove(&key);
-        // own_full_res contract (原 L1163): sub-256 filler must not repaint
-        // a tile currently upsampling an ancestor.
+        // own_full_res 契约（原 L1163）：sub-256 填充不得重绘
+        // 当前正在上采样祖先的瓦片。
         let filler = result.width < 256 && key.2 > BASE_LAYER_ZOOM;
         if !filler {
             mgr.effective_tex.insert(key, tex_handle.clone());
@@ -408,7 +408,7 @@ pub fn run(
         tex_uploads += 1;
     }
 
-    // Sharpen pass: upsampled tile with own full-res + real mesh swaps atomically.
+    // 锐化通道：具有自身全分辨率 + 真实网格的上采样瓦片原子交换。
     let sharpen: Vec<TileKey> = mgr.upsampled.iter().filter(|k| {
         mgr.tile_entities.contains_key(*k) && mgr.gpu_meshes.contains_key(*k)
             && matches!(mgr.gpu_tex_size.get(*k), Some(&s) if s >= 256)
@@ -421,7 +421,7 @@ pub fn run(
         }
     }
 
-    // 5) Budgeted cleanup (MAX_TILE_ENTITIES cap, fine-level-first LRU).
+    // 5) 预算化清理（MAX_TILE_ENTITIES 上限，细层优先 LRU）。
     let mut removed = 0;
     let max_entities = DefaultBudget::MAX_TILE_ENTITIES;
     let max_despawns = DefaultBudget::MAX_DESPAWNS_PER_FRAME;
@@ -454,7 +454,7 @@ pub fn run(
         }
     }
 
-    // Coverage repair (stable frames only).
+    // 覆盖修复（仅稳定帧）。
     if !view_changed {
         let missing: Vec<TileKey> = mgr.visible_set.iter().chain(mgr.load_set.iter())
             .filter(|k| !mgr.tile_entities.contains_key(k) && !mgr.queued.contains(k))
@@ -488,13 +488,13 @@ pub fn run(
         }
     }
 
-    // Wanted refresh.
+    // wanted 刷新。
     { let mut w = tex_rx.wanted.lock().unwrap(); w.clear();
       w.extend(mgr.queued.iter().copied()); w.extend(mgr.visible_set.iter().copied());
       w.extend(mgr.load_set.iter().copied()); w.extend(mgr.tile_entities.keys().copied());
     }
 
-    // PerfCounters write-back (bidirectional with legacy).
+    // PerfCounters 回写（与遗留双向）。
     perf.in_flight = mgr.in_flight.len() as u32;
     perf.gpu_tex_order = mgr.gpu_tex_order.len() as u32;
     perf.tile_entities = mgr.tile_entities.len() as u32;
@@ -511,18 +511,18 @@ pub fn run(
     perf.evict_deferred = perf.evict_deferred.wrapping_add(evict_deferred_delta);
 }
 
-// ── GPU cache eviction (three invariants) ────────────────────────────────
+// ── GPU 缓存淘汰（三条不变式） ────────────────────────────────
 
-/// FIFO-evict the oldest cached GPU handles once over the cap.
+/// 超过上限时按 FIFO 淘汰最旧的缓存 GPU 句柄。
 ///
-/// Three invariants (delegated from `cesium-pipeline` GpuCache design, #25):
-/// 1. **BASE_LAYER exempt** — z ≤ BASE_LAYER_ZOOM never evicted (permanent fallback)
-/// 2. **Live-entity push_back deferral** — 花屏防護: freeing Assets data while a
-///    spawned entity references it corrupts the mesh allocator (horizontal stripes)
-/// 3. **Termination** — MAX_TILE_ENTITIES(1800) << MAX_GPU_CACHE_ENTRIES(3000)
-///    guarantees evictable (dead) entries always exist
+/// 三条不变式（源自 `cesium-pipeline` GpuCache 设计，#25）：
+/// 1. **BASE_LAYER 豁免** — z ≤ BASE_LAYER_ZOOM 永不淘汰（永久回退）
+/// 2. **活跃实体 push_back 延迟** — 花屏防護：当已生成实体仍引用
+///    Assets 数据时释放它会破坏网格分配器（水平条纹）
+/// 3. **终止性** — MAX_TILE_ENTITIES(1800) << MAX_GPU_CACHE_ENTRIES(3000)
+///    保证始终存在可淘汰（已死）的条目
 ///
-/// Original: `dynamic_globe.rs:1476-1502` (逐字節保留).
+/// 原始：`dynamic_globe.rs:1476-1502`（逐字節保留）。
 pub fn evict_gpu_cache(mgr: &mut TileManager) -> (u32, u32) {
     let mut evicted: u32 = 0;
     let mut deferred: u32 = 0;
@@ -531,11 +531,11 @@ pub fn evict_gpu_cache(mgr: &mut TileManager) -> (u32, u32) {
             break;
         };
         if old.2 <= BASE_LAYER_ZOOM {
-            // Invariant 1: Permanent fallback layer — never evict.
+            // 不变式 1：永久回退层 —— 永不淘汰。
             continue;
         }
         if mgr.tile_entities.contains_key(&old) {
-            // Invariant 2: Still rendered — defer eviction (花屏防護).
+            // 不变式 2：仍在渲染 —— 延迟淘汰（花屏防護）。
             mgr.gpu_tex_order.push_back(old);
             deferred += 1;
             continue;
@@ -551,13 +551,13 @@ pub fn evict_gpu_cache(mgr: &mut TileManager) -> (u32, u32) {
     (evicted, deferred)
 }
 
-// ── Display-set helpers ──────────────────────────────────────────────────
+// ── 显示集辅助函数 ──────────────────────────────────────────────────
 
-/// A partition leaf the display can safely hand over to: a live entity
-/// showing real pixels (own full-res texture, or an intentional solid /
-/// no-data inheritance) — never a stretched-ancestor upsample.
+/// 显示可以安全移交给的划分叶节点：一个展示真实像素的活跃实体
+///（自身全分辨率纹理，或刻意的纯色 /
+/// 无数据继承）—— 绝非拉伸祖先的上采样。
 ///
-/// Original: `dynamic_globe.rs:1435-1446` (逐字節保留).
+/// 原始：`dynamic_globe.rs:1435-1446`（逐字節保留）。
 pub fn replacement_ready(mgr: &TileManager, key: &TileKey) -> bool {
     if !mgr.tile_entities.contains_key(key) {
         return false;
@@ -571,10 +571,10 @@ pub fn replacement_ready(mgr: &TileManager, key: &TileKey) -> bool {
     matches!(mgr.gpu_tex_size.get(key), Some(&s) if s >= 256)
 }
 
-/// True when any ancestor of `key` has a spawned entity still covering its
-/// region, so `key` can be safely skipped/evicted without opening a hole.
+/// 当 `key` 的任一祖先拥有仍覆盖其区域的已生成实体时为真，
+/// 因此 `key` 可被安全跳过/淘汰而不会留出空洞。
 ///
-/// Original: `dynamic_globe.rs:1451-1462` (逐字節保留).
+/// 原始：`dynamic_globe.rs:1451-1462`（逐字節保留）。
 pub fn has_live_ancestor(mgr: &TileManager, key: &TileKey) -> bool {
     let (mut x, mut y, mut z) = *key;
     while z > 0 {
@@ -588,10 +588,10 @@ pub fn has_live_ancestor(mgr: &TileManager, key: &TileKey) -> bool {
     false
 }
 
-/// Ancestor keys of every render/load-set tile that has no spawned entity
-/// yet. Protection covers the ENTIRE ancestor chain of each pending leaf.
+/// 每个尚无已生成实体的 render/load 集瓦片的祖先键。
+/// 保护覆盖每个待定叶节点的整条祖先链。
 ///
-/// Original: `dynamic_globe.rs:631-650` (逐字節保留).
+/// 原始：`dynamic_globe.rs:631-650`（逐字節保留）。
 pub fn protected_ancestors(mgr: &TileManager) -> HashSet<TileKey> {
     let mut prot: HashSet<TileKey> = HashSet::new();
     for v in mgr
@@ -606,19 +606,19 @@ pub fn protected_ancestors(mgr: &TileManager) -> HashSet<TileKey> {
             y >>= 1;
             z -= 1;
             if !prot.insert((x, y, z)) {
-                break; // higher ancestors were already registered
+                break; // 更高层祖先已注册
             }
         }
     }
     prot
 }
 
-// ── Background mesh builds ───────────────────────────────────────────────
+// ── 后台网格构建 ───────────────────────────────────────────────
 
-/// Build tile meshes on worker threads; results flow back through the
-/// pipeline channel and are uploaded to the GPU within the frame budget.
+/// 在 worker 线程上构建瓦片网格；结果经管线通道回流
+/// 并在帧预算内上传到 GPU。
 ///
-/// Original: `dynamic_globe.rs:2076-2108` (逐字節保留).
+/// 原始：`dynamic_globe.rs:2076-2108`（逐字節保留）。
 pub fn start_mesh_builds(pipe: &mut MeshPipeline, jobs: Vec<(TileKey, u32, Option<[f32; 4]>)>) {
     let tx = pipe.tx.clone();
 
@@ -653,10 +653,10 @@ pub fn start_mesh_builds(pipe: &mut MeshPipeline, jobs: Vec<(TileKey, u32, Optio
     });
 }
 
-// ── Bing Maps downloads ──────────────────────────────────────────────────
+// ── Bing Maps 下载 ──────────────────────────────────────────────────
 
-/// Bing Maps quadkey encoding from tile coordinates.
-/// Original: `dynamic_globe.rs:2112-2126` (逐字節保留).
+/// 从瓦片坐标进行 Bing Maps quadkey 编码。
+/// 原始：`dynamic_globe.rs:2112-2126`（逐字節保留）。
 pub fn tile_to_quadkey(x: u32, y: u32, level: u32) -> String {
     let mut qk = String::with_capacity(level as usize);
     for i in (0..level).rev() {
@@ -673,35 +673,35 @@ pub fn tile_to_quadkey(x: u32, y: u32, level: u32) -> String {
     qk
 }
 
-/// Feed download jobs to the persistent worker pool. Non-blocking: jobs queue
-/// up and workers skip stale ones (not in `wanted`) at dequeue time.
+/// 向常驻 worker 池投递下载任务。非阻塞：任务排队，
+/// worker 在出队时跳过陈旧任务（不在 `wanted` 中的）。
 ///
-/// Original: `dynamic_globe.rs:2133-2137` (逐字節保留).
+/// 原始：`dynamic_globe.rs:2133-2137`（逐字節保留）。
 pub fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
     for &(key, downscale) in tiles {
         let _ = tex_rx.job_tx.send((key, downscale));
     }
 }
 
-// ── Download worker (offline wiring: M3 gate L127) ───────────────────────
+// ── 下载 worker（离线接线：M3 门槛 L127） ───────────────────────
 
-/// Persistent download-pool worker: owns one ureq agent for its whole life
-/// (connection pool keeps tile-server connections warm across fetches) and
-/// pulls jobs until the feed closes.
+/// 常驻下载池 worker：整个生命周期持有一个 ureq agent
+///（连接池在多次获取间保持瓦片服务器连接温热）并持续
+/// 拉取任务，直到投递通道关闭。
 ///
-/// ## Offline wiring (M3 gate L127)
-/// - `OFFLINE_IMAGERY_ROOT` set → reads `{root}/{z}/{x}/{y}.png` from disk
-/// - `STRICT_OFFLINE=1` + any https URL → synchronous panic (no fallback)
-/// - Neither set → online Bing via `fetch_gated` (shared ureq keep-alive pool)
+/// ## 离线接线（M3 门槛 L127）
+/// - `OFFLINE_IMAGERY_ROOT` 已设置 → 从磁盘读取 `{root}/{z}/{x}/{y}.png`
+/// - `STRICT_OFFLINE=1` + 任何 https URL → 同步 panic（无回退）
+/// - 两者均未设置 → 经 `fetch_gated` 访问在线 Bing（共享 ureq keep-alive 池）
 ///
-/// Original: `dynamic_globe.rs:2143-2285` (逐字節保留, plus offline wiring).
+/// 原始：`dynamic_globe.rs:2143-2285`（逐字節保留，外加离线接线）。
 pub fn download_worker(
     job_rx: Arc<Mutex<mpsc::Receiver<(TileKey, bool)>>>,
     tx: mpsc::Sender<TileDownloadResult>,
     wanted: Arc<Mutex<HashSet<TileKey>>>,
 ) {
-    // Resolve offline config once at worker startup (env is process-global,
-    // immutable after main() entry — no TOCTOU risk).
+    // 在 worker 启动时一次性解析离线配置（env 是进程全局的，
+    // 进入 main() 后不可变 —— 无 TOCTOU 风险）。
     let offline_root = feature_flags::offline_imagery_root();
     let strict = feature_flags::strict_offline();
     let use_pipeline = pipeline_gate_enabled();
@@ -711,8 +711,8 @@ pub fn download_worker(
         let Ok(((px, py, pz), downscale)) = job else {
             return;
         };
-        // Wanted-staleness skip: fast pans make whole batches stale within a
-        // few frames; skip fetches nobody will look at.
+        // wanted 陈旧跳过：快速平移会在几帧内使整批任务陈旧；
+        // 跳过无人会查看的获取。
         if !wanted.lock().unwrap().contains(&(px, py, pz)) {
             let _ = tx.send(TileDownloadResult {
                 x: px, y: py, z: pz,
@@ -722,7 +722,7 @@ pub fn download_worker(
             continue;
         }
 
-        // ── Offline path: read from disk ─────────────────────────────────
+        // ── 离线路径：从磁盘读取 ─────────────────────────────────
         if let Some(root) = &offline_root {
             let path = root.join(pz.to_string()).join(px.to_string())
                 .join(format!("{}.png", py));
@@ -761,10 +761,10 @@ pub fn download_worker(
                         });
                         continue;
                     }
-                    // Decode failed — fall through to failed result.
+                    // 解码失败 —— 落入失败结果。
                 }
                 Err(_) => {
-                    // File not found — treat as no-data (placeholder).
+                    // 文件未找到 —— 视为无数据（占位图）。
                     let _ = tx.send(TileDownloadResult {
                         x: px, y: py, z: pz,
                         rgba_data: Vec::new(), width: 0, height: 0, mip_levels: 0,
@@ -773,7 +773,7 @@ pub fn download_worker(
                     continue;
                 }
             }
-            // If we get here, decode failed.
+            // 若执行到此，则解码失败。
             let _ = tx.send(TileDownloadResult {
                 x: px, y: py, z: pz,
                 rgba_data: Vec::new(), width: 0, height: 0, mip_levels: 0,
@@ -782,7 +782,7 @@ pub fn download_worker(
             continue;
         }
 
-        // ── Online path: Bing Maps via fetch_gated ───────────────────────
+        // ── 在线路径：经 fetch_gated 访问 Bing Maps ───────────────────────
         let qk = tile_to_quadkey(px, py, pz);
         let sub = (px + py) % 8;
         let url = format!(
@@ -790,7 +790,7 @@ pub fn download_worker(
             sub, qk
         );
 
-        // STRICT_OFFLINE: any https URL is a hard error (M3 gate L127).
+        // STRICT_OFFLINE：任何 https URL 都是硬错误（M3 门槛 L127）。
         if strict && url.starts_with("https") {
             panic!(
                 "STRICT_OFFLINE=1: network fetch attempted for {} — \
@@ -799,7 +799,7 @@ pub fn download_worker(
             );
         }
 
-        // Retry with backoff: tile servers throttle bursty clients.
+        // 退避重试：瓦片服务器会限流突发客户端。
         let mut delivered = false;
         for attempt in 0..3u32 {
             if attempt > 0 {
@@ -856,13 +856,13 @@ pub fn download_worker(
     }
 }
 
-// ── Base-sphere composite ────────────────────────────────────────────────
+// ── 基础球合成 ────────────────────────────────────────────────
 
-/// Once every base-layer (z=3) tile has either a texture or a no-data
-/// verdict, bake them into one 1024×1024 Mercator composite and drape it
-/// over the base sphere.
+/// 当每个基础层（z=3）瓦片都拥有纹理或无数据判定后，
+/// 将它们烘焙成一张 1024×1024 的墨卡托合成图并披覆
+/// 到底球上。
 ///
-/// Original: `dynamic_globe.rs:1920-1991` (逐字節保留).
+/// 原始：`dynamic_globe.rs:1920-1991`（逐字節保留）。
 pub fn run_base_sphere_composite(
     state: &mut BaseSphereComposite,
     mgr: &TileManager,
@@ -900,7 +900,7 @@ pub fn run_base_sphere_composite(
         return;
     }
 
-    // Collect 128-px blocks (box-downsampled full-res tiles).
+    // 收集 128 px 块（盒式降采样的全分辨率瓦片）。
     let mut blocks: Vec<(u32, u32, Vec<u8>)> = Vec::with_capacity(keys.len());
     for k in keys {
         let block = mgr

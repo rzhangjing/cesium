@@ -1,62 +1,62 @@
-//! Shadow mapping with cascaded shadow maps (CSM).
+//! 使用级联阴影贴图（CSM）的阴影贴图。
 //!
-//! Maps to CesiumJS `Scene/ShadowMap.js`:
-//! - Shadow map configuration
-//! - Cascaded shadow mapping for directional lights
-//! - Shadow bias and filtering
-//! - Per-type bias (terrain/primitive/point)
-//! - Point light cube map shadows
-//! - Shadow fading near horizon
-//! - PCF soft shadow filtering
+//! 映射到 CesiumJS `Scene/ShadowMap.js`：
+//! - 阴影贴图配置
+//! - 用于方向光的级联阴影贴图
+//! - 阴影偏移与过滤
+//! - 按类型偏移（地形/图元/点光源）
+//! - 点光源立方体贴图阴影
+//! - 接近地平线时的阴影淡出
+//! - PCF 软阴影过滤
 
 use glam::{DMat4, DVec3};
 
-/// Shadow map type.
+/// 阴影贴图类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShadowMapType {
-    /// Single shadow map (for point/spot lights).
+    /// 单个阴影贴图（用于点光源/聚光灯）。
     Single,
-    /// Cascaded shadow maps (for directional lights like the sun).
+    /// 级联阴影贴图（用于像太阳这样的方向光）。
     Cascaded,
 }
 
-/// Light source type for shadow mapping.
+/// 用于阴影贴图的光源类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ShadowLightType {
-    /// Directional light (sun) — uses cascaded shadow maps.
+    /// 方向光（太阳）—— 使用级联阴影贴图。
     #[default]
     Directional,
-    /// Point light — uses cube map (6 faces).
+    /// 点光源 —— 使用立方体贴图（6 个面）。
     Point,
-    /// Spot light — uses single perspective shadow map.
+    /// 聚光灯 —— 使用单个透视阴影贴图。
     Spot,
 }
 
-/// Per-type shadow bias configuration.
+/// 按类型的阴影偏移配置。
 ///
-/// Maps to CesiumJS ShadowMap `_terrainBias`, `_primitiveBias`, `_pointBias`.
+/// 映射到 CesiumJS ShadowMap 的 `_terrainBias`、`_primitiveBias`、`_pointBias`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShadowBias {
-    /// Whether polygon offset is enabled.
+    /// 是否启用多边形偏移。
     pub polygon_offset: bool,
-    /// Polygon offset factor.
+    /// 多边形偏移因子。
     pub polygon_offset_factor: f64,
-    /// Polygon offset units.
+    /// 多边形偏移单位。
     pub polygon_offset_units: f64,
-    /// Whether normal offset is enabled.
+    /// 是否启用法线偏移。
     pub normal_offset: bool,
-    /// Normal offset scale.
+    /// 法线偏移缩放。
     pub normal_offset_scale: f64,
-    /// Whether normal shading is enabled.
+    /// 是否启用法线着色。
     pub normal_shading: bool,
-    /// Normal shading smoothness.
+    /// 法线着色平滑度。
     pub normal_shading_smooth: f64,
-    /// Depth bias.
+    /// 深度偏移。
     pub depth_bias: f64,
 }
 
 impl ShadowBias {
-    /// Default bias for terrain rendering.
+    /// 地形渲染的默认偏移。
     pub fn terrain(normal_offset: bool) -> Self {
         Self {
             polygon_offset: true,
@@ -70,7 +70,7 @@ impl ShadowBias {
         }
     }
 
-    /// Default bias for primitive (3D model) rendering.
+    /// 图元（3D 模型）渲染的默认偏移。
     pub fn primitive(normal_offset: bool) -> Self {
         Self {
             polygon_offset: true,
@@ -84,7 +84,7 @@ impl ShadowBias {
         }
     }
 
-    /// Default bias for point light rendering.
+    /// 点光源渲染的默认偏移。
     pub fn point(normal_offset: bool) -> Self {
         Self {
             polygon_offset: false,
@@ -98,7 +98,7 @@ impl ShadowBias {
         }
     }
 
-    /// Computes the effective bias for a given surface normal and light direction.
+    /// 计算给定表面法线和光方向的有效偏移。
     pub fn compute_effective_bias(&self, normal: DVec3, light_dir: DVec3) -> f64 {
         let mut bias = self.depth_bias;
         if self.normal_offset {
@@ -110,14 +110,14 @@ impl ShadowBias {
     }
 }
 
-/// PCF (Percentage-Closer Filtering) configuration for soft shadows.
+/// 用于软阴影的 PCF（百分比近似过滤）配置。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PcfConfig {
-    /// Whether PCF is enabled.
+    /// 是否启用 PCF。
     pub enabled: bool,
-    /// Kernel size (1, 3, 5, 7).
+    /// 核大小（1、3、5、7）。
     pub kernel_size: u32,
-    /// Whether to use Poisson disk sampling instead of grid.
+    /// 是否使用泊松盘采样而非网格。
     pub use_poisson_disk: bool,
 }
 
@@ -132,9 +132,9 @@ impl Default for PcfConfig {
 }
 
 impl PcfConfig {
-    /// Computes the PCF filter result given depth comparisons.
+    /// 根据深度比较结果计算 PCF 过滤结果。
     ///
-    /// Returns shadow factor in [0.0, 1.0] (0 = fully shadowed, 1 = fully lit).
+    /// 返回 [0.0, 1.0] 范围内的阴影因子（0 = 完全阴影，1 = 完全照亮）。
     pub fn filter(&self, depth_comparisons: &[f64]) -> f64 {
         if !self.enabled || depth_comparisons.is_empty() {
             return if depth_comparisons.first().copied().unwrap_or(1.0) >= 0.0 {
@@ -147,7 +147,7 @@ impl PcfConfig {
         lit_count as f64 / depth_comparisons.len() as f64
     }
 
-    /// Generates PCF sample offsets for the configured kernel.
+    /// 为配置的核生成 PCF 采样偏移。
     pub fn sample_offsets(&self) -> Vec<[f64; 2]> {
         if self.use_poisson_disk {
             return poisson_disk_samples(self.kernel_size);
@@ -165,7 +165,7 @@ impl PcfConfig {
     }
 }
 
-/// Generates Poisson disk sample offsets.
+/// 生成泊松盘采样偏移。
 fn poisson_disk_samples(count: u32) -> Vec<[f64; 2]> {
     const POISSON_16: [[f64; 2]; 16] = [
         [-0.9420162, -0.3990622], [0.9455861, -0.7689072],
@@ -181,41 +181,41 @@ fn poisson_disk_samples(count: u32) -> Vec<[f64; 2]> {
     POISSON_16[..n].to_vec()
 }
 
-/// Shadow map configuration.
-/// Maps to CesiumJS `ShadowMap` options
+/// 阴影贴图配置。
+/// 映射到 CesiumJS `ShadowMap` 选项
 #[derive(Debug, Clone)]
 pub struct ShadowMapConfig {
-    /// Whether shadows are enabled.
+    /// 是否启用阴影。
     pub enabled: bool,
-    /// Shadow map type.
+    /// 阴影贴图类型。
     pub shadow_map_type: ShadowMapType,
-    /// Light source type.
+    /// 光源类型。
     pub light_type: ShadowLightType,
-    /// Shadow map resolution (width = height).
+    /// 阴影贴图分辨率（宽 = 高）。
     pub resolution: u32,
-    /// Number of cascades for CSM.
+    /// CSM 的级联数。
     pub cascade_count: u32,
-    /// Bias to reduce shadow acne.
+    /// 用于减少阴影瑕斯的偏移。
     pub bias: f64,
-    /// Normal offset bias.
+    /// 法线偏移。
     pub normal_bias: f64,
-    /// Whether to use soft shadows (PCF).
+    /// 是否使用软阴影（PCF）。
     pub soft_shadows: bool,
-    /// PCF configuration.
+    /// PCF 配置。
     pub pcf: PcfConfig,
-    /// Darkness of shadows (0.0 = fully black, 1.0 = no shadow).
+    /// 阴影的暗度（0.0 = 全黑，1.0 = 无阴影）。
     pub darkness: f64,
-    /// Whether the shadow map is fixed (doesn't update with camera).
+    /// 阴影贴图是否固定（不随相机更新）。
     pub is_fixed: bool,
-    /// Maximum distance for shadows.
+    /// 阴影的最大距离。
     pub maximum_distance: f64,
-    /// Whether normal offset is applied.
+    /// 是否应用法线偏移。
     pub normal_offset: bool,
-    /// Whether shadows fade out near the horizon.
+    /// 阴影是否在接近地平线时淡出。
     pub fading_enabled: bool,
-    /// Point light radius (for point lights).
+    /// 点光源半径（用于点光源）。
     pub point_light_radius: f64,
-    /// Maximum cascade distances [4 values].
+    /// 最大级联距离 [4 个值]。
     pub maximum_cascade_distances: [f64; 4],
 }
 
@@ -242,64 +242,64 @@ impl Default for ShadowMapConfig {
     }
 }
 
-/// Camera parameters for shadow map computation.
+/// 用于阴影贴图计算的相机参数。
 #[derive(Debug, Clone, Copy)]
 pub struct ShadowCameraParams {
-    /// Camera position in world space.
+    /// 相机在世界空间中的位置。
     pub position: DVec3,
-    /// Camera view direction.
+    /// 相机视图方向。
     pub direction: DVec3,
-    /// Camera up vector.
+    /// 相机的 up 向量。
     pub up: DVec3,
-    /// Vertical field of view (radians).
+    /// 垂直视场角（弧度）。
     pub fov_y: f64,
-    /// Aspect ratio (width / height).
+    /// 宽高比（宽 / 高）。
     pub aspect_ratio: f64,
 }
 
-/// A single cascade in the cascaded shadow map.
+/// 级联阴影贴图中的一个级联。
 #[derive(Debug, Clone)]
 pub struct ShadowCascade {
-    /// The light view-projection matrix for this cascade.
+    /// 此级联的光视图-投影矩阵。
     pub light_view_projection: DMat4,
-    /// The split distance (near plane of this cascade in view space).
+    /// 分割距离（此级联在视图空间中的近平面）。
     pub split_near: f64,
-    /// The far plane of this cascade in view space.
+    /// 此级联在视图空间中的远平面。
     pub split_far: f64,
-    /// The texel size (world units per texel).
+    /// 纹素大小（每纹素的世界单位）。
     pub texel_size: f64,
 }
 
-/// The shadow map state.
+/// 阴影贴图状态。
 #[derive(Debug, Clone)]
 pub struct ShadowMap {
-    /// Configuration.
+    /// 配置。
     pub config: ShadowMapConfig,
-    /// Light direction (normalized, pointing from light to scene).
+    /// 光方向（归一化，由光指向场景）。
     pub light_direction: DVec3,
-    /// Light position (for point/spot lights).
+    /// 光位置（用于点光源/聚光灯）。
     pub light_position: DVec3,
-    /// The cascades (for CSM).
+    /// 级联（用于 CSM）。
     pub cascades: Vec<ShadowCascade>,
-    /// Whether the shadow map needs to be updated.
+    /// 阴影贴图是否需要更新。
     pub needs_update: bool,
-    /// Per-type bias configurations.
+    /// 按类型的偏移配置。
     pub terrain_bias: ShadowBias,
-    /// Primitive bias.
+    /// 图元偏移。
     pub primitive_bias: ShadowBias,
-    /// Point light bias.
+    /// 点光源偏移。
     pub point_bias: ShadowBias,
-    /// Current fade factor (1.0 = no fade, 0.0 = fully faded).
+    /// 当前淡出因子（1.0 = 无淡出，0.0 = 完全淡出）。
     pub fade_factor: f64,
-    /// Whether the light is out of view.
+    /// 光是否位于视野之外。
     pub out_of_view: bool,
 }
 
-/// Global maximum shadow distance.
+/// 全局最大阴影距离。
 pub const SHADOW_MAP_MAXIMUM_DISTANCE: f64 = 20000.0;
 
 impl ShadowMap {
-    /// Creates a new shadow map.
+    /// 创建一个新的阴影贴图。
     pub fn new(config: ShadowMapConfig, light_direction: DVec3) -> Self {
         let normal_offset = config.normal_offset;
         Self {
@@ -316,12 +316,12 @@ impl ShadowMap {
         }
     }
 
-    /// Creates a shadow map for the sun.
+    /// 为太阳创建阴影贴图。
     pub fn for_sun(sun_direction: DVec3) -> Self {
         Self::new(ShadowMapConfig::default(), -sun_direction)
     }
 
-    /// Creates a shadow map for a point light.
+    /// 为点光源创建阴影贴图。
     pub fn for_point_light(position: DVec3, radius: f64) -> Self {
         let config = ShadowMapConfig {
             shadow_map_type: ShadowMapType::Single,
@@ -335,7 +335,7 @@ impl ShadowMap {
         map
     }
 
-    /// Creates a shadow map for a spot light.
+    /// 为聚光灯创建阴影贴图。
     pub fn for_spot_light(position: DVec3, direction: DVec3) -> Self {
         let config = ShadowMapConfig {
             shadow_map_type: ShadowMapType::Single,
@@ -348,18 +348,18 @@ impl ShadowMap {
         map
     }
 
-    /// Computes the shadow fade factor based on light elevation.
+    /// 根据光高度角计算阴影淡出因子。
     ///
-    /// Shadows fade out as the light approaches the horizon.
+    /// 当光接近地平线时阴影会淡出。
     ///
-    /// # Arguments
-    /// * `light_elevation` - Light elevation angle in radians (0 = horizon, π/2 = overhead)
+    /// # 参数
+    /// * `light_elevation` - 光高度角（弧度）（0 = 地平线，π/2 = 头顶）
     pub fn compute_fade_factor(&self, light_elevation: f64) -> f64 {
         if !self.config.fading_enabled {
             return 1.0;
         }
 
-        // Fade starts at ~10 degrees above horizon, fully faded at horizon
+        // 淡出从高于地平线约 10 度开始，到地平线时完全淡出
         let fade_start = 10.0_f64.to_radians();
         let fade_end = 0.0_f64.to_radians();
 
@@ -372,15 +372,15 @@ impl ShadowMap {
         }
     }
 
-    /// Updates the fade factor based on light elevation.
+    /// 根据光高度角更新淡出因子。
     pub fn update_fade(&mut self, light_elevation: f64) {
         self.fade_factor = self.compute_fade_factor(light_elevation);
     }
 
-    /// Returns the number of shadow passes required.
+    /// 返回所需的阴影渲染通道数。
     pub fn pass_count(&self) -> usize {
         match self.config.light_type {
-            ShadowLightType::Point => 6, // Cube map: 6 faces
+            ShadowLightType::Point => 6, // 立方体贴图：6 个面
             ShadowLightType::Spot => 1,
             ShadowLightType::Directional => {
                 if self.config.cascade_count > 0 {
@@ -392,7 +392,7 @@ impl ShadowMap {
         }
     }
 
-    /// Returns the bias configuration for a given receiver type.
+    /// 返回给定接收器类型的偏移配置。
     pub fn bias_for_type(&self, receiver_type: ShadowBiasType) -> &ShadowBias {
         match receiver_type {
             ShadowBiasType::Terrain => &self.terrain_bias,
@@ -401,12 +401,12 @@ impl ShadowMap {
         }
     }
 
-    /// Computes the cascade splits using practical split scheme.
+    /// 使用实用分割方案计算级联分割。
     ///
-    /// # Arguments
-    /// * `near` - Camera near plane
-    /// * `far` - Camera far plane (or maximum shadow distance)
-    /// * `lambda` - Blend factor between logarithmic (0.0) and uniform (1.0) splits
+    /// # 参数
+    /// * `near` - 相机近平面
+    /// * `far` - 相机远平面（或最大阴影距离）
+    /// * `lambda` - 对数分割（0.0）与均匀分割（1.0）之间的混合因子
     pub fn compute_cascade_splits(&self, near: f64, far: f64, lambda: f64) -> Vec<f64> {
         let count = self.config.cascade_count as usize;
         let mut splits = Vec::with_capacity(count + 1);
@@ -416,13 +416,13 @@ impl ShadowMap {
         for i in 1..count {
             let t = i as f64 / count as f64;
 
-            // Logarithmic split
+            // 对数分割
             let log_split = near * (far / near).powf(t);
 
-            // Uniform split
+            // 均匀分割
             let uniform_split = near + (far - near) * t;
 
-            // Blend between logarithmic and uniform
+            // 在对数与均匀之间混合
             let split = lambda * log_split + (1.0 - lambda) * uniform_split;
             splits.push(split);
         }
@@ -431,19 +431,19 @@ impl ShadowMap {
         splits
     }
 
-    /// Computes the light view-projection matrix for a cascade.
+    /// 计算某个级联的光视图-投影矩阵。
     ///
-    /// # Arguments
-    /// * `camera` - Camera parameters
-    /// * `cascade_near` - Near plane distance for this cascade
-    /// * `cascade_far` - Far plane distance for this cascade
+    /// # 参数
+    /// * `camera` - 相机参数
+    /// * `cascade_near` - 此级联的近平面距离
+    /// * `cascade_far` - 此级联的远平面距离
     pub fn compute_cascade_matrix(
         &self,
         camera: &ShadowCameraParams,
         cascade_near: f64,
         cascade_far: f64,
     ) -> DMat4 {
-        // Compute the frustum corners in world space
+        // 在世界空间中计算视锥体角点
         let corners = compute_frustum_corners(
             camera.position,
             camera.direction,
@@ -454,16 +454,16 @@ impl ShadowMap {
             camera.aspect_ratio,
         );
 
-        // Compute the centroid of the frustum
+        // 计算视锥体的形心
         let centroid = corners.iter().sum::<DVec3>() / 8.0;
 
-        // Light view matrix (looking from light direction)
+        // 光视图矩阵（沿光方向观察）
         let light_right = self.light_direction.cross(DVec3::Y).normalize();
         let light_up = light_right.cross(self.light_direction).normalize();
 
         let light_view = look_at_matrix(centroid - self.light_direction * 1000.0, centroid, light_up);
 
-        // Transform corners to light space
+        // 将角点变换到光空间
         let mut min_x = f64::INFINITY;
         let mut max_x = f64::NEG_INFINITY;
         let mut min_y = f64::INFINITY;
@@ -481,7 +481,7 @@ impl ShadowMap {
             max_z = max_z.max(transformed.z);
         }
 
-        // Add some padding
+        // 添加一些边距
         let padding = 10.0;
         min_x -= padding;
         max_x += padding;
@@ -490,13 +490,13 @@ impl ShadowMap {
         min_z -= padding;
         max_z += padding;
 
-        // Orthographic projection
+        // 正交投影
         let light_projection = orthographic_matrix(min_x, max_x, min_y, max_y, min_z, max_z);
 
         light_projection * light_view
     }
 
-    /// Updates the cascades based on the camera.
+    /// 根据相机更新级联。
     pub fn update_cascades(
         &mut self,
         camera: &ShadowCameraParams,
@@ -535,31 +535,31 @@ impl ShadowMap {
         self.needs_update = false;
     }
 
-    /// Computes the shadow factor for a world position.
+    /// 计算某个世界位置的阴影因子。
     ///
-    /// Returns a value in [darkness, 1.0] where darkness = fully shadowed.
+    /// 返回 [darkness, 1.0] 范围内的值，其中 darkness = 完全阴影。
     pub fn compute_shadow_factor(&self, _world_position: DVec3, view_depth: f64) -> f64 {
         if !self.config.enabled || self.cascades.is_empty() {
             return 1.0;
         }
 
-        // Find the appropriate cascade
+        // 找到合适的级联
         let cascade = self.cascades.iter().find(|c| {
             view_depth >= c.split_near && view_depth < c.split_far
         });
 
         match cascade {
             Some(_) => {
-                // In a real implementation, we would sample the shadow map here.
-                // For now, return a placeholder based on darkness.
-                // The actual shadow lookup would compare depth with the shadow map.
-                1.0 // Placeholder: no shadow (would need actual depth comparison)
+                // 在真实实现中，我们会在此采样阴影贴图。
+                // 目前，返回一个基于 darkness 的占位值。
+                // 实际的阴影查找会将深度与阴影贴图进行比较。
+                1.0 // 占位：无阴影（需要实际的深度比较）
             }
-            None => 1.0, // Outside shadow range
+            None => 1.0, // 在阴影范围之外
         }
     }
 
-    /// Applies shadow to a color.
+    /// 将阴影应用于颜色。
     pub fn apply_shadow(&self, color: DVec3, shadow_factor: f64) -> DVec3 {
         let effective_factor = shadow_factor * self.fade_factor;
         let factor = self.config.darkness + (1.0 - self.config.darkness) * effective_factor;
@@ -567,18 +567,18 @@ impl ShadowMap {
     }
 }
 
-/// Receiver type for bias selection.
+/// 用于偏移选择的接收器类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShadowBiasType {
-    /// Terrain receiver.
+    /// 地形接收器。
     Terrain,
-    /// Primitive (3D model) receiver.
+    /// 图元（3D 模型）接收器。
     Primitive,
-    /// Point light receiver.
+    /// 点光源接收器。
     Point,
 }
 
-/// Computes the 8 corners of a view frustum slice.
+/// 计算视图视锥体切片的 8 个角点。
 fn compute_frustum_corners(
     camera_position: DVec3,
     camera_direction: DVec3,
@@ -607,12 +607,12 @@ fn compute_frustum_corners(
     let far_right = camera_right * (far_width / 2.0);
 
     [
-        // Near plane corners
+        // 近平面角点
         near_center - near_right + near_up,
         near_center + near_right + near_up,
         near_center + near_right - near_up,
         near_center - near_right - near_up,
-        // Far plane corners
+        // 远平面角点
         far_center - far_right + far_up,
         far_center + far_right + far_up,
         far_center + far_right - far_up,
@@ -620,7 +620,7 @@ fn compute_frustum_corners(
     ]
 }
 
-/// Creates a look-at view matrix.
+/// 创建 look-at 视图矩阵。
 fn look_at_matrix(eye: DVec3, target: DVec3, up: DVec3) -> DMat4 {
     let z = (eye - target).normalize();
     let x = up.cross(z).normalize();
@@ -634,7 +634,7 @@ fn look_at_matrix(eye: DVec3, target: DVec3, up: DVec3) -> DMat4 {
     ])
 }
 
-/// Creates an orthographic projection matrix.
+/// 创建正交投影矩阵。
 fn orthographic_matrix(left: f64, right: f64, bottom: f64, top: f64, near: f64, far: f64) -> DMat4 {
     let rcp_width = 1.0 / (right - left);
     let rcp_height = 1.0 / (top - bottom);
@@ -667,7 +667,7 @@ mod tests {
         let sun_direction = DVec3::new(0.5, -0.7, 0.3).normalize();
         let shadow_map = ShadowMap::for_sun(sun_direction);
 
-        // Light direction should be opposite to sun direction
+        // 光方向应与太阳方向相反
         assert!((shadow_map.light_direction - (-sun_direction)).length() < 1e-10);
     }
 
@@ -677,8 +677,8 @@ mod tests {
 
         let splits = shadow_map.compute_cascade_splits(0.1, 1000.0, 0.5);
 
-        // Should have cascade_count + 1 splits
-        assert_eq!(splits.len(), 5); // 4 cascades = 5 splits
+        // 应有 cascade_count + 1 个分割
+        assert_eq!(splits.len(), 5); // 4 个级联 = 5 个分割
         assert!((splits[0] - 0.1).abs() < 1e-10);
         assert!((splits[4] - 1000.0).abs() < 1e-10);
     }
@@ -698,12 +698,12 @@ mod tests {
     fn test_cascade_splits_lambda() {
         let shadow_map = ShadowMap::new(ShadowMapConfig::default(), DVec3::new(0.0, -1.0, 0.0));
 
-        // Lambda = 0.0: uniform splits
+        // Lambda = 0.0：均匀分割
         let uniform = shadow_map.compute_cascade_splits(0.1, 1000.0, 0.0);
         let expected_uniform = 0.1 + (1000.0 - 0.1) * 0.25;
         assert!((uniform[1] - expected_uniform).abs() < 1.0);
 
-        // Lambda = 1.0: logarithmic splits
+        // Lambda = 1.0：对数分割
         let logarithmic = shadow_map.compute_cascade_splits(0.1, 1000.0, 1.0);
         let expected_log = 0.1_f64 * (1000.0_f64 / 0.1_f64).powf(0.25);
         assert!((logarithmic[1] - expected_log).abs() < 0.1);
@@ -750,7 +750,7 @@ mod tests {
     fn test_shadow_factor_no_cascades() {
         let shadow_map = ShadowMap::new(ShadowMapConfig::default(), DVec3::new(0.0, -1.0, 0.0));
 
-        // No cascades computed yet
+        // 尚未计算任何级联
         let factor = shadow_map.compute_shadow_factor(DVec3::ZERO, 100.0);
         assert_eq!(factor, 1.0);
     }
@@ -773,11 +773,11 @@ mod tests {
 
         let color = DVec3::new(1.0, 1.0, 1.0);
 
-        // Full shadow (factor = 0.0)
+        // 完全阴影（factor = 0.0）
         let shadowed = shadow_map.apply_shadow(color, 0.0);
         assert!((shadowed.x - shadow_map.config.darkness).abs() < 1e-10);
 
-        // No shadow (factor = 1.0)
+        // 无阴影（factor = 1.0）
         let lit = shadow_map.apply_shadow(color, 1.0);
         assert!((lit.x - 1.0).abs() < 1e-10);
     }
@@ -794,7 +794,7 @@ mod tests {
             1.0,
         );
 
-        // All corners should be in front of the camera (negative Z)
+        // 所有角点都应位于相机前方（负 Z）
         for corner in &corners {
             assert!(corner.z < 0.0);
         }
@@ -808,7 +808,7 @@ mod tests {
             DVec3::Y,
         );
 
-        // Origin should transform to (0, 0, -5)
+        // 原点应变换到 (0, 0, -5)
         let transformed = matrix.transform_point3(DVec3::ZERO);
         assert!((transformed.x).abs() < 1e-10);
         assert!((transformed.y).abs() < 1e-10);
@@ -819,7 +819,7 @@ mod tests {
     fn test_orthographic_matrix() {
         let matrix = orthographic_matrix(-1.0, 1.0, -1.0, 1.0, 0.1, 100.0);
 
-        // Center should map to (0, 0, z)
+        // 中心应映射到 (0, 0, z)
         let center = matrix.transform_point3(DVec3::ZERO);
         assert!((center.x).abs() < 1e-10);
         assert!((center.y).abs() < 1e-10);

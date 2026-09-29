@@ -1,27 +1,21 @@
-//! Expression preprocessing: `${...}` defines, backslash escaping and variable
-//! substitution for the 3D Tiles Styling language.
+//! 表达式预处理：3D Tiles Styling 语言的 `${...}` defines、反斜杠转义与变量替换。
 //!
-//! Ported from `cesium-rs/crates/cesium-scene/src/expression.rs` L372-440
-//! (`VARIABLE_PATTERN` / `replace_defines` / `remove_backslashes` /
-//! `replace_variables`), the Rust port of upstream
-//! `packages/engine/Source/Scene/Expression.js` L573-625
-//! (`replaceDefines` / `removeBackslashes` / `replaceBackslashes` /
-//! `replaceVariables`).
+//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs` L372-440
+//! （`VARIABLE_PATTERN` / `replace_defines` / `remove_backslashes` /
+//! `replace_variables`），它是上游 `packages/engine/Source/Scene/Expression.js`
+//! L573-625（`replaceDefines` / `removeBackslashes` / `replaceBackslashes` /
+//! `replaceVariables`）的 Rust 移植。
 //!
-//! # CONFLICT resolution (task brief vs source of truth)
+//! # 冲突消解（任务简报 vs 事实来源）
 //!
-//! The task brief described `replace_defines` as needing **recursive expansion +
-//! cycle detection (`MAX_DEFINES_DEPTH`)**. Neither the blueprint
-//! (`expression.rs` L377-390) nor upstream (`Expression.js` L573-587) does this:
-//! both perform a **single pass** over `defines`, replacing each `${key}` once.
-//! A single pass cannot loop forever, so `MAX_DEFINES_DEPTH` is moot. This port
-//! follows the **source of truth** (single pass, blueprint-faithful) rather than
-//! the brief's invented recursion guard; the deviation is recorded here and in
-//! the milestone report.
+//! 任务简报把 `replace_defines` 描述为需要**递归展开 + 环检测（`MAX_DEFINES_DEPTH`）**。
+//! 无论 blueprint（`expression.rs` L377-390）还是上游（`Expression.js` L573-587）
+//! 都不这么做：两者都对 `defines` 做**单趟**遍历，每个 `${key}` 只替换一次。
+//! 单趟不可能无限循环，所以 `MAX_DEFINES_DEPTH` 无关紧要。本移植遵循**事实来源**
+//! （单趟，忠于 blueprint），而非简报里臆造的递归保护；该偏离记录在此处与里程碑报告里。
 //!
-//! `replace_backslashes` (the reverse of `remove_backslashes`) lives in `ast.rs`
-//! because `parse_literal` needs it; only the forward direction and the
-//! define/variable passes are here.
+//! `replace_backslashes`（`remove_backslashes` 的逆运算）位于 `ast.rs`，
+//! 因为 `parse_literal` 需要它；这里只有正向以及 define/variable 遍历。
 
 use std::collections::HashMap;
 
@@ -29,33 +23,32 @@ use ::regex::Regex;
 
 use crate::value::{runtime_error, RuntimeError};
 
-/// The `${name}` placeholder pattern, mirroring Expression.js `VARIABLE_PATTERN`.
+/// `${name}` 占位符模式，镜像 Expression.js 的 `VARIABLE_PATTERN`。
 pub const VARIABLE_PATTERN: &str = r"\$\{(.*?)}";
 
-/// The compiled `${name}` pattern, cached for the evaluation hot path.
+/// 编译好的 `${name}` 模式，为求值热路径而缓存。
 ///
-/// Compiling a [`Regex`] on every `VariableInString` evaluation (and every
-/// `get_variables` walk) is prohibitively expensive — string-template styling
-/// expressions are the most common real-world case, so this compiles the
-/// pattern exactly once per process via [`std::sync::OnceLock`].
+/// 在每次 `VariableInString` 求值（以及每次 `get_variables` 遍历）时
+/// 编译一个 [`Regex`] 代价高得令人却步 —— 字符串模板 styling 表达式是现实世界
+/// 最常见的情形，所以这里通过 [`std::sync::OnceLock`] 每进程恰好编译该模式一次。
 pub fn variable_regex() -> &'static Regex {
     static REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
     REGEX.get_or_init(|| Regex::new(VARIABLE_PATTERN).expect("variable pattern is valid"))
 }
 
-/// The sentinel `\` is swapped to while lexing, mirroring `BACKSLASH_REPLACEMENT`.
+/// 词法期间 `\` 被交换成的哨兵，镜像 `BACKSLASH_REPLACEMENT`。
 pub(crate) const BACKSLASH_REPLACEMENT: &str = "@#%";
 
-/// Mirrors `replaceDefines`: replaces each `${key}` placeholder with
-/// `(<define value>)`. Single pass over `defines` (see module docs).
+/// 镜像 `replaceDefines`：把每个 `${key}` 占位符替换为
+/// `(<define value>)`。对 `defines` 单趟遍历（见模块文档）。
 pub fn replace_defines(expression: &str, defines: &HashMap<String, String>) -> String {
     let mut result = expression.to_string();
     for (key, value) in defines {
         let placeholder = Regex::new(&format!(r"\$\{{{}}}", ::regex::escape(key)))
             .expect("escaped define key is a valid regex");
         let define_replace = format!("({value})");
-        // NoExpand: the replacement value may itself contain `${...}` which
-        // would otherwise be interpreted as capture-group references.
+        // NoExpand：替换值本身可能含有 `${...}`，
+        // 否则它们会被解释为捕获组引用。
         result = placeholder
             .replace_all(&result, ::regex::NoExpand(define_replace.as_str()))
             .to_string();
@@ -63,18 +56,18 @@ pub fn replace_defines(expression: &str, defines: &HashMap<String, String>) -> S
     result
 }
 
-/// Mirrors `removeBackslashes`: `\` -> `"@#%"`.
+/// 镜像 `removeBackslashes`：`\` -> `"@#%"`。
 pub fn remove_backslashes(expression: &str) -> String {
     expression.replace('\\', BACKSLASH_REPLACEMENT)
 }
 
-/// Mirrors `replaceVariables`: `${name}` outside of quotes becomes `czm_name`;
-/// an unterminated `${` throws `"Unmatched {."`.
+/// 镜像 `replaceVariables`：引号之外的 `${name}` 变成 `czm_name`；
+/// 一个未终止的 `${` 抛出 `"Unmatched {."`。
 pub fn replace_variables(expression: &str) -> Result<String, RuntimeError> {
     let mut exp = expression.to_string();
     let mut result = String::new();
     while let Some(i) = exp.find("${") {
-        // Check if string is inside quotes
+        // 检查字符串是否位于引号内
         let open_single_quote = exp.find('\'');
         let open_double_quote = exp.find('"');
         if let Some(open) = open_single_quote {
@@ -114,21 +107,21 @@ mod tests {
 
     #[test]
     fn remove_and_replace_backslashes_roundtrip() {
-        // remove: `\` -> "@#%" (ast::replace_backslashes is the inverse).
+        // remove：`\` -> "@#%"（ast::replace_backslashes 是其逆运算）。
         assert_eq!(remove_backslashes(r"a\b"), "a@#%b");
         assert_eq!(crate::ast::replace_backslashes("a@#%b"), r"a\b");
     }
 
     #[test]
     fn replace_variables_bare_and_quoted() {
-        // Outside quotes -> czm_name.
+        // 引号之外 -> czm_name。
         assert_eq!(replace_variables("${height}").unwrap(), "czm_height");
         assert_eq!(
             replace_variables("${a} + ${b}").unwrap(),
             "czm_a + czm_b"
         );
-        // Inside a quoted string the placeholder is preserved verbatim so the
-        // VariableInString node can interpolate it at evaluate time.
+        // 在带引号的字符串内，占位符逐字保留，以便
+        // VariableInString 节点在求值时对其插值。
         assert_eq!(
             replace_variables("'${name}'").unwrap(),
             "'${name}'"
@@ -149,11 +142,11 @@ mod tests {
     fn replace_defines_single_pass() {
         let mut defines = HashMap::new();
         defines.insert("x".to_string(), "1 + 2".to_string());
-        // `${x}` -> "(1 + 2)".
+        // `${x}` -> "(1 + 2)"。
         assert_eq!(replace_defines("${x} * 3", &defines), "(1 + 2) * 3");
-        // NoExpand: a define value containing `${...}` is inserted literally,
-        // not treated as a capture reference, and is NOT re-expanded (single
-        // pass) — this is the blueprint/upstream behaviour.
+        // NoExpand：含 `${...}` 的 define 值被逐字插入，
+        // 不被当作捕获引用，且不会被重新展开（单趟）
+        // —— 这就是 blueprint/上游的行为。
         let mut nested = HashMap::new();
         nested.insert("a".to_string(), "${b}".to_string());
         assert_eq!(replace_defines("${a}", &nested), "(${b})");

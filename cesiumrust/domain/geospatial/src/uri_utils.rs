@@ -1,16 +1,17 @@
-//! URI and HTTP utility functions.
+//! URI 与 HTTP 工具函数。
 //!
-//! Faithful port of CesiumJS `objectToQuery.js`, `queryToObject.js`,
-//! `parseResponseHeaders.js`, `getFilenameFromUri.js`, `getExtensionFromUri.js`.
+//! CesiumJS `objectToQuery.js`、`queryToObject.js`、
+//! `parseResponseHeaders.js`、`getFilenameFromUri.js`、`getExtensionFromUri.js` 的忠实移植。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::manual_pattern_char_comparison)]
 use std::collections::HashMap;
 
-/// Converts an object representing URL parameters into a query string.
+/// 将表示 URL 参数的对象转换为查询字符串。
 ///
 /// CesiumJS: `objectToQuery(obj)` → `"key1=value1&key2=value2"`
-/// Arrays produce repeated keys: `{key: ["a","b"]}` → `"key=a&key=b"`
+/// 数组会产生重复的键：`{key: ["a","b"]}` → `"key=a&key=b"`
 pub fn object_to_query(obj: &HashMap<String, QueryValue>) -> String {
     let mut parts: Vec<String> = Vec::new();
     for (key, value) in obj {
@@ -28,10 +29,10 @@ pub fn object_to_query(obj: &HashMap<String, QueryValue>) -> String {
     parts.join("&")
 }
 
-/// Converts a query string into an object.
+/// 将查询字符串转换为对象。
 ///
 /// CesiumJS: `queryToObject(queryString)` → `{key1: "value1", key2: ["a","b"]}`
-/// Supports both `&` and `;` as separators. `+` is decoded as space.
+/// 同时支持 `&` 和 `;` 作为分隔符。`+` 被解码为空格。
 pub fn query_to_object(query_string: &str) -> HashMap<String, QueryValue> {
     let mut result: HashMap<String, Vec<String>> = HashMap::new();
 
@@ -39,7 +40,7 @@ pub fn query_to_object(query_string: &str) -> HashMap<String, QueryValue> {
         return HashMap::new();
     }
 
-    // Split on & or ;
+    // 在 & 或 ; 处拆分
     let pairs: Vec<&str> = query_string
         .split(|c| c == '&' || c == ';')
         .filter(|s| !s.is_empty())
@@ -56,7 +57,7 @@ pub fn query_to_object(query_string: &str) -> HashMap<String, QueryValue> {
         result.entry(decoded_key).or_default().push(decoded_value);
     }
 
-    // Convert Vec<String> to QueryValue
+    // 将 Vec<String> 转换为 QueryValue
     result
         .into_iter()
         .map(|(k, v)| {
@@ -69,7 +70,7 @@ pub fn query_to_object(query_string: &str) -> HashMap<String, QueryValue> {
         .collect()
 }
 
-/// Parses HTTP response headers string into a map.
+/// 将 HTTP 响应头字符串解析为一个映射。
 ///
 /// CesiumJS: `parseResponseHeaders(headerString)` → `{Date: "...", Server: "..."}`
 pub fn parse_response_headers(header_string: &str) -> HashMap<String, String> {
@@ -88,24 +89,24 @@ pub fn parse_response_headers(header_string: &str) -> HashMap<String, String> {
     result
 }
 
-/// Gets the filename from a URI (last path segment, without query/fragment).
+/// 从 URI 获取文件名（最后一个路径段，不含查询/片段）。
 ///
 /// CesiumJS: `getFilenameFromUri(uri)`
 pub fn get_filename_from_uri(uri: &str) -> String {
-    // Remove query string
+    // 移除查询字符串
     let path = uri.split('?').next().unwrap_or(uri);
-    // Remove fragment
+    // 移除片段
     let path = path.split('#').next().unwrap_or(path);
-    // Get last segment
+    // 获取最后一个段
     path.rsplit('/')
         .next()
         .unwrap_or(path)
         .to_string()
 }
 
-/// Gets the file extension from a URI (without the dot).
+/// 从 URI 获取文件扩展名（不含点）。
 ///
-/// CesiumJS: `getExtensionFromUri(uri)` → `"png"` or `""`
+/// CesiumJS: `getExtensionFromUri(uri)` → `"png"` 或 `""`
 pub fn get_extension_from_uri(uri: &str) -> String {
     let filename = get_filename_from_uri(uri);
     if let Some(idx) = filename.rfind('.') {
@@ -115,15 +116,15 @@ pub fn get_extension_from_uri(uri: &str) -> String {
     }
 }
 
-/// Value type for query parameters.
+/// 查询参数的值类型。
 #[derive(Clone, Debug, PartialEq)]
 pub enum QueryValue {
     Single(String),
     Array(Vec<String>),
 }
 
-/// Percent-encodes a string (RFC 3986).
-/// Encodes all characters except unreserved: A-Z a-z 0-9 - _ . ~
+/// 对一个字符串进行百分号编码（RFC 3986）。
+/// 除未保留字符 A-Z a-z 0-9 - _ . ~ 之外的所有字符都会被编码
 fn percent_encode(input: &str) -> String {
     let mut result = String::new();
     for byte in input.bytes() {
@@ -139,7 +140,7 @@ fn percent_encode(input: &str) -> String {
     result
 }
 
-/// Decodes a percent-encoded string. Also converts `+` to space.
+/// 解码一个百分号编码的字符串。也将 `+` 转换为空格。
 fn percent_decode(input: &str) -> String {
     let input = input.replace('+', " ");
     let mut result = String::new();

@@ -1,11 +1,12 @@
-//! Polyline geometry - a ribbon of constant width along a geodesic arc.
+//! 折线几何 - 沿大地线弧宽度恒定的带状体。
 //!
-//! Faithful adaptation of CesiumJS `PolylineGeometry.js`. CesiumJS uses
-//! GPU-side expansion (prevPosition/nextPosition/expandAndWidth attributes);
-//! here we generate a CPU-expanded triangle-strip ribbon in world space which
-//! is directly renderable with Bevy's standard mesh pipeline.
+//! 对 CesiumJS `PolylineGeometry.js` 的忠实适配。CesiumJS 使用
+//! GPU 端展开（prevPosition/nextPosition/expandAndWidth 属性）；
+//! 这里我们在世界空间中生成一个由 CPU 展开的三角带条状体，
+//! 可直接用 Bevy 的标准网格管线渲染。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(unused_variables)]
 use crate::bounding::BoundingSphere;
 use crate::ellipsoid::Ellipsoid;
@@ -14,16 +15,16 @@ use crate::math_utils::EPSILON10;
 use crate::polyline_pipeline::{generate_arc, ArcOptions};
 use glam::DVec3;
 
-/// Options describing a polyline.
+/// 描述一条折线的选项。
 #[derive(Debug, Clone)]
 pub struct PolylineOptions {
-    /// The polyline positions (at least 2).
+    /// 折线的位置（至少 2 个）。
     pub positions: Vec<DVec3>,
-    /// Width in meters.
+    /// 宽度（米）。
     pub width: f64,
-    /// Angular granularity in radians for arc subdivision.
+    /// 用于弧细分的角度粒度（弧度）。
     pub granularity: f64,
-    /// The reference ellipsoid.
+    /// 参考椭球。
     pub ellipsoid: Ellipsoid,
 }
 
@@ -38,15 +39,15 @@ impl Default for PolylineOptions {
     }
 }
 
-/// Generates a polyline geometry as a flat ribbon (triangle strip).
+/// 将一条折线生成为扁平带状体（三角带）。
 ///
-/// The ribbon lies on the ellipsoid surface, centered on the geodesic arc,
-/// with the specified width. Normals point outward from the ellipsoid.
+/// 带状体位于椭球表面上，以大地线弧为中心，
+/// 宽度为指定值。法线从椭球向外。
 pub fn polyline_geometry(options: &PolylineOptions, vf: VertexFormat) -> GeometryData {
     let ellipsoid = &options.ellipsoid;
     let width = options.width;
 
-    // Remove duplicates.
+    // 去除重复项。
     let mut positions: Vec<DVec3> = options.positions.clone();
     positions.dedup_by(|a, b| {
         (a.x - b.x).abs() <= EPSILON10
@@ -58,7 +59,7 @@ pub fn polyline_geometry(options: &PolylineOptions, vf: VertexFormat) -> Geometr
         return empty_geometry();
     }
 
-    // Subdivide into a geodesic arc.
+    // 细分为大地线弧。
     let opts = ArcOptions {
         positions: &positions,
         heights: None,
@@ -74,8 +75,8 @@ pub fn polyline_geometry(options: &PolylineOptions, vf: VertexFormat) -> Geometr
 
     let half_width = width / 2.0;
 
-    // For each arc point, compute the perpendicular (left) direction and
-    // offset to get left/right edge vertices.
+    // 对每个弧点，计算垂直（左）方向并
+    // 偏移以得到左/右边缘顶点。
     let mut pos_out: Vec<[f64; 3]> = Vec::with_capacity(n * 2);
     let mut normals_out: Option<Vec<[f64; 3]>> = if vf.normal { Some(Vec::with_capacity(n * 2)) } else { None };
     let mut tangents_out: Option<Vec<[f64; 3]>> = if vf.tangent { Some(Vec::with_capacity(n * 2)) } else { None };
@@ -88,7 +89,7 @@ pub fn polyline_geometry(options: &PolylineOptions, vf: VertexFormat) -> Geometr
         let p = arc[i];
         let normal = ellipsoid.geodetic_surface_normal(p).unwrap_or(DVec3::Z);
 
-        // Tangent direction along the arc.
+        // 沿弧的切线方向。
         let tangent = if i == 0 {
             (arc[1] - arc[0]).normalize_or(DVec3::X)
         } else if i == n - 1 {
@@ -97,13 +98,13 @@ pub fn polyline_geometry(options: &PolylineOptions, vf: VertexFormat) -> Geometr
             (arc[i + 1] - arc[i - 1]).normalize_or(DVec3::X)
         };
 
-        // Left direction: cross(normal, tangent) gives the perpendicular in the tangent plane.
+        // 左方向：cross(normal, tangent) 给出切平面内的垂直方向。
         let left = normal.cross(tangent).normalize_or(DVec3::Y);
 
         let right_pt = p - left * half_width;
         let left_pt = p + left * half_width;
 
-        // Push right vertex, then left vertex.
+        // 先推入右侧顶点，再推入左侧顶点。
         pos_out.push([right_pt.x, right_pt.y, right_pt.z]);
         pos_out.push([left_pt.x, left_pt.y, left_pt.z]);
 
@@ -122,12 +123,12 @@ pub fn polyline_geometry(options: &PolylineOptions, vf: VertexFormat) -> Geometr
         }
         if let Some(ref mut st) = st_out {
             let s = i as f64 * st_s;
-            st.push([s, 0.0]); // right
-            st.push([s, 1.0]); // left
+            st.push([s, 0.0]); // 右
+            st.push([s, 1.0]); // 左
         }
     }
 
-    // Triangulate: each quad between consecutive pairs.
+    // 三角剖分：相邻顶点对之间的每个四边形。
     let mut indices: Vec<u32> = Vec::with_capacity((n - 1) * 6);
     for i in 0..n - 1 {
         let r0 = (i * 2) as u32;
@@ -194,7 +195,7 @@ mod tests {
         assert!(!geo.positions.is_empty());
         assert_eq!(geo.primitive_type, PrimitiveType::Triangles);
         assert_eq!(geo.indices.len() % 3, 0);
-        // Each arc point generates 2 vertices.
+        // 每个弧点生成 2 个顶点。
         assert_eq!(geo.positions.len() % 2, 0);
         assert!(geo.normals.is_some());
         assert!(geo.tex_coords.is_some());
@@ -206,7 +207,7 @@ mod tests {
     fn test_polyline_vertex_count() {
         let geo = polyline_geometry(&polyline_opts(), VertexFormat::POSITION_ONLY);
         let n_verts = geo.positions.len();
-        // n_verts = 2 * arc_points, indices = 6 * (arc_points - 1)
+        // n_verts = 2 * arc_points，indices = 6 * (arc_points - 1)
         let arc_points = n_verts / 2;
         assert_eq!(geo.indices.len(), (arc_points - 1) * 6);
     }
@@ -244,7 +245,7 @@ mod tests {
         let ell = Ellipsoid::WGS84;
         let geo = polyline_geometry(&polyline_opts(), VertexFormat::ALL);
         let normals = geo.normals.unwrap();
-        // All normals should point roughly outward (positive dot with position).
+        // 所有法线应大致指向外侧（与位置的点积为正）。
         for (i, p) in geo.positions.iter().enumerate() {
             let pos = DVec3::new(p[0], p[1], p[2]);
             let n = DVec3::new(normals[i][0], normals[i][1], normals[i][2]);

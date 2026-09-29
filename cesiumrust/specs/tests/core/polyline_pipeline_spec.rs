@@ -1,12 +1,12 @@
-//! Core/PolylinePipelineSpec.js → Rust integration tests
-//! 15 original it() blocks → 8 A-class tests ported
+//! Core/PolylinePipelineSpec.js → Rust 集成测试
+//! 15 个原始 it() 块 → 移植 8 个 A 类测试
 //!
-//! Skipped C-class tests:
-//! - "generateArc throws without positions" - compile-time type safety
-//! - "generateRhumbArc throws without positions" - compile-time type safety
+//! 跳过的 C 类测试：
+//! - "generateArc throws without positions" - 编译期类型安全
+//! - "generateRhumbArc throws without positions" - 编译期类型安全
 //!
-//! Skipped (generateRhumbArc not yet implemented - 5 tests):
-//! - generateRhumbArc: height/subdivides/empty/one position/return values
+//! 跳过（generateRhumbArc 尚未实现 - 5 个测试）：
+//! - generateRhumbArc：height/subdivides/empty/one position/return values
 
 use cesium_geospatial::polyline_pipeline::{generate_arc, wrap_longitude, ArcOptions};
 use cesium_geospatial::transforms::east_north_up_to_fixed_frame;
@@ -92,7 +92,7 @@ fn generate_arc_accepts_height_for_single_value() {
 fn generate_arc_subdivides_in_half() {
     let p1 = from_degrees(0.0, 0.0, 0.0);
     let p2 = from_degrees(90.0, 0.0, 0.0);
-    let p3 = from_degrees(45.0, 0.0, 0.0); // expected midpoint
+    let p3 = from_degrees(45.0, 0.0, 0.0); // 期望的中点
 
     let positions = vec![p1, p2];
     let opts = ArcOptions {
@@ -103,7 +103,7 @@ fn generate_arc_subdivides_in_half() {
     };
     let result = generate_arc(&opts);
 
-    // Should produce 3 points: start, mid, end
+    // 应产生 3 个点：起点、中点、终点
     assert_eq!(result.len(), 3, "expected 3 points, got {}", result.len());
     assert_vec3_epsilon!(result[0], p1, epsilon::EPSILON4);
     assert_vec3_epsilon!(result[2], p2, epsilon::EPSILON4);
@@ -125,7 +125,7 @@ fn generate_arc_works_with_empty_array() {
 #[test]
 fn generate_arc_works_with_one_position() {
     let unit_sphere = Ellipsoid::UNIT_SPHERE;
-    let positions = vec![DVec3::Z]; // UNIT_Z on unit sphere
+    let positions = vec![DVec3::Z]; // 单位球上的 UNIT_Z
     let opts = ArcOptions {
         positions: &positions,
         heights: None,

@@ -1,14 +1,14 @@
-//! Scene/ParticleSystemSpec.js, ParticleSpec.js, EmitterSpec.js → Rust integration tests
+//! Scene/ParticleSystemSpec.js、ParticleSpec.js、EmitterSpec.js → Rust 集成测试
 //!
-//! Maps to CesiumJS:
-//! - Scene/ParticleSystem.js (emission, lifecycle, bursts, forces)
-//! - Scene/Particle.js (update, normalized_age, scale interpolation)
+//! 对应 CesiumJS：
+//! - Scene/ParticleSystem.js（发射、生命周期、爆发、力）
+//! - Scene/Particle.js（更新、归一化年龄、缩放插值）
 //! - Scene/BoxEmitter.js, CircleEmitter.js, SphereEmitter.js, ConeEmitter.js
 //!
-//! A-class tests: Particle lifecycle, forces (gravity/drag/wind/attractor/vortex),
-//! ParticleSystem emission/max_particles/stop/reset/bursts, presets (fire/smoke/snow),
-//! color interpolation, emitter shapes.
-//! C-class omitted: WebGL rendering, billboard textures, Scene integration.
+//! A 类测试：粒子生命周期、力（gravity/drag/wind/attractor/vortex）、
+//! ParticleSystem emission/max_particles/stop/reset/bursts、预设（fire/smoke/snow）、
+//! 颜色插值、发射器形状。
+//! C 类省略：WebGL 渲染、billboard 纹理、Scene 集成。
 
 use cesium_effects::particles::{
     EmitterShape, Particle, ParticleBurst, ParticleForce, ParticleSystem, ParticleSystemConfig,
@@ -98,8 +98,8 @@ fn particle_update_drag() {
     let mut p = Particle::new(1, DVec3::ZERO, DVec3::new(10.0, 0.0, 0.0), 10.0);
     let forces = vec![ParticleForce::Drag { coefficient: 0.5 }];
     p.update(1.0, &forces);
-    // Drag: accel = -velocity * coeff = -10*0.5 = -5
-    // new velocity = 10 + (-5)*1 = 5
+    // 阻力：accel = -velocity * coeff = -10*0.5 = -5
+    // 新速度 = 10 + (-5)*1 = 5
     assert!((p.velocity.x - 5.0).abs() < 1e-10);
 }
 
@@ -109,7 +109,7 @@ fn particle_death_at_lifetime() {
     let forces: Vec<ParticleForce> = vec![];
     p.update(0.5, &forces);
     assert!(p.alive);
-    p.update(0.6, &forces); // total 1.1 > 1.0
+    p.update(0.6, &forces); // 总计 1.1 > 1.0
     assert!(!p.alive);
 }
 
@@ -119,7 +119,7 @@ fn particle_dead_no_update() {
     p.alive = false;
     let forces = vec![ParticleForce::Gravity { acceleration: DVec3::new(0.0, -10.0, 0.0) }];
     p.update(1.0, &forces);
-    assert_eq!(p.position, DVec3::ZERO); // No movement
+    assert_eq!(p.position, DVec3::ZERO); // 无移动
 }
 
 // === ParticleForce ===
@@ -137,7 +137,7 @@ fn force_wind() {
     let force = ParticleForce::Wind { velocity: DVec3::new(5.0, 0.0, 0.0) };
     let p = Particle::new(1, DVec3::ZERO, DVec3::ZERO, 10.0);
     let accel = force.compute_acceleration(&p);
-    // Wind: (wind_vel - particle_vel) * 0.1 = (5-0)*0.1 = 0.5
+    // 风力：(wind_vel - particle_vel) * 0.1 = (5-0)*0.1 = 0.5
     assert!((accel.x - 0.5).abs() < 1e-10);
 }
 
@@ -149,7 +149,7 @@ fn force_attractor() {
     };
     let p = Particle::new(1, DVec3::ZERO, DVec3::ZERO, 10.0);
     let accel = force.compute_acceleration(&p);
-    assert!(accel.x > 0.0); // Towards attractor
+    assert!(accel.x > 0.0); // 朝吸引子方向
 }
 
 #[test]
@@ -244,14 +244,14 @@ fn particle_system_reset() {
 #[test]
 fn particle_system_burst_fires() {
     let config = ParticleSystemConfig {
-        emission_rate: 0.0, // No continuous emission
+        emission_rate: 0.0, // 无连续发射
         bursts: vec![ParticleBurst::new(0.5, 20, 20)],
         ..Default::default()
     };
     let mut system = ParticleSystem::new(config, DVec3::ZERO);
-    system.update(0.3, 42); // Before burst time
+    system.update(0.3, 42); // 在爆发时间之前
     assert_eq!(system.particle_count(), 0);
-    system.update(0.3, 42); // Total 0.6 > 0.5, burst fires
+    system.update(0.3, 42); // 总计 0.6 > 0.5，爆发触发
     assert!(system.particle_count() >= 20);
 }
 
@@ -271,7 +271,7 @@ fn particle_system_color_interpolation() {
     assert!((color[3] - 0.5).abs() < 1e-10);
 }
 
-// === Presets ===
+// === 预设 ===
 
 #[test]
 fn preset_fire() {

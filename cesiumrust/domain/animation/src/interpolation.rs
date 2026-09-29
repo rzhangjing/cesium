@@ -1,6 +1,6 @@
-//! Time interpolation algorithms for animation.
+//! 用于动画的时间插值算法。
 //!
-//! Maps to CesiumJS interpolation:
+//! 映射到 CesiumJS 插值：
 //! - `Core/HermitePolynomialApproximation.js`
 //! - `Core/LagrangePolynomialApproximation.js`
 //! - `Core/LinearApproximation.js`
@@ -8,31 +8,31 @@
 
 use glam::DVec3;
 
-/// Interpolation algorithm type.
+/// 插值算法类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InterpolationType {
-    /// Linear interpolation (degree 1).
+    /// 线性插值（1 阶）。
     #[default]
     Linear,
-    /// Hermite polynomial interpolation (uses derivatives).
+    /// Hermite 多项式插值（使用导数）。
     Hermite,
-    /// Lagrange polynomial interpolation.
+    /// Lagrange 多项式插值。
     Lagrange,
 }
 
-/// A time-value sample point.
+/// 一个时间-数值采样点。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SamplePoint {
-    /// Time in seconds from epoch.
+    /// 自纪元起的时间（秒）。
     pub time: f64,
-    /// Value at this time.
+    /// 此时刻的值。
     pub value: f64,
-    /// Optional derivative (for Hermite).
+    /// 可选导数（用于 Hermite）。
     pub derivative: Option<f64>,
 }
 
 impl SamplePoint {
-    /// Creates a new sample point.
+    /// 创建一个新的采样点。
     pub fn new(time: f64, value: f64) -> Self {
         Self {
             time,
@@ -41,7 +41,7 @@ impl SamplePoint {
         }
     }
 
-    /// Creates a sample point with derivative.
+    /// 创建一个带导数的采样点。
     pub fn with_derivative(time: f64, value: f64, derivative: f64) -> Self {
         Self {
             time,
@@ -51,24 +51,24 @@ impl SamplePoint {
     }
 }
 
-/// Linear interpolation between two values.
+/// 两个值之间的线性插值。
 pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t
 }
 
-/// Linear interpolation for DVec3.
+/// DVec3 的线性插值。
 pub fn lerp_vec3(a: DVec3, b: DVec3, t: f64) -> DVec3 {
     a + (b - a) * t
 }
 
-/// Hermite interpolation (cubic) between two points with tangents.
+/// 两个带切线的点之间的 Hermite（三次）插值。
 ///
-/// # Arguments
-/// * `p0` - Start value
-/// * `m0` - Start tangent
-/// * `p1` - End value
-/// * `m1` - End tangent
-/// * `t` - Parameter [0, 1]
+/// # 参数
+/// * `p0` - 起始值
+/// * `m0` - 起始切线
+/// * `p1` - 结束值
+/// * `m1` - 结束切线
+/// * `t` - 参数 [0, 1]
 pub fn hermite(p0: f64, m0: f64, p1: f64, m1: f64, t: f64) -> f64 {
     let t2 = t * t;
     let t3 = t2 * t;
@@ -81,7 +81,7 @@ pub fn hermite(p0: f64, m0: f64, p1: f64, m1: f64, t: f64) -> f64 {
     h00 * p0 + h10 * m0 + h01 * p1 + h11 * m1
 }
 
-/// Hermite interpolation for DVec3.
+/// DVec3 的 Hermite 插值。
 pub fn hermite_vec3(p0: DVec3, m0: DVec3, p1: DVec3, m1: DVec3, t: f64) -> DVec3 {
     DVec3::new(
         hermite(p0.x, m0.x, p1.x, m1.x, t),
@@ -90,11 +90,11 @@ pub fn hermite_vec3(p0: DVec3, m0: DVec3, p1: DVec3, m1: DVec3, t: f64) -> DVec3
     )
 }
 
-/// Lagrange polynomial interpolation.
+/// Lagrange 多项式插值。
 ///
-/// # Arguments
-/// * `points` - Sample points (time, value)
-/// * `t` - Time to interpolate at
+/// # 参数
+/// * `points` - 采样点（时间、数值）
+/// * `t` - 要插值的时间
 pub fn lagrange_interpolate(points: &[SamplePoint], t: f64) -> f64 {
     let n = points.len();
     if n == 0 {
@@ -120,7 +120,7 @@ pub fn lagrange_interpolate(points: &[SamplePoint], t: f64) -> f64 {
     result
 }
 
-/// Lagrange interpolation for DVec3.
+/// DVec3 的 Lagrange 插值。
 pub fn lagrange_interpolate_vec3(
     times: &[f64],
     values: &[DVec3],
@@ -148,11 +148,11 @@ pub fn lagrange_interpolate_vec3(
     )
 }
 
-/// Catmull-Rom spline interpolation (a type of Hermite with auto-tangents).
+/// Catmull-Rom 样条插值（一种自动切线的 Hermite）。
 ///
-/// # Arguments
-/// * `p0`, `p1`, `p2`, `p3` - Four control points
-/// * `t` - Parameter [0, 1] (interpolates between p1 and p2)
+/// # 参数
+/// * `p0`, `p1`, `p2`, `p3` - 四个控制点
+/// * `t` - 参数 [0, 1]（在 p1 与 p2 之间插值）
 pub fn catmull_rom(p0: f64, p1: f64, p2: f64, p3: f64, t: f64) -> f64 {
     let t2 = t * t;
     let t3 = t2 * t;
@@ -163,7 +163,7 @@ pub fn catmull_rom(p0: f64, p1: f64, p2: f64, p3: f64, t: f64) -> f64 {
         + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
 }
 
-/// Catmull-Rom spline for DVec3.
+/// DVec3 的 Catmull-Rom 样条。
 pub fn catmull_rom_vec3(p0: DVec3, p1: DVec3, p2: DVec3, p3: DVec3, t: f64) -> DVec3 {
     DVec3::new(
         catmull_rom(p0.x, p1.x, p2.x, p3.x, t),
@@ -172,12 +172,12 @@ pub fn catmull_rom_vec3(p0: DVec3, p1: DVec3, p2: DVec3, p3: DVec3, t: f64) -> D
     )
 }
 
-/// Spherical linear interpolation for unit vectors (directions).
+/// 单位向量（方向）的球面线性插值。
 pub fn slerp_vec3(a: DVec3, b: DVec3, t: f64) -> DVec3 {
     let dot = a.dot(b).clamp(-1.0, 1.0);
 
     if dot.abs() > 0.9995 {
-        // Nearly parallel, use linear interpolation
+        // 近乎平行，使用线性插值
         return lerp_vec3(a, b, t).normalize();
     }
 
@@ -189,7 +189,7 @@ pub fn slerp_vec3(a: DVec3, b: DVec3, t: f64) -> DVec3 {
     (a * wa + b * wb).normalize()
 }
 
-/// Interpolates a value using the specified algorithm.
+/// 使用指定算法插值一个数值。
 pub fn interpolate(
     algo: InterpolationType,
     points: &[SamplePoint],
@@ -204,7 +204,7 @@ pub fn interpolate(
 
     match algo {
         InterpolationType::Linear => {
-            // Find bracketing interval
+            // 找到包围区间
             let (i0, i1) = find_bracket(points, t);
             let dt = points[i1].time - points[i0].time;
             let frac = if dt.abs() > 1e-15 {
@@ -230,7 +230,7 @@ pub fn interpolate(
     }
 }
 
-/// Finds the bracketing indices for time t.
+/// 查找时间 t 的包围索引。
 fn find_bracket(points: &[SamplePoint], t: f64) -> (usize, usize) {
     if t <= points[0].time {
         return (0, 1.min(points.len() - 1));
@@ -271,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_hermite_endpoints() {
-        // Hermite should pass through endpoints
+        // Hermite 应穿过端点
         let result_start = hermite(1.0, 0.0, 5.0, 0.0, 0.0);
         let result_end = hermite(1.0, 0.0, 5.0, 0.0, 1.0);
         assert!((result_start - 1.0).abs() < 1e-10);
@@ -280,14 +280,14 @@ mod tests {
 
     #[test]
     fn test_hermite_midpoint() {
-        // With zero tangents, midpoint should be average
+        // 切线为零时，中点应为平均值
         let result = hermite(0.0, 0.0, 10.0, 0.0, 0.5);
         assert!((result - 5.0).abs() < 1e-10);
     }
 
     #[test]
     fn test_lagrange_linear() {
-        // Two points = linear interpolation
+        // 两个点 = 线性插值
         let points = vec![SamplePoint::new(0.0, 0.0), SamplePoint::new(1.0, 10.0)];
         let result = lagrange_interpolate(&points, 0.5);
         assert!((result - 5.0).abs() < 1e-10);
@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn test_lagrange_quadratic() {
-        // Three points on y = x^2
+        // y = x^2 上的三个点
         let points = vec![
             SamplePoint::new(0.0, 0.0),
             SamplePoint::new(1.0, 1.0),
@@ -326,7 +326,7 @@ mod tests {
         let a = DVec3::X;
         let b = DVec3::Y;
         let result = slerp_vec3(a, b, 0.5);
-        // Should be at 45 degrees
+        // 应处于 45 度
         let expected = (std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2);
         assert!((result.x - expected.0).abs() < 1e-10);
         assert!((result.y - expected.1).abs() < 1e-10);

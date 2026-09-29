@@ -1,5 +1,5 @@
-//! VoxelCylinderShape tests ported from CesiumJS VoxelCylinderShapeSpec.js
-//! Tests: constructs, update(modelMatrix/nonDefaultBounds/cross180), computeOBBForTile
+//! VoxelCylinderShape 测试，移植自 CesiumJS VoxelCylinderShapeSpec.js
+//! 测试：constructs、update(modelMatrix/nonDefaultBounds/cross180)、computeOBBForTile
 
 use cesium_voxel::{VoxelCylinderShape, VoxelShape};
 use glam::{DMat3, DMat4, DQuat, DVec3};
@@ -42,23 +42,23 @@ fn assert_mat3_eq(a: DMat3, b: DMat3, msg: &str) {
 }
 
 // ============================================================================
-// constructs
+// constructs（构造）
 // ============================================================================
 
 #[test]
 fn test_constructs() {
-    // Ported from: "constructs"
+    // 移植自："constructs"
     let shape = VoxelCylinderShape::new();
     assert_eq!(shape.shape_transform(), DMat4::IDENTITY);
 }
 
 // ============================================================================
-// update works with model matrix
+// update 配合 model matrix 工作
 // ============================================================================
 
 #[test]
 fn test_update_with_model_matrix() {
-    // Ported from: "update works with model matrix"
+    // 移植自："update works with model matrix"
     let mut shape = VoxelCylinderShape::new();
 
     let translation = DVec3::new(1.0, 2.0, 3.0);
@@ -76,8 +76,8 @@ fn test_update_with_model_matrix() {
     );
     assert!(visible);
 
-    // Expected OBB: center = translation
-    // halfAxes = R(angle) * S(scale) (upper-left 3x3 of model matrix)
+    // 期望的 OBB：center = translation
+    // halfAxes = R(angle) * S(scale)（model matrix 的左上 3x3）
     let obb = shape.oriented_bounding_box();
     assert_vec3_eq(obb.center, translation, "OBB center");
 
@@ -94,7 +94,7 @@ fn test_update_with_model_matrix() {
     );
     assert_mat3_eq(obb.half_axes, expected_half_axes, "OBB halfAxes");
 
-    // BoundingSphere: center = translation, radius = |scale|
+    // BoundingSphere：center = translation，radius = |scale|
     let bs = shape.bounding_sphere();
     assert_vec3_eq(bs.center, translation, "BS center");
     let expected_radius = scale.length();
@@ -115,12 +115,12 @@ fn test_update_with_model_matrix() {
 }
 
 // ============================================================================
-// update works with non-default minimum and maximum bounds
+// update 配合非默认 min/max 边界工作
 // ============================================================================
 
 #[test]
 fn test_update_with_non_default_bounds() {
-    // Ported from: "update works with non-default minimum and maximum bounds"
+    // 移植自："update works with non-default minimum and maximum bounds"
     let mut shape = VoxelCylinderShape::new();
 
     let translation = DVec3::new(1.0, 2.0, 3.0);
@@ -128,7 +128,7 @@ fn test_update_with_non_default_bounds() {
     let rotation = DQuat::IDENTITY;
     let model_matrix = DMat4::from_scale_rotation_translation(scale, rotation, translation);
 
-    // Half revolution
+    // 半周旋转
     let min_radius = 0.25;
     let max_radius = 0.75;
     let min_angle = -PI;
@@ -141,7 +141,7 @@ fn test_update_with_non_default_bounds() {
     let visible = shape.update(model_matrix, min_bounds, max_bounds, None, None);
     assert!(visible);
 
-    // Expected computation (from CesiumJS test):
+    // 期望计算（来自 CesiumJS 测试）：
     let expected_min_x = translation.x - max_radius * scale.x;
     let expected_max_x = translation.x + max_radius * scale.x;
     let expected_min_y = translation.y - max_radius * scale.y;
@@ -149,7 +149,7 @@ fn test_update_with_non_default_bounds() {
     let expected_min_z = translation.z + min_height * scale.z;
     let expected_max_z = translation.z + max_height * scale.z;
 
-    // x and y are swapped because scale is relative to angle midpoint: -pi/2
+    // x 与 y 互换，因为 scale 相对角度中点 -pi/2
     let expected_scale = DVec3::new(
         0.5 * (expected_max_y - expected_min_y),
         0.5 * (expected_max_x - expected_min_x),
@@ -177,7 +177,7 @@ fn test_update_with_non_default_bounds() {
     assert_vec3_eq(obb.center, expected_translation, "OBB center");
     assert_mat3_eq(obb.half_axes, expected_half_axes, "OBB halfAxes");
 
-    // BoundingSphere
+    // BoundingSphere（包围球）
     let bs = shape.bounding_sphere();
     assert_vec3_eq(bs.center, expected_translation, "BS center");
     let expected_radius = expected_scale.length();
@@ -198,12 +198,12 @@ fn test_update_with_non_default_bounds() {
 }
 
 // ============================================================================
-// update works with bounds crossing the 180th meridian
+// update 配合跨越 180° 经线的边界工作
 // ============================================================================
 
 #[test]
 fn test_update_cross_180_meridian() {
-    // Ported from: "update works with minimum and maximum bounds that cross the 180th meridian"
+    // 移植自："update works with minimum and maximum bounds that cross the 180th meridian"
     let mut shape = VoxelCylinderShape::new();
 
     let translation = DVec3::ZERO;
@@ -211,7 +211,7 @@ fn test_update_cross_180_meridian() {
     let rotation = DQuat::IDENTITY;
     let model_matrix = DMat4::from_scale_rotation_translation(scale, rotation, translation);
 
-    // Half revolution around 180th meridian
+    // 围绕 180° 经线半周旋转
     let min_angle = PI_OVER_TWO;
     let max_angle = -PI_OVER_TWO;
     let default_min = cylinder_default_min();
@@ -222,7 +222,7 @@ fn test_update_cross_180_meridian() {
     let visible = shape.update(model_matrix, min_bounds, max_bounds, None, None);
     assert!(visible);
 
-    // Expected (from CesiumJS test):
+    // 期望值（来自 CesiumJS 测试）：
     let expected_scale = DVec3::new(0.5, 1.0, 1.0);
     let expected_translation = DVec3::new(-0.5, 0.0, 0.0);
     // expectedRotation = Matrix3.fromRotationZ(PI)
@@ -241,7 +241,7 @@ fn test_update_cross_180_meridian() {
     assert_vec3_eq(obb.center, expected_translation, "OBB center");
     assert_mat3_eq(obb.half_axes, expected_half_axes, "OBB halfAxes");
 
-    // BoundingSphere
+    // BoundingSphere（包围球）
     let bs = shape.bounding_sphere();
     assert_vec3_eq(bs.center, expected_translation, "BS center");
     let expected_radius = expected_scale.length();
@@ -267,7 +267,7 @@ fn test_update_cross_180_meridian() {
 
 #[test]
 fn test_compute_obb_for_tile() {
-    // Ported from: "computeOrientedBoundingBoxForTile returns oriented bounding box for a specified tile"
+    // 移植自："computeOrientedBoundingBoxForTile returns oriented bounding box for a specified tile"
     let mut shape = VoxelCylinderShape::new();
 
     let translation = DVec3::new(1.0, 2.0, 3.0);
@@ -275,7 +275,7 @@ fn test_compute_obb_for_tile() {
     let rotation = DQuat::IDENTITY;
     let model_matrix = DMat4::from_scale_rotation_translation(scale, rotation, translation);
 
-    // Half revolution
+    // 半周旋转
     let min_radius = 0.25;
     let max_radius = 0.75;
     let min_angle = -PI;
@@ -286,12 +286,12 @@ fn test_compute_obb_for_tile() {
     let max_bounds = DVec3::new(max_radius, max_angle, max_height);
     shape.update(model_matrix, min_bounds, max_bounds, None, None);
 
-    // Root tile (level=0, x=0, y=0, z=0)
+    // 根瓦片（level=0, x=0, y=0, z=0）
     let tile_obb = shape.compute_obb_for_tile(0, 0, 0, 0);
 
-    // Expected from CesiumJS test:
+    // CesiumJS 测试的期望值：
     // center = (1.0, 0.875, 3.0)
-    // halfAxes = Matrix3(0, 1.5, 0, -1.125, 0, 0, 0, 0, 2) [row-major in CesiumJS]
+    // halfAxes = Matrix3(0, 1.5, 0, -1.125, 0, 0, 0, 0, 2) [CesiumJS 中为行主序]
     assert!(
         (tile_obb.center.x - 1.0).abs() < EPSILON12,
         "tile OBB center.x: {}",
@@ -308,9 +308,9 @@ fn test_compute_obb_for_tile() {
         tile_obb.center.z
     );
 
-    // CesiumJS Matrix3 row-major: (0, 1.5, 0, -1.125, 0, 0, 0, 0, 2)
-    // Row-major means: row0=(0, 1.5, 0), row1=(-1.125, 0, 0), row2=(0, 0, 2)
-    // In column-major (glam): col0=(0, -1.125, 0), col1=(1.5, 0, 0), col2=(0, 0, 2)
+    // CesiumJS Matrix3 行主序：(0, 1.5, 0, -1.125, 0, 0, 0, 0, 2)
+    // 行主序意味着：row0=(0, 1.5, 0)，row1=(-1.125, 0, 0)，row2=(0, 0, 2)
+    // 列主序（glam）下：col0=(0, -1.125, 0)，col1=(1.5, 0, 0)，col2=(0, 0, 2)
     let expected_half_axes = DMat3::from_cols(
         DVec3::new(0.0, -1.125, 0.0),
         DVec3::new(1.5, 0.0, 0.0),

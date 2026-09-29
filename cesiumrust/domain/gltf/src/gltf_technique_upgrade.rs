@@ -1,12 +1,12 @@
-//! glTF 1.0 technique / material → glTF 2.0 PBR material migration.
+//! glTF 1.0 technique / material → glTF 2.0 PBR material 迁移。
 //!
-//! Mirrors CesiumJS `packages/engine/Source/Scene/GltfPipeline/`:
-//! `moveTechniqueRenderStates.js`, `moveTechniquesToExtension.js`, and the two
-//! legacy-extension converters at the tail of `updateVersion.js`
-//! (`convertTechniquesToPbr` L1040, `convertMaterialsCommonToPbr` L1084).
+//! 镜像 CesiumJS `packages/engine/Source/Scene/GltfPipeline/`：
+//! `moveTechniqueRenderStates.js`、`moveTechniquesToExtension.js`，以及
+//! `updateVersion.js` 末尾的两个遗留扩展转换器
+//! （`convertTechniquesToPbr` L1040、`convertMaterialsCommonToPbr` L1084）。
 //!
-//! These run after the structural 1.0 → 2.0 transform, so top-level collections
-//! are already arrays. Everything operates on raw [`serde_json::Value`].
+//! 它们在结构化的 1.0 → 2.0 变换之后运行，因此顶层集合
+//! 已是数组。一切都在原始 [`serde_json::Value`] 上操作。
 
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
@@ -16,16 +16,16 @@ use crate::gltf_upgrade_util::{
     is_vec4, remove_extension, srgb_to_linear, webgl,
 };
 
-/// `defaultBaseColorTextureNames` (updateVersion.js L994): uniform names in a
-/// glTF 1.0 technique material that indicate a base color *texture*.
+/// `defaultBaseColorTextureNames`（updateVersion.js L994）：glTF 1.0 technique
+/// material 中指示 base color *texture* 的 uniform 名称。
 pub(crate) const DEFAULT_BASE_COLOR_TEXTURE_NAMES: [&str; 4] =
     ["u_tex", "u_diffuse", "u_emission", "u_diffuse_tex"];
 
-/// `defaultBaseColorFactorNames` (updateVersion.js L1000): uniform names that
-/// indicate a base color *factor* (an sRGB vec4).
+/// `defaultBaseColorFactorNames`（updateVersion.js L1000）：指示 base
+/// color *factor*（一个 sRGB vec4）的 uniform 名称。
 pub(crate) const DEFAULT_BASE_COLOR_FACTOR_NAMES: [&str; 2] = ["u_diffuse", "u_diffuse_mat"];
 
-/// Blend factors accepted by `KHR_blend` (moveTechniqueRenderStates.js L24).
+/// `KHR_blend` 接受的混合因子（moveTechniqueRenderStates.js L24）。
 const SUPPORTED_BLEND_FACTORS: [u64; 10] = [
     webgl::ZERO,
     webgl::ONE,
@@ -39,9 +39,9 @@ const SUPPORTED_BLEND_FACTORS: [u64; 10] = [
     webgl::ONE_MINUS_DST_COLOR,
 ];
 
-/// `moveTechniqueRenderStates.js`: move glTF 1.0 technique render states to
-/// glTF 2.0 material properties (`alphaMode` / `doubleSided`) and the `KHR_blend`
-/// extension, then delete `technique.states`.
+/// `moveTechniqueRenderStates.js`：将 glTF 1.0 technique 渲染状态移动到
+/// glTF 2.0 material 属性（`alphaMode` / `doubleSided`）和 `KHR_blend`
+/// 扩展，然后删除 `technique.states`。
 pub(crate) fn move_technique_render_states(gltf: &mut Value) {
     if gltf.get("techniques").is_none() {
         return;
@@ -125,8 +125,8 @@ pub(crate) fn move_technique_render_states(gltf: &mut Value) {
     });
 }
 
-/// `getSupportedBlendFactors` (moveTechniqueRenderStates.js L38): return the
-/// value when all four factors are supported, otherwise the default.
+/// `getSupportedBlendFactors`（moveTechniqueRenderStates.js L38）：当四个因子
+/// 都受支持时返回该值，否则返回默认值。
 fn supported_blend_factors(value: Option<&Value>) -> Value {
     let default = json!([webgl::ONE, webgl::ZERO, webgl::ONE, webgl::ZERO]);
     let Some(arr) = value.and_then(Value::as_array) else {
@@ -144,15 +144,15 @@ fn supported_blend_factors(value: Option<&Value>) -> Value {
     value.cloned().unwrap_or(default)
 }
 
-/// `moveTechniquesToExtension.js`: move glTF 1.0 techniques / programs / shaders
-/// into the `KHR_techniques_webgl` extension and rewrite each material's
-/// `technique` + `values` into `material.extensions.KHR_techniques_webgl`.
+/// `moveTechniquesToExtension.js`：将 glTF 1.0 techniques / programs / shaders
+/// 移入 `KHR_techniques_webgl` 扩展，并将每个 material 的
+/// `technique` + `values` 重写为 `material.extensions.KHR_techniques_webgl`。
 pub(crate) fn move_techniques_to_extension(gltf: &mut Value) {
     // techniqueId -> (parameterName -> uniformName)
     let mut mapped_uniforms: HashMap<usize, HashMap<String, String>> = HashMap::new();
-    // old technique index -> new index inside the extension
+    // 旧 technique 索引 -> 扩展内的新索引
     let mut updated_technique_indices: HashMap<usize, usize> = HashMap::new();
-    // old program index -> new index inside the extension
+    // 旧 program 索引 -> 扩展内的新索引
     let mut seen_programs: HashMap<u64, usize> = HashMap::new();
 
     if gltf.get("techniques").is_some() {
@@ -160,8 +160,8 @@ pub(crate) fn move_techniques_to_extension(gltf: &mut Value) {
             .as_object_mut()
             .and_then(|o| o.remove("glExtensionsUsed"));
 
-        // Snapshot the legacy collections so the extension can be built without
-        // aliasing the root.
+        // 快照遗留集合，以便构建扩展时
+        // 不借用根对象。
         let techniques = gltf.get("techniques").cloned().unwrap_or(Value::Null);
         let programs = gltf.get("programs").cloned().unwrap_or(Value::Null);
         let shaders = gltf.get("shaders").cloned().unwrap_or(Value::Null);
@@ -277,7 +277,7 @@ pub(crate) fn move_techniques_to_extension(gltf: &mut Value) {
         }
     }
 
-    // Rewrite materials.
+    // 重写 materials。
     for_each_material(gltf, &mut |material| {
         let tech_index = material.get("technique").and_then(Value::as_u64);
         if let Some(tech_index) = tech_index {
@@ -321,7 +321,7 @@ pub(crate) fn move_techniques_to_extension(gltf: &mut Value) {
     }
 }
 
-/// Reads `collection[index]` for an array-form collection (post `objectsToArrays`).
+/// 对于数组形式的集合读取 `collection[index]`（`objectsToArrays` 之后）。
 fn index_value(collection: &Value, index: u64) -> &Value {
     collection
         .as_array()
@@ -329,8 +329,8 @@ fn index_value(collection: &Value, index: u64) -> &Value {
         .unwrap_or(&Value::Null)
 }
 
-/// `convertTechniquesToPbr` (updateVersion.js L1040): build PBR base color from
-/// common glTF 1.0 technique uniform names, then drop the legacy extensions.
+/// `convertTechniquesToPbr`（updateVersion.js L1040）：从常见的 glTF 1.0
+/// technique uniform 名称构建 PBR base color，然后丢弃遗留扩展。
 pub(crate) fn convert_techniques_to_pbr(
     gltf: &mut Value,
     base_color_texture_names: &[String],
@@ -358,8 +358,8 @@ pub(crate) fn convert_techniques_to_pbr(
     remove_extension(gltf, "KHR_blend");
 }
 
-/// `ForEach.materialValue` (ForEach.js L204): material values live either on
-/// `material.values` (glTF 1.0) or `material.extensions.KHR_techniques_webgl.values`.
+/// `ForEach.materialValue`（ForEach.js L204）：material 的值要么位于
+/// `material.values`（glTF 1.0），要么位于 `material.extensions.KHR_techniques_webgl.values`。
 fn collect_material_values(material: &Value) -> Vec<(String, Value)> {
     let values = material
         .pointer("/extensions/KHR_techniques_webgl/values")
@@ -370,8 +370,8 @@ fn collect_material_values(material: &Value) -> Vec<(String, Value)> {
     }
 }
 
-/// `initializePbrMaterial` (updateVersion.js L1002): ensure `pbrMetallicRoughness`
-/// exists with `roughnessFactor = 1.0` and `metallicFactor = 0.0`.
+/// `initializePbrMaterial`（updateVersion.js L1002）：确保 `pbrMetallicRoughness`
+/// 存在且 `roughnessFactor = 1.0`、`metallicFactor = 0.0`。
 fn initialize_pbr_material(material: &mut Value) {
     let Some(obj) = material.as_object_mut() else { return };
     let pbr = obj
@@ -393,9 +393,9 @@ fn set_pbr_field(material: &mut Value, field: &str, value: Value) {
     }
 }
 
-/// `convertMaterialsCommonToPbr` (updateVersion.js L1084): convert the
-/// `KHR_materials_common` extension to a PBR material (adding
-/// `KHR_materials_unlit` for the `CONSTANT` technique), then drop the extension.
+/// `convertMaterialsCommonToPbr`（updateVersion.js L1084）：将
+/// `KHR_materials_common` 扩展转换为 PBR material（为 `CONSTANT` technique
+/// 添加 `KHR_materials_unlit`），然后丢弃该扩展。
 pub(crate) fn convert_materials_common_to_pbr(gltf: &mut Value) {
     let mut used_unlit = false;
 
@@ -477,7 +477,7 @@ pub(crate) fn convert_materials_common_to_pbr(gltf: &mut Value) {
     remove_extension(gltf, "KHR_materials_common");
 }
 
-/// `assignAsBaseColor` (updateVersion.js L1064).
+/// `assignAsBaseColor`（updateVersion.js L1064）。
 fn assign_as_base_color(material: &mut Value, base_color: Option<&Value>) {
     let Some(base_color) = base_color else { return };
     if is_vec4(base_color) {
@@ -492,7 +492,7 @@ fn assign_as_base_color(material: &mut Value, base_color: Option<&Value>) {
     }
 }
 
-/// `assignAsEmissive` (updateVersion.js L1074).
+/// `assignAsEmissive`（updateVersion.js L1074）。
 fn assign_as_emissive(material: &mut Value, emissive: Option<&Value>) {
     let Some(emissive) = emissive else { return };
     if is_vec4(emissive) {

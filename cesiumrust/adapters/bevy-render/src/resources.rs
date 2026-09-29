@@ -1,18 +1,18 @@
-//! Bevy ECS resources for CesiumRust global configuration and state.
+//! 用于 CesiumRust 全局配置与状态的 Bevy ECS 资源。
 //!
-//! In "hybrid mode", domain configuration and state serve as Bevy Resources
-//! directly for rendering, while IO uses port traits.
+//! 在“混合模式”下，领域配置与状态直接作为 Bevy Resources
+//! 供渲染使用，而 IO 则使用 port trait。
 
 use bevy::prelude::*;
 use cesium_geospatial::ellipsoid::Ellipsoid;
 
-/// Render-scale factor: domain works in meters (f64), GPU renders in f32.
-/// Earth-scale coordinates (~6.4e6 m) exceed f32 depth/frustum precision,
-/// so the adapter scales the world down to a unit sphere for rendering.
-/// 1 render unit = 6378137 meters (WGS84 semi-major axis).
+/// 渲染缩放因子：领域以米（f64）工作，GPU 以 f32 渲染。
+/// 地球尺度的坐标（~6.4e6 m）超出 f32 的深度/视锥精度，
+/// 因此适配器将世界缩小为一个单位球体以供渲染。
+/// 1 render unit = 6378137 米（WGS84 半长轴）。
 pub const METERS_PER_RENDER_UNIT: f64 = 6378137.0;
 
-/// Render scale: 1 render unit = METERS_PER_RENDER_UNIT meters.
+/// 渲染缩放：1 render unit = METERS_PER_RENDER_UNIT 米。
 #[derive(Resource, Clone)]
 pub struct RenderScale(pub f64);
 
@@ -22,7 +22,7 @@ impl Default for RenderScale {
     }
 }
 
-/// Global globe configuration.
+/// 全局地球配置。
 #[derive(Resource)]
 pub struct GlobeConfig {
     pub ellipsoid: Ellipsoid,
@@ -40,17 +40,17 @@ impl Default for GlobeConfig {
     }
 }
 
-/// Statistics about loaded tiles.
+/// 关于已加载瓦片的统计信息。
 #[derive(Resource, Default)]
 pub struct TileLoadStats {
     pub tiles_loaded: u32,
     pub tiles_failed: u32,
     pub tiles_pending: u32,
     pub bytes_downloaded: u64,
-    /// Number of tiles skipped during LOD/culling selection (never requested).
-    /// Additive field: defaults to `0` via `#[derive(Default)]`, so all existing
-    /// construction sites (`TileLoadStats::default()`, `init_resource`) remain
-    /// valid without modification.
+    /// 在 LOD/culling 选择期被跳过（从未请求）的瓦片数。
+    /// 附加字段：通过 `#[derive(Default)]` 默认为 `0`，因此所有现有
+    /// 构造点（`TileLoadStats::default()`、`init_resource`）无需
+    /// 修改仍保持有效。
     pub tiles_skipped: u32,
 }
 

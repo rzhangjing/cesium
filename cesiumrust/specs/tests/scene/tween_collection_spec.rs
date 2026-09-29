@@ -1,7 +1,7 @@
-//! Scene/TweenCollectionSpec.js → Rust integration tests
+//! Scene/TweenCollectionSpec.js → Rust 集成测试
 //!
-//! Original: 25 it() → 11 A-class (14 C-class: throws/callbacks-spy)
-//! A-class: add(2) + add_zero_duration(1) + cancelTween(1) + remove(1) +
+//! 原始：25 it() → 11 A 类（14 C 类：throws/callbacks-spy）
+//! A 类：add(2) + add_zero_duration(1) + cancelTween(1) + remove(1) +
 //!          removeAll(1) + get(1) + update(1) + addProperty(1) + addAlpha(1) + addOffsetIncrement(1)
 
 use cesium_animation::tween::{EasingFunction, TweenCollection, TweenOptions};
@@ -102,7 +102,7 @@ fn test_remove_removes_a_tween() {
     assert!(!tweens.contains(idx));
     assert!(*cancelled.borrow());
 
-    // Removing again returns false
+    // 再次移除返回 false
     let removed_again = tweens.remove(idx);
     assert!(!removed_again);
 }

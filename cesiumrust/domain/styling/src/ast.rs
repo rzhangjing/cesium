@@ -1,111 +1,111 @@
-//! Runtime AST for the 3D Tiles Styling expression engine.
+//! 3D Tiles Styling 表达式引擎的运行时 AST。
 //!
-//! Ported from `cesium-rs/crates/cesium-scene/src/expression.rs`:
-//! - `ExpressionNodeType`              ← `expression_node_type.rs` (19 variants)
+//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs`：
+//! - `ExpressionNodeType`              ← `expression_node_type.rs`（19 个变体）
 //! - `NodeValue` + `Node`              ← L307-366
 //! - `JsepNode` + `JsepLiteral`        ← L634-670
-//! - operator tables                   ← L903-906
-//! - `create_runtime_ast` + `parse_*`  ← L909-1569 (jsep-AST → runtime-AST bridge)
+//! - 运算符表                    ← L903-906
+//! - `create_runtime_ast` + `parse_*`  ← L909-1569（jsep-AST → 运行时-AST 桥）
 //! - `vector_component`/`member_access`← L1889-1954
 //!
-//! # M7-A scope notes (base layer)
+//! # M7-A 作用域说明（基础层）
 //!
-//! * This module builds the **runtime AST** from a jsep AST. The Pratt parser
-//!   (tokens → [`JsepNode`]) and all evaluation (`evaluate_*`) are M7-B.
-//! * M7-B: the `regExp(...)` branch of [`parse_call`] now delegates to
-//!   `crate::regex::parse_regex` (the `regex` crate IS available offline), so
-//!   [`NodeValue::Regex`] is constructed for literal patterns. Every other
-//!   `parse_call` branch (color/rgb/hsl/rgba/hsla/vec2-4/unary/binary/ternary/
-//!   Boolean/Number/String/test/exec/toString) is pure structural node building.
-//! * The full preprocessing pipeline (`replaceDefines`/`removeBackslashes`/
-//!   `replaceVariables`) lives in `variables.rs` (M7-B); only
-//!   `replace_backslashes` (needed by `parse_literal`) is kept here.
+//! * 本模块从 jsep AST 构建**运行时 AST**。Pratt 解析器
+//!   （tokens → [`JsepNode`]）与所有求值（`evaluate_*`）都在 M7-B。
+//! * M7-B：[`parse_call`] 的 `regExp(...)` 分支现在委托给
+//!   `crate::regex::parse_regex`（`regex` crate 在离线环境下可用），因此
+//!   对字面模式会构造出 [`NodeValue::Regex`]。其他每一个
+//!   `parse_call` 分支（color/rgb/hsl/rgba/hsla/vec2-4/unary/binary/ternary/
+//!   Boolean/Number/String/test/exec/toString）都是纯粹的结构化节点构建。
+//! * 完整的预处理流水线（`replaceDefines`/`removeBackslashes`/
+//!   `replaceVariables`）位于 `variables.rs`（M7-B）；此处只保留
+//!   `replace_backslashes`（`parse_literal` 需要）。
 
 use crate::regex::RegExpValue;
 use crate::value::{runtime_error, RuntimeError, Value};
 
 // ---------------------------------------------------------------------------
-// Node type (mirrors ExpressionNodeType.js)
+// 节点类型（镜像 ExpressionNodeType.js）
 // ---------------------------------------------------------------------------
 
-/// The type of a runtime AST node. The discriminants mirror the numeric values
-/// of the original JS object; [`ExpressionNodeType::is_literal_type`] depends on
-/// the `>= LiteralNull` ordering, exactly like the original `isLiteralType`.
+/// 运行时 AST 节点的类型。判别值镜像原 JS 对象的数值；
+/// [`ExpressionNodeType::is_literal_type`] 依赖 `>= LiteralNull` 的排序，
+/// 与原 `isLiteralType` 完全一致。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub enum ExpressionNodeType {
-    /// A `${name}` variable reference.
+    /// 一个 `${name}` 变量引用。
     Variable = 0,
-    /// Unary operator or single-argument function.
+    /// 一元运算符或单参数函数。
     Unary = 1,
-    /// Binary operator or two-argument function.
+    /// 二元运算符或双参数函数。
     Binary = 2,
-    /// Three-argument function.
+    /// 三参数函数。
     Ternary = 3,
-    /// Conditional `? :` expression.
+    /// 条件 `? :` 表达式。
     Conditional = 4,
-    /// Member access (`.` or `[]`).
+    /// 成员访问（`.` 或 `[]`）。
     Member = 5,
-    /// Function call on an object (e.g. `regExp(...).test(...)`).
+    /// 对对象的函数调用（例如 `regExp(...).test(...)`）。
     FunctionCall = 6,
-    /// Array literal.
+    /// 数组字面量。
     Array = 7,
-    /// Regular expression constructed at evaluation time.
+    /// 在求值时构造的正则表达式。
     Regex = 8,
-    /// String literal containing `${name}` placeholders.
+    /// 含 `${name}` 占位符的字符串字面量。
     VariableInString = 9,
-    /// `null` literal.
+    /// `null` 字面量。
     LiteralNull = 10,
-    /// Boolean literal.
+    /// 布尔字面量。
     LiteralBoolean = 11,
-    /// Number literal.
+    /// 数字字面量。
     LiteralNumber = 12,
-    /// String literal.
+    /// 字符串字面量。
     LiteralString = 13,
-    /// Color literal (`color`/`rgb`/`rgba`/`hsl`/`hsla`).
+    /// 颜色字面量（`color`/`rgb`/`rgba`/`hsl`/`hsla`）。
     LiteralColor = 14,
-    /// Vector literal (`vec2`/`vec3`/`vec4`).
+    /// 向量字面量（`vec2`/`vec3`/`vec4`）。
     LiteralVector = 15,
-    /// Regular expression literal (pre-compiled).
+    /// 正则表达式字面量（预编译）。
     LiteralRegex = 16,
-    /// `undefined` literal.
+    /// `undefined` 字面量。
     LiteralUndefined = 17,
-    /// Built-in variable (e.g. `tiles3d_tileset_time`).
+    /// 内建变量（例如 `tiles3d_tileset_time`）。
     BuiltinVariable = 18,
 }
 
 impl ExpressionNodeType {
-    /// Returns `true` when the node holds a literal value, mirroring
-    /// `isLiteralType`: `node._type >= ExpressionNodeType.LITERAL_NULL`.
+    /// 当节点持有一个字面值时返回 `true`，镜像
+    /// `isLiteralType`：`node._type >= ExpressionNodeType.LITERAL_NULL`。
     pub fn is_literal_type(self) -> bool {
         self >= ExpressionNodeType::LiteralNull
     }
 }
 
 // ---------------------------------------------------------------------------
-// Runtime AST node
+// 运行时 AST 节点
 // ---------------------------------------------------------------------------
 
-/// The payload of a runtime AST node, mirroring JS `_value`.
+/// 运行时 AST 节点的负载，镜像 JS 的 `_value`。
 #[derive(Debug, Clone)]
 pub enum NodeValue {
-    /// No value (e.g. `getExactClassName`).
+    /// 无值（例如 `getExactClassName`）。
     None,
     Null,
     Undefined,
     Bool(bool),
     Number(f64),
     Str(String),
-    /// Child expressions (the ARRAY node type).
+    /// 子表达式（ARRAY 节点类型）。
     Nodes(Vec<Node>),
-    /// A pre-compiled regular expression (LITERAL_REGEX). M7-A: never
-    /// constructed (regex compilation is deferred to M7-B); see module docs.
+    /// 一个预编译的正则表达式（LITERAL_REGEX）。M7-A：从不
+    /// 构造（正则编译推迟到 M7-B）；见模块文档。
     Regex(RegExpValue),
 }
 
-/// A runtime AST node, mirroring the `Node` constructor of Expression.js.
-/// `_left` may be either a single node or an array of argument nodes
-/// (LITERAL_COLOR / LITERAL_VECTOR); `left_children` holds the latter.
+/// 一个运行时 AST 节点，镜像 Expression.js 的 `Node` 构造器。
+/// `_left` 既可以是单个节点，也可以是参数节点数组
+/// （LITERAL_COLOR / LITERAL_VECTOR）；`left_children` 持有后者。
 #[derive(Debug, Clone)]
 pub struct Node {
     pub node_type: ExpressionNodeType,
@@ -117,7 +117,7 @@ pub struct Node {
 }
 
 impl Node {
-    /// Builds a node with optional single `left`/`right`/`test` children.
+    /// 构建一个带可选单个 `left`/`right`/`test` 子节点的节点。
     pub fn new(
         node_type: ExpressionNodeType,
         value: NodeValue,
@@ -135,7 +135,7 @@ impl Node {
         }
     }
 
-    /// Builds a node whose arguments live in `left_children` (color/vector).
+    /// 构建一个其参数位于 `left_children` 中的节点（color/vector）。
     pub fn with_children(
         node_type: ExpressionNodeType,
         value: NodeValue,
@@ -153,10 +153,10 @@ impl Node {
 }
 
 // ---------------------------------------------------------------------------
-// jsep AST (produced by the M7-B parser, consumed by create_runtime_ast)
+// jsep AST（由 M7-B 解析器产出，被 create_runtime_ast 消费）
 // ---------------------------------------------------------------------------
 
-/// jsep-style AST produced by the parser before [`create_runtime_ast`].
+/// 由解析器在 [`create_runtime_ast`] 之前产出的 jsep 风格 AST。
 #[derive(Debug, Clone)]
 pub enum JsepNode {
     Literal(JsepLiteral),
@@ -188,7 +188,7 @@ pub enum JsepNode {
     Array(Vec<JsepNode>),
 }
 
-/// A jsep literal value.
+/// 一个 jsep 字面值。
 #[derive(Debug, Clone)]
 pub enum JsepLiteral {
     Null,
@@ -198,25 +198,25 @@ pub enum JsepLiteral {
 }
 
 // ---------------------------------------------------------------------------
-// createRuntimeAst (jsep AST -> runtime nodes)
+// createRuntimeAst（jsep AST → 运行时节点）
 // ---------------------------------------------------------------------------
 
-/// The unary operators jsep/Cesium accept (`!`, unary `-`, unary `+`).
+/// jsep/Cesium 接受的一元运算符（`!`、一元 `-`、一元 `+`）。
 pub const UNARY_OPERATORS: [&str; 3] = ["!", "-", "+"];
-/// The binary operators, mirroring `jsep.binary_ops` plus the Cesium
-/// customizations `addBinaryOp("=~", 0)` / `addBinaryOp("!~", 0)`.
+/// 二元运算符，镜像 `jsep.binary_ops` 加上 Cesium 的
+/// 定制 `addBinaryOp("=~", 0)` / `addBinaryOp("!~", 0)`。
 pub const BINARY_OPERATORS: [&str; 15] = [
     "+", "-", "*", "/", "%", "===", "!==", ">", ">=", "<", "<=", "&&", "||", "!~", "=~",
 ];
 
 const BACKSLASH_REPLACEMENT: &str = "@#%";
 
-/// Mirrors `replaceBackslashes`: `"@#%"` -> `\`.
+/// 镜像 `replaceBackslashes`：`"@#%"` → `\`。
 pub(crate) fn replace_backslashes(expression: &str) -> String {
     expression.replace(BACKSLASH_REPLACEMENT, "\\")
 }
 
-/// Mirrors `parseLiteral`.
+/// 镜像 `parseLiteral`。
 fn parse_literal(literal: &JsepLiteral) -> Node {
     match literal {
         JsepLiteral::Null => Node::new(
@@ -270,7 +270,7 @@ fn get_property_name(variable: &str) -> &str {
     &variable[4..]
 }
 
-/// Mirrors `parseKeywordsAndVariables`.
+/// 镜像 `parseKeywordsAndVariables`。
 fn parse_keywords_and_variables(name: &str) -> Result<Node, RuntimeError> {
     if is_variable(name) {
         let property = get_property_name(name);
@@ -319,8 +319,8 @@ fn parse_keywords_and_variables(name: &str) -> Result<Node, RuntimeError> {
     Err(runtime_error(&format!("{name} is not defined.")))
 }
 
-/// Mirrors `parseMathConstant` (returns None for unknown constants, like the
-/// original returns undefined).
+/// 镜像 `parseMathConstant`（对未知常量返回 None，如同
+/// 原函数返回 undefined）。
 fn parse_math_constant(name: &str) -> Option<Node> {
     if name == "PI" {
         Some(Node::new(
@@ -343,7 +343,7 @@ fn parse_math_constant(name: &str) -> Option<Node> {
     }
 }
 
-/// Mirrors `parseNumberConstant`.
+/// 镜像 `parseNumberConstant`。
 fn parse_number_constant(name: &str) -> Option<Node> {
     if name == "POSITIVE_INFINITY" {
         Some(Node::new(
@@ -375,7 +375,7 @@ fn is_ternary_function(call: &str) -> bool {
     matches!(call, "clamp" | "mix")
 }
 
-/// Mirrors `parseMemberExpression`.
+/// 镜像 `parseMemberExpression`。
 fn parse_member_expression(
     object: &JsepNode,
     property: &JsepNode,
@@ -437,15 +437,15 @@ fn parse_member_expression(
     ))
 }
 
-/// Mirrors `parseCall`.
+/// 镜像 `parseCall`。
 ///
-/// DEVIATION (M7-A): the `regExp(...)` branch returns an error instead of
-/// building a regex node; regex compilation lands in M7-B `regex.rs`
-/// (`parse_regex` + `RegExpValue::compile`). All other branches are faithful.
+/// 偏离（M7-A）：`regExp(...)` 分支返回一个错误而非构建一个正则节点；
+/// 正则编译落在 M7-B `regex.rs`
+/// （`parse_regex` + `RegExpValue::compile`）。所有其他分支都是忠实的。
 fn parse_call(callee: &JsepNode, arguments: &[JsepNode]) -> Result<Node, RuntimeError> {
     let args_length = arguments.len();
 
-    // Member function calls
+    // 成员函数调用
     if let JsepNode::Member {
         object,
         property,
@@ -457,7 +457,7 @@ fn parse_call(callee: &JsepNode, arguments: &[JsepNode]) -> Result<Node, Runtime
             _ => return Err(runtime_error("Cannot parse expression.")),
         };
         if call == "test" || call == "exec" {
-            // Make sure this is called on a valid type
+            // 确保这是在一个有效类型上调用
             let is_reg_exp = matches!(
                 object.as_ref(),
                 JsepNode::Call { callee, .. }
@@ -509,7 +509,7 @@ fn parse_call(callee: &JsepNode, arguments: &[JsepNode]) -> Result<Node, Runtime
         )));
     }
 
-    // Non-member function calls
+    // 非成员函数调用
     let call = match callee {
         JsepNode::Identifier(name) => name.as_str(),
         _ => return Err(runtime_error("Unexpected function call.")),
@@ -564,7 +564,7 @@ fn parse_call(callee: &JsepNode, arguments: &[JsepNode]) -> Result<Node, Runtime
             children,
         ));
     } else if call == "vec2" || call == "vec3" || call == "vec4" {
-        // Check for invalid constructors at evaluation time
+        // 在求值时检查无效构造器
         let mut children = Vec::with_capacity(args_length);
         for argument in arguments {
             children.push(create_runtime_ast(argument)?);
@@ -720,7 +720,7 @@ fn parse_call(callee: &JsepNode, arguments: &[JsepNode]) -> Result<Node, Runtime
             None,
         ));
     } else if call == "regExp" {
-        // M7-B: delegate to `regex.rs` (`parse_regex` + `RegExpValue::compile`).
+        // M7-B：委托给 `regex.rs`（`parse_regex` + `RegExpValue::compile`）。
         return crate::regex::parse_regex(arguments);
     }
 
@@ -729,7 +729,7 @@ fn parse_call(callee: &JsepNode, arguments: &[JsepNode]) -> Result<Node, Runtime
     )))
 }
 
-/// Mirrors `createRuntimeAst`.
+/// 镜像 `createRuntimeAst`。
 pub fn create_runtime_ast(ast: &JsepNode) -> Result<Node, RuntimeError> {
     match ast {
         JsepNode::Literal(literal) => Ok(parse_literal(literal)),
@@ -811,11 +811,11 @@ pub fn create_runtime_ast(ast: &JsepNode) -> Result<Node, RuntimeError> {
 }
 
 // ---------------------------------------------------------------------------
-// Member access helpers (mirrors `.r/.g/.b/.a`, `.x/.y/.z/.w`, `[0]-[3]`)
+// 成员访问辅助（镜像 `.r/.g/.b/.a`、`.x/.y/.z/.w`、`[0]-[3]`）
 // ---------------------------------------------------------------------------
 
-/// Component access on vectors, mirroring the `.r/.g/.b/.a`, `.x/.y/.z/.w`
-/// and `[0]-[3]` member handling.
+/// 向量上的分量访问，镜像 `.r/.g/.b/.a`、`.x/.y/.z/.w`
+/// 和 `[0]-[3]` 成员处理。
 pub fn vector_component(property: &Value, member: &Value) -> Option<Value> {
     let name: &str = match member {
         Value::Number(n) => match n {
@@ -851,7 +851,7 @@ pub fn vector_component(property: &Value, member: &Value) -> Option<Value> {
     }
 }
 
-/// Generic member access for arrays and strings (JS `property[member]`).
+/// 对数组和字符串的通用成员访问（JS `property[member]`）。
 pub fn member_access(property: &Value, member: &Value) -> Value {
     match property {
         Value::Array(items) => {
@@ -898,7 +898,7 @@ mod tests {
         Box::new(n)
     }
 
-    // --- ExpressionNodeType: 19 variants + discriminants + is_literal_type ---
+    // --- ExpressionNodeType：19 个变体 + 判别值 + is_literal_type ---
 
     #[test]
     fn node_type_discriminants_and_count() {
@@ -907,7 +907,7 @@ mod tests {
         assert_eq!(ExpressionNodeType::LiteralNull as u8, 10);
         assert_eq!(ExpressionNodeType::LiteralRegex as u8, 16);
         assert_eq!(ExpressionNodeType::BuiltinVariable as u8, 18);
-        // 19 variants total: discriminants 0..=18.
+        // 共 19 个变体：判别值 0..=18。
         let all = [
             ExpressionNodeType::Variable,
             ExpressionNodeType::Unary,
@@ -934,7 +934,7 @@ mod tests {
 
     #[test]
     fn is_literal_type_ordering() {
-        // >= LiteralNull(10) is a literal type.
+        // >= LiteralNull(10) 是一个字面类型。
         assert!(!ExpressionNodeType::Variable.is_literal_type());
         assert!(!ExpressionNodeType::VariableInString.is_literal_type());
         assert!(ExpressionNodeType::LiteralNull.is_literal_type());
@@ -942,7 +942,7 @@ mod tests {
         assert!(ExpressionNodeType::BuiltinVariable.is_literal_type());
     }
 
-    // --- create_runtime_ast: literals ---
+    // --- create_runtime_ast：字面量 ---
 
     #[test]
     fn literal_number_node() {
@@ -977,7 +977,7 @@ mod tests {
         assert!(matches!(b.value, NodeValue::Bool(true)));
     }
 
-    // --- create_runtime_ast: keywords & variables ---
+    // --- create_runtime_ast：关键字与变量 ---
 
     #[test]
     fn variable_and_builtin_nodes() {
@@ -1008,7 +1008,7 @@ mod tests {
         assert!(err.message().contains("is not defined"));
     }
 
-    // --- create_runtime_ast: operators ---
+    // --- create_runtime_ast：运算符 ---
 
     #[test]
     fn binary_node() {
@@ -1073,7 +1073,7 @@ mod tests {
         }
     }
 
-    // --- create_runtime_ast: member access ---
+    // --- create_runtime_ast：成员访问 ---
 
     #[test]
     fn member_dot_and_brackets() {
@@ -1121,7 +1121,7 @@ mod tests {
         assert!(create_runtime_ast(&bad).is_err());
     }
 
-    // --- create_runtime_ast: calls ---
+    // --- create_runtime_ast：调用 ---
 
     #[test]
     fn call_vector_constructor() {
@@ -1199,7 +1199,7 @@ mod tests {
 
     #[test]
     fn this_expression_is_not_defined() {
-        // `this` is not a czm_ variable nor a keyword -> "this is not defined."
+        // `this` 既不是 czm_ 变量也不是关键字 → "this is not defined."
         let err = create_runtime_ast(&JsepNode::ThisExpression).unwrap_err();
         assert!(err.message().contains("is not defined"));
     }
@@ -1225,7 +1225,7 @@ mod tests {
             vector_component(&v3, &Value::Number(1.0)),
             Some(Value::Number(2.0))
         );
-        // vec3 has no .a/.w component.
+        // vec3 没有 .a/.w 分量。
         assert_eq!(vector_component(&v3, &Value::String("a".into())), None);
 
         let v4 = Value::Cartesian4(DVec4::new(1.0, 2.0, 3.0, 4.0));
@@ -1244,7 +1244,7 @@ mod tests {
             vector_component(&v2, &Value::Number(0.0)),
             Some(Value::Number(7.0))
         );
-        // Non-vector property -> None.
+        // 非向量属性 → None。
         assert_eq!(
             vector_component(&Value::Number(1.0), &Value::String("x".into())),
             None

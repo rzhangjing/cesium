@@ -1,5 +1,5 @@
-//! Core/IntersectionTestsSpec.js, RaySpec.js, PlaneSpec.js, Intersections2DSpec.js
-//! → Rust integration tests
+//! Core/IntersectionTestsSpec.js、RaySpec.js、PlaneSpec.js、Intersections2DSpec.js
+//! → Rust 集成测试
 
 use cesium_geospatial::bounding::{AxisAlignedBoundingBox, BoundingSphere, OrientedBoundingBox};
 use cesium_geospatial::ray::{
@@ -15,7 +15,7 @@ use glam::DVec3;
 #[test]
 fn test_ray_new() {
     let origin = DVec3::new(1.0, 2.0, 3.0);
-    let direction = DVec3::new(0.0, 0.0, 5.0); // will be normalized
+    let direction = DVec3::new(0.0, 0.0, 5.0); // 会被归一化
     let r = Ray::new(origin, direction);
     assert_vec3_epsilon!(r.origin, origin, epsilon::EPSILON15);
     assert_approx!(r.direction.length(), 1.0, epsilon::EPSILON15);
@@ -53,7 +53,7 @@ fn test_plane_project_point() {
     assert_vec3_epsilon!(projected, DVec3::new(1.0, 2.0, 0.0), epsilon::EPSILON14);
 }
 
-// === Ray-Plane Intersection ===
+// === 射线-平面 相交 ===
 
 #[test]
 fn test_ray_plane_hit() {
@@ -77,7 +77,7 @@ fn test_ray_plane_behind_no_hit() {
     assert!(ray_plane(&r, &plane).is_none());
 }
 
-// === Ray-Sphere Intersection ===
+// === 射线-球 相交 ===
 
 #[test]
 fn test_ray_sphere_hit() {
@@ -104,7 +104,7 @@ fn test_ray_sphere_inside() {
     assert_approx!(stop, 5.0, epsilon::EPSILON10);
 }
 
-// === Ray-Triangle Intersection ===
+// === 射线-三角形 相交 ===
 
 #[test]
 fn test_ray_triangle_hit() {
@@ -125,7 +125,7 @@ fn test_ray_triangle_miss_outside() {
     assert!(ray_triangle(&r, v0, v1, v2, false).is_none());
 }
 
-// === Ray-Ellipsoid Intersection ===
+// === 射线-椭球 相交 ===
 
 #[test]
 fn test_ray_ellipsoid_hit() {
@@ -151,7 +151,7 @@ fn test_ray_ellipsoid_miss() {
     assert!(result.is_none());
 }
 
-// === Ray-AABB Intersection ===
+// === 射线-AABB 相交 ===
 
 #[test]
 fn test_ray_aabb_hit() {
@@ -168,7 +168,7 @@ fn test_ray_aabb_miss() {
     assert!(ray_aabb(&r, &aabb).is_none());
 }
 
-// === Ray-OBB Intersection ===
+// === 射线-OBB 相交 ===
 
 #[test]
 fn test_ray_obb_hit() {
@@ -187,7 +187,7 @@ fn test_ray_obb_miss() {
     assert!(ray_obb(&r, &obb).is_none());
 }
 
-// === Barycentric Coordinates (Intersections2D) ===
+// === 重心坐标 (Intersections2D) ===
 
 #[test]
 fn test_barycentric_at_vertex() {
@@ -211,7 +211,7 @@ fn test_barycentric_at_centroid() {
     assert_approx!(w, 1.0 / 3.0, epsilon::EPSILON10);
 }
 
-// === Intersect enum ===
+// === Intersect 枚举 ===
 
 #[test]
 fn test_intersect_variants() {

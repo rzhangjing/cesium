@@ -1,8 +1,8 @@
-//! DebugInspector / PerformanceOverlay / TilesetInspector specs
-//! Ported from CesiumJS Scene/DebugInspector.js
+//! DebugInspector / PerformanceOverlay / TilesetInspector 规范
+//! 移植自 CesiumJS Scene/DebugInspector.js
 //!
-//! A-class tests: enable/disable, tile recording, frame stats, summary,
-//! performance overlay history/fps/average, tileset inspector select/deselect
+//! A 类测试：启用/禁用、瓦片记录、帧统计、摘要、
+//! 性能叠加层 history/fps/average、tileset inspector 选中/取消选中
 
 use cesium_scene::{
     DebugInspector, FrameDebugStats, HighlightMode, PerformanceOverlay, TileDebugInfo,
@@ -91,7 +91,7 @@ fn debug_inspector_record_and_get_tile() {
     assert_eq!(info.triangles_count, 15000);
     assert!((info.load_time_ms - 12.5).abs() < 1e-10);
 
-    // Non-existent tile
+    // 不存在的瓦片
     assert!(inspector.get_tile_info(999).is_none());
 }
 

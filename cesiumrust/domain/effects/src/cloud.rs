@@ -1,87 +1,86 @@
-//! Cloud rendering system (CumulusCloud + CloudCollection).
+//! 云渲染系统（CumulusCloud + CloudCollection）。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Scene/CumulusCloud.js`
 //! - `Scene/CloudCollection.js`
 //! - `Scene/CloudType.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint 清理时重新审视，或本文件在其里程碑被重写时
 #![allow(clippy::field_reassign_with_default)]
 use glam::{DVec2, DVec3};
 
-// ─── M6.6 additive constants (CloudCollection.js / CloudNoiseFS.glsl / CloudCollectionFS.glsl) ───
+// ─── M6.6 新增常量（CloudCollection.js / CloudNoiseFS.glsl / CloudCollectionFS.glsl）───
 //
-// Everything below this line is ADDITIVE (M6.6): the original 426-line data model
-// (CumulusCloud / CloudCollection / CloudType) and its tests are untouched. The
-// constants mirror the upstream truth source byte-for-byte where one exists; the
-// physically-based scattering constants (HG phase `g`, Beer-Lambert extinction) are
-// an ADDITIVE extension — upstream CesiumJS cumulus clouds use the Gardner (1985)
-// sine-texture + Worley-FBM erosion model with a SINGLE ray/ellipsoid intersection,
-// NOT a multi-step HG/Beer-Lambert volume march. Both paths are provided; see the
-// module report + `docs/deviations.md#dev-032` (draft).
+// 本行以下的一切都是新增的（M6.6）：原有的 426 行数据模型
+// （CumulusCloud / CloudCollection / CloudType）及其测试保持不变。只要存在上游真值源，
+// 下面的常量就逐字节镜像它；基于物理的散射常量（HG 相位 `g`、Beer-Lambert 消光）
+// 是一个新增扩展——上游 CesiumJS 的 cumulus 云使用 Gardner (1985)
+// 正弦 texture + Worley-FBM 侵蚀模型，配合单次光线/椭球相交，
+// 而非多步 HG/Beer-Lambert 体积行进。两条路径都提供；参见
+// 模块报告 + `docs/deviations.md#dev-032`（草稿）。
 
-/// Edge length of the cubic noise volume, in voxels.
-/// Mirrors `CloudCollection.js` `_textureSliceWidth = 128` (L118). 128³ = 2_097_152
-/// voxels; at 3 Worley channels the CPU f64 reference is ~50 MB and the GPU RGBA8
-/// upload is 8 MB (see the memory-budget note in the M6.6 report).
+/// 立方 noise 体积的边长，以体素计。
+/// 镜像 `CloudCollection.js` `_textureSliceWidth = 128`（L118）。128³ = 2_097_152
+/// 个体素；在 3 个 Worley 通道下，CPU f64 参考约占 50 MB，而 GPU RGBA8
+/// 上传占 8 MB（参见 M6.6 报告中的内存预算说明）。
 pub const NOISE_TEXTURE_DIMENSIONS: usize = 128;
 
-/// Number of rows the upstream 2D noise atlas packs the 128³ volume into.
-/// Mirrors `CloudCollection.js` `_noiseTextureRows = 4` (L119).
+/// 上游 2D noise 图集将 128³ 体积打包成的行数。
+/// 镜像 `CloudCollection.js` `_noiseTextureRows = 4`（L119）。
 pub const NOISE_TEXTURE_ROWS: usize = 4;
 
-/// Number of Worley channels stored per voxel (worley0/1/2 → RGB).
-/// Mirrors `CloudNoiseFS.glsl` `main` (L88-91).
+/// 每个体素存储的 Worley 通道数（worley0/1/2 → RGB）。
+/// 镜像 `CloudNoiseFS.glsl` `main`（L88-91）。
 pub const NOISE_CHANNELS: usize = 3;
 
-/// Henyey-Greenstein anisotropy for in-scattering (ADDITIVE, not upstream).
-/// `g = 0.6` is the standard cumulus forward-scattering lobe.
+/// 内散射的 Henyey-Greenstein 各向异性（新增，非上游）。
+/// `g = 0.6` 是标准的 cumulus 前向散射瓣。
 pub const HG_PHASE_G: f64 = 0.6;
 
-/// Beer-Lambert extinction coefficient (ADDITIVE, not upstream), per render unit.
+/// Beer-Lambert 消光系数（新增，非上游），每渲染单位。
 pub const BEER_LAMBERT_EXTINCTION: f64 = 0.1;
 
-/// Ellipsoid shrink factor applied to `maximumSize` before intersection.
-/// Mirrors `CloudCollectionFS.glsl` `main` `ellipsoidScale = 0.82 * v_maximumSize` (L240).
+/// 相交前应用于 `maximumSize` 的椭球收缩因子。
+/// 镜像 `CloudCollectionFS.glsl` `main` `ellipsoidScale = 0.82 * v_maximumSize`（L240）。
 pub const ELLIPSOID_SCALE_FACTOR: f64 = 0.82;
 
-/// Minimum raymarch step count for the ADDITIVE volumetric path.
+/// 新增体积路径的最小 raymarch 步数。
 pub const RAYMARCH_STEPS_MIN: usize = 8;
-/// Maximum raymarch step count for the ADDITIVE volumetric path.
+/// 新增体积路径的最大 raymarch 步数。
 pub const RAYMARCH_STEPS_MAX: usize = 16;
-/// Default raymarch step count (mid-range, quality/cost balance).
+/// 默认 raymarch 步数（中程，质量/开销平衡）。
 pub const RAYMARCH_STEPS_DEFAULT: usize = 12;
 
-// Gardner (1985) "Visual Simulation of Clouds" texture constants — mirror
-// `CloudCollectionFS.glsl` L129-159.
-/// Contrast of the Gardner texture pattern (`T0`, L129).
+// Gardner (1985)《Visual Simulation of Clouds》texture 常量——镜像
+// `CloudCollectionFS.glsl` L129-159。
+/// Gardner texture 图案的对比度（`T0`，L129）。
 pub const GARDNER_T0: f64 = 0.6;
-/// Normalisation coefficient (`k`, L130).
+/// 归一化系数（`k`，L130）。
 pub const GARDNER_K: f64 = 0.1;
-/// Base octave coefficient (`C0`, L131).
+/// 基础八度系数（`C0`，L131）。
 pub const GARDNER_C0: f64 = 0.8;
-/// Base X frequency (`FX0`, L132).
+/// 基础 X 频率（`FX0`，L132）。
 pub const GARDNER_FX0: f64 = 0.6;
-/// Base Y frequency (`FY0`, L133).
+/// 基础 Y 频率（`FY0`，L133）。
 pub const GARDNER_FY0: f64 = 0.6;
-/// Gardner octave count (`octaves`, L134).
+/// Gardner 八度数（`octaves`，L134）。
 pub const GARDNER_OCTAVES: usize = 5;
-/// Ambient / scattered-light fraction (`a`, L151).
+/// 环境/散射光比例（`a`，L151）。
 pub const CLOUD_AMBIENT_FRACTION: f64 = 0.5;
-/// Texture-shading fraction (`t`, L152).
+/// texture 着色比例（`t`，L152）。
 pub const CLOUD_TEXTURE_FRACTION: f64 = 0.4;
-/// Specular fraction (`s`, L153).
+/// 镜面反射比例（`s`，L153）。
 pub const CLOUD_SPECULAR_FRACTION: f64 = 0.25;
-/// Fixed cloud light direction — mirror `CloudCollectionFS.glsl` L159
-/// `normalize(vec3(0.2, -1.0, 0.7))`.
+/// 固定的云光照方向——镜像 `CloudCollectionFS.glsl` L159
+/// `normalize(vec3(0.2, -1.0, 0.7))`。
 pub const CLOUD_LIGHT_DIR: DVec3 = DVec3::new(0.2, -1.0, 0.7);
 
-/// Worley FBM iteration cap — mirror `CloudNoiseFS.glsl` `MAX_FBM_ITERATIONS` (L60).
+/// Worley FBM 迭代上限——镜像 `CloudNoiseFS.glsl` `MAX_FBM_ITERATIONS`（L60）。
 pub const MAX_FBM_ITERATIONS: usize = 10;
-/// Worley FBM base persistence — mirror `CloudNoiseFS.glsl` L65.
+/// Worley FBM 基础持续度——镜像 `CloudNoiseFS.glsl` L65。
 pub const WORLEY_FBM_PERSISTENCE: f64 = 0.625;
-/// Small surface offset to avoid self-intersection — mirror `czm_epsilon2`
-/// (`CloudCollectionFS.glsl` L92).
+/// 避免自相交的小表面偏移——镜像 `czm_epsilon2`
+/// （`CloudCollectionFS.glsl` L92）。
 pub const CZM_EPSILON2: f64 = 1e-5;
 
 #[inline]
@@ -99,8 +98,8 @@ fn floor3(v: DVec3) -> DVec3 {
     DVec3::new(v.x.floor(), v.y.floor(), v.z.floor())
 }
 
-/// Mirror of `CloudNoiseFS.glsl` / `CloudCollectionFS.glsl` `wrap` (L6-13 / L10-17):
-/// positive modulo that stays in `[0, range_length)` for negative inputs too.
+/// `CloudNoiseFS.glsl` / `CloudCollectionFS.glsl` `wrap`（L6-13 / L10-17）的镜像：
+/// 正模运算，对负输入也保持在 `[0, range_length)` 内。
 pub fn wrap(value: f64, range_length: f64) -> f64 {
     if value < 0.0 {
         let abs_value = value.abs();
@@ -111,7 +110,7 @@ pub fn wrap(value: f64, range_length: f64) -> f64 {
     }
 }
 
-/// Component-wise [`wrap`] — mirror `wrapVec` (CloudNoiseFS.glsl L15-19).
+/// 逐分量的 [`wrap`]——镜像 `wrapVec`（CloudNoiseFS.glsl L15-19）。
 pub fn wrap_vec(value: DVec3, range_length: f64) -> DVec3 {
     DVec3::new(
         wrap(value.x, range_length),
@@ -120,9 +119,9 @@ pub fn wrap_vec(value: DVec3, range_length: f64) -> DVec3 {
     )
 }
 
-/// Mirror of `CloudNoiseFS.glsl` `random3` (L21-25): a hash-like pseudo-random
-/// point in `[0,1)³` from a cell centre. CPU f64 reference — the GPU
-/// (`cloud_noise.wgsl`) mirrors the same expression in f32.
+/// `CloudNoiseFS.glsl` `random3`（L21-25）的镜像：由单元格中心得到一个
+/// 类哈希的伪随机点，位于 `[0,1)³`。CPU f64 参考——GPU
+/// （`cloud_noise.wgsl`）以 f32 镜像同一个表达式。
 pub fn worley_random3(p: DVec3) -> DVec3 {
     let dot1 = p.dot(DVec3::new(127.1, 311.7, 932.8));
     let dot2 = p.dot(DVec3::new(269.5, 183.3, 421.4));
@@ -133,7 +132,7 @@ pub fn worley_random3(p: DVec3) -> DVec3 {
     )
 }
 
-/// Mirror of `CloudNoiseFS.glsl` `getWorleyCellPoint` (L29-36).
+/// `CloudNoiseFS.glsl` `getWorleyCellPoint`（L29-36）的镜像。
 fn worley_cell_point(
     center_cell: DVec3,
     offset: DVec3,
@@ -146,9 +145,9 @@ fn worley_cell_point(
     offset + worley_random3(cell)
 }
 
-/// Mirror of `CloudNoiseFS.glsl` `worleyNoise` (L38-58): the shortest distance from
-/// `p` (scaled by `freq`) to the nearest jittered cell centre over the 3×3×3
-/// neighbourhood. Result is in `[0, ~1.5]` (a cell diagonal).
+/// `CloudNoiseFS.glsl` `worleyNoise`（L38-58）的镜像：`p`（乘以 `freq`）到
+/// 3×3×3 邻域内最近抖动单格中心的最短距离。结果在
+/// `[0, ~1.5]`（一个单元格对角线）。
 pub fn worley_noise(
     p: DVec3,
     freq: f64,
@@ -175,8 +174,8 @@ pub fn worley_noise(
     shortest_distance
 }
 
-/// Mirror of `CloudNoiseFS.glsl` `worleyFBMNoise` (L62-76): `octaves` of Worley at
-/// doubling frequency / halving persistence, summed.
+/// `CloudNoiseFS.glsl` `worleyFBMNoise`（L62-76）：`octaves` 个 Worley，
+/// 频率倍增 / 持续度减半，求和。
 pub fn worley_fbm(
     p: DVec3,
     octaves: usize,
@@ -200,36 +199,36 @@ pub fn worley_fbm(
     noise
 }
 
-/// Cloud type enumeration.
+/// 云类型枚举。
 ///
-/// Maps to CesiumJS `Scene/CloudType.js`.
+/// 映射到 CesiumJS `Scene/CloudType.js`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum CloudType {
-    /// Cumulus clouds (billboard-based).
+    /// Cumulus 云（基于 billboard）。
     #[default]
     Cumulus,
 }
 
-/// A single cumulus cloud billboard in the 3D scene.
+/// 3D 场景中的单个 cumulus 云 billboard。
 ///
-/// Maps to CesiumJS `Scene/CumulusCloud.js`.
+/// 映射到 CesiumJS `Scene/CumulusCloud.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct CumulusCloud {
-    /// Whether the cloud is visible.
+    /// 云是否可见。
     pub show: bool,
-    /// World position of the cloud.
+    /// 云的世界位置。
     pub position: DVec3,
-    /// Billboard scale (width, height) in meters.
+    /// billboard 尺度（宽，高），以米计。
     pub scale: [f64; 2],
-    /// Maximum size of the cloud volume (x, y, z) in meters.
+    /// 云体积的最大尺寸 (x, y, z)，以米计。
     pub maximum_size: DVec3,
-    /// Cross-section slice through the cloud [0, 1], or negative for no slice.
+    /// 云的横截面切片 [0, 1]，若为负则无切片。
     pub slice: f64,
-    /// Brightness multiplier [0, 1].
+    /// 亮度乘数 [0, 1]。
     pub brightness: f64,
-    /// Cloud color as RGBA [0, 1].
+    /// 以 RGBA 表示的云颜色 [0, 1]。
     pub color: [f64; 4],
-    /// Internal index in the collection.
+    /// 在集合中的内部索引。
     index: i32,
 }
 
@@ -249,7 +248,7 @@ impl Default for CumulusCloud {
 }
 
 impl CumulusCloud {
-    /// Create a new cumulus cloud with position and maximum size.
+    /// 由位置与最大尺寸创建一个新的 cumulus 云。
     pub fn new(position: DVec3, maximum_size: DVec3) -> Self {
         let scale = [maximum_size.x, maximum_size.y];
         Self {
@@ -260,7 +259,7 @@ impl CumulusCloud {
         }
     }
 
-    /// Create with full options.
+    /// 用完整选项创建。
     pub fn with_options(
         position: DVec3,
         scale: [f64; 2],
@@ -281,15 +280,15 @@ impl CumulusCloud {
         }
     }
 
-    /// Get the cloud's index in the collection.
+    /// 获取云在集合中的索引。
     pub fn index(&self) -> i32 {
         self.index
     }
 
-    /// Compute the effective billboard dimensions considering slice.
+    /// 考虑 slice 后计算有效的 billboard 尺寸。
     pub fn effective_dimensions(&self) -> [f64; 2] {
         if self.slice >= 0.0 && self.slice <= 1.0 {
-            // Sliced clouds appear smaller
+            // 被切片的云看起来更小
             let factor = 1.0 - (self.slice - 0.5).abs() * 0.5;
             [self.scale[0] * factor, self.scale[1] * factor]
         } else {
@@ -297,30 +296,30 @@ impl CumulusCloud {
         }
     }
 
-    /// Check if the slice value is in the recommended range [0.1, 0.9].
+    /// 检查 slice 值是否处于推荐范围 [0.1, 0.9] 内。
     pub fn is_slice_recommended(&self) -> bool {
         self.slice < 0.0 || (self.slice >= 0.1 && self.slice <= 0.9)
     }
 }
 
-/// A renderable collection of clouds in the 3D scene.
+/// 3D 场景中可渲染的云集合。
 ///
-/// Maps to CesiumJS `Scene/CloudCollection.js`.
+/// 映射到 CesiumJS `Scene/CloudCollection.js`。
 #[derive(Debug, Clone)]
 pub struct CloudCollection {
-    /// Whether to display the clouds.
+    /// 是否显示云。
     pub show: bool,
-    /// Desired amount of detail in the noise texture.
+    /// noise texture 中期望的细节量。
     pub noise_detail: f64,
-    /// Desired translation of data in noise texture.
+    /// noise texture 中期望的数据平移量。
     pub noise_offset: DVec3,
-    /// For debugging: render billboards with opaque color.
+    /// 调试用：以不透明颜色渲染 billboard。
     pub debug_billboards: bool,
-    /// For debugging: render clouds as opaque ellipsoids.
+    /// 调试用：将云渲染为不透明椭球。
     pub debug_ellipsoids: bool,
-    /// The clouds in this collection.
+    /// 本集合中的云。
     clouds: Vec<CumulusCloud>,
-    /// Whether the collection needs a GPU buffer update.
+    /// 集合是否需要 GPU buffer 更新。
     dirty: bool,
 }
 
@@ -339,12 +338,12 @@ impl Default for CloudCollection {
 }
 
 impl CloudCollection {
-    /// Create a new empty cloud collection.
+    /// 创建一个空的云集合。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Create with noise parameters.
+    /// 由 noise 参数创建。
     pub fn with_noise(noise_detail: f64, noise_offset: DVec3) -> Self {
         Self {
             noise_detail,
@@ -353,7 +352,7 @@ impl CloudCollection {
         }
     }
 
-    /// Add a cloud to the collection. Returns the cloud's index.
+    /// 向集合添加一朵云。返回云的索引。
     pub fn add(&mut self, mut cloud: CumulusCloud) -> usize {
         let index = self.clouds.len();
         cloud.index = index as i32;
@@ -362,11 +361,11 @@ impl CloudCollection {
         index
     }
 
-    /// Remove a cloud by index.
+    /// 按索引移除一朵云。
     pub fn remove(&mut self, index: usize) -> Option<CumulusCloud> {
         if index < self.clouds.len() {
             let cloud = self.clouds.remove(index);
-            // Reindex remaining clouds
+            // 重新索引剩余的云
             for (i, c) in self.clouds.iter_mut().enumerate().skip(index) {
                 c.index = i as i32;
             }
@@ -377,18 +376,18 @@ impl CloudCollection {
         }
     }
 
-    /// Remove all clouds.
+    /// 移除所有云。
     pub fn remove_all(&mut self) {
         self.clouds.clear();
         self.dirty = true;
     }
 
-    /// Get a cloud by index.
+    /// 按索引获取一朵云。
     pub fn get(&self, index: usize) -> Option<&CumulusCloud> {
         self.clouds.get(index)
     }
 
-    /// Get a mutable cloud by index.
+    /// 按索引获取一朵云的可变引用。
     pub fn get_mut(&mut self, index: usize) -> Option<&mut CumulusCloud> {
         if index < self.clouds.len() {
             self.dirty = true;
@@ -398,44 +397,44 @@ impl CloudCollection {
         }
     }
 
-    /// Get the number of clouds.
+    /// 获取云的数量。
     pub fn len(&self) -> usize {
         self.clouds.len()
     }
 
-    /// Check if the collection is empty.
+    /// 检查集合是否为空。
     pub fn is_empty(&self) -> bool {
         self.clouds.is_empty()
     }
 
-    /// Get all clouds.
+    /// 获取所有云。
     pub fn clouds(&self) -> &[CumulusCloud] {
         &self.clouds
     }
 
-    /// Get visible clouds only.
+    /// 仅获取可见的云。
     pub fn visible_clouds(&self) -> impl Iterator<Item = &CumulusCloud> {
         self.clouds.iter().filter(|c| c.show)
     }
 
-    /// Check if the collection needs a GPU update.
+    /// 检查集合是否需要 GPU 更新。
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
 
-    /// Mark the collection as clean (after GPU update).
+    /// 将集合标记为干净（在 GPU 更新之后）。
     pub fn mark_clean(&mut self) {
         self.dirty = false;
     }
 
-    /// Compute the total bounding sphere of all visible clouds.
+    /// 计算所有可见云的总包围球。
     pub fn compute_bounding_sphere(&self) -> Option<(DVec3, f64)> {
         let visible: Vec<_> = self.visible_clouds().collect();
         if visible.is_empty() {
             return None;
         }
 
-        // Simple centroid + max distance approach
+        // 简单的形心 + 最大距离方法
         let mut center = DVec3::ZERO;
         for cloud in &visible {
             center += cloud.position;
@@ -453,10 +452,10 @@ impl CloudCollection {
     }
 }
 
-// ─── Perlin gradient noise (ADDITIVE — the "Perlin" half of Perlin-Worley) ──────
+// ─── Perlin 梯度 noise（新增——Perlin-Worley 中的“Perlin”那一半）───────
 
-/// Classic Perlin permutation table (Ken Perlin's 2002 improved-noise ordering).
-/// Deterministic; the GPU `cloud_noise.wgsl` mirrors the same table.
+/// 经典 Perlin 置换表（Ken Perlin 2002 改进 noise 的排序）。
+/// 确定性；GPU `cloud_noise.wgsl` 镜像同一张表。
 const PERLIN_PERM: [u8; 256] = [
     151, 160, 137, 91, 90, 15, 131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140, 36, 103, 30, 69,
     142, 8, 99, 37, 240, 21, 10, 23, 190, 6, 148, 247, 120, 234, 75, 0, 26, 197, 62, 94, 252, 219,
@@ -475,7 +474,7 @@ const PERLIN_PERM: [u8; 256] = [
 
 #[inline]
 fn perlin_fade(t: f64) -> f64 {
-    // 6t⁵ − 15t⁴ + 10t³ (NO FMA contraction — three separate roundings).
+    // 6t⁵ − 15t⁴ + 10t³（不做 FMA 收缩——三次独立舍入）。
     t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
 }
 
@@ -485,7 +484,7 @@ fn perlin_perm(index: usize) -> usize {
 }
 
 fn perlin_grad(hash: usize, x: f64, y: f64, z: f64) -> f64 {
-    // 12 gradient directions (Perlin's improved set), reduced to the 8 cube corners.
+    // 12 个梯度方向（Perlin 的改进集），归约到 8 个立方角。
     let h = hash & 15;
     let u = if h < 8 { x } else { y };
     let v = if h < 4 { y } else if h == 12 || h == 14 { x } else { z };
@@ -494,10 +493,10 @@ fn perlin_grad(hash: usize, x: f64, y: f64, z: f64) -> f64 {
     u_term + v_term
 }
 
-/// Classic improved-Perlin 3D gradient noise in approximately `[-1, 1]`.
-/// ADDITIVE: upstream CesiumJS cumulus clouds store pure Worley-FBM channels; the
-/// Perlin base is the low-frequency "shape" half of the standard Perlin-Worley
-/// cloud model (Decima / Hillaire), provided here for the volumetric path.
+/// 近似位于 `[-1, 1]` 的经典改进 Perlin 3D 梯度 noise。
+/// 新增：上游 CesiumJS cumulus 云存储纯 Worley-FBM 通道；
+/// Perlin 基底是标准 Perlin-Worley 云模型（Decima / Hillaire）中低频的“形状”
+/// 那一半，在此为体积路径提供。
 pub fn perlin_noise_3d(p: DVec3) -> f64 {
     let x = p.x.floor() as i64;
     let y = p.y.floor() as i64;
@@ -530,38 +529,37 @@ pub fn perlin_noise_3d(p: DVec3) -> f64 {
 
 #[inline]
 fn lerp(a: f64, b: f64, t: f64) -> f64 {
-    // Two roundings (NO FMA): a + (b − a)·t keeps the subtraction and the
-    // multiply/add distinct, matching the WGSL reference.
+    // 两次舍入（无 FMA）：a + (b − a)·t 使减法与乘/加保持独立，
+    // 与 WGSL 参考一致。
     a + (b - a) * t
 }
 
-/// A CPU f64 reference noise volume: `dimensions³` voxels × [`NOISE_CHANNELS`]
-/// Worley-FBM channels, mirroring `CloudNoiseFS.glsl` `main` (L78-92).
+/// 一个 CPU f64 参考 noise 体积：`dimensions³` 个体素 × [`NOISE_CHANNELS`]
+/// 个 Worley-FBM 通道，镜像 `CloudNoiseFS.glsl` `main`（L78-92）。
 ///
-/// The GPU path (`cloud_noise.wgsl`) generates the same volume into a `texture_3d`;
-/// this struct is the deterministic reference used by the unit tests and (optionally)
-/// as a CPU-upload fallback when a 3D texture is unavailable. `data` is laid out
-/// channel-major within a voxel and z-slowest:
-/// `index = ((z·dim + y)·dim + x)·CHANNELS + c`.
+/// GPU 路径（`cloud_noise.wgsl`）将同一个体积生成到一个 `texture_3d`；
+/// 本结构是单元测试使用的确定性参考，并（可选地）在 3D texture
+/// 不可用时作为 CPU 上传回退。`data` 布局为体素内 channel-major、z 最慢：
+/// `index = ((z·dim + y)·dim + x)·CHANNELS + c`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct NoiseVolume {
-    /// Edge length in voxels (production = [`NOISE_TEXTURE_DIMENSIONS`] = 128).
+    /// 以体素计的边长（生产环境 = [`NOISE_TEXTURE_DIMENSIONS`] = 128）。
     pub dimensions: usize,
-    /// Worley-FBM detail divisor — mirror `u_noiseDetail` (default 16).
+    /// Worley-FBM 细节除数——镜像 `u_noiseDetail`（默认 16）。
     pub detail: f64,
-    /// Noise translation — mirror `u_noiseOffset`.
+    /// noise 平移——镜像 `u_noiseOffset`。
     pub noise_offset: DVec3,
-    /// Flat voxel data, `dimensions³ · NOISE_CHANNELS` f64 values in `[0, 1]`.
+    /// 扁平体素数据，`dimensions³ · NOISE_CHANNELS` 个 `[0, 1]` 内的 f64 值。
     pub data: Vec<f64>,
 }
 
 impl NoiseVolume {
-    /// Generates a `dimensions³` Worley-FBM volume. Mirrors `CloudNoiseFS.glsl`
-    /// `main`: each voxel centre `position = (x, y, z) / detail` yields three
-    /// clamped `worley_fbm(position, 3 octaves, scale ∈ {1, 2, 3})` channels.
+    /// 生成一个 `dimensions³` 的 Worley-FBM 体积。镜像 `CloudNoiseFS.glsl`
+    /// `main`：每个体素中心 `position = (x, y, z) / detail` 产生三个
+    /// 被钳制的 `worley_fbm(position, 3 octaves, scale ∈ {1, 2, 3})` 通道。
     ///
-    /// Cost is `dimensions³ · 3 · (3 octaves · 27 cells)`; production 128³ is a
-    /// one-off GPU/upload step, while tests use a small `dimensions` (≤ 16).
+    /// 开销为 `dimensions³ · 3 · (3 octaves · 27 cells)`；生产环境 128³ 是一个
+    /// 一次性的 GPU/上传步骤，而测试使用较小的 `dimensions`（≤ 16）。
     pub fn generate(dimensions: usize, detail: f64, noise_offset: DVec3) -> Self {
         let slice_width = dimensions as f64;
         let mut data = vec![0.0_f64; dimensions * dimensions * dimensions * NOISE_CHANNELS];
@@ -585,7 +583,7 @@ impl NoiseVolume {
         }
     }
 
-    /// Fetches the raw 3-channel value at integer voxel `(x, y, z)` (wrapped).
+    /// 获取整数体素 `(x, y, z)` 处的原始 3 通道值（回绕）。
     pub fn voxel(&self, x: usize, y: usize, z: usize) -> [f64; NOISE_CHANNELS] {
         let d = self.dimensions;
         let wx = x.rem_euclid(d);
@@ -599,9 +597,9 @@ impl NoiseVolume {
         ]
     }
 
-    /// Trilinear interpolation of the volume at a continuous voxel-space `position`.
-    /// Mirrors `CloudCollectionFS.glsl` `sampleNoiseTexture` (L51-65): recenter by
-    /// half the slice width, then `floor`/`fract` + 3-axis `mix`.
+    /// 在连续的体素空间 `position` 处对体积做三线性插值。
+    /// 镜像 `CloudCollectionFS.glsl` `sampleNoiseTexture`（L51-65）：先以
+    /// 半个切片宽度重新居中，然后 `floor`/`fract` + 三轴 `mix`。
     pub fn sample_trilinear(&self, position: DVec3) -> [f64; NOISE_CHANNELS] {
         let d = self.dimensions as f64;
         let recentered = position + DVec3::splat(d / 2.0);
@@ -629,10 +627,10 @@ impl NoiseVolume {
         mix3(y0, y1, lerp_value.z)
     }
 
-    /// Packs the volume into RGBA8 bytes for the GPU upload boundary (the single
-    /// f64 → u8 projection). Alpha is 255; RGB are the three Worley channels.
-    /// Layout matches a `128 × (128·ROWS)` 2D atlas OR a `128³` 3D texture
-    /// (z-slowest), so the same bytes serve either the atlas or the D3 route.
+    /// 将体积打包为 RGBA8 字节用于 GPU 上传边界（唯一的
+    /// f64 → u8 投影）。Alpha 为 255；RGB 为三个 Worley 通道。
+    /// 布局要么匹配一个 `128 × (128·ROWS)` 的 2D 图集，要么匹配一个 `128³` 的 3D texture
+    /// （z 最慢），因此同一批字节要么服务于图集要么服务于 D3 路径。
     pub fn to_rgba8_bytes(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(self.data.len() / NOISE_CHANNELS * 4);
         for voxel in self.data.chunks_exact(NOISE_CHANNELS) {
@@ -645,42 +643,41 @@ impl NoiseVolume {
     }
 }
 
-// ─── Billboard geometry (mirror CloudCollectionVS.glsl) ──────────────────────
+// ─── Billboard 几何（镜像 CloudCollectionVS.glsl）──────────────────────
 
-/// Two-triangle quad indices — mirror `CloudCollection.js` `textureIndices` (L451).
+/// 两三角形四边形索引——镜像 `CloudCollection.js` `textureIndices`（L451）。
 pub const BILLBOARD_INDICES: [u32; 6] = [0, 1, 2, 0, 2, 3];
 
-/// The four corner UVs of a cloud billboard — mirror the `coordinates` attribute
-/// (`CloudCollectionVS.glsl` L24 / L34 `offset = dir - vec2(0.5, 0.5)`).
+/// 一朵云 quad 的四个角 UV——镜像 `coordinates` 属性
+/// （`CloudCollectionVS.glsl` L24 / L34 `offset = dir - vec2(0.5, 0.5)`）。
 pub const BILLBOARD_CORNER_UVS: [[f64; 2]; 4] =
     [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
 
-/// A camera-facing quad (4 world-space vertices) for one cumulus cloud.
+/// 一朵 cumulus 云的面向相机四边形（4 个世界空间顶点）。
 ///
-/// Mirrors `CloudCollectionVS.glsl`: the corners are offset from the cloud centre
-/// by `scale * (uv - 0.5)` along the camera right/up basis, so every billboard is
-/// parallel to the view plane (screen-aligned, as upstream does in eye space).
+/// 镜像 `CloudCollectionVS.glsl`：各角由云中心沿相机的 right/up 基偏移
+/// `scale * (uv - 0.5)`，因此每个 billboard 都平行于视平面（与上游在眼空间中所做的一样，屏幕对齐）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct BillboardGeometry {
-    /// World-space corner positions (metric f64), matching [`BILLBOARD_CORNER_UVS`].
+    /// 世界空间角位置（度量 f64），与 [`BILLBOARD_CORNER_UVS`] 对应。
     pub positions: [[f64; 3]; 4],
-    /// Per-corner UVs in `[0,1]²`.
+    /// 每角在 `[0,1]²` 内的 UV。
     pub uvs: [[f64; 2]; 4],
-    /// Triangle indices ([`BILLBOARD_INDICES`]).
+    /// 三角索引（[`BILLBOARD_INDICES`]）。
     pub indices: [u32; 6],
-    /// The cloud centre the quad is built around.
+    /// 四边形构建围绕的云中心。
     pub center: DVec3,
-    /// Unit normal guaranteed to point FROM the cloud TOWARD the camera.
+    /// 保证从云指向相机（FROM 云 TOWARD 相机）的单位法线。
     pub normal: DVec3,
 }
 
 impl CloudCollection {
-    /// Builds one camera-facing billboard quad for `cloud`.
+    /// 为 `cloud` 构建一个面向相机的 billboard 四边形。
     ///
-    /// `cam_right` / `cam_up` are the (world-space) camera basis vectors; the quad
-    /// lies in the plane they span, centred on `cloud.position`, sized by
-    /// [`CumulusCloud::effective_dimensions`]. `camera_position` is used only to
-    /// orient [`BillboardGeometry::normal`] toward the eye (handedness-robust).
+    /// `cam_right` / `cam_up` 是（世界空间的）相机基向量；四边形位于
+    /// 它们张成的平面上，以 `cloud.position` 为中心，由
+    /// [`CumulusCloud::effective_dimensions`] 定尺。`camera_position` 仅用于
+    /// 将 [`BillboardGeometry::normal`] 转向眼睛（对坐标系手性稳健）。
     pub fn build_billboard(
         cloud: &CumulusCloud,
         camera_position: DVec3,
@@ -691,7 +688,7 @@ impl CloudCollection {
         let right = cam_right.normalize();
         let up = cam_up.normalize();
         let mut normal = right.cross(up);
-        // Guarantee the normal faces the camera regardless of basis handedness.
+        // 保证无论基的手性如何，法线都面向相机。
         if normal.dot(camera_position - cloud.position) < 0.0 {
             normal = -normal;
         }
@@ -712,7 +709,7 @@ impl CloudCollection {
         }
     }
 
-    /// Builds billboards for every visible cloud (skips `show == false`).
+    /// 为每一朵可见云构建 billboard（跳过 `show == false`）。
     pub fn build_geometry(
         &self,
         camera_position: DVec3,
@@ -725,23 +722,23 @@ impl CloudCollection {
     }
 }
 
-// ─── Gardner (1985) texture + intensity (mirror CloudCollectionFS.glsl) ───────
+// ─── Gardner (1985) texture + 强度（镜像 CloudCollectionFS.glsl）───────
 
-/// Mirror of `CloudCollectionFS.glsl` `phaseShift2D` (L118-120).
+/// `CloudCollectionFS.glsl` `phaseShift2D`（L118-120）的镜像。
 fn phase_shift_2d(p: DVec2, freq: DVec2) -> DVec2 {
     let half_pi = std::f64::consts::FRAC_PI_2;
     DVec2::new(half_pi * (freq.y * p.y).sin(), half_pi * (freq.x * p.x).sin())
 }
 
-/// Mirror of `CloudCollectionFS.glsl` `phaseShift3D` (L122-124).
+/// `CloudCollectionFS.glsl` `phaseShift3D`（L122-124）的镜像。
 fn phase_shift_3d(p: DVec3, freq: DVec2) -> DVec2 {
     let s = (freq.x * p.z).sin();
     phase_shift_2d(DVec2::new(p.x, p.y), freq)
         + DVec2::new(std::f64::consts::PI * s, std::f64::consts::PI * s)
 }
 
-/// Mirror of `CloudCollectionFS.glsl` `T` (L136-149): Gardner's sine-sum cloud
-/// texture function. `Ci *= 0.707` and `FXY *= 2.0` happen BEFORE each octave's use.
+/// `CloudCollectionFS.glsl` `T`（L136-149）的镜像：Gardner 的正弦和云
+/// texture 函数。`Ci *= 0.707` 和 `FXY *= 2.0` 在每个八度使用之前发生。
 pub fn gardner_texture(point: DVec3) -> f64 {
     let mut sum = DVec2::ZERO;
     let mut ci = GARDNER_C0;
@@ -759,9 +756,8 @@ pub fn gardner_texture(point: DVec3) -> f64 {
     GARDNER_K * sum.x * sum.y
 }
 
-/// Mirror of `CloudCollectionFS.glsl` `I` (L155-157): combines diffuse (`id`),
-/// specular (`is`) and texture (`it`) terms with the fixed ambient/texture/specular
-/// fractions.
+/// `CloudCollectionFS.glsl` `I`（L155-157）的镜像：以固定的环境/texture/镜面
+/// 比例组合漫反射（`id`）、镜面（`is`）与 texture（`it`）项。
 pub fn cloud_intensity(id: f64, is: f64, it: f64) -> f64 {
     let a = CLOUD_AMBIENT_FRACTION;
     let t = CLOUD_TEXTURE_FRACTION;
@@ -769,10 +765,10 @@ pub fn cloud_intensity(id: f64, is: f64, it: f64) -> f64 {
     (1.0 - a) * ((1.0 - t) * ((1.0 - s) * id + s * is) + t * it) + a
 }
 
-// ─── Ray / ellipsoid intersection (mirror CloudCollectionFS.glsl) ─────────────
+// ─── 光线 / 椭球相交（镜像 CloudCollectionFS.glsl）─────────────
 
-/// A ray/ellipsoid intersection: the surface `point`, the unit-sphere `normal`, and
-/// the ray parameter `t`.
+/// 一个光线/椭球相交：表面 `point`、单位球 `normal`，以及
+/// 光线参数 `t`。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EllipsoidHit {
     pub point: DVec3,
@@ -780,8 +776,8 @@ pub struct EllipsoidHit {
     pub t: f64,
 }
 
-/// Mirror of `CloudCollectionFS.glsl` `intersectSphere` (L68-94): intersection with
-/// a unit sphere of radius 0.5 at the origin, honouring the optional `slice` plane.
+/// `CloudCollectionFS.glsl` `intersectSphere`（L68-94）的镜像：与原点处
+/// 半径 0.5 的单位球相交，并尊重可选的 `slice` 平面。
 pub fn intersect_sphere(origin: DVec3, dir: DVec3, slice: f64) -> Option<EllipsoidHit> {
     let a = dir.dot(dir);
     let b = origin.dot(dir);
@@ -797,7 +793,7 @@ pub fn intersect_sphere(origin: DVec3, dir: DVec3, slice: f64) -> Option<Ellipso
     }
     let mut point = origin + dir * t;
     if slice >= 0.0 {
-        // point.z = (slice / 2.0) - 0.5 (GLSL swizzle write → whole-vector rebuild).
+        // point.z = (slice / 2.0) - 0.5（GLSL swizzle 写入 → 整向量重建）。
         point = DVec3::new(point.x, point.y, slice / 2.0 - 0.5);
         if point.length() > 0.5 {
             return None;
@@ -808,9 +804,9 @@ pub fn intersect_sphere(origin: DVec3, dir: DVec3, slice: f64) -> Option<Ellipso
     Some(EllipsoidHit { point, normal, t })
 }
 
-/// Mirror of `CloudCollectionFS.glsl` `intersectEllipsoid` (L98-113): transforms the
-/// ray into unit-sphere space, intersects, then maps the point back. The `normal`
-/// stays in unit-sphere space (upstream does NOT rescale it).
+/// `CloudCollectionFS.glsl` `intersectEllipsoid`（L98-113）的镜像：将光线
+/// 变换到单位球空间，相交，再将点映回。`normal` 保持在单位球空间
+/// （上游并**不**对它重新缩放）。
 pub fn intersect_ellipsoid(
     origin: DVec3,
     dir: DVec3,
@@ -828,18 +824,17 @@ pub fn intersect_ellipsoid(
     Some(hit)
 }
 
-/// Mirror of `CloudCollectionFS.glsl` `drawCloud` (L161-230): the FAITHFUL upstream
-/// cumulus shading — a single ellipsoid intersection, Gardner texture + Worley-FBM
-/// erosion, returning premultiplied `rgba` (alpha = translucency `TR`).
+/// `CloudCollectionFS.glsl` `drawCloud`（L161-230）的镜像：忠实的上游
+/// cumulus 着色——单次椭球相交，Gardner texture + Worley-FBM 侵蚀，
+/// 返回预乘的 `rgba`（alpha = 半透明度 `TR`）。
 ///
-/// `noise` / `noise_detail` drive the `sampleNoiseTexture(u_noiseDetail * point)`
-/// call (L175). Returns `[0,0,0,0]` on a miss (upstream returns `vec4(0.0)`).
+/// `noise` / `noise_detail` 驱动 `sampleNoiseTexture(u_noiseDetail * point)`
+/// 调用（L175）。错过时返回 `[0,0,0,0]`（上游返回 `vec4(0.0)`）。
 ///
-/// `#[allow(clippy::too_many_arguments)]`: the 9-argument list is a deliberate
-/// 1:1 mirror of upstream `drawCloud`'s uniform inputs (ray, ellipsoid, shading,
-/// noise). Collapsing it into param structs would obscure the domain-WGSL parity
-/// this reference exists to guarantee, and there are no production callers
-/// yet (the adapter constructs these from GPU uniforms). See `docs/deviations.md#dev-032`.
+/// `#[allow(clippy::too_many_arguments)]`：9 参数的列表是有意对上游 `drawCloud`
+/// 的 uniform 输入（光线、椭球、着色、noise）做 1:1 镜像。将它们
+/// 折叠进参数结构体会模糊本参考所必须保证的领域-WGSL 平价，且尚无
+/// 生产调用方（适配器从 GPU uniform 构造这些参数）。参见 `docs/deviations.md#dev-032`。
 #[allow(clippy::too_many_arguments)]
 pub fn draw_cloud(
     ray_origin: DVec3,
@@ -857,8 +852,8 @@ pub fn draw_cloud(
         None => return [0.0; 4],
     };
     let light_dir = CLOUD_LIGHT_DIR.normalize();
-    let id = hit.normal.dot(-light_dir).clamp(0.0, 1.0); // diffuse
-    let is = (-light_dir).dot(-ray_dir).max(0.0).powi(2); // specular
+    let id = hit.normal.dot(-light_dir).clamp(0.0, 1.0); // 漫反射
+    let is = (-light_dir).dot(-ray_dir).max(0.0).powi(2); // 镜面
     let it = gardner_texture(hit.point); // texture
     let intensity = cloud_intensity(id, is, it);
     let shaded = intensity * brightness.clamp(0.1, 1.0);
@@ -869,7 +864,7 @@ pub fn draw_cloud(
     let w3 = n[2];
 
     let nd_dot = hit.normal.dot(-ray_dir).clamp(0.0, 1.0);
-    let mut tr = nd_dot.powi(3) - w; // translucency
+    let mut tr = nd_dot.powi(3) - w; // 半透明度
     tr *= 1.3;
     let minus_dot = 0.5 - nd_dot;
     tr -= (minus_dot * w2).min(0.0);
@@ -890,39 +885,39 @@ pub fn draw_cloud(
     ]
 }
 
-// ─── Physically-based scattering (ADDITIVE — NOT upstream cumulus) ───────────
+// ─── 基于物理的散射（新增——非上游 cumulus）───────────
 
-/// Henyey-Greenstein phase function (normalised over the sphere). `g = 0` is
-/// isotropic; `g > 0` is forward-scattering. ADDITIVE extension: upstream cumulus
-/// uses the Gardner specular/diffuse terms, not a phase function.
+/// Henyey-Greenstein 相位函数（在球面上归一化）。`g = 0` 是
+/// 各向同性；`g > 0` 是前向散射。新增扩展：上游 cumulus
+/// 使用 Gardner 的镜面/漫反射项，而非相位函数。
 pub fn henyey_greenstein(cos_theta: f64, g: f64) -> f64 {
     let g2 = g * g;
     let denom = 1.0 + g2 - 2.0 * g * cos_theta;
-    // Guard the degenerate denominator (g → ±1 with cos_theta → ±1).
+    // 守护退化的分母（g → ±1 且 cos_theta → ±1）。
     if denom.abs() < 1e-12 {
         return 0.0;
     }
     (1.0 - g2) / (4.0 * std::f64::consts::PI * denom.powf(1.5))
 }
 
-/// Beer-Lambert transmittance `exp(-density · extinction · distance)` over a step.
+/// 一个步长上的 Beer-Lambert 透射率 `exp(-density · extinction · distance)`。
 pub fn beer_lambert_transmittance(density: f64, extinction: f64, distance: f64) -> f64 {
     (-(density * extinction * distance)).exp()
 }
 
-/// Result of the ADDITIVE volumetric raymarch through one cloud ellipsoid.
+/// 新增体积 raymarch 穿过一个云椭球的结果。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RaymarchResult {
-    /// Accumulated transmittance after the march (in `(0, 1]`).
+    /// 行进后的累积透射率（在 `(0, 1]` 内）。
     pub transmittance: f64,
-    /// Accumulated in-scattered radiance (HG phase × absorbed energy).
+    /// 累积的内散射辐射（HG 相位 × 吸收能量）。
     pub scattered: f64,
-    /// Number of steps actually taken.
+    /// 实际取的步数。
     pub steps_taken: usize,
 }
 
-/// The near/far ray parameters where the ray enters/exits the unit-sphere-space
-/// ellipsoid (both roots, near clamped to 0). Returns `None` on a miss.
+/// 光线进入/离开单位球空间椭球的近/远光线参数
+/// （两个根，近端钳制到 0）。错过时返回 `None`。
 fn ellipsoid_interval(
     origin: DVec3,
     dir: DVec3,
@@ -950,15 +945,14 @@ fn ellipsoid_interval(
     Some((t0, t1))
 }
 
-/// ADDITIVE volumetric raymarch: marches `steps` (clamped to
-/// `[RAYMARCH_STEPS_MIN, RAYMARCH_STEPS_MAX]`) samples between the ellipsoid entry
-/// and exit, accumulating Beer-Lambert extinction and HG in-scattering. This is the
-/// physically-based alternative to upstream's single-intersection `drawCloud`; both
-/// are exposed so the render path can choose fidelity vs cost.
+/// 新增的体积 raymarch：在椭球入口与出口之间行进 `steps`
+/// （钳制到 `[RAYMARCH_STEPS_MIN, RAYMARCH_STEPS_MAX]`）个采样，累积 Beer-Lambert
+/// 消光与 HG 内散射。这是上游单次相交 `drawCloud` 的基于物理的替代
+/// 方案；两者都对外暴露，以便渲染路径在保真度与开销之间选择。
 ///
-/// `#[allow(clippy::too_many_arguments)]`: same rationale as [`draw_cloud`] — the
-/// signature mirrors the volumetric raymarch uniform set (ray, ellipsoid, march,
-/// noise, scattering) rather than an idiomatic Rust grouping.
+/// `#[allow(clippy::too_many_arguments)]`：与 [`draw_cloud`] 同样的理由——该
+/// 签名镜像体积 raymarch 的 uniform 集（光线、椭球、行进、
+/// noise、散射），而非惯用的 Rust 分组。
 #[allow(clippy::too_many_arguments)]
 pub fn raymarch_density(
     ray_origin: DVec3,
@@ -1046,15 +1040,15 @@ mod tests {
     #[test]
     fn test_cumulus_cloud_effective_dimensions() {
         let mut cloud = CumulusCloud::default();
-        // No slice (negative) => full scale
+        // 无切片（负值）=> 完整尺度
         assert_eq!(cloud.effective_dimensions(), [20.0, 12.0]);
 
-        // Slice at 0.5 => factor = 1.0
+        // 切片在 0.5 => factor = 1.0
         cloud.slice = 0.5;
         let dims = cloud.effective_dimensions();
         assert!((dims[0] - 20.0).abs() < 1e-10);
 
-        // Slice at 0.0 => factor = 0.75
+        // 切片在 0.0 => factor = 0.75
         cloud.slice = 0.0;
         let dims = cloud.effective_dimensions();
         assert!((dims[0] - 15.0).abs() < 1e-10);
@@ -1063,7 +1057,7 @@ mod tests {
     #[test]
     fn test_cumulus_cloud_slice_recommended() {
         let mut cloud = CumulusCloud::default();
-        assert!(cloud.is_slice_recommended()); // -1.0 is ok
+        assert!(cloud.is_slice_recommended()); // -1.0 是可以的
 
         cloud.slice = 0.5;
         assert!(cloud.is_slice_recommended());
@@ -1098,7 +1092,7 @@ mod tests {
         let removed = collection.remove(0);
         assert!(removed.is_some());
         assert_eq!(collection.len(), 1);
-        // Remaining cloud should be reindexed
+        // 剩余的云应被重新索引
         assert_eq!(collection.get(0).unwrap().index(), 0);
     }
 
@@ -1164,7 +1158,7 @@ mod tests {
         assert_eq!(CloudType::default(), CloudType::Cumulus);
     }
 
-    // ─── M6.6 additive tests: noise / billboard / intersection / scattering ────
+    // ─── M6.6 新增测试：noise / billboard / 相交 / 散射 ────
 
     #[test]
     fn noise_worley_fbm_non_negative_monotone_in_octaves_and_deterministic() {
@@ -1172,9 +1166,9 @@ mod tests {
         let w1 = worley_fbm(p, 1, 1.0, 16.0, DVec3::ZERO, 128.0);
         let w3 = worley_fbm(p, 3, 1.0, 16.0, DVec3::ZERO, 128.0);
         assert!(w1 >= 0.0 && w1.is_finite(), "worley distance is non-negative");
-        // Each octave adds a non-negative term (persistence > 0) ⇒ 3 ≥ 1.
+        // 每个八度都添加一个非负项（持续度 > 0）⇒ 3 ≥ 1。
         assert!(w3 >= w1 - 1e-12, "more octaves only add energy");
-        // Deterministic reference (the GPU f32 mirror is cross-checked loosely).
+        // 确定性参考（GPU f32 镜像会宽松地交叉校验）。
         assert_eq!(w3, worley_fbm(p, 3, 1.0, 16.0, DVec3::ZERO, 128.0));
     }
 
@@ -1187,7 +1181,7 @@ mod tests {
             "worley channels clamped to [0,1]"
         );
         assert_eq!(v, NoiseVolume::generate(8, 8.0, DVec3::ZERO), "deterministic");
-        // Trilinear at an exact integer voxel (recentered) returns that voxel.
+        // 在恰好为整数体素（重新居中）处的三线性插值返回那个体素。
         let vox = v.voxel(2, 3, 4);
         let sampled = v.sample_trilinear(DVec3::new(2.0, 3.0, 4.0) - DVec3::splat(4.0));
         for c in 0..NOISE_CHANNELS {
@@ -1223,7 +1217,7 @@ mod tests {
         }
         assert!(min >= -1.5 && max <= 1.5, "Perlin bounded ≈ [-1,1]: [{min}, {max}]");
         assert!((sum / n as f64).abs() < 0.3, "roughly zero-mean");
-        // Continuity: points 1e-3 apart differ by < 0.05.
+        // 连续性：相距 1e-3 的点差异 < 0.05。
         let a = perlin_noise_3d(DVec3::new(1.0, 2.0, 3.0));
         let b = perlin_noise_3d(DVec3::new(1.001, 2.0, 3.0));
         assert!((a - b).abs() < 0.05, "Lipschitz-continuous");
@@ -1234,17 +1228,17 @@ mod tests {
         let cloud = CumulusCloud::new(DVec3::ZERO, DVec3::new(20.0, 12.0, 8.0));
         let cam_pos = DVec3::new(0.0, 0.0, 100.0);
         let bb = CloudCollection::build_billboard(&cloud, cam_pos, DVec3::X, DVec3::Y);
-        // Normal points from the cloud toward the camera (+Z here).
+        // 法线从云指向相机（此处为 +Z）。
         assert!(bb.normal.dot(cam_pos - bb.center) > 0.0, "faces camera");
         assert!((bb.normal - DVec3::Z).length() < 1e-9, "right×up = +Z");
-        // Centroid of the 4 corners == the cloud centre.
+        // 4 个角的形心 == 云中心。
         let mut centroid = DVec3::ZERO;
         for p in &bb.positions {
             centroid += DVec3::from(*p);
         }
         centroid /= 4.0;
         assert!((centroid - bb.center).length() < 1e-9, "symmetric");
-        // X span == effective width (20), Y span == effective height (12).
+        // X 展开 == 有效宽度 (20)，Y 展开 == 有效高度 (12)。
         assert!((bb.positions[1][0] - bb.positions[0][0] - 20.0).abs() < 1e-9);
         assert!((bb.positions[3][1] - bb.positions[0][1] - 12.0).abs() < 1e-9);
         assert_eq!(bb.indices, BILLBOARD_INDICES);
@@ -1266,7 +1260,7 @@ mod tests {
     fn intersect_sphere_honours_slice_plane() {
         let hit = intersect_sphere(DVec3::new(0.0, 0.0, -5.0), DVec3::new(0.0, 0.0, 1.0), 0.5)
             .expect("hits the unit sphere");
-        // slice = 0.5 ⇒ point.z = 0.25 - 0.5 = -0.25 (± the epsilon normal offset).
+        // slice = 0.5 ⇒ point.z = 0.25 - 0.5 = -0.25（± epsilon 法线偏移）。
         assert!((hit.point.z - (-0.25)).abs() < 1e-3, "z pinned to slice plane");
         assert!(hit.point.length() <= 0.5 + 1e-9, "inside the sphere");
     }
@@ -1275,7 +1269,7 @@ mod tests {
     fn intersect_ellipsoid_hits_misses_and_rejects_degenerate_scale() {
         let center = DVec3::ZERO;
         let scale = DVec3::new(10.0, 10.0, 10.0);
-        // Ray down +Z through the centre hits.
+        // 沿 +Z 穿过中心的光线会命中。
         assert!(intersect_ellipsoid(
             DVec3::new(0.0, 0.0, -50.0),
             DVec3::new(0.0, 0.0, 1.0),
@@ -1284,7 +1278,7 @@ mod tests {
             -1.0
         )
         .is_some());
-        // Ray parallel to X at z = -50 never approaches the ellipsoid ⇒ miss.
+        // 在 z = -50 处平行于 X 的光线从不靠近椭球 ⇒ 错过。
         assert!(intersect_ellipsoid(
             DVec3::new(0.0, 0.0, -50.0),
             DVec3::new(1.0, 0.0, 0.0),
@@ -1293,7 +1287,7 @@ mod tests {
             -1.0
         )
         .is_none());
-        // Degenerate scale (< 0.01 on an axis) is rejected.
+        // 退化尺度（某轴 < 0.01）会被拒绝。
         assert!(intersect_ellipsoid(
             DVec3::new(0.0, 0.0, -50.0),
             DVec3::new(0.0, 0.0, 1.0),
@@ -1319,7 +1313,7 @@ mod tests {
 
     #[test]
     fn cloud_intensity_matches_analytic_endpoints() {
-        // I(1,1,1) = 1 (all terms saturated); I(0,0,0) = a (ambient only).
+        // I(1,1,1) = 1（所有项饱和）；I(0,0,0) = a（仅环境项）。
         assert!((cloud_intensity(1.0, 1.0, 1.0) - 1.0).abs() < 1e-12);
         assert!((cloud_intensity(0.0, 0.0, 0.0) - CLOUD_AMBIENT_FRACTION).abs() < 1e-12);
     }
@@ -1342,7 +1336,7 @@ mod tests {
         );
         assert!(rgba.iter().all(|c| c.is_finite()), "finite colour");
         assert!((0.0..=1.0).contains(&rgba[3]), "alpha = TR clamped to [0,1]");
-        // A perpendicular ray that never approaches the ellipsoid ⇒ vec4(0).
+        // 一条从不靠近椭球的垂直光线 ⇒ vec4(0)。
         let miss = draw_cloud(
             DVec3::new(0.0, 0.0, -50.0),
             DVec3::new(1.0, 0.0, 0.0),
@@ -1429,7 +1423,7 @@ mod tests {
             assert!(r.transmittance > 0.0 && r.transmittance <= 1.0 + 1e-12);
             assert!(r.scattered >= 0.0, "in-scattered radiance non-negative");
         }
-        // Midpoint-rule Riemann convergence: successive differences shrink.
+        // 中点法则 Riemann 收敛：连续差值逐渐缩小。
         assert!(
             (r16.scattered - r12.scattered).abs()
                 <= (r12.scattered - r8.scattered).abs() + 1e-9,

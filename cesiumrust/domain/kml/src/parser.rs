@@ -1,10 +1,10 @@
-//! KML (Keyhole Markup Language) parser.
+//! KML（Keyhole Markup Language，可标记语言）解析器。
 //!
-//! Maps to CesiumJS `DataSources/KmlDataSource.js`:
-//! - Placemark parsing
-//! - Geometry types (Point, LineString, Polygon, MultiGeometry)
-//! - Style resolution
-//! - Extended data
+//! 映射到 CesiumJS `DataSources/KmlDataSource.js`：
+//! - 地标（Placemark）解析
+//! - 几何类型（Point、LineString、Polygon、MultiGeometry）
+//! - 样式解析
+//! - 扩展数据
 
 use cesium_datasource::entity::{
     Entity, PointGraphics, PolygonGraphics, PolylineGraphics,
@@ -13,19 +13,19 @@ use cesium_datasource::entity_collection::DataSource;
 use cesium_datasource::property::{Color, Property};
 use cesium_geospatial::cartographic::Cartographic;
 
-/// KML coordinate (longitude, latitude, altitude).
+/// KML 坐标（经度、纬度、高度）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct KmlCoordinate {
-    /// Longitude in degrees.
+    /// 经度（度）。
     pub longitude: f64,
-    /// Latitude in degrees.
+    /// 纬度（度）。
     pub latitude: f64,
-    /// Altitude in meters.
+    /// 高度（米）。
     pub altitude: f64,
 }
 
 impl KmlCoordinate {
-    /// Creates a new KML coordinate.
+    /// 创建一个新的 KML 坐标。
     pub fn new(longitude: f64, latitude: f64, altitude: f64) -> Self {
         Self {
             longitude,
@@ -34,7 +34,7 @@ impl KmlCoordinate {
         }
     }
 
-    /// Converts to Cartographic (radians).
+    /// 转换为 Cartographic（弧度）。
     pub fn to_cartographic(&self) -> Cartographic {
         Cartographic::from_radians(
             self.longitude.to_radians(),
@@ -44,66 +44,66 @@ impl KmlCoordinate {
     }
 }
 
-/// KML geometry types.
+/// KML 几何类型。
 #[derive(Debug, Clone, PartialEq)]
 pub enum KmlGeometry {
-    /// A single point.
+    /// 单个点。
     Point {
-        /// The coordinate.
+        /// 坐标。
         coordinate: KmlCoordinate,
-        /// Whether to extrude to ground.
+        /// 是否拉伸至地面。
         extrude: bool,
     },
-    /// A line string.
+    /// 一条线串。
     LineString {
-        /// The coordinates.
+        /// 坐标。
         coordinates: Vec<KmlCoordinate>,
-        /// Whether to extrude to ground.
+        /// 是否拉伸至地面。
         extrude: bool,
-        /// Tessellation (follow terrain).
+        /// 细分（沿地形）。
         tessellate: bool,
     },
-    /// A polygon (outer boundary + optional inner boundaries).
+    /// 一个多边形（外边界 + 可选内边界）。
     Polygon {
-        /// Outer boundary coordinates.
+        /// 外边界坐标。
         outer: Vec<KmlCoordinate>,
-        /// Inner boundaries (holes).
+        /// 内边界（空洞）。
         inner: Vec<Vec<KmlCoordinate>>,
-        /// Whether to extrude.
+        /// 是否拉伸。
         extrude: bool,
-        /// Extrude height.
+        /// 拉伸高度。
         altitude: f64,
     },
-    /// Multiple geometries.
+    /// 多个几何。
     MultiGeometry {
-        /// Child geometries.
+        /// 子几何。
         geometries: Vec<KmlGeometry>,
     },
 }
 
-/// KML style definition.
+/// KML 样式定义。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct KmlStyle {
-    /// Style ID (for reference).
+    /// 样式 ID（用于引用）。
     pub id: Option<String>,
-    /// Icon style (for points).
+    /// 图标样式（用于点）。
     pub icon_style: Option<KmlIconStyle>,
-    /// Line style.
+    /// 线样式。
     pub line_style: Option<KmlLineStyle>,
-    /// Polygon style.
+    /// 多边形样式。
     pub poly_style: Option<KmlPolyStyle>,
-    /// Label style.
+    /// 标注样式。
     pub label_style: Option<KmlLabelStyle>,
 }
 
-/// KML icon style.
+/// KML 图标样式。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlIconStyle {
-    /// Icon color (aabbggrr format).
+    /// 图标颜色（aabbggrr 格式）。
     pub color: Option<String>,
-    /// Icon scale.
+    /// 图标缩放。
     pub scale: f64,
-    /// Icon URL.
+    /// 图标 URL。
     pub href: Option<String>,
 }
 
@@ -117,12 +117,12 @@ impl Default for KmlIconStyle {
     }
 }
 
-/// KML line style.
+/// KML 线样式。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlLineStyle {
-    /// Line color (aabbggrr format).
+    /// 线颜色（aabbggrr 格式）。
     pub color: Option<String>,
-    /// Line width in pixels.
+    /// 线宽（像素）。
     pub width: f64,
 }
 
@@ -135,14 +135,14 @@ impl Default for KmlLineStyle {
     }
 }
 
-/// KML polygon style.
+/// KML 多边形样式。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlPolyStyle {
-    /// Fill color (aabbggrr format).
+    /// 填充颜色（aabbggrr 格式）。
     pub color: Option<String>,
-    /// Whether to fill the polygon.
+    /// 是否填充多边形。
     pub fill: bool,
-    /// Whether to draw the outline.
+    /// 是否绘制轮廓。
     pub outline: bool,
 }
 
@@ -156,12 +156,12 @@ impl Default for KmlPolyStyle {
     }
 }
 
-/// KML label style.
+/// KML 标注样式。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlLabelStyle {
-    /// Label color (aabbggrr format).
+    /// 标注颜色（aabbggrr 格式）。
     pub color: Option<String>,
-    /// Label scale.
+    /// 标注缩放。
     pub scale: f64,
 }
 
@@ -174,24 +174,24 @@ impl Default for KmlLabelStyle {
     }
 }
 
-/// A KML Placemark.
+/// 一个 KML 地标（Placemark）。
 #[derive(Debug, Clone)]
 pub struct KmlPlacemark {
-    /// Placemark ID.
+    /// 地标 ID。
     pub id: Option<String>,
-    /// Placemark name.
+    /// 地标名称。
     pub name: Option<String>,
-    /// Placemark description.
+    /// 地标描述。
     pub description: Option<String>,
-    /// The geometry.
+    /// 几何。
     pub geometry: Option<KmlGeometry>,
-    /// Style URL reference.
+    /// 样式 URL 引用。
     pub style_url: Option<String>,
-    /// Inline style.
+    /// 内联样式。
     pub style: Option<KmlStyle>,
-    /// Extended data (key-value pairs).
+    /// 扩展数据（键值对）。
     pub extended_data: Vec<(String, String)>,
-    /// Visibility.
+    /// 可见性。
     pub visibility: bool,
 }
 
@@ -210,24 +210,24 @@ impl Default for KmlPlacemark {
     }
 }
 
-/// KML document.
+/// KML 文档。
 #[derive(Debug, Clone, Default)]
 pub struct KmlDocument {
-    /// Document name.
+    /// 文档名称。
     pub name: Option<String>,
-    /// Document description.
+    /// 文档描述。
     pub description: Option<String>,
-    /// Placemarks.
+    /// 地标。
     pub placemarks: Vec<KmlPlacemark>,
-    /// Styles (by ID).
+    /// 样式（按 ID）。
     pub styles: Vec<KmlStyle>,
-    /// Style maps (by ID).
+    /// 样式映射（按 ID）。
     pub style_maps: Vec<(String, String, String)>, // (id, normal_style, highlight_style)
 }
 
-/// Parses KML coordinate string.
+/// 解析 KML 坐标字符串。
 ///
-/// Format: "lon,lat,alt lon,lat,alt ..."
+/// 格式："lon,lat,alt lon,lat,alt ..."
 pub fn parse_coordinates(s: &str) -> Vec<KmlCoordinate> {
     s.split_whitespace()
         .filter_map(|tuple| {
@@ -248,7 +248,7 @@ pub fn parse_coordinates(s: &str) -> Vec<KmlCoordinate> {
         .collect()
 }
 
-/// Parses KML color (aabbggrr format) to RGBA.
+/// 将 KML 颜色（aabbggrr 格式）解析为 RGBA。
 pub fn parse_kml_color(color: &str) -> Option<Color> {
     if color.len() != 8 {
         return None;
@@ -267,7 +267,7 @@ pub fn parse_kml_color(color: &str) -> Option<Color> {
     ))
 }
 
-/// Converts KML color to f32 array [r, g, b, a].
+/// 将 KML 颜色转换为 f32 数组 [r, g, b, a]。
 pub fn kml_color_to_f32(color: &str) -> [f32; 4] {
     match parse_kml_color(color) {
         Some(c) => c.to_f32_array(),
@@ -275,7 +275,7 @@ pub fn kml_color_to_f32(color: &str) -> [f32; 4] {
     }
 }
 
-/// Converts a KML document to a DataSource.
+/// 将 KML 文档转换为 DataSource。
 pub fn kml_to_datasource(doc: &KmlDocument) -> DataSource {
     let mut ds = DataSource::new(doc.name.clone().unwrap_or_else(|| "KML".to_string()));
 
@@ -288,7 +288,7 @@ pub fn kml_to_datasource(doc: &KmlDocument) -> DataSource {
     ds
 }
 
-/// Converts a KML placemark to an Entity.
+/// 将 KML 地标转换为 Entity。
 fn placemark_to_entity(placemark: &KmlPlacemark) -> Option<Entity> {
     let geometry = placemark.geometry.as_ref()?;
 
@@ -301,7 +301,7 @@ fn placemark_to_entity(placemark: &KmlPlacemark) -> Option<Entity> {
     entity.name = placemark.name.clone();
     entity.show = placemark.visibility;
 
-    // Get style colors
+    // 获取样式颜色
     let (line_color, fill_color) = get_placemark_colors(placemark);
 
     match geometry {
@@ -341,7 +341,7 @@ fn placemark_to_entity(placemark: &KmlPlacemark) -> Option<Entity> {
             });
         }
         KmlGeometry::MultiGeometry { geometries } => {
-            // Use the first geometry for simplicity
+            // 为简化起见，使用第一个几何
             if let Some(first) = geometries.first() {
                 let temp_placemark = KmlPlacemark {
                     geometry: Some(first.clone()),
@@ -355,7 +355,7 @@ fn placemark_to_entity(placemark: &KmlPlacemark) -> Option<Entity> {
     Some(entity)
 }
 
-/// Gets the line and fill colors for a placemark.
+/// 获取地标的线颜色与填充颜色。
 fn get_placemark_colors(placemark: &KmlPlacemark) -> (Color, Color) {
     let style = placemark.style.as_ref();
 
@@ -374,19 +374,19 @@ fn get_placemark_colors(placemark: &KmlPlacemark) -> (Color, Color) {
     (line_color, fill_color)
 }
 
-/// Simple KML parser (basic implementation).
+/// 简单的 KML 解析器（基本实现）。
 ///
-/// This is a simplified parser that handles common KML structures.
-/// For production use, consider using a full XML parser.
+/// 这是一个简化版解析器，处理常见的 KML 结构。
+/// 生产环境请考虑使用完整的 XML 解析器。
 pub fn parse_kml_simple(xml: &str) -> Result<KmlDocument, String> {
     let mut doc = KmlDocument::default();
 
-    // Extract document name
+    // 提取文档名称
     if let Some(name) = extract_tag_content(xml, "name") {
         doc.name = Some(name);
     }
 
-    // Extract placemarks
+    // 提取地标
     let placemarks = extract_all_tags(xml, "Placemark");
     for pm_xml in placemarks {
         let placemark = parse_placemark(&pm_xml)?;
@@ -396,7 +396,7 @@ pub fn parse_kml_simple(xml: &str) -> Result<KmlDocument, String> {
     Ok(doc)
 }
 
-/// Extracts content between tags.
+/// 提取标签之间的内容。
 fn extract_tag_content(xml: &str, tag: &str) -> Option<String> {
     let start_tag = format!("<{}>", tag);
     let end_tag = format!("</{}>", tag);
@@ -407,7 +407,7 @@ fn extract_tag_content(xml: &str, tag: &str) -> Option<String> {
     Some(xml[start..end].trim().to_string())
 }
 
-/// Extracts all occurrences of a tag.
+/// 提取某个标签的所有出现。
 fn extract_all_tags(xml: &str, tag: &str) -> Vec<String> {
     let mut results = Vec::new();
     let start_tag = format!("<{}", tag);
@@ -428,9 +428,9 @@ fn extract_all_tags(xml: &str, tag: &str) -> Vec<String> {
     results
 }
 
-/// Parses a placemark XML fragment.
+/// 解析一个地标 XML 片段。
 fn parse_placemark(xml: &str) -> Result<KmlPlacemark, String> {
-    // Parse geometry
+    // 解析几何
     let geometry = if xml.contains("<Point>") {
         Some(parse_point_geometry(xml))
     } else if xml.contains("<LineString>") {
@@ -441,7 +441,7 @@ fn parse_placemark(xml: &str) -> Result<KmlPlacemark, String> {
         None
     };
 
-    // Parse style
+    // 解析样式
     let style = extract_all_tags(xml, "Style").first().map(|s| parse_style(s));
 
     Ok(KmlPlacemark {
@@ -456,7 +456,7 @@ fn parse_placemark(xml: &str) -> Result<KmlPlacemark, String> {
     })
 }
 
-/// Parses a Point geometry.
+/// 解析一个 Point 几何。
 fn parse_point_geometry(xml: &str) -> KmlGeometry {
     let coordinates = extract_tag_content(xml, "coordinates")
         .map(|c| parse_coordinates(&c))
@@ -470,7 +470,7 @@ fn parse_point_geometry(xml: &str) -> KmlGeometry {
     }
 }
 
-/// Parses a LineString geometry.
+/// 解析一个 LineString 几何。
 fn parse_linestring_geometry(xml: &str) -> KmlGeometry {
     let coordinates = extract_tag_content(xml, "coordinates")
         .map(|c| parse_coordinates(&c))
@@ -486,7 +486,7 @@ fn parse_linestring_geometry(xml: &str) -> KmlGeometry {
     }
 }
 
-/// Parses a Polygon geometry.
+/// 解析一个 Polygon 几何。
 fn parse_polygon_geometry(xml: &str) -> KmlGeometry {
     let outer = extract_tag_content(xml, "outerBoundaryIs")
         .and_then(|ob| extract_tag_content(&ob, "coordinates"))
@@ -503,7 +503,7 @@ fn parse_polygon_geometry(xml: &str) -> KmlGeometry {
     }
 }
 
-/// Parses a Style element.
+/// 解析一个 Style 元素。
 fn parse_style(xml: &str) -> KmlStyle {
     let icon_style = extract_all_tags(xml, "IconStyle").first().map(|icon_xml| {
         KmlIconStyle {
@@ -541,7 +541,7 @@ fn parse_style(xml: &str) -> KmlStyle {
     }
 }
 
-/// Extracts an attribute value from an XML tag.
+/// 从 XML 标签中提取属性值。
 fn extract_attribute(xml: &str, attr: &str) -> Option<String> {
     let pattern = format!("{}=\"", attr);
     let start = xml.find(&pattern)? + pattern.len();
@@ -572,8 +572,8 @@ mod tests {
 
     #[test]
     fn test_parse_kml_color() {
-        // KML color format: aabbggrr
-        let color = parse_kml_color("ff0000ff").unwrap(); // Red, fully opaque
+        // KML 颜色格式：aabbggrr
+        let color = parse_kml_color("ff0000ff").unwrap(); // 红色，完全不透明
         assert!((color.red - 1.0).abs() < 1e-10);
         assert!((color.green - 0.0).abs() < 1e-10);
         assert!((color.blue - 0.0).abs() < 1e-10);
@@ -582,7 +582,7 @@ mod tests {
 
     #[test]
     fn test_parse_kml_color_green() {
-        let color = parse_kml_color("8000ff00").unwrap(); // Green, 50% transparent
+        let color = parse_kml_color("8000ff00").unwrap(); // 绿色，50% 透明
         assert!((color.red - 0.0).abs() < 1e-10);
         assert!((color.green - 1.0).abs() < 1e-10);
         assert!((color.blue - 0.0).abs() < 1e-10);

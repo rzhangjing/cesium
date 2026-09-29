@@ -1,22 +1,21 @@
-//! Core/RectangleSpec.js → Rust integration tests (faithful port).
+//! Core/RectangleSpec.js → Rust 集成测试（忠实移植）。
 //!
-//! Faithfully ports the original CesiumJS `packages/engine/Specs/Core/RectangleSpec.js`
-//! (112 `it()` cases, including the `createPackableSpecs` block). Reference values
-//! are used verbatim so the Rust implementation is verified against the exact
-//! same ground truth as CesiumJS.
+//! 忠实移植原始 CesiumJS `packages/engine/Specs/Core/RectangleSpec.js`
+//!（112 个 `it()` 用例，包含 `createPackableSpecs` 块）。参考值逐字使用，
+//! 以便 Rust 实现针对与 CesiumJS 完全相同的基准真值进行验证。
 //!
-//! Platform adaptations (documented, per the verification plan):
-//! - CesiumJS "works with a result parameter" variants test the JS memory-reuse
-//!   API contract (`returnedResult === result`). Rust returns owned values and has
-//!   no result-parameter API, so those variants are subsumed by the owned-return
-//!   tests below (identical computed values, single code path).
-//! - CesiumJS "throws with no <arg>" cases test runtime null/undefined checks.
-//!   Rust's type system makes null arguments unrepresentable (compile-time
-//!   safety), so those error paths have no Rust counterpart and are omitted.
-//! - CesiumJS `Rectangle._validate` / `Rectangle.subsection` throw
-//!   `DeveloperError`; the Rust port returns `Result<_, String>`, so the
-//!   "throws with bad/out-of-range value" cases ARE ported (as `is_err()`).
-//! - `clone` maps to Rust's derived `Clone`; `equals` maps to derived `PartialEq`.
+//! 平台适配（依据验证计划，均有文档说明）：
+//! - CesiumJS 的 "works with a result parameter" 变体测试 JS 的内存复用
+//!   API 契约（`returnedResult === result`）。Rust 返回拥有所有权的值且没有
+//!   result-parameter API，因此这些变体被下方的拥有返回测试所归并
+//!  （计算值相同，单一代码路径）。
+//! - CesiumJS 的 "throws with no <arg>" 用例测试运行时的 null/undefined 检查。
+//!   Rust 的类型系统使 null 参数无法表示（编译期安全），因此这些错误路径
+//!   没有对应的 Rust 版本，予以省略。
+//! - CesiumJS 的 `Rectangle._validate` / `Rectangle.subsection` 抛出
+//!   `DeveloperError`；Rust 移植版返回 `Result<_, String>`，因此
+//!   "throws with bad/out-of-range value" 用例确实被移植（以 `is_err()` 形式）。
+//! - `clone` 映射到 Rust 派生的 `Clone`；`equals` 映射到派生的 `PartialEq`。
 
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::cartographic::Cartographic;
@@ -27,7 +26,7 @@ use cesium_specs::{assert_approx, epsilon};
 use glam::DVec3;
 use std::f64::consts::PI;
 
-// --- Reference values from the original spec ---
+// --- 来自原始规范的参考值 ---
 const WEST: f64 = -0.9;
 const SOUTH: f64 = 0.5;
 const EAST: f64 = 1.4;
@@ -37,7 +36,7 @@ fn center() -> Cartographic {
     Cartographic::from_radians((WEST + EAST) / 2.0, (SOUTH + NORTH) / 2.0, 0.0)
 }
 
-// --- Constructor ---
+// --- 构造函数 ---
 
 // "default constructor sets expected values."
 #[test]
@@ -82,7 +81,7 @@ fn test_compute_height() {
 // --- fromDegrees / fromRadians ---
 
 // "fromDegrees produces expected values."
-// (the "works with a result parameter" variant is subsumed: Rust returns an owned value)
+//（"works with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_from_degrees_produces_expected_values() {
     let west = -10.0;
@@ -98,7 +97,7 @@ fn test_from_degrees_produces_expected_values() {
 }
 
 // "fromRadians produces expected values."
-// (the "works with a result parameter" variant is subsumed: Rust returns an owned value)
+//（"works with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_from_radians_produces_expected_values() {
     let west = -1.0;
@@ -116,7 +115,7 @@ fn test_from_radians_produces_expected_values() {
 // --- fromCartographicArray ---
 
 // "fromCartographicArray produces expected values."
-// (the "works with a result parameter" variant is subsumed: Rust returns an owned value)
+//（"works with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_from_cartographic_array_produces_expected_values() {
     let min_lon = Cartographic::from_radians(-0.1, 0.3, 0.0);
@@ -149,7 +148,7 @@ fn test_from_cartographic_array_crosses_idl() {
 // --- fromCartesianArray ---
 
 // "fromCartesianArray produces expected values."
-// (the "works with a result parameter" variant is subsumed: Rust returns an owned value)
+//（"works with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_from_cartesian_array_produces_expected_values() {
     let min_lon = Cartographic::from_radians(-0.1, 0.3, 0.0);
@@ -190,9 +189,9 @@ fn test_from_cartesian_array_crosses_idl() {
 // --- clone ---
 
 // "clone works without a result parameter."
-// (the "with a result parameter", "'this' result parameter", and "without
-//  rectangle" variants are subsumed/unrepresentable in Rust: Clone always
-//  returns a fresh owned value and the argument is non-optional.)
+//（"with a result parameter"、"'this' result parameter" 和 "without
+//  rectangle" 变体在 Rust 中已被归并/无法表示：Clone 总是
+//  返回一个新的拥有所有权的值，且参数非可选。）
 #[test]
 fn test_clone() {
     let rectangle = Rectangle::new(WEST, SOUTH, EAST, NORTH);
@@ -203,8 +202,8 @@ fn test_clone() {
 // --- equals / equalsEpsilon ---
 
 // "Equals works in all cases" + "Static equals works in all cases"
-// (Rust has a single `PartialEq` covering both the instance and static forms;
-//  the `equals(undefined)` case is unrepresentable — type-safe equality.)
+//（Rust 只有单个 `PartialEq`，同时覆盖实例与静态两种形式；
+//  `equals(undefined)` 用例无法表示——类型安全的相等。）
 #[test]
 fn test_equals_works_in_all_cases() {
     let rectangle = Rectangle::new(0.1, 0.2, 0.3, 0.4);
@@ -216,7 +215,7 @@ fn test_equals_works_in_all_cases() {
 }
 
 // "Static equals epsilon works in all cases" + "Equals epsilon works in all cases"
-// (single `equals_epsilon` covers both forms; `undefined` cases unrepresentable.)
+//（单个 `equals_epsilon` 覆盖两种形式；`undefined` 用例无法表示。）
 #[test]
 fn test_equals_epsilon_works_in_all_cases() {
     let rectangle1 = Rectangle::new(0.1, 0.2, 0.3, 0.4);
@@ -235,9 +234,9 @@ fn test_equals_epsilon_works_in_all_cases() {
 // --- validate ---
 
 // "validate throws with bad west/south/east/north"
-// (the "throws with no rectangle / no west / no south / no east / no north"
-//  cases test undefined-field runtime checks — unrepresentable in Rust where
-//  all fields are mandatory f64.)
+//（"throws with no rectangle / no west / no south / no east / no north"
+//  用例测试未定义字段的运行时检查——在 Rust 中无法表示，因为
+//  所有字段都是必需的 f64。）
 #[test]
 fn test_validate_ok() {
     let rectangle = Rectangle::new(WEST, SOUTH, EAST, NORTH);
@@ -268,11 +267,10 @@ fn test_validate_throws_with_bad_north() {
     assert!(rectangle.validate().is_err());
 }
 
-// --- corners ---
+// --- 角点 ---
 
 // "southwest works without a result parameter"
-// (the "with a result parameter" and "throws with no rectangle" variants are
-//  subsumed/unrepresentable.)
+//（"with a result parameter" 和 "throws with no rectangle" 变体已被归并/无法表示。）
 #[test]
 fn test_southwest() {
     let rectangle = Rectangle::new(WEST, SOUTH, EAST, NORTH);
@@ -308,11 +306,10 @@ fn test_southeast() {
     assert_eq!(returned_result.latitude, SOUTH);
 }
 
-// --- center ---
+// --- 中心 ---
 
 // "center works without a result parameter"
-// (the "with a result parameter" and "throws with no rectangle" variants are
-//  subsumed/unrepresentable.)
+//（"with a result parameter" 和 "throws with no rectangle" 变体已被归并/无法表示。）
 #[test]
 fn test_center() {
     let rectangle = Rectangle::new(WEST, SOUTH, EAST, NORTH);
@@ -344,10 +341,10 @@ fn test_center_works_across_idl() {
         .equals_epsilon(&Cartographic::from_degrees(-30.0, 0.0, 0.0), epsilon::EPSILON11));
 }
 
-// --- intersection ---
+// --- 相交 ---
 
 // "intersection works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned value)
+//（"with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_intersection() {
     let rectangle = Rectangle::new(0.5, 0.1, 0.75, 0.9);
@@ -486,10 +483,10 @@ fn test_intersection_returns_none_ew_degenerate() {
     assert_eq!(rectangle2.intersection(&rectangle1), None);
 }
 
-// --- union ---
+// --- 并集 ---
 
 // "union works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned value)
+//（"with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_union() {
     let rectangle1 = Rectangle::new(0.5, 0.1, 0.75, 0.9);
@@ -539,7 +536,7 @@ fn test_union_rectangles_span_entire_globe() {
     assert!(returned_result.equals_epsilon(&expected, epsilon::EPSILON15));
 }
 
-// --- expand ---
+// --- 扩展 ---
 
 // "expand works if rectangle needs to grow right"
 #[test]
@@ -591,8 +588,8 @@ fn test_expand_no_growth_needed() {
     assert_eq!(result, expected);
 }
 
-// "expand works with a result parameter" — subsumed (owned return). The original
-// grows both east and north here; verify the same combined growth.
+// "expand works with a result parameter" — 已被归并（拥有返回）。原用例在此处
+// 同时向东和向北扩展；验证相同的组合扩展。
 #[test]
 fn test_expand_grow_right_and_up() {
     let rectangle = Rectangle::new(0.5, 0.1, 0.75, 0.9);
@@ -602,7 +599,7 @@ fn test_expand_grow_right_and_up() {
     assert_eq!(result, expected);
 }
 
-// --- contains ---
+// --- 包含 ---
 
 // "contains works"
 #[test]
@@ -641,10 +638,10 @@ fn test_contains_with_rectangle_across_idl() {
     assert!(!rectangle.contains(east + 0.1, north));
 }
 
-// --- subsample ---
+// --- 子采样 ---
 
 // "subsample works south of the equator"
-// (the "works with a result parameter" variant is subsumed: Rust returns an owned value)
+//（"works with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_subsample_works_south_of_the_equator() {
     let west = 0.1;
@@ -749,10 +746,10 @@ fn test_subsample_works_at_a_height_above_the_ellipsoid() {
     assert_eq!(returned_result, expected);
 }
 
-// --- subsection ---
+// --- 子区域 ---
 
 // "subsection works with a result parameter" + "subsection works with no result parameter"
-// (merged: Rust returns an owned value, single code path)
+//（已合并：Rust 返回拥有所有权的值，单一代码路径）
 #[test]
 fn test_subsection() {
     let west = 0.0;
@@ -808,8 +805,8 @@ fn test_subsection_zero_area_rectangle() {
     let north = 0.1;
     let rectangle = Rectangle::new(west, south, east, north);
 
-    // These values should have no effect on the final result
-    // because the rectangle has zero area.
+    // 由于该矩形面积为零，这些值不应对最终结果
+    // 产生任何影响。
     let expected = Rectangle::new(west, south, east, north);
     let subsection = rectangle.subsection(0.22, 0.22, 0.88, 0.88).unwrap();
     assert_eq!(subsection, expected);

@@ -1,40 +1,40 @@
-//! GPX (GPS Exchange Format) parser.
+//! GPX（GPS Exchange Format）解析器。
 //!
-//! Maps to CesiumJS `DataSources/GpxDataSource.js`:
-//! - Waypoint parsing
-//! - Track parsing
-//! - Route parsing
+//! 映射到 CesiumJS 的 `DataSources/GpxDataSource.js`：
+//! - 航点（waypoint）解析
+//! - 轨迹（track）解析
+//! - 航线（route）解析
 
 use cesium_datasource::entity::{Entity, PointGraphics, PolylineGraphics};
 use cesium_datasource::entity_collection::DataSource;
 use cesium_datasource::property::{Color, Property};
 use cesium_geospatial::cartographic::Cartographic;
 
-/// A GPX waypoint (wpt).
+/// 一个 GPX 航点（wpt）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct GpxWaypoint {
-    /// Latitude in degrees.
+    /// 纬度（度）。
     pub latitude: f64,
-    /// Longitude in degrees.
+    /// 经度（度）。
     pub longitude: f64,
-    /// Elevation in meters.
+    /// 高程（米）。
     pub elevation: Option<f64>,
-    /// Timestamp (ISO 8601).
+    /// 时间戳（ISO 8601）。
     pub time: Option<String>,
-    /// Name.
+    /// 名称。
     pub name: Option<String>,
-    /// Comment.
+    /// 备注。
     pub comment: Option<String>,
-    /// Description.
+    /// 描述。
     pub description: Option<String>,
-    /// Symbol name.
+    /// 符号名称。
     pub symbol: Option<String>,
-    /// Type.
+    /// 类型。
     pub waypoint_type: Option<String>,
 }
 
 impl GpxWaypoint {
-    /// Creates a new waypoint.
+    /// 创建一个新的航点。
     pub fn new(latitude: f64, longitude: f64) -> Self {
         Self {
             latitude,
@@ -49,7 +49,7 @@ impl GpxWaypoint {
         }
     }
 
-    /// Converts to Cartographic (radians).
+    /// 转换为 Cartographic（弧度）。
     pub fn to_cartographic(&self) -> Cartographic {
         Cartographic::from_radians(
             self.longitude.to_radians(),
@@ -59,41 +59,41 @@ impl GpxWaypoint {
     }
 }
 
-/// A GPX track (trk).
+/// 一个 GPX 轨迹（trk）。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct GpxTrack {
-    /// Track name.
+    /// 轨迹名称。
     pub name: Option<String>,
-    /// Track comment.
+    /// 轨迹备注。
     pub comment: Option<String>,
-    /// Track description.
+    /// 轨迹描述。
     pub description: Option<String>,
-    /// Track segments.
+    /// 轨迹段。
     pub segments: Vec<GpxTrackSegment>,
 }
 
-/// A GPX track segment (trkseg).
+/// 一个 GPX 轨迹段（trkseg）。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct GpxTrackSegment {
-    /// Track points.
+    /// 轨迹点。
     pub points: Vec<GpxTrackPoint>,
 }
 
-/// A GPX track point (trkpt).
+/// 一个 GPX 轨迹点（trkpt）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct GpxTrackPoint {
-    /// Latitude in degrees.
+    /// 纬度（度）。
     pub latitude: f64,
-    /// Longitude in degrees.
+    /// 经度（度）。
     pub longitude: f64,
-    /// Elevation in meters.
+    /// 高程（米）。
     pub elevation: Option<f64>,
-    /// Timestamp (ISO 8601).
+    /// 时间戳（ISO 8601）。
     pub time: Option<String>,
 }
 
 impl GpxTrackPoint {
-    /// Creates a new track point.
+    /// 创建一个新的轨迹点。
     pub fn new(latitude: f64, longitude: f64) -> Self {
         Self {
             latitude,
@@ -103,7 +103,7 @@ impl GpxTrackPoint {
         }
     }
 
-    /// Converts to Cartographic (radians).
+    /// 转换为 Cartographic（弧度）。
     pub fn to_cartographic(&self) -> Cartographic {
         Cartographic::from_radians(
             self.longitude.to_radians(),
@@ -113,34 +113,34 @@ impl GpxTrackPoint {
     }
 }
 
-/// A GPX route (rte).
+/// 一个 GPX 航线（rte）。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct GpxRoute {
-    /// Route name.
+    /// 航线名称。
     pub name: Option<String>,
-    /// Route comment.
+    /// 航线备注。
     pub comment: Option<String>,
-    /// Route description.
+    /// 航线描述。
     pub description: Option<String>,
-    /// Route points.
+    /// 航线点。
     pub points: Vec<GpxRoutePoint>,
 }
 
-/// A GPX route point (rtept).
+/// 一个 GPX 航线点（rtept）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct GpxRoutePoint {
-    /// Latitude in degrees.
+    /// 纬度（度）。
     pub latitude: f64,
-    /// Longitude in degrees.
+    /// 经度（度）。
     pub longitude: f64,
-    /// Elevation in meters.
+    /// 高程（米）。
     pub elevation: Option<f64>,
-    /// Name.
+    /// 名称。
     pub name: Option<String>,
 }
 
 impl GpxRoutePoint {
-    /// Creates a new route point.
+    /// 创建一个新的航线点。
     pub fn new(latitude: f64, longitude: f64) -> Self {
         Self {
             latitude,
@@ -150,7 +150,7 @@ impl GpxRoutePoint {
         }
     }
 
-    /// Converts to Cartographic (radians).
+    /// 转换为 Cartographic（弧度）。
     pub fn to_cartographic(&self) -> Cartographic {
         Cartographic::from_radians(
             self.longitude.to_radians(),
@@ -160,35 +160,35 @@ impl GpxRoutePoint {
     }
 }
 
-/// GPX metadata.
+/// GPX 元数据。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct GpxMetadata {
-    /// Document name.
+    /// 文档名称。
     pub name: Option<String>,
-    /// Document description.
+    /// 文档描述。
     pub description: Option<String>,
-    /// Author name.
+    /// 作者名称。
     pub author: Option<String>,
-    /// Creation time (ISO 8601).
+    /// 创建时间（ISO 8601）。
     pub time: Option<String>,
-    /// Keywords.
+    /// 关键词。
     pub keywords: Option<String>,
 }
 
-/// A GPX document.
+/// 一个 GPX 文档。
 #[derive(Debug, Clone, Default)]
 pub struct GpxDocument {
-    /// Metadata.
+    /// 元数据。
     pub metadata: GpxMetadata,
-    /// Waypoints.
+    /// 航点。
     pub waypoints: Vec<GpxWaypoint>,
-    /// Tracks.
+    /// 轨迹。
     pub tracks: Vec<GpxTrack>,
-    /// Routes.
+    /// 航线。
     pub routes: Vec<GpxRoute>,
 }
 
-/// Converts a GPX document to a DataSource.
+/// 将一个 GPX 文档转换为 DataSource。
 pub fn gpx_to_datasource(doc: &GpxDocument) -> DataSource {
     let name = doc
         .metadata
@@ -197,7 +197,7 @@ pub fn gpx_to_datasource(doc: &GpxDocument) -> DataSource {
         .unwrap_or_else(|| "GPX".to_string());
     let mut ds = DataSource::new(name);
 
-    // Add waypoints as points
+    // 将航点作为 point 添加
     for (i, wpt) in doc.waypoints.iter().enumerate() {
         let mut entity = Entity::new(format!("waypoint_{}", i));
         entity.name = wpt.name.clone();
@@ -217,7 +217,7 @@ pub fn gpx_to_datasource(doc: &GpxDocument) -> DataSource {
         ds.entities.add(entity);
     }
 
-    // Add tracks as polylines
+    // 将轨迹作为折线添加
     for (i, track) in doc.tracks.iter().enumerate() {
         for (j, segment) in track.segments.iter().enumerate() {
             let mut entity = Entity::new(format!("track_{}_{}", i, j));
@@ -246,7 +246,7 @@ pub fn gpx_to_datasource(doc: &GpxDocument) -> DataSource {
         }
     }
 
-    // Add routes as polylines
+    // 将航线作为折线添加
     for (i, route) in doc.routes.iter().enumerate() {
         let mut entity = Entity::new(format!("route_{}", i));
         entity.name = route.name.clone();
@@ -276,11 +276,11 @@ pub fn gpx_to_datasource(doc: &GpxDocument) -> DataSource {
     ds
 }
 
-/// Simple GPX parser (basic implementation).
+/// 简单的 GPX 解析器（基础实现）。
 pub fn parse_gpx_simple(xml: &str) -> Result<GpxDocument, String> {
     let mut doc = GpxDocument::default();
 
-    // Parse metadata
+    // 解析元数据
     if let Some(name) = extract_tag_content(xml, "name") {
         doc.metadata.name = Some(name);
     }
@@ -288,19 +288,19 @@ pub fn parse_gpx_simple(xml: &str) -> Result<GpxDocument, String> {
         doc.metadata.description = Some(desc);
     }
 
-    // Parse waypoints
+    // 解析航点
     for wpt_xml in extract_all_tags(xml, "wpt") {
         let wpt = parse_waypoint(&wpt_xml)?;
         doc.waypoints.push(wpt);
     }
 
-    // Parse tracks
+    // 解析轨迹
     for trk_xml in extract_all_tags(xml, "trk") {
         let track = parse_track(&trk_xml)?;
         doc.tracks.push(track);
     }
 
-    // Parse routes
+    // 解析航线
     for rte_xml in extract_all_tags(xml, "rte") {
         let route = parse_route(&rte_xml)?;
         doc.routes.push(route);
@@ -309,7 +309,7 @@ pub fn parse_gpx_simple(xml: &str) -> Result<GpxDocument, String> {
     Ok(doc)
 }
 
-/// Parses a waypoint element.
+/// 解析一个航点元素。
 fn parse_waypoint(xml: &str) -> Result<GpxWaypoint, String> {
     let lat = extract_attribute(xml, "lat")
         .and_then(|s| s.parse().ok())
@@ -330,7 +330,7 @@ fn parse_waypoint(xml: &str) -> Result<GpxWaypoint, String> {
     Ok(wpt)
 }
 
-/// Parses a track element.
+/// 解析一个轨迹元素。
 fn parse_track(xml: &str) -> Result<GpxTrack, String> {
     let mut segments = Vec::new();
     for seg_xml in extract_all_tags(xml, "trkseg") {
@@ -346,7 +346,7 @@ fn parse_track(xml: &str) -> Result<GpxTrack, String> {
     })
 }
 
-/// Parses a track segment element.
+/// 解析一个轨迹段元素。
 fn parse_track_segment(xml: &str) -> Result<GpxTrackSegment, String> {
     let mut segment = GpxTrackSegment::default();
 
@@ -368,7 +368,7 @@ fn parse_track_segment(xml: &str) -> Result<GpxTrackSegment, String> {
     Ok(segment)
 }
 
-/// Parses a route element.
+/// 解析一个航线元素。
 fn parse_route(xml: &str) -> Result<GpxRoute, String> {
     let mut points = Vec::new();
     for pt_xml in extract_all_tags(xml, "rtept") {
@@ -394,7 +394,7 @@ fn parse_route(xml: &str) -> Result<GpxRoute, String> {
     })
 }
 
-/// Extracts content between tags.
+/// 提取标签之间的内容。
 fn extract_tag_content(xml: &str, tag: &str) -> Option<String> {
     let start_tag = format!("<{}>", tag);
     let end_tag = format!("</{}>", tag);
@@ -405,7 +405,7 @@ fn extract_tag_content(xml: &str, tag: &str) -> Option<String> {
     Some(xml[start..end].trim().to_string())
 }
 
-/// Extracts all occurrences of a tag.
+/// 提取某个标签的所有出现。
 fn extract_all_tags(xml: &str, tag: &str) -> Vec<String> {
     let mut results = Vec::new();
     let start_tag = format!("<{}", tag);
@@ -414,13 +414,13 @@ fn extract_all_tags(xml: &str, tag: &str) -> Vec<String> {
     let mut search_start = 0;
     while let Some(start) = xml[search_start..].find(&start_tag) {
         let abs_start = search_start + start;
-        // Check for self-closing tag
+        // 检查是否为自闭合标签
         let tag_end = match xml[abs_start..].find('>') {
             Some(pos) => pos + abs_start,
             None => break,
         };
         if xml.as_bytes()[tag_end - 1] == b'/' {
-            // Self-closing tag
+            // 自闭合标签
             results.push(xml[abs_start..=tag_end].to_string());
             search_start = tag_end + 1;
         } else if let Some(end) = xml[abs_start..].find(&end_tag) {
@@ -435,7 +435,7 @@ fn extract_all_tags(xml: &str, tag: &str) -> Vec<String> {
     results
 }
 
-/// Extracts an attribute value from an XML tag.
+/// 从一个 XML 标签中提取属性值。
 fn extract_attribute(xml: &str, attr: &str) -> Option<String> {
     let pattern = format!("{}=\"", attr);
     let start = xml.find(&pattern)? + pattern.len();
@@ -582,7 +582,7 @@ mod tests {
 
         let ds = gpx_to_datasource(&doc);
         assert_eq!(ds.name, "Test");
-        assert_eq!(ds.entities.len(), 2); // 1 waypoint + 1 track segment
+        assert_eq!(ds.entities.len(), 2); // 1 个航点 + 1 个轨迹段
     }
 
     #[test]

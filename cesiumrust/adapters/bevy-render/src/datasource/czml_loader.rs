@@ -1,7 +1,7 @@
-//! CZML data source loader for Bevy.
+//! 用于 Bevy 的 CZML 数据源加载器。
 //!
-//! Loads .czml files, parses them via the domain `parse_czml` function,
-//! and spawns CesiumEntity + Graphics components into the ECS.
+//! 加载 .czml 文件，通过领域的 `parse_czml` 函数解析它们，
+//! 并将 CesiumEntity + Graphics 组件生成到 ECS 中。
 
 use bevy::prelude::*;
 use cesium_datasource::czml::parse_czml;
@@ -12,14 +12,14 @@ use crate::entity::components::{
     CesiumEntity, EntityWrapper, NeedsVisualUpdate, TimeDynamicProperties,
 };
 
-/// Resource that tracks pending CZML file loads.
+/// 跟踪待处理 CZML 文件加载的资源。
 #[derive(Resource, Default)]
 pub struct CzmlLoadQueue {
-    /// Files to load (paths to .czml files).
+    /// 待加载的文件（指向 .czml 文件的路径）。
     pub files: Vec<String>,
 }
 
-/// Plugin for CZML data source loading.
+/// 用于 CZML 数据源加载的插件。
 pub struct CzmlLoadPlugin;
 
 impl Plugin for CzmlLoadPlugin {
@@ -29,7 +29,7 @@ impl Plugin for CzmlLoadPlugin {
     }
 }
 
-/// System that loads .czml files from the queue and spawns entities.
+/// 从队列加载 .czml 文件并生成实体的系统。
 fn czml_load_system(
     mut commands: Commands,
     mut queue: ResMut<CzmlLoadQueue>,
@@ -66,7 +66,7 @@ fn czml_load_system(
     }
 }
 
-/// Spawns a single CZML entity into the Bevy ECS.
+/// 将单个 CZML 实体生成到 Bevy ECS 中。
 fn spawn_czml_entity(commands: &mut Commands, domain_entity: &DomainEntity) {
     let cesium_entity = CesiumEntity {
         entity_id: domain_entity.id.clone(),
@@ -94,7 +94,7 @@ fn spawn_czml_entity(commands: &mut Commands, domain_entity: &DomainEntity) {
     ));
 }
 
-/// Helper to load a CZML file by adding it to the queue.
+/// Helper：通过将 CZML 文件加入队列来加载它。
 pub fn load_czml_file(queue: &mut CzmlLoadQueue, path: impl Into<String>) {
     queue.files.push(path.into());
 }

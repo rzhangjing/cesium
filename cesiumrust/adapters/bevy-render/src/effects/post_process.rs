@@ -9,26 +9,26 @@ use glam::DVec3;
 use super::ao::CesiumAmbientOcclusion;
 use super::fxaa::CesiumFxaa;
 
-/// Daniel M2: independent FXAA / AO sub-gate env vars, consumed **only** inside
-/// effects.
+/// Daniel M2：独立的 FXAA / AO 子门控环境变量，**仅**在 effects
+/// 内部消费。
 ///
-/// **Single source of truth (task #81)**: both names are now registered in the
-/// app-layer `feature_flags` registry (`ENV_ENABLE_FXAA` / `ENV_ENABLE_AO` with
-/// the `fxaa_enabled()` / `ao_enabled()` accessors — the Terry M5-Verify Medium
-/// finding). These two consts are therefore *mirrors*, not owners: they exist
-/// only because `cesium-app` depends on `cesium-bevy-render` (never the reverse),
-/// so this crate cannot import the registry. They are `pub` so
+/// **单一真相源（任务 #81）**：两个名字现在都注册在应用层的
+/// `feature_flags` 注册表（`ENV_ENABLE_FXAA` / `ENV_ENABLE_AO`，搭配
+/// `fxaa_enabled()` / `ao_enabled()` 访问器 —— Terry M5-Verify 的中等
+/// 发现）。因此这两个 const 是*镜像*，而非所有者：它们存在
+/// 仅因为 `cesium-app` 依赖 `cesium-bevy-render`（从不反向），
+/// 所以本 crate 无法导入注册表。它们是 `pub` 的，以便
 /// `feature_flags::adapter_gate_mirrors_are_byte_identical_to_the_registry`
-/// can assert byte-equality across the crate boundary and turn a one-sided
-/// rename red.
+/// 能跨 crate 边界断言字节相等，并使单方面的
+/// 重命名变红。
 pub const ENV_ENABLE_FXAA: &str = "CESIUM_ENABLE_FXAA";
 pub const ENV_ENABLE_AO: &str = "CESIUM_ENABLE_AO";
 
-/// A sub-gate is ON unless its env var is explicitly set to a falsy token
-/// (`0 / false / no / off / ""`). Unset ⇒ ON, so the master
-/// `CESIUM_ENABLE_POSTPROCESS` gate alone still enables both effects (the pre-M2
-/// behaviour). Delegates to the authoritative 4-token truthy parser
-/// (`pipeline::fetch::gate_from_env_value` via `graph`) — no local copy (Daniel H1).
+/// 子门控默认 ON，除非其环境变量被显式设为 falsy token
+///（`0 / false / no / off / ""`）。未设置 ⇒ ON，所以仅主
+/// `CESIUM_ENABLE_POSTPROCESS` 门控仍会启用两个效果（M2 之前的
+/// 行为）。委派给权威的 4-token truthy 解析器
+///（`pipeline::fetch::gate_from_env_value`，经 `graph`）—— 无本地副本（Daniel H1）。
 fn sub_gate_enabled(env: &str) -> bool {
     match std::env::var(env) {
         Ok(raw) => super::graph::gate_from_env_value(Some(raw)),
@@ -43,10 +43,10 @@ pub struct PostProcessConfig {
     pub bloom_enabled: bool,
     pub ambient_occlusion_enabled: bool,
     pub fxaa_enabled: bool,
-    /// Daniel M1: when `true` **and** FXAA is enabled, cameras carrying
-    /// [`CesiumFxaa`] are forced to `Msaa::Off` so FXAA and the camera's hardware
-    /// MSAA do not double-smooth the same edges. Recorded on the config so the
-    /// coupling is explicit, discoverable and unit-testable.
+    /// Daniel M1：当 `true` **且** FXAA 启用时，携带
+    /// [`CesiumFxaa`] 的相机被强制为 `Msaa::Off`，以免 FXAA 与相机的硬件
+    /// MSAA 对同一条边双重平滑。在配置上记录该耦合，以便它
+    /// 显式、可发现、可单元测试。
     pub fxaa_forces_msaa_off: bool,
     pub color_correction_enabled: bool,
     pub height_fog_enabled: bool,
@@ -164,21 +164,20 @@ pub fn bloom_system(
 ) {
 }
 
-/// M5-E2: drive the SSAO render-graph node on/off from [`PostProcessConfig`].
+/// M5-E2：从 [`PostProcessConfig`] 驱动 SSAO render-graph 节点的开/关。
 ///
-/// Syncs `config.ambient_occlusion_enabled` into every camera's
-/// [`CesiumAmbientOcclusion`] marker component. The marker is extracted to the
-/// render world by `ExtractComponentPlugin<CesiumAmbientOcclusion>` and read by
-/// `AoNode::run` (which early-returns when `enabled == false`, giving zero GPU
-/// cost when off). Mirrors [`fxaa_system`].
+/// 将 `config.ambient_occlusion_enabled` 同步进每个相机的
+/// [`CesiumAmbientOcclusion`] 标记组件。该标记由
+/// `ExtractComponentPlugin<CesiumAmbientOcclusion>` 提取到 render world，并由
+/// `AoNode::run` 读取（当 `enabled == false` 时提前 return，关闭时零 GPU
+/// 开销）。对应 [`fxaa_system`]。
 ///
-/// The SSAO kernel parameters (intensity=3.0, sample_radius=0.5, sample_count=16,
-/// bias=0.001, length_cap=0.26) are **compile-time f32 constants** baked into
-/// `ao.wgsl` (f64 in domain, projected to f32 at the GPU boundary); there is no
-/// per-frame uniform to upload beyond the view matrix, so the enable toggle is
-/// the runtime control surface. Runs in `Update`, **before**
-/// [`super::ao::setup_ao_prepass`] (which attaches/detaches the depth+normal
-/// prepass according to this flag).
+/// SSAO 核参数（intensity=3.0、sample_radius=0.5、sample_count=16、
+/// bias=0.001、length_cap=0.26）是烧入 `ao.wgsl` 的**编译期 f32 常量**
+///（领域中为 f64，在 GPU 边界投影为 f32）；除视图矩阵外没有
+/// 逐帧 uniform 需上传，所以开关就是运行时控制面。运行在 `Update`，
+/// **在** [`super::ao::setup_ao_prepass`]（它根据此标志
+/// 挂载/摘除 depth+normal 前置 pass）**之前**。
 pub fn ao_system(
     config: Res<PostProcessConfig>,
     mut query: Query<&mut CesiumAmbientOcclusion>,
@@ -190,19 +189,19 @@ pub fn ao_system(
     }
 }
 
-/// M5-E1: drive the FXAA render-graph node on/off from [`PostProcessConfig`].
+/// M5-E1：从 [`PostProcessConfig`] 驱动 FXAA render-graph 节点的开/关。
 ///
-/// Syncs `config.fxaa_enabled` into every camera's [`CesiumFxaa`] marker
-/// component. The marker is extracted to the render world by
-/// `ExtractComponentPlugin<CesiumFxaa>` and read by `FxaaNode::run` (which
-/// early-returns when `enabled == false`, giving zero GPU cost when off).
+/// 将 `config.fxaa_enabled` 同步进每个相机的 [`CesiumFxaa`] 标记
+/// 组件。该标记由 `ExtractComponentPlugin<CesiumFxaa>` 提取到
+/// render world，并由 `FxaaNode::run` 读取（当 `enabled == false` 时
+/// 提前 return，关闭时零 GPU 开销）。
 ///
-/// FXAA quality preset 12 parameters (PS=5, P0..P4, subpix=0.5,
-/// edgeThreshold=0.125, edgeThresholdMin=0.0833) are **compile-time constants**
-/// baked into `fxaa.wgsl` — mirroring CesiumJS, which hardcodes the preset in
-/// the GLSL rather than exposing a uniform. There is therefore no per-frame
-/// uniform buffer to upload; the enable toggle is the only runtime control
-/// surface. Runs in `Update`.
+/// FXAA 质量预设 12 参数（PS=5、P0..P4、subpix=0.5、
+/// edgeThreshold=0.125、edgeThresholdMin=0.0833）是烧入 `fxaa.wgsl` 的
+/// **编译期常量** —— 与 CesiumJS 一致，它在 GLSL 中硬编码预设
+/// 而非暴露一个 uniform。因此没有逐帧
+/// uniform 缓冲需上传；开关是唯一的运行时控制
+/// 面。运行在 `Update`。
 pub fn fxaa_system(
     config: Res<PostProcessConfig>,
     mut query: Query<&mut CesiumFxaa>,
@@ -214,25 +213,24 @@ pub fn fxaa_system(
     }
 }
 
-/// FIX-MSAA-RESTORE: records a camera's user-authored [`Msaa`] that
-/// [`fxaa_msaa_linkage_system`] suppressed to [`Msaa::Off`] while the FXAA↔MSAA
-/// linkage was active, so the original can be restored the moment the linkage
-/// ends instead of leaving the camera stuck at `Off`.
+/// FIX-MSAA-RESTORE：记录相机用户自行设定的 [`Msaa`]，即
+/// [`fxaa_msaa_linkage_system`] 在 FXAA↔MSAA 关联处于活动期时被压制为 [`Msaa::Off`]
+/// 的值，以便一旦关联结束就能立即恢复原值，而不是
+/// 把相机卡在 `Off`。
 #[derive(Component, Clone, Copy, Debug)]
 pub struct FxaaSuppressedMsaa(pub Msaa);
 
-/// Daniel M1: FXAA and the camera's hardware MSAA are both anti-aliasing. Running
-/// them together double-smooths edges (and wastes the 4× MSAA resolve that FXAA
-/// then re-blurs). When FXAA is enabled and the linkage is on, force every
-/// `CesiumFxaa` camera to `Msaa::Off`. This lives in effects (a camera-traversal
-/// system), **not** in `orbit_camera.rs` (out of scope for this task). Runs in
-/// `Update`; the coupling is recorded via [`PostProcessConfig::fxaa_forces_msaa_off`].
+/// Daniel M1：FXAA 与相机的硬件 MSAA 都是抗锯齿。同时运行
+/// 会对边双重平滑（并浪费 FXAA 随后又重新模糊的 4× MSAA 解析）。当 FXAA 启用
+/// 且关联开启时，强制每个
+/// `CesiumFxaa` 相机为 `Msaa::Off`。这位于 effects（一个相机遍历系统），
+/// **不在** `orbit_camera.rs`（不属本任务范围）。运行在
+/// `Update`；该耦合通过 [`PostProcessConfig::fxaa_forces_msaa_off`] 记录。
 ///
-/// FIX-MSAA-RESTORE: the suppression is now reversible — the first time a camera
-/// is forced off its original value is remembered in [`FxaaSuppressedMsaa`], and
-/// when the linkage turns off (FXAA disabled or `fxaa_forces_msaa_off` cleared)
-/// the original is restored and the marker dropped. The previous one-way write
-/// left cameras permanently at `Off` even after FXAA was disabled.
+/// FIX-MSAA-RESTORE：压制现在可逆 —— 相机第一次被强制关闭时，其原值
+/// 被记入 [`FxaaSuppressedMsaa`]，而当关联关闭（FXAA 禁用或
+/// `fxaa_forces_msaa_off` 清除）时，原值被恢复且标记被删除。之前的单向写
+/// 会让相机即便在 FXAA 禁用后也永久停在 `Off`。
 pub fn fxaa_msaa_linkage_system(
     config: Res<PostProcessConfig>,
     mut commands: Commands,
@@ -245,19 +243,19 @@ pub fn fxaa_msaa_linkage_system(
     for (cam, mut msaa, suppressed) in &mut cameras {
         if linkage_on {
             match suppressed {
-                // Not yet suppressed: remember the authored value (only if there
-                // is one to remember) and force it off.
+                // 尚未压制：记住已设定的值（仅当有值可记时）并强制将其
+                // 关闭。
                 None => {
                     if *msaa != Msaa::Off {
                         commands.entity(cam).insert(FxaaSuppressedMsaa(*msaa));
                         *msaa = Msaa::Off;
                     }
                 }
-                // Already suppressed: stay forced off while the linkage holds.
+                // 已压制：只要关联保持就继续强制关闭。
                 Some(_) => *msaa = Msaa::Off,
             }
         } else if let Some(saved) = suppressed {
-            // Linkage ended: restore the original and clear the marker.
+            // 关联结束：恢复原值并清除标记。
             *msaa = saved.0;
             commands.entity(cam).remove::<FxaaSuppressedMsaa>();
         }
@@ -279,9 +277,9 @@ pub fn post_process_system(
     mut clear_color: ResMut<ClearColor>,
     camera_query: Query<&Transform, With<Camera3d>>,
 ) {
-    // M4.2: folded former `fog_system_inner` (exact duplicate of `fog_system`)
-    // into this unified entry point. The fog logic below is byte-identical to
-    // `fog_system`; the standalone `fog_system` remains for direct scheduling.
+    // M4.2：将旧的 `fog_system_inner`（`fog_system` 的完全重复）折入
+    // 这个统一入口点。下方的雾逻辑与 `fog_system` 字节一致；
+    // 独立的 `fog_system` 保留以便直接调度。
     if !config.fog_enabled {
         return;
     }
@@ -318,20 +316,20 @@ impl Plugin for CesiumEffectsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PostProcessConfig>();
 
-        // M4.2: fog clear-color system — gated by CESIUM_ENABLE_POSTPROCESS_BUILTIN
-        // (tonemapping / bloom / HDR live on the camera bundle in orbit_camera.rs).
-        // Kept on the BUILTIN gate so it never leaks into the M5-E FXAA comparison.
+        // M4.2：雾清屏色系统 —— 由 CESIUM_ENABLE_POSTPROCESS_BUILTIN 门控
+        //（tonemapping / bloom / HDR 位于 orbit_camera.rs 的相机 bundle 上）。
+        // 保持在 BUILTIN 门控上，以免泄入 M5-E 的 FXAA 对比。
         if super::graph::builtin_gate_enabled() {
             app.add_systems(Update, post_process_system);
         }
 
-        // M5-E1: FXAA render-graph node — gated by CESIUM_ENABLE_POSTPROCESS.
-        // Gate OFF → no nodes registered → v0 baselines pixel-neutral (PSNR=∞).
+        // M5-E1：FXAA render-graph 节点 —— 由 CESIUM_ENABLE_POSTPROCESS 门控。
+        // 门控 OFF → 不注册节点 → v0 baseline 像素中性（PSNR=∞）。
         if super::graph::postprocess_gate_enabled() {
-            // Daniel M2: FXAA and AO now have independent sub-gates
-            // (`CESIUM_ENABLE_FXAA` / `CESIUM_ENABLE_AO`). Each defaults to ON when
-            // unset, so the master gate alone still enables both (pre-M2 behaviour);
-            // setting one to a falsy token disables just that effect.
+            // Daniel M2：FXAA 与 AO 现在拥有独立的子门控
+            //（`CESIUM_ENABLE_FXAA` / `CESIUM_ENABLE_AO`）。各自未设置时默认为 ON，
+            // 所以仅主门控仍会启用两者（M2 之前的行为）；
+            // 将一个设为 falsy token 只会禁用该效果。
             let fxaa_enabled = sub_gate_enabled(ENV_ENABLE_FXAA);
             let ao_enabled = sub_gate_enabled(ENV_ENABLE_AO);
             {
@@ -339,31 +337,31 @@ impl Plugin for CesiumEffectsPlugin {
                 cfg.fxaa_enabled = fxaa_enabled;
                 cfg.ambient_occlusion_enabled = ao_enabled;
             }
-            // fxaa_system / ao_system sync these toggles into each camera's
-            // CesiumFxaa / CesiumAmbientOcclusion markers.
+            // fxaa_system / ao_system 将这些开关同步进每个相机的
+            // CesiumFxaa / CesiumAmbientOcclusion 标记。
             app.add_systems(Update, fxaa_system);
-            // Daniel M1: FXAA on ⇒ force the FXAA cameras' MSAA off (no double AA).
+            // Daniel M1：FXAA 开启 ⇒ 强制 FXAA 相机的 MSAA 关闭（无双重 AA）。
             app.add_systems(Update, fxaa_msaa_linkage_system);
-            // ao_system must run before setup_ao_prepass so the prepass
-            // attach/detach decision sees the reconciled `enabled` flag.
+            // ao_system 必须在 setup_ao_prepass 之前运行，以便前置 pass 的
+            // 挂载/摘除决策能看到已调和的 `enabled` 标志。
             app.add_systems(
                 Update,
                 ao_system.before(super::ao::setup_ao_prepass),
             );
-            // `build` half only. The render-world half (pipeline `init_resource`,
-            // whose `FromWorld` reads `RenderDevice`) must wait for
-            // `Plugin::finish` below: Bevy inserts `RenderDevice` into the render
-            // world in `RenderPlugin::finish`, never in `build`
-            // (docs/deviations.md#dev-029).
+            // 仅 `build` 半边。render-world 半边（pipeline `init_resource`，
+            // 其 `FromWorld` 读取 `RenderDevice`）必须等待下方的
+            // `Plugin::finish`：Bevy 在 `RenderPlugin::finish` 中才将 `RenderDevice`
+            // 插入 render world，从不在 `build` 中
+            //（docs/deviations.md#dev-029）。
             super::graph::register_render_graph_main_world(app);
         }
     }
 
-    /// `Plugin::finish`: `RenderPlugin::finish` has now created and inserted
-    /// `RenderDevice` / `RenderQueue` / `RenderAdapter` into the render world, so
-    /// the `PassThroughPipeline` / `FxaaPipeline` / `AoPipeline` resources, their
-    /// `Core3d` nodes and Robin #72's H2 chain can be built safely. Gate OFF (the
-    /// default) ⇒ no-op ⇒ v0 baselines pixel-neutral.
+    /// `Plugin::finish`：`RenderPlugin::finish` 现已创建并将 `RenderDevice` /
+    /// `RenderQueue` / `RenderAdapter` 插入 render world，因此
+    /// `PassThroughPipeline` / `FxaaPipeline` / `AoPipeline` 资源、它们的
+    /// `Core3d` 节点以及 Robin #72 的 H2 链可以安全构建。门控 OFF（默认值）
+    /// ⇒ no-op ⇒ v0 baseline 像素中性。
     fn finish(&self, app: &mut App) {
         if super::graph::postprocess_gate_enabled() {
             super::graph::finish_render_graph(app);
@@ -592,16 +590,16 @@ mod tests {
         assert!((pipeline.bloom.threshold - 0.9).abs() < 1e-10);
     }
 
-    /// M5-E1: `fxaa_system` must sync `PostProcessConfig.fxaa_enabled` into every
-    /// camera's `CesiumFxaa` marker (the node on/off driver). Headless-testable
-    /// because it is a pure ECS system — no GPU / render graph required.
+    /// M5-E1：`fxaa_system` 必须将 `PostProcessConfig.fxaa_enabled` 同步进每个
+    /// 相机的 `CesiumFxaa` 标记（节点开/关驱动）。可无头测试
+    /// 因为它是一个纯 ECS 系统 —— 无需 GPU / render graph。
     #[test]
     fn test_fxaa_system_syncs_config_to_component() {
         let mut app = App::new();
         app.init_resource::<PostProcessConfig>();
         app.add_systems(Update, fxaa_system);
 
-        // Spawn a camera marker enabled=true; config default is fxaa_enabled=false.
+        // 生成一个 enabled=true 的相机标记；配置默认 fxaa_enabled=false。
         let e = app.world_mut().spawn(CesiumFxaa { enabled: true }).id();
         app.update();
         assert!(
@@ -609,7 +607,7 @@ mod tests {
             "component must follow config (false)"
         );
 
-        // Flip config on → component follows.
+        // 将配置翻为开 → 标记随之。
         app.world_mut().resource_mut::<PostProcessConfig>().fxaa_enabled = true;
         app.update();
         assert!(
@@ -618,17 +616,17 @@ mod tests {
         );
     }
 
-    /// M5-E2: `ao_system` must sync `PostProcessConfig.ambient_occlusion_enabled`
-    /// into every camera's `CesiumAmbientOcclusion` marker (the SSAO node on/off
-    /// driver). Headless-testable because it is a pure ECS system — no GPU /
-    /// render graph required. Mirrors `test_fxaa_system_syncs_config_to_component`.
+    /// M5-E2：`ao_system` 必须将 `PostProcessConfig.ambient_occlusion_enabled`
+    /// 同步进每个相机的 `CesiumAmbientOcclusion` 标记（SSAO 节点开/关
+    /// 驱动）。可无头测试因为它是一个纯 ECS 系统 —— 无需 GPU /
+    /// render graph。对应 `test_fxaa_system_syncs_config_to_component`。
     #[test]
     fn test_ao_system_syncs_config_to_component() {
         let mut app = App::new();
         app.init_resource::<PostProcessConfig>();
         app.add_systems(Update, ao_system);
 
-        // Spawn a camera marker enabled=true; config default is ambient_occlusion_enabled=false.
+        // 生成一个 enabled=true 的相机标记；配置默认 ambient_occlusion_enabled=false。
         let e = app
             .world_mut()
             .spawn(CesiumAmbientOcclusion { enabled: true })
@@ -639,7 +637,7 @@ mod tests {
             "component must follow config (false)"
         );
 
-        // Flip config on → component follows.
+        // 将配置翻为开 → 标记随之。
         app.world_mut()
             .resource_mut::<PostProcessConfig>()
             .ambient_occlusion_enabled = true;
@@ -650,9 +648,9 @@ mod tests {
         );
     }
 
-    /// Daniel M1: when FXAA is enabled and the linkage is on, every `CesiumFxaa`
-    /// camera is forced to `Msaa::Off` (no double anti-aliasing); disabling the
-    /// linkage leaves the camera's MSAA untouched. Headless — pure ECS.
+    /// Daniel M1：当 FXAA 启用且关联开启时，每个 `CesiumFxaa`
+    /// 相机被强制为 `Msaa::Off`（无双重抗锯齿）；禁用关联则保持相机的 MSAA
+    /// 不变。无头 —— 纯 ECS。
     #[test]
     fn test_fxaa_msaa_linkage_forces_msaa_off() {
         let mut app = App::new();
@@ -673,7 +671,7 @@ mod tests {
             "FXAA on ⇒ camera MSAA forced off"
         );
 
-        // Linkage disabled ⇒ the camera's MSAA is left as authored.
+        // 关联禁用 ⇒ 相机的 MSAA 保持其设定的值。
         app.world_mut()
             .resource_mut::<PostProcessConfig>()
             .fxaa_forces_msaa_off = false;
@@ -682,10 +680,10 @@ mod tests {
         assert_eq!(*app.world().get::<Msaa>(cam).unwrap(), Msaa::Sample4);
     }
 
-    /// FIX-MSAA-RESTORE: disabling FXAA must restore the camera's *original*
-    /// MSAA (remembered when it was forced off), not leave it stuck at `Off`.
-    /// Unlike the test above, the camera's MSAA is never hand-edited, so only a
-    /// real save/restore can make it pass. Headless — pure ECS.
+    /// FIX-MSAA-RESTORE：禁用 FXAA 必须恢复相机*原始的*
+    /// MSAA（在其被强制关闭时记住的值），而不是把它卡在 `Off`。
+    /// 与上面的测试不同，相机的 MSAA 从不会被手工修改，所以只有
+    /// 真正的 save/restore 才能使其通过。无头 —— 纯 ECS。
     #[test]
     fn test_fxaa_msaa_linkage_restores_original_msaa() {
         let mut app = App::new();
@@ -699,7 +697,7 @@ mod tests {
             .spawn((Msaa::Sample4, CesiumFxaa { enabled: true }))
             .id();
 
-        // Linkage on ⇒ forced off, and the authored value is remembered.
+        // 关联开启 ⇒ 强制关闭，且设定的值被记住。
         app.update();
         assert_eq!(*app.world().get::<Msaa>(cam).unwrap(), Msaa::Off);
         assert_eq!(
@@ -708,7 +706,7 @@ mod tests {
             "original MSAA must be remembered on suppression"
         );
 
-        // Disable FXAA (no manual MSAA edit) ⇒ original restored, marker dropped.
+        // 禁用 FXAA（不手工修改 MSAA）⇒ 恢复原值，标记被删除。
         app.world_mut()
             .resource_mut::<PostProcessConfig>()
             .fxaa_enabled = false;
@@ -724,8 +722,8 @@ mod tests {
         );
     }
 
-    /// Daniel M2: the FXAA / AO sub-gates read distinct env-var names so they can
-    /// be toggled independently under the master `CESIUM_ENABLE_POSTPROCESS` gate.
+    /// Daniel M2：FXAA / AO 子门控读取各自不同的环境变量名，以便
+    /// 在主 `CESIUM_ENABLE_POSTPROCESS` 门控下可独立切换它们。
     #[test]
     fn test_sub_gate_env_names_are_distinct() {
         assert_eq!(ENV_ENABLE_FXAA, "CESIUM_ENABLE_FXAA");

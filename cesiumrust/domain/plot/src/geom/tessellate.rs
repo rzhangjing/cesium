@@ -1,22 +1,21 @@
-//! Polygon tessellation (plan §6): ear-clipping triangulation of a filled ring
-//! with optional holes, via the `earcut` crate (a workspace dependency).
+//! 多边形细分（计划 §6）：对带可选孔的填充环进行耳切三角剖分，
+//! 经由 `earcut` crate（一个工作区依赖）。
 //!
-//! Input rings are plain `[f64; 2]` positions (world or screen — the caller
-//! decides, and must feed a *planar* space); output is CCW triangle indices into
-//! the concatenated `[outer…, hole0…, hole1…]` vertex stream, ready to become a
-//! `TriangleList` mesh.
+//! 输入环是普通的 `[f64; 2]` 位置（世界或屏幕 —— 由调用方
+//! 决定，且必须馈入一个*平面*空间）；输出是 CCW 三角形索引，指向
+//! 拼接后的 `[outer…, hole0…, hole1…]` 顶点流，可直接成为
+//! `TriangleList` 网格。
 
 use earcut::Earcut;
 
-/// Triangulate a simple polygon. `outer` is the boundary ring; each `hole` is an
-/// interior ring. Returns triangle indices into the concatenated vertex stream
-/// (`outer` followed by the holes in order). Empty when there are too few points
-/// to form a face.
+/// 对一个简单多边形进行三角剖分。`outer` 是边界环；每个 `hole` 是一个
+/// 内部环。返回指向拼接后顶点流的三角形索引
+/// （`outer` 后依次跟各孔）。当点数太少无法构成一个面时为空。
 pub fn triangulate(outer: &[[f64; 2]], holes: &[[f64; 2]]) -> Vec<u32> {
     triangulate_rings(outer, std::iter::once(holes))
 }
 
-/// Multi-hole variant of [`triangulate`].
+/// [`triangulate`] 的多孔变体。
 pub fn triangulate_holes(outer: &[[f64; 2]], holes: &[Vec<[f64; 2]>]) -> Vec<u32> {
     triangulate_rings(outer, holes.iter().map(|h| h.as_slice()))
 }
@@ -68,7 +67,7 @@ mod tests {
         let outer = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
         let hole = [[4.0, 4.0], [6.0, 4.0], [6.0, 6.0], [4.0, 6.0]];
         let idx = triangulate(&outer, &hole);
-        // 8 total vertices; the ring-with-hole needs > 1 triangle to ring it.
+        // 共 8 个顶点；带孔的环需要 > 1 个三角形来环绕它。
         assert!(idx.len() >= 6 && idx.len().is_multiple_of(3), "{:?}", idx.len());
         assert!(idx.iter().all(|&i| i < 8), "indices stay in range: {idx:?}");
     }

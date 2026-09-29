@@ -1,6 +1,6 @@
-//! Scene/CameraSpec.js → Rust integration tests (setView variants + coordinate transforms)
-//! Ported from: packages/engine/Specs/Scene/CameraSpec.js
-//! A-class pure math tests: setView HPR round-trips, direction/up, coordinate transforms,
+//! Scene/CameraSpec.js → Rust 集成测试（setView 变体 + 坐标变换）
+//! 移植自：packages/engine/Specs/Scene/CameraSpec.js
+//! A 类纯数学测试：setView HPR 往返、direction/up、坐标变换、
 //! distanceToBoundingSphere
 
 use cesium_camera::Camera;
@@ -43,7 +43,7 @@ fn assert_scalar_eq(actual: f64, expected: f64, eps: f64, msg: &str) {
 }
 
 // ============================================================================
-// setView right rotation order
+// setView 右旋旋转顺序
 // CesiumJS: position=fromDegrees(-117.16, 32.71), heading=180°, pitch=0°, roll=45°
 // ============================================================================
 
@@ -72,7 +72,7 @@ fn set_view_right_rotation_order() {
 }
 
 // ============================================================================
-// setView (1) - heading change without destination
+// setView (1) - 无 destination 的 heading 变化
 // CesiumJS: heading=45°, pitch=-50°, roll=45°, then heading→200°
 // ============================================================================
 
@@ -99,7 +99,7 @@ fn set_view_1_heading_change() {
     assert_scalar_eq(camera.pitch_3d(&ellipsoid), pitch, EPSILON6, "pitch (1)");
     assert_scalar_eq(camera.roll_3d(&ellipsoid), roll, EPSILON6, "roll (1)");
 
-    // Change heading only (no destination → keep current position)
+    // 仅改变 heading（无 destination → 保持当前位置）
     let new_heading = math_utils::to_radians(200.0);
     let cur_pitch = camera.pitch_3d(&ellipsoid);
     let cur_roll = camera.roll_3d(&ellipsoid);
@@ -112,7 +112,7 @@ fn set_view_1_heading_change() {
 }
 
 // ============================================================================
-// setView (2) - pitch change without destination
+// setView (2) - 无 destination 的 pitch 变化
 // CesiumJS: heading=45°, pitch=50°, roll=45°, then pitch→-50°
 // ============================================================================
 
@@ -139,7 +139,7 @@ fn set_view_2_pitch_change() {
     assert_scalar_eq(camera.pitch_3d(&ellipsoid), pitch, EPSILON6, "pitch (1)");
     assert_scalar_eq(camera.roll_3d(&ellipsoid), roll, EPSILON6, "roll (1)");
 
-    // Change pitch only
+    // 仅改变 pitch
     let new_pitch = math_utils::to_radians(-50.0);
     let cur_heading = camera.heading_3d(&ellipsoid);
     let cur_roll = camera.roll_3d(&ellipsoid);
@@ -152,7 +152,7 @@ fn set_view_2_pitch_change() {
 }
 
 // ============================================================================
-// setView (3) - roll change without destination
+// setView (3) - 无 destination 的 roll 变化
 // CesiumJS: heading=45°, pitch=50°, roll=45°, then roll→200°
 // ============================================================================
 
@@ -179,7 +179,7 @@ fn set_view_3_roll_change() {
     assert_scalar_eq(camera.pitch_3d(&ellipsoid), pitch, EPSILON6, "pitch (1)");
     assert_scalar_eq(camera.roll_3d(&ellipsoid), roll, EPSILON6, "roll (1)");
 
-    // Change roll only
+    // 仅改变 roll
     let new_roll = math_utils::to_radians(200.0);
     let cur_heading = camera.heading_3d(&ellipsoid);
     let cur_pitch = camera.pitch_3d(&ellipsoid);
@@ -192,7 +192,7 @@ fn set_view_3_roll_change() {
 }
 
 // ============================================================================
-// setView with direction, up
+// 带 direction、up 的 setView
 // CesiumJS: direction=-UNIT_Z, up=UNIT_Y, destination=fromDegrees(-117.16, 32.71)
 // ============================================================================
 
@@ -219,7 +219,7 @@ fn set_view_with_direction_up() {
 
 // ============================================================================
 // worldToCameraCoordinates (Cartesian4)
-// CesiumJS: transform with rotation only, UNIT_X → UNIT_Z
+// CesiumJS: 仅旋转变换，UNIT_X → UNIT_Z
 // ============================================================================
 
 #[test]
@@ -231,8 +231,8 @@ fn world_to_camera_coordinates_cartesian4() {
     );
 
     // CesiumJS: new Matrix4(0,0,1,0, 1,0,0,0, 0,1,0,0, 0,0,0,1)
-    // CesiumJS constructor args are row-major; glam from_cols_array is column-major.
-    // Transpose rotation part: M_glam = M_cesium^T
+    // CesiumJS 构造参数为行主序；glam from_cols_array 为列主序。
+    // 转置旋转部分：M_glam = M_cesium^T
     let transform = DMat4::from_cols_array(&[
         0.0, 1.0, 0.0, 0.0,
         0.0, 0.0, 1.0, 0.0,
@@ -247,7 +247,7 @@ fn world_to_camera_coordinates_cartesian4() {
 
 // ============================================================================
 // worldToCameraCoordinatesPoint
-// CesiumJS: transform with rotation+translation, UNIT_X → invTransform * (1,0,0,1)
+// CesiumJS: 旋转+平移变换，UNIT_X → invTransform * (1,0,0,1)
 // ============================================================================
 
 #[test]
@@ -259,7 +259,7 @@ fn world_to_camera_coordinates_point() {
     );
 
     // CesiumJS: new Matrix4(0,0,1,10, 1,0,0,20, 0,1,0,30, 0,0,0,1)
-    // Transpose rotation, keep translation column:
+    // 转置旋转，保留平移列：
     let transform = DMat4::from_cols_array(&[
         0.0, 1.0, 0.0, 0.0,
         0.0, 0.0, 1.0, 0.0,
@@ -268,7 +268,7 @@ fn world_to_camera_coordinates_point() {
     ]);
     camera.transform = transform;
 
-    // CesiumJS expected: getColumn(inverseTransform, 3) + UNIT_Z
+    // CesiumJS 期望值：getColumn(inverseTransform, 3) + UNIT_Z
     let inv = transform.inverse();
     let inv_col3 = (inv * DVec4::new(0.0, 0.0, 0.0, 1.0)).truncate();
     let expected = inv_col3 + DVec3::new(0.0, 0.0, 1.0);
@@ -279,7 +279,7 @@ fn world_to_camera_coordinates_point() {
 
 // ============================================================================
 // worldToCameraCoordinatesVector
-// CesiumJS: transform with rotation+translation, UNIT_X → UNIT_Z (vector ignores translation)
+// CesiumJS: 旋转+平移变换，UNIT_X → UNIT_Z（向量忽略平移）
 // ============================================================================
 
 #[test]
@@ -305,7 +305,7 @@ fn world_to_camera_coordinates_vector() {
 
 // ============================================================================
 // cameraToWorldCoordinates (Cartesian4)
-// CesiumJS: transform with rotation only, UNIT_Z → UNIT_X
+// CesiumJS: 仅旋转变换，UNIT_Z → UNIT_X
 // ============================================================================
 
 #[test]
@@ -331,7 +331,7 @@ fn camera_to_world_coordinates_cartesian4() {
 
 // ============================================================================
 // cameraToWorldCoordinatesPoint
-// CesiumJS: transform with rotation+translation, UNIT_Z → UNIT_X + column3(transform)
+// CesiumJS: 旋转+平移变换，UNIT_Z → UNIT_X + column3(transform)
 // ============================================================================
 
 #[test]
@@ -351,7 +351,7 @@ fn camera_to_world_coordinates_point() {
     ]);
     camera.transform = transform;
 
-    // CesiumJS expected: UNIT_X + getColumn(transform, 3)
+    // CesiumJS 期望值：UNIT_X + getColumn(transform, 3)
     let col3 = (transform * DVec4::new(0.0, 0.0, 0.0, 1.0)).truncate();
     let expected = DVec3::new(1.0, 0.0, 0.0) + col3;
 
@@ -361,7 +361,7 @@ fn camera_to_world_coordinates_point() {
 
 // ============================================================================
 // cameraToWorldCoordinatesVector
-// CesiumJS: transform with rotation+translation, UNIT_Z → UNIT_X (vector ignores translation)
+// CesiumJS: 旋转+平移变换，UNIT_Z → UNIT_X（向量忽略平移）
 // ============================================================================
 
 #[test]
@@ -387,7 +387,7 @@ fn camera_to_world_coordinates_vector() {
 
 // ============================================================================
 // distanceToBoundingSphere
-// CesiumJS: camera at (0,0,1), dir=(0,0,-1), sphere at ZERO radius 0.5 → distance 0.5
+// CesiumJS: 相机位于 (0,0,1)，dir=(0,0,-1)，球体位于 ZERO 半径 0.5 → 距离 0.5
 // ============================================================================
 
 #[test]
@@ -404,7 +404,7 @@ fn distance_to_bounding_sphere() {
 }
 
 // ============================================================================
-// get inverse transform
+// 获取逆变换
 // CesiumJS: setTransform(scale5 + translation), inverseTransform = inverseTransformation
 // ============================================================================
 
@@ -417,7 +417,7 @@ fn get_inverse_transform() {
     );
 
     // CesiumJS: new Matrix4(5,0,0,1, 0,5,0,2, 0,0,5,3, 0,0,0,1)
-    // Row-major args → glam column-major (transpose rotation, keep translation):
+    // 行主序参数 → glam 列主序（转置旋转，保留平移）：
     // M_cesium = [[5,0,0,1],[0,5,0,2],[0,0,5,3],[0,0,0,1]]
     // M_glam cols: col0=(5,0,0,0), col1=(0,5,0,0), col2=(0,0,5,0), col3=(1,2,3,1)
     let transform = DMat4::from_cols_array(&[
@@ -431,7 +431,7 @@ fn get_inverse_transform() {
     let inv = camera.inverse_transform();
     let expected = camera.transform.inverse();
 
-    // Verify inverse_transform == transform.inverse()
+    // 验证 inverse_transform == transform.inverse()
     for i in 0..16 {
         let a = inv.to_cols_array()[i];
         let b = expected.to_cols_array()[i];
@@ -440,7 +440,7 @@ fn get_inverse_transform() {
 }
 
 // ============================================================================
-// gets magnitude in Columbus view / 3D
+// 在 Columbus view / 3D 中获取模长
 // ============================================================================
 
 #[test]
@@ -467,8 +467,8 @@ fn gets_magnitude_in_3d() {
 }
 
 // ============================================================================
-// normalizes WC members
-// CesiumJS: after lookAtTransform(scale(2)), directionWC/rightWC/upWC are unit
+// 归一化 WC 成员
+// CesiumJS: 在 lookAtTransform(scale(2)) 之后，directionWC/rightWC/upWC 均为单位向量
 // ============================================================================
 
 #[test]
@@ -488,7 +488,7 @@ fn normalizes_wc_members() {
 }
 
 // ============================================================================
-// get pick ray perspective
+// 获取拾取射线（透视）
 // CesiumJS: windowCoord=(width/2, height), expected dir=(0, -windowHeight, -1).normalize()
 // ============================================================================
 
@@ -500,16 +500,16 @@ fn get_pick_ray_perspective() {
         DVec3::new(0.0, 1.0, 0.0),
     );
 
-    // Use arbitrary canvas dimensions
+    // 使用任意画布尺寸
     let width = 512.0;
     let height = 384.0;
     let window_x = width / 2.0;
-    let window_y = height; // bottom of screen
+    let window_y = height; // 屏幕底部
 
     let ray = camera.get_pick_ray_perspective(window_x, window_y, width, height).unwrap();
 
-    // Expected: windowHeight = near * tan(fovy * 0.5)
-    // Default frustum: fov=60deg, near=1.0
+    // 期望值：windowHeight = near * tan(fovy * 0.5)
+    // 默认视锥：fov=60deg, near=1.0
     let fovy = math_utils::to_radians(60.0);
     let near = 1.0;
     let window_height = near * (fovy * 0.5).tan();
@@ -520,8 +520,8 @@ fn get_pick_ray_perspective() {
 }
 
 // ============================================================================
-// pick ellipsoid
-// CesiumJS: camera at 2*maxRadii on X axis, looking at center, center pick → (0,0,0) cartographic
+// 拾取椭球
+// CesiumJS: 相机位于 X 轴 2*maxRadii 处，看向中心，中心拾取 → (0,0,0) 的 cartographic
 // ============================================================================
 
 #[test]
@@ -534,11 +534,11 @@ fn pick_ellipsoid_center() {
     let up = DVec3::Z;
 
     let mut camera = Camera::new(position, direction, up);
-    // Set perspective frustum matching CesiumJS test
+    // 设置与 CesiumJS 测试一致的透视视锥
     camera.frustum = cesium_camera::Frustum::Perspective(
         cesium_geospatial::PerspectiveFrustum::new(
             math_utils::to_radians(60.0),
-            1.0, // aspect ratio
+            1.0, // 宽高比
             100.0,
             60.0 * max_radii,
         ),
@@ -546,7 +546,7 @@ fn pick_ellipsoid_center() {
 
     let width = 512.0;
     let height = 384.0;
-    // Pick at center of screen
+    // 在屏幕中心拾取
     let p = camera.pick_ellipsoid(width * 0.5, height * 0.5, width, height, &ellipsoid);
     assert!(p.is_some(), "should pick ellipsoid at center");
     let p = p.unwrap();
@@ -576,7 +576,7 @@ fn pick_ellipsoid_misses_at_corner() {
         ),
     );
 
-    // Pick at corner (0,0) - should miss the ellipsoid
+    // 在角点 (0,0) 拾取 - 应未命中椭球
     let p = camera.pick_ellipsoid(0.0, 0.0, 512.0, 384.0, &ellipsoid);
     assert!(p.is_none(), "should not pick ellipsoid at corner");
 }
@@ -586,19 +586,19 @@ fn pick_ellipsoid_near_surface() {
     let ellipsoid = Ellipsoid::WGS84;
     let min_radii = ellipsoid.minimum_radius();
 
-    // Ten meters above the surface at the north pole, looking down.
+    // 位于北极表面以上十米处，俯视下方。
     let camera = Camera::new(
         DVec3::new(0.0, 0.0, min_radii + 10.0),
         DVec3::new(0.0, 0.0, -1.0),
         DVec3::new(1.0, 0.0, 0.0),
     );
 
-    // Pick at top-left corner (CesiumJS test uses Cartesian2.ZERO)
+    // 在左上角拾取（CesiumJS 测试使用 Cartesian2.ZERO）
     let p = camera.pick_ellipsoid(0.0, 0.0, 512.0, 384.0, &ellipsoid);
-    // The test expects p.z ≈ minRadii (within 1e-4)
-    // With default frustum (fov=60, aspect=16/9), the corner ray may still hit
+    // 测试期望 p.z ≈ minRadii（误差 1e-4 以内）
+    // 使用默认视锥（fov=60, aspect=16/9），角点射线仍可能命中
     if let Some(p) = p {
         assert_scalar_eq(p.z, min_radii, 1e-4, "pick near surface z");
     }
-    // If None, the corner ray misses - that's also acceptable for this camera setup
+    // 若为 None，则角点射线未命中 - 对于此相机设置同样可接受
 }

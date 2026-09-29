@@ -1,9 +1,9 @@
-//! Tests ported from CesiumJS:
-//! - objectToQuerySpec.js (5 A-class)
-//! - queryToObjectSpec.js (4 A-class)
-//! - parseResponseHeadersSpec.js (2 A-class)
-//! - getFilenameFromUriSpec.js (1 A-class)
-//! - getExtensionFromUriSpec.js (1 A-class)
+//! 移植自 CesiumJS 的测试：
+//! - objectToQuerySpec.js（5 个 A 类）
+//! - queryToObjectSpec.js（4 个 A 类）
+//! - parseResponseHeadersSpec.js（2 个 A 类）
+//! - getFilenameFromUriSpec.js（1 个 A 类）
+//! - getExtensionFromUriSpec.js（1 个 A 类）
 
 use cesium_geospatial::uri_utils::{
     get_extension_from_uri, get_filename_from_uri, object_to_query, parse_response_headers,
@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 #[test]
 fn test_object_to_query_can_encode_data() {
-    // Note: HashMap doesn't preserve order, so we test with single-key maps
+    // 注意：HashMap 不保证顺序，因此我们用单键 map 进行测试
     let mut obj = HashMap::new();
     obj.insert("key1".to_string(), QueryValue::Single("some value".to_string()));
     let str = object_to_query(&obj);
@@ -54,14 +54,14 @@ fn test_object_to_query_can_encode_blank() {
 
 #[test]
 fn test_object_to_query_combined() {
-    // Test individual keys since HashMap order is non-deterministic
+    // 由于 HashMap 顺序不确定，逐个测试各个键
     let mut obj = HashMap::new();
     obj.insert("key1".to_string(), QueryValue::Single("some value".to_string()));
     obj.insert("key2".to_string(), QueryValue::Single("a/b".to_string()));
     obj.insert("key3".to_string(), QueryValue::Array(vec!["x".to_string(), "y".to_string()]));
 
     let query = object_to_query(&obj);
-    // Verify all parts are present
+    // 验证所有部分都存在
     assert!(query.contains("key1=some%20value"));
     assert!(query.contains("key2=a%2Fb"));
     assert!(query.contains("key3=x"));
@@ -88,7 +88,7 @@ fn test_query_to_object_can_decode_data() {
         Some(&QueryValue::Single("Core/objectToQuery can encode data.".to_string()))
     );
 
-    // + is decoded as space
+    // + 被解码为空格
     let obj = query_to_object("q=query+string");
     assert_eq!(obj.get("q"), Some(&QueryValue::Single("query string".to_string())));
 }

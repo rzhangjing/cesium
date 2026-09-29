@@ -1,4 +1,4 @@
-//! Tests ported from CesiumJS EntitySpec.js (13 A-class tests)
+//! 移植自 CesiumJS EntitySpec.js 的测试（13 个 A 类测试）
 //! - constructor/isAvailable/merge/computeModelMatrix/addProperty/removeProperty
 
 use cesium_datasource::entity::Entity;
@@ -6,7 +6,7 @@ use cesium_datasource::property::Property;
 use cesium_geospatial::Ellipsoid;
 use cesium_time::{JulianDate, TimeInterval, TimeIntervalCollection, TimeIntervalData};
 
-// ===== Constructor =====
+// ===== 构造 =====
 
 #[test]
 fn test_constructor_sets_expected_properties() {
@@ -22,7 +22,7 @@ fn test_constructor_sets_expected_properties() {
 
 #[test]
 fn test_constructor_creates_unique_id() {
-    // In Rust, we always require an ID, but we can test that different entities have different IDs
+    // 在 Rust 中我们始终要求一个 ID，但可测试不同实体有不同 ID
     let e1 = Entity::new("id-1");
     let e2 = Entity::new("id-2");
     assert_ne!(e1.id, e2.id);
@@ -41,7 +41,7 @@ fn test_is_available_always_true_if_no_availability() {
 fn test_is_available_works() {
     let mut entity = Entity::new("test");
 
-    // Create availability: [2020-01-01, 2020-12-31]
+    // 创建可用性区间: [2020-01-01, 2020-12-31]
     let start = JulianDate::from_date_components(2020, 1, 1, 0, 0, 0, 0.0);
     let stop = JulianDate::from_date_components(2020, 12, 31, 23, 59, 59, 0.0);
     let interval = TimeInterval::new(start, stop, true, true);
@@ -49,11 +49,11 @@ fn test_is_available_works() {
     tic.add_interval(TimeIntervalData::new(interval, None), &|_, _| true);
     entity.availability = Some(tic);
 
-    // Time inside availability
+    // 时间在可用性内
     let inside = JulianDate::from_date_components(2020, 6, 15, 12, 0, 0, 0.0);
     assert!(entity.is_available(&inside));
 
-    // Time outside availability
+    // 时间在可用性外
     let outside = JulianDate::from_date_components(2021, 6, 15, 12, 0, 0, 0.0);
     assert!(!entity.is_available(&outside));
 }
@@ -95,9 +95,9 @@ fn test_merge_ignores_reserved_property_names() {
     let source = Entity::new("source").with_name("Source Name");
 
     target.merge(&source);
-    // Name should NOT be overwritten
+    // name 不应被覆盖
     assert_eq!(target.name, Some("Target Name".to_string()));
-    // ID should NOT change
+    // ID 应保持不变
     assert_eq!(target.id, "target");
 }
 
@@ -112,9 +112,9 @@ fn test_merge_does_not_overwrite_availability() {
     target.availability = Some(tic);
 
     let source = Entity::new("source");
-    // source has no availability
+    // source 无可用性
     target.merge(&source);
-    // target's availability should be preserved
+    // target 的可用性应被保留
     assert!(target.availability.is_some());
 }
 
@@ -128,9 +128,9 @@ fn test_merge_works_with_custom_properties() {
         .with_property("new_prop", serde_json::json!(42));
 
     target.merge(&source);
-    // Existing property should NOT be overwritten
+    // 已有属性不应被覆盖
     assert_eq!(target.properties["existing"], serde_json::json!("target_value"));
-    // New property should be added
+    // 新属性应被添加
     assert_eq!(target.properties["new_prop"], serde_json::json!(42));
 }
 
@@ -140,7 +140,7 @@ fn test_merge_fills_undefined_position() {
     let source = Entity::new("source").with_position(0.5, 0.6, 200.0);
 
     target.merge(&source);
-    // Position should be filled from source
+    // position 应从 source 填充
     assert!(matches!(target.position, Property::Constant(_)));
 }
 
@@ -162,7 +162,7 @@ fn test_compute_model_matrix_returns_enu_when_no_orientation() {
     assert!(result.is_some());
 
     let mat = result.unwrap();
-    // Translation should be on the equator at lon=0
+    // 平移应在赤道上 lon=0 处
     let translation = mat.w_axis;
     // At lon=0, lat=0, h=0: x ≈ 6378137, y ≈ 0, z ≈ 0
     assert!((translation.x - 6378137.0).abs() < 1.0);
@@ -181,7 +181,7 @@ fn test_compute_model_matrix_with_orientation() {
     assert!(result.is_some());
 
     let mat = result.unwrap();
-    // With identity quaternion, rotation should be identity
+    // 使用单位四元数时，旋转应为单位阵
     let rot = glam::DMat3::from_cols(
         mat.col(0).truncate(),
         mat.col(1).truncate(),

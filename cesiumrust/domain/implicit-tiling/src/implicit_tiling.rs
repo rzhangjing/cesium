@@ -1,25 +1,25 @@
-//! Implicit tiling for 3D Tiles 1.1.
+//! 3D Tiles 1.1 的隐式切分。
 //!
-//! Maps to CesiumJS `Scene/Implicit3DTileContent.js`:
-//! - Quadtree/Octree implicit subdivision
-//! - Availability bitstreams
-//! - Morton index computation
-//! - Subtree file parsing
+//! 映射到 CesiumJS `Scene/Implicit3DTileContent.js`：
+//! - Quadtree/Octree 隐式细分
+//! - 可用性位流（availability bitstreams）
+//! - Morton 索引计算
+//! - 子树文件解析
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 沿自 CesiumJS 移植的 legacy 风格债（deferred.md #18）；在 M13 lint-cleanup 或本文件在其里程碑被重写时重新检视
 #![allow(clippy::manual_is_multiple_of)]
-/// Subdivision scheme for implicit tiling.
+/// 隐式切分的细分方案。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SubdivisionScheme {
-    /// Quadtree (2D subdivision).
+    /// Quadtree（2D 细分）。
     #[default]
     Quadtree,
-    /// Octree (3D subdivision).
+    /// Octree（3D 细分）。
     Octree,
 }
 
 impl SubdivisionScheme {
-    /// Returns the number of children per node.
+    /// 返回每个节点的子节点数。
     pub fn branching_factor(&self) -> u32 {
         match self {
             Self::Quadtree => 4,
@@ -27,7 +27,7 @@ impl SubdivisionScheme {
         }
     }
 
-    /// Returns the number of dimensions.
+    /// 返回维度数。
     pub fn dimensions(&self) -> u32 {
         match self {
             Self::Quadtree => 2,
@@ -36,44 +36,44 @@ impl SubdivisionScheme {
     }
 }
 
-/// A tile coordinate in the implicit tiling hierarchy.
-/// Maps to CesiumJS `Scene/ImplicitTileCoordinates.js`
+/// 隐式切分级层中的一个瓦片坐标。
+/// 映射到 CesiumJS `Scene/ImplicitTileCoordinates.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImplicitTileCoord {
-    /// Level in the tree (0 = root).
+    /// 树中的层级（0 = 根）。
     pub level: u32,
-    /// X coordinate at this level.
+    /// 该层级的 X 坐标。
     pub x: u32,
-    /// Y coordinate at this level.
+    /// 该层级的 Y 坐标。
     pub y: u32,
-    /// Z coordinate at this level (octree only).
+    /// 该层级的 Z 坐标（仅 octree）。
     pub z: u32,
-    /// Number of distinct levels within the coordinate's subtree.
+    /// 该坐标所在子树内的不同层级数。
     pub subtree_levels: u32,
 }
 
 impl ImplicitTileCoord {
-    /// Creates a new quadtree coordinate with default subtree_levels=2.
+    /// 创建一个新的 quadtree 坐标，默认 subtree_levels=2。
     pub fn quadtree(level: u32, x: u32, y: u32) -> Self {
         Self { level, x, y, z: 0, subtree_levels: 2 }
     }
 
-    /// Creates a new quadtree coordinate with explicit subtree_levels.
+    /// 创建一个新的 quadtree 坐标，显式指定 subtree_levels。
     pub fn quadtree_with_subtree(level: u32, x: u32, y: u32, subtree_levels: u32) -> Self {
         Self { level, x, y, z: 0, subtree_levels }
     }
 
-    /// Creates a new octree coordinate with default subtree_levels=2.
+    /// 创建一个新的 octree 坐标，默认 subtree_levels=2。
     pub fn octree(level: u32, x: u32, y: u32, z: u32) -> Self {
         Self { level, x, y, z, subtree_levels: 2 }
     }
 
-    /// Creates a new octree coordinate with explicit subtree_levels.
+    /// 创建一个新的 octree 坐标，显式指定 subtree_levels。
     pub fn octree_with_subtree(level: u32, x: u32, y: u32, z: u32, subtree_levels: u32) -> Self {
         Self { level, x, y, z, subtree_levels }
     }
 
-    /// Computes the Morton index for this coordinate.
+    /// 计算该坐标的 Morton 索引。
     pub fn morton_index(&self, scheme: SubdivisionScheme) -> u64 {
         match scheme {
             SubdivisionScheme::Quadtree => morton_2d(self.x, self.y),
@@ -81,7 +81,7 @@ impl ImplicitTileCoord {
         }
     }
 
-    /// Returns the parent coordinate.
+    /// 返回父坐标。
     pub fn parent(&self) -> Option<Self> {
         if self.level == 0 {
             return None;
@@ -95,7 +95,7 @@ impl ImplicitTileCoord {
         })
     }
 
-    /// Returns child coordinates.
+    /// 返回子坐标。
     pub fn children(&self, scheme: SubdivisionScheme) -> Vec<Self> {
         let child_level = self.level + 1;
         let bx = self.x * 2;
@@ -122,7 +122,7 @@ impl ImplicitTileCoord {
         }
     }
 
-    /// Returns the number of tiles at this level.
+    /// 返回该层级的瓦片数。
     pub fn tiles_at_level(level: u32, scheme: SubdivisionScheme) -> u64 {
         let per_dim = 1u64 << level;
         match scheme {
@@ -132,11 +132,11 @@ impl ImplicitTileCoord {
     }
 
     // ========================================================================
-    // ImplicitTileCoordinates methods (ported from CesiumJS)
+    // ImplicitTileCoordinates 方法（沿自 CesiumJS）
     // ========================================================================
 
-    /// Computes the child index (which child of the parent this tile is).
-    /// Maps to `ImplicitTileCoordinates.childIndex`
+    /// 计算子索引（本瓦片是父节点的哪个孩子）。
+    /// 映射到 `ImplicitTileCoordinates.childIndex`
     pub fn child_index(&self, scheme: SubdivisionScheme) -> u32 {
         let mut idx = 0u32;
         idx |= self.x & 1;
@@ -147,8 +147,8 @@ impl ImplicitTileCoord {
         idx
     }
 
-    /// Computes the tile index (level offset + morton index).
-    /// Maps to `ImplicitTileCoordinates.tileIndex`
+    /// 计算瓦片索引（层级偏移 + morton 索引）。
+    /// 映射到 `ImplicitTileCoordinates.tileIndex`
     pub fn tile_index(&self, scheme: SubdivisionScheme) -> u64 {
         let level_offset = match scheme {
             SubdivisionScheme::Octree => ((1u64 << (3 * self.level)) - 1) / 7,
@@ -157,8 +157,8 @@ impl ImplicitTileCoord {
         level_offset + self.morton_index(scheme)
     }
 
-    /// Computes descendant coordinates given a relative offset.
-    /// Maps to `ImplicitTileCoordinates.getDescendantCoordinates`
+    /// 给定一个相对偏移，计算后代坐标。
+    /// 映射到 `ImplicitTileCoordinates.getDescendantCoordinates`
     pub fn get_descendant_coordinates(&self, offset: &ImplicitTileCoord) -> Self {
         let descendant_level = self.level + offset.level;
         let descendant_x = (self.x << offset.level) + offset.x;
@@ -173,8 +173,8 @@ impl ImplicitTileCoord {
         }
     }
 
-    /// Computes ancestor coordinates by going up a number of levels.
-    /// Maps to `ImplicitTileCoordinates.getAncestorCoordinates`
+    /// 向上跨越若干层级来计算祖先坐标。
+    /// 映射到 `ImplicitTileCoordinates.getAncestorCoordinates`
     pub fn get_ancestor_coordinates(&self, offset_levels: u32) -> Self {
         let divisor = 1u32 << offset_levels;
         Self {
@@ -186,8 +186,8 @@ impl ImplicitTileCoord {
         }
     }
 
-    /// Computes the offset from this ancestor to a descendant.
-    /// Maps to `ImplicitTileCoordinates.getOffsetCoordinates`
+    /// 计算从本祖先到某个后代的偏移。
+    /// 映射到 `ImplicitTileCoordinates.getOffsetCoordinates`
     pub fn get_offset_coordinates(&self, descendant: &ImplicitTileCoord) -> Self {
         let offset_level = descendant.level - self.level;
         let dimension_at_offset = 1u32 << offset_level;
@@ -200,8 +200,8 @@ impl ImplicitTileCoord {
         }
     }
 
-    /// Gets child coordinates from a child index (morton index within parent).
-    /// Maps to `ImplicitTileCoordinates.getChildCoordinates`
+    /// 由子索引（父节点内的 morton 索引）获取子坐标。
+    /// 映射到 `ImplicitTileCoordinates.getChildCoordinates`
     pub fn get_child_coordinates(&self, child_index: u32) -> Self {
         let level = self.level + 1;
         let x = 2 * self.x + (child_index % 2);
@@ -216,20 +216,20 @@ impl ImplicitTileCoord {
         }
     }
 
-    /// Gets the coordinates of the subtree root containing this tile.
-    /// Maps to `ImplicitTileCoordinates.getSubtreeCoordinates`
+    /// 获取包含本瓦片的子树根的坐标。
+    /// 映射到 `ImplicitTileCoordinates.getSubtreeCoordinates`
     pub fn get_subtree_coordinates(&self) -> Self {
         self.get_ancestor_coordinates(self.level % self.subtree_levels)
     }
 
-    /// Gets the coordinates of the parent subtree containing this tile.
-    /// Maps to `ImplicitTileCoordinates.getParentSubtreeCoordinates`
+    /// 获取包含本瓦片的父子树的坐标。
+    /// 映射到 `ImplicitTileCoordinates.getParentSubtreeCoordinates`
     pub fn get_parent_subtree_coordinates(&self) -> Self {
         self.get_ancestor_coordinates((self.level % self.subtree_levels) + self.subtree_levels)
     }
 
-    /// Returns whether this tile is an ancestor of another tile.
-    /// Maps to `ImplicitTileCoordinates.isAncestor`
+    /// 返回本瓦片是否为另一瓦片的祖先。
+    /// 映射到 `ImplicitTileCoordinates.isAncestor`
     pub fn is_ancestor(&self, descendant: &ImplicitTileCoord, scheme: SubdivisionScheme) -> bool {
         let level_diff = descendant.level as i32 - self.level as i32;
         if level_diff <= 0 {
@@ -247,26 +247,26 @@ impl ImplicitTileCoord {
         }
     }
 
-    /// Returns whether this tile is the root of the implicit tileset (level 0).
-    /// Maps to `ImplicitTileCoordinates.isImplicitTilesetRoot`
+    /// 返回本瓦片是否为隐式瓦片集的根（层级 0）。
+    /// 映射到 `ImplicitTileCoordinates.isImplicitTilesetRoot`
     pub fn is_implicit_tileset_root(&self) -> bool {
         self.level == 0
     }
 
-    /// Returns whether this tile is the root of a subtree.
-    /// Maps to `ImplicitTileCoordinates.isSubtreeRoot`
+    /// 返回本瓦片是否为某个子树的根。
+    /// 映射到 `ImplicitTileCoordinates.isSubtreeRoot`
     pub fn is_subtree_root(&self) -> bool {
         self.level % self.subtree_levels == 0
     }
 
-    /// Returns whether this tile is on the last level of its subtree.
-    /// Maps to `ImplicitTileCoordinates.isBottomOfSubtree`
+    /// 返回本瓦片是否位于其子树的最后一层。
+    /// 映射到 `ImplicitTileCoordinates.isBottomOfSubtree`
     pub fn is_bottom_of_subtree(&self) -> bool {
         self.level % self.subtree_levels == self.subtree_levels - 1
     }
 
-    /// Creates coordinates from a Morton index at a given level.
-    /// Maps to `ImplicitTileCoordinates.fromMortonIndex`
+    /// 由给定层级的 Morton 索引创建坐标。
+    /// 映射到 `ImplicitTileCoordinates.fromMortonIndex`
     pub fn from_morton_index(
         scheme: SubdivisionScheme,
         subtree_levels: u32,
@@ -285,9 +285,9 @@ impl ImplicitTileCoord {
         }
     }
 
-    /// Substitutes template placeholders in a URI with coordinate values.
-    /// Replaces `{level}`, `{x}`, `{y}`, `{z}` with actual coordinate values.
-    /// Maps to `ImplicitTileCoordinates.getTemplateValues`
+    /// 将 URI 中的模板占位符替换为坐标值。
+    /// 将 `{level}`、`{x}`、`{y}`、`{z}` 替换为实际的坐标值。
+    /// 映射到 `ImplicitTileCoordinates.getTemplateValues`
     pub fn get_template_values(&self, template_uri: &str) -> String {
         template_uri
             .replace("{level}", &self.level.to_string())
@@ -296,8 +296,8 @@ impl ImplicitTileCoord {
             .replace("{z}", &self.z.to_string())
     }
 
-    /// Creates coordinates from a tile index.
-    /// Maps to `ImplicitTileCoordinates.fromTileIndex`
+    /// 由瓦片索引创建坐标。
+    /// 映射到 `ImplicitTileCoordinates.fromTileIndex`
     pub fn from_tile_index(
         scheme: SubdivisionScheme,
         subtree_levels: u32,
@@ -326,19 +326,19 @@ impl ImplicitTileCoord {
     }
 }
 
-/// Computes 2D Morton code (Z-order curve).
-/// CesiumJS convention: x at even bits (0,2,4...), y at odd bits (1,3,5...).
+/// 计算 2D Morton 码（Z 阶曲线）。
+/// CesiumJS 约定：x 占偶数位（0,2,4...），y 占奇数位（1,3,5...）。
 pub fn morton_2d(x: u32, y: u32) -> u64 {
     (part1by1(y as u64) << 1) | part1by1(x as u64)
 }
 
-/// Computes 3D Morton code.
-/// CesiumJS convention: x at positions 0,3,6..., y at 1,4,7..., z at 2,5,8...
+/// 计算 3D Morton 码。
+/// CesiumJS 约定：x 占位置 0,3,6...，y 占 1,4,7...，z 占 2,5,8...
 pub fn morton_3d(x: u32, y: u32, z: u32) -> u64 {
     (part1by2(z as u64) << 2) | (part1by2(y as u64) << 1) | part1by2(x as u64)
 }
 
-/// Spreads bits for 2D Morton code.
+/// 为 2D Morton 码展开位。
 fn part1by1(mut n: u64) -> u64 {
     n &= 0x0000_0000_ffff_ffff;
     n = (n | (n << 16)) & 0x0000_ffff_0000_ffff;
@@ -349,7 +349,7 @@ fn part1by1(mut n: u64) -> u64 {
     n
 }
 
-/// Spreads bits for 3D Morton code.
+/// 为 3D Morton 码展开位。
 fn part1by2(mut n: u64) -> u64 {
     n &= 0x0000_0000_001f_ffff;
     n = (n | (n << 32)) & 0x001f_0000_0000_ffff;
@@ -360,16 +360,16 @@ fn part1by2(mut n: u64) -> u64 {
     n
 }
 
-/// Decodes a 2D Morton index into (x, y) coordinates.
-/// x from even bits, y from odd bits (CesiumJS convention).
+/// 将一个 2D Morton 索引解码为 (x, y) 坐标。
+/// x 取自偶数位，y 取自奇数位（CesiumJS 约定）。
 pub fn decode_morton_2d(morton: u64) -> (u32, u32) {
     let x = compact1by1(morton) as u32;
     let y = compact1by1(morton >> 1) as u32;
     (x, y)
 }
 
-/// Decodes a 3D Morton index into (x, y, z) coordinates.
-/// x from positions 0,3,6..., y from 1,4,7..., z from 2,5,8... (CesiumJS convention).
+/// 将一个 3D Morton 索引解码为 (x, y, z) 坐标。
+/// x 取自位置 0,3,6...，y 取自 1,4,7...，z 取自 2,5,8...（CesiumJS 约定）。
 pub fn decode_morton_3d(morton: u64) -> (u32, u32, u32) {
     let x = compact1by2(morton) as u32;
     let y = compact1by2(morton >> 1) as u32;
@@ -377,7 +377,7 @@ pub fn decode_morton_3d(morton: u64) -> (u32, u32, u32) {
     (x, y, z)
 }
 
-/// Compacts bits for 2D Morton decode (inverse of part1by1).
+/// 为 2D Morton 解码压缩位（part1by1 的逆运算）。
 fn compact1by1(mut n: u64) -> u64 {
     n &= 0x5555_5555_5555_5555;
     n = (n ^ (n >> 1)) & 0x3333_3333_3333_3333;
@@ -388,7 +388,7 @@ fn compact1by1(mut n: u64) -> u64 {
     n
 }
 
-/// Compacts bits for 3D Morton decode (inverse of part1by2).
+/// 为 3D Morton 解码压缩位（part1by2 的逆运算）。
 fn compact1by2(mut n: u64) -> u64 {
     n &= 0x1249_2492_4924_9249;
     n = (n ^ (n >> 2)) & 0x10c3_0c30_c30c_30c3;
@@ -399,17 +399,17 @@ fn compact1by2(mut n: u64) -> u64 {
     n
 }
 
-/// Availability bitstream for implicit tiles.
+/// 隐式瓦片的可用性位流。
 #[derive(Debug, Clone)]
 pub struct AvailabilityBitstream {
-    /// Bit data (LSB first within each byte).
+    /// 位数据（每字节内 LSB 优先）。
     pub bits: Vec<u8>,
-    /// Number of valid bits.
+    /// 有效位数。
     pub length: u64,
 }
 
 impl AvailabilityBitstream {
-    /// Creates a new bitstream with all bits unset.
+    /// 创建一个所有位均未置 1 的新位流。
     pub fn new(length: u64) -> Self {
         let byte_count = length.div_ceil(8) as usize;
         Self {
@@ -418,12 +418,12 @@ impl AvailabilityBitstream {
         }
     }
 
-    /// Creates from raw bytes.
+    /// 由原始字节创建。
     pub fn from_bytes(bits: Vec<u8>, length: u64) -> Self {
         Self { bits, length }
     }
 
-    /// Returns true if the bit at index is set.
+    /// 若 index 处的位已置 1 则返回 true。
     pub fn is_available(&self, index: u64) -> bool {
         if index >= self.length {
             return false;
@@ -433,7 +433,7 @@ impl AvailabilityBitstream {
         (self.bits[byte_index] >> bit_index) & 1 == 1
     }
 
-    /// Sets the bit at index.
+    /// 设置 index 处的位。
     pub fn set(&mut self, index: u64, available: bool) {
         if index >= self.length {
             return;
@@ -447,7 +447,7 @@ impl AvailabilityBitstream {
         }
     }
 
-    /// Returns the number of available tiles.
+    /// 返回可用瓦片的数量。
     pub fn count_available(&self) -> u64 {
         let mut count = 0u64;
         for i in 0..self.length {
@@ -459,23 +459,23 @@ impl AvailabilityBitstream {
     }
 }
 
-/// Implicit tiling configuration from tileset.json.
+/// 来自 tileset.json 的隐式切分配置。
 #[derive(Debug, Clone)]
 pub struct ImplicitTilingConfig {
-    /// Subdivision scheme.
+    /// 细分方案。
     pub subdivision_scheme: SubdivisionScheme,
-    /// Number of levels in each subtree.
+    /// 每个子树的层数。
     pub subtree_levels: u32,
-    /// Maximum number of levels in the tree.
+    /// 树的最大层数。
     pub maximum_level: u32,
-    /// URL template for subtree files.
+    /// 子树文件的 URL 模板。
     pub subtree_uri_template: String,
-    /// URL template for content files.
+    /// 内容文件的 URL 模板。
     pub content_uri_template: String,
 }
 
 impl ImplicitTilingConfig {
-    /// Generates a subtree URI for a given coordinate.
+    /// 为给定坐标生成一个子树 URI。
     pub fn get_subtree_uri(&self, coord: &ImplicitTileCoord) -> String {
         self.subtree_uri_template
             .replace("{level}", &coord.level.to_string())
@@ -484,7 +484,7 @@ impl ImplicitTilingConfig {
             .replace("{z}", &coord.z.to_string())
     }
 
-    /// Generates a content URI for a given coordinate.
+    /// 为给定坐标生成一个内容 URI。
     pub fn get_content_uri(&self, coord: &ImplicitTileCoord) -> String {
         self.content_uri_template
             .replace("{level}", &coord.level.to_string())
@@ -493,7 +493,7 @@ impl ImplicitTilingConfig {
             .replace("{z}", &coord.z.to_string())
     }
 
-    /// Computes the subtree root coordinate for a tile.
+    /// 计算某个瓦片的子树根坐标。
     pub fn get_subtree_root(&self, coord: &ImplicitTileCoord) -> ImplicitTileCoord {
         let subtree_level = (coord.level / self.subtree_levels) * self.subtree_levels;
         let level_diff = coord.level - subtree_level;
@@ -507,28 +507,28 @@ impl ImplicitTilingConfig {
     }
 }
 
-/// A parsed subtree file.
+/// 一个已解析的子树文件。
 #[derive(Debug, Clone)]
 pub struct Subtree {
-    /// Root coordinate of this subtree.
+    /// 本子树的根坐标。
     pub root: ImplicitTileCoord,
-    /// Tile availability within the subtree.
+    /// 子树内的瓦片可用性。
     pub tile_availability: AvailabilityBitstream,
-    /// Content availability within the subtree.
+    /// 子树内的内容可用性。
     pub content_availability: AvailabilityBitstream,
-    /// Child subtree availability.
+    /// 子树的孩子子树可用性。
     pub child_subtree_availability: AvailabilityBitstream,
 }
 
 impl Subtree {
-    /// Returns the total number of nodes in a subtree.
+    /// 返回子树中的节点总数。
     pub fn total_nodes(subtree_levels: u32, scheme: SubdivisionScheme) -> u64 {
         let branching = scheme.branching_factor() as u64;
-        // Sum of branching^0 + branching^1 + ... + branching^(levels-1)
+        // branching^0 + branching^1 + ... + branching^(levels-1) 之和
         (branching.pow(subtree_levels) - 1) / (branching - 1)
     }
 
-    /// Computes the linear index of a tile within the subtree.
+    /// 计算某个瓦片在子树内的线性索引。
     pub fn local_index(
         coord: &ImplicitTileCoord,
         subtree_root: &ImplicitTileCoord,
@@ -537,14 +537,14 @@ impl Subtree {
         let relative_level = coord.level - subtree_root.level;
         let branching = scheme.branching_factor() as u64;
 
-        // Offset to the start of this level
+        // 到本层级起始处的偏移
         let level_offset = if relative_level == 0 {
             0
         } else {
             (branching.pow(relative_level) - 1) / (branching - 1)
         };
 
-        // Morton index within the level
+        // 层级内的 Morton 索引
         let local_coord = ImplicitTileCoord {
             level: relative_level,
             x: coord.x - (subtree_root.x << relative_level),
@@ -573,8 +573,8 @@ mod tests {
     #[test]
     fn test_morton_2d() {
         assert_eq!(morton_2d(0, 0), 0);
-        assert_eq!(morton_2d(1, 0), 1); // x at even bits
-        assert_eq!(morton_2d(0, 1), 2); // y at odd bits
+        assert_eq!(morton_2d(1, 0), 1); // x 占偶数位
+        assert_eq!(morton_2d(0, 1), 2); // y 占奇数位
         assert_eq!(morton_2d(1, 1), 3);
         assert_eq!(morton_2d(2, 0), 4);
     }
@@ -582,9 +582,9 @@ mod tests {
     #[test]
     fn test_morton_3d() {
         assert_eq!(morton_3d(0, 0, 0), 0);
-        assert_eq!(morton_3d(1, 0, 0), 1); // x at positions 0,3,6...
-        assert_eq!(morton_3d(0, 1, 0), 2); // y at positions 1,4,7...
-        assert_eq!(morton_3d(0, 0, 1), 4); // z at positions 2,5,8...
+        assert_eq!(morton_3d(1, 0, 0), 1); // x 占位置 0,3,6...
+        assert_eq!(morton_3d(0, 1, 0), 2); // y 占位置 1,4,7...
+        assert_eq!(morton_3d(0, 0, 1), 4); // z 占位置 2,5,8...
         assert_eq!(morton_3d(1, 1, 1), 7);
     }
 
@@ -644,7 +644,7 @@ mod tests {
         assert!(!bs.is_available(1));
         assert!(bs.is_available(5));
         assert!(bs.is_available(15));
-        assert!(!bs.is_available(16)); // Out of bounds
+        assert!(!bs.is_available(16)); // 越界
     }
 
     #[test]
@@ -690,9 +690,9 @@ mod tests {
 
     #[test]
     fn test_subtree_total_nodes() {
-        // Quadtree with 4 levels: 1 + 4 + 16 + 64 = 85
+        // 4 层的 Quadtree：1 + 4 + 16 + 64 = 85
         assert_eq!(Subtree::total_nodes(4, SubdivisionScheme::Quadtree), 85);
-        // Octree with 2 levels: 1 + 8 = 9
+        // 2 层的 Octree：1 + 8 = 9
         assert_eq!(Subtree::total_nodes(2, SubdivisionScheme::Octree), 9);
     }
 
@@ -701,7 +701,7 @@ mod tests {
         let root = ImplicitTileCoord::quadtree(0, 0, 0);
         let coord = ImplicitTileCoord::quadtree(1, 1, 0);
         let index = Subtree::local_index(&coord, &root, SubdivisionScheme::Quadtree);
-        // Level 1 starts at offset 1, morton(1,0) = 1 (CesiumJS: x at even bits)
+        // 层级 1 从偏移 1 开始，morton(1,0) = 1（CesiumJS：x 占偶数位）
         assert_eq!(index, 1 + 1);
     }
 

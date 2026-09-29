@@ -1,7 +1,7 @@
-//! Graphics specs - ported from DataSources/*GraphicsSpec.js
-//! Covers: PointGraphics, PolylineGraphics, PolygonGraphics, BillboardGraphics,
-//! LabelGraphics, ModelGraphics, EllipseGraphics, BoxGraphics, CylinderGraphics,
-//! CorridorGraphics, RectangleGraphics, WallGraphics, EllipsoidGraphics, PlaneGraphics, PathGraphics
+//! Graphics 规范 - 移植自 DataSources/*GraphicsSpec.js
+//! 覆盖：PointGraphics、PolylineGraphics、PolygonGraphics、BillboardGraphics、
+//! LabelGraphics、ModelGraphics、EllipseGraphics、BoxGraphics、CylinderGraphics、
+//! CorridorGraphics、RectangleGraphics、WallGraphics、EllipsoidGraphics、PlaneGraphics、PathGraphics
 
 use cesium_datasource::{
     BillboardGraphics, BoxGraphics, CorridorGraphics, CylinderGraphics, EllipseGraphics,
@@ -65,7 +65,7 @@ fn polygon_graphics_with_holes() {
 #[test]
 fn billboard_graphics_default() {
     let g = BillboardGraphics::default();
-    // image defaults to Undefined → get_value returns None
+    // image 默认为 Undefined → get_value 返回 None
     assert_eq!(g.image.get_value(0.0), None);
     assert_eq!(g.scale.get_value(0.0), Some(&1.0));
 }
@@ -82,7 +82,7 @@ fn billboard_graphics_custom_image() {
 #[test]
 fn label_graphics_default() {
     let g = LabelGraphics::default();
-    // text defaults to Undefined
+    // text 默认为 Undefined
     assert_eq!(g.text.get_value(0.0), None);
 }
 
@@ -98,7 +98,7 @@ fn label_graphics_custom_text() {
 #[test]
 fn model_graphics_default() {
     let g = ModelGraphics::default();
-    // uri defaults to Undefined
+    // uri 默认为 Undefined
     assert_eq!(g.uri.get_value(0.0), None);
     assert_eq!(g.scale.get_value(0.0), Some(&1.0));
 }
@@ -108,7 +108,7 @@ fn model_graphics_default() {
 #[test]
 fn ellipse_graphics_default() {
     let g = EllipseGraphics::default();
-    // semi_major/minor default to Undefined
+    // semi_major/minor 默认为 Undefined
     assert_eq!(g.semi_major_axis.get_value(0.0), None);
     assert_eq!(g.semi_minor_axis.get_value(0.0), None);
 }
@@ -127,7 +127,7 @@ fn ellipse_graphics_custom() {
 #[test]
 fn box_graphics_default() {
     let g = BoxGraphics::default();
-    // dimensions defaults to Undefined
+    // dimensions 默认为 Undefined
     assert_eq!(g.dimensions.get_value(0.0), None);
     assert_eq!(g.fill.get_value(0.0), Some(&true));
 }
@@ -144,7 +144,7 @@ fn box_graphics_custom_dimensions() {
 #[test]
 fn cylinder_graphics_default() {
     let g = CylinderGraphics::default();
-    // length/radii default to Undefined
+    // length/radii 默认为 Undefined
     assert_eq!(g.length.get_value(0.0), None);
     assert_eq!(g.top_radius.get_value(0.0), None);
     assert_eq!(g.bottom_radius.get_value(0.0), None);
@@ -155,7 +155,7 @@ fn cylinder_graphics_default() {
 #[test]
 fn corridor_graphics_default() {
     let g = CorridorGraphics::default();
-    // width defaults to Undefined
+    // width 默认为 Undefined
     assert_eq!(g.width.get_value(0.0), None);
 }
 
@@ -164,7 +164,7 @@ fn corridor_graphics_default() {
 #[test]
 fn rectangle_graphics_default() {
     let g = RectangleGraphics::default();
-    // coordinates defaults to Undefined
+    // coordinates 默认为 Undefined
     assert_eq!(g.coordinates.get_value(0.0), None);
 }
 
@@ -173,7 +173,7 @@ fn rectangle_graphics_default() {
 #[test]
 fn wall_graphics_default() {
     let g = WallGraphics::default();
-    // positions defaults to Undefined
+    // positions 默认为 Undefined
     assert_eq!(g.positions.get_value(0.0), None);
 }
 
@@ -182,7 +182,7 @@ fn wall_graphics_default() {
 #[test]
 fn ellipsoid_graphics_default() {
     let g = EllipsoidGraphics::default();
-    // radii defaults to Undefined
+    // radii 默认为 Undefined
     assert_eq!(g.radii.get_value(0.0), None);
 }
 
@@ -191,7 +191,7 @@ fn ellipsoid_graphics_default() {
 #[test]
 fn plane_graphics_default() {
     let g = PlaneGraphics::default();
-    // dimensions defaults to Undefined
+    // dimensions 默认为 Undefined
     assert_eq!(g.dimensions.get_value(0.0), None);
 }
 

@@ -1,13 +1,13 @@
-//! Scene/ImageryLayer blending → Rust integration tests.
+//! Scene/ImageryLayer 混合 → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
-//! - Scene/ImageryLayer.js (blending, color adjustments, alpha)
-//! - Scene/ImageryLayerCollection.js (layer compositing)
+//! 对应 CesiumJS：
+//! - Scene/ImageryLayer.js（混合、颜色调整、alpha）
+//! - Scene/ImageryLayerCollection.js（图层合成）
 //!
-//! A-class tests: compute_effective_alpha, apply_color_adjustments,
-//! blend_pixel (Standard/Additive/Multiplicative), composite_layers,
+//! A 类测试：compute_effective_alpha、apply_color_adjustments、
+//! blend_pixel（Standard/Additive/Multiplicative）、composite_layers、
 //! should_render_for_split.
-//! C-class omitted: WebGL texture operations, reprojection, provider async.
+//! C 类省略：WebGL 纹理操作、重投影、provider 异步。
 
 use cesium_imagery::blending::{
     apply_color_adjustments, blend_pixel, composite_layers, compute_effective_alpha,
@@ -183,8 +183,8 @@ fn blend_additive_clamped() {
     let dst = PixelColor::opaque(0.8, 0.9, 0.5);
     let src = PixelColor::opaque(0.5, 0.5, 0.5);
     let result = blend_pixel(dst, src, AlphaBlendingMode::Additive, 1.0);
-    assert!((result.r - 1.0).abs() < 1e-10); // clamped
-    assert!((result.g - 1.0).abs() < 1e-10); // clamped
+    assert!((result.r - 1.0).abs() < 1e-10); // 钳制
+    assert!((result.g - 1.0).abs() < 1e-10); // 钳制
     assert!((result.b - 1.0).abs() < 1e-10);
 }
 
@@ -220,7 +220,7 @@ fn composite_two_layers_top_covers() {
         PixelColor::opaque(0.0, 0.0, 1.0),
     ];
     let result = composite_layers(&layers, &colors, true, PixelColor::TRANSPARENT);
-    // Layer2 (blue, alpha=1) fully covers layer1 (red)
+    // Layer2（蓝，alpha=1）完全覆盖 layer1（红）
     assert!((result.r - 0.0).abs() < 1e-10);
     assert!((result.b - 1.0).abs() < 1e-10);
 }
@@ -236,7 +236,7 @@ fn composite_hidden_layer_skipped() {
         PixelColor::opaque(0.0, 1.0, 0.0),
     ];
     let result = composite_layers(&layers, &colors, true, PixelColor::BLACK);
-    // layer1 hidden, only layer2 (green) applied
+    // layer1 隐藏，仅应用 layer2（绿）
     assert!((result.g - 1.0).abs() < 1e-10);
     assert!((result.r - 0.0).abs() < 1e-10);
 }
@@ -248,7 +248,7 @@ fn composite_with_semi_transparent() {
     let layers = vec![&layer];
     let colors = vec![PixelColor::opaque(1.0, 0.0, 0.0)];
     let result = composite_layers(&layers, &colors, true, PixelColor::BLACK);
-    // 50% red + 50% black = (0.5, 0, 0)
+    // 50% 红 + 50% 黑 = (0.5, 0, 0)
     assert!((result.r - 0.5).abs() < 1e-10);
 }
 
@@ -282,10 +282,10 @@ fn split_right_only_right() {
 fn split_boundary_exact() {
     let mut layer = make_layer();
     layer.split_direction = SplitDirection::Left;
-    // At exact split position, Left renders (<=)
+    // 在精确分割位置，Left 渲染 (<=)
     assert!(should_render_for_split(&layer, 0.5, 0.5));
 
     layer.split_direction = SplitDirection::Right;
-    // At exact split position, Right does NOT render (>)
+    // 在精确分割位置，Right 不渲染 (>)
     assert!(!should_render_for_split(&layer, 0.5, 0.5));
 }

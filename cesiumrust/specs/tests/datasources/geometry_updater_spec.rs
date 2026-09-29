@@ -1,5 +1,5 @@
-//! GeometryUpdater specs - ported from DataSources/*GeometryUpdaterSpec.js
-//! Covers: update_box/cylinder/ellipse/corridor/rectangle/wall/ellipsoid/polyline_graphics
+//! GeometryUpdater 规范 - 移植自 DataSources/*GeometryUpdaterSpec.js
+//! 覆盖：update_box/cylinder/ellipse/corridor/rectangle/wall/ellipsoid/polyline_graphics
 
 use cesium_datasource::geometry_updater::{
     cartographic_to_cartesian, positions_to_cartesian, update_box_graphics,
@@ -19,7 +19,7 @@ fn wgs84() -> Ellipsoid {
 
 fn entity_with_position() -> Entity {
     let mut e = Entity::new("test-entity");
-    e.position = Property::Constant([0.0, 0.0, 0.0]); // lon, lat, height in radians/meters
+    e.position = Property::Constant([0.0, 0.0, 0.0]); // lon、lat、height 以弧度/米为单位
     e
 }
 
@@ -94,7 +94,7 @@ fn update_corridor_produces_fill() {
 fn update_rectangle_produces_fill() {
     let entity = entity_with_position();
     let mut g = RectangleGraphics::default();
-    g.coordinates = Property::Constant([0.0, 0.0, 0.1, 0.1]); // west, south, east, north
+    g.coordinates = Property::Constant([0.0, 0.0, 0.1, 0.1]); // west、south、east、north
     let result = update_rectangle_graphics(&entity, &g, 0.0, &wgs84());
     assert!(!result.is_empty());
 }
@@ -139,7 +139,7 @@ fn update_polyline_produces_fill() {
     assert!(!result.is_empty());
 }
 
-// ─── EntityGeometry helpers ─────────────────────────────────────────────────
+// ─── EntityGeometry 辅助 ─────────────────────────────────────────────────
 
 #[test]
 fn entity_geometry_instance_count() {
@@ -150,13 +150,13 @@ fn entity_geometry_instance_count() {
     assert_eq!(result.instance_count(), result.fill_instances.len() + result.outline_instances.len());
 }
 
-// ─── Coordinate conversion ──────────────────────────────────────────────────
+// ─── 坐标转换 ──────────────────────────────────────────────────
 
 #[test]
 fn cartographic_to_cartesian_origin() {
     let e = wgs84();
     let pos = cartographic_to_cartesian(&[0.0, 0.0, 0.0], &e);
-    // At lon=0, lat=0, height=0 → on equator at prime meridian
+    // 在 lon=0, lat=0, height=0 → 赤道与本初子午线交点
     assert!((pos.x - e.radii().x).abs() < 1.0);
     assert!(pos.y.abs() < 1.0);
     assert!(pos.z.abs() < 1.0);
@@ -166,7 +166,7 @@ fn cartographic_to_cartesian_origin() {
 fn cartographic_to_cartesian_lon90() {
     use std::f64::consts::FRAC_PI_2;
     let e = wgs84();
-    // lon=90°E, lat=0 → on equator, x≈0, y≈a, z≈0
+    // lon=90°E, lat=0 → 赤道上，x≈0, y≈a, z≈0
     let pos = cartographic_to_cartesian(&[FRAC_PI_2, 0.0, 0.0], &e);
     assert!(pos.x.abs() < 1.0, "x should be ~0 at lon=90, got {}", pos.x);
     assert!((pos.y - e.radii().x).abs() < 1.0, "y should be ~a at lon=90, got {}", pos.y);
@@ -177,7 +177,7 @@ fn cartographic_to_cartesian_lon90() {
 fn cartographic_to_cartesian_north_pole() {
     use std::f64::consts::FRAC_PI_2;
     let e = wgs84();
-    // lon=0, lat=90°N → north pole, x≈0, y≈0, z≈b
+    // lon=0, lat=90°N → 北极点，x≈0, y≈0, z≈b
     let pos = cartographic_to_cartesian(&[0.0, FRAC_PI_2, 0.0], &e);
     assert!(pos.x.abs() < 1.0, "x should be ~0 at pole, got {}", pos.x);
     assert!(pos.y.abs() < 1.0, "y should be ~0 at pole, got {}", pos.y);
@@ -190,5 +190,5 @@ fn positions_to_cartesian_multiple() {
     let positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
     let result = positions_to_cartesian(&positions, &e);
     assert_eq!(result.len(), 2);
-    assert!((result[0].x - result[1].x).abs() > 1.0); // different positions
+    assert!((result[0].x - result[1].x).abs() > 1.0); // 不同的位置
 }

@@ -1,5 +1,5 @@
-//! Scene specs - ported from packages/engine/Specs/Scene/
-//! Covers: Tileset, Imagery, Material, Particles, Camera, Primitives, etc.
+//! Scene 规格测试 - 移植自 packages/engine/Specs/Scene/
+//! 覆盖范围：Tileset、Imagery、Material、Particles、Camera、Primitives 等。
 
 mod scene {
     pub mod tileset_spec;

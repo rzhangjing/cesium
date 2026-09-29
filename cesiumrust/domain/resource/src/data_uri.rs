@@ -1,35 +1,35 @@
-//! `data:` URI scheme parsing and decoding.
+//! `data:` URI 方案的解析与解码。
 //!
-//! Maps to CesiumJS `Resource.js` data URI handling:
-//! - The `dataUriRegex` (`/^data:(.*?)(;base64)?,(.*)$/`) extraction.
-//! - `decodeDataUri(match, responseType)` text/arraybuffer branches.
-//! - `Resource.prototype.isDataUri` property.
+//! 映射到 CesiumJS `Resource.js` 的 data URI 处理：
+//! - `dataUriRegex`（`/^data:(.*?)(;base64)?,(.*)$/`）提取。
+//! - `decodeDataUri(match, responseType)` 的 text/arraybuffer 分支。
+//! - `Resource.prototype.isDataUri` 属性。
 //!
-//! Supports both base64-encoded and percent-encoded (plain text) payloads.
-//! This module is **pure domain logic** — no IO, no framework dependency.
+//! 同时支持 base64 编码与百分号编码（纯文本）的负载。
+//! 本模块是 **纯领域逻辑** —— 无 IO，无框架依赖。
 
-/// Result of parsing a `data:` URI.
+/// 解析 `data:` URI 的结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataUriParts {
-    /// The media type / MIME type (e.g. `"text/plain"`, `"image/png"`).
-    /// Empty string if not specified (RFC 2397 default: `text/plain;charset=US-ASCII`).
+    /// 媒体类型 / MIME 类型（例如 `"text/plain"`、`"image/png"`）。
+    /// 若未指定则为空字符串（RFC 2397 默认：`text/plain;charset=US-ASCII`）。
     pub media_type: String,
-    /// Whether the payload is base64-encoded (`;base64` parameter present).
+    /// 负载是否为 base64 编码（存在 `;base64` 参数）。
     pub is_base64: bool,
-    /// The raw payload string (before decoding).
+    /// 原始负载字符串（解码之前）。
     pub raw_payload: String,
 }
 
-/// Errors that can occur when parsing or decoding a data URI.
+/// 解析或解码 data URI 时可能发生的错误。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DataUriError {
-    /// The URI does not start with `data:`.
+    /// URI 不以 `data:` 开头。
     NotaDataUri,
-    /// The URI is missing the comma separator.
+    /// URI 缺少逗号分隔符。
     MissingComma,
-    /// Base64 decoding failed (invalid characters or length).
+    /// base64 解码失败（字符非法或长度错误）。
     InvalidBase64(String),
-    /// Percent-decoding failed (malformed escape sequence).
+    /// 百分号解码失败（转义序列格式错误）。
     InvalidPercentEncoding(String),
 }
 
@@ -46,19 +46,18 @@ impl std::fmt::Display for DataUriError {
 
 impl std::error::Error for DataUriError {}
 
-/// Returns `true` if the given URL string is a `data:` URI.
+/// 若给定的 URL 字符串是 `data:` URI 则返回 `true`。
 ///
-/// Maps to CesiumJS `isDataUri(url)` / `Resource.prototype.isDataUri`.
+/// 映射到 CesiumJS `isDataUri(url)` / `Resource.prototype.isDataUri`。
 pub fn is_data_uri(url: &str) -> bool {
     url.trim_start().starts_with("data:")
 }
 
-/// Parses a `data:` URI into its constituent parts without decoding the
-/// payload.
+/// 将 `data:` URI 解析为其组成部分，但不解码负载。
 ///
-/// Mirrors the CesiumJS regex match: `/^data:(.*?)(;base64)?,(.*)$/`
+/// 镜像 CesiumJS 的正则匹配：`/^data:(.*?)(;base64)?,(.*)$/`
 ///
-/// # Examples
+/// # 示例
 /// ```
 /// use cesium_resource::data_uri::parse_data_uri;
 /// let parts = parse_data_uri("data:text/plain;base64,SGVsbG8=").unwrap();
@@ -72,9 +71,9 @@ pub fn parse_data_uri(uri: &str) -> Result<DataUriParts, DataUriError> {
         return Err(DataUriError::NotaDataUri);
     }
 
-    let after_scheme = &uri[5..]; // skip "data:"
+    let after_scheme = &uri[5..]; // 跳过 "data:"
 
-    // Find the comma that separates metadata from payload.
+    // 找到分隔元数据与负载的逗号。
     let comma_pos = after_scheme
         .find(',')
         .ok_or(DataUriError::MissingComma)?;
@@ -82,7 +81,7 @@ pub fn parse_data_uri(uri: &str) -> Result<DataUriParts, DataUriError> {
     let metadata = &after_scheme[..comma_pos];
     let payload = &after_scheme[comma_pos + 1..];
 
-    // Check for ;base64 suffix in metadata.
+    // 检查元数据中是否有 ;base64 后缀。
     let (media_type, is_base64) = match metadata.strip_suffix(";base64") {
         Some(stripped) => (stripped, true),
         None => (metadata, false),
@@ -95,13 +94,12 @@ pub fn parse_data_uri(uri: &str) -> Result<DataUriParts, DataUriError> {
     })
 }
 
-/// Decodes a `data:` URI and returns the payload as raw bytes.
+/// 解码 `data:` URI 并以原始字节形式返回负载。
 ///
-/// Handles both base64 and percent-encoded payloads. For percent-encoded
-/// payloads the decoded bytes are the UTF-8 representation of the
-/// percent-decoded string.
+/// 同时处理 base64 与百分号编码的负载。对于百分号编码的
+/// 负载，解码后的字节是百分号解码字符串的 UTF-8 表示。
 ///
-/// Maps to CesiumJS `decodeDataUriArrayBuffer` (the arraybuffer/blob branch).
+/// 映射到 CesiumJS `decodeDataUriArrayBuffer`（arraybuffer/blob 分支）。
 pub fn decode_data_uri_bytes(uri: &str) -> Result<Vec<u8>, DataUriError> {
     let parts = parse_data_uri(uri)?;
     if parts.is_base64 {
@@ -111,12 +109,12 @@ pub fn decode_data_uri_bytes(uri: &str) -> Result<Vec<u8>, DataUriError> {
     }
 }
 
-/// Decodes a `data:` URI and returns the payload as a UTF-8 string.
+/// 解码 `data:` URI 并以 UTF-8 字符串形式返回负载。
 ///
-/// For base64 payloads, the decoded bytes are interpreted as UTF-8 (lossy).
-/// For percent-encoded payloads, the result is the percent-decoded string.
+/// 对于 base64 负载，解码后的字节按 UTF-8 解释（有损）。
+/// 对于百分号编码的负载，结果为百分号解码后的字符串。
 ///
-/// Maps to CesiumJS `decodeDataUriText` (the text branch).
+/// 映射到 CesiumJS `decodeDataUriText`（text 分支）。
 pub fn decode_data_uri_text(uri: &str) -> Result<String, DataUriError> {
     let parts = parse_data_uri(uri)?;
     if parts.is_base64 {
@@ -127,10 +125,10 @@ pub fn decode_data_uri_text(uri: &str) -> Result<String, DataUriError> {
     }
 }
 
-/// Extracts the media type from a data URI, or `None` if not a data URI.
+/// 从 data URI 中提取媒体类型，若不是 data URI 则返回 `None`。
 ///
-/// Returns the default `"text/plain"` when the media type field is empty
-/// (RFC 2397 specifies `text/plain;charset=US-ASCII` as the default).
+/// 当媒体类型字段为空时返回默认的 `"text/plain"`
+/// （RFC 2397 将 `text/plain;charset=US-ASCII` 指定为默认值）。
 pub fn media_type_of(uri: &str) -> Option<String> {
     parse_data_uri(uri).ok().map(|parts| {
         if parts.media_type.is_empty() {
@@ -141,13 +139,12 @@ pub fn media_type_of(uri: &str) -> Option<String> {
     })
 }
 
-// ── Percent-decoding ────────────────────────────────────────────────────────
+// ── 百分号解码 ──────────────────────────────────────────────────────────────
 
-/// Decodes percent-encoded characters (`%XX`) in a string.
+/// 解码字符串中的百分号编码字符（`%XX`）。
 ///
-/// Maps to JavaScript `decodeURIComponent`. Unlike JS, invalid sequences are
-/// passed through verbatim rather than throwing (robustness for malformed
-/// data URIs encountered in the wild).
+/// 映射到 JavaScript `decodeURIComponent`。与 JS 不同，非法序列会被
+/// 原样透传而非抛错（增强对现实中格式错误的 data URI 的健壮性）。
 pub fn percent_decode(input: &str) -> String {
     let bytes = input.as_bytes();
     let mut result = Vec::with_capacity(bytes.len());
@@ -168,11 +165,11 @@ pub fn percent_decode(input: &str) -> String {
     String::from_utf8_lossy(&result).into_owned()
 }
 
-/// Encodes a string with percent-encoding for URI components.
+/// 对 URI 组件进行百分号编码。
 ///
-/// Maps to JavaScript `encodeURIComponent`. Unreserved characters
-/// (`A-Z a-z 0-9 - _ . ! ~ * ' ( )`) are passed through; everything else
-/// is percent-encoded.
+/// 映射到 JavaScript `encodeURIComponent`。未保留字符
+/// （`A-Z a-z 0-9 - _ . ! ~ * ' ( )`）原样透传；其余一切
+/// 均被百分号编码。
 pub fn percent_encode(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     for byte in input.bytes() {
@@ -189,14 +186,14 @@ pub fn percent_encode(input: &str) -> String {
     result
 }
 
-/// Converts a hex character pair to a byte value.
+/// 将一对十六进制字符转换为字节值。
 fn hex_pair_to_byte(hi: u8, lo: u8) -> Option<u8> {
     let h = hex_val(hi)?;
     let l = hex_val(lo)?;
     Some((h << 4) | l)
 }
 
-/// Converts a single hex ASCII character to its 4-bit value.
+/// 将单个十六进制 ASCII 字符转换为其 4 位值。
 fn hex_val(b: u8) -> Option<u8> {
     match b {
         b'0'..=b'9' => Some(b - b'0'),
@@ -206,14 +203,14 @@ fn hex_val(b: u8) -> Option<u8> {
     }
 }
 
-// ── Base64 decoding ─────────────────────────────────────────────────────────
+// ── Base64 解码 ─────────────────────────────────────────────────────────
 
-/// Minimal base64 decoder (mirrors `atob` semantics).
+/// 极简 base64 解码器（镜像 `atob` 语义）。
 ///
-/// Handles standard base64 alphabet (`A-Z a-z 0-9 + /`) with `=` padding.
-/// Whitespace characters are silently skipped (mirrors browser leniency).
+/// 处理标准 base64 字母表（`A-Z a-z 0-9 + /`）与 `=` 填充。
+/// 空白字符会被静默跳过（镜像浏览器的宽松行为）。
 ///
-/// Returns [`DataUriError::InvalidBase64`] on malformed input.
+/// 输入格式错误时返回 [`DataUriError::InvalidBase64`]。
 pub fn base64_decode(input: &str) -> Result<Vec<u8>, DataUriError> {
     let bytes: Vec<u8> = input
         .bytes()
@@ -233,7 +230,7 @@ pub fn base64_decode(input: &str) -> Result<Vec<u8>, DataUriError> {
             ));
         }
 
-        // Count padding
+        // 统计填充
         let padding = chunk.iter().filter(|&&b| b == b'=').count();
 
         let mut buf: u32 = 0;
@@ -263,10 +260,10 @@ pub fn base64_decode(input: &str) -> Result<Vec<u8>, DataUriError> {
     Ok(output)
 }
 
-/// Encodes bytes to base64 string (standard alphabet, with padding).
+/// 将字节编码为 base64 字符串（标准字母表，带填充）。
 ///
-/// Provided for round-trip testing and for constructing data URIs
-/// programmatically (e.g. in test fixtures or offline asset generators).
+/// 用于往返测试以及以编程方式构造 data URI
+/// （例如在测试 fixture 或离线资源生成器中）。
 pub fn base64_encode(input: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = String::with_capacity(input.len().div_ceil(3) * 4);
@@ -296,7 +293,7 @@ pub fn base64_encode(input: &[u8]) -> String {
     result
 }
 
-/// Converts a base64 character to its 6-bit value.
+/// 将 base64 字符转换为其 6 位值。
 fn base64_char_value(b: u8) -> Option<u8> {
     match b {
         b'A'..=b'Z' => Some(b - b'A'),
@@ -308,17 +305,17 @@ fn base64_char_value(b: u8) -> Option<u8> {
     }
 }
 
-// ── Data URI construction helper ────────────────────────────────────────────
+// ── Data URI 构造辅助函数 ────────────────────────────────────────────
 
-/// Constructs a `data:` URI from a media type and raw bytes (base64-encoded).
+/// 由媒体类型与原始字节构造一个 `data:` URI（base64 编码）。
 ///
-/// Useful for embedding small assets inline (mirrors the pattern used in
-/// CesiumJS `createResourceFromDataUri` helpers and test fixtures).
+/// 适用于内联嵌入小资源（镜像 CesiumJS
+/// `createResourceFromDataUri` 辅助函数与测试 fixture 中使用的模式）。
 pub fn build_data_uri_base64(media_type: &str, data: &[u8]) -> String {
     format!("data:{};base64,{}", media_type, base64_encode(data))
 }
 
-/// Constructs a `data:` URI from a media type and plain text (percent-encoded).
+/// 由媒体类型与纯文本构造一个 `data:` URI（百分号编码）。
 pub fn build_data_uri_text(media_type: &str, text: &str) -> String {
     format!("data:{},{}", media_type, percent_encode(text))
 }
@@ -419,12 +416,12 @@ mod tests {
         );
         assert_eq!(
             media_type_of("data:,bare"),
-            Some("text/plain".to_string()) // RFC 2397 default
+            Some("text/plain".to_string()) // RFC 2397 默认
         );
         assert_eq!(media_type_of("https://example.com"), None);
     }
 
-    // ── percent encoding/decoding ───────────────────────────────────────
+    // ── 百分号编码/解码 ───────────────────────────────────────────
 
     #[test]
     fn percent_encode_special_chars() {
@@ -443,7 +440,7 @@ mod tests {
 
     #[test]
     fn percent_decode_passes_through_invalid() {
-        // Invalid percent sequences pass through verbatim
+        // 非法的百分号序列会原样透传
         assert_eq!(percent_decode("%ZZ%"), "%ZZ%");
         assert_eq!(percent_decode("100%"), "100%");
     }
@@ -460,13 +457,13 @@ mod tests {
 
     #[test]
     fn base64_handles_padding() {
-        // 1 byte → 2 padding chars
+        // 1 字节 → 2 个填充字符
         assert_eq!(base64_encode(b"a"), "YQ==");
         assert_eq!(base64_decode("YQ==").unwrap(), b"a".to_vec());
-        // 2 bytes → 1 padding char
+        // 2 字节 → 1 个填充字符
         assert_eq!(base64_encode(b"ab"), "YWI=");
         assert_eq!(base64_decode("YWI=").unwrap(), b"ab".to_vec());
-        // 3 bytes → no padding
+        // 3 字节 → 无填充
         assert_eq!(base64_encode(b"abc"), "YWJj");
         assert_eq!(base64_decode("YWJj").unwrap(), b"abc".to_vec());
     }
@@ -482,13 +479,13 @@ mod tests {
         assert_eq!(base64_encode(b""), "");
     }
 
-    // ── build helpers ───────────────────────────────────────────────────
+    // ── 构造辅助函数 ───────────────────────────────────────────────────
 
     #[test]
     fn build_base64_data_uri() {
         let uri = build_data_uri_base64("image/png", b"abc");
         assert_eq!(uri, "data:image/png;base64,YWJj");
-        // Round-trip
+        // 往返
         let bytes = decode_data_uri_bytes(&uri).unwrap();
         assert_eq!(bytes, b"abc".to_vec());
     }
@@ -501,12 +498,12 @@ mod tests {
         assert_eq!(text, "hello world");
     }
 
-    // ── Query parameter multi-value support ─────────────────────────────
+    // ── 查询参数多值支持 ─────────────────────────────────
 
     #[test]
     fn data_uri_with_query_like_payload() {
-        // Data URIs can contain '?' and '&' in the payload — these are NOT
-        // query parameters, they're part of the data.
+        // Data URI 的负载中可以包含 '?' 和 '&' —— 这些不是
+        // 查询参数，而是数据的一部分。
         let parts = parse_data_uri("data:application/x-www-form-urlencoded,a=1&b=2").unwrap();
         assert_eq!(parts.raw_payload, "a=1&b=2");
         assert_eq!(parts.media_type, "application/x-www-form-urlencoded");

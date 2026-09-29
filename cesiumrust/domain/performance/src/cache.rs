@@ -1,6 +1,6 @@
-//! Cache systems: LRU cache, tileset cache, reference-counted resource cache.
+//! 缓存系统：LRU 缓存、瓦片集缓存、引用计数资源缓存。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Scene/Cesium3DTilesetCache.js` → TilesetCache
 //! - `Scene/ResourceCache.js` → ResourceCache
 //! - `Scene/ResourceCacheStatistics.js` → CacheStatistics
@@ -8,58 +8,58 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 
-/// Cache statistics tracking.
+/// 缓存统计跟踪。
 ///
-/// Maps to CesiumJS `ResourceCacheStatistics.js`.
+/// 映射到 CesiumJS `ResourceCacheStatistics.js`。
 #[derive(Debug, Clone, Default)]
 pub struct CacheStatistics {
-    /// Number of cache hits.
+    /// 缓存命中次数。
     pub hits: u64,
-    /// Number of cache misses.
+    /// 缓存未命中次数。
     pub misses: u64,
-    /// Number of evictions.
+    /// 逐出次数。
     pub evictions: u64,
-    /// Number of insertions.
+    /// 插入次数。
     pub insertions: u64,
-    /// Current number of entries.
+    /// 当前条目数。
     pub entry_count: usize,
-    /// Current total size in bytes.
+    /// 当前总大小（字节）。
     pub total_bytes: u64,
-    /// Peak total size in bytes.
+    /// 总大小峰值（字节）。
     pub peak_bytes: u64,
-    /// Geometry byte length (vertex/index buffers).
+    /// 几何字节长度（顶点/索引缓冲）。
     pub geometry_byte_length: u64,
-    /// Texture byte length.
+    /// 纹理字节长度。
     pub textures_byte_length: u64,
 }
 
 impl CacheStatistics {
-    /// Create new statistics.
+    /// 创建新的统计。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Record a cache hit.
+    /// 记录一次缓存命中。
     pub fn record_hit(&mut self) {
         self.hits += 1;
     }
 
-    /// Record a cache miss.
+    /// 记录一次缓存未命中。
     pub fn record_miss(&mut self) {
         self.misses += 1;
     }
 
-    /// Record an eviction.
+    /// 记录一次逐出。
     pub fn record_eviction(&mut self) {
         self.evictions += 1;
     }
 
-    /// Record an insertion.
+    /// 记录一次插入。
     pub fn record_insertion(&mut self) {
         self.insertions += 1;
     }
 
-    /// Get the hit rate as a fraction [0, 1].
+    /// 以 [0, 1]  fraction 返回命中率。
     pub fn hit_rate(&self) -> f64 {
         let total = self.hits + self.misses;
         if total == 0 {
@@ -68,55 +68,55 @@ impl CacheStatistics {
         self.hits as f64 / total as f64
     }
 
-    /// Reset all statistics.
+    /// 重置所有统计。
     pub fn clear(&mut self) {
         *self = Self::default();
     }
 
-    /// Add geometry bytes.
+    /// 添加几何字节。
     pub fn add_geometry(&mut self, bytes: u64) {
         self.geometry_byte_length += bytes;
         self.total_bytes += bytes;
         self.peak_bytes = self.peak_bytes.max(self.total_bytes);
     }
 
-    /// Remove geometry bytes.
+    /// 移除几何字节。
     pub fn remove_geometry(&mut self, bytes: u64) {
         self.geometry_byte_length = self.geometry_byte_length.saturating_sub(bytes);
         self.total_bytes = self.total_bytes.saturating_sub(bytes);
     }
 
-    /// Add texture bytes.
+    /// 添加纹理字节。
     pub fn add_texture(&mut self, bytes: u64) {
         self.textures_byte_length += bytes;
         self.total_bytes += bytes;
         self.peak_bytes = self.peak_bytes.max(self.total_bytes);
     }
 
-    /// Remove texture bytes.
+    /// 移除纹理字节。
     pub fn remove_texture(&mut self, bytes: u64) {
         self.textures_byte_length = self.textures_byte_length.saturating_sub(bytes);
         self.total_bytes = self.total_bytes.saturating_sub(bytes);
     }
 }
 
-/// A generic LRU (Least Recently Used) cache.
+/// 一个通用的 LRU（最近最少使用）缓存。
 ///
-/// Evicts the least recently used entry when capacity is exceeded.
+/// 超出容量时逐出最近最少使用的条目。
 #[derive(Debug, Clone)]
 pub struct LruCache<K: Eq + Hash + Clone, V: Clone> {
-    /// Maximum number of entries.
+    /// 最大条目数。
     capacity: usize,
-    /// Storage.
+    /// 存储。
     entries: HashMap<K, V>,
-    /// Access order (most recent at back).
+    /// 访问顺序（最近的在后）。
     order: Vec<K>,
-    /// Statistics.
+    /// 统计。
     pub stats: CacheStatistics,
 }
 
 impl<K: Eq + Hash + Clone, V: Clone> LruCache<K, V> {
-    /// Create a new LRU cache with the given capacity.
+    /// 创建一个具有给定容量的新 LRU 缓存。
     pub fn new(capacity: usize) -> Self {
         Self {
             capacity: capacity.max(1),
@@ -126,26 +126,26 @@ impl<K: Eq + Hash + Clone, V: Clone> LruCache<K, V> {
         }
     }
 
-    /// Get the capacity.
+    /// 获取容量。
     pub fn capacity(&self) -> usize {
         self.capacity
     }
 
-    /// Get the current number of entries.
+    /// 获取当前条目数。
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
-    /// Check if the cache is empty.
+    /// 检查缓存是否为空。
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
-    /// Get a value by key (marks as recently used).
+    /// 按键获取值（并将其标记为最近使用）。
     pub fn get(&mut self, key: &K) -> Option<&V> {
         if self.entries.contains_key(key) {
             self.stats.record_hit();
-            // Move to most recent
+            // 移到最近
             self.order.retain(|k| k != key);
             self.order.push(key.clone());
             self.entries.get(key)
@@ -155,23 +155,23 @@ impl<K: Eq + Hash + Clone, V: Clone> LruCache<K, V> {
         }
     }
 
-    /// Get a value without updating access order.
+    /// 获取值但不更新访问顺序。
     pub fn peek(&self, key: &K) -> Option<&V> {
         self.entries.get(key)
     }
 
-    /// Insert a key-value pair.
+    /// 插入一个键值对。
     pub fn put(&mut self, key: K, value: V) -> Option<V> {
         self.stats.record_insertion();
 
         if self.entries.contains_key(&key) {
-            // Update existing
+            // 更新已有项
             self.order.retain(|k| k != &key);
             self.order.push(key.clone());
             return self.entries.insert(key, value);
         }
 
-        // Evict if at capacity
+        // 已满则逐出
         if self.entries.len() >= self.capacity {
             self.evict_lru();
         }
@@ -182,7 +182,7 @@ impl<K: Eq + Hash + Clone, V: Clone> LruCache<K, V> {
         None
     }
 
-    /// Remove a key from the cache.
+    /// 从缓存中移除一个键。
     pub fn remove(&mut self, key: &K) -> Option<V> {
         self.order.retain(|k| k != key);
         let value = self.entries.remove(key);
@@ -190,12 +190,12 @@ impl<K: Eq + Hash + Clone, V: Clone> LruCache<K, V> {
         value
     }
 
-    /// Check if a key exists.
+    /// 检查某个键是否存在。
     pub fn contains(&self, key: &K) -> bool {
         self.entries.contains_key(key)
     }
 
-    /// Evict the least recently used entry.
+    /// 逐出最近最少使用的条目。
     fn evict_lru(&mut self) -> Option<(K, V)> {
         if let Some(lru_key) = self.order.first().cloned() {
             self.order.remove(0);
@@ -207,49 +207,49 @@ impl<K: Eq + Hash + Clone, V: Clone> LruCache<K, V> {
         None
     }
 
-    /// Clear all entries.
+    /// 清除所有条目。
     pub fn clear(&mut self) {
         self.entries.clear();
         self.order.clear();
         self.stats.entry_count = 0;
     }
 
-    /// Get all keys in LRU order (least recent first).
+    /// 以 LRU 顺序获取所有键（最久未用在前）。
     pub fn keys_lru_order(&self) -> &[K] {
         &self.order
     }
 }
 
-/// A tile cache entry with size tracking.
+/// 一个带大小跟踪的瓦片缓存条目。
 #[derive(Debug, Clone)]
 pub struct TileCacheEntry {
-    /// Tile identifier.
+    /// 瓦片标识。
     pub tile_id: u64,
-    /// Memory size in bytes.
+    /// 内存大小（字节）。
     pub size_bytes: u64,
-    /// Whether this tile was touched (used) this frame.
+    /// 本瓦片本帧是否被触用（使用）。
     pub touched: bool,
-    /// Frame number when last touched.
+    /// 上次触用时的帧编号。
     pub last_touched_frame: u64,
 }
 
-/// Tileset cache with sentinel-based LRU eviction.
+/// 基于哨兵（sentinel）的 LRU 逐出的瓦片集缓存。
 ///
-/// Maps to CesiumJS `Cesium3DTilesetCache.js`.
-/// Tiles are divided into two groups:
-/// - Untouched (candidates for eviction, LRU order)
-/// - Touched this frame (protected from eviction)
+/// 映射到 CesiumJS `Cesium3DTilesetCache.js`。
+/// 瓦片分为两组：
+/// - 未触用（逐出候选，按 LRU 顺序）
+/// - 本帧已触用（受保护不被逐出）
 #[derive(Debug, Clone)]
 pub struct TilesetCache {
-    /// All cached tiles.
+    /// 所有已缓存瓦片。
     tiles: Vec<TileCacheEntry>,
-    /// Maximum cache size in bytes.
+    /// 最大缓存大小（字节）。
     pub cache_bytes: u64,
-    /// Current total memory usage.
+    /// 当前总内存使用量。
     pub total_memory_bytes: u64,
-    /// Whether to trim all tiles on next unload.
+    /// 下次卸载时是否修剪全部瓦片。
     trim_tiles: bool,
-    /// Statistics.
+    /// 统计。
     pub stats: CacheStatistics,
 }
 
@@ -266,7 +266,7 @@ impl Default for TilesetCache {
 }
 
 impl TilesetCache {
-    /// Create a new tileset cache with a byte budget.
+    /// 创建一个具有字节预算的新瓦片集缓存。
     pub fn new(cache_bytes: u64) -> Self {
         Self {
             cache_bytes,
@@ -274,15 +274,15 @@ impl TilesetCache {
         }
     }
 
-    /// Reset the cache for a new frame.
-    /// All tiles become candidates for eviction.
+    /// 为新帧重置缓存。
+    /// 所有瓦片都成为逐出候选。
     pub fn reset(&mut self) {
         for tile in &mut self.tiles {
             tile.touched = false;
         }
     }
 
-    /// Touch a tile (mark as used this frame).
+    /// 触用一个瓦片（标记为本帧已用）。
     pub fn touch(&mut self, tile_id: u64, frame_number: u64) {
         if let Some(tile) = self.tiles.iter_mut().find(|t| t.tile_id == tile_id) {
             tile.touched = true;
@@ -293,10 +293,10 @@ impl TilesetCache {
         }
     }
 
-    /// Add a tile to the cache.
+    /// 向缓存添加一个瓦片。
     pub fn add(&mut self, tile_id: u64, size_bytes: u64, frame_number: u64) {
         if self.tiles.iter().any(|t| t.tile_id == tile_id) {
-            return; // Already cached
+            return; // 已缓存
         }
 
         self.tiles.push(TileCacheEntry {
@@ -310,7 +310,7 @@ impl TilesetCache {
         self.stats.entry_count = self.tiles.len();
     }
 
-    /// Remove a specific tile from the cache.
+    /// 从缓存中移除特定瓦片。
     pub fn remove(&mut self, tile_id: u64) -> Option<TileCacheEntry> {
         if let Some(idx) = self.tiles.iter().position(|t| t.tile_id == tile_id) {
             let tile = self.tiles.remove(idx);
@@ -322,14 +322,14 @@ impl TilesetCache {
         }
     }
 
-    /// Unload tiles that exceed the cache budget.
-    /// Returns the IDs of evicted tiles.
+    /// 卸载超出缓存预算的瓦片。
+    /// 返回被逐出瓦片的 ID。
     pub fn unload_tiles(&mut self) -> Vec<u64> {
         let mut evicted = Vec::new();
         let trim_all = self.trim_tiles;
         self.trim_tiles = false;
 
-        // Sort untouched tiles by last_touched_frame (LRU first)
+        // 将未触用瓦片按 last_touched_frame 排序（LRU 在前）
         let mut untouched: Vec<usize> = self
             .tiles
             .iter()
@@ -339,7 +339,7 @@ impl TilesetCache {
             .collect();
         untouched.sort_by_key(|&i| self.tiles[i].last_touched_frame);
 
-        // Evict from LRU until under budget (or trim all)
+        // 从 LRU 开始逐出，直到降到预算内（或修剪全部）
         let mut to_remove = Vec::new();
         for &idx in &untouched {
             if !trim_all && self.total_memory_bytes <= self.cache_bytes {
@@ -358,48 +358,48 @@ impl TilesetCache {
         evicted
     }
 
-    /// Force trim all tiles on next unload.
+    /// 强制下次卸载时修剪全部瓦片。
     pub fn trim(&mut self) {
         self.trim_tiles = true;
     }
 
-    /// Get the number of cached tiles.
+    /// 获取已缓存瓦片数。
     pub fn tile_count(&self) -> usize {
         self.tiles.len()
     }
 
-    /// Check if a tile is cached.
+    /// 检查某个瓦片是否已缓存。
     pub fn contains(&self, tile_id: u64) -> bool {
         self.tiles.iter().any(|t| t.tile_id == tile_id)
     }
 
-    /// Get the number of touched tiles this frame.
+    /// 获取本帧被触用的瓦片数。
     pub fn touched_count(&self) -> usize {
         self.tiles.iter().filter(|t| t.touched).count()
     }
 }
 
-/// A reference-counted cache entry.
+/// 一个引用计数的缓存条目。
 #[derive(Debug, Clone)]
 pub struct RefCountedEntry<V: Clone> {
-    /// The cached value.
+    /// 缓存的值。
     pub value: V,
-    /// Reference count.
+    /// 引用计数。
     pub reference_count: u32,
-    /// Size in bytes (for memory tracking).
+    /// 大小（字节，用于内存跟踪）。
     pub size_bytes: u64,
 }
 
-/// Reference-counted resource cache.
+/// 引用计数的资源缓存。
 ///
-/// Maps to CesiumJS `ResourceCache.js`.
-/// Resources are shared and reference-counted; they are removed
-/// when the reference count drops to zero.
+/// 映射到 CesiumJS `ResourceCache.js`。
+/// 资源被共享并引用计数；当引用计数降为零时
+/// 将其移除。
 #[derive(Debug, Clone)]
 pub struct ResourceCache<K: Eq + Hash + Clone, V: Clone> {
-    /// Cache entries.
+    /// 缓存条目。
     entries: HashMap<K, RefCountedEntry<V>>,
-    /// Statistics.
+    /// 统计。
     pub stats: CacheStatistics,
 }
 
@@ -413,12 +413,12 @@ impl<K: Eq + Hash + Clone, V: Clone> Default for ResourceCache<K, V> {
 }
 
 impl<K: Eq + Hash + Clone, V: Clone> ResourceCache<K, V> {
-    /// Create a new resource cache.
+    /// 创建一个新的资源缓存。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Get a resource from the cache (increments reference count).
+    /// 从缓存获取资源（引用计数加一）。
     pub fn get(&mut self, key: &K) -> Option<&V> {
         if let Some(entry) = self.entries.get_mut(key) {
             entry.reference_count += 1;
@@ -430,10 +430,10 @@ impl<K: Eq + Hash + Clone, V: Clone> ResourceCache<K, V> {
         }
     }
 
-    /// Add a resource to the cache.
+    /// 向缓存添加资源。
     pub fn add(&mut self, key: K, value: V, size_bytes: u64) -> bool {
         if self.entries.contains_key(&key) {
-            return false; // Already exists
+            return false; // 已存在
         }
 
         self.entries.insert(
@@ -451,8 +451,8 @@ impl<K: Eq + Hash + Clone, V: Clone> ResourceCache<K, V> {
         true
     }
 
-    /// Release a reference to a resource.
-    /// Returns true if the resource was removed (ref count reached 0).
+    /// 释放一个资源的引用。
+    /// 如果资源被移除（引用计数降为 0）则返回 true。
     pub fn release(&mut self, key: &K) -> bool {
         if let Some(entry) = self.entries.get_mut(key) {
             entry.reference_count = entry.reference_count.saturating_sub(1);
@@ -467,27 +467,27 @@ impl<K: Eq + Hash + Clone, V: Clone> ResourceCache<K, V> {
         false
     }
 
-    /// Get the reference count for a key.
+    /// 获取某个键的引用计数。
     pub fn reference_count(&self, key: &K) -> u32 {
         self.entries.get(key).map(|e| e.reference_count).unwrap_or(0)
     }
 
-    /// Check if a key exists in the cache.
+    /// 检查某个键是否存在于缓存中。
     pub fn contains(&self, key: &K) -> bool {
         self.entries.contains_key(key)
     }
 
-    /// Get the number of entries.
+    /// 获取条目数。
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
-    /// Check if the cache is empty.
+    /// 检查缓存是否为空。
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
-    /// Clear all entries.
+    /// 清除所有条目。
     pub fn clear(&mut self) {
         self.entries.clear();
         self.stats.entry_count = 0;
@@ -499,7 +499,7 @@ impl<K: Eq + Hash + Clone, V: Clone> ResourceCache<K, V> {
 mod tests {
     use super::*;
 
-    // === CacheStatistics tests ===
+    // === CacheStatistics 测试 ===
 
     #[test]
     fn test_statistics_default() {
@@ -528,10 +528,10 @@ mod tests {
 
         stats.remove_geometry(400);
         assert_eq!(stats.total_bytes, 1100);
-        assert_eq!(stats.peak_bytes, 1500); // Peak unchanged
+        assert_eq!(stats.peak_bytes, 1500); // 峰值不变
     }
 
-    // === LruCache tests ===
+    // === LruCache 测试 ===
 
     #[test]
     fn test_lru_cache_basic() {
@@ -551,7 +551,7 @@ mod tests {
         let mut cache = LruCache::new(2);
         cache.put("a", 1);
         cache.put("b", 2);
-        cache.put("c", 3); // Should evict "a"
+        cache.put("c", 3); // 应逐出 "a"
 
         assert_eq!(cache.len(), 2);
         assert_eq!(cache.get(&"a"), None);
@@ -565,10 +565,10 @@ mod tests {
         cache.put("a", 1);
         cache.put("b", 2);
 
-        // Access "a" to make it recently used
+        // 访问 "a" 使其成为最近使用
         cache.get(&"a");
 
-        // Insert "c" - should evict "b" (least recently used)
+        // 插入 "c" —— 应逐出 "b"（最近最少使用）
         cache.put("c", 3);
 
         assert_eq!(cache.get(&"a"), Some(&1));
@@ -613,10 +613,10 @@ mod tests {
         cache.put("a", 1);
         cache.put("b", 2);
 
-        // Peek doesn't update order
+        // Peek 不更新顺序
         assert_eq!(cache.peek(&"a"), Some(&1));
 
-        // Insert "c" - should still evict "a" since peek didn't update
+        // 插入 "c" —— 仍应逐出 "a"，因为 peek 未更新顺序
         cache.put("c", 3);
         assert_eq!(cache.peek(&"a"), None);
     }
@@ -625,15 +625,15 @@ mod tests {
     fn test_lru_cache_stats() {
         let mut cache = LruCache::new(2);
         cache.put("a", 1);
-        cache.get(&"a"); // hit
-        cache.get(&"x"); // miss
+        cache.get(&"a"); // 命中
+        cache.get(&"x"); // 未命中
 
         assert_eq!(cache.stats.hits, 1);
         assert_eq!(cache.stats.misses, 1);
         assert_eq!(cache.stats.insertions, 1);
     }
 
-    // === TilesetCache tests ===
+    // === TilesetCache 测试 ===
 
     #[test]
     fn test_tileset_cache_basic() {
@@ -663,16 +663,16 @@ mod tests {
         let mut cache = TilesetCache::new(500);
         cache.add(1, 200, 0);
         cache.add(2, 200, 0);
-        cache.add(3, 200, 0); // Total 600 > 500
+        cache.add(3, 200, 0); // 总计 600 > 500
 
-        // Reset and touch only tile 3
+        // 重置并仅触用瓦片 3
         cache.reset();
         cache.touch(3, 1);
 
         let evicted = cache.unload_tiles();
-        // Should evict tile 1 (untouched, LRU) to get under budget
+        // 应逐出瓦片 1（未触用，LRU）以降到预算内
         assert!(evicted.contains(&1));
-        // Tile 3 is touched, never evicted
+        // 瓦片 3 已触用，永不逐出
         assert!(!evicted.contains(&3));
         assert!(cache.total_memory_bytes <= 500);
         assert!(cache.contains(3));
@@ -696,14 +696,14 @@ mod tests {
         cache.add(1, 100, 0);
         cache.add(2, 100, 0);
         cache.reset();
-        cache.trim(); // Force trim all
+        cache.trim(); // 强制修剪全部
 
         let evicted = cache.unload_tiles();
         assert_eq!(evicted.len(), 2);
         assert_eq!(cache.tile_count(), 0);
     }
 
-    // === ResourceCache tests ===
+    // === ResourceCache 测试 ===
 
     #[test]
     fn test_resource_cache_basic() {
@@ -717,9 +717,9 @@ mod tests {
     fn test_resource_cache_duplicate() {
         let mut cache: ResourceCache<String, i32> = ResourceCache::new();
         assert!(cache.add("key".to_string(), 42, 4));
-        // Duplicate should fail
+        // 重复添加应失败
         assert!(!cache.add("key".to_string(), 99, 4));
-        // Value unchanged
+        // 值不变
         assert_eq!(cache.get(&"key".to_string()), Some(&42));
     }
 
@@ -728,18 +728,18 @@ mod tests {
         let mut cache: ResourceCache<String, i32> = ResourceCache::new();
         cache.add("key".to_string(), 42, 4);
 
-        // Initial ref count is 1
+        // 初始引用计数为 1
         assert_eq!(cache.reference_count(&"key".to_string()), 1);
 
-        // Get increments
+        // get 使计数递增
         cache.get(&"key".to_string());
         assert_eq!(cache.reference_count(&"key".to_string()), 2);
 
-        // Release decrements
+        // release 使计数递减
         assert!(!cache.release(&"key".to_string()));
         assert_eq!(cache.reference_count(&"key".to_string()), 1);
 
-        // Release to zero removes
+        // 释放至零则移除
         assert!(cache.release(&"key".to_string()));
         assert!(!cache.contains(&"key".to_string()));
     }
@@ -756,7 +756,7 @@ mod tests {
 
         cache.release(&"a".to_string());
         assert_eq!(cache.stats.total_bytes, 200);
-        assert_eq!(cache.stats.peak_bytes, 300); // Peak unchanged
+        assert_eq!(cache.stats.peak_bytes, 300); // 峰值不变
     }
 
     #[test]

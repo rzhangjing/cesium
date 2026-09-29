@@ -1,7 +1,7 @@
-//! DoubleEndedPriorityQueue specs - ported from:
-//! - packages/engine/Specs/Core/DoubleEndedPriorityQueueSpec.js (26 it())
+//! DoubleEndedPriorityQueue 规格测试 - 移植自：
+//! - packages/engine/Specs/Core/DoubleEndedPriorityQueueSpec.js（26 个 it()）
 //!
-//! A-class tests: 24 (skipping 4 JS-specific `throws` constructor/setter tests)
+//! A 类测试：24 个（跳过 4 个 JS 特有的 `throws` 构造函数/setter 测试）
 
 use cesium_geospatial::double_ended_priority_queue::DoubleEndedPriorityQueue;
 use std::cmp::Ordering;
@@ -25,7 +25,7 @@ fn new_queue_max(max: usize) -> DoubleEndedPriorityQueue<i32, Cmp> {
     DoubleEndedPriorityQueue::new(cmp_asc, Some(max))
 }
 
-/// Deterministic pseudo-random number generator (replaces Math.random()).
+/// 确定性的伪随机数生成器（替代 Math.random()）。
 struct Lcg {
     state: u64,
 }
@@ -43,8 +43,8 @@ impl Lcg {
     }
 }
 
-/// Validates the queue by draining clones via removeMinimum / removeMaximum
-/// and checking that the results are sorted.
+/// 通过 removeMinimum / removeMaximum 排空克隆来校验队列，
+/// 并检查结果是否有序。
 fn is_valid_queue<T, F>(queue: &DoubleEndedPriorityQueue<T, F>) -> bool
 where
     T: Clone + PartialOrd,
@@ -85,8 +85,8 @@ fn gets_comparator() {
     let cmp: Cmp = cmp_asc;
     let queue = DoubleEndedPriorityQueue::new(cmp, None);
     let stored = *queue.comparator();
-    // Compare behaviour, not fn-pointer addresses (which the compiler does not
-    // guarantee to be stable, so `==` on them is meaningless).
+    // 比较行为，而非函数指针地址（编译器并不保证地址稳定，
+    // 因此对它们使用 `==` 没有意义）。
     for (a, b) in [(1, 2), (2, 1), (3, 3), (-5, 7)] {
         assert_eq!(stored(&a, &b), cmp(&a, &b));
     }
@@ -99,7 +99,7 @@ fn uses_different_comparator() {
     queue.insert(1);
     queue.insert(2);
 
-    // The comparator is flipped, so 2 is the minimum and 1 is the maximum.
+    // 比较器被翻转，因此 2 是最小值、1 是最大值。
     assert_eq!(queue.length(), 2);
     assert_eq!(queue.get_minimum(), Some(&2));
     assert_eq!(queue.get_maximum(), Some(&1));
@@ -191,8 +191,8 @@ fn insert_returns_element_when_low_priority_and_full() {
 
     let result1 = queue.insert(Obj { value: 1, id: 0 });
     let result2 = queue.insert(Obj { value: 2, id: 0 });
-    let result3 = queue.insert(Obj { value: 1, id: 1 }); // ignored: equal priority to minimum
-    let result4 = queue.insert(Obj { value: 0, id: 1 }); // ignored: lower priority than minimum
+    let result3 = queue.insert(Obj { value: 1, id: 1 }); // 被忽略：优先级等于最小值
+    let result4 = queue.insert(Obj { value: 0, id: 1 }); // 被忽略：优先级低于最小值
 
     assert_eq!(queue.length(), 2);
     assert_eq!(queue.maximum_length(), Some(2));
@@ -216,7 +216,7 @@ fn remove_and_return_minimum_element() {
     assert_eq!(queue.length(), 2);
     assert_eq!(minimum_value, Some(1));
     assert_eq!(queue.get_minimum(), Some(&2));
-    // The element was dereferenced.
+    // 该元素已被解引用。
     assert_eq!(queue.internal_array()[2], None);
 }
 
@@ -238,7 +238,7 @@ fn remove_and_return_maximum_element() {
     assert_eq!(queue.length(), 2);
     assert_eq!(maximum_value, Some(3));
     assert_eq!(queue.get_maximum(), Some(&2));
-    // The element was dereferenced.
+    // 该元素已被解引用。
     assert_eq!(queue.internal_array()[2], None);
 }
 
@@ -271,7 +271,7 @@ fn resets_queue() {
     assert_eq!(queue.length(), 0);
     assert_eq!(queue.get_minimum(), None);
     assert_eq!(queue.get_maximum(), None);
-    // The elements were dereferenced.
+    // 这些元素已被解引用。
     assert_eq!(queue.internal_array().len(), 0);
 }
 
@@ -284,7 +284,7 @@ fn resets_queue_with_maximum_length() {
     assert_eq!(queue.length(), 0);
     assert_eq!(queue.get_minimum(), None);
     assert_eq!(queue.get_maximum(), None);
-    // The element was dereferenced but the array stayed the same size.
+    // 该元素已被解引用，但数组大小保持不变。
     assert_eq!(queue.internal_array().len(), 1);
     assert_eq!(queue.internal_array()[0], None);
 }
@@ -402,7 +402,7 @@ fn resorts_queue() {
         queue.insert(0.0);
     }
 
-    // Change all of the queue values to random values to make it unsorted.
+    // 将队列中所有值改为随机值，使其无序。
     let mut rng = Lcg::new(123);
     {
         let array = queue.internal_array_mut();

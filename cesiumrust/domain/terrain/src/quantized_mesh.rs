@@ -1,5 +1,5 @@
-//! Quantized mesh terrain data.
-//! Maps to CesiumJS `Core/QuantizedMeshTerrainData.js`
+//! 量化网格地形数据。
+//! 映射到 CesiumJS `Core/QuantizedMeshTerrainData.js`
 
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::cartographic::Cartographic;
@@ -12,123 +12,123 @@ use serde::{Deserialize, Serialize};
 use crate::terrain_mesh::TerrainMesh;
 use crate::MAX_SHORT;
 
-/// Terrain data for a single tile where the terrain is represented as a quantized mesh.
+/// 单个图块的地形数据，其中地形以量化网格表示。
 ///
-/// A quantized mesh consists of three vertex attributes: longitude (u), latitude (v),
-/// and height. All attributes are expressed as 16-bit values in the range 0 to 32767.
+/// 量化网格由三个顶点属性组成：经度 (u)、纬度 (v) 和高度。
+/// 所有属性均以 16 位值表示，范围为 0 到 32767。
 ///
-/// - u: 0 at west edge, 32767 at east edge
-/// - v: 0 at south edge, 32767 at north edge
-/// - height: 0 at minimum height, 32767 at maximum height
+/// - u：西边缘为 0，东边缘为 32767
+/// - v：南边缘为 0，北边缘为 32767
+/// - height：最小高度为 0，最大高度为 32767
 ///
-/// Maps to CesiumJS `QuantizedMeshTerrainData`
+/// 映射到 CesiumJS `QuantizedMeshTerrainData`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuantizedMeshTerrainData {
-    /// Quantized vertex data: [u0, u1, ..., v0, v1, ..., h0, h1, ...]
-    /// Each component is a u16 in range [0, 32767]
+    /// 量化顶点数据：[u0, u1, ..., v0, v1, ..., h0, h1, ...]
+    /// 每个分量是范围 [0, 32767] 内的 u16
     pub quantized_vertices: Vec<u16>,
 
-    /// Triangle indices (u16 or u32 depending on vertex count)
+    /// 三角形索引（根据顶点数可为 u16 或 u32）
     pub indices: Vec<u32>,
 
-    /// Minimum terrain height in meters above the ellipsoid
+    /// 椭球上方以米计的最小地形高度
     pub minimum_height: f64,
 
-    /// Maximum terrain height in meters above the ellipsoid
+    /// 椭球上方以米计的最大地形高度
     pub maximum_height: f64,
 
-    /// Bounding sphere for the tile
+    /// 图块的包围球
     pub bounding_sphere: BoundingSphere,
 
-    /// Horizon occlusion point in ellipsoid-scaled coordinates
+    /// 椭球缩放坐标中的地平线遮挡点
     pub horizon_occlusion_point: DVec3,
 
-    /// Indices of vertices on the western edge
+    /// 西边缘顶点的索引
     pub west_indices: Vec<u32>,
 
-    /// Indices of vertices on the southern edge
+    /// 南边缘顶点的索引
     pub south_indices: Vec<u32>,
 
-    /// Indices of vertices on the eastern edge
+    /// 东边缘顶点的索引
     pub east_indices: Vec<u32>,
 
-    /// Indices of vertices on the northern edge
+    /// 北边缘顶点的索引
     pub north_indices: Vec<u32>,
 
-    /// Skirt height on western edge
+    /// 西边缘的裙边高度
     pub west_skirt_height: f64,
 
-    /// Skirt height on southern edge
+    /// 南边缘的裙边高度
     pub south_skirt_height: f64,
 
-    /// Skirt height on eastern edge
+    /// 东边缘的裙边高度
     pub east_skirt_height: f64,
 
-    /// Skirt height on northern edge
+    /// 北边缘的裙边高度
     pub north_skirt_height: f64,
 
-    /// Bit mask indicating which children exist (bit 0=SW, 1=SE, 2=NW, 3=NE)
+    /// 指示哪些子块存在的位掩码（bit 0=SW, 1=SE, 2=NW, 3=NE）
     #[serde(default = "default_child_tile_mask")]
     pub child_tile_mask: u8,
 
-    /// Whether this was created by upsampling
+    /// 是否由上采样创建
     #[serde(default)]
     pub created_by_upsampling: bool,
 
-    /// Oct-encoded normals (optional)
+    /// Oct 编码的法线（可选）
     #[serde(default)]
     pub encoded_normals: Option<Vec<u8>>,
 
-    /// Water mask (optional)
+    /// 水面遮罩（可选）
     #[serde(default)]
     pub water_mask: Option<Vec<u8>>,
 }
 
 fn default_child_tile_mask() -> u8 {
-    15 // All children exist by default
+    15 // 默认所有子块都存在
 }
 
 impl QuantizedMeshTerrainData {
-    /// Returns the number of vertices in the mesh.
+    /// 返回网格中的顶点数。
     pub fn vertex_count(&self) -> usize {
         self.quantized_vertices.len() / 3
     }
 
-    /// Returns the u values (longitude quantization) for all vertices.
+    /// 返回所有顶点的 u 值（经度量化）。
     pub fn u_values(&self) -> &[u16] {
         let count = self.vertex_count();
         &self.quantized_vertices[0..count]
     }
 
-    /// Returns the v values (latitude quantization) for all vertices.
+    /// 返回所有顶点的 v 值（纬度量化）。
     pub fn v_values(&self) -> &[u16] {
         let count = self.vertex_count();
         &self.quantized_vertices[count..2 * count]
     }
 
-    /// Returns the height values for all vertices.
+    /// 返回所有顶点的高度值。
     pub fn height_values(&self) -> &[u16] {
         let count = self.vertex_count();
         &self.quantized_vertices[2 * count..3 * count]
     }
 
-    /// Checks if a specific child tile exists.
+    /// 检查特定子块是否存在。
     ///
-    /// # Arguments
-    /// * `child` - Child index (0=SW, 1=SE, 2=NW, 3=NE)
+    /// # 参数
+    /// * `child` - 子索引（0=SW, 1=SE, 2=NW, 3=NE）
     pub fn is_child_available(&self, child: usize) -> bool {
         (self.child_tile_mask & (1 << child)) != 0
     }
 
-    /// Checks if a child tile is available using tile coordinates.
+    /// 使用图块坐标检查子块是否可用。
     ///
-    /// Maps to CesiumJS `QuantizedMeshTerrainData.isChildAvailable(thisX, thisY, childX, childY)`
+    /// 映射到 CesiumJS `QuantizedMeshTerrainData.isChildAvailable(thisX, thisY, childX, childY)`
     ///
-    /// # Arguments
-    /// * `this_x` - Parent tile X
-    /// * `this_y` - Parent tile Y
-    /// * `child_x` - Child tile X
-    /// * `child_y` - Child tile Y
+    /// # 参数
+    /// * `this_x` - 父块 X
+    /// * `this_y` - 父块 Y
+    /// * `child_x` - 子块 X
+    /// * `child_y` - 子块 Y
     pub fn is_child_available_coords(
         &self,
         this_x: u32,
@@ -139,51 +139,51 @@ impl QuantizedMeshTerrainData {
         let relative_x = child_x - this_x * 2;
         let relative_y = child_y - this_y * 2;
 
-        // CesiumJS tile coordinates: Y increases southward
-        // relative_y=0 → north row, relative_y=1 → south row
+        // CesiumJS 图块坐标：Y 向南递增
+        // relative_y=0 → 北行，relative_y=1 → 南行
         if relative_y == 0 {
             if relative_x == 0 {
-                // Northwest child (bit 2)
+                // 西北子块（bit 2）
                 (self.child_tile_mask & 4) != 0
             } else {
-                // Northeast child (bit 3)
+                // 东北子块（bit 3）
                 (self.child_tile_mask & 8) != 0
             }
         } else if relative_x == 0 {
-            // Southwest child (bit 0)
+            // 西南子块（bit 0）
             (self.child_tile_mask & 1) != 0
         } else {
-            // Southeast child (bit 1)
+            // 东南子块（bit 1）
             (self.child_tile_mask & 2) != 0
         }
     }
 
-    /// Interpolates height at a given longitude/latitude within the tile rectangle.
+    /// 在图块矩形内对给定经度/纬度处的高度进行插值。
     ///
-    /// Maps to CesiumJS `QuantizedMeshTerrainData.interpolateHeight(rectangle, longitude, latitude)`
+    /// 映射到 CesiumJS `QuantizedMeshTerrainData.interpolateHeight(rectangle, longitude, latitude)`
     ///
-    /// Uses barycentric coordinates to find the containing triangle and interpolate.
+    /// 使用重心坐标找到包含该点的三角形并进行插值。
     pub fn interpolate_height(&self, rectangle: &Rectangle, longitude: f64, latitude: f64) -> f64 {
         let vertex_count = self.vertex_count();
         let u_values = self.u_values();
         let v_values = self.v_values();
         let height_values = self.height_values();
 
-        // Clamp to rectangle bounds
+        // 限制到矩形边界
         let lon = longitude.clamp(rectangle.west, rectangle.east);
         let lat = latitude.clamp(rectangle.south, rectangle.north);
 
-        // Convert to normalized u,v coordinates within the tile
+        // 转换为图块内归一化的 u,v 坐标
         let width = rectangle.east - rectangle.west;
         let height_range = rectangle.north - rectangle.south;
         let u = if width > 0.0 { (lon - rectangle.west) / width } else { 0.0 };
         let v = if height_range > 0.0 { (lat - rectangle.south) / height_range } else { 0.0 };
 
-        // Convert u,v to quantized coordinates
+        // 将 u,v 转换为量化坐标
         let target_u = u * MAX_SHORT as f64;
         let target_v = v * MAX_SHORT as f64;
 
-        // Find the triangle containing this point and interpolate
+        // 找到包含该点的三角形并插值
         let indices = &self.indices;
         for tri in indices.chunks(3) {
             if tri.len() < 3 {
@@ -204,7 +204,7 @@ impl QuantizedMeshTerrainData {
             let u2 = u_values[i2] as f64;
             let v2 = v_values[i2] as f64;
 
-            // Compute barycentric coordinates
+            // 计算重心坐标
             let denom = (v1 - v2) * (u0 - u2) + (u2 - u1) * (v0 - v2);
             if denom.abs() < 1e-30 {
                 continue;
@@ -214,7 +214,7 @@ impl QuantizedMeshTerrainData {
             let b = ((v2 - v0) * (target_u - u2) + (u0 - u2) * (target_v - v2)) / denom;
             let c = 1.0 - a - b;
 
-            // Check if point is inside triangle (with small tolerance)
+            // 检查点是否在三角形内（带小容差）
             if a >= -1e-10 && b >= -1e-10 && c >= -1e-10 {
                 let h0 = math_utils::lerp(
                     self.minimum_height,
@@ -236,24 +236,24 @@ impl QuantizedMeshTerrainData {
             }
         }
 
-        // Fallback: return average height
+        // 回退：返回平均高度
         (self.minimum_height + self.maximum_height) * 0.5
     }
 
-    /// Creates terrain mesh from quantized data.
+    /// 从量化数据创建地形网格。
     ///
-    /// This is the main method that converts quantized mesh data into
-    /// actual 3D positions using the tile rectangle and ellipsoid.
+    /// 这是主方法，使用图块矩形和椭球体将量化网格数据
+    /// 转换为实际的 3D 位置。
     ///
-    /// Maps to CesiumJS `createVerticesFromQuantizedTerrainMesh`
+    /// 映射到 CesiumJS `createVerticesFromQuantizedTerrainMesh`
     ///
-    /// # Arguments
-    /// * `rectangle` - The tile rectangle (west, south, east, north in radians)
-    /// * `ellipsoid` - The ellipsoid to use for coordinate conversion
-    /// * `exaggeration` - Vertical exaggeration factor (1.0 = no exaggeration)
+    /// # 参数
+    /// * `rectangle` - 图块矩形（west、south、east、north，以弧度计）
+    /// * `ellipsoid` - 用于坐标转换的椭球体
+    /// * `exaggeration` - 垂直夸张因子（1.0 = 无夸张）
     ///
-    /// # Returns
-    /// A TerrainMesh with actual 3D positions
+    /// # 返回
+    /// 带有实际 3D 位置的 TerrainMesh
     pub fn create_mesh(
         &self,
         rectangle: &Rectangle,
@@ -296,7 +296,7 @@ impl QuantizedMeshTerrainData {
             uvs.push([u, v]);
             heights.push(height);
 
-            // Compute geodetic surface normal if exaggeration is applied
+            // 若应用了夸张，则计算大地测量表面法线
             if has_exaggeration {
                 let normal = ellipsoid
                     .geodetic_surface_normal(position)
@@ -305,7 +305,7 @@ impl QuantizedMeshTerrainData {
             }
         }
 
-        // Decode oct-encoded normals if available
+        // 若可用则解码 oct 编码的法线
         if let Some(ref encoded) = self.encoded_normals {
             normals = decode_oct_normals(encoded, vertex_count);
         }
@@ -321,12 +321,12 @@ impl QuantizedMeshTerrainData {
         }
     }
 
-    /// Creates terrain mesh with skirts for seamless tile boundaries.
+    /// 创建带裙边的地形网格，以实现无缝的图块边界。
     ///
-    /// # Arguments
-    /// * `rectangle` - The tile rectangle
-    /// * `ellipsoid` - The ellipsoid
-    /// * `exaggeration` - Vertical exaggeration factor
+    /// # 参数
+    /// * `rectangle` - 图块矩形
+    /// * `ellipsoid` - 椭球体
+    /// * `exaggeration` - 垂直夸张因子
     pub fn create_mesh_with_skirts(
         &self,
         rectangle: &Rectangle,
@@ -335,17 +335,17 @@ impl QuantizedMeshTerrainData {
     ) -> TerrainMesh {
         let mut mesh = self.create_mesh(rectangle, ellipsoid, exaggeration);
 
-        // Add skirt vertices
+        // 添加裙边顶点
         self.add_skirts(&mut mesh, rectangle, ellipsoid);
 
         mesh
     }
 
-    /// Adds skirt vertices to the mesh for seamless boundaries.
+    /// 向网格添加裙边顶点，以实现无缝边界。
     fn add_skirts(&self, mesh: &mut TerrainMesh, _rectangle: &Rectangle, ellipsoid: &Ellipsoid) {
         let base_vertex_count = mesh.positions.len();
 
-        // Helper to add skirt for an edge
+        // 辅助函数：为某条边添加裙边
         let mut add_edge_skirt = |edge_indices: &[u32], skirt_height: f64| {
             for &idx in edge_indices {
                 let idx = idx as usize;
@@ -353,9 +353,9 @@ impl QuantizedMeshTerrainData {
                     let pos = mesh.positions[idx];
                     let position = DVec3::new(pos[0], pos[1], pos[2]);
 
-                    // Get the cartographic coordinates
+                    // 获取地图投影坐标
                     if let Some(carto) = ellipsoid.cartesian_to_cartographic(position) {
-                        // Lower the height by skirt amount
+                        // 按裙边量降低高度
                         let skirt_carto = Cartographic::from_radians(
                             carto.longitude,
                             carto.latitude,
@@ -364,7 +364,7 @@ impl QuantizedMeshTerrainData {
                         let skirt_pos = ellipsoid.cartographic_to_cartesian(&skirt_carto);
                         mesh.positions.push([skirt_pos.x, skirt_pos.y, skirt_pos.z]);
 
-                        // Copy UV and normal
+                        // 复制 UV 和法线
                         let uv_to_copy = mesh.tex_coords.as_ref().and_then(|uvs| uvs.get(idx).copied());
                         if let Some(uv) = uv_to_copy {
                             if let Some(ref mut new_uvs) = mesh.tex_coords {
@@ -382,13 +382,13 @@ impl QuantizedMeshTerrainData {
             }
         };
 
-        // Add skirts for each edge
+        // 为每条边添加裙边
         add_edge_skirt(&self.west_indices, self.west_skirt_height);
         add_edge_skirt(&self.south_indices, self.south_skirt_height);
         add_edge_skirt(&self.east_indices, self.east_skirt_height);
         add_edge_skirt(&self.north_indices, self.north_skirt_height);
 
-        // Add skirt triangles
+        // 添加裙边三角形
         let mut add_skirt_indices = |edge_indices: &[u32], offset: usize| {
             for i in 0..edge_indices.len().saturating_sub(1) {
                 let v0 = edge_indices[i];
@@ -396,7 +396,7 @@ impl QuantizedMeshTerrainData {
                 let v2 = (offset + i) as u32;
                 let v3 = (offset + i + 1) as u32;
 
-                // Two triangles for the skirt quad
+                // 裙边四边形对应的两个三角形
                 mesh.indices.push(v0);
                 mesh.indices.push(v2);
                 mesh.indices.push(v1);
@@ -418,10 +418,10 @@ impl QuantizedMeshTerrainData {
     }
 }
 
-/// Decodes oct-encoded normals.
+/// 解码 oct 编码的法线。
 ///
-/// Oct encoding maps a unit vector to two bytes using an octahedral projection.
-/// Maps to CesiumJS `AttributeCompression.octDecode`
+/// Oct 编码使用八面体投影将单位向量映射为两个字节。
+/// 映射到 CesiumJS `AttributeCompression.octDecode`
 fn decode_oct_normals(encoded: &[u8], vertex_count: usize) -> Vec<[f64; 3]> {
     let mut normals = Vec::with_capacity(vertex_count);
 
@@ -429,11 +429,11 @@ fn decode_oct_normals(encoded: &[u8], vertex_count: usize) -> Vec<[f64; 3]> {
         let x = encoded.get(i * 2).copied().unwrap_or(128);
         let y = encoded.get(i * 2 + 1).copied().unwrap_or(128);
 
-        // Decode from [0, 255] to [-1, 1]
+        // 从 [0, 255] 解码到 [-1, 1]
         let mut decoded_x = (x as f64 / 255.0) * 2.0 - 1.0;
         let mut decoded_y = (y as f64 / 255.0) * 2.0 - 1.0;
 
-        // Oct decode
+        // Oct 解码
         let z = 1.0 - decoded_x.abs() - decoded_y.abs();
         if z < 0.0 {
             let old_x = decoded_x;
@@ -441,7 +441,7 @@ fn decode_oct_normals(encoded: &[u8], vertex_count: usize) -> Vec<[f64; 3]> {
             decoded_y = (1.0 - old_x.abs()) * decoded_y.signum();
         }
 
-        // Normalize
+        // 归一化
         let len = (decoded_x * decoded_x + decoded_y * decoded_y + z * z).sqrt();
         if len > 0.0 {
             normals.push([decoded_x / len, decoded_y / len, z / len]);
@@ -459,14 +459,14 @@ mod tests {
     use cesium_geospatial::bounding::BoundingSphere;
 
     fn create_test_data() -> QuantizedMeshTerrainData {
-        // Simple 4-vertex quad (SW, NW, SE, NE)
+        // 简单的 4 顶点四边形（SW, NW, SE, NE）
         QuantizedMeshTerrainData {
             quantized_vertices: vec![
-                // u values
+                // u 值
                 0, 0, 32767, 32767,
-                // v values
+                // v 值
                 0, 32767, 0, 32767,
-                // height values
+                // 高度值
                 16384, 0, 32767, 16384,
             ],
             indices: vec![0, 3, 1, 0, 2, 3],
@@ -543,20 +543,20 @@ mod tests {
 
         let mesh = data.create_mesh_with_skirts(&rectangle, &ellipsoid, 1.0);
 
-        // Should have more vertices due to skirts
+        // 由于裙边应有更多顶点
         assert!(mesh.positions.len() > 4);
-        // Should have more indices due to skirt triangles
+        // 由于裙边三角形应有更多索引
         assert!(mesh.indices.len() > 6);
     }
 
     #[test]
     fn test_decode_oct_normals() {
-        // Test with encoded normal pointing up (128, 128 = center)
+        // 测试指向朝上的编码法线（128, 128 = 中心）
         let encoded = vec![128, 128];
         let normals = decode_oct_normals(&encoded, 1);
 
         assert_eq!(normals.len(), 1);
-        // Should be approximately [0, 0, 1]
+        // 应约为 [0, 0, 1]
         assert!((normals[0][2] - 1.0).abs() < 0.1);
     }
 }

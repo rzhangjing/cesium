@@ -1,19 +1,19 @@
-//! Core/BoundingRectangleSpec.js → Rust integration tests
+//! Core/BoundingRectangleSpec.js → Rust 集成测试
 //!
-//! Faithful port of CesiumJS `Specs/Core/BoundingRectangleSpec.js` (28 `it()` cases).
+//! 忠实移植自 CesiumJS `Specs/Core/BoundingRectangleSpec.js`（28 个 `it()` 用例）。
 //!
-//! ## Platform adaptations
-//! - JS result-parameter variants (`clone(result)`, `fromPoints(p, result)`,
-//!   `fromRectangle(r, p, result)`, `union(l, r, result)`, `expand(rect, pt, result)`)
-//!   are merged into the owned-return tests: Rust returns owned values / uses `Copy`.
-//! - JS "throws with no <arg>" cases (null/undefined checks) are omitted: Rust's type
-//!   system makes passing `undefined` impossible.
-//! - JS `fromPoints()` / `fromRectangle()` with no argument map to Rust empty-slice /
-//!   required-reference semantics; the "no rectangle" empty case is omitted (Rust requires
-//!   a `&Rectangle`), while "no positions" maps to `from_points(&[])`.
-//! - JS `clone()` with no argument returns `undefined`; Rust `Copy` has no such path → omitted.
-//! - `createPackableSpecs` (pack/unpack into arrays) is omitted: packing is a JS-array
-//!   serialization concern not part of the Rust domain API.
+//! ## 平台适配
+//! - JS 结果参数变体（`clone(result)`、`fromPoints(p, result)`、
+//!   `fromRectangle(r, p, result)`、`union(l, r, result)`、`expand(rect, pt, result)`）
+//!   已合并进返回所有权值的测试：Rust 返回所有权值 / 使用 `Copy`。
+//! - JS "throws with no <arg>" 用例（null/undefined 检查）已省略：Rust 的类型
+//!   系统使传入 `undefined` 不可能。
+//! - JS 无参数的 `fromPoints()` / `fromRectangle()` 对应 Rust 空切片 /
+//!   必需引用语义；“无矩形”空用例已省略（Rust 要求传入
+//!   `&Rectangle`），而“无位置”对应 `from_points(&[])`。
+//! - JS 无参数的 `clone()` 返回 `undefined`；Rust `Copy` 没有此路径 → 省略。
+//! - `createPackableSpecs`（pack/unpack 到数组）已省略：打包是 JS 数组
+//!   序列化关注点，不属于 Rust 领域 API。
 
 use cesium_geospatial::bounding::BoundingRectangle;
 use cesium_geospatial::ray::Intersect;
@@ -45,7 +45,7 @@ fn test_br_constructor() {
 #[test]
 fn test_br_clone() {
     let r = BoundingRectangle::new(1.0, 2.0, 3.0, 4.0);
-    let result = r; // Copy semantics == r.clone()
+    let result = r; // 拷贝语义 == r.clone()
     assert!(r == result);
 }
 

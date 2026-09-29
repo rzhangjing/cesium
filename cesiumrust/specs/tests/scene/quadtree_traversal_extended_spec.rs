@@ -1,7 +1,7 @@
-//! QuadtreePrimitive traversal extended specs - ported from QuadtreePrimitiveSpec.js
+//! QuadtreePrimitive 遍历扩展 specs - 移植自 QuadtreePrimitiveSpec.js
 //!
-//! Tests QuadtreeTile SSE computation, children coordinates,
-//! QuadtreePrimitive.traverse with mock tile provider, TraversalResult.
+//! 测试 QuadtreeTile SSE 计算、子瓦片坐标、
+//! 使用 mock 瓦片提供者的 QuadtreePrimitive.traverse、TraversalResult。
 
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_quadtree::{
@@ -80,7 +80,7 @@ fn tile_screen_space_error_close_camera() {
         radius: 100.0,
     };
 
-    // Camera very close → high SSE
+    // 相机非常近 → 高 SSE
     let camera = DVec3::new(0.0, 0.0, 200.0);
     let sse = tile.compute_screen_space_error(camera, 1080.0, std::f64::consts::FRAC_PI_4);
 
@@ -98,7 +98,7 @@ fn tile_screen_space_error_far_camera() {
         radius: 100.0,
     };
 
-    // Camera far away → low SSE
+    // 相机很远 → 低 SSE
     let camera = DVec3::new(0.0, 0.0, 1000000.0);
     let sse = tile.compute_screen_space_error(camera, 1080.0, std::f64::consts::FRAC_PI_4);
 
@@ -115,7 +115,7 @@ fn tile_screen_space_error_minimum_distance() {
         radius: 1000.0,
     };
 
-    // Camera inside bounding sphere → distance clamped to 1.0
+    // 相机在包围球内 → distance 被钳制到 1.0
     let camera = DVec3::new(0.0, 0.0, 500.0);
     let sse = tile.compute_screen_space_error(camera, 1080.0, std::f64::consts::FRAC_PI_4);
 
@@ -140,7 +140,7 @@ fn tile_state_variants() {
         TileState::Rendered,
         TileState::Refined,
     ];
-    // All distinct
+    // 全部互异
     for i in 0..states.len() {
         for j in (i + 1)..states.len() {
             assert_ne!(states[i], states[j]);
@@ -159,11 +159,11 @@ fn quadtree_config_defaults() {
     assert!(!config.fog_culling);
 }
 
-// ─── QuadtreePrimitive Traversal ──────────────────────────────────────────
+// ─── QuadtreePrimitive 遍历 ──────────────────────────────────────────
 
 #[test]
 fn traverse_single_tile_no_refine() {
-    // Camera far away → SSE below threshold → no refinement
+    // 相机很远 → SSE 低于阈值 → 不细分
     let root = make_tile(0, 0, 0, 100.0);
     let config = QuadtreeConfig {
         maximum_screen_space_error: 2.0,
@@ -172,7 +172,7 @@ fn traverse_single_tile_no_refine() {
     };
     let primitive = QuadtreePrimitive::new(vec![root], config);
 
-    let camera = DVec3::new(0.0, 0.0, 10000000.0); // very far
+    let camera = DVec3::new(0.0, 0.0, 10000000.0); // 很远
     let result = primitive.traverse(camera, 1080.0, std::f64::consts::FRAC_PI_4, &|_, _, _| None);
 
     assert_eq!(result.tiles_visited, 1);
@@ -182,7 +182,7 @@ fn traverse_single_tile_no_refine() {
 
 #[test]
 fn traverse_refines_with_loaded_children() {
-    // Camera close → SSE above threshold → refine
+    // 相机很近 → SSE 高于阈值 → 细分
     let mut root = make_tile(0, 0, 0, 100000.0);
     root.bounding_sphere = BoundingSphere {
         center: DVec3::ZERO,
@@ -191,14 +191,14 @@ fn traverse_refines_with_loaded_children() {
 
     let config = QuadtreeConfig {
         maximum_screen_space_error: 2.0,
-        maximum_level: 1, // limit to one level of refinement
+        maximum_level: 1, // 限制为一层细分
         ..Default::default()
     };
     let primitive = QuadtreePrimitive::new(vec![root], config);
 
-    let camera = DVec3::new(0.0, 0.0, 200.0); // close
+    let camera = DVec3::new(0.0, 0.0, 200.0); // 很近
 
-    // Provide loaded children
+    // 提供已加载的子瓦片
     let result = primitive.traverse(camera, 1080.0, std::f64::consts::FRAC_PI_4, &|x, y, level| {
         let mut child = make_loaded_tile(x, y, level, 50000.0);
         child.bounding_sphere = BoundingSphere {
@@ -208,15 +208,15 @@ fn traverse_refines_with_loaded_children() {
         Some(child)
     });
 
-    // Should have visited root + 4 children
+    // 应已访问根 + 4 个子瓦片
     assert!(result.tiles_visited > 1);
     assert!(result.max_depth >= 1);
 }
 
 #[test]
 fn traverse_unloaded_children_fallback_to_parent() {
-    // Camera close → SSE above threshold → try refine
-    // But children are unloaded → render parent as fallback
+    // 相机很近 → SSE 高于阈值 → 尝试细分
+    // 但子瓦片未加载 → 渲染父瓦片作为回退
     let mut root = make_tile(0, 0, 0, 100000.0);
     root.bounding_sphere = BoundingSphere {
         center: DVec3::ZERO,
@@ -232,20 +232,20 @@ fn traverse_unloaded_children_fallback_to_parent() {
 
     let camera = DVec3::new(0.0, 0.0, 200.0);
 
-    // Provide unloaded children
+    // 提供未加载的子瓦片
     let result = primitive.traverse(camera, 1080.0, std::f64::consts::FRAC_PI_4, &|x, y, level| {
         Some(make_tile(x, y, level, 50000.0)) // state = Unloaded
     });
 
-    // Parent should be in tiles_to_render as fallback
+    // 父瓦片应作为回退位于 tiles_to_render 中
     assert!(!result.tiles_to_render.is_empty());
-    // Children should be in tiles_to_load
+    // 子瓦片应位于 tiles_to_load 中
     assert!(!result.tiles_to_load.is_empty());
 }
 
 #[test]
 fn traverse_respects_maximum_level() {
-    // Tile at maximum level → should not refine even with high SSE
+    // 位于最大层级的瓦片 → 即使 SSE 很高也不应细分
     let mut root = make_tile(0, 0, 22, 100000.0);
     root.bounding_sphere = BoundingSphere {
         center: DVec3::ZERO,
@@ -259,10 +259,10 @@ fn traverse_respects_maximum_level() {
     };
     let primitive = QuadtreePrimitive::new(vec![root], config);
 
-    let camera = DVec3::new(0.0, 0.0, 200.0); // close → high SSE
+    let camera = DVec3::new(0.0, 0.0, 200.0); // 很近 → 高 SSE
     let result = primitive.traverse(camera, 1080.0, std::f64::consts::FRAC_PI_4, &|_, _, _| None);
 
-    // Should render root without refining
+    // 应渲染根而不细分
     assert_eq!(result.tiles_to_render.len(), 1);
     assert_eq!(result.max_depth, 22);
 }
@@ -282,7 +282,7 @@ fn traverse_non_refineable_tile() {
     let camera = DVec3::new(0.0, 0.0, 200.0);
     let result = primitive.traverse(camera, 1080.0, std::f64::consts::FRAC_PI_4, &|_, _, _| None);
 
-    // Should render without refining
+    // 应渲染而不细分
     assert_eq!(result.tiles_to_render.len(), 1);
     assert_eq!(result.tiles_visited, 1);
 }
@@ -298,7 +298,7 @@ fn traversal_result_default() {
 
 #[test]
 fn traverse_multiple_roots() {
-    // Two root tiles (like WGS84 hemispheres)
+    // 两个根瓦片（类似 WGS84 半球）
     let root1 = make_tile(0, 0, 0, 100.0);
     let root2 = make_tile(1, 0, 0, 100.0);
 
@@ -308,7 +308,7 @@ fn traverse_multiple_roots() {
     let camera = DVec3::new(0.0, 0.0, 10000000.0);
     let result = primitive.traverse(camera, 1080.0, std::f64::consts::FRAC_PI_4, &|_, _, _| None);
 
-    // Both roots visited and rendered
+    // 两个根都被访问和渲染
     assert_eq!(result.tiles_visited, 2);
     assert_eq!(result.tiles_to_render.len(), 2);
 }

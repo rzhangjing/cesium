@@ -1,27 +1,27 @@
-//! Entity collection management.
+//! 实体集合管理。
 //!
-//! Maps to CesiumJS `DataSources/EntityCollection.js`
+//! 映射到 CesiumJS `DataSources/EntityCollection.js`
 
 use crate::entity::Entity;
 use std::collections::HashMap;
 
-/// A collection of entities with ID-based lookup.
+/// 一个支持基于 ID 查找的实体集合。
 ///
-/// Maps to CesiumJS `DataSources/EntityCollection.js`
+/// 映射到 CesiumJS `DataSources/EntityCollection.js`
 #[derive(Debug, Default)]
 pub struct EntityCollection {
-    /// Entities indexed by ID.
+    /// 按 ID 索引的实体。
     entities: HashMap<String, Entity>,
 
-    /// Insertion order tracking.
+    /// 插入顺序跟踪。
     order: Vec<String>,
 
-    /// Whether the collection is shown.
+    /// 集合是否显示。
     show: bool,
 }
 
 impl EntityCollection {
-    /// Creates a new empty collection.
+    /// 创建新的空集合。
     pub fn new() -> Self {
         Self {
             entities: HashMap::new(),
@@ -30,7 +30,7 @@ impl EntityCollection {
         }
     }
 
-    /// Adds or replaces an entity.
+    /// 添加或替换一个实体。
     pub fn add(&mut self, entity: Entity) {
         let id = entity.id.clone();
         if !self.entities.contains_key(&id) {
@@ -39,7 +39,7 @@ impl EntityCollection {
         self.entities.insert(id, entity);
     }
 
-    /// Removes an entity by ID.
+    /// 按 ID 移除一个实体。
     pub fn remove(&mut self, id: &str) -> Option<Entity> {
         if let Some(entity) = self.entities.remove(id) {
             self.order.retain(|o| o != id);
@@ -49,70 +49,70 @@ impl EntityCollection {
         }
     }
 
-    /// Gets an entity by ID.
+    /// 按 ID 获取一个实体。
     pub fn get(&self, id: &str) -> Option<&Entity> {
         self.entities.get(id)
     }
 
-    /// Gets a mutable entity by ID.
+    /// 按 ID 获取一个可变实体。
     pub fn get_mut(&mut self, id: &str) -> Option<&mut Entity> {
         self.entities.get_mut(id)
     }
 
-    /// Returns the number of entities.
+    /// 返回实体数量。
     pub fn len(&self) -> usize {
         self.entities.len()
     }
 
-    /// Returns true if the collection is empty.
+    /// 若集合为空则返回 true。
     pub fn is_empty(&self) -> bool {
         self.entities.is_empty()
     }
 
-    /// Returns true if the collection contains an entity with the given ID.
+    /// 若集合中包含具有给定 ID 的实体则返回 true。
     pub fn contains(&self, id: &str) -> bool {
         self.entities.contains_key(id)
     }
 
-    /// Clears all entities.
+    /// 清除所有实体。
     pub fn clear(&mut self) {
         self.entities.clear();
         self.order.clear();
     }
 
-    /// Returns entities in insertion order.
+    /// 按插入顺序返回实体。
     pub fn values(&self) -> impl Iterator<Item = &Entity> {
         self.order.iter().filter_map(|id| self.entities.get(id))
     }
 
-    /// Returns all entity IDs in insertion order.
+    /// 按插入顺序返回所有实体 ID。
     pub fn ids(&self) -> &[String] {
         &self.order
     }
 
-    /// Returns whether the collection is shown.
+    /// 返回集合是否显示。
     pub fn show(&self) -> bool {
         self.show
     }
 
-    /// Sets whether the collection is shown.
+    /// 设置集合是否显示。
     pub fn set_show(&mut self, show: bool) {
         self.show = show;
     }
 
-    /// Returns only visible entities (show=true and collection show=true).
+    /// 仅返回可见实体（show=true 且集合 show=true）。
     pub fn visible_entities(&self) -> impl Iterator<Item = &Entity> {
         let show = self.show;
         self.values().filter(move |e| show && e.show)
     }
 
-    /// Returns entities that have renderable graphics.
+    /// 返回具有可渲染图形的实体。
     pub fn renderable_entities(&self) -> impl Iterator<Item = &Entity> {
         self.visible_entities().filter(|e| e.has_graphics())
     }
 
-    /// Gets an entity by ID, or creates and inserts a new one if not present.
-    /// Maps to `EntityCollection.prototype.getOrCreateEntity`.
+    /// 按 ID 获取一个实体，若不存在则创建并插入一个新的。
+    /// 映射到 `EntityCollection.prototype.getOrCreateEntity`。
     pub fn get_or_create(&mut self, id: &str) -> &Entity {
         if !self.entities.contains_key(id) {
             let entity = Entity::new(id.to_string());
@@ -122,52 +122,52 @@ impl EntityCollection {
         self.entities.get(id).unwrap()
     }
 
-    /// Removes all entities from the collection.
-    /// Maps to `EntityCollection.prototype.removeAll`.
+    /// 移除集合中的所有实体。
+    /// 映射到 `EntityCollection.prototype.removeAll`。
     pub fn remove_all(&mut self) {
         self.entities.clear();
         self.order.clear();
     }
 
-    /// Removes an entity by ID, returning true if it was present.
-    /// Maps to `EntityCollection.prototype.removeById`.
+    /// 按 ID 移除一个实体，若原本存在则返回 true。
+    /// 映射到 `EntityCollection.prototype.removeById`。
     pub fn remove_by_id(&mut self, id: &str) -> bool {
         self.remove(id).is_some()
     }
 
-    /// Suspends events (placeholder for future event system integration).
+    /// 挂起事件（为未来事件系统集成预留的占位）。
     pub fn suspend_events(&mut self) {
-        // Placeholder
+        // 占位
     }
 
-    /// Resumes events.
+    /// 恢复事件。
     pub fn resume_events(&mut self) {
-        // Placeholder
+        // 占位
     }
 }
 
-/// A data source that provides entities.
+/// 一个提供实体的数据源。
 ///
-/// Maps to CesiumJS `DataSources/DataSource.js`
+/// 映射到 CesiumJS `DataSources/DataSource.js`
 #[derive(Debug)]
 pub struct DataSource {
-    /// The name of this data source.
+    /// 此数据源的名称。
     pub name: String,
 
-    /// The entity collection.
+    /// 实体集合。
     pub entities: EntityCollection,
 
-    /// Whether the data source has been loaded.
+    /// 数据源是否已加载。
     pub loaded: bool,
 
-    /// Clock settings (if time-dynamic).
+    /// 时钟设置（若为时间动态）。
     pub clock_start: Option<f64>,
     pub clock_stop: Option<f64>,
     pub clock_current: Option<f64>,
 }
 
 impl DataSource {
-    /// Creates a new data source with the given name.
+    /// 创建一个具有给定名称的新数据源。
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -179,7 +179,7 @@ impl DataSource {
         }
     }
 
-    /// Returns true if this data source is ready for rendering.
+    /// 若此数据源已准备好渲染则返回 true。
     pub fn is_ready(&self) -> bool {
         self.loaded
     }
@@ -256,7 +256,7 @@ mod tests {
     fn test_renderable_entities() {
         let mut collection = EntityCollection::new();
 
-        // Has graphics
+        // 有图形
         let with_gfx = Entity::new("gfx")
             .with_point(PointGraphics {
                 color: Property::Constant(Color::RED),
@@ -264,7 +264,7 @@ mod tests {
             });
         collection.add(with_gfx);
 
-        // No graphics
+        // 无图形
         collection.add(Entity::new("no-gfx"));
 
         assert_eq!(collection.renderable_entities().count(), 1);

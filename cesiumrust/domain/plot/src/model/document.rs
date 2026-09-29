@@ -1,12 +1,12 @@
-//! The scene document: the single serialisable source of truth the whole
-//! overlay is a view of (plan §5, §14).
+//! 场景文档：整个覆盖层都是其一个视图的单一可序列化事实源
+//! （计划 §5、§14）。
 //!
-//! A flat set of tables (`layers` / `groups` / `elements`) plus a `parents`
-//! index that turns the tree into O(1) upward walks. Ids come from one
-//! monotonic counter. All structural edits go through the methods here so the
-//! index and the `Group.parent` field never drift from the `roots` / `members`
-//! vectors — the later command layer (`ops`, M6) drives these and records
-//! inverses for undo.
+//! 一组扁平的表（`layers` / `groups` / `elements`）加上一个 `parents`
+//! 索引，将树变为 O(1) 的向上遍历。Id 来自单个
+//! 单调计数器。所有结构编辑都通过这里的方法进行，因此
+//! 索引与 `Group.parent` 字段永不偏离 `roots` / `members`
+//! 向量 —— 后续的命令层（`ops`，M6）驱动这些方法并为
+//! 撤销记录逆操作。
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -21,37 +21,37 @@ use super::ids::{ElementId, GroupId, LayerId};
 use super::layer::Layer;
 use super::node::Node;
 
-/// Where a node sits in the tree.
+/// 一个节点在树中的位置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ParentRef {
     Layer(LayerId),
     Group(GroupId),
 }
 
-/// A freshly built, still-unplaced element (its `id` is already minted).
+/// 一个新构建、尚未放置的元素（其 `id` 已铸造）。
 pub struct NewElement {
     pub id: ElementId,
     pub element: Element,
 }
 
-/// The document tree.
+/// 文档树。
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Document {
-    /// Insertion-ordered layers (draw order resolved by `Layer::order`).
+    /// 按插入顺序排列的图层（绘制顺序由 `Layer::order` 解析）。
     layers: Vec<Layer>,
     groups: BTreeMap<GroupId, Group>,
     elements: BTreeMap<ElementId, Element>,
-    /// node -> parent, kept in sync with every tree mutation.
+    /// node -> 父节点，与每次树变更保持同步。
     #[serde(skip)]
     parents: HashMap<Node, ParentRef>,
-    /// Monotonic id counter shared by all three id kinds (unique per doc).
+    /// 三种 id 类型共享的单调 id 计数器（每文档唯一）。
     next_id: u64,
-    /// The layer new content lands in (§9).
+    /// 新内容落入的图层（§9）。
     active_layer: Option<LayerId>,
 }
 
 impl Document {
-    /// An empty document with a single default, active layer.
+    /// 创建一个带单个默认、活动图层的空文档。
     pub fn with_default_layer() -> Self {
         let mut doc = Self::default();
         let id = doc.new_layer("默认层");
@@ -65,9 +65,9 @@ impl Document {
         v
     }
 
-    // ── Layers ─────────────────────────────────────────────────────────────
+    // ── 图层 ─────────────────────────────────────────────────────────────
 
-    /// Mint + append a new layer, returning its id.
+    /// 铸造 + 追加一个新图层，返回其 id。
     pub fn new_layer(&mut self, name: impl Into<String>) -> LayerId {
         let id = LayerId(self.alloc());
         self.layers.push(Layer::new(id, name));
@@ -86,7 +86,7 @@ impl Document {
         &self.layers
     }
 
-    /// Layers sorted by `order` ascending (draw back-to-front).
+    /// 按 `order` 升序排列的图层（由后到前绘制）。
     pub fn layers_ordered(&self) -> Vec<&Layer> {
         let mut v: Vec<&Layer> = self.layers.iter().collect();
         v.sort_by_key(|l| (l.order, l.id.raw()));
@@ -101,8 +101,8 @@ impl Document {
         self.active_layer
     }
 
-    /// Make `id` the active layer (new content lands here) and reflect the flag
-    /// on the [`Layer`] itself. Silently ignored when the layer is gone.
+    /// 使 `id` 成为活动图层（新内容落入此处）并在
+    /// [`Layer`] 本身上反映该标志。当图层已不存在时静默忽略。
     pub fn focus_layer(&mut self, id: LayerId) {
         for l in &mut self.layers {
             l.active = l.id == id;
@@ -110,43 +110,43 @@ impl Document {
         self.active_layer = Some(id);
     }
 
-    /// Set a layer's §10.2 manual visibility.
+    /// 设置图层的 §10.2 手动可见性。
     pub fn set_layer_visible(&mut self, id: LayerId, visible: bool) {
         if let Some(l) = self.layer_mut(id) {
             l.visible = visible;
         }
     }
 
-    /// Set a layer's edit permission (locked layers are read-only, plan §9).
+    /// 设置图层的编辑权限（锁定的图层为只读，计划 §9）。
     pub fn set_layer_editable(&mut self, id: LayerId, editable: bool) {
         if let Some(l) = self.layer_mut(id) {
             l.editable = editable;
         }
     }
 
-    /// Set a layer's group-opacity multiplier, clamped to `0..=1` (§9).
+    /// 设置图层的组不透明度乘子，钳制到 `0..=1`（§9）。
     pub fn set_layer_opacity(&mut self, id: LayerId, opacity: f32) {
         if let Some(l) = self.layer_mut(id) {
             l.opacity = opacity.clamp(0.0, 1.0);
         }
     }
 
-    /// Set a layer's pick / select permission (plan §9).
+    /// 设置图层的拾取 / 选中权限（计划 §9）。
     pub fn set_layer_selectable(&mut self, id: LayerId, selectable: bool) {
         if let Some(l) = self.layer_mut(id) {
             l.selectable = selectable;
         }
     }
 
-    /// Nudge a layer's draw / pick `order` by `delta` (the panel's up / down
-    /// buttons). Higher draws later (on top).
+    /// 将图层的绘制 / 拾取 `order` 推进 `delta`（面板的上 / 下
+    /// 按钮）。越高越后绘制（在上）。
     pub fn nudge_layer_order(&mut self, id: LayerId, delta: i32) {
         if let Some(l) = self.layer_mut(id) {
             l.order += delta;
         }
     }
 
-    /// Remove a layer and every element / group that was under it.
+    /// 移除一个图层以及曾处于其下的每个元素 / 组。
     pub fn remove_layer(&mut self, id: LayerId) {
         if let Some(idx) = self.layers.iter().position(|l| l.id == id) {
             let layer = self.layers.remove(idx);
@@ -159,19 +159,19 @@ impl Document {
         }
     }
 
-    // ── Elements ─────────────────────────────────────────────────────────────
+    // ── 元素 ─────────────────────────────────────────────────────────────
 
-    /// Mint an element (not yet in the tree). Bounds are computed.
+    /// 铸造一个元素（尚未入树）。包围盒会被计算。
     pub fn make_element(&mut self, name: impl Into<String>, geometry: Geometry) -> NewElement {
         let id = ElementId(self.alloc());
         let element = Element::new(id, name, geometry);
         NewElement { id, element }
     }
 
-    /// Place an element into a layer's roots (append, draw last).
+    /// 将一个元素放入某图层的 roots（追加，最后绘制）。
     pub fn add_element_to_layer(&mut self, layer: LayerId, ne: NewElement) -> ElementId {
         let Some(l) = self.layers.iter_mut().find(|l| l.id == layer) else {
-            // Layer vanished: drop the element (id stays consumed).
+            // 图层已消失：丢弃该元素（id 仍被消耗）。
             return ne.id;
         };
         l.roots.push(Node::Element(ne.id));
@@ -180,7 +180,7 @@ impl Document {
         ne.id
     }
 
-    /// Place an element into a group's members.
+    /// 将一个元素放入某组的 members。
     pub fn add_element_to_group(&mut self, group: GroupId, ne: NewElement) -> Option<ElementId> {
         let g = self.groups.get_mut(&group)?;
         g.members.push(Node::Element(ne.id));
@@ -206,8 +206,8 @@ impl Document {
         self.elements.keys().copied()
     }
 
-    /// Remove an element from the tree + table (leaves its parent's vector
-    /// containing a dangling slot? no — we purge the node reference too).
+    /// 从树 + 表中移除一个元素（会否在其父节点的向量中
+    /// 留下悬空槽位？不会 —— 我们也会清除该节点引用）。
     pub fn remove_element(&mut self, id: ElementId) {
         let node = Node::Element(id);
         if let Some(parent) = self.parents.remove(&node) {
@@ -216,9 +216,9 @@ impl Document {
         self.elements.remove(&id);
     }
 
-    // ── Groups ─────────────────────────────────────────────────────────────
+    // ── 组 ─────────────────────────────────────────────────────────────
 
-    /// Create a group under a layer root and return its id.
+    /// 在某图层根下创建一个组并返回其 id。
     pub fn new_group_in_layer(&mut self, layer: LayerId, name: impl Into<String>) -> GroupId {
         let id = GroupId(self.alloc());
         self.groups.insert(id, Group::new(id, name));
@@ -229,7 +229,7 @@ impl Document {
         id
     }
 
-    /// Create a nested group under a parent group.
+    /// 在父组下创建一个嵌套组。
     pub fn new_group_in_group(&mut self, parent: GroupId, name: impl Into<String>) -> Option<GroupId> {
         let id = GroupId(self.alloc());
         self.groups.insert(id, Group::new(id, name));
@@ -251,15 +251,15 @@ impl Document {
         self.groups.get_mut(&id)
     }
 
-    // ── Tree walks ────────────────────────────────────────────────────────────
+    // ── 树遍历 ────────────────────────────────────────────────────────────
 
-    /// The layer an element ultimately belongs to (walking up the parent chain),
-    /// plus the group chain from the layer root down to the element (outermost
-    /// first). Returns `None` for an orphan (shouldn't happen in a valid tree).
+    /// 一个元素最终所属的图层（沿父链向上遍历），
+    /// 加上从图层根下到元素的组链（最外层在前）。对孤立节点
+    /// 返回 `None`（在合法树中不应发生）。
     pub fn element_context(&self, id: ElementId) -> Option<(LayerId, Vec<GroupId>)> {
         let mut groups = Vec::new();
         let mut cur = Node::Element(id);
-        // guard against a corrupt cycle: bounded by node count.
+        // 防止损坏的环：以节点数为上限。
         for _ in 0..(self.elements.len() + self.groups.len() + 1) {
             match self.parents.get(&cur)? {
                 ParentRef::Layer(l) => {
@@ -275,7 +275,7 @@ impl Document {
         None
     }
 
-    /// The layer a group belongs to.
+    /// 一个组所属的图层。
     pub fn group_layer(&self, id: GroupId) -> Option<LayerId> {
         let mut cur = Node::Group(id);
         for _ in 0..(self.groups.len() + 1) {
@@ -287,7 +287,7 @@ impl Document {
         None
     }
 
-    /// All element ids under a group (recursive).
+    /// 某组下的所有元素 id（递归）。
     pub fn group_members_recursive(&self, id: GroupId) -> Vec<ElementId> {
         let mut out = Vec::new();
         let mut stack = vec![id];
@@ -303,9 +303,9 @@ impl Document {
         out
     }
 
-    /// Every element in the document, in layer-order then within each layer in
-    /// roots order, expanding groups depth-first (parents before members so a
-    /// later sort by `z_order` can refine within the layer).
+    /// 文档中的每个元素，按图层顺序，然后每个图层内按
+    /// roots 顺序，深度优先展开组（父先于成员，以便后续按
+    /// `z_order` 排序能在图层内细化）。
     pub fn flatten_draw_order(&self) -> Vec<ElementId> {
         let mut out = Vec::new();
         for layer in self.layers_ordered() {
@@ -329,13 +329,13 @@ impl Document {
         }
     }
 
-    /// Every element ordered for **painting** (plan §16 M9 "z 排序完善"): first
-    /// by layer `order` (bottom layer first), then by each element's
-    /// `style.z_order` tier, then by id for a stable tie-break. Unlike
-    /// [`flatten_draw_order`](Self::flatten_draw_order) (layer-then-tree order
-    /// only), this honours the per-element z tier so a user can lift one feature
-    /// above its siblings; painting in this order makes later (higher) elements
-    /// win both on screen and in pick ties.
+    /// 为**绘制**排序的所有元素（计划 §16 M9 “z 排序完善”）：先按
+    /// 图层 `order`（底层在前），然后按每个元素的
+    /// `style.z_order` 层级，最后按 id 做稳定破平。不同于
+    /// [`flatten_draw_order`](Self::flatten_draw_order)（仅图层优树序），
+    /// 它尊重逐元素的 z 层级，因此用户可将一个要素提升
+    /// 到其同层之上；按此顺序绘制使靠后（更高）的元素在屏幕
+    /// 与拾取平局中均胜出。
     pub fn draw_order_sorted(&self) -> Vec<ElementId> {
         let mut keyed: Vec<(i32, i32, u64, ElementId)> = self
             .flatten_draw_order()
@@ -354,9 +354,9 @@ impl Document {
         keyed.into_iter().map(|(_, _, _, id)| id).collect()
     }
 
-    // ── Aggregate ──────────────────────────────────────────────────────────────
+    // ── 聚合 ──────────────────────────────────────────────────────────────
 
-    /// Union of every element's bounds, or `None` when empty.
+    /// 所有元素包围盒的并集，若为空则 `None`。
     pub fn bounds(&self) -> Option<GeoBounds> {
         let mut acc = GeoBounds::empty();
         for e in self.elements.values() {
@@ -373,10 +373,10 @@ impl Document {
         self.elements.len()
     }
 
-    /// Rebuild the `#[serde(skip)]` parent index from the layer / group member
-    /// vectors. A loader that deserialises a [`Document`] (e.g. from GeoJSON,
-    /// see `crate::io`) must call this before any upward walk (`element_context`,
-    /// `group_layer`, `flatten_draw_order`) returns correct results.
+    /// 从图层 / 组的成员向量重建 `#[serde(skip)]` 的父索引。一个反序列化
+    /// [`Document`] 的加载器（例如从 GeoJSON，见 `crate::io`）必须先调用
+    /// 本方法，之后任何向上遍历（`element_context`、
+    /// `group_layer`、`flatten_draw_order`）才能返回正确结果。
     pub fn rebuild_parents(&mut self) {
         let mut refs: Vec<(Node, ParentRef)> = Vec::new();
         for layer in &self.layers {
@@ -395,10 +395,10 @@ impl Document {
         }
     }
 
-    // ── internals ──────────────────────────────────────────────────────────
+    // ── 内部实现 ──────────────────────────────────────────────────────────
 
-    /// Remove a node reference from whatever holds it (layer roots or group
-    /// members) given its recorded parent.
+    /// 从持有它的任意位置（图层 roots 或组成员）移除一个节点
+    /// 引用，依据其记录的父节点。
     fn purge_node(&mut self, parent: ParentRef, node: Node) {
         match parent {
             ParentRef::Layer(l) => {
@@ -414,8 +414,8 @@ impl Document {
         }
     }
 
-    /// Recursively detach a node (group or element) and everything under it,
-    /// dropping the element/group tables and parent entries.
+    /// 递归地分离一个节点（组或元素）及其下的一切，
+    /// 丢弃元素/组表以及父条目。
     fn detach_subtree(&mut self, node: Node) {
         match node {
             Node::Element(e) => {
@@ -466,7 +466,7 @@ mod tests {
         let mut hi = doc.make_element("high", point_geo(1.0, 1.0));
         hi.element.style.z_order = 5;
         let e_high = doc.add_element_to_layer(front, hi);
-        // A back-layer element added last by id must still paint first (lower layer).
+        // 一个后层元素无论 id 多后加入都必须仍先绘制（较低层）。
         let back_el = doc.make_element("back", point_geo(2.0, 2.0));
         let e_back = doc.add_element_to_layer(back, back_el);
 
@@ -476,7 +476,7 @@ mod tests {
             vec![e_back, e_low, e_high],
             "layer order dominates, then z_order within a layer"
         );
-        // The highest-z front element paints last.
+        // z 最高的前层元素最后绘制。
         assert_eq!(order.last(), Some(&e_high));
     }
 
@@ -501,7 +501,7 @@ mod tests {
         doc.add_element_to_group(inner, ne);
         let (layer, chain) = doc.element_context(e).unwrap();
         assert_eq!(layer, l);
-        // Chain is outermost-first: the layer's group, then the nested one.
+        // 链为最外层在前：图层的组，然后是嵌套的那个。
         assert_eq!(chain, vec![outer, inner]);
         assert_eq!(doc.group_layer(inner), Some(l));
         assert_eq!(doc.group_members_recursive(outer), vec![e]);
@@ -547,7 +547,7 @@ mod tests {
         assert_eq!(doc.active_layer(), Some(a));
         assert!(doc.layer(a).unwrap().active);
         assert!(!doc.layer(b).unwrap().active);
-        // Focusing b moves the marker and the flag together.
+        // 聚焦 b 会连同标志位一起移动标记。
         doc.focus_layer(b);
         assert!(!doc.layer(a).unwrap().active);
         assert!(doc.layer(b).unwrap().active);
@@ -565,7 +565,7 @@ mod tests {
 
         doc.set_layer_opacity(a, 0.5);
         assert_eq!(doc.layer(a).unwrap().opacity, 0.5);
-        // Out-of-range values clamp rather than panic.
+        // 越界的值会被钳制而非 panic。
         doc.set_layer_opacity(a, 2.0);
         assert_eq!(doc.layer(a).unwrap().opacity, 1.0);
         doc.set_layer_opacity(a, -1.0);
@@ -608,7 +608,7 @@ mod tests {
         let ne = doc.make_element("e", point_geo(1.0, 2.0));
         let e = ne.id;
         doc.add_element_to_group(g, ne);
-        // Round-trip drops the parent index (serde skip), then rebuild it.
+        // 往返会丢失父索引（serde skip），然后重建它。
         let j = serde_json::to_string(&doc).unwrap();
         let mut back: Document = serde_json::from_str(&j).unwrap();
         assert!(back.element_context(e).is_none(), "index is empty before rebuild");
@@ -619,10 +619,10 @@ mod tests {
 
     #[test]
     fn document_serde_roundtrip_rebuilds_parent_index() {
-        // Serialise a small tree, then confirm tables come back. The parents
-        // index is #[serde(skip)], so a consumer must rebuild it if it needs
-        // walks; here we assert the raw tables survive (index rebuild is a
-        // documented follow-up responsibility of the loader, not serde).
+        // 序列化一个小树，然后确认表能回原。parents
+        // 索引是 #[serde(skip)]，因此若需遍历则消费者必须重建
+        // 它；这里我们断言原始表存活（索引重建是
+        // 加载器的一个文档化后续职责，而非 serde）。
         let mut doc = Document::with_default_layer();
         let l = doc.active_layer().unwrap();
         let e = doc.make_element("e", point_geo(5.0, 6.0));

@@ -1,14 +1,14 @@
-//! Render state and GPU resource domain models.
+//! 渲染状态与 GPU 资源的领域模型。
 //!
-//! Maps to CesiumJS `Renderer/RenderState.js`, `Renderer/ClearCommand.js`,
-//! `Renderer/ComputeCommand.js`, `Renderer/PassState.js`,
-//! `Renderer/Texture.js`, `Renderer/Framebuffer.js`,
-//! `Renderer/TextureAtlas.js`, `Renderer/Buffer.js`.
+//! 映射到 CesiumJS `Renderer/RenderState.js`、`Renderer/ClearCommand.js`、
+//! `Renderer/ComputeCommand.js`、`Renderer/PassState.js`、
+//! `Renderer/Texture.js`、`Renderer/Framebuffer.js`、
+//! `Renderer/TextureAtlas.js`、`Renderer/Buffer.js`。
 
 use glam::DVec4;
 use serde::{Deserialize, Serialize};
 
-/// Cull face mode.
+/// 背面剔除模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum CullFace {
     #[default]
@@ -17,7 +17,7 @@ pub enum CullFace {
     FrontAndBack,
 }
 
-/// Stencil operation.
+/// 模板操作。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum StencilOp {
     #[default]
@@ -29,7 +29,7 @@ pub enum StencilOp {
     Invert,
 }
 
-/// Stencil test state.
+/// 模板测试状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StencilState {
     pub enabled: bool,
@@ -51,7 +51,7 @@ impl Default for StencilState {
     }
 }
 
-/// Polygon offset state.
+/// 多边形偏移状态。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PolygonOffsetState {
     pub enabled: bool,
@@ -65,7 +65,7 @@ impl Default for PolygonOffsetState {
     }
 }
 
-/// Scissor test state.
+/// 剪裁测试状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ScissorState {
     pub enabled: bool,
@@ -75,9 +75,9 @@ pub struct ScissorState {
     pub height: u32,
 }
 
-/// Complete render state.
+/// 完整的渲染状态。
 ///
-/// Maps to CesiumJS `Renderer/RenderState.js`
+/// 映射到 CesiumJS `Renderer/RenderState.js`
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct RenderState {
     pub cull_enabled: bool,
@@ -92,7 +92,7 @@ pub struct RenderState {
     pub line_width: f32,
 }
 
-/// Depth comparison function.
+/// 深度比较函数。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum DepthFunc {
     Never,
@@ -107,7 +107,7 @@ pub enum DepthFunc {
 }
 
 impl RenderState {
-    /// Create a default opaque render state.
+    /// 创建一个默认的不透明渲染状态。
     pub fn opaque() -> Self {
         Self {
             cull_enabled: true,
@@ -120,7 +120,7 @@ impl RenderState {
         }
     }
 
-    /// Create a translucent render state with alpha blending.
+    /// 创建一个带 alpha 混合的半透明渲染状态。
     pub fn translucent() -> Self {
         Self {
             cull_enabled: true,
@@ -133,7 +133,7 @@ impl RenderState {
         }
     }
 
-    /// Create a render state for 2D (no depth test).
+    /// 为 2D 创建一个渲染状态（无深度测试）。
     pub fn state_2d() -> Self {
         Self {
             cull_enabled: false,
@@ -145,9 +145,9 @@ impl RenderState {
     }
 }
 
-/// A clear command.
+/// 一个清除命令。
 ///
-/// Maps to CesiumJS `Renderer/ClearCommand.js`
+/// 映射到 CesiumJS `Renderer/ClearCommand.js`
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClearCommand {
     pub color: Option<DVec4>,
@@ -166,25 +166,25 @@ impl Default for ClearCommand {
 }
 
 impl ClearCommand {
-    /// Clear color only.
+    /// 仅清除颜色。
     pub fn color_only(color: DVec4) -> Self {
         Self { color: Some(color), depth: None, stencil: None }
     }
 
-    /// Clear depth only.
+    /// 仅清除深度。
     pub fn depth_only(depth: f32) -> Self {
         Self { color: None, depth: Some(depth), stencil: None }
     }
 
-    /// Clear all buffers.
+    /// 清除所有缓冲。
     pub fn all(color: DVec4, depth: f32, stencil: u32) -> Self {
         Self { color: Some(color), depth: Some(depth), stencil: Some(stencil) }
     }
 }
 
-/// A compute command for GPU compute operations.
+/// 用于 GPU 计算操作的计算命令。
 ///
-/// Maps to CesiumJS `Renderer/ComputeCommand.js`
+/// 映射到 CesiumJS `Renderer/ComputeCommand.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComputeCommand {
     pub shader_id: u64,
@@ -192,7 +192,7 @@ pub struct ComputeCommand {
     pub uniform_map: Vec<(String, ComputeUniformValue)>,
 }
 
-/// Compute uniform value types.
+/// 计算 uniform 值的类型。
 #[derive(Debug, Clone, PartialEq)]
 pub enum ComputeUniformValue {
     Float(f32),
@@ -218,9 +218,9 @@ impl ComputeCommand {
     }
 }
 
-/// Pass state for a render pass.
+/// 一个渲染通道的通道状态。
 ///
-/// Maps to CesiumJS `Renderer/PassState.js`
+/// 映射到 CesiumJS `Renderer/PassState.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct PassState {
     pub render_state: RenderState,
@@ -238,7 +238,7 @@ impl Default for PassState {
     }
 }
 
-/// Texture pixel format.
+/// 纹理像素格式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum PixelFormat {
     #[default]
@@ -251,9 +251,9 @@ pub enum PixelFormat {
 }
 
 impl PixelFormat {
-    /// Returns the number of components per pixel for this format.
+    /// 返回该格式每个像素的分量数量。
     ///
-    /// Maps to CesiumJS `PixelFormat.componentsLength`.
+    /// 映射到 CesiumJS `PixelFormat.componentsLength`。
     pub fn components_per_pixel(&self) -> usize {
         match self {
             Self::Rgba => 4,
@@ -265,9 +265,9 @@ impl PixelFormat {
         }
     }
 
-    /// Flips pixel data vertically (Y-axis).
+    /// 将像素数据沿垂直方向（Y 轴）翻转。
     ///
-    /// Maps to CesiumJS `PixelFormat.flipY`.
+    /// 映射到 CesiumJS `PixelFormat.flipY`。
     pub fn flip_y(data: &[u8], format: PixelFormat, width: usize, height: usize) -> Vec<u8> {
         if height == 1 {
             return data.to_vec();
@@ -285,7 +285,7 @@ impl PixelFormat {
     }
 }
 
-/// Texture data type.
+/// 纹理数据类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum PixelDatatype {
     #[default]
@@ -296,7 +296,7 @@ pub enum PixelDatatype {
     UnsignedInt,
 }
 
-/// Texture filter.
+/// 纹理过滤器。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum TextureFilter {
     #[default]
@@ -308,7 +308,7 @@ pub enum TextureFilter {
     NearestMipmapNearest,
 }
 
-/// Texture wrap mode.
+/// 纹理环绕模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum TextureWrap {
     #[default]
@@ -317,9 +317,9 @@ pub enum TextureWrap {
     MirroredRepeat,
 }
 
-/// A texture resource (domain representation).
+/// 一个纹理资源（领域表示）。
 ///
-/// Maps to CesiumJS `Renderer/Texture.js`
+/// 映射到 CesiumJS `Renderer/Texture.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct Texture {
     pub id: u64,
@@ -357,9 +357,9 @@ impl Texture {
     }
 }
 
-/// A framebuffer resource (domain representation).
+/// 一个帧缓冲资源（领域表示）。
 ///
-/// Maps to CesiumJS `Renderer/Framebuffer.js`
+/// 映射到 CesiumJS `Renderer/Framebuffer.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct Framebuffer {
     pub id: u64,
@@ -391,9 +391,9 @@ impl Framebuffer {
     }
 }
 
-/// A texture atlas for batching small textures.
+/// 用于批量处理小纹理的纹理图集。
 ///
-/// Maps to CesiumJS `Renderer/TextureAtlas.js`
+/// 映射到 CesiumJS `Renderer/TextureAtlas.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextureAtlas {
     pub id: u64,
@@ -402,7 +402,7 @@ pub struct TextureAtlas {
     pub padding: u32,
 }
 
-/// An entry in a texture atlas.
+/// 纹理图集中的一个条目。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextureAtlasEntry {
     pub x: u32,
@@ -421,7 +421,7 @@ impl TextureAtlas {
         }
     }
 
-    /// Add an entry to the atlas (simple row-based packing).
+    /// 向图集添加一个条目（简单的基于行的packing）。
     pub fn add_entry(&mut self, width: u32, height: u32) -> Option<TextureAtlasEntry> {
         let mut x = self.padding;
         let mut y = self.padding;
@@ -429,7 +429,7 @@ impl TextureAtlas {
 
         for entry in &self.entries {
             if x + width + self.padding <= self.texture.width {
-                // Check if it fits in current row
+                // 检查是否能放入当前行
                 if entry.y == y {
                     x = x.max(entry.x + entry.width + self.padding);
                     row_height = row_height.max(entry.height);
@@ -438,13 +438,13 @@ impl TextureAtlas {
         }
 
         if x + width + self.padding > self.texture.width {
-            // Move to next row
+            // 移动到下一行
             x = self.padding;
             y += row_height + self.padding;
         }
 
         if y + height + self.padding > self.texture.height {
-            return None; // Atlas full
+            return None; // 图集已满
         }
 
         let entry = TextureAtlasEntry { x, y, width, height };
@@ -457,9 +457,9 @@ impl TextureAtlas {
     }
 }
 
-/// GPU buffer usage.
+/// GPU 缓冲用途。
 ///
-/// Maps to CesiumJS `Renderer/BufferUsage.js`
+/// 映射到 CesiumJS `Renderer/BufferUsage.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum BufferUsage {
     #[default]
@@ -468,9 +468,9 @@ pub enum BufferUsage {
     StreamDraw,
 }
 
-/// A GPU buffer (domain representation).
+/// 一个 GPU 缓冲（领域表示）。
 ///
-/// Maps to CesiumJS `Renderer/Buffer.js`
+/// 映射到 CesiumJS `Renderer/Buffer.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct GpuBuffer {
     pub id: u64,
@@ -557,7 +557,7 @@ mod tests {
         let e2 = atlas.add_entry(64, 64);
         assert!(e2.is_some());
         assert_eq!(atlas.entry_count(), 2);
-        // Entries should not overlap
+        // 条目不应重叠
         let e1 = e1.unwrap();
         let e2 = e2.unwrap();
         assert!(e1.x + e1.width + 2 <= e2.x || e2.x + e2.width + 2 <= e1.x || e1.y != e2.y);

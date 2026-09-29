@@ -1,7 +1,7 @@
-//! Clipping & Cloud specs - ported from Scene/ClippingPlaneSpec, ClippingPlaneCollectionSpec, CloudCollectionSpec
-//! Covers: ClippingPlane, ClippingPlaneCollection, CloudCollection, CumulusCloud, CloudType
-//! ClippingPlaneSpec.js: 3 A-class (of 5; 1 callback=C, 1 result-param=C)
-//! ClippingPlaneCollectionSpec.js: 7 A-class (of 28; 3 events=C, 18 WebGL=C)
+//! 裁剪与云规范 - 移植自 Scene/ClippingPlaneSpec, ClippingPlaneCollectionSpec, CloudCollectionSpec
+//! 覆盖：ClippingPlane, ClippingPlaneCollection, CloudCollection, CumulusCloud, CloudType
+//! ClippingPlaneSpec.js：3 个 A 类（共 5；1 callback=C, 1 result-param=C）
+//! ClippingPlaneCollectionSpec.js：7 个 A 类（共 28；3 events=C, 18 WebGL=C）
 
 use cesium_effects::{ClippingPlane, ClippingPlaneCollection, CloudCollection, CloudType};
 use glam::{DMat4, DVec3};
@@ -58,11 +58,11 @@ fn cloud_type_default() {
     assert_eq!(CloudType::default(), CloudType::Cumulus);
 }
 
-// ─── ClippingPlane: faithful ports from ClippingPlaneSpec.js ──────────────────
+// ─── ClippingPlane：忠实移植自 ClippingPlaneSpec.js ──────────────────
 
 #[test]
 fn clipping_plane_constructs() {
-    // Ported from: ClippingPlaneSpec "constructs"
+    // 移植自: ClippingPlaneSpec "constructs"
     let normal = DVec3::X;
     let distance = 1.0;
     let plane = ClippingPlane::new(normal, distance);
@@ -72,7 +72,7 @@ fn clipping_plane_constructs() {
 
 #[test]
 fn clipping_plane_works_with_plane_math() {
-    // Ported from: ClippingPlaneSpec "works with Plane math"
+    // 移植自: ClippingPlaneSpec "works with Plane math"
     let normal = DVec3::new(1.0, 2.0, 3.0).normalize();
     let clipping_plane = ClippingPlane::new(normal, 12.34);
 
@@ -88,37 +88,37 @@ fn clipping_plane_works_with_plane_math() {
 
     let transformed = clipping_plane.transform(&transform);
 
-    // CesiumJS expects: distance * 2.0
+    // CesiumJS 预期：distance * 2.0
     assert!(
         (transformed.distance - clipping_plane.distance * 2.0).abs() < 1e-10,
         "distance: got {}, expected {}",
         transformed.distance,
         clipping_plane.distance * 2.0
     );
-    // normal.x negated
+    // normal.x 取反
     assert!(
         (transformed.normal.x - (-clipping_plane.normal.x)).abs() < 1e-10,
         "normal.x: got {}, expected {}",
         transformed.normal.x,
         -clipping_plane.normal.x
     );
-    // normal.y unchanged
+    // normal.y 保持不变
     assert!(
         (transformed.normal.y - clipping_plane.normal.y).abs() < 1e-10,
         "normal.y"
     );
-    // normal.z negated
+    // normal.z 取反
     assert!(
         (transformed.normal.z - (-clipping_plane.normal.z)).abs() < 1e-10,
         "normal.z"
     );
 }
 
-// ─── ClippingPlaneCollection: faithful ports from ClippingPlaneCollectionSpec.js ───
+// ─── ClippingPlaneCollection：忠实移植自 ClippingPlaneCollectionSpec.js ───
 
 #[test]
 fn clipping_collection_default_constructor() {
-    // Ported from: ClippingPlaneCollectionSpec "default constructor"
+    // 移植自: ClippingPlaneCollectionSpec "default constructor"
     let collection = ClippingPlaneCollection::default();
     assert!(collection.is_empty());
     assert!(collection.enabled);
@@ -130,7 +130,7 @@ fn clipping_collection_default_constructor() {
 
 #[test]
 fn clipping_collection_get_at_index() {
-    // Ported from: ClippingPlaneCollectionSpec "gets the plane at an index"
+    // 移植自: ClippingPlaneCollectionSpec "gets the plane at an index"
     let planes = vec![
         ClippingPlane::new(DVec3::X, 1.0),
         ClippingPlane::new(DVec3::Y, 2.0),
@@ -150,7 +150,7 @@ fn clipping_collection_get_at_index() {
 
 #[test]
 fn clipping_collection_remove_first_occurrence() {
-    // Ported from: ClippingPlaneCollectionSpec "remove removes the first occurrence"
+    // 移植自: ClippingPlaneCollectionSpec "remove removes the first occurrence"
     let planes = vec![
         ClippingPlane::new(DVec3::X, 1.0),
         ClippingPlane::new(DVec3::Y, 2.0),
@@ -162,17 +162,17 @@ fn clipping_collection_remove_first_occurrence() {
     assert!(removed.is_some());
     assert_eq!(collection.len(), 1);
 
-    // Remaining plane should be the Y plane
+    // 剩余的平面应为 Y 平面
     let remaining = collection.get(0).unwrap();
     assert_eq!(remaining.normal, DVec3::Y);
 
-    // Out of bounds returns None
+    // 越界返回 None
     assert!(collection.remove(5).is_none());
 }
 
 #[test]
 fn clipping_collection_remove_all() {
-    // Ported from: ClippingPlaneCollectionSpec "removeAll removes all"
+    // 移植自: ClippingPlaneCollectionSpec "removeAll removes all"
     let planes = vec![
         ClippingPlane::new(DVec3::X, 1.0),
         ClippingPlane::new(DVec3::Y, 2.0),
@@ -186,16 +186,16 @@ fn clipping_collection_remove_all() {
 
 #[test]
 fn clipping_collection_clipping_planes_state() {
-    // Ported from: ClippingPlaneCollectionSpec behavior
+    // 移植自: ClippingPlaneCollectionSpec behavior
     let mut collection = ClippingPlaneCollection::with_planes(vec![
         ClippingPlane::new(DVec3::X, 1.0),
         ClippingPlane::new(DVec3::Y, 2.0),
     ]);
 
-    // Intersection mode (default): negative count
+    // 交集模式（默认）：负数计数
     assert_eq!(collection.clipping_planes_state(), -2);
 
-    // Union mode: positive count
+    // 并集模式：正数计数
     collection.union_clipping_regions = true;
     assert_eq!(collection.clipping_planes_state(), 2);
 }

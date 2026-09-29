@@ -1,7 +1,7 @@
-//! Core/PolygonGeometryLibrarySpec.js → Rust integration tests
-//! 16 original it() blocks → 16 A-class tests ported
+//! Core/PolygonGeometryLibrarySpec.js → Rust 集成测试
+//! 16 个原始 it() 块 → 已移植 16 个 A 类测试
 //!
-//! All tests are A-class (pure computational geometry).
+//! 所有测试均为 A 类（纯计算几何）。
 
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_geospatial::polygon_geometry_library::{
@@ -11,14 +11,14 @@ use glam::DVec3;
 
 const EPSILON7: f64 = 1e-7;
 
-/// Unpacks a flat array [x0,y0,z0, x1,y1,z1, ...] into Vec<DVec3>.
+/// 将扁平数组 [x0,y0,z0, x1,y1,z1, ...] 解包为 Vec<DVec3>。
 fn unpack_array(flat: &[f64]) -> Vec<DVec3> {
     flat.chunks(3)
         .map(|c| DVec3::new(c[0], c[1], c[2]))
         .collect()
 }
 
-/// Converts degrees array [lon0,lat0, lon1,lat1, ...] to Vec<DVec3> on WGS84.
+/// 将角度数组 [lon0,lat0, lon1,lat1, ...] 转换为 WGS84 上的 Vec<DVec3>。
 fn from_degrees_array(degrees: &[f64]) -> Vec<DVec3> {
     let ellipsoid = Ellipsoid::WGS84;
     degrees
@@ -63,7 +63,7 @@ fn subdivide_rhumb_line_returns_first_point_if_close() {
     let ellipsoid = Ellipsoid::WGS84;
     let p0 = DVec3::new(3813220.0, -5085291.0, 527179.0);
     let p1 = DVec3::new(3813220.0, -5085291.0, 527179.0 + 1.0);
-    // actual surface distance is ~0.997
+    // 实际表面距离约为 ~0.997
     let positions = subdivide_rhumb_line(&ellipsoid, p0, p1, 2.0);
     assert_eq!(positions.len(), 3);
     assert_eq!(positions, vec![3813220.0, -5085291.0, 527179.0]);
@@ -74,7 +74,7 @@ fn subdivide_rhumb_line_subdivides() {
     let ellipsoid = Ellipsoid::WGS84;
     let p0 = DVec3::new(3813220.0, -5085291.0, 527179.0);
     let p1 = DVec3::new(3813220.0, -5085291.0, 527179.0 + 5.0);
-    // actual surface distance is ~4.983
+    // 实际表面距离约为 ~4.983
     let positions = subdivide_rhumb_line(&ellipsoid, p0, p1, 2.0);
     assert_eq!(positions.len(), 12); // 4 vertices * 3
 

@@ -1,18 +1,18 @@
-//! Entity-specific Bevy components.
+//! 实体专用的 Bevy 组件。
 //!
-//! These components map to CesiumJS entity types (PointGraphics,
-//! PolylineGraphics, PolygonGraphics, BillboardGraphics, ModelGraphics).
-//! Domain types from `cesium_datasource` remain the source of truth;
-//! these are used for GPU-ready rendering state.
+//! 这些组件对应 CesiumJS 的实体类型（PointGraphics、
+//! PolylineGraphics、PolygonGraphics、BillboardGraphics、ModelGraphics）。
+//! 来自 `cesium_datasource` 的领域类型仍是单一真相源；
+//! 这些组件用于面向 GPU 的就绪渲染状态。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// CesiumJS 移植遗留的风格债（deferred.md #18）；在 M13 lint-cleanup 或本文件在其里程碑被重写时
 #![allow(clippy::derivable_impls)]
 use bevy::prelude::*;
 use cesium_datasource::entity::Entity as DomainEntity;
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_time::TimeIntervalCollection;
 
-/// Resource wrapping the globe ellipsoid.
+/// 包装地球椭球的资源。
 #[derive(Resource, Deref, DerefMut)]
 pub struct GlobeEllipsoid(pub Ellipsoid);
 
@@ -52,15 +52,15 @@ impl CesiumEntity {
     }
 }
 
-/// Marker for entities that need their visualization created/updated.
+/// 标记需要创建/更新其可视化的实体。
 #[derive(Component)]
 pub struct NeedsVisualUpdate;
 
-/// Marker for entities whose visualization has been built.
+/// 标记其可视化已构建完成的实体。
 #[derive(Component)]
 pub struct VisualizationBuilt;
 
-/// Marker for billboard entities (face camera each frame).
+/// 标记 billboard 实体（每帧朝向相机）。
 #[derive(Component)]
 pub struct BillboardTag;
 

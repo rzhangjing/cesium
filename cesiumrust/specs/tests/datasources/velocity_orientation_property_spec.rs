@@ -1,6 +1,6 @@
-//! Tests for VelocityOrientationProperty - ported from VelocityOrientationPropertySpec.js
+//! VelocityOrientationProperty 测试 - 移植自 VelocityOrientationPropertySpec.js
 //!
-//! Original: 14 it() → 7 A-class (7 C-class: events/spy/system-time omitted)
+//! 原始：14 it() → 7 A 类（7 C 类：events/spy/system-time 已省略）
 
 use cesium_datasource::property_system::position::SampledPositionProperty;
 use cesium_datasource::property_system::property::ConstantProperty;
@@ -21,7 +21,7 @@ fn from_degrees(lon_deg: f64, lat_deg: f64, height: f64) -> DVec3 {
     Ellipsoid::WGS84.cartographic_to_cartesian(&Cartographic::from_degrees(lon_deg, lat_deg, height))
 }
 
-// === Constructor ===
+// === 构造 ===
 
 #[test]
 fn test_velocity_orientation_default_construct() {
@@ -46,7 +46,7 @@ fn test_velocity_orientation_construct_with_args() {
 
 #[test]
 fn test_velocity_orientation_get_value() {
-    // Position moving east along equator
+    // 位置沿赤道向东移动
     let times = vec![jd(0.0), jd(1.0 / 60.0)];
     let values = vec![from_degrees(0.0, 0.0, 0.0), from_degrees(1.0, 0.0, 0.0)];
 
@@ -65,7 +65,7 @@ fn test_velocity_orientation_get_value() {
     let result = property.get_value(&times[0]);
     assert!(result.is_some());
     let q = result.unwrap();
-    // Quaternions may differ by sign (q and -q represent same rotation)
+    // 四元数可能符号不同（q 和 -q 表示相同旋转）
     let dot = q.dot(expected).abs();
     assert!(
         (dot - 1.0).abs() < 1e-10,
@@ -74,11 +74,11 @@ fn test_velocity_orientation_get_value() {
     );
 }
 
-// === Zero velocity ===
+// === 零速度 ===
 
 #[test]
 fn test_velocity_orientation_zero_velocity() {
-    // Constant position → zero velocity → undefined
+    // 常量位置 → 零速度 → undefined
     let position = Arc::new(ConstantProperty::new(PropertyValue::Cartesian3(
         from_degrees(0.0, 0.0, 0.0),
     )));
@@ -87,30 +87,30 @@ fn test_velocity_orientation_zero_velocity() {
     assert!(result.is_none());
 }
 
-// === Undefined position ===
+// === 未定义位置 ===
 
 #[test]
 fn test_velocity_orientation_undefined_position() {
-    // No position property → undefined
+    // 无 position 属性 → undefined
     let property = VelocityOrientationProperty::new();
     let result = property.get_value(&jd(0.0));
     assert!(result.is_none());
 }
 
-// === Single sample (cannot compute velocity) ===
+// === 单个样本（无法计算速度）===
 
 #[test]
 fn test_velocity_orientation_single_sample() {
-    // With extrapolation NONE, querying outside the single sample returns undefined
+    // 外推为 NONE 时，在单个样本外查询返回 undefined
     let mut position = SampledPositionProperty::new(ReferenceFrame::Fixed, 0);
     position.add_samples(&[jd(1.0)], &[from_degrees(0.0, 0.0, 0.0)], None);
-    // Query at time 0 (before the sample) - with default extrapolation it may still work
-    // but the velocity will be zero since both evaluations return the same value
+    // 在 time 0（样本之前）查询 - 默认外推下仍可能生效
+    // 但速度将为零，因为两次求值返回相同的值
     let property =
         VelocityOrientationProperty::with_position(Arc::new(position), Ellipsoid::WGS84);
-    // At the exact sample time, finite diff forward gives same value → zero velocity
+    // 在精确样本时间，前向差分给出相同值 → 零速度
     let result = property.get_value(&jd(1.0));
-    // With linear extrapolation, both t and t+dt evaluate to same constant → zero velocity
+    // 线性外推下，t 和 t+dt 都求值为同一常量 → 零速度
     assert!(result.is_none());
 }
 
@@ -130,7 +130,7 @@ fn test_velocity_orientation_equals() {
     let right2 = VelocityOrientationProperty::with_position(position.clone(), Ellipsoid::WGS84);
     assert!(left2.equals(&right2));
 
-    // Different ellipsoid
+    // 不同的椭球
     left2.set_ellipsoid(Ellipsoid::UNIT_SPHERE);
     assert!(!left2.equals(&right2));
 }

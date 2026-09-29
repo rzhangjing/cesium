@@ -1,7 +1,7 @@
-//! Minimal CesiumRust example: globe + camera + test entities.
+//! 最小 CesiumRust 示例：地球 + 相机 + 测试实体。
 //!
-//! This demonstrates the simplest possible CesiumRust app using
-//! the hexagonal-architecture plugin stack.
+//! 这演示了使用六边形架构插件栈的最简单
+//! CesiumRust 应用。
 
 // legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
 #![allow(unused_imports)]
@@ -43,7 +43,7 @@ fn spawn_scene(
 
     let scale = (1.0 / METERS_PER_RENDER_UNIT) as f32;
 
-    // ── Globe ──────────────────────────────────────────────────
+    // ── 地球 ──────────────────────────────────────────────────
     globe_config.ellipsoid = Ellipsoid::WGS84;
 
     let globe_material = materials.add(StandardMaterial {
@@ -59,7 +59,7 @@ fn spawn_scene(
     ));
     commands.spawn(CesiumTerrainTile { x: 0, y: 0, level: 0 });
 
-    // ── Camera ─────────────────────────────────────────────────
+    // ── 相机 ─────────────────────────────────────────────────
     let cam_pos = {
         let c = Cartographic::from_degrees(-95.0, 40.0, 20_000_000.0);
         Ellipsoid::WGS84.cartographic_to_cartesian(&c)
@@ -85,7 +85,7 @@ fn spawn_scene(
             .looking_at(target.as_vec3() * scale, up.as_vec3()),
     ));
 
-    // ── Imagery ────────────────────────────────────────────────
+    // ── 影像 ────────────────────────────────────────────────
     imagery_mgr.add_layer(
         "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
         1.0,
@@ -93,7 +93,7 @@ fn spawn_scene(
         18,
     );
 
-    // ── Test entities ──────────────────────────────────────────
+    // ── 测试实体 ────────────────────────────────────────────
     let ny = ellipsoid_point(-74.006, 40.7128, 1000.0);
     let point_mat = materials.add(StandardMaterial {
         base_color: Color::srgb(1.0, 0.0, 0.0),

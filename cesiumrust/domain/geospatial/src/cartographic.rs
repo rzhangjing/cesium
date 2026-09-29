@@ -1,26 +1,26 @@
-//! Cartographic - a position defined by longitude, latitude, and height.
-//! Maps to CesiumJS `Core/Cartographic.js`
+//! Cartographic - 由经度、纬度和高度定义的位置。
+//! 映射到 CesiumJS `Core/Cartographic.js`
 
 use crate::ellipsoid::Ellipsoid;
 use crate::math_utils;
 use glam::DVec3;
 use serde::{Deserialize, Serialize};
 
-/// A position defined by longitude, latitude, and height above the ellipsoid.
-/// Longitude and latitude are in radians. Height is in meters.
+/// 由经度、纬度以及椭球上方高度定义的位置。
+/// 经度和纬度以弧度为单位。高度以米为单位。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Cartographic {
-    /// Longitude in radians.
+    /// 弧度为单位的经度。
     pub longitude: f64,
-    /// Latitude in radians.
+    /// 弧度为单位的纬度。
     pub latitude: f64,
-    /// Height in meters above the ellipsoid.
+    /// 椭球上方以米为单位的高度。
     pub height: f64,
 }
 
 impl Cartographic {
-    /// Creates a new Cartographic from radians.
-    /// Maps to Cartographic.fromRadians
+    /// 从弧度创建新的 Cartographic。
+    /// 映射到 Cartographic.fromRadians
     #[inline]
     pub fn from_radians(longitude: f64, latitude: f64, height: f64) -> Self {
         Self {
@@ -30,8 +30,8 @@ impl Cartographic {
         }
     }
 
-    /// Creates a new Cartographic from degrees.
-    /// Maps to Cartographic.fromDegrees
+    /// 从角度创建新的 Cartographic。
+    /// 映射到 Cartographic.fromDegrees
     #[inline]
     pub fn from_degrees(longitude: f64, latitude: f64, height: f64) -> Self {
         Self {
@@ -41,38 +41,38 @@ impl Cartographic {
         }
     }
 
-    /// Creates a Cartographic at the origin (0, 0, 0).
+    /// 在原点 (0, 0, 0) 创建一个 Cartographic。
     pub const ZERO: Self = Self {
         longitude: 0.0,
         latitude: 0.0,
         height: 0.0,
     };
 
-    /// Determines if this Cartographic is equal to another within an epsilon.
+    /// 判断此 Cartographic 是否在 epsilon 范围内等于另一个。
     pub fn equals_epsilon(&self, other: &Self, epsilon: f64) -> bool {
         (self.longitude - other.longitude).abs() <= epsilon
             && (self.latitude - other.latitude).abs() <= epsilon
             && (self.height - other.height).abs() <= epsilon
     }
 
-    /// Creates a new Cartesian3 instance from a Cartographic input.
-    /// Maps to `Cartographic.toCartesian`. The input values are in radians.
-    /// The ellipsoid is passed explicitly (Rust has no `Ellipsoid.default` global).
+    /// 从 Cartographic 输入创建新的 Cartesian3 实例。
+    /// 映射到 `Cartographic.toCartesian`。输入值以弧度为单位。
+    /// 椭球显式传入（Rust 没有 `Ellipsoid.default` 全局变量）。
     pub fn to_cartesian(cartographic: &Cartographic, ellipsoid: &Ellipsoid) -> DVec3 {
         ellipsoid.cartographic_to_cartesian(cartographic)
     }
 
-    /// Creates a new Cartographic instance from a Cartesian position.
-    /// Maps to `Cartographic.fromCartesian`. The resulting values are in radians.
-    /// The ellipsoid is passed explicitly (Rust has no `Ellipsoid.default` global).
-    /// Returns None if the cartesian is at the center of the ellipsoid.
+    /// 从 Cartesian 位置创建新的 Cartographic 实例。
+    /// 映射到 `Cartographic.fromCartesian`。所得值以弧度为单位。
+    /// 椭球显式传入（Rust 没有 `Ellipsoid.default` 全局变量）。
+    /// 若 cartesian 位于椭球中心则返回 None。
     pub fn from_cartesian(cartesian: DVec3, ellipsoid: &Ellipsoid) -> Option<Cartographic> {
         ellipsoid.cartesian_to_cartographic(cartesian)
     }
 }
 
 impl std::fmt::Display for Cartographic {
-    /// Maps to `Cartographic.toString` → `(longitude, latitude, height)`.
+    /// 映射到 `Cartographic.toString` → `(longitude, latitude, height)`。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({}, {}, {})", self.longitude, self.latitude, self.height)
     }

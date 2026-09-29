@@ -1,31 +1,31 @@
-//! Geometry sampling / subdivision (plan §6).
+//! 几何采样 / 细分（计划 §6）。
 //!
-//! Turns the parametric primitives into vertex [`Ring`]s of [`GeoPoint`]s, and
-//! densifies straight geodesics into great-circle arcs so a line hugs the sphere
-//! in the globe view. Everything is pure and works in geographic coordinates, so
-//! the bridge can project the resulting rings with the same reprojection it uses
-//! for every other vertex — and the whole thing is unit-testable headless.
+//! 将参数化图元转换为 [`GeoPoint`] 顶点组成的 [`Ring`]，
+//! 并将直线测地线加密为大圆弧，使一条线在地球视图中紧贴球面。
+//! 一切皆为纯函数且工作在地理坐标上，因此
+//! 桥接层可以用它对其他每个顶点所用的同一重投影来投影
+//! 结果环 —— 而且整个过程可无头单元测试。
 //!
-//! The geodesic maths uses a spherical Earth of radius [`METERS_PER_RENDER_UNIT`]
-//! (the viewer's render-unit scale), which is exact-enough for the overlay's
-//! ground circles / ellipses at typical plotting extents.
+//! 测地线数学使用半径为 [`METERS_PER_RENDER_UNIT`] 的球面地球
+//! （查看器的渲染单位尺度），对于典型标绘范围下的
+//! 覆盖层地面圆 / 椭圆而言精度已足够。
 
 use std::f64::consts::TAU;
 
 use crate::geo::{GeoPoint, METERS_PER_RENDER_UNIT};
 use crate::model::geometry::{Arc3, Circle, Ellipse, Rectangle, Ring};
 
-/// Default number of segments a full circle / ellipse is sampled into.
+/// 一个完整的圆 / 椭圆被采样成的默认段数。
 pub const DEFAULT_SEGMENTS: usize = 64;
-/// Angular step (radians) a great-circle span is subdivided into (~1°), so a
-/// long globe line follows the sphere instead of cutting a chord through it.
+/// 一个大圆弧跨步被细分成的角步长（弧度，约 1°），使一条
+/// 长的地球线跟随球面而非直接割一条弦穿过。
 pub const GREAT_CIRCLE_STEP_RAD: f64 = 1.0f64.to_radians();
 
-/// Great-circle destination point from `start`, travelling `dist_m` metres along
-/// `bearing_deg` (clockwise from true north). Spherical model.
+/// 从 `start` 出发，沿 `bearing_deg`（从正北顺时针）行进 `dist_m` 米的
+/// 大圆目的点。球面模型。
 pub fn offset_point(start: GeoPoint, bearing_deg: f64, dist_m: f64) -> GeoPoint {
     let r = METERS_PER_RENDER_UNIT;
-    let d = dist_m / r; // angular distance (radians)
+    let d = dist_m / r; // 角距离（弧度）
     let th = bearing_deg.to_radians();
     let lat1 = start.lat_deg.to_radians();
     let lon1 = start.lon_deg.to_radians();
@@ -36,8 +36,8 @@ pub fn offset_point(start: GeoPoint, bearing_deg: f64, dist_m: f64) -> GeoPoint 
     GeoPoint::new(lon2.to_degrees(), lat2.to_degrees(), start.height_m)
 }
 
-/// A ground circle → `segments` vertices at constant `radius_m` from the centre,
-/// starting due north and sweeping clockwise.
+/// 一个地面圆 → 以 `segments` 个顶点，从中心沿恒定 `radius_m`，
+/// 从正北开始顺时针扫掠。
 pub fn circle_ring(c: &Circle, segments: usize) -> Ring {
     let n = segments.max(3);
     (0..n)
@@ -48,10 +48,10 @@ pub fn circle_ring(c: &Circle, segments: usize) -> Ring {
         .collect()
 }
 
-/// A ground ellipse → `segments` vertices. The major axis points at
-/// `rotation_deg` clockwise from north; a point is placed by rotating its
-/// (along-major, along-minor) offsets into north/east metres and stepping from
-/// the centre (a flat-earth ENU approximation, exact enough for plotting).
+/// 一个地面椭圆 → `segments` 个顶点。长轴指向
+/// `rotation_deg`（从北顺时针）；一个点的定位方式是将其
+/// （沿长轴、沿短轴）偏移旋转到北/东米分量并从
+/// 中心步进（一个扁地 ENU 近似，对标绘而言足够精确）。
 pub fn ellipse_ring(e: &Ellipse, segments: usize) -> Ring {
     let n = segments.max(3);
     let rot = e.rotation_deg.to_radians();
@@ -60,7 +60,7 @@ pub fn ellipse_ring(e: &Ellipse, segments: usize) -> Ring {
             let phi = i as f64 * TAU / n as f64;
             let along_major = e.semi_major_m * phi.cos();
             let along_minor = e.semi_minor_m * phi.sin();
-            // Rotate into north / east components (major axis at `rot` from N).
+            // 旋转到北 / 东分量（长轴在 `rot` 相对于 N）。
             let north = along_major * rot.cos() - along_minor * rot.sin();
             let east = along_major * rot.sin() + along_minor * rot.cos();
             let p = offset_point(e.center, 0.0, north);
@@ -69,7 +69,7 @@ pub fn ellipse_ring(e: &Ellipse, segments: usize) -> Ring {
         .collect()
 }
 
-/// A lat/lon rectangle → its four corners (west-south-east-north), CCW.
+/// 一个经纬度矩形 → 它的四个角（西-南-东-北），逆时针。
 pub fn rectangle_ring(r: &Rectangle) -> Ring {
     vec![
         GeoPoint::surface(r.west, r.south),
@@ -79,12 +79,12 @@ pub fn rectangle_ring(r: &Rectangle) -> Ring {
     ]
 }
 
-/// A three-point arc (`start` → via `center` → `end`) sampled as a quadratic
-/// Bézier in lon/lat whose control point is chosen so the curve passes exactly
-/// through `center` at the midpoint. Endpoints and midpoint are exact.
+/// 一个三点弧（`start` → 经由 `center` → `end`）采样为一条二次
+/// 贝塞尔曲线（在经/纬度上），其控制点的选择使曲线在中点恰好
+/// 穿过 `center`。端点与中点都是精确的。
 pub fn arc_ring(a: &Arc3, segments: usize) -> Ring {
     let n = segments.max(2);
-    // Control point P1 with B(0.5) = center  ⇒  P1 = 2·center − (P0 + P2)/2.
+    // 控制点 P1 使 B(0.5) = center  ⇒  P1 = 2·center − (P0 + P2)/2。
     let ctrl = |p0: f64, c: f64, p2: f64| 2.0 * c - 0.5 * (p0 + p2);
     let lon1 = ctrl(a.start.lon_deg, a.center.lon_deg, a.end.lon_deg);
     let lat1 = ctrl(a.start.lat_deg, a.center.lat_deg, a.end.lat_deg);
@@ -105,7 +105,7 @@ pub fn arc_ring(a: &Arc3, segments: usize) -> Ring {
         .collect()
 }
 
-/// Unit direction of a geographic point on the sphere (for great-circle slerp).
+/// 球面上一个地理点的单位方向（用于大圆 slerp）。
 fn unit_dir(p: GeoPoint) -> glam::DVec3 {
     let lat = p.lat_deg.to_radians();
     let lon = p.lon_deg.to_radians();
@@ -118,7 +118,7 @@ fn dir_to_geo(d: glam::DVec3, height_m: f64) -> GeoPoint {
     GeoPoint::new(lon, lat, height_m)
 }
 
-/// Spherical linear interpolation between two unit directions.
+/// 两个单位方向之间的球面线性插值。
 fn slerp(a: glam::DVec3, b: glam::DVec3, t: f64) -> glam::DVec3 {
     let dot = a.dot(b).clamp(-1.0, 1.0);
     let omega = dot.acos();
@@ -129,10 +129,10 @@ fn slerp(a: glam::DVec3, b: glam::DVec3, t: f64) -> glam::DVec3 {
     (a * ((1.0 - t) * omega).sin() + b * (t * omega).sin()) / s
 }
 
-/// Densify a polyline so each great-circle span is broken into sub-steps of at
-/// most `step_rad` (default [`GREAT_CIRCLE_STEP_RAD`]). Endpoints are preserved
-/// and each pair is interpolated along the sphere, so a globe line follows the
-/// surface rather than cutting a chord. Returns the subdivided coordinate list.
+/// 加密一条折线，使每个大圆弧跨步被拆为至多 `step_rad`
+/// （默认 [`GREAT_CIRCLE_STEP_RAD`]）的子步。端点被保留
+/// 且每一对沿球面插值，使一条地球线跟随
+/// 表面而非割一条弦。返回细分后的坐标列表。
 pub fn subdivide_great_circle(positions: &[GeoPoint], step_rad: f64) -> Vec<GeoPoint> {
     let step = step_rad.max(1e-6);
     let mut out = Vec::new();
@@ -169,7 +169,7 @@ mod tests {
         let n100 = offset_point(start, 0.0, 1_000_000.0);
         assert!(n100.lat_deg > 8.0 && n100.lat_deg < 10.0, "{n100:?}");
         assert!(approx(n100.lon_deg, 0.0, 1e-9));
-        // Due east keeps the equator latitude, advances longitude.
+        // 正东保持赤道纬度，推进经度。
         let e100 = offset_point(start, 90.0, 1_000_000.0);
         assert!(approx(e100.lat_deg, 0.0, 1e-6), "{e100:?}");
         assert!(e100.lon_deg > 8.0);
@@ -184,7 +184,7 @@ mod tests {
         let ring = circle_ring(&c, 36);
         assert_eq!(ring.len(), 36);
         for p in &ring {
-            // Every vertex sits ~radius metres from the centre.
+            // 每个顶点都距中心 ~radius 米。
             let d = c.center.surface_distance(*p);
             assert!((d - 100_000.0).abs() < 500.0, "{d}");
         }
@@ -212,7 +212,7 @@ mod tests {
             end: GeoPoint::surface(10.0, 0.0),
         };
         let ring = arc_ring(&a, 8);
-        assert_eq!(ring.len(), 9); // segments + 1 (inclusive endpoints)
+        assert_eq!(ring.len(), 9); // 段数 + 1（含端点）
         assert!(approx(ring[0].lon_deg, 0.0, 1e-9));
         assert!(approx(ring[8].lon_deg, 10.0, 1e-9));
         assert!(approx(ring[4].lon_deg, 5.0, 1e-6), "midpoint via");
@@ -226,7 +226,7 @@ mod tests {
         assert!(sub.len() > 3, "should add intermediate points");
         assert!(approx(sub.first().unwrap().lon_deg, 0.0, 1e-9));
         assert!(approx(sub.last().unwrap().lon_deg, 90.0, 1e-9));
-        // A shorter span than the step stays a single segment (endpoints only).
+        // 一个比步长更短的跨步保持单段（仅端点）。
         let short = subdivide_great_circle(&pts, 200f64.to_radians());
         assert_eq!(short.len(), 2);
     }

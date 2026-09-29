@@ -1,22 +1,21 @@
-//! Frustum geometry (camera frustum visualisation).
+//! 视锥体几何（相机视锥可视化）。
 //!
-//! Faithful port of CesiumJS `FrustumGeometry.js` and `FrustumOutlineGeometry.js`.
-//! The frustum is built from its 8 corners (4 near + 4 far), which are found by
-//! unprojecting the NDC corners through the inverse view-projection matrix, then
-//! assembled into 6 quad planes (near, far, -x, -y, +x, +y).
+//! 对 CesiumJS `FrustumGeometry.js` 与 `FrustumOutlineGeometry.js` 的忠实移植。
+//! 视锥体由其 8 个角点（4 个近 + 4 个远）构建，这些角点通过将 NDC 角点
+//! 经逆视图-投影矩阵反投影而得，然后组装为 6 个四边形平面（近、远、-x、-y、+x、+y）。
 
 use crate::bounding::BoundingSphere;
 use crate::frustum::{OrthographicFrustum, PerspectiveFrustum};
 use crate::geometry::{GeometryData, PrimitiveType, VertexFormat};
 use glam::{DMat3, DMat4, DQuat, DVec3, DVec4};
 
-/// A frustum definition (perspective or orthographic).
+/// 一个视锥体定义（透视或正交）。
 pub enum FrustumDef {
     Perspective(PerspectiveFrustum),
     Orthographic(OrthographicFrustum),
 }
 
-/// NDC corners of the far plane (x, y, z=1, w=1).
+/// 远平面的 NDC 角点 (x, y, z=1, w=1)。
 const FRUSTUM_CORNERS_NDC: [[f64; 4]; 4] = [
     [-1.0, -1.0, 1.0, 1.0],
     [1.0, -1.0, 1.0, 1.0],
@@ -24,11 +23,11 @@ const FRUSTUM_CORNERS_NDC: [[f64; 4]; 4] = [
     [-1.0, 1.0, 1.0, 1.0],
 ];
 
-/// Builds a right-handed view matrix from camera axes.
+/// 由相机轴构建一个右手视图矩阵。
 ///
-/// Port of `Matrix4.computeView(position, direction, up, right)`. CesiumJS lays
-/// the matrix out row-major as `[right; up; -direction]` with the translation
-/// in the last column. glam is column-major, so we supply the columns directly.
+/// 移植自 `Matrix4.computeView(position, direction, up, right)`。CesiumJS 以行主序
+/// 将矩阵排列为 `[right; up; -direction]`，平移位于最后一列。glam 为列主序，
+/// 因此我们直接提供各列。
 fn compute_view(position: DVec3, direction: DVec3, up: DVec3, right: DVec3) -> DMat4 {
     DMat4::from_cols(
         DVec4::new(right.x, up.x, -direction.x, 0.0),
@@ -43,11 +42,11 @@ fn compute_view(position: DVec3, direction: DVec3, up: DVec3, right: DVec3) -> D
     )
 }
 
-/// Computes the 8 corner positions of the frustum (near plane first, then far).
+/// 计算视锥体的 8 个角点位置（先近平面，后远平面）。
 ///
-/// Port of `FrustumGeometry._computeNearFarPlanes`. Returns 8 positions laid out
-/// as `[near0, near1, near2, near3, far0, far1, far2, far3]`, where the corner
-/// order matches [`FRUSTUM_CORNERS_NDC`].
+/// 移植自 `FrustumGeometry._computeNearFarPlanes`。返回按
+/// `[near0, near1, near2, near3, far0, far1, far2, far3]` 排列的 8 个位置，
+/// 其中角点顺序与 [`FRUSTUM_CORNERS_NDC`] 一致。
 fn compute_near_far_planes(
     origin: DVec3,
     orientation: DQuat,
@@ -74,7 +73,7 @@ fn compute_near_far_planes(
                 for j in 0..4 {
                     let c = FRUSTUM_CORNERS_NDC[j];
                     let corner = inv_vp * DVec4::new(c[0], c[1], c[2], c[3]);
-                    // Reverse perspective divide.
+                    // 逆转透视除法。
                     let w = 1.0 / corner.w;
                     let mut corner3 = DVec3::new(corner.x, corner.y, corner.z) * w;
 
@@ -92,8 +91,8 @@ fn compute_near_far_planes(
             let left = -right;
             let top = o.height() * 0.5;
             let bottom = -top;
-            // For orthographic the splits are [0, near, far]; iteration i uses
-            // the plane at distance splits[i + 1].
+            // 对于正交投影，splits 为 [0, near, far]；迭代 i 使用
+            // 位于距离 splits[i + 1] 处的平面。
             let splits = [0.0, o.near, o.far];
 
             for i in 0..2 {
@@ -112,9 +111,9 @@ fn compute_near_far_planes(
     positions
 }
 
-/// Generates a filled frustum geometry (6 quad planes).
+/// 生成一个实心视锥体几何（6 个四边形平面）。
 ///
-/// Maps to CesiumJS `FrustumGeometry`.
+/// 映射到 CesiumJS `FrustumGeometry`。
 pub fn frustum_geometry(
     frustum: &FrustumDef,
     origin: DVec3,
@@ -123,35 +122,33 @@ pub fn frustum_geometry(
 ) -> GeometryData {
     let corners = compute_near_far_planes(origin, orientation, frustum);
 
-    // Build 6 planes x 4 vertices. The near/far planes come directly from the
-    // corners; the four side planes are assembled from corner combinations
-    // (mirroring the index arithmetic in FrustumGeometry.createGeometry).
+    // 构建 6 个平面 x 4 个顶点。近/远平面直接来自角点；四个侧面
+    // 由角点组合而成（镜像 FrustumGeometry.createGeometry 中的索引算术）。
     let c = |k: usize| corners[k];
     let mut positions: Vec<[f64; 3]> = Vec::with_capacity(24);
 
-    // Near plane (corners 0..4).
+    // 近平面（角点 0..4）。
     positions.extend_from_slice(&[c(0), c(1), c(2), c(3)]);
-    // Far plane (corners 4..8).
+    // 远平面（角点 4..8）。
     positions.extend_from_slice(&[c(4), c(5), c(6), c(7)]);
 
-    // The four side planes are assembled from corner combinations, mirroring
-    // the flat-index arithmetic in FrustumGeometry.createGeometry. The flat
-    // corner array is [near0..near3, far0..far3], so flat index k maps to
-    // near[k] for k < 4 and far[k - 4] for k >= 4.
+    // 四个侧面由角点组合而成，镜像 FrustumGeometry.createGeometry 中的
+    // 扁平索引算术。扁平角点数组为 [near0..near3, far0..far3]，因此扁平
+    // 索引 k 在 k < 4 时映射到 near[k]，在 k >= 4 时映射到 far[k - 4]。
     let near = [c(0), c(1), c(2), c(3)];
     let far = [c(4), c(5), c(6), c(7)];
-    // -x plane: flat [4], [0], [3], [7] => near[0], near[3], far[3], far[0]
+    // -x 平面：扁平 [4], [0], [3], [7] => near[0], near[3], far[3], far[0]
     positions.extend_from_slice(&[near[0], near[3], far[3], far[0]]);
-    // -y plane: flat [5], [1], [0], [4] => near[1], near[0], far[0], far[1]
+    // -y 平面：扁平 [5], [1], [0], [4] => near[1], near[0], far[0], far[1]
     positions.extend_from_slice(&[near[1], near[0], far[0], far[1]]);
-    // +x plane: flat [1], [5], [6], [2] => near[1], far[1], far[2], near[2]
+    // +x 平面：扁平 [1], [5], [6], [2] => near[1], far[1], far[2], near[2]
     positions.extend_from_slice(&[near[1], far[1], far[2], near[2]]);
-    // +y plane: flat [2], [6], [7], [3] => near[2], far[2], far[3], near[3]
+    // +y 平面：扁平 [2], [6], [7], [3] => near[2], far[2], far[3], near[3]
     positions.extend_from_slice(&[near[2], far[2], far[3], near[3]]);
 
     let number_of_planes = 6usize;
 
-    // Per-plane constant attributes.
+    // 逐平面的常量属性。
     let rotation = DMat3::from_quat(orientation);
     let mut x = rotation.col(0).normalize();
     let y = rotation.col(1).normalize();
@@ -161,10 +158,10 @@ pub fn frustum_geometry(
     let neg_y = -y;
     let neg_z = -z;
 
-    // (normal, tangent, bitangent) per plane, in CesiumJS order.
+    // 每个平面的 (法线、切线、副切线)，按 CesiumJS 顺序。
     let plane_attrs: [(DVec3, DVec3, DVec3); 6] = [
-        (neg_z, x, y),    // near
-        (z, neg_x, y),    // far
+        (neg_z, x, y),    // 近
+        (z, neg_x, y),    // 远
         (neg_x, neg_z, y),   // -x
         (neg_y, neg_z, neg_x), // -y
         (x, z, y),        // +x
@@ -194,7 +191,7 @@ pub fn frustum_geometry(
         }
     }
 
-    // Two triangles per plane.
+    // 每个平面两个三角形。
     let mut indices: Vec<u32> = Vec::with_capacity(6 * number_of_planes);
     for i in 0..number_of_planes {
         let index = (i * 4) as u32;
@@ -217,10 +214,10 @@ pub fn frustum_geometry(
     }
 }
 
-/// Generates a frustum outline geometry (12 edges as line segments).
+/// 生成一个视锥体线框几何（作为线段序列的 12 条边）。
 ///
-/// Maps to CesiumJS `FrustumOutlineGeometry`. The outline consists of the 4 near
-/// edges, 4 far edges and 4 connecting edges.
+/// 映射到 CesiumJS `FrustumOutlineGeometry`。线框由 4 条近边、4 条远边和
+/// 4 条连接边组成。
 pub fn frustum_outline_geometry(
     frustum: &FrustumDef,
     origin: DVec3,
@@ -229,19 +226,19 @@ pub fn frustum_outline_geometry(
     let corners = compute_near_far_planes(origin, orientation, frustum);
     let positions = corners;
 
-    // Edges: near ring, far ring, and 4 connectors.
+    // 边：近环路、远环路，以及 4 条连接边。
     let mut indices: Vec<u32> = Vec::with_capacity(24);
-    // Near ring (0-1-2-3).
+    // 近环路 (0-1-2-3)。
     for i in 0..4u32 {
         indices.push(i);
         indices.push((i + 1) % 4);
     }
-    // Far ring (4-5-6-7).
+    // 远环路 (4-5-6-7)。
     for i in 0..4u32 {
         indices.push(4 + i);
         indices.push(4 + (i + 1) % 4);
     }
-    // Connectors.
+    // 连接边。
     for i in 0..4u32 {
         indices.push(i);
         indices.push(4 + i);
@@ -279,8 +276,8 @@ mod tests {
     #[test]
     fn test_frustum_geometry_counts() {
         let geo = frustum_geometry(&perspective(), DVec3::ZERO, DQuat::IDENTITY, VertexFormat::ALL);
-        assert_eq!(geo.positions.len(), 24); // 6 planes x 4 vertices
-        assert_eq!(geo.indices.len(), 36); // 6 planes x 2 triangles x 3
+        assert_eq!(geo.positions.len(), 24); // 6 个平面 x 4 个顶点
+        assert_eq!(geo.indices.len(), 36); // 6 个平面 x 2 个三角形 x 3
         assert_eq!(geo.normals.as_ref().unwrap().len(), 24);
         assert_eq!(geo.tex_coords.as_ref().unwrap().len(), 24);
         assert_eq!(geo.primitive_type, PrimitiveType::Triangles);
@@ -288,10 +285,10 @@ mod tests {
 
     #[test]
     fn test_frustum_corners_at_correct_depth() {
-        // With identity orientation the frustum looks down -Z... the near-plane
-        // corners should all lie at distance `near` along the frustum axis.
+        // 在单位方位下视锥体沿 -Z 方向观看……近平面的
+        // 角点都应位于沿视锥轴距离 `near` 处。
         let corners = compute_near_far_planes(DVec3::ZERO, DQuat::IDENTITY, &perspective());
-        // The frustum axis is the orientation's Z column (identity => +Z).
+        // 视锥轴是方位的 Z 列（单位 => +Z）。
         let axis = DVec3::Z;
         for corner in &corners[0..4] {
             let d = DVec3::new(corner[0], corner[1], corner[2]).dot(axis);
@@ -307,7 +304,7 @@ mod tests {
     fn test_frustum_outline_counts() {
         let geo = frustum_outline_geometry(&perspective(), DVec3::ZERO, DQuat::IDENTITY);
         assert_eq!(geo.positions.len(), 8);
-        assert_eq!(geo.indices.len(), 24); // 12 edges x 2
+        assert_eq!(geo.indices.len(), 24); // 12 条边 x 2
         assert_eq!(geo.primitive_type, PrimitiveType::Lines);
     }
 
@@ -317,7 +314,7 @@ mod tests {
         let geo = frustum_geometry(&frustum, DVec3::ZERO, DQuat::IDENTITY, VertexFormat::POSITION_ONLY);
         assert_eq!(geo.positions.len(), 24);
         assert_eq!(geo.indices.len(), 36);
-        // Orthographic near-plane corners should form a width x height rectangle.
+        // 正交投影的近平面角点应构成一个 width x height 的矩形。
         let corners = compute_near_far_planes(DVec3::ZERO, DQuat::IDENTITY, &frustum);
         let xs: Vec<f64> = corners[0..4].iter().map(|c| c[0]).collect();
         let max_x = xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);

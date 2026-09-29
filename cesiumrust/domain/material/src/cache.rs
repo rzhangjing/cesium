@@ -1,10 +1,9 @@
-//! The material cache and the 25 built-in Fabric materials.
+//! 材质缓存与 25 个内置 Fabric 材质。
 //!
-//! Maps to CesiumJS `Material._materialCache` and the
-//! `Material._materialCache.addMaterial(...)` calls at the bottom of
-//! `Scene/Material.js`. Instead of a mutable global, the domain layer uses an
-//! explicit [`MaterialSystem`] value so caches are testable and can be scoped
-//! per application.
+//! 映射到 CesiumJS `Material._materialCache` 以及 `Scene/Material.js`
+//! 底部的 `Material._materialCache.addMaterial(...)` 调用。领域层不使用
+//! 可变全局变量，而是使用显式的 [`MaterialSystem`] 值，因此缓存可测试
+//! 且可按应用作用域划分。
 
 use crate::error::MaterialError;
 use crate::fabric::{FabricTemplate, MaterialComponents};
@@ -14,16 +13,15 @@ use crate::translucent::TranslucentSpec;
 use crate::uniform::{UniformValue, DEFAULT_IMAGE_ID};
 use std::collections::{BTreeMap, HashMap};
 
-/// A cached material definition: the original Fabric template plus its
-/// translucency rule.
+/// 缓存的材质定义：原始 Fabric 模板加上其半透明规则。
 ///
-/// Maps to a single entry in `Material._materialCache._materials`, i.e. the
-/// `{ fabric, translucent }` object passed to `addMaterial`.
+/// 映射到 `Material._materialCache._materials` 中的单个条目，即传给
+/// `addMaterial` 的 `{ fabric, translucent }` 对象。
 #[derive(Debug, Clone)]
 pub struct CachedMaterial {
-    /// The original Fabric template (uniforms + source/components).
+    /// 原始 Fabric 模板（uniforms + source/components）。
     pub fabric: FabricTemplate,
-    /// The translucency rule (`translucent` member of the cache entry).
+    /// 半透明规则（缓存条目的 `translucent` 成员）。
     pub translucent: Option<TranslucentSpec>,
 }
 
@@ -65,7 +63,7 @@ impl CachedMaterial {
     }
 }
 
-/// Shorthand builders for uniform maps used by the built-in materials.
+/// 内置材质所用 uniform 映射的简写构造器。
 fn color(r: f64, g: f64, b: f64, a: f64) -> UniformValue {
     UniformValue::Vec4([r, g, b, a])
 }
@@ -85,7 +83,7 @@ fn channels(s: &str) -> UniformValue {
     UniformValue::Channels(s.to_string())
 }
 
-/// A uniform-map builder to keep the built-in definitions readable.
+/// 用于保持内置定义可读性的 uniform 映射构建器。
 struct U(BTreeMap<String, UniformValue>);
 impl U {
     fn new() -> Self {
@@ -100,24 +98,24 @@ impl U {
     }
 }
 
-/// The material cache + factory.
+/// 材质缓存 + 工厂。
 ///
-/// Maps to `Material._materialCache` plus the `new Material(...)` /
-/// `Material.fromType(...)` construction entry points.
+/// 映射到 `Material._materialCache`，以及 `new Material(...)` /
+/// `Material.fromType(...)` 构造入口点。
 #[derive(Debug, Clone, Default)]
 pub struct MaterialSystem {
     cache: HashMap<String, CachedMaterial>,
 }
 
 impl MaterialSystem {
-    /// An empty cache with no built-in materials.
+    /// 不含内置材质的空缓存。
     pub fn new() -> Self {
         MaterialSystem {
             cache: HashMap::new(),
         }
     }
 
-    /// A cache pre-populated with the 25 built-in CesiumJS materials.
+    /// 预置 25 个内置 CesiumJS 材质的缓存。
     pub fn with_builtin_materials() -> Self {
         let mut system = MaterialSystem::new();
         for (name, material) in builtin_materials() {
@@ -126,28 +124,27 @@ impl MaterialSystem {
         system
     }
 
-    /// Registers a material type. Maps to `addMaterial`.
+    /// 注册一种材质类型。映射到 `addMaterial`。
     pub fn add_material(&mut self, type_name: &str, material: CachedMaterial) {
         self.cache.insert(type_name.to_string(), material);
     }
 
-    /// Looks up a cached material type. Maps to `getMaterial`.
+    /// 查找缓存的材质类型。映射到 `getMaterial`。
     pub fn get_material(&self, type_name: &str) -> Option<&CachedMaterial> {
         self.cache.get(type_name)
     }
 
-    /// The number of cached material types.
+    /// 缓存材质类型的数量。
     pub fn len(&self) -> usize {
         self.cache.len()
     }
 
-    /// Whether the cache is empty.
+    /// 缓存是否为空。
     pub fn is_empty(&self) -> bool {
         self.cache.is_empty()
     }
 
-    /// Builds a material from a Fabric template (low-level entry used by the
-    /// construction pipeline and tests).
+    /// 从 Fabric 模板构建材质（供构建流水线和测试使用的低层入口）。
     pub(crate) fn build(
         &self,
         fabric: FabricTemplate,
@@ -160,10 +157,10 @@ impl MaterialSystem {
         Ok(material)
     }
 
-    /// Creates a material from options.
+    /// 从选项创建材质。
     ///
-    /// Maps to `new Material(options)`. When the resulting type is new (not in
-    /// the cache) it is added afterwards, mirroring `initializeMaterial`.
+    /// 映射到 `new Material(options)`。当结果类型是新的（不在缓存中）时，
+    /// 之后将其加入，模拟 `initializeMaterial`。
     pub fn create_material(&mut self, options: MaterialOptions) -> Result<Material, MaterialError> {
         let type_name = options
             .fabric
@@ -175,9 +172,8 @@ impl MaterialSystem {
 
         let material = self.build(options.fabric.clone(), options.strict, options.translucent)?;
 
-        // Add new types to the cache (with no translucency rule of their own;
-        // CesiumJS stores the Material whose `translucent` property is
-        // undefined, i.e. `None` here).
+        // 将新类型加入缓存（它们自身没有半透明规则；CesiumJS 存储的
+        // Material 其 `translucent` 属性为 undefined，即此处的 `None`）。
         if !already_cached {
             self.cache.insert(
                 material.type_name().to_string(),
@@ -191,9 +187,9 @@ impl MaterialSystem {
         Ok(material)
     }
 
-    /// Creates a new material from an existing cached type.
+    /// 从已有的缓存类型创建新材质。
     ///
-    /// Maps to `Material.fromType(type, uniforms)`.
+    /// 映射到 `Material.fromType(type, uniforms)`。
     pub fn from_type(
         &self,
         type_name: &str,
@@ -215,8 +211,7 @@ impl MaterialSystem {
     }
 }
 
-/// The 25 built-in materials, in the order they are registered in
-/// `Scene/Material.js`.
+/// 25 个内置材质，按它们在 `Scene/Material.js` 中注册的顺序排列。
 fn builtin_materials() -> Vec<(String, CachedMaterial)> {
     let mut out: Vec<(String, CachedMaterial)> = Vec::with_capacity(25);
     let mut add = |name: &str, m: CachedMaterial| out.push((name.to_string(), m));
@@ -631,7 +626,7 @@ fn builtin_materials() -> Vec<(String, CachedMaterial)> {
     out
 }
 
-/// The built-in material type names. Maps to the `Material.*Type` constants.
+/// 内置材质类型名。映射到 `Material.*Type` 常量。
 pub const BUILTIN_MATERIAL_TYPES: [&str; 25] = [
     "Color",
     "Image",
@@ -683,7 +678,7 @@ mod tests {
         let m = system.from_type("Color", BTreeMap::new()).unwrap();
         assert_eq!(m.type_name(), "Color");
         assert!(m.shader_source().contains("czm_getMaterial"));
-        assert!(m.is_translucent()); // default alpha 0.5
+        assert!(m.is_translucent()); // 默认 alpha 0.5
     }
 
     #[test]
@@ -724,7 +719,7 @@ mod tests {
     #[test]
     fn test_builtin_translucency_expectations() {
         let system = MaterialSystem::with_builtin_materials();
-        // Always-translucent built-ins.
+        // 始终半透明的内置材质。
         for name in ["AlphaMap", "PolylineArrow", "PolylineDash", "PolylineGlow", "ElevationBand"] {
             assert!(
                 system.from_type(name, BTreeMap::new()).unwrap().is_translucent(),
@@ -732,7 +727,7 @@ mod tests {
                 name
             );
         }
-        // Never-translucent built-ins.
+        // 从不半透明的内置材质。
         for name in ["DiffuseMap", "SpecularMap", "EmissionMap", "BumpMap", "NormalMap", "ElevationContour", "WaterMask"] {
             assert!(
                 !system.from_type(name, BTreeMap::new()).unwrap().is_translucent(),
@@ -759,7 +754,7 @@ mod tests {
         assert_eq!(m.type_name(), "MyCustom");
         assert!(system.get_material("MyCustom").is_some());
 
-        // A second material of the same type reuses the cached template.
+        // 相同类型的第二个材质复用已缓存的模板。
         let m2 = system.from_type("MyCustom", BTreeMap::new()).unwrap();
         assert_eq!(m2.type_name(), "MyCustom");
         assert!(m2.shader_source().contains("material.diffuse"));
@@ -768,9 +763,9 @@ mod tests {
     #[test]
     fn test_grid_translucency_via_cell_alpha() {
         let system = MaterialSystem::with_builtin_materials();
-        // Default Grid: color alpha 1.0 but cellAlpha 0.1 -> translucent.
+        // 默认 Grid：color alpha 1.0 但 cellAlpha 0.1 -> 半透明。
         assert!(system.from_type("Grid", BTreeMap::new()).unwrap().is_translucent());
-        // cellAlpha 1.0 and color alpha 1.0 -> opaque.
+        // cellAlpha 1.0 且 color alpha 1.0 -> 不透明。
         let mut overrides = BTreeMap::new();
         overrides.insert("cellAlpha".to_string(), float(1.0));
         overrides.insert("color".to_string(), color(0.0, 1.0, 0.0, 1.0));

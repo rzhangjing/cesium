@@ -1,8 +1,8 @@
-//! GeoJSON data source loader for Bevy.
+//! 用于 Bevy 的 GeoJSON 数据源加载器。
 //!
-//! Loads .geojson files, parses them via the domain `parse_geojson` function,
-//! and spawns appropriate entity types (Point → PointGraphics,
-//! LineString → PolylineGraphics, Polygon → PolygonGraphics).
+//! 加载 .geojson 文件，通过领域的 `parse_geojson` 函数解析它们，
+//! 并生成适当的实体类型（Point → PointGraphics，
+//! LineString → PolylineGraphics，Polygon → PolygonGraphics）。
 
 use bevy::prelude::*;
 use cesium_datasource::entity::Entity as DomainEntity;
@@ -13,14 +13,14 @@ use crate::entity::components::{
     CesiumEntity, EntityWrapper, NeedsVisualUpdate, TimeDynamicProperties,
 };
 
-/// Resource that tracks pending GeoJSON file loads.
+/// 跟踪待处理 GeoJSON 文件加载的资源。
 #[derive(Resource, Default)]
 pub struct GeoJsonLoadQueue {
-    /// Files to load (paths to .geojson files).
+    /// 待加载的文件（指向 .geojson 文件的路径）。
     pub files: Vec<String>,
 }
 
-/// Plugin for GeoJSON data source loading.
+/// 用于 GeoJSON 数据源加载的插件。
 pub struct GeoJsonLoadPlugin;
 
 impl Plugin for GeoJsonLoadPlugin {
@@ -30,7 +30,7 @@ impl Plugin for GeoJsonLoadPlugin {
     }
 }
 
-/// System that loads .geojson files and spawns entities.
+/// 加载 .geojson 文件并生成实体的系统。
 fn geojson_load_system(
     mut commands: Commands,
     mut queue: ResMut<GeoJsonLoadQueue>,
@@ -71,7 +71,7 @@ fn geojson_load_system(
     }
 }
 
-/// Spawns a single GeoJSON entity into the Bevy ECS.
+/// 将单个 GeoJSON 实体生成到 Bevy ECS 中。
 fn spawn_geojson_entity(commands: &mut Commands, domain_entity: &DomainEntity) {
     let cesium_entity = CesiumEntity {
         entity_id: domain_entity.id.clone(),
@@ -99,7 +99,7 @@ fn spawn_geojson_entity(commands: &mut Commands, domain_entity: &DomainEntity) {
     ));
 }
 
-/// Helper to load a GeoJSON file by adding it to the queue.
+/// Helper：通过将 GeoJSON 文件加入队列来加载它。
 pub fn load_geojson_file(queue: &mut GeoJsonLoadQueue, path: impl Into<String>) {
     queue.files.push(path.into());
 }

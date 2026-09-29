@@ -1,10 +1,9 @@
-//! Wall geometry - a vertical curtain extruded between top and bottom heights.
+//! 围墙几何 —— 在顶部与底部高度之间垂直拉伸出的幕帘。
 //!
-//! Faithful port of CesiumJS `WallGeometryLibrary.js`, `WallGeometry.js` and
-//! `WallOutlineGeometry.js`. A wall is defined by a series of surface positions
-//! that extrude vertically between a minimum and maximum height. The arc between
-//! consecutive positions is subdivided along the geodesic (see
-//! [`crate::polyline_pipeline`]).
+//! 对 CesiumJS `WallGeometryLibrary.js`、`WallGeometry.js` 与
+//! `WallOutlineGeometry.js` 的忠实移植。围墙由一系列表面位置定义，
+//! 它们在最小和最大高度之间垂直拉伸。相邻位置之间的弧沿大地线细分（参见
+//! [`crate::polyline_pipeline`]）。
 
 use crate::bounding::BoundingSphere;
 use crate::cartographic::Cartographic;
@@ -14,27 +13,27 @@ use crate::math_utils::EPSILON10;
 use crate::polyline_pipeline::{generate_arc, ArcOptions};
 use glam::DVec3;
 
-/// Default granularity: one degree in radians.
+/// 默认粒度：一度（以弧度计）。
 const DEFAULT_GRANULARITY: f64 = std::f64::consts::PI / 180.0;
 
-/// Options describing a wall.
+/// 描述一个围墙的选项。
 #[derive(Debug, Clone)]
 pub struct WallOptions {
-    /// The surface positions defining the wall path (at least 2).
+    /// 定义围墙路径的表面位置（至少 2 个）。
     pub positions: Vec<DVec3>,
-    /// Maximum (top) height at each position. `None` uses each position's height.
+    /// 每个位置的最大（顶部）高度。`None` 使用每个位置自身的高度。
     pub maximum_heights: Option<Vec<f64>>,
-    /// Minimum (bottom) height at each position. `None` uses 0.
+    /// 每个位置的最小（底部）高度。`None` 使用 0。
     pub minimum_heights: Option<Vec<f64>>,
-    /// Angular granularity in radians.
+    /// 角度粒度（弧度）。
     pub granularity: f64,
-    /// The reference ellipsoid.
+    /// 参考椭球。
     pub ellipsoid: Ellipsoid,
 }
 
 impl WallOptions {
-    /// Creates a wall from constant top/bottom heights (mirrors
-    /// `WallGeometry.fromConstantHeights`).
+    /// 由恒定的顶部/底部高度创建一个围墙（镜像
+    /// `WallGeometry.fromConstantHeights`）。
     pub fn from_constant_heights(
         positions: Vec<DVec3>,
         minimum_height: Option<f64>,
@@ -66,7 +65,7 @@ impl Default for WallOptions {
     }
 }
 
-/// Cleaned positions after duplicate removal.
+/// 去重后的清理位置。
 struct CleanedPositions {
     positions: Vec<DVec3>,
     top_heights: Vec<f64>,
@@ -84,17 +83,16 @@ fn cartesian_equals_epsilon(a: DVec3, b: DVec3) -> bool {
         && (a.z - b.z).abs() <= EPSILON10
 }
 
-/// Removes consecutive duplicate positions (and merges heights for positions
-/// sharing the same longitude/latitude).
+/// 移除连续重复的位置（并合并共享相同经/纬度的位置的高度）。
 ///
-/// Maps to `WallGeometryLibrary`'s private `removeDuplicates`.
+/// 映射到 `WallGeometryLibrary` 的私有 `removeDuplicates`。
 fn remove_duplicates(
     ellipsoid: &Ellipsoid,
     positions: &[DVec3],
     top_heights: Option<&[f64]>,
     bottom_heights: Option<&[f64]>,
 ) -> Option<CleanedPositions> {
-    // arrayRemoveDuplicates: drop consecutive exactly-equal positions.
+    // arrayRemoveDuplicates：丢弃连续的、完全相等的位置。
     let mut deduped: Vec<DVec3> = Vec::with_capacity(positions.len());
     for &p in positions {
         if deduped.last().is_none_or(|&last| !cartesian_equals_epsilon(last, p)) {
@@ -144,7 +142,7 @@ fn remove_duplicates(
                 has_all_same_heights && (cleaned_top[idx] - cleaned_bottom[idx]).abs() < f64::EPSILON;
             c0 = c1;
         } else if c0.height < c1.height {
-            // Adjacent positions share lon/lat: keep the greater top height.
+            // 相邻位置共享经/纬度：保留较大的顶部高度。
             let idx = cleaned_top.len() - 1;
             cleaned_top[idx] = c1.height;
         }
@@ -166,19 +164,18 @@ fn has_all_same_heigths_check(flag: &mut bool, height: f64) {
     *flag = *flag && height.abs() < f64::EPSILON;
 }
 
-/// Result of [`compute_positions`].
+/// [`compute_positions`] 的结果。
 struct WallPositions {
     top_positions: Vec<DVec3>,
     bottom_positions: Vec<DVec3>,
     num_corners: usize,
 }
 
-/// Computes the subdivided top and bottom position arrays for the wall.
+/// 计算围墙细分后的顶部和底部位置数组。
 ///
-/// Maps to `WallGeometryLibrary.computePositions`. When `duplicate_corners` is
-/// true (filled geometry) each segment is subdivided independently so corners
-/// are duplicated for correct per-face normals; when false (outline) the whole
-/// path is subdivided as a single arc.
+/// 映射到 `WallGeometryLibrary.computePositions`。当 `duplicate_corners` 为
+/// true（实心几何）时，每段独立细分，因此角点会被重复以获得正确的逐面法线；
+/// 为 false（线框）时，整条路径作为单条弧细分。
 fn compute_positions(
     ellipsoid: &Ellipsoid,
     wall_positions: &[DVec3],
@@ -248,9 +245,9 @@ fn compute_positions(
     })
 }
 
-/// Generates a filled wall geometry.
+/// 生成一个实心围墙几何。
 ///
-/// Maps to CesiumJS `WallGeometry.createGeometry`.
+/// 映射到 CesiumJS `WallGeometry.createGeometry`。
 pub fn wall_geometry(options: &WallOptions, vf: VertexFormat) -> GeometryData {
     let ellipsoid = &options.ellipsoid;
     let pos = compute_positions(
@@ -271,7 +268,7 @@ pub fn wall_geometry(options: &WallOptions, vf: VertexFormat) -> GeometryData {
     let num_corners = pos.num_corners;
     let length = top_positions.len();
 
-    // Interleave bottom (even) and top (odd) positions.
+    // 交错底部（偶数）和顶部（奇数）位置。
     let mut positions: Vec<[f64; 3]> = Vec::with_capacity(length * 2);
     let mut normals: Option<Vec<[f64; 3]>> = if vf.normal { Some(Vec::new()) } else { None };
     let mut tangents: Option<Vec<[f64; 3]>> = if vf.tangent { Some(Vec::new()) } else { None };
@@ -345,7 +342,7 @@ pub fn wall_geometry(options: &WallOptions, vf: VertexFormat) -> GeometryData {
         }
     }
 
-    // Two triangles per wall quad.
+    // 每个围墙四边形两个三角形。
     let num_vertices = positions.len();
     let mut indices: Vec<u32> = Vec::new();
     let mut i = 0usize;
@@ -381,9 +378,9 @@ pub fn wall_geometry(options: &WallOptions, vf: VertexFormat) -> GeometryData {
     }
 }
 
-/// Generates a wall outline geometry (line segments).
+/// 生成一个围墙线框几何（线段序列）。
 ///
-/// Maps to CesiumJS `WallOutlineGeometry.createGeometry`.
+/// 映射到 CesiumJS `WallOutlineGeometry.createGeometry`。
 pub fn wall_outline_geometry(options: &WallOptions) -> GeometryData {
     let ellipsoid = &options.ellipsoid;
     let pos = compute_positions(
@@ -403,7 +400,7 @@ pub fn wall_outline_geometry(options: &WallOptions) -> GeometryData {
     let bottom_positions = &pos.bottom_positions;
     let length = top_positions.len();
 
-    // Interleave bottom (even) and top (odd).
+    // 交错底部（偶数）和顶部（奇数）。
     let mut positions: Vec<[f64; 3]> = Vec::with_capacity(length * 2);
     for i in 0..length {
         let bp = bottom_positions[i];
@@ -426,13 +423,13 @@ pub fn wall_outline_geometry(options: &WallOptions) -> GeometryData {
         }
         let ul = i + 1;
         let ur = i + 3;
-        // Vertical left edge, top edge, bottom edge.
+        // 左侧竖边、顶边、底边。
         indices.extend_from_slice(&[ul as u32, ll as u32]);
         indices.extend_from_slice(&[ul as u32, ur as u32]);
         indices.extend_from_slice(&[ll as u32, lr as u32]);
         i += 2;
     }
-    // Final vertical edge.
+    // 最后一条竖边。
     if num_vertices >= 2 {
         indices.push((num_vertices - 2) as u32);
         indices.push((num_vertices - 1) as u32);
@@ -488,7 +485,7 @@ mod tests {
         assert!(!geo.positions.is_empty());
         assert_eq!(geo.primitive_type, PrimitiveType::Triangles);
         assert_eq!(geo.indices.len() % 3, 0);
-        // Positions interleaved bottom/top => even count.
+        // 位置交错底部/顶部 => 偶数个。
         assert_eq!(geo.positions.len() % 2, 0);
         assert_eq!(geo.normals.as_ref().unwrap().len(), geo.positions.len());
         assert_eq!(geo.tex_coords.as_ref().unwrap().len(), geo.positions.len());
@@ -498,7 +495,7 @@ mod tests {
     fn test_wall_heights_correct() {
         let ell = Ellipsoid::WGS84;
         let geo = wall_geometry(&wall_options(), VertexFormat::POSITION_ONLY);
-        // Even indices are bottom (~0 m), odd are top (~10000 m).
+        // 偶数索引为底部（~0 m），奇数为顶部（~10000 m）。
         for (i, p) in geo.positions.iter().enumerate() {
             let c = ell.cartesian_to_cartographic(DVec3::new(p[0], p[1], p[2])).unwrap();
             if i % 2 == 0 {
@@ -515,7 +512,7 @@ mod tests {
         assert!(!geo.positions.is_empty());
         assert_eq!(geo.primitive_type, PrimitiveType::Lines);
         assert_eq!(geo.indices.len() % 2, 0);
-        // All indices in range.
+        // 所有索引都在范围内。
         let n = geo.positions.len() as u32;
         for &idx in &geo.indices {
             assert!(idx < n);
@@ -524,7 +521,7 @@ mod tests {
 
     #[test]
     fn test_wall_degenerate_all_zero_heights() {
-        // When all top heights are 0, CesiumJS considers the wall degenerate.
+        // 当所有顶部高度都为 0 时，CesiumJS 认为围墙是退化的。
         let ell = Ellipsoid::WGS84;
         let positions = vec![
             ell.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0)),

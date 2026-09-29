@@ -1,7 +1,7 @@
-//! GPX data source loader for Bevy.
+//! 用于 Bevy 的 GPX 数据源加载器。
 //!
-//! Parses GPX files via `cesium_gpx::parser` and converts tracks
-//! to PolylineGraphics and waypoints to PointGraphics.
+//! 通过 `cesium_gpx::parser` 解析 GPX 文件，并将轨迹（tracks）
+//! 转为 PolylineGraphics，将航点（waypoints）转为 PointGraphics。
 
 use bevy::prelude::*;
 use cesium_datasource::entity::Entity as DomainEntity;
@@ -12,14 +12,14 @@ use crate::entity::components::{
     CesiumEntity, EntityWrapper, NeedsVisualUpdate, TimeDynamicProperties,
 };
 
-/// Resource that tracks pending GPX file loads.
+/// 跟踪待处理 GPX 文件加载的资源。
 #[derive(Resource, Default)]
 pub struct GpxLoadQueue {
-    /// Files to load (paths to .gpx files).
+    /// 待加载的文件（指向 .gpx 文件的路径）。
     pub files: Vec<String>,
 }
 
-/// Plugin for GPX data source loading.
+/// 用于 GPX 数据源加载的插件。
 pub struct GpxLoadPlugin;
 
 impl Plugin for GpxLoadPlugin {
@@ -29,7 +29,7 @@ impl Plugin for GpxLoadPlugin {
     }
 }
 
-/// System that loads GPX files and spawns entities.
+/// 加载 GPX 文件并生成实体的系统。
 fn gpx_load_system(
     mut commands: Commands,
     mut queue: ResMut<GpxLoadQueue>,
@@ -70,7 +70,7 @@ fn gpx_load_system(
     }
 }
 
-/// Spawns a single GPX entity into the Bevy ECS.
+/// 将单个 GPX 实体生成到 Bevy ECS 中。
 fn spawn_gpx_entity(commands: &mut Commands, domain_entity: &DomainEntity) {
     let cesium_entity = CesiumEntity {
         entity_id: domain_entity.id.clone(),
@@ -98,7 +98,7 @@ fn spawn_gpx_entity(commands: &mut Commands, domain_entity: &DomainEntity) {
     ));
 }
 
-/// Helper to load a GPX file by adding it to the queue.
+/// Helper：通过将 GPX 文件加入队列来加载它。
 pub fn load_gpx_file(queue: &mut GpxLoadQueue, path: impl Into<String>) {
     queue.files.push(path.into());
 }

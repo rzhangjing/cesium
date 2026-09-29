@@ -1,7 +1,8 @@
-//! Ray, Plane, and intersection tests.
-//! Maps to CesiumJS `Core/Ray.js`, `Core/Plane.js`, `Core/IntersectionTests.js`, `Core/Intersections2D.js`
+//! 射线、平面以及相交测试。
+//! 映射到 CesiumJS `Core/Ray.js`, `Core/Plane.js`, `Core/IntersectionTests.js`, `Core/Intersections2D.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::manual_range_contains, clippy::doc_lazy_continuation)]
 use crate::bounding::{AxisAlignedBoundingBox, BoundingSphere, OrientedBoundingBox};
 use crate::ellipsoid::Ellipsoid;
@@ -9,24 +10,24 @@ use crate::math_utils::{EPSILON15, EPSILON6};
 use glam::{DMat4, DVec3, DVec4};
 use serde::{Deserialize, Serialize};
 
-/// The result of an intersection test with a plane or culling volume.
+/// 与平面或剔除体相交测试的结果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Intersect {
-    /// The object is entirely outside.
+    /// 对象完全在外部。
     Outside,
-    /// The object intersects the boundary.
+    /// 对象与边界相交。
     Intersecting,
-    /// The object is entirely inside.
+    /// 对象完全在内部。
     Inside,
 }
 
-/// A ray defined by an origin and direction.
-/// Maps to CesiumJS `Ray`
+/// 由起点和方向定义的射线。
+/// 映射到 CesiumJS `Ray`
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Ray {
-    /// The origin of the ray.
+    /// 射线的起点。
     pub origin: DVec3,
-    /// The direction of the ray (normalized).
+    /// 射线的方向（已归一化）。
     pub direction: DVec3,
 }
 
@@ -38,50 +39,50 @@ impl Ray {
         }
     }
 
-    /// Gets a point along the ray at parameter t.
+    /// 获取射线上参数 t 处的点。
     #[inline]
     pub fn point_at(&self, t: f64) -> DVec3 {
         self.origin + self.direction * t
     }
 }
 
-/// A plane defined by a normal and distance from origin.
-/// The plane equation is: normal · x + distance = 0
-/// Maps to CesiumJS `Plane`
+/// 由法线和到原点的距离定义的平面。
+/// 平面方程为：normal · x + distance = 0
+/// 映射到 CesiumJS `Plane`
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Plane {
-    /// The plane normal (normalized).
+    /// 平面法线（已归一化）。
     pub normal: DVec3,
-    /// The shortest distance from the origin to the plane.
+    /// 从原点到平面的最短距离。
     pub distance: f64,
 }
 
 impl Plane {
-    /// The XY plane through the origin, normal +Z.
-    /// Maps to `Plane.ORIGIN_XY_PLANE`
+    /// 过原点的 XY 平面，法线 +Z。
+    /// 映射到 `Plane.ORIGIN_XY_PLANE`
     pub const ORIGIN_XY_PLANE: Self = Self {
         normal: DVec3::Z,
         distance: 0.0,
     };
-    /// The YZ plane through the origin, normal +X.
-    /// Maps to `Plane.ORIGIN_YZ_PLANE`
+    /// 过原点的 YZ 平面，法线 +X。
+    /// 映射到 `Plane.ORIGIN_YZ_PLANE`
     pub const ORIGIN_YZ_PLANE: Self = Self {
         normal: DVec3::X,
         distance: 0.0,
     };
-    /// The ZX plane through the origin, normal +Y.
-    /// Maps to `Plane.ORIGIN_ZX_PLANE`
+    /// 过原点的 ZX 平面，法线 +Y。
+    /// 映射到 `Plane.ORIGIN_ZX_PLANE`
     pub const ORIGIN_ZX_PLANE: Self = Self {
         normal: DVec3::Y,
         distance: 0.0,
     };
 
-    /// Creates a plane from a normal and distance.
+    /// 由法线和距离创建一个平面。
     ///
-    /// Faithful to CesiumJS: the normal is stored **as-is** (not re-normalized);
-    /// the caller must supply a unit-length normal. The debug-only normalization
-    /// check mirrors CesiumJS's `DeveloperError` (stripped in release builds).
-    /// Maps to `new Plane(normal, distance)`
+    /// 忠实于 CesiumJS：法线**原样**存储（不重新归一化）；
+    /// 调用方必须提供单位长度的法线。仅在 debug 下进行的归一化检查
+    /// 对应 CesiumJS 的 `DeveloperError`（在 release 构建中被剥离）。
+    /// 映射到 `new Plane(normal, distance)`
     pub fn new(normal: DVec3, distance: f64) -> Self {
         debug_assert!(
             (normal.length() - 1.0).abs() <= crate::math_utils::EPSILON6,
@@ -90,8 +91,8 @@ impl Plane {
         Self { normal, distance }
     }
 
-    /// Creates a plane from a point and a (unit-length) normal.
-    /// Maps to `Plane.fromPointNormal`
+    /// 由一个点和一个（单位长度）法线创建平面。
+    /// 映射到 `Plane.fromPointNormal`
     pub fn from_point_normal(point: DVec3, normal: DVec3) -> Self {
         debug_assert!(
             (normal.length() - 1.0).abs() <= crate::math_utils::EPSILON6,
@@ -101,9 +102,9 @@ impl Plane {
         Self { normal, distance }
     }
 
-    /// Creates a plane from the general equation coefficients `(x, y, z, w)`,
-    /// where `(x, y, z)` is the unit-length normal and `w` is the distance.
-    /// Maps to `Plane.fromCartesian4`
+    /// 由一般方程系数 `(x, y, z, w)` 创建平面，
+    /// 其中 `(x, y, z)` 是单位长度的法线，`w` 是距离。
+    /// 映射到 `Plane.fromCartesian4`
     pub fn from_cartesian4(coefficients: DVec4) -> Self {
         let normal = coefficients.truncate();
         debug_assert!(
@@ -116,24 +117,24 @@ impl Plane {
         }
     }
 
-    /// Computes the signed distance from a point to the plane.
-    /// Maps to `Plane.getPointDistance`
+    /// 计算从一点到平面的带符号距离。
+    /// 映射到 `Plane.getPointDistance`
     pub fn point_distance(&self, point: DVec3) -> f64 {
         self.normal.dot(point) + self.distance
     }
 
-    /// Projects a point onto the plane.
-    /// Maps to `Plane.projectPointOntoPlane`
+    /// 将一点投影到平面上。
+    /// 映射到 `Plane.projectPointOntoPlane`
     pub fn project_point_onto_plane(&self, point: DVec3) -> DVec3 {
         let dist = self.point_distance(point);
         point - self.normal * dist
     }
 
-    /// Transforms the plane by the given transformation matrix.
+    /// 用给定的变换矩阵变换该平面。
     ///
-    /// Faithful port: multiplies the plane-as-Cartesian4 by the inverse-transpose
-    /// of the transform, then renormalizes to Hessian Normal Form.
-    /// Maps to `Plane.transform`
+    /// 忠实移植：将“平面作为 Cartesian4”乘以变换的逆转置，
+    /// 然后重新归一化为 Hessian 标准式。
+    /// 映射到 `Plane.transform`
     pub fn transform(&self, transform: &DMat4) -> Self {
         let inverse_transpose = transform.inverse().transpose();
         let mut plane_as_cartesian4 =
@@ -145,19 +146,19 @@ impl Plane {
     }
 }
 
-// --- Intersection Tests ---
-// Maps to CesiumJS `IntersectionTests`
+// --- 相交测试 ---
+// 映射到 CesiumJS `IntersectionTests`
 
-/// Computes the intersection of a ray with an ellipsoid.
-/// Returns (t0, t1) parameters along the ray, or None if no intersection.
-/// Maps to `IntersectionTests.rayEllipsoid`
+/// 计算射线与椭球的相交。
+/// 返回沿射线的 (t0, t1) 参数，若不相交则返回 None。
+/// 映射到 `IntersectionTests.rayEllipsoid`
 pub fn ray_ellipsoid(ray: &Ray, ellipsoid: &Ellipsoid) -> Option<(f64, f64)> {
     ellipsoid.intersection(ray.origin, ray.direction)
 }
 
-/// Computes the intersection of a ray with a plane.
-/// Returns the intersection point, or None if parallel.
-/// Maps to `IntersectionTests.rayPlane`
+/// 计算射线与平面的相交。
+/// 返回交点，若平行则返回 None。
+/// 映射到 `IntersectionTests.rayPlane`
 pub fn ray_plane(ray: &Ray, plane: &Plane) -> Option<DVec3> {
     let denominator = plane.normal.dot(ray.direction);
     if denominator.abs() < EPSILON15 {
@@ -170,9 +171,9 @@ pub fn ray_plane(ray: &Ray, plane: &Plane) -> Option<DVec3> {
     Some(ray.point_at(t))
 }
 
-/// Computes the intersection of a line segment with a plane.
-/// Returns the intersection point, or None if the segment doesn't cross the plane.
-/// Maps to `IntersectionTests.lineSegmentPlane`
+/// 计算线段与平面的相交。
+/// 返回交点，若线段未穿过平面则返回 None。
+/// 映射到 `IntersectionTests.lineSegmentPlane`
 pub fn line_segment_plane(p0: DVec3, p1: DVec3, plane: &Plane) -> Option<DVec3> {
     let difference = p1 - p0;
     let n = plane.normal.dot(difference);
@@ -186,10 +187,10 @@ pub fn line_segment_plane(p0: DVec3, p1: DVec3, plane: &Plane) -> Option<DVec3> 
     Some(p0 + difference * t)
 }
 
-/// Computes the intersection of a ray with a bounding sphere.
-/// Returns an interval (start, stop) of parametric distances along the ray,
-/// or None if there is no intersection.
-/// Maps to `IntersectionTests.raySphere`
+/// 计算射线与包围球的相交。
+/// 返回沿射线的参数距离区间 (start, stop)，
+/// 若不相交则返回 None。
+/// 映射到 `IntersectionTests.raySphere`
 pub fn ray_sphere(ray: &Ray, sphere: &BoundingSphere) -> Option<(f64, f64)> {
     let origin = ray.origin;
     let direction = ray.direction;
@@ -214,7 +215,7 @@ pub fn ray_sphere(ray: &Ray, sphere: &BoundingSphere) -> Option<(f64, f64)> {
         let r1 = (-b - disc) * denom;
         if r0 < r1 { (r0, r1) } else { (r1, r0) }
     } else {
-        // det == 0: repeated root
+        // det == 0：重根
         let root = -b / (2.0 * a);
         if root == 0.0 {
             return None;
@@ -222,7 +223,7 @@ pub fn ray_sphere(ray: &Ray, sphere: &BoundingSphere) -> Option<(f64, f64)> {
         (root, root)
     };
 
-    // Public API: filter and clamp
+    // 公共 API：过滤并钳制
     if root1 < 0.0 {
         return None;
     }
@@ -230,10 +231,10 @@ pub fn ray_sphere(ray: &Ray, sphere: &BoundingSphere) -> Option<(f64, f64)> {
     Some((start, root1))
 }
 
-/// Computes the intersection of a ray with a triangle as a parametric distance.
-/// Returns the parametric distance `t` along the ray, or None.
-/// The result can be negative when the triangle is behind the ray.
-/// Maps to `IntersectionTests.rayTriangleParametric`
+/// 将射线与三角形的相交计算为参数距离。
+/// 返回沿射线的参数距离 `t`，或 None。
+/// 当三角形位于射线后方时，结果可能为负。
+/// 映射到 `IntersectionTests.rayTriangleParametric`
 pub fn ray_triangle_parametric(
     ray: &Ray,
     p0: DVec3,
@@ -290,9 +291,9 @@ pub fn ray_triangle_parametric(
     }
 }
 
-/// Computes the intersection of a ray with a triangle (Möller–Trumbore algorithm).
-/// Returns the intersection point, or None.
-/// Maps to `IntersectionTests.rayTriangle`
+/// 计算射线与三角形的相交（Möller–Trumbore 算法）。
+/// 返回交点，或 None。
+/// 映射到 `IntersectionTests.rayTriangle`
 pub fn ray_triangle(
     ray: &Ray,
     v0: DVec3,
@@ -307,9 +308,9 @@ pub fn ray_triangle(
     Some(ray.point_at(t))
 }
 
-/// Computes the intersection of a line segment with a triangle.
-/// Returns the intersection point, or None.
-/// Maps to `IntersectionTests.lineSegmentTriangle`
+/// 计算线段与三角形的相交。
+/// 返回交点，或 None。
+/// 映射到 `IntersectionTests.lineSegmentTriangle`
 pub fn line_segment_triangle(
     v0: DVec3,
     v1: DVec3,
@@ -329,17 +330,17 @@ pub fn line_segment_triangle(
     Some(ray.point_at(t))
 }
 
-/// Result of a triangle-plane intersection.
-/// Contains the positions and indices of the resulting triangles.
+/// 三角形与平面相交的结果。
+/// 包含所得三角形的位置和索引。
 #[derive(Debug, Clone)]
 pub struct TrianglePlaneIntersectionResult {
     pub positions: Vec<DVec3>,
     pub indices: Vec<u32>,
 }
 
-/// Computes the intersection of a triangle and a plane.
-/// Returns positions and indices of resulting sub-triangles, or None if no intersection.
-/// Maps to `IntersectionTests.trianglePlaneIntersection`
+/// 计算三角形与平面的相交。
+/// 返回所得子三角形的位置和索引，若不相交则返回 None。
+/// 映射到 `IntersectionTests.trianglePlaneIntersection`
 pub fn triangle_plane_intersection(
     p0: DVec3,
     p1: DVec3,
@@ -408,14 +409,14 @@ pub fn triangle_plane_intersection(
                 })
             }
         }
-        // numBehind == 0 (all in front) or 3 (all behind): no intersection
+        // numBehind == 0（全部在前）或 3（全部在后）：不相交
         _ => None,
     }
 }
 
-/// Computes the intersection of a ray with an oriented bounding box.
-/// Returns the distance along the ray, or None.
-/// Maps to `IntersectionTests.rayOrientedBoundingBox`
+/// 计算射线与方向包围盒的相交。
+/// 返回沿射线的距离，或 None。
+/// 映射到 `IntersectionTests.rayOrientedBoundingBox`
 pub fn ray_obb(ray: &Ray, obb: &OrientedBoundingBox) -> Option<f64> {
     let offset = ray.origin - obb.center;
 
@@ -423,7 +424,7 @@ pub fn ray_obb(ray: &Ray, obb: &OrientedBoundingBox) -> Option<f64> {
     let v = obb.half_axes.y_axis;
     let w = obb.half_axes.z_axis;
 
-    // Transform ray into OBB local space
+    // 将射线变换到 OBB 局部空间
     let inv_u = if u.length_squared() > 0.0 { u / u.length_squared() } else { DVec3::ZERO };
     let inv_v = if v.length_squared() > 0.0 { v / v.length_squared() } else { DVec3::ZERO };
     let inv_w = if w.length_squared() > 0.0 { w / w.length_squared() } else { DVec3::ZERO };
@@ -439,7 +440,7 @@ pub fn ray_obb(ray: &Ray, obb: &OrientedBoundingBox) -> Option<f64> {
         ray.direction.dot(inv_w),
     );
 
-    // Slab method for unit box [-1, 1]^3
+    // 针对单位立方体 [-1, 1]^3 的 slab 法
     let mut t_min = f64::NEG_INFINITY;
     let mut t_max = f64::INFINITY;
 
@@ -473,9 +474,9 @@ pub fn ray_obb(ray: &Ray, obb: &OrientedBoundingBox) -> Option<f64> {
     Some(if t_min >= 0.0 { t_min } else { t_max })
 }
 
-/// Computes the intersection of a ray with an axis-aligned bounding box.
-/// Returns the distance along the ray, or None.
-/// Maps to `IntersectionTests.rayAxisAlignedBoundingBox`
+/// 计算射线与轴对齐包围盒的相交。
+/// 返回沿射线的距离，或 None。
+/// 映射到 `IntersectionTests.rayAxisAlignedBoundingBox`
 pub fn ray_aabb(ray: &Ray, aabb: &AxisAlignedBoundingBox) -> Option<f64> {
     let mut t_min = f64::NEG_INFINITY;
     let mut t_max = f64::INFINITY;
@@ -512,11 +513,11 @@ pub fn ray_aabb(ray: &Ray, aabb: &AxisAlignedBoundingBox) -> Option<f64> {
     Some(if t_min >= 0.0 { t_min } else { t_max })
 }
 
-// --- 2D Intersection Tests ---
-// Maps to CesiumJS `Intersections2D`
+// --- 2D 相交测试 ---
+// 映射到 CesiumJS `Intersections2D`
 
-/// Computes the barycentric coordinates of a point in a triangle.
-/// Maps to `Intersections2D.computeBarycentricCoordinates`
+/// 计算三角形内某点的重心坐标。
+/// 映射到 `Intersections2D.computeBarycentricCoordinates`
 #[allow(clippy::too_many_arguments)]
 pub fn compute_barycentric_coordinates(
     point_x: f64,
@@ -542,11 +543,11 @@ pub fn compute_barycentric_coordinates(
     (u, v, w)
 }
 
-/// Splits a 2D triangle at an axis-aligned threshold and returns the resulting polygon.
-/// Returns a flat Vec<f64> where:
-/// - Values 0, 1, 2 are original vertex indices
-/// - Value -1 indicates a new interpolated vertex, followed by (from_idx, to_idx, ratio)
-/// Maps to `Intersections2D.clipTriangleAtAxisAlignedThreshold`
+/// 在轴对齐阈值处分割一个 2D 三角形并返回所得多边形。
+/// 返回一个扁平的 Vec<f64>，其中：
+/// - 值 0、1、2 是原始顶点索引
+/// - 值 -1 表示一个新的插值顶点，其后跟着 (from_idx, to_idx, ratio)
+/// 映射到 `Intersections2D.clipTriangleAtAxisAlignedThreshold`
 pub fn clip_triangle_at_axis_aligned_threshold(
     threshold: f64,
     keep_above: bool,
@@ -627,17 +628,17 @@ pub fn clip_triangle_at_axis_aligned_threshold(
             result.extend_from_slice(&[-1.0, 1.0, 2.0, u12_ratio]);
         }
     } else if num_behind != 3 {
-        // Completely in front of threshold
+        // 完全在阈值前方
         result.extend_from_slice(&[0.0, 1.0, 2.0]);
     }
-    // else: completely behind → empty
+    // 否则：完全在后 → 为空
 
     result
 }
 
-/// Computes the intersection of two 2D line segments.
-/// Returns Some((x, y)) if they intersect, None if parallel/coincident/non-intersecting.
-/// Maps to `Intersections2D.computeLineSegmentLineSegmentIntersection`
+/// 计算两条 2D 线段的交点。
+/// 若相交则返回 Some((x, y))，若平行/共线/不相交则返回 None。
+/// 映射到 `Intersections2D.computeLineSegmentLineSegmentIntersection`
 #[allow(clippy::too_many_arguments)]
 pub fn compute_line_segment_line_segment_intersection(
     x00: f64,

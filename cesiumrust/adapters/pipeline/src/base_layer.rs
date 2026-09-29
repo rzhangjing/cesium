@@ -1,40 +1,39 @@
-//! Base-layer zoom exemption logic.
+//! 基础层 zoom 豁免逻辑。
 //!
-//! Mirrors `dynamic_globe.rs:1483` — tiles at `z <= BASE_LAYER_ZOOM` form the
-//! permanent global fallback layer (CesiumJS's base imagery layer role).
-//! They are downloaded once at startup and never despawned or evicted, so
-//! fast pans into never-visited regions show blurry imagery instead of the
-//! black base sphere while fine tiles load.
+//! 照搬 `dynamic_globe.rs:1483` —— `z <= BASE_LAYER_ZOOM` 的瓦片构成
+//! 永久性的全局回退层（即 CesiumJS 基础影像层的角色）。
+//! 它们在启动时下载一次，永不 despawn 或驱逐，因此向从未访问区域的
+//! 快速平移会显示模糊影像，而非细瓦片加载期间的黑色基础球体。
 
-/// Determines whether a tile key belongs to the permanently-resident base layer.
+/// 判断一个瓦片键是否属于常驻的基础层。
 ///
-/// The zoom component is extracted via the provided closure, keeping this
-/// generic over key types (e.g. `(u32, u32, u32)` where `.2` is zoom).
+/// zoom 分量通过提供的闭包提取，从而保持此函数对键类型通用
+/// （例如 `(u32, u32, u32)`，其中 `.2` 是 zoom）。
 ///
-/// Corresponds to `dynamic_globe.rs:1483`:
+/// 对应 `dynamic_globe.rs:1483`：
 /// ```text
 /// if old.2 <= BASE_LAYER_ZOOM { continue; }
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct BaseLayerGuard {
-    /// Maximum zoom level that is permanently exempt from eviction.
-    /// Default: 3 (`dynamic_globe.rs:70`).
+    /// 永久豁免驱逐的最大 zoom 层级。
+    /// 默认：3（`dynamic_globe.rs:70`）。
     pub max_zoom: u32,
 }
 
 impl BaseLayerGuard {
-    /// Create a guard with the default base layer zoom (3).
+    /// 创建一个使用默认基础层 zoom（3）的守卫。
     pub fn new() -> Self {
         Self { max_zoom: 3 }
     }
 
-    /// Create a guard with a custom base layer zoom.
+    /// 创建一个使用自定义基础层 zoom 的守卫。
     pub fn with_zoom(max_zoom: u32) -> Self {
         Self { max_zoom }
     }
 
-    /// Returns true if the given zoom level is within the base layer
-    /// (permanently exempt from eviction/despawn).
+    /// 若给定的 zoom 层级位于基础层内（永久豁免驱逐/despawn），
+    /// 则返回 true。
     #[inline]
     pub fn is_base_layer(&self, zoom: u32) -> bool {
         zoom <= self.max_zoom

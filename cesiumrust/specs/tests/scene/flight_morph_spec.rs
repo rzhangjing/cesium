@@ -1,11 +1,11 @@
-//! Scene/CameraFlight + SceneMorph → Rust integration tests.
+//! Scene/CameraFlight + SceneMorph → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Scene/Camera.js (flyTo/flyToBoundingSphere/flyHome)
-//! - Scene/Scene.js (morphing transitions)
+//! - Scene/Scene.js（变形过渡）
 //!
-//! A-class tests: CameraFlight creation/update/progress/complete/apply,
-//! compute_look_at/compute_set_view, SceneMorph start/update/complete/cancel.
+//! A 类测试：CameraFlight 创建/更新/进度/完成/应用、
+//! compute_look_at/compute_set_view、SceneMorph start/update/complete/cancel。
 
 use cesium_camera::{Camera, EasingFunction, SceneMode};
 use cesium_geospatial::cartographic::Cartographic;
@@ -22,7 +22,7 @@ fn test_camera() -> Camera {
     )
 }
 
-// === CameraFlight creation ===
+// === CameraFlight 创建 ===
 
 #[test]
 fn flight_fly_to_creation() {
@@ -41,7 +41,7 @@ fn flight_minimum_duration() {
     let camera = test_camera();
     let dest = DVec3::new(6378137.0, 0.0, 0.0);
     let flight = CameraFlight::fly_to(&camera, dest, None, None, 0.0);
-    // Duration clamped to 0.001
+    // 时长被钳制到 0.001
     assert!(flight.duration >= 0.001);
 }
 
@@ -64,7 +64,7 @@ fn flight_explicit_direction() {
     assert!((flight.end_direction - dir.normalize()).length() < 1e-10);
 }
 
-// === CameraFlight update ===
+// === CameraFlight 更新 ===
 
 #[test]
 fn flight_update_start() {
@@ -90,7 +90,7 @@ fn flight_update_after_complete_returns_none() {
     let camera = test_camera();
     let dest = DVec3::new(6378137.0, 0.0, 0.0);
     let mut flight = CameraFlight::fly_to(&camera, dest, None, None, 1.0);
-    flight.update(2.0); // Exceeds duration
+    flight.update(2.0); // 超出时长
     assert!(flight.update(0.1).is_none());
 }
 
@@ -158,7 +158,7 @@ fn look_at_direction_points_to_target() {
     let (position, direction, up) = compute_look_at(target, offset);
     let expected_dir = (target - position).normalize();
     assert!((direction - expected_dir).length() < 1e-10);
-    // Up perpendicular to direction
+    // up 垂直于 direction
     assert!(direction.dot(up).abs() < 1e-10);
 }
 
@@ -248,7 +248,7 @@ fn morph_cancel_restores_source() {
     let mut morph = SceneMorph::new();
     morph.start_morph(&camera, SceneMode::Scene3D, SceneMode::Scene2D, &Ellipsoid::WGS84, 5.0);
     let mut cam = camera.clone();
-    morph.update(1.0, &mut cam); // Partially morph
+    morph.update(1.0, &mut cam); // 部分变形
     morph.cancel_morph(&mut cam);
     assert!(!morph.is_morphing());
     assert_eq!(cam.mode, SceneMode::Scene3D);

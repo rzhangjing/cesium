@@ -1,25 +1,25 @@
-//! TimeInterval - time interval with start/stop inclusion flags.
-//! Maps to CesiumJS `Core/TimeInterval.js`
+//! TimeInterval - 带开始/停止包含标志的时间区间。
+//! 映射到 CesiumJS `Core/TimeInterval.js`
 
 use crate::julian_date::JulianDate;
 use serde::{Deserialize, Serialize};
 
-/// An interval defined by a start and stop time, optionally including those times.
-/// Maps to CesiumJS `TimeInterval`
+/// 由开始和停止时间定义的区间，可选择包含这些时间。
+/// 映射到 CesiumJS `TimeInterval`
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TimeInterval {
-    /// The start time of the interval.
+    /// 区间的开始时间。
     pub start: JulianDate,
-    /// The stop time of the interval.
+    /// 区间的停止时间。
     pub stop: JulianDate,
-    /// Whether the start time is included in the interval.
+    /// 开始时间是否包含在区间内。
     pub is_start_included: bool,
-    /// Whether the stop time is included in the interval.
+    /// 停止时间是否包含在区间内。
     pub is_stop_included: bool,
 }
 
 impl TimeInterval {
-    /// Creates a new TimeInterval.
+    /// 创建一个新的 TimeInterval。
     pub fn new(
         start: JulianDate,
         stop: JulianDate,
@@ -34,8 +34,8 @@ impl TimeInterval {
         }
     }
 
-    /// Returns true if this interval is empty.
-    /// Maps to `TimeInterval.isEmpty`
+    /// 若此区间为空则返回 true。
+    /// 映射到 `TimeInterval.isEmpty`
     pub fn is_empty(&self) -> bool {
         let cmp = self.stop.cmp(&self.start);
         cmp == std::cmp::Ordering::Less
@@ -43,8 +43,8 @@ impl TimeInterval {
                 && (!self.is_start_included || !self.is_stop_included))
     }
 
-    /// Returns true if the interval contains the given time.
-    /// Maps to `TimeInterval.contains`
+    /// 若区间包含给定时间则返回 true。
+    /// 映射到 `TimeInterval.contains`
     pub fn contains(&self, time: &JulianDate) -> bool {
         if self.is_empty() {
             return false;
@@ -68,10 +68,10 @@ impl TimeInterval {
         after_start && before_stop
     }
 
-    /// Computes the intersection of two intervals.
-    /// Maps to `TimeInterval.intersect`
+    /// 计算两个区间的交集。
+    /// 映射到 `TimeInterval.intersect`
     pub fn intersect(&self, other: &Self) -> Self {
-        // Determine the later start
+        // 确定较晚的开始时间
         let (start, is_start_included) = if self.start > other.start {
             (self.start, self.is_start_included)
         } else if other.start > self.start {
@@ -80,7 +80,7 @@ impl TimeInterval {
             (self.start, self.is_start_included && other.is_start_included)
         };
 
-        // Determine the earlier stop
+        // 确定较早的停止时间
         let (stop, is_stop_included) = if self.stop < other.stop {
             (self.stop, self.is_stop_included)
         } else if other.stop < self.stop {
@@ -97,7 +97,7 @@ impl TimeInterval {
         }
     }
 
-    /// An empty interval.
+    /// 一个空区间。
     pub const EMPTY: Self = Self {
         start: JulianDate { day_number: 0, seconds_of_day: 0.0 },
         stop: JulianDate { day_number: 0, seconds_of_day: 0.0 },
@@ -105,8 +105,8 @@ impl TimeInterval {
         is_stop_included: false,
     };
 
-    /// Creates a TimeInterval from an ISO 8601 interval string ("start/stop").
-    /// Maps to `TimeInterval.fromIso8601`
+    /// 从 ISO 8601 区间字符串（"start/stop"）创建 TimeInterval。
+    /// 映射到 `TimeInterval.fromIso8601`
     pub fn from_iso8601(
         iso8601: &str,
         is_start_included: bool,
@@ -121,13 +121,13 @@ impl TimeInterval {
         Some(Self::new(start, stop, is_start_included, is_stop_included))
     }
 
-    /// Formats this interval as an ISO 8601 interval string.
-    /// Maps to `TimeInterval.toIso8601`
+    /// 将此区间格式化为 ISO 8601 区间字符串。
+    /// 映射到 `TimeInterval.toIso8601`
     pub fn to_iso8601(&self) -> String {
         format!("{}/{}", self.start.to_iso8601(), self.stop.to_iso8601())
     }
 
-    /// Formats this interval as an ISO 8601 interval string with specified precision.
+    /// 以指定精度将此区间格式化为 ISO 8601 区间字符串。
     pub fn to_iso8601_with_precision(&self, precision: Option<usize>) -> String {
         format!(
             "{}/{}",
@@ -136,8 +136,8 @@ impl TimeInterval {
         )
     }
 
-    /// Compares two intervals for equality within an epsilon (seconds).
-    /// Maps to `TimeInterval.equalsEpsilon`
+    /// 在 epsilon（秒）范围内比较两个区间是否相等。
+    /// 映射到 `TimeInterval.equalsEpsilon`
     pub fn equals_epsilon(&self, other: &Self, epsilon: f64) -> bool {
         self.start.equals_epsilon(&other.start, epsilon)
             && self.stop.equals_epsilon(&other.stop, epsilon)
@@ -145,7 +145,7 @@ impl TimeInterval {
             && self.is_stop_included == other.is_stop_included
     }
 
-    /// The duration of the interval in seconds.
+    /// 区间的时长（秒）。
     pub fn duration_seconds(&self) -> f64 {
         if self.is_empty() {
             0.0

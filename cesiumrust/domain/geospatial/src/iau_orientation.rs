@@ -1,8 +1,8 @@
-//! IAU 2000 Orientation model + IauOrientationAxes.
+//! IAU 2000 姿态模型 + IauOrientationAxes。
 //!
-//! Faithful port of CesiumJS `Iau2000Orientation.js` and `IauOrientationAxes.js`.
-//! Data from the Report of the IAU/IAG Working Group on Cartographic
-//! Coordinates and Rotational Elements: 2000.
+//! 对 CesiumJS `Iau2000Orientation.js` 和 `IauOrientationAxes.js` 的忠实移植。
+//! 数据来自报告《Report of the IAU/IAG Working Group on Cartographic
+//! Coordinates and Rotational Elements: 2000》。
 
 use cesium_time::JulianDate;
 use glam::{DVec3, DMat3, DQuat};
@@ -28,7 +28,7 @@ const C11: f64 = 0.0036096;
 const C12: f64 = 0.1643573;
 const C13: f64 = 12.9590088;
 
-/// Orientation parameters for a body.
+/// 某天体的姿态参数。
 #[derive(Clone, Debug, Default)]
 pub struct IauOrientationParameters {
     pub right_ascension: f64,
@@ -37,7 +37,7 @@ pub struct IauOrientationParameters {
     pub rotation_rate: f64,
 }
 
-/// Compute the orientation parameters for the Moon.
+/// 计算月球的姿态参数。
 pub fn compute_moon(date: &JulianDate) -> IauOrientationParameters {
     let date_tt = date.add_seconds(TDT_MINUS_TAI);
     let d = date_tt.total_days() - J2000D;
@@ -149,7 +149,7 @@ fn zero_to_two_pi(angle: f64) -> f64 {
     result
 }
 
-/// Computes the rotation matrix from right ascension and declination.
+/// 由赤经和赤纬计算旋转矩阵。
 fn compute_rotation_matrix(alpha: f64, delta: f64) -> DMat3 {
     let x_axis = DVec3::new(
         (alpha + PI_OVER_TWO).cos(),
@@ -162,8 +162,8 @@ fn compute_rotation_matrix(alpha: f64, delta: f64) -> DMat3 {
 
     let y_axis = z_axis.cross(x_axis);
 
-    // CesiumJS sets result[0]=xAxis.x, result[1]=yAxis.x, result[2]=zAxis.x
-    // meaning rows are the axes. glam from_cols_array is column-major:
+    // CesiumJS 设置 result[0]=xAxis.x, result[1]=yAxis.x, result[2]=zAxis.x，
+    // 即每一行是一个轴。glam 的 from_cols_array 是列主序：
     // col0=(row0[0],row1[0],row2[0]) = (x.x, y.x, z.x)
     DMat3::from_cols_array(&[
         x_axis.x, y_axis.x, z_axis.x,
@@ -172,9 +172,9 @@ fn compute_rotation_matrix(alpha: f64, delta: f64) -> DMat3 {
     ])
 }
 
-/// Computes a rotation from ICRF to a Globe's Fixed axes (Moon).
+/// 计算从 ICRF 到某 Globe 的 Fixed 轴的旋转（月球）。
 ///
-/// This is the `IauOrientationAxes.evaluate()` method using `compute_moon` as the compute function.
+/// 这就是以 `compute_moon` 为计算函数的 `IauOrientationAxes.evaluate()` 方法。
 pub fn evaluate_icrf_to_fixed(date: &JulianDate) -> DMat3 {
     let alpha_delta_w = compute_moon(date);
     let prec_mtx = compute_rotation_matrix(alpha_delta_w.right_ascension, alpha_delta_w.declination);

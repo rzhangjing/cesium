@@ -1,7 +1,7 @@
-//! Expression math function tests.
+//! Expression 数学函数测试。
 //!
-//! Ports A-class tests from CesiumJS ExpressionSpec.js for math functions:
-//! trig, rounding, exponential, interpolation, HSL color.
+//! 移植自 CesiumJS ExpressionSpec.js 的数学函数 A 类测试：
+//! 三角、取整、指数、插值、HSL 颜色。
 
 use cesium_tileset::styling::Expression;
 use std::collections::HashMap;
@@ -20,7 +20,7 @@ fn eval_color(expr: &str) -> [f64; 4] {
     parsed.evaluate(&empty()).as_color()
 }
 
-// === Trigonometric functions ===
+// === 三角函数 ===
 
 #[test]
 fn expression_cos_function() {
@@ -64,7 +64,7 @@ fn expression_atan2_function() {
     assert!((result - std::f64::consts::FRAC_PI_4).abs() < 1e-10);
 }
 
-// === Angle conversion ===
+// === 角度转换 ===
 
 #[test]
 fn expression_radians_function() {
@@ -78,7 +78,7 @@ fn expression_degrees_function() {
     assert!((result - 180.0).abs() < 1e-8);
 }
 
-// === Rounding / sign ===
+// === 取整 / 符号 ===
 
 #[test]
 fn expression_sign_positive() {
@@ -117,7 +117,7 @@ fn expression_fract_function() {
     assert!((result - 0.75).abs() < 1e-10);
 }
 
-// === Exponential / logarithmic ===
+// === 指数 / 对数 ===
 
 #[test]
 fn expression_exp_function() {
@@ -155,7 +155,7 @@ fn expression_mod_function() {
     assert!((result - 1.0).abs() < 1e-10);
 }
 
-// === Interpolation ===
+// === 插值 ===
 
 #[test]
 fn expression_mix_function() {
@@ -169,7 +169,7 @@ fn expression_mix_function_endpoints() {
     assert!((eval_num("mix(2.0, 8.0, 1.0)") - 8.0).abs() < 1e-10);
 }
 
-// === HSL color constructors ===
+// === HSL 颜色构造 ===
 
 #[test]
 fn expression_hsl_red() {
@@ -203,7 +203,7 @@ fn expression_hsla_with_alpha() {
     assert!((c[3] - 0.5).abs() < 1e-6, "a={}", c[3]);
 }
 
-// === Combined expressions ===
+// === 组合表达式 ===
 
 #[test]
 fn expression_nested_math() {

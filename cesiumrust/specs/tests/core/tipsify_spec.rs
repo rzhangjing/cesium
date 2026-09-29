@@ -1,15 +1,15 @@
-//! Core/TipsifySpec.js → Rust integration tests
-//! 13 original it() blocks → 4 A-class tests ported (9 throws = C-class compile-time safety)
+//! Core/TipsifySpec.js → Rust 集成测试
+//! 13 个原始 it() 块 → 移植 4 个 A 类测试（9 个 throws = C 类，编译期安全）
 //!
-//! Skipped C-class tests:
-//! - "throws when calculating ACMR (1-4 of 4)" - compile-time type safety
-//! - "throws when executing Tipsify (1-5 of 5)" - compile-time type safety
+//! 跳过的 C 类测试：
+//! - "throws when calculating ACMR (1-4 of 4)" - 编译期类型安全
+//! - "throws when executing Tipsify (1-5 of 5)" - 编译期类型安全
 
 use cesium_geospatial::tipsify::{calculate_acmr, tipsify};
 
 #[test]
 fn can_calculate_the_acmr() {
-    // Hexagon formed from 6 triangles, 7 vertices
+    // 由 6 个三角形、7 个顶点构成的六边形
     let indices: Vec<u32> = vec![0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 1, 6];
     let acmr = calculate_acmr(&indices, Some(6), 3);
     assert_eq!(acmr, 2.0);

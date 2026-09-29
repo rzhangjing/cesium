@@ -1,6 +1,6 @@
-//! Ported from `packages/engine/Specs/Core/EncodedCartesian3Spec.js` (13 it(), 5 A-class)
+//! 移植自 `packages/engine/Specs/Core/EncodedCartesian3Spec.js`（13 个 it()，5 个 A 类）
 //!
-//! 8 throws tests omitted (C-class: Rust type system enforces valid inputs).
+//! 省略 8 个 throws 测试（C 类：Rust 类型系统强制输入合法）。
 
 use cesium_geospatial::encoded_cartesian3::*;
 use glam::DVec3;
@@ -14,14 +14,14 @@ fn construct_with_default_values() {
 
 #[test]
 fn encode_encodes_a_negative_value() {
-    // Original spec title says "positive" but passes -10000000.0
+    // 原始规格标题写着 "positive"，但传入的是 -10000000.0
     let (high, low) = encode(-10000000.0);
     assert_eq!(high + low, -10000000.0);
 }
 
 #[test]
 fn encode_encodes_a_positive_value() {
-    // Original spec title says "negative" but passes 10000000.0
+    // 原始规格标题写着 "negative"，但传入的是 10000000.0
     let (high, low) = encode(10000000.0);
     assert_eq!(high + low, 10000000.0);
 }

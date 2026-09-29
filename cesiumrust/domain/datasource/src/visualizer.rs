@@ -1,9 +1,9 @@
-//! Visualizer: manages entity-to-geometry mapping and batch processing.
+//! Visualizer：管理实体到几何的映射与批处理。
 //!
-//! Maps to CesiumJS `DataSources/GeometryVisualizer.js`, `DataSources/Visualizer.js`
+//! 映射到 CesiumJS `DataSources/GeometryVisualizer.js`、`DataSources/Visualizer.js`
 //!
-//! The visualizer tracks entities from an EntityCollection, converts their
-//! graphics properties into geometry instances, and manages static/dynamic batching.
+//! 该 visualizer 跟踪来自 EntityCollection 的实体，将其图形属性
+//! 转换为几何实例，并管理静态/动态批处理。
 
 use std::collections::HashMap;
 
@@ -12,23 +12,23 @@ use cesium_geospatial::Ellipsoid;
 use crate::entity_collection::EntityCollection;
 use crate::geometry_updater::{update_entity_geometry, EntityGeometry, GeometryInstance};
 
-/// A visualizer that manages geometry generation for a collection of entities.
+/// 一个为实体集合管理几何生成的 visualizer。
 ///
-/// Maps to CesiumJS `DataSources/GeometryVisualizer.js`
+/// 映射到 CesiumJS `DataSources/GeometryVisualizer.js`
 #[derive(Debug)]
 pub struct GeometryVisualizer {
-    /// Cached geometry per entity ID.
+    /// 每个实体 ID 缓存的几何。
     geometry_cache: HashMap<String, EntityGeometry>,
-    /// Last update time.
+    /// 上一次更新的时间。
     last_time: f64,
-    /// The ellipsoid used for coordinate conversion.
+    /// 用于坐标转换的椭球。
     ellipsoid: Ellipsoid,
-    /// Whether the visualizer needs a full rebuild.
+    /// visualizer 是否需要完全重建。
     dirty: bool,
 }
 
 impl GeometryVisualizer {
-    /// Creates a new geometry visualizer.
+    /// 创建新的几何 visualizer。
     pub fn new(ellipsoid: Ellipsoid) -> Self {
         Self {
             geometry_cache: HashMap::new(),
@@ -38,19 +38,19 @@ impl GeometryVisualizer {
         }
     }
 
-    /// Creates a new geometry visualizer with WGS84 ellipsoid.
+    /// 创建一个使用 WGS84 椭球的新几何 visualizer。
     pub fn wgs84() -> Self {
         Self::new(Ellipsoid::WGS84)
     }
 
-    /// Marks the visualizer as dirty (needs full rebuild).
+    /// 将 visualizer 标记为脏（需要完全重建）。
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
     }
 
-    /// Updates the visualizer for the given entity collection at the given time.
+    /// 在给定时间处为给定实体集合更新 visualizer。
     ///
-    /// Returns the number of entities that were updated.
+    /// 返回被更新的实体数量。
     pub fn update(&mut self, entities: &EntityCollection, time: f64) -> usize {
         let time_changed = (time - self.last_time).abs() > f64::EPSILON;
         self.last_time = time;
@@ -61,11 +61,11 @@ impl GeometryVisualizer {
 
         let mut updated = 0;
 
-        // Remove entities that no longer exist
+        // 移除已不再存在的实体
         let current_ids: Vec<String> = entities.values().map(|e| e.id.clone()).collect();
         self.geometry_cache.retain(|id, _| current_ids.contains(id));
 
-        // Update or add entities
+        // 更新或添加实体
         for entity in entities.values() {
             let needs_update = self.dirty
                 || time_changed
@@ -82,12 +82,12 @@ impl GeometryVisualizer {
         updated
     }
 
-    /// Gets the geometry for a specific entity.
+    /// 获取特定实体的几何。
     pub fn get_geometry(&self, entity_id: &str) -> Option<&EntityGeometry> {
         self.geometry_cache.get(entity_id)
     }
 
-    /// Returns all fill geometry instances across all entities.
+    /// 返回跨所有实体的全部填充几何实例。
     pub fn all_fill_instances(&self) -> Vec<&GeometryInstance> {
         self.geometry_cache
             .values()
@@ -95,7 +95,7 @@ impl GeometryVisualizer {
             .collect()
     }
 
-    /// Returns all outline geometry instances across all entities.
+    /// 返回跨所有实体的全部轮廓几何实例。
     pub fn all_outline_instances(&self) -> Vec<&GeometryInstance> {
         self.geometry_cache
             .values()
@@ -103,7 +103,7 @@ impl GeometryVisualizer {
             .collect()
     }
 
-    /// Returns all geometry instances (fill + outline).
+    /// 返回所有几何实例（填充 + 轮廓）。
     pub fn all_instances(&self) -> Vec<&GeometryInstance> {
         self.geometry_cache
             .values()
@@ -113,7 +113,7 @@ impl GeometryVisualizer {
             .collect()
     }
 
-    /// Total number of geometry instances.
+    /// 几何实例总数。
     pub fn instance_count(&self) -> usize {
         self.geometry_cache
             .values()
@@ -121,78 +121,78 @@ impl GeometryVisualizer {
             .sum()
     }
 
-    /// Number of entities being tracked.
+    /// 被跟踪的实体数量。
     pub fn entity_count(&self) -> usize {
         self.geometry_cache.len()
     }
 
-    /// Removes geometry for a specific entity.
+    /// 移除特定实体的几何。
     pub fn remove_entity(&mut self, entity_id: &str) {
         self.geometry_cache.remove(entity_id);
     }
 
-    /// Clears all cached geometry.
+    /// 清除所有缓存的几何。
     pub fn clear(&mut self) {
         self.geometry_cache.clear();
         self.dirty = true;
     }
 }
 
-/// A static geometry batch that combines multiple geometry instances
-/// into a single batch for efficient rendering.
+/// 一个静态几何批次，将多个几何实例
+/// 合并为单个批次以高效渲染。
 ///
-/// Maps to CesiumJS `DataSources/StaticGeometryColorBatch.js`
+/// 映射到 CesiumJS `DataSources/StaticGeometryColorBatch.js`
 #[derive(Debug, Default)]
 pub struct StaticGeometryBatch {
-    /// Batched fill instances.
+    /// 批量处理的填充实例。
     pub fill_instances: Vec<GeometryInstance>,
-    /// Batched outline instances.
+    /// 批量处理的轮廓实例。
     pub outline_instances: Vec<GeometryInstance>,
 }
 
 impl StaticGeometryBatch {
-    /// Creates a new empty batch.
+    /// 创建新的空批次。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Adds geometry instances to the batch.
+    /// 向批次添加几何实例。
     pub fn add(&mut self, geometry: &EntityGeometry) {
         self.fill_instances.extend(geometry.fill_instances.iter().cloned());
         self.outline_instances.extend(geometry.outline_instances.iter().cloned());
     }
 
-    /// Total number of instances in the batch.
+    /// 批次中实例总数。
     pub fn len(&self) -> usize {
         self.fill_instances.len() + self.outline_instances.len()
     }
 
-    /// Returns true if the batch is empty.
+    /// 若批次为空则返回 true。
     pub fn is_empty(&self) -> bool {
         self.fill_instances.is_empty() && self.outline_instances.is_empty()
     }
 
-    /// Clears the batch.
+    /// 清除批次。
     pub fn clear(&mut self) {
         self.fill_instances.clear();
         self.outline_instances.clear();
     }
 }
 
-/// A dynamic geometry updater that regenerates geometry each frame
-/// for entities with time-dynamic properties.
+/// 一个动态几何更新器，对于具有时间动态属性的
+/// 实体，每帧重新生成几何。
 ///
-/// Maps to CesiumJS `DataSources/DynamicGeometryUpdater.js`
+/// 映射到 CesiumJS `DataSources/DynamicGeometryUpdater.js`
 #[derive(Debug)]
 pub struct DynamicGeometryUpdater {
-    /// Entity IDs that have dynamic (time-varying) geometry.
+    /// 具有动态（随时间变化）几何的实体 ID。
     dynamic_entities: Vec<String>,
-    /// The ellipsoid used for coordinate conversion.
+    /// 用于坐标转换的椭球。
     ellipsoid: Ellipsoid,
 }
 
 impl DynamicGeometryUpdater {
-    /// Creates a new dynamic geometry updater.
+    /// 创建新的动态几何更新器。
     pub fn new(ellipsoid: Ellipsoid) -> Self {
         Self {
             dynamic_entities: Vec::new(),
@@ -200,19 +200,19 @@ impl DynamicGeometryUpdater {
         }
     }
 
-    /// Registers an entity as dynamic.
+    /// 将一个实体注册为动态。
     pub fn add_entity(&mut self, entity_id: &str) {
         if !self.dynamic_entities.contains(&entity_id.to_string()) {
             self.dynamic_entities.push(entity_id.to_string());
         }
     }
 
-    /// Removes an entity from dynamic tracking.
+    /// 将一个实体从动态跟踪中移除。
     pub fn remove_entity(&mut self, entity_id: &str) {
         self.dynamic_entities.retain(|id| id != entity_id);
     }
 
-    /// Updates dynamic geometry for all tracked entities at the given time.
+    /// 在给定时间处为所有被跟踪的实体更新动态几何。
     pub fn update(&self, entities: &EntityCollection, time: f64) -> Vec<(String, EntityGeometry)> {
         self.dynamic_entities
             .iter()
@@ -225,7 +225,7 @@ impl DynamicGeometryUpdater {
             .collect()
     }
 
-    /// Number of dynamic entities being tracked.
+    /// 被跟踪的动态实体数量。
     pub fn entity_count(&self) -> usize {
         self.dynamic_entities.len()
     }
@@ -278,7 +278,7 @@ mod tests {
 
         viz.update(&collection, 0.0);
         let updated = viz.update(&collection, 0.0);
-        assert_eq!(updated, 0); // No change
+        assert_eq!(updated, 0); // 无变化
     }
 
     #[test]
@@ -288,7 +288,7 @@ mod tests {
 
         viz.update(&collection, 0.0);
         let updated = viz.update(&collection, 1.0);
-        assert_eq!(updated, 2); // Time changed, all updated
+        assert_eq!(updated, 2); // 时间变化，全部更新
     }
 
     #[test]
@@ -337,7 +337,7 @@ mod tests {
         batch.add(&geo);
         assert!(batch.is_empty());
 
-        // Add real geometry
+        // 添加真实几何
         let mut viz = GeometryVisualizer::wgs84();
         let collection = make_collection();
         viz.update(&collection, 0.0);

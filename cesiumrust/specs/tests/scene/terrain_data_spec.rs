@@ -1,12 +1,12 @@
-//! Core/HeightmapTerrainData + QuantizedMeshTerrainData → Rust integration tests.
+//! Core/HeightmapTerrainData + QuantizedMeshTerrainData → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Core/HeightmapTerrainData.js
 //! - Core/QuantizedMeshTerrainData.js
 //!
-//! A-class tests: heightmap get/interpolate/create_mesh/child_mask,
-//! quantized mesh vertex accessors/create_mesh/skirts/child_mask.
-//! C-class omitted: Worker creation, ArrayBuffer transfer, upsampling (needs full pipeline).
+//! A 类测试：heightmap get/interpolate/create_mesh/child_mask、
+//! quantized mesh 顶点访问器/create_mesh/skirts/child_mask。
+//! 省略的 C 类：Worker 创建、ArrayBuffer 转移、upsampling（需要完整流水线）。
 
 use cesium_terrain::{HeightmapTerrainData, QuantizedMeshTerrainData, MAX_SHORT};
 use cesium_geospatial::bounding::BoundingSphere;
@@ -17,11 +17,11 @@ use glam::DVec3;
 // === HeightmapTerrainData ===
 
 fn make_heightmap() -> HeightmapTerrainData {
-    // 4x3 heightmap (width=4, height=3)
+    // 4x3 高度图（width=4, height=3）
     let heights = vec![
-        0.0, 100.0, 200.0, 300.0,   // row 0 (south)
-        50.0, 150.0, 250.0, 350.0,  // row 1 (middle)
-        100.0, 200.0, 300.0, 400.0, // row 2 (north)
+        0.0, 100.0, 200.0, 300.0,   // 行 0（南）
+        50.0, 150.0, 250.0, 350.0,  // 行 1（中）
+        100.0, 200.0, 300.0, 400.0, // 行 2（北）
     ];
     HeightmapTerrainData::new(heights, 4, 3, 0.0, 400.0)
 }
@@ -56,20 +56,20 @@ fn heightmap_get_height_out_of_bounds() {
 #[test]
 fn heightmap_interpolate_corners() {
     let data = make_heightmap();
-    // (0,0) = SW corner = heights[0] = 0.0
+    // (0,0) = SW 角 = heights[0] = 0.0
     assert!((data.interpolate_height(0.0, 0.0) - 0.0).abs() < 0.01);
-    // (1,0) = SE corner = heights[3] = 300.0
+    // (1,0) = SE 角 = heights[3] = 300.0
     assert!((data.interpolate_height(1.0, 0.0) - 300.0).abs() < 0.01);
-    // (0,1) = NW corner = heights[8] = 100.0
+    // (0,1) = NW 角 = heights[8] = 100.0
     assert!((data.interpolate_height(0.0, 1.0) - 100.0).abs() < 0.01);
-    // (1,1) = NE corner = heights[11] = 400.0
+    // (1,1) = NE 角 = heights[11] = 400.0
     assert!((data.interpolate_height(1.0, 1.0) - 400.0).abs() < 0.01);
 }
 
 #[test]
 fn heightmap_interpolate_midpoint() {
     let data = make_heightmap();
-    // Center of the grid: bilinear interpolation
+    // 网格中心：双线性插值
     // u=0.5 → col_f=1.5, v=0.5 → row_f=1.0
     // row0=1, row1=1 (since row_f=1.0 exactly → row0=1, row1=min(2, 2)=2? no, floor(1.0)=1)
     // Actually row_f = 0.5 * (3-1) = 1.0, so row0=1, row1=min(2,2)=2, dv=0.0
@@ -90,9 +90,9 @@ fn heightmap_create_mesh() {
     let ellipsoid = Ellipsoid::WGS84;
     let mesh = data.create_mesh(&rectangle, &ellipsoid);
 
-    // 4*3 = 12 vertices
+    // 4*3 = 12 个顶点
     assert_eq!(mesh.positions.len(), 12);
-    // (4-1)*(3-1)*2*3 = 3*2*6 = 36 indices
+    // (4-1)*(3-1)*2*3 = 3*2*6 = 36 个索引
     assert_eq!(mesh.indices.len(), 36);
     assert!(mesh.normals.is_some());
     assert!(mesh.tex_coords.is_some());
@@ -101,7 +101,7 @@ fn heightmap_create_mesh() {
 #[test]
 fn heightmap_child_mask() {
     let data = make_heightmap();
-    // Default child_tile_mask = 15 (all 4 children)
+    // 默认 child_tile_mask = 15（全部 4 个子块）
     assert!(data.is_child_available(0));
     assert!(data.is_child_available(1));
     assert!(data.is_child_available(2));
@@ -111,7 +111,7 @@ fn heightmap_child_mask() {
 #[test]
 fn heightmap_partial_child_mask() {
     let mut data = make_heightmap();
-    data.child_tile_mask = 0b0101; // Only children 0 and 2
+    data.child_tile_mask = 0b0101; // 仅子块 0 和 2
     assert!(data.is_child_available(0));
     assert!(!data.is_child_available(1));
     assert!(data.is_child_available(2));
@@ -121,14 +121,14 @@ fn heightmap_partial_child_mask() {
 // === QuantizedMeshTerrainData ===
 
 fn make_quantized_mesh() -> QuantizedMeshTerrainData {
-    // 4 vertices forming a quad
+    // 4 个顶点构成一个四边形
     QuantizedMeshTerrainData {
         quantized_vertices: vec![
-            // u values: SW=0, SE=MAX, NW=0, NE=MAX
+            // u 值：SW=0, SE=MAX, NW=0, NE=MAX
             0, MAX_SHORT, 0, MAX_SHORT,
-            // v values: SW=0, SE=0, NW=MAX, NE=MAX
+            // v 值：SW=0, SE=0, NW=MAX, NE=MAX
             0, 0, MAX_SHORT, MAX_SHORT,
-            // height values: all mid-range
+            // height 值：全部居中
             16384, 16384, 16384, 16384,
         ],
         indices: vec![0, 1, 2, 1, 3, 2],
@@ -187,7 +187,7 @@ fn quantized_mesh_child_availability() {
 #[test]
 fn quantized_mesh_partial_child_mask() {
     let mut data = make_quantized_mesh();
-    data.child_tile_mask = 0b1010; // Children 1 and 3
+    data.child_tile_mask = 0b1010; // 子块 1 和 3
     assert!(!data.is_child_available(0));
     assert!(data.is_child_available(1));
     assert!(!data.is_child_available(2));
@@ -215,8 +215,8 @@ fn quantized_mesh_positions_on_ellipsoid() {
     let ellipsoid = Ellipsoid::WGS84;
     let mesh = data.create_mesh(&rectangle, &ellipsoid, 1.0);
 
-    // All positions should be near the ellipsoid surface
-    // Geocentric radius varies from ~6357km (pole) to ~6378km (equator)
+    // 所有位置应接近椭球表面
+    // 地心半径从约 6357km（极点）变化到约 6378km（赤道）
     for pos in &mesh.positions {
         let r = DVec3::new(pos[0], pos[1], pos[2]).length();
         assert!(r > 6350000.0, "radius {} too small", r);
@@ -231,9 +231,9 @@ fn quantized_mesh_create_mesh_with_skirts() {
     let ellipsoid = Ellipsoid::WGS84;
     let mesh = data.create_mesh_with_skirts(&rectangle, &ellipsoid, 1.0);
 
-    // More vertices due to skirts (4 base + skirt vertices)
+    // 由于 skirts 顶点更多（4 个基础 + skirt 顶点）
     assert!(mesh.positions.len() > 4);
-    // More indices due to skirt triangles
+    // 由于 skirt 三角形索引更多
     assert!(mesh.indices.len() > 6);
 }
 
@@ -245,13 +245,13 @@ fn quantized_mesh_uv_coordinates() {
     let mesh = data.create_mesh(&rectangle, &ellipsoid, 1.0);
 
     let uvs = mesh.tex_coords.unwrap();
-    // Vertex 0: u=0/MAX=0, v=0/MAX=0
+    // 顶点 0：u=0/MAX=0, v=0/MAX=0
     assert!((uvs[0][0] - 0.0).abs() < 1e-4);
     assert!((uvs[0][1] - 0.0).abs() < 1e-4);
-    // Vertex 1: u=MAX/MAX=1, v=0/MAX=0
+    // 顶点 1：u=MAX/MAX=1, v=0/MAX=0
     assert!((uvs[1][0] - 1.0).abs() < 1e-4);
     assert!((uvs[1][1] - 0.0).abs() < 1e-4);
-    // Vertex 2: u=0/MAX=0, v=MAX/MAX=1
+    // 顶点 2：u=0/MAX=0, v=MAX/MAX=1
     assert!((uvs[2][0] - 0.0).abs() < 1e-4);
     assert!((uvs[2][1] - 1.0).abs() < 1e-4);
 }
@@ -265,7 +265,7 @@ fn quantized_mesh_max_short_constant() {
 
 #[test]
 fn heightmap_upsample_southwest_child() {
-    // 3x3 uniform gradient: heights[row][col] = row*10 + col
+    // 3x3 均匀梯度：heights[row][col] = row*10 + col
     let heights = vec![
         0.0, 1.0, 2.0,
         10.0, 11.0, 12.0,
@@ -273,18 +273,18 @@ fn heightmap_upsample_southwest_child() {
     ];
     let parent = HeightmapTerrainData::new(heights, 3, 3, 0.0, 22.0);
 
-    // Upsample to SW child (x=0, y=0, level=1) from parent (x=0, y=0, level=0)
+    // 从父块 (x=0, y=0, level=0) 上采样到 SW 子块 (x=0, y=0, level=1)
     let child = parent.upsample(0, 0, 0, 0, 0, 1);
 
-    // SW child covers [0, 0.5] x [0, 0.5] of parent
-    // With 3x3 grid: u=0.5 maps to col_f=1.0 (exact grid point)
-    // Child corner (0,0) = parent (0,0) = 0.0
+    // SW 子块覆盖父块的 [0, 0.5] x [0, 0.5]
+    // 在 3x3 网格下：u=0.5 映射到 col_f=1.0（精确网格点）
+    // 子角点 (0,0) = 父 (0,0) = 0.0
     assert!((child.get_height(0, 0).unwrap() - 0.0).abs() < 1e-10);
-    // Child corner (2,0) = parent (0.5, 0) → col_f=1, row_f=0 → h=1.0
+    // 子角点 (2,0) = 父 (0.5, 0) → col_f=1, row_f=0 → h=1.0
     assert!((child.get_height(2, 0).unwrap() - 1.0).abs() < 1e-10);
-    // Child corner (0,2) = parent (0, 0.5) → col_f=0, row_f=1 → h=10.0
+    // 子角点 (0,2) = 父 (0, 0.5) → col_f=0, row_f=1 → h=10.0
     assert!((child.get_height(0, 2).unwrap() - 10.0).abs() < 1e-10);
-    // Child corner (2,2) = parent (0.5, 0.5) → col_f=1, row_f=1 → h=11.0
+    // 子角点 (2,2) = 父 (0.5, 0.5) → col_f=1, row_f=1 → h=11.0
     assert!((child.get_height(2, 2).unwrap() - 11.0).abs() < 1e-10);
     assert!(child.created_by_upsampling);
 }
@@ -298,17 +298,17 @@ fn heightmap_upsample_eastern_child() {
     ];
     let parent = HeightmapTerrainData::new(heights, 3, 3, 0.0, 22.0);
 
-    // SE child (x=1, y=0)
+    // SE 子块 (x=1, y=0)
     let child = parent.upsample(0, 0, 0, 1, 0, 1);
 
-    // SE child covers [0.5, 1.0] x [0, 0.5] of parent
-    // Child corner (0,0) = parent (0.5, 0) → h=1.0
+    // SE 子块覆盖父块的 [0.5, 1.0] x [0, 0.5]
+    // 子角点 (0,0) = 父 (0.5, 0) → h=1.0
     assert!((child.get_height(0, 0).unwrap() - 1.0).abs() < 1e-10);
-    // Child corner (2,0) = parent (1.0, 0) → h=2.0
+    // 子角点 (2,0) = 父 (1.0, 0) → h=2.0
     assert!((child.get_height(2, 0).unwrap() - 2.0).abs() < 1e-10);
-    // Child corner (0,2) = parent (0.5, 0.5) → h=11.0
+    // 子角点 (0,2) = 父 (0.5, 0.5) → h=11.0
     assert!((child.get_height(0, 2).unwrap() - 11.0).abs() < 1e-10);
-    // Child corner (2,2) = parent (1.0, 0.5) → h=12.0
+    // 子角点 (2,2) = 父 (1.0, 0.5) → h=12.0
     assert!((child.get_height(2, 2).unwrap() - 12.0).abs() < 1e-10);
 }
 
@@ -321,17 +321,17 @@ fn heightmap_upsample_northwest_child() {
     ];
     let parent = HeightmapTerrainData::new(heights, 3, 3, 0.0, 22.0);
 
-    // NW child (x=0, y=1)
+    // NW 子块 (x=0, y=1)
     let child = parent.upsample(0, 0, 0, 0, 1, 1);
 
-    // NW child covers [0, 0.5] x [0.5, 1.0] of parent
-    // Child corner (0,0) = parent (0, 0.5) → col_f=0, row_f=1 → h=10.0
+    // NW 子块覆盖父块的 [0, 0.5] x [0.5, 1.0]
+    // 子角点 (0,0) = 父 (0, 0.5) → col_f=0, row_f=1 → h=10.0
     assert!((child.get_height(0, 0).unwrap() - 10.0).abs() < 1e-10);
-    // Child corner (2,0) = parent (0.5, 0.5) → col_f=1, row_f=1 → h=11.0
+    // 子角点 (2,0) = 父 (0.5, 0.5) → col_f=1, row_f=1 → h=11.0
     assert!((child.get_height(2, 0).unwrap() - 11.0).abs() < 1e-10);
-    // Child corner (0,2) = parent (0, 1.0) → col_f=0, row_f=2 → h=20.0
+    // 子角点 (0,2) = 父 (0, 1.0) → col_f=0, row_f=2 → h=20.0
     assert!((child.get_height(0, 2).unwrap() - 20.0).abs() < 1e-10);
-    // Child corner (2,2) = parent (0.5, 1.0) → col_f=1, row_f=2 → h=21.0
+    // 子角点 (2,2) = 父 (0.5, 1.0) → col_f=1, row_f=2 → h=21.0
     assert!((child.get_height(2, 2).unwrap() - 21.0).abs() < 1e-10);
 }
 
@@ -344,17 +344,17 @@ fn heightmap_upsample_northeast_child() {
     ];
     let parent = HeightmapTerrainData::new(heights, 3, 3, 0.0, 22.0);
 
-    // NE child (x=1, y=1)
+    // NE 子块 (x=1, y=1)
     let child = parent.upsample(0, 0, 0, 1, 1, 1);
 
-    // NE child covers [0.5, 1.0] x [0.5, 1.0] of parent
-    // Child corner (0,0) = parent (0.5, 0.5) → col_f=1, row_f=1 → h=11.0
+    // NE 子块覆盖父块的 [0.5, 1.0] x [0.5, 1.0]
+    // 子角点 (0,0) = 父 (0.5, 0.5) → col_f=1, row_f=1 → h=11.0
     assert!((child.get_height(0, 0).unwrap() - 11.0).abs() < 1e-10);
-    // Child corner (2,0) = parent (1.0, 0.5) → col_f=2, row_f=1 → h=12.0
+    // 子角点 (2,0) = 父 (1.0, 0.5) → col_f=2, row_f=1 → h=12.0
     assert!((child.get_height(2, 0).unwrap() - 12.0).abs() < 1e-10);
-    // Child corner (0,2) = parent (0.5, 1.0) → col_f=1, row_f=2 → h=21.0
+    // 子角点 (0,2) = 父 (0.5, 1.0) → col_f=1, row_f=2 → h=21.0
     assert!((child.get_height(0, 2).unwrap() - 21.0).abs() < 1e-10);
-    // Child corner (2,2) = parent (1.0, 1.0) → col_f=2, row_f=2 → h=22.0
+    // 子角点 (2,2) = 父 (1.0, 1.0) → col_f=2, row_f=2 → h=22.0
     assert!((child.get_height(2, 2).unwrap() - 22.0).abs() < 1e-10);
 }
 
@@ -373,5 +373,5 @@ fn heightmap_upsample_preserves_dimensions() {
 fn heightmap_upsample_rejects_multi_level() {
     let heights = vec![0.0; 4];
     let parent = HeightmapTerrainData::new(heights, 2, 2, 0.0, 0.0);
-    parent.upsample(0, 0, 0, 0, 0, 2); // level diff = 2
+    parent.upsample(0, 0, 0, 0, 0, 2); // 层差 = 2
 }

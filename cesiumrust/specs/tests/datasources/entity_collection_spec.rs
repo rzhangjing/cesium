@@ -1,15 +1,15 @@
-//! Faithful port of CesiumJS DataSources/EntityCollectionSpec.js A-class tests.
+//! CesiumJS DataSources/EntityCollectionSpec.js A 类测试的忠实移植。
 //!
-//! Original: 29 it() tests. A-class (pure logic, no events/spy/DOM): 15 tests.
-//! Event-based tests (collectionChanged, suspendEvents/resumeEvents) are B-class
-//! (require event system not yet implemented in Rust).
+//! 原始：29 个 it() 测试。A 类（纯逻辑，无 events/spy/DOM）：15 个测试。
+//! 基于事件的测试（collectionChanged、suspendEvents/resumeEvents）为 B 类
+//!（需要 Rust 中尚未实现的事件系统）。
 
 use cesium_datasource::entity::{Entity, PointGraphics};
 use cesium_datasource::entity_collection::EntityCollection;
 use cesium_datasource::property::{Color, Property};
 
 // ===========================================================================
-// Constructor
+// 构造
 // ===========================================================================
 
 #[test]
@@ -22,7 +22,7 @@ fn entity_collection_constructor_has_expected_defaults() {
 }
 
 // ===========================================================================
-// Add / Remove
+// 添加 / 移除
 // ===========================================================================
 
 #[test]
@@ -47,7 +47,7 @@ fn entity_collection_add_remove_works() {
 
 #[test]
 fn entity_collection_add_with_id() {
-    // "add with template" (adapted: Rust uses Entity::new(id))
+    // "add with template"（已调整：Rust 使用 Entity::new(id)）
     let mut collection = EntityCollection::new();
     collection.add(Entity::new("1".to_string()));
 
@@ -58,8 +58,8 @@ fn entity_collection_add_with_id() {
 
 #[test]
 fn entity_collection_add_replaces_same_id() {
-    // "add throws for Entity with same id" → In Rust, add replaces (no throw).
-    // We verify the replacement semantics instead.
+    // "add throws for Entity with same id" → 在 Rust 中，add 会替换（不抛出）。
+    // 我们改为验证替换语义。
     let mut collection = EntityCollection::new();
 
     let mut e1 = Entity::new("1".to_string());
@@ -70,7 +70,7 @@ fn entity_collection_add_replaces_same_id() {
     e2.name = Some("second".to_string());
     collection.add(e2);
 
-    // Still only 1 entity (replaced, not duplicated)
+    // 仍只有 1 个实体（替换，而非重复）
     assert_eq!(collection.len(), 1);
     assert_eq!(collection.get("1").unwrap().name.as_deref(), Some("second"));
 }
@@ -93,7 +93,7 @@ fn entity_collection_remove_all_works() {
 
 #[test]
 fn entity_collection_remove_all_on_empty_is_noop() {
-    // "removeAll raises expected events" (partial: no events, just verify no panic)
+    // "removeAll raises expected events"（部分：无事件，仅验证不 panic）
     let mut collection = EntityCollection::new();
     collection.remove_all();
     assert_eq!(collection.len(), 0);
@@ -194,18 +194,18 @@ fn entity_collection_contains_returns_false_if_not_in_collection() {
 }
 
 // ===========================================================================
-// Remove returns None for non-existent
+// Remove 对不存在的项返回 None
 // ===========================================================================
 
 #[test]
 fn entity_collection_remove_returns_none_for_nonexistent() {
-    // "remove returns false with undefined Entity" (adapted for Rust Option)
+    // "remove returns false with undefined Entity"（已适配 Rust Option）
     let mut collection = EntityCollection::new();
     assert!(collection.remove("nonexistent").is_none());
 }
 
 // ===========================================================================
-// Values / Insertion Order
+// Values / 插入顺序
 // ===========================================================================
 
 #[test]
@@ -233,7 +233,7 @@ fn entity_collection_values_after_remove_preserves_order() {
 }
 
 // ===========================================================================
-// Show / Visibility
+// Show / 可见性
 // ===========================================================================
 
 #[test]
@@ -282,14 +282,14 @@ fn entity_collection_visible_entities_respects_collection_show() {
 }
 
 // ===========================================================================
-// Renderable entities
+// 可渲染实体
 // ===========================================================================
 
 #[test]
 fn entity_collection_renderable_entities_filters_by_graphics() {
     let mut collection = EntityCollection::new();
 
-    // Has graphics
+    // 含图元
     let mut with_gfx = Entity::new("gfx".to_string());
     with_gfx.point = Some(PointGraphics {
         color: Property::Constant(Color::RED),
@@ -297,14 +297,14 @@ fn entity_collection_renderable_entities_filters_by_graphics() {
     });
     collection.add(with_gfx);
 
-    // No graphics
+    // 无图元
     collection.add(Entity::new("no-gfx".to_string()));
 
     assert_eq!(collection.renderable_entities().count(), 1);
 }
 
 // ===========================================================================
-// IDs accessor
+// IDs 访问器
 // ===========================================================================
 
 #[test]

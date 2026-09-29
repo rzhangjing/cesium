@@ -1,4 +1,4 @@
-//! Geometry showcase - displays all geometry types in a grid.
+//! 几何展示 - 以网格形式展示所有几何类型。
 
 use bevy::prelude::*;
 use cesium_bevy_render::geometry_to_mesh;
@@ -18,7 +18,7 @@ use cesium_geospatial::geometry::{
 use cesium_geospatial::rectangle::Rectangle;
 use glam::{DQuat, DVec3};
 
-/// Plugin that spawns a geometry showcase scene.
+/// 生成一个几何展示场景的插件。
 pub struct GeometryShowcasePlugin;
 
 impl Plugin for GeometryShowcasePlugin {
@@ -32,13 +32,13 @@ fn setup_geometry_showcase(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // NOTE: Camera and Light are provided by CesiumRenderPlugin;
-    // do NOT spawn duplicates here to avoid order-ambiguity warnings.
+    // 注意：Camera 与 Light 由 CesiumRenderPlugin 提供；
+    // 此处不要重复 spawn，以避免顺序歧义警告。
 
     let ell = Ellipsoid::WGS84;
     let vf = VertexFormat::ALL;
 
-    // Grid layout: 5 columns x 4 rows, spacing 3 units.
+    // 网格布局：5 列 x 4 行，间距 3 个单位。
     let spacing = 3.0;
     let cols = 5;
     let start_x = -(cols as f32 - 1.0) * spacing / 2.0;
@@ -67,7 +67,7 @@ fn setup_geometry_showcase(
         *idx += 1;
     };
 
-    // Row 1: Basic primitives.
+    // 第 1 行：基本 primitive。
     spawn_geo(
         &mut commands,
         &mut meshes,
@@ -109,9 +109,9 @@ fn setup_geometry_showcase(
         &mut idx,
     );
 
-    // Row 2: Geodetic geometries (scaled down).
+    // 第 2 行：大地测量几何（缩小）。
     let center = ell.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0));
-    let scale = 1e-6; // Scale down from meters to scene units.
+    let scale = 1e-6; // 从米缩小到场景单位。
 
     let ellipse_opts = EllipseOptions {
         center,
@@ -211,7 +211,7 @@ fn setup_geometry_showcase(
         &mut idx,
     );
 
-    // Row 3: More geodetic + outlines.
+    // 第 3 行：更多大地测量几何 + 轮廓线。
     let rect = Rectangle::from_degrees(-1.0, -1.0, 1.0, 1.0);
     spawn_geo(
         &mut commands,
@@ -285,7 +285,7 @@ fn setup_geometry_showcase(
         &mut idx,
     );
 
-    // Row 4: Outlines (rendered as lines).
+    // 第 4 行：轮廓线（以线段渲染）。
     spawn_geo(
         &mut commands,
         &mut meshes,
@@ -328,7 +328,7 @@ fn setup_geometry_showcase(
     );
 }
 
-/// Scales a geometry's positions by a factor.
+/// 按一个因子缩放几何的位置。
 fn scale_geometry(geo: &geometry::GeometryData, scale: f64) -> geometry::GeometryData {
     let mut scaled = geo.clone();
     for p in &mut scaled.positions {

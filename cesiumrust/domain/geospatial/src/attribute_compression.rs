@@ -1,7 +1,8 @@
-//! AttributeCompression - oct encoding, texture coordinate compression, zigzag decode.
-//! Maps to CesiumJS `Core/AttributeCompression.js`
+//! AttributeCompression —— 八面体编码、纹理坐标压缩、zigzag 解码。
+//! 映射到 CesiumJS `Core/AttributeCompression.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::needless_range_loop)]
 use crate::ellipsoid::normalize_cartesian3;
 use crate::math_utils;
@@ -11,10 +12,9 @@ const RIGHT_SHIFT8: f64 = 1.0 / 256.0;
 const LEFT_SHIFT16: f64 = 65536.0;
 const LEFT_SHIFT8: f64 = 256.0;
 
-/// Encodes a normalized vector into 2 SNORM values in the range [0, range_max]
-/// following the 'oct' encoding.
+/// 按照 'oct' 编码，将一个归一化向量编码为 [0, range_max] 范围内的 2 个 SNORM 值。
 ///
-/// Maps to `AttributeCompression.octEncodeInRange`
+/// 映射到 `AttributeCompression.octEncodeInRange`
 pub fn oct_encode_in_range(vector: DVec3, range_max: f64) -> DVec2 {
     let denom = vector.x.abs() + vector.y.abs() + vector.z.abs();
     let mut x = vector.x / denom;
@@ -33,17 +33,17 @@ pub fn oct_encode_in_range(vector: DVec3, range_max: f64) -> DVec2 {
     )
 }
 
-/// Encodes a normalized vector into 2 SNORM values in the range [0, 255].
+/// 将一个归一化向量编码为 [0, 255] 范围内的 2 个 SNORM 值。
 ///
-/// Maps to `AttributeCompression.octEncode`
+/// 映射到 `AttributeCompression.octEncode`
 pub fn oct_encode(vector: DVec3) -> DVec2 {
     oct_encode_in_range(vector, 255.0)
 }
 
-/// Encodes a normalized vector into 4 bytes (Cartesian4 representation).
-/// Returns (x, y, z, w) as f64 values in [0, 255].
+/// 将一个归一化向量编码为 4 字节（Cartesian4 表示）。
+/// 以 [0, 255] 范围内的 f64 值返回 (x, y, z, w)。
 ///
-/// Maps to `AttributeCompression.octEncodeToCartesian4`
+/// 映射到 `AttributeCompression.octEncodeToCartesian4`
 pub fn oct_encode_to_cartesian4(vector: DVec3) -> (f64, f64, f64, f64) {
     let encoded = oct_encode_in_range(vector, 65535.0);
     let x = force_uint8(encoded.x * RIGHT_SHIFT8);
@@ -53,9 +53,9 @@ pub fn oct_encode_to_cartesian4(vector: DVec3) -> (f64, f64, f64, f64) {
     (x, y, z, w)
 }
 
-/// Decodes a unit-length vector from 'oct' encoding in range [0, range_max].
+/// 从 [0, range_max] 范围内的 'oct' 编码解码出一个单位长向量。
 ///
-/// Maps to `AttributeCompression.octDecodeInRange`
+/// 映射到 `AttributeCompression.octDecodeInRange`
 pub fn oct_decode_in_range(x: f64, y: f64, range_max: f64) -> DVec3 {
     let mut rx = math_utils::from_snorm(x, range_max);
     let mut ry = math_utils::from_snorm(y, range_max);
@@ -70,40 +70,40 @@ pub fn oct_decode_in_range(x: f64, y: f64, range_max: f64) -> DVec3 {
     normalize_cartesian3(DVec3::new(rx, ry, rz))
 }
 
-/// Decodes a unit-length vector from 2-byte 'oct' encoding.
+/// 从 2 字节 'oct' 编码解码出一个单位长向量。
 ///
-/// Maps to `AttributeCompression.octDecode`
+/// 映射到 `AttributeCompression.octDecode`
 pub fn oct_decode(x: f64, y: f64) -> DVec3 {
     oct_decode_in_range(x, y, 255.0)
 }
 
-/// Decodes a unit-length vector from 4-byte 'oct' encoding.
+/// 从 4 字节 'oct' 编码解码出一个单位长向量。
 ///
-/// Maps to `AttributeCompression.octDecodeFromCartesian4`
+/// 映射到 `AttributeCompression.octDecodeFromCartesian4`
 pub fn oct_decode_from_cartesian4(x: f64, y: f64, z: f64, w: f64) -> DVec3 {
     let x_oct16 = x * LEFT_SHIFT8 + y;
     let y_oct16 = z * LEFT_SHIFT8 + w;
     oct_decode_in_range(x_oct16, y_oct16, 65535.0)
 }
 
-/// Packs an oct-encoded vector (2 bytes) into a single float.
+/// 将一个 oct 编码的向量（2 字节）打包进单个浮点数。
 ///
-/// Maps to `AttributeCompression.octPackFloat`
+/// 映射到 `AttributeCompression.octPackFloat`
 pub fn oct_pack_float(encoded: DVec2) -> f64 {
     256.0 * encoded.x + encoded.y
 }
 
-/// Encodes a normalized vector into a single float (2-byte oct encoding packed).
+/// 将一个归一化向量编码为单个浮点数（打包的 2 字节 oct 编码）。
 ///
-/// Maps to `AttributeCompression.octEncodeFloat`
+/// 映射到 `AttributeCompression.octEncodeFloat`
 pub fn oct_encode_float(vector: DVec3) -> f64 {
     let encoded = oct_encode(vector);
     oct_pack_float(encoded)
 }
 
-/// Decodes a unit-length vector from a float-packed oct encoding.
+/// 从浮点数打包的 oct 编码解码出一个单位长向量。
 ///
-/// Maps to `AttributeCompression.octDecodeFloat`
+/// 映射到 `AttributeCompression.octDecodeFloat`
 pub fn oct_decode_float(value: f64) -> DVec3 {
     let temp = value / 256.0;
     let x = temp.floor();
@@ -111,9 +111,9 @@ pub fn oct_decode_float(value: f64) -> DVec3 {
     oct_decode(x, y)
 }
 
-/// Encodes three normalized vectors into two floats (packed oct encoding).
+/// 将三个归一化向量编码为两个浮点数（打包的 oct 编码）。
 ///
-/// Maps to `AttributeCompression.octPack`
+/// 映射到 `AttributeCompression.octPack`
 pub fn oct_pack(v1: DVec3, v2: DVec3, v3: DVec3) -> DVec2 {
     let encoded1 = oct_encode_float(v1);
     let encoded2 = oct_encode_float(v2);
@@ -124,9 +124,9 @@ pub fn oct_pack(v1: DVec3, v2: DVec3, v3: DVec3) -> DVec2 {
     )
 }
 
-/// Decodes three unit-length vectors from two packed floats.
+/// 从两个打包的浮点数解码出三个单位长向量。
 ///
-/// Maps to `AttributeCompression.octUnpack`
+/// 映射到 `AttributeCompression.octUnpack`
 pub fn oct_unpack(packed: DVec2) -> (DVec3, DVec3, DVec3) {
     let temp = packed.x / LEFT_SHIFT16;
     let x = temp.floor();
@@ -142,18 +142,18 @@ pub fn oct_unpack(packed: DVec2) -> (DVec3, DVec3, DVec3) {
     (v1, v2, v3)
 }
 
-/// Compresses texture coordinates into a single float (12-bit precision per component).
+/// 将纹理坐标压缩为单个浮点数（每个分量 12 位精度）。
 ///
-/// Maps to `AttributeCompression.compressTextureCoordinates`
+/// 映射到 `AttributeCompression.compressTextureCoordinates`
 pub fn compress_texture_coordinates(texture_coordinates: DVec2) -> f64 {
     let x = (texture_coordinates.x * 4095.0) as i64;
     let y = (texture_coordinates.y * 4095.0) as i64;
     4096.0 * x as f64 + y as f64
 }
 
-/// Decompresses texture coordinates from a single float.
+/// 从单个浮点数解压纹理坐标。
 ///
-/// Maps to `AttributeCompression.decompressTextureCoordinates`
+/// 映射到 `AttributeCompression.decompressTextureCoordinates`
 pub fn decompress_texture_coordinates(compressed: f64) -> DVec2 {
     let temp = compressed / 4096.0;
     let x_zero_to_4095 = temp.floor();
@@ -168,9 +168,9 @@ fn zig_zag_decode(value: u16) -> i32 {
     (v >> 1) ^ -(v & 1)
 }
 
-/// Decodes delta and ZigZag encoded vertices in place.
+/// 就地解码经 delta 与 ZigZag 编码的顶点。
 ///
-/// Maps to `AttributeCompression.zigZagDeltaDecode`
+/// 映射到 `AttributeCompression.zigZagDeltaDecode`
 pub fn zig_zag_delta_decode(u_buffer: &mut [u16], v_buffer: &mut [u16], mut height_buffer: Option<&mut [u16]>) {
     let count = u_buffer.len();
     let mut u: i32 = 0;
@@ -190,34 +190,34 @@ pub fn zig_zag_delta_decode(u_buffer: &mut [u16], v_buffer: &mut [u16], mut heig
     }
 }
 
-/// WebGL component datatypes. Components are intrinsics,
-/// which form attributes, which form vertices.
+/// WebGL 分量数据类型。分量是内建类型，
+/// 它们构成属性，属性又构成顶点。
 ///
-/// Maps to CesiumJS `Core/ComponentDatatype.js`
+/// 映射到 CesiumJS `Core/ComponentDatatype.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ComponentDatatype {
-    /// 8-bit signed byte (gl.BYTE = 0x1400)
+    /// 8 位有符号字节 (gl.BYTE = 0x1400)
     Byte,
-    /// 8-bit unsigned byte (gl.UNSIGNED_BYTE = 0x1401)
+    /// 8 位无符号字节 (gl.UNSIGNED_BYTE = 0x1401)
     UnsignedByte,
-    /// 16-bit signed short (gl.SHORT = 0x1402)
+    /// 16 位有符号短整型 (gl.SHORT = 0x1402)
     Short,
-    /// 16-bit unsigned short (gl.UNSIGNED_SHORT = 0x1403)
+    /// 16 位无符号短整型 (gl.UNSIGNED_SHORT = 0x1403)
     UnsignedShort,
-    /// 32-bit signed int (gl.INT = 0x1404)
+    /// 32 位有符号整型 (gl.INT = 0x1404)
     Int,
-    /// 32-bit unsigned int (gl.UNSIGNED_INT = 0x1405)
+    /// 32 位无符号整型 (gl.UNSIGNED_INT = 0x1405)
     UnsignedInt,
-    /// 32-bit float (gl.FLOAT = 0x1406)
+    /// 32 位浮点 (gl.FLOAT = 0x1406)
     Float,
-    /// 64-bit float (gl.DOUBLE = 0x140A)
+    /// 64 位浮点 (gl.DOUBLE = 0x140A)
     Double,
 }
 
 impl ComponentDatatype {
-    /// Returns the size in bytes of this component datatype.
+    /// 返回此分量数据类型的字节大小。
     ///
-    /// Maps to CesiumJS `ComponentDatatype.getSizeInBytes`
+    /// 映射到 CesiumJS `ComponentDatatype.getSizeInBytes`
     pub fn size_in_bytes(self) -> usize {
         match self {
             Self::Byte | Self::UnsignedByte => 1,
@@ -227,7 +227,7 @@ impl ComponentDatatype {
         }
     }
 
-    /// Returns the WebGL constant value for this component datatype.
+    /// 返回此分量数据类型的 WebGL 常量值。
     pub fn gl_value(self) -> u32 {
         match self {
             Self::Byte => 0x1400,
@@ -241,17 +241,17 @@ impl ComponentDatatype {
         }
     }
 
-    /// Validates that the provided value is a valid ComponentDatatype.
-    /// In Rust, any enum variant is inherently valid.
+    /// 校验所提供的值是否为有效的 ComponentDatatype。
+    /// 在 Rust 中，任何枚举变体本质上都是有效的。
     ///
-    /// Maps to CesiumJS `ComponentDatatype.validate`
+    /// 映射到 CesiumJS `ComponentDatatype.validate`
     pub fn validate(self) -> bool {
         true
     }
 
-    /// Returns the ComponentDatatype for the provided name string.
+    /// 返回所提供名称字符串对应的 ComponentDatatype。
     ///
-    /// Maps to CesiumJS `ComponentDatatype.fromName`
+    /// 映射到 CesiumJS `ComponentDatatype.fromName`
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "BYTE" => Some(Self::Byte),
@@ -266,7 +266,7 @@ impl ComponentDatatype {
         }
     }
 
-    /// Returns the ComponentDatatype from a WebGL constant value.
+    /// 从 WebGL 常量值返回 ComponentDatatype。
     pub fn from_gl_value(value: u32) -> Option<Self> {
         match value {
             0x1400 => Some(Self::Byte),
@@ -281,7 +281,7 @@ impl ComponentDatatype {
         }
     }
 
-    /// Divisor used for dequantization (integer types only).
+    /// 用于反量化的除数（仅整型）。
     pub fn divisor(self) -> f64 {
         match self {
             Self::Byte => 127.0,
@@ -295,26 +295,26 @@ impl ComponentDatatype {
     }
 }
 
-/// Index datatype for geometry indices.
+/// 几何索引的索引数据类型。
 ///
-/// Maps to CesiumJS `Core/IndexDatatype.js`
+/// 映射到 CesiumJS `Core/IndexDatatype.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IndexDatatype {
-    /// 8-bit unsigned byte (gl.UNSIGNED_BYTE = 0x1401)
+    /// 8 位无符号字节 (gl.UNSIGNED_BYTE = 0x1401)
     UnsignedByte,
-    /// 16-bit unsigned short (gl.UNSIGNED_SHORT = 0x1403)
+    /// 16 位无符号短整型 (gl.UNSIGNED_SHORT = 0x1403)
     UnsignedShort,
-    /// 32-bit unsigned int (gl.UNSIGNED_INT = 0x1405)
+    /// 32 位无符号整型 (gl.UNSIGNED_INT = 0x1405)
     UnsignedInt,
 }
 
 impl IndexDatatype {
-    /// 64K = 65536, the maximum number of vertices for UNSIGNED_SHORT indices.
+    /// 64K = 65536，即 UNSIGNED_SHORT 索引的最大顶点数。
     pub const SIXTY_FOUR_KILOBYTES: u64 = 65536;
 
-    /// Returns the size in bytes of this index datatype.
+    /// 返回此索引数据类型的字节大小。
     ///
-    /// Maps to CesiumJS `IndexDatatype.getSizeInBytes`
+    /// 映射到 CesiumJS `IndexDatatype.getSizeInBytes`
     pub fn size_in_bytes(self) -> usize {
         match self {
             Self::UnsignedByte => 1,
@@ -323,7 +323,7 @@ impl IndexDatatype {
         }
     }
 
-    /// Returns the WebGL constant value for this index datatype.
+    /// 返回此索引数据类型的 WebGL 常量值。
     pub fn gl_value(self) -> u32 {
         match self {
             Self::UnsignedByte => 0x1401,
@@ -332,16 +332,16 @@ impl IndexDatatype {
         }
     }
 
-    /// Validates that the provided value is a valid IndexDatatype.
+    /// 校验所提供的值是否为有效的 IndexDatatype。
     ///
-    /// Maps to CesiumJS `IndexDatatype.validate`
+    /// 映射到 CesiumJS `IndexDatatype.validate`
     pub fn validate(self) -> bool {
         true
     }
 
-    /// Returns the IndexDatatype for the provided name string.
+    /// 返回所提供名称字符串对应的 IndexDatatype。
     ///
-    /// Maps to CesiumJS `IndexDatatype.fromName`
+    /// 映射到 CesiumJS `IndexDatatype.fromName`
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "UNSIGNED_BYTE" => Some(Self::UnsignedByte),
@@ -351,7 +351,7 @@ impl IndexDatatype {
         }
     }
 
-    /// Returns the IndexDatatype from a WebGL constant value.
+    /// 从 WebGL 常量值返回 IndexDatatype。
     pub fn from_gl_value(value: u32) -> Option<Self> {
         match value {
             0x1401 => Some(Self::UnsignedByte),
@@ -361,10 +361,10 @@ impl IndexDatatype {
         }
     }
 
-    /// Determines the appropriate IndexDatatype for the given number of vertices.
-    /// If numberOfVertices >= 65536, returns UnsignedInt; otherwise UnsignedShort.
+    /// 为给定的顶点数确定合适的 IndexDatatype。
+    /// 若 numberOfVertices >= 65536，返回 UnsignedInt；否则返回 UnsignedShort。
     ///
-    /// Maps to CesiumJS `IndexDatatype.createTypedArray` logic
+    /// 映射到 CesiumJS `IndexDatatype.createTypedArray` 的逻辑
     pub fn for_vertex_count(number_of_vertices: u64) -> Self {
         if number_of_vertices >= Self::SIXTY_FOUR_KILOBYTES {
             Self::UnsignedInt
@@ -374,9 +374,9 @@ impl IndexDatatype {
     }
 }
 
-/// Dequantizes a typed array of i32 values into f32 (as f64 here).
+/// 将一个 i32 值的类型化数组反量化为 f32（此处为 f64）。
 ///
-/// Maps to `AttributeCompression.dequantize`
+/// 映射到 `AttributeCompression.dequantize`
 pub fn dequantize(
     typed_array: &[i32],
     component_datatype: ComponentDatatype,
@@ -395,9 +395,9 @@ pub fn dequantize(
     result
 }
 
-/// Encodes RGB values at 8-bit precision into a single float (0xFFFFFF representation).
+/// 以 8 位精度将 RGB 值编码为单个浮点数（0xFFFFFF 表示）。
 ///
-/// Maps to `AttributeCompression.encodeRGB8`
+/// 映射到 `AttributeCompression.encodeRGB8`
 pub fn encode_rgb8(red: f64, green: f64, blue: f64) -> f64 {
     let r = (math_utils::clamp(red * 255.0, 0.0, 255.0)).round();
     let g = (math_utils::clamp(green * 255.0, 0.0, 255.0)).round();
@@ -405,10 +405,10 @@ pub fn encode_rgb8(red: f64, green: f64, blue: f64) -> f64 {
     r * LEFT_SHIFT16 + g * LEFT_SHIFT8 + b
 }
 
-/// Decodes RGB values at 8-bit precision from a single float.
-/// Returns (red, green, blue) in [0, 1].
+/// 从单个浮点数解码出 8 位精度的 RGB 值。
+/// 返回 [0, 1] 范围内的 (red, green, blue)。
 ///
-/// Maps to `AttributeCompression.decodeRGB8`
+/// 映射到 `AttributeCompression.decodeRGB8`
 pub fn decode_rgb8(encoded: f64) -> (f64, f64, f64) {
     let encoded = encoded.floor() as i64;
     let red = ((encoded >> 16) & 255) as f64 / 255.0;
@@ -417,9 +417,9 @@ pub fn decode_rgb8(encoded: f64) -> (f64, f64, f64) {
     (red, green, blue)
 }
 
-/// Decodes RGB565-encoded colors into normalized RGB values.
+/// 将 RGB565 编码的颜色解码为归一化的 RGB 值。
 ///
-/// Maps to `AttributeCompression.decodeRGB565`
+/// 映射到 `AttributeCompression.decodeRGB565`
 pub fn decode_rgb565(typed_array: &[u16]) -> Vec<f64> {
     let count = typed_array.len();
     let mut result = vec![0.0_f64; count * 3];
@@ -443,7 +443,7 @@ pub fn decode_rgb565(typed_array: &[u16]) -> Vec<f64> {
     result
 }
 
-/// Forces a value into uint8 range (mimics JS Uint8Array truncation).
+/// 将一个值强制放入 uint8 范围（模仿 JS Uint8Array 的截断）。
 #[inline]
 fn force_uint8(value: f64) -> f64 {
     (value as u32 & 0xFF) as f64

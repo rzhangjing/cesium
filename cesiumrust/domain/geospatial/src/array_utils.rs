@@ -1,20 +1,20 @@
-//! Array utilities - faithful port of CesiumJS `Core/arrayRemoveDuplicates.js`.
+//! 数组工具 - CesiumJS `Core/arrayRemoveDuplicates.js` 的忠实移植。
 
 use crate::math_utils::EPSILON10;
 
-/// Removes adjacent duplicate values in an array of values.
+/// 移除值数组中相邻的重复值。
 ///
-/// Maps to CesiumJS `arrayRemoveDuplicates`.
+/// 映射到 CesiumJS `arrayRemoveDuplicates`。
 ///
-/// # Arguments
-/// * `values` - The array of values.
-/// * `equals_epsilon` - Function to compare values with an epsilon: `fn(&T, &T, f64) -> bool`.
-/// * `wrap_around` - Compare the last value against the first. If equal, the last is removed.
+/// # 参数
+/// * `values` - 值的数组。
+/// * `equals_epsilon` - 使用 epsilon 比较值的函数：`fn(&T, &T, f64) -> bool`。
+/// * `wrap_around` - 将最后一个值与第一个值比对比。若相等，则移除最后一个。
 ///
-/// # Returns
-/// A tuple of `(cleaned_values, removed_indices)`.
-/// - If no duplicates found, returns the original values unchanged and empty removed_indices.
-/// - If duplicates found, returns a new Vec with duplicates removed and their original indices.
+/// # 返回
+/// 一个元组 `(cleaned_values, removed_indices)`。
+/// - 若未发现重复，则原样返回原始值且 removed_indices 为空。
+/// - 若发现重复，则返回一个移除了重复项及其原始索引的新 Vec。
 pub fn array_remove_duplicates<T: Clone>(
     values: &[T],
     equals_epsilon: fn(&T, &T, f64) -> bool,
@@ -53,7 +53,7 @@ pub fn array_remove_duplicates<T: Clone>(
 
     if wrap_around && equals_epsilon(&values[0], &values[length - 1], EPSILON10) {
         if let Some(ref mut cv) = cleaned_values {
-            // Insert lastCleanIndex into removedIndices at the proper sorted position
+            // 将 lastCleanIndex 插入到 removedIndices 的正确排序位置
             removed_indices.insert(removed_index_lci, last_clean_index);
             cv.truncate(cv.len() - 1);
         } else {
@@ -68,7 +68,7 @@ pub fn array_remove_duplicates<T: Clone>(
     }
 }
 
-/// Convenience: returns true if no duplicates were removed (original array unchanged).
+/// 便捷函数：若未移除任何重复项（原始数组未变）则返回 true。
 pub fn array_remove_duplicates_in_place<T: Clone>(
     values: &[T],
     equals_epsilon: fn(&T, &T, f64) -> bool,

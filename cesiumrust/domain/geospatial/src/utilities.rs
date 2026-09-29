@@ -1,19 +1,20 @@
-//! Core utility functions.
-//! Maps to CesiumJS `Core/binarySearch.js`, `Core/barycentricCoordinates.js`,
-//! `Core/pointInsideTriangle.js`, `Core/subdivideArray.js`
+//! 核心工具函数。
+//! 映射到 CesiumJS `Core/binarySearch.js`、`Core/barycentricCoordinates.js`、
+//! `Core/pointInsideTriangle.js`、`Core/subdivideArray.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::manual_div_ceil)]
 use crate::math_utils::EPSILON14;
 use glam::DVec3;
 
-/// Finds an item in a sorted array using binary search.
+/// 使用二分查找在有序数组中查找一个项。
 ///
-/// Returns the index of `item_to_find` if it exists.
-/// If not found, returns a negative number which is the bitwise complement (!)
-/// of the index before which the item should be inserted.
+/// 若 `item_to_find` 存在则返回其索引。
+/// 若未找到，返回一个负数，它是该项应插入位置
+/// 之前的索引的按位取反（!）。
 ///
-/// Maps to `binarySearch(array, itemToFind, comparator)`
+/// 映射到 `binarySearch(array, itemToFind, comparator)`
 pub fn binary_search<T, F>(array: &[T], item_to_find: &T, comparator: F) -> i64
 where
     F: Fn(&T, &T) -> i64,
@@ -35,19 +36,19 @@ where
     !(high + 1)
 }
 
-/// Computes the barycentric coordinates for a point with respect to a triangle (3D).
+/// 计算一个点关于一个三角形（3D）的重心坐标。
 ///
-/// Returns Some(DVec3) where x, y, z are the barycentric coordinates corresponding
-/// to p0, p1, p2 respectively. Returns None if the triangle is degenerate.
+/// 返回 Some(DVec3)，其中 x、y、z 分别对应于
+/// p0、p1、p2 的重心坐标。若三角形退化则返回 None。
 ///
-/// Maps to `barycentricCoordinates(point, p0, p1, p2)`
+/// 映射到 `barycentricCoordinates(point, p0, p1, p2)`
 pub fn barycentric_coordinates(
     point: DVec3,
     p0: DVec3,
     p1: DVec3,
     p2: DVec3,
 ) -> Option<DVec3> {
-    // Check if point equals any vertex
+    // 检查点是否等于任一顶点
     if point.abs_diff_eq(p0, EPSILON14) {
         return Some(DVec3::X);
     }
@@ -72,7 +73,7 @@ pub fn barycentric_coordinates(
     let mut z = dot00 * dot12 - dot01 * dot02;
     let q = dot00 * dot11 - dot01 * dot01;
 
-    // Triangle is degenerate
+    // 三角形退化
     if q == 0.0 {
         return None;
     }
@@ -83,18 +84,18 @@ pub fn barycentric_coordinates(
     Some(DVec3::new(x, y, z))
 }
 
-/// Determines if a 2D point is inside a triangle defined by three 2D points.
+/// 判断一个 2D 点是否在一个由三个 2D 点定义的三角形内部。
 ///
-/// Returns true only if the point is strictly inside (not on edges or vertices).
+/// 仅当点严格位于内部（不在边或顶点上）时才返回 true。
 ///
-/// Maps to `pointInsideTriangle(point, p0, p1, p2)`
+/// 映射到 `pointInsideTriangle(point, p0, p1, p2)`
 pub fn point_inside_triangle(
     point: (f64, f64),
     p0: (f64, f64),
     p1: (f64, f64),
     p2: (f64, f64),
 ) -> bool {
-    // Use barycentric coordinate approach
+    // 使用重心坐标方法
     let (px, py) = point;
     let (x1, y1) = p0;
     let (x2, y2) = p1;
@@ -112,13 +113,13 @@ pub fn point_inside_triangle(
     let v = (-y1my3 * dpx + x1mx3 * dpy) * inverse_det;
     let w = 1.0 - u - v;
 
-    // Strictly inside: all coordinates must be > 0 (not on edge)
+    // 严格内部：所有坐标必须 > 0（不在边上）
     u > 0.0 && v > 0.0 && w > 0.0
 }
 
-/// Splits an array into a specified number of sub-arrays.
+/// 将数组拆分为指定数量的子数组。
 ///
-/// Maps to `subdivideArray(array, numberOfArrays)`
+/// 映射到 `subdivideArray(array, numberOfArrays)`
 pub fn subdivide_array<T: Clone>(array: &[T], number_of_arrays: usize) -> Vec<Vec<T>> {
     debug_assert!(number_of_arrays > 0, "number_of_arrays must be > 0");
 
@@ -142,15 +143,15 @@ pub fn subdivide_array<T: Clone>(array: &[T], number_of_arrays: usize) -> Vec<Ve
     result
 }
 
-/// Sorts an array in place using a stable sort (merge sort semantics).
-/// Maps to CesiumJS `Core/mergeSort.js`
+/// 使用稳定排序（归并排序语义）就地排序数组。
+/// 映射到 CesiumJS `Core/mergeSort.js`
 ///
-/// The comparator returns an Ordering: Less if a should come before b.
+/// 比较器返回一个 Ordering：若 a 应排在 b 之前则为 Less。
 pub fn merge_sort<T, F>(array: &mut [T], comparator: F)
 where
     F: Fn(&T, &T) -> std::cmp::Ordering,
 {
-    // Rust's sort_by is a stable sort (adaptive merge sort + insertion sort),
-    // which matches CesiumJS mergeSort semantics exactly.
+    // Rust 的 sort_by 是稳定排序（自适应归并排序 + 插入排序），
+    // 与 CesiumJS mergeSort 的语义完全匹配。
     array.sort_by(comparator);
 }

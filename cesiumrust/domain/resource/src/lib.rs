@@ -1,37 +1,37 @@
-//! cesium-resource: Resource management and request scheduling.
+//! cesium-resource：资源管理与请求调度。
 //!
-//! Domain layer — pure Rust, no framework dependency, no network IO.
+//! 领域层 —— 纯 Rust，无框架依赖，无网络 IO。
 //!
-//! CesiumJS mapping:
-//! - `packages/engine/Source/Core/Resource.js` (2281 lines)
-//! - `packages/engine/Source/Core/RequestScheduler.js` (525 lines)
+//! CesiumJS 映射：
+//! - `packages/engine/Source/Core/Resource.js`（2281 行）
+//! - `packages/engine/Source/Core/RequestScheduler.js`（525 行）
 //! - `packages/engine/Source/Core/Request.js`
 //! - `packages/engine/Source/Core/DefaultProxy.js`
 //! - `packages/engine/Source/Core/IonResource.js`
 //!
-//! # Architecture
+//! # 架构
 //!
-//! This crate provides the **pure domain logic** for resource management:
-//! URL construction, query parameter handling, proxy policy, data URI decoding,
-//! Ion endpoint building, request scheduling with priority/throttling, retry
-//! semantics, and statistics aggregation.
+//! 本 crate 提供资源管理的 **纯领域逻辑**：
+//! URL 构造、查询参数处理、代理策略、data URI 解码、
+//! Ion 端点构建、带优先级/限流的请求调度、重试
+//! 语义，以及统计聚合。
 //!
-//! Actual HTTP IO is NOT performed here — the `Resource::build_fetch_descriptor`
-//! family produces [`FetchDescriptor`] values that the adapter layer
-//! (`adapters/network`) executes. This separation ensures the domain is fully
-//! testable without network access or async runtimes.
+//! 实际的 HTTP IO 不在此处执行 —— `Resource::build_fetch_descriptor`
+//! 系列函数产生 [`FetchDescriptor`] 值，由适配层
+//! （`adapters/network`）执行。这种分离确保了领域层完全
+//! 可在无网络访问或无异步运行时的情况下测试。
 //!
-//! # Module layout
+//! # 模块布局
 //!
-//! | Module | Responsibility | CesiumJS mapping |
+//! | 模块 | 职责 | CesiumJS 映射 |
 //! |--------|---------------|------------------|
-//! | `lib.rs` | Resource, Request, RequestScheduler, FetchDescriptor | Resource.js + RequestScheduler.js |
-//! | `proxy.rs` | DefaultProxy, ProxyPolicy + trusted-server gating | DefaultProxy.js |
-//! | `data_uri.rs` | data: URI parsing/decoding (base64 + percent) | Resource.js dataUriRegex |
-//! | `ion.rs` | Ion asset endpoint URL/header construction | IonResource.js + Ion.js |
-//! | `statistics.rs` | RequestStatistics aggregation | RequestScheduler.statistics |
-//! | `priority.rs` | PriorityFunction trait + SSED/distance impls | Request.priorityFunction |
-//! | `trusted_servers.rs` | TrustedServers registry | TrustedServers.js |
+//! | `lib.rs` | Resource、Request、RequestScheduler、FetchDescriptor | Resource.js + RequestScheduler.js |
+//! | `proxy.rs` | DefaultProxy、ProxyPolicy + 可信服务器门控 | DefaultProxy.js |
+//! | `data_uri.rs` | data: URI 解析/解码（base64 + 百分号） | Resource.js dataUriRegex |
+//! | `ion.rs` | Ion 资产端点 URL/头部构造 | IonResource.js + Ion.js |
+//! | `statistics.rs` | RequestStatistics 聚合 | RequestScheduler.statistics |
+//! | `priority.rs` | PriorityFunction trait + SSED/距离实现 | Request.priorityFunction |
+//! | `trusted_servers.rs` | TrustedServers 注册表 | TrustedServers.js |
 
 pub mod data_uri;
 pub mod ion;
@@ -48,74 +48,74 @@ use crate::priority::{FrameContext, PriorityFunction, PriorityKey};
 use crate::proxy::ProxyPolicy;
 use crate::statistics::RequestStatistics;
 
-/// The type of request.
-/// Maps to CesiumJS `RequestType`
+/// 请求的类型。
+/// 映射到 CesiumJS `RequestType`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum RequestType {
-    /// Terrain request.
+    /// 地形请求。
     Terrain,
-    /// Imagery request.
+    /// 影像请求。
     Imagery,
-    /// 3D Tiles request.
+    /// 3D Tiles 请求。
     Tiles3D,
-    /// Other request type.
+    /// 其他请求类型。
     #[default]
     Other,
 }
 
-/// The state of a request.
-/// Maps to CesiumJS `RequestState`
+/// 请求的状态。
+/// 映射到 CesiumJS `RequestState`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum RequestState {
-    /// Initial state, not yet issued.
+    /// 初始状态，尚未发出。
     #[default]
     Unissued,
-    /// Issued but not yet active.
+    /// 已发出但尚未激活。
     Issued,
-    /// Actively being processed.
+    /// 正在活跃处理中。
     Active,
-    /// Received response, processing.
+    /// 已收到响应，处理中。
     Received,
-    /// Request failed.
+    /// 请求失败。
     Failed,
-    /// Request was cancelled.
+    /// 请求被取消。
     Cancelled,
 }
 
-/// A unique identifier for a request.
+/// 请求的唯一标识符。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RequestId(pub u64);
 
-/// Stores information for making a request.
-/// Maps to CesiumJS `Request`
+/// 存储发起一个请求所需的信息。
+/// 映射到 CesiumJS `Request`
 #[derive(Debug, Clone)]
 pub struct Request {
-    /// Unique identifier.
+    /// 唯一标识符。
     pub id: RequestId,
-    /// The URL to request.
+    /// 要请求的 URL。
     pub url: String,
-    /// Priority (lower = higher priority).
+    /// 优先级（越低 = 优先级越高）。
     pub priority: f64,
-    /// Whether to throttle and prioritize the request.
+    /// 是否对请求进行限流与优先级排序。
     pub throttle: bool,
-    /// Whether to throttle by server.
+    /// 是否按服务器限流。
     pub throttle_by_server: bool,
-    /// Type of request.
+    /// 请求类型。
     pub request_type: RequestType,
-    /// Current state.
+    /// 当前状态。
     pub state: RequestState,
-    /// Server key for throttling.
+    /// 用于限流的服务器键。
     pub server_key: String,
-    /// Optional spatial key consumed by the scheduler's [`PriorityFunction`]
-    /// to recompute `priority` each frame (see `update_with_context`).
+    /// 供调度器的 [`PriorityFunction`] 消费的空间键，每帧
+    /// 重新计算 `priority`（见 `update_with_context`）。
     ///
-    /// Maps to the tile/geometry data captured by a CesiumJS
-    /// `request.priorityFunction` closure.
+    /// 映射到 CesiumJS `request.priorityFunction` 闭包所捕获的
+    /// 瓦片/几何数据。
     pub priority_key: Option<PriorityKey>,
 }
 
 impl Request {
-    /// Creates a new request.
+    /// 创建一个新请求。
     pub fn new(url: String, request_type: RequestType) -> Self {
         let server_key = extract_server_key(&url);
         Self {
@@ -131,7 +131,7 @@ impl Request {
         }
     }
 
-    /// Creates a throttled request.
+    /// 创建一个被限流的请求。
     pub fn throttled(url: String, request_type: RequestType, priority: f64) -> Self {
         let server_key = extract_server_key(&url);
         Self {
@@ -147,15 +147,15 @@ impl Request {
         }
     }
 
-    /// Attaches a spatial [`PriorityKey`] so the scheduler's priority function
-    /// can recompute this request's priority from frame state.
+    /// 附加一个空间 [`PriorityKey`]，以便调度器的优先级函数
+    /// 能从帧状态重新计算本请求的优先级。
     pub fn with_priority_key(mut self, key: PriorityKey) -> Self {
         self.priority_key = Some(key);
         self
     }
 }
 
-/// Wrapper for priority queue ordering (min-heap by priority).
+/// 用于优先队列排序的包装器（按优先级的最小堆）。
 #[derive(Debug, Clone)]
 struct PrioritizedRequest {
     id: RequestId,
@@ -164,10 +164,10 @@ struct PrioritizedRequest {
 
 impl PartialEq for PrioritizedRequest {
     fn eq(&self, other: &Self) -> bool {
-        // M1 review fix: use `total_cmp` so `eq` agrees with `Ord::cmp` even
-        // for NaN priorities. The pre-fix impl used `==` here (false for NaN)
-        // while `cmp` used `partial_cmp().unwrap_or(Equal)` (Equal for NaN),
-        // violating the `Ord`/`Eq` consistency law `a.cmp(b) == Equal <=> a == b`.
+        // M1 评审修复：使用 `total_cmp`，使得即使对于 NaN 优先级，`eq` 也与
+        // `Ord::cmp` 一致。修复前的实现在这里用 `==`（对 NaN 为 false），
+        // 而 `cmp` 用 `partial_cmp().unwrap_or(Equal)`（对 NaN 为 Equal），
+        // 违反了 `Ord`/`Eq` 一致性法则 `a.cmp(b) == Equal <=> a == b`。
         self.priority.total_cmp(&other.priority) == Ordering::Equal
     }
 }
@@ -182,26 +182,24 @@ impl PartialOrd for PrioritizedRequest {
 
 impl Ord for PrioritizedRequest {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Reverse ordering for min-heap (lower priority value = higher
-        // priority). M1 review fix: `total_cmp` gives NaN a deterministic
-        // position in the total order (positive NaN sorts above `+inf`), so a
-        // NaN-priority request naturally sinks to the bottom of the min-heap
-        // and can never corrupt the `BinaryHeap` invariant. The pre-fix
-        // `partial_cmp().unwrap_or(Equal)` made NaN compare `Equal` to every
-        // value, breaking the heap's total-order contract.
+        // 为最小堆反转排序（更低的优先级值 = 更高的优先级）。M1 评审
+        // 修复：`total_cmp` 赋予 NaN 在总序中的一个确定位置（正 NaN 排在
+        // `+inf` 之上），因此一个 NaN 优先级的请求自然地沉到最小堆的底部，
+        // 永远不会破坏 `BinaryHeap` 不变式。修复前的
+        // `partial_cmp().unwrap_or(Equal)` 使 NaN 与每个值都比较为 `Equal`，
+        // 破坏了堆的总序契约。
         other.priority.total_cmp(&self.priority)
     }
 }
 
-/// Clamps a priority value for safe heap insertion (M1 review fix).
+/// 限制优先级值以保证安插入堆（M1 评审修复）。
 ///
-/// A NaN priority — reachable in practice when a composite priority sums
-/// `f64::MAX`-magnitude components to `inf` and then `inf + (-inf)` — would
-/// violate the `BinaryHeap` total-order invariant. Mapping NaN to `f64::MAX`
-/// sinks such a request to the *bottom* of the min-heap (lowest priority) so
-/// it never disturbs the ordering of well-formed priorities. Finite values
-/// (including `±inf`) pass through unchanged; combined with the `total_cmp`
-/// `Ord` impl this is defence-in-depth for the NaN path.
+/// NaN 优先级 —— 当一个复合优先级将 `f64::MAX` 量级的各分量求和到
+/// `inf`，然后 `inf + (-inf)` 时，在实践中可能达到 —— 会违反
+/// `BinaryHeap` 的总序不变式。将 NaN 映射为 `f64::MAX` 会使此类
+/// 请求沉到最小堆的 *底部*（优先级最低），从而永不扰乱
+/// 格式良好的优先级的排序。有限值（包括 `±inf`）原样透传；
+/// 与 `total_cmp` 的 `Ord` 实现结合，这构成了对 NaN 路径的纵深防御。
 fn sanitize_priority(priority: f64) -> f64 {
     if priority.is_nan() {
         f64::MAX
@@ -210,48 +208,47 @@ fn sanitize_priority(priority: f64) -> f64 {
     }
 }
 
-/// Manages request throttling and prioritization.
-/// Maps to CesiumJS `RequestScheduler`
+/// 管理请求的限流与优先级排序。
+/// 映射到 CesiumJS `RequestScheduler`
 #[derive(Debug)]
 pub struct RequestScheduler {
-    /// Maximum number of simultaneous active requests.
+    /// 同时活动请求的最大数量。
     pub maximum_requests: usize,
-    /// Maximum number of simultaneous active requests per server.
+    /// 每服务器同时活动请求的最大数量。
     pub maximum_requests_per_server: usize,
-    /// Per-server overrides for max requests.
+    /// 逐服务器对最大请求数的覆盖。
     pub requests_by_server: HashMap<String, usize>,
-    /// Whether to throttle requests.
+    /// 是否对请求限流。
     pub throttle_requests: bool,
-    /// Maximum size of the priority heap.
+    /// 优先级堆的最大长度。
     pub priority_heap_length: usize,
-    /// Maximum number of deferred requests retained when the priority heap is
-    /// saturated. Deferred requests are re-promoted into the heap once slots
-    /// free up (maps to CesiumJS re-requesting throttled tiles next frame).
+    /// 当优先级堆饱和时保留的延迟请求最大数量。当空闲出
+    /// 槽位时，延迟请求会被重新提升入堆（映射到 CesiumJS 下一帧
+    /// 重新请求被限流的瓦片）。
     pub maximum_deferred: usize,
 
-    // Internal state
+    // 内部状态
     active_requests: HashMap<RequestId, Request>,
     pending_heap: BinaryHeap<PrioritizedRequest>,
     active_count_by_server: HashMap<String, usize>,
     next_id: u64,
 
-    /// Aggregate request statistics (attempted/active/succeeded/failed/cancelled
-    /// + per-server + per-type). Maps to CesiumJS `RequestScheduler.statistics`.
+    /// 聚合的请求统计（attempted/active/succeeded/failed/cancelled
+    /// + 逐服务器 + 逐类型）。映射到 CesiumJS `RequestScheduler.statistics`。
     statistics: RequestStatistics,
 
-    /// Optional pluggable priority function. When set, `update_with_context`
-    /// recomputes each pending request's priority from frame state before
-    /// promotion. Maps to CesiumJS `Request.priorityFunction`.
+    /// 可选的可插拔优先级函数。设置后，`update_with_context` 会在提升前
+    /// 从帧状态重新计算每个待定请求的优先级。映射到
+    /// CesiumJS `Request.priorityFunction`。
     priority_function: Option<Box<dyn PriorityFunction>>,
 
-    /// Requests rejected from a saturated priority heap, retained for later
-    /// promotion. Ordered implicitly; re-inserted by priority when the heap
-    /// has open slots again.
+    /// 从饱和的优先级堆中被拒绝的请求，为后续提升而保留。
+    /// 隐式排序；当堆重新有空闲槽位时按优先级重新插入。
     deferred: Vec<Request>,
 }
 
 impl RequestScheduler {
-    /// Creates a new RequestScheduler with default settings.
+    /// 使用默认设置创建一个新的 RequestScheduler。
     pub fn new() -> Self {
         Self {
             maximum_requests: 50,
@@ -270,57 +267,57 @@ impl RequestScheduler {
         }
     }
 
-    /// Returns a shared reference to the aggregate statistics.
+    /// 返回聚合统计的共享引用。
     ///
-    /// Maps to CesiumJS `RequestScheduler.statistics` (exposed for diagnostics).
+    /// 映射到 CesiumJS `RequestScheduler.statistics`（为诊断而暴露）。
     pub fn statistics(&self) -> &RequestStatistics {
         &self.statistics
     }
 
-    /// Returns a mutable reference to the aggregate statistics.
+    /// 返回聚合统计的可变引用。
     pub fn statistics_mut(&mut self) -> &mut RequestStatistics {
         &mut self.statistics
     }
 
-    /// Resets the aggregate statistics to zero.
+    /// 将聚合统计重置为零。
     ///
-    /// Maps to `RequestScheduler.clearForSpecs()` statistics reset.
+    /// 映射到 `RequestScheduler.clearForSpecs()` 的统计重置。
     pub fn reset_statistics(&mut self) {
         self.statistics.reset();
     }
 
-    /// Installs a pluggable priority function.
+    /// 安装一个可插拔的优先级函数。
     ///
-    /// Once set, [`RequestScheduler::update_with_context`] recomputes each
-    /// pending request's priority from the frame context before promotion,
-    /// mirroring CesiumJS's per-frame `priorityFunction` re-sort.
+    /// 一旦设置，[`RequestScheduler::update_with_context`] 会在提升前从帧上下文
+    /// 重新计算每个待定请求的优先级，镜像 CesiumJS 逐帧的
+    /// `priorityFunction` 重新排序。
     pub fn set_priority_function(&mut self, f: Box<dyn PriorityFunction>) {
         self.priority_function = Some(f);
     }
 
-    /// Returns the name of the installed priority function, if any.
+    /// 返回已安装的优先级函数的名称（若有）。
     pub fn priority_function_name(&self) -> Option<&str> {
         self.priority_function.as_ref().map(|f| f.name())
     }
 
-    /// Returns the number of currently deferred (heap-rejected) requests.
+    /// 返回当前被延迟（堆拒绝）的请求数量。
     pub fn deferred_count(&self) -> usize {
         self.deferred.len()
     }
 
-    /// Returns the number of active requests.
-    /// Maps to CesiumJS `RequestScheduler.statistics.numberOfActiveRequests`
+    /// 返回活动请求的数量。
+    /// 映射到 CesiumJS `RequestScheduler.statistics.numberOfActiveRequests`
     pub fn active_request_count(&self) -> usize {
         self.active_count_by_server.values().sum()
     }
 
-    /// Returns the number of pending requests.
+    /// 返回待定请求的数量。
     pub fn pending_request_count(&self) -> usize {
         self.pending_heap.len()
     }
 
-    /// Checks if a server has open slots for more requests.
-    /// Maps to `RequestScheduler.serverHasOpenSlots`
+    /// 检查某个服务器是否有空闲槽位接受更多请求。
+    /// 映射到 `RequestScheduler.serverHasOpenSlots`
     pub fn server_has_open_slots(&self, server_key: &str, desired_requests: usize) -> bool {
         let max_requests = self
             .requests_by_server
@@ -331,61 +328,59 @@ impl RequestScheduler {
         current + desired_requests <= max_requests
     }
 
-    /// Checks if the priority heap has open slots.
-    /// Maps to `RequestScheduler.heapHasOpenSlots`
+    /// 检查优先级堆是否有空闲槽位。
+    /// 映射到 `RequestScheduler.heapHasOpenSlots`
     pub fn heap_has_open_slots(&self, desired_requests: usize) -> bool {
         self.pending_heap.len() + desired_requests <= self.priority_heap_length
     }
 
-    /// Schedules a request. Returns the request ID if accepted.
+    /// 调度一个请求。若被接受则返回请求 ID。
     ///
-    /// Maps to `RequestScheduler.request`. When throttling is enabled and the
-    /// request cannot be activated immediately, it is placed in the priority
-    /// heap. If the heap is saturated, the request is *deferred* (retained for
-    /// later promotion) rather than dropped, up to [`Self::maximum_deferred`].
+    /// 映射到 `RequestScheduler.request`。当启用了限流且请求
+    /// 无法立即激活时，它会被放入优先级堆。若堆已饱和，请求会被
+    /// *延迟*（为后续提升而保留）而非丢弃，最多到
+    /// [`Self::maximum_deferred`]。
     pub fn schedule(&mut self, mut request: Request) -> Option<RequestId> {
-        // Assign ID
+        // 分配 ID
         let id = RequestId(self.next_id);
         self.next_id += 1;
         request.id = id;
         self.statistics.on_scheduled();
 
-        // If not throttling, immediately activate
+        // 若不限流，立即激活
         if !self.throttle_requests || !request.throttle {
             self.activate_request(request);
             return Some(id);
         }
 
-        // Check if we can activate immediately
+        // 检查是否可以立即激活
         if self.can_activate(&request) {
             self.activate_request(request);
             return Some(id);
         }
 
-        // Add to pending heap if there's room
+        // 若还有空间则加入待定堆
         if self.pending_heap.len() < self.priority_heap_length {
             request.state = RequestState::Issued;
             self.pending_heap.push(PrioritizedRequest {
                 id,
-                // M1 review fix: guard against a NaN priority corrupting the
-                // heap's total order (NaN sinks to the bottom as `f64::MAX`).
+                // M1 评审修复：防止 NaN 优先级破坏堆的总序
+                // （NaN 作为 `f64::MAX` 沉到底部）。
                 priority: sanitize_priority(request.priority),
             });
             self.active_requests.insert(id, request);
             Some(id)
         } else {
-            // Heap saturated — apply the CesiumJS `RequestScheduler.request`
-            // priority-rejection rule (`packages/engine/Source/Core/RequestScheduler.js`):
-            // the internal `PriorityQueue.insert` returns `false` when the new
-            // item's priority is **not better** than the worst resident item,
-            // in which case the request is rejected outright. Only when the
-            // new item strictly outranks the worst resident do we evict the
-            // worst (into the M8.1 deferred queue, if it has room) and admit
-            // the newcomer.
+            // 堆饱和 —— 应用 CesiumJS `RequestScheduler.request`
+            // 的优先级拒绝规则（`packages/engine/Source/Core/RequestScheduler.js`）：
+            // 当新项的优先级 **不优于** 最差的常驻项时，内部的
+            // `PriorityQueue.insert` 返回 `false`，此时请求会被直接拒绝。只有当
+            // 新项严格优于最差的常驻项时，我们才驱逐最差项
+            // （若还有空间则放入 M8.1 延迟队列）并接纳新来者。
             //
-            // `pending_heap` is a min-heap by priority value (lower value =
-            // higher priority, see `PrioritizedRequest::cmp`), so the *worst*
-            // resident is the entry with the **maximum** `priority` field.
+            // `pending_heap` 是按优先级值的最小堆（值越低 = 优先级越高，见
+            // `PrioritizedRequest::cmp`），因此 *最差* 的常驻项是 `priority`
+            // 字段 **最大** 的那个条目。
             let worst_priority = self
                 .pending_heap
                 .iter()
@@ -393,19 +388,18 @@ impl RequestScheduler {
                 .fold(f64::NEG_INFINITY, f64::max);
 
             if request.priority.partial_cmp(&worst_priority) != Some(Ordering::Less) {
-                // New request is not strictly better than the worst resident
-                // (covers equal-priority, worse-priority, and NaN-incomparable
-                // cases). Reject and account for it — this is the
-                // `heapHasOpenSlots == false` branch of the CesiumJS spec.
+                // 新请求不严格优于最差的常驻项
+                // （涵盖同优先级、更差优先级以及 NaN 不可比的
+                // 情况）。拒绝它并记账 —— 这对应 CesiumJS 规范中
+                // `heapHasOpenSlots == false` 的分支。
                 self.statistics.on_cancelled_pending();
                 return None;
             }
 
-            // New request strictly outranks the worst resident: evict the
-            // worst, admit the newcomer. `BinaryHeap` has no remove-by-value,
-            // so drain + rebuild (heap sizes are bounded by
-            // `priority_heap_length`, default 20 — the O(n) rebuild is
-            // negligible and keeps the invariant exact).
+            // 新请求严格优于最差的常驻项：驱逐最差项，接纳新来者。
+            // `BinaryHeap` 没有按值移除，因此排空 + 重建（堆大小受
+            // `priority_heap_length` 限制，默认 20 —— O(n) 重建可忽略不计，
+            // 且能精确保持不变式）。
             let mut entries: Vec<PrioritizedRequest> = self.pending_heap.drain().collect();
             let mut worst_idx = 0;
             for (i, e) in entries.iter().enumerate() {
@@ -416,16 +410,15 @@ impl RequestScheduler {
             let evicted = entries.remove(worst_idx);
             entries.push(PrioritizedRequest {
                 id,
-                // M1 review fix: NaN → f64::MAX sink-to-bottom guard.
+                // M1 评审修复：NaN → f64::MAX 沉底守卫。
                 priority: sanitize_priority(request.priority),
             });
             for e in entries {
                 self.pending_heap.push(e);
             }
 
-            // Route the evicted request into the M8.1 deferred queue (if it
-            // has room) so a later `update()` can promote it back once the
-            // heap drains; otherwise drop it and account for the cancellation.
+            // 将被驱逐的请求路由到 M8.1 延迟队列（若还有空间），以便后续
+            // `update()` 能在堆排空后将其提升回来；否则丢弃它并为取消记账。
             if let Some(mut evicted_req) = self.active_requests.remove(&evicted.id) {
                 evicted_req.state = RequestState::Unissued;
                 if self.deferred.len() < self.maximum_deferred {
@@ -441,10 +434,10 @@ impl RequestScheduler {
         }
     }
 
-    /// Cancels a request.
+    /// 取消一个请求。
     ///
-    /// Updates statistics differently depending on whether the request had been
-    /// activated (cancelled-active) or was still pending (cancelled-pending).
+    /// 根据请求是否已被激活（cancelled-active）还是仍为待定（cancelled-pending），
+    /// 以不同方式更新统计。
     pub fn cancel(&mut self, id: RequestId) -> bool {
         let was_active = self
             .active_requests
@@ -466,7 +459,7 @@ impl RequestScheduler {
         }
     }
 
-    /// Marks a request as completed successfully.
+    /// 将一个请求标记为成功完成。
     pub fn complete(&mut self, id: RequestId) -> bool {
         let was_active = self
             .active_requests
@@ -480,8 +473,8 @@ impl RequestScheduler {
                 if was_active {
                     self.statistics.on_completed(&server_key, rtype);
                 } else {
-                    // Completed while still pending: count success without an
-                    // active decrement (it was never activated).
+                    // 在仍为待定时完成：计为成功而不做
+                    // active 递减（它从未被激活）。
                     self.statistics.succeeded += 1;
                     *self.statistics.completed_by_server.entry(server_key).or_insert(0) += 1;
                     *self.statistics.completed_by_type.entry(rtype).or_insert(0) += 1;
@@ -492,11 +485,11 @@ impl RequestScheduler {
         }
     }
 
-    /// Marks a request as failed (retries exhausted or unrecoverable error).
+    /// 将一个请求标记为失败（重试耗尽或不可恢复的错误）。
     ///
-    /// Mirrors the failure path of CesiumJS `RequestScheduler` where
-    /// `statistics.numberOfFailedRequests` is incremented and the request is
-    /// released back so its server slot opens.
+    /// 镜像 CesiumJS `RequestScheduler` 的失败路径，其中
+    /// `statistics.numberOfFailedRequests` 递增且请求被释放回去，
+    /// 使其服务器槽位开启。
     pub fn fail(&mut self, id: RequestId) -> bool {
         let was_active = self
             .active_requests
@@ -520,35 +513,34 @@ impl RequestScheduler {
         }
     }
 
-    /// Updates priorities and activates pending requests.
-    /// Should be called once per frame.
+    /// 更新优先级并激活待定请求。
+    /// 应每帧调用一次。
     ///
-    /// Order of operations (mirrors CesiumJS `RequestScheduler.update`):
-    /// 1. Snapshot the previous active count for delta diagnostics.
-    /// 2. Promote deferred requests into the priority heap if slots opened.
-    /// 3. Activate pending requests while global/per-server slots are available.
+    /// 操作顺序（镜像 CesiumJS `RequestScheduler.update`）：
+    /// 1. 快照之前的活动计数用于增量诊断。
+    /// 2. 若槽位开启，将延迟请求提升入优先级堆。
+    /// 3. 在全局/逐服务器槽位可用时激活待定请求。
     pub fn update(&mut self) {
         self.statistics.snapshot_last_active();
         self.promote_deferred();
 
-        // Activate pending requests. Mirrors CesiumJS `RequestScheduler.update`
-        // (packages/engine/Source/Core/RequestScheduler.js L320-340): the loop
-        // TERMINATES only when the GLOBAL slot budget is exhausted. A heap-top
-        // whose OWN server is saturated is SKIPPED — popped and parked back
-        // into the deferred queue for a later frame — and the scan CONTINUES,
-        // so pending requests bound for OTHER servers with open slots are still
-        // activated. The pre-fix code `break`-ed on any `can_activate == false`,
-        // conflating "global budget full" with "this request's server full": a
-        // single saturated server sitting at the heap top then starved every
-        // other server's backlog for the whole frame (H1 review fix).
+        // 激活待定请求。镜像 CesiumJS `RequestScheduler.update`
+        // （packages/engine/Source/Core/RequestScheduler.js L320-340）：仅当
+        // 全局槽位预算耗尽时循环才终止。当一个堆顶项自身的服务器
+        // 已饱和时，它会被 SKIPPED——弹出并停放到延迟队列留待后续
+        // 帧——然后扫描 CONTINUES，因此发往其他有空闲槽位服务器的
+        // 待定请求仍会被激活。修复前的代码在任何 `can_activate == false`
+        // 时 `break`，将“全局预算满”与“本请求的服务器满”混为一谈：
+        // 一个处于堆顶的饱和服务器会使其他所有服务器的积压在整个
+        // 帧内挨饿（H1 评审修复）。
         while let Some(prioritized) = self.pending_heap.peek() {
-            // Global budget exhausted → nothing more can activate this frame.
+            // 全局预算耗尽 → 本帧不能再激活任何东西。
             if !self.global_has_slots() {
                 break;
             }
             let id = prioritized.id;
             let Some(request) = self.active_requests.get(&id) else {
-                // Stale heap entry (request already cancelled/completed) → drop.
+                // 陈旧的堆条目（请求已取消/完成）→ 丢弃。
                 self.pending_heap.pop();
                 continue;
             };
@@ -561,13 +553,11 @@ impl RequestScheduler {
                 *self.active_count_by_server.entry(server_key.clone()).or_insert(0) += 1;
                 self.statistics.on_activated(&server_key, rtype);
             } else {
-                // This request's server is saturated. Skip it (pop off the
-                // heap) and park it in the deferred queue so `promote_deferred`
-                // re-admits it on a later frame once its server drains, then
-                // keep scanning for other-server requests. Popping — rather
-                // than leaving it at the heap top — is what lets the loop
-                // advance past a saturated server instead of re-peeking it
-                // forever (which is how the pre-fix `break` starved others).
+                // 本请求的服务器已饱和。跳过它（从堆中弹出）
+                // 并将其停放到延迟队列，以便 `promote_deferred` 在其服务器排空后的
+                // 后续帧重新接纳它，然后继续扫描其他服务器的请求。弹出——而非
+                // 将其留在堆顶——正是让循环能越过饱和服务器继续推进的原因
+                // （反复重新 peek 它就是修复前的 `break` 使其他服务器挨饿的原因）。
                 self.pending_heap.pop();
                 if let Some(mut req) = self.active_requests.remove(&id) {
                     req.state = RequestState::Unissued;
@@ -581,26 +571,24 @@ impl RequestScheduler {
         }
     }
 
-    /// Recomputes pending request priorities from frame state, then updates.
+    /// 从帧状态重新计算待定请求的优先级，然后更新。
     ///
-    /// When a [`PriorityFunction`] is installed, each pending (Issued) request
-    /// carrying a [`PriorityKey`] has its priority recomputed against the
-    /// supplied [`FrameContext`]; the priority heap is then rebuilt and
-    /// [`Self::update`] runs. This mirrors CesiumJS re-evaluating
-    /// `request.priorityFunction()` every frame before promotion.
+    /// 当安装了 [`PriorityFunction`] 时，每个携带 [`PriorityKey`] 的待定
+    /// （Issued）请求都会根据提供的 [`FrameContext`] 重新计算优先级；然后重建
+    /// 优先级堆并运行 [`Self::update`]。这镜像了 CesiumJS 在提升前
+    /// 每帧重新求值 `request.priorityFunction()`。
     ///
-    /// If no priority function is installed, this is equivalent to [`Self::update`].
+    /// 若未安装优先级函数，这等价于 [`Self::update`]。
     pub fn update_with_context(&mut self, context: &FrameContext) {
         if let Some(pf) = self.priority_function.as_ref() {
             let mut new_entries: Vec<PrioritizedRequest> = Vec::new();
-            // `pf` borrows `self.priority_function`; the loop borrows
-            // `self.active_requests` — disjoint fields.
+            // `pf` 借用 `self.priority_function`；循环借用
+            // `self.active_requests` —— 不相交的字段。
             for (id, request) in self.active_requests.iter_mut() {
                 if request.state == RequestState::Issued {
                     if let Some(key) = &request.priority_key {
-                        // M1 review fix: guard the recomputed priority so a NaN
-                        // returned by the priority function can't corrupt the
-                        // rebuilt heap's total order (NaN → f64::MAX sink).
+                        // M1 评审修复：对重新计算的优先级做守卫，以免优先级
+                        // 函数返回的 NaN 破坏重建后堆的总序（NaN → f64::MAX 沉底）。
                         request.priority = sanitize_priority(pf.compute_priority(key, context));
                     }
                     new_entries.push(PrioritizedRequest {
@@ -614,56 +602,55 @@ impl RequestScheduler {
         self.update();
     }
 
-    /// Gets a request by ID (active or pending; deferred requests are not yet
-    /// tracked here — see [`Self::deferred_requests`]).
+    /// 按 ID 获取一个请求（活动或待定；延迟请求尚未在此追踪
+    /// —— 见 [`Self::deferred_requests`]）。
     pub fn get_request(&self, id: RequestId) -> Option<&Request> {
         self.active_requests.get(&id)
     }
 
-    /// Returns the currently deferred (heap-rejected, awaiting promotion)
-    /// requests.
+    /// 返回当前被延迟（堆拒绝、等待提升）的
+    /// 请求。
     pub fn deferred_requests(&self) -> &[Request] {
         &self.deferred
     }
 
-    // Internal helpers
+    // 内部辅助函数
 
-    /// Global-slot predicate: `true` while the scheduler has room for *any*
-    /// further active request, regardless of server. Split out from the old
-    /// combined `can_activate` so [`Self::update`] can distinguish "global
-    /// budget exhausted" (terminate the loop) from "this request's server is
-    /// saturated" (skip just that request) — the H1 review fix.
+    /// 全局槽位谓词：只要调度器还有空间接纳 *任何* 进一步的
+    /// 活动请求（无论哪个服务器）就为 `true`。从旧的合并
+    /// `can_activate` 中拆分出来，以便 [`Self::update`] 能区分“全局
+    /// 预算耗尽”（终止循环）与“本请求的服务器饱和”（仅跳过该请求）
+    /// —— 即 H1 评审修复。
     fn global_has_slots(&self) -> bool {
         let active_count = self.active_count_by_server.values().sum::<usize>();
         active_count < self.maximum_requests
     }
 
-    /// Per-server predicate: `true` if this request may take a slot on its own
-    /// server (or isn't server-throttled at all).
+    /// 逐服务器谓词：若本请求可以在其自身服务器上占用一个槽位
+    /// （或根本不按服务器限流）则为 `true`。
     fn server_has_slots(&self, request: &Request) -> bool {
         !request.throttle_by_server || self.server_has_open_slots(&request.server_key, 1)
     }
 
-    /// Combined immediate-activation predicate (global AND per-server). Used by
-    /// [`Self::schedule`] for its fast-path check; [`Self::update`] consults
-    /// the two predicates separately so one saturated server can't stall the
-    /// whole activation loop.
+    /// 组合的立即激活谓词（全局 AND 逐服务器）。供 [`Self::schedule`]
+    /// 的快路径检查使用；[`Self::update`] 分别查询
+    /// 两个谓词，以致一个饱和的服务器不会拖慢整个
+    /// 激活循环。
     fn can_activate(&self, request: &Request) -> bool {
         self.global_has_slots() && self.server_has_slots(request)
     }
 
-    /// Promotes deferred requests into the priority heap while slots are open.
+    /// 在槽位开启时将延迟请求提升入优先级堆。
     ///
-    /// Deferred requests are promoted in ascending priority-value order (best
-    /// first) so that the most important deferred requests re-enter the heap
-    /// when capacity frees up.
+    /// 延迟请求按优先级值升序（最优优先）提升，以便最重要的
+    /// 延迟请求在容量空闲时重新进入堆。
     fn promote_deferred(&mut self) {
         if self.deferred.is_empty() {
             return;
         }
-        // Best (lowest priority value) first. M1 review fix: `total_cmp` keeps
-        // the sort total (NaN gets a deterministic position) instead of the
-        // previous `partial_cmp().unwrap_or(Equal)` which left NaN unordered.
+        // 最优（优先级值最低）优先。M1 评审修复：`total_cmp` 保持排序
+        // 为总序（NaN 获得一个确定位置），而非之前的
+        // `partial_cmp().unwrap_or(Equal)`，后者使 NaN 无序。
         self.deferred
             .sort_by(|a, b| a.priority.total_cmp(&b.priority));
 
@@ -671,7 +658,7 @@ impl RequestScheduler {
         for mut request in self.deferred.drain(..) {
             if self.pending_heap.len() < self.priority_heap_length {
                 let id = request.id;
-                // M1 review fix: NaN → f64::MAX sink-to-bottom guard.
+                // M1 评审修复：NaN → f64::MAX 沉底守卫。
                 let priority = sanitize_priority(request.priority);
                 request.state = RequestState::Issued;
                 self.active_requests.insert(id, request);
@@ -692,9 +679,9 @@ impl RequestScheduler {
         self.active_requests.insert(request.id, request);
     }
 
-    /// Removes a request from tracking, releasing its server slot if it was
-    /// active. Returns the removed request so callers can update statistics
-    /// according to the outcome (complete/fail/cancel).
+    /// 从一个请求停止追踪，若它曾处于活动状态则释放其服务器槽位。
+    /// 返回被移除的请求，以便调用方根据结果（complete/fail/cancel）
+    /// 更新统计。
     fn deactivate_request(&mut self, id: RequestId) -> Option<Request> {
         if let Some(request) = self.active_requests.remove(&id) {
             if request.state == RequestState::Active {
@@ -715,23 +702,23 @@ impl Default for RequestScheduler {
     }
 }
 
-/// Extracts the server key (host:port) from a URL.
+/// 从 URL 中提取服务器键（host:port）。
 ///
-/// Maps to CesiumJS `RequestScheduler.getServerKey`.
-/// Adds default ports: http→80, https→443.
+/// 映射到 CesiumJS `RequestScheduler.getServerKey`。
+/// 添加默认端口：http→80，https→443。
 pub fn get_server_key(url: &str) -> String {
     if let Some(start) = url.find("://") {
         let scheme = url[..start].to_lowercase();
         let after_scheme = &url[start + 3..];
         let end = after_scheme.find('/').unwrap_or(after_scheme.len());
         let authority = &after_scheme[..end];
-        // Strip credentials (user:pass@)
+        // 剥离凭据（user:pass@）
         let authority = if let Some(at) = authority.find('@') {
             &authority[at + 1..]
         } else {
             authority
         };
-        // Add default port if missing
+        // 若缺失则添加默认端口
         if authority.contains(':') {
             authority.to_lowercase()
         } else {
@@ -746,43 +733,43 @@ pub fn get_server_key(url: &str) -> String {
     }
 }
 
-/// Internal alias for backward compatibility.
+/// 用于向后兼容的内部别名。
 fn extract_server_key(url: &str) -> String {
     get_server_key(url)
 }
 
-/// A resource URL template with query parameters.
-/// Maps to CesiumJS `Resource`
+/// 一个带查询参数的资源 URL 模板。
+/// 映射到 CesiumJS `Resource`
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Resource {
-    /// The base URL (without query string).
+    /// 基础 URL（不含查询字符串）。
     pub url: String,
-    /// Query parameters.
+    /// 查询参数。
     pub query_parameters: HashMap<String, String>,
-    /// Template values for URL substitution ({key} → value).
+    /// 用于 URL 替换的模板值（{key} → value）。
     pub template_values: HashMap<String, String>,
-    /// HTTP headers.
+    /// HTTP 头部。
     pub headers: HashMap<String, String>,
 }
 
-/// Options for creating a derived resource.
-/// Maps to CesiumJS `Resource.getDerivedResource` options
+/// 创建派生资源的选项。
+/// 映射到 CesiumJS `Resource.getDerivedResource` options
 #[derive(Debug, Clone, Default)]
 pub struct DeriveResourceOptions {
-    /// Relative or absolute URL to resolve against the parent.
+    /// 要相对于父资源解析的相对或绝对 URL。
     pub url: Option<String>,
-    /// Additional query parameters.
+    /// 额外的查询参数。
     pub query_parameters: Vec<(String, String)>,
-    /// Additional template values.
+    /// 额外的模板值。
     pub template_values: Vec<(String, String)>,
-    /// Additional headers.
+    /// 额外的头部。
     pub headers: Vec<(String, String)>,
 }
 
 impl Resource {
-    /// Creates a new resource with the given URL.
-    /// Parses query parameters from the URL if present.
-    /// Maps to CesiumJS `new Resource({ url })`
+    /// 使用给定的 URL 创建一个新资源。
+    /// 若 URL 中存在则解析查询参数。
+    /// 映射到 CesiumJS `new Resource({ url })`
     pub fn new(url: impl Into<String>) -> Self {
         let raw = url.into();
         let (base, query_params) = Self::parse_url(&raw);
@@ -794,8 +781,8 @@ impl Resource {
         }
     }
 
-    /// Creates a resource without parsing query parameters from the URL.
-    /// Maps to CesiumJS `new Resource({ url, parseUrl: false })`
+    /// 创建一个不从 URL 解析查询参数的资源。
+    /// 映射到 CesiumJS `new Resource({ url, parseUrl: false })`
     pub fn new_unparsed(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -805,34 +792,34 @@ impl Resource {
         }
     }
 
-    /// Adds a query parameter.
+    /// 添加一个查询参数。
     pub fn with_query(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.query_parameters.insert(key.into(), value.into());
         self
     }
 
-    /// Adds a template value.
+    /// 添加一个模板值。
     pub fn with_template_value(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.template_values.insert(key.into(), value.into());
         self
     }
 
-    /// Adds a header.
+    /// 添加一个头部。
     pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.insert(key.into(), value.into());
         self
     }
 
-    /// Appends a forward slash to the URL if it doesn't already end with one.
-    /// Maps to CesiumJS `Resource.appendForwardSlash`
+    /// 若 URL 末尾没有正斜杠则追加上一个。
+    /// 映射到 CesiumJS `Resource.appendForwardSlash`
     pub fn append_forward_slash(&mut self) {
         if !self.url.ends_with('/') {
             self.url.push('/');
         }
     }
 
-    /// Gets the URL component, optionally including query parameters.
-    /// Maps to CesiumJS `Resource.getUrlComponent(includeQuery, includeProxy)`
+    /// 获取 URL 组件，可选择是否包含查询参数。
+    /// 映射到 CesiumJS `Resource.getUrlComponent(includeQuery, includeProxy)`
     pub fn get_url_component(&self, include_query: bool) -> String {
         if !include_query || self.query_parameters.is_empty() {
             return self.url.clone();
@@ -840,8 +827,8 @@ impl Resource {
         format!("{}?{}", self.url, self.build_query_string())
     }
 
-    /// Builds the full URL with query parameters and template substitution.
-    /// Maps to CesiumJS `Resource.url` getter / `toString()`
+    /// 构建含查询参数与模板替换的完整 URL。
+    /// 映射到 CesiumJS `Resource.url` getter / `toString()`
     pub fn build_url(&self) -> String {
         let base = self.apply_template_values(&self.url);
         if self.query_parameters.is_empty() {
@@ -854,27 +841,27 @@ impl Resource {
         }
     }
 
-    /// Gets the server key for this resource.
+    /// 获取此资源的服务器键。
     pub fn server_key(&self) -> String {
         extract_server_key(&self.url)
     }
 
-    /// Sets query parameters, optionally preserving existing values as defaults.
-    /// Maps to CesiumJS `Resource.setQueryParameters(params, useAsDefault)`
+    /// 设置查询参数，可选择将现有值保留为默认值。
+    /// 映射到 CesiumJS `Resource.setQueryParameters(params, useAsDefault)`
     pub fn set_query_parameters(&mut self, params: Vec<(String, String)>, use_as_default: bool) {
         if use_as_default {
-            // Only add keys that don't already exist
+            // 仅添加尚不存在的键
             for (k, v) in params {
                 self.query_parameters.entry(k).or_insert(v);
             }
         } else {
-            // Overwrite all
+            // 全部覆盖
             self.query_parameters = params.into_iter().collect();
         }
     }
 
-    /// Creates a derived resource by resolving a relative URL against this resource.
-    /// Maps to CesiumJS `Resource.getDerivedResource`
+    /// 通过将相对 URL 相对于本资源解析来创建一个派生资源。
+    /// 映射到 CesiumJS `Resource.getDerivedResource`
     pub fn get_derived_resource(&self, options: &DeriveResourceOptions) -> Self {
         let mut derived_url = self.url.clone();
 
@@ -882,31 +869,31 @@ impl Resource {
             derived_url = Self::resolve_url(&derived_url, rel_url);
         }
 
-        // Merge query parameters
+        // 合并查询参数
         let mut query = self.query_parameters.clone();
         for (k, v) in &options.query_parameters {
             query.insert(k.clone(), v.clone());
         }
 
-        // Parse query from derived URL
+        // 从派生 URL 解析查询参数
         let (base, url_params) = Self::parse_url(&derived_url);
         for (k, v) in url_params {
             query.insert(k, v);
         }
 
-        // Merge template values
+        // 合并模板值
         let mut templates = self.template_values.clone();
         for (k, v) in &options.template_values {
             templates.insert(k.clone(), v.clone());
         }
 
-        // Merge headers
+        // 合并头部
         let mut headers = self.headers.clone();
         for (k, v) in &options.headers {
             headers.insert(k.clone(), v.clone());
         }
 
-        // Apply template values to the URL
+        // 将模板值应用于 URL
         let final_url = Self::apply_template_values_static(&base, &templates);
 
         Self {
@@ -917,7 +904,7 @@ impl Resource {
         }
     }
 
-    /// Creates a derived resource with a relative path appended (legacy API).
+    /// 创建一个附加了相对路径的派生资源（旧版 API）。
     pub fn derive(&self, relative_path: &str) -> Self {
         let base = if self.url.ends_with('/') {
             &self.url
@@ -935,9 +922,9 @@ impl Resource {
         }
     }
 
-    // ─── Internal helpers ──────────────────────────────────────────────────────
+    // ─── 内部辅助函数 ──────────────────────────────────────────────────────
 
-    /// Parses a URL into base (without query) and query parameters.
+    /// 将一个 URL 解析为基础部分（不含查询）与查询参数。
     fn parse_url(raw: &str) -> (String, HashMap<String, String>) {
         if let Some(qpos) = raw.find('?') {
             let base = raw[..qpos].to_string();
@@ -949,7 +936,7 @@ impl Resource {
         }
     }
 
-    /// Parses a query string into key-value pairs.
+    /// 将查询字符串解析为键值对。
     fn parse_query_string(qs: &str) -> HashMap<String, String> {
         let mut map = HashMap::new();
         for pair in qs.split('&') {
@@ -967,7 +954,7 @@ impl Resource {
         map
     }
 
-    /// Builds a query string from parameters (sorted for determinism).
+    /// 从参数构建查询字符串（为确定性而排序）。
     fn build_query_string(&self) -> String {
         let mut pairs: Vec<_> = self.query_parameters.iter().collect();
         // deferred.md #14: 采纳 clippy 建议解引用克隆内层 String（原 k.clone() 对 &&String 双重引用克隆）。
@@ -979,12 +966,12 @@ impl Resource {
             .join("&")
     }
 
-    /// Applies template values to this resource's URL.
+    /// 将模板值应用于本资源的 URL。
     fn apply_template_values(&self, url: &str) -> String {
         Self::apply_template_values_static(url, &self.template_values)
     }
 
-    /// Replaces {key} placeholders in a URL with template values.
+    /// 用模板值替换 URL 中的 {key} 占位符。
     fn apply_template_values_static(url: &str, templates: &HashMap<String, String>) -> String {
         if templates.is_empty() {
             return url.to_string();
@@ -992,14 +979,14 @@ impl Resource {
         let mut result = url.to_string();
         for (key, value) in templates {
             let placeholder = format!("{{{}}}", key);
-            // URL-encode the value (encode special chars)
+            // 对值进行 URL 编码（编码特殊字符）
             let encoded = Self::encode_uri_component(value);
             result = result.replace(&placeholder, &encoded);
         }
         result
     }
 
-    /// Encodes a URI component (percent-encoding for special characters).
+    /// 编码一个 URI 组件（对特殊字符进行百分号编码）。
     fn encode_uri_component(s: &str) -> String {
         let mut result = String::with_capacity(s.len());
         for byte in s.bytes() {
@@ -1016,15 +1003,15 @@ impl Resource {
         result
     }
 
-    /// Resolves a relative URL against a base URL.
-    /// Maps to CesiumJS URI resolution logic.
+    /// 将相对 URL 相对于基础 URL 解析。
+    /// 映射到 CesiumJS URI 解析逻辑。
     fn resolve_url(base: &str, relative: &str) -> String {
-        // If relative is absolute (has scheme), use it directly
+        // 若 relative 是绝对的（含方案），直接使用它
         if relative.contains("://") {
             return relative.to_string();
         }
 
-        // Get the directory part of the base URL
+        // 获取基础 URL 的目录部分
         let directory = if base.ends_with('/') {
             base.to_string()
         } else if let Some(pos) = base.rfind('/') {
@@ -1036,28 +1023,28 @@ impl Resource {
         format!("{}{}", directory, relative)
     }
 
-    // ─── URI classification ──────────────────────────────────────────────
+    // ─── URI 分类 ──────────────────────────────────────────────
 
-    /// Returns `true` if this resource's URL is a `data:` URI.
+    /// 若本资源的 URL 是 `data:` URI 则返回 `true`。
     ///
-    /// Data URIs carry their payload inline and never hit the network, so the
-    /// fetch-descriptor pipeline short-circuits them (no proxy, no scheduler).
-    /// Maps to CesiumJS `Resource` handling of `dataUriRegex`.
+    /// Data URI 内联携带其负载且从不访问网络，因此
+    /// fetch-descriptor 管道会对它们短路（不走代理，不走调度器）。
+    /// 映射到 CesiumJS `Resource` 对 `dataUriRegex` 的处理。
     pub fn is_data_uri(&self) -> bool {
         crate::data_uri::is_data_uri(&self.url)
     }
 
-    /// Returns `true` if this resource's URL is a `blob:` URI.
+    /// 若本资源的 URL 是 `blob:` URI 则返回 `true`。
     ///
-    /// Blob URIs reference in-memory browser objects; like data URIs they are
-    /// never proxied. Maps to CesiumJS blob handling in `Resource`.
+    /// Blob URI 引用内存中的浏览器对象；与 data URI 一样它们
+    /// 从不被代理。映射到 CesiumJS `Resource` 中的 blob 处理。
     pub fn is_blob_uri(&self) -> bool {
         self.url.starts_with("blob:")
     }
 
-    /// Returns the base URI (`scheme://authority/`) of this resource.
+    /// 返回本资源的基础 URI（`scheme://authority/`）。
     ///
-    /// Maps to CesiumJS `Resource.getBaseUri`.
+    /// 映射到 CesiumJS `Resource.getBaseUri`。
     pub fn get_base_uri(&self) -> String {
         if let Some(start) = self.url.find("://") {
             let after = &self.url[start + 3..];
@@ -1068,29 +1055,28 @@ impl Resource {
         }
     }
 
-    /// Appends query values, overwriting any existing keys.
+    /// 追加查询值，覆盖任何已存在的键。
     ///
-    /// Maps to CesiumJS `Resource.appendQueryParameters`.
+    /// 映射到 CesiumJS `Resource.appendQueryParameters`。
     pub fn append_query_values(&mut self, params: &[(String, String)]) {
         for (k, v) in params {
             self.query_parameters.insert(k.clone(), v.clone());
         }
     }
 
-    /// Removes the given query parameter keys.
+    /// 移除给定的查询参数键。
     ///
-    /// Maps to CesiumJS `Resource.removeQueryParameters`.
+    /// 映射到 CesiumJS `Resource.removeQueryParameters`。
     pub fn remove_query_values(&mut self, keys: &[&str]) {
         for k in keys {
             self.query_parameters.remove(*k);
         }
     }
 
-    /// Clones this resource with a different base URL, preserving query
-    /// parameters, template values, and headers.
+    /// 以不同的基础 URL 克隆本资源，保留查询
+    /// 参数、模板值与头部。
     ///
-    /// Maps to CesiumJS `Resource.getDerivedResource({ url })` when only the
-    /// URL changes.
+    /// 当仅 URL 变化时，映射到 CesiumJS `Resource.getDerivedResource({ url })`。
     pub fn clone_with_url(&self, url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -1100,17 +1086,17 @@ impl Resource {
         }
     }
 
-    // ─── Fetch descriptor construction (pure; no IO) ──────────────────────
+    // ─── Fetch descriptor 构造（纯函数；无 IO） ──────────────────────
 
-    /// Builds a [`FetchDescriptor`] describing *what* to request without
-    /// performing any IO.
+    /// 构建一个 [`FetchDescriptor`]，描述要请求 *什么* 而不
+    /// 执行任何 IO。
     ///
-    /// This is the domain-side counterpart of CesiumJS `Resource.fetch*`: the
-    /// adapter layer (`adapters/network`) consumes the descriptor and executes
-    /// the actual HTTP request. Because construction is pure, the entire URL /
-    /// header / proxy / retry pipeline is unit-testable without a network.
+    /// 这是 CesiumJS `Resource.fetch*` 在领域侧的对应物：
+    /// 适配层（`adapters/network`）消费该描述符并执行
+    /// 实际的 HTTP 请求。因为构造是纯函数，整个 URL /
+    /// 头部 / 代理 / 重试管道都可在无网络的情况下单元测试。
     ///
-    /// Data URIs short-circuit: `is_data_uri` is set and no proxy is applied.
+    /// Data URI 短路：设置 `is_data_uri` 且不应用代理。
     pub fn build_fetch_descriptor(
         &self,
         response_type: ResponseType,
@@ -1141,38 +1127,38 @@ impl Resource {
         }
     }
 
-    /// Descriptor for fetching binary content (`ArrayBuffer`).
-    /// Maps to CesiumJS `Resource.fetchArrayBuffer`.
+    /// 获取二进制内容（`ArrayBuffer`）的描述符。
+    /// 映射到 CesiumJS `Resource.fetchArrayBuffer`。
     pub fn fetch_array_buffer(&self, proxy: Option<&ProxyPolicy>) -> FetchDescriptor {
         self.build_fetch_descriptor(ResponseType::ArrayBuffer, proxy)
     }
 
-    /// Descriptor for fetching JSON content.
-    /// Maps to CesiumJS `Resource.fetchJson`.
+    /// 获取 JSON 内容的描述符。
+    /// 映射到 CesiumJS `Resource.fetchJson`。
     pub fn fetch_json(&self, proxy: Option<&ProxyPolicy>) -> FetchDescriptor {
         self.build_fetch_descriptor(ResponseType::Json, proxy)
     }
 
-    /// Descriptor for fetching text content.
-    /// Maps to CesiumJS `Resource.fetchText`.
+    /// 获取文本内容的描述符。
+    /// 映射到 CesiumJS `Resource.fetchText`。
     pub fn fetch_text(&self, proxy: Option<&ProxyPolicy>) -> FetchDescriptor {
         self.build_fetch_descriptor(ResponseType::Text, proxy)
     }
 
-    /// Descriptor for fetching image content.
-    /// Maps to CesiumJS `Resource.fetchImage`.
+    /// 获取图像内容的描述符。
+    /// 映射到 CesiumJS `Resource.fetchImage`。
     pub fn fetch_image(&self, proxy: Option<&ProxyPolicy>) -> FetchDescriptor {
         self.build_fetch_descriptor(ResponseType::Image, proxy)
     }
 
-    /// Descriptor for fetching blob content.
-    /// Maps to CesiumJS `Resource.fetchBlob`.
+    /// 获取 blob 内容的描述符。
+    /// 映射到 CesiumJS `Resource.fetchBlob`。
     pub fn fetch_blob(&self, proxy: Option<&ProxyPolicy>) -> FetchDescriptor {
         self.build_fetch_descriptor(ResponseType::Blob, proxy)
     }
 
-    /// Descriptor for a POST request carrying a body.
-    /// Maps to CesiumJS `Resource.post`.
+    /// 携带请求体的 POST 请求描述符。
+    /// 映射到 CesiumJS `Resource.post`。
     pub fn post(&self, body: Vec<u8>, proxy: Option<&ProxyPolicy>) -> FetchDescriptor {
         let mut descriptor = self.build_fetch_descriptor(ResponseType::Json, proxy);
         descriptor.method = HttpMethod::Post;
@@ -1187,35 +1173,35 @@ impl std::fmt::Display for Resource {
     }
 }
 
-// ─── Response / method / fetch descriptor types ─────────────────────────
+// ─── 响应 / 方法 / fetch 描述符类型 ─────────────────────────
 
-/// The expected response body type.
+/// 预期的响应体类型。
 ///
-/// Maps to CesiumJS `Resource.ResponseType` (`ARRAY_BUFFER`, `BLOB`,
-/// `DOCUMENT`, `JSON`, `TEXT`, `IMAGE`, `IMAGE_BITMAP`). The adapter layer
-/// uses this to decide how to decode the HTTP response body.
+/// 映射到 CesiumJS `Resource.ResponseType`（`ARRAY_BUFFER`、`BLOB`、
+/// `DOCUMENT`、`JSON`、`TEXT`、`IMAGE`、`IMAGE_BITMAP`）。适配层
+/// 用此决定如何解码 HTTP 响应体。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResponseType {
-    /// Raw bytes.
+    /// 原始字节。
     ArrayBuffer,
-    /// Binary large object (images, etc.).
+    /// 二进制大对象（图像等）。
     Blob,
-    /// Parsed document (XML/HTML).
+    /// 已解析的文档（XML/HTML）。
     Document,
-    /// JSON value.
+    /// JSON 值。
     Json,
-    /// UTF-8 text.
+    /// UTF-8 文本。
     Text,
-    /// Decoded image.
+    /// 已解码的图像。
     Image,
-    /// Decoded image bitmap (GPU-uploadable).
+    /// 已解码的位图（可上传 GPU）。
     ImageBitmap,
 }
 
-/// HTTP method for a fetch.
+/// 一次 fetch 的 HTTP 方法。
 ///
-/// Maps to the methods CesiumJS `Resource` supports (`fetch*` use GET,
-/// `post`/`put`/`patch`/`delete` mutate).
+/// 映射到 CesiumJS `Resource` 支持的方法（`fetch*` 用 GET，
+/// `post`/`put`/`patch`/`delete` 会修改）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HttpMethod {
     Get,
@@ -1226,7 +1212,7 @@ pub enum HttpMethod {
 }
 
 impl HttpMethod {
-    /// Returns the canonical uppercase method token.
+    /// 返回规范的大写方法 token。
     pub fn as_str(&self) -> &'static str {
         match self {
             HttpMethod::Get => "GET",
@@ -1238,61 +1224,61 @@ impl HttpMethod {
     }
 }
 
-/// A fully-resolved description of a network request, produced by the pure
-/// domain layer and executed by the adapter layer.
+/// 一个完全解析的网络请求描述，由纯领域层产生、
+/// 由适配层执行。
 ///
-/// This is the boundary type that keeps IO out of the domain: `Resource`
-/// builds it, `adapters/network` consumes it.
+/// 这是将 IO 排除在领域层之外的边界类型：`Resource`
+/// 构造它，`adapters/network` 消费它。
 #[derive(Debug, Clone, PartialEq)]
 pub struct FetchDescriptor {
-    /// Final URL (proxy already applied, query/template substituted).
+    /// 最终 URL（已应用代理，已替换查询/模板）。
     pub url: String,
-    /// HTTP method.
+    /// HTTP 方法。
     pub method: HttpMethod,
-    /// Request headers.
+    /// 请求头部。
     pub headers: HashMap<String, String>,
-    /// Expected response body type.
+    /// 预期的响应体类型。
     pub response_type: ResponseType,
-    /// Logical request type (for scheduler statistics/throttling).
+    /// 逻辑请求类型（用于调度器统计/限流）。
     pub request_type: RequestType,
-    /// Retry policy applied on failure.
+    /// 失败时应用的重试策略。
     pub retry: RetryPolicy,
-    /// Initial priority hint (lower = higher priority).
+    /// 初始优先级提示（越低 = 优先级越高）。
     pub priority: f64,
-    /// Server key (`host:port`) for per-server throttling. Empty for data URIs.
+    /// 用于逐服务器限流的服务器键（`host:port`）。对 data URI 为空。
     pub server_key: String,
-    /// Optional request body (POST/PUT/PATCH).
+    /// 可选的请求体（POST/PUT/PATCH）。
     pub body: Option<Vec<u8>>,
-    /// Whether the URL is an inline `data:`/`blob:` URI (no network needed).
+    /// URL 是否为内联的 `data:`/`blob:` URI（无需网络）。
     pub is_data_uri: bool,
 }
 
 impl FetchDescriptor {
-    /// Overrides the logical request type.
+    /// 覆盖逻辑请求类型。
     pub fn with_request_type(mut self, request_type: RequestType) -> Self {
         self.request_type = request_type;
         self
     }
 
-    /// Overrides the retry policy.
+    /// 覆盖重试策略。
     pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
         self.retry = retry;
         self
     }
 
-    /// Overrides the initial priority hint.
+    /// 覆盖初始优先级提示。
     pub fn with_priority(mut self, priority: f64) -> Self {
         self.priority = priority;
         self
     }
 
-    /// Adds (or replaces) a header.
+    /// 添加（或替换）一个头部。
     pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.insert(key.into(), value.into());
         self
     }
 
-    /// Converts this descriptor into a schedulable [`Request`].
+    /// 将此描述符转换为一个可调度的 [`Request`]。
     pub fn to_request(&self) -> Request {
         let mut request = Request::throttled(
             self.url.clone(),
@@ -1308,67 +1294,67 @@ impl FetchDescriptor {
     }
 }
 
-// ─── Retry semantics (pure) ─────────────────────────────────────────────
+// ─── 重试语义（纯函数） ─────────────────────────────────────────────
 
-/// Classification of a request failure, used to decide retryability.
+/// 请求失败的分类，用于决定可重试性。
 ///
-/// Maps to the CesiumJS `retryCallback(resource, error)` decision, where the
-/// error's HTTP status determines whether a retry is worthwhile.
+/// 映射到 CesiumJS `retryCallback(resource, error)` 的判定，其中
+/// 错误的 HTTP 状态码决定重试是否值得。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestErrorClass {
-    /// Recoverable (5xx, network timeout) — retry with backoff.
+    /// 可恢复（5xx、网络超时）—— 退避重试。
     Transient,
-    /// Rate-limited (HTTP 429) — retry only if `retry_on_throttled`.
+    /// 被限流（HTTP 429）—— 仅当 `retry_on_throttled` 时重试。
     Throttled,
-    /// Client error (4xx except 429) — never retry.
+    /// 客户端错误（除 429 外的 4xx）—— 从不重试。
     Permanent,
 }
 
-/// Backoff shape applied between retry attempts.
+/// 在重试尝试之间应用的退避形状。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackoffStrategy {
-    /// Constant delay between attempts.
+    /// 尝试之间固定延迟。
     Fixed,
-    /// Delay grows linearly with the attempt number.
+    /// 延迟随尝试次数线性增长。
     Linear,
-    /// Delay doubles each attempt (capped at `max_delay_millis`).
+    /// 延迟每次尝试翻倍（上限为 `max_delay_millis`）。
     Exponential,
 }
 
-/// The scheduler/caller's decision after a failed attempt.
+/// 一次失败尝试后调度器/调用方的决策。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetryDecision {
-    /// Retry immediately (no delay).
+    /// 立即重试（无延迟）。
     RetryNow,
-    /// Retry after the given delay in milliseconds.
+    /// 在给定毫秒数延迟后重试。
     RetryAfterMillis(u64),
-    /// Stop retrying; surface the failure.
+    /// 停止重试；上报失败。
     GiveUp,
 }
 
-/// Pure retry policy.
+/// 纯重试策略。
 ///
-/// Maps to CesiumJS `Resource.retryAttempts` + `Resource.retryCallback`. The
-/// default mirrors CesiumJS's `retryAttempts = 1` with no delay, but hosts can
-/// configure exponential backoff for transient/throttled failures.
+/// 映射到 CesiumJS `Resource.retryAttempts` + `Resource.retryCallback`。
+/// 默认镜像 CesiumJS 的 `retryAttempts = 1` 且无延迟，但宿主可
+/// 为瞬态/限流失败配置指数退避。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetryPolicy {
-    /// Maximum number of retry attempts after the initial request.
+    /// 初始请求之后的最大重试次数。
     pub max_attempts: u32,
-    /// Base delay in milliseconds (used by the backoff strategy).
+    /// 基准延迟（毫秒，由退避策略使用）。
     pub base_delay_millis: u64,
-    /// Upper bound on the computed delay.
+    /// 计算出的延迟的上限。
     pub max_delay_millis: u64,
-    /// Backoff shape.
+    /// 退避形状。
     pub backoff: BackoffStrategy,
-    /// Whether to retry throttled (429) responses.
+    /// 是否重试被限流（429）的响应。
     pub retry_on_throttled: bool,
 }
 
 impl Default for RetryPolicy {
     fn default() -> Self {
         Self {
-            // CesiumJS `Resource.retryAttempts` defaults to 1.
+            // CesiumJS `Resource.retryAttempts` 默认为 1。
             max_attempts: 1,
             base_delay_millis: 0,
             max_delay_millis: 30_000,
@@ -1379,7 +1365,7 @@ impl Default for RetryPolicy {
 }
 
 impl RetryPolicy {
-    /// A policy that never retries.
+    /// 一个从不重试的策略。
     pub fn no_retry() -> Self {
         Self {
             max_attempts: 0,
@@ -1387,7 +1373,7 @@ impl RetryPolicy {
         }
     }
 
-    /// Exponential backoff with a sane default base delay.
+    /// 带合理默认基准延迟的指数退避。
     pub fn exponential(max_attempts: u32, base_delay_millis: u64) -> Self {
         Self {
             max_attempts,
@@ -1397,7 +1383,7 @@ impl RetryPolicy {
         }
     }
 
-    /// Computes the delay before the given (0-based) retry attempt.
+    /// 计算在给定（从 0 开始）重试尝试之前的延迟。
     pub fn delay_for(&self, attempt: u32) -> u64 {
         if self.base_delay_millis == 0 {
             return 0;
@@ -1414,10 +1400,10 @@ impl RetryPolicy {
         raw.min(self.max_delay_millis)
     }
 
-    /// Decides whether to retry after a failed attempt.
+    /// 决定一次失败尝试后是否重试。
     ///
-    /// `attempt` is the number of retries already performed (0 = first failure).
-    /// This is the pure core of CesiumJS's `retryCallback` decision.
+    /// `attempt` 是已执行的重试次数（0 = 首次失败）。
+    /// 这是 CesiumJS `retryCallback` 决策的纯核心。
     pub fn decide(&self, attempt: u32, error: RequestErrorClass) -> RetryDecision {
         match error {
             RequestErrorClass::Permanent => RetryDecision::GiveUp,
@@ -1438,10 +1424,10 @@ impl RetryPolicy {
     }
 }
 
-/// Classifies an HTTP status code into a [`RequestErrorClass`].
+/// 将一个 HTTP 状态码分类为一个 [`RequestErrorClass`]。
 ///
-/// Maps to the status-based retry heuristics in CesiumJS request handling
-/// (429 = throttled, 5xx = transient, other 4xx = permanent).
+/// 映射到 CesiumJS 请求处理中基于状态的退避启发式
+/// （429 = 限流，5xx = 瞬态，其他 4xx = 永久）。
 pub fn classify_status(status: u16) -> RequestErrorClass {
     match status {
         429 => RequestErrorClass::Throttled,
@@ -1450,23 +1436,23 @@ pub fn classify_status(status: u16) -> RequestErrorClass {
     }
 }
 
-/// Context handed to a [`RetryCallback`] after a failed attempt.
+/// 一次失败尝试后交给 [`RetryCallback`] 的上下文。
 #[derive(Debug, Clone)]
 pub struct RetryContext {
-    /// The URL that failed.
+    /// 失败的 URL。
     pub url: String,
-    /// Number of retries already performed (0 = first failure).
+    /// 已执行的重试次数（0 = 首次失败）。
     pub attempt: u32,
-    /// HTTP status code, if the failure came from a response.
+    /// HTTP 状态码，若失败来自响应。
     pub status: Option<u16>,
-    /// Pre-classified error class.
+    /// 预先分类的错误类别。
     pub error_class: RequestErrorClass,
-    /// The policy in effect.
+    /// 生效的策略。
     pub policy: RetryPolicy,
 }
 
 impl RetryContext {
-    /// Builds a context from a status code, classifying it automatically.
+    /// 从状态码构建一个上下文，自动对其分类。
     pub fn from_status(url: impl Into<String>, attempt: u32, status: u16, policy: RetryPolicy) -> Self {
         Self {
             url: url.into(),
@@ -1477,24 +1463,23 @@ impl RetryContext {
         }
     }
 
-    /// The default decision: delegate to the policy's `decide`.
+    /// 默认决策：委托给策略的 `decide`。
     pub fn default_decision(&self) -> RetryDecision {
         self.policy.decide(self.attempt, self.error_class)
     }
 }
 
-/// A pluggable retry callback.
+/// 一个可插拔的重试回调。
 ///
-/// Maps to CesiumJS `Resource.retryCallback(resource, error)`. The domain
-/// provides the pure decision; the adapter invokes the callback between
-/// attempts. Kept as a boxed closure so hosts can inject custom logic
-/// (e.g. honor `Retry-After` headers).
+/// 映射到 CesiumJS `Resource.retryCallback(resource, error)`。领域层
+/// 提供纯决策；适配器在尝试之间调用该回调。保留为装箱的
+/// 闭包，以便宿主注入自定义逻辑（例如遵守 `Retry-After` 头部）。
 pub type RetryCallback = Box<dyn Fn(&RetryContext) -> RetryDecision + Send + Sync>;
 
-/// Returns the default retry callback, which simply applies the policy.
+/// 返回默认的重试回调，它简单地应用策略。
 ///
-/// This is the pure-domain equivalent of CesiumJS's built-in retry behaviour
-/// when no custom `retryCallback` is supplied.
+/// 当未提供自定义 `retryCallback` 时，这是 CesiumJS 内置重试行为的
+/// 纯领域等价物。
 pub fn default_retry_callback() -> RetryCallback {
     Box::new(|ctx: &RetryContext| ctx.default_decision())
 }
@@ -1523,7 +1508,7 @@ mod tests {
         let mut scheduler = RequestScheduler::new();
         scheduler.maximum_requests_per_server = 2;
 
-        // Schedule 2 requests to the same server
+        // 向同一服务器调度 2 个请求
         for i in 0..2 {
             let request = Request::throttled(
                 format!("https://example.com/tile{}.b3dm", i),
@@ -1534,7 +1519,7 @@ mod tests {
         }
         scheduler.update();
 
-        // Third request should be pending (not active)
+        // 第三个请求应为待定（非活动）
         let request = Request::throttled(
             "https://example.com/tile2.b3dm".to_string(),
             RequestType::Tiles3D,
@@ -1542,7 +1527,7 @@ mod tests {
         );
         scheduler.schedule(request).unwrap();
 
-        // Only 2 should be active (server key includes default port)
+        // 应只有 2 个为活动（服务器键包含默认端口）
         assert!(scheduler.server_has_open_slots("example.com:443", 0));
         assert!(!scheduler.server_has_open_slots("example.com:443", 1));
     }
@@ -1553,7 +1538,7 @@ mod tests {
         scheduler.maximum_requests = 1;
         scheduler.throttle_requests = true;
 
-        // First request activates immediately
+        // 第一个请求立即激活
         let r1 = Request::throttled(
             "https://a.com/1".to_string(),
             RequestType::Other,
@@ -1561,16 +1546,16 @@ mod tests {
         );
         scheduler.schedule(r1).unwrap();
 
-        // These should be pending
+        // 这些应为待定
         let r2 = Request::throttled(
             "https://b.com/2".to_string(),
             RequestType::Other,
-            5.0, // Higher priority (lower value)
+            5.0, // 更高优先级（值更低）
         );
         let r3 = Request::throttled(
             "https://c.com/3".to_string(),
             RequestType::Other,
-            1.0, // Highest priority
+            1.0, // 最高优先级
         );
         scheduler.schedule(r2).unwrap();
         scheduler.schedule(r3).unwrap();
@@ -1578,18 +1563,18 @@ mod tests {
         assert_eq!(scheduler.pending_request_count(), 2);
     }
 
-    /// H1 review fix: a saturated server sitting at the top of the priority
-    /// heap must NOT stall activation of pending requests bound for OTHER
-    /// servers with open slots (the pre-fix `break`-on-any-full starved them).
+    /// H1 评审修复：一个处于优先级堆顶的饱和服务器，绝不能拖慢
+    /// 发往其他有空闲槽位服务器的待定请求的激活（修复前的
+    /// “任何满则 break”会使它们挨饿）。
     #[test]
     fn update_activates_other_server_when_heap_top_server_is_saturated() {
         let mut sched = RequestScheduler::new();
         sched.throttle_requests = true;
-        sched.maximum_requests = 50; // ample global budget
-        sched.maximum_requests_per_server = 1; // one active per server
+        sched.maximum_requests = 50; // 宽裕的全局预算
+        sched.maximum_requests_per_server = 1; // 每服务器一个活动
         sched.priority_heap_length = 20;
 
-        // Saturate BOTH servers with one active request each.
+        // 用每个服务器各一个活动请求使两个服务器都饱和。
         let a1 = sched
             .schedule(Request::throttled(
                 "https://servera.example/a1".into(),
@@ -1607,9 +1592,9 @@ mod tests {
         assert_eq!(sched.get_request(a1).unwrap().state, RequestState::Active);
         assert_eq!(sched.get_request(b0).unwrap().state, RequestState::Active);
 
-        // These two land in the pending heap (both servers currently full).
-        // The serverA request has the BETTER priority (0.0 < 1.0) so it sits at
-        // the heap top — exactly the position that starved others pre-fix.
+        // 这两个进入待定堆（两个服务器当前都满）。
+        // serverA 的请求拥有更好的优先级（0.0 < 1.0）因此位于
+        // 堆顶——正是修复前使其他请求挨饿的那个位置。
         let a2 = sched
             .schedule(Request::throttled(
                 "https://servera.example/a2".into(),
@@ -1626,19 +1611,19 @@ mod tests {
             .unwrap();
         assert_eq!(sched.pending_request_count(), 2);
 
-        // Free serverB (complete b0); serverA stays saturated (a1 still active).
+        // 释放 serverB（完成 b0）；serverA 保持饱和（a1 仍活动）。
         assert!(sched.complete(b0));
 
         sched.update();
 
-        // serverB's pending request (b1) MUST activate even though the heap top
-        // (a2) belongs to the still-saturated serverA.
+        // serverB 的待定请求（b1）必须激活，即使堆顶
+        // （a2）属于仍处于饱和的 serverA。
         assert_eq!(
             sched.get_request(b1).map(|r| r.state),
             Some(RequestState::Active),
             "serverB pending request must not be starved by a saturated serverA at the heap top"
         );
-        // serverA's a2 is skipped this frame and parked in the deferred queue.
+        // serverA 的 a2 本帧被跳过并停放到延迟队列。
         assert!(
             sched.get_request(a2).is_none(),
             "a2 leaves the active map (deferred) rather than activating on a full server"
@@ -1647,8 +1632,8 @@ mod tests {
         assert_eq!(sched.deferred_requests()[0].id, a2);
     }
 
-    /// M1 review fix: `Ord::cmp` and `PartialEq::eq` must agree even for NaN
-    /// priorities (`a.cmp(b) == Equal <=> a == b`).
+    /// M1 评审修复：`Ord::cmp` 与 `PartialEq::eq` 必须即使对于 NaN
+    /// 优先级也保持一致（`a.cmp(b) == Equal <=> a == b`）。
     #[test]
     fn prioritized_request_ord_eq_consistent_for_nan() {
         let nan = f64::NAN;
@@ -1659,25 +1644,24 @@ mod tests {
             a == b,
             "Ord/Eq consistency law must hold for NaN"
         );
-        // NaN vs a finite value: strictly ordered, never Equal (pre-fix cmp
-        // returned Equal for the NaN comparison, corrupting the heap order).
+        // NaN 与一个有限值相比：严格排序，从不 Equal（修复前的 cmp
+        // 对 NaN 比较返回 Equal，破坏了堆排序）。
         let c = PrioritizedRequest { id: RequestId(3), priority: 0.0 };
         assert_ne!(a.cmp(&c), Ordering::Equal);
         assert!(a != c);
-        // sanitize_priority sinks NaN to the bottom value.
+        // sanitize_priority 将 NaN 沉到底部值。
         assert_eq!(sanitize_priority(nan), f64::MAX);
         assert_eq!(sanitize_priority(2.5), 2.5);
     }
 
-    /// M1 review fix: a NaN-priority request sinks to the BOTTOM of the
-    /// schedule heap (activated last) without corrupting the ordering of
-    /// well-formed priorities. NaN is reachable via `inf + (-inf)` from a
-    /// composite priority summing `f64::MAX`-magnitude components.
+    /// M1 评审修复：一个 NaN 优先级的请求会沉到调度堆的底部（最后
+    /// 激活）而不破坏格式良好的优先级的排序。NaN 可通过复合
+    /// 优先级将 `f64::MAX` 量级的各分量求和得到的 `inf + (-inf)` 达到。
     #[test]
     fn nan_priority_request_activates_last_without_corrupting_heap() {
         let mut sched = RequestScheduler::new();
         sched.throttle_requests = true;
-        sched.maximum_requests = 1; // drain one-at-a-time → activation order == heap order
+        sched.maximum_requests = 1; // 一次排空一个 → 激活顺序 == 堆顺序
         sched.maximum_requests_per_server = 50;
         sched.priority_heap_length = 20;
 
@@ -1687,11 +1671,11 @@ mod tests {
         let mk = |prio: f64| {
             let mut r =
                 Request::throttled("https://s.example/t".into(), RequestType::Terrain, prio);
-            r.throttle_by_server = false; // isolate global-budget ordering
+            r.throttle_by_server = false; // 隔离全局预算排序
             r
         };
 
-        // First (5.0) activates (budget 1); the rest pile into the heap.
+        // 第一个（5.0）激活（预算 1）；其余堆入堆。
         let id_first = sched.schedule(mk(5.0)).unwrap();
         let id_nan = sched.schedule(mk(nan)).unwrap();
         let id_low = sched.schedule(mk(1.0)).unwrap();
@@ -1699,7 +1683,7 @@ mod tests {
         assert_eq!(sched.get_request(id_first).unwrap().state, RequestState::Active);
         assert_eq!(sched.pending_request_count(), 3, "nan/1.0/3.0 all pending");
 
-        // Drain one-at-a-time, recording activation order.
+        // 一次排空一个，记录激活顺序。
         let mut order = Vec::new();
         let mut current = id_first;
         loop {
@@ -1719,7 +1703,7 @@ mod tests {
                 None => break,
             }
         }
-        // Best-first heap order: 1.0, 3.0, then NaN sinks to the bottom (last).
+        // 最优优先的堆顺序：1.0、3.0，然后 NaN 沉到底部（最后）。
         assert_eq!(
             order,
             vec![id_low, id_mid, id_nan],
@@ -1768,7 +1752,7 @@ mod tests {
             ("b".to_string(), "2".to_string()),
         ]);
         assert_eq!(resource.query_parameters.len(), 2);
-        // Overwrite existing key.
+        // 覆盖已存在的键。
         resource.append_query_values(&[("a".to_string(), "9".to_string())]);
         assert_eq!(resource.query_parameters.get("a").unwrap(), "9");
         resource.remove_query_values(&["a"]);
@@ -1783,7 +1767,7 @@ mod tests {
             .with_query("x", "1")
             .with_query("y", "2");
         let url = resource.build_url();
-        // Sorted for determinism: x, y, z.
+        // 为确定性排序：x、y、z。
         assert!(url.find("x=1").unwrap() < url.find("y=2").unwrap());
         assert!(url.find("y=2").unwrap() < url.find("z=3").unwrap());
     }
@@ -1798,12 +1782,12 @@ mod tests {
             ],
             true,
         );
-        // use_as_default=true: existing key preserved, new key added.
+        // use_as_default=true：保留已存在的键，添加新键。
         assert_eq!(resource.query_parameters.get("k").unwrap(), "original");
         assert_eq!(resource.query_parameters.get("j").unwrap(), "added");
     }
 
-    // ─── URI classification / base uri ───────────────────────────────────
+    // ─── URI 分类 / 基础 uri ─────────────────────────────────────────────
 
     #[test]
     fn test_is_data_and_blob_uri() {
@@ -1835,7 +1819,7 @@ mod tests {
         assert_eq!(format!("{}", resource), "https://example.com/api?k=v");
     }
 
-    // ─── FetchDescriptor construction ────────────────────────────────────
+    // ─── FetchDescriptor 构造 ────────────────────────────────────────────
 
     #[test]
     fn test_fetch_descriptor_get() {
@@ -1864,7 +1848,7 @@ mod tests {
             "https://proxy.example.com/".to_string(),
         ));
         let descriptor = resource.fetch_array_buffer(Some(&proxy));
-        // Data URI: no proxy applied, empty server key, flagged inline.
+        // Data URI：不应用代理，服务器键为空，标记为内联。
         assert!(descriptor.is_data_uri);
         assert!(descriptor.url.starts_with("data:"));
         assert!(descriptor.server_key.is_empty());
@@ -1902,18 +1886,18 @@ mod tests {
         assert_eq!(request.server_key, "example.com:443");
     }
 
-    // ─── Retry semantics ─────────────────────────────────────────────────
+    // ─── 重试语义 ─────────────────────────────────────────────────────────
 
     #[test]
     fn test_retry_policy_default_single_attempt() {
         let policy = RetryPolicy::default();
         assert_eq!(policy.max_attempts, 1);
-        // First transient failure retries immediately (no base delay).
+        // 首次瞬时失败立即重试（无基础延迟）。
         assert_eq!(
             policy.decide(0, RequestErrorClass::Transient),
             RetryDecision::RetryNow
         );
-        // Second attempt exceeds max_attempts=1.
+        // 第二次尝试超出 max_attempts=1。
         assert_eq!(
             policy.decide(1, RequestErrorClass::Transient),
             RetryDecision::GiveUp
@@ -2023,7 +2007,7 @@ mod tests {
 
     #[test]
     fn test_scheduler_statistics_cancel_active_vs_pending() {
-        // Active cancellation.
+        // 活动请求的取消。
         let mut scheduler = RequestScheduler::new();
         let id = scheduler
             .schedule(Request::new(
@@ -2034,7 +2018,7 @@ mod tests {
         scheduler.cancel(id);
         assert_eq!(scheduler.statistics().cancelled_active, 1);
 
-        // Pending cancellation (forced into heap by maximum_requests=0).
+        // 待定请求的取消（由 maximum_requests=0 强制入堆）。
         let mut scheduler = RequestScheduler::new();
         scheduler.maximum_requests = 0;
         let id = scheduler
@@ -2061,15 +2045,15 @@ mod tests {
         assert_eq!(scheduler.statistics().attempted, 0);
     }
 
-    // ─── Deferred promotion ──────────────────────────────────────────────
+    // ─── 延迟提升 ──────────────────────────────────────────────
 
     #[test]
     fn test_scheduler_deferred_when_heap_saturated() {
         let mut scheduler = RequestScheduler::new();
-        scheduler.maximum_requests = 0; // nothing can activate
+        scheduler.maximum_requests = 0; // 无任何请求可激活
         scheduler.priority_heap_length = 1;
 
-        // First throttled request fills the heap (priority 1.0).
+        // 第一个被限流的请求填满堆（优先级 1.0）。
         scheduler
             .schedule(Request::throttled(
                 "https://example.com/a".to_string(),
@@ -2079,12 +2063,12 @@ mod tests {
             .unwrap();
         assert_eq!(scheduler.pending_request_count(), 1);
 
-        // Second request has **better** priority (0.5 < 1.0), so under the
-        // CesiumJS `PriorityQueue.insert` rule it evicts the worst resident
-        // (the p=1.0 request) into the M8.1 deferred queue and takes its heap
-        // slot. This is the eviction path that keeps deferred-promotion alive
-        // while still honouring the spec's rejection of worse-priority
-        // newcomers (see `test_scheduler_rejects_worse_priority_when_heap_full`).
+        // 第二个请求拥有**更优**的优先级（0.5 < 1.0），因此根据
+        // CesiumJS `PriorityQueue.insert` 规则，它会把最差的驻留者
+        // （p=1.0 的请求）逐出到 M8.1 延迟队列中，并占据其堆
+        // 槽位。正是这条逐出路径让延迟-提升保持活跃，
+        // 同时仍遵守规范对更差优先级
+        // 新来者的拒绝（见 `test_scheduler_rejects_worse_priority_when_heap_full`）。
         scheduler
             .schedule(Request::throttled(
                 "https://example.com/b".to_string(),
@@ -2095,7 +2079,7 @@ mod tests {
         assert_eq!(scheduler.deferred_count(), 1);
         assert_eq!(scheduler.pending_request_count(), 1);
 
-        // Growing the heap and updating promotes the deferred request back.
+        // 扩大堆并更新会把延迟的请求重新提升回来。
         scheduler.priority_heap_length = 2;
         scheduler.update();
         assert_eq!(scheduler.deferred_count(), 0);
@@ -2109,7 +2093,7 @@ mod tests {
         scheduler.priority_heap_length = 1;
         scheduler.maximum_deferred = 1;
 
-        // r1 (p=1.0) fills the heap.
+        // r1（p=1.0）填满堆。
         scheduler
             .schedule(Request::throttled(
                 "https://example.com/a".to_string(),
@@ -2117,7 +2101,7 @@ mod tests {
                 1.0,
             ))
             .unwrap();
-        // r2 (p=0.5) is better → evicts r1 into the deferred queue (now full).
+        // r2（p=0.5）更优 → 将 r1 逐出到延迟队列（现已满）。
         scheduler
             .schedule(Request::throttled(
                 "https://example.com/b".to_string(),
@@ -2126,8 +2110,8 @@ mod tests {
             ))
             .unwrap();
         assert_eq!(scheduler.deferred_count(), 1);
-        // r3 (p=2.0) is worse than the heap resident (p=0.5) → rejected
-        // outright by the CesiumJS priority rule, regardless of deferred room.
+        // r3（p=2.0）比堆中驻留者（p=0.5）更差 → 无论是否有延迟余量，
+        // 都会被 CesiumJS 优先级规则直接拒绝。
         assert!(scheduler
             .schedule(Request::throttled(
                 "https://example.com/c".to_string(),
@@ -2137,11 +2121,11 @@ mod tests {
             .is_none());
     }
 
-    /// CesiumJS spec alignment: a newcomer whose priority is **not strictly
-    /// better** than the worst resident of a saturated heap is rejected
-    /// outright (never deferred). This is the rule that
+    /// CesiumJS 规范对齐：当一个新来请求的优先级相对于已饱和堆中
+    /// 最差的驻留者**并非严格更优**时，会被直接拒绝（绝不延迟保留）。
+    /// 这正是以下测试所断言的规则：
     /// `specs/tests/core/request_scheduler_spec.rs::honors_priority_heap_length`
-    /// and `::handles_low_priority_requests` assert against.
+    /// 和 `::handles_low_priority_requests`。
     #[test]
     fn test_scheduler_rejects_worse_priority_when_heap_full() {
         let mut scheduler = RequestScheduler::new();
@@ -2155,7 +2139,7 @@ mod tests {
                 0.0,
             ))
             .unwrap();
-        // Worse priority (1.0 > 0.0) → rejected, not deferred.
+        // 更差的优先级（1.0 > 0.0）→ 被拒绝，而非延迟。
         assert!(scheduler
             .schedule(Request::throttled(
                 "https://example.com/b".to_string(),
@@ -2166,7 +2150,7 @@ mod tests {
         assert_eq!(scheduler.deferred_count(), 0);
         assert_eq!(scheduler.pending_request_count(), 1);
 
-        // Equal priority (0.0 == 0.0) is also rejected (not *strictly* better).
+        // 相等的优先级（0.0 == 0.0）同样被拒绝（并非*严格*更优）。
         assert!(scheduler
             .schedule(Request::throttled(
                 "https://example.com/c".to_string(),
@@ -2176,14 +2160,14 @@ mod tests {
             .is_none());
     }
 
-    // ─── Priority function integration ───────────────────────────────────
+    // ─── 优先级函数集成 ───────────────────────────────────
 
     #[test]
     fn test_scheduler_priority_function_recomputes() {
         use crate::priority::{FrameContext, PriorityKey, SsedPriority};
 
         let mut scheduler = RequestScheduler::new();
-        scheduler.maximum_requests = 0; // keep everything pending
+        scheduler.maximum_requests = 0; // 让全部请求保持待定
         scheduler.set_priority_function(Box::new(SsedPriority::new()));
         assert_eq!(scheduler.priority_function_name(), Some("SSED"));
 
@@ -2204,7 +2188,7 @@ mod tests {
         let context = FrameContext::new().with_camera(0.0, 0.0, 6_378_137.0);
         scheduler.update_with_context(&context);
 
-        // The stored priority was recomputed by the SSED function (no longer 999).
+        // 存储的优先级已被 SSED 函数重新计算（不再是 999）。
         let request = scheduler.get_request(id).unwrap();
         assert!((request.priority - 999.0).abs() > f64::EPSILON);
     }
@@ -2220,7 +2204,7 @@ mod tests {
                 7.0,
             ))
             .unwrap();
-        // No priority function installed: priority unchanged.
+        // 未安装优先级函数：优先级不变。
         scheduler.update_with_context(&crate::priority::FrameContext::new());
         assert_eq!(scheduler.get_request(id).unwrap().priority, 7.0);
     }

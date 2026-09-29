@@ -1,4 +1,4 @@
-//! DataSources/EntitySpec.js, EntityCollectionSpec.js → Rust integration tests
+//! DataSources/EntitySpec.js、EntityCollectionSpec.js → Rust 集成测试
 
 use cesium_datasource::entity::{
     BillboardGraphics, BoxGraphics, CylinderGraphics, EllipseGraphics, Entity, HeightReference,
@@ -230,7 +230,7 @@ fn test_entity_collection_ids() {
 
     let ids = collection.ids();
     assert_eq!(ids.len(), 3);
-    // Should preserve insertion order
+    // 应保持插入顺序
     assert_eq!(ids[0], "a");
     assert_eq!(ids[1], "b");
     assert_eq!(ids[2], "c");
@@ -255,7 +255,7 @@ fn test_entity_collection_replace() {
     entity1_updated.name = Some("Updated".to_string());
     collection.add(entity1_updated);
 
-    // Should still have only 1 entity
+    // 应仍只有 1 个实体
     assert_eq!(collection.len(), 1);
     assert_eq!(
         collection.get("entity-1").unwrap().name.as_ref().unwrap(),

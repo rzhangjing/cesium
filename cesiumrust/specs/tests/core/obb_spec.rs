@@ -1,26 +1,26 @@
-//! Core/OrientedBoundingBoxSpec.js → Rust integration tests
+//! Core/OrientedBoundingBoxSpec.js → Rust 集成测试
 //!
-//! Faithful port of CesiumJS `Specs/Core/OrientedBoundingBoxSpec.js` (61 `it()` cases).
+//! 忠实移植 CesiumJS `Specs/Core/OrientedBoundingBoxSpec.js`（61 个 `it()` 用例）。
 //!
-//! ## Platform adaptations
-//! - JS result-parameter variants (`fromRectangle(.., result)`, `computeCorners(result)`,
-//!   `computeTransformation(result)`, `fromTransformation(.., result)`) test the JS
-//!   memory-reuse API contract (`returnedResult === result`). Rust returns owned values,
-//!   so each is merged into its "without a result parameter" counterpart (identical values).
-//! - JS "throws without a <arg>" cases (null/undefined checks) are omitted: Rust's type
-//!   system makes passing `undefined` impossible.
-//! - JS `fromRectangle` debug-only `DeveloperError` checks (invalid width/height,
-//!   non-revolution ellipsoid) map to Rust `debug_assert!`; the "throws with invalid
-//!   rectangles" / "throws with non-revolution ellipsoids" cases ARE ported via
-//!   `#[should_panic]` (debug assertions are active under `cargo test`).
-//! - `clone` maps to Rust's derived `Clone`/`Copy`; the JS "clone undefined → undefined"
-//!   paths have no Rust counterpart and are omitted.
-//! - `equals` maps to derived `PartialEq`; the JS `equals(undefined) === false` path is
-//!   omitted (Rust `PartialEq` has no null case).
-//! - `createPackableSpecs` (pack/unpack into JS arrays) is omitted: packing is a JS-array
-//!   serialization concern, not part of the Rust domain API.
-//! - `isOccluded` (3 cases) is C-class: it depends on `Occluder` (a Scene/rendering
-//!   concept) and is not ported.
+//! ## 平台适配
+//! - JS 的 result-parameter 变体（`fromRectangle(.., result)`、`computeCorners(result)`、
+//!   `computeTransformation(result)`、`fromTransformation(.., result)`）测试 JS 的
+//!   内存复用 API 契约（`returnedResult === result`）。Rust 返回拥有所有权的值，
+//!   因此每个变体都被合并进对应的 "without a result parameter" 版本（值相同）。
+//! - JS 的 "throws without a <arg>" 用例（null/undefined 检查）予以省略：Rust 的类型系统
+//!   使传入 `undefined` 成为不可能。
+//! - JS `fromRectangle` 仅限 debug 的 `DeveloperError` 检查（非法宽度/高度、
+//!   非旋转椭球）映射到 Rust 的 `debug_assert!`；"throws with invalid
+//!   rectangles" / "throws with non-revolution ellipsoids" 用例确实通过
+//!   `#[should_panic]` 移植（debug 断言在 `cargo test` 下处于激活状态）。
+//! - `clone` 映射到 Rust 派生的 `Clone`/`Copy`；JS 的 "clone undefined → undefined"
+//!   路径没有对应的 Rust 版本，予以省略。
+//! - `equals` 映射到派生的 `PartialEq`；JS 的 `equals(undefined) === false` 路径
+//!   予以省略（Rust `PartialEq` 没有 null 情形）。
+//! - `createPackableSpecs`（pack/unpack 到 JS 数组）予以省略：打包是 JS 数组的
+//!   序列化关注点，不属于 Rust 领域 API。
+//! - `isOccluded`（3 个用例）属于 C 类：它依赖 `Occluder`（一个 Scene/渲染概念），
+//!   未予移植。
 
 use cesium_geospatial::bounding::OrientedBoundingBox;
 use cesium_geospatial::ray::{Intersect, Plane};
@@ -32,9 +32,9 @@ use glam::{DMat3, DMat4, DQuat, DVec3};
 
 const SQRT1_2: f64 = std::f64::consts::FRAC_1_SQRT_2;
 
-/// Builds a `DMat3` from a CesiumJS Matrix3 column-major flat array
-/// (`[col0.x, col0.y, col0.z, col1.x, col1.y, col1.z, col2.x, col2.y, col2.z]`).
-/// Uses explicit `from_cols` to avoid glam `from_cols_array` layout ambiguity.
+/// 从 CesiumJS Matrix3 列主序扁平数组构建 `DMat3`
+///（`[col0.x, col0.y, col0.z, col1.x, col1.y, col1.z, col2.x, col2.y, col2.z]`）。
+/// 使用显式的 `from_cols` 以避免 glam `from_cols_array` 的布局歧义。
 fn mat3_from_cesium(cols: [f64; 9]) -> DMat3 {
     DMat3::from_cols(
         DVec3::new(cols[0], cols[1], cols[2]),
@@ -43,7 +43,7 @@ fn mat3_from_cesium(cols: [f64; 9]) -> DMat3 {
     )
 }
 
-/// The shared test fixture: six axis-aligned points at distances (2, 3, 4).
+/// 共享测试夹具：六个沿轴对齐、距离为 (2, 3, 4) 的点。
 fn positions() -> Vec<DVec3> {
     vec![
         DVec3::new(2.0, 0.0, 0.0),
@@ -55,7 +55,7 @@ fn positions() -> Vec<DVec3> {
     ]
 }
 
-/// Mirrors the spec's `rotatePositions`: returns the rotated points and the rotation matrix.
+/// 对应规范中的 `rotatePositions`：返回旋转后的点和旋转矩阵。
 fn rotate_positions(positions: &[DVec3], axis: DVec3, angle: f64) -> (Vec<DVec3>, DMat3) {
     let quaternion = DQuat::from_axis_angle(axis, angle);
     let rotation = DMat3::from_quat(quaternion);
@@ -63,12 +63,12 @@ fn rotate_positions(positions: &[DVec3], axis: DVec3, angle: f64) -> (Vec<DVec3>
     (points, rotation)
 }
 
-/// Mirrors the spec's `translatePositions`.
+/// 对应规范中的 `translatePositions`。
 fn translate_positions(positions: &[DVec3], translation: DVec3) -> Vec<DVec3> {
     positions.iter().map(|&p| translation + p).collect()
 }
 
-/// `Matrix3.multiplyByScale(matrix, scale)`: scale each column by the matching component.
+/// `Matrix3.multiplyByScale(matrix, scale)`：将每一列按对应的分量缩放。
 fn multiply_by_scale(matrix: DMat3, scale: DVec3) -> DMat3 {
     DMat3::from_cols(
         matrix.x_axis * scale.x,
@@ -77,7 +77,7 @@ fn multiply_by_scale(matrix: DMat3, scale: DVec3) -> DMat3 {
     )
 }
 
-/// `Matrix3.fromScale(scale)` for 3D: creates a diagonal matrix from a 3-component scale.
+/// 3D 版的 `Matrix3.fromScale(scale)`：由三分量缩放创建对角矩阵。
 fn mat3_from_scale(scale: DVec3) -> DMat3 {
     DMat3::from_cols(
         DVec3::new(scale.x, 0.0, 0.0),
@@ -95,7 +95,7 @@ fn test_obb_constructor_default() {
 }
 
 /// `it("fromPoints constructs empty box with undefined positions")`
-/// (JS `undefined` maps to Rust empty slice)
+///（JS 的 `undefined` 映射为 Rust 的空切片）
 #[test]
 fn test_obb_from_points_undefined() {
     let box_ = OrientedBoundingBox::from_points(&[]);
@@ -133,7 +133,7 @@ fn test_obb_from_points_correct_translation() {
 #[test]
 fn test_obb_from_points_rotation_z() {
     let (points, mut rotation) = rotate_positions(&positions(), DVec3::Z, math_consts::PI_OVER_FOUR);
-    // Negate the off-diagonal sign-flipped entries (spec: rotation[1], rotation[3]).
+    // 对非对角线的符号翻转项取反（规范：rotation[1]、rotation[3]）。
     let mut a = rotation.to_cols_array();
     a[1] = -a[1];
     a[3] = -a[3];
@@ -356,7 +356,7 @@ fn test_obb_from_rectangle_with_heights() {
     assert_vec3_epsilon!(box_.center, DVec3::new(0.0, 0.0, 0.0), epsilon::EPSILON15);
     assert_mat3_epsilon!(box_.half_axes, DMat3::ZERO, epsilon::EPSILON15);
 
-    // NOTE: Values verified against CesiumJS runtime (spec file has column-order errors).
+    // 注意：数值已对照 CesiumJS 运行时验证（规范文件存在列顺序错误）。
     let box_ = OrientedBoundingBox::from_rectangle(
         &Rectangle::new(0.0, 0.0, 0.0, 0.0),
         -1.0,
@@ -418,7 +418,7 @@ fn test_obb_from_rectangle_span_over_half() {
     let sqrt_two_minus_one_div_four = (std::f64::consts::SQRT_2 - 1.0) / 4.0;
     let sqrt_two_plus_one_div_four = (std::f64::consts::SQRT_2 + 1.0) / 4.0;
 
-    // Entire ellipsoid
+    // 整个椭球
     let box_ = OrientedBoundingBox::from_rectangle(
         &Rectangle::new(-d180, -d90, d180, d90),
         0.0, 0.0, &Ellipsoid::UNIT_SPHERE,
@@ -430,7 +430,7 @@ fn test_obb_from_rectangle_span_over_half() {
         epsilon::EPSILON15
     );
 
-    // 3/4s of longitude, full latitude
+    // 经度 3/4，完整纬度
     let box_ = OrientedBoundingBox::from_rectangle(
         &Rectangle::new(-d135, -d90, d135, d90),
         0.0, 0.0, &Ellipsoid::UNIT_SPHERE,
@@ -446,7 +446,7 @@ fn test_obb_from_rectangle_span_over_half() {
         epsilon::EPSILON15
     );
 
-    // 3/4s of longitude, 1/2 of latitude centered at equator
+    // 经度 3/4，纬度 1/2，以赤道为中心
     let box_ = OrientedBoundingBox::from_rectangle(
         &Rectangle::new(-d135, -d45, d135, d45),
         0.0, 0.0, &Ellipsoid::UNIT_SPHERE,
@@ -462,7 +462,7 @@ fn test_obb_from_rectangle_span_over_half() {
         epsilon::EPSILON15
     );
 
-    // 3/4s of longitude centered at IDL, 1/2 of latitude centered at equator
+    // 经度 3/4 以国际日期变更线为中心，纬度 1/2 以赤道为中心
     let box_ = OrientedBoundingBox::from_rectangle(
         &Rectangle::new(d180, -d45, d90, d45),
         0.0, 0.0, &Ellipsoid::UNIT_SPHERE,
@@ -482,7 +482,7 @@ fn test_obb_from_rectangle_span_over_half() {
         epsilon::EPSILON15
     );
 
-    // Full longitude, 1/2 of latitude centered at equator
+    // 完整经度，纬度 1/2 以赤道为中心
     let box_ = OrientedBoundingBox::from_rectangle(
         &Rectangle::new(-d180, -d45, d180, d45),
         0.0, 0.0, &Ellipsoid::UNIT_SPHERE,
@@ -494,7 +494,7 @@ fn test_obb_from_rectangle_span_over_half() {
         epsilon::EPSILON15
     );
 
-    // Full longitude, 1/4 of latitude starting from north pole
+    // 完整经度，纬度 1/4 从北极开始
     let box_ = OrientedBoundingBox::from_rectangle(
         &Rectangle::new(-d180, d45, d180, d90),
         0.0, 0.0, &Ellipsoid::UNIT_SPHERE,
@@ -514,7 +514,7 @@ fn test_obb_from_rectangle_span_over_half() {
         epsilon::EPSILON15
     );
 
-    // Full longitude, 1/4 of latitude starting from south pole
+    // 完整经度，纬度 1/4 从南极开始
     let box_ = OrientedBoundingBox::from_rectangle(
         &Rectangle::new(-d180, -d90, d180, -d45),
         0.0, 0.0, &Ellipsoid::UNIT_SPHERE,
@@ -534,7 +534,7 @@ fn test_obb_from_rectangle_span_over_half() {
         epsilon::EPSILON15
     );
 
-    // Completely on north pole
+    // 完全位于北极
     let box_ = OrientedBoundingBox::from_rectangle(
         &Rectangle::new(-d180, d90, d180, d90),
         0.0, 0.0, &Ellipsoid::UNIT_SPHERE,
@@ -542,7 +542,7 @@ fn test_obb_from_rectangle_span_over_half() {
     assert_vec3_epsilon!(box_.center, DVec3::new(0.0, 0.0, 1.0), epsilon::EPSILON15);
     assert_mat3_epsilon!(box_.half_axes, DMat3::ZERO, epsilon::EPSILON15);
 
-    // Completely on north pole 2
+    // 完全位于北极 2
     let box_ = OrientedBoundingBox::from_rectangle(
         &Rectangle::new(-d135, d90, d135, d90),
         0.0, 0.0, &Ellipsoid::UNIT_SPHERE,
@@ -550,7 +550,7 @@ fn test_obb_from_rectangle_span_over_half() {
     assert_vec3_epsilon!(box_.center, DVec3::new(0.0, 0.0, 1.0), epsilon::EPSILON15);
     assert_mat3_epsilon!(box_.half_axes, DMat3::ZERO, epsilon::EPSILON15);
 
-    // Completely on south pole
+    // 完全位于南极
     let box_ = OrientedBoundingBox::from_rectangle(
         &Rectangle::new(-d180, -d90, d180, -d90),
         0.0, 0.0, &Ellipsoid::UNIT_SPHERE,
@@ -558,7 +558,7 @@ fn test_obb_from_rectangle_span_over_half() {
     assert_vec3_epsilon!(box_.center, DVec3::new(0.0, 0.0, -1.0), epsilon::EPSILON15);
     assert_mat3_epsilon!(box_.half_axes, DMat3::ZERO, epsilon::EPSILON15);
 
-    // Completely on south pole 2
+    // 完全位于南极 2
     let box_ = OrientedBoundingBox::from_rectangle(
         &Rectangle::new(-d135, -d90, d135, -d90),
         0.0, 0.0, &Ellipsoid::UNIT_SPHERE,
@@ -705,7 +705,7 @@ fn test_obb_from_rectangle_degenerate_edge_cases() {
 }
 
 /// `it("fromTransformation works without a result parameter")`
-/// (result-parameter variant merged: identical values)
+///（result-parameter 变体已合并：值相同）
 #[test]
 fn test_obb_from_transformation_without_result() {
     let translation = DVec3::new(1.0, 2.0, 3.0);
@@ -736,9 +736,9 @@ fn test_obb_from_transformation_zero_scale() {
 
 // ======================== intersectPlane ========================
 
-/// Faithful port of the spec's `intersectPlaneTestCornersEdgesFaces` helper.
-/// Generates planes at various distances from box faces/edges/corners and
-/// verifies the expected Intersect classification.
+/// 忠实移植规范中的 `intersectPlaneTestCornersEdgesFaces` 辅助函数。
+/// 在距盒子的面/棱/顶点不同距离处生成平面，并
+/// 验证预期的 Intersect 分类结果。
 fn intersect_plane_test_corners_edges_faces(center: DVec3, axes: DMat3) {
     let sqrt1_2 = (0.5f64).sqrt();
     let sqrt3_4 = (0.75f64).sqrt();
@@ -776,7 +776,7 @@ fn intersect_plane_test_corners_edges_faces(center: DVec3, axes: DMat3) {
         }
     };
 
-    // Faces
+    // 面
     for &(nx, ny, nz) in &[
         (1.0, 0.0, 0.0), (-1.0, 0.0, 0.0),
         (0.0, 1.0, 0.0), (0.0, -1.0, 0.0),
@@ -788,7 +788,7 @@ fn intersect_plane_test_corners_edges_faces(center: DVec3, axes: DMat3) {
         check(nx, ny, nz, -0.50001, Intersect::Outside);
     }
 
-    // Edges
+    // 棱
     for &(nx, ny, nz) in &[
         (1.0, 1.0, 0.0), (1.0, -1.0, 0.0), (-1.0, 1.0, 0.0), (-1.0, -1.0, 0.0),
         (1.0, 0.0, 1.0), (1.0, 0.0, -1.0), (-1.0, 0.0, 1.0), (-1.0, 0.0, -1.0),
@@ -800,7 +800,7 @@ fn intersect_plane_test_corners_edges_faces(center: DVec3, axes: DMat3) {
         check(nx, ny, nz, -sqrt1_2 - 0.00001, Intersect::Outside);
     }
 
-    // Corners
+    // 顶点
     for &(nx, ny, nz) in &[
         (1.0, 1.0, 1.0), (1.0, 1.0, -1.0), (1.0, -1.0, 1.0), (1.0, -1.0, -1.0),
         (-1.0, 1.0, 1.0), (-1.0, 1.0, -1.0), (-1.0, -1.0, 1.0), (-1.0, -1.0, -1.0),
@@ -873,32 +873,32 @@ fn test_obb_distance_squared_to() {
     let y_axis = obb.half_axes.y_axis;
     let z_axis = obb.half_axes.z_axis;
 
-    // from positive/negative x direction
+    // 沿 x 轴正/负方向
     for &s in &[2.0f64, -2.0] {
         let cartesian = center + x_axis * s;
         let d = (cartesian - center).length() - scale.x;
         assert_approx!(obb.distance_squared_to(cartesian), d * d, epsilon::EPSILON10);
     }
-    // from positive/negative y direction
+    // 沿 y 轴正/负方向
     for &s in &[2.0f64, -2.0] {
         let cartesian = center + y_axis * s;
         let d = (cartesian - center).length() - scale.y;
         assert_approx!(obb.distance_squared_to(cartesian), d * d, epsilon::EPSILON10);
     }
-    // from positive/negative z direction
+    // 沿 z 轴正/负方向
     for &s in &[2.0f64, -2.0] {
         let cartesian = center + z_axis * s;
         let d = (cartesian - center).length() - scale.z;
         assert_approx!(obb.distance_squared_to(cartesian), d * d, epsilon::EPSILON10);
     }
-    // from corner point
+    // 沿角点方向
     let cartesian = x_axis + y_axis + z_axis;
     let corner_distance = cartesian.length();
     let cartesian = cartesian + center;
     let d = (cartesian - center).length() - corner_distance;
     assert_approx!(obb.distance_squared_to(cartesian), d * d, epsilon::EPSILON10);
 
-    // inside box
+    // 盒子内部
     let offset = rotation * (scale * 0.25);
     let cartesian = center + offset;
     assert_approx!(obb.distance_squared_to(cartesian), 0.0, epsilon::EPSILON10);
@@ -914,7 +914,7 @@ fn test_obb_distance_squared_to_degenerate_x() {
     let obb = OrientedBoundingBox::new(center, rotation_scale);
 
     assert_eq!(obb.half_axes.x_axis, DVec3::ZERO);
-    let x_axis = DVec3::X; // degenerate direction
+    let x_axis = DVec3::X; // 退化方向
     let y_axis = obb.half_axes.y_axis;
     let z_axis = obb.half_axes.z_axis;
 
@@ -933,13 +933,13 @@ fn test_obb_distance_squared_to_degenerate_x() {
         let d = (c - center).length() - scale.z;
         assert_approx!(obb.distance_squared_to(c), d * d, epsilon::EPSILON10);
     }
-    // corner
+    // 角点
     let cartesian = y_axis + z_axis;
     let corner_distance = cartesian.length();
     let c = cartesian + center;
     let d = (c - center).length() - corner_distance;
     assert_approx!(obb.distance_squared_to(c), d * d, epsilon::EPSILON10);
-    // inside
+    // 内部
     let offset = rotation * (scale * 0.25);
     assert_approx!(obb.distance_squared_to(center + offset), 0.0, epsilon::EPSILON10);
 }
@@ -1016,7 +1016,7 @@ fn test_obb_distance_squared_to_degenerate_z() {
     let c = cartesian + center;
     let d = (c - center).length() - corner_distance;
     assert_approx!(obb.distance_squared_to(c), d * d, epsilon::EPSILON10);
-    // inside (Z degenerate: offset has no z component after scale)
+    // 内部（Z 退化：缩放后 offset 没有 z 分量）
     let offset = scale * 0.25;
     assert_approx!(obb.distance_squared_to(center + offset), 0.0, epsilon::EPSILON10);
 }
@@ -1053,7 +1053,7 @@ fn test_obb_distance_squared_to_degenerate_xy() {
         let d = (c - center).length() - scale.z;
         assert_approx!(obb.distance_squared_to(c), d * d, epsilon::EPSILON10);
     }
-    // endpoints
+    // 端点
     let ep = z_axis;
     let ep_dist = ep.length();
     let c = ep + center;
@@ -1062,7 +1062,7 @@ fn test_obb_distance_squared_to_degenerate_xy() {
     let c = -ep + center;
     let d = (c - center).length() - ep_dist;
     assert_approx!(obb.distance_squared_to(c), d * d, epsilon::EPSILON10);
-    // inside
+    // 内部
     let offset = rotation * (scale * 0.25);
     assert_approx!(obb.distance_squared_to(center + offset), 0.0, epsilon::EPSILON10);
 }
@@ -1176,11 +1176,11 @@ fn test_obb_distance_squared_to_three_degenerate() {
         let d = (c - center).length();
         assert_approx!(obb.distance_squared_to(c), d * d, epsilon::EPSILON10);
     }
-    // arbitrary point
+    // 任意点
     let c = DVec3::new(5.0, 10.0, 15.0) + center;
     let d = (c - center).length();
     assert_approx!(obb.distance_squared_to(c), d * d, epsilon::EPSILON10);
-    // inside (at center)
+    // 内部（位于中心）
     assert_approx!(obb.distance_squared_to(center), 0.0, epsilon::EPSILON10);
 }
 
@@ -1201,7 +1201,7 @@ fn test_obb_compute_plane_distances() {
     let y_axis = obb.half_axes.y_axis;
     let z_axis = obb.half_axes.z_axis;
 
-    // from x direction
+    // 沿 x 方向
     let position = center + x_axis * 2.0;
     let direction = (-x_axis).normalize();
     let d = (position - center).length();
@@ -1209,7 +1209,7 @@ fn test_obb_compute_plane_distances() {
     assert_approx!(distances.start, d - scale.x, epsilon::EPSILON14);
     assert_approx!(distances.stop, d + scale.x, epsilon::EPSILON14);
 
-    // from y direction
+    // 沿 y 方向
     let position = center + y_axis * 2.0;
     let direction = (-y_axis).normalize();
     let d = (position - center).length();
@@ -1217,7 +1217,7 @@ fn test_obb_compute_plane_distances() {
     assert_approx!(distances.start, d - scale.y, epsilon::EPSILON14);
     assert_approx!(distances.stop, d + scale.y, epsilon::EPSILON14);
 
-    // from z direction
+    // 沿 z 方向
     let position = center + z_axis * 2.0;
     let direction = (-z_axis).normalize();
     let d = (position - center).length();
@@ -1225,7 +1225,7 @@ fn test_obb_compute_plane_distances() {
     assert_approx!(distances.start, d - scale.z, epsilon::EPSILON14);
     assert_approx!(distances.stop, d + scale.z, epsilon::EPSILON14);
 
-    // from corner point
+    // 沿角点方向
     let position = x_axis + y_axis + z_axis;
     let direction = (-position).normalize();
     let corner_distance = position.length();
@@ -1239,7 +1239,7 @@ fn test_obb_compute_plane_distances() {
 // ======================== computeCorners ========================
 
 /// `it("computeCorners works without a result parameter")`
-/// (result-parameter variant merged: identical values)
+///（result-parameter 变体已合并：值相同）
 #[test]
 fn test_obb_compute_corners_without_result() {
     let center = DVec3::new(1.0, 2.0, 3.0);
@@ -1271,7 +1271,7 @@ fn test_obb_compute_corners_zero_scale() {
 // ======================== computeTransformation ========================
 
 /// `it("computeTransformation works without a result parameter")`
-/// (result-parameter variant merged: identical values)
+///（result-parameter 变体已合并：值相同）
 #[test]
 fn test_obb_compute_transformation_without_result() {
     let center = DVec3::new(1.0, 2.0, 3.0);

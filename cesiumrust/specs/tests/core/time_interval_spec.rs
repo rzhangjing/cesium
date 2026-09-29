@@ -63,7 +63,7 @@ fn from_iso8601_assigns_all_options() {
 
 #[test]
 fn from_iso8601_invalid_date_returns_none() {
-    // Single date (no '/') is invalid for interval
+    // 单个日期（无 '/'）对区间而言无效
     assert!(TimeInterval::from_iso8601("2020-08-29T00:00:00+00:00", true, true).is_none());
 }
 
@@ -222,7 +222,7 @@ fn equals_and_equals_epsilon_work() {
     assert_eq!(left, right);
     assert!(left.equals_epsilon(&right, 0.0));
 
-    // Different start
+    // 不同的 start
     let right2 = TimeInterval::new(
         JulianDate::with_time_standard(-1.0, 0.0, TimeStandard::UTC),
         JulianDate::default(),
@@ -232,7 +232,7 @@ fn equals_and_equals_epsilon_work() {
     assert_ne!(left, right2);
     assert!(!left.equals_epsilon(&right2, 0.0));
 
-    // Different stop
+    // 不同的 stop
     let right3 = TimeInterval::new(
         JulianDate::default(),
         JulianDate::with_time_standard(1.0, 0.0, TimeStandard::UTC),
@@ -242,12 +242,12 @@ fn equals_and_equals_epsilon_work() {
     assert_ne!(left, right3);
     assert!(!left.equals_epsilon(&right3, 0.0));
 
-    // Different is_start_included
+    // 不同的 is_start_included
     let right4 = TimeInterval::new(JulianDate::default(), JulianDate::default(), false, true);
     assert_ne!(left, right4);
     assert!(!left.equals_epsilon(&right4, 0.0));
 
-    // Different is_stop_included
+    // 不同的 is_stop_included
     let right5 = TimeInterval::new(JulianDate::default(), JulianDate::default(), true, false);
     assert_ne!(left, right5);
     assert!(!left.equals_epsilon(&right5, 0.0));
@@ -295,7 +295,7 @@ fn formats_as_iso8601_with_to_string() {
     // to_iso8601 should produce "start/stop" format
     let iso = interval.to_iso8601();
     assert_eq!(iso, "2011-07-04T12:00:00Z/2011-07-05T12:00:00Z");
-    // Verify roundtrip
+    // 验证往返转换
     let parsed = TimeInterval::from_iso8601(&iso, true, true).unwrap();
     assert_eq!(parsed.start, interval.start);
     assert_eq!(parsed.stop, interval.stop);
@@ -355,9 +355,9 @@ fn intersect_exhaustive_cases() {
         let intersect1 = first.intersect(second);
         let intersect2 = second.intersect(first);
 
-        // Both directions should give same result
+        // 两个方向应给出相同结果
         assert_eq!(intersect1, intersect2, "Failed symmetry at index {}", i);
-        // Result should match expected
+        // 结果应与期望匹配
         let expected_val = if expected.is_empty() && expected.start.day_number == 0
             && expected.stop.day_number == 0 && !expected.is_start_included && !expected.is_stop_included
         {

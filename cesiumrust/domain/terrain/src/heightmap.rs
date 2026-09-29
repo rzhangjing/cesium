@@ -1,5 +1,5 @@
-//! Heightmap terrain data.
-//! Maps to CesiumJS `Core/HeightmapTerrainData.js`
+//! 高程图地形数据。
+//! 映射到 CesiumJS `Core/HeightmapTerrainData.js`
 
 // legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
 #![allow(clippy::too_many_arguments, clippy::needless_range_loop)]
@@ -13,27 +13,27 @@ use serde::{Deserialize, Serialize};
 
 use crate::terrain_mesh::TerrainMesh;
 
-/// Describes the layout of height data in a raw buffer.
+/// 描述原始缓冲区中高度数据的布局。
 ///
-/// Maps to CesiumJS `HeightmapTessellator.DEFAULT_STRUCTURE` and the
-/// `structure` option of `HeightmapTerrainData`.
+/// 映射到 CesiumJS `HeightmapTessellator.DEFAULT_STRUCTURE` 以及
+/// `HeightmapTerrainData` 的 `structure` 选项。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct HeightmapStructure {
-    /// Number of elements to skip to get from one height to the next.
+    /// 从一个高度到下一个高度需要跳过的元素数。
     pub stride: usize,
-    /// Number of elements that make up a single height value.
+    /// 构成单个高度值的元素数。
     pub elements_per_height: usize,
-    /// Multiplier between elements (default 256).
+    /// 元素之间的乘数（默认 256）。
     pub element_multiplier: f64,
-    /// Whether multi-element heights are big-endian.
+    /// 多元素高度是否为大端序。
     pub is_big_endian: bool,
-    /// Scale applied after decoding.
+    /// 解码后应用的缩放。
     pub height_scale: f64,
-    /// Offset added after scaling.
+    /// 缩放后添加的偏移。
     pub height_offset: f64,
-    /// Optional lowest clamped value (encoded units).
+    /// 可选的最低钳制值（编码单位）。
     pub lowest_encoded_height: Option<f64>,
-    /// Optional highest clamped value (encoded units).
+    /// 可选的最高钳制值（编码单位）。
     pub highest_encoded_height: Option<f64>,
 }
 
@@ -52,9 +52,9 @@ impl Default for HeightmapStructure {
     }
 }
 
-/// Reads a height value from a raw buffer at the given vertex index.
+/// 从原始缓冲区中读取给定顶点索引处的高度值。
 ///
-/// Maps to CesiumJS `getHeight` in HeightmapTerrainData.js.
+/// 映射到 CesiumJS HeightmapTerrainData.js 中的 `getHeight`。
 pub fn get_height_from_buffer(
     buffer: &[u8],
     structure: &HeightmapStructure,
@@ -76,9 +76,9 @@ pub fn get_height_from_buffer(
     height
 }
 
-/// Writes a height value into a raw buffer at the given vertex index.
+/// 将高度值写入原始缓冲区中给定顶点索引处。
 ///
-/// Maps to CesiumJS `setHeight` in HeightmapTerrainData.js.
+/// 映射到 CesiumJS HeightmapTerrainData.js 中的 `setHeight`。
 pub fn set_height_in_buffer(
     buffer: &mut [u8],
     structure: &HeightmapStructure,
@@ -98,7 +98,7 @@ pub fn set_height_in_buffer(
             height -= val as f64 * div;
             div /= structure.element_multiplier;
         }
-        // Last element gets remainder
+        // 最后一个元素取余数
         buffer[offset + structure.elements_per_height - 1] = height as u8;
     } else {
         for i in (1..structure.elements_per_height).rev() {
@@ -107,19 +107,19 @@ pub fn set_height_in_buffer(
             height -= val as f64 * div;
             div /= structure.element_multiplier;
         }
-        // First element (index 0) gets remainder
+        // 第一个元素（索引 0）取余数
         buffer[offset] = height as u8;
     }
 }
 
-/// Interpolates a height from a grid using the CesiumJS triangle method.
+/// 使用 CesiumJS 三角形方法从网格插值高度。
 ///
-/// The grid is stored row-major with rows going from NORTH to SOUTH
-/// (row 0 = north, row height-1 = south), matching CesiumJS mesh layout.
-/// `u` is west-to-east [0,1], `v` is south-to-north [0,1].
+/// 网格以行主序存储，行从北（NORTH）到南（SOUTH）排列
+/// （第 0 行 = 北，第 height-1 行 = 南），与 CesiumJS 网格布局一致。
+/// `u` 为西到东 [0,1]，`v` 为南到北 [0,1]。
 ///
-/// Maps to CesiumJS `interpolateHeight` / `interpolateMeshHeight` +
-/// `triangleInterpolateHeight`.
+/// 映射到 CesiumJS `interpolateHeight` / `interpolateMeshHeight` +
+/// `triangleInterpolateHeight`。
 fn interpolate_height_from_grid(
     heights: &[f64],
     width: usize,
@@ -127,7 +127,7 @@ fn interpolate_height_from_grid(
     u: f64,
     v: f64,
 ) -> f64 {
-    // Convert u,v to grid coordinates (fromWest, fromSouth)
+    // 将 u,v 转换为网格坐标（fromWest、fromSouth）
     let from_west = u * (width - 1) as f64;
     let from_south = v * (height - 1) as f64;
 
@@ -148,8 +148,8 @@ fn interpolate_height_from_grid(
     let dx = from_west - west_int as f64;
     let dy = from_south - south_int as f64;
 
-    // Flip row indices: grid rows go north-to-south, but south_int/north_int
-    // are in south-to-north space.
+    // 翻转行索引：网格行从北到南排列，但 south_int/north_int
+    // 处于南到北的空间中。
     let south_row = height - 1 - south_int;
     let north_row = height - 1 - north_int;
 
@@ -158,46 +158,46 @@ fn interpolate_height_from_grid(
     let nw = heights[north_row * width + west_int];
     let ne = heights[north_row * width + east_int];
 
-    // Triangle interpolation (CesiumJS bisects quad from SW to NE)
+    // 三角形插值（CesiumJS 沿 SW 到 NE 对四边形二分）
     if dy < dx {
-        // Lower-right triangle
+        // 右下三角形
         sw + dx * (se - sw) + dy * (ne - se)
     } else {
-        // Upper-left triangle
+        // 左上三角形
         sw + dx * (ne - nw) + dy * (nw - sw)
     }
 }
 
-/// Terrain data represented as a heightmap.
+/// 以高程图表示的地形数据。
 ///
-/// A heightmap is a regular grid of height values covering a rectangular region.
+/// 高程图是覆盖矩形区域的高度值规则网格。
 ///
-/// Maps to CesiumJS `HeightmapTerrainData`
+/// 映射到 CesiumJS `HeightmapTerrainData`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeightmapTerrainData {
-    /// Height values in row-major order (south to north, west to east)
+    /// 以行主序存储的高度值（南到北，西到东）
     pub heights: Vec<f64>,
 
-    /// Number of rows (latitude samples)
+    /// 行数（纬度采样）
     pub width: usize,
 
-    /// Number of columns (longitude samples)
+    /// 列数（经度采样）
     pub height: usize,
 
-    /// Minimum height in the tile
+    /// 图块中的最小高度
     pub minimum_height: f64,
 
-    /// Maximum height in the tile
+    /// 图块中的最大高度
     pub maximum_height: f64,
 
-    /// Bounding sphere for the tile
+    /// 图块的包围球
     pub bounding_sphere: BoundingSphere,
 
-    /// Bit mask indicating which children exist
+    /// 指示哪些子块存在的位掩码
     #[serde(default = "default_child_mask")]
     pub child_tile_mask: u8,
 
-    /// Whether this was created by upsampling
+    /// 是否由上采样创建
     #[serde(default)]
     pub created_by_upsampling: bool,
 }
@@ -207,7 +207,7 @@ fn default_child_mask() -> u8 {
 }
 
 impl HeightmapTerrainData {
-    /// Creates a new heightmap terrain data.
+    /// 创建新的高程图地形数据。
     pub fn new(
         heights: Vec<f64>,
         width: usize,
@@ -228,7 +228,7 @@ impl HeightmapTerrainData {
         }
     }
 
-    /// Gets the height at a specific grid position.
+    /// 获取特定网格位置处的高度。
     pub fn get_height(&self, col: usize, row: usize) -> Option<f64> {
         if col < self.width && row < self.height {
             Some(self.heights[row * self.width + col])
@@ -237,7 +237,7 @@ impl HeightmapTerrainData {
         }
     }
 
-    /// Interpolates height at a fractional grid position.
+    /// 在小数网格位置处插值高度。
     pub fn interpolate_height(&self, u: f64, v: f64) -> f64 {
         let col_f = u * (self.width - 1) as f64;
         let row_f = v * (self.height - 1) as f64;
@@ -255,23 +255,23 @@ impl HeightmapTerrainData {
         let h01 = self.heights[row1 * self.width + col0];
         let h11 = self.heights[row1 * self.width + col1];
 
-        // Bilinear interpolation
+        // 双线性插值
         let h0 = math_utils::lerp(h00, h10, du);
         let h1 = math_utils::lerp(h01, h11, du);
         math_utils::lerp(h0, h1, dv)
     }
 
-    /// Creates a terrain mesh from the heightmap.
+    /// 从高程图创建地形网格。
     ///
-    /// # Arguments
-    /// * `rectangle` - The tile rectangle
-    /// * `ellipsoid` - The ellipsoid
+    /// # 参数
+    /// * `rectangle` - 图块矩形
+    /// * `ellipsoid` - 椭球体
     pub fn create_mesh(&self, rectangle: &Rectangle, ellipsoid: &Ellipsoid) -> TerrainMesh {
         let mut positions = Vec::with_capacity(self.width * self.height);
         let mut uvs = Vec::with_capacity(self.width * self.height);
         let mut indices = Vec::new();
 
-        // Generate vertices
+        // 生成顶点
         for row in 0..self.height {
             let v = row as f64 / (self.height - 1) as f64;
             let lat = math_utils::lerp(rectangle.south, rectangle.north, v);
@@ -289,7 +289,7 @@ impl HeightmapTerrainData {
             }
         }
 
-        // Generate indices
+        // 生成索引
         for row in 0..self.height - 1 {
             for col in 0..self.width - 1 {
                 let i0 = (row * self.width + col) as u32;
@@ -297,7 +297,7 @@ impl HeightmapTerrainData {
                 let i2 = i0 + self.width as u32;
                 let i3 = i2 + 1;
 
-                // Two triangles per quad
+                // 每个四边形两个三角形
                 indices.push(i0);
                 indices.push(i2);
                 indices.push(i1);
@@ -322,22 +322,22 @@ impl HeightmapTerrainData {
         mesh
     }
 
-    /// Checks if a specific child tile exists.
+    /// 检查特定子块是否存在。
     pub fn is_child_available(&self, child: usize) -> bool {
         (self.child_tile_mask & (1 << child)) != 0
     }
 
-    /// Upsamples this heightmap using a raw byte buffer with structure encoding.
+    /// 使用带结构编码的原始字节缓冲区对高程图进行上采样。
     ///
-    /// This is the faithful port of CesiumJS `HeightmapTerrainData.upsample` for
-    /// multi-element/stride/big-endian buffers. It decodes heights from the raw
-    /// buffer, interpolates, clamps, and re-encodes.
+    /// 这是 CesiumJS `HeightmapTerrainData.upsample` 针对
+    /// 多元素/步长/大端缓冲区的忠实移植。它从原始
+    /// 缓冲区解码高度、插值、钳制并重新编码。
     ///
-    /// # Arguments
-    /// * `buffer` - Raw byte buffer containing encoded heights
-    /// * `structure` - Height data layout description
-    /// * `this_x/this_y/this_level` - This tile coordinates
-    /// * `descendant_x/descendant_y/descendant_level` - Child tile coordinates
+    /// # 参数
+    /// * `buffer` - 包含编码高度的原始字节缓冲区
+    /// * `structure` - 高度数据布局描述
+    /// * `this_x/this_y/this_level` - 当前图块坐标
+    /// * `descendant_x/descendant_y/descendant_level` - 子图块坐标
     pub fn upsample_with_structure(
         &self,
         buffer: &[u8],
@@ -355,39 +355,39 @@ impl HeightmapTerrainData {
         let width = self.width;
         let height = self.height;
 
-        // Compute relative position of child within parent
+        // 计算子块在父块内的相对位置
         let relative_x = descendant_x - this_x * 2;
         let relative_y = descendant_y - this_y * 2;
 
-        // Child covers [relative/2, (relative+1)/2] of parent
+        // 子块覆盖父块的 [relative/2, (relative+1)/2]
         let west_frac = relative_x as f64 / 2.0;
         let east_frac = (relative_x + 1) as f64 / 2.0;
-        // CesiumJS tile Y increases southward; child row 0 = north
+        // CesiumJS 图块 Y 向南递增；子块第 0 行 = 北
         let north_frac = relative_y as f64 / 2.0;
         let south_frac = (relative_y + 1) as f64 / 2.0;
 
-        // Decode all source heights from buffer
+        // 从缓冲区解码所有源高度
         let mut source_heights = vec![0.0f64; width * height];
         for idx in 0..width * height {
             let h = get_height_from_buffer(buffer, structure, idx);
             source_heights[idx] = h * structure.height_scale + structure.height_offset;
         }
 
-        // Output buffer
+        // 输出缓冲区
         let mut out_buffer = vec![0u8; width * height * structure.stride];
 
         for j in 0..height {
-            // CesiumJS iterates rows from north to south
+            // CesiumJS 从北到南遍历各行
             let v = j as f64 / (height - 1) as f64;
-            // j=0 → dest north → parent v = 1 - north_frac
-            // j=height-1 → dest south → parent v = 1 - south_frac
+            // j=0 → 目标北 → 父块 v = 1 - north_frac
+            // j=height-1 → 目标南 → 父块 v = 1 - south_frac
             let parent_v = (1.0 - north_frac) + v * ((1.0 - south_frac) - (1.0 - north_frac));
 
             for i in 0..width {
                 let u = i as f64 / (width - 1) as f64;
                 let parent_u = west_frac + u * (east_frac - west_frac);
 
-                // Interpolate using triangle method (faithful to CesiumJS)
+                // 使用三角形方法插值（忠实于 CesiumJS）
                 let h = interpolate_height_from_grid(
                     &source_heights,
                     width,
@@ -396,7 +396,7 @@ impl HeightmapTerrainData {
                     parent_v,
                 );
 
-                // Clamp
+                // 钳制
                 let mut h_clamped = h;
                 if let Some(low) = structure.lowest_encoded_height {
                     if h_clamped < low {
@@ -421,17 +421,17 @@ impl HeightmapTerrainData {
         out_buffer
     }
 
-    /// Upsamples this heightmap to produce a child tile at the given position.
+    /// 对高程图进行上采样，在给定位置生成子图块。
     ///
-    /// Maps to CesiumJS `HeightmapTerrainData.upsample`.
+    /// 映射到 CesiumJS `HeightmapTerrainData.upsample`。
     ///
-    /// # Arguments
-    /// * `this_x` - This tile's X coordinate
-    /// * `this_y` - This tile's Y coordinate
-    /// * `this_level` - This tile's level
-    /// * `descendant_x` - Child tile's X coordinate
-    /// * `descendant_y` - Child tile's Y coordinate
-    /// * `descendant_level` - Child tile's level (must be this_level + 1)
+    /// # 参数
+    /// * `this_x` - 当前图块的 X 坐标
+    /// * `this_y` - 当前图块的 Y 坐标
+    /// * `this_level` - 当前图块的层级
+    /// * `descendant_x` - 子图块的 X 坐标
+    /// * `descendant_y` - 子图块的 Y 坐标
+    /// * `descendant_level` - 子图块的层级（必须为 this_level + 1）
     pub fn upsample(
         &self,
         this_x: u32,
@@ -447,18 +447,18 @@ impl HeightmapTerrainData {
             "upsample can only cross one level"
         );
 
-        // Compute the child's position within the parent
+        // 计算子块在父块内的位置
         let tiles_at_this_level = 1u32 << level_difference;
         let relative_x = descendant_x - this_x * tiles_at_this_level;
         let relative_y = descendant_y - this_y * tiles_at_this_level;
 
-        // The child covers [relative_x/tiles, (relative_x+1)/tiles] of the parent
+        // 子块覆盖父块的 [relative_x/tiles, (relative_x+1)/tiles]
         let west_fraction = relative_x as f64 / tiles_at_this_level as f64;
         let east_fraction = (relative_x + 1) as f64 / tiles_at_this_level as f64;
         let south_fraction = relative_y as f64 / tiles_at_this_level as f64;
         let north_fraction = (relative_y + 1) as f64 / tiles_at_this_level as f64;
 
-        // Child has same dimensions as parent
+        // 子块与父块尺寸相同
         let child_width = self.width;
         let child_height = self.height;
         let mut child_heights = vec![0.0f64; child_width * child_height];
@@ -498,7 +498,7 @@ mod tests {
     use super::*;
 
     fn create_test_heightmap() -> HeightmapTerrainData {
-        // 3x3 heightmap
+        // 3x3 高程图
         let heights = vec![
             0.0, 100.0, 0.0,
             100.0, 200.0, 100.0,
@@ -519,9 +519,9 @@ mod tests {
     #[test]
     fn test_interpolate_height() {
         let data = create_test_heightmap();
-        // Center should be 200
+        // 中心应为 200
         assert!((data.interpolate_height(0.5, 0.5) - 200.0).abs() < 0.01);
-        // Corner should be 0
+        // 角点应为 0
         assert!((data.interpolate_height(0.0, 0.0) - 0.0).abs() < 0.01);
     }
 
@@ -534,7 +534,7 @@ mod tests {
         let mesh = data.create_mesh(&rectangle, &ellipsoid);
 
         assert_eq!(mesh.positions.len(), 9); // 3x3
-        assert_eq!(mesh.indices.len(), 24); // 4 quads * 2 triangles * 3 indices
+        assert_eq!(mesh.indices.len(), 24); // 4 个四边形 * 2 个三角形 * 3 个索引
         assert!(mesh.normals.is_some());
     }
 

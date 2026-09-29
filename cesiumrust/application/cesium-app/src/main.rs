@@ -1,10 +1,10 @@
-//! cesium-app: CesiumRust 3D Globe Viewer
+//! cesium-app：CesiumRust 3D 地球查看器
 //!
-//! Interactive 3D globe with:
-//! - Base sphere + polar caps (non-LOD safety net)
-//! - Dynamic LOD tiles with Bing Maps satellite imagery
-//! - Orbit camera (mouse drag to rotate, scroll to zoom)
-//! - Atmospheric limb glow + starfield background
+//! 交互式 3D 地球，包含：
+//! - 基础球体 + 极地盖片（无 LOD 的兜底安全网）
+//! - 带 Bing Maps 卫星影像的动态 LOD 瓦片
+//! - Orbit 相机（鼠标拖拽旋转，滚轮缩放）
+//! - 大气边缘辉光 + 星空背景
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{save_to_disk, Screenshot};
@@ -45,14 +45,12 @@ use perf_counters::PerfCounters;
 use perf_trace::PerfTracePlugin;
 use bevy::time::TimeUpdateStrategy;
 use serde::Deserialize;
-// ── M6 Wave A (task #81) ────────────────────────────────────────────────────
-// The three M6 camera components, the render-graph entry point that owns their
-// `Core3d` edges, and the *domain* value objects the components are built from.
-// The domain types reach `cesium-app` through the re-exports in
-// `adapters/bevy-render/src/effects/mod.rs` (the same pattern `LightingMode`
-// already uses): `cesium-app` deliberately holds no direct dependency on the
-// `cesium-effects` domain crate, so the adapter remains the only layer that
-// narrows domain f64 to GPU f32.
+// ── M6 Wave A（任务 #81）───────────────────────────────────────────────────
+// 三个 M6 相机组件、拥有其 `Core3d` 边的渲染图入口点，以及这些组件
+// 所构建自的*领域*值对象。领域类型通过 `adapters/bevy-render/src/effects/mod.rs`
+// 中的重新导出抵达 `cesium-app`（与 `LightingMode` 已在使用的模式相同）：
+// `cesium-app` 刻意不直接依赖 `cesium-effects` 领域 crate，因此适配器
+// 仍是唯一将领域 f64 收窄为 GPU f32 的层。
 use cesium_bevy_render::effects::{
     CesiumClippingPlanes, CesiumClouds, CesiumIbl, CesiumOit, CesiumPanorama, CesiumSplit,
     ClippingPlane, ClippingPlaneCollection, CloudCollection, CubeMapPanorama, CumulusCloud,
@@ -61,13 +59,13 @@ use cesium_bevy_render::effects::{
 
 const TILE_SEGMENTS: u32 = 16;
 
-// ── Cesium Ion terrain configuration (async, off the main thread) ────────
-/// Resolves the Cesium World Terrain endpoint via the ion API and returns the
-/// `{z}/{x}/{y}` template URL, or `None` when the token is missing / the call
-/// fails (graceful degradation to an idle terrain chain).
+// ── Cesium Ion 地形配置（异步，脱离主线程）────────────────────────
+/// 通过 ion API 解析 Cesium World Terrain 端点并返回 `{z}/{x}/{y}`
+/// 模板 URL；当 token 缺失 / 调用失败时返回 `None`（优雅降级为一个
+/// 空闲的地形链）。
 ///
-/// Runs on an [`IoTaskPool`] worker (blocking ureq is fine there); it must
-/// never run on the Startup/frame thread or the first frame would stall.
+/// 运行在 [`IoTaskPool`] worker 上（在此使用阻塞式 ureq 没问题）；它绝
+/// 不能运行在 Startup/帧线程上，否则首帧会卡顿。
 fn resolve_terrain_endpoint() -> Option<String> {
     let token = match std::env::var("CESIUM_ION_TOKEN") {
         Ok(t) if !t.trim().is_empty() => t,
@@ -118,21 +116,21 @@ fn resolve_terrain_endpoint() -> Option<String> {
     Some(template)
 }
 
-/// In-flight ion endpoint resolution; removed once it resolves.
+/// 正在进行的 ion 端点解析；一旦解析完成即被移除。
 #[derive(Resource)]
 struct PendingTerrainEndpoint {
     task: Task<Option<String>>,
 }
 
-/// Startup: spawn the ion endpoint resolution on the IoTaskPool. Non-blocking.
+/// Startup：在 IoTaskPool 上 spawn ion 端点解析。非阻塞。
 fn spawn_terrain_config_task(mut commands: Commands) {
     let pool = IoTaskPool::get();
     let task = pool.spawn(async move { resolve_terrain_endpoint() });
     commands.insert_resource(PendingTerrainEndpoint { task });
 }
 
-/// Update: poll the endpoint task once per frame; when ready, back-fill
-/// `GlobeConfig.terrain_provider_url` and drop the pending resource.
+/// Update：每帧轮询端点任务一次；就绪后回填
+/// `GlobeConfig.terrain_provider_url` 并丢弃 pending 资源。
 fn apply_terrain_endpoint(
     mut commands: Commands,
     pending: Option<ResMut<PendingTerrainEndpoint>>,
@@ -146,7 +144,7 @@ fn apply_terrain_endpoint(
     commands.remove_resource::<PendingTerrainEndpoint>();
 }
 
-/// Diagnostic: logs TileLoadStats every 5 seconds.
+/// 诊断：每 5 秒记录一次 TileLoadStats。
 fn stats_logger_system(
     stats: Res<TileLoadStats>,
     time: Res<Time>,
@@ -167,11 +165,11 @@ fn stats_logger_system(
     }
 }
 
-/// Startup: spawn a 3D Tiles tileset root.
+/// Startup：spawn 一个 3D Tiles 瓦片集根。
 ///
-/// Default is the Cesium sample tileset (uncompressed b3dm) served straight from
-/// GitHub raw — a public, token-free online source. Override with
-/// `CESIUM_TILESET_URL` (e.g. a local HTTP server) for offline runs.
+/// 默认是从 GitHub raw 直接供送的 Cesium 示例瓦片集（未压缩 b3dm）——
+/// 一个公开、免 token 的在线源。离线运行时可用
+/// `CESIUM_TILESET_URL`（例如本地 HTTP 服务器）覆盖。
 fn spawn_tileset_root(mut commands: Commands) {
     let url = std::env::var("CESIUM_TILESET_URL").unwrap_or_else(|_| {
         "https://raw.githubusercontent.com/CesiumGS/cesium/main/Apps/SampleData/Cesium3DTiles/Tilesets/Tileset/tileset.json".to_string()
@@ -183,10 +181,9 @@ fn spawn_tileset_root(mut commands: Commands) {
     });
 }
 
-/// Headless verification aid, inert unless `CESIUM_SCREENSHOT_AT_FRAME` is set:
-/// captures a screenshot at that frame and exits shortly after. Lets reviewers
-/// grab a deterministic frame (default or opt-in chains) without altering the
-/// default interactive run.
+/// 无头验证辅助工具，除非设置了 `CESIUM_SCREENSHOT_AT_FRAME` 否则不生效：
+/// 在该帧捕获一张截图并在紧随其后退出。让审阅者无需改变默认
+/// 交互式运行就能抓取一个确定性帧（默认或 opt-in 链）。
 #[derive(Resource)]
 struct AutoScreenshot {
     frame: u32,
@@ -203,10 +200,10 @@ fn auto_screenshot_system(
     shot.frame += 1;
     if shot.frame == shot.at_frame {
         let path = shot.path.clone();
-        // FIX-HL-EXIT: under CESIUM_HEADLESS there is no primary window, so
-        // `Screenshot::primary_window()` is inert (no capture observer fires). Make
-        // that silent gap loud; the supported headless artefact is the M11.3
-        // offscreen `CesiumHeadlessPlugin` capture path instead.
+        // FIX-HL-EXIT：在 CESIUM_HEADLESS 下没有主窗口，因此
+        // `Screenshot::primary_window()` 不生效（不会触发任何 capture observer）。使
+        // 那个静默的空缺变得响亮；受支持的无头产物是 M11.3
+        // 离屏 `CesiumHeadlessPlugin` 捕获路径。
         if feature_flags::headless_enabled() {
             warn!(
                 "[shot] AutoScreenshot uses Screenshot::primary_window(), inert under \
@@ -216,9 +213,9 @@ fn auto_screenshot_system(
         commands.spawn(Screenshot::primary_window()).observe(save_to_disk(path.clone()));
         info!("[shot] capturing at frame {}", shot.at_frame);
 
-        // M3: write camera pos/quat JSON alongside the screenshot.
+        // M3：在截图旁写入相机 pos/quat JSON。
         // Schema: {"pos":[x,y,z],"quat":[x,y,z,w],"fov_y":<deg>}
-        // This is the M2.4 playback-fidelity reference (<1e-4 render units).
+        // 这是 M2.4 回放保真度的参考基准（<1e-4 render unit）。
         if let Ok((transform, projection)) = cameras.get_single() {
             let p = transform.translation;
             let q = transform.rotation;
@@ -232,7 +229,7 @@ fn auto_screenshot_system(
                 q.x, q.y, q.z, q.w,
                 fov_y_deg,
             );
-            // Derive .camera.json path from the screenshot path.
+            // 从截图路径推导 .camera.json 路径。
             let cam_path = std::path::Path::new(&path)
                 .with_extension("camera.json");
             if let Err(e) = std::fs::write(&cam_path, &json) {
@@ -247,15 +244,15 @@ fn auto_screenshot_system(
     }
 }
 
-// ── M3.3: FIXED_CAMERA — deterministic pose override ────────────────────
+// ── M3.3：FIXED_CAMERA —— 确定性位姿覆盖 ──────────────────
 
-/// TOML schema for `FIXED_CAMERA` file: a single `[camera]` table.
+/// `FIXED_CAMERA` 文件的 TOML schema：单个 `[camera]` 表。
 #[derive(Debug, Deserialize)]
 struct FixedCameraFile {
     camera: capture_script::CameraPose,
 }
 
-/// Resource holding a frozen camera pose applied every PostUpdate frame.
+/// 保存一个每帧 PostUpdate 都应用的冻结相机位姿的资源。
 #[derive(Resource)]
 struct FixedCameraPose {
     pos: Vec3,
@@ -263,8 +260,8 @@ struct FixedCameraPose {
     fov_y: Option<f32>,
 }
 
-/// PostUpdate system: overrides the orbit camera with the fixed pose.
-/// Runs after orbit_camera's Update so the deterministic pose wins.
+/// PostUpdate 系统：用固定位姿覆盖 orbit 相机。
+/// 在 orbit_camera 的 Update 之后运行，因此确定性位姿胜出。
 fn fixed_camera_system(
     pose: Res<FixedCameraPose>,
     mut cameras: Query<(&mut Transform, &mut Projection), With<Camera>>,
@@ -280,9 +277,9 @@ fn fixed_camera_system(
     }
 }
 
-// ── M3.4: Batch screenshot capture ─────────────────────────────────────
+// ── M3.4：批量截图捕获 ─────────────────────────
 
-/// Resource driving batch multi-view capture (`CESIUM_SCREENSHOT_SCRIPT`).
+/// 驱动批量多视图捕获（`CESIUM_SCREENSHOT_SCRIPT`）的资源。
 #[derive(Resource)]
 struct BatchCapture {
     script: Vec<capture_script::ShotEntry>,
@@ -293,9 +290,9 @@ struct BatchCapture {
     env_snapshot: serde_json::Value,
 }
 
-/// PostUpdate system: advances the batch capture scheduler. Applies the due
-/// shot's camera pose, spawns a `Screenshot`, writes `.camera.json` +
-/// `.meta.json`, and exits after all shots + 30 buffer frames.
+/// PostUpdate 系统：推进批量捕获调度器。应用到期
+/// shot 的相机位姿，spawn 一个 `Screenshot`，写入 `.camera.json` +
+/// `.meta.json`，并在所有 shot + 30 帧缓冲帧之后退出。
 fn batch_capture_system(
     mut commands: Commands,
     mut batch: ResMut<BatchCapture>,
@@ -307,7 +304,7 @@ fn batch_capture_system(
     if let Some(idx) = capture_script::next_due(&batch.script, batch.cursor, batch.frame) {
         let entry = batch.script[idx].clone();
 
-        // Apply scripted camera pose (overrides orbit_camera for this frame).
+        // 应用脚本化的相机位姿（本帧覆盖 orbit_camera）。
         if let Ok((mut transform, mut projection)) = cameras.get_single_mut() {
             transform.translation = Vec3::new(
                 entry.pos[0] as f32,
@@ -327,10 +324,10 @@ fn batch_capture_system(
             }
         }
 
-        // Spawn screenshot.
+        // spawn 截图。
         let png_path = format!("{}/{}.png", batch.output_dir, entry.name);
-        // FIX-HL-EXIT: batch capture is likewise not yet headless-aware (see the
-        // M11.4 NOTE at the plugin wiring); warn rather than fail silently.
+        // FIX-HL-EXIT：批量捕获同样尚未无头感知（参见插件布线处的
+        // M11.4 NOTE）；宁可告警也不要静默失败。
         if feature_flags::headless_enabled() {
             warn!(
                 "[batch] Screenshot::primary_window() is inert under CESIUM_HEADLESS; \
@@ -341,7 +338,7 @@ fn batch_capture_system(
             .spawn(Screenshot::primary_window())
             .observe(save_to_disk(png_path));
 
-        // Write .camera.json (same schema as single-shot harness).
+        // 写入 .camera.json（与单 shot harness 同 schema）。
         let fov_y_deg = entry.fov_y.unwrap_or(60.0);
         let cam_json = format!(
             "{{\"pos\":[{:.6},{:.6},{:.6}],\"quat\":[{:.6},{:.6},{:.6},{:.6}],\"fov_y\":{:.4}}}",
@@ -354,7 +351,7 @@ fn batch_capture_system(
             warn!("[batch] camera JSON write failed {}: {}", cam_path, e);
         }
 
-        // Write .meta.json (frame/env/git_sha for pixel_diff gating).
+        // 写入 .meta.json（供 pixel_diff 门控的 frame/env/git_sha）。
         let meta_json = capture_script::metadata_json(
             &entry,
             batch.frame,
@@ -376,7 +373,7 @@ fn batch_capture_system(
         batch.cursor = idx + 1;
     }
 
-    // Exit after all shots fired + 30 buffer frames for GPU flush.
+    // 在所有 shot 发射后 + 30 帧缓冲帧供 GPU flush 后退出。
     if batch.cursor >= batch.script.len() && !batch.script.is_empty() {
         let last_frame = batch.script.last().map_or(0, |e| e.frame);
         if batch.frame >= last_frame + 30 {
@@ -389,7 +386,7 @@ fn batch_capture_system(
     }
 }
 
-/// Builds the env snapshot JSON for batch capture metadata.
+/// 为批量捕获元数据构建 env 快照 JSON。
 fn build_env_snapshot() -> serde_json::Value {
     serde_json::json!({
         "strict_offline": feature_flags::strict_offline(),
@@ -402,7 +399,7 @@ fn build_env_snapshot() -> serde_json::Value {
     })
 }
 
-/// Plugin that spawns the base sphere and polar caps.
+/// spawn 基础球体与极地盖片的插件。
 struct BaseSpherePlugin;
 
 impl Plugin for BaseSpherePlugin {
@@ -418,12 +415,11 @@ fn spawn_base_sphere(
 ) {
     let scale = render_scale();
 
-    // Base sphere — high-subdivision UV sphere (Mercator-mapped V so the
-    // runtime whole-globe composite texture drapes like the tile layer);
-    // slightly smaller to stay below tiles and polar caps. Solid color is
-    // only the pre-composite fallback: once the base tile layer arrives,
-    // dynamic_globe drapes a blurry earth composite over it so transient
-    // holes read as earth, not a flat blue void.
+    // 基础球体 —— 高细分 UV 球体（Mercator 映射 V，因此运行时
+    // 全球 composite 纹理能像瓦片层一样垂覆）；略小以保持
+    // 在瓦片与极地盖片之下。纯色只是 composite 前的兜底：一旦基础
+    // 瓦片层到达，dynamic_globe 就在其上垂覆一个模糊的地球 composite，
+    // 使瞬时的空缺读作地球而非一片扁平的蓝色虚空。
     let base_material = materials.add(StandardMaterial {
         base_color: Color::srgb(0.15, 0.17, 0.19),
         perceptual_roughness: 1.0,
@@ -437,10 +433,10 @@ fn spawn_base_sphere(
         Transform::from_scale(Vec3::splat(scale * 0.99)),
     ));
 
-    // Polar caps — north cap steel-blue matched to the LIT ocean color so
-    // the Arctic pole continues the surrounding sea seamlessly (reference:
-    // CesiumJS whole-globe look); south cap ice white because the 85° tile
-    // ring around Antarctica is white ice and the cap must continue it.
+    // 极地盖片 —— 北盖使用与受光海洋颜色匹配的钢蓝色，因此
+    // 北极点无缝地延续周围的海面（参考：CesiumJS 全球观感）；
+    // 南盖为冰白色，因为环绕南极的 85° 瓦片环是白色冰原，
+    // 盖片必须延续它。
     let north_cap_material = materials.add(StandardMaterial {
         base_color: Color::srgb(0.15, 0.17, 0.19),
         perceptual_roughness: 0.95,
@@ -466,42 +462,42 @@ fn spawn_base_sphere(
 }
 
 fn main() {
-    // M3.3: headless offline self-check — proves fetcher wiring without GPU.
-    // Exits immediately (no Bevy app, no window, no GPU context needed).
+    // M3.3：无头离线自检 —— 无需 GPU 即可证明 fetcher 布线。
+    // 立即退出（无 Bevy app、无窗口、无需 GPU 上下文）。
     if feature_flags::offline_selfcheck() {
         std::process::exit(offline_check::run());
     }
 
-    // M0.3: feature gates now live in `feature_flags`; the umbrella
-    // `CESIUM_ENABLE_NEW_CHAINS` and the per-chain flags preserve their
-    // pre-M0.3 semantics exactly (default OFF, truthy tokens unchanged).
+    // M0.3：功能门控现位于 `feature_flags` 中；总括的
+    // `CESIUM_ENABLE_NEW_CHAINS` 与每链标志完全保留其 M0.3 前的
+    // 语义（默认 OFF，truthy token 不变）。
     let enable_terrain = terrain_enabled();
     let enable_tileset = tileset_enabled();
 
-    // M0.4: PerfCounters is always present (cheap; dynamic_globe writes
-    // into it every frame). M0.5 perf-trace plugin reads it.
+    // M0.4：PerfCounters 始终存在（廉价；dynamic_globe 每帧
+    // 写入其中）。M0.5 perf-trace 插件读取它。
     let perf_counters = PerfCounters::default();
 
-    // M0.5: CLI/env parsing for headless + trace + camera-script.
+    // M0.5：用于无头 + trace + camera-script 的 CLI/env 解析。
     let mut cli = perf_trace::Cli::from_env_and_args();
 
-    // ── M11.3: headless mode ownership ──────────────────────────────────
-    // `CESIUM_HEADLESS` (default OFF) now drives a real surface-less
-    // render → offscreen capture → PNG → clean exit via
-    // `CesiumHeadlessPlugin` (added below). perf-trace's older M0.5 behaviour
-    // for the same flag is a frame-cap *auto-exit*, which would fire at frame N
-    // and kill the process before the async screenshot readback (spawned around
-    // the same frame) has landed — so no PNG would ever be written. Hand exit
-    // ownership to the capture plugin by clearing perf-trace's headless
-    // auto-exit; camera-script playback (a separate flag) is unaffected.
+    // ── M11.3：无头模式所有权 ──────────────────────────
+    // `CESIUM_HEADLESS`（默认 OFF）现在驱动一次真正的无表面
+    // 渲染 → 离屏捕获 → PNG → 通过
+    // `CesiumHeadlessPlugin`（下方新增）干净退出。perf-trace 旧的 M0.5
+    // 对于同一标志的行为是一个帧数上限的 *auto-exit*，它会在第 N 帧触发
+    // 并在异步截图回读（约在同一帧 spawn）落地前杀掉进程 —— 因此
+    // PNG 永不会被写入。通过清除 perf-trace 的无头 auto-exit
+    // 将退出所有权交给捕获插件；camera-script 回放（一个独立的标志）
+    // 不受影响。
     //
-    // FIX-HL-EXIT (exit chain verified): `CesiumHeadlessPlugin` counts down
-    // `headless_frames()` Update ticks, then `headless_capture_tick` spawns the
-    // offscreen `Screenshot::image`, whose `save_to_disk` observer writes the PNG
-    // synchronously and a second observer sends `AppExit::Success`
-    // (`headless/mod.rs` L316-320). So clearing `cli.headless` here is safe — the
-    // process still terminates and the artefact is still written; perf-trace's
-    // `headless_exit_system` merely stands down so the two exits never race.
+    // FIX-HL-EXIT（退出链已验证）：`CesiumHeadlessPlugin` 递减
+    // `headless_frames()` Update tick，然后 `headless_capture_tick` spawn
+    // 离屏的 `Screenshot::image`，其 `save_to_disk` observer 同步写入 PNG
+    // 且第二个 observer 发送 `AppExit::Success`
+    // （`headless/mod.rs` L316-320）。因此在此清除 `cli.headless` 是安全的 ——
+    // 进程仍会终止且产物仍会被写入；perf-trace 的
+    // `headless_exit_system` 仅退让，以便两个退出永不竞态。
     let headless = feature_flags::headless_enabled();
     if headless {
         cli.headless = false;
@@ -509,27 +505,26 @@ fn main() {
 
     let mut app = App::new();
 
-    // M4.1: read lighting mode from env BEFORE plugin registration so
-    // CesiumCorePlugin's Startup system sees the correct value.
+    // M4.1：在插件注册*之前*从 env 读取 lighting 模式，以便
+    // CesiumCorePlugin 的 Startup 系统看到正确的值。
     let lighting = lighting_mode();
 
-    // ── M11.3: headless (surface-less) render mode ──────────────────────
-    // When `headless`, swap the windowed WindowPlugin for a `primary_window:
-    // None` / `DontExit` config so the app renders with no window, monitor or
-    // display server. The `else` arm is byte-for-byte the pre-M11.3 windowed
-    // config, so the default startup path is unchanged (golden-path neutral).
+    // ── M11.3：无头（无表面）渲染模式 ──────────────────
+    // 当 `headless` 时，将窗口化的 WindowPlugin 换为一个 `primary_window:
+    // None` / `DontExit` 配置，因此 app 渲染时无窗口、无监视器也无
+    // 显示服务器。`else` 分支逐字节就是 M11.3 前的窗口化
+    // 配置，因此默认启动路径不变（黄金路径中性）。
     if headless {
-        // Surface-less: no primary window AND no winit event loop. With zero
-        // windows the winit loop parks waiting for events, so `Update` would
-        // never tick and the capture→AppExit path would never fire. Drive frames
-        // with the continuous ScheduleRunner instead; the offscreen capture
-        // plugin (added below) renders `headless_frames()` frames, writes the
-        // PNG, then sends AppExit to terminate the runner.
+        // 无表面：既无主窗口也无 winit 事件循环。零窗口时
+        // winit 循环会停车等待事件，因此 `Update` 永不会 tick 且捕获→AppExit 路径
+        // 永不会触发。改用连续的 ScheduleRunner 驱动帧；离屏捕获
+        // 插件（下方新增）渲染 `headless_frames()` 帧，写入
+        // PNG，然后发送 AppExit 以终止 runner。
         //
-        // FIX-HL-EXIT: `Duration::ZERO` is deliberate — headless has no window to
-        // present to and no vsync, so the runner ticks as fast as the CPU allows
-        // and the only bound on runtime is the `headless_frames()` capture count.
-        // An artificial throttle would only slow capture with nothing to gain.
+        // FIX-HL-EXIT：`Duration::ZERO` 是有意为之 —— 无头没有可呈现的窗口也
+        // 没有 vsync，因此 runner 以 CPU 允许的最快速度 tick，
+        // 运行时长的唯一约束是 `headless_frames()` 捕获计数。
+        // 人为限流只会拖慢捕获而毫无收益。
         app.add_plugins(
             DefaultPlugins
                 .set(cesium_bevy_render::headless::headless_window_plugin())
@@ -550,78 +545,78 @@ fn main() {
     }
 
     app.insert_resource(ClearColor(Color::BLACK))
-        // M4.1: insert lighting mode before CesiumCorePlugin so setup_lighting
-        // reads it (init_resource would use Default=FullAmbient otherwise).
+        // M4.1：在 CesiumCorePlugin 之前插入 lighting 模式，以便 setup_lighting
+        // 读取它（否则 init_resource 会用 Default=FullAmbient）。
         .insert_resource(lighting)
-        // Core: lighting + globe config + AnimationClock
+        // Core：lighting + 地球配置 + AnimationClock
         .add_plugins(CesiumCorePlugin)
-        // Camera: mouse orbit/zoom
+        // Camera：鼠标 orbit/缩放
         .add_plugins(OrbitCameraPlugin)
-        // Globe rendering
+        // 地球渲染
         .add_plugins(BaseSpherePlugin);
 
-    // Globe rendering. P1-1/建议1 (2026-09-27): the golden path is the M1.5
-    // thin shell. The frozen legacy monolith (`dynamic_globe_legacy`, the
-    // former CESIUMRST_LEGACY_DYNAMIC_GLOBE A/B arm) was retired after G4
-    // proved it is pixel-neutral with the thin shell (see
-    // PIPELINE_PROMOTION_PLAN.md and verification_evidence/g4/).
+    // 地球渲染。P1-1/建议1 (2026-09-27)：黄金路径是 M1.5
+    // 薄壳。冻结的遗留单体（`dynamic_globe_legacy`，旧的
+    // CESIUMRST_LEGACY_DYNAMIC_GLOBE A/B 分支）在 G4 证明它与薄壳像素中性
+    // 之后已被退役（参见
+    // PIPELINE_PROMOTION_PLAN.md 与 verification_evidence/g4/）。
     app.add_plugins(dynamic_globe::DynamicGlobePlugin);
 
-    // ── M5-B: AtmosphereGlow ↔ SkyDome mutual exclusion ────────────────
-    // The 8-shell glow fallback and the procedural sky dome render overlapping
-    // atmospheric limb effects. glow_enabled() returns !skydome_enabled() so
-    // they are never both active. Default (SKYDOME OFF) → glow ON → v0 zero-diff.
-    // Safety: AtmosphereGlowPlugin's fade system reads Res<OrbitState> which is
-    // guaranteed present because OrbitCameraPlugin is unconditionally registered
-    // at L476 above (same pattern as #47 terrain plugin independence).
+    // ── M5-B：AtmosphereGlow ↔ SkyDome 互斥 ────────────────
+    // 8-shell 辉光回退与程序化 sky dome 渲染相互重叠的
+    // 大气边缘效果。glow_enabled() 返回 !skydome_enabled() 因此
+    // 它们永不同时激活。默认（SKYDOME OFF）→ glow ON → v0 零差异。
+    // 安全：AtmosphereGlowPlugin 的 fade 系统读取 Res<OrbitState>，后者
+    // 因 OrbitCameraPlugin 在上方 L476 无条件注册而保证存在
+    // （与 #47 terrain 插件独立性同一模式）。
     if glow_enabled() {
         app.add_plugins(AtmosphereGlowPlugin);
     }
     app.add_plugins(StarfieldPlugin);
 
-    // ── 2D flat-map mode + switch button (windowed only) ─────────────────
-    // Never registered under CESIUM_HEADLESS, so the deterministic offscreen
-    // capture path keeps a single camera, no UI, no extra render pass (v0 /
-    // FIXED_CAMERA / camera-script baselines stay byte-exact). In the default
-    // windowed session MapMode starts as ThreeD, so the 3D orbit path also runs
-    // unchanged until the user clicks the button.
+    // ── 2D 平面图模式 + 切换按钮（仅窗口化）─────────────────
+    // 在 CESIUM_HEADLESS 下永不注册，因此确定性的离屏
+    // 捕获路径保持单相机、无 UI、无额外 render pass（v0 /
+    // FIXED_CAMERA / camera-script 基线保持字节精确）。在默认
+    // 窗口化会话中 MapMode 以 ThreeD 开始，因此 3D orbit 路径也
+    // 不变地运行直到用户点击按钮。
     if !headless {
         app.add_plugins(map2d::Map2dPlugin);
     }
 
-    // ── cesium-plot overlay bridge (windowed only, M0 scaffold) ──────────
-    // Never registered under CESIUM_HEADLESS, and gated by `plot_enabled()`
-    // (defaults ON when unset, opt out with CESIUM_ENABLE_PLOT=0). M0 adds only
-    // the shared bridge resources (PlotViewCtx / PlotInputCapture) — no systems,
-    // entities or render-layer content — so the 3D golden path and the offscreen
-    // baselines stay byte-exact. Later milestones fill in view sync / picking /
-    // interaction here on render layer 3.
+    // ── cesium-plot overlay 桥接（仅窗口化，M0 脚手架）──────────
+    // 在 CESIUM_HEADLESS 下永不注册，并由 `plot_enabled()` 门控
+    // （未设时默认 ON，用 CESIUM_ENABLE_PLOT=0 退出）。M0 只添加
+    // 共享的桥接资源（PlotViewCtx / PlotInputCapture）—— 无系统、
+    // 实体或 render-layer 内容 —— 因此 3D 黄金路径与离屏
+    // 基线保持字节精确。后续里程碑在 render layer 3 上填充视图同步 / 拾取 /
+    // 交互。
     if !headless && feature_flags::plot_enabled() {
         app.add_plugins(cesium_plot_bevy::CesiumPlotBridgePlugin);
     }
 
-    // ── M4.1: shadow plugin (day_night lighting only) ───────────────────
+    // ── M4.1：shadow 插件（仅 day_night lighting）───────────────────
     if lighting == LightingMode::DayNight {
         app.add_plugins(CesiumShadowPlugin);
         info!("[M4.1] DayNight lighting: shadow plugin registered");
     }
 
-    // ── M5-B: procedural sky dome — independent SKYDOME gate ────────────
-    // CesiumAtmospherePlugin is activated by SKYDOME=1, NOT by DayNight.
-    // Decoupling sky rendering from lighting mode lets M5-C extend
-    // sky_system.rs without touching main.rs. Default OFF → v0 zero-diff.
-    // DEVIATION: sky dome gated independently of DayNight, mutually exclusive
-    //   with AtmosphereGlowPlugin; see docs/deviations.md#dev-015
+    // ── M5-B：程序化 sky dome —— 独立的 SKYDOME 门控 ────────────
+    // CesiumAtmospherePlugin 由 SKYDOME=1 激活，而非由 DayNight。
+    // 将天空渲染与 lighting 模式解耦，让 M5-C 扩展
+    // sky_system.rs 而无需碰 main.rs。默认 OFF → v0 零差异。
+    // DEVIATION：sky dome 独立于 DayNight 门控，与 AtmosphereGlowPlugin
+    //   互斥；参见 docs/deviations.md#dev-015
     if skydome_enabled() {
         app.add_plugins(CesiumAtmospherePlugin);
         info!("[M5-B] SkyDome: CesiumAtmospherePlugin registered");
-        // M5-C caveat: the dome shader emits *un-normalized* in-scattered
-        // radiance (solar disc can exceed 1.0). That is only displayable when
-        // the camera runs `Camera{hdr:true}` + `Tonemapping::AcesFitted`, which
-        // M4.2 wires exclusively under CESIUM_ENABLE_POSTPROCESS_BUILTIN
-        // (see docs/deviations.md#dev-010). With SKYDOME alone the values land
-        // in an LDR framebuffer and clip, so gate ON can look *worse* than
-        // gate OFF — warn instead of silently degrading.
+        // M5-C 注意事项：dome shader 发射*未归一化*的在散射
+        // radiance（太阳盘可超过 1.0）。那只有在相机运行
+        // `Camera{hdr:true}` + `Tonemapping::AcesFitted` 时才可显示，而这由
+        // M4.2 专在 CESIUM_ENABLE_POSTPROCESS_BUILTIN 下布线
+        // （参见 docs/deviations.md#dev-010）。仅开 SKYDOME 时那些值会落入
+        // LDR framebuffer 并被 clip，因此门控 ON 可能看起来比
+        // 门控 OFF *更差* —— 宁可告警也不要静默降级。
         if !postprocess_builtin_enabled() {
             warn!(
                 "[M5-C] SKYDOME 已开但 POSTPROCESS_BUILTIN 未开：散射将写入 LDR framebuffer、>1.0 被 clip，\
@@ -630,28 +625,28 @@ fn main() {
         }
     }
 
-    // ── M4.2 + M5-E1: post-process (two independent gates, coexist) ────────
-    // CesiumEffectsPlugin is registered when EITHER gate is ON:
-    //   • CESIUM_ENABLE_POSTPROCESS_BUILTIN → M4.2 fog clear-color system
-    //     (tonemapping / bloom / HDR live on the camera bundle in orbit_camera.rs).
-    //   • CESIUM_ENABLE_POSTPROCESS         → M5-E1 FXAA render-graph node
-    //     (self-implemented WGSL, quality preset 12 only; see effects/fxaa.rs).
-    // The plugin internally gates each feature by its own env var (see
-    // CesiumEffectsPlugin::build), so these two POSTPROCESS gates never
-    // cross-contaminate and there is no double-FXAA (Bevy's built-in FxaaPlugin
-    // is not added; our node uses a distinct CesiumPostProcessLabel::Fxaa +
-    // CesiumFxaa marker component).
-    // SCOPE OF THAT CLAIM (corrected at M5 收口, Ultra Review Daniel M3):
-    // independence holds for POSTPROCESS ↔ POSTPROCESS_BUILTIN only. It does
-    // NOT hold across the M5 sky/post-process family:
-    //   • SKYDOME ↔ GLOW are **mutually exclusive by construction** —
-    //     glow_enabled() == !skydome_enabled() (feature_flags.rs), so SKYDOME=1
-    //     is *not* purely additive: it forces AtmosphereGlowPlugin OFF
-    //     (docs/deviations.md#dev-015).
-    //   • SKYDOME **recommends** POSTPROCESS_BUILTIN=1 — the dome's
-    //     un-normalized radiance needs HDR + AcesFitted tonemapping, else it
-    //     clips in an LDR framebuffer (warned above; deferred.md #45).
-    // Default (all OFF) → plugin not added → v0 baselines pixel-neutral (PSNR=∞).
+    // ── M4.2 + M5-E1：后处理（两个独立门控，共存）───────────
+    // 当任一个门控 ON 时都注册 CesiumEffectsPlugin：
+    //   • CESIUM_ENABLE_POSTPROCESS_BUILTIN → M4.2 雾 clear-color 系统
+    //     （tonemapping / bloom / HDR 位于 orbit_camera.rs 的相机 bundle 上）。
+    //   • CESIUM_ENABLE_POSTPROCESS         → M5-E1 FXAA render-graph 节点
+    //     （自实现 WGSL，仅 quality preset 12；参见 effects/fxaa.rs）。
+    // 插件内部按各自的 env 变量门控每个功能（参见
+    // CesiumEffectsPlugin::build），因此这两个 POSTPROCESS 门控永不
+    // 交叉污染且没有双重 FXAA（Bevy 内置的 FxaaPlugin
+    // 未被添加；我们的节点使用一个独立的 CesiumPostProcessLabel::Fxaa +
+    // CesiumFxaa 标记组件）。
+    // 该声明的适用范围（在 M5 收口时修正，Ultra Review Daniel M3）：
+    // 独立性仅对 POSTPROCESS ↔ POSTPROCESS_BUILTIN 成立。它在
+    // M5 sky/后处理家族之间并*不*成立：
+    //   • SKYDOME ↔ GLOW **按构造互斥** ——
+    //     glow_enabled() == !skydome_enabled()（feature_flags.rs），因此 SKYDOME=1
+    //     *不是*纯附加的：它强制 AtmosphereGlowPlugin OFF
+    //     （docs/deviations.md#dev-015）。
+    //   • SKYDOME **推荐** POSTPROCESS_BUILTIN=1 —— dome 的
+    //     未归一化 radiance 需要 HDR + AcesFitted tonemapping，否则它
+    //     会在 LDR framebuffer 中被 clip（上方已告警；deferred.md #45）。
+    // 默认（全 OFF）→ 插件未添加 → v0 基线像素中性（PSNR=∞）。
     if postprocess_builtin_enabled() || postprocess_enabled() {
         app.add_plugins(CesiumEffectsPlugin);
         if postprocess_builtin_enabled() {
@@ -662,54 +657,53 @@ fn main() {
         }
     }
 
-    // ── M5-D: Fabric material showcase (built-ins + 3 Water sea states) ──────
-    // Pure additive, env-gated (default OFF → v0 baselines pixel-neutral).
-    // Opt-in via CESIUM_ENABLE_MATERIAL_SHOWCASE=1 to render the material spheres
-    // — including the faithfully-ported Water.glsl (case 17u) calm/medium/rough
-    // baselines captured to specs/baselines/v2_water/ (4 PNG: 3 sea-state
-    // close-ups + 1 arc overview). No existing plugin registration is altered.
-    // The gate is read through the feature_flags registry (single source of
-    // truth for every CESIUM_* env name) rather than a bare string literal.
+    // ── M5-D：Fabric 材质展示（内置 + 3 种 Water 海况）──────
+    // 纯附加，env 门控（默认 OFF → v0 基线像素中性）。
+    // 通过 CESIUM_ENABLE_MATERIAL_SHOWCASE=1 opt-in 渲染材质球
+    // —— 包括忠实移植的 Water.glsl（case 17u）calm/medium/rough
+    // 基线，捕获到 specs/baselines/v2_water/（4 PNG：3 张海况
+    // 特写 + 1 张弧形总览）。现有插件注册未被改动。
+    // 该门控通过 feature_flags 注册表读取（每个 CESIUM_* env
+    // 名的单一真相源）而非一个裸字符串字面量。
     if material_showcase_enabled() {
         app.add_plugins(MaterialShowcasePlugin);
         info!("[M5-D] Material showcase: MaterialShowcasePlugin registered");
     }
 
-    // ── M6 Wave A (task #81) + Phase-3 FIX-INTEG: Clipping + Panorama + IBL + OIT + Clouds ──
-    // Five independent gates, all default OFF, all purely additive:
-    //   • CESIUM_ENABLE_CLIPPING → M6.2 screen-space clipping node      (#77)
-    //   • CESIUM_ENABLE_PANORAMA → M6.3 environment panorama node       (#78)
-    //   • CESIUM_ENABLE_IBL      → M6.5 image-based lighting node       (#79)
-    //   • CESIUM_ENABLE_OIT      → M6.4 weighted-blended OIT tail  (#67, phase-3)
-    //   • CESIUM_ENABLE_CLOUDS   → M6.6 volumetric cloud composite (#63, phase-3)
-    // `M6WaveARenderGraphPlugin` reads the same env names through the
-    // adapter's byte-identical mirrors (DDD: `adapters/bevy-render` cannot import
-    // this `application` crate) and adds **nodes and `Core3d` edges only for the
-    // gates that are ON**. With every gate OFF nothing is registered, no edge is
-    // touched and no component is inserted, so the v0 baselines stay bit-exact
-    // (PSNR = ∞) — the golden path is not reachable from this block.
+    // ── M6 Wave A（任务 #81）+ Phase-3 FIX-INTEG：Clipping + Panorama + IBL + OIT + Clouds ──
+    // 五个独立门控，均默认 OFF，均为纯附加：
+    //   • CESIUM_ENABLE_CLIPPING → M6.2 屏幕空间 clipping 节点      (#77)
+    //   • CESIUM_ENABLE_PANORAMA → M6.3 环境 panorama 节点       (#78)
+    //   • CESIUM_ENABLE_IBL      → M6.5 基于图像的 lighting 节点       (#79)
+    //   • CESIUM_ENABLE_OIT      → M6.4 加权混合 OIT 尾链  (#67, phase-3)
+    //   • CESIUM_ENABLE_CLOUDS   → M6.6 体积云 composite (#63, phase-3)
+    // `M6WaveARenderGraphPlugin` 通过适配器的字节相同镜像读取
+    // 相同的 env 名（DDD：`adapters/bevy-render` 不能导入
+    // 这个 `application` crate），并**仅为处于 ON 的门控添加
+    // 节点与 `Core3d` 边**。当每个门控都 OFF 时什么都不注册、
+    // 不碰任何边也不插入任何组件，因此 v0 基线保持位精确
+    // （PSNR = ∞）—— 从本块无法触及黄金路径。
     //
-    // It is a *plugin* rather than a plain function call because the render-world
-    // half of the registration needs `RenderDevice`, which Bevy only inserts in
-    // `RenderPlugin::finish`: the plugin's `build` does the main-world half
-    // (shaders + `ExtractComponentPlugin` + prepass systems) and its `finish` the
-    // render-world half (pipelines + `Core3d` nodes + edges). Calling it as a
-    // plain function here panicked with "RenderDevice does not exist in the World"
-    // (docs/deviations.md#dev-029).
+    // 它是一个*插件*而非普通函数调用，因为注册的 render-world
+    // 那一半需要 `RenderDevice`，而 Bevy 只在 `RenderPlugin::finish` 中插入它：
+    // 插件的 `build` 做 main-world 那一半
+    // （shaders + `ExtractComponentPlugin` + prepass 系统）而其 `finish` 做
+    // render-world 那一半（pipelines + `Core3d` 节点 + 边）。在此将其作为普通
+    // 函数调用会以 "RenderDevice does not exist in the World" panic
+    // （docs/deviations.md#dev-029）。
     //
-    // The graph entry point is the single owner of the chain *shape*: it removes
-    // the bevy default `MainOpaquePass → MainTransmissivePass` edge before
-    // splicing the panorama in (serial insertion, never a diamond — the defect
-    // class Daniel H2 flagged and `insert_node_in_core3d` used to have), and it
-    // removes `EndMainPass → Tonemapping` / `EndMainPass → PassThrough` before
-    // prepending Clipping + IBL, so Robin #72's post-process reorder
-    // (`PassThrough → AmbientOcclusion → Tonemapping → Fxaa`) survives
-    // byte-for-byte.
+    // 图的入口点是链 *形状*的唯一拥有者：它在拼入 panorama
+    // 之前移除 bevy 默认的 `MainOpaquePass → MainTransmissivePass` 边（串行插入，
+    // 绝无 diamond —— Daniel H2 标记且 `insert_node_in_core3d`
+    // 曾有的缺陷类），并在前置 Clipping + IBL 之前移除
+    // `EndMainPass → Tonemapping` / `EndMainPass → PassThrough`，因此 Robin #72 的
+    // 后处理重排序（`PassThrough → AmbientOcclusion → Tonemapping → Fxaa`）
+    // 逐字节存活。
     //
-    // DEVIATION: IBL adds environment light to the HDR scene and Clipping
-    //   overwrites the clipped region — both are *screen-space* passes, whereas
-    //   upstream injects IBL per-material in the forward pass and clips with a
-    //   per-geometry `discard`; see docs/deviations.md#dev-027
+    // DEVIATION：IBL 向 HDR 场景添加环境光，Clipping
+    //   覆写被裁剪的区域——两者都是*屏幕空间* pass，而
+    //   上游在 forward pass 中逐材质注入 IBL 并用一个
+    //   逐几何的 `discard` 裁剪；参见 docs/deviations.md#dev-027
     let m6_clipping = feature_flags::clipping_enabled();
     let m6_panorama = feature_flags::panorama_enabled();
     let m6_ibl = feature_flags::ibl_enabled();
@@ -728,9 +722,8 @@ fn main() {
             done: false,
             sky_image: None,
         });
-        // FIX-HL-RESMUT: create the (camera-independent) sky image once at
-        // Startup, then let the per-frame setup attach components without ever
-        // holding `Assets<Image>`.
+        // FIX-HL-RESMUT：在 Startup 时创建一次（与相机无关的）sky image，
+        // 然后让每帧的 setup 附加组件而永不持有 `Assets<Image>`。
         app.add_systems(Startup, m6_wave_a_prepare);
         app.add_systems(Update, m6_wave_a_setup);
         if m6_clipping {
@@ -759,28 +752,28 @@ fn main() {
         }
     }
 
-    // M0.4: register PerfCounters resource (dynamic_globe writes, trace reads).
+    // M0.4：注册 PerfCounters 资源（dynamic_globe 写入，trace 读取）。
     app.insert_resource(perf_counters);
 
-    // ── M2.5: CameraControl driving port ────────────────────────────────
-    // Programmatic camera control (set_view / fly_to / look_at / zoom / home),
-    // delegating to the domain camera algorithms. Registered as a resource so
-    // scripts/systems can fetch `CameraControlPort` and drive the camera; the
-    // PostUpdate bridge syncs it to any `CesiumCamera` entity and is inert when
-    // none exists (the interactive default camera stays orbit_camera-driven,
-    // pixel-neutral).
+    // ── M2.5：CameraControl 驱动端口 ──────────────────────────
+    // 程序化的相机控制（set_view / fly_to / look_at / zoom / home），
+    // 委派给领域相机算法。作为一个资源注册，因此
+    // 脚本/系统可以获取 `CameraControlPort` 并驱动相机；PostUpdate 桥接
+    // 将它同步到任意 `CesiumCamera` 实体，且当不存在时不生效
+    // （交互式默认相机仍由 orbit_camera 驱动，
+    // 像素中性）。
     app.init_resource::<CameraControlPort>()
         .add_systems(PostUpdate, camera_control_port_system);
 
-    // M0.5: perf-trace plugin (CSV writer + optional camera-script playback
-    // + optional headless auto-exit). Inert when no trace path is given.
+    // M0.5：perf-trace 插件（CSV writer + 可选 camera-script 回放
+    // + 可选无头 auto-exit）。未给 trace 路径时不生效。
     app.add_plugins(PerfTracePlugin::new(cli));
 
     if enable_terrain {
         app.add_plugins(CesiumTerrainPlugin)
-            // M4.3: imagery pipeline provides textures for terrain draping
-            // (base_color_texture on terrain tiles). Registered alongside
-            // terrain so ImageryCache is populated before render_system runs.
+            // M4.3：imagery 管线为地形垂覆提供纹理
+            // （地形瓦片上的 base_color_texture）。与 terrain 一同注册，
+            // 以便在 render_system 运行前 ImageryCache 已填充。
             .add_plugins(CesiumImageryPlugin)
             .add_systems(Startup, spawn_terrain_config_task)
             .add_systems(Update, apply_terrain_endpoint);
@@ -793,7 +786,7 @@ fn main() {
         app.add_systems(Update, stats_logger_system);
     }
 
-    // Optional deterministic screenshot for headless verification (inert by default).
+    // 用于无头验证的可选确定性截图（默认不生效）。
     if let Some(at_frame) = std::env::var("CESIUM_SCREENSHOT_AT_FRAME")
         .ok()
         .and_then(|v| v.parse::<u32>().ok())
@@ -803,7 +796,7 @@ fn main() {
         app.add_systems(Update, auto_screenshot_system);
     }
 
-    // ── M3.3: FIXED_TIME — freeze clock for deterministic lighting ──────
+    // ── M3.3：FIXED_TIME —— 冻结时钟以确定 lighting ──────
     if feature_flags::fixed_time_enabled() {
         app.insert_resource(TimeUpdateStrategy::ManualDuration(
             std::time::Duration::ZERO,
@@ -811,7 +804,7 @@ fn main() {
         info!("[M3.3] FIXED_TIME: clock frozen (delta=0)");
     }
 
-    // ── M3.3: FIXED_CAMERA — deterministic pose override ────────────────
+    // ── M3.3：FIXED_CAMERA —— 确定性位姿覆盖 ────────────────
     if let Some(cam_path) = feature_flags::fixed_camera_path() {
         match std::fs::read_to_string(&cam_path) {
             Ok(text) => match toml::from_str::<FixedCameraFile>(&text) {
@@ -834,14 +827,14 @@ fn main() {
         }
     }
 
-    // ── M3.4: CESIUM_SCREENSHOT_SCRIPT — batch multi-view capture ───────
+    // ── M3.4：CESIUM_SCREENSHOT_SCRIPT —— 批量多视图捕获 ───────
     if let Some(script_path) = feature_flags::screenshot_script_path() {
         match capture_script::ShotScript::from_file(&script_path) {
             Ok(script) => {
                 let shots = script.sorted().shot;
                 let output_dir = std::env::var("CESIUM_SCREENSHOT_DIR")
                     .unwrap_or_else(|_| ".".to_string());
-                // Ensure output directory exists.
+                // 确保输出目录存在。
                 let _ = std::fs::create_dir_all(&output_dir);
                 info!(
                     "[M3.4] batch capture: {} shots from {} → {}/",
@@ -863,17 +856,17 @@ fn main() {
         }
     }
 
-    // ── M11.3: headless offscreen capture → PNG → clean exit ────────────
-    // Only active under CESIUM_HEADLESS (default OFF → plugin not added →
-    // windowed path byte-for-byte untouched). Creates an offscreen RGBA8(sRGB)
-    // target, retargets the scene Camera3d to it each frame, renders
-    // `headless_frames()` warm-up frames, then captures one PNG (the artefact
-    // `tools/pixel_diff` consumes for the pixel gate) and requests AppExit.
-    // NOTE (deferred to M11.4): multi-view batch capture
-    // (CESIUM_SCREENSHOT_SCRIPT) and AutoScreenshot still use
-    // Screenshot::primary_window(), so they are not yet headless-aware — they now
-    // emit a `warn!` (FIX-HL-EXIT) rather than failing silently; single-view
-    // offscreen capture via this plugin is the supported headless path.
+    // ── M11.3：无头离屏捕获 → PNG → 干净退出 ────────────
+    // 仅在 CESIUM_HEADLESS 下激活（默认 OFF → 插件未添加 →
+    // 窗口化路径逐字节未被触碰）。创建一个离屏 RGBA8(sRGB)
+    // 目标，每帧将场景 Camera3d 重新指向它，渲染
+    // `headless_frames()` 预热帧，然后捕获一张 PNG（`tools/pixel_diff`
+    // 为像素门控消费的产物）并请求 AppExit。
+    // NOTE（推迟至 M11.4）：多视图批量捕获
+    // （CESIUM_SCREENSHOT_SCRIPT）与 AutoScreenshot 仍使用
+    // Screenshot::primary_window()，因此它们尚未无头感知 —— 它们现在
+    // 会发出一个 `warn!`（FIX-HL-EXIT）而非静默失败；通过本插件的单视图
+    // 离屏捕获是受支持的无头路径。
     if headless {
         let output = feature_flags::headless_output();
         let frames = feature_flags::headless_frames();
@@ -890,60 +883,60 @@ fn main() {
     app.run();
 }
 
-// ─── M6 Wave A (task #81): camera component composition ─────────────────────
+// ─── M6 Wave A（任务 #81）：相机组件组合 ─────────────────
 
-/// Which M6 components the one-shot setup system still has to attach.
+/// 一次性 setup 系统仍需附加哪些 M6 组件。
 ///
-/// `done` makes the system idempotent: re-inserting the components every frame
-/// would re-extract a fresh copy each frame and churn the render-world bind
-/// groups (`prepare_panorama_bind_groups` rebuilds them per frame *anyway*, but
-/// only for entities that actually changed).
+/// `done` 使系统幂等：每帧重新插入组件会每帧重新提取
+/// 一份新副本并扰动 render-world 的 bind group
+/// （`prepare_panorama_bind_groups` 反正会逐帧重建它们，但
+/// 仅针对真正发生了变化的实体）。
 #[derive(Resource)]
 struct M6WaveAConfig {
     clipping: bool,
     panorama: bool,
     ibl: bool,
-    /// Phase-3 FIX-INTEG: M6.4 weighted-blended OIT gate.
+    /// Phase-3 FIX-INTEG：M6.4 加权混合 OIT 门控。
     oit: bool,
-    /// Phase-3 FIX-INTEG: M6.6 volumetric cloud composite gate.
+    /// Phase-3 FIX-INTEG：M6.6 体积云 composite 门控。
     clouds: bool,
-    /// Phase-3 FIX-SPLIT: M6.1 split-screen divider gate.
+    /// Phase-3 FIX-SPLIT：M6.1 分屏分隔线门控。
     split: bool,
     done: bool,
-    /// FIX-HL-RESMUT: procedural sky-cube [`Image`] handle, built once by
-    /// [`m6_wave_a_prepare`] in `Startup`. [`m6_wave_a_setup`] reads (clones) it
-    /// to attach the panorama, so that per-frame system no longer needs a
-    /// persistent `ResMut<Assets<Image>>` — which otherwise claimed the shared
-    /// image asset store for the whole `Update` stage on every frame.
+    /// FIX-HL-RESMUT：程序化 sky-cube [`Image`] 句柄，由
+    /// [`m6_wave_a_prepare`] 在 `Startup` 中构建一次。[`m6_wave_a_setup`] 读取（克隆）
+    /// 它来附加 panorama，因此那个每帧系统不再需要
+    /// 一个持久的 `ResMut<Assets<Image>>` —— 否则它会在每帧为整个 `Update`
+    /// stage 占用共享的 image 资产存储。
     sky_image: Option<Handle<Image>>,
 }
 
-/// FIX-HL-RESMUT: one-shot `Startup` system that builds the procedural sky-cube
-/// image and stashes its handle on [`M6WaveAConfig`]. Asset creation does not
-/// depend on the camera, so it belongs in `Startup` (runs exactly once, after
-/// which the `Assets<Image>` borrow is released); the per-frame
-/// [`m6_wave_a_setup`] then only consumes the pre-made handle.
+/// FIX-HL-RESMUT：一次性 `Startup` 系统，构建程序化 sky-cube
+/// 图像并将其句柄藏于 [`M6WaveAConfig`] 上。资产创建不
+/// 依赖相机，因此它属于 `Startup`（恰好运行一次，之后
+/// `Assets<Image>` 借用即被释放）；每帧的
+/// [`m6_wave_a_setup`] 随后只消费预先做好的句柄。
 fn m6_wave_a_prepare(mut cfg: ResMut<M6WaveAConfig>, mut images: ResMut<Assets<Image>>) {
     if cfg.panorama && cfg.sky_image.is_none() {
         cfg.sky_image = Some(images.add(m6_procedural_sky_cube()));
     }
 }
 
-/// Attaches the M6 components to the scene camera, once.
+/// 将 M6 组件附加到场景相机，一次性。
 ///
-/// **Why a one-shot `Update` system and not `Startup`:** the camera entity is
-/// spawned by `orbit_camera::spawn_orbit_camera`, which is *private* to that
-/// module and registered in `Startup`, so `main.rs` cannot order a system
-/// `.after(...)` it. Waiting for the first `Update` in which a `Camera3d` exists
-/// is the ordering-free equivalent, and it keeps `orbit_camera.rs` untouched
-/// (M2/M5 red line: the camera bundle is that module's territory).
+/// **为何是一个一次性 `Update` 系统而非 `Startup`：**相机实体由
+/// `orbit_camera::spawn_orbit_camera` spawn，而后者*私有*于那个模块
+/// 并在 `Startup` 中注册，因此 `main.rs` 无法将一个系统
+/// `.after(...)` 它。等待第一个存在 `Camera3d` 的 `Update` 帧
+/// 是一个无需排序的等价做法，且它保持 `orbit_camera.rs` 未被触碰
+/// （M2/M5 红线：相机 bundle 是该模块的地盘）。
 ///
-/// The three nodes are driven by per-view components, exactly like M5's
-/// `CesiumFxaa` / `CesiumAmbientOcclusion`. The prepass components they need
-/// (`DepthPrepass` for clipping, `DepthPrepass + NormalPrepass` for IBL) are
-/// attached by the adapters' own `setup_*_prepass` systems, registered inside
-/// `register_clipping_planes_node` / `register_ibl_node` — so this system only
-/// ever inserts the *component that carries the domain value objects*.
+/// 三个节点由逐视图组件驱动，与 M5 的
+/// `CesiumFxaa` / `CesiumAmbientOcclusion` 完全一致。它们需要的 prepass 组件
+/// （clipping 的 `DepthPrepass`，IBL 的 `DepthPrepass + NormalPrepass`）由
+/// 适配器自己的 `setup_*_prepass` 系统附加，注册在
+/// `register_clipping_planes_node` / `register_ibl_node` 内部 —— 因此这个系统只
+/// 插入*携带领域值对象的那个组件*。
 fn m6_wave_a_setup(
     mut commands: Commands,
     mut cfg: ResMut<M6WaveAConfig>,
@@ -952,26 +945,25 @@ fn m6_wave_a_setup(
     if cfg.done {
         return;
     }
-    // FIX-HL-RESMUT: pick the camera deterministically. `Query::iter().next()`
-    // follows archetype/chunk iteration order, which is not a stable notion of
-    // "the main camera" once more than one `Camera3d` exists. `Entity` is `Ord`
-    // by (index, generation), so `.min()` always resolves the first-spawned
-    // camera (`orbit_camera::spawn_orbit_camera` runs before any secondary view).
-    // A dedicated main-camera marker would be stronger, but `orbit_camera.rs` is
-    // outside this change's file scope, so deterministic ordering is used here.
+    // FIX-HL-RESMUT：确定性地选取相机。`Query::iter().next()`
+    // 遵循 archetype/chunk 的迭代顺序，而一旦存在多个 `Camera3d`，
+    // 它就不是“主相机”的一个稳定概念。`Entity` 按 (index, generation)
+    // 是 `Ord` 的，因此 `.min()` 总解析为先 spawn 的相机
+    // （`orbit_camera::spawn_orbit_camera` 在任何辅助视图之前运行）。
+    // 一个专用主相机标记会更强大，但 `orbit_camera.rs` 在本
+    // 改动的文件范围之外，因此这里使用确定性排序。
     let Some(camera) = cameras.iter().min() else {
-        // Camera not spawned yet — stay `!done` and retry on the next frame.
+        // 相机尚未 spawn —— 保持 `!done` 并在下一帧重试。
         return;
     };
 
     if cfg.clipping {
         commands.entity(camera).insert(m6_demo_clipping_planes());
     }
-    // Phase-3 FIX-INTEG: OIT is a whole-camera marker — the accumulate/composite
-    // nodes early-return when `enabled == false`, so an active component plus the
-    // gate being ON is all that turns the transparent-tail pass on. (Faithful
-    // re-routing of Bevy's transparent geometry into the MRT targets is deferred;
-    // see docs/deviations.md#dev-031.)
+    // Phase-3 FIX-INTEG：OIT 是一个整相机标记 —— accumulate/composite
+    // 节点在 `enabled == false` 时提前返回，因此一个激活的组件加
+    // 上门控 ON 就是开启透明尾链 pass 所需的全部。（将 Bevy 的透明
+    // 几何忠实重路由到 MRT 目标被推迟；参见 docs/deviations.md#dev-031。）
     if cfg.oit {
         commands.entity(camera).insert(CesiumOit::default());
     }
@@ -980,17 +972,17 @@ fn m6_wave_a_setup(
             .entity(camera)
             .insert(CesiumClouds::new(m6_demo_cloud_collection()));
     }
-    // Phase-3 FIX-SPLIT: the split-screen divider is a whole-camera marker too —
-    // the `SplitNode` early-returns when `enabled == false`, so inserting the
-    // component plus the gate being ON turns the overlay on. `new(0.5)` centres
-    // the divider at the horizontal mid-point (a `SplitConfig` drag then moves it).
+    // Phase-3 FIX-SPLIT：分屏分隔线也是一个整相机标记 ——
+    // `SplitNode` 在 `enabled == false` 时提前返回，因此插入该组件
+    // 加上门控 ON 就开启 overlay。`new(0.5)` 将分隔线居中于
+    // 水平中点（一个 `SplitConfig` 拖拽随后移动它）。
     if cfg.split {
         commands.entity(camera).insert(CesiumSplit::new(0.5));
     }
     if cfg.ibl {
-        // Domain defaults: `image_based_lighting_factor = [1.0, 1.0]` (so
-        // `CesiumIbl::is_active()` is true) and no explicit SH coefficients, which
-        // `IblUniform::from_domain` resolves through `default_spherical_harmonics()`.
+        // 领域默认值：`image_based_lighting_factor = [1.0, 1.0]`（因此
+        // `CesiumIbl::is_active()` 为 true）且无显式 SH 系数，
+        // `IblUniform::from_domain` 通过 `default_spherical_harmonics()` 解析它们。
         commands
             .entity(camera)
             .insert(CesiumIbl::new(
@@ -999,9 +991,9 @@ fn m6_wave_a_setup(
             ));
     }
     if cfg.panorama {
-        // FIX-HL-RESMUT: use the handle pre-created in `m6_wave_a_prepare` so this
-        // per-frame system never touches `Assets<Image>`. A `None` means prepare did
-        // not run — warn and skip rather than resurrect the persistent borrow.
+        // FIX-HL-RESMUT：使用在 `m6_wave_a_prepare` 中预创建的句柄，因此这个
+        // 每帧系统永不触碰 `Assets<Image>`。`None` 意味着 prepare 未
+        // 运行 —— 宁可告警并跳过也不要复活那个持久借用。
         match cfg.sky_image.clone() {
             Some(image) => {
                 let faces: [String; 6] = CubeMapPanorama::FACE_NAMES
@@ -1027,22 +1019,22 @@ fn m6_wave_a_setup(
     cfg.done = true;
 }
 
-/// A two-plane globe cut, the classic CesiumJS `ClippingPlaneCollection` demo.
+/// 一个双面地球切割，经典的 CesiumJS `ClippingPlaneCollection` 演示。
 ///
-/// Intersection mode (`union_clipping_regions == false`, the domain default)
-/// clips a fragment only when it is outside **every** plane, so these two planes
-/// remove the `x < 0 && z < 0` quarter of the globe and leave the other three
-/// quadrants intact. Distances are in **metres** — the adapter divides by
-/// `METERS_PER_RENDER_UNIT = 6378137` when packing the uniform — and `0.0` puts
-/// both planes through the globe centre.
+/// 交集模式（`union_clipping_regions == false`，领域默认值）仅当一个
+/// fragment 在**每个**平面之外时才裁剪它，因此这两个平面
+/// 移除地球的 `x < 0 && z < 0` 四分之一并保留其余三个
+/// 象限完好。距离以**米**计 —— 适配器在打包 uniform 时除以
+/// `METERS_PER_RENDER_UNIT = 6378137`，而 `0.0` 将
+/// 两个平面都置于球心。
 ///
-/// `edge_width` is in **pixels**, not metres: `shaders/clipping.wgsl` multiplies
-/// it by `fwidth()` (the stand-in for upstream's `czm_metersPerPixel`, see
-/// docs/deviations.md#dev-023).
+/// `edge_width` 以**像素**计，而非米：`shaders/clipping.wgsl` 将其
+/// 乘以 `fwidth()`（上游 `czm_metersPerPixel` 的替代，参见
+/// docs/deviations.md#dev-023）。
 fn m6_demo_clipping_planes() -> CesiumClippingPlanes {
     let mut collection = ClippingPlaneCollection::with_planes(vec![
-        // `bevy::math::DVec3` (f64) is not in `bevy::prelude`, which only exports
-        // the f32 vector types — spelled out so the domain stays f64 end to end.
+        // `bevy::math::DVec3`（f64）不在 `bevy::prelude` 中，后者只导出
+        // f32 向量类型 —— 完整拼写以使领域端到端保持 f64。
         ClippingPlane::new(bevy::math::DVec3::new(0.0, 0.0, 1.0), 0.0),
         ClippingPlane::new(bevy::math::DVec3::new(1.0, 0.0, 0.0), 0.0),
     ]);
@@ -1051,21 +1043,21 @@ fn m6_demo_clipping_planes() -> CesiumClippingPlanes {
     CesiumClippingPlanes::new(collection)
 }
 
-/// A small deterministic cloud field for the M6.6 gate-on demo.
+/// M6.6 门控演示的一个小型确定性云场。
 ///
-/// Positions and maximum sizes are in **metres** (metric f64 domain; the adapter
-/// narrows to render units at the GPU boundary). This only ever reaches the GPU
-/// when `CESIUM_ENABLE_CLOUDS=1` (default OFF → the node is never registered and
-/// the v0 baselines stay bit-exact); the composite `is_active()` guard additionally
-/// early-returns while the collection is empty or hidden. The faithful per-cloud
-/// billboard + 3D-noise path is deferred to a real-GPU task
-/// (`docs/deviations.md#dev-032`); this field exercises the screen-space
-/// ray-march composite end to end.
+/// 位置与最大尺寸以**米**计（公制 f64 领域；适配器
+/// 在 GPU 边界收窄为 render unit）。这仅在 `CESIUM_ENABLE_CLOUDS=1` 时
+/// 才到达 GPU（默认 OFF → 节点永不注册且
+/// v0 基线保持位精确）；composite 的 `is_active()` 守卫另外会在集合
+/// 为空或隐藏时提前返回。忠实的逐云 billboard + 3D-noise
+/// 路径被推迟到一个真 GPU 任务
+/// （`docs/deviations.md#dev-032`）；此云场端到端地演练屏幕空间
+/// ray-march composite。
 fn m6_demo_cloud_collection() -> CloudCollection {
     use bevy::math::DVec3;
     let mut collection = CloudCollection::new();
-    // A shallow arc of cumulus cloudlets, each a ~2 km × 1 km ellipsoid, offset
-    // along ±x and lifted to a low altitude so the orbit camera frames them.
+    // 一片浅弧状的 cumulus 小云，每朵约为一个 ~2 km × 1 km 椭球，
+    // 沿 ±x 排列并抬到低高度，以便 orbit 相机能框住它们。
     for i in -2..=2 {
         let x = f64::from(i) * 2500.0;
         let position = DVec3::new(x, 0.0, 3000.0);
@@ -1075,48 +1067,47 @@ fn m6_demo_cloud_collection() -> CloudCollection {
     collection
 }
 
-/// A procedurally generated six-face cube map standing in for a real sky asset.
+/// 一个程序生成的六面 cube map，作为一个真实天空资产的替代。
 ///
-/// **Why procedural, and why `CubeMapPanorama` rather than the upstream default
-/// `EquirectangularPanorama`** (docs/deviations.md#dev-028, deferred.md #58):
-/// upstream's equirectangular panorama is a *finite bubble* whose default radius
-/// is `DEFAULT_PANORAMA_RADIUS = 100_000 m = 0.0157` render units — about 1.6 %
-/// of the globe radius. `orbit_camera` never comes closer than `1.005` render
-/// units, so that bubble sits entirely inside the globe and the opaque pass
-/// hides it: gate ON would be indistinguishable from gate OFF. The cube-map
-/// placement (`PanoramaPlacement::Skybox`) is camera-centred and infinite,
-/// writes no depth, and is therefore the placement that makes the documented
+/// **为何是程序生成，以及为何用 `CubeMapPanorama` 而非上游默认的
+/// `EquirectangularPanorama`**（docs/deviations.md#dev-028，deferred.md #58）：
+/// 上游的等矩形 panorama 是一个*有限球泡*，其默认半径
+/// 为 `DEFAULT_PANORAMA_RADIUS = 100_000 m = 0.0157` render unit —— 约地球半径的 1.6 %。
+/// `orbit_camera` 从不会靠近到低于 `1.005` render unit，因此那个球泡
+/// 完全位于地球内部并被 opaque pass 隐藏：门控 ON 会与
+/// 门控 OFF 无法区分。cube-map 放置（`PanoramaPlacement::Skybox`）以相机为中心
+/// 且无限，不写深度，因此它正是使文档化的
 /// `MainOpaquePass → Panorama → MainTransparentPass(starfield r=50 → sky dome
-/// r=40)` order coherent — the panorama fills the sky, the transparent draws
-/// still pass the depth test on top of it, and the sky dome's three ordering
-/// mechanisms (`depth_bias` / `Premultiplied` / `cull Front`) stay untouched.
+/// r=40)` 顺序自洽的那个放置 —— panorama 填满天空，透明 draw
+/// 仍在其上方通过深度测试，且 sky dome 的三个排序机制
+/// （`depth_bias` / `Premultiplied` / `cull Front`）保持未被触碰。
 ///
-/// Shape requirements are those `prepare_panorama_bind_groups` enforces: a
-/// `texture_cube` slot needs exactly **six array layers**, so the image is built
-/// as a 2D array texture with `depth_or_array_layers = 6` and a
-/// `TextureViewDescriptor` whose `dimension` is `Cube` (bevy 0.15.3 honours
-/// `Image::texture_view_descriptor` verbatim in `GpuImage::prepare_asset`).
+/// 形状要求就是 `prepare_panorama_bind_groups` 强制的那些：
+/// 一个 `texture_cube` 插槽需要恰好**六个 array layer**，因此图像
+/// 构建为一个 `depth_or_array_layers = 6` 的 2D array 纹理，以及一个
+/// `dimension` 为 `Cube` 的 `TextureViewDescriptor`（bevy 0.15.3 在
+/// `GpuImage::prepare_asset` 中逐字遵从 `Image::texture_view_descriptor`）。
 ///
-/// Colours are **sRGB bytes** because the format is `Rgba8UnormSrgb`: the
-/// hardware performs the sRGB → linear decode that upstream's `czm_gammaCorrect`
-/// did by hand (project sRGB red line, docs/deviations.md#dev-025).
+/// 颜色是 **sRGB 字节**，因为格式为 `Rgba8UnormSrgb`：硬件
+/// 执行上游 `czm_gammaCorrect` 曾手工做的 sRGB → linear 解码
+/// （项目 sRGB 红线，docs/deviations.md#dev-025）。
 fn m6_procedural_sky_cube() -> Image {
-    /// Per-face edge length. Small on purpose: linear filtering across a smooth
-    /// vertical gradient is all the placeholder has to do.
+    /// 每面边长。有意很小：跨一个平滑垂直梯度的线性过滤
+    /// 就是这个占位物需要做的一切。
     const FACE: u32 = 8;
     const ZENITH: [u8; 3] = [38, 78, 160];
     const HORIZON: [u8; 3] = [126, 148, 176];
     const NADIR: [u8; 3] = [12, 14, 22];
 
     let mut data = Vec::with_capacity(6 * (FACE * FACE * 4) as usize);
-    // Face order is upstream's `[+X, -X, +Y, -Y, +Z, -Z]`
-    // (`CubeMapPanorama::FACE_NAMES` ≡ `SkyBox.js::createEarthSkyBox`).
+    // 面顺序是上游的 `[+X, -X, +Y, -Y, +Z, -Z]`
+    // （`CubeMapPanorama::FACE_NAMES` ≡ `SkyBox.js::createEarthSkyBox`）。
     for face in 0..6u32 {
         for y in 0..FACE {
-            // `t = 0` at the zenith edge of the face, `1` at the nadir edge. In a
-            // cube map the four side faces run `+Y` (row 0) → `-Y` (last row), so a
-            // plain row index is already the gradient axis; `+Y` (face 2) is the
-            // zenith cap and `-Y` (face 3) the nadir cap.
+            // `t = 0` 在该面的 zenith 边缘，`1` 在 nadir 边缘。在一个
+            // cube map 中四个侧面沿 `+Y`（行 0）→ `-Y`（最后一行）运行，因此一个
+            // 普通的行索引已是梯度轴；`+Y`（面 2）是 zenith 盖，
+            // `-Y`（面 3）是 nadir 盖。
             let t = match face {
                 2 => 0.0_f32,
                 3 => 1.0_f32,
@@ -1152,10 +1143,10 @@ fn m6_procedural_sky_cube() -> Image {
     image
 }
 
-/// Component-wise byte lerp for the placeholder sky gradient.
+/// 为占位天空梯度做的逐分量字节 lerp。
 ///
-/// `t` is always in `[0, 1]` at both call sites, so the result cannot leave the
-/// `u8` range and the `as u8` narrowing is exact.
+/// `t` 在两个调用处都始终处于 `[0, 1]`，因此结果不会离开
+/// `u8` 范围且 `as u8` 收窄是精确的。
 fn m6_lerp_u8(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
     let mix = |lo: u8, hi: u8| -> u8 {
         let lo = f32::from(lo);
@@ -1169,18 +1160,18 @@ fn m6_lerp_u8(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
 mod m6_setup_tests {
     use super::*;
 
-    /// FIX-HL-RESMUT: with two `Camera3d` entities the one-shot setup must attach
-    /// the M6 component to the *deterministically selected* camera — the same one
-    /// `cameras.iter().min()` resolves — not whichever `Query::iter()` happens to
-    /// yield first. A clipping-only config keeps the fixture free of
-    /// `Assets<Image>` / render-world dependencies.
+    /// FIX-HL-RESMUT：有两个 `Camera3d` 实体时，一次性 setup 必须将
+    /// M6 组件附加到*确定性选取*的相机 —— 即 `cameras.iter().min()`
+    /// 解析出的同一个 —— 而非 `Query::iter()` 恰好首先产出
+    /// 的那一个。一个仅 clipping 的配置使该 fixture 免受
+    /// `Assets<Image>` / render-world 依赖。
     #[test]
     fn m6_wave_a_setup_attaches_to_the_deterministic_camera() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         let cam_a = app.world_mut().spawn(Camera3d::default()).id();
         let cam_b = app.world_mut().spawn(Camera3d::default()).id();
-        // Mirror the system's selection rule (lowest `Entity` by `Ord`).
+        // 镜像系统的选取规则（按 `Ord` 取最小的 `Entity`）。
         let expected = cam_a.min(cam_b);
         let other = if expected == cam_a { cam_b } else { cam_a };
 

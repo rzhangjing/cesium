@@ -1,13 +1,13 @@
-//! Globe surface rendering and terrain interaction.
+//! 地球表面渲染与地形交互。
 //!
-//! Maps to CesiumJS `Scene/Globe.js`:
-//! - Globe surface properties
-//! - Depth test against terrain
-//! - Elevation queries
-//! - Globe translucency
-//! - Underground rendering
-//! - Lighting fade distances
-//! - Terrain skirts and back-face culling
+//! 映射到 CesiumJS `Scene/Globe.js`：
+//! - 地球表面属性
+//! - 针对地形的深度测试
+//! - 高程查询
+//! - 地球半透明
+//! - 地下渲染
+//! - 光照淡入淡出距离
+//! - 地形平边（skirts）与背面剔除
 
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_geospatial::cartographic::Cartographic;
@@ -15,42 +15,42 @@ use cesium_geospatial::rectangle::Rectangle;
 use glam::DVec3;
 use std::f64::consts::PI;
 
-/// Shadow mode for globe rendering.
-/// Maps to CesiumJS `Scene/ShadowMode`
+/// 地球渲染的阴影模式。
+/// 映射到 CesiumJS `Scene/ShadowMode`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ShadowMode {
-    /// Shadows are disabled.
+    /// 禁用阴影。
     Disabled,
-    /// Globe only receives shadows.
+    /// 地球仅接收阴影。
     #[default]
     ReceiveOnly,
-    /// Globe only casts shadows.
+    /// 地球仅投射阴影。
     CastOnly,
-    /// Globe both casts and receives shadows.
+    /// 地球既投射又接收阴影。
     Enabled,
 }
 
-/// Near/far scalar for distance-based interpolation.
-/// Maps to CesiumJS `Core/NearFarScalar`
+/// 用于基于距离插值的近/远标量。
+/// 映射到 CesiumJS `Core/NearFarScalar`
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NearFarScalar {
-    /// Near distance.
+    /// 近距。
     pub near: f64,
-    /// Value at near distance.
+    /// 近距处的值。
     pub near_value: f64,
-    /// Far distance.
+    /// 远距。
     pub far: f64,
-    /// Value at far distance.
+    /// 远距处的值。
     pub far_value: f64,
 }
 
 impl NearFarScalar {
-    /// Creates a new near/far scalar.
+    /// 创建一个新的近/远标量。
     pub fn new(near: f64, near_value: f64, far: f64, far_value: f64) -> Self {
         Self { near, near_value, far, far_value }
     }
 
-    /// Interpolates the value at a given distance.
+    /// 插值给定距离处的值。
     pub fn interpolate(&self, distance: f64) -> f64 {
         if distance <= self.near {
             return self.near_value;
@@ -63,86 +63,86 @@ impl NearFarScalar {
     }
 }
 
-/// Globe rendering configuration.
+/// 地球渲染配置。
 ///
-/// Maps to CesiumJS `Scene/Globe.js`
+/// 映射到 CesiumJS `Scene/Globe.js`
 #[derive(Debug, Clone)]
 pub struct GlobeConfig {
-    /// Whether the globe is shown.
+    /// 是否显示地球。
     pub show: bool,
-    /// Whether to enable depth test against terrain.
+    /// 是否启用针对地形的深度测试。
     pub depth_test_against_terrain: bool,
-    /// Whether the globe is translucent (for underground rendering).
+    /// 地球是否半透明（用于地下渲染）。
     pub translucency_enabled: bool,
-    /// Globe translucency front face alpha.
+    /// 地球半透明正面 alpha。
     pub front_face_alpha: f64,
-    /// Globe translucency back face alpha.
+    /// 地球半透明背面 alpha。
     pub back_face_alpha: f64,
-    /// Whether to show the ground atmosphere effect.
+    /// 是否显示近地大气效果。
     pub show_ground_atmosphere: bool,
-    /// Whether to show the water effect.
+    /// 是否显示水面效果。
     pub show_water_effect: bool,
-    /// Base color when no imagery is available [r, g, b].
+    /// 无可用影像时的基础颜色 [r, g, b]。
     pub base_color: [f64; 3],
-    /// Maximum screen space error for terrain tiles.
+    /// 地形瓦片的最大屏幕空间误差。
     pub maximum_screen_space_error: f64,
-    /// Tile cache size (number of tiles).
+    /// 瓦片缓存大小（瓦片数）。
     pub tile_cache_size: usize,
-    /// Whether to enable lighting (day/night).
+    /// 是否启用光照（昼夜）。
     pub enable_lighting: bool,
-    /// Loading descendant limit for tile scheduling.
+    /// 用于瓦片调度的后代加载上限。
     pub loading_descendant_limit: u32,
-    /// Whether to preload ancestor tiles.
+    /// 是否预加载祖先瓦片。
     pub preload_ancestors: bool,
-    /// Whether to preload sibling tiles.
+    /// 是否预加载兄弟瓦片。
     pub preload_siblings: bool,
-    /// Fill highlight color [r, g, b, a] (None = no highlight).
+    /// 填充高亮颜色 [r, g, b, a]（None = 无高亮）。
     pub fill_highlight_color: Option<[f64; 4]>,
-    /// Lambert diffuse multiplier for terrain lighting.
+    /// 地形光照的 Lambert 漫反射乘数。
     pub lambert_diffuse_multiplier: f64,
-    /// Whether dynamic atmosphere lighting is enabled.
+    /// 是否启用动态大气光照。
     pub dynamic_atmosphere_lighting: bool,
-    /// Whether dynamic atmosphere lighting uses sun direction.
+    /// 动态大气光照是否使用太阳方向。
     pub dynamic_atmosphere_lighting_from_sun: bool,
-    /// Atmosphere light intensity.
+    /// 大气光照强度。
     pub atmosphere_light_intensity: f64,
-    /// Rayleigh scattering coefficient [r, g, b].
+    /// Rayleigh 散射系数 [r, g, b]。
     pub atmosphere_rayleigh_coefficient: [f64; 3],
-    /// Mie scattering coefficient [r, g, b].
+    /// Mie 散射系数 [r, g, b]。
     pub atmosphere_mie_coefficient: [f64; 3],
-    /// Rayleigh scale height (meters).
+    /// Rayleigh 标高（米）。
     pub atmosphere_rayleigh_scale_height: f64,
-    /// Mie scale height (meters).
+    /// Mie 标高（米）。
     pub atmosphere_mie_scale_height: f64,
-    /// Mie anisotropy factor (-1.0 to 1.0).
+    /// Mie 各向异性因子（-1.0 到 1.0）。
     pub atmosphere_mie_anisotropy: f64,
-    /// Distance where lighting fades out (meters).
+    /// 光照淡出距离（米）。
     pub lighting_fade_out_distance: f64,
-    /// Distance where lighting fades in (meters).
+    /// 光照淡入距离（米）。
     pub lighting_fade_in_distance: f64,
-    /// Distance where night fades out (meters).
+    /// 黑夜淡出距离（米）。
     pub night_fade_out_distance: f64,
-    /// Distance where night fades in (meters).
+    /// 黑夜淡入距离（米）。
     pub night_fade_in_distance: f64,
-    /// Whether to show terrain skirts.
+    /// 是否显示地形平边（skirts）。
     pub show_skirts: bool,
-    /// Whether to cull back-facing terrain.
+    /// 是否剔除背向的地形。
     pub back_face_culling: bool,
-    /// Vertex shadow darkness (0.0 to 1.0).
+    /// 顶点阴影黑度（0.0 到 1.0）。
     pub vertex_shadow_darkness: f64,
-    /// Underground color [r, g, b] (None = disabled).
+    /// 地下颜色 [r, g, b]（None = 禁用）。
     pub underground_color: Option<[f64; 3]>,
-    /// Underground color alpha by distance.
+    /// 按距离变化的地下颜色 alpha。
     pub underground_color_alpha_by_distance: Option<NearFarScalar>,
-    /// Cartographic limit rectangle for rendering.
+    /// 用于渲染的 Cartographic 限制矩形。
     pub cartographic_limit_rectangle: Rectangle,
-    /// Shadow mode.
+    /// 阴影模式。
     pub shadows: ShadowMode,
-    /// Atmosphere hue shift (-1.0 to 1.0).
+    /// 大气色相偏移（-1.0 到 1.0）。
     pub atmosphere_hue_shift: f64,
-    /// Atmosphere saturation shift (-1.0 to 1.0).
+    /// 大气饱和度偏移（-1.0 到 1.0）。
     pub atmosphere_saturation_shift: f64,
-    /// Atmosphere brightness shift (-1.0 to 1.0).
+    /// 大气亮度偏移（-1.0 到 1.0）。
     pub atmosphere_brightness_shift: f64,
 }
 
@@ -157,7 +157,7 @@ impl Default for GlobeConfig {
             back_face_alpha: 1.0,
             show_ground_atmosphere: true,
             show_water_effect: true,
-            base_color: [0.0, 0.0, 0.5], // Ocean blue
+            base_color: [0.0, 0.0, 0.5], // 海洋蓝
             maximum_screen_space_error: 2.0,
             tile_cache_size: 100,
             enable_lighting: false,
@@ -197,21 +197,21 @@ impl Default for GlobeConfig {
     }
 }
 
-/// Globe surface for terrain interaction.
+/// 用于地形交互的地球表面。
 #[derive(Debug, Clone)]
 pub struct GlobeSurface {
-    /// The ellipsoid shape.
+    /// 椭球形状。
     pub ellipsoid: Ellipsoid,
-    /// Configuration.
+    /// 配置。
     pub config: GlobeConfig,
-    /// Minimum terrain height in the current view.
+    /// 当前视图中的最小地形高度。
     pub minimum_terrain_height: f64,
-    /// Maximum terrain height in the current view.
+    /// 当前视图中的最大地形高度。
     pub maximum_terrain_height: f64,
 }
 
 impl GlobeSurface {
-    /// Creates a new globe surface with WGS84 ellipsoid.
+    /// 创建一个使用 WGS84 椭球的新地球表面。
     pub fn new() -> Self {
         Self {
             ellipsoid: Ellipsoid::WGS84,
@@ -221,7 +221,7 @@ impl GlobeSurface {
         }
     }
 
-    /// Creates a globe surface with a custom ellipsoid.
+    /// 创建一个使用自定义椭球的地球表面。
     pub fn with_ellipsoid(ellipsoid: Ellipsoid) -> Self {
         Self {
             ellipsoid,
@@ -231,30 +231,30 @@ impl GlobeSurface {
         }
     }
 
-    /// Gets the surface normal at a position.
+    /// 获取某位置处的表面法线。
     pub fn get_surface_normal(&self, position: DVec3) -> DVec3 {
         self.ellipsoid
             .geodetic_surface_normal(position)
             .unwrap_or(DVec3::Z)
     }
 
-    /// Gets the height at a cartographic position (simplified).
+    /// 获取某 Cartographic 位置处的高度（简化）。
     ///
-    /// In a full implementation, this would query terrain tiles.
+    /// 在完整实现中，此处会查询地形瓦片。
     pub fn get_height(&self, _cartographic: &Cartographic) -> Option<f64> {
-        // Simplified: return 0 (ellipsoid surface)
+        // 简化：返回 0（椭球表面）
         Some(0.0)
     }
 
-    /// Picks the globe surface with a ray.
+    /// 用一条射线拾取地球表面。
     ///
-    /// Returns the intersection point in world coordinates.
+    /// 返回世界坐标中的交点。
     pub fn pick(&self, ray_origin: DVec3, ray_direction: DVec3) -> Option<DVec3> {
-        // Ray-ellipsoid intersection using the standard quadratic formula
-        // For ellipsoid x^2/a^2 + y^2/b^2 + z^2/c^2 = 1
-        // Ray: P = O + t*D
-        // Substituting: (O + t*D)^T * M * (O + t*D) = 1
-        // where M = diag(1/a^2, 1/b^2, 1/c^2)
+        // 使用标准二次型公式进行射线-椭球相交
+        // 对于椭球 x^2/a^2 + y^2/b^2 + z^2/c^2 = 1
+        // 射线：P = O + t*D
+        // 代入：(O + t*D)^T * M * (O + t*D) = 1
+        // 其中 M = diag(1/a^2, 1/b^2, 1/c^2)
 
         let radii = self.ellipsoid.radii();
         let one_over_radii_sq = DVec3::new(
@@ -266,7 +266,7 @@ impl GlobeSurface {
         let o = ray_origin;
         let d = ray_direction;
 
-        // Quadratic coefficients: A*t^2 + B*t + C = 0
+        // 二次型系数：A*t^2 + B*t + C = 0
         let o_scaled = o * one_over_radii_sq;
         let d_scaled = d * one_over_radii_sq;
 
@@ -284,7 +284,7 @@ impl GlobeSurface {
         let t1 = (-b - sqrt_disc) / (2.0 * a);
         let t2 = (-b + sqrt_disc) / (2.0 * a);
 
-        // Find the nearest positive t
+        // 找到最近的非负 t
         let t = if t1 >= 0.0 {
             t1
         } else if t2 >= 0.0 {
@@ -296,32 +296,32 @@ impl GlobeSurface {
         Some(ray_origin + ray_direction * t)
     }
 
-    /// Computes the horizon distance from a height.
+    /// 计算从某高度到地平线的距离。
     ///
-    /// Returns the distance to the horizon in meters.
+    /// 以米返回到地平线的距离。
     pub fn horizon_distance(&self, height: f64) -> f64 {
         let r = self.ellipsoid.maximum_radius();
         // d = sqrt((r + h)^2 - r^2) = sqrt(2*r*h + h^2)
         (2.0 * r * height + height * height).sqrt()
     }
 
-    /// Computes the dip angle of the horizon from a height.
+    /// 计算从某高度看地平线的俯角。
     ///
-    /// Returns the angle in radians below horizontal.
+    /// 以弧度返回低于水平面的角度。
     pub fn horizon_dip_angle(&self, height: f64) -> f64 {
         let r = self.ellipsoid.maximum_radius();
         // cos(dip) = r / (r + h)
         (r / (r + height)).acos()
     }
 
-    /// Checks if a position is on the visible hemisphere.
+    /// 判断某位置是否处于可见半球上。
     pub fn is_on_visible_hemisphere(&self, position: DVec3, camera_position: DVec3) -> bool {
         let surface_normal = self.get_surface_normal(position);
         let to_camera = (camera_position - position).normalize();
         surface_normal.dot(to_camera) > 0.0
     }
 
-    /// Computes the approximate level of detail for a tile.
+    /// 计算瓦片的近似细节层级。
     pub fn compute_tile_sse(
         &self,
         tile_geometric_error: f64,
@@ -336,7 +336,7 @@ impl GlobeSurface {
         (tile_geometric_error * viewport_height) / (distance * sse_denominator)
     }
 
-    /// Determines if a tile should be refined based on SSE.
+    /// 根据 SSE 判断是否应细化瓦片。
     pub fn should_refine_tile(&self, sse: f64) -> bool {
         sse > self.config.maximum_screen_space_error
     }
@@ -348,16 +348,16 @@ impl Default for GlobeSurface {
     }
 }
 
-/// Globe translucency settings.
+/// 地球半透明设置。
 ///
-/// Maps to CesiumJS `GlobeTranslucency.js`
+/// 映射到 CesiumJS `GlobeTranslucency.js`
 #[derive(Debug, Clone)]
 pub struct GlobeTranslucency {
-    /// Whether translucency is enabled.
+    /// 是否启用半透明。
     pub enabled: bool,
-    /// Front face alpha (0.0 = transparent, 1.0 = opaque).
+    /// 正面 alpha（0.0 = 透明，1.0 = 不透明）。
     pub front_face_alpha: f64,
-    /// Back face alpha.
+    /// 背面 alpha。
     pub back_face_alpha: f64,
 }
 
@@ -372,7 +372,7 @@ impl Default for GlobeTranslucency {
 }
 
 impl GlobeTranslucency {
-    /// Creates new translucency settings.
+    /// 创建新的半透明设置。
     pub fn new(enabled: bool) -> Self {
         Self {
             enabled,
@@ -380,7 +380,7 @@ impl GlobeTranslucency {
         }
     }
 
-    /// Computes the effective alpha for a surface facing the camera.
+    /// 计算面向 camera 表面的有效 alpha。
     pub fn front_alpha(&self) -> f64 {
         if self.enabled {
             self.front_face_alpha
@@ -389,7 +389,7 @@ impl GlobeTranslucency {
         }
     }
 
-    /// Computes the effective alpha for a surface facing away from the camera.
+    /// 计算背离 camera 表面的有效 alpha。
     pub fn back_alpha(&self) -> f64 {
         if self.enabled {
             self.back_face_alpha
@@ -416,7 +416,7 @@ mod tests {
     #[test]
     fn test_globe_surface_normal() {
         let globe = GlobeSurface::new();
-        // At the north pole, normal should point up (Z axis)
+        // 在北极点，法线应指向上方（Z 轴）
         let north_pole = DVec3::new(0.0, 0.0, 6356752.3142);
         let normal = globe.get_surface_normal(north_pole);
         assert!(normal.z > 0.99);
@@ -425,7 +425,7 @@ mod tests {
     #[test]
     fn test_horizon_distance() {
         let globe = GlobeSurface::new();
-        // At 1000m height, horizon should be ~113 km
+        // 在 1000m 高度，地平线应约为 113 km
         let dist = globe.horizon_distance(1000.0);
         assert!(dist > 100_000.0 && dist < 120_000.0);
     }
@@ -440,7 +440,7 @@ mod tests {
     #[test]
     fn test_horizon_dip_angle() {
         let globe = GlobeSurface::new();
-        // At 1000m, dip angle should be small (~0.03 rad)
+        // 在 1000m 处，俯角应很小（约 0.03 rad）
         let dip = globe.horizon_dip_angle(1000.0);
         assert!(dip > 0.0 && dip < 0.1);
     }
@@ -448,7 +448,7 @@ mod tests {
     #[test]
     fn test_pick_globe_from_above() {
         let globe = GlobeSurface::new();
-        // Ray from above looking down
+        // 从上方俯瞰的射线
         let origin = DVec3::new(0.0, 0.0, 10_000_000.0);
         let direction = DVec3::new(0.0, 0.0, -1.0);
 
@@ -456,14 +456,14 @@ mod tests {
         assert!(hit.is_some());
 
         let hit_point = hit.unwrap();
-        // Should hit near the north pole surface
+        // 应在靠近北极点的表面处命中
         assert!((hit_point.z - 6356752.3142).abs() < 1.0);
     }
 
     #[test]
     fn test_pick_globe_miss() {
         let globe = GlobeSurface::new();
-        // Ray pointing away from Earth
+        // 指向远离地球方向的射线
         let origin = DVec3::new(0.0, 0.0, 10_000_000.0);
         let direction = DVec3::new(0.0, 0.0, 1.0);
 
@@ -476,11 +476,11 @@ mod tests {
         let globe = GlobeSurface::new();
         let camera = DVec3::new(0.0, 0.0, 10_000_000.0);
 
-        // North pole should be visible
+        // 北极点应可见
         let north_pole = DVec3::new(0.0, 0.0, 6356752.3142);
         assert!(globe.is_on_visible_hemisphere(north_pole, camera));
 
-        // South pole should not be visible
+        // 南极点应不可见
         let south_pole = DVec3::new(0.0, 0.0, -6356752.3142);
         assert!(!globe.is_on_visible_hemisphere(south_pole, camera));
     }
@@ -489,11 +489,11 @@ mod tests {
     fn test_tile_sse_computation() {
         let globe = GlobeSurface::new();
 
-        // High geometric error, close distance → high SSE
+        // 高几何误差、近距离 → 高 SSE
         let sse = globe.compute_tile_sse(1000.0, 1000.0, 1080.0, 1.0);
         assert!(sse > 100.0);
 
-        // Low geometric error, far distance → low SSE
+        // 低几何误差、远距离 → 低 SSE
         let sse = globe.compute_tile_sse(1.0, 1_000_000.0, 1080.0, 1.0);
         assert!(sse < 1.0);
     }
@@ -520,7 +520,7 @@ mod tests {
     fn test_globe_translucency_disabled() {
         let translucency = GlobeTranslucency::default();
         assert!(!translucency.enabled);
-        // When disabled, always returns 1.0
+        // 禁用时，始终返回 1.0
         assert!((translucency.front_alpha() - 1.0).abs() < 1e-10);
     }
 
@@ -538,7 +538,7 @@ mod tests {
         let globe = GlobeSurface::with_ellipsoid(ellipsoid);
 
         let dist = globe.horizon_distance(100.0);
-        // Smaller ellipsoid → shorter horizon distance
+        // 更小的椭球 → 更短的地平线距离
         assert!(dist < 1000.0);
     }
 }

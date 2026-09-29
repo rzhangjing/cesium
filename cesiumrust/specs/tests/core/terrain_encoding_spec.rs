@@ -1,14 +1,14 @@
-//! Core/TerrainEncodingSpec.js → Rust integration tests
+//! Core/TerrainEncodingSpec.js → Rust 集成测试
 //!
-//! Faithful port of CesiumJS `Specs/Core/TerrainEncodingSpec.js` (19 `it()` cases).
+//! 对 CesiumJS `Specs/Core/TerrainEncodingSpec.js`（19 个 `it()` 用例）的忠实移植。
 //!
-//! ## Platform adaptations
-//! - The JS `clones with result` variant (writing into a caller-supplied object) is
-//!   merged into the `clones` test: Rust `Clone` always returns a fresh owned value.
-//! - JS passes a `Cartesian3` where a packed `Cartesian2` normal is expected (dynamic
-//!   typing); `octPackFloat` only reads `.x`/`.y`, so the Rust port passes an explicit
-//!   `DVec2::new(normal.x, normal.y)`.
-//! - JS `undefined` optional arguments map to Rust `Option::None`.
+//! ## 平台适配
+//! - JS 的 `clones with result` 变体（写入调用方提供的对象）被
+//!   合并进 `clones` 测试：Rust 的 `Clone` 总是返回全新的所有权值。
+//! - JS 在期望打包的 `Cartesian2` 法线处传入了 `Cartesian3`（动态
+//!   类型）；`octPackFloat` 只读取 `.x`/`.y`，因此 Rust 移植显式传入
+//!   `DVec2::new(normal.x, normal.y)`。
+//! - JS 的 `undefined` 可选参数对应 Rust 的 `Option::None`。
 
 use cesium_geospatial::attribute_compression::oct_encode;
 use cesium_geospatial::bounding::AxisAlignedBoundingBox;
@@ -20,7 +20,7 @@ use cesium_specs::{assert_approx, assert_vec2_epsilon, assert_vec3_epsilon, epsi
 use cesium_terrain::{TerrainEncoding, TerrainQuantization};
 use glam::{DMat4, DVec2, DVec3};
 
-/// Common `beforeEach` state from the JS spec.
+/// 来自 JS 规格的常见 `beforeEach` 状态。
 struct Setup {
     center: DVec3,
     aabox: AxisAlignedBoundingBox,
@@ -368,7 +368,7 @@ fn test_terrain_encoding_encodes_texcoords_quantization_normals() {
         DVec3::ZERO,
         tex_coords,
         100.0,
-        Some(DVec2::new(1.0, 0.0)), // Cartesian3.UNIT_X → octPackFloat reads .x/.y
+        Some(DVec2::new(1.0, 0.0)), // Cartesian3.UNIT_X → octPackFloat 读取 .x/.y
         None,
         None,
     );
@@ -555,7 +555,7 @@ fn test_terrain_encoding_removes_geodetic_surface_normals() {
     assert_eq!(new_buffer.len(), new_stride);
 }
 
-/// Helper for the attribute / clone tests (1e6 bounds → NONE quantization).
+/// 属性 / 克隆测试的辅助函数（1e6 边界 → NONE 量化）。
 fn setup_none_quantization() -> TerrainEncoding {
     let center = Ellipsoid::WGS84.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0));
     let maximum = DVec3::new(1.0e6, 1.0e6, 1.0e6);
@@ -588,12 +588,12 @@ fn test_terrain_encoding_gets_attributes() {
 fn test_terrain_encoding_gets_attribute_locations() {
     let encoding = setup_none_quantization();
     let attribute_locations = encoding.get_attribute_locations();
-    // NONE quantization → position3DAndHeight / textureCoordAndEncodedNormals locations.
+    // NONE 量化 → position3DAndHeight / textureCoordAndEncodedNormals 位置。
     assert_eq!(attribute_locations.position_3d_and_height, 0);
     assert_eq!(attribute_locations.texture_coord_and_encoded_normals, 1);
 }
 
-/// `it("clones")` and `it("clones with result")` (merged: Rust `Clone` returns a fresh value).
+/// `it("clones")` 与 `it("clones with result")`（合并：Rust `Clone` 返回全新值）。
 #[test]
 fn test_terrain_encoding_clones() {
     let encoding = setup_none_quantization();

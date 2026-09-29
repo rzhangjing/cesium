@@ -1,6 +1,6 @@
 //! Core/GeometryInstanceAttributeSpec.js + ColorGeometryInstanceAttributeSpec.js
 //! + ShowGeometryInstanceAttributeSpec.js + DistanceDisplayConditionGeometryInstanceAttributeSpec.js
-//! → Rust integration tests (A-class only)
+//! → Rust 集成测试（仅 A 类）
 
 use cesium_geospatial::attribute_compression::ComponentDatatype;
 use cesium_geospatial::color::Color;
@@ -69,24 +69,24 @@ fn color_attribute_to_value() {
 #[test]
 fn color_attribute_equals() {
     let color = ColorGeometryInstanceAttribute::new(0.1, 0.2, 0.3, 0.4);
-    // Same reference
+    // 相同引用
     assert!(ColorGeometryInstanceAttribute::equals(Some(&color), Some(&color)));
-    // Equal values
+    // 相等的值
     let same = ColorGeometryInstanceAttribute::new(0.1, 0.2, 0.3, 0.4);
     assert!(ColorGeometryInstanceAttribute::equals(Some(&color), Some(&same)));
-    // Different red
+    // red 不同
     let diff_r = ColorGeometryInstanceAttribute::new(0.5, 0.2, 0.3, 0.4);
     assert!(!ColorGeometryInstanceAttribute::equals(Some(&color), Some(&diff_r)));
-    // Different green
+    // green 不同
     let diff_g = ColorGeometryInstanceAttribute::new(0.1, 0.5, 0.3, 0.4);
     assert!(!ColorGeometryInstanceAttribute::equals(Some(&color), Some(&diff_g)));
-    // Different blue
+    // blue 不同
     let diff_b = ColorGeometryInstanceAttribute::new(0.1, 0.2, 0.5, 0.4);
     assert!(!ColorGeometryInstanceAttribute::equals(Some(&color), Some(&diff_b)));
-    // Different alpha
+    // alpha 不同
     let diff_a = ColorGeometryInstanceAttribute::new(0.1, 0.2, 0.3, 0.5);
     assert!(!ColorGeometryInstanceAttribute::equals(Some(&color), Some(&diff_a)));
-    // None cases
+    // None 情况
     assert!(!ColorGeometryInstanceAttribute::equals(Some(&color), None));
     assert!(!ColorGeometryInstanceAttribute::equals(None, Some(&color)));
 }

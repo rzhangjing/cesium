@@ -1,6 +1,6 @@
-//! KML Tour support.
+//! KML Tour（巡游）支持。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `DataSources/KmlTour.js`
 //! - `DataSources/KmlTourFlyTo.js`
 //! - `DataSources/KmlTourWait.js`
@@ -11,37 +11,37 @@ use glam::DVec3;
 // KmlTourFlyTo
 // ============================================================================
 
-/// A fly-to entry in a KML tour playlist.
+/// KML 巡游播放列表中的一个 fly-to（飞行至）条目。
 ///
-/// Maps to CesiumJS `DataSources/KmlTourFlyTo.js`.
+/// 映射到 CesiumJS `DataSources/KmlTourFlyTo.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlTourFlyTo {
-    /// Duration of the fly-to in seconds.
+    /// fly-to 的时长（秒）。
     pub duration: f64,
-    /// Target position (longitude, latitude, altitude) in degrees/meters.
+    /// 目标位置（经度、纬度、高度），单位为度/米。
     pub position: DVec3,
-    /// Heading in degrees.
+    /// 航向角（度）。
     pub heading: Option<f64>,
-    /// Tilt in degrees.
+    /// 仰俯角（度）。
     pub tilt: Option<f64>,
-    /// Range (distance from target) in meters.
+    /// 距离（与目标的间距），单位为米。
     pub range: Option<f64>,
-    /// Whether to use great circle path (vs. linear).
+    /// 是否使用大圆路径（而非线性）。
     pub fly_to_mode: FlyToMode,
 }
 
-/// Fly-to interpolation mode.
+/// fly-to 插值模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FlyToMode {
-    /// Smooth camera path.
+    /// 平滑的相机路径。
     #[default]
     Smooth,
-    /// Bounce effect.
+    /// 跳跃效果。
     Bounce,
 }
 
 impl KmlTourFlyTo {
-    /// Create a new fly-to entry.
+    /// 创建一个新的 fly-to 条目。
     pub fn new(duration: f64, position: DVec3) -> Self {
         Self {
             duration,
@@ -53,25 +53,25 @@ impl KmlTourFlyTo {
         }
     }
 
-    /// Set the heading.
+    /// 设置航向角。
     pub fn with_heading(mut self, heading: f64) -> Self {
         self.heading = Some(heading);
         self
     }
 
-    /// Set the tilt.
+    /// 设置仰俯角。
     pub fn with_tilt(mut self, tilt: f64) -> Self {
         self.tilt = Some(tilt);
         self
     }
 
-    /// Set the range.
+    /// 设置距离。
     pub fn with_range(mut self, range: f64) -> Self {
         self.range = Some(range);
         self
     }
 
-    /// Set the fly-to mode.
+    /// 设置 fly-to 模式。
     pub fn with_mode(mut self, mode: FlyToMode) -> Self {
         self.fly_to_mode = mode;
         self
@@ -82,17 +82,17 @@ impl KmlTourFlyTo {
 // KmlTourWait
 // ============================================================================
 
-/// A wait entry in a KML tour playlist.
+/// KML 巡游播放列表中的一个等待条目。
 ///
-/// Maps to CesiumJS `DataSources/KmlTourWait.js`.
+/// 映射到 CesiumJS `DataSources/KmlTourWait.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlTourWait {
-    /// Duration to wait in seconds.
+    /// 等待时长（秒）。
     pub duration: f64,
 }
 
 impl KmlTourWait {
-    /// Create a new wait entry.
+    /// 创建一个新的等待条目。
     pub fn new(duration: f64) -> Self {
         Self { duration }
     }
@@ -102,17 +102,17 @@ impl KmlTourWait {
 // KmlTourEntry
 // ============================================================================
 
-/// A playlist entry (either fly-to or wait).
+/// 一个播放列表条目（fly-to 或 wait 之一）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum KmlTourEntry {
-    /// Fly to a position.
+    /// 飞行至某个位置。
     FlyTo(KmlTourFlyTo),
-    /// Wait for a duration.
+    /// 等待一段时长。
     Wait(KmlTourWait),
 }
 
 impl KmlTourEntry {
-    /// Get the duration of this entry.
+    /// 获取此条目的时长。
     pub fn duration(&self) -> f64 {
         match self {
             Self::FlyTo(f) => f.duration,
@@ -125,25 +125,25 @@ impl KmlTourEntry {
 // KmlTour
 // ============================================================================
 
-/// A KML tour with a playlist of entries.
+/// 一个带有播放列表条目的 KML 巡游。
 ///
-/// Maps to CesiumJS `DataSources/KmlTour.js`.
+/// 映射到 CesiumJS `DataSources/KmlTour.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlTour {
-    /// Tour ID.
+    /// 巡游 ID。
     pub id: String,
-    /// Tour name.
+    /// 巡游名称。
     pub name: String,
-    /// Playlist of entries.
+    /// 播放列表条目。
     pub playlist: Vec<KmlTourEntry>,
-    /// Current playlist index.
+    /// 当前播放列表索引。
     pub playlist_index: usize,
-    /// Whether the tour is playing.
+    /// 巡游是否正在播放。
     pub is_playing: bool,
 }
 
 impl KmlTour {
-    /// Create a new tour.
+    /// 创建一个新的巡游。
     pub fn new(id: &str, name: &str) -> Self {
         Self {
             id: id.to_string(),
@@ -154,44 +154,44 @@ impl KmlTour {
         }
     }
 
-    /// Add a fly-to entry to the playlist.
+    /// 向播放列表添加一个 fly-to 条目。
     pub fn add_fly_to(&mut self, fly_to: KmlTourFlyTo) {
         self.playlist.push(KmlTourEntry::FlyTo(fly_to));
     }
 
-    /// Add a wait entry to the playlist.
+    /// 向播放列表添加一个 wait 条目。
     pub fn add_wait(&mut self, wait: KmlTourWait) {
         self.playlist.push(KmlTourEntry::Wait(wait));
     }
 
-    /// Add a generic entry to the playlist.
+    /// 向播放列表添加一个通用条目。
     pub fn add_entry(&mut self, entry: KmlTourEntry) {
         self.playlist.push(entry);
     }
 
-    /// Get the total duration of the tour.
+    /// 获取巡游的总时长。
     pub fn total_duration(&self) -> f64 {
         self.playlist.iter().map(|e| e.duration()).sum()
     }
 
-    /// Get the number of entries.
+    /// 获取条目数。
     pub fn entry_count(&self) -> usize {
         self.playlist.len()
     }
 
-    /// Start playing the tour.
+    /// 开始播放巡游。
     pub fn play(&mut self) {
         self.is_playing = true;
         self.playlist_index = 0;
     }
 
-    /// Stop the tour.
+    /// 停止巡游。
     pub fn stop(&mut self) {
         self.is_playing = false;
         self.playlist_index = 0;
     }
 
-    /// Advance to the next entry. Returns false if tour is complete.
+    /// 前进到下一个条目。若巡游已完成则返回 false。
     pub fn advance(&mut self) -> bool {
         if self.playlist_index < self.playlist.len() {
             self.playlist_index += 1;
@@ -203,19 +203,19 @@ impl KmlTour {
         true
     }
 
-    /// Get the current entry.
+    /// 获取当前条目。
     pub fn current_entry(&self) -> Option<&KmlTourEntry> {
         self.playlist.get(self.playlist_index)
     }
 
-    /// Whether the tour is complete.
+    /// 巡游是否已完成。
     pub fn is_complete(&self) -> bool {
         self.playlist_index >= self.playlist.len()
     }
 }
 
 // ============================================================================
-// Tests
+// 测试
 // ============================================================================
 
 #[cfg(test)]
@@ -278,12 +278,12 @@ mod tests {
         assert_eq!(tour.playlist_index, 0);
         assert!(!tour.is_complete());
 
-        // Advance through entries
+        // 逐个前进条目
         assert!(tour.advance());
         assert_eq!(tour.playlist_index, 1);
         assert!(!tour.is_complete());
 
-        assert!(!tour.advance()); // Last entry
+        assert!(!tour.advance()); // 最后一个条目
         assert!(tour.is_complete());
         assert!(!tour.is_playing);
     }

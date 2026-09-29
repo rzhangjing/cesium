@@ -1,6 +1,6 @@
-//! DataSources/PropertyBagSpec.js → Rust integration tests
-//! Covers: PropertyBag construction, addProperty, removeProperty, hasProperty,
-//! getValue, isConstant, equals, merge
+//! DataSources/PropertyBagSpec.js → Rust 集成测试
+//! 覆盖：PropertyBag 构造、addProperty、removeProperty、hasProperty、
+//! getValue、isConstant、equals、merge
 
 use cesium_datasource::property_bag::PropertyBag;
 use cesium_datasource::property_system::property::ConstantProperty;
@@ -12,7 +12,7 @@ fn time() -> JulianDate {
     JulianDate::new(2451545.0, 0.0)
 }
 
-// ─── Construction ───────────────────────────────────────────────────────────
+// ─── 构造 ───────────────────────────────────────────────────────────
 
 #[test]
 fn property_bag_default_construct() {
@@ -138,7 +138,7 @@ fn property_bag_remove_property_not_added_throws() {
     bag.remove_property("a");
 }
 
-// ─── getValue with result ───────────────────────────────────────────────────
+// ─── 带 result 的 getValue ───────────────────────────────────────────────────
 
 #[test]
 fn property_bag_get_value_with_result() {

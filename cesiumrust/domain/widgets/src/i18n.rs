@@ -1,29 +1,29 @@
-//! Internationalization (i18n) support for widgets.
+//! widget 的国际化（i18n）支持。
 //!
-//! Provides locale-aware string resources for all widget UI text.
+//! 为所有 widget UI 文本提供区域感知（locale-aware）的字符串资源。
 
 use std::collections::HashMap;
 
-/// Supported locales.
+/// 支持的区域设置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Locale {
-    /// English (default).
+    /// 英语（默认）。
     #[default]
     En,
-    /// Simplified Chinese.
+    /// 简体中文。
     ZhCn,
-    /// Japanese.
+    /// 日语。
     Ja,
-    /// French.
+    /// 法语。
     Fr,
-    /// German.
+    /// 德语。
     De,
-    /// Spanish.
+    /// 西班牙语。
     Es,
 }
 
 impl Locale {
-    /// Get the locale code string.
+    /// 获取区域代码字符串。
     pub fn code(&self) -> &'static str {
         match self {
             Self::En => "en",
@@ -35,7 +35,7 @@ impl Locale {
         }
     }
 
-    /// Parse a locale from a code string.
+    /// 从代码字符串解析区域设置。
     pub fn from_code(code: &str) -> Option<Self> {
         match code {
             "en" => Some(Self::En),
@@ -48,139 +48,139 @@ impl Locale {
         }
     }
 
-    /// Get all available locales.
+    /// 获取所有可用区域设置。
     pub fn all() -> &'static [Locale] {
         &[Self::En, Self::ZhCn, Self::Ja, Self::Fr, Self::De, Self::Es]
     }
 }
 
-/// Widget UI strings for a specific locale.
+/// 特定区域设置的 widget UI 字符串。
 #[derive(Debug, Clone, PartialEq)]
 pub struct WidgetStrings {
-    /// Animation widget strings.
+    /// 动画 widget 字符串。
     pub animation: AnimationStrings,
-    /// Timeline widget strings.
+    /// 时间轴 widget 字符串。
     pub timeline: TimelineStrings,
-    /// Scene mode picker strings.
+    /// 场景模式选择器字符串。
     pub scene_mode_picker: SceneModePickerStrings,
-    /// Base layer picker strings.
+    /// 基础图层选择器字符串。
     pub base_layer_picker: BaseLayerPickerStrings,
-    /// Geocoder strings.
+    /// 地名搜索字符串。
     pub geocoder: GeocoderStrings,
-    /// Navigation help strings.
+    /// 导航帮助字符串。
     pub navigation_help: NavigationHelpStrings,
-    /// Fullscreen button strings.
+    /// 全屏按钮字符串。
     pub fullscreen: FullscreenStrings,
-    /// Info box strings.
+    /// 信息框字符串。
     pub info_box: InfoBoxStrings,
-    /// VR button strings.
+    /// VR 按钮字符串。
     pub vr_button: VRButtonStrings,
 }
 
-/// Animation widget strings.
+/// 动画 widget 字符串。
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnimationStrings {
-    /// Play button tooltip.
+    /// 播放按钮提示文本。
     pub play: String,
-    /// Pause button tooltip.
+    /// 暂停按钮提示文本。
     pub pause: String,
-    /// Play reverse tooltip.
+    /// 反向播放提示文本。
     pub play_reverse: String,
-    /// Play forward tooltip.
+    /// 正向播放提示文本。
     pub play_forward: String,
-    /// Realtime button tooltip.
+    /// 实时按钮提示文本。
     pub realtime: String,
-    /// Speed multiplier label.
+    /// 速度倍率标签。
     pub multiplier_label: String,
 }
 
-/// Timeline widget strings.
+/// 时间轴 widget 字符串。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimelineStrings {
-    /// Timeline tooltip.
+    /// 时间轴提示文本。
     pub tooltip: String,
 }
 
-/// Scene mode picker strings.
+/// 场景模式选择器字符串。
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneModePickerStrings {
-    /// 3D mode label.
+    /// 3D 模式标签。
     pub scene_3d: String,
-    /// 2D mode label.
+    /// 2D 模式标签。
     pub scene_2d: String,
-    /// Columbus View label.
+    /// Columbus View 标签。
     pub columbus_view: String,
-    /// Tooltip.
+    /// 提示文本。
     pub tooltip: String,
 }
 
-/// Base layer picker strings.
+/// 基础图层选择器字符串。
 #[derive(Debug, Clone, PartialEq)]
 pub struct BaseLayerPickerStrings {
-    /// Button tooltip.
+    /// 按钮提示文本。
     pub tooltip: String,
-    /// Imagery category label.
+    /// 影像类别标签。
     pub imagery: String,
-    /// Terrain category label.
+    /// 地形类别标签。
     pub terrain: String,
 }
 
-/// Geocoder strings.
+/// 地名搜索字符串。
 #[derive(Debug, Clone, PartialEq)]
 pub struct GeocoderStrings {
-    /// Placeholder text.
+    /// 占位提示文本。
     pub placeholder: String,
-    /// Search button tooltip.
+    /// 搜索按钮提示文本。
     pub search: String,
-    /// No results message.
+    /// 无结果消息。
     pub no_results: String,
 }
 
-/// Navigation help strings.
+/// 导航帮助字符串。
 #[derive(Debug, Clone, PartialEq)]
 pub struct NavigationHelpStrings {
-    /// Button tooltip.
+    /// 按钮提示文本。
     pub tooltip: String,
-    /// Mouse navigation title.
+    /// 鼠标导航标题。
     pub mouse_title: String,
-    /// Touch navigation title.
+    /// 触摸导航标题。
     pub touch_title: String,
-    /// Rotate instruction.
+    /// 旋转说明。
     pub rotate: String,
-    /// Zoom instruction.
+    /// 缩放说明。
     pub zoom: String,
-    /// Pan instruction.
+    /// 平移说明。
     pub pan: String,
-    /// Tilt instruction.
+    /// 俯仰说明。
     pub tilt: String,
 }
 
-/// Fullscreen button strings.
+/// 全屏按钮字符串。
 #[derive(Debug, Clone, PartialEq)]
 pub struct FullscreenStrings {
-    /// Enter fullscreen tooltip.
+    /// 进入全屏提示文本。
     pub enter: String,
-    /// Exit fullscreen tooltip.
+    /// 退出全屏提示文本。
     pub exit: String,
 }
 
-/// Info box strings.
+/// 信息框字符串。
 #[derive(Debug, Clone, PartialEq)]
 pub struct InfoBoxStrings {
-    /// Panel title.
+    /// 面板标题。
     pub title: String,
-    /// Close button tooltip.
+    /// 关闭按钮提示文本。
     pub close: String,
-    /// No selection message.
+    /// 无选中项消息。
     pub no_selection: String,
 }
 
-/// VR button strings.
+/// VR 按钮字符串。
 #[derive(Debug, Clone, PartialEq)]
 pub struct VRButtonStrings {
-    /// Enter VR tooltip.
+    /// 进入 VR 提示文本。
     pub enter: String,
-    /// Exit VR tooltip.
+    /// 退出 VR 提示文本。
     pub exit: String,
 }
 
@@ -191,7 +191,7 @@ impl Default for WidgetStrings {
 }
 
 impl WidgetStrings {
-    /// Get English strings.
+    /// 获取英语字符串。
     pub fn english() -> Self {
         Self {
             animation: AnimationStrings {
@@ -246,7 +246,7 @@ impl WidgetStrings {
         }
     }
 
-    /// Get Simplified Chinese strings.
+    /// 获取简体中文字符串。
     pub fn chinese() -> Self {
         Self {
             animation: AnimationStrings {
@@ -301,7 +301,7 @@ impl WidgetStrings {
         }
     }
 
-    /// Get Japanese strings.
+    /// 获取日语字符串。
     pub fn japanese() -> Self {
         Self {
             animation: AnimationStrings {
@@ -357,14 +357,14 @@ impl WidgetStrings {
     }
 }
 
-/// Internationalization manager.
+/// 国际化管理器。
 ///
-/// Manages locale-specific strings for all widgets.
+/// 管理所有 widget 的区域特定字符串。
 #[derive(Debug, Clone)]
 pub struct I18n {
-    /// Current locale.
+    /// 当前区域设置。
     pub current_locale: Locale,
-    /// Available string resources keyed by locale.
+    /// 以区域设置键组织的可用字符串资源。
     pub resources: HashMap<Locale, WidgetStrings>,
 }
 
@@ -382,43 +382,43 @@ impl Default for I18n {
 }
 
 impl I18n {
-    /// Create a new i18n manager with default locales.
+    /// 创建一个新的、带默认区域设置的 i18n 管理器。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Set the current locale.
+    /// 设置当前区域设置。
     pub fn set_locale(&mut self, locale: Locale) {
         self.current_locale = locale;
     }
 
-    /// Get the strings for the current locale.
+    /// 获取当前区域设置的字符串。
     pub fn strings(&self) -> &WidgetStrings {
         self.resources
             .get(&self.current_locale)
             .unwrap_or_else(|| self.resources.get(&Locale::En).unwrap())
     }
 
-    /// Get strings for a specific locale (fallback to English).
+    /// 获取特定区域设置的字符串（回退到英语）。
     pub fn strings_for(&self, locale: Locale) -> &WidgetStrings {
         self.resources
             .get(&locale)
             .unwrap_or_else(|| self.resources.get(&Locale::En).unwrap())
     }
 
-    /// Register strings for a locale.
+    /// 为某个区域设置注册字符串。
     pub fn register_locale(&mut self, locale: Locale, strings: WidgetStrings) {
         self.resources.insert(locale, strings);
     }
 
-    /// Get available locales.
+    /// 获取可用的区域设置。
     pub fn available_locales(&self) -> Vec<Locale> {
         let mut locales: Vec<Locale> = self.resources.keys().copied().collect();
         locales.sort_by_key(|l| l.code());
         locales
     }
 
-    /// Get a translated string by key path (e.g., "animation.play").
+    /// 按键路径获取已翻译的字符串（例如 "animation.play"）。
     pub fn get(&self, key: &str) -> Option<&str> {
         let strings = self.strings();
         let parts: Vec<&str> = key.splitn(2, '.').collect();
@@ -521,8 +521,8 @@ mod tests {
     #[test]
     fn test_i18n_fallback() {
         let mut i18n = I18n::new();
-        i18n.set_locale(Locale::Fr); // Not registered
-        // Should fallback to English
+        i18n.set_locale(Locale::Fr); // 未注册
+        // 应回退到英语
         assert_eq!(i18n.strings().animation.play, "Play");
     }
 
@@ -542,7 +542,7 @@ mod tests {
     fn test_i18n_available_locales() {
         let i18n = I18n::new();
         let locales = i18n.available_locales();
-        assert_eq!(locales.len(), 3); // en, ja, zh-CN
+        assert_eq!(locales.len(), 3); // en、ja、zh-CN
     }
 
     #[test]

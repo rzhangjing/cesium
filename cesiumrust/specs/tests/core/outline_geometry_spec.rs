@@ -1,7 +1,7 @@
-//! Outline geometry specs - ported from multiple OutlineGeometrySpec.js files
+//! 轮廓几何规格 - 移植自多个 OutlineGeometrySpec.js 文件
 //!
-//! Tests box, ellipsoid, circle, rectangle, cylinder, plane, wall, corridor,
-//! ellipse, and frustum outline geometry generators.
+//! 测试 box、ellipsoid、circle、rectangle、cylinder、plane、wall、corridor、
+//! ellipse 与 frustum 轮廓几何生成器。
 
 use cesium_geospatial::geometry::{
     box_outline_geometry, circle_outline_geometry, cylinder_outline_geometry,
@@ -24,7 +24,7 @@ fn equator_center() -> DVec3 {
     wgs84().cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0))
 }
 
-// ─── Box Outline ───────────────────────────────────────────────────────────
+// ─── Box 轮廓 ───────────────────────────────────────────────────────────
 
 #[test]
 fn box_outline_has_8_vertices_and_12_edges() {
@@ -41,7 +41,7 @@ fn box_outline_positions_at_corners() {
     let max = DVec3::new(1.0, 2.0, 3.0);
     let geo = box_outline_geometry(min, max);
 
-    // All positions should be at corners (each coordinate is min or max)
+    // 所有位置应在角点处（每个坐标都是 min 或 max）
     for p in &geo.positions {
         let x_ok = (p[0] - min.x).abs() < 1e-10 || (p[0] - max.x).abs() < 1e-10;
         let y_ok = (p[1] - min.y).abs() < 1e-10 || (p[1] - max.y).abs() < 1e-10;
@@ -57,13 +57,13 @@ fn box_outline_bounding_sphere() {
     let geo = box_outline_geometry(min, max);
 
     let expected_center = DVec3::ZERO;
-    let expected_radius = 3.0_f64.sqrt(); // half-diagonal of 2x2x2 cube
+    let expected_radius = 3.0_f64.sqrt(); // 2x2x2 立方体的半对角线
 
     assert!((geo.bounding_sphere.center - expected_center).length() < 1e-10);
     assert!((geo.bounding_sphere.radius - expected_radius).abs() < 1e-10);
 }
 
-// ─── Ellipsoid Outline ─────────────────────────────────────────────────────
+// ─── Ellipsoid 轮廓 ─────────────────────────────────────────────────────
 
 #[test]
 fn ellipsoid_outline_three_great_circles() {
@@ -73,7 +73,7 @@ fn ellipsoid_outline_three_great_circles() {
     let slices = 8;
     let geo = ellipsoid_outline_geometry(radii, stacks, slices);
 
-    // 3 circles: XY (slices+1), XZ (stacks+1), YZ (stacks+1)
+    // 3 个圆：XY (slices+1), XZ (stacks+1), YZ (stacks+1)
     let expected_vertices = (slices + 1) + (stacks + 1) + (stacks + 1);
     assert_eq!(geo.positions.len(), expected_vertices as usize);
     assert_eq!(geo.primitive_type, PrimitiveType::Lines);
@@ -85,13 +85,13 @@ fn ellipsoid_outline_positions_on_surface() {
     let geo = ellipsoid_outline_geometry(radii, 16, 16);
 
     for p in &geo.positions {
-        // Ellipsoid equation: (x/a)^2 + (y/b)^2 + (z/c)^2 = 1
+        // 椭球方程：(x/a)^2 + (y/b)^2 + (z/c)^2 = 1
         let val = (p[0] / radii.x).powi(2) + (p[1] / radii.y).powi(2) + (p[2] / radii.z).powi(2);
         assert!((val - 1.0).abs() < 1e-6, "position {:?} should be on ellipsoid surface, val={}", p, val);
     }
 }
 
-// ─── Circle Outline ────────────────────────────────────────────────────────
+// ─── Circle 轮廓 ────────────────────────────────────────────────────────
 
 #[test]
 fn circle_outline_ring_of_segments() {
@@ -99,7 +99,7 @@ fn circle_outline_ring_of_segments() {
     let e = wgs84();
     let center = equator_center();
     let radius = 100000.0;
-    let granularity = std::f64::consts::PI / 18.0; // 10 degrees
+    let granularity = std::f64::consts::PI / 18.0; // 10 度
     let geo = circle_outline_geometry(center, radius, &e, granularity);
 
     assert!(!geo.positions.is_empty());
@@ -115,7 +115,7 @@ fn circle_outline_positions_at_correct_distance() {
     let granularity = std::f64::consts::PI / 36.0;
     let geo = circle_outline_geometry(center, radius, &e, granularity);
 
-    // All positions should be approximately `radius` distance from center (on surface)
+    // 所有位置应距中心约 `radius`（在表面上）
     for p in &geo.positions {
         let pos = DVec3::from(*p);
         let surface = e.scale_to_geodetic_surface(pos).unwrap_or(pos);
@@ -127,7 +127,7 @@ fn circle_outline_positions_at_correct_distance() {
     }
 }
 
-// ─── Rectangle Outline ─────────────────────────────────────────────────────
+// ─── Rectangle 轮廓 ─────────────────────────────────────────────────────
 
 #[test]
 fn rectangle_outline_computes_positions() {
@@ -136,7 +136,7 @@ fn rectangle_outline_computes_positions() {
     let rect = Rectangle::new(-2.0, -1.0, 0.0, 1.0);
     let geo = rectangle_outline_geometry(&rect, &e, 1.0);
 
-    // With granularity=1.0: each edge has ~2 segments
+    // 当 granularity=1.0 时：每条边约 2 段
     assert!(geo.positions.len() >= 8, "rectangle outline should have at least 8 positions");
     assert_eq!(geo.primitive_type, PrimitiveType::Lines);
     assert_eq!(geo.indices.len() % 2, 0);
@@ -172,14 +172,14 @@ fn rectangle_outline_indices_valid() {
     }
 }
 
-// ─── Cylinder Outline ──────────────────────────────────────────────────────
+// ─── Cylinder 轮廓 ──────────────────────────────────────────────────────
 
 #[test]
 fn cylinder_outline_two_circles_and_verticals() {
     // CylinderOutlineGeometrySpec: "computes positions"
     let geo = cylinder_outline_geometry(10.0, 5.0, 5.0, 16);
 
-    // Bottom circle (slices+1) + top circle (slices+1) + verticals (min(slices,16)*2)
+    // 底圆 (slices+1) + 顶圆 (slices+1) + 垂直线 (min(slices,16)*2)
     let expected = (16 + 1) + (16 + 1) + 16 * 2;
     assert_eq!(geo.positions.len(), expected);
     assert_eq!(geo.primitive_type, PrimitiveType::Lines);
@@ -191,7 +191,7 @@ fn cylinder_outline_positions_at_correct_z() {
     let geo = cylinder_outline_geometry(length, 5.0, 5.0, 16);
     let half = length / 2.0;
 
-    // Positions should be at z = -half or z = +half
+    // 位置应在 z = -half 或 z = +half 处
     for p in &geo.positions {
         let z = p[2];
         assert!(
@@ -203,13 +203,13 @@ fn cylinder_outline_positions_at_correct_z() {
 
 #[test]
 fn cylinder_outline_cone_top_radius_zero() {
-    // Cone: top_radius = 0
+    // 圆锥：top_radius = 0
     let geo = cylinder_outline_geometry(10.0, 0.0, 5.0, 16);
     assert!(!geo.positions.is_empty());
     assert_eq!(geo.primitive_type, PrimitiveType::Lines);
 }
 
-// ─── Plane Outline ─────────────────────────────────────────────────────────
+// ─── Plane 轮廓 ─────────────────────────────────────────────────────────
 
 #[test]
 fn plane_outline_unit_quad() {
@@ -217,7 +217,7 @@ fn plane_outline_unit_quad() {
     let geo = plane_outline_geometry();
 
     assert_eq!(geo.positions.len(), 4);
-    assert_eq!(geo.indices.len(), 8); // 4 edges * 2
+    assert_eq!(geo.indices.len(), 8); // 4 条边 * 2
     assert_eq!(geo.primitive_type, PrimitiveType::Lines);
 }
 
@@ -232,7 +232,7 @@ fn plane_outline_positions_at_half_unit() {
     }
 }
 
-// ─── Wall Outline ──────────────────────────────────────────────────────────
+// ─── Wall 轮廓 ──────────────────────────────────────────────────────────
 
 #[test]
 fn wall_outline_basic() {
@@ -268,7 +268,7 @@ fn wall_outline_indices_valid() {
     }
 }
 
-// ─── Corridor Outline ──────────────────────────────────────────────────────
+// ─── Corridor 轮廓 ──────────────────────────────────────────────────────
 
 #[test]
 fn corridor_outline_closed_loop() {
@@ -291,7 +291,7 @@ fn corridor_outline_closed_loop() {
 
     assert!(!geo.positions.is_empty());
     assert_eq!(geo.primitive_type, PrimitiveType::Lines);
-    // Outline should form a closed loop
+    // 轮廓应构成闭合环
     assert_eq!(geo.indices.len() % 2, 0);
 }
 
@@ -318,7 +318,7 @@ fn corridor_outline_indices_valid() {
     }
 }
 
-// ─── Ellipse Outline ───────────────────────────────────────────────────────
+// ─── Ellipse 轮廓 ───────────────────────────────────────────────────────
 
 #[test]
 fn ellipse_outline_ring() {
@@ -338,7 +338,7 @@ fn ellipse_outline_ring() {
 
     assert!(!geo.positions.is_empty());
     assert_eq!(geo.primitive_type, PrimitiveType::Lines);
-    // Line loop: n vertices, n*2 indices
+    // 线环：n 个顶点，n*2 个索引
     assert_eq!(geo.indices.len(), geo.positions.len() * 2);
 }
 
@@ -363,7 +363,7 @@ fn ellipse_outline_indices_form_loop() {
     }
 }
 
-// ─── Frustum Outline ───────────────────────────────────────────────────────
+// ─── Frustum 轮廓 ───────────────────────────────────────────────────────
 
 #[test]
 fn frustum_outline_8_vertices_12_edges() {
@@ -391,7 +391,7 @@ fn frustum_outline_near_far_depths() {
     ));
     let geo = frustum_outline_geometry(&frustum, DVec3::ZERO, DQuat::IDENTITY);
 
-    // First 4 positions are near plane (z ≈ 2), last 4 are far plane (z ≈ 50)
+    // 前 4 个位置是近平面（z ≈ 2），后 4 个是远平面（z ≈ 50）
     for p in &geo.positions[0..4] {
         assert!((p[2] - 2.0).abs() < 1e-6, "near corner z={} should be ≈ 2", p[2]);
     }
@@ -400,7 +400,7 @@ fn frustum_outline_near_far_depths() {
     }
 }
 
-// ─── Common properties ─────────────────────────────────────────────────────
+// ─── 通用属性 ─────────────────────────────────────────────────────
 
 #[test]
 fn all_outlines_use_lines_primitive() {
@@ -436,7 +436,7 @@ fn all_outlines_have_valid_bounding_spheres() {
 
     for geo in &geos {
         assert!(geo.bounding_sphere.radius >= 0.0, "bounding sphere radius should be non-negative");
-        // All positions should be within bounding sphere
+        // 所有位置应在包围球内
         for p in &geo.positions {
             let dist = (DVec3::from(*p) - geo.bounding_sphere.center).length();
             assert!(

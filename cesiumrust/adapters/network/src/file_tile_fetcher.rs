@@ -1,60 +1,54 @@
-//! Offline disk-backed tile fetcher with STRICT_OFFLINE semantics.
+//! 具备 STRICT_OFFLINE 语义的离线磁盘支撑瓦片获取器。
 //!
-//! Implements the [`TileFetcher`] port by reading tile bytes from a local
-//! directory. Two on-disk layouts are supported (selected by
-//! [`FileTileScheme`]):
+//! 通过从本地目录读取瓦片字节来实现 [`TileFetcher`] 驱动端口。支持两种
+//! 磁盘布局（由 [`FileTileScheme`] 选择）：
 //!
-//! * [`FileTileScheme::Xyz`] — the canonical `{root}/{level}/{x}/{y}.{ext}`
-//!   pyramid used by the viewer-demo offline imagery fixture and by the
-//!   CesiumJS `NaturalEarthII` asset (blueprint:
-//!   `cesium-rs/examples/viewer-demo/src/main.rs` L601-623).
-//! * [`FileTileScheme::Quadkey`] — Bing-style single-segment quadkeys stored
-//!   as `{root}/{quadkey}.{ext}` (quadkey digits `0`-`3`, level = digit
-//!   count).
+//! * [`FileTileScheme::Xyz`] —— 规范的 `{root}/{level}/{x}/{y}.{ext}`
+//!   金字塔布局，被 viewer-demo 离线影像 fixture 以及 CesiumJS 的
+//!   `NaturalEarthII` 资源使用（参考实现：
+//!   `cesium-rs/examples/viewer-demo/src/main.rs` L601-623）。
+//! * [`FileTileScheme::Quadkey`] —— Bing 风格的单段 quadkey，以
+//!   `{root}/{quadkey}.{ext}` 形式存储（quadkey 数字 `0`-`3`，层级 = 数字位数）。
 //!
-//! # STRICT_OFFLINE contract
+//! # STRICT_OFFLINE 契约
 //!
-//! The offline viewer-demo path never falls back to HTTP. When
-//! [`FileTileFetcher::with_strict_offline`] is enabled and a caller passes an
-//! `http://` or `https://` URL to [`TileFetcher::fetch`], the fetcher panics
-//! *synchronously* — before the returned future is even built — so the
-//! violation is loud and cannot be silently swallowed by an async runtime.
+//! 离线 viewer-demo 路径绝不回退到 HTTP。当启用
+//! [`FileTileFetcher::with_strict_offline`] 且调用方将一个 `http://` 或
+//! `https://` URL 传给 [`TileFetcher::fetch`] 时，获取器会*同步地*立即
+//! panic —— 甚至在返回的 future 被构造之前 —— 因此该违规会响亮地暴露，
+//! 无法被 async 运行时静默吞掉。
 //!
-//! # Async shape
+//! # 异步形态
 //!
-//! [`TileFetcher::fetch`] returns a boxed future for port compatibility, but
-//! the disk read itself is plain [`std::fs::read`] inside an `async move`
-//! block. No tokio runtime, no `spawn_blocking`: the future is `Send` and
-//! resolves on the first poll, which matches the "offline = synchronous
-//! local IO" contract.
+//! [`TileFetcher::fetch`] 为端口兼容性返回一个 boxed future，但磁盘读取本身
+//! 只是 `async move` 块内一次朴素的 [`std::fs::read`]。没有 tokio 运行时，
+//! 没有 `spawn_blocking`：该 future 是 `Send` 的，并在首次 poll 时即完成，
+//! 这与「离线 = 同步本地 IO」的契约相符。
 
 use cesium_ports_driven::{PortError, PortResult, TileFetcher};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-/// Tile addressing scheme interpreted from the URL passed to
-/// [`TileFetcher::fetch`].
+/// 从传给 [`TileFetcher::fetch`] 的 URL 解释出的瓦片寻址方案。
 ///
-/// The scheme determines how the URL tail maps to a disk path under
-/// [`FileTileFetcher::root`]:
+/// 该方案决定 URL 尾部如何映射到 [`FileTileFetcher::root`] 下的磁盘路径：
 ///
-/// | Scheme   | URL tail            | Disk path                       |
+/// | 方案      | URL 尾部              | 磁盘路径                          |
 /// |----------|---------------------|---------------------------------|
 /// | `Xyz`    | `0/0/0[.ext]`       | `{root}/0/0/0.{ext}`            |
 /// | `Quadkey`| `120[.ext]`         | `{root}/120.{ext}`              |
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileTileScheme {
-    /// `{level}/{x}/{y}` XYZ pyramid (row 0 at the north pole).
+    /// `{level}/{x}/{y}` XYZ 金字塔（第 0 行位于北极）。
     Xyz,
-    /// Bing-style quadkey string (digits `0`-`3`, level = digit count).
+    /// Bing 风格的 quadkey 字符串（数字 `0`-`3`，层级 = 数字位数）。
     Quadkey,
 }
 
-/// Offline tile fetcher reading bytes from a local directory.
+/// 从本地目录读取字节的离线瓦片获取器。
 ///
-/// Clonable, `Send + Sync`, and free of any HTTP dependency — safe to share
-/// across threads without a runtime.
+/// 可克隆、`Send + Sync`，且不含任何 HTTP 依赖 —— 无需运行时即可跨线程安全共享。
 #[derive(Debug, Clone)]
 pub struct FileTileFetcher {
     root: PathBuf,
@@ -64,11 +58,11 @@ pub struct FileTileFetcher {
 }
 
 impl FileTileFetcher {
-    /// Creates a fetcher rooted at `root` using the given URL scheme.
+    /// 创建一个以 `root` 为根、使用给定 URL 方案的获取器。
     ///
-    /// The default extension is `png` (the viewer-demo offline imagery
-    /// fixture writes `{level}/{x}/{y}.png`). Override with
-    /// [`Self::with_extension`] when the tileset uses `jpg`/`jpeg`.
+    /// 默认扩展名为 `png`（viewer-demo 离线影像 fixture 写入
+    /// `{level}/{x}/{y}.png`）。当瓦片集使用 `jpg`/`jpeg` 时，用
+    /// [`Self::with_extension`] 覆盖。
     pub fn new(root: impl AsRef<Path>, scheme: FileTileScheme) -> Self {
         Self {
             root: root.as_ref().to_path_buf(),
@@ -78,45 +72,43 @@ impl FileTileFetcher {
         }
     }
 
-    /// Enables STRICT_OFFLINE semantics: any `http://` or `https://` URL
-    /// passed to [`TileFetcher::fetch`] triggers an immediate panic.
+    /// 启用 STRICT_OFFLINE 语义：任何传给 [`TileFetcher::fetch`] 的
+    /// `http://` 或 `https://` URL 都会触发立即 panic。
     ///
-    /// This is the offline viewer-demo contract — there is no HTTP fallback
-    /// path, so a network URL reaching this fetcher is a wiring bug and
-    /// must fail loudly.
+    /// 这是离线 viewer-demo 契约 —— 不存在 HTTP 回退路径，因此网络 URL
+    /// 到达此获取器是一个接线错误，必须响亮地失败。
     pub fn with_strict_offline(mut self, strict: bool) -> Self {
         self.strict_offline = strict;
         self
     }
 
-    /// Overrides the default tile file extension (default: `png`).
+    /// 覆盖默认的瓦片文件扩展名（默认：`png`）。
     pub fn with_extension(mut self, ext: impl Into<String>) -> Self {
         self.extension = ext.into();
         self
     }
 
-    /// Root directory of the tile pyramid.
+    /// 瓦片金字塔的根目录。
     pub fn root(&self) -> &Path {
         &self.root
     }
 
-    /// Active URL scheme.
+    /// 当前启用的 URL 方案。
     pub fn scheme(&self) -> FileTileScheme {
         self.scheme
     }
 
-    /// Whether STRICT_OFFLINE semantics are active.
+    /// STRICT_OFFLINE 语义是否处于激活状态。
     pub fn strict_offline(&self) -> bool {
         self.strict_offline
     }
 
-    /// Resolves a URL to a disk path under [`Self::root`].
+    /// 将一个 URL 解析为 [`Self::root`] 下的磁盘路径。
     ///
-    /// # Panics
+    /// # Panic
     ///
-    /// Panics if [`Self::strict_offline`] is `true` and `url` starts with
-    /// `http://` or `https://` — the STRICT_OFFLINE contract forbids any
-    /// network fallback.
+    /// 当 [`Self::strict_offline`] 为 `true` 且 `url` 以 `http://` 或
+    /// `https://` 开头时 panic —— STRICT_OFFLINE 契约禁止任何网络回退。
     fn resolve(&self, url: &str) -> PortResult<PathBuf> {
         if self.strict_offline && is_http_url(url) {
             panic!(
@@ -132,16 +124,16 @@ impl FileTileFetcher {
                 url
             )));
         }
-        // Absolute paths (POSIX `/...` or Windows `C:\...`) bypass the root
-        // join so `file:///abs/path.png` URLs resolve correctly.
+        // 绝对路径（POSIX `/...` 或 Windows `C:\...`）绕过与 root 的 join，
+        // 以便 `file:///abs/path.png` 这类 URL 能正确解析。
         let candidate = Path::new(tail);
         let path = if candidate.is_absolute() || has_windows_drive(tail) {
             candidate.to_path_buf()
         } else {
             self.root.join(tail)
         };
-        // Append the configured extension when the caller omitted it, so
-        // `fetch("0/0/0")` and `fetch("0/0/0.png")` both resolve.
+        // 当调用方省略扩展名时追加配置的扩展名，以便
+        // `fetch("0/0/0")` 和 `fetch("0/0/0.png")` 都能解析。
         if path.extension().is_none() {
             return Ok(path.with_extension(&self.extension));
         }
@@ -155,8 +147,8 @@ impl TileFetcher for FileTileFetcher {
         url: &'a str,
         _priority: f64,
     ) -> Pin<Box<dyn Future<Output = PortResult<Vec<u8>>> + Send + 'a>> {
-        // Resolve synchronously so a STRICT_OFFLINE violation panics before
-        // the future is even built (loud failure, no async swallowing).
+        // 同步解析，以便 STRICT_OFFLINE 违规在 future 被构造之前即 panic
+        // （响亮失败，不被 async 吞掉）。
         let path = match self.resolve(url) {
             Ok(p) => p,
             Err(e) => return Box::pin(async move { Err(e) }),
@@ -180,49 +172,47 @@ impl TileFetcher for FileTileFetcher {
     }
 
     fn cancel(&self, _url: &str) {
-        // Disk reads are synchronous and non-cancellable; the future
-        // resolves on first poll, so there is nothing to cancel.
+        // 磁盘读取是同步且不可取消的；future 在首次 poll 时即完成，
+        // 因此没有可取消的东西。
     }
 }
 
-/// Returns `true` when `url` starts with `http://` or `https://`
-/// (case-insensitive).
+/// 当 `url` 以 `http://` 或 `https://` 开头时返回 `true`
+/// （大小写不敏感）。
 fn is_http_url(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();
     lower.starts_with("http://") || lower.starts_with("https://")
 }
 
-/// Strips a `scheme://host` prefix, returning the path tail.
+/// 剥离 `scheme://host` 前缀，返回路径尾部。
 ///
-/// * `file:///abs/path.png` → `/abs/path.png` (leading slash preserved so
-///   the path stays absolute).
-/// * `https://host/a/b.png` → `a/b.png` (host stripped).
-/// * `a/b.png` (no scheme) → `a/b.png` (returned unchanged).
+/// * `file:///abs/path.png` → `/abs/path.png`（保留前导斜杠，使路径仍为绝对）。
+/// * `https://host/a/b.png` → `a/b.png`（剥离 host）。
+/// * `a/b.png`（无 scheme）→ `a/b.png`（原样返回）。
 fn strip_scheme_and_host(url: &str) -> &str {
     let Some(idx) = url.find("://") else {
         return url;
     };
     let scheme = &url[..idx];
     let after = &url[idx + 3..];
-    // `file://` URLs keep the leading slash to remain absolute on POSIX;
-    // on Windows, `file:///C:/path` yields `/C:/path` whose leading slash
-    // must be dropped so the drive letter becomes the path prefix.
+    // `file://` URL 保留前导斜杠以在 POSIX 上保持绝对；在 Windows 上，
+    // `file:///C:/path` 产生 `/C:/path`，其前导斜杠必须去掉，好让盘符
+    // 成为路径前缀。
     if scheme.eq_ignore_ascii_case("file") {
         if let Some(slash) = after.find('/') {
             return strip_windows_drive_slash(&after[slash..]);
         }
         return after;
     }
-    // http(s)://host/path → drop host, keep path after the first '/'.
+    // http(s)://host/path → 丢弃 host，保留首个 '/' 之后的路径。
     match after.find('/') {
         Some(slash) => &after[slash + 1..],
         None => "",
     }
 }
 
-/// On Windows, a `file:///C:/path` URL yields a tail of `/C:/path`; the
-/// leading slash must be dropped so the drive letter becomes the path
-/// prefix. POSIX tails (`/abs/path`) are returned unchanged.
+/// 在 Windows 上，`file:///C:/path` URL 产生的尾部为 `/C:/path`；必须去掉
+/// 前导斜杠，好让盘符成为路径前缀。POSIX 尾部（`/abs/path`）原样返回。
 fn strip_windows_drive_slash(tail: &str) -> &str {
     let b = tail.as_bytes();
     if b.len() >= 3 && b[0] == b'/' && b[2] == b':' && b[1].is_ascii_alphabetic() {
@@ -232,7 +222,7 @@ fn strip_windows_drive_slash(tail: &str) -> &str {
     }
 }
 
-/// Detects a Windows drive-letter prefix like `C:` at the start of `s`.
+/// 检测 `s` 开头是否为类似 `C:` 的 Windows 盘符前缀。
 fn has_windows_drive(s: &str) -> bool {
     let mut chars = s.chars();
     match (chars.next(), chars.next()) {
@@ -242,7 +232,7 @@ fn has_windows_drive(s: &str) -> bool {
 }
 
 // ============================================================================
-// Tests
+// 测试
 // ============================================================================
 
 #[cfg(test)]
@@ -265,7 +255,7 @@ mod tests {
         dir
     }
 
-    // --- URL helpers ---------------------------------------------------------
+    // --- URL 辅助函数 ---------------------------------------------------------
 
     #[test]
     fn test_is_http_url() {
@@ -304,7 +294,7 @@ mod tests {
         assert!(!has_windows_drive("0/0/0"));
     }
 
-    // --- resolve -------------------------------------------------------------
+    // --- resolve（路径解析）-------------------------------------------------------------
 
     #[test]
     fn test_resolve_xyz_relative_appends_extension() {
@@ -343,7 +333,7 @@ mod tests {
     fn test_resolve_file_url_absolute() {
         let dir = unique_temp_dir("resolve-file-url");
         let fetcher = FileTileFetcher::new(&dir, FileTileScheme::Xyz);
-        // A file:// URL pointing outside the root must stay absolute.
+        // 指向 root 之外的 file:// URL 必须保持绝对。
         let abs = dir.join("abs.png");
         let url = format!("file:///{}", abs.display().to_string().replace('\\', "/"));
         let path = fetcher.resolve(&url).unwrap();
@@ -355,7 +345,7 @@ mod tests {
     fn test_resolve_https_tail_under_root_when_not_strict() {
         let dir = unique_temp_dir("resolve-https-tail");
         let fetcher = FileTileFetcher::new(&dir, FileTileScheme::Xyz);
-        // Not strict: the https tail is rebased under the offline root.
+        // 非严格模式：https 尾部会被重新基准化到离线 root 之下。
         let path = fetcher
             .resolve("https://example.com/tiles/0/0/0.png")
             .unwrap();
@@ -378,7 +368,7 @@ mod tests {
         let dir = unique_temp_dir("strict-https");
         let fetcher =
             FileTileFetcher::new(&dir, FileTileScheme::Xyz).with_strict_offline(true);
-        // Panics synchronously inside `resolve`, before the future is built.
+        // 在 `resolve` 内部同步 panic，先于 future 被构造。
         let _ = fetcher.resolve("https://example.com/0/0/0.png");
     }
 
@@ -396,7 +386,7 @@ mod tests {
         let dir = unique_temp_dir("strict-ok");
         let fetcher =
             FileTileFetcher::new(&dir, FileTileScheme::Xyz).with_strict_offline(true);
-        // Relative and file:// URLs are fine under STRICT_OFFLINE.
+        // 在 STRICT_OFFLINE 下，相对路径和 file:// URL 都是允许的。
         assert!(fetcher.resolve("0/0/0").is_ok());
         assert!(fetcher
             .resolve(&format!(
@@ -412,11 +402,11 @@ mod tests {
         let dir = unique_temp_dir("strict-fetch");
         let fetcher =
             FileTileFetcher::new(&dir, FileTileScheme::Xyz).with_strict_offline(true);
-        // The panic fires synchronously inside `fetch`, so awaiting is moot.
+        // panic 在 `fetch` 内部同步触发，因此是否 await 无关紧要。
         let _ = fetcher.fetch("https://example.com/0/0/0.png", 1.0).await;
     }
 
-    // --- end-to-end fetch ----------------------------------------------------
+    // --- 端到端获取 ----------------------------------------------------
 
     #[tokio::test]
     async fn test_fetch_xyz_returns_bytes() {
@@ -466,7 +456,7 @@ mod tests {
 
         let fetcher = FileTileFetcher::new(&dir, FileTileScheme::Xyz);
         fetcher.cancel("0/0/0");
-        // cancel is a no-op; the read still succeeds.
+        // cancel 是一个空操作；读取仍会成功。
         let data = fetcher.fetch("0/0/0", 1.0).await.unwrap();
         assert_eq!(data, b"x");
     }

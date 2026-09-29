@@ -1,32 +1,32 @@
-//! Water and ocean surface effects.
+//! 水与海洋表面效果。
 //!
-//! Maps to CesiumJS water-related features:
-//! - Ocean surface rendering
-//! - Wave simulation (Gerstner waves)
-//! - Water reflection/refraction parameters
+//! 映射到 CesiumJS 与水相关的特性：
+//! - 海洋表面渲染
+//! - 波浪模拟（Gerstner 波）
+//! - 水的反射/折射参数
 
 use glam::DVec3;
 
-/// A single Gerstner wave component.
-/// Gerstner waves provide realistic ocean surface animation.
+/// 单个 Gerstner 波分量。
+/// Gerstner 波可提供逼真的海洋表面动画。
 #[derive(Debug, Clone, PartialEq)]
 pub struct GerstnerWave {
-    /// Wave direction (normalized, in XZ plane).
+    /// 波的方向（归一化，位于 XZ 平面）。
     pub direction: DVec3,
-    /// Wavelength in meters.
+    /// 波长（米）。
     pub wavelength: f64,
-    /// Wave amplitude in meters.
+    /// 波幅（米）。
     pub amplitude: f64,
-    /// Wave speed (phase velocity) in m/s.
+    /// 波速（相速度）（m/s）。
     pub speed: f64,
-    /// Steepness factor (0.0 = sinusoidal, 1.0 = sharp crests).
+    /// 陡峭度因子（0.0 = 正弦，1.0 = 尖锐波峰）。
     pub steepness: f64,
-    /// Phase offset in radians.
+    /// 相位偏移（弧度）。
     pub phase: f64,
 }
 
 impl GerstnerWave {
-    /// Creates a new Gerstner wave.
+    /// 创建一个新的 Gerstner 波。
     pub fn new(direction: DVec3, wavelength: f64, amplitude: f64, speed: f64) -> Self {
         Self {
             direction: direction.normalize(),
@@ -38,47 +38,47 @@ impl GerstnerWave {
         }
     }
 
-    /// Computes the wave number (k = 2π / wavelength).
+    /// 计算波数（k = 2π / wavelength）。
     pub fn wave_number(&self) -> f64 {
         std::f64::consts::TAU / self.wavelength
     }
 
-    /// Computes the angular frequency (ω = k * speed).
+    /// 计算角频率（ω = k * speed）。
     pub fn angular_frequency(&self) -> f64 {
         self.wave_number() * self.speed
     }
 
-    /// Computes the displacement at a given position and time.
+    /// 计算给定位置和时刻处的位移。
     ///
-    /// # Arguments
-    /// * `position` - World position (XZ plane)
-    /// * `time` - Time in seconds
+    /// # 参数
+    /// * `position` - 世界位置（XZ 平面）
+    /// * `time` - 时间（秒）
     ///
-    /// # Returns
-    /// The 3D displacement vector
+    /// # 返回
+    /// 3D 位移向量
     pub fn compute_displacement(&self, position: DVec3, time: f64) -> DVec3 {
         let k = self.wave_number();
         let omega = self.angular_frequency();
 
-        // Dot product of wave direction and position
+        // 波方向与位置的点积
         let d = self.direction.dot(position);
 
-        // Phase
+        // 相位
         let theta = k * d - omega * time + self.phase;
 
         let cos_theta = theta.cos();
         let sin_theta = theta.sin();
 
-        // Horizontal displacement (creates the sharp crests)
+        // 水平位移（形成尖锐波峰）
         let horizontal = self.direction * (self.steepness * self.amplitude * cos_theta);
 
-        // Vertical displacement
+        // 垂直位移
         let vertical = self.amplitude * sin_theta;
 
         DVec3::new(horizontal.x, vertical, horizontal.z)
     }
 
-    /// Computes the surface normal at a given position and time.
+    /// 计算给定位置和时刻处的表面法线。
     pub fn compute_normal(&self, position: DVec3, time: f64) -> DVec3 {
         let k = self.wave_number();
         let omega = self.angular_frequency();
@@ -89,11 +89,11 @@ impl GerstnerWave {
         let cos_theta = theta.cos();
         let sin_theta = theta.sin();
 
-        // Partial derivatives
+        // 偏导数
         let wa = self.amplitude * k;
         let qa = self.steepness * self.amplitude * k;
 
-        // Normal calculation (simplified)
+        // 法线计算（简化）
         DVec3::new(
             -self.direction.x * wa * cos_theta,
             1.0 - qa * sin_theta,
@@ -103,34 +103,34 @@ impl GerstnerWave {
     }
 }
 
-/// Ocean surface configuration.
+/// 海洋表面配置。
 #[derive(Debug, Clone)]
 pub struct OceanConfig {
-    /// Whether the ocean is enabled.
+    /// 海洋是否启用。
     pub enabled: bool,
-    /// Base water color (deep water).
+    /// 基础水色（深水）。
     pub water_color: DVec3,
-    /// Shallow water color.
+    /// 浅水颜色。
     pub shallow_color: DVec3,
-    /// Water transparency (0.0 = opaque, 1.0 = fully transparent).
+    /// 水的透明度（0.0 = 不透明，1.0 = 完全透明）。
     pub transparency: f64,
-    /// Reflection strength (0.0 = no reflection, 1.0 = mirror).
+    /// 反射强度（0.0 = 无反射，1.0 = 镜面）。
     pub reflection_strength: f64,
-    /// Refraction strength.
+    /// 折射强度。
     pub refraction_strength: f64,
-    /// Fresnel power (controls reflection angle falloff).
+    /// 菲涅尔幂（控制反射角度的衰减）。
     pub fresnel_power: f64,
-    /// Specular intensity (sun glint).
+    /// 镜面反射强度（太阳反光）。
     pub specular_intensity: f64,
-    /// Specular power (sharpness of sun glint).
+    /// 镜面反射幂（太阳反光的锐度）。
     pub specular_power: f64,
-    /// Wave components.
+    /// 波分量。
     pub waves: Vec<GerstnerWave>,
-    /// Normal map scale (for detail waves).
+    /// 法线贴图缩放（用于细节波浪）。
     pub normal_scale: f64,
-    /// Foam threshold (wave crests above this show foam).
+    /// 泡沫阈值（高于此值的波峰会显示泡沫）。
     pub foam_threshold: f64,
-    /// Foam color.
+    /// 泡沫颜色。
     pub foam_color: DVec3,
 }
 
@@ -154,35 +154,35 @@ impl Default for OceanConfig {
     }
 }
 
-/// Creates a default set of ocean waves.
+/// 创建一组默认的海洋波浪。
 fn create_default_waves() -> Vec<GerstnerWave> {
     vec![
-        // Large swell
+        // 大涌浪
         GerstnerWave::new(DVec3::new(1.0, 0.0, 0.3), 100.0, 1.5, 8.0),
-        // Medium waves
+        // 中等波浪
         GerstnerWave::new(DVec3::new(0.7, 0.0, 0.7), 50.0, 0.8, 6.0),
         GerstnerWave::new(DVec3::new(-0.3, 0.0, 0.9), 30.0, 0.5, 5.0),
-        // Small ripples
+        // 细小涟漪
         GerstnerWave::new(DVec3::new(0.9, 0.0, -0.4), 10.0, 0.2, 3.0),
         GerstnerWave::new(DVec3::new(-0.6, 0.0, 0.8), 5.0, 0.1, 2.0),
     ]
 }
 
-/// The ocean surface state.
+/// 海洋表面状态。
 #[derive(Debug, Clone)]
 pub struct OceanSurface {
-    /// Configuration.
+    /// 配置。
     pub config: OceanConfig,
-    /// Current time (for wave animation).
+    /// 当前时间（用于波浪动画）。
     pub time: f64,
-    /// Wind direction (affects wave generation).
+    /// 风向（影响波浪生成）。
     pub wind_direction: DVec3,
-    /// Wind speed (m/s).
+    /// 风速（m/s）。
     pub wind_speed: f64,
 }
 
 impl OceanSurface {
-    /// Creates a new ocean surface.
+    /// 创建一个新的海洋表面。
     pub fn new(config: OceanConfig) -> Self {
         Self {
             config,
@@ -192,12 +192,12 @@ impl OceanSurface {
         }
     }
 
-    /// Updates the ocean surface by a time delta.
+    /// 按时间增量更新海洋表面。
     pub fn update(&mut self, dt: f64) {
         self.time += dt;
     }
 
-    /// Computes the total wave displacement at a position.
+    /// 计算某位置处的总波位移。
     pub fn compute_displacement(&self, position: DVec3) -> DVec3 {
         if !self.config.enabled {
             return DVec3::ZERO;
@@ -210,7 +210,7 @@ impl OceanSurface {
         total
     }
 
-    /// Computes the surface normal at a position.
+    /// 计算某位置处的表面法线。
     pub fn compute_normal(&self, position: DVec3) -> DVec3 {
         if !self.config.enabled {
             return DVec3::Y;
@@ -224,51 +224,51 @@ impl OceanSurface {
         normal.normalize()
     }
 
-    /// Computes the water height at a position (Y displacement).
+    /// 计算某位置处的水面高度（Y 位移）。
     pub fn compute_height(&self, position: DVec3) -> f64 {
         self.compute_displacement(position).y
     }
 
-    /// Computes the Fresnel reflection coefficient.
+    /// 计算菲涅尔反射系数。
     ///
-    /// # Arguments
-    /// * `view_direction` - Direction from surface to camera (normalized)
-    /// * `normal` - Surface normal (normalized)
+    /// # 参数
+    /// * `view_direction` - 从表面到相机的方向（归一化）
+    /// * `normal` - 表面法线（归一化）
     pub fn compute_fresnel(&self, view_direction: DVec3, normal: DVec3) -> f64 {
         let cos_theta = view_direction.dot(normal).abs().clamp(0.0, 1.0);
 
-        // Schlick's approximation
-        let r0 = 0.02; // Base reflectivity for water
+        // Schlick 近似
+        let r0 = 0.02; // 水的基反射率
         r0 + (1.0 - r0) * (1.0 - cos_theta).powf(self.config.fresnel_power)
     }
 
-    /// Computes the specular reflection (sun glint).
+    /// 计算镜面反射（太阳反光）。
     ///
-    /// # Arguments
-    /// * `view_direction` - Direction from surface to camera
-    /// * `light_direction` - Direction from surface to light (sun)
-    /// * `normal` - Surface normal
+    /// # 参数
+    /// * `view_direction` - 从表面到相机的方向
+    /// * `light_direction` - 从表面到光源（太阳）的方向
+    /// * `normal` - 表面法线
     pub fn compute_specular(
         &self,
         view_direction: DVec3,
         light_direction: DVec3,
         normal: DVec3,
     ) -> f64 {
-        // Reflect light direction around normal
+        // 将光方向绕法线反射
         let reflect_dir = (2.0 * normal.dot(light_direction) * normal - light_direction).normalize();
 
-        // Specular intensity
+        // 镜面反射强度
         let spec_angle = reflect_dir.dot(view_direction).max(0.0);
         spec_angle.powf(self.config.specular_power) * self.config.specular_intensity
     }
 
-    /// Computes the final water color at a position.
+    /// 计算某位置处的最终水色。
     ///
-    /// # Arguments
-    /// * `position` - World position on the water surface
-    /// * `view_direction` - Direction from surface to camera
-    /// * `light_direction` - Direction from surface to light (sun)
-    /// * `depth` - Water depth (for shallow/deep color blending)
+    /// # 参数
+    /// * `position` - 水面上的世界位置
+    /// * `view_direction` - 从表面到相机的方向
+    /// * `light_direction` - 从表面到光源（太阳）的方向
+    /// * `depth` - 水深（用于浅/深色混合）
     pub fn compute_water_color(
         &self,
         position: DVec3,
@@ -282,24 +282,24 @@ impl OceanSurface {
 
         let normal = self.compute_normal(position);
 
-        // Depth-based color blending
-        let depth_factor = (depth / 10.0).clamp(0.0, 1.0); // 10m transition zone
+        // 基于深度的颜色混合
+        let depth_factor = (depth / 10.0).clamp(0.0, 1.0); // 10 米过渡带
         let base_color = self.config.shallow_color.lerp(self.config.water_color, depth_factor);
 
-        // Fresnel reflection
+        // 菲涅尔反射
         let fresnel = self.compute_fresnel(view_direction, normal);
 
-        // Specular (sun glint)
+        // 镜面反射（太阳反光）
         let specular = self.compute_specular(view_direction, light_direction, normal);
 
-        // Combine
-        let reflection_color = DVec3::new(0.5, 0.6, 0.8); // Sky reflection approximation
+        // 组合
+        let reflection_color = DVec3::new(0.5, 0.6, 0.8); // 天空反射近似
         let mut final_color = base_color.lerp(reflection_color, fresnel * self.config.reflection_strength);
 
-        // Add specular highlight
+        // 添加高光
         final_color += DVec3::splat(specular);
 
-        // Foam on wave crests
+        // 波峰上的泡沫
         let height = self.compute_height(position);
         if height > self.config.foam_threshold {
             let foam_factor = ((height - self.config.foam_threshold) / 0.5).clamp(0.0, 1.0);
@@ -309,24 +309,24 @@ impl OceanSurface {
         final_color.clamp(DVec3::ZERO, DVec3::ONE)
     }
 
-    /// Generates waves based on wind (simplified Pierson-Moskowitz spectrum).
+    /// 根据风生成波浪（简化的 Pierson-Moskowitz 谱）。
     pub fn generate_wind_waves(&mut self) {
         let wind_dir = self.wind_direction.normalize();
 
-        // Wave parameters based on wind speed
+        // 基于风速的波浪参数
         let significant_wave_height = 0.22 * self.wind_speed * self.wind_speed / 9.81;
         let peak_wavelength = 2.0 * std::f64::consts::PI * self.wind_speed * self.wind_speed / 9.81;
 
         self.config.waves.clear();
 
-        // Generate a spectrum of waves
+        // 生成一系列波浪谱
         for i in 0..8 {
             let scale = 0.5_f64.powi(i);
             let wavelength = peak_wavelength * scale;
             let amplitude = significant_wave_height * scale * 0.1;
             let speed = (9.81 * wavelength / std::f64::consts::TAU).sqrt();
 
-            // Vary direction slightly
+            // 使方向略有变化
             let angle_offset = (i as f64 - 3.5) * 0.2;
             let cos_a = angle_offset.cos();
             let sin_a = angle_offset.sin();
@@ -337,7 +337,7 @@ impl OceanSurface {
             );
 
             let mut wave = GerstnerWave::new(direction, wavelength.max(1.0), amplitude, speed);
-            wave.phase = (i as f64) * 1.7; // Vary phase
+            wave.phase = (i as f64) * 1.7; // 使相位变化
             wave.steepness = 0.3 + 0.1 * (i as f64);
 
             self.config.waves.push(wave);
@@ -373,17 +373,17 @@ mod tests {
             wavelength: 10.0,
             amplitude: 1.0,
             speed: 5.0,
-            steepness: 0.0, // Pure sinusoidal
+            steepness: 0.0, // 纯正弦
             phase: 0.0,
         };
 
-        // At t=0, position=(0,0,0): theta = 0, sin(0) = 0
+        // 当 t=0、position=(0,0,0) 时：theta = 0，sin(0) = 0
         let displacement = wave.compute_displacement(DVec3::ZERO, 0.0);
         assert!((displacement.y).abs() < 1e-10);
 
-        // At t such that theta = -π/2: sin(-π/2) = -1
-        // theta = k*d - omega*t = -omega*t (since d=0)
-        // For theta = -π/2: t = π/(2*omega)
+        // 当 t 使 theta = -π/2 时：sin(-π/2) = -1
+        // theta = k*d - omega*t = -omega*t（因为 d=0）
+        // 对于 theta = -π/2：t = π/(2*omega)
         let omega = wave.angular_frequency();
         let t = std::f64::consts::FRAC_PI_2 / omega;
         let displacement = wave.compute_displacement(DVec3::ZERO, t);
@@ -396,7 +396,7 @@ mod tests {
 
         let normal = wave.compute_normal(DVec3::ZERO, 0.0);
 
-        // Normal should be roughly pointing up
+        // 法线应大致朝上
         assert!(normal.y > 0.5);
     }
 
@@ -434,8 +434,8 @@ mod tests {
 
         let displacement = ocean.compute_displacement(DVec3::ZERO);
 
-        // Should have some displacement from the waves
-        // (may be zero at t=0 depending on wave phases)
+        // 波浪应产生一些位移
+        // （在 t=0 时可能为零，取决于波浪相位）
         assert!(displacement.length() >= 0.0);
     }
 
@@ -445,7 +445,7 @@ mod tests {
 
         let normal = ocean.compute_normal(DVec3::ZERO);
 
-        // Normal should be roughly pointing up
+        // 法线应大致朝上
         assert!(normal.y > 0.0);
         assert!((normal.length() - 1.0).abs() < 1e-6);
     }
@@ -469,13 +469,13 @@ mod tests {
     fn test_fresnel_straight_on() {
         let ocean = OceanSurface::new(OceanConfig::default());
 
-        // Looking straight down at flat water
+        // 垂直向下看平静的水面
         let view_dir = DVec3::Y;
         let normal = DVec3::Y;
 
         let fresnel = ocean.compute_fresnel(view_dir, normal);
 
-        // At normal incidence, reflection should be minimal (~2%)
+        // 在正入射时，反射应很小（约 2%）
         assert!(fresnel < 0.1);
     }
 
@@ -483,13 +483,13 @@ mod tests {
     fn test_fresnel_grazing_angle() {
         let ocean = OceanSurface::new(OceanConfig::default());
 
-        // Looking at grazing angle
+        // 以掠射角观看
         let view_dir = DVec3::new(1.0, 0.1, 0.0).normalize();
         let normal = DVec3::Y;
 
         let fresnel = ocean.compute_fresnel(view_dir, normal);
 
-        // At grazing angle, reflection should be high
+        // 在掠射角时，反射应很高
         assert!(fresnel > 0.5);
     }
 
@@ -498,12 +498,12 @@ mod tests {
         let ocean = OceanSurface::new(OceanConfig::default());
 
         let view_dir = DVec3::Y;
-        let light_dir = DVec3::Y; // Sun directly overhead
+        let light_dir = DVec3::Y; // 太阳直射头顶
         let normal = DVec3::Y;
 
         let specular = ocean.compute_specular(view_dir, light_dir, normal);
 
-        // Perfect reflection should give high specular
+        // 完美反射应产生高镜面值
         assert!(specular > 0.9);
     }
 
@@ -515,10 +515,10 @@ mod tests {
             DVec3::ZERO,
             DVec3::Y,
             DVec3::Y,
-            100.0, // Deep water
+            100.0, // 深水
         );
 
-        // Should be a valid color
+        // 应为一个有效颜色
         assert!(color.x >= 0.0 && color.x <= 1.0);
         assert!(color.y >= 0.0 && color.y <= 1.0);
         assert!(color.z >= 0.0 && color.z <= 1.0);
@@ -534,7 +534,7 @@ mod tests {
 
         assert_eq!(ocean.config.waves.len(), 8);
 
-        // All waves should have positive wavelength and amplitude
+        // 所有波浪都应有正的波长和波幅
         for wave in &ocean.config.waves {
             assert!(wave.wavelength > 0.0);
             assert!(wave.amplitude >= 0.0);

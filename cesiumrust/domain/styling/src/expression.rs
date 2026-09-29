@@ -1,22 +1,22 @@
-//! Top-level `Expression`: parse a 3D Tiles Styling language source string into
-//! a runtime AST and evaluate it against an optional feature.
+//! 顶层 `Expression`：把 3D Tiles Styling 语言的源字符串解析为运行时
+//! AST，并针对可选的 feature 求值。
 //!
-//! Ported from `cesium-rs/crates/cesium-scene/src/expression.rs` L3051-3179
-//! (`Expression` struct + `try_new`/`new`/`expression`/`runtime_ast`/`evaluate`/
-//! `evaluate_color`/`get_variables`), the Rust port of upstream
-//! `packages/engine/Source/Scene/Expression.js` (the `Expression` constructor
-//! and prototype).
+//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs` L3051-3179
+//! （`Expression` 结构体 + `try_new`/`new`/`expression`/`runtime_ast`/`evaluate`/
+//! `evaluate_color`/`get_variables`），它是上游
+//! `packages/engine/Source/Scene/Expression.js`（`Expression` 构造函数
+//! 与原型）的 Rust 移植。
 //!
-//! # DEVIATION (deps + deferred codegen)
+//! # 偏离（依赖 + 延后的 codegen）
 //!
-//! * The blueprint's `evaluate_color` writes into a `cesium_core::Color`. This
-//!   isolated domain crate has no `Color` type (colors are `glam::DVec4` rgba
-//!   0..1, see `literal.rs`), so `evaluate_color` returns the `DVec4` directly.
-//! * `get_shader_function` / `get_shader_expression` (GLSL codegen) are
-//!   **deferred** to a later milestone (Sam Q2); this CPU-side engine only
-//!   implements interpretation via [`Node::evaluate`].
-//! * A cached, de-duplicated `variables` list is stored on the struct (computed
-//!   once in [`Expression::try_new`]) so [`Expression::get_variables`] is O(1).
+//! * blueprint 的 `evaluate_color` 写入一个 `cesium_core::Color`。这个
+//!   孤立的 domain crate 没有 `Color` 类型（颜色是 `glam::DVec4` rgba
+//!   0..1，见 `literal.rs`），所以 `evaluate_color` 直接返回 `DVec4`。
+//! * `get_shader_function` / `get_shader_expression`（GLSL codegen）**延后**
+//!   到后续里程碑（Sam Q2）；这个 CPU 侧引擎只通过 [`Node::evaluate`]
+//!   实现解释求值。
+//! * 结构体上缓存了一份去重的 `variables` 列表（在 [`Expression::try_new`]
+//!   中一次性计算），因此 [`Expression::get_variables`] 是 O(1)。
 
 use std::collections::HashMap;
 
@@ -28,9 +28,8 @@ use crate::runtime::ExpressionFeature;
 use crate::value::{runtime_error, RuntimeError, Value};
 use crate::variables::{remove_backslashes, replace_defines, replace_variables};
 
-/// An expression for a style applied to a `Cesium3DTileset`. Evaluates an
-/// expression defined using the 3D Tiles Styling language. Implements the
-/// `StyleExpression` interface.
+/// 应用于 `Cesium3DTileset` 的样式表达式。对以 3D Tiles Styling 语言定义的
+/// 表达式求值。实现 `StyleExpression` 接口。
 pub struct Expression {
     expression_string: String,
     runtime_ast: Node,
@@ -38,13 +37,12 @@ pub struct Expression {
 }
 
 impl Expression {
-    /// null just needs to be some sentinel value that will cause
-    /// "[expression] === null" to be false in nearly all cases. GLSL doesn't
-    /// have a NaN constant so use czm_infinity.
+    /// null 只需要是一个哨兵值，使 "[expression] === null" 在几乎所有情形下
+    /// 都为 false。GLSL 没有 NaN 常量，所以用 czm_infinity。
     pub const NULL_SENTINEL: &'static str = "czm_infinity";
 
-    /// Mirrors `new Expression(expression, defines)`; parse failures are
-    /// returned as `Err` instead of being thrown.
+    /// 镜像 `new Expression(expression, defines)`；解析失败以 `Err` 返回，
+    /// 而非抛出。
     pub fn try_new(
         expression: &str,
         defines: Option<&HashMap<String, String>>,
@@ -56,12 +54,12 @@ impl Expression {
         }
         processed = replace_variables(&remove_backslashes(&processed))?;
 
-        // jsep customization mirrored by the Pratt parser: addBinaryOp("=~", 0)
-        // and addBinaryOp("!~", 0).
+        // Pratt 解析器所镜像的 jsep 定制：addBinaryOp("=~", 0)
+        // 与 addBinaryOp("!~", 0)。
         let ast = Parser::parse(&processed)?;
         let runtime_ast = create_runtime_ast(&ast)?;
 
-        // Cache the de-duplicated variable list (mirrors getVariables()).
+        // 缓存去重后的变量列表（镜像 getVariables()）。
         let mut variables = Vec::new();
         runtime_ast.get_variables(&mut variables, None);
         let mut deduped: Vec<String> = Vec::with_capacity(variables.len());
@@ -78,8 +76,8 @@ impl Expression {
         })
     }
 
-    /// Mirrors `new Expression(expression, defines)`; panics on parse
-    /// errors, like the JS constructor throws.
+    /// 镜像 `new Expression(expression, defines)`；解析出错时 panic，
+    /// 如同 JS 构造函数抛出那样。
     pub fn new(expression: &str, defines: Option<&HashMap<String, String>>) -> Expression {
         match Self::try_new(expression, defines) {
             Ok(expression) => expression,
@@ -87,18 +85,18 @@ impl Expression {
         }
     }
 
-    /// Gets the expression defined in the 3D Tiles Styling language.
+    /// 获取以 3D Tiles Styling 语言定义的表达式。
     pub fn expression(&self) -> &str {
         &self.expression_string
     }
 
-    /// Exposes the runtime AST, mirroring the spec's access to the private
-    /// `_runtimeAst` field (used to assert node types such as LITERAL_REGEX).
+    /// 暴露运行时 AST，镜像 spec 对私有 `_runtimeAst` 字段的访问
+    /// （用于断言诸如 LITERAL_REGEX 的节点类型）。
     pub fn runtime_ast(&self) -> &Node {
         &self.runtime_ast
     }
 
-    /// Mirrors `Expression.prototype.evaluate`.
+    /// 镜像 `Expression.prototype.evaluate`。
     pub fn evaluate(
         &self,
         feature: Option<&dyn ExpressionFeature>,
@@ -106,11 +104,10 @@ impl Expression {
         self.runtime_ast.evaluate(feature)
     }
 
-    /// Mirrors `Expression.prototype.evaluateColor`.
+    /// 镜像 `Expression.prototype.evaluateColor`。
     ///
-    /// DEVIATION: returns the rgba color as a `glam::DVec4` (components 0..1)
-    /// rather than writing into a `cesium_core::Color`, which this domain crate
-    /// does not depend on.
+    /// 偏离：以 `glam::DVec4`（分量 0..1）返回 rgba 颜色，
+    /// 而非写入本 domain crate 并不依赖的 `cesium_core::Color`。
     pub fn evaluate_color(
         &self,
         feature: Option<&dyn ExpressionFeature>,
@@ -123,8 +120,8 @@ impl Expression {
         }
     }
 
-    /// Mirrors `Expression.prototype.getVariables`: the de-duplicated list of
-    /// `${name}` variables referenced by the expression.
+    /// 镜像 `Expression.prototype.getVariables`：该表达式所引用的 `${name}`
+    /// 变量的去重列表。
     pub fn get_variables(&self) -> Vec<String> {
         self.variables.clone()
     }
@@ -153,7 +150,7 @@ mod tests {
         }
     }
 
-    /// Parse + evaluate a source string with no feature.
+    /// 解析并求值一个无 feature 的源字符串。
     fn eval(src: &str) -> Value {
         Expression::try_new(src, None)
             .unwrap_or_else(|e| panic!("parse {src:?}: {e}"))
@@ -179,14 +176,14 @@ mod tests {
         }
     }
 
-    // --- The 11 JS-quirk end-to-end cases -----------------------------------
+    // --- 11 个 JS 怪癖的端到端用例 -----------------------------------
 
     #[test]
     fn quirk_string_plus_number_concatenates() {
-        // "1" + 1 == "11" (string concat wins when either side is a string).
+        // "1" + 1 == "11"（任一侧为字符串时字符串拼接优先）。
         assert_eq!(eval(r#""1" + 1"#), Value::String("11".to_string()));
         assert_eq!(eval(r#"1 + "1""#), Value::String("11".to_string()));
-        // But number + number is arithmetic.
+        // 但 数字 + 数字 是算术。
         assert_eq!(num("1 + 1"), 2.0);
     }
 
@@ -200,7 +197,7 @@ mod tests {
 
     #[test]
     fn quirk_round_half_towards_positive_infinity() {
-        // Math.round(-0.5) == 0 (not -1); Math.round(0.5) == 1.
+        // Math.round(-0.5) == 0（不是 -1）；Math.round(0.5) == 1。
         assert_eq!(num("round(-0.5)"), 0.0);
         assert_eq!(num("round(0.5)"), 1.0);
         assert_eq!(num("round(1.5)"), 2.0);
@@ -209,7 +206,7 @@ mod tests {
 
     #[test]
     fn quirk_min_max_nan_propagation() {
-        // Math.min(NaN, 1) == NaN (NaN propagates, unlike Rust f64::min).
+        // Math.min(NaN, 1) == NaN（NaN 会传播，不同于 Rust f64::min）。
         assert!(bool_("isNaN(min(NaN, 1))"));
         assert!(bool_("isNaN(max(NaN, 1))"));
         assert_eq!(num("min(1, 2)"), 1.0);
@@ -218,11 +215,11 @@ mod tests {
 
     #[test]
     fn quirk_null_loose_equals_undefined_but_not_strict() {
-        // The styling language only has === (strict): null === undefined is false.
+        // styling 语言只有 ===（严格）：null === undefined 为 false。
         assert!(!bool_("null === undefined"));
         assert!(bool_("null === null"));
         assert!(bool_("undefined === undefined"));
-        // The loose (==) quirk lives on Value::equals_loose (no == operator here).
+        // 宽松 (==) 怪癖位于 Value::equals_loose（此处没有 == 运算符）。
         assert!(Value::Null.equals_loose(&Value::Undefined));
         assert!(Value::Undefined.equals_loose(&Value::Null));
         assert!(!Value::Null.equals_strict(&Value::Undefined));
@@ -230,18 +227,18 @@ mod tests {
 
     #[test]
     fn quirk_strict_string_number_not_equal() {
-        // "5" === 5 is false (strict, no coercion).
+        // "5" === 5 为 false（严格，不做类型转换）。
         assert!(!bool_(r#""5" === 5"#));
         assert!(bool_(r#""5" === "5""#));
-        // Number("5") === 5 after explicit coercion.
+        // 显式类型转换后 Number("5") === 5。
         assert!(bool_(r#"Number("5") === 5"#));
-        // The loose "1" == 1 quirk is on Value::equals_loose.
+        // 宽松的 "1" == 1 怪癖位于 Value::equals_loose。
         assert!(Value::String("1".into()).equals_loose(&Value::Number(1.0)));
     }
 
     #[test]
     fn quirk_number_of_empty_string_is_zero() {
-        // Number("") == 0 in JS (via number_conversion / js_parse_number).
+        // JS 中 Number("") == 0（经由 number_conversion / js_parse_number）。
         assert_eq!(num(r#"Number("")"#), 0.0);
         assert!(bool_(r#"Number("") === 0"#));
         assert!(bool_(r#"Number("abc") !== Number("abc")"#)); // NaN
@@ -253,7 +250,7 @@ mod tests {
         assert!((pi - std::f64::consts::PI).abs() < 1e-15);
         assert_eq!(num("Infinity"), f64::INFINITY);
         assert!(bool_("isNaN(NaN)"));
-        // degrees(radians(180)) round-trips through the PI-based conversions.
+        // degrees(radians(180)) 经由基于 PI 的转换往返。
         assert!((num("degrees(radians(180))") - 180.0).abs() < 1e-12);
     }
 
@@ -269,9 +266,8 @@ mod tests {
 
     #[test]
     fn quirk_unary_plus_requires_number() {
-        // DEVIATION from JS: unary + does NOT coerce a string (the styling
-        // language requires a number/vector), so +"" errors; Number("") is the
-        // coercion path that yields 0.
+        // 偏离 JS：一元 + 不会把字符串做类型转换（styling 语言要求
+        // 数字/向量），所以 +"" 报错；Number("") 才是产生 0 的类型转换路径。
         assert!(Expression::try_new(r#"+"""#, None)
             .unwrap()
             .evaluate(None)
@@ -280,28 +276,28 @@ mod tests {
         assert_eq!(num("+5"), 5.0);
     }
 
-    // --- Pratt precedence ---------------------------------------------------
+    // --- Pratt 优先级 ---------------------------------------------------
 
     #[test]
     fn pratt_operator_precedence() {
         assert_eq!(num("2 + 3 * 4"), 14.0);
         assert_eq!(num("(2 + 3) * 4"), 20.0);
-        assert_eq!(num("10 - 2 - 3"), 5.0); // left assoc
-        assert_eq!(num("2 * 3 % 4"), 2.0); // * before %... (2*3)=6 %4=2
-        assert!(bool_("1 + 2 === 3")); // arithmetic before comparison
-        assert!(bool_("2 < 3 && 4 < 5")); // comparison before logical
-        assert!(bool_("-2 < 0")); // unary minus
+        assert_eq!(num("10 - 2 - 3"), 5.0); // 左结合
+        assert_eq!(num("2 * 3 % 4"), 2.0); // * 先于 %... (2*3)=6 %4=2
+        assert!(bool_("1 + 2 === 3")); // 算术先于比较
+        assert!(bool_("2 < 3 && 4 < 5")); // 比较先于逻辑
+        assert!(bool_("-2 < 0")); // 一元负号
     }
 
     #[test]
     fn pratt_ternary_conditional() {
         assert_eq!(num("true ? 1 : 2"), 1.0);
         assert_eq!(num("false ? 1 : 2"), 2.0);
-        // right associative
+        // 右结合
         assert_eq!(num("true ? false ? 1 : 2 : 3"), 2.0);
     }
 
-    // --- Builtin function coverage -----------------------------------------
+    // --- 内建函数覆盖 -----------------------------------------
 
     #[test]
     fn builtin_unary_functions() {
@@ -337,7 +333,7 @@ mod tests {
         assert_eq!(num("vec2(4, 5).x"), 4.0);
         assert_eq!(num("vec4(1, 2, 3, 4).w"), 4.0);
         assert_eq!(num("length(vec3(3, 4, 0))"), 5.0);
-        // componentwise arithmetic
+        // 逐分量算术
         assert_eq!(eval("vec2(1, 2) + vec2(3, 4)"), Value::Cartesian2(
             glam::DVec2::new(4.0, 6.0)
         ));
@@ -346,7 +342,7 @@ mod tests {
         ));
     }
 
-    // --- Regex operators / functions ---------------------------------------
+    // --- 正则运算符 / 函数 ---------------------------------------
 
     #[test]
     fn regex_test_and_match_operators() {
@@ -356,7 +352,7 @@ mod tests {
         assert!(bool_("'abc' !~ regExp('z')"));
     }
 
-    // --- Round-trip: create_runtime_ast -> evaluate -------------------------
+    // --- 往返：create_runtime_ast -> evaluate -------------------------
 
     #[test]
     fn create_runtime_ast_evaluate_roundtrip() {
@@ -369,13 +365,13 @@ mod tests {
         assert_eq!(node.evaluate(None).unwrap(), Value::Number(1.0));
     }
 
-    // --- ${...} variable substitution + defines -----------------------------
+    // --- ${...} 变量替换 + defines -----------------------------
 
     #[test]
     fn variable_substitution_against_feature() {
         let f = feature(&[("height", Value::Number(10.0))]);
         assert_eq!(eval_with("${height} * 2", &f), Value::Number(20.0));
-        // missing property -> undefined
+        // 属性缺失 -> undefined
         assert_eq!(eval_with("${missing}", &f), Value::Undefined);
     }
 
@@ -402,18 +398,18 @@ mod tests {
         let mut vars = expr.get_variables();
         vars.sort();
         assert_eq!(vars, vec!["a".to_string(), "b".to_string()]);
-        // `${feature.<prop>}` member access also registers the property name.
+        // `${feature.<prop>}` 成员访问同样会登记属性名。
         let expr2 = Expression::try_new("${feature.height}", None).unwrap();
         assert_eq!(expr2.get_variables(), vec!["height".to_string()]);
     }
 
-    // --- evaluate_color + Expression accessors ------------------------------
+    // --- evaluate_color + Expression 访问器 ------------------------------
 
     #[test]
     fn evaluate_color_returns_dvec4() {
         let expr = Expression::try_new("color('red')", None).unwrap();
         assert_eq!(expr.evaluate_color(None).unwrap(), DVec4::new(1.0, 0.0, 0.0, 1.0));
-        // A non-color expression errors.
+        // 非颜色表达式会报错。
         let expr = Expression::try_new("1 + 1", None).unwrap();
         assert!(expr.evaluate_color(None).is_err());
     }
@@ -428,9 +424,9 @@ mod tests {
 
     #[test]
     fn try_new_reports_parse_errors() {
-        // Unterminated variable placeholder.
+        // 未终止的变量占位符。
         assert!(Expression::try_new("${oops", None).is_err());
-        // `new` panics on the same input.
+        // `new` 在相同输入上会 panic。
         let panicked = std::panic::catch_unwind(|| Expression::new("${oops", None)).is_err();
         assert!(panicked);
     }

@@ -1,28 +1,27 @@
-//! Regular-expression support for the 3D Tiles Styling expression engine.
+//! 3D Tiles Styling 表达式引擎的正则表达式支持。
 //!
-//! Ported from `cesium-rs/crates/cesium-scene/src/expression.rs`:
+//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs`：
 //! - `RegExpValue` (+ `compile`/`test`/`exec_first_capture`/`to_js_string`) ← L47-104
 //! - `node_value_string`                                                     ← L1131-1140
 //! - `parse_regex`                                                           ← L1143-1201
 //!
-//! which is itself the Rust port of upstream
-//! `packages/engine/Source/Scene/Expression.js` (`regExp()` + `addBinaryOp("=~"/"!~", 0)`).
+//! 而后者本身是上游
+//! `packages/engine/Source/Scene/Expression.js`（`regExp()` + `addBinaryOp("=~"/"!~", 0)`）的 Rust 移植。
 //!
-//! # M7-B scope notes
+//! # M7-B 作用域说明
 //!
-//! * The `regex` crate IS available in the offline registry (locked at 1.13.x in
-//!   the workspace), so [`RegExpValue`] holds a **real compiled** [`::regex::Regex`]
-//!   here rather than the M7-A source/flags placeholder. The M7-A placeholder lived
-//!   in `value.rs`; it is relocated here (its natural home per the blueprint, which
-//!   keeps `RegExpValue` beside the regex helpers) and upgraded to compile.
-//! * The external crate is referenced as `::regex` (leading `::`) to disambiguate
-//!   it from this `crate::regex` module.
-//! * DEVIATION (Rust `regex` vs JS `RegExp`): the Rust engine has **no**
-//!   look-behind/look-ahead and no `u`/`y` flags. `compile` accepts `g`/`u`/`y`
-//!   and ignores them (the `regex` crate is stateless, so `g` is meaningless);
-//!   `i`/`m`/`s` map to inline `(?i)`/`(?m)`/`(?s)` prefixes. Upstream spec cases
-//!   relying on look-around or `u`/`y` semantics are expected to be `#[ignore]`d
-//!   in M7-C.
+//! * `regex` crate 在离线 registry 中**确实可用**（工作区里锁定为 1.13.x），
+//!   所以这里 [`RegExpValue`] 持有的是一个**真正编译好的** [`::regex::Regex`]，
+//!   而非 M7-A 的 source/flags 占位。M7-A 的占位原本位于 `value.rs`；它被
+//!   迁移到这里（按 blueprint 它是自然归属，将 `RegExpValue` 与正则辅助函数
+//!   放在一起），并升级为真正编译。
+//! * 外部 crate 以 `::regex`（前导 `::`）引用，以与本页的 `crate::regex`
+//!   模块区分。
+//! * 偏离（Rust `regex` vs JS `RegExp`）：Rust 引擎**没有**后行/先行断言
+//!   （look-behind/look-ahead），也没有 `u`/`y` flag。`compile` 接受 `g`/`u`/`y`
+//!   并忽略它们（`regex` crate 无状态，故 `g` 无意义）；`i`/`m`/`s` 映射为
+//!   内联 `(?i)`/`(?m)`/`(?s)` 前缀。上游依赖 look-around 或 `u`/`y` 语义的
+//!   spec 用例预计在 M7-C 中会被 `#[ignore]`。
 
 use ::regex::Regex;
 
@@ -30,24 +29,23 @@ use crate::ast::{create_runtime_ast, replace_backslashes, ExpressionNodeType, Js
 use crate::value::{number_to_js_string, runtime_error, RuntimeError};
 
 // ---------------------------------------------------------------------------
-// RegExpValue (mirrors a JS `RegExp` produced by `regExp()`)
+// RegExpValue（镜像 `regExp()` 产生的 JS `RegExp`）
 // ---------------------------------------------------------------------------
 
-/// A compiled regular expression value, mirroring a JS `RegExp` produced by the
-/// `regExp()` function.
+/// 一个编译好的正则表达式值，镜像由 `regExp()` 函数产生的 JS `RegExp`。
 #[derive(Debug, Clone)]
 pub struct RegExpValue {
     compiled: Regex,
-    /// The original (backslash-restored) pattern source.
+    /// 原始（反斜杠已还原的）模式 source。
     pub source: String,
-    /// The JS flag string (e.g. `"gi"`).
+    /// JS flag 字符串（例如 `"gi"`）。
     pub flags: String,
 }
 
 impl RegExpValue {
-    /// Compiles a pattern with JS-style flags (`i`, `m`, `s`; `g`/`u`/`y` are
-    /// accepted and ignored since the `regex` crate has no global state).
-    /// Mirrors `new RegExp(pattern, flags)` wrapped in try/catch.
+    /// 用 JS 风格 flags 编译模式（`i`、`m`、`s`；`g`/`u`/`y` 被接受并忽略，
+    /// 因为 `regex` crate 没有全局状态）。
+    /// 镜像包裹在 try/catch 中的 `new RegExp(pattern, flags)`。
     pub fn compile(pattern: &str, flags: &str) -> Result<RegExpValue, RuntimeError> {
         let mut prefix = String::new();
         for c in flags.chars() {
@@ -73,21 +71,21 @@ impl RegExpValue {
         }
     }
 
-    /// Mirrors `RegExp.prototype.test`.
+    /// 镜像 `RegExp.prototype.test`。
     pub fn test(&self, text: &str) -> bool {
         self.compiled.is_match(text)
     }
 
-    /// Mirrors `RegExp.prototype.exec`, returning capture group 1 when present
-    /// (the full match otherwise), as used by `_evaluateRegExpExec`.
+    /// 镜像 `RegExp.prototype.exec`，存在时返回捕获组 1（否则返回整个匹配），
+    /// 供 `_evaluateRegExpExec` 使用。
     pub fn exec_first_capture(&self, text: &str) -> Option<String> {
         let captures = self.compiled.captures(text)?;
         let group = captures.get(1).or_else(|| captures.get(0))?;
         Some(group.as_str().to_string())
     }
 
-    /// Mirrors `String(regExp)` -> `"/pattern/flags"`. JS sorts the flags in
-    /// `dgimsuy` order when stringifying a RegExp.
+    /// 镜像 `String(regExp)` -> `"/pattern/flags"`。JS 在把 RegExp 转成字符串时
+    /// 按 `dgimsuy` 顺序对 flags 排序。
     pub fn to_js_string(&self) -> String {
         let mut sorted: Vec<char> = self.flags.chars().collect();
         sorted.sort_by_key(|c| "dgimsuy".find(*c).unwrap_or(usize::MAX));
@@ -97,11 +95,11 @@ impl RegExpValue {
 }
 
 // ---------------------------------------------------------------------------
-// parse_regex (mirrors `parseRegex`)
+// parse_regex（镜像 `parseRegex`）
 // ---------------------------------------------------------------------------
 
-/// Mirrors `getDefaultValueString` for a literal node: the string a literal
-/// contributes to a `regExp(...)` pattern/flags argument.
+/// 对一个字面量节点镜像 `getDefaultValueString`：字面量在
+/// `regExp(...)` 的 pattern/flags 参数中贡献的字符串。
 pub(crate) fn node_value_string(node: &Node) -> String {
     match &node.value {
         NodeValue::Null => "null".to_string(),
@@ -113,10 +111,10 @@ pub(crate) fn node_value_string(node: &Node) -> String {
     }
 }
 
-/// Mirrors `parseRegex`: builds a LITERAL_REGEX node when the pattern (and
-/// optional flags) are literal, otherwise a REGEX node compiled at evaluate time.
+/// 镜像 `parseRegex`：当 pattern（及可选 flags）是字面量时构建 LITERAL_REGEX
+/// 节点，否则构建在求值时才编译的 REGEX 节点。
 pub(crate) fn parse_regex(arguments: &[JsepNode]) -> Result<Node, RuntimeError> {
-    // no arguments, return default regex
+    // 无参数，返回默认正则
     if arguments.is_empty() {
         let regex = RegExpValue::compile("(?:)", "")?;
         return Ok(Node::new(
@@ -130,7 +128,7 @@ pub(crate) fn parse_regex(arguments: &[JsepNode]) -> Result<Node, RuntimeError> 
 
     let pattern = create_runtime_ast(&arguments[0])?;
 
-    // optional flag argument supplied
+    // 提供了可选的 flag 参数
     if arguments.len() > 1 {
         let flags = create_runtime_ast(&arguments[1])?;
         if pattern.node_type.is_literal_type() && flags.node_type.is_literal_type() {
@@ -155,7 +153,7 @@ pub(crate) fn parse_regex(arguments: &[JsepNode]) -> Result<Node, RuntimeError> 
         ));
     }
 
-    // only pattern argument supplied
+    // 仅提供了 pattern 参数
     if pattern.node_type.is_literal_type() {
         let regex = RegExpValue::compile(&node_value_string(&pattern), "")?;
         return Ok(Node::new(
@@ -192,14 +190,14 @@ mod tests {
     fn compile_flags_case_insensitive() {
         let re = RegExpValue::compile("ab", "i").unwrap();
         assert!(re.test("AB"));
-        // Without the flag it would not match uppercase.
+        // 没有该 flag 时不会匹配大写。
         let plain = RegExpValue::compile("ab", "").unwrap();
         assert!(!plain.test("AB"));
     }
 
     #[test]
     fn compile_global_flag_is_accepted_and_ignored() {
-        // `g` has no meaning for the stateless Rust engine but must not error.
+        // `g` 对无状态的 Rust 引擎无意义，但不得报错。
         let re = RegExpValue::compile("a", "g").unwrap();
         assert!(re.test("aaa"));
         assert_eq!(re.flags, "g");
@@ -213,7 +211,7 @@ mod tests {
 
     #[test]
     fn compile_invalid_pattern_errors() {
-        // Unbalanced group is a compile error surfaced as a RuntimeError.
+        // 括号不配对是编译错误，以 RuntimeError 形式抛出。
         assert!(RegExpValue::compile("(", "").is_err());
     }
 
@@ -221,10 +219,10 @@ mod tests {
     fn exec_first_capture_prefers_group_one() {
         let re = RegExpValue::compile("a(b)c", "").unwrap();
         assert_eq!(re.exec_first_capture("xxabcyy").as_deref(), Some("b"));
-        // No capture group -> whole match.
+        // 无捕获组 -> 整个匹配。
         let re2 = RegExpValue::compile("abc", "").unwrap();
         assert_eq!(re2.exec_first_capture("xxabcyy").as_deref(), Some("abc"));
-        // No match -> None.
+        // 无匹配 -> None。
         assert_eq!(re2.exec_first_capture("zzz"), None);
     }
 
@@ -271,7 +269,7 @@ mod tests {
 
     #[test]
     fn parse_regex_non_literal_pattern_defers_to_runtime() {
-        // A variable pattern cannot be compiled at parse time -> REGEX node.
+        // 变量 pattern 无法在解析期编译 -> REGEX 节点。
         let args = vec![JsepNode::Identifier("czm_pattern".to_string())];
         let node = parse_regex(&args).unwrap();
         assert_eq!(node.node_type, ExpressionNodeType::Regex);

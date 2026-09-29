@@ -1,11 +1,11 @@
-//! Scene/Cesium3DTilesetTraversal + LOD selection → Rust integration tests.
+//! Scene/Cesium3DTilesetTraversal + LOD 选择 → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Cesium3DTileset._computeScreenSpaceError
-//! - Cesium3DTilesetTraversal traversal logic
+//! - Cesium3DTilesetTraversal 遍历逻辑
 //!
-//! A-class tests: SSE formula, tile selection (REPLACE/ADD), distance computation.
-//! C-class omitted: WebGL rendering, actual tileset loading, frame state.
+//! A 类测试：SSE 公式、瓦片选择（REPLACE/ADD）、距离计算。
+//! C 类省略：WebGL 渲染、实际 tileset 加载、帧状态。
 
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_tileset::lod_selection::{
@@ -21,8 +21,8 @@ fn test_camera() -> CameraState {
         DVec3::new(0.0, 0.0, 1000.0),
         DVec3::new(0.0, 0.0, -1.0),
         DVec3::new(0.0, 1.0, 0.0),
-        FRAC_PI_4, // 45 degrees fov
-        1080.0,    // viewport height
+        FRAC_PI_4, // 45 度 fov
+        1080.0,    // 视口高度
     )
 }
 
@@ -62,7 +62,7 @@ fn make_child(error: f64) -> Tile {
     }
 }
 
-// === SSE Formula ===
+// === SSE 公式 ===
 
 #[test]
 fn sse_formula_matches_cesiumjs() {
@@ -143,19 +143,19 @@ fn should_not_refine_without_children() {
     assert!(!should_refine_tile(100.0, 16.0, false));
 }
 
-// === Distance computation ===
+// === 距离计算 ===
 
 #[test]
 fn distance_to_sphere_tile() {
     let camera = test_camera();
     let tile = make_tile(10.0, 100.0, vec![]);
     let distance = compute_distance_to_tile(&camera, &tile, &Ellipsoid::WGS84);
-    // Camera at (0,0,1000), sphere at origin radius 100
+    // 相机在 (0,0,1000)，球体在原点，半径 100
     // Distance = |camera_pos| - radius = 1000 - 100 = 900
     assert!((distance - 900.0).abs() < 1e-10);
 }
 
-// === Tile Selection ===
+// === 瓦片选择 ===
 
 #[test]
 fn select_tiles_renders_leaf_when_sse_low() {
@@ -176,7 +176,7 @@ fn select_tiles_refines_when_sse_high() {
     let context = LodSelectionContext::default();
 
     let selected = select_tiles(&root, &camera, &context, &Ellipsoid::WGS84);
-    // Should refine to child
+    // 应细化到子瓦片
     assert!(selected.iter().any(|t| t.path == vec![0]));
 }
 
@@ -189,21 +189,21 @@ fn select_tiles_add_refinement_renders_parent_and_child() {
     let context = LodSelectionContext::default();
 
     let selected = select_tiles(&root, &camera, &context, &Ellipsoid::WGS84);
-    // ADD mode: both parent and child rendered
-    assert!(selected.iter().any(|t| t.path.is_empty())); // parent
-    assert!(selected.iter().any(|t| t.path == vec![0])); // child
+    // ADD 模式：父与子都渲染
+    assert!(selected.iter().any(|t| t.path.is_empty())); // 父
+    assert!(selected.iter().any(|t| t.path == vec![0])); // 子
 }
 
 #[test]
 fn select_tiles_empty_root_refines_anyway() {
     let mut root = make_tile(10.0, 100.0, vec![make_child(5.0)]);
-    root.content = None; // no content
+    root.content = None; // 无内容
 
     let camera = test_camera();
     let context = LodSelectionContext::default();
 
     let selected = select_tiles(&root, &camera, &context, &Ellipsoid::WGS84);
-    // Empty tile with children: refine regardless of SSE
+    // 空瓦片带子瓦片：无论 SSE 都细化
     assert!(selected.iter().any(|t| t.path == vec![0]));
 }
 

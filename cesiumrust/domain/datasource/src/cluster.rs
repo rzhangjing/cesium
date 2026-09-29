@@ -1,50 +1,51 @@
-//! Entity clustering and entity view (camera follow).
+//! 实体聚类与实体视图（相机跟随）。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `DataSources/EntityCluster.js`
 //! - `DataSources/EntityView.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留 CesiumJS 移植的风格技术债（deferred.md #18）；在 M13 lint 清理
+// 或本文件在其里程碑被重写时重新审视
 #![allow(unused_imports)]
 use crate::entity::Entity;
 use crate::entity_collection::EntityCollection;
 use std::collections::HashMap;
 
-/// Grid cell key: (cell_x, cell_y).
+/// 网格单元键：(cell_x, cell_y)。
 type GridKey = (i64, i64);
-/// Entity position entry: (entity_id, position).
+/// 实体位置条目：(entity_id, position)。
 type EntityPos = (String, [f64; 3]);
-/// Spatial hash grid for clustering.
+/// 用于聚类的空间哈希网格。
 type ClusterGrid = HashMap<GridKey, Vec<EntityPos>>;
 
-/// A cluster of nearby entities.
+/// 一簇相邻实体。
 #[derive(Debug, Clone)]
 pub struct Cluster {
-    /// The centroid position [lon_rad, lat_rad, height_m].
+    /// 质心位置 [lon_rad, lat_rad, height_m]。
     pub position: [f64; 3],
-    /// Entity IDs in this cluster.
+    /// 此簇中的实体 ID。
     pub entity_ids: Vec<String>,
-    /// Number of entities in the cluster.
+    /// 簇中实体数量。
     pub count: usize,
 }
 
 impl Cluster {
-    /// Returns true if this cluster contains only one entity.
+    /// 若此簇仅包含一个实体则返回 true。
     pub fn is_single(&self) -> bool {
         self.count <= 1
     }
 }
 
-/// Configuration for entity clustering.
+/// 实体聚类的配置。
 ///
-/// Maps to CesiumJS `DataSources/EntityCluster.js`
+/// 映射到 CesiumJS `DataSources/EntityCluster.js`
 #[derive(Debug, Clone)]
 pub struct EntityClusterOptions {
-    /// Whether clustering is enabled.
+    /// 是否启用聚类。
     pub enabled: bool,
-    /// The pixel range for clustering (entities within this range are clustered).
+    /// 聚类的像素范围（在此范围内的实体会被聚为一簇）。
     pub pixel_range: f64,
-    /// The minimum number of entities to form a cluster.
+    /// 形成一个簇所需的最少实体数量。
     pub minimum_cluster_size: usize,
 }
 
@@ -58,36 +59,36 @@ impl Default for EntityClusterOptions {
     }
 }
 
-/// Entity clustering engine.
+/// 实体聚类引擎。
 ///
-/// Groups nearby entities into clusters based on screen-space proximity.
-/// In this domain implementation, we use a simple grid-based spatial hash
-/// in cartographic space as an approximation of screen-space clustering.
+/// 基于屏幕空间邻近度将相邻实体分为若干簇。
+/// 在本领域实现中，我们在地图空间中使用一个简单的基于网格的空间哈希，
+/// 作为屏幕空间聚类的近似。
 ///
-/// Maps to CesiumJS `DataSources/EntityCluster.js`
+/// 映射到 CesiumJS `DataSources/EntityCluster.js`
 #[derive(Debug)]
 pub struct EntityCluster {
-    /// Cluster options.
+    /// 聚类选项。
     pub options: EntityClusterOptions,
-    /// Current clusters.
+    /// 当前的簇。
     clusters: Vec<Cluster>,
-    /// Grid cell size in radians (approximation of pixel range).
+    /// 网格单元大小（以弧度计，为像素范围的近似）。
     cell_size: f64,
 }
 
 impl EntityCluster {
-    /// Creates a new entity cluster with default options.
+    /// 使用默认选项创建新的实体聚类。
     pub fn new() -> Self {
         Self {
             options: EntityClusterOptions::default(),
             clusters: Vec::new(),
-            cell_size: 0.01, // ~0.57 degrees
+            cell_size: 0.01, // 约 0.57 度
         }
     }
 
-    /// Creates a new entity cluster with custom options.
+    /// 使用自定义选项创建新的实体聚类。
     pub fn with_options(options: EntityClusterOptions) -> Self {
-        let cell_size = options.pixel_range * 0.000125; // Approximate conversion
+        let cell_size = options.pixel_range * 0.000125; // 近似换算
         Self {
             options,
             clusters: Vec::new(),
@@ -95,9 +96,9 @@ impl EntityCluster {
         }
     }
 
-    /// Updates clusters for the given entities at the given time.
+    /// 在给定时间处为给定实体更新各簇。
     ///
-    /// Uses a grid-based spatial hash to group nearby entities.
+    /// 使用基于网格的空间哈希来将相邻实体分组。
     pub fn update(&mut self, entities: &EntityCollection, time: f64) {
         self.clusters.clear();
 
@@ -105,7 +106,7 @@ impl EntityCluster {
             return;
         }
 
-        // Grid-based clustering
+        // 基于网格的聚类
         let mut grid: ClusterGrid = HashMap::new();
 
         for entity in entities.values() {
@@ -122,10 +123,10 @@ impl EntityCluster {
             }
         }
 
-        // Convert grid cells to clusters
+        // 将网格单元转换为簇
         for ((_cx, _cy), members) in grid {
             if members.len() >= self.options.minimum_cluster_size {
-                // Compute centroid
+                // 计算质心
                 let count = members.len();
                 let mut lon_sum = 0.0;
                 let mut lat_sum = 0.0;
@@ -146,7 +147,7 @@ impl EntityCluster {
                     count,
                 });
             } else {
-                // Single entities (not clustered)
+                // 单个实体（未被聚类）
                 for (id, pos) in members {
                     self.clusters.push(Cluster {
                         position: pos,
@@ -158,22 +159,22 @@ impl EntityCluster {
         }
     }
 
-    /// Gets the current clusters.
+    /// 获取当前的各簇。
     pub fn clusters(&self) -> &[Cluster] {
         &self.clusters
     }
 
-    /// Number of clusters.
+    /// 簇的数量。
     pub fn cluster_count(&self) -> usize {
         self.clusters.len()
     }
 
-    /// Number of actual clusters (count > 1).
+    /// 实际簇的数量（count > 1）。
     pub fn actual_cluster_count(&self) -> usize {
         self.clusters.iter().filter(|c| !c.is_single()).count()
     }
 
-    /// Total number of clustered entities.
+    /// 被聚类的实体总数。
     pub fn clustered_entity_count(&self) -> usize {
         self.clusters.iter().filter(|c| !c.is_single()).map(|c| c.count).sum()
     }
@@ -185,37 +186,37 @@ impl Default for EntityCluster {
     }
 }
 
-/// Camera follow mode for EntityView.
+/// EntityView 的相机跟随模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EntityViewMode {
-    /// Camera follows the entity position.
+    /// 相机跟随实体位置。
     #[default]
     Follow,
-    /// Camera tracks the entity with a fixed offset.
+    /// 相机以固定偏移追踪实体。
     Track,
-    /// Camera looks at the entity from a distance.
+    /// 相机从远处注视实体。
     LookAt,
 }
 
-/// Entity view: makes the camera follow/track an entity.
+/// 实体视图：使相机跟随/追踪一个实体。
 ///
-/// Maps to CesiumJS `DataSources/EntityView.js`
+/// 映射到 CesiumJS `DataSources/EntityView.js`
 #[derive(Debug, Clone)]
 pub struct EntityView {
-    /// The entity ID being followed.
+    /// 被跟随的实体 ID。
     pub entity_id: String,
-    /// The view mode.
+    /// 视图模式。
     pub mode: EntityViewMode,
-    /// Offset from the entity [x, y, z] in meters (for Track/LookAt modes).
+    /// 相对于实体的偏移 [x, y, z]，以米计（用于 Track/LookAt 模式）。
     pub offset: [f64; 3],
-    /// Last known entity position [x, y, z] in Cartesian3.
+    /// 最后已知的实体位置 [x, y, z]，以 Cartesian3 表示。
     pub last_position: [f64; 3],
-    /// Whether the view is active.
+    /// 视图是否处于活动状态。
     pub active: bool,
 }
 
 impl EntityView {
-    /// Creates a new entity view that follows the given entity.
+    /// 创建一个新的实体视图，跟随给定实体。
     pub fn new(entity_id: impl Into<String>) -> Self {
         Self {
             entity_id: entity_id.into(),
@@ -226,7 +227,7 @@ impl EntityView {
         }
     }
 
-    /// Creates a tracking entity view with an offset.
+    /// 创建一个带偏移的追踪型实体视图。
     pub fn tracking(entity_id: impl Into<String>, offset: [f64; 3]) -> Self {
         Self {
             entity_id: entity_id.into(),
@@ -237,9 +238,9 @@ impl EntityView {
         }
     }
 
-    /// Updates the view for the given entity at the given time.
+    /// 在给定时间处为给定实体更新视图。
     ///
-    /// Returns the target camera position (entity position + offset).
+    /// 返回目标相机位置（实体位置 + 偏移）。
     pub fn update(
         &mut self,
         entity: &Entity,
@@ -268,12 +269,12 @@ impl EntityView {
         Some(target)
     }
 
-    /// Deactivates the view.
+    /// 停用视图。
     pub fn deactivate(&mut self) {
         self.active = false;
     }
 
-    /// Activates the view.
+    /// 激活视图。
     pub fn activate(&mut self) {
         self.active = true;
     }
@@ -287,11 +288,11 @@ mod tests {
 
     fn make_cluster_entities() -> EntityCollection {
         let mut collection = EntityCollection::new();
-        // Group of 3 nearby entities
+        // 一组 3 个相邻实体
         collection.add(Entity::new("p1").with_position(0.0, 0.0, 0.0).with_point(PointGraphics::default()));
         collection.add(Entity::new("p2").with_position(0.001, 0.001, 0.0).with_point(PointGraphics::default()));
         collection.add(Entity::new("p3").with_position(0.002, 0.002, 0.0).with_point(PointGraphics::default()));
-        // Isolated entity far away
+        // 孤立的实体，距离较远
         collection.add(Entity::new("p4").with_position(1.0, 1.0, 0.0).with_point(PointGraphics::default()));
         collection
     }
@@ -303,9 +304,9 @@ mod tests {
 
         cluster.update(&entities, 0.0);
 
-        // Should have clusters
+        // 应含有若干簇
         assert!(cluster.cluster_count() > 0);
-        // At least one actual cluster (count > 1)
+        // 至少一个实际的簇（count > 1）
         assert!(cluster.actual_cluster_count() >= 1);
     }
 
@@ -326,12 +327,12 @@ mod tests {
         let mut cluster = EntityCluster::with_options(EntityClusterOptions {
             enabled: true,
             pixel_range: 80.0,
-            minimum_cluster_size: 5, // Require 5 to cluster
+            minimum_cluster_size: 5, // 需要 5 个才聚类
         });
         let entities = make_cluster_entities();
 
         cluster.update(&entities, 0.0);
-        // No clusters should form (max 3 nearby)
+        // 不应形成任何簇（最多 3 个相邻）
         assert_eq!(cluster.actual_cluster_count(), 0);
     }
 
@@ -354,9 +355,9 @@ mod tests {
         let mut view = EntityView::new("vehicle");
         let target = view.update(&entity, 0.0, &ellipsoid).unwrap();
 
-        // Position should be on the ellipsoid surface + 1000m
+        // 位置应位于椭球表面 + 1000m
         let dist = (target[0] * target[0] + target[1] * target[1] + target[2] * target[2]).sqrt();
-        assert!(dist > 6371000.0); // Earth radius + height
+        assert!(dist > 6371000.0); // 地球半径 + 高度
     }
 
     #[test]
@@ -367,7 +368,7 @@ mod tests {
         let mut view = EntityView::tracking("sat", [1000.0, 0.0, 0.0]);
         let target = view.update(&entity, 0.0, &ellipsoid).unwrap();
 
-        // Target should be offset from entity position
+        // 目标应相对实体位置有偏移
         let entity_pos = ellipsoid.cartographic_to_cartesian(
             &cesium_geospatial::Cartographic::from_radians(0.0, 0.0, 0.0),
         );
@@ -397,10 +398,10 @@ mod tests {
 
         cluster.update(&entities, 0.0);
 
-        // Find the cluster with both entities
+        // 找到同时包含两个实体的簇
         let multi = cluster.clusters().iter().find(|c| c.count == 2);
         if let Some(c) = multi {
-            // Centroid should be approximately at (0.001, 0.001)
+            // 质心应大致位于 (0.001, 0.001)
             assert!((c.position[0] - 0.001).abs() < 0.002);
             assert!((c.position[1] - 0.001).abs() < 0.002);
         }

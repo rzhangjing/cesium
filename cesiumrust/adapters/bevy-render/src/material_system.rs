@@ -1,10 +1,9 @@
-//! Bridge domain Material → Bevy FabricMaterial.
+//! 桥接领域 Material → Bevy FabricMaterial。
 //!
-//! Provides the [`CesiumMaterialPlugin`] which reads entity components and
-//! applies Fabric procedural materials to Bevy meshes, plus per-frame uniform
-//! updates (e.g. water animation time).
+//! 提供 [`CesiumMaterialPlugin`]，它读取实体组件并将 Fabric 程序化材质
+//! 应用到 Bevy mesh，外加逐帧 uniform 更新（例如水的动画时间）。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格债（deferred.md #18）；在 M13 lint 清理时或本文件在其里程碑被重写时重新审视
 #![allow(clippy::type_complexity)]
 use bevy::prelude::*;
 use cesium_material::{MaterialSystem, UniformValue};
@@ -15,22 +14,21 @@ use crate::fabric_material::{
 };
 use cesium_shadow::{OceanConfig, OceanSurface};
 
-/// Component that references a CesiumJS Fabric material to apply to an entity.
+/// 引用一个 CesiumJS Fabric 材质以应用到实体的组件。
 ///
-/// Attach this to any entity with a [`MeshMaterial3d<FabricMaterial>`] target
-/// (or insert [`FabricMaterial`] directly) to have the material generated from
-/// the domain layer.
+/// 将其附加到任何带有 [`MeshMaterial3d<FabricMaterial>`] 目标的实体
+/// （或直接插入 [`FabricMaterial`]），材质便会从领域层生成。
 #[derive(Component, Clone, Debug)]
 pub struct MaterialRef {
-    /// The CesiumJS material type name (e.g. `"ElevationContour"`,
-    /// `"RimLighting"`, `"Color"`).
+    /// CesiumJS 材质类型名（例如 `"ElevationContour"`、
+    /// `"RimLighting"`、`"Color"`）。
     pub type_name: String,
-    /// Optional uniform overrides (keyed by Fabric uniform name).
+    /// 可选的 uniform 覆盖（以 Fabric uniform 名为键）。
     pub uniforms: std::collections::BTreeMap<String, UniformValue>,
 }
 
 impl MaterialRef {
-    /// Create a material reference from a type name with default uniforms.
+    /// 从类型名创建一个使用默认 uniform 的材质引用。
     pub fn new(type_name: impl Into<String>) -> Self {
         Self {
             type_name: type_name.into(),
@@ -38,7 +36,7 @@ impl MaterialRef {
         }
     }
 
-    /// Create with uniform overrides.
+    /// 创建并带有 uniform 覆盖。
     pub fn with_uniforms(
         type_name: impl Into<String>,
         uniforms: std::collections::BTreeMap<String, UniformValue>,
@@ -50,45 +48,41 @@ impl MaterialRef {
     }
 }
 
-/// Resource holding time for animated materials (e.g. Water).
+/// 为动画材质保存时间的资源（例如 Water）。
 #[derive(Resource, Default)]
 pub struct MaterialAnimationTime {
-    /// Accumulated delta-seconds since startup (legacy wall-clock field).
+    /// 自启动以来累积的增量秒（遗留的墙钟字段）。
     pub time: f32,
-    /// Monotonic frame counter mirroring CesiumJS `czm_frameNumber`
-    /// (Water.glsl L18: `time = czm_frameNumber * animationSpeed`).
-    /// DEVIATION: Water animation now advances per *frame* (matching CesiumJS)
-    /// rather than per accumulated second; see docs/deviations.md#dev-019.
-    /// FROZEN under FIXED_TIME (`delta_secs() == 0.0`) — see [`advance_animation`].
+    /// 镜像 CesiumJS `czm_frameNumber` 的单调帧计数器
+    /// （Water.glsl L18：`time = czm_frameNumber * animationSpeed`）。
+    /// DEVIATION：Water 动画现按*帧*推进（匹配 CesiumJS），
+    /// 而非按累积秒；参见 docs/deviations.md#dev-019。
+    /// 在 FIXED_TIME（`delta_secs() == 0.0`）下冻结 —— 见 [`advance_animation`]。
     pub frame_number: u32,
-    /// The `frame_number` last published into Water's `extra_c.z` (Ryan L6).
-    /// `None` until the first write; equal to the current frame ⇒ the write is
-    /// skipped so the bind group is not needlessly re-encoded.
+    /// 最后发布到 Water 的 `extra_c.z` 的 `frame_number`（Ryan L6）。
+    /// 首次写入前为 `None`；等于当前帧 ⇒ 跳过该次写入，
+    /// 以免无谓地重新编码 bind group。
     last_written_frame: Option<u32>,
 }
 
-/// Water animation frame period (Ryan L4).
+/// Water 动画的帧周期（Ryan L4）。
 ///
-/// `extra_c.z` is written as `frame_number as f32`. f32 represents every integer
-/// exactly only up to 2^24 (16_777_216 ≈ 3.2 days @ 60 fps); past that the
-/// counter stops advancing in f32 and the Water animation freezes, and the `u32`
-/// itself wraps after ~2.3 years. Water.glsl consumes `time` only through
-/// `fract()` (czm_get_water_noise multiplies `time` by the sampling directions
-/// then `fract`s the UVs), so the visible motion is periodic and the counter can
-/// be reduced modulo a period far below 2^24. 2^20 (1_048_576 ≈ 4.8 h @ 60 fps)
-/// keeps `extra_c.z` exactly representable and bounds the wrap to one
-/// imperceptible phase step.
+/// `extra_c.z` 以 `frame_number as f32` 写入。f32 仅在不超过 2^24
+/// （16_777_216 ≈ 3.2 天 @ 60 fps）时才能精确表示每个整数；超过该值后
+/// 计数器在 f32 中停止推进、Water 动画冻结，而 `u32` 本身在约 2.3 年后回绕。
+/// Water.glsl 仅通过 `fract()` 消费 `time`（czm_get_water_noise 将 `time`
+/// 乘以采样方向后对 UV 取 `fract`），因此可见运动是周期性的，计数器可以对
+/// 一个远低于 2^24 的周期取模。2^20（1_048_576 ≈ 4.8 小时 @ 60 fps）
+/// 使 `extra_c.z` 保持精确可表示，并将回绕限制为一次难以察觉的相位跳变。
 pub const WATER_FRAME_PERIOD: u32 = 1 << 20;
 
-/// Advance the material animation clock by `delta_secs`, returning the frame
-/// counter to publish into Water's `extra_c.z`.
+/// 将材质动画时钟推进 `delta_secs`，返回要发布到 Water 的 `extra_c.z` 的帧计数器。
 ///
-/// Ryan M3 / dev-019 方案 A: under FIXED_TIME (`delta_secs() == 0.0`, which
-/// `main.rs` sets via `TimeUpdateStrategy::ManualDuration(ZERO)`) the frame
-/// counter is FROZEN, so the Water phase — and therefore every captured baseline
-/// — is bit-reproducible instead of drifting with the number of Update ticks that
-/// ran before the screenshot. The three Water close-ups stay distinguishable
-/// because they differ by preset (amplitude/frequency), not by phase.
+/// Ryan M3 / dev-019 方案 A：在 FIXED_TIME（`delta_secs() == 0.0`，`main.rs`
+/// 通过 `TimeUpdateStrategy::ManualDuration(ZERO)` 设置）下帧计数器被冻结，
+/// 因此 Water 相位 —— 以及每个捕获的基线 —— 都是位可复现的，而不会随截图前
+/// 运行的 Update tick 数漂移。三张 Water 特写仍可区分，因为它们按预设
+/// （振幅/频率）不同，而非按相位不同。
 fn advance_animation(anim: &mut MaterialAnimationTime, delta_secs: f32) -> u32 {
     anim.time += delta_secs;
     if delta_secs != 0.0 {
@@ -97,45 +91,41 @@ fn advance_animation(anim: &mut MaterialAnimationTime, delta_secs: f32) -> u32 {
     anim.frame_number
 }
 
-/// Cached handles of every [`FabricMaterial`] whose `kind == Water` (Ryan L6).
+/// 缓存每个 `kind == Water` 的 [`FabricMaterial`] 的 handle（Ryan L6）。
 ///
-/// `update_material_uniforms` used to `iter_mut()` the whole
-/// `Assets<FabricMaterial>` every frame; each `Mut<T>` drop unconditionally flags
-/// the asset changed, so all Water materials were re-dirtied → `as_bind_group`
-/// re-encoded the 192 B uniform and rebuilt the bind group every frame. We cache
-/// the Water handles here and `get_mut` only those, and only when the published
-/// frame actually changed.
+/// `update_material_uniforms` 过去每帧都对整个 `Assets<FabricMaterial>`
+/// 调用 `iter_mut()`；每次 `Mut<T>` drop 都无条件地将资产标记为已改变，
+/// 于是所有 Water 材质被重新弄脏 → `as_bind_group` 每帧重新编码 192 B 的
+/// uniform 并重建 bind group。我们在此缓存 Water 的 handle，仅对这些
+/// `get_mut`，且仅当发布的帧确实改变时才做。
 ///
-/// The cache self-heals: it is rebuilt (via a non-dirtying immutable `iter()`)
-/// whenever `Assets<FabricMaterial>::len()` changes, so Water materials spawned
-/// directly by the application showcase — which bypass `apply_fabric_materials` —
-/// are picked up too.
+/// 该缓存能自愈：只要 `Assets<FabricMaterial>::len()` 变化，它就（通过一次
+/// 不弄脏的不可变 `iter()`）被重建，因此由应用 showcase 直接 spawn ——
+/// 绕过 `apply_fabric_materials` —— 的 Water 材质也会被纳入。
 #[derive(Resource, Default)]
 pub struct WaterMaterialHandles {
     handles: Vec<Handle<FabricMaterial>>,
     known_len: usize,
 }
 
-/// Shared Water normal/specular maps for the DEFAULT [`OceanConfig`] (Daniel L4).
+/// 面向默认 [`OceanConfig`] 的共享 Water 法线/镜面贴图（Daniel L4）。
 ///
-/// `apply_fabric_materials` used to build a fresh
-/// `OceanSurface::new(OceanConfig::default())` plus two 128×128 (64 KB each)
-/// procedural textures for *every* Water entity — O(N) byte-identical texture
-/// pairs for N water entities, since the default config is constant. The first
-/// Water entity generates the pair once here; later default-config entities reuse
-/// the same handles. Non-default configs (the showcase's Calm/Rough presets) still
-/// generate per-entity.
+/// `apply_fabric_materials` 过去为*每个* Water 实体都构建一个新的
+/// `OceanSurface::new(OceanConfig::default())` 加两张 128×128（各 64 KB）
+/// 程序化纹理 —— 对 N 个水体实体产生 O(N) 个逐字节相同的贴图对，因为默认
+/// 配置是常量。第一个 Water 实体在此生成该贴图对一次；后续默认配置实体复用
+/// 相同的 handle。非默认配置（showcase 的 Calm/Rough 预设）仍按实体生成。
 #[derive(Resource, Default)]
 pub struct SharedWaterTextures {
     normal_map: Option<Handle<Image>>,
     specular_map: Option<Handle<Image>>,
 }
 
-/// Plugin bridging domain [`cesium_material::Material`] → Bevy [`FabricMaterial`].
+/// 桥接领域 [`cesium_material::Material`] → Bevy [`FabricMaterial`] 的插件。
 ///
-/// Adds systems that:
-/// - Apply [`MaterialRef`] components to entities as [`FabricMaterial`] instances.
-/// - Update animated uniform values per-frame (water time, etc.).
+/// 添加如下系统：
+/// - 将 [`MaterialRef`] 组件作为 [`FabricMaterial`] 实例应用到实体。
+/// - 逐帧更新动画 uniform 值（水时间等）。
 pub struct CesiumMaterialPlugin;
 
 impl Plugin for CesiumMaterialPlugin {
@@ -145,13 +135,12 @@ impl Plugin for CesiumMaterialPlugin {
             .init_resource::<WaterMaterialHandles>()
             .init_resource::<SharedWaterTextures>();
 
-        // The two Update systems dereference `Assets<Image>` /
-        // `Assets<FabricMaterial>` and `Time`, all absent under a headless
-        // `MinimalPlugins` app (no AssetPlugin) — running them there panics. Gate
-        // registration on the same `asset_backend_available` predicate
-        // `FabricMaterialPlugin` already uses for `MaterialPlugin`, so headless apps
-        // (and the Mark M-3 showcase smoke test) install the plugin as a silent
-        // no-op while the GPU path is unchanged (pixel-neutral).
+        // 这两个 Update 系统解引用 `Assets<Image>` / `Assets<FabricMaterial>`
+        // 和 `Time`，它们在无头 `MinimalPlugins` app（无 AssetPlugin）下均缺失
+        // —— 在那里运行会 panic。注册依据 `FabricMaterialPlugin` 已用于
+        // `MaterialPlugin` 的同一个 `asset_backend_available` 谓词进行门控，
+        // 因此无头 app（以及 Mark M-3 showcase 冒烟测试）会将该插件安装为一个
+        // 静默空操作，而 GPU 路径保持不变（像素中性）。
         if crate::shader_registry::asset_backend_available(app) {
             app.add_systems(
                 Update,
@@ -161,11 +150,10 @@ impl Plugin for CesiumMaterialPlugin {
     }
 }
 
-/// System: for entities with a [`MaterialRef`] component, look up the material
-/// type in the domain [`MaterialSystem`], extract uniform values, and create a
-/// Bevy [`FabricMaterial`] instance.
+/// 系统：对于带有 [`MaterialRef`] 组件的实体，在领域 [`MaterialSystem`] 中查找
+/// 材质类型，提取 uniform 值，并创建一个 Bevy [`FabricMaterial`] 实例。
 ///
-/// This runs only when a [`MaterialRef`] is added or changed (via `Changed<MaterialRef>`).
+/// 仅当 [`MaterialRef`] 被添加或改变时运行（通过 `Changed<MaterialRef>`）。
 fn apply_fabric_materials(
     mut commands: Commands,
     material_system: Option<Res<MaterialSystemResource>>,
@@ -182,17 +170,17 @@ fn apply_fabric_materials(
         }
     };
 
-    // Nothing added/changed this frame → skip. Avoids allocating a fresh
-    // fallback image into `Assets<Image>` every frame (M5-D).
+    // 本帧无新增/改变 → 跳过。避免每帧都向 `Assets<Image>` 分配一个新的
+    // 回退图像（M5-D）。
     if query.is_empty() {
         return;
     }
 
-    // Create a 1x1 white fallback image for materials that need a texture.
-    // Materials that don't use textures (Color, etc.) ignore this binding.
-    // NOTE: Rgba8UnormSrgb is correct for this *colour* fallback (imagery-like),
-    // but Water's normalMap/specularMap are LINEAR and use Rgba8Unorm below —
-    // never propagate this Srgb format to those (sRGB red-line).
+    // 为需要纹理的材质创建一个 1x1 白色回退图像。
+    // 不使用纹理的材质（Color 等）会忽略此绑定。
+    // 注意：Rgba8UnormSrgb 对这个*颜色*回退是正确的（类影像），
+    // 但 Water 的 normalMap/specularMap 是 LINEAR 且在下方使用 Rgba8Unorm ——
+    // 切勿将该 Srgb 格式传播到它们（sRGB 红线）。
     let fallback_img = Image::new(
         bevy::render::render_resource::Extent3d {
             width: 1,
@@ -220,13 +208,13 @@ fn apply_fabric_materials(
 
         let fabric_material =
             if FabricKind::from_type_name(&mat_ref.type_name) == FabricKind::Water {
-                // M5-D: Water binds real procedurally-generated normal/specular
-                // maps (Rgba8Unorm LINEAR, from the domain cesium_shadow
-                // OceanSurface); other kinds use the fallback for all bindings.
+                // M5-D：Water 绑定真实的程序化生成的法线/镜面贴图
+                // （Rgba8Unorm LINEAR，来自领域 cesium_shadow OceanSurface）；
+                // 其他类型对所有绑定使用回退。
                 //
-                // Daniel L4: the default `OceanConfig` is constant, so its
-                // 2×(128×128) texture pair is generated ONCE and shared across all
-                // default-config Water entities instead of O(N) identical copies.
+                // Daniel L4：默认 `OceanConfig` 是常量，因此其 2×(128×128)
+                // 纹理对仅生成一次，并在所有默认配置的 Water 实体间共享，
+                // 而非产生 O(N) 个相同副本。
                 let (normal_map, specular_map) =
                     match (&shared_water.normal_map, &shared_water.specular_map) {
                         (Some(n), Some(s)) => (n.clone(), s.clone()),
@@ -253,30 +241,29 @@ fn apply_fabric_materials(
     }
 }
 
-/// System: per-frame uniform updates for animated materials.
+/// 系统：为动画材质做逐帧 uniform 更新。
 ///
-/// Currently updates:
-/// - Water time animation
+/// 当前更新：
+/// - Water 时间动画
 fn update_material_uniforms(
     time: Res<Time>,
     mut animation_time: ResMut<MaterialAnimationTime>,
     mut materials: ResMut<Assets<FabricMaterial>>,
     mut water_handles: ResMut<WaterMaterialHandles>,
 ) {
-    // Ryan M3 / dev-019 方案 A: advance the clock, FREEZING the frame counter when
-    // FIXED_TIME holds (`delta_secs() == 0.0`) so the Water phase is bit-reproducible.
+    // Ryan M3 / dev-019 方案 A：推进时钟，并在 FIXED_TIME 成立（`delta_secs() == 0.0`）
+    // 时冻结帧计数器，使 Water 相位位可复现。
     let frame_number = advance_animation(&mut animation_time, time.delta_secs());
 
-    // Daniel M5: `extra_c.z` now carries a per-FRAME counter mirroring CesiumJS
-    // `czm_frameNumber` (Water.glsl L18 `time = czm_frameNumber * animationSpeed`),
-    // NOT accumulated seconds. Water animation is therefore frame-rate dependent
-    // (60 fps advances the waveform twice as fast as 30 fps). Any Water baseline
-    // capture MUST lock the frame index, not wall time — see the note in
-    // specs/scripts/v2_water.toml and docs/deviations.md#dev-003 / #dev-019.
+    // Daniel M5：`extra_c.z` 现承载一个按帧的计数器，镜像 CesiumJS 的
+    // `czm_frameNumber`（Water.glsl L18 `time = czm_frameNumber * animationSpeed`），
+    // 而非累积秒。因此 Water 动画依赖帧率（60 fps 推进波形的速度是 30 fps 的两倍）。
+    // 任何 Water 基线捕获都必须锁定帧索引，而非墙钟时间 —— 见 specs/scripts/v2_water.toml
+    // 与 docs/deviations.md#dev-003 / #dev-019 中的说明。
 
-    // Ryan L6: rebuild the Water-handle cache only when the asset set changes (a
-    // spawn/removal), via a non-dirtying immutable `iter()`. Covers both the
-    // `apply_fabric_materials` path and materials the showcase spawns directly.
+    // Ryan L6：仅当资产集合变化（一次 spawn/removal）时，通过一次不弄脏的
+    // 不可变 `iter()` 重建 Water-handle 缓存。覆盖 `apply_fabric_materials` 路径
+    // 以及 showcase 直接 spawn 的材质。
     let current_len = materials.len();
     if current_len != water_handles.known_len {
         water_handles.handles = materials
@@ -287,15 +274,14 @@ fn update_material_uniforms(
         water_handles.known_len = current_len;
     }
 
-    // Skip the write entirely when the published frame is unchanged (FIXED_TIME, or
-    // any frame that did not advance) so the bind group is not needlessly
-    // re-encoded and the Water materials are not spuriously dirtied (Ryan L6).
+    // 当发布的帧未改变时（FIXED_TIME，或未推进的任何帧）完全跳过写入，
+    // 使 bind group 不被无谓地重新编码、Water 材质不被虚假地弄脏（Ryan L6）。
     if animation_time.last_written_frame == Some(frame_number) {
         return;
     }
 
-    // Ryan L4: reduce modulo WATER_FRAME_PERIOD so `frame as f32` stays exact well
-    // beyond the 2^24 f32 integer-precision cliff.
+    // Ryan L4：对 WATER_FRAME_PERIOD 取模，使 `frame as f32` 在远超 2^24 的
+    // f32 整数精度悬崖处仍保持精确。
     let phase = (frame_number % WATER_FRAME_PERIOD) as f32;
     for handle in &water_handles.handles {
         if let Some(material) = materials.get_mut(handle) {
@@ -305,15 +291,15 @@ fn update_material_uniforms(
     animation_time.last_written_frame = Some(frame_number);
 }
 
-/// Resource wrapping a [`MaterialSystem`] so it can be used as a Bevy resource.
+/// 包装 [`MaterialSystem`] 的资源，使其可作为 Bevy 资源使用。
 ///
-/// The [`MaterialSystem`] holds the cached built-in material type definitions
-/// (GLSL source + default uniforms) and is required by [`apply_fabric_materials`].
+/// [`MaterialSystem`] 持有缓存的内置材质类型定义（GLSL 源 + 默认 uniform），
+/// 并被 [`apply_fabric_materials`] 所需。
 #[derive(Resource)]
 pub struct MaterialSystemResource(pub MaterialSystem);
 
 impl MaterialSystemResource {
-    /// Create with all built-in CesiumJS material types pre-registered.
+    /// 创建并预注册所有内置 CesiumJS 材质类型。
     pub fn with_builtin_materials() -> Self {
         Self(MaterialSystem::with_builtin_materials())
     }
@@ -331,18 +317,16 @@ mod tests {
     use bevy::time::TimeUpdateStrategy;
     use std::time::Duration;
 
-    /// Headless regression guard for `docs/deviations.md#dev-005` /
-    /// `docs/deferred.md#6` (resolved at M5.1).
+    /// 针对 `docs/deviations.md#dev-005` / `docs/deferred.md#6`（在 M5.1 解决）
+    /// 的无头回归守卫。
     ///
-    /// Replicates the exact scenario of the four
-    /// `specs/tests/integration/material_integration_test.rs` cases: a
-    /// `create_test_app()`-style app (`MinimalPlugins` + [`CesiumCorePlugin`], with
-    /// no `AssetPlugin` / `RenderApp` / wgpu device) plus [`CesiumMaterialPlugin`].
-    /// Before M5.1 this panicked inside `FabricMaterialPlugin::build`
-    /// (`load_internal_asset!` → missing `Assets<Shader>`, then `MaterialPlugin`
-    /// → missing `AssetServer`). The headless-safe guards in
-    /// [`crate::shader_registry`] make registration a no-op instead, so the plugin
-    /// installs and the CPU-side material API stays usable.
+    /// 复现四个 `specs/tests/integration/material_integration_test.rs` 用例的
+    /// 确切场景：一个 `create_test_app()` 风格的 app（`MinimalPlugins` +
+    /// [`CesiumCorePlugin`]，无 `AssetPlugin` / `RenderApp` / wgpu device）
+    /// 加上 [`CesiumMaterialPlugin`]。在 M5.1 之前，这会在 `FabricMaterialPlugin::build`
+    /// 内部 panic（`load_internal_asset!` → 缺失 `Assets<Shader>`，随后
+    /// `MaterialPlugin` → 缺失 `AssetServer`）。[`crate::shader_registry`] 中的
+    /// 无头安好守卫改为使注册成为空操作，因此插件得以安装，且 CPU 侧的材质 API 保持可用。
     #[test]
     fn cesium_material_plugin_headless_minimal_does_not_panic() {
         let mut app = App::new();
@@ -374,32 +358,32 @@ mod tests {
         assert!(got2.uniforms.contains_key("color"));
     }
 
-    /// Ryan M3 / dev-019 方案 A — the pure clock-advance helper: under FIXED_TIME
-    /// (`delta_secs() == 0.0`) the frame counter is FROZEN; a live clock advances.
+    /// Ryan M3 / dev-019 方案 A —— 纯时钟推进辅助函数：在 FIXED_TIME
+    /// （`delta_secs() == 0.0`）下帧计数器被冻结；活跃时钟则推进。
     #[test]
     fn advance_animation_freezes_frame_number_under_fixed_time() {
         let mut anim = MaterialAnimationTime::default();
-        // FIXED_TIME: delta_secs() == 0.0 → frame counter must NOT advance.
+        // FIXED_TIME：delta_secs() == 0.0 → 帧计数器不得推进。
         assert_eq!(advance_animation(&mut anim, 0.0), 0);
         assert_eq!(advance_animation(&mut anim, 0.0), 0);
         assert_eq!(anim.frame_number, 0, "FIXED_TIME must freeze the Water phase");
-        // A live clock still advances monotonically.
+        // 活跃时钟仍单调推进。
         assert_eq!(advance_animation(&mut anim, 1.0 / 60.0), 1);
         assert_eq!(advance_animation(&mut anim, 1.0 / 60.0), 2);
     }
 
-    /// Ryan L4 — the modulo keeps `extra_c.z` exactly representable in f32 far
-    /// beyond the 2^24 precision cliff, and the period is well below it.
+    /// Ryan L4 —— 取模使 `extra_c.z` 在 f32 中保持精确可表示，远在 2^24
+    /// 精度悬崖之上，且该周期远低于此值。
     #[test]
     fn water_frame_period_stays_below_the_f32_integer_precision_cliff() {
-        // Compile-time-checked invariant (a bare runtime `assert!` on constants
-        // trips clippy::assertions_on_constants); this fails the build if the
-        // period is ever raised to/past 2^24, where `frame as f32` stops being exact.
+        // 编译期检查的不变量（对常量使用裸运行时 `assert!` 会触发
+        // clippy::assertions_on_constants）；若周期被提升到/超过 2^24（即
+        // `frame as f32` 不再精确处），这会使构建失败。
         const _: () = assert!(
             WATER_FRAME_PERIOD < (1 << 24),
             "WATER_FRAME_PERIOD must be < 2^24 so `frame as f32` stays exact"
         );
-        // A frame counter just under the cliff, reduced, is still exact in f32.
+        // 一个恰在悬崖之下的帧计数器，取模后在 f32 中仍精确。
         let huge: u32 = (1 << 24) + 12345;
         let reduced = huge % WATER_FRAME_PERIOD;
         let phase = reduced as f32;
@@ -407,19 +391,19 @@ mod tests {
         assert!(phase < 16_777_216.0);
     }
 
-    /// Ryan M3 — the actual system: two consecutive `update_material_uniforms`
-    /// ticks under FIXED_TIME (`ManualDuration(ZERO)`) leave Water's `extra_c.z`
-    /// bit-identical, so a captured Water baseline is reproducible.
+    /// Ryan M3 —— 真实系统：在 FIXED_TIME（`ManualDuration(ZERO)`）下连续两次
+    /// `update_material_uniforms` tick 使 Water 的 `extra_c.z` 保持位一致，
+    /// 因此捕获的 Water 基线可复现。
     #[test]
     fn update_material_uniforms_freezes_water_phase_under_fixed_time() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
-        // The FIXED_TIME contract `main.rs` relies on for bit-reproducible frames.
-        // Bevy 0.15.3 idiom (matches main.rs / specs/tests/camera_control.rs): the
-        // strategy is a standalone resource; `Time::new_with_update_strategy` was
-        // removed. `init_resource::<Time>()` guarantees `Res<Time>` resolves even
-        // though `MinimalPlugins` may not add `TimePlugin`; either way the manual
-        // ZERO duration (and the never-advanced default) keep `delta_secs() == 0.0`.
+        // `main.rs` 为实现位可复现帧所依赖的 FIXED_TIME 契约。
+        // Bevy 0.15.3 惯用法（与 main.rs / specs/tests/camera_control.rs 一致）：
+        // 策略是一个独立资源；`Time::new_with_update_strategy` 已被移除。
+        // `init_resource::<Time>()` 保证 `Res<Time>` 能解析，即使 `MinimalPlugins`
+        // 可能不添加 `TimePlugin`；无论哪种方式，手动的 ZERO 时长（以及从不推进的
+        // 默认值）都使 `delta_secs() == 0.0` 成立。
         app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::ZERO));
         app.init_resource::<Time>();
         app.init_resource::<MaterialAnimationTime>();
@@ -427,10 +411,10 @@ mod tests {
         app.init_resource::<Assets<FabricMaterial>>();
         app.add_systems(Update, update_material_uniforms);
 
-        // Seed a Water material with a non-zero phase so a spurious write is
-        // visible. Struct literal (not `default()` + field reassign, which trips
-        // clippy::field_reassign_with_default). extra_c default is
-        // `Vec4::new(0.0, 1000.0, 0.0, 0.5)`; we plant z = 123.0.
+        // 用一个非零相位播种一个 Water 材质，使任何虚假写入都可见。
+        // 结构体字面量（而非 `default()` + 字段重新赋值，那会触发
+        // clippy::field_reassign_with_default）。extra_c 默认为
+        // `Vec4::new(0.0, 1000.0, 0.0, 0.5)`；我们植入 z = 123.0。
         let params = FabricParams {
             kind: FabricKind::Water as u32,
             extra_c: Vec4::new(0.0, 1000.0, 123.0, 0.5),
@@ -467,7 +451,7 @@ mod tests {
             .extra_c
             .z;
 
-        // Frozen frame (0) ⇒ phase 0.0, identical across both ticks.
+        // 冻结帧 (0) ⇒ 相位 0.0，在两次 tick 间一致。
         assert_eq!(z1, z2, "Water phase drifted under FIXED_TIME (dev-019 方案 A)");
         assert_eq!(z2, 0.0, "frozen frame_number 0 must publish phase 0.0");
     }

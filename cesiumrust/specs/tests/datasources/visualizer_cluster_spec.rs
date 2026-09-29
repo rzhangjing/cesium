@@ -1,5 +1,5 @@
-//! Visualizer & Cluster specs - ported from DataSources/GeometryVisualizerSpec, EntityClusterSpec, EntityViewSpec
-//! Covers: GeometryVisualizer, StaticGeometryBatch, EntityCluster, EntityView
+//! Visualizer 与 Cluster 规范 - 移植自 DataSources/GeometryVisualizerSpec、EntityClusterSpec、EntityViewSpec
+//! 覆盖：GeometryVisualizer、StaticGeometryBatch、EntityCluster、EntityView
 
 use cesium_datasource::cluster::{EntityCluster, EntityClusterOptions, EntityView};
 use cesium_datasource::visualizer::{GeometryVisualizer, StaticGeometryBatch};
@@ -46,7 +46,7 @@ fn visualizer_get_geometry() {
     }
     collection.add(e);
     vis.update(&collection, 0.0);
-    // Entity may or may not produce geometry depending on implementation
+    // 实体可能产生也可能不产生几何，取决于实现
     let _geo = vis.get_geometry("e1");
 }
 
@@ -123,11 +123,11 @@ fn cluster_actual_cluster_count() {
     };
     let mut cluster = EntityCluster::with_options(opts);
     let mut collection = EntityCollection::new();
-    // Two entities very close together
+    // 两个实体非常接近
     collection.add(make_point_entity("e1", 0.0, 0.0));
     collection.add(make_point_entity("e2", 0.00001, 0.00001));
     cluster.update(&collection, 0.0);
-    // actual_cluster_count only counts clusters with >1 entity
+    // actual_cluster_count 只统计含 >1 个实体的聚类
     assert!(cluster.actual_cluster_count() <= cluster.cluster_count());
 }
 

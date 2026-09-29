@@ -1,43 +1,43 @@
-//! Classification system for 3D Tiles and terrain.
+//! 3D Tiles 与地形的分类（classification）系统。
 //!
-//! Maps to CesiumJS classification primitives:
+//! 对应 CesiumJS 的分类图元：
 //! - `Scene/ClassificationPrimitive.js`
 //! - `Scene/ClassificationType.js`
-//! - Feature ID-based classification
+//! - 基于 Feature ID 的分类
 
-/// Classification type determines what geometry is affected.
+/// 分类类型决定受影响的几何体。
 ///
-/// Maps to CesiumJS `Scene/ClassificationType.js`
+/// 对应 CesiumJS `Scene/ClassificationType.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ClassificationType {
-    /// Classify both terrain and 3D Tiles.
+    /// 同时分类地形和 3D Tiles。
     #[default]
     Both,
-    /// Classify only terrain.
+    /// 仅分类地形。
     Terrain,
-    /// Classify only 3D Tiles.
+    /// 仅分类 3D Tiles。
     Cesium3DTile,
 }
 
-/// A classification definition for features.
+/// 针对 feature 的分类定义。
 #[derive(Debug, Clone)]
 pub struct Classification {
-    /// Unique identifier.
+    /// 唯一标识符。
     pub id: String,
-    /// Classification type.
+    /// 分类类型。
     pub classification_type: ClassificationType,
-    /// Whether the classification is shown.
+    /// 分类是否显示。
     pub show: bool,
-    /// Color to apply [r, g, b, a].
+    /// 要应用的颜色 [r, g, b, a]。
     pub color: [f64; 4],
-    /// Feature IDs to classify (empty = all).
+    /// 要分类的 Feature ID（空 = 全部）。
     pub feature_ids: Vec<u64>,
-    /// Batch IDs to classify (for b3dm).
+    /// 要分类的 Batch ID（用于 b3dm）。
     pub batch_ids: Vec<u32>,
 }
 
 impl Classification {
-    /// Creates a new classification.
+    /// 创建一个新的分类。
     pub fn new(id: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -49,60 +49,60 @@ impl Classification {
         }
     }
 
-    /// Sets the classification type.
+    /// 设置分类类型。
     pub fn with_type(mut self, classification_type: ClassificationType) -> Self {
         self.classification_type = classification_type;
         self
     }
 
-    /// Sets the color.
+    /// 设置颜色。
     pub fn with_color(mut self, color: [f64; 4]) -> Self {
         self.color = color;
         self
     }
 
-    /// Adds feature IDs to classify.
+    /// 添加要分类的 feature ID。
     pub fn with_feature_ids(mut self, ids: Vec<u64>) -> Self {
         self.feature_ids = ids;
         self
     }
 
-    /// Adds batch IDs to classify.
+    /// 添加要分类的 batch ID。
     pub fn with_batch_ids(mut self, ids: Vec<u32>) -> Self {
         self.batch_ids = ids;
         self
     }
 
-    /// Checks if a feature ID is classified.
+    /// 检查某个 feature ID 是否被分类。
     pub fn contains_feature(&self, feature_id: u64) -> bool {
         self.feature_ids.is_empty() || self.feature_ids.contains(&feature_id)
     }
 
-    /// Checks if a batch ID is classified.
+    /// 检查某个 batch ID 是否被分类。
     pub fn contains_batch(&self, batch_id: u32) -> bool {
         self.batch_ids.is_empty() || self.batch_ids.contains(&batch_id)
     }
 }
 
-/// A collection of classifications.
+/// 分类的集合。
 #[derive(Debug, Default)]
 pub struct ClassificationCollection {
-    /// Classifications by ID.
+    /// 按 ID 存储的分类。
     classifications: Vec<Classification>,
 }
 
 impl ClassificationCollection {
-    /// Creates a new empty collection.
+    /// 创建一个新的空集合。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Adds a classification.
+    /// 添加一个分类。
     pub fn add(&mut self, classification: Classification) {
         self.classifications.push(classification);
     }
 
-    /// Removes a classification by ID.
+    /// 按 ID 移除一个分类。
     pub fn remove(&mut self, id: &str) -> Option<Classification> {
         if let Some(pos) = self.classifications.iter().position(|c| c.id == id) {
             Some(self.classifications.remove(pos))
@@ -111,22 +111,22 @@ impl ClassificationCollection {
         }
     }
 
-    /// Gets a classification by ID.
+    /// 按 ID 获取一个分类。
     pub fn get(&self, id: &str) -> Option<&Classification> {
         self.classifications.iter().find(|c| c.id == id)
     }
 
-    /// Returns the number of classifications.
+    /// 返回分类的数量。
     pub fn len(&self) -> usize {
         self.classifications.len()
     }
 
-    /// Returns true if the collection is empty.
+    /// 若集合为空则返回 true。
     pub fn is_empty(&self) -> bool {
         self.classifications.is_empty()
     }
 
-    /// Gets all classifications that affect a feature.
+    /// 获取影响某个 feature 的所有分类。
     pub fn get_for_feature(&self, feature_id: u64) -> Vec<&Classification> {
         self.classifications
             .iter()
@@ -134,7 +134,7 @@ impl ClassificationCollection {
             .collect()
     }
 
-    /// Gets all classifications that affect a batch.
+    /// 获取影响某个 batch 的所有分类。
     pub fn get_for_batch(&self, batch_id: u32) -> Vec<&Classification> {
         self.classifications
             .iter()
@@ -142,13 +142,13 @@ impl ClassificationCollection {
             .collect()
     }
 
-    /// Computes the blended color for a feature.
+    /// 计算某个 feature 的混合颜色。
     pub fn compute_feature_color(&self, feature_id: u64, base_color: [f64; 4]) -> [f64; 4] {
         let classifications = self.get_for_feature(feature_id);
         Self::blend_colors(base_color, &classifications)
     }
 
-    /// Blends multiple classification colors with a base color.
+    /// 将多个分类颜色与基础颜色混合。
     fn blend_colors(base_color: [f64; 4], classifications: &[&Classification]) -> [f64; 4] {
         let mut result = base_color;
 
@@ -156,7 +156,7 @@ impl ClassificationCollection {
             let c = classification.color;
             let alpha = c[3];
 
-            // Alpha blending: result = base * (1 - alpha) + overlay * alpha
+            // Alpha 混合：result = base * (1 - alpha) + overlay * alpha
             result[0] = result[0] * (1.0 - alpha) + c[0] * alpha;
             result[1] = result[1] * (1.0 - alpha) + c[1] * alpha;
             result[2] = result[2] * (1.0 - alpha) + c[2] * alpha;
@@ -167,36 +167,36 @@ impl ClassificationCollection {
     }
 }
 
-/// Feature metadata for classification.
+/// 用于分类的 feature 元数据。
 #[derive(Debug, Clone, Default)]
 pub struct FeatureMetadata {
-    /// Feature ID.
+    /// Feature ID。
     pub feature_id: u64,
-    /// Batch ID (for b3dm).
+    /// Batch ID（用于 b3dm）。
     pub batch_id: Option<u32>,
-    /// Property table index.
+    /// 属性表索引。
     pub property_table: Option<u32>,
-    /// Custom properties.
+    /// 自定义属性。
     pub properties: Vec<(String, MetadataValue)>,
 }
 
-/// Metadata value types.
+/// 元数据值类型。
 #[derive(Debug, Clone, PartialEq)]
 pub enum MetadataValue {
-    /// Boolean value.
+    /// 布尔值。
     Bool(bool),
-    /// Integer value.
+    /// 整数值。
     Int(i64),
-    /// Float value.
+    /// 浮点值。
     Float(f64),
-    /// String value.
+    /// 字符串值。
     String(String),
-    /// Array of floats.
+    /// 浮点数组。
     FloatArray(Vec<f64>),
 }
 
 impl FeatureMetadata {
-    /// Creates new feature metadata.
+    /// 创建新的 feature 元数据。
     pub fn new(feature_id: u64) -> Self {
         Self {
             feature_id,
@@ -204,7 +204,7 @@ impl FeatureMetadata {
         }
     }
 
-    /// Gets a property value by name.
+    /// 按名称获取属性值。
     pub fn get_property(&self, name: &str) -> Option<&MetadataValue> {
         self.properties
             .iter()
@@ -212,7 +212,7 @@ impl FeatureMetadata {
             .map(|(_, v)| v)
     }
 
-    /// Sets a property value.
+    /// 设置属性值。
     pub fn set_property(&mut self, name: impl Into<String>, value: MetadataValue) {
         let name = name.into();
         if let Some(prop) = self.properties.iter_mut().find(|(n, _)| *n == name) {
@@ -252,7 +252,7 @@ mod tests {
     fn test_classification_empty_ids() {
         let classification = Classification::new("test");
 
-        // Empty feature_ids means all features
+        // 空的 feature_ids 表示全部 feature
         assert!(classification.contains_feature(999));
     }
 
@@ -292,10 +292,10 @@ mod tests {
                 .with_feature_ids(vec![1]),
         );
 
-        let base = [0.0, 0.0, 1.0, 1.0]; // Blue
+        let base = [0.0, 0.0, 1.0, 1.0]; // 蓝色
         let result = collection.compute_feature_color(1, base);
 
-        // Red overlay at 50% alpha on blue base
+        // 在蓝色基底上叠加 50% alpha 的红色
         // result = blue * 0.5 + red * 0.5 = [0.5, 0.0, 0.5, 1.0]
         assert!((result[0] - 0.5).abs() < 0.01);
         assert!((result[1] - 0.0).abs() < 0.01);

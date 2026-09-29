@@ -1,4 +1,4 @@
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格债（deferred.md #18）；在 M13 lint 清理时或本文件在其里程碑被重写时重新审视
 #![allow(unused_imports)]
 use bevy::prelude::*;
 use cesium_effects::{
@@ -152,9 +152,8 @@ pub fn particle_render_system(
     query: Query<(&ParticleSystemComponent, &GlobalTransform)>,
 ) {
     for (_comp, _transform) in query.iter() {
-        // GPU rendering deferred — particles are currently drawn
-        // via gizmos in particle_update_system.
-        // A future compute-shader pass will replace this.
+        // GPU 渲染暂缓 —— 粒子当前通过 particle_update_system 中的 gizmos 绘制。
+        // 未来的 compute-shader 通道将取代这里。
     }
 }
 
@@ -207,8 +206,8 @@ mod tests {
             comp.system.update(0.1, 42);
         }
 
-        // Particles should still be alive because system loops
-        // (some may have died but new ones emitted)
+        // 粒子应仍然存活，因为系统循环
+        // （有些可能已消亡但新的已发射）
         assert!(comp.system.particle_count() > 0);
     }
 

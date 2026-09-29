@@ -1,5 +1,5 @@
-//! PostProcess specs - ported from Scene/PostProcessStageSpec, PostProcessStageCollectionSpec
-//! Covers: PostProcessStage, PostProcessStageComposite, PostProcessStageCollection,
+//! PostProcess 规范 - 移植自 Scene/PostProcessStageSpec、PostProcessStageCollectionSpec
+//! 覆盖：PostProcessStage、PostProcessStageComposite、PostProcessStageCollection、
 //! Tonemapper, SampleMode, UniformValue
 
 use cesium_effects::post_process_stage::{
@@ -70,7 +70,7 @@ fn tonemapper_variants() {
 #[test]
 fn post_process_collection_default() {
     let collection = PostProcessStageCollection::default();
-    // FXAA is disabled by default
+    // FXAA 默认禁用
     assert!(!collection.fxaa.enabled);
 }
 

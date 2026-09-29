@@ -1,48 +1,48 @@
-//! Advanced 3D Tiles traversal strategies.
+//! 高级 3D Tiles 遍历策略。
 //!
-//! Maps to CesiumJS:
+//! 镜像 CesiumJS：
 //! - `Scene/Cesium3DTilesetTraversal.js`
 //! - `Scene/Cesium3DTilesetSkipTraversal.js`
 //! - `Scene/Cesium3DTilesetMostDetailedTraversal.js`
 //! - `Scene/Cesium3DTilesetBaseTraversal.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格债务（deferred.md #18）；在 M13 lint-cleanup 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::field_reassign_with_default)]
 use crate::lod_selection::{CameraState, LodSelectionContext, SelectedTile, TileSelectionResult};
 use crate::tile::{Tile, TileRefine};
 use cesium_geospatial::ellipsoid::Ellipsoid;
 
-/// Traversal strategy selection.
+/// 遍历策略选择。
 ///
-/// Maps to CesiumJS traversal types.
+/// 映射到 CesiumJS 的遍历类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TraversalStrategy {
-    /// Base traversal: simple top-down SSE-based refinement.
+    /// 基础遍历：简单的自上而下、基于 SSE 的细化。
     #[default]
     Base,
-    /// Skip traversal: allows skipping levels, renders parent+children simultaneously.
+    /// 跳过遍历：允许跳级，同时渲染父瓦片与子瓦片。
     Skip,
-    /// Most detailed traversal: always refines to deepest available content.
+    /// 最详细遍历：总是细化到可用的最深内容。
     MostDetailed,
 }
 
-/// Priority for tile loading requests.
+/// 瓦片加载请求的优先级。
 ///
-/// Maps to CesiumJS tile priority computation.
+/// 映射到 CesiumJS 的瓦片优先级计算。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TilePriority {
-    /// Distance from camera (lower = higher priority).
+    /// 到相机的距离（越小优先级越高）。
     pub distance: f64,
-    /// Depth in the tree (lower = higher priority for ancestors).
+    /// 在树中的深度（越小则祖先优先级越高）。
     pub depth: u32,
-    /// Whether this is an ancestor of a selected tile.
+    /// 是否为某个选中瓦片的祖先。
     pub is_ancestor: bool,
 }
 
 impl TilePriority {
-    /// Computes a numeric priority value (lower = load first).
+    /// 计算一个数值优先级（越小越先加载）。
     pub fn value(&self) -> f64 {
-        // Ancestors get highest priority (load parent before children)
+        // 祖先获得最高优先级（先加载父瓦片再加载子瓦片）
         let ancestor_bonus = if self.is_ancestor { -1000.0 } else { 0.0 };
         ancestor_bonus + self.distance + (self.depth as f64) * 0.01
     }
@@ -64,30 +64,30 @@ impl Ord for TilePriority {
 
 impl Eq for TilePriority {}
 
-/// A tile request with priority.
+/// 带优先级的瓦片请求。
 #[derive(Debug, Clone)]
 pub struct TileRequest {
-    /// Path to the tile in the tree.
+    /// 瓦片在树中的路径。
     pub path: Vec<usize>,
-    /// Priority for loading.
+    /// 加载优先级。
     pub priority: TilePriority,
 }
 
-/// Memory-adjusted screen space error computation.
+/// 内存调整的屏幕空间误差计算。
 ///
-/// Maps to CesiumJS `Cesium3DTileset.memoryAdjustedScreenSpaceError`
+/// 映射到 CesiumJS `Cesium3DTileset.memoryAdjustedScreenSpaceError`
 #[derive(Debug, Clone)]
 pub struct MemoryAdjustedSse {
-    /// Base maximum screen space error.
+    /// 基准最大屏幕空间误差。
     pub base_sse: f64,
-    /// Maximum memory in bytes.
+    /// 最大内存（字节）。
     pub max_memory_bytes: u64,
-    /// Current memory usage in bytes.
+    /// 当前内存使用量（字节）。
     pub current_memory_bytes: u64,
 }
 
 impl MemoryAdjustedSse {
-    /// Creates a new memory-adjusted SSE calculator.
+    /// 创建一个新的内存调整 SSE 计算器。
     pub fn new(base_sse: f64, max_memory_bytes: u64) -> Self {
         Self {
             base_sse,
@@ -96,10 +96,10 @@ impl MemoryAdjustedSse {
         }
     }
 
-    /// Computes the memory-adjusted SSE threshold.
+    /// 计算内存调整后的 SSE 阈值。
     ///
-    /// When memory usage exceeds the limit, the SSE threshold is increased
-    /// to reduce detail and free memory.
+    /// 当内存使用超过上限时，提高 SSE 阈值
+    /// 以降低细节并释放内存。
     pub fn adjusted_sse(&self) -> f64 {
         if self.max_memory_bytes == 0 {
             return self.base_sse;
@@ -109,39 +109,39 @@ impl MemoryAdjustedSse {
             self.current_memory_bytes as f64 / self.max_memory_bytes as f64;
 
         if usage_ratio <= 0.5 {
-            // Under 50% memory: use base SSE
+            // 内存低于 50%：使用基准 SSE
             self.base_sse
         } else if usage_ratio < 1.0 {
-            // 50-100%: linearly increase SSE
+            // 50-100%：线性提高 SSE
             let t = (usage_ratio - 0.5) / 0.5;
             self.base_sse * (1.0 + t)
         } else {
-            // Over 100%: aggressively increase SSE
+            // 超过 100%：激进地提高 SSE
             let overage = usage_ratio - 1.0;
             self.base_sse * (2.0 + overage * 4.0)
         }
     }
 
-    /// Returns true if memory is over the limit.
+    /// 若内存超过上限则返回 true。
     pub fn is_over_limit(&self) -> bool {
         self.current_memory_bytes > self.max_memory_bytes
     }
 }
 
-/// Traversal context with all configuration.
+/// 包含所有配置的遍历上下文。
 #[derive(Debug, Clone)]
 pub struct TraversalContext {
-    /// LOD selection context.
+    /// LOD 选择上下文。
     pub lod_context: LodSelectionContext,
-    /// Traversal strategy.
+    /// 遍历策略。
     pub strategy: TraversalStrategy,
-    /// Memory-adjusted SSE.
+    /// 内存调整的 SSE。
     pub memory_sse: MemoryAdjustedSse,
-    /// Maximum number of tiles to visit per frame (0 = unlimited).
+    /// 每帧最多访问的瓦片数（0 = 无限）。
     pub max_tiles_per_frame: usize,
-    /// Whether to preload ancestors.
+    /// 是否预加载祖先。
     pub preload_ancestors: bool,
-    /// Loading descendant limit.
+    /// 加载后代数限制。
     pub loading_descendant_limit: u32,
 }
 
@@ -158,22 +158,22 @@ impl Default for TraversalContext {
     }
 }
 
-/// Result of a traversal operation.
+/// 一次遍历操作的结果。
 #[derive(Debug, Clone, Default)]
 pub struct TraversalResult {
-    /// Tiles selected for rendering.
+    /// 选中渲染的瓦片。
     pub selected_tiles: Vec<SelectedTile>,
-    /// Tiles requested for loading (with priority).
+    /// 请求加载的瓦片（带优先级）。
     pub requested_tiles: Vec<TileRequest>,
-    /// Number of tiles visited.
+    /// 访问的瓦片数。
     pub visited_count: usize,
-    /// Number of tiles culled.
+    /// 被剔除的瓦片数。
     pub culled_count: usize,
-    /// Maximum depth reached.
+    /// 达到的最大深度。
     pub max_depth: u32,
 }
 
-/// Performs tile traversal using the configured strategy.
+/// 使用配置的策略执行瓦片遍历。
 pub fn traverse(
     root: &Tile,
     camera: &CameraState,
@@ -189,7 +189,7 @@ pub fn traverse(
     }
 }
 
-/// Base traversal: simple top-down SSE-based refinement.
+/// 基础遍历：简单的自上而下、基于 SSE 的细化。
 fn traverse_base(
     root: &Tile,
     camera: &CameraState,
@@ -206,7 +206,7 @@ fn traverse_base(
         crate::lod_selection::select_tiles(root, camera, &ctx, ellipsoid);
     result.visited_count = result.selected_tiles.len();
 
-    // Generate load requests for selected tiles
+    // 为选中的瓦片生成加载请求
     for tile in &result.selected_tiles {
         result.requested_tiles.push(TileRequest {
             path: tile.path.clone(),
@@ -221,14 +221,14 @@ fn traverse_base(
     result
 }
 
-/// Skip traversal: allows skipping levels of the tree.
+/// 跳过遍历：允许跳过树中的某些层级。
 ///
-/// Maps to CesiumJS `Cesium3DTilesetSkipTraversal.selectTiles`
+/// 映射到 CesiumJS `Cesium3DTilesetSkipTraversal.selectTiles`
 ///
-/// Key differences from base traversal:
-/// - Can render parent and child tiles simultaneously
-/// - Skips intermediate levels when children are not yet loaded
-/// - Uses descendant selection depth of 2
+/// 与基础遍历的关键区别：
+/// - 可同时渲染父瓦片与子瓦片
+/// - 子瓦片尚未加载时跳过中间层级
+/// - 使用为 2 的后代选择深度
 fn traverse_skip(
     root: &Tile,
     camera: &CameraState,
@@ -250,13 +250,13 @@ fn traverse_skip(
         &mut result,
     );
 
-    // Sort requests by priority
+    // 按优先级排序请求
     result.requested_tiles.sort_by_key(|a| a.priority);
 
     result
 }
 
-/// Recursive helper for skip traversal.
+/// 跳过遍历的递归辅助函数。
 #[allow(clippy::too_many_arguments)]
 fn traverse_skip_recursive(
     tile: &Tile,
@@ -277,11 +277,11 @@ fn traverse_skip_recursive(
     let refine_mode = tile.effective_refine(parent_refine);
     let has_children = !tile.children.is_empty();
 
-    // Check if we should refine
+    // 检查是否应细化
     let should_refine = has_children && sse > max_sse;
 
     if !should_refine {
-        // Render this tile
+        // 渲染本瓦片
         if tile.has_content() {
             result.selected_tiles.push(SelectedTile {
                 path: path.to_vec(),
@@ -298,7 +298,7 @@ fn traverse_skip_recursive(
                 },
             });
         } else if has_children {
-            // Empty tile: must refine
+            // 空瓦片：必须细化
             for (i, child) in tile.children.iter().enumerate() {
                 let mut child_path = path.to_vec();
                 child_path.push(i);
@@ -318,11 +318,11 @@ fn traverse_skip_recursive(
         return;
     }
 
-    // Should refine: check if children are ready
-    // In skip traversal, we render the parent if children aren't ready
-    // and also try to load children (skip levels if needed)
+    // 应细化：检查子瓦片是否就绪
+    // 在跳过遍历中，若子瓦片未就绪则渲染父瓦片，
+    // 并尝试加载子瓦片（必要时跳级）
 
-    // For ADD refinement, always render parent
+    // 对于 ADD 细化，总是渲染父瓦片
     if refine_mode == TileRefine::Add && tile.has_content() {
         result.selected_tiles.push(SelectedTile {
             path: path.to_vec(),
@@ -332,8 +332,8 @@ fn traverse_skip_recursive(
         });
     }
 
-    // Traverse children with skip logic
-    // Skip traversal: look ahead 2 levels (descendantSelectionDepth = 2)
+    // 带跳过逻辑地遍历子瓦片
+    // 跳过遍历：向前看 2 层（descendantSelectionDepth = 2）
     let mut any_child_rendered = false;
     for (i, child) in tile.children.iter().enumerate() {
         let mut child_path = path.to_vec();
@@ -344,9 +344,9 @@ fn traverse_skip_recursive(
         let child_sse =
             camera.compute_screen_space_error(child.geometric_error, child_distance);
 
-        // If child SSE is still too high and has grandchildren, skip to grandchildren
+        // 若子瓦片 SSE 仍太高且有孙瓦片，则跳到孙瓦片
         if !child.children.is_empty() && child_sse > max_sse {
-            // Skip level: render child as ancestor, traverse grandchildren
+            // 跳级：将子瓦片作为祖先渲染，遍历孙瓦片
             if preload_ancestors && child.has_content() {
                 result.requested_tiles.push(TileRequest {
                     path: child_path.clone(),
@@ -375,7 +375,7 @@ fn traverse_skip_recursive(
             }
             any_child_rendered = true;
         } else {
-            // Normal traversal for this child
+            // 对该子瓦片进行正常遍历
             traverse_skip_recursive(
                 child,
                 camera,
@@ -391,7 +391,7 @@ fn traverse_skip_recursive(
         }
     }
 
-    // If no children were rendered and this tile has content, render it as fallback
+    // 若没有子瓦片被渲染且本瓦片有内容，将其作为后备渲染
     if !any_child_rendered && tile.has_content() && refine_mode == TileRefine::Replace {
         result.selected_tiles.push(SelectedTile {
             path: path.to_vec(),
@@ -402,12 +402,11 @@ fn traverse_skip_recursive(
     }
 }
 
-/// Most detailed traversal: always refines to the deepest available content.
+/// 最详细遍历：总是细化到可用的最深内容。
 ///
-/// Maps to CesiumJS `Cesium3DTilesetMostDetailedTraversal.selectTiles`
+/// 映射到 CesiumJS `Cesium3DTilesetMostDetailedTraversal.selectTiles`
 ///
-/// This traversal is used for picking and other operations where
-/// the most detailed tile is needed regardless of SSE.
+/// 该遍历用于拾取及其他需要最详细瓦片（无论 SSE 如何）的操作。
 fn traverse_most_detailed(
     root: &Tile,
     camera: &CameraState,
@@ -429,7 +428,7 @@ fn traverse_most_detailed(
     result
 }
 
-/// Recursive helper for most detailed traversal.
+/// 最详细遍历的递归辅助函数。
 fn traverse_most_detailed_recursive(
     tile: &Tile,
     camera: &CameraState,
@@ -447,9 +446,9 @@ fn traverse_most_detailed_recursive(
     let refine_mode = tile.effective_refine(parent_refine);
     let has_children = !tile.children.is_empty();
 
-    // Always try to refine to children (most detailed)
+    // 总是尝试细化到子瓦片（最详细）
     if has_children {
-        // For ADD refinement, also render parent
+        // 对于 ADD 细化，同时也渲染父瓦片
         if refine_mode == TileRefine::Add && tile.has_content() {
             result.selected_tiles.push(SelectedTile {
                 path: path.to_vec(),
@@ -473,7 +472,7 @@ fn traverse_most_detailed_recursive(
             );
         }
     } else if tile.has_content() {
-        // Leaf tile with content: render it
+        // 带内容的叶瓦片：渲染它
         result.selected_tiles.push(SelectedTile {
             path: path.to_vec(),
             result: TileSelectionResult::Render,
@@ -491,9 +490,9 @@ fn traverse_most_detailed_recursive(
     }
 }
 
-/// Sorts children by distance to camera (farthest first for stack-based traversal).
+/// 按到相机的距离对子瓦片排序（最远优先，用于基于栈的遍历）。
 ///
-/// Maps to CesiumJS `Cesium3DTilesetTraversal.sortChildrenByDistanceToCamera`
+/// 映射到 CesiumJS `Cesium3DTilesetTraversal.sortChildrenByDistanceToCamera`
 pub fn sort_children_by_distance(
     children: &[(usize, &Tile)],
     camera: &CameraState,
@@ -507,14 +506,14 @@ pub fn sort_children_by_distance(
         })
         .collect();
 
-    // Sort by distance descending (farthest first)
+    // 按距离降序排序（最远优先）
     indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     indexed.into_iter().map(|(i, _)| i).collect()
 }
 
-/// Checks if a tile can be traversed (has children and SSE exceeds threshold).
+/// 检查瓦片是否可被遍历（有子瓦片且 SSE 超过阈值）。
 ///
-/// Maps to CesiumJS `Cesium3DTilesetTraversal.canTraverse`
+/// 映射到 CesiumJS `Cesium3DTilesetTraversal.canTraverse`
 pub fn can_traverse(
     tile: &Tile,
     sse: f64,
@@ -583,7 +582,7 @@ mod tests {
             depth: 1,
             is_ancestor: false,
         };
-        // Ancestor should have higher priority (lower value)
+        // 祖先应有更高的优先级（更小的值）
         assert!(p1.value() < p2.value());
     }
 
@@ -637,7 +636,7 @@ mod tests {
 
     #[test]
     fn test_skip_traversal() {
-        // Create a 3-level tree
+        // 创建一个 3 层树
         let grandchild = create_leaf_tile(1.0, "gc.b3dm");
         let child = create_tile(100.0, "child.b3dm", vec![grandchild]);
         let root = create_tile(1000.0, "root.b3dm", vec![child]);
@@ -648,13 +647,13 @@ mod tests {
 
         let result = traverse(&root, &camera, &context, &Ellipsoid::WGS84);
         assert!(!result.selected_tiles.is_empty());
-        // Skip traversal should have visited multiple levels
+        // 跳过遍历应访问了多个层级
         assert!(result.visited_count > 0);
     }
 
     #[test]
     fn test_most_detailed_traversal() {
-        // Create a 3-level tree
+        // 创建一个 3 层树
         let grandchild = create_leaf_tile(0.0, "gc.b3dm");
         let child = create_tile(50.0, "child.b3dm", vec![grandchild]);
         let root = create_tile(1000.0, "root.b3dm", vec![child]);
@@ -665,7 +664,7 @@ mod tests {
 
         let result = traverse(&root, &camera, &context, &Ellipsoid::WGS84);
 
-        // Most detailed should select the deepest tile (grandchild)
+        // 最详细遍历应选出最深的瓦片（孙瓦片）
         assert!(result.selected_tiles.iter().any(|t| t.path == vec![0, 0]));
         assert_eq!(result.max_depth, 2);
     }
@@ -682,7 +681,7 @@ mod tests {
 
         let result = traverse(&root, &camera, &context, &Ellipsoid::WGS84);
 
-        // ADD refinement: both parent and child should be rendered
+        // ADD 细化：父瓦片和子瓦片都应渲染
         assert!(result.selected_tiles.iter().any(|t| t.path.is_empty()));
         assert!(result.selected_tiles.iter().any(|t| t.path == vec![0]));
     }
@@ -716,9 +715,9 @@ mod tests {
         let children = vec![(0, &child0), (1, &child1)];
         let sorted = sort_children_by_distance(&children, &camera, &Ellipsoid::WGS84);
 
-        // child0 is farther from camera (at z=1000 looking at z=0)
-        // child1 is at z=500, closer to camera
-        // Sorted descending: child0 first (farther)
+        // child0 离相机更远（相机在 z=1000 看向 z=0）
+        // child1 在 z=500，离相机更近
+        // 降序排序：child0 在前（更远）
         assert_eq!(sorted[0], 0);
         assert_eq!(sorted[1], 1);
     }
@@ -731,7 +730,7 @@ mod tests {
 
         let leaf = create_leaf_tile(10.0, "leaf.b3dm");
         assert!(!can_traverse(&leaf, 100.0, 16.0, false));
-        // With implicit content, can traverse even without children
+        // 有隐式内容时，即使无子瓦片也可遍历
         assert!(can_traverse(&leaf, 100.0, 16.0, true));
     }
 

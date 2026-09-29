@@ -4,10 +4,10 @@ use cesium_scene_mode::SceneMode;
 
 use crate::camera::components::{ActiveMorph, CesiumCamera};
 
-/// Scene mode switching system: keyboard shortcuts and morph animation.
+/// 场景模式切换系统：键盘快捷键与渐变动画。
 ///
-/// Press `2` for 2D, `3` for 3D, `C` for Columbus View.
-/// Morphing animates smoothly between modes.
+/// 按 `2` 切 2D，`3` 切 3D，`C` 切 Columbus View。
+/// 渐变在各模式间平滑动画。
 pub fn scene_mode_system(
     mut cameras: Query<&mut CesiumCamera>,
     mut morph: ResMut<ActiveMorph>,
@@ -16,7 +16,7 @@ pub fn scene_mode_system(
 ) {
     let dt = time.delta_secs() as f64;
 
-    // --- Check mode switch keys ---
+    // --- 检测模式切换键 ---
     let target_mode = if keys.just_pressed(KeyCode::Digit2) {
         Some(SceneMode::Scene2D)
     } else if keys.just_pressed(KeyCode::Digit3) {
@@ -36,7 +36,7 @@ pub fn scene_mode_system(
         }
     }
 
-    // --- Advance morph ---
+    // --- 推进渐变 ---
     let was_active = morph.state.active;
     morph.state.update(dt);
     let just_finished = was_active && !morph.state.active;

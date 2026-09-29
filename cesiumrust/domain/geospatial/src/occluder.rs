@@ -1,27 +1,28 @@
-//! Occluder - determines whether objects are visible or hidden behind a horizon.
-//! Maps to CesiumJS `Core/Occluder.js`
+//! Occluder - 判断对象是否可见或隐藏在地平线之后。
+//! 映射到 CesiumJS `Core/Occluder.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::needless_range_loop, clippy::excessive_precision)]
 use crate::bounding::BoundingSphere;
 use glam::DVec3;
 
-/// Visibility result for occlusion queries.
-/// Maps to CesiumJS `Core/Visibility.js`
+/// 遮挡查询的可见性结果。
+/// 映射到 CesiumJS `Core/Visibility.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Visibility {
-    /// The object is not visible (fully occluded).
+    /// 对象不可见（完全遮挡）。
     None = -1,
-    /// The object is partially visible.
+    /// 对象部分可见。
     Partial = 0,
-    /// The object is fully visible.
+    /// 对象完全可见。
     Full = 1,
 }
 
-/// An occluder derived from an object's position and radius, plus camera position.
-/// Used to determine whether other objects are visible or hidden behind the
-/// visible horizon defined by the occluder and camera position.
-/// Maps to CesiumJS `Core/Occluder`
+/// 由对象的位置和半径以及相机位置导出的遮挡体。
+/// 用于判断其他对象是否可见，或者是否隐藏由该遮挡体和相机位置
+/// 所定义的可见地平线之后。
+/// 映射到 CesiumJS `Core/Occluder`
 #[derive(Debug, Clone)]
 pub struct Occluder {
     occluder_position: DVec3,
@@ -33,8 +34,8 @@ pub struct Occluder {
 }
 
 impl Occluder {
-    /// Creates an Occluder from a bounding sphere and camera position.
-    /// Maps to `new Occluder(occluderBoundingSphere, cameraPosition)`
+    /// 由包围球和相机位置创建一个 Occluder。
+    /// 映射到 `new Occluder(occluderBoundingSphere, cameraPosition)`
     pub fn new(occluder_bounding_sphere: &BoundingSphere, camera_position: DVec3) -> Self {
         let occluder_position = occluder_bounding_sphere.center;
         let occluder_radius = occluder_bounding_sphere.radius;
@@ -51,8 +52,8 @@ impl Occluder {
         result
     }
 
-    /// Creates an occluder from a bounding sphere and camera position.
-    /// Maps to `Occluder.fromBoundingSphere`
+    /// 由包围球和相机位置创建一个遮挡体。
+    /// 映射到 `Occluder.fromBoundingSphere`
     pub fn from_bounding_sphere(
         occluder_bounding_sphere: &BoundingSphere,
         camera_position: DVec3,
@@ -86,23 +87,23 @@ impl Occluder {
         }
     }
 
-    /// The position of the occluder.
+    /// 遮挡体的位置。
     pub fn position(&self) -> DVec3 {
         self.occluder_position
     }
 
-    /// The radius of the occluder.
+    /// 遮挡体的半径。
     pub fn radius(&self) -> f64 {
         self.occluder_radius
     }
 
-    /// The position of the camera.
+    /// 相机的位置。
     pub fn camera_position(&self) -> DVec3 {
         self.camera_position
     }
 
-    /// Determines whether or not a sphere (the occludee) is hidden from view by the occluder.
-    /// Maps to `Occluder.prototype.isBoundingSphereVisible`
+    /// 判断某个球（被遮挡对象）是否因遮挡体而不可见。
+    /// 映射到 `Occluder.prototype.isBoundingSphereVisible`
     pub fn is_bounding_sphere_visible(&self, occludee: &BoundingSphere) -> bool {
         let occludee_position = occludee.center;
         let occludee_radius = occludee.radius;
@@ -122,7 +123,7 @@ impl Occluder {
                 return false;
             }
 
-            // Occludee radius >= occluder radius
+            // 被遮挡对象半径 >= 遮挡体半径
             if temp > 0.0 {
                 let temp_vec2 = occludee_position - self.camera_position;
                 let temp_vec_magnitude_squared = temp_vec2.length_squared();
@@ -138,15 +139,15 @@ impl Occluder {
                 return temp * temp + occludee_radius_squared > temp_vec_magnitude_squared;
             }
 
-            // The occludee completely encompasses the occluder
+            // 被遮挡对象完全包含遮挡体
             return true;
         }
 
         false
     }
 
-    /// Determine to what extent an occludee is visible.
-    /// Maps to `Occluder.prototype.computeVisibility`
+    /// 确定被遮挡对象的可见程度。
+    /// 映射到 `Occluder.prototype.computeVisibility`
     pub fn compute_visibility(&self, occludee_bs: &BoundingSphere) -> Visibility {
         let occludee_position = occludee_bs.center;
         let occludee_radius = occludee_bs.radius;
@@ -162,7 +163,7 @@ impl Occluder {
             temp = occluder_to_occludee_dist_sqrd - temp * temp;
 
             if temp > 0.0 {
-                // The occludee is not completely inside the occluder
+                // 被遮挡对象并非完全在遮挡体内部
                 temp = temp.sqrt() + self.horizon_distance;
                 let temp_vec2 = occludee_position - self.camera_position;
                 let camera_to_occludee_dist_sqrd = temp_vec2.length_squared();
@@ -173,7 +174,7 @@ impl Occluder {
                     return Visibility::None;
                 }
 
-                // Check whether fully or partially visible when NOT intersecting
+                // 在不相交时检查是完全可见还是部分可见
                 temp = self.occluder_radius + occludee_radius;
                 temp = occluder_to_occludee_dist_sqrd - temp * temp;
                 if temp > 0.0 {
@@ -187,7 +188,7 @@ impl Occluder {
                     };
                 }
 
-                // Check when the occludee DOES intersect the occluder
+                // 检查被遮挡对象确实与遮挡体相交时的情形
                 if let (Some(hpn), Some(hpp)) =
                     (self.horizon_plane_normal, self.horizon_plane_position)
                 {
@@ -204,8 +205,8 @@ impl Occluder {
         Visibility::None
     }
 
-    /// Computes a point that can be used as the occludee position for visibility functions.
-    /// Maps to `Occluder.computeOccludeePoint`
+    /// 计算一个可作为可见性函数中被遮挡对象位置的点。
+    /// 映射到 `Occluder.computeOccludeePoint`
     pub fn compute_occludee_point(
         occluder_bounding_sphere: &BoundingSphere,
         occludee_position: DVec3,
@@ -222,7 +223,7 @@ impl Occluder {
             return None;
         }
 
-        // Compute a plane with a normal from the occluder to the occludee position.
+        // 计算一个法线从遮挡体指向被遮挡对象位置的平面。
         let occluder_plane_normal = (occludee_position - occluder_position).normalize();
         let occluder_plane_d = -occluder_plane_normal.dot(occluder_position);
 
@@ -253,7 +254,7 @@ impl Occluder {
             }
         }
 
-        // Verify that the dot is not near 90 degrees
+        // 验证该点积不接近 90 度
         if dot < 0.00174532836589830883577820272085 {
             return None;
         }
@@ -262,8 +263,8 @@ impl Occluder {
         Some(occluder_position + occluder_plane_normal * distance)
     }
 
-    /// Computes an occludee point from a rectangle.
-    /// Maps to `Occluder.computeOccludeePointFromRectangle`
+    /// 由矩形计算被遮挡对象点。
+    /// 映射到 `Occluder.computeOccludeePointFromRectangle`
     pub fn compute_occludee_point_from_rectangle(
         rectangle: &crate::rectangle::Rectangle,
         ellipsoid: &crate::ellipsoid::Ellipsoid,
@@ -280,8 +281,8 @@ impl Occluder {
         }
     }
 
-    /// Computes any rotation vector in the occluder plane.
-    /// Maps to `Occluder._anyRotationVector`
+    /// 在遮挡体平面内计算任意一个旋转向量。
+    /// 映射到 `Occluder._anyRotationVector`
     pub fn any_rotation_vector(
         occluder_position: DVec3,
         occluder_plane_normal: DVec3,
@@ -332,8 +333,8 @@ impl Occluder {
         (point_on_plane - occluder_position).normalize()
     }
 
-    /// Computes the rotation vector for a specific position.
-    /// Maps to `Occluder._rotationVector`
+    /// 为特定位置计算旋转向量。
+    /// 映射到 `Occluder._rotationVector`
     fn rotation_vector(
         occluder_position: DVec3,
         occluder_plane_normal: DVec3,
@@ -354,8 +355,8 @@ impl Occluder {
         any_rotation_vector
     }
 
-    /// Computes the horizon-to-plane-normal dot product.
-    /// Maps to `Occluder._horizonToPlaneNormalDotProduct`
+    /// 计算地平线到平面法线的点积。
+    /// 映射到 `Occluder._horizonToPlaneNormalDotProduct`
     fn horizon_to_plane_normal_dot_product(
         occluder_bs: &BoundingSphere,
         occluder_plane_normal: DVec3,
@@ -366,7 +367,7 @@ impl Occluder {
         let occluder_position = occluder_bs.center;
         let occluder_radius = occluder_bs.radius;
 
-        // Verify that the position is outside the occluder
+        // 验证位置在遮挡体之外
         let mut position_to_occluder = occluder_position - position;
         let occluder_to_position_distance_squared = position_to_occluder.length_squared();
         let occluder_radius_squared = occluder_radius * occluder_radius;
@@ -374,7 +375,7 @@ impl Occluder {
             return None;
         }
 
-        // Horizon parameters
+        // 地平线参数
         let horizon_distance_squared =
             occluder_to_position_distance_squared - occluder_radius_squared;
         let horizon_distance = horizon_distance_squared.sqrt();
@@ -389,7 +390,7 @@ impl Occluder {
             - horizon_plane_distance * horizon_plane_distance)
             .sqrt();
 
-        // Rotate the position-to-occluder vector 90 degrees
+        // 将 position-to-occluder 向量旋转 90 度
         let temp_vec = Self::rotation_vector(
             occluder_position,
             occluder_plane_normal,
@@ -411,7 +412,7 @@ impl Occluder {
         )
         .normalize();
 
-        // Horizon positions
+        // 地平线位置
         let offset = horizon_cross_direction * horizon_cross_distance;
 
         let temp_vec0 =

@@ -1,15 +1,15 @@
-//! Classification specs - ported from ClassificationPrimitiveSpec.js
-//! and ClassificationTypeSpec.js
+//! 分类规范 - 移植自 ClassificationPrimitiveSpec.js
+//! 及 ClassificationTypeSpec.js
 //!
-//! Tests Classification/ClassificationCollection/FeatureMetadata:
-//! creation, builder pattern, feature/batch filtering, color blending,
-//! collection management, metadata properties.
+//! 测试 Classification/ClassificationCollection/FeatureMetadata：
+//! 创建、builder 模式、要素/批次过滤、颜色混合、
+//! 集合管理、元数据属性。
 
 use cesium_styling::{
     Classification, ClassificationCollection, ClassificationType, FeatureMetadata, MetadataValue,
 };
 
-// ─── Classification Creation ───────────────────────────────────────────────
+// ─── Classification 创建 ───────────────────────────────────────────────
 
 #[test]
 fn classification_default_values() {
@@ -46,12 +46,12 @@ fn classification_builder_batch_ids() {
     assert_eq!(c.batch_ids, vec![0, 5, 10]);
 }
 
-// ─── Contains Feature / Batch ──────────────────────────────────────────────
+// ─── 包含 Feature / Batch ──────────────────────────────────────────────
 
 #[test]
 fn contains_feature_empty_means_all() {
     let c = Classification::new("c1");
-    // Empty feature_ids → classifies ALL features
+    // 空 feature_ids → 分类所有要素
     assert!(c.contains_feature(0));
     assert!(c.contains_feature(999999));
 }
@@ -151,7 +151,7 @@ fn collection_remove_nonexistent() {
     assert_eq!(collection.len(), 1);
 }
 
-// ─── Get For Feature / Batch ───────────────────────────────────────────────
+// ─── 获取对应 Feature / Batch ───────────────────────────────────────────────
 
 #[test]
 fn get_for_feature_filters_correctly() {
@@ -161,10 +161,10 @@ fn get_for_feature_filters_correctly() {
     collection.add(Classification::new("c3").with_feature_ids(vec![5, 6]));
 
     let for_2 = collection.get_for_feature(2);
-    assert_eq!(for_2.len(), 2); // c1 and c2
+    assert_eq!(for_2.len(), 2); // c1 和 c2
 
     let for_5 = collection.get_for_feature(5);
-    assert_eq!(for_5.len(), 1); // only c3
+    assert_eq!(for_5.len(), 1); // 仅 c3
 
     let for_99 = collection.get_for_feature(99);
     assert_eq!(for_99.len(), 0);
@@ -179,7 +179,7 @@ fn get_for_feature_respects_show_flag() {
     collection.add(Classification::new("visible").with_feature_ids(vec![1, 2]));
 
     let for_1 = collection.get_for_feature(1);
-    assert_eq!(for_1.len(), 1); // only visible
+    assert_eq!(for_1.len(), 1); // 仅可见
     assert_eq!(for_1[0].id, "visible");
 }
 
@@ -196,14 +196,14 @@ fn get_for_batch_filters_correctly() {
     assert_eq!(for_0.len(), 1);
 }
 
-// ─── Color Blending ────────────────────────────────────────────────────────
+// ─── 颜色混合 ────────────────────────────────────────────────────────
 
 #[test]
 fn compute_feature_color_no_classifications() {
     let collection = ClassificationCollection::new();
     let base = [0.5, 0.5, 0.5, 1.0];
     let result = collection.compute_feature_color(1, base);
-    // No classifications → base color unchanged
+    // 无分类 → 基础颜色不变
     assert_eq!(result, base);
 }
 
@@ -216,10 +216,10 @@ fn compute_feature_color_single_overlay() {
             .with_feature_ids(vec![1]),
     );
 
-    let base = [0.0, 0.0, 1.0, 1.0]; // blue
+    let base = [0.0, 0.0, 1.0, 1.0]; // 蓝色
     let result = collection.compute_feature_color(1, base);
 
-    // Alpha blend: base * (1-0.5) + overlay * 0.5
+    // Alpha 混合：base * (1-0.5) + overlay * 0.5
     assert!((result[0] - 0.5).abs() < 0.01); // 0*0.5 + 1*0.5
     assert!((result[1] - 0.0).abs() < 0.01);
     assert!((result[2] - 0.5).abs() < 0.01); // 1*0.5 + 0*0.5
@@ -230,14 +230,14 @@ fn compute_feature_color_full_alpha_replaces() {
     let mut collection = ClassificationCollection::new();
     collection.add(
         Classification::new("c1")
-            .with_color([0.0, 1.0, 0.0, 1.0]) // full alpha
+            .with_color([0.0, 1.0, 0.0, 1.0]) // 完全 alpha
             .with_feature_ids(vec![1]),
     );
 
     let base = [1.0, 0.0, 0.0, 1.0];
     let result = collection.compute_feature_color(1, base);
 
-    // Full alpha overlay completely replaces base
+    // 完全 alpha 覆盖层完全替换基础色
     assert!((result[0] - 0.0).abs() < 0.01);
     assert!((result[1] - 1.0).abs() < 0.01);
     assert!((result[2] - 0.0).abs() < 0.01);
@@ -277,7 +277,7 @@ fn feature_metadata_overwrite_property() {
     meta.set_property("height", MetadataValue::Float(200.0));
 
     assert_eq!(meta.get_property("height"), Some(&MetadataValue::Float(200.0)));
-    // Should not duplicate
+    // 不应重复
     assert_eq!(meta.properties.len(), 1);
 }
 

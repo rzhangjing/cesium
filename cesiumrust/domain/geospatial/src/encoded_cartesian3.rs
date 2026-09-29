@@ -1,15 +1,15 @@
-//! EncodedCartesian3 - fixed-point encoding of Cartesian3 for GPU rendering.
-//! Maps to CesiumJS `Core/EncodedCartesian3.js`
+//! EncodedCartesian3 - 用于 GPU 渲染的 Cartesian3 定点编码。
+//! 映射到 CesiumJS `Core/EncodedCartesian3.js`
 
 use glam::DVec3;
 
-/// A fixed-point encoding of a Cartesian3 as two Cartesian3 values (high and low)
-/// that, when converted to 32-bit floating-point and added, approximate the original input.
+/// 一个 Cartesian3 的定点编码，拆分为两个 Cartesian3 值（high 和 low），
+/// 当它们转换为 32 位浮点并相加时，近似原始输入。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EncodedCartesian3 {
-    /// The high bits for each component.
+    /// 每个分量的高位。
     pub high: DVec3,
-    /// The low bits for each component.
+    /// 每个分量的低位。
     pub low: DVec3,
 }
 
@@ -22,10 +22,10 @@ impl Default for EncodedCartesian3 {
     }
 }
 
-/// Encodes a 64-bit floating-point value as two f64 values (high, low) that,
-/// when converted to 32-bit floating-point and added, approximate the original input.
+/// 将一个 64 位浮点值编码为两个 f64 值（high, low），当它们
+/// 转换为 32 位浮点并相加时，近似原始输入。
 ///
-/// Maps to `EncodedCartesian3.encode`
+/// 映射到 `EncodedCartesian3.encode`
 pub fn encode(value: f64) -> (f64, f64) {
     if value >= 0.0 {
         let double_high = (value / 65536.0).floor() * 65536.0;
@@ -36,9 +36,9 @@ pub fn encode(value: f64) -> (f64, f64) {
     }
 }
 
-/// Encodes a Cartesian3 as an EncodedCartesian3.
+/// 将 Cartesian3 编码为 EncodedCartesian3。
 ///
-/// Maps to `EncodedCartesian3.fromCartesian`
+/// 映射到 `EncodedCartesian3.fromCartesian`
 pub fn from_cartesian(cartesian: DVec3) -> EncodedCartesian3 {
     let (hx, lx) = encode(cartesian.x);
     let (hy, ly) = encode(cartesian.y);
@@ -49,10 +49,10 @@ pub fn from_cartesian(cartesian: DVec3) -> EncodedCartesian3 {
     }
 }
 
-/// Encodes a Cartesian3 and writes it to an array as
-/// [high.x, high.y, high.z, low.x, low.y, low.z] starting at `index`.
+/// 编码一个 Cartesian3，并以
+/// [high.x, high.y, high.z, low.x, low.y, low.z] 的形式从 `index` 处写入数组。
 ///
-/// Maps to `EncodedCartesian3.writeElements`
+/// 映射到 `EncodedCartesian3.writeElements`
 pub fn write_elements(cartesian: DVec3, array: &mut [f64], index: usize) {
     let encoded = from_cartesian(cartesian);
     array[index] = encoded.high.x;

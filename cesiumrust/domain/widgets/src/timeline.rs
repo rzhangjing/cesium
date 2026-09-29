@@ -1,114 +1,114 @@
-//! Timeline widget model.
+//! 时间轴（Timeline）widget 模型。
 //!
-//! Maps to CesiumJS `Timeline/Timeline.js`.
+//! 映射到 CesiumJS `Timeline/Timeline.js`。
 
-/// Timeline tic scales in seconds.
+/// 以秒表示的时间轴刻度（tic scale）。
 pub const TIMELINE_TIC_SCALES: &[f64] = &[
     0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.25, 0.5,
     1.0, 2.0, 5.0, 10.0, 15.0, 30.0,
-    60.0,      // 1 min
-    120.0,     // 2 min
-    300.0,     // 5 min
-    600.0,     // 10 min
-    900.0,     // 15 min
-    1800.0,    // 30 min
-    3600.0,    // 1 hr
-    7200.0,    // 2 hr
-    14400.0,   // 4 hr
-    21600.0,   // 6 hr
-    43200.0,   // 12 hr
-    86400.0,   // 24 hr
-    172800.0,  // 2 days
-    345600.0,  // 4 days
-    604800.0,  // 7 days
-    1296000.0, // 15 days
-    2592000.0, // 30 days
-    5184000.0, // 60 days
-    7776000.0, // 90 days
-    15552000.0,  // 180 days
-    31536000.0,  // 365 days
-    63072000.0,  // 2 years
-    126144000.0, // 4 years
-    157680000.0, // 5 years
-    315360000.0, // 10 years
-    630720000.0, // 20 years
-    1261440000.0, // 40 years
-    1576800000.0, // 50 years
-    3153600000.0, // 100 years
-    6307200000.0, // 200 years
-    12614400000.0, // 400 years
-    15768000000.0, // 500 years
-    31536000000.0, // 1000 years
+    60.0,      // 1 分钟
+    120.0,     // 2 分钟
+    300.0,     // 5 分钟
+    600.0,     // 10 分钟
+    900.0,     // 15 分钟
+    1800.0,    // 30 分钟
+    3600.0,    // 1 小时
+    7200.0,    // 2 小时
+    14400.0,   // 4 小时
+    21600.0,   // 6 小时
+    43200.0,   // 12 小时
+    86400.0,   // 24 小时
+    172800.0,  // 2 天
+    345600.0,  // 4 天
+    604800.0,  // 7 天
+    1296000.0, // 15 天
+    2592000.0, // 30 天
+    5184000.0, // 60 天
+    7776000.0, // 90 天
+    15552000.0,  // 180 天
+    31536000.0,  // 365 天
+    63072000.0,  // 2 年
+    126144000.0, // 4 年
+    157680000.0, // 5 年
+    315360000.0, // 10 年
+    630720000.0, // 20 年
+    1261440000.0, // 40 年
+    1576800000.0, // 50 年
+    3153600000.0, // 100 年
+    6307200000.0, // 200 年
+    12614400000.0, // 400 年
+    15768000000.0, // 500 年
+    31536000000.0, // 1000 年
 ];
 
-/// A timeline tic scale with label formatting.
+/// 一个带标签格式化的时间轴刻度。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TimelineTicScale {
-    /// The scale value in seconds.
+    /// 以秒表示的刻度值。
     pub seconds: f64,
-    /// Whether this is a major tic.
+    /// 是否为主刻度（major tic）。
     pub is_major: bool,
 }
 
 impl TimelineTicScale {
-    /// Get the appropriate tic scale for a given time span and pixel width.
+    /// 为给定的时间跳度与像素宽度获取合适的刻度。
     pub fn for_span_and_width(span_seconds: f64, width_pixels: f64, min_tic_spacing: f64) -> Self {
         let ideal_tic_seconds = span_seconds * min_tic_spacing / width_pixels;
 
         for &scale in TIMELINE_TIC_SCALES {
             if scale >= ideal_tic_seconds {
-                let is_major = scale >= 3600.0; // Major tics at 1hr+
+                let is_major = scale >= 3600.0; // 1 小时及以上为主刻度
                 return Self { seconds: scale, is_major };
             }
         }
 
-        // Fallback to largest scale
+        // 回退到最大刻度
         Self {
             seconds: *TIMELINE_TIC_SCALES.last().unwrap(),
             is_major: true,
         }
     }
 
-    /// Format a time value for this tic scale.
+    /// 为该刻度格式化一个时间值。
     pub fn format_label(&self, time_seconds: f64) -> String {
         if self.seconds >= 86400.0 {
-            // Days or longer - show date
+            // 天或更长 - 显示日期
             let days = (time_seconds / 86400.0).floor() as i64;
             format!("Day {}", days)
         } else if self.seconds >= 3600.0 {
-            // Hours
+            // 小时
             let hours = (time_seconds / 3600.0).floor() as i64;
             let minutes = ((time_seconds % 3600.0) / 60.0).floor() as i64;
             format!("{:02}:{:02}", hours, minutes)
         } else if self.seconds >= 60.0 {
-            // Minutes
+            // 分钟
             let minutes = (time_seconds / 60.0).floor() as i64;
             let seconds = (time_seconds % 60.0).floor() as i64;
             format!("{:02}:{:02}", minutes, seconds)
         } else {
-            // Seconds
+            // 秒
             format!("{:.1}s", time_seconds)
         }
     }
 }
 
-/// A track on the timeline.
+/// 时间轴上的一条轨道。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimelineTrack {
-    /// Track name/identifier.
+    /// 轨道名称/标识符。
     pub name: String,
-    /// Start time in seconds since epoch.
+    /// 开始时间（自纪元起算的秒数）。
     pub start_time: f64,
-    /// End time in seconds since epoch.
+    /// 结束时间（自纪元起算的秒数）。
     pub end_time: f64,
-    /// Track color as RGBA [0, 1].
+    /// 轨道颜色，RGBA [0, 1]。
     pub color: [f64; 4],
-    /// Height of the track in pixels.
+    /// 轨道高度（像素）。
     pub height: f64,
 }
 
 impl TimelineTrack {
-    /// Create a new timeline track.
+    /// 创建一条新的时间轴轨道。
     pub fn new(name: impl Into<String>, start_time: f64, end_time: f64) -> Self {
         Self {
             name: name.into(),
@@ -119,42 +119,42 @@ impl TimelineTrack {
         }
     }
 
-    /// Set the track color.
+    /// 设置轨道颜色。
     pub fn with_color(mut self, color: [f64; 4]) -> Self {
         self.color = color;
         self
     }
 
-    /// Set the track height.
+    /// 设置轨道高度。
     pub fn with_height(mut self, height: f64) -> Self {
         self.height = height;
         self
     }
 
-    /// Check if a time is within this track.
+    /// 检查某个时间是否在此轨道内。
     pub fn contains_time(&self, time: f64) -> bool {
         time >= self.start_time && time <= self.end_time
     }
 
-    /// Get the duration of the track.
+    /// 获取轨道的时长。
     pub fn duration(&self) -> f64 {
         self.end_time - self.start_time
     }
 }
 
-/// A highlight range on the timeline.
+/// 时间轴上的一个高亮区间。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimelineHighlightRange {
-    /// Start time in seconds.
+    /// 开始时间（秒）。
     pub start_time: f64,
-    /// End time in seconds.
+    /// 结束时间（秒）。
     pub end_time: f64,
-    /// Highlight color as RGBA [0, 1].
+    /// 高亮颜色，RGBA [0, 1]。
     pub color: [f64; 4],
 }
 
 impl TimelineHighlightRange {
-    /// Create a new highlight range.
+    /// 创建一个新的高亮区间。
     pub fn new(start_time: f64, end_time: f64) -> Self {
         Self {
             start_time,
@@ -163,39 +163,39 @@ impl TimelineHighlightRange {
         }
     }
 
-    /// Set the highlight color.
+    /// 设置高亮颜色。
     pub fn with_color(mut self, color: [f64; 4]) -> Self {
         self.color = color;
         self
     }
 
-    /// Check if a time is within this range.
+    /// 检查某个时间是否在此区间内。
     pub fn contains_time(&self, time: f64) -> bool {
         time >= self.start_time && time <= self.end_time
     }
 
-    /// Get the duration.
+    /// 获取时长。
     pub fn duration(&self) -> f64 {
         self.end_time - self.start_time
     }
 }
 
-/// Timeline widget model.
+/// 时间轴 widget 模型。
 ///
-/// Displays and controls the current scene time with tracks and highlights.
+/// 显示并控制当前场景时间，带轨道与高亮。
 #[derive(Debug, Clone)]
 pub struct Timeline {
-    /// Start time of the visible range (seconds since epoch).
+    /// 可见范围的开始时间（自纪元起算的秒数）。
     pub start_time: f64,
-    /// End time of the visible range (seconds since epoch).
+    /// 可见范围的结束时间（自纪元起算的秒数）。
     pub end_time: f64,
-    /// Current time (seconds since epoch).
+    /// 当前时间（自纪元起算的秒数）。
     pub current_time: f64,
-    /// Tracks on the timeline.
+    /// 时间轴上的轨道。
     pub tracks: Vec<TimelineTrack>,
-    /// Highlight ranges.
+    /// 高亮区间。
     pub highlight_ranges: Vec<TimelineHighlightRange>,
-    /// Whether the timeline is visible.
+    /// 时间轴是否可见。
     pub show: bool,
 }
 
@@ -203,7 +203,7 @@ impl Default for Timeline {
     fn default() -> Self {
         Self {
             start_time: 0.0,
-            end_time: 86400.0, // 1 day
+            end_time: 86400.0, // 1 天
             current_time: 0.0,
             tracks: Vec::new(),
             highlight_ranges: Vec::new(),
@@ -213,7 +213,7 @@ impl Default for Timeline {
 }
 
 impl Timeline {
-    /// Create a new timeline with a time range.
+    /// 创建一个新的、带时间范围的时间轴。
     pub fn new(start_time: f64, end_time: f64) -> Self {
         Self {
             start_time,
@@ -223,24 +223,24 @@ impl Timeline {
         }
     }
 
-    /// Get the visible time span in seconds.
+    /// 获取可见时间跳度（秒）。
     pub fn span(&self) -> f64 {
         self.end_time - self.start_time
     }
 
-    /// Set the visible time range.
+    /// 设置可见时间范围。
     pub fn set_range(&mut self, start_time: f64, end_time: f64) {
         self.start_time = start_time;
         self.end_time = end_time;
         self.current_time = self.current_time.clamp(start_time, end_time);
     }
 
-    /// Set the current time.
+    /// 设置当前时间。
     pub fn set_current_time(&mut self, time: f64) {
         self.current_time = time.clamp(self.start_time, self.end_time);
     }
 
-    /// Convert a time to a normalized position [0, 1] on the timeline.
+    /// 将一个时间转换为时间轴上的归一化位置 [0, 1]。
     pub fn time_to_position(&self, time: f64) -> f64 {
         let span = self.span();
         if span <= 0.0 {
@@ -249,35 +249,35 @@ impl Timeline {
         ((time - self.start_time) / span).clamp(0.0, 1.0)
     }
 
-    /// Convert a normalized position [0, 1] to a time.
+    /// 将归一化位置 [0, 1] 转换为时间。
     pub fn position_to_time(&self, position: f64) -> f64 {
         let clamped = position.clamp(0.0, 1.0);
         self.start_time + clamped * self.span()
     }
 
-    /// Add a track.
+    /// 添加一条轨道。
     pub fn add_track(&mut self, track: TimelineTrack) {
         self.tracks.push(track);
     }
 
-    /// Remove a track by name.
+    /// 按名称移除一条轨道。
     pub fn remove_track(&mut self, name: &str) -> bool {
         let len_before = self.tracks.len();
         self.tracks.retain(|t| t.name != name);
         self.tracks.len() < len_before
     }
 
-    /// Add a highlight range.
+    /// 添加一个高亮区间。
     pub fn add_highlight(&mut self, highlight: TimelineHighlightRange) {
         self.highlight_ranges.push(highlight);
     }
 
-    /// Clear all highlights.
+    /// 清除所有高亮。
     pub fn clear_highlights(&mut self) {
         self.highlight_ranges.clear();
     }
 
-    /// Zoom in by a factor (centered on current time).
+    /// 按一个倍数放大（以当前时间为中心）。
     pub fn zoom_in(&mut self, factor: f64) {
         let new_span = self.span() / factor.max(1.01);
         let center = self.current_time;
@@ -285,7 +285,7 @@ impl Timeline {
         self.end_time = center + new_span / 2.0;
     }
 
-    /// Zoom out by a factor (centered on current time).
+    /// 按一个倍数缩小（以当前时间为中心）。
     pub fn zoom_out(&mut self, factor: f64) {
         let new_span = self.span() * factor.max(1.01);
         let center = self.current_time;
@@ -293,14 +293,14 @@ impl Timeline {
         self.end_time = center + new_span / 2.0;
     }
 
-    /// Pan by a fraction of the visible span.
+    /// 按可见跳度的一个比例平移。
     pub fn pan(&mut self, fraction: f64) {
         let delta = self.span() * fraction;
         self.start_time += delta;
         self.end_time += delta;
     }
 
-    /// Get the appropriate tic scale for the current view.
+    /// 为当前视图获取合适的刻度。
     pub fn tic_scale(&self, width_pixels: f64) -> TimelineTicScale {
         TimelineTicScale::for_span_and_width(self.span(), width_pixels, 50.0)
     }

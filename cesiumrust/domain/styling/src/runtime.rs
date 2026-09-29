@@ -1,36 +1,35 @@
-//! Runtime evaluation of the styling AST: the `Node::evaluate` dispatch loop,
-//! the feature interface, and the unary/binary operator evaluation.
+//! styling AST 的运行时求值：`Node::evaluate` 分派循环、
+//! feature 接口，以及一元/二元运算符求值。
 //!
-//! Ported from `cesium-rs/crates/cesium-scene/src/expression.rs`:
+//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs`：
 //! - `ExpressionFeature` trait          <- L268-286
 //! - `get_feature_property`/`check_feature` <- L288-299
-//! - `Node::evaluate`                   <- L2104-2300 (per-node dispatch)
+//! - `Node::evaluate`                   <- L2104-2300（逐节点分派）
 //! - `Node::evaluate_unary`             <- L2302-2364
 //! - `Node::evaluate_binary`            <- L2366-2548
 //! - `Node::get_variables`              <- L2993-3048
 //!
-//! which are the Rust port of upstream
-//! `packages/engine/Source/Scene/Expression.js` (`setEvaluateFunction` and the
-//! `_evaluate*` closures).
+//! 而它们是上游
+//! `packages/engine/Source/Scene/Expression.js`（`setEvaluateFunction` 及各个
+//! `_evaluate*` 闭包）的 Rust 移植。
 //!
-//! # DEVIATION (deps)
+//! # 偏离（依赖）
 //!
-//! The blueprint uses `cesium_core::Cartesian2/3/4` free functions
-//! (`add_new`/`subtract_new`/`multiply_components_new`/`multiply_by_scalar_new`/
+//! blueprint 使用 `cesium_core::Cartesian2/3/4` 的自由函数
+//! （`add_new`/`subtract_new`/`multiply_components_new`/`multiply_by_scalar_new`/
 //! `divide_components_new`/`divide_by_scalar_new`/`negate_new`/
-//! `from_elements_new`). This isolated domain crate only depends on `glam`, so
-//! vectors are `glam::DVec2/DVec3/DVec4` (f64) and the arithmetic uses glam's
-//! operator overloads (`+`, `-`, `*`, `/`, unary `-`), which are componentwise
-//! for vector⊗vector and scalar-broadcast for vector⊗f64 — byte-identical to
-//! the Cartesian helpers. The `%` operator has no glam overload, so it is done
-//! componentwise by hand.
+//! `from_elements_new`）。这个孤立的 domain crate 只依赖 `glam`，所以
+//! 向量是 `glam::DVec2/DVec3/DVec4`（f64），算术使用 glam 的运算符重载
+//! （`+`、`-`、`*`、`/`、一元 `-`），它们对 向量⊗向量 是逐分量的，对
+//! 向量⊗f64 是标量广播的 —— 与 Cartesian 辅助函数逐字节一致。`%` 运算符
+//! 没有 glam 重载，因此手工逐分量实现。
 //!
-//! # Module wiring
+//! # 模块接线
 //!
-//! The heavy lifting is delegated to sibling modules to keep this file focused
-//! on dispatch: [`crate::member_access`] (Member), [`crate::literal`]
-//! (LiteralColor/LiteralVector), [`crate::coerce`] (the unary/binary/ternary
-//! builtin function tables) and [`crate::regex`] (RegExp compile/test/exec).
+//! 重活都委托给同级的兄弟模块，以保持本文件专注于分派：[`crate::member_access`]
+//! （Member）、[`crate::literal`]（LiteralColor/LiteralVector）、
+//! [`crate::coerce`]（一元/二元/三元内建函数表）以及 [`crate::regex`]
+//! （RegExp 编译/测试/exec）。
 
 use glam::{DVec2, DVec3, DVec4};
 
@@ -43,34 +42,32 @@ use crate::value::{runtime_error, RuntimeError, Value};
 use crate::variables::variable_regex;
 
 // ---------------------------------------------------------------------------
-// Feature interface (mirrors the Cesium3DTileFeature methods used here)
+// Feature 接口（镜像此处用到的 Cesium3DTileFeature 方法）
 // ---------------------------------------------------------------------------
 
-/// The feature properties interface used by expression evaluation, mirroring
-/// the `Cesium3DTileFeature` methods `getPropertyInherited`, `isExactClass`,
-/// `isClass` and `getExactClassName`.
+/// 表达式求值所用的 feature 属性接口，镜像 `Cesium3DTileFeature` 的
+/// `getPropertyInherited`、`isExactClass`、`isClass` 和 `getExactClassName` 方法。
 pub trait ExpressionFeature {
-    /// Mirrors `getPropertyInherited(name)`; `None` is `undefined`.
+    /// 镜像 `getPropertyInherited(name)`；`None` 即 `undefined`。
     fn get_property_inherited(&self, name: &str) -> Option<Value>;
 
-    /// Mirrors `isExactClass(className)`.
+    /// 镜像 `isExactClass(className)`。
     fn is_exact_class(&self, _class_name: &Value) -> bool {
         false
     }
 
-    /// Mirrors `isClass(className)`.
+    /// 镜像 `isClass(className)`。
     fn is_class(&self, _class_name: &Value) -> bool {
         false
     }
 
-    /// Mirrors `getExactClassName()`.
+    /// 镜像 `getExactClassName()`。
     fn get_exact_class_name(&self) -> Option<Value> {
         None
     }
 }
 
-/// Mirrors `getFeatureProperty`: returns undefined when the feature is not
-/// defined or the property is missing.
+/// 镜像 `getFeatureProperty`：当 feature 未定义或属性缺失时返回 undefined。
 pub(crate) fn get_feature_property(
     feature: Option<&dyn ExpressionFeature>,
     name: &str,
@@ -81,12 +78,12 @@ pub(crate) fn get_feature_property(
     }
 }
 
-/// Mirrors `checkFeature`: `true` when the node is the bare `feature` keyword.
+/// 镜像 `checkFeature`：当节点是裸 `feature` 关键字时为 `true`。
 pub(crate) fn check_feature(node: &Node) -> bool {
     matches!(&node.value, NodeValue::Str(value) if value == "feature")
 }
 
-/// Extracts the operator/call name stored in a node's `NodeValue::Str`.
+/// 提取存储于节点 `NodeValue::Str` 中的运算符/调用名。
 fn node_op(node: &Node) -> &str {
     match &node.value {
         NodeValue::Str(s) => s.as_str(),
@@ -95,8 +92,7 @@ fn node_op(node: &Node) -> &str {
 }
 
 impl Node {
-    /// Mirrors the per-node `evaluate` functions assigned by
-    /// `setEvaluateFunction`.
+    /// 镜像由 `setEvaluateFunction` 赋值的逐节点 `evaluate` 函数。
     pub fn evaluate(
         &self,
         feature: Option<&dyn ExpressionFeature>,
@@ -230,11 +226,11 @@ impl Node {
                 Ok(Value::RegExp(regex))
             }
             ExpressionNodeType::BuiltinVariable => {
-                // DEVIATION: `tiles3d_tileset_time` reads
-                // `feature.content.tileset.timeSinceLoad` in the original; the
-                // CPU-side domain port has no tileset context, so it evaluates
-                // to 0.0 (the same value returned when the feature is
-                // undefined). Shader-side time stays a codegen concern (Sam Q2).
+                // 偏离：原始代码中 `tiles3d_tileset_time` 读取
+                // `feature.content.tileset.timeSinceLoad`；CPU 侧的 domain 移植
+                // 没有 tileset 上下文，所以它求值为 0.0（与 feature 为
+                // undefined 时返回的值相同）。着色器侧的时间仍是 codegen 的
+                // 职责（Sam Q2）。
                 Ok(Value::Number(0.0))
             }
             ExpressionNodeType::LiteralNull => Ok(Value::Null),
@@ -254,8 +250,8 @@ impl Node {
         }
     }
 
-    /// UNARY node evaluation, mirroring `_evaluateNot`/`_evaluateNegative`/
-    /// `_evaluatePositive`/conversion calls and the unary function table.
+    /// UNARY 节点求值，镜像 `_evaluateNot`/`_evaluateNegative`/
+    /// `_evaluatePositive`/类型转换调用，以及一元函数表。
     fn evaluate_unary(
         &self,
         feature: Option<&dyn ExpressionFeature>,
@@ -313,14 +309,14 @@ impl Node {
         }
     }
 
-    /// BINARY node evaluation, mirroring `_evaluatePlus`/.../`_evaluateOr`
-    /// and the regex match operators.
+    /// BINARY 节点求值，镜像 `_evaluatePlus`/.../`_evaluateOr`
+    /// 以及正则匹配运算符。
     fn evaluate_binary(
         &self,
         feature: Option<&dyn ExpressionFeature>,
     ) -> Result<Value, RuntimeError> {
         let op = node_op(self);
-        // Short-circuit operators evaluate the right side lazily.
+        // 短路运算符惰性求值右侧。
         if op == "&&" || op == "||" {
             let left = self.left.as_ref().unwrap().evaluate(feature)?;
             let Value::Boolean(left) = left else {
@@ -456,11 +452,10 @@ impl Node {
         }
     }
 
-    /// Mirrors `Node.prototype.getVariables`: walks the AST collecting the
-    /// `${name}` variables, `Variable` names and `feature.<name>` property
-    /// accesses. `parent` is needed for the `LiteralString` case (a string
-    /// literal is only a variable when it is the property of a `feature`
-    /// member access).
+    /// 镜像 `Node.prototype.getVariables`：遍历 AST，收集 `${name}` 变量、
+    /// `Variable` 名称以及 `feature.<name>` 属性访问。`LiteralString` 情形
+    /// 需要 `parent`（字符串字面量只有作为 `feature` 成员访问的属性时
+    /// 才是变量）。
     pub fn get_variables(&self, variables: &mut Vec<String>, parent: Option<&Node>) {
         if let Some(children) = &self.left_children {
             for child in children {
@@ -477,7 +472,7 @@ impl Node {
             test.get_variables(variables, Some(self));
         }
         if let NodeValue::Nodes(nodes) = &self.value {
-            // For ARRAY type
+            // 针对 ARRAY 类型
             for node in nodes {
                 node.get_variables(variables, Some(self));
             }
@@ -619,7 +614,7 @@ mod tests {
             binary("===", num(5.0), num(5.0)).evaluate(None).unwrap(),
             Value::Boolean(true)
         );
-        // vector * scalar and vector + vector via glam operators
+        // 向量 * 标量与向量 + 向量，经由 glam 运算符
         let v3 = Node::new(
             ExpressionNodeType::LiteralVector,
             NodeValue::None,
@@ -635,11 +630,11 @@ mod tests {
 
     #[test]
     fn short_circuit_and_or() {
-        // false && <error> short-circuits to false without evaluating right.
-        let bad = unary("!", num(1.0)); // would error: ! requires boolean
+        // false && <error> 短路为 false，不求值右侧。
+        let bad = unary("!", num(1.0)); // 若求值会报错：! 要求布尔
         let node = binary("&&", boolean(false), bad);
         assert_eq!(node.evaluate(None).unwrap(), Value::Boolean(false));
-        // true || <error> short-circuits to true.
+        // true || <error> 短路为 true。
         let bad = unary("!", num(1.0));
         let node = binary("||", boolean(true), bad);
         assert_eq!(node.evaluate(None).unwrap(), Value::Boolean(true));
@@ -679,7 +674,7 @@ mod tests {
             NodeValue::None,
             Some(num(1.0)),
             Some(num(2.0)),
-            Some(num(3.0)), // non-boolean test -> error
+            Some(num(3.0)), // 非布尔 test -> 报错
         );
         assert!(cond.evaluate(None).is_err());
         let cond = Node::new(
@@ -726,7 +721,7 @@ mod tests {
             Value::String("h=10,n=abc".into())
         );
 
-        // getExactClassName unary
+        // getExactClassName 一元
         let gec = Node::new(
             ExpressionNodeType::Unary,
             NodeValue::Str("getExactClassName".into()),
@@ -742,7 +737,7 @@ mod tests {
 
     #[test]
     fn get_variables_collects_and_dedups_paths() {
-        // ${a} + ${b} in a string template plus a bare Variable node.
+        // 字符串模板中的 ${a} + ${b}，外加一个裸 Variable 节点。
         let tmpl = Node::new(
             ExpressionNodeType::VariableInString,
             NodeValue::Str("${a}/${b}".into()),

@@ -1,14 +1,14 @@
-//! CameraEventAggregator specs - ported from CameraEventAggregatorSpec.js
+//! CameraEventAggregator 规范 - 移植自 CameraEventAggregatorSpec.js
 //!
-//! Tests event aggregation: button down/up, drag movement, wheel events,
-//! frame reset, multi-button state, movement queries.
+//! 测试事件聚合：按钮按下/抬起、拖拽移动、滚轮事件、
+//! 帧重置、多按钮状态、移动查询。
 
 use cesium_interaction::{
     AggregateMovement, CameraEventAggregator, CameraEventType, MouseButton,
 };
 use glam::DVec2;
 
-// ─── AggregateMovement Unit Tests ─────────────────────────────────────────
+// ─── AggregateMovement 单元测试 ─────────────────────────────────────────
 
 #[test]
 fn aggregate_movement_default_state() {
@@ -56,7 +56,7 @@ fn aggregate_movement_drag_computes_delta() {
 #[test]
 fn aggregate_movement_drag_without_button_down_ignored() {
     let mut m = AggregateMovement::new();
-    // No button_down first
+    // 先无 button_down
     m.drag(DVec2::new(200.0, 200.0), 0.5);
 
     assert!(!m.is_moving);
@@ -83,11 +83,11 @@ fn aggregate_movement_reset_frame() {
     m.reset_frame();
     assert!(!m.is_moving);
     assert_eq!(m.movement, DVec2::ZERO);
-    // Button state preserved
+    // 按钮状态被保留
     assert!(m.is_button_down);
 }
 
-// ─── CameraEventAggregator Integration ─────────────────────────────────────
+// ─── CameraEventAggregator 集成 ─────────────────────────────────────
 
 #[test]
 fn aggregator_new_no_movements() {
@@ -102,12 +102,12 @@ fn aggregator_left_button_lifecycle() {
     let mut agg = CameraEventAggregator::new();
     agg.reset(0.0);
 
-    // Button down
+    // 按钮按下
     agg.button_down(MouseButton::Left, DVec2::new(100.0, 100.0));
     assert!(agg.is_button_down(MouseButton::Left));
     assert!(!agg.is_button_down(MouseButton::Right));
 
-    // Drag
+    // 拖拽
     agg.mouse_move(MouseButton::Left, DVec2::new(150.0, 120.0));
     assert!(agg.is_moving(CameraEventType::LeftDrag));
 
@@ -115,7 +115,7 @@ fn aggregator_left_button_lifecycle() {
     assert!((delta.x - 50.0).abs() < 1e-10);
     assert!((delta.y - 20.0).abs() < 1e-10);
 
-    // Button up
+    // 按钮抬起
     agg.button_up(MouseButton::Left);
     assert!(!agg.is_button_down(MouseButton::Left));
 }
@@ -166,11 +166,11 @@ fn aggregator_reset_clears_movement_preserves_button() {
     agg.mouse_move(MouseButton::Left, DVec2::new(200.0, 200.0));
     assert!(agg.is_moving(CameraEventType::LeftDrag));
 
-    // New frame
+    // 新帧
     agg.reset(1.0 / 60.0);
     assert!(!agg.is_moving(CameraEventType::LeftDrag));
     assert_eq!(agg.get_movement_delta(CameraEventType::LeftDrag), DVec2::ZERO);
-    // Button still held
+    // 按钮仍按住
     assert!(agg.is_button_down(MouseButton::Left));
 }
 
@@ -187,7 +187,7 @@ fn aggregator_multiple_buttons_simultaneous() {
     assert!(agg.is_button_down(MouseButton::Right));
     assert!(agg.is_button_down(MouseButton::Middle));
 
-    // Release one
+    // 释放一个
     agg.button_up(MouseButton::Right);
     assert!(agg.is_button_down(MouseButton::Left));
     assert!(!agg.is_button_down(MouseButton::Right));
@@ -210,7 +210,7 @@ fn aggregator_drag_continues_from_start() {
     agg.mouse_move(MouseButton::Left, DVec2::new(110.0, 110.0));
     agg.mouse_move(MouseButton::Left, DVec2::new(130.0, 130.0));
 
-    // Movement is always from start to current end
+    // 移动始终从起点到当前终点
     let delta = agg.get_movement_delta(CameraEventType::LeftDrag);
     assert!((delta.x - 30.0).abs() < 1e-10);
     assert!((delta.y - 30.0).abs() < 1e-10);

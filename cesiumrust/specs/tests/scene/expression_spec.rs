@@ -1,16 +1,16 @@
 //! Scene/ExpressionSpec.js + ConditionsExpressionSpec.js + Cesium3DTileStyleSpec.js
-//! → Rust integration tests for tileset styling expression system.
+//! → 针对 tileset 样式表达式系统的 Rust 集成测试。
 //!
-//! CesiumJS ExpressionSpec.js (4235 lines, 15 it() with many assertions each)
-//! uses a full JavaScript expression parser. The Rust implementation
-//! (cesium_tileset::styling) supports a subset: property refs, comparisons,
-//! arithmetic, logical ops, unary ops, function calls (color/rgb/rgba/abs/sqrt/
-//! min/max/clamp), and conditions expressions.
+//! CesiumJS ExpressionSpec.js（4235 行，15 个 it()，每个含大量断言）
+//! 使用完整的 JavaScript 表达式解析器。Rust 实现
+//! (cesium_tileset::styling) 支持其子集：属性引用、比较、
+//! 算术、逻辑运算、一元运算、函数调用（color/rgb/rgba/abs/sqrt/
+//! min/max/clamp）以及 conditions 表达式。
 //!
-//! A-class tests ported: expression parsing + evaluation + conditions + TileStyle.
-//! C-class omitted: RegExp, member access (vec.x), template strings with
-//! interpolation, hsl/hsla, Boolean()/Number()/String() constructors,
-//! shader generation, getVariables, result-parameter variants.
+//! 已移植的 A 类测试：表达式解析 + 求值 + conditions + TileStyle。
+//! 省略的 C 类：RegExp、成员访问（vec.x）、带插值的模板字符串
+//! hsl/hsla、Boolean()/Number()/String() 构造函数、
+//! 着色器生成、getVariables、result-parameter 变体。
 
 use cesium_tileset::styling::{
     ConditionsExpression, EvalResult, Expression, StyleExpression, TileStyle,
@@ -26,7 +26,7 @@ fn empty() -> HashMap<String, serde_json::Value> {
     HashMap::new()
 }
 
-// === Expression: Literal Parsing ===
+// === 表达式：字面量解析 ===
 
 #[test]
 fn expression_parses_boolean_true() {
@@ -54,9 +54,9 @@ fn expression_parses_float_number() {
 
 #[test]
 fn expression_parses_negative_number() {
-    // Negative numbers: parsed as unary negate or as part of arithmetic
+    // 负数：解析为一元取负或作为算术的一部分
     let expr = Expression::parse("-5.0");
-    // The parser may treat this as UnaryOp(Negate, 5.0) or NumberConstant(-5.0)
+    // 解析器可能将其视为 UnaryOp(Negate, 5.0) 或 NumberConstant(-5.0)
     let result = expr.evaluate(&empty());
     assert_eq!(result, EvalResult::Number(-5.0));
 }
@@ -73,7 +73,7 @@ fn expression_parses_string_double_quotes() {
     assert_eq!(expr.evaluate(&empty()), EvalResult::String("Cesium".to_string()));
 }
 
-// === Expression: Property References ===
+// === 表达式：属性引用 ===
 
 #[test]
 fn expression_evaluates_property_ref_number() {
@@ -98,12 +98,12 @@ fn expression_evaluates_property_ref_boolean() {
 
 #[test]
 fn expression_property_ref_missing_returns_zero() {
-    // CesiumJS returns undefined; Rust returns Number(0.0) as default
+    // CesiumJS 返回 undefined；Rust 返回 Number(0.0) 作为默认值
     let expr = Expression::parse("${missing}");
     assert_eq!(expr.evaluate(&empty()), EvalResult::Number(0.0));
 }
 
-// === Expression: Comparisons ===
+// === 表达式：比较 ===
 
 #[test]
 fn expression_comparison_greater_than() {
@@ -147,7 +147,7 @@ fn expression_comparison_not_equal() {
     assert_eq!(expr.evaluate(&props(vec![("Type", json!(3.0))])), EvalResult::Bool(false));
 }
 
-// === Expression: Arithmetic ===
+// === 表达式：算术 ===
 
 #[test]
 fn expression_arithmetic_addition() {
@@ -179,7 +179,7 @@ fn expression_arithmetic_division() {
 
 #[test]
 fn expression_arithmetic_division_by_zero() {
-    // CesiumJS returns Infinity; Rust returns 0.0 (safe default)
+    // CesiumJS 返回 Infinity；Rust 返回 0.0（安全默认值）
     let expr = Expression::parse("${a} / ${b}");
     let p = props(vec![("a", json!(10.0)), ("b", json!(0.0))]);
     assert_eq!(expr.evaluate(&p), EvalResult::Number(0.0));
@@ -187,17 +187,17 @@ fn expression_arithmetic_division_by_zero() {
 
 #[test]
 fn expression_arithmetic_modulo_not_parsed() {
-    // NOTE: The Rust parser does not support '%' as an operator (unlike CesiumJS).
-    // BinaryOperator::Mod exists but is only reachable via direct AST construction.
-    // Parsing "${a} % ${b}" falls through to StringConstant.
+    // 注意：Rust 解析器不支持 '%' 作为运算符（不同于 CesiumJS）。
+    // BinaryOperator::Mod 存在，但仅可通过直接构造 AST 到达。
+    // 解析 "${a} % ${b}" 会落到 StringConstant。
     let expr = Expression::parse("${a} % ${b}");
     let p = props(vec![("a", json!(10.0)), ("b", json!(3.0))]);
-    // Falls back to string since % is not a recognized operator
+    // 由于 % 不是被识别的运算符，回退为字符串
     let result = expr.evaluate(&p);
     assert!(matches!(result, EvalResult::String(_)));
 }
 
-// === Expression: Logical Operators ===
+// === 表达式：逻辑运算符 ===
 
 #[test]
 fn expression_logical_and_both_true() {
@@ -222,7 +222,7 @@ fn expression_logical_or() {
     assert_eq!(expr.evaluate(&p_one_true), EvalResult::Bool(true));
 }
 
-// === Expression: Unary Operators ===
+// === 表达式：一元运算符 ===
 
 #[test]
 fn expression_unary_not() {
@@ -231,7 +231,7 @@ fn expression_unary_not() {
     assert_eq!(expr.evaluate(&props(vec![("visible", json!(false))])), EvalResult::Bool(true));
 }
 
-// === Expression: Function Calls ===
+// === 表达式：函数调用 ===
 
 #[test]
 fn expression_color_by_name_red() {
@@ -340,7 +340,7 @@ fn expression_clamp_function() {
     assert_eq!(expr.evaluate(&p2), EvalResult::Number(0.0));
 }
 
-// === Expression: Combined expressions ===
+// === 表达式：组合表达式 ===
 
 #[test]
 fn expression_combined_comparison_and_arithmetic() {
@@ -358,7 +358,7 @@ fn expression_nested_function_with_property() {
     assert_eq!(expr.evaluate(&p), EvalResult::Number(20.0));
 }
 
-// === EvalResult conversions ===
+// === EvalResult 转换 ===
 
 #[test]
 fn eval_result_as_bool_truthy() {
@@ -389,7 +389,7 @@ fn eval_result_as_color() {
         EvalResult::Color([0.5, 0.5, 0.5, 1.0]).as_color(),
         [0.5, 0.5, 0.5, 1.0]
     );
-    // Number -> grayscale
+    // Number -> 灰度
     assert_eq!(EvalResult::Number(0.5).as_color(), [0.5, 0.5, 0.5, 1.0]);
 }
 
@@ -397,7 +397,7 @@ fn eval_result_as_color() {
 
 #[test]
 fn conditions_expression_evaluates_first_match() {
-    // Maps to ConditionsExpressionSpec "evaluates conditional"
+    // 映射至 ConditionsExpressionSpec "evaluates conditional"
     let json_val = json!({
         "conditions": [
             ["${Height} > 100", "color('blue')"],
@@ -423,10 +423,10 @@ fn conditions_expression_evaluates_first_match() {
 
 #[test]
 fn conditions_expression_empty_conditions() {
-    // Maps to ConditionsExpressionSpec "constructs and evaluates empty conditional"
+    // 映射至 ConditionsExpressionSpec "constructs and evaluates empty conditional"
     let json_val = json!({ "conditions": [] });
     let conds = ConditionsExpression::from_json(&json_val).unwrap();
-    // No conditions match -> default white
+    // 无条件匹配 -> 默认白色
     assert_eq!(
         conds.evaluate(&props(vec![("Height", json!(101.0))])),
         EvalResult::Color([1.0, 1.0, 1.0, 1.0])
@@ -443,12 +443,12 @@ fn conditions_expression_with_arithmetic_condition() {
     });
     let conds = ConditionsExpression::from_json(&json_val).unwrap();
 
-    // Height=60 -> 60*2=120 > 100 -> red
+    // Height=60 -> 60*2=120 > 100 -> 红
     assert_eq!(
         conds.evaluate(&props(vec![("Height", json!(60.0))])),
         EvalResult::Color([1.0, 0.0, 0.0, 1.0])
     );
-    // Height=40 -> 40*2=80 < 100 -> blue
+    // Height=40 -> 40*2=80 < 100 -> 蓝
     assert_eq!(
         conds.evaluate(&props(vec![("Height", json!(40.0))])),
         EvalResult::Color([0.0, 0.0, 1.0, 1.0])
@@ -502,7 +502,7 @@ fn style_expression_from_json_conditions() {
 
 #[test]
 fn tile_style_from_json_show_expression() {
-    // Maps to Cesium3DTileStyleSpec "sets show value to expression"
+    // 映射至 Cesium3DTileStyleSpec "sets show value to expression"
     let json_val = json!({
         "show": "${Height} > 0"
     });
@@ -513,7 +513,7 @@ fn tile_style_from_json_show_expression() {
 
 #[test]
 fn tile_style_from_json_show_default_true() {
-    // No show expression -> default true
+    // 无 show 表达式 -> 默认 true
     let json_val = json!({});
     let style = TileStyle::from_json(&json_val);
     assert!(style.evaluate_show(&empty()));
@@ -521,7 +521,7 @@ fn tile_style_from_json_show_default_true() {
 
 #[test]
 fn tile_style_from_json_color_conditions() {
-    // Maps to Cesium3DTileStyleSpec "sets color value to conditional"
+    // 映射至 Cesium3DTileStyleSpec "sets color value to conditional"
     let json_val = json!({
         "color": {
             "conditions": [
@@ -590,7 +590,7 @@ fn tile_style_from_json_meta() {
 
 #[test]
 fn tile_style_from_json_color_with_alpha() {
-    // Maps to Cesium3DTileStyleSpec "sets color value to expression" with alpha
+    // 映射至 Cesium3DTileStyleSpec "sets color value to expression"，带 alpha
     let json_val = json!({
         "color": "color('purple', 0.5)"
     });
@@ -605,7 +605,7 @@ fn tile_style_from_json_color_with_alpha() {
 
 #[test]
 fn tile_style_combined_show_and_color() {
-    // Full style with show + color + pointSize
+    // 包含 show + color + pointSize 的完整样式
     let json_val = json!({
         "show": "${Height} > 0",
         "color": {

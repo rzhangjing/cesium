@@ -1,127 +1,126 @@
-//! 3D Tile node definition.
+//! 3D Tile 节点定义。
 //!
-//! Maps to CesiumJS `Scene/Cesium3DTile.js`
+//! 镜像 CesiumJS `Scene/Cesium3DTile.js`
 
 use crate::bounding_volume::BoundingVolume;
 use serde::{Deserialize, Serialize};
 
-/// The refinement strategy for a tile.
+/// 瓦片的 refinement 策略。
 ///
-/// Maps to CesiumJS `Scene/Cesium3DTileRefine.js`
+/// 镜像 CesiumJS `Scene/Cesium3DTileRefine.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum TileRefine {
-    /// Child tiles replace the parent when rendered.
+    /// 渲染时子瓦片替换父瓦片。
     #[default]
     Replace,
-    /// Child tiles are added to the parent when rendered.
+    /// 渲染时子瓦片叠加到父瓦片上。
     Add,
 }
 
-/// The loading state of tile content.
+/// 瓦片内容的加载状态。
 ///
-/// Maps to CesiumJS `Scene/Cesium3DTileContentState.js`
+/// 镜像 CesiumJS `Scene/Cesium3DTileContentState.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TileContentState {
-    /// Content has not been requested.
+    /// 尚未请求内容。
     #[default]
     Unloaded,
-    /// Content request is in progress.
+    /// 内容请求正在进行。
     Loading,
-    /// Content is being processed (decoded, GPU upload).
+    /// 内容正在处理（解码、GPU 上传）。
     Processing,
-    /// Content is ready for rendering.
+    /// 内容已就绪可渲染。
     Ready,
-    /// Content failed to load.
+    /// 内容加载失败。
     Failed,
-    /// Content has been explicitly unloaded.
+    /// 内容已被显式卸载。
     Expired,
 }
 
 impl TileContentState {
-    /// Returns true if the content is ready for rendering.
+    /// 若内容已就绪可渲染则返回 true。
     pub fn is_renderable(&self) -> bool {
         matches!(self, TileContentState::Ready)
     }
 
-    /// Returns true if a request should be made.
+    /// 若应发起请求则返回 true。
     pub fn should_request(&self) -> bool {
         matches!(self, TileContentState::Unloaded | TileContentState::Failed)
     }
 }
 
-/// Content reference for a tile.
+/// 瓦片的内容引用。
 ///
-/// Maps to the `content` property in tileset.json
+/// 映射到 tileset.json 中的 `content` 属性
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TileContent {
-    /// URI to the tile content (glTF, b3dm, pnts, etc.)
+    /// 瓦片内容的 URI（glTF、b3dm、pnts 等）
     pub uri: String,
 
-    /// Optional bounding volume for the content (tighter than tile bounds).
+    /// 可选的内容包围体（比瓦片边界更紧凑）。
     #[serde(default)]
     pub bounding_volume: Option<BoundingVolume>,
 
-    /// Optional group ID for multiple contents.
+    /// 用于多内容的可选 group ID。
     #[serde(default)]
     pub group: Option<u32>,
 }
 
-/// A node in the 3D Tiles tree structure.
+/// 3D Tiles 树结构中的一个节点。
 ///
-/// Maps to CesiumJS `Cesium3DTile`
+/// 镜像 CesiumJS `Cesium3DTile`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Tile {
-    /// The bounding volume of this tile.
+    /// 本瓦片的包围体。
     pub bounding_volume: BoundingVolume,
 
-    /// The geometric error (in meters) introduced if this tile is rendered
-    /// and its children are not.
+    /// 几何误差（以米计）：若渲染本瓦片而其子瓦片未渲染时引入的误差。
     pub geometric_error: f64,
 
-    /// The refinement strategy (ADD or REPLACE).
+    /// refinement 策略（ADD 或 REPLACE）。
     #[serde(default)]
     pub refine: Option<TileRefine>,
 
-    /// Optional 4x4 transform matrix (column-major, 16 elements).
+    /// 可选的 4x4 变换矩阵（列主序，16 个元素）。
     #[serde(default)]
     pub transform: Option<[f64; 16]>,
 
-    /// The content of this tile (if it has renderable content).
+    /// 本瓦片的内容（若它有可渲染内容）。
     #[serde(default)]
     pub content: Option<TileContent>,
 
-    /// Multiple contents (for composite tiles).
+    /// 多个内容（用于复合瓦片）。
     #[serde(default)]
     pub contents: Option<Vec<TileContent>>,
 
-    /// Child tiles.
+    /// 子瓦片。
     #[serde(default)]
     pub children: Vec<Tile>,
 
-    /// Optional viewer request volume for prefetching.
+    /// 用于预取的可选 viewer request volume。
     #[serde(default)]
     pub viewer_request_volume: Option<BoundingVolume>,
 
-    /// Optional extras (application-specific data).
+    /// 可选的 extras（应用特定数据）。
     #[serde(default)]
     pub extras: Option<serde_json::Value>,
 }
 
 impl Tile {
-    /// Returns the effective refine mode, inheriting from parent if not specified.
+    /// 返回有效的 refine 模式，若未指定则从父瓦片继承。
     pub fn effective_refine(&self, parent_refine: TileRefine) -> TileRefine {
         self.refine.unwrap_or(parent_refine)
     }
 
-    /// Returns true if this tile has renderable content.
+    /// 若本瓦片有可渲染内容则返回 true。
     pub fn has_content(&self) -> bool {
         self.content.is_some() || self.contents.as_ref().is_some_and(|c| !c.is_empty())
     }
 
-    /// Returns all content URIs for this tile.
+    /// 返回本瓦片所有内容 URI。
     pub fn content_uris(&self) -> Vec<&str> {
         let mut uris = Vec::new();
         if let Some(ref content) = self.content {
@@ -135,7 +134,7 @@ impl Tile {
         uris
     }
 
-    /// Returns the number of descendant tiles (recursive).
+    /// 返回后代瓦片的数量（递归）。
     pub fn descendant_count(&self) -> usize {
         let mut count = self.children.len();
         for child in &self.children {
@@ -144,7 +143,7 @@ impl Tile {
         count
     }
 
-    /// Gets the transform matrix as a glam DMat4, or identity if not specified.
+    /// 将变换矩阵作为 glam DMat4 返回，若未指定则返回单位阵。
     pub fn transform_matrix(&self) -> glam::DMat4 {
         match self.transform {
             Some(data) => glam::DMat4::from_cols_array(&data),
@@ -153,34 +152,34 @@ impl Tile {
     }
 }
 
-/// Runtime state for a tile during traversal.
+/// 遍历期间瓦片的运行时状态。
 ///
-/// This is separate from the serializable Tile struct to keep
-/// the domain model pure and the runtime state mutable.
+/// 它与可序列化的 Tile 结构分离，以保持 domain 模型纯粹、
+/// 运行时状态可变。
 #[derive(Debug, Clone, Default)]
 pub struct TileRuntimeState {
-    /// Current content loading state.
+    /// 当前的内容加载状态。
     pub content_state: TileContentState,
 
-    /// Distance from the camera to this tile.
+    /// 到本瓦片的相机距离。
     pub distance_to_camera: f64,
 
-    /// Screen space error for this tile.
+    /// 本瓦片的屏幕空间误差。
     pub screen_space_error: f64,
 
-    /// Whether this tile is visible in the current frame.
+    /// 本瓦片在当前帧中是否可见。
     pub visible: bool,
 
-    /// Whether this tile was selected for rendering.
+    /// 本瓦片是否被选中渲染。
     pub selected: bool,
 
-    /// The depth of this tile in the tree.
+    /// 本瓦片在树中的深度。
     pub depth: u32,
 
-    /// Frame number when this tile was last visited.
+    /// 本瓦片上次被访问时的帧号。
     pub visited_frame: u64,
 
-    /// Frame number when this tile was last selected.
+    /// 本瓦片上次被选中时的帧号。
     pub selected_frame: u64,
 }
 
@@ -251,11 +250,11 @@ mod tests {
         let mut tile = create_test_tile();
         tile.refine = None;
 
-        // Should inherit from parent
+        // 应从父瓦片继承
         assert_eq!(tile.effective_refine(TileRefine::Add), TileRefine::Add);
         assert_eq!(tile.effective_refine(TileRefine::Replace), TileRefine::Replace);
 
-        // Should use own value
+        // 应使用自身值
         tile.refine = Some(TileRefine::Add);
         assert_eq!(tile.effective_refine(TileRefine::Replace), TileRefine::Add);
     }

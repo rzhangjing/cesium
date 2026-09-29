@@ -1,5 +1,5 @@
-//! Tests for Cartesian2 extension functions.
-//! Maps to CesiumJS `Specs/Core/Cartesian2Spec.js` A-class tests.
+//! Cartesian2 扩展函数的测试。
+//! 对应 CesiumJS `Specs/Core/Cartesian2Spec.js` 的 A 类测试。
 
 use cesium_geospatial::cartesian2_ext as c2;
 use cesium_geospatial::math_utils;

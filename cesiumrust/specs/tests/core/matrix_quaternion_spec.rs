@@ -1,5 +1,5 @@
-//! Matrix and Quaternion specs - ported from Core/Matrix2Spec, Matrix3Spec, Matrix4Spec, QuaternionSpec
-//! Covers: DMat2/DMat3/DMat4 operations, DQuat rotations, Transforms integration.
+//! Matrix 与 Quaternion 规格测试 - 移植自 Core/Matrix2Spec、Matrix3Spec、Matrix4Spec、QuaternionSpec
+//! 覆盖范围：DMat2/DMat3/DMat4 运算、DQuat 旋转、Transforms 集成。
 
 use cesium_geospatial::transforms::{HeadingPitchRoll, TranslationRotationScale};
 use glam::{DMat2, DMat3, DMat4, DQuat, DVec3};

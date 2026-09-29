@@ -1,16 +1,16 @@
-//! Core/AxisAlignedBoundingBoxSpec.js → Rust integration tests
+//! Core/AxisAlignedBoundingBoxSpec.js → Rust 集成测试
 //!
-//! Faithful port of CesiumJS `Specs/Core/AxisAlignedBoundingBoxSpec.js` (22 `it()` cases).
+//! 忠实移植自 CesiumJS `Specs/Core/AxisAlignedBoundingBoxSpec.js`（22 个 `it()` 用例）。
 //!
-//! ## Platform adaptations
-//! - JS result-parameter variants (`fromCorners(min, max, result)`, `clone(result)`)
-//!   are merged into the owned-return tests: Rust returns owned values / uses `Copy`.
-//! - JS "throws without a minimum/maximum/box/plane" cases (null/undefined checks) are
-//!   omitted: Rust's type system makes passing `undefined` impossible.
-//! - JS `fromPoints(undefined)` maps to Rust `from_points(&[])` (both yield the empty box).
-//! - JS `clone()` with no argument returns `undefined`; Rust `Copy` has no such path → omitted.
-//! - The JS 3-argument constructor `new AxisAlignedBoundingBox(min, max, center)` maps to
-//!   `AxisAlignedBoundingBox::with_center`.
+//! ## 平台适配
+//! - JS 结果参数变体（`fromCorners(min, max, result)`、`clone(result)`）
+//!   已合并进返回所有权值的测试：Rust 返回所有权值 / 使用 `Copy`。
+//! - JS "throws without a minimum/maximum/box/plane" 用例（null/undefined 检查）
+//!   已省略：Rust 的类型系统使传入 `undefined` 不可能。
+//! - JS `fromPoints(undefined)` 对应 Rust `from_points(&[])`（两者都产生空包围盒）。
+//! - JS 无参数的 `clone()` 返回 `undefined`；Rust `Copy` 没有此路径 → 省略。
+//! - JS 的 3 参数构造函数 `new AxisAlignedBoundingBox(min, max, center)` 对应
+//!   `AxisAlignedBoundingBox::with_center`。
 
 use cesium_geospatial::bounding::AxisAlignedBoundingBox;
 use cesium_geospatial::ray::{Intersect, Plane};
@@ -76,7 +76,7 @@ fn test_aabb_from_corners() {
 
 /// `it("fromPoints constructs empty box with undefined positions")` +
 /// `it("fromPoints constructs empty box with empty positions")`
-/// (JS `undefined` and `[]` both map to Rust empty slice)
+/// (JS 的 `undefined` 和 `[]` 都对应 Rust 空切片)
 #[test]
 fn test_aabb_from_points_empty() {
     let box_ = AxisAlignedBoundingBox::from_points(&[]);
@@ -98,7 +98,7 @@ fn test_aabb_from_points_values() {
 #[test]
 fn test_aabb_clone() {
     let box_ = AxisAlignedBoundingBox::new(DVec3::Y, DVec3::X);
-    let result = box_; // Copy semantics == box.clone()
+    let result = box_; // Copy 语义 == box.clone()
     assert!(box_ == result);
 }
 

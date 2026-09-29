@@ -1,6 +1,6 @@
-//! Context specs - ported from Renderer/ContextSpec, VertexArraySpec
-//! Covers: DrawCommand, RenderCommandList, RenderPass, BlendState, DepthState,
-//! FrameStatistics, DebugInspector
+//! Context 规范 - 移植自 Renderer/ContextSpec、VertexArraySpec
+//! 覆盖：DrawCommand、RenderCommandList、RenderPass、BlendState、DepthState、
+//! FrameStatistics、DebugInspector
 
 use cesium_scene::{
     BlendState, ClearCommand, DepthState, DrawCommand, FrameStatistics, RenderPass,

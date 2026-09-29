@@ -1,6 +1,6 @@
-//! ScreenSpaceCameraController extended specs — rotate, look, translate, twist
-//! Ported from: packages/engine/Specs/Scene/ScreenSpaceCameraControllerSpec.js
-//! A-class pure math tests
+//! ScreenSpaceCameraController 扩展规格 — 旋转、观察、平移、扭曲
+//! 移植自：packages/engine/Specs/Scene/ScreenSpaceCameraControllerSpec.js
+//! A 类纯数学测试
 
 use cesium_interaction::camera_controller::{CameraController, CameraControllerConfig};
 use cesium_camera::Camera;
@@ -24,7 +24,7 @@ fn make_controller() -> CameraController {
 }
 
 // ============================================================================
-// Config customization
+// 配置自定义
 // ============================================================================
 
 #[test]
@@ -57,14 +57,14 @@ fn config_minimum_zoom_distance_custom() {
         DVec3::new(0.0, 0.0, 1.0),
     );
 
-    // Camera is 50m above surface, min distance is 100m — collision should push it up
+    // 相机位于表面上方 50m，最小距离为 100m — 碰撞应将其上推
     controller.enforce_collision(&mut camera);
     let height = camera.position.length() - Ellipsoid::WGS84.maximum_radius();
     assert!(height >= 100.0 - EPSILON10);
 }
 
 // ============================================================================
-// Orbit: heading-only rotation preserves distance
+// 环绕：仅 heading 旋转保持距离
 // ============================================================================
 
 #[test]
@@ -120,7 +120,7 @@ fn orbit_disabled_does_nothing() {
 }
 
 // ============================================================================
-// Orbit: pitch clamping
+// 环绕：pitch 限制
 // ============================================================================
 
 #[test]
@@ -129,17 +129,17 @@ fn orbit_pitch_clamped_to_near_90() {
     let mut camera = make_camera();
     let target = DVec3::ZERO;
 
-    // Try to pitch way past vertical
+    // 尝试将 pitch 拉过铅直很多
     controller.orbit(&mut camera, target, 0.0, 10.0, 0.0);
 
-    // Camera should not pass through the pole
+    // 相机不应穿过极点
     let offset = camera.position - target;
     let pitch = offset.y.atan2((offset.x * offset.x + offset.z * offset.z).sqrt());
     assert!(pitch.abs() <= PI / 2.0 + 0.01);
 }
 
 // ============================================================================
-// Pan: direction tests
+// 平移：方向测试
 // ============================================================================
 
 #[test]
@@ -150,9 +150,9 @@ fn pan_right_moves_camera() {
 
     controller.pan(&mut camera, 1.0, 0.0);
 
-    // Camera should move in the direction of right vector
+    // 相机应沿 right 向量方向移动
     let delta = camera.position - initial_pos;
-    // delta should have component along camera.right (which points roughly +Z for this setup)
+    // delta 应沿 camera.right 有分量（此设置下 right 大致指向 +Z）
     assert!(delta.length() > 0.0);
 }
 
@@ -181,7 +181,7 @@ fn pan_disabled_does_nothing() {
 }
 
 // ============================================================================
-// Zoom: collision prevention
+// 缩放：防止碰撞
 // ============================================================================
 
 #[test]
@@ -193,7 +193,7 @@ fn zoom_does_not_cross_surface() {
         DVec3::new(0.0, 0.0, 1.0),
     );
 
-    // Try to zoom in deep underground
+    // 尝试深入地下放大
     controller.zoom(&mut camera, 100.0);
 
     let height = camera.position.length() - Ellipsoid::WGS84.maximum_radius();
@@ -225,11 +225,11 @@ fn zoom_with_collision_disabled_can_go_underground() {
     controller.zoom(&mut camera, 100.0);
 
     let height = camera.position.length() - Ellipsoid::WGS84.maximum_radius();
-    assert!(height < 0.0); // Below surface
+    assert!(height < 0.0); // 表面以下
 }
 
 // ============================================================================
-// Tilt: pitch changes
+// 倾斜：pitch 变化
 // ============================================================================
 
 #[test]
@@ -263,14 +263,14 @@ fn tilt_up_increases_z_height() {
     controller.tilt(&mut camera, target, PI / 4.0);
     let _height_after = camera.position.length();
 
-    // After tilting, position length may change — just verify orthonormality
+    // 倾斜后，position 长度可能改变 — 仅验证正交归一性
     assert!((camera.direction.length() - 1.0).abs() < EPSILON14);
     assert!((camera.up.length() - 1.0).abs() < EPSILON14);
     assert!((camera.right.length() - 1.0).abs() < EPSILON14);
 }
 
 // ============================================================================
-// Enforce collision
+// 强制碰撞
 // ============================================================================
 
 #[test]
@@ -316,7 +316,7 @@ fn enforce_collision_disabled_does_nothing() {
 }
 
 // ============================================================================
-// Orbit: orthonormality
+// 环绕：正交归一性
 // ============================================================================
 
 #[test]
@@ -336,7 +336,7 @@ fn orbit_preserves_orthonormality() {
 }
 
 // ============================================================================
-// Multiple operations chaining
+// 多操作链式调用
 // ============================================================================
 
 #[test]
@@ -346,21 +346,21 @@ fn orbit_then_pan_then_zoom() {
 
     let initial_pos = camera.position;
 
-    // Orbit
+    // 环绕
     controller.orbit(&mut camera, DVec3::ZERO, 0.5, -0.2, 0.0);
     assert!(camera.position != initial_pos);
 
-    // Pan
+    // 平移
     controller.pan(&mut camera, 0.3, -0.1);
     assert!((camera.direction.length() - 1.0).abs() < EPSILON14);
 
-    // Zoom out
+    // 缩小
     controller.zoom(&mut camera, -1.0);
     assert!((camera.up.length() - 1.0).abs() < EPSILON14);
 }
 
 // ============================================================================
-// Edge cases
+// 边界情形
 // ============================================================================
 
 #[test]

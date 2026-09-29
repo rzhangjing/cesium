@@ -1,34 +1,34 @@
-//! WKT (Well-Known Text) geometry parser.
+//! WKT（Well-Known Text）几何解析器。
 //!
-//! Implements OGC WKT specification for geometry representation.
+//! 实现用于几何表示的 OGC WKT 规范。
 
 use glam::DVec2;
 
-/// A WKT geometry.
+/// 一个 WKT 几何。
 #[derive(Debug, Clone, PartialEq)]
 pub enum WktGeometry {
-    /// A single point.
+    /// 单个点。
     Point(DVec2),
-    /// A line string (polyline).
+    /// 一条线串（折线）。
     LineString(Vec<DVec2>),
-    /// A polygon with exterior ring and optional holes.
+    /// 一个带外环和可选内腔的多边形。
     Polygon {
-        /// Exterior ring.
+        /// 外环。
         exterior: Vec<DVec2>,
-        /// Interior rings (holes).
+        /// 内环（内腔）。
         interiors: Vec<Vec<DVec2>>,
     },
-    /// Multiple points.
+    /// 多个点。
     MultiPoint(Vec<DVec2>),
-    /// Multiple line strings.
+    /// 多条线串。
     MultiLineString(Vec<Vec<DVec2>>),
-    /// Multiple polygons.
+    /// 多个多边形。
     MultiPolygon(Vec<WktGeometry>),
-    /// A collection of geometries.
+    /// 一个几何集合。
     GeometryCollection(Vec<WktGeometry>),
 }
 
-/// Parses a WKT string into a geometry.
+/// 将 WKT 字符串解析为几何。
 pub fn parse_wkt(wkt: &str) -> Result<WktGeometry, WktError> {
     let wkt = wkt.trim();
     let upper = wkt.to_uppercase();
@@ -52,18 +52,18 @@ pub fn parse_wkt(wkt: &str) -> Result<WktGeometry, WktError> {
     }
 }
 
-/// WKT parsing errors.
+/// WKT 解析错误。
 #[derive(Debug, Clone, PartialEq)]
 pub enum WktError {
-    /// Unknown geometry type.
+    /// 未知的几何类型。
     UnknownType(String),
-    /// Invalid coordinate format.
+    /// 无效的坐标格式。
     InvalidCoordinate(String),
-    /// Missing parentheses.
+    /// 缺少括号。
     MissingParenthesis,
-    /// Unexpected end of input.
+    /// 输入意外结束。
     UnexpectedEnd,
-    /// Invalid number format.
+    /// 无效的数字格式。
     InvalidNumber(String),
 }
 
@@ -107,7 +107,7 @@ fn parse_polygon(wkt: &str) -> Result<WktGeometry, WktError> {
 
 fn parse_multipoint(wkt: &str) -> Result<WktGeometry, WktError> {
     let inner = extract_parentheses(wkt)?;
-    // MultiPoint can be ((x y), (x y)) or (x y, x y)
+    // MultiPoint 可以是 ((x y), (x y)) 或 (x y, x y)
     if inner.contains('(') {
         let rings = parse_ring_list(&inner)?;
         let points: Vec<DVec2> = rings.iter().filter_map(|r| r.first().copied()).collect();
@@ -126,7 +126,7 @@ fn parse_multilinestring(wkt: &str) -> Result<WktGeometry, WktError> {
 
 fn parse_multipolygon(wkt: &str) -> Result<WktGeometry, WktError> {
     let inner = extract_parentheses(wkt)?;
-    // Split at top-level parentheses: each polygon is ((rings))
+    // 在顶层括号处拆分：每个多边形为 ((rings))
     let mut polygons = Vec::new();
     let mut depth = 0i32;
     let mut current = String::new();
@@ -238,7 +238,7 @@ fn parse_ring_list(s: &str) -> Result<Vec<Vec<DVec2>>, WktError> {
         }
     }
 
-    // Handle case where there are no inner parentheses (e.g., MultiPoint without parens)
+    // 处理没有内层括号的情况（例如无括号的 MultiPoint）
     if rings.is_empty() && !s.trim().is_empty() && !s.contains('(') {
         rings.push(parse_coordinate_list(s)?);
     }
@@ -285,7 +285,7 @@ fn split_top_level(s: &str, delimiter: char) -> Result<Vec<String>, WktError> {
     Ok(parts)
 }
 
-/// Serializes a geometry to WKT string.
+/// 将几何序列化为 WKT 字符串。
 pub fn to_wkt(geometry: &WktGeometry) -> String {
     match geometry {
         WktGeometry::Point(p) => format!("POINT ({} {})", p.x, p.y),

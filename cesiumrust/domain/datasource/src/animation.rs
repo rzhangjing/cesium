@@ -1,9 +1,9 @@
-//! Animation system: property animation, path animation, and path visualization.
+//! 动画系统：属性动画、路径动画与路径可视化。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `DataSources/PathVisualizer.js`
-//! - `DataSources/SampledPositionProperty.js` (animation aspect)
-//! - `Core/JulianDate.js` (time management)
+//! - `DataSources/SampledPositionProperty.js`（动画方面）
+//! - `Core/JulianDate.js`（时间管理）
 
 use cesium_geospatial::{Cartographic, Ellipsoid};
 
@@ -11,46 +11,46 @@ use crate::entity::Entity;
 use crate::entity_collection::EntityCollection;
 use crate::property::Property;
 
-/// A keyframe in an animation.
+/// 动画中的一个关键帧。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Keyframe {
-    /// Time in seconds since epoch.
+    /// 自历元起以秒计的时间。
     pub time: f64,
-    /// Value at this keyframe (position as [lon_rad, lat_rad, height_m]).
+    /// 此关键帧处的值（位置以 [lon_rad, lat_rad, height_m] 表示）。
     pub value: [f64; 3],
 }
 
-/// Interpolation algorithm for animation.
+/// 动画的插值算法。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InterpolationAlgorithm {
-    /// Linear interpolation.
+    /// 线性插值。
     #[default]
     Linear,
-    /// Hermite (cubic) interpolation.
+    /// Hermite（三次）插值。
     Hermite,
-    /// Lagrange polynomial interpolation.
+    /// Lagrange 多项式插值。
     Lagrange,
 }
 
-/// Animation clock state.
+/// 动画时钟状态。
 #[derive(Debug, Clone)]
 pub struct AnimationClock {
-    /// Start time (seconds).
+    /// 起始时间（秒）。
     pub start_time: f64,
-    /// Stop time (seconds).
+    /// 停止时间（秒）。
     pub stop_time: f64,
-    /// Current time (seconds).
+    /// 当前时间（秒）。
     pub current_time: f64,
-    /// Playback rate multiplier.
+    /// 播放速率倍率。
     pub multiplier: f64,
-    /// Whether the clock is playing.
+    /// 时钟是否正在播放。
     pub playing: bool,
-    /// Whether to loop.
+    /// 是否循环。
     pub looping: bool,
 }
 
 impl AnimationClock {
-    /// Creates a new animation clock.
+    /// 创建新的动画时钟。
     pub fn new(start_time: f64, stop_time: f64) -> Self {
         Self {
             start_time,
@@ -62,7 +62,7 @@ impl AnimationClock {
         }
     }
 
-    /// Advances the clock by delta_time seconds.
+    /// 将时钟推进 delta_time 秒。
     pub fn tick(&mut self, delta_time: f64) {
         if !self.playing {
             return;
@@ -89,7 +89,7 @@ impl AnimationClock {
         }
     }
 
-    /// Normalized progress (0.0 to 1.0).
+    /// 归一化的进度（0.0 到 1.0）。
     pub fn progress(&self) -> f64 {
         if (self.stop_time - self.start_time).abs() < f64::EPSILON {
             return 0.0;
@@ -97,18 +97,18 @@ impl AnimationClock {
         (self.current_time - self.start_time) / (self.stop_time - self.start_time)
     }
 
-    /// Resets to start.
+    /// 重置到起点。
     pub fn reset(&mut self) {
         self.current_time = self.start_time;
     }
 
-    /// Seeks to a specific time.
+    /// 定位到特定时间。
     pub fn seek(&mut self, time: f64) {
         self.current_time = time.clamp(self.start_time, self.stop_time);
     }
 }
 
-/// Interpolates a position at the given time from keyframes.
+/// 从关键帧在给定的时间处插值出一个位置。
 pub fn interpolate_position(
     keyframes: &[Keyframe],
     time: f64,
@@ -121,7 +121,7 @@ pub fn interpolate_position(
         return Some(keyframes[0].value);
     }
 
-    // Find surrounding keyframes
+    // 查找相邻的关键帧
     let mut prev_idx = 0;
     for (i, kf) in keyframes.iter().enumerate() {
         if kf.time > time {
@@ -130,11 +130,11 @@ pub fn interpolate_position(
         prev_idx = i;
     }
 
-    // Before first or at first
+    // 在第一个之前或正好在第一个
     if time <= keyframes[0].time {
         return Some(keyframes[0].value);
     }
-    // After last or at last
+    // 在最后一个之后或正好在最后一个
     if time >= keyframes[keyframes.len() - 1].time {
         return Some(keyframes[keyframes.len() - 1].value);
     }
@@ -159,7 +159,7 @@ pub fn interpolate_position(
             ])
         }
         InterpolationAlgorithm::Hermite => {
-            // Cubic Hermite with zero tangents (smooth step)
+            // 零切线的三次 Hermite（smoothstep 平滑）
             let t2 = t * t;
             let t3 = t2 * t;
             let h = 3.0 * t2 - 2.0 * t3; // smoothstep
@@ -170,13 +170,13 @@ pub fn interpolate_position(
             ])
         }
         InterpolationAlgorithm::Lagrange => {
-            // Use up to 4 surrounding points for Lagrange
+            // 为 Lagrange 使用至多 4 个相邻点
             let start = prev_idx.saturating_sub(1);
             let end = (next_idx + 2).min(keyframes.len());
             let points: Vec<&Keyframe> = keyframes[start..end].iter().collect();
 
             if points.len() < 3 {
-                // Fall back to linear
+                // 回退到线性
                 return Some([
                     prev.value[0] + t * (next.value[0] - prev.value[0]),
                     prev.value[1] + t * (next.value[1] - prev.value[1]),
@@ -204,18 +204,18 @@ pub fn interpolate_position(
     }
 }
 
-/// A path trail point in Cartesian3.
+/// Cartesian3 中的一个路径拖尾点。
 #[derive(Debug, Clone)]
 pub struct PathPoint {
-    /// Position in Cartesian3 [x, y, z].
+    /// 以 Cartesian3 [x, y, z] 表示的位置。
     pub position: [f64; 3],
-    /// Time at this point.
+    /// 此点处的时间。
     pub time: f64,
 }
 
-/// Computes the trail/lead path for an entity at the given time.
+/// 计算给定时间处实体的拖尾/前导路径。
 ///
-/// Maps to CesiumJS `DataSources/PathVisualizer.js`
+/// 映射到 CesiumJS `DataSources/PathVisualizer.js`
 pub fn compute_path(
     entity: &Entity,
     time: f64,
@@ -226,11 +226,11 @@ pub fn compute_path(
 ) -> Vec<PathPoint> {
     let mut path = Vec::new();
 
-    // Get position samples from the entity
+    // 从实体获取位置样本
     let samples = match &entity.position {
         Property::Sampled(s) => s,
         Property::Constant(pos) => {
-            // Static entity - no path
+            // 静态实体 - 无路径
             let cart = ellipsoid.cartographic_to_cartesian(
                 &Cartographic::from_radians(pos[0], pos[1], pos[2]),
             );
@@ -247,13 +247,13 @@ pub fn compute_path(
         return path;
     }
 
-    // Compute keyframes from samples
+    // 由样本计算关键帧
     let keyframes: Vec<Keyframe> = samples
         .iter()
         .map(|(t, pos)| Keyframe { time: *t, value: *pos })
         .collect();
 
-    // Trail: from (time - trail_time) to time
+    // 拖尾：从 (time - trail_time) 到 time
     let trail_start = time - trail_time;
     let mut t = trail_start;
     while t <= time {
@@ -269,7 +269,7 @@ pub fn compute_path(
         t += resolution;
     }
 
-    // Lead: from time to (time + lead_time)
+    // 前导：从 time 到 (time + lead_time)
     let lead_end = time + lead_time;
     t = time + resolution;
     while t <= lead_end {
@@ -288,7 +288,7 @@ pub fn compute_path(
     path
 }
 
-/// Updates all entities with path graphics, computing their trail/lead paths.
+/// 更新所有带 path 图形的实体，计算它们的拖尾/前导路径。
 pub fn update_all_paths(
     entities: &EntityCollection,
     time: f64,
@@ -385,7 +385,7 @@ mod tests {
             Keyframe { time: 10.0, value: [10.0, 10.0, 10.0] },
         ];
 
-        // At midpoint, Hermite (smoothstep) should give 0.5
+        // 在中点处，Hermite（smoothstep）应给出 0.5
         let pos = interpolate_position(&keyframes, 5.0, InterpolationAlgorithm::Hermite).unwrap();
         assert!((pos[0] - 5.0).abs() < 1e-10);
     }
@@ -397,11 +397,11 @@ mod tests {
             Keyframe { time: 10.0, value: [10.0, 20.0, 30.0] },
         ];
 
-        // Before start
+        // 在开始之前
         let pos = interpolate_position(&keyframes, -5.0, InterpolationAlgorithm::Linear).unwrap();
         assert_eq!(pos, [1.0, 2.0, 3.0]);
 
-        // After end
+        // 在结束之后
         let pos = interpolate_position(&keyframes, 15.0, InterpolationAlgorithm::Linear).unwrap();
         assert_eq!(pos, [10.0, 20.0, 30.0]);
     }
@@ -431,7 +431,7 @@ mod tests {
         let ellipsoid = Ellipsoid::WGS84;
         let path = compute_path(&entity, 60.0, 60.0, 60.0, 30.0, &ellipsoid);
 
-        // Should have trail (0-60) + lead (60-120) points
+        // 应有拖尾 (0-60) + 前导 (60-120) 的点
         assert!(path.len() >= 4);
     }
 
@@ -441,7 +441,7 @@ mod tests {
         let ellipsoid = Ellipsoid::WGS84;
 
         let path = compute_path(&entity, 0.0, 60.0, 60.0, 30.0, &ellipsoid);
-        assert_eq!(path.len(), 1); // Static entity has single point
+        assert_eq!(path.len(), 1); // 静态实体只有一个点
     }
 
     #[test]
@@ -461,7 +461,7 @@ mod tests {
         });
         entities.add(sat);
 
-        // Entity without path
+        // 没有 path 的实体
         entities.add(Entity::new("no-path").with_position(0.0, 0.0, 0.0));
 
         let ellipsoid = Ellipsoid::WGS84;

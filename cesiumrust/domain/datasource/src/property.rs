@@ -1,11 +1,11 @@
-//! Property system for time-dynamic values.
+//! 用于时间动态值的属性系统。
 //!
-//! Maps to CesiumJS `DataSources/Property.js`, `ConstantProperty.js`,
-//! `SampledProperty.js`, `TimeIntervalCollectionProperty.js`
+//! 映射到 CesiumJS `DataSources/Property.js`、`ConstantProperty.js`、
+//! `SampledProperty.js`、`TimeIntervalCollectionProperty.js`
 
 use serde::{Deserialize, Serialize};
 
-/// A color value in RGBA (0.0..1.0 per channel).
+/// 以 RGBA 表示的颜色值（每通道 0.0..1.0）。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Color {
     pub red: f64,
@@ -15,36 +15,36 @@ pub struct Color {
 }
 
 impl Color {
-    /// Creates a new color.
+    /// 创建新颜色。
     pub fn new(red: f64, green: f64, blue: f64, alpha: f64) -> Self {
         Self { red, green, blue, alpha }
     }
 
-    /// White opaque.
+    /// 不透明白。
     pub const WHITE: Self = Self { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 };
 
-    /// Black opaque.
+    /// 不透明黑。
     pub const BLACK: Self = Self { red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0 };
 
-    /// Red opaque.
+    /// 不透明红。
     pub const RED: Self = Self { red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0 };
 
-    /// Green opaque.
+    /// 不透明绿。
     pub const GREEN: Self = Self { red: 0.0, green: 1.0, blue: 0.0, alpha: 1.0 };
 
-    /// Blue opaque.
+    /// 不透明蓝。
     pub const BLUE: Self = Self { red: 0.0, green: 0.0, blue: 1.0, alpha: 1.0 };
 
-    /// Yellow opaque.
+    /// 不透明黄。
     pub const YELLOW: Self = Self { red: 1.0, green: 1.0, blue: 0.0, alpha: 1.0 };
 
-    /// Cyan opaque.
+    /// 不透明青。
     pub const CYAN: Self = Self { red: 0.0, green: 1.0, blue: 1.0, alpha: 1.0 };
 
-    /// Transparent.
+    /// 完全透明。
     pub const TRANSPARENT: Self = Self { red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0 };
 
-    /// Creates a color from a CSS hex string (e.g., "#FF0000" or "#FF000080").
+    /// 从 CSS 十六进制字符串创建颜色（例如 "#FF0000" 或 "#FF000080"）。
     pub fn from_hex(hex: &str) -> Option<Self> {
         let hex = hex.trim_start_matches('#');
         match hex.len() {
@@ -70,7 +70,7 @@ impl Color {
         }
     }
 
-    /// Converts to [f32; 4] for GPU use.
+    /// 转换为 [f32; 4] 以供 GPU 使用。
     pub fn to_f32_array(&self) -> [f32; 4] {
         [self.red as f32, self.green as f32, self.blue as f32, self.alpha as f32]
     }
@@ -83,25 +83,25 @@ impl Default for Color {
     }
 }
 
-/// A property value that can be constant or time-varying.
+/// 可为常量或随时间变化的属性值。
 ///
-/// Maps to CesiumJS `DataSources/Property.js`
+/// 映射到 CesiumJS `DataSources/Property.js`
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum Property<T: Clone + PartialEq> {
-    /// A constant value.
+    /// 一个常量值。
     Constant(T),
-    /// A sampled property with time-value pairs (JulianDate seconds, value).
+    /// 带时间-值对的采样属性（JulianDate 秒数，值）。
     Sampled(Vec<(f64, T)>),
-    /// Undefined (no value).
+    /// 未定义（无值）。
     #[default]
     Undefined,
 }
 
 impl<T: Clone + PartialEq> Property<T> {
-    /// Gets the value at a given time (seconds since epoch).
+    /// 获取给定时间（自纪元起的秒数）下的值。
     ///
-    /// For constant properties, always returns the constant.
-    /// For sampled properties, returns the nearest value (no interpolation).
+    /// 对于常量属性，始终返回常量。
+    /// 对于采样属性，返回最接近的值（不做插值）。
     pub fn get_value(&self, time: f64) -> Option<&T> {
         match self {
             Property::Constant(v) => Some(v),
@@ -109,7 +109,7 @@ impl<T: Clone + PartialEq> Property<T> {
                 if samples.is_empty() {
                     return None;
                 }
-                // Find nearest sample
+                // 查找最接近的采样点
                 let mut nearest = &samples[0];
                 let mut min_dist = (time - nearest.0).abs();
                 for sample in samples.iter().skip(1) {
@@ -125,12 +125,12 @@ impl<T: Clone + PartialEq> Property<T> {
         }
     }
 
-    /// Returns true if this is a constant property.
+    /// 若为常量属性则返回 true。
     pub fn is_constant(&self) -> bool {
         matches!(self, Property::Constant(_))
     }
 
-    /// Returns true if this property has a value.
+    /// 若此属性有值则返回 true。
     pub fn is_defined(&self) -> bool {
         !matches!(self, Property::Undefined)
     }
@@ -138,19 +138,19 @@ impl<T: Clone + PartialEq> Property<T> {
 
 
 
-/// A position property (cartographic: lon, lat, height in radians/meters).
+/// 位置属性（大地坐标：lon, lat, height，以弧度/米计）。
 pub type PositionProperty = Property<[f64; 3]>;
 
-/// A color property.
+/// 颜色属性。
 pub type ColorProperty = Property<Color>;
 
-/// A numeric property.
+/// 数值属性。
 pub type NumberProperty = Property<f64>;
 
-/// A boolean property.
+/// 布尔属性。
 pub type BoolProperty = Property<bool>;
 
-/// A string property.
+/// 字符串属性。
 pub type StringProperty = Property<String>;
 
 #[cfg(test)]
@@ -192,11 +192,11 @@ mod tests {
         assert!(!prop.is_constant());
         assert!(prop.is_defined());
 
-        // Nearest to time=0
+        // 最接近 time=0
         assert_eq!(*prop.get_value(0.0).unwrap(), 10.0);
-        // Nearest to time=9
+        // 最接近 time=9
         assert_eq!(*prop.get_value(9.0).unwrap(), 20.0);
-        // Nearest to time=20
+        // 最接近 time=20
         assert_eq!(*prop.get_value(20.0).unwrap(), 30.0);
     }
 

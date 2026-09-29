@@ -1,45 +1,44 @@
-//! Image-Based Lighting (IBL).
+//! 基于图像的照明（IBL）。
 //!
-//! Maps to CesiumJS `Scene/ImageBasedLighting.js`:
-//! - Spherical harmonic coefficients for diffuse IBL
-//! - Specular environment maps
-//! - IBL factor scaling
+//! 映射到 CesiumJS `Scene/ImageBasedLighting.js`：
+//! - 用于漫反射 IBL 的球谐系数
+//! - 镜面环境贴图
+//! - IBL factor 缩放
 //!
-//! Domain layer — pure Rust, f64 precision.
+//! 领域层——纯 Rust，f64 精度。
 
 use glam::DVec3;
 
-/// Number of spherical harmonic coefficients (3rd order = 9 coefficients).
+/// 球谐系数的数量（3 阶 = 9 个系数）。
 pub const SH_COEFFICIENT_COUNT: usize = 9;
 
-/// Split-sum BRDF integration sample count used when applying IBL at runtime.
+/// 在运行时应用 IBL 所使用的 split-sum BRDF 积分采样数。
 ///
-/// Mirrors `BRDF_APPLY_SAMPLES` in `adapters/bevy-render/shaders/ibl.wgsl`
-/// (L107). The GPU apply node recomputes the split-sum BRDF inline with this
-/// many GGX importance samples instead of binding a precomputed 256×256 LUT
-/// (see `docs/deviations.md#dev-024`); the CPU reference keeps the same count
-/// so domain↔GPU specular cross-checks compare like-for-like. The apply path
-/// uses 32 taps while the higher-accuracy CPU integrator in [`texture_ibl`]
-/// runs 1024 — the mirror is for the GPU-boundary pairing tests, not for
-/// [`texture_ibl`] itself.
+/// 镜像 `adapters/bevy-render/shaders/ibl.wgsl`（L107）中的
+/// `BRDF_APPLY_SAMPLES`。GPU 应用节点以这么多数量的 GGX 重要性采样
+/// 内联地重算 split-sum BRDF，而非绑定一个预计算的 256×256 LUT
+/// （参见 `docs/deviations.md#dev-024`）；CPU 参考保持相同的数量，
+/// 从而使 domain↔GPU 的镜面对照能同口径比较。应用路径使用 32 个
+/// 采样点，而 [`texture_ibl`] 中更高精度的 CPU 积分器运行 1024 个——
+/// 这一镜像是为 GPU 边界配对测试服务的，而非为 [`texture_ibl`] 本身。
 pub const BRDF_APPLY_SAMPLES: usize = 32;
 
-/// Image-based lighting configuration.
+/// 基于图像照明的配置。
 ///
-/// Maps to CesiumJS `ImageBasedLighting`.
+/// 映射到 CesiumJS `ImageBasedLighting`。
 #[derive(Debug, Clone)]
 pub struct ImageBasedLighting {
-    /// Scales diffuse and specular IBL contribution.
-    /// x = diffuse factor, y = specular factor. Both in [0, 1].
+    /// 缩放漫反射与镜面 IBL 的贡献。
+    /// x = 漫反射因子，y = 镜面因子。二者均在 [0, 1]。
     pub image_based_lighting_factor: [f64; 2],
-    /// Third-order spherical harmonic coefficients for diffuse IBL.
-    /// 9 coefficients, each an RGB triple.
+    /// 用于漫反射 IBL 的三阶球谐系数。
+    /// 9 个系数，每个都是一个 RGB 三元组。
     pub spherical_harmonic_coefficients: Option<[[f64; 3]; SH_COEFFICIENT_COUNT]>,
-    /// URL to a KTX2 specular environment map.
+    /// 指向 KTX2 镜面环境贴图的 URL。
     pub specular_environment_maps: Option<String>,
-    /// Whether to use default spherical harmonics.
+    /// 是否使用默认球谐系数。
     pub use_default_spherical_harmonics: bool,
-    /// Whether to use default specular maps.
+    /// 是否使用默认镜面贴图。
     pub use_default_specular_maps: bool,
 }
 
@@ -56,54 +55,54 @@ impl Default for ImageBasedLighting {
 }
 
 impl ImageBasedLighting {
-    /// Creates a new IBL configuration.
+    /// 创建一个新的 IBL 配置。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Sets the IBL factor (diffuse and specular scaling).
+    /// 设置 IBL 因子（漫反射与镜面缩放）。
     ///
-    /// # Panics
-    /// Panics if values are outside [0, 1].
+    /// # 恐慌
+    /// 若值超出 [0, 1] 则 panic。
     pub fn set_factor(&mut self, diffuse: f64, specular: f64) {
         assert!((0.0..=1.0).contains(&diffuse), "diffuse factor must be in [0, 1]");
         assert!((0.0..=1.0).contains(&specular), "specular factor must be in [0, 1]");
         self.image_based_lighting_factor = [diffuse, specular];
     }
 
-    /// Sets the spherical harmonic coefficients.
+    /// 设置球谐系数。
     ///
-    /// # Panics
-    /// Panics if the array doesn't have exactly 9 coefficients.
+    /// # 恐慌
+    /// 若数组并非恰好含 9 个系数则 panic。
     pub fn set_spherical_harmonics(&mut self, coefficients: [[f64; 3]; SH_COEFFICIENT_COUNT]) {
         self.spherical_harmonic_coefficients = Some(coefficients);
         self.use_default_spherical_harmonics = false;
     }
 
-    /// Returns whether custom SH coefficients are set.
+    /// 返回是否已设置自定义 SH 系数。
     pub fn has_spherical_harmonics(&self) -> bool {
         self.spherical_harmonic_coefficients.is_some()
     }
 
-    /// Returns whether a specular environment map is set.
+    /// 返回是否已设置镜面环境贴图。
     pub fn has_specular_environment_maps(&self) -> bool {
         self.specular_environment_maps.is_some()
     }
 
-    /// Returns whether shaders need regeneration due to IBL changes.
+    /// 返回是否因 IBL 变化而需要重新生成 shader。
     pub fn needs_shader_regeneration(&self) -> bool {
         self.spherical_harmonic_coefficients.is_some() || self.specular_environment_maps.is_some()
     }
 
-    /// Computes the diffuse IBL contribution for a given normal direction.
+    /// 计算给定法线方向的漫反射 IBL 贡献。
     ///
-    /// Uses the spherical harmonic coefficients to evaluate irradiance.
+    /// 使用球谐系数来求值 irradiance。
     ///
-    /// # Arguments
-    /// * `normal` - Surface normal (normalized)
+    /// # 参数
+    /// * `normal` - 表面法线（已归一化）
     ///
-    /// # Returns
-    /// Diffuse irradiance color [R, G, B], scaled by the diffuse IBL factor.
+    /// # 返回
+    /// 漫反射 irradiance 颜色 [R, G, B]，按漫反射 IBL 因子缩放。
     pub fn compute_diffuse_ibl(&self, normal: DVec3) -> [f64; 3] {
         let coefficients = match &self.spherical_harmonic_coefficients {
             Some(c) => c,
@@ -115,44 +114,43 @@ impl ImageBasedLighting {
             return [0.0; 3];
         }
 
-        // Evaluate spherical harmonics
+        // 求值球谐函数
         let sh = evaluate_sh(coefficients, normal);
 
         [sh[0] * diffuse_factor, sh[1] * diffuse_factor, sh[2] * diffuse_factor]
     }
 
-    /// Computes the specular IBL contribution.
+    /// 计算镜面 IBL 贡献。
     ///
-    /// In a full implementation, this would sample the specular environment map
-    /// at the reflection direction with the appropriate mip level based on roughness.
+    /// 在一个完整实现中，它会在反射方向上采样预过滤的镜面环境贴图，
+    /// 并根据 roughness 选取合适的 mip 层级。
     ///
-    /// # Arguments
-    /// * `reflection` - Reflection direction (normalized)
-    /// * `roughness` - Surface roughness [0, 1]
+    /// # 参数
+    /// * `reflection` - 反射方向（已归一化）
+    /// * `roughness` - 表面 roughness [0, 1]
     ///
-    /// # Returns
-    /// Specular color [R, G, B], scaled by the specular IBL factor.
+    /// # 返回
+    /// 镜面颜色 [R, G, B]，按镜面 IBL 因子缩放。
     pub fn compute_specular_ibl(&self, _reflection: DVec3, _roughness: f64) -> [f64; 3] {
         let specular_factor = self.image_based_lighting_factor[1];
         if specular_factor == 0.0 {
             return [0.0; 3];
         }
 
-        // DEVIATION: placeholder constant contribution, see docs/deviations.md#dev-024.
-        // A real implementation samples the prefiltered specular environment cubemap
-        // at `reflection` with a roughness→mip LOD; the offline / GPU prefilter
-        // driver is not landed yet (deferred #54). Until then this returns a fixed
-        // neutral environment tint scaled by the specular IBL factor — which is why
-        // the `ibl_compute_specular_*` roughness / reflection-dependence specs are
-        // marked `#[ignore]` (awaiting deferred #54 real prefilter) in
-        // `specs/tests/scene/ibl_cloud_spec.rs`.
+        // 偏差：占位的常量贡献，参见 docs/deviations.md#dev-024。
+        // 真正的实现会在 `reflection` 处按 roughness→mip LOD 采样预过滤的
+        // 镜面环境立方贴图；而离线 / GPU 预过滤驱动尚未落地（延期项 #54）。
+        // 在此之前，它返回一个按镜面 IBL 因子缩放的固定中性环境色调——
+        // 这就是为何 `ibl_compute_specular_*` 那些 roughness / 反射相关性
+        // 规格在 `specs/tests/scene/ibl_cloud_spec.rs` 中被标为
+        // `#[ignore]`（等待延期项 #54 的真实预过滤）。
         [0.1 * specular_factor, 0.1 * specular_factor, 0.12 * specular_factor]
     }
 }
 
-/// Evaluates 3rd-order spherical harmonics for a given direction.
+/// 对给定方向求值三阶球谐函数。
 ///
-/// The 9 SH basis functions for order 0, 1, 2:
+/// 0、1、2 阶的 9 个 SH 基函数：
 /// - Y_0^0 = 0.282095
 /// - Y_1^{-1} = 0.488603 * y
 /// - Y_1^0 = 0.488603 * z
@@ -167,7 +165,7 @@ fn evaluate_sh(coefficients: &[[f64; 3]; 9], direction: DVec3) -> [f64; 3] {
     let y = direction.y;
     let z = direction.z;
 
-    // SH basis functions
+    // SH 基函数
     let basis = [
         0.282095,                        // Y_0^0
         0.488603 * y,                    // Y_1^{-1}
@@ -190,14 +188,14 @@ fn evaluate_sh(coefficients: &[[f64; 3]; 9], direction: DVec3) -> [f64; 3] {
     result
 }
 
-/// Default spherical harmonic coefficients for a neutral sky environment.
+/// 中性天空环境的默认球谐系数。
 ///
-/// These approximate a simple sky/ground environment.
+/// 它们近似一个简单的大地—天空环境。
 pub fn default_spherical_harmonics() -> [[f64; 3]; SH_COEFFICIENT_COUNT] {
     [
-        [0.3, 0.3, 0.35],   // DC term (ambient)
+        [0.3, 0.3, 0.35],   // 直流项（环境光）
         [0.0, 0.0, 0.0],    // Y_1^{-1}
-        [0.1, 0.1, 0.15],   // Y_1^0 (sky/ground gradient)
+        [0.1, 0.1, 0.15],   // Y_1^0（天/地梯度）
         [0.0, 0.0, 0.0],    // Y_1^1
         [0.0, 0.0, 0.0],    // Y_2^{-2}
         [0.0, 0.0, 0.0],    // Y_2^{-1}
@@ -208,12 +206,12 @@ pub fn default_spherical_harmonics() -> [[f64; 3]; SH_COEFFICIENT_COUNT] {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CesiumJS-faithful IBL CPU reference (M6.5)
+// 忠于 CesiumJS 的 IBL CPU 参考（M6.5）
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// The functions below are a 1:1 f64 port of the authoritative CesiumJS PBR/IBL
-// shaders, mirroring `adapters/bevy-render/src/shaders/ibl.wgsl` entry-for-entry
-// so the CPU reference and the GPU shader can be cross-validated:
+// 下面这些函数是对权威 CesiumJS PBR/IBL shader 的 1:1 f64 移植，逐条入口
+// 镜像 `adapters/bevy-render/src/shaders/ibl.wgsl`，以便 CPU 参考与
+// GPU shader 能相互对照验证：
 //   * `spherical_harmonics`  ← Shaders/Builtin/Functions/sphericalHarmonics.glsl
 //   * `ggx_ndf` / `smith_visibility_ggx` / `fresnel_schlick2`
 //                            ← Shaders/Builtin/Functions/pbrLighting.glsl
@@ -221,20 +219,19 @@ pub fn default_spherical_harmonics() -> [[f64; 3]; SH_COEFFICIENT_COUNT] {
 //   * `integrate_brdf`       ← Shaders/BrdfLutGeneratorFS.glsl
 //   * `texture_ibl`          ← Shaders/Model/ImageBasedLightingStageFS.glsl
 //
-// SH CONVENTION (deliberate divergence from the legacy `evaluate_sh` above):
-// CesiumJS `czm_sphericalHarmonics` consumes PRE-SCALED coefficients — cmgen
-// (`--no-mirror`) bakes both the orthonormal-basis constants AND the cosine-lobe
-// irradiance transfer into the 9 RGB values — so evaluation is the bare
-// polynomial in (x,y,z) followed by `max(., 0)`. The legacy `evaluate_sh`
-// instead stores RAW orthonormal-basis coefficients and applies the constants at
-// evaluation time. `project_irradiance_to_sh` emits the CesiumJS convention, so
-// its output feeds `spherical_harmonics` (CPU) and the `irradiance` WGSL entry
-// (GPU) unchanged. Both are kept because `evaluate_sh` backs the pre-existing
-// `compute_diffuse_ibl` API (domain f64 semantics frozen).
+// SH 约定（与上文遗留的 `evaluate_sh` 有意分歧）：
+// CesiumJS 的 `czm_sphericalHarmonics` 消费预缩放（PRE-SCALED）系数——cmgen
+// （`--no-mirror`）把正交归一基常量与余弦波瓣 irradiance 传递一并烘焙进这
+// 9 个 RGB 值——因此求值就是对 (x,y,z) 的裸多项式，后接 `max(., 0)`。遗留的
+// `evaluate_sh` 则存储原始的正交归一基系数，并在求值时才应用常量。
+// `project_irradiance_to_sh` 输出 CesiumJS 约定，因此其结果可原样馈入
+// `spherical_harmonics`（CPU）与 `irradiance` WGSL 入口（GPU）。两者都保留，
+// 因为 `evaluate_sh` 支撑着既有的 `compute_diffuse_ibl` API
+// （domain 的 f64 语义已冻结）。
 
-/// The 9 CesiumJS `czm_sphericalHarmonics` polynomial basis terms `P_i(x,y,z)`,
-/// in upstream coefficient order `[L00, L1_1, L10, L11, L2_2, L2_1, L20, L21, L22]`.
-/// Ported verbatim from `sphericalHarmonics.glsl` (no normalisation constants).
+/// CesiumJS `czm_sphericalHarmonics` 的 9 个多项式基项 `P_i(x,y,z)`，
+/// 按上游系数顺序 `[L00, L1_1, L10, L11, L2_2, L2_1, L20, L21, L22]`。
+/// 逐字移植自 `sphericalHarmonics.glsl`（不含归一化常量）。
 pub fn sh_polynomial_basis(direction: DVec3) -> [f64; SH_COEFFICIENT_COUNT] {
     let x = direction.x;
     let y = direction.y;
@@ -252,8 +249,8 @@ pub fn sh_polynomial_basis(direction: DVec3) -> [f64; SH_COEFFICIENT_COUNT] {
     ]
 }
 
-/// Orthonormal SH basis normalisation constants `k_lm` (per coefficient index),
-/// i.e. `Y_lm(dir) = k_lm · P_i(dir)`. Standard values (Ramamoorthi, envmap.pdf).
+/// 正交归一 SH 基归一化常量 `k_lm`（按系数索引），
+/// 即 `Y_lm(dir) = k_lm · P_i(dir)`。标准取值（Ramamoorthi, envmap.pdf）。
 pub const SH_ORTHONORMAL_CONSTANTS: [f64; SH_COEFFICIENT_COUNT] = [
     0.282_094_791_773_878_14, // L00  = 1/(2√π)
     0.488_602_511_902_919_9,  // L1_1 = √3/(2√π)
@@ -266,21 +263,21 @@ pub const SH_ORTHONORMAL_CONSTANTS: [f64; SH_COEFFICIENT_COUNT] = [
     0.546_274_215_296_039_6,  // L22  = √15/(4√π)
 ];
 
-/// Zonal cosine-lobe transfer coefficients `A_l` (Ramamoorthi & Hanrahan): the
-/// irradiance band-l scale `[π, 2π/3, π/4]` for `l = 0, 1, 2`.
+/// 带余弦波瓣的转移系数 `A_l`（Ramamoorthi & Hanrahan）：即
+/// `l = 0, 1, 2` 时的 irradiance 带缩放 `[π, 2π/3, π/4]`。
 pub const IRRADIANCE_ZONAL_BY_BAND: [f64; 3] = [
     std::f64::consts::PI,
     2.0 * std::f64::consts::PI / 3.0,
     std::f64::consts::PI / 4.0,
 ];
 
-/// SH band `l` of each of the 9 coefficients, in CesiumJS order.
+/// 9 个系数各自的 SH 带 `l`，按 CesiumJS 顺序。
 const SH_BAND: [usize; SH_COEFFICIENT_COUNT] = [0, 1, 1, 1, 2, 2, 2, 2, 2];
 
-/// Evaluates third-order SH exactly as CesiumJS `czm_sphericalHarmonics`:
-/// `max(Σ c_i · P_i(dir), 0)` per RGB channel. Coefficients use the PRE-SCALED
-/// CesiumJS convention (see module note). f64 reference for the `ibl.wgsl`
-/// `spherical_harmonics` helper.
+/// 完全按 CesiumJS `czm_sphericalHarmonics` 的方式求值三阶 SH：
+/// 每个 RGB 通道 `max(Σ c_i · P_i(dir), 0)`。系数使用预缩放（PRE-SCALED）的
+/// CesiumJS 约定（见模块说明）。是 `ibl.wgsl` 中
+/// `spherical_harmonics` 辅助函数的 f64 参考。
 pub fn spherical_harmonics(
     coefficients: &[[f64; 3]; SH_COEFFICIENT_COUNT],
     direction: DVec3,
@@ -292,12 +289,12 @@ pub fn spherical_harmonics(
             out[c] += coefficients[i][c] * b;
         }
     }
-    // czm clamps negative irradiance to zero: `max(L, vec3(0.0))`.
+    // czm 将负 irradiance 钳制为零：`max(L, vec3(0.0))`。
     [out[0].max(0.0), out[1].max(0.0), out[2].max(0.0)]
 }
 
-/// Deterministic Fibonacci-lattice directions on the unit sphere. Fixed (no RNG)
-/// so `project_irradiance_to_sh` is bit-reproducible run-to-run and CI-stable.
+/// 单位球上确定性的 Fibonacci 格方向。固定（无 RNG），
+/// 因此 `project_irradiance_to_sh` 逐位可复现、跨运行且对 CI 稳定。
 pub fn fibonacci_sphere(samples: usize) -> Vec<DVec3> {
     let n = samples.max(1);
     if n == 1 {
@@ -314,15 +311,15 @@ pub fn fibonacci_sphere(samples: usize) -> Vec<DVec3> {
     out
 }
 
-/// Projects an environment radiance function onto the 9 CesiumJS-convention
-/// irradiance SH coefficients by deterministic Monte-Carlo over a Fibonacci
-/// sphere. `radiance(dir) -> [R,G,B]` (linear, ≥ 0). The result feeds directly
-/// into [`spherical_harmonics`] (CPU) and the `irradiance` WGSL entry (GPU).
+/// 通过在 Fibonacci 球上做确定性蒙特卡洛，把一个环境 radiance 函数投影到
+/// 9 个 CesiumJS 约定的 irradiance SH 系数上。`radiance(dir) -> [R,G,B]`
+/// （线性，≥ 0）。结果直接馈入 [`spherical_harmonics`]（CPU）与
+/// `irradiance` WGSL 入口（GPU）。
 ///
-/// Math: `a_lm = ∫ L(ω)Y_lm(ω)dω ≈ (4π/N) Σ L(ω_j) k_lm P_i(ω_j)`;
-/// irradiance transfer `E_lm = A_l · a_lm`; CesiumJS coefficient
-/// `c_i = E_lm · k_lm`, so `spherical_harmonics(c, n)` reproduces the irradiance
-/// `E(n) = ∫ L(ω)(n·ω)⁺ dω`.
+/// 数学：`a_lm = ∫ L(ω)Y_lm(ω)dω ≈ (4π/N) Σ L(ω_j) k_lm P_i(ω_j)`；
+/// irradiance 传递 `E_lm = A_l · a_lm`；CesiumJS 系数
+/// `c_i = E_lm · k_lm`，因此 `spherical_harmonics(c, n)` 复现出 irradiance
+/// `E(n) = ∫ L(ω)(n·ω)⁺ dω`。
 pub fn project_irradiance_to_sh<F>(
     radiance: F,
     samples: usize,
@@ -340,7 +337,7 @@ where
         for i in 0..SH_COEFFICIENT_COUNT {
             let k = SH_ORTHONORMAL_CONSTANTS[i];
             let a_band = IRRADIANCE_ZONAL_BY_BAND[SH_BAND[i]];
-            // c_i accumulates L · P_i · (solid_angle · k² · A_l).
+            // c_i 累加 L · P_i · (solid_angle · k² · A_l)。
             let scale = solid_angle * k * k * a_band;
             for c in 0..3 {
                 coeffs[i][c] += l[c] * basis[i] * scale;
@@ -350,9 +347,9 @@ where
     coeffs
 }
 
-/// Van der Corput radical inverse, base 2 (port of `vdcRadicalInverse`). Exact
-/// integer halving via bit ops — no float `mod`, so the WGSL twin sidesteps the
-/// `mod` reserved-word hazard entirely.
+/// Van der Corput radical inverse，基 2（移植自 `vdcRadicalInverse`）。通过
+/// 位运算做精确的整数减半——无浮点 `mod`，因此 WGSL 孪生体完全绕开了
+/// `mod` 保留字隐患。
 pub fn radical_inverse_vdc(bits_in: u32) -> f64 {
     let mut i = bits_in;
     let mut value = 0.0f64;
@@ -368,19 +365,20 @@ pub fn radical_inverse_vdc(bits_in: u32) -> f64 {
     value
 }
 
-/// Hammersley 2D low-discrepancy point (port of `hammersley2D`).
+/// Hammersley 2D 低差异点（移植自 `hammersley2D`）。
 pub fn hammersley2d(i: usize, n: usize) -> [f64; 2] {
     [i as f64 / n.max(1) as f64, radical_inverse_vdc(i as u32)]
 }
 
-/// Equirectangular `[0,1]²` uv → unit world direction, **z-up** — the f64 twin of
-/// `direction_from_uv` in `adapters/bevy-render/shaders/ibl.wgsl` (FIX-IBL-ZUP).
+/// 等距柱状投影 `[0,1]²` uv → 单位世界方向，**z-up**——是
+/// `adapters/bevy-render/shaders/ibl.wgsl` 中 `direction_from_uv` 的 f64 孪生体
+/// （FIX-IBL-ZUP）。
 ///
-/// Latitude rides the `z` component (`sin(lat)`), longitude the `x`/`y` plane,
-/// matching `direction_to_uv` in `domain/effects/src/panorama.rs` so every
-/// equirect map in the engine agrees on one convention. The pre-fix GPU form put
-/// `sin(theta)` in `y` (y-up), disagreeing with the rest of the engine; this twin
-/// is what the WGSL cross-check test pins the shader against.
+/// 纬度承载于 `z` 分量（`sin(lat)`），经度位于 `x`/`y` 平面，与
+/// `domain/effects/src/panorama.rs` 中的 `direction_to_uv` 一致，从而引擎中
+/// 每张等距柱状贴图都遵循同一约定。修正前的 GPU 形式把 `sin(theta)` 放在
+/// `y`（y-up），与引擎其余部分不一致；这个孪生体正是 WGSL 对照测试用来钉住
+/// shader 的依据。
 pub fn direction_from_uv(uv: [f64; 2]) -> DVec3 {
     use std::f64::consts::{PI, TAU};
     let lon = TAU * (uv[0] - 0.5); // [-π, π]
@@ -389,14 +387,14 @@ pub fn direction_from_uv(uv: [f64; 2]) -> DVec3 {
     DVec3::new(cos_lat * lon.cos(), cos_lat * lon.sin(), lat.sin()).normalize_or_zero()
 }
 
-/// GGX / Trowbridge-Reitz normal distribution (port of `GGX` in pbrLighting.glsl).
+/// GGX / Trowbridge-Reitz 法线分布（移植自 pbrLighting.glsl 中的 `GGX`）。
 pub fn ggx_ndf(alpha_roughness: f64, ndoth: f64) -> f64 {
     let a2 = alpha_roughness * alpha_roughness;
     let f = (ndoth * a2 - ndoth) * ndoth + 1.0;
     a2 / (std::f64::consts::PI * f * f)
 }
 
-/// Smith joint GGX visibility `= G/(4·NdotL·NdotV)` (port of `smithVisibilityGGX`).
+/// Smith 联合 GGX 可见性 `= G/(4·NdotL·NdotV)`（移植自 `smithVisibilityGGX`）。
 pub fn smith_visibility_ggx(alpha_roughness: f64, ndotl: f64, ndotv: f64) -> f64 {
     let a2 = alpha_roughness * alpha_roughness;
     let ggxv = ndotl * (ndotv * ndotv * (1.0 - a2) + a2).max(0.0).sqrt();
@@ -409,9 +407,9 @@ pub fn smith_visibility_ggx(alpha_roughness: f64, ndotl: f64, ndotv: f64) -> f64
     }
 }
 
-/// Roughness-dependent Schlick Fresnel (port of `fresnelSchlick2`). The
-/// `versine^5` is expanded as `vs2*vs2*versine` and kept UNFUSED — matching the
-/// WGSL twin's two-rounding rule (no FMA contraction on the IBL numerics).
+/// 依赖 roughness 的 Schlick Fresnel（移植自 `fresnelSchlick2`）。
+/// `versine^5` 展开为 `vs2*vs2*versine` 并保持非融合（UNFUSED）——以匹配
+/// WGSL 孪生体的两次舍入规则（IBL 数值上不做 FMA 收缩）。
 pub fn fresnel_schlick2(f0: [f64; 3], f90: [f64; 3], vdoth: f64) -> [f64; 3] {
     let versine = 1.0 - vdoth;
     let vs2 = versine * versine;
@@ -423,12 +421,11 @@ pub fn fresnel_schlick2(f0: [f64; 3], f90: [f64; 3], vdoth: f64) -> [f64; 3] {
     ]
 }
 
-/// GGX importance sample: the world-space half-vector `H` for a 2D quasi-random
-/// `xi` (port of `importanceSampleGGX`). NOTE the two upstream call sites feed
-/// different arguments: `ConvolveSpecularMapFS` passes perceptual `roughness`,
-/// while `BrdfLutGeneratorFS` passes `alphaRoughness = roughness²`. This function
-/// squares its `alpha_roughness` argument internally, exactly as the GLSL does,
-/// so callers must replicate their upstream site verbatim.
+/// GGX 重要性采样：由二维准随机 `xi` 得到世界空间的半角向量 `H`
+/// （移植自 `importanceSampleGGX`）。注意两个上游调用点传入的参数不同：
+/// `ConvolveSpecularMapFS` 传入感知 `roughness`，而 `BrdfLutGeneratorFS`
+/// 传入 `alphaRoughness = roughness²`。本函数内部会对 `alpha_roughness`
+/// 参数取平方，与 GLSL 完全一致，因此调用方必须逐字复现其上游调用点。
 pub fn importance_sample_ggx(xi: [f64; 2], alpha_roughness: f64, n: DVec3) -> DVec3 {
     let a2 = alpha_roughness * alpha_roughness;
     let phi = 2.0 * std::f64::consts::PI * xi[0];
@@ -446,10 +443,10 @@ pub fn importance_sample_ggx(xi: [f64; 2], alpha_roughness: f64, n: DVec3) -> DV
     tangent_x * h.x + tangent_y * h.y + n * h.z
 }
 
-/// Prefiltered specular radiance for `dir` / `roughness` (port of
-/// `ConvolveSpecularMapFS.glsl`): GGX-importance-sample the environment, weight
-/// each tap by `NdotL`, normalise by the accumulated weight. `radiance(dir)`
-/// samples the source environment cubemap in the given direction.
+/// `dir` / `roughness` 的预过滤镜面 radiance（移植自
+/// `ConvolveSpecularMapFS.glsl`）：对环境做 GGX 重要性采样，按 `NdotL`
+/// 为每个采样点加权，再由累加权重归一化。`radiance(dir)` 在给定方向上
+/// 采样源环境立方贴图。
 pub fn prefilter_specular<F>(radiance: F, roughness: f64, dir: DVec3, samples: usize) -> [f64; 3]
 where
     F: Fn(DVec3) -> [f64; 3],
@@ -460,9 +457,9 @@ where
     let mut weight = 0.0f64;
     for i in 0..n {
         let xi = hammersley2d(i, n);
-        // ConvolveSpecularMapFS passes raw `roughness` (squared inside).
+        // ConvolveSpecularMapFS 传入原始 `roughness`（内部取平方）。
         let h = importance_sample_ggx(xi, roughness, v);
-        let l = h * (2.0 * v.dot(h)) - v; // reflected vector
+        let l = h * (2.0 * v.dot(h)) - v; // 反射向量
         let ndotl = v.dot(l).max(0.0);
         if ndotl > 0.0 {
             let s = radiance(l.normalize());
@@ -479,9 +476,9 @@ where
     }
 }
 
-/// Split-sum environment-BRDF integration → `(scale, bias)` (port of
-/// `BrdfLutGeneratorFS.glsl::integrateBrdf`). Indexed by `(NdotV, roughness)`,
-/// exactly as `texture(czm_brdfLut, vec2(NdotV, roughness))` reads the LUT.
+/// split-sum 环境-BRDF 积分 → `(scale, bias)`（移植自
+/// `BrdfLutGeneratorFS.glsl::integrateBrdf`）。按 `(NdotV, roughness)` 索引，
+/// 正如 `texture(czm_brdfLut, vec2(NdotV, roughness))` 读取 LUT 那样。
 pub fn integrate_brdf(roughness: f64, ndotv: f64, samples: usize) -> [f64; 2] {
     let ndotv = ndotv.clamp(0.0, 1.0);
     let v = DVec3::new((1.0 - ndotv * ndotv).max(0.0).sqrt(), 0.0, ndotv);
@@ -491,14 +488,14 @@ pub fn integrate_brdf(roughness: f64, ndotv: f64, samples: usize) -> [f64; 2] {
     let mut b = 0.0f64;
     for i in 0..n {
         let xi = hammersley2d(i, n);
-        // BrdfLutGeneratorFS passes `alphaRoughness = roughness²` (squared again inside).
+        // BrdfLutGeneratorFS 传入 `alphaRoughness = roughness²`（内部再次取平方）。
         let h = importance_sample_ggx(xi, alpha_roughness, DVec3::Z);
         let l = h * (2.0 * v.dot(h)) - v;
         let ndotl = l.z.clamp(0.0, 1.0);
         let ndoth = h.z.clamp(0.0, 1.0);
         let vdoth = v.dot(h).clamp(0.0, 1.0);
-        // `ndoth > 0.0` guards the `4·G·VdotH·NdotL / NdotH` division; it holds
-        // for every sample the upstream `NdotL > 0` branch admits (defensive superset).
+        // `ndoth > 0.0` 守护着 `4·G·VdotH·NdotL / NdotH` 的除法；它对上游
+        // `NdotL > 0` 分支所接纳的每个采样点都成立（一个防御性的超集）。
         if ndotl > 0.0 && ndoth > 0.0 {
             let g = smith_visibility_ggx(alpha_roughness, ndotl, ndotv);
             let g_vis = 4.0 * g * vdoth * ndotl / ndoth;
@@ -510,16 +507,16 @@ pub fn integrate_brdf(roughness: f64, ndotv: f64, samples: usize) -> [f64; 2] {
     [a / n as f64, b / n as f64]
 }
 
-/// PBR surface inputs for [`texture_ibl`] (subset of `czm_modelMaterial`).
+/// [`texture_ibl`] 的 PBR 表面输入（`czm_modelMaterial` 的子集）。
 #[derive(Debug, Clone, Copy)]
 pub struct IblMaterial {
-    /// Lambertian base colour (linear RGB).
+    /// Lambertian 基础颜色（线性 RGB）。
     pub diffuse: [f64; 3],
-    /// Specular F0 reflectance (linear RGB).
+    /// 镜面 F0 反射率（线性 RGB）。
     pub specular_f0: [f64; 3],
-    /// Perceptual roughness in `[0, 1]`.
+    /// 感知 roughness，位于 `[0, 1]`。
     pub roughness: f64,
-    /// Specular weight (glTF `KHR_materials_specular`); `1.0` when unused.
+    /// 镜面权重（glTF `KHR_materials_specular`）；未使用时为 `1.0`。
     pub specular_weight: f64,
 }
 
@@ -534,11 +531,11 @@ impl Default for IblMaterial {
     }
 }
 
-/// The full image-based-lighting contribution (port of
-/// `ImageBasedLightingStageFS.glsl::textureIBL`, Fdez-Aguera single- +
-/// multi-scattering). Ties the three references together: diffuse from the SH
-/// irradiance, specular from a prefiltered-environment closure `specular_env(dir,
-/// roughness)`, modulated by the split-sum BRDF LUT. `ibl_factor = [diffuse, specular]`.
+/// 完整的基于图像照明贡献（移植自
+/// `ImageBasedLightingStageFS.glsl::textureIBL`，Fdez-Aguera 单次 +
+/// 多次散射）。它将三个参考串联起来：漫反射来自 SH irradiance，镜面来自
+/// 预过滤环境的闭包 `specular_env(dir, roughness)`，再由 split-sum BRDF LUT
+/// 调制。`ibl_factor = [diffuse, specular]`。
 pub fn texture_ibl<S>(
     irradiance_sh: &[[f64; 3]; SH_COEFFICIENT_COUNT],
     view_dir: DVec3,
@@ -557,7 +554,7 @@ where
     let specular_weight = material.specular_weight;
     let ndotv = n.dot(v).clamp(0.0, 1.0);
 
-    // Roughness-dependent Fresnel, from Fdez-Aguera: f90 = max(1-roughness, f0).
+    // 依赖 roughness 的 Fresnel，出自 Fdez-Aguera：f90 = max(1-roughness, f0)。
     let one_minus_r = 1.0 - roughness;
     let f90 = [
         one_minus_r.max(f0[0]),
@@ -568,14 +565,14 @@ where
     let brdf_lut = integrate_brdf(roughness, ndotv, 1024);
     let (lut_scale, lut_bias) = (brdf_lut[0], brdf_lut[1]);
 
-    // FssEss = specularWeight · (F · scale + bias), per channel.
+    // FssEss = specularWeight · (F · scale + bias)，逐通道。
     let fss_ess = [
         specular_weight * (single_scatter_fresnel[0] * lut_scale + lut_bias),
         specular_weight * (single_scatter_fresnel[1] * lut_scale + lut_bias),
         specular_weight * (single_scatter_fresnel[2] * lut_scale + lut_bias),
     ];
 
-    // Diffuse (multi-scattering energy compensation).
+    // 漫反射（多次散射能量补偿）。
     let irradiance = spherical_harmonics(irradiance_sh, n);
     let average_fresnel = [
         f0[0] + (1.0 - f0[0]) / 21.0,
@@ -596,7 +593,7 @@ where
         out[c] = diffuse_contribution;
     }
 
-    // Specular: reflect(-V, N) = -V - 2·dot(N,-V)·N = 2(N·V)N - V.
+    // 镜面：reflect(-V, N) = -V - 2·dot(N,-V)·N = 2(N·V)N - V。
     let reflect_dir = (n * (2.0 * n.dot(v)) - v).normalize_or_zero();
     let radiance = specular_env(reflect_dir, roughness);
     for c in 0..3 {
@@ -664,7 +661,7 @@ mod tests {
 
         let result = ibl.compute_diffuse_ibl(DVec3::Y);
 
-        // Should produce non-zero result
+        // 应产生非零结果
         assert!(result[0] > 0.0 || result[1] > 0.0 || result[2] > 0.0);
     }
 
@@ -672,7 +669,7 @@ mod tests {
     fn test_compute_diffuse_ibl_zero_factor() {
         let mut ibl = ImageBasedLighting::default();
         ibl.set_spherical_harmonics(default_spherical_harmonics());
-        ibl.set_factor(0.0, 1.0); // Zero diffuse
+        ibl.set_factor(0.0, 1.0); // 漫反射为零
 
         let result = ibl.compute_diffuse_ibl(DVec3::Y);
         assert_eq!(result, [0.0; 3]);
@@ -683,14 +680,14 @@ mod tests {
         let ibl = ImageBasedLighting::default();
         let result = ibl.compute_specular_ibl(DVec3::Y, 0.5);
 
-        // Default returns neutral contribution
+        // 默认返回中性贡献
         assert!(result[0] > 0.0);
     }
 
     #[test]
     fn test_compute_specular_ibl_zero_factor() {
         let mut ibl = ImageBasedLighting::default();
-        ibl.set_factor(1.0, 0.0); // Zero specular
+        ibl.set_factor(1.0, 0.0); // 镜面为零
 
         let result = ibl.compute_specular_ibl(DVec3::Y, 0.5);
         assert_eq!(result, [0.0; 3]);
@@ -698,11 +695,11 @@ mod tests {
 
     #[test]
     fn test_evaluate_sh_dc_only() {
-        // Only DC term set
+        // 仅设置直流项
         let mut coefficients = [[0.0; 3]; 9];
         coefficients[0] = [1.0, 1.0, 1.0];
 
-        // DC term should be constant regardless of direction
+        // 直流项应与方向无关，恒为常量
         let up = evaluate_sh(&coefficients, DVec3::Y);
         let down = evaluate_sh(&coefficients, DVec3::new(0.0, -1.0, 0.0));
 
@@ -713,20 +710,19 @@ mod tests {
     #[test]
     fn test_default_spherical_harmonics() {
         let sh = default_spherical_harmonics();
-        // DC term should be the ambient contribution
+        // 直流项应是环境光贡献
         assert!(sh[0][0] > 0.0);
         assert!(sh[0][1] > 0.0);
         assert!(sh[0][2] > 0.0);
     }
 
-    // ─── M6.5 CesiumJS-faithful IBL reference ─────────────────────────────
-    // Every assertion is anchored to a closed-form value derived from the
-    // upstream GLSL, so a numeric regression is caught without a GPU.
+    // ─── M6.5 忠于 CesiumJS 的 IBL 参考 ─────────────────────────────
+    // 每条断言都锚定到由上游 GLSL 导出的闭式值，因此无需 GPU 也能捕获数值回归。
 
     #[test]
     fn spherical_harmonics_dc_only_is_direction_independent() {
-        // czm_sphericalHarmonics: P_0 == 1, so a DC-only coefficient set returns
-        // that coefficient verbatim for every direction.
+        // czm_sphericalHarmonics：P_0 == 1，因此仅含直流项的系数集合
+        // 对每个方向都原样返回该系数。
         let mut coeffs = [[0.0f64; 3]; SH_COEFFICIENT_COUNT];
         coeffs[0] = [0.7, 0.2, 0.9];
         for dir in [DVec3::X, DVec3::Y, DVec3::Z, DVec3::new(0.3, -0.8, 0.52).normalize()] {
@@ -739,7 +735,7 @@ mod tests {
 
     #[test]
     fn spherical_harmonics_clamps_negative_irradiance_to_zero() {
-        // czm ends with `max(L, vec3(0.0))`.
+        // czm 以 `max(L, vec3(0.0))` 结尾。
         let mut coeffs = [[0.0f64; 3]; SH_COEFFICIENT_COUNT];
         coeffs[0] = [-1.0, -2.0, -3.0];
         let out = spherical_harmonics(&coeffs, DVec3::Y);
@@ -748,7 +744,7 @@ mod tests {
 
     #[test]
     fn spherical_harmonics_band1_z_is_direction_dependent() {
-        // L10 basis is `z`: +Z and -Z must evaluate to opposite signs pre-clamp.
+        // L10 基是 `z`：+Z 与 -Z 在钳制前必须求值为异号。
         let mut coeffs = [[0.0f64; 3]; SH_COEFFICIENT_COUNT];
         coeffs[0] = [1.0, 1.0, 1.0];
         coeffs[2] = [0.5, 0.5, 0.5]; // L10 * z
@@ -760,9 +756,9 @@ mod tests {
 
     #[test]
     fn project_irradiance_of_a_constant_environment_is_pi_times_radiance() {
-        // Closed form: for a uniform environment L = C over the full sphere,
-        // E(n) = C ∫_hemi cos dω = C·π for every normal. The DC coefficient is
-        // exact under any equal-solid-angle quadrature (Σ P_0 · dω = 4π).
+        // 闭式：对整个球面上的均匀环境 L = C，
+        // E(n) = C ∫_hemi cos dω = C·π 对每条法线成立。直流系数
+        // 在任意等立体角求积下都是精确的（Σ P_0 · dω = 4π）。
         let c = [1.0, 1.0, 1.0];
         let coeffs = project_irradiance_to_sh(move |_dir| c, 4096);
         for dir in [DVec3::X, DVec3::Y, DVec3::Z, DVec3::new(0.4, 0.7, -0.59).normalize()] {
@@ -812,7 +808,7 @@ mod tests {
 
     #[test]
     fn importance_sample_ggx_at_zero_roughness_returns_the_normal() {
-        // alpha = 0 collapses the GGX lobe to a delta at H = N.
+        // alpha = 0 把 GGX 波瓣塌缩为 H = N 处的一个 delta。
         let h = importance_sample_ggx([0.3, 0.6], 0.0, DVec3::Z);
         assert!((h - DVec3::Z).length() < 1e-9, "H = {h}");
     }
@@ -828,7 +824,7 @@ mod tests {
 
     #[test]
     fn prefilter_of_a_constant_environment_returns_the_constant() {
-        // A weighted average of a constant radiance is that constant.
+        // 常量 radiance 的加权平均仍是该常量。
         let c = [0.4, 0.6, 0.8];
         let out = prefilter_specular(move |_dir| c, 0.5, DVec3::Z, 512);
         for ch in 0..3 {
@@ -838,8 +834,8 @@ mod tests {
 
     #[test]
     fn integrate_brdf_at_zero_roughness_normal_incidence_is_unit_scale() {
-        // Closed form: roughness=0, NdotV=1 ⇒ every sample is H=L=V=N, G_Vis=1,
-        // Fc=0 ⇒ (scale, bias) = (1, 0).
+        // 闭式：roughness=0, NdotV=1 ⇒ 每个采样点都是 H=L=V=N, G_Vis=1,
+        // Fc=0 ⇒ (scale, bias) = (1, 0)。
         let [scale, bias] = integrate_brdf(0.0, 1.0, 1024);
         assert!((scale - 1.0).abs() < 1e-9, "scale = {scale}");
         assert!(bias.abs() < 1e-9, "bias = {bias}");
@@ -853,7 +849,7 @@ mod tests {
                 assert!(scale.is_finite() && bias.is_finite());
                 assert!(scale >= -1e-9, "scale {scale} at r={roughness} v={ndotv}");
                 assert!(bias >= -1e-9, "bias {bias} at r={roughness} v={ndotv}");
-                // scale + bias is the hemisphere-reflected BRDF energy fraction ≤ ~1.
+                // scale + bias 是半球反射的 BRDF 能量占比 ≤ ~1。
                 assert!(scale + bias <= 1.0 + 1e-6, "energy {scale}+{bias}");
             }
         }
@@ -873,7 +869,7 @@ mod tests {
 
     #[test]
     fn smith_visibility_ggx_at_zero_roughness_normal_is_quarter() {
-        // a=0, NdotL=NdotV=1 ⇒ GGXV=GGXL=1, GGX=2, Vis=0.5/2=0.25.
+        // a=0, NdotL=NdotV=1 ⇒ GGXV=GGXL=1, GGX=2, Vis=0.5/2=0.25。
         assert!((smith_visibility_ggx(0.0, 1.0, 1.0) - 0.25).abs() < 1e-12);
     }
 
@@ -913,21 +909,21 @@ mod tests {
         }
     }
 
-    // ── Cluster C (M6 Wave A review) cross-checks ───────────────────────────
+    // ── Cluster C（M6 Wave A 评审）交叉对照 ───────────────────────────
 
     #[test]
     fn brdf_apply_samples_mirrors_the_wgsl_constant() {
-        // `adapters/bevy-render/shaders/ibl.wgsl:107` declares
-        // `const BRDF_APPLY_SAMPLES: i32 = 32;`. The domain mirror must stay in
-        // lockstep — it is what the GPU-boundary pairing tests sample against.
+        // `adapters/bevy-render/shaders/ibl.wgsl:107` 声明了
+        // `const BRDF_APPLY_SAMPLES: i32 = 32;`。domain 的镜像必须与之
+        // 保持同步——GPU 边界配对测试正是拿它来对照采样。
         assert_eq!(BRDF_APPLY_SAMPLES, 32);
     }
 
     #[test]
     fn direction_from_uv_is_z_up() {
-        // FIX-IBL-ZUP: latitude rides `z` (`sin(lat)`), NOT `y`. Anchors:
-        // equator-centre → +X, top row → +Z (north), bottom row → -Z, quarter
-        // longitude → +Y. A y-up regression would swap the `z`/`y` poles.
+        // FIX-IBL-ZUP：纬度承载于 `z`（`sin(lat)`），而非 `y`。锚点：
+        // 赤道中心 → +X，顶行 → +Z（北），底行 → -Z，四分之一
+        // 经度 → +Y。若是 y-up 回归则会交换 `z`/`y` 两极。
         let eps = 1e-9;
         let c = direction_from_uv([0.5, 0.5]);
         assert!((c - DVec3::new(1.0, 0.0, 0.0)).length() < eps, "centre {c}");
@@ -941,9 +937,9 @@ mod tests {
 
     #[test]
     fn direction_from_uv_matches_the_wgsl_f32_mirror() {
-        // Cross-check the domain f64 twin against a faithful f32 transcription of
-        // the WGSL `direction_from_uv` (FIX-IBL-ZUP). Non-trivial UVs across the
-        // sphere; tolerance absorbs the single f32 round-down at the GPU boundary.
+        // 将 domain 的 f64 孪生体与 WGSL `direction_from_uv`
+        // （FIX-IBL-ZUP）的一份忠于原式的 f32 转录做交叉对照。取球面上
+        // 非平凡的 UV；容差吸收 GPU 边界处那一次 f32 舍入向下。
         fn gpu_direction_from_uv(uv: [f32; 2]) -> [f32; 3] {
             const PI: f32 = std::f32::consts::PI;
             const TAU: f32 = std::f32::consts::TAU;
@@ -971,11 +967,11 @@ mod tests {
 
     #[test]
     fn multi_scattering_denominator_guard_matches_the_gpu_abs_form() {
-        // FIX-IBL-DENOM: the WGSL switched from `denom > 1e-12` to
-        // `abs(denom) > 1e-12` to mirror the domain's `denom.abs() > 1e-12`.
-        // The two must agree across the sign of `denom` — a legitimately large
-        // NEGATIVE denominator (specular_weight > 1 pushes `ems` past 1) must NOT
-        // be zeroed out, while a near-zero one (either sign) must return 0.
+        // FIX-IBL-DENOM：WGSL 从 `denom > 1e-12` 改为
+        // `abs(denom) > 1e-12`，以镜像 domain 的 `denom.abs() > 1e-12`。
+        // 两者必须对 `denom` 的符号保持一致——一个合法的大负分母
+        // （specular_weight > 1 会把 `ems` 推过 1）绝不能被清零，
+        // 而一个接近零的分母（无论正负）必须返回 0。
         let domain_guard = |num: f64, denom: f64| {
             if denom.abs() > 1e-12 {
                 num / denom
@@ -986,18 +982,18 @@ mod tests {
         let gpu_guard = |num: f64, denom: f64| {
             let n = num as f32 as f64;
             let dn = denom as f32 as f64;
-            // select(0, num/denom, abs(denom) > eps) — both arms evaluate, the
-            // inf from a ~0 denominator is discarded, never propagated.
+            // select(0, num/denom, abs(denom) > eps)——两臂都会求值，
+            // 由 ~0 分母产生的 inf 会被丢弃，绝不传播。
             if dn.abs() > 1e-12 {
                 n / dn
             } else {
                 0.0
             }
         };
-        // num arbitrary; cover positive / negative / tiny / zero denominators.
+        // num 任意；覆盖正 / 负 / 极小 / 零分母。
         let cases = [
             (0.5, 0.5),
-            (0.5, -0.5), // large-negative: must produce a non-zero, matching result
+            (0.5, -0.5), // 大负值：必须产生非零且一致的结果
             (0.5, 1e-13),
             (0.5, -1e-13),
             (0.5, 0.0),
@@ -1012,8 +1008,8 @@ mod tests {
                 "guard divergence num={num} denom={denom} domain={d} gpu={g}"
             );
         }
-        // Sanity: the large-negative case is non-zero on BOTH sides (proves the
-        // abs-form parity — the old unsigned `denom > eps` GPU form would be 0).
+        // 合理性检查：大负值情形在两侧都非零（证明 abs 形式的对等性——
+        // 旧的无符号 `denom > eps` GPU 形式本会得到 0）。
         assert!(domain_guard(0.5, -0.5).abs() > 1e-6);
         assert!(gpu_guard(0.5, -0.5).abs() > 1e-6);
     }

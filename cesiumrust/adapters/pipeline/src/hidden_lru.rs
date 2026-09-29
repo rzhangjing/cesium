@@ -1,30 +1,29 @@
-//! Hidden-entity LRU tracking for warm fallback tiles.
+//! 面向温回退瓦片的隐藏实体 LRU 追踪。
 //!
-//! Mirrors the despawn/hidden-LRU stage in `dynamic_globe.rs::process_pipeline`
-//! (L1250-1322): tiles that leave the visible set are hidden (Visibility::Hidden)
-//! rather than immediately despawned, so a zoom-out can re-partition onto live
-//! coarse tiles instead of flashing down to the base sphere.
+//! 照搬 `dynamic_globe.rs::process_pipeline` 中的 despawn/hidden-LRU 阶段
+//! （L1250-1322）：离开可见集的瓦片会被隐藏（Visibility::Hidden）
+//! 而非立即 despawn，因此一次缩小（zoom-out）可以重新分区到粗瓦片的
+//! 活实体上，而不会闪降到基础球体。
 //!
-//! When `MAX_TILE_ENTITIES` (1800) is exceeded, the least-recently-hidden
-//! tiles are despawned first (within `MAX_DESPAWNS_PER_FRAME` = 24 budget).
+//! 当超过 `MAX_TILE_ENTITIES`（1800）时，最久被隐藏的瓦片会最先被
+//! despawn（在 `MAX_DESPAWNS_PER_FRAME` = 24 预算内）。
 
 use std::collections::HashMap;
 use std::hash::Hash;
 
-/// LRU tracker for hidden (warm fallback) tile entities.
+/// 面向隐藏（温回退）瓦片实体的 LRU 追踪器。
 ///
-/// Tiles are moved here when they leave the visible set. The monotonically
-/// increasing `tick` determines eviction order (lowest tick = oldest = first
-/// to despawn when over budget).
+/// 瓦片在离开可见集时被移入这里。单调递增的 `tick` 决定驱逐顺序
+/// （最小的 tick = 最旧 = 超预算时最先 despawn）。
 pub struct HiddenLru<K: Hash + Eq + Copy> {
-    /// Map from tile key to the tick when it was hidden.
+    /// 从瓦片键到其被隐藏时 tick 的映射。
     entries: HashMap<K, u64>,
-    /// Monotonic tick counter (incremented each frame).
+    /// 单调 tick 计数器（每帧递增）。
     tick: u64,
 }
 
 impl<K: Hash + Eq + Copy> HiddenLru<K> {
-    /// Create an empty LRU tracker.
+    /// 创建一个空的 LRU 追踪器。
     pub fn new() -> Self {
         Self {
             entries: HashMap::new(),
@@ -32,45 +31,44 @@ impl<K: Hash + Eq + Copy> HiddenLru<K> {
         }
     }
 
-    /// Advance the frame tick. Called once per frame before hide/show operations.
+    /// 推进帧 tick。在 hide/show 操作之前每帧调用一次。
     pub fn advance_frame(&mut self) {
         self.tick += 1;
     }
 
-    /// Mark a tile as hidden (left visible set). Records current tick for LRU order.
+    /// 将一个瓦片标记为隐藏（离开可见集）。记录当前 tick 用于 LRU 顺序。
     ///
-    /// Corresponds to L1250-1280: entity set to Visibility::Hidden, moved to
-    /// the hidden warm pool.
+    /// 对应 L1250-1280：实体被设为 Visibility::Hidden，移入隐藏温池。
     pub fn hide(&mut self, key: K) {
         self.entries.insert(key, self.tick);
     }
 
-    /// Mark a tile as visible again (re-entered visible set). Removes from LRU.
+    /// 将一个瓦片重新标记为可见（重新进入可见集）。从 LRU 中移除。
     ///
-    /// Corresponds to L1285-1300: hidden tile re-activated on zoom-out.
+    /// 对应 L1285-1300：缩小（zoom-out）时重新激活隐藏瓦片。
     pub fn show(&mut self, key: &K) -> bool {
         self.entries.remove(key).is_some()
     }
 
-    /// Check if a tile is currently hidden.
+    /// 检查一个瓦片当前是否隐藏。
     pub fn is_hidden(&self, key: &K) -> bool {
         self.entries.contains_key(key)
     }
 
-    /// Number of hidden tiles.
+    /// 隐藏瓦片的数量。
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
-    /// Returns true if no tiles are hidden.
+    /// 若没有瓦片被隐藏则返回 true。
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
-    /// Pop up to `budget` least-recently-hidden keys for despawn.
+    /// 弹出最多 `budget` 个最久被隐藏的键用于 despawn。
     ///
-    /// Corresponds to L1300-1322: despawn oldest hidden tiles within
-    /// `MAX_DESPAWNS_PER_FRAME` (24) budget when over `MAX_TILE_ENTITIES`.
+    /// 对应 L1300-1322：当超过 `MAX_TILE_ENTITIES` 时，在
+    /// `MAX_DESPAWNS_PER_FRAME`（24）预算内 despawn 最旧的隐藏瓦片。
     pub fn pop_lru(&mut self, budget: usize) -> Vec<K> {
         if self.entries.is_empty() || budget == 0 {
             return Vec::new();
@@ -82,7 +80,7 @@ impl<K: Hash + Eq + Copy> HiddenLru<K> {
         let take = budget.min(sorted.len());
         let evicted: Vec<K> = sorted.drain(..take).map(|(k, _)| k).collect();
 
-        // Put back the remaining entries
+        // 将剩余的条目放回
         self.entries.extend(sorted);
 
         evicted
@@ -153,7 +151,7 @@ mod tests {
         lru.advance_frame();
         lru.hide((2, 0, 4));
 
-        // Re-show the oldest
+        // 重新 show 最旧的那个
         lru.show(&(1, 0, 4));
 
         let evicted = lru.pop_lru(5);

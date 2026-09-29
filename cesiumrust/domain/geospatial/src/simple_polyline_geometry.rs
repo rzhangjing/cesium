@@ -1,6 +1,6 @@
-//! SimplePolylineGeometry - a simple polyline geometry generator.
+//! SimplePolylineGeometry —— 一个简单的折线几何生成器。
 //!
-//! Maps to CesiumJS `Core/SimplePolylineGeometry.js`
+//! 映射到 CesiumJS `Core/SimplePolylineGeometry.js`
 
 use crate::bounding::BoundingSphere;
 use crate::ellipsoid::Ellipsoid;
@@ -9,9 +9,9 @@ use crate::polygon_geometry_library::ArcType;
 use crate::polyline_pipeline::{generate_arc, number_of_points, ArcOptions};
 use glam::DVec3;
 
-/// Extracts heights from cartesian positions using the ellipsoid.
+/// 使用椭球从笛卡尔位置中提取高度。
 ///
-/// Maps to `PolylinePipeline.extractHeights`.
+/// 映射到 `PolylinePipeline.extractHeights`。
 pub fn extract_heights(positions: &[DVec3], ellipsoid: &Ellipsoid) -> Vec<f64> {
     positions
         .iter()
@@ -24,7 +24,7 @@ pub fn extract_heights(positions: &[DVec3], ellipsoid: &Ellipsoid) -> Vec<f64> {
         .collect()
 }
 
-/// Color as RGBA bytes.
+/// 以 RGBA 字节表示的颜色。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColorRgba {
     pub red: f64,
@@ -38,13 +38,13 @@ impl ColorRgba {
         Self { red, green, blue, alpha }
     }
 
-    /// Converts a float color component [0,1] to byte [0,255].
-    /// Maps to `Color.floatToByte`.
+    /// 将浮点颜色分量 [0,1] 转换为字节 [0,255]。
+    /// 映射到 `Color.floatToByte`。
     pub fn float_to_byte(value: f64) -> u8 {
         (value.clamp(0.0, 1.0) * 255.0).round() as u8
     }
 
-    /// Returns RGBA as byte array.
+    /// 以字节数组返回 RGBA。
     pub fn to_bytes(&self) -> [u8; 4] {
         [
             Self::float_to_byte(self.red),
@@ -55,24 +55,24 @@ impl ColorRgba {
     }
 }
 
-/// Result of SimplePolylineGeometry::create_geometry.
+/// SimplePolylineGeometry::create_geometry 的结果。
 #[derive(Debug, Clone)]
 pub struct SimplePolylineResult {
-    /// Vertex positions (flat: x,y,z,x,y,z,...).
+    /// 顶点位置（扁平存储：x,y,z,x,y,z,...）。
     pub position_values: Vec<f64>,
-    /// Per-vertex RGBA color bytes (optional).
+    /// 逐顶点的 RGBA 颜色字节（可选）。
     pub color_values: Option<Vec<u8>>,
-    /// Line indices (pairs).
+    /// 线条索引（成对）。
     pub indices: Vec<u32>,
-    /// Always PrimitiveType::Lines.
+    /// 恒为 PrimitiveType::Lines。
     pub is_lines: bool,
-    /// Bounding sphere from original positions.
+    /// 由原始位置计算出的包围球。
     pub bounding_sphere: BoundingSphere,
 }
 
-/// SimplePolylineGeometry description.
+/// SimplePolylineGeometry 的描述。
 ///
-/// Maps to CesiumJS `Core/SimplePolylineGeometry`.
+/// 映射到 CesiumJS `Core/SimplePolylineGeometry`。
 #[derive(Debug, Clone)]
 pub struct SimplePolylineGeometry {
     pub positions: Vec<DVec3>,
@@ -84,7 +84,7 @@ pub struct SimplePolylineGeometry {
 }
 
 impl SimplePolylineGeometry {
-    /// Creates a new SimplePolylineGeometry.
+    /// 创建一个新的 SimplePolylineGeometry。
     pub fn new(
         positions: Vec<DVec3>,
         colors: Option<Vec<ColorRgba>>,
@@ -103,9 +103,9 @@ impl SimplePolylineGeometry {
         }
     }
 
-    /// Computes the geometric representation of a simple polyline.
+    /// 计算一条简单折线的几何表示。
     ///
-    /// Maps to `SimplePolylineGeometry.createGeometry`.
+    /// 映射到 `SimplePolylineGeometry.createGeometry`。
     pub fn create_geometry(&self) -> SimplePolylineResult {
         let positions = &self.positions;
         let colors = &self.colors;
@@ -124,7 +124,7 @@ impl SimplePolylineGeometry {
             let heights = extract_heights(positions, ellipsoid);
 
             if per_segment_colors {
-                // Per-segment colors: generate arc per segment
+                // 逐段颜色：为每一段生成弧
                 let colors_arr = colors.as_ref().unwrap();
                 let min_distance = chord_length(granularity, ellipsoid.maximum_radius());
 
@@ -161,7 +161,7 @@ impl SimplePolylineGeometry {
                 position_values = pos_vals;
                 color_values = Some(col_vals);
             } else {
-                // Per-vertex colors or no colors: generate full arc
+                // 逐顶点颜色或无颜色：生成完整的弧
                 let arc_positions = generate_arc(&ArcOptions {
                     positions,
                     heights: Some(&heights),
@@ -178,7 +178,7 @@ impl SimplePolylineGeometry {
                 position_values = pos_vals;
 
                 if let Some(colors_arr) = colors {
-                    // Interpolate per-vertex colors along the arc
+                    // 沿弧插值逐顶点颜色
                     let num_positions = arc_positions.len();
                     let mut col_vals: Vec<u8> = Vec::with_capacity(num_positions * 4);
 
@@ -204,7 +204,7 @@ impl SimplePolylineGeometry {
                         }
                     }
 
-                    // Last color
+                    // 最后一个颜色
                     let last_color = colors_arr[length - 1];
                     col_vals.extend_from_slice(&last_color.to_bytes());
 
@@ -212,7 +212,7 @@ impl SimplePolylineGeometry {
                 }
             }
         } else {
-            // ArcType::None - no subdivision
+            // ArcType::None —— 不进行细分
             let number_of_positions = if per_segment_colors {
                 length * 2 - 2
             } else {
@@ -262,7 +262,7 @@ impl SimplePolylineGeometry {
             }
         }
 
-        // Generate line indices
+        // 生成线条索引
         let number_of_positions = position_values.len() / 3;
         let number_of_indices = (number_of_positions - 1) * 2;
         let mut indices: Vec<u32> = Vec::with_capacity(number_of_indices);
@@ -271,7 +271,7 @@ impl SimplePolylineGeometry {
             indices.push(i + 1);
         }
 
-        // Bounding sphere from original positions
+        // 由原始位置计算包围球
         let bounding_sphere = BoundingSphere::from_points(positions);
 
         SimplePolylineResult {

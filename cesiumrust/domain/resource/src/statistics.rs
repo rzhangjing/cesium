@@ -1,20 +1,18 @@
-//! Request statistics aggregation.
+//! 请求统计聚合。
 //!
-//! Maps to CesiumJS `RequestScheduler.statistics` (the private `statistics`
-//! object inside `RequestScheduler.js`) and the per-server / per-type counters
-//! used for diagnostics and throttling decisions.
+//! 映射到 CesiumJS `RequestScheduler.statistics`（`RequestScheduler.js` 内部的
+//! 私有 `statistics` 对象）以及用于诊断与限流决策的逐服务器 / 逐类型计数器。
 //!
-//! The statistics are **pure counters** — no IO, no framework dependency.
-//! The [`RequestScheduler`] in `lib.rs` drives state transitions that update
-//! these counters.
+//! 这些统计是 **纯计数器** —— 无 IO，无框架依赖。
+//! `lib.rs` 中的 [`RequestScheduler`] 驱动更新这些计数器的状态转移。
 
 use std::collections::HashMap;
 
 use crate::RequestType;
 
-/// Aggregate request statistics.
+/// 聚合的请求统计。
 ///
-/// Mirrors CesiumJS `RequestScheduler.statistics`:
+/// 镜像 CesiumJS `RequestScheduler.statistics`：
 /// ```js
 /// var statistics = {
 ///   numberOfAttemptedRequests: 0,
@@ -27,68 +25,68 @@ use crate::RequestType;
 /// };
 /// ```
 ///
-/// Extended with per-server and per-type breakdowns for richer diagnostics
-/// (the per-server breakdown mirrors `numberOfActiveRequestsByServer`).
+/// 扩展了逐服务器与逐类型的分解，以获得更丰富的诊断
+/// （逐服务器分解镜像 `numberOfActiveRequestsByServer`）。
 #[derive(Debug, Clone, Default)]
 pub struct RequestStatistics {
-    /// Total number of requests that have been attempted (scheduled).
+    /// 已被尝试（已调度）的请求总数。
     pub attempted: u64,
 
-    /// Number of currently active requests.
+    /// 当前活动请求的数量。
     pub active: u64,
 
-    /// Number of requests cancelled while pending (never activated).
+    /// 在待定状态（从未激活）时被取消的请求数量。
     pub cancelled_pending: u64,
 
-    /// Number of requests cancelled while active.
+    /// 在活动状态时被取消的请求数量。
     pub cancelled_active: u64,
 
-    /// Number of requests that failed (retries exhausted or error).
+    /// 失败的请求数量（重试耗尽或出错）。
     pub failed: u64,
 
-    /// Number of requests that completed successfully.
+    /// 成功完成的请求数量。
     pub succeeded: u64,
 
-    /// Total number of requests ever made active (monotonic).
+    /// 曾被激活的请求总数（单调递增）。
     pub active_ever: u64,
 
-    /// Number of active requests at the previous `update()` call.
-    /// Used for delta diagnostics (JS `lastNumberOfActiveRequests`).
+    /// 上一次 `update()` 调用时的活动请求数量。
+    /// 用于增量诊断（JS `lastNumberOfActiveRequests`）。
     pub last_active: u64,
 
-    /// Per-server active request counts.
+    /// 逐服务器的活动请求计数。
     ///
-    /// Maps to `RequestScheduler.numberOfActiveRequestsByServer`.
+    /// 映射到 `RequestScheduler.numberOfActiveRequestsByServer`。
     pub active_by_server: HashMap<String, u64>,
 
-    /// Per-server total completed counts.
+    /// 逐服务器的已完成总数。
     pub completed_by_server: HashMap<String, u64>,
 
-    /// Per-server total failed counts.
+    /// 逐服务器的总失败数。
     pub failed_by_server: HashMap<String, u64>,
 
-    /// Per-type active request counts.
+    /// 逐类型的活动请求计数。
     pub active_by_type: HashMap<RequestType, u64>,
 
-    /// Per-type total completed counts.
+    /// 逐类型的已完成总数。
     pub completed_by_type: HashMap<RequestType, u64>,
 
-    /// Per-type total failed counts.
+    /// 逐类型的总失败数。
     pub failed_by_type: HashMap<RequestType, u64>,
 }
 
 impl RequestStatistics {
-    /// Creates a new zero-initialized statistics instance.
+    /// 创建一个新初始化为零的统计实例。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Records that a request has been scheduled (attempted).
+    /// 记录一个请求已被调度（已尝试）。
     pub fn on_scheduled(&mut self) {
         self.attempted += 1;
     }
 
-    /// Records that a request has been activated.
+    /// 记录一个请求已被激活。
     pub fn on_activated(&mut self, server_key: &str, request_type: RequestType) {
         self.active += 1;
         self.active_ever += 1;
@@ -96,7 +94,7 @@ impl RequestStatistics {
         *self.active_by_type.entry(request_type).or_insert(0) += 1;
     }
 
-    /// Records that a request completed successfully.
+    /// 记录一个请求成功完成。
     pub fn on_completed(&mut self, server_key: &str, request_type: RequestType) {
         self.active = self.active.saturating_sub(1);
         self.succeeded += 1;
@@ -110,7 +108,7 @@ impl RequestStatistics {
         *self.completed_by_type.entry(request_type).or_insert(0) += 1;
     }
 
-    /// Records that a request failed.
+    /// 记录一个请求失败。
     pub fn on_failed(&mut self, server_key: &str, request_type: RequestType) {
         self.active = self.active.saturating_sub(1);
         self.failed += 1;
@@ -124,12 +122,12 @@ impl RequestStatistics {
         *self.failed_by_type.entry(request_type).or_insert(0) += 1;
     }
 
-    /// Records that a pending (never-activated) request was cancelled.
+    /// 记录一个待定（从未激活）的请求被取消。
     pub fn on_cancelled_pending(&mut self) {
         self.cancelled_pending += 1;
     }
 
-    /// Records that an active request was cancelled.
+    /// 记录一个活动请求被取消。
     pub fn on_cancelled_active(&mut self, server_key: &str, request_type: RequestType) {
         self.active = self.active.saturating_sub(1);
         self.cancelled_active += 1;
@@ -141,42 +139,42 @@ impl RequestStatistics {
         }
     }
 
-    /// Called at the start of each scheduler `update()` cycle to snapshot the
-    /// previous active count for delta diagnostics.
+    /// 在每个调度器 `update()` 周期开始时调用，以快照
+    /// 之前的活动计数用于增量诊断。
     ///
-    /// Maps to JS: `statistics.lastNumberOfActiveRequests = statistics.numberOfActiveRequests`.
+    /// 映射到 JS：`statistics.lastNumberOfActiveRequests = statistics.numberOfActiveRequests`。
     pub fn snapshot_last_active(&mut self) {
         self.last_active = self.active;
     }
 
-    /// Returns the total number of cancelled requests (pending + active).
+    /// 返回被取消的请求总数（待定 + 活动）。
     pub fn total_cancelled(&self) -> u64 {
         self.cancelled_pending + self.cancelled_active
     }
 
-    /// Returns the total number of finished requests (succeeded + failed + cancelled).
+    /// 返回已结束的请求总数（成功 + 失败 + 取消）。
     pub fn total_finished(&self) -> u64 {
         self.succeeded + self.failed + self.total_cancelled()
     }
 
-    /// Returns the number of active requests for a specific server.
+    /// 返回某个特定服务器的活动请求数量。
     pub fn active_for_server(&self, server_key: &str) -> u64 {
         self.active_by_server.get(server_key).copied().unwrap_or(0)
     }
 
-    /// Returns the number of active requests for a specific type.
+    /// 返回某个特定类型的活动请求数量。
     pub fn active_for_type(&self, request_type: RequestType) -> u64 {
         self.active_by_type.get(&request_type).copied().unwrap_or(0)
     }
 
-    /// Resets all counters to zero (used in tests / `clearForSpecs`).
+    /// 将所有计数器重置为零（用于测试 / `clearForSpecs`）。
     ///
-    /// Maps to `RequestScheduler.clearForSpecs()` which resets the statistics.
+    /// 映射到重置统计的 `RequestScheduler.clearForSpecs()`。
     pub fn reset(&mut self) {
         *self = Self::new();
     }
 
-    /// Returns a human-readable summary string for diagnostics.
+    /// 返回用于诊断的人类可读摘要字符串。
     pub fn summary(&self) -> String {
         format!(
             "attempted={} active={} succeeded={} failed={} cancelled={}",
@@ -282,7 +280,7 @@ mod tests {
         assert_eq!(stats.last_active, 2);
         stats.on_completed("x.com:80", RequestType::Other);
         assert_eq!(stats.active, 1);
-        assert_eq!(stats.last_active, 2); // unchanged until next snapshot
+        assert_eq!(stats.last_active, 2); // 直到下次快照保持不变
     }
 
     #[test]
@@ -300,7 +298,7 @@ mod tests {
     #[test]
     fn total_finished_accounts_for_all_outcomes() {
         let mut stats = RequestStatistics::new();
-        // 1 succeeded, 1 failed, 1 cancelled_pending, 1 cancelled_active
+        // 1 个成功、1 个失败、1 个 cancelled_pending、1 个 cancelled_active
         stats.on_activated("e.com:80", RequestType::Other);
         stats.on_completed("e.com:80", RequestType::Other);
         stats.on_activated("e.com:80", RequestType::Other);

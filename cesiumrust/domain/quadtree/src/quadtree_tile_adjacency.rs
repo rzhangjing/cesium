@@ -1,28 +1,28 @@
-//! QuadtreeTile adjacency: find neighboring tiles in a quadtree.
+//! QuadtreeTile 邻接：在四叉树中查找相邻瓦片。
 //!
-//! Maps to CesiumJS `Scene/QuadtreeTile.js` adjacency methods:
+//! 映射到 CesiumJS `Scene/QuadtreeTile.js` 的邻接方法：
 //! - `createLevelZeroTiles`
 //! - `findTileToWest/East/North/South`
 //! - `findLevelZeroTile`
 
-/// A tile coordinate in the quadtree.
+/// 四叉树中的一个瓦片坐标。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TileCoord {
-    /// Tile X coordinate.
+    /// 瓦片 X 坐标。
     pub x: u32,
-    /// Tile Y coordinate.
+    /// 瓦片 Y 坐标。
     pub y: u32,
-    /// Level of detail (0 = coarsest).
+    /// 细节层级（0 = 最粗）。
     pub level: u32,
 }
 
 impl TileCoord {
-    /// Creates a new tile coordinate.
+    /// 创建一个新的瓦片坐标。
     pub fn new(x: u32, y: u32, level: u32) -> Self {
         Self { x, y, level }
     }
 
-    /// Returns the parent coordinate (None if level 0).
+    /// 返回父坐标（若为层级 0 则返回 None）。
     pub fn parent(&self) -> Option<TileCoord> {
         if self.level == 0 {
             None
@@ -35,28 +35,28 @@ impl TileCoord {
         }
     }
 
-    /// Returns the northwest child (x*2, y*2, level+1).
+    /// 返回西北子节点（x*2, y*2, level+1）。
     pub fn northwest_child(&self) -> TileCoord {
         TileCoord::new(self.x * 2, self.y * 2, self.level + 1)
     }
 
-    /// Returns the northeast child (x*2+1, y*2, level+1).
+    /// 返回东北子节点（x*2+1, y*2, level+1）。
     pub fn northeast_child(&self) -> TileCoord {
         TileCoord::new(self.x * 2 + 1, self.y * 2, self.level + 1)
     }
 
-    /// Returns the southwest child (x*2, y*2+1, level+1).
+    /// 返回西南子节点（x*2, y*2+1, level+1）。
     pub fn southwest_child(&self) -> TileCoord {
         TileCoord::new(self.x * 2, self.y * 2 + 1, self.level + 1)
     }
 
-    /// Returns the southeast child (x*2+1, y*2+1, level+1).
+    /// 返回东南子节点（x*2+1, y*2+1, level+1）。
     pub fn southeast_child(&self) -> TileCoord {
         TileCoord::new(self.x * 2 + 1, self.y * 2 + 1, self.level + 1)
     }
 
-    /// Determines which child position this tile is relative to its parent.
-    /// Returns None if level == 0.
+    /// 判断本瓦片相对于其父节点处于哪个子位置。
+    /// 若 level == 0 则返回 None。
     fn child_position(&self) -> Option<ChildPosition> {
         if self.level == 0 {
             return None;
@@ -80,17 +80,17 @@ enum ChildPosition {
     Southeast,
 }
 
-/// A tiling scheme descriptor for adjacency calculations.
+/// 用于邻接计算的切分方案描述符。
 #[derive(Debug, Clone)]
 pub struct TilingSchemeDescriptor {
-    /// Number of tiles in X direction at level 0.
+    /// 层级 0 时 X 方向的瓦片数。
     pub x_tiles_at_level_zero: u32,
-    /// Number of tiles in Y direction at level 0.
+    /// 层级 0 时 Y 方向的瓦片数。
     pub y_tiles_at_level_zero: u32,
 }
 
 impl TilingSchemeDescriptor {
-    /// Creates a new tiling scheme descriptor.
+    /// 创建一个新的切分方案描述符。
     pub fn new(x_tiles: u32, y_tiles: u32) -> Self {
         Self {
             x_tiles_at_level_zero: x_tiles,
@@ -98,22 +98,22 @@ impl TilingSchemeDescriptor {
         }
     }
 
-    /// Geographic tiling scheme (2x1 at level 0).
+    /// 地理（Geographic）切分方案（层级 0 为 2x1）。
     pub fn geographic() -> Self {
         Self::new(2, 1)
     }
 
-    /// Web Mercator tiling scheme (1x1 at level 0).
+    /// Web Mercator 切分方案（层级 0 为 1x1）。
     pub fn web_mercator() -> Self {
         Self::new(1, 1)
     }
 }
 
-/// Creates level zero tiles for a given tiling scheme.
+/// 为给定切分方案创建层级零的瓦片。
 ///
-/// Returns tiles ordered from northwest, proceeding east then south.
+/// 返回的瓦片从西北开始排序，先向东再向南。
 ///
-/// Maps to `QuadtreeTile.createLevelZeroTiles`.
+/// 映射到 `QuadtreeTile.createLevelZeroTiles`。
 pub fn create_level_zero_tiles(scheme: &TilingSchemeDescriptor) -> Vec<TileCoord> {
     let mut result = Vec::with_capacity(
         (scheme.x_tiles_at_level_zero * scheme.y_tiles_at_level_zero) as usize,
@@ -126,11 +126,11 @@ pub fn create_level_zero_tiles(scheme: &TilingSchemeDescriptor) -> Vec<TileCoord
     result
 }
 
-/// Finds the level-zero tile at the given coordinates, wrapping X around the anti-meridian.
+/// 在给定坐标处查找层级零瓦片，X 沿反日子线环绕。
 ///
-/// Returns None if Y is out of bounds (north of north pole or south of south pole).
+/// 若 Y 越界（北极以北或南极以南）则返回 None。
 ///
-/// Maps to `QuadtreeTile.findLevelZeroTile`.
+/// 映射到 `QuadtreeTile.findLevelZeroTile`。
 pub fn find_level_zero_tile(
     scheme: &TilingSchemeDescriptor,
     level_zero_tiles: &[TileCoord],
@@ -157,9 +157,9 @@ pub fn find_level_zero_tile(
         .copied()
 }
 
-/// Finds the tile to the west of the given tile.
+/// 查找给定瓦片西侧的瓦片。
 ///
-/// Maps to `QuadtreeTile.findTileToWest`.
+/// 映射到 `QuadtreeTile.findTileToWest`。
 pub fn find_tile_to_west(
     scheme: &TilingSchemeDescriptor,
     level_zero_tiles: &[TileCoord],
@@ -186,9 +186,9 @@ pub fn find_tile_to_west(
     }
 }
 
-/// Finds the tile to the east of the given tile.
+/// 查找给定瓦片东侧的瓦片。
 ///
-/// Maps to `QuadtreeTile.findTileToEast`.
+/// 映射到 `QuadtreeTile.findTileToEast`。
 pub fn find_tile_to_east(
     scheme: &TilingSchemeDescriptor,
     level_zero_tiles: &[TileCoord],
@@ -215,9 +215,9 @@ pub fn find_tile_to_east(
     }
 }
 
-/// Finds the tile to the south of the given tile.
+/// 查找给定瓦片南侧的瓦片。
 ///
-/// Maps to `QuadtreeTile.findTileToSouth`.
+/// 映射到 `QuadtreeTile.findTileToSouth`。
 pub fn find_tile_to_south(
     scheme: &TilingSchemeDescriptor,
     level_zero_tiles: &[TileCoord],
@@ -244,9 +244,9 @@ pub fn find_tile_to_south(
     }
 }
 
-/// Finds the tile to the north of the given tile.
+/// 查找给定瓦片北侧的瓦片。
 ///
-/// Maps to `QuadtreeTile.findTileToNorth`.
+/// 映射到 `QuadtreeTile.findTileToNorth`。
 pub fn find_tile_to_north(
     scheme: &TilingSchemeDescriptor,
     level_zero_tiles: &[TileCoord],
@@ -291,7 +291,7 @@ mod tests {
         let scheme = TilingSchemeDescriptor::new(3, 3);
         let tiles = create_level_zero_tiles(&scheme);
         assert_eq!(tiles.len(), 9);
-        // Ordered NW→E→S
+        // 按 NW→E→S 排序
         assert_eq!(tiles[0], TileCoord::new(0, 0, 0));
         assert_eq!(tiles[1], TileCoord::new(1, 0, 0));
         assert_eq!(tiles[2], TileCoord::new(2, 0, 0));
@@ -302,10 +302,10 @@ mod tests {
     fn test_find_level_zero_tile_wraps_x() {
         let scheme = TilingSchemeDescriptor::new(3, 3);
         let tiles = create_level_zero_tiles(&scheme);
-        // x=-1 wraps to x=2
+        // x=-1 环绕为 x=2
         let found = find_level_zero_tile(&scheme, &tiles, -1, 0);
         assert_eq!(found, Some(TileCoord::new(2, 0, 0)));
-        // x=3 wraps to x=0
+        // x=3 环绕为 x=0
         let found = find_level_zero_tile(&scheme, &tiles, 3, 0);
         assert_eq!(found, Some(TileCoord::new(0, 0, 0)));
     }
@@ -324,19 +324,19 @@ mod tests {
         let tiles = create_level_zero_tiles(&scheme);
         let tile = TileCoord::new(0, 0, 0);
 
-        // West wraps around
+        // 西侧环绕
         assert_eq!(
             find_tile_to_west(&scheme, &tiles, &tile),
             Some(TileCoord::new(2, 0, 0))
         );
-        // East
+        // 东
         assert_eq!(
             find_tile_to_east(&scheme, &tiles, &tile),
             Some(TileCoord::new(1, 0, 0))
         );
-        // North of row 0 → None
+        // 第 0 行的北侧 → None
         assert_eq!(find_tile_to_north(&scheme, &tiles, &tile), None);
-        // South
+        // 南
         assert_eq!(
             find_tile_to_south(&scheme, &tiles, &tile),
             Some(TileCoord::new(0, 1, 0))

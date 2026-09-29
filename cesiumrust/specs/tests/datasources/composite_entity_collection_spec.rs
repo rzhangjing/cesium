@@ -1,12 +1,12 @@
-//! DataSources/CompositeEntityCollectionSpec.js → Rust integration tests
-//! Covers: addCollection, removeCollection, getCollectionsLength, getCollection,
-//! contains, getById, values, recomposite
+//! DataSources/CompositeEntityCollectionSpec.js → Rust 集成测试
+//! 覆盖：addCollection、removeCollection、getCollectionsLength、getCollection、
+//! contains、getById、values、recomposite
 
 use cesium_datasource::composite_entity_collection::CompositeEntityCollection;
 use cesium_datasource::entity::Entity;
 use cesium_datasource::entity_collection::EntityCollection;
 
-// ─── Construction ───────────────────────────────────────────────────────────
+// ─── 构造 ───────────────────────────────────────────────────────────
 
 #[test]
 fn composite_constructor_defaults() {
@@ -59,7 +59,7 @@ fn composite_add_collection_at_index() {
     composite.add_collection_at(1, ec2);
 
     assert_eq!(composite.get_collections_length(), 3);
-    // Verify order by checking that get_collection works
+    // 通过检查 get_collection 是否生效来验证顺序
     assert!(composite.get_collection(0).is_some());
     assert!(composite.get_collection(1).is_some());
     assert!(composite.get_collection(2).is_some());
@@ -127,11 +127,11 @@ fn composite_values() {
     assert_eq!(values.len(), 3);
 }
 
-// ─── Merge behavior ─────────────────────────────────────────────────────────
+// ─── 合并行为 ─────────────────────────────────────────────────────────
 
 #[test]
 fn composite_merge_same_id() {
-    // Later collections take priority for same-ID entities
+    // 同 ID 实体时后置集合优先
     let mut ec1 = EntityCollection::new();
     ec1.add(Entity::new("shared").with_name("From EC1"));
 
@@ -143,9 +143,9 @@ fn composite_merge_same_id() {
     composite.add_collection(ec2);
     composite.recomposite();
 
-    // Should have only one entity with id "shared"
+    // 应只有一个 id 为 "shared" 的实体
     assert_eq!(composite.len(), 1);
-    // The later collection (ec2) takes priority
+    // 后置集合（ec2）优先
     let entity = composite.get_by_id("shared").unwrap();
     assert_eq!(entity.name, Some("From EC2".to_string()));
 }
@@ -189,6 +189,6 @@ fn composite_get_or_create_entity() {
     let entity = composite.get_or_create_entity("new_id");
     assert_eq!(entity.id, "new_id");
 
-    // Should now be in the composite
+    // 此时应已位于复合集合中
     assert!(composite.contains("new_id"));
 }

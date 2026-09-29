@@ -1,5 +1,5 @@
-//! Core/BoundingSphereSpec.js, BoundingRectangleSpec.js, OrientedBoundingBoxSpec.js,
-//! AxisAlignedBoundingBoxSpec.js → Rust integration tests
+//! Core/BoundingSphereSpec.js、BoundingRectangleSpec.js、OrientedBoundingBoxSpec.js、
+//! AxisAlignedBoundingBoxSpec.js → Rust 集成测试
 
 use cesium_geospatial::bounding::{BoundingSphere, OrientedBoundingBox, AxisAlignedBoundingBox};
 use cesium_specs::{assert_approx, assert_vec3_epsilon, epsilon};
@@ -91,10 +91,10 @@ fn test_obb_distance_to() {
     let center = DVec3::ZERO;
     let half_axes = glam::DMat3::from_diagonal(DVec3::new(2.0, 2.0, 2.0));
     let obb = OrientedBoundingBox::new(center, half_axes);
-    // Point inside
+    // 点在内部
     let dist_inside = obb.distance_to(DVec3::new(1.0, 1.0, 1.0));
     assert_approx!(dist_inside, 0.0, epsilon::EPSILON10);
-    // Point outside
+    // 点在外部
     let dist_outside = obb.distance_to(DVec3::new(3.0, 0.0, 0.0));
     assert_approx!(dist_outside, 1.0, epsilon::EPSILON10);
 }
@@ -115,7 +115,7 @@ fn test_aabb_center() {
     let min = DVec3::new(0.0, 0.0, 0.0);
     let max = DVec3::new(4.0, 6.0, 8.0);
     let aabb = AxisAlignedBoundingBox::new(min, max);
-    // center is a field, not a method
+    // center 是字段，而非方法
     assert_vec3_epsilon!(aabb.center, DVec3::new(2.0, 3.0, 4.0), epsilon::EPSILON15);
 }
 

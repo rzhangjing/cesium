@@ -1,13 +1,13 @@
-//! Resource URL manipulation specs.
-//! Ported from CesiumJS Core/ResourceSpec.js (2744 lines, ~60 it())
+//! Resource URL 操作规格测试。
+//! 移植自 CesiumJS Core/ResourceSpec.js（2744 行，约 60 个 it()）
 //!
-//! A-class tests: URL parsing, query parameters, template values,
-//! appendForwardSlash, getDerivedResource, setQueryParameters, getUrlComponent.
-//! C-class omitted: network fetch, proxy, retryCallback, ImageBitmap, canvas.
+//! A 类测试：URL 解析、查询参数、模板值、
+//! appendForwardSlash、getDerivedResource、setQueryParameters、getUrlComponent。
+//! 省略 C 类：网络抓取、代理、retryCallback、ImageBitmap、canvas。
 
 use cesium_resource::{DeriveResourceOptions, Resource};
 
-// === Constructor / URL Parsing ===
+// === 构造函数 / URL 解析 ===
 
 #[test]
 fn constructor_sets_url_and_parses_query() {
@@ -57,7 +57,7 @@ fn append_forward_slash_noop_if_already_ends_with_slash() {
     assert_eq!(resource.url, "http://test.com/tileset/");
 }
 
-// === Template Values ===
+// === 模板值 ===
 
 #[test]
 fn replaces_template_values_in_url() {
@@ -135,7 +135,7 @@ fn set_query_parameters_use_as_default_true() {
         true,
     );
 
-    // Existing keys preserved, new key added
+    // 保留已有键，新增键
     assert_eq!(resource.query_parameters.get("x").unwrap(), "1");
     assert_eq!(resource.query_parameters.get("y").unwrap(), "2");
     assert_eq!(resource.query_parameters.get("z").unwrap(), "0");
@@ -156,7 +156,7 @@ fn set_query_parameters_use_as_default_false() {
         false,
     );
 
-    // All overwritten
+    // 全部覆盖
     assert_eq!(resource.query_parameters.get("x").unwrap(), "3");
     assert_eq!(resource.query_parameters.get("y").unwrap(), "4");
     assert_eq!(resource.query_parameters.get("z").unwrap(), "0");
@@ -214,7 +214,7 @@ fn derived_resource_with_query_parameters() {
         ..Default::default()
     });
 
-    // URL stays the same, query params are merged
+    // URL 保持不变，查询参数被合并
     assert_eq!(derived.url, "http://test.com/terrain");
     assert_eq!(derived.query_parameters.get("x").unwrap(), "1");
     assert_eq!(derived.query_parameters.get("y").unwrap(), "2");
@@ -237,10 +237,10 @@ fn derived_resource_merges_parent_query_params() {
     });
 
     assert_eq!(derived.url, "http://test.com/tileset/tileset.json");
-    // Parent query params preserved
+    // 保留父级查询参数
     assert_eq!(derived.query_parameters.get("key").unwrap(), "value");
     assert_eq!(derived.query_parameters.get("foo").unwrap(), "bar");
-    // New params added
+    // 新增参数
     assert_eq!(derived.query_parameters.get("key1").unwrap(), "value1");
     assert_eq!(derived.query_parameters.get("key2").unwrap(), "value2");
 }

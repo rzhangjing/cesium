@@ -1,23 +1,23 @@
-//! Fabric uniform values and GLSL type inference.
+//! Fabric uniform 值与 GLSL 类型推断。
 //!
-//! Maps to the uniform handling in CesiumJS `Scene/Material.js`
-//! (`getUniformType`, `createUniform`) plus the uniform value coercion done
-//! by the WebGL uniform setters.
+//! 映射到 CesiumJS `Scene/Material.js` 中的 uniform 处理
+//! （`getUniformType`、`createUniform`），以及 WebGL uniform 设置器
+//! 所执行的 uniform 值强制转换。
 
 use crate::error::MaterialError;
 use serde_json::Value as JsonValue;
 
-/// The default texture uniform value.
-/// Maps to `Material.DefaultImageId`.
+/// 默认纹理 uniform 值。
+/// 映射到 `Material.DefaultImageId`。
 pub const DEFAULT_IMAGE_ID: &str = "czm_defaultImage";
 
-/// The default cube map texture uniform value.
-/// Maps to `Material.DefaultCubeMapId`.
+/// 默认立方体贴图纹理 uniform 值。
+/// 映射到 `Material.DefaultCubeMapId`。
 pub const DEFAULT_CUBEMAP_ID: &str = "czm_defaultCubeMap";
 
-/// The six face images of a cube map uniform.
-/// Maps to the `{positiveX, negativeX, positiveY, negativeY, positiveZ,
-/// negativeZ}` object accepted by `samplerCube` uniforms.
+/// cube map uniform 的六个面图像。
+/// 映射到 `samplerCube` uniform 所接受的 `{positiveX, negativeX, positiveY, negativeY, positiveZ,
+/// negativeZ}` 对象。
 #[derive(Debug, Clone, PartialEq)]
 pub struct CubeMapFaces {
     pub positive_x: String,
@@ -28,47 +28,46 @@ pub struct CubeMapFaces {
     pub negative_z: String,
 }
 
-/// A Fabric material uniform value.
+/// Fabric 材质的 uniform 值。
 ///
-/// CesiumJS stores uniform values as raw JS values (numbers, booleans,
-/// `Color`, `Cartesian2`, image URLs, channel strings, matrices as arrays,
-/// cube-map face objects) and infers the GLSL uniform type from the shape of
-/// the value in `getUniformType`. This enum captures the same set of shapes
-/// with the inferred type made explicit.
+/// CesiumJS 将 uniform 值存储为原始 JS 值（数字、布尔、`Color`、
+/// `Cartesian2`、图像 URL、通道字符串、以数组表示的矩阵、立方体贴图面
+/// 对象），并在 `getUniformType` 中根据值的形状推断 GLSL uniform 类型。
+/// 本 enum 捕获同一组形状，并将推断出的类型显式化。
 #[derive(Debug, Clone, PartialEq)]
 pub enum UniformValue {
-    /// GLSL `float` (JS number).
+    /// GLSL `float`（JS number）。
     Float(f64),
-    /// GLSL `bool` (JS boolean).
+    /// GLSL `bool`（JS boolean）。
     Bool(bool),
-    /// GLSL `vec2` (`Cartesian2`, `{x, y}`, or a two-channel boolean vector
-    /// such as `fadeDirection: {x: true, y: true}`).
+    /// GLSL `vec2`（`Cartesian2`、`{x, y}`，或像 `fadeDirection: {x: true, y: true}`
+    /// 这样的双通道布尔向量）。
     Vec2([f64; 2]),
-    /// GLSL `vec3` (`Cartesian3` / `{x, y, z}`).
+    /// GLSL `vec3`（`Cartesian3` / `{x, y, z}`）。
     Vec3([f64; 3]),
-    /// GLSL `vec4` (`Color` / `Cartesian4` / `{x, y, z, w}`).
+    /// GLSL `vec4`（`Color` / `Cartesian4` / `{x, y, z, w}`）。
     Vec4([f64; 4]),
-    /// GLSL `ivec3` (used for the auto-generated `<image>Dimensions` uniforms).
+    /// GLSL `ivec3`（用于自动生成的 `<image>Dimensions` uniform）。
     IVec3([i64; 3]),
-    /// GLSL `mat2` (column-major array of 4 numbers).
+    /// GLSL `mat2`（4 个数字的列主序数组）。
     Mat2([f64; 4]),
-    /// GLSL `mat3` (column-major array of 9 numbers).
+    /// GLSL `mat3`（9 个数字的列主序数组）。
     Mat3([f64; 9]),
-    /// GLSL `mat4` (column-major array of 16 numbers).
+    /// GLSL `mat4`（16 个数字的列主序数组）。
     Mat4([f64; 16]),
-    /// GLSL `sampler2D` (an image URL, or [`DEFAULT_IMAGE_ID`]).
+    /// GLSL `sampler2D`（图像 URL，或 [`DEFAULT_IMAGE_ID`]）。
     Sampler2D(String),
-    /// GLSL `samplerCube`. `None` represents [`DEFAULT_CUBEMAP_ID`].
+    /// GLSL `samplerCube`。`None` 表示 [`DEFAULT_CUBEMAP_ID`]。
     SamplerCube(Option<CubeMapFaces>),
-    /// A channel swizzle string such as `"rgb"` or `"a"`. In CesiumJS this is
-    /// not a real uniform: the token is textually replaced in the shader
-    /// source (`channels` type in `getUniformType`).
+    /// 像 `"rgb"` 或 `"a"` 这样的通道 swizzle 字符串。在 CesiumJS 中这
+    /// 并非真正的 uniform：该 token 会在着色器源码中被文本替换
+    /// （`getUniformType` 中的 `channels` 类型）。
     Channels(String),
 }
 
 impl UniformValue {
-    /// The GLSL uniform type name for this value.
-    /// Maps to the return values of `getUniformType`.
+    /// 该值的 GLSL uniform 类型名。
+    /// 映射到 `getUniformType` 的返回值。
     pub fn glsl_type(&self) -> &'static str {
         match self {
             UniformValue::Float(_) => "float",
@@ -86,9 +85,9 @@ impl UniformValue {
         }
     }
 
-    /// The alpha component for color-like values, or the scalar for floats.
-    /// Used by translucency evaluation (`material.uniforms.color.alpha < 1.0`
-    /// and `uniforms.cellAlpha < 1.0` in the built-in translucent functions).
+    /// 对于类颜色值返回 alpha 分量，对于 float 返回标量。
+    /// 由半透明性求值使用（内置半透明函数中的
+    /// `material.uniforms.color.alpha < 1.0` 和 `uniforms.cellAlpha < 1.0`）。
     pub fn alpha_or_scalar(&self) -> Option<f64> {
         match self {
             UniformValue::Float(f) => Some(*f),
@@ -98,8 +97,8 @@ impl UniformValue {
     }
 }
 
-/// Whether a string is a channel swizzle (`"r"`, `"rgb"`, `"rgba"`, ...).
-/// Maps to the `/^([rgba]){1,4}$/i` test in `getUniformType`.
+/// 字符串是否为通道 swizzle（`"r"`、`"rgb"`、`"rgba"` 等）。
+/// 映射到 `getUniformType` 中的 `/^([rgba]){1,4}$/i` 测试。
 pub fn is_channel_string(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 4
@@ -119,19 +118,19 @@ fn take_number(map: &serde_json::Map<String, JsonValue>, key: &str) -> Option<f6
     map.get(key).and_then(json_to_f64)
 }
 
-/// Parses a Fabric JSON uniform value into a [`UniformValue`].
+/// 将 Fabric JSON uniform 值解析为 [`UniformValue`]。
 ///
-/// Faithful port of the shape-based inference in CesiumJS `getUniformType`:
+/// 对 CesiumJS `getUniformType` 中基于形状推断的忠实移植：
 /// - number → `float`
 /// - boolean → `bool`
-/// - string → `channels` when it matches `^[rgba]{1,4}$`, `samplerCube` when
-///   it is [`DEFAULT_CUBEMAP_ID`], otherwise `sampler2D`
-/// - array of 4/9/16 numbers → `mat2`/`mat3`/`mat4`
-/// - object with `red/green/blue/alpha` → `vec4` (a `Color`)
-/// - object with the six cube-map face keys → `samplerCube`
-/// - object with 2/3/4 attributes → `vec2`/`vec3`/`vec4` (booleans coerce to
-///   1.0/0.0, matching the WebGL uniform setters)
-/// - an explicit `"type"` member overrides the inferred type name
+/// - string → 当匹配 `^[rgba]{1,4}$` 时为 `channels`，当为
+///   [`DEFAULT_CUBEMAP_ID`] 时为 `samplerCube`，否则为 `sampler2D`
+/// - 4/9/16 个数字的数组 → `mat2`/`mat3`/`mat4`
+/// - 含 `red/green/blue/alpha` 的对象 → `vec4`（一个 `Color`）
+/// - 含六个立方体贴图面键的对象 → `samplerCube`
+/// - 含 2/3/4 个属性的对象 → `vec2`/`vec3`/`vec4`（布尔强制转换为
+///   1.0/0.0，与 WebGL uniform 设置器一致）
+/// - 显式的 `"type"` 成员会覆盖推断出的类型名
 pub fn uniform_value_from_json(value: &JsonValue) -> Result<UniformValue, MaterialError> {
     match value {
         JsonValue::Number(n) => Ok(UniformValue::Float(
@@ -178,13 +177,13 @@ pub fn uniform_value_from_json(value: &JsonValue) -> Result<UniformValue, Materi
             }
         }
         JsonValue::Object(map) => {
-            // Explicit type annotation (e.g. the auto-generated
-            // `{ type: "ivec3", x: 1, y: 1 }` dimensions uniforms).
+            // 显式类型标注（例如自动生成的
+            // `{ type: "ivec3", x: 1, y: 1 }` 尺寸 uniform）。
             if let Some(JsonValue::String(type_name)) = map.get("type") {
                 return uniform_value_with_explicit_type(type_name, map);
             }
 
-            // Color: { red, green, blue, alpha }
+            // Color：{ red, green, blue, alpha }
             if map.contains_key("red")
                 && map.contains_key("green")
                 && map.contains_key("blue")
@@ -198,7 +197,7 @@ pub fn uniform_value_from_json(value: &JsonValue) -> Result<UniformValue, Materi
                 ]));
             }
 
-            // Cube map faces: { positiveX, negativeX, ..., negativeZ }
+            // 立方体贴图面：{ positiveX, negativeX, ..., negativeZ }
             if map.contains_key("positiveX")
                 && map.contains_key("negativeX")
                 && map.contains_key("positiveY")
@@ -222,7 +221,7 @@ pub fn uniform_value_from_json(value: &JsonValue) -> Result<UniformValue, Materi
                 })));
             }
 
-            // Attribute-count based vector inference (2..=4 attributes).
+            // 基于属性数量的向量推断（2..=4 个属性）。
             let num_attributes = map.len();
             let component = |key: &str| -> Option<f64> { take_number(map, key) };
             match num_attributes {
@@ -381,7 +380,7 @@ mod tests {
 
     #[test]
     fn test_boolean_vector_coercion() {
-        // fadeDirection: { x: true, y: true } → vec2(1.0, 1.0)
+        // fadeDirection：{ x: true, y: true } → vec2(1.0, 1.0)
         assert_eq!(
             uniform_value_from_json(&json!({"x": true, "y": false})).unwrap(),
             UniformValue::Vec2([1.0, 0.0])
@@ -440,7 +439,7 @@ mod tests {
     #[test]
     fn test_invalid_values() {
         assert!(uniform_value_from_json(&JsonValue::Null).is_err());
-        // 5 attributes cannot be inferred
+        // 5 个属性无法推断
         assert!(uniform_value_from_json(&json!({
             "a": 1, "b": 2, "c": 3, "d": 4, "e": 5
         }))

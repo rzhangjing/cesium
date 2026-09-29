@@ -1,27 +1,27 @@
-//! Info box widget view model.
+//! 信息框（info box）widget 视图模型。
 //!
-//! Maps to CesiumJS `InfoBox/InfoBoxViewModel.js`.
+//! 映射到 CesiumJS `InfoBox/InfoBoxViewModel.js`。
 
-/// Info box widget view model.
+/// 信息框 widget 视图模型。
 ///
-/// Displays information about a selected entity in a panel.
+/// 在一个面板中显示关于选中实体的信息。
 #[derive(Debug, Clone)]
 pub struct InfoBoxViewModel {
-    /// Whether the info box is visible.
+    /// 信息框是否可见。
     pub show: bool,
-    /// Whether the info box frame/panel is shown (expanded).
+    /// 是否显示信息框边框/面板（展开）。
     pub is_frame_visible: bool,
-    /// Title text (usually entity name).
+    /// 标题文本（通常为实体名称）。
     pub title: String,
-    /// Description content (HTML or plain text).
+    /// 描述内容（HTML 或纯文本）。
     pub description: String,
-    /// Whether the close button is visible.
+    /// 关闭按钮是否可见。
     pub show_close: bool,
-    /// Whether the info box has content to display.
+    /// 信息框是否有内容可显示。
     pub has_content: bool,
-    /// Camera view offset when tracking the entity.
+    /// 跟踪实体时的相机视角偏移。
     pub camera_view_offset: Option<[f64; 3]>,
-    /// Whether the info box is in "tracking" mode.
+    /// 信息框是否处于“跟踪”模式。
     pub is_tracking: bool,
 }
 
@@ -41,12 +41,12 @@ impl Default for InfoBoxViewModel {
 }
 
 impl InfoBoxViewModel {
-    /// Create a new info box view model.
+    /// 创建一个新的信息框视图模型。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Show entity information.
+    /// 显示实体信息。
     pub fn show_entity(&mut self, title: impl Into<String>, description: impl Into<String>) {
         self.title = title.into();
         self.description = description.into();
@@ -54,7 +54,7 @@ impl InfoBoxViewModel {
         self.is_frame_visible = true;
     }
 
-    /// Clear the info box content.
+    /// 清除信息框内容。
     pub fn clear(&mut self) {
         self.title.clear();
         self.description.clear();
@@ -64,29 +64,29 @@ impl InfoBoxViewModel {
         self.camera_view_offset = None;
     }
 
-    /// Close the info box panel (hide frame but keep widget).
+    /// 关闭信息框面板（隐藏边框但保留 widget）。
     pub fn close(&mut self) {
         self.is_frame_visible = false;
     }
 
-    /// Toggle the frame visibility.
+    /// 切换边框可见性。
     pub fn toggle_frame(&mut self) {
         if self.has_content {
             self.is_frame_visible = !self.is_frame_visible;
         }
     }
 
-    /// Set tracking mode.
+    /// 设置跟踪模式。
     pub fn set_tracking(&mut self, tracking: bool) {
         self.is_tracking = tracking;
     }
 
-    /// Set the camera view offset for tracking.
+    /// 设置用于跟踪的相机视角偏移。
     pub fn set_camera_offset(&mut self, offset: [f64; 3]) {
         self.camera_view_offset = Some(offset);
     }
 
-    /// Get a summary line for the info box.
+    /// 获取信息框的摘要行。
     pub fn summary(&self) -> String {
         if !self.has_content {
             return String::new();
@@ -145,13 +145,13 @@ mod tests {
         assert!(vm.is_frame_visible);
         vm.close();
         assert!(!vm.is_frame_visible);
-        assert!(vm.has_content); // Content preserved
+        assert!(vm.has_content); // 内容被保留
     }
 
     #[test]
     fn test_toggle_frame() {
         let mut vm = InfoBoxViewModel::new();
-        // No content - toggle should not work
+        // 无内容 - 切换不应生效
         vm.toggle_frame();
         assert!(!vm.is_frame_visible);
 
@@ -175,7 +175,7 @@ mod tests {
         let long_desc = "A".repeat(200);
         vm.show_entity("Test", long_desc);
         let summary = vm.summary();
-        assert_eq!(summary.len(), 100); // 97 chars + "..."
+        assert_eq!(summary.len(), 100); // 97 个字符 + "..."
         assert!(summary.ends_with("..."));
     }
 

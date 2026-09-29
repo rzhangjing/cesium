@@ -1,19 +1,19 @@
-//! Projection picker view model.
+//! 投影选择器视图模型。
 //!
-//! Maps to CesiumJS `ProjectionPicker/ProjectionPickerViewModel.js`.
+//! 映射到 CesiumJS `ProjectionPicker/ProjectionPickerViewModel.js`。
 
-/// Projection type for the camera.
+/// 相机的投影类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ProjectionType {
-    /// Perspective projection.
+    /// 透视投影。
     #[default]
     Perspective,
-    /// Orthographic projection.
+    /// 正交投影。
     Orthographic,
 }
 
 impl ProjectionType {
-    /// Get the display label.
+    /// 获取显示标签。
     pub fn label(&self) -> &'static str {
         match self {
             Self::Perspective => "Perspective",
@@ -21,7 +21,7 @@ impl ProjectionType {
         }
     }
 
-    /// Get the tooltip text.
+    /// 获取提示文本。
     pub fn tooltip(&self) -> &'static str {
         match self {
             Self::Perspective => "Perspective projection",
@@ -30,20 +30,20 @@ impl ProjectionType {
     }
 }
 
-/// Projection picker view model.
+/// 投影选择器视图模型。
 ///
-/// Controls switching between perspective and orthographic projections.
+/// 控制透视与正交投影之间的切换。
 #[derive(Debug, Clone)]
 pub struct ProjectionPickerViewModel {
-    /// The currently selected projection type.
+    /// 当前选中的投影类型。
     pub selected_projection: ProjectionType,
-    /// Whether the dropdown is expanded.
+    /// 下拉菜单是否展开。
     pub is_dropdown_open: bool,
-    /// Whether the widget is visible.
+    /// widget 是否可见。
     pub show: bool,
-    /// Whether the transition is animated.
+    /// 过渡是否带动画。
     pub is_transitioning: bool,
-    /// Transition progress [0, 1].
+    /// 过渡进度 [0, 1]。
     pub transition_progress: f64,
 }
 
@@ -60,12 +60,12 @@ impl Default for ProjectionPickerViewModel {
 }
 
 impl ProjectionPickerViewModel {
-    /// Create a new projection picker.
+    /// 创建一个新的投影选择器。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Select a projection type.
+    /// 选择一种投影类型。
     pub fn select_projection(&mut self, projection: ProjectionType) {
         if self.selected_projection != projection {
             self.selected_projection = projection;
@@ -75,34 +75,34 @@ impl ProjectionPickerViewModel {
         self.is_dropdown_open = false;
     }
 
-    /// Switch to perspective projection.
+    /// 切换到透视投影。
     pub fn select_perspective(&mut self) {
         self.select_projection(ProjectionType::Perspective);
     }
 
-    /// Switch to orthographic projection.
+    /// 切换到正交投影。
     pub fn select_orthographic(&mut self) {
         self.select_projection(ProjectionType::Orthographic);
     }
 
-    /// Toggle the dropdown.
+    /// 切换下拉菜单。
     pub fn toggle_dropdown(&mut self) {
         self.is_dropdown_open = !self.is_dropdown_open;
     }
 
-    /// Close the dropdown.
+    /// 关闭下拉菜单。
     pub fn close_dropdown(&mut self) {
         self.is_dropdown_open = false;
     }
 
-    /// Update the transition animation.
-    /// Returns true if transition is complete.
+    /// 更新过渡动画。
+    /// 若过渡已完成则返回 true。
     pub fn update_transition(&mut self, delta_seconds: f64) -> bool {
         if !self.is_transitioning {
             return true;
         }
 
-        let duration = 0.5; // 0.5 second transition
+        let duration = 0.5; // 0.5 秒过渡
         self.transition_progress += delta_seconds / duration;
 
         if self.transition_progress >= 1.0 {
@@ -114,12 +114,12 @@ impl ProjectionPickerViewModel {
         }
     }
 
-    /// Get the current label.
+    /// 获取当前标签。
     pub fn current_label(&self) -> &'static str {
         self.selected_projection.label()
     }
 
-    /// Check if a projection is selected.
+    /// 检查某种投影是否已选中。
     pub fn is_selected(&self, projection: ProjectionType) -> bool {
         self.selected_projection == projection
     }
@@ -151,7 +151,7 @@ mod tests {
     fn test_select_same_projection() {
         let mut vm = ProjectionPickerViewModel::new();
         vm.select_perspective();
-        // Already perspective, no transition
+        // 已是透视投影，无过渡
         assert!(!vm.is_transitioning);
     }
 
@@ -161,12 +161,12 @@ mod tests {
         vm.select_orthographic();
         assert!(vm.is_transitioning);
 
-        // Partial update
+        // 部分更新
         let done = vm.update_transition(0.25);
         assert!(!done);
         assert!((vm.transition_progress - 0.5).abs() < 1e-10);
 
-        // Complete
+        // 完成
         let done = vm.update_transition(0.3);
         assert!(done);
         assert!(!vm.is_transitioning);

@@ -1,31 +1,31 @@
-//! CustomDataSource - a basic named DataSource with an entity collection.
+//! CustomDataSource - 一个带有实体集合的基础命名 DataSource。
 //!
-//! Maps to CesiumJS `DataSources/CustomDataSource.js`
+//! 映射到 CesiumJS `DataSources/CustomDataSource.js`
 
 use crate::datasource_clock::DataSourceClock;
 use crate::entity_collection::EntityCollection;
 
-/// A basic DataSource with a name, entity collection, clock, and visibility.
+/// 一个基础的 DataSource，具有名称、实体集合、时钟和可见性。
 ///
-/// Maps to CesiumJS `DataSources/CustomDataSource.js`
+/// 映射到 CesiumJS `DataSources/CustomDataSource.js`
 #[derive(Debug)]
 pub struct CustomDataSource {
-    /// The display name of this data source.
+    /// 此数据源的显示名称。
     name: String,
-    /// The collection of entities.
+    /// 实体集合。
     entities: EntityCollection,
-    /// The clock associated with this data source.
+    /// 与此数据源关联的时钟。
     clock: Option<DataSourceClock>,
-    /// Whether the data source is currently shown.
+    /// 数据源当前是否显示。
     show: bool,
-    /// Whether the data source is currently loading.
+    /// 数据源当前是否正在加载。
     is_loading: bool,
 }
 
 impl CustomDataSource {
-    /// Creates a new CustomDataSource with the given name.
+    /// 创建一个具有给定名称的新 CustomDataSource。
     ///
-    /// Maps to `new CustomDataSource(name)`
+    /// 映射到 `new CustomDataSource(name)`
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -36,53 +36,53 @@ impl CustomDataSource {
         }
     }
 
-    /// Gets the name.
+    /// 获取名称。
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    /// Sets the name.
+    /// 设置名称。
     pub fn set_name(&mut self, name: &str) {
         self.name = name.to_string();
     }
 
-    /// Gets the entity collection.
+    /// 获取实体集合。
     pub fn entities(&self) -> &EntityCollection {
         &self.entities
     }
 
-    /// Gets the entity collection mutably.
+    /// 以可变方式获取实体集合。
     pub fn entities_mut(&mut self) -> &mut EntityCollection {
         &mut self.entities
     }
 
-    /// Gets the clock.
+    /// 获取时钟。
     pub fn clock(&self) -> Option<&DataSourceClock> {
         self.clock.as_ref()
     }
 
-    /// Sets the clock.
+    /// 设置时钟。
     pub fn set_clock(&mut self, clock: Option<DataSourceClock>) {
         self.clock = clock;
     }
 
-    /// Gets whether the data source is shown.
+    /// 获取数据源是否显示。
     pub fn show(&self) -> bool {
         self.show
     }
 
-    /// Sets whether the data source is shown.
+    /// 设置数据源是否显示。
     pub fn set_show(&mut self, show: bool) {
         self.show = show;
         self.entities.set_show(show);
     }
 
-    /// Gets whether the data source is loading.
+    /// 获取数据源是否正在加载。
     pub fn is_loading(&self) -> bool {
         self.is_loading
     }
 
-    /// Sets whether the data source is loading.
+    /// 设置数据源是否正在加载。
     pub fn set_is_loading(&mut self, is_loading: bool) {
         self.is_loading = is_loading;
     }

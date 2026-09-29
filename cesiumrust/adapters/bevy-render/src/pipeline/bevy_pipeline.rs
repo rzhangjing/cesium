@@ -1,4 +1,4 @@
-//! `CesiumPipelinePlugin` — opt-in assembly of the M1 pipeline binding layer.
+//! `CesiumPipelinePlugin`——M1 pipeline 绑定层的选择性开启装配。
 
 use bevy::prelude::*;
 
@@ -6,19 +6,19 @@ use super::bindings::PipelineEvictionStats;
 use super::gpu_handle::BevyGpuHandleCache;
 use super::system_wiring::gpu_cache_eviction_system;
 
-/// Opt-in plugin that wires the `cesium-pipeline` core into a Bevy app.
+/// 选择性开启的插件，把 `cesium-pipeline` core 接入一个 Bevy app。
 ///
-/// Registers:
-/// - [`BevyGpuHandleCache`] resource (golden-path defaults: capacity 3000,
-///   base-layer zoom 3),
-/// - [`PipelineEvictionStats`] observation resource,
-/// - the [`gpu_cache_eviction_system`] in `Update`.
+/// 注册：
+/// - [`BevyGpuHandleCache`] resource（黄金路径默认值：容量 3000，
+///   底层 zoom 3），
+/// - [`PipelineEvictionStats`] 观测 resource，
+/// - 在 `Update` 中的 [`gpu_cache_eviction_system`]。
 ///
-/// # Rollout guard
-/// This plugin is **not** added to the default cesium-app runtime in M1.3;
-/// `CESIUM_ENABLE_PIPELINE` stays OFF. Adding it is a no-op on the golden path
-/// because nothing inserts into the cache until the M1.4/M1.5 loader migration
-/// feeds it — the eviction system simply finds an empty cache each frame.
+/// # 推广护栏
+/// 本插件在 M1.3 中**不**加入默认的 cesium-app 运行时；
+/// `CESIUM_ENABLE_PIPELINE` 保持 OFF。向它新增内容对黄金路径是一个空操作，
+/// 因为在 M1.4/M1.5 loader 迁移喂入它之前没有任何东西写入缓存——
+/// 逐出系统每帧只会发现一个空缓存。
 #[derive(Default, Debug, Clone, Copy)]
 pub struct CesiumPipelinePlugin;
 
@@ -34,8 +34,8 @@ impl Plugin for CesiumPipelinePlugin {
 mod tests {
     use super::*;
 
-    /// The plugin must install its resources + system and run headless without
-    /// panicking (no render/asset plugins required).
+    /// 该插件必须安装它的 resources + system，并在无头模式下运行而不
+    /// panic（不需要 render/asset 插件）。
     #[test]
     fn plugin_installs_resources_and_runs() {
         let mut app = App::new();
@@ -44,7 +44,7 @@ mod tests {
 
         assert!(app.world().contains_resource::<BevyGpuHandleCache>());
         assert!(app.world().contains_resource::<PipelineEvictionStats>());
-        // Empty cache → eviction is a no-op.
+        // 空缓存 → 逐出是空操作。
         assert!(app.world().resource::<BevyGpuHandleCache>().is_empty());
         let stats = app.world().resource::<PipelineEvictionStats>();
         assert_eq!(stats.evicted, 0);

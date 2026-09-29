@@ -1,16 +1,14 @@
-//! Agent-facing **orchestration façade** (plan P3).
+//! 面向 agent 的**编排门面**（计划 P3）。
 //!
-//! [`PlotSession`] bundles the two pieces of server state an agent edits — the
-//! [`Document`] and its [`HistoryStack`] — behind one in-process entry point. It
-//! is the single surface every host (a Bevy bridge, a CLI, a future MCP shim)
-//! shares: it owns nothing engine-specific, holds no renderer reference, and is
-//! therefore fully unit-testable headless.
+//! [`PlotSession`] 把 agent 要编辑的两块服务器状态 —— [`Document`] 及其
+//! [`HistoryStack`] —— 打包在一个进程内入口之后。它是每个宿主（一个 Bevy
+//! 桥、一个 CLI、一个未来的 MCP shim）共享的单一表面：它不拥有任何引擎专有
+//! 的东西，不持有渲染器引用，因此可以完全无头单元测试。
 //!
-//! The session is intentionally thin — it forwards to the [`action`](super::action)
-//! write path, the [`query`](super::query) read path and the
-//! [`schema`](super::schema) document I/O. Keeping it a thin aggregator (rather
-//! than re-implementing logic) means the pure functions stay the single source of
-//! truth and the invariants proven there hold here too.
+//! 该会话有意保持精简 —— 它转发到 [`action`](super::action) 写路径、
+//! [`query`](super::query) 读路径与 [`schema`](super::schema) 文档 I/O。
+//! 把它保持为一个薄薄的聚合器（而非重新实现逻辑）意味着纯函数仍是单一
+//! 事实来源，那里被证明的不变量在此同样成立。
 
 use crate::agent::action::{apply_action, ActionError, AgentAction, Applied};
 use crate::agent::query::{query, ElementSummary, QueryFilter};
@@ -20,20 +18,19 @@ use crate::model::ids::ElementId;
 use crate::model::{Document, ViewContext};
 use crate::ops::HistoryStack;
 
-/// A plot document plus its undo / redo history, driven through a single
-/// agent-facing API.
+/// 一个标绘文档加上它的 undo / redo 历史，通过单一的面向 agent API 驱动。
 #[derive(Debug)]
 pub struct PlotSession {
-    /// The live scene document. Public so a host can read / borrow it directly
-    /// (e.g. to render it); every *mutation* should still go through [`Self::apply`]
-    /// so it stays undoable and validated.
+    /// 实时场景文档。公开，以便宿主可以直接读取 / 借用它
+    /// （例如把它渲染出去）；每一次*变更*仍应经过 [`Self::apply`]，
+    /// 从而保持可撤销且经过校验。
     pub doc: Document,
-    /// The undo / redo recorder kept in lock-step with `doc`.
+    /// 与 `doc` 保持同步锁定的 undo / redo 记录器。
     pub history: HistoryStack,
 }
 
 impl Default for PlotSession {
-    /// An empty session with no layers (a `Create` must resolve a layer first).
+    /// 一个没有任何图层的空会话（一个 `Create` 必须先解析出一个图层）。
     fn default() -> Self {
         Self {
             doc: Document::default(),
@@ -43,13 +40,13 @@ impl Default for PlotSession {
 }
 
 impl PlotSession {
-    /// An empty session (no layers yet — add one or use [`Self::with_default_layer`]).
+    /// 一个空会话（尚无图层 —— 添加一个或使用 [`Self::with_default_layer`]）。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// A session pre-seeded with a single default layer, ready to accept
-    /// [`AgentAction::Create`] without an explicit target layer.
+    /// 一个预置了单个默认图层的会话，无需显式目标图层即可接受
+    /// [`AgentAction::Create`]。
     pub fn with_default_layer() -> Self {
         Self {
             doc: Document::with_default_layer(),
@@ -57,15 +54,15 @@ impl PlotSession {
         }
     }
 
-    /// Validate, compile, apply and record one action as a single undo step.
-    /// A rejected action short-circuits in validation and mutates nothing.
+    /// 校验、编译、应用并记录一个动作为单个 undo 步骤。
+    /// 被拒绝的动作在校验时就短路，不变更任何东西。
     pub fn apply(&mut self, action: AgentAction) -> Result<Applied, ActionError> {
         apply_action(&mut self.doc, &mut self.history, &action)
     }
 
-    /// Apply actions in order, each its own undo step. Stops at the first error;
-    /// already-applied steps stay committed (they are separate undo steps, so a
-    /// host can roll them back one `undo` at a time).
+    /// 按顺序应用动作，每个都是它自己的 undo 步骤。在第一个错误处停止；
+    /// 已应用的步骤保持已提交（它们是各自独立的 undo 步骤，因此宿主
+    /// 可以一次 `undo` 一步地回滚它们）。
     pub fn apply_all(&mut self, actions: Vec<AgentAction>) -> Result<Vec<Applied>, ActionError> {
         let mut applied = Vec::with_capacity(actions.len());
         for action in actions {
@@ -74,62 +71,61 @@ impl PlotSession {
         Ok(applied)
     }
 
-    /// Undo the most recent step, returning the element ids it touched.
+    /// 撤销最近的步骤，返回它触及的元素 id。
     pub fn undo(&mut self) -> Option<Vec<ElementId>> {
         self.history.undo(&mut self.doc)
     }
 
-    /// Redo the most recently undone step, returning the touched ids.
+    /// 重做最近被撤销的步骤，返回触及的 id。
     pub fn redo(&mut self) -> Option<Vec<ElementId>> {
         self.history.redo(&mut self.doc)
     }
 
-    /// Whether an undo is available.
+    /// 是否有可撤销的操作。
     pub fn can_undo(&self) -> bool {
         self.history.can_undo()
     }
 
-    /// Whether a redo is available.
+    /// 是否有可重做的操作。
     pub fn can_redo(&self) -> bool {
         self.history.can_redo()
     }
 
-    /// Number of recorded undo steps (for a "undo N" affordance).
+    /// 已记录的 undo 步骤数（用于一个 "undo N" 交互）。
     pub fn undo_len(&self) -> usize {
         self.history.undo_len()
     }
 
-    /// Number of pending redo steps.
+    /// 待重做的 redo 步骤数。
     pub fn redo_len(&self) -> usize {
         self.history.redo_len()
     }
 
-    /// Replace the document from an [`Self::export_doc`] payload (or any GeoJSON
-    /// `FeatureCollection`, imported best-effort). Clears history, since prior
-    /// steps refer to the discarded document.
+    /// 从一个 [`Self::export_doc`] 负载（或任何 GeoJSON
+    /// `FeatureCollection`，尽最大努力导入）替换文档。清空历史，因为先前的
+    /// 步骤引用的是被丢弃的文档。
     pub fn import_doc(&mut self, text: &str) -> Result<(), PlotIoError> {
         self.doc = import_document_json(text)?;
         self.history.clear();
         Ok(())
     }
 
-    /// Serialise the whole document (lossless GeoJSON).
+    /// 序列化整个文档（无损 GeoJSON）。
     pub fn export_doc(&self) -> String {
         export_document_json(&self.doc)
     }
 
-    /// Read-only situational query over the current document, evaluated with no
-    /// view context: each summary's `visible` reflects only the manual flag and
-    /// the layer switch. Use [`Self::query_with_view`] to additionally honour the
-    /// scale band and per-mode show flags.
+    /// 对当前文档的只读态势查询，在无视图上下文下求值：每个摘要的
+    /// `visible` 只反映手动标志与图层开关。用 [`Self::query_with_view`]
+    /// 可额外兼顾比例尺带与每模式显示标志。
     pub fn query(&self, filter: &QueryFilter) -> Vec<ElementSummary> {
         self.query_with_view(filter, None)
     }
 
-    /// Like [`Self::query`], but threads in an optional [`ViewContext`] so the
-    /// computed `visible` flag also respects each element's scale band and
-    /// per-mode (`show_in_flat` / `show_in_globe`) show flags — the same view
-    /// state the renderer would apply. Pass `None` to skip that gating.
+    /// 同 [`Self::query`]，但额外传入一个可选的 [`ViewContext`]，使算出的
+    /// `visible` 标志也尊重每个元素的比例尺带与每模式
+    /// （`show_in_flat` / `show_in_globe`）显示标志 —— 即渲染器会应用的
+    /// 同一视图状态。传 `None` 跳过那道门控。
     pub fn query_with_view(
         &self,
         filter: &QueryFilter,
@@ -162,14 +158,14 @@ mod tests {
     fn scripted_session_end_to_end() {
         let mut s = PlotSession::with_default_layer();
 
-        // 1. Build three elements, remembering their ids.
+        // 1. 构建三个元素，记住它们的 id。
         let a = s.apply(create(0.0, "alpha")).unwrap().new_id.unwrap();
         let b = s.apply(create(10.0, "bravo")).unwrap().new_id.unwrap();
         let c = s.apply(create(20.0, "charlie")).unwrap().new_id.unwrap();
         assert_eq!(s.doc.element_count(), 3);
         assert_eq!(s.history.undo_len(), 3);
 
-        // 2. Move one.
+        // 2. 移动其中一个。
         s.apply(AgentAction::Move {
             target: a,
             delta_lonlat: [5.0, 0.0],
@@ -180,7 +176,7 @@ mod tests {
             other => panic!("{other:?}"),
         }
 
-        // 3. Restyle another + set an attribute.
+        // 3. 给另一个改样式 + 设置一个属性。
         s.apply(AgentAction::Style {
             target: b,
             patch: StylePatch {
@@ -191,7 +187,7 @@ mod tests {
         .unwrap();
         assert_eq!(s.doc.element(b).unwrap().style.color, [1.0, 0.0, 0.0, 1.0]);
 
-        // 4. Query sees all three (name filter narrows it).
+        // 4. 查询看到全部三个（名称过滤器把它收窄）。
         let all = s.query(&QueryFilter::default());
         assert_eq!(all.len(), 3);
         let named = s.query(&QueryFilter {
@@ -201,13 +197,13 @@ mod tests {
         assert_eq!(named.len(), 1);
         assert_eq!(named[0].id, b);
 
-        // 5. Undo every step back to empty.
+        // 5. 撤销每一步直到为空。
         assert!(s.can_undo());
         while s.can_undo() {
             s.undo();
         }
         assert_eq!(s.doc.element_count(), 0);
-        // Redo walks them all back.
+        // 重做把它们全部走回。
         while s.can_redo() {
             s.redo();
         }
@@ -228,8 +224,7 @@ mod tests {
             ])
             .unwrap_err();
         assert_eq!(err, ActionError::UnknownTarget(ElementId(999)));
-        // The first create committed; the failing delete and the trailing
-        // create never ran.
+        // 第一个 create 已提交；失败的 delete 与尾随的 create 从未运行。
         assert_eq!(s.doc.element_count(), 1);
         assert_eq!(s.history.undo_len(), 1);
     }
@@ -244,9 +239,9 @@ mod tests {
         let mut s2 = PlotSession::new();
         s2.import_doc(&text).unwrap();
         assert_eq!(s2.doc.element_count(), 2);
-        // Import clears history (steps referred to the discarded document).
+        // 导入清空历史（步骤引用的是被丢弃的文档）。
         assert!(!s2.can_undo());
-        // And the restored document equals the exported one.
+        // 且还原的文档等于导出的那个。
         assert_eq!(s2.doc, s.doc);
     }
 
@@ -255,8 +250,8 @@ mod tests {
         let mut s = PlotSession::new();
         let err = s.apply(create(0.0, "orphan")).unwrap_err();
         assert_eq!(err, ActionError::NoActiveLayer);
-        // Supplying a layer explicitly is not possible without one existing, so
-        // the with_default_layer constructor is the convenience path.
+        // 在一个图层都不存在时无法显式提供图层，所以
+        // with_default_layer 构造器是便捷路径。
         assert_eq!(s.doc.element_count(), 0);
     }
 

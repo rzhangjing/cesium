@@ -1,5 +1,5 @@
-//! Tests for Matrix3 extension functions.
-//! Maps to CesiumJS `Specs/Core/Matrix3Spec.js` + `Matrix2Spec.js` A-class tests.
+//! Matrix3 扩展函数测试。
+//! 对应 CesiumJS `Specs/Core/Matrix3Spec.js` + `Matrix2Spec.js` A 类测试。
 
 use cesium_geospatial::matrix3_ext as m3;
 use cesium_geospatial::math_utils;
@@ -22,7 +22,7 @@ fn pack_and_unpack() {
 fn from_column_major_array() {
     let array = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
     let m = m3::from_column_major_array(&array, 0);
-    // Column-major: col0=(1,2,3), col1=(4,5,6), col2=(7,8,9)
+    // 列主序：col0=(1,2,3)，col1=(4,5,6)，col2=(7,8,9)
     assert_eq!(m.x_axis, DVec3::new(1.0, 2.0, 3.0));
     assert_eq!(m.y_axis, DVec3::new(4.0, 5.0, 6.0));
     assert_eq!(m.z_axis, DVec3::new(7.0, 8.0, 9.0));
@@ -30,10 +30,10 @@ fn from_column_major_array() {
 
 #[test]
 fn from_row_major_array() {
-    // Row-major: row0=(1,2,3), row1=(4,5,6), row2=(7,8,9)
+    // 行主序：row0=(1,2,3)，row1=(4,5,6)，row2=(7,8,9)
     let array = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
     let m = m3::from_row_major_array(&array);
-    // Column-major: col0=(1,4,7), col1=(2,5,8), col2=(3,6,9)
+    // 列主序：col0=(1,4,7)，col1=(2,5,8)，col2=(3,6,9)
     assert_eq!(m.x_axis, DVec3::new(1.0, 4.0, 7.0));
     assert_eq!(m.y_axis, DVec3::new(2.0, 5.0, 8.0));
     assert_eq!(m.z_axis, DVec3::new(3.0, 6.0, 9.0));
@@ -48,12 +48,12 @@ fn from_quaternion_identity() {
 
 #[test]
 fn from_quaternion_rotation_z_90() {
-    // 90 degrees around Z
+    // 绕 Z 轴 90 度
     let angle = std::f64::consts::FRAC_PI_2;
     let q = DQuat::from_axis_angle(DVec3::Z, angle);
     let m = m3::from_quaternion(q);
 
-    // Expected: [0, -1, 0; 1, 0, 0; 0, 0, 1] (column-major)
+    // 期望：[0, -1, 0; 1, 0, 0; 0, 0, 1]（列主序）
     // col0 = (cos, sin, 0) = (0, 1, 0)
     // col1 = (-sin, cos, 0) = (-1, 0, 0)
     // col2 = (0, 0, 1)
@@ -153,7 +153,7 @@ fn get_maximum_scale_works() {
 
 #[test]
 fn get_rotation_works() {
-    // Create a matrix with rotation + scale
+    // 构造一个含旋转 + 缩放的矩阵
     let rotation = m3::from_rotation_z(std::f64::consts::FRAC_PI_4);
     let scaled = m3::set_rotation(&m3::from_scale(DVec3::new(2.0, 3.0, 4.0)), &rotation);
     let extracted = m3::get_rotation(&scaled);
@@ -166,7 +166,7 @@ fn set_rotation_preserves_scale() {
     let rotation = m3::from_rotation_z(std::f64::consts::FRAC_PI_4);
     let result = m3::set_rotation(&original, &rotation);
 
-    // Scale should be preserved
+    // 缩放应被保留
     let scale = m3::get_scale(&result);
     assert!((scale.x - 2.0).abs() < EPSILON14);
     assert!((scale.y - 3.0).abs() < EPSILON14);
@@ -202,7 +202,7 @@ fn matrix2_from_rotation_works() {
     let m = m3::matrix2_from_rotation(angle);
     let cos_a = angle.cos();
     let sin_a = angle.sin();
-    // Column-major: [cos, sin, -sin, cos]
+    // 列主序：[cos, sin, -sin, cos]
     assert!((m[0] - cos_a).abs() < EPSILON14);
     assert!((m[1] - sin_a).abs() < EPSILON14);
     assert!((m[2] - (-sin_a)).abs() < EPSILON14);

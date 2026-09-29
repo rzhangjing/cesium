@@ -1,12 +1,12 @@
-//! Imagery provider URL generation spec tests.
+//! 影像提供者 URL 生成规范测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Scene/UrlTemplateImageryProviderSpec.js
 //! - Scene/WebMapTileServiceImageryProviderSpec.js
 //! - Scene/TileMapServiceImageryProviderSpec.js
 //! - Scene/OpenStreetMapImageryProviderSpec.js
 //!
-//! A-class tests: URL template substitution, KVP/REST URL generation, reverse Y.
+//! A 类测试：URL 模板替换、KVP/REST URL 生成、反向 Y。
 
 use cesium_provider::imagery_provider::{
     BingMapsImageryProvider, BingMapStyle, OpenStreetMapImageryProvider, TileCoord,
@@ -27,7 +27,7 @@ fn url_template_basic_substitution() {
 fn url_template_reverse_y() {
     let p = UrlTemplateImageryProvider::new("https://tiles.example.com/{z}/{x}/{reverseY}.png");
     let coord = TileCoord::new(0, 0, 1);
-    // At level 1, tiles_y = 2, reverseY = 2 - 1 - 0 = 1
+    // 在第 1 级，tiles_y = 2，reverseY = 2 - 1 - 0 = 1
     let url = p.get_tile_url(&coord, 0);
     assert_eq!(url, "https://tiles.example.com/1/0/1.png");
 }
@@ -36,7 +36,7 @@ fn url_template_reverse_y() {
 fn url_template_reverse_y_level_2() {
     let p = UrlTemplateImageryProvider::new("https://t.com/{z}/{x}/{reverseY}.png");
     let coord = TileCoord::new(1, 3, 2);
-    // At level 2, tiles_y = 4, reverseY = 4 - 1 - 3 = 0
+    // 在第 2 级，tiles_y = 4，reverseY = 4 - 1 - 3 = 0
     let url = p.get_tile_url(&coord, 0);
     assert_eq!(url, "https://t.com/2/1/0.png");
 }
@@ -56,7 +56,7 @@ fn url_template_subdomain_round_robin() {
     let url2 = p.get_tile_url(&coord, 2);
     assert!(url2.contains("c.tiles"));
 
-    // Wraps around
+    // 环绕
     let url3 = p.get_tile_url(&coord, 3);
     assert!(url3.contains("a.tiles"));
 }
@@ -181,7 +181,7 @@ fn tms_defaults() {
 fn tms_reverse_y_url() {
     let p = TmsImageryProvider::new("https://tms.example.com/tiles");
     let coord = TileCoord::new(3, 5, 4);
-    // At level 4, tiles_y = 16, tms_y = 16 - 1 - 5 = 10
+    // 在第 4 级，tiles_y = 16，tms_y = 16 - 1 - 5 = 10
     let url = p.get_tile_url(&coord);
     assert_eq!(url, "https://tms.example.com/tiles/4/3/10.png");
 }
@@ -190,7 +190,7 @@ fn tms_reverse_y_url() {
 fn tms_reverse_y_level_0() {
     let p = TmsImageryProvider::new("https://tms.example.com");
     let coord = TileCoord::new(0, 0, 0);
-    // At level 0, tiles_y = 1, tms_y = 1 - 1 - 0 = 0
+    // 在第 0 级，tiles_y = 1，tms_y = 1 - 1 - 0 = 0
     let url = p.get_tile_url(&coord);
     assert_eq!(url, "https://tms.example.com/0/0/0.png");
 }
@@ -199,7 +199,7 @@ fn tms_reverse_y_level_0() {
 fn tms_trailing_slash() {
     let p = TmsImageryProvider::new("https://tms.example.com/");
     let coord = TileCoord::new(1, 1, 1);
-    // At level 1, tiles_y = 2, tms_y = 2 - 1 - 1 = 0
+    // 在第 1 级，tiles_y = 2，tms_y = 2 - 1 - 1 = 0
     let url = p.get_tile_url(&coord);
     assert_eq!(url, "https://tms.example.com/1/1/0.png");
 }
@@ -242,7 +242,7 @@ fn bing_defaults() {
 
 #[test]
 fn bing_quadkey_level_1() {
-    // Level 1: 4 quadrants
+    // 第 1 级：4 个象限
     assert_eq!(
         BingMapsImageryProvider::tile_to_quadkey(&TileCoord::new(0, 0, 1)),
         "0"
@@ -275,7 +275,7 @@ fn bing_quadkey_level_2() {
 
 #[test]
 fn bing_quadkey_level_3() {
-    // x=5 (101), y=3 (011) at level 3
+    // x=5 (101), y=3 (011) 在第 3 级
     // i=2: mask=4, x&4=4→+1, y&4=0→digit=1
     // i=1: mask=2, x&2=0, y&2=2→+2→digit=2
     // i=0: mask=1, x&1=1→+1, y&1=1→+2→digit=3

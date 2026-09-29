@@ -1,7 +1,7 @@
-//! Geometry degenerate cases - ported from CesiumJS Core/CylinderGeometrySpec.js,
-//! Core/EllipsoidGeometrySpec.js, Core/BoxGeometrySpec.js
+//! 几何退化情形 - 移植自 CesiumJS Core/CylinderGeometrySpec.js、
+//! Core/EllipsoidGeometrySpec.js、Core/BoxGeometrySpec.js
 //!
-//! Tests degenerate inputs that should produce minimal/empty geometry.
+//! 测试应产生最小/空几何的退化输入。
 
 use cesium_geospatial::geometry::{
     box_geometry, cylinder_geometry, ellipsoid_geometry, sphere_geometry,
@@ -11,14 +11,14 @@ use glam::DVec3;
 
 const EPSILON10: f64 = 1e-10;
 
-// ─── CylinderGeometry degenerate cases (from CylinderGeometrySpec.js) ────────
+// ─── CylinderGeometry 退化情形（来自 CylinderGeometrySpec.js）────────
 
 #[test]
 fn cylinder_degenerate_length_zero() {
     // CylinderGeometrySpec: "undefined is returned if the length is less than or equal to zero"
     let geo = cylinder_geometry(0.0, 80000.0, 200000.0, 8, VertexFormat::POSITION_ONLY);
-    // Our implementation produces degenerate geometry instead of None
-    // All positions should be at z=0
+    // 我们的实现产生退化几何而非 None
+    // 所有位置应在 z=0 处
     for p in &geo.positions {
         assert!(p[2].abs() < EPSILON10, "z={} should be 0 for zero-length", p[2]);
     }
@@ -28,7 +28,7 @@ fn cylinder_degenerate_length_zero() {
 fn cylinder_degenerate_negative_length() {
     // CylinderGeometrySpec: "undefined if length < 0"
     let geo = cylinder_geometry(-200000.0, 100.0, 100.0, 8, VertexFormat::POSITION_ONLY);
-    // Implementation produces geometry with swapped z extents
+    // 实现产生 z 范围互换的几何
     assert!(!geo.positions.is_empty());
     assert_eq!(geo.primitive_type, PrimitiveType::Triangles);
 }
@@ -37,7 +37,7 @@ fn cylinder_degenerate_negative_length() {
 fn cylinder_degenerate_both_radii_zero() {
     // CylinderGeometrySpec: "undefined if both radii are equal to zero"
     let geo = cylinder_geometry(200000.0, 0.0, 0.0, 8, VertexFormat::POSITION_ONLY);
-    // All positions should be on Z axis
+    // 所有位置应在 Z 轴上
     for p in &geo.positions {
         assert!(p[0].abs() < EPSILON10, "x={} should be 0", p[0]);
         assert!(p[1].abs() < EPSILON10, "y={} should be 0", p[1]);
@@ -59,15 +59,15 @@ fn cylinder_degenerate_bottom_radius_negative() {
 
 #[test]
 fn cylinder_cone_top_vs_bottom_zero() {
-    // Compare cone with top=0 vs bottom=0 - should be mirror images
+    // 比较 top=0 与 bottom=0 的圆锥 - 应互为镜像
     let top_zero = cylinder_geometry(10.0, 0.0, 5.0, 8, VertexFormat::POSITION_ONLY);
     let bottom_zero = cylinder_geometry(10.0, 5.0, 0.0, 8, VertexFormat::POSITION_ONLY);
 
-    // Same number of vertices
+    // 相同的顶点数
     assert_eq!(top_zero.positions.len(), bottom_zero.positions.len());
     assert_eq!(top_zero.indices.len(), bottom_zero.indices.len());
 
-    // Same bounding sphere radius
+    // 相同的包围球半径
     assert!(
         (top_zero.bounding_sphere.radius - bottom_zero.bounding_sphere.radius).abs() < EPSILON10
     );
@@ -75,20 +75,20 @@ fn cylinder_cone_top_vs_bottom_zero() {
 
 #[test]
 fn cylinder_large_slice_count() {
-    // High slice count should produce smooth cylinder
+    // 较高的分段数应产生平滑的圆柱
     let geo = cylinder_geometry(2.0, 1.0, 1.0, 64, VertexFormat::POSITION_ONLY);
-    // Should have many vertices
+    // 应有许多顶点
     assert!(geo.positions.len() > 100, "high slice count should produce many vertices");
     assert_eq!(geo.primitive_type, PrimitiveType::Triangles);
 }
 
-// ─── EllipsoidGeometry degenerate cases (from EllipsoidGeometrySpec.js) ──────
+// ─── EllipsoidGeometry 退化情形（来自 EllipsoidGeometrySpec.js）─────
 
 #[test]
 fn ellipsoid_degenerate_zero_x_radius() {
     // EllipsoidGeometrySpec: "undefined if x, y, or z radii are equal or less than zero"
     let geo = ellipsoid_geometry(DVec3::new(0.0, 500000.0, 500000.0), 4, 4, VertexFormat::POSITION_ONLY);
-    // All positions should have x=0 (flattened to YZ plane)
+    // 所有位置应有 x=0（压平到 YZ 平面）
     for p in &geo.positions {
         assert!(p[0].abs() < EPSILON10, "x={} should be 0", p[0]);
     }
@@ -131,9 +131,9 @@ fn ellipsoid_degenerate_negative_z_radius() {
 #[test]
 fn ellipsoid_partitions_default_to_minimum() {
     // EllipsoidGeometrySpec: "computes partitions to default to 2 if less than 2"
-    // With 0 stacks and 0 slices, our implementation should handle gracefully
+    // 对于 0 stacks 和 0 slices，我们的实现应能优雅处理
     let geo = ellipsoid_geometry(DVec3::new(0.5, 0.5, 0.5), 1, 1, VertexFormat::POSITION_ONLY);
-    // Minimal partitions: at least some vertices and indices
+    // 最小分区：至少有一些顶点和索引
     assert!(!geo.positions.is_empty());
     assert!(!geo.indices.is_empty());
 }
@@ -147,23 +147,23 @@ fn ellipsoid_unit_sphere_radius() {
 
 #[test]
 fn ellipsoid_non_uniform_bounding_sphere() {
-    // Bounding sphere should use max radius
+    // 包围球应使用最大半径
     let radii = DVec3::new(1.0, 2.0, 3.0);
     let geo = ellipsoid_geometry(radii, 8, 8, VertexFormat::POSITION_ONLY);
     assert!((geo.bounding_sphere.radius - 3.0).abs() < EPSILON10);
 }
 
-// ─── BoxGeometry degenerate cases (from BoxGeometrySpec.js) ─────────────────
+// ─── BoxGeometry 退化情形（来自 BoxGeometrySpec.js）─────────────────
 
 #[test]
 fn box_degenerate_flat_in_x() {
-    // Box with zero extent in X dimension
+    // X 维度范围为零的盒子
     let geo = box_geometry(
         DVec3::new(5.0, -1.0, -1.0),
         DVec3::new(5.0, 1.0, 1.0),
         VertexFormat::POSITION_ONLY,
     );
-    // All positions should have x=5
+    // 所有位置应有 x=5
     for p in &geo.positions {
         assert!((p[0] - 5.0).abs() < EPSILON10, "x={} should be 5", p[0]);
     }
@@ -195,7 +195,7 @@ fn box_degenerate_flat_in_z() {
 
 #[test]
 fn box_normals_consistent_across_faces() {
-    // Each face should have uniform normals
+    // 每个面应有均匀的法线
     let geo = box_geometry(
         DVec3::new(-1.0, -1.0, -1.0),
         DVec3::new(1.0, 1.0, 1.0),
@@ -204,19 +204,19 @@ fn box_normals_consistent_across_faces() {
     let normals = geo.normals.as_ref().unwrap();
     assert_eq!(normals.len(), geo.positions.len());
 
-    // All normals should be unit length
+    // 所有法线应为单位长度
     for n in normals {
         let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
         assert!((len - 1.0).abs() < EPSILON10, "normal should be unit length, got {}", len);
     }
 }
 
-// ─── SphereGeometry degenerate cases ────────────────────────────────────────
+// ─── SphereGeometry 退化情形 ───────────────────────────────────────
 
 #[test]
 fn sphere_degenerate_zero_radius() {
     let geo = sphere_geometry(0.0, 4, 4, VertexFormat::POSITION_ONLY);
-    // All positions should be at origin
+    // 所有位置应在原点
     for p in &geo.positions {
         assert!(p[0].abs() < EPSILON10);
         assert!(p[1].abs() < EPSILON10);
@@ -227,7 +227,7 @@ fn sphere_degenerate_zero_radius() {
 
 #[test]
 fn sphere_degenerate_one_stack_one_slice() {
-    // Minimal partitions
+    // 最小分区
     let geo = sphere_geometry(1.0, 1, 1, VertexFormat::POSITION_ONLY);
     assert!(!geo.positions.is_empty());
     assert!(!geo.indices.is_empty());
@@ -236,22 +236,22 @@ fn sphere_degenerate_one_stack_one_slice() {
 
 #[test]
 fn sphere_large_partitions() {
-    // High partition count should produce many vertices
+    // 较高的分区数应产生许多顶点
     let geo = sphere_geometry(1.0, 32, 32, VertexFormat::POSITION_ONLY);
     let expected_vertices = (32 + 1) * (32 + 1);
     assert_eq!(geo.positions.len(), expected_vertices);
-    // All positions should be on unit sphere
+    // 所有位置应在单位球面上
     for p in &geo.positions {
         let pos = DVec3::from(*p);
         assert!((pos.length() - 1.0).abs() < EPSILON10);
     }
 }
 
-// ─── Cross-cutting invariants ──────────────────────────────────────────────
+// ─── 横切不变量 ────────────────────────────────────────────────────
 
 #[test]
 fn all_geometries_produce_valid_indices_for_degenerate_inputs() {
-    // Even degenerate inputs should produce valid (in-bounds) indices
+    // 即使是退化输入也应产生有效（在范围内）的索引
     let geometries = vec![
         ("cylinder_zero_length", cylinder_geometry(0.0, 1.0, 1.0, 8, VertexFormat::POSITION_ONLY)),
         ("cylinder_zero_radii", cylinder_geometry(1.0, 0.0, 0.0, 8, VertexFormat::POSITION_ONLY)),

@@ -1,5 +1,5 @@
-//! Renderer/TextureSpec.js, TextureAtlasSpec.js, FramebufferSpec.js
-//! → Rust integration tests
+//! Renderer/TextureSpec.js、TextureAtlasSpec.js、FramebufferSpec.js
+//! → Rust 集成测试
 
 use cesium_scene::{
     Texture, PixelFormat, PixelDatatype, TextureFilter, TextureWrap,
@@ -117,7 +117,7 @@ fn test_texture_atlas_multiple_entries() {
     let mut atlas = TextureAtlas::new(0, 256, 256, 1);
     let e1 = atlas.add_entry(32, 32).unwrap();
     let e2 = atlas.add_entry(32, 32).unwrap();
-    // Entries should not overlap
+    // 条目不应重叠
     assert!(e1.x + e1.width < e2.x || e2.x + e2.width < e1.x || e1.y != e2.y);
     assert_eq!(atlas.entry_count(), 2);
 }

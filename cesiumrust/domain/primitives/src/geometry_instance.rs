@@ -1,6 +1,6 @@
-//! Geometry instances and appearance system.
+//! 几何实例与外观系统。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Scene/GeometryInstance.js`
 //! - `Scene/Appearance.js`
 //! - `Scene/MaterialAppearance.js`
@@ -9,27 +9,27 @@
 use cesium_geospatial::bounding::BoundingSphere;
 use glam::{DMat4, DVec3};
 
-/// A geometry instance with transform and attributes.
+/// 一个带变换与属性的几何实例。
 ///
-/// Maps to CesiumJS `Scene/GeometryInstance.js`
+/// 映射到 CesiumJS `Scene/GeometryInstance.js`
 #[derive(Debug, Clone)]
 pub struct GeometryInstance {
-    /// Unique identifier.
+    /// 唯一标识符。
     pub id: String,
-    /// Geometry type.
+    /// 几何类型。
     pub geometry_type: GeometryType,
-    /// Model matrix (local to world transform).
+    /// 模型矩阵（局部到世界的变换）。
     pub model_matrix: DMat4,
-    /// Per-instance color [r, g, b, a] (0.0-1.0).
+    /// 每实例颜色 [r, g, b, a]（0.0-1.0）。
     pub color: [f64; 4],
-    /// Whether the instance is shown.
+    /// 实例是否显示。
     pub show: bool,
-    /// Computed bounding sphere.
+    /// 计算出的包围球。
     pub bounding_sphere: Option<BoundingSphere>,
 }
 
 impl GeometryInstance {
-    /// Creates a new geometry instance.
+    /// 创建一个新的几何实例。
     pub fn new(id: impl Into<String>, geometry_type: GeometryType) -> Self {
         Self {
             id: id.into(),
@@ -41,99 +41,99 @@ impl GeometryInstance {
         }
     }
 
-    /// Sets the model matrix.
+    /// 设置模型矩阵。
     pub fn with_model_matrix(mut self, matrix: DMat4) -> Self {
         self.model_matrix = matrix;
         self
     }
 
-    /// Sets the color.
+    /// 设置颜色。
     pub fn with_color(mut self, color: [f64; 4]) -> Self {
         self.color = color;
         self
     }
 
-    /// Sets the position (translation only).
+    /// 设置位置（仅平移）。
     pub fn with_position(mut self, position: DVec3) -> Self {
         self.model_matrix = DMat4::from_translation(position);
         self
     }
 
-    /// Computes the world-space bounding sphere.
+    /// 计算世界空间的包围球。
     pub fn compute_bounding_sphere(&mut self) {
         let local_bs = self.geometry_type.bounding_sphere();
         self.bounding_sphere = Some(local_bs.transform(&self.model_matrix));
     }
 }
 
-/// Geometry types that can be instanced.
+/// 可实例化的几何类型。
 #[derive(Debug, Clone, PartialEq)]
 pub enum GeometryType {
-    /// Box geometry.
+    /// 盒体几何。
     Box {
-        /// Half-extents.
+        /// 半长（半边长度）。
         half_extents: DVec3,
     },
-    /// Sphere geometry.
+    /// 球体几何。
     Sphere {
-        /// Radius.
+        /// 半径。
         radius: f64,
     },
-    /// Cylinder geometry.
+    /// 柱体几何。
     Cylinder {
-        /// Top radius.
+        /// 顶部半径。
         top_radius: f64,
-        /// Bottom radius.
+        /// 底部半径。
         bottom_radius: f64,
-        /// Height.
+        /// 高度。
         height: f64,
     },
-    /// Ellipsoid geometry.
+    /// 椭球几何。
     Ellipsoid {
-        /// Radii.
+        /// 各轴半径。
         radii: DVec3,
     },
-    /// Rectangle geometry (geographic).
+    /// 矩形几何（地理）。
     Rectangle {
-        /// West (radians).
+        /// 西（弧度）。
         west: f64,
-        /// South (radians).
+        /// 南（弧度）。
         south: f64,
-        /// East (radians).
+        /// 东（弧度）。
         east: f64,
-        /// North (radians).
+        /// 北（弧度）。
         north: f64,
     },
-    /// Polygon geometry.
+    /// 多边形几何。
     Polygon {
-        /// Positions [lon, lat, height] in radians/meters.
+        /// 位置 [lon, lat, height]，单位为弧度/米。
         positions: Vec<[f64; 3]>,
     },
-    /// Polyline geometry.
+    /// 折线几何。
     Polyline {
-        /// Positions [lon, lat, height] in radians/meters.
+        /// 位置 [lon, lat, height]，单位为弧度/米。
         positions: Vec<[f64; 3]>,
-        /// Width in meters.
+        /// 宽度（米）。
         width: f64,
     },
-    /// Circle geometry.
+    /// 圆形几何。
     Circle {
-        /// Center [lon, lat, height] in radians/meters.
+        /// 中心 [lon, lat, height]，单位为弧度/米。
         center: [f64; 3],
-        /// Radius in meters.
+        /// 半径（米）。
         radius: f64,
     },
-    /// Custom geometry with vertex data.
+    /// 带顶点数据的自定义几何。
     Custom {
-        /// Vertex count.
+        /// 顶点数。
         vertex_count: u32,
-        /// Bounding sphere.
+        /// 包围球。
         bounding_sphere: BoundingSphere,
     },
 }
 
 impl GeometryType {
-    /// Returns the local-space bounding sphere for this geometry.
+    /// 返回该几何的局部空间包围球。
     pub fn bounding_sphere(&self) -> BoundingSphere {
         match self {
             Self::Box { half_extents } => {
@@ -158,11 +158,11 @@ impl GeometryType {
                 east,
                 north,
             } => {
-                // Approximate bounding sphere
+                // 近似包围球
                 let center_lon = (west + east) / 2.0;
                 let center_lat = (south + north) / 2.0;
                 let angular_radius = ((east - west) / 2.0).max((north - south) / 2.0);
-                // Approximate radius on unit sphere
+                // 单位球上的近似半径
                 let radius = angular_radius.sin() * 6378137.0;
                 BoundingSphere::new(
                     DVec3::new(center_lon.cos() * center_lat.cos(), center_lon.sin() * center_lat.cos(), center_lat.sin()) * 6378137.0,
@@ -173,7 +173,7 @@ impl GeometryType {
                 if positions.is_empty() {
                     return BoundingSphere::new(DVec3::ZERO, 0.0);
                 }
-                // Compute centroid and max distance
+                // 计算形心与最大距离
                 let mut center = DVec3::ZERO;
                 for p in positions {
                     center += DVec3::new(
@@ -207,7 +207,7 @@ impl GeometryType {
         }
     }
 
-    /// Returns the vertex count estimate for this geometry.
+    /// 返回该几何的顶点数估算值。
     pub fn estimated_vertex_count(&self) -> u32 {
         match self {
             Self::Box { .. } => 24,
@@ -223,20 +223,20 @@ impl GeometryType {
     }
 }
 
-/// Appearance defines how geometry is rendered.
+/// Appearance 定义几何如何渲染。
 ///
-/// Maps to CesiumJS `Scene/Appearance.js`
+/// 映射到 CesiumJS `Scene/Appearance.js`
 #[derive(Debug, Clone)]
 pub struct Appearance {
-    /// Whether the appearance is translucent.
+    /// 外观是否为半透明。
     pub translucent: bool,
-    /// Whether to render both faces.
+    /// 是否渲染两个面。
     pub two_sided: bool,
-    /// Whether to use flat shading.
+    /// 是否使用平面明暗（flat shading）。
     pub flat: bool,
-    /// Material type.
+    /// 材质类型。
     pub material: MaterialType,
-    /// Render state.
+    /// 渲染状态。
     pub render_state: RenderState,
 }
 
@@ -253,12 +253,12 @@ impl Default for Appearance {
 }
 
 impl Appearance {
-    /// Creates a new appearance.
+    /// 创建一个新的外观。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Creates a per-instance color appearance.
+    /// 创建一个每实例颜色的外观。
     pub fn per_instance_color() -> Self {
         Self {
             material: MaterialType::PerInstanceColor,
@@ -266,73 +266,73 @@ impl Appearance {
         }
     }
 
-    /// Sets the material.
+    /// 设置材质。
     pub fn with_material(mut self, material: MaterialType) -> Self {
         self.material = material;
         self
     }
 
-    /// Sets whether the appearance is translucent.
+    /// 设置外观是否为半透明。
     pub fn with_translucent(mut self, translucent: bool) -> Self {
         self.translucent = translucent;
         self
     }
 }
 
-/// Material types.
+/// 材质类型。
 #[derive(Debug, Clone, PartialEq)]
 pub enum MaterialType {
-    /// Solid color.
+    /// 纯色。
     Color([f64; 4]),
-    /// Use per-instance color.
+    /// 使用每实例颜色。
     PerInstanceColor,
-    /// Image texture.
+    /// 图像纹理。
     Image {
-        /// Texture URL.
+        /// 纹理 URL。
         url: String,
-        /// Repeat in X.
+        /// X 方向重复。
         repeat_x: f64,
-        /// Repeat in Y.
+        /// Y 方向重复。
         repeat_y: f64,
     },
-    /// Diffuse map.
+    /// 漫反射贴图。
     DiffuseMap {
-        /// Texture URL.
+        /// 纹理 URL。
         url: String,
     },
-    /// Normal map.
+    /// 法线贴图。
     NormalMap {
-        /// Texture URL.
+        /// 纹理 URL。
         url: String,
     },
-    /// Grid pattern.
+    /// 网格图案。
     Grid {
-        /// Grid color.
+        /// 网格颜色。
         color: [f64; 4],
-        /// Number of cells.
+        /// 单元素数。
         cells: u32,
     },
-    /// Stripe pattern.
+    /// 条纹图案。
     Stripe {
-        /// Even color.
+        /// 偶数颜颜色。
         even_color: [f64; 4],
-        /// Odd color.
+        /// 奇数颜色。
         odd_color: [f64; 4],
-        /// Repeat count.
+        /// 重复次数。
         repeat: f64,
     },
 }
 
-/// Render state configuration.
+/// 渲染状态配置。
 #[derive(Debug, Clone)]
 pub struct RenderState {
-    /// Whether depth testing is enabled.
+    /// 是否启用深度测试。
     pub depth_test: bool,
-    /// Whether depth writing is enabled.
+    /// 是否启用深度写入。
     pub depth_write: bool,
-    /// Whether blending is enabled.
+    /// 是否启用混合。
     pub blending: bool,
-    /// Cull mode.
+    /// 敲除模式。
     pub cull_mode: CullMode,
 }
 
@@ -347,14 +347,14 @@ impl Default for RenderState {
     }
 }
 
-/// Face culling mode.
+/// 面敲除模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CullMode {
-    /// No culling.
+    /// 不敲除。
     None,
-    /// Cull front faces.
+    /// 敲除正面。
     Front,
-    /// Cull back faces.
+    /// 敲除背面。
     #[default]
     Back,
 }
@@ -418,7 +418,7 @@ mod tests {
             radii: DVec3::new(100.0, 200.0, 150.0),
         };
         let bs = geometry.bounding_sphere();
-        assert_eq!(bs.radius, 200.0); // Max of radii
+        assert_eq!(bs.radius, 200.0); // radii 的最大值
     }
 
     #[test]

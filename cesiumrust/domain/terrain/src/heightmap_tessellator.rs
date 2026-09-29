@@ -1,6 +1,6 @@
-//! Heightmap tessellation: creates a mesh from a heightmap image.
+//! 高程图细分为网格：从高程图图像创建网格。
 //!
-//! Maps to CesiumJS `Core/HeightmapTessellator.js`
+//! 映射到 CesiumJS `Core/HeightmapTessellator.js`
 
 // legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
 #![allow(unused_imports, unused_variables)]
@@ -14,21 +14,21 @@ use glam::{DVec2, DVec3};
 
 use crate::terrain_encoding::TerrainEncoding;
 
-/// Default structure of a heightmap.
-/// Maps to CesiumJS `HeightmapTessellator.DEFAULT_STRUCTURE`
+/// 高程图的默认结构。
+/// 映射到 CesiumJS `HeightmapTessellator.DEFAULT_STRUCTURE`
 #[derive(Debug, Clone)]
 pub struct HeightmapStructure {
-    /// The factor by which to multiply height samples.
+    /// 高度采样要乘以的因子。
     pub height_scale: f64,
-    /// The offset to add to the scaled height.
+    /// 添加到缩放后高度的偏移。
     pub height_offset: f64,
-    /// The number of elements that make up a single height sample.
+    /// 构成单个高度采样的元素数。
     pub elements_per_height: usize,
-    /// The number of elements to skip between heights.
+    /// 高度之间要跳过的元素数。
     pub stride: usize,
-    /// The multiplier used to compute height when stride > 1.
+    /// 当 stride > 1 时用于计算高度的乘数。
     pub element_multiplier: f64,
-    /// Indicates endianness when elementsPerHeight > 1.
+    /// 当 elementsPerHeight > 1 时指示字节序。
     pub is_big_endian: bool,
 }
 
@@ -45,38 +45,38 @@ impl Default for HeightmapStructure {
     }
 }
 
-/// Options for `compute_vertices`.
+/// `compute_vertices` 的选项。
 pub struct ComputeVerticesOptions {
-    /// The heightmap data.
+    /// 高程图数据。
     pub heightmap: Vec<f64>,
-    /// Width in height samples.
+    /// 以高度采样计的宽度。
     pub width: usize,
-    /// Height in height samples.
+    /// 以高度采样计的高度。
     pub height: usize,
-    /// Height of skirts at edges.
+    /// 边缘裙边的高度。
     pub skirt_height: f64,
-    /// Rectangle in native coordinates (degrees for geographic, meters for web mercator).
+    /// 原生坐标中的矩形（地理用度，web mercator 用米）。
     pub native_rectangle: Rectangle,
-    /// Optional rectangle in geodetic radians.
+    /// 可选的大地弧度矩形。
     pub rectangle: Option<Rectangle>,
-    /// True if geographic projection (default), false for web mercator.
+    /// 若为地理投影则为 true（默认），web mercator 为 false。
     pub is_geographic: bool,
-    /// The ellipsoid.
+    /// 椭球体。
     pub ellipsoid: Ellipsoid,
-    /// Optional center for relative positions.
+    /// 可选的相对位置中心。
     pub relative_to_center: Option<DVec3>,
-    /// Height structure descriptor.
+    /// 高度结构描述符。
     pub structure: Option<HeightmapStructure>,
-    /// Whether to include web mercator T coordinate.
+    /// 是否包含 web mercator 的 T 坐标。
     pub include_web_mercator_t: bool,
-    /// Terrain exaggeration scale.
+    /// 地形夸张缩放。
     pub exaggeration: f64,
-    /// Height from which exaggeration is applied.
+    /// 应用夸张所基于的高度。
     pub exaggeration_relative_height: f64,
 }
 
 impl ComputeVerticesOptions {
-    /// Creates options with required fields and sensible defaults.
+    /// 使用必填字段和合理默认值创建选项。
     pub fn new(
         heightmap: Vec<f64>,
         width: usize,
@@ -102,23 +102,23 @@ impl ComputeVerticesOptions {
     }
 }
 
-/// Result of `compute_vertices`.
+/// `compute_vertices` 的结果。
 pub struct TessellatedVertices {
-    /// The vertex buffer (stride floats per vertex).
+    /// 顶点缓冲区（每顶点 stride 个浮点数）。
     pub vertices: Vec<f64>,
-    /// Minimum height.
+    /// 最小高度。
     pub minimum_height: f64,
-    /// Maximum height.
+    /// 最大高度。
     pub maximum_height: f64,
-    /// The terrain encoding used.
+    /// 所使用的地形编码。
     pub encoding: TerrainEncoding,
-    /// Bounding sphere of the mesh.
+    /// 网格的包围球。
     pub bounding_sphere_3d: BoundingSphere,
 }
 
-/// Fills an array of vertices from a heightmap image.
+/// 从高程图图像填充顶点数组。
 ///
-/// Maps to CesiumJS `HeightmapTessellator.computeVertices`
+/// 映射到 CesiumJS `HeightmapTessellator.computeVertices`
 pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices {
     let heightmap = &options.heightmap;
     let width = options.width;
@@ -219,9 +219,9 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
         (0, height as i32, 0, width as i32)
     };
 
-    // Note: CesiumJS applies a tiny skirt_offset_percentage (0.00001) to lat/lon
-    // for z-fighting prevention. We skip this as it's a rendering optimization
-    // that doesn't affect geometric correctness.
+    // 注意：CesiumJS 对 lat/lon 应用一个极小的 skirt_offset_percentage（0.00001）
+    // 以防止 z-fighting。我们跳过它，因为这是一项不影响几何正确性的
+    // 渲染优化。
 
     for row_index in start_row..end_row {
         let mut row = row_index;
@@ -373,7 +373,7 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
         }
     }
 
-    // Compute bounding sphere from positions
+    // 从位置计算包围球
     let valid_positions: Vec<DVec3> = positions.iter().filter_map(|p| *p).collect();
     let bounding_sphere_3d = BoundingSphere::from_points(&valid_positions);
 

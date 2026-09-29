@@ -1,25 +1,25 @@
-//! Performance optimization: frame rate control, request scheduling, memory management.
+//! 性能优化：帧率控制、请求调度、内存管理。
 //!
-//! Maps to CesiumJS performance features:
-//! - `Scene/FrameRateController.js` (target FPS)
-//! - Request scheduling and throttling
-//! - Memory budget management
+//! 映射到 CesiumJS 性能特性：
+//! - `Scene/FrameRateController.js`（目标 FPS）
+//! - 请求调度与限流
+//! - 内存预算管理
 
 use std::collections::VecDeque;
 use std::time::Instant;
 
-/// Frame rate controller configuration.
+/// 帧率控制器配置。
 #[derive(Debug, Clone)]
 pub struct FrameRateConfig {
-    /// Target frames per second.
+    /// 目标每秒帧数。
     pub target_fps: f64,
-    /// Minimum frame time (seconds).
+    /// 最小帧时间（秒）。
     pub min_frame_time: f64,
-    /// Maximum frame time (seconds).
+    /// 最大帧时间（秒）。
     pub max_frame_time: f64,
-    /// Whether to use vsync.
+    /// 是否使用 vsync。
     pub vsync: bool,
-    /// Whether to render on demand only.
+    /// 是否仅在需要时渲染。
     pub render_on_demand: bool,
 }
 
@@ -35,23 +35,23 @@ impl Default for FrameRateConfig {
     }
 }
 
-/// Frame rate controller.
+/// 帧率控制器。
 #[derive(Debug)]
 pub struct FrameRateController {
-    /// Configuration.
+    /// 配置。
     pub config: FrameRateConfig,
-    /// Last frame time.
+    /// 上一帧时间。
     last_frame_time: Option<Instant>,
-    /// Frame time history for averaging.
+    /// 用于求平均的帧时间历史。
     frame_history: VecDeque<f64>,
-    /// Maximum history size.
+    /// 最大历史长度。
     history_size: usize,
-    /// Whether a render is requested.
+    /// 是否已请求渲染。
     render_requested: bool,
 }
 
 impl FrameRateController {
-    /// Creates a new frame rate controller.
+    /// 创建一个新的帧率控制器。
     pub fn new(config: FrameRateConfig) -> Self {
         Self {
             config,
@@ -62,8 +62,8 @@ impl FrameRateController {
         }
     }
 
-    /// Called at the start of each frame.
-    /// Returns the delta time in seconds.
+    /// 在每帧开始时调用。
+    /// 返回以秒计的间隔时间（delta time）。
     pub fn begin_frame(&mut self) -> f64 {
         let now = Instant::now();
         let delta = match self.last_frame_time {
@@ -72,10 +72,10 @@ impl FrameRateController {
         };
         self.last_frame_time = Some(now);
 
-        // Clamp delta time
+        // 将 delta time 夹取到范围内
         let delta = delta.clamp(self.config.min_frame_time, self.config.max_frame_time);
 
-        // Record history
+        // 记录历史
         self.frame_history.push_back(delta);
         if self.frame_history.len() > self.history_size {
             self.frame_history.pop_front();
@@ -84,7 +84,7 @@ impl FrameRateController {
         delta
     }
 
-    /// Returns the average frame time.
+    /// 返回平均帧时间。
     pub fn average_frame_time(&self) -> f64 {
         if self.frame_history.is_empty() {
             return 1.0 / self.config.target_fps;
@@ -93,17 +93,17 @@ impl FrameRateController {
         sum / self.frame_history.len() as f64
     }
 
-    /// Returns the current FPS.
+    /// 返回当前 FPS。
     pub fn current_fps(&self) -> f64 {
         1.0 / self.average_frame_time()
     }
 
-    /// Requests a render on the next frame.
+    /// 请求在下一帧渲染。
     pub fn request_render(&mut self) {
         self.render_requested = true;
     }
 
-    /// Returns true if a render should occur this frame.
+    /// 如果本帧应当渲染则返回 true。
     pub fn should_render(&mut self) -> bool {
         if !self.config.render_on_demand {
             return true;
@@ -113,62 +113,62 @@ impl FrameRateController {
         should
     }
 
-    /// Returns the target frame time in seconds.
+    /// 返回以秒计的目标帧时间。
     pub fn target_frame_time(&self) -> f64 {
         1.0 / self.config.target_fps
     }
 }
 
-/// Request priority levels.
+/// 请求优先级级别。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum RequestPriority {
-    /// Low priority (preload).
+    /// 低优先级（预加载）。
     Low = 0,
-    /// Normal priority.
+    /// 普通优先级。
     #[default]
     Normal = 1,
-    /// High priority (visible tiles).
+    /// 高优先级（可见瓦片）。
     High = 2,
-    /// Critical priority (immediate).
+    /// 关键优先级（立即）。
     Critical = 3,
 }
 
-/// A scheduled request.
+/// 一个已调度的请求。
 #[derive(Debug, Clone)]
 pub struct ScheduledRequest {
-    /// Request ID.
+    /// 请求 ID。
     pub id: u64,
-    /// Priority.
+    /// 优先级。
     pub priority: RequestPriority,
-    /// Frame number when scheduled.
+    /// 调度时的帧编号。
     pub frame_number: u64,
-    /// Whether the request has been cancelled.
+    /// 请求是否已被取消。
     pub cancelled: bool,
 }
 
-/// Request scheduler with throttling.
+/// 带限流的请求调度器。
 #[derive(Debug)]
 pub struct RequestScheduler {
-    /// Pending requests.
+    /// 待处理请求。
     pending: VecDeque<ScheduledRequest>,
-    /// Maximum concurrent requests.
+    /// 最大并发请求数。
     pub max_concurrent: usize,
-    /// Currently active request count.
+    /// 当前活动请求数。
     active_count: usize,
-    /// Total requests processed.
+    /// 已处理请求总数。
     pub total_processed: u64,
-    /// Next request ID.
+    /// 下一个请求 ID。
     next_id: u64,
 }
 
 impl Default for RequestScheduler {
     fn default() -> Self {
-        Self::new(6) // Default: 6 concurrent (browser limit per domain)
+        Self::new(6) // 默认：6 个并发（浏览器每域名限制）
     }
 }
 
 impl RequestScheduler {
-    /// Creates a new request scheduler.
+    /// 创建一个新的请求调度器。
     pub fn new(max_concurrent: usize) -> Self {
         Self {
             pending: VecDeque::new(),
@@ -179,7 +179,7 @@ impl RequestScheduler {
         }
     }
 
-    /// Schedules a new request.
+    /// 调度一个新请求。
     pub fn schedule(&mut self, priority: RequestPriority, frame_number: u64) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
@@ -192,23 +192,23 @@ impl RequestScheduler {
         id
     }
 
-    /// Cancels a request.
+    /// 取消一个请求。
     pub fn cancel(&mut self, id: u64) {
         if let Some(req) = self.pending.iter_mut().find(|r| r.id == id) {
             req.cancelled = true;
         }
     }
 
-    /// Gets the next request to process.
+    /// 获取下一个要处理的请求。
     pub fn next_request(&mut self) -> Option<ScheduledRequest> {
         if self.active_count >= self.max_concurrent {
             return None;
         }
 
-        // Remove cancelled requests
+        // 移除已取消的请求
         self.pending.retain(|r| !r.cancelled);
 
-        // Find highest priority, oldest request
+        // 找出优先级最高、最旧的请求
         let best_idx = self
             .pending
             .iter()
@@ -221,7 +221,7 @@ impl RequestScheduler {
         Some(request)
     }
 
-    /// Marks a request as complete.
+    /// 将一个请求标记为完成。
     pub fn complete_request(&mut self) {
         if self.active_count > 0 {
             self.active_count -= 1;
@@ -229,27 +229,27 @@ impl RequestScheduler {
         self.total_processed += 1;
     }
 
-    /// Returns the number of pending requests.
+    /// 返回待处理请求的数量。
     pub fn pending_count(&self) -> usize {
         self.pending.iter().filter(|r| !r.cancelled).count()
     }
 
-    /// Returns true if there are available slots.
+    /// 如果还有可用槽位则返回 true。
     pub fn has_capacity(&self) -> bool {
         self.active_count < self.max_concurrent
     }
 }
 
-/// Memory budget configuration.
+/// 内存预算配置。
 #[derive(Debug, Clone)]
 pub struct MemoryBudget {
-    /// Maximum texture memory in bytes.
+    /// 最大纹理内存（字节）。
     pub max_texture_bytes: u64,
-    /// Maximum geometry memory in bytes.
+    /// 最大几何内存（字节）。
     pub max_geometry_bytes: u64,
-    /// Maximum tile cache size.
+    /// 最大瓦片缓存大小。
     pub max_tile_cache_entries: usize,
-    /// Whether to automatically evict when over budget.
+    /// 超出预算时是否自动逐出。
     pub auto_evict: bool,
 }
 
@@ -264,62 +264,62 @@ impl Default for MemoryBudget {
     }
 }
 
-/// Memory usage tracker.
+/// 内存使用跟踪器。
 #[derive(Debug, Default)]
 pub struct MemoryTracker {
-    /// Current texture memory usage.
+    /// 当前纹理内存使用量。
     pub texture_bytes: u64,
-    /// Current geometry memory usage.
+    /// 当前几何内存使用量。
     pub geometry_bytes: u64,
-    /// Number of cached tiles.
+    /// 已缓存瓦片数。
     pub tile_cache_count: usize,
-    /// Peak texture usage.
+    /// 纹理使用峰值。
     pub peak_texture_bytes: u64,
-    /// Peak geometry usage.
+    /// 几何使用峰值。
     pub peak_geometry_bytes: u64,
 }
 
 impl MemoryTracker {
-    /// Creates a new memory tracker.
+    /// 创建一个新的内存跟踪器。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Allocates texture memory.
+    /// 分配纹理内存。
     pub fn allocate_texture(&mut self, bytes: u64) {
         self.texture_bytes += bytes;
         self.peak_texture_bytes = self.peak_texture_bytes.max(self.texture_bytes);
     }
 
-    /// Frees texture memory.
+    /// 释放纹理内存。
     pub fn free_texture(&mut self, bytes: u64) {
         self.texture_bytes = self.texture_bytes.saturating_sub(bytes);
     }
 
-    /// Allocates geometry memory.
+    /// 分配几何内存。
     pub fn allocate_geometry(&mut self, bytes: u64) {
         self.geometry_bytes += bytes;
         self.peak_geometry_bytes = self.peak_geometry_bytes.max(self.geometry_bytes);
     }
 
-    /// Frees geometry memory.
+    /// 释放几何内存。
     pub fn free_geometry(&mut self, bytes: u64) {
         self.geometry_bytes = self.geometry_bytes.saturating_sub(bytes);
     }
 
-    /// Returns total memory usage.
+    /// 返回总内存使用量。
     pub fn total_bytes(&self) -> u64 {
         self.texture_bytes + self.geometry_bytes
     }
 
-    /// Checks if over budget.
+    /// 检查是否超出预算。
     pub fn is_over_budget(&self, budget: &MemoryBudget) -> bool {
         self.texture_bytes > budget.max_texture_bytes
             || self.geometry_bytes > budget.max_geometry_bytes
             || self.tile_cache_count > budget.max_tile_cache_entries
     }
 
-    /// Returns bytes to evict to get under budget.
+    /// 返回为降到预算内需逐出的字节数。
     pub fn bytes_to_evict(&self, budget: &MemoryBudget) -> u64 {
         let texture_over = self.texture_bytes.saturating_sub(budget.max_texture_bytes);
         let geometry_over = self.geometry_bytes.saturating_sub(budget.max_geometry_bytes);
@@ -361,11 +361,11 @@ mod tests {
             render_on_demand: true,
             ..Default::default()
         });
-        // Initially requested
+        // 初始时已请求
         assert!(controller.should_render());
-        // After render, not requested
+        // 渲染后，未请求
         assert!(!controller.should_render());
-        // Request again
+        // 再次请求
         controller.request_render();
         assert!(controller.should_render());
     }
@@ -387,7 +387,7 @@ mod tests {
 
         assert_eq!(scheduler.pending_count(), 2);
 
-        // Should get high priority first
+        // 应先获得高优先级请求
         let req = scheduler.next_request().unwrap();
         assert_eq!(req.id, id2);
         assert_eq!(req.priority, RequestPriority::High);
@@ -400,16 +400,16 @@ mod tests {
         scheduler.schedule(RequestPriority::Normal, 1);
         scheduler.schedule(RequestPriority::Normal, 1);
 
-        // First request
+        // 第一个请求
         let req = scheduler.next_request();
         assert!(req.is_some());
         assert!(!scheduler.has_capacity());
 
-        // No more capacity
+        // 没有更多容量
         let req = scheduler.next_request();
         assert!(req.is_none());
 
-        // Complete and try again
+        // 完成一个后重试
         scheduler.complete_request();
         assert!(scheduler.has_capacity());
     }
@@ -452,7 +452,7 @@ mod tests {
         tracker.free_texture(400);
         assert_eq!(tracker.texture_bytes, 600);
 
-        // Can't go below zero
+        // 不能低于零
         tracker.free_texture(1000);
         assert_eq!(tracker.texture_bytes, 0);
     }

@@ -1,18 +1,18 @@
-//! The picking subsystem (plan §7): turn a screen cursor into the single best
-//! [`PickHit`] under it, drive hover feedback and click-to-select, and emit the
-//! hover / selection events the interaction FSM and UI consume.
+//! 拾取子系统（计划 §7）：将屏幕光标转换为其下方最佳
+//! [`PickHit`]，驱动悬停反馈和点击选择，并发出交互 FSM 和 UI
+//! 消费的悬停 / 选择事件。
 //!
-//! The logic splits in two so it is both correct and testable:
-//!  * [`pick_at`] is a **pure query** — given the document, the current pickable
-//!    id set and *any* geographic → screen projector, it projects each candidate
-//!    geometry, runs the [`cesium_plot::geom::hit`] primitives and folds the
-//!    results through [`pick_best`]. It has no Bevy dependency, so the whole hit
-//!    / rank / select contract is unit-testable headless (plan §15).
-//!  * [`pick_system`] is the thin ECS shell: it gathers the active camera's
-//!    metrics, builds the projector out of [`crate::labels::world_to_screen`] —
-//!    the *same* call the renderer uses to place meshes and labels, so "what you
-//!    pick" is by construction "what you see" in 2D and 3D — and then applies the
-//!    hover / click state changes.
+//! 逻辑拆分为两部分以兼顾正确性和可测性：
+//!  * [`pick_at`] 是一个**纯查询**——给定文档、当前可拾取
+//!    id 集和*任意*地理 → 屏幕投影器，它投影每个候选
+//!    几何，运行 [`cesium_plot::geom::hit`] 图元并通过 [`pick_best`] 折叠
+//!    结果。它无 Bevy 依赖，因此整个命中 / 排名 / 选择契约可以 headless
+//!    单测（计划 §15）。
+//!  * [`pick_system`] 是薄 ECS 壳：采集激活相机的
+//!    度量，用 [`crate::labels::world_to_screen`] 构建投影器——
+//!    渲染器放置网格和标签时使用的*同一*调用，因此“你拾取什么”
+//!    在构造上就是“你看到什么”——然后应用
+//!    悬停 / 点击状态变更。
 
 use std::collections::BTreeSet;
 
@@ -35,16 +35,15 @@ use crate::reproject::ViewMetrics;
 use crate::resources::{PlotDocument, PlotFilters, PlotHover, PlotSelection, PlotViewCtx};
 use crate::shapes;
 
-/// Weight of a layer's `order` in the composite draw / pick priority (a layer
-/// beats any intra-layer `z_order` differences below it).
+/// 层的 `order` 在合成绘制 / 拾取优先级中的权重（层
+/// 胜过其下任何层内 `z_order` 差异）。
 const LAYER_WEIGHT: i32 = 100_000;
 
-/// A cheap equality key capturing every input that determines [`pick_at`]'s
-/// result for a frame. Two consecutive frames sharing a key produce an identical
-/// hover, so the expensive per-element projection / tessellation is skipped and
-/// the cached [`PickHit`] is reused. It deliberately includes the resolved
-/// `pickable` set (the only way a `Filters` edit surfaces, since `Filters` has no
-/// revision counter) and the camera pose / projection the projector closes over.
+/// 一个廉价的等价键，捕获决定 [`pick_at`] 每帧结果的所有输入。连续两帧
+/// 共享同一键则产生相同的悬停，因此跳过昂贵的逐元素投影 / 剖分并
+/// 复用缓存的 [`PickHit`]。它故意包含解析后的
+/// `pickable` 集（`Filters` 编辑唯一的浮现方式，因为 `Filters` 无
+/// revision 计数器）以及投影器闭包捕获的相机位姿 / 投影。
 #[derive(Clone, PartialEq)]
 pub struct PickKey {
     cursor: [f64; 2],
@@ -59,48 +58,46 @@ pub struct PickKey {
     pickable: Vec<ElementId>,
 }
 
-/// Cache for [`pick_system`]: the last hover result and the [`PickKey`] it was
-/// computed under. Windowed-only (lives with the bridge plugin), so the headless
-/// golden baseline is untouched.
+/// [`pick_system`] 的缓存：最后一次悬停结果及其计算时的 [`PickKey`]。
+/// 仅窗口模式存在（随桥接插件存活），因此 headless
+/// 黄金基线不受影响。
 #[derive(Resource, Default)]
 pub struct PlotPickCache {
     key: Option<PickKey>,
     best: Option<PickHit>,
 }
 
-/// Emitted whenever the hovered element changes (plan §14).
+/// 悬停元素变化时发出（计划 §14）。
 #[derive(Event, Clone, Copy, Debug, PartialEq)]
 pub struct PlotHoverChanged {
-    /// The new hit under the cursor, if any.
+    /// 光标下的新命中（若有）。
     pub hit: Option<PickHit>,
 }
 
-/// Emitted whenever the selection set changes (plan §14).
+/// 选择集变化时发出（计划 §14）。
 #[derive(Event, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PlotSelectionChanged {
-    /// Size of the new selection.
+    /// 新选择的尺寸。
     pub selected: u32,
 }
 
-/// Emitted on a right-click (plan §16 M9 "右键菜单"): the UI / app owns the
-/// actual menu, this only reports *where* it was requested and *what* (if
-/// anything) sat under the cursor, so a menu can offer context actions on the
-/// picked element. Nothing else changes — the bridge just raises the intent.
+/// 右键点击时发出（计划 §16 M9 “右键菜单”）：UI / 应用拥有
+/// 实际菜单，这里只报告请求位置及其下方（若有）内容，
+/// 以便菜单可提供上下文动作。其他一切不变——桥接层只提出意图。
 #[derive(Event, Clone, Copy, Debug, PartialEq)]
 pub struct PlotContextMenu {
-    /// The element under the cursor, if the right-click hit one.
+    /// 光标下的元素，若右键命中了一个。
     pub target: Option<ElementId>,
-    /// Screen position (logical pixels) to anchor the menu at.
+    /// 屏幕位置（逻辑像素）用于锚定菜单。
     pub screen: Vec2,
 }
 
-/// Project a geographic point into screen pixels through the active camera, or
-/// `None` when it fails to project (behind the camera, off-viewport, …).
+/// 通过激活相机将地理坐标投影为屏幕像素，投影失败时（在相机后方、
+/// 超出视口等）返回 `None`。
 type Projector<'a> = dyn Fn(GeoPoint) -> Option<[f64; 2]> + 'a;
 
-/// Hit one geometry against `cursor`, returning `(part, screen_dist, rank)`.
-/// Only the M2/M3 drawable kinds are tested; faces / conics gain a filled
-/// interior hit at M4 once they are sampled.
+/// 将单个几何与 `cursor` 碰撞，返回 `(part, screen_dist, rank)`。
+/// 只测试 M2/M3 可绘制类型；面 / 圆锥曲线在 M4 采样后获得填充内部命中。
 fn hit_geometry(
     geo: &Geometry,
     style: &Style,
@@ -124,15 +121,15 @@ fn hit_geometry(
         }
         Geometry::Label(l) => {
             let sp = project(l.at)?;
-            // A generous text-box proxy: a fixed radius around the anchor.
+            // 宽松文本框代理：锚点周围的固定半径。
             let r = hit::DEFAULT_TOL_PX.max(10.0);
             let (part, d) = hit::hit_point(cursor, sp, r)?;
             Some((part, d, cesium_plot::model::RANK_MARKER))
         }
         Geometry::Polyline(_) | Geometry::Arc(_) | Geometry::Path(_) => {
-            // Sampled / great-circle-densified stroke, identical to what renders
-            // (via [`crate::shapes`]). Require every vertex to project so part
-            // indices stay aligned with the geometry's real vertices.
+            // 采样 / 大圆加密后的描边，与渲染的完全一致
+            // （通过 [`crate::shapes`]）。要求每个顶点都能投影，
+            // 以便 part 索引与几何的真实顶点对齐。
             let pos = shapes::stroke_positions(geo, mode)?;
             let mut pts: Vec<[f64; 2]> = Vec::with_capacity(pos.len());
             for g in &pos {
@@ -166,13 +163,12 @@ fn hit_geometry(
             };
             Some((part, d, rank))
         }
-        _ => None, // point/icon/label handled above; composite reserved for M9
+        _ => None, // 点/图标/标签已在上方处理；组合保留给 M9
     }
 }
 
-/// Whether a geometry's narrow-phase hit is expensive enough (it projects a
-/// sampled / densified vertex chain) to be worth a broad-phase reject first.
-/// Point-like kinds project a single point and skip the broad phase.
+/// 几何的窄相位命中是否足够昂贵（它投影一个采样 / 加密的顶点链）
+/// 以至于值得先做粗相位拒绝。点类型只投影单个点，跳过粗相位。
 fn is_multi_vertex(geo: &Geometry) -> bool {
     matches!(
         geo,
@@ -186,13 +182,12 @@ fn is_multi_vertex(geo: &Geometry) -> bool {
     )
 }
 
-/// Broad-phase screen test. Projects the element's conservative geographic
-/// `bounds` on a 4×4 grid into a screen AABB and returns `false` only when the
-/// cursor is provably outside it (padded by `tol` px). It is never a false
-/// reject: an empty box, or any grid sample that fails to project (geometry off
-/// or behind the camera), is conservatively reported as a possible hit. The
-/// bounds come from [`cesium_plot::model::Geometry::bounds`], which is the
-/// globe-densified extent, so it also covers the great-circle bulge.
+/// 粗相位屏幕测试。将元素的保守地理 `bounds` 以 4×4 网格投影为屏幕 AABB，
+/// 仅在光标可证明在其外部（以 `tol` px 填充）时返回 `false`。绝不会
+/// 误拒：空包围盒或任何网格采样无法投影（几何在相机外或后方）
+/// 都保守地报告为可能命中。bounds 来自
+/// [`cesium_plot::model::Geometry::bounds`]，即球体加密后的范围，
+/// 因此它也覆盖大圆隆起。
 fn bounds_might_hit(
     bounds: &GeoBounds,
     project: &Projector<'_>,
@@ -216,7 +211,7 @@ fn bounds_might_hit(
                     max[0] = max[0].max(sp[0]);
                     max[1] = max[1].max(sp[1]);
                 }
-                // Cannot prove the element is off-screen → keep it.
+                // 无法证明元素在屏幕外 → 保留它。
                 None => return true,
             }
         }
@@ -227,9 +222,9 @@ fn bounds_might_hit(
         && cursor[1] <= max[1] + tol
 }
 
-/// The pure pick query (plan §14). Returns the winning [`PickHit`] among the
-/// `pickable` elements under `cursor`, or `None`. `project` maps a geographic
-/// coordinate to screen pixels; the bridge supplies the camera-based one.
+/// 纯拾取查询（计划 §14）。在 `pickable` 元素中返回 `cursor` 下的最佳
+/// [`PickHit`]，或 `None`。`project` 将地理坐标映射为屏幕像素；
+/// 桥接层提供基于相机的版本。
 pub fn pick_at(
     doc: &Document,
     pickable: &BTreeSet<ElementId>,
@@ -251,10 +246,10 @@ pub fn pick_at(
             .unwrap_or(0)
             .saturating_mul(LAYER_WEIGHT)
             + element.style.z_order;
-        // Broad phase: cheap screen-AABB reject before the expensive per-vertex
-        // projection / tessellation, and only for multi-vertex kinds (a point
-        // already projects one coordinate, so culling it would cost more than it
-        // saves). The conservative bounds guarantee this never drops a real hit.
+        // 粗相位：昂贵的逐顶点投影 / 剖分之前先做廉价的屏幕-AABB 拒绝，
+        // 且仅对多顶点类型（一个点已经投影了一个坐标，
+        // 粗筛它的开销比节省的更多）。保守的 bounds 保证这绝不会
+        // 丢弃真正的命中。
         if is_multi_vertex(&element.geometry) {
             let tol = element.style.width_px as f64 * 0.5 + hit::DEFAULT_TOL_PX + 4.0;
             if !bounds_might_hit(&element.bounds, project, cursor, tol) {
@@ -277,7 +272,7 @@ pub fn pick_at(
     pick_best(&candidates)
 }
 
-/// The per-frame pick system (see module docs).
+/// 每帧拾取系统（参见模块文档）。
 #[allow(clippy::too_many_arguments)]
 pub fn pick_system(
     ctx: Res<PlotViewCtx>,
@@ -294,7 +289,7 @@ pub fn pick_system(
     mut selection_events: EventWriter<PlotSelectionChanged>,
     mut menu_events: EventWriter<PlotContextMenu>,
 ) {
-    // Cursor must be inside the window; a leaving cursor clears the hover.
+    // 光标必须在窗口内；离开的光标清除悬停。
     let cursor = match windows.get_single() {
         Ok(w) => w.cursor_position().map(|c| [c.x as f64, c.y as f64]),
         Err(_) => None,
@@ -307,9 +302,9 @@ pub fn pick_system(
         return;
     };
 
-    // Active camera (projection matching the view mode, else any active) — the
-    // same selection rule [`crate::sync::sync_visuals`] uses, so pick and render
-    // always agree on which camera defines the screen.
+    // 激活相机（匹配视图模式的投影，否则任选一个激活的）——与
+    // [`crate::sync::sync_visuals`] 使用相同的选择规则，因此拾取和渲染
+    // 始终对哪个相机定义屏幕达成一致。
     let want_perspective = matches!(ctx.mode, cesium_plot::model::ViewMode::Globe);
     let mut exact: Option<(&Camera, &GlobalTransform, &Projection)> = None;
     let mut fallback: Option<(&Camera, &GlobalTransform, &Projection)> = None;
@@ -348,7 +343,7 @@ pub fn pick_system(
         cam_pos: ct.translation(),
     };
 
-    // Pickable set = visible ∧ selectable under the current filters (plan §7).
+    // 可拾取集 = 当前筛选下可见 ∧ 可选择（计划 §7）。
     let ppw_rep = match ctx.mode {
         cesium_plot::model::ViewMode::Flat => metrics.pixels_per_world,
         cesium_plot::model::ViewMode::Globe => metrics.pixels_per_world_at(Vec3::ZERO),
@@ -363,11 +358,10 @@ pub fn pick_system(
     };
     let pickable = eval_visibility(&plot_doc.doc, &view, &filters.0).pickable;
 
-    // Reuse the last hover whenever every input that feeds `pick_at` is
-    // unchanged (cursor, document revision, camera pose / projection, viewport,
-    // and the resolved pickable set). This is the big constant-factor win for
-    // large scenes: a stationary cursor over a moving camera still re-picks, but
-    // an idle frame skips the whole per-element projection / tessellation.
+    // 只要喂给 `pick_at` 的每个输入都未变（光标、文档 revision、相机位姿 / 投影、视口、
+    // 以及解析后的 pickable 集）就复用上次悬停。这是大场景的
+    // 重要常量因子优化：静止光标在移动相机上仍会重新拾取，但
+    // 空闲帧跳过整个逐元素投影 / 剖分。
     let key = PickKey {
         cursor,
         revision: plot_doc.revision,
@@ -397,10 +391,9 @@ pub fn pick_system(
         hover_events.send(PlotHoverChanged { hit: best });
     }
 
-    // A plain left click replaces the selection with the hit element, or clears
-    // it when clicking empty space (ctrl / box multi-select lands at M5). While
-    // a draw tool is active the click belongs to the FSM (add a vertex), so the
-    // picker stands down entirely to avoid double-handling the same press.
+    // 普通左键点击用命中元素替换选择集，或在点击空白时清除
+    // 它（ctrl / 框选多选在 M5 落地）。绘制工具激活时
+    // 点击属于 FSM（添加顶点），因此拾取器完全让位以避免重复处理同一按下。
     if interaction.is_drawing() {
         return;
     }
@@ -416,8 +409,8 @@ pub fn pick_system(
         }
     }
 
-    // A right-click raises the context-menu intent (M9): report the hit (if any)
-    // and the anchor position; the app decides what menu, if any, to show.
+    // 右键点击提出上下文菜单意图（M9）：报告命中（若有）
+    // 和锚定位置；应用决定显示什么菜单（若有）。
     if mouse.just_pressed(MouseButton::Right) {
         menu_events.send(PlotContextMenu {
             target: best.map(|h| h.element),
@@ -434,8 +427,8 @@ mod tests {
     use cesium_plot::model::ids::ElementId;
     use cesium_plot::model::{Document, Geometry, LabelAnchor};
 
-    /// A projector that maps lon/lat degrees straight to pixels (× 4) so tests
-    /// can reason about screen positions without any camera.
+    /// 一个将经纬度直接映射为像素（× 4）的投影器，以便测试
+    /// 无需相机即可推理屏幕位置。
     fn quad_projector(g: GeoPoint) -> Option<[f64; 2]> {
         Some([g.lon_deg * 4.0, g.lat_deg * 4.0])
     }
@@ -456,17 +449,16 @@ mod tests {
     fn pick_at_misses_when_cursor_is_off_every_element() {
         let (doc, _, _) = point_doc();
         let pickable: BTreeSet<ElementId> = doc.elements().map(|e| e.id).collect();
-        // Far from both projected points.
+        // 远离两个投影点。
         assert!(pick_at(&doc, &pickable, [500.0, 500.0], ViewMode::Flat, &quad_projector).is_none());
     }
 
     #[test]
     fn globe_pick_follows_the_great_circle_not_the_flat_chord() {
-        // M9 both-mode proof for picking: a long east-west line at 60°N has a
-        // great circle that bulges poleward. A point on that bulge is pickable in
-        // Globe mode (the stroke is densified along the sphere) yet missed in Flat
-        // mode (the straight 2D chord passes well south of it). This exercises the
-        // mode-aware sampling shared with the renderer.
+        // M9 拾取双模式证明： 60°N 上的东西长线段的大圆向极地隆起。
+        // 隆起上的一个点在 Globe 模式下可拾取（描边沿球体加密）
+        // 但在 Flat 模式下未命中（直线 2D 弦从其南方远处经过）。这测试了
+        // 与渲染器共享的模式感知采样。
         let mut doc = Document::default();
         let layer = doc.new_layer("L");
         let line = doc.make_element(
@@ -479,7 +471,7 @@ mod tests {
         doc.add_element_to_layer(layer, line);
         let pickable: BTreeSet<ElementId> = [id].into_iter().collect();
 
-        // The most-poleward densified Globe sample (the great-circle apex).
+        // 极地最远的 Globe 加密采样（大圆顶点）。
         let globe_pts =
             shapes::stroke_positions(&doc.element(id).unwrap().geometry, ViewMode::Globe).unwrap();
         let bulge = globe_pts

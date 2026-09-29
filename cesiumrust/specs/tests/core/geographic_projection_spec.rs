@@ -1,23 +1,23 @@
-//! Core/GeographicProjectionSpec.js → Rust integration tests (faithful port).
+//! Core/GeographicProjectionSpec.js → Rust 集成测试（忠实移植）。
 //!
-//! Faithfully ports the original CesiumJS
-//! `packages/engine/Specs/Core/GeographicProjectionSpec.js` (9 `it()` cases).
-//! Reference values are used verbatim so the Rust implementation is verified
-//! against the exact same ground truth as CesiumJS.
+//! 忠实移植原始 CesiumJS
+//! `packages/engine/Specs/Core/GeographicProjectionSpec.js`（9 个 `it()` 用例）。
+//! 参考值原样使用，以便针对与 CesiumJS 完全相同的基准真值
+//! 验证 Rust 实现。
 //!
-//! Platform adaptations (documented, per the verification plan):
-//! - CesiumJS "project3" / "unproject1" are "works with a result parameter"
-//!   variants testing the JS memory-reuse API contract (`result === returnValue`).
-//!   Rust returns owned values and has no result-parameter API, so those variants
-//!   are subsumed by the owned-return tests below (identical computed values,
-//!   single code path).
-//! - CesiumJS "project throws without cartesian" actually invokes
-//!   `projection.unproject()` with no argument, testing a runtime null-check.
-//!   Rust's type system makes a missing argument unrepresentable (compile-time
-//!   safety), so that error path has no Rust counterpart and is omitted.
-//! - `construct0` uses `new GeographicProjection()` which defaults to
-//!   `Ellipsoid.default` (WGS84 in the test environment); the Rust equivalent of
-//!   default construction is `GeographicProjection::wgs84()`.
+//! 平台适配（按验证计划予以记录）：
+//! - CesiumJS "project3" / "unproject1" 为 "works with a result parameter"
+//!   变体，用于测试 JS 内存复用 API 契约（`result === returnValue`）。
+//!   Rust 返回自有值且没有 result-parameter API，因此这些变体
+//!   由下方的 owned-return 测试涵盖（计算值相同，
+//!   单一代码路径）。
+//! - CesiumJS "project throws without cartesian" 实际调用
+//!   `projection.unproject()` 且不带参数，用于测试运行期空值检查。
+//!   Rust 类型系统使缺失参数无法表示（编译期安全），
+//!   故该错误路径没有 Rust 对应项，予以省略。
+//! - `construct0` 使用 `new GeographicProjection()`，其默认值为
+//!   `Ellipsoid.default`（测试环境中为 WGS84）；默认构造的 Rust 等价形式
+//!   为 `GeographicProjection::wgs84()`。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;

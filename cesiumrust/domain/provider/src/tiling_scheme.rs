@@ -1,6 +1,6 @@
-//! Tiling schemes for map tile organization.
+//! 用于地图瓦片组织的裁剪方案。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Core/GeographicTilingScheme.js`
 //! - `Core/WebMercatorTilingScheme.js`
 
@@ -16,33 +16,33 @@ use std::f64::consts::PI;
 
 use crate::imagery_provider::TileCoord;
 
-/// A tiling scheme for dividing the globe into tiles.
+/// 用于将 globe 划分为瓦片的裁剪方案。
 ///
-/// Maps to CesiumJS `GeographicTilingScheme` and `WebMercatorTilingScheme`
+/// 映射到 CesiumJS `GeographicTilingScheme` 与 `WebMercatorTilingScheme`
 #[derive(Debug, Clone)]
 pub enum TilingScheme {
-    /// Geographic (EPSG:4326) tiling scheme.
-    /// Default: 2 tiles wide, 1 tile tall at level 0.
+    /// 地理（EPSG:4326）裁剪方案。
+    /// 默认：在层级 0 为 2 瓦宽、1 瓦高。
     Geographic(GeographicTilingScheme),
-    /// Web Mercator (EPSG:3857) tiling scheme.
-    /// Default: 1 tile wide, 1 tile tall at level 0.
+    /// Web 墨卡托（EPSG:3857）裁剪方案。
+    /// 默认：在层级 0 为 1 瓦宽、1 瓦高。
     WebMercator(WebMercatorTilingScheme),
 }
 
-/// Geographic (EPSG:4326) tiling scheme.
+/// 地理（EPSG:4326）裁剪方案。
 ///
-/// Maps to CesiumJS `Core/GeographicTilingScheme.js`
+/// 映射到 CesiumJS `Core/GeographicTilingScheme.js`
 #[derive(Debug, Clone)]
 pub struct GeographicTilingScheme {
-    /// The ellipsoid that is tiled by this tiling scheme.
+    /// 由该裁剪方案划分的椭球体。
     pub ellipsoid: Ellipsoid,
-    /// The map projection used by this tiling scheme.
+    /// 该裁剪方案使用的地图投影。
     pub projection: GeographicProjection,
-    /// The rectangle covered by the tiling scheme (radians).
+    /// 裁剪方案覆盖的矩形（弧度）。
     pub rectangle: Rectangle,
-    /// Number of tiles in X at level 0.
+    /// 层级 0 时 X 方向的瓦片数。
     pub number_of_level_zero_tiles_x: u32,
-    /// Number of tiles in Y at level 0.
+    /// 层级 0 时 Y 方向的瓦片数。
     pub number_of_level_zero_tiles_y: u32,
 }
 
@@ -53,15 +53,15 @@ impl Default for GeographicTilingScheme {
 }
 
 impl GeographicTilingScheme {
-    /// Creates a new geographic tiling scheme with default settings.
+    /// 使用默认设置创建一个新的地理裁剪方案。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Creates a geographic tiling scheme with custom parameters.
+    /// 使用自定义参数创建一个地理裁剪方案。
     ///
-    /// Maps to the CesiumJS constructor options (`ellipsoid`, `rectangle`,
-    /// `numberOfLevelZeroTilesX`, `numberOfLevelZeroTilesY`).
+    /// 映射到 CesiumJS 构造函数选项（`ellipsoid`、`rectangle`、
+    /// `numberOfLevelZeroTilesX`、`numberOfLevelZeroTilesY`）。
     pub fn with_options(
         ellipsoid: Ellipsoid,
         rectangle: Rectangle,
@@ -77,19 +77,19 @@ impl GeographicTilingScheme {
         }
     }
 
-    /// Gets the number of tiles in X at a given level.
+    /// 获取给定层级下 X 方向的瓦片数。
     pub fn number_of_x_tiles_at_level(&self, level: u32) -> u32 {
         self.number_of_level_zero_tiles_x << level
     }
 
-    /// Gets the number of tiles in Y at a given level.
+    /// 获取给定层级下 Y 方向的瓦片数。
     pub fn number_of_y_tiles_at_level(&self, level: u32) -> u32 {
         self.number_of_level_zero_tiles_y << level
     }
 
-    /// Converts tile x, y, level to a rectangle in radians.
+    /// 将瓦片 x、y、层级转换为以弧度表示的矩形。
     ///
-    /// Maps to `GeographicTilingScheme.tileXYToRectangle`
+    /// 映射到 `GeographicTilingScheme.tileXYToRectangle`
     pub fn tile_xy_to_rectangle(&self, x: u32, y: u32, level: u32) -> Rectangle {
         let rectangle = &self.rectangle;
         let x_tiles = self.number_of_x_tiles_at_level(level);
@@ -106,9 +106,9 @@ impl GeographicTilingScheme {
         Rectangle::new(west, south, east, north)
     }
 
-    /// Converts a position (radians) to tile coordinates at a given level.
+    /// 将一个位置（弧度）转换为给定层级下的瓦片坐标。
     ///
-    /// Maps to `GeographicTilingScheme.positionToTileXY`
+    /// 映射到 `GeographicTilingScheme.positionToTileXY`
     pub fn position_to_tile_xy(
         &self,
         longitude: f64,
@@ -117,7 +117,7 @@ impl GeographicTilingScheme {
     ) -> Option<TileCoord> {
         let rectangle = &self.rectangle;
         if !rectangle.contains(longitude, latitude) {
-            // outside the bounds of the tiling scheme
+            // 超出裁剪方案的边界
             return None;
         }
 
@@ -132,7 +132,7 @@ impl GeographicTilingScheme {
             longitude += TWO_PI;
         }
 
-        // JS `| 0` truncates toward zero; Rust `as i64` does the same.
+        // JS 的 `| 0` 向零截断；Rust 的 `as i64` 行为相同。
         let mut x_tile_coordinate = ((longitude - rectangle.west) / x_tile_width) as i64;
         if x_tile_coordinate >= x_tiles as i64 {
             x_tile_coordinate = x_tiles as i64 - 1;
@@ -150,7 +150,7 @@ impl GeographicTilingScheme {
         ))
     }
 
-    /// Converts a cartographic position to tile coordinates.
+    /// 将一个测地位置转换为瓦片坐标。
     pub fn cartographic_to_tile_xy(
         &self,
         cartographic: &Cartographic,
@@ -159,9 +159,9 @@ impl GeographicTilingScheme {
         self.position_to_tile_xy(cartographic.longitude, cartographic.latitude, level)
     }
 
-    /// Transforms a rectangle to native coordinates (degrees for geographic).
+    /// 将一个矩形变换到原生坐标（地理方案为度）。
     ///
-    /// Maps to `GeographicTilingScheme.rectangleToNativeRectangle`
+    /// 映射到 `GeographicTilingScheme.rectangleToNativeRectangle`
     pub fn rectangle_to_native_rectangle(&self, rectangle: &Rectangle) -> Rectangle {
         Rectangle::new(
             to_degrees(rectangle.west),
@@ -171,33 +171,33 @@ impl GeographicTilingScheme {
         )
     }
 
-    /// Converts tile x, y, level to a native rectangle (degrees).
+    /// 将瓦片 x、y、层级转换为原生矩形（度）。
     ///
-    /// Maps to `GeographicTilingScheme.tileXYToNativeRectangle`
+    /// 映射到 `GeographicTilingScheme.tileXYToNativeRectangle`
     pub fn tile_xy_to_native_rectangle(&self, x: u32, y: u32, level: u32) -> Rectangle {
         let rect = self.tile_xy_to_rectangle(x, y, level);
         self.rectangle_to_native_rectangle(&rect)
     }
 }
 
-/// Web Mercator (EPSG:3857) tiling scheme.
+/// Web 墨卡托（EPSG:3857）裁剪方案。
 ///
-/// Maps to CesiumJS `Core/WebMercatorTilingScheme.js`
+/// 映射到 CesiumJS `Core/WebMercatorTilingScheme.js`
 #[derive(Debug, Clone)]
 pub struct WebMercatorTilingScheme {
-    /// The ellipsoid that is tiled by this tiling scheme.
+    /// 由该裁剪方案划分的椭球体。
     pub ellipsoid: Ellipsoid,
-    /// The map projection used by this tiling scheme.
+    /// 该裁剪方案使用的地图投影。
     pub projection: WebMercatorProjection,
-    /// The rectangle covered (radians, clamped to Mercator bounds).
+    /// 覆盖的矩形（弧度，钳制到墨卡托边界）。
     pub rectangle: Rectangle,
-    /// Number of tiles in X at level 0.
+    /// 层级 0 时 X 方向的瓦片数。
     pub number_of_level_zero_tiles_x: u32,
-    /// Number of tiles in Y at level 0.
+    /// 层级 0 时 Y 方向的瓦片数。
     pub number_of_level_zero_tiles_y: u32,
-    /// Southwest corner in projected meters.
+    /// 投影米制下的西南角。
     pub rectangle_southwest_in_meters: (f64, f64),
-    /// Northeast corner in projected meters.
+    /// 投影米制下的东北角。
     pub rectangle_northeast_in_meters: (f64, f64),
 }
 
@@ -208,18 +208,18 @@ impl Default for WebMercatorTilingScheme {
 }
 
 impl WebMercatorTilingScheme {
-    /// Creates a new Web Mercator tiling scheme with default settings.
+    /// 使用默认设置创建一个新的 Web 墨卡托裁剪方案。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Creates a Web Mercator tiling scheme for a custom ellipsoid.
+    /// 为自定义椭球体创建一个 Web 墨卡托裁剪方案。
     pub fn with_ellipsoid(ellipsoid: Ellipsoid) -> Self {
         Self::with_options(ellipsoid, 1, 1, None, None)
     }
 
-    /// Creates a Web Mercator tiling scheme covering a custom rectangle given
-    /// by its southwest/northeast corners in projected meters.
+    /// 创建一个覆盖自定义矩形的 Web 墨卡托裁剪方案，该矩形
+    /// 由其在投影米制下的西南/东北角给定。
     pub fn with_meter_corners(
         ellipsoid: Ellipsoid,
         southwest_in_meters: (f64, f64),
@@ -234,11 +234,11 @@ impl WebMercatorTilingScheme {
         )
     }
 
-    /// Creates a Web Mercator tiling scheme with full custom options.
+    /// 使用完全自定义选项创建一个 Web 墨卡托裁剪方案。
     ///
-    /// Maps to the CesiumJS constructor options (`ellipsoid`,
-    /// `numberOfLevelZeroTilesX/Y`, `rectangleSouthwestInMeters`,
-    /// `rectangleNortheastInMeters`).
+    /// 映射到 CesiumJS 构造函数选项（`ellipsoid`、
+    /// `numberOfLevelZeroTilesX/Y`、`rectangleSouthwestInMeters`、
+    /// `rectangleNortheastInMeters`）。
     pub fn with_options(
         ellipsoid: Ellipsoid,
         tiles_x: u32,
@@ -280,28 +280,28 @@ impl WebMercatorTilingScheme {
         }
     }
 
-    /// Gets the number of tiles in X at a given level.
+    /// 获取给定层级下 X 方向的瓦片数。
     pub fn number_of_x_tiles_at_level(&self, level: u32) -> u32 {
         self.number_of_level_zero_tiles_x << level
     }
 
-    /// Gets the number of tiles in Y at a given level.
+    /// 获取给定层级下 Y 方向的瓦片数。
     pub fn number_of_y_tiles_at_level(&self, level: u32) -> u32 {
         self.number_of_level_zero_tiles_y << level
     }
 
-    /// Transforms a rectangle to native coordinates (Web Mercator meters).
+    /// 将一个矩形变换到原生坐标（Web 墨卡托米制）。
     ///
-    /// Maps to `WebMercatorTilingScheme.rectangleToNativeRectangle`
+    /// 映射到 `WebMercatorTilingScheme.rectangleToNativeRectangle`
     pub fn rectangle_to_native_rectangle(&self, rectangle: &Rectangle) -> Rectangle {
         let southwest = self.projection.project(&rectangle.southwest());
         let northeast = self.projection.project(&rectangle.northeast());
         Rectangle::new(southwest.x, southwest.y, northeast.x, northeast.y)
     }
 
-    /// Converts tile x, y, level to a native rectangle (meters).
+    /// 将瓦片 x、y、层级转换为原生矩形（米）。
     ///
-    /// Maps to `WebMercatorTilingScheme.tileXYToNativeRectangle`
+    /// 映射到 `WebMercatorTilingScheme.tileXYToNativeRectangle`
     pub fn tile_xy_to_native_rectangle(&self, x: u32, y: u32, level: u32) -> Rectangle {
         let x_tiles = self.number_of_x_tiles_at_level(level);
         let y_tiles = self.number_of_y_tiles_at_level(level);
@@ -320,9 +320,9 @@ impl WebMercatorTilingScheme {
         Rectangle::new(west, south, east, north)
     }
 
-    /// Converts tile x, y, level to a rectangle in radians.
+    /// 将瓦片 x、y、层级转换为以弧度表示的矩形。
     ///
-    /// Maps to `WebMercatorTilingScheme.tileXYToRectangle`
+    /// 映射到 `WebMercatorTilingScheme.tileXYToRectangle`
     pub fn tile_xy_to_rectangle(&self, x: u32, y: u32, level: u32) -> Rectangle {
         let native = self.tile_xy_to_native_rectangle(x, y, level);
         let southwest = self
@@ -339,9 +339,9 @@ impl WebMercatorTilingScheme {
         )
     }
 
-    /// Converts a position (radians) to tile coordinates at a given level.
+    /// 将一个位置（弧度）转换为给定层级下的瓦片坐标。
     ///
-    /// Maps to `WebMercatorTilingScheme.positionToTileXY`
+    /// 映射到 `WebMercatorTilingScheme.positionToTileXY`
     pub fn position_to_tile_xy(
         &self,
         longitude: f64,
@@ -350,7 +350,7 @@ impl WebMercatorTilingScheme {
     ) -> Option<TileCoord> {
         let rectangle = &self.rectangle;
         if !rectangle.contains(longitude, latitude) {
-            // outside the bounds of the tiling scheme
+            // 超出裁剪方案的边界
             return None;
         }
 
@@ -370,7 +370,7 @@ impl WebMercatorTilingScheme {
         let distance_from_west = web_mercator_position.x - sw_x;
         let distance_from_north = ne_y - web_mercator_position.y;
 
-        // JS `| 0` truncates toward zero; Rust `as i64` does the same.
+        // JS 的 `| 0` 向零截断；Rust 的 `as i64` 行为相同。
         let mut x_tile_coordinate = (distance_from_west / x_tile_width) as i64;
         if x_tile_coordinate >= x_tiles as i64 {
             x_tile_coordinate = x_tiles as i64 - 1;
@@ -387,7 +387,7 @@ impl WebMercatorTilingScheme {
         ))
     }
 
-    /// Converts a cartographic position to tile coordinates.
+    /// 将一个测地位置转换为瓦片坐标。
     pub fn cartographic_to_tile_xy(
         &self,
         cartographic: &Cartographic,
@@ -398,17 +398,17 @@ impl WebMercatorTilingScheme {
 }
 
 impl TilingScheme {
-    /// Creates a default geographic tiling scheme.
+    /// 创建一个默认的地理裁剪方案。
     pub fn geographic() -> Self {
         Self::Geographic(GeographicTilingScheme::default())
     }
 
-    /// Creates a default Web Mercator tiling scheme.
+    /// 创建一个默认的 Web 墨卡托裁剪方案。
     pub fn web_mercator() -> Self {
         Self::WebMercator(WebMercatorTilingScheme::default())
     }
 
-    /// Gets the number of tiles in X at a given level.
+    /// 获取给定层级下 X 方向的瓦片数。
     pub fn number_of_x_tiles_at_level(&self, level: u32) -> u32 {
         match self {
             Self::Geographic(g) => g.number_of_x_tiles_at_level(level),
@@ -416,7 +416,7 @@ impl TilingScheme {
         }
     }
 
-    /// Gets the number of tiles in Y at a given level.
+    /// 获取给定层级下 Y 方向的瓦片数。
     pub fn number_of_y_tiles_at_level(&self, level: u32) -> u32 {
         match self {
             Self::Geographic(g) => g.number_of_y_tiles_at_level(level),
@@ -424,7 +424,7 @@ impl TilingScheme {
         }
     }
 
-    /// Converts tile coordinates to a rectangle in radians.
+    /// 将瓦片坐标转换为以弧度表示的矩形。
     pub fn tile_xy_to_rectangle(&self, x: u32, y: u32, level: u32) -> Rectangle {
         match self {
             Self::Geographic(g) => g.tile_xy_to_rectangle(x, y, level),
@@ -432,7 +432,7 @@ impl TilingScheme {
         }
     }
 
-    /// Converts a position to tile coordinates.
+    /// 将一个位置转换为瓦片坐标。
     pub fn position_to_tile_xy(
         &self,
         longitude: f64,
@@ -445,7 +445,7 @@ impl TilingScheme {
         }
     }
 
-    /// Gets the rectangle covered by this tiling scheme.
+    /// 获取该裁剪方案覆盖的矩形。
     pub fn rectangle(&self) -> &Rectangle {
         match self {
             Self::Geographic(g) => &g.rectangle,
@@ -454,9 +454,9 @@ impl TilingScheme {
     }
 }
 
-// ─── TileAvailability (faithful port of Core/TileAvailability.js) ────────────
+// ─── TileAvailability（对 Core/TileAvailability.js 的忠实移植）────────────
 
-/// A rectangle tagged with an availability level.
+/// 标记了可用性层级的矩形。
 #[derive(Debug, Clone, Copy)]
 struct RectangleWithLevel {
     level: u32,
@@ -466,7 +466,7 @@ struct RectangleWithLevel {
     north: f64,
 }
 
-/// Internal quadtree node (slab-allocated).
+/// 内部四叉树节点（slab 分配）。
 #[derive(Debug, Clone)]
 struct AvailabilityNode {
     level: u32,
@@ -475,13 +475,13 @@ struct AvailabilityNode {
     extent: Rectangle,
     rectangles: Vec<RectangleWithLevel>,
     parent: Option<usize>,
-    /// Children: [nw, ne, sw, se], lazily created.
+    /// 子节点：[nw, ne, sw, se]，惰性创建。
     children: [Option<usize>; 4],
 }
 
-/// Reports the availability of tiles in a tiling scheme.
+/// 报告裁剪方案中瓦片的可用性。
 ///
-/// Maps to CesiumJS `Core/TileAvailability.js`
+/// 映射到 CesiumJS `Core/TileAvailability.js`
 #[derive(Debug, Clone)]
 pub struct TileAvailability {
     tiling_scheme: TilingScheme,
@@ -507,7 +507,7 @@ fn rectangle_contains_position(r_west: f64, r_south: f64, r_east: f64, r_north: 
     lon >= r_west && lon <= r_east && lat >= r_south && lat <= r_north
 }
 
-/// A simple rectangle used in coverage subtraction.
+/// 用于覆盖相减的简单矩形。
 #[derive(Debug, Clone, Copy)]
 struct CoverageRect {
     west: f64,
@@ -558,9 +558,9 @@ fn subtract_rectangle(rectangle_list: &[CoverageRect], sub: &CoverageRect) -> Ve
 }
 
 impl TileAvailability {
-    /// Creates a new tile availability tracker.
+    /// 创建一个新的瓦片可用性跟踪器。
     ///
-    /// Maps to `new TileAvailability(tilingScheme, maximumLevel)`
+    /// 映射到 `new TileAvailability(tilingScheme, maximumLevel)`
     pub fn new(tiling_scheme: TilingScheme, maximum_level: u32) -> Self {
         Self {
             tiling_scheme,
@@ -570,7 +570,7 @@ impl TileAvailability {
         }
     }
 
-    /// Creates an availability where all tiles are available up to maximum_level.
+    /// 创建一个所有瓦片在 maximum_level 之前均可用的可用性。
     pub fn all(maximum_level: u32) -> Self {
         let mut avail = Self::new(TilingScheme::geographic(), maximum_level);
         let x_tiles = avail.tiling_scheme.number_of_x_tiles_at_level(0);
@@ -599,7 +599,7 @@ impl TileAvailability {
         idx
     }
 
-    /// Gets or creates the child node in the given slot (0=nw, 1=ne, 2=sw, 3=se).
+    /// 获取或创建给定槽位中的子节点（0=nw, 1=ne, 2=sw, 3=se）。
     fn get_child(&mut self, node_idx: usize, slot: usize) -> usize {
         if let Some(child) = self.nodes[node_idx].children[slot] {
             return child;
@@ -619,9 +619,9 @@ impl TileAvailability {
         child
     }
 
-    /// Marks a rectangular range of tiles in a particular level as being available.
+    /// 将某一特定层级中的一段矩形瓦片范围标记为可用。
     ///
-    /// Maps to `TileAvailability.addAvailableTileRange`
+    /// 映射到 `TileAvailability.addAvailableTileRange`
     pub fn add_available_tile_range(
         &mut self,
         level: u32,
@@ -667,7 +667,7 @@ impl TileAvailability {
         }
     }
 
-    /// Marks a single tile as available.
+    /// 将单个瓦片标记为可用。
     pub fn add_available_tile(&mut self, level: u32, x: u32, y: u32) {
         self.add_available_tile_range(level, x, y, x, y);
     }
@@ -677,7 +677,7 @@ impl TileAvailability {
         let mut node_idx = root_idx;
 
         while self.nodes[node_idx].level < max_depth {
-            // Try each child: nw, ne, sw, se
+            // 依次尝试每个子节点：nw, ne, sw, se
             let mut descended = false;
             for slot in 0..4 {
                 let child_idx = self.get_child(node_idx, slot);
@@ -698,7 +698,7 @@ impl TileAvailability {
         {
             node.rectangles.push(rectangle);
         } else {
-            // Maintain ordering by level when inserting (binarySearch + splice).
+            // 插入时按层级维持顺序（binarySearch + splice）。
             let index = node
                 .rectangles
                 .partition_point(|r| r.level < rectangle.level);
@@ -706,12 +706,12 @@ impl TileAvailability {
         }
     }
 
-    /// Determines the level of the most detailed tile covering the position.
-    /// Returns -1 if the position is outside the tiling scheme.
+    /// 确定覆盖该位置的最详细瓦片的层级。
+    /// 若该位置在裁剪方案之外则返回 -1。
     ///
-    /// Maps to `TileAvailability.computeMaximumLevelAtPosition`
+    /// 映射到 `TileAvailability.computeMaximumLevelAtPosition`
     pub fn compute_maximum_level_at_position(&self, position: &Cartographic) -> i32 {
-        // Find the root node that contains this position.
+        // 找到包含该位置的根节点。
         let mut node_idx = None;
         for &root_idx in &self.root_nodes {
             let e = &self.nodes[root_idx].extent;
@@ -739,7 +739,7 @@ impl TileAvailability {
         let mut max_level: i32 = 0;
         let (lon, lat) = (position.longitude, position.latitude);
 
-        // Find the deepest quadtree node containing this point.
+        // 找到包含该点的最深四叉树节点。
         let mut node_idx = start_node;
         loop {
             let children = self.nodes[node_idx].children;
@@ -754,7 +754,7 @@ impl TileAvailability {
             }
 
             if containing.len() > 1 {
-                // Point is on a boundary between tiles; check all of them.
+                // 点位于瓦片之间的边界上；全部检查。
                 for &child_idx in &containing {
                     let level = self.find_max_level_from_node(
                         Some(node_idx), child_idx, position,
@@ -769,13 +769,13 @@ impl TileAvailability {
             }
         }
 
-        // Work up the tree until we find a rectangle that contains this point.
+        // 沿树向上查找，直到找到一个包含该点的矩形。
         let mut current = Some(node_idx);
         while current != stop_node {
             let idx = current.unwrap();
             let rectangles = &self.nodes[idx].rectangles;
 
-            // Rectangles are sorted by level, lowest first.
+            // 矩形按层级排序，最低的在前。
             for i in (0..rectangles.len()).rev() {
                 if (rectangles[i].level as i32) <= max_level {
                     break;
@@ -792,15 +792,14 @@ impl TileAvailability {
         max_level
     }
 
-    /// Finds the most detailed level that is available _everywhere_ within a
-    /// given rectangle.
+    /// 查找在给定矩形内 _处处_ 均可用的最详细层级。
     ///
-    /// Maps to `TileAvailability.computeBestAvailableLevelOverRectangle`
+    /// 映射到 `TileAvailability.computeBestAvailableLevelOverRectangle`
     pub fn compute_best_available_level_over_rectangle(&self, rectangle: &Rectangle) -> u32 {
         let mut rectangles_to_cover: Vec<CoverageRect> = Vec::new();
 
         if rectangle.east < rectangle.west {
-            // Rectangle crosses the IDL, make it two rectangles.
+            // 矩形跨越 IDL，将其拆为两个矩形。
             rectangles_to_cover.push(CoverageRect {
                 west: -PI,
                 south: rectangle.south,
@@ -822,7 +821,7 @@ impl TileAvailability {
             });
         }
 
-        // remainingToCoverByLevel: index = level
+        // remainingToCoverByLevel：索引 = 层级
         let mut remaining_to_cover: Vec<Option<Vec<CoverageRect>>> = Vec::new();
 
         for &root_idx in &self.root_nodes {
@@ -880,7 +879,7 @@ impl TileAvailability {
             remaining[level] = Some(subtract_rectangle(&current, &sub));
         }
 
-        // Update with child nodes.
+        // 用子节点更新。
         for &child_opt in &node.children {
             if let Some(child_idx) = child_opt {
                 self.update_coverage_with_node(remaining, child_idx, rectangles_to_cover);
@@ -888,19 +887,19 @@ impl TileAvailability {
         }
     }
 
-    /// Determines if a particular tile is available.
+    /// 判断某个特定瓦片是否可用。
     ///
-    /// Maps to `TileAvailability.isTileAvailable`
+    /// 映射到 `TileAvailability.isTileAvailable`
     pub fn is_tile_available(&self, level: u32, x: u32, y: u32) -> bool {
         let rectangle = self.tiling_scheme.tile_xy_to_rectangle(x, y, level);
         let center = rectangle.center();
         self.compute_maximum_level_at_position(&center) >= level as i32
     }
 
-    /// Computes a bit mask indicating which of a tile's four children exist.
+    /// 计算一个位掩码，指示一个瓦片的四个子节点中哪些存在。
     /// Bit 0 (1) = SW, bit 1 (2) = SE, bit 2 (4) = NW, bit 3 (8) = NE.
     ///
-    /// Maps to `TileAvailability.computeChildMaskForTile`
+    /// 映射到 `TileAvailability.computeChildMaskForTile`
     pub fn compute_child_mask_for_tile(&self, level: u32, x: u32, y: u32) -> u8 {
         let child_level = level + 1;
         if child_level >= self.maximum_level {
@@ -923,13 +922,13 @@ impl TileAvailability {
         mask
     }
 
-    /// Gets the best available level for a position (longitude/latitude in radians).
+    /// 获取某个位置（经度/纬度，以弧度表示）的最佳可用层级。
     pub fn best_available_level(&self, longitude: f64, latitude: f64) -> u32 {
         let pos = Cartographic::from_radians(longitude, latitude, 0.0);
         self.compute_maximum_level_at_position(&pos).max(0) as u32
     }
 
-    /// Returns the number of quadtree nodes allocated.
+    /// 返回已分配的四叉树节点数。
     pub fn tile_count(&self) -> usize {
         self.nodes.len()
     }
@@ -955,14 +954,14 @@ mod tests {
     fn test_geographic_tile_to_rectangle() {
         let scheme = GeographicTilingScheme::new();
 
-        // Level 0, tile (0,0) should be western hemisphere
+        // 层级 0，瓦片 (0,0) 应为西半球
         let rect = scheme.tile_xy_to_rectangle(0, 0, 0);
         assert!((rect.west - (-PI)).abs() < 1e-10);
         assert!((rect.east - 0.0).abs() < 1e-10);
         assert!((rect.south - (-PI / 2.0)).abs() < 1e-10);
         assert!((rect.north - (PI / 2.0)).abs() < 1e-10);
 
-        // Level 0, tile (1,0) should be eastern hemisphere
+        // 层级 0，瓦片 (1,0) 应为东半球
         let rect = scheme.tile_xy_to_rectangle(1, 0, 0);
         assert!((rect.west - 0.0).abs() < 1e-10);
         assert!((rect.east - PI).abs() < 1e-10);
@@ -972,12 +971,12 @@ mod tests {
     fn test_geographic_position_to_tile() {
         let scheme = GeographicTilingScheme::new();
 
-        // Position at (0, 0) should be in tile (1, 0) at level 0
+        // 位置 (0, 0) 在层级 0 应位于瓦片 (1, 0)
         let tile = scheme.position_to_tile_xy(0.01, 0.0, 0).unwrap();
         assert_eq!(tile.x, 1);
         assert_eq!(tile.y, 0);
 
-        // Position at (-90°, 45°) should be in tile (0, 0) at level 0
+        // 位置 (-90°, 45°) 在层级 0 应位于瓦片 (0, 0)
         let tile = scheme
             .position_to_tile_xy(-PI / 2.0, PI / 4.0, 0)
             .unwrap();
@@ -994,7 +993,7 @@ mod tests {
             1,
         );
 
-        // Position outside the rectangle
+        // 位于矩形之外的位置
         let result = scheme.position_to_tile_xy(2.0, 0.5, 0);
         assert!(result.is_none());
     }
@@ -1023,7 +1022,7 @@ mod tests {
 
     #[test]
     fn test_web_mercator_project_unproject() {
-        // Round-trip test via the scheme's WebMercatorProjection
+        // 通过该方案的 WebMercatorProjection 进行往返测试
         let scheme = WebMercatorTilingScheme::new();
         let c = Cartographic::from_radians(0.5, 0.3, 0.0);
         let projected = scheme.projection.project(&c);
@@ -1046,7 +1045,7 @@ mod tests {
     fn test_web_mercator_tile_to_rectangle() {
         let scheme = WebMercatorTilingScheme::new();
 
-        // Level 0, single tile should cover the full extent
+        // 层级 0，单个瓦片应覆盖完整范围
         let rect = scheme.tile_xy_to_rectangle(0, 0, 0);
         assert!((rect.west - (-PI)).abs() < 1e-6);
         assert!((rect.east - PI).abs() < 1e-6);
@@ -1058,12 +1057,12 @@ mod tests {
     fn test_web_mercator_position_to_tile() {
         let scheme = WebMercatorTilingScheme::new();
 
-        // At level 1, position (0, 0) should be in tile (1, 1) (bottom-right of center)
+        // 在层级 1，位置 (0, 0) 应位于瓦片 (1, 1)（中心的右下角）
         let tile = scheme.position_to_tile_xy(0.01, -0.01, 1).unwrap();
         assert_eq!(tile.x, 1);
         assert_eq!(tile.y, 1);
 
-        // Top-left quadrant
+        // 左上象限
         let tile = scheme.position_to_tile_xy(-1.0, 1.0, 1).unwrap();
         assert_eq!(tile.x, 0);
         assert_eq!(tile.y, 0);
@@ -1118,7 +1117,7 @@ mod tests {
         avail.add_available_tile_range(0, 0, 0, 1, 0);
         let count_after_first = avail.tile_count();
         avail.add_available_tile_range(0, 0, 0, 1, 0);
-        // No new nodes should be created by a duplicate range
+        // 重复的范围不应创建新节点
         assert_eq!(avail.tile_count(), count_after_first);
     }
 
@@ -1126,11 +1125,11 @@ mod tests {
     fn test_geographic_level2_tiles() {
         let scheme = GeographicTilingScheme::new();
 
-        // Level 2: 8 x 4 tiles
+        // 层级 2：8 x 4 瓦片
         assert_eq!(scheme.number_of_x_tiles_at_level(2), 8);
         assert_eq!(scheme.number_of_y_tiles_at_level(2), 4);
 
-        // Tile (0,0) at level 2 should be 1/8 width, 1/4 height
+        // 层级 2 的瓦片 (0,0) 应为 1/8 宽、1/4 高
         let rect = scheme.tile_xy_to_rectangle(0, 0, 2);
         let expected_width = 2.0 * PI / 8.0;
         let expected_height = PI / 4.0;

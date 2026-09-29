@@ -1,8 +1,8 @@
-//! cesium-animation: Time-dynamic animation and interpolation.
+//! cesium-animation：时间动态动画与插值。
 //!
-//! Domain layer - pure Rust, f64 precision.
+//! Domain 层 - 纯 Rust，f64 精度。
 //!
-//! CesiumJS mapping:
+//! CesiumJS 映射：
 //! - `Core/HermitePolynomialApproximation.js` → interpolation
 //! - `Core/LagrangePolynomialApproximation.js` → interpolation
 //! - `Widgets/Timeline/Timeline.js` → timeline

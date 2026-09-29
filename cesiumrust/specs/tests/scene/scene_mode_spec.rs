@@ -1,12 +1,12 @@
-//! Scene/SceneMode + morphing → Rust integration tests.
+//! Scene/SceneMode + 变形 → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
-//! - Scene/SceneMode.js (mode enum, getMorphTime)
-//! - Scene/SceneMode morphing transitions
+//! 对应 CesiumJS：
+//! - Scene/SceneMode.js（模式枚举、getMorphTime）
+//! - Scene/SceneMode 变形过渡
 //!
-//! A-class tests: mode properties, morph state machine, smoothstep,
-//! project/unproject 2D, Columbus View, camera for mode, MapProjection2D.
-//! C-class omitted: actual Scene rendering, camera controller integration.
+//! A 类测试：模式属性、变形状态机、smoothstep、
+//! 2D 投影/反投影、Columbus View、各模式相机、MapProjection2D。
+//! C 类省略：实际 Scene 渲染、相机控制器集成。
 
 use cesium_scene_mode::{
     compute_camera_for_mode, morph_position, project_to_2d, project_to_columbus_view,
@@ -17,7 +17,7 @@ use std::f64::consts::PI;
 
 const EARTH_RADIUS: f64 = 6378137.0;
 
-// === SceneMode enum ===
+// === SceneMode 枚举 ===
 
 #[test]
 fn scene_mode_default_is_3d() {
@@ -85,7 +85,7 @@ fn morph_state_update_clamps_progress() {
     let mut state = MorphState::default();
     state.start_morph(SceneMode::Scene3D, SceneMode::Scene2D, 1.0);
 
-    state.update(5.0); // overshoot
+    state.update(5.0); // 过冲
     assert_eq!(state.progress, 1.0);
     assert!(!state.active);
 }
@@ -94,7 +94,7 @@ fn morph_state_update_clamps_progress() {
 fn morph_state_update_noop_when_inactive() {
     let mut state = MorphState::default();
     state.update(1.0);
-    assert_eq!(state.progress, 1.0); // unchanged
+    assert_eq!(state.progress, 1.0); // 保持不变
 }
 
 #[test]
@@ -165,7 +165,7 @@ fn morph_position_at_midpoint() {
     let pos_3d = DVec3::new(100.0, 0.0, 0.0);
     let pos_2d = DVec3::new(0.0, 100.0, 0.0);
     let result = morph_position(pos_3d, pos_2d, 0.5);
-    // smoothstep(0.5) = 0.5, so lerp at t=0.5
+    // smoothstep(0.5) = 0.5，因此在 t=0.5 处 lerp
     assert!((result.x - 50.0).abs() < 1e-10);
     assert!((result.y - 50.0).abs() < 1e-10);
 }

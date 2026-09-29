@@ -1,20 +1,20 @@
-//! Groups: named, nestable collections of members with an optional group-level
-//! transform and visibility/lock inheritance (plan §5, §9).
+//! 组：命名的、可嵌套的成员集合，带可选的组级
+//! 变换以及可见性/锁定继承（计划 §5、§9）。
 
 use serde::{Deserialize, Serialize};
 
 use super::ids::GroupId;
 use super::node::Node;
 
-/// A transform applied to a whole group *without* burning it into member
-/// geometry (plan §17.4: group keeps the transform; single-element edits bake).
+/// 应用于整个组的变换，*不会*将其烧录进成员
+/// 几何中（计划 §17.4：组保留变换；单元素编辑则烘焙）。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct GroupTransform {
-    /// Rotation about the group pivot, degrees clockwise.
+    /// 绕组枢轴旋转，顺时针度数。
     pub rotate_deg: f64,
-    /// Uniform scale factor.
+    /// 均匀缩放因子。
     pub scale: f64,
-    /// Geographic offset (lon, lat degrees) added to members.
+    /// 添加到成员的地理偏移（经、纬度度）。
     pub offset_lonlat: [f64; 2],
 }
 
@@ -29,11 +29,11 @@ impl Default for GroupTransform {
 }
 
 impl GroupTransform {
-    /// The identity transform.
+    /// 恒等变换。
     pub fn identity() -> Self {
         Self::default()
     }
-    /// True when the transform changes nothing.
+    /// 当变换不改变任何内容时为 true。
     pub fn is_identity(&self) -> bool {
         self.rotate_deg == 0.0
             && self.scale == 1.0
@@ -41,29 +41,29 @@ impl GroupTransform {
     }
 }
 
-/// A group of elements and/or child groups.
+/// 一组元素和/或子组。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Group {
     pub id: GroupId,
     pub name: String,
-    /// Enclosing group, if nested (the document owns the tree consistency).
+    /// 外层组（若嵌套）（文档保证树一致性）。
     pub parent: Option<GroupId>,
-    /// Members in draw order.
+    /// 按绘制顺序排列的成员。
     pub members: Vec<Node>,
-    /// Optional group transform; `None` == identity.
+    /// 可选的组变换；`None` == 恒等。
     pub transform: Option<GroupTransform>,
-    /// Manual visibility (inherited down the chain).
+    /// 手动可见性（沿链向下继承）。
     pub visible: bool,
-    /// Locked groups cannot be edited (and their members can't be individually
-    /// moved) though they may still be selected as a whole.
+    /// 锁定的组无法被编辑（其成员也无法被单独
+    /// 移动），但作为一个整体仍可能被选中。
     pub locked: bool,
-    /// When true, member styles are governed by the group and locked from
-    /// per-member edits (style-propagation hook).
+    /// 为 true 时，成员样式由组接管并锁定以免
+    /// 逐成员编辑（样式传播钩子）。
     pub style_lock: bool,
 }
 
 impl Group {
-    /// An empty, visible, unlocked group.
+    /// 一个空、可见、未锁定的组。
     pub fn new(id: GroupId, name: impl Into<String>) -> Self {
         Self {
             id,

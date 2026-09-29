@@ -1,16 +1,14 @@
-//! Agent-facing **read-only situational query** (plan P2).
+//! 面向 agent 的**只读态势查询**（计划 P2）。
 //!
-//! Where [`action`](super::action) is the write path, this is the "understand the
-//! picture" half an agent needs: a pure [`query`] that filters the document by
-//! bounding box / attributes / geometry kind / layer / name and returns
-//! serialisable [`ElementSummary`] rows, plus [`measure_length`] /
-//! [`measure_area`] read-outs. No mutation, no engine types — deterministically
-//! unit-testable headless.
+//! 如果说 [`action`](super::action) 是写路径，这里就是 agent 需要的
+//! “理解态势”那一半：一个纯 [`query`]，按包围盒 / 属性 / 几何类型 /
+//! 图层 / 名称过滤文档并返回可序列化的 [`ElementSummary`] 行，
+//! 加上 [`measure_length`] / [`measure_area`] 读数。无变更、无引擎类型 ——
+//! 可确定性地无头单元测试。
 //!
-//! The `bbox` filter tests against each element's *conservative* geographic
-//! bounds (see `Geometry::bounds`), which already cover great-circle bulge and
-//! parameterised-figure extent, so a broad-phase overlap can never drop an
-//! element that actually intersects the window.
+//! `bbox` 过滤器针对每个元素的*保守* 地理包围盒测试（见
+//! `Geometry::bounds`），它已涵盖大圆外鼓与参数化图形的范围，
+//! 因此一个宽相位重叠绝不会丢弃一个实际与窗口相交的元素。
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -21,41 +19,41 @@ use crate::model::ids::{ElementId, LayerId};
 use crate::model::{Document, ViewContext, ViewMode};
 use crate::ops::measure::{measure_area_m2, measure_length_m};
 
-/// A conjunctive filter: an element matches only when it satisfies *every*
-/// present criterion. An all-`None` / empty filter returns every element.
+/// 一个合取过滤器：一个元素仅当满足*每一个* 存在的条件时才匹配。
+/// 一个全 `None` / 空的过滤器返回所有元素。
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct QueryFilter {
-    /// Keep elements whose bounds overlap this window (inclusive).
+    /// 保留其包围盒与此窗口重叠（含边界）的元素。
     pub bbox: Option<GeoBounds>,
-    /// Keep elements whose attributes contain all of these exact key/values.
+    /// 保留其属性包含所有这些精确键/值的元素。
     pub attributes: Vec<(String, Value)>,
-    /// Keep only this coarse geometry class.
+    /// 只保留这一粗粒度几何类别。
     pub kind: Option<GeometryKind>,
-    /// Keep only elements belonging to this layer.
+    /// 只保留属于此图层的元素。
     pub layer: Option<LayerId>,
-    /// Keep elements whose name contains this substring (case-sensitive).
+    /// 保留名称包含此子串（区分大小写）的元素。
     pub name_contains: Option<String>,
-    /// Restrict to pickable / selectable elements.
+    /// 限定为可拾取 / 可选的元素。
     pub selectable_only: bool,
 }
 
-/// A serialisable summary row for a matched element.
+/// 一个匹配元素的可序列化摘要行。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ElementSummary {
     pub id: ElementId,
     pub name: String,
     pub kind: GeometryKind,
-    /// The layer the element resolves to (its ancestor chain's layer root).
+    /// 元素最终归属的图层（其祖先链的图层根）。
     pub layer: Option<LayerId>,
     pub bounds: GeoBounds,
     pub attributes: Map<String, Value>,
-    /// Effective visibility: the manual flag AND-ed with the layer switch and,
-    /// when a `view` was supplied, the scale band and per-mode show flags.
+    /// 有效可见性：手动标志与图层开关取 AND，且当提供了
+    /// `view` 时，再加上比例尺带与每模式显示标志。
     pub visible: bool,
 }
 
-/// Broad-phase overlap of two axis-aligned lat/lon boxes (inclusive). An empty
-/// box overlaps nothing.
+/// 两个轴对齐经纬框的宽相位重叠（含边界）。一个空框
+/// 与任何东西都不重叠。
 fn overlaps(a: &GeoBounds, b: &GeoBounds) -> bool {
     if a.is_empty() || b.is_empty() {
         return false;
@@ -66,14 +64,14 @@ fn overlaps(a: &GeoBounds, b: &GeoBounds) -> bool {
         && a.north_deg >= b.south_deg
 }
 
-/// Every requested `(key, value)` pair is present in `attrs` with an equal value.
+/// 每个请求的 `(key, value)` 对都存在于 `attrs` 中且值相等。
 fn attr_matches(attrs: &Map<String, Value>, want: &[(String, Value)]) -> bool {
     want.iter().all(|(k, v)| attrs.get(k) == Some(v))
 }
 
-/// Return a summary for every element matching `filter`, in stable draw order.
-/// `view` is optional: when given, the computed `visible` flag additionally
-/// honours the element's scale band and its per-mode show flags.
+/// 以稳定绘制顺序为每个匹配 `filter` 的元素返回一个摘要。
+/// `view` 可选：当提供时，计算出的 `visible` 标志还会兼顾元素的
+/// 比例尺带及其每模式显示标志。
 pub fn query(
     doc: &Document,
     filter: &QueryFilter,
@@ -138,14 +136,14 @@ pub fn query(
     out
 }
 
-/// Great-circle / perimeter length (metres) of an element, or `None` for an
-/// unknown id. Point-like kinds measure `0.0`.
+/// 一个元素的大圆 / 周长长度（米），未知 id 返回 `None`。点类
+/// 类型量得 `0.0`。
 pub fn measure_length(doc: &Document, id: ElementId) -> Option<f64> {
     doc.element(id).map(|e| measure_length_m(&e.geometry))
 }
 
-/// Enclosed area (m²) of an element, or `None` for an unknown id. Open /
-/// point-like kinds measure `0.0`.
+/// 一个元素的包围面积（m²），未知 id 返回 `None`。开放 /
+/// 点类类型量得 `0.0`。
 pub fn measure_area(doc: &Document, id: ElementId) -> Option<f64> {
     doc.element(id).map(|e| measure_area_m2(&e.geometry))
 }
@@ -240,7 +238,7 @@ mod tests {
             None,
         );
         assert_eq!(by_layer.len(), 2);
-        // A layer nothing belongs to → empty.
+        // 一个无人归属的图层 → 空。
         let none = query(
             &doc,
             &QueryFilter {
@@ -296,11 +294,10 @@ mod tests {
 
     #[test]
     fn bbox_does_not_miss_great_circle_bulge() {
-        // A 60°N parallel chord follows a great circle that bulges poleward, so
-        // its true extent reaches above the 60.0° of its raw control points. A
-        // naive control-point box would top out at exactly 60.0 and wrongly
-        // reject a window sitting just north of it (the classic silent
-        // broad-phase miss); the element's *conservative* bounds cover the bulge.
+        // 一条 60°N 纬线弦跟随一个大圆向极点方向外鼓，因此它的
+        // 真实范围超出其原始控制点的 60.0°。一个朴素的控制点盒
+        // 会恰好止于 60.0 而错误地拒绝一个位于其紧邻北方的窗口（经典的
+        // 静默宽相位遗漏）；元素的*保守* 包围盒涵盖了外鼓。
         let mut doc = Document::with_default_layer();
         let id = line(&mut doc, "arctic", pt(0.0, 60.0), pt(10.0, 60.0));
         let bounds = doc.element(id).unwrap().bounds;
@@ -308,12 +305,12 @@ mod tests {
             bounds.north_deg > 60.05,
             "bounds must cover the bulge, got {bounds:?}"
         );
-        // A window strictly above the raw 60.0 latitude, but inside the bulge,
-        // still matches — a control-point-only box would miss it.
+        // 一个严格高于原始 60.0 纬度、但位于外鼓内部的窗口，
+        // 仍会匹配 —— 一个仅含控制点的盒会遗漏它。
         let got = query(&doc, &box_filter(4.0, 60.02, 6.0, 60.04), None);
         assert_eq!(got.len(), 1, "bulge window must not miss the line");
         assert_eq!(got[0].id, id);
-        // A window above the real bounds top is correctly rejected (not a lie).
+        // 一个高于真实包围盒顶部的窗口被正确拒绝（而非虚报）。
         let miss = query(&doc, &box_filter(4.0, 60.5, 6.0, 60.9), None);
         assert!(miss.is_empty(), "window above the true bulge must miss");
     }
@@ -328,11 +325,11 @@ mod tests {
         let id = ne.id;
         doc.add_element_to_layer(layer, ne);
 
-        // No view → only manual + layer govern visibility (band ignored).
+        // 无 view → 仅手动 + 图层支配可见性（忽略比例尺带）。
         let plain = query(&doc, &QueryFilter::default(), None).remove(0);
         assert!(plain.id == id && plain.visible);
 
-        // A view outside the band hides it; a view inside keeps it visible.
+        // 一个在带外的 view 隐藏它；一个在带内的 view 保持可见。
         let out_of_band = ViewContext {
             pixels_per_world: 5000.0,
             ..Default::default()
@@ -348,7 +345,7 @@ mod tests {
     #[test]
     fn measure_wrappers_match_geometry() {
         let mut doc = Document::with_default_layer();
-        // One degree of longitude at the equator ≈ 111.32 km.
+        // 赤道上经度一度 ≈ 111.32 km。
         let id = line(&mut doc, "deg", pt(0.0, 0.0), pt(1.0, 0.0));
         let len = measure_length(&doc, id).unwrap();
         assert!((len - 111_319.0).abs() < 200.0, "got {len}");

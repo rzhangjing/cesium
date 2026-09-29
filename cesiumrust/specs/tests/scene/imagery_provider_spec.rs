@@ -1,5 +1,5 @@
-//! ImageryProvider specs - ported from Scene/*ImageryProviderSpec
-//! Covers: ImageryProviderDescriptor, ImageryProviderKind, BingMapStyle,
+//! ImageryProvider 规范 - 移植自 Scene/*ImageryProviderSpec
+//! 覆盖：ImageryProviderDescriptor、ImageryProviderKind、BingMapStyle、
 //! UrlTemplate, WMTS, WMS, TMS, OSM, Bing providers
 
 use cesium_provider::imagery_provider::{
@@ -103,7 +103,7 @@ fn url_template_reverse_y() {
     let provider = UrlTemplateImageryProvider::new("https://tile.example.com/{z}/{x}/{reverseY}.png");
     let coord = TileCoord::new(0, 0, 1);
     let url = provider.get_tile_url(&coord, 0);
-    // At level 1, tiles_y = 2, reverseY = 2 - 1 - 0 = 1
+    // 在第 1 层，tiles_y = 2, reverseY = 2 - 1 - 0 = 1
     assert_eq!(url, "https://tile.example.com/1/0/1.png");
 }
 
@@ -199,7 +199,7 @@ fn tms_get_tile_url() {
     let provider = TmsImageryProvider::new("https://tms.example.com");
     let coord = TileCoord::new(1, 0, 1);
     let url = provider.get_tile_url(&coord);
-    // TMS reverses Y: tiles_y=2, tms_y = 2-1-0 = 1
+    // TMS 反转 Y：tiles_y=2, tms_y = 2-1-0 = 1
     assert_eq!(url, "https://tms.example.com/1/1/1.png");
 }
 

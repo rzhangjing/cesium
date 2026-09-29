@@ -1,7 +1,7 @@
-//! Scene/MetadataComponentTypeSpec.js → Rust integration tests
+//! Scene/MetadataComponentTypeSpec.js → Rust 集成测试
 //!
-//! Original: 37 it() → 20 A-class (17 C-class: throws)
-//! Tests: getMinimum(1) + getMaximum(1) + isIntegerType(1) + isUnsignedIntegerType(1) +
+//! 原始：37 it() → 20 A 类（17 C 类：throws）
+//! 测试：getMinimum(1) + getMaximum(1) + isIntegerType(1) + isUnsignedIntegerType(1) +
 //!        normalize(4) + unnormalize(5) + getSizeInBytes(1) + fromComponentDatatype(1) +
 //!        toComponentDatatype(3) + category(1) + downcastFunction(1)
 
@@ -99,7 +99,7 @@ fn test_normalize_int64() {
     let max = i64::MAX as f64;
     assert_eq!(t.normalize(0.0), 0.0);
     assert_eq!(t.normalize(max), 1.0);
-    // min/max → -1.0 (clamped)
+    // min/max → -1.0（钳制）
     assert_eq!(t.normalize(i64::MIN as f64), -1.0);
 }
 
@@ -247,15 +247,15 @@ fn test_category() {
 
 #[test]
 fn test_downcast_function() {
-    // INT64 downcast clamps to INT32 range
+    // INT64 downcast 钳制到 INT32 范围
     assert_eq!(MetadataComponentType::Int64.downcast(123456789012345.0), 2147483647.0);
     assert_eq!(MetadataComponentType::Int64.downcast(-123456789012345.0), -2147483648.0);
 
-    // UINT64 downcast clamps to UINT32 range
+    // UINT64 downcast 钳制到 UINT32 范围
     assert_eq!(MetadataComponentType::Uint64.downcast(123456789012345.0), 4294967295.0);
     assert_eq!(MetadataComponentType::Uint64.downcast(-1.0), 0.0);
 
-    // FLOAT64 downcast converts to f32 precision
+    // FLOAT64 downcast 转换为 f32 精度
     let value = 1.337123456789_f64;
     let downcast = MetadataComponentType::Float64.downcast(value);
     assert_eq!(downcast, (value as f32) as f64);

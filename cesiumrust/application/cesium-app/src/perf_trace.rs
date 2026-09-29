@@ -1,6 +1,6 @@
-//! M0.5 — CSV perf-trace, headless CLI, and camera-script playback.
+//! M0.5 —— CSV 性能追踪、无头 CLI 与相机脚本播放。
 //!
-//! ## Architecture
+//! ## 架构
 //!
 //! ```text
 //!  frame thread (Update)                    writer thread (dedicated)
@@ -11,24 +11,24 @@
 //!  dynamic_globe::process_pipeline (M0.4 write-back)
 //! ```
 //!
-//! The frame thread's only work is: read counters, `format!` one CSV line,
-//! `tx.send(line)`. All file I/O (open, write, flush, close) happens on the
-//! writer thread, so a slow disk never stalls the render loop. Measured
-//! self-overhead is reported every 5 s via `info!`.
+//! 帧线程唯一的工作是：读取计数器、`format!` 一行 CSV、
+//! `tx.send(line)`。所有文件 I/O（打开、写入、刷新、关闭）都发生在
+//! 写入线程上，因此慢磁盘绝不会拖住渲染循环。测得的
+//! 自身开销每 5 秒经 `info!` 报告一次。
 //!
-//! ## CLI / env
+//! ## CLI / 环境变量
 //!
-//! | Flag | Env | Default | Effect |
+//! | 标志 | 环境变量 | 默认值 | 作用 |
 //! |------|-----|---------|--------|
-//! | `--headless` | `CESIUM_HEADLESS=1` | off | Auto-exit after `--headless-frames`; camera script drives the view |
-//! | `--perf-trace=<path>` | `CESIUM_PERF_TRACE` | off | Write CSV trace to `<path>` |
-//! | `--camera-script=<toml>` | `CESIUM_CAMERA_SCRIPT` | off | Play back a keyframed camera trajectory |
-//! | `--trace-interval=<n>` | `CESIUM_TRACE_INTERVAL` | 1 | Emit one CSV row every `n` frames |
-//! | `--headless-frames=<n>` | `CESIUM_HEADLESS_FRAMES` | `feature_flags::DEFAULT_HEADLESS_FRAMES` (120) | Auto-exit cap for the bare `--headless` flag. FIX-HL-FRAMES: single source of truth is `feature_flags`; the `CESIUM_HEADLESS`-env capture path exits via `CesiumHeadlessPlugin`, not this |
+//! | `--headless` | `CESIUM_HEADLESS=1` | 关闭 | 在 `--headless-frames` 后自动退出；相机脚本驱动视图 |
+//! | `--perf-trace=<path>` | `CESIUM_PERF_TRACE` | 关闭 | 将 CSV 追踪写入 `<path>` |
+//! | `--camera-script=<toml>` | `CESIUM_CAMERA_SCRIPT` | 关闭 | 播放关键帧相机轨迹 |
+//! | `--trace-interval=<n>` | `CESIUM_TRACE_INTERVAL` | 1 | 每 `n` 帧发出一行 CSV |
+//! | `--headless-frames=<n>` | `CESIUM_HEADLESS_FRAMES` | `feature_flags::DEFAULT_HEADLESS_FRAMES` (120) | 裸 `--headless` 标志的自动退出上限。FIX-HL-FRAMES：单一真相源是 `feature_flags`；`CESIUM_HEADLESS`-env 捕获路径经 `CesiumHeadlessPlugin` 退出，而非此标志 |
 //!
-//! Flags take precedence over env when both are present.
+//! 两者都存在时，标志优先于环境变量。
 //!
-//! ## Camera-script TOML format
+//! ## 相机脚本 TOML 格式
 //!
 //! ```toml
 //! [meta]
@@ -49,20 +49,20 @@
 //! height = 2.0
 //! ```
 //!
-//! Fields per keyframe (all optional except `t`):
-//! - `t` — seconds from script start (required, monotonically increasing)
-//! - `lon` / `heading` — degrees; `heading` takes precedence (matches Lee's
-//!   `CESIUM_CAM_HEADING` convention)
-//! - `lat` / `pitch` — degrees; `pitch` takes precedence
-//! - `height` — render units above the surface (globe R = 1)
-//! - `distance` — direct orbit distance from center; overrides `height`
+//! 每个关键帧的字段（除 `t` 外均可选）：
+//! - `t` — 距脚本开始的秒数（必需，单调递增）
+//! - `lon` / `heading` — 度；`heading` 优先（符合 Lee 的
+//!   `CESIUM_CAM_HEADING` 约定）
+//! - `lat` / `pitch` — 度；`pitch` 优先
+//! - `height` — 表面上方的渲染单位（地球 R = 1）
+//! - `distance` — 从中心的直接轨道距离；覆盖 `height`
 //!
-//! Interpolation is **linear** between adjacent keyframes. Before the first
-//! keyframe the camera holds `keyframe[0]`; after the last it holds
-//! `keyframe[last]`. A single-keyframe script is a static camera.
+//! 相邻关键帧之间为**线性**插值。第一个关键帧之前相机保持
+//! `keyframe[0]`；最后一个之后保持
+//! `keyframe[last]`。单关键帧脚本即为静态相机。
 //!
-//! The script **seeds from Lee's orbit_camera env** when no keyframe fields
-//! are given at `t=0`, so `--camera-script` composes with `CESIUM_CAM_*`.
+//! 当 `t=0` 未给出任何关键帧字段时，脚本**从 Lee 的 orbit_camera 环境
+//! 播种**，因此 `--camera-script` 与 `CESIUM_CAM_*` 组合使用。
 
 use bevy::prelude::*;
 use serde::Deserialize;
@@ -79,41 +79,41 @@ use crate::perf_counters::PerfCounters;
 
 // ── CLI ──────────────────────────────────────────────────────────────────
 
-/// Parsed command-line / env configuration for the perf-trace subsystem.
+/// perf-trace 子系统的已解析命令行 / 环境配置。
 #[derive(Debug, Clone, Default)]
 pub struct Cli {
-    /// Run without interaction and auto-exit after `headless_frames`.
+    /// 无交互运行，并在 `headless_frames` 后自动退出。
     pub headless: bool,
-    /// CSV trace output path. `None` = tracing disabled.
+    /// CSV 追踪输出路径。`None` = 禁用追踪。
     pub perf_trace: Option<PathBuf>,
-    /// Camera-script TOML path. `None` = no scripted playback.
+    /// 相机脚本 TOML 路径。`None` = 无脚本播放。
     pub camera_script: Option<PathBuf>,
-    /// Emit one CSV row every N frames (default 1 = every frame).
+    /// 每 N 帧发出一行 CSV（默认 1 = 每帧）。
     pub trace_interval: u32,
-    /// Frames before auto-exit in headless mode. FIX-HL-FRAMES: the default now
-    /// mirrors `feature_flags::DEFAULT_HEADLESS_FRAMES` (single source of truth,
-    /// currently 120) instead of a divergent hard-coded 3600.
-    /// This is a **fallback** cap: when a wall-clock target is known (an
-    /// explicit `--headless-secs`, or a camera-script's `duration_s`), the
-    /// wall-clock target governs the exit instead, so the full trajectory is
-    /// captured regardless of the actual frame rate.
+    /// 无头模式下自动退出前的帧数。FIX-HL-FRAMES：默认值现
+    /// 镜像 `feature_flags::DEFAULT_HEADLESS_FRAMES`（单一真相源，
+    /// 当前为 120），而非发散的硬编码 3600。
+    /// 这是一个**回退**上限：当已知墙钟目标（显式
+    /// `--headless-secs`，或相机脚本的 `duration_s`）时，改由
+    /// 墙钟目标支配退出，因此无论实际帧率如何
+    /// 都能捕获完整轨迹。
     pub headless_frames: u32,
-    /// Wall-clock seconds before auto-exit in headless mode. When set, this
-    /// takes precedence over `headless_frames` (which becomes a safety net).
-    /// When unset but a camera-script is loaded, the script's `duration_s`
-    /// (plus a small tail) is used automatically.
+    /// 无头模式下自动退出前的墙钟秒数。设置后，此项
+    /// 优先于 `headless_frames`（后者变为安全网）。
+    /// 未设置但加载了相机脚本时，自动使用脚本的 `duration_s`
+    ///（加一小段尾时）。
     pub headless_secs: Option<f64>,
 }
 
 impl Cli {
-    /// Parse from `std::env::args()` + environment variables.
+    /// 从 `std::env::args()` + 环境变量解析。
     ///
-    /// Precedence: CLI flag > env var > default. Unknown flags are ignored
-    /// (forward-compatible with future milestones).
+    /// 优先级：CLI 标志 > 环境变量 > 默认值。未知标志被忽略
+    ///（与未来里程碑向后兼容）。
     pub fn from_env_and_args() -> Self {
         let mut cli = Self::default();
 
-        // ── Env defaults ──────────────────────────────────────────────
+        // ── 环境变量默认值 ──────────────────────────────────────────────
         if env_flag("CESIUM_HEADLESS") {
             cli.headless = true;
         }
@@ -145,7 +145,7 @@ impl Cli {
             }
         }
 
-        // ── CLI overrides ─────────────────────────────────────────────
+        // ── CLI 覆盖 ─────────────────────────────────────────────
         let args: Vec<String> = std::env::args().skip(1).collect();
         let mut i = 0;
         while i < args.len() {
@@ -191,7 +191,7 @@ impl Cli {
                     }
                 }
                 other => {
-                    // Support `--flag=value` form.
+                    // 支持 `--flag=value` 形式。
                     if let Some(v) = other.strip_prefix("--perf-trace=") {
                         cli.perf_trace = Some(PathBuf::from(v));
                     } else if let Some(v) = other.strip_prefix("--camera-script=") {
@@ -211,44 +211,44 @@ impl Cli {
                             }
                         }
                     }
-                    // Unknown flags: silently ignored (forward-compat).
+                    // 未知标志：静默忽略（向后兼容）。
                 }
             }
             i += 1;
         }
 
-        // ── Defaults for unset values ─────────────────────────────────
+        // ── 未设置值的默认值 ─────────────────────────────────
         if cli.trace_interval == 0 {
             cli.trace_interval = 1;
         }
         if cli.headless_frames == 0 {
-            // FIX-HL-FRAMES: source the fallback from `feature_flags`' single
-            // source of truth rather than a private 3600, so the two modules
-            // agree on `CESIUM_HEADLESS_FRAMES` when it is left unset. Here the
-            // value is the bare-`--headless` auto-exit cap; under
-            // `CESIUM_HEADLESS` the capture plugin owns the exit.
+            // FIX-HL-FRAMES：从 `feature_flags` 的单一真相源取得回退值，
+            // 而非私有的 3600，因此两个模块在未设置时
+            // 对 `CESIUM_HEADLESS_FRAMES` 达成一致。这里的
+            // 值是裸 `--headless` 的自动退出上限；在
+            // `CESIUM_HEADLESS` 下捕获插件拥有退出权。
             cli.headless_frames = crate::feature_flags::DEFAULT_HEADLESS_FRAMES as u32;
         }
-        // Headless implies tracing unless explicitly disabled — but we
-        // respect an explicit `--perf-trace` absence: headless without a
-        // trace path just auto-exits (useful for smoke tests).
+        // 无头意味着启用追踪，除非显式禁用 —— 但我们尊重显式
+        // `--perf-trace` 的缺失：无追踪路径的无头模式
+        // 只是自动退出（对冒烟测试有用）。
 
         cli
     }
 
-    /// True when any perf-trace subsystem should activate.
+    /// 当任一 perf-trace 子系统应激活时为真。
     pub fn active(&self) -> bool {
         self.headless || self.perf_trace.is_some() || self.camera_script.is_some()
     }
 }
 
-// MK4: `env_truthy` removed — use `crate::feature_flags::env_flag` (the
-// single env-read path for all CESIUM_* flags). See feature_flags.rs
-// "Runtime mode switches" section for the registered variables.
+// MK4：`env_truthy` 已移除 —— 改用 `crate::feature_flags::env_flag`（所有
+// CESIUM_* 标志的单一环境读取路径）。参见 feature_flags.rs 的
+// "Runtime mode switches" 一节了解已注册的变量。
 
-// ── Camera script (TOML) ─────────────────────────────────────────────────
+// ── 相机脚本（TOML） ─────────────────────────────────────────────────
 
-/// Raw TOML schema for a camera-script file.
+/// 相机脚本文件的原始 TOML schema。
 #[derive(Debug, Deserialize)]
 struct CameraScriptFile {
     #[serde(default)]
@@ -267,34 +267,34 @@ struct ScriptMeta {
     description: Option<String>,
 }
 
-/// One keyframe in the trajectory. All fields except `t` are optional;
-/// missing fields inherit the previous keyframe's value (or the env seed
-/// for the first keyframe).
+/// 轨迹中的一个关键帧。除 `t` 外所有字段均可选；
+/// 缺失字段继承前一个关键帧的值（第一个关键帧则
+/// 继承环境播种值）。
 #[derive(Debug, Deserialize, Clone)]
 struct KeyframeRaw {
-    /// Seconds from script start.
+    /// 距脚本开始的秒数。
     t: f64,
-    /// Longitude in degrees (camera azimuth). Alias: `heading`.
+    /// 以度为单位的经度（相机方位角）。别名：`heading`。
     #[serde(default)]
     lon: Option<f64>,
-    /// Latitude in degrees (camera elevation). Alias: `pitch`.
+    /// 以度为单位的纬度（相机仰角）。别名：`pitch`。
     #[serde(default)]
     lat: Option<f64>,
-    /// Heading in degrees — takes precedence over `lon` (Lee's convention).
+    /// 以度为单位的朝向角 —— 优先于 `lon`（Lee 的约定）。
     #[serde(default)]
     heading: Option<f64>,
-    /// Pitch in degrees — takes precedence over `lat`.
+    /// 以度为单位的俯仰角 —— 优先于 `lat`。
     #[serde(default)]
     pitch: Option<f64>,
-    /// Height above surface in render units (globe R = 1).
+    /// 以渲染单位计的表面上方高度（地球 R = 1）。
     #[serde(default)]
     height: Option<f64>,
-    /// Direct orbit distance from center; overrides `height`.
+    /// 从中心的直接轨道距离；覆盖 `height`。
     #[serde(default)]
     distance: Option<f64>,
 }
 
-/// Resolved keyframe with all fields populated (no `Option`).
+/// 已解析、所有字段填充的关键帧（无 `Option`）。
 #[derive(Debug, Clone)]
 struct Keyframe {
     t: f64,
@@ -303,20 +303,20 @@ struct Keyframe {
     distance: f32,
 }
 
-/// Parsed + resolved camera script, ready for playback.
+/// 已解析 + 已解决的相机脚本，准备好播放。
 #[derive(Debug, Clone)]
 pub struct CameraScript {
     pub name: String,
     pub duration_s: f64,
-    /// Optional human description from `[meta]`, logged on load.
+    /// 来自 `[meta]` 的可选人类描述，加载时记录日志。
     pub description: Option<String>,
     keyframes: Vec<Keyframe>,
 }
 
 impl CameraScript {
-    /// Load from a TOML file. Falls back to the env seed (Lee's
-    /// `orbit_state_from_env` equivalent) for any field the first keyframe
-    /// omits, so a script can specify only the axes it cares about.
+    /// 从 TOML 文件加载。对于第一个关键帧省略的任何字段，
+    /// 回退到环境播种（Lee 的 `orbit_state_from_env` 等价物），
+    /// 因此脚本可只指定它关心的轴。
     pub fn load(path: &PathBuf, env_seed: &OrbitState) -> Result<Self, String> {
         let text = std::fs::read_to_string(path)
             .map_err(|e| format!("camera-script read failed: {}", e))?;
@@ -343,27 +343,27 @@ impl CameraScript {
             .and_then(|m| m.duration_s)
             .unwrap_or_else(|| raw.keyframes.last().map(|k| k.t).unwrap_or(0.0));
 
-        // Resolve each keyframe: missing fields inherit from the previous
-        // resolved keyframe; the first keyframe inherits from the env seed.
+        // 解析每个关键帧：缺失字段继承自前一个已解析
+        // 关键帧；第一个关键帧继承自环境播种。
         let mut resolved: Vec<Keyframe> = Vec::with_capacity(raw.keyframes.len());
         let mut prev_heading = env_seed.heading;
         let mut prev_pitch = env_seed.pitch;
         let mut prev_distance = env_seed.distance;
 
         for kf in &raw.keyframes {
-            // heading: explicit `heading` > `lon` > inherit
+            // heading：显式 `heading` > `lon` > 继承
             let heading_deg = kf.heading.or(kf.lon);
             let heading_rad = match heading_deg {
                 Some(d) => (d as f32).to_radians(),
                 None => prev_heading,
             };
-            // pitch: explicit `pitch` > `lat` > inherit
+            // pitch：显式 `pitch` > `lat` > 继承
             let pitch_deg = kf.pitch.or(kf.lat);
             let pitch_rad = match pitch_deg {
                 Some(d) => (d as f32).to_radians(),
                 None => prev_pitch,
             };
-            // distance: explicit `distance` > `height` (1.0 + h) > inherit
+            // distance：显式 `distance` > `height` (1.0 + h) > 继承
             let distance = if let Some(d) = kf.distance {
                 d as f32
             } else if let Some(h) = kf.height {
@@ -383,7 +383,7 @@ impl CameraScript {
             prev_distance = distance;
         }
 
-        // Sort by time (TOML order is not guaranteed).
+        // 按时间排序（TOML 顺序不保证）。
         resolved.sort_by(|a, b| a.t.total_cmp(&b.t));
 
         Ok(Self {
@@ -394,8 +394,8 @@ impl CameraScript {
         })
     }
 
-    /// Sample the trajectory at `t` seconds (linear interpolation).
-    /// Clamps to the first / last keyframe outside the script's range.
+    /// 在 `t` 秒处采样轨迹（线性插值）。
+    /// 超出脚本范围时钳制到第一个 / 最后一个关键帧。
     pub fn sample(&self, t: f64) -> (f32, f32, f32) {
         let kfs = &self.keyframes;
         if kfs.len() == 1 || t <= kfs[0].t {
@@ -407,7 +407,7 @@ impl CameraScript {
             let k = &kfs[last];
             return (k.heading_rad, k.pitch_rad, k.distance);
         }
-        // Find the bracketing pair.
+        // 找到夹逼的一对。
         for i in 0..last {
             let a = &kfs[i];
             let b = &kfs[i + 1];
@@ -430,25 +430,25 @@ impl CameraScript {
     }
 }
 
-// ── CSV writer thread ────────────────────────────────────────────────────
+// ── CSV 写入线程 ────────────────────────────────────────────────────
 
-/// CSV column header. Kept in sync with `format_row` below.
-/// M4: original 13 columns preserved in position (baseline compat); 4 new
-/// columns appended at tail.
+/// CSV 列头。与下方 `format_row` 保持同步。
+/// M4：原始 13 列按位置保留（基线兼容）；4 个新列
+/// 追加在尾部。
 const CSV_HEADER: &str = "frame_idx,dt_ms,view_sse,visible_n,partition_n,load_n,spawn_n,\
 tex_upload_n,evict_n,gpu_tex_cache,mesh_backlog,dl_in_flight,stale_skips,\
 retry_after,frame_mesh,frame_despawn,evict_deferred";
 
-/// Message sent from the frame thread to the writer thread.
+/// 从帧线程发往写入线程的消息。
 enum WriterMsg {
-    /// One CSV row (already formatted, newline-terminated).
+    /// 一行 CSV（已格式化，换行结尾）。
     Row(String),
-    /// Graceful shutdown: flush + close.
+    /// 优雅关闭：刷新 + 关闭。
     Shutdown,
 }
 
-/// Handle to the writer thread. Dropping it sends `Shutdown` so the thread
-/// flushes and exits even if the caller forgets.
+/// 写入线程的句柄。丢弃它会发送 `Shutdown`，因此即使调用者
+/// 遗忘，线程也会刷新并退出。
 struct WriterHandle {
     tx: Option<mpsc::Sender<WriterMsg>>,
     join: Option<std::thread::JoinHandle<()>>,
@@ -470,8 +470,8 @@ impl WriterHandle {
 
     fn send(&self, row: String) {
         if let Some(tx) = &self.tx {
-            // Best-effort: if the writer died, drop the row rather than
-            // panicking the frame thread.
+            // 尽力而为：若写入线程已死，丢弃该行而非
+            // 使帧线程 panic。
             let _ = tx.send(WriterMsg::Row(row));
         }
     }
@@ -483,17 +483,17 @@ impl Drop for WriterHandle {
             let _ = tx.send(WriterMsg::Shutdown);
         }
         if let Some(j) = self.join.take() {
-            // Give the writer up to 2 s to flush; don't block shutdown forever.
+            // 给写入线程最多 2 秒刷新；不要永久阻塞关闭。
             let _ = j.join();
         }
     }
 }
 
-/// Writer-thread main loop: batch rows in a ringbuffer, flush periodically.
+/// 写入线程主循环：在环形缓冲区中批量处理行，定期刷新。
 ///
-/// Flush policy: every 64 rows OR every 200 ms, whichever comes first. This
-/// bounds memory (≤64 rows × ~200 B ≈ 13 KB) while keeping disk I/O off the
-/// frame thread's critical path.
+/// 刷新策略：每 64 行或每 200 毫秒，以先到者为准。这将
+/// 内存限制在（≤64 行 × ~200 B ≈ 13 KB），同时使磁盘 I/O 远离
+/// 帧线程的关键路径。
 fn writer_loop(path: PathBuf, rx: mpsc::Receiver<WriterMsg>) {
     let file = match File::create(&path) {
         Ok(f) => f,
@@ -514,8 +514,8 @@ fn writer_loop(path: PathBuf, rx: mpsc::Receiver<WriterMsg>) {
     let mut last_flush = Instant::now();
 
     loop {
-        // Drain available messages without blocking longer than the flush
-        // interval, so we honor the time-based flush even when rows trickle.
+        // 排空可用消息，阻塞时长不超过刷新间隔，
+        // 因此即使行涓流到达也能遵守基于时间的刷新。
         let timeout = FLUSH_INTERVAL.saturating_sub(last_flush.elapsed());
         match rx.recv_timeout(timeout.max(Duration::from_millis(1))) {
             Ok(WriterMsg::Row(row)) => buf.push(row),
@@ -523,7 +523,7 @@ fn writer_loop(path: PathBuf, rx: mpsc::Receiver<WriterMsg>) {
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
-        // Drain any additional queued rows (non-blocking) to batch them.
+        // 非阻塞地排空任何额外排队的行以批量处理。
         while buf.len() < BATCH * 4 {
             match rx.try_recv() {
                 Ok(WriterMsg::Row(row)) => buf.push(row),
@@ -547,67 +547,67 @@ fn flush_rows(w: &mut BufWriter<File>, buf: &mut Vec<String>) {
         return;
     }
     for row in buf.drain(..) {
-        // Ignore write errors: a full disk must not crash the app.
+        // 忽略写错误：磁盘满绝不能使应用崩溃。
         let _ = w.write_all(row.as_bytes());
     }
     let _ = w.flush();
 }
 
-/// Format one CSV row from the current counters.
+/// 从当前计数器格式化一行 CSV。
 ///
-/// Column order matches `CSV_HEADER`. `view_sse` is a per-tile value inside
-/// the quadtree traversal, not a single scalar; it remains a `0` placeholder
-/// until deferred item DEFER-M0-VIEWSSE is resolved (registered by Jimmy).
+/// 列顺序与 `CSV_HEADER` 匹配。`view_sse` 是四叉树遍历内的逐瓦片值，
+/// 而非单一标量；在延迟项 DEFER-M0-VIEWSSE 解决（由 Jimmy 登记）
+/// 之前，它保持为 `0` 占位符。
 fn format_row(c: &PerfCounters) -> String {
     format!(
         "{},{:.3},0,{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
         c.frame_idx,
         c.dt_ms,
-        c.tile_entities,   // visible_n: spawned entities (partition subset)
-        c.spawn_queue,      // partition_n proxy: queued for spawn
-        c.load_set,         // load_n: KICK-blocked children still loading
+        c.tile_entities,   // visible_n：已生成实体（划分子集）
+        c.spawn_queue,      // partition_n 代理：排队等待生成
+        c.load_set,         // load_n：被 KICK 阻塞、仍在加载的子节点
         c.frame_spawn,      // spawn_n
         c.frame_tex,        // tex_upload_n
-        c.evict_total,      // evict_n (cumulative)
+        c.evict_total,      // evict_n（累计）
         c.gpu_tex_order,    // gpu_tex_cache
         c.backlog,          // mesh_backlog
         c.in_flight,        // dl_in_flight
-        c.stale_skips,      // stale_skips (cumulative)
-        c.retry_after,      // retry_after (M4 col 14)
-        c.frame_mesh,       // frame_mesh (M4 col 15)
-        c.frame_despawn,    // frame_despawn (M4 col 16)
-        c.evict_deferred,   // evict_deferred (M4 col 17)
+        c.stale_skips,      // stale_skips（累计）
+        c.retry_after,      // retry_after（M4 第 14 列）
+        c.frame_mesh,       // frame_mesh（M4 第 15 列）
+        c.frame_despawn,    // frame_despawn（M4 第 16 列）
+        c.evict_deferred,   // evict_deferred（M4 第 17 列）
     )
 }
 
-// ── Bevy plugin + systems ────────────────────────────────────────────────
+// ── Bevy 插件 + 系统 ────────────────────────────────────────────────
 
-/// Resource holding the runtime state of the perf-trace subsystem.
+/// 持有 perf-trace 子系统运行时状态的资源。
 #[derive(Resource)]
 struct TraceState {
     cli: Cli,
     writer: Option<WriterHandle>,
     script: Option<CameraScript>,
-    /// App start instant, for camera-script time base.
+    /// 应用启动时刻，作为相机脚本时间基准。
     start: Instant,
-    /// Accumulated self-overhead for the 5 s report.
+    /// 用于 5 秒报告的累计自身开销。
     overhead_accum: Duration,
     overhead_frames: u32,
-    /// Last overhead report instant.
+    /// 上一次开销报告时刻。
     last_report: Instant,
-    /// Frame counter for trace-interval gating.
+    /// 用于 trace-interval 门控的帧计数器。
     frame_counter: u32,
-    /// Wall-clock exit target for headless mode. `Some(d)` means: exit once
-    /// `start.elapsed() >= d`, regardless of frame count. `None` means: fall
-    /// back to the `headless_frames` cap. Computed at plugin build from
-    /// `--headless-secs`, else the camera-script's `duration_s` + tail.
+    /// 无头模式的墙钟退出目标。`Some(d)` 意味着：一旦
+    /// `start.elapsed() >= d` 就退出，无论帧数。`None` 意味着：
+    /// 回退到 `headless_frames` 上限。在插件构建时由
+    /// `--headless-secs` 计算，否则用相机脚本的 `duration_s` + 尾时。
     exit_after: Option<Duration>,
 }
 
-/// Plugin that wires up the perf-trace subsystem.
+/// 连装 perf-trace 子系统的插件。
 ///
-/// Inert when `cli.active()` is false: no systems are registered, no
-/// resources inserted, zero runtime cost.
+/// 当 `cli.active()` 为 false 时无作用：不注册任何系统，
+/// 不插入任何资源，零运行时开销。
 pub struct PerfTracePlugin {
     cli: Cli,
 }
@@ -624,9 +624,9 @@ impl Plugin for PerfTracePlugin {
             return;
         }
 
-        // Load the camera script (if any) using the env-seeded OrbitState
-        // as the fallback for omitted keyframe fields. MK5: directly call
-        // `orbit_state_from_env` (single source of truth for camera seed).
+        // 使用环境播种的 OrbitState 加载相机脚本（若有），
+        // 作为省略关键帧字段的回退。MK5：直接调用
+        // `orbit_state_from_env`（相机播种的单一真相源）。
         let script = self.cli.camera_script.as_ref().and_then(|p| {
             let seed = orbit_state_from_env();
             match CameraScript::load(p, &seed) {
@@ -665,13 +665,13 @@ impl Plugin for PerfTracePlugin {
             }
         });
 
-        // Compute the wall-clock exit target BEFORE `script` is moved into
-        // the resource. Precedence: explicit `--headless-secs` > the loaded
-        // script's `duration_s` (+0.5 s tail so the final keyframe is
-        // captured and its CSV row flushed) > None (frame-cap fallback).
+        // 在 `script` 被移入资源之前计算墙钟退出目标。
+        // 优先级：显式 `--headless-secs` > 已加载脚本的
+        // `duration_s`（+0.5 秒收尾，使最后一个关键帧被
+        // 捕获且其 CSV 行刷新）> None（回退到帧数上限）。
         //
-        // R2: `is_finite()` guard — `Duration::from_secs_f64(INFINITY)` panics.
-        // TOML `duration_s` can also be inf/nan; fall back to 3600 s.
+        // R2：`is_finite()` 守卫 —— `Duration::from_secs_f64(INFINITY)` 会 panic。
+        // TOML 的 `duration_s` 也可能是 inf/nan；回退到 3600 秒。
         let exit_after = self
             .cli
             .headless_secs
@@ -700,34 +700,34 @@ impl Plugin for PerfTracePlugin {
             exit_after,
         });
 
-        // Camera-script playback runs BEFORE the trace sampler so the CSV
-        // row reflects the scripted camera, not the previous frame's.
+        // 相机脚本播放运行在 trace 采样器之前，使 CSV 行
+        // 反映的是脚本驱动的相机，而非上一帧的。
         app.add_systems(Update, camera_script_system);
-        // R1: explicit `.after(TilePipelineSet)` ensures PerfCounters are
-        // populated with THIS frame's data before we sample them. Without
-        // this, Bevy's scheduler may run trace_sampler_system first (both
-        // hold ResMut<PerfCounters>), yielding stale values in the CSV.
+        // R1：显式 `.after(TilePipelineSet)` 确保 PerfCounters 在我们采样
+        // 之前已用本帧数据填充。若无此约束，Bevy 调度器可能先运行
+        // trace_sampler_system（二者都持有 ResMut<PerfCounters>），导致
+        // CSV 中出现过期值。
         app.add_systems(
             Update,
             trace_sampler_system
                 .after(camera_script_system)
                 .after(TilePipelineSet),
         );
-        // Headless auto-exit runs last so the final frame's row is emitted.
+        // 无头自动退出最后运行，使最后一帧的行得以发出。
         app.add_systems(Update, headless_exit_system.after(trace_sampler_system));
     }
 }
 
-// MK5: `env_seed_state()` removed — now calls `orbit_state_from_env()` from
-// orbit_camera.rs directly (pub(crate) since M0 review). Single source of
-// truth for camera env seed, eliminating drift between the two implementations.
+// MK5：移除 `env_seed_state()` —— 现直接调用 orbit_camera.rs 的
+// `orbit_state_from_env()`（自 M0 评审起为 pub(crate)）。相机环境播种的
+// 单一真相源，消除两处实现之间的漂移。
 
-/// Camera-script playback: overwrite OrbitState from the interpolated
-/// trajectory. Runs only when a script is loaded.
+/// 相机脚本播放：用插值轨迹覆盖 OrbitState。仅在加载了脚本时
+/// 运行。
 ///
-/// We set BOTH `distance` and `target_distance` so orbit_camera's inertia
-/// glide is a no-op (target == current), and heading/pitch directly since
-/// headless mode has no mouse input to modify them.
+/// 我们同时设置 `distance` 和 `target_distance`，使 orbit_camera 的惯性
+/// 滑行为空操作（target == current），并直接设置 heading/pitch，因为
+/// 无头模式没有鼠标输入来修改它们。
 fn camera_script_system(
     state: Res<TraceState>,
     mut orbit: ResMut<OrbitState>,
@@ -744,13 +744,12 @@ fn camera_script_system(
     orbit.target_distance = distance;
 }
 
-/// Trace sampler: advance PerfCounters frame bookkeeping, format one CSV
-/// row per `trace_interval` frames, and hand it to the writer thread.
-/// Measures its own overhead and reports every 5 s.
+/// Trace 采样器：推进 PerfCounters 的帧记账，每 `trace_interval` 帧
+/// 格式化一行 CSV，并交给写入线程。测量自身开销，每 5 秒报告一次。
 ///
-/// Takes `ResMut<PerfCounters>` so it can call `end_frame` (frame_idx +
-/// dt_ms). R1: `.after(process_pipeline)` is enforced at registration so
-/// the gauges/deltas are guaranteed populated with THIS frame's data.
+/// 取得 `ResMut<PerfCounters>` 以便能调用 `end_frame`（frame_idx +
+/// dt_ms）。R1：`.after(process_pipeline)` 在注册时强制约束，因此
+/// 仪表值/增量保证已用本帧数据填充。
 fn trace_sampler_system(
     mut state: ResMut<TraceState>,
     mut counters: ResMut<PerfCounters>,
@@ -760,12 +759,11 @@ fn trace_sampler_system(
 
     state.frame_counter = state.frame_counter.wrapping_add(1);
 
-    // Advance frame bookkeeping: frame_idx + dt_ms. This is the ONLY
-    // writer of these two fields, so the CSV row's frame number matches
-    // the frame that produced the counters.
+    // 推进帧记账：frame_idx + dt_ms。这是这两个字段的唯一
+    // 写入者，因此 CSV 行的帧编号与产生这些计数器的帧一致。
     counters.end_frame(time.delta_secs_f64() * 1000.0);
 
-    // Gate by trace_interval (default 1 = every frame).
+    // 按 trace_interval 门控（默认 1 = 每帧）。
     if state.frame_counter.is_multiple_of(state.cli.trace_interval.max(1)) {
         if let Some(writer) = &state.writer {
             let row = format_row(&counters);
@@ -784,9 +782,9 @@ fn trace_sampler_system(
             "[perf-trace] self-overhead: {:.4} ms/frame (avg over {} frames)",
             avg, state.overhead_frames
         );
-        // M0.4 acceptance: PerfCounters must agree with the legacy `[stats]`
-        // printf. Emit the same numbers in a comparable one-liner so a
-        // reviewer can eyeball-consistency between old log and new counters.
+        // M0.4 验收：PerfCounters 必须与旧版 `[stats]` printf 一致。
+        // 以可比较的单行形式发出相同数字，使评审者能目测旧日志
+        // 与新计数器之间的一致性。
         info!("[perf-trace] counters: {}", counters.summary_line());
         state.overhead_accum = Duration::ZERO;
         state.overhead_frames = 0;
@@ -794,16 +792,16 @@ fn trace_sampler_system(
     }
 }
 
-/// Headless auto-exit. When a wall-clock target is known (`exit_after`),
-/// it governs the exit so the full camera trajectory is captured regardless
-/// of frame rate; otherwise fall back to the `headless_frames` cap.
+/// 无头自动退出。当墙钟目标已知（`exit_after`）时，由它
+/// 控制退出，从而不论帧率如何都能捕获完整的相机轨迹；否则
+/// 回退到 `headless_frames` 上限。
 ///
-/// FIX-HL-EXIT: this system is the exit path for the bare `--headless` CLI flag
-/// only. Under the `CESIUM_HEADLESS` env, `main.rs` forces `cli.headless = false`
-/// ("headless mode ownership"), so the early-return below parks this system and
-/// hands exit ownership to `CesiumHeadlessPlugin`'s offscreen capture →
-/// `AppExit::Success` chain. The branch is therefore *conditional*, not dead —
-/// do not remove it.
+/// FIX-HL-EXIT：本系统是裸 `--headless` CLI 标志的退出路径。
+/// 在 `CESIUM_HEADLESS` 环境下，`main.rs` 强制 `cli.headless = false`
+/// （“无头模式所有权”），因此下方的提前返回会挂起本系统，
+/// 并将退出所有权交给 `CesiumHeadlessPlugin` 的离屏捕获 →
+/// `AppExit::Success` 链。因此该分支是*有条件的*，而非死代码 ——
+/// 不要移除它。
 fn headless_exit_system(
     state: Res<TraceState>,
     mut exit: EventWriter<AppExit>,
@@ -835,7 +833,7 @@ fn headless_exit_system(
     }
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────
+// ── 测试 ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -843,7 +841,7 @@ mod tests {
 
     #[test]
     fn cli_defaults_are_sane() {
-        // Clear env so the test is deterministic.
+        // 清除环境变量以使测试具有确定性。
         for k in [
             "CESIUM_HEADLESS",
             "CESIUM_PERF_TRACE",
@@ -916,7 +914,7 @@ height = 3.0
         std::fs::write(&dir, toml_text).unwrap();
         let script = CameraScript::load(&dir, &seed).unwrap();
         let (h, p, d) = script.sample(5.0);
-        // Midpoint: lon=50°, lat=25°, height=2.0 → distance=3.0
+        // 中点：lon=50°, lat=25°, height=2.0 → distance=3.0
         assert!((h - 50.0f32.to_radians()).abs() < 1e-5);
         assert!((p - 25.0f32.to_radians()).abs() < 1e-5);
         assert!((d - 3.0).abs() < 1e-5);
@@ -971,12 +969,12 @@ heading = 99.0
             header_cols.len(),
             cols
         );
-        assert_eq!(header_cols.len(), 17); // M4: 13 original + 4 appended
+        assert_eq!(header_cols.len(), 17); // M4：原有 13 列 + 追加 4 列
         assert_eq!(cols[0], "7"); // frame_idx
         assert_eq!(cols[5], "12"); // load_n = load_set
-        assert_eq!(cols[13], "3"); // retry_after (M4 col 14)
-        assert_eq!(cols[14], "9"); // frame_mesh (M4 col 15)
-        assert_eq!(cols[15], "1"); // frame_despawn (M4 col 16)
-        assert_eq!(cols[16], "2"); // evict_deferred (M4 col 17)
+        assert_eq!(cols[13], "3"); // retry_after（M4 第 14 列）
+        assert_eq!(cols[14], "9"); // frame_mesh（M4 第 15 列）
+        assert_eq!(cols[15], "1"); // frame_despawn（M4 第 16 列）
+        assert_eq!(cols[16], "2"); // evict_deferred（M4 第 17 列）
     }
 }

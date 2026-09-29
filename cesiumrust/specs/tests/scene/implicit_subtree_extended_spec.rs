@@ -1,9 +1,9 @@
-//! Implicit tiling extended specs - ported from ImplicitSubtreeSpec.js,
-//! ImplicitTileCoordinatesSpec.js (advanced operations)
+//! 隐式瓦片扩展规范 - 移植自 ImplicitSubtreeSpec.js、
+//! ImplicitTileCoordinatesSpec.js（高级操作）
 //!
-//! Tests subtree local_index, total_nodes, ancestor/descendant/offset coordinates,
-//! Morton encode/decode roundtrips, ImplicitTilingConfig URI generation, and
-//! AvailabilityBitstream advanced operations.
+//! 测试子树的 local_index、total_nodes、祖先/后代/偏移坐标，
+//! Morton 编码/解码往返、ImplicitTilingConfig URI 生成，以及
+//! AvailabilityBitstream 高级操作。
 
 use cesium_implicit_tiling::{
     decode_morton_2d, decode_morton_3d, morton_2d, morton_3d, AvailabilityBitstream,
@@ -14,7 +14,7 @@ use cesium_implicit_tiling::{
 
 #[test]
 fn subtree_total_nodes_quadtree() {
-    // Quadtree: 1 + 4 + 16 = 21 for 3 levels
+    // 四叉树：1 + 4 + 16 = 21（3 层）
     assert_eq!(Subtree::total_nodes(1, SubdivisionScheme::Quadtree), 1);
     assert_eq!(Subtree::total_nodes(2, SubdivisionScheme::Quadtree), 5);
     assert_eq!(Subtree::total_nodes(3, SubdivisionScheme::Quadtree), 21);
@@ -23,7 +23,7 @@ fn subtree_total_nodes_quadtree() {
 
 #[test]
 fn subtree_total_nodes_octree() {
-    // Octree: 1 + 8 + 64 = 73 for 3 levels
+    // 八叉树：1 + 8 + 64 = 73（3 层）
     assert_eq!(Subtree::total_nodes(1, SubdivisionScheme::Octree), 1);
     assert_eq!(Subtree::total_nodes(2, SubdivisionScheme::Octree), 9);
     assert_eq!(Subtree::total_nodes(3, SubdivisionScheme::Octree), 73);
@@ -41,7 +41,7 @@ fn subtree_local_index_root() {
 #[test]
 fn subtree_local_index_level1_quadtree() {
     let root = ImplicitTileCoord::quadtree_with_subtree(0, 0, 0, 4);
-    // Level 1 starts at offset 1 (after root)
+    // 第 1 层从偏移 1 开始（根之后）
     let c00 = ImplicitTileCoord::quadtree_with_subtree(1, 0, 0, 4);
     let c10 = ImplicitTileCoord::quadtree_with_subtree(1, 1, 0, 4);
     let c01 = ImplicitTileCoord::quadtree_with_subtree(1, 0, 1, 4);
@@ -55,27 +55,27 @@ fn subtree_local_index_level1_quadtree() {
 #[test]
 fn subtree_local_index_level2_quadtree() {
     let root = ImplicitTileCoord::quadtree_with_subtree(0, 0, 0, 4);
-    // Level 2 starts at offset 5 (1 + 4)
+    // 第 2 层从偏移 5 开始（1 + 4）
     let coord = ImplicitTileCoord::quadtree_with_subtree(2, 0, 0, 4);
     assert_eq!(Subtree::local_index(&coord, &root, SubdivisionScheme::Quadtree), 5);
-    // morton(1,1) = 3, so (2, 1, 1) → 5 + 3 = 8
+    // morton(1,1) = 3，因此 (2, 1, 1) → 5 + 3 = 8
     let coord2 = ImplicitTileCoord::quadtree_with_subtree(2, 1, 1, 4);
     assert_eq!(Subtree::local_index(&coord2, &root, SubdivisionScheme::Quadtree), 8);
 }
 
 #[test]
 fn subtree_local_index_non_root_subtree() {
-    // Subtree rooted at level 2, coord (2, 1, 1)
+    // 根在第 2 层、坐标 (2, 1, 1) 的子树
     let root = ImplicitTileCoord::quadtree_with_subtree(2, 1, 1, 4);
     let idx = Subtree::local_index(&root, &root, SubdivisionScheme::Quadtree);
     assert_eq!(idx, 0);
-    // Child at level 3, (2, 0) relative → (3, 2, 2) absolute
+    // 第 3 层的子节点，相对 (2, 0) → 绝对 (3, 2, 2)
     let child = ImplicitTileCoord::quadtree_with_subtree(3, 2, 2, 4);
     let child_idx = Subtree::local_index(&child, &root, SubdivisionScheme::Quadtree);
     assert_eq!(child_idx, 1); // level_offset=1, morton(0,0)=0
 }
 
-// ─── Ancestor/Descendant/Offset coordinates ────────────────────────────────
+// ─── 祖先/后代/偏移坐标 ────────────────────────────────
 
 #[test]
 fn get_descendant_coordinates_basic() {
@@ -142,7 +142,7 @@ fn get_child_coordinates_octree() {
     assert_eq!(c7.z, 1);
 }
 
-// ─── Subtree coordinates ───────────────────────────────────────────────────
+// ─── 子树坐标 ───────────────────────────────────────────────────
 
 #[test]
 fn get_subtree_coordinates_at_root() {
@@ -153,7 +153,7 @@ fn get_subtree_coordinates_at_root() {
 
 #[test]
 fn get_subtree_coordinates_mid_subtree() {
-    // subtree_levels=4, level 6 → 6%4=2, ancestor by 2 → level 4
+    // subtree_levels=4，第 6 层 → 6%4=2，向上 2 层祖先 → 第 4 层
     let coord = ImplicitTileCoord::quadtree_with_subtree(6, 15, 8, 4);
     let subtree_coord = coord.get_subtree_coordinates();
     assert_eq!(subtree_coord.level, 4);
@@ -173,7 +173,7 @@ fn is_subtree_root_check() {
 
 #[test]
 fn is_bottom_of_subtree_check() {
-    // subtree_levels=4: bottom levels are 3, 7, 11, ...
+    // subtree_levels=4：底部层为 3, 7, 11, ...
     let level3 = ImplicitTileCoord::quadtree_with_subtree(3, 0, 0, 4);
     assert!(level3.is_bottom_of_subtree());
     let level2 = ImplicitTileCoord::quadtree_with_subtree(2, 0, 0, 4);
@@ -209,7 +209,7 @@ fn is_ancestor_false_wrong_branch() {
 fn from_morton_index_quadtree() {
     let coord = ImplicitTileCoord::from_morton_index(SubdivisionScheme::Quadtree, 4, 2, 5);
     assert_eq!(coord.level, 2);
-    // morton_2d decode of 5: x=1, y=2 (binary 0101 → x bits: 01=1, y bits: 10=2)
+    // morton_2d 解码 5：x=1, y=2（二进制 0101 → x 位: 01=1, y 位: 10=2）
     let (ex, ey) = decode_morton_2d(5);
     assert_eq!(coord.x, ex);
     assert_eq!(coord.y, ey);
@@ -225,7 +225,7 @@ fn from_tile_index_quadtree_root() {
 
 #[test]
 fn from_tile_index_quadtree_level1() {
-    // tile_index 1..4 are level 1 (offset 1)
+    // tile_index 1..4 属于第 1 层（偏移 1）
     let coord = ImplicitTileCoord::from_tile_index(SubdivisionScheme::Quadtree, 4, 1);
     assert_eq!(coord.level, 1);
     assert_eq!(coord.x, 0);
@@ -246,7 +246,7 @@ fn tile_index_roundtrip() {
     assert_eq!(recovered.y, original.y);
 }
 
-// ─── Morton encode/decode roundtrip ────────────────────────────────────────
+// ─── Morton 编码/解码往返 ────────────────────────────────────────
 
 #[test]
 fn morton_2d_roundtrip() {
@@ -297,7 +297,7 @@ fn config_subtree_root() {
         subtree_uri_template: String::new(),
         content_uri_template: String::new(),
     };
-    // Level 6, subtree_levels=4 → subtree root at level 4
+    // 第 6 层，subtree_levels=4 → 子树根在第 4 层
     let coord = ImplicitTileCoord::quadtree_with_subtree(6, 13, 9, 4);
     let root = config.get_subtree_root(&coord);
     assert_eq!(root.level, 4);
@@ -305,7 +305,7 @@ fn config_subtree_root() {
     assert_eq!(root.y, 9 >> 2); // 2
 }
 
-// ─── AvailabilityBitstream extended ────────────────────────────────────────
+// ─── AvailabilityBitstream 扩展 ────────────────────────────────────────
 
 #[test]
 fn bitstream_count_available() {
@@ -319,7 +319,7 @@ fn bitstream_count_available() {
 
 #[test]
 fn bitstream_from_bytes() {
-    // 0b10100101 = 0xA5 → bits 0,2,5,7 set
+    // 0b10100101 = 0xA5 → 位 0,2,5,7 置位
     let bs = AvailabilityBitstream::from_bytes(vec![0xA5], 8);
     assert!(bs.is_available(0));
     assert!(!bs.is_available(1));

@@ -1,8 +1,8 @@
-//! Faithful port of CesiumJS DataSources/ReferencePropertySpec.js A-class tests.
+//! CesiumJS DataSources/ReferencePropertySpec.js A 类测试的忠实移植。
 //!
-//! Original: 24 it() tests. A-class (pure logic, no events/spy): 10 tests.
-//! Event-based tests (definitionChanged tracking) are B-class.
-//! Throws tests are C-class (Rust uses type system / Option instead).
+//! 原始：24 个 it() 测试。A 类（纯逻辑，无事件/spy）：10 个测试。
+//! 基于事件的测试（definitionChanged 追踪）属 B 类。
+//! Throws 测试属 C 类（Rust 改用类型系统 / Option 表达）。
 
 use cesium_datasource::property_system::{
     ConstantProperty, DynProperty, MapPropertyResolver, PropertyValue, ReferenceProperty,
@@ -19,12 +19,12 @@ fn names(v: &[&str]) -> Vec<String> {
 }
 
 // ===========================================================================
-// Constructor
+// 构造函数
 // ===========================================================================
 
 #[test]
 fn reference_property_constructor_sets_expected_values() {
-    // "constructor sets expected values"
+    // 移植自："constructor sets expected values"
     let resolver = Arc::new(MapPropertyResolver::new());
     let property = ReferenceProperty::new(
         resolver,
@@ -45,7 +45,7 @@ fn reference_property_constructor_sets_expected_values() {
 
 #[test]
 fn reference_property_from_string_sets_expected_values() {
-    // "fromString sets expected values"
+    // 移植自："fromString sets expected values"
     let resolver = Arc::new(MapPropertyResolver::new());
     let property = ReferenceProperty::from_string(resolver, "testId#foo.bar.baz");
 
@@ -58,7 +58,7 @@ fn reference_property_from_string_sets_expected_values() {
 
 #[test]
 fn reference_property_from_string_works_with_escaped_values() {
-    // "fromString works with escaped values"
+    // 移植自："fromString works with escaped values"
     let resolver = Arc::new(MapPropertyResolver::new());
     let property = ReferenceProperty::from_string(
         resolver,
@@ -77,12 +77,12 @@ fn reference_property_from_string_works_with_escaped_values() {
 }
 
 // ===========================================================================
-// getValue / isConstant with resolution
+// getValue / isConstant（带解析）
 // ===========================================================================
 
 #[test]
 fn reference_property_get_value_returns_undefined_if_target_not_resolved() {
-    // "getValue returns undefined if target entity can not be resolved"
+    // 移植自："getValue returns undefined if target entity can not be resolved"
     let resolver = Arc::new(MapPropertyResolver::new());
     let property = ReferenceProperty::from_string(resolver, "testId#foo.bar");
     let time = jd(2451545.0, 0.0);
@@ -92,8 +92,8 @@ fn reference_property_get_value_returns_undefined_if_target_not_resolved() {
 
 #[test]
 fn reference_property_get_value_returns_undefined_if_property_not_resolved() {
-    // "getValue returns undefined if target property can not be resolved"
-    // Register a property at "testId#billboard" but query "testId#billboard.scale"
+    // 移植自："getValue returns undefined if target property can not be resolved"
+    // 在 "testId#billboard" 注册属性，但查询 "testId#billboard.scale"
     let mut r = MapPropertyResolver::new();
     r.insert(
         "testId",
@@ -109,7 +109,7 @@ fn reference_property_get_value_returns_undefined_if_property_not_resolved() {
 
 #[test]
 fn reference_property_is_constant_true_when_unresolved() {
-    // "isConstant returns true when target entity does not exist"
+    // 移植自："isConstant returns true when target entity does not exist"
     let resolver = Arc::new(MapPropertyResolver::new());
     let property = ReferenceProperty::from_string(resolver, "nonExistent#foo");
 
@@ -118,7 +118,7 @@ fn reference_property_is_constant_true_when_unresolved() {
 
 #[test]
 fn reference_property_properly_tracks_resolved_property() {
-    // "properly tracks resolved property" (A-class subset: getValue/isConstant)
+    // 移植自："properly tracks resolved property"（A 类子集：getValue/isConstant）
     let mut resolver = MapPropertyResolver::new();
     resolver.insert(
         "testId",
@@ -136,7 +136,7 @@ fn reference_property_properly_tracks_resolved_property() {
         PropertyValue::Number(5.0)
     );
 
-    // resolved_property returns the underlying property
+    // resolved_property 返回底层属性
     let resolved = property.resolved_property();
     assert!(resolved.is_some());
     assert_eq!(resolved.unwrap().get_value(&time), PropertyValue::Number(5.0));
@@ -156,7 +156,7 @@ fn reference_property_resolved_property_none_when_unresolvable() {
 
 #[test]
 fn reference_property_equals_works() {
-    // "equals works"
+    // 移植自："equals works"
     let resolver1 = Arc::new(MapPropertyResolver::new());
     let resolver2 = Arc::new(MapPropertyResolver::new());
 
@@ -164,30 +164,30 @@ fn reference_property_equals_works() {
     let right = ReferenceProperty::from_string(resolver1.clone(), "objectId#foo.bar");
     assert!(left.equals(&right));
 
-    // collection (resolver) differs
+    // collection（resolver）不同
     let right2 = ReferenceProperty::from_string(resolver2.clone(), "objectId#foo.bar");
     assert!(!left.equals(&right2));
 
-    // target id differs
+    // target id 不同
     let right3 = ReferenceProperty::from_string(resolver1.clone(), "otherObjectId#foo.bar");
     assert!(!left.equals(&right3));
 
-    // number of sub-properties differ
+    // 子属性数量不同
     let right4 = ReferenceProperty::from_string(resolver1.clone(), "objectId#foo");
     assert!(!left.equals(&right4));
 
-    // sub-properties of same length differ
+    // 长度相同的子属性序列不同
     let right5 = ReferenceProperty::from_string(resolver1.clone(), "objectId#foo.baz");
     assert!(!left.equals(&right5));
 }
 
 // ===========================================================================
-// reference_frame delegation
+// reference_frame 委派
 // ===========================================================================
 
 #[test]
 fn reference_property_reference_frame_delegates_to_resolved() {
-    // "works with position properties" (A-class subset: referenceFrame)
+    // 移植自："works with position properties"（A 类子集：referenceFrame）
     use cesium_datasource::property_system::{ConstantPositionProperty, ReferenceFrame};
     use glam::DVec3;
 
@@ -203,7 +203,7 @@ fn reference_property_reference_frame_delegates_to_resolved() {
     let property = ReferenceProperty::from_string(resolver.clone(), "testId#position");
     assert_eq!(property.reference_frame(), Some(ReferenceFrame::Fixed));
 
-    // Non-existent reference has no frame
+    // 不存在的引用没有参考系
     let property2 = ReferenceProperty::from_string(resolver, "nonExistent#position");
     assert_eq!(property2.reference_frame(), None);
 }

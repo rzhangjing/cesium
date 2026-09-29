@@ -1,6 +1,6 @@
 //! Core/MathSpec.js → Rust integration tests
-//! 109 original it() blocks → 62 A-class tests ported (47 throws = C-class compile-time safety)
-//! Tests for cesium_geospatial::math_utils
+//! 109 个原始 it() 块 → 已移植 62 个 A 类测试（47 个 throws = C 类编译期安全）
+//! 针对 cesium_geospatial::math_utils 的测试
 
 use cesium_geospatial::math_utils::*;
 use cesium_specs::assert_approx;

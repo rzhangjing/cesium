@@ -1,6 +1,6 @@
-//! cesium-terrain: Terrain domain models
+//! cesium-terrain：地形领域模型
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Core/QuantizedMeshTerrainData.js`
 //! - `Core/HeightmapTerrainData.js`
 //! - `Core/TerrainMesh.js`
@@ -17,16 +17,16 @@ pub use terrain_mesh::TerrainMesh;
 pub use heightmap::HeightmapTerrainData;
 pub use terrain_encoding::{TerrainAttribute, TerrainAttributeLocations, TerrainEncoding};
 
-/// The maximum value for quantized terrain coordinates (u16).
+/// 量化地形坐标的最大值（u16）。
 pub const MAX_SHORT: u16 = 32767;
 
-/// Terrain quantization mode.
-/// Maps to CesiumJS `TerrainQuantization`
+/// 地形量化模式。
+/// 映射到 CesiumJS `TerrainQuantization`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TerrainQuantization {
-    /// No quantization - positions stored as full precision.
+    /// 无量化 - 位置以完整精度存储。
     #[default]
     None,
-    /// Positions quantized to 12 bits.
+    /// 位置量化到 12 位。
     Bits12,
 }

@@ -1,5 +1,5 @@
-//! VoxelCylinderShape extended tests — sampling, bounds, visibility edge cases
-//! Additional ports from CesiumJS VoxelCylinderShapeSpec.js
+//! VoxelCylinderShape 扩展测试 — 采样、边界、可见性边缘情形
+//! 另从 CesiumJS VoxelCylinderShapeSpec.js 移植
 
 use cesium_voxel::{VoxelCylinderShape, VoxelShape};
 use glam::{DMat4, DQuat, DVec3};
@@ -23,7 +23,7 @@ fn assert_vec3_eq(a: DVec3, b: DVec3, msg: &str) {
 }
 
 // ============================================================================
-// Default state
+// 默认状态
 // ============================================================================
 
 #[test]
@@ -34,7 +34,7 @@ fn test_default_state() {
 }
 
 // ============================================================================
-// UV space transform
+// UV 空间变换
 // ============================================================================
 
 #[test]
@@ -42,8 +42,8 @@ fn test_convert_local_to_shape_uv_space_default() {
     let mut shape = VoxelCylinderShape::new();
     shape.update(DMat4::IDENTITY, cylinder_default_min(), cylinder_default_max(), None, None);
 
-    // UV transform maps [min, max] → [0, 1] for each axis
-    // Verify function doesn't panic and returns finite values
+    // UV 变换将每个轴的 [min, max] 映射到 [0, 1]
+    // 验证函数不 panic 且返回有限值
     let uv_min = shape.convert_local_to_shape_uv_space(cylinder_default_min());
     let uv_max = shape.convert_local_to_shape_uv_space(cylinder_default_max());
     let uv_mid = shape.convert_local_to_shape_uv_space(DVec3::new(0.5, 0.0, 0.0));
@@ -72,7 +72,7 @@ fn test_convert_local_to_shape_uv_space_custom() {
 }
 
 // ============================================================================
-// OBB tile computation at various levels
+// 各层级下的 OBB 瓦片计算
 // ============================================================================
 
 #[test]
@@ -81,9 +81,9 @@ fn test_compute_obb_for_tile_zero_angle() {
     let model_matrix = DMat4::IDENTITY;
     shape.update(model_matrix, cylinder_default_min(), cylinder_default_max(), None, None);
 
-    // Level 1, tile (0, 0, 0) → first octant
+    // 层级 1，瓦片 (0, 0, 0) → 第一卦限
     let obb = shape.compute_obb_for_tile(1, 0, 0, 0);
-    // Should be near [-0.5, 0, -0.5] region within tolerance
+    // 应在容差内接近 [-0.5, 0, -0.5] 区域
     assert!(obb.center.x < 0.1, "center.x should be near negative: {}", obb.center.x);
     assert!(obb.center.z < 0.1, "center.z should be near negative: {}", obb.center.z);
 }
@@ -94,16 +94,16 @@ fn test_compute_obb_for_tile_half_angle() {
     let model_matrix = DMat4::IDENTITY;
     shape.update(model_matrix, cylinder_default_min(), cylinder_default_max(), None, None);
 
-    // Level 1, tile (0, 1, 0) → [0, 0.5] radius, [0, PI] angle, [-1, 0] height
+    // 层级 1，瓦片 (0, 1, 0) → [0, 0.5] 半径、[0, PI] 角度、[-1, 0] 高度
     let obb = shape.compute_obb_for_tile(1, 0, 1, 0);
-    // Radius [0, 0.5], angle [0, PI] → center in positive X direction
+    // 半径 [0, 0.5]，角度 [0, PI] → 中心位于正 X 方向
     assert!(obb.center.x > 0.0, "center.x should be positive: {}", obb.center.x);
     assert!(obb.center.y < 0.5, "center.y angle half");
     assert!(obb.center.z < 0.0, "center.z should be negative: {}", obb.center.z);
 }
 
 // ============================================================================
-// Visibility: zero scale (any single component => invisible)
+// 可见性：零缩放（任意单个分量 => 不可见）
 // ============================================================================
 
 #[test]
@@ -128,21 +128,21 @@ fn test_invisible_zero_scale_z() {
 }
 
 // ============================================================================
-// Visibility: zero bounds (degenerate shapes)
+// 可见性：零边界（退化形状）
 // ============================================================================
 
 #[test]
 fn test_invisible_zero_radius_bounds() {
     let mut shape = VoxelCylinderShape::new();
     let min_b = DVec3::new(0.0, -PI, -1.0);
-    let max_b = DVec3::new(0.0, PI, 1.0); // Zero radius range
+    let max_b = DVec3::new(0.0, PI, 1.0); // 零半径范围
     assert!(!shape.update(DMat4::IDENTITY, min_b, max_b, None, None));
 }
 
 #[test]
 fn test_visible_zero_bounds_single_dim() {
     let mut shape = VoxelCylinderShape::new();
-    // Zero in one bound component is OK (radius)
+    // 单个边界分量为 0 是可以的（半径）
     let min_b = DVec3::new(0.5, -PI, -1.0);
     let max_b = DVec3::new(0.5, PI, 1.0);
     let visible = shape.update(
@@ -154,11 +154,11 @@ fn test_visible_zero_bounds_single_dim() {
 }
 
 // ============================================================================
-// Contains point  (not available on cylinder shape — skipped)
+// 包含点  (圆柱形状不支持 — 已跳过)
 // ============================================================================
 
 // ============================================================================
-// Update with rotation
+// 带旋转的更新
 // ============================================================================
 
 #[test]
@@ -173,14 +173,14 @@ fn test_update_with_rotation_y_axis() {
     assert!(visible);
 
     let obb = shape.oriented_bounding_box();
-    // Center should be the translation
+    // 中心应为平移量
     assert!((obb.center - translation).length() < EPSILON12);
-    // Shape transform should be the model matrix
+    // shape transform 应为模型矩阵
     assert_eq!(shape.shape_transform(), model);
 }
 
 // ============================================================================
-// Bounding sphere correctness
+// 包围球正确性
 // ============================================================================
 
 #[test]
@@ -196,7 +196,7 @@ fn test_bounding_sphere_radius_matches_scale() {
 }
 
 // ============================================================================
-// bound_transform correctness
+// bound_transform 正确性
 // ============================================================================
 
 #[test]

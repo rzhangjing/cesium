@@ -1,34 +1,34 @@
-//! `gen_offline_assets` — deterministic offline asset generator.
+//! `gen_offline_assets` —— 确定性离线资产生成器。
 //!
-//! Produces the on-disk fixtures that the M3.1 offline fetchers
-//! (`FileTileFetcher` / `FileTerrainFetcher`) read back:
+//! 生成 M3.1 离线 fetcher（`FileTileFetcher` / `FileTerrainFetcher`）
+//! 读回时使用的磁盘 fixture：
 //!
-//! * an **imagery** XYZ pyramid of procedural 256×256 PNGs at
-//!   `specs/fixtures/offline-imagery/{level}/{x}/{y}.png`, and
-//! * a **heightmap-1.0 terrain** tileset (`layer.json` + `.terrain` tiles) at
-//!   `specs/fixtures/offline-terrain/{level}/{x}/{disk_y}.terrain`.
+//! * 一个**影像** XYZ 金字塔，由过程化 256×256 PNG 构成，位于
+//!   `specs/fixtures/offline-imagery/{level}/{x}/{y}.png`，以及
+//! * 一个 **heightmap-1.0 地形** tileset（`layer.json` + `.terrain` 瓦片），位于
+//!   `specs/fixtures/offline-terrain/{level}/{x}/{disk_y}.terrain`。
 //!
-//! Generation is a pure function of the tile coordinates — no RNG, no clock, no
-//! network — and idempotent (an existing output is left untouched unless
-//! `--force` is passed). Total output is ~6 MB, well under the 50 MB budget.
+//! 生成是瓦片坐标的纯函数 —— 无 RNG、无时钟、无网络 —— 且幂等
+//! （除非传入 `--force`，否则已存在的输出保持不动）。总输出约 6 MB，
+//! 远低于 50 MB 预算。
 //!
-//! ## Usage
+//! ## 用法
 //! ```text
 //! gen_offline_assets [OPTIONS]
 //! ```
 //!
-//! ## Options
-//! - `--imagery-root <PATH>`    output dir for imagery (default: `<ws>/specs/fixtures/offline-imagery`)
-//! - `--terrain-root <PATH>`    output dir for terrain (default: `<ws>/specs/fixtures/offline-terrain`)
-//! - `--imagery-max-level <N>`  deepest imagery level (default: 3)
-//! - `--terrain-max-level <N>`  deepest terrain level (default: 4)
-//! - `--force`                  regenerate even when output already exists
-//! - `--verify`                 read tiles back through the real fetchers and assert success
-//! - `-h`, `--help`             show help
+//! ## 选项
+//! - `--imagery-root <PATH>`    影像输出目录（默认：`<ws>/specs/fixtures/offline-imagery`）
+//! - `--terrain-root <PATH>`    地形输出目录（默认：`<ws>/specs/fixtures/offline-terrain`）
+//! - `--imagery-max-level <N>`  影像最深级别（默认：3）
+//! - `--terrain-max-level <N>`  地形最深级别（默认：4）
+//! - `--force`                  即使输出已存在也重新生成
+//! - `--verify`                 通过真实 fetcher 读回瓦片并断言成功
+//! - `-h`, `--help`             显示帮助
 //!
-//! ## Exit codes
-//! - `0` success
-//! - `2` error (IO failure, bad arguments, verification mismatch)
+//! ## 退出码
+//! - `0` 成功
+//! - `2` 错误（IO 失败、参数非法、校验不一致）
 
 mod generate;
 mod verify;
@@ -36,9 +36,8 @@ mod verify;
 use std::path::{Path, PathBuf};
 use std::process;
 
-/// Resolves the workspace root from the compile-time manifest dir, so the
-/// default fixture paths land in `cesiumrust/specs/fixtures` regardless of the
-/// process working directory.
+/// 从编译期 manifest 目录解析 workspace 根，使默认 fixture 路径
+/// 无论进程工作目录如何都落在 `cesiumrust/specs/fixtures`。
 fn workspace_root() -> PathBuf {
     // CARGO_MANIFEST_DIR == <ws>/tools/gen_offline_assets
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -136,7 +135,7 @@ fn parse_level(value: String) -> Result<u32, String> {
         .map_err(|_| format!("invalid level value: {value}"))
 }
 
-/// Formats a byte count as a human-readable MB string (2 decimals).
+/// 将字节数格式化为人类可读的 MB 字符串（2 位小数）。
 fn fmt_mb(bytes: u64) -> String {
     format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0))
 }

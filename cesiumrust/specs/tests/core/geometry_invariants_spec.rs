@@ -1,13 +1,13 @@
-//! Geometry invariants spec - cross-cutting tests for all geometry generators.
+//! 几何不变量规格测试 - 针对所有几何生成器的横切测试。
 //!
-//! Verifies mathematical invariants that must hold for ALL geometry types:
-//! - Valid indices (in-bounds)
-//! - Bounding sphere containment
-//! - Unit-length normals
-//! - Texture coordinate range [0,1]
-//! - Correct primitive types
-//! - Non-empty output
-//! - Consistent vertex counts across attributes
+//! 验证必须对所有几何类型成立的数学不变量：
+//! - 有效索引（在范围内）
+//! - 包围球包含性
+//! - 单位长度法线
+//! - 纹理坐标范围 [0,1]
+//! - 正确的图元类型
+//! - 非空输出
+//! - 各属性间顶点数一致
 
 use cesium_geospatial::geometry::{
     box_geometry, box_outline_geometry, circle_geometry, circle_outline_geometry,
@@ -26,7 +26,7 @@ fn wgs84() -> Ellipsoid {
     Ellipsoid::WGS84
 }
 
-// ─── Valid indices invariant ────────────────────────────────────────────────
+// ─── 有效索引不变量 ────────────────────────────────────────────────
 
 #[test]
 fn all_geometries_produce_valid_indices() {
@@ -56,7 +56,7 @@ fn all_geometries_produce_valid_indices() {
     }
 }
 
-// ─── Bounding sphere containment invariant ──────────────────────────────────
+// ─── 包围球包含性不变量 ──────────────────────────────────
 
 #[test]
 fn all_geometries_bounding_sphere_contains_positions() {
@@ -90,7 +90,7 @@ fn all_geometries_bounding_sphere_contains_positions() {
     }
 }
 
-// ─── Unit-length normals invariant ─────────────────────────────────────────
+// ─── 单位长度法线不变量 ─────────────────────────────────────────
 
 #[test]
 fn all_geometries_with_normals_have_unit_length() {
@@ -128,7 +128,7 @@ fn all_geometries_with_normals_have_unit_length() {
     }
 }
 
-// ─── Texture coordinate range invariant ────────────────────────────────────
+// ─── 纹理坐标范围不变量 ────────────────────────────────────
 
 #[test]
 fn all_geometries_tex_coords_in_unit_square() {
@@ -170,7 +170,7 @@ fn all_geometries_tex_coords_in_unit_square() {
     }
 }
 
-// ─── Consistent vertex counts invariant ─────────────────────────────────────
+// ─── 顶点数一致性不变量 ─────────────────────────────────────
 
 #[test]
 fn all_geometries_consistent_vertex_counts() {
@@ -207,7 +207,7 @@ fn all_geometries_consistent_vertex_counts() {
     }
 }
 
-// ─── Correct primitive types invariant ──────────────────────────────────────
+// ─── 正确图元类型不变量 ──────────────────────────────────────
 
 #[test]
 fn all_triangle_geometries_use_triangles_primitive() {
@@ -272,7 +272,7 @@ fn all_outline_geometries_use_lines_primitive() {
     }
 }
 
-// ─── Non-empty output invariant ─────────────────────────────────────────────
+// ─── 非空输出不变量 ─────────────────────────────────────────────
 
 #[test]
 fn all_geometries_produce_non_empty_output() {
@@ -307,7 +307,7 @@ fn all_geometries_produce_non_empty_output() {
     }
 }
 
-// ─── Specific geometric invariants ──────────────────────────────────────────
+// ─── 特定几何不变量 ──────────────────────────────────────────
 
 #[test]
 fn sphere_positions_on_surface() {

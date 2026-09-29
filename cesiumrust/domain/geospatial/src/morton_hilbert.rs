@@ -1,14 +1,15 @@
-//! Morton Order (Z-Order Curve) and Hilbert Order helper functions.
-//! Maps to CesiumJS `Core/MortonOrder.js` and `Core/HilbertOrder.js`
+//! Morton 序（Z 序曲线）与 Hilbert 序的辅助函数。
+//! 映射到 CesiumJS `Core/MortonOrder.js` 和 `Core/HilbertOrder.js`
 
 // =============================================================================
 // MortonOrder
 // =============================================================================
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::manual_swap)]
-/// Inserts one 0 bit of spacing between a number's bits.
-/// Input: 16-bit unsigned integer → Output: 32-bit unsigned integer.
+/// 在一个数的各比特位之间插入一位 0 间距。
+/// 输入：16 位无符号整数 → 输出：32 位无符号整数。
 fn insert_one_spacing(v: u32) -> u32 {
     let mut v = v;
     v = (v ^ (v << 8)) & 0x00ff00ff;
@@ -18,8 +19,8 @@ fn insert_one_spacing(v: u32) -> u32 {
     v
 }
 
-/// Inserts two 0 bits of spacing between a number's bits.
-/// Input: 10-bit unsigned integer → Output: 30-bit unsigned integer.
+/// 在一个数的各比特位之间插入两位 0 间距。
+/// 输入：10 位无符号整数 → 输出：30 位无符号整数。
 fn insert_two_spacing(v: u32) -> u32 {
     let mut v = v;
     v = (v ^ (v << 16)) & 0x030000ff;
@@ -29,8 +30,8 @@ fn insert_two_spacing(v: u32) -> u32 {
     v
 }
 
-/// Removes one bit of spacing between bits.
-/// Input: 32-bit unsigned integer → Output: 16-bit unsigned integer.
+/// 移除各比特位之间的一位间距。
+/// 输入：32 位无符号整数 → 输出：16 位无符号整数。
 fn remove_one_spacing(v: u32) -> u32 {
     let mut v = v;
     v &= 0x55555555;
@@ -41,8 +42,8 @@ fn remove_one_spacing(v: u32) -> u32 {
     v
 }
 
-/// Removes two bits of spacing between bits.
-/// Input: 30-bit unsigned integer → Output: 10-bit unsigned integer.
+/// 移除各比特位之间的两位间距。
+/// 输入：30 位无符号整数 → 输出：10 位无符号整数。
 fn remove_two_spacing(v: u32) -> u32 {
     let mut v = v;
     v &= 0x09249249;
@@ -53,34 +54,34 @@ fn remove_two_spacing(v: u32) -> u32 {
     v
 }
 
-/// Computes the Morton index from 2D coordinates (bit interleaving).
-/// Inputs must be 16-bit unsigned integers [0, 65535].
-/// Maps to `MortonOrder.encode2D`
+/// 从 2D 坐标计算 Morton 索引（位交错）。
+/// 输入必须为 16 位无符号整数 [0, 65535]。
+/// 映射到 `MortonOrder.encode2D`
 pub fn morton_encode_2d(x: u32, y: u32) -> u32 {
     debug_assert!(x <= 65535 && y <= 65535, "inputs must be 16-bit unsigned integers");
     insert_one_spacing(x) | (insert_one_spacing(y) << 1)
 }
 
-/// Computes the 2D coordinates from a Morton index (bit deinterleaving).
-/// Input must be a 32-bit unsigned integer [0, 4294967295].
-/// Maps to `MortonOrder.decode2D`
+/// 从 Morton 索引计算 2D 坐标（位反交错）。
+/// 输入必须为 32 位无符号整数 [0, 4294967295]。
+/// 映射到 `MortonOrder.decode2D`
 pub fn morton_decode_2d(morton_index: u32) -> (u32, u32) {
     let x = remove_one_spacing(morton_index);
     let y = remove_one_spacing(morton_index >> 1);
     (x, y)
 }
 
-/// Computes the Morton index from 3D coordinates (bit interleaving).
-/// Inputs must be 10-bit unsigned integers [0, 1023].
-/// Maps to `MortonOrder.encode3D`
+/// 从 3D 坐标计算 Morton 索引（位交错）。
+/// 输入必须为 10 位无符号整数 [0, 1023]。
+/// 映射到 `MortonOrder.encode3D`
 pub fn morton_encode_3d(x: u32, y: u32, z: u32) -> u32 {
     debug_assert!(x <= 1023 && y <= 1023 && z <= 1023, "inputs must be 10-bit unsigned integers");
     insert_two_spacing(x) | (insert_two_spacing(y) << 1) | (insert_two_spacing(z) << 2)
 }
 
-/// Computes the 3D coordinates from a Morton index (bit deinterleaving).
-/// Input must be a 30-bit unsigned integer [0, 1073741823].
-/// Maps to `MortonOrder.decode3D`
+/// 从 Morton 索引计算 3D 坐标（位反交错）。
+/// 输入必须为 30 位无符号整数 [0, 1073741823]。
+/// 映射到 `MortonOrder.decode3D`
 pub fn morton_decode_3d(morton_index: u32) -> (u32, u32, u32) {
     let x = remove_two_spacing(morton_index);
     let y = remove_two_spacing(morton_index >> 1);
@@ -92,7 +93,7 @@ pub fn morton_decode_3d(morton_index: u32) -> (u32, u32, u32) {
 // HilbertOrder
 // =============================================================================
 
-/// Rotate/flip a quadrant appropriately for Hilbert curve traversal.
+/// 为 Hilbert 曲线遍历适当旋转/翻转一个象限。
 fn hilbert_rotate(n: u32, x: &mut u32, y: &mut u32, rx: u32, ry: u32) {
     if ry != 0 {
         return;
@@ -106,8 +107,8 @@ fn hilbert_rotate(n: u32, x: &mut u32, y: &mut u32, rx: u32, ry: u32) {
     *y = t;
 }
 
-/// Computes the Hilbert index at the given level from 2D coordinates.
-/// Maps to `HilbertOrder.encode2D`
+/// 从 2D 坐标计算给定层级处的 Hilbert 索引。
+/// 映射到 `HilbertOrder.encode2D`
 pub fn hilbert_encode_2d(level: u32, x: u32, y: u32) -> u128 {
     let n: u32 = 1 << level;
     debug_assert!(level >= 1, "Hilbert level cannot be less than 1");
@@ -129,8 +130,8 @@ pub fn hilbert_encode_2d(level: u32, x: u32, y: u32) -> u128 {
     index
 }
 
-/// Computes the 2D coordinates from the Hilbert index at the given level.
-/// Maps to `HilbertOrder.decode2D`
+/// 从给定层级处的 Hilbert 索引计算 2D 坐标。
+/// 映射到 `HilbertOrder.decode2D`
 pub fn hilbert_decode_2d(level: u32, index: u128) -> (u32, u32) {
     debug_assert!(level >= 1, "Hilbert level cannot be less than 1");
     let n: u32 = 1 << level;

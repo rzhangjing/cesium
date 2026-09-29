@@ -1,5 +1,5 @@
-//! OIT + SplitDirection specs
-//! Ported from CesiumJS Scene/OITSpec.js + Scene/SplitDirectionSpec.js
+//! OIT + SplitDirection 规范
+//! 移植自 CesiumJS Scene/OITSpec.js + Scene/SplitDirectionSpec.js
 
 use cesium_effects::{
     BlendEquation, BlendFunction, OitCapabilities, OitConfig, OitMode, SplitDirection,
@@ -7,7 +7,7 @@ use cesium_effects::{
 };
 use glam::DVec4;
 
-// ==================== OIT: Capabilities ====================
+// ==================== OIT：能力 ====================
 
 #[test]
 fn oit_capabilities_mrt_mode() {
@@ -43,7 +43,7 @@ fn oit_capabilities_unsupported() {
     assert!(!caps.translucent_multipass_supported());
 }
 
-// ==================== OIT: Config ====================
+// ==================== OIT：配置 ====================
 
 #[test]
 fn oit_config_from_mrt_capabilities() {
@@ -90,7 +90,7 @@ fn oit_config_defaults() {
     assert_eq!(config.destination_blend, BlendFunction::One);
 }
 
-// ==================== OIT: Weight function ====================
+// ==================== OIT：权重函数 ====================
 
 #[test]
 fn oit_weight_near_greater_than_far() {
@@ -115,7 +115,7 @@ fn oit_weight_proportional_to_alpha() {
     assert!((w2 / w1 - 2.0).abs() < 1e-10);
 }
 
-// ==================== OIT: Accumulate + Composite ====================
+// ==================== OIT：累加 + 合成 ====================
 
 #[test]
 fn oit_accumulate_revealage() {
@@ -140,7 +140,7 @@ fn oit_composite_blends_translucent() {
     let accumulation = DVec4::new(0.5, 0.0, 0.0, 0.5);
     let revealage = 0.5;
     let result = config.composite(opaque, accumulation, revealage);
-    // Should have both red and blue
+    // 应同时含红与蓝
     assert!(result.x > 0.0);
     assert!(result.z > 0.0);
 }
@@ -172,14 +172,14 @@ fn split_direction_is_split() {
 #[test]
 fn split_direction_should_show_at() {
     let split_pos = 0.5;
-    // None always shows
+    // None 始终显示
     assert!(SplitDirection::None.should_show_at(0.0, split_pos));
     assert!(SplitDirection::None.should_show_at(1.0, split_pos));
-    // Left shows at/before split
+    // Left 在分割处/之前显示
     assert!(SplitDirection::Left.should_show_at(0.3, split_pos));
     assert!(SplitDirection::Left.should_show_at(0.5, split_pos));
     assert!(!SplitDirection::Left.should_show_at(0.7, split_pos));
-    // Right shows after split
+    // Right 在分割之后显示
     assert!(!SplitDirection::Right.should_show_at(0.3, split_pos));
     assert!(SplitDirection::Right.should_show_at(0.7, split_pos));
 }

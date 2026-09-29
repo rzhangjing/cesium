@@ -1,5 +1,5 @@
-//! ShadowMap + Ocean/Water specs
-//! Ported from CesiumJS Scene/ShadowMapSpec.js + water rendering logic
+//! ShadowMap + 海洋/水面规范
+//! 移植自 CesiumJS Scene/ShadowMapSpec.js + 水面渲染逻辑
 
 use cesium_shadow::{
     GerstnerWave, OceanConfig, OceanSurface, PcfConfig, ShadowBias, ShadowBiasType,
@@ -35,14 +35,14 @@ fn shadow_bias_effective_bias_no_normal_offset() {
     let normal = DVec3::new(0.0, 1.0, 0.0);
     let light = DVec3::new(0.0, -1.0, 0.0);
     let effective = bias.compute_effective_bias(normal, light);
-    // Without normal offset, effective = depth_bias
+    // 无法线偏移时，effective = depth_bias
     assert!((effective - bias.depth_bias).abs() < 1e-10);
 }
 
 #[test]
 fn shadow_bias_effective_bias_with_normal_offset() {
     let bias = ShadowBias::terrain(true);
-    let normal = DVec3::new(1.0, 0.0, 0.0); // Perpendicular to light
+    let normal = DVec3::new(1.0, 0.0, 0.0); // 垂直于光线
     let light = DVec3::new(0.0, -1.0, 0.0);
     let effective = bias.compute_effective_bias(normal, light);
     // n_dot_l = |dot((1,0,0), (0,1,0))| = 0, slope_factor = 1.0
@@ -116,7 +116,7 @@ fn shadow_map_maximum_distance_constant() {
 fn shadow_map_for_sun() {
     let sun_dir = DVec3::new(0.0, -1.0, 0.0);
     let map = ShadowMap::for_sun(sun_dir);
-    // Light direction is -sun_direction
+    // 光线方向为 -sun_direction
     assert!((map.light_direction.y - 1.0).abs() < 1e-10);
     assert!(map.needs_update);
     assert!((map.fade_factor - 1.0).abs() < 1e-10);
@@ -138,7 +138,7 @@ fn shadow_map_pass_count() {
     assert_eq!(sun_map.pass_count(), 4); // cascade_count = 4
 
     let point_map = ShadowMap::for_point_light(DVec3::ZERO, 10.0);
-    assert_eq!(point_map.pass_count(), 6); // cube map
+    assert_eq!(point_map.pass_count(), 6); // 立方体贴图
 
     let spot_map = ShadowMap::for_spot_light(DVec3::ZERO, DVec3::new(0.0, -1.0, 0.0));
     assert_eq!(spot_map.pass_count(), 1);
@@ -148,11 +148,11 @@ fn shadow_map_pass_count() {
 fn shadow_map_fade_factor() {
     let map = ShadowMap::for_sun(DVec3::new(0.0, -1.0, 0.0));
 
-    // High elevation → no fade
+    // 高仰角 → 无淡出
     assert!((map.compute_fade_factor(PI / 4.0) - 1.0).abs() < 1e-10);
-    // At horizon → fully faded
+    // 在地平线 → 完全淡出
     assert!((map.compute_fade_factor(0.0)).abs() < 1e-10);
-    // 5 degrees → partial
+    // 5 度 → 部分淡出
     let partial = map.compute_fade_factor(5.0_f64.to_radians());
     assert!(partial > 0.0 && partial < 1.0);
 }
@@ -173,9 +173,9 @@ fn shadow_map_cascade_splits() {
     let splits = map.compute_cascade_splits(1.0, 1000.0, 0.5);
 
     assert_eq!(splits.len(), 5); // cascade_count + 1
-    assert!((splits[0] - 1.0).abs() < 1e-10); // near
-    assert!((splits[4] - 1000.0).abs() < 1e-10); // far
-    // Splits should be monotonically increasing
+    assert!((splits[0] - 1.0).abs() < 1e-10); // 近
+    assert!((splits[4] - 1000.0).abs() < 1e-10); // 远
+    // 分层值应单调递增
     for i in 1..splits.len() {
         assert!(splits[i] > splits[i - 1]);
     }
@@ -212,7 +212,7 @@ fn gerstner_wave_angular_frequency() {
 #[test]
 fn gerstner_wave_displacement_at_origin_time0() {
     let wave = GerstnerWave::new(DVec3::new(1.0, 0.0, 0.0), 100.0, 2.0, 5.0);
-    // At position (0,0,0), time=0: theta = 0
+    // 在位置 (0,0,0)、time=0：theta = 0
     // vertical = amplitude * sin(0) = 0
     let disp = wave.compute_displacement(DVec3::ZERO, 0.0);
     assert!(disp.y.abs() < 1e-10);
@@ -262,11 +262,11 @@ fn ocean_surface_fresnel_grazing_angle() {
     let surface = OceanSurface::new(OceanConfig::default());
     let normal = DVec3::Y;
 
-    // Looking straight down → low reflection
+    // 垂直向下看 → 低反射
     let view_down = DVec3::Y;
     let fresnel_down = surface.compute_fresnel(view_down, normal);
 
-    // Looking at grazing angle → high reflection
+    // 以掠射角看 → 高反射
     let view_grazing = DVec3::new(1.0, 0.01, 0.0).normalize();
     let fresnel_grazing = surface.compute_fresnel(view_grazing, normal);
 
@@ -291,7 +291,7 @@ fn ocean_surface_generate_wind_waves() {
     surface.generate_wind_waves();
 
     assert_eq!(surface.config.waves.len(), 8);
-    // All waves should have positive wavelength
+    // 所有波浪都应有正波长
     for wave in &surface.config.waves {
         assert!(wave.wavelength > 0.0);
         assert!(wave.amplitude > 0.0);

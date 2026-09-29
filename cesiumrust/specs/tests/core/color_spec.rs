@@ -1,7 +1,7 @@
-//! Ported from `packages/engine/Specs/Core/ColorSpec.js` (98 it(), ~58 A-class)
+//! 移植自 `packages/engine/Specs/Core/ColorSpec.js`（98 个 it()，约 58 个 A 类）
 //!
-//! 40 throws tests omitted (C-class: Rust type system enforces valid inputs).
-//! fromRandom tests omitted (B-class: random behavior).
+//! 省略 40 个 throws 测试（C 类：Rust 类型系统强制输入合法）。
+//! 省略 fromRandom 测试（B 类：随机行为）。
 
 use cesium_geospatial::color::Color;
 

@@ -1,7 +1,7 @@
-//! CZML data source parsing.
+//! CZML 数据源解析。
 //!
-//! Maps to CesiumJS `DataSources/CzmlDataSource.js`
-//! CZML is a JSON format for describing time-dynamic 3D scenes.
+//! 映射到 CesiumJS `DataSources/CzmlDataSource.js`
+//! CZML 是一种用于描述时动态 3D 场景的 JSON 格式。
 
 use crate::entity::{
     Entity, PointGraphics, PolylineGraphics, PolygonGraphics,
@@ -14,402 +14,402 @@ use crate::property::{Color, Property};
 use serde::Deserialize;
 use thiserror::Error;
 
-/// CZML parsing errors.
+/// CZML 解析错误。
 #[derive(Debug, Error)]
 pub enum CzmlError {
-    /// JSON parsing error.
+    /// JSON 解析错误。
     #[error("JSON parse error: {0}")]
     Json(#[from] serde_json::Error),
 
-    /// Missing document packet.
+    /// 缺少 document 数据包。
     #[error("CZML must start with a document packet (id='document')")]
     MissingDocument,
 }
 
-/// A CZML packet.
+/// 一个 CZML 数据包。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlPacket {
-    /// Packet ID.
+    /// 数据包 ID。
     pub id: String,
 
-    /// Packet name.
+    /// 数据包名称。
     #[serde(default)]
     pub name: Option<String>,
 
-    /// Position (cartographic degrees: [time, lon, lat, height, ...]).
+    /// 位置（经纬度：[time, lon, lat, height, ...]）。
     #[serde(default)]
     pub position: Option<CzmlPosition>,
 
-    /// Point graphics.
+    /// 点图形。
     #[serde(default)]
     pub point: Option<CzmlPoint>,
 
-    /// Polyline graphics.
+    /// polyline（折线）图形。
     #[serde(default)]
     pub polyline: Option<CzmlPolyline>,
 
-    /// Polygon graphics.
+    /// polygon（多边形）图形。
     #[serde(default)]
     pub polygon: Option<CzmlPolygon>,
 
-    /// Label.
+    /// label。
     #[serde(default)]
     pub label: Option<CzmlLabel>,
 
-    /// Billboard.
+    /// billboard。
     #[serde(default)]
     pub billboard: Option<CzmlBillboard>,
 
-    /// Model.
+    /// model。
     #[serde(default)]
     pub model: Option<CzmlModel>,
 
-    /// Ellipse.
+    /// 椭圆。
     #[serde(default)]
     pub ellipse: Option<CzmlEllipse>,
 
-    /// Box.
+    /// 方框。
     #[serde(default, rename = "box")]
     pub box_graphics: Option<CzmlBox>,
 
-    /// Cylinder.
+    /// 圆柱。
     #[serde(default)]
     pub cylinder: Option<CzmlCylinder>,
 
-    /// Corridor.
+    /// corridor。
     #[serde(default)]
     pub corridor: Option<CzmlCorridor>,
 
-    /// Rectangle.
+    /// 矩形。
     #[serde(default)]
     pub rectangle: Option<CzmlRectangle>,
 
-    /// Wall.
+    /// 墙体。
     #[serde(default)]
     pub wall: Option<CzmlWall>,
 
-    /// Ellipsoid.
+    /// 球体。
     #[serde(default)]
     pub ellipsoid: Option<CzmlEllipsoid>,
 
-    /// Path.
+    /// path（轨迹）。
     #[serde(default)]
     pub path: Option<CzmlPath>,
 
-    /// Availability (ISO 8601 time interval string).
+    /// 可用性（ISO 8601 时间区间字符串）。
     #[serde(default)]
     pub availability: Option<String>,
 
-    /// Description.
+    /// 描述。
     #[serde(default)]
     pub description: Option<String>,
 }
 
-/// CZML position value.
+/// CZML 位置值。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum CzmlPosition {
-    /// Cartographic degrees as flat array [lon, lat, height] or time-tagged.
+    /// 以经纬度（平铺数组 [lon, lat, height] 或带时间标记）表示。
     CartographicDegrees(Vec<f64>),
-    /// Object with cartographicDegrees field.
+    /// 带 cartographicDegrees 字段的对象。
     Object {
         #[serde(rename = "cartographicDegrees")]
         cartographic_degrees: Vec<f64>,
     },
 }
 
-/// CZML point graphics.
+/// CZML 点图形。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlPoint {
-    /// Color as RGBA [r, g, b, a] (0-255).
+    /// 以 RGBA [r, g, b, a] 表示的颜色（0-255）。
     #[serde(default)]
     pub color: Option<CzmlColor>,
-    /// Pixel size.
+    /// 像素尺寸。
     #[serde(default)]
     pub pixel_size: Option<f64>,
-    /// Outline color.
+    /// 轮廓颜色。
     #[serde(default)]
     pub outline_color: Option<CzmlColor>,
-    /// Outline width.
+    /// 轮廓宽度。
     #[serde(default)]
     pub outline_width: Option<f64>,
 }
 
-/// CZML polyline graphics.
+/// CZML polyline（折线）图形。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlPolyline {
-    /// Positions as cartographic degrees.
+    /// 以经纬度表示的位置。
     #[serde(default)]
     pub positions: Option<CzmlPosition>,
-    /// Width.
+    /// 宽度。
     #[serde(default)]
     pub width: Option<f64>,
-    /// Material.
+    /// 材质。
     #[serde(default)]
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML polygon graphics.
+/// CZML polygon（多边形）图形。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlPolygon {
-    /// Positions as cartographic degrees.
+    /// 以经纬度表示的位置。
     #[serde(default)]
     pub positions: Option<CzmlPosition>,
-    /// Material.
+    /// 材质。
     #[serde(default)]
     pub material: Option<CzmlMaterial>,
-    /// Height.
+    /// 高度。
     #[serde(default)]
     pub height: Option<f64>,
-    /// Extruded height.
+    /// 挤出高度。
     #[serde(default)]
     pub extruded_height: Option<f64>,
 }
 
-/// CZML label.
+/// CZML label。
 #[derive(Debug, Clone, Deserialize)]
 pub struct CzmlLabel {
-    /// Label text.
+    /// label 文本。
     #[serde(default)]
     pub text: Option<String>,
-    /// Font.
+    /// 字体。
     #[serde(default)]
     pub font: Option<String>,
-    /// Fill color.
+    /// 填充颜色。
     #[serde(default, rename = "fillColor")]
     pub fill_color: Option<CzmlColor>,
-    /// Outline color.
+    /// 轮廓颜色。
     #[serde(default, rename = "outlineColor")]
     pub outline_color: Option<CzmlColor>,
 }
 
-/// CZML billboard.
+/// CZML billboard。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlBillboard {
-    /// Image URI.
+    /// 图像 URI。
     #[serde(default)]
     pub image: Option<String>,
-    /// Scale.
+    /// 缩放。
     #[serde(default)]
     pub scale: Option<f64>,
-    /// Color.
+    /// 颜色。
     #[serde(default)]
     pub color: Option<CzmlColor>,
-    /// Rotation.
+    /// 旋转。
     #[serde(default)]
     pub rotation: Option<f64>,
-    /// Width.
+    /// 宽度。
     #[serde(default)]
     pub width: Option<f64>,
-    /// Height.
+    /// 高度。
     #[serde(default)]
     pub height: Option<f64>,
 }
 
-/// CZML model.
+/// CZML model。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlModel {
-    /// Model URI (glTF/glb).
+    /// model URI（glTF/glb）。
     #[serde(default)]
     pub gltf: Option<String>,
-    /// Scale.
+    /// 缩放。
     #[serde(default)]
     pub scale: Option<f64>,
-    /// Minimum pixel size.
+    /// 最小像素尺寸。
     #[serde(default)]
     pub minimum_pixel_size: Option<f64>,
 }
 
-/// CZML ellipse.
+/// CZML 椭圆。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlEllipse {
-    /// Semi-major axis.
+    /// 半长轴。
     #[serde(default)]
     pub semi_major_axis: Option<f64>,
-    /// Semi-minor axis.
+    /// 半短轴。
     #[serde(default)]
     pub semi_minor_axis: Option<f64>,
-    /// Height.
+    /// 高度。
     #[serde(default)]
     pub height: Option<f64>,
-    /// Material.
+    /// 材质。
     #[serde(default)]
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML box.
+/// CZML 方框。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlBox {
-    /// Dimensions [x, y, z].
+    /// 尺寸 [x, y, z]。
     #[serde(default)]
     pub dimensions: Option<CzmlCartesian3Value>,
-    /// Material.
+    /// 材质。
     #[serde(default)]
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML cylinder.
+/// CZML 圆柱。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlCylinder {
-    /// Length.
+    /// 长度。
     #[serde(default)]
     pub length: Option<f64>,
-    /// Top radius.
+    /// 顶部半径。
     #[serde(default)]
     pub top_radius: Option<f64>,
-    /// Bottom radius.
+    /// 底部半径。
     #[serde(default)]
     pub bottom_radius: Option<f64>,
-    /// Material.
+    /// 材质。
     #[serde(default)]
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML corridor.
+/// CZML corridor。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlCorridor {
-    /// Positions.
+    /// 位置。
     #[serde(default)]
     pub positions: Option<CzmlPosition>,
-    /// Width.
+    /// 宽度。
     #[serde(default)]
     pub width: Option<f64>,
-    /// Height.
+    /// 高度。
     #[serde(default)]
     pub height: Option<f64>,
-    /// Material.
+    /// 材质。
     #[serde(default)]
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML rectangle.
+/// CZML 矩形。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlRectangle {
-    /// Coordinates [west, south, east, north] in degrees.
+    /// 坐标 [west, south, east, north]（度）。
     #[serde(default)]
     pub coordinates: Option<CzmlRectangleCoords>,
-    /// Height.
+    /// 高度。
     #[serde(default)]
     pub height: Option<f64>,
-    /// Material.
+    /// 材质。
     #[serde(default)]
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML rectangle coordinates.
+/// CZML 矩形坐标。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum CzmlRectangleCoords {
-    /// Flat array [west, south, east, north] in degrees.
+    /// 以度为单位的平铺数组 [west, south, east, north]。
     Array(Vec<f64>),
-    /// Object with degrees field.
+    /// 带 degrees 字段的对象。
     Object { degrees: Vec<f64> },
 }
 
-/// CZML wall.
+/// CZML 墙体（wall）。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlWall {
-    /// Positions.
+    /// 位置。
     #[serde(default)]
     pub positions: Option<CzmlPosition>,
-    /// Maximum heights.
+    /// 最大高度。
     #[serde(default)]
     pub maximum_heights: Option<Vec<f64>>,
-    /// Minimum heights.
+    /// 最小高度。
     #[serde(default)]
     pub minimum_heights: Option<Vec<f64>>,
-    /// Material.
+    /// 材质。
     #[serde(default)]
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML ellipsoid.
+/// CZML 球体。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlEllipsoid {
-    /// Radii [x, y, z].
+    /// 半径 [x, y, z]。
     #[serde(default)]
     pub radii: Option<CzmlCartesian3Value>,
-    /// Material.
+    /// 材质。
     #[serde(default)]
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML path.
+/// CZML path（轨迹）。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlPath {
-    /// Lead time.
+    /// 前导时间（lead time）。
     #[serde(default)]
     pub lead_time: Option<f64>,
-    /// Trail time.
+    /// 拖尾时间（trail time）。
     #[serde(default)]
     pub trail_time: Option<f64>,
-    /// Width.
+    /// 宽度。
     #[serde(default)]
     pub width: Option<f64>,
-    /// Material.
+    /// 材质。
     #[serde(default)]
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML Cartesian3 value.
+/// CZML Cartesian3 值。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum CzmlCartesian3Value {
-    /// Flat array [x, y, z].
+    /// 平铺数组 [x, y, z]。
     Array(Vec<f64>),
-    /// Object with cartesian3 field.
+    /// 带 cartesian3 字段的对象。
     Object { cartesian3: Vec<f64> },
 }
 
-/// CZML color value.
+/// CZML 颜色值。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum CzmlColor {
-    /// RGBA array [r, g, b, a] (0-255).
+    /// RGBA 数组 [r, g, b, a]（0-255）。
     Rgba(Vec<f64>),
-    /// Object with rgba field.
+    /// 带 rgba 字段的对象。
     Object { rgba: Vec<f64> },
 }
 
-/// CZML material.
+/// CZML 材质。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlMaterial {
-    /// Solid color.
+    /// 纯色。
     #[serde(default)]
     pub solid_color: Option<CzmlSolidColor>,
 }
 
-/// CZML solid color material.
+/// CZML 纯色材质。
 #[derive(Debug, Clone, Deserialize)]
 pub struct CzmlSolidColor {
-    /// Color as RGBA.
+    /// 以 RGBA 表示的颜色。
     #[serde(default)]
     pub color: Option<CzmlColor>,
 }
 
-/// Parses a CZML string into a DataSource.
+/// 将 CZML 字符串解析为 DataSource。
 pub fn parse_czml(json: &str) -> Result<DataSource, CzmlError> {
     let packets: Vec<CzmlPacket> = serde_json::from_str(json)?;
 
     let mut ds = DataSource::new("CZML");
 
     for packet in &packets {
-        // Skip document packet
+        // 跳过 document 数据包
         if packet.id == "document" {
             if let Some(ref name) = packet.name {
                 ds.name = name.clone();
@@ -425,7 +425,7 @@ pub fn parse_czml(json: &str) -> Result<DataSource, CzmlError> {
     Ok(ds)
 }
 
-/// Processes a CZML packet into an Entity.
+/// 处理一个 CZML 数据包并生成 Entity。
 fn process_packet(packet: &CzmlPacket) -> Entity {
     let mut entity = Entity::new(packet.id.clone());
 
@@ -437,13 +437,13 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.description = Some(desc.clone());
     }
 
-    // Process position
+    // 处理位置
     if let Some(ref pos) = packet.position {
         let coords = extract_position_coords(pos);
         if coords.len() >= 3 {
-            // Check if time-tagged (length > 3 and first value looks like time)
+            // 检查是否带时间标记（长度 > 3 且首值似为时间）
             if coords.len() > 3 && coords.len().is_multiple_of(4) {
-                // Time-tagged: [time, lon, lat, height, time, lon, lat, height, ...]
+                // 带时间标记：[time, lon, lat, height, time, lon, lat, height, ...]
                 let samples: Vec<(f64, [f64; 3])> = coords
                     .chunks(4)
                     .filter(|c| c.len() == 4)
@@ -459,7 +459,7 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         }
     }
 
-    // Process point
+    // 处理点
     if let Some(ref pt) = packet.point {
         let mut point = PointGraphics::default();
         if let Some(ref color) = pt.color {
@@ -477,7 +477,7 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.point = Some(point);
     }
 
-    // Process polyline
+    // 处理 polyline
     if let Some(ref pl) = packet.polyline {
         let mut polyline = PolylineGraphics::default();
         if let Some(ref pos) = pl.positions {
@@ -496,7 +496,7 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.polyline = Some(polyline);
     }
 
-    // Process polygon
+    // 处理 polygon
     if let Some(ref pg) = packet.polygon {
         let mut polygon = PolygonGraphics::default();
         if let Some(ref pos) = pg.positions {
@@ -518,7 +518,7 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.polygon = Some(polygon);
     }
 
-    // Process label
+    // 处理 label
     if let Some(ref lb) = packet.label {
         let mut label = LabelGraphics::default();
         if let Some(ref text) = lb.text {
@@ -536,7 +536,7 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.label = Some(label);
     }
 
-    // Process billboard
+    // 处理 billboard
     if let Some(ref bb) = packet.billboard {
         let mut billboard = BillboardGraphics::default();
         if let Some(ref image) = bb.image {
@@ -560,7 +560,7 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.billboard = Some(billboard);
     }
 
-    // Process model
+    // 处理 model
     if let Some(ref mdl) = packet.model {
         let mut model = ModelGraphics::default();
         if let Some(ref gltf) = mdl.gltf {
@@ -575,7 +575,7 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.model = Some(model);
     }
 
-    // Process ellipse
+    // 处理椭圆
     if let Some(ref ell) = packet.ellipse {
         let mut ellipse = EllipseGraphics::default();
         if let Some(sma) = ell.semi_major_axis {
@@ -595,7 +595,7 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.ellipse = Some(ellipse);
     }
 
-    // Process box
+    // 处理方框
     if let Some(ref bx) = packet.box_graphics {
         let mut box_g = BoxGraphics::default();
         if let Some(ref dims) = bx.dimensions {
@@ -612,7 +612,7 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.box_graphics = Some(box_g);
     }
 
-    // Process cylinder
+    // 处理圆柱
     if let Some(ref cyl) = packet.cylinder {
         let mut cylinder = CylinderGraphics::default();
         if let Some(l) = cyl.length {
@@ -632,7 +632,7 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.cylinder = Some(cylinder);
     }
 
-    // Process corridor
+    // 处理 corridor
     if let Some(ref cor) = packet.corridor {
         let mut corridor = CorridorGraphics::default();
         if let Some(ref pos) = cor.positions {
@@ -654,7 +654,7 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.corridor = Some(corridor);
     }
 
-    // Process rectangle
+    // 处理矩形
     if let Some(ref rect) = packet.rectangle {
         let mut rectangle = RectangleGraphics::default();
         if let Some(ref coords) = rect.coordinates {
@@ -680,7 +680,7 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.rectangle = Some(rectangle);
     }
 
-    // Process wall
+    // 处理墙体
     if let Some(ref wl) = packet.wall {
         let mut wall = WallGraphics::default();
         if let Some(ref pos) = wl.positions {
@@ -702,7 +702,7 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.wall = Some(wall);
     }
 
-    // Process ellipsoid
+    // 处理球体
     if let Some(ref el) = packet.ellipsoid {
         let mut ellipsoid = EllipsoidGraphics::default();
         if let Some(ref radii) = el.radii {
@@ -719,7 +719,7 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.ellipsoid = Some(ellipsoid);
     }
 
-    // Process path
+    // 处理 path
     if let Some(ref pth) = packet.path {
         let mut path = PathGraphics::default();
         if let Some(lt) = pth.lead_time {
@@ -742,7 +742,7 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
     entity
 }
 
-/// Extracts coordinate values from a CZML position.
+/// 从 CZML 位置中提取坐标值。
 fn extract_position_coords(pos: &CzmlPosition) -> Vec<f64> {
     match pos {
         CzmlPosition::CartographicDegrees(v) => v.clone(),
@@ -750,7 +750,7 @@ fn extract_position_coords(pos: &CzmlPosition) -> Vec<f64> {
     }
 }
 
-/// Converts flat coordinate array [lon, lat, height, lon, lat, height, ...] to positions.
+/// 将平铺坐标数组 [lon, lat, height, lon, lat, height, ...] 转换为位置。
 fn coords_to_positions(coords: &[f64]) -> Vec<[f64; 3]> {
     coords
         .chunks(3)
@@ -759,7 +759,7 @@ fn coords_to_positions(coords: &[f64]) -> Vec<[f64; 3]> {
         .collect()
 }
 
-/// Converts a CZML color to our Color type.
+/// 将 CZML 颜色转换为我们的 Color 类型。
 fn czml_color_to_color(czml_color: &CzmlColor) -> Color {
     let rgba = match czml_color {
         CzmlColor::Rgba(v) => v.clone(),
@@ -778,7 +778,7 @@ fn czml_color_to_color(czml_color: &CzmlColor) -> Color {
     }
 }
 
-/// Extracts a color from a CZML material.
+/// 从 CZML 材质中提取颜色。
 fn extract_material_color(mat: &CzmlMaterial) -> Option<Color> {
     mat.solid_color
         .as_ref()
@@ -786,7 +786,7 @@ fn extract_material_color(mat: &CzmlMaterial) -> Option<Color> {
         .map(czml_color_to_color)
 }
 
-/// Extracts a Cartesian3 value from a CZML Cartesian3.
+/// 从 CZML Cartesian3 中提取 Cartesian3 值。
 fn extract_cartesian3(val: &CzmlCartesian3Value) -> Vec<f64> {
     match val {
         CzmlCartesian3Value::Array(v) => v.clone(),
@@ -934,7 +934,7 @@ mod tests {
 
         let ds = parse_czml(json).unwrap();
         let entity = ds.entities.get("sat-1").unwrap();
-        // Should be sampled (time-tagged)
+        // 应为采样（带时间标记）
         match &entity.position {
             Property::Sampled(samples) => {
                 assert_eq!(samples.len(), 2);

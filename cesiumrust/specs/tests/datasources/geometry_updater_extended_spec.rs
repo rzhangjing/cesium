@@ -1,5 +1,5 @@
-//! GeometryUpdater extended specs - outline/show/dispatch/plane/polyline_volume
-//! Ported from DataSources/*GeometryUpdaterSpec.js (outline, show, material paths)
+//! GeometryUpdater 扩展规范 - outline/show/dispatch/plane/polyline_volume
+//! 移植自 DataSources/*GeometryUpdaterSpec.js（outline、show、material 路径）
 
 use cesium_datasource::geometry_updater::{
     update_box_graphics, update_corridor_graphics, update_cylinder_graphics,
@@ -24,7 +24,7 @@ fn entity_at_origin() -> Entity {
     e
 }
 
-// ─── Box outline ────────────────────────────────────────────────────────────
+// ─── Box 轮廓 ────────────────────────────────────────────────────────────
 
 #[test]
 fn box_outline_produces_outline_instances() {
@@ -71,7 +71,7 @@ fn box_fill_false_no_fill_instances() {
     assert!(!result.outline_instances.is_empty(), "outline should still be generated");
 }
 
-// ─── Cylinder outline ───────────────────────────────────────────────────────
+// ─── Cylinder 轮廓 ───────────────────────────────────────────────────────
 
 #[test]
 fn cylinder_outline_produces_outline() {
@@ -97,7 +97,7 @@ fn cylinder_show_false_empty() {
     assert!(result.is_empty());
 }
 
-// ─── Ellipse outline ────────────────────────────────────────────────────────
+// ─── Ellipse 轮廓 ────────────────────────────────────────────────────────
 
 #[test]
 fn ellipse_outline_produces_outline() {
@@ -110,7 +110,7 @@ fn ellipse_outline_produces_outline() {
     assert!(!result.outline_instances.is_empty());
 }
 
-// ─── Plane graphics ─────────────────────────────────────────────────────────
+// ─── Plane 图元 ─────────────────────────────────────────────────────────
 
 #[test]
 fn plane_produces_fill() {
@@ -161,7 +161,7 @@ fn plane_outline_produces_outline() {
     assert!(!result.outline_instances.is_empty());
 }
 
-// ─── Polyline volume ────────────────────────────────────────────────────────
+// ─── Polyline 体积 ────────────────────────────────────────────────────────
 
 #[test]
 fn polyline_volume_produces_fill() {
@@ -204,7 +204,7 @@ fn polyline_volume_show_false_empty() {
     assert!(result.is_empty());
 }
 
-// ─── Polyline edge cases ────────────────────────────────────────────────────
+// ─── Polyline 边缘情形 ────────────────────────────────────────────────────
 
 #[test]
 fn polyline_less_than_2_positions_empty() {
@@ -225,7 +225,7 @@ fn polyline_show_false_empty() {
     assert!(result.is_empty());
 }
 
-// ─── update_entity_geometry dispatcher ──────────────────────────────────────
+// ─── update_entity_geometry 分发器 ──────────────────────────────────────
 
 #[test]
 fn dispatcher_entity_show_false_empty() {
@@ -263,7 +263,7 @@ fn dispatcher_multiple_graphics_combined() {
     entity.cylinder = Some(cyl_g);
 
     let result = update_entity_geometry(&entity, 0.0, &wgs84());
-    // Both box and cylinder should produce fill instances
+    // box 和 cylinder 均应产生填充实例
     assert!(result.fill_instances.len() >= 2, "should have instances from both graphics");
 }
 
@@ -274,7 +274,7 @@ fn dispatcher_no_graphics_empty() {
     assert!(result.is_empty(), "entity with no graphics should produce nothing");
 }
 
-// ─── EntityGeometry helpers ─────────────────────────────────────────────────
+// ─── EntityGeometry 辅助 ─────────────────────────────────────────────────
 
 #[test]
 fn entity_geometry_default_is_empty() {
@@ -294,7 +294,7 @@ fn entity_geometry_instance_count_sums() {
     assert_eq!(result.instance_count(), expected);
 }
 
-// ─── Corridor/Wall/Rectangle/Ellipsoid outline ──────────────────────────────
+// ─── Corridor/Wall/Rectangle/Ellipsoid 轮廓 ──────────────────────────────
 
 #[test]
 fn corridor_outline_produces_outline() {

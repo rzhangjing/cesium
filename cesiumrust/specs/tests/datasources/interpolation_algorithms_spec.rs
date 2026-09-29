@@ -1,7 +1,7 @@
-//! Interpolation algorithm specs - ported from Core/LinearApproximationSpec.js,
-//! Core/LagrangePolynomialApproximationSpec.js, Core/HermitePolynomialApproximationSpec.js
+//! 插值算法规范 - 移植自 Core/LinearApproximationSpec.js、
+//! Core/LagrangePolynomialApproximationSpec.js、Core/HermitePolynomialApproximationSpec.js
 //!
-//! Tests the low-level interpolation algorithms used by SampledProperty.
+//! 测试 SampledProperty 使用的底层插值算法。
 
 use cesium_datasource::property_system::{
     ExtrapolationType, HermitePolynomialApproximation, InterpolationAlgorithm,
@@ -68,7 +68,7 @@ fn linear_name() {
 
 #[test]
 fn linear_required_data_points() {
-    // Linear always needs 2 points regardless of degree
+    // Linear 无论阶数如何始终需要 2 个点
     assert_eq!(LinearApproximation.get_required_data_points(1, 0), 2);
     assert_eq!(LinearApproximation.get_required_data_points(5, 0), 2);
 }
@@ -98,7 +98,7 @@ fn linear_interpolate_at_endpoints() {
 
 #[test]
 fn linear_interpolate_multi_stride() {
-    // 2 components per sample: y_table = [x0,y0, x1,y1]
+    // 每个样本 2 个分量：y_table = [x0,y0, x1,y1]
     let x_table = [0.0, 10.0];
     let y_table = [0.0, 100.0, 10.0, 200.0];
     let result = LinearApproximation.interpolate_order_zero(5.0, &x_table, &y_table, 2);
@@ -122,7 +122,7 @@ fn lagrange_name() {
 
 #[test]
 fn lagrange_required_data_points() {
-    // degree+1 points required (min 2)
+    // 需要 degree+1 个点（最少 2 个）
     assert_eq!(LagrangePolynomialApproximation.get_required_data_points(1, 0), 2);
     assert_eq!(LagrangePolynomialApproximation.get_required_data_points(2, 0), 3);
     assert_eq!(LagrangePolynomialApproximation.get_required_data_points(4, 0), 5);
@@ -135,7 +135,7 @@ fn lagrange_does_not_support_derivatives() {
 
 #[test]
 fn lagrange_linear_two_points() {
-    // With 2 points, Lagrange = linear
+    // 2 个点时，Lagrange = linear
     let result = LagrangePolynomialApproximation.interpolate_order_zero(
         5.0, &[0.0, 10.0], &[0.0, 100.0], 1,
     );
@@ -144,10 +144,10 @@ fn lagrange_linear_two_points() {
 
 #[test]
 fn lagrange_quadratic_three_points() {
-    // y = x^2: points at x=0,1,2 → y=0,1,4
+    // y = x^2: 取点 x=0,1,2 → y=0,1,4
     let x_table = [0.0, 1.0, 2.0];
     let y_table = [0.0, 1.0, 4.0];
-    // Interpolate at x=0.5 → y=0.25
+    // 在 x=0.5 插值 → y=0.25
     let result = LagrangePolynomialApproximation.interpolate_order_zero(
         0.5, &x_table, &y_table, 1,
     );
@@ -169,7 +169,7 @@ fn lagrange_passes_through_all_points() {
 
 #[test]
 fn lagrange_multi_stride() {
-    // 2 components: y = [x, x^2] at x=0,1,2
+    // 2 个分量：y = [x, x^2]，x=0,1,2
     let x_table = [0.0, 1.0, 2.0];
     let y_table = [0.0, 0.0, 1.0, 1.0, 2.0, 4.0];
     let result = LagrangePolynomialApproximation.interpolate_order_zero(
@@ -201,7 +201,7 @@ fn hermite_required_data_points() {
 
 #[test]
 fn hermite_order_zero_linear() {
-    // With 2 points and no derivatives, Hermite order-zero = linear
+    // 2 个点且无导数时，Hermite 零阶 = linear
     let result = HermitePolynomialApproximation.interpolate_order_zero(
         5.0, &[0.0, 10.0], &[0.0, 100.0], 1,
     );
@@ -223,9 +223,9 @@ fn hermite_order_zero_passes_through_points() {
 
 #[test]
 fn hermite_interpolate_with_derivatives() {
-    // y = x^2, y' = 2x at x=0,1
-    // x_table = [0, 1], y_table with stride=1, input_order=1:
-    // y_table layout: [y0, y'0, y1, y'1] = [0, 0, 1, 2]
+    // y = x^2, y' = 2x，x=0,1
+    // x_table = [0, 1]，y_table 采用 stride=1、input_order=1：
+    // y_table 布局：[y0, y'0, y1, y'1] = [0, 0, 1, 2]
     let x_table = [0.0, 1.0];
     let y_table = [0.0, 0.0, 1.0, 2.0];
     let result = HermitePolynomialApproximation.interpolate(
@@ -237,10 +237,10 @@ fn hermite_interpolate_with_derivatives() {
 
 #[test]
 fn hermite_interpolate_output_derivative() {
-    // y = x^2, y' = 2x at x=0,1
+    // y = x^2, y' = 2x，x=0,1
     let x_table = [0.0, 1.0];
     let y_table = [0.0, 0.0, 1.0, 2.0];
-    // output_order=1 → returns [y, y']
+    // output_order=1 → 返回 [y, y']
     let result = HermitePolynomialApproximation.interpolate(
         0.5, &x_table, &y_table, 1, 1, 1,
     );
@@ -251,7 +251,7 @@ fn hermite_interpolate_output_derivative() {
 
 #[test]
 fn hermite_multi_stride_order_zero() {
-    // 2 components, 2 points
+    // 2 个分量，2 个点
     let x_table = [0.0, 10.0];
     let y_table = [0.0, 100.0, 10.0, 200.0];
     let result = HermitePolynomialApproximation.interpolate_order_zero(

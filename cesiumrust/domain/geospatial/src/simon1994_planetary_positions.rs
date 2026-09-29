@@ -1,10 +1,11 @@
-//! Simon1994PlanetaryPositions - Computes sun/moon positions in Earth-centered inertial frame.
+//! Simon1994PlanetaryPositions - 在地心惯性系中计算日/月位置。
 //!
-//! Faithful port of CesiumJS `Simon1994PlanetaryPositions.js`.
-//! Reference: Simon et al. 1994, "Numerical expressions for precession formulae
+//! 忠实移植自 CesiumJS `Simon1994PlanetaryPositions.js`。
+//! 参考：Simon et al. 1994, "Numerical expressions for precession formulae
 //! and mean elements for the Moon and the planets"
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(dead_code, unused_mut, clippy::neg_multiply)]
 use cesium_time::JulianDate;
 use glam::{DVec3, DMat3};
@@ -14,7 +15,7 @@ const J2000D: f64 = 2451545.0;
 const METERS_PER_KILOMETER: f64 = 1000.0;
 const RADIANS_PER_DEGREE: f64 = std::f64::consts::PI / 180.0;
 const RADIANS_PER_ARC_SECOND: f64 = std::f64::consts::PI / (180.0 * 3600.0);
-const METERS_PER_ASTRONOMICAL_UNIT: f64 = 1.4959787e11; // IAU 1976 value
+const METERS_PER_ASTRONOMICAL_UNIT: f64 = 1.4959787e11; // IAU 1976 值
 const SECONDS_PER_DAY: f64 = 86400.0;
 const DAYS_PER_JULIAN_CENTURY: f64 = 36525.0;
 const TWO_PI: f64 = 2.0 * std::f64::consts::PI;
@@ -26,9 +27,9 @@ fn compute_tdb_minus_tt_spice(days_since_j2000_in_terrestrial_time: f64) -> f64 
 }
 
 fn tai_to_tdb(date: &JulianDate) -> JulianDate {
-    // Converts TAI to TT
+    // 将 TAI 转换为 TT
     let tt = date.add_seconds(TDT_MINUS_TAI);
-    // Converts TT to TDB
+    // 将 TT 转换为 TDB
     let days = tt.total_days() - J2000D;
     tt.add_seconds(compute_tdb_minus_tt_spice(days))
 }
@@ -45,11 +46,11 @@ fn mean_anomaly_to_eccentric_anomaly(mean_anomaly: f64, eccentricity: f64) -> f6
     let revs = (mean_anomaly / TWO_PI).floor();
     let mut ma = mean_anomaly - revs * TWO_PI;
 
-    // Starting value for iteration
+    // 迭代的起始值
     let mut iteration_value = ma
         + (eccentricity * ma.sin()) / (1.0 - (ma + eccentricity).sin() + ma.sin());
 
-    // Newton-Raphson iteration on Kepler's equation
+    // 对开普勒方程进行 Newton-Raphson 迭代
     let mut eccentric_anomaly = f64::MAX;
     for _ in 0..50 {
         if (eccentric_anomaly - iteration_value).abs() <= EPSILON8 {
@@ -86,8 +87,8 @@ fn mean_anomaly_to_true_anomaly(mean_anomaly: f64, eccentricity: f64) -> f64 {
     eccentric_anomaly_to_true_anomaly(ea, eccentricity)
 }
 
-/// Computes the transformation matrix from perifocal (PQW) to inertial cartesian.
-/// Returns a DMat3 (column-major).
+/// 计算从近焦点（PQW）系到惯性笛卡尔系的变换矩阵。
+/// 返回一个 DMat3（列主序）。
 fn perifocal_to_cartesian_matrix(
     argument_of_periapsis: f64,
     inclination: f64,
@@ -100,7 +101,7 @@ fn perifocal_to_cartesian_matrix(
     let cosraan = right_ascension.cos();
     let sinraan = right_ascension.sin();
 
-    // Column-major: col0, col1, col2
+    // 列主序：col0、col1、col2
     DMat3::from_cols_array(&[
         cosraan * cosap - sinraan * sinap * cosi,  // col0, row0
         sinraan * cosap + cosraan * sinap * cosi,  // col0, row1
@@ -149,12 +150,12 @@ fn elements_to_cartesian(
     perifocal_to_equatorial * result
 }
 
-// From section 5.8
+// 来自第 5.8 节
 const SEMI_MAJOR_AXIS0: f64 = 1.0000010178; // * METERS_PER_ASTRONOMICAL_UNIT
-const MEAN_LONGITUDE0: f64 = 100.46645683; // degrees
-const MEAN_LONGITUDE1: f64 = 1295977422.83429; // arcseconds
+const MEAN_LONGITUDE0: f64 = 100.46645683; // 角度
+const MEAN_LONGITUDE1: f64 = 1295977422.83429; // 角秒
 
-// From table 6
+// 来自表 6
 const P1U: f64 = 16002.0;
 const P2U: f64 = 21863.0;
 const P3U: f64 = 32004.0;
@@ -209,7 +210,7 @@ const SL6: f64 = -88.0e-7;
 const SL7: f64 = -112.0e-7;
 const SL8: f64 = -80.0e-7;
 
-/// Gets a point describing the motion of the Earth-Moon barycenter (section 6).
+/// 获取一个描述地月质心运动的点（第 6 节）。
 fn compute_simon_earth_moon_barycenter(date: &JulianDate) -> DVec3 {
     let tdb = tai_to_tdb(date);
     let x = tdb.total_days() - J2000D;
@@ -253,7 +254,7 @@ fn compute_simon_earth_moon_barycenter(date: &JulianDate) -> DVec3 {
         + CL8 * (Q8U * u).cos()
         + SL8 * (Q8U * u).sin();
 
-    // All constants from section 5.8
+    // 所有常量均来自第 5.8 节
     let eccentricity = 0.0167086342 - 0.0004203654 * t;
     let longitude_of_perigee =
         102.93734808 * RADIANS_PER_DEGREE + 11612.3529 * RADIANS_PER_ARC_SECOND * t;
@@ -271,7 +272,7 @@ fn compute_simon_earth_moon_barycenter(date: &JulianDate) -> DVec3 {
     )
 }
 
-/// Gets a point describing the position of the moon (section 4).
+/// 获取一个描述月球位置的点（第 4 节）。
 fn compute_simon_moon(date: &JulianDate) -> DVec3 {
     let tdb = tai_to_tdb(date);
     let x = tdb.total_days() - J2000D;
@@ -280,7 +281,7 @@ fn compute_simon_moon(date: &JulianDate) -> DVec3 {
     let t3 = t2 * t;
     let t4 = t3 * t;
 
-    // Terms from section 3.4 (b.1)
+    // 来自第 3.4 节（b.1）的项
     let mut semimajor_axis = 383397.7725 + 0.004 * t;
     let mut eccentricity = 0.055545526 - 0.000000016 * t;
     let inclination_constant = 5.15668983 * RADIANS_PER_DEGREE;
@@ -296,7 +297,7 @@ fn compute_simon_moon(date: &JulianDate) -> DVec3 {
     let mut mean_longitude_sec_part =
         1732559343.4847 * t - 6.391 * t2 + 0.006588 * t3 - 0.00003169 * t4;
 
-    // Delaunay arguments from section 3.5 b
+    // 来自第 3.5 节 b 的 Delaunay 参数
     let d = 297.85019547 * RADIANS_PER_DEGREE
         + RADIANS_PER_ARC_SECOND
             * (1602961601.209 * t - 6.3706 * t2 + 0.006593 * t3 - 0.00003169 * t4);
@@ -313,7 +314,7 @@ fn compute_simon_moon(date: &JulianDate) -> DVec3 {
         - RADIANS_PER_ARC_SECOND
             * (6967051.436 * t + 6.2068 * t2 + 0.007618 * t3 - 0.00003219 * t4);
 
-    // Add terms from Table 4
+    // 添加来自表 4 的项
     let two_d = 2.0 * d;
     let four_d = 4.0 * d;
     let six_d = 6.0 * d;
@@ -378,7 +379,7 @@ fn compute_simon_moon(date: &JulianDate) -> DVec3 {
         + 396.3 * l.sin()
         - 218.0 * (two_d - lprime).sin();
 
-    // Add terms from Table 5
+    // 添加来自表 5 的项
     let two_psi = 2.0 * psi;
     let three_psi = 3.0 * psi;
     inclination_sec_part += 46.997 * psi.cos() * t
@@ -409,7 +410,7 @@ fn compute_simon_moon(date: &JulianDate) -> DVec3 {
         - 0.0011 * three_psi.sin() * t3
         - 0.0009 * two_psi.sin() * t3;
 
-    // Add constants and convert units
+    // 加上常量并转换单位
     semimajor_axis *= METERS_PER_KILOMETER;
     let inclination = inclination_constant + inclination_sec_part * RADIANS_PER_ARC_SECOND;
     let longitude_of_perigee =
@@ -436,9 +437,9 @@ fn compute_simon_earth(date: &JulianDate) -> DVec3 {
     compute_simon_moon(date) * EARTH_FACTOR
 }
 
-/// Axes transformation from Simon1994 frame to J2000.
-/// CesiumJS Matrix3 constructor takes (col0row0, col1row0, col2row0, col0row1, col1row1, col2row1, col0row2, col1row2, col2row2)
-/// but stores column-major internally. glam from_cols_array takes [col0.x, col0.y, col0.z, col1.x, ...]
+/// 从 Simon1994 坐标系到 J2000 的坐标轴变换。
+/// CesiumJS 的 Matrix3 构造函数接受 (col0row0, col1row0, col2row0, col0row1, col1row1, col2row1, col0row2, col1row2, col2row2)
+/// 但内部以列主序存储。glam 的 from_cols_array 接受 [col0.x, col0.y, col0.z, col1.x, ...]
 const AXES_TRANSFORMATION: DMat3 = DMat3::from_cols_array(&[
     1.0000000000000002,      // col0.x (col0row0)
     -5.154129427414611e-16,  // col0.y (col0row1)
@@ -451,21 +452,21 @@ const AXES_TRANSFORMATION: DMat3 = DMat3::from_cols_array(&[
     0.9174820620691819,      // col2.z (col2row2)
 ]);
 
-/// Computes the position of the Sun in the Earth-centered inertial frame.
+/// 计算太阳在地心惯性系中的位置。
 pub fn compute_sun_position_in_earth_inertial_frame(date: &JulianDate) -> DVec3 {
-    // First forward transformation: negate EMB position
+    // 第一次正变换：将地月质心位置取反
     let emb = compute_simon_earth_moon_barycenter(date);
     let mut result = -emb;
 
-    // Second forward transformation: subtract Earth offset from EMB
+    // 第二次正变换：从地月质心中减去地球偏移
     let earth = compute_simon_earth(date);
     result -= earth;
 
-    // Apply axes transformation
+    // 应用坐标轴变换
     AXES_TRANSFORMATION * result
 }
 
-/// Computes the position of the Moon in the Earth-centered inertial frame.
+/// 计算月球在地心惯性系中的位置。
 pub fn compute_moon_position_in_earth_inertial_frame(date: &JulianDate) -> DVec3 {
     let moon = compute_simon_moon(date);
     AXES_TRANSFORMATION * moon

@@ -1,10 +1,10 @@
-//! CatmullRomSplineSpec.js → Rust integration tests
+//! CatmullRomSplineSpec.js → Rust 集成测试
 //!
-//! Original: packages/engine/Specs/Core/CatmullRomSplineSpec.js (11 it())
-//! A-class ported: 5 (sets_tangents, computes_tangents, check_against_hermite,
-//!                    evaluate_at_control_point, 2pts_lerp)
-//! C-class omitted: 5 (constructor throws ×3, evaluate throws ×2)
-//! Merged: 1 (result-parameter variant → owned-return)
+//! 原始：packages/engine/Specs/Core/CatmullRomSplineSpec.js（11 个 it()）
+//! A 类已移植：5 个（sets_tangents、computes_tangents、check_against_hermite、
+//!                    evaluate_at_control_point、2pts_lerp）
+//! C 类已省略：5 个（构造 throws ×3、求值 throws ×2）
+//! 已合并：1 个（结果参数变体 → 返回所有权值）
 
 use cesium_animation::spline::*;
 use cesium_specs::epsilon;
@@ -70,7 +70,7 @@ fn check_catmull_rom_against_hermite() {
     let (times, points) = setup();
     let crs = CatmullRomSpline::new(times.clone(), points.clone());
 
-    // Build equivalent HermiteSpline via createC1
+    // 通过 createC1 构造等价的 HermiteSpline
     let mut tangents = vec![crs.first_tangent];
     for i in 1..points.len() - 1 {
         tangents.push((points[i + 1] - points[i - 1]) * 0.5);

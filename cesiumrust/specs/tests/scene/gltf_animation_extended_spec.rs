@@ -1,7 +1,7 @@
-//! glTF animation runtime extended specs
+//! glTF 动画运行时扩展规范
 //!
-//! Tests RuntimeAnimation state machine: play/pause/stop/advance,
-//! multiplier, reverse, delay, loop modes, and effective_time.
+//! 测试 RuntimeAnimation 状态机：play/pause/stop/advance、
+//! 倍率、反向、延迟、循环模式及 effective_time。
 
 use cesium_gltf::animation_runtime::{AnimationLoop, AnimationState, RuntimeAnimation};
 
@@ -22,7 +22,7 @@ fn make_animation() -> RuntimeAnimation {
     }
 }
 
-// ─── RuntimeAnimation state machine ─────────────────────────────────────────
+// ─── RuntimeAnimation 状态机 ─────────────────────────────────────────
 
 #[test]
 fn runtime_animation_initial_state() {
@@ -66,7 +66,7 @@ fn runtime_animation_advance_completes_at_duration() {
     let mut anim = make_animation();
     anim.play();
     let still_playing = anim.advance(2.0);
-    // advance returns false when animation completes (stops)
+    // 动画完成（停止）时 advance 返回 false
     assert!(!still_playing, "should have stopped");
     assert_eq!(anim.state, AnimationState::Stopped);
 }
@@ -84,7 +84,7 @@ fn runtime_animation_advance_when_paused() {
     let mut anim = make_animation();
     anim.state = AnimationState::Paused;
     let result = anim.advance(1.0);
-    // Paused: returns true (not stopped), but local_time unchanged
+    // 暂停：返回 true（未停止），但 local_time 不变
     assert!(result, "paused should return true");
     assert!((anim.local_time - 0.0).abs() < EPSILON7);
 }
@@ -93,7 +93,7 @@ fn runtime_animation_advance_when_paused() {
 fn runtime_animation_advance_when_stopped() {
     let mut anim = make_animation();
     let result = anim.advance(1.0);
-    // Stopped: returns false
+    // 停止：返回 false
     assert!(!result, "stopped should return false");
     assert!((anim.local_time - 0.0).abs() < EPSILON7);
 }
@@ -126,7 +126,7 @@ fn runtime_animation_loop_repeat() {
     anim.loop_mode = AnimationLoop::Repeat;
     anim.play();
     anim.advance(3.0);
-    // Should wrap around: 3.0 % 2.0 = 1.0
+    // 应环绕：3.0 % 2.0 = 1.0
     assert!((anim.local_time - 1.0).abs() < EPSILON7);
     assert_eq!(anim.state, AnimationState::Playing);
 }
@@ -138,7 +138,7 @@ fn runtime_animation_loop_mirrored() {
     anim.loop_mode = AnimationLoop::MirroredRepeat;
     anim.play();
     anim.advance(3.0);
-    // Mirrored: should be within [0, duration]
+    // 镜像：应位于 [0, duration] 内
     assert!(anim.local_time >= 0.0 && anim.local_time <= 2.0);
     assert_eq!(anim.state, AnimationState::Playing);
 }
@@ -167,7 +167,7 @@ fn runtime_animation_zero_duration() {
     anim.duration = 0.0;
     anim.play();
     let result = anim.advance(0.1);
-    // Zero duration: skips loop handling, returns true (still playing)
+    // 零时长：跳过循环处理，返回 true（仍在播放）
     assert!(result, "zero duration should return true");
 }
 
@@ -179,7 +179,7 @@ fn runtime_animation_negative_multiplier() {
     anim.local_time = 10.0;
     anim.play();
     anim.advance(1.0);
-    // Negative multiplier reverses direction
+    // 负倍率反转方向
     assert!((anim.local_time - 9.0).abs() < EPSILON7);
 }
 

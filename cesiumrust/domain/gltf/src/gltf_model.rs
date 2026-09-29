@@ -1,116 +1,116 @@
-//! glTF 2.0 domain model.
+//! glTF 2.0 领域模型。
 //!
-//! Maps to CesiumJS `Scene/GltfLoader.js` and the glTF 2.0 specification.
-//! This module defines the core glTF JSON structures for parsing and processing.
+//! 映射到 CesiumJS `Scene/GltfLoader.js` 和 glTF 2.0 规范。
+//! 本模块定义用于解析与处理的核心 glTF JSON 结构。
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// The root glTF object.
+/// 根 glTF 对象。
 ///
-/// Maps to the top-level JSON structure of a .gltf file.
+/// 映射到 .gltf 文件的顶层 JSON 结构。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GltfModel {
-    /// Asset metadata (required).
+    /// 资源元数据（必需）。
     pub asset: Asset,
 
-    /// The default scene index.
+    /// 默认 scene 索引。
     #[serde(default)]
     pub scene: Option<usize>,
 
-    /// Array of scenes.
+    /// scene 数组。
     #[serde(default)]
     pub scenes: Vec<Scene>,
 
-    /// Array of nodes.
+    /// node 数组。
     #[serde(default)]
     pub nodes: Vec<Node>,
 
-    /// Array of meshes.
+    /// mesh 数组。
     #[serde(default)]
     pub meshes: Vec<GltfMesh>,
 
-    /// Array of accessors.
+    /// accessor 数组。
     #[serde(default)]
     pub accessors: Vec<Accessor>,
 
-    /// Array of buffer views.
+    /// buffer view 数组。
     #[serde(default)]
     pub buffer_views: Vec<BufferView>,
 
-    /// Array of buffers.
+    /// buffer 数组。
     #[serde(default)]
     pub buffers: Vec<Buffer>,
 
-    /// Array of materials.
+    /// material 数组。
     #[serde(default)]
     pub materials: Vec<Material>,
 
-    /// Array of textures.
+    /// texture 数组。
     #[serde(default)]
     pub textures: Vec<Texture>,
 
-    /// Array of images.
+    /// image 数组。
     #[serde(default)]
     pub images: Vec<Image>,
 
-    /// Array of samplers.
+    /// sampler 数组。
     #[serde(default)]
     pub samplers: Vec<Sampler>,
 
-    /// Array of skins.
+    /// skin 数组。
     #[serde(default)]
     pub skins: Vec<Skin>,
 
-    /// Array of animations.
+    /// animation 数组。
     #[serde(default)]
     pub animations: Vec<Animation>,
 
-    /// Extensions used in this glTF.
+    /// 本 glTF 中使用的扩展。
     #[serde(default)]
     pub extensions_used: Vec<String>,
 
-    /// Extensions required by this glTF.
+    /// 本 glTF 必需的扩展。
     #[serde(default)]
     pub extensions_required: Vec<String>,
 
-    /// Extension-specific data.
+    /// 扩展特定数据。
     #[serde(default)]
     pub extensions: Option<serde_json::Value>,
 
-    /// Application-specific data.
+    /// 应用特定数据。
     #[serde(default)]
     pub extras: Option<serde_json::Value>,
 }
 
 impl GltfModel {
-    /// Parses a glTF model from JSON string.
+    /// 从 JSON 字符串解析一个 glTF 模型。
     pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(json)
     }
 
-    /// Parses a glTF model from JSON bytes.
+    /// 从 JSON 字节解析一个 glTF 模型。
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, serde_json::Error> {
         serde_json::from_slice(bytes)
     }
 
-    /// Converts an already-parsed JSON [`serde_json::Value`] into the typed
-    /// model. Used by the glTF 1.0 → 2.0 upgrade path
-    /// ([`crate::gltf_upgrade::update_version_with_buffers`]): the 1.0 JSON is
-    /// upgraded as an untyped value (its object-keyed collections cannot be
-    /// deserialized into this array-based model) and only then converted here.
+    /// 将一个已解析的 JSON [`serde_json::Value`] 转换为强类型
+    /// 模型。由 glTF 1.0 → 2.0 升级路径使用
+    ///（[`crate::gltf_upgrade::update_version_with_buffers`]）：1.0 JSON 以
+    /// 无类型值的形式升级（其以对象为键的集合无法反序列化到本基于
+    /// 数组的模型中），仅在此之后才进转换。
     pub fn from_value(value: serde_json::Value) -> Result<Self, serde_json::Error> {
         serde_json::from_value(value)
     }
 
-    /// Returns the default scene, or the first scene if no default is set.
+    /// 返回默认 scene，若未设置默认则返回第一个 scene。
     pub fn default_scene(&self) -> Option<&Scene> {
         let index = self.scene.unwrap_or(0);
         self.scenes.get(index)
     }
 
-    /// Returns the total number of triangles across all meshes.
+    /// 返回所有 mesh 中的三角形总数。
     pub fn triangle_count(&self) -> usize {
         self.meshes
             .iter()
@@ -125,7 +125,7 @@ impl GltfModel {
             .sum()
     }
 
-    /// Returns the total number of vertices across all meshes.
+    /// 返回所有 mesh 中的顶点总数。
     pub fn vertex_count(&self) -> usize {
         self.meshes
             .iter()
@@ -137,22 +137,22 @@ impl GltfModel {
     }
 }
 
-/// Asset metadata.
+/// 资源元数据。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Asset {
-    /// The glTF version (e.g., "2.0").
+    /// glTF 版本（例如 "2.0"）。
     pub version: String,
 
-    /// The minimum glTF version required.
+    /// 所需的最低 glTF 版本。
     #[serde(default)]
     pub min_version: Option<String>,
 
-    /// Tool that generated this glTF.
+    /// 生成本 glTF 的工具。
     #[serde(default)]
     pub generator: Option<String>,
 
-    /// Copyright information.
+    /// 版权信息。
     #[serde(default)]
     pub copyright: Option<String>,
 }
@@ -168,61 +168,61 @@ impl Default for Asset {
     }
 }
 
-/// A scene containing a list of root nodes.
+/// 一个包含根 node 列表的 scene。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Scene {
-    /// Optional name.
+    /// 可选名称。
     #[serde(default)]
     pub name: Option<String>,
 
-    /// Indices of root nodes.
+    /// 根 node 的索引。
     #[serde(default)]
     pub nodes: Vec<usize>,
 }
 
-/// A node in the scene graph.
+/// 场景图中的一個 node。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Node {
-    /// Optional name.
+    /// 可选名称。
     #[serde(default)]
     pub name: Option<String>,
 
-    /// Indices of child nodes.
+    /// 子 node 的索引。
     #[serde(default)]
     pub children: Vec<usize>,
 
-    /// Index of the mesh in this node.
+    /// 本 node 中 mesh 的索引。
     #[serde(default)]
     pub mesh: Option<usize>,
 
-    /// Index of the skin referenced by this node.
+    /// 本 node 所引用的 skin 索引。
     #[serde(default)]
     pub skin: Option<usize>,
 
-    /// A 4x4 transformation matrix (column-major).
+    /// 一个 4x4 变换矩阵（列主序）。
     #[serde(default)]
     pub matrix: Option<[f64; 16]>,
 
-    /// Translation [x, y, z].
+    /// 平移 [x, y, z]。
     #[serde(default)]
     pub translation: Option<[f64; 3]>,
 
-    /// Rotation as quaternion [x, y, z, w].
+    /// 作为四元数的旋转 [x, y, z, w]。
     #[serde(default)]
     pub rotation: Option<[f64; 4]>,
 
-    /// Scale [x, y, z].
+    /// 缩放 [x, y, z]。
     #[serde(default)]
     pub scale: Option<[f64; 3]>,
 
-    /// Extension-specific data.
+    /// 扩展特定数据。
     #[serde(default)]
     pub extensions: Option<serde_json::Value>,
 }
 
 impl Node {
-    /// Computes the local transform matrix from TRS or matrix.
+    /// 从 TRS 或 matrix 计算局部变换矩阵。
     pub fn local_transform(&self) -> glam::DMat4 {
         if let Some(m) = self.matrix {
             return glam::DMat4::from_cols_array(&m);
@@ -247,66 +247,66 @@ impl Node {
     }
 }
 
-/// A mesh containing primitives.
+/// 一个包含图元的 mesh。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GltfMesh {
-    /// Optional name.
+    /// 可选名称。
     #[serde(default)]
     pub name: Option<String>,
 
-    /// Array of primitives.
+    /// 图元数组。
     pub primitives: Vec<Primitive>,
 
-    /// Morph target weights.
+    /// morph target 权重。
     #[serde(default)]
     pub weights: Vec<f64>,
 }
 
-/// A primitive (geometry) within a mesh.
+/// mesh 内的一个图元（几何）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Primitive {
-    /// Vertex attributes (e.g., "POSITION", "NORMAL", "TEXCOORD_0").
+    /// 顶点属性（例如 "POSITION"、"NORMAL"、"TEXCOORD_0"）。
     pub attributes: HashMap<String, usize>,
 
-    /// Index of the accessor containing indices.
+    /// 包含索引的 accessor 索引。
     #[serde(default)]
     pub indices: Option<usize>,
 
-    /// Index of the material.
+    /// material 的索引。
     #[serde(default)]
     pub material: Option<usize>,
 
-    /// The topology type (default: Triangles).
+    /// 拓扑类型（默认：Triangles）。
     #[serde(default)]
     pub mode: PrimitiveMode,
 
-    /// Morph targets.
+    /// morph target。
     #[serde(default)]
     pub targets: Vec<HashMap<String, usize>>,
 
-    /// Extension-specific data.
+    /// 扩展特定数据。
     #[serde(default)]
     pub extensions: Option<serde_json::Value>,
 }
 
-/// Primitive topology modes.
+/// 图元拓扑模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PrimitiveMode {
-    /// Points.
+    /// 点。
     Points = 0,
-    /// Lines.
+    /// 线。
     Lines = 1,
-    /// Line loop.
+    /// 环线。
     LineLoop = 2,
-    /// Line strip.
+    /// 线带。
     LineStrip = 3,
-    /// Triangles (default).
+    /// 三角形（默认）。
     #[default]
     Triangles = 4,
-    /// Triangle strip.
+    /// 三角形带。
     TriangleStrip = 5,
-    /// Triangle fan.
+    /// 三角形扇。
     TriangleFan = 6,
 }
 
@@ -338,94 +338,94 @@ impl<'de> Deserialize<'de> for PrimitiveMode {
     }
 }
 
-/// Sparse accessor data for overriding specific elements.
+/// 用于覆盖特定元素的稀疏 accessor 数据。
 ///
-/// Maps to glTF 2.0 `accessor.sparse`
+/// 映射到 glTF 2.0 `accessor.sparse`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessorSparse {
-    /// Number of elements overridden.
+    /// 被覆盖的元素数量。
     pub count: usize,
 
-    /// Indices of elements to override.
+    /// 要覆盖的元素的索引。
     pub indices: AccessorSparseIndices,
 
-    /// Replacement values.
+    /// 替换值。
     pub values: AccessorSparseValues,
 }
 
-/// Sparse accessor indices.
+/// 稀疏 accessor 索引。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessorSparseIndices {
-    /// Index of the buffer view.
+    /// buffer view 的索引。
     pub buffer_view: usize,
 
-    /// Byte offset into the buffer view.
+    /// buffer view 内的字节偏移。
     #[serde(default)]
     pub byte_offset: usize,
 
-    /// Component type of indices (5121=u8, 5123=u16, 5125=u32).
+    /// 索引的分量类型（5121=u8、5123=u16、5125=u32）。
     pub component_type: ComponentType,
 }
 
-/// Sparse accessor values.
+/// 稀疏 accessor 值。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessorSparseValues {
-    /// Index of the buffer view.
+    /// buffer view 的索引。
     pub buffer_view: usize,
 
-    /// Byte offset into the buffer view.
+    /// buffer view 内的字节偏移。
     #[serde(default)]
     pub byte_offset: usize,
 }
 
-/// An accessor for buffer data.
+/// 一个用于 buffer 数据的 accessor。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Accessor {
-    /// Optional name.
+    /// 可选名称。
     #[serde(default)]
     pub name: Option<String>,
 
-    /// Index of the buffer view.
+    /// buffer view 的索引。
     #[serde(default)]
     pub buffer_view: Option<usize>,
 
-    /// Byte offset into the buffer view.
+    /// buffer view 内的字节偏移。
     #[serde(default)]
     pub byte_offset: usize,
 
-    /// The data type of components.
+    /// 分量的数据类型。
     pub component_type: ComponentType,
 
-    /// Whether data is normalized.
+    /// 数据是否归一化。
     #[serde(default)]
     pub normalized: bool,
 
-    /// Number of elements.
+    /// 元素数量。
     pub count: usize,
 
-    /// The type of the accessor (e.g., "VEC3", "SCALAR").
+    /// accessor 的类型（例如 "VEC3"、"SCALAR"）。
     #[serde(rename = "type")]
     pub accessor_type: AccessorType,
 
-    /// Maximum values.
+    /// 最大值。
     #[serde(default)]
     pub max: Vec<f64>,
 
-    /// Minimum values.
+    /// 最小值。
     #[serde(default)]
     pub min: Vec<f64>,
 
-    /// Sparse accessor overrides.
+    /// 稀疏 accessor 覆盖。
     #[serde(default)]
     pub sparse: Option<AccessorSparse>,
 }
 
 impl Accessor {
-    /// Returns the number of components per element.
+    /// 返回每个元素的分量数量。
     pub fn components_per_element(&self) -> usize {
         match self.accessor_type {
             AccessorType::Scalar => 1,
@@ -438,7 +438,7 @@ impl Accessor {
         }
     }
 
-    /// Returns the byte size of each component.
+    /// 返回每个分量的字节大小。
     pub fn component_byte_size(&self) -> usize {
         match self.component_type {
             ComponentType::I8 | ComponentType::U8 => 1,
@@ -447,24 +447,24 @@ impl Accessor {
         }
     }
 
-    /// Returns the total byte stride for one element.
+    /// 返回一个元素的总字节 stride。
     pub fn element_byte_size(&self) -> usize {
         self.components_per_element() * self.component_byte_size()
     }
 
-    /// Returns true if this accessor has sparse overrides.
+    /// 若本 accessor 有稀疏覆盖则返回 true。
     pub fn is_sparse(&self) -> bool {
         self.sparse.is_some()
     }
 
-    /// Reads f32 data from a binary buffer using this accessor.
+    /// 使用本 accessor 从二进制 buffer 读取 f32 数据。
     ///
-    /// Maps to CesiumJS `GltfLoaderUtility.getAccessorData`
+    /// 映射到 CesiumJS `GltfLoaderUtility.getAccessorData`
     pub fn read_f32_data(&self, buffers: &[Vec<u8>], buffer_views: &[BufferView]) -> Vec<f32> {
         let total_components = self.count * self.components_per_element();
         let mut data = vec![0.0f32; total_components];
 
-        // Read base data from buffer view
+        // 从 buffer view 读取基础数据
         if let Some(bv_idx) = self.buffer_view {
             if let Some(bv) = buffer_views.get(bv_idx) {
                 if let Some(buffer) = buffers.get(bv.buffer) {
@@ -491,7 +491,7 @@ impl Accessor {
             }
         }
 
-        // Apply sparse overrides
+        // 应用稀疏覆盖
         if let Some(ref sparse) = self.sparse {
             self.apply_sparse_f32(&mut data, sparse, buffers, buffer_views);
         }
@@ -499,7 +499,7 @@ impl Accessor {
         data
     }
 
-    /// Reads u16 index data from a binary buffer.
+    /// 从二进制 buffer 读取 u16 索引数据。
     pub fn read_u16_data(&self, buffers: &[Vec<u8>], buffer_views: &[BufferView]) -> Vec<u16> {
         let mut data = vec![0u16; self.count];
 
@@ -525,7 +525,7 @@ impl Accessor {
         data
     }
 
-    /// Reads u32 index data from a binary buffer.
+    /// 从二进制 buffer 读取 u32 索引数据。
     pub fn read_u32_data(&self, buffers: &[Vec<u8>], buffer_views: &[BufferView]) -> Vec<u32> {
         let mut data = vec![0u32; self.count];
 
@@ -553,7 +553,7 @@ impl Accessor {
         data
     }
 
-    /// Applies sparse overrides to f32 data.
+    /// 将稀疏覆盖应用到 f32 数据。
     fn apply_sparse_f32(
         &self,
         data: &mut [f32],
@@ -561,10 +561,10 @@ impl Accessor {
         buffers: &[Vec<u8>],
         buffer_views: &[BufferView],
     ) {
-        // Read sparse indices
+        // 读取稀疏索引
         let indices = self.read_sparse_indices(sparse, buffers, buffer_views);
 
-        // Read sparse values
+        // 读取稀疏值
         if let Some(values_bv) = buffer_views.get(sparse.values.buffer_view) {
             if let Some(buffer) = buffers.get(values_bv.buffer) {
                 let components = self.components_per_element();
@@ -595,7 +595,7 @@ impl Accessor {
         }
     }
 
-    /// Reads sparse indices as usize values.
+    /// 将稀疏索引读取为 usize 值。
     fn read_sparse_indices(
         &self,
         sparse: &AccessorSparse,
@@ -651,20 +651,20 @@ impl Accessor {
     }
 }
 
-/// Component data types.
+/// 分量数据类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComponentType {
-    /// Signed 8-bit integer (5120).
+    /// 有符号 8 位整数（5120）。
     I8,
-    /// Unsigned 8-bit integer (5121).
+    /// 无符号 8 位整数（5121）。
     U8,
-    /// Signed 16-bit integer (5122).
+    /// 有符号 16 位整数（5122）。
     I16,
-    /// Unsigned 16-bit integer (5123).
+    /// 无符号 16 位整数（5123）。
     U16,
-    /// Unsigned 32-bit integer (5125).
+    /// 无符号 32 位整数（5125）。
     U32,
-    /// 32-bit float (5126).
+    /// 32 位浮点（5126）。
     F32,
 }
 
@@ -698,77 +698,77 @@ impl<'de> Deserialize<'de> for ComponentType {
             5123 => ComponentType::U16,
             5125 => ComponentType::U32,
             5126 => ComponentType::F32,
-            _ => ComponentType::F32, // Default to F32 for unknown
+            _ => ComponentType::F32, // 未知时默认为 F32
         })
     }
 }
 
-/// Accessor element types.
+/// accessor 元素类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AccessorType {
-    /// Single scalar value.
+    /// 单个标量值。
     #[serde(rename = "SCALAR")]
     Scalar,
-    /// 2D vector.
+    /// 2D 向量。
     #[serde(rename = "VEC2")]
     Vec2,
-    /// 3D vector.
+    /// 3D 向量。
     #[serde(rename = "VEC3")]
     Vec3,
-    /// 4D vector.
+    /// 4D 向量。
     #[serde(rename = "VEC4")]
     Vec4,
-    /// 2x2 matrix.
+    /// 2x2 矩阵。
     #[serde(rename = "MAT2")]
     Mat2,
-    /// 3x3 matrix.
+    /// 3x3 矩阵。
     #[serde(rename = "MAT3")]
     Mat3,
-    /// 4x4 matrix.
+    /// 4x4 矩阵。
     #[serde(rename = "MAT4")]
     Mat4,
 }
 
-/// A view into a buffer.
+/// buffer 的一个视图。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BufferView {
-    /// Optional name.
+    /// 可选名称。
     #[serde(default)]
     pub name: Option<String>,
 
-    /// Index of the buffer.
+    /// buffer 的索引。
     pub buffer: usize,
 
-    /// Byte offset into the buffer.
+    /// buffer 内的字节偏移。
     #[serde(default)]
     pub byte_offset: usize,
 
-    /// Length in bytes.
+    /// 字节长度。
     pub byte_length: usize,
 
-    /// Byte stride (for interleaved data).
+    /// 字节步幅（用于交错数据）。
     #[serde(default)]
     pub byte_stride: Option<usize>,
 
-    /// Target buffer type.
+    /// 目标 buffer 类型。
     #[serde(default)]
     pub target: Option<BufferTarget>,
 }
 
-/// Buffer target types.
+/// buffer 目标类型。
 ///
-/// glTF encodes these as the OpenGL enum integers (34962 = ARRAY_BUFFER,
-/// 34963 = ELEMENT_ARRAY_BUFFER), so the (de)serialization is numeric — the
-/// derived string-variant impl would reject every real `bufferView.target`.
+/// glTF 将其编码为 OpenGL 枚举整数（34962 = ARRAY_BUFFER、
+/// 34963 = ELEMENT_ARRAY_BUFFER），因此（反）序列化是数值式的——
+/// derive 出的字符串变体实现会拒绝每一个真实的 `bufferView.target`。
 ///
 /// DEVIATION(fix): 序列化由 derive 字符串变体改为手写数值 34962/34963，
 /// 未知整数 Err(invalid_value) 不静默降级；see docs/deviations.md#dev-014
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BufferTarget {
-    /// Array buffer (34962).
+    /// 数组 buffer（34962）。
     ArrayBuffer,
-    /// Element array buffer (34963).
+    /// 元素数组 buffer（34963）。
     ElementArrayBuffer,
 }
 
@@ -794,10 +794,10 @@ impl<'de> Deserialize<'de> for BufferTarget {
         match value {
             34962 => Ok(BufferTarget::ArrayBuffer),
             34963 => Ok(BufferTarget::ElementArrayBuffer),
-            // An unknown integer means the payload is corrupt or from a glTF
-            // variant we do not model. Fail loudly instead of silently coercing
-            // it to `ArrayBuffer`, which would mask the data corruption and let
-            // a broken `bufferView` flow through as if it were valid.
+            // 未知的整数意味着该 payload 已损坏，或来自我们
+            // 未建模的 glTF 变体。直接失败而非静默将其强转为
+            // `ArrayBuffer`，否则会掩盖数据损坏，让损坏的
+            // `bufferView` 当作有效值继续流动。
             other => Err(serde::de::Error::invalid_value(
                 serde::de::Unexpected::Unsigned(u64::from(other)),
                 &"34962 (ARRAY_BUFFER) or 34963 (ELEMENT_ARRAY_BUFFER)",
@@ -829,15 +829,15 @@ mod buffer_target_tests {
 
     #[test]
     fn rejects_unknown_target() {
-        // Unknown integers must surface as data corruption, never silently
-        // degrade to `ArrayBuffer`.
+        // 未知的整数必须作为数据损坏上报，绝不静默
+        // 降级为 `ArrayBuffer`。
         assert!(target_from("9999").is_err());
         assert!(target_from("0").is_err());
     }
 
     #[test]
     fn buffer_view_target_defaults_to_none() {
-        // A `bufferView` with no `target` field must stay `None`, not error.
+        // 一个没有 `target` 字段的 `bufferView` 必须保持为 `None`，而非报错。
         let view: BufferView =
             serde_json::from_str(r#"{"buffer":0,"byteLength":12}"#).unwrap();
         assert_eq!(view.target, None);
@@ -861,273 +861,273 @@ mod buffer_target_tests {
     }
 }
 
-/// A binary data buffer.
+/// 一个二进制数据 buffer。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Buffer {
-    /// Optional name.
+    /// 可选名称。
     #[serde(default)]
     pub name: Option<String>,
 
-    /// URI to the buffer data (or None for embedded GLB data).
+    /// buffer 数据的 URI（对于嵌入式 GLB 数据为 None）。
     #[serde(default)]
     pub uri: Option<String>,
 
-    /// Length in bytes.
+    /// 字节长度。
     pub byte_length: usize,
 }
 
-/// A material definition.
+/// 一个 material 定义。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Material {
-    /// Optional name.
+    /// 可选名称。
     #[serde(default)]
     pub name: Option<String>,
 
-    /// PBR metallic-roughness parameters.
+    /// PBR metallic-roughness 参数。
     #[serde(default)]
     pub pbr_metallic_roughness: Option<PbrMetallicRoughness>,
 
-    /// Normal map texture info.
+    /// 法线贴图 texture info。
     #[serde(default)]
     pub normal_texture: Option<TextureInfo>,
 
-    /// Occlusion map texture info.
+    /// 遮蔽贴图 texture info。
     #[serde(default)]
     pub occlusion_texture: Option<TextureInfo>,
 
-    /// Emissive map texture info.
+    /// 自发光贴图 texture info。
     #[serde(default)]
     pub emissive_texture: Option<TextureInfo>,
 
-    /// Emissive color [r, g, b].
+    /// 自发光颜色 [r, g, b]。
     #[serde(default)]
     pub emissive_factor: Option<[f64; 3]>,
 
-    /// Alpha mode.
+    /// alpha 模式。
     #[serde(default)]
     pub alpha_mode: Option<AlphaMode>,
 
-    /// Alpha cutoff value.
+    /// alpha 截断值。
     #[serde(default)]
     pub alpha_cutoff: Option<f64>,
 
-    /// Whether the material is double-sided.
+    /// material 是否为双面。
     #[serde(default)]
     pub double_sided: bool,
 
-    /// Extension-specific data.
+    /// 扩展特定数据。
     #[serde(default)]
     pub extensions: Option<serde_json::Value>,
 }
 
-/// PBR metallic-roughness material model.
+/// PBR metallic-roughness material 模型。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PbrMetallicRoughness {
-    /// Base color [r, g, b, a].
+    /// 基础颜色 [r, g, b, a]。
     #[serde(default)]
     pub base_color_factor: Option<[f64; 4]>,
 
-    /// Base color texture.
+    /// 基础颜色贴图。
     #[serde(default)]
     pub base_color_texture: Option<TextureInfo>,
 
-    /// Metallic factor (0.0 to 1.0).
+    /// 金属度因子（0.0 到 1.0）。
     #[serde(default)]
     pub metallic_factor: Option<f64>,
 
-    /// Roughness factor (0.0 to 1.0).
+    /// 粗糙度因子（0.0 到 1.0）。
     #[serde(default)]
     pub roughness_factor: Option<f64>,
 
-    /// Metallic-roughness texture.
+    /// 金属度-粗糙度贴图。
     #[serde(default)]
     pub metallic_roughness_texture: Option<TextureInfo>,
 }
 
-/// Texture reference with coordinates.
+/// 带坐标的 texture 引用。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextureInfo {
-    /// Index of the texture.
+    /// texture 的索引。
     pub index: usize,
 
-    /// Texture coordinate set.
+    /// texture 坐标集。
     #[serde(default)]
     pub tex_coord: usize,
 }
 
-/// A texture combining image and sampler.
+/// 组合了 image 与 sampler 的 texture。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Texture {
-    /// Optional name.
+    /// 可选名称。
     #[serde(default)]
     pub name: Option<String>,
 
-    /// Index of the sampler.
+    /// sampler 的索引。
     #[serde(default)]
     pub sampler: Option<usize>,
 
-    /// Index of the image.
+    /// image 的索引。
     #[serde(default)]
     pub source: Option<usize>,
 }
 
-/// An image resource.
+/// 一个 image 资源。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Image {
-    /// Optional name.
+    /// 可选名称。
     #[serde(default)]
     pub name: Option<String>,
 
-    /// URI to the image file.
+    /// image 文件的 URI。
     #[serde(default)]
     pub uri: Option<String>,
 
-    /// MIME type.
+    /// MIME 类型。
     #[serde(default)]
     pub mime_type: Option<String>,
 
-    /// Index of the buffer view containing the image.
+    /// 包含该 image 的 buffer view 的索引。
     #[serde(default)]
     pub buffer_view: Option<usize>,
 }
 
-/// A texture sampler.
+/// 一个 texture sampler。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Sampler {
-    /// Optional name.
+    /// 可选名称。
     #[serde(default)]
     pub name: Option<String>,
 
-    /// Magnification filter.
+    /// 放大过滤器。
     #[serde(default)]
     pub mag_filter: Option<u32>,
 
-    /// Minification filter.
+    /// 缩小过滤器。
     #[serde(default)]
     pub min_filter: Option<u32>,
 
-    /// S (U) wrapping mode.
+    /// S (U) 环绕模式。
     #[serde(default)]
     pub wrap_s: Option<u32>,
 
-    /// T (V) wrapping mode.
+    /// T (V) 环绕模式。
     #[serde(default)]
     pub wrap_t: Option<u32>,
 }
 
-/// A skin for skeletal animation.
+/// 用于骨骼动画的 skin。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Skin {
-    /// Optional name.
+    /// 可选名称。
     #[serde(default)]
     pub name: Option<String>,
 
-    /// Index of the accessor containing inverse bind matrices.
+    /// 包含逆变换绑定矩阵的 accessor 索引。
     #[serde(default)]
     pub inverse_bind_matrices: Option<usize>,
 
-    /// Index of the skeleton root node.
+    /// skeleton 根 node 的索引。
     #[serde(default)]
     pub skeleton: Option<usize>,
 
-    /// Indices of joint nodes.
+    /// joint node 的索引。
     pub joints: Vec<usize>,
 }
 
-/// An animation.
+/// 一个 animation。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Animation {
-    /// Optional name.
+    /// 可选名称。
     #[serde(default)]
     pub name: Option<String>,
 
-    /// Animation channels.
+    /// animation channel。
     pub channels: Vec<AnimationChannel>,
 
-    /// Animation samplers.
+    /// animation sampler。
     pub samplers: Vec<AnimationSampler>,
 }
 
-/// An animation channel.
+/// 一个 animation channel。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnimationChannel {
-    /// Index of the sampler.
+    /// sampler 的索引。
     pub sampler: usize,
 
-    /// Target of the animation.
+    /// animation 的目标。
     pub target: AnimationTarget,
 }
 
-/// Animation target.
+/// animation 目标。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimationTarget {
-    /// Index of the node to animate.
+    /// 要驱动的 node 的索引。
     pub node: usize,
 
-    /// Property to animate.
+    /// 要驱动的属性。
     pub path: AnimationPath,
 }
 
-/// Animation property paths.
+/// animation 属性路径。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AnimationPath {
-    /// Translation.
+    /// 平移。
     Translation,
-    /// Rotation.
+    /// 旋转。
     Rotation,
-    /// Scale.
+    /// 缩放。
     Scale,
-    /// Morph weights.
+    /// morph 权重。
     Weights,
 }
 
-/// An animation sampler.
+/// 一个 animation sampler。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimationSampler {
-    /// Index of the accessor containing keyframe timestamps.
+    /// 包含关键帧时间戳的 accessor 索引。
     pub input: usize,
 
-    /// Index of the accessor containing keyframe values.
+    /// 包含关键帧值的 accessor 索引。
     pub output: usize,
 
-    /// Interpolation method.
+    /// 插值方法。
     #[serde(default)]
     pub interpolation: Interpolation,
 }
 
-/// Interpolation methods.
+/// 插值方法。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Interpolation {
-    /// Linear interpolation (default).
+    /// 线性插值（默认）。
     #[default]
     Linear,
-    /// Step interpolation.
+    /// 阶跃插值。
     Step,
-    /// Cubic spline interpolation.
+    /// 三次样条插值。
     CubicSpline,
 }
 
-/// Alpha blending modes.
+/// alpha 混合模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum AlphaMode {
-    /// Opaque (default).
+    /// 不透明（默认）。
     #[default]
     Opaque,
-    /// Mask (binary transparency).
+    /// 遮罩（二值透明）。
     Mask,
-    /// Blend (alpha blending).
+    /// 混合（alpha 混合）。
     Blend,
 }
 
@@ -1274,7 +1274,7 @@ mod tests {
 
     #[test]
     fn test_accessor_read_f32_data() {
-        // Create a buffer with 3 f32 values: 1.0, 2.0, 3.0
+        // 创建一个包含 3 个 f32 值的 buffer：1.0、2.0、3.0
         let mut buffer = Vec::new();
         buffer.extend_from_slice(&1.0f32.to_le_bytes());
         buffer.extend_from_slice(&2.0f32.to_le_bytes());
@@ -1312,7 +1312,7 @@ mod tests {
 
     #[test]
     fn test_accessor_read_f32_vec3() {
-        // 2 VEC3 elements: (1,2,3) and (4,5,6)
+        // 2 个 VEC3 元素：(1,2,3) 与 (4,5,6)
         let mut buffer = Vec::new();
         for v in [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0] {
             buffer.extend_from_slice(&v.to_le_bytes());
@@ -1418,18 +1418,18 @@ mod tests {
 
     #[test]
     fn test_accessor_sparse() {
-        // Base data: [0.0, 0.0, 0.0] (3 scalars)
-        // Sparse: override index 1 with value 5.0
+        // 基础数据：[0.0, 0.0, 0.0]（3 个标量）
+        // 稀疏：将索引 1 覆盖为值 5.0
         let mut base_buffer = Vec::new();
         base_buffer.extend_from_slice(&0.0f32.to_le_bytes());
         base_buffer.extend_from_slice(&0.0f32.to_le_bytes());
         base_buffer.extend_from_slice(&0.0f32.to_le_bytes());
 
-        // Sparse indices buffer: [1u16]
+        // 稀疏索引 buffer：[1u16]
         let mut idx_buffer = Vec::new();
         idx_buffer.extend_from_slice(&1u16.to_le_bytes());
 
-        // Sparse values buffer: [5.0f32]
+        // 稀疏值 buffer：[5.0f32]
         let mut val_buffer = Vec::new();
         val_buffer.extend_from_slice(&5.0f32.to_le_bytes());
 
@@ -1488,20 +1488,20 @@ mod tests {
         assert!(accessor.is_sparse());
         let data = accessor.read_f32_data(&buffers, &buffer_views);
         assert!((data[0] - 0.0).abs() < 1e-6);
-        assert!((data[1] - 5.0).abs() < 1e-6); // overridden
+        assert!((data[1] - 5.0).abs() < 1e-6); // 已被覆盖
         assert!((data[2] - 0.0).abs() < 1e-6);
     }
 
     #[test]
     fn test_accessor_with_byte_stride() {
-        // Interleaved: position(3f) + normal(3f) = 24 bytes stride
-        // Only read positions (first 3 floats of each 6-float stride)
+        // 交错布局：position(3f) + normal(3f) = 24 字节 stride
+        // 只读取 positions（每个 6-float stride 的前 3 个 float）
         let mut buffer = Vec::new();
-        // Element 0: pos(1,2,3) + normal(0,0,1)
+        // 元素 0：pos(1,2,3) + normal(0,0,1)
         for v in [1.0f32, 2.0, 3.0, 0.0, 0.0, 1.0] {
             buffer.extend_from_slice(&v.to_le_bytes());
         }
-        // Element 1: pos(4,5,6) + normal(0,1,0)
+        // 元素 1：pos(4,5,6) + normal(0,1,0)
         for v in [4.0f32, 5.0, 6.0, 0.0, 1.0, 0.0] {
             buffer.extend_from_slice(&v.to_le_bytes());
         }
@@ -1512,7 +1512,7 @@ mod tests {
             buffer: 0,
             byte_offset: 0,
             byte_length: 48,
-            byte_stride: Some(24), // 6 floats * 4 bytes
+            byte_stride: Some(24), // 6 个 float * 4 字节
             target: None,
         }];
 

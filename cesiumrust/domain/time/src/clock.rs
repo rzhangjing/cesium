@@ -1,84 +1,84 @@
-//! Clock - simulation clock for time management.
-//! Maps to CesiumJS `Core/Clock.js`, `Core/ClockRange.js`, `Core/ClockStep.js`
+//! Clock - 用于时间管理的模拟时钟。
+//! 映射到 CesiumJS `Core/Clock.js`、`Core/ClockRange.js`、`Core/ClockStep.js`
 
 use crate::julian_date::JulianDate;
 use serde::{Deserialize, Serialize};
 
-/// Determines how the clock behaves when start/stop time is reached.
-/// Maps to CesiumJS `ClockRange`
+/// 决定时钟在到达开始/停止时间时的行为。
+/// 映射到 CesiumJS `ClockRange`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ClockRange {
-    /// Clock always advances in its current direction.
+    /// 时钟始终沿当前方向推进。
     #[default]
     Unbounded,
-    /// Clock will not advance past start/stop time.
+    /// 时钟不会越过开始/停止时间推进。
     Clamped,
-    /// Clock loops back to start when stop is reached.
+    /// 到达停止时间时时钟循环回开始时间。
     LoopStop,
 }
 
-/// Determines how much time advances with each tick.
-/// Maps to CesiumJS `ClockStep`
+/// 决定每次 tick 推进多少时间。
+/// 映射到 CesiumJS `ClockStep`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ClockStep {
-    /// Advances by a fixed number of seconds (multiplier).
+    /// 按固定的秒数（倍率）推进。
     TickDependent,
-    /// Advances by elapsed system time * multiplier.
+    /// 按流逝的系统时间 * 倍率 推进。
     #[default]
     SystemClockMultiplier,
-    /// Sets clock to current system time.
+    /// 将时钟设为当前系统时间。
     SystemClock,
 }
 
-/// A simple clock for keeping track of simulated time.
-/// Maps to CesiumJS `Clock`
+/// 用于跟踪模拟时间的简单时钟。
+/// 映射到 CesiumJS `Clock`
 #[derive(Debug, Clone)]
 pub struct Clock {
-    /// The start time of the clock.
+    /// 时钟的开始时间。
     pub start_time: JulianDate,
-    /// The stop time of the clock.
+    /// 时钟的停止时间。
     pub stop_time: JulianDate,
-    /// The current time.
+    /// 当前时间。
     pub current_time: JulianDate,
-    /// How much time advances per tick (seconds or multiplier).
+    /// 每次 tick 推进的时间量（秒或倍率）。
     pub multiplier: f64,
-    /// Determines tick behavior (frame-dependent or system-clock-dependent).
+    /// 决定 tick 行为（依赖帧或依赖系统时钟）。
     pub clock_step: ClockStep,
-    /// Determines behavior at start/stop boundaries.
+    /// 决定在开始/停止边界处的行为。
     pub clock_range: ClockRange,
-    /// Whether tick can advance time.
+    /// tick 是否可以推进时间。
     pub can_animate: bool,
-    /// Whether tick should attempt to advance time.
+    /// tick 是否应尝试推进时间。
     pub should_animate: bool,
-    /// Last system time in seconds (for SystemClockMultiplier).
+    /// 上次系统时间（秒），用于 SystemClockMultiplier。
     #[allow(dead_code)]
     last_system_time_secs: f64,
 }
 
-/// Options for constructing a Clock.
-/// Maps to CesiumJS Clock constructor options object.
+/// 构造 Clock 的选项。
+/// 映射到 CesiumJS Clock 构造函数的选项对象。
 #[derive(Debug, Clone, Default)]
 pub struct ClockOptions {
-    /// The start time of the clock.
+    /// 时钟的开始时间。
     pub start_time: Option<JulianDate>,
-    /// The stop time of the clock.
+    /// 时钟的停止时间。
     pub stop_time: Option<JulianDate>,
-    /// The current time.
+    /// 当前时间。
     pub current_time: Option<JulianDate>,
-    /// Determines how much time advances per tick.
+    /// 决定每次 tick 推进的时间量。
     pub multiplier: Option<f64>,
-    /// Determines tick behavior.
+    /// 决定 tick 行为。
     pub clock_step: Option<ClockStep>,
-    /// Determines behavior at start/stop boundaries.
+    /// 决定在开始/停止边界处的行为。
     pub clock_range: Option<ClockRange>,
-    /// Whether tick can advance time.
+    /// tick 是否可以推进时间。
     pub can_animate: Option<bool>,
-    /// Whether tick should attempt to advance time.
+    /// tick 是否应尝试推进时间。
     pub should_animate: Option<bool>,
 }
 
 impl Clock {
-    /// Creates a new Clock with the given parameters.
+    /// 使用给定参数创建一个新 Clock。
     pub fn new(
         start_time: JulianDate,
         stop_time: JulianDate,
@@ -97,13 +97,13 @@ impl Clock {
         }
     }
 
-    /// Creates a Clock from options, faithfully mirroring CesiumJS Clock constructor.
-    /// Derivation rules:
-    /// - currentTime: if not specified → startTime if set, else stopTime - 1 day, else now
-    /// - startTime: if not specified → currentTime (as derived above)
-    /// - stopTime: if not specified → startTime + 1 day
+    /// 从选项创建 Clock，忠实镜像 CesiumJS Clock 构造函数。
+    /// 推导规则：
+    /// - currentTime：若未指定 → 若设置了 startTime 则用它，否则 stopTime - 1 天，否则当前时间
+    /// - startTime：若未指定 → currentTime（如上推导）
+    /// - stopTime：若未指定 → startTime + 1 天
     pub fn from_options(options: &ClockOptions) -> Self {
-        // Derive currentTime
+        // 推导 currentTime
         let current_time = if let Some(ct) = options.current_time {
             ct
         } else if let Some(st) = options.start_time {
@@ -114,10 +114,10 @@ impl Clock {
             JulianDate::now()
         };
 
-        // Derive startTime
+        // 推导 startTime
         let start_time = options.start_time.unwrap_or(current_time);
 
-        // Derive stopTime
+        // 推导 stopTime
         let stop_time = options.stop_time.unwrap_or_else(|| start_time.add_days(1.0));
 
         Self {
@@ -133,16 +133,16 @@ impl Clock {
         }
     }
 
-    /// Creates a clock with default settings (current time = now).
+    /// 创建一个使用默认设置的时钟（当前时间 = now）。
     pub fn default_now() -> Self {
         Self::from_options(&ClockOptions::default())
     }
 
-    /// Advances the clock from the current time.
-    /// Maps to `Clock.tick()`
+    /// 从当前时间推进时钟。
+    /// 映射到 `Clock.tick()`
     ///
-    /// `delta_secs` is the elapsed system time in seconds since last tick
-    /// (provided by the caller for framework independence).
+    /// `delta_secs` 是自上次 tick 以来流逝的系统时间（秒）
+    /// （由调用方提供以保持框架无关）。
     pub fn tick(&mut self, delta_secs: f64) -> JulianDate {
         let mut current_time = self.current_time;
 
@@ -159,7 +159,7 @@ impl Clock {
                 }
             }
 
-            // Apply clock range constraints
+            // 应用时钟范围约束
             match self.clock_range {
                 ClockRange::Clamped => {
                     if current_time.less_than(&self.start_time) {
@@ -185,7 +185,7 @@ impl Clock {
         current_time
     }
 
-    /// Gets the current system time in seconds (monotonic).
+    /// 获取当前系统时间（秒，单调）。
     fn get_system_time_secs() -> f64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -211,9 +211,9 @@ mod tests {
         let mut clock = Clock::new(start, stop, start);
         clock.should_animate = true;
         clock.clock_step = ClockStep::TickDependent;
-        clock.multiplier = 60.0; // 60 seconds per tick
+        clock.multiplier = 60.0; // 每 tick 60 秒
 
-        let result = clock.tick(0.016); // delta doesn't matter for TickDependent
+        let result = clock.tick(0.016); // TickDependent 下 delta 无关紧要
         let expected = start.add_seconds(60.0);
         assert!(result.equals_epsilon(&expected, 1e-10));
     }
@@ -221,31 +221,31 @@ mod tests {
     #[test]
     fn test_tick_clamped() {
         let start = JulianDate::from_date_components(2000, 1, 1, 0, 0, 0, 0.0);
-        let stop = JulianDate::from_date_components(2000, 1, 1, 0, 1, 0, 0.0); // 1 minute
+        let stop = JulianDate::from_date_components(2000, 1, 1, 0, 1, 0, 0.0); // 1 分钟
         let mut clock = Clock::new(start, stop, start);
         clock.should_animate = true;
         clock.clock_step = ClockStep::TickDependent;
         clock.clock_range = ClockRange::Clamped;
-        clock.multiplier = 120.0; // 2 minutes per tick (exceeds stop)
+        clock.multiplier = 120.0; // 每 tick 2 分钟（超过 stop）
 
         let result = clock.tick(0.016);
-        assert_eq!(result, stop); // Clamped to stop
+        assert_eq!(result, stop); // 被钳制到 stop
     }
 
     #[test]
     fn test_tick_loop_stop() {
         let start = JulianDate::from_date_components(2000, 1, 1, 0, 0, 0, 0.0);
-        let stop = JulianDate::from_date_components(2000, 1, 1, 1, 0, 0, 0.0); // 1 hour
+        let stop = JulianDate::from_date_components(2000, 1, 1, 1, 0, 0, 0.0); // 1 小时
         let current = JulianDate::from_date_components(2000, 1, 1, 0, 59, 0, 0.0);
         let mut clock = Clock::new(start, stop, current);
         clock.should_animate = true;
         clock.clock_step = ClockStep::TickDependent;
         clock.clock_range = ClockRange::LoopStop;
-        clock.multiplier = 120.0; // 2 minutes per tick
+        clock.multiplier = 120.0; // 每 tick 2 分钟
 
         let result = clock.tick(0.016);
-        // 59:00 + 2:00 = 61:00, which is 1:00 past stop (60:00)
-        // Loops to start + 60 seconds = 00:01:00
+        // 59:00 + 2:00 = 61:00，即超过 stop（60:00）1:00
+        // 循环回 start + 60 秒 = 00:01:00
         let expected = start.add_seconds(60.0);
         assert!(result.equals_epsilon(&expected, 1e-10));
     }
@@ -260,7 +260,7 @@ mod tests {
         clock.multiplier = 60.0;
 
         let result = clock.tick(0.016);
-        assert_eq!(result, start); // Should not advance
+        assert_eq!(result, start); // 不应推进
     }
 
     #[test]
@@ -270,10 +270,10 @@ mod tests {
         let mut clock = Clock::new(start, stop, start);
         clock.should_animate = true;
         clock.clock_step = ClockStep::SystemClockMultiplier;
-        clock.multiplier = 2.0; // 2x speed
+        clock.multiplier = 2.0; // 2x 速度
 
-        let result = clock.tick(0.5); // 0.5 seconds elapsed
-        let expected = start.add_seconds(1.0); // 0.5 * 2.0 = 1.0 second
+        let result = clock.tick(0.5); // 流逝 0.5 秒
+        let expected = start.add_seconds(1.0); // 0.5 * 2.0 = 1.0 秒
         assert!(result.equals_epsilon(&expected, 1e-10));
     }
 }

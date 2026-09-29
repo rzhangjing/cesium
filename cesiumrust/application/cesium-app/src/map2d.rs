@@ -1,19 +1,19 @@
-//! 2D flat-map mode + the 2D/3D switch button (see plan `cesium-app_2D_地图模式`).
+//! 2D 平面图模式 + 2D/3D 切换按钮（参见计划 `cesium-app_2D_地图模式`）。
 //!
-//! ## Scope of this module
-//! A single [`MapMode`] resource decides whether the viewer runs the proven 3D
-//! globe path or a new flat Geographic (equirectangular) map. In 2D the imagery
-//! is laid on the XY plane via `x = R·lon, y = R·lat` as a Web Mercator tile
-//! layer; a cell whose exact tile is still downloading falls back to its best
-//! cached ancestor so the view never blanks out.
+//! ## 本模块范围
+//! 单个 [`MapMode`] 资源决定查看器运行的是久经考验的 3D
+//! 地球路径还是新的平面 Geographic（等距矩形）地图。在 2D 中，影像
+//! 通过 `x = R·lon, y = R·lat` 以 Web Mercator 瓦片层
+//! 铺在 XY 平面上；当某单元格的精确瓦片仍在下载时，回退到其最佳
+//! 缓存祖先，因此视图绝不会闪白。
 //!
-//! ## Determinism contract (hard requirement)
-//! [`MapMode`] defaults to [`MapMode::ThreeD`]. The 3D orbit systems are gated
-//! with `run_if(map_is_3d)` so in the default mode they run exactly as before —
-//! byte-for-byte. This plugin is only registered on the *windowed* branch of
-//! `main`, never under `CESIUM_HEADLESS`, so the offscreen capture path (v0 /
-//! FIXED_CAMERA / camera-script golden tests) is untouched: no second camera, no
-//! UI, no extra render pass.
+//! ## 确定性契约（硬约束）
+//! [`MapMode`] 默认为 [`MapMode::ThreeD`]。3D orbit 系统用 `run_if(map_is_3d)`
+//! 门控，因此在默认模式下它们与之前完全一样运行 —— 逐字节。
+//! 本插件只在 `main` 的*窗口*分支注册，从不在
+//! `CESIUM_HEADLESS` 下，因此离屏捕获路径（v0 /
+//! FIXED_CAMERA / camera-script golden 测试）不受影响：无第二相机、无
+//! UI、无额外渲染 pass。
 
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::input::mouse::MouseWheel;
@@ -32,46 +32,45 @@ use std::sync::{Arc, Mutex};
 
 use crate::orbit_camera::OrbitCamera;
 
-/// `f64` copies of the constants the tile math needs (kept in double to avoid
-/// visible column drift at deep zoom levels).
+/// 瓦片数学所需常量的 `f64` 副本（保持为双精度，以避免在深层
+/// 缩放级别出现可见的列漂移）。
 const PI6: f64 = std::f64::consts::PI;
 const TAU6: f64 = std::f64::consts::TAU;
 
-// ── Geographic world scale ──────────────────────────────────────────────────
-// 1 render unit == the globe radius, so the equirectangular plane spans
-// x ∈ [-π, π] (longitude) and y ∈ [-π/2, π/2] (latitude). The texture is one
-// full world wide, so wrapping the camera centre by WORLD_W keeps the grid
-// seamless → "infinite" longitude dragging.
-const WORLD_W: f32 = std::f32::consts::TAU; // 2π, full-360° period in x
-const LAT_MAX: f32 = std::f32::consts::FRAC_PI_2; // π/2, ±90° in y
+// ── Geographic 世界尺度 ──────────────────────────────────────
+// 1 render unit == 地球半径，因此等距矩形平面在
+// x ∈ [-π, π]（经度）和 y ∈ [-π/2, π/2]（纬度）上展开。纹理宽度
+// 为整个世界，因此用 WORLD_W 对相机中心取模可使网格无缝
+// → “无限”经度拖拽。
+const WORLD_W: f32 = std::f32::consts::TAU; // 2π，x 方向的完整 360° 周期
+const LAT_MAX: f32 = std::f32::consts::FRAC_PI_2; // π/2，y 方向 ±90°
 
-/// Zoom (pixels per world unit) limits. `ZOOM_MIN` keeps the whole world plus
-/// margin inside the oversized base quad so no empty edges show; `ZOOM_MAX` is a
-/// sanity ceiling.
+/// 缩放（每世界单位的像素）限制。`ZOOM_MIN` 使整个世界加边距
+/// 落在超大基础 quad 内，因此不显示空白边缘；`ZOOM_MAX` 是一个
+/// 合理性上限。
 const ZOOM_MIN: f32 = 110.0;
 const ZOOM_MAX: f32 = 8000.0;
-// Default so the map fills the frame vertically (window height ≈ π·zoom) rather
-// than floating as a small band with empty margins.
+// 默认值使地图在垂直方向上填满画面（窗口高度 ≈ π·zoom），而非
+// 作为一条小带子漂浮在空白边距中。
 const ZOOM_DEFAULT: f32 = 240.0;
 
-/// Camera height above the plane (render units). Only needs to sit inside the
-/// orthographic near/far band; the projection is orthographic so this is
-/// visually irrelevant beyond depth ordering.
+/// 相机高于平面的高度（render unit）。只需位于正交 near/far
+/// 范围带内；投影是正交的，因此除了深度排序外这在视觉上无关紧要。
 const CAM_Z: f32 = 100.0;
 
-// ── P2 imagery-tile tuning ────────────────────────────────────────────────
-// Tile level is picked so one 256px tile spans ~256 screen px (native res).
+// ── P2 影像瓦片调参 ────────────────────────────────────
+// 瓦片级别的选取使一个 256px 瓦片跨越 ~256 屏幕 px（原生分辨率）。
 const TILE_PX_TARGET: f32 = 256.0;
 const TILE_Z_MIN: i32 = 1;
 const TILE_Z_MAX: i32 = 19;
-/// Tiles float just above the placeholder grid (z = 0) so they win depth tests.
+/// 瓦片漂浮在占位网格（z = 0）上方一点，因此赢得深度测试。
 const TILE_Z_ELEV: f32 = 0.5;
-/// Background worker threads downloading 2D imagery tiles.
+/// 下载 2D 影像瓦片的后台工作线程。
 const MAP2D_DOWNLOAD_THREADS: usize = 4;
 
-// ── 2D/3D switch palette ──────────────────────────────────────────────────
-// `Color::srgba` is a `const fn` in bevy_color 0.15, so the whole theme can be
-// compile-time data. Dark "glass" shell + azure accent for the active segment.
+// ── 2D/3D 切换调色板 ──────────────────────────────────────
+// `Color::srgba` 在 bevy_color 0.15 中是一个 `const fn`，因此整个主题
+// 可以是编译期数据。深色“玻璃”外壳 + 潮蓝强调色用于激活段。
 const SW_GLASS: Color = Color::srgba(0.07, 0.10, 0.15, 0.80);
 const SW_GLASS_BORDER: Color = Color::srgba(1.0, 1.0, 1.0, 0.16);
 const SW_ACCENT: Color = Color::srgba(0.16, 0.50, 0.86, 1.0);
@@ -81,8 +80,8 @@ const SW_HOVER_PRESSED: Color = Color::srgba(1.0, 1.0, 1.0, 0.26);
 const SW_ACTIVE_TEXT: Color = Color::srgba(1.0, 1.0, 1.0, 1.0);
 const SW_IDLE_TEXT: Color = Color::srgba(0.72, 0.78, 0.86, 1.0);
 
-/// Which projection the viewer is in. `ThreeD` is the default and the golden
-/// path; `TwoD` is the flat map.
+/// 查看器处于哪种投影。`ThreeD` 是默认值也是 golden
+/// 路径；`TwoD` 是平面图。
 #[derive(Resource, Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum MapMode {
     #[default]
@@ -90,67 +89,67 @@ pub enum MapMode {
     TwoD,
 }
 
-/// System run-condition: true while the flat map is active.
+/// 系统运行条件：平面图激活时为 true。
 pub fn map_is_2d(mode: Res<MapMode>) -> bool {
     matches!(*mode, MapMode::TwoD)
 }
 
-/// System run-condition: true while the 3D globe is active (the default). Used
-/// by `OrbitCameraPlugin` to gate its systems without altering 3D behaviour.
+/// 系统运行条件：3D 地球激活时（默认）为 true。由
+/// `OrbitCameraPlugin` 用来门控其系统而不改变 3D 行为。
 pub fn map_is_3d(mode: Res<MapMode>) -> bool {
     matches!(*mode, MapMode::ThreeD)
 }
 
-/// Marker for the 2D orthographic camera (kept separate from [`OrbitCamera`] so
-/// the two never fight over the same query).
+/// 2D 正交相机的标记（与 [`OrbitCamera`] 分开保留，
+/// 因此两者从不争夺同一个 query）。
 #[derive(Component)]
 struct Map2dCamera;
 
-/// One cell of the 2D/3D segmented switch. Remembers which mode it selects and
-/// its own label entity, so a single system can restyle fill + text together.
+/// 2D/3D 分段切换的一个单元格。记住它选择的模式
+/// 和它自己的标签实体，因此单个系统能一起重新设置填充 + 文本样式。
 #[derive(Component)]
 struct ModeSegment {
     mode: MapMode,
     label: Entity,
 }
 
-/// Marker for the switch's outer pill container. Also a UI root, so it needs an
-/// explicit [`TargetCamera`] (see [`sync_ui_target_camera`]).
+/// 切换器外层胶囊容器的标记。也是一个 UI 根，因此它需要一个
+/// 显式的 [`TargetCamera`]（参见 [`sync_ui_target_camera]）。
 #[derive(Component)]
 struct ModeSwitchRoot;
 
-/// Marker for the bottom-left readout container — the other UI root.
+/// 左下角读数容器的标记 —— 另一个 UI 根。
 #[derive(Component)]
 struct ReadoutRoot;
 
-/// Component carrying the flat-map camera state (Geographic world coords).
+/// 携带平面图相机状态的组件（Geographic 世界坐标）。
 #[derive(Component)]
 struct Map2dCam {
-    /// Camera centre in Geographic world units (x = R·lon, y = R·lat).
+    /// Geographic 世界单位下的相机中心（x = R·lon, y = R·lat）。
     center: Vec2,
-    /// Pixels per world unit; the orthographic scale is `1 / zoom`.
+    /// 每世界单位的像素；正交缩放为 `1 / zoom`。
     zoom: f32,
 }
 
-/// Live cursor readout text (lon°/lat°).
+/// 实时光标读数文本（lon°/lat°）。
 #[derive(Component)]
 struct CoordText;
 
-/// Live zoom-level text.
+/// 实时缩放级别文本。
 #[derive(Component)]
 struct LevelText;
 
-// ── P2: real imagery tiles ─────────────────────────────────────────────────
+// ── P2：真实影像瓦片 ────────────────────────────────────
 
-/// Marker for a per-tile imagery quad, keyed by its canonical Web-Mercator
-/// `(x, y, z)`. Placement uses a raw (possibly out-of-range) column so the map
-/// wraps infinitely in longitude while the texture is fetched by canonical col.
+/// 逐瓦片影像 quad 的标记，以其规范 Web-Mercator `(x, y, z)`
+/// 为键。放置时使用一个原始（可能越界）列，因此地图在经度上
+/// 无限环绕，而纹理按规范列获取。
 #[derive(Component)]
 struct Map2dTile {
     key: (u32, u32, u32),
 }
 
-/// A decoded tile image shipped from a worker thread back to the main world.
+/// 一个已解码的瓦片图像，由工作线程送回主世界。
 struct Map2dTileImg {
     x: u32,
     y: u32,
@@ -160,19 +159,18 @@ struct Map2dTileImg {
     height: u32,
 }
 
-/// Cross-frame state for the 2D imagery layer: a small worker pool downloads
-/// Bing Aerial tiles (or reads `OFFLINE_IMAGERY_ROOT` from disk), decoded RGBA
-/// is cached by canonical key, and one quad entity is maintained per visible
-/// raw column/row. Kept fully separate from the 3D `TileManager` so the golden
-/// globe path is never entangled with 2D panning.
+/// 2D 影像层的跨帧状态：一个小工作池下载 Bing Aerial 瓦片
+/// （或从磁盘读取 `OFFLINE_IMAGERY_ROOT`），解码后的 RGBA 按规范键
+/// 缓存，并为每个可见的原始列/行维护一个 quad 实体。与 3D
+/// `TileManager` 完全分开，因此 golden 地球路径从不与 2D 平移纠缠。
 #[derive(Resource)]
 struct Map2dTiler {
     job_tx: mpsc::Sender<(u32, u32, u32)>,
     rx: Mutex<mpsc::Receiver<Map2dTileImg>>,
     cache: HashMap<(u32, u32, u32), Handle<Image>>,
-    /// Live quads keyed by their *placement* — `(raw_col, raw_row, level)`. The
-    /// level is part of the key because one view mixes target tiles with the
-    /// coarser ancestors shown beneath them as fallbacks.
+    /// 按*放置位置*为键的活动 quad —— `(raw_col, raw_row, level)`。级别
+    /// 是键的一部分，因为一个视图会将目标瓦片与其下方作为回退显示的
+    /// 更粗祖先混在一起。
     live: HashMap<(i64, i64, u32), Entity>,
     in_flight: HashSet<(u32, u32, u32)>,
     unit_quad: Option<Handle<Mesh>>,
@@ -199,22 +197,22 @@ impl Default for Map2dTiler {
     }
 }
 
-/// Remembers the cursor sample from the previous frame while the left button is
-/// held. Panning diffs two samples taken in the *same* space — `Window::cursor_
-/// position` (logical px, top-left origin) — rather than mixing that with
-/// `MouseMotion` (physical px, y-up), which made 2D drag inverted and non-1:1.
+/// 左键按住时记住上一帧的光标采样。平移对两个在*同一*
+/// 空间采样的值做差 —— `Window::cursor_position`（逻辑 px，左上
+/// 原点）—— 而非将其与 `MouseMotion`（物理 px，y 向上）混用，
+/// 后者会使 2D 拖拽反转且非 1:1。
 #[derive(Resource, Default)]
 struct Map2dPanCursor {
     last: Option<Vec2>,
 }
 
-/// Plugin wiring the 2D map. Registered only on the windowed branch of `main`.
+/// 接入 2D 地图的插件。只在 `main` 的窗口分支注册。
 pub struct Map2dPlugin;
 
 impl Plugin for Map2dPlugin {
     fn build(&self, app: &mut App) {
-        // MapMode itself is initialised by OrbitCameraPlugin (always present);
-        // here we only add the 2D-specific systems and startup spawns.
+        // MapMode 本身由 OrbitCameraPlugin（总是存在）初始化；
+        // 这里我们只添加 2D 专用系统和启动 spawn。
         app.add_systems(
             Startup,
             (spawn_map2d_camera, build_mode_ui).chain(),
@@ -239,13 +237,13 @@ impl Plugin for Map2dPlugin {
     }
 }
 
-// ── Spawns ──────────────────────────────────────────────────────────────────
+// ── Spawn ──────────────────────────────────────────────────
 
 fn spawn_map2d_camera(mut commands: Commands) {
-    // Orthographic top-down over the XY plane. Identity rotation looks along -Z,
-    // screen-right = +X (east), screen-up = +Y (north) — exactly the Geographic
-    // layout. `ScalingMode::WindowSize` (default) makes `scale` == world units
-    // per pixel, so `scale = 1 / zoom`. `order` starts low; sync promotes it in 2D.
+    // 对 XY 平面的正交俯视图。单位旋转沿 -Z 看，
+    // 屏幕右 = +X（东），屏幕上 = +Y（北）—— 正是 Geographic
+    // 布局。`ScalingMode::WindowSize`（默认）使 `scale` == 每像素的世界
+    // 单位，因此 `scale = 1 / zoom`。`order` 从低值开始；sync 在 2D 中将其提升。
     let projection = OrthographicProjection {
         scale: 1.0 / ZOOM_DEFAULT,
         near: -1000.0,
@@ -258,13 +256,13 @@ fn spawn_map2d_camera(mut commands: Commands) {
             order: 0,
             ..default()
         },
-        // The workspace disables `tonemapping_luts`, so `Camera3d`'s default
-        // (`TonyMcMapFace`) logs an error every frame. An unlit flat map needs
-        // no tonemapping at all.
+        // 工作区禁用了 `tonemapping_luts`，因此 `Camera3d` 的默认值
+        // （`TonyMcMapFace`）会每帧记录一条错误。无光照的平面图根本
+        // 不需要任何色调映射。
         Tonemapping::None,
-        // Layer 1 = the flat imagery tiles, layer 2 = shared UI, layer 3 = the
-        // plotting overlay. It never sees the globe (layer 0), so switching modes
-        // can't leave the 3D scene showing; layer 3 is shared with the 3D camera.
+        // 图层 1 = 平面影像瓦片，图层 2 = 共享 UI，图层 3 = 标绘
+        // overlay。它从不看到地球（图层 0），因此切换模式不会让 3D
+        // 场景残留显示；图层 3 与 3D 相机共享。
         RenderLayers::from_layers(&[1, 2, 3]),
         Projection::Orthographic(projection),
         Map2dCamera,
@@ -277,11 +275,11 @@ fn spawn_map2d_camera(mut commands: Commands) {
 }
 
 fn build_mode_ui(mut commands: Commands) {
-    // ── Bottom-right 2D/3D segmented switch ─────────────────────────────────
-    // A pill-shaped glass shell holding two rounded cells; the cell matching the
-    // CURRENT mode carries the accent fill, so the control always shows where you
-    // are (the old "[ 2D ]" toggle advertised the *other* mode and read as noise).
-    // Hover/press feedback lives in `update_mode_segments`.
+    // ── 右下角 2D/3D 分段切换 ─────────────────────────────────
+    // 一个容纳两个圆角单元格的胶囊形玻璃外壳；与当前模式匹配的
+    // 单元格带有强调填充，因此控件始终显示你所在的模式（旧的
+    // "[ 2D ]" 切换按钮宣传的是*另一个*模式，看起来像噪声）。
+    // 悬停/按下反馈位于 `update_mode_segments`。
     let container = commands
         .spawn((
             Node {
@@ -290,13 +288,13 @@ fn build_mode_ui(mut commands: Commands) {
                 bottom: Val::Px(18.0),
                 column_gap: Val::Px(3.0),
                 padding: UiRect::all(Val::Px(4.0)),
-                // A 1px border must be sized before `BorderColor` paints anything.
+                // 1px 边框必须在 `BorderColor` 绘制任何内容之前设好尺寸。
                 border: UiRect::all(Val::Px(1.0)),
                 ..default()
             },
             BackgroundColor(SW_GLASS),
             BorderColor(SW_GLASS_BORDER),
-            // Half the container's 42px height → a true pill.
+            // 容器 42px 高度的一半 → 真正的胶囊形。
             BorderRadius::all(Val::Px(21.0)),
             BoxShadow {
                 color: Color::srgba(0.0, 0.0, 0.0, 0.45),
@@ -305,7 +303,7 @@ fn build_mode_ui(mut commands: Commands) {
                 spread_radius: Val::Px(0.0),
                 blur_radius: Val::Px(12.0),
             },
-            // Layer 2: shared UI, seen by both the 3D and 2D cameras.
+            // 图层 2：共享 UI，3D 和 2D 相机都能看到。
             RenderLayers::layer(2),
             ModeSwitchRoot,
         ))
@@ -314,7 +312,7 @@ fn build_mode_ui(mut commands: Commands) {
     spawn_mode_segment(&mut commands, container, MapMode::ThreeD);
     spawn_mode_segment(&mut commands, container, MapMode::TwoD);
 
-    // Bottom-left readout block (coords + zoom level), stacked vertically.
+    // 左下角读数区块（坐标 + 缩放级别），垂直堆叠。
     let readout = commands
         .spawn((
             Node {
@@ -355,11 +353,11 @@ fn build_mode_ui(mut commands: Commands) {
         .set_parent(readout);
 }
 
-/// One pill cell of the switch: `Button` + `Interaction` on the node, its label
-/// as a child. The label entity is parked on [`ModeSegment`] so the styling
-/// system can reach it without a `Children` walk every frame.
+/// 切换器的一个胶囊单元格：节点上是 `Button` + `Interaction`，其标签
+/// 作为子节点。标签实体被存放在 [`ModeSegment`] 上，因此样式系统
+/// 无需每帧遍历 `Children` 就能访问它。
 fn spawn_mode_segment(commands: &mut Commands, parent: Entity, mode: MapMode) {
-    // ASCII only: the bundled FiraSans has no CJK/`°` glyphs (renders tofu).
+    // 仅用 ASCII：内置的 FiraSans 没有 CJK/`°` 字形（会渲染成豆腐块）。
     let title = match mode {
         MapMode::ThreeD => "3D",
         MapMode::TwoD => "2D",
@@ -386,7 +384,7 @@ fn spawn_mode_segment(commands: &mut Commands, parent: Entity, mode: MapMode) {
                 align_items: AlignItems::Center,
                 ..default()
             },
-            // Inactive cells are see-through; the shell's glass shows through.
+            // 非激活单元格是透明的；外壳的玻璃会透出来。
             BackgroundColor(Color::NONE),
             BorderRadius::all(Val::Px(16.0)),
             RenderLayers::layer(2),
@@ -397,12 +395,12 @@ fn spawn_mode_segment(commands: &mut Commands, parent: Entity, mode: MapMode) {
     commands.entity(label).set_parent(cell);
 }
 
-// ── Mode sync / toggling ────────────────────────────────────────────────────
+// ── 模式同步 / 切换 ──────────────────────────────────────────
 
-/// Keep exactly one camera live for the active mode. `RenderLayers` already
-/// isolate what each camera sees, so we simply enable the matching one and
-/// disable the other — no double render, no clear-order ambiguity, and the
-/// pre-existing 3D scene entities are never touched.
+/// 为当前激活模式只保留一个存活相机。`RenderLayers` 已经
+/// 隔离了每个相机所看到的内容，所以我们只需启用匹配的那个并
+/// 禁用另一个 —— 无双重渲染、无清除顺序歧义，且
+/// 预先存在的 3D 场景实体永不被碰。
 fn sync_camera_by_mode(
     mode: Res<MapMode>,
     mut cams: Query<(&mut Camera, Has<OrbitCamera>, Has<Map2dCamera>)>,
@@ -417,24 +415,24 @@ fn sync_camera_by_mode(
     }
 }
 
-/// Pin every UI root to the camera that is actually active for the current mode.
+/// 将每个 UI 根钉到当前模式下实际激活的相机。
 ///
-/// bevy_ui binds a UI tree to ONE camera: `TargetCamera`, falling back to
-/// `DefaultUiCamera` — which is only resolvable when the world has a single
-/// camera. `TargetCamera`'s own doc says as much: *"Optional if there is only
-/// one camera in the world. Required otherwise."* We have at least two (orbit +
-/// flat), so the binding is ambiguous and lands on whichever camera the query
-/// happens to yield. Extraction drops `DefaultCameraView` for **inactive**
-/// cameras, so if that pick is the mode's dormant one the whole control simply
-/// stops drawing — which is exactly why the switch could vanish on entering 2D.
+/// bevy_ui 将一棵 UI 树绑定到一个相机：`TargetCamera`，否则回退到
+/// `DefaultUiCamera` —— 而后者只有当世界只有一个相机时才能解析。
+/// `TargetCamera` 自己的文档也说明了这一点：*“如果世界只有一个
+/// 相机则是可选的，否则必需。”* 我们至少有两只（orbit + flat），
+/// 因此绑定是歧义的，会落在 query 恰好产出的那一只相机上。对
+/// **非激活**相机会剔除 `DefaultCameraView`，所以若那个选择恰好是本
+/// 模式的休眠相机，整个控件就会完全停止绘制 —— 这正是切换器在
+/// 进入 2D 时可能消失的原因。
 ///
-/// Layout is window-derived and identical for both cameras, so re-pointing the
-/// roots is safe. The write is guarded on "already correct" to avoid a change
-/// tick (and a child re-propagation) on every idle frame.
-/// Query filters for [`sync_ui_target_camera`]; factored out to keep clippy's
-/// `type_complexity` happy (nested `Has`/`Or` tuples blow the default budget).
-/// Both `Query` lifetimes (`'w`, `'s`) stay as separate params — collapsing them
-/// into one breaks the `SystemParam` bound Bevy's `.chain()` relies on.
+/// 布局由窗口推导且对两只相机相同，因此重新指向这些根是安全的。
+/// 写入时会根据“已正确”做守卫，避免在每个空闲帧都产生一个变化
+/// tick（以及一次子节点重传播）。
+/// [`sync_ui_target_camera`] 的查询过滤器；拆出来是为了让 clippy 的
+/// `type_complexity` 满意（嵌套的 `Has`/`Or` 元组会爆默认预算）。
+/// 两个 `Query` 生命周期（`'w`、`'s`）保持为 separate 参数 —— 将它们
+/// 归为一个会破坏 Bevy `.chain()` 所依赖的 `SystemParam` 约束。
 type ModeCamsQuery<'w, 's> =
     Query<'w, 's, (Entity, Has<OrbitCamera>, Has<Map2dCamera>), With<Camera>>;
 type UiRootsQuery<'w, 's> =
@@ -452,8 +450,8 @@ fn sync_ui_target_camera(
         .iter()
         .find_map(|(e, orbit, flat)| ((orbit && !two_d) || (flat && two_d)).then_some(e))
     else {
-        // No camera owns this mode yet (e.g. the orbit camera spawns late) —
-        // retry next frame rather than pinning the UI to nothing.
+        // 尚无相机拥有此模式（例如 orbit 相机晚些才 spawn）——
+        // 下一帧重试，而不是把 UI 钉到空。
         return;
     };
     for root in roots.iter() {
@@ -464,9 +462,9 @@ fn sync_ui_target_camera(
     }
 }
 
-/// Clicking a segment selects that mode. Deliberately *not* a toggle: clicking
-/// the already-active cell is a no-op, so the switch can never flip out from
-/// under a user who meant to press the other one.
+/// 点击一个分段就选择该模式。故意*不是*切换按钮：点击已经
+/// 激活的单元格是空操作，因此切换器绝不会在本想按另一个的用户
+/// 手下反转。
 fn on_mode_segment_click(
     mut mode: ResMut<MapMode>,
     cells: Query<(&ModeSegment, &Interaction), Changed<Interaction>>,
@@ -479,9 +477,9 @@ fn on_mode_segment_click(
     }
 }
 
-/// Paint the switch: the cell for the active [`MapMode`] carries the accent
-/// fill, every cell answers hover/press with a visible change. Values are
-/// compared before writing so idle frames raise no UI change ticks.
+/// 绘制切换器：激活 [`MapMode`] 的单元格带强调填充，每个单元格
+/// 以可见变化响应悬停/按下。写入前先比较值，因此空闲帧不会
+/// 引发 UI 变化 tick。
 fn update_mode_segments(
     mode: Res<MapMode>,
     mut cells: Query<(&ModeSegment, &Interaction, &mut BackgroundColor)>,
@@ -510,8 +508,8 @@ fn update_mode_segments(
         }
 
         if let Ok(mut tc) = labels.get_mut(seg.label) {
-            // The active cell and any hovered cell read bright; only a resting
-            // inactive cell is dimmed.
+            // 激活单元格与任何悬停单元格都显亮；只有静置的
+            // 非激活单元格会被调暗。
             let want_tc = if active || hovered {
                 SW_ACTIVE_TEXT
             } else {
@@ -524,11 +522,11 @@ fn update_mode_segments(
     }
 }
 
-// ── 2D camera interaction ───────────────────────────────────────────────────
+// ── 2D 相机交互 ────────────────────────────────────────
 
-/// Left-drag pans the flat map; the geographic world point grabbed under the
-/// cursor stays glued to it, and the centre wraps in longitude (infinite drag).
-/// Only mutates [`Map2dCam`]; [`apply_map2d_cam`] writes it to the camera.
+/// 左键拖拽平移平面图；光标下抓取 Geographic 世界点会粘住光标，
+/// 且中心在经度上环绕（无限拖拽）。
+/// 只修改 [`Map2dCam`]；[`apply_map2d_cam`] 将其写入相机。
 fn map2d_pan_system(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
@@ -537,25 +535,25 @@ fn map2d_pan_system(
     mut anchor: ResMut<Map2dPanCursor>,
     capture: Option<Res<PlotInputCapture>>,
 ) {
-    // The plot overlay owns the pointer this frame: stand down and drop the
-    // grab anchor so releasing capture can't resume a stale pan.
+    // 标绘 overlay 本帧拥有指针：退让并释放抓取锚点，以便释放
+    // 捕获时不会恢复一个过期平移。
     if capture.is_some_and(|c| c.is_captured()) {
         anchor.last = None;
         return;
     }
-    // Not dragging: drop the anchor so the next press re-seeds without a jump.
+    // 未在拖拽：释放锚点，以便下次按下重新播种而不发生跳变。
     if !mouse.pressed(MouseButton::Left) {
         anchor.last = None;
         return;
     }
     let Ok(win) = windows.get_single() else { return };
-    // `cursor_position` shares `viewport_to_world_2d`'s space (logical px, top-
-    // left origin), so consecutive samples diff cleanly — no DPI scale, no axis
-    // flip. This is why we no longer read `MouseMotion` here.
+    // `cursor_position` 与 `viewport_to_world_2d` 共享同一空间（逻辑 px，左上
+    // 原点），因此连续采样能干净地做差 —— 无 DPI 缩放、无轴翻转。
+    // 这就是我们不再在此读取 `MouseMotion` 的原因。
     let Some(cursor) = win.cursor_position() else { return };
     let Ok((cam, ct)) = read.get_single() else { return };
 
-    // First frame of a drag: remember where the grab started, don't move yet.
+    // 拖拽的第一帧：记住抓取起始位置，暂不移动。
     let Some(prev) = anchor.last.replace(cursor) else {
         return;
     };
@@ -563,8 +561,8 @@ fn map2d_pan_system(
         return;
     }
 
-    // Grab-the-map: the world point under the previous sample lands under the
-    // current one, so the imagery tracks the cursor exactly 1:1.
+    // 抓图：上一个采样下的世界点落在当前采样下，因此影像精确
+    // 地 1:1 跟随光标。
     let (Ok(w_now), Ok(w_prev)) = (
         cam.viewport_to_world_2d(ct, cursor),
         cam.viewport_to_world_2d(ct, prev),
@@ -581,16 +579,16 @@ fn map2d_pan_system(
     }
 }
 
-/// Wheel zooms toward the cursor: the geographic point under the pointer is held
-/// fixed across the zoom step (CesiumJS-style zoom-to-cursor).
+/// 滚轮向光标方向缩放：指针下的 Geographic 点在缩放步进中保持
+/// 固定（CesiumJS 风格的光标缩放）。
 fn map2d_zoom_system(
     mut wheel: EventReader<MouseWheel>,
     windows: Query<&Window>,
     mut cams: Query<(&Camera, &GlobalTransform, &mut Map2dCam), With<Map2dCamera>>,
     capture: Option<Res<PlotInputCapture>>,
 ) {
-    // Plot overlay has the wheel this frame: consume the events so the camera
-    // doesn't jump when control is handed back, then stand down.
+    // 标绘 overlay 本帧拥有滚轮：消费事件，以便控制权交回时相机
+    // 不会跳变，然后退让。
     if capture.is_some_and(|c| c.is_captured()) {
         wheel.clear();
         return;
@@ -606,7 +604,7 @@ fn map2d_zoom_system(
     let Some(cursor) = win.cursor_position() else { return };
     let Ok((cam, ct, mut mc)) = cams.get_single_mut() else { return };
 
-    // Absolute geographic world point under the cursor at the CURRENT zoom.
+    // 当前缩放下光标下的绝对 Geographic 世界点。
     let Ok(g) = cam.viewport_to_world_2d(ct, cursor) else {
         return;
     };
@@ -614,8 +612,8 @@ fn map2d_zoom_system(
     let factor = (1.0 + 0.3_f32.min(scroll.abs()) * scroll.signum()).max(0.2);
     let zoom_min = min_zoom_for(win.height());
     let new_zoom = (mc.zoom * factor).clamp(zoom_min, ZOOM_MAX);
-    // scale ∝ 1/zoom, so to keep `g` pinned under the cursor the centre moves
-    // a fraction (1 - old/new) of the way from the centre to `g`.
+    // scale ∝ 1/zoom，因此要将 `g` 保持在光标下，中心需从中心向 `g`
+    // 移动 (1 - old/new) 的比例距离。
     let ratio = 1.0 - mc.zoom / new_zoom;
     let mut center = mc.center + (g - mc.center) * ratio;
     center.x = wrap_x(center.x);
@@ -625,10 +623,9 @@ fn map2d_zoom_system(
     mc.center = center;
 }
 
-/// Single writer: push [`Map2dCam`] centre/zoom onto the live camera transform +
-/// orthographic scale (`1 / zoom`). Kept separate from the input systems so they
-/// can read `Camera`/`GlobalTransform` while mapping the cursor without also
-/// holding them mutably.
+/// 单一写入者：将 [`Map2dCam`] 的中心/缩放推到存活相机的 transform +
+/// 正交缩放（`1 / zoom`）上。与输入系统分开保留，使它们能在映射
+/// 光标时读取 `Camera`/`GlobalTransform`，而不同时可变地持有它们。
 fn apply_map2d_cam(
     mut q: Query<(&mut Transform, &mut Projection, &Map2dCam), With<Map2dCamera>>,
 ) {
@@ -640,13 +637,13 @@ fn apply_map2d_cam(
     }
 }
 
-/// Mirror the app's view state into the plotting bridge's [`PlotViewCtx`].
+/// 将应用的视图状态镜像到标绘桥接的 [`PlotViewCtx`]。
 ///
-/// The bridge (an adapter) must not import this application layer, so the app
-/// pushes what it owns — the active [`MapMode`], window metrics and flat-map
-/// zoom — into the shared resource each frame. Uses `Option<ResMut>` so the
-/// 2D path stays valid when the plot bridge plugin isn't registered (headless,
-/// or `CESIUM_ENABLE_PLOT=0`): the system is then a harmless no-op.
+/// 桥接（一个适配器）不得导入本应用层，因此应用每帧将它拥有的
+/// 内容 —— 当前 [`MapMode`]、窗口尺寸与平面图缩放 —— 推入共享
+/// 资源。使用 `Option<ResMut>` 以便在标绘桥接插件未注册（无头，
+/// 或 `CESIUM_ENABLE_PLOT=0`）时 2D 路径仍有效：此时本系统是一个
+/// 无害的空操作。
 fn sync_plot_view_ctx(
     mode: Res<MapMode>,
     windows: Query<&Window>,
@@ -667,7 +664,7 @@ fn sync_plot_view_ctx(
     }
 }
 
-// ── Readout ─────────────────────────────────────────────────────────────────
+// ── 读数 ──────────────────────────────────────────────
 
 fn update_readout(
     mode: Res<MapMode>,
@@ -677,10 +674,10 @@ fn update_readout(
     cams: Query<&Map2dCam, With<Map2dCamera>>,
 ) {
     if !matches!(*mode, MapMode::TwoD) {
-        // Clear the readout once on the 2D→3D transition so stale lon/lat text
-        // never lingers over the globe. `is_changed` keeps this to one frame.
-        // Scoped to the readout labels: an unfiltered sweep here used to blank
-        // the mode-switch captions too, leaving a textless button in 3D.
+        // 在 2D→3D 过渡时清除读数一次，使陈旧的 lon/lat 文本
+        // 永不残留在地球上。`is_changed` 将其限制为一帧。
+        // 仅限于读数标签：此处一次未过滤的清扫曾连切换器的标题
+        // 一并置空，在 3D 中留下一个无文字按钮。
         if mode.is_changed() {
             for (mut t, is_coord, is_level) in texts.iter_mut() {
                 if (is_coord || is_level) && !t.is_empty() {
@@ -693,8 +690,8 @@ fn update_readout(
     let Ok(win) = windows.get_single() else { return };
     let Ok((cam, ct)) = read.get_single() else { return };
 
-    // A single `&mut Text` query (with `Has<..>` role tags) avoids the ECS
-    // conflict two separate `&mut Text` queries would raise.
+    // 单个 `&mut Text` 查询（带 `Has<..>` 角色标签）避免了两个独立
+    // `&mut Text` 查询会引发的 ECS 冲突。
     let level = cams.get_single().ok().map(|mc| approx_zoom_level(mc.zoom));
     let lonlat = win.cursor_position().and_then(|cursor| {
         cam.viewport_to_world_2d(ct, cursor).ok().map(|world| {
@@ -707,7 +704,7 @@ fn update_readout(
     for (mut t, is_coord, is_level) in texts.iter_mut() {
         if is_coord {
             if let Some((lon, lat)) = lonlat {
-                // ASCII only: the bundled FiraSans has no `°`/`≈` glyph (renders tofu).
+                // 仅用 ASCII：内置的 FiraSans 没有 `°`/`≈` 字形（会渲染成豆腐块）。
                 t.0 = format!("lon {lon:.4} deg   lat {lat:.4} deg");
             }
         } else if is_level {
@@ -718,10 +715,10 @@ fn update_readout(
     }
 }
 
-// ── Pure helpers (unit-tested) ──────────────────────────────────────────────
+// ── 纯函数助手（已单元测试）─────────────────────────
 
-/// Wrap a Geographic x (longitude·R, R = 1) into [-π, π) so dragging past the
-/// antimeridian continues seamlessly.
+/// 将 Geographic x（经度·R，R = 1）包裹到 [-π, π)，以便越过反子午线
+/// 拖拽时无缝延续。
 fn wrap_x(x: f32) -> f32 {
     let mut v = x;
     while v > std::f32::consts::PI {
@@ -733,18 +730,17 @@ fn wrap_x(x: f32) -> f32 {
     v
 }
 
-/// Smallest zoom (px / world-unit) at which the world's full latitude band
-/// (±90°, height `2·LAT_MAX = π`) still covers a `canvas_h`-pixel-tall viewport.
-/// Zooming out past this would leave empty margins above/below the map, so it is
-/// the effective lower bound (Google-maps-style "whole world fills the frame").
+/// 世界完整纬度带（±90°，高度 `2·LAT_MAX = π`）仍能覆盖一个
+/// `canvas_h` 像素高的视口所需的最小缩放（px / 世界单位）。
+/// 缩小超过此值会在地图上/下留下空白边距，因此它是
+/// 有效下界（Google-maps 风格“整个世界填满画面”）。
 fn min_zoom_for(canvas_h: f32) -> f32 {
     (canvas_h / (2.0 * LAT_MAX)).max(ZOOM_MIN)
 }
 
-/// Clamp the camera centre so the imagery always fills the viewport vertically:
-/// when the whole world fits (zoomed out) pin it to the equator; otherwise keep
-/// the visible band inside ±90° so a pole edge never reveals empty background.
-/// Longitude is left free (it wraps infinitely via [`wrap_x`]).
+/// 约束相机中心，使影像始终在垂直方向填满视口：当整个世界
+/// 都能放下（缩出）时钉到赤道；否则将可见带保持在 ±90° 内，
+/// 使极地边缘从不露出空白背景。经度保持自由（它通过 [`wrap_x`] 无限环绕）。
 fn clamp_center_y(center: Vec2, zoom: f32, canvas_h: f32) -> Vec2 {
     let half_h = canvas_h * 0.5 / zoom;
     let cy = if half_h >= LAT_MAX {
@@ -755,7 +751,7 @@ fn clamp_center_y(center: Vec2, zoom: f32, canvas_h: f32) -> Vec2 {
     Vec2::new(center.x, cy)
 }
 
-/// Normalise a longitude in degrees into [-180, 180].
+/// 将度数经度归一化到 [-180, 180]。
 fn wrap_lon_deg(mut lon: f32) -> f32 {
     while lon > 180.0 {
         lon -= 360.0;
@@ -766,9 +762,9 @@ fn wrap_lon_deg(mut lon: f32) -> f32 {
     lon
 }
 
-/// Inverse of the tile-size rule: the Web Mercator level at which one tile is
-/// roughly `MAX_TILE_SCREEN_PX` wide, given the current zoom (px / world-unit,
-/// where one world is `WORLD_W` units wide).
+/// 瓦片尺寸规则的反函数：在当前缩放（px / 世界单位，其中一个
+/// 世界宽 `WORLD_W` 单位）下，一个瓦片约 `MAX_TILE_SCREEN_PX` 宽时的
+/// Web Mercator 级别。
 fn approx_zoom_level(zoom: f32) -> i32 {
     const MAX_TILE_SCREEN_PX: f32 = 288.0;
     // tile_px(z) = zoom * WORLD_W / 2^z == MAX_TILE_SCREEN_PX  →  z.
@@ -776,31 +772,30 @@ fn approx_zoom_level(zoom: f32) -> i32 {
     z.max(0.0).round() as i32
 }
 
-// ── P2: imagery-tile layer ─────────────────────────────────────────────────
+// ── P2：影像瓦片层 ──────────────────────────────────
 
-/// Pick the Web-Mercator tile level so one native 256px tile covers about
-/// `TILE_PX_TARGET` screen pixels at the current `zoom` (px / world-unit).
+/// 选取 Web-Mercator 瓦片级别，使一个原生 256px 瓦片在当前 `zoom`
+/// （px / 世界单位）下覆盖约 `TILE_PX_TARGET` 屏幕像素。
 fn tile_zoom_for(zoom: f32) -> u32 {
     let z = (f64::from(zoom) * TAU6 / TILE_PX_TARGET as f64).log2().round() as i32;
     z.clamp(TILE_Z_MIN, TILE_Z_MAX) as u32
 }
 
-/// Geographic latitude (radians) of the north edge of Mercator row `row`.
+/// Mercator 行 `row` 北缘的 Geographic 纬度（弧度）。
 fn row_to_lat(row: f64, n: f64) -> f64 {
     (PI6 * (1.0 - 2.0 * row / n)).sinh().atan()
 }
 
-/// Inverse of [`row_to_lat`]: the (fractional) Mercator row of latitude `lat`.
-/// Clamped just inside the poles so `tan`/`asinh` never blow up to infinity.
+/// [`row_to_lat`] 的反函数：纬度 `lat` 的（小数）Mercator 行。
+/// 被约束在略靠极地内侧，使 `tan`/`asinh` 永不爆炸到无穷。
 fn lat_to_row(lat: f64, n: f64) -> f64 {
     let l = lat.clamp(-1.4844, 1.4844);
     (1.0 - l.tan().asinh() / PI6) * 0.5 * n
 }
 
-/// Centre + size (world units) of the Geographic rectangle for raw column
-/// `col`, Mercator `row`, at level denominator `n`. `col` may be outside
-/// `[0, n)`; the returned x then sits beyond ±π, which is exactly what makes
-/// the longitude wrap look continuous.
+/// 原始列 `col`、Mercator `row`、在级别分母 `n` 下 Geographic 矩形的
+/// 中心 + 尺寸（世界单位）。`col` 可能在 `[0, n)` 之外；返回的 x 随后
+/// 位于 ±π 之外，而这正是使经度环绕看起来连续的原因。
 fn tile_rect(col: f64, row: f64, n: f64) -> (f32, f32, f32, f32) {
     let x0 = col / n * TAU6 - PI6;
     let x1 = (col + 1.0) / n * TAU6 - PI6;
@@ -814,7 +809,7 @@ fn tile_rect(col: f64, row: f64, n: f64) -> (f32, f32, f32, f32) {
     )
 }
 
-/// Convert XYZ tile coords to a Bing Maps quadkey.
+/// 将 XYZ 瓦片坐标转换为 Bing Maps quadkey。
 fn quadkey(x: u32, y: u32, level: u32) -> String {
     let mut s = String::with_capacity(level as usize);
     for i in (0..level).rev() {
@@ -831,9 +826,9 @@ fn quadkey(x: u32, y: u32, level: u32) -> String {
     s
 }
 
-/// A unit quad in the XY plane (local extent [-0.5, 0.5]), UV filling [0, 1] so
-/// v=0 is the tile's north edge (row 0 of the downloaded image). Wound CCW as
-/// seen from +Z so the front face points at the top-down camera.
+/// XY 平面内的一个单位 quad（局部范围 [-0.5, 0.5]），UV 填满 [0, 1]，因此
+/// v=0 是瓦片的北缘（下载图像的第 0 行）。从 +Z 看按 CCW 绕序，使正面
+/// 朝向俯视相机。
 fn build_unit_quad() -> Mesh {
     let positions = [
         [-0.5, 0.5, 0.0],
@@ -851,22 +846,21 @@ fn build_unit_quad() -> Mesh {
     mesh
 }
 
-/// One desired tile: `(placement_key, (canonical_key, rect))`. The placement key
-/// is `(raw_col, raw_row, level)` — the level is part of it because one view
-/// mixes target-level tiles with coarser ancestors shown as fallbacks. The rect
-/// is `(centre_x, centre_y, width, height)` in Geographic world units.
+/// 一个目标瓦片：`(placement_key, (canonical_key, rect))`。放置键是
+/// `(raw_col, raw_row, level)` —— 级别是键的一部分，因为一个视图会将
+/// 目标级瓦片与其下方作为回退显示的更粗祖先混在一起。rect 是
+/// Geographic 世界单位下的 `(centre_x, centre_y, width, height)`。
 type DesiredTile = HashMap<(i64, i64, u32), ((u32, u32, u32), (f32, f32, f32, f32))>;
 
-/// Decide which tile a target cell `(col, row)` at level `z` should actually
-/// show: the cell's own tile when `has` reports it cached, otherwise the nearest
-/// cached ancestor (walking up one level at a time). When nothing along the
-/// chain is cached it stops at the coarsest level `TILE_Z_MIN`, so the caller
-/// still places a (hidden) placeholder and keeps requesting the exact tile.
+/// 决定级别 `z` 下目标单格 `(col, row)` 实际应显示哪个瓦片：当 `has`
+/// 报告已缓存时显示单格自身的瓦片，否则显示最近的已缓存祖先（一次
+/// 向上走一级）。当链上什么都没有缓存时，它在最粗级别 `TILE_Z_MIN` 停下，
+/// 因此调用方仍会放置一个（隐藏）占位格并持续请求精确瓦片。
 ///
-/// Returns `(place_col, place_row, place_level, canonical_key)` — the first three
-/// locate the chosen tile's rectangle via [`tile_rect`], the last is the cache
-/// key to paint from. `col` may lie outside `[0, 2^z)` (longitude wrap); the
-/// `div_euclid`/`rem_euclid` pair keeps ancestor columns consistent with that.
+/// 返回 `(place_col, place_row, place_level, canonical_key)` —— 前三个通过
+/// [`tile_rect`] 定位选中瓦片的矩形，最后一个是用于绘制的缓存键。`col`
+/// 可能位于 `[0, 2^z)` 之外（经度环绕）；`div_euclid`/`rem_euclid` 配对使
+/// 祖先列与之保持一致。
 fn resolve_tile_cell(
     col: i64,
     row: i64,
@@ -887,16 +881,15 @@ fn resolve_tile_cell(
     }
 }
 
-/// Maintain the flat-map imagery layer for the current viewport: reconcile the
-/// set of visible tiles (spawn/despawn quads), kick off downloads for tiles we
-/// don't yet have, and paint cached textures onto entities as they land.
+/// 为当前视口维护平面图影像层：协调可见瓦片集（spawn/despawn
+/// quad），为我们尚未拥有的瓦片启动下载，并在缓存纹理到达时将其
+/// 绘制到实体上。
 ///
-/// Each visible cell shows the best imagery it can: its own tile when cached,
-/// otherwise the nearest already-downloaded ancestor tile drawn at the ancestor's
-/// native rectangle. Tiles are stacked by level (finer on top), so zooming in
-/// keeps the coarse imagery visible until the finer tiles arrive — no blank, no
-/// white flash. A cell with nothing cached at any level spawns `Hidden` and is
-/// revealed by the paint step once its image lands.
+/// 每个可见单格显示它能得到的最佳影像：已缓存时显示自身瓦片，
+/// 否则以祖先的原生矩形绘制最近已下载的祖先瓦片。瓦片按级别堆叠
+/// （更细在上），因此放大时保持粗影像可见，直到更细瓦片到达 ——
+/// 无空白、无白闪。任何级别都无缓存的单格会 spawn `Hidden`，并在
+/// 其图像到达后由绘制步骤揭示。
 #[allow(clippy::too_many_arguments)]
 fn update_map2d_tiles(
     mut commands: Commands,
@@ -908,7 +901,7 @@ fn update_map2d_tiles(
     cams: Query<(&Camera, &GlobalTransform, &Map2dCam), With<Map2dCamera>>,
     mut live: Query<(&Map2dTile, &MeshMaterial3d<StandardMaterial>, &mut Visibility)>,
 ) {
-    // 1. Drain finished downloads into the texture cache.
+    // 1. 将已完成的下载排空进纹理缓存。
     let drained: Vec<Map2dTileImg> = {
         let rx = tiler.rx.lock().unwrap();
         let mut v = Vec::new();
@@ -947,20 +940,18 @@ fn update_map2d_tiles(
         return;
     };
 
-    // 3. Resolve the target level. A level change no longer wipes the layer: a
-    //    cell whose exact tile isn't cached keeps showing its best cached
-    //    ancestor, so zooming in never flashes blank.
+    // 3. 解析目标级别。级别变化不再清空该层：精确瓦片未缓存的
+    //    单格会持续显示其最佳缓存祖先，因此放大从不闪白。
     let z = tile_zoom_for(mc.zoom);
     let ni = 1i64 << z;
     let n = ni as f64;
 
-    // 4. Enumerate the visible target rectangle. Columns run past the ±π edges
-    //    and wrap via `rem_euclid`; rows are clamped to [0, n). Each target cell
-    //    walks up the level ladder to the coarsest cached tile and places *that*
-    //    tile at its own native rectangle. Distinct placements dedup, so one
-    //    cached ancestor stands in for all of its still-missing descendants; a
-    //    finer tile that later lands is drawn on top (higher z) and the ancestor
-    //    drops out once nothing beneath it still needs it.
+    // 4. 枚举可见的目标矩形。列越过 ±π 边缘并通过 `rem_euclid`
+    //    环绕；行被约束到 [0, n)。每个目标单格沿级别阶梯向上走到最粗
+    //    的已缓存瓦片，并将*那个*瓦片以其自身原生矩形放置。不同的放置
+    //    会去重，因此一个缓存祖先可代替其全部仍缺失的后代；一个后到的
+    //    更细瓦片会绘制在上方（更高 z），而一旦其下方再无任何东西需要
+    //    该祖先，祖先就退出。
     let col_start = ((f64::from(tl.x) + PI6) / TAU6 * n).floor() as i64;
     let col_end = ((f64::from(br.x) + PI6) / TAU6 * n).floor() as i64;
     let row_start = lat_to_row(f64::from(tl.y), n).floor().max(0.0) as i64;
@@ -969,8 +960,8 @@ fn update_map2d_tiles(
         .min((ni - 1) as f64) as i64;
 
     let mut desired: DesiredTile = HashMap::new();
-    // Target-level tiles we ask to download; ancestors shown as fallbacks are
-    // cached by construction, so they never need fetching.
+    // 我们请求下载的目标级瓦片；作为回退显示的祖先按构造已缓存，
+    // 因此从不需获取。
     let mut wants: Vec<(u32, u32, u32)> = Vec::new();
     for row in row_start..=row_end {
         for col in col_start..=col_end {
@@ -982,8 +973,8 @@ fn update_map2d_tiles(
         }
     }
 
-    // 5. Despawn placements no longer wanted (left the viewport, or were
-    //    superseded by a finer tile that just finished downloading).
+    // 5. Despawn 不再需要的放置（已离开视口，或被刚下载完成的更细
+    //    瓦片取代）。
     let gone: Vec<(i64, i64, u32)> = tiler
         .live
         .keys()
@@ -996,15 +987,15 @@ fn update_map2d_tiles(
         }
     }
 
-    // 6. Ensure the shared unit-quad mesh exists.
+    // 6. 确保共享的单位 quad 网格存在。
     if tiler.unit_quad.is_none() {
         tiler.unit_quad = Some(meshes.add(build_unit_quad()));
     }
     let quad = tiler.unit_quad.clone().unwrap();
 
-    // 7. Spawn new placements. Elevation rises with the level so a finer tile
-    //    always covers the coarser fallback beneath it; a cell with nothing
-    //    cached at any level spawns `Hidden` and is revealed by step 9.
+    // 7. Spawn 新放置。高度随级别递增，因此更细瓦片总会覆盖其下方
+    //    更粗的回退；任何级别都无缓存的单格会 spawn `Hidden`，并由步骤 9
+    //    揭示。
     for (pk, (canon, (cx, cy, w, h))) in &desired {
         if tiler.live.contains_key(pk) {
             continue;
@@ -1035,7 +1026,7 @@ fn update_map2d_tiles(
         tiler.live.insert(*pk, e);
     }
 
-    // 8. Queue downloads for the target-level tiles we don't have / aren't fetching.
+    // 8. 为我们尚未拥有 / 尚未获取的目标级瓦片排队下载。
     wants.sort_unstable();
     wants.dedup();
     for key in wants {
@@ -1044,8 +1035,8 @@ fn update_map2d_tiles(
         }
     }
 
-    // 9. Paint cached textures onto already-live entities that are still blank
-    //    (covers the one-frame race where a tile is spawned before its image).
+    // 9. 将缓存纹理绘制到仍然空白的已存活实体上（处理一个瓦片先于
+    //    其图像 spawn 的单帧竞态）。
     for (tile, mat_handle, mut vis) in live.iter_mut() {
         if let Some(h) = tiler.cache.get(&tile.key) {
             if let Some(m) = materials.get_mut(mat_handle) {
@@ -1060,10 +1051,9 @@ fn update_map2d_tiles(
     }
 }
 
-/// A 2D download worker: fetches Bing Aerial tiles over the network (or reads
-/// `{root}/{z}/{x}/{y}.png` from disk when `OFFLINE_IMAGERY_ROOT` is set),
-/// decodes to RGBA and ships results back. One agent per thread keeps the
-/// connection pool warm across fetches.
+/// 一个 2D 下载工作线程：通过网络获取 Bing Aerial 瓦片（或在设置了
+/// `OFFLINE_IMAGERY_ROOT` 时从磁盘读取 `{root}/{z}/{x}/{y}.png`），解码为
+/// RGBA 并将结果送回。每线程一个 agent 在多次获取间保持连接池预热。
 fn map2d_worker(job_rx: Arc<Mutex<mpsc::Receiver<(u32, u32, u32)>>>, tx: mpsc::Sender<Map2dTileImg>) {
     let offline_root = crate::feature_flags::offline_imagery_root();
     let agent = ureq::AgentBuilder::new()
@@ -1115,7 +1105,7 @@ fn map2d_worker(job_rx: Arc<Mutex<mpsc::Receiver<(u32, u32, u32)>>>, tx: mpsc::S
     }
 }
 
-// ── Tests ───────────────────────────────────────────────────────────────────
+// ── 测试 ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod map2d_tests {
@@ -1124,7 +1114,7 @@ mod map2d_tests {
     #[test]
     fn wrap_x_is_periodic_and_bounded() {
         let pi = std::f32::consts::PI;
-        // Just past the antimeridian wraps to the far west, seamless.
+        // 刚过反子午线会环绕到最西侧，无缝。
         assert!((wrap_x(pi + 0.1) - (-pi + 0.1)).abs() < 1e-4);
         assert!((wrap_x(-pi - 0.1) - (pi - 0.1)).abs() < 1e-4);
         for k in -6..=6 {
@@ -1151,11 +1141,11 @@ mod map2d_tests {
     #[test]
     fn row_lat_is_monotonic_and_symmetric() {
         let n = 256.0;
-        // Row 0 is the far north, the middle row is the equator, the last is south.
+        // 第 0 行是最北，中间行是赤道，最后一行是最南。
         assert!(row_to_lat(0.0, n) > 1.4, "top row near north pole");
         assert!(row_to_lat(n / 2.0, n).abs() < 1e-9, "middle row is the equator");
         assert!(row_to_lat(n, n) < -1.4, "bottom row near south pole");
-        // Row <-> lat round-trip.
+        // Row <-> lat 往返。
         for row in [3.0, 40.0, 128.0, 200.0] {
             let lat = row_to_lat(row, n);
             assert!((lat_to_row(lat, n) - row).abs() < 1e-6, "round trip {row}");
@@ -1167,17 +1157,17 @@ mod map2d_tests {
         let n = 16.0;
         let (c0, _, w, _) = tile_rect(0.0, 0.0, n);
         let (c1, _, w1, _) = tile_rect(1.0, 0.0, n);
-        // All columns share one width == the world period / n.
+        // 所有列共享一个宽度 == 世界周期 / n。
         let world_w = (TAU6 / n) as f32;
         assert!((w - world_w).abs() < 1e-3);
         assert!((w - w1).abs() < 1e-6, "uniform columns");
-        // Adjacent column centres sit exactly one width apart (seamless).
+        // 相邻列中心恰好相隔一个宽度（无缝）。
         assert!((c1 - c0 - w).abs() < 1e-3, "column pitch == width");
-        // West edge of column 0 is -pi; west edge of column n is +pi (one world).
+        // 列 0 的西缘是 -pi；列 n 的西缘是 +pi（一个世界）。
         assert!((c0 - w / 2.0 + PI6 as f32).abs() < 1e-2, "col 0 west == -pi");
         let (cn, _, wn, _) = tile_rect(n, 0.0, n);
         assert!((cn - wn / 2.0 - PI6 as f32).abs() < 1e-2, "col n west == +pi");
-        // Rows abut: south edge of row 4 == north edge of row 5.
+        // 行互相紧接：行 4 南缘 == 行 5 北缘。
         let (_, y4, _, h4) = tile_rect(0.0, 4.0, n);
         let (_, y5, _, h5) = tile_rect(0.0, 5.0, n);
         assert!(
@@ -1188,7 +1178,7 @@ mod map2d_tests {
 
     #[test]
     fn quadkey_known_value() {
-        // x=3, y=5, z=3 -> "213" (standard Bing/OSM quadkey).
+        // x=3, y=5, z=3 -> "213"（标准 Bing/OSM quadkey）。
         assert_eq!(quadkey(3, 5, 3), "213");
         assert_eq!(quadkey(0, 0, 0), "");
         assert_eq!(quadkey(1, 1, 1), "3");
@@ -1204,8 +1194,8 @@ mod map2d_tests {
             "cached exact tile wins"
         );
 
-        // (5, 3) at z=4 → z=3 parent (2, 1) → z=2 grandparent (1, 0): the one
-        // cached level is chosen even though finer levels were requested.
+        // (5, 3) 在 z=4 → z=3 父级 (2, 1) → z=2 祖级 (1, 0)：尽管请求了
+        // 更细级别，仍选中已缓存的那一级。
         let gp: HashSet<(u32, u32, u32)> = [(1, 0, 2)].into_iter().collect();
         assert_eq!(
             resolve_tile_cell(5, 3, 4, |k| gp.contains(&k)),
@@ -1226,7 +1216,7 @@ mod map2d_tests {
     #[test]
     fn resolve_wraps_negative_columns_to_parent() {
         use std::collections::HashSet;
-        // col -1 at z=2 wraps to canonical x=3; its z=1 parent is x=1, row 3>>1=1.
+        // z=2 下 col -1 环绕到规范 x=3；其 z=1 父级是 x=1，row 3>>1=1。
         let parent: HashSet<(u32, u32, u32)> = [(1, 1, 1)].into_iter().collect();
         assert_eq!(
             resolve_tile_cell(-1, 3, 2, |k| parent.contains(&k)),
@@ -1246,12 +1236,11 @@ mod map2d_tests {
 
     #[test]
     fn clamp_center_pins_world_and_bounds_poles() {
-        // Zoomed out so the whole world fits vertically -> pin to the equator,
-        // longitude untouched.
+        // 缩出使整个世界垂直放下 -> 钉到赤道，经度不变。
         let c = clamp_center_y(Vec2::new(0.5, 1.4), 100.0, 700.0);
         assert_eq!(c.y, 0.0);
         assert_eq!(c.x, 0.5);
-        // Zoomed in -> keep the band inside ±90 so a pole never shows empty.
+        // 放大 -> 将带保持在 ±90 内，使极地从不显示空白。
         let lim = LAT_MAX - 700.0 * 0.5 / 2000.0;
         let north = clamp_center_y(Vec2::new(0.0, 5.0), 2000.0, 700.0);
         assert!((north.y - lim).abs() < 1e-4, "north clamp");
@@ -1261,19 +1250,18 @@ mod map2d_tests {
 
     #[test]
     fn min_zoom_fills_frame_and_respects_floor() {
-        // A 727px-tall canvas needs ~727/π px/unit for the π-tall world to fill.
+        // 一个 727px 高的 canvas 需要 ~727/π px/unit 才能让高 π 的世界填满。
         let m = min_zoom_for(727.0);
         assert!(m >= ZOOM_MIN);
         assert!((m - 727.0 / std::f32::consts::PI).abs() < 1.0, "m = {m}");
-        // A tiny canvas falls back to the fixed floor.
+        // 一个极小的 canvas 回退到固定下界。
         assert_eq!(min_zoom_for(100.0), ZOOM_MIN);
     }
 
-    /// Regression guard for "the switch vanishes after entering 2D". With two
-    /// cameras the UI root must be re-pinned to whichever camera is active for
-    /// the current [`MapMode`], or bevy_ui drops its `DefaultCameraView` and the
-    /// whole control stops drawing. Drives the real sync systems over a minimal
-    /// world and checks the root's [`TargetCamera`] tracks the mode.
+    /// “进入 2D 后切换器消失”的回归守卫。拥有两只相机时，UI 根必须
+    /// 重新钉到当前 [`MapMode`] 下存活的那只相机，否则 bevy_ui 丢弃其
+    /// `DefaultCameraView` 且整个控件停止绘制。在一个最小世界上驱动真正的
+    /// sync 系统，并检查根的 [`TargetCamera`] 跟随模式。
     #[test]
     fn ui_roots_follow_active_camera_in_each_mode() {
         let mut app = App::new();
@@ -1295,19 +1283,19 @@ mod map2d_tests {
             readout_root = world.spawn(ReadoutRoot).id();
         }
 
-        // Default (ThreeD): both roots target the orbit camera.
+        // 默认（ThreeD）：两个根都瞄准 orbit 相机。
         app.update();
         assert_eq!(app.world().get::<TargetCamera>(switch_root).map(|t| t.0), Some(orbit));
         assert_eq!(app.world().get::<TargetCamera>(readout_root).map(|t| t.0), Some(orbit));
 
-        // Switch to 2D: both roots must re-point to the flat camera — the exact
-        // moment the old build lost the control.
+        // 切到 2D：两个根必须重新指向 flat 相机 —— 正是旧构建丢失控件的
+        // 那一刻。
         *app.world_mut().resource_mut::<MapMode>() = MapMode::TwoD;
         app.update();
         assert_eq!(app.world().get::<TargetCamera>(switch_root).map(|t| t.0), Some(flat));
         assert_eq!(app.world().get::<TargetCamera>(readout_root).map(|t| t.0), Some(flat));
 
-        // And back to 3D.
+        // 再切回 3D。
         *app.world_mut().resource_mut::<MapMode>() = MapMode::ThreeD;
         app.update();
         assert_eq!(app.world().get::<TargetCamera>(switch_root).map(|t| t.0), Some(orbit));

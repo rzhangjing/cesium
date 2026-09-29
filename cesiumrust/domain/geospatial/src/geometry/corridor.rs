@@ -1,9 +1,8 @@
-//! Corridor geometry - a band of constant width along a polyline path.
+//! 走廊几何 —— 沿一条折线路径、宽度恒定的带状区域。
 //!
-//! Faithful port of CesiumJS `CorridorGeometryLibrary.js` and
-//! `CorridorGeometry.js`. A corridor is defined by a series of centerline
-//! positions and a width; the geometry is the flat ribbon between the left
-//! and right edges (with optional rounded/mitered/beveled corners).
+//! 对 CesiumJS `CorridorGeometryLibrary.js` 与
+//! `CorridorGeometry.js` 的忠实移植。走廊由一系列中心线位置和一个宽度定义；
+//! 几何体是左右边缘之间的扁平条状体（可选地带圆角/斜接/切角）。
 
 use crate::bounding::BoundingSphere;
 use crate::ellipsoid::Ellipsoid;
@@ -12,32 +11,32 @@ use crate::math_utils::{self, EPSILON7};
 use crate::polyline_pipeline::{generate_arc, ArcOptions};
 use glam::DVec3;
 
-/// Corner style for corridor turns.
+/// 走廊转弯处的角风格。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CornerType {
-    /// Rounded corners (default).
+    /// 圆角（默认）。
     #[default]
     Rounded,
-    /// Mitered (sharp) corners.
+    /// 斜接（尖锐）角。
     Mitered,
-    /// Beveled (cut) corners.
+    /// 切角（裁切）。
     Beveled,
 }
 
-/// Options describing a corridor.
+/// 描述一个走廊的选项。
 #[derive(Debug, Clone)]
 pub struct CorridorOptions {
-    /// Centerline positions (at least 2).
+    /// 中心线位置（至少 2 个）。
     pub positions: Vec<DVec3>,
-    /// Width in meters.
+    /// 宽度（米）。
     pub width: f64,
-    /// Height above the ellipsoid surface.
+    /// 椭球表面上方的高度。
     pub height: f64,
-    /// Angular granularity in radians.
+    /// 角度粒度（弧度）。
     pub granularity: f64,
-    /// Corner style.
+    /// 角风格。
     pub corner_type: CornerType,
-    /// The reference ellipsoid.
+    /// 参考椭球。
     pub ellipsoid: Ellipsoid,
 }
 
@@ -54,10 +53,9 @@ impl Default for CorridorOptions {
     }
 }
 
-/// Determines if the angle from `backward` to `forward` (viewed from outside
-/// the ellipsoid) is greater than pi.
+/// 判断从 `backward` 到 `forward` 的角度（从椭球外部观察）是否大于 pi。
 ///
-/// Maps to `PolylineVolumeGeometryLibrary.angleIsGreaterThanPi`.
+/// 映射到 `PolylineVolumeGeometryLibrary.angleIsGreaterThanPi`。
 fn angle_is_greater_than_pi(
     forward: DVec3,
     backward: DVec3,
@@ -82,14 +80,14 @@ fn angle_is_greater_than_pi(
     prev_x * next_y - prev_y * next_x >= 0.0
 }
 
-/// Rotates a vector around a unit axis by an angle (Rodrigues' formula).
+/// 将向量绕一个单位轴旋转一个角度（Rodrigues 公式）。
 fn rotate_around_axis(v: DVec3, axis: DVec3, angle: f64) -> DVec3 {
     let cos_a = angle.cos();
     let sin_a = angle.sin();
     v * cos_a + axis.cross(v) * sin_a + axis * axis.dot(v) * (1.0 - cos_a)
 }
 
-/// Computes a rounded corner arc.
+/// 计算一段圆角弧。
 fn compute_round_corner(
     corner_point: DVec3,
     start_point: DVec3,
@@ -125,7 +123,7 @@ fn compute_round_corner(
     array
 }
 
-/// Computes a mitered corner (2 points).
+/// 计算一个斜接角（2 个点）。
 fn compute_mitered_corner(
     position: DVec3,
     left_corner_direction: DVec3,
@@ -140,13 +138,13 @@ fn compute_mitered_corner(
     vec![corner_point, last_point]
 }
 
-/// A computed corner (either left or right positions).
+/// 一个已计算的角（左侧或右侧位置）。
 struct CornerData {
     left_positions: Option<Vec<DVec3>>,
     right_positions: Option<Vec<DVec3>>,
 }
 
-/// Offsets a centerline arc into right and left edge positions.
+/// 将中心线弧偏移为右侧和左侧边缘位置。
 fn add_shifted_positions(
     positions: &[DVec3],
     left: DVec3,
@@ -157,15 +155,15 @@ fn add_shifted_positions(
     let scaled_right = -scaled_left;
 
     let right_positions: Vec<DVec3> = positions.iter().map(|&p| p + scaled_right).collect();
-    // Left positions stored in reverse order (matching CesiumJS).
+    // 左侧位置以逆序存储（与 CesiumJS 一致）。
     let left_positions: Vec<DVec3> = positions.iter().rev().map(|&p| p + scaled_left).collect();
 
     out.push(right_positions);
     out.push(left_positions);
 }
 
-/// Core corridor position computation.
-/// Maps to `CorridorGeometryLibrary.computePositions`.
+/// 走廊位置的核心计算。
+/// 映射到 `CorridorGeometryLibrary.computePositions`。
 fn compute_corridor_positions(
     positions: &[DVec3],
     width: f64,
@@ -268,7 +266,7 @@ fn compute_corridor_positions(
         position = next_position;
     }
 
-    // Final segment.
+    // 最后一段。
     let seg = [previous_pos, position];
     let opts = ArcOptions { positions: &seg, heights: None, granularity, ellipsoid };
     let subdivided = generate_arc(&opts);
@@ -277,7 +275,7 @@ fn compute_corridor_positions(
     (calculated_positions, corners)
 }
 
-/// Assembles right and left edges from computed positions + corners.
+/// 由已计算的位置 + 角组装出右侧和左侧边缘。
 fn assemble_edges(
     positions: &[Vec<DVec3>],
     corners: &[CornerData],
@@ -295,7 +293,7 @@ fn assemble_edges(
             right_edge.extend_from_slice(right_seg);
             left_edge.extend_from_slice(left_seg);
         } else {
-            // Skip duplicate first/last point from corner junction.
+            // 跳过角连接处重复的首/尾点。
             if right_seg.len() > 1 {
                 right_edge.extend_from_slice(&right_seg[1..]);
             }
@@ -304,7 +302,7 @@ fn assemble_edges(
             }
         }
 
-        // Insert corner positions.
+        // 插入角位置。
         if corner_idx < corners.len() {
             let corner = &corners[corner_idx];
             if let Some(ref lp) = corner.left_positions {
@@ -322,14 +320,14 @@ fn assemble_edges(
     (right_edge, left_edge)
 }
 
-/// Generates a corridor geometry (flat, non-extruded).
+/// 生成一个走廊几何（扁平、非拉伸）。
 ///
-/// Maps to CesiumJS `CorridorGeometry.createGeometry`.
+/// 映射到 CesiumJS `CorridorGeometry.createGeometry`。
 pub fn corridor_geometry(options: &CorridorOptions, vf: VertexFormat) -> GeometryData {
     let ellipsoid = &options.ellipsoid;
     let width = options.width;
 
-    // Scale positions to surface and remove duplicates.
+    // 将位置缩放到表面并去除重复项。
     let mut positions: Vec<DVec3> = options
         .positions
         .iter()
@@ -368,7 +366,7 @@ pub fn corridor_geometry(options: &CorridorOptions, vf: VertexFormat) -> Geometr
     let mut bitangents_out: Option<Vec<[f64; 3]>> = if vf.bitangent { Some(Vec::with_capacity(total_verts)) } else { None };
     let mut st_out: Option<Vec<[f64; 2]>> = if vf.st { Some(Vec::with_capacity(total_verts)) } else { None };
 
-    // Right edge vertices.
+    // 右侧边缘顶点。
     let right_st = if right_count > 1 { 1.0 / (right_count - 1) as f64 } else { 1.0 };
     for (idx, p) in right_edge.iter().enumerate() {
         let raised = raise_to_height(*p, options.height, ellipsoid);
@@ -392,7 +390,7 @@ pub fn corridor_geometry(options: &CorridorOptions, vf: VertexFormat) -> Geometr
         }
     }
 
-    // Left edge vertices (reversed for consistent winding).
+    // 左侧边缘顶点（为保持一致的绕序而反转）。
     let left_st = if left_count > 1 { 1.0 / (left_count - 1) as f64 } else { 1.0 };
     for (idx, p) in left_edge.iter().enumerate() {
         let raised = raise_to_height(*p, options.height, ellipsoid);
@@ -416,7 +414,7 @@ pub fn corridor_geometry(options: &CorridorOptions, vf: VertexFormat) -> Geometr
         }
     }
 
-    // Triangulate: strip between right and left edges.
+    // 三角剖分：在右侧与左侧边缘之间拉成条带。
     let strip_count = right_count.min(left_count);
     let mut indices: Vec<u32> = Vec::with_capacity((strip_count - 1) * 6);
     for i in 0..strip_count - 1 {
@@ -444,7 +442,7 @@ pub fn corridor_geometry(options: &CorridorOptions, vf: VertexFormat) -> Geometr
     }
 }
 
-/// Generates a corridor outline geometry (line loop around the corridor).
+/// 生成一个走廊线框几何（绕走廊一周的线循环）。
 pub fn corridor_outline_geometry(options: &CorridorOptions) -> GeometryData {
     let ellipsoid = &options.ellipsoid;
     let width = options.width;
@@ -474,13 +472,13 @@ pub fn corridor_outline_geometry(options: &CorridorOptions) -> GeometryData {
 
     let (right_edge, left_edge) = assemble_edges(&computed_positions, &corners);
 
-    // Outline: right edge forward + left edge forward (reversed back).
+    // 线框：右侧边缘前向 + 左侧边缘前向（反向回溯）。
     let mut pos_out: Vec<[f64; 3]> = Vec::new();
     for p in &right_edge {
         let raised = raise_to_height(*p, options.height, ellipsoid);
         pos_out.push([raised.x, raised.y, raised.z]);
     }
-    // Left edge in reverse to form a loop.
+    // 左侧边缘逆序以构成环路。
     for p in left_edge.iter().rev() {
         let raised = raise_to_height(*p, options.height, ellipsoid);
         pos_out.push([raised.x, raised.y, raised.z]);
@@ -492,7 +490,7 @@ pub fn corridor_outline_geometry(options: &CorridorOptions) -> GeometryData {
         indices.push(i as u32);
         indices.push((i + 1) as u32);
     }
-    // Close the loop.
+    // 闭合环路。
     indices.push((n - 1) as u32);
     indices.push(0);
 
@@ -581,7 +579,7 @@ mod tests {
         assert_eq!(geo.indices.len() % 3, 0);
         assert!(geo.normals.is_some());
         assert!(geo.tex_coords.is_some());
-        // Should have right + left edge vertices.
+        // 应拥有右侧 + 左侧边缘顶点。
         assert!(geo.positions.len() >= 4);
     }
 
@@ -589,8 +587,8 @@ mod tests {
     fn test_corridor_width_correct() {
         let opts = corridor_opts();
         let geo = corridor_geometry(&opts, VertexFormat::POSITION_ONLY);
-        // The corridor should span roughly 100km width.
-        // Check bounding sphere radius is reasonable (> 50km).
+        // 走廊应跨越大约 100km 宽度。
+        // 检查包围球半径是否合理（> 50km）。
         assert!(geo.bounding_sphere.radius > 50_000.0);
     }
 

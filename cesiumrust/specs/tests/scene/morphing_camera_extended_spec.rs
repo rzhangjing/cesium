@@ -1,5 +1,5 @@
-//! Morphing/Camera extended specs - SceneMorph mode transitions + CameraFlight extended
-//! Ported from Scene/SceneSpec.js morphing + Scene/CameraSpec.js flight (A-class)
+//! Morphing/Camera 扩展规范 - SceneMorph 模式过渡 + CameraFlight 扩展
+//! 移植自 Scene/SceneSpec.js 变形 + Scene/CameraSpec.js 飞行（A 类）
 
 use cesium_interaction::{SceneMorph, CameraFlight, FlightOptions, compute_look_at};
 use cesium_camera::{Camera, SceneMode};
@@ -15,7 +15,7 @@ fn test_camera() -> Camera {
     )
 }
 
-// ─── SceneMorph mode transitions ────────────────────────────────────────────
+// ─── SceneMorph 模式过渡 ────────────────────────────────────────────
 
 #[test]
 fn morph_3d_to_2d_starts() {
@@ -69,7 +69,7 @@ fn morph_update_halfway_progress() {
     let mut cam = camera.clone();
 
     morph.start_morph(&cam, SceneMode::Scene3D, SceneMode::Scene2D, &Ellipsoid::WGS84, 2.0);
-    morph.update(1.0, &mut cam); // Halfway
+    morph.update(1.0, &mut cam); // 中途
 
     assert!((morph.progress() - 0.5).abs() < 1e-10);
 }
@@ -100,7 +100,7 @@ fn morph_cancel_restores_source_mode() {
 
     assert_eq!(cam.mode, SceneMode::Scene3D);
     assert!(!morph.is_morphing());
-    // Position should be restored to start
+    // 位置应恢复到起点
     assert!((cam.position - camera.position).length() < 1e-6);
 }
 
@@ -135,11 +135,11 @@ fn morph_minimum_duration_clamped() {
 
     morph.start_morph(&camera, SceneMode::Scene3D, SceneMode::Scene2D, &Ellipsoid::WGS84, 0.0);
 
-    // Duration should be clamped to at least 0.001
+    // 时长应被钳制到至少 0.001
     assert!(morph.duration >= 0.001);
 }
 
-// ─── CameraFlight extended ──────────────────────────────────────────────────
+// ─── CameraFlight 扩展 ──────────────────────────────────────────────────
 
 #[test]
 fn flight_fly_home() {
@@ -148,7 +148,7 @@ fn flight_fly_home() {
 
     assert!((flight.duration - 2.0).abs() < 1e-10);
     assert!(!flight.complete);
-    // End position should be a "home" view (above equator)
+    // 终点位置应为"home"视图（赤道上方）
     assert!(flight.end_position.length() > Ellipsoid::WGS84.maximum_radius());
 }
 
@@ -167,7 +167,7 @@ fn flight_fly_to_bounding_sphere() {
     );
 
     assert!((flight.duration - 3.0).abs() < 1e-10);
-    // End position should be offset from center by some multiple of radius
+    // 终点位置应偏离中心若干个半径倍数
     let dist = (flight.end_position - center).length();
     assert!(dist > radius, "camera should be outside the bounding sphere");
 }
@@ -178,7 +178,7 @@ fn flight_update_smooth_interpolation() {
     let destination = DVec3::new(6378137.0 * 2.0, 0.0, 0.0);
     let mut flight = CameraFlight::fly_to(&camera, destination, None, None, 4.0);
 
-    // Collect positions at regular intervals
+    // 以规则间隔收集位置
     let mut positions = Vec::new();
     for _ in 0..4 {
         if let Some((pos, _, _)) = flight.update(1.0) {
@@ -186,7 +186,7 @@ fn flight_update_smooth_interpolation() {
         }
     }
 
-    // Positions should be monotonically getting closer to destination
+    // 位置应单调地靠近目的地
     for i in 1..positions.len() {
         let d_prev = (positions[i - 1] - destination).length();
         let d_curr = (positions[i] - destination).length();
@@ -211,12 +211,12 @@ fn flight_with_options_custom_duration() {
 #[test]
 fn compute_look_at_up_perpendicular() {
     let target = DVec3::new(6378137.0, 0.0, 0.0);
-    let offset = DVec3::new(0.0, 0.0, 1000000.0); // Looking from above
+    let offset = DVec3::new(0.0, 0.0, 1000000.0); // 从上方俯视
 
     let (_position, direction, up) = compute_look_at(target, offset);
 
-    // Up should be perpendicular to direction
+    // up 应垂直于 direction
     assert!(direction.dot(up).abs() < 1e-10, "up must be perpendicular to direction");
-    // Up should be normalized
+    // up 应被归一化
     assert!((up.length() - 1.0).abs() < 1e-10);
 }

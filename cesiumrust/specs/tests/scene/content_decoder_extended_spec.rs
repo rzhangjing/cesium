@@ -1,18 +1,18 @@
-//! Content decoder extended spec tests (i3dm, pnts, cmpt, detect).
+//! 内容解码器扩展规格测试（i3dm、pnts、cmpt、detect）。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Scene/I3dmParserSpec.js
 //! - Scene/PntsParserSpec.js
 //! - Scene/Composite3DTileContentSpec.js
 //! - Core/getMagicSpec.js
 //!
-//! A-class tests: binary parsing, content type detection, error handling.
+//! A 类测试：二进制解析、内容类型检测、错误处理。
 
 use cesium_tileset::content_decoder::{
     detect_content_type, parse_cmpt, parse_i3dm, parse_pnts, DecodeError, TileContentType,
 };
 
-// === Helper: build binary buffers ===
+// === 辅助：构造二进制缓冲区 ===
 
 fn make_i3dm(ft_json: &str, gltf_format: u32, gltf: &[u8]) -> Vec<u8> {
     let ft_bytes = ft_json.as_bytes();
@@ -22,8 +22,8 @@ fn make_i3dm(ft_json: &str, gltf_format: u32, gltf: &[u8]) -> Vec<u8> {
     let bt_bin_len = 0u32;
     let gltf_len = gltf.len() as u32;
 
-    // Header: magic(4) + version(4) + byteLength(4) + ftJsonLen(4) + ftBinLen(4) +
-    //         btJsonLen(4) + btBinLen(4) + gltfFormat(4) = 32 bytes
+    // 头部：magic(4) + version(4) + byteLength(4) + ftJsonLen(4) + ftBinLen(4) +
+    //       btJsonLen(4) + btBinLen(4) + gltfFormat(4) = 32 字节
     let total = 32 + ft_json_len + gltf_len;
 
     let mut buf = Vec::with_capacity(total as usize);
@@ -47,8 +47,8 @@ fn make_pnts(ft_json: &str, ft_binary: &[u8]) -> Vec<u8> {
     let bt_json_len = 0u32;
     let bt_bin_len = 0u32;
 
-    // Header: magic(4) + version(4) + byteLength(4) + ftJsonLen(4) + ftBinLen(4) +
-    //         btJsonLen(4) + btBinLen(4) = 28 bytes
+    // 头部：magic(4) + version(4) + byteLength(4) + ftJsonLen(4) + ftBinLen(4) +
+    //       btJsonLen(4) + btBinLen(4) = 28 字节
     let total = 28 + ft_json_len + ft_bin_len;
 
     let mut buf = Vec::with_capacity(total as usize);
@@ -68,7 +68,7 @@ fn make_cmpt(inner_tiles: &[&[u8]]) -> Vec<u8> {
     let tiles_length = inner_tiles.len() as u32;
     let inner_total: u32 = inner_tiles.iter().map(|t| t.len() as u32).sum();
 
-    // Header: magic(4) + version(4) + byteLength(4) + tilesLength(4) = 16 bytes
+    // 头部：magic(4) + version(4) + byteLength(4) + tilesLength(4) = 16 字节
     let total = 16 + inner_total;
 
     let mut buf = Vec::with_capacity(total as usize);
@@ -83,7 +83,7 @@ fn make_cmpt(inner_tiles: &[&[u8]]) -> Vec<u8> {
 }
 
 fn make_glb_simple() -> Vec<u8> {
-    // Minimal GLB: magic + version + length + JSON chunk
+    // 最小 GLB：magic + version + length + JSON chunk
     let json = b"{}";
     let json_len = json.len() as u32;
     let total = 12 + 8 + json_len;
@@ -92,7 +92,7 @@ fn make_glb_simple() -> Vec<u8> {
     buf.extend_from_slice(b"glTF");
     buf.extend_from_slice(&2u32.to_le_bytes());
     buf.extend_from_slice(&total.to_le_bytes());
-    // JSON chunk
+    // JSON chunk（块）
     buf.extend_from_slice(&json_len.to_le_bytes());
     buf.extend_from_slice(&0x4E4F534Au32.to_le_bytes()); // JSON
     buf.extend_from_slice(json);
@@ -208,7 +208,7 @@ fn i3dm_buffer_too_short() {
 #[test]
 fn i3dm_unsupported_version() {
     let mut buf = make_i3dm("{}", 1, &[]);
-    // Set version to 2
+    // 设置 version 为 2
     buf[4..8].copy_from_slice(&2u32.to_le_bytes());
     let err = parse_i3dm(&buf).unwrap_err();
     assert!(matches!(err, DecodeError::UnsupportedVersion { .. }));

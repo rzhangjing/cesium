@@ -1,30 +1,29 @@
-//! Optional reqwest-based async network backend.
+//! 可选的、基于 reqwest 的 async 网络后端。
 //!
-//! Available behind the `reqwest-backend` feature flag. Uses tokio as a
-//! **transitive dependency only** — the pipeline main runtime remains
-//! synchronous (std threads + mpsc channels). The reqwest backend internally
-//! blocks on a dedicated tokio runtime handle per worker thread.
+//! 在 `reqwest-backend` feature flag 后可用。仅将 tokio 作为
+//! **传递依赖**使用 —— 流水线的主运行时仍是同步的（std 线程 + mpsc
+//! 通道）。reqwest 后端内部在每个工作线程上针对一个专用的 tokio
+//! 运行时句柄阻塞。
 //!
-//! This backend exists for future M1.4+ integration where async providers
-//! (e.g. streaming 3D Tiles content) may benefit from HTTP/2 multiplexing.
-//! For the default tile imagery path, `UreqBackend` is preferred (simpler,
-//! no tokio dependency, proven keep-alive pooling).
+//! 该后端为未来 M1.4+ 集成而存在，届时 async 提供者（例如流式 3D Tiles
+//! 内容）可能从 HTTP/2 多路复用中受益。对于默认的瓦片影像路径，
+//! 更推荐 `UreqBackend`（更简单、无 tokio 依赖、久经验证的 keep-alive 池化）。
 
 use std::time::Duration;
 
 use super::{FetchResult, NetworkBackend};
 
-/// Async HTTP backend using reqwest with rustls-tls.
+/// 使用 reqwest 并带 rustls-tls 的 async HTTP 后端。
 ///
-/// Internally creates a single-threaded tokio runtime for blocking calls
-/// from worker threads. This is NOT the pipeline main runtime.
+/// 内部为从工作线程发起的阻塞调用创建一个单线程的 tokio 运行时。这
+/// 并非流水线的主运行时。
 pub struct ReqwestBackend {
     client: reqwest::blocking::Client,
     timeout: Duration,
 }
 
 impl ReqwestBackend {
-    /// Create a backend with default settings (10 s timeout, rustls-tls).
+    /// 创建一个使用默认设置的后端（10 s 超时、rustls-tls）。
     pub fn new() -> Self {
         let timeout = Duration::from_secs(10);
         let client = reqwest::blocking::Client::builder()
@@ -35,7 +34,7 @@ impl ReqwestBackend {
         Self { client, timeout }
     }
 
-    /// Create a backend with custom timeout.
+    /// 创建一个使用自定义超时的后端。
     pub fn with_timeout(timeout: Duration) -> Self {
         let client = reqwest::blocking::Client::builder()
             .user_agent("Mozilla/5.0 CesiumRust/0.1")
@@ -103,10 +102,10 @@ mod tests {
         assert_eq!(b.timeout(), Duration::from_secs(10));
     }
 
-    /// Same-K equivalence: for an identical URL (tile key), the ureq and
-    /// reqwest backends must return byte-identical `FetchResult::Ok` payloads.
-    /// This proves the two backends are interchangeable behind `NetworkBackend`
-    /// (the host can switch backends without changing pipeline behavior).
+    /// 同-K 等价性：对于相同的 URL（瓦片键），ureq 和 reqwest 后端必须返回
+    /// 逐字节相同的 `FetchResult::Ok` 载荷。这证明两个后端在
+    /// `NetworkBackend` 之后可互换（宿主可以在不改变流水线行为的前提下
+    /// 切换后端）。
     #[test]
     fn same_k_ureq_reqwest_equivalent() {
         use crate::net::test_server;

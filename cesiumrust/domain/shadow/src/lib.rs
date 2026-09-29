@@ -1,10 +1,10 @@
-//! cesium-shadow: Shadow mapping and water/ocean effects.
+//! cesium-shadow：阴影贴图与水/海洋效果。
 //!
-//! Domain layer - pure Rust, f64 precision.
+//! 领域层 —— 纯 Rust，f64 精度。
 //!
-//! CesiumJS mapping:
+//! CesiumJS 映射：
 //! - `Scene/ShadowMap.js` → shadow_map
-//! - Water/ocean rendering → water
+//! - 水/海洋渲染 → water
 
 pub mod shadow_map;
 pub mod water;

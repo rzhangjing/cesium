@@ -1,11 +1,10 @@
-//! cesium-pipeline — Generic tile pipeline adapter (M1.2).
+//! cesium-pipeline —— 通用瓦片流水线适配器（M1.2）。
 //!
-//! Bevy-free, pure `std` implementation of the M1.1 `TilePipeline` contract
-//! from `cesium-ports-driven`. Faithfully replicates the budget/eviction/
-//! staleness/retry semantics of `dynamic_globe.rs` (the golden-path reference)
-//! in a reusable, testable crate.
+//! 无 Bevy、纯 `std` 的实现，对应 `cesium-ports-driven` 中 M1.1 的
+//! `TilePipeline` 契约。以可复用、可测试的 crate 形式，忠实复刻
+//! `dynamic_globe.rs`（黄金路径参考）的预算/驱逐/过期/重试语义。
 //!
-//! ## Architecture
+//! ## 架构
 //!
 //! ```text
 //!  submit(key, prio)          poll_ready(budget)
@@ -20,21 +19,21 @@
 //!  refresh_wanted()         NetworkBackend (ureq / reqwest)
 //! ```
 //!
-//! ## Module map
+//! ## 模块地图
 //!
-//! | Module | Responsibility |
+//! | 模块 | 职责 |
 //! |--------|---------------|
-//! | `runtime` | `GenericPipeline<K,P>` — the `TilePipeline` impl |
-//! | `pool` | Blocking worker pool (16 threads, keep-alive) |
-//! | `budget` | `DefaultBudget` — verbatim dynamic_globe constants |
-//! | `gpu_cache` | FIFO eviction with base-layer lock + live deferral |
-//! | `hidden_lru` | LRU tracking for hidden (warm fallback) entities |
-//! | `dedup` | In-flight deduplication set |
-//! | `base_layer` | Base-layer zoom exemption logic |
-//! | `retry` | `DefaultRetry` — dual-timescale retry policy |
-//! | `staleness` | `DefaultStaleness` — three-state result classification |
-//! | `net` | `NetworkBackend` trait + ureq/reqwest impls |
-//! | `resource_backend` | M8 `ResourceBackend` — bulk asset streaming via the reused cache hierarchy |
+//! | `runtime` | `GenericPipeline<K,P>` —— `TilePipeline` 的实现 |
+//! | `pool` | 阻塞式工作池（16 线程，keep-alive） |
+//! | `budget` | `DefaultBudget` —— 逐字采用的 dynamic_globe 常量 |
+//! | `gpu_cache` | 带基础层锁定 + 活跃延迟的 FIFO 驱逐 |
+//! | `hidden_lru` | 隐藏（温回退）实体的 LRU 追踪 |
+//! | `dedup` | 在途去重集合 |
+//! | `base_layer` | 基础层 zoom 豁免逻辑 |
+//! | `retry` | `DefaultRetry` —— 双时间尺度重试策略 |
+//! | `staleness` | `DefaultStaleness` —— 三态结果分类 |
+//! | `net` | `NetworkBackend` trait + ureq/reqwest 实现 |
+//! | `resource_backend` | M8 `ResourceBackend` —— 经由复用的缓存层级流式传输 bulk 资产 |
 
 pub mod base_layer;
 pub mod budget;
@@ -48,7 +47,7 @@ pub mod retry;
 pub mod runtime;
 pub mod staleness;
 
-// Re-export the core pipeline type + default policy impls for convenience.
+// 为方便起见，重新导出核心流水线类型 + 默认策略实现。
 pub use budget::DefaultBudget;
 pub use resource_backend::PipelineResourceBackend;
 pub use retry::DefaultRetry;

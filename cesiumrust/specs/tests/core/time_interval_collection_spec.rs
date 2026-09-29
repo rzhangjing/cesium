@@ -1,31 +1,31 @@
-//! Core/TimeIntervalCollectionSpec.js → Rust integration tests
-//! 67 original it() blocks. C-class (throws/changedEvent) skipped (11).
-//! Merge callback test skipped (API not yet supported).
-//! Ported: ~55 tests covering construct, contains, indexOf, get, findInterval,
-//! addInterval, removeInterval, intersect, equals, fromIso8601, fromIso8601DateArray,
-//! fromIso8601DurationArray.
+//! Core/TimeIntervalCollectionSpec.js → Rust 集成测试
+//! 原始共 67 个 it() 块。C 类（throws/changedEvent）已跳过（11 个）。
+//! 合并回调测试已跳过（API 尚未支持）。
+//! 已移植：约 55 个测试，覆盖 construct、contains、indexOf、get、findInterval、
+//! addInterval、removeInterval、intersect、equals、fromIso8601、fromIso8601DateArray、
+//! fromIso8601DurationArray。
 
 use cesium_time::{
     FromIso8601Options, JulianDate, TimeInterval, TimeIntervalCollection, TimeIntervalData,
     TimeStandard,
 };
 
-/// Helper: create JulianDate from day number (UTC)
+/// 辅助函数：从日数（UTC）创建 JulianDate
 fn jd(day: f64) -> JulianDate {
     JulianDate::new(day, 0.0)
 }
 
-/// Helper: create JulianDate from day number + seconds (TAI)
+/// 辅助函数：从日数 + 秒数（TAI）创建 JulianDate
 fn jd_tai(day: f64, sec: f64) -> JulianDate {
     JulianDate::with_time_standard(day, sec, TimeStandard::TAI)
 }
 
-/// Helper: create TimeIntervalData with i32 data
+/// 辅助函数：创建带 i32 数据的 TimeIntervalData
 fn tid(start: f64, stop: f64, si: bool, sti: bool, data: i32) -> TimeIntervalData<i32> {
     TimeIntervalData::new(TimeInterval::new(jd(start), jd(stop), si, sti), Some(data))
 }
 
-/// Helper: create TimeIntervalData with no data
+/// 辅助函数：创建无数据的 TimeIntervalData
 fn tid_nodata(start: f64, stop: f64, si: bool, sti: bool) -> TimeIntervalData<i32> {
     TimeIntervalData::new(TimeInterval::new(jd(start), jd(stop), si, sti), None)
 }
@@ -38,7 +38,7 @@ fn same_usize(a: &usize, b: &usize) -> bool {
     a == b
 }
 
-/// Helper: check intervals match expected julian dates array (for fromIso8601 tests)
+/// 辅助函数：检查各区间是否匹配预期的 julian 日期数组（用于 fromIso8601 测试）
 fn check_intervals(
     collection: &TimeIntervalCollection<usize>,
     julian_dates: &[JulianDate],
@@ -87,7 +87,7 @@ fn iso8601_to_julian_date_array(dates: &[&str]) -> Vec<JulianDate> {
         .collect()
 }
 
-// === Construction ===
+// === 构造 ===
 
 #[test]
 fn constructing_default_interval_collection_has_expected_property_values() {
@@ -133,7 +133,7 @@ fn is_start_included_is_stop_included_works() {
     assert!(intervals.is_stop_included());
 }
 
-// === Contains ===
+// === 包含 ===
 
 #[test]
 fn contains_works_for_a_simple_interval_collection() {
@@ -497,35 +497,35 @@ fn remove_interval_works_correctly() {
         &same,
     );
 
-    // Empty
+    // 空
     assert!(!intervals.remove_interval(&TimeInterval::EMPTY));
     assert_eq!(intervals.len(), 2);
 
-    // Before first
+    // 首个之前
     assert!(!intervals.remove_interval(&create_ti(1.0, 5.0)));
     assert_eq!(intervals.len(), 2);
 
-    // After last
+    // 最后一个之后
     assert!(!intervals.remove_interval(&create_ti(50.0, 60.0)));
     assert_eq!(intervals.len(), 2);
 
-    // Inside hole
+    // 位于空洞内
     assert!(!intervals.remove_interval(&create_ti(22.0, 28.0)));
     assert_eq!(intervals.len(), 2);
 
-    // From beginning
+    // 从开头
     assert!(intervals.remove_interval(&create_ti(5.0, 15.0)));
     assert_eq!(intervals.len(), 2);
     assert_eq!(intervals.get(0).unwrap().interval.start.total_days(), 15.0);
     assert_eq!(intervals.get(0).unwrap().interval.stop.total_days(), 20.0);
 
-    // From end
+    // 从结尾
     assert!(intervals.remove_interval(&create_ti(35.0, 45.0)));
     assert_eq!(intervals.len(), 2);
     assert_eq!(intervals.get(1).unwrap().interval.start.total_days(), 30.0);
     assert_eq!(intervals.get(1).unwrap().interval.stop.total_days(), 35.0);
 
-    // From middle of single interval
+    // 从单个区间的中部
     intervals.remove_all();
     intervals.add_interval(TimeIntervalData::new(create_ti(10.0, 20.0), None), &same);
     intervals.add_interval(TimeIntervalData::new(create_ti(30.0, 40.0), None), &same);
@@ -536,7 +536,7 @@ fn remove_interval_works_correctly() {
     assert_eq!(intervals.get(1).unwrap().interval.start.total_days(), 18.0);
     assert!(!intervals.get(1).unwrap().interval.is_start_included);
 
-    // Span an entire interval and into part of next
+    // 跨越整个区间并延伸进下一个区间的一部分
     intervals.remove_all();
     intervals.add_interval(TimeIntervalData::new(create_ti(10.0, 20.0), None), &same);
     intervals.add_interval(TimeIntervalData::new(create_ti(30.0, 40.0), None), &same);
@@ -546,7 +546,7 @@ fn remove_interval_works_correctly() {
     assert_eq!(intervals.get(1).unwrap().interval.start.total_days(), 46.0);
     assert!(!intervals.get(1).unwrap().interval.is_start_included);
 
-    // Interval ends at same date as an existing interval
+    // 区间结束于与现有区间相同的日期
     intervals.remove_all();
     intervals.add_interval(TimeIntervalData::new(create_ti(10.0, 20.0), None), &same);
     intervals.add_interval(TimeIntervalData::new(create_ti(30.0, 40.0), None), &same);
@@ -556,7 +556,7 @@ fn remove_interval_works_correctly() {
     assert_eq!(intervals.get(0).unwrap().interval.stop.total_days(), 20.0);
     assert_eq!(intervals.get(1).unwrap().interval.start.total_days(), 45.0);
 
-    // Interval ends at same date, single point survives
+    // 区间结束于同一日期，单点存活
     intervals.remove_all();
     intervals.add_interval(TimeIntervalData::new(create_ti(10.0, 20.0), None), &same);
     intervals.add_interval(TimeIntervalData::new(create_ti(30.0, 40.0), None), &same);
@@ -570,7 +570,7 @@ fn remove_interval_works_correctly() {
     assert!(intervals.get(1).unwrap().interval.is_stop_included);
     assert_eq!(intervals.get(2).unwrap().interval.start.total_days(), 45.0);
 
-    // Single point survives and can be combined with next interval
+    // 单点存活且可与下一个区间合并
     intervals.remove_all();
     intervals.add_interval(TimeIntervalData::new(create_ti(10.0, 20.0), None), &same);
     intervals.add_interval(TimeIntervalData::new(create_ti(30.0, 40.0), None), &same);
@@ -584,7 +584,7 @@ fn remove_interval_works_correctly() {
     assert_eq!(intervals.get(1).unwrap().interval.start.total_days(), 40.0);
     assert!(intervals.get(1).unwrap().interval.is_start_included);
 
-    // End point of removal interval overlaps first point of existing interval
+    // 被移除区间的端点与现有区间的第一个点重叠
     intervals.remove_all();
     intervals.add_interval(TimeIntervalData::new(create_ti(10.0, 20.0), None), &same);
     assert!(intervals.remove_interval(&create_ti(0.0, 10.0)));
@@ -594,7 +594,7 @@ fn remove_interval_works_correctly() {
     assert!(!intervals.get(0).unwrap().interval.is_start_included);
     assert!(intervals.get(0).unwrap().interval.is_stop_included);
 
-    // Start point of removal interval does NOT overlap last point
+    // 被移除区间的起点不（NOT）与最后一个点重叠
     intervals.remove_all();
     intervals.add_interval(TimeIntervalData::new(create_ti(10.0, 20.0), None), &same);
     assert!(!intervals.remove_interval(&create_ti_excl(20.0, 30.0, false, true)));
@@ -604,7 +604,7 @@ fn remove_interval_works_correctly() {
     assert!(intervals.get(0).unwrap().interval.is_start_included);
     assert!(intervals.get(0).unwrap().interval.is_stop_included);
 
-    // Removing an open interval from an otherwise identical closed interval
+    // 从一个其余部分相同的闭区间中移除一个开区间
     intervals.remove_all();
     intervals.add_interval(TimeIntervalData::new(create_ti(0.0, 20.0), None), &same);
     assert!(intervals.remove_interval(&create_ti_excl(0.0, 20.0, false, false)));
@@ -622,7 +622,7 @@ fn remove_interval_works_correctly() {
 #[test]
 fn remove_interval_removes_the_first_interval_correctly() {
     let mut intervals: TimeIntervalCollection<&str> = TimeIntervalCollection::new();
-    let same = |_: &&str, _: &&str| false; // never merge (different data)
+    let same = |_: &&str, _: &&str| false; // 从不合并（数据不同）
 
     let from1to3 = TimeIntervalData::new(
         TimeInterval::new(jd(1.0), jd(3.0), true, true),
@@ -685,17 +685,17 @@ fn should_add_and_remove_intervals_correctly_integration_test() {
         ));
     }
 
-    let same = |_: &i32, _: &i32| false; // never merge
+    let same = |_: &i32, _: &i32| false; // 从不合并
     let mut collection: TimeIntervalCollection<i32> = TimeIntervalCollection::new();
 
-    // Add initial intervals
+    // 添加初始区间
     collection.add_interval(interval_from_seconds(0.0, 0), &same);
     collection.add_interval(interval_from_seconds(2.0, 2), &same);
     collection.add_interval(interval_from_seconds(4.0, 4), &same);
     collection.add_interval(interval_from_seconds(6.0, 6), &same);
     assert_eq!(collection.len(), 4);
 
-    // Verify data at various seconds
+    // 验证各个秒数处的数据
     assert_eq!(
         collection.find_data_for_interval_containing_date(&JulianDate::new(CONST_DAY_NUM, 0.0)),
         Some(&0)
@@ -717,7 +717,7 @@ fn should_add_and_remove_intervals_correctly_integration_test() {
         None
     );
 
-    // Add overlapping intervals
+    // 添加重叠区间
     collection.add_interval(interval_from_seconds(1.0, 1), &same);
     collection.add_interval(interval_from_seconds(3.0, 3), &same);
     assert_eq!(collection.len(), 4);
@@ -734,7 +734,7 @@ fn should_add_and_remove_intervals_correctly_integration_test() {
         Some(&6)
     );
 
-    // Remove interval
+    // 移除区间
     remove_from_to(&mut collection, 3.0, 8.0);
     assert_eq!(collection.len(), 3);
     assert_eq!(
@@ -746,7 +746,7 @@ fn should_add_and_remove_intervals_correctly_integration_test() {
         Some(&6)
     );
 
-    // Remove all
+    // 移除全部
     remove_from_to(&mut collection, 0.0, 11.0);
     assert_eq!(collection.len(), 0);
 }
@@ -887,8 +887,8 @@ fn equals_works_without_data() {
 
 #[test]
 fn equals_works_with_data() {
-    // In CesiumJS, {} !== {} so without a callback, different objects are not equal.
-    // In Rust, we simulate this with same_data always returning false.
+    // 在 CesiumJS 中，{} !== {}，因此没有回调时，不同的对象不相等。
+    // 在 Rust 中，我们通过让 same_data 始终返回 false 来模拟这一行为。
     let always_false = |_: &i32, _: &i32| false;
     let always_true = |_: &i32, _: &i32| true;
 
@@ -902,13 +902,13 @@ fn equals_works_with_data() {
     right.add_interval(tid(2.0, 3.0, false, true, 200), &same_i32);
     right.add_interval(tid(4.0, 5.0, true, true, 300), &same_i32);
 
-    // With same_data = same_i32, they are equal (same values)
+    // 当 same_data = same_i32 时，它们相等（值相同）
     assert!(left.equals(&right, &same_i32));
 
-    // With always_true, they are equal
+    // 使用 always_true 时，它们相等
     assert!(left.equals(&right, &always_true));
 
-    // With always_false, they are NOT equal (simulates {} !== {})
+    // 使用 always_false 时，它们不相等（模拟 {} !== {}）
     assert!(!left.equals(&right, &always_false));
 }
 
@@ -1231,10 +1231,10 @@ fn from_iso8601_handles_leading_interval_option() {
         &same_usize,
     );
 
-    // Total: 1 leading + 3 main = 4
+    // 总计：1 个前导 + 3 个主要 = 4
     assert_eq!(intervals.len(), 4);
 
-    // Check leading interval
+    // 检查前导区间
     let leading = intervals.get(0).unwrap();
     let min_value = JulianDate::from_iso8601("0001-01-01T00:00:00Z").unwrap();
     assert_eq!(leading.interval.start, min_value);
@@ -1242,13 +1242,13 @@ fn from_iso8601_handles_leading_interval_option() {
     assert!(leading.interval.is_start_included);
     assert!(!leading.interval.is_stop_included); // !isStartIncluded = false
 
-    // Check main intervals (indices 1..4)
+    // 检查主要区间（索引 1..4）
     for i in 0..3 {
         let interval = intervals.get(i + 1).unwrap();
         assert_eq!(interval.interval.start, julian_dates[i]);
         assert_eq!(interval.interval.stop, julian_dates[i + 1]);
-        // For this option set every main interval includes its start and
-        // excludes its stop, independent of `i`.
+        // 对于此选项集，每个主要区间都包含其起点并
+        // 排除其终点，与 `i` 无关。
         assert!(interval.interval.is_start_included);
         assert!(!interval.interval.is_stop_included);
     }
@@ -1275,10 +1275,10 @@ fn from_iso8601_handles_trailing_interval_option() {
         &same_usize,
     );
 
-    // Total: 3 main + 1 trailing = 4
+    // 总计：3 个主要 + 1 个尾随 = 4
     assert_eq!(intervals.len(), 4);
 
-    // Check trailing interval
+    // 检查尾随区间
     let trailing = intervals.get(3).unwrap();
     let max_value = JulianDate::from_iso8601("9999-12-31T24:00:00Z").unwrap();
     assert_eq!(trailing.interval.start, julian_dates[3]);
@@ -1286,7 +1286,7 @@ fn from_iso8601_handles_trailing_interval_option() {
     assert!(!trailing.interval.is_start_included); // !isStopIncluded = false
     assert!(trailing.interval.is_stop_included);
 
-    // Check main intervals
+    // 检查主要区间
     for i in 0..3 {
         let interval = intervals.get(i).unwrap();
         assert_eq!(interval.interval.start, julian_dates[i]);
@@ -1323,10 +1323,10 @@ fn from_iso8601_handles_leading_and_trailing_interval_options() {
         &same_usize,
     );
 
-    // Total: 1 leading + 3 main + 1 trailing = 5
+    // 总计：1 个前导 + 3 个主要 + 1 个尾随 = 5
     assert_eq!(intervals.len(), 5);
 
-    // Check leading interval
+    // 检查前导区间
     let leading = intervals.get(0).unwrap();
     let min_value = JulianDate::from_iso8601("0001-01-01T00:00:00Z").unwrap();
     assert_eq!(leading.interval.start, min_value);
@@ -1334,7 +1334,7 @@ fn from_iso8601_handles_leading_and_trailing_interval_options() {
     assert!(leading.interval.is_start_included);
     assert!(leading.interval.is_stop_included); // !isStartIncluded = !false = true
 
-    // Check trailing interval
+    // 检查尾随区间
     let trailing = intervals.get(4).unwrap();
     let max_value = JulianDate::from_iso8601("9999-12-31T24:00:00Z").unwrap();
     assert_eq!(trailing.interval.start, julian_dates[3]);
@@ -1342,7 +1342,7 @@ fn from_iso8601_handles_leading_and_trailing_interval_options() {
     assert!(trailing.interval.is_start_included); // !isStopIncluded = !false = true
     assert!(trailing.interval.is_stop_included);
 
-    // Check main intervals (indices 1..4)
+    // 检查主要区间（索引 1..4）
     for i in 0..3 {
         let interval = intervals.get(i + 1).unwrap();
         assert_eq!(interval.interval.start, julian_dates[i]);
@@ -1378,7 +1378,7 @@ fn from_iso8601_date_array_handles_leading_interval_option() {
 
     assert_eq!(intervals.len(), 4);
 
-    // Check leading interval
+    // 检查前导区间
     let leading = intervals.get(0).unwrap();
     let min_value = JulianDate::from_iso8601("0001-01-01T00:00:00Z").unwrap();
     assert_eq!(leading.interval.start, min_value);
@@ -1408,7 +1408,7 @@ fn from_iso8601_date_array_handles_trailing_interval_option() {
 
     assert_eq!(intervals.len(), 4);
 
-    // Check trailing interval
+    // 检查尾随区间
     let trailing = intervals.get(3).unwrap();
     let max_value = JulianDate::from_iso8601("9999-12-31T24:00:00Z").unwrap();
     assert_eq!(trailing.interval.start, julian_dates[3]);
@@ -1438,7 +1438,7 @@ fn from_iso8601_date_array_handles_leading_and_trailing_interval_options() {
 
     assert_eq!(intervals.len(), 5);
 
-    // Check leading interval
+    // 检查前导区间
     let leading = intervals.get(0).unwrap();
     let min_value = JulianDate::from_iso8601("0001-01-01T00:00:00Z").unwrap();
     assert_eq!(leading.interval.start, min_value);
@@ -1446,7 +1446,7 @@ fn from_iso8601_date_array_handles_leading_and_trailing_interval_options() {
     assert!(leading.interval.is_start_included);
     assert!(leading.interval.is_stop_included); // !isStartIncluded = !false = true
 
-    // Check trailing interval
+    // 检查尾随区间
     let trailing = intervals.get(4).unwrap();
     let max_value = JulianDate::from_iso8601("9999-12-31T24:00:00Z").unwrap();
     assert_eq!(trailing.interval.start, julian_dates[3]);
@@ -1479,10 +1479,10 @@ fn from_iso8601_duration_array_handles_relative_to_previous_set_to_false() {
         &same_usize,
     );
 
-    // Total: 1 leading + 3 main + 1 trailing = 5
+    // 总计：1 个前导 + 3 个主要 + 1 个尾随 = 5
     assert_eq!(intervals.len(), 5);
 
-    // Check leading interval
+    // 检查前导区间
     let leading = intervals.get(0).unwrap();
     let min_value = JulianDate::from_iso8601("0001-01-01T00:00:00Z").unwrap();
     assert_eq!(leading.interval.start, min_value);
@@ -1490,7 +1490,7 @@ fn from_iso8601_duration_array_handles_relative_to_previous_set_to_false() {
     assert!(leading.interval.is_start_included);
     assert!(leading.interval.is_stop_included); // !isStartIncluded = !false = true
 
-    // Check trailing interval
+    // 检查尾随区间
     let trailing = intervals.get(4).unwrap();
     let max_value = JulianDate::from_iso8601("9999-12-31T24:00:00Z").unwrap();
     assert_eq!(trailing.interval.start, julian_dates[3]);
@@ -1498,7 +1498,7 @@ fn from_iso8601_duration_array_handles_relative_to_previous_set_to_false() {
     assert!(trailing.interval.is_start_included); // !isStopIncluded = !false = true
     assert!(trailing.interval.is_stop_included);
 
-    // Check main intervals
+    // 检查主要区间
     for i in 0..3 {
         let interval = intervals.get(i + 1).unwrap();
         assert_eq!(interval.interval.start, julian_dates[i]);
@@ -1528,22 +1528,22 @@ fn from_iso8601_duration_array_handles_relative_to_previous_set_to_true() {
         &same_usize,
     );
 
-    // Total: 1 leading + 3 main + 1 trailing = 5
+    // 总计：1 个前导 + 3 个主要 + 1 个尾随 = 5
     assert_eq!(intervals.len(), 5);
 
-    // Check leading interval
+    // 检查前导区间
     let leading = intervals.get(0).unwrap();
     let min_value = JulianDate::from_iso8601("0001-01-01T00:00:00Z").unwrap();
     assert_eq!(leading.interval.start, min_value);
     assert_eq!(leading.interval.stop, julian_dates[0]);
 
-    // Check trailing interval
+    // 检查尾随区间
     let trailing = intervals.get(4).unwrap();
     let max_value = JulianDate::from_iso8601("9999-12-31T24:00:00Z").unwrap();
     assert_eq!(trailing.interval.start, julian_dates[3]);
     assert_eq!(trailing.interval.stop, max_value);
 
-    // Check main intervals
+    // 检查主要区间
     for i in 0..3 {
         let interval = intervals.get(i + 1).unwrap();
         assert_eq!(interval.interval.start, julian_dates[i]);

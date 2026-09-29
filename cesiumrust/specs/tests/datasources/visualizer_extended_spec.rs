@@ -1,5 +1,5 @@
-//! Visualizer extended specs - GeometryVisualizer/StaticGeometryBatch/DynamicGeometryUpdater
-//! Ported from DataSources/GeometryVisualizerSpec.js (A-class logic)
+//! Visualizer 扩展规范 - GeometryVisualizer/StaticGeometryBatch/DynamicGeometryUpdater
+//! 移植自 DataSources/GeometryVisualizerSpec.js（A 类逻辑）
 
 use cesium_datasource::visualizer::{
     GeometryVisualizer, StaticGeometryBatch, DynamicGeometryUpdater,
@@ -42,7 +42,7 @@ fn visualizer_update_skips_when_not_dirty_same_time() {
     entities.add(make_entity("e1"));
 
     vis.update(&entities, 0.0);
-    let updated = vis.update(&entities, 0.0); // Same time, not dirty
+    let updated = vis.update(&entities, 0.0); // 相同时间，非 dirty
     assert_eq!(updated, 0);
 }
 
@@ -53,7 +53,7 @@ fn visualizer_update_reprocesses_on_time_change() {
     entities.add(make_entity("e1"));
 
     vis.update(&entities, 0.0);
-    let updated = vis.update(&entities, 1.0); // Time changed
+    let updated = vis.update(&entities, 1.0); // 时间已改变
     assert_eq!(updated, 1);
 }
 
@@ -118,7 +118,7 @@ fn visualizer_all_instances() {
 
     vis.update(&entities, 0.0);
     let instances = vis.all_instances();
-    // Point graphics should produce at least one fill instance
+    // Point 图元应产生至少一个填充实例
     assert!(!instances.is_empty() || vis.instance_count() == 0);
 }
 
@@ -155,7 +155,7 @@ fn dynamic_updater_add_remove() {
 fn dynamic_updater_no_duplicates() {
     let mut updater = DynamicGeometryUpdater::new(Ellipsoid::WGS84);
     updater.add_entity("e1");
-    updater.add_entity("e1"); // Duplicate
+    updater.add_entity("e1"); // 重复项
     assert_eq!(updater.entity_count(), 1);
 }
 
@@ -182,5 +182,5 @@ fn dynamic_updater_update_skips_missing_entities() {
     entities.add(make_entity("e1"));
 
     let results = updater.update(&entities, 0.0);
-    assert_eq!(results.len(), 1); // "missing" not in collection
+    assert_eq!(results.len(), 1); // "missing" 不在集合中
 }

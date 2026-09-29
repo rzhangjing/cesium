@@ -1,6 +1,6 @@
-//! Structural metadata for EXT_structural_metadata extension.
+//! EXT_structural_metadata 扩展的结构化元数据。
 //!
-//! Maps to CesiumJS:
+//! 镜像 CesiumJS：
 //! - `Scene/PropertyTable.js`
 //! - `Scene/PropertyTexture.js`
 //! - `Scene/PropertyAttribute.js`
@@ -15,39 +15,39 @@ use std::collections::HashMap;
 // MetadataType
 // ============================================================================
 
-/// Metadata property types per EXT_structural_metadata spec.
+/// 按 EXT_structural_metadata 规范定义的元数据属性类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MetadataType {
-    /// 8-bit signed integer.
+    /// 8 位有符号整数。
     Int8,
-    /// 8-bit unsigned integer.
+    /// 8 位无符号整数。
     Uint8,
-    /// 16-bit signed integer.
+    /// 16 位有符号整数。
     Int16,
-    /// 16-bit unsigned integer.
+    /// 16 位无符号整数。
     Uint16,
-    /// 32-bit signed integer.
+    /// 32 位有符号整数。
     Int32,
-    /// 32-bit unsigned integer.
+    /// 32 位无符号整数。
     Uint32,
-    /// 64-bit signed integer.
+    /// 64 位有符号整数。
     Int64,
-    /// 64-bit unsigned integer.
+    /// 64 位无符号整数。
     Uint64,
-    /// 32-bit float.
+    /// 32 位浮点数。
     Float32,
-    /// 64-bit float.
+    /// 64 位浮点数。
     Float64,
-    /// Boolean.
+    /// 布尔值。
     Boolean,
-    /// String.
+    /// 字符串。
     String,
-    /// Enum.
+    /// 枚举。
     Enum,
 }
 
 impl MetadataType {
-    /// Get the byte size of this type (0 for variable-length types).
+    /// 获取本类型的字节大小（变长类型为 0）。
     pub fn byte_size(&self) -> usize {
         match self {
             Self::Int8 | Self::Uint8 | Self::Boolean => 1,
@@ -59,27 +59,27 @@ impl MetadataType {
     }
 }
 
-/// Metadata component type (scalar, vecN, matN).
+/// 元数据分量类型（标量、vecN、matN）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MetadataComponentType {
-    /// Scalar value.
+    /// 标量值。
     Scalar,
-    /// 2-component vector.
+    /// 2 分量向量。
     Vec2,
-    /// 3-component vector.
+    /// 3 分量向量。
     Vec3,
-    /// 4-component vector.
+    /// 4 分量向量。
     Vec4,
-    /// 2x2 matrix.
+    /// 2x2 矩阵。
     Mat2,
-    /// 3x3 matrix.
+    /// 3x3 矩阵。
     Mat3,
-    /// 4x4 matrix.
+    /// 4x4 矩阵。
     Mat4,
 }
 
 impl MetadataComponentType {
-    /// Get the number of components.
+    /// 获取分量数量。
     pub fn component_count(&self) -> usize {
         match self {
             Self::Scalar => 1,
@@ -97,25 +97,25 @@ impl MetadataComponentType {
 // MetadataValue
 // ============================================================================
 
-/// A metadata property value.
+/// 一个元数据属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum MetadataValue {
-    /// Boolean value.
+    /// 布尔值。
     Bool(bool),
-    /// Integer value (i64 covers all int types).
+    /// 整数值（i64 涵盖所有整数类型）。
     Int(i64),
-    /// Unsigned integer value.
+    /// 无符号整数值。
     Uint(u64),
-    /// Float value.
+    /// 浮点值。
     Float(f64),
-    /// String value.
+    /// 字符串值。
     String(String),
-    /// Array of values.
+    /// 值的数组。
     Array(Vec<MetadataValue>),
 }
 
 impl MetadataValue {
-    /// Get as f64 if numeric.
+    /// 若为数值则作为 f64 获取。
     pub fn as_f64(&self) -> Option<f64> {
         match self {
             Self::Int(v) => Some(*v as f64),
@@ -126,7 +126,7 @@ impl MetadataValue {
         }
     }
 
-    /// Get as string reference.
+    /// 作为字符串引用获取。
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Self::String(s) => Some(s),
@@ -139,41 +139,41 @@ impl MetadataValue {
 // MetadataClassProperty
 // ============================================================================
 
-/// Definition of a single property in a metadata class.
+/// 元数据类中单个属性的定义。
 #[derive(Debug, Clone, PartialEq)]
 pub struct MetadataClassProperty {
-    /// Property name.
+    /// 属性名。
     pub name: String,
-    /// Property description.
+    /// 属性描述。
     pub description: Option<String>,
-    /// Value type.
+    /// 值类型。
     pub value_type: MetadataType,
-    /// Component type (for vectors/matrices).
+    /// 分量类型（用于向量/矩阵）。
     pub component_type: MetadataComponentType,
-    /// Whether this is an array property.
+    /// 本属性是否为数组属性。
     pub array: bool,
-    /// Whether this property is required.
+    /// 本属性是否为必需。
     pub required: bool,
-    /// No-data value (used when property is missing).
+    /// 无数据值（属性缺失时使用）。
     pub no_data: Option<MetadataValue>,
-    /// Default value.
+    /// 默认值。
     pub default: Option<MetadataValue>,
-    /// Normalization flag.
+    /// 归一化标志。
     pub normalized: bool,
-    /// Offset for dequantization.
+    /// 用于反量子化的偏移。
     pub offset: Option<MetadataValue>,
-    /// Scale for dequantization.
+    /// 用于反量子化的缩放。
     pub scale: Option<MetadataValue>,
-    /// Maximum value.
+    /// 最大值。
     pub max: Option<MetadataValue>,
-    /// Minimum value.
+    /// 最小值。
     pub min: Option<MetadataValue>,
-    /// Enum ID (if type is Enum).
+    /// 枚举 ID（若类型为 Enum）。
     pub enum_id: Option<String>,
 }
 
 impl MetadataClassProperty {
-    /// Create a new scalar property.
+    /// 创建一个新的标量属性。
     pub fn new_scalar(name: &str, value_type: MetadataType) -> Self {
         Self {
             name: name.to_string(),
@@ -193,7 +193,7 @@ impl MetadataClassProperty {
         }
     }
 
-    /// Create a new vector property.
+    /// 创建一个新的向量属性。
     pub fn new_vector(
         name: &str,
         value_type: MetadataType,
@@ -222,21 +222,21 @@ impl MetadataClassProperty {
 // MetadataClass
 // ============================================================================
 
-/// A metadata class definition (schema class).
+/// 一个元数据类定义（schema 类）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct MetadataClass {
-    /// Class ID.
+    /// 类 ID。
     pub id: String,
-    /// Human-readable name.
+    /// 可读名称。
     pub name: Option<String>,
-    /// Description.
+    /// 描述。
     pub description: Option<String>,
-    /// Properties in this class.
+    /// 本类中的属性。
     pub properties: HashMap<String, MetadataClassProperty>,
 }
 
 impl MetadataClass {
-    /// Create a new empty class.
+    /// 创建一个空的类。
     pub fn new(id: &str) -> Self {
         Self {
             id: id.to_string(),
@@ -246,12 +246,12 @@ impl MetadataClass {
         }
     }
 
-    /// Add a property to the class.
+    /// 向类中添加一个属性。
     pub fn add_property(&mut self, property: MetadataClassProperty) {
         self.properties.insert(property.name.clone(), property);
     }
 
-    /// Get a property by ID.
+    /// 按 ID 获取一个属性。
     pub fn get_property(&self, id: &str) -> Option<&MetadataClassProperty> {
         self.properties.get(id)
     }
@@ -261,23 +261,23 @@ impl MetadataClass {
 // MetadataEnum
 // ============================================================================
 
-/// A metadata enum definition.
+/// 一个元数据枚举定义。
 #[derive(Debug, Clone, PartialEq)]
 pub struct MetadataEnum {
-    /// Enum ID.
+    /// 枚举 ID。
     pub id: String,
-    /// Human-readable name.
+    /// 可读名称。
     pub name: Option<String>,
-    /// Description.
+    /// 描述。
     pub description: Option<String>,
-    /// Value type (Int8, Uint8, Int16, etc.).
+    /// 值类型（Int8、Uint8、Int16 等）。
     pub value_type: MetadataType,
-    /// Enum values: name → numeric value.
+    /// 枚举值：名称 → 数值。
     pub values: HashMap<String, i64>,
 }
 
 impl MetadataEnum {
-    /// Create a new enum.
+    /// 创建一个新的枚举。
     pub fn new(id: &str, value_type: MetadataType) -> Self {
         Self {
             id: id.to_string(),
@@ -288,12 +288,12 @@ impl MetadataEnum {
         }
     }
 
-    /// Add a value to the enum.
+    /// 向枚举中添加一个值。
     pub fn add_value(&mut self, name: &str, value: i64) {
         self.values.insert(name.to_string(), value);
     }
 
-    /// Get the name for a numeric value.
+    /// 获取一个数值对应的名称。
     pub fn name_for_value(&self, value: i64) -> Option<&str> {
         self.values
             .iter()
@@ -306,27 +306,27 @@ impl MetadataEnum {
 // PropertyTable
 // ============================================================================
 
-/// A property table containing per-feature metadata.
+/// 包含逐 feature 元数据的属性表。
 ///
-/// Maps to CesiumJS `Scene/PropertyTable.js`.
+/// 映射到 CesiumJS `Scene/PropertyTable.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropertyTable {
-    /// Table name.
+    /// 表名。
     pub name: Option<String>,
-    /// Table ID.
+    /// 表 ID。
     pub id: Option<String>,
-    /// Number of features.
+    /// feature 数量。
     pub count: usize,
-    /// Class this table conforms to.
+    /// 本表所从属的类。
     pub class: MetadataClass,
-    /// Property values: property_id → feature_index → value.
+    /// 属性值：property_id → feature_index → value。
     pub values: HashMap<String, Vec<MetadataValue>>,
-    /// Extra user-defined data.
+    /// 额外的用户自定义数据。
     pub extras: Option<serde_json::Value>,
 }
 
 impl PropertyTable {
-    /// Create a new property table.
+    /// 创建一个新的属性表。
     pub fn new(count: usize, class: MetadataClass) -> Self {
         Self {
             name: None,
@@ -338,7 +338,7 @@ impl PropertyTable {
         }
     }
 
-    /// Set a property value for a feature.
+    /// 为一个 feature 设置属性值。
     pub fn set_value(&mut self, property_id: &str, feature_index: usize, value: MetadataValue) {
         let values = self
             .values
@@ -349,19 +349,19 @@ impl PropertyTable {
         }
     }
 
-    /// Get a property value for a feature.
+    /// 获取一个 feature 的属性值。
     pub fn get_value(&self, property_id: &str, feature_index: usize) -> Option<&MetadataValue> {
         self.values
             .get(property_id)
             .and_then(|v| v.get(feature_index))
     }
 
-    /// Get all property IDs in this table.
+    /// 获取本表中的所有属性 ID。
     pub fn property_ids(&self) -> Vec<&str> {
         self.values.keys().map(|s| s.as_str()).collect()
     }
 
-    /// Get the number of properties.
+    /// 获取属性数量。
     pub fn property_count(&self) -> usize {
         self.values.len()
     }
@@ -371,36 +371,36 @@ impl PropertyTable {
 // PropertyTexture
 // ============================================================================
 
-/// A property stored in a texture.
+/// 存储于纹理中的属性。
 ///
-/// Maps to CesiumJS `Scene/PropertyTexture.js`.
+/// 映射到 CesiumJS `Scene/PropertyTexture.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropertyTexture {
-    /// Texture name.
+    /// 纹理名。
     pub name: Option<String>,
-    /// Texture ID.
+    /// 纹理 ID。
     pub id: Option<String>,
-    /// Class this texture conforms to.
+    /// 本纹理所从属的类。
     pub class: MetadataClass,
-    /// Property definitions: property_id → texture channel info.
+    /// 属性定义：property_id → 纹理通道信息。
     pub properties: HashMap<String, PropertyTextureProperty>,
-    /// Extra user-defined data.
+    /// 额外的用户自定义数据。
     pub extras: Option<serde_json::Value>,
 }
 
-/// A single property within a property texture.
+/// 属性纹理中的单个属性。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropertyTextureProperty {
-    /// Texture index.
+    /// 纹理索引。
     pub texture_index: usize,
-    /// Texture coordinate set index.
+    /// 纹理坐标集索引。
     pub tex_coord: usize,
-    /// Channel indices (e.g., [0,1,2] for RGB).
+    /// 通道索引（例如 RGB 对应 [0,1,2]）。
     pub channels: Vec<usize>,
 }
 
 impl PropertyTexture {
-    /// Create a new property texture.
+    /// 创建一个新的属性纹理。
     pub fn new(class: MetadataClass) -> Self {
         Self {
             name: None,
@@ -411,12 +411,12 @@ impl PropertyTexture {
         }
     }
 
-    /// Add a property to the texture.
+    /// 向纹理中添加一个属性。
     pub fn add_property(&mut self, property_id: &str, prop: PropertyTextureProperty) {
         self.properties.insert(property_id.to_string(), prop);
     }
 
-    /// Get a property by ID.
+    /// 按 ID 获取一个属性。
     pub fn get_property(&self, property_id: &str) -> Option<&PropertyTextureProperty> {
         self.properties.get(property_id)
     }
@@ -426,32 +426,32 @@ impl PropertyTexture {
 // PropertyAttribute
 // ============================================================================
 
-/// Per-vertex properties stored as custom attributes.
+/// 作为自定义属性存储的逐顶点属性。
 ///
-/// Maps to CesiumJS `Scene/PropertyAttribute.js`.
+/// 映射到 CesiumJS `Scene/PropertyAttribute.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropertyAttribute {
-    /// Attribute name.
+    /// 属性名。
     pub name: Option<String>,
-    /// Attribute ID.
+    /// 属性 ID。
     pub id: Option<String>,
-    /// Class this attribute conforms to.
+    /// 本属性所从属的类。
     pub class: MetadataClass,
-    /// Property definitions: property_id → attribute name in geometry.
+    /// 属性定义：property_id → 几何中的属性名。
     pub properties: HashMap<String, PropertyAttributeProperty>,
-    /// Extra user-defined data.
+    /// 额外的用户自定义数据。
     pub extras: Option<serde_json::Value>,
 }
 
-/// A single property within a property attribute.
+/// 属性 attribute 中的单个属性。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropertyAttributeProperty {
-    /// The vertex attribute name (e.g., "_HEIGHT").
+    /// 顶点属性名（例如 "_HEIGHT"）。
     pub attribute: String,
 }
 
 impl PropertyAttribute {
-    /// Create a new property attribute.
+    /// 创建一个新的属性 attribute。
     pub fn new(class: MetadataClass) -> Self {
         Self {
             name: None,
@@ -462,12 +462,12 @@ impl PropertyAttribute {
         }
     }
 
-    /// Add a property to the attribute.
+    /// 向 attribute 中添加一个属性。
     pub fn add_property(&mut self, property_id: &str, prop: PropertyAttributeProperty) {
         self.properties.insert(property_id.to_string(), prop);
     }
 
-    /// Get a property by ID.
+    /// 按 ID 获取一个属性。
     pub fn get_property(&self, property_id: &str) -> Option<&PropertyAttributeProperty> {
         self.properties.get(property_id)
     }
@@ -477,70 +477,70 @@ impl PropertyAttribute {
 // StructuralMetadata
 // ============================================================================
 
-/// Container for all structural metadata in a tile/model.
+/// 一个瓦片/模型中所有结构化元数据的容器。
 ///
-/// Maps to CesiumJS `Scene/StructuralMetadata.js`.
+/// 映射到 CesiumJS `Scene/StructuralMetadata.js`。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct StructuralMetadata {
-    /// Property tables.
+    /// 属性表。
     pub property_tables: Vec<PropertyTable>,
-    /// Property textures.
+    /// 属性纹理。
     pub property_textures: Vec<PropertyTexture>,
-    /// Property attributes.
+    /// 属性 attribute。
     pub property_attributes: Vec<PropertyAttribute>,
-    /// Enum definitions.
+    /// 枚举定义。
     pub enums: HashMap<String, MetadataEnum>,
-    /// Class definitions.
+    /// 类定义。
     pub classes: HashMap<String, MetadataClass>,
 }
 
 impl StructuralMetadata {
-    /// Create empty structural metadata.
+    /// 创建空的结构化元数据。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Add a property table.
+    /// 添加一个属性表。
     pub fn add_property_table(&mut self, table: PropertyTable) {
         self.property_tables.push(table);
     }
 
-    /// Add a property texture.
+    /// 添加一个属性纹理。
     pub fn add_property_texture(&mut self, texture: PropertyTexture) {
         self.property_textures.push(texture);
     }
 
-    /// Add a property attribute.
+    /// 添加一个属性 attribute。
     pub fn add_property_attribute(&mut self, attribute: PropertyAttribute) {
         self.property_attributes.push(attribute);
     }
 
-    /// Add an enum definition.
+    /// 添加一个枚举定义。
     pub fn add_enum(&mut self, metadata_enum: MetadataEnum) {
         self.enums.insert(metadata_enum.id.clone(), metadata_enum);
     }
 
-    /// Add a class definition.
+    /// 添加一个类定义。
     pub fn add_class(&mut self, class: MetadataClass) {
         self.classes.insert(class.id.clone(), class);
     }
 
-    /// Get a property table by index.
+    /// 按索引获取一个属性表。
     pub fn get_property_table(&self, index: usize) -> Option<&PropertyTable> {
         self.property_tables.get(index)
     }
 
-    /// Get a class by ID.
+    /// 按 ID 获取一个类。
     pub fn get_class(&self, id: &str) -> Option<&MetadataClass> {
         self.classes.get(id)
     }
 
-    /// Get an enum by ID.
+    /// 按 ID 获取一个枚举。
     pub fn get_enum(&self, id: &str) -> Option<&MetadataEnum> {
         self.enums.get(id)
     }
 
-    /// Whether the metadata is empty.
+    /// 元数据是否为空。
     pub fn is_empty(&self) -> bool {
         self.property_tables.is_empty()
             && self.property_textures.is_empty()
@@ -549,7 +549,7 @@ impl StructuralMetadata {
 }
 
 // ============================================================================
-// Tests
+// 测试
 // ============================================================================
 
 #[cfg(test)]
@@ -573,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::approx_constant)] // 3.14 is arbitrary test data, not PI; see docs/deferred.md #1
+    #[allow(clippy::approx_constant)] // 3.14 为任意测试数据，并非 PI；参见 docs/deferred.md #1
     fn test_metadata_value_as_f64() {
         assert_eq!(MetadataValue::Int(42).as_f64(), Some(42.0));
         assert_eq!(MetadataValue::Uint(10).as_f64(), Some(10.0));

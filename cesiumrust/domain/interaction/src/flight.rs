@@ -1,6 +1,6 @@
-//! Camera flight animations (flyTo, lookAt).
+//! 相机飞行动画（flyTo、lookAt）。
 //!
-//! Maps to CesiumJS `Scene/Camera.js` flight methods:
+//! 映射到 CesiumJS `Scene/Camera.js` 的飞行方法：
 //! - `Camera.flyTo`
 //! - `Camera.flyToBoundingSphere`
 //! - `Camera.flyHome`
@@ -13,24 +13,24 @@ use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_geospatial::{BoundingSphere, HeadingPitchRange};
 use glam::DVec3;
 
-/// Options for a camera flight.
+/// 相机飞行的选项。
 #[derive(Debug, Clone)]
 pub struct FlightOptions {
-    /// Target position (ECEF).
+    /// 目标位置（ECEF）。
     pub destination: DVec3,
-    /// Target heading in radians.
+    /// 目标航向角（弧度）。
     pub heading: Option<f64>,
-    /// Target pitch in radians.
+    /// 目标俯仰角（弧度）。
     pub pitch: Option<f64>,
-    /// Target roll in radians.
+    /// 目标翻滚角（弧度）。
     pub roll: Option<f64>,
-    /// Target direction (overrides heading/pitch).
+    /// 目标方向（覆盖 heading/pitch）。
     pub direction: Option<DVec3>,
-    /// Target up vector.
+    /// 目标 up 向量。
     pub up: Option<DVec3>,
-    /// Flight duration in seconds.
+    /// 飞行时长（以秒计）。
     pub duration: f64,
-    /// Easing function.
+    /// 缓动函数。
     pub easing: EasingFunction,
 }
 
@@ -49,39 +49,39 @@ impl Default for FlightOptions {
     }
 }
 
-/// A camera flight path animation.
+/// 一条相机路径飞行动画。
 #[derive(Debug, Clone)]
 pub struct CameraFlight {
-    /// Start position.
+    /// 起始位置。
     pub start_position: DVec3,
-    /// End position.
+    /// 结束位置。
     pub end_position: DVec3,
-    /// Start direction.
+    /// 起始方向。
     pub start_direction: DVec3,
-    /// End direction.
+    /// 结束方向。
     pub end_direction: DVec3,
-    /// Start up vector.
+    /// 起始 up 向量。
     pub start_up: DVec3,
-    /// End up vector.
+    /// 结束 up 向量。
     pub end_up: DVec3,
-    /// Total duration in seconds.
+    /// 总时长（以秒计）。
     pub duration: f64,
-    /// Elapsed time in seconds.
+    /// 已经过的时间（以秒计）。
     pub elapsed: f64,
-    /// Whether the flight is complete.
+    /// 飞行是否已完成。
     pub complete: bool,
-    /// Easing function for the flight.
+    /// 飞行的缓动函数。
     pub easing: EasingFunction,
 }
 
 impl CameraFlight {
-    /// Creates a flyTo animation.
+    /// 创建一个 flyTo 动画。
     ///
-    /// # Arguments
-    /// * `camera` - Current camera state
-    /// * `destination` - Target position (ECEF)
-    /// * `direction` - Target look direction (optional)
-    /// * `duration` - Flight duration in seconds
+    /// # 参数
+    /// * `camera` - 当前相机状态
+    /// * `destination` - 目标位置（ECEF）
+    /// * `direction` - 目标视线方向（可选）
+    /// * `duration` - 飞行时长（以秒计）
     pub fn fly_to(
         camera: &Camera,
         destination: DVec3,
@@ -90,7 +90,7 @@ impl CameraFlight {
         duration: f64,
     ) -> Self {
         let end_direction = direction.unwrap_or_else(|| {
-            // Default: look at the center of the Earth from destination
+            // 默认：从 destination 看向地心
             -destination.normalize()
         });
         let end_up = up.unwrap_or(DVec3::Z);
@@ -109,7 +109,7 @@ impl CameraFlight {
         }
     }
 
-    /// Creates a flyTo from cartographic coordinates.
+    /// 从大地坐标创建一个 flyTo。
     pub fn fly_to_cartographic(
         camera: &Camera,
         destination: &Cartographic,
@@ -117,17 +117,17 @@ impl CameraFlight {
         duration: f64,
     ) -> Self {
         let ecef = ellipsoid.cartographic_to_cartesian(destination);
-        let direction = -ecef.normalize(); // Look down
+        let direction = -ecef.normalize(); // 向下俯视
         Self::fly_to(camera, ecef, Some(direction), Some(DVec3::Z), duration)
     }
 
-    /// Updates the flight by a time delta and returns the interpolated camera state.
+    /// 按时间增量更新飞行，并返回插值后的相机状态。
     ///
-    /// # Arguments
-    /// * `dt` - Time delta in seconds
+    /// # 参数
+    /// * `dt` - 以秒计的时间增量
     ///
-    /// # Returns
-    /// The interpolated camera position, direction, and up vector
+    /// # 返回
+    /// 插值后的相机位置、方向与 up 向量
     pub fn update(&mut self, dt: f64) -> Option<(DVec3, DVec3, DVec3)> {
         if self.complete {
             return None;
@@ -140,13 +140,13 @@ impl CameraFlight {
             self.complete = true;
         }
 
-        // Apply easing function
+        // 应用缓动函数
         let t_eased = self.easing.evaluate(t);
 
-        // Great-arc (slerp) interpolation with a parabolic altitude arch, so the
-        // camera sweeps along the globe instead of cutting a straight chord.
-        // Orientation vectors are slerped too, keeping the rotation on the
-        // shortest angular path (CesiumJS `Camera` flight uses quaternion slerp).
+        // 大圆弧（slerp）插值，配合抛物线式高度拱起，使相机沿地球表面
+        // 扫掠，而非走一条笔直的弦线。
+        // 方向向量同样做 slerp，使旋转保持在最短角路径上
+        // （CesiumJS 的 `Camera` 飞行使用四元数 slerp）。
         let position = slerp_great_arc(self.start_position, self.end_position, t_eased);
         let direction = slerp_unit(self.start_direction, self.end_direction, t_eased);
         let up = slerp_unit(self.start_up, self.end_up, t_eased);
@@ -154,7 +154,7 @@ impl CameraFlight {
         Some((position, direction, up))
     }
 
-    /// Applies the current flight state to a camera.
+    /// 将当前飞行状态应用到相机。
     pub fn apply_to_camera(&mut self, camera: &mut Camera, dt: f64) -> bool {
         if let Some((position, direction, up)) = self.update(dt) {
             camera.position = position;
@@ -167,18 +167,18 @@ impl CameraFlight {
         }
     }
 
-    /// Returns the progress (0.0 to 1.0).
+    /// 返回进度（0.0 到 1.0）。
     pub fn progress(&self) -> f64 {
         (self.elapsed / self.duration).clamp(0.0, 1.0)
     }
 
-    /// Creates a flight from full options.
-    /// Maps to `Camera.flyTo` with full options
+    /// 从完整选项创建一个飞行。
+    /// 映射到带完整选项的 `Camera.flyTo`
     pub fn fly_to_with_options(camera: &Camera, options: &FlightOptions) -> Self {
         let end_direction = if let Some(dir) = options.direction {
             dir.normalize()
         } else {
-            // Compute from heading/pitch or default to looking at center
+            // 由 heading/pitch 计算，或默认看向中心
             -options.destination.normalize()
         };
         let end_up = options.up.unwrap_or(DVec3::Z).normalize();
@@ -197,8 +197,8 @@ impl CameraFlight {
         }
     }
 
-    /// Creates a flight to view a bounding sphere.
-    /// Maps to `Camera.flyToBoundingSphere`
+    /// 创建一个用于查看包围球的飞行。
+    /// 映射到 `Camera.flyToBoundingSphere`
     pub fn fly_to_bounding_sphere(
         camera: &Camera,
         sphere: &BoundingSphere,
@@ -208,11 +208,11 @@ impl CameraFlight {
         let default_offset = HeadingPitchRange::new(0.0, -std::f64::consts::FRAC_PI_4, 0.0);
         let offset = offset.unwrap_or(&default_offset);
 
-        // Compute range if not specified
+        // 若未指定则计算距离
         let range = if offset.range > 0.0 {
             offset.range
         } else {
-            // Default: compute from sphere radius and FOV
+            // 默认：由球半径和 FOV 计算
             let fov = match &camera.frustum {
                 cesium_camera::Frustum::Perspective(f) => f.fov,
                 cesium_camera::Frustum::Orthographic(_) => std::f64::consts::FRAC_PI_3,
@@ -220,7 +220,7 @@ impl CameraFlight {
             sphere.radius / (fov * 0.5).sin().max(0.001)
         };
 
-        // Compute destination from sphere center + offset
+        // 由球心 + 偏移计算 destination
         let cos_pitch = offset.pitch.cos();
         let dest_offset = DVec3::new(
             range * cos_pitch * offset.heading.cos(),
@@ -244,24 +244,23 @@ impl CameraFlight {
         }
     }
 
-    /// Creates a flight to the default home view.
-    /// Maps to `Camera.flyHome`
+    /// 创建一个飞往默认 home 视图的飞行。
+    /// 映射到 `Camera.flyHome`
     pub fn fly_home(camera: &Camera, ellipsoid: &Ellipsoid, duration: f64) -> Self {
         let destination = Camera::default_home_position(ellipsoid);
         let direction = -destination.normalize();
         Self::fly_to(camera, destination, Some(direction), Some(DVec3::Z), duration)
     }
 
-    /// Creates a great-arc flight whose `duration` and `easing` are derived
-    /// automatically from the travelled distance.
+    /// 创建一个 `duration` 与 `easing` 均由行进距离自动推导的大圆弧飞行。
     ///
-    /// - `duration = clamp(distance / 1e6, 1.0, 5.0)` seconds
-    ///   (see [`compute_flight_duration`]).
-    /// - `easing` = quintic in-out for short hops (`< 1e6` m), cubic in-out
-    ///   otherwise (see [`select_flight_easing`]).
+    /// - `duration = clamp(distance / 1e6, 1.0, 5.0)` 秒
+    ///   （参见 [`compute_flight_duration`]）。
+    /// - `easing` = 短途跳跃（`< 1e6` 米）用五次 in-out，否则用
+    ///   三次 in-out（参见 [`select_flight_easing`]）。
     ///
-    /// Maps to CesiumJS `Camera.flyTo` when `duration` is omitted
-    /// (`CameraFlightPath.createTween`, L444-449).
+    /// 当省略 `duration` 时，映射到 CesiumJS `Camera.flyTo`
+    /// （`CameraFlightPath.createTween`，L444-449）。
     pub fn fly_to_great_arc(
         camera: &Camera,
         destination: DVec3,
@@ -276,21 +275,21 @@ impl CameraFlight {
     }
 }
 
-/// Computes a "lookAt" camera orientation.
+/// 计算一个“lookAt”相机朝向。
 ///
-/// Positions the camera to look at a target from a given offset.
+/// 将相机定位到从给定偏移看向目标。
 ///
-/// # Arguments
-/// * `target` - The point to look at (ECEF)
-/// * `offset` - Offset from target (in local ENU or world coordinates)
+/// # 参数
+/// * `target` - 要看向的点（ECEF）
+/// * `offset` - 相对目标的偏移（局部 ENU 或世界坐标）
 ///
-/// # Returns
-/// Camera position, direction, and up vector
+/// # 返回
+/// 相机位置、方向与 up 向量
 pub fn compute_look_at(target: DVec3, offset: DVec3) -> (DVec3, DVec3, DVec3) {
     let position = target + offset;
     let direction = (target - position).normalize();
 
-    // Choose up vector that's not parallel to direction
+    // 选择不与 direction 平行的 up 向量
     let world_up = if direction.dot(DVec3::Z).abs() > 0.99 {
         DVec3::Y
     } else {
@@ -303,17 +302,17 @@ pub fn compute_look_at(target: DVec3, offset: DVec3) -> (DVec3, DVec3, DVec3) {
     (position, direction, up)
 }
 
-/// Computes a camera view looking down at a cartographic position from a given height.
+/// 计算一个从给定高度向下俯视某个大地坐标位置的相机视图。
 ///
-/// # Arguments
-/// * `cartographic` - The position to look at
-/// * `height` - Height above the surface (meters)
-/// * `heading` - Camera heading (radians)
-/// * `pitch` - Camera pitch (radians, negative = looking down)
-/// * `ellipsoid` - The ellipsoid
+/// # 参数
+/// * `cartographic` - 要看向的位置
+/// * `height` - 地表上方高度（米）
+/// * `heading` - 相机航向角（弧度）
+/// * `pitch` - 相机俯仰角（弧度，负值 = 向下看）
+/// * `ellipsoid` - 椭球
 ///
-/// # Returns
-/// Camera position, direction, and up vector
+/// # 返回
+/// 相机位置、方向与 up 向量
 pub fn compute_set_view(
     cartographic: &Cartographic,
     height: f64,
@@ -321,7 +320,7 @@ pub fn compute_set_view(
     pitch: f64,
     ellipsoid: &Ellipsoid,
 ) -> (DVec3, DVec3, DVec3) {
-    // Position above the target
+    // 目标上方的位置
     let target_carto = Cartographic::from_radians(
         cartographic.longitude,
         cartographic.latitude,
@@ -329,30 +328,29 @@ pub fn compute_set_view(
     );
     let position = ellipsoid.cartographic_to_cartesian(&target_carto);
 
-    // Surface normal at the target
+    // 目标处的表面法线
     let surface_normal = position.normalize();
 
-    // Compute direction from pitch and heading
-    // pitch = -PI/2 means looking straight down
+    // 由俯仰角和航向角计算方向
+    // pitch = -PI/2 表示垂直向下看
     let pitch_from_nadir = pitch + std::f64::consts::FRAC_PI_2;
 
-    // Direction: rotate surface normal by pitch
+    // 方向：将表面法线按俯仰角旋转
     let east = DVec3::Z.cross(surface_normal).normalize();
     let north = surface_normal.cross(east).normalize();
 
-    // Apply heading rotation to get the tilt plane
+    // 应用航向旋转以得到倾斜平面
     let tilt_dir = north * heading.cos() + east * heading.sin();
 
-    // Direction is a combination of looking down and tilting
+    // 方向是向下看与倾斜的组合
     let direction = (-surface_normal * pitch_from_nadir.cos() + tilt_dir * pitch_from_nadir.sin())
         .normalize();
 
-    // `right` must be perpendicular to the view direction. When looking straight
-    // down/up the direction is (anti)parallel to the surface normal, so the naive
-    // `direction × normal` degenerates to a zero vector (→ NaN after normalize).
-    // Fall back to the heading's tilt direction (horizontal, ⊥ normal), which
-    // yields the natural north-referenced up; a perpendicular axis covers the
-    // remaining degenerate (polar) case where `tilt_dir` itself collapses.
+    // `right` 必须垂直于视线方向。当垂直向下/向上看时，方向与表面法线
+    // （反）平行，因此朴素的 `direction × normal` 会退化为零向量（normalize
+    // 后→ NaN）。回退到航向的倾斜方向（水平的，⊥ normal），
+    // 它会得到自然的以北为参考的 up；一个垂直轴可覆盖剩下的
+    // 退化情形（极地处 `tilt_dir` 自身崩塌）。
     let right_ref = if direction.cross(surface_normal).length_squared() < 1e-18 {
         if tilt_dir.length_squared() < 1e-18 {
             perpendicular_axis(direction)
@@ -368,35 +366,33 @@ pub fn compute_set_view(
     (position, direction, up)
 }
 
-/// Peak-radius factor for the flight arch.
+/// 飞行拱起的峰值半径系数。
 ///
-/// Analogous to CesiumJS `createHeightFunction`, which caps the mid-flight
-/// altitude at `getAltitude(...) * 0.2` (`CameraFlightPath.js` L104-107). The
-/// bulge is scaled by the swept angle so collinear endpoints produce no arch.
+/// 类似于 CesiumJS 的 `createHeightFunction`，它将飞行中段的
+/// 高度上限设为 `getAltitude(...) * 0.2`（`CameraFlightPath.js` L104-107）。鼓包
+/// 按扫过角度缩放，因此共线的端点不会产生拱起。
 const ARC_PEAK_FACTOR: f64 = 0.2;
 
-/// Rotates `v` about `axis` by `angle` (Rodrigues' rotation formula).
+/// 将 `v` 绕 `axis` 旋转 `angle`（Rodrigues 旋转公式）。
 fn rotate_about_axis(v: DVec3, axis: DVec3, angle: f64) -> DVec3 {
     let cos_a = angle.cos();
     let sin_a = angle.sin();
     v * cos_a + axis.cross(v) * sin_a + axis * axis.dot(v) * (1.0 - cos_a)
 }
 
-/// Returns any unit vector perpendicular to `v` (used for the antiparallel
-/// slerp fallback, where the great-arc plane is otherwise ambiguous).
+/// 返回任意一个垂直于 `v` 的单位向量（用于反平行的
+/// slerp 回退，此时大圆弧平面本无法确定）。
 fn perpendicular_axis(v: DVec3) -> DVec3 {
     let helper = if v.x.abs() < 0.9 { DVec3::X } else { DVec3::Y };
     v.cross(helper).normalize()
 }
 
-/// Spherical linear interpolation between two directions, treated as unit
-/// vectors.
+/// 在两个方向之间做球面线性插值，将其视为单位向量。
 ///
-/// Handles the two degenerate cases the plain `sin`-weighted formula divides by
-/// zero on:
-/// - near-parallel (`dot ≈ 1`): returns `start` (the arc has zero sweep);
-/// - near-antiparallel (`dot ≈ -1`): rotates about an arbitrary perpendicular
-///   axis by `π·t`, keeping the sweep continuous and half-way well-defined.
+/// 处理朴素的 `sin` 加权公式会除以零的两种退化情形：
+/// - 近平行（`dot ≈ 1`）：返回 `start`（弧的扫过角为零）；
+/// - 近反平行（`dot ≈ -1`）：绕任意垂直轴旋转 `π·t`，
+///   保持扫过连续且中点定义良好。
 fn slerp_unit(start: DVec3, end: DVec3, t: f64) -> DVec3 {
     let a = start.normalize();
     let b = end.normalize();
@@ -417,11 +413,11 @@ fn slerp_unit(start: DVec3, end: DVec3, t: f64) -> DVec3 {
     (a * wa + b * wb).normalize()
 }
 
-/// CesiumJS `createHeightFunction` (`CameraFlightPath.js` L75-126): a
-/// power-curve arch that peaks at `altitude` when both endpoints sit below it,
-/// otherwise a plain linear interpolation. `power = 8`, `factor = 1e6` exactly
-/// as the source; at `t = 0` and `t = 1` the curve reproduces the endpoint
-/// heights, and it rises smoothly toward `altitude` in between.
+/// CesiumJS 的 `createHeightFunction`（`CameraFlightPath.js` L75-126）：一个
+/// 幂曲线拱起，当两个端点都低于 `altitude` 时在 `altitude` 处达到峰值，
+/// 否则为普通的线性插值。`power = 8`、`factor = 1e6` 与源文件完全一致；
+/// 在 `t = 0` 和 `t = 1` 处曲线复现端点高度，并在中间平滑地
+/// 向 `altitude` 上升。
 fn arc_height(start_height: f64, end_height: f64, altitude: f64, t: f64) -> f64 {
     const POWER: i32 = 8;
     const FACTOR: f64 = 1_000_000.0;
@@ -436,16 +432,15 @@ fn arc_height(start_height: f64, end_height: f64, altitude: f64, t: f64) -> f64 
     start_height + (end_height - start_height) * t
 }
 
-/// Interpolates a position along the great arc between `start` and `end`.
+/// 沿 `start` 与 `end` 之间的大圆弧插值一个位置。
 ///
-/// The direction is slerped about the ellipsoid center (constant-radius sweep),
-/// while the radius follows [`arc_height`] so the path arches outward instead of
-/// cutting a straight chord through the globe. Collinear endpoints (zero swept
-/// angle) yield no bulge and reduce to a radial move.
+/// 方向绕椭球中心做 slerp（恒定半径扫掠），而半径遵循 [`arc_height`]，
+/// 使路径向外拱起，而非笔直地穿过地球走一条弦线。共线的端点（扫过角
+/// 为零）不会产生鼓包，退化为一径向移动。
 fn slerp_great_arc(start: DVec3, end: DVec3, t: f64) -> DVec3 {
     let start_radius = start.length();
     let end_radius = end.length();
-    // An endpoint at the center has no direction; fall back to a straight lerp.
+    // 位于中心的端点没有方向；回退到直线 lerp。
     if start_radius < 1e-9 || end_radius < 1e-9 {
         return start + (end - start) * t;
     }
@@ -462,18 +457,18 @@ fn slerp_great_arc(start: DVec3, end: DVec3, t: f64) -> DVec3 {
     direction * arc_height(start_radius, end_radius, peak_radius, t)
 }
 
-/// Computes the flight duration from the travelled distance:
-/// `clamp(distance / 1e6, 1.0, 5.0)` seconds.
+/// 由行进距离计算飞行时长：
+/// `clamp(distance / 1e6, 1.0, 5.0)` 秒。
 ///
-/// Short hops get a full second so they do not snap; very long flights cap at
-/// five seconds. Mirrors CesiumJS's distance-scaled `duration` heuristic
-/// (`CameraFlightPath.createTween`, L444-449).
+/// 短途跳跃至少给满一秒以免瞬间到位；超长飞行上限为五秒。模拟
+/// CesiumJS 基于距离缩放的 `duration` 启发式
+/// （`CameraFlightPath.createTween`，L444-449）。
 pub fn compute_flight_duration(distance: f64) -> f64 {
     (distance / 1_000_000.0).clamp(1.0, 5.0)
 }
 
-/// Selects the flight easing by travelled distance: quintic in-out for short
-/// flights (`< 1e6` m, a gentler start/stop) and cubic in-out for long ones.
+/// 按行进距离选择飞行缓动：短途飞行（`< 1e6` 米，起停更柔和）用五次
+/// in-out，长途用三次 in-out。
 pub fn select_flight_easing(distance: f64) -> EasingFunction {
     if distance < 1_000_000.0 {
         EasingFunction::QuinticInOut
@@ -486,7 +481,7 @@ pub fn select_flight_easing(distance: f64) -> EasingFunction {
 mod tests {
     use super::*;
 
-    /// Smooth step interpolation (Hermite) - test helper.
+    /// 平滑阶跃插值（Hermite）- 测试辅助函数。
     fn smoothstep(t: f64) -> f64 {
         t * t * (3.0 - 2.0 * t)
     }
@@ -519,16 +514,16 @@ mod tests {
 
         let mut flight = CameraFlight::fly_to(&camera, destination, None, None, 2.0);
 
-        // At t=0
+        // 在 t=0
         let (pos, _, _) = flight.update(0.0).unwrap();
         assert!((pos - camera.position).length() < 1.0);
 
-        // At t=1 (halfway)
+        // 在 t=1（中点）
         let (pos, _, _) = flight.update(1.0).unwrap();
         let midpoint = (camera.position + destination) / 2.0;
         assert!((pos - midpoint).length() / midpoint.length() < 0.01);
 
-        // At t=2 (end)
+        // 在 t=2（终点）
         let (pos, _, _) = flight.update(1.0).unwrap();
         assert!((pos - destination).length() < 1.0);
         assert!(flight.complete);
@@ -556,9 +551,9 @@ mod tests {
         let mut flight = CameraFlight::fly_to(&camera, destination, None, None, 1.0);
         let mut camera = camera;
 
-        // Apply full duration
+        // 应用完整时长
         let still_flying = flight.apply_to_camera(&mut camera, 1.0);
-        assert!(!still_flying); // Flight complete
+        assert!(!still_flying); // 飞行完成
         assert!((camera.position - destination).length() < 1.0);
     }
 
@@ -569,14 +564,14 @@ mod tests {
 
         let (position, direction, up) = compute_look_at(target, offset);
 
-        // Position should be target + offset
+        // 位置应为 target + offset
         assert!((position - (target + offset)).length() < 1e-6);
 
-        // Direction should point from position to target
+        // 方向应从 position 指向 target
         let expected_dir = (target - position).normalize();
         assert!((direction - expected_dir).length() < 1e-10);
 
-        // Up should be perpendicular to direction
+        // up 应垂直于 direction
         assert!(direction.dot(up).abs() < 1e-10);
     }
 
@@ -589,15 +584,15 @@ mod tests {
             &carto,
             height,
             0.0,
-            -std::f64::consts::FRAC_PI_2, // Looking straight down
+            -std::f64::consts::FRAC_PI_2, // 垂直向下看
             &Ellipsoid::WGS84,
         );
 
-        // Position should be at the given height above the equator/prime meridian
+        // 位置应在赤道/本初子午线上方的给定高度处
         let pos_height = position.length() - Ellipsoid::WGS84.maximum_radius();
         assert!((pos_height - height).abs() / height < 0.01);
 
-        // Direction should be roughly towards the center (looking down)
+        // 方向应大致指向中心（向下看）
         let to_center = -position.normalize();
         assert!(direction.dot(to_center) > 0.9);
     }
@@ -618,7 +613,7 @@ mod tests {
 
         assert_eq!(flight.duration, 3.0);
         assert!(!flight.complete);
-        // End position should be on the ellipsoid at the given cartographic
+        // 结束位置应在椭球上给定的大地坐标处
         let expected_pos = Ellipsoid::WGS84.cartographic_to_cartesian(&dest);
         assert!((flight.end_position - expected_pos).length() < 1.0);
     }
@@ -629,13 +624,13 @@ mod tests {
         let b = DVec3::Y;
         assert!((slerp_unit(a, b, 0.0) - a).length() < 1e-12);
         assert!((slerp_unit(a, b, 1.0) - b).length() < 1e-12);
-        // Antiparallel fallback must stay unit-length and continuous.
+        // 反平行回退必须保持单位长度且连续。
         let mid = slerp_unit(DVec3::X, -DVec3::X, 0.5);
         assert!((mid.length() - 1.0).abs() < 1e-12);
     }
 
-    /// Task requirement: the great-arc midpoint deviates < 1e-6 rad from the
-    /// geodesic midpoint `normalize(start_dir + end_dir)`.
+    /// 任务要求：大圆弧中点与测地线中点
+    /// `normalize(start_dir + end_dir)` 的偏离 < 1e-6 弧度。
     #[test]
     fn test_great_arc_midpoint_deviation_below_epsilon() {
         let r = 6378137.0 * 2.0;
@@ -643,7 +638,7 @@ mod tests {
         let destination = DVec3::new(0.0, r, 0.0);
         let mut flight = CameraFlight::fly_to(&camera, destination, None, None, 2.0);
 
-        // t = 0.5 (SinusoidalInOut(0.5) == 0.5).
+        // t = 0.5（SinusoidalInOut(0.5) == 0.5）。
         let (pos, _, _) = flight.update(1.0).unwrap();
         let expected_dir = (DVec3::X + DVec3::Y).normalize();
         let deviation = expected_dir.dot(pos.normalize()).clamp(-1.0, 1.0).acos();
@@ -661,7 +656,7 @@ mod tests {
         let mut flight = CameraFlight::fly_to(&camera, destination, None, None, 2.0);
 
         let (pos, _, _) = flight.update(1.0).unwrap();
-        // The arch lifts the mid-flight radius above both endpoints.
+        // 拱起将飞行中段半径抬高到两个端点之上。
         assert!(pos.length() > r, "arc should bulge: |pos| = {}", pos.length());
     }
 
@@ -671,7 +666,7 @@ mod tests {
         assert!((arc_height(100.0, 200.0, 500.0, 1.0) - 200.0).abs() < 1e-6);
         let mid = arc_height(100.0, 200.0, 500.0, 0.5);
         assert!(mid > 200.0 && mid <= 500.0 + 1e-6, "arch peak out of range: {mid}");
-        // altitude below both endpoints ⇒ linear branch.
+        // altitude 低于两个端点 ⇒ 线性分支。
         assert!((arc_height(100.0, 200.0, 150.0, 0.5) - 150.0).abs() < 1e-6);
     }
 
@@ -693,7 +688,7 @@ mod tests {
         let camera = create_test_camera();
         let destination = DVec3::new(0.0, 6378137.0 * 3.0, 0.0);
         let flight = CameraFlight::fly_to_great_arc(&camera, destination, None, None);
-        // |dest - pos| = 3R√2 ≈ 2.7e7 → duration clamped to 5.0, easing cubic.
+        // |dest - pos| = 3R√2 ≈ 2.7e7 → duration 钳制到 5.0，缓动为三次。
         assert!((flight.duration - 5.0).abs() < 1e-9);
         assert_eq!(flight.easing, EasingFunction::CubicInOut);
     }

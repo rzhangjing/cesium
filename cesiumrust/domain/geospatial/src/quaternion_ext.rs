@@ -1,16 +1,17 @@
-//! Quaternion extension functions - CesiumJS-specific algorithms not in glam.
+//! 四元数扩展函数 —— glam 中未包含的 CesiumJS 特定算法。
 //!
-//! Maps to CesiumJS `Core/Quaternion.js` extension methods:
-//! computeAxis, computeAngle, log, exp, computeInnerQuadrangle, squad, fastSlerp, fastSquad
+//! 映射到 CesiumJS `Core/Quaternion.js` 的扩展方法：
+//! computeAxis、computeAngle、log、exp、computeInnerQuadrangle、squad、fastSlerp、fastSquad
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::excessive_precision)]
 use glam::{DMat3, DQuat, DVec3};
 
 use crate::math_utils;
 
-/// Computes the normalized rotation axis of a quaternion.
-/// Maps to `Quaternion.computeAxis`.
+/// 计算一个四元数的归一化旋转轴。
+/// 映射到 `Quaternion.computeAxis`。
 pub fn compute_axis(quaternion: DQuat) -> DVec3 {
     let w = quaternion.w;
     if (w - 1.0).abs() < math_utils::EPSILON6 || (w + 1.0).abs() < math_utils::EPSILON6 {
@@ -25,8 +26,8 @@ pub fn compute_axis(quaternion: DQuat) -> DVec3 {
     )
 }
 
-/// Computes the angle of rotation of the provided quaternion.
-/// Maps to `Quaternion.computeAngle`.
+/// 计算给定的四元数的旋转角度。
+/// 映射到 `Quaternion.computeAngle`。
 pub fn compute_angle(quaternion: DQuat) -> f64 {
     if (quaternion.w - 1.0).abs() < math_utils::EPSILON6 {
         return 0.0;
@@ -34,9 +35,9 @@ pub fn compute_angle(quaternion: DQuat) -> f64 {
     2.0 * quaternion.w.acos()
 }
 
-/// The logarithmic quaternion function.
-/// Maps to `Quaternion.log`.
-/// Returns the Cartesian3 (vector part) of the logarithm.
+/// 对数四元数函数。
+/// 映射到 `Quaternion.log`。
+/// 返回对数的 Cartesian3（向量部分）。
 pub fn quaternion_log(quaternion: DQuat) -> DVec3 {
     let theta = math_utils::acos_clamped(quaternion.w);
     let mut theta_over_sin_theta = 0.0;
@@ -52,9 +53,9 @@ pub fn quaternion_log(quaternion: DQuat) -> DVec3 {
     )
 }
 
-/// The exponential quaternion function.
-/// Maps to `Quaternion.exp`.
-/// Takes a Cartesian3 (pure imaginary quaternion) and returns a unit quaternion.
+/// 指数四元数函数。
+/// 映射到 `Quaternion.exp`。
+/// 接受一个 Cartesian3（纯虚四元数）并返回一个单位四元数。
 pub fn quaternion_exp(cartesian: DVec3) -> DQuat {
     let theta = cartesian.length();
     let mut sin_theta_over_theta = 0.0;
@@ -71,9 +72,9 @@ pub fn quaternion_exp(cartesian: DVec3) -> DQuat {
     )
 }
 
-/// Computes an inner quadrangle point.
-/// This will compute quaternions that ensure a squad curve is C¹.
-/// Maps to `Quaternion.computeInnerQuadrangle`.
+/// 计算一个内部四边形点。
+/// 它将计算能保证 squad 曲线为 C¹ 的四元数。
+/// 映射到 `Quaternion.computeInnerQuadrangle`。
 pub fn compute_inner_quadrangle(q0: DQuat, q1: DQuat, q2: DQuat) -> DQuat {
     let q_inv = q1.conjugate();
 
@@ -90,8 +91,8 @@ pub fn compute_inner_quadrangle(q0: DQuat, q1: DQuat, q2: DQuat) -> DQuat {
     q1 * exp_result
 }
 
-/// Computes the linear interpolation or extrapolation at t using the provided quaternions.
-/// Maps to `Quaternion.lerp`.
+/// 使用给定的四元数计算在 t 处的线性插值或外推。
+/// 映射到 `Quaternion.lerp`。
 pub fn quaternion_lerp(start: DQuat, end: DQuat, t: f64) -> DQuat {
     let scaled_end = DQuat::from_xyzw(
         end.x * t,
@@ -113,21 +114,21 @@ pub fn quaternion_lerp(start: DQuat, end: DQuat, t: f64) -> DQuat {
     )
 }
 
-/// Computes the spherical linear interpolation or extrapolation at t.
-/// Maps to `Quaternion.slerp` (CesiumJS version with lerp fallback).
+/// 计算在 t 处的球面线性插值或外推。
+/// 映射到 `Quaternion.slerp`（带 lerp 回退的 CesiumJS 版本）。
 pub fn cesium_slerp(start: DQuat, end: DQuat, t: f64) -> DQuat {
     let mut dot = start.x * end.x + start.y * end.y + start.z * end.z + start.w * end.w;
 
-    // The angle between start must be acute. Since q and -q represent
-    // the same rotation, negate q to get the acute angle.
+    // start 之间的夹角必须是锐角。由于 q 和 -q 表示
+    // 相同的旋转，取反 q 以获得锐角。
     let mut r = end;
     if dot < 0.0 {
         dot = -dot;
         r = DQuat::from_xyzw(-end.x, -end.y, -end.z, -end.w);
     }
 
-    // dot > 0, as the dot product approaches 1, the angle between the
-    // quaternions vanishes. use linear interpolation.
+    // dot > 0，当点积趋近于 1 时，四元数之间的
+    // 夹角消失。使用线性插值。
     if 1.0 - dot < math_utils::EPSILON6 {
         return quaternion_lerp(start, r, t);
     }
@@ -145,18 +146,18 @@ pub fn cesium_slerp(start: DQuat, end: DQuat, t: f64) -> DQuat {
     )
 }
 
-/// Computes the spherical quadrangle interpolation between quaternions.
-/// Maps to `Quaternion.squad`.
+/// 计算四元数之间的球面四边形插值。
+/// 映射到 `Quaternion.squad`。
 pub fn squad(q0: DQuat, q1: DQuat, s0: DQuat, s1: DQuat, t: f64) -> DQuat {
     let slerp0 = cesium_slerp(q0, q1, t);
     let slerp1 = cesium_slerp(s0, s1, t);
     cesium_slerp(slerp0, slerp1, 2.0 * t * (1.0 - t))
 }
 
-// Constants for fastSlerp polynomial approximation
+// fastSlerp 多项式逼近的常量
 const OPMU: f64 = 1.90110745351730037;
 
-/// Precomputed u and v arrays for fastSlerp.
+/// 为 fastSlerp 预计算的 u 和 v 数组。
 fn fast_slerp_coefficients() -> ([f64; 8], [f64; 8]) {
     let mut u = [0.0f64; 8];
     let mut v = [0.0f64; 8];
@@ -174,9 +175,9 @@ fn fast_slerp_coefficients() -> ([f64; 8], [f64; 8]) {
     (u, v)
 }
 
-/// Computes the spherical linear interpolation or extrapolation at t.
-/// This implementation is faster than slerp, but is only accurate up to 10⁻⁶.
-/// Maps to `Quaternion.fastSlerp`.
+/// 计算在 t 处的球面线性插值或外推。
+/// 该实现比 slerp 更快，但仅精确到 10⁻⁶。
+/// 映射到 `Quaternion.fastSlerp`。
 pub fn fast_slerp(start: DQuat, end: DQuat, t: f64) -> DQuat {
     let (u, v) = fast_slerp_coefficients();
 
@@ -241,18 +242,18 @@ pub fn fast_slerp(start: DQuat, end: DQuat, t: f64) -> DQuat {
     )
 }
 
-/// Computes the spherical quadrangle interpolation between quaternions.
-/// An implementation that is faster than squad, but less accurate.
-/// Maps to `Quaternion.fastSquad`.
+/// 计算四元数之间的球面四边形插值。
+/// 一个比 squad 更快但精度较低的实现。
+/// 映射到 `Quaternion.fastSquad`。
 pub fn fast_squad(q0: DQuat, q1: DQuat, s0: DQuat, s1: DQuat, t: f64) -> DQuat {
     let slerp0 = fast_slerp(q0, q1, t);
     let slerp1 = fast_slerp(s0, s1, t);
     fast_slerp(slerp0, slerp1, 2.0 * t * (1.0 - t))
 }
 
-/// Computes a Quaternion from the provided rotation matrix (Matrix3).
-/// Maps to `Quaternion.fromRotationMatrix`.
-/// Uses the standard Shepperd's method with correct sign convention.
+/// 从给定的旋转矩阵（Matrix3）计算一个 Quaternion。
+/// 映射到 `Quaternion.fromRotationMatrix`。
+/// 使用标准的 Shepperd 方法，并采用正确的符号约定。
 pub fn from_rotation_matrix(matrix: &DMat3) -> DQuat {
     let m00 = matrix.x_axis.x;
     let m01 = matrix.y_axis.x;
@@ -297,8 +298,8 @@ pub fn from_rotation_matrix(matrix: &DMat3) -> DQuat {
     }
 }
 
-/// Checks if two quaternions are equal within an epsilon.
-/// Maps to `Quaternion.equalsEpsilon`.
+/// 检查两个四元数是否在一个 epsilon 范围内相等。
+/// 映射到 `Quaternion.equalsEpsilon`。
 pub fn equals_epsilon(left: DQuat, right: DQuat, epsilon: f64) -> bool {
     (left.x - right.x).abs() <= epsilon
         && (left.y - right.y).abs() <= epsilon

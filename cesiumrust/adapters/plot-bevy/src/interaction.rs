@@ -1,17 +1,15 @@
-//! The interaction state machine (plan §8): the drawing tool. M5 lands the
-//! finite-state logic (tool selection → click-to-add-vertex → live draft →
-//! commit / cancel), the input-capture gate that hands the pointer to the plot
-//! overlay while a draw is active, and a rubber-band preview of the in-progress
-//! draft. Editing / move / history land on top of the same command layer at M6.
+//! 交互状态机（计划 §8）：绘制工具。M5 落地有限状态逻辑
+//! （工具选择 → 点击添加顶点 → 实时草稿 →
+//! 提交 / 取消），输入捕获门控在绘制激活时将指针交给标绘叠加层，
+//! 以及进行中草稿的橡皮筋预览。编辑 / 移动 / 历史在 M6
+//! 以同一命令层叠加其上。
 //!
-//! The state transitions are split from the ECS so they are deterministic and
-//! unit-testable with no window or camera: [`PlotInteraction`] holds the current
-//! [`PlotTool`] and draft vertices and folds clicks through the pure
-//! [`commit_draft`]. The [`interaction_system`] is the thin shell that gathers
-//! raw input, resolves the cursor to a geographic point through the *engine's*
-//! inverse projection (mirroring the pick path, so a drawn vertex lands exactly
-//! where the cursor is), and applies the resulting [`PlotCommand`] to the
-//! document.
+//! 状态转换与 ECS 分离，因此它们是确定性的且无需窗口或相机即可单测：
+//! [`PlotInteraction`] 持有当前 [`PlotTool`] 和草稿顶点并通过纯函数
+//! [`commit_draft`] 折叠点击。[`interaction_system`] 是薄壳，
+//! 采集原始输入，通过*引擎的*逆变换将光标解析为地理坐标
+//! （镜像拾取路径，因此绘制的顶点恰好落在光标位置），
+//! 并将结果 [`PlotCommand`] 应用到文档。
 
 use bevy::input::mouse::MouseButton;
 use bevy::prelude::*;
@@ -33,61 +31,60 @@ use crate::resources::{
 use crate::surface;
 use crate::sync::OVERLAY_LAYER;
 
-/// Which tool the overlay is in. `Idle` lets the camera own the pointer; a
-/// `Draw` kind captures it to build a new element.
+/// 叠加层当前处于哪个工具。`Idle` 让相机拥有指针；
+/// `Draw` 类型将其捕获以构建新元素。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum PlotTool {
-    /// No active tool (default): the pointer drives the camera / selection.
+    /// 无激活工具（默认）：指针驱动相机 / 选择。
     #[default]
     Idle,
-    /// Drawing `kind`: clicks append draft vertices.
+    /// 绘制 `kind`：点击追加草稿顶点。
     Draw(DrawKind),
 }
 
-/// Request a tool change (the toolbar / hotkeys send these; the FSM applies them
-/// at the start of the next frame).
+/// 请求工具切换（工具栏 / 热键发送这些；FSM 在下一帧开始时应用）。
 #[derive(Event, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PlotSetTool(pub PlotTool);
 
-/// Emitted when a draw is committed (or abandoned), so the UI can react.
+/// 绘制提交（或放弃）时发出，以便 UI 响应。
 #[derive(Event, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PlotDrawFinished {
-    /// The id of the committed element, or `None` when the draw was cancelled.
+    /// 提交元素的 id，或为 `None` 表示绘制被取消。
     pub committed: Option<ElementId>,
 }
 
-/// The interaction FSM state: the current tool and the in-progress draft.
+/// 交互 FSM 状态：当前工具和进行中的草稿。
 #[derive(Resource, Default)]
 pub struct PlotInteraction {
-    /// Active tool.
+    /// 激活工具。
     pub tool: PlotTool,
-    /// Draft vertices accumulated for the current draw.
+    /// 当前绘制累积的草稿顶点。
     pub draft: Vec<GeoPoint>,
 }
 
 impl PlotInteraction {
-    /// Start drawing `kind` from an empty draft.
+    /// 从空草稿开始绘制 `kind`。
     pub fn begin(&mut self, kind: DrawKind) {
         self.tool = PlotTool::Draw(kind);
         self.draft.clear();
     }
 
-    /// Drop back to idle, discarding the draft.
+    /// 回到空闲状态，丢弃草稿。
     pub fn stop(&mut self) {
         self.tool = PlotTool::Idle;
         self.draft.clear();
     }
 
-    /// Whether a draw tool is active.
+    /// 是否有绘制工具激活。
     #[inline]
     pub fn is_drawing(&self) -> bool {
         matches!(self.tool, PlotTool::Draw(_))
     }
 
-    /// Record a click. Returns a committed geometry when a fixed-point kind
-    /// (point / rectangle / circle) reaches its required count — the draft then
-    /// resets to idle. Open kinds (polyline / polygon) keep drawing until
-    /// [`finish`](Self::finish).
+    /// 记录一次点击。当固定点数类型（点 / 矩形 / 圆）
+    /// 达到所需数量时返回提交的几何——草稿随后重置为空闲。
+    /// 开放类型（多段线 / 多边形）持续绘制直到
+    /// [`finish`](Self::finish)。
     pub fn add_point(&mut self, geo: GeoPoint) -> Option<Geometry> {
         let PlotTool::Draw(kind) = self.tool else {
             return None;
@@ -103,8 +100,8 @@ impl PlotInteraction {
         None
     }
 
-    /// Finish an open-ended draw: fold the draft if valid (else stay drawing so
-    /// the user can keep adding points).
+    /// 结束开放式绘制：如果草稿有效则折叠（否则继续绘制以便
+    /// 用户继续添加点）。
     pub fn finish(&mut self) -> Option<Geometry> {
         let PlotTool::Draw(kind) = self.tool else {
             return None;
@@ -116,12 +113,12 @@ impl PlotInteraction {
         g
     }
 
-    /// Cancel the current draw.
+    /// 取消当前绘制。
     pub fn cancel(&mut self) {
         self.stop();
     }
 
-    /// Delete the last draft vertex (Backspace).
+    /// 删除最后一个草稿顶点（Backspace）。
     pub fn backspace(&mut self) {
         if self.is_drawing() {
             self.draft.pop();
@@ -129,9 +126,8 @@ impl PlotInteraction {
     }
 }
 
-/// Resolve a logical-pixel cursor position to a geographic point through the
-/// active camera's inverse projection — the pick-path counterpart used for
-/// placing draft vertices (plan §3, "落点 = screen_to_geo").
+/// 通过激活相机的逆变换将逻辑像素光标位置解析为地理坐标——
+/// 拾取路径的对应版本，用于放置草稿顶点（计划 §3，“落点 = screen_to_geo”）。
 pub fn screen_to_geo(
     cam: &Camera,
     ct: &GlobalTransform,
@@ -150,9 +146,8 @@ pub fn screen_to_geo(
     }
 }
 
-/// Commit a finished geometry into the document's active layer (creating one if
-/// the document is empty), select it, record the add on the history stack and
-/// bump the revision. Returns the new id.
+/// 将完成的几何提交到文档的活动层（文档为空时创建一个），
+/// 选中它，在历史栈上记录新增并推进 revision。返回新的 id。
 pub fn commit_geometry(
     plot_doc: &mut PlotDocument,
     history: &mut PlotHistory,
@@ -182,9 +177,9 @@ pub fn commit_geometry(
     id
 }
 
-/// Pick the active camera for `mode` (projection-matching first, else any
-/// active) and build its [`ViewMetrics`] + rotation — the same selection rule
-/// the render / pick systems use so input, projection and drawing agree.
+/// 为 `mode` 选择激活相机（先匹配投影类型，否则任选一个激活的）
+/// 并构建其 [`ViewMetrics`] + 旋转——与渲染 / 拾取系统使用相同的选择规则，
+/// 以使输入、投影、绘制一致。
 fn active_view<'q>(
     cams: &'q Query<(Entity, &Camera, &GlobalTransform, &Projection)>,
     ctx: &PlotViewCtx,
@@ -226,7 +221,7 @@ fn active_view<'q>(
     Some((e, cam, ct, ct.rotation(), metrics))
 }
 
-/// The draw FSM system (see module docs).
+/// 绘制 FSM 系统（参见模块文档）。
 #[allow(clippy::too_many_arguments)]
 pub fn interaction_system(
     ctx: Res<PlotViewCtx>,
@@ -243,7 +238,7 @@ pub fn interaction_system(
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
 ) {
-    // 1. Apply queued tool switches.
+    // 1. 应用已排队的工具切换。
     for ev in tool_events.read() {
         match ev.0 {
             PlotTool::Idle => interaction.stop(),
@@ -251,7 +246,7 @@ pub fn interaction_system(
         }
     }
 
-    // 2. Cancel / undo-vertex hotkeys.
+    // 2. 取消 / 撤销顶点热键。
     if keys.just_pressed(KeyCode::Escape) && interaction.is_drawing() {
         interaction.cancel();
         done_events.send(PlotDrawFinished { committed: None });
@@ -260,7 +255,7 @@ pub fn interaction_system(
         interaction.backspace();
     }
 
-    // 3. Capture the pointer for the whole draw so the camera stands down.
+    // 3. 在整个绘制期间捕获指针以使相机让位。
     capture.0 = interaction.is_drawing();
     if !interaction.is_drawing() {
         return;
@@ -271,13 +266,13 @@ pub fn interaction_system(
     };
     let cursor = windows.get_single().ok().and_then(|w| w.cursor_position());
 
-    // We only reach here while drawing, so the tool is a `Draw(kind)`.
+    // 只有绘制中才到达此处，因此工具必定是 `Draw(kind)`。
     let kind = match interaction.tool {
         PlotTool::Draw(k) => k,
         PlotTool::Idle => return,
     };
 
-    // 4. Enter finishes an open-ended draw.
+    // 4. Enter 结束开放式绘制。
     if keys.just_pressed(KeyCode::Enter) {
         if let Some(g) = interaction.finish() {
             let id = commit_geometry(&mut plot_doc, &mut history, &mut selection, kind, g);
@@ -288,15 +283,15 @@ pub fn interaction_system(
         return;
     }
 
-    // 5. A left click drops / completes a vertex. The raw cursor coordinate is
-    //    first folded through the (by-default-disabled) snap config so a vertex
-    //    can latch onto a nearby grid / vertex / edge before it lands.
+    // 5. 左键点击放置 / 完成一个顶点。原始光标坐标
+    //    先经过（默认禁用的）吸附配置折叠，以使顶点
+    //    在落下之前可能附加到附近的网格 / 顶点 / 边。
     if mouse.just_pressed(MouseButton::Left) {
         if let Some(pos) = cursor {
             if let Some(geo) = screen_to_geo(cam, ct, ctx.mode, pos) {
                 let geo = snap(&plot_doc.doc, geo, &snap_res, None).point();
                 if let Some(g) = interaction.add_point(geo) {
-                    // A fixed-point kind auto-completed → commit it.
+                    // 固定点数类型自动完成 → 提交它。
                     let id = commit_geometry(&mut plot_doc, &mut history, &mut selection, kind, g);
                     done_events.send(PlotDrawFinished {
                         committed: Some(id),
@@ -307,9 +302,9 @@ pub fn interaction_system(
     }
 }
 
-/// A preview of the in-progress draft: a rubber-band stroke through the placed
-/// vertices plus a live segment to the cursor (plan §8 "实时预览"). Transient
-/// entities carry [`PlotPreviewEntity`] and are rebuilt fresh every frame.
+/// 进行中草稿的预览：穿过已放置顶点的橡皮筋描边
+/// 加上到光标的实时段（计划 §8 “实时预览”）。临时实体携带
+/// [`PlotPreviewEntity`] 并每帧重建。
 #[allow(clippy::too_many_arguments)]
 pub fn draw_preview_system(
     mut commands: Commands,
@@ -321,7 +316,7 @@ pub fn draw_preview_system(
     windows: Query<&Window, With<PrimaryWindow>>,
     cams: Query<(Entity, &Camera, &GlobalTransform, &Projection)>,
 ) {
-    // Drop the previous frame's preview.
+    // 移除上一帧的预览。
     for e in old.iter() {
         commands.entity(e).despawn();
     }
@@ -333,7 +328,7 @@ pub fn draw_preview_system(
         return;
     };
 
-    // Draft vertices + the rubber-band tail to the live cursor.
+    // 草稿顶点 + 到实时光标的橡皮筋尾段。
     let mut geos: Vec<GeoPoint> = interaction.draft.clone();
     if let Some(pos) = windows.get_single().ok().and_then(|w| w.cursor_position()) {
         if let Some(g) = screen_to_geo(cam, ct, ctx.mode, pos) {
@@ -341,7 +336,7 @@ pub fn draw_preview_system(
         }
     }
 
-    // A preview stroke through the chain (rubber band).
+    // 穿过链的预览描边（橡皮筋）。
     if geos.len() >= 2 {
         let world: Vec<Vec3> = geos.iter().map(|g| metrics.project(*g)).collect();
         let normal = rot * Vec3::Z;
@@ -367,11 +362,11 @@ pub fn draw_preview_system(
     }
 }
 
-/// Marker for the transient preview entities (rebuilt every frame).
+/// 临时预览实体的标记（每帧重建）。
 #[derive(Component)]
 pub struct PlotPreviewEntity;
 
-/// The preview stroke colour (semi-opaque white, double-sided, unlit).
+/// 预览描边颜色（半透明白、双面、无光照）。
 fn preview_material() -> bevy::pbr::StandardMaterial {
     bevy::pbr::StandardMaterial {
         base_color: Color::srgba(1.0, 1.0, 1.0, 0.8),
@@ -394,8 +389,8 @@ mod tests {
 
     #[test]
     fn snap_is_off_by_default_so_draws_are_unaffected() {
-        // Baseline guard: the bridge's snap resource defaults to disabled, and a
-        // disabled config returns the raw cursor coordinate untouched (M9).
+        // 基线守卫：桥接层的 snap 资源默认为禁用，且
+        // 禁用的配置原封不动地返回原始光标坐标（M9）。
         let snap_cfg = PlotSnap::default();
         assert!(!snap_cfg.enabled, "PlotSnap must default to off");
         let doc = Document::default();
@@ -406,10 +401,10 @@ mod tests {
 
     #[test]
     fn snapped_vertex_lands_identically_in_2d_and_3d() {
-        // M9 both-mode proof: snapping is a geographic fold, so a snapped vertex
-        // coincides with its target in *both* projections. Snap a raw cursor near
-        // an existing vertex, then check it projects to the same world position as
-        // the target under the Flat (2D) and Globe (3D) metrics independently.
+        // M9 双模式证明：吸附是地理折叠，因此吸附后的顶点
+        // 在*两种*投影下都与其目标重合。将一个接近现有顶点的原始光标
+        // 吸附，然后检查在 Flat（2D）和 Globe（3D）度量下它投影到
+        // 与目标相同的世界位置。
         let mut doc = Document::default();
         let layer = doc.new_layer("L");
         let target = p(10.0, 20.0);
@@ -418,7 +413,7 @@ mod tests {
 
         let cfg = SnapConfig {
             enabled: true,
-            vertex_threshold_m: 200_000.0, // generous so the ~6 km offset latches
+            vertex_threshold_m: 200_000.0, // 宽松以便 ~6 km 偏移能量 latch
             ..Default::default()
         };
         let raw = p(10.05, 20.05);
@@ -437,7 +432,7 @@ mod tests {
             focal_px: 600.0,
             cam_pos: Vec3::new(3.0, 0.0, 0.0),
         };
-        // Same geographic truth ⇒ identical render position, in either mode.
+        // 相同的地理真相 ⇒ 相同的渲染位置，无论哪种模式。
         assert!(flat.project(snapped).distance(flat.project(target)) < 1e-9);
         assert!(globe.project(snapped).distance(globe.project(target)) < 1e-9);
     }
@@ -525,7 +520,7 @@ mod tests {
         assert!(plot_doc.doc.active_layer().is_some(), "layer auto-created");
         assert!(selection.contains(id), "committed element is selected");
         assert!(plot_doc.dirty);
-        // The add was recorded so it can be undone (M6).
+        // 新增已被记录因此可撤销（M6）。
         assert!(history.0.can_undo());
         history.0.undo(&mut plot_doc.doc);
         assert_eq!(plot_doc.doc.element_count(), 0);

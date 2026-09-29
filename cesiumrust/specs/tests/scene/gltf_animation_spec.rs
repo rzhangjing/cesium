@@ -1,5 +1,5 @@
-//! GltfAnimation specs - ported from Scene/ModelAnimationSpec, GltfLoaderSpec
-//! Covers: AnimationState, AnimationLoop, MorphTargetBlender, CustomShader
+//! GltfAnimation 规范 - 移植自 Scene/ModelAnimationSpec、GltfLoaderSpec
+//! 覆盖：AnimationState、AnimationLoop、MorphTargetBlender、CustomShader
 
 use cesium_gltf::animation_runtime::{AnimationLoop, AnimationState, MorphTargetBlender};
 use cesium_gltf::custom_shader::{CustomShader, CustomShaderMode, UniformType};

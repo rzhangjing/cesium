@@ -1,7 +1,7 @@
-//! Scene/AttributeTypeSpec.js → Rust integration tests
+//! Scene/AttributeTypeSpec.js → Rust 集成测试
 //!
-//! Original: 7 it() → 4 A-class (3 C-class: throws)
-//! Tests: getMathType(1) + getGlslType(1) + getNumberOfComponents(1) +
+//! 原始：7 it() → 4 A 类（3 C 类：throws）
+//! 测试：getMathType(1) + getGlslType(1) + getNumberOfComponents(1) +
 //!        getAttributeLocationCount(1)
 
 use cesium_scene::attribute_type::AttributeType;

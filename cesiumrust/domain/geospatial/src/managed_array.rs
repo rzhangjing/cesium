@@ -1,8 +1,8 @@
-//! A managed array that tracks length separately from capacity.
-//! Maps to CesiumJS `Core/ManagedArray.js`
+//! 一个将长度与容量分开跟踪的托管数组。
+//! 映射到 CesiumJS `Core/ManagedArray.js`
 
-/// An array-like data structure that manages its own capacity,
-/// tracking logical length separately from reserved capacity.
+/// 一个类数组的数据结构，自行管理容量，
+/// 将逻辑长度与预留容量分开跟踪。
 #[derive(Debug, Clone)]
 pub struct ManagedArray<T: Default + Clone> {
     values: Vec<T>,
@@ -10,8 +10,8 @@ pub struct ManagedArray<T: Default + Clone> {
 }
 
 impl<T: Default + Clone> ManagedArray<T> {
-    /// Creates a new ManagedArray with the given initial length.
-    /// The internal storage is initialized to `length` elements.
+    /// 创建一个具有给定初始长度的新 ManagedArray。
+    /// 内部存储被初始化为 `length` 个元素。
     pub fn new(length: usize) -> Self {
         Self {
             values: vec![T::default(); length],
@@ -19,37 +19,37 @@ impl<T: Default + Clone> ManagedArray<T> {
         }
     }
 
-    /// Returns the logical length of the array.
+    /// 返回数组的逻辑长度。
     pub fn length(&self) -> usize {
         self.length
     }
 
-    /// Sets the logical length. If growing, new elements are default-initialized.
-    /// If shrinking, the capacity is preserved.
+    /// 设置逻辑长度。若增长，新元素被默认初始化。
+    /// 若缩小，则保留容量。
     pub fn set_length(&mut self, length: usize) {
         self.resize(length);
     }
 
-    /// Returns a reference to the internal values slice (up to reserved capacity).
+    /// 返回内部值切片的引用（直至预留容量）。
     pub fn values(&self) -> &[T] {
         &self.values
     }
 
-    /// Returns the reserved capacity (internal storage length).
+    /// 返回预留容量（内部存储长度）。
     pub fn capacity(&self) -> usize {
         self.values.len()
     }
 
-    /// Gets the element at the given index.
+    /// 获取给定索引处的元素。
     ///
-    /// # Panics
-    /// Panics if `index >= length`.
+    /// # Panic
+    /// 若 `index >= length` 则 Panic。
     pub fn get(&self, index: usize) -> &T {
         assert!(index < self.length, "index out of bounds");
         &self.values[index]
     }
 
-    /// Sets the element at the given index, resizing if necessary.
+    /// 设置给定索引处的元素，必要时调整大小。
     pub fn set(&mut self, index: usize, value: T) {
         if index >= self.length {
             self.resize(index + 1);
@@ -57,7 +57,7 @@ impl<T: Default + Clone> ManagedArray<T> {
         self.values[index] = value;
     }
 
-    /// Returns the last element, or None if empty.
+    /// 返回最后一个元素，若为空则返回 None。
     pub fn peek(&self) -> Option<&T> {
         if self.length == 0 {
             None
@@ -66,7 +66,7 @@ impl<T: Default + Clone> ManagedArray<T> {
         }
     }
 
-    /// Pushes a value onto the end of the array.
+    /// 将一个值压入数组末尾。
     pub fn push(&mut self, value: T) {
         if self.length < self.values.len() {
             self.values[self.length] = value;
@@ -76,8 +76,8 @@ impl<T: Default + Clone> ManagedArray<T> {
         self.length += 1;
     }
 
-    /// Pops the last element from the array.
-    /// Returns None if the array is empty.
+    /// 从数组弹出最后一个元素。
+    /// 若数组为空则返回 None。
     pub fn pop(&mut self) -> Option<T> {
         if self.length == 0 {
             return None;
@@ -88,21 +88,21 @@ impl<T: Default + Clone> ManagedArray<T> {
         Some(value)
     }
 
-    /// Reserves at least `capacity` elements of internal storage.
-    /// Does not change the logical length.
+    /// 至少预留 `capacity` 个元素的内部存储。
+    /// 不改变逻辑长度。
     pub fn reserve(&mut self, capacity: usize) {
         if capacity > self.values.len() {
             self.values.resize(capacity, T::default());
         }
     }
 
-    /// Resizes the logical length. If growing, new elements are default-initialized.
-    /// If shrinking, capacity is preserved but trailing elements are cleared.
+    /// 调整逻辑长度。若增长，新元素被默认初始化。
+    /// 若缩小，保留容量但清除尾部元素。
     pub fn resize(&mut self, length: usize) {
         if length > self.values.len() {
             self.values.resize(length, T::default());
         }
-        // Clear trailing references when shrinking
+        // 缩小时清除尾部引用
         if length < self.length {
             for i in length..self.length {
                 if i < self.values.len() {
@@ -113,7 +113,7 @@ impl<T: Default + Clone> ManagedArray<T> {
         self.length = length;
     }
 
-    /// Trims the internal storage to the given capacity (or current length if not specified).
+    /// 将内部存储裁剪到给定容量（若未指定则用当前长度）。
     pub fn trim(&mut self, capacity: Option<usize>) {
         let target = capacity.unwrap_or(self.length).max(self.length);
         self.values.resize(target, T::default());

@@ -1,5 +1,5 @@
-//! KML Export specs - ported from DataSources/exportKmlSpec.js
-//! Tests KmlExporter, KmlExportStyle, KmlExportPlacemark, KmlExportGeometry, rgba_to_kml_color
+//! KML 导出规范 - 移植自 DataSources/exportKmlSpec.js
+//! 测试 KmlExporter、KmlExportStyle、KmlExportPlacemark、KmlExportGeometry、rgba_to_kml_color
 
 use cesium_kml::{
     rgba_to_kml_color, KmlExportGeometry, KmlExportIconStyle, KmlExportLabelStyle,
@@ -8,7 +8,7 @@ use cesium_kml::{
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// KmlExporter basics
+// KmlExporter 基础
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -303,7 +303,7 @@ fn kml_exporter_multiple_styles_and_placemarks() {
     assert!(kml.contains("<Style id=\"s1\">"));
     assert!(kml.contains("<name>P1</name>"));
     assert!(kml.contains("<name>P2</name>"));
-    // Styles should appear before Placemarks
+    // Styles 应出现在 Placemarks 之前
     let style_pos = kml.find("<Style").unwrap();
     let placemark_pos = kml.find("<Placemark>").unwrap();
     assert!(style_pos < placemark_pos);
@@ -340,7 +340,7 @@ fn kml_color_black_transparent() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// XML escaping
+// XML 转义
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]

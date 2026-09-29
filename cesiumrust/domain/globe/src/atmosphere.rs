@@ -1,26 +1,26 @@
-//! Ground atmosphere and sky rendering.
+//! 近地大气与天空渲染。
 //!
-//! Maps to CesiumJS atmosphere effects:
+//! 映射到 CesiumJS 大气效果：
 //! - `Scene/SkyAtmosphere.js`
 //! - `Scene/SkyBox.js`
-//! - Ground atmosphere (view from surface)
+//! - 近地大气（从地表观察）
 
 use glam::DVec3;
 
-/// Sky atmosphere configuration.
+/// 天空大气配置。
 ///
-/// Maps to CesiumJS `Scene/SkyAtmosphere.js`
+/// 映射到 CesiumJS `Scene/SkyAtmosphere.js`
 #[derive(Debug, Clone)]
 pub struct SkyAtmosphereConfig {
-    /// Whether the sky atmosphere is shown.
+    /// 是否显示天空大气。
     pub show: bool,
-    /// Hue shift (-1.0 to 1.0).
+    /// 色相偏移（-1.0 到 1.0）。
     pub hue_shift: f64,
-    /// Saturation shift (-1.0 to 1.0).
+    /// 饱和度偏移（-1.0 到 1.0）。
     pub saturation_shift: f64,
-    /// Brightness shift (-1.0 to 1.0).
+    /// 亮度偏移（-1.0 到 1.0）。
     pub brightness_shift: f64,
-    /// Per-position radius for atmosphere (meters).
+    /// 大气的每位置半径（米）。
     pub atmosphere_radius: f64,
 }
 
@@ -31,21 +31,21 @@ impl Default for SkyAtmosphereConfig {
             hue_shift: 0.0,
             saturation_shift: 0.0,
             brightness_shift: 0.0,
-            atmosphere_radius: 6378137.0 + 60000.0, // Earth radius + 60km atmosphere
+            atmosphere_radius: 6378137.0 + 60000.0, // 地球半径 + 60km 大气
         }
     }
 }
 
-/// Sky box configuration for star rendering.
+/// 用于恒星渲染的天空盒配置。
 ///
-/// Maps to CesiumJS `Scene/SkyBox.js`
+/// 映射到 CesiumJS `Scene/SkyBox.js`
 #[derive(Debug, Clone)]
 pub struct SkyBoxConfig {
-    /// Whether the sky box is shown.
+    /// 是否显示天空盒。
     pub show: bool,
-    /// Source URLs for cube map faces [px, nx, py, ny, pz, nz].
+    /// 立方体贴图各面的源 URL [px, nx, py, ny, pz, nz]。
     pub sources: Option<[String; 6]>,
-    /// Star sphere radius.
+    /// 恒星球半径。
     pub radius: f64,
 }
 
@@ -54,30 +54,30 @@ impl Default for SkyBoxConfig {
         Self {
             show: true,
             sources: None,
-            radius: 1e15, // Very large radius for stars
+            radius: 1e15, // 为恒星设置极大的半径
         }
     }
 }
 
-/// Ground atmosphere parameters for view-from-surface rendering.
+/// 用于从地表观察渲染的近地大气参数。
 #[derive(Debug, Clone)]
 pub struct GroundAtmosphere {
-    /// Rayleigh scattering coefficients [r, g, b].
+    /// Rayleigh 散射系数 [r, g, b]。
     pub rayleigh_coefficients: [f64; 3],
-    /// Mie scattering coefficient.
+    /// Mie 散射系数。
     pub mie_coefficient: f64,
-    /// Mie directional factor (g).
+    /// Mie 方向因子（g）。
     pub mie_g: f64,
-    /// Atmosphere scale height (meters).
+    /// 大气标高（米）。
     pub scale_height: f64,
-    /// Sun intensity factor.
+    /// 太阳强度因子。
     pub sun_intensity: f64,
 }
 
 impl Default for GroundAtmosphere {
     fn default() -> Self {
         Self {
-            // Standard Rayleigh scattering (blue sky)
+            // 标准 Rayleigh 散射（蓝天）
             rayleigh_coefficients: [5.5e-6, 13.0e-6, 22.4e-6],
             mie_coefficient: 21e-6,
             mie_g: 0.758,
@@ -88,15 +88,15 @@ impl Default for GroundAtmosphere {
 }
 
 impl GroundAtmosphere {
-    /// Computes the sky color for a given view and sun direction.
+    /// 计算给定视图与太阳方向下的天空颜色。
     ///
-    /// # Arguments
-    /// * `view_direction` - Normalized view direction
-    /// * `sun_direction` - Normalized direction to the sun
-    /// * `camera_height` - Camera height above surface (meters)
+    /// # 参数
+    /// * `view_direction` - 归一化的视图方向
+    /// * `sun_direction` - 指向太阳的归一化方向
+    /// * `camera_height` - camera 高于地表的高度（米）
     ///
-    /// # Returns
-    /// RGB color [0.0-1.0]
+    /// # 返回
+    /// RGB 颜色 [0.0-1.0]
     pub fn compute_sky_color(
         &self,
         view_direction: DVec3,
@@ -105,15 +105,15 @@ impl GroundAtmosphere {
     ) -> [f64; 3] {
         let cos_theta = view_direction.dot(sun_direction);
 
-        // Rayleigh phase function
+        // Rayleigh 相位函数
         let rayleigh_phase = 0.75 * (1.0 + cos_theta * cos_theta);
 
-        // Mie phase function (Henyey-Greenstein)
+        // Mie 相位函数（Henyey-Greenstein）
         let g2 = self.mie_g * self.mie_g;
         let mie_phase = (1.0 - g2)
             / (4.0 * std::f64::consts::PI * (1.0 + g2 - 2.0 * self.mie_g * cos_theta).powf(1.5));
 
-        // Optical depth (simplified)
+        // 光学深度（简化）
         let height_factor = (-camera_height / self.scale_height).exp();
 
         let mut color = [0.0f64; 3];
@@ -122,16 +122,16 @@ impl GroundAtmosphere {
             let mie = self.mie_coefficient * mie_phase;
             let optical_depth = (rayleigh + mie) * height_factor;
 
-            // Transmittance
+            // 透射率
             let transmittance = (-optical_depth * 1000.0).exp();
 
-            // In-scattering
+            // 内散射
             let in_scatter = (1.0 - transmittance) * self.sun_intensity;
 
             *c = (rayleigh / (rayleigh + mie + 1e-10)) * in_scatter;
         }
 
-        // Tone mapping (simple Reinhard)
+        // 色调映射（简化 Reinhard）
         for c in color.iter_mut() {
             *c = *c / (1.0 + *c);
             *c = c.clamp(0.0, 1.0);
@@ -140,18 +140,18 @@ impl GroundAtmosphere {
         color
     }
 
-    /// Computes the horizon glow color near sunset/sunrise.
+    /// 计算日出/日落附近的地平线辉光颜色。
     ///
-    /// # Arguments
-    /// * `sun_elevation` - Sun elevation angle in radians
+    /// # 参数
+    /// * `sun_elevation` - 太阳高度角（弧度）
     ///
-    /// # Returns
-    /// RGB color for horizon glow
+    /// # 返回
+    /// 地平线辉光的 RGB 颜色
     pub fn compute_horizon_glow(&self, sun_elevation: f64) -> [f64; 3] {
-        // Glow is strongest when sun is near horizon
+        // 当太阳接近地平线时辉光最强
         let t = (-sun_elevation.abs() / 0.2).exp();
 
-        // Orange/red glow
+        // 橙/红色辉光
         [
             (1.0 * t).clamp(0.0, 1.0),
             (0.4 * t).clamp(0.0, 1.0),
@@ -159,9 +159,9 @@ impl GroundAtmosphere {
         ]
     }
 
-    /// Computes the zenith color (sky directly overhead).
+    /// 计算天顶颜色（头顶正上方的天空）。
     pub fn compute_zenith_color(&self, sun_elevation: f64) -> [f64; 3] {
-        // Blue sky during day, dark at night
+        // 白天为蓝天，夜晚变暗
         let day_factor = (sun_elevation / 0.3).clamp(0.0, 1.0);
 
         [
@@ -172,22 +172,22 @@ impl GroundAtmosphere {
     }
 }
 
-/// Lighting configuration for globe rendering.
+/// 地球渲染的光照配置。
 ///
-/// Maps to CesiumJS globe lighting
+/// 映射到 CesiumJS 地球光照
 #[derive(Debug, Clone)]
 pub struct GlobeLighting {
-    /// Whether lighting is enabled.
+    /// 是否启用光照。
     pub enabled: bool,
-    /// Sun direction (normalized, in ECEF).
+    /// 太阳方向（归一化，ECEF 中）。
     pub sun_direction: DVec3,
-    /// Sun color [r, g, b].
+    /// 太阳颜色 [r, g, b]。
     pub sun_color: [f64; 3],
-    /// Ambient light color [r, g, b].
+    /// 环境光颜色 [r, g, b]。
     pub ambient_color: [f64; 3],
-    /// Whether to show the day/night terminator.
+    /// 是否显示昼夜终止线。
     pub show_terminator: bool,
-    /// Specular intensity for water surfaces.
+    /// 水面的镜面反射强度。
     pub specular_intensity: f64,
 }
 
@@ -205,13 +205,13 @@ impl Default for GlobeLighting {
 }
 
 impl GlobeLighting {
-    /// Computes the diffuse lighting factor at a surface point.
+    /// 计算表面点处的漫反射光照因子。
     ///
-    /// # Arguments
-    /// * `surface_normal` - Surface normal at the point
+    /// # 参数
+    /// * `surface_normal` - 该点处的表面法线
     ///
-    /// # Returns
-    /// Diffuse factor [0.0-1.0]
+    /// # 返回
+    /// 漫反射因子 [0.0-1.0]
     pub fn compute_diffuse(&self, surface_normal: DVec3) -> f64 {
         if !self.enabled {
             return 1.0;
@@ -219,28 +219,28 @@ impl GlobeLighting {
         surface_normal.dot(self.sun_direction).max(0.0)
     }
 
-    /// Computes the specular highlight for water surfaces.
+    /// 计算水面的镜面高光。
     ///
-    /// # Arguments
-    /// * `surface_normal` - Surface normal
-    /// * `view_direction` - Direction from surface to camera
+    /// # 参数
+    /// * `surface_normal` - 表面法线
+    /// * `view_direction` - 从表面指向 camera 的方向
     ///
-    /// # Returns
-    /// Specular intensity [0.0-1.0]
+    /// # 返回
+    /// 镜面反射强度 [0.0-1.0]
     pub fn compute_specular(&self, surface_normal: DVec3, view_direction: DVec3) -> f64 {
         if !self.enabled || self.specular_intensity <= 0.0 {
             return 0.0;
         }
 
-        // Blinn-Phong specular
+        // Blinn-Phong 镜面反射
         let half_vector = (self.sun_direction + view_direction).normalize();
         let n_dot_h = surface_normal.dot(half_vector).max(0.0);
 
-        // High shininess for water
+        // 水面的高光泽度
         n_dot_h.powf(64.0) * self.specular_intensity
     }
 
-    /// Computes the final lit color for a surface.
+    /// 计算表面的最终受照颜色。
     pub fn compute_lit_color(
         &self,
         base_color: [f64; 3],
@@ -261,7 +261,7 @@ impl GlobeLighting {
             result[i] = (sun_contrib + ambient_contrib).clamp(0.0, 1.0);
         }
 
-        // Add specular for water
+        // 为水面添加镜面反射
         if is_water {
             let specular = self.compute_specular(surface_normal, view_direction);
             for (r, sun) in result.iter_mut().zip(self.sun_color.iter()) {
@@ -272,9 +272,9 @@ impl GlobeLighting {
         result
     }
 
-    /// Computes the night-side color (city lights approximation).
+    /// 计算背光侧颜色（城市灯光近似）。
     pub fn compute_night_color(&self, base_color: [f64; 3]) -> [f64; 3] {
-        // Darken significantly on night side
+        // 在背光侧显著变暗
         [
             base_color[0] * 0.02,
             base_color[1] * 0.02,
@@ -308,27 +308,27 @@ mod tests {
     fn test_ground_atmosphere_day() {
         let atmosphere = GroundAtmosphere::default();
 
-        // Looking up with sun overhead
+        // 抬头仰望，太阳在头顶
         let view = DVec3::new(0.0, 0.0, 1.0);
         let sun = DVec3::new(0.0, 0.0, 1.0);
 
         let color = atmosphere.compute_sky_color(view, sun, 0.0);
 
-        // Should be blue-ish
-        assert!(color[2] > color[0]); // Blue > Red
+        // 应偏蓝色
+        assert!(color[2] > color[0]); // 蓝 > 红
     }
 
     #[test]
     fn test_ground_atmosphere_sunset() {
         let atmosphere = GroundAtmosphere::default();
 
-        // Sun at horizon
+        // 太阳位于地平线
         let view = DVec3::new(1.0, 0.0, 0.0);
         let sun = DVec3::new(1.0, 0.0, 0.0);
 
         let color = atmosphere.compute_sky_color(view, sun, 0.0);
 
-        // All channels should be valid
+        // 所有通道均应为有效值
         for c in &color {
             assert!(*c >= 0.0 && *c <= 1.0);
         }
@@ -338,21 +338,21 @@ mod tests {
     fn test_horizon_glow_sunset() {
         let atmosphere = GroundAtmosphere::default();
 
-        // Sun slightly below horizon
+        // 太阳略低于地平线
         let glow = atmosphere.compute_horizon_glow(-0.1);
 
-        // Should have warm colors
-        assert!(glow[0] > glow[2]); // Red > Blue
+        // 应呈暖色调
+        assert!(glow[0] > glow[2]); // 红 > 蓝
     }
 
     #[test]
     fn test_horizon_glow_noon() {
         let atmosphere = GroundAtmosphere::default();
 
-        // Sun high in sky
+        // 太阳高挂天空
         let glow = atmosphere.compute_horizon_glow(FRAC_PI_2);
 
-        // Should be minimal glow
+        // 应仅有极少的辉光
         assert!(glow[0] < 0.1);
     }
 
@@ -361,7 +361,7 @@ mod tests {
         let atmosphere = GroundAtmosphere::default();
         let color = atmosphere.compute_zenith_color(0.5);
 
-        // Blue sky
+        // 蓝天
         assert!(color[2] > color[0]);
     }
 
@@ -370,7 +370,7 @@ mod tests {
         let atmosphere = GroundAtmosphere::default();
         let color = atmosphere.compute_zenith_color(-0.5);
 
-        // Dark sky
+        // 暗夜空
         assert!(color[2] < 0.1);
     }
 
@@ -391,12 +391,12 @@ mod tests {
             ..Default::default()
         };
 
-        // Surface facing the sun
+        // 面向太阳的表面
         let normal = DVec3::new(0.0, 0.0, 1.0);
         let diffuse = lighting.compute_diffuse(normal);
         assert!((diffuse - 1.0).abs() < 1e-10);
 
-        // Surface facing away
+        // 背离太阳的表面
         let normal_away = DVec3::new(0.0, 0.0, -1.0);
         let diffuse_away = lighting.compute_diffuse(normal_away);
         assert!(diffuse_away.abs() < 1e-10);
@@ -431,7 +431,7 @@ mod tests {
 
         let lit = lighting.compute_lit_color(base, normal, view, false);
 
-        // Should be brighter than ambient
+        // 应比环境光更亮
         assert!(lit[0] > 0.1);
     }
 
@@ -441,7 +441,7 @@ mod tests {
         let base = [0.5, 0.5, 0.5];
         let night = lighting.compute_night_color(base);
 
-        // Should be very dark
+        // 应非常暗
         assert!(night[0] < 0.05);
         assert!(night[1] < 0.05);
     }

@@ -1,18 +1,18 @@
-//! GregorianDate - calendar date representation.
-//! Maps to CesiumJS `Core/GregorianDate.js`
+//! GregorianDate - 日历日期表示。
+//! 映射到 CesiumJS `Core/GregorianDate.js`
 
 use serde::{Deserialize, Serialize};
 
-/// Days in each month (non-leap year). Index 0 = January.
+/// 每个月的天数（非闰年）。索引 0 = 一月。
 const DAYS_IN_MONTH: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
-/// Returns true if the given year is a leap year.
-/// Maps to CesiumJS `isLeapYear`
+/// 若给定年份是闰年则返回 true。
+/// 映射到 CesiumJS `isLeapYear`
 pub fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
 
-/// Returns the number of days in the given month (1-based) for the given year.
+/// 返回给定年份中给定月份（从 1 开始）的天数。
 pub fn days_in_month(year: i32, month: u32) -> u32 {
     if month == 2 && is_leap_year(year) {
         29
@@ -21,33 +21,33 @@ pub fn days_in_month(year: i32, month: u32) -> u32 {
     }
 }
 
-/// A calendar date in the Gregorian calendar.
-/// Maps to CesiumJS `GregorianDate`
+/// 格里高利历（公历）中的一个日历日期。
+/// 映射到 CesiumJS `GregorianDate`
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct GregorianDate {
-    /// The year (1-9999).
+    /// 年（1-9999）。
     pub year: i32,
-    /// The month (1-12).
+    /// 月（1-12）。
     pub month: u32,
-    /// The day of the month (1-31).
+    /// 该月的日（1-31）。
     pub day: u32,
-    /// The hour (0-23).
+    /// 时（0-23）。
     pub hour: u32,
-    /// The minute (0-59).
+    /// 分（0-59）。
     pub minute: u32,
-    /// The second (0-60, 60 for leap seconds).
+    /// 秒（0-60，闰秒时为 60）。
     pub second: u32,
-    /// The millisecond (0-999.999...).
+    /// 毫秒（0-999.999...）。
     pub millisecond: f64,
-    /// Whether this date is during a leap second.
+    /// 该日期是否处于闰秒期间。
     pub is_leap_second: bool,
 }
 
 impl GregorianDate {
-    /// Creates a new GregorianDate with validation.
-    /// Maps to CesiumJS `new GregorianDate(year, month, day, hour, minute, second, millisecond, isLeapSecond)`
+    /// 创建一个经过校验的新 GregorianDate。
+    /// 映射到 CesiumJS `new GregorianDate(year, month, day, hour, minute, second, millisecond, isLeapSecond)`
     ///
-    /// Validation is debug-only (matches CesiumJS DeveloperError behavior).
+    /// 校验仅在 debug 下生效（对应 CesiumJS DeveloperError 行为）。
     // deferred.md #13: debug_assert 范围校验 (year/month/day/millisecond) 触发 manual_range_contains，风格问题。
     #[allow(clippy::too_many_arguments, clippy::manual_range_contains)]
     pub fn new(
@@ -60,7 +60,7 @@ impl GregorianDate {
         millisecond: f64,
         is_leap_second: bool,
     ) -> Self {
-        // Debug-only validation (matches CesiumJS `//>>includeStart('debug')` blocks)
+        // 仅 debug 下的校验（对应 CesiumJS `//>>includeStart('debug')` 代码块）
         debug_assert!(year >= 1 && year <= 9999, "Year must be in range [1, 9999], got {year}");
         debug_assert!(month >= 1 && month <= 12, "Month must be in range [1, 12], got {month}");
         debug_assert!(day >= 1 && day <= 31, "Day must be in range [1, 31], got {day}");
@@ -70,7 +70,7 @@ impl GregorianDate {
         debug_assert!(second <= max_second, "Second must be in range [0, {max_second}], got {second}");
         debug_assert!(millisecond >= 0.0 && millisecond < 1000.0,
             "Millisecond must be in range [0, 1000), got {millisecond}");
-        // Validate day is valid for the given month/year
+        // 校验该日对给定的月/年是否有效
         if month >= 1 && month <= 12 {
             let max_day = days_in_month(year, month);
             debug_assert!(day <= max_day,
@@ -91,8 +91,8 @@ impl GregorianDate {
 }
 
 impl Default for GregorianDate {
-    /// Constructs the minimum date (year 1, month 1, day 1, midnight).
-    /// Maps to CesiumJS `new GregorianDate()` with all defaults.
+    /// 构造最小日期（1 年 1 月 1 日，午夜）。
+    /// 映射到使用全部默认值的 CesiumJS `new GregorianDate()`。
     fn default() -> Self {
         Self {
             year: 1,

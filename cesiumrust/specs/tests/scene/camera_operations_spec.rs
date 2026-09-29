@@ -1,6 +1,6 @@
-//! Scene/CameraSpec.js → Rust integration tests (Camera operations)
-//! Ported from: packages/engine/Specs/Scene/CameraSpec.js
-//! A-class pure math tests: move, look, rotate, twist, zoom, coordinate transforms
+//! Scene/CameraSpec.js → Rust 集成测试（相机操作）
+//! 移植自：packages/engine/Specs/Scene/CameraSpec.js
+//! A 类纯数学测试：move、look、rotate、twist、zoom、坐标变换
 
 use cesium_camera::Camera;
 use cesium_geospatial::Ellipsoid;
@@ -15,7 +15,7 @@ const TURN_AMOUNT: f64 = std::f64::consts::FRAC_PI_2; // PI/2
 const ROTATE_AMOUNT: f64 = std::f64::consts::FRAC_PI_2;
 const ZOOM_AMOUNT: f64 = 1.0;
 
-/// Creates the standard test camera matching CesiumJS beforeEach:
+/// 创建与 CesiumJS beforeEach 一致的标准测试相机：
 /// position = (0,0,1), up = (0,1,0), dir = (0,0,-1), right = (1,0,0)
 fn test_camera() -> Camera {
     Camera::new(DVec3::new(0.0, 0.0, 1.0), DVec3::new(0.0, 0.0, -1.0), DVec3::new(0.0, 1.0, 0.0))
@@ -32,7 +32,7 @@ fn assert_vec3_eq(actual: DVec3, expected: DVec3, eps: f64, msg: &str) {
 }
 
 // ============================================================================
-// View matrix
+// 视图矩阵
 // ============================================================================
 
 #[test]
@@ -45,8 +45,8 @@ fn get_view_matrix() {
     let dir = camera.direction;
     let right = camera.right;
 
-    // Expected: rotation * translation (CesiumJS Matrix4.computeView)
-    // Column-major: col0=(right.x, up.x, -dir.x, 0), etc.
+    // 期望值：rotation * translation（CesiumJS Matrix4.computeView）
+    // 列主序：col0=(right.x, up.x, -dir.x, 0) 等。
     let expected = DMat4::from_cols_array(&[
         right.x, up.x, -dir.x, 0.0,
         right.y, up.y, -dir.y, 0.0,
@@ -82,7 +82,7 @@ fn get_inverse_view_matrix() {
 }
 
 // ============================================================================
-// Move operations
+// 移动操作
 // ============================================================================
 
 #[test]
@@ -129,26 +129,26 @@ fn moves_right() {
     let mut camera = test_camera();
     camera.move_right(Some(MOVE_AMOUNT));
 
-    // right = (-1,0,0), so moving right by 3 → position += (-1,0,0)*3 = (-3,0,1)
-    // Wait: CesiumJS expects (moveAmount, 0, 1) because right=(-1,0,0) but moveRight
-    // moves along right vector... Actually CesiumJS right = cross(dir, up) = (-1,0,0)
-    // and moveRight does position += right * amount = (0,0,1) + (-3,0,0) = (-3,0,1)
-    // But original spec expects (moveAmount, 0.0, 1.0) = (3, 0, 1)!
-    // Let me re-check: CesiumJS right = cross(dir, up) = cross((0,0,-1), (0,1,0))
+    // right = (-1,0,0)，因此向右移动 3 → position += (-1,0,0)*3 = (-3,0,1)
+    // 等等：CesiumJS 期望 (moveAmount, 0, 1)，因为 right=(-1,0,0) 但 moveRight
+    // 沿 right 向量移动... 实际上 CesiumJS right = cross(dir, up) = (-1,0,0)
+    // 且 moveRight 执行 position += right * amount = (0,0,1) + (-3,0,0) = (-3,0,1)
+    // 但原始 spec 期望 (moveAmount, 0.0, 1.0) = (3, 0, 1)！
+    // 我重新检查：CesiumJS right = cross(dir, up) = cross((0,0,-1), (0,1,0))
     // = (0*0-(-1)*1, (-1)*0-0*0, 0*1-0*0) = (1, 0, 0)
-    // Wait! In CesiumJS: right = Cartesian3.cross(dir, up) where dir=(0,0,-1), up=(0,1,0)
+    // 等等！在 CesiumJS 中：right = Cartesian3.cross(dir, up)，其中 dir=(0,0,-1), up=(0,1,0)
     // cross((0,0,-1), (0,1,0)) = (0*0-(-1)*1, (-1)*0-0*0, 0*1-0*0) = (1, 0, 0)
-    // So right = (1, 0, 0) not (-1, 0, 0)!
-    // But the original spec says: right = Cartesian3.cross(dir, up, new Cartesian3());
-    // And then expects moveRight → (moveAmount, 0, 1) = (3, 0, 1)
-    // So right must be (1, 0, 0).
+    // 因此 right = (1, 0, 0) 而非 (-1, 0, 0)！
+    // 但原始 spec 写道：right = Cartesian3.cross(dir, up, new Cartesian3());
+    // 然后期望 moveRight → (moveAmount, 0, 1) = (3, 0, 1)
+    // 因此 right 必为 (1, 0, 0)。
     //
-    // In our Rust: right = direction.cross(up) = (0,0,-1)×(0,1,0)
+    // 在我们的 Rust 中：right = direction.cross(up) = (0,0,-1)×(0,1,0)
     // = (0*0-(-1)*1, (-1)*0-0*0, 0*1-0*0) = (1, 0, 0)
-    // Wait that gives (1,0,0) too! Let me recalculate:
+    // 等等，这也给出 (1,0,0)！我重新计算：
     // a×b = (a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x)
     // (0,0,-1)×(0,1,0) = (0*0-(-1)*1, (-1)*0-0*0, 0*1-0*0) = (1, 0, 0)
-    // So right = (1, 0, 0). My earlier analysis was wrong!
+    // 因此 right = (1, 0, 0)。我之前的分析有误！
     assert_vec3_eq(camera.position, DVec3::new(MOVE_AMOUNT, 0.0, 1.0), EPSILON10, "position");
     assert_vec3_eq(camera.up, DVec3::Y, EPSILON10, "up");
     assert_vec3_eq(camera.direction, DVec3::new(0.0, 0.0, -1.0), EPSILON10, "direction");
@@ -189,7 +189,7 @@ fn moves_backward() {
 }
 
 // ============================================================================
-// Look operations (orientation only, no position change)
+// 观察操作（仅改变朝向，不改变位置）
 // ============================================================================
 
 #[test]
@@ -264,7 +264,7 @@ fn looks_down() {
 }
 
 // ============================================================================
-// Twist operations (roll around direction axis)
+// 扭转操作（绕 direction 轴旋转）
 // ============================================================================
 
 #[test]
@@ -298,7 +298,7 @@ fn twists_right() {
 }
 
 // ============================================================================
-// Rotate operations (orbit: position + orientation change)
+// 旋转操作（环绕：位置 + 朝向都改变）
 // ============================================================================
 
 #[test]
@@ -365,7 +365,7 @@ fn rotates() {
     let angle = std::f64::consts::FRAC_PI_2;
     camera.rotate(axis, angle);
 
-    // position rotated from (0,0,1) around axis by PI/2
+    // position 由 (0,0,1) 绕轴旋转 PI/2
     let expected_pos = DVec3::new(-axis.x, axis.y, 0.0);
     assert_vec3_eq(camera.position, expected_pos, EPSILON15, "position");
 
@@ -383,7 +383,7 @@ fn rotates() {
 }
 
 // ============================================================================
-// Zoom operations (3D mode)
+// 缩放操作（3D 模式）
 // ============================================================================
 
 #[test]
@@ -409,10 +409,10 @@ fn zooms_out_3d() {
 }
 
 // ============================================================================
-// Coordinate transforms (world ↔ camera)
+// 坐标变换（world ↔ camera）
 // ============================================================================
 
-/// Transform matrix used in CesiumJS coordinate transform tests (rotation only):
+/// CesiumJS 坐标变换测试中使用的变换矩阵（仅旋转）：
 /// col0=(0,1,0), col1=(0,0,1), col2=(1,0,0), col3=(0,0,0)
 fn rotation_transform() -> DMat4 {
     DMat4::from_cols_array(&[
@@ -423,7 +423,7 @@ fn rotation_transform() -> DMat4 {
     ])
 }
 
-/// Transform matrix with translation:
+/// 带平移的变换矩阵：
 /// col0=(0,1,0), col1=(0,0,1), col2=(1,0,0), col3=(10,20,30)
 fn translation_transform() -> DMat4 {
     DMat4::from_cols_array(&[
@@ -449,7 +449,7 @@ fn world_to_camera_coordinates_point() {
     camera.transform = translation_transform();
 
     let result = camera.world_to_camera_point(DVec3::X);
-    // inverse_transform column 3 + UNIT_Z
+    // inverse_transform 第 3 列 + UNIT_Z
     let inv = camera.transform.inverse();
     let expected = DVec3::new(inv.w_axis.x, inv.w_axis.y, inv.w_axis.z) + DVec3::Z;
     assert_vec3_eq(result, expected, EPSILON10, "world_to_camera_point(UNIT_X)");
@@ -470,7 +470,7 @@ fn camera_to_world_coordinates_point() {
     camera.transform = translation_transform();
 
     let result = camera.camera_to_world_point(DVec3::Z);
-    // transform column 3 + UNIT_X
+    // transform 第 3 列 + UNIT_X
     let expected = DVec3::new(
         camera.transform.w_axis.x,
         camera.transform.w_axis.y,
@@ -500,7 +500,7 @@ fn look_at_with_cartesian3_offset() {
     let expected_up = camera.right.cross(camera.direction).normalize();
     assert_vec3_eq(camera.up, expected_up, 1e-11, "up");
 
-    // Verify unit vectors
+    // 验证单位向量
     assert!((camera.direction.length() - 1.0).abs() < EPSILON14);
     assert!((camera.up.length() - 1.0).abs() < EPSILON14);
     assert!((camera.right.length() - 1.0).abs() < EPSILON14);
@@ -522,7 +522,7 @@ fn look_at_when_target_is_zero() {
 }
 
 // ============================================================================
-// Constrained rotation
+// 受限旋转
 // ============================================================================
 
 #[test]
@@ -554,25 +554,25 @@ fn rotates_down_with_constrained_axis() {
 }
 
 // ============================================================================
-// Orthonormality
+// 正交归一性
 // ============================================================================
 
 #[test]
 fn computes_orthonormal_vectors() {
     let mut camera = test_camera();
-    // Set non-normalized vectors
+    // 设置未归一化的向量
     camera.direction = DVec3::new(-0.32297853365047874, 0.9461560708446421, 0.021761351171635013);
     camera.up = DVec3::new(0.9327219113001013, 0.31839266745173644, -2.9874778345595487e-10);
     camera.right = DVec3::new(0.0069286549295528715, -0.020297288960790985, 0.9853344956450351);
 
-    // After calling view_matrix (which uses the vectors), verify they should be normalized
-    // In our Rust impl, view_matrix doesn't modify the camera, but we can normalize manually
-    // and verify the view matrix is a valid rotation
+    // 调用 view_matrix（其使用这些向量）后，验证它们应被归一化
+    // 在我们的 Rust 实现中，view_matrix 不修改相机，但我们可以手动归一化
+    // 并验证视图矩阵是一个有效旋转
     let view = camera.view_matrix();
-    let inv_affine = view.inverse(); // For orthonormal, inverse == transpose of rotation part
+    let inv_affine = view.inverse(); // 对于正交归一，inverse == 旋转部分的转置
     let product = view * inv_affine;
 
-    // Should be close to identity
+    // 应接近单位矩阵
     for i in 0..4 {
         for j in 0..4 {
             let expected = if i == j { 1.0 } else { 0.0 };
@@ -587,7 +587,7 @@ fn computes_orthonormal_vectors() {
 }
 
 // ============================================================================
-// Default amounts
+// 默认量
 // ============================================================================
 
 #[test]
@@ -610,7 +610,7 @@ fn look_uses_default_amount() {
     let dir_before = camera.direction;
     camera.look_left(None);
 
-    // Direction should have changed by default_look_amount
+    // Direction 应因 default_look_amount 而改变
     let angle = dir_before.dot(camera.direction).clamp(-1.0, 1.0).acos();
     assert!(
         (angle - camera.default_look_amount).abs() < 1e-10,

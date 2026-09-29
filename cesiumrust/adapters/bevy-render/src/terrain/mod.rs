@@ -19,21 +19,21 @@ impl Plugin for CesiumTerrainPlugin {
             .init_resource::<TerrainLoadState>()
             .init_resource::<TerrainPendingLoads>()
             .init_resource::<TerrainRenderMap>()
-            // M4.3: terrain_render_system reads ImageryCache + ImageryLayerManager
-            // for the simple draping path. init_resource is idempotent — when
-            // CesiumImageryPlugin is also registered, these calls are no-ops.
-            // Without them, CesiumTerrainPlugin used standalone would panic on
-            // missing resources.
+            // M4.3: terrain_render_system 为简单垂辖路径读取 ImageryCache + ImageryLayerManager。
+            // init_resource 是幂等的——当 CesiumImageryPlugin 也被注册时，
+            // 这些调用是空操作。
+            // 若没有它们，单独使用的 CesiumTerrainPlugin 会因
+            // resource 缺失而 panic。
             .init_resource::<ImageryCache>()
             .init_resource::<ImageryLayerManager>()
-            // terrain_tile_load_system writes TileLoadStats; idempotent with
-            // CesiumCorePlugin's registration.
+            // terrain_tile_load_system 写入 TileLoadStats；与
+            // CesiumCorePlugin 的注册幂等。
             .init_resource::<TileLoadStats>()
             .add_systems(PreUpdate, terrain_lod_system)
             .add_systems(
                 Update,
-                // Defensive ordering: the loader must run before the renderer so
-                // freshly-resolved `Ready` tiles can be picked up in the same frame.
+                // 防御性排序：loader 必须在 renderer 之前运行，以便
+                // 刚解析完的 `Ready` tile 能在同一帧被取走。
                 (terrain_tile_load_system, terrain_render_system).chain(),
             );
     }
@@ -48,9 +48,9 @@ mod tests {
     use bevy::render::mesh::Mesh;
     use bevy::image::Image;
 
-    /// Regression test for Ultra Review Critical: CesiumTerrainPlugin must
-    /// register ImageryCache + ImageryLayerManager + TileLoadStats so it can
-    /// run without CesiumImageryPlugin or CesiumCorePlugin.
+    /// 针对 Ultra Review Critical 的回归测试：CesiumTerrainPlugin 必须
+    /// 注册 ImageryCache + ImageryLayerManager + TileLoadStats，以便它能在
+    /// 没有 CesiumImageryPlugin 或 CesiumCorePlugin 时也能运行。
     #[test]
     fn terrain_plugin_registers_imagery_resources() {
         let mut app = App::new();
@@ -71,8 +71,8 @@ mod tests {
         );
     }
 
-    /// Full integration: CesiumTerrainPlugin standalone with asset infra,
-    /// app.update() must not panic on missing resources.
+    /// 完整集成：CesiumTerrainPlugin 单独配合 asset 基础设施时，
+    /// app.update() 必须不因 resource 缺失而 panic。
     #[test]
     fn terrain_plugin_standalone_update_does_not_panic() {
         let mut app = App::new();
@@ -82,7 +82,7 @@ mod tests {
         app.init_asset::<StandardMaterial>();
         app.init_asset::<Image>();
         app.add_plugins(CesiumTerrainPlugin);
-        // Must not panic — all cesiumrust resources are self-registered.
+        // 不得 panic——所有 cesiumrust resource 都自行注册。
         app.update();
     }
 }

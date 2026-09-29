@@ -1,80 +1,78 @@
-//! Pluggable priority function for request scheduling.
+//! 用于请求调度的可插拔优先级函数。
 //!
-//! Maps to CesiumJS `Request.priorityFunction` / `RequestScheduler`'s priority
-//! heap ordering and the `priorityFunction` callback pattern used in
-//! `Cesium3DTileset`, `QuadtreePrimitive`, and `GlobeSurfaceTileProvider`.
+//! 映射到 CesiumJS `Request.priorityFunction` / `RequestScheduler` 的优先级
+//! 堆排序，以及 `Cesium3DTileset`、`QuadtreePrimitive` 和
+//! `GlobeSurfaceTileProvider` 中使用的 `priorityFunction` 回调模式。
 //!
-//! In CesiumJS, the priority function is a callback on each `Request` that
-//! returns a numeric priority (lower = higher priority). The scheduler uses a
-//! min-heap ordered by this value to decide which pending requests to promote.
+//! 在 CesiumJS 中，优先级函数是每个 `Request` 上的一个回调，
+//! 返回一个数值优先级（越低 = 优先级越高）。调度器使用一个按此值
+//! 排序的最小堆来决定将哪些待定请求提升。
 //!
-//! This module provides:
-//! - A [`PriorityFunction`] trait for pluggable priority computation.
-//! - A [`SsedPriority`] default implementation based on Screen-Space Error
-//!   Distance (SSED) — the same metric CesiumJS uses for 3D Tiles and terrain
-//!   request prioritization.
-//! - A [`DistanceDecayPriority`] alternative that uses simple distance falloff.
-//! - A [`CompositePriority`] that combines multiple priority signals.
+//! 本模块提供：
+//! - 一个用于可插拔优先级计算的 [`PriorityFunction`] trait。
+//! - 一个基于屏幕空间误差距离（SSED）的默认实现 [`SsedPriority`]
+//!   —— 与 CesiumJS 用于 3D Tiles 和地形请求优先级排序的度量相同。
+//! - 一个使用简单距离衰减的替代方案 [`DistanceDecayPriority`]。
+//! - 一个组合多个优先级信号的 [`CompositePriority`]。
 //!
-//! **Pure domain logic** — no IO, no framework dependency, f64 throughout.
+//! **纯领域逻辑** —— 无 IO，无框架依赖，全程使用 f64。
 
 use std::fmt::Debug;
 
-/// Trait for computing request priority.
+/// 用于计算请求优先级的 trait。
 ///
-/// The scheduler calls this once per frame for each pending/throttled request
-/// to determine promotion order. Lower values = higher priority (matching
-/// CesiumJS `RequestScheduler` min-heap semantics).
+/// 调度器每帧为每个待定/被限流的请求调用一次本函数，
+/// 以决定提升顺序。值越低 = 优先级越高（匹配
+/// CesiumJS `RequestScheduler` 的最小堆语义）。
 ///
-/// Maps to CesiumJS `request.priorityFunction`:
+/// 映射到 CesiumJS `request.priorityFunction`：
 /// ```js
 /// request.priorityFunction = function() {
 ///   return tile.priority; // computed from SSE/distance
 /// };
 /// ```
 pub trait PriorityFunction: Send + Sync + Debug {
-    /// Computes the priority for a request identified by `key`.
+    /// 为以 `key` 标识的请求计算优先级。
     ///
-    /// Lower values indicate higher priority (promoted first from the heap).
-    /// The `context` provides frame-state information (camera position, etc.)
-    /// needed for screen-space computations.
+    /// 值越低表示优先级越高（最先从堆中提升）。
+    /// `context` 提供屏幕空间计算所需的帧状态信息（相机位置等）。
     ///
-    /// Returns `f64::MAX` to deprioritize a request effectively to the bottom
-    /// of the heap (e.g. for requests that are no longer relevant).
+    /// 返回 `f64::MAX` 可将一个请求有效地降级到堆的
+    /// 底部（例如对于不再相关的请求）。
     fn compute_priority(&self, key: &PriorityKey, context: &FrameContext) -> f64;
 
-    /// Returns the name of this priority function (for diagnostics).
+    /// 返回本优先级函数的名称（用于诊断）。
     fn name(&self) -> &str;
 }
 
-/// Identifies a request for priority computation.
+/// 为一个请求标识以供优先级计算。
 ///
-/// Generic enough to cover terrain tiles, imagery tiles, and 3D Tiles content.
+/// 足够通用，能覆盖地形瓦片、影像瓦片和 3D Tiles 内容。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PriorityKey {
-    /// Tile coordinates (x, y) at the given zoom level.
+    /// 给定缩放级别下的瓦片坐标 (x, y)。
     pub x: u32,
     pub y: u32,
-    /// Zoom level (0 = root).
+    /// 缩放级别（0 = 根）。
     pub zoom: u32,
 
-    /// Bounding volume center in world coordinates (ECEF meters, f64).
-    /// Used for distance-based priority computations.
+    /// 世界坐标中的包围体积中心（ECEF 米，f64）。
+    /// 用于基于距离的优先级计算。
     pub center_x: f64,
     pub center_y: f64,
     pub center_z: f64,
 
-    /// Geometric error of this tile in meters (used for SSE computation).
-    /// Maps to CesiumJS `tile._geometricError` / `tileset._maximumScreenSpaceError`.
+    /// 此瓦片的几何误差（米，用于 SSE 计算）。
+    /// 映射到 CesiumJS `tile._geometricError` / `tileset._maximumScreenSpaceError`。
     pub geometric_error: f64,
 
-    /// Additional user-defined weight multiplier (default 1.0).
-    /// Allows hosts to bias certain tiles (e.g. center-of-view boost).
+    /// 额外的用户自定义权重乘子（默认 1.0）。
+    /// 允许宿主对特定瓦片加偏（例如中心视域提升）。
     pub weight: f64,
 }
 
 impl PriorityKey {
-    /// Creates a minimal priority key with just tile coordinates.
+    /// 创建一个仅含瓦片坐标的最小优先级键。
     pub fn new(x: u32, y: u32, zoom: u32) -> Self {
         Self {
             x,
@@ -88,7 +86,7 @@ impl PriorityKey {
         }
     }
 
-    /// Sets the bounding volume center (ECEF meters).
+    /// 设置包围体积中心（ECEF 米）。
     pub fn with_center(mut self, x: f64, y: f64, z: f64) -> Self {
         self.center_x = x;
         self.center_y = y;
@@ -96,65 +94,65 @@ impl PriorityKey {
         self
     }
 
-    /// Sets the geometric error in meters.
+    /// 设置几何误差（米）。
     pub fn with_geometric_error(mut self, error: f64) -> Self {
         self.geometric_error = error;
         self
     }
 
-    /// Sets the weight multiplier.
+    /// 设置权重乘子。
     pub fn with_weight(mut self, weight: f64) -> Self {
         self.weight = weight;
         self
     }
 }
 
-/// Per-frame context for priority computations.
+/// 用于优先级计算的逐帧上下文。
 ///
-/// Contains camera state and viewport dimensions needed for screen-space
-/// error calculations. Updated once per frame by the host (Bevy system).
+/// 包含屏幕空间误差计算所需的相机状态和视口尺寸。
+/// 由宿主（Bevy 系统）每帧更新一次。
 #[derive(Debug, Clone)]
 pub struct FrameContext {
-    /// Camera position in world coordinates (ECEF meters, f64).
+    /// 世界坐标中的相机位置（ECEF 米，f64）。
     pub camera_x: f64,
     pub camera_y: f64,
     pub camera_z: f64,
 
-    /// Viewport width in pixels.
+    /// 视口宽度（像素）。
     pub viewport_width: f64,
 
-    /// Viewport height in pixels.
+    /// 视口高度（像素）。
     pub viewport_height: f64,
 
-    /// Vertical field of view in radians.
+    /// 垂直视场角（弧度）。
     pub fov_y: f64,
 
-    /// Maximum screen-space error threshold (pixels).
-    /// Tiles with SSE above this are refined; below this they're sufficient.
+    /// 最大屏幕空间误差阈值（像素）。
+    /// SSE 高于此值的瓦片会被细化；低于此值则足够。
     ///
-    /// Maps to CesiumJS `Cesium3DTileset.maximumScreenSpaceError` (default 16).
+    /// 映射到 CesiumJS `Cesium3DTileset.maximumScreenSpaceError`（默认 16）。
     pub maximum_screen_space_error: f64,
 
-    /// Current frame index (monotonic, for staleness heuristics).
+    /// 当前帧索引（单调递增，用于过期启发式）。
     pub frame_index: u64,
 }
 
 impl FrameContext {
-    /// Creates a default frame context with typical values.
+    /// 创建一个使用典型值的默认帧上下文。
     pub fn new() -> Self {
         Self {
             camera_x: 0.0,
             camera_y: 0.0,
-            camera_z: 6_378_137.0, // Default: above equator at 1 Earth radius
+            camera_z: 6_378_137.0, // 默认：赤道上方 1 个地球半径处
             viewport_width: 1920.0,
             viewport_height: 1080.0,
-            fov_y: std::f64::consts::FRAC_PI_3, // 60 degrees
+            fov_y: std::f64::consts::FRAC_PI_3, // 60 度
             maximum_screen_space_error: 16.0,
             frame_index: 0,
         }
     }
 
-    /// Sets the camera position.
+    /// 设置相机位置。
     pub fn with_camera(mut self, x: f64, y: f64, z: f64) -> Self {
         self.camera_x = x;
         self.camera_y = y;
@@ -162,26 +160,26 @@ impl FrameContext {
         self
     }
 
-    /// Sets the viewport dimensions.
+    /// 设置视口尺寸。
     pub fn with_viewport(mut self, width: f64, height: f64) -> Self {
         self.viewport_width = width;
         self.viewport_height = height;
         self
     }
 
-    /// Sets the field of view.
+    /// 设置视场角。
     pub fn with_fov(mut self, fov_y: f64) -> Self {
         self.fov_y = fov_y;
         self
     }
 
-    /// Sets the maximum screen-space error.
+    /// 设置最大屏幕空间误差。
     pub fn with_max_sse(mut self, sse: f64) -> Self {
         self.maximum_screen_space_error = sse;
         self
     }
 
-    /// Computes the distance from the camera to a point.
+    /// 计算从相机到一个点的距离。
     pub fn distance_to(&self, x: f64, y: f64, z: f64) -> f64 {
         let dx = self.camera_x - x;
         let dy = self.camera_y - y;
@@ -189,15 +187,15 @@ impl FrameContext {
         (dx * dx + dy * dy + dz * dz).sqrt()
     }
 
-    /// Computes the screen-space error for a tile at the given distance.
+    /// 计算在给定距离处一个瓦片的屏幕空间误差。
     ///
-    /// Maps to CesiumJS `Cesium3DTileset.prototype._computeScreenSpaceError`:
+    /// 映射到 CesiumJS `Cesium3DTileset.prototype._computeScreenSpaceError`：
     /// ```js
     /// sse = (geometricError * screenHeight) / (distance * 2 * tan(fovY / 2))
     /// ```
     ///
-    /// This is the simplified form assuming perspective projection where the
-    /// tile's geometric error is a length in world space.
+    /// 这是在透视投影下、假设瓦片的几何误差为世界空间中
+    /// 一个长度的简化形式。
     pub fn screen_space_error(&self, geometric_error: f64, distance: f64) -> f64 {
         if distance <= 0.0 || geometric_error <= 0.0 {
             return f64::MAX;
@@ -216,39 +214,38 @@ impl Default for FrameContext {
     }
 }
 
-// ── SSED Priority (Screen-Space Error Distance) ─────────────────────────────
+// ── SSED 优先级（屏幕空间误差距离） ────────────────────────────
 
-/// Default priority function based on Screen-Space Error Distance (SSED).
+/// 基于屏幕空间误差距离（SSED）的默认优先级函数。
 ///
-/// This is the same metric CesiumJS uses for 3D Tiles and terrain tile
-/// prioritization: tiles with higher screen-space error (i.e. more visually
-/// impactful refinement) get higher priority (lower numeric value).
+/// 这是 CesiumJS 用于 3D Tiles 和地形瓦片优先级排序的
+/// 同一度量：屏幕空间误差越高（即视觉影响更大的细化）的瓦片
+/// 获得越高优先级（数值越低）。
 ///
-/// The priority formula:
+/// 优先级公式：
 /// ```text
 /// priority = max(0, maximumSSE - computedSSE) * weight
 /// ```
 ///
-/// - If `computedSSE >= maximumSSE`: priority = 0 (highest — tile MUST refine)
-/// - If `computedSSE < maximumSSE`: priority > 0 (tile is already sufficient,
-///   but we still load it for future camera movements; lower SSE = lower
-///   priority)
+/// - 若 `computedSSE >= maximumSSE`：priority = 0（最高 —— 瓦片必须细化）
+/// - 若 `computedSSE < maximumSSE`：priority > 0（瓦片已经足够，
+///   但我们仍为未来的相机移动加载它；SSE 越低 = 优先级越低）
 ///
-/// Maps to CesiumJS `QuadtreePrimitive._prioritizeTiles` and
-/// `Cesium3DTileset._processScreenSpaceError`.
+/// 映射到 CesiumJS `QuadtreePrimitive._prioritizeTiles` 和
+/// `Cesium3DTileset._processScreenSpaceError`。
 #[derive(Debug, Clone)]
 pub struct SsedPriority {
-    /// Multiplier applied to the computed priority (default 1.0).
+    /// 应用于计算出的优先级的乘子（默认 1.0）。
     pub scale: f64,
 }
 
 impl SsedPriority {
-    /// Creates a new SSED priority function with default scale.
+    /// 创建一个使用默认 scale 的新 SSED 优先级函数。
     pub fn new() -> Self {
         Self { scale: 1.0 }
     }
 
-    /// Creates with a custom scale factor.
+    /// 使用自定义 scale 因子创建。
     pub fn with_scale(scale: f64) -> Self {
         Self { scale }
     }
@@ -262,20 +259,20 @@ impl Default for SsedPriority {
 
 impl PriorityFunction for SsedPriority {
     fn compute_priority(&self, key: &PriorityKey, context: &FrameContext) -> f64 {
-        // Compute distance from camera to tile center.
+        // 计算从相机到瓦片中心的距离。
         let distance = context.distance_to(key.center_x, key.center_y, key.center_z);
 
-        // Compute screen-space error at this distance.
+        // 计算此距离处的屏幕空间误差。
         let sse = context.screen_space_error(key.geometric_error, distance);
 
-        // Priority: how much the SSE exceeds the threshold.
-        // Higher excess → lower priority value → promoted first.
+        // 优先级：SSE 超出阈值多少。
+        // 超出越多 → 优先级值越低 → 最先提升。
         let excess = context.maximum_screen_space_error - sse;
         let priority = if excess <= 0.0 {
-            // SSE exceeds threshold: must refine, highest priority.
+            // SSE 超出阈值：必须细化，最高优先级。
             0.0
         } else {
-            // SSE below threshold: priority proportional to how far below.
+            // SSE 低于阈值：优先级与低出多少成正比。
             excess
         };
 
@@ -287,34 +284,34 @@ impl PriorityFunction for SsedPriority {
     }
 }
 
-// ── Distance Decay Priority ─────────────────────────────────────────────────
+// ── 距离衰减优先级 ──────────────────────────────────────
 
-/// Simple distance-based priority: closer tiles get higher priority.
+/// 简单的基于距离的优先级：越近的瓦片优先级越高。
 ///
-/// Formula: `priority = distance / reference_distance * weight`
+/// 公式：`priority = distance / reference_distance * weight`
 ///
-/// Useful for imagery layers where geometric error is not meaningful (all
-/// tiles at a given zoom have the same error) but proximity to the camera
-/// determines visual importance.
+/// 适用于几何误差不具意义的影像层（给定缩放下
+/// 所有瓦片都有相同的误差），但靠近相机的程度
+/// 决定了视觉重要性。
 ///
-/// Maps to the simpler priority heuristic used in some CesiumJS imagery
-/// providers (e.g. `ImageryLayer._createImagerySSEPriorityFunction`).
+/// 映射到某些 CesiumJS 影像提供者中使用的更简单的优先级启发式
+/// （例如 `ImageryLayer._createImagerySSEPriorityFunction`）。
 #[derive(Debug, Clone)]
 pub struct DistanceDecayPriority {
-    /// Reference distance for normalization (priority = 1.0 at this distance).
-    /// Default: 10_000_000.0 meters (~1.5 Earth radii).
+    /// 用于归一化的参考距离（在此距离处 priority = 1.0）。
+    /// 默认：10_000_000.0 米（约 1.5 个地球半径）。
     pub reference_distance: f64,
 }
 
 impl DistanceDecayPriority {
-    /// Creates with default reference distance.
+    /// 使用默认参考距离创建。
     pub fn new() -> Self {
         Self {
             reference_distance: 10_000_000.0,
         }
     }
 
-    /// Creates with a custom reference distance.
+    /// 使用自定义参考距离创建。
     pub fn with_reference(reference_distance: f64) -> Self {
         Self { reference_distance }
     }
@@ -342,42 +339,42 @@ impl PriorityFunction for DistanceDecayPriority {
     }
 }
 
-// ── Composite Priority ──────────────────────────────────────────────────────
+// ── 复合优先级 ──────────────────────────────────────────
 
-/// Combines multiple priority functions with weighted blending.
+/// 通过加权混合组合多个优先级函数。
 ///
-/// The final priority is the weighted sum of all constituent priorities:
+/// 最终优先级是所有组成优先级的加权和：
 /// ```text
 /// priority = Σ (weight_i * function_i.compute_priority(key, context))
 /// ```
 ///
-/// This allows hosts to combine SSED (for visual refinement urgency) with
-/// distance decay (for spatial locality) and custom heuristics.
+/// 这使得宿主可以将 SSED（用于视觉细化的紧迫性）与
+/// 距离衰减（用于空间局部性）及自定义启发式相结合。
 #[derive(Debug)]
 pub struct CompositePriority {
     components: Vec<(f64, Box<dyn PriorityFunction>)>,
 }
 
 impl CompositePriority {
-    /// Creates an empty composite.
+    /// 创建一个空的复合体。
     pub fn new() -> Self {
         Self {
             components: Vec::new(),
         }
     }
 
-    /// Adds a priority function with the given weight.
+    /// 以给定的权重添加一个优先级函数。
     pub fn add(mut self, weight: f64, function: Box<dyn PriorityFunction>) -> Self {
         self.components.push((weight, function));
         self
     }
 
-    /// Returns the number of component functions.
+    /// 返回组成部分函数的数量。
     pub fn len(&self) -> usize {
         self.components.len()
     }
 
-    /// Returns whether the composite has no components.
+    /// 返回复合体是否没有任何组成部分。
     pub fn is_empty(&self) -> bool {
         self.components.is_empty()
     }
@@ -405,19 +402,19 @@ impl PriorityFunction for CompositePriority {
     }
 }
 
-// ── Static Priority (for testing / trivial cases) ───────────────────────────
+// ── 静态优先级（用于测试 / 简单情况） ──────────────────────
 
-/// A priority function that always returns a fixed value.
+/// 一个总是返回固定值的优先级函数。
 ///
-/// Useful for testing and for requests that should all have equal priority
-/// (FIFO ordering within the heap).
+/// 适用于测试，以及应用于拥有相同优先级的请求
+/// （堆内的 FIFO 顺序）。
 #[derive(Debug, Clone)]
 pub struct StaticPriority {
     value: f64,
 }
 
 impl StaticPriority {
-    /// Creates a static priority with the given fixed value.
+    /// 使用给定的固定值创建一个静态优先级。
     pub fn new(value: f64) -> Self {
         Self { value }
     }
@@ -449,20 +446,20 @@ mod tests {
         let ctx = make_context();
         let ssed = SsedPriority::new();
 
-        // Tile close to camera (small distance → large SSE → low priority value)
+        // 靠近相机的瓦片（小距离 → 大 SSE → 低优先级值）
         let close = PriorityKey::new(0, 0, 15)
-            .with_center(0.0, 0.0, 6_378_137.0 - 1000.0) // 1km below camera
+            .with_center(0.0, 0.0, 6_378_137.0 - 1000.0) // 相机下方 1km
             .with_geometric_error(10.0);
 
-        // Tile far from camera
+        // 远离相机的瓦片
         let far = PriorityKey::new(0, 0, 5)
-            .with_center(0.0, 0.0, 0.0) // center of Earth
+            .with_center(0.0, 0.0, 0.0) // 地球中心
             .with_geometric_error(10.0);
 
         let p_close = ssed.compute_priority(&close, &ctx);
         let p_far = ssed.compute_priority(&far, &ctx);
 
-        // Closer tile should have lower priority value (higher priority)
+        // 更近的瓦片应拥有更低的优先级值（更高优先级）
         assert!(
             p_close < p_far,
             "close priority {} should be < far priority {}",
@@ -476,9 +473,9 @@ mod tests {
         let ctx = make_context().with_max_sse(16.0);
         let ssed = SsedPriority::new();
 
-        // Very close tile with large geometric error → SSE >> threshold
+        // 带大几何误差的非常近的瓦片 → SSE >> 阈值
         let key = PriorityKey::new(0, 0, 20)
-            .with_center(0.0, 0.0, 6_378_137.0 - 100.0) // 100m below camera
+            .with_center(0.0, 0.0, 6_378_137.0 - 100.0) // 相机下方 100m
             .with_geometric_error(1000.0);
 
         let priority = ssed.compute_priority(&key, &ctx);
@@ -505,12 +502,12 @@ mod tests {
         let ctx = make_context();
         let dd = DistanceDecayPriority::with_reference(1_000_000.0);
 
-        // Tile at exactly 1M meters from camera
+        // 恰好在距相机 1M 米处的瓦片
         let key = PriorityKey::new(0, 0, 10)
             .with_center(0.0, 0.0, 6_378_137.0 - 1_000_000.0);
 
         let priority = dd.compute_priority(&key, &ctx);
-        // Should be approximately 1.0 (distance / reference_distance)
+        // 应约为 1.0（distance / reference_distance）
         assert!(
             (priority - 1.0).abs() < 0.001,
             "expected ~1.0, got {}",
@@ -549,7 +546,7 @@ mod tests {
             .with_weight(1.0);
         let boosted = PriorityKey::new(0, 0, 10)
             .with_center(0.0, 0.0, 6_000_000.0)
-            .with_weight(0.5); // Lower weight → lower priority value → higher priority
+            .with_weight(0.5); // 更低的权重 → 更低的优先级值 → 更高优先级
 
         let p_normal = dd.compute_priority(&normal, &ctx);
         let p_boosted = dd.compute_priority(&boosted, &ctx);
@@ -560,9 +557,9 @@ mod tests {
     fn screen_space_error_computation() {
         let ctx = FrameContext::new()
             .with_viewport(1080.0, 1080.0)
-            .with_fov(std::f64::consts::FRAC_PI_2); // 90 degrees
+            .with_fov(std::f64::consts::FRAC_PI_2); // 90 度
 
-        // At distance 1000, geometric error 10:
+        // 在距离 1000、几何误差 10 时：
         // sse = (10 * 1080) / (1000 * 2 * tan(45°)) = 10800 / 2000 = 5.4
         let sse = ctx.screen_space_error(10.0, 1000.0);
         assert!((sse - 5.4).abs() < 0.01, "expected ~5.4, got {}", sse);

@@ -1,6 +1,6 @@
-//! Shadow map extended specs - tests for ShadowMap, ShadowBias, and cascade computation
+//! 阴影贴图扩展规范 - 测试 ShadowMap、ShadowBias 及级联计算
 //!
-//! Covers: bias construction, shadow map construction, fade factor, cascade splits
+//! 覆盖：bias 构造、阴影贴图构造、淡出因子、级联分层
 
 use cesium_shadow::{ShadowBias, ShadowMap, ShadowMapConfig};
 use glam::DVec3;
@@ -8,7 +8,7 @@ use glam::DVec3;
 const EPSILON3: f64 = 1e-3;
 const EPSILON6: f64 = 1e-6;
 
-// ─── ShadowBias construction ─────────────────────────────────────────────────
+// ─── ShadowBias 构造 ─────────────────────────────────────────────────
 
 #[test]
 fn shadow_bias_terrain_default() {
@@ -51,7 +51,7 @@ fn shadow_bias_point_default() {
 fn shadow_bias_terrain_vs_primitive() {
     let terrain = ShadowBias::terrain(false);
     let primitive = ShadowBias::primitive(false);
-    // Terrain should have larger depth bias than primitive
+    // 地形的 depth bias 应大于图元
     assert!(
         terrain.depth_bias > primitive.depth_bias,
         "terrain depth_bias {} should be > primitive {}",
@@ -60,7 +60,7 @@ fn shadow_bias_terrain_vs_primitive() {
     );
 }
 
-// ─── ShadowMap construction ──────────────────────────────────────────────────
+// ─── ShadowMap 构造 ──────────────────────────────────────────────────
 
 #[test]
 fn shadow_map_for_sun() {
@@ -93,14 +93,14 @@ fn shadow_map_new_with_config() {
     assert!(shadow_map.pass_count() >= 1);
 }
 
-// ─── ShadowMap fade ──────────────────────────────────────────────────────────
+// ─── ShadowMap 淡出 ──────────────────────────────────────────────────────────
 
 #[test]
 fn shadow_map_fade_factor_noon() {
     let config = ShadowMapConfig::default();
     let shadow_map = ShadowMap::new(config, DVec3::new(0.0, 0.0, -1.0));
     let fade = shadow_map.compute_fade_factor(std::f64::consts::FRAC_PI_2);
-    // Noon (high elevation) should have full shadow
+    // 正午（高仰角）应有完整阴影
     assert!(
         (fade - 1.0).abs() < EPSILON3,
         "noon fade should be ~1.0, got {}",
@@ -113,7 +113,7 @@ fn shadow_map_fade_factor_sunset() {
     let config = ShadowMapConfig::default();
     let shadow_map = ShadowMap::new(config, DVec3::new(1.0, 0.0, 0.0));
     let fade = shadow_map.compute_fade_factor(0.0);
-    // Sunset (low elevation) should fade shadows
+    // 日落（低仰角）应淡出阴影
     assert!(
         fade < 1.0,
         "sunset fade should be < 1.0, got {}",
@@ -126,7 +126,7 @@ fn shadow_map_fade_factor_night() {
     let config = ShadowMapConfig::default();
     let shadow_map = ShadowMap::new(config, DVec3::new(0.0, 0.0, 1.0));
     let fade = shadow_map.compute_fade_factor(-std::f64::consts::FRAC_PI_4);
-    // Night (negative elevation) should have no shadows
+    // 夜晚（负仰角）应无阴影
     assert!(
         fade.abs() < EPSILON3,
         "night fade should be ~0.0, got {}",
@@ -134,7 +134,7 @@ fn shadow_map_fade_factor_night() {
     );
 }
 
-// ─── ShadowMap cascade splits ────────────────────────────────────────────────
+// ─── ShadowMap 级联分层 ────────────────────────────────────────────────
 
 #[test]
 fn shadow_map_cascade_splits_linear() {
@@ -142,11 +142,11 @@ fn shadow_map_cascade_splits_linear() {
     let shadow_map = ShadowMap::new(config, DVec3::new(0.0, 0.0, -1.0));
     let near = 1.0;
     let far = 100.0;
-    let lambda = 0.0; // Pure linear
+    let lambda = 0.0; // 纯线性
     let splits = shadow_map.compute_cascade_splits(near, far, lambda);
-    // Should produce at least 1 split
+    // 应产生至少 1 个分层
     assert!(!splits.is_empty(), "should produce at least 1 split");
-    // Splits should be monotonically increasing
+    // 分层值应单调递增
     for i in 1..splits.len() {
         assert!(
             splits[i] > splits[i - 1],
@@ -163,11 +163,11 @@ fn shadow_map_cascade_splits_logarithmic() {
     let shadow_map = ShadowMap::new(config, DVec3::new(0.0, 0.0, -1.0));
     let near = 1.0;
     let far = 100.0;
-    let lambda = 1.0; // Pure logarithmic
+    let lambda = 1.0; // 纯对数
     let splits = shadow_map.compute_cascade_splits(near, far, lambda);
-    // Should produce at least 1 split
+    // 应产生至少 1 个分层
     assert!(!splits.is_empty(), "should produce at least 1 split");
-    // Logarithmic splits should be closer together near the camera
+    // 对数分层在靠近相机处应更密集
     if splits.len() >= 3 {
         let gap1 = splits[1] - splits[0];
         let gap2 = splits[2] - splits[1];
@@ -186,9 +186,9 @@ fn shadow_map_cascade_splits_practical() {
     let shadow_map = ShadowMap::new(config, DVec3::new(0.0, 0.0, -1.0));
     let near = 0.1;
     let far = 1000.0;
-    let lambda = 0.5; // Practical blend
+    let lambda = 0.5; // 实际混合
     let splits = shadow_map.compute_cascade_splits(near, far, lambda);
-    // All splits should be within [near, far]
+    // 所有分层应位于 [near, far] 内
     for &split in &splits {
         assert!(
             split >= near && split <= far,
@@ -200,7 +200,7 @@ fn shadow_map_cascade_splits_practical() {
     }
 }
 
-// ─── ShadowMap bias types ────────────────────────────────────────────────────
+// ─── ShadowMap bias 类型 ────────────────────────────────────────────────────
 
 #[test]
 fn shadow_map_bias_for_type_terrain() {
@@ -218,14 +218,14 @@ fn shadow_map_bias_for_type_primitive() {
     assert!(bias.depth_bias > 0.0);
 }
 
-// ─── ShadowMap update ────────────────────────────────────────────────────────
+// ─── ShadowMap 更新 ────────────────────────────────────────────────────────
 
 #[test]
 fn shadow_map_update_fade() {
     let config = ShadowMapConfig::default();
     let mut shadow_map = ShadowMap::new(config, DVec3::new(0.0, 0.0, -1.0));
     shadow_map.update_fade(std::f64::consts::FRAC_PI_4);
-    // Should update internal fade state
+    // 应更新内部淡出状态
     let fade = shadow_map.compute_fade_factor(std::f64::consts::FRAC_PI_4);
     assert!(fade >= 0.0 && fade <= 1.0);
 }

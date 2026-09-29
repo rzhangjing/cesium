@@ -1,18 +1,18 @@
-//! cesium-datasource: Entity and DataSource domain models
+//! cesium-datasource：Entity 与 DataSource 领域模型
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `DataSources/Entity.js`
 //! - `DataSources/EntityCollection.js`
 //! - `DataSources/GeoJsonDataSource.js`
 //! - `DataSources/CzmlDataSource.js`
 //! - `DataSources/Property.js`
 //!
-//! # Features
-//! - Property system (constant, sampled, time-dynamic)
-//! - Entity with graphics (point, polyline, polygon, billboard, label, model, ellipse)
-//! - EntityCollection management
-//! - GeoJSON parsing (RFC 7946)
-//! - CZML parsing (basic)
+//! # 特性
+//! - 属性系统（常量、采样、时间动态）
+//! - 带图形元素的 Entity（point、polyline、polygon、billboard、label、model、ellipse）
+//! - EntityCollection 管理
+//! - GeoJSON 解析（RFC 7946）
+//! - CZML 解析（基础）
 
 pub mod property;
 pub mod property_system;

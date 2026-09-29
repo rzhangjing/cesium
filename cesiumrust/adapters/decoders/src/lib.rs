@@ -1,11 +1,11 @@
-//! cesium-decoders: Binary format decoders for terrain and 3D tiles
+//! cesium-decoders：面向地形与 3D 瓦片的二进制格式解码器
 //!
-//! Maps to CesiumJS:
-//! - Quantized-mesh terrain format parsing
-//! - Image decoding (PNG/JPEG/WebP)
-//! - Gzip decompression
-//! - Draco mesh decoding (future)
-//! - KTX2 texture decoding (future)
+//! CesiumJS 映射：
+//! - Quantized-mesh 地形格式解析
+//! - 图像解码（PNG/JPEG/WebP）
+//! - Gzip 解压缩
+//! - Draco 网格解码（未来）
+//! - KTX2 纹理解码（未来）
 
 pub mod quantized_mesh_decoder;
 pub mod image_decoder;

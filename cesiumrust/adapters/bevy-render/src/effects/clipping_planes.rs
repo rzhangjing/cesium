@@ -1,45 +1,43 @@
-//! M6.2: ClippingPlanes `ViewNode` + uniform injection infrastructure.
+//! M6.2：ClippingPlanes `ViewNode` + uniform 注入基础设施。
 //!
-//! Ports the upstream CesiumJS clipping-plane capability
-//! (`Scene/ClippingPlaneCollection.js` + `Shaders/Model/ModelClippingPlanesStageFS.glsl`)
-//! onto the M5-E render-graph infrastructure (`graph.rs`). Mirrors the
-//! [`super::fxaa`] / [`super::ao`] pattern: this module registers the node /
-//! resources / systems **but never creates graph edges** — the single linear
-//! `Core3d` chain in `graph.rs::register_render_graph` owns them, so no diamond
-//! can form. Wiring the clipping node into that chain is integration task #81.
+//! 将上游 CesiumJS 的裁削平面能力
+//!（`Scene/ClippingPlaneCollection.js` + `Shaders/Model/ModelClippingPlanesStageFS.glsl`）
+//! 移植到 M5-E 渲染图基础设施（`graph.rs`）。对应
+//! [`super::fxaa`] / [`super::ao`] 模式：本模块注册节点 /
+//! 资源 / 系统，**但从不创建图边** ——
+//! `graph.rs::register_render_graph` 中的单一线性 `Core3d` 链
+//! 拥有这些边，所以不会形成菱形。将裁削节点接入该链是集成任务 #81。
 //!
-//! # Two clipping paths (see `shaders/clipping.wgsl`)
-//! 1. **Forward pass (faithful)** — `apply_clipping_planes(world_pos)` is
-//!    `#import`-ed into the globe / tileset fragment shaders so clipped fragments
-//!    `discard` during geometry rasterisation, exactly where upstream
-//!    `modelClippingPlanesStage(inout vec4 color)` runs. That wiring touches the
-//!    material shaders (out of M6.2 file scope) and is deferred to #81.
-//! 2. **Screen-space node (this file)** — [`ClippingPlanesNode`] reconstructs the
-//!    world position from the depth prepass (the WGSL analogue of upstream
-//!    `czm_windowToEyeCoordinates(gl_FragCoord)`) and applies the same decision,
-//!    overwriting clipped fragments with a background colour + edge highlight.
-//!    DEVIATION: a screen-space node cannot `discard` already-rasterised geometry,
-//!    and the planes are pre-transformed on the CPU instead of per-fragment
-//!    `czm_transformPlane` — see `docs/deviations.md#dev-023`.
+//! # 两条裁削路径（参见 `shaders/clipping.wgsl`）
+//! 1. **正向 pass（忠实）** —— `apply_clipping_planes(world_pos)` 被
+//!    `#import` 到 globe / tileset 片元 shader 中，使被裁削的片元在几何栅格化期间
+//!    `discard`，恰好在上游
+//!    `modelClippingPlanesStage(inout vec4 color)` 运行的位置。该接线触及
+//!    材质 shader（超出 M6.2 文件范围），暂缓到 #81。
+//! 2. **屏幕空间节点（本文件）** —— [`ClippingPlanesNode`] 从深度前置 pass
+//!    重建世界坐标（上游 `czm_windowToEyeCoordinates(gl_FragCoord)` 的 WGSL 类比），
+//!    并应用相同的判定，用背景色 + 边缘高亮覆盖被裁削的片元。
+//!    DEVIATION：屏幕空间节点无法 `discard` 已栅格化的几何，
+//!    且平面在 CPU 上预先变换，而非逐片元的
+//!    `czm_transformPlane`——参见 `docs/deviations.md#dev-023`。
 //!
-//! # Gate (single source of truth)
-//! The gate name is owned by the app-layer registry
-//! `application/cesium-app/src/feature_flags.rs` (`ENV_ENABLE_CLIPPING` /
-//! `clipping_enabled()`); [`ENV_ENABLE_CLIPPING`] below is a byte-identical mirror
-//! forced by the crate dependency direction (`cesium-app` → `cesium-bevy-render`).
-//! Default OFF ⇒ `effects::graph::M6WaveARenderGraphPlugin` (task #81) returns
-//! early from both halves ⇒ [`register_clipping_planes_node`] is never called and
-//! no `Core3d` edges exist ⇒ the node never runs ⇒ dynamic_globe v0 baselines stay
-//! pixel-neutral (PSNR = ∞).
+//! # 门控（单一真相源）
+//! 门控名由应用层注册表
+//! `application/cesium-app/src/feature_flags.rs`（`ENV_ENABLE_CLIPPING` /
+//! `clipping_enabled()`）拥有；下方的 [`ENV_ENABLE_CLIPPING`] 是一个字节一致的镜像，
+//! 由 crate 依赖方向（`cesium-app` → `cesium-bevy-render`）强制。默认
+//! OFF ⇒ `effects::graph::M6WaveARenderGraphPlugin`（task #81）从两半都提前
+//! return ⇒ [`register_clipping_planes_node`] 从不被调用且没有 `Core3d`
+//! 边 ⇒ 节点从不运行 ⇒ dynamic_globe v0 基线保持像素中性（PSNR = ∞）。
 //!
-//! # Red lines honoured
-//! - domain stays metric **f64**; the metric → render-unit conversion
-//!   (`distance / METERS_PER_RENDER_UNIT`, `METERS_PER_RENDER_UNIT = 6378137`)
-//!   happens ONLY at the [`ClippingPlanesUniform::from_domain`] GPU boundary.
-//! - `clipping.wgsl` keeps `dot(n,p)` and `+ w` as two roundings (no FMA fusion).
-//! - glam fast-math disabled repo-wide (nothing here relies on non-IEEE floats).
+//! # 已遵守的红线
+//! - 领域保持度量 **f64**；度量→渲染单位的转换
+//!   （`distance / METERS_PER_RENDER_UNIT`，`METERS_PER_RENDER_UNIT = 6378137`）
+//!   仅在 [`ClippingPlanesUniform::from_domain`] GPU 边界发生。
+//! - `clipping.wgsl` 将 `dot(n,p)` 和 `+ w` 保持为两次舍入（无 FMA 融合）。
+//! - glam fast-math 全仓禁用（此处不依赖非 IEEE 浮点）。
 //!
-//! # Blueprint
+//! # 蓝图
 //! - `packages/engine/Source/Scene/ClippingPlane.js` (Hessian normal form)
 //! - `packages/engine/Source/Scene/ClippingPlaneCollection.js` L146-152 (union /
 //!   intersection), L251-257 (`clippingPlanesState`), L404-602 (GPU packing)
@@ -78,76 +76,75 @@ use super::graph::gate_from_env_value;
 
 // ─── Shader handle ───────────────────────────────────────────────────────────
 
-/// Unique handle for the embedded `clipping.wgsl` shader (distinct from the
-/// pass-through / FXAA / AO handles — see the collision test below).
+/// 内嵌 `clipping.wgsl` shader 的唯一 handle（与 pass-through / FXAA / AO
+/// handle 区分——参见下方的碰撞测试）。
 pub const CLIPPING_SHADER_HANDLE: Handle<Shader> =
     Handle::weak_from_u128(0xCE51_C1C1_0006_0002);
 
-/// Maximum number of clipping planes uploaded to the GPU uniform.
+/// 上传到 GPU uniform 的裁削平面最大数量。
 ///
-/// Upstream packs an arbitrary count into a texture; this port caps at 8 (a clip
-/// box needs 6). Must equal the `array<vec4<f32>, 8>` size in `clipping.wgsl`
-/// (asserted by `wgsl_max_planes_matches_rust_const`).
+/// 上游将任意数量打包进一个纹理；本移植上限为 8（一个裁削盒需要 6）。
+/// 必须等于 `clipping.wgsl` 中的 `array<vec4<f32>, 8>` 大小
+///（由 `wgsl_max_planes_matches_rust_const` 断言）。
 pub const MAX_CLIPPING_PLANES: usize = 8;
 
-// ─── Gate (mirror of the app-layer registry — see below) ─────────────────────
+// ─── 门控（应用层注册表的镜像——参见下方）
 
-/// Env var gating the M6.2 clipping node.
+/// 门控 M6.2 裁削节点的环境变量。
 ///
-/// **Single source of truth (task #81)**: the owner of this name is the app-layer
-/// registry `application/cesium-app/src/feature_flags.rs` (`ENV_ENABLE_CLIPPING`
-/// and the `clipping_enabled()` accessor, listed in `RESERVED_FLAGS`, default OFF).
-/// This const is a *mirror* that exists only because `cesium-app` depends on
-/// `cesium-bevy-render` (never the reverse), so this crate cannot import the
-/// registry. It is `pub` so
-/// `feature_flags::adapter_gate_mirrors_are_byte_identical_to_the_registry` can
-/// assert byte-equality across the crate boundary; the registration itself is
-/// driven by `effects::graph::M6WaveARenderGraphPlugin`, which reads
-/// [`clipping_gate_enabled`] once per plugin phase.
+/// **单一真相源（task #81）**：该名的拥有者是应用层
+/// 注册表 `application/cesium-app/src/feature_flags.rs`（`ENV_ENABLE_CLIPPING`
+/// 和 `clipping_enabled()` 访问器，列在 `RESERVED_FLAGS`，默认 OFF）。
+/// 本 const 是一个*镜像*，仅因 `cesium-app` 依赖
+/// `cesium-bevy-render`（绝不反向）而存在，所以本 crate 无法导入该
+/// 注册表。它为 `pub`，以便
+/// `feature_flags::adapter_gate_mirrors_are_byte_identical_to_the_registry` 能
+/// 跨 crate 边界断言字节相等；注册本身由
+/// `effects::graph::M6WaveARenderGraphPlugin` 驱动，它在每个插件阶段读取一次
+/// [`clipping_gate_enabled`]。
 pub const ENV_ENABLE_CLIPPING: &str = "CESIUM_ENABLE_CLIPPING";
 
-/// Returns `true` when the clipping gate is enabled. Reuses the single
-/// authoritative truthy parser (`gate_from_env_value`, the crate-wide
-/// `{1, true, yes, on}` set) so it agrees with every other cesium gate.
+/// 当裁削门控启用时返回 `true`。复用单一权威的
+/// truthy 解析器（`gate_from_env_value`，全 crate 的 `{1, true, yes, on}` 集），
+/// 所以它与其他所有 cesium 门控一致。
 #[inline]
 pub fn clipping_gate_enabled() -> bool {
     gate_from_env_value(std::env::var(ENV_ENABLE_CLIPPING).ok())
 }
 
-// ─── Render graph label (local — #81 wires it into the Core3d chain) ─────────
+// ─── 渲染图 label（本地—#81 将其接入 Core3d 链）
 
-/// Node label for the cesium clipping node in `Core3d`.
+/// cesium 裁削节点在 `Core3d` 中的节点 label。
 ///
-/// Defined locally so this module does not have to edit the shared
-/// `CesiumPostProcessLabel` enum in `graph.rs`. Integration task #81 creates the
-/// edges: recommended position is immediately after `Node3d::EndMainPass` (the
-/// node operates on the HDR scene right after geometry, before AO / tonemapping):
-/// `EndMainPass → CesiumClippingLabel → PassThrough → AmbientOcclusion → …`.
+/// 本地定义，以便本模块不必编辑 `graph.rs` 中共享的
+/// `CesiumPostProcessLabel` 枚举。集成任务 #81 创建边：推荐位置是紧接
+/// `Node3d::EndMainPass` 之后（该节点在几何之后、AO / tonemapping 之前
+/// 直接作用于 HDR 场景）：
+/// `EndMainPass → CesiumClippingLabel → PassThrough → AmbientOcclusion → …`。
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
 pub struct CesiumClippingLabel;
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// ─── 组件 ───────────────────────────────────────────────────────────────
 
-/// Component carrying an active [`ClippingPlaneCollection`] for a view.
+/// 为一个视图携带活跃 [`ClippingPlaneCollection`] 的组件。
 ///
-/// Placed on the camera (like [`super::fxaa::CesiumFxaa`]) to drive the
-/// screen-space node; #81 may also attach collections to globe / tileset entities
-/// for the faithful forward-injection path. Extracted to the render world via
-/// `ExtractComponentPlugin`. The node early-returns when `enabled == false` or the
-/// collection is empty / disabled (zero GPU cost, pixel-neutral).
+/// 放在相机上（像 [`super::fxaa::CesiumFxaa`]）以驱动屏幕空间节点；#81 也可
+/// 将集合附加到 globe / tileset 实体上以实现忠实的正向注入路径。经
+/// `ExtractComponentPlugin` 提取到 render world。当 `enabled == false` 或集合
+/// 为空 / 禁用时节点提前 return（零 GPU 开销，像素中性）。
 ///
-/// `Default` is derived: `enabled = false` (conservative, mirrors
-/// `CesiumPassThrough`) and an empty `ClippingPlaneCollection`.
+/// `Default` 为派生：`enabled = false`（保守，对应 `CesiumPassThrough`）
+/// 与一个空的 `ClippingPlaneCollection`。
 #[derive(Component, Clone, Debug, Default, ExtractComponent)]
 pub struct CesiumClippingPlanes {
-    /// Master enable for the clipping node on this view.
+    /// 该视图上裁削节点的主开关。
     pub enabled: bool,
-    /// The domain clipping-plane collection (metric f64).
+    /// 领域裁削平面集合（度量 f64）。
     pub collection: ClippingPlaneCollection,
 }
 
 impl CesiumClippingPlanes {
-    /// Convenience constructor for an enabled view clipping collection.
+    /// 一个便捷构造函数，创建一个启用的视图裁削集合。
     pub fn new(collection: ClippingPlaneCollection) -> Self {
         Self {
             enabled: true,
@@ -155,38 +152,37 @@ impl CesiumClippingPlanes {
         }
     }
 
-    /// Whether clipping should actually run (all three gates agree).
+    /// 裁削是否应当真正运行（三个门控都一致）。
     #[inline]
     pub fn is_active(&self) -> bool {
         self.enabled && self.collection.enabled && !self.collection.is_empty()
     }
 }
 
-/// Per-view cached pipeline ID for the clipping node.
+/// 裁削节点的逐视图缓存 pipeline ID。
 #[derive(Component)]
 pub struct CameraClippingPipeline {
     pub pipeline_id: CachedRenderPipelineId,
 }
 
-/// Per-view GPU uniform buffer holding the packed clipping planes.
+/// 持有打包后裁削平面的逐视图 GPU uniform 缓冲。
 #[derive(Component)]
 pub struct ViewClippingUniform {
     pub buffer: UniformBuffer<ClippingPlanesUniform>,
 }
 
-// ─── GPU uniform (f32 boundary) ──────────────────────────────────────────────
+// ─── GPU uniform（f32 边界）
 
-/// GPU-facing clipping uniform. **f32 only** — the domain collection stays metric
-/// f64; [`ClippingPlanesUniform::from_domain`] performs the single metric →
-/// render-unit conversion at this boundary (red line).
+/// GPU 面向的裁削 uniform。**仅 f32** —— 领域集合保持度量
+/// f64；[`ClippingPlanesUniform::from_domain`] 在此边界执行唯一的度量→
+/// 渲染单位转换（红线）。
 ///
-/// Layout must match `struct ClippingPlanes` in `shaders/clipping.wgsl`.
+/// 布局必须与 `shaders/clipping.wgsl` 中的 `struct ClippingPlanes` 匹配。
 ///
-/// The struct lives in a private `clipping_uniform` module carrying
-/// `#![allow(dead_code)]` (the `sky_dome.rs` convention): the encase `ShaderType`
-/// derive emits a module-level helper the dead-code pass flags even though every
-/// field is uploaded via `write_buffer`. Field values are asserted in the
-/// `from_domain_*` unit tests.
+/// 该 struct 住在带 `#![allow(dead_code)]` 的私有 `clipping_uniform`
+/// 模块中（`sky_dome.rs` 约定）：encase 的 `ShaderType` derive 会生成一个
+/// 模块级 helper，死代码分析会标记它，尽管每个字段都通过 `write_buffer`
+/// 上传。字段值在 `from_domain_*` 单元测试中被断言。
 pub use clipping_uniform::ClippingPlanesUniform;
 
 mod clipping_uniform {
@@ -195,17 +191,17 @@ mod clipping_uniform {
     use bevy::prelude::Vec4;
     use bevy::render::render_resource::ShaderType;
 
-    /// GPU clipping uniform; layout matches `struct ClippingPlanes` in
-    /// `shaders/clipping.wgsl` (encase std140).
+    /// GPU 裁削 uniform；布局匹配 `shaders/clipping.wgsl` 中的
+    /// `struct ClippingPlanes`（encase std140）。
     #[derive(ShaderType, Clone, Debug)]
     pub struct ClippingPlanesUniform {
-        /// `xyz` = unit normal (world space), `w` = signed distance in RENDER UNITS.
+        /// `xyz` = 单位法线（世界空间），`w` = 以 RENDER UNITS 计的有符号距离。
         pub planes: [Vec4; MAX_CLIPPING_PLANES],
-        /// `rgb` = edge highlight colour, `a` = edge width in PIXELS.
+        /// `rgb` = 边缘高亮颜色，`a` = 以 PIXELS 计的边缘宽度。
         pub edge_color: Vec4,
-        /// Written for clipped fragments on the node path.
+        /// 在节点路径上为被裁削的片元写入。
         pub background_color: Vec4,
-        /// `x` = plane count, `y` = union flag, `z` = enabled, `w` = pad.
+        /// `x` = 平面数，`y` = union 标志，`z` = 启用，`w` = 填充。
         pub params: Vec4,
     }
 }
@@ -215,12 +211,12 @@ impl Default for ClippingPlanesUniform {
         Self {
             planes: [Vec4::ZERO; MAX_CLIPPING_PLANES],
             edge_color: Vec4::new(1.0, 1.0, 1.0, 0.0),
-            // params.z = 0 ⇒ the shader passes the source colour through untouched
-            // (pixel-neutral). FIX-CLIP-BGCOLOR: when the node IS active it writes
-            // background_color over clipped pixels with `blend: None`, and FXAA
-            // carries alpha straight through to present, so a default alpha of 0
-            // would read downstream as a fully-transparent hole. Default to an
-            // opaque black "void" reveal instead; users override via the collection.
+            // params.z = 0 ⇒ shader 原样透传源颜色
+            //（像素中性）。FIX-CLIP-BGCOLOR：当节点确实激活时，它用
+            // `blend: None` 将 background_color 覆在被裁削的像素上，而 FXAA
+            // 将 alpha 直接透传到呈现，所以默认 alpha 为 0
+            // 会在下游读成一个完全透明的空洞。默认改为
+            // 不透明的黑色“空虚”揭露；用户通过集合覆盖。
             background_color: Vec4::new(0.0, 0.0, 0.0, 1.0),
             params: Vec4::ZERO,
         }
@@ -228,17 +224,16 @@ impl Default for ClippingPlanesUniform {
 }
 
 impl ClippingPlanesUniform {
-    /// Packs a domain [`ClippingPlaneCollection`] into the GPU uniform.
+    /// 将一个领域 [`ClippingPlaneCollection`] 打包进 GPU uniform。
     ///
-    /// - Planes are baked into world space on the CPU via
-    ///   [`ClippingPlaneCollection::world_planes`] (the CPU equivalent of upstream
-    ///   per-fragment `czm_transformPlane`), then each plane's **metric distance is
-    ///   divided by [`METERS_PER_RENDER_UNIT`]** to enter render-unit world space —
-    ///   the same space `world_pos` reconstructed from depth lives in. Normals are
-    ///   unit directions (scale-free), so they are cast straight to f32.
-    /// - Count is clamped to [`MAX_CLIPPING_PLANES`].
-    /// - `params.z` (enabled) is `0.0` when the collection is disabled or empty,
-    ///   which makes the node a pure pass-through (pixel-neutral).
+    /// - 平面在 CPU 上经 [`ClippingPlaneCollection::world_planes`] 烘焙进世界
+    ///   空间（上游逐片元 `czm_transformPlane` 的 CPU 等价物），然后每个平面的
+    ///   **度量距离除以 [`METERS_PER_RENDER_UNIT`]** 以进入渲染单位世界空间——
+    ///   即从深度重建的 `world_pos` 所住的空间。法线是
+    ///   单位方向（无尺度），所以直接转为 f32。
+    /// - 数量被限幅到 [`MAX_CLIPPING_PLANES`]。
+    /// - 当集合禁用或为空时 `params.z`（enabled）为 `0.0`，
+    ///   这使得节点为纯透传（像素中性）。
     pub fn from_domain(collection: &ClippingPlaneCollection) -> Self {
         let mut planes = [Vec4::ZERO; MAX_CLIPPING_PLANES];
 
@@ -249,7 +244,7 @@ impl ClippingPlanesUniform {
                 plane.normal.x as f32,
                 plane.normal.y as f32,
                 plane.normal.z as f32,
-                // metric → render unit (red line: divide by 6378137).
+                // 度量→渲染单位（红线：除以 6378137）。
                 (plane.distance / METERS_PER_RENDER_UNIT) as f32,
             );
         }
@@ -258,7 +253,7 @@ impl ClippingPlanesUniform {
             collection.edge_color[0] as f32,
             collection.edge_color[1] as f32,
             collection.edge_color[2] as f32,
-            collection.edge_width as f32, // stays in PIXELS (shader uses fwidth)
+            collection.edge_width as f32, // 保持在 PIXELS（shader 用 fwidth）
         );
 
         let active = collection.enabled && !collection.is_empty();
@@ -272,10 +267,10 @@ impl ClippingPlanesUniform {
         Self {
             planes,
             edge_color,
-            // FIX-CLIP-BGCOLOR: opaque alpha so the node-path background is not a
-            // transparent hole once FXAA carries alpha through to present. The
-            // domain collection exposes no background colour yet; when it does,
-            // thread it here (deferred #51 tracks the faithful per-geometry discard).
+            // FIX-CLIP-BGCOLOR：不透明 alpha，使节点路径背景不会在 FXAA
+            // 将 alpha 透传到呈现后变成一个透明空洞。领域集合尚未
+            // 对外暴露背景色；当它暴露时，将其贯穿到此（deferred #51 跟踪
+            // 忠实的逐几何丢弃）。
             background_color: Vec4::new(0.0, 0.0, 0.0, 1.0),
             params,
         }
@@ -284,15 +279,15 @@ impl ClippingPlanesUniform {
 
 // ─── Pipeline ────────────────────────────────────────────────────────────────
 
-/// Render-world resource: bind group layout + samplers for the clipping node.
+/// Render-world 资源：裁削节点的 bind group 布局 + 采样器。
 ///
-/// Group 0 bindings (must match `clipping.wgsl` + the binding-coverage test):
-/// - 0: depth prepass (`texture_depth_2d`) — world-position reconstruction
-/// - 1: colour source (`texture_2d<f32>`) — post-process input
-/// - 2: point sampler (NonFiltering, depth)
-/// - 3: linear sampler (Filtering, colour)
-/// - 4: `ViewUniform` (dynamic offset) — `view_from_clip` / `world_from_view`
-/// - 5: `ClippingPlanesUniform` — the packed planes
+/// Group 0 bindings（必须匹配 `clipping.wgsl` + binding 覆盖测试）：
+/// - 0：深度前置 pass（`texture_depth_2d`）— 世界坐标重建
+/// - 1：颜色源（`texture_2d<f32>`）— 后处理输入
+/// - 2：point 采样器（NonFiltering，深度）
+/// - 3：linear 采样器（Filtering，颜色）
+/// - 4：`ViewUniform`（动态偏移）— `view_from_clip` / `world_from_view`
+/// - 5：`ClippingPlanesUniform` — 打包后的平面
 #[derive(Resource)]
 pub struct ClippingPlanesPipeline {
     pub bind_group_layout: BindGroupLayout,
@@ -345,13 +340,11 @@ impl FromWorld for ClippingPlanesPipeline {
 
 // ─── ViewNode ────────────────────────────────────────────────────────────────
 
-/// Screen-space clipping `ViewNode`.
+/// 屏幕空间裁削 `ViewNode`。
 ///
-/// Reconstructs the world position from the depth prepass and applies the
-/// collection's union / intersection decision, overwriting clipped fragments with
-/// the configured background colour and tinting the edge band. Early-returns
-/// (pixel-neutral) when the component is inactive or the depth prepass / pipeline
-/// is unavailable.
+/// 从深度前置 pass 重建世界坐标，并应用集合的 union / intersection
+/// 判定，用配置的背景色覆盖被裁削的片元并对边缘带做着色。当组件
+/// 非活跃或深度前置 pass / pipeline 不可用时提前 return（像素中性）。
 #[derive(Default)]
 pub struct ClippingPlanesNode;
 
@@ -378,7 +371,7 @@ impl ViewNode for ClippingPlanesNode {
             return Ok(());
         }
 
-        // Clipping needs the depth prepass to reconstruct world position.
+        // 裁削需要深度前置 pass 来重建世界坐标。
         let Some(depth_view) = prepass.depth_view() else {
             return Ok(());
         };
@@ -433,19 +426,19 @@ impl ViewNode for ClippingPlanesNode {
             .begin_render_pass(&pass_descriptor);
 
         render_pass.set_pipeline(pipeline);
-        // Binding 4 (ViewUniform) is dynamic-offset; supply its offset (Ryan C2
-        // lesson: a `&[]` offset list would fail dynamic-buffer validation).
+        // Binding 4（ViewUniform）为动态偏移；提供它的偏移（Ryan C2
+        // 教训：一个 `&[]` 偏移列表会使 dynamic-buffer 校验失败）。
         render_pass.set_bind_group(0, &bind_group, &[view_uniform_offset.offset]);
-        render_pass.draw(0..3, 0..1); // fullscreen triangle
+        render_pass.draw(0..3, 0..1); // 全屏三角形
 
         Ok(())
     }
 }
 
-// ─── Render systems ──────────────────────────────────────────────────────────
+// ─── 渲染系统 ──────────────────────────────────────────────────────────
 
-/// Prepares the clipping pipeline + per-view uniform buffer for each active view.
-/// Runs in `Render`, `RenderSet::Prepare` (before the render graph executes).
+/// 为每个活跃视图准备裁削 pipeline + 逐视图 uniform 缓冲。
+/// 在 `Render`、`RenderSet::Prepare` 中运行（渲染图执行之前）。
 pub fn prepare_clipping(
     mut commands: Commands,
     pipeline_cache: Res<PipelineCache>,
@@ -486,8 +479,8 @@ pub fn prepare_clipping(
             zero_initialize_workgroup_memory: false,
         });
 
-        // Pack the domain collection (metric f64) into the GPU uniform (f32,
-        // render-unit distances) and upload it.
+        // 将领域集合（度量 f64）打包进 GPU uniform（f32，渲染单位距离）
+        // 并上传。
         let mut buffer = UniformBuffer::from(ClippingPlanesUniform::from_domain(
             &clipping.collection,
         ));
@@ -500,15 +493,13 @@ pub fn prepare_clipping(
     }
 }
 
-// ─── Main-world systems ──────────────────────────────────────────────────────
+// ─── 主 world 系统 ──────────────────────────────────────────────────────
 
-/// Ensures cameras driving an active clipping collection carry [`DepthPrepass`]
-/// (the node's world-position input). Adapter-layer enablement so the app-layer
-/// camera bundle stays untouched (same discipline as `setup_ao_prepass`).
+/// 确保驱动一个活跃裁削集合的相机携带 [`DepthPrepass`]（该节点的世界坐标输入）。
+/// 适配层启用，使应用层相机 bundle 保持不变（与 `setup_ao_prepass` 同纪律）。
 ///
-/// Only ADDS `DepthPrepass` (never removes it — AO may also need it). Registered
-/// only when the clipping gate is ON, so gate OFF ⇒ no extra geometry pass ⇒ v0
-/// baselines pixel-neutral.
+/// 仅 ADDS `DepthPrepass`（从不移除它——AO 可能也需要它）。仅当裁削门控 ON 时
+/// 才注册，所以门控 OFF ⇒ 无额外几何 pass ⇒ v0 基线像素中性。
 pub fn setup_clipping_prepass(
     mut commands: Commands,
     cameras: Query<(Entity, &CesiumClippingPlanes)>,
@@ -520,36 +511,34 @@ pub fn setup_clipping_prepass(
     }
 }
 
-// ─── Registration ────────────────────────────────────────────────────────────
+// ─── 注册 ────────────────────────────────────────────────────────────
 
-/// Register the clipping node into `RenderApp` (shader + extract + node + systems).
+/// 将裁削节点注册进 `RenderApp`（shader + extract + 节点 + 系统）。
 ///
-/// Called by `effects::graph::M6WaveARenderGraphPlugin` (task #81) when
-/// [`clipping_gate_enabled()`] is true; the `Core3d` edges are created by
-/// `effects::graph::wire_m6_edges` (this function registers the node but never
-/// wires edges, so the shared linear chain in `graph.rs` stays the single owner
-/// and no diamond can form).
+/// 当 [`clipping_gate_enabled()`] 为 true 时由 `effects::graph::M6WaveARenderGraphPlugin`
+///（task #81）调用；`Core3d` 边由 `effects::graph::wire_m6_edges` 创建
+///（本函数注册节点但从不接线，所以 `graph.rs` 中的共享线性链仍是唯一拥有者，
+/// 不会形成菱形）。
 ///
-/// Headless-safe: degrades to a no-op without a `RenderApp` (MinimalPlugins).
+/// 无头安好：没有 `RenderApp`（MinimalPlugins）时降级为 no-op。
 #[deprecated = "DEV-029 / FIX-REG-FACADE: call `register_clipping_planes_node_main_world` from `Plugin::build` and `register_clipping_planes_node_render_world` from `Plugin::finish`; this facade runs the finish half against a possibly device-less render world."]
 pub fn register_clipping_planes_node(app: &mut App) {
     register_clipping_planes_node_main_world(app);
-    // Headless `MinimalPlugins` has no `RenderApp` — degrade gracefully.
+    // 无头的 `MinimalPlugins` 没有 `RenderApp` —— 优雅降级。
     if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
         register_clipping_planes_node_render_world(render_app);
     }
 }
 
-/// `Plugin::build`-time half of [`register_clipping_planes_node`]: everything
-/// that lives in the **main** world (WGSL shader asset +
-/// `ExtractComponentPlugin` + the `setup_clipping_prepass` system).
+/// [`register_clipping_planes_node`] 的 `Plugin::build` 时半边：所有住在**主** world
+/// 的东西（WGSL shader 资源 + `ExtractComponentPlugin` + `setup_clipping_prepass` 系统）。
 ///
-/// Split out by task #81 — see `docs/deviations.md#dev-029`. The pipeline's
-/// `FromWorld` reads `RenderDevice`, which Bevy only inserts into the render
-/// world in `RenderPlugin::finish`, so the render-world half below must run from
-/// a plugin's `finish`, never from its `build`.
+/// 由 task #81 拆分——参见 `docs/deviations.md#dev-029`。pipeline 的
+/// `FromWorld` 读取 `RenderDevice`，而 Bevy 仅在 `RenderPlugin::finish` 中把它插入
+/// render world，所以下方的 render-world 半边必须从插件的 `finish` 运行，
+/// 绝不从其 `build` 运行。
 pub fn register_clipping_planes_node_main_world(app: &mut App) {
-    // Register the clipping WGSL shader (headless-safe via shader_registry).
+    // 注册裁削 WGSL shader（经 shader_registry 无头安好）。
     crate::shader_registry::try_load_internal_shader(
         app,
         CLIPPING_SHADER_HANDLE,
@@ -557,19 +546,19 @@ pub fn register_clipping_planes_node_main_world(app: &mut App) {
         "shaders/clipping.wgsl",
     );
 
-    // ExtractComponentPlugin: main → render world each frame (ExtractSchedule).
+    // ExtractComponentPlugin：每帧 主 → render world（ExtractSchedule）。
     app.add_plugins(ExtractComponentPlugin::<CesiumClippingPlanes>::default());
 
-    // Main-world: attach DepthPrepass to cameras driving an active collection.
+    // 主 world：为驱动活跃集合的相机附加 DepthPrepass。
     app.add_systems(Update, setup_clipping_prepass);
 }
 
-/// `Plugin::finish`-time half of [`register_clipping_planes_node`]: the
-/// render-world pipeline resource + the `Core3d` node.
+/// [`register_clipping_planes_node`] 的 `Plugin::finish` 时半边：render-world pipeline
+/// 资源 + `Core3d` 节点。
 pub fn register_clipping_planes_node_render_world(render_app: &mut bevy::app::SubApp) {
-    // FIX-REG-FACADE (DEV-029): degrade to a no-op when `RenderDevice` is absent
-    // (finish half reached from `build`, or a bare render world). See
-    // `crate::effects::render_world_missing_device`.
+    // FIX-REG-FACADE (DEV-029)：当 `RenderDevice` 缺失时降级为 no-op
+    //（finish 半边从 `build` 到达，或一个裸 render world）。参见
+    // `crate::effects::render_world_missing_device`。
     if crate::effects::render_world_missing_device(render_app) {
         return;
     }
@@ -581,11 +570,11 @@ pub fn register_clipping_planes_node_render_world(render_app: &mut bevy::app::Su
             Core3d,
             CesiumClippingLabel,
         );
-    // NOTE: edges are created by `effects::graph::wire_m6_edges` (task #81), the
-    // single owner of the shared `Core3d` chain.
+    // 注意：边由 `effects::graph::wire_m6_edges`（task #81）创建，它是共享
+    // `Core3d` 链的唯一拥有者。
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────────────
+// ─── 测试 ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -602,11 +591,11 @@ mod tests {
 
     #[test]
     fn clipping_gate_const_is_local_and_stable() {
-        // The gate env var is defined LOCALLY (isolation discipline) and must not
-        // collide with the post-process gates. Pure assertion (no env mutation).
+        // 门控 env 变量定义在本地（隔离纪律），且绝不可与后处理门控
+        // 碰撞。纯断言（无 env 变更）。
         assert_eq!(ENV_ENABLE_CLIPPING, "CESIUM_ENABLE_CLIPPING");
         assert_ne!(ENV_ENABLE_CLIPPING, "CESIUM_ENABLE_POSTPROCESS");
-        // Reuses the authoritative truthy parser.
+        // 复用权威的 truthy 解析器。
         assert!(!gate_from_env_value(None));
         assert!(gate_from_env_value(Some("1".into())));
     }
@@ -623,26 +612,26 @@ mod tests {
 
     #[test]
     fn clipping_headless_graceful() {
-        // No RenderApp (headless) → register must not panic.
+        // 无 RenderApp（无头）→ register 绝不可 panic。
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         #[allow(deprecated)]
         register_clipping_planes_node(&mut app);
     }
 
-    // ─── Uniform packing: the metric → render-unit boundary (red line) ────────
+    // ─── Uniform 打包：度量→渲染单位边界（红线）────────
 
     #[test]
     fn from_domain_divides_distance_by_meters_per_render_unit() {
-        // A plane 6_378_137 m (== 1 render unit) along +Y. Its normal is unit
-        // (unchanged); its metric distance must arrive divided by 6378137.
+        // 一个沿 +Y 的平面，距 6_378_137 m（== 1 渲染单位）。它的法线是单位
+        //（不变）；它的度量距离到达时必须除以 6378137。
         let collection = ClippingPlaneCollection::with_planes(vec![ClippingPlane::new(
             DVec3::Y,
             METERS_PER_RENDER_UNIT,
         )]);
         let u = ClippingPlanesUniform::from_domain(&collection);
 
-        // identity model_matrix ⇒ world plane == local plane.
+        // 单位矩阵 model_matrix ⇒ 世界平面 == 局部平面。
         let plane = u.planes[0];
         assert!((plane.x).abs() < 1e-6, "normal.x");
         assert!((plane.y - 1.0).abs() < 1e-6, "normal.y preserved");
@@ -731,13 +720,13 @@ mod tests {
         assert!(app.world().get::<DepthPrepass>(cam2).is_none());
     }
 
-    // ─── Ryan C1/C2 defence line: headless naga parse + validate + layout ──────
+    // ─── Ryan C1/C2 防线：无头 naga 解析 + 校验 + 布局 ──────
 
-    /// naga has no preprocessor, so the two `#import`s in `clipping.wgsl` are
-    /// replaced by struct stubs declaring exactly the fields the shader reads:
-    /// `FullscreenVertexOutput.{position, uv}` and `View.{view_from_clip,
-    /// world_from_view}`. The `view` **binding** itself is declared by the real
-    /// shader text (group 0, binding 4), so it is deliberately not stubbed here.
+    /// naga 没有预处理器，所以 `clipping.wgsl` 中的两个 `#import` 被替换为
+    /// 精确声明 shader 所读取字段的 struct stub：
+    /// `FullscreenVertexOutput.{position, uv}` 和 `View.{view_from_clip,
+    /// world_from_view}`。`view` **binding** 本身由真实 shader 文本声明
+    ///（group 0, binding 4），所以此处刻意不为其提供 stub。
     const CLIPPING_WGSL_IMPORT_STUBS: &str = "\
 struct FullscreenVertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -762,9 +751,9 @@ struct View {
         source
     }
 
-    /// Headless proof the clipping shader is real: parsed + type-checked by
-    /// **naga** (the same WGSL front end `bevy_render` compiles it with on the GPU
-    /// path). Guards the M5 C1 (reserved word) class of silent-failure bug.
+    /// 裁削 shader 为真的无头证明：由 **naga** 解析 + 做类型检查
+    ///（`bevy_render` 在 GPU 路径上编译它所用的同一个 WGSL 前端）。
+    /// 防住 M5 C1（保留字）类的静默失败 bug。
     #[test]
     fn clipping_wgsl_parses_and_type_checks_under_naga() {
         let source = clipping_stubbed_wgsl();
@@ -790,10 +779,10 @@ struct View {
         );
     }
 
-    /// Ryan C1 (catches the **C2** class of bug): every binding the `fragment`
-    /// entry statically uses must be present in the Rust `ClippingPlanesPipeline`
-    /// layout (group 0: bindings 0..=5). Guards against a silent pipeline-build
-    /// failure that would no-op clipping while `pixel_diff` reported a false green.
+    /// Ryan C1（捕获 **C2** 类 bug）：`fragment` 入口静态使用的每个 binding
+    /// 都必须出现在 Rust `ClippingPlanesPipeline` 布局中（group 0: bindings 0..=5）。
+    /// 防住一种静默的 pipeline-build 失败——它会让裁削 no-op，而
+    /// `pixel_diff` 却报出假绿。
     #[test]
     fn clipping_wgsl_entry_bindings_are_covered_by_the_rust_layout() {
         let source = clipping_stubbed_wgsl();
@@ -801,7 +790,7 @@ struct View {
             panic!("clipping.wgsl does not parse:\n{}", error.emit_to_string(&source))
         });
 
-        // Mirror of `ClippingPlanesPipeline::from_world` (group 0 binding indices).
+        // `ClippingPlanesPipeline::from_world` 的镜像（group 0 binding 索引）。
         let layout: std::collections::BTreeSet<(u32, u32)> =
             [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (0, 5)].into_iter().collect();
 
@@ -840,8 +829,8 @@ struct View {
         );
     }
 
-    /// Cross-check: the WGSL uniform array size must equal the Rust
-    /// [`MAX_CLIPPING_PLANES`] const, so `from_domain`'s clamp matches the shader.
+    /// 交叉校验：WGSL uniform 数组大小必须等于 Rust 的 [`MAX_CLIPPING_PLANES`]
+    /// const，所以 `from_domain` 的限幅与 shader 一致。
     #[test]
     fn wgsl_max_planes_matches_rust_const() {
         let wgsl = include_str!("../../shaders/clipping.wgsl");
@@ -855,9 +844,9 @@ struct View {
         );
     }
 
-    /// Red-line guard: the WGSL must keep the metric → render-unit conversion note
-    /// and the NO-FMA-CONTRACTION invariant visible in-source (mirrors the
-    /// sky_atmosphere.wgsl header assertions).
+    /// 红线守卫：WGSL 必须在源码中保留度量→渲染单位的转换说明
+    /// 与 NO-FMA-CONTRACTION 不变量，使其可见（对应 sky_atmosphere.wgsl
+    /// 的头部断言）。
     #[test]
     fn wgsl_declares_red_lines() {
         let wgsl = include_str!("../../shaders/clipping.wgsl");
@@ -865,10 +854,9 @@ struct View {
         assert!(wgsl.contains("NO FMA CONTRACTION"));
     }
 
-    /// f32 mirror of the GPU `apply_clipping_planes` accumulation
-    /// (`clipping.wgsl`), kept here so the shader's signed min/max + `<= 0.0`
-    /// semantics are cross-validated against the f64 domain reference
-    /// [`ClippingPlaneCollection::clip_signed`]. FIX-CLIP-CPUREF.
+    /// GPU `apply_clipping_planes` 累加的 f32 镜像（`clipping.wgsl`），
+    /// 留在此处以便 shader 的有符号 min/max + `<= 0.0` 语义能与 f64 领域
+    /// 参考 [`ClippingPlaneCollection::clip_signed`] 交叉校验。FIX-CLIP-CPUREF。
     fn gpu_clip_mirror_f32(planes: &[(glam::Vec3, f32)], union: bool, world_pos: glam::Vec3) -> (bool, f32) {
         let mut any_outside = false;
         let mut all_outside = true;
@@ -891,7 +879,7 @@ struct View {
 
     #[test]
     fn clipping_gpu_signed_accumulation_matches_the_cpu_reference() {
-        // Deterministic LCG (no rand dependency). Values in [0, 1).
+        // 确定性 LCG（无 rand 依赖）。值在 [0, 1)。
         struct Lcg(u64);
         impl Lcg {
             fn next01(&mut self) -> f64 {
@@ -917,8 +905,8 @@ struct View {
                     let n = if n.length_squared() < 1e-12 { DVec3::Y } else { n.normalize() };
                     let dist = rng.signed(6.0);
                     let p = ClippingPlane::new(n, dist);
-                    // ClippingPlane::new re-normalizes; read the authoritative
-                    // normal/distance back so the f32 mirror sees the *same* plane.
+                    // ClippingPlane::new 会重新归一化；读回权威的
+                    // normal/distance，使 f32 镜像看到*同一个*平面。
                     domain.push((glam::Vec3::new(p.normal.x as f32, p.normal.y as f32, p.normal.z as f32), p.distance as f32));
                     planes.push(p);
                 }

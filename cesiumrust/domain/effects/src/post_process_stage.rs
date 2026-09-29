@@ -1,88 +1,88 @@
-//! Post-process stage system.
+//! 后处理阶段系统。
 //!
-//! Maps to CesiumJS:
-//! - `Scene/PostProcessStage.js` — individual post-process stage
-//! - `Scene/PostProcessStageCollection.js` — ordered collection
-//! - `Scene/PostProcessStageLibrary.js` — built-in stages (FXAA, AO, Bloom)
+//! 映射到 CesiumJS：
+//! - `Scene/PostProcessStage.js` —— 单个后处理阶段
+//! - `Scene/PostProcessStageCollection.js` —— 有序集合
+//! - `Scene/PostProcessStageLibrary.js` —— 内置阶段（FXAA、AO、Bloom）
 //!
-//! Domain layer — pure Rust, f64 precision.
+//! 领域层——纯 Rust，f64 精度。
 
 use std::collections::HashMap;
 
 // ─── PostProcessStage ───────────────────────────────────────────────────────
 
-/// How to sample the input color texture.
+/// 如何采样输入颜色 texture。
 ///
-/// Maps to CesiumJS `PostProcessStageSampleMode`.
+/// 映射到 CesiumJS `PostProcessStageSampleMode`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SampleMode {
-    /// Nearest-neighbor sampling.
+    /// 最近邻采样。
     #[default]
     Nearest,
-    /// Linear interpolation sampling.
+    /// 线性插值采样。
     Linear,
 }
 
-/// Pixel format for post-process output.
+/// 后处理输出的像素格式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PixelFormat {
-    /// RGBA 8-bit.
+    /// RGBA 8 位。
     #[default]
     Rgba8,
-    /// RGBA 16-bit float.
+    /// RGBA 16 位浮点。
     Rgba16F,
-    /// RGBA 32-bit float.
+    /// RGBA 32 位浮点。
     Rgba32F,
 }
 
-/// A uniform value for a post-process stage.
+/// 后处理阶段的一个 uniform 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum UniformValue {
-    /// Float scalar.
+    /// 浮点标量。
     Float(f64),
-    /// 2D vector.
+    /// 2D 向量。
     Vec2([f64; 2]),
-    /// 3D vector.
+    /// 3D 向量。
     Vec3([f64; 3]),
-    /// 4D vector.
+    /// 4D 向量。
     Vec4([f64; 4]),
-    /// Integer.
+    /// 整数。
     Int(i32),
-    /// Boolean.
+    /// 布尔。
     Bool(bool),
-    /// Texture reference (URI or name).
+    /// texture 引用（URI 或名称）。
     Texture(String),
 }
 
-/// A single post-process stage.
+/// 单个后处理阶段。
 ///
-/// Maps to CesiumJS `PostProcessStage`.
+/// 映射到 CesiumJS `PostProcessStage`。
 #[derive(Debug, Clone)]
 pub struct PostProcessStage {
-    /// Unique name of this stage.
+    /// 本阶段的唯一名称。
     pub name: String,
-    /// Whether this stage is enabled.
+    /// 本阶段是否启用。
     pub enabled: bool,
-    /// The fragment shader source (GLSL/WGSL).
+    /// fragment shader 源码（GLSL/WGSL）。
     pub fragment_shader: String,
-    /// Uniform values for the shader.
+    /// shader 的 uniform 值。
     pub uniforms: HashMap<String, UniformValue>,
-    /// Texture scale (0.0, 1.0] — scales the output texture dimensions.
+    /// texture 缩放 (0.0, 1.0]——缩放输出 texture 的尺寸。
     pub texture_scale: f64,
-    /// Whether to force power-of-two texture dimensions.
+    /// 是否强制 texture 尺寸为 2 的幂。
     pub force_power_of_two: bool,
-    /// How to sample the input color texture.
+    /// 如何采样输入颜色 texture。
     pub sample_mode: SampleMode,
-    /// Output pixel format.
+    /// 输出像素格式。
     pub pixel_format: PixelFormat,
-    /// Clear color [R, G, B, A].
+    /// 清除颜色 [R, G, B, A]。
     pub clear_color: [f64; 4],
-    /// Whether this stage is ready (shader compiled, textures allocated).
+    /// 本阶段是否就绪（shader 已编译，texture 已分配）。
     pub ready: bool,
 }
 
 impl PostProcessStage {
-    /// Creates a new post-process stage with a fragment shader.
+    /// 创建一个带 fragment shader 的新后处理阶段。
     pub fn new(name: impl Into<String>, fragment_shader: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -98,17 +98,17 @@ impl PostProcessStage {
         }
     }
 
-    /// Sets a uniform value.
+    /// 设置一个 uniform 值。
     pub fn set_uniform(&mut self, name: impl Into<String>, value: UniformValue) {
         self.uniforms.insert(name.into(), value);
     }
 
-    /// Gets a uniform value.
+    /// 获取一个 uniform 值。
     pub fn get_uniform(&self, name: &str) -> Option<&UniformValue> {
         self.uniforms.get(name)
     }
 
-    /// Computes the output texture dimensions given viewport size.
+    /// 给定视口尺寸，计算输出 texture 的尺寸。
     pub fn output_dimensions(&self, viewport_width: u32, viewport_height: u32) -> (u32, u32) {
         let mut w = (viewport_width as f64 * self.texture_scale) as u32;
         let mut h = (viewport_height as f64 * self.texture_scale) as u32;
@@ -126,23 +126,23 @@ impl PostProcessStage {
 
 // ─── PostProcessStageComposite ──────────────────────────────────────────────
 
-/// A composite of multiple post-process stages that execute as a unit.
+/// 多个后处理阶段作为一体执行的复合体。
 ///
-/// Maps to CesiumJS `PostProcessStageComposite`.
+/// 映射到 CesiumJS `PostProcessStageComposite`。
 #[derive(Debug, Clone)]
 pub struct PostProcessStageComposite {
-    /// Unique name.
+    /// 唯一名称。
     pub name: String,
-    /// Whether the composite is enabled.
+    /// 复合体是否启用。
     pub enabled: bool,
-    /// The stages in this composite (executed in order).
+    /// 本复合体中的各阶段（按顺序执行）。
     pub stages: Vec<PostProcessStage>,
-    /// Whether to execute stages in parallel (input = same texture) or sequentially.
+    /// 是否并行执行各阶段（输入 = 同一 texture），否则顺序执行。
     pub parallel: bool,
 }
 
 impl PostProcessStageComposite {
-    /// Creates a new composite.
+    /// 创建一个新的复合体。
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -152,47 +152,47 @@ impl PostProcessStageComposite {
         }
     }
 
-    /// Adds a stage to the composite.
+    /// 向复合体添加一个阶段。
     pub fn add_stage(&mut self, stage: PostProcessStage) {
         self.stages.push(stage);
     }
 
-    /// Returns the number of stages.
+    /// 返回阶段的数量。
     pub fn len(&self) -> usize {
         self.stages.len()
     }
 
-    /// Returns whether the composite is empty.
+    /// 返回复合体是否为空。
     pub fn is_empty(&self) -> bool {
         self.stages.is_empty()
     }
 
-    /// Returns whether all stages are ready.
+    /// 返回是否所有阶段都已就绪。
     pub fn is_ready(&self) -> bool {
         self.stages.iter().all(|s| s.ready)
     }
 }
 
-// ─── Built-in Stage Factories ───────────────────────────────────────────────
+// ─── 内置阶段工厂 ───────────────────────────────────────────────
 
-/// Creates an FXAA (Fast Approximate Anti-Aliasing) stage.
+/// 创建一个 FXAA（快速近似抗锯齿）阶段。
 ///
-/// Maps to CesiumJS `PostProcessStageLibrary.createFXAAStage()`.
+/// 映射到 CesiumJS `PostProcessStageLibrary.createFXAAStage()`。
 ///
-/// # M5-E1 implementation note
-/// The runtime shader is the self-implemented WGSL at
-/// `adapters/bevy-render/shaders/fxaa.wgsl` — a translation of FXAA 3.11
-/// **quality preset 12 only** (`FXAA_QUALITY_PS=5`, `P0=1.0, P1=1.5, P2=2.0,
-/// P3=4.0, P4=12.0`), green-channel-as-luma + early-exit.
+/// # M5-E1 实现说明
+/// 运行时的 shader 是自实现的 WGSL，位于
+/// `adapters/bevy-render/shaders/fxaa.wgsl`——一个 FXAA 3.11 的翻译，
+/// **仅含 quality preset 12**（`FXAA_QUALITY_PS=5`、`P0=1.0, P1=1.5, P2=2.0,
+/// P3=4.0, P4=12.0`），绿色通道作为亮度 + 提前退出。
 ///
-/// Blueprint: `cesium-rs/crates/cesium-shaders/shaders/FXAA3_11.glsl` L102-108
-/// (preset 12 defines) + L261-650 (core algorithm); interface wrapper
-/// `packages/engine/Source/Shaders/PostProcessStages/FXAA.glsl` L1-21.
+/// 蓝图：`cesium-rs/crates/cesium-shaders/shaders/FXAA3_11.glsl` L102-108
+/// （preset 12 的 define）+ L261-650（核心算法）；接口封装
+/// `packages/engine/Source/Shaders/PostProcessStages/FXAA.glsl` L1-21。
 ///
-/// The three quality params below are **compile-time `const`** in both the
-/// CesiumJS GLSL (FXAA.glsl L5-7) and our WGSL — NOT runtime uniforms. They are
-/// recorded here as `f64` for domain-side introspection / parity assertions.
-/// See `docs/deviations.md#dev-017`.
+/// 下方的三个 quality 参数在 CesiumJS GLSL（FXAA.glsl L5-7）和我们的
+/// WGSL 中均为**编译期 `const`**——而非运行时 uniform。它们在此
+/// 以 `f64` 记录，供领域侧自省 / 半位断言使用。
+/// 参见 `docs/deviations.md#dev-017`。
 pub fn create_fxaa_stage() -> PostProcessStage {
     let mut stage = PostProcessStage::new(
         "czm_fxaa",
@@ -202,24 +202,24 @@ pub fn create_fxaa_stage() -> PostProcessStage {
          // const SUBPIX_QUALITY=0.5; EDGE_THRESHOLD=0.125; EDGE_THRESHOLD_MIN=0.0833 (FXAA.glsl L5-7)\n\
          // green-as-luma + early-exit; 5 unrolled edge-search steps; alpha preserved.",
     );
-    stage.enabled = false; // Disabled by default (enabled via CESIUM_ENABLE_POSTPROCESS gate)
+    stage.enabled = false; // 默认禁用（通过 CESIUM_ENABLE_POSTPROCESS 门控启用）
     stage.sample_mode = SampleMode::Linear;
-    // CesiumJS FXAA.glsl L5-7 quality params (compile-time constants upstream;
-    // mirrored as f64 here so the domain descriptor is introspectable/testable).
+    // CesiumJS FXAA.glsl L5-7 的 quality 参数（上游为编译期常量；
+    // 在此以 f64 镜像，以便领域侧描述子可自省/可测试）。
     stage.set_uniform("fxaaQualitySubpix", UniformValue::Float(0.5));
     stage.set_uniform("fxaaQualityEdgeThreshold", UniformValue::Float(0.125));
     stage.set_uniform("fxaaQualityEdgeThresholdMin", UniformValue::Float(0.0833));
     stage
 }
 
-/// Creates a Bloom composite stage.
+/// 创建一个 Bloom 复合阶段。
 ///
-/// Maps to CesiumJS `PostProcessStageLibrary.createBloomStage()`.
+/// 映射到 CesiumJS `PostProcessStageLibrary.createBloomStage()`。
 pub fn create_bloom_composite() -> PostProcessStageComposite {
     let mut composite = PostProcessStageComposite::new("czm_bloom");
     composite.enabled = false;
 
-    // Bright pass: extract bright pixels
+    // 亮部提取 pass：提取明亮像素
     let mut bright_pass = PostProcessStage::new(
         "czm_bloom_brightness",
         "// Brightness threshold pass",
@@ -229,7 +229,7 @@ pub fn create_bloom_composite() -> PostProcessStageComposite {
     bright_pass.set_uniform("glowOnly", UniformValue::Bool(false));
     composite.add_stage(bright_pass);
 
-    // Blur pass: Gaussian blur
+    // 模糊 pass：高斯模糊
     let mut blur_pass = PostProcessStage::new("czm_bloom_blur", "// Gaussian blur pass");
     blur_pass.set_uniform("delta", UniformValue::Float(1.0));
     blur_pass.set_uniform("sigma", UniformValue::Float(3.8));
@@ -239,35 +239,35 @@ pub fn create_bloom_composite() -> PostProcessStageComposite {
     composite
 }
 
-/// Creates an Ambient Occlusion composite stage.
+/// 创建一个环境光遮蔽（Ambient Occlusion）复合阶段。
 ///
-/// Maps to CesiumJS `PostProcessStageLibrary.createAmbientOcclusionStage()`
-/// (`PostProcessStageLibrary.js` L496) / `isAmbientOcclusionSupported` (L599).
+/// 映射到 CesiumJS `PostProcessStageLibrary.createAmbientOcclusionStage()`
+/// （`PostProcessStageLibrary.js` L496）/ `isAmbientOcclusionSupported`（L599）。
 ///
-/// # M5-E2 implementation note
-/// The runtime shader is the self-implemented WGSL at
-/// `adapters/bevy-render/shaders/ao.wgsl` — a **hemisphere 16-sample SSAO**
-/// kernel (`fragment_generate`) + a **4×4 box blur + modulate** pass
-/// (`fragment_blur_modulate`), fed by Bevy's `DepthPrepass` + `NormalPrepass`.
+/// # M5-E2 实现说明
+/// 运行时的 shader 是自实现的 WGSL，位于
+/// `adapters/bevy-render/shaders/ao.wgsl`——一个**半球 16 样本 SSAO**
+/// 核（`fragment_generate`）+ 一个 **4×4 box blur + modulate** pass
+/// （`fragment_blur_modulate`），由 Bevy 的 `DepthPrepass` + `NormalPrepass` 供数。
 ///
-/// Blueprint (semantic): `packages/engine/Source/Shaders/PostProcessStages/
-/// AmbientOcclusionGenerate.glsl` L1-144 (HBAO ray-march) +
-/// `AmbientOcclusionModulate.glsl` L1-11. Structural/API reference:
-/// `bevy_pbr-0.15.3/src/ssao/{mod.rs,ssao.wgsl}`.
+/// 蓝图（语义）：`packages/engine/Source/Shaders/PostProcessStages/
+/// AmbientOcclusionGenerate.glsl` L1-144（HBAO ray-march）+
+/// `AmbientOcclusionModulate.glsl` L1-11。结构/API 参考：
+/// `bevy_pbr-0.15.3/src/ssao/{mod.rs,ssao.wgsl}`。
 ///
-/// DEVIATION: CesiumJS AO is an HBAO ray-march (directionCount × stepCount);
-/// cesiumrust implements the hemisphere-kernel SSAO family per the M5-E2 plan.
-/// The `directionCount` / `stepCount` uniforms below are therefore retained for
-/// domain-side parity/introspection but are **informational** at runtime (the
-/// WGSL uses a fixed 16-tap hemisphere kernel). The AO parameters
-/// (intensity=3.0, sample_radius=0.5, sample_count=16, bias=0.001,
-/// length_cap=0.26) are f64 here and projected to f32 `const` in `ao.wgsl`.
-/// See `docs/deviations.md#dev-018`.
+/// 偏差：CesiumJS AO 是一个 HBAO ray-march（directionCount × stepCount）；
+/// cesiumrust 按 M5-E2 计划实现半球核 SSAO 家族。
+/// 因此下方的 `directionCount` / `stepCount` uniform 为领域侧的
+/// 半位/自省而保留，但在运行时仅为**参考信息**（
+/// WGSL 使用固定的 16-tap 半球核）。AO 参数
+/// （intensity=3.0、sample_radius=0.5、sample_count=16、bias=0.001、
+/// length_cap=0.26）在此为 f64，在 `ao.wgsl` 中投影为 f32 `const`。
+/// 参见 `docs/deviations.md#dev-018`。
 pub fn create_ambient_occlusion_composite() -> PostProcessStageComposite {
     let mut composite = PostProcessStageComposite::new("czm_ambient_occlusion");
     composite.enabled = false;
 
-    // AO generation pass (hemisphere 16-sample kernel → AO factor texture).
+    // AO 生成 pass（半球 16 样本核 → AO factor texture）。
     let mut ao_pass = PostProcessStage::new(
         "czm_ambient_occlusion_generate",
         "// SSAO hemisphere 16-sample kernel (self-implemented WGSL).\n\
@@ -284,7 +284,7 @@ pub fn create_ambient_occlusion_composite() -> PostProcessStageComposite {
     ao_pass.set_uniform("ambientOcclusionOnly", UniformValue::Bool(false));
     composite.add_stage(ao_pass);
 
-    // Blur + modulate pass (4×4 box blur of the AO factor, multiplied into colour).
+    // 模糊 + 调制 pass（对 AO factor 做 4×4 box blur，乘入颜色）。
     let blur_pass = PostProcessStage::new(
         "czm_ambient_occlusion_blur",
         "// 4x4 box blur + modulate (self-implemented WGSL).\n\
@@ -296,9 +296,9 @@ pub fn create_ambient_occlusion_composite() -> PostProcessStageComposite {
     composite
 }
 
-/// Creates an auto-exposure stage.
+/// 创建一个自动曝光阶段。
 ///
-/// Maps to CesiumJS `PostProcessStageLibrary.createAutoExposureStage()`.
+/// 映射到 CesiumJS `PostProcessStageLibrary.createAutoExposureStage()`。
 pub fn create_auto_exposure_stage() -> PostProcessStage {
     let mut stage = PostProcessStage::new("czm_auto_exposure", "// Auto exposure histogram");
     stage.enabled = false;
@@ -307,24 +307,24 @@ pub fn create_auto_exposure_stage() -> PostProcessStage {
 
 // ─── Tonemapper ─────────────────────────────────────────────────────────────
 
-/// Tonemapper selection for HDR → LDR conversion.
+/// 用于 HDR → LDR 转换的色调映射器选择。
 ///
-/// Maps to CesiumJS `Tonemapper`.
+/// 映射到 CesiumJS `Tonemapper`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tonemapper {
-    /// PBR Neutral tonemapper (CesiumJS default).
+    /// PBR Neutral 色调映射器（CesiumJS 默认）。
     #[default]
     PbrNeutral,
-    /// ACES Filmic tonemapper.
+    /// ACES Filmic 色调映射器。
     AcesFilmic,
-    /// Reinhard tonemapper.
+    /// Reinhard 色调映射器。
     Reinhard,
-    /// No tonemapping.
+    /// 不做色调映射。
     None,
 }
 
 impl Tonemapper {
-    /// Returns the shader function name for this tonemapper.
+    /// 返回本色调映射器对应的 shader 函数名。
     pub fn shader_function(&self) -> &'static str {
         match self {
             Self::PbrNeutral => "czm_pbrNeutralTonemap",
@@ -337,37 +337,37 @@ impl Tonemapper {
 
 // ─── PostProcessStageCollection ─────────────────────────────────────────────
 
-/// A collection of post-process stages executed in order.
+/// 按顺序执行的后处理阶段集合。
 ///
-/// Maps to CesiumJS `PostProcessStageCollection`.
+/// 映射到 CesiumJS `PostProcessStageCollection`。
 ///
-/// Execution order:
-/// 1. Ambient Occlusion (if enabled)
-/// 2. Bloom (if enabled)
-/// 3. User stages (in add order)
-/// 4. Tonemapping (if enabled)
-/// 5. FXAA (if enabled)
+/// 执行顺序：
+/// 1. 环境光遮蔽（若启用）
+/// 2. Bloom（若启用）
+/// 3. 用户阶段（按添加顺序）
+/// 4. 色调映射（若启用）
+/// 5. FXAA（若启用）
 #[derive(Debug, Clone)]
 pub struct PostProcessStageCollection {
-    /// Built-in FXAA stage.
+    /// 内置 FXAA 阶段。
     pub fxaa: PostProcessStage,
-    /// Built-in Ambient Occlusion composite.
+    /// 内置环境光遮蔽复合体。
     pub ambient_occlusion: PostProcessStageComposite,
-    /// Built-in Bloom composite.
+    /// 内置 Bloom 复合体。
     pub bloom: PostProcessStageComposite,
-    /// Built-in auto-exposure stage.
+    /// 内置自动曝光阶段。
     pub auto_exposure: PostProcessStage,
-    /// Whether auto-exposure is enabled.
+    /// 自动曝光是否启用。
     pub auto_exposure_enabled: bool,
-    /// Manual exposure value (when auto-exposure is disabled).
+    /// 手动曝光值（当自动曝光禁用时）。
     pub exposure: f64,
-    /// The tonemapper to use.
+    /// 使用的色调映射器。
     pub tonemapper: Tonemapper,
-    /// Whether tonemapping is enabled.
+    /// 色调映射是否启用。
     pub tonemapping_enabled: bool,
-    /// User-added stages.
+    /// 用户添加的阶段。
     stages: Vec<PostProcessStage>,
-    /// Stage names for lookup.
+    /// 供查找使用的阶段名称。
     stage_names: HashMap<String, usize>,
 }
 
@@ -378,7 +378,7 @@ impl Default for PostProcessStageCollection {
 }
 
 impl PostProcessStageCollection {
-    /// Creates a new collection with built-in stages.
+    /// 创建一个带内置阶段的新集合。
     pub fn new() -> Self {
         Self {
             fxaa: create_fxaa_stage(),
@@ -394,9 +394,9 @@ impl PostProcessStageCollection {
         }
     }
 
-    /// Adds a user stage to the collection.
+    /// 向集合添加一个用户阶段。
     ///
-    /// Returns the index of the added stage.
+    /// 返回被添加阶段的索引。
     pub fn add(&mut self, stage: PostProcessStage) -> usize {
         let index = self.stages.len();
         self.stage_names.insert(stage.name.clone(), index);
@@ -404,13 +404,13 @@ impl PostProcessStageCollection {
         index
     }
 
-    /// Removes a stage by name.
+    /// 按名称移除一个阶段。
     ///
-    /// Returns the removed stage, if found.
+    /// 若找到，返回被移除的阶段。
     pub fn remove(&mut self, name: &str) -> Option<PostProcessStage> {
         if let Some(&index) = self.stage_names.get(name) {
             self.stage_names.remove(name);
-            // Rebuild indices after removal
+            // 移除后重建索引
             let removed = self.stages.remove(index);
             self.rebuild_indices();
             Some(removed)
@@ -419,27 +419,27 @@ impl PostProcessStageCollection {
         }
     }
 
-    /// Gets a stage by name.
+    /// 按名称获取一个阶段。
     pub fn get_by_name(&self, name: &str) -> Option<&PostProcessStage> {
         self.stage_names.get(name).map(|&i| &self.stages[i])
     }
 
-    /// Gets a mutable stage by name.
+    /// 按名称获取一个可变阶段。
     pub fn get_by_name_mut(&mut self, name: &str) -> Option<&mut PostProcessStage> {
         self.stage_names.get(name).copied().map(|i| &mut self.stages[i])
     }
 
-    /// Returns the number of user stages.
+    /// 返回用户阶段的数量。
     pub fn len(&self) -> usize {
         self.stages.len()
     }
 
-    /// Returns whether there are no user stages.
+    /// 返回是否没有用户阶段。
     pub fn is_empty(&self) -> bool {
         self.stages.is_empty()
     }
 
-    /// Returns whether any stage is ready and enabled.
+    /// 返回是否有任一阶段既就绪又启用。
     pub fn is_ready(&self) -> bool {
         let built_in_ready = (self.fxaa.ready && self.fxaa.enabled)
             || (self.ambient_occlusion.enabled && self.ambient_occlusion.is_ready())
@@ -449,13 +449,13 @@ impl PostProcessStageCollection {
         built_in_ready || self.stages.iter().any(|s| s.ready && s.enabled)
     }
 
-    /// Returns the execution order of all active stages.
+    /// 返回所有活跃阶段的执行顺序。
     ///
-    /// This determines the order in which stages should be executed.
+    /// 这决定了各阶段应被执行的顺序。
     pub fn execution_order(&self) -> Vec<StageRef> {
         let mut order = Vec::new();
 
-        // 1. Ambient Occlusion (before all others)
+        // 1. 环境光遮蔽（在所有其他阶段之前）
         if self.ambient_occlusion.enabled {
             order.push(StageRef::AmbientOcclusion);
         }
@@ -465,19 +465,19 @@ impl PostProcessStageCollection {
             order.push(StageRef::Bloom);
         }
 
-        // 3. User stages
+        // 3. 用户阶段
         for (i, stage) in self.stages.iter().enumerate() {
             if stage.enabled {
                 order.push(StageRef::User(i));
             }
         }
 
-        // 4. Tonemapping
+        // 4. 色调映射
         if self.tonemapping_enabled {
             order.push(StageRef::Tonemapping);
         }
 
-        // 5. FXAA (after all others)
+        // 5. FXAA（在所有其他阶段之后）
         if self.fxaa.enabled {
             order.push(StageRef::Fxaa);
         }
@@ -493,18 +493,18 @@ impl PostProcessStageCollection {
     }
 }
 
-/// Reference to a stage in the execution pipeline.
+/// 对执行流水线中某个阶段的引用。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StageRef {
-    /// Built-in ambient occlusion.
+    /// 内置环境光遮蔽。
     AmbientOcclusion,
-    /// Built-in bloom.
+    /// 内置 bloom。
     Bloom,
-    /// User stage at index.
+    /// 指定索引处的用户阶段。
     User(usize),
-    /// Built-in tonemapping.
+    /// 内置色调映射。
     Tonemapping,
-    /// Built-in FXAA.
+    /// 内置 FXAA。
     Fxaa,
 }
 
@@ -512,7 +512,7 @@ pub enum StageRef {
 mod tests {
     use super::*;
 
-    // ─── PostProcessStage tests ─────────────────────────────────────────
+    // ─── PostProcessStage 测试 ─────────────────────────────────────────
 
     #[test]
     fn test_stage_creation() {
@@ -563,7 +563,7 @@ mod tests {
         assert_eq!(h, 2048);
     }
 
-    // ─── Composite tests ────────────────────────────────────────────────
+    // ─── 复合体测试 ────────────────────────────────────────────────
 
     #[test]
     fn test_composite_creation() {
@@ -593,19 +593,19 @@ mod tests {
         composite.add_stage(s1);
         composite.add_stage(s2);
 
-        assert!(!composite.is_ready()); // s2 not ready
+        assert!(!composite.is_ready()); // s2 未就绪
 
         composite.stages[1].ready = true;
         assert!(composite.is_ready());
     }
 
-    // ─── Built-in stage tests ───────────────────────────────────────────
+    // ─── 内置阶段测试 ───────────────────────────────────────────
 
     #[test]
     fn test_fxaa_stage() {
         let fxaa = create_fxaa_stage();
         assert_eq!(fxaa.name, "czm_fxaa");
-        assert!(!fxaa.enabled); // Disabled by default
+        assert!(!fxaa.enabled); // 默认禁用
         assert_eq!(fxaa.sample_mode, SampleMode::Linear);
     }
 
@@ -614,7 +614,7 @@ mod tests {
         let bloom = create_bloom_composite();
         assert_eq!(bloom.name, "czm_bloom");
         assert!(!bloom.enabled);
-        assert_eq!(bloom.len(), 2); // brightness + blur
+        assert_eq!(bloom.len(), 2); // 亮度 + 模糊
     }
 
     #[test]
@@ -622,15 +622,15 @@ mod tests {
         let ao = create_ambient_occlusion_composite();
         assert_eq!(ao.name, "czm_ambient_occlusion");
         assert!(!ao.enabled);
-        assert_eq!(ao.len(), 2); // generate + blur
+        assert_eq!(ao.len(), 2); // 生成 + 模糊
 
-        // Check AO uniforms
+        // 检查 AO uniform
         let gen = &ao.stages[0];
         assert_eq!(gen.get_uniform("intensity"), Some(&UniformValue::Float(3.0)));
         assert_eq!(gen.get_uniform("directionCount"), Some(&UniformValue::Int(8)));
     }
 
-    // ─── Tonemapper tests ───────────────────────────────────────────────
+    // ─── Tonemapper 测试 ───────────────────────────────────────────────
 
     #[test]
     fn test_tonemapper_shader_functions() {
@@ -640,7 +640,7 @@ mod tests {
         assert_eq!(Tonemapper::None.shader_function(), "czm_noTonemap");
     }
 
-    // ─── Collection tests ───────────────────────────────────────────────
+    // ─── Collection 测试 ───────────────────────────────────────────────
 
     #[test]
     fn test_collection_creation() {
@@ -662,11 +662,11 @@ mod tests {
         assert_eq!(idx, 0);
         assert_eq!(collection.len(), 1);
 
-        // Get by name
+        // 按名称获取
         assert!(collection.get_by_name("my_stage").is_some());
         assert!(collection.get_by_name("nonexistent").is_none());
 
-        // Remove
+        // 移除
         let removed = collection.remove("my_stage");
         assert!(removed.is_some());
         assert_eq!(collection.len(), 0);
@@ -676,7 +676,7 @@ mod tests {
     fn test_collection_execution_order_empty() {
         let collection = PostProcessStageCollection::new();
         let order = collection.execution_order();
-        assert!(order.is_empty()); // Nothing enabled
+        assert!(order.is_empty()); // 未启用任何阶段
     }
 
     #[test]

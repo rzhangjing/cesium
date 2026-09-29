@@ -1,70 +1,70 @@
-//! Tile cache and loading queue management.
+//! 瓦片缓存与加载队列管理。
 //!
-//! Maps to CesiumJS tile loading/caching:
-//! - LRU cache for loaded tiles
-//! - Priority-based loading queue
-//! - Tile replacement policies
+//! 映射到 CesiumJS 的瓦片加载/缓存：
+//! - 面向已加载瓦片的 LRU 缓存
+//! - 基于优先级的加载队列
+//! - 瓦片替换策略
 
 use std::collections::{HashMap, VecDeque};
 
-/// A tile identifier (x, y, level).
+/// 瓦片标识符（x, y, level）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TileId {
-    /// Tile X coordinate.
+    /// 瓦片 X 坐标。
     pub x: u32,
-    /// Tile Y coordinate.
+    /// 瓦片 Y 坐标。
     pub y: u32,
-    /// Tile level.
+    /// 瓦片层级。
     pub level: u32,
 }
 
 impl TileId {
-    /// Creates a new tile ID.
+    /// 创建一个新的瓦片 ID。
     pub fn new(x: u32, y: u32, level: u32) -> Self {
         Self { x, y, level }
     }
 }
 
-/// Tile loading priority.
+/// 瓦片加载优先级。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum TilePriority {
-    /// Low priority (preload).
+    /// 低优先级（预加载）。
     Low = 0,
-    /// Normal priority.
+    /// 普通优先级。
     #[default]
     Normal = 1,
-    /// High priority (visible).
+    /// 高优先级（可见）。
     High = 2,
-    /// Critical priority (center of view).
+    /// 关键优先级（视图中心）。
     Critical = 3,
 }
 
-/// A tile in the loading queue.
+/// 加载队列中的一个瓦片。
 #[derive(Debug, Clone)]
 pub struct QueuedTile {
-    /// Tile identifier.
+    /// 瓦片标识符。
     pub id: TileId,
-    /// Loading priority.
+    /// 加载优先级。
     pub priority: TilePriority,
-    /// Frame number when queued.
+    /// 入队时的帧号。
     pub frame_number: u64,
-    /// Distance from camera (for priority sorting).
+    /// 到 camera 的距离（用于优先级排序）。
     pub distance: f64,
 }
 
-/// Loading queue for tiles.
+/// 瓦片的加载队列。
 ///
-/// Manages the order in which tiles are loaded based on priority and distance.
+/// 基于优先级与距离管理瓦片的加载顺序。
 #[derive(Debug, Default)]
 pub struct TileLoadQueue {
-    /// Queued tiles.
+    /// 队列中的瓦片。
     queue: VecDeque<QueuedTile>,
-    /// Maximum queue size.
+    /// 最大队列长度。
     max_size: usize,
 }
 
 impl TileLoadQueue {
-    /// Creates a new loading queue.
+    /// 创建一个新的加载队列。
     pub fn new(max_size: usize) -> Self {
         Self {
             queue: VecDeque::new(),
@@ -72,10 +72,10 @@ impl TileLoadQueue {
         }
     }
 
-    /// Adds a tile to the queue.
+    /// 将一个瓦片加入队列。
     pub fn enqueue(&mut self, tile: QueuedTile) {
         if self.queue.len() >= self.max_size {
-            // Remove lowest priority tile
+            // 移除优先级最低的瓦片
             if let Some(min_idx) = self
                 .queue
                 .iter()
@@ -89,13 +89,13 @@ impl TileLoadQueue {
         self.queue.push_back(tile);
     }
 
-    /// Gets the next tile to load (highest priority, closest).
+    /// 获取下一个待加载的瓦片（优先级最高、距离最近）。
     pub fn dequeue(&mut self) -> Option<QueuedTile> {
         if self.queue.is_empty() {
             return None;
         }
 
-        // Find highest priority, closest tile
+        // 找到优先级最高、距离最近的瓦片
         let best_idx = self
             .queue
             .iter()
@@ -106,39 +106,39 @@ impl TileLoadQueue {
         self.queue.remove(best_idx)
     }
 
-    /// Returns the number of queued tiles.
+    /// 返回队列中瓦片的数量。
     pub fn len(&self) -> usize {
         self.queue.len()
     }
 
-    /// Returns true if the queue is empty.
+    /// 若队列为空则返回 true。
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }
 
-    /// Clears the queue.
+    /// 清空队列。
     pub fn clear(&mut self) {
         self.queue.clear();
     }
 }
 
-/// LRU cache for loaded tiles.
+/// 面向已加载瓦片的 LRU 缓存。
 ///
-/// Maps to CesiumJS tile cache behavior.
+/// 映射到 CesiumJS 的瓦片缓存行为。
 #[derive(Debug)]
 pub struct TileCache<T> {
-    /// Cached tiles.
+    /// 已缓存的瓦片。
     tiles: HashMap<TileId, T>,
-    /// Access order (most recent at back).
+    /// 访问顺序（最近访问在后）。
     access_order: VecDeque<TileId>,
-    /// Maximum cache size.
+    /// 最大缓存大小。
     max_size: usize,
-    /// Evicted tiles (for cleanup).
+    /// 被逐出的瓦片（供清理）。
     evicted: Vec<(TileId, T)>,
 }
 
 impl<T> TileCache<T> {
-    /// Creates a new tile cache.
+    /// 创建一个新的瓦片缓存。
     pub fn new(max_size: usize) -> Self {
         Self {
             tiles: HashMap::new(),
@@ -148,10 +148,10 @@ impl<T> TileCache<T> {
         }
     }
 
-    /// Gets a tile from the cache.
+    /// 从缓存获取一个瓦片。
     pub fn get(&mut self, id: &TileId) -> Option<&T> {
         if self.tiles.contains_key(id) {
-            // Update access order
+            // 更新访问顺序
             self.access_order.retain(|x| x != id);
             self.access_order.push_back(*id);
             self.tiles.get(id)
@@ -160,9 +160,9 @@ impl<T> TileCache<T> {
         }
     }
 
-    /// Inserts a tile into the cache.
+    /// 向缓存插入一个瓦片。
     pub fn insert(&mut self, id: TileId, tile: T) {
-        // Evict if necessary
+        // 必要时逐出
         while self.tiles.len() >= self.max_size {
             if let Some(oldest) = self.access_order.pop_front() {
                 if let Some(evicted_tile) = self.tiles.remove(&oldest) {
@@ -177,49 +177,49 @@ impl<T> TileCache<T> {
         self.access_order.push_back(id);
     }
 
-    /// Removes a tile from the cache.
+    /// 从缓存移除一个瓦片。
     pub fn remove(&mut self, id: &TileId) -> Option<T> {
         self.access_order.retain(|x| x != id);
         self.tiles.remove(id)
     }
 
-    /// Returns true if the cache contains the tile.
+    /// 若缓存包含该瓦片则返回 true。
     pub fn contains(&self, id: &TileId) -> bool {
         self.tiles.contains_key(id)
     }
 
-    /// Returns the number of cached tiles.
+    /// 返回已缓存瓦片的数量。
     pub fn len(&self) -> usize {
         self.tiles.len()
     }
 
-    /// Returns true if the cache is empty.
+    /// 若缓存为空则返回 true。
     pub fn is_empty(&self) -> bool {
         self.tiles.is_empty()
     }
 
-    /// Takes evicted tiles for cleanup.
+    /// 取走被逐出的瓦片以供清理。
     pub fn take_evicted(&mut self) -> Vec<(TileId, T)> {
         std::mem::take(&mut self.evicted)
     }
 
-    /// Clears the cache.
+    /// 清空缓存。
     pub fn clear(&mut self) {
         self.tiles.clear();
         self.access_order.clear();
     }
 }
 
-/// Tile scheduler configuration.
+/// 瓦片调度器配置。
 #[derive(Debug, Clone)]
 pub struct SchedulerConfig {
-    /// Maximum tiles to load per frame.
+    /// 每帧最多加载的瓦片数。
     pub max_loads_per_frame: usize,
-    /// Maximum tiles in cache.
+    /// 缓存中最多瓦片数。
     pub max_cache_size: usize,
-    /// Maximum tiles in loading queue.
+    /// 加载队列中最多瓦片数。
     pub max_queue_size: usize,
-    /// Whether to prioritize by distance.
+    /// 是否按距离排优先级。
     pub prioritize_by_distance: bool,
 }
 
@@ -234,18 +234,18 @@ impl Default for SchedulerConfig {
     }
 }
 
-/// Tile scheduler statistics.
+/// 瓦片调度器统计。
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SchedulerStats {
-    /// Tiles loaded this frame.
+    /// 本帧加载的瓦片数。
     pub loaded_this_frame: u32,
-    /// Tiles in cache.
+    /// 缓存中的瓦片数。
     pub cached_tiles: u32,
-    /// Tiles in queue.
+    /// 队列中的瓦片数。
     pub queued_tiles: u32,
-    /// Cache hits.
+    /// 缓存命中。
     pub cache_hits: u64,
-    /// Cache misses.
+    /// 缓存未命中。
     pub cache_misses: u64,
 }
 
@@ -307,7 +307,7 @@ mod tests {
             distance: 50.0,
         });
 
-        // Should dequeue highest priority first
+        // 应先出队优先级最高的
         let tile = queue.dequeue().unwrap();
         assert_eq!(tile.priority, TilePriority::Critical);
     }
@@ -326,10 +326,10 @@ mod tests {
             id: TileId::new(1, 1, 1),
             priority: TilePriority::Normal,
             frame_number: 1,
-            distance: 100.0, // Closer
+            distance: 100.0, // 更近
         });
 
-        // Should dequeue closer tile first (same priority)
+        // 应先出队更近的瓦片（同优先级）
         let tile = queue.dequeue().unwrap();
         assert_eq!(tile.id, TileId::new(1, 1, 1));
     }
@@ -357,7 +357,7 @@ mod tests {
             distance: 100.0,
         });
 
-        // Should have evicted lowest priority
+        // 应逐出最低优先级
         assert_eq!(queue.len(), 2);
     }
 
@@ -386,7 +386,7 @@ mod tests {
 
         cache.insert(TileId::new(0, 0, 0), "tile0");
         cache.insert(TileId::new(1, 1, 1), "tile1");
-        cache.insert(TileId::new(2, 2, 2), "tile2"); // Should evict tile0
+        cache.insert(TileId::new(2, 2, 2), "tile2"); // 应逐出 tile0
 
         assert_eq!(cache.len(), 2);
         assert!(!cache.contains(&TileId::new(0, 0, 0)));
@@ -405,10 +405,10 @@ mod tests {
         cache.insert(TileId::new(0, 0, 0), "tile0");
         cache.insert(TileId::new(1, 1, 1), "tile1");
 
-        // Access tile0 to make it recently used
+        // 访问 tile0，使其成为最近使用
         cache.get(&TileId::new(0, 0, 0));
 
-        // Insert tile2 - should evict tile1 (least recently used)
+        // 插入 tile2 - 应逐出 tile1（最久未使用）
         cache.insert(TileId::new(2, 2, 2), "tile2");
 
         assert!(cache.contains(&TileId::new(0, 0, 0)));

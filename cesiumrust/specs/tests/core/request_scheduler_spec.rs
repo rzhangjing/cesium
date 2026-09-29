@@ -1,6 +1,6 @@
-//! RequestScheduler spec - ported from packages/engine/Specs/Core/RequestSchedulerSpec.js
+//! RequestScheduler 规格测试 - 移植自 packages/engine/Specs/Core/RequestSchedulerSpec.js
 //!
-//! A-class tests: 15 (pure logic, synchronous scheduler)
+//! A 类测试：15 个（纯逻辑，同步调度器）
 
 use cesium_resource::{get_server_key, Request, RequestScheduler, RequestState, RequestType};
 
@@ -43,7 +43,7 @@ mod tests {
         scheduler.maximum_requests = 2;
         scheduler.throttle_requests = true;
 
-        // Schedule 2 requests (should succeed)
+        // 调度 2 个请求（应成功）
         let r1 = Request::throttled("http://test.invalid/1".to_string(), RequestType::Other, 0.0);
         let r2 = Request::throttled("http://test.invalid/2".to_string(), RequestType::Other, 0.0);
         let id1 = scheduler.schedule(r1);
@@ -54,11 +54,11 @@ mod tests {
         scheduler.update();
         assert_eq!(scheduler.active_request_count(), 2);
 
-        // Third request goes to pending (heap has room), but won't activate
+        // 第三个请求进入 pending（堆还有空间），但不会被激活
         let r3 = Request::throttled("http://test.invalid/3".to_string(), RequestType::Other, 0.0);
         let _id3 = scheduler.schedule(r3);
         scheduler.update();
-        // Active count stays at 2 (max)
+        // 活跃数保持在上限 2
         assert_eq!(scheduler.active_request_count(), 2);
     }
 
@@ -72,7 +72,7 @@ mod tests {
         let url = "http://test.invalid/1";
         let server = get_server_key(url);
 
-        // Schedule 2 requests to same server
+        // 向同一服务器调度 2 个请求
         let r1 = Request::throttled(url.to_string(), RequestType::Other, 0.0);
         let r2 = Request::throttled(url.to_string(), RequestType::Other, 0.0);
         scheduler.schedule(r1);
@@ -81,7 +81,7 @@ mod tests {
 
         assert!(!scheduler.server_has_open_slots(&server, 1));
 
-        // Different server should have slots
+        // 不同服务器应有空余名额
         assert!(scheduler.server_has_open_slots("other.invalid:80", 1));
     }
 
@@ -90,14 +90,14 @@ mod tests {
     fn honors_priority_heap_length() {
         let mut scheduler = RequestScheduler::new();
         scheduler.priority_heap_length = 1;
-        scheduler.maximum_requests = 0; // Force all to pending
+        scheduler.maximum_requests = 0; // 强制全部进入 pending
         scheduler.throttle_requests = true;
 
         let r1 = Request::throttled("http://test.invalid/1".to_string(), RequestType::Other, 0.0);
         let id1 = scheduler.schedule(r1);
         assert!(id1.is_some());
 
-        // Heap is full, second request rejected
+        // 堆已满，第二个请求被拒绝
         let r2 = Request::throttled("http://test.invalid/2".to_string(), RequestType::Other, 1.0);
         let id2 = scheduler.schedule(r2);
         assert!(id2.is_none());
@@ -109,13 +109,13 @@ mod tests {
         let mut scheduler = RequestScheduler::new();
         scheduler.throttle_requests = true;
 
-        // Non-throttled request goes immediately active
+        // 非限流请求立即变为 active
         let mut r = Request::new("https://test.invalid/1".to_string(), RequestType::Other);
         r.throttle = false;
         let id = scheduler.schedule(r);
         assert!(id.is_some());
 
-        // Should be active immediately (no update needed)
+        // 应立即激活（无需 update）
         let req = scheduler.get_request(id.unwrap()).unwrap();
         assert_eq!(req.state, RequestState::Active);
     }
@@ -125,19 +125,19 @@ mod tests {
     fn throttled_request_state_transitions() {
         let mut scheduler = RequestScheduler::new();
         scheduler.throttle_requests = true;
-        scheduler.maximum_requests = 0; // Force to pending initially
+        scheduler.maximum_requests = 0; // 初始强制进入 pending
 
         let r = Request::throttled("https://test.invalid/1".to_string(), RequestType::Other, 0.0);
         assert_eq!(r.state, RequestState::Unissued);
 
         let id = scheduler.schedule(r).unwrap();
-        // After schedule with max=0, state is Issued (pending)
+        // schedule 后（max=0）状态为 Issued（pending）
         {
             let req = scheduler.get_request(id).unwrap();
             assert_eq!(req.state, RequestState::Issued);
         }
 
-        // Now allow activation
+        // 现在允许激活
         scheduler.maximum_requests = 1;
         scheduler.update();
         {
@@ -145,7 +145,7 @@ mod tests {
             assert_eq!(req.state, RequestState::Active);
         }
 
-        // After complete, request is removed
+        // complete 后请求被移除
         scheduler.complete(id);
         assert_eq!(scheduler.active_request_count(), 0);
         assert!(scheduler.get_request(id).is_none());
@@ -156,17 +156,17 @@ mod tests {
     fn cancels_issued_request() {
         let mut scheduler = RequestScheduler::new();
         scheduler.throttle_requests = true;
-        scheduler.maximum_requests = 0; // Force to pending
+        scheduler.maximum_requests = 0; // 强制进入 pending
 
         let r = Request::throttled("https://test.invalid/1".to_string(), RequestType::Other, 0.0);
         let id = scheduler.schedule(r).unwrap();
 
-        // Verify it's pending
+        // 确认它处于 pending
         assert_eq!(scheduler.pending_request_count(), 1);
 
-        // Cancel before update
+        // 在 update 之前取消
         assert!(scheduler.cancel(id));
-        // Request is removed after cancel
+        // 取消后请求被移除
         assert!(scheduler.get_request(id).is_none());
     }
 
@@ -180,16 +180,16 @@ mod tests {
         let id = scheduler.schedule(r).unwrap();
         scheduler.update();
 
-        // Now active
+        // 此时应为 active
         {
             let req = scheduler.get_request(id).unwrap();
             assert_eq!(req.state, RequestState::Active);
         }
         assert_eq!(scheduler.active_request_count(), 1);
 
-        // Cancel
+        // 取消
         assert!(scheduler.cancel(id));
-        // Request is removed after cancel
+        // 取消后请求被移除
         assert!(scheduler.get_request(id).is_none());
         assert_eq!(scheduler.active_request_count(), 0);
     }
@@ -199,9 +199,9 @@ mod tests {
     fn prioritizes_requests() {
         let mut scheduler = RequestScheduler::new();
         scheduler.throttle_requests = true;
-        scheduler.maximum_requests = 1; // Only 1 active at a time
+        scheduler.maximum_requests = 1; // 同时只有 1 个 active
 
-        // Schedule requests with different priorities
+        // 调度不同优先级的请求
         let r1 = Request::throttled("http://test.invalid/1".to_string(), RequestType::Other, 0.9);
         let r2 = Request::throttled("http://test.invalid/2".to_string(), RequestType::Other, 0.1);
         let r3 = Request::throttled("http://test.invalid/3".to_string(), RequestType::Other, 0.5);
@@ -210,15 +210,15 @@ mod tests {
         let _id2 = scheduler.schedule(r2).unwrap();
         let _id3 = scheduler.schedule(r3).unwrap();
 
-        // First update activates one request
+        // 第一次 update 激活一个请求
         scheduler.update();
         assert_eq!(scheduler.active_request_count(), 1);
 
-        // Complete it and update - should activate highest priority (lowest value)
+        // 完成它并 update —— 应激活优先级最高（数值最小）的请求
         scheduler.complete(id1);
         scheduler.update();
 
-        // After update, one of the pending should be active
+        // update 后，某个 pending 请求应变为 active
         assert_eq!(scheduler.active_request_count(), 1);
     }
 
@@ -227,16 +227,16 @@ mod tests {
     fn handles_low_priority_requests() {
         let mut scheduler = RequestScheduler::new();
         scheduler.throttle_requests = true;
-        scheduler.maximum_requests = 0; // Force all to pending
+        scheduler.maximum_requests = 0; // 强制全部进入 pending
         scheduler.priority_heap_length = 2;
 
-        // Fill the heap
+        // 填满堆
         let r1 = Request::throttled("http://test.invalid/1".to_string(), RequestType::Other, 0.5);
         let r2 = Request::throttled("http://test.invalid/2".to_string(), RequestType::Other, 0.5);
         assert!(scheduler.schedule(r1).is_some());
         assert!(scheduler.schedule(r2).is_some());
 
-        // Heap full, low priority rejected
+        // 堆已满，低优先级被拒绝
         let r3 = Request::throttled("http://test.invalid/3".to_string(), RequestType::Other, 1.0);
         assert!(scheduler.schedule(r3).is_none());
     }
@@ -245,9 +245,9 @@ mod tests {
     #[test]
     fn no_throttle_when_disabled() {
         let mut scheduler = RequestScheduler::new();
-        scheduler.maximum_requests = 0; // Would normally block
+        scheduler.maximum_requests = 0; // 正常情况下会阻塞
 
-        // With throttle_requests = false, requests go through
+        // throttle_requests = false 时请求直接通过
         scheduler.throttle_requests = false;
         let r = Request::throttled("https://test.invalid/1".to_string(), RequestType::Other, 0.0);
         let id = scheduler.schedule(r);
@@ -266,10 +266,10 @@ mod tests {
 
         let server = "test.invalid:80";
 
-        // Initially has slots
+        // 初始有空余名额
         assert!(scheduler.server_has_open_slots(server, 1));
 
-        // Schedule 5 requests
+        // 调度 5 个请求
         for i in 0..5 {
             let r = Request::throttled(
                 format!("http://test.invalid/{}", i),
@@ -280,7 +280,7 @@ mod tests {
         }
         scheduler.update();
 
-        // Now full
+        // 现在已填满
         assert!(!scheduler.server_has_open_slots(server, 1));
     }
 
@@ -293,7 +293,7 @@ mod tests {
 
         let server = "test.invalid:80";
 
-        // Schedule 2 requests
+        // 调度 2 个请求
         for i in 0..2 {
             let r = Request::throttled(
                 format!("http://test.invalid/{}", i),
@@ -304,9 +304,9 @@ mod tests {
         }
         scheduler.update();
 
-        // 3 more should fit (2+3=5)
+        // 还能容纳 3 个（2+3=5）
         assert!(scheduler.server_has_open_slots(server, 3));
-        // 4 more should not (2+4=6 > 5)
+        // 容纳不下 4 个（2+4=6 > 5）
         assert!(!scheduler.server_has_open_slots(server, 4));
     }
 
@@ -314,13 +314,13 @@ mod tests {
     #[test]
     fn custom_requests_by_server() {
         let mut scheduler = RequestScheduler::new();
-        scheduler.maximum_requests_per_server = 2; // Default
+        scheduler.maximum_requests_per_server = 2; // 默认值
         scheduler.requests_by_server.insert("test.invalid:80".to_string(), 23);
         scheduler.throttle_requests = true;
 
         let server = "test.invalid:80";
 
-        // Schedule 23 requests (custom limit)
+        // 调度 23 个请求（自定义上限）
         for i in 0..23 {
             let r = Request::throttled(
                 format!("http://test.invalid/{}", i),
@@ -331,9 +331,9 @@ mod tests {
         }
         scheduler.update();
 
-        // Should still have slots at 23
+        // 到达 23 时仍应有空余名额
         assert!(scheduler.server_has_open_slots(server, 0));
-        // But not 1 more
+        // 但再加 1 个就不行了
         assert!(!scheduler.server_has_open_slots(server, 1));
     }
 

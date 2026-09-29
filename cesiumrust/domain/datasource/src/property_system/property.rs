@@ -1,9 +1,9 @@
-//! The core `DynProperty` trait and its concrete implementations.
+//! `DynProperty` 核心 trait 及其具体实现。
 //!
-//! Maps to CesiumJS `DataSources/Property.js` and the concrete property
-//! classes `ConstantProperty`, `SampledProperty`,
-//! `TimeIntervalCollectionProperty`, `CompositeProperty` and
-//! `CallbackProperty`.
+//! 映射到 CesiumJS `DataSources/Property.js` 及具体属性类
+//! `ConstantProperty`、`SampledProperty`、
+//! `TimeIntervalCollectionProperty`、`CompositeProperty` 与
+//! `CallbackProperty`。
 
 use crate::property_system::interpolation::{
     ExtrapolationType, InterpolationAlgorithm, InterpolationAlgorithmKind,
@@ -13,36 +13,34 @@ use cesium_time::{JulianDate, TimeInterval, TimeIntervalCollection, TimeInterval
 use std::any::Any;
 use std::sync::Arc;
 
-/// The interface for all properties, representing a value that can optionally
-/// vary over time.
+/// 所有属性的接口，表示一个可随时间变化的值。
 ///
-/// Maps to CesiumJS `DataSources/Property.js`.
+/// 映射到 CesiumJS `DataSources/Property.js`。
 pub trait DynProperty: Send + Sync {
-    /// Whether `get_value` always returns the same result for the current
-    /// definition. Maps to `Property.prototype.isConstant`.
+    /// 在当前定义下 `get_value` 是否总返回相同结果。映射到 `Property.prototype.isConstant`。
     fn is_constant(&self) -> bool;
 
-    /// Gets the value of the property at the provided time.
-    /// Maps to `Property.prototype.getValue`.
+    /// 获取所提供时间处该属性的值。
+    /// 映射到 `Property.prototype.getValue`。
     fn get_value(&self, time: &JulianDate) -> PropertyValue;
 
-    /// A stable type name used for downcasting and debugging.
+    /// 一个用于向下转型与调试的稳定类型名。
     fn type_name(&self) -> &'static str;
 
-    /// Compares this property to another. Maps to `Property.prototype.equals`.
+    /// 将此属性与另一个属性比较。映射到 `Property.prototype.equals`。
     fn equals(&self, other: &dyn DynProperty) -> bool;
 
-    /// Enables downcasting to the concrete type.
+    /// 支持向下转型为具体类型。
     fn as_any(&self) -> &dyn Any;
 
-    /// The reference frame in which a position is defined. Only valid for
-    /// position properties. Maps to `PositionProperty.referenceFrame`.
+    /// 定义位置时所用的参考系。仅对位置属性有效。
+    /// 映射到 `PositionProperty.referenceFrame`。
     fn reference_frame(&self) -> Option<ReferenceFrame> {
         None
     }
 
-    /// Gets the value in the provided reference frame. Only valid for position
-    /// properties. Maps to `PositionProperty.getValueInReferenceFrame`.
+    /// 在所提供的参考系中获取值。仅对位置属性
+    /// 有效。映射到 `PositionProperty.getValueInReferenceFrame`。
     fn get_value_in_reference_frame(
         &self,
         _time: &JulianDate,
@@ -51,21 +49,21 @@ pub trait DynProperty: Send + Sync {
         None
     }
 
-    /// Gets the material type at the provided time. Only valid for material
-    /// properties. Maps to `MaterialProperty.getType`.
+    /// 获取所提供时间处的材质类型。仅对材质
+    /// 属性有效。映射到 `MaterialProperty.getType`。
     fn get_type(&self, _time: &JulianDate) -> Option<String> {
         None
     }
 }
 
-/// Compares two trait-object properties for equality, treating an `Arc`
-/// pointer match as equal. Mirrors CesiumJS `Property.equals(left, right)`.
+/// 比较两个 trait-object 属性是否相等，将 `Arc`
+/// 指针相等视为相等。镜像 CesiumJS `Property.equals(left, right)`。
 pub fn arc_property_equals(left: &Arc<dyn DynProperty>, right: &Arc<dyn DynProperty>) -> bool {
     Arc::ptr_eq(left, right) || left.equals(right.as_ref())
 }
 
-/// Mirrors CesiumJS `Property.isConstant(property)`: an absent property is
-/// considered constant.
+/// 镜像 CesiumJS `Property.isConstant(property)`：缺失的属性
+/// 被视为常量。
 pub fn property_is_constant(property: Option<&dyn DynProperty>) -> bool {
     match property {
         None => true,
@@ -73,7 +71,7 @@ pub fn property_is_constant(property: Option<&dyn DynProperty>) -> bool {
     }
 }
 
-/// Mirrors CesiumJS `Property.getValueOrUndefined(property, time)`.
+/// 镜像 CesiumJS `Property.getValueOrUndefined(property, time)`。
 pub fn property_get_value_or_undefined(
     property: Option<&dyn DynProperty>,
     time: &JulianDate,
@@ -88,28 +86,28 @@ pub fn property_get_value_or_undefined(
 // ConstantProperty
 // ---------------------------------------------------------------------------
 
-/// A property whose value does not change with respect to simulation time.
+/// 其值不随仿真时间变化的属性。
 ///
-/// Maps to CesiumJS `DataSources/ConstantProperty.js`.
+/// 映射到 CesiumJS `DataSources/ConstantProperty.js`。
 #[derive(Debug, Clone)]
 pub struct ConstantProperty {
     value: PropertyValue,
 }
 
 impl ConstantProperty {
-    /// Creates a new constant property with the given value.
+    /// 创建一个新的常量属性，取给定值。
     pub fn new(value: PropertyValue) -> Self {
         Self { value }
     }
 
-    /// Sets the value of the property.
-    /// Maps to `ConstantProperty.prototype.setValue`.
+    /// 设置属性的值。
+    /// 映射到 `ConstantProperty.prototype.setValue`。
     pub fn set_value(&mut self, value: PropertyValue) {
         self.value = value;
     }
 
-    /// Gets this property's value.
-    /// Maps to `ConstantProperty.prototype.valueOf`.
+    /// 获取此属性的值。
+    /// 映射到 `ConstantProperty.prototype.valueOf`。
     pub fn value(&self) -> &PropertyValue {
         &self.value
     }
@@ -144,8 +142,8 @@ impl DynProperty for ConstantProperty {
 // SampledProperty
 // ---------------------------------------------------------------------------
 
-/// Binary search over a sorted slice of `JulianDate`s. Returns the index of an
-/// exact match, or the bitwise complement of the insertion point.
+/// 在已排序的 `JulianDate` 切片上二分查找。若精确匹配
+/// 则返回其索引，否则返回插入点的按位取反值。
 fn binary_search_times(times: &[JulianDate], target: &JulianDate) -> isize {
     let mut low: isize = 0;
     let mut high: isize = times.len() as isize - 1;
@@ -160,10 +158,10 @@ fn binary_search_times(times: &[JulianDate], target: &JulianDate) -> isize {
     !low
 }
 
-/// Merges new samples into the sorted `times`/`values` storage, preserving
-/// ordering. Samples whose time already exists overwrite the stored value.
+/// 将新样本合并进已排序的 `times`/`values` 存储，并
+/// 保持有序。时间已存在的样本会覆盖已存的值。
 ///
-/// Maps to the internal `mergeNewSamples` in `DataSources/SampledProperty.js`.
+/// 映射到 `DataSources/SampledProperty.js` 内部的 `mergeNewSamples`。
 fn merge_new_samples(
     times: &mut Vec<JulianDate>,
     values: &mut Vec<f64>,
@@ -179,7 +177,7 @@ fn merge_new_samples(
         let search = binary_search_times(times, &current_time);
 
         if search < 0 {
-            // Doesn't exist: insert as many additional consecutive values as we can.
+            // 不存在：尽可能多地插入额外的连续值。
             let insert_idx = (!search) as usize;
             let values_insertion_point = insert_idx * packed_length;
             let next_time = times.get(insert_idx).copied();
@@ -217,7 +215,7 @@ fn merge_new_samples(
                 times.splice(insert_idx..insert_idx, times_to_insert.iter().copied());
             }
         } else {
-            // Found an exact match: overwrite the stored value.
+            // 找到精确匹配：覆盖已存的值。
             let idx = search as usize;
             for i in 0..packed_length {
                 values[idx * packed_length + i] = new_values[new_data_index * packed_length + i];
@@ -227,10 +225,10 @@ fn merge_new_samples(
     }
 }
 
-/// A property whose value is interpolated for a given time from the provided
-/// set of samples and specified interpolation algorithm and degree.
+/// 其值在给定时间处由所提供的样本集以及指定的插值
+/// 算法与次数插值得到的属性。
 ///
-/// Maps to CesiumJS `DataSources/SampledProperty.js`.
+/// 映射到 CesiumJS `DataSources/SampledProperty.js`。
 #[derive(Debug, Clone)]
 pub struct SampledProperty {
     property_type: PackableType,
@@ -249,13 +247,13 @@ pub struct SampledProperty {
 }
 
 impl SampledProperty {
-    /// Creates a new sampled property of the given type.
+    /// 创建指定类型的新采样属性。
     pub fn new(property_type: PackableType) -> Self {
         Self::with_derivative_types(property_type, None)
     }
 
-    /// Creates a new sampled property with derivative information.
-    /// Maps to `new SampledProperty(type, derivativeTypes)`.
+    /// 创建带导数信息的新采样属性。
+    /// 映射到 `new SampledProperty(type, derivativeTypes)`。
     pub fn with_derivative_types(
         property_type: PackableType,
         derivative_types: Option<Vec<PackableType>>,
@@ -287,38 +285,38 @@ impl SampledProperty {
         }
     }
 
-    /// The type of property. Maps to `SampledProperty.prototype.type`.
+    /// 属性的类型。映射到 `SampledProperty.prototype.type`。
     pub fn property_type(&self) -> PackableType {
         self.property_type
     }
 
-    /// The derivative types. Maps to `SampledProperty.prototype.derivativeTypes`.
+    /// 导数类型。映射到 `SampledProperty.prototype.derivativeTypes`。
     pub fn derivative_types(&self) -> Option<&[PackableType]> {
         self.derivative_types.as_deref()
     }
 
-    /// The interpolation degree. Maps to `interpolationDegree`.
+    /// 插值次数。映射到 `interpolationDegree`。
     pub fn interpolation_degree(&self) -> usize {
         self.interpolation_degree
     }
 
-    /// The interpolation algorithm. Maps to `interpolationAlgorithm`.
+    /// 插值算法。映射到 `interpolationAlgorithm`。
     pub fn interpolation_algorithm(&self) -> InterpolationAlgorithmKind {
         self.interpolation_algorithm
     }
 
-    /// The number of samples currently stored.
+    /// 当前存储的样本数量。
     pub fn sample_count(&self) -> usize {
         self.times.len()
     }
 
-    /// The sample times.
+    /// 采样时间。
     pub fn times(&self) -> &[JulianDate] {
         &self.times
     }
 
-    /// Sets the algorithm and degree to use when interpolating a value.
-    /// Maps to `SampledProperty.prototype.setInterpolationOptions`.
+    /// 设置插值时所使用的算法与次数。
+    /// 映射到 `SampledProperty.prototype.setInterpolationOptions`。
     pub fn set_interpolation_options(
         &mut self,
         algorithm: Option<InterpolationAlgorithmKind>,
@@ -332,30 +330,30 @@ impl SampledProperty {
         }
     }
 
-    /// Sets the forward extrapolation type. Maps to `forwardExtrapolationType`.
+    /// 设置前推外推类型。映射到 `forwardExtrapolationType`。
     pub fn set_forward_extrapolation_type(&mut self, value: ExtrapolationType) {
         self.forward_extrapolation_type = value;
     }
 
-    /// Sets the forward extrapolation duration. Maps to
-    /// `forwardExtrapolationDuration`.
+    /// 设置前推外推时长。映射到
+    /// `forwardExtrapolationDuration`。
     pub fn set_forward_extrapolation_duration(&mut self, value: f64) {
         self.forward_extrapolation_duration = value;
     }
 
-    /// Sets the backward extrapolation type. Maps to
-    /// `backwardExtrapolationType`.
+    /// 设置后推外推类型。映射到
+    /// `backwardExtrapolationType`。
     pub fn set_backward_extrapolation_type(&mut self, value: ExtrapolationType) {
         self.backward_extrapolation_type = value;
     }
 
-    /// Sets the backward extrapolation duration. Maps to
-    /// `backwardExtrapolationDuration`.
+    /// 设置后推外推时长。映射到
+    /// `backwardExtrapolationDuration`。
     pub fn set_backward_extrapolation_duration(&mut self, value: f64) {
         self.backward_extrapolation_duration = value;
     }
 
-    /// Adds a new sample. Maps to `SampledProperty.prototype.addSample`.
+    /// 添加一个新样本。映射到 `SampledProperty.prototype.addSample`。
     pub fn add_sample(
         &mut self,
         time: JulianDate,
@@ -379,7 +377,7 @@ impl SampledProperty {
         );
     }
 
-    /// Adds an array of samples. Maps to `SampledProperty.prototype.addSamples`.
+    /// 添加一组样本。映射到 `SampledProperty.prototype.addSamples`。
     pub fn add_samples(
         &mut self,
         times: &[JulianDate],
@@ -412,11 +410,10 @@ impl SampledProperty {
         );
     }
 
-    /// Adds samples as a single packed array where each sample is represented
-    /// as a numeric time offset (in seconds from `epoch`) followed by the
-    /// packed value (and derivatives).
+    /// 以单个打包数组添加样本，其中每个样本由一个数值时间偏移
+    /// （相对于 `epoch` 的秒数）后接打包值（及导数）表示。
     ///
-    /// Maps to `SampledProperty.prototype.addSamplesPackedArray`.
+    /// 映射到 `SampledProperty.prototype.addSamplesPackedArray`。
     pub fn add_samples_packed_array(&mut self, packed_samples: &[f64], epoch: &JulianDate) {
         let stride = 1 + self.packed_length;
         let count = packed_samples.len() / stride;
@@ -438,9 +435,9 @@ impl SampledProperty {
         );
     }
 
-    /// Retrieves the time of the sample at the given index. A negative index
-    /// accesses the list of samples in reverse order.
-    /// Maps to `SampledProperty.prototype.getSample`.
+    /// 获取给定索引处样本的时间。负索引按
+    /// 逆序访问样本列表。
+    /// 映射到 `SampledProperty.prototype.getSample`。
     pub fn get_sample(&self, index: isize) -> Option<JulianDate> {
         let len = self.times.len();
         if len == 0 {
@@ -456,8 +453,8 @@ impl SampledProperty {
         Some(self.times[idx as usize])
     }
 
-    /// Removes the sample at the given time, if present. Returns `true` if a
-    /// sample was removed. Maps to `SampledProperty.prototype.removeSample`.
+    /// 若存在则移除给定时间处的样本。若移除了
+    /// 样本则返回 `true`。映射到 `SampledProperty.prototype.removeSample`。
     pub fn remove_sample(&mut self, time: &JulianDate) -> bool {
         let index = binary_search_times(&self.times, time);
         if index < 0 {
@@ -467,8 +464,8 @@ impl SampledProperty {
         true
     }
 
-    /// Removes all samples within the given time interval.
-    /// Maps to `SampledProperty.prototype.removeSamples`.
+    /// 移除给定时间区间内的所有样本。
+    /// 映射到 `SampledProperty.prototype.removeSamples`。
     pub fn remove_samples_interval(&mut self, time_interval: &TimeInterval) {
         let mut start_index = binary_search_times(&self.times, &time_interval.start);
         if start_index < 0 {
@@ -516,11 +513,11 @@ impl DynProperty for SampledProperty {
         let mut index = binary_search_times(times, time);
 
         if index >= 0 {
-            // Exact match.
+            // 精确匹配。
             return inner_type.unpack(values, index as usize * self.packed_length);
         }
 
-        // Convert to an insertion index.
+        // 转换为插入索引。
         index = !index;
 
         if index == 0 {
@@ -587,13 +584,13 @@ impl DynProperty for SampledProperty {
         }
         let length = last_index - first_index + 1;
 
-        // Build the x table (seconds relative to the last sample in the window).
+        // 构建 x 表（相对于窗口内最后一个样本的秒数）。
         let mut x_table = vec![0.0f64; length];
         for (i, x) in x_table.iter_mut().enumerate() {
             *x = times[first_index + i].seconds_difference(&times[last_index]);
         }
 
-        // Build the y table.
+        // 构建 y 表。
         let y_table: Vec<f64> = if !inner_type.uses_interpolation_conversion() {
             let packed_length = self.packed_length;
             let source_start = first_index * packed_length;
@@ -610,7 +607,7 @@ impl DynProperty for SampledProperty {
             table
         };
 
-        // Interpolate.
+        // 插值。
         let x = time.seconds_difference(&times[last_index]);
         let interpolation_result = if input_order == 0
             || !interpolation_algorithm.supports_derivatives()
@@ -669,10 +666,10 @@ fn value_same_data(a: &PropertyValue, b: &PropertyValue) -> bool {
     a == b
 }
 
-/// A property defined by a `TimeIntervalCollection`, where the data of each
-/// interval represents the value at that time.
+/// 由 `TimeIntervalCollection` 定义的属性，其中每个区间的数据
+/// 表示该时间处的值。
 ///
-/// Maps to CesiumJS `DataSources/TimeIntervalCollectionProperty.js`.
+/// 映射到 CesiumJS `DataSources/TimeIntervalCollectionProperty.js`。
 #[derive(Debug, Clone)]
 pub struct TimeIntervalCollectionProperty {
     intervals: TimeIntervalCollection<PropertyValue>,
@@ -685,19 +682,19 @@ impl Default for TimeIntervalCollectionProperty {
 }
 
 impl TimeIntervalCollectionProperty {
-    /// Creates an empty interval collection property.
+    /// 创建空的区间集合属性。
     pub fn new() -> Self {
         Self {
             intervals: TimeIntervalCollection::new(),
         }
     }
 
-    /// The underlying interval collection. Maps to `intervals`.
+    /// 底层的区间集合。映射到 `intervals`。
     pub fn intervals(&self) -> &TimeIntervalCollection<PropertyValue> {
         &self.intervals
     }
 
-    /// Adds an interval with the given value data.
+    /// 添加一个带给定值数据的区间。
     pub fn add_interval(&mut self, interval: TimeInterval, data: Option<PropertyValue>) {
         let tid = TimeIntervalData::new(interval, data);
         self.intervals.add_interval(tid, &value_same_data);
@@ -743,10 +740,10 @@ fn property_same_data(a: &Arc<dyn DynProperty>, b: &Arc<dyn DynProperty>) -> boo
     arc_property_equals(a, b)
 }
 
-/// A property defined by a `TimeIntervalCollection`, where the data of each
-/// interval is another `Property` evaluated at the provided time.
+/// 由 `TimeIntervalCollection` 定义的属性，其中每个区间的数据
+/// 是另一个在所提供的时间处求值的 `Property`。
 ///
-/// Maps to CesiumJS `DataSources/CompositeProperty.js`.
+/// 映射到 CesiumJS `DataSources/CompositeProperty.js`。
 #[derive(Clone)]
 pub struct CompositeProperty {
     intervals: TimeIntervalCollection<Arc<dyn DynProperty>>,
@@ -759,19 +756,19 @@ impl Default for CompositeProperty {
 }
 
 impl CompositeProperty {
-    /// Creates an empty composite property.
+    /// 创建空的组合属性。
     pub fn new() -> Self {
         Self {
             intervals: TimeIntervalCollection::new(),
         }
     }
 
-    /// The underlying interval collection. Maps to `intervals`.
+    /// 底层的区间集合。映射到 `intervals`。
     pub fn intervals(&self) -> &TimeIntervalCollection<Arc<dyn DynProperty>> {
         &self.intervals
     }
 
-    /// Adds an interval whose data is another property.
+    /// 添加一个数据为另一个属性的区间。
     pub fn add_interval(&mut self, interval: TimeInterval, data: Option<Arc<dyn DynProperty>>) {
         let tid = TimeIntervalData::new(interval, data);
         self.intervals.add_interval(tid, &property_same_data);
@@ -810,12 +807,12 @@ impl DynProperty for CompositeProperty {
 // CallbackProperty
 // ---------------------------------------------------------------------------
 
-/// The callback function type used by `CallbackProperty`.
+/// `CallbackProperty` 所使用的回调函数类型。
 pub type CallbackFn = Arc<dyn Fn(&JulianDate) -> PropertyValue + Send + Sync>;
 
-/// A property whose value is lazily evaluated by a callback function.
+/// 其值由回调函数延迟求值的属性。
 ///
-/// Maps to CesiumJS `DataSources/CallbackProperty.js`.
+/// 映射到 CesiumJS `DataSources/CallbackProperty.js`。
 #[derive(Clone)]
 pub struct CallbackProperty {
     callback: CallbackFn,
@@ -823,8 +820,8 @@ pub struct CallbackProperty {
 }
 
 impl CallbackProperty {
-    /// Creates a new callback property.
-    /// Maps to `new CallbackProperty(callback, isConstant)`.
+    /// 创建新的回调属性。
+    /// 映射到 `new CallbackProperty(callback, isConstant)`。
     pub fn new<F>(callback: F, is_constant: bool) -> Self
     where
         F: Fn(&JulianDate) -> PropertyValue + Send + Sync + 'static,
@@ -835,7 +832,7 @@ impl CallbackProperty {
         }
     }
 
-    /// Creates a callback property from a shared callback.
+    /// 从共享回调创建回调属性。
     pub fn from_arc(callback: CallbackFn, is_constant: bool) -> Self {
         Self {
             callback,
@@ -843,8 +840,8 @@ impl CallbackProperty {
         }
     }
 
-    /// Sets the callback to be used.
-    /// Maps to `CallbackProperty.prototype.setCallback`.
+    /// 设置要使用的回调。
+    /// 映射到 `CallbackProperty.prototype.setCallback`。
     pub fn set_callback<F>(&mut self, callback: F, is_constant: bool)
     where
         F: Fn(&JulianDate) -> PropertyValue + Send + Sync + 'static,
@@ -907,19 +904,19 @@ mod tests {
     #[test]
     fn test_sampled_property_linear_number() {
         let mut p = SampledProperty::new(PackableType::Number);
-        assert!(p.is_constant()); // no samples yet
+        assert!(p.is_constant()); // 尚无样本
 
         p.add_sample(jd(0.0), &PropertyValue::Number(0.0), &[]);
         p.add_sample(jd(10.0), &PropertyValue::Number(100.0), &[]);
         assert!(!p.is_constant());
         assert_eq!(p.sample_count(), 2);
 
-        // Exact match.
+        // 精确匹配。
         assert_eq!(p.get_value(&jd(0.0)), PropertyValue::Number(0.0));
         assert_eq!(p.get_value(&jd(10.0)), PropertyValue::Number(100.0));
-        // Interpolated midpoint.
+        // 插值中点。
         assert_eq!(p.get_value(&jd(5.0)), PropertyValue::Number(50.0));
-        // Quarter point.
+        // 四分之一处。
         assert_eq!(p.get_value(&jd(2.5)), PropertyValue::Number(25.0));
     }
 
@@ -928,7 +925,7 @@ mod tests {
         let mut p = SampledProperty::new(PackableType::Number);
         p.add_sample(jd(0.0), &PropertyValue::Number(0.0), &[]);
         p.add_sample(jd(10.0), &PropertyValue::Number(100.0), &[]);
-        // Default extrapolation is NONE.
+        // 默认外推为 NONE。
         assert_eq!(p.get_value(&jd(-1.0)), PropertyValue::Undefined);
         assert_eq!(p.get_value(&jd(11.0)), PropertyValue::Undefined);
     }
@@ -962,9 +959,9 @@ mod tests {
         p.add_sample(jd(10.0), &PropertyValue::Number(100.0), &[]);
         p.set_forward_extrapolation_type(ExtrapolationType::Hold);
         p.set_forward_extrapolation_duration(5.0);
-        // Within duration: hold.
+        // 在时长范围内：保持。
         assert_eq!(p.get_value(&jd(12.0)), PropertyValue::Number(100.0));
-        // Beyond duration: undefined.
+        // 超出时长：undefined。
         assert_eq!(p.get_value(&jd(20.0)), PropertyValue::Undefined);
     }
 
@@ -1003,7 +1000,7 @@ mod tests {
             &PropertyValue::Quaternion(DQuat::from_rotation_z(FRAC_PI_2)),
             &[],
         );
-        // Midpoint should be a 45-degree rotation about Z.
+        // 中点应为绕 Z 轴 45 度的旋转。
         let mid = p.get_value(&jd(5.0));
         if let PropertyValue::Quaternion(q) = mid {
             let expected = DQuat::from_rotation_z(FRAC_PI_2 / 2.0);
@@ -1032,7 +1029,7 @@ mod tests {
         let mut p = SampledProperty::new(PackableType::Number);
         p.add_sample(jd(0.0), &PropertyValue::Number(0.0), &[]);
         p.add_sample(jd(10.0), &PropertyValue::Number(100.0), &[]);
-        // Overwrite the sample at t=10.
+        // 覆盖 t=10 处的样本。
         p.add_sample(jd(10.0), &PropertyValue::Number(200.0), &[]);
         assert_eq!(p.sample_count(), 2);
         assert_eq!(p.get_value(&jd(10.0)), PropertyValue::Number(200.0));
@@ -1079,7 +1076,7 @@ mod tests {
         }
         let interval = TimeInterval::new(jd(3.0), jd(7.0), true, true);
         p.remove_samples_interval(&interval);
-        // Removed t=3,4,5,6,7 -> 6 samples remain.
+        // 已移除 t=3,4,5,6,7 -> 剩余 6 个样本。
         assert_eq!(p.sample_count(), 6);
     }
 
@@ -1097,7 +1094,7 @@ mod tests {
     fn test_sampled_property_add_samples_packed_array() {
         let mut p = SampledProperty::new(PackableType::Number);
         let epoch = jd(0.0);
-        // Each sample: [time_offset, value].
+        // 每个样本：[time_offset, value]。
         let packed = [0.0, 0.0, 10.0, 100.0, 5.0, 50.0];
         p.add_samples_packed_array(&packed, &epoch);
         assert_eq!(p.sample_count(), 3);
@@ -1120,9 +1117,9 @@ mod tests {
     fn test_sampled_property_single_sample() {
         let mut p = SampledProperty::new(PackableType::Number);
         p.add_sample(jd(5.0), &PropertyValue::Number(42.0), &[]);
-        // Exact match works.
+        // 精确匹配生效。
         assert_eq!(p.get_value(&jd(5.0)), PropertyValue::Number(42.0));
-        // Interpolation impossible with one sample.
+        // 只有一个样本时无法插值。
         assert_eq!(p.get_value(&jd(6.0)), PropertyValue::Undefined);
     }
 
@@ -1182,10 +1179,10 @@ mod tests {
         assert_eq!(p.get_value(&jd(7.0)), PropertyValue::Number(2451545.0));
 
         let q = CallbackProperty::new(|t| PropertyValue::Number(t.day_number as f64), false);
-        // Different closures -> not equal.
+        // 不同的 closure -> 不相等。
         assert!(!p.equals(&q));
 
-        // Same Arc -> equal.
+        // 相同的 Arc -> 相等。
         let shared: CallbackFn = Arc::new(|t| PropertyValue::Number(t.day_number as f64));
         let r = CallbackProperty::from_arc(Arc::clone(&shared), true);
         let s = CallbackProperty::from_arc(shared, true);

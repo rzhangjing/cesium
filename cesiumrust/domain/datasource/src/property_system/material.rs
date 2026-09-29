@@ -1,15 +1,15 @@
-//! Material properties: properties which represent [`Material`] uniforms.
+//! 材质属性：表示 [`Material`] uniform 的属性。
 //!
-//! Maps to CesiumJS `DataSources/MaterialProperty.js` and the concrete
-//! implementations `ColorMaterialProperty`, `ImageMaterialProperty`,
-//! `CheckerboardMaterialProperty`, `GridMaterialProperty`,
-//! `StripeMaterialProperty`, `PolylineArrowMaterialProperty`,
-//! `PolylineDashMaterialProperty`, `PolylineGlowMaterialProperty`,
-//! `PolylineOutlineMaterialProperty` and `CompositeMaterialProperty`.
+//! 映射到 CesiumJS `DataSources/MaterialProperty.js` 及其具体实现
+//! `ColorMaterialProperty`、`ImageMaterialProperty`、
+//! `CheckerboardMaterialProperty`、`GridMaterialProperty`、
+//! `StripeMaterialProperty`、`PolylineArrowMaterialProperty`、
+//! `PolylineDashMaterialProperty`、`PolylineGlowMaterialProperty`、
+//! `PolylineOutlineMaterialProperty` 与 `CompositeMaterialProperty`。
 //!
-//! Each material property evaluates to a material type string (e.g. `"Color"`,
-//! `"Grid"`) plus a set of named uniform values. The Fabric material system
-//! (P1.3) consumes these to build actual shader materials.
+//! 每个材质属性都会求值为一个材质类型字符串（例如 `"Color"`、
+//! `"Grid"`）加上一组命名 uniform 值。Fabric 材质系统
+//! （P1.3）消费这些值来构建实际的 shader 材质。
 
 use crate::property_system::property::{ConstantProperty, DynProperty};
 use crate::property_system::value::PropertyValue;
@@ -19,46 +19,44 @@ use std::any::Any;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-/// Material uniform values keyed by uniform name.
+/// 以 uniform 名为键的材质 uniform 值。
 ///
-/// Maps to the `result` object filled by CesiumJS
-/// `MaterialProperty.prototype.getValue(time, result)`.
+/// 映射到由 CesiumJS `MaterialProperty.prototype.getValue(time, result)`
+/// 填充的 `result` 对象。
 pub type MaterialUniforms = BTreeMap<String, PropertyValue>;
 
-/// `Color.WHITE` (maps to CesiumJS `Color.WHITE`).
+/// `Color.WHITE`（映射到 CesiumJS `Color.WHITE`）。
 pub const COLOR_WHITE: [f64; 4] = [1.0, 1.0, 1.0, 1.0];
-/// `Color.BLACK` (maps to CesiumJS `Color.BLACK`).
+/// `Color.BLACK`（映射到 CesiumJS `Color.BLACK`）。
 pub const COLOR_BLACK: [f64; 4] = [0.0, 0.0, 0.0, 1.0];
-/// `Color.TRANSPARENT` (maps to CesiumJS `Color.TRANSPARENT`).
+/// `Color.TRANSPARENT`（映射到 CesiumJS `Color.TRANSPARENT`）。
 pub const COLOR_TRANSPARENT: [f64; 4] = [0.0, 0.0, 0.0, 0.0];
 
-/// The interface for all properties that represent material uniforms.
+/// 所有表示材质 uniform 的属性的接口。
 ///
-/// Maps to CesiumJS `DataSources/MaterialProperty.js`.
+/// 映射到 CesiumJS `DataSources/MaterialProperty.js`。
 pub trait MaterialProperty: Send + Sync {
-    /// Whether `get_value` always returns the same result for the current
-    /// definition. Maps to `isConstant`.
+    /// 在当前定义下 `get_value` 是否总返回相同结果。映射到 `isConstant`。
     fn is_constant(&self) -> bool;
 
-    /// Gets the material type at the provided time.
-    /// Maps to `MaterialProperty.prototype.getType`.
+    /// 获取所提供时间处的材质类型。
+    /// 映射到 `MaterialProperty.prototype.getType`。
     fn get_type(&self, time: &JulianDate) -> Option<String>;
 
-    /// Gets the uniform values of the property at the provided time.
-    /// Maps to `MaterialProperty.prototype.getValue(time, result)`.
+    /// 获取所提供时间处该属性的 uniform 值。
+    /// 映射到 `MaterialProperty.prototype.getValue(time, result)`。
     fn get_value(&self, time: &JulianDate) -> MaterialUniforms;
 
-    /// Compares this property to another.
-    /// Maps to `MaterialProperty.prototype.equals`.
+    /// 将此属性与另一个属性比较。
+    /// 映射到 `MaterialProperty.prototype.equals`。
     fn equals(&self, other: &dyn MaterialProperty) -> bool;
 
-    /// Enables downcasting to the concrete type.
+    /// 支持向下转型为具体类型。
     fn as_any(&self) -> &dyn Any;
 }
 
-/// Compares two trait-object material properties for equality, treating an
-/// `Arc` pointer match as equal. Mirrors `Property.equals(left, right)` as
-/// used with material properties.
+/// 比较两个 trait-object 材质属性是否相等，将 `Arc` 指针相等视为相等。
+/// 镜像了用于材质属性时的 `Property.equals(left, right)`。
 pub fn arc_material_property_equals(
     left: &Arc<dyn MaterialProperty>,
     right: &Arc<dyn MaterialProperty>,
@@ -66,14 +64,13 @@ pub fn arc_material_property_equals(
     Arc::ptr_eq(left, right) || left.equals(right.as_ref())
 }
 
-/// Wraps a raw value into a constant property.
+/// 将原始值包装为常量属性。
 fn to_constant(value: PropertyValue) -> Arc<dyn DynProperty> {
     Arc::new(ConstantProperty::new(value))
 }
 
-/// Maps to `Property.getValueOrClonedDefault` / `Property.getValueOrDefault`:
-/// evaluates the property at `time`, falling back to `default` when the
-/// property is absent or yields undefined.
+/// 映射到 `Property.getValueOrClonedDefault` / `Property.getValueOrDefault`：
+/// 在 `time` 处求值该属性，当属性缺失或产生 undefined 时回退到 `default`。
 fn value_or_default(
     property: &Option<Arc<dyn DynProperty>>,
     time: &JulianDate,
@@ -92,7 +89,7 @@ fn value_or_default(
     }
 }
 
-/// Maps to `Property.getValueOrUndefined`.
+/// 映射到 `Property.getValueOrUndefined`。
 fn value_or_undefined(
     property: &Option<Arc<dyn DynProperty>>,
     time: &JulianDate,
@@ -103,7 +100,7 @@ fn value_or_undefined(
     }
 }
 
-/// Maps to `Property.isConstant(property)` for optional properties.
+/// 映射到用于可选属性的 `Property.isConstant(property)`。
 fn option_is_constant(property: &Option<Arc<dyn DynProperty>>) -> bool {
     match property {
         None => true,
@@ -111,7 +108,7 @@ fn option_is_constant(property: &Option<Arc<dyn DynProperty>>) -> bool {
     }
 }
 
-/// Maps to `Property.equals(left, right)` for optional properties.
+/// 映射到用于可选属性的 `Property.equals(left, right)`。
 fn option_equals(
     left: &Option<Arc<dyn DynProperty>>,
     right: &Option<Arc<dyn DynProperty>>,
@@ -127,41 +124,41 @@ fn option_equals(
 // ColorMaterialProperty
 // ---------------------------------------------------------------------------
 
-/// A material property that maps to solid color material uniforms.
+/// 一种映射到纯色（solid color）材质 uniform 的材质属性。
 ///
-/// Maps to CesiumJS `DataSources/ColorMaterialProperty.js`.
+/// 映射到 CesiumJS `DataSources/ColorMaterialProperty.js`.
 #[derive(Clone)]
 pub struct ColorMaterialProperty {
     color: Option<Arc<dyn DynProperty>>,
 }
 
 impl ColorMaterialProperty {
-    /// Creates a new color material property. `color` may be a
-    /// `PropertyValue::Color`; other property kinds can be assigned via
-    /// [`set_color_property`](Self::set_color_property).
-    /// Maps to `new ColorMaterialProperty(color)`.
+    /// 创建新的颜色材质属性。`color` 可以是一个
+    /// `PropertyValue::Color`；其他属性种类可通过
+    /// [`set_color_property`](Self::set_color_property) 赋值。
+    /// 映射到 `new ColorMaterialProperty(color)`。
     pub fn new(color: Option<PropertyValue>) -> Self {
         Self {
             color: color.map(to_constant),
         }
     }
 
-    /// Creates a color material property from a constant RGBA color.
+    /// 从常量 RGBA 颜色创建颜色材质属性。
     pub fn from_color(color: [f64; 4]) -> Self {
         Self::new(Some(PropertyValue::Color(color)))
     }
 
-    /// The color property. Maps to `color`.
+    /// 颜色属性。映射到 `color`。
     pub fn color_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.color.as_ref()
     }
 
-    /// Sets the color property. Maps to the `color` setter.
+    /// 设置颜色属性。映射到 `color` setter。
     pub fn set_color_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.color = property;
     }
 
-    /// Sets the color as a constant value.
+    /// 将颜色设为常量值。
     pub fn set_color(&mut self, color: Option<PropertyValue>) {
         self.color = color.map(to_constant);
     }
@@ -201,9 +198,9 @@ impl MaterialProperty for ColorMaterialProperty {
 // ImageMaterialProperty
 // ---------------------------------------------------------------------------
 
-/// A material property that maps to image material uniforms.
+/// 一种映射到图像材质 uniform 的材质属性。
 ///
-/// Maps to CesiumJS `DataSources/ImageMaterialProperty.js`.
+/// 映射到 CesiumJS `DataSources/ImageMaterialProperty.js`.
 #[derive(Clone, Default)]
 pub struct ImageMaterialProperty {
     image: Option<Arc<dyn DynProperty>>,
@@ -213,67 +210,67 @@ pub struct ImageMaterialProperty {
 }
 
 impl ImageMaterialProperty {
-    /// Creates a new image material property with all values defaulted.
+    /// 创建新的图像材质属性，所有值均取默认。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// The image property (URL/canvas/etc). Maps to `image`.
+    /// 图像属性（URL/canvas 等）。映射到 `image`。
     pub fn image_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.image.as_ref()
     }
 
-    /// Sets the image property. Maps to the `image` setter.
+    /// 设置图像属性。映射到 `image` setter。
     pub fn set_image_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.image = property;
     }
 
-    /// Sets the image as a constant value (typically a URL string).
+    /// 将图像设为常量值（通常为 URL 字符串）。
     pub fn set_image(&mut self, image: Option<PropertyValue>) {
         self.image = image.map(to_constant);
     }
 
-    /// The repeat property. Maps to `repeat`.
+    /// repeat（重复）属性。映射到 `repeat`。
     pub fn repeat_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.repeat.as_ref()
     }
 
-    /// Sets the repeat property. Maps to the `repeat` setter.
+    /// 设置 repeat 属性。映射到 `repeat` setter。
     pub fn set_repeat_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.repeat = property;
     }
 
-    /// Sets the repeat as a constant value.
+    /// 将 repeat 设为常量值。
     pub fn set_repeat(&mut self, repeat: Option<PropertyValue>) {
         self.repeat = repeat.map(to_constant);
     }
 
-    /// The color property. Maps to `color`.
+    /// 颜色属性。映射到 `color`。
     pub fn color_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.color.as_ref()
     }
 
-    /// Sets the color property. Maps to the `color` setter.
+    /// 设置颜色属性。映射到 `color` setter。
     pub fn set_color_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.color = property;
     }
 
-    /// Sets the color as a constant value.
+    /// 将颜色设为常量值。
     pub fn set_color(&mut self, color: Option<PropertyValue>) {
         self.color = color.map(to_constant);
     }
 
-    /// The transparent property. Maps to `transparent`.
+    /// transparent 属性。映射到 `transparent`。
     pub fn transparent_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.transparent.as_ref()
     }
 
-    /// Sets the transparent property. Maps to the `transparent` setter.
+    /// 设置 transparent 属性。映射到 `transparent` setter。
     pub fn set_transparent_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.transparent = property;
     }
 
-    /// Sets the transparent flag as a constant value.
+    /// 将 transparent 标志设为常量值。
     pub fn set_transparent(&mut self, transparent: Option<PropertyValue>) {
         self.transparent = transparent.map(to_constant);
     }
@@ -338,9 +335,9 @@ impl MaterialProperty for ImageMaterialProperty {
 // CheckerboardMaterialProperty
 // ---------------------------------------------------------------------------
 
-/// A material property that maps to checkerboard material uniforms.
+/// 一种映射到棋盘格材质 uniform 的材质属性。
 ///
-/// Maps to CesiumJS `DataSources/CheckerboardMaterialProperty.js`.
+/// 映射到 CesiumJS `DataSources/CheckerboardMaterialProperty.js`.
 #[derive(Clone, Default)]
 pub struct CheckerboardMaterialProperty {
     even_color: Option<Arc<dyn DynProperty>>,
@@ -349,52 +346,52 @@ pub struct CheckerboardMaterialProperty {
 }
 
 impl CheckerboardMaterialProperty {
-    /// Creates a new checkerboard material property with all values defaulted.
+    /// 创建新的棋盘格材质属性，所有值均取默认。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// The even color property. Maps to `evenColor`.
+    /// 偶数颜色属性。映射到 `evenColor`。
     pub fn even_color_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.even_color.as_ref()
     }
 
-    /// Sets the even color property. Maps to the `evenColor` setter.
+    /// 设置偶数颜色属性。映射到 `evenColor` setter。
     pub fn set_even_color_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.even_color = property;
     }
 
-    /// Sets the even color as a constant value.
+    /// 将偶数颜色设为常量值。
     pub fn set_even_color(&mut self, color: Option<PropertyValue>) {
         self.even_color = color.map(to_constant);
     }
 
-    /// The odd color property. Maps to `oddColor`.
+    /// 奇数颜色属性。映射到 `oddColor`。
     pub fn odd_color_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.odd_color.as_ref()
     }
 
-    /// Sets the odd color property. Maps to the `oddColor` setter.
+    /// 设置奇数颜色属性。映射到 `oddColor` setter。
     pub fn set_odd_color_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.odd_color = property;
     }
 
-    /// Sets the odd color as a constant value.
+    /// 将奇数颜色设为常量值。
     pub fn set_odd_color(&mut self, color: Option<PropertyValue>) {
         self.odd_color = color.map(to_constant);
     }
 
-    /// The repeat property. Maps to `repeat`.
+    /// repeat（重复）属性。映射到 `repeat`。
     pub fn repeat_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.repeat.as_ref()
     }
 
-    /// Sets the repeat property. Maps to the `repeat` setter.
+    /// 设置 repeat 属性。映射到 `repeat` setter。
     pub fn set_repeat_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.repeat = property;
     }
 
-    /// Sets the repeat as a constant value.
+    /// 将 repeat 设为常量值。
     pub fn set_repeat(&mut self, repeat: Option<PropertyValue>) {
         self.repeat = repeat.map(to_constant);
     }
@@ -452,9 +449,9 @@ impl MaterialProperty for CheckerboardMaterialProperty {
 // GridMaterialProperty
 // ---------------------------------------------------------------------------
 
-/// A material property that maps to grid material uniforms.
+/// 一种映射到网格材质 uniform 的材质属性。
 ///
-/// Maps to CesiumJS `DataSources/GridMaterialProperty.js`.
+/// 映射到 CesiumJS `DataSources/GridMaterialProperty.js`.
 #[derive(Clone, Default)]
 pub struct GridMaterialProperty {
     color: Option<Arc<dyn DynProperty>>,
@@ -465,82 +462,82 @@ pub struct GridMaterialProperty {
 }
 
 impl GridMaterialProperty {
-    /// Creates a new grid material property with all values defaulted.
+    /// 创建新的网格材质属性，所有值均取默认。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// The color property. Maps to `color`.
+    /// 颜色属性。映射到 `color`。
     pub fn color_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.color.as_ref()
     }
 
-    /// Sets the color property. Maps to the `color` setter.
+    /// 设置颜色属性。映射到 `color` setter。
     pub fn set_color_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.color = property;
     }
 
-    /// Sets the color as a constant value.
+    /// 将颜色设为常量值。
     pub fn set_color(&mut self, color: Option<PropertyValue>) {
         self.color = color.map(to_constant);
     }
 
-    /// The cell alpha property. Maps to `cellAlpha`.
+    /// cell alpha（单元格透明度）属性。映射到 `cellAlpha`。
     pub fn cell_alpha_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.cell_alpha.as_ref()
     }
 
-    /// Sets the cell alpha property. Maps to the `cellAlpha` setter.
+    /// 设置 cell alpha 属性。映射到 `cellAlpha` setter。
     pub fn set_cell_alpha_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.cell_alpha = property;
     }
 
-    /// Sets the cell alpha as a constant value.
+    /// 将 cell alpha 设为常量值。
     pub fn set_cell_alpha(&mut self, cell_alpha: Option<PropertyValue>) {
         self.cell_alpha = cell_alpha.map(to_constant);
     }
 
-    /// The line count property. Maps to `lineCount`.
+    /// line count（线数）属性。映射到 `lineCount`。
     pub fn line_count_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.line_count.as_ref()
     }
 
-    /// Sets the line count property. Maps to the `lineCount` setter.
+    /// 设置 line count 属性。映射到 `lineCount` setter。
     pub fn set_line_count_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.line_count = property;
     }
 
-    /// Sets the line count as a constant value.
+    /// 将 line count 设为常量值。
     pub fn set_line_count(&mut self, line_count: Option<PropertyValue>) {
         self.line_count = line_count.map(to_constant);
     }
 
-    /// The line thickness property. Maps to `lineThickness`.
+    /// line thickness（线宽）属性。映射到 `lineThickness`。
     pub fn line_thickness_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.line_thickness.as_ref()
     }
 
-    /// Sets the line thickness property. Maps to the `lineThickness` setter.
+    /// 设置 line thickness 属性。映射到 `lineThickness` setter。
     pub fn set_line_thickness_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.line_thickness = property;
     }
 
-    /// Sets the line thickness as a constant value.
+    /// 将 line thickness 设为常量值。
     pub fn set_line_thickness(&mut self, line_thickness: Option<PropertyValue>) {
         self.line_thickness = line_thickness.map(to_constant);
     }
 
-    /// The line offset property. Maps to `lineOffset`.
+    /// line offset（线偏移）属性。映射到 `lineOffset`。
     pub fn line_offset_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.line_offset.as_ref()
     }
 
-    /// Sets the line offset property. Maps to the `lineOffset` setter.
+    /// 设置 line offset 属性。映射到 `lineOffset` setter。
     pub fn set_line_offset_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.line_offset = property;
     }
 
-    /// Sets the line offset as a constant value.
+    /// 将 line offset 设为常量值。
     pub fn set_line_offset(&mut self, line_offset: Option<PropertyValue>) {
         self.line_offset = line_offset.map(to_constant);
     }
@@ -618,20 +615,20 @@ impl MaterialProperty for GridMaterialProperty {
 // StripeMaterialProperty
 // ---------------------------------------------------------------------------
 
-/// The orientation of stripes in a `StripeMaterialProperty`.
+/// `StripeMaterialProperty` 中条纹的方向。
 ///
-/// Maps to CesiumJS `DataSources/StripeOrientation.js`.
+/// 映射到 CesiumJS `DataSources/StripeOrientation.js`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StripeOrientation {
-    /// Horizontal orientation (`StripeOrientation.HORIZONTAL` = 0).
+    /// 水平方向（`StripeOrientation.HORIZONTAL` = 0）。
     #[default]
     Horizontal,
-    /// Vertical orientation (`StripeOrientation.VERTICAL` = 1).
+    /// 垂直方向（`StripeOrientation.VERTICAL` = 1）。
     Vertical,
 }
 
 impl StripeOrientation {
-    /// Converts to the numeric representation used by CesiumJS.
+    /// 转换为 CesiumJS 使用的数值表示。
     pub fn to_number(self) -> f64 {
         match self {
             StripeOrientation::Horizontal => 0.0,
@@ -639,14 +636,14 @@ impl StripeOrientation {
         }
     }
 
-    /// Converts to a `PropertyValue::Number`.
+    /// 转换为 `PropertyValue::Number`。
     pub fn to_value(self) -> PropertyValue {
         PropertyValue::Number(self.to_number())
     }
 
-    /// Parses from a property value. Anything other than the number `1.0`
-    /// yields `Horizontal` (matching CesiumJS's `=== StripeOrientation.HORIZONTAL`
-    /// comparison semantics where the default applies).
+    /// 从属性值解析。除数值 `1.0` 以外的任何值都
+    /// 产生 `Horizontal`（与 CesiumJS 的 `=== StripeOrientation.HORIZONTAL`
+    /// 比较语义一致，其中默认值生效）。
     pub fn from_value(value: &PropertyValue) -> Self {
         match value {
             PropertyValue::Number(n) if *n == 1.0 => StripeOrientation::Vertical,
@@ -655,9 +652,9 @@ impl StripeOrientation {
     }
 }
 
-/// A material property that maps to stripe material uniforms.
+/// 一种映射到条纹材质 uniform 的材质属性。
 ///
-/// Maps to CesiumJS `DataSources/StripeMaterialProperty.js`.
+/// 映射到 CesiumJS `DataSources/StripeMaterialProperty.js`.
 #[derive(Clone, Default)]
 pub struct StripeMaterialProperty {
     orientation: Option<Arc<dyn DynProperty>>,
@@ -668,82 +665,82 @@ pub struct StripeMaterialProperty {
 }
 
 impl StripeMaterialProperty {
-    /// Creates a new stripe material property with all values defaulted.
+    /// 创建新的条纹材质属性，所有值均取默认。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// The orientation property. Maps to `orientation`.
+    /// orientation 属性。映射到 `orientation`。
     pub fn orientation_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.orientation.as_ref()
     }
 
-    /// Sets the orientation property. Maps to the `orientation` setter.
+    /// 设置 orientation 属性。映射到 `orientation` setter。
     pub fn set_orientation_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.orientation = property;
     }
 
-    /// Sets the orientation as a constant value.
+    /// 将 orientation 设为常量值。
     pub fn set_orientation(&mut self, orientation: StripeOrientation) {
         self.orientation = Some(to_constant(orientation.to_value()));
     }
 
-    /// The even color property. Maps to `evenColor`.
+    /// 偶数颜色属性。映射到 `evenColor`。
     pub fn even_color_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.even_color.as_ref()
     }
 
-    /// Sets the even color property. Maps to the `evenColor` setter.
+    /// 设置偶数颜色属性。映射到 `evenColor` setter。
     pub fn set_even_color_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.even_color = property;
     }
 
-    /// Sets the even color as a constant value.
+    /// 将偶数颜色设为常量值。
     pub fn set_even_color(&mut self, color: Option<PropertyValue>) {
         self.even_color = color.map(to_constant);
     }
 
-    /// The odd color property. Maps to `oddColor`.
+    /// 奇数颜色属性。映射到 `oddColor`。
     pub fn odd_color_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.odd_color.as_ref()
     }
 
-    /// Sets the odd color property. Maps to the `oddColor` setter.
+    /// 设置奇数颜色属性。映射到 `oddColor` setter。
     pub fn set_odd_color_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.odd_color = property;
     }
 
-    /// Sets the odd color as a constant value.
+    /// 将奇数颜色设为常量值。
     pub fn set_odd_color(&mut self, color: Option<PropertyValue>) {
         self.odd_color = color.map(to_constant);
     }
 
-    /// The offset property. Maps to `offset`.
+    /// offset 属性。映射到 `offset`。
     pub fn offset_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.offset.as_ref()
     }
 
-    /// Sets the offset property. Maps to the `offset` setter.
+    /// 设置 offset 属性。映射到 `offset` setter。
     pub fn set_offset_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.offset = property;
     }
 
-    /// Sets the offset as a constant value.
+    /// 将 offset 设为常量值。
     pub fn set_offset(&mut self, offset: Option<PropertyValue>) {
         self.offset = offset.map(to_constant);
     }
 
-    /// The repeat property. Maps to `repeat`.
+    /// repeat（重复）属性。映射到 `repeat`。
     pub fn repeat_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.repeat.as_ref()
     }
 
-    /// Sets the repeat property. Maps to the `repeat` setter.
+    /// 设置 repeat 属性。映射到 `repeat` setter。
     pub fn set_repeat_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.repeat = property;
     }
 
-    /// Sets the repeat as a constant value.
+    /// 将 repeat 设为常量值。
     pub fn set_repeat(&mut self, repeat: Option<PropertyValue>) {
         self.repeat = repeat.map(to_constant);
     }
@@ -813,34 +810,34 @@ impl MaterialProperty for StripeMaterialProperty {
 // PolylineArrowMaterialProperty
 // ---------------------------------------------------------------------------
 
-/// A material property that maps to PolylineArrow material uniforms.
+/// 一种映射到 PolylineArrow 材质 uniform 的材质属性。
 ///
-/// Maps to CesiumJS `DataSources/PolylineArrowMaterialProperty.js`.
+/// 映射到 CesiumJS `DataSources/PolylineArrowMaterialProperty.js`.
 #[derive(Clone)]
 pub struct PolylineArrowMaterialProperty {
     color: Option<Arc<dyn DynProperty>>,
 }
 
 impl PolylineArrowMaterialProperty {
-    /// Creates a new polyline arrow material property.
-    /// Maps to `new PolylineArrowMaterialProperty(color)`.
+    /// 创建新的折线箭头材质属性。
+    /// 映射到 `new PolylineArrowMaterialProperty(color)`。
     pub fn new(color: Option<PropertyValue>) -> Self {
         Self {
             color: color.map(to_constant),
         }
     }
 
-    /// The color property. Maps to `color`.
+    /// 颜色属性。映射到 `color`。
     pub fn color_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.color.as_ref()
     }
 
-    /// Sets the color property. Maps to the `color` setter.
+    /// 设置颜色属性。映射到 `color` setter。
     pub fn set_color_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.color = property;
     }
 
-    /// Sets the color as a constant value.
+    /// 将颜色设为常量值。
     pub fn set_color(&mut self, color: Option<PropertyValue>) {
         self.color = color.map(to_constant);
     }
@@ -880,9 +877,9 @@ impl MaterialProperty for PolylineArrowMaterialProperty {
 // PolylineDashMaterialProperty
 // ---------------------------------------------------------------------------
 
-/// A material property that maps to polyline dash material uniforms.
+/// 一种映射到折线虚线材质 uniform 的材质属性。
 ///
-/// Maps to CesiumJS `DataSources/PolylineDashMaterialProperty.js`.
+/// 映射到 CesiumJS `DataSources/PolylineDashMaterialProperty.js`.
 #[derive(Clone, Default)]
 pub struct PolylineDashMaterialProperty {
     color: Option<Arc<dyn DynProperty>>,
@@ -892,67 +889,67 @@ pub struct PolylineDashMaterialProperty {
 }
 
 impl PolylineDashMaterialProperty {
-    /// Creates a new polyline dash material property with all values defaulted.
+    /// 创建新的折线虚线材质属性，所有值均取默认。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// The color property. Maps to `color`.
+    /// 颜色属性。映射到 `color`。
     pub fn color_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.color.as_ref()
     }
 
-    /// Sets the color property. Maps to the `color` setter.
+    /// 设置颜色属性。映射到 `color` setter。
     pub fn set_color_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.color = property;
     }
 
-    /// Sets the color as a constant value.
+    /// 将颜色设为常量值。
     pub fn set_color(&mut self, color: Option<PropertyValue>) {
         self.color = color.map(to_constant);
     }
 
-    /// The gap color property. Maps to `gapColor`.
+    /// gap（间隙）颜色属性。映射到 `gapColor`。
     pub fn gap_color_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.gap_color.as_ref()
     }
 
-    /// Sets the gap color property. Maps to the `gapColor` setter.
+    /// 设置 gap 颜色属性。映射到 `gapColor` setter。
     pub fn set_gap_color_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.gap_color = property;
     }
 
-    /// Sets the gap color as a constant value.
+    /// 将 gap 颜色设为常量值。
     pub fn set_gap_color(&mut self, color: Option<PropertyValue>) {
         self.gap_color = color.map(to_constant);
     }
 
-    /// The dash length property. Maps to `dashLength`.
+    /// dash 长度属性。映射到 `dashLength`。
     pub fn dash_length_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.dash_length.as_ref()
     }
 
-    /// Sets the dash length property. Maps to the `dashLength` setter.
+    /// 设置 dash 长度属性。映射到 `dashLength` setter。
     pub fn set_dash_length_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.dash_length = property;
     }
 
-    /// Sets the dash length as a constant value.
+    /// 将 dash 长度设为常量值。
     pub fn set_dash_length(&mut self, dash_length: Option<PropertyValue>) {
         self.dash_length = dash_length.map(to_constant);
     }
 
-    /// The dash pattern property. Maps to `dashPattern`.
+    /// dash 图案属性。映射到 `dashPattern`。
     pub fn dash_pattern_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.dash_pattern.as_ref()
     }
 
-    /// Sets the dash pattern property. Maps to the `dashPattern` setter.
+    /// 设置 dash 图案属性。映射到 `dashPattern` setter。
     pub fn set_dash_pattern_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.dash_pattern = property;
     }
 
-    /// Sets the dash pattern as a constant value.
+    /// 将 dash 图案设为常量值。
     pub fn set_dash_pattern(&mut self, dash_pattern: Option<PropertyValue>) {
         self.dash_pattern = dash_pattern.map(to_constant);
     }
@@ -1016,9 +1013,9 @@ impl MaterialProperty for PolylineDashMaterialProperty {
 // PolylineGlowMaterialProperty
 // ---------------------------------------------------------------------------
 
-/// A material property that maps to polyline glow material uniforms.
+/// 一种映射到折线光晕材质 uniform 的材质属性。
 ///
-/// Maps to CesiumJS `DataSources/PolylineGlowMaterialProperty.js`.
+/// 映射到 CesiumJS `DataSources/PolylineGlowMaterialProperty.js`.
 #[derive(Clone, Default)]
 pub struct PolylineGlowMaterialProperty {
     color: Option<Arc<dyn DynProperty>>,
@@ -1027,52 +1024,52 @@ pub struct PolylineGlowMaterialProperty {
 }
 
 impl PolylineGlowMaterialProperty {
-    /// Creates a new polyline glow material property with all values defaulted.
+    /// 创建新的折线光晕材质属性，所有值均取默认。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// The color property. Maps to `color`.
+    /// 颜色属性。映射到 `color`。
     pub fn color_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.color.as_ref()
     }
 
-    /// Sets the color property. Maps to the `color` setter.
+    /// 设置颜色属性。映射到 `color` setter。
     pub fn set_color_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.color = property;
     }
 
-    /// Sets the color as a constant value.
+    /// 将颜色设为常量值。
     pub fn set_color(&mut self, color: Option<PropertyValue>) {
         self.color = color.map(to_constant);
     }
 
-    /// The glow power property. Maps to `glowPower`.
+    /// glow power（光晕强度）属性。映射到 `glowPower`。
     pub fn glow_power_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.glow_power.as_ref()
     }
 
-    /// Sets the glow power property. Maps to the `glowPower` setter.
+    /// 设置 glow power 属性。映射到 `glowPower` setter。
     pub fn set_glow_power_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.glow_power = property;
     }
 
-    /// Sets the glow power as a constant value.
+    /// 将 glow power 设为常量值。
     pub fn set_glow_power(&mut self, glow_power: Option<PropertyValue>) {
         self.glow_power = glow_power.map(to_constant);
     }
 
-    /// The taper power property. Maps to `taperPower`.
+    /// taper power（收缩强度）属性。映射到 `taperPower`。
     pub fn taper_power_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.taper_power.as_ref()
     }
 
-    /// Sets the taper power property. Maps to the `taperPower` setter.
+    /// 设置 taper power 属性。映射到 `taperPower` setter。
     pub fn set_taper_power_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.taper_power = property;
     }
 
-    /// Sets the taper power as a constant value.
+    /// 将 taper power 设为常量值。
     pub fn set_taper_power(&mut self, taper_power: Option<PropertyValue>) {
         self.taper_power = taper_power.map(to_constant);
     }
@@ -1080,10 +1077,9 @@ impl PolylineGlowMaterialProperty {
 
 impl MaterialProperty for PolylineGlowMaterialProperty {
     fn is_constant(&self) -> bool {
-        // Note: CesiumJS checks `Property.isConstant(this._glow)` here, which
-        // references a nonexistent field and thus always passes; the intended
-        // semantics (and the fields compared in `equals`) are color, glowPower
-        // and taperPower, which is what we implement.
+        // 注意：CesiumJS 在此处检查 `Property.isConstant(this._glow)`，该引用
+        // 指向一个不存在的字段，因而总是通过；预期的语义（以及 `equals` 中
+        // 比较的字段）是 color、glowPower 与 taperPower，我们实现的正是后者。
         option_is_constant(&self.color)
             && option_is_constant(&self.glow_power)
             && option_is_constant(&self.taper_power)
@@ -1130,9 +1126,9 @@ impl MaterialProperty for PolylineGlowMaterialProperty {
 // PolylineOutlineMaterialProperty
 // ---------------------------------------------------------------------------
 
-/// A material property that maps to polyline outline material uniforms.
+/// 一种映射到折线轮廓材质 uniform 的材质属性。
 ///
-/// Maps to CesiumJS `DataSources/PolylineOutlineMaterialProperty.js`.
+/// 映射到 CesiumJS `DataSources/PolylineOutlineMaterialProperty.js`.
 #[derive(Clone, Default)]
 pub struct PolylineOutlineMaterialProperty {
     color: Option<Arc<dyn DynProperty>>,
@@ -1141,53 +1137,52 @@ pub struct PolylineOutlineMaterialProperty {
 }
 
 impl PolylineOutlineMaterialProperty {
-    /// Creates a new polyline outline material property with all values
-    /// defaulted.
+    /// 创建新的折线轮廓材质属性，所有值均取默认。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// The color property. Maps to `color`.
+    /// 颜色属性。映射到 `color`。
     pub fn color_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.color.as_ref()
     }
 
-    /// Sets the color property. Maps to the `color` setter.
+    /// 设置颜色属性。映射到 `color` setter。
     pub fn set_color_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.color = property;
     }
 
-    /// Sets the color as a constant value.
+    /// 将颜色设为常量值。
     pub fn set_color(&mut self, color: Option<PropertyValue>) {
         self.color = color.map(to_constant);
     }
 
-    /// The outline color property. Maps to `outlineColor`.
+    /// 轮廓颜色属性。映射到 `outlineColor`。
     pub fn outline_color_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.outline_color.as_ref()
     }
 
-    /// Sets the outline color property. Maps to the `outlineColor` setter.
+    /// 设置轮廓颜色属性。映射到 `outlineColor` setter。
     pub fn set_outline_color_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.outline_color = property;
     }
 
-    /// Sets the outline color as a constant value.
+    /// 将轮廓颜色设为常量值。
     pub fn set_outline_color(&mut self, color: Option<PropertyValue>) {
         self.outline_color = color.map(to_constant);
     }
 
-    /// The outline width property. Maps to `outlineWidth`.
+    /// 轮廓宽度属性。映射到 `outlineWidth`。
     pub fn outline_width_property(&self) -> Option<&Arc<dyn DynProperty>> {
         self.outline_width.as_ref()
     }
 
-    /// Sets the outline width property. Maps to the `outlineWidth` setter.
+    /// 设置轮廓宽度属性。映射到 `outlineWidth` setter。
     pub fn set_outline_width_property(&mut self, property: Option<Arc<dyn DynProperty>>) {
         self.outline_width = property;
     }
 
-    /// Sets the outline width as a constant value.
+    /// 将轮廓宽度设为常量值。
     pub fn set_outline_width(&mut self, width: Option<PropertyValue>) {
         self.outline_width = width.map(to_constant);
     }
@@ -1252,29 +1247,29 @@ fn material_same_data(
     arc_material_property_equals(left, right)
 }
 
-/// A `CompositeProperty` which is also a `MaterialProperty`.
+/// 一个既是 `MaterialProperty` 的 `CompositeProperty`。
 ///
-/// Each interval's data is itself a material property; evaluation delegates
-/// to the inner property.
+/// 每个区间的数据本身就是一个材质属性；求值时委托给
+/// 内部属性。
 ///
-/// Maps to CesiumJS `DataSources/CompositeMaterialProperty.js`.
+/// 映射到 CesiumJS `DataSources/CompositeMaterialProperty.js`.
 #[derive(Clone, Default)]
 pub struct CompositeMaterialProperty {
     intervals: TimeIntervalCollection<Arc<dyn MaterialProperty>>,
 }
 
 impl CompositeMaterialProperty {
-    /// Creates an empty composite material property.
+    /// 创建一个空的组合材质属性。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// The underlying interval collection. Maps to `intervals`.
+    /// 底层的区间集合。映射到 `intervals`。
     pub fn intervals(&self) -> &TimeIntervalCollection<Arc<dyn MaterialProperty>> {
         &self.intervals
     }
 
-    /// Adds an interval whose data is another material property.
+    /// 添加一个数据为另一个材质属性的区间。
     pub fn add_interval(
         &mut self,
         interval: TimeInterval,
@@ -1402,7 +1397,7 @@ mod tests {
             uniform(&uniforms, "image"),
             &PropertyValue::Text("test.png".to_string())
         );
-        // Default WHITE alpha 1.0 is capped to 0.99 when transparent.
+        // 当 transparent 时，默认的 WHITE alpha 1.0 被限幅到 0.99。
         assert_eq!(
             uniform(&uniforms, "color"),
             &PropertyValue::Color([1.0, 1.0, 1.0, 0.99])
@@ -1494,7 +1489,7 @@ mod tests {
         assert_eq!(uniform(&uniforms, "cellAlpha"), &PropertyValue::Number(0.5));
         assert!(prop.is_constant());
 
-        // A dynamic sub-property makes the whole material non-constant.
+        // 动态的子属性会使整个材质变为非常量。
         let mut sampled = SampledProperty::new(PackableType::Number);
         sampled.add_sample(t(0.0), &PropertyValue::Number(0.0), &[]);
         sampled.add_sample(t(10.0), &PropertyValue::Number(1.0), &[]);
@@ -1610,8 +1605,8 @@ mod tests {
 
     #[test]
     fn test_polyline_glow_dynamic_not_constant() {
-        // Corrects CesiumJS's `isConstant` bug (it checks nonexistent `_glow`):
-        // a dynamic glowPower must make the property non-constant.
+        // 修正了 CesiumJS 的 `isConstant` bug（它检查了不存在的 `_glow`）：
+        // 动态的 glowPower 必须使属性变为非常量。
         let mut prop = PolylineGlowMaterialProperty::new();
         let mut sampled = SampledProperty::new(PackableType::Number);
         sampled.add_sample(t(0.0), &PropertyValue::Number(0.1), &[]);
@@ -1645,7 +1640,7 @@ mod tests {
     #[test]
     fn test_composite_material() {
         let mut prop = CompositeMaterialProperty::new();
-        assert!(prop.is_constant()); // empty → constant
+        assert!(prop.is_constant()); // 空 → 常量
 
         let color_mat = Arc::new(ColorMaterialProperty::from_color([1.0, 0.0, 0.0, 1.0]))
             as Arc<dyn MaterialProperty>;
@@ -1664,7 +1659,7 @@ mod tests {
         assert_eq!(prop.get_type(&t(15.0)), Some("Grid".to_string()));
         assert!(prop.get_value(&t(15.0)).contains_key("cellAlpha"));
 
-        // Outside all intervals: no type, empty uniforms.
+        // 在所有区间之外：无类型，uniform 为空。
         assert_eq!(prop.get_type(&t(30.0)), None);
         assert!(prop.get_value(&t(30.0)).is_empty());
     }

@@ -1,14 +1,14 @@
-//! Scene/Model/CustomShader → Rust integration tests.
+//! Scene/Model/CustomShader → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Scene/Model/CustomShader.js
 //! - Scene/Model/CustomShaderMode.js
 //! - Scene/Model/CustomShaderTranslucencyMode.js
 //! - Scene/Model/UniformType.js
 //! - Scene/Model/VaryingType.js
 //!
-//! A-class tests: UniformType/VaryingType glsl_type/component_count,
-//! CustomShader creation/uniforms/varyings/validate/parse_variables/generate_declarations.
+//! A 类测试：UniformType/VaryingType glsl_type/component_count、
+//! CustomShader 创建/uniforms/varyings/validate/parse_variables/generate_declarations。
 
 use cesium_gltf::custom_shader::{
     CustomShader, CustomShaderMode, CustomShaderTranslucencyMode, ShaderError,
@@ -60,7 +60,7 @@ fn varying_type_glsl_type() {
     assert_eq!(VaryingType::Mat4.glsl_type(), "mat4");
 }
 
-// === CustomShader creation ===
+// === CustomShader 创建 ===
 
 #[test]
 fn custom_shader_default() {
@@ -233,7 +233,7 @@ fn validate_correct_variables_pass() {
     assert!(shader.validate().is_ok());
 }
 
-// === generate declarations ===
+// === 生成声明 ===
 
 #[test]
 fn generate_uniform_declarations() {

@@ -1,8 +1,8 @@
-//! ShaderBuilder / ShaderSource / ShaderProgram / ShaderCache specs
-//! Ported from CesiumJS Renderer/ShaderBuilder.js + ShaderSource.js + ShaderCache.js
+//! ShaderBuilder / ShaderSource / ShaderProgram / ShaderCache 规范
+//! 移植自 CesiumJS Renderer/ShaderBuilder.js + ShaderSource.js + ShaderCache.js
 //!
-//! A-class tests: ShaderSource construction/append/combined, ShaderBuilder
-//! uniforms/structs/functions/defines/build, ShaderProgram lifecycle, ShaderCache dedup
+//! A 类测试：ShaderSource 构造/追加/合并、ShaderBuilder
+//! uniforms/structs/functions/defines/build、ShaderProgram 生命周期、ShaderCache 去重
 
 use cesium_scene::{
     ShaderBuilder, ShaderCache, ShaderFunction, ShaderProgram, ShaderSource, ShaderStage, ShaderUniform,
@@ -157,7 +157,7 @@ fn shader_builder_full_pipeline() {
         .append_vertex("void main() { gl_Position = transformPosition(position); }");
 
     let vs = builder.build_vertex_source();
-    // Order: defines → structs → uniforms → functions → source
+    // 顺序：defines → structs → uniforms → functions → source
     let define_pos = vs.find("#define USE_LIGHTING 1").unwrap();
     let struct_pos = vs.find("struct VSInput {").unwrap();
     let uniform_pos = vs.find("uniform mat4 u_modelViewMatrix;").unwrap();
@@ -211,7 +211,7 @@ fn shader_cache_dedup() {
         ShaderSource::new("void main() {}", ShaderStage::Fragment),
     );
 
-    // Same source → same ID (deduplication)
+    // 相同 source → 相同 ID（去重）
     assert_eq!(id1, id2);
     assert_eq!(cache.len(), 1);
 }

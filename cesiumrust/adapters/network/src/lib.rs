@@ -1,26 +1,26 @@
-//! cesium-network: HTTP + offline disk network adapters
+//! cesium-network：HTTP + 离线磁盘网络适配器
 //!
-//! Implements the `TileFetcher` / `TerrainProvider` driven ports:
+//! 实现 `TileFetcher` / `TerrainProvider` 驱动端口：
 //!
-//! * [`HttpTileFetcher`] — synchronous HTTP requests via ureq dispatched
-//!   through a **tokio-free** `std::thread` + `mpsc` bridge
-//!   ([`resource_backend_impl::spawn_blocking_fetch`]) — rate-limited,
-//!   retrying, cancellable. M8.3 (#66) purged the previous
+//! * [`HttpTileFetcher`] —— 通过 ureq 发起的同步 HTTP 请求，经由一个
+//!   **不依赖 tokio** 的 `std::thread` + `mpsc` 桥接分发
+//!   （[`resource_backend_impl::spawn_blocking_fetch`]）——具限速、
+//!   重试、可取消能力。M8.3（#66）清理了之前的
 //!   `tokio::task::spawn_blocking` / `tokio::time::sleep` / `tokio::sync::Mutex`
-//!   production path in favour of the shared blocking-pool philosophy
-//!   (`adapters/pipeline/src/pool.rs`: 16 workers + keep-alive, no tokio
-//!   Runtime).
-//! * [`FileTileFetcher`] — offline disk-backed imagery tiles (XYZ / quadkey
-//!   layout) with STRICT_OFFLINE semantics (no HTTP fallback).
-//! * [`FileTerrainFetcher`] — offline disk-backed heightmap-1.0 terrain tiles.
-//! * [`MockTileFetcher`] — predefined-response fetcher for tests.
-//! * [`resource_backend_impl`] — the M8.3 [`ResourceBackend`] network adapter
-//!   ([`NetworkResourceBackend`]) + the local env-gate
-//!   ([`resource_fetch_backend_enabled`]) for `CESIUM_ENABLE_RESOURCE_FETCH_BACKEND`.
-//!   When the gate is ON, [`HttpTileFetcher::fetch`] routes through the
-//!   pipeline-managed 16-worker keep-alive pool + hot/warm cache hierarchy;
-//!   when OFF (default), it takes the pre-M8.3 direct-ureq path so the v0
-//!   baseline stays byte-identical.
+//!   生产路径，改用共享的阻塞池理念
+//!   （`adapters/pipeline/src/pool.rs`：16 个工作线程 + keep-alive，无 tokio
+//!   Runtime）。
+//! * [`FileTileFetcher`] —— 离线磁盘支撑的影像瓦片（XYZ / quadkey
+//!   布局），具有 STRICT_OFFLINE 语义（无 HTTP 回退）。
+//! * [`FileTerrainFetcher`] —— 离线磁盘支撑的 heightmap-1.0 地形瓦片。
+//! * [`MockTileFetcher`] —— 供测试使用的预定义响应获取器。
+//! * [`resource_backend_impl`] —— M8.3 的 [`ResourceBackend`] 网络适配器
+//!   （[`NetworkResourceBackend`]）+ 针对 `CESIUM_ENABLE_RESOURCE_FETCH_BACKEND` 的
+//!   本地环境门控（[`resource_fetch_backend_enabled`]）。
+//!   当门控为 ON 时，[`HttpTileFetcher::fetch`] 经由 pipeline 管理的
+//!   16 工作线程 keep-alive 池 + 热/冷缓存层级路由；
+//!   为 OFF（默认）时，走 M8.3 前的直接-ureq 路径，以保证 v0
+//!   基线逐字节一致。
 
 pub mod file_terrain_fetcher;
 pub mod file_tile_fetcher;
@@ -34,9 +34,9 @@ pub use resource_backend_impl::{
 };
 
 use cesium_ports_driven::{PortError, PortResult, TileFetcher};
-// M8.4 (#67): the adapter executes the IO-free domain `FetchDescriptor`
-// produced by `Resource::fetch_*`/`post`. domain/resource stays network-free;
-// all HTTP execution lives here in the adapter.
+// M8.4（#67）：适配器执行由 `Resource::fetch_*`/`post` 产生的、无 IO 的领域
+// `FetchDescriptor`。domain/resource 保持无网络；
+// 所有 HTTP 执行都集中在此处的适配器层。
 use cesium_resource::{FetchDescriptor, HttpMethod};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -50,7 +50,7 @@ const DEFAULT_RETRY_COUNT: u32 = 3;
 const DEFAULT_READ_TIMEOUT_SECS: u64 = 30;
 const RATE_LIMIT_POLL_MS: u64 = 50;
 
-/// Network errors
+/// 网络错误
 #[derive(Debug, Error)]
 pub enum NetworkError {
     #[error("HTTP error: {0}")]
@@ -66,39 +66,39 @@ pub enum NetworkError {
     Cancelled,
 }
 
-/// HTTP-based tile fetcher using ureq for synchronous HTTP/HTTPS requests.
+/// 基于 HTTP 的瓦片获取器，使用 ureq 发起同步的 HTTP/HTTPS 请求。
 ///
-/// Requests are dispatched to a **tokio-free** `std::thread` + `mpsc` bridge
-/// ([`resource_backend_impl::spawn_blocking_fetch`]) so the synchronous ureq
-/// calls do not block the polling context. When
-/// [`resource_fetch_backend_enabled()`] returns `true` (env gate
-/// `CESIUM_ENABLE_RESOURCE_FETCH_BACKEND`), the fetch is routed through the
-/// shared [`NetworkResourceBackend`] (16-worker keep-alive pool + hot/warm
-/// cache hierarchy + in-flight dedup, all reused from `cesium-pipeline`);
-/// when OFF (default) the pre-M8.3 direct-ureq path runs, preserving the v0
-/// baseline byte-identically.
+/// 请求被分发到一个**不依赖 tokio** 的 `std::thread` + `mpsc` 桥接
+/// （[`resource_backend_impl::spawn_blocking_fetch`]），从而同步的 ureq
+/// 调用不会阻塞轮询上下文。当
+/// [`resource_fetch_backend_enabled()`] 返回 `true`（环境门控
+/// `CESIUM_ENABLE_RESOURCE_FETCH_BACKEND`）时，获取会经由共享的
+/// [`NetworkResourceBackend`]（16 工作线程 keep-alive 池 + 热/冷
+/// 缓存层级 + 在途去重，均复用自 `cesium-pipeline`）路由；
+/// 为 OFF（默认）时运行 M8.3 前的直接-ureq 路径，以保持 v0
+/// 基线逐字节一致。
 pub struct HttpTileFetcher {
     agent: ureq::Agent,
     #[allow(dead_code)]
     base_url: String,
     headers: HashMap<String, String>,
-    /// Per-server in-flight counters (rate-limit gate). M8.3: `tokio::sync::Mutex`
-    /// → `std::sync::Mutex` (blocking wait inside the spawned std::thread;
-    /// never blocks the polling context because the whole rate-limit loop
-    /// runs inside [`spawn_blocking_fetch`]).
+    /// 每服务器在途计数（限速门控）。M8.3：`tokio::sync::Mutex`
+    /// → `std::sync::Mutex`（在 spawn 出的 std::thread 内阻塞等待；
+    /// 因为整个限速循环都运行在 [`spawn_blocking_fetch`] 内部，
+    /// 所以绝不会阻塞轮询上下文）。
     active_requests: Arc<StdMutex<HashMap<String, usize>>>,
     max_requests_per_server: usize,
     retry_count: u32,
     cancelled: Arc<StdMutex<HashSet<String>>>,
-    /// M8.3 network `ResourceBackend` — consulted only when
-    /// [`resource_fetch_backend_enabled()`] returns `true`. Shared across all
-    /// `HttpTileFetcher` clones so the 16-worker keep-alive pool + hot/warm
-    /// cache hierarchy are amortised process-wide.
+    /// M8.3 网络 `ResourceBackend` —— 仅当
+    /// [`resource_fetch_backend_enabled()`] 返回 `true` 时才使用。在所有
+    /// `HttpTileFetcher` 克隆间共享，以便 16 工作线程 keep-alive 池 + 热/冷
+    /// 缓存层级在进程范围内被摊薄复用。
     resource_backend: Arc<NetworkResourceBackend>,
 }
 
 impl HttpTileFetcher {
-    /// Creates a new `HttpTileFetcher` with a default ureq agent.
+    /// 创建一个新的 `HttpTileFetcher`，使用默认的 ureq agent。
     pub fn new(base_url: &str) -> Self {
         let agent = ureq::AgentBuilder::new()
             .timeout_read(Duration::from_secs(DEFAULT_READ_TIMEOUT_SECS))
@@ -116,7 +116,7 @@ impl HttpTileFetcher {
         }
     }
 
-    /// Creates a new `HttpTileFetcher` with a custom ureq agent.
+    /// 创建一个新的 `HttpTileFetcher`，使用自定义的 ureq agent。
     pub fn with_agent(base_url: &str, agent: ureq::Agent) -> Self {
         Self {
             agent,
@@ -130,25 +130,25 @@ impl HttpTileFetcher {
         }
     }
 
-    /// Sets a request header.
+    /// 设置一个请求头。
     pub fn with_header(mut self, key: &str, value: &str) -> Self {
         self.headers.insert(key.to_string(), value.to_string());
         self
     }
 
-    /// Sets the maximum concurrent requests per server.
+    /// 设置每服务器的最大并发请求数。
     pub fn with_max_requests_per_server(mut self, max: usize) -> Self {
         self.max_requests_per_server = max;
         self
     }
 
-    /// Sets the number of retry attempts on transient failures.
+    /// 设置瞬时失败时的重试次数。
     pub fn with_retry_count(mut self, retries: u32) -> Self {
         self.retry_count = retries;
         self
     }
 
-    /// Extracts the server key (host[:port]) from a URL.
+    /// 从 URL 中提取服务器键（host[:port]）。
     fn extract_server_key(url: &str) -> String {
         if let Some(start) = url.find("://") {
             let rest = &url[start + 3..];
@@ -160,12 +160,12 @@ impl HttpTileFetcher {
         url.to_string()
     }
 
-    /// Performs a single HTTP GET request and returns the response body.
+    /// 执行一次 HTTP GET 请求并返回响应体。
     ///
-    /// L2 review fix: returns a [`FetchFailure`] (error + retry classification)
-    /// instead of a bare `PortError`, so `do_fetch_with_retry` retries only
-    /// genuinely transient failures (408/429/5xx/transport) and fails fast on
-    /// permanent 4xx client errors.
+    /// L2 审查修正：返回一个 [`FetchFailure`]（错误 + 重试分类）
+    /// 而非裸的 `PortError`，以便 `do_fetch_with_retry` 只重试
+    /// 真正瞬时的失败（408/429/5xx/传输错误），而对永久性 4xx 客户端
+    /// 错误快速失败。
     fn do_fetch(
         agent: &ureq::Agent,
         url: &str,
@@ -182,8 +182,8 @@ impl HttpTileFetcher {
         resp.into_reader()
             .read_to_end(&mut data)
             .map_err(|e| FetchFailure {
-                // A mid-body read error (connection reset, truncated response)
-                // is transient — retrying may succeed.
+                // 响应体读取中途出错（连接重置、响应被截断）
+                // 是瞬时的 —— 重试可能成功。
                 err: PortError::Network(format!("Failed to read response body: {}", e)),
                 transient: true,
             })?;
@@ -191,7 +191,7 @@ impl HttpTileFetcher {
         Ok(data)
     }
 
-    /// Performs a fetch with retry logic for transient failures.
+    /// 执行一次获取，带面向瞬时失败的重试逻辑。
     fn do_fetch_with_retry(
         agent: &ureq::Agent,
         url: &str,
@@ -204,12 +204,12 @@ impl HttpTileFetcher {
             match Self::do_fetch(agent, url, headers) {
                 Ok(data) => return Ok(data),
                 Err(failure) => {
-                    // L2 review fix: retry only transient failures. The pre-fix
-                    // `matches!(&e, PortError::Network(_))` retried *every*
-                    // non-404 status (map_ureq_error folds them all into
-                    // Network), so a permanent 400/401/403 was retried
-                    // pointlessly. `classify_ureq_error` now flags 408/429/5xx/
-                    // transport as transient and everything else as permanent.
+                    // L2 审查修正：只重试瞬时失败。修正前的
+                    // `matches!(&e, PortError::Network(_))` 会重试*每一个*
+                    // 非-404 状态（map_ureq_error 把它们全部归入
+                    // Network），因此一个永久性的 400/401/403 会被
+                    // 毫无意义地重试。`classify_ureq_error` 现在将 408/429/5xx/
+                    // 传输错误标为瞬时，其余标为永久。
                     if !failure.transient {
                         return Err(failure.err);
                     }
@@ -228,32 +228,32 @@ impl HttpTileFetcher {
         }))
     }
 
-    /// M8.4 (#67): execute a domain [`FetchDescriptor`] through the
-    /// gate-guarded adapter path, with the gate decision **injected** so the
-    /// ON/OFF branches are unit-testable without mutating the process env.
+    /// M8.4（#67）：经由受门控保护的适配器路径执行一个领域 [`FetchDescriptor`]，
+    /// 并将门控判定**注入**，以便 ON/OFF 分支可在不变更进程
+    /// 环境的情况下进行单元测试。
     ///
-    /// Routing (see [`Self::fetch_descriptor_blocking`] for the public contract):
-    /// * `is_data_uri` → short-circuit via the pure domain decoder
-    ///   (`cesium_resource::data_uri::decode_data_uri_bytes`); zero network.
-    /// * non-GET method → `PortError::Network` (the `NetworkBackend::fetch(url)`
-    ///   trait + the legacy `do_fetch` execute GET only; per-request
-    ///   method/body await a trait extension — docs/deferred.md). All five
-    ///   `Resource::fetch_*` builders emit GET, so the common path is covered.
-    /// * `gate_enabled` → `NetworkResourceBackend` (→ `PipelineResourceBackend`
-    ///   → 16-worker keep-alive `WorkerPool` → `UreqBackend`) by url + priority.
-    /// * else → the byte-identical pre-M8.4 direct-ureq path
-    ///   (`do_fetch_with_retry`, fetcher headers merged with descriptor headers,
-    ///   retry count from `descriptor.retry.max_attempts`).
+    /// 路由（公共契约见 [`Self::fetch_descriptor_blocking`]）：
+    /// * `is_data_uri` → 通过纯领域解码器短路
+    ///   （`cesium_resource::data_uri::decode_data_uri_bytes`）；零网络。
+    /// * 非-GET 方法 → `PortError::Network`（`NetworkBackend::fetch(url)`
+    ///   trait + 遗留的 `do_fetch` 只执行 GET；按请求的
+    ///   方法/请求体尚待 trait 扩展——docs/deferred.md）。五个
+    ///   `Resource::fetch_*` 构建器均发出 GET，因此常见路径已被覆盖。
+    /// * `gate_enabled` → `NetworkResourceBackend`（→ `PipelineResourceBackend`
+    ///   → 16 工作线程 keep-alive `WorkerPool` → `UreqBackend`），按 url + 优先级。
+    /// * 否则 → 逐字节一致的 M8.4 前直接-ureq 路径
+    ///   （`do_fetch_with_retry`，将获取器 headers 与 descriptor headers 合并，
+    ///   重试次数取自 `descriptor.retry.max_attempts`）。
     fn execute_descriptor_gated(
         &self,
         descriptor: &FetchDescriptor,
         gate_enabled: bool,
     ) -> PortResult<Vec<u8>> {
-        // L4 review fix: reject a non-GET method *before* the data-URI
-        // short-circuit, so a `data:` descriptor carrying a non-GET method
-        // can't slip past the method guard. (Every `Resource::fetch_*`/`post`
-        // builder that emits a data URI uses GET, so this reorders the guard
-        // without changing golden-path behavior.)
+        // L4 审查修正：在数据-URI 短路*之前*拒绝非-GET 方法，
+        // 以便携带非-GET 方法的 `data:` descriptor 不会绕过方法守卫。
+        // （每个发出数据 URI 的 `Resource::fetch_*`/`post`
+        // 构建器都使用 GET，因此这一重排在不改变黄金路径
+        // 行为的前提下收紧了守卫。）
         if !matches!(descriptor.method, HttpMethod::Get) {
             return Err(PortError::Network(format!(
                 "M8.4 backend executes GET only; {:?} awaits a NetworkBackend trait extension",
@@ -264,14 +264,13 @@ impl HttpTileFetcher {
             return cesium_resource::data_uri::decode_data_uri_bytes(&descriptor.url)
                 .map_err(|e| PortError::Decode(format!("data URI decode failed: {e:?}")));
         }
-        // H2 review fix (interim, option b): the gate-ON backend path
-        // (`NetworkResourceBackend::fetch_url_blocking`) forwards only
-        // url + priority — it drops `descriptor.headers` (which may carry an
-        // Authorization / Ion token) and `descriptor.retry`. Until the
-        // `NetworkBackend` trait grows headers/retry parameters (deferred #41),
-        // route any request that actually carries headers through the
-        // byte-identical direct path so no credential is silently lost. A
-        // header-less request still enjoys the shared pool + cache hierarchy.
+        // H2 审查修正（过渡性，选项 b）：受门控保护的后端路径
+        // （`NetworkResourceBackend::fetch_url_blocking`）只转发
+        // url + 优先级 —— 它会丢弃 `descriptor.headers`（可能携带
+        // Authorization / Ion token）和 `descriptor.retry`。直到
+        // `NetworkBackend` trait 长出 headers/retry 参数（deferred #41）为止，
+        // 任何实际携带 headers 的请求都经由逐字节一致的直接路径，
+        // 以免静默丢失凭据。无 headers 的请求仍享受共享池 + 缓存层级。
         let has_headers = !descriptor.headers.is_empty() || !self.headers.is_empty();
         if gate_enabled && !has_headers {
             self.resource_backend
@@ -288,19 +287,19 @@ impl HttpTileFetcher {
         }
     }
 
-    /// M8.4 (#67): the adapter-side execution counterpart of the IO-free
+    /// M8.4（#67）：无 IO 的
     /// `Resource::fetch_array_buffer`/`fetch_json`/`fetch_text`/`fetch_image`/
-    /// `fetch_blob`/`post` descriptor builders. This closes the M8
-    /// “`Resource::fetch` 全量切换收敛” gate (门④): every descriptor executes
-    /// either through the shared backend (gate ON) or the byte-identical legacy
-    /// direct path (gate OFF) — never through an ad-hoc HTTP call scattered in a
-    /// loader, so 门① (HTTP direct calls confined to the backend abstraction
-    /// layer) is preserved after the switch.
+    /// `fetch_blob`/`post` descriptor 构建器在适配器端的执行对应物。它闭合了 M8
+    /// “`Resource::fetch` 全量切换收敛”门（门④）：每个 descriptor 要么
+    /// 经由共享后端（门 ON）执行，要么经由逐字节一致的遗留
+    /// 直接路径（门 OFF）执行 —— 绝不通过分散在某个 loader 里的临时 HTTP 调用，
+    /// 因此切换之后仍能保持 门①（HTTP 直接调用限定在后端抽象
+    /// 层内）。
     ///
-    /// The gate is read once from [`resource_fetch_backend_enabled()`]
-    /// (`CESIUM_ENABLE_RESOURCE_FETCH_BACKEND`). Blocking (like
-    /// [`NetworkResourceBackend::fetch_url_blocking`]); call from a worker
-    /// thread, never the frame thread. domain/resource stays IO-free.
+    /// 门控仅从 [`resource_fetch_backend_enabled()`]
+    /// （`CESIUM_ENABLE_RESOURCE_FETCH_BACKEND`）读取一次。阻塞式（同
+    /// [`NetworkResourceBackend::fetch_url_blocking`]）；从工作线程调用，绝不
+    /// 从帧线程调用。domain/resource 保持无 IO。
     pub fn fetch_descriptor_blocking(&self, descriptor: &FetchDescriptor) -> PortResult<Vec<u8>> {
         self.execute_descriptor_gated(descriptor, resource_fetch_backend_enabled())
     }
@@ -321,21 +320,21 @@ impl TileFetcher for HttpTileFetcher {
         let retry_count = self.retry_count;
         let server_key = Self::extract_server_key(&url_owned);
         let backend = Arc::clone(&self.resource_backend);
-        // Snapshot the gate once per fetch so a mid-flight env mutation cannot
-        // tear the rate-limit + fetch decision (matches the pre-M8.3 atomic
-        // behavior where `tokio::task::spawn_blocking` captured the closure
-        // environment at spawn time).
+        // 每次获取只对门控快照一次，以便飞行中途的环境变更无法
+        // 撕裂限速 + 获取的判定（与 M8.3 前的原子行为一致，
+        // 当时 `tokio::task::spawn_blocking` 在 spawn 时就捕获了
+        // 闭包环境）。
         let use_backend = resource_fetch_backend_enabled();
 
-        // M8.3 tokio purge: the whole rate-limit + fetch + release sequence
-        // runs on a dedicated `std::thread` (via `spawn_blocking_fetch`), not
-        // on a tokio worker. The returned future blocks the polling thread on
-        // `mpsc::recv()` and resolves `Ready` on the first poll, matching the
-        // `PipelineResourceBackend::request_stream` pattern. Callers must
-        // drive this future from an IO/worker context (never the frame
-        // thread) — the same contract `PipelineResourceBackend` publishes.
+        // M8.3 tokio 清理：整个限速 + 获取 + 释放序列
+        // 在一个专门的 `std::thread`（通过 `spawn_blocking_fetch`）上运行，
+        // 而非在 tokio 工作线程上。返回的 future 在 `mpsc::recv()`
+        // 上阻塞轮询线程，并在首次 poll 时解析为 `Ready`，与
+        // `PipelineResourceBackend::request_stream` 模式一致。调用方必须
+        // 从 IO/工作上下文驱动这个 future（绝不从帧线程）——
+        // 与 `PipelineResourceBackend` 发布的契约相同。
         spawn_blocking_fetch(move || {
-            // Cancellation check (byte-identical semantics to pre-M8.3).
+            // 取消检查（与 M8.3 前逐字节一致的语义）。
             {
                 let cancelled_set = cancelled.lock().unwrap();
                 if cancelled_set.contains(&url_owned) {
@@ -343,11 +342,10 @@ impl TileFetcher for HttpTileFetcher {
                 }
             }
 
-            // Rate-limit: wait until a slot opens for this server. Was a
-            // `tokio::time::sleep(...).await` loop pre-M8.3; now a blocking
-            // `std::thread::sleep` inside the spawned worker thread. The
-            // observable behavior (slot acquisition order, poll interval,
-            // saturating release) is unchanged.
+            // 限速：等待直到为该服务器开出一个名额。M8.3 前是一个
+            // `tokio::time::sleep(...).await` 循环；现在是 spawn 出的工作线程
+            // 内阻塞的 `std::thread::sleep`。可观察行为（名额获取
+            // 顺序、轮询间隔、饱和释放）不变。
             loop {
                 let acquired = {
                     let mut active_map = active.lock().unwrap();
@@ -365,24 +363,24 @@ impl TileFetcher for HttpTileFetcher {
                 std::thread::sleep(Duration::from_millis(RATE_LIMIT_POLL_MS));
             }
 
-            // Dispatch: gate ON routes through the shared 16-worker keep-alive
-            // pool (NetworkResourceBackend → PipelineResourceBackend →
-            // WorkerPool → UreqBackend); gate OFF takes the pre-M8.3 direct
-            // ureq path (`do_fetch_with_retry`) so the v0 baseline stays
-            // byte-identical.
-            // H2 review fix (interim, option b): mirror
-            // `execute_descriptor_gated`. The gate-ON backend path forwards only
-            // url + priority, so a fetcher configured with headers (e.g. an
-            // Authorization / Ion token via `with_header`) would lose them.
-            // Route header-bearing fetches through the direct path until the
-            // backend grows a headers parameter (deferred #41).
+            // 分发：门 ON 经由共享的 16 工作线程 keep-alive 池路由
+            // （NetworkResourceBackend → PipelineResourceBackend →
+            // WorkerPool → UreqBackend）；门 OFF 走 M8.3 前的直接
+            // ureq 路径（`do_fetch_with_retry`），以保证 v0 基线
+            // 逐字节一致。
+            // H2 审查修正（过渡性，选项 b）：镜像
+            // `execute_descriptor_gated`。受门控保护的后端路径只转发
+            // url + 优先级，因此为配置了 headers 的获取器（例如通过
+            // `with_header` 设置的 Authorization / Ion token）会丢失它们。
+            // 在后端长出 headers 参数（deferred #41）之前，将携带 headers
+            // 的获取经由直接路径。
             let result = if use_backend && headers.is_empty() {
                 backend.fetch_url_blocking(&url_owned, priority)
             } else {
                 Self::do_fetch_with_retry(&agent, &url_owned, &headers, retry_count)
             };
 
-            // Release the slot (byte-identical semantics to pre-M8.3).
+            // 释放名额（与 M8.3 前逐字节一致的语义）。
             {
                 let mut active_map = active.lock().unwrap();
                 if let Some(count) = active_map.get_mut(&server_key) {
@@ -400,7 +398,7 @@ impl TileFetcher for HttpTileFetcher {
     }
 }
 
-/// Maps a ureq error to a `PortError`.
+/// 将一个 ureq 错误映射为 `PortError`。
 fn map_ureq_error(err: ureq::Error) -> PortError {
     match err {
         ureq::Error::Status(code, _resp) => {
@@ -421,31 +419,31 @@ fn map_ureq_error(err: ureq::Error) -> PortError {
     }
 }
 
-/// A fetch failure paired with its retry classification (L2 review fix).
+/// 一个获取失败，与其重试分类配对（L2 审查修正）。
 ///
-/// The pre-fix retry loop inferred "transient" from
-/// `matches!(err, PortError::Network(_))`, but [`map_ureq_error`] folds *every*
-/// non-404 HTTP status into `PortError::Network` — so a permanent 4xx (400 bad
-/// request, 401/403 auth) was pointlessly retried. Carrying an explicit
-/// `transient` flag lets [`HttpTileFetcher::do_fetch_with_retry`] retry only
-/// genuinely retryable failures and fail fast on the rest.
+/// 修正前的重试循环从 `matches!(err, PortError::Network(_))` 推断“瞬时”，
+/// 但 [`map_ureq_error`] 将*每一个*非-404 的 HTTP 状态都归入
+/// `PortError::Network` —— 因此一个永久性的 4xx（400 错误请求、
+/// 401/403 鉴权）会被毫无意义地重试。携带一个显式的
+/// `transient` 标志，使 [`HttpTileFetcher::do_fetch_with_retry`] 只重试
+/// 真正可重试的失败，其余快速失败。
 struct FetchFailure {
-    /// The error to surface to the caller.
+    /// 向调用方冒泡的错误。
     err: PortError,
-    /// Whether the failure is worth retrying.
+    /// 该失败是否值得重试。
     transient: bool,
 }
 
-/// Classifies a ureq error into a [`FetchFailure`] (L2 review fix).
+/// 将一个 ureq 错误分类为一个 [`FetchFailure`]（L2 审查修正）。
 ///
-/// * HTTP 408 (request timeout) / 429 (too many requests) / 5xx → transient.
-/// * HTTP 404 → `PortError::NotFound`, non-transient.
-/// * any other 4xx → `PortError::Network`, non-transient (a client error won't
-///   fix itself on retry).
-/// * transport errors (DNS, connect, read timeout) → transient.
+/// * HTTP 408（请求超时）/ 429（请求过多）/ 5xx → 瞬时。
+/// * HTTP 404 → `PortError::NotFound`，非瞬时。
+/// * 任何其他 4xx → `PortError::Network`，非瞬时（客户端错误不会
+///   在重试时自行恢复）。
+/// * 传输错误（DNS、连接、读取超时）→ 瞬时。
 ///
-/// The `err` payload reuses [`map_ureq_error`] so the surfaced error variants
-/// are unchanged from pre-fix; only the retry decision is corrected.
+/// `err` 负载复用 [`map_ureq_error`]，因此冒泡的错误变体与
+/// 修正前保持一致；仅修正了重试决策。
 fn classify_ureq_error(err: ureq::Error) -> FetchFailure {
     let transient = match &err {
         ureq::Error::Status(code, _) => *code == 408 || *code == 429 || *code >= 500,
@@ -458,23 +456,23 @@ fn classify_ureq_error(err: ureq::Error) -> FetchFailure {
 }
 
 // ============================================================================
-// MockTileFetcher (for testing)
+// MockTileFetcher（用于测试）
 // ============================================================================
 
-/// A mock tile fetcher for testing that returns predefined data.
+/// 一个用于测试的 mock 瓦片获取器，返回预定义数据。
 pub struct MockTileFetcher {
     responses: HashMap<String, Vec<u8>>,
 }
 
 impl MockTileFetcher {
-    /// Creates a new mock tile fetcher.
+    /// 创建一个新的 mock 瓦片获取器。
     pub fn new() -> Self {
         Self {
             responses: HashMap::new(),
         }
     }
 
-    /// Adds a predefined response for a URL.
+    /// 为一个 URL 添加预定义响应。
     pub fn with_response(mut self, url: &str, data: Vec<u8>) -> Self {
         self.responses.insert(url.to_string(), data);
         self
@@ -503,12 +501,12 @@ impl TileFetcher for MockTileFetcher {
     }
 
     fn cancel(&self, _url: &str) {
-        // Mock fetcher doesn't need cancellation
+        // mock 获取器不需要取消
     }
 }
 
 // ============================================================================
-// Tests
+// 测试
 // ============================================================================
 
 #[cfg(test)]
@@ -550,7 +548,7 @@ mod tests {
         );
     }
 
-    // --- builder -------------------------------------------------------------
+    // --- 构建器 -------------------------------------------------------------
 
     #[test]
     fn test_http_tile_fetcher_builder() {
@@ -583,13 +581,13 @@ mod tests {
         assert_eq!(fetcher.base_url, "https://custom.example.com");
     }
 
-    // --- real fetch (integration-like) ---------------------------------------
+    // --- 真实获取（类集成）---------------------------------------
     //
-    // M8.3: `#[tokio::test]` → `#[test]` + `block_on_noop`. The new
-    // `spawn_blocking_fetch` bridge resolves `Ready` on the first poll (the
-    // worker `std::thread` blocks internally on `mpsc::recv`), so a
-    // `Waker::noop()` single-poll driver is sufficient — no tokio Runtime,
-    // matching the production path's tokio-free contract.
+    // M8.3：`#[tokio::test]` → `#[test]` + `block_on_noop`。新的
+    // `spawn_blocking_fetch` 桥接在首次 poll 时解析为 `Ready`（工作线程
+    // `std::thread` 内部阻塞在 `mpsc::recv` 上），因此一个
+    // `Waker::noop()` 单次-poll 驱动器就足够了 —— 无 tokio Runtime，
+    // 符合生产路径的不依赖-tokio 契约。
 
     #[test]
     fn test_fetch_invalid_url() {
@@ -628,58 +626,56 @@ mod tests {
         let fetcher = MockTileFetcher::new();
         fetcher.cancel("anything");
         let result = block_on_noop(fetcher.fetch("anything", 1.0));
-        assert!(result.is_err()); // not found, not cancelled — cancel is a noop
+        assert!(result.is_err()); // 未找到，非取消 —— cancel 是一个空操作
     }
 
-    // --- M8.3 gate branch reachability ----------------------------------------
+    // --- M8.3 门控分支可达性 ----------------------------------------
     //
-    // Proves the gate-ON branch in `HttpTileFetcher::fetch` is syntactically
-    // reachable and that `NetworkResourceBackend` is wired into the struct.
-    // The end-to-end wiremock-driven assertions live in
-    // `specs/tests/e2e_network/*` (deferred #37, `#[ignore]`-gated until
-    // M11.1 wires the async harness).
+    // 证明 `HttpTileFetcher::fetch` 中的门-ON 分支在语法上可达，且
+    // `NetworkResourceBackend` 已接入该结构体。端到端的 wiremock
+    // 驱动断言位于 `specs/tests/e2e_network/*`（deferred #37，
+    // 在 M11.1 接入异步测试架之前以 `#[ignore]` 门控）。
 
     #[test]
     fn http_tile_fetcher_holds_network_resource_backend() {
         let fetcher = HttpTileFetcher::new("https://example.com");
-        // The backend is constructed eagerly so the gate-ON branch is a pure
-        // env-var decision at fetch time (no lazy-init race).
+        // 后端被急切地构造，以便门-ON 分支在获取时是一个纯粹的环境
+        // 变量判定（无懒初始化的竞态）。
         assert_eq!(fetcher.resource_backend.name(), "cesium-network-resource");
         assert!(fetcher.resource_backend.is_available());
     }
 
     #[test]
     fn gate_off_takes_direct_ureq_branch() {
-        // Ambient env must have CESIUM_ENABLE_RESOURCE_FETCH_BACKEND unset for
-        // the golden path; assert the observed default so a stray export in
-        // CI would fail loudly here rather than silently flipping the branch.
+        // 对于黄金路径，环境变量必须未设置 CESIUM_ENABLE_RESOURCE_FETCH_BACKEND；
+        // 断言观察到的默认值，以便 CI 中一个误设的导出会在此处响亮地
+        // 失败，而不是静默地翻转分支。
         if std::env::var(ENV_ENABLE_RESOURCE_FETCH_BACKEND).is_err() {
             assert!(!resource_fetch_backend_enabled());
         }
     }
 
-    // --- error mapping -------------------------------------------------------
+    // --- 错误映射 -------------------------------------------------------
 
     #[test]
     fn test_map_ureq_error_status_404() {
-        // We can't easily construct ureq::Error::Status without a real response,
-        // but we test the logic indirectly via integration tests above.
-        // This placeholder documents the expected mapping.
+        // 没有真实响应我们很难构造 ureq::Error::Status，
+        // 但上面的集成测试已间接测试了该逻辑。
+        // 这个占位注释记录了预期的映射。
     }
 
-    // --- M8.4 (#67): FetchDescriptor execution wiring ------------------------
+    // --- M8.4（#67）：FetchDescriptor 执行接入 ------------------------
     //
-    // Proves the M8.4 convergence gate: the IO-free domain descriptors produced
-    // by `Resource::fetch_*`/`post` execute through the gate-guarded adapter
-    // path — data URIs short-circuit (zero network), gate ON routes through
-    // `NetworkResourceBackend`, gate OFF takes the byte-identical direct path.
-    // The gate decision is injected via `execute_descriptor_gated` so both
-    // branches are exercised without mutating the process env (which would race
-    // across parallel tests).
+    // 证明 M8.4 收敛门：由 `Resource::fetch_*`/`post` 产生的无-IO 领域
+    // descriptor 经由受门控保护的适配器路径执行 —— 数据 URI 短路（零网络），
+    // 门 ON 经由 `NetworkResourceBackend` 路由，门 OFF 走逐字节一致的
+    // 直接路径。门控判定通过 `execute_descriptor_gated` 注入，因此两个
+    // 分支都能在不变更进程环境（这在并行测试间会产生竞态）的
+    // 情况下被执行。
 
-    /// Minimal offline HTTP server (ephemeral 127.0.0.1 port) returning `body`
-    /// for every GET. Mirrors `adapters/pipeline/src/net/mod.rs::test_server`
-    /// (which is `pub(crate)`, hence not reachable cross-crate).
+    /// 最小化的离线 HTTP 服务器（临时 127.0.0.1 端口），对每个 GET 都返回 `body`。
+    /// 镜像了 `adapters/pipeline/src/net/mod.rs::test_server`
+    /// （后者是 `pub(crate)`，因此跨 crate 不可达）。
     fn spawn_test_server(body: &'static [u8]) -> String {
         use std::io::{Read, Write};
         use std::net::TcpListener;
@@ -689,7 +685,7 @@ mod tests {
             for stream in listener.incoming() {
                 let Ok(mut stream) = stream else { break };
                 let mut buf = [0u8; 2048];
-                let _ = stream.read(&mut buf); // drain the request head
+                let _ = stream.read(&mut buf); // 排空请求头
                 let head = format!(
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                     body.len()
@@ -709,12 +705,12 @@ mod tests {
     #[test]
     fn fetch_descriptor_data_uri_short_circuits_no_network() {
         let fetcher = HttpTileFetcher::new("https://example.com");
-        // "QUJD" is base64 for "ABC".
+        // "QUJD" 是 "ABC" 的 base64。
         let resource = cesium_resource::Resource::new("data:application/octet-stream;base64,QUJD");
         let descriptor = resource.fetch_array_buffer(None);
         assert!(descriptor.is_data_uri);
         let before = fetcher.resource_backend.fetch_count();
-        // data URI short-circuits before the gate is even consulted.
+        // 数据 URI 在门控被查询之前就已短路。
         let out = fetcher
             .fetch_descriptor_blocking(&descriptor)
             .expect("data URI decodes");
@@ -746,7 +742,7 @@ mod tests {
         let resource = cesium_resource::Resource::new(&url);
         let descriptor = resource.fetch_array_buffer(None);
         assert!(!descriptor.is_data_uri);
-        // gate OFF (injected) -> byte-identical legacy direct-ureq path.
+        // 门 OFF（注入）-> 逐字节一致的遗留直接-ureq 路径。
         let out = fetcher
             .execute_descriptor_gated(&descriptor, false)
             .expect("direct path");
@@ -760,7 +756,7 @@ mod tests {
         let resource = cesium_resource::Resource::new(&url);
         let descriptor = resource.fetch_array_buffer(None);
         let before = fetcher.resource_backend.fetch_count();
-        // gate ON (injected) -> NetworkResourceBackend -> WorkerPool -> UreqBackend.
+        // 门 ON（注入）-> NetworkResourceBackend -> WorkerPool -> UreqBackend。
         let out = fetcher
             .execute_descriptor_gated(&descriptor, true)
             .expect("backend path");
@@ -771,10 +767,9 @@ mod tests {
         );
     }
 
-    /// Offline HTTP server returning `body` (200) only when the request head
-    /// carries `required_header` (case-insensitive substring match); otherwise
-    /// 403. Proves the H2 fallback actually transmits descriptor headers that
-    /// the gate-ON backend path would drop.
+    /// 离线 HTTP 服务器，仅当请求头携带 `required_header`（大小写不敏感的
+    /// 子串匹配）时才返回 `body`（200）；否则 403。证明 H2 回退确实
+    /// 传送了受门控保护的后端路径会丢弃的 descriptor headers。
     fn spawn_header_gate_server(required_header: &'static str, body: &'static [u8]) -> String {
         use std::io::{Read, Write};
         use std::net::TcpListener;
@@ -811,11 +806,10 @@ mod tests {
 
     #[test]
     fn gate_on_with_headers_falls_back_to_direct_and_sends_them() {
-        // H2 review fix: a descriptor carrying headers must NOT lose them on
-        // the gate-ON path. The server returns the body only when the
-        // `X-Ion-Token` header arrives, so receiving the body proves the
-        // interim fallback to the direct path transmitted it; `fetch_count`
-        // staying put proves the request bypassed the header-dropping backend.
+        // H2 审查修正：携带 headers 的 descriptor 在门-ON 路径上绝不能丢失
+        // 它们。服务器仅当 `X-Ion-Token` header 到达时才返回 body，因此
+        // 收到 body 就证明了向直接路径的过渡性回退传送了它；而 `fetch_count`
+        // 保持不变则证明该请求绕过了丢弃 headers 的后端。
         let url = spawn_header_gate_server("X-Ion-Token: secret", b"authorized-tile");
         let fetcher = HttpTileFetcher::new("");
         let resource = cesium_resource::Resource::new(&url).with_header("X-Ion-Token", "secret");
@@ -826,7 +820,7 @@ mod tests {
         );
 
         let before = fetcher.resource_backend.fetch_count();
-        // gate ON (injected) but headers present -> interim fallback to direct.
+        // 门 ON（注入）但存在 headers -> 过渡性地回退到直接路径。
         let out = fetcher
             .execute_descriptor_gated(&descriptor, true)
             .expect("header-bearing gate-ON request falls back to direct and succeeds");
@@ -840,12 +834,11 @@ mod tests {
 
     #[test]
     fn non_get_data_uri_descriptor_rejected_before_short_circuit() {
-        // L4 review fix: the method guard now runs BEFORE the data-URI
-        // short-circuit, so a non-GET descriptor carrying a `data:` URL is
-        // rejected with a Network error instead of silently decoding. Pre-fix
-        // the data-URI branch fired first and returned the decoded bytes for a
-        // POST. (All `Resource::fetch_*` data-URI builders emit GET; only the
-        // nonsensical `post()`-on-data-URI path reaches this guard.)
+        // L4 审查修正：方法守卫现在在数据-URI 短路之前运行，因此
+        // 携带 `data:` URL 的非-GET descriptor 会被以 Network 错误拒绝，而不是
+        // 静默解码。修正前数据-URI 分支先触发，会为 POST 返回已解码的
+        // 字节。（所有 `Resource::fetch_*` 数据-URI 构建器都发出 GET；只有
+        // 那个没意义的“对数据 URI 调用 `post()`”路径会抵达此守卫。）
         let fetcher = HttpTileFetcher::new("");
         let resource = cesium_resource::Resource::new("data:application/octet-stream;base64,QUJD");
         let descriptor = resource.post(vec![1, 2, 3], None);
@@ -862,11 +855,10 @@ mod tests {
 
     #[test]
     fn permanent_4xx_fails_fast_without_retry() {
-        // L2 review fix: a permanent 4xx (here 400 Bad Request) is classified
-        // non-transient, so `do_fetch_with_retry` fails fast on the FIRST
-        // attempt instead of retrying `retry_count` times. The server counts
-        // hits; exactly one proves no retry. (408/429/5xx stay transient and
-        // would be retried.)
+        // L2 审查修正：一个永久性的 4xx（此处为 400 Bad Request）被分类为
+        // 非-瞬时，因此 `do_fetch_with_retry` 在第一次尝试就快速失败，
+        // 而不是重试 `retry_count` 次。服务器统计命中数；恰好一个就
+        // 证明了没有重试。（408/429/5xx 仍为瞬时，会被重试。）
         use std::io::{Read, Write};
         use std::net::TcpListener;
         use std::sync::atomic::{AtomicUsize, Ordering};

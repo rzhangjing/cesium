@@ -1,4 +1,4 @@
-//! Scene/QuadtreePrimitiveSpec.js, QuadtreeTileSpec.js → Rust integration tests
+//! Scene/QuadtreePrimitiveSpec.js、QuadtreeTileSpec.js → Rust 集成测试
 
 use cesium_quadtree::{
     QuadtreeConfig, QuadtreePrimitive, QuadtreeTile, TileState, TraversalResult,
@@ -98,7 +98,7 @@ fn test_quadtree_config_default() {
     assert!(!config.fog_culling);
 }
 
-// === QuadtreePrimitive traversal ===
+// === QuadtreePrimitive 遍历 ===
 
 #[test]
 fn test_traversal_renders_root_when_far() {
@@ -140,9 +140,9 @@ fn test_traversal_queues_children_when_close() {
         }
     });
 
-    // Root rendered as fallback (children unloaded)
+    // 作为回退渲染根（子节点未加载）
     assert_eq!(result.tiles_to_render.len(), 1);
-    // 4 children queued for loading
+    // 4 个子节点排队等待加载
     assert_eq!(result.tiles_to_load.len(), 4);
 }
 

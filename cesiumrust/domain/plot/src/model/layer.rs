@@ -1,36 +1,36 @@
-//! A layer: the top-level container in the tree — an ordered bucket of root
-//! nodes (elements + groups) with visibility / editability / opacity flags and
-//! the "active layer" marker new content falls into (plan §5, §9).
+//! 一个图层：树中的顶层容器 —— 一个有序的根节点
+//! 桶（元素 + 组），带可见性 / 可编辑性 / 不透明度标志以及
+//! 新内容落入的“活动图层”标记（计划 §5、§9）。
 
 use serde::{Deserialize, Serialize};
 
 use super::ids::LayerId;
 use super::node::Node;
 
-/// A plotting layer.
+/// 一个标绘图层。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Layer {
     pub id: LayerId,
     pub name: String,
-    /// Draw / pick priority; higher draws later (on top). Distinct from a
-    /// member's own `style.z_order` (which orders within the layer).
+    /// 绘制 / 拾取优先级；越高越后绘制（在上层）。与成员
+    /// 自身的 `style.z_order`（在层内排序）不同。
     pub order: i32,
-    /// Layer on/off switch (§10.2).
+    /// 图层开/关开关（§10.2）。
     pub visible: bool,
-    /// Group opacity multiplier applied over members' colours (§9).
+    /// 施加在成员颜色之上的组不透明度乘子（§9）。
     pub opacity: f32,
-    /// Editing allowed in this layer? Locked layers are read-only (§9).
+    /// 本层允许编辑吗？锁定的图层为只读（§9）。
     pub editable: bool,
-    /// Elements here are pickable/selectable? (§9).
+    /// 本层的元素是否可拾取/可选中？（§9）。
     pub selectable: bool,
-    /// New / pasted elements land in the active layer (§9).
+    /// 新建 / 粘贴的元素落入活动图层（§9）。
     pub active: bool,
-    /// Root members in draw order.
+    /// 按绘制顺序排列的根成员。
     pub roots: Vec<Node>,
 }
 
 impl Layer {
-    /// A visible, editable, selectable, empty layer.
+    /// 一个可见、可编辑、可选中、空的图层。
     pub fn new(id: LayerId, name: impl Into<String>) -> Self {
         Self {
             id,

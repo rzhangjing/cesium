@@ -1,17 +1,17 @@
-//! M5-E1: FXAA anti-aliasing ViewNode (quality preset 12 only).
+//! M5-E1：FXAA 抗锯齿 ViewNode（仅质量预设 12）。
 //!
-//! Implements the cesiumrust FXAA post-process node using the RenderGraph
-//! infrastructure from M5-E0 (`graph.rs`). The node is inserted between
-//! `Node3d::Tonemapping` and `Node3d::EndMainPassPostProcessing` in `Core3d`.
+//! 使用来自 M5-E0（`graph.rs`）的 RenderGraph
+//! 基础设施实现 cesiumrust 的 FXAA 后处理节点。该节点插入在
+//! `Core3d` 的 `Node3d::Tonemapping` 与 `Node3d::EndMainPassPostProcessing` 之间。
 //!
-//! # Blueprint
-//! - `cesium-rs/crates/cesium-shaders/shaders/FXAA3_11.glsl` (651 lines, preset 12 = L102-108)
-//! - `packages/engine/Source/Shaders/PostProcessStages/FXAA.glsl` (21 lines, interface)
+//! # 蓝图
+//! - `cesium-rs/crates/cesium-shaders/shaders/FXAA3_11.glsl`（651 行，preset 12 = L102-108）
+//! - `packages/engine/Source/Shaders/PostProcessStages/FXAA.glsl`（21 行，接口）
 //! - `packages/engine/Source/Scene/PostProcessStageLibrary.js` L611 `createFXAAStage`
 //!
-//! # DEVIATION
-//! WGSL rewrite of GLSL FXAA 3.11; only quality preset 12 implemented (plan L155).
-//! See `docs/deviations.md#dev-017`.
+//! # 偏差
+//! GLSL FXAA 3.11 的 WGSL 重写；仅实现质量预设 12（计划 L155）。
+//! 参见 `docs/deviations.md#dev-017`。
 
 use std::sync::Mutex;
 
@@ -44,19 +44,19 @@ use super::graph::CesiumPostProcessLabel;
 
 // ─── Shader handle ───────────────────────────────────────────────────────────
 
-/// Unique handle for the embedded `fxaa.wgsl` shader.
+/// 内嵌 `fxaa.wgsl` shader 的唯一 handle。
 pub const FXAA_SHADER_HANDLE: Handle<Shader> =
     Handle::weak_from_u128(0xCE51_E1E1_F4AA_0012);
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// ─── 组件 ───────────────────────────────────────────────────────────────
 
-/// Marker component enabling cesiumrust FXAA on a camera entity.
+/// 在相机实体上启用 cesiumrust FXAA 的标记组件。
 ///
-/// Extracted to render world via `ExtractComponentPlugin`. The `FxaaNode`
-/// early-returns when `enabled == false` (zero GPU cost).
+/// 通过 `ExtractComponentPlugin` 提取到 render world。当 `enabled == false` 时
+/// `FxaaNode` 会提前 return（零 GPU 开销）。
 #[derive(Component, Clone, Debug, ExtractComponent)]
 pub struct CesiumFxaa {
-    /// Master enable for the FXAA pass on this camera.
+    /// 该相机上 FXAA pass 的主开关。
     pub enabled: bool,
 }
 
@@ -66,7 +66,7 @@ impl Default for CesiumFxaa {
     }
 }
 
-/// Per-view cached pipeline ID for the FXAA node.
+/// FXAA 节点的逐视图缓存 pipeline ID。
 #[derive(Component)]
 pub struct CameraFxaaPipeline {
     pub pipeline_id: CachedRenderPipelineId,
@@ -74,7 +74,7 @@ pub struct CameraFxaaPipeline {
 
 // ─── Pipeline ────────────────────────────────────────────────────────────────
 
-/// Render-world resource: bind group layout + sampler for FXAA.
+/// Render-world 资源：FXAA 的 bind group 布局 + 采样器。
 #[derive(Resource)]
 pub struct FxaaPipeline {
     pub texture_bind_group_layout: BindGroupLayout,
@@ -111,7 +111,7 @@ impl FromWorld for FxaaPipeline {
     }
 }
 
-/// Specialization key: texture format only (preset 12 is hardcoded in WGSL).
+/// 特化键：仅纹理格式（preset 12 硬编码在 WGSL 中）。
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct FxaaPipelineKey {
     pub texture_format: TextureFormat,
@@ -146,10 +146,10 @@ impl SpecializedRenderPipeline for FxaaPipeline {
 
 // ─── ViewNode ────────────────────────────────────────────────────────────────
 
-/// FXAA `ViewNode` — runs after tonemapping, before EndMainPassPostProcessing.
+/// FXAA `ViewNode` —— 在 tonemapping 之后、EndMainPassPostProcessing 之前运行。
 ///
-/// Pattern matches `bevy_core_pipeline::fxaa::node::FxaaNode` (86 lines) with
-/// cesiumrust's own WGSL shader (quality preset 12).
+/// 模式对应 `bevy_core_pipeline::fxaa::node::FxaaNode`（86 行），但使用
+/// cesiumrust 自己的 WGSL shader（质量预设 12）。
 #[derive(Default)]
 pub struct FxaaNode {
     cached_texture_bind_group: Mutex<Option<(TextureViewId, BindGroup)>>,
@@ -216,16 +216,16 @@ impl ViewNode for FxaaNode {
 
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);
-        render_pass.draw(0..3, 0..1); // fullscreen triangle
+        render_pass.draw(0..3, 0..1); // 全屏三角形
 
         Ok(())
     }
 }
 
-// ─── Render systems ──────────────────────────────────────────────────────────
+// ─── 渲染系统 ──────────────────────────────────────────────────────────
 
-/// Prepares specialized FXAA pipelines per camera view.
-/// Runs in `Render` schedule, `RenderSet::Prepare`.
+/// 逐相机视图准备特化的 FXAA pipeline。
+/// 运行在 `Render` 调度、`RenderSet::Prepare`。
 pub fn prepare_fxaa_pipelines(
     mut commands: Commands,
     pipeline_cache: Res<PipelineCache>,
@@ -254,42 +254,41 @@ pub fn prepare_fxaa_pipelines(
     }
 }
 
-// ─── Registration ────────────────────────────────────────────────────────────
+// ─── 注册 ────────────────────────────────────────────────────────────
 
-/// Register the FXAA node into `RenderApp` (shader + extract + node + systems).
+/// 将 FXAA 节点注册进 `RenderApp`（shader + extract + node + 系统）。
 ///
-/// Called from `register_render_graph` (graph.rs) when the post-process gate is
-/// ON. This function registers the node **but does not create graph edges** —
-/// `register_render_graph` owns the single linear chain (Daniel H2, upstream
-/// CesiumJS parity) `EndMainPass → PassThrough → AmbientOcclusion → Tonemapping →
-/// Fxaa → EndMainPassPostProcessing`, so the cesium nodes never form a diamond in
-/// `Core3d`.
+/// 当后处理门控为 ON 时，从 `register_render_graph`（graph.rs）调用。本
+/// 函数注册节点**但不创建 graph 边** ——
+/// `register_render_graph` 拥有单一线性链（Daniel H2，上游
+/// CesiumJS 对齐）`EndMainPass → PassThrough → AmbientOcclusion → Tonemapping →
+/// Fxaa → EndMainPassPostProcessing`，所以 cesium 节点从不在
+/// `Core3d` 中形成菱形。
 ///
-/// Position rationale: FXAA runs **after** tonemapping (HDR linear → LDR done)
-/// and **before** upscaling, matching CesiumJS where FXAA operates on the final
-/// LDR image. See `docs/deviations.md#dev-017`.
+/// 位置理由：FXAA 在 tonemapping **之后**（HDR 线性 → LDR 完成）、上采样
+/// **之前**运行，与 CesiumJS 中 FXAA 作用于最终
+/// LDR 图像的做法一致。参见 `docs/deviations.md#dev-017`。
 #[deprecated = "DEV-029 / FIX-REG-FACADE: call `register_fxaa_node_main_world` from `Plugin::build` and `register_fxaa_node_render_world` from `Plugin::finish`; this facade runs the finish half against a possibly device-less render world."]
 pub fn register_fxaa_node(app: &mut App) {
     register_fxaa_node_main_world(app);
-    // Headless `MinimalPlugins` has no `RenderApp` — degrade gracefully.
+    // 无头 `MinimalPlugins` 没有 `RenderApp` —— 优雅降级。
     if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
         register_fxaa_node_render_world(render_app);
     }
 }
 
-/// `Plugin::build`-time half of [`register_fxaa_node`]: everything that lives in
-/// the **main** world (WGSL shader asset + `ExtractComponentPlugin`).
+/// [`register_fxaa_node`] 的 `Plugin::build` 时半边：生住在
+/// **主** world 中的一切（WGSL shader 资产 + `ExtractComponentPlugin`）。
 ///
-/// Split out by task #81 — see `docs/deviations.md#dev-029`. `FxaaPipeline`'s
-/// `FromWorld` reads `RenderDevice`, and Bevy only inserts `RenderDevice` into
-/// the render world in `RenderPlugin::finish` (`bevy_render/src/lib.rs`
-/// L399-430), so calling [`register_fxaa_node_render_world`] from any plugin's
-/// `build` panics with "RenderDevice does not exist in the World". Callers must
-/// therefore run the two halves from `build` and `finish` respectively (the
-/// pattern Bevy itself uses: `bevy_pbr/src/ssao/mod.rs` L54 `build` / L80
-/// `finish`).
+/// 由任务 #81 拆出 —— 参见 `docs/deviations.md#dev-029`。`FxaaPipeline` 的
+/// `FromWorld` 读取 `RenderDevice`，而 Bevy 只在 `RenderPlugin::finish`
+///（`bevy_render/src/lib.rs` L399-430）中才将 `RenderDevice` 插入 render
+/// world，所以从任何插件的 `build` 调用 [`register_fxaa_node_render_world`] 会
+/// panic，报错 "RenderDevice does not exist in the World"。因此调用者必须
+/// 分别从 `build` 和 `finish` 运行两个半边（Bevy 自身使用的
+/// 模式：`bevy_pbr/src/ssao/mod.rs` L54 `build` / L80 `finish`）。
 pub fn register_fxaa_node_main_world(app: &mut App) {
-    // Register FXAA WGSL shader (headless-safe).
+    // 注册 FXAA WGSL shader（无头安好）。
     crate::shader_registry::try_load_internal_shader(
         app,
         FXAA_SHADER_HANDLE,
@@ -297,16 +296,16 @@ pub fn register_fxaa_node_main_world(app: &mut App) {
         "shaders/fxaa.wgsl",
     );
 
-    // ExtractComponentPlugin for CesiumFxaa (ExtractSchedule: main→render world).
+    // CesiumFxaa 的 ExtractComponentPlugin（ExtractSchedule：主→render world）。
     app.add_plugins(ExtractComponentPlugin::<CesiumFxaa>::default());
 }
 
-/// `Plugin::finish`-time half of [`register_fxaa_node`]: the render-world
-/// pipeline resources + the `Core3d` node.
+/// [`register_fxaa_node`] 的 `Plugin::finish` 时半边：render-world
+/// pipeline 资源 + `Core3d` 节点。
 pub fn register_fxaa_node_render_world(render_app: &mut bevy::app::SubApp) {
-    // FIX-REG-FACADE (DEV-029): degrade to a no-op when `RenderDevice` is absent
-    // (finish half reached from `build`, or a bare render world). See
-    // `crate::effects::render_world_missing_device`.
+    // FIX-REG-FACADE（DEV-029）：当 `RenderDevice` 缺失时降级为 no-op
+    //（finish 半边从 `build` 到达，或一个裸 render world）。参见
+    // `crate::effects::render_world_missing_device`。
     if crate::effects::render_world_missing_device(render_app) {
         return;
     }
@@ -319,10 +318,10 @@ pub fn register_fxaa_node_render_world(render_app: &mut bevy::app::SubApp) {
             Core3d,
             CesiumPostProcessLabel::Fxaa,
         );
-    // NOTE: edges are created by `register_render_graph` (unified linear chain).
+    // 注意：边由 `register_render_graph` 创建（统一线性链）。
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────────────
+// ─── 测试 ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -338,25 +337,25 @@ mod tests {
     fn fxaa_headless_graceful() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
-        // Should not panic (no RenderApp).
+        // 不应 panic（没有 RenderApp）。
         #[allow(deprecated)]
         register_fxaa_node(&mut app);
     }
 
     #[test]
     fn fxaa_shader_handle_unique() {
-        // Ensure no collision with pass-through handle.
+        // 确保不与 pass-through handle 冲突。
         assert_ne!(
             FXAA_SHADER_HANDLE,
             super::super::graph::PASS_THROUGH_SHADER_HANDLE
         );
     }
 
-    // ─── Ryan C1 defence line: headless naga parse + validate + layout parity ──
+    // ─── Ryan C1 防线：无头 naga 解析 + 校验 + 布局对齐 ──
 
-    /// naga has no preprocessor, so `fxaa.wgsl`'s single `#import`
-    /// (`FullscreenVertexOutput`) is replaced by a stub declaring the field the
-    /// fragment reads (`position`). Everything else is the real shader source.
+    /// naga 没有预处理器，所以 `fxaa.wgsl` 的那一个 `#import`
+    ///（`FullscreenVertexOutput`）被一个 stub 取代，该 stub 声明片元
+    /// 读取的字段（`position`）。其余全是真实的 shader 源码。
     const FXAA_WGSL_IMPORT_STUBS: &str = "\
 struct FullscreenVertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -376,9 +375,9 @@ struct FullscreenVertexOutput {
         source
     }
 
-    /// Headless proof the FXAA shader is real: parsed + type-checked by **naga**
-    /// (the same WGSL front end `bevy_render` compiles it with on the GPU path).
-    /// Device readback still needs xvfb (`.github/workflows/cesiumrust-e2e.yml`).
+    /// FXAA shader 真实性的无头证明：由 **naga** 解析 + 类型检查
+    ///（与 `bevy_render` 在 GPU 路径上编译它所用的 WGSL 前端相同）。
+    /// 设备回读仍需 xvfb（`.github/workflows/cesiumrust-e2e.yml`）。
     #[test]
     fn fxaa_wgsl_parses_and_type_checks_under_naga() {
         let source = fxaa_stubbed_wgsl();
@@ -404,11 +403,11 @@ struct FullscreenVertexOutput {
         );
     }
 
-    /// Ryan C1 (catches the **C2** class of bug): every binding the `fragment`
-    /// entry statically uses must be present in the Rust `FxaaPipeline` layout
-    /// (group 0: binding 0 = screen texture, binding 1 = sampler). Guards against a
-    /// silent pipeline-build failure that would no-op FXAA while `pixel_diff`
-    /// reported a false green.
+    /// Ryan C1（捕捉 **C2** 类 bug）：`fragment` 入口静态使用的每一个 binding
+    /// 都必须存在于 Rust 的 `FxaaPipeline` 布局中
+    ///（group 0：binding 0 = 屏幕纹理，binding 1 = 采样器）。以防一种
+    /// 静默的 pipeline-build 失败使 FXAA 变为 no-op，而 `pixel_diff`
+    /// 却报出一个假绿。
     #[test]
     fn fxaa_wgsl_entry_bindings_are_covered_by_the_rust_layout() {
         let source = fxaa_stubbed_wgsl();

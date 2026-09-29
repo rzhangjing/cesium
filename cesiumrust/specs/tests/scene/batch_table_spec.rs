@@ -1,13 +1,13 @@
-//! Scene/Cesium3DTileBatchTable + FeatureTable → Rust integration tests.
+//! Scene/Cesium3DTileBatchTable + FeatureTable → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Scene/Cesium3DTileFeatureTable.js
 //! - Scene/Cesium3DTileBatchTable.js
 //! - Scene/BatchTableHierarchy.js
 //!
-//! A-class tests: ComponentType/AccessorType parsing, FeatureTable global/binary
-//! properties, BatchTable JSON/binary get/set, BatchTableHierarchy class/parent/property.
-//! C-class omitted: WebGL buffer upload, shader integration, picking.
+//! A 类测试：ComponentType/AccessorType 解析、FeatureTable 全局/二进制
+//! 属性、BatchTable JSON/二进制 get/set、BatchTableHierarchy class/parent/property。
+//! C 类省略：WebGL buffer 上传、shader 集成、picking。
 
 use cesium_tileset::batch_table::{
     AccessorType, BatchTable, BatchTableHierarchy, ComponentType, FeatureTable,
@@ -64,17 +64,17 @@ fn accessor_type_from_name() {
 // === FeatureTable ===
 
 fn make_feature_table() -> FeatureTable {
-    // 3 points with binary POSITION data (3 * 3 floats = 36 bytes)
+    // 3 个带二进制 POSITION 数据的点（3 * 3 个浮点 = 36 字节）
     let mut binary = Vec::new();
-    // Point 0: (1.0, 2.0, 3.0)
+    // 点 0: (1.0, 2.0, 3.0)
     binary.extend_from_slice(&1.0f32.to_le_bytes());
     binary.extend_from_slice(&2.0f32.to_le_bytes());
     binary.extend_from_slice(&3.0f32.to_le_bytes());
-    // Point 1: (4.0, 5.0, 6.0)
+    // 点 1: (4.0, 5.0, 6.0)
     binary.extend_from_slice(&4.0f32.to_le_bytes());
     binary.extend_from_slice(&5.0f32.to_le_bytes());
     binary.extend_from_slice(&6.0f32.to_le_bytes());
-    // Point 2: (7.0, 8.0, 9.0)
+    // 点 2: (7.0, 8.0, 9.0)
     binary.extend_from_slice(&7.0f32.to_le_bytes());
     binary.extend_from_slice(&8.0f32.to_le_bytes());
     binary.extend_from_slice(&9.0f32.to_le_bytes());
@@ -195,7 +195,7 @@ fn make_batch_table() -> BatchTable {
         }
     });
 
-    // Binary: 3 f32 values for area
+    // 二进制：area 的 3 个 f32 值
     let mut binary = Vec::new();
     binary.extend_from_slice(&100.5f32.to_le_bytes());
     binary.extend_from_slice(&200.5f32.to_le_bytes());
@@ -341,9 +341,9 @@ fn hierarchy_class_ids() {
 fn hierarchy_parent_ids() {
     let json = make_hierarchy_json();
     let hierarchy = BatchTableHierarchy::from_json(&json, &[]).unwrap();
-    assert_eq!(hierarchy.get_parent_id(0), Some(u32::MAX)); // no parent
-    assert_eq!(hierarchy.get_parent_id(2), Some(0)); // parent is instance 0
-    assert_eq!(hierarchy.get_parent_id(4), Some(1)); // parent is instance 1
+    assert_eq!(hierarchy.get_parent_id(0), Some(u32::MAX)); // 无父节点
+    assert_eq!(hierarchy.get_parent_id(2), Some(0)); // 父节点是实例 0
+    assert_eq!(hierarchy.get_parent_id(4), Some(1)); // 父节点是实例 1
 }
 
 #[test]
@@ -351,15 +351,15 @@ fn hierarchy_get_property() {
     let json = make_hierarchy_json();
     let hierarchy = BatchTableHierarchy::from_json(&json, &[]).unwrap();
 
-    // Instance 0 is Building class (index 0 in Building class)
+    // 实例 0 属于 Building class（Building class 中索引 0）
     let height = hierarchy.get_property(0, "height").unwrap();
     assert_eq!(height, json!(10.0));
 
-    // Instance 1 is Building class (index 1 in Building class)
+    // 实例 1 属于 Building class（Building class 中索引 1）
     let height1 = hierarchy.get_property(1, "height").unwrap();
     assert_eq!(height1, json!(20.0));
 
-    // Instance 2 is Floor class (index 0 in Floor class)
+    // 实例 2 属于 Floor class（Floor class 中索引 0）
     let level = hierarchy.get_property(2, "level").unwrap();
     assert_eq!(level, json!(1));
 }

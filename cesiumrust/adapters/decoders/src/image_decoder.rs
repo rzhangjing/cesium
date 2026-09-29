@@ -1,6 +1,6 @@
-//! Image decoding for PNG, JPEG, WebP formats.
+//! 面向 PNG、JPEG、WebP 格式的图像解码。
 //!
-//! Uses the `image` crate which auto-detects format from magic bytes.
+//! 使用 `image` crate，它从魔数字节自动检测格式。
 
 use cesium_ports_driven::{DecodedImage, PortError, PortResult};
 use image::GenericImageView;

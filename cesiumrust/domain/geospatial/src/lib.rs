@@ -1,7 +1,7 @@
-//! cesium-geospatial: Ellipsoid, coordinates, projections, tiling, bounding volumes, geometry
-//! Domain layer - pure Rust, f64 precision, no framework dependency.
+//! cesium-geospatial：椭球体、坐标、投影、瓦片划分、包围体、几何
+//! 领域层 —— 纯 Rust，f64 精度，无框架依赖。
 //!
-//! CesiumJS mapping: `packages/engine/Source/Core/` (~180 math/geometry files)
+//! CesiumJS 映射：`packages/engine/Source/Core/`（约 180 个数学/几何文件）
 
 pub mod math_utils;
 pub mod cartographic;

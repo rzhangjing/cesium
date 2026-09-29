@@ -1,5 +1,5 @@
-//! Shadow specs - ported from Scene/ShadowMapSpec
-//! Covers: ShadowMapConfig, ShadowMap, ShadowLightType, ShadowMapType,
+//! Shadow 规范 - 移植自 Scene/ShadowMapSpec
+//! 覆盖：ShadowMapConfig、ShadowMap、ShadowLightType、ShadowMapType、
 //! ShadowCascade, ShadowBias, OceanSurface, GerstnerWave, OceanConfig
 
 use cesium_shadow::{
@@ -45,7 +45,7 @@ fn shadow_map_cascades() {
         ..Default::default()
     };
     let map = ShadowMap::new(config, DVec3::new(0.0, -1.0, 0.0));
-    // Cascades are empty until update is called; config stores the count
+    // 级联在调用 update 前为空；config 存储数量
     assert_eq!(map.config.cascade_count, 4);
     assert!(map.cascades.is_empty());
 }

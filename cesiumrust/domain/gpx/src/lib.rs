@@ -1,8 +1,8 @@
-//! cesium-gpx: GPX (GPS Exchange Format) parser.
+//! cesium-gpx：GPX（GPS Exchange Format）解析器。
 //!
-//! Domain layer - pure Rust, f64 precision.
+//! 领域层 —— 纯 Rust，f64 精度。
 //!
-//! CesiumJS mapping: `DataSources/GpxDataSource.js`
+//! CesiumJS 映射：`DataSources/GpxDataSource.js`
 
 pub mod parser;
 

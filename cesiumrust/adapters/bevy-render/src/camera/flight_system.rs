@@ -3,7 +3,7 @@ use cesium_interaction::CameraFlight;
 
 use crate::camera::components::{ActiveFlight, CesiumCamera, FlightComplete, FlyToRequest};
 
-/// Processes FlyToRequest events and advances active flight animations.
+/// 处理 FlyToRequest 事件并推进活飞行动画。
 pub fn camera_flight_system(
     mut cameras: Query<&mut CesiumCamera>,
     mut active_flight: ResMut<ActiveFlight>,
@@ -13,7 +13,7 @@ pub fn camera_flight_system(
 ) {
     let dt = time.delta_secs() as f64;
 
-    // --- Process new fly-to requests ---
+    // --- 处理新的 fly-to 请求 ---
     for request in fly_requests.read() {
         for cesium_cam in cameras.iter() {
             let flight = CameraFlight::fly_to_cartographic(
@@ -26,7 +26,7 @@ pub fn camera_flight_system(
         }
     }
 
-    // --- Advance active flight ---
+    // --- 推进活飞行 ---
     let mut is_done = false;
     if let Some(flight) = active_flight.flight.as_mut() {
         if flight.complete {

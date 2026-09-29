@@ -1,11 +1,12 @@
-//! Polyline pipeline - arc subdivision with height interpolation.
+//! 折线流水线 —— 带高度插值的弧细分。
 //!
-//! Faithful port of CesiumJS `PolylinePipeline.js`. The core routine
-//! [`generate_arc`] subdivides a polyline into a geodesic arc on the ellipsoid,
-//! raising every generated point to a (per-vertex interpolated) height. This is
-//! the foundation of wall, corridor and polyline geometry.
+//! 对 CesiumJS `PolylinePipeline.js` 的忠实移植。核心例程
+//! [`generate_arc`] 将一条折线细分为椭球上的大地线弧，
+//! 并将每个生成的点抬升到（逐顶点插值的）高度。这是
+//! 围墙、走廊和折线几何的基础。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::needless_range_loop)]
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
@@ -14,20 +15,20 @@ use crate::math_utils::chord_length;
 use crate::ray::{line_segment_plane, Plane};
 use glam::{DMat4, DVec3};
 
-/// Default granularity: one degree in radians (CesiumJS `RADIANS_PER_DEGREE`).
+/// 默认粒度：一度（以弧度计）（CesiumJS `RADIANS_PER_DEGREE`）。
 pub const DEFAULT_GRANULARITY: f64 = std::f64::consts::PI / 180.0;
 
-/// Number of subdivisions for a segment so that no chord exceeds `min_distance`.
+/// 一个线段需细分多少段，才能使每条弦都不超过 `min_distance`。
 ///
-/// Maps to `PolylinePipeline.numberOfPoints`.
+/// 映射到 `PolylinePipeline.numberOfPoints`。
 pub fn number_of_points(p0: DVec3, p1: DVec3, min_distance: f64) -> usize {
     let distance = p0.distance(p1);
     (distance / min_distance).ceil() as usize
 }
 
-/// Linearly subdivides heights between `h0` and `h1` into `num_points` samples.
+/// 在 `h0` 和 `h1` 之间将高度线性细分为 `num_points` 个采样。
 ///
-/// Maps to the private `subdivideHeights`.
+/// 映射到私有的 `subdivideHeights`。
 fn subdivide_heights(num_points: usize, h0: f64, h1: f64) -> Vec<f64> {
     let mut heights = vec![0.0; num_points];
     if (h0 - h1).abs() < f64::EPSILON {
@@ -42,10 +43,10 @@ fn subdivide_heights(num_points: usize, h0: f64, h1: f64) -> Vec<f64> {
     heights
 }
 
-/// Generates a single cartesian arc from `p0` to `p1` (includes `p0`, excludes
-/// `p1`), appending results to `out`. Returns the number of points appended.
+/// 从 `p0` 到 `p1` 生成单条笛卡尔弧（包含 `p0`，不包含
+/// `p1`），将结果追加到 `out`。返回追加的点数。
 ///
-/// Maps to the private `generateCartesianArc`.
+/// 映射到私有的 `generateCartesianArc`。
 fn generate_cartesian_arc(
     p0: DVec3,
     p1: DVec3,
@@ -66,7 +67,7 @@ fn generate_cartesian_arc(
     let geodesic = EllipsoidGeodesic::new(start, end, ellipsoid);
     let surface_distance_between_points = geodesic.surface_distance() / num_points as f64;
 
-    // First point at h0.
+    // 位于 h0 的首点。
     let mut start_carto = start;
     start_carto.height = h0;
     out.push(ellipsoid.cartographic_to_cartesian(&start_carto));
@@ -81,22 +82,22 @@ fn generate_cartesian_arc(
     num_points
 }
 
-/// Options for [`generate_arc`].
+/// [`generate_arc`] 的选项。
 pub struct ArcOptions<'a> {
-    /// The polyline positions.
+    /// 折线的位置。
     pub positions: &'a [DVec3],
-    /// Per-vertex heights. `None` means height 0 for every vertex.
+    /// 逐顶点高度。`None` 表示每个顶点高度为 0。
     pub heights: Option<&'a [f64]>,
-    /// Angular granularity in radians.
+    /// 角度粒度（弧度）。
     pub granularity: f64,
-    /// The reference ellipsoid.
+    /// 参考椭球。
     pub ellipsoid: &'a Ellipsoid,
 }
 
-/// Subdivides a polyline into a geodesic arc and raises every point to its
-/// (interpolated) height.
+/// 将一条折线细分为大地线弧，并将每个点抬升到其
+/// （插值后的）高度。
 ///
-/// Maps to `PolylinePipeline.generateArc`.
+/// 映射到 `PolylinePipeline.generateArc`。
 pub fn generate_arc(options: &ArcOptions) -> Vec<DVec3> {
     let positions = options.positions;
     let ellipsoid = options.ellipsoid;
@@ -134,7 +135,7 @@ pub fn generate_arc(options: &ArcOptions) -> Vec<DVec3> {
         generate_cartesian_arc(p0, p1, min_distance, ellipsoid, h0, h1, &mut result);
     }
 
-    // Append the final point exactly.
+    // 精确地追加最后一个点。
     let last_point = positions[length - 1];
     let mut carto = ellipsoid
         .cartesian_to_cartographic(last_point)
@@ -145,17 +146,17 @@ pub fn generate_arc(options: &ArcOptions) -> Vec<DVec3> {
     result
 }
 
-/// Result of [`wrap_longitude`]: split polyline positions and segment lengths.
+/// [`wrap_longitude`] 的结果：拆分后的折线位置与各段长度。
 pub struct WrapLongitudeResult {
-    /// The positions, possibly with extra points at the IDL crossing.
+    /// 位置，在国际日期变更线交叉处可能带有额外的点。
     pub positions: Vec<DVec3>,
-    /// The number of positions in each segment.
+    /// 每段中的位置数量。
     pub lengths: Vec<usize>,
 }
 
-/// Breaks a polyline into segments such that it does not cross the ±180 degree meridian.
+/// 将一条折线拆分为若干段，使其不跨越 ±180 度经线。
 ///
-/// Maps to `PolylinePipeline.wrapLongitude`.
+/// 映射到 `PolylinePipeline.wrapLongitude`。
 pub fn wrap_longitude(positions: &[DVec3], model_matrix: Option<&DMat4>) -> WrapLongitudeResult {
     let mut cartesians: Vec<DVec3> = Vec::new();
     let mut segments: Vec<usize> = Vec::new();
@@ -183,11 +184,11 @@ pub fn wrap_longitude(positions: &[DVec3], model_matrix: Option<&DMat4>) -> Wrap
     for i in 1..positions.len() {
         let cur = positions[i];
 
-        // Intersects the IDL if either endpoint is on the negative side of the yz-plane
+        // 若任一端点位于 yz 平面的负侧，则与国际日期变更线相交
         if yz_plane.point_distance(prev) < 0.0 || yz_plane.point_distance(cur) < 0.0 {
-            // And intersects the xz-plane
+            // 并且与 xz 平面相交
             if let Some(intersection) = line_segment_plane(prev, cur, &xz_plane) {
-                // Move point on the xz-plane slightly away from the plane
+                // 将 xz 平面上的点略微偏移、远离该平面
                 let mut offset = xz_normal * 5.0e-9;
                 if xz_plane.point_distance(prev) < 0.0 {
                     offset = -offset;
@@ -254,10 +255,10 @@ mod tests {
         };
         let arc = generate_arc(&opts);
         assert!(arc.len() >= 3, "arc len {}", arc.len());
-        // First point near p0, last point near p1.
+        // 首点靠近 p0，尾点靠近 p1。
         assert!((arc[0] - p0).length() < 1.0);
         assert!((arc[arc.len() - 1] - p1).length() < 1.0);
-        // All points on the surface (height ~ 0).
+        // 所有点都在表面上（高度 ~ 0）。
         for p in &arc {
             let c = ell.cartesian_to_cartographic(*p).unwrap();
             assert!(c.height.abs() < 1e-3, "height {}", c.height);
@@ -277,7 +278,7 @@ mod tests {
             ellipsoid: &ell,
         };
         let arc = generate_arc(&opts);
-        // Every point should be at ~1000 m height.
+        // 每个点都应位于 ~1000 m 高度。
         for p in &arc {
             let c = ell.cartesian_to_cartographic(*p).unwrap();
             assert!((c.height - 1000.0).abs() < 1.0, "height {}", c.height);
@@ -286,8 +287,8 @@ mod tests {
 
     #[test]
     fn test_generate_arc_geodesic_not_linear() {
-        // A geodesic between two points at the same latitude (off equator) bows
-        // toward the pole relative to a constant-latitude line.
+        // 同一纬度（偏离赤道）两点之间的大地线，相对于等纬度线会向
+        // 极点弯曲。
         let ell = Ellipsoid::WGS84;
         let p0 = ell.cartographic_to_cartesian(&Cartographic::from_degrees(-10.0, 45.0, 0.0));
         let p1 = ell.cartographic_to_cartesian(&Cartographic::from_degrees(10.0, 45.0, 0.0));
@@ -298,7 +299,7 @@ mod tests {
             ellipsoid: &ell,
         };
         let arc = generate_arc(&opts);
-        // The midpoint latitude of a great circle should be > 45 degrees.
+        // 大圆的中点纬度应 > 45 度。
         let mid = arc[arc.len() / 2];
         let mid_carto = ell.cartesian_to_cartographic(mid).unwrap();
         assert!(

@@ -1,53 +1,53 @@
-//! Deterministic offline asset generation (imagery pyramid + heightmap-1.0 terrain).
+//! 确定性的离线资产生成（影像金字塔 + heightmap-1.0 地形）。
 //!
-//! Every routine here is a pure function of the tile coordinates `(level, x, y)`
-//! — there is **no RNG, no wall-clock, and no network**. Two runs produce
-//! byte-identical output, so the generator is trivially reproducible.
+//! 此处的每个例程都是瓦片坐标 `(level, x, y)` 的纯函数 ——
+//! **无 RNG、无 wall-clock、无网络**。两次运行产生
+//! 逐字节一致的输出，因此生成器天然可复现。
 //!
-//! The on-disk layouts mirror the viewer-demo blueprint
-//! (`cesium-rs/examples/viewer-demo/src/main.rs`) and are the exact inputs the
-//! M3.1 offline fetchers (`FileTileFetcher` / `FileTerrainFetcher`) read back:
+//! 磁盘布局镜像 viewer-demo 蓝图
+//! （`cesium-rs/examples/viewer-demo/src/main.rs`），且正是
+//! M3.1 离线 fetcher（`FileTileFetcher` / `FileTerrainFetcher`）读回时的输入：
 //!
-//! * **Imagery** — XYZ pyramid `{root}/{level}/{x}/{y}.png`, geographic y
-//!   order (row 0 at the north pole), 256×256 RGBA procedural tiles.
-//! * **Terrain** — heightmap-1.0 tileset: a `layer.json` descriptor plus
-//!   `{root}/{level}/{x}/{disk_y}.terrain` tiles with **TMS** y order on disk
-//!   (`disk_y = (1 << level) - 1 - y_geo`). Each tile is a `65×65` grid of
-//!   `u16`-LE encoded heights + 1-byte childTileMask + 1-byte waterMask
-//!   (`65*65*2 + 2 = 8452` bytes).
+//! * **影像** —— XYZ 金字塔 `{root}/{level}/{x}/{y}.png`，地理 y
+//!   序（第 0 行在北极），256×256 RGBA 过程化瓦片。
+//! * **地形** —— heightmap-1.0 tileset：一个 `layer.json` 描述符加上
+//!   `{root}/{level}/{x}/{disk_y}.terrain` 瓦片，磁盘上使用 **TMS** y 序
+//!   （`disk_y = (1 << level) - 1 - y_geo`）。每块瓦片是一个 `65×65` 的
+//!   `u16`-LE 编码高度网格 + 1 字节 childTileMask + 1 字节 waterMask
+//!   （`65*65*2 + 2 = 8452` 字节）。
 
 use std::f64::consts::{FRAC_PI_2, PI};
 use std::fs;
 use std::io;
 use std::path::Path;
 
-/// Default highest level for the offline imagery pyramid (blueprint
-/// `OFFLINE_IMAGERY_MAXIMUM_LEVEL`). Levels `0..=3` form a geographic pyramid
-/// of `2 + 8 + 32 + 128 = 170` tiles.
+/// 离线影像金字塔的默认最高级别（蓝图
+/// `OFFLINE_IMAGERY_MAXIMUM_LEVEL`）。级别 `0..=3` 构成一个地理金字塔，
+/// 共 `2 + 8 + 32 + 128 = 170` 块瓦片。
 pub const IMAGERY_DEFAULT_MAX_LEVEL: u32 = 3;
-/// Default highest level for the offline terrain tileset (blueprint
-/// `OFFLINE_TERRAIN_MAXIMUM_LEVEL`). Levels `0..=4` form `682` tiles.
+/// 离线地形 tileset 的默认最高级别（蓝图
+/// `OFFLINE_TERRAIN_MAXIMUM_LEVEL`）。级别 `0..=4` 构成 `682` 块瓦片。
 pub const TERRAIN_DEFAULT_MAX_LEVEL: u32 = 4;
-/// Heightmap grid width (heightmap-1.0 default; blueprint `TERRAIN_GRID_SIZE`).
+/// 高度图网格宽度（heightmap-1.0 默认值；蓝图 `TERRAIN_GRID_SIZE`）。
 pub const TERRAIN_GRID_SIZE: usize = 65;
-/// Byte size of one heightmap-1.0 tile (`65*65` u16 + childTileMask + waterMask).
+/// 一块 heightmap-1.0 瓦片的字节大小（`65*65` u16 + childTileMask + waterMask）。
 pub const HEIGHTMAP_TILE_BYTES: usize = TERRAIN_GRID_SIZE * TERRAIN_GRID_SIZE * 2 + 2;
-/// Edge length of a generated imagery tile in pixels.
+/// 生成的影像瓦片的边长（像素）。
 const IMAGERY_TILE_SIZE: u32 = 256;
 
-/// Aggregated outcome of one generation pass.
+/// 一次生成过程的聚合结果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GenStats {
-    /// Number of tiles written (or already present when skipped).
+    /// 写入的瓦片数（或已存在而被跳过时的数量）。
     pub tiles: usize,
-    /// Total payload bytes across all tiles (excludes directory overhead).
+    /// 所有瓦片的 payload 总字节数（不含目录开销）。
     pub bytes: u64,
-    /// `true` when generation was skipped because the output already existed.
+    /// 当因输出已存在而跳过生成时为 `true`。
     pub skipped: bool,
 }
 
-/// Returns the number of tiles in a geographic pyramid over `0..=max_level`
-/// where each level has `(2 << level)` columns and `(1 << level)` rows.
+/// 返回 `0..=max_level` 范围内地理金字塔的瓦片数，
+/// 其中每级有 `(2 << level)` 列和 `(1 << level)` 行。
 fn pyramid_tile_count(max_level: u32) -> usize {
     let mut total = 0usize;
     for level in 0..=max_level {
@@ -58,12 +58,11 @@ fn pyramid_tile_count(max_level: u32) -> usize {
     total
 }
 
-/// Generates the offline imagery XYZ pyramid under `root` when missing.
+/// 当缺失时在 `root` 下生成离线影像 XYZ 金字塔。
 ///
-/// Idempotent: returns early (with `skipped = true`) when `root/0` already
-/// exists, unless `force` is set. Tiles are 256×256 RGBA PNGs laid out as
-/// `{root}/{level}/{x}/{y}.png` with geographic y order — exactly the paths
-/// `FileTileFetcher::new(root, FileTileScheme::Xyz)` resolves.
+/// 幂等：当 `root/0` 已存在且未设 `force` 时提前返回（`skipped = true`）。
+/// 瓦片是 256×256 RGBA PNG，布局为 `{root}/{level}/{x}/{y}.png`，使用地理
+/// y 序 —— 正是 `FileTileFetcher::new(root, FileTileScheme::Xyz)` 解析的路径。
 pub fn ensure_imagery(root: &Path, max_level: u32, force: bool) -> io::Result<GenStats> {
     let expected = pyramid_tile_count(max_level);
     if !force && root.join("0").is_dir() {
@@ -99,13 +98,13 @@ pub fn ensure_imagery(root: &Path, max_level: u32, force: bool) -> io::Result<Ge
     })
 }
 
-/// Generates the offline heightmap-1.0 terrain tileset under `root` when missing.
+/// 当缺失时在 `root` 下生成离线 heightmap-1.0 地形 tileset。
 ///
-/// Idempotent: returns early (with `skipped = true`) when `root/layer.json`
-/// already exists, unless `force` is set. Writes a `layer.json` descriptor plus
-/// `{root}/{level}/{x}/{disk_y}.terrain` tiles with TMS y order on disk — the
-/// exact layout `FileTerrainFetcher::new(root, TerrainScheme::Tms, max_level)`
-/// (and `from_layer_url`) decode.
+/// 幂等：当 `root/layer.json` 已存在且未设 `force` 时提前返回
+/// （`skipped = true`）。写入一个 `layer.json` 描述符加上
+/// `{root}/{level}/{x}/{disk_y}.terrain` 瓦片，磁盘上使用 TMS y 序 ——
+/// 正是 `FileTerrainFetcher::new(root, TerrainScheme::Tms, max_level)`
+/// （和 `from_layer_url`）解码的布局。
 pub fn ensure_terrain(root: &Path, max_level: u32, force: bool) -> io::Result<GenStats> {
     let expected = pyramid_tile_count(max_level);
     if !force && root.join("layer.json").is_file() {
@@ -126,7 +125,7 @@ pub fn ensure_terrain(root: &Path, max_level: u32, force: bool) -> io::Result<Ge
         for x in 0..columns {
             for y_geo in 0..rows {
                 let payload = terrain_tile_payload(level, max_level);
-                // TMS y order on disk: geographic row 0 (north) is stored last.
+                // 磁盘上的 TMS y 序：地理第 0 行（北）存储在最后。
                 let disk_y = rows - y_geo - 1;
                 let path = root.join(format!("{level}/{x}/{disk_y}.terrain"));
                 if let Some(parent) = path.parent() {
@@ -144,9 +143,9 @@ pub fn ensure_terrain(root: &Path, max_level: u32, force: bool) -> io::Result<Ge
     })
 }
 
-/// Builds one heightmap-1.0 tile payload: `65×65` u16-LE heights (west→east
-/// ramp so the decoded mesh is visibly non-flat), then a childTileMask byte and
-/// a water-mask byte.
+/// 构造一块 heightmap-1.0 瓦片 payload：`65×65` u16-LE 高度（西→东
+/// 渐变坡，使解码出的 mesh 明显非平坦），随后一个 childTileMask 字节和
+/// 一个 water-mask 字节。
 fn terrain_tile_payload(level: u32, max_level: u32) -> Vec<u8> {
     let mut buffer: Vec<u8> = Vec::with_capacity(HEIGHTMAP_TILE_BYTES);
     for _row in 0..TERRAIN_GRID_SIZE {
@@ -156,24 +155,24 @@ fn terrain_tile_payload(level: u32, max_level: u32) -> Vec<u8> {
             buffer.extend_from_slice(&encode_terrain_height(height).to_le_bytes());
         }
     }
-    // childTileMask: all four children exist below the leaf level, none at it.
+    // childTileMask：叶级以下四个子块都存在，叶级处都没有。
     let child_mask: u8 = if level < max_level { 0x0F } else { 0x00 };
     buffer.push(child_mask);
-    // One-byte water mask (all land).
+    // 单字节水域 mask（全为陆地）。
     buffer.push(0);
     buffer
 }
 
-/// Encodes a metric height into the heightmap-1.0 u16 domain. Inverse of the
-/// fetcher's decode (`height_m = encoded / 5 - 1000`), matching the blueprint's
-/// `encode_terrain_height`.
+/// 将米制高度编码进 heightmap-1.0 的 u16 域。是 fetcher 解码的逆运算
+/// （`height_m = encoded / 5 - 1000`），与蓝图的
+/// `encode_terrain_height` 一致。
 fn encode_terrain_height(height_meters: f64) -> u16 {
     ((height_meters + 1000.0) * 5.0).round() as u16
 }
 
-/// Renders the `layer.json` descriptor consumed by `FileTerrainFetcher`
-/// (`read_maxzoom` scans the `"maxzoom"` integer; `"scheme": "tms"` documents
-/// the on-disk y order).
+/// 渲染 `FileTerrainFetcher` 消费的 `layer.json` 描述符
+/// （`read_maxzoom` 扫描 `"maxzoom"` 整数；`"scheme": "tms"` 记录
+/// 磁盘上的 y 序）。
 fn layer_json(maxzoom: u32) -> String {
     format!(
         "{{\n  \"tilejson\": \"2.1.0\",\n  \"format\": \"heightmap-1.0\",\n  \
@@ -184,13 +183,12 @@ fn layer_json(maxzoom: u32) -> String {
     )
 }
 
-/// Renders one 256×256 imagery tile for the geographic scheme (y = 0 at the
-/// north pole), a pure function of `(x, y, columns, rows)`.
+/// 为地理方案渲染一块 256×256 影像瓦片（y = 0 在北极），
+/// 是 `(x, y, columns, rows)` 的纯函数。
 ///
-/// The pattern is deliberately asymmetric — a red north-polar cap, a blue
-/// south-polar cap, and a green/white checker with a longitude gradient in the
-/// mid latitudes — so UV flips, seams, and stretching are obvious when the tile
-/// is sampled back through the imagery pipeline.
+/// 该图案刻意不对称 —— 一个红色北极冠、一个蓝色南极冠，中纬度处
+/// 是带经度渐变的绿/白棋盘格 —— 使 UV 翻转、接缝和拉伸在瓦片
+/// 被影像管线采样回来时一目了然。
 fn generate_tile(x: u32, y: u32, columns: u32, rows: u32) -> image::RgbaImage {
     let size = IMAGERY_TILE_SIZE;
     let west = -PI + f64::from(x) * (2.0 * PI) / f64::from(columns);
@@ -204,13 +202,13 @@ fn generate_tile(x: u32, y: u32, columns: u32, rows: u32) -> image::RgbaImage {
         for px in 0..size {
             let longitude = west + (f64::from(px) + 0.5) * lon_step;
             let color = if latitude > PI / 4.0 {
-                // North polar cap: red (UV-flip marker — must appear on top).
+                // 北极冠：红色（UV 翻转标记 —— 必须出现在顶部）。
                 [255, 24, 24, 255]
             } else if latitude < -PI / 4.0 {
-                // South polar cap: blue (must appear at the bottom).
+                // 南极冠：蓝色（必须出现在底部）。
                 [24, 64, 255, 255]
             } else {
-                // Mid latitudes: green/white checker + longitude gradient.
+                // 中纬度：绿/白棋盘格 + 经度渐变。
                 let checker = ((px / 32) + (py / 32)) % 2 == 0;
                 let gradient = ((longitude + PI) / (2.0 * PI) * 128.0) as u8;
                 if checker {
@@ -231,7 +229,7 @@ mod tests {
 
     #[test]
     fn encode_terrain_height_matches_fetcher_decode() {
-        // encode then decode with the fetcher's inverse formula.
+        // 先 encode，再用 fetcher 的逆公式 decode。
         for h in [0.0, 100.0, 300.0, 700.0, -1000.0] {
             let encoded = encode_terrain_height(h);
             let decoded = f64::from(encoded) / 5.0 - 1000.0;
@@ -243,7 +241,7 @@ mod tests {
     fn terrain_tile_payload_has_exact_byte_size() {
         let payload = terrain_tile_payload(2, 4);
         assert_eq!(payload.len(), HEIGHTMAP_TILE_BYTES);
-        // childTileMask is present below the leaf level.
+        // 叶级以下存在 childTileMask。
         assert_eq!(payload[HEIGHTMAP_TILE_BYTES - 2], 0x0F);
         assert_eq!(payload[HEIGHTMAP_TILE_BYTES - 1], 0);
         let leaf = terrain_tile_payload(4, 4);
@@ -252,9 +250,9 @@ mod tests {
 
     #[test]
     fn pyramid_tile_count_matches_blueprint() {
-        // imagery levels 0..=3 = 2 + 8 + 32 + 128 = 170.
+        // 影像级别 0..=3 = 2 + 8 + 32 + 128 = 170。
         assert_eq!(pyramid_tile_count(3), 170);
-        // terrain levels 0..=4 = 170 + 512 = 682.
+        // 地形级别 0..=4 = 170 + 512 = 682。
         assert_eq!(pyramid_tile_count(4), 682);
     }
 

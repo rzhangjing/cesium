@@ -1,7 +1,7 @@
-//! GeometryPipeline specs - ported from Core/GeometryPipelineSpec.js
-//! A-class tests: toWireframe, computeNormal, computeTangentAndBitangent,
-//! projectTo2D, encodeAttribute, transformToWorldCoordinates, compressVertices,
-//! reorderForPreVertexCache, fitToUnsignedShortIndices, splitLongitude,
+//! GeometryPipeline 规格测试 - 移植自 Core/GeometryPipelineSpec.js
+//! A 类测试：toWireframe、computeNormal、computeTangentAndBitangent、
+//! projectTo2D、encodeAttribute、transformToWorldCoordinates、compressVertices、
+//! reorderForPreVertexCache、fitToUnsignedShortIndices、splitLongitude、
 //! createLineSegmentsForVectors
 
 use cesium_geospatial::geometry::{
@@ -50,8 +50,8 @@ fn wireframe_converts_triangles() {
 
 #[test]
 fn compute_normal_one_triangle() {
-    // Triangle in XY plane: (0,0,0), (1,0,0), (0,1,0)
-    // Normal should be (0,0,1)
+    // XY 平面内的三角形：(0,0,0), (1,0,0), (0,1,0)
+    // 法线应为 (0,0,1)
     let mut geo = GeometryData {
         positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
         normals: None,
@@ -73,7 +73,7 @@ fn compute_normal_one_triangle() {
 
 #[test]
 fn compute_normal_two_triangles() {
-    // Two triangles sharing an edge in XY plane
+    // XY 平面内共享一条边的两个三角形
     let mut geo = GeometryData {
         positions: vec![
             [0.0, 0.0, 0.0],
@@ -92,7 +92,7 @@ fn compute_normal_two_triangles() {
     compute_normal(&mut geo);
     let normals = geo.normals.unwrap();
     assert_eq!(normals.len(), 4);
-    // All normals should be (0,0,1)
+    // 所有法线都应为 (0,0,1)
     for n in &normals {
         assert!((n[2] - 1.0).abs() < 1e-6);
     }
@@ -100,7 +100,7 @@ fn compute_normal_two_triangles() {
 
 #[test]
 fn compute_normal_degenerate_triangle() {
-    // Degenerate triangle (all same point) → normal defaults to (0,0,1)
+    // 退化三角形（全部为同一点）→ 法线默认为 (0,0,1)
     let mut geo = GeometryData {
         positions: vec![[1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [1.0, 2.0, 3.0]],
         normals: None,
@@ -113,7 +113,7 @@ fn compute_normal_degenerate_triangle() {
     };
     compute_normal(&mut geo);
     let normals = geo.normals.unwrap();
-    // Degenerate → normalize_or(DVec3::Z) → (0,0,1)
+    // 退化 → normalize_or(DVec3::Z) → (0,0,1)
     for n in &normals {
         assert!((n[2] - 1.0).abs() < 1e-10);
     }
@@ -130,7 +130,7 @@ fn compute_normal_box_geometry() {
     compute_normal(&mut geo);
     let normals = geo.normals.as_ref().unwrap();
     assert_eq!(normals.len(), geo.positions.len());
-    // All normals should be unit length
+    // 所有法线都应为单位长度
     for n in normals {
         let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
         assert!((len - 1.0).abs() < 1e-6);
@@ -141,7 +141,7 @@ fn compute_normal_box_geometry() {
 
 #[test]
 fn compute_tangent_bitangent_one_triangle() {
-    // Triangle in XY plane with UVs
+    // XY 平面内带 UV 的三角形
     let mut geo = GeometryData {
         positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
         normals: Some(vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]),
@@ -157,7 +157,7 @@ fn compute_tangent_bitangent_one_triangle() {
     let bitangents = geo.bitangents.as_ref().unwrap();
     assert_eq!(tangents.len(), 3);
     assert_eq!(bitangents.len(), 3);
-    // Tangent should be along X (1,0,0), bitangent along Y (0,1,0)
+    // 切线应沿 X (1,0,0)，副切线沿 Y (0,1,0)
     for t in tangents {
         assert!((t[0] - 1.0).abs() < 1e-6);
         assert!((t[1]).abs() < 1e-6);
@@ -181,7 +181,7 @@ fn compute_tangent_bitangent_box() {
     assert!(geo.bitangents.is_some());
     let tangents = geo.tangents.as_ref().unwrap();
     assert_eq!(tangents.len(), geo.positions.len());
-    // All tangents should be unit length
+    // 所有切线都应为单位长度
     for t in tangents {
         let len = (t[0] * t[0] + t[1] * t[1] + t[2] * t[2]).sqrt();
         assert!((len - 1.0).abs() < 1e-6);
@@ -203,17 +203,17 @@ fn project_to_2d_basic() {
     let positions = vec![[p1.x, p1.y, p1.z], [p2.x, p2.y, p2.z]];
     let (pos3d, pos2d) = project_to_2d(&positions, &ellipsoid);
 
-    // 3D positions should be unchanged
+    // 3D 位置应保持不变
     assert!((pos3d[0][0] - p1.x).abs() < 1e-10);
     assert!((pos3d[0][1] - p1.y).abs() < 1e-10);
     assert!((pos3d[0][2] - p1.z).abs() < 1e-10);
 
-    // 2D positions should be projected (longitude/latitude in meters)
-    // GeographicProjection: x = lon * a, y = lat * a, z = height
+    // 2D 位置应被投影（以米为单位的经度/纬度）
+    // GeographicProjection：x = lon * a, y = lat * a, z = height
     let a = ellipsoid.maximum_radius();
     let expected_x1 = 10.0_f64.to_radians() * a;
     let expected_y1 = 20.0_f64.to_radians() * a;
-    assert!((pos2d[0][0] - expected_x1).abs() < 1.0); // Within 1 meter
+    assert!((pos2d[0][0] - expected_x1).abs() < 1.0); // 在 1 米以内
     assert!((pos2d[0][1] - expected_y1).abs() < 1.0);
 }
 
@@ -237,7 +237,7 @@ fn encode_attribute_positions() {
     assert_eq!(high.len(), 2);
     assert_eq!(low.len(), 2);
 
-    // high + low should approximate original
+    // high + low 应近似原值
     for i in 0..2 {
         for j in 0..3 {
             let reconstructed = high[i][j] as f64 + low[i][j] as f64;
@@ -264,13 +264,13 @@ fn transform_to_world_coordinates_translation() {
     let model_matrix = DMat4::from_translation(DVec3::new(10.0, 20.0, 30.0));
     transform_to_world_coordinates(&mut geo, &model_matrix);
 
-    // Positions should be translated
+    // 位置应被平移
     assert!((geo.positions[0][0] - 10.0).abs() < 1e-10);
     assert!((geo.positions[0][1] - 20.0).abs() < 1e-10);
     assert!((geo.positions[0][2] - 30.0).abs() < 1e-10);
     assert!((geo.positions[1][0] - 11.0).abs() < 1e-10);
 
-    // Normals should be unchanged (translation doesn't affect normals)
+    // 法线应保持不变（平移不影响法线）
     let normals = geo.normals.as_ref().unwrap();
     assert!((normals[0][2] - 1.0).abs() < 1e-6);
 }
@@ -292,7 +292,7 @@ fn transform_to_world_coordinates_identity() {
     let model_matrix = DMat4::IDENTITY;
     transform_to_world_coordinates(&mut geo, &model_matrix);
 
-    // Should be unchanged
+    // 应保持不变
     for i in 0..2 {
         for j in 0..3 {
             assert!((geo.positions[i][j] - original_positions[i][j]).abs() < 1e-10);
@@ -316,12 +316,12 @@ fn transform_to_world_coordinates_scale() {
     let model_matrix = DMat4::from_scale(DVec3::splat(2.0));
     transform_to_world_coordinates(&mut geo, &model_matrix);
 
-    // Positions should be scaled
+    // 位置应被缩放
     assert!((geo.positions[0][0] - 2.0).abs() < 1e-10);
     assert!((geo.positions[1][1] - 2.0).abs() < 1e-10);
     assert!((geo.positions[2][2] - 2.0).abs() < 1e-10);
 
-    // Normals should remain unit length (uniform scale)
+    // 法线应保持单位长度（均匀缩放）
     let normals = geo.normals.as_ref().unwrap();
     for n in normals {
         let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
@@ -359,7 +359,7 @@ fn compress_vertices_with_normals() {
         primitive_type: PrimitiveType::Triangles,
     };
     let compressed = compress_vertices(&geo).unwrap();
-    // 3 vertices * 1 u32 (normal only) = 3 u32s
+    // 3 顶点 * 1 u32（仅法线）= 3 个 u32
     assert_eq!(compressed.len(), 3);
 }
 
@@ -376,7 +376,7 @@ fn compress_vertices_with_normals_and_st() {
         primitive_type: PrimitiveType::Triangles,
     };
     let compressed = compress_vertices(&geo).unwrap();
-    // 3 vertices * 2 u32 (normal + st) = 6 u32s
+    // 3 顶点 * 2 u32（法线 + st）= 6 个 u32
     assert_eq!(compressed.len(), 6);
 }
 
@@ -397,10 +397,10 @@ fn create_line_segments_for_normals() {
     let lines = create_line_segments_for_vectors(&positions, &normals, 1.0);
 
     assert_eq!(lines.primitive_type, PrimitiveType::Lines);
-    assert_eq!(lines.positions.len(), 6); // 3 vertices * 2 (start + end)
+    assert_eq!(lines.positions.len(), 6); // 3 顶点 * 2（起点 + 终点）
     assert_eq!(lines.indices.len(), 6);
 
-    // First line: (0,0,0) → (0,0,1)
+    // 第一条线：(0,0,0) → (0,0,1)
     assert!((lines.positions[0][0]).abs() < 1e-10);
     assert!((lines.positions[0][1]).abs() < 1e-10);
     assert!((lines.positions[0][2]).abs() < 1e-10);
@@ -408,7 +408,7 @@ fn create_line_segments_for_normals() {
     assert!((lines.positions[1][1]).abs() < 1e-10);
     assert!((lines.positions[1][2] - 1.0).abs() < 1e-10);
 
-    // Bounding sphere radius should be original + length
+    // 包围球半径应为原值 + 长度
     assert!(lines.bounding_sphere.radius > 1.0);
 }
 
@@ -422,7 +422,7 @@ fn reorder_for_pre_vertex_cache_basic() {
             [1.0, 0.0, 0.0], // 1
             [0.0, 1.0, 0.0], // 2
             [1.0, 1.0, 0.0], // 3
-            [0.5, 0.5, 0.0], // 4 (unused)
+            [0.5, 0.5, 0.0], // 4（未使用）
             [2.0, 0.0, 0.0], // 5
         ],
         normals: None,
@@ -436,9 +436,9 @@ fn reorder_for_pre_vertex_cache_basic() {
 
     reorder_for_pre_vertex_cache(&mut geo);
 
-    // Vertex 4 (unused) should be removed
+    // 顶点 4（未使用）应被移除
     assert_eq!(geo.positions.len(), 5);
-    // First index should be 0 (remapped)
+    // 第一个索引应为 0（重映射后）
     assert_eq!(geo.indices[0], 0);
 }
 
@@ -446,11 +446,11 @@ fn reorder_for_pre_vertex_cache_basic() {
 fn reorder_for_pre_vertex_cache_removes_unused() {
     let mut geo = GeometryData {
         positions: vec![
-            [0.0; 3], // 0 - used
-            [1.0; 3], // 1 - unused
-            [2.0; 3], // 2 - used
-            [3.0; 3], // 3 - unused
-            [4.0; 3], // 4 - used
+            [0.0; 3], // 0 - 已使用
+            [1.0; 3], // 1 - 未使用
+            [2.0; 3], // 2 - 已使用
+            [3.0; 3], // 3 - 未使用
+            [4.0; 3], // 4 - 已使用
         ],
         normals: None,
         tex_coords: None,
@@ -463,7 +463,7 @@ fn reorder_for_pre_vertex_cache_removes_unused() {
 
     reorder_for_pre_vertex_cache(&mut geo);
 
-    // Only 3 vertices should remain
+    // 应仅剩 3 个顶点
     assert_eq!(geo.positions.len(), 3);
     assert_eq!(geo.indices, vec![0, 1, 2]);
 }
@@ -491,13 +491,13 @@ fn fit_to_unsigned_short_no_change() {
 
 #[test]
 fn fit_to_unsigned_short_splits_large_geometry() {
-    // Create geometry with > 65536 vertices
+    // 创建含 > 65536 顶点的几何体
     let num_vertices = 65537;
     let positions: Vec<[f64; 3]> = (0..num_vertices)
         .map(|i| [i as f64, 0.0, 0.0])
         .collect();
 
-    // Create triangles that reference all vertices
+    // 创建引用所有顶点的三角形
     let mut indices: Vec<u32> = Vec::new();
     for i in 0..(num_vertices - 2) {
         indices.push(i as u32);
@@ -519,7 +519,7 @@ fn fit_to_unsigned_short_splits_large_geometry() {
     let result = fit_to_unsigned_short_indices(&geo);
     assert!(result.len() >= 2, "Should split into at least 2 geometries");
 
-    // Each sub-geometry should have <= 65536 vertices
+    // 每个子几何体应含 <= 65536 顶点
     for sub_geo in &result {
         assert!(sub_geo.positions.len() <= 65536);
     }
@@ -530,7 +530,7 @@ fn fit_to_unsigned_short_splits_large_geometry() {
 #[test]
 fn split_longitude_does_nothing_for_non_crossing() {
     let ellipsoid = Ellipsoid::WGS84;
-    // Geometry entirely in eastern hemisphere
+    // 完全位于东半球的几何体
     let p0 = ellipsoid.cartographic_to_cartesian(
         &cesium_geospatial::Cartographic::from_degrees(10.0, 0.0, 0.0),
     );
@@ -553,14 +553,14 @@ fn split_longitude_does_nothing_for_non_crossing() {
     };
 
     let result = split_longitude(&geo, &ellipsoid);
-    assert_eq!(result.len(), 1); // Should not split
+    assert_eq!(result.len(), 1); // 不应拆分
 }
 
 #[test]
 fn split_longitude_splits_crossing_geometry() {
     let ellipsoid = Ellipsoid::WGS84;
-    // Create a geometry with triangles on both sides of the IDL
-    // East side: 170°E-175°E, West side: 170°W-175°W (= -170° to -175°)
+    // 创建在 IDL 两侧都有三角形的几何体
+    // 东侧：170°E-175°E，西侧：170°W-175°W（= -170° 至 -175°）
     let e0 = ellipsoid.cartographic_to_cartesian(
         &cesium_geospatial::Cartographic::from_degrees(170.0, 0.0, 0.0),
     );
@@ -582,28 +582,28 @@ fn split_longitude_splits_crossing_geometry() {
 
     let geo = GeometryData {
         positions: vec![
-            [e0.x, e0.y, e0.z], // 0: east
-            [e1.x, e1.y, e1.z], // 1: east
-            [e2.x, e2.y, e2.z], // 2: east
-            [w0.x, w0.y, w0.z], // 3: west
-            [w1.x, w1.y, w1.z], // 4: west
-            [w2.x, w2.y, w2.z], // 5: west
+            [e0.x, e0.y, e0.z], // 0: 东
+            [e1.x, e1.y, e1.z], // 1: 东
+            [e2.x, e2.y, e2.z], // 2: 东
+            [w0.x, w0.y, w0.z], // 3: 西
+            [w1.x, w1.y, w1.z], // 4: 西
+            [w2.x, w2.y, w2.z], // 5: 西
         ],
         normals: None,
         tex_coords: None,
         tangents: None,
         bitangents: None,
-        indices: vec![0, 1, 2, 3, 4, 5], // 2 triangles: one east, one west
+        indices: vec![0, 1, 2, 3, 4, 5], // 2 个三角形：一个东，一个西
         bounding_sphere: BoundingSphere::new(DVec3::ZERO, ellipsoid.maximum_radius()),
         primitive_type: PrimitiveType::Triangles,
     };
 
     let result = split_longitude(&geo, &ellipsoid);
-    // Should split into 2 geometries: east triangle and west triangle
+    // 应拆分为 2 个几何体：东三角形和西三角形
     assert!(result.len() >= 2, "Should split into east and west parts, got {}", result.len());
 }
 
-// ─── Geometry generators (detailed) ─────────────────────────────────────────
+// ─── 几何生成器（详细） ─────────────────────────────────────────────
 
 #[test]
 fn box_geometry_detailed() {
@@ -612,20 +612,20 @@ fn box_geometry_detailed() {
         DVec3::new(1.0, 1.0, 1.0),
         VertexFormat::ALL,
     );
-    assert_eq!(geo.positions.len(), 24); // 6 faces * 4 vertices
-    assert_eq!(geo.indices.len(), 36); // 6 faces * 2 triangles * 3
+    assert_eq!(geo.positions.len(), 24); // 6 面 * 4 顶点
+    assert_eq!(geo.indices.len(), 36); // 6 面 * 2 三角形 * 3
     assert!(geo.normals.is_some());
     assert!(geo.tex_coords.is_some());
     assert_eq!(geo.primitive_type, PrimitiveType::Triangles);
 
-    // All normals should be unit length
+    // 所有法线都应为单位长度
     let normals = geo.normals.as_ref().unwrap();
     for n in normals {
         let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
         assert!((len - 1.0).abs() < 1e-6);
     }
 
-    // Bounding sphere should contain the box
+    // 包围球应包含该盒子
     assert!(geo.bounding_sphere.radius >= 1.0);
 }
 
@@ -633,12 +633,12 @@ fn box_geometry_detailed() {
 fn ellipsoid_geometry_detailed() {
     let radii = DVec3::new(1.0, 2.0, 3.0);
     let geo = cesium_geospatial::geometry::ellipsoid_geometry(radii, 8, 16, VertexFormat::ALL);
-    assert_eq!(geo.positions.len(), 9 * 17); // (stacks+1) * (slices+1)
+    assert_eq!(geo.positions.len(), 9 * 17); //（stacks+1）*（slices+1）
     assert_eq!(geo.indices.len(), 8 * 16 * 6);
     assert!(geo.normals.is_some());
     assert!(geo.tex_coords.is_some());
 
-    // Bounding sphere radius should be max radii
+    // 包围球半径应为最大半径
     assert!((geo.bounding_sphere.radius - 3.0).abs() < 1e-10);
 }
 
@@ -655,7 +655,7 @@ fn cylinder_geometry_detailed() {
     assert!(!geo.positions.is_empty());
     assert!(geo.normals.is_some());
     assert_eq!(geo.primitive_type, PrimitiveType::Triangles);
-    // Indices should be multiple of 3 (triangles)
+    // 索引数应为 3 的倍数（三角形）
     assert_eq!(geo.indices.len() % 3, 0);
 }
 
@@ -712,7 +712,7 @@ fn combine_instances_combines_several_geometries_with_indices() {
 
     let b = GeometryData {
         positions: vec![[3.0; 3], [4.0; 3], [5.0; 3]],
-        normals: None, // not present in all → dropped from result
+        normals: None, // 非全部含有 → 从结果中丢弃
         tex_coords: None,
         tangents: None,
         bitangents: None,
@@ -725,9 +725,9 @@ fn combine_instances_combines_several_geometries_with_indices() {
     assert_eq!(combined.positions.len(), 6);
     assert_eq!(combined.positions[3], [3.0, 3.0, 3.0]);
     assert_eq!(combined.positions[5], [5.0, 5.0, 5.0]);
-    // Indices offset by the first geometry's vertex count.
+    // 索引按第一个几何体的顶点数偏移。
     assert_eq!(combined.indices, vec![0, 1, 2, 3, 4, 5]);
-    // normal was only in the first geometry → dropped.
+    // normal 仅存在于第一个几何体 → 被丢弃。
     assert!(combined.normals.is_none());
     assert_eq!(combined.primitive_type, PrimitiveType::Triangles);
 }

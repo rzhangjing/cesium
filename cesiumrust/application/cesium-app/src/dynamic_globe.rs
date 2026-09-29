@@ -1,35 +1,35 @@
-//! M1.5 thin-shell dynamic globe — ImageryKey/ImageryPayload specialization
-//! delegating tile fetch/decode/GPU-cache/eviction to the `cesium-pipeline`
-//! core (via `fetch_gated` → shared ureq keep-alive pool) and extracted helper
-//! modules (`globe_lod`, `globe_pipeline`, `globe_textures`, `base_sphere`).
+//! M1.5 薄壳动态地球 —— ImageryKey/ImageryPayload 特化，
+//! 将瓦片获取/解码/GPU 缓存/淘汰委托给 `cesium-pipeline`
+//! 核心（经 `fetch_gated` → 共享 ureq keep-alive 池）以及抽取的辅助
+//! 模块（`globe_lod`、`globe_pipeline`、`globe_textures`、`base_sphere`）。
 //!
-//! ## Implicit contracts preserved (逐字节/带注释):
-//! - `BaseSphereMarker` (re-exported from `base_sphere`)
-//! - `DynamicGlobePlugin` — same system chain, same Startup/Update registration
-//! - `BASE_LAYER_ZOOM = 3` permanent resident fallback (via `DefaultBudget`)
-//! - wanted-staleness skip (worker checks wanted set before fetch)
-//! - `own_full_res` (L837-841 / L1163 semantics preserved in `globe_pipeline`)
-//! - `evict_gpu_cache` three invariants: BASE_LAYER exempt, live push_back
-//!   deferral (花屏防护), termination 1800 << 3000 (via `DefaultBudget`)
-//! - `TilePipelineSet` pub(crate) (perf_trace cross-module contract)
-//! - `PerfCounters` write-back (bidirectional with legacy)
+//! ## 保留的隐式契约（逐字节/带注释）：
+//! - `BaseSphereMarker`（从 `base_sphere` 重新导出）
+//! - `DynamicGlobePlugin` —— 相同的系统链，相同的 Startup/Update 注册
+//! - `BASE_LAYER_ZOOM = 3` 永久常驻回退（经 `DefaultBudget`）
+//! - wanted 陈旧跳过（worker 在获取前检查 wanted 集合）
+//! - `own_full_res`（L837-841 / L1163 语义在 `globe_pipeline` 中保留）
+//! - `evict_gpu_cache` 三条不变式：BASE_LAYER 豁免、活跃 push_back 延迟
+//!   （花屏防护），终止 1800 << 3000（经 `DefaultBudget`）
+//! - `TilePipelineSet` pub(crate)（perf_trace 跨模块契约）
+//! - `PerfCounters` 回写（与遗留双向）
 //!
-//! ## GenericPipeline deferred-problem resolutions (M1.4 → M1.5):
-//! (a) Decoder(bytes)→Payload without key context: **solved by specialization**
-//!     — imagery decode (load_from_memory + placeholder + mip chain) is
-//!     key-independent; downscale is a per-job flag in the worker channel.
-//! (b) K:Copy excludes tileset Vec/String keys: **not applicable** — imagery
-//!     TileKey=(u32,u32,u32) IS Copy; tileset is a separate consumer.
-//! (c) Cross-frame persistence needs new Resource: **solved** — TileManager +
-//!     TextureReceiver ARE Bevy Resources (inherently cross-frame); they wrap
-//!     the pipeline's NetworkBackend (shared ureq pool) + DefaultBudget.
+//! ## GenericPipeline 遗留问题的解决（M1.4 → M1.5）：
+//! (a) Decoder(bytes)→Payload 缺少 key 上下文：**通过特化解决**
+//!     —— 影像解码（load_from_memory + 占位图 + mip 链）是
+//!     与 key 无关的；降采样是 worker 通道中的逐任务标志。
+//! (b) K:Copy 排除 tileset 的 Vec/String key：**不适用** —— 影像
+//!     TileKey=(u32,u32,u32) 确为 Copy；tileset 是独立的消费者。
+//! (c) 跨帧持久化需要新的 Resource：**已解决** —— TileManager +
+//!     TextureReceiver 本身就是 Bevy Resource（天然跨帧）；它们封装了
+//!     管线的 NetworkBackend（共享 ureq 池）+ DefaultBudget。
 //!
-//! ## Offline wiring (M3 gate L127):
-//! When `OFFLINE_IMAGERY_ROOT` is set, the download worker reads tiles from
-//! disk (`{root}/{z}/{x}/{y}.png`) instead of Bing. `STRICT_OFFLINE=1` panics
-//! on any https URL (no network fallback).
+//! ## 离线接线（M3 门槛 L127）：
+//! 设置 `OFFLINE_IMAGERY_ROOT` 后，下载 worker 从磁盘读取瓦片
+//! （`{root}/{z}/{x}/{y}.png`）而非 Bing。`STRICT_OFFLINE=1` 在任何
+//! https URL 上 panic（无网络回退）。
 
-// frozen legacy golden-path style debt; local allow to satisfy strict CI clippy gate
+// 冻结的遗留黄金路径风格债务；局部 allow 以满足严格 CI clippy 门槛
 #![allow(clippy::unnecessary_map_or, clippy::type_complexity, clippy::too_many_arguments)]
 
 use bevy::prelude::*;
@@ -45,9 +45,9 @@ use crate::perf_counters::PerfCounters;
 use crate::tile_mesh::GlobeTile;
 use cesium_pipeline::DefaultBudget;
 
-// ── Types ────────────────────────────────────────────────────────────────
+// ── 类型 ────────────────────────────────────────────────────────────────
 
-/// Cached tile image data (mip-chained RGBA bytes + dimensions).
+/// 缓存的瓦片图像数据（mip 链式 RGBA 字节 + 尺寸）。
 pub(crate) struct CachedTexture {
     pub rgba_data: Vec<u8>,
     pub width: u32,
@@ -55,7 +55,7 @@ pub(crate) struct CachedTexture {
     pub mip_levels: u32,
 }
 
-// ── Resources ────────────────────────────────────────────────────────────
+// ── 资源 ────────────────────────────────────────────────────────────
 
 #[derive(Resource)]
 pub(crate) struct TileManager {
@@ -114,7 +114,7 @@ impl LodContext for TileManager {
 }
 
 impl TileManager {
-    /// Despawn one tile entity; GPU handles stay cached for cheap re-spawn.
+    /// 反生成一个瓦片实体；GPU 句柄保持缓存以便廉价再生成。
     pub fn despawn_tile(&mut self, key: &TileKey, commands: &mut Commands) {
         if let Some(entity) = self.tile_entities.remove(key) {
             commands.entity(entity).despawn();
@@ -143,8 +143,8 @@ impl Default for TextureReceiver {
         let job_rx = Arc::new(Mutex::new(job_rx));
         let cache = Arc::new(Mutex::new(HashMap::new()));
         let wanted = Arc::new(Mutex::new(HashSet::new()));
-        // Persistent worker pool: 16 threads with shared ureq keep-alive pool
-        // (delegates to cesium-pipeline's UreqBackend via fetch_gated).
+        // 常驻 worker 池：16 个线程，带共享 ureq keep-alive 池
+        // （经 fetch_gated 委托给 cesium-pipeline 的 UreqBackend）。
         for _ in 0..DefaultBudget::DOWNLOAD_THREADS {
             let job_rx = job_rx.clone();
             let tx = tx.clone();
@@ -169,10 +169,10 @@ impl Default for MeshPipeline {
     }
 }
 
-// ── Plugin ───────────────────────────────────────────────────────────────
+// ── 插件 ───────────────────────────────────────────────────────────────
 
-/// SystemSet marker for the tile pipeline chain (pub(crate) — perf_trace
-/// cross-module contract, preserved from golden path L300-301).
+/// 瓦片管线链的 SystemSet 标记（pub(crate) —— perf_trace
+/// 跨模块契约，自黄金路径 L300-301 保留）。
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct TilePipelineSet;
 
@@ -195,10 +195,10 @@ impl Plugin for DynamicGlobePlugin {
     }
 }
 
-// Re-export so main.rs import path is unchanged.
+// 重新导出，使 main.rs 的导入路径保持不变。
 pub use crate::base_sphere::BaseSphereMarker;
 
-// ── Startup ──────────────────────────────────────────────────────────────
+// ── 启动 ──────────────────────────────────────────────────────────────
 
 fn initial_spawn(
     mut mgr: ResMut<TileManager>,
@@ -219,7 +219,7 @@ fn initial_spawn(
     globe_pipeline::enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &visible);
     globe_pipeline::enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &load);
 
-    // Permanent coarse fallback layer (BASE_LAYER_ZOOM=3, 硬约束).
+    // 永久粗级回退层（BASE_LAYER_ZOOM=3，硬约束）。
     let mut base: Vec<(TileKey, f32)> = Vec::new();
     for z in 1..=BASE_LAYER_ZOOM {
         for y in 0..(1u32 << z) {
@@ -234,7 +234,7 @@ fn initial_spawn(
     mgr.initialized = true;
 }
 
-// ── View-dependent update ────────────────────────────────────────────────
+// ── 视图相关更新 ────────────────────────────────────────────────
 
 fn view_dependent_update(
     orbit: Res<OrbitState>,
@@ -264,7 +264,7 @@ fn view_dependent_update(
     globe_pipeline::enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &new_visible);
     globe_pipeline::enqueue_tiles(&mut mgr, &mut mesh_pipe, &tex_rx, &new_load);
 
-    // Hidden-tile LRU maintenance.
+    // 隐藏瓦片的 LRU 维护。
     let (vis, load, ents, hide) = {
         let m = &mut *mgr;
         (&m.visible_set, &m.load_set, &m.tile_entities, &mut m.hide_order)
@@ -281,7 +281,7 @@ fn view_dependent_update(
     mgr.view_changed_this_frame = partition_changed;
 }
 
-// ── Budgeted asset pipeline ──────────────────────────────────────────────
+// ── 预算化资源管线 ──────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
 fn process_pipeline(
@@ -300,7 +300,7 @@ fn process_pipeline(
     );
 }
 
-// ── Visibility sync ──────────────────────────────────────────────────────
+// ── 可见性同步 ──────────────────────────────────────────────────────
 
 fn sync_visibility(mgr: Res<TileManager>, mut tiles: Query<(&GlobeTile, &mut Visibility)>) {
     for (tile, mut vis) in &mut tiles {
@@ -310,7 +310,7 @@ fn sync_visibility(mgr: Res<TileManager>, mut tiles: Query<(&GlobeTile, &mut Vis
     }
 }
 
-// ── Base-sphere composite ────────────────────────────────────────────────
+// ── 基础球合成 ────────────────────────────────────────────────
 
 fn base_sphere_composite_system(
     mut state: ResMut<BaseSphereComposite>,

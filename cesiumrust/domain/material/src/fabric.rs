@@ -1,43 +1,42 @@
-//! The Fabric JSON schema: the declarative material description language.
+//! Fabric JSON schema：声明式的材质描述语言。
 //!
-//! Maps to the `fabric` option of CesiumJS `Scene/Material.js`. A Fabric
-//! template is a JSON object with up to five properties:
+//! 映射到 CesiumJS `Scene/Material.js` 的 `fabric` 选项。Fabric 模板是一个
+//! 最多含五个属性的 JSON 对象：
 //!
-//! - `type`: the material type name (existing or new)
-//! - `uniforms`: map of uniform name → value
-//! - `materials`: map of sub-material name → nested Fabric template
-//! - `components`: the `czm_material` component expressions
-//!   (`diffuse`/`specular`/`shininess`/`normal`/`emission`/`alpha`)
-//! - `source`: a full custom `czm_getMaterial` GLSL definition
+//! - `type`：材质类型名（已存在的或新的）
+//! - `uniforms`：uniform 名 → 值 的映射
+//! - `materials`：子材质名 → 嵌套 Fabric 模板 的映射
+//! - `components`：`czm_material` 分量表达式
+//!   （`diffuse`/`specular`/`shininess`/`normal`/`emission`/`alpha`）
+//! - `source`：完整自定义的 `czm_getMaterial` GLSL 定义
 //!
-//! `source` and `components` are mutually exclusive.
+//! `source` 与 `components` 互斥。
 
 use crate::error::MaterialError;
 use crate::uniform::{uniform_value_from_json, UniformValue};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
-/// The valid top-level properties of a Fabric template.
-/// Maps to `templateProperties` in `Material.js`.
+/// Fabric 模板的合法顶层属性。
+/// 映射到 `Material.js` 中的 `templateProperties`。
 pub const TEMPLATE_PROPERTIES: [&str; 5] =
     ["type", "materials", "uniforms", "components", "source"];
 
-/// The valid properties of a Fabric `components` object.
-/// Maps to `componentProperties` in `Material.js`.
+/// Fabric `components` 对象的合法属性。
+/// 映射到 `Material.js` 中的 `componentProperties`。
 pub const COMPONENT_PROPERTIES: [&str; 6] = [
     "diffuse", "specular", "shininess", "normal", "emission", "alpha",
 ];
 
-/// The `czm_material` component expressions of a Fabric template.
+/// Fabric 模板的 `czm_material` 分量表达式。
 ///
-/// Maps to `template.components` in `Material.js`. Each entry is a GLSL
-/// expression string assigned to the corresponding `czm_material` member in
-/// the generated `czm_getMaterial` body. Iteration order for shader
-/// generation is the canonical CesiumJS order: diffuse, specular, shininess,
-/// normal, emission, alpha.
+/// 映射到 `Material.js` 中的 `template.components`。每个条目是一个 GLSL
+/// 表达式字符串，在生成的 `czm_getMaterial` 函数体中被赋给对应的
+/// `czm_material` 成员。着色器生成的迭代顺序为 CesiumJS 的规范顺序：
+/// diffuse、specular、shininess、normal、emission、alpha。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MaterialComponents {
-    /// `material.diffuse = <expr>;` (gamma-corrected unless fused).
+    /// `material.diffuse = <expr>;`（除非融合，否则进行 gamma 校正）。
     pub diffuse: Option<String>,
     /// `material.specular = <expr>;`
     pub specular: Option<String>,
@@ -45,14 +44,14 @@ pub struct MaterialComponents {
     pub shininess: Option<String>,
     /// `material.normal = <expr>;`
     pub normal: Option<String>,
-    /// `material.emission = <expr>;` (gamma-corrected unless fused).
+    /// `material.emission = <expr>;`（除非融合，否则进行 gamma 校正）。
     pub emission: Option<String>,
     /// `material.alpha = <expr>;`
     pub alpha: Option<String>,
 }
 
 impl MaterialComponents {
-    /// Returns true when no component expression is set.
+    /// 当未设置任何分量表达式时返回 true。
     pub fn is_empty(&self) -> bool {
         self.diffuse.is_none()
             && self.specular.is_none()
@@ -62,7 +61,7 @@ impl MaterialComponents {
             && self.alpha.is_none()
     }
 
-    /// Iterates the components in canonical CesiumJS order.
+    /// 按 CesiumJS 规范顺序迭代各分量。
     pub fn iter(&self) -> impl Iterator<Item = (&'static str, &str)> {
         [
             ("diffuse", self.diffuse.as_deref()),
@@ -88,8 +87,8 @@ impl MaterialComponents {
             }
         };
 
-        // Validate property names (maps to checkForValidProperties with
-        // invalidNameError for components).
+        // 校验属性名（映射到 checkForValidProperties，对 components
+        // 使用 invalidNameError）。
         for key in map.keys() {
             if !COMPONENT_PROPERTIES.contains(&key.as_str()) {
                 return Err(MaterialError::InvalidPropertyName {
@@ -115,27 +114,25 @@ impl MaterialComponents {
     }
 }
 
-/// A parsed Fabric material template.
+/// 已解析的 Fabric 材质模板。
 ///
-/// Maps to the cloned `options.fabric` / `_template` object in
-/// `Material.js`.
+/// 映射到 `Material.js` 中被克隆的 `options.fabric` / `_template` 对象。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FabricTemplate {
-    /// The material type name (`template.type`); a GUID is generated during
-    /// material construction when absent.
+    /// 材质类型名（`template.type`）；缺失时在材质构造期间生成一个 GUID。
     pub type_name: Option<String>,
-    /// Uniform name → value (`template.uniforms`).
+    /// uniform 名 → 值（`template.uniforms`）。
     pub uniforms: BTreeMap<String, UniformValue>,
-    /// Sub-material name → nested template (`template.materials`).
+    /// 子材质名 → 嵌套模板（`template.materials`）。
     pub materials: BTreeMap<String, FabricTemplate>,
-    /// Component expressions (`template.components`).
+    /// 分量表达式（`template.components`）。
     pub components: Option<MaterialComponents>,
-    /// Custom `czm_getMaterial` GLSL source (`template.source`).
+    /// 自定义的 `czm_getMaterial` GLSL 源码（`template.source`）。
     pub source: Option<String>,
 }
 
 impl FabricTemplate {
-    /// Parses a Fabric template from a JSON value.
+    /// 从 JSON 值解析 Fabric 模板。
     pub fn from_json(json: &JsonValue) -> Result<Self, MaterialError> {
         let map = match json {
             JsonValue::Object(map) => map,
@@ -147,8 +144,8 @@ impl FabricTemplate {
             }
         };
 
-        // Validate top-level property names (maps to checkForValidProperties
-        // with invalidNameError for the template).
+        // 校验顶层属性名（映射到 checkForValidProperties，对模板
+        // 使用 invalidNameError）。
         for key in map.keys() {
             if !TEMPLATE_PROPERTIES.contains(&key.as_str()) {
                 return Err(MaterialError::InvalidPropertyName {
@@ -208,20 +205,20 @@ impl FabricTemplate {
         })
     }
 
-    /// Parses a Fabric template from a JSON string.
-    /// Maps to `parse_fabric` in the architecture plan.
+    /// 从 JSON 字符串解析 Fabric 模板。
+    /// 映射到架构方案中的 `parse_fabric`。
     pub fn from_json_str(json: &str) -> Result<Self, MaterialError> {
         let value: JsonValue = serde_json::from_str(json)?;
         Self::from_json(&value)
     }
 
-    /// Validates the template for structural errors.
+    /// 校验模板的结构错误。
     ///
-    /// Maps to `checkForTemplateErrors` in `Material.js`:
-    /// - `source` and `components` cannot coexist
-    /// - uniforms and materials cannot share a name
+    /// 映射到 `Material.js` 中的 `checkForTemplateErrors`：
+    /// - `source` 与 `components` 不能共存
+    /// - uniforms 与 materials 不能共享同名
     ///
-    /// Property-name validation already happens during parsing.
+    /// 属性名校验已在解析期间完成。
     pub fn validate(&self) -> Result<(), MaterialError> {
         if self.components.is_some() && self.source.is_some() {
             return Err(MaterialError::SourceAndComponents);
@@ -239,11 +236,11 @@ impl FabricTemplate {
         Ok(())
     }
 
-    /// Deep-merges `base` into `self`, with `self` taking precedence.
+    /// 将 `base` 深合并进 `self`，`self` 优先。
     ///
-    /// Maps to `combine(result._template, template, true)` in
-    /// `initializeMaterial`: the user-provided template wins, and any keys
-    /// missing from it are filled in from the cached (base) template.
+    /// 映射到 `initializeMaterial` 中的
+    /// `combine(result._template, template, true)`：用户提供的模板胜出，
+    /// 其中缺失的任何键由缓存的（base）模板填充。
     pub fn merge_over(&mut self, base: &FabricTemplate) {
         if self.type_name.is_none() {
             self.type_name = base.type_name.clone();
@@ -395,8 +392,8 @@ mod tests {
 
         user.merge_over(&cached);
 
-        // User's color wins; extra uniform filled from cache; components
-        // filled from cache.
+        // 用户的 color 胜出；extra uniform 由缓存填充；components
+        // 由缓存填充。
         assert_eq!(
             user.uniforms.get("color"),
             Some(&UniformValue::Vec4([0.0, 1.0, 0.0, 1.0]))

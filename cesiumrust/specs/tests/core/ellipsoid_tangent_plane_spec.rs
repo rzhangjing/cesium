@@ -1,7 +1,7 @@
-//! Ported from `packages/engine/Specs/Core/EllipsoidTangentPlaneSpec.js` (27 it(), 19 A-class)
+//! 移植自 `packages/engine/Specs/Core/EllipsoidTangentPlaneSpec.js`（27 个 it()，19 个 A 类）
 //!
-//! 8 throws tests are omitted (C-class: Rust type system enforces valid construction).
-//! Result-parameter variants are merged into their owned-return counterparts.
+//! 省略 8 个 throws 测试（C 类：Rust 类型系统强制构造合法）。
+//! result 参数变体被合并到其“返回所有权”对应的测试中。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -41,7 +41,7 @@ fn from_points_sets_expected_values() {
     let points = [DVec3::new(2.0, 0.0, 0.0), DVec3::new(0.0, 0.0, 0.0)];
     let tangent_plane = EllipsoidTangentPlane::from_points(&points, &Ellipsoid::UNIT_SPHERE);
     assert_eq!(*tangent_plane.ellipsoid(), Ellipsoid::UNIT_SPHERE);
-    // Center of AABB([2,0,0],[0,0,0]) = (1,0,0), scaled to unit sphere surface = (1,0,0)
+    // AABB([2,0,0],[0,0,0]) 的中心 = (1,0,0)，缩放到单位球面 = (1,0,0)
     assert!(tangent_plane.origin().abs_diff_eq(DVec3::X, EPSILON14));
 }
 
@@ -50,8 +50,8 @@ fn project_point_onto_plane_returns_none_for_unsolvable_projections() {
     let ellipsoid = Ellipsoid::UNIT_SPHERE;
     let origin = DVec3::new(1.0, 0.0, 0.0);
     let tangent_plane = EllipsoidTangentPlane::new(origin, &ellipsoid);
-    // Point at (0,0,1) - direction is (0,0,1), plane normal is (1,0,0)
-    // Ray from (0,0,1) in direction (0,0,1) is parallel to plane x=1
+    // 位于 (0,0,1) 的点 - 方向为 (0,0,1)，平面法线为 (1,0,0)
+    // 从 (0,0,1) 沿方向 (0,0,1) 的射线平行于平面 x=1
     let position = DVec3::new(0.0, 0.0, 1.0);
     let result = tangent_plane.project_point_onto_plane(position);
     assert!(result.is_none());
@@ -110,9 +110,9 @@ fn project_points_onto_plane_skips_unprojectable_points() {
     let positions = [
         DVec3::new(1.0, 0.0, 1.0),
         DVec3::new(1.0, 0.0, 0.0),
-        DVec3::new(0.0, 0.0, 1.0), // unprojectable
+        DVec3::new(0.0, 0.0, 1.0), // 无法投影
         DVec3::new(1.0, 1.0, 0.0),
-        DVec3::new(0.0, 1.0, 0.0), // unprojectable
+        DVec3::new(0.0, 1.0, 0.0), // 无法投影
     ];
     let expected = [
         DVec2::new(0.0, 1.0),
@@ -252,8 +252,8 @@ fn project_points_onto_ellipsoid_with_arbitrary_ellipsoid_using_from_points() {
     let points_2d = tangent_plane.project_points_onto_plane(&points);
     let positions_back = tangent_plane.project_points_onto_ellipsoid(&points_2d);
 
-    // The first point should round-trip closely
-    let eps = 1e-5; // toBeCloseTo default precision
+    // 第一个点应能精确往返转换
+    let eps = 1e-5; // toBeCloseTo 的默认精度
     assert!(
         (positions_back[0].x - points[0].x).abs() < eps,
         "x: {} vs {}",

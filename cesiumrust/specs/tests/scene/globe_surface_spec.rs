@@ -1,5 +1,5 @@
-//! Globe surface + atmosphere specs
-//! Ported from CesiumJS Scene/GlobeSpec.js + Scene/GlobeTranslucencySpec.js
+//! 地球表面 + 大气规范
+//! 移植自 CesiumJS Scene/GlobeSpec.js + Scene/GlobeTranslucencySpec.js
 
 use cesium_globe::{
     GlobeConfig, GlobeLighting, GlobeSurface, GlobeTranslucency, GroundAtmosphere,
@@ -77,7 +77,7 @@ fn globe_surface_pick_from_above() {
     let hit = globe.pick(origin, direction);
     assert!(hit.is_some());
     let p = hit.unwrap();
-    // Should hit near north pole (z ≈ 6356752)
+    // 应命中靠近北极处 (z ≈ 6356752)
     assert!((p.z - 6356752.3142).abs() < 1.0);
 }
 
@@ -85,7 +85,7 @@ fn globe_surface_pick_from_above() {
 fn globe_surface_pick_miss() {
     let globe = GlobeSurface::new();
     let origin = DVec3::new(0.0, 0.0, 10_000_000.0);
-    let direction = DVec3::new(0.0, 0.0, 1.0); // Away from Earth
+    let direction = DVec3::new(0.0, 0.0, 1.0); // 背离地球
     assert!(globe.pick(origin, direction).is_none());
 }
 
@@ -97,7 +97,7 @@ fn globe_surface_pick_equator() {
     let hit = globe.pick(origin, direction);
     assert!(hit.is_some());
     let p = hit.unwrap();
-    // Should hit at equator x ≈ 6378137
+    // 应在赤道命中 x ≈ 6378137
     assert!((p.x - 6378137.0).abs() < 1.0);
 }
 
@@ -119,7 +119,7 @@ fn globe_surface_horizon_distance_zero() {
 fn globe_surface_horizon_dip_angle() {
     let globe = GlobeSurface::new();
     let dip = globe.horizon_dip_angle(1000.0);
-    // Small angle (~0.03 rad)
+    // 小角度（~0.03 rad）
     assert!(dip > 0.0 && dip < 0.1);
 }
 
@@ -203,23 +203,23 @@ fn ground_atmosphere_blue_dominant() {
         DVec3::new(1.0, 0.0, 0.0),
         0.0,
     );
-    // Blue channel should be dominant (Rayleigh scattering)
+    // 蓝色通道应占主导（瑞利散射）
     assert!(color[2] >= color[0]);
 }
 
 #[test]
 fn ground_atmosphere_horizon_glow_sunset() {
     let atmo = GroundAtmosphere::default();
-    let glow = atmo.compute_horizon_glow(0.0); // Sun at horizon
-    assert!(glow[0] > glow[1]); // Red dominant
+    let glow = atmo.compute_horizon_glow(0.0); // 太阳位于地平线
+    assert!(glow[0] > glow[1]); // 红色占主导
     assert!(glow[0] > 0.5);
 }
 
 #[test]
 fn ground_atmosphere_zenith_day() {
     let atmo = GroundAtmosphere::default();
-    let zenith = atmo.compute_zenith_color(0.5); // Sun well above horizon
-    assert!(zenith[2] > zenith[0]); // Blue dominant
+    let zenith = atmo.compute_zenith_color(0.5); // 太阳高过地平线
+    assert!(zenith[2] > zenith[0]); // 蓝色占主导
 }
 
 // ==================== GlobeLighting + SkyConfig ====================

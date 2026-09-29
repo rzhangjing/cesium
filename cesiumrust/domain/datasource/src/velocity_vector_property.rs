@@ -1,6 +1,6 @@
-//! VelocityVectorProperty - derives velocity direction from a position property.
+//! VelocityVectorProperty - 从位置属性导出速度方向。
 //!
-//! Maps to CesiumJS `DataSources/VelocityVectorProperty.js`
+//! 映射到 CesiumJS `DataSources/VelocityVectorProperty.js`
 
 use crate::property_system::property::DynProperty;
 use crate::property_system::value::PropertyValue;
@@ -8,20 +8,20 @@ use cesium_time::JulianDate;
 use glam::DVec3;
 use std::sync::Arc;
 
-/// A property that computes the velocity vector (optionally normalized) from
-/// a position property by finite differencing.
+/// 一个通过有限差分从位置属性计算速度向量（可选归一化）的
+/// 属性。
 ///
-/// Maps to CesiumJS `DataSources/VelocityVectorProperty.js`
+/// 映射到 CesiumJS `DataSources/VelocityVectorProperty.js`
 #[derive(Clone)]
 pub struct VelocityVectorProperty {
-    /// The position property to derive velocity from.
+    /// 用于导出速度的位置属性。
     position: Option<Arc<dyn DynProperty>>,
-    /// Whether to normalize the velocity vector.
+    /// 是否归一化速度向量。
     normalize: bool,
 }
 
 impl VelocityVectorProperty {
-    /// Creates a new VelocityVectorProperty with no position.
+    /// 创建一个无位置的新 VelocityVectorProperty。
     pub fn new() -> Self {
         Self {
             position: None,
@@ -29,7 +29,7 @@ impl VelocityVectorProperty {
         }
     }
 
-    /// Creates a VelocityVectorProperty with a position property.
+    /// 使用位置属性创建 VelocityVectorProperty。
     pub fn with_position(position: Arc<dyn DynProperty>, normalize: bool) -> Self {
         Self {
             position: Some(position),
@@ -37,7 +37,7 @@ impl VelocityVectorProperty {
         }
     }
 
-    /// Gets whether this property is constant.
+    /// 获取此属性是否为常量。
     pub fn is_constant(&self) -> bool {
         match &self.position {
             None => true,
@@ -45,38 +45,38 @@ impl VelocityVectorProperty {
         }
     }
 
-    /// Gets the position property.
+    /// 获取位置属性。
     pub fn position(&self) -> Option<&Arc<dyn DynProperty>> {
         self.position.as_ref()
     }
 
-    /// Sets the position property.
+    /// 设置位置属性。
     pub fn set_position(&mut self, position: Option<Arc<dyn DynProperty>>) {
         self.position = position;
     }
 
-    /// Gets whether the velocity is normalized.
+    /// 获取速度是否归一化。
     pub fn normalize(&self) -> bool {
         self.normalize
     }
 
-    /// Sets whether to normalize the velocity.
+    /// 设置是否归一化速度。
     pub fn set_normalize(&mut self, normalize: bool) {
         self.normalize = normalize;
     }
 
-    /// Gets the velocity vector at the given time.
+    /// 获取给定时间处的速度向量。
     ///
-    /// Computes the velocity by evaluating the position at time and time+dt,
-    /// then computing the difference. If normalize is true, the result is
-    /// normalized to unit length.
+    /// 通过在 time 和 time+dt 处求值位置，
+    /// 然后计算差值得到速度。若 normalize 为 true，则结果会被
+    /// 归一化为单位长度。
     ///
-    /// Maps to `VelocityVectorProperty.prototype.getValue`
+    /// 映射到 `VelocityVectorProperty.prototype.getValue`
     pub fn get_value(&self, time: &JulianDate) -> Option<DVec3> {
         let position = self.position.as_ref()?;
 
-        // Use a small time delta for finite differencing
-        let dt = 1.0 / 60.0; // 1/60th of a second
+        // 为有限差分使用一个较小的时间增量
+        let dt = 1.0 / 60.0; // 六十分之一秒
         let time_after = time.add_seconds(dt);
 
         let pos_before = position.get_value(time);
@@ -104,7 +104,7 @@ impl VelocityVectorProperty {
         }
     }
 
-    /// Compares this property to another.
+    /// 将此属性与另一个属性进行比较。
     pub fn equals(&self, other: &VelocityVectorProperty) -> bool {
         self.normalize == other.normalize
             && match (&self.position, &other.position) {

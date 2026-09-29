@@ -1,9 +1,9 @@
-//! SteppedSplineSpec.js → Rust integration tests
+//! SteppedSplineSpec.js → Rust 集成测试
 //!
-//! Original: packages/engine/Specs/Core/SteppedSplineSpec.js (10 it())
-//! A-class ported: 3 (evaluate_number, evaluate_cartesian3, evaluate_midpoint)
-//! C-class omitted: 5 (constructor throws ×3, evaluate throws ×2)
-//! Omitted: 2 quaternion tests (Rust SteppedSpline is DVec3-only; type-system limited)
+//! 原始：packages/engine/Specs/Core/SteppedSplineSpec.js（10 个 it()）
+//! 移植的 A 类：3 个（evaluate_number、evaluate_cartesian3、evaluate_midpoint）
+//! 省略的 C 类：5 个（构造函数 throws ×3、evaluate throws ×2）
+//! 省略：2 个四元数测试（Rust 的 SteppedSpline 仅支持 DVec3；受类型系统限制）
 
 use cesium_animation::spline::*;
 use glam::DVec3;
@@ -20,12 +20,12 @@ fn setup() -> (Vec<f64>, Vec<DVec3>) {
 }
 
 /// "evaluate returns number value"
-/// Uses DVec3 x-component to encode scalar (numberPoints = [10, -5, 8, 3]).
+/// 用 DVec3 的 x 分量来编码标量（numberPoints = [10, -5, 8, 3]）。
 #[test]
 fn evaluate_returns_number_value() {
     let times = vec![0.0, 1.0, 2.0, 3.0];
     let number_points: Vec<f64> = vec![10.0, -5.0, 8.0, 3.0];
-    // Encode as DVec3 x-component
+    // 编码为 DVec3 的 x 分量
     let points: Vec<DVec3> = number_points.iter().map(|&v| DVec3::new(v, 0.0, 0.0)).collect();
 
     let spline = SteppedSpline::new(times.clone(), points);
@@ -55,7 +55,7 @@ fn evaluate_returns_cartesian3_value() {
 }
 
 /// "evaluate returns cartesian3 value with result parameter"
-/// Merged: verifies midpoint of [times[1], times[2]] holds points[1].
+/// 合并：验证 [times[1], times[2]] 的中点保存 points[1]。
 #[test]
 fn evaluate_returns_cartesian3_midpoint() {
     let (times, cartesian_points) = setup();

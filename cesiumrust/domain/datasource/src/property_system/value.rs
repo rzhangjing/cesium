@@ -1,59 +1,59 @@
-//! Type-erased property values and packable value types.
+//! 类型擦除的属性值与可打包值类型。
 //!
-//! Maps to the CesiumJS `Packable` interface implemented by `Cartesian2`,
-//! `Cartesian3`, `Quaternion`, `Color` and the internal `PackableNumber`
-//! (see `DataSources/SampledProperty.js`), plus `DataSources/ReferenceFrame.js`.
+//! 映射到 CesiumJS 由 `Cartesian2`、`Cartesian3`、`Quaternion`、`Color`
+//! 以及内部 `PackableNumber` 所实现的 `Packable` 接口
+//! （见 `DataSources/SampledProperty.js`），外加 `DataSources/ReferenceFrame.js`。
 
 use glam::{DQuat, DVec2, DVec3};
 use serde_json::Value as JsonValue;
 
-/// The reference frame in which a position is defined.
+/// 定义位置时所用的参考系。
 ///
-/// Maps to CesiumJS `DataSources/ReferenceFrame.js`.
+/// 映射到 CesiumJS `DataSources/ReferenceFrame.js`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ReferenceFrame {
-    /// The fixed frame (e.g. ECEF / `FIXED`).
+    /// fixed 参考系（例如 ECEF / `FIXED`）。
     #[default]
     Fixed,
-    /// The inertial frame (e.g. ICRF / `INERTIAL`).
+    /// 惯性参考系（例如 ICRF / `INERTIAL`）。
     Inertial,
 }
 
-/// A type-erased property value.
+/// 一个类型擦除的属性值。
 ///
-/// CesiumJS properties may hold any value; this enum covers the set of value
-/// types used across the DataSources layer.
+/// CesiumJS 属性可保存任意值；此枚举涵盖 DataSources 层
+/// 所使用的各类值类型。
 #[derive(Debug, Clone, PartialEq)]
 pub enum PropertyValue {
-    /// No value (CesiumJS `undefined`).
+    /// 无值（CesiumJS 的 `undefined`）。
     Undefined,
-    /// A number.
+    /// 一个数字。
     Number(f64),
-    /// A boolean.
+    /// 一个布尔值。
     Boolean(bool),
-    /// A string.
+    /// 一个字符串。
     Text(String),
-    /// A 2D Cartesian vector.
+    /// 一个二维笛卡尔向量。
     Cartesian2(DVec2),
-    /// A 3D Cartesian vector.
+    /// 一个三维笛卡尔向量。
     Cartesian3(DVec3),
-    /// A quaternion (rotation).
+    /// 一个四元数（旋转）。
     Quaternion(DQuat),
-    /// An RGBA color with components in `[0, 1]`.
+    /// 一个 RGBA 颜色，各分量处于 `[0, 1]`。
     Color([f64; 4]),
-    /// A generic packed array of `f64`.
+    /// 一个通用的 `f64` 打包数组。
     Array(Vec<f64>),
-    /// An arbitrary JSON value.
+    /// 一个任意的 JSON 值。
     Json(JsonValue),
 }
 
 impl PropertyValue {
-    /// Returns `true` if this value is `Undefined`.
+    /// 若此值为 `Undefined` 则返回 `true`。
     pub fn is_undefined(&self) -> bool {
         matches!(self, PropertyValue::Undefined)
     }
 
-    /// Returns up to four packed `f64` components of this value.
+    /// 返回此值至多四个打包的 `f64` 分量。
     fn packed_components(&self) -> [f64; 4] {
         match self {
             PropertyValue::Number(v) => [*v, 0.0, 0.0, 0.0],
@@ -66,26 +66,26 @@ impl PropertyValue {
     }
 }
 
-/// A packable value type usable with `SampledProperty`.
+/// 可与 `SampledProperty` 一同使用的可打包值类型。
 ///
-/// Maps to the CesiumJS `Packable` interface.
+/// 映射到 CesiumJS `Packable` 接口。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PackableType {
-    /// A single number (`PackableNumber`, packedLength 1).
+    /// 单个数字（`PackableNumber`，packedLength 1）。
     Number,
-    /// `Cartesian2` (packedLength 2).
+    /// `Cartesian2`（packedLength 2）。
     Cartesian2,
-    /// `Cartesian3` (packedLength 3).
+    /// `Cartesian3`（packedLength 3）。
     Cartesian3,
-    /// `Quaternion` (packedLength 4, packedInterpolationLength 3).
+    /// `Quaternion`（packedLength 4，packedInterpolationLength 3）。
     Quaternion,
-    /// `Color` (packedLength 4).
+    /// `Color`（packedLength 4）。
     Color,
 }
 
 impl PackableType {
-    /// The number of `f64` elements used to store the value.
-    /// Maps to `Packable.packedLength`.
+    /// 用于存储该值的 `f64` 元素数量。
+    /// 映射到 `Packable.packedLength`。
     pub fn packed_length(self) -> usize {
         match self {
             PackableType::Number => 1,
@@ -96,8 +96,8 @@ impl PackableType {
         }
     }
 
-    /// The number of elements used to store the value in a form suitable for
-    /// interpolation. Maps to `Packable.packedInterpolationLength`.
+    /// 用于以适合插值的形式存储该值所需的元素数量。
+    /// 映射到 `Packable.packedInterpolationLength`。
     pub fn packed_interpolation_length(self) -> usize {
         match self {
             PackableType::Quaternion => 3,
@@ -105,24 +105,23 @@ impl PackableType {
         }
     }
 
-    /// Appends the packed representation of `value` onto `out`.
-    /// Maps to `Packable.pack(value, array, startingIndex)` (append form).
+    /// 将 `value` 的打包表示追加到 `out` 上。
+    /// 映射到 `Packable.pack(value, array, startingIndex)`（追加形式）。
     pub fn pack(&self, value: &PropertyValue, out: &mut Vec<f64>) {
         let comps = value.packed_components();
         let len = self.packed_length();
         out.extend_from_slice(&comps[..len]);
     }
 
-    /// Writes the packed representation of `value` into `array` starting at
-    /// `starting_index`.
+    /// 从 `starting_index` 开始，将 `value` 的打包表示写入 `array`。
     pub fn pack_at(&self, value: &PropertyValue, array: &mut [f64], starting_index: usize) {
         let comps = value.packed_components();
         let len = self.packed_length();
         array[starting_index..starting_index + len].copy_from_slice(&comps[..len]);
     }
 
-    /// Reads a value from `array` starting at `starting_index`.
-    /// Maps to `Packable.unpack(array, startingIndex, result)`.
+    /// 从 `starting_index` 开始从 `array` 中读取一个值。
+    /// 映射到 `Packable.unpack(array, startingIndex, result)`。
     pub fn unpack(&self, array: &[f64], starting_index: usize) -> PropertyValue {
         let s = starting_index;
         match self {
@@ -145,18 +144,18 @@ impl PackableType {
         }
     }
 
-    /// Whether this type defines `convertPackedArrayForInterpolation`
-    /// (only `Quaternion` does).
+    /// 此类型是否定义了 `convertPackedArrayForInterpolation`
+    /// （仅 `Quaternion` 定义了）。
     pub fn uses_interpolation_conversion(&self) -> bool {
         matches!(self, PackableType::Quaternion)
     }
 
-    /// Converts a packed array into a form suitable for interpolation.
+    /// 将打包数组转换为适合插值的形式。
     ///
-    /// Maps to `Quaternion.convertPackedArrayForInterpolation`. Only meaningful
-    /// for `Quaternion`; converts each quaternion in the inclusive range
-    /// `[first_index, last_index]` into an axis-angle vector relative to the
-    /// last quaternion in the range.
+    /// 映射到 `Quaternion.convertPackedArrayForInterpolation`。仅对
+    /// `Quaternion` 有意义；它将闭区间
+    /// `[first_index, last_index]` 中的每个四元数转换为相对于该区间中
+    /// 最后一个四元数的轴角向量。
     pub fn convert_packed_array_for_interpolation(
         &self,
         packed_array: &[f64],
@@ -186,11 +185,11 @@ impl PackableType {
         }
     }
 
-    /// Retrieves an instance from an array converted with
-    /// `convert_packed_array_for_interpolation`.
+    /// 从经 `convert_packed_array_for_interpolation` 转换的数组中
+    /// 取回一个实例。
     ///
-    /// Maps to `Quaternion.unpackInterpolationResult`. Only meaningful for
-    /// `Quaternion`.
+    /// 映射到 `Quaternion.unpackInterpolationResult`。仅对
+    /// `Quaternion` 有意义。
     pub fn unpack_interpolation_result(
         &self,
         array: &[f64],
@@ -211,7 +210,7 @@ impl PackableType {
     }
 }
 
-/// Unpacks a quaternion (4 components) from `array` at `starting_index`.
+/// 从 `array` 的 `starting_index` 处解包一个四元数（4 个分量）。
 fn unpack_quaternion(array: &[f64], starting_index: usize) -> DQuat {
     DQuat::from_xyzw(
         array[starting_index],
@@ -223,8 +222,8 @@ fn unpack_quaternion(array: &[f64], starting_index: usize) -> DQuat {
 
 const EPSILON6: f64 = 1e-6;
 
-/// Computes the normalized rotation axis of a quaternion.
-/// Maps to `Quaternion.computeAxis`.
+/// 计算四元数的归一化旋转轴。
+/// 映射到 `Quaternion.computeAxis`。
 fn compute_axis(q: DQuat) -> DVec3 {
     let w = q.w;
     if (w - 1.0).abs() < EPSILON6 || (w + 1.0).abs() < EPSILON6 {
@@ -234,8 +233,8 @@ fn compute_axis(q: DQuat) -> DVec3 {
     DVec3::new(q.x * scalar, q.y * scalar, q.z * scalar)
 }
 
-/// Computes the rotation angle of a quaternion.
-/// Maps to `Quaternion.computeAngle`.
+/// 计算四元数的旋转角度。
+/// 映射到 `Quaternion.computeAngle`。
 fn compute_angle(q: DQuat) -> f64 {
     if (q.w - 1.0).abs() < EPSILON6 {
         return 0.0;
@@ -243,8 +242,8 @@ fn compute_angle(q: DQuat) -> f64 {
     2.0 * q.w.acos()
 }
 
-/// Builds a quaternion from an axis (normalized internally) and an angle.
-/// Maps to `Quaternion.fromAxisAngle`.
+/// 由一个轴（内部会归一化）与一个角度构建四元数。
+/// 映射到 `Quaternion.fromAxisAngle`。
 fn from_axis_angle(axis: DVec3, angle: f64) -> DQuat {
     let half_angle = angle / 2.0;
     let s = half_angle.sin();
@@ -325,7 +324,7 @@ mod tests {
 
     #[test]
     fn test_quaternion_interpolation_conversion_identity() {
-        // Two identical quaternions: relative rotation is identity -> axis-angle zero.
+        // 两个相同的四元数：相对旋转为恒等 -> 轴角为零。
         let q = DQuat::from_rotation_z(FRAC_PI_2);
         let mut packed = Vec::new();
         PackableType::Quaternion.pack(&PropertyValue::Quaternion(q), &mut packed);
@@ -333,7 +332,7 @@ mod tests {
 
         let mut result = vec![0.0; 6];
         PackableType::Quaternion.convert_packed_array_for_interpolation(&packed, 0, 1, &mut result);
-        // Both relative to the last (itself): identity -> zero vectors.
+        // 两者都相对于最后一个（自身）：恒等 -> 零向量。
         assert!((result[0]).abs() < 1e-9);
         assert!((result[1]).abs() < 1e-9);
         assert!((result[2]).abs() < 1e-9);
@@ -344,8 +343,8 @@ mod tests {
 
     #[test]
     fn test_quaternion_interpolation_roundtrip() {
-        // q0 = identity, q1 = 90deg about Z. Relative to q1:
-        // q0 * conj(q1) = -90deg about Z.
+        // q0 = 恒等，q1 = 绕 Z 轴 90 度。相对于 q1：
+        // q0 * conj(q1) = 绕 Z 轴 -90 度。
         let q0 = DQuat::IDENTITY;
         let q1 = DQuat::from_rotation_z(FRAC_PI_2);
         let mut packed = Vec::new();
@@ -355,10 +354,10 @@ mod tests {
         let mut result = vec![0.0; 6];
         PackableType::Quaternion.convert_packed_array_for_interpolation(&packed, 0, 1, &mut result);
 
-        // Reconstruct q0 from its axis-angle representation relative to q1.
+        // 从 q0 相对于 q1 的轴角表示重建 q0。
         let recovered = PackableType::Quaternion.unpack_interpolation_result(&result, &packed, 0, 1);
         if let PropertyValue::Quaternion(rq) = recovered {
-            // Quaternions are equal up to sign.
+            // 四元数在符号意义下相等。
             let dot = rq.dot(q0);
             assert!((dot.abs() - 1.0).abs() < 1e-9, "dot = {dot}");
         } else {

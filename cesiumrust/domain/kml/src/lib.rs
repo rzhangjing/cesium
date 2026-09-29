@@ -1,8 +1,8 @@
-//! cesium-kml: KML (Keyhole Markup Language) parser and exporter.
+//! cesium-kml：KML（Keyhole Markup Language，可标记语言）解析器与导出器。
 //!
-//! Domain layer - pure Rust, f64 precision.
+//! Domain 层 - 纯 Rust，f64 精度。
 //!
-//! CesiumJS mapping:
+//! CesiumJS 映射：
 //! - `DataSources/KmlDataSource.js` → parser
 //! - `DataSources/KmlTour.js` → tour
 //! - `DataSources/exportKml.js` → export

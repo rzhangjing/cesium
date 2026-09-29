@@ -68,7 +68,7 @@ fn test_catmull_rom_spline_passes_through_control_points() {
     let expected_times = times.clone();
     let spline = CatmullRomSpline::new(times, points);
 
-    // Should pass through all control points
+    // 应经过所有控制点
     for (i, &t) in expected_times.iter().enumerate() {
         let p = spline.evaluate(t);
         assert_vec3_epsilon!(p, expected_points[i], epsilon::EPSILON8);
@@ -85,9 +85,9 @@ fn test_catmull_rom_spline_smooth_interpolation() {
     ];
     let spline = CatmullRomSpline::new(times, points);
 
-    // Midpoint should be smooth (not necessarily linear)
+    // 中点应平滑（不一定线性）
     let mid = spline.evaluate(0.5);
-    // Should be somewhere between the control points
+    // 应在控制点之间的某处
     assert!(mid.x > 0.0 && mid.x < 1.0);
 }
 
@@ -139,8 +139,8 @@ fn assert_quat_eq_eps(actual: glam::DQuat, expected: glam::DQuat, eps: f64) {
     assert!((actual.w - expected.w).abs() < eps, "quat.w: {} vs {}", actual.w, expected.w);
 }
 
-/// Port of "evaluate without result parameter": evaluate at a knot returns the
-/// control point; evaluate at a segment midpoint matches Quaternion.slerp.
+/// "evaluate without result parameter" 的移植：在节点处 evaluate 返回该
+/// 控制点；在线段中点处 evaluate 与 Quaternion.slerp 匹配。
 #[test]
 fn test_quaternion_spline_evaluate_knot_and_midpoint() {
     use glam::DQuat;
@@ -154,11 +154,11 @@ fn test_quaternion_spline_evaluate_knot_and_midpoint() {
     let times = vec![0.0, 1.0, 2.0, 3.0];
     let spline = QuaternionSpline::new(times.clone(), points.clone());
 
-    // evaluate at first knot returns the first control point
+    // 在第一个节点处 evaluate 返回第一个控制点
     let q0 = spline.evaluate(times[0]);
     assert_quat_eq_eps(q0, points[0], epsilon::EPSILON6);
 
-    // midpoint of segment [times[1], times[2]]
+    // 线段 [times[1], times[2]] 的中点
     let time = (times[2] + times[1]) * 0.5;
     let t = (time - times[1]) / (times[2] - times[1]);
     let actual = spline.evaluate(time);
@@ -200,7 +200,7 @@ fn test_stepped_spline_holds_previous() {
     let p = spline.evaluate(0.5);
     assert_vec3_epsilon!(p, DVec3::new(0.0, 0.0, 0.0), epsilon::EPSILON10);
 
-    // At exactly 1.0, should be the second point
+    // 恰好为 1.0 时，应为第二个点
     let p1 = spline.evaluate(1.0);
     assert_vec3_epsilon!(p1, DVec3::new(1.0, 1.0, 1.0), epsilon::EPSILON10);
 }

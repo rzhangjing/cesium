@@ -1,6 +1,6 @@
-//! cesium-imagery: Imagery layer domain models
+//! cesium-imagery：影像图层领域模型
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Scene/ImageryLayer.js`
 //! - `Scene/ImageryLayerCollection.js`
 //! - `Scene/Imagery.js`
@@ -23,27 +23,27 @@ pub use blending::{PixelColor, blend_pixel, composite_layers, compute_effective_
 
 use serde::{Deserialize, Serialize};
 
-/// Imagery split direction for split-screen comparison.
-/// Maps to CesiumJS `Scene/SplitDirection`
+/// 用于分屏对比的影像分割方向。
+/// 映射到 CesiumJS `Scene/SplitDirection`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum SplitDirection {
-    /// Use the left side of the splitter.
+    /// 使用分割器的左侧。
     Left = -1,
-    /// No split, use the full screen.
+    /// 不分隔，使用全屏。
     #[default]
     None = 0,
-    /// Use the right side of the splitter.
+    /// 使用分割器的右侧。
     Right = 1,
 }
 
-/// Alpha blending mode for imagery layers.
+/// 影像图层的 alpha 混合模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum AlphaBlendingMode {
-    /// Standard alpha blending (src * alpha + dst * (1 - alpha))
+    /// 标准 alpha 混合（src * alpha + dst * (1 - alpha)）
     #[default]
     Standard,
-    /// Additive blending (src + dst)
+    /// 叠加混合（src + dst）
     Additive,
-    /// Multiplicative blending (src * dst)
+    /// 正片叠底混合（src * dst）
     Multiplicative,
 }

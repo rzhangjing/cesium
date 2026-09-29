@@ -1,8 +1,9 @@
-//! Polygon geometry library functions.
+//! 多边形几何库函数。
 //!
-//! Maps to CesiumJS `Core/PolygonGeometryLibrary.js`
+//! 映射到 CesiumJS `Core/PolygonGeometryLibrary.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(unused_mut)]
 use crate::ellipsoid::Ellipsoid;
 use crate::ellipsoid_rhumb_line::EllipsoidRhumbLine;
@@ -11,22 +12,22 @@ use crate::ray::{line_segment_plane, Plane};
 use glam::DVec3;
 use std::f64::consts::PI;
 
-/// Arc type for polygon edges.
+/// 多边形边的弧类型。
 ///
-/// Maps to CesiumJS `Core/ArcType.js`
+/// 映射到 CesiumJS `Core/ArcType.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ArcType {
-    /// Straight line (no arc).
+    /// 直线（无弧）。
     None,
-    /// Geodesic arc (great circle).
+    /// 大地线弧（大圆）。
     Geodesic,
-    /// Rhumb line arc (constant bearing).
+    /// 恒向线弧（等倾角）。
     Rhumb,
 }
 
-/// Subdivides a rhumb line between two Cartesian3 points into a flat array of positions.
+/// 将两点 Cartesian3 之间的恒向线细分为一个扁平的位置数组。
 ///
-/// Maps to CesiumJS `PolygonGeometryLibrary.subdivideRhumbLine`
+/// 映射到 CesiumJS `PolygonGeometryLibrary.subdivideRhumbLine`
 pub fn subdivide_rhumb_line(
     ellipsoid: &Ellipsoid,
     p0: DVec3,
@@ -39,7 +40,7 @@ pub fn subdivide_rhumb_line(
     let (c0, c1) = match (c0, c1) {
         (Some(c0), Some(c1)) => (c0, c1),
         _ => {
-            // If conversion fails, return just p0
+            // 若转换失败，则仅返回 p0
             return vec![p0.x, p0.y, p0.z];
         }
     };
@@ -47,7 +48,7 @@ pub fn subdivide_rhumb_line(
     let rhumb = EllipsoidRhumbLine::new(&c0, &c1, ellipsoid);
 
     if rhumb.surface_distance() <= min_distance {
-        // No need to subdivide a line that's already shorter than min distance
+        // 无需细分已经短于最小距离的线
         return vec![p0.x, p0.y, p0.z];
     }
 
@@ -68,33 +69,33 @@ pub fn subdivide_rhumb_line(
     positions
 }
 
-/// Edge on the equatorial plane, used during polygon splitting.
+/// 赤道平面上的边，用于多边形拆分期间。
 struct EdgeOnPlane {
-    /// Index into the positions array.
+    /// 指向 positions 数组的索引。
     position: usize,
-    /// Sign of the start point's z coordinate (-1, 0, or 1).
+    /// 起点 z 坐标的符号（-1、0 或 1）。
     edge_type: i32,
-    /// Whether this edge has been visited during wiring.
+    /// 在连线过程中此边是否已被访问。
     visited: bool,
-    /// Sign of the next point's z coordinate.
+    /// 下一点 z 坐标的符号。
     next: i32,
-    /// Longitude of the intersection point (for sorting).
+    /// 交点的经度（用于排序）。
     theta: f64,
 }
 
-/// Computes the equator intersection point for a geodesic edge.
+/// 计算一条大地线边与赤道的交点。
 fn compute_equator_intersection_geodesic(
     start: DVec3,
     end: DVec3,
     ellipsoid: &Ellipsoid,
 ) -> Option<DVec3> {
-    // The equatorial plane: normal = (0, 0, 1), distance = 0
+    // 赤道平面：法线 = (0, 0, 1)，距离 = 0
     let plane = Plane::from_point_normal(DVec3::ZERO, DVec3::Z);
     let intersection = line_segment_plane(start, end, &plane)?;
     ellipsoid.scale_to_geodetic_surface(intersection)
 }
 
-/// Computes the equator intersection point for a rhumb edge.
+/// 计算一条恒向线边与赤道的交点。
 fn compute_equator_intersection_rhumb(
     start: DVec3,
     end: DVec3,
@@ -103,7 +104,7 @@ fn compute_equator_intersection_rhumb(
     let c0 = ellipsoid.cartesian_to_cartographic(start)?;
     let c1 = ellipsoid.cartesian_to_cartographic(end)?;
 
-    // If both on same side of equator, no intersection
+    // 若两点位于赤道同侧，则无交点
     if c0.latitude.signum() == c1.latitude.signum() {
         return None;
     }
@@ -115,7 +116,7 @@ fn compute_equator_intersection_rhumb(
     let max_longitude = c0.longitude.max(c1.longitude);
 
     let (min_lon, max_lon) = if (max_longitude - min_longitude).abs() > PI {
-        // Crosses IDL, flip min and max
+        // 跨越国际日期变更线，交换 min 和 max
         (max_longitude, min_longitude)
     } else {
         (min_longitude, max_longitude)
@@ -128,7 +129,7 @@ fn compute_equator_intersection_rhumb(
     Some(ellipsoid.cartographic_to_cartesian(&intersection))
 }
 
-/// Computes the equator intersection for an edge based on arc type.
+/// 根据弧类型计算一条边与赤道的交点。
 fn compute_equator_intersection(
     start: DVec3,
     end: DVec3,
@@ -141,8 +142,7 @@ fn compute_equator_intersection(
     }
 }
 
-/// Finds all edges that intersect the equatorial plane and splices intersection points
-/// into the positions array.
+/// 找出所有与赤道平面相交的边，并将交点拼接进 positions 数组。
 fn compute_edges_on_plane(
     positions: &mut Vec<DVec3>,
     ellipsoid: &Ellipsoid,
@@ -166,7 +166,7 @@ fn compute_edges_on_plane(
         };
 
         if edge_type == 0 {
-            // Start position is on the split plane
+            // 起始位置位于拆分平面上
             edges_on_plane.push(EdgeOnPlane {
                 position: i,
                 edge_type,
@@ -180,12 +180,12 @@ fn compute_edges_on_plane(
 
             i += 1;
             if intersection.is_none() {
-                // The line segment is entirely above or below
-                // NOTE: `continue` skips the bottom i+=1, matching JS behavior
+                // 该线段完全位于上方或下方
+                // 注意：`continue` 跳过了底部的 i+=1，与 JS 行为一致
                 continue;
             }
 
-            // The line segment passed through the equator
+            // 该线段穿过了赤道
             let intersection = intersection.unwrap();
             positions.insert(i, intersection);
             edges_on_plane.push(EdgeOnPlane {
@@ -203,7 +203,7 @@ fn compute_edges_on_plane(
     edges_on_plane
 }
 
-/// Recursively wires polygons from positions and edge information.
+/// 由位置和边信息递归地连线多边形。
 #[allow(clippy::too_many_arguments)]
 fn wire_polygon(
     polygons: &mut Vec<Vec<DVec3>>,
@@ -245,7 +245,7 @@ fn wire_polygon(
 
         if edge_type == 0 {
             if next == 0 {
-                // Special case: backtrack along the edge
+                // 特殊情况：沿边回退
                 let prev_edge_idx = if above_plane {
                     if edge > 0 { Some(edge - 1) } else { None }
                 } else {
@@ -265,7 +265,7 @@ fn wire_polygon(
                 }
             }
 
-            // Special case where 3 polygons meet
+            // 三个多边形相接的特殊情况
             if (!has_been_visited && above_plane && next > 0)
                 || (start_index == i && !above_plane && next < 0)
             {
@@ -281,11 +281,11 @@ fn wire_polygon(
         }
 
         if !has_been_visited {
-            // Wire another polygon starting at this position on the other side
+            // 从另一侧的这个位置开始连线另一个多边形
             polygons_to_wire.push(i);
         }
 
-        // Continue counter-clockwise to the next edge
+        // 逆时针继续到下一条边
         let next_edge_index = if above_plane {
             if edge + 1 < edges_on_plane.len() { Some(edge + 1) } else { None }
         } else {
@@ -303,7 +303,7 @@ fn wire_polygon(
         }
     }
 
-    // Replace polygon at polygon_index
+    // 替换 polygon_index 处的多边形
     if to_delete > 0 && polygon_index < polygons.len() {
         polygons.splice(polygon_index..polygon_index + to_delete, vec![polygon]);
     } else {
@@ -326,9 +326,9 @@ fn wire_polygon(
     current_index
 }
 
-/// Splits an array of polygons along the equator.
+/// 沿赤道拆分一个多边形数组。
 ///
-/// Maps to CesiumJS `PolygonGeometryLibrary.splitPolygonsOnEquator`
+/// 映射到 CesiumJS `PolygonGeometryLibrary.splitPolygonsOnEquator`
 pub fn split_polygons_on_equator(
     outer_rings: &[Vec<DVec3>],
     ellipsoid: &Ellipsoid,
@@ -347,20 +347,20 @@ pub fn split_polygons_on_equator(
             continue;
         }
 
-        // Step 1: Get all edges which intersect the split line
+        // 步骤 1：获取所有与拆分线相交的边
         let mut edges_on_plane = compute_edges_on_plane(&mut positions, ellipsoid, arc_type);
 
-        // If nothing intersected or only a single point on the plane, use original polygon
+        // 若没有相交或平面上只有一个点，则使用原多边形
         if positions.len() == outer_ring.len() || edges_on_plane.len() <= 1 {
             result[current_polygon] = positions;
             current_polygon += 1;
             continue;
         }
 
-        // Step 2: Sort edges along the split line by longitude
+        // 步骤 2：沿拆分线按经度对边排序
         edges_on_plane.sort_by(|a, b| a.theta.partial_cmp(&b.theta).unwrap_or(std::cmp::Ordering::Equal));
 
-        // Step 3: Rewire polygons
+        // 步骤 3：重新连线多边形
         let north = positions[0].z >= 0.0;
         current_polygon = wire_polygon(
             &mut result,

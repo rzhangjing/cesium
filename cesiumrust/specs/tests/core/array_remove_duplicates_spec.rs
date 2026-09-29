@@ -1,16 +1,16 @@
-//! Core/arrayRemoveDuplicatesSpec.js → Rust integration tests
-//! 25 original it() blocks → 21 A-class tests ported
+//! Core/arrayRemoveDuplicatesSpec.js → Rust 集成测试
+//! 25 个原始 it() 块 → 移植 21 个 A 类测试
 //!
-//! Skipped C-class tests:
-//! - "returns undefined" - Rust uses Option/empty slice (compile-time safety)
-//! - "anonymous types" / "Spherical type" - Rust is statically typed (DVec3 covers the logic)
-//! - "doesn't modify removedIndices length===1" - merged into no-duplicates test
+//! 跳过的 C 类测试：
+//! - "returns undefined" - Rust 使用 Option/空切片（编译期安全）
+//! - "anonymous types" / "Spherical type" - Rust 是静态类型（DVec3 覆盖了逻辑）
+//! - "doesn't modify removedIndices length===1" - 合并进无重复测试
 
 use cesium_geospatial::array_utils::array_remove_duplicates;
 use cesium_geospatial::math_utils::EPSILON10;
 use glam::DVec3;
 
-/// CesiumJS Cartesian3.equalsEpsilon - checks both absolute and relative epsilon
+/// CesiumJS Cartesian3.equalsEpsilon - 同时检查绝对与相对 epsilon
 fn vec3_equals_epsilon(left: &DVec3, right: &DVec3, epsilon: f64) -> bool {
     let dx = (left.x - right.x).abs();
     let dy = (left.y - right.y).abs();
@@ -23,7 +23,7 @@ fn vec3_equals_epsilon(left: &DVec3, right: &DVec3, epsilon: f64) -> bool {
 }
 
 // ============================================================================
-// No duplicates
+// 无重复
 // ============================================================================
 
 #[test]
@@ -51,7 +51,7 @@ fn wrapping_returns_positions_if_none_removed() {
 }
 
 // ============================================================================
-// Basic duplicate removal
+// 基本去重
 // ============================================================================
 
 #[test]
@@ -101,7 +101,7 @@ fn works_with_empty_array() {
 }
 
 // ============================================================================
-// Epsilon behavior
+// Epsilon 行为
 // ============================================================================
 
 #[test]
@@ -140,9 +140,9 @@ fn keeps_positions_that_add_up_past_relative_epsilon10() {
         DVec3::new(0.0, 0.0, 1.0 + 2.0 * eighty_percent),
         DVec3::new(0.0, 0.0, 1.0 + 3.0 * eighty_percent),
     ];
-    // First and second are within epsilon → second removed
-    // Third is compared to first (v0 stays at first): 2*0.8=1.6 > 1.0 epsilon → kept
-    // Fourth compared to third: diff = 0.8*epsilon < epsilon → removed
+    // 第一个与第二个在 epsilon 之内 → 移除第二个
+    // 第三个与第一个比较（v0 保持在第一个）：2*0.8=1.6 > 1.0 epsilon → 保留
+    // 第四个与第三个比较：diff = 0.8*epsilon < epsilon → 移除
     let expected = vec![
         DVec3::new(0.0, 0.0, 1.0),
         DVec3::new(0.0, 0.0, 1.0 + 2.0 * eighty_percent),
@@ -152,7 +152,7 @@ fn keeps_positions_that_add_up_past_relative_epsilon10() {
 }
 
 // ============================================================================
-// Wrap-around behavior
+// 首尾环绕行为
 // ============================================================================
 
 #[test]
@@ -224,8 +224,8 @@ fn wrapping_doesnt_remove_nonadjacent_duplicates() {
         DVec3::splat(3.0),
         DVec3::splat(1.0),
     ];
-    // Wrap-around: last(1,1,1)==first(1,1,1) → remove last
-    // But also adjacents: no adjacent duplicates
+    // 首尾环绕：last(1,1,1)==first(1,1,1) → 移除最后一个
+    // 同时检查相邻：无相邻重复
     let expected = vec![
         DVec3::splat(1.0),
         DVec3::splat(2.0),
@@ -237,7 +237,7 @@ fn wrapping_doesnt_remove_nonadjacent_duplicates() {
 }
 
 // ============================================================================
-// removedIndices tracking
+// removedIndices 跟踪
 // ============================================================================
 
 #[test]

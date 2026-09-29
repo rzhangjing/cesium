@@ -1,5 +1,5 @@
-//! Tests ported from CesiumJS PathVisualizerSpec.js + AnimationViewModelSpec.js
-//! A-class logic: AnimationClock, interpolate_position, compute_path
+//! 移植自 CesiumJS PathVisualizerSpec.js + AnimationViewModelSpec.js 的测试
+//! A 类逻辑：AnimationClock、interpolate_position、compute_path
 
 use cesium_datasource::animation::{
     interpolate_position, AnimationClock, InterpolationAlgorithm, Keyframe,
@@ -50,7 +50,7 @@ fn test_clock_loop_wraps_around() {
     clock.playing = true;
     clock.looping = true;
     clock.tick(12.0);
-    // Should wrap: 12 % 10 = 2
+    // 应回绕：12 % 10 = 2
     assert!((clock.current_time - 2.0).abs() < 1e-10);
 }
 
@@ -84,7 +84,7 @@ fn test_clock_reset_and_seek() {
     clock.seek(5.0);
     assert_eq!(clock.current_time, 5.0);
 
-    // Seek clamps
+    // Seek 钳制
     clock.seek(20.0);
     assert_eq!(clock.current_time, 10.0);
     clock.seek(-5.0);
@@ -124,10 +124,10 @@ fn test_interpolate_before_first_and_after_last() {
         Keyframe { time: 1.0, value: [1.0, 1.0, 1.0] },
         Keyframe { time: 5.0, value: [5.0, 5.0, 5.0] },
     ];
-    // Before first
+    // 首个之前
     let result = interpolate_position(&kf, 0.0, InterpolationAlgorithm::Linear).unwrap();
     assert_eq!(result, [1.0, 1.0, 1.0]);
-    // After last
+    // 末个之后
     let result = interpolate_position(&kf, 10.0, InterpolationAlgorithm::Linear).unwrap();
     assert_eq!(result, [5.0, 5.0, 5.0]);
 }
@@ -138,18 +138,18 @@ fn test_interpolate_hermite_smoothstep() {
         Keyframe { time: 0.0, value: [0.0, 0.0, 0.0] },
         Keyframe { time: 1.0, value: [1.0, 1.0, 1.0] },
     ];
-    // At t=0.5, smoothstep(0.5) = 3*0.25 - 2*0.125 = 0.75 - 0.25 = 0.5
+    // 在 t=0.5，smoothstep(0.5) = 3*0.25 - 2*0.125 = 0.75 - 0.25 = 0.5
     let result = interpolate_position(&kf, 0.5, InterpolationAlgorithm::Hermite).unwrap();
     assert!((result[0] - 0.5).abs() < 1e-10);
 
-    // At t=0.25, smoothstep(0.25) = 3*0.0625 - 2*0.015625 = 0.1875 - 0.03125 = 0.15625
+    // 在 t=0.25，smoothstep(0.25) = 3*0.0625 - 2*0.015625 = 0.1875 - 0.03125 = 0.15625
     let result = interpolate_position(&kf, 0.25, InterpolationAlgorithm::Hermite).unwrap();
     assert!((result[0] - 0.15625).abs() < 1e-10);
 }
 
 #[test]
 fn test_interpolate_lagrange_quadratic() {
-    // Three points on a line: Lagrange should reproduce linear exactly
+    // 一条直线上的三个点：Lagrange 应精确复现 linear
     let kf = vec![
         Keyframe { time: 0.0, value: [0.0, 0.0, 0.0] },
         Keyframe { time: 1.0, value: [1.0, 2.0, 3.0] },

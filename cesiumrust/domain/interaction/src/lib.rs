@@ -1,8 +1,8 @@
-//! cesium-interaction: Camera controllers, flight animations, picking, and events.
+//! cesium-interaction：相机控制器、飞行动画、拾取与事件。
 //!
-//! Domain layer - pure Rust, f64 precision.
+//! 领域层 - 纯 Rust，f64 精度。
 //!
-//! CesiumJS mapping:
+//! CesiumJS 映射：
 //! - `Scene/ScreenSpaceCameraController.js` → camera_controller
 //! - `Scene/ScreenSpaceCameraController.js` (inertia) → inertia
 //! - `Scene/Camera.js` (flyTo/lookAt) → flight

@@ -1,32 +1,32 @@
-//! GeometryInstanceAttribute family.
-//! Maps to CesiumJS `Core/GeometryInstanceAttribute.js`,
-//! `Core/ColorGeometryInstanceAttribute.js`,
-//! `Core/ShowGeometryInstanceAttribute.js`,
+//! GeometryInstanceAttribute 家族。
+//! 映射到 CesiumJS `Core/GeometryInstanceAttribute.js`、
+//! `Core/ColorGeometryInstanceAttribute.js`、
+//! `Core/ShowGeometryInstanceAttribute.js`、
 //! `Core/DistanceDisplayConditionGeometryInstanceAttribute.js`
 
 use crate::attribute_compression::ComponentDatatype;
 use crate::color::Color;
 
-/// Values and type information for per-instance geometry attributes.
-/// Maps to CesiumJS `GeometryInstanceAttribute`
+/// 逐实例几何属性的值与类型信息。
+/// 映射到 CesiumJS `GeometryInstanceAttribute`
 #[derive(Debug, Clone, PartialEq)]
 pub struct GeometryInstanceAttribute {
-    /// The datatype of each component in the attribute.
+    /// 属性中每个分量的数据类型。
     pub component_datatype: ComponentDatatype,
-    /// A number between 1 and 4 that defines the number of components in an attribute.
+    /// 一个介于 1 和 4 之间的数，定义属性中的分量数量。
     pub components_per_attribute: u32,
-    /// When true and componentDatatype is an integer format, indicate that the components
-    /// should be mapped to the range [0, 1] (unsigned) or [-1, 1] (signed).
+    /// 当为 true 且 componentDatatype 为整数格式时，表示各分量
+    /// 应映射到区间 [0, 1]（无符号）或 [-1, 1]（有符号）。
     pub normalize: bool,
-    /// The value for the attribute.
+    /// 属性的值。
     pub value: Vec<f64>,
 }
 
 impl GeometryInstanceAttribute {
-    /// Creates a new GeometryInstanceAttribute.
+    /// 创建一个新的 GeometryInstanceAttribute。
     ///
-    /// # Panics
-    /// Panics if `components_per_attribute` is not between 1 and 4.
+    /// # Panic
+    /// 若 `components_per_attribute` 不在 1 到 4 之间则 Panic。
     pub fn new(
         component_datatype: ComponentDatatype,
         components_per_attribute: u32,
@@ -46,16 +46,16 @@ impl GeometryInstanceAttribute {
     }
 }
 
-/// Value and type information for per-instance geometry color.
-/// Maps to CesiumJS `ColorGeometryInstanceAttribute`
+/// 逐实例几何颜色的值与类型信息。
+/// 映射到 CesiumJS `ColorGeometryInstanceAttribute`
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColorGeometryInstanceAttribute {
-    /// The values for the attributes stored as [R, G, B, A] bytes.
+    /// 以 [R, G, B, A] 字节存储的属性值。
     pub value: [u8; 4],
 }
 
 impl ColorGeometryInstanceAttribute {
-    /// Creates a new ColorGeometryInstanceAttribute from floating point RGBA components.
+    /// 由浮点 RGBA 分量创建一个新的 ColorGeometryInstanceAttribute。
     pub fn new(red: f64, green: f64, blue: f64, alpha: f64) -> Self {
         Self {
             value: [
@@ -67,37 +67,37 @@ impl ColorGeometryInstanceAttribute {
         }
     }
 
-    /// The datatype of each component: UNSIGNED_BYTE.
+    /// 每个分量的数据类型：UNSIGNED_BYTE。
     pub fn component_datatype(&self) -> ComponentDatatype {
         ComponentDatatype::UnsignedByte
     }
 
-    /// The number of components: 4.
+    /// 分量数量：4。
     pub fn components_per_attribute(&self) -> u32 {
         4
     }
 
-    /// Normalize: true.
+    /// Normalize：true。
     pub fn normalize(&self) -> bool {
         true
     }
 
-    /// Creates a new ColorGeometryInstanceAttribute from a Color.
-    /// Maps to CesiumJS `ColorGeometryInstanceAttribute.fromColor`
+    /// 由一个 Color 创建一个新的 ColorGeometryInstanceAttribute。
+    /// 映射到 CesiumJS `ColorGeometryInstanceAttribute.fromColor`
     pub fn from_color(color: &Color) -> Self {
         Self {
             value: color.to_bytes(),
         }
     }
 
-    /// Converts a color to a byte array that can be used to assign a color attribute.
-    /// Maps to CesiumJS `ColorGeometryInstanceAttribute.toValue`
+    /// 将一个颜色转换为可用于赋颜色属性的字节数组。
+    /// 映射到 CesiumJS `ColorGeometryInstanceAttribute.toValue`
     pub fn to_value(color: &Color) -> [u8; 4] {
         color.to_bytes()
     }
 
-    /// Compares two ColorGeometryInstanceAttributes for equality.
-    /// Maps to CesiumJS `ColorGeometryInstanceAttribute.equals`
+    /// 比较两个 ColorGeometryInstanceAttribute 是否相等。
+    /// 映射到 CesiumJS `ColorGeometryInstanceAttribute.equals`
     pub fn equals(
         left: Option<&ColorGeometryInstanceAttribute>,
         right: Option<&ColorGeometryInstanceAttribute>,
@@ -109,59 +109,59 @@ impl ColorGeometryInstanceAttribute {
     }
 }
 
-/// Value and type information for per-instance geometry attribute that determines
-/// if the geometry instance will be shown.
-/// Maps to CesiumJS `ShowGeometryInstanceAttribute`
+/// 逐实例几何属性的值与类型信息，该属性决定
+/// 几何实例是否显示。
+/// 映射到 CesiumJS `ShowGeometryInstanceAttribute`
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShowGeometryInstanceAttribute {
-    /// The values for the attributes stored as [show] byte.
+    /// 以 [show] 字节存储的属性值。
     pub value: [u8; 1],
 }
 
 impl ShowGeometryInstanceAttribute {
-    /// Creates a new ShowGeometryInstanceAttribute.
+    /// 创建一个新的 ShowGeometryInstanceAttribute。
     pub fn new(show: bool) -> Self {
         Self {
             value: Self::to_value(show),
         }
     }
 
-    /// The datatype of each component: UNSIGNED_BYTE.
+    /// 每个分量的数据类型：UNSIGNED_BYTE。
     pub fn component_datatype(&self) -> ComponentDatatype {
         ComponentDatatype::UnsignedByte
     }
 
-    /// The number of components: 1.
+    /// 分量数量：1。
     pub fn components_per_attribute(&self) -> u32 {
         1
     }
 
-    /// Normalize: false.
+    /// Normalize：false。
     pub fn normalize(&self) -> bool {
         false
     }
 
-    /// Converts a boolean show to a typed array.
-    /// Maps to CesiumJS `ShowGeometryInstanceAttribute.toValue`
+    /// 将一个布尔值 show 转换为类型化数组。
+    /// 映射到 CesiumJS `ShowGeometryInstanceAttribute.toValue`
     pub fn to_value(show: bool) -> [u8; 1] {
         [show as u8]
     }
 }
 
-/// Value and type information for per-instance geometry attribute that determines
-/// if the geometry instance has a distance display condition.
-/// Maps to CesiumJS `DistanceDisplayConditionGeometryInstanceAttribute`
+/// 逐实例几何属性的值与类型信息，该属性决定
+/// 几何实例是否具有距离显示条件。
+/// 映射到 CesiumJS `DistanceDisplayConditionGeometryInstanceAttribute`
 #[derive(Debug, Clone, PartialEq)]
 pub struct DistanceDisplayConditionGeometryInstanceAttribute {
-    /// The values for the attributes stored as [near, far] floats.
+    /// 以 [near, far] 浮点数存储的属性值。
     pub value: [f32; 2],
 }
 
 impl DistanceDisplayConditionGeometryInstanceAttribute {
-    /// Creates a new DistanceDisplayConditionGeometryInstanceAttribute.
+    /// 创建一个新的 DistanceDisplayConditionGeometryInstanceAttribute。
     ///
-    /// # Panics
-    /// Panics if far <= near.
+    /// # Panic
+    /// 若 far <= near 则 Panic。
     pub fn new(near: f32, far: f32) -> Self {
         assert!(
             far > near,
@@ -172,30 +172,30 @@ impl DistanceDisplayConditionGeometryInstanceAttribute {
         }
     }
 
-    /// Creates with default values: near=0.0, far=f32::MAX.
+    /// 以默认值创建：near=0.0，far=f32::MAX。
     pub fn default_value() -> Self {
         Self {
             value: [0.0, f32::MAX],
         }
     }
 
-    /// The datatype of each component: FLOAT.
+    /// 每个分量的数据类型：FLOAT。
     pub fn component_datatype(&self) -> ComponentDatatype {
         ComponentDatatype::Float
     }
 
-    /// The number of components: 2.
+    /// 分量数量：2。
     pub fn components_per_attribute(&self) -> u32 {
         2
     }
 
-    /// Normalize: false.
+    /// Normalize：false。
     pub fn normalize(&self) -> bool {
         false
     }
 
-    /// Creates from a DistanceDisplayCondition (near, far pair).
-    /// Maps to CesiumJS `DistanceDisplayConditionGeometryInstanceAttribute.fromDistanceDisplayCondition`
+    /// 由一个 DistanceDisplayCondition（near、far 对）创建。
+    /// 映射到 CesiumJS `DistanceDisplayConditionGeometryInstanceAttribute.fromDistanceDisplayCondition`
     pub fn from_distance_display_condition(near: f32, far: f32) -> Self {
         assert!(
             far > near,
@@ -206,8 +206,8 @@ impl DistanceDisplayConditionGeometryInstanceAttribute {
         }
     }
 
-    /// Converts a distance display condition to a float array.
-    /// Maps to CesiumJS `DistanceDisplayConditionGeometryInstanceAttribute.toValue`
+    /// 将一个距离显示条件转换为浮点数组。
+    /// 映射到 CesiumJS `DistanceDisplayConditionGeometryInstanceAttribute.toValue`
     pub fn to_value(near: f32, far: f32) -> [f32; 2] {
         [near, far]
     }

@@ -1,15 +1,14 @@
-//! Ellipsoid geodesic (great-circle path on the ellipsoid).
+//! 椭球大地线（椭球上的大圆路径）。
 //!
-//! Faithful port of CesiumJS `EllipsoidGeodesic.js`, which uses the Vincenty
-//! inverse formula to compute the surface distance and headings between two
-//! cartographic points, and a series expansion to interpolate intermediate
-//! points at a given surface distance.
+//! 忠实移植自 CesiumJS `EllipsoidGeodesic.js`，它使用 Vincenty 反算公式
+//! 计算两个测绘坐标点之间的表面距离和方位角，并使用一个级数展开
+//! 在给定表面距离处插值中间点。
 
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
 use crate::math_utils::EPSILON12;
 
-/// Precomputed constants for the geodesic series expansion.
+/// 大地线级数展开的预计算常量。
 #[derive(Debug, Clone, Default)]
 struct GeodesicConstants {
     a: f64,
@@ -30,9 +29,9 @@ struct GeodesicConstants {
     distance_ratio: f64,
 }
 
-/// A geodesic on the ellipsoid connecting two planetodetic points.
+/// 椭球上连接两个地球素点（planetodetic）的大地线。
 ///
-/// Maps to CesiumJS `EllipsoidGeodesic`.
+/// 映射到 CesiumJS `EllipsoidGeodesic`。
 #[derive(Debug, Clone)]
 pub struct EllipsoidGeodesic {
     start: Cartographic,
@@ -71,7 +70,7 @@ fn compute_delta_lambda(
                             - 1.0)))
 }
 
-/// Result of the Vincenty inverse formula.
+/// Vincenty 反算公式的结果。
 struct VincentyResult {
     distance: f64,
     start_heading: f64,
@@ -79,7 +78,7 @@ struct VincentyResult {
     u_squared: f64,
 }
 
-/// Intermediate values produced by the converging iteration.
+/// 收敛迭代所产生的中间值。
 struct VincentyIteration {
     sigma: f64,
     sine_sigma: f64,
@@ -272,14 +271,14 @@ fn set_constants(
 }
 
 impl EllipsoidGeodesic {
-    /// Creates a geodesic connecting `start` to `end` on the given ellipsoid.
+    /// 在给定椭球上创建一条从 `start` 连接到 `end` 的大地线。
     ///
-    /// Maps to the `EllipsoidGeodesic` constructor / `setEndPoints`.
+    /// 映射到 `EllipsoidGeodesic` 构造函数 / `setEndPoints`。
     pub fn new(start: Cartographic, end: Cartographic, ellipsoid: &Ellipsoid) -> Self {
         Self::from_radii(start, end, ellipsoid.maximum_radius(), ellipsoid.minimum_radius())
     }
 
-    /// Creates a geodesic from explicit ellipsoid radii.
+    /// 由显式的椭球半径创建一条大地线。
     fn from_radii(
         start: Cartographic,
         end: Cartographic,
@@ -320,44 +319,44 @@ impl EllipsoidGeodesic {
         }
     }
 
-    /// Resets the endpoints of the geodesic.
+    /// 重置大地线的端点。
     pub fn set_end_points(&mut self, start: Cartographic, end: Cartographic) {
         *self = Self::from_radii(start, end, self.maximum_radius, self.minimum_radius);
     }
 
-    /// The surface distance between the start and end points.
+    /// 起点与终点之间的表面距离。
     pub fn surface_distance(&self) -> f64 {
         self.distance
     }
 
-    /// The heading at the start point.
+    /// 起点处的方位角。
     pub fn start_heading(&self) -> f64 {
         self.start_heading
     }
 
-    /// The heading at the end point.
+    /// 终点处的方位角。
     pub fn end_heading(&self) -> f64 {
         self.end_heading
     }
 
-    /// The start point of the geodesic.
+    /// 大地线的起点。
     pub fn start(&self) -> Cartographic {
         self.start
     }
 
-    /// The end point of the geodesic.
+    /// 大地线的终点。
     pub fn end(&self) -> Cartographic {
         self.end
     }
 
-    /// Interpolates a point at the given fraction (0..1) along the geodesic.
+    /// 在大地上按给定比例（0..1）插值一个点。
     pub fn interpolate_using_fraction(&self, fraction: f64) -> Cartographic {
         self.interpolate_using_surface_distance(self.distance * fraction)
     }
 
-    /// Interpolates a point at the given surface distance from the start.
+    /// 从起点开始按给定表面距离插值一个点。
     ///
-    /// Maps to `EllipsoidGeodesic.interpolateUsingSurfaceDistance`.
+    /// 映射到 `EllipsoidGeodesic.interpolateUsingSurfaceDistance`。
     pub fn interpolate_using_surface_distance(&self, distance: f64) -> Cartographic {
         let c = &self.constants;
 
@@ -400,7 +399,7 @@ impl EllipsoidGeodesic {
         let theta = (sigma.sin() * c.cosine_alpha).asin();
         let latitude = ((c.a / c.b) * theta.tan()).atan();
 
-        // Redefine in terms of relative argument of latitude.
+        // 用以纬度幅角的相对参数重新定义。
         sigma -= c.sigma;
 
         let cosine_twice_sigma_midpoint = (2.0 * c.sigma + sigma).cos();
@@ -436,7 +435,7 @@ mod tests {
 
     #[test]
     fn test_surface_distance_equator() {
-        // 1 degree along the equator on WGS84 ~ 111319.49 m
+        // WGS84 赤道上 1 度约 111319.49 米
         let ell = Ellipsoid::WGS84;
         let start = Cartographic::from_degrees(0.0, 0.0, 0.0);
         let end = Cartographic::from_degrees(1.0, 0.0, 0.0);

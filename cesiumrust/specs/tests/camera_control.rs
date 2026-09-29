@@ -1,17 +1,17 @@
-//! M2.5 integration test — the `CameraControl` driving port.
+//! M2.5 集成测试 —— 用于驱动 `CameraControl` 的端口。
 //!
-//! Exercises the port implementation (`cesium-bevy-render`'s
-//! [`CameraControlImpl`] / [`CameraControlPort`]) that exposes the domain camera
-//! algorithms as a programmable control surface. Two levels are covered:
+//! 测试端口实现（`cesium-bevy-render` 的
+//! [`CameraControlImpl`] / [`CameraControlPort`]），它将对域相机
+//! 算法暴露为一个可编程的控制接口。涵盖两个层次：
 //!
-//! 1. **Port object** (ECS-free): `set_view` / `fly_to` / `look_at` / `zoom_*` /
-//!    `get_camera_state` are driven directly and asserted in ECEF meters, with
-//!    the `fly_to` landing error checked against the M2 gate of `< 1e-4` render
-//!    units (`METERS_PER_RENDER_UNIT = 6378137`).
-//! 2. **Bevy bridge**: a minimal app registers [`CameraControlPort`] +
-//!    [`camera_control_port_system`] with a single [`CesiumCamera`] entity and
-//!    proves a port command reaches the live entity (both an instantaneous
-//!    `set_view` and a multi-frame great-arc `fly_to`).
+//! 1. **端口对象**（不依赖 ECS）：直接驱动 `set_view` / `fly_to` / `look_at` / `zoom_*` /
+//!    `get_camera_state`，并以 ECEF 米为单位进行断言，其中
+//!    `fly_to` 的落点误差按 `< 1e-4` 个渲染单位的 M2 门槛
+//!    进行检查（`METERS_PER_RENDER_UNIT = 6378137`）。
+//! 2. **Bevy 桥接**：一个最小应用注册 [`CameraControlPort`] +
+//!    [`camera_control_port_system`]，仅含一个 [`CesiumCamera`] 实体，
+//!    并证明端口命令能到达活动实体（既是瞬时的
+//!    `set_view`，也是多帧的大圆弧 `fly_to`）。
 
 use std::f64::consts::FRAC_PI_2;
 use std::time::Duration;
@@ -29,10 +29,10 @@ use cesium_ports_driving::CameraControl;
 use cesium_scene_mode::SceneMode;
 use glam::DVec3;
 
-/// WGS84 maximum radius (meters) == `METERS_PER_RENDER_UNIT`.
+/// WGS84 最大半径（米）== `METERS_PER_RENDER_UNIT`。
 const R: f64 = 6378137.0;
 
-/// A camera one radius above the equator on the +X axis, looking at the center.
+/// 位于赤道上空一个半径、+X 轴上、朝向中心的相机。
 fn equator_camera() -> Camera {
     Camera::new(
         DVec3::new(R * 2.0, 0.0, 0.0),
@@ -45,8 +45,8 @@ fn new_control() -> CameraControlImpl {
     CameraControlImpl::new(equator_camera(), Ellipsoid::WGS84)
 }
 
-/// Drives `control`'s active flight to completion with fixed `dt` steps,
-/// bounded so a non-completing flight fails loudly rather than hanging.
+/// 以固定 `dt` 步长驱动 `control` 的活动飞行直至完成，
+/// 并设有上限，使无法完成的飞行会显式失败而非挂起。
 fn run_flight_to_completion(control: &mut CameraControlImpl, dt: f64) {
     for _ in 0..10_000 {
         if !control.update(dt) {
@@ -56,17 +56,17 @@ fn run_flight_to_completion(control: &mut CameraControlImpl, dt: f64) {
     panic!("flight did not complete within 10_000 steps");
 }
 
-// ── Port object: fly_to ────────────────────────────────────────────────────
+// ── 端口对象：fly_to ────────────────────────────────────────────────────
 
-/// `fly_to` follows a great arc and lands exactly on the destination ECEF; the
-/// residual is asserted against the M2 gate (< 1e-4 render units) and printed.
+/// `fly_to` 沿大圆弧飞行并精确落在目标 ECEF 上；
+/// 残差按 M2 门槛（< 1e-4 个渲染单位）断言并打印。
 #[test]
 fn fly_to_lands_on_destination_within_gate() {
     let mut control = new_control();
     let dest = Cartographic::from_degrees(-75.0, 40.0, 1_000_000.0);
 
-    // duration_secs = 0.0 → the port derives duration/easing from the distance
-    // (compute_flight_duration / select_flight_easing) and slerps the great arc.
+    // duration_secs = 0.0 → 端口从距离推导时长/缓动
+    //（compute_flight_duration / select_flight_easing）并对大圆弧做球面插值。
     control.fly_to(dest, None, None, None, 0.0);
     assert!(control.is_flying(), "fly_to must start a flight");
 
@@ -90,15 +90,15 @@ fn fly_to_lands_on_destination_within_gate() {
     );
 }
 
-/// An explicit `duration_secs` is honored and the flight still lands on target.
+/// 显式的 `duration_secs` 会被采纳，且飞行仍落在目标上。
 #[test]
 fn fly_to_honors_explicit_duration() {
     let mut control = new_control();
     let dest = Cartographic::from_degrees(139.0, 35.0, 2_000_000.0);
     control.fly_to(dest, Some(0.0), Some(-FRAC_PI_2), None, 2.0);
 
-    // Half-way through a 2 s flight the camera must be strictly between the
-    // endpoints (proves the duration is real, not an instant snap).
+    // 在 2 秒飞行的中点，相机必须严格位于
+    // 两端点之间（证明时长真实存在，而非瞬时跳转）。
     control.update(1.0);
     let mid = control.get_camera_state().position;
     let start = DVec3::new(R * 2.0, 0.0, 0.0);
@@ -111,10 +111,10 @@ fn fly_to_honors_explicit_duration() {
     assert!(err_ru < 1e-4, "explicit-duration fly_to error {err_ru} ru");
 }
 
-// ── Port object: set_view / get_camera_state ───────────────────────────────
+// ── 端口对象：set_view / get_camera_state ───────────────────────────────
 
-/// `set_view` places the camera at the cartographic position and reports the
-/// pose back through `get_camera_state` (position + a downward pitch).
+/// `set_view` 将相机放置于测绘坐标位置，并通过
+/// `get_camera_state` 回报该姿态（位置 + 向下的俯仰角）。
 #[test]
 fn set_view_positions_camera_and_state_reports_it() {
     let mut control = new_control();
@@ -126,7 +126,7 @@ fn set_view_positions_camera_and_state_reports_it() {
     let state = control.get_camera_state();
     let err_ru = (state.position - expected).length() / METERS_PER_RENDER_UNIT;
     assert!(err_ru < 1e-4, "set_view position error {err_ru} ru");
-    // Looking straight down ⇒ pitch ≈ -π/2 and the direction opposes the normal.
+    // 垂直向下看 ⇒ 俯仰角 ≈ -π/2，且方向与法线相反。
     assert!(
         (state.pitch + FRAC_PI_2).abs() < 1e-6,
         "set_view pitch {} should be -π/2",
@@ -137,13 +137,13 @@ fn set_view_positions_camera_and_state_reports_it() {
         state.direction.dot(-n) > 1.0 - 1e-9,
         "set_view must look straight down"
     );
-    // A level camera has ~zero roll.
+    // 水平相机的翻滚角约为零。
     assert!(state.roll.abs() < 1e-6, "set_view roll {}", state.roll);
 }
 
-// ── Port object: look_at ───────────────────────────────────────────────────
+// ── 端口对象：look_at ───────────────────────────────────────────────────
 
-/// `look_at` holds the requested range and aims the camera at the target.
+/// `look_at` 保持请求的距离并将相机对准目标。
 #[test]
 fn look_at_holds_range_and_aims_at_target() {
     let mut control = new_control();
@@ -166,10 +166,10 @@ fn look_at_holds_range_and_aims_at_target() {
     );
 }
 
-// ── Port object: zoom ──────────────────────────────────────────────────────
+// ── 端口对象：zoom ──────────────────────────────────────────────────────
 
-/// `zoom_in` moves the camera forward along its view by the metric amount and
-/// `zoom_out` moves it back, both measured against the surface distance.
+/// `zoom_in` 沿视线方向按公制量将相机向前移动，
+/// `zoom_out` 则向后退，两者均以表面距离衡量。
 #[test]
 fn zoom_in_and_out_move_along_view() {
     let mut control = new_control();
@@ -190,12 +190,12 @@ fn zoom_in_and_out_move_along_view() {
     );
 }
 
-// ── Bevy bridge ────────────────────────────────────────────────────────────
+// ── Bevy 桥接 ────────────────────────────────────────────────────────────
 
-/// Builds a minimal app: `MinimalPlugins` (for `Time`), the [`CameraControlPort`]
-/// resource, [`camera_control_port_system`] in `PostUpdate`, and one
-/// [`CesiumCamera`] entity. No input plugins are needed because only the port
-/// bridge is exercised.
+/// 构建一个最小应用：`MinimalPlugins`（用于 `Time`）、[`CameraControlPort`]
+/// 资源、`PostUpdate` 中的 [`camera_control_port_system`]，以及一个
+/// [`CesiumCamera`] 实体。无需输入插件，因为仅测试端口
+/// 桥接。
 fn bridge_app() -> (App, Entity) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
@@ -212,8 +212,8 @@ fn entity_position(app: &App, e: Entity) -> DVec3 {
     app.world().get::<CesiumCamera>(e).unwrap().camera.position
 }
 
-/// An instantaneous `set_view` through the port resource reaches the live
-/// `CesiumCamera` entity after one `app.update()`.
+/// 通过端口资源的瞬时 `set_view` 会在一次 `app.update()`
+/// 后到达活动的 `CesiumCamera` 实体。
 #[test]
 fn bridge_set_view_updates_cesium_camera_entity() {
     let (mut app, e) = bridge_app();
@@ -233,13 +233,13 @@ fn bridge_set_view_updates_cesium_camera_entity() {
     );
 }
 
-/// A great-arc `fly_to` driven through the port resource advances across frames
-/// (fixed dt via `TimeUpdateStrategy`) and lands the `CesiumCamera` entity on the
-/// destination within the 1e-4 render-unit gate.
+/// 通过端口资源驱动的大圆弧 `fly_to` 会跨帧推进
+///（通过 `TimeUpdateStrategy` 使用固定 dt），并将 `CesiumCamera` 实体落在
+/// 目标上，误差在 1e-4 渲染单位门槛之内。
 #[test]
 fn bridge_fly_to_flies_cesium_camera_entity_to_destination() {
     let (mut app, e) = bridge_app();
-    // Fixed 50 ms frames so the flight completes deterministically.
+    // 固定 50 毫秒的帧，使飞行确定地完成。
     app.insert_resource(TimeUpdateStrategy::ManualDuration(
         Duration::from_secs_f64(0.05),
     ));
@@ -249,7 +249,7 @@ fn bridge_fly_to_flies_cesium_camera_entity_to_destination() {
         .resource_mut::<CameraControlPort>()
         .fly_to(dest, None, None, None, 1.0);
 
-    // 1 s flight at 50 ms/frame → 20 frames; run 40 for margin.
+    // 1 秒飞行、50 毫秒/帧 → 20 帧；运行 40 帧以留余量。
     for _ in 0..40 {
         app.update();
     }
@@ -275,8 +275,8 @@ fn bridge_fly_to_flies_cesium_camera_entity_to_destination() {
     );
 }
 
-/// With no command and no flight the bridge is inert: the entity's own pose is
-/// preserved (the port tracks it rather than overwriting it).
+/// 无命令且无飞行时桥接不活动：实体自身的姿态
+/// 会被保留（端口跟踪它而非覆盖它）。
 #[test]
 fn bridge_is_inert_without_commands() {
     let (mut app, e) = bridge_app();

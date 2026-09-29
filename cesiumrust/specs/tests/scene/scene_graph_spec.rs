@@ -1,4 +1,4 @@
-//! Scene/SceneSpec.js, SceneTransformsSpec.js → Rust integration tests
+//! Scene/SceneSpec.js、SceneTransformsSpec.js → Rust 集成测试
 
 use cesium_scene::{
     SceneGraph, SceneNode, DrawCommand, RenderPass, FrameStatistics,
@@ -108,7 +108,7 @@ fn test_shader_builder_basic() {
 #[test]
 fn test_render_state_default() {
     let state = RenderState::default();
-    // Default derived: all bools are false
+    // 默认派生：所有 bool 为 false
     assert!(!state.cull_enabled);
     assert!(!state.depth_test_enabled);
     assert!(!state.blend_enabled);
@@ -119,7 +119,7 @@ fn test_render_state_default() {
 #[test]
 fn test_clear_command_default() {
     let cmd = ClearCommand::default();
-    // The default clear targets all three buffers.
+    // 默认 clear 针对全部三个缓冲区。
     assert!(cmd.color.is_some());
     assert!(cmd.depth.is_some());
     assert!(cmd.stencil.is_some());

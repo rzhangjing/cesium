@@ -1,16 +1,15 @@
-//! EllipsoidalOccluder - horizon culling against an ellipsoid.
-//! Maps to CesiumJS `Core/EllipsoidalOccluder.js`
+//! EllipsoidalOccluder - 针对椭球的地平线剔除。
+//! 映射到 CesiumJS `Core/EllipsoidalOccluder.js`
 
 use crate::bounding::BoundingSphere;
 use crate::ellipsoid::{normalize_cartesian3, Ellipsoid};
 use crate::rectangle::Rectangle;
 use glam::DVec3;
 
-/// Determines whether or not other objects are visible or hidden behind the
-/// visible horizon defined by an ellipsoid and a camera position.
-/// Uses the algorithm described in the Horizon Culling blog post.
+/// 判断其他对象是否可见，或者是否隐藏由椭球和相机位置所定义
+/// 的可见地平线之后。使用 Horizon Culling 博客文章中描述的算法。
 ///
-/// Maps to CesiumJS `EllipsoidalOccluder`
+/// 映射到 CesiumJS `EllipsoidalOccluder`
 #[derive(Debug, Clone)]
 pub struct EllipsoidalOccluder {
     ellipsoid: Ellipsoid,
@@ -20,10 +19,10 @@ pub struct EllipsoidalOccluder {
 }
 
 impl EllipsoidalOccluder {
-    /// Creates a new ellipsoidal occluder.
-    /// If `camera_position` is provided, internal scaled-space values are computed immediately.
+    /// 创建一个新的椭球遮挡体。
+    /// 若提供了 `camera_position`，则立即计算内部缩放空间值。
     ///
-    /// Maps to `new EllipsoidalOccluder(ellipsoid, cameraPosition)`
+    /// 映射到 `new EllipsoidalOccluder(ellipsoid, cameraPosition)`
     pub fn new(ellipsoid: Ellipsoid, camera_position: Option<DVec3>) -> Self {
         let mut occluder = Self {
             ellipsoid,
@@ -37,21 +36,21 @@ impl EllipsoidalOccluder {
         occluder
     }
 
-    /// Gets the occluding ellipsoid.
+    /// 获取遮挡椭球。
     #[inline]
     pub fn ellipsoid(&self) -> &Ellipsoid {
         &self.ellipsoid
     }
 
-    /// Gets the camera position.
+    /// 获取相机位置。
     #[inline]
     pub fn camera_position(&self) -> DVec3 {
         self.camera_position
     }
 
-    /// Sets the camera position and recomputes internal scaled-space values.
+    /// 设置相机位置并重新计算内部缩放空间值。
     ///
-    /// Maps to `EllipsoidalOccluder.prototype.cameraPosition` setter
+    /// 映射到 `EllipsoidalOccluder.prototype.cameraPosition` setter
     pub fn set_camera_position(&mut self, camera_position: DVec3) {
         let cv = self.ellipsoid.transform_position_to_scaled_space(camera_position);
         let vh_magnitude_squared = cv.length_squared() - 1.0;
@@ -61,9 +60,9 @@ impl EllipsoidalOccluder {
         self.distance_to_limb_in_scaled_space_squared = vh_magnitude_squared;
     }
 
-    /// Determines whether or not a point (the occludee) is hidden from view by the occluder.
+    /// 判断某个点（被遮挡对象）是否因遮挡体而不可见。
     ///
-    /// Maps to `EllipsoidalOccluder.prototype.isPointVisible`
+    /// 映射到 `EllipsoidalOccluder.prototype.isPointVisible`
     pub fn is_point_visible(&self, occludee: DVec3) -> bool {
         let occludee_scaled_space_position =
             self.ellipsoid.transform_position_to_scaled_space(occludee);
@@ -74,10 +73,9 @@ impl EllipsoidalOccluder {
         )
     }
 
-    /// Determines whether or not a point expressed in the ellipsoid scaled space
-    /// is hidden from view by the occluder.
+    /// 判断以椭球缩放空间表示的某个点是否因遮挡体而不可见。
     ///
-    /// Maps to `EllipsoidalOccluder.prototype.isScaledSpacePointVisible`
+    /// 映射到 `EllipsoidalOccluder.prototype.isScaledSpacePointVisible`
     pub fn is_scaled_space_point_visible(&self, occludee_scaled_space_position: DVec3) -> bool {
         is_scaled_space_point_visible(
             occludee_scaled_space_position,
@@ -86,11 +84,10 @@ impl EllipsoidalOccluder {
         )
     }
 
-    /// Similar to `is_scaled_space_point_visible` except tests against an
-    /// ellipsoid that has been shrunk by the minimum height when the minimum
-    /// height is below the ellipsoid.
+    /// 与 `is_scaled_space_point_visible` 类似，但针对的是一个在最小高度低于
+    /// 椭球时被该最小高度缩小后的椭球进行测试。
     ///
-    /// Maps to `EllipsoidalOccluder.prototype.isScaledSpacePointVisiblePossiblyUnderEllipsoid`
+    /// 映射到 `EllipsoidalOccluder.prototype.isScaledSpacePointVisiblePossiblyUnderEllipsoid`
     pub fn is_scaled_space_point_visible_possibly_under_ellipsoid(
         &self,
         occludee_scaled_space_position: DVec3,
@@ -121,10 +118,10 @@ impl EllipsoidalOccluder {
         is_scaled_space_point_visible(occludee_scaled_space_position, cv, vh_magnitude_squared)
     }
 
-    /// Computes a point that can be used for horizon culling from a list of positions.
-    /// Returns None if the point cannot be computed (e.g., positions face opposite direction).
+    /// 从一组位置计算一个可用于地平线剔除的点。
+    /// 若无法计算该点（例如位置朝相反方向）则返回 None。
     ///
-    /// Maps to `EllipsoidalOccluder.prototype.computeHorizonCullingPoint`
+    /// 映射到 `EllipsoidalOccluder.prototype.computeHorizonCullingPoint`
     pub fn compute_horizon_culling_point(
         &self,
         direction_to_point: DVec3,
@@ -137,10 +134,10 @@ impl EllipsoidalOccluder {
         )
     }
 
-    /// Similar to `compute_horizon_culling_point` except computes relative to an
-    /// ellipsoid shrunk by the minimum height when below the ellipsoid.
+    /// 与 `compute_horizon_culling_point` 类似，但当位置低于椭球时相对于一个
+    /// 被最小高度缩小后的椭球进行计算。
     ///
-    /// Maps to `EllipsoidalOccluder.prototype.computeHorizonCullingPointPossiblyUnderEllipsoid`
+    /// 映射到 `EllipsoidalOccluder.prototype.computeHorizonCullingPointPossiblyUnderEllipsoid`
     pub fn compute_horizon_culling_point_possibly_under_ellipsoid(
         &self,
         direction_to_point: DVec3,
@@ -155,9 +152,9 @@ impl EllipsoidalOccluder {
         )
     }
 
-    /// Computes a horizon culling point from vertex data with a stride.
+    /// 从带 stride 的顶点数据计算地平线剔除点。
     ///
-    /// Maps to `EllipsoidalOccluder.prototype.computeHorizonCullingPointFromVertices`
+    /// 映射到 `EllipsoidalOccluder.prototype.computeHorizonCullingPointFromVertices`
     pub fn compute_horizon_culling_point_from_vertices(
         &self,
         direction_to_point: DVec3,
@@ -174,10 +171,10 @@ impl EllipsoidalOccluder {
         )
     }
 
-    /// Similar to `compute_horizon_culling_point_from_vertices` except computes
-    /// relative to a possibly-shrunk ellipsoid.
+    /// 与 `compute_horizon_culling_point_from_vertices` 类似，但相对于一个
+    /// 可能被缩小的椭球进行计算。
     ///
-    /// Maps to `EllipsoidalOccluder.prototype.computeHorizonCullingPointFromVerticesPossiblyUnderEllipsoid`
+    /// 映射到 `EllipsoidalOccluder.prototype.computeHorizonCullingPointFromVerticesPossiblyUnderEllipsoid`
     pub fn compute_horizon_culling_point_from_vertices_possibly_under_ellipsoid(
         &self,
         direction_to_point: DVec3,
@@ -196,10 +193,10 @@ impl EllipsoidalOccluder {
         )
     }
 
-    /// Computes a horizon culling point from a rectangle.
-    /// Returns None if the bounding sphere center is too close to the ellipsoid center.
+    /// 由矩形计算地平线剔除点。
+    /// 若包围球中心离椭球中心太近则返回 None。
     ///
-    /// Maps to `EllipsoidalOccluder.prototype.computeHorizonCullingPointFromRectangle`
+    /// 映射到 `EllipsoidalOccluder.prototype.computeHorizonCullingPointFromRectangle`
     pub fn compute_horizon_culling_point_from_rectangle(
         &self,
         rectangle: &Rectangle,
@@ -208,8 +205,8 @@ impl EllipsoidalOccluder {
         let positions = rectangle.subsample(ellipsoid, 0.0);
         let bs = BoundingSphere::from_points(&positions);
 
-        // If the bounding sphere center is too close to the center of the occluder,
-        // it doesn't make sense to try to horizon cull it.
+        // 若包围球中心离遮挡体中心太近，
+        // 那么试图对它进行地平线剔除就没有意义。
         if bs.center.length() < 0.1 * ellipsoid.minimum_radius() {
             return None;
         }
@@ -218,10 +215,10 @@ impl EllipsoidalOccluder {
     }
 }
 
-// --- Private helper functions ---
+// --- 私有辅助函数 ---
 
-/// Core visibility test in scaled space.
-/// Maps to the module-level `isScaledSpacePointVisible` function.
+/// 缩放空间中的核心可见性测试。
+/// 映射到模块级的 `isScaledSpacePointVisible` 函数。
 fn is_scaled_space_point_visible(
     occludee_scaled_space_position: DVec3,
     camera_position_in_scaled_space: DVec3,
@@ -232,8 +229,8 @@ fn is_scaled_space_point_visible(
     let vt = occludee_scaled_space_position - cv;
     let vt_dot_vc = -vt.dot(cv);
 
-    // If vhMagnitudeSquared < 0 then we are below the surface of the ellipsoid and
-    // in this case, set the culling plane to be on V.
+    // 若 vhMagnitudeSquared < 0，则我们位于椭球表面之下，
+    // 此时将剔除平面设在 V 上。
     let is_occluded = if vh_magnitude_squared < 0.0 {
         vt_dot_vc > 0.0
     } else {
@@ -243,7 +240,7 @@ fn is_scaled_space_point_visible(
     !is_occluded
 }
 
-/// Computes the horizon culling point from an array of positions.
+/// 由位置数组计算地平线剔除点。
 fn compute_horizon_culling_point_from_positions(
     ellipsoid: &Ellipsoid,
     direction_to_point: DVec3,
@@ -266,7 +263,7 @@ fn compute_horizon_culling_point_from_positions(
     magnitude_to_point(scaled_space_direction_to_point, result_magnitude)
 }
 
-/// Computes the horizon culling point from vertex data with stride.
+/// 由带 stride 的顶点数据计算地平线剔除点。
 fn compute_horizon_culling_point_from_vertices(
     ellipsoid: &Ellipsoid,
     direction_to_point: DVec3,
@@ -300,7 +297,7 @@ fn compute_horizon_culling_point_from_vertices(
     magnitude_to_point(scaled_space_direction_to_point, result_magnitude)
 }
 
-/// Computes the magnitude for a position relative to the scaled-space direction.
+/// 计算某个点相对于缩放空间方向的模长。
 fn compute_magnitude(
     ellipsoid: &Ellipsoid,
     position: DVec3,
@@ -311,7 +308,7 @@ fn compute_magnitude(
     let mut magnitude = magnitude_squared.sqrt();
     let direction = scaled_space_position / magnitude;
 
-    // For the purpose of this computation, points below the ellipsoid are considered to be on it instead.
+    // 在本计算的目的下，椭球下方的点被视为位于椭球上。
     magnitude_squared = magnitude_squared.max(1.0);
     magnitude = magnitude.max(1.0);
 
@@ -323,11 +320,11 @@ fn compute_magnitude(
     1.0 / (cos_alpha * cos_beta - sin_alpha * sin_beta)
 }
 
-/// Converts a magnitude along the scaled-space direction to a point.
-/// Returns None if the magnitude is invalid.
+/// 将沿缩放空间方向的模长转换为一个点。
+/// 若模长无效则返回 None。
 fn magnitude_to_point(scaled_space_direction_to_point: DVec3, result_magnitude: f64) -> Option<DVec3> {
-    // The horizon culling point is undefined if there were no positions from which to compute it,
-    // the directionToPoint is pointing opposite all of the positions, or if we computed NaN or infinity.
+    // 若没有可供计算的位置、directionToPoint 与所有位置方向相反，
+    // 或者我们算出了 NaN 或无穷，则地平线剔除点未定义。
     if result_magnitude <= 0.0 || result_magnitude == f64::INFINITY || result_magnitude.is_nan() {
         return None;
     }
@@ -335,8 +332,8 @@ fn magnitude_to_point(scaled_space_direction_to_point: DVec3, result_magnitude: 
     Some(scaled_space_direction_to_point * result_magnitude)
 }
 
-/// Transforms a direction to scaled space and normalizes it.
-/// Returns None if the direction is zero.
+/// 将方向变换到缩放空间并归一化。
+/// 若方向为零则返回 None。
 fn compute_scaled_space_direction_to_point(
     ellipsoid: &Ellipsoid,
     direction_to_point: DVec3,
@@ -349,7 +346,7 @@ fn compute_scaled_space_direction_to_point(
     Some(normalize_cartesian3(scaled))
 }
 
-/// Returns a possibly-shrunk ellipsoid based on minimum height.
+/// 根据最小高度返回一个可能被缩小的椭球。
 fn get_possibly_shrunk_ellipsoid(ellipsoid: &Ellipsoid, minimum_height: Option<f64>) -> Ellipsoid {
     if let Some(mh) = minimum_height {
         if mh < 0.0 && ellipsoid.minimum_radius() > -mh {

@@ -1,13 +1,13 @@
-//! Scene/GltfLoaderSpec.js + ModelSpec.js → Rust integration tests (extended).
+//! Scene/GltfLoaderSpec.js + ModelSpec.js → Rust 集成测试（扩展）。
 //!
-//! Maps to CesiumJS:
-//! - Scene/GltfLoader.js (JSON parsing, accessor data reading, sparse accessors)
-//! - Scene/Model/ModelUtility.js (node transforms, triangle/vertex counts)
+//! 对应 CesiumJS：
+//! - Scene/GltfLoader.js（JSON 解析、accessor 数据读取、稀疏 accessor）
+//! - Scene/Model/ModelUtility.js（节点变换、三角形/顶点计数）
 //!
-//! A-class tests: Node.local_transform, Accessor read methods (f32/u16/u32/sparse/stride),
-//! GltfModel.triangle_count/vertex_count, PrimitiveMode/ComponentType/Interpolation serde,
-//! full model parsing (materials, animations, skins).
-//! C-class omitted: WebGL resource creation, shader compilation, texture upload.
+//! A 类测试：Node.local_transform、Accessor 读取方法（f32/u16/u32/sparse/stride）、
+//! GltfModel.triangle_count/vertex_count、PrimitiveMode/ComponentType/Interpolation serde、
+//! 完整模型解析（材质、动画、蒙皮）。
+//! C 类省略：WebGL 资源创建、着色器编译、纹理上传。
 
 use cesium_gltf::{
     Accessor, AccessorSparse, AccessorSparseIndices, AccessorSparseValues,
@@ -15,7 +15,7 @@ use cesium_gltf::{
     GltfModel, Interpolation, Node, PrimitiveMode,
 };
 
-// === Helper: build a buffer with f32 values ===
+// === 辅助：构造含 f32 值的 buffer ===
 fn f32_buffer(values: &[f32]) -> Vec<u8> {
     let mut buf = Vec::with_capacity(values.len() * 4);
     for v in values {
@@ -66,7 +66,7 @@ fn node_local_transform_identity() {
 
 #[test]
 fn node_local_transform_from_matrix() {
-    // When matrix is provided, it takes precedence over TRS
+    // 提供 matrix 时，它优先于 TRS
     let cols: [f64; 16] = [
         2.0, 0.0, 0.0, 0.0,
         0.0, 3.0, 0.0, 0.0,
@@ -75,7 +75,7 @@ fn node_local_transform_from_matrix() {
     ];
     let node = Node {
         matrix: Some(cols),
-        translation: Some([99.0, 99.0, 99.0]), // should be ignored
+        translation: Some([99.0, 99.0, 99.0]), // 应被忽略
         ..Default::default()
     };
     let m = node.local_transform();
@@ -83,7 +83,7 @@ fn node_local_transform_from_matrix() {
     assert!((t.x - 10.0).abs() < 1e-10);
     assert!((t.y - 20.0).abs() < 1e-10);
     assert!((t.z - 30.0).abs() < 1e-10);
-    // Scale from matrix
+    // 来自 matrix 的缩放
     assert!((m.x_axis.x - 2.0).abs() < 1e-10);
     assert!((m.y_axis.y - 3.0).abs() < 1e-10);
     assert!((m.z_axis.z - 4.0).abs() < 1e-10);
@@ -116,14 +116,14 @@ fn node_local_transform_scale_only() {
 
 #[test]
 fn node_local_transform_rotation_90_z() {
-    // Quaternion for 90° around Z: [0, 0, sin(45°), cos(45°)]
+    // 绕 Z 轴 90° 的四元数：[0, 0, sin(45°), cos(45°)]
     let s = std::f64::consts::FRAC_1_SQRT_2;
     let node = Node {
         rotation: Some([0.0, 0.0, s, s]),
         ..Default::default()
     };
     let m = node.local_transform();
-    // After 90° Z rotation: X axis → Y axis
+    // 绕 Z 轴旋转 90° 后：X 轴 → Y 轴
     assert!(m.x_axis.x.abs() < 1e-10);
     assert!((m.x_axis.y - 1.0).abs() < 1e-10);
 }
@@ -138,17 +138,17 @@ fn node_local_transform_trs_combined() {
         ..Default::default()
     };
     let m = node.local_transform();
-    // Translation preserved
+    // 平移被保留
     let t = m.w_axis.truncate();
     assert!((t.x - 1.0).abs() < 1e-10);
     assert!((t.y - 2.0).abs() < 1e-10);
     assert!((t.z - 3.0).abs() < 1e-10);
-    // Scale applied to axes
+    // 缩放应用于各轴
     let x_len = m.x_axis.truncate().length();
     assert!((x_len - 2.0).abs() < 1e-10);
 }
 
-// === Accessor methods ===
+// === Accessor 方法 ===
 
 #[test]
 fn accessor_components_per_element() {
@@ -213,7 +213,7 @@ fn accessor_read_f32_vec2() {
     let acc = make_accessor(Some(0), ComponentType::F32, 2, AccessorType::Vec2);
 
     let data = acc.read_f32_data(&buffers, &bvs);
-    assert_eq!(data.len(), 4); // 2 elements * 2 components
+    assert_eq!(data.len(), 4); // 2 个元素 * 2 个分量
     assert!((data[0] - 1.0).abs() < 1e-6);
     assert!((data[1] - 2.0).abs() < 1e-6);
     assert!((data[2] - 3.0).abs() < 1e-6);
@@ -222,12 +222,12 @@ fn accessor_read_f32_vec2() {
 
 #[test]
 fn accessor_read_f32_with_byte_offset() {
-    // Skip first 4 bytes (one f32)
+    // 跳过前 4 字节（一个 f32）
     let buffer = f32_buffer(&[99.0, 10.0, 20.0]);
     let buffers = vec![buffer];
     let bvs = vec![make_buffer_view(0, 12)];
     let mut acc = make_accessor(Some(0), ComponentType::F32, 2, AccessorType::Scalar);
-    acc.byte_offset = 4; // skip first float
+    acc.byte_offset = 4; // 跳过第一个 float
 
     let data = acc.read_f32_data(&buffers, &bvs);
     assert_eq!(data.len(), 2);
@@ -237,14 +237,14 @@ fn accessor_read_f32_with_byte_offset() {
 
 #[test]
 fn accessor_read_f32_with_stride() {
-    // Interleaved: pos(2f) + color(2f) = 16 bytes stride
+    // 交错：pos(2f) + color(2f) = 16 字节 stride
     let buffer = f32_buffer(&[
-        1.0, 2.0, 0.5, 0.5,  // elem 0: pos=(1,2), color=(0.5,0.5)
-        3.0, 4.0, 0.8, 0.8,  // elem 1: pos=(3,4), color=(0.8,0.8)
+        1.0, 2.0, 0.5, 0.5,  // 元素 0：pos=(1,2), color=(0.5,0.5)
+        3.0, 4.0, 0.8, 0.8,  // 元素 1：pos=(3,4), color=(0.8,0.8)
     ]);
     let buffers = vec![buffer];
     let mut bv = make_buffer_view(0, 32);
-    bv.byte_stride = Some(16); // 4 floats * 4 bytes
+    bv.byte_stride = Some(16); // 4 个 float * 4 字节
     let bvs = vec![bv];
     let acc = make_accessor(Some(0), ComponentType::F32, 2, AccessorType::Vec2);
 
@@ -286,7 +286,7 @@ fn accessor_read_u32_data() {
 
 #[test]
 fn accessor_sparse_override() {
-    // Base: [0, 0, 0], sparse: index 1 → 9.0
+    // 基础：[0, 0, 0]，稀疏：索引 1 → 9.0
     let base_buf = f32_buffer(&[0.0, 0.0, 0.0]);
     let mut idx_buf = Vec::new();
     idx_buf.extend_from_slice(&1u16.to_le_bytes());
@@ -327,7 +327,7 @@ fn accessor_no_buffer_view_returns_zeros() {
     assert_eq!(data, vec![0.0, 0.0, 0.0]);
 }
 
-// === GltfModel parsing ===
+// === GltfModel 解析 ===
 
 #[test]
 fn gltf_model_triangle_count_multiple_meshes() {
@@ -345,7 +345,7 @@ fn gltf_model_triangle_count_multiple_meshes() {
         ]
     }"#;
     let model = GltfModel::from_json(json).unwrap();
-    // mesh0: 12/3=4 tris, mesh1: 6/3=2 tris → total 6
+    // mesh0: 12/3=4 三角形, mesh1: 6/3=2 三角形 → 共 6
     assert_eq!(model.triangle_count(), 6);
 }
 
@@ -368,7 +368,7 @@ fn gltf_model_vertex_count() {
 
 #[test]
 fn gltf_model_default_scene_fallback() {
-    // No "scene" field → defaults to index 0
+    // 无 "scene" 字段 → 默认为索引 0
     let json = r#"{
         "asset": {"version": "2.0"},
         "scenes": [{"nodes": [0, 1]}, {"nodes": [2]}],

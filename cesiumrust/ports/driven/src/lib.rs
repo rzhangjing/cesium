@@ -1,14 +1,14 @@
-//! cesium-ports-driven: Driven ports (Domain → External)
-//! Trait contracts for external services that the domain depends on.
+//! cesium-ports-driven: 被驱动端口（领域 → 外部）
+//! 领域所依赖的外部服务的 trait 契约。
 //!
-//! In hexagonal architecture, driven ports define how the domain
-//! communicates with external systems (adapters implement these traits).
+//! 在六边形架构中，被驱动端口定义领域
+//! 如何与外部系统通信（adapter 实现这些 trait）。
 
 use cesium_geospatial::{GeometryData, Rectangle};
 use std::future::Future;
 use std::pin::Pin;
 
-/// Error type for port operations.
+/// 端口操作的错误类型。
 #[derive(Debug, thiserror::Error)]
 pub enum PortError {
     #[error("Network error: {0}")]
@@ -25,45 +25,45 @@ pub enum PortError {
     Cancelled,
 }
 
-/// Result type for port operations.
+/// 端口操作的结果类型。
 pub type PortResult<T> = Result<T, PortError>;
 
 // ============================================================================
-// Data Fetching Ports
+// 数据抓取端口
 // ============================================================================
 
-/// Fetches raw bytes from a URL.
-/// Implemented by HTTP adapters (reqwest, browser fetch, etc.)
+/// 从 URL 抓取原始字节。
+/// 由 HTTP adapter 实现（reqwest、浏览器 fetch 等）
 pub trait TileFetcher: Send + Sync {
-    /// Fetches bytes from the given URL.
+    /// 从给定 URL 抓取字节。
     fn fetch<'a>(
         &'a self,
         url: &'a str,
         priority: f64,
     ) -> Pin<Box<dyn Future<Output = PortResult<Vec<u8>>> + Send + 'a>>;
 
-    /// Cancels a pending fetch.
+    /// 取消一个挂起的抓取。
     fn cancel(&self, url: &str);
 }
 
-/// Fetches imagery tiles.
+/// 抓取影像瓦片。
 pub trait ImageryProvider: Send + Sync {
-    /// Gets the rectangle covered by this imagery provider.
+    /// 获取此影像 provider 覆盖的矩形区域。
     fn rectangle(&self) -> Rectangle;
 
-    /// Gets the minimum zoom level.
+    /// 获取最小缩放级别。
     fn minimum_level(&self) -> u32;
 
-    /// Gets the maximum zoom level.
+    /// 获取最大缩放级别。
     fn maximum_level(&self) -> u32;
 
-    /// Gets the tile width in pixels.
+    /// 获取瓦片宽度（像素）。
     fn tile_width(&self) -> u32;
 
-    /// Gets the tile height in pixels.
+    /// 获取瓦片高度（像素）。
     fn tile_height(&self) -> u32;
 
-    /// Requests an imagery tile.
+    /// 请求一张影像瓦片。
     fn request_image<'a>(
         &'a self,
         x: u32,
@@ -72,15 +72,15 @@ pub trait ImageryProvider: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = PortResult<Vec<u8>>> + Send + 'a>>;
 }
 
-/// Fetches terrain tiles.
+/// 抓取地形瓦片。
 pub trait TerrainProvider: Send + Sync {
-    /// Gets the rectangle covered by this terrain provider.
+    /// 获取此地形 provider 覆盖的矩形区域。
     fn rectangle(&self) -> Rectangle;
 
-    /// Gets the maximum zoom level.
+    /// 获取最大缩放级别。
     fn maximum_level(&self) -> u32;
 
-    /// Requests a terrain tile.
+    /// 请求一块地形瓦片。
     fn request_tile_geometry<'a>(
         &'a self,
         x: u32,
@@ -88,25 +88,25 @@ pub trait TerrainProvider: Send + Sync {
         level: u32,
     ) -> Pin<Box<dyn Future<Output = PortResult<GeometryData>> + Send + 'a>>;
 
-    /// Gets the availability of terrain data at a position.
+    /// 获取某位置处地形数据的可用性。
     fn get_availability(&self, x: u32, y: u32, level: u32) -> bool;
 }
 
 // ============================================================================
-// GPU/Rendering Ports
+// GPU/渲染端口
 // ============================================================================
 
-/// A handle to a GPU resource (texture, buffer, etc.)
+/// 一个 GPU 资源句柄（纹理、buffer 等）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GpuHandle(pub u64);
 
-/// Sends geometry and textures to the GPU.
-/// Implemented by rendering adapters (Bevy, wgpu, etc.)
+/// 将几何与纹理发送到 GPU。
+/// 由渲染 adapter 实现（Bevy、wgpu 等）
 pub trait GpuSink: Send + Sync {
-    /// Uploads geometry data to the GPU, returns a handle.
+    /// 上传几何数据到 GPU，返回一个句柄。
     fn upload_geometry(&mut self, geometry: &GeometryData) -> PortResult<GpuHandle>;
 
-    /// Uploads texture data to the GPU, returns a handle.
+    /// 上传纹理数据到 GPU，返回一个句柄。
     fn upload_texture(
         &mut self,
         width: u32,
@@ -114,7 +114,7 @@ pub trait GpuSink: Send + Sync {
         data: &[u8],
     ) -> PortResult<GpuHandle>;
 
-    /// Updates an existing texture.
+    /// 更新一张已存在的纹理。
     fn update_texture(
         &mut self,
         handle: GpuHandle,
@@ -123,27 +123,27 @@ pub trait GpuSink: Send + Sync {
         data: &[u8],
     ) -> PortResult<()>;
 
-    /// Deletes a GPU resource.
+    /// 删除一个 GPU 资源。
     fn delete(&mut self, handle: GpuHandle);
 }
 
 // ============================================================================
-// Decoding Ports
+// 解码端口
 // ============================================================================
 
-/// Decodes compressed/encoded data formats.
+/// 解码压缩/编码的数据格式。
 pub trait Decoder: Send + Sync {
-    /// Decodes Draco-compressed geometry.
+    /// 解码 Draco 压缩的几何。
     fn decode_draco(&self, data: &[u8]) -> PortResult<GeometryData>;
 
-    /// Decodes an image (PNG, JPEG, WebP, etc.)
+    /// 解码一张图像（PNG、JPEG、WebP 等）
     fn decode_image(&self, data: &[u8]) -> PortResult<DecodedImage>;
 
-    /// Decodes gzip-compressed data.
+    /// 解码 gzip 压缩的数据。
     fn decode_gzip(&self, data: &[u8]) -> PortResult<Vec<u8>>;
 }
 
-/// A decoded image with raw pixel data.
+/// 一张带原始像素数据的已解码图像。
 #[derive(Debug, Clone)]
 pub struct DecodedImage {
     pub width: u32,
@@ -153,78 +153,78 @@ pub struct DecodedImage {
 }
 
 // ============================================================================
-// Caching Ports
+// 缓存端口
 // ============================================================================
 
-/// A cache for storing fetched/decoded data.
+/// 用于存储已抓取/已解码数据的缓存。
 pub trait Cache: Send + Sync {
-    /// Gets a cached value by key.
+    /// 按 key 获取一个缓存值。
     fn get(&self, key: &str) -> Option<Vec<u8>>;
 
-    /// Stores a value in the cache.
+    /// 在缓存中存储一个值。
     fn set(&self, key: &str, value: Vec<u8>);
 
-    /// Removes a value from the cache.
+    /// 从缓存中移除一个值。
     fn remove(&self, key: &str) -> bool;
 
-    /// Clears all cached data.
+    /// 清空所有缓存数据。
     fn clear(&self);
 
-    /// Gets the current cache size in bytes.
+    /// 获取当前缓存大小（字节）。
     fn size(&self) -> usize;
 
-    /// Gets the maximum cache size in bytes.
+    /// 获取最大缓存大小（字节）。
     fn max_size(&self) -> usize;
 }
 
 // ============================================================================
-// Time/Clock Ports
+// 时间/时钟端口
 // ============================================================================
 
-/// Provides the current system time.
+/// 提供当前系统时间。
 pub trait SystemClock: Send + Sync {
-    /// Gets the current time in seconds since Unix epoch.
+    /// 获取当前时间（自 Unix 纪元起的秒数）。
     fn now_secs(&self) -> f64;
 
-    /// Gets the elapsed time since the last call (for frame timing).
+    /// 获取距上次调用的经过时间（用于帧计时）。
     fn delta_secs(&mut self) -> f64;
 }
 
 // ============================================================================
-// Scene/Rendering Ports
+// 场景/渲染端口
 // ============================================================================
 
-/// Provides access to the rendering context.
+/// 提供对渲染上下文的访问。
 pub trait RenderContext: Send + Sync {
-    /// Gets the drawing buffer width.
+    /// 获取绘制缓冲区宽度。
     fn drawing_buffer_width(&self) -> u32;
 
-    /// Gets the drawing buffer height.
+    /// 获取绘制缓冲区高度。
     fn drawing_buffer_height(&self) -> u32;
 
-    /// Gets the device pixel ratio.
+    /// 获取设备像素比。
     fn device_pixel_ratio(&self) -> f64;
 }
 
 // ============================================================================
-// M1.1 — Tile Pipeline Contracts
+// M1.1 — 瓦片管线契约
 // ============================================================================
 //
-// Seven traits defining the generic tile pipeline abstraction extracted from
-// `application/cesium-app/src/dynamic_globe.rs` (the "golden path" reference
-// implementation). These contracts are **additive** — the existing 8 traits
-// above remain unchanged and the P0 three-loader compilation is preserved.
+// 定义通用瓦片管线抽象的七个 trait，抽取自
+// `application/cesium-app/src/dynamic_globe.rs`（"黄金路径"参考
+// 实现）。这些契约是**增量式**的——上方现有的 8 个 trait
+// 保持不变，P0 三 loader 的编译也不受影响。
 //
-// Design decisions (leader-ruled):
-// - Q1: All traits are dyn-compatible after concretizing K/Payload.
-//   Async methods use `Pin<Box<dyn Future + Send>>` (matching TileFetcher style).
-//   No generic methods, no `Self: Sized` bounds.
-// - Q2: No `BlockingTileFetcher` here; synchronous network is provided by
-//   `adapters/pipeline::NetworkBackend` (ureq pool), not a ports/driven trait.
+// 设计决策（由 leader 裁决）：
+// - Q1：在将 K/Payload 具体化后，所有 trait 均为 dyn 兼容。
+//   异步方法使用 `Pin<Box<dyn Future + Send>>`（与 TileFetcher 风格一致）。
+//   无泛型方法，无 `Self: Sized` 约束。
+// - Q2：这里没有 `BlockingTileFetcher`；同步网络由
+//   `adapters/pipeline::NetworkBackend`（ureq 池）提供，而非 ports/driven 的 trait。
 //
-// Type parameter bounds:
-// - `K: Hash + Eq + Copy + 'static` — tile key (e.g. `(u32, u32, u32)` = TileKey)
-// - `Payload: Send + 'static` — download result (e.g. TileDownloadResult)
+// 类型参数约束：
+// - `K: Hash + Eq + Copy + 'static` — 瓦片 key（例如 `(u32, u32, u32)` = TileKey）
+// - `Payload: Send + 'static` — 下载结果（例如 TileDownloadResult）
 
 use std::collections::VecDeque;
 use std::hash::Hash;
@@ -232,64 +232,64 @@ use std::time::Duration;
 
 // ── TilePipeline ────────────────────────────────────────────────────────────
 
-/// Outcome of polling a submitted tile from the pipeline.
+/// 从管线轮询一个已提交瓦片的结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PollOutcome<K, Payload> {
-    /// Tile download completed successfully with payload.
+    /// 瓦片下载成功完成，带 payload。
     Ready(K, Payload),
-    /// Tile was aborted (left the wanted set mid-flight).
-    /// Corresponds to `dynamic_globe.rs:1052-1060` — only clears in_flight,
-    /// counts stale_skip, does NOT stamp no-data.
+    /// 瓦片被中止（在传输途中离开了 wanted 集合）。
+    /// 对应 `dynamic_globe.rs:1052-1060` —— 仅清除 in_flight，
+    /// 计入 stale_skip，并不打上 no-data 标记。
     Aborted(K),
-    /// Tile fetch failed after all retries (transient throttle/timeout).
-    /// Corresponds to `dynamic_globe.rs:1062-1072` — enters retry_after
-    /// cooldown (10 s), does NOT stamp permanent no-data.
+    /// 瓦片在所有重试后抓取失败（临时性限流/超时）。
+    /// 对应 `dynamic_globe.rs:1062-1072` —— 进入 retry_after
+    /// 冷却期（10 秒），并不打上永久性 no-data 标记。
     Failed(K),
-    /// Tile is a placeholder (no usable imagery, e.g. Bing gradient JPEG).
-    /// Corresponds to `dynamic_globe.rs:1074-1098` — stamps permanent no-data,
-    /// inherits ancestor coverage.
+    /// 瓦片是一个占位图（无可用影像，例如 Bing 渐变 JPEG）。
+    /// 对应 `dynamic_globe.rs:1074-1098` —— 打上永久性 no-data 标记，
+    /// 继承祖先覆盖。
     Placeholder(K),
 }
 
-/// Core tile pipeline trait: submit work, cancel stale requests, poll results.
+/// 瓦片管线核心 trait：提交工作、取消过期请求、轮询结果。
 ///
-/// Mirrors the orchestration in `dynamic_globe.rs::process_pipeline` (L662-1429)
-/// and `download_worker` (L2143-2285). The pipeline owns the download thread
-/// pool, deduplication, wanted-set gating, and three-state result dispatch.
+/// 镜像 `dynamic_globe.rs::process_pipeline`（L662-1429）
+/// 和 `download_worker`（L2143-2285）中的编排逻辑。管线拥有下载线程
+/// 池、去重、wanted 集合门控，以及三态结果分发。
 ///
-/// Dyn-compatible when `K` and `Payload` are concrete.
+/// 当 `K` 与 `Payload` 具体化时为 dyn 兼容。
 pub trait TilePipeline<K, Payload>: Send + Sync
 where
     K: Hash + Eq + Copy + Send + 'static,
     Payload: Send + 'static,
 {
-    /// Submit a tile for downloading. Priority determines fetch order
-    /// (higher = sooner). Corresponds to `enqueue_tiles` (L371-459):
-    /// dedup via in_flight set, priority sort, wanted-set injection.
+    /// 提交一个瓦片用于下载。Priority 决定抓取顺序
+    /// （越大 = 越早）。对应 `enqueue_tiles`（L371-459）：
+    /// 通过 in_flight 集合去重、优先级排序、wanted 集合注入。
     fn submit(&self, key: K, priority: f64);
 
-    /// Cancel a pending/in-flight tile. Removes from wanted set so the
-    /// download worker's gate (L2161) produces an Aborted result.
+    /// 取消一个挂起/传输中的瓦片。从 wanted 集合移除，使
+    /// 下载 worker 的门控（L2161）产生一个 Aborted 结果。
     fn cancel(&self, key: &K);
 
-    /// Poll completed tiles (non-blocking drain). Returns up to `budget`
-    /// results. Corresponds to the tex_rx drain loop (L1046-1048) bounded
-    /// by `MAX_TEXTURE_UPLOADS_PER_FRAME`.
+    /// 轮询已完成的瓦片（非阻塞排空）。最多返回 `budget`
+    /// 个结果。对应 tex_rx 排空循环（L1046-1048），受
+    /// `MAX_TEXTURE_UPLOADS_PER_FRAME` 约束。
     fn poll_ready(&self, budget: usize) -> Vec<PollOutcome<K, Payload>>;
 
-    /// Replace the wanted set (called once per frame at L1402-1409).
-    /// Tiles not in the new set become abort candidates at the worker gate.
+    /// 替换 wanted 集合（每帧调用一次，见 L1402-1409）。
+    /// 不在新集合中的瓦片在 worker 门控处成为中止候选。
     fn refresh_wanted(&self, wanted: &[K]);
 
-    /// Snapshot current pipeline statistics.
+    /// 快照当前管线统计。
     fn stats(&self) -> PipelineStats;
 }
 
 // ── BudgetPolicy ────────────────────────────────────────────────────────────
 
-/// Per-frame budget configuration for the tile pipeline.
+/// 瓦片管线的每帧预算配置。
 ///
-/// Default values are **verbatim** from `dynamic_globe.rs` constants (L48-73):
+/// 默认值**逐字取自** `dynamic_globe.rs` 常量（L48-73）：
 /// - `DOWNLOAD_THREADS = 16` (L48)
 /// - `MAX_MESH_UPLOADS_PER_FRAME = 12` (L53)
 /// - `MAX_SPAWNS_PER_FRAME = 16` (L54)
@@ -299,134 +299,134 @@ where
 /// - `BASE_LAYER_ZOOM = 3` (L70)
 /// - `MAX_GPU_CACHE_ENTRIES = 3000` (L73)
 ///
-/// These budgets slice GPU work across frames so a zoom/pan never produces
-/// a multi-hundred-millisecond hitch (L50-52 doc comment).
+/// 这些预算将 GPU 工作切分到各帧，使一次缩放/平移不会造成
+/// 数百毫秒的卡顿（L50-52 doc 注释）。
 pub trait BudgetPolicy: Send + Sync {
-    /// Number of parallel download worker threads (L48: 16).
+    /// 并行下载 worker 线程数（L48：16）。
     fn download_threads(&self) -> usize;
 
-    /// Max mesh GPU uploads per frame (L53: 12).
+    /// 每帧最大 mesh GPU 上传数（L53：12）。
     fn max_mesh_uploads_per_frame(&self) -> usize;
 
-    /// Max entity spawns per frame (L54: 16).
+    /// 每帧最大实体 spawn 数（L54：16）。
     fn max_spawns_per_frame(&self) -> usize;
 
-    /// Max texture GPU uploads per frame (L55: 16).
+    /// 每帧最大纹理 GPU 上传数（L55：16）。
     fn max_texture_uploads_per_frame(&self) -> usize;
 
-    /// Max entity despawns per frame (L58: 24).
+    /// 每帧最大实体 despawn 数（L58：24）。
     fn max_despawns_per_frame(&self) -> usize;
 
-    /// Hard cap on live tile entities (L65: 1800). Hidden tiles count
-    /// toward this cap; it bounds entity/handle storage, not draw calls.
+    /// 存活瓦片实体的硬上限（L65：1800）。隐藏瓦片也计入
+    /// 此上限；它约束的是实体/句柄存储，而非绘制调用。
     fn max_tile_entities(&self) -> usize;
 
-    /// Coarsest zoom level kept permanently resident (L70: 3). Tiles at
-    /// z <= base_layer_zoom are never evicted or despawned.
+    /// 永久常驻的最粗缩放级别（L70：3）。z <= base_layer_zoom 的
+    /// 瓦片永不被驱逐或 despawn。
     fn base_layer_zoom(&self) -> u32;
 
-    /// Upper bound for GPU handle caches (L73: 3000). Oldest entries
-    /// evicted FIFO when exceeded.
+    /// GPU 句柄缓存的上界（L73：3000）。超限时最旧条目
+    /// 按 FIFO 驱逐。
     fn max_gpu_cache_entries(&self) -> usize;
 }
 
 // ── EvictionPolicy ──────────────────────────────────────────────────────────
 
-/// GPU cache eviction policy expressing the three invariants from
-/// `dynamic_globe.rs::evict_gpu_cache` (L1476-1502):
+/// GPU 缓存驱逐策略，表达 `dynamic_globe.rs::evict_gpu_cache`
+/// （L1476-1502）中的三条不变量：
 ///
-/// 1. **BASE_LAYER exemption** (L1483): tiles at z <= base_layer_zoom are
-///    never evicted — permanent global fallback layer.
-/// 2. **Live-entity deferral** (L1487-1491): tiles with active entities are
-///    pushed back to the queue tail (花屏防护核心 — prevents blank frames).
-/// 3. **Termination guarantee** (L1471-1472): MAX_TILE_ENTITIES(1800) <<
-///    MAX_GPU_CACHE_ENTRIES(3000), so evictable (dead) entries always exist.
+/// 1. **BASE_LAYER 豁免**（L1483）：z <= base_layer_zoom 的瓦片
+///    永不驱逐 —— 永久的全局回退层。
+/// 2. **存活实体延后**（L1487-1491）：拥有活跃实体的瓦片被
+///    推回队列尾部（花屏防护核心 —— 避免出现空帧）。
+/// 3. **终止性保证**（L1471-1472）：MAX_TILE_ENTITIES(1800) <<
+///    MAX_GPU_CACHE_ENTRIES(3000)，因此总是存在可驱逐的（死亡）条目。
 pub trait EvictionPolicy<K>: Send + Sync
 where
     K: Hash + Eq + Copy + Send + 'static,
 {
-    /// Returns the FIFO eviction order (oldest first).
-    /// Corresponds to `mgr.gpu_tex_order: VecDeque<TileKey>` (L1479).
+    /// 返回 FIFO 驱逐顺序（最旧优先）。
+    /// 对应 `mgr.gpu_tex_order: VecDeque<TileKey>`（L1479）。
     fn evict_order(&self) -> &VecDeque<K>;
 
-    /// Returns true if this key must NEVER be evicted (base layer lock).
-    /// Corresponds to L1483: `if old.2 <= BASE_LAYER_ZOOM { continue }`.
+    /// 若此 key 绝不可驱逐（基础层锁定）则返回 true。
+    /// 对应 L1483：`if old.2 <= BASE_LAYER_ZOOM { continue }`。
     fn never_evict(&self, key: &K) -> bool;
 
-    /// Returns true if eviction should be deferred (tile still has a live
-    /// entity). Corresponds to L1487: `if mgr.tile_entities.contains_key(&old)`.
-    /// Deferred entries are pushed back to the queue tail (L1489).
+    /// 若驱逐应被延后（瓦片仍有存活实体）则返回 true。
+    /// 对应 L1487：`if mgr.tile_entities.contains_key(&old)`。
+    /// 被延后的条目推回队列尾部（L1489）。
     fn defer_if_live(&self, key: &K) -> bool;
 }
 
 // ── StalenessPolicy ─────────────────────────────────────────────────────────
 
-/// Three-state result classification for downloaded tiles.
+/// 对已下载瓦片的三态结果分类。
 ///
-/// Mirrors the dispatch at `dynamic_globe.rs:1052-1098`. The three states
-/// are **semantically distinct and must not be merged**:
+/// 镜像 `dynamic_globe.rs:1052-1098` 处的分发。这三态
+/// **语义上互不相同，不可合并**：
 ///
-/// - `Aborted` (L1052-1060): tile left wanted set mid-flight. Only clears
-///   in_flight + reupload guard, counts stale_skip. No permanent state change.
-/// - `Failed` (L1062-1072): all retries exhausted (transient). Enters
-///   retry_after cooldown (10 s). NOT permanent no-data.
-/// - `Placeholder` (L1074-1098): no usable imagery (Bing gradient JPEG).
-///   Stamps permanent no-data, inherits ancestor coverage via UV upsample.
+/// - `Aborted`（L1052-1060）：瓦片在传输途中离开 wanted 集合。仅清除
+///   in_flight + 重传守卫，计入 stale_skip。无永久状态变更。
+/// - `Failed`（L1062-1072）：所有重试耗尽（临时性）。进入
+///   retry_after 冷却期（10 秒）。不是永久性 no-data。
+/// - `Placeholder`（L1074-1098）：无可用影像（Bing 渐变 JPEG）。
+///   打上永久性 no-data 标记，通过 UV 上采样继承祖先覆盖。
 pub trait StalenessPolicy: Send + Sync {
-    /// Classify a download result into one of the three staleness states.
-    /// Returns the appropriate `PollOutcome` variant tag.
+    /// 将一次下载结果分类为三态之一。
+    /// 返回相应的 `PollOutcome` 变体标签。
     fn classify(&self, aborted: bool, failed: bool, placeholder: bool) -> StalenessVerdict;
 
-    /// Duration of the retry cooldown after a Failed verdict (L1070: 10 s).
+    /// Failed 裁决后重试冷却期的时长（L1070：10 秒）。
     fn retry_cooldown(&self) -> Duration;
 }
 
-/// Verdict from staleness classification.
+/// 由过期分类得出的裁决。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StalenessVerdict {
-    /// Tile left wanted set; clear in_flight, count stale_skip (L1052-1060).
+    /// 瓦片离开 wanted 集合；清除 in_flight，计入 stale_skip（L1052-1060）。
     Aborted,
-    /// Transient failure; enter retry cooldown (L1062-1072).
+    /// 临时性失败；进入重试冷却期（L1062-1072）。
     Failed,
-    /// Permanent no-data; inherit ancestor coverage (L1074-1098).
+    /// 永久性 no-data；继承祖先覆盖（L1074-1098）。
     Placeholder,
-    /// Successful download with usable payload.
+    /// 下载成功，payload 可用。
     Fresh,
 }
 
 // ── RetryPolicy ─────────────────────────────────────────────────────────────
 
-/// Dual-timescale retry configuration mirroring `dynamic_globe.rs`:
+/// 镜像 `dynamic_globe.rs` 的双时间尺度重试配置：
 ///
-/// 1. **Worker-level retries** (L2186-2191): 3 attempts with exponential
-///    backoff `250ms << attempt` (250 ms, 500 ms, 1000 ms). Handles
-///    transient 403/429/timeout from tile servers.
-/// 2. **Pipeline-level cooldown** (L1068-1071): after all worker retries
-///    fail, the tile enters `retry_after` map with a 10 s cooldown before
-///    the enqueue path (L398-400, L419-421) will re-issue the fetch.
+/// 1. **Worker 级重试**（L2186-2191）：3 次尝试，指数退避
+///    `250ms << attempt`（250 毫秒、500 毫秒、1000 毫秒）。处理
+///    来自瓦片服务器的临时性 403/429/超时。
+/// 2. **管线级冷却**（L1068-1071）：在所有 worker 重试
+///    失败后，瓦片进入 `retry_after` map，带 10 秒冷却，之后
+///    入队路径（L398-400、L419-421）才会重新发起抓取。
 ///
-/// Both timescales are necessary: worker retries handle momentary hiccups;
-/// pipeline cooldown prevents hammering a throttling server every frame.
+/// 两个时间尺度都必不可少：worker 重试处理瞬时抖动；
+/// 管线冷却防止每帧都猛击一个限流的服务器。
 pub trait RetryPolicy: Send + Sync {
-    /// Number of worker-level retry attempts (L2186: 3).
+    /// Worker 级重试次数（L2186：3）。
     fn max_attempts(&self) -> u32;
 
-    /// Base backoff duration for worker retries (L2189: 250 ms).
-    /// Actual sleep = `base << attempt` (exponential).
+    /// Worker 重试的基准退避时长（L2189：250 毫秒）。
+    /// 实际 sleep = `base << attempt`（指数）。
     fn backoff_base(&self) -> Duration;
 
-    /// Pipeline-level cooldown after all attempts exhausted (L1070: 10 s).
+    /// 所有尝试耗尽后的管线级冷却（L1070：10 秒）。
     fn cooldown(&self) -> Duration;
 }
 
 // ── PipelineStats ───────────────────────────────────────────────────────────
 
-/// Pipeline statistics snapshot, aligned with M0.4 `PerfCounters`
-/// (`application/cesium-app/src/perf_counters.rs`) and the 17-column CSV
-/// trace format (`perf_trace.rs::CSV_HEADER`).
+/// 管线统计快照，与 M0.4 的 `PerfCounters`
+/// （`application/cesium-app/src/perf_counters.rs`）以及 17 列 CSV
+/// 追踪格式（`perf_trace.rs::CSV_HEADER`）对齐。
 ///
-/// Field mapping to PerfCounters / CSV columns:
-/// | PipelineStats field   | PerfCounters field | CSV column (1-indexed) |
+/// 字段到 PerfCounters / CSV 列的映射：
+/// | PipelineStats 字段     | PerfCounters 字段  | CSV 列（从 1 开始）      |
 /// |-----------------------|--------------------|------------------------|
 /// | `frame_idx`           | `frame_idx`        | 1                      |
 /// | `dt_ms`               | `dt_ms`            | 2                      |
@@ -445,47 +445,47 @@ pub trait RetryPolicy: Send + Sync {
 /// | `frame_despawn`       | `frame_despawn`    | 16                     |
 /// | `evict_deferred`      | `evict_deferred`   | 17                     |
 ///
-/// Column 3 (`view_sse`) is a quadtree per-tile value not tracked at pipeline
-/// level; reserved as 0 placeholder (see deferred DEFER-M0-VIEWSSE).
+/// 第 3 列（`view_sse`）是四叉树的每瓦片值，不在管线层级
+/// 追踪；保留为 0 占位（见 deferred DEFER-M0-VIEWSSE）。
 #[derive(Debug, Clone, Default)]
 pub struct PipelineStats {
-    /// Monotonic frame index (CSV col 1).
+    /// 单调递增的帧索引（CSV col 1）。
     pub frame_idx: u32,
-    /// Wall-clock frame delta in milliseconds (CSV col 2).
+    /// 帧 wall-clock 时间差（毫秒）（CSV col 2）。
     pub dt_ms: f64,
-    /// Live tile entities (CSV col 4 = PerfCounters::tile_entities).
+    /// 存活瓦片实体（CSV col 4 = PerfCounters::tile_entities）。
     pub visible_n: u32,
-    /// Spawn queue depth (CSV col 5 = PerfCounters::spawn_queue).
+    /// spawn 队列深度（CSV col 5 = PerfCounters::spawn_queue）。
     pub partition_n: u32,
-    /// Load set size (CSV col 6 = PerfCounters::load_set).
+    /// load 集合大小（CSV col 6 = PerfCounters::load_set）。
     pub load_n: u32,
-    /// Entities spawned this frame (CSV col 7).
+    /// 本帧 spawn 的实体数（CSV col 7）。
     pub spawn_n: u32,
-    /// Textures uploaded this frame (CSV col 8).
+    /// 本帧上传的纹理数（CSV col 8）。
     pub tex_upload_n: u32,
-    /// Cumulative evictions (CSV col 9).
+    /// 累计驱逐数（CSV col 9）。
     pub evict_n: u32,
-    /// GPU texture cache entries (CSV col 10).
+    /// GPU 纹理缓存条目数（CSV col 10）。
     pub gpu_tex_cache: u32,
-    /// Mesh backlog depth (CSV col 11).
+    /// mesh 积压深度（CSV col 11）。
     pub mesh_backlog: u32,
-    /// Downloads in flight (CSV col 12).
+    /// 传输中的下载数（CSV col 12）。
     pub dl_in_flight: u32,
-    /// Cumulative stale skips (CSV col 13).
+    /// 累计过期跳过数（CSV col 13）。
     pub stale_skips: u32,
-    /// Tiles in retry cooldown (CSV col 14).
+    /// 处于重试冷却期的瓦片数（CSV col 14）。
     pub retry_after: u32,
-    /// Mesh uploads this frame (CSV col 15).
+    /// 本帧 mesh 上传数（CSV col 15）。
     pub frame_mesh: u32,
-    /// Desawns this frame (CSV col 16).
+    /// 本帧 despawn 数（CSV col 16）。
     pub frame_despawn: u32,
-    /// Deferred evictions (CSV col 17).
+    /// 被延后的驱逐数（CSV col 17）。
     pub evict_deferred: u32,
 }
 
 // ── ResourceBackend (M8 / P2.3) ─────────────────────────────────────────────
-// Moved to `ports/driven/src/resource.rs` (M8.2 position fix). Re-exported
-// below so all existing `use cesium_ports_driven::{CacheTier, ResourceBackend,
-// ResourceStats}` paths remain valid.
+// 已移至 `ports/driven/src/resource.rs`（M8.2 位置修正）。在下方
+// 重新导出，使所有现有的 `use cesium_ports_driven::{CacheTier, ResourceBackend,
+// ResourceStats}` 路径保持有效。
 pub mod resource;
 pub use resource::{CacheTier, ResourceBackend, ResourceStats};

@@ -1,6 +1,6 @@
-//! 3D Tiles binary content decoding (b3dm, i3dm, pnts, cmpt).
+//! 3D Tiles 二进制内容解码（b3dm、i3dm、pnts、cmpt）。
 //!
-//! Maps to CesiumJS:
+//! 镜像 CesiumJS：
 //! - `Scene/B3dmParser.js`
 //! - `Scene/I3dmParser.js`
 //! - `Scene/PntsParser.js`
@@ -9,33 +9,33 @@
 
 use serde_json::Value;
 
-/// The type of 3D Tile content, identified by the magic bytes.
+/// 3D Tile 内容的类型，通过 magic 字节识别。
 ///
-/// Maps to CesiumJS `Scene/Cesium3DTileContentType.js`
+/// 映射到 CesiumJS `Scene/Cesium3DTileContentType.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TileContentType {
-    /// Batched 3D Model (`b3dm`)
+    /// 批量 3D 模型（`b3dm`）
     Batched3DModel,
-    /// Instanced 3D Model (`i3dm`)
+    /// 实例化 3D 模型（`i3dm`）
     Instanced3DModel,
-    /// Point Cloud (`pnts`)
+    /// 点云（`pnts`）
     PointCloud,
-    /// Composite (`cmpt`)
+    /// 复合（`cmpt`）
     Composite,
-    /// Binary glTF (`glTF` → `glb`)
+    /// 二进制 glTF（`glTF` → `glb`）
     GltfBinary,
-    /// Implicit subtree (`subt`)
+    /// 隐式子树（`subt`）
     ImplicitSubtree,
-    /// Geometry (`geom`)
+    /// 几何（`geom`）
     Geometry,
-    /// Vector (`vctr`)
+    /// 向量（`vctr`）
     Vector,
-    /// Unknown content type
+    /// 未知内容类型
     Unknown,
 }
 
 impl TileContentType {
-    /// Returns true if this is a binary format.
+    /// 若这是一个二进制格式则返回 true。
     pub fn is_binary(&self) -> bool {
         matches!(
             self,
@@ -51,9 +51,9 @@ impl TileContentType {
     }
 }
 
-/// Detects the content type from the first 4 bytes (magic) of a binary buffer.
+/// 从二进制缓冲区的前 4 个字节（magic）检测内容类型。
 ///
-/// Maps to CesiumJS `Core/getMagic.js`
+/// 映射到 CesiumJS `Core/getMagic.js`
 pub fn detect_content_type(data: &[u8]) -> TileContentType {
     if data.len() < 4 {
         return TileContentType::Unknown;
@@ -71,22 +71,22 @@ pub fn detect_content_type(data: &[u8]) -> TileContentType {
     }
 }
 
-/// Error type for content decoding.
+/// 内容解码的错误类型。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeError {
-    /// Buffer too small for the header.
+    /// 缓冲区对于头部而言太小。
     BufferTooSmall { needed: usize, actual: usize },
-    /// Unsupported version.
+    /// 不支持的版本。
     UnsupportedVersion { format: &'static str, version: u32 },
-    /// Invalid magic bytes.
+    /// 无效的 magic 字节。
     InvalidMagic { expected: &'static str, actual: [u8; 4] },
-    /// Feature table JSON byte length is zero (required for pnts/i3dm).
+    /// feature table JSON 字节长度为零（pnts/i3dm 必需）。
     EmptyFeatureTable,
-    /// Invalid JSON in feature/batch table.
+    /// feature/batch table 中的 JSON 无效。
     InvalidJson(String),
-    /// glTF byte length is zero.
+    /// glTF 字节长度为零。
     EmptyGltf,
-    /// Invalid gltf format (i3dm only, must be 0 or 1).
+    /// 无效的 gltf 格式（仅 i3dm，必须为 0 或 1）。
     InvalidGltfFormat(u32),
 }
 
@@ -120,85 +120,85 @@ impl std::fmt::Display for DecodeError {
 
 impl std::error::Error for DecodeError {}
 
-/// Parsed result of a b3dm (Batched 3D Model) tile.
+/// b3dm（批量 3D 模型）瓦片的解析结果。
 ///
-/// Maps to CesiumJS `Scene/B3dmParser.js` return value.
+/// 映射到 CesiumJS `Scene/B3dmParser.js` 的返回值。
 #[derive(Debug, Clone)]
 pub struct B3dmContent {
-    /// The batch length (number of features).
+    /// batch length（feature 数量）。
     pub batch_length: u32,
-    /// Feature table JSON (parsed).
+    /// feature table JSON（已解析）。
     pub feature_table_json: Option<Value>,
-    /// Feature table binary body.
+    /// feature table 二进制主体。
     pub feature_table_binary: Vec<u8>,
-    /// Batch table JSON (parsed).
+    /// batch table JSON（已解析）。
     pub batch_table_json: Option<Value>,
-    /// Batch table binary body.
+    /// batch table 二进制主体。
     pub batch_table_binary: Vec<u8>,
-    /// Embedded glTF (GLB) bytes.
+    /// 内嵌的 glTF（GLB）字节。
     pub gltf: Vec<u8>,
 }
 
-/// Parsed result of an i3dm (Instanced 3D Model) tile.
+/// i3dm（实例化 3D 模型）瓦片的解析结果。
 ///
-/// Maps to CesiumJS `Scene/I3dmParser.js` return value.
+/// 映射到 CesiumJS `Scene/I3dmParser.js` 的返回值。
 #[derive(Debug, Clone)]
 pub struct I3dmContent {
-    /// Feature table JSON (parsed).
+    /// feature table JSON（已解析）。
     pub feature_table_json: Option<Value>,
-    /// Feature table binary body.
+    /// feature table 二进制主体。
     pub feature_table_binary: Vec<u8>,
-    /// Batch table JSON (parsed).
+    /// batch table JSON（已解析）。
     pub batch_table_json: Option<Value>,
-    /// Batch table binary body.
+    /// batch table 二进制主体。
     pub batch_table_binary: Vec<u8>,
-    /// glTF format: 0 = URI, 1 = embedded GLB.
+    /// glTF 格式：0 = URI，1 = 内嵌 GLB。
     pub gltf_format: u32,
-    /// glTF data (URI string bytes or embedded GLB).
+    /// glTF 数据（URI 字符串字节或内嵌 GLB）。
     pub gltf: Vec<u8>,
 }
 
-/// Parsed result of a pnts (Point Cloud) tile.
+/// pnts（点云）瓦片的解析结果。
 ///
-/// Maps to CesiumJS `Scene/PntsParser.js` return value.
+/// 映射到 CesiumJS `Scene/PntsParser.js` 的返回值。
 #[derive(Debug, Clone)]
 pub struct PntsContent {
-    /// Feature table JSON (parsed).
+    /// feature table JSON（已解析）。
     pub feature_table_json: Option<Value>,
-    /// Feature table binary body.
+    /// feature table 二进制主体。
     pub feature_table_binary: Vec<u8>,
-    /// Batch table JSON (parsed).
+    /// batch table JSON（已解析）。
     pub batch_table_json: Option<Value>,
-    /// Batch table binary body.
+    /// batch table 二进制主体。
     pub batch_table_binary: Vec<u8>,
 }
 
-/// Parsed result of a cmpt (Composite) tile.
+/// cmpt（复合）瓦片的解析结果。
 ///
-/// Maps to CesiumJS `Scene/Composite3DTileContent.js`
+/// 映射到 CesiumJS `Scene/Composite3DTileContent.js`
 #[derive(Debug, Clone)]
 pub struct CmptContent {
-    /// Inner tiles (each is raw binary of the inner tile).
+    /// 内部瓦片（每个均为内部瓦片的原始二进制）。
     pub inner_tiles: Vec<DecodedTile>,
 }
 
-/// A decoded 3D Tile content (union of all formats).
+/// 一个已解码的 3D Tile 内容（所有格式的并集）。
 #[derive(Debug, Clone)]
 pub enum DecodedTile {
-    /// Batched 3D Model
+    /// 批量 3D 模型
     B3dm(B3dmContent),
-    /// Instanced 3D Model
+    /// 实例化 3D 模型
     I3dm(I3dmContent),
-    /// Point Cloud
+    /// 点云
     Pnts(PntsContent),
-    /// Composite (contains inner tiles)
+    /// 复合（包含内部瓦片）
     Cmpt(CmptContent),
-    /// Raw glTF binary
+    /// 原始 glTF 二进制
     Glb(Vec<u8>),
 }
 
 impl DecodedTile {
-    /// Returns the content type of this decoded tile.
+    /// 返回本已解码瓦片的内容类型。
     pub fn content_type(&self) -> TileContentType {
         match self {
             Self::B3dm(_) => TileContentType::Batched3DModel,
@@ -210,7 +210,7 @@ impl DecodedTile {
     }
 }
 
-/// Helper: read a little-endian u32 from a byte slice at offset.
+/// 辅助函数：从字节切片的偏移处读取一个Little-Endian u32。
 fn read_u32_le(data: &[u8], offset: usize) -> u32 {
     u32::from_le_bytes([
         data[offset],
@@ -220,7 +220,7 @@ fn read_u32_le(data: &[u8], offset: usize) -> u32 {
     ])
 }
 
-/// Helper: parse JSON from a byte slice region.
+/// 辅助函数：从字节切片区域解析 JSON。
 fn parse_json(data: &[u8], offset: usize, length: usize) -> Result<Option<Value>, DecodeError> {
     if length == 0 {
         return Ok(None);
@@ -233,7 +233,7 @@ fn parse_json(data: &[u8], offset: usize, length: usize) -> Result<Option<Value>
         });
     }
     let json_bytes = &data[offset..end];
-    // Trim trailing whitespace/null padding
+    // 剪除尾部的空白/null 填充
     let trimmed = trim_padding(json_bytes);
     if trimmed.is_empty() {
         return Ok(None);
@@ -243,7 +243,7 @@ fn parse_json(data: &[u8], offset: usize, length: usize) -> Result<Option<Value>
         .map_err(|e| DecodeError::InvalidJson(e.to_string()))
 }
 
-/// Trims trailing whitespace and null bytes from JSON bytes.
+/// 从 JSON 字节中剪除尾部的空白和 null 字节。
 fn trim_padding(bytes: &[u8]) -> &[u8] {
     let mut end = bytes.len();
     while end > 0 && (bytes[end - 1] == b' ' || bytes[end - 1] == 0) {
@@ -252,23 +252,23 @@ fn trim_padding(bytes: &[u8]) -> &[u8] {
     &bytes[..end]
 }
 
-/// Parses a b3dm (Batched 3D Model) binary buffer.
+/// 解析一个 b3dm（批量 3D 模型）二进制缓冲区。
 ///
-/// Header layout (28 bytes):
-/// - magic: 4 bytes ("b3dm")
-/// - version: u32 (must be 1)
-/// - byteLength: u32
-/// - featureTableJsonByteLength: u32
-/// - featureTableBinaryByteLength: u32
-/// - batchTableJsonByteLength: u32
-/// - batchTableBinaryByteLength: u32
+/// 头部布局（28 字节）：
+/// - magic：4 字节（"b3dm"）
+/// - version：u32（必须为 1）
+/// - byteLength：u32
+/// - featureTableJsonByteLength：u32
+/// - featureTableBinaryByteLength：u32
+/// - batchTableJsonByteLength：u32
+/// - batchTableBinaryByteLength：u32
 ///
-/// Maps to CesiumJS `B3dmParser.parse`
+/// 映射到 CesiumJS `B3dmParser.parse`
 pub fn parse_b3dm(data: &[u8]) -> Result<B3dmContent, DecodeError> {
     parse_b3dm_at(data, 0)
 }
 
-/// Parses a b3dm at a specific byte offset.
+/// 在指定的字节偏移处解析一个 b3dm。
 pub fn parse_b3dm_at(data: &[u8], byte_offset: usize) -> Result<B3dmContent, DecodeError> {
     const HEADER_SIZE: usize = 28;
     let byte_start = byte_offset;
@@ -280,7 +280,7 @@ pub fn parse_b3dm_at(data: &[u8], byte_offset: usize) -> Result<B3dmContent, Dec
         });
     }
 
-    // Validate magic
+    // 校验 magic
     let magic: [u8; 4] = [
         data[byte_start],
         data[byte_start + 1],
@@ -316,10 +316,10 @@ pub fn parse_b3dm_at(data: &[u8], byte_offset: usize) -> Result<B3dmContent, Dec
     let mut bt_bin_len = read_u32_le(data, offset) as usize;
     offset += 4;
 
-    // Legacy header detection (from CesiumJS B3dmParser)
+    // 遗留头部检测（来自 CesiumJS B3dmParser）
     let mut batch_length: Option<u32> = None;
     if bt_json_len >= 570_425_344 {
-        // Legacy format #1: [batchLength] [batchTableByteLength]
+        // 遗留格式 #1：[batchLength] [batchTableByteLength]
         offset -= 8;
         batch_length = Some(ft_json_len as u32);
         bt_json_len = ft_bin_len;
@@ -327,7 +327,7 @@ pub fn parse_b3dm_at(data: &[u8], byte_offset: usize) -> Result<B3dmContent, Dec
         ft_json_len = 0;
         ft_bin_len = 0;
     } else if bt_bin_len >= 570_425_344 {
-        // Legacy format #2: [batchTableJsonByteLength] [batchTableBinaryByteLength] [batchLength]
+        // 遗留格式 #2：[batchTableJsonByteLength] [batchTableBinaryByteLength] [batchLength]
         offset -= 4;
         batch_length = Some(bt_json_len as u32);
         bt_json_len = ft_json_len;
@@ -336,9 +336,9 @@ pub fn parse_b3dm_at(data: &[u8], byte_offset: usize) -> Result<B3dmContent, Dec
         ft_bin_len = 0;
     }
 
-    // Parse feature table JSON
+    // 解析 feature table JSON
     let feature_table_json = if ft_json_len == 0 {
-        // Create default with BATCH_LENGTH
+        // 创建带 BATCH_LENGTH 的默认值
         let bl = batch_length.unwrap_or(0);
         Some(serde_json::json!({ "BATCH_LENGTH": bl }))
     } else {
@@ -346,7 +346,7 @@ pub fn parse_b3dm_at(data: &[u8], byte_offset: usize) -> Result<B3dmContent, Dec
     };
     offset += ft_json_len;
 
-    // Feature table binary
+    // feature table 二进制主体 部分
     let ft_bin_end = offset + ft_bin_len;
     if ft_bin_end > data.len() {
         return Err(DecodeError::BufferTooSmall {
@@ -357,7 +357,7 @@ pub fn parse_b3dm_at(data: &[u8], byte_offset: usize) -> Result<B3dmContent, Dec
     let feature_table_binary = data[offset..ft_bin_end].to_vec();
     offset = ft_bin_end;
 
-    // Batch table JSON
+    // batch table JSON 部分
     let batch_table_json = if bt_json_len > 0 {
         parse_json(data, offset, bt_json_len)?
     } else {
@@ -365,7 +365,7 @@ pub fn parse_b3dm_at(data: &[u8], byte_offset: usize) -> Result<B3dmContent, Dec
     };
     offset += bt_json_len;
 
-    // Batch table binary
+    // batch table 二进制主体 部分
     let batch_table_binary = if bt_bin_len > 0 {
         let bt_bin_end = offset + bt_bin_len;
         if bt_bin_end > data.len() {
@@ -381,7 +381,7 @@ pub fn parse_b3dm_at(data: &[u8], byte_offset: usize) -> Result<B3dmContent, Dec
         Vec::new()
     };
 
-    // glTF body
+    // glTF 主体
     let gltf_end = byte_start + byte_length;
     let gltf_byte_length = gltf_end.saturating_sub(offset);
     if gltf_byte_length == 0 {
@@ -395,7 +395,7 @@ pub fn parse_b3dm_at(data: &[u8], byte_offset: usize) -> Result<B3dmContent, Dec
     }
     let gltf = data[offset..gltf_end].to_vec();
 
-    // Extract BATCH_LENGTH from feature table if not from legacy header
+    // 提取 BATCH_LENGTH（若并非来自遗留头部）
     let final_batch_length = batch_length.unwrap_or_else(|| {
         feature_table_json
             .as_ref()
@@ -414,24 +414,24 @@ pub fn parse_b3dm_at(data: &[u8], byte_offset: usize) -> Result<B3dmContent, Dec
     })
 }
 
-/// Parses an i3dm (Instanced 3D Model) binary buffer.
+/// 解析一个 i3dm（实例化 3D 模型）二进制缓冲区。
 ///
-/// Header layout (32 bytes):
-/// - magic: 4 bytes ("i3dm")
-/// - version: u32 (must be 1)
-/// - byteLength: u32
-/// - featureTableJsonByteLength: u32
-/// - featureTableBinaryByteLength: u32
-/// - batchTableJsonByteLength: u32
-/// - batchTableBinaryByteLength: u32
-/// - gltfFormat: u32 (0 = URI, 1 = embedded)
+/// 头部布局（32 字节）：
+/// - magic：4 字节（"i3dm"）
+/// - version：u32（必须为 1）
+/// - byteLength：u32
+/// - featureTableJsonByteLength：u32
+/// - featureTableBinaryByteLength：u32
+/// - batchTableJsonByteLength：u32
+/// - batchTableBinaryByteLength：u32
+/// - gltfFormat：u32（0 = URI，1 = 内嵌）
 ///
-/// Maps to CesiumJS `I3dmParser.parse`
+/// 映射到 CesiumJS `I3dmParser.parse`
 pub fn parse_i3dm(data: &[u8]) -> Result<I3dmContent, DecodeError> {
     parse_i3dm_at(data, 0)
 }
 
-/// Parses an i3dm at a specific byte offset.
+/// 在指定的字节偏移处解析一个 i3dm。
 pub fn parse_i3dm_at(data: &[u8], byte_offset: usize) -> Result<I3dmContent, DecodeError> {
     const HEADER_SIZE: usize = 32;
     let byte_start = byte_offset;
@@ -487,11 +487,11 @@ pub fn parse_i3dm_at(data: &[u8], byte_offset: usize) -> Result<I3dmContent, Dec
     }
     offset += 4;
 
-    // Feature table JSON
+    // feature table JSON 部分
     let feature_table_json = parse_json(data, offset, ft_json_len)?;
     offset += ft_json_len;
 
-    // Feature table binary
+    // feature table 二进制主体 部分
     let ft_bin_end = offset + ft_bin_len;
     if ft_bin_end > data.len() {
         return Err(DecodeError::BufferTooSmall {
@@ -502,7 +502,7 @@ pub fn parse_i3dm_at(data: &[u8], byte_offset: usize) -> Result<I3dmContent, Dec
     let feature_table_binary = data[offset..ft_bin_end].to_vec();
     offset = ft_bin_end;
 
-    // Batch table JSON
+    // batch table JSON 部分
     let batch_table_json = if bt_json_len > 0 {
         parse_json(data, offset, bt_json_len)?
     } else {
@@ -510,7 +510,7 @@ pub fn parse_i3dm_at(data: &[u8], byte_offset: usize) -> Result<I3dmContent, Dec
     };
     offset += bt_json_len;
 
-    // Batch table binary
+    // batch table 二进制主体 部分
     let batch_table_binary = if bt_bin_len > 0 {
         let bt_bin_end = offset + bt_bin_len;
         if bt_bin_end > data.len() {
@@ -526,7 +526,7 @@ pub fn parse_i3dm_at(data: &[u8], byte_offset: usize) -> Result<I3dmContent, Dec
         Vec::new()
     };
 
-    // glTF body
+    // glTF 主体
     let gltf_end = byte_start + byte_length;
     let gltf_byte_length = gltf_end.saturating_sub(offset);
     if gltf_byte_length == 0 {
@@ -550,23 +550,23 @@ pub fn parse_i3dm_at(data: &[u8], byte_offset: usize) -> Result<I3dmContent, Dec
     })
 }
 
-/// Parses a pnts (Point Cloud) binary buffer.
+/// 解析一个 pnts（点云）二进制缓冲区。
 ///
-/// Header layout (28 bytes):
-/// - magic: 4 bytes ("pnts")
-/// - version: u32 (must be 1)
-/// - byteLength: u32
-/// - featureTableJsonByteLength: u32
-/// - featureTableBinaryByteLength: u32
-/// - batchTableJsonByteLength: u32
-/// - batchTableBinaryByteLength: u32
+/// 头部布局（28 字节）：
+/// - magic：4 字节（"pnts"）
+/// - version：u32（必须为 1）
+/// - byteLength：u32
+/// - featureTableJsonByteLength：u32
+/// - featureTableBinaryByteLength：u32
+/// - batchTableJsonByteLength：u32
+/// - batchTableBinaryByteLength：u32
 ///
-/// Maps to CesiumJS `PntsParser.parse`
+/// 映射到 CesiumJS `PntsParser.parse`
 pub fn parse_pnts(data: &[u8]) -> Result<PntsContent, DecodeError> {
     parse_pnts_at(data, 0)
 }
 
-/// Parses a pnts at a specific byte offset.
+/// 在指定的字节偏移处解析一个 pnts。
 pub fn parse_pnts_at(data: &[u8], byte_offset: usize) -> Result<PntsContent, DecodeError> {
     const HEADER_SIZE: usize = 28;
     let byte_start = byte_offset;
@@ -601,7 +601,7 @@ pub fn parse_pnts_at(data: &[u8], byte_offset: usize) -> Result<PntsContent, Dec
     }
     offset += 4;
 
-    // Skip byteLength
+    // 跳过 byteLength
     offset += 4;
 
     let ft_json_len = read_u32_le(data, offset) as usize;
@@ -617,11 +617,11 @@ pub fn parse_pnts_at(data: &[u8], byte_offset: usize) -> Result<PntsContent, Dec
     let bt_bin_len = read_u32_le(data, offset) as usize;
     offset += 4;
 
-    // Feature table JSON
+    // feature table JSON 部分
     let feature_table_json = parse_json(data, offset, ft_json_len)?;
     offset += ft_json_len;
 
-    // Feature table binary
+    // feature table 二进制主体 部分
     let ft_bin_end = offset + ft_bin_len;
     if ft_bin_end > data.len() {
         return Err(DecodeError::BufferTooSmall {
@@ -632,7 +632,7 @@ pub fn parse_pnts_at(data: &[u8], byte_offset: usize) -> Result<PntsContent, Dec
     let feature_table_binary = data[offset..ft_bin_end].to_vec();
     offset = ft_bin_end;
 
-    // Batch table JSON
+    // batch table JSON 部分
     let batch_table_json = if bt_json_len > 0 {
         parse_json(data, offset, bt_json_len)?
     } else {
@@ -640,7 +640,7 @@ pub fn parse_pnts_at(data: &[u8], byte_offset: usize) -> Result<PntsContent, Dec
     };
     offset += bt_json_len;
 
-    // Batch table binary
+    // batch table 二进制主体 部分
     let batch_table_binary = if bt_bin_len > 0 {
         let bt_bin_end = offset + bt_bin_len;
         if bt_bin_end > data.len() {
@@ -662,20 +662,20 @@ pub fn parse_pnts_at(data: &[u8], byte_offset: usize) -> Result<PntsContent, Dec
     })
 }
 
-/// Parses a cmpt (Composite) binary buffer, recursively decoding inner tiles.
+/// 解析一个 cmpt（复合）二进制缓冲区，递归解码内部瓦片。
 ///
-/// Header layout (16 bytes):
-/// - magic: 4 bytes ("cmpt")
-/// - version: u32 (must be 1)
-/// - byteLength: u32
-/// - tilesLength: u32
+/// 头部布局（16 字节）：
+/// - magic：4 字节（"cmpt"）
+/// - version：u32（必须为 1）
+/// - byteLength：u32
+/// - tilesLength：u32
 ///
-/// Maps to CesiumJS `Composite3DTileContent.fromTileType`
+/// 映射到 CesiumJS `Composite3DTileContent.fromTileType`
 pub fn parse_cmpt(data: &[u8]) -> Result<CmptContent, DecodeError> {
     parse_cmpt_at(data, 0)
 }
 
-/// Parses a cmpt at a specific byte offset.
+/// 在指定的字节偏移处解析一个 cmpt。
 pub fn parse_cmpt_at(data: &[u8], byte_offset: usize) -> Result<CmptContent, DecodeError> {
     const HEADER_SIZE: usize = 16;
     let byte_start = byte_offset;
@@ -710,7 +710,7 @@ pub fn parse_cmpt_at(data: &[u8], byte_offset: usize) -> Result<CmptContent, Dec
     }
     offset += 4;
 
-    // Skip byteLength
+    // 跳过 byteLength
     offset += 4;
 
     let tiles_length = read_u32_le(data, offset) as usize;
@@ -721,7 +721,7 @@ pub fn parse_cmpt_at(data: &[u8], byte_offset: usize) -> Result<CmptContent, Dec
         if offset + 12 > data.len() {
             break;
         }
-        // Each inner tile has: magic(4) + version(4) + byteLength(4)
+        // 每个内部瓦片包含：magic(4) + version(4) + byteLength(4)
         let tile_byte_length = read_u32_le(data, offset + 8) as usize;
         if tile_byte_length == 0 || offset + tile_byte_length > data.len() {
             break;
@@ -752,10 +752,10 @@ pub fn parse_cmpt_at(data: &[u8], byte_offset: usize) -> Result<CmptContent, Dec
     Ok(CmptContent { inner_tiles })
 }
 
-/// Decodes any supported 3D Tiles binary content from raw bytes.
+/// 从原始字节解码任意受支持的 3D Tiles 二进制内容。
 ///
-/// Automatically detects the content type from magic bytes and dispatches
-/// to the appropriate parser.
+/// 自动从 magic 字节检测内容类型并分发
+/// 到相应的解析器。
 pub fn decode_tile_content(data: &[u8]) -> Result<DecodedTile, DecodeError> {
     let content_type = detect_content_type(data);
     match content_type {
@@ -780,7 +780,7 @@ pub fn decode_tile_content(data: &[u8]) -> Result<DecodedTile, DecodeError> {
 mod tests {
     use super::*;
 
-    /// Builds a minimal valid b3dm buffer for testing.
+    /// 为测试构建一个最小的有效 b3dm 缓冲区。
     fn build_b3dm(
         batch_length: u32,
         ft_json: &str,
@@ -800,7 +800,7 @@ mod tests {
 
         let mut buf = Vec::with_capacity(byte_length);
         buf.extend_from_slice(b"b3dm");
-        buf.extend_from_slice(&1u32.to_le_bytes()); // version
+        buf.extend_from_slice(&1u32.to_le_bytes()); // 版本
         buf.extend_from_slice(&(byte_length as u32).to_le_bytes());
         buf.extend_from_slice(&(ft_json_bytes.len() as u32).to_le_bytes());
         buf.extend_from_slice(&(ft_bin.len() as u32).to_le_bytes());
@@ -811,11 +811,11 @@ mod tests {
         buf.extend_from_slice(bt_json_bytes);
         buf.extend_from_slice(bt_bin);
         buf.extend_from_slice(gltf);
-        let _ = batch_length; // batch_length is in ft_json
+        let _ = batch_length; // batch_length 在 ft_json 中
         buf
     }
 
-    /// Builds a minimal valid pnts buffer for testing.
+    /// 为测试构建一个最小的有效 pnts 缓冲区。
     fn build_pnts(ft_json: &str, ft_bin: &[u8], bt_json: &str, bt_bin: &[u8]) -> Vec<u8> {
         let ft_json_bytes = ft_json.as_bytes();
         let bt_json_bytes = bt_json.as_bytes();
@@ -836,7 +836,7 @@ mod tests {
         buf
     }
 
-    /// Builds a minimal valid i3dm buffer for testing.
+    /// 为测试构建一个最小的有效 i3dm 缓冲区。
     fn build_i3dm(
         ft_json: &str,
         ft_bin: &[u8],
@@ -929,7 +929,7 @@ mod tests {
     #[test]
     fn test_parse_b3dm_with_feature_table_binary() {
         let ft_json = r#"{"BATCH_LENGTH": 1, "POSITION": {"byteOffset": 0}}"#;
-        let ft_bin = vec![0u8; 12]; // 3 floats
+        let ft_bin = vec![0u8; 12]; // 3 个浮点数
         let gltf = b"glTF";
         let buf = build_b3dm(1, ft_json, &ft_bin, "", &[], gltf);
 
@@ -970,7 +970,7 @@ mod tests {
     #[test]
     fn test_parse_pnts_basic() {
         let ft_json = r#"{"POINTS_LENGTH": 3, "POSITION": {"byteOffset": 0}}"#;
-        let ft_bin = vec![0u8; 36]; // 3 points × 3 floats × 4 bytes
+        let ft_bin = vec![0u8; 36]; // 3 点 × 3 浮点 × 4 字节
         let buf = build_pnts(ft_json, &ft_bin, "", &[]);
 
         let result = parse_pnts(&buf).unwrap();
@@ -995,11 +995,11 @@ mod tests {
 
     #[test]
     fn test_parse_pnts_empty_feature_table() {
-        // featureTableJsonByteLength = 0 should error
+        // featureTableJsonByteLength = 0 应报错
         let mut buf = build_pnts("", &[], "", &[]);
-        // Manually set ft_json_len to 0 (it already is since "" has 0 bytes)
-        // Actually the builder uses the string length, so "" gives 0
-        // But we need at least the header to be valid
+        // 手动将 ft_json_len 设为 0（由于 "" 有 0 字节，它已经是 0）
+        // 实际上 builder 使用字符串长度，所以 "" 得到 0
+        // 但至少需要头部有效
         buf[12] = 0; // ft_json_len = 0
         buf[13] = 0;
         buf[14] = 0;
@@ -1010,7 +1010,7 @@ mod tests {
     #[test]
     fn test_parse_i3dm_basic() {
         let ft_json = r#"{"INSTANCES_LENGTH": 5, "POSITION": {"byteOffset": 0}}"#;
-        let ft_bin = vec![0u8; 60]; // 5 instances × 3 floats × 4 bytes
+        let ft_bin = vec![0u8; 60]; // 5 实例 × 3 浮点 × 4 字节
         let gltf = b"glTF embedded model";
         let buf = build_i3dm(ft_json, &ft_bin, "", &[], 1, gltf);
 
@@ -1044,7 +1044,7 @@ mod tests {
 
     #[test]
     fn test_parse_cmpt_basic() {
-        // Build two inner b3dm tiles
+        // 构建两个内部 b3dm 瓦片
         let inner1 = build_b3dm(1, r#"{"BATCH_LENGTH":1}"#, &[], "", &[], b"glTF1");
         let inner2 = build_b3dm(2, r#"{"BATCH_LENGTH":2}"#, &[], "", &[], b"glTF2");
 
@@ -1109,25 +1109,25 @@ mod tests {
 
     #[test]
     fn test_b3dm_legacy_header_format1() {
-        // Legacy format #1: [magic(4)] [version(4)] [byteLength(4)] [batchLength(4)] [batchTableByteLength(4)]
-        // Total header = 20 bytes, then batch table JSON immediately follows.
-        // Detection: the value at offset 20 (first byte of JSON = '"' = 0x22)
-        // when read as uint32 LE gives >= 570425344.
+        // 遗留格式 #1：[magic(4)] [version(4)] [byteLength(4)] [batchLength(4)] [batchTableByteLength(4)]
+        // 总头部 = 20 字节，随后紧跟 batch table JSON。
+        // 检测：偏移 20 处的值（JSON 的首字节 = '"' = 0x22）
+        // 作为 uint32 LE 读取时 >= 570425344。
         let bt_json = r#"{"id": [1, 2]}"#;
         let bt_json_bytes = bt_json.as_bytes();
         let gltf = b"glTF legacy";
 
-        // byteLength covers the whole tile
+        // byteLength 覆盖整个瓦片
         let byte_length = 20 + bt_json_bytes.len() + gltf.len();
         let mut buf = Vec::new();
         buf.extend_from_slice(b"b3dm");
-        buf.extend_from_slice(&1u32.to_le_bytes()); // version
+        buf.extend_from_slice(&1u32.to_le_bytes()); // 版本
         buf.extend_from_slice(&(byte_length as u32).to_le_bytes());
-        // batchLength = 3 (stored in ft_json_len slot)
+        // batchLength = 3（存于 ft_json_len 槽位）
         buf.extend_from_slice(&3u32.to_le_bytes());
-        // batchTableByteLength (stored in ft_bin_len slot)
+        // batchTableByteLength（存于 ft_bin_len 槽位）
         buf.extend_from_slice(&(bt_json_bytes.len() as u32).to_le_bytes());
-        // Batch table JSON starts immediately at offset 20
+        // batch table JSON 从偏移 20 处立即开始
         buf.extend_from_slice(bt_json_bytes);
         buf.extend_from_slice(gltf);
 

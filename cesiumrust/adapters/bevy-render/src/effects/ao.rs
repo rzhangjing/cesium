@@ -1,34 +1,32 @@
-//! M5-E2: Screen-Space Ambient Occlusion (SSAO) `ViewNode`.
+//! M5-E2：屏幕空间环焦遮蔽（SSAO）`ViewNode`。
 //!
-//! Self-implemented hemisphere 16-sample SSAO kernel + 4×4 box blur, inserted
-//! into the M5-E0 render-graph infrastructure (`graph.rs`) between the
-//! pass-through node and FXAA. Mirrors the [`super::fxaa`] `register_fxaa_node`
-//! pattern: this module registers the node / resources / systems **but never
-//! creates graph edges** — `graph.rs::register_render_graph` owns the single
-//! linear chain so no diamond can form in `Core3d`.
+//! 自行实现的半球 16 采样 SSAO 核 + 4×4 盒模糊，插入
+//! M5-E0 渲染图基础设施（`graph.rs`）中 pass-through 节点与 FXAA 之间。
+//! 对应 [`super::fxaa`] 的 `register_fxaa_node` 模式：本模块
+//! 注册节点 / 资源 / 系统，**但从不创建图边** ——
+//! `graph.rs::register_render_graph` 拥有单一线性链，所以 `Core3d` 中不会形成菱形。
 //!
-//! # Chain position (owned by graph.rs)
+//! # 链上位置（由 graph.rs 拥有）
 //! `EndMainPass → PassThrough → AmbientOcclusion → Tonemapping → Fxaa → EndMainPassPostProcessing`
-//! AO runs on the HDR scene colour **before** tonemapping and FXAA runs on the
-//! final LDR image **after** tonemapping — matching the upstream CesiumJS
-//! `PostProcessStageCollection` order (AO → … → Tonemapping → … → FXAA last).
+//! AO 在 tonemapping **之前**作用于 HDR 场景色，FXAA 在 tonemapping **之后**
+//! 作用于最终 LDR 图像 —— 与上游 CesiumJS 的
+//! `PostProcessStageCollection` 顺序一致（AO → … → Tonemapping → … → FXAA 最后）。
 //!
-//! # Inputs: DepthPrepass + NormalPrepass
-//! SSAO needs view-space depth + normals. Bevy exposes them through
-//! [`ViewPrepassTextures`] once the camera carries [`DepthPrepass`] +
-//! [`NormalPrepass`] (both previously **zero-usage** repo-wide). They are enabled
-//! here in the adapter layer by [`setup_ao_prepass`] — **not** in the app-layer
-//! camera bundle (orbit_camera.rs is out of scope per the M5-E2 red line).
+//! # 输入：DepthPrepass + NormalPrepass
+//! SSAO 需要视图空间深度 + 法线。一旦相机携带 [`DepthPrepass`] +
+//! [`NormalPrepass`]（两者先前全仓 **零使用**），Bevy 就通过
+//! [`ViewPrepassTextures`] 暴露它们。它们在此由 [`setup_ao_prepass`] 在适配层启用
+//! —— **不在**应用层相机 bundle（orbit_camera.rs 因 M5-E2 红线而超出范围）。
 //!
-//! # Blueprint
+//! # 蓝图
 //! - `packages/engine/Source/Shaders/PostProcessStages/AmbientOcclusionGenerate.glsl` L1-144
 //! - `packages/engine/Source/Shaders/PostProcessStages/AmbientOcclusionModulate.glsl` L1-11
 //! - `packages/engine/Source/Scene/PostProcessStageLibrary.js` L496 / L599
 //! - `bevy_pbr-0.15.3/src/ssao/mod.rs` L224-323 (SsaoNode) / L682-772 (prepass binding)
 //!
-//! # DEVIATION
-//! WGSL rewrite; hemisphere-kernel SSAO (not CesiumJS HBAO ray-march). See
-//! `docs/deviations.md#dev-018`.
+//! # 偏差
+//! WGSL 重写；半球核 SSAO（非 CesiumJS 的 HBAO 射线行进）。参见
+//! `docs/deviations.md#dev-018`。
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -63,24 +61,24 @@ use super::post_process::PostProcessConfig;
 
 // ─── Shader handle ───────────────────────────────────────────────────────────
 
-/// Unique handle for the embedded `ao.wgsl` shader (distinct from pass-through /
-/// FXAA handles — see the collision test below).
+/// 内嵌 `ao.wgsl` shader 的唯一 handle（与 pass-through /
+/// FXAA handle 区分——参见下方的碰撞测试）。
 pub const AO_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0xCE51_E2E2_A0A0_0016);
 
-/// Format of the AO intermediate buffer (single scalar AO replicated to RGBA).
+/// AO 中间缓冲的格式（单个标量 AO 复制到 RGBA）。
 const AO_TEXTURE_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// ─── 组件 ───────────────────────────────────────────────────────────────
 
-/// Marker component enabling cesiumrust SSAO on a camera entity.
+/// 在相机实体上启用 cesiumrust SSAO 的标记组件。
 ///
-/// Extracted to the render world via `ExtractComponentPlugin`. The [`AoNode`]
-/// early-returns when `enabled == false` (zero GPU cost). `enabled` is synced
-/// from `PostProcessConfig::ambient_occlusion_enabled` by `ao_system`
-/// (post_process.rs), mirroring `fxaa_system` → `CesiumFxaa`.
+/// 经 `ExtractComponentPlugin` 提取到 render world。当 `enabled == false` 时
+/// [`AoNode`] 提前 return（零 GPU 开销）。`enabled` 由 `ao_system`
+///（post_process.rs）从 `PostProcessConfig::ambient_occlusion_enabled` 同步，
+/// 对应 `fxaa_system` → `CesiumFxaa`。
 #[derive(Component, Clone, Debug, ExtractComponent)]
 pub struct CesiumAmbientOcclusion {
-    /// Master enable for the SSAO passes on this camera.
+    /// 该相机上 SSAO pass 的主开关。
     pub enabled: bool,
 }
 
@@ -90,7 +88,7 @@ impl Default for CesiumAmbientOcclusion {
     }
 }
 
-/// Per-view cached pipeline IDs (generate + blur/modulate) for the AO node.
+/// AO 节点的逐视图缓存 pipeline ID（生成 + 模糊/调制）。
 #[derive(Component)]
 pub struct CameraAoPipeline {
     pub generate_id: CachedRenderPipelineId,
@@ -99,23 +97,23 @@ pub struct CameraAoPipeline {
 
 // ─── Pipeline ────────────────────────────────────────────────────────────────
 
-/// Render-world resource: bind group layouts + samplers for the two AO passes.
+/// Render-world 资源：两个 AO pass 的 bind group 布局 + 采样器。
 ///
-/// Both passes share WGSL group(0). The `view` uniform (binding 3) is statically
-/// used by **both** entry points, so it must appear in **both** layouts (Ryan C2 —
-/// the blur layout previously omitted it, which made `create_render_pipeline`
-/// layout validation fail, the blur pipeline resolve to `None`, and the `AND`
-/// early-return in [`AoNode::run`] silently no-op the whole AO node — pixels then
-/// equalled gate OFF and `pixel_diff` reported a false green):
-/// - generate: bindings 0..=3 (depth, normal, point sampler, view uniform)
-/// - blur/modulate: bindings 3..=6 (view uniform, ao texture, colour texture, linear sampler)
+/// 两个 pass 共享 WGSL group(0)。`view` uniform（binding 3）被**两个**
+/// 入口点静态使用，所以它必须出现在**两个**布局中（Ryan C2 ——
+/// blur 布局之前省略了它，导致 `create_render_pipeline` 布局校验
+/// 失败、blur pipeline 解析为 `None`，而 [`AoNode::run`] 中的 `AND`
+/// 提前 return 静默地将整个 AO 节点变为 no-op —— 像素于是
+/// 等于 gate OFF，而 `pixel_diff` 报出一个假绿）：
+/// - generate：bindings 0..=3（深度、法线、point 采样器、view uniform）
+/// - blur/modulate：bindings 3..=6（view uniform、ao 纹理、颜色纹理、线性采样器）
 #[derive(Resource)]
 pub struct AoPipeline {
     pub generate_bind_group_layout: BindGroupLayout,
     pub blur_bind_group_layout: BindGroupLayout,
-    /// Non-filtering sampler for the depth + normal prepass textures.
+    /// depth + normal 前置 pass 纹理的非滤波采样器。
     pub point_sampler: GpuSampler,
-    /// Filtering sampler for the AO box blur + colour modulation.
+    /// AO 盒模糊 + 颜色调制的滤波采样器。
     pub linear_sampler: GpuSampler,
 }
 
@@ -123,7 +121,7 @@ impl FromWorld for AoPipeline {
     fn from_world(render_world: &mut World) -> Self {
         let render_device = render_world.resource::<RenderDevice>();
 
-        // Generate pass: depth (0), normal (1), point sampler (2), view uniform (3).
+        // 生成 pass：depth (0)、normal (1)、point sampler (2)、view uniform (3)。
         let generate_bind_group_layout = render_device.create_bind_group_layout(
             "cesium_ao_generate_bind_group_layout",
             &BindGroupLayoutEntries::sequential(
@@ -137,8 +135,8 @@ impl FromWorld for AoPipeline {
             ),
         );
 
-        // Blur/modulate pass: view uniform (3, shared with generate — Ryan C2),
-        // ao texture (4), colour texture (5), linear sampler (6).
+        // 模糊/调制 pass：view uniform（3，与 generate 共享 —— Ryan C2）、
+        // ao 纹理（4）、颜色纹理（5）、线性采样器（6）。
         let blur_bind_group_layout = render_device.create_bind_group_layout(
             "cesium_ao_blur_bind_group_layout",
             &BindGroupLayoutEntries::with_indices(
@@ -179,19 +177,17 @@ impl FromWorld for AoPipeline {
 
 // ─── ViewNode ────────────────────────────────────────────────────────────────
 
-/// SSAO `ViewNode`: hemisphere 16-sample generate pass → AO intermediate texture,
-/// then a 4×4 box-blur + modulate pass onto the scene colour target.
+/// SSAO `ViewNode`：半球 16 采样生成 pass → AO 中间纹理，
+/// 然后一个 4×4 盒模糊 + 调制 pass 作用于颜色目标。
 ///
-/// Caches the fullscreen AO intermediate texture **per view entity** (Ryan L3 — the
-/// previous single-slot cache thrashed and carried an implicit ordering dependency
-/// whenever more than one camera was active). Bind groups are rebuilt per frame
-/// (they depend on the per-frame prepass views + post-process source); per-frame
-/// bind-group caching is a known perf refinement deferred to the M11.2 xvfb e2e
-/// (see `docs/deferred.md`).
+/// **逐视图实体**缓存全屏 AO 中间纹理（Ryan L3 —— 之前的
+/// 单槽缓存在多于一个相机活动时会颠簸并带有一个隐式顺序依赖）。
+/// Bind group 每帧重建（它们依赖逐帧的 prepass views + post-process source）；
+/// 逐帧 bind-group 缓存是一个已知的性能优化，暂缓到 M11.2 xvfb e2e
+///（参见 `docs/deferred.md`）。
 #[derive(Default)]
 pub struct AoNode {
-    /// view entity → (width, height, texture, view); an entry is recreated when
-    /// that view's viewport size changes.
+    /// 视图实体 →（宽、高、纹理、视图）；当某个视图的视口尺寸变化时条目会重建。
     cached_ao_textures: Mutex<HashMap<Entity, (u32, u32, Texture, TextureView)>>,
 }
 
@@ -219,7 +215,7 @@ impl ViewNode for AoNode {
             return Ok(());
         }
 
-        // SSAO requires both depth + normal prepass inputs.
+        // SSAO 需要 depth + normal 两个 prepass 输入。
         let (Some(depth_view), Some(normal_view)) = (prepass.depth_view(), prepass.normal_view())
         else {
             return Ok(());
@@ -240,16 +236,15 @@ impl ViewNode for AoNode {
             return Ok(());
         };
 
-        // Clone the RenderDevice (Arc-backed, cheap) so it does not hold an
-        // immutable borrow of `render_context` across the later mutable
-        // `render_context.command_encoder()` calls.
+        // 克隆 RenderDevice（Arc 支撑，廉价），以免在后续可变的
+        // `render_context.command_encoder()` 调用间持有对 `render_context` 的
+        // 不可变借用。
         let render_device = render_context.render_device().clone();
 
-        // ── AO intermediate texture (viewport-sized, cached per view entity) ──
-        // Ryan L3: keyed by view entity so multiple active cameras never thrash a
-        // shared slot (the previous single-slot `Mutex<Option<..>>` also carried an
-        // implicit cross-view ordering dependency). An entry is recreated only when
-        // that view's viewport size changes.
+        // ── AO 中间纹理（视口尺寸，逐视图实体缓存）──
+        // Ryan L3：以视图实体为键，所以多个活动相机从不颠簸一个共享槽位
+        //（之前的单槽 `Mutex<Option<..>>` 也带有一个隐式的跨视图顺序
+        // 依赖）。仅当某个视图的视口尺寸变化时条目才重建。
         let width = prepass.size.width.max(1);
         let height = prepass.size.height.max(1);
         let mut cache = self.cached_ao_textures.lock().unwrap();
@@ -269,7 +264,7 @@ impl ViewNode for AoNode {
         }
         let ao_texture_view = &cache.get(&view_entity).unwrap().3;
 
-        // ── Pass 1: generate SSAO into the AO intermediate texture ──
+        // ── Pass 1：将 SSAO 生成进 AO 中间纹理 ──
         let generate_bind_group = render_device.create_bind_group(
             Some("cesium_ao_generate_bind_group"),
             &ao_pipeline.generate_bind_group_layout,
@@ -286,9 +281,9 @@ impl ViewNode for AoNode {
             color_attachments: &[Some(RenderPassColorAttachment {
                 view: ao_texture_view,
                 resolve_target: None,
-                // Fullscreen triangle covers every texel, so the clear value is
-                // always overwritten; `Operations::default()` (clear + store) is
-                // sufficient and matches the FXAA / pass-through nodes.
+                // 全屏三角形覆盖每个 texel，所以清除值总是被覆盖；
+                // `Operations::default()`（clear + store）已足够，并与 FXAA /
+                // pass-through 节点一致。
                 ops: Operations::default(),
             })],
             depth_stencil_attachment: None,
@@ -302,10 +297,10 @@ impl ViewNode for AoNode {
                 .begin_render_pass(&generate_pass);
             pass.set_pipeline(generate_pipeline);
             pass.set_bind_group(0, &generate_bind_group, &[view_uniform_offset.offset]);
-            pass.draw(0..3, 0..1); // fullscreen triangle
+            pass.draw(0..3, 0..1); // 全屏三角形
         }
 
-        // ── Pass 2: 4×4 box blur + modulate onto the colour target ──
+        // ── Pass 2：4×4 盒模糊 + 调制到颜色目标上 ──
         let post_process = target.post_process_write();
         let source = post_process.source;
         let destination = post_process.destination;
@@ -338,21 +333,21 @@ impl ViewNode for AoNode {
                 .command_encoder()
                 .begin_render_pass(&blur_pass);
             pass.set_pipeline(blur_pipeline);
-            // Ryan C2: the blur layout now binds the dynamic-offset view uniform
-            // (binding 3, shared with generate), so its offset must be supplied
-            // here — a `&[]` offset list would fail the dynamic-buffer validation.
+            // Ryan C2：blur 布局现在绑定带动态偏移的 view uniform
+            //（binding 3，与 generate 共享），所以必须在此提供它的偏移
+            // —— 一个 `&[]` 偏移列表会使动态缓冲校验失败。
             pass.set_bind_group(0, &blur_bind_group, &[view_uniform_offset.offset]);
-            pass.draw(0..3, 0..1); // fullscreen triangle
+            pass.draw(0..3, 0..1); // 全屏三角形
         }
 
         Ok(())
     }
 }
 
-// ─── Render systems ──────────────────────────────────────────────────────────
+// ─── 渲染系统 ──────────────────────────────────────────────────────────
 
-/// Prepares the two specialized AO render pipelines per enabled camera view.
-/// Runs in `Render`, `RenderSet::Prepare`.
+/// 为每个启用的相机视图准备两个特化的 AO render pipeline。
+/// 运行在 `Render`、`RenderSet::Prepare`。
 pub fn prepare_ao_pipelines(
     mut commands: Commands,
     pipeline_cache: Res<PipelineCache>,
@@ -364,7 +359,7 @@ pub fn prepare_ao_pipelines(
             continue;
         }
 
-        // Destination format matches the post-process target (HDR vs LDR).
+        // 目标格式与 post-process 目标匹配（HDR 还是 LDR）。
         let destination_format = if view.hdr {
             ViewTarget::TEXTURE_FORMAT_HDR
         } else {
@@ -420,29 +415,28 @@ pub fn prepare_ao_pipelines(
     }
 }
 
-// ─── Main-world systems ──────────────────────────────────────────────────────
+// ─── 主 world 系统 ──────────────────────────────────────────────────────
 
-/// Ensures every `Camera3d` carries the SSAO marker + the depth/normal prepass
-/// components it needs. **Adapter-layer** enablement of `DepthPrepass` +
-/// `NormalPrepass` (both previously zero-usage repo-wide) so the app-layer camera
-/// bundle (`orbit_camera.rs`) does not need to change (M5-E2 red line).
+/// 确保每个 `Camera3d` 携带 SSAO 标记 + 它所需的 depth/normal 前置 pass
+/// 组件。**适配层**启用 `DepthPrepass` + `NormalPrepass`
+///（两者先前全仓零使用），以便应用层相机
+/// bundle（`orbit_camera.rs`）无需改动（M5-E2 红线）。
 ///
-/// Runs in `Update`. When AO is disabled the prepass markers are removed so the
-/// extra geometry pass is not incurred — **except** where a co-located clipping /
-/// IBL effect still needs them (FIX-AO-PREPASS, see below). Only added to the
-/// schedule when the post-process gate is ON, so gate OFF ⇒ no prepass ⇒ v0
-/// baselines pixel-neutral.
+/// 运行在 `Update`。当 AO 禁用时，前置 pass 标记被移除，以免产生
+/// 额外的几何 pass —— **除了**同位的 clipping / IBL 效果仍需要它们的
+/// 情形（FIX-AO-PREPASS，见下）。仅在后处理门控为 ON 时才加入调度，
+/// 所以 gate OFF ⇒ 无前置 pass ⇒ v0
+/// baseline 像素中性。
 ///
-/// FIX-AO-PREPASS: `DepthPrepass` / `NormalPrepass` are **shared** with the
-/// clipping and IBL effects, whose own `setup_*_prepass` systems are insert-only
-/// (never remove) and run in the same `Update` with no cross-system ordering. The
-/// old blanket `remove` here therefore yanked a marker a clipping / IBL camera had
-/// just been given, with the outcome dependent on scheduler order (and
-/// `NormalPrepass` has no other inserter at all for an AO+clipping camera). The
-/// removal is now guarded by each camera's *persistent driver components* —
-/// `CesiumClippingPlanes` (wants `DepthPrepass`) and `CesiumIbl` (wants both) —
-/// so the decision never reads the transient marker itself and is order-independent.
-#[allow(clippy::type_complexity)] // Bevy system param: (Entity, Option<&C>, Option<&I>) filter
+/// FIX-AO-PREPASS：`DepthPrepass` / `NormalPrepass` 与 clipping、IBL 效果
+/// **共享**，它们各自的 `setup_*_prepass` 系统是只插入（从不移除），
+/// 并在同一个 `Update` 中无跨系统排序地运行。因此这里旧的无条件
+/// `remove` 会抓走 clipping / IBL 相机刚被赋予的标记，结果取决于调度器
+/// 顺序（而 AO+clipping 相机的 `NormalPrepass` 根本没有其他插入者）。
+/// 现在移除由每个相机的*持久驱动组件*守考——
+/// `CesiumClippingPlanes`（需要 `DepthPrepass`）与 `CesiumIbl`（需要两者）——
+/// 所以决策从不读取瞬态标记本身，与顺序无关。
+#[allow(clippy::type_complexity)] // Bevy 系统参数：(Entity, Option<&C>, Option<&I>) 过滤器
 pub fn setup_ao_prepass(
     mut commands: Commands,
     config: Res<PostProcessConfig>,
@@ -461,9 +455,9 @@ pub fn setup_ao_prepass(
         let enabled = match ao_markers.get(entity) {
             Ok(marker) => marker.enabled,
             Err(_) => {
-                // First sighting: seed the marker from the config so the AO sub-gate
-                // (Daniel M2 — `PostProcessConfig::ambient_occlusion_enabled`) decides
-                // whether AO is on at all; `ao_system` reconciles it every frame after.
+                // 首次目击：从配置种子化标记，以便 AO 子门控
+                //（Daniel M2 — `PostProcessConfig::ambient_occlusion_enabled`）决定
+                // AO 是否开启；`ao_system` 在此后每帧调和它。
                 ecmd.insert(CesiumAmbientOcclusion {
                     enabled: config.ambient_occlusion_enabled,
                 });
@@ -475,12 +469,12 @@ pub fn setup_ao_prepass(
             ecmd.insert(DepthPrepass);
             ecmd.insert(NormalPrepass);
         } else {
-            // FIX-AO-PREPASS: only drop a shared marker when *this* camera has no
-            // other active consumer of it. `NormalPrepass` is demanded by AO + IBL;
-            // `DepthPrepass` by AO + clipping + IBL. Presence of the driver component
-            // is the demand signal (a disabled-but-present effect is treated as a
-            // consumer, which is conservative: it can only avoid an over-eager
-            // removal, never break the other effect).
+            // FIX-AO-PREPASS：仅当*本*相机没有其他活动消费者时才 drop 一个共享标记。
+            // `NormalPrepass` 由 AO + IBL 需求；
+            // `DepthPrepass` 由 AO + clipping + IBL。驱动组件的存在
+            // 就是需求信号（一个禁用但存在的效果被视为
+            // 消费者，这是保守的：它只能避免过度热心的
+            // 移除，从不破坏另一个效果）。
             if ibl.is_none() {
                 ecmd.remove::<NormalPrepass>();
             }
@@ -513,8 +507,8 @@ mod ao_prepass_tests {
         app.world().get::<T>(e).is_some()
     }
 
-    /// FIX-AO-PREPASS: AO off with no other consumer ⇒ AO owns the markers and
-    /// removes both.
+    /// FIX-AO-PREPASS：AO 关且无其他消费者 ⇒ AO 拥有这些标记并
+    /// 将两者都移除。
     #[test]
     fn ao_off_yanks_prepass_when_no_other_consumer() {
         let mut app = app_with(false);
@@ -527,8 +521,8 @@ mod ao_prepass_tests {
         assert!(!has::<NormalPrepass>(&app, cam), "no consumer ⇒ normal removed");
     }
 
-    /// FIX-AO-PREPASS: AO off on a camera that also drives clipping / IBL must NOT
-    /// yank the shared markers those effects insert (and rely on).
+    /// FIX-AO-PREPASS：在一个同时驱动 clipping / IBL 的相机上关闭 AO 时，绝不可
+    /// 拽掉那些 effect 插入（并依赖）的共享标记。
     #[test]
     fn ao_off_preserves_shared_prepass_for_clipping_and_ibl() {
         let mut app = app_with(false);
@@ -551,15 +545,15 @@ mod ao_prepass_tests {
             ))
             .id();
         app.update();
-        // Clipping keeps DepthPrepass; NormalPrepass has no other consumer here → yanked.
+        // Clipping 保留 DepthPrepass；NormalPrepass 此处无其他消费者 → 被拽掉。
         assert!(has::<DepthPrepass>(&app, clip_cam), "clipping must retain depth prepass");
         assert!(!has::<NormalPrepass>(&app, clip_cam), "no ibl ⇒ normal prepass may be yanked");
-        // IBL demands both → neither is yanked.
+        // IBL 需要两者 → 都不会被拽掉。
         assert!(has::<DepthPrepass>(&app, ibl_cam), "ibl must retain depth prepass");
         assert!(has::<NormalPrepass>(&app, ibl_cam), "ibl must retain normal prepass");
     }
 
-    /// AO on ⇒ AO inserts both markers (unchanged happy path).
+    /// AO 开启 ⇒ AO 插入两个标记（不变的正常路径）。
     #[test]
     fn ao_on_inserts_depth_and_normal_prepass() {
         let mut app = app_with(true);
@@ -570,34 +564,34 @@ mod ao_prepass_tests {
     }
 }
 
-// ─── Registration ────────────────────────────────────────────────────────────
+// ─── 注册 ────────────────────────────────────────────────────────────
 
-/// Register the SSAO node into `RenderApp` (shader + extract + node + systems)
-/// and enable the depth/normal prepass on cameras in the main world.
+/// 将 SSAO 节点注册进 `RenderApp`（shader + extract + 节点 + 系统），
+/// 并在主 world 的相机上启用 depth/normal 前置 pass。
 ///
-/// Called from `register_render_graph` (graph.rs) when the post-process gate is
-/// ON. Registers the node **but does not create graph edges** — the unified
-/// linear chain in graph.rs owns them (no diamond in `Core3d`). Mirrors
-/// [`super::fxaa::register_fxaa_node`].
+/// 当后处理门控为 ON 时由 `register_render_graph`（graph.rs）调用。
+/// 注册节点**但从不创建图边** —— graph.rs 中的统一
+/// 线性链拥有这些边（`Core3d` 中无菱形）。对应
+/// [`super::fxaa::register_fxaa_node`]。
 #[deprecated = "DEV-029 / FIX-REG-FACADE: call `register_ao_node_main_world` from `Plugin::build` and `register_ao_node_render_world` from `Plugin::finish`; this facade runs the finish half against a possibly device-less render world."]
 pub fn register_ao_node(app: &mut App) {
     register_ao_node_main_world(app);
-    // Headless `MinimalPlugins` has no `RenderApp` — degrade gracefully.
+    // 无头的 `MinimalPlugins` 没有 `RenderApp` —— 优雅降级。
     if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
         register_ao_node_render_world(render_app);
     }
 }
 
-/// `Plugin::build`-time half of [`register_ao_node`]: everything that lives in
-/// the **main** world (WGSL shader asset + `ExtractComponentPlugin` + the
-/// `setup_ao_prepass` system that attaches `DepthPrepass`/`NormalPrepass`).
+/// [`register_ao_node`] 的 `Plugin::build` 时半边：所有住在**主** world 的东西
+///（WGSL shader 资源 + `ExtractComponentPlugin` + 附加 `DepthPrepass`/`NormalPrepass`
+/// 的 `setup_ao_prepass` 系统）。
 ///
-/// Split out by task #81 — see `docs/deviations.md#dev-029`. `AoPipeline`'s
-/// `FromWorld` reads `RenderDevice`, which Bevy only inserts into the render
-/// world in `RenderPlugin::finish`, so the render-world half below must run from
-/// a plugin's `finish`, never from its `build`.
+/// 由 task #81 拆分——参见 `docs/deviations.md#dev-029`。`AoPipeline` 的
+/// `FromWorld` 读取 `RenderDevice`，而 Bevy 仅在 `RenderPlugin::finish` 中把它插入
+/// render world，所以下方的 render-world 半边必须从插件的 `finish` 运行，
+/// 绝不从其 `build` 运行。
 pub fn register_ao_node_main_world(app: &mut App) {
-    // Register the AO WGSL shader (headless-safe via shader_registry).
+    // 注册 AO WGSL shader（经 shader_registry 无头安好）。
     crate::shader_registry::try_load_internal_shader(
         app,
         AO_SHADER_HANDLE,
@@ -605,20 +599,20 @@ pub fn register_ao_node_main_world(app: &mut App) {
         "shaders/ao.wgsl",
     );
 
-    // ExtractComponentPlugin: main → render world each frame (ExtractSchedule).
+    // ExtractComponentPlugin：每帧 主 → render world（ExtractSchedule）。
     app.add_plugins(ExtractComponentPlugin::<CesiumAmbientOcclusion>::default());
 
-    // Main-world: attach DepthPrepass + NormalPrepass to cameras (SSAO inputs).
-    // Added here (gate ON only) so the app-layer camera bundle stays untouched.
+    // 主 world：为相机附加 DepthPrepass + NormalPrepass（SSAO 输入）。
+    // 在此添加（仅门控 ON），使应用层相机 bundle 保持不变。
     app.add_systems(Update, setup_ao_prepass);
 }
 
-/// `Plugin::finish`-time half of [`register_ao_node`]: the render-world pipeline
-/// resources + the `Core3d` node.
+/// [`register_ao_node`] 的 `Plugin::finish` 时半边：render-world pipeline
+/// 资源 + `Core3d` 节点。
 pub fn register_ao_node_render_world(render_app: &mut bevy::app::SubApp) {
-    // FIX-REG-FACADE (DEV-029): degrade to a no-op when `RenderDevice` is absent
-    // (finish half reached from `build`, or a bare render world). See
-    // `crate::effects::render_world_missing_device`.
+    // FIX-REG-FACADE (DEV-029)：当 `RenderDevice` 缺失时降级为 no-op
+    //（finish 半边从 `build` 到达，或一个裸 render world）。参见
+    // `crate::effects::render_world_missing_device`。
     if crate::effects::render_world_missing_device(render_app) {
         return;
     }
@@ -630,10 +624,10 @@ pub fn register_ao_node_render_world(render_app: &mut bevy::app::SubApp) {
             Core3d,
             CesiumPostProcessLabel::AmbientOcclusion,
         );
-    // NOTE: edges are created by `register_render_graph` (unified linear chain).
+    // 注意：边由 `register_render_graph`（统一线性链）创建。
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────────────
+// ─── 测试 ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -646,30 +640,30 @@ mod tests {
 
     #[test]
     fn ao_shader_handle_unique() {
-        // No collision with pass-through / FXAA handles.
+        // 与 pass-through / FXAA handle 无碰撞。
         assert_ne!(AO_SHADER_HANDLE, super::super::graph::PASS_THROUGH_SHADER_HANDLE);
         assert_ne!(AO_SHADER_HANDLE, super::super::fxaa::FXAA_SHADER_HANDLE);
     }
 
     #[test]
     fn ao_headless_graceful() {
-        // No RenderApp (headless) → register_ao_node must not panic.
+        // 无 RenderApp（无头）→ register_ao_node 绝不可 panic。
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         #[allow(deprecated)]
         register_ao_node(&mut app);
     }
 
-    /// Adapter-layer prepass enablement: a `Camera3d` gains the SSAO marker +
-    /// `DepthPrepass` + `NormalPrepass` (the previously zero-usage inputs), and
-    /// loses the prepass markers when AO is disabled. Headless-testable because
-    /// it is a pure main-world ECS system — no GPU / render graph required.
+    /// 适配层前置 pass 启用：一个 `Camera3d` 获得 SSAO 标记 +
+    /// `DepthPrepass` + `NormalPrepass`（先前零使用的输入），并在 AO 禁用时
+    /// 失去这些前置 pass 标记。因它是一个纯主 world ECS 系统而无头可测——
+    /// 无需 GPU / render graph。
     #[test]
     fn setup_ao_prepass_attaches_and_removes_prepass() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
-        // AO sub-gate ON (Daniel M2) — `setup_ao_prepass` now seeds the marker from
-        // the config, so the resource must exist and enable AO for this test.
+        // AO 子门控 ON（Daniel M2）—— `setup_ao_prepass` 现在从 config 种下标记，
+        // 所以对本测试而言该资源必须存在并启用 AO。
         app.insert_resource(PostProcessConfig {
             ambient_occlusion_enabled: true,
             ..Default::default()
@@ -684,7 +678,7 @@ mod tests {
         assert!(app.world().get::<DepthPrepass>(cam).is_some());
         assert!(app.world().get::<NormalPrepass>(cam).is_some());
 
-        // Disable AO (mirrors ao_system syncing config=false) → prepass removed.
+        // 禁用 AO（对应 ao_system 同步 config=false）→ 前置 pass 移除。
         app.world_mut()
             .get_mut::<CesiumAmbientOcclusion>(cam)
             .unwrap()
@@ -694,9 +688,9 @@ mod tests {
         assert!(app.world().get::<NormalPrepass>(cam).is_none());
     }
 
-    /// Daniel M2: with the AO sub-gate OFF (config default), the first sighting
-    /// seeds the marker **disabled** and attaches no prepass — so gate OFF incurs
-    /// zero extra geometry passes and the v0 baselines stay pixel-neutral.
+    /// Daniel M2：当 AO 子门控 OFF（config 默认）时，首次目击将标记
+    /// 种为**禁用**且不附加任何前置 pass——所以门控 OFF 不产生
+    /// 任何额外几何 pass，v0 基线保持像素中性。
     #[test]
     fn setup_ao_prepass_off_seeds_disabled_no_prepass() {
         let mut app = App::new();
@@ -714,15 +708,15 @@ mod tests {
         assert!(app.world().get::<NormalPrepass>(cam).is_none());
     }
 
-    // ─── Ryan C1 defence line: headless naga parse + validate + layout parity ──
+    // ─── Ryan C1 防线：无头 naga 解析 + 校验 + 布局一致性 ──
 
-    /// naga has no preprocessor, so the two `#import`s in `ao.wgsl` are replaced by
-    /// struct stubs declaring exactly the fields the shader reads:
-    /// `FullscreenVertexOutput.{position, uv}` and
-    /// `View.{view_from_clip, view_from_world, clip_from_view, viewport}`. The
-    /// `view` **binding** itself is declared by the real shader text (group 0,
-    /// binding 3), so it is deliberately not stubbed here. Everything else is the
-    /// actual shader source, so this validates the real SSAO code.
+    /// naga 没有预处理器，所以 `ao.wgsl` 中的两个 `#import` 被替换为
+    /// 精确声明 shader 所读取字段的 struct stub：
+    /// `FullscreenVertexOutput.{position, uv}` 和
+    /// `View.{view_from_clip, view_from_world, clip_from_view, viewport}`。
+    /// `view` **binding** 本身由真实 shader 文本声明（group 0,
+    /// binding 3），所以此处刻意不为其提供 stub。其余全是
+    /// 实际 shader 源码，因此这校验了真实的 SSAO 代码。
     const AO_WGSL_IMPORT_STUBS: &str = "\
 struct FullscreenVertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -749,10 +743,10 @@ struct View {
         source
     }
 
-    /// The strongest headless evidence that the SSAO shader is real: it is parsed
-    /// and type-checked by **naga**, the same WGSL front end `bevy_render` compiles
-    /// it with on the GPU path. A literal device readback still needs xvfb
-    /// (`.github/workflows/cesiumrust-e2e.yml`, M11.2).
+    /// SSAO shader 为真的最强无头证据：它由 **naga** 解析并做类型检查，
+    /// 即 `bevy_render` 在 GPU 路径上编译它所用的同一个 WGSL 前端。
+    /// 字面意义的设备回读仍需 xvfb
+    ///（`.github/workflows/cesiumrust-e2e.yml`，M11.2）。
     #[test]
     fn ao_wgsl_parses_and_type_checks_under_naga() {
         let source = ao_stubbed_wgsl();
@@ -782,10 +776,10 @@ struct View {
         );
     }
 
-    /// Walk an entry point's call graph and collect every `(group, binding)` it
-    /// statically references — `GlobalVariable` expressions, recursing through
-    /// local-function `CallResult` expressions (e.g. `view` is only touched inside
-    /// `reconstruct_view_position` / `load_view_normal`).
+    /// 遍历一个入口点的调用图，收集它静态引用的每个 `(group, binding)`
+    /// —— `GlobalVariable` 表达式，并递归穿过
+    /// 局部函数的 `CallResult` 表达式（例如 `view` 仅在
+    /// `reconstruct_view_position` / `load_view_normal` 内部被触碰）。
     fn entry_used_bindings(
         module: &naga::Module,
         entry: &naga::EntryPoint,
@@ -813,12 +807,11 @@ struct View {
         out
     }
 
-    /// Ryan C1 defence line (catches the **C2** class of bug at test time): every
-    /// binding an entry point statically uses must be present in the matching Rust
-    /// `BindGroupLayout`. The blur entry uses the shared `view` uniform (group 0,
-    /// binding 3); were the Rust blur layout to omit it again, `create_render_pipeline`
-    /// would fail, the blur pipeline would resolve to `None`, and the whole AO node
-    /// would silently no-op — a false green in `pixel_diff` (gate-OFF-equal pixels).
+    /// Ryan C1 防线（在测试时捕获 **C2** 类 bug）：入口点静态使用的每个
+    /// binding 都必须出现在对应的 Rust `BindGroupLayout` 中。blur 入口使用共享的
+    /// `view` uniform（group 0, binding 3）；倘若 Rust blur 布局再次省略它，
+    /// `create_render_pipeline` 会失败，blur pipeline 会解析为 `None`，整个 AO 节点
+    /// 会静默 no-op —— 在 `pixel_diff` 中报出假绿（与 gate-OFF 相等的像素）。
     #[test]
     fn ao_wgsl_entry_bindings_are_covered_by_the_rust_layouts() {
         let source = ao_stubbed_wgsl();
@@ -826,7 +819,7 @@ struct View {
             panic!("ao.wgsl does not parse:\n{}", error.emit_to_string(&source))
         });
 
-        // Mirror of `AoPipeline::from_world` (group 0 binding indices).
+        // `AoPipeline::from_world` 的镜像（group 0 binding 索引）。
         let generate_layout: std::collections::BTreeSet<(u32, u32)> =
             [(0, 0), (0, 1), (0, 2), (0, 3)].into_iter().collect();
         let blur_layout: std::collections::BTreeSet<(u32, u32)> =

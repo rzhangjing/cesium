@@ -1,5 +1,5 @@
-//! Celestial + Atmospheric Scattering specs
-//! Ported from CesiumJS Core/Simon1994PlanetaryPositionsSpec.js + Scene/SkyAtmosphereSpec.js
+//! 天体 + 大气散射规格
+//! 移植自 CesiumJS Core/Simon1994PlanetaryPositionsSpec.js + Scene/SkyAtmosphereSpec.js
 
 use cesium_atmosphere::{
     atmospheric_density, compute_gmst, compute_horizon_glow, compute_moon_direction_eci,
@@ -10,13 +10,13 @@ use cesium_atmosphere::{
 use glam::DVec3;
 use std::f64::consts::PI;
 
-// ==================== Celestial: Sun ====================
+// ==================== 天体：太阳 ====================
 
 #[test]
 fn sun_position_at_j2000_approximately_1au() {
     let pos = compute_sun_position_eci(J2000_EPOCH);
     let dist = pos.length();
-    // Within 2% of 1 AU
+    // 在 1 AU 的 2% 以内
     assert!((dist - AU_IN_METERS).abs() / AU_IN_METERS < 0.02);
 }
 
@@ -36,19 +36,19 @@ fn sun_position_ecef_same_magnitude_as_eci() {
 #[test]
 fn sun_position_varies_with_date() {
     let pos1 = compute_sun_position_eci(J2000_EPOCH);
-    let pos2 = compute_sun_position_eci(J2000_EPOCH + 182.5); // ~6 months later
-    // Direction should be significantly different
+    let pos2 = compute_sun_position_eci(J2000_EPOCH + 182.5); // 约 6 个月后
+    // Direction 应显著不同
     let dot = pos1.normalize().dot(pos2.normalize());
-    assert!(dot < 0.5); // Not the same direction
+    assert!(dot < 0.5); // 并非同一方向
 }
 
-// ==================== Celestial: Moon ====================
+// ==================== 天体：月球 ====================
 
 #[test]
 fn moon_position_distance_range() {
     let pos = compute_moon_position_eci(J2000_EPOCH);
     let dist_km = pos.length() / 1000.0;
-    // Moon: 356,000 - 407,000 km
+    // 月球：356,000 - 407,000 km
     assert!(dist_km > 350_000.0);
     assert!(dist_km < 410_000.0);
 }
@@ -66,7 +66,7 @@ fn moon_position_ecef_preserves_distance() {
     assert!((eci.length() - ecef.length()).abs() / eci.length() < 1e-10);
 }
 
-// ==================== Celestial: GMST + ECI→ECEF ====================
+// ==================== 天体：GMST + ECI→ECEF ====================
 
 #[test]
 fn gmst_in_valid_range() {
@@ -78,9 +78,9 @@ fn gmst_in_valid_range() {
 #[test]
 fn gmst_advances_with_time() {
     let g1 = compute_gmst(J2000_EPOCH);
-    let g2 = compute_gmst(J2000_EPOCH + 1.0); // +1 day
-    // Earth rotates ~360.98°/day, so GMST should advance
-    assert!((g2 - g1).abs() > 0.01); // At least some change
+    let g2 = compute_gmst(J2000_EPOCH + 1.0); // +1 天
+    // 地球每天自转约 360.98°，因此 GMST 应前进
+    assert!((g2 - g1).abs() > 0.01); // 至少有一些变化
 }
 
 #[test]
@@ -92,17 +92,17 @@ fn eci_to_ecef_preserves_magnitude() {
 
 #[test]
 fn eci_to_ecef_z_unchanged() {
-    // GMST rotation is around Z axis, so Z component should be preserved
+    // GMST 旋转绕 Z 轴，因此 Z 分量应保持不变
     let eci = DVec3::new(1.0e11, 2.0e10, 5.0e10);
     let ecef = eci_to_ecef(eci, J2000_EPOCH);
-    assert!((eci.z - ecef.z).abs() < 1.0); // Z unchanged
+    assert!((eci.z - ecef.z).abs() < 1.0); // Z 不变
 }
 
-// ==================== Scattering: Phase functions ====================
+// ==================== 散射：相函数 ====================
 
 #[test]
 fn rayleigh_phase_symmetry() {
-    // Rayleigh phase is symmetric: P(cos) = P(-cos)
+    // Rayleigh 相位对称：P(cos) = P(-cos)
     let forward = rayleigh_phase(1.0);
     let backward = rayleigh_phase(-1.0);
     assert!((forward - backward).abs() < 1e-15);
@@ -110,7 +110,7 @@ fn rayleigh_phase_symmetry() {
 
 #[test]
 fn rayleigh_phase_perpendicular() {
-    // At 90 degrees (cos_theta=0): P = 3/(16*pi)
+    // 在 90 度（cos_theta=0）：P = 3/(16*pi)
     let p = rayleigh_phase(0.0);
     let expected = 3.0 / (16.0 * PI);
     assert!((p - expected).abs() < 1e-15);
@@ -118,7 +118,7 @@ fn rayleigh_phase_perpendicular() {
 
 #[test]
 fn mie_phase_forward_scattering() {
-    // With positive g, forward scattering (cos_theta=1) should be stronger
+    // g 为正时，前向散射（cos_theta=1）应更强
     let forward = mie_phase(1.0, 0.758);
     let backward = mie_phase(-1.0, 0.758);
     assert!(forward > backward);
@@ -126,17 +126,17 @@ fn mie_phase_forward_scattering() {
 
 #[test]
 fn mie_phase_g_zero_still_varies() {
-    // g=0 removes asymmetry but formula still has (1+cos²θ) term
+    // g=0 消除不对称，但公式仍含 (1+cos²θ) 项
     let forward = mie_phase(1.0, 0.0);
     let perp = mie_phase(0.0, 0.0);
-    // forward (cos²=1) → (1+1)=2, perp (cos²=0) → (1+0)=1
+    // 前向 (cos²=1) → (1+1)=2，垂直 (cos²=0) → (1+0)=1
     assert!(forward > perp);
-    // Symmetric: forward == backward
+    // 对称：前向 == 后向
     let backward = mie_phase(-1.0, 0.0);
     assert!((forward - backward).abs() < 1e-15);
 }
 
-// ==================== Scattering: Density ====================
+// ==================== 散射：密度 ====================
 
 #[test]
 fn atmospheric_density_at_surface_is_one() {
@@ -151,17 +151,17 @@ fn atmospheric_density_decays_with_height() {
     let d16k = atmospheric_density(16000.0, 8000.0);
     assert!(d0 > d8k);
     assert!(d8k > d16k);
-    // At one scale height: e^-1
+    // 在一个尺度高度处：e^-1
     assert!((d8k - (-1.0_f64).exp()).abs() < 1e-10);
 }
 
-// ==================== Scattering: Sky color ====================
+// ==================== 散射：天空颜色 ====================
 
 #[test]
 fn sky_color_nonzero_toward_sun() {
     let params = AtmosphereParameters::default();
     let view = DVec3::new(1.0, 0.0, 0.0);
-    let sun = DVec3::new(1.0, 0.0, 0.0); // Looking at sun
+    let sun = DVec3::new(1.0, 0.0, 0.0); // 朝向太阳看
     let color = compute_sky_color(view, sun, 0.0, &params);
     assert!(color[0] > 0.0);
     assert!(color[1] > 0.0);
@@ -174,25 +174,25 @@ fn sky_color_blue_dominant_at_surface() {
     let view = DVec3::new(0.0, 0.0, 1.0);
     let sun = DVec3::new(1.0, 0.0, 0.0);
     let color = compute_sky_color(view, sun, 0.0, &params);
-    // Blue (index 2) should be strongest due to Rayleigh
-    assert!(color[2] > color[0]); // Blue > Red
+    // 由于 Rayleigh，蓝色（索引 2）应最强
+    assert!(color[2] > color[0]); // 蓝 > 红
 }
 
-// ==================== Horizon glow ====================
+// ==================== 地平线辉光 ====================
 
 #[test]
 fn horizon_glow_sunset_reddish() {
-    // Sun slightly below horizon (elevation < 0)
+    // 太阳略低于地平线（elevation < 0）
     let glow = compute_horizon_glow(-0.1);
-    // Should be warm colors (R > B)
+    // 应为暖色调（R > B）
     assert!(glow[0] > glow[2]);
 }
 
 #[test]
 fn horizon_glow_high_sun_bluish() {
-    // Sun high (elevation = pi/2)
+    // 太阳高悬（elevation = pi/2）
     let glow = compute_horizon_glow(PI / 2.0);
-    // Should be blue-dominant
+    // 应偏蓝
     assert!(glow[2] > glow[0]);
 }
 
@@ -201,19 +201,19 @@ fn horizon_glow_high_sun_bluish() {
 #[test]
 fn lighting_config_sun_elevation() {
     let mut config = LightingConfig::default();
-    config.sun_direction = DVec3::new(0.0, 0.0, 1.0); // Sun directly overhead
+    config.sun_direction = DVec3::new(0.0, 0.0, 1.0); // 太阳位于正上方
     let surface_normal = DVec3::new(0.0, 0.0, 1.0);
     let elevation = config.sun_elevation_at(surface_normal);
-    // Sun overhead → elevation = pi/2
+    // 太阳在头顶 → elevation = pi/2
     assert!((elevation - PI / 2.0).abs() < 1e-10);
 }
 
 #[test]
 fn lighting_config_sun_at_horizon() {
     let mut config = LightingConfig::default();
-    config.sun_direction = DVec3::new(1.0, 0.0, 0.0); // Sun on horizon
+    config.sun_direction = DVec3::new(1.0, 0.0, 0.0); // 太阳在地平线
     let surface_normal = DVec3::new(0.0, 0.0, 1.0);
     let elevation = config.sun_elevation_at(surface_normal);
-    // Sun perpendicular to normal → elevation = 0
+    // 太阳垂直于法线 → elevation = 0
     assert!((elevation).abs() < 1e-10);
 }

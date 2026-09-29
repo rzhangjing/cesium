@@ -1,17 +1,15 @@
-//! Fabric procedural material adapter (bevy-render).
+//! Fabric 程序化材质适配器（bevy-render）。
 //!
-//! Bridges the domain [`cesium_material::Material`] (a Fabric material:
-//! assembled GLSL source + uniform values) to a native Bevy/WGSL procedural
-//! material so it can be rendered without a runtime GLSL→WGSL transpiler.
+//! 将领域 [`cesium_material::Material`]（一个 Fabric 材质：已组装的 GLSL 源 +
+//! uniform 值）桥接为原生的 Bevy/WGSL 程序化材质，使其无需运行时 GLSL→WGSL
+//! 转译器即可渲染。
 //!
-//! Maps to CesiumJS `Scene/Material.js` rendering path: the domain layer does
-//! the exact textual assembly CesiumJS performs, and this adapter provides the
-//! GPU-side evaluation of the same built-in procedural patterns (see
-//! `shaders/fabric_material.wgsl`, a faithful port of
-//! `Source/Shaders/Materials/*.glsl`).
+//! 对应 CesiumJS `Scene/Material.js` 渲染路径：领域层执行 CesiumJS 所做的确切
+//! 文本组装，而本适配器提供对同一批内置程序化图案的 GPU 侧求值（见
+//! `shaders/fabric_material.wgsl`，它是 `Source/Shaders/Materials/*.glsl` 的一次忠实移植）。
 //!
-//! Covering all 21 CesiumJS built-in procedural material types:
-//! Color(0)..Fade(6) and PolylineArrow(7)..WaterMask(20).
+//! 覆盖全部 21 种 CesiumJS 内置程序化材质类型：
+//! Color(0)..Fade(6) 与 PolylineArrow(7)..WaterMask(20)。
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -20,67 +18,65 @@ use cesium_material::{Material as DomainMaterial, UniformValue};
 use cesium_shadow::{OceanConfig, OceanSurface};
 use std::collections::BTreeMap;
 
-/// Strong handle to the embedded Fabric material WGSL shader.
+/// 指向嵌入的 Fabric 材质 WGSL shader 的强 handle。
 ///
-/// The shader is compiled into the crate via [`load_internal_asset!`] so the
-/// adapter works without an external `assets/` directory (the application
-/// crate does not need to copy the `.wgsl` file).
+/// 该 shader 通过 [`load_internal_asset!`] 编译进 crate，因此适配器无需外部
+/// `assets/` 目录即可工作（应用 crate 无需复制 `.wgsl` 文件）。
 pub const FABRIC_MATERIAL_SHADER_HANDLE: Handle<Shader> =
     Handle::weak_from_u128(0x4641_4252_4943_4D41_5445_5249_414C);
 
-/// The procedural pattern selector. Values match the `kind` switch in
-/// `shaders/fabric_material.wgsl`.
+/// 程序化图案选择器。取值与 `shaders/fabric_material.wgsl` 中的 `kind` switch 相匹配。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(u32)]
 pub enum FabricKind {
-    /// Solid colour (`Color` material).
+    /// 纯色（`Color` 材质）。
     #[default]
     Color = 0,
-    /// Tiled image (`Image` material).
+    /// 平铺图像（`Image` 材质）。
     Image = 1,
-    /// Checkerboard (`Checkerboard` material).
+    /// 棋盘格（`Checkerboard` 材质）。
     Checkerboard = 2,
-    /// Stripes (`Stripe` material).
+    /// 条纹（`Stripe` 材质）。
     Stripe = 3,
-    /// Grid lines (`Grid` material).
+    /// 网格线（`Grid` 材质）。
     Grid = 4,
-    /// Dots (`Dot` material).
+    /// 圆点（`Dot` 材质）。
     Dot = 5,
-    /// Distance fade (`Fade` material).
+    /// 距离淡入淡出（`Fade` 材质）。
     Fade = 6,
-    /// Arrow head on polyline (`PolylineArrow` material).
+    /// 折线上的箭头（`PolylineArrow` 材质）。
     PolylineArrow = 7,
-    /// Dashed polyline (`PolylineDash` material).
+    /// 虚线折线（`PolylineDash` 材质）。
     PolylineDash = 8,
-    /// Glowing polyline (`PolylineGlow` material).
+    /// 发光折线（`PolylineGlow` 材质）。
     PolylineGlow = 9,
-    /// Outlined polyline (`PolylineOutline` material).
+    /// 描边折线（`PolylineOutline` 材质）。
     PolylineOutline = 10,
-    /// Contour lines by elevation (`ElevationContour` material).
+    /// 按高程的等高线（`ElevationContour` 材质）。
     ElevationContour = 11,
-    /// Color ramp by elevation (`ElevationRamp` material).
+    /// 按高程的颜色渐变（`ElevationRamp` 材质）。
     ElevationRamp = 12,
-    /// Color ramp by slope aspect (`AspectRamp` material).
+    /// 按坡向的颜色渐变（`AspectRamp` 材质）。
     AspectRamp = 13,
-    /// Color ramp by slope steepness (`SlopeRamp` material).
+    /// 按坡度的颜色渐变（`SlopeRamp` 材质）。
     SlopeRamp = 14,
-    /// Normal mapping (`NormalMap` material).
+    /// 法线贴图（`NormalMap` 材质）。
     NormalMap = 15,
-    /// Bump mapping (`BumpMap` material).
+    /// 凹凸贴图（`BumpMap` 材质）。
     BumpMap = 16,
-    /// Animated water surface (`Water` material).
+    /// 动画水面（`Water` 材质）。
     Water = 17,
-    /// Rim lighting effect (`RimLighting` material).
+    /// 边缘光效果（`RimLighting` 材质）。
     RimLighting = 18,
-    /// Discrete elevation bands (`ElevationBand` material).
+    /// 离散高程带（`ElevationBand` 材质）。
     ElevationBand = 19,
-    /// Water/land mask colouring (`WaterMask` material).
+    /// 水陆掩膜着色（`WaterMask` 材质）。
     WaterMask = 20,
 }
 
 impl FabricKind {
-    /// Maps a CesiumJS built-in material type name to a [`FabricKind`].
-    /// Unknown / custom types fall back to [`FabricKind::Color`].
+    /// 将 CesiumJS 内置材质类型名映射为一个 [`FabricKind`]。
+    /// 未知 / 自定义类型回退到 [`FabricKind::Color`]。
     pub fn from_type_name(type_name: &str) -> Self {
         match type_name {
             "Color" => FabricKind::Color,
@@ -109,36 +105,35 @@ impl FabricKind {
     }
 }
 
-// The `ShaderType` derive (encase 0.10) emits, for every field, a
-// `const _: fn() = || { fn check() { .. } }` compile-time trait-bound
-// assertion. The inner `fn check` is intentionally never *called* (it only
-// forces the field type's bounds to be checked), so Rust 1.95+'s `dead_code`
-// lint reports it — a false positive in third-party generated code. Isolating
-// the derive in a submodule with a tightly-scoped `#![allow(dead_code)]`
-// silences it without disabling the lint for the rest of this file.
+// `ShaderType` derive（encase 0.10）会为每个字段生成一个
+// `const _: fn() = || { fn check() { .. } }` 编译期 trait-bound 断言。内部的
+// `fn check` 有意从不被*调用*（它只是强制检查字段类型的 bound），因此 Rust 1.95+
+// 的 `dead_code` lint 会报告它 —— 这是第三方生成代码中的误报。将该 derive 隔离到
+// 一个带窄范围 `#![allow(dead_code)]` 的子模块中，即可在不禁用本文件其余部分该
+// lint 的前提下消除它。
 mod fabric_params {
     #![allow(dead_code)]
     use super::*;
 
-    /// GPU uniform block for [`FabricMaterial`](super::FabricMaterial).
+    /// 面向 [`FabricMaterial`](super::FabricMaterial) 的 GPU uniform 块。
     ///
-    /// Fields are packed from the domain material's uniform map. The layout
-    /// must match the `FabricParams` struct in `shaders/fabric_material.wgsl`.
+    /// 字段从领域材质的 uniform map 打包而来。其布局必须与
+    /// `shaders/fabric_material.wgsl` 中的 `FabricParams` 结构相匹配。
     #[derive(ShaderType, Debug, Clone)]
     pub struct FabricParams {
-        /// [`FabricKind`] discriminant.
+        /// [`FabricKind`] 判别值。
         pub kind: u32,
-        /// Stripe `horizontal` flag (0/1).
+        /// Stripe 的 `horizontal` 标志 (0/1)。
         pub horizontal: u32,
-        /// Fade `repeat` flag (0/1).
+        /// Fade 的 `repeat` 标志 (0/1)。
         pub repeat_flag: u32,
-        /// Grid `czm_pixelRatio` (integer, typically 1).
+        /// Grid 的 `czm_pixelRatio`（整数，通常为 1）。
         pub pixel_ratio: u32,
-        /// Primary colour (light/even/color/fadeIn/waterColor/baseColor).
+        /// 主色（light/even/color/fadeIn/waterColor/baseColor）。
         pub color_a: Vec4,
-        /// Secondary colour (dark/odd/fadeOut/outlineColor/rimColor/landColor/gapColor).
+        /// 次色（dark/odd/fadeOut/outlineColor/rimColor/landColor/gapColor）。
         pub color_b: Vec4,
-        /// Image tint colour.
+        /// 图像着色颜色。
         pub color_c: Vec4,
         /// x=repeat.x, y=repeat.y, z=stripe offset, w=fade maximumDistance.
         pub repeat_offset: Vec4,
@@ -154,10 +149,10 @@ mod fabric_params {
         pub extra_b: Vec4,
         /// x=minHeight(ramp/band), y=maxHeight(ramp/band), z=frameNumber(water), w=animationSpeed.
         pub extra_c: Vec4,
-        /// M5-D Water (Water.glsl): x=frequency, y=amplitude, z=specularIntensity,
-        /// w=fadeFactor. MUST stay the last field so every pre-existing uniform
-        /// offset (kind..extra_c) is unchanged — a mid-struct insert would shift
-        /// the encase layout and corrupt all 21 cases (WGSL/Rust must match).
+        /// M5-D Water (Water.glsl)：x=frequency, y=amplitude, z=specularIntensity,
+        /// w=fadeFactor。必须保持为最后一个字段，以使每个既有 uniform 偏移
+        /// （kind..extra_c）不变 —— 结构体中间的插入会移动 encase 布局并损坏
+        /// 全部 21 种情形（WGSL/Rust 必须匹配）。
         pub water_a: Vec4,
     }
 
@@ -178,7 +173,7 @@ mod fabric_params {
                 extra_a: Vec4::new(1.0, 0.0, 0.3, 16.0),
                 extra_b: Vec4::new(1000.0, 2.0, 0.5, 255.0),
                 extra_c: Vec4::new(0.0, 1000.0, 0.0, 0.5),
-                // Water.glsl defaults mirror domain/material cache.rs:
+                // Water.glsl 的默认值镜像领域 material/cache.rs：
                 // frequency=10, amplitude=1, specularIntensity=0.5, fadeFactor=1.
                 water_a: Vec4::new(10.0, 1.0, 0.5, 1.0),
             }
@@ -187,30 +182,30 @@ mod fabric_params {
 }
 pub use fabric_params::FabricParams;
 
-/// A Bevy material that renders a CesiumJS Fabric procedural pattern.
+/// 一个渲染 CesiumJS Fabric 程序化图案的 Bevy 材质。
 #[derive(AsBindGroup, Asset, TypePath, Debug, Clone)]
 pub struct FabricMaterial {
-    /// Packed uniform block.
+    /// 打包的 uniform 块。
     #[uniform(0)]
     pub params: FabricParams,
-    /// Texture used by `Sampler2D` uniforms (e.g. the `Image` material).
+    /// 由 `Sampler2D` uniform 使用的纹理（例如 `Image` 材质）。
     #[texture(1)]
     #[sampler(2)]
     pub image: Handle<Image>,
-    /// M5-D Water `normalMap` (Water.glsl). LINEAR tangent-space data → the
-    /// bound [`Image`] MUST use `TextureFormat::Rgba8Unorm` (never
-    /// `Rgba8UnormSrgb`, which would double-encode the normals). Non-water kinds
-    /// never sample this binding; it falls back to `image`.
+    /// M5-D Water `normalMap`（Water.glsl）。LINEAR 切线空间数据 → 所绑定的
+    /// [`Image`] 必须使用 `TextureFormat::Rgba8Unorm`（绝不用
+    /// `Rgba8UnormSrgb`，那会对法线二次编码）。非 water 类型从不采样此绑定；
+    /// 它回退到 `image`。
     #[texture(3)]
     #[sampler(4)]
     pub normal_map: Handle<Image>,
-    /// M5-D Water `specularMap` (Water.glsl). LINEAR mask data → same
-    /// `Rgba8Unorm` rule as `normal_map`. Sampled as `.r` by case 17u.
+    /// M5-D Water `specularMap`（Water.glsl）。LINEAR 掩膜数据 → 与 `normal_map`
+    /// 相同的 `Rgba8Unorm` 规则。由 case 17u 以 `.r` 采样。
     #[texture(5)]
     #[sampler(6)]
     pub specular_map: Handle<Image>,
-    /// Whether the material is translucent (drives [`AlphaMode`]).
-    /// Mirrors `Material.isTranslucent()` from the domain layer.
+    /// 材质是否半透明（驱动 [`AlphaMode`]）。
+    /// 镜像领域层的 `Material.isTranslucent()`。
     pub translucent: bool,
 }
 
@@ -229,7 +224,7 @@ impl Material for FabricMaterial {
 }
 
 // ---------------------------------------------------------------------------
-// Uniform packing helpers
+// Uniform 打包辅助函数
 // ---------------------------------------------------------------------------
 
 fn vec4_of(v: &UniformValue) -> Option<[f32; 4]> {
@@ -277,15 +272,14 @@ fn get_bool(u: &BTreeMap<String, UniformValue>, name: &str, default: bool) -> bo
     u.get(name).and_then(bool_of).unwrap_or(default)
 }
 
-/// Builds a renderable [`FabricMaterial`] from a domain [`DomainMaterial`].
+/// 从领域 [`DomainMaterial`] 构建一个可渲染的 [`FabricMaterial`]。
 ///
-/// The `image` handle supplies any `Sampler2D` uniform (CesiumJS's
-/// `czm_defaultImage`) and also backs the Water `normalMap` / `specularMap`
-/// bindings as a fallback. Translucency is taken from the domain material's
-/// `is_translucent()` so the alpha mode matches CesiumJS behaviour.
+/// `image` handle 为任意 `Sampler2D` uniform（CesiumJS 的 `czm_defaultImage`）
+/// 提供供给，并作为回退支撑 Water 的 `normalMap` / `specularMap` 绑定。半透明度
+/// 取自领域材质的 `is_translucent()`，以使 alpha mode 匹配 CesiumJS 行为。
 ///
-/// For Water with real procedurally-generated maps use
-/// [`fabric_material_from_domain_with_maps`] or [`water_material_from_preset`].
+/// 对于带真实程序化生成贴图的 Water，请使用
+/// [`fabric_material_from_domain_with_maps`] 或 [`water_material_from_preset`]。
 pub fn fabric_material_from_domain(
     domain_material: &DomainMaterial,
     image: Handle<Image>,
@@ -293,9 +287,9 @@ pub fn fabric_material_from_domain(
     fabric_material_from_domain_with_maps(domain_material, image.clone(), image.clone(), image)
 }
 
-/// Like [`fabric_material_from_domain`] but binds explicit Water `normalMap` /
-/// `specularMap` handles (M5-D). Both MUST be linear (`Rgba8Unorm`) images —
-/// see the sRGB red-line. Non-water kinds ignore these bindings.
+/// 与 [`fabric_material_from_domain`] 类似，但绑定显式的 Water `normalMap` /
+/// `specularMap` handle（M5-D）。两者都必须为线性（`Rgba8Unorm`）图像 ——
+/// 见 sRGB 红线。非 water 类型忽略这些绑定。
 pub fn fabric_material_from_domain_with_maps(
     domain_material: &DomainMaterial,
     image: Handle<Image>,
@@ -357,7 +351,7 @@ pub fn fabric_material_from_domain_with_maps(
             params.color_a = get_vec4(u, "fadeInColor", [1.0, 0.0, 0.0, 1.0]);
             params.color_b = get_vec4(u, "fadeOutColor", [0.0, 0.0, 0.0, 0.0]);
         }
-        // --- New material types ---
+        // --- 新增材质类型 ---
         FabricKind::PolylineArrow => {
             params.color_a = get_vec4(u, "color", [1.0, 1.0, 1.0, 1.0]);
         }
@@ -387,10 +381,10 @@ pub fn fabric_material_from_domain_with_maps(
             params.extra_c.y = get_float(u, "maximumHeight", 1000.0);
         }
         FabricKind::AspectRamp => {
-            // Uses image texture for the ramp
+            // 使用图像纹理做渐变
         }
         FabricKind::SlopeRamp => {
-            // Uses image texture for the ramp
+            // 使用图像纹理做渐变
         }
         FabricKind::NormalMap => {
             let repeat = get_vec2(u, "repeat", [1.0, 1.0]);
@@ -403,14 +397,14 @@ pub fn fabric_material_from_domain_with_maps(
             params.extra_b.z = get_float(u, "strength", 0.5);
         }
         FabricKind::Water => {
-            // Water.glsl uniforms (defaults mirror domain/material cache.rs).
+            // Water.glsl uniform（默认值镜像领域 material/cache.rs）。
             params.color_a = get_vec4(u, "baseWaterColor", [0.2, 0.3, 0.6, 1.0]);
             params.color_b = get_vec4(u, "blendColor", [0.0, 1.0, 0.699, 1.0]);
-            // extra_c.z = czm_frameNumber (per-frame counter, set by material_system);
-            // extra_c.w = animationSpeed. Water.glsl L18: time = frameNumber * speed.
+            // extra_c.z = czm_frameNumber（按帧计数器，由 material_system 设置）；
+            // extra_c.w = animationSpeed。Water.glsl L18：time = frameNumber * speed。
             params.extra_c.z = 0.0;
             params.extra_c.w = get_float(u, "animationSpeed", 0.01);
-            // water_a: frequency / amplitude / specularIntensity / fadeFactor.
+            // water_a：frequency / amplitude / specularIntensity / fadeFactor。
             params.water_a.x = get_float(u, "frequency", 10.0);
             params.water_a.y = get_float(u, "amplitude", 1.0);
             params.water_a.z = get_float(u, "specularIntensity", 0.5);
@@ -428,7 +422,7 @@ pub fn fabric_material_from_domain_with_maps(
         FabricKind::WaterMask => {
             params.color_a = get_vec4(u, "waterColor", [0.1, 0.3, 0.7, 1.0]);
             params.color_b = get_vec4(u, "landColor", [0.3, 0.6, 0.2, 1.0]);
-            params.extra_c.x = 0.0; // water level
+            params.extra_c.x = 0.0; // 水位
         }
     }
 
@@ -442,28 +436,27 @@ pub fn fabric_material_from_domain_with_maps(
 }
 
 // ---------------------------------------------------------------------------
-// M5-D: Water normal / specular map generation (domain cesium_shadow → adapter)
+// M5-D：Water 法线 / 镜面贴图生成（领域 cesium_shadow → 适配器）
 // ---------------------------------------------------------------------------
 
-/// Sea-state presets for the Water material showcase / baselines.
+/// 面向 Water 材质 showcase / 基线的海况预设。
 ///
-/// Each preset drives a domain [`OceanSurface`] (Gerstner wave stack from
-/// `cesium_shadow::water`) plus the recommended Water-material uniform
-/// overrides, wiring the previously-unconsumed `OceanConfig` /
-/// `create_default_waves` / `generate_wind_waves` domain code into the render
-/// adapter (M5-D 改动面 4).
+/// 每个预设驱动一个领域 [`OceanSurface`]（来自 `cesium_shadow::water` 的
+/// Gerstner 波叠加），外加推荐的 Water 材质 uniform 覆盖，将先前未被消费的
+/// `OceanConfig` / `create_default_waves` / `generate_wind_waves` 领域代码
+/// 接入渲染适配器（M5-D 改动面 4）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WaterPreset {
-    /// 平静 — light wind, regenerated small-wave spectrum.
+    /// 平静 —— 微风，重新生成的小浪谱。
     Calm,
-    /// 中浪 — the domain default 5-wave stack (`create_default_waves`).
+    /// 中浪 —— 领域默认的 5 波叠加（`create_default_waves`）。
     Medium,
-    /// 大浪 — strong wind, regenerated spectrum.
+    /// 大浪 —— 强风，重新生成的谱。
     Rough,
 }
 
 impl WaterPreset {
-    /// Short ASCII label for entity naming / baseline file names.
+    /// 用于实体命名 / 基线文件名的简短 ASCII 标签。
     pub fn label(&self) -> &'static str {
         match self {
             WaterPreset::Calm => "calm",
@@ -472,12 +465,12 @@ impl WaterPreset {
         }
     }
 
-    /// Builds the domain ocean state (consumes `OceanConfig::default()` →
-    /// `create_default_waves`; `generate_wind_waves` for Calm/Rough).
+    /// 构建领域海洋状态（消费 `OceanConfig::default()` → `create_default_waves`；
+    /// Calm/Rough 使用 `generate_wind_waves`）。
     pub fn ocean(&self) -> OceanSurface {
         let mut ocean = OceanSurface::new(OceanConfig::default());
         match self {
-            // Medium keeps the default create_default_waves() 5-wave stack.
+            // Medium 保留默认的 create_default_waves() 5 波叠加。
             WaterPreset::Medium => {}
             WaterPreset::Calm => {
                 ocean.wind_speed = 5.0;
@@ -491,8 +484,8 @@ impl WaterPreset {
         ocean
     }
 
-    /// Water-material uniform overrides (frequency / amplitude /
-    /// animationSpeed / specularIntensity) tuned per sea state.
+    /// Water 材质 uniform 覆盖（frequency / amplitude / animationSpeed /
+    /// specularIntensity），按海况分别调校。
     pub fn uniform_overrides(&self) -> Vec<(&'static str, UniformValue)> {
         match self {
             WaterPreset::Calm => vec![
@@ -517,16 +510,14 @@ impl WaterPreset {
     }
 }
 
-/// Generates a tangent-space Water `normalMap` by sampling a domain
-/// [`OceanSurface`] (Gerstner waves) over a UV tile of `tile_size_m` metres.
+/// 通过在 `tile_size_m` 米的 UV 瓦片上采样领域 [`OceanSurface`]（Gerstner 波），
+/// 生成一个切线空间的 Water `normalMap`。
 ///
-/// sRGB red-line: this is LINEAR direction data, so the [`Image`] uses
-/// `TextureFormat::Rgba8Unorm` — never `Rgba8UnormSrgb` (which would
-/// double-encode the normals). 米制换算 red-line: the sampled positions and wave
-/// amplitudes stay in metre-space; the returned normals are dimensionless
-/// directions (slope = m/m), so no `METERS_PER_RENDER_UNIT` division applies
-/// here — that conversion is applied shader-side to Water.glsl's 1e10 fade
-/// divisor (see `shaders/fabric_material.wgsl`).
+/// sRGB 红线：这是 LINEAR 方向数据，因此 [`Image`] 使用 `TextureFormat::Rgba8Unorm`
+/// —— 绝不用 `Rgba8UnormSrgb`（那会对法线二次编码）。米制换算红线：被采样的位置
+/// 与波浪振幅保持在米空间；返回的法线是无量纲方向（坡度 = m/m），因此此处不施加
+/// `METERS_PER_RENDER_UNIT` 除法 —— 该换算在 shader 侧施加于 Water.glsl 的 1e10
+/// 淡出除数（见 `shaders/fabric_material.wgsl`）。
 pub fn generate_water_normal_map(size: u32, ocean: &OceanSurface, tile_size_m: f64) -> Image {
     let denom = size.saturating_sub(1).max(1) as f64;
     let enc = |c: f64| ((c * 0.5 + 0.5).clamp(0.0, 1.0) * 255.0) as u8;
@@ -536,9 +527,9 @@ pub fn generate_water_normal_map(size: u32, ocean: &OceanSurface, tile_size_m: f
             let u = x as f64 / denom;
             let v = y as f64 / denom;
             let pos = DVec3::new(u * tile_size_m, 0.0, v * tile_size_m);
-            // World-space (Y-up) ocean normal from the Gerstner wave stack.
+            // 来自 Gerstner 波叠加的世界空间（Y-up）海洋法线。
             let n = ocean.compute_normal(pos);
-            // Water.glsl tangent space is Z-up; remap Y-up world → Z-up tangent.
+            // Water.glsl 切线空间是 Z-up；将 Y-up 世界重映射为 Z-up 切线。
             data.extend_from_slice(&[enc(n.x), enc(n.z), enc(n.y), 255]);
         }
     }
@@ -555,10 +546,9 @@ pub fn generate_water_normal_map(size: u32, ocean: &OceanSurface, tile_size_m: f
     )
 }
 
-/// Generates a Water `specularMap` (water/non-water mask, sampled as `.r` by
-/// Water.glsl) from the ocean crest height. LINEAR mask data → `Rgba8Unorm`
-/// (sRGB red-line). Kept bright (≈0.6..1.0) so the water stays visible:
-/// Water.glsl multiplies alpha by this value, so a dark mask would vanish.
+/// 从海浪波峰高度生成一个 Water `specularMap`（水/非水掩膜，由 Water.glsl
+/// 以 `.r` 采样）。LINEAR 掩膜数据 → `Rgba8Unorm`（sRGB 红线）。保持明亮
+/// （≈0.6..1.0）以使水面可见：Water.glsl 将 alpha 乘以该值，因此暗掩膜会消失。
 pub fn generate_water_specular_map(size: u32, ocean: &OceanSurface, tile_size_m: f64) -> Image {
     let denom = size.saturating_sub(1).max(1) as f64;
     let foam = ocean.config.foam_threshold.max(1e-6);
@@ -568,10 +558,10 @@ pub fn generate_water_specular_map(size: u32, ocean: &OceanSurface, tile_size_m:
             let u = x as f64 / denom;
             let v = y as f64 / denom;
             let pos = DVec3::new(u * tile_size_m, 0.0, v * tile_size_m);
-            let h = ocean.compute_height(pos); // metres
-            // Normalise crest height into [0,1], then map to a bright mask band
-            // [0.6, 1.0] so the water stays visible: Water.glsl multiplies alpha by
-            // this value, so a dark mask would make the surface vanish.
+            let h = ocean.compute_height(pos); // 米
+            // 将波峰高度归一化到 [0,1]，再映射到一个明亮的掩膜带
+            // [0.6, 1.0] 以使水面可见：Water.glsl 将 alpha 乘以该值，
+            // 因此暗掩膜会使表面消失。
             let crest = ((h / foam) * 0.5 + 0.5).clamp(0.0, 1.0);
             let mask = 0.6 + 0.4 * crest;
             let b = (mask * 255.0) as u8;
@@ -591,9 +581,9 @@ pub fn generate_water_specular_map(size: u32, ocean: &OceanSurface, tile_size_m:
     )
 }
 
-/// Convenience: build a Water [`FabricMaterial`] for `preset`, generating and
-/// inserting its normal/specular maps into `images`. Keeps `cesium_shadow`
-/// usage inside the adapter so application crates need not depend on it.
+/// 便捷函数：为 `preset` 构建一个 Water [`FabricMaterial`]，生成其法线/镜面贴图
+/// 并插入 `images`。将 `cesium_shadow` 的使用保留在适配器内部，因此应用 crate
+/// 无需依赖它。
 pub fn water_material_from_preset(
     images: &mut Assets<Image>,
     domain_material: &DomainMaterial,
@@ -606,21 +596,19 @@ pub fn water_material_from_preset(
     fabric_material_from_domain_with_maps(domain_material, fallback, normal_map, specular_map)
 }
 
-/// Plugin registering the [`FabricMaterial`] with Bevy's asset/pipeline system.
+/// 将 [`FabricMaterial`] 注册到 Bevy 资产/管线系统的插件。
 pub struct FabricMaterialPlugin;
 
 impl Plugin for FabricMaterialPlugin {
     fn build(&self, app: &mut App) {
-        // Embed the WGSL shader into the binary so no external asset path is
-        // required by the host application.
+        // 将 WGSL shader 嵌入二进制，因此宿主应用无需外部资产路径。
         //
-        // Headless-safe (M5.1): the raw `load_internal_asset!` dereferences
-        // `Assets<Shader>`, which is absent under a `MinimalPlugins` test app (no
-        // `AssetPlugin`) and panics. `try_load_internal_shader` guards on that
-        // resource and degrades to a no-op (`None`) when it is missing, while
-        // inserting the *same* `include_str!`-embedded source at the *same*
-        // `AssetId` on the GPU path (pixel-neutral).
-        // See docs/deviations.md#dev-005 / docs/deferred.md#6 (resolved at M5.1).
+        // 无头安好（M5.1）：裸 `load_internal_asset!` 会解引用 `Assets<Shader>`，
+        // 它在 `MinimalPlugins` 测试 app（无 `AssetPlugin`）下缺失并会 panic。
+        // `try_load_internal_shader` 对该资源进行守卫，缺失时降级为空操作
+        // （`None`），同时在 GPU 路径上以*相同的* `AssetId` 插入*相同的*
+        // `include_str!` 嵌入源（像素中性）。
+        // 参见 docs/deviations.md#dev-005 / docs/deferred.md#6（在 M5.1 解决）。
         crate::shader_registry::try_load_internal_shader(
             app,
             FABRIC_MATERIAL_SHADER_HANDLE,
@@ -632,13 +620,12 @@ impl Plugin for FabricMaterialPlugin {
                 .to_string_lossy(),
         );
 
-        // `MaterialPlugin::build` calls `init_asset::<M>()`, which dereferences the
-        // `AssetServer` resource and panics when it is absent (headless). Bevy 0.15
-        // already guards the `RenderApp` sub-app portion of `MaterialPlugin` and
-        // `RenderAssetPlugin` (`get_sub_app_mut(RenderApp)`), so the asset backend
-        // is the only unguarded hazard. Skip the whole plugin when the backend is
-        // unavailable; `FabricMaterial` remains usable as a plain CPU-side type
-        // (component / `fabric_material_from_domain`) for headless tests.
+        // `MaterialPlugin::build` 调用 `init_asset::<M>()`，它解引用 `AssetServer`
+        // 资源并在其缺失时（无头）panic。Bevy 0.15 已守卫了 `MaterialPlugin` 与
+        // `RenderAssetPlugin` 的 `RenderApp` 子 app 部分（`get_sub_app_mut(RenderApp)`），
+        // 因此资产后端是唯一未受守卫的隐患。当后端不可用时跳过整个插件；
+        // `FabricMaterial` 仍可作为纯 CPU 侧类型（组件 / `fabric_material_from_domain`）
+        // 供无头测试使用。
         if crate::shader_registry::asset_backend_available(app) {
             app.add_plugins(MaterialPlugin::<FabricMaterial>::default());
         }
@@ -684,10 +671,10 @@ mod tests {
         let handle = Handle::<Image>::default();
         let fm = fabric_material_from_domain(&m, handle);
         assert_eq!(fm.params.kind, FabricKind::Checkerboard as u32);
-        // Default repeat is (5, 5).
+        // 默认 repeat 为 (5, 5)。
         assert!((fm.params.repeat_offset.x - 5.0).abs() < 1e-6);
         assert!((fm.params.repeat_offset.y - 5.0).abs() < 1e-6);
-        // Default lightColor is white (alpha 0.5) -> translucent.
+        // 默认 lightColor 为白色（alpha 0.5）→ 半透明。
         assert!(fm.translucent);
     }
 
@@ -698,7 +685,7 @@ mod tests {
         assert_eq!(fm.params.kind, FabricKind::Grid as u32);
         assert!((fm.params.line_params.x - 8.0).abs() < 1e-6); // lineCount.x
         assert!((fm.params.line_off_cell.z - 0.1).abs() < 1e-6); // cellAlpha
-        // Default Grid is translucent (cellAlpha 0.1).
+        // 默认 Grid 为半透明（cellAlpha 0.1）。
         assert!(fm.translucent);
     }
 
@@ -708,7 +695,7 @@ mod tests {
         let fm = fabric_material_from_domain(&m, Handle::<Image>::default());
         assert_eq!(fm.params.kind, FabricKind::Stripe as u32);
         assert!((fm.params.repeat_offset.x - 5.0).abs() < 1e-6); // repeat
-        assert_eq!(fm.params.horizontal, 1); // default horizontal = true
+        assert_eq!(fm.params.horizontal, 1); // 默认 horizontal = true
     }
 
     #[test]
@@ -722,8 +709,8 @@ mod tests {
         let m = system.from_type("Color", overrides).unwrap();
         let fm = fabric_material_from_domain(&m, Handle::<Image>::default());
         assert_eq!(fm.params.kind, FabricKind::Color as u32);
-        assert!(!fm.translucent); // alpha 1.0 -> opaque
-        assert!((fm.params.color_a.y - 1.0).abs() < 1e-6); // green
+        assert!(!fm.translucent); // alpha 1.0 → 不透明
+        assert!((fm.params.color_a.y - 1.0).abs() < 1e-6); // 绿色
     }
 
     #[test]
@@ -797,8 +784,8 @@ mod tests {
 
     #[test]
     fn test_from_domain_water_packs_water_a() {
-        // M5-D: Water.glsl frequency/amplitude/specularIntensity/fadeFactor land
-        // in water_a (cache.rs defaults 10 / 1 / 0.5 / 1).
+        // M5-D：Water.glsl 的 frequency/amplitude/specularIntensity/fadeFactor
+        // 落在 water_a（cache.rs 默认值 10 / 1 / 0.5 / 1）。
         let m = build("Water");
         let fm = fabric_material_from_domain(&m, Handle::<Image>::default());
         assert!((fm.params.water_a.x - 10.0).abs() < 1e-6);
@@ -809,7 +796,7 @@ mod tests {
 
     #[test]
     fn test_water_normal_map_is_linear_rgba8unorm() {
-        // sRGB red-line: tangent-space normals are LINEAR → Rgba8Unorm.
+        // sRGB 红线：切线空间法线是 LINEAR → Rgba8Unorm。
         let ocean = WaterPreset::Medium.ocean();
         let img = generate_water_normal_map(16, &ocean, 200.0);
         assert_eq!(
@@ -828,7 +815,7 @@ mod tests {
             img.texture_descriptor.format,
             bevy::render::render_resource::TextureFormat::Rgba8Unorm
         );
-        // Mask band [0.6, 1.0] keeps water visible → r >= ~153.
+        // 掩膜带 [0.6, 1.0] 使水面可见 → r >= ~153。
         assert!(img.data.iter().step_by(4).all(|&r| r >= 150));
     }
 
@@ -838,26 +825,24 @@ mod tests {
         assert_eq!(WaterPreset::Medium.label(), "medium");
         assert_eq!(WaterPreset::Rough.label(), "rough");
         assert_eq!(WaterPreset::Rough.uniform_overrides().len(), 4);
-        // Medium consumes create_default_waves() (5 waves); Rough regenerates 8.
+        // Medium 消费 create_default_waves()（5 个波）；Rough 重新生成 8 个。
         assert_eq!(WaterPreset::Medium.ocean().config.waves.len(), 5);
         assert_eq!(WaterPreset::Rough.ocean().config.waves.len(), 8);
     }
 
     // ------------------------------------------------------------------
-    // Ryan C1 defense line: naga parse + validate `fabric_material.wgsl`.
+    // Ryan C1 防线：naga 解析 + 校验 `fabric_material.wgsl`。
     //
-    // The 14 tests above only exercise the Rust-side uniform packing and texture
-    // formats; none of them ran the WGSL through naga, which is why a WGSL
-    // reserved word used as a call (`mod(...)`) slipped through CI green. naga is
-    // the exact front end Bevy compiles with (bevy_render -> naga 23.1), so
-    // driving it here turns that class of defect into a hard failure.
+    // 上述 14 个测试只演练 Rust 侧的 uniform 打包与纹理格式；它们都没有将 WGSL
+    // 过一遍 naga，这正是某个被用作调用的 WGSL 保留字（`mod(...)`）能瞒过 CI
+    // 转绿的原因。naga 正是 Bevy 编译所用的前端（bevy_render -> naga 23.1），
+    // 因此在此驱动它能将那一类缺陷变成硬性失败。
     // ------------------------------------------------------------------
 
-    /// Stubs for the two `#import`s (naga has no preprocessor). Declares exactly
-    /// the bindings the shader reads: `VertexOutput.world_position` /
-    /// `.world_normal` / `.uv` (forward_io) and `view.world_position`
-    /// (mesh_view_bindings). Everything else is the real shader text, so this
-    /// validates the actual 21-case procedural code.
+    /// 为两个 `#import` 提供的桩（naga 没有预处理器）。精确声明 shader 读取的
+    /// 那些绑定：`VertexOutput.world_position` / `.world_normal` / `.uv`
+    /// （forward_io）与 `view.world_position`（mesh_view_bindings）。其余全部是
+    /// 真实的 shader 文本，因此这校验了实际的 21 情形程序化代码。
     const WGSL_IMPORT_STUBS: &str = "\
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -874,15 +859,14 @@ struct View {
 @group(0) @binding(0) var<uniform> view: View;
 ";
 
-    /// Rebuild `fabric_material.wgsl` into standalone WGSL naga can parse: strip
-    /// the `#import` lines (replaced by [`WGSL_IMPORT_STUBS`]) and resolve the
-    /// `#ifdef / #else / #endif` blocks. [`FabricMaterial`] sets no custom
-    /// `shader_def` (it does not override `Material::specialize`), so every guarded
-    /// symbol (`VERTEX_UVS_A`) is UNDEFINED → the `#else` branch is taken.
+    /// 将 `fabric_material.wgsl` 重建为 naga 可解析的独立 WGSL：剥离 `#import`
+    /// 行（由 [`WGSL_IMPORT_STUBS`] 替代）并解析 `#ifdef / #else / #endif` 块。
+    /// [`FabricMaterial`] 不设自定义 `shader_def`（它不覆写 `Material::specialize`），
+    /// 因此每个受守卫的符号（`VERTEX_UVS_A`）都是 UNDEFINED → 取 `#else` 分支。
     fn stubbed_wgsl() -> String {
         let source = include_str!("../shaders/fabric_material.wgsl").replace("\r\n", "\n");
         let mut out = String::from(WGSL_IMPORT_STUBS);
-        // Non-nested `#ifdef` with an optional `#else`; all symbols undefined.
+        // 非嵌套的 `#ifdef`，带可选 `#else`；所有符号均未定义。
         let mut skipping = false;
         for line in source.lines() {
             let t = line.trim_start();
@@ -891,11 +875,11 @@ struct View {
                 continue;
             }
             if t.starts_with("#ifdef") {
-                skipping = true; // undefined symbol → drop the #if branch
+                skipping = true; // 未定义符号 → 丢弃 #if 分支
                 continue;
             }
             if t.starts_with("#else") {
-                skipping = false; // keep the fallback branch
+                skipping = false; // 保留回退分支
                 continue;
             }
             if skipping {
@@ -907,11 +891,11 @@ struct View {
         out
     }
 
-    /// The Ryan C1 regression gate: the whole `fabric_material.wgsl` (all 21 Fabric
-    /// cases) must parse AND type-check under naga. A WGSL reserved word used as a
-    /// call (`mod(...)`, now `glsl_mod(...)`) or an undeclared identifier
-    /// (`in.world_tangent`, `mesh_view_bindings::view`) parses fine but fails
-    /// lowering, silently dropping every pipeline (all 21 cases unrenderable).
+    /// Ryan C1 回归门禁：整个 `fabric_material.wgsl`（全部 21 个 Fabric 情形）
+    /// 必须能在 naga 下解析并进行类型检查。一个被用作调用的 WGSL 保留字
+    /// （`mod(...)`，现为 `glsl_mod(...)`）或未声明的标识符（`in.world_tangent`、
+    /// `mesh_view_bindings::view`）能正常解析但在 lowering 时失败，静默地丢弃
+    /// 每个管线（全部 21 个情形不可渲染）。
     #[test]
     fn fabric_material_wgsl_parses_and_validates_under_naga() {
         let source = stubbed_wgsl();
@@ -928,7 +912,7 @@ struct View {
         .validate(&module)
         .expect("fabric_material.wgsl does not validate");
 
-        // Single forward `Material` fragment entry, the signature Bevy expects.
+        // 单个 forward `Material` 片元入口，即 Bevy 期望的签名。
         let entry_points = module
             .entry_points
             .iter()
@@ -941,14 +925,13 @@ struct View {
         );
     }
 
-    /// Fast, precise source-contract assertions for the exact defects this round
-    /// fixed, so a regression is diagnosed even before naga lowering runs.
+    /// 针对本轮所修复的确切缺陷的快速、精确的源码契约断言，从而在 naga lowering
+    /// 运行之前就能诊断出回归。
     #[test]
     fn fabric_material_wgsl_avoids_the_known_reserved_word_and_dead_branch_traps() {
         let source = include_str!("../shaders/fabric_material.wgsl").replace("\r\n", "\n");
-        // Strip `//` line comments first: the explanatory comments for these very
-        // fixes mention `mod()`, `VERTEX_TANGENTS` and `world_tangent` in prose, so
-        // scanning the raw source would false-positive. The contract is about CODE.
+        // 先剥离 `//` 行注释：恰恰是这些修复的说明性注释在文字中提到了 `mod()`、
+        // `VERTEX_TANGENTS` 与 `world_tangent`，因此扫描原始源会误报。该契约针对的是代码。
         let code = source
             .lines()
             .map(|line| match line.find("//") {
@@ -957,14 +940,14 @@ struct View {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        // Ryan C1: every `mod(` must be the `glsl_mod(` helper — strip those and no
-        // bare `mod(` (a WGSL reserved word) may remain.
+        // Ryan C1：每个 `mod(` 都必须是 `glsl_mod(` 辅助函数 —— 剥离这些后不得
+        // 残留裸 `mod(`（一个 WGSL 保留字）。
         assert!(
             !code.replace("glsl_mod(", "").contains("mod("),
             "fabric_material.wgsl calls the WGSL reserved word `mod`; use glsl_mod"
         );
-        // Daniel L3: the dead VERTEX_TANGENTS branch read an undeclared
-        // `in.world_tangent`; it must stay removed (no uncompilable path).
+        // Daniel L3：已失效的 VERTEX_TANGENTS 分支曾读取一个未声明的
+        // `in.world_tangent`；它必须保持移除（无不需编译的路径）。
         assert!(
             !code.contains("VERTEX_TANGENTS"),
             "dead VERTEX_TANGENTS branch must stay removed"
@@ -973,17 +956,16 @@ struct View {
             !code.contains("world_tangent"),
             "world_tangent is not declared in this shader's VertexOutput"
         );
-        // The `view` binding must be referenced unqualified: naga_oil resolves
-        // `#import bevy_pbr::mesh_view_bindings` into global scope, and `::` is not
-        // valid WGSL (raw naga lowering rejects it).
+        // `view` 绑定必须以非限定形式引用：naga_oil 将 `#import bevy_pbr::mesh_view_bindings`
+        // 解析进全局作用域，而 `::` 不是合法的 WGSL（裸 naga lowering 会拒绝它）。
         assert!(
             !code.contains("mesh_view_bindings::"),
             "reference `view`, not the non-WGSL `mesh_view_bindings::view`"
         );
         assert!(code.contains("view.world_position"));
-        // WGSL forbids swizzle assignment (`v.rgb = ...`, `v.xy /= ...`); naga
-        // rejects it and the whole shader fails to lower. The four sites this round
-        // fixed are asserted absent here for a fast, precise pre-diagnosis.
+        // WGSL 禁止 swizzle 赋值（`v.rgb = ...`、`v.xy /= ...`）；naga 会拒绝它，
+        // 整个 shader 无法 lowering。本轮修复的四处都在此断言为不存在，以实现快速、
+        // 精确的预诊断。
         for pat in [".rgb =", ".rgba =", ".xy =", ".xyz =", ".xy /=", ".xy *="] {
             assert!(
                 !code.contains(pat),

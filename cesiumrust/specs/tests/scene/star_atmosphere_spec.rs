@@ -1,5 +1,5 @@
-//! StarSphere + SkyAtmosphere + SkyBox specs
-//! Ported from CesiumJS Scene/StarSphereSpec.js + Scene/SkyAtmosphereSpec.js + Scene/SkyBoxSpec.js
+//! StarSphere + SkyAtmosphere + SkyBox 规范
+//! 移植自 CesiumJS Scene/StarSphereSpec.js + Scene/SkyAtmosphereSpec.js + Scene/SkyBoxSpec.js
 
 use cesium_atmosphere::{
     DynamicAtmosphereLighting, HsbShift, SkyAtmosphereConfig, SkyBoxState, Star, StarSphere,
@@ -15,7 +15,7 @@ fn star_from_degrees_converts_to_radians() {
     assert!((star.right_ascension - PI).abs() < 1e-10);
     assert!((star.declination - PI / 4.0).abs() < 1e-10);
     assert!((star.magnitude - 2.0).abs() < 1e-10);
-    assert!((star.color_temperature - 6500.0).abs() < 1e-10); // default white
+    assert!((star.color_temperature - 6500.0).abs() < 1e-10); // 默认白色
 }
 
 #[test]
@@ -59,11 +59,11 @@ fn star_brightness_pogson_scale() {
     let mag5 = Star::from_degrees(0.0, 0.0, 5.0);
     let mag_neg1 = Star::from_degrees(0.0, 0.0, -1.0);
 
-    // Magnitude 0 → brightness 1.0
+    // 星等 0 → 亮度 1.0
     assert!((mag0.brightness() - 1.0).abs() < 1e-10);
-    // 5 magnitudes dimmer → 100x dimmer
+    // 暗 5 星等 → 暗 100 倍
     assert!((mag5.brightness() - 0.01).abs() < 1e-4);
-    // Negative magnitude → brighter than 1.0
+    // 负星等 → 亮于 1.0
     assert!(mag_neg1.brightness() > 1.0);
 }
 
@@ -74,7 +74,7 @@ fn star_spectral_color_hot_blue() {
         ..Star::from_degrees(0.0, 0.0, 0.0)
     };
     let color = star.spectral_color();
-    // Hot stars are blue-dominant
+    // 高温恒星偏蓝
     assert!(color[2] > color[0]);
 }
 
@@ -85,7 +85,7 @@ fn star_spectral_color_cool_red() {
         ..Star::from_degrees(0.0, 0.0, 0.0)
     };
     let color = star.spectral_color();
-    // Cool stars are red-dominant
+    // 低温恒星偏红
     assert!(color[0] > color[2]);
 }
 
@@ -104,9 +104,9 @@ fn star_sphere_visible_stars_filters_by_magnitude() {
     let mut sphere = StarSphere::default();
     sphere.minimum_magnitude = 0.0;
     sphere.maximum_magnitude = 2.0;
-    sphere.add_star(Star::from_degrees(0.0, 0.0, -1.0)); // too bright
-    sphere.add_star(Star::from_degrees(10.0, 10.0, 1.0)); // visible
-    sphere.add_star(Star::from_degrees(20.0, 20.0, 5.0)); // too dim
+    sphere.add_star(Star::from_degrees(0.0, 0.0, -1.0)); // 过亮
+    sphere.add_star(Star::from_degrees(10.0, 10.0, 1.0)); // 可见
+    sphere.add_star(Star::from_degrees(20.0, 20.0, 5.0)); // 过暗
 
     let visible: Vec<_> = sphere.visible_stars().collect();
     assert_eq!(visible.len(), 1);
@@ -128,7 +128,7 @@ fn star_sphere_point_size_brighter_is_larger() {
     let dim_size = sphere.star_point_size(&dim);
 
     assert!(bright_size > dim_size);
-    assert!((bright_size - 4.0).abs() < 1e-10); // Full base size at min magnitude
+    assert!((bright_size - 4.0).abs() < 1e-10); // 在最小星等时为完整基础大小
 }
 
 #[test]
@@ -143,7 +143,7 @@ fn star_sphere_render_color_applies_brightness() {
         ..Star::from_degrees(0.0, 0.0, 0.0)
     };
     let color = sphere.star_render_color(&star);
-    // brightness = 10^(-0.4*0) * 2.0 = 2.0, all channels > 0
+    // brightness = 10^(-0.4*0) * 2.0 = 2.0，所有通道 > 0
     assert!(color[0] > 0.0);
     assert!(color[1] > 0.0);
     assert!(color[2] > 0.0);
@@ -180,7 +180,7 @@ fn hsb_shift_saturation_zero_grayscale() {
     };
     let color = [1.0, 0.0, 0.0];
     let result = shift.apply(color);
-    // All channels should be equal (grayscale)
+    // 所有通道应相等（灰度）
     assert!((result[0] - result[1]).abs() < 1e-6);
     assert!((result[1] - result[2]).abs() < 1e-6);
 }
@@ -259,11 +259,11 @@ fn sky_box_teme_to_ecef_rotates_x() {
     let sky_box = SkyBoxState::default();
     let dir = DVec3::new(1.0, 0.0, 0.0);
 
-    // At GMST=0, unchanged
+    // 在 GMST=0 时，不变
     let ecef = sky_box.teme_to_ecef(dir, 0.0);
     assert!((ecef - dir).length() < 1e-10);
 
-    // At GMST=π/2, X rotates to -Y
+    // 在 GMST=π/2 时，X 旋转到 -Y
     let ecef_90 = sky_box.teme_to_ecef(dir, PI / 2.0);
     assert!(ecef_90.x.abs() < 1e-10);
     assert!((ecef_90.y - (-1.0)).abs() < 1e-10);

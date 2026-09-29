@@ -1,5 +1,5 @@
-//! Traversal extended specs - TilePriority/MemoryAdjustedSse/can_traverse
-//! Ported from Scene/Cesium3DTilesetTraversalSpec.js (A-class priority/memory paths)
+//! 遍历扩展规范 - TilePriority/MemoryAdjustedSse/can_traverse
+//! 移植自 Scene/Cesium3DTilesetTraversalSpec.js（A 类优先级/内存路径）
 
 use cesium_tileset::traversal::{can_traverse, MemoryAdjustedSse, TilePriority};
 use cesium_tileset::tile::{Tile, TileContent, TileRefine};
@@ -109,21 +109,21 @@ fn priority_ordering_eq() {
 #[test]
 fn memory_sse_under_50_percent() {
     let mut mas = MemoryAdjustedSse::new(16.0, 1_000_000);
-    mas.current_memory_bytes = 400_000; // 40% usage
+    mas.current_memory_bytes = 400_000; // 使用率 40%
     assert!((mas.adjusted_sse() - 16.0).abs() < 1e-10, "under 50% should use base SSE");
 }
 
 #[test]
 fn memory_sse_at_50_percent() {
     let mut mas = MemoryAdjustedSse::new(16.0, 1_000_000);
-    mas.current_memory_bytes = 500_000; // exactly 50%
+    mas.current_memory_bytes = 500_000; // 恰好 50%
     assert!((mas.adjusted_sse() - 16.0).abs() < 1e-10, "at 50% should use base SSE");
 }
 
 #[test]
 fn memory_sse_at_75_percent() {
     let mut mas = MemoryAdjustedSse::new(16.0, 1_000_000);
-    mas.current_memory_bytes = 750_000; // 75% usage
+    mas.current_memory_bytes = 750_000; // 使用率 75%
     // t = (0.75 - 0.5) / 0.5 = 0.5
     // adjusted = 16 * (1 + 0.5) = 24
     assert!((mas.adjusted_sse() - 24.0).abs() < 1e-10);
@@ -132,7 +132,7 @@ fn memory_sse_at_75_percent() {
 #[test]
 fn memory_sse_at_100_percent() {
     let mut mas = MemoryAdjustedSse::new(16.0, 1_000_000);
-    mas.current_memory_bytes = 1_000_000; // 100% usage
+    mas.current_memory_bytes = 1_000_000; // 使用率 100%
     // t = (1.0 - 0.5) / 0.5 = 1.0
     // adjusted = 16 * (1 + 1) = 32
     assert!((mas.adjusted_sse() - 32.0).abs() < 1e-10);
@@ -141,7 +141,7 @@ fn memory_sse_at_100_percent() {
 #[test]
 fn memory_sse_over_100_percent() {
     let mut mas = MemoryAdjustedSse::new(16.0, 1_000_000);
-    mas.current_memory_bytes = 1_500_000; // 150% usage
+    mas.current_memory_bytes = 1_500_000; // 使用率 150%
     // overage = 1.5 - 1.0 = 0.5
     // adjusted = 16 * (2 + 0.5 * 4) = 16 * 4 = 64
     assert!((mas.adjusted_sse() - 64.0).abs() < 1e-10);

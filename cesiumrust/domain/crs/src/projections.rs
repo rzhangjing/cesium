@@ -1,51 +1,51 @@
-//! Map projections for coordinate transformation.
+//! 用于坐标变换的地图投影。
 //!
-//! Implements various map projections:
-//! - Web Mercator (EPSG:3857)
-//! - UTM (Universal Transverse Mercator)
-//! - Polar Stereographic
-//! - Equirectangular (Plate Carrée)
+//! 实现多种地图投影：
+//! - Web Mercator（EPSG:3857）
+//! - UTM（通用横轴墨卡托）
+//! - 极地方位投影（Polar Stereographic）
+//! - 等距圆柱投影（Plate Carrée）
 
 use glam::DVec2;
 use std::f64::consts::FRAC_PI_2;
 
-/// A 2D projected coordinate.
+/// 一个二维投影坐标。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ProjectedCoordinate {
-    /// X coordinate (easting in meters).
+    /// X 坐标（东向，单位米）。
     pub x: f64,
-    /// Y coordinate (northing in meters).
+    /// Y 坐标（北向，单位米）。
     pub y: f64,
 }
 
 impl ProjectedCoordinate {
-    /// Creates a new projected coordinate.
+    /// 创建一个新的投影坐标。
     pub fn new(x: f64, y: f64) -> Self {
         Self { x, y }
     }
 
-    /// Converts to DVec2.
+    /// 转换为 DVec2。
     pub fn to_vec2(self) -> DVec2 {
         DVec2::new(self.x, self.y)
     }
 
-    /// Creates from DVec2.
+    /// 从 DVec2 创建。
     pub fn from_vec2(v: DVec2) -> Self {
         Self { x: v.x, y: v.y }
     }
 }
 
-/// A geographic coordinate (longitude, latitude in radians).
+/// 一个地理坐标（经度、纬度，单位为弧度）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GeographicCoordinate {
-    /// Longitude in radians (-π to π).
+    /// 经度（弧度，-π 到 π）。
     pub longitude: f64,
-    /// Latitude in radians (-π/2 to π/2).
+    /// 纬度（弧度，-π/2 到 π/2）。
     pub latitude: f64,
 }
 
 impl GeographicCoordinate {
-    /// Creates a new geographic coordinate from radians.
+    /// 从弧度创建一个新的地理坐标。
     pub fn from_radians(longitude: f64, latitude: f64) -> Self {
         Self {
             longitude,
@@ -53,7 +53,7 @@ impl GeographicCoordinate {
         }
     }
 
-    /// Creates from degrees.
+    /// 从角度创建。
     pub fn from_degrees(longitude: f64, latitude: f64) -> Self {
         Self {
             longitude: longitude.to_radians(),
@@ -61,12 +61,12 @@ impl GeographicCoordinate {
         }
     }
 
-    /// Returns longitude in degrees.
+    /// 以度返回经度。
     pub fn longitude_degrees(&self) -> f64 {
         self.longitude.to_degrees()
     }
 
-    /// Returns latitude in degrees.
+    /// 以度返回纬度。
     pub fn latitude_degrees(&self) -> f64 {
         self.latitude.to_degrees()
     }
@@ -76,73 +76,73 @@ impl GeographicCoordinate {
 // Web Mercator (EPSG:3857)
 // ============================================================================
 
-/// Web Mercator projection (EPSG:3857).
+/// Web Mercator 投影（EPSG:3857）。
 ///
-/// The standard projection used by most web mapping services.
-/// Maps longitude/latitude to meters on a square tile grid.
+/// 大多数 Web 地图服务使用的标准投影。
+/// 将经度/纬度映射到方形瓦片网格上的米坐标。
 #[derive(Debug, Clone, Copy)]
 pub struct WebMercator {
-    /// Earth radius used for projection (meters).
+    /// 用于投影的地球半径（米）。
     pub radius: f64,
 }
 
 impl Default for WebMercator {
     fn default() -> Self {
         Self {
-            radius: 6378137.0, // WGS84 semi-major axis
+            radius: 6378137.0, // WGS84 长半轴
         }
     }
 }
 
 impl WebMercator {
-    /// Creates a Web Mercator projection with the given radius.
+    /// 创建一个使用给定半径的 Web Mercator 投影。
     pub fn new(radius: f64) -> Self {
         Self { radius }
     }
 
-    /// Maximum latitude that can be projected (in radians).
-    pub const MAX_LATITUDE: f64 = 1.4844222297453324; // ~85.0511 degrees
+    /// 可投影的最大纬度（弧度）。
+    pub const MAX_LATITUDE: f64 = 1.4844222297453324; // 约 85.0511 度
 
-    /// Projects a geographic coordinate to Web Mercator.
+    /// 将地理坐标投影为 Web Mercator。
     ///
-    /// # Arguments
-    /// * `geo` - Geographic coordinate (longitude, latitude in radians)
+    /// # 参数
+    /// * `geo` - 地理坐标（经度、纬度，单位为弧度）
     ///
-    /// # Returns
-    /// Projected coordinate (x, y in meters)
+    /// # 返回
+    /// 投影坐标（x、y，单位米）
     pub fn project(&self, geo: &GeographicCoordinate) -> Option<ProjectedCoordinate> {
         if geo.latitude.abs() > Self::MAX_LATITUDE {
             return None;
         }
 
         let x = self.radius * geo.longitude;
-        // Standard Web Mercator formula: y = R * ln(tan(π/4 + lat/2))
+        // 标准 Web Mercator 公式：y = R * ln(tan(π/4 + lat/2))
         let y = self.radius * (std::f64::consts::FRAC_PI_4 + geo.latitude / 2.0).tan().ln();
 
         Some(ProjectedCoordinate::new(x, y))
     }
 
-    /// Unprojects a Web Mercator coordinate to geographic.
+    /// 将 Web Mercator 坐标反投影为地理坐标。
     ///
-    /// # Arguments
-    /// * `proj` - Projected coordinate (x, y in meters)
+    /// # 参数
+    /// * `proj` - 投影坐标（x、y，单位米）
     ///
-    /// # Returns
-    /// Geographic coordinate (longitude, latitude in radians)
+    /// # 返回
+    /// 地理坐标（经度、纬度，单位为弧度）
     pub fn unproject(&self, proj: &ProjectedCoordinate) -> GeographicCoordinate {
         let longitude = proj.x / self.radius;
-        // Inverse: lat = 2 * atan(exp(y / R)) - π/2
+        // 反算：lat = 2 * atan(exp(y / R)) - π/2
         let latitude = 2.0 * (proj.y / self.radius).exp().atan() - FRAC_PI_2;
 
         GeographicCoordinate::from_radians(longitude, latitude)
     }
 
-    /// Projects from degrees.
+    /// 从角度投影。
     pub fn project_degrees(&self, lon: f64, lat: f64) -> Option<ProjectedCoordinate> {
         self.project(&GeographicCoordinate::from_degrees(lon, lat))
     }
 
-    /// Unprojects to degrees.
+    /// 反投影为角度。
     pub fn unproject_to_degrees(&self, proj: &ProjectedCoordinate) -> (f64, f64) {
         let geo = self.unproject(proj);
         (geo.longitude_degrees(), geo.latitude_degrees())
@@ -153,17 +153,17 @@ impl WebMercator {
 // UTM (Universal Transverse Mercator)
 // ============================================================================
 
-/// UTM zone information.
+/// UTM 分带信息。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UtmZone {
-    /// Zone number (1-60).
+    /// 分带号（1-60）。
     pub zone: u32,
-    /// Whether in the northern hemisphere.
+    /// 是否位于北半球。
     pub north: bool,
 }
 
 impl UtmZone {
-    /// Computes the UTM zone for a given longitude/latitude (in degrees).
+    /// 计算给定经度/纬度（单位为度）对应的 UTM 分带。
     pub fn from_lon_lat(lon_deg: f64, lat_deg: f64) -> Self {
         let zone = ((lon_deg + 180.0) / 6.0).floor() as u32 + 1;
         let zone = zone.clamp(1, 60);
@@ -172,12 +172,12 @@ impl UtmZone {
         Self { zone, north }
     }
 
-    /// Returns the central meridian of the zone (in radians).
+    /// 返回该分带的中央经线（弧度）。
     pub fn central_meridian(&self) -> f64 {
         ((self.zone as f64 - 1.0) * 6.0 - 180.0 + 3.0).to_radians()
     }
 
-    /// Returns the EPSG code for this zone.
+    /// 返回该分带的 EPSG 代码。
     pub fn epsg_code(&self) -> u32 {
         if self.north {
             32600 + self.zone
@@ -187,20 +187,20 @@ impl UtmZone {
     }
 }
 
-/// Universal Transverse Mercator projection.
+/// 通用横轴墨卡托（UTM）投影。
 ///
-/// Divides the Earth into 60 zones, each 6 degrees of longitude wide.
+/// 将地球划分为 60 个分带，每个分带宽 6 度经度。
 #[derive(Debug, Clone)]
 pub struct Utm {
-    /// Earth semi-major axis (meters).
+    /// 地球长半轴（米）。
     pub semi_major_axis: f64,
-    /// Earth flattening.
+    /// 地球扁率。
     pub flattening: f64,
-    /// Scale factor at central meridian.
+    /// 中央经线上的长度比。
     pub scale_factor: f64,
-    /// False easting (meters).
+    /// 假东偏移（米）。
     pub false_easting: f64,
-    /// False northing for southern hemisphere (meters).
+    /// 南半球的假北偏移（米）。
     pub false_northing_south: f64,
 }
 
@@ -217,14 +217,14 @@ impl Default for Utm {
 }
 
 impl Utm {
-    /// Projects a geographic coordinate to UTM.
+    /// 将地理坐标投影为 UTM。
     ///
-    /// # Arguments
-    /// * `geo` - Geographic coordinate (longitude, latitude in radians)
-    /// * `zone` - Target UTM zone (if None, auto-computed)
+    /// # 参数
+    /// * `geo` - 地理坐标（经度、纬度，单位为弧度）
+    /// * `zone` - 目标 UTM 分带（若为 None 则自动计算）
     ///
-    /// # Returns
-    /// Projected coordinate and the zone used
+    /// # 返回
+    /// 投影坐标以及所用的分带
     pub fn project(
         &self,
         geo: &GeographicCoordinate,
@@ -245,12 +245,12 @@ impl Utm {
         let phi = geo.latitude;
         let lambda = geo.longitude;
 
-        // Eccentricity squared
+        // 偏心率平方
         let e2 = 2.0 * self.flattening - self.flattening * self.flattening;
         let e4 = e2 * e2;
         let e6 = e4 * e2;
 
-        // Meridional arc length
+        // 子午线弧长
         let n = self.semi_major_axis / (1.0 - e2 * phi.sin() * phi.sin()).sqrt();
         let t = phi.tan();
         let c = e2 / (1.0 - e2) * phi.cos() * phi.cos();
@@ -262,11 +262,11 @@ impl Utm {
         let a5 = a4 * a;
         let a6 = a5 * a;
 
-        // Transverse Mercator formulas
+        // 横轴墨卡托公式
         let x = self.scale_factor * n * (a + (1.0 - t * t + c) * a3 / 6.0
             + (5.0 - 18.0 * t * t + t * t * t * t + 72.0 * c - 58.0 * e2 / (1.0 - e2)) * a5 / 120.0);
 
-        // Meridional arc
+        // 子午线弧
         let m = self.semi_major_axis * (
             (1.0 - e2 / 4.0 - 3.0 * e4 / 64.0 - 5.0 * e6 / 256.0) * phi
             - (3.0 * e2 / 8.0 + 3.0 * e4 / 32.0 + 45.0 * e6 / 1024.0) * (2.0 * phi).sin()
@@ -288,14 +288,14 @@ impl Utm {
         (ProjectedCoordinate::new(easting, northing), utm_zone)
     }
 
-    /// Unprojects a UTM coordinate to geographic.
+    /// 将 UTM 坐标反投影为地理坐标。
     ///
-    /// # Arguments
-    /// * `proj` - Projected coordinate (easting, northing in meters)
-    /// * `zone` - UTM zone information
+    /// # 参数
+    /// * `proj` - 投影坐标（东向、北向，单位米）
+    /// * `zone` - UTM 分带信息
     ///
-    /// # Returns
-    /// Geographic coordinate (longitude, latitude in radians)
+    /// # 返回
+    /// 地理坐标（经度、纬度，单位为弧度）
     pub fn unproject(&self, proj: &ProjectedCoordinate, zone: &UtmZone) -> GeographicCoordinate {
         let x = proj.x - self.false_easting;
         let y = if zone.north {
@@ -309,8 +309,8 @@ impl Utm {
         let e6 = e4 * e2;
         let ep2 = e2 / (1.0 - e2);
 
-        // Meridional arc at equator
-        let m0 = 0.0; // Equator
+        // 赤道处的子午线弧
+        let m0 = 0.0; // 赤道
         let m = m0 + y / self.scale_factor;
 
         let mu = m / (self.semi_major_axis * (1.0 - e2 / 4.0 - 3.0 * e4 / 64.0 - 5.0 * e6 / 256.0));
@@ -349,18 +349,18 @@ impl Utm {
 // Polar Stereographic
 // ============================================================================
 
-/// Polar Stereographic projection.
+/// 极地方位投影（Polar Stereographic）。
 ///
-/// Used for polar regions (above 84°N or below 80°S).
+/// 用于极地区域（84°N 以上或 80°S 以下）。
 #[derive(Debug, Clone, Copy)]
 pub struct PolarStereographic {
-    /// Earth semi-major axis (meters).
+    /// 地球长半轴（米）。
     pub semi_major_axis: f64,
-    /// Earth flattening.
+    /// 地球扁率。
     pub flattening: f64,
-    /// True scale latitude (radians, usually 71° for Arctic, 71° for Antarctic).
+    /// 真实比例纬线（弧度，通常北极为 71°，南极为 71°）。
     pub standard_parallel: f64,
-    /// Whether projecting the north pole (true) or south pole (false).
+    /// 是否投影北极（true）或南极（false）。
     pub north_pole: bool,
 }
 
@@ -376,7 +376,7 @@ impl Default for PolarStereographic {
 }
 
 impl PolarStereographic {
-    /// Projects a geographic coordinate to Polar Stereographic.
+    /// 将地理坐标投影为极地方位投影。
     pub fn project(&self, geo: &GeographicCoordinate) -> ProjectedCoordinate {
         let e = (2.0 * self.flattening - self.flattening * self.flattening).sqrt();
 
@@ -388,11 +388,11 @@ impl PolarStereographic {
 
         let lambda = geo.longitude;
 
-        // Conformal latitude
+        // 等角纬度
         let t = ((FRAC_PI_2 - phi) / 2.0).tan() /
             ((1.0 - e * phi.sin()) / (1.0 + e * phi.sin())).powf(e / 2.0);
 
-        // Scale factor at standard parallel
+        // 标准纬线上的长度比
         let phi_c = self.standard_parallel;
         let t_c = ((FRAC_PI_2 - phi_c) / 2.0).tan() /
             ((1.0 - e * phi_c.sin()) / (1.0 + e * phi_c.sin())).powf(e / 2.0);
@@ -410,7 +410,7 @@ impl PolarStereographic {
         ProjectedCoordinate::new(x, y)
     }
 
-    /// Unprojects a Polar Stereographic coordinate to geographic.
+    /// 将极地方位投影坐标反投影为地理坐标。
     pub fn unproject(&self, proj: &ProjectedCoordinate) -> GeographicCoordinate {
         let e = (2.0 * self.flattening - self.flattening * self.flattening).sqrt();
 
@@ -425,7 +425,7 @@ impl PolarStereographic {
         let rho = (x * x + y * y).sqrt();
         let t = rho * t_c / (self.semi_major_axis * m_c);
 
-        // Iterative solution for latitude
+        // 纬度的迭代求解
         let mut phi = FRAC_PI_2 - 2.0 * t.atan();
         for _ in 0..10 {
             let e_sin_phi = e * phi.sin();
@@ -447,12 +447,12 @@ impl PolarStereographic {
 // Equirectangular (Plate Carrée)
 // ============================================================================
 
-/// Equirectangular projection (Plate Carrée, EPSG:4326-like).
+/// 等距圆柱投影（Plate Carrée，类 EPSG:4326）。
 ///
-/// Simple projection where longitude maps to X and latitude maps to Y.
+/// 一种简单的投影，经度映射到 X、纬度映射到 Y。
 #[derive(Debug, Clone, Copy)]
 pub struct Equirectangular {
-    /// Earth radius (meters).
+    /// 地球半径（米）。
     pub radius: f64,
 }
 
@@ -463,14 +463,14 @@ impl Default for Equirectangular {
 }
 
 impl Equirectangular {
-    /// Projects a geographic coordinate to Equirectangular.
+    /// 将地理坐标投影为等距圆柱投影。
     pub fn project(&self, geo: &GeographicCoordinate) -> ProjectedCoordinate {
         let x = self.radius * geo.longitude;
         let y = self.radius * geo.latitude;
         ProjectedCoordinate::new(x, y)
     }
 
-    /// Unprojects an Equirectangular coordinate to geographic.
+    /// 将等距圆柱投影坐标反投影为地理坐标。
     pub fn unproject(&self, proj: &ProjectedCoordinate) -> GeographicCoordinate {
         let longitude = proj.x / self.radius;
         let latitude = proj.y / self.radius;
@@ -497,7 +497,7 @@ mod tests {
     #[test]
     fn test_web_mercator_roundtrip() {
         let mercator = WebMercator::default();
-        let original = GeographicCoordinate::from_degrees(-73.9857, 40.7484); // NYC
+        let original = GeographicCoordinate::from_degrees(-73.9857, 40.7484); // 纽约
 
         let proj = mercator.project(&original).unwrap();
         let recovered = mercator.unproject(&proj);
@@ -510,11 +510,11 @@ mod tests {
     fn test_web_mercator_max_latitude() {
         let mercator = WebMercator::default();
 
-        // At max latitude
+        // 处于最大纬度处
         let geo = GeographicCoordinate::from_radians(0.0, WebMercator::MAX_LATITUDE);
         assert!(mercator.project(&geo).is_some());
 
-        // Beyond max latitude
+        // 超出最大纬度
         let geo = GeographicCoordinate::from_radians(0.0, WebMercator::MAX_LATITUDE + 0.1);
         assert!(mercator.project(&geo).is_none());
     }
@@ -523,21 +523,21 @@ mod tests {
     fn test_web_mercator_known_values() {
         let mercator = WebMercator::default();
 
-        // London (0°, 51.5°)
+        // 伦敦（0°, 51.5°）
         let proj = mercator.project_degrees(0.0, 51.5).unwrap();
-        assert!((proj.x).abs() < 1.0); // Near prime meridian
-        // y at 51.5° should be positive and in the millions of meters
+        assert!((proj.x).abs() < 1.0); // 靠近本初子午线
+        // 51.5° 处的 y 应为正且达数百万米
         assert!(proj.y > 6_000_000.0 && proj.y < 7_000_000.0);
     }
 
     #[test]
     fn test_utm_zone_calculation() {
-        // New York: ~74°W, 40°N → Zone 18N
+        // 纽约：约 74°W, 40°N → 分带 18N
         let zone = UtmZone::from_lon_lat(-73.9857, 40.7484);
         assert_eq!(zone.zone, 18);
         assert!(zone.north);
 
-        // Sydney: ~151°E, 33°S → Zone 56S
+        // 悉尼：约 151°E, 33°S → 分带 56S
         let zone = UtmZone::from_lon_lat(151.2093, -33.8688);
         assert_eq!(zone.zone, 56);
         assert!(!zone.north);
@@ -555,7 +555,7 @@ mod tests {
     #[test]
     fn test_utm_project_roundtrip() {
         let utm = Utm::default();
-        let original = GeographicCoordinate::from_degrees(-73.9857, 40.7484); // NYC
+        let original = GeographicCoordinate::from_degrees(-73.9857, 40.7484); // 纽约
 
         let (proj, zone) = utm.project(&original, None);
         let recovered = utm.unproject(&proj, &zone);
@@ -567,21 +567,21 @@ mod tests {
     #[test]
     fn test_utm_false_easting() {
         let utm = Utm::default();
-        // Point at zone 31 central meridian (3°E), equator
+        // 位于分带 31 中央经线（3°E）、赤道的点
         let geo = GeographicCoordinate::from_degrees(3.0, 0.0);
 
         let (proj, _zone) = utm.project(&geo, Some(31));
 
-        // At the central meridian, easting should be exactly 500000m (false easting)
+        // 在中央经线上，东向坐标应恰为 500000m（假东偏移）
         assert!((proj.x - 500000.0).abs() < 1.0);
-        // At the equator, northing should be ~0
+        // 在赤道上，北向坐标应约为 0
         assert!(proj.y.abs() < 1.0);
     }
 
     #[test]
     fn test_polar_stereographic_origin() {
         let proj = PolarStereographic::default();
-        let geo = GeographicCoordinate::from_radians(0.0, FRAC_PI_2); // North pole
+        let geo = GeographicCoordinate::from_radians(0.0, FRAC_PI_2); // 北极
 
         let projected = proj.project(&geo);
         assert!(projected.x.abs() < 1.0);
@@ -591,7 +591,7 @@ mod tests {
     #[test]
     fn test_polar_stereographic_roundtrip() {
         let proj = PolarStereographic::default();
-        let original = GeographicCoordinate::from_degrees(45.0, 85.0); // Near north pole
+        let original = GeographicCoordinate::from_degrees(45.0, 85.0); // 靠近北极
 
         let projected = proj.project(&original);
         let recovered = proj.unproject(&projected);
@@ -643,12 +643,12 @@ mod tests {
     #[test]
     fn test_utm_zone_central_meridian() {
         let zone = UtmZone { zone: 1, north: true };
-        // Zone 1: -180 to -174, central meridian = -177°
+        // 分带 1：-180 到 -174，中央经线 = -177°
         let cm = zone.central_meridian().to_degrees();
         assert!((cm - (-177.0)).abs() < TOLERANCE);
 
         let zone = UtmZone { zone: 31, north: true };
-        // Zone 31: 0 to 6, central meridian = 3°
+        // 分带 31：0 到 6，中央经线 = 3°
         let cm = zone.central_meridian().to_degrees();
         assert!((cm - 3.0).abs() < TOLERANCE);
     }

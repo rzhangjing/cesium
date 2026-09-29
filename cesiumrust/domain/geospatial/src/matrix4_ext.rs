@@ -1,17 +1,18 @@
-//! Matrix4 CesiumJS extension functions.
-//! Maps to CesiumJS `Core/Matrix4.js` static methods beyond basic glam operations.
-//! Note: CesiumJS stores matrices in column-major order, same as glam DMat4.
+//! Matrix4 的 CesiumJS 扩展函数。
+//! 映射到 CesiumJS `Core/Matrix4.js` 中超越基础 glam 操作的静态方法。
+//! 注意：CesiumJS 以列主序存储矩阵，与 glam DMat4 相同。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::manual_memcpy)]
 use crate::math_utils;
 use glam::{DMat3, DMat4, DVec3};
 
-/// The packed length of a Matrix4: 16.
+/// 一个 Matrix4 的打包长度：16。
 pub const PACKED_LENGTH: usize = 16;
 
-/// Creates a Matrix4 from a rotation (Matrix3) and translation.
-/// Maps to CesiumJS `Matrix4.fromRotationTranslation`
+/// 从一个旋转（Matrix3）和平移创建一个 Matrix4。
+/// 映射到 CesiumJS `Matrix4.fromRotationTranslation`
 pub fn from_rotation_translation(rotation: &DMat3, translation: DVec3) -> DMat4 {
     DMat4::from_cols_array(&[
         rotation.x_axis.x,
@@ -33,8 +34,8 @@ pub fn from_rotation_translation(rotation: &DMat3, translation: DVec3) -> DMat4 
     ])
 }
 
-/// Creates a Matrix4 from a translation vector.
-/// Maps to CesiumJS `Matrix4.fromTranslation`
+/// 从一个平移向量创建一个 Matrix4。
+/// 映射到 CesiumJS `Matrix4.fromTranslation`
 pub fn from_translation(translation: DVec3) -> DMat4 {
     DMat4::from_cols_array(&[
         1.0, 0.0, 0.0, 0.0,
@@ -44,8 +45,8 @@ pub fn from_translation(translation: DVec3) -> DMat4 {
     ])
 }
 
-/// Creates a Matrix4 from a non-uniform scale.
-/// Maps to CesiumJS `Matrix4.fromScale`
+/// 从一个非均匀缩放创建一个 Matrix4。
+/// 映射到 CesiumJS `Matrix4.fromScale`
 pub fn from_scale(scale: DVec3) -> DMat4 {
     DMat4::from_cols_array(&[
         scale.x, 0.0, 0.0, 0.0,
@@ -55,20 +56,20 @@ pub fn from_scale(scale: DVec3) -> DMat4 {
     ])
 }
 
-/// Creates a Matrix4 from a uniform scale.
-/// Maps to CesiumJS `Matrix4.fromUniformScale`
+/// 从一个均匀缩放创建一个 Matrix4。
+/// 映射到 CesiumJS `Matrix4.fromUniformScale`
 pub fn from_uniform_scale(scale: f64) -> DMat4 {
     from_scale(DVec3::splat(scale))
 }
 
-/// Gets the translation component of an affine transformation matrix.
-/// Maps to CesiumJS `Matrix4.getTranslation`
+/// 获取一个仿射变换矩阵的平移分量。
+/// 映射到 CesiumJS `Matrix4.getTranslation`
 pub fn get_translation(matrix: &DMat4) -> DVec3 {
     DVec3::new(matrix.w_axis.x, matrix.w_axis.y, matrix.w_axis.z)
 }
 
-/// Gets the scale component of an affine transformation matrix.
-/// Maps to CesiumJS `Matrix4.getScale`
+/// 获取一个仿射变换矩阵的缩放分量。
+/// 映射到 CesiumJS `Matrix4.getScale`
 pub fn get_scale(matrix: &DMat4) -> DVec3 {
     let sx = DVec3::new(matrix.x_axis.x, matrix.x_axis.y, matrix.x_axis.z).length();
     let sy = DVec3::new(matrix.y_axis.x, matrix.y_axis.y, matrix.y_axis.z).length();
@@ -76,15 +77,15 @@ pub fn get_scale(matrix: &DMat4) -> DVec3 {
     DVec3::new(sx, sy, sz)
 }
 
-/// Gets the maximum scale of an affine transformation matrix.
-/// Maps to CesiumJS `Matrix4.getMaximumScale`
+/// 获取一个仿射变换矩阵的最大缩放。
+/// 映射到 CesiumJS `Matrix4.getMaximumScale`
 pub fn get_maximum_scale(matrix: &DMat4) -> f64 {
     let scale = get_scale(matrix);
     scale.x.max(scale.y).max(scale.z)
 }
 
-/// Gets the rotation component (upper-left 3x3 normalized by scale).
-/// Maps to CesiumJS `Matrix4.getRotation`
+/// 获取旋转分量（左上 3x3，按缩放归一化）。
+/// 映射到 CesiumJS `Matrix4.getRotation`
 pub fn get_rotation(matrix: &DMat4) -> DMat3 {
     let scale = get_scale(matrix);
     DMat3::from_cols_array(&[
@@ -100,9 +101,9 @@ pub fn get_rotation(matrix: &DMat4) -> DMat3 {
     ])
 }
 
-/// Multiplies an affine transformation matrix by an implicit translation.
-/// Equivalent to matrix * fromTranslation(translation) but more efficient.
-/// Maps to CesiumJS `Matrix4.multiplyByTranslation`
+/// 将一个仿射变换矩阵乘以一个隐式平移。
+/// 等价于 matrix * fromTranslation(translation)，但更高效。
+/// 映射到 CesiumJS `Matrix4.multiplyByTranslation`
 pub fn multiply_by_translation(matrix: &DMat4, translation: DVec3) -> DMat4 {
     let x = translation.x;
     let y = translation.y;
@@ -129,8 +130,8 @@ pub fn multiply_by_translation(matrix: &DMat4, translation: DVec3) -> DMat4 {
     ])
 }
 
-/// Multiplies an affine transformation matrix by an implicit non-uniform scale.
-/// Maps to CesiumJS `Matrix4.multiplyByScale`
+/// 将一个仿射变换矩阵乘以一个隐式的非均匀缩放。
+/// 映射到 CesiumJS `Matrix4.multiplyByScale`
 pub fn multiply_by_scale(matrix: &DMat4, scale: DVec3) -> DMat4 {
     if scale.x == 1.0 && scale.y == 1.0 && scale.z == 1.0 {
         return *matrix;
@@ -156,8 +157,8 @@ pub fn multiply_by_scale(matrix: &DMat4, scale: DVec3) -> DMat4 {
     ])
 }
 
-/// Computes a perspective projection matrix from field of view.
-/// Maps to CesiumJS `Matrix4.computePerspectiveFieldOfView`
+/// 从视场角计算一个透视投影矩阵。
+/// 映射到 CesiumJS `Matrix4.computePerspectiveFieldOfView`
 pub fn compute_perspective_field_of_view(
     fov_y: f64,
     aspect_ratio: f64,
@@ -178,8 +179,8 @@ pub fn compute_perspective_field_of_view(
     ])
 }
 
-/// Packs a Matrix4 into an array at the given starting index.
-/// Maps to CesiumJS `Matrix4.pack`
+/// 将一个 Matrix4 打包到数组中给定的起始索引处。
+/// 映射到 CesiumJS `Matrix4.pack`
 pub fn pack(value: &DMat4, array: &mut [f64], starting_index: usize) {
     let cols = value.to_cols_array();
     for (i, &v) in cols.iter().enumerate() {
@@ -187,8 +188,8 @@ pub fn pack(value: &DMat4, array: &mut [f64], starting_index: usize) {
     }
 }
 
-/// Unpacks a Matrix4 from an array at the given starting index.
-/// Maps to CesiumJS `Matrix4.unpack`
+/// 从数组中给定的起始索引处解包出一个 Matrix4。
+/// 映射到 CesiumJS `Matrix4.unpack`
 pub fn unpack(array: &[f64], starting_index: usize) -> DMat4 {
     let mut cols = [0.0f64; 16];
     for i in 0..16 {
@@ -197,8 +198,8 @@ pub fn unpack(array: &[f64], starting_index: usize) -> DMat4 {
     DMat4::from_cols_array(&cols)
 }
 
-/// Returns true if left and right are equal within the provided epsilon.
-/// Maps to CesiumJS `Matrix4.equalsEpsilon`
+/// 若在给定的 epsilon 范围内 left 与 right 相等则返回 true。
+/// 映射到 CesiumJS `Matrix4.equalsEpsilon`
 pub fn equals_epsilon(left: &DMat4, right: &DMat4, epsilon: f64) -> bool {
     let l = left.to_cols_array();
     let r = right.to_cols_array();
@@ -207,11 +208,11 @@ pub fn equals_epsilon(left: &DMat4, right: &DMat4, epsilon: f64) -> bool {
         .all(|(&a, &b)| math_utils::equals_epsilon(a, b, 0.0, epsilon))
 }
 
-/// Computes a view matrix from eye position, direction, and up vector.
-/// Maps to CesiumJS `Matrix4.computeView`
+/// 从眼睛位置、方向和 up 向量计算一个视图矩阵。
+/// 映射到 CesiumJS `Matrix4.computeView`
 pub fn compute_view(position: DVec3, direction: DVec3, up: DVec3) -> DMat4 {
     let right = direction.cross(up);
-    // Column-major: each column is [right, up, -direction, position] transposed
+    // 列主序：每一列都是 [right, up, -direction, position] 的转置
     DMat4::from_cols_array(&[
         right.x, up.x, -direction.x, 0.0,
         right.y, up.y, -direction.y, 0.0,
@@ -220,8 +221,8 @@ pub fn compute_view(position: DVec3, direction: DVec3, up: DVec3) -> DMat4 {
     ])
 }
 
-/// Creates a Matrix4 from translation, quaternion rotation, and scale.
-/// Maps to CesiumJS `Matrix4.fromTranslationQuaternionRotationScale`
+/// 从平移、四元数旋转和缩放创建一个 Matrix4。
+/// 映射到 CesiumJS `Matrix4.fromTranslationQuaternionRotationScale`
 pub fn from_translation_quaternion_rotation_scale(
     translation: DVec3,
     rotation: glam::DQuat,
@@ -236,14 +237,14 @@ pub fn from_translation_quaternion_rotation_scale(
     ])
 }
 
-/// Multiplies two affine transformation matrices, ignoring the 4th row.
-/// The result always has [0,0,0,1] as its 4th row.
-/// Maps to CesiumJS `Matrix4.multiplyTransformation`
+/// 相乘两个仿射变换矩阵，忽略第 4 行。
+/// 结果的第四行始终为 [0,0,0,1]。
+/// 映射到 CesiumJS `Matrix4.multiplyTransformation`
 pub fn multiply_transformation(left: &DMat4, right: &DMat4) -> DMat4 {
     let l = left.to_cols_array();
     let r = right.to_cols_array();
     let mut out = [0.0f64; 16];
-    // Columns 0..2: standard 4x4 multiply but with row3 = [0,0,0,1]
+    // 列 0..2：标准 4x4 相乘，但 row3 = [0,0,0,1]
     for col in 0..3 {
         for row in 0..3 {
             out[col * 4 + row] = l[row] * r[col * 4]
@@ -252,7 +253,7 @@ pub fn multiply_transformation(left: &DMat4, right: &DMat4) -> DMat4 {
         }
         out[col * 4 + 3] = 0.0;
     }
-    // Column 3 (translation): left * right_col3
+    // 列 3（平移）：left * right_col3
     for row in 0..3 {
         out[12 + row] = l[row] * r[12]
             + l[4 + row] * r[13]
@@ -263,9 +264,9 @@ pub fn multiply_transformation(left: &DMat4, right: &DMat4) -> DMat4 {
     DMat4::from_cols_array(&out)
 }
 
-/// Transforms a point by a 4x4 matrix, treating it as a direction (w=0).
-/// Translation is ignored.
-/// Maps to CesiumJS `Matrix4.multiplyByPointAsVector`
+/// 使用一个 4x4 矩阵变换一个点，将其视为方向（w=0）。
+/// 忽略平移。
+/// 映射到 CesiumJS `Matrix4.multiplyByPointAsVector`
 pub fn multiply_by_point_as_vector(matrix: &DMat4, point: DVec3) -> DVec3 {
     DVec3::new(
         matrix.x_axis.x * point.x + matrix.y_axis.x * point.y + matrix.z_axis.x * point.z,
@@ -274,25 +275,25 @@ pub fn multiply_by_point_as_vector(matrix: &DMat4, point: DVec3) -> DVec3 {
     )
 }
 
-/// Computes the inverse of an affine transformation matrix.
-/// More efficient than general inverse for matrices with [0,0,0,1] last row.
-/// Maps to CesiumJS `Matrix4.inverseTransformation`
+/// 计算一个仿射变换矩阵的逆。
+/// 对于最后一行为 [0,0,0,1] 的矩阵，比通用求逆更高效。
+/// 映射到 CesiumJS `Matrix4.inverseTransformation`
 pub fn inverse_transformation(matrix: &DMat4) -> DMat4 {
-    // For an affine matrix [R|t; 0|1], inverse is [R^T | -R^T*t; 0 | 1]
-    // Extract rotation columns
+    // 对于仿射矩阵 [R|t; 0|1]，其逆为 [R^T | -R^T*t; 0 | 1]
+    // 提取旋转列
     let col0 = DVec3::new(matrix.x_axis.x, matrix.x_axis.y, matrix.x_axis.z);
     let col1 = DVec3::new(matrix.y_axis.x, matrix.y_axis.y, matrix.y_axis.z);
     let col2 = DVec3::new(matrix.z_axis.x, matrix.z_axis.y, matrix.z_axis.z);
     let t = DVec3::new(matrix.w_axis.x, matrix.w_axis.y, matrix.w_axis.z);
 
-    // R^T rows are the original columns
+    // R^T 的行就是原始的列
     // new_t = -R^T * t = -(col0.dot(t), col1.dot(t), col2.dot(t))
     let nt = DVec3::new(-col0.dot(t), -col1.dot(t), -col2.dot(t));
 
-    // R^T in column-major: column i of R^T = row i of R
-    // row 0 of R = (col0.x, col1.x, col2.x)
-    // row 1 of R = (col0.y, col1.y, col2.y)
-    // row 2 of R = (col0.z, col1.z, col2.z)
+    // R^T 以列主序：R^T 的第 i 列 = R 的第 i 行
+    // R 的第 0 行 = (col0.x, col1.x, col2.x)
+    // R 的第 1 行 = (col0.y, col1.y, col2.y)
+    // R 的第 2 行 = (col0.z, col1.z, col2.z)
     DMat4::from_cols_array(&[
         col0.x, col1.x, col2.x, 0.0,
         col0.y, col1.y, col2.y, 0.0,
@@ -301,8 +302,8 @@ pub fn inverse_transformation(matrix: &DMat4) -> DMat4 {
     ])
 }
 
-/// Sets the rotation component (upper-left 3x3) of a matrix.
-/// Maps to CesiumJS `Matrix4.setRotation`
+/// 设置矩阵的旋转分量（左上 3x3）。
+/// 映射到 CesiumJS `Matrix4.setRotation`
 pub fn set_rotation(matrix: &DMat4, rotation: &DMat3) -> DMat4 {
     DMat4::from_cols_array(&[
         rotation.x_axis.x, rotation.x_axis.y, rotation.x_axis.z, matrix.x_axis.w,
@@ -312,8 +313,8 @@ pub fn set_rotation(matrix: &DMat4, rotation: &DMat3) -> DMat4 {
     ])
 }
 
-/// Sets the translation component of a matrix.
-/// Maps to CesiumJS `Matrix4.setTranslation`
+/// 设置矩阵的平移分量。
+/// 映射到 CesiumJS `Matrix4.setTranslation`
 pub fn set_translation(matrix: &DMat4, translation: DVec3) -> DMat4 {
     DMat4::from_cols_array(&[
         matrix.x_axis.x, matrix.x_axis.y, matrix.x_axis.z, matrix.x_axis.w,
@@ -323,8 +324,8 @@ pub fn set_translation(matrix: &DMat4, translation: DVec3) -> DMat4 {
     ])
 }
 
-/// Sets the scale component of a matrix (replaces upper-left 3x3 column magnitudes).
-/// Maps to CesiumJS `Matrix4.setScale`
+/// 设置矩阵的缩放分量（替换左上 3x3 的各列量级）。
+/// 映射到 CesiumJS `Matrix4.setScale`
 pub fn set_scale(matrix: &DMat4, scale: DVec3) -> DMat4 {
     let current = get_scale(matrix);
     let sx = scale.x / current.x;
@@ -338,8 +339,8 @@ pub fn set_scale(matrix: &DMat4, scale: DVec3) -> DMat4 {
     ])
 }
 
-/// Computes an orthographic projection matrix.
-/// Maps to CesiumJS `Matrix4.computeOrthographicOffCenter`
+/// 计算一个正交投影矩阵。
+/// 映射到 CesiumJS `Matrix4.computeOrthographicOffCenter`
 pub fn compute_orthographic_off_center(
     left: f64, right: f64, bottom: f64, top: f64, near: f64, far: f64,
 ) -> DMat4 {
@@ -361,8 +362,8 @@ pub fn compute_orthographic_off_center(
     ])
 }
 
-/// Computes a perspective projection matrix from off-center parameters.
-/// Maps to CesiumJS `Matrix4.computePerspectiveOffCenter`
+/// 从 off-center 参数计算一个透视投影矩阵。
+/// 映射到 CesiumJS `Matrix4.computePerspectiveOffCenter`
 pub fn compute_perspective_off_center(
     left: f64, right: f64, bottom: f64, top: f64, near: f64, far: f64,
 ) -> DMat4 {
@@ -382,8 +383,8 @@ pub fn compute_perspective_off_center(
     ])
 }
 
-/// Computes an infinite perspective projection matrix.
-/// Maps to CesiumJS `Matrix4.computeInfinitePerspectiveOffCenter`
+/// 计算一个无限远透视投影矩阵。
+/// 映射到 CesiumJS `Matrix4.computeInfinitePerspectiveOffCenter`
 pub fn compute_infinite_perspective_off_center(
     left: f64, right: f64, bottom: f64, top: f64, near: f64,
 ) -> DMat4 {
@@ -403,8 +404,8 @@ pub fn compute_infinite_perspective_off_center(
     ])
 }
 
-/// Computes a viewport transformation matrix.
-/// Maps to CesiumJS `Matrix4.computeViewportTransformation`
+/// 计算一个视口变换矩阵。
+/// 映射到 CesiumJS `Matrix4.computeViewportTransformation`
 pub fn compute_viewport_transformation(
     viewport_x: f64, viewport_y: f64,
     viewport_width: f64, viewport_height: f64,
@@ -429,8 +430,8 @@ pub fn compute_viewport_transformation(
     ])
 }
 
-/// Computes the element-wise absolute value of a matrix.
-/// Maps to CesiumJS `Matrix4.abs`
+/// 计算矩阵的逐元素绝对值。
+/// 映射到 CesiumJS `Matrix4.abs`
 pub fn abs(matrix: &DMat4) -> DMat4 {
     let cols = matrix.to_cols_array();
     let mut out = [0.0f64; 16];

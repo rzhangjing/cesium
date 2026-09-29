@@ -1,8 +1,8 @@
-//! Polyline volume geometry - extrudes a 2D shape along a polyline path.
+//! 折线体几何 - 沿折线路径拉伸一个 2D 形状。
 //!
-//! Faithful adaptation of CesiumJS `PolylineVolumeGeometry.js` and
-//! `PolylineVolumeGeometryLibrary.js`. Extrudes a 2D cross-section shape
-//! along a geodesic arc, generating a tube-like volume.
+//! 对 CesiumJS `PolylineVolumeGeometry.js` 与
+//! `PolylineVolumeGeometryLibrary.js` 的忠实适配。沿大地线弧拉伸
+//! 一个 2D 截面形状，生成一个管状的体。
 
 use crate::bounding::BoundingSphere;
 use crate::ellipsoid::Ellipsoid;
@@ -11,16 +11,16 @@ use crate::math_utils::EPSILON10;
 use crate::polyline_pipeline::{generate_arc, ArcOptions};
 use glam::DVec3;
 
-/// Options describing a polyline volume.
+/// 描述一个折线体的选项。
 #[derive(Debug, Clone)]
 pub struct PolylineVolumeOptions {
-    /// The polyline positions (at least 2).
+    /// 折线的位置（至少 2 个）。
     pub positions: Vec<DVec3>,
-    /// The 2D cross-section shape (in the local frame: x=right, y=up).
+    /// 2D 截面形状（在局部标架中：x=右，y=上）。
     pub shape: Vec<[f64; 2]>,
-    /// Angular granularity in radians for arc subdivision.
+    /// 用于弧细分的角度粒度（弧度）。
     pub granularity: f64,
-    /// The reference ellipsoid.
+    /// 参考椭球。
     pub ellipsoid: Ellipsoid,
 }
 
@@ -35,13 +35,13 @@ impl Default for PolylineVolumeOptions {
     }
 }
 
-/// Generates a polyline volume geometry.
+/// 生成一个折线体几何。
 ///
-/// Maps to CesiumJS `PolylineVolumeGeometry.createGeometry`.
+/// 映射到 CesiumJS `PolylineVolumeGeometry.createGeometry`。
 pub fn polyline_volume_geometry(options: &PolylineVolumeOptions, vf: VertexFormat) -> GeometryData {
     let ellipsoid = &options.ellipsoid;
 
-    // Remove duplicates.
+    // 去除重复项。
     let mut positions: Vec<DVec3> = options.positions.clone();
     positions.dedup_by(|a, b| {
         (a.x - b.x).abs() <= EPSILON10
@@ -53,7 +53,7 @@ pub fn polyline_volume_geometry(options: &PolylineVolumeOptions, vf: VertexForma
         return empty_geometry();
     }
 
-    // Subdivide into a geodesic arc.
+    // 细分为大地线弧。
     let opts = ArcOptions {
         positions: &positions,
         heights: None,
@@ -68,7 +68,7 @@ pub fn polyline_volume_geometry(options: &PolylineVolumeOptions, vf: VertexForma
         return empty_geometry();
     }
 
-    // For each arc point, compute a local frame and transform the shape.
+    // 对每个弧点，计算一个局部标架并变换形状。
     let mut pos_out: Vec<[f64; 3]> = Vec::with_capacity(n * shape_len);
     let mut normals_out: Option<Vec<[f64; 3]>> = if vf.normal { Some(Vec::with_capacity(n * shape_len)) } else { None };
     let mut tangents_out: Option<Vec<[f64; 3]>> = if vf.tangent { Some(Vec::with_capacity(n * shape_len)) } else { None };
@@ -80,7 +80,7 @@ pub fn polyline_volume_geometry(options: &PolylineVolumeOptions, vf: VertexForma
     for i in 0..n {
         let p = arc[i];
 
-        // Compute tangent along the arc.
+        // 计算沿弧的切线。
         let tangent = if i == 0 {
             (arc[1] - arc[0]).normalize_or(DVec3::X)
         } else if i == n - 1 {
@@ -89,19 +89,19 @@ pub fn polyline_volume_geometry(options: &PolylineVolumeOptions, vf: VertexForma
             (arc[i + 1] - arc[i - 1]).normalize_or(DVec3::X)
         };
 
-        // Compute the local frame: tangent (along path), up (surface normal), right.
+        // 计算局部标架：tangent（沿路径）、up（表面法线）、right。
         let up = ellipsoid.geodetic_surface_normal(p).unwrap_or(DVec3::Z);
         let right = tangent.cross(up).normalize_or(DVec3::Y);
         let corrected_up = right.cross(tangent).normalize_or(up);
 
-        // Transform each shape point into 3D.
+        // 将每个形状点变换到 3D。
         for (j, shape_pt) in options.shape.iter().enumerate() {
             let offset = right * shape_pt[0] + corrected_up * shape_pt[1];
             let world_pt = p + offset;
             pos_out.push([world_pt.x, world_pt.y, world_pt.z]);
 
             if let Some(ref mut norms) = normals_out {
-                // Normal points outward from the shape center.
+                // 法线从形状中心向外。
                 let normal = offset.normalize_or(corrected_up);
                 norms.push([normal.x, normal.y, normal.z]);
             }
@@ -121,7 +121,7 @@ pub fn polyline_volume_geometry(options: &PolylineVolumeOptions, vf: VertexForma
         }
     }
 
-    // Triangulate: connect consecutive cross-sections.
+    // 三角剖分：连接相邻的截面。
     let mut indices: Vec<u32> = Vec::with_capacity((n - 1) * shape_len * 6);
     for i in 0..n - 1 {
         for j in 0..shape_len {
@@ -136,7 +136,7 @@ pub fn polyline_volume_geometry(options: &PolylineVolumeOptions, vf: VertexForma
         }
     }
 
-    // Cap the start and end.
+    // 为起点和终点加上盖子。
     add_cap(&mut indices, 0, shape_len, false);
     add_cap(&mut indices, (n - 1) * shape_len, shape_len, true);
 
@@ -156,7 +156,7 @@ pub fn polyline_volume_geometry(options: &PolylineVolumeOptions, vf: VertexForma
     }
 }
 
-/// Adds a fan-triangulated cap at the given offset.
+/// 在给定偏移处添加一个扇形三角剖分的盖子。
 fn add_cap(indices: &mut Vec<u32>, offset: usize, shape_len: usize, reverse: bool) {
     if shape_len < 3 {
         return;
@@ -225,7 +225,7 @@ mod tests {
     #[test]
     fn test_polyvol_vertex_count() {
         let geo = polyline_volume_geometry(&polyvol_opts(), VertexFormat::POSITION_ONLY);
-        // n arc points * 4 shape vertices.
+        // n 个弧点 * 4 个形状顶点。
         let n_verts = geo.positions.len();
         assert_eq!(n_verts % 4, 0);
         let n_arc = n_verts / 4;
@@ -253,7 +253,7 @@ mod tests {
         ];
         let opts = PolylineVolumeOptions {
             positions,
-            shape: vec![[0.0, 0.0], [1.0, 0.0]], // Only 2 points, need 3+.
+            shape: vec![[0.0, 0.0], [1.0, 0.0]], // 只有 2 个点，需要 3 个以上。
             ..Default::default()
         };
         let geo = polyline_volume_geometry(&opts, VertexFormat::POSITION_ONLY);

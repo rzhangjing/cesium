@@ -1,51 +1,50 @@
-//! Terrain mesh representation.
-//! Maps to CesiumJS `Core/TerrainMesh.js`
+//! 地形网格表示。
+//! 映射到 CesiumJS `Core/TerrainMesh.js`
 
 use cesium_geospatial::bounding::BoundingSphere;
 use serde::{Deserialize, Serialize};
 
-/// A mesh representing terrain geometry.
+/// 表示地形几何的网格。
 ///
-/// This is the output of terrain data processing - actual 3D positions
-/// ready for rendering.
+/// 这是地形数据处理的输出 - 可直接用于渲染的实际 3D 位置。
 ///
-/// Maps to CesiumJS `TerrainMesh`
+/// 映射到 CesiumJS `TerrainMesh`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerrainMesh {
-    /// Vertex positions in ECEF coordinates [x, y, z] per vertex
+    /// ECEF 坐标中的顶点位置，每顶点 [x, y, z]
     pub positions: Vec<[f64; 3]>,
 
-    /// Vertex normals (optional) [x, y, z] per vertex
+    /// 顶点法线（可选），每顶点 [x, y, z]
     pub normals: Option<Vec<[f64; 3]>>,
 
-    /// Texture coordinates [u, v] per vertex
+    /// 纹理坐标，每顶点 [u, v]
     pub tex_coords: Option<Vec<[f64; 2]>>,
 
-    /// Triangle indices
+    /// 三角形索引
     pub indices: Vec<u32>,
 
-    /// Minimum height in the mesh
+    /// 网格中的最小高度
     pub minimum_height: f64,
 
-    /// Maximum height in the mesh
+    /// 网格中的最大高度
     pub maximum_height: f64,
 
-    /// Bounding sphere for the mesh
+    /// 网格的包围球
     pub bounding_sphere: BoundingSphere,
 }
 
 impl TerrainMesh {
-    /// Returns the number of vertices in the mesh.
+    /// 返回网格中的顶点数。
     pub fn vertex_count(&self) -> usize {
         self.positions.len()
     }
 
-    /// Returns the number of triangles in the mesh.
+    /// 返回网格中的三角形数。
     pub fn triangle_count(&self) -> usize {
         self.indices.len() / 3
     }
 
-    /// Computes vertex normals from triangle faces if not present.
+    /// 若不存在，则从三角形面计算顶点法线。
     pub fn compute_normals(&mut self) {
         if self.normals.is_some() {
             return;
@@ -54,7 +53,7 @@ impl TerrainMesh {
         let vertex_count = self.positions.len();
         let mut normals = vec![[0.0f64; 3]; vertex_count];
 
-        // Accumulate face normals
+        // 累加面法线
         for tri in self.indices.chunks(3) {
             if tri.len() < 3 {
                 continue;
@@ -72,7 +71,7 @@ impl TerrainMesh {
             let p1 = self.positions[i1];
             let p2 = self.positions[i2];
 
-            // Compute face normal
+            // 计算面法线
             let e1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
             let e2 = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
 
@@ -82,7 +81,7 @@ impl TerrainMesh {
                 e1[0] * e2[1] - e1[1] * e2[0],
             ];
 
-            // Accumulate
+            // 累加
             for &idx in tri {
                 let idx = idx as usize;
                 normals[idx][0] += normal[0];
@@ -91,7 +90,7 @@ impl TerrainMesh {
             }
         }
 
-        // Normalize
+        // 归一化
         for normal in normals.iter_mut() {
             let len = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
             if len > 0.0 {
@@ -145,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_compute_normals() {
-        // Simple triangle in XY plane
+        // XY 平面中的简单三角形
         let mut mesh = TerrainMesh {
             positions: vec![
                 [0.0, 0.0, 0.0],
@@ -161,7 +160,7 @@ mod tests {
 
         assert!(mesh.normals.is_some());
         let normals = mesh.normals.unwrap();
-        // Normal should point in +Z direction
+        // 法线应指向 +Z 方向
         assert!((normals[0][2] - 1.0).abs() < 0.01);
     }
 }

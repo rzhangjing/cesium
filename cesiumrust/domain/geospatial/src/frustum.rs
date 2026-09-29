@@ -1,15 +1,15 @@
-//! Frustum and CullingVolume - view frustum definitions and culling.
-//! Maps to CesiumJS `Core/PerspectiveFrustum.js`, `Core/OrthographicFrustum.js`, `Core/CullingVolume.js`
+//! Frustum 与 CullingVolume - 视锥定义与剔除。
+//! 映射到 CesiumJS `Core/PerspectiveFrustum.js`, `Core/OrthographicFrustum.js`, `Core/CullingVolume.js`
 
 use crate::bounding::{AxisAlignedBoundingBox, BoundingSphere};
 use crate::ray::{Intersect, Plane};
 use glam::{DMat4, DVec3};
 use serde::{Deserialize, Serialize};
 
-/// Trait for bounding volumes that can be tested against culling planes.
-/// Maps to the duck-typed `boundingVolume.intersectPlane(plane)` in CesiumJS.
+/// 可与剔除平面进行测试的包围体的 trait。
+/// 映射到 CesiumJS 中鸭子类型的 `boundingVolume.intersectPlane(plane)`。
 pub trait Cullable {
-    /// Determines which side of a plane this bounding volume is located.
+    /// 判断该包围体位于平面的哪一侧。
     fn cullable_intersect_plane(&self, plane: &Plane) -> Intersect;
 }
 
@@ -25,29 +25,29 @@ impl Cullable for AxisAlignedBoundingBox {
     }
 }
 
-/// A culling volume defined by 6 clipping planes.
-/// Maps to CesiumJS `CullingVolume`
+/// 由 6 个裁剪平面定义的剔除体。
+/// 映射到 CesiumJS `CullingVolume`
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct CullingVolume {
-    /// The 6 clipping planes: left, right, bottom, top, near, far.
+    /// 6 个裁剪平面：左、右、下、上、近、远。
     pub planes: [Plane; 6],
 }
 
 impl CullingVolume {
-    /// The object is entirely outside the culling volume.
-    /// Maps to `CullingVolume.MASK_OUTSIDE`
+    /// 对象完全在剔除体之外。
+    /// 映射到 `CullingVolume.MASK_OUTSIDE`
     pub const MASK_OUTSIDE: u32 = 0xffffffff;
-    /// The object is entirely inside the culling volume.
-    /// Maps to `CullingVolume.MASK_INSIDE`
+    /// 对象完全在剔除体之内。
+    /// 映射到 `CullingVolume.MASK_INSIDE`
     pub const MASK_INSIDE: u32 = 0x00000000;
-    /// The object may intersect all planes of the culling volume.
-    /// Maps to `CullingVolume.MASK_INDETERMINATE`
+    /// 对象可能与剔除体的所有平面相交。
+    /// 映射到 `CullingVolume.MASK_INDETERMINATE`
     pub const MASK_INDETERMINATE: u32 = 0x7fffffff;
 
-    /// Constructs a culling volume from a bounding sphere.
-    /// Creates six planes that create a box containing the sphere,
-    /// aligned to the x, y, and z axes in world coordinates.
-    /// Maps to `CullingVolume.fromBoundingSphere`
+    /// 由包围球构造一个剔除体。
+    /// 创建六个平面构成一个包含该球体的盒子，
+    /// 在世界坐标中对齐到 x、y、z 轴。
+    /// 映射到 `CullingVolume.fromBoundingSphere`
     pub fn from_bounding_sphere(sphere: &BoundingSphere) -> Self {
         let center = sphere.center;
         let radius = sphere.radius;
@@ -57,11 +57,11 @@ impl CullingVolume {
         let mut plane_index = 0;
 
         for face_normal in &faces {
-            // plane0: normal = faceNormal, through (center - faceNormal * radius)
+            // plane0：法线 = faceNormal，过 (center - faceNormal * radius)
             let point0 = center - *face_normal * radius;
             planes[plane_index] = Plane::from_point_normal(point0, *face_normal);
 
-            // plane1: normal = -faceNormal, through (center + faceNormal * radius)
+            // plane1：法线 = -faceNormal，过 (center + faceNormal * radius)
             let point1 = center + *face_normal * radius;
             planes[plane_index + 1] = Plane::from_point_normal(point1, -*face_normal);
 
@@ -71,8 +71,8 @@ impl CullingVolume {
         CullingVolume { planes }
     }
 
-    /// Determines the visibility of a bounding volume relative to this culling volume.
-    /// Maps to `CullingVolume.computeVisibility`
+    /// 判断某个包围体相对于本剔除体的可见性。
+    /// 映射到 `CullingVolume.computeVisibility`
     pub fn visibility(&self, volume: &impl Cullable) -> Intersect {
         let mut intersecting = false;
 
@@ -92,8 +92,8 @@ impl CullingVolume {
         }
     }
 
-    /// Computes the visibility with a parent plane mask for hierarchical culling.
-    /// Maps to `CullingVolume.computeVisibilityWithPlaneMask`
+    /// 使用父级平面掩码计算可见性，用于层级式剔除。
+    /// 映射到 `CullingVolume.computeVisibilityWithPlaneMask`
     pub fn visibility_with_plane_mask(
         &self,
         volume: &impl Cullable,
@@ -108,7 +108,7 @@ impl CullingVolume {
         for (k, plane) in self.planes.iter().enumerate() {
             let flag = if k < 31 { 1u32 << k } else { 0 };
             if k < 31 && (parent_plane_mask & flag) == 0 {
-                // bounding volume is known to be INSIDE this plane
+                // 已知包围体位于此平面之内（INSIDE）
                 continue;
             }
 
@@ -124,21 +124,21 @@ impl CullingVolume {
     }
 }
 
-/// A perspective frustum defined by field of view, aspect ratio, and near/far planes.
-/// Maps to CesiumJS `PerspectiveFrustum`
+/// 由视野角、宽高比以及近/远平面定义的透视视锥。
+/// 映射到 CesiumJS `PerspectiveFrustum`
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PerspectiveFrustum {
-    /// The angle of the field of view in radians (vertical).
+    /// 视野角（垂直，弧度）。
     pub fov: f64,
-    /// The aspect ratio (width / height).
+    /// 宽高比（宽 / 高）。
     pub aspect_ratio: f64,
-    /// The distance to the near plane.
+    /// 到近平面的距离。
     pub near: f64,
-    /// The distance to the far plane.
+    /// 到远平面的距离。
     pub far: f64,
-    /// Optional horizontal field of view offset (for off-center projections).
+    /// 可选的水平视野偏移（用于偏心投影）。
     pub x_offset: f64,
-    /// Optional vertical field of view offset.
+    /// 可选的垂直视野偏移。
     pub y_offset: f64,
 }
 
@@ -154,14 +154,14 @@ impl PerspectiveFrustum {
         }
     }
 
-    /// The horizontal field of view in radians.
-    /// Maps to `PerspectiveFrustum.fovy` (actually this is the vertical fov)
+    /// 垂直视野角（弧度）。
+    /// 映射到 `PerspectiveFrustum.fovy`
     #[inline]
     pub fn fovy(&self) -> f64 {
         self.fov
     }
 
-    /// The horizontal field of view.
+    /// 水平视野角。
     pub fn fov_x(&self) -> f64 {
         2.0 * (self.fov_y_half().tan() * self.aspect_ratio).atan()
     }
@@ -170,8 +170,8 @@ impl PerspectiveFrustum {
         self.fov * 0.5
     }
 
-    /// Computes the projection matrix.
-    /// Maps to `PerspectiveFrustum.projectionMatrix`
+    /// 计算投影矩阵。
+    /// 映射到 `PerspectiveFrustum.projectionMatrix`
     pub fn projection_matrix(&self) -> DMat4 {
         let fovy_half = self.fov_y_half();
         let tan_fovy = fovy_half.tan();
@@ -180,7 +180,7 @@ impl PerspectiveFrustum {
         let right = top * self.aspect_ratio;
         let left = -right;
 
-        // Apply offsets
+        // 应用偏移
         let left = left + self.x_offset * self.near;
         let right = right + self.x_offset * self.near;
         let bottom = bottom + self.y_offset * self.near;
@@ -189,8 +189,8 @@ impl PerspectiveFrustum {
         perspective_off_center(left, right, bottom, top, self.near, self.far)
     }
 
-    /// Computes an infinite far-plane projection matrix (for shadow mapping).
-    /// Maps to `PerspectiveFrustum.infiniteProjectionMatrix`
+    /// 计算无限远平面投影矩阵（用于阴影映射）。
+    /// 映射到 `PerspectiveFrustum.infiniteProjectionMatrix`
     pub fn infinite_projection_matrix(&self) -> DMat4 {
         let fovy_half = self.fov_y_half();
         let tan_fovy = fovy_half.tan();
@@ -208,12 +208,12 @@ impl PerspectiveFrustum {
         ])
     }
 
-    /// Computes the culling volume for this frustum at the given position/orientation.
-    /// Maps to `PerspectiveOffCenterFrustum.computeCullingVolume`
+    /// 计算本视锥在给定位置/朝向下的剔除体。
+    /// 映射到 `PerspectiveOffCenterFrustum.computeCullingVolume`
     pub fn compute_culling_volume(&self, position: DVec3, direction: DVec3, up: DVec3) -> CullingVolume {
         let right = direction.cross(up);
 
-        // Compute off-center frustum parameters (same as projection_matrix)
+        // 计算偏心视锥参数（与 projection_matrix 相同）
         let fovy_half = self.fov_y_half();
         let tan_fovy = fovy_half.tan();
         let t = self.near * tan_fovy;
@@ -221,7 +221,7 @@ impl PerspectiveFrustum {
         let r = t * self.aspect_ratio;
         let l = -r;
 
-        // Apply offsets
+        // 应用偏移
         let l = l + self.x_offset * self.near;
         let r = r + self.x_offset * self.near;
         let b = b + self.y_offset * self.near;
@@ -230,26 +230,26 @@ impl PerspectiveFrustum {
         let near_center = position + direction * self.near;
         let far_center = position + direction * self.far;
 
-        // Left plane: direction from position to left edge of near plane, cross with up
+        // 左平面：从 position 到近平面左边缘的方向，与 up 叉积
         let left_normal = (near_center + right * l - position).cross(up).normalize();
         let left_plane = Plane::from_point_normal(position, left_normal);
 
-        // Right plane: up cross direction from position to right edge of near plane
+        // 右平面：up 与从 position 到近平面右边缘方向的叉积
         let right_normal = up.cross(near_center + right * r - position).normalize();
         let right_plane = Plane::from_point_normal(position, right_normal);
 
-        // Bottom plane: right cross direction from position to bottom edge of near plane
+        // 下平面：right 与从 position 到近平面下边缘方向的叉积
         let bottom_normal = right.cross(near_center + up * b - position).normalize();
         let bottom_plane = Plane::from_point_normal(position, bottom_normal);
 
-        // Top plane: direction from position to top edge of near plane, cross with right
+        // 上平面：从 position 到近平面上边缘的方向，与 right 叉积
         let top_normal = (near_center + up * t - position).cross(right).normalize();
         let top_plane = Plane::from_point_normal(position, top_normal);
 
-        // Near plane: normal points along view direction
+        // 近平面：法线沿视线方向
         let near_plane = Plane::from_point_normal(near_center, direction);
 
-        // Far plane: normal points opposite view direction
+        // 远平面：法线指向视线反方向
         let far_plane = Plane::from_point_normal(far_center, -direction);
 
         CullingVolume {
@@ -257,16 +257,16 @@ impl PerspectiveFrustum {
         }
     }
 
-    /// Computes the pixel dimensions at a given distance.
-    /// Maps to `PerspectiveOffCenterFrustum.getPixelDimensions`
+    /// 计算给定距离处的像素尺寸。
+    /// 映射到 `PerspectiveOffCenterFrustum.getPixelDimensions`
     ///
-    /// # Arguments
-    /// * `drawing_buffer_width` - Width of the drawing buffer in pixels
-    /// * `drawing_buffer_height` - Height of the drawing buffer in pixels
-    /// * `distance` - Distance from the camera to the object
-    /// * `pixel_ratio` - The pixel ratio (default 1.0)
+    /// # 参数
+    /// * `drawing_buffer_width` - 绘制缓冲区的宽度（像素）
+    /// * `drawing_buffer_height` - 绘制缓冲区的高度（像素）
+    /// * `distance` - 相机到物体的距离
+    /// * `pixel_ratio` - 像素比（默认 1.0）
     ///
-    /// Returns (pixel_width, pixel_height) - the size of a pixel in world units at the given distance.
+    /// 返回 (pixel_width, pixel_height) - 在给定距离下一个像素在世界单位下的大小。
     pub fn pixel_dimensions(&self, drawing_buffer_width: f64, drawing_buffer_height: f64, distance: f64, pixel_ratio: f64) -> (f64, f64) {
         let tan_phi = self.fov_y_half().tan();
         let tan_theta = tan_phi * self.aspect_ratio;
@@ -275,23 +275,23 @@ impl PerspectiveFrustum {
         (pixel_width, pixel_height)
     }
 
-    /// Computes the sse denominator for screen-space error calculations.
+    /// 为屏幕空间误差（SSE）计算计算 sse 分母。
     pub fn sse_denominator(&self) -> f64 {
         2.0 * self.fov_y_half().tan()
     }
 }
 
-/// An orthographic frustum defined by width, aspect ratio, and near/far planes.
-/// Maps to CesiumJS `OrthographicFrustum`
+/// 由宽度、宽高比以及近/远平面定义的正射视锥。
+/// 映射到 CesiumJS `OrthographicFrustum`
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct OrthographicFrustum {
-    /// The width of the frustum at the near plane.
+    /// 视锥在近平面处的宽度。
     pub width: f64,
-    /// The aspect ratio (width / height).
+    /// 宽高比（宽 / 高）。
     pub aspect_ratio: f64,
-    /// The distance to the near plane.
+    /// 到近平面的距离。
     pub near: f64,
-    /// The distance to the far plane.
+    /// 到远平面的距离。
     pub far: f64,
 }
 
@@ -305,13 +305,13 @@ impl OrthographicFrustum {
         }
     }
 
-    /// The height of the frustum.
+    /// 视锥的高度。
     pub fn height(&self) -> f64 {
         self.width / self.aspect_ratio
     }
 
-    /// Computes the projection matrix.
-    /// Maps to `OrthographicFrustum.projectionMatrix`
+    /// 计算投影矩阵。
+    /// 映射到 `OrthographicFrustum.projectionMatrix`
     pub fn projection_matrix(&self) -> DMat4 {
         let right = self.width * 0.5;
         let left = -right;
@@ -327,7 +327,7 @@ impl OrthographicFrustum {
         ])
     }
 
-    /// Computes the culling volume.
+    /// 计算剔除体。
     pub fn compute_culling_volume(&self, position: DVec3, direction: DVec3, up: DVec3) -> CullingVolume {
         let right = direction.cross(up).normalize();
         let half_width = self.width * 0.5;
@@ -348,10 +348,10 @@ impl OrthographicFrustum {
         }
     }
 
-    /// Computes the pixel dimensions at a given distance.
-    /// Maps to `OrthographicOffCenterFrustum.getPixelDimensions`
+    /// 计算给定距离处的像素尺寸。
+    /// 映射到 `OrthographicOffCenterFrustum.getPixelDimensions`
     ///
-    /// Returns (pixel_width, pixel_height) - the size of a pixel in world units.
+    /// 返回 (pixel_width, pixel_height) - 一个像素在世界单位下的大小。
     pub fn pixel_dimensions(&self, drawing_buffer_width: f64, drawing_buffer_height: f64, _distance: f64, pixel_ratio: f64) -> (f64, f64) {
         let pixel_width = (pixel_ratio * self.width) / drawing_buffer_width;
         let pixel_height = (pixel_ratio * self.height()) / drawing_buffer_height;
@@ -359,29 +359,28 @@ impl OrthographicFrustum {
     }
 }
 
-// --- Off-center frustums ---
+// --- 偏心视锥 ---
 
-/// A perspective frustum defined by six clipping plane distances
-/// (left, right, top, bottom, near, far).
+/// 由六个裁剪平面距离（左、右、上、下、近、远）定义的透视视锥。
 ///
-/// This is the lower-level frustum used by `PerspectiveFrustum`; it allows
-/// off-center (asymmetric) projections. `left`/`right`/`top`/`bottom` are
-/// `Option` because CesiumJS leaves them `undefined` until set, and accessing
-/// the projection matrix before they are set throws a `DeveloperError`.
-/// Maps to CesiumJS `PerspectiveOffCenterFrustum`
+/// 这是 `PerspectiveFrustum` 所使用的底层视锥；它允许
+/// 偏心（非对称）投影。`left`/`right`/`top`/`bottom` 为
+/// `Option`，因为 CesiumJS 在被设置前将它们留为 `undefined`，而在它们
+/// 被设置前访问投影矩阵会抛出 `DeveloperError`。
+/// 映射到 CesiumJS `PerspectiveOffCenterFrustum`
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PerspectiveOffCenterFrustum {
-    /// The left clipping plane distance (`undefined` until set).
+    /// 左裁剪平面距离（设置前为 `undefined`）。
     pub left: Option<f64>,
-    /// The right clipping plane distance (`undefined` until set).
+    /// 右裁剪平面距离（设置前为 `undefined`）。
     pub right: Option<f64>,
-    /// The top clipping plane distance (`undefined` until set).
+    /// 上裁剪平面距离（设置前为 `undefined`）。
     pub top: Option<f64>,
-    /// The bottom clipping plane distance (`undefined` until set).
+    /// 下裁剪平面距离（设置前为 `undefined`）。
     pub bottom: Option<f64>,
-    /// The distance of the near plane (default `1.0`).
+    /// 近平面的距离（默认 `1.0`）。
     pub near: f64,
-    /// The distance of the far plane (default `500000000.0`).
+    /// 远平面的距离（默认 `500000000.0`）。
     pub far: f64,
 }
 
@@ -399,12 +398,12 @@ impl Default for PerspectiveOffCenterFrustum {
 }
 
 impl PerspectiveOffCenterFrustum {
-    /// Creates a default (empty) off-center perspective frustum.
+    /// 创建一个默认的（空）偏心透视视锥。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Creates an off-center perspective frustum from explicit bounds.
+    /// 由显式边界创建一个偏心透视视锥。
     pub fn from_bounds(left: f64, right: f64, bottom: f64, top: f64, near: f64, far: f64) -> Self {
         Self {
             left: Some(left),
@@ -416,8 +415,8 @@ impl PerspectiveOffCenterFrustum {
         }
     }
 
-    /// Resolves the four lateral bounds, panicking if any is unset
-    /// (mirrors CesiumJS `update()` throwing `DeveloperError`).
+    /// 解析四个侧向边界，若任一未设置则 panic
+    /// （对应 CesiumJS `update()` 抛出 `DeveloperError`）。
     fn bounds(&self) -> (f64, f64, f64, f64) {
         let left = self
             .left
@@ -434,22 +433,22 @@ impl PerspectiveOffCenterFrustum {
         (left, right, bottom, top)
     }
 
-    /// The perspective projection matrix.
-    /// Maps to `PerspectiveOffCenterFrustum.projectionMatrix`
+    /// 透视投影矩阵。
+    /// 映射到 `PerspectiveOffCenterFrustum.projectionMatrix`
     pub fn projection_matrix(&self) -> DMat4 {
         let (left, right, bottom, top) = self.bounds();
         perspective_off_center(left, right, bottom, top, self.near, self.far)
     }
 
-    /// The perspective projection matrix with an infinite far plane.
-    /// Maps to `PerspectiveOffCenterFrustum.infiniteProjectionMatrix`
+    /// 带无限远平面的透视投影矩阵。
+    /// 映射到 `PerspectiveOffCenterFrustum.infiniteProjectionMatrix`
     pub fn infinite_projection_matrix(&self) -> DMat4 {
         let (left, right, bottom, top) = self.bounds();
         infinite_perspective_off_center(left, right, bottom, top, self.near)
     }
 
-    /// Creates a culling volume for this frustum at the given pose.
-    /// Maps to `PerspectiveOffCenterFrustum.computeCullingVolume`
+    /// 在本视锥于给定姿态下创建一个剔除体。
+    /// 映射到 `PerspectiveOffCenterFrustum.computeCullingVolume`
     pub fn compute_culling_volume(&self, position: DVec3, direction: DVec3, up: DVec3) -> CullingVolume {
         let (left, right, bottom, top) = self.bounds();
         let l = left;
@@ -463,26 +462,26 @@ impl PerspectiveOffCenterFrustum {
         let near_center = position + direction * n;
         let far_center = position + direction * f;
 
-        // Left plane: normalize(nearCenter + right*l - position) x up
+        // 左平面：normalize(nearCenter + right*l - position) x up
         let left_normal = (near_center + right_vec * l - position).cross(up).normalize();
         let left_plane = Plane::from_point_normal(position, left_normal);
 
-        // Right plane: up x normalize(nearCenter + right*r - position)
+        // 右平面：up x normalize(nearCenter + right*r - position)
         let right_normal = up.cross(near_center + right_vec * r - position).normalize();
         let right_plane = Plane::from_point_normal(position, right_normal);
 
-        // Bottom plane: right x normalize(nearCenter + up*b - position)
+        // 下平面：right x normalize(nearCenter + up*b - position)
         let bottom_normal = right_vec.cross(near_center + up * b - position).normalize();
         let bottom_plane = Plane::from_point_normal(position, bottom_normal);
 
-        // Top plane: normalize(nearCenter + up*t - position) x right
+        // 上平面：normalize(nearCenter + up*t - position) x right
         let top_normal = (near_center + up * t - position).cross(right_vec).normalize();
         let top_plane = Plane::from_point_normal(position, top_normal);
 
-        // Near plane: normal along view direction through near center.
+        // 近平面：法线沿视线方向，过近中心。
         let near_plane = Plane::from_point_normal(near_center, direction);
 
-        // Far plane: normal opposite view direction through far center.
+        // 远平面：法线指向视线反方向，过远中心。
         let far_plane = Plane::from_point_normal(far_center, -direction);
 
         CullingVolume {
@@ -490,8 +489,8 @@ impl PerspectiveOffCenterFrustum {
         }
     }
 
-    /// Returns the pixel's width and height in meters.
-    /// Maps to `PerspectiveOffCenterFrustum.getPixelDimensions`
+    /// 返回像素的宽度和高度（单位：米）。
+    /// 映射到 `PerspectiveOffCenterFrustum.getPixelDimensions`
     pub fn pixel_dimensions(
         &self,
         drawing_buffer_width: f64,
@@ -514,8 +513,8 @@ impl PerspectiveOffCenterFrustum {
         (pixel_width, pixel_height)
     }
 
-    /// Componentwise equality.
-    /// Maps to `PerspectiveOffCenterFrustum.equals`
+    /// 逐分量相等。
+    /// 映射到 `PerspectiveOffCenterFrustum.equals`
     pub fn equals(&self, other: &Self) -> bool {
         self.right == other.right
             && self.left == other.left
@@ -525,8 +524,8 @@ impl PerspectiveOffCenterFrustum {
             && self.far == other.far
     }
 
-    /// Componentwise equality within a relative/absolute tolerance.
-    /// Maps to `PerspectiveOffCenterFrustum.equalsEpsilon`
+    /// 在相对/绝对容差内的逐分量相等。
+    /// 映射到 `PerspectiveOffCenterFrustum.equalsEpsilon`
     pub fn equals_epsilon(&self, other: &Self, relative_epsilon: f64, absolute_epsilon: f64) -> bool {
         crate::math_utils::equals_epsilon(self.right.unwrap_or(f64::NAN), other.right.unwrap_or(f64::NAN), relative_epsilon, absolute_epsilon)
             && crate::math_utils::equals_epsilon(self.left.unwrap_or(f64::NAN), other.left.unwrap_or(f64::NAN), relative_epsilon, absolute_epsilon)
@@ -537,22 +536,21 @@ impl PerspectiveOffCenterFrustum {
     }
 }
 
-/// An orthographic frustum defined by six clipping plane distances
-/// (left, right, top, bottom, near, far).
-/// Maps to CesiumJS `OrthographicOffCenterFrustum`
+/// 由六个裁剪平面距离（左、右、上、下、近、远）定义的正射视锥。
+/// 映射到 CesiumJS `OrthographicOffCenterFrustum`
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct OrthographicOffCenterFrustum {
-    /// The left clipping plane (`undefined` until set).
+    /// 左裁剪平面（设置前为 `undefined`）。
     pub left: Option<f64>,
-    /// The right clipping plane (`undefined` until set).
+    /// 右裁剪平面（设置前为 `undefined`）。
     pub right: Option<f64>,
-    /// The top clipping plane (`undefined` until set).
+    /// 上裁剪平面（设置前为 `undefined`）。
     pub top: Option<f64>,
-    /// The bottom clipping plane (`undefined` until set).
+    /// 下裁剪平面（设置前为 `undefined`）。
     pub bottom: Option<f64>,
-    /// The distance of the near plane (default `1.0`).
+    /// 近平面的距离（默认 `1.0`）。
     pub near: f64,
-    /// The distance of the far plane (default `500000000.0`).
+    /// 远平面的距离（默认 `500000000.0`）。
     pub far: f64,
 }
 
@@ -570,12 +568,12 @@ impl Default for OrthographicOffCenterFrustum {
 }
 
 impl OrthographicOffCenterFrustum {
-    /// Creates a default (empty) off-center orthographic frustum.
+    /// 创建一个默认的（空）偏心正射视锥。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Creates an off-center orthographic frustum from explicit bounds.
+    /// 由显式边界创建一个偏心正射视锥。
     pub fn from_bounds(left: f64, right: f64, bottom: f64, top: f64, near: f64, far: f64) -> Self {
         Self {
             left: Some(left),
@@ -587,8 +585,8 @@ impl OrthographicOffCenterFrustum {
         }
     }
 
-    /// Resolves the four lateral bounds, panicking if any is unset
-    /// (mirrors CesiumJS `update()` throwing `DeveloperError`).
+    /// 解析四个侧向边界，若任一未设置则 panic
+    /// （对应 CesiumJS `update()` 抛出 `DeveloperError`）。
     fn bounds(&self) -> (f64, f64, f64, f64) {
         let left = self
             .left
@@ -605,15 +603,15 @@ impl OrthographicOffCenterFrustum {
         (left, right, bottom, top)
     }
 
-    /// The orthographic projection matrix.
-    /// Maps to `OrthographicOffCenterFrustum.projectionMatrix`
+    /// 正射投影矩阵。
+    /// 映射到 `OrthographicOffCenterFrustum.projectionMatrix`
     pub fn projection_matrix(&self) -> DMat4 {
         let (left, right, bottom, top) = self.bounds();
         orthographic_off_center(left, right, bottom, top, self.near, self.far)
     }
 
-    /// Creates a culling volume for this frustum at the given pose.
-    /// Maps to `OrthographicOffCenterFrustum.computeCullingVolume`
+    /// 在本视锥于给定姿态下创建一个剔除体。
+    /// 映射到 `OrthographicOffCenterFrustum.computeCullingVolume`
     pub fn compute_culling_volume(&self, position: DVec3, direction: DVec3, up: DVec3) -> CullingVolume {
         let (left, right, bottom, top) = self.bounds();
         let l = left;
@@ -623,21 +621,21 @@ impl OrthographicOffCenterFrustum {
         let n = self.near;
         let f = self.far;
 
-        // Note: the orthographic variant normalizes the right vector.
+        // 注意：正射变体会对 right 向量归一化。
         let right_vec = direction.cross(up).normalize();
         let near_center = position + direction * n;
 
-        // Left plane: normal = right, through nearCenter + right*l.
+        // 左平面：法线 = right，过 nearCenter + right*l。
         let left_plane = Plane::from_point_normal(near_center + right_vec * l, right_vec);
-        // Right plane: normal = -right, through nearCenter + right*r.
+        // 右平面：法线 = -right，过 nearCenter + right*r。
         let right_plane = Plane::from_point_normal(near_center + right_vec * r, -right_vec);
-        // Bottom plane: normal = up, through nearCenter + up*b.
+        // 下平面：法线 = up，过 nearCenter + up*b。
         let bottom_plane = Plane::from_point_normal(near_center + up * b, up);
-        // Top plane: normal = -up, through nearCenter + up*t.
+        // 上平面：法线 = -up，过 nearCenter + up*t。
         let top_plane = Plane::from_point_normal(near_center + up * t, -up);
-        // Near plane: normal along view direction through near center.
+        // 近平面：法线沿视线方向，过近中心。
         let near_plane = Plane::from_point_normal(near_center, direction);
-        // Far plane: normal opposite view direction through far center.
+        // 远平面：法线指向视线反方向，过远中心。
         let far_plane = Plane::from_point_normal(position + direction * f, -direction);
 
         CullingVolume {
@@ -645,8 +643,8 @@ impl OrthographicOffCenterFrustum {
         }
     }
 
-    /// Returns the pixel's width and height in meters.
-    /// Maps to `OrthographicOffCenterFrustum.getPixelDimensions`
+    /// 返回像素的宽度和高度（单位：米）。
+    /// 映射到 `OrthographicOffCenterFrustum.getPixelDimensions`
     pub fn pixel_dimensions(
         &self,
         drawing_buffer_width: f64,
@@ -662,8 +660,8 @@ impl OrthographicOffCenterFrustum {
         (pixel_width, pixel_height)
     }
 
-    /// Componentwise equality.
-    /// Maps to `OrthographicOffCenterFrustum.equals`
+    /// 逐分量相等。
+    /// 映射到 `OrthographicOffCenterFrustum.equals`
     pub fn equals(&self, other: &Self) -> bool {
         self.right == other.right
             && self.left == other.left
@@ -673,8 +671,8 @@ impl OrthographicOffCenterFrustum {
             && self.far == other.far
     }
 
-    /// Componentwise equality within a relative/absolute tolerance.
-    /// Maps to `OrthographicOffCenterFrustum.equalsEpsilon`
+    /// 在相对/绝对容差内的逐分量相等。
+    /// 映射到 `OrthographicOffCenterFrustum.equalsEpsilon`
     pub fn equals_epsilon(&self, other: &Self, relative_epsilon: f64, absolute_epsilon: f64) -> bool {
         crate::math_utils::equals_epsilon(self.right.unwrap_or(f64::NAN), other.right.unwrap_or(f64::NAN), relative_epsilon, absolute_epsilon)
             && crate::math_utils::equals_epsilon(self.left.unwrap_or(f64::NAN), other.left.unwrap_or(f64::NAN), relative_epsilon, absolute_epsilon)
@@ -685,10 +683,10 @@ impl OrthographicOffCenterFrustum {
     }
 }
 
-// --- Helper functions ---
+// --- 辅助函数 ---
 
-/// Creates an off-center perspective projection matrix.
-/// Maps to `Matrix4.computePerspectiveOffCenter`
+/// 创建一个偏心透视投影矩阵。
+/// 映射到 `Matrix4.computePerspectiveOffCenter`
 fn perspective_off_center(left: f64, right: f64, bottom: f64, top: f64, near: f64, far: f64) -> DMat4 {
     DMat4::from_cols_array(&[
         2.0 * near / (right - left), 0.0, 0.0, 0.0,
@@ -698,8 +696,8 @@ fn perspective_off_center(left: f64, right: f64, bottom: f64, top: f64, near: f6
     ])
 }
 
-/// Creates an off-center perspective projection matrix with an infinite far plane.
-/// Maps to `Matrix4.computeInfinitePerspectiveOffCenter`
+/// 创建一个带无限远平面的偏心透视投影矩阵。
+/// 映射到 `Matrix4.computeInfinitePerspectiveOffCenter`
 fn infinite_perspective_off_center(left: f64, right: f64, bottom: f64, top: f64, near: f64) -> DMat4 {
     DMat4::from_cols_array(&[
         2.0 * near / (right - left), 0.0, 0.0, 0.0,
@@ -709,8 +707,8 @@ fn infinite_perspective_off_center(left: f64, right: f64, bottom: f64, top: f64,
     ])
 }
 
-/// Creates an off-center orthographic projection matrix.
-/// Maps to `Matrix4.computeOrthographicOffCenter`
+/// 创建一个偏心正射投影矩阵。
+/// 映射到 `Matrix4.computeOrthographicOffCenter`
 fn orthographic_off_center(left: f64, right: f64, bottom: f64, top: f64, near: f64, far: f64) -> DMat4 {
     let mut a = 1.0 / (right - left);
     let mut b = 1.0 / (top - bottom);
@@ -747,7 +745,7 @@ mod tests {
             1000.0,
         );
         let proj = frustum.projection_matrix();
-        // Check that it's a valid perspective matrix (bottom-right is 0, w-row has -1)
+        // 检查它是一个有效的透视矩阵（右下角为 0，w 行含 -1）
         assert!((proj.w_axis.w).abs() < 1e-10);
         assert!((proj.z_axis.w - (-1.0)).abs() < 1e-10);
     }
@@ -761,7 +759,7 @@ mod tests {
             1000.0,
         );
         let fov_x = frustum.fov_x();
-        assert!(fov_x > frustum.fov); // Wider aspect → wider horizontal FOV
+        assert!(fov_x > frustum.fov); // 更宽的宽高比 → 更宽的水平 FOV
     }
 
     #[test]
@@ -777,7 +775,7 @@ mod tests {
         let up = DVec3::Y;
         let cv = frustum.compute_culling_volume(position, direction, up);
 
-        // Sphere in front of camera, well within frustum
+        // 位于相机前方、完全在视锥内的球
         let sphere = BoundingSphere::new(DVec3::new(0.0, 0.0, -10.0), 1.0);
         assert_eq!(cv.visibility(&sphere), Intersect::Inside);
     }
@@ -795,7 +793,7 @@ mod tests {
         let up = DVec3::Y;
         let cv = frustum.compute_culling_volume(position, direction, up);
 
-        // Sphere behind camera
+        // 位于相机后方的球
         let sphere = BoundingSphere::new(DVec3::new(0.0, 0.0, 10.0), 1.0);
         assert_eq!(cv.visibility(&sphere), Intersect::Outside);
     }
@@ -811,14 +809,14 @@ mod tests {
         let (pw, ph) = frustum.pixel_dimensions(1024.0, 1024.0, 100.0, 1.0);
         assert!(pw > 0.0);
         assert!(ph > 0.0);
-        assert!((pw - ph).abs() < 1e-10); // aspect 1.0 → square pixels
+        assert!((pw - ph).abs() < 1e-10); // 宽高比 1.0 → 正方形像素
     }
 
     #[test]
     fn test_orthographic_projection() {
         let frustum = OrthographicFrustum::new(10.0, 1.0, 0.1, 100.0);
         let proj = frustum.projection_matrix();
-        // Orthographic: w-row should be (0, 0, 0, 1)
+        // 正射：w 行应为 (0, 0, 0, 1)
         assert!((proj.x_axis.w).abs() < 1e-10);
         assert!((proj.y_axis.w).abs() < 1e-10);
         assert!((proj.z_axis.w).abs() < 1e-10);

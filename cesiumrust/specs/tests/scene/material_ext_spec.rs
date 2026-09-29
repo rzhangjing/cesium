@@ -1,13 +1,13 @@
-//! Scene/ModelComponentsSpec.js + GltfLoaderUtilitySpec.js → Rust integration tests.
+//! Scene/ModelComponentsSpec.js + GltfLoaderUtilitySpec.js → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
-//! - Scene/ModelComponents.js (Material, MetallicRoughness, all KHR extensions)
-//! - Scene/Model/GltfLoaderUtility.js (extension parsing, texture transform)
+//! 对应 CesiumJS：
+//! - Scene/ModelComponents.js（Material、MetallicRoughness、所有 KHR 扩展）
+//! - Scene/Model/GltfLoaderUtility.js（扩展解析、纹理变换）
 //!
-//! A-class tests: default values for all 10 KHR extensions, parse_material_extensions,
+//! A 类测试：全部 10 个 KHR 扩展的默认值、parse_material_extensions、
 //! TextureTransform.compute_matrix/transform_uv, TextureTransformInfo.effective_tex_coord,
-//! serde roundtrip.
-//! C-class omitted: WebGL texture creation, shader generation.
+//! serde 往返。
+//! C 类省略：WebGL 纹理创建、shader 生成。
 
 use cesium_gltf::{
     Anisotropy, Clearcoat, EmissiveStrength, ExtendedMaterial, Ior,
@@ -16,7 +16,7 @@ use cesium_gltf::{
     parse_material_extensions,
 };
 
-// === Default values ===
+// === 默认值 ===
 
 #[test]
 fn metallic_roughness_defaults() {
@@ -285,7 +285,7 @@ fn texture_transform_rotation_90() {
         rotation: std::f64::consts::FRAC_PI_2,
         ..Default::default()
     };
-    // (1, 0) rotated 90° CCW → (0, 1)
+    // (1, 0) 逆时针旋转 90° → (0, 1)
     let uv = tt.transform_uv(1.0, 0.0);
     assert!(uv[0].abs() < 1e-10);
     assert!((uv[1] - 1.0).abs() < 1e-10);
@@ -293,8 +293,8 @@ fn texture_transform_rotation_90() {
 
 #[test]
 fn texture_transform_combined_srt() {
-    // T(0.5, 0.5) * R(90°) * S(2, 2) applied to (1, 0)
-    // Scale: (2, 0), Rotate 90°: (0, 2), Offset: (0.5, 2.5)
+    // T(0.5, 0.5) * R(90°) * S(2, 2) 应用于 (1, 0)
+    // 缩放: (2, 0), 旋转 90°: (0, 2), 偏移: (0.5, 2.5)
     let tt = TextureTransform {
         offset: [0.5, 0.5],
         rotation: std::f64::consts::FRAC_PI_2,
@@ -310,7 +310,7 @@ fn texture_transform_combined_srt() {
 fn texture_transform_compute_matrix_identity() {
     let tt = TextureTransform::default();
     let m = tt.compute_matrix();
-    // Column-major 3x3 identity
+    // 列主序 3x3 单位阵
     assert!((m[0] - 1.0).abs() < 1e-10);
     assert!((m[4] - 1.0).abs() < 1e-10);
     assert!((m[8] - 1.0).abs() < 1e-10);
@@ -393,7 +393,7 @@ fn texture_transform_info_get_transform_none() {
     assert!(info.get_transform().is_none());
 }
 
-// === ExtendedMaterial serde roundtrip ===
+// === ExtendedMaterial serde 往返 ===
 
 #[test]
 fn extended_material_serde_roundtrip() {
@@ -437,6 +437,6 @@ fn extended_material_default_all_none() {
     assert!(mat.sheen.is_none());
     assert!(mat.volume.is_none());
     assert!(!mat.unlit);
-    // Base metallic_roughness should have defaults
+    // 基础 metallic_roughness 应有默认值
     assert_eq!(mat.metallic_roughness.metallic_factor, 1.0);
 }

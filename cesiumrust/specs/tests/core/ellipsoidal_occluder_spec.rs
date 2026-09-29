@@ -1,8 +1,8 @@
-//! Ported from `packages/engine/Specs/Core/EllipsoidalOccluderSpec.js` (24 it(), ~17 A-class)
+//! 移植自 `packages/engine/Specs/Core/EllipsoidalOccluderSpec.js`（24 个 it()，约 17 个 A 类）
 //!
-//! 1 throws test omitted (C-class: Rust type system).
-//! 3 grazingAltitudeLocation tests deferred (t16c).
-//! 3 result-parameter/throws variants merged.
+//! 省略 1 个 throws 测试（C 类：Rust 类型系统）。
+//! 3 个 grazingAltitudeLocation 测试延后处理（t16c）。
+//! 合并了 3 个 result 参数/throws 变体。
 
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -45,7 +45,7 @@ fn is_scaled_space_point_visible_possibly_under_ellipsoid_example_works_as_claim
     let occluder = EllipsoidalOccluder::new(ellipsoid, Some(camera_position));
     let height = -0.5;
 
-    // Test 1: point on the diagonal, halfway inside unit sphere
+    // 测试 1：位于对角线上的点，深入单位球一半
     let direction = DVec3::new(1.0, 1.0, 1.0).normalize();
     let point = direction * 0.5;
     let scaled_space_point = occluder.compute_horizon_culling_point(point, &[point]).unwrap();
@@ -59,7 +59,7 @@ fn is_scaled_space_point_visible_possibly_under_ellipsoid_example_works_as_claim
         Some(height)
     ));
 
-    // Test 2: point on the +y-axis, halfway inside unit sphere
+    // 测试 2：位于 +y 轴上的点，深入单位球一半
     let direction = DVec3::new(0.0, 1.0, 0.0);
     let point = direction * 0.5;
     let scaled_space_point = occluder.compute_horizon_culling_point(point, &[point]).unwrap();

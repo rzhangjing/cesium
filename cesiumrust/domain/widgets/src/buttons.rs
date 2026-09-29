@@ -1,28 +1,28 @@
-//! Button widget view models.
+//! 按钮 widget 视图模型。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `HomeButton/HomeButtonViewModel.js`
 //! - `FullscreenButton/FullscreenButtonViewModel.js`
 //! - `NavigationHelpButton/NavigationHelpButtonViewModel.js`
 //! - `VRButton/VRButtonViewModel.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留 CesiumJS 移植风格债（deferred.md #18）；将在 M13 lint 清理，或本文件在其所属里程碑被重写时重新审视
 #![allow(clippy::field_reassign_with_default)]
-/// A generic toggle button view model.
+/// 一个通用的切换按钮视图模型。
 #[derive(Debug, Clone)]
 pub struct ToggleButtonViewModel {
-    /// Whether the button is toggled on.
+    /// 按钮是否已切换开启。
     pub is_toggled: bool,
-    /// Button tooltip text.
+    /// 按钮提示文本。
     pub tooltip: String,
-    /// Whether the button is visible.
+    /// 按钮是否可见。
     pub show: bool,
-    /// Whether the button is enabled.
+    /// 按钮是否启用。
     pub is_enabled: bool,
 }
 
 impl ToggleButtonViewModel {
-    /// Create a new toggle button.
+    /// 创建一个新的切换按钮。
     pub fn new(tooltip: impl Into<String>) -> Self {
         Self {
             is_toggled: false,
@@ -32,14 +32,14 @@ impl ToggleButtonViewModel {
         }
     }
 
-    /// Toggle the button state.
+    /// 切换按钮状态。
     pub fn toggle(&mut self) {
         if self.is_enabled {
             self.is_toggled = !self.is_toggled;
         }
     }
 
-    /// Set the toggled state.
+    /// 设置切换状态。
     pub fn set_toggled(&mut self, toggled: bool) {
         if self.is_enabled {
             self.is_toggled = toggled;
@@ -47,22 +47,22 @@ impl ToggleButtonViewModel {
     }
 }
 
-/// Home button view model.
+/// 主页（Home）按钮视图模型。
 ///
-/// Resets the camera to the default home view.
+/// 将相机重置到默认的主页视图。
 #[derive(Debug, Clone)]
 pub struct HomeButtonViewModel {
-    /// Button tooltip.
+    /// 按钮提示文本。
     pub tooltip: String,
-    /// Whether the button is visible.
+    /// 按钮是否可见。
     pub show: bool,
-    /// Duration of the home flight in seconds.
+    /// 主页飞行的时长（秒）。
     pub duration: f64,
-    /// Home view longitude in radians.
+    /// 主页视图经度（弧度）。
     pub home_longitude: f64,
-    /// Home view latitude in radians.
+    /// 主页视图纬度（弧度）。
     pub home_latitude: f64,
-    /// Home view height in meters.
+    /// 主页视图高度（米）。
     pub home_height: f64,
 }
 
@@ -72,7 +72,7 @@ impl Default for HomeButtonViewModel {
             tooltip: "View Home".to_string(),
             show: true,
             duration: 1.5,
-            // Default home: looking at Earth from a distance
+            // 默认主页：从远处眺望地球
             home_longitude: 0.0,
             home_latitude: 0.0,
             home_height: 15_000_000.0,
@@ -81,38 +81,38 @@ impl Default for HomeButtonViewModel {
 }
 
 impl HomeButtonViewModel {
-    /// Create a new home button.
+    /// 创建一个新的主页按钮。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Set the home view position.
+    /// 设置主页视图位置。
     pub fn set_home(&mut self, longitude: f64, latitude: f64, height: f64) {
         self.home_longitude = longitude;
         self.home_latitude = latitude;
         self.home_height = height;
     }
 
-    /// Get the home position as (longitude, latitude, height).
+    /// 以 (经度, 纬度, 高度) 获取主页位置。
     pub fn home_position(&self) -> (f64, f64, f64) {
         (self.home_longitude, self.home_latitude, self.home_height)
     }
 }
 
-/// Fullscreen button view model.
+/// 全屏按钮视图模型。
 ///
-/// Toggles browser fullscreen mode.
+/// 切换浏览器全屏模式。
 #[derive(Debug, Clone)]
 pub struct FullscreenButtonViewModel {
-    /// Whether fullscreen is currently active.
+    /// 当前是否处于全屏。
     pub is_fullscreen: bool,
-    /// Tooltip when not fullscreen.
+    /// 非全屏时的提示文本。
     pub enter_tooltip: String,
-    /// Tooltip when fullscreen.
+    /// 全屏时的提示文本。
     pub exit_tooltip: String,
-    /// Whether the button is visible.
+    /// 按钮是否可见。
     pub show: bool,
-    /// Whether fullscreen is supported by the environment.
+    /// 环境是否支持全屏。
     pub is_supported: bool,
 }
 
@@ -129,19 +129,19 @@ impl Default for FullscreenButtonViewModel {
 }
 
 impl FullscreenButtonViewModel {
-    /// Create a new fullscreen button.
+    /// 创建一个新的全屏按钮。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Toggle fullscreen state.
+    /// 切换全屏状态。
     pub fn toggle_fullscreen(&mut self) {
         if self.is_supported {
             self.is_fullscreen = !self.is_fullscreen;
         }
     }
 
-    /// Get the current tooltip.
+    /// 获取当前提示文本。
     pub fn current_tooltip(&self) -> &str {
         if self.is_fullscreen {
             &self.exit_tooltip
@@ -151,18 +151,18 @@ impl FullscreenButtonViewModel {
     }
 }
 
-/// Navigation help button view model.
+/// 导航帮助按钮视图模型。
 ///
-/// Shows/hides navigation help overlay.
+/// 显示/隐藏导航帮助覆盖层。
 #[derive(Debug, Clone)]
 pub struct NavigationHelpButtonViewModel {
-    /// Whether the help panel is visible.
+    /// 帮助面板是否可见。
     pub is_help_visible: bool,
-    /// Button tooltip.
+    /// 按钮提示文本。
     pub tooltip: String,
-    /// Whether the button is visible.
+    /// 按钮是否可见。
     pub show: bool,
-    /// Whether to show touch navigation help (vs mouse).
+    /// 是否显示触摸导航帮助（而非鼠标）。
     pub show_touch: bool,
 }
 
@@ -178,51 +178,51 @@ impl Default for NavigationHelpButtonViewModel {
 }
 
 impl NavigationHelpButtonViewModel {
-    /// Create a new navigation help button.
+    /// 创建一个新的导航帮助按钮。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Toggle the help panel.
+    /// 切换帮助面板。
     pub fn toggle_help(&mut self) {
         self.is_help_visible = !self.is_help_visible;
     }
 
-    /// Show the help panel.
+    /// 显示帮助面板。
     pub fn show_help(&mut self) {
         self.is_help_visible = true;
     }
 
-    /// Hide the help panel.
+    /// 隐藏帮助面板。
     pub fn hide_help(&mut self) {
         self.is_help_visible = false;
     }
 
-    /// Switch to mouse navigation instructions.
+    /// 切换到鼠标导航说明。
     pub fn show_mouse_help(&mut self) {
         self.show_touch = false;
     }
 
-    /// Switch to touch navigation instructions.
+    /// 切换到触摸导航说明。
     pub fn show_touch_help(&mut self) {
         self.show_touch = true;
     }
 }
 
-/// VR button view model.
+/// VR 按钮视图模型。
 ///
-/// Toggles VR mode.
+/// 切换 VR 模式。
 #[derive(Debug, Clone)]
 pub struct VRButtonViewModel {
-    /// Whether VR mode is active.
+    /// VR 模式是否已激活。
     pub is_vr_active: bool,
-    /// Tooltip when not in VR.
+    /// 未进入 VR 时的提示文本。
     pub enter_tooltip: String,
-    /// Tooltip when in VR.
+    /// 处于 VR 时的提示文本。
     pub exit_tooltip: String,
-    /// Whether the button is visible.
+    /// 按钮是否可见。
     pub show: bool,
-    /// Whether VR is supported.
+    /// 是否支持 VR。
     pub is_supported: bool,
 }
 
@@ -239,19 +239,19 @@ impl Default for VRButtonViewModel {
 }
 
 impl VRButtonViewModel {
-    /// Create a new VR button.
+    /// 创建一个新的 VR 按钮。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Toggle VR mode.
+    /// 切换 VR 模式。
     pub fn toggle_vr(&mut self) {
         if self.is_supported {
             self.is_vr_active = !self.is_vr_active;
         }
     }
 
-    /// Get the current tooltip.
+    /// 获取当前提示文本。
     pub fn current_tooltip(&self) -> &str {
         if self.is_vr_active {
             &self.exit_tooltip
@@ -343,7 +343,7 @@ mod tests {
         let mut btn = VRButtonViewModel::default();
         assert!(!btn.is_vr_active);
         assert!(!btn.is_supported);
-        // VR not supported, toggle should not work
+        // VR 不支持，切换不应生效
         btn.toggle_vr();
         assert!(!btn.is_vr_active);
 

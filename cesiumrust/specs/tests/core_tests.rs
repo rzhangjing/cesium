@@ -1,5 +1,5 @@
-//! Core specs - ported from packages/engine/Specs/Core/
-//! Covers: Math, Cartesian, Ellipsoid, Time, Spline, Geometry, Bounding, etc.
+//! Core 规格测试 - 移植自 packages/engine/Specs/Core/
+//! 覆盖范围：Math、Cartesian、Ellipsoid、Time、Spline、Geometry、Bounding 等。
 
 mod core {
     pub mod math_spec;

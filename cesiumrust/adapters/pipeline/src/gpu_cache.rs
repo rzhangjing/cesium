@@ -1,6 +1,6 @@
-//! FIFO GPU cache with base-layer lock and live-entity deferral.
+//! 带基础层锁定与活实体延迟的 FIFO GPU 缓存。
 //!
-//! Faithfully replicates `dynamic_globe.rs::evict_gpu_cache` (L1476-1502):
+//! 忠实复刻 `dynamic_globe.rs::evict_gpu_cache`（L1476-1502）：
 //!
 //! ```text
 //! while gpu_tex_order.len() > MAX_GPU_CACHE_ENTRIES {
@@ -14,10 +14,10 @@
 //! }
 //! ```
 //!
-//! Three invariants:
-//! 1. BASE_LAYER permanent exemption (L1483)
-//! 2. Live-entity push-back deferral (L1487-1491) — 花屏防护核心
-//! 3. Termination: MAX_TILE_ENTITIES(1800) << MAX_GPU_CACHE_ENTRIES(3000)
+//! 三个不变式：
+//! 1. BASE_LAYER 永久豁免（L1483）
+//! 2. 活实体回推延迟（L1487-1491）—— 花屏防护核心
+//! 3. 终止性：MAX_TILE_ENTITIES(1800) << MAX_GPU_CACHE_ENTRIES(3000)
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
@@ -26,35 +26,35 @@ use cesium_ports_driven::EvictionPolicy;
 
 use crate::base_layer::BaseLayerGuard;
 
-/// Result of an eviction pass.
+/// 一次驱逐遍历的结果。
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EvictionResult {
-    /// Entries actually removed from the cache.
+    /// 实际从缓存移除的条目。
     pub evicted: u32,
-    /// Entries deferred (pushed back) because they have live entities.
+    /// 因拥有活实体而被延迟（回推）的条目。
     pub deferred: u32,
 }
 
-/// FIFO-ordered GPU handle cache with eviction policy.
+/// 带驱逐策略的 FIFO 序 GPU 句柄缓存。
 ///
-/// Generic over key type `K` (e.g. `(u32, u32, u32)` = TileKey).
-/// Stores opaque handle values `V` (e.g. GPU texture IDs).
+/// 对键类型 `K` 通用（例如 `(u32, u32, u32)` = TileKey）。
+/// 存储不透明的句柄值 `V`（例如 GPU 纹理 ID）。
 pub struct GpuCache<K, V>
 where
     K: Hash + Eq + Copy,
 {
-    /// FIFO insertion order (oldest at front). Corresponds to `mgr.gpu_tex_order`.
+    /// FIFO 插入顺序（最旧在前）。对应 `mgr.gpu_tex_order`。
     order: VecDeque<K>,
-    /// Actual cached values. Corresponds to `mgr.gpu_textures` / `gpu_meshes` / etc.
+    /// 实际缓存的值。对应 `mgr.gpu_textures` / `gpu_meshes` 等。
     entries: HashMap<K, V>,
-    /// Maximum entries before eviction kicks in (L73: 3000).
+    /// 触发驱逐前的最大条目数（L73：3000）。
     max_entries: usize,
-    /// Base layer guard for permanent exemption.
+    /// 用于永久豁免的基础层守卫。
     base_guard: BaseLayerGuard,
-    /// Zoom extractor: gets the zoom component from a key.
+    /// Zoom 提取器：从键获取 zoom 分量。
     zoom_of: fn(&K) -> u32,
-    /// Keys currently backed by a live entity (deferral set for invariant 2).
-    /// Corresponds to membership in `mgr.tile_entities` (L1487).
+    /// 当前由活实体支撑的键（不变式 2 的延迟集）。
+    /// 对应 `mgr.tile_entities` 的成员关系（L1487）。
     live: HashSet<K>,
 }
 
@@ -62,10 +62,10 @@ impl<K, V> GpuCache<K, V>
 where
     K: Hash + Eq + Copy,
 {
-    /// Create a cache with the given capacity and zoom extractor.
+    /// 创建一个使用给定容量与 zoom 提取器的缓存。
     ///
-    /// `zoom_of` extracts the zoom level from a key for base-layer checks.
-    /// For `TileKey = (u32, u32, u32)`, this is `|k| k.2`.
+    /// `zoom_of` 从键提取 zoom 层级用于基础层检查。对于
+    /// `TileKey = (u32, u32, u32)`，它就是 `|k| k.2`。
     pub fn new(max_entries: usize, base_guard: BaseLayerGuard, zoom_of: fn(&K) -> u32) -> Self {
         Self {
             order: VecDeque::new(),
@@ -77,10 +77,10 @@ where
         }
     }
 
-    /// Mark a key as backed (or not) by a live entity.
+    /// 将一个键标记为由活实体支撑（或不再支撑）。
     ///
-    /// The host calls this when it spawns/despawns a tile entity so that
-    /// `defer_if_live` (invariant 2, L1487) reflects the current live set.
+    /// 宿主在 spawn/despawn 一个瓦片实体时调用此方法，以便
+    /// `defer_if_live`（不变式 2，L1487）反映当前的活集。
     pub fn set_live(&mut self, key: K, is_live: bool) {
         if is_live {
             self.live.insert(key);
@@ -89,9 +89,8 @@ where
         }
     }
 
-    /// Insert a key-value pair. If the key already exists, updates the value
-    /// without changing FIFO order (matches dynamic_globe behavior where
-    /// re-uploads don't reset eviction priority).
+    /// 插入一个键值对。若键已存在，则更新值而不改变 FIFO 顺序
+    /// （与 dynamic_globe 行为一致：重上传不会重置驱逐优先级）。
     pub fn insert(&mut self, key: K, value: V) {
         if !self.entries.contains_key(&key) {
             self.order.push_back(key);
@@ -99,21 +98,21 @@ where
         self.entries.insert(key, value);
     }
 
-    /// Get a reference to a cached value.
+    /// 获取一个缓存值的引用。
     pub fn get(&self, key: &K) -> Option<&V> {
         self.entries.get(key)
     }
 
-    /// Check if a key is cached.
+    /// 检查一个键是否已缓存。
     pub fn contains_key(&self, key: &K) -> bool {
         self.entries.contains_key(key)
     }
 
-    /// Remove a specific key from the cache.
+    /// 从缓存中移除一个特定的键。
     pub fn remove(&mut self, key: &K) -> Option<V> {
         if let Some(v) = self.entries.remove(key) {
-            // Remove from order queue (linear scan — acceptable for
-            // explicit removals which are rare vs FIFO eviction).
+            // 从顺序队列移除（线性扫描 —— 对于显式移除（相比
+            // FIFO 驱逐很罕见）是可以接受的）。
             if let Some(pos) = self.order.iter().position(|k| k == key) {
                 self.order.remove(pos);
             }
@@ -123,25 +122,25 @@ where
         }
     }
 
-    /// Current number of cached entries.
+    /// 当前缓存条目的数量。
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
-    /// Returns true if the cache is empty.
+    /// 若缓存为空则返回 true。
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
-    /// Run FIFO eviction until `len() <= max_entries`.
+    /// 运行 FIFO 驱逐直到 `len() <= max_entries`。
     ///
-    /// `is_live` predicate corresponds to L1487: `mgr.tile_entities.contains_key(&old)`.
-    /// Returns eviction/deferral counts for PerfCounters (M0.4 observation).
+    /// `is_live` 谓词对应 L1487：`mgr.tile_entities.contains_key(&old)`。
+    /// 返回驱逐/延迟计数供 PerfCounters 使用（M0.4 观测）。
     ///
-    /// Faithfully implements the three invariants:
-    /// 1. Base-layer keys are skipped (never evicted).
-    /// 2. Live-entity keys are pushed back (deferred).
-    /// 3. Termination guaranteed because live entities << max_entries.
+    /// 忠实实现三个不变式：
+    /// 1. 基础层键被跳过（永不驱逐）。
+    /// 2. 活实体键被回推（延迟）。
+    /// 3. 因活实体 << max_entries 而保证终止。
     pub fn evict<F>(&mut self, is_live: F) -> EvictionResult
     where
         F: Fn(&K) -> bool,
@@ -153,23 +152,23 @@ where
                 break;
             };
 
-            // Invariant 1: base layer permanent exemption (L1483)
+            // 不变式 1：基础层永久豁免（L1483）
             let zoom = (self.zoom_of)(&old);
             if self.base_guard.is_base_layer(zoom) {
-                // Don't count as evicted — just skip. The entry stays in
-                // `entries` but is removed from `order` (it will never be
-                // evicted, so tracking order is pointless).
+                // 不计为驱逐 —— 只是跳过。该条目保留在
+                // `entries` 中但从 `order` 移除（它永远不会被
+                // 驱逐，因此追踪其顺序毫无意义）。
                 continue;
             }
 
-            // Invariant 2: live-entity deferral (L1487-1491)
+            // 不变式 2：活实体延迟（L1487-1491）
             if is_live(&old) {
                 self.order.push_back(old);
                 result.deferred += 1;
                 continue;
             }
 
-            // Actually evict
+            // 实际驱逐
             self.entries.remove(&old);
             result.evicted += 1;
         }
@@ -177,32 +176,32 @@ where
         result
     }
 
-    /// Read-only access to the FIFO order (for `EvictionPolicy` trait impl).
+    /// 对 FIFO 顺序的只读访问（用于 `EvictionPolicy` trait 实现）。
     pub fn order(&self) -> &VecDeque<K> {
         &self.order
     }
 }
 
-/// `EvictionPolicy` contract impl (M1.1) expressing the three invariants.
+/// `EvictionPolicy` 契约实现（M1.1），表达三个不变式。
 ///
-/// The extra `Send + 'static` bounds (vs the inherent impl) are required by
-/// the port trait; they are satisfied by `TileKey = (u32, u32, u32)`.
+/// 相比 inherent impl，额外的 `Send + 'static` 约束是端口 trait 所
+/// 要求的；它们由 `TileKey = (u32, u32, u32)` 满足。
 impl<K, V> EvictionPolicy<K> for GpuCache<K, V>
 where
     K: Hash + Eq + Copy + Send + Sync + 'static,
     V: Send + Sync + 'static,
 {
-    /// Invariant: FIFO order, oldest first (`mgr.gpu_tex_order`, L1479).
+    /// 不变式：FIFO 顺序，最旧在前（`mgr.gpu_tex_order`，L1479）。
     fn evict_order(&self) -> &VecDeque<K> {
         &self.order
     }
 
-    /// Invariant 1 (L1483): base-layer tiles are never evicted.
+    /// 不变式 1（L1483）：基础层瓦片永不驱逐。
     fn never_evict(&self, key: &K) -> bool {
         self.base_guard.is_base_layer((self.zoom_of)(key))
     }
 
-    /// Invariant 2 (L1487): tiles with a live entity are deferred (pushed back).
+    /// 不变式 2（L1487）：拥有活实体的瓦片会被延迟（回推）。
     fn defer_if_live(&self, key: &K) -> bool {
         self.live.contains(key)
     }
@@ -228,36 +227,36 @@ mod tests {
         cache.insert((0, 0, 4), 100);
         cache.insert((1, 0, 4), 200);
         cache.insert((2, 0, 4), 300);
-        cache.insert((3, 0, 4), 400); // exceeds cap
+        cache.insert((3, 0, 4), 400); // 超出上限
 
         let result = cache.evict(|_| false);
         assert_eq!(result.evicted, 1);
         assert_eq!(result.deferred, 0);
-        assert!(!cache.contains_key(&(0, 0, 4))); // oldest evicted
-        assert!(cache.contains_key(&(3, 0, 4))); // newest kept
+        assert!(!cache.contains_key(&(0, 0, 4))); // 最旧的被驱逐
+        assert!(cache.contains_key(&(3, 0, 4))); // 最新的保留
     }
 
     #[test]
     fn base_layer_never_evicted() {
-        // With enough pressure, normal tiles get evicted but base layer survives.
-        // Base-layer entries popped from order free slots (matching dynamic_globe
-        // L1483: `continue` removes from gpu_tex_order but keeps GPU handles).
+        // 在足够的压力下，普通瓦片会被驱逐但基础层存活。
+        // 从 order 弹出的基础层条目会释放空位（与 dynamic_globe 一致，
+        // L1483：`continue` 从 gpu_tex_order 移除但保留 GPU 句柄）。
         let mut cache = make_cache(2);
-        cache.insert((0, 0, 3), 1); // base layer (z=3)
-        cache.insert((1, 1, 5), 2); // normal
-        cache.insert((2, 2, 5), 3); // normal
-        cache.insert((3, 3, 5), 4); // normal
+        cache.insert((0, 0, 3), 1); // 基础层（z=3）
+        cache.insert((1, 1, 5), 2); // 普通
+        cache.insert((2, 2, 5), 3); // 普通
+        cache.insert((3, 3, 5), 4); // 普通
 
-        // order len=4 > max=2:
-        // Pop (0,0,3): base → skip (freed from order, kept in entries)
-        // order len=3 > 2: Pop (1,1,5): normal, not live → evict
-        // order len=2, not > 2: exit
+        // order len=4 > max=2：
+        // Pop (0,0,3)：基础层 → 跳过（从 order 释放，保留在 entries 中）
+        // order len=3 > 2：Pop (1,1,5)：普通、非 live → 驱逐
+        // order len=2，不再 > 2：退出
         let result = cache.evict(|_| false);
         assert_eq!(result.evicted, 1);
-        assert!(cache.contains_key(&(0, 0, 3)));  // base layer NEVER evicted
-        assert!(!cache.contains_key(&(1, 1, 5))); // evicted
-        assert!(cache.contains_key(&(2, 2, 5)));  // still in cache
-        assert!(cache.contains_key(&(3, 3, 5)));  // still in cache
+        assert!(cache.contains_key(&(0, 0, 3)));  // 基础层永不驱逐
+        assert!(!cache.contains_key(&(1, 1, 5))); // 已驱逐
+        assert!(cache.contains_key(&(2, 2, 5)));  // 仍在缓存
+        assert!(cache.contains_key(&(3, 3, 5)));  // 仍在缓存
     }
 
     #[test]
@@ -265,12 +264,12 @@ mod tests {
         let mut cache = make_cache(2);
         cache.insert((1, 1, 5), 10);
         cache.insert((2, 2, 5), 20);
-        cache.insert((3, 3, 5), 30); // exceeds cap
+        cache.insert((3, 3, 5), 30); // 超出上限
 
-        // Mark the oldest as "live"
+        // 将最旧的标记为 "live"
         let result = cache.evict(|k| *k == (1, 1, 5));
         assert_eq!(result.deferred, 1);
-        // (1,1,5) was pushed back, (2,2,5) evicted instead
+        // (1,1,5) 被回推，改为驱逐 (2,2,5)
         assert!(cache.contains_key(&(1, 1, 5)));
         assert!(!cache.contains_key(&(2, 2, 5)));
     }
@@ -280,27 +279,27 @@ mod tests {
         let mut cache = make_cache(10);
         cache.insert((1, 1, 4), 100);
         cache.insert((2, 2, 4), 200);
-        cache.insert((1, 1, 4), 999); // update value, keep position
+        cache.insert((1, 1, 4), 999); // 更新值，保留位置
 
         assert_eq!(cache.get(&(1, 1, 4)), Some(&999));
-        assert_eq!(cache.order()[0], (1, 1, 4)); // still first
+        assert_eq!(cache.order()[0], (1, 1, 4)); // 仍在最前
     }
 
     #[test]
     fn eviction_policy_trait_expresses_three_invariants() {
-        // Exercise the ports `EvictionPolicy<K>` impl directly (dyn-compatible).
+        // 直接练习端口 `EvictionPolicy<K>` 实现（dyn 兼容）。
         let mut cache = make_cache(3000);
-        cache.insert((0, 0, 3), 1); // base layer (z=3)
-        cache.insert((1, 1, 5), 2); // normal
+        cache.insert((0, 0, 3), 1); // 基础层（z=3）
+        cache.insert((1, 1, 5), 2); // 普通
         cache.set_live((1, 1, 5), true);
 
         let policy: &dyn EvictionPolicy<TileKey> = &cache;
-        // Invariant: FIFO order exposed.
+        // 不变式：暴露 FIFO 顺序。
         assert_eq!(policy.evict_order().len(), 2);
-        // Invariant 1: base layer (z<=3) is never evicted.
+        // 不变式 1：基础层（z<=3）永不驱逐。
         assert!(policy.never_evict(&(0, 0, 3)));
         assert!(!policy.never_evict(&(1, 1, 5)));
-        // Invariant 2: live entity is deferred.
+        // 不变式 2：活实体会被延迟。
         assert!(policy.defer_if_live(&(1, 1, 5)));
         assert!(!policy.defer_if_live(&(0, 0, 3)));
     }

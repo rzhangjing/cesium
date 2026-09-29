@@ -1,8 +1,8 @@
-//! Extended geometry specs - ported from Core/CircleGeometrySpec.js,
-//! Core/CoplanarPolygonGeometrySpec.js, Core/GroundPolylineGeometrySpec.js,
-//! Core/PolylineVolumeGeometrySpec.js, Core/PlaneGeometrySpec.js
+//! 扩展几何规格 - 移植自 Core/CircleGeometrySpec.js、
+//! Core/CoplanarPolygonGeometrySpec.js、Core/GroundPolylineGeometrySpec.js、
+//! Core/PolylineVolumeGeometrySpec.js、Core/PlaneGeometrySpec.js
 //!
-//! Tests mathematical properties of additional geometry generators.
+//! 测试其余几何生成器的数学属性。
 
 use cesium_geospatial::geometry::{
     circle_geometry, coplanar_polygon_geometry, ground_polyline_geometry,
@@ -17,7 +17,7 @@ fn wgs84() -> Ellipsoid {
     Ellipsoid::WGS84
 }
 
-// ─── CircleGeometry (from CircleGeometrySpec.js) ───────────────────────────
+// ─── CircleGeometry（来自 CircleGeometrySpec.js）───────────────────────────
 
 #[test]
 fn circle_computes_positions() {
@@ -28,7 +28,7 @@ fn circle_computes_positions() {
 
     // Rust: center + (segments+1) ring vertices = 1 + 17 = 18
     assert_eq!(geo.positions.len(), 18);
-    // Fan triangulation: segments triangles * 3 indices
+    // 扇形三角剖分：segments 个三角形 * 3 索引
     assert_eq!(geo.indices.len(), 16 * 3);
     assert_eq!(geo.primitive_type, PrimitiveType::Triangles);
 }
@@ -41,14 +41,14 @@ fn circle_computes_all_vertex_attributes() {
     let geo = circle_geometry(center, 1000.0, &e, 8, VertexFormat::ALL);
 
     let num_vertices = geo.positions.len();
-    assert_eq!(num_vertices, 10); // 1 center + 9 ring
+    assert_eq!(num_vertices, 10); // 1 中心 + 9 环形
     assert_eq!(geo.normals.as_ref().unwrap().len(), num_vertices);
     assert_eq!(geo.tex_coords.as_ref().unwrap().len(), num_vertices);
 }
 
 #[test]
 fn circle_bounding_sphere() {
-    // CircleGeometrySpec: bounding sphere radius equals circle radius
+    // CircleGeometrySpec: 包围球半径等于圆半径
     let e = wgs84();
     let center = e.cartographic_to_cartesian(&Cartographic::from_degrees(10.0, 20.0, 0.0));
     let radius = 5000.0;
@@ -60,7 +60,7 @@ fn circle_bounding_sphere() {
 
 #[test]
 fn circle_positions_on_surface() {
-    // All positions should be on the ellipsoid surface
+    // 所有位置应在椭球表面上
     let e = wgs84();
     let center = e.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0));
     let geo = circle_geometry(center, 10000.0, &e, 16, VertexFormat::POSITION_ONLY);
@@ -74,7 +74,7 @@ fn circle_positions_on_surface() {
     }
 }
 
-// ─── CoplanarPolygonGeometry (from CoplanarPolygonGeometrySpec.js) ─────────
+// ─── CoplanarPolygonGeometry（来自 CoplanarPolygonGeometrySpec.js）─────────
 
 #[test]
 fn coplanar_polygon_computes_positions() {
@@ -94,7 +94,7 @@ fn coplanar_polygon_computes_positions() {
     let geo = coplanar_polygon_geometry(&opts, VertexFormat::POSITION_ONLY);
 
     assert_eq!(geo.positions.len(), 4);
-    assert_eq!(geo.indices.len(), 2 * 3); // 2 triangles for a quad
+    assert_eq!(geo.indices.len(), 2 * 3); // 一个四边形 2 个三角形
 }
 
 #[test]
@@ -126,7 +126,7 @@ fn coplanar_polygon_computes_all_attributes() {
 
 #[test]
 fn coplanar_polygon_triangle() {
-    // Simple triangle should produce 1 triangle
+    // 简单三角形应产生 1 个三角形
     let e = wgs84();
     let positions = vec![
         e.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0)),
@@ -141,10 +141,10 @@ fn coplanar_polygon_triangle() {
     let geo = coplanar_polygon_geometry(&opts, VertexFormat::POSITION_ONLY);
 
     assert_eq!(geo.positions.len(), 3);
-    assert_eq!(geo.indices.len(), 3); // 1 triangle
+    assert_eq!(geo.indices.len(), 3); // 1 个三角形
 }
 
-// ─── GroundPolylineGeometry (from GroundPolylineGeometrySpec.js) ───────────
+// ─── GroundPolylineGeometry（来自 GroundPolylineGeometrySpec.js）───────────
 
 #[test]
 fn ground_polyline_computes_positions() {
@@ -169,7 +169,7 @@ fn ground_polyline_computes_positions() {
 
 #[test]
 fn ground_polyline_positions_on_surface() {
-    // Ground polyline positions should be on the ellipsoid surface
+    // 贴地折线位置应在椭球表面上
     let e = wgs84();
     let opts = GroundPolylineOptions {
         positions: vec![
@@ -192,7 +192,7 @@ fn ground_polyline_positions_on_surface() {
     }
 }
 
-// ─── PolylineVolumeGeometry (from PolylineVolumeGeometrySpec.js) ───────────
+// ─── PolylineVolumeGeometry（来自 PolylineVolumeGeometrySpec.js）───────────
 
 #[test]
 fn polyline_volume_computes_positions() {
@@ -248,15 +248,15 @@ fn polyline_volume_computes_all_attributes() {
     }
 }
 
-// ─── PlaneGeometry (from PlaneGeometrySpec.js) ─────────────────────────────
+// ─── PlaneGeometry（来自 PlaneGeometrySpec.js）─────────────────────────────
 
 #[test]
 fn plane_computes_positions() {
-    // PlaneGeometrySpec: unit quad in XY plane
+    // PlaneGeometrySpec: XY 平面中的单位四边形
     let geo = plane_geometry(VertexFormat::POSITION_ONLY);
 
     assert_eq!(geo.positions.len(), 4);
-    assert_eq!(geo.indices.len(), 6); // 2 triangles
+    assert_eq!(geo.indices.len(), 6); // 2 个三角形
     assert_eq!(geo.primitive_type, PrimitiveType::Triangles);
 }
 
@@ -268,7 +268,7 @@ fn plane_computes_all_attributes() {
     assert_eq!(geo.normals.as_ref().unwrap().len(), 4);
     assert_eq!(geo.tex_coords.as_ref().unwrap().len(), 4);
 
-    // All normals should point in +Z direction
+    // 所有法线应指向 +Z 方向
     for n in geo.normals.as_ref().unwrap() {
         assert!((n[0]).abs() < 1e-10);
         assert!((n[1]).abs() < 1e-10);
@@ -280,7 +280,7 @@ fn plane_computes_all_attributes() {
 fn plane_positions_form_unit_quad() {
     let geo = plane_geometry(VertexFormat::POSITION_ONLY);
 
-    // Positions should form a unit quad centered at origin
+    // 位置应构成以原点为中心的单位四边形
     let mut min_x = f64::MAX;
     let mut max_x = f64::MIN;
     let mut min_y = f64::MAX;
@@ -291,7 +291,7 @@ fn plane_positions_form_unit_quad() {
         if p[0] > max_x { max_x = p[0]; }
         if p[1] < min_y { min_y = p[1]; }
         if p[1] > max_y { max_y = p[1]; }
-        // Z should be 0
+        // Z 应为 0
         assert!(p[2].abs() < 1e-10);
     }
 
@@ -301,7 +301,7 @@ fn plane_positions_form_unit_quad() {
     assert!((max_y - 0.5).abs() < 1e-10);
 }
 
-// ─── Cross-cutting: bounding sphere contains all positions ─────────────────
+// ─── 横切：包围球包含所有位置 ─────────────────────────────────────────
 
 #[test]
 fn circle_bounding_sphere_contains_all_positions() {
@@ -314,7 +314,7 @@ fn circle_bounding_sphere_contains_all_positions() {
 
     for p in &geo.positions {
         let dist = (DVec3::from(*p) - bs_center).length();
-        // Allow some tolerance since positions are on curved surface
+        // 由于位置在曲面上，允许一些容差
         assert!(
             dist <= bs_radius + 100.0,
             "position distance {} exceeds bounding sphere radius {} + tolerance", dist, bs_radius
@@ -350,7 +350,7 @@ fn coplanar_polygon_bounding_sphere_contains_all_positions() {
     }
 }
 
-// ─── Circle geometry with negative/zero radius ────────────────────────────
+// ─── 负/零半径的圆几何 ─────────────────────────────────────
 
 #[test]
 fn circle_zero_radius_degenerate() {
@@ -358,7 +358,7 @@ fn circle_zero_radius_degenerate() {
     let center = e.cartographic_to_cartesian(&Cartographic::from_degrees(10.0, 20.0, 0.0));
     let geo = circle_geometry(center, 0.0, &e, 16, VertexFormat::POSITION_ONLY);
 
-    // With radius=0, bounding sphere radius should be 0
+    // radius=0 时，包围球半径应为 0
     assert!(geo.bounding_sphere.radius < 1e-10);
 }
 
@@ -368,13 +368,13 @@ fn circle_negative_radius_uses_absolute() {
     let center = e.cartographic_to_cartesian(&Cartographic::from_degrees(10.0, 20.0, 0.0));
     let geo = circle_geometry(center, -1.0, &e, 16, VertexFormat::POSITION_ONLY);
 
-    // Implementation may handle negative radius differently
-    // But should not crash
+    // 实现可能以不同方式处理负半径
+    // 但不应崩溃
     assert_eq!(geo.positions.len(), 18);
     assert_eq!(geo.indices.len(), 48);
 }
 
-// ─── Circle geometry with texture coordinates ─────────────────────────────
+// ─── 带纹理坐标的圆几何 ─────────────────────────────────────
 
 #[test]
 fn circle_tex_coords_pattern() {
@@ -384,12 +384,12 @@ fn circle_tex_coords_pattern() {
     let st = geo.tex_coords.as_ref().unwrap();
     let nv = geo.positions.len();
     assert_eq!(st.len(), nv);
-    // Center vertex (index 0) ST should be near center of texture
+    // 中心顶点（索引 0）的 ST 应靠近纹理中心
     assert!((st[0][0] - 0.5).abs() < 1e-2);
     assert!((st[0][1] - 0.5).abs() < 1e-2);
 }
 
-// ─── CoplanarPolygonGeometry: edge cases ──────────────────────────────────
+// ─── CoplanarPolygonGeometry：边界情形 ───────────────────────────
 
 #[test]
 fn coplanar_polygon_with_height() {
@@ -407,14 +407,14 @@ fn coplanar_polygon_with_height() {
     let geo = coplanar_polygon_geometry(&opts, VertexFormat::POSITION_ONLY);
 
     assert_eq!(geo.positions.len(), 3);
-    // Positions should be at height ~5000
+    // 位置应位于高度 ~5000
     for p in &geo.positions {
         let carto = e.cartesian_to_cartographic(DVec3::from(*p)).unwrap();
         assert!((carto.height - 5000.0).abs() < 10.0);
     }
 }
 
-// ─── PolylineVolumeGeometry: edge cases ───────────────────────────────────
+// ─── PolylineVolumeGeometry：边界情形 ─────────────────────────────
 
 #[test]
 fn polyline_volume_with_corner_shape() {
@@ -445,7 +445,7 @@ fn polyline_volume_with_corner_shape() {
     }
 }
 
-// ─── GroundPolylineGeometry: closed vs open ───────────────────────────────
+// ─── GroundPolylineGeometry：闭合与开放 ─────────────────────────
 
 #[test]
 fn ground_polyline_closed_produces_closed_shape() {
@@ -466,28 +466,28 @@ fn ground_polyline_closed_produces_closed_shape() {
     assert!(!geo.indices.is_empty());
 }
 
-// ─── PlaneGeometry: normal direction ──────────────────────────────────────
+// ─── PlaneGeometry：法线方向 ────────────────────────────────────
 
 #[test]
 fn plane_positions_form_right_handed_quads() {
     let geo = plane_geometry(VertexFormat::POSITION_AND_NORMAL);
     let normals = geo.normals.as_ref().unwrap();
 
-    // All normals should point in +Z direction
+    // 所有法线应指向 +Z 方向
     for n in normals {
         assert!((n[0]).abs() < 1e-10);
         assert!((n[1]).abs() < 1e-10);
         assert!((n[2] - 1.0).abs() < 1e-10);
     }
 
-    // Verify triangle winding produces +Z normals (right-handed)
-    // Triangle 0: positions[0], positions[1], positions[2]
+    // 验证三角形绕序产生 +Z 法线（右手系）
+    // 三角形 0：positions[0], positions[1], positions[2]
     let p0 = DVec3::from(geo.positions[geo.indices[0] as usize]);
     let p1 = DVec3::from(geo.positions[geo.indices[1] as usize]);
     let p2 = DVec3::from(geo.positions[geo.indices[2] as usize]);
     let edge1 = p1 - p0;
     let edge2 = p2 - p0;
     let face_normal = edge1.cross(edge2);
-    // Face normal should point in +Z (positive z)
+    // 面法线应指向 +Z（正 z）
     assert!(face_normal.z > 0.0, "face normal should point +Z");
 }

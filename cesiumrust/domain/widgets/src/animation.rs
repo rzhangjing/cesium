@@ -1,29 +1,29 @@
-//! Animation widget view model.
+//! 动画（animation）widget 视图模型。
 //!
-//! Maps to CesiumJS `Animation/AnimationViewModel.js`.
+//! 映射到 CesiumJS `Animation/AnimationViewModel.js`。
 
-/// Shuttle ring angle constants.
+/// 动感环（shuttle ring）角度常量。
 pub const REALTIME_SHUTTLE_RING_ANGLE: f64 = 15.0;
 pub const MAX_SHUTTLE_RING_ANGLE: f64 = 105.0;
 
-/// Default shuttle ring ticks (speed multipliers).
+/// 默认动感环刻度（速度倍率）。
 pub const DEFAULT_SHUTTLE_RING_TICKS: &[f64] = &[
     -1000.0, -100.0, -50.0, -25.0, -10.0, -5.0, -2.0, -1.0,
     1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0, 1000.0,
 ];
 
-/// Month names for date display.
+/// 用于日期显示的月份名称。
 pub const MONTH_NAMES: &[&str] = &[
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-/// Shuttle ring angle ↔ multiplier conversion.
+/// 动感环角度 ↔ 倍率转换。
 ///
-/// Maps to CesiumJS AnimationViewModel angle/multiplier functions.
+/// 映射到 CesiumJS AnimationViewModel 的 angle/multiplier 函数。
 #[derive(Debug, Clone)]
 pub struct ShuttleRing {
-    /// The shuttle ring tick values.
+    /// 动感环的刻度值。
     pub ticks: Vec<f64>,
 }
 
@@ -36,18 +36,18 @@ impl Default for ShuttleRing {
 }
 
 impl ShuttleRing {
-    /// Create with custom ticks.
+    /// 使用自定义刻度创建。
     pub fn with_ticks(ticks: Vec<f64>) -> Self {
         let mut sorted = ticks;
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         Self { ticks: sorted }
     }
 
-    /// Convert a shuttle ring angle to a speed multiplier.
+    /// 将动感环角度转换为速度倍率。
     ///
-    /// Angle range: [-MAX_SHUTTLE_RING_ANGLE, MAX_SHUTTLE_RING_ANGLE]
-    /// - Angles in [-15, 15] map linearly to [-1, 1]
-    /// - Angles outside use logarithmic scale
+    /// 角度范围：[-MAX_SHUTTLE_RING_ANGLE, MAX_SHUTTLE_RING_ANGLE]
+    /// - [-15, 15] 内的角度线性映射到 [-1, 1]
+    /// - 范围外的角度使用对数尺度
     pub fn angle_to_multiplier(&self, angle: f64) -> f64 {
         if angle.abs() <= REALTIME_SHUTTLE_RING_ANGLE {
             return angle / REALTIME_SHUTTLE_RING_ANGLE;
@@ -68,7 +68,7 @@ impl ShuttleRing {
         }
     }
 
-    /// Convert a speed multiplier to a shuttle ring angle.
+    /// 将速度倍率转换为动感环角度。
     pub fn multiplier_to_angle(&self, multiplier: f64, is_system_clock: bool) -> f64 {
         if is_system_clock {
             return REALTIME_SHUTTLE_RING_ANGLE;
@@ -96,7 +96,7 @@ impl ShuttleRing {
         }
     }
 
-    /// Get the typical multiplier index for a given multiplier.
+    /// 获取给定倍率对应的典型倍率索引。
     pub fn get_typical_multiplier_index(&self, multiplier: f64) -> usize {
         match self.ticks.binary_search_by(|t| {
             t.partial_cmp(&multiplier).unwrap_or(std::cmp::Ordering::Equal)
@@ -107,22 +107,22 @@ impl ShuttleRing {
     }
 }
 
-/// Animation widget view model.
+/// 动画 widget 视图模型。
 ///
-/// Controls time playback with play/pause, speed multiplier, and shuttle ring.
+/// 通过播放/暂停、速度倍率与动感环控制时间 playback。
 #[derive(Debug, Clone)]
 pub struct AnimationViewModel {
-    /// Whether animation is playing.
+    /// 动画是否正在播放。
     pub is_playing: bool,
-    /// Current speed multiplier (1.0 = real-time).
+    /// 当前速度倍率（1.0 = 实时）。
     pub multiplier: f64,
-    /// Current shuttle ring angle in degrees.
+    /// 当前动感环角度（度）。
     pub shuttle_ring_angle: f64,
-    /// Whether the clock is in system clock mode.
+    /// 时钟是否处于系统时钟模式。
     pub is_system_clock: bool,
-    /// Current time as seconds since J2000 epoch.
+    /// 当前时间，以自 J2000 纪元起算的秒数表示。
     pub current_time: f64,
-    /// The shuttle ring converter.
+    /// 动感环转换器。
     pub shuttle_ring: ShuttleRing,
 }
 
@@ -140,27 +140,27 @@ impl Default for AnimationViewModel {
 }
 
 impl AnimationViewModel {
-    /// Create a new animation view model.
+    /// 创建一个新的动画视图模型。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Toggle play/pause.
+    /// 切换播放/暂停。
     pub fn toggle_play(&mut self) {
         self.is_playing = !self.is_playing;
     }
 
-    /// Play the animation.
+    /// 播放动画。
     pub fn play(&mut self) {
         self.is_playing = true;
     }
 
-    /// Pause the animation.
+    /// 暂停动画。
     pub fn pause(&mut self) {
         self.is_playing = false;
     }
 
-    /// Play in reverse.
+    /// 反向播放。
     pub fn play_reverse(&mut self) {
         self.is_playing = true;
         if self.multiplier > 0.0 {
@@ -168,7 +168,7 @@ impl AnimationViewModel {
         }
     }
 
-    /// Play forward.
+    /// 正向播放。
     pub fn play_forward(&mut self) {
         self.is_playing = true;
         if self.multiplier < 0.0 {
@@ -176,20 +176,20 @@ impl AnimationViewModel {
         }
     }
 
-    /// Set the speed multiplier.
+    /// 设置速度倍率。
     pub fn set_multiplier(&mut self, multiplier: f64) {
         self.multiplier = multiplier;
         self.shuttle_ring_angle = self.shuttle_ring.multiplier_to_angle(multiplier, self.is_system_clock);
     }
 
-    /// Set the shuttle ring angle.
+    /// 设置动感环角度。
     pub fn set_shuttle_ring_angle(&mut self, angle: f64) {
         let clamped = angle.clamp(-MAX_SHUTTLE_RING_ANGLE, MAX_SHUTTLE_RING_ANGLE);
         self.shuttle_ring_angle = clamped;
         self.multiplier = self.shuttle_ring.angle_to_multiplier(clamped);
     }
 
-    /// Set system clock mode.
+    /// 设置系统时钟模式。
     pub fn set_system_clock(&mut self, enabled: bool) {
         self.is_system_clock = enabled;
         if enabled {
@@ -197,20 +197,20 @@ impl AnimationViewModel {
         }
     }
 
-    /// Update the current time.
+    /// 更新当前时间。
     pub fn update_time(&mut self, time: f64) {
         self.current_time = time;
     }
 
-    /// Format the current time as a date string.
+    /// 将当前时间格式化为日期字符串。
     pub fn format_date(&self) -> String {
-        // Simplified: convert seconds since J2000 to a date string
-        // J2000 epoch is 2000-01-01 12:00:00 TT
-        let j2000_unix = 946728000.0; // Unix timestamp of J2000
+        // 简化处理：将自 J2000 起算的秒数转换为日期字符串
+        // J2000 纪元为 2000-01-01 12:00:00 TT
+        let j2000_unix = 946728000.0; // J2000 的 Unix 时间戳
         let unix_time = self.current_time + j2000_unix;
         let days = (unix_time / 86400.0).floor() as i64;
 
-        // Simple date calculation (approximate)
+        // 简单的日期计算（近似）
         let years_since_1970 = days / 365;
         let year = 1970 + years_since_1970;
         let day_of_year = days % 365;
@@ -220,7 +220,7 @@ impl AnimationViewModel {
         format!("{} {}, {}", MONTH_NAMES[month], day, year)
     }
 
-    /// Format the current time as a time string.
+    /// 将当前时间格式化为时间字符串。
     pub fn format_time(&self) -> String {
         let j2000_unix = 946728000.0;
         let unix_time = self.current_time + j2000_unix;
@@ -232,7 +232,7 @@ impl AnimationViewModel {
         format!("{:02}:{:02}:{:02} UTC", hours, minutes, seconds)
     }
 
-    /// Get the multiplier display string.
+    /// 获取倍率的显示字符串。
     pub fn multiplier_string(&self) -> String {
         if self.multiplier == 1.0 {
             "1x".to_string()
@@ -261,7 +261,7 @@ mod tests {
     #[test]
     fn test_shuttle_ring_angle_to_multiplier_linear() {
         let ring = ShuttleRing::default();
-        // In linear range [-15, 15]
+        // 在范围 [-15, 15] 内
         assert!((ring.angle_to_multiplier(0.0)).abs() < 1e-10);
         assert!((ring.angle_to_multiplier(15.0) - 1.0).abs() < 1e-10);
         assert!((ring.angle_to_multiplier(-15.0) - (-1.0)).abs() < 1e-10);
@@ -271,7 +271,7 @@ mod tests {
     #[test]
     fn test_shuttle_ring_angle_to_multiplier_log() {
         let ring = ShuttleRing::default();
-        // At max angle, should be near max tick
+        // 在最大角度时，应接近最大刻度
         let max_mult = ring.angle_to_multiplier(MAX_SHUTTLE_RING_ANGLE);
         assert!(max_mult > 100.0);
 
@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn test_shuttle_ring_multiplier_to_angle() {
         let ring = ShuttleRing::default();
-        // Multiplier 1.0 should give angle 15
+        // 倍率 1.0 应得到角度 15
         assert!((ring.multiplier_to_angle(1.0, false) - 15.0).abs() < 1e-10);
         assert!((ring.multiplier_to_angle(-1.0, false) - (-15.0)).abs() < 1e-10);
         assert!((ring.multiplier_to_angle(0.5, false) - 7.5).abs() < 1e-10);
@@ -291,7 +291,7 @@ mod tests {
     #[test]
     fn test_shuttle_ring_system_clock() {
         let ring = ShuttleRing::default();
-        // System clock always returns realtime angle
+        // 系统时钟总返回实时角度
         assert!((ring.multiplier_to_angle(100.0, true) - REALTIME_SHUTTLE_RING_ANGLE).abs() < 1e-10);
     }
 
@@ -372,7 +372,7 @@ mod tests {
     #[test]
     fn test_animation_format_time() {
         let mut vm = AnimationViewModel::new();
-        vm.current_time = 0.0; // J2000 epoch = 2000-01-01 12:00:00
+        vm.current_time = 0.0; // J2000 纪元 = 2000-01-01 12:00:00
         let time_str = vm.format_time();
         assert!(time_str.contains("UTC"));
     }

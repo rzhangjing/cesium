@@ -1,24 +1,24 @@
-//! Core/CartographicSpec.js → Rust integration tests (faithful port).
+//! Core/CartographicSpec.js → Rust 集成测试（忠实移植）。
 //!
-//! Faithfully ports the original CesiumJS `packages/engine/Specs/Core/CartographicSpec.js`
-//! (24 `it()` cases). Reference values are used verbatim so the Rust implementation
-//! is verified against the exact same ground truth as CesiumJS.
+//! 忠实移植原始 CesiumJS `packages/engine/Specs/Core/CartographicSpec.js`
+//!（24 个 `it()` 用例）。参考值逐字使用，以便 Rust 实现
+//! 针对与 CesiumJS 完全相同的基准真值进行验证。
 //!
-//! Platform adaptations (documented, per the verification plan):
-//! - CesiumJS "works with a result parameter" variants test the JS memory-reuse
-//!   API contract (`returnedResult === result`). Rust returns owned values and has
-//!   no result-parameter API, so those variants are subsumed by the owned-return
-//!   tests below (identical computed values, single code path).
-//! - CesiumJS "throws without longitude/latitude" and "throws when there is no
-//!   cartesian" cases test runtime null-checks. Rust's type system makes null
-//!   arguments unrepresentable (compile-time safety), so those error paths have
-//!   no Rust counterpart. The "defaults altitude" half of those cases is ported
-//!   by passing an explicit height of 0.0 (Rust has no optional parameters).
-//! - `Ellipsoid.default` is a JS mutable-global pattern. The "uses default
-//!   ellipsoid" tests set `Ellipsoid.default = Ellipsoid.MOON`; in Rust the
-//!   ellipsoid is passed explicitly, so those tests pass `&Ellipsoid::MOON`
-//!   directly (same conversion behavior, no global state).
-//! - `clone` maps to Rust's derived `Clone`; `equals` maps to derived `PartialEq`.
+//! 平台适配（依据验证计划，均有文档说明）：
+//! - CesiumJS 的 "works with a result parameter" 变体测试 JS 的内存复用
+//!   API 契约（`returnedResult === result`）。Rust 返回拥有所有权的值且没有
+//!   result-parameter API，因此这些变体被下方的拥有返回
+//!   测试所归并（计算值相同，单一代码路径）。
+//! - CesiumJS 的 "throws without longitude/latitude" 和 "throws when there is no
+//!   cartesian" 用例测试运行时的 null 检查。Rust 的类型系统使 null
+//!   参数无法表示（编译期安全），因此这些错误路径
+//!   没有对应的 Rust 版本。这些用例的 "defaults altitude" 部分通过
+//!   显式传入高度 0.0 来移植（Rust 没有可选参数）。
+//! - `Ellipsoid.default` 是一种 JS 可变全局模式。"uses default
+//!   ellipsoid" 测试会设置 `Ellipsoid.default = Ellipsoid.MOON`；在 Rust 中
+//!   椭球是显式传入的，因此这些测试直接传入 `&Ellipsoid::MOON`
+//!   （转换行为相同，无全局状态）。
+//! - `clone` 映射到 Rust 派生的 `Clone`；`equals` 映射到派生的 `PartialEq`。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -26,7 +26,7 @@ use cesium_geospatial::math_utils::to_radians;
 use cesium_specs::{assert_vec3_epsilon, epsilon};
 use glam::DVec3;
 
-// --- Reference values from the original spec ---
+// --- 来自原始规范的参考值 ---
 
 #[allow(clippy::excessive_precision)]
 fn surface_cartesian() -> DVec3 {
@@ -43,7 +43,7 @@ fn moon_cartographic() -> Cartographic {
     Cartographic::from_degrees(23.47315, 0.67416, 0.0)
 }
 
-// --- Constructor ---
+// --- 构造函数 ---
 
 // "default constructor sets expected properties"
 #[test]
@@ -66,7 +66,7 @@ fn test_constructor_sets_expected_properties_from_parameters() {
 // --- toCartesian ---
 
 // "toCartesian conversion from Cartographic input to Cartesian3 output"
-// Original asserts `Cartographic.toCartesian(c)` toEqual `ellipsoid.cartographicToCartesian(c)`.
+// 原用例断言 `Cartographic.toCartesian(c)` toEqual `ellipsoid.cartographicToCartesian(c)`。
 #[test]
 fn test_to_cartesian_conversion() {
     let lon = to_radians(150.0);
@@ -80,7 +80,7 @@ fn test_to_cartesian_conversion() {
 }
 
 // "toCartesian uses default ellipsoid"
-// Original sets `Ellipsoid.default = Ellipsoid.MOON`; Rust passes MOON explicitly.
+// 原用例设置 `Ellipsoid.default = Ellipsoid.MOON`；Rust 显式传入 MOON。
 #[test]
 fn test_to_cartesian_uses_moon_ellipsoid() {
     let cartographic = moon_cartographic();
@@ -91,7 +91,7 @@ fn test_to_cartesian_uses_moon_ellipsoid() {
 // --- fromRadians ---
 
 // "fromRadians works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned value)
+//（"with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_from_radians() {
     let c = Cartographic::from_radians(std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_4, 100.0);
@@ -101,9 +101,9 @@ fn test_from_radians() {
 }
 
 // "fromRadians throws without longitude or latitude parameter but defaults altitude"
-// The "throws" half has no Rust counterpart (type-safe, no null). The "defaults
-// altitude" half is adapted: Rust has no optional parameters, so height 0.0 is
-// passed explicitly (the JS default value).
+// "throws" 部分没有对应的 Rust 版本（类型安全、无 null）。"defaults
+// altitude" 部分做了适配：Rust 没有可选参数，因此显式
+// 传入高度 0.0（即 JS 的默认值）。
 #[test]
 fn test_from_radians_defaults_altitude() {
     let c = Cartographic::from_radians(std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_4, 0.0);
@@ -115,7 +115,7 @@ fn test_from_radians_defaults_altitude() {
 // --- fromDegrees ---
 
 // "fromDegrees works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned value)
+//（"with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_from_degrees() {
     let c = Cartographic::from_degrees(90.0, 45.0, 100.0);
@@ -125,7 +125,7 @@ fn test_from_degrees() {
 }
 
 // "fromDegrees throws without longitude or latitude parameter but defaults altitude"
-// (adaptation as in test_from_radians_defaults_altitude)
+//（适配方式同 test_from_radians_defaults_altitude）
 #[test]
 fn test_from_degrees_defaults_altitude() {
     let c = Cartographic::from_degrees(90.0, 45.0, 0.0);
@@ -137,7 +137,7 @@ fn test_from_degrees_defaults_altitude() {
 // --- fromCartesian ---
 
 // "fromCartesian works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned value)
+//（"with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_from_cartesian() {
     let c = Cartographic::from_cartesian(surface_cartesian(), &Ellipsoid::WGS84).unwrap();
@@ -145,7 +145,7 @@ fn test_from_cartesian() {
 }
 
 // "fromCartesian works without an ellipsoid"
-// Original omits the ellipsoid (defaults to WGS84); Rust passes WGS84 explicitly.
+// 原用例省略了椭球（默认为 WGS84）；Rust 显式传入 WGS84。
 #[test]
 fn test_from_cartesian_default_ellipsoid_wgs84() {
     let c = Cartographic::from_cartesian(surface_cartesian(), &Ellipsoid::WGS84).unwrap();
@@ -153,7 +153,7 @@ fn test_from_cartesian_default_ellipsoid_wgs84() {
 }
 
 // "fromCartesian uses default ellipsoid"
-// Original sets `Ellipsoid.default = Ellipsoid.MOON`; Rust passes MOON explicitly.
+// 原用例设置 `Ellipsoid.default = Ellipsoid.MOON`；Rust 显式传入 MOON。
 #[test]
 fn test_from_cartesian_uses_moon_ellipsoid() {
     let cartographic = Cartographic::from_cartesian(moon_position(), &Ellipsoid::MOON).unwrap();
@@ -164,7 +164,7 @@ fn test_from_cartesian_uses_moon_ellipsoid() {
 #[test]
 fn test_from_cartesian_above_surface() {
     let cartographic1 = Cartographic::from_degrees(35.766989, 33.333602, 3000.0);
-    // Cartesian3.fromRadians on the default (WGS84) ellipsoid.
+    // 在默认（WGS84）椭球上调用 Cartesian3.fromRadians。
     let cartesian1 = Ellipsoid::WGS84.cartographic_to_cartesian(&cartographic1);
     let cartographic2 = Cartographic::from_cartesian(cartesian1, &Ellipsoid::WGS84).unwrap();
     assert!(cartographic2.equals_epsilon(&cartographic1, epsilon::EPSILON8));
@@ -182,8 +182,8 @@ fn test_from_cartesian_below_surface() {
 // --- clone ---
 
 // "clone without a result parameter"
-// (the "with a result parameter" and "'this' result parameter" variants are
-//  subsumed: Rust Clone always returns a fresh owned value)
+//（"with a result parameter" 和 "'this' result parameter" 变体已被
+//  归并：Rust 的 Clone 总是返回一个新的拥有所有权的值）
 #[test]
 fn test_clone() {
     let cartographic = Cartographic::from_radians(1.0, 2.0, 3.0);
@@ -198,7 +198,7 @@ fn test_clone() {
 // --- equals / equalsEpsilon ---
 
 // "equals"
-// (the `equals(undefined)` case is unrepresentable in Rust — type-safe equality)
+//（`equals(undefined)` 用例在 Rust 中无法表示——类型安全的相等）
 #[test]
 fn test_equals() {
     let cartographic = Cartographic::from_radians(1.0, 2.0, 3.0);
@@ -209,7 +209,7 @@ fn test_equals() {
 }
 
 // "equalsEpsilon"
-// (the `equalsEpsilon(undefined, 1)` case is unrepresentable in Rust)
+//（`equalsEpsilon(undefined, 1)` 用例在 Rust 中无法表示）
 #[test]
 fn test_equals_epsilon() {
     let cartographic = Cartographic::from_radians(1.0, 2.0, 3.0);

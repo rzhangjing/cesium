@@ -1,6 +1,6 @@
-//! Ported from `packages/engine/Specs/Core/S2CellSpec.js` (27 it(), 15 A-class)
+//! 移植自 `packages/engine/Specs/Core/S2CellSpec.js`（27 个 it()，15 个 A 类）
 //!
-//! B-class (throws) tests are omitted since Rust's type system enforces valid inputs.
+//! 省略 B 类（throws）测试，因为 Rust 的类型系统会强制输入合法。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -72,7 +72,7 @@ fn accepts_valid_cell_id() {
 #[test]
 fn rejects_cell_id_of_invalid_value() {
     assert!(!S2Cell::is_valid_id(0));
-    // Face > 5
+    // Face 大于 5
     assert!(!S2Cell::is_valid_id(0b0010101000000000000000000000000000000000000000000000000000000000u128));
 }
 
@@ -139,7 +139,7 @@ fn gets_correct_children_of_cell() {
 
 #[test]
 fn gets_correct_center_of_cell() {
-    // Use EPSILON10 relative to Earth radius (~6e6), so absolute tolerance ~1e-4
+    // 相对于地球半径（约 6e6）使用 EPSILON10，故绝对容差约 1e-4
     let eps = 1e-4;
 
     let center = S2Cell::from_token("1").get_center(&Ellipsoid::WGS84);
@@ -177,7 +177,7 @@ fn gets_correct_center_of_cell() {
 
 #[test]
 fn gets_correct_vertices_of_cell() {
-    // Use EPSILON15 relative to Earth radius, absolute tolerance ~1e-8
+    // 相对于地球半径使用 EPSILON15，绝对容差约 1e-8
     let eps = 1e-8;
     let cell = S2Cell::from_token("2ef59bd352b93ac3");
 

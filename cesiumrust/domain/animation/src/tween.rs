@@ -1,13 +1,13 @@
-//! TweenCollection - property animation via easing functions.
+//! TweenCollection - 通过缓动函数实现属性动画。
 //!
-//! Maps to CesiumJS `Scene/TweenCollection.js` + `Core/EasingFunction.js`
+//! 映射到 CesiumJS `Scene/TweenCollection.js` + `Core/EasingFunction.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格债（deferred.md #18）；在 M13 lint 清理、或本文件在其里程碑被重写时重新审视
 #![allow(clippy::derivable_impls, clippy::type_complexity, clippy::too_many_arguments, clippy::ptr_eq)]
 use std::collections::HashMap;
 
-/// Easing functions for tween animations.
-/// Maps to CesiumJS `Core/EasingFunction.js` (28 variants from tween.js)
+/// 用于补间（tween）动画的缓动函数。
+/// 映射到 CesiumJS `Core/EasingFunction.js`（来自 tween.js 的 28 种变体）
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EasingFunction {
     LinearNone,
@@ -50,8 +50,8 @@ impl Default for EasingFunction {
 }
 
 impl EasingFunction {
-    /// Evaluates the easing function at time k (0..1).
-    /// Formulas from tween.js (Robert Penner / sole).
+    /// 在时间 k（0..1）处求缓动函数的值。
+    /// 公式来自 tween.js（Robert Penner / sole）。
     pub fn evaluate(&self, k: f64) -> f64 {
         use std::f64::consts::PI;
         match self {
@@ -164,7 +164,7 @@ impl EasingFunction {
     }
 }
 
-/// A single tween animation.
+/// 单个补间动画。
 pub struct Tween {
     start_object: HashMap<String, f64>,
     stop_object: HashMap<String, f64>,
@@ -186,7 +186,7 @@ impl Tween {
     pub fn delay(&self) -> f64 { self.delay }
     pub fn easing_function(&self) -> EasingFunction { self.easing_function }
 
-    /// Computes interpolated values at the given elapsed time (seconds since tween start).
+    /// 计算在给定经过时间（自补间开始的秒数）处的插值。
     fn compute_values(&self, elapsed: f64) -> HashMap<String, f64> {
         let mut result = HashMap::new();
         let t = if self.duration > 0.0 {
@@ -203,7 +203,7 @@ impl Tween {
     }
 }
 
-/// Options for adding a tween.
+/// 添加补间的选项。
 pub struct TweenOptions {
     pub start_object: HashMap<String, f64>,
     pub stop_object: HashMap<String, f64>,
@@ -232,8 +232,8 @@ impl TweenOptions {
     }
 }
 
-/// A collection of tween animations.
-/// Maps to CesiumJS `Scene/TweenCollection.js`
+/// 一组补间动画。
+/// 映射到 CesiumJS `Scene/TweenCollection.js`
 pub struct TweenCollection {
     tweens: Vec<Tween>,
 }
@@ -246,8 +246,8 @@ impl TweenCollection {
     pub fn len(&self) -> usize { self.tweens.len() }
     pub fn is_empty(&self) -> bool { self.tweens.is_empty() }
 
-    /// Adds a tween. If duration == 0, immediately calls complete and does not add.
-    /// Returns the index of the added tween, or None if duration was 0.
+    /// 添加一个补间。若 duration == 0，则立即调用 complete 并不添加。
+    /// 返回已添加补间的索引，若 duration 为 0 则返回 None。
     pub fn add(&mut self, mut options: TweenOptions) -> Option<usize> {
         if options.duration == 0.0 {
             if let Some(ref mut complete) = options.complete {
@@ -273,8 +273,8 @@ impl TweenCollection {
         Some(self.tweens.len() - 1)
     }
 
-    /// Adds a tween that animates a single scalar property.
-    /// Maps to CesiumJS `TweenCollection.addProperty`.
+    /// 添加一个对单个标量属性做动画的补间。
+    /// 映射到 CesiumJS `TweenCollection.addProperty`。
     pub fn add_property(
         &mut self,
         start_value: f64,
@@ -311,8 +311,8 @@ impl TweenCollection {
         self.add(options)
     }
 
-    /// Adds a tween that animates alpha on color uniforms.
-    /// Maps to CesiumJS `TweenCollection.addAlpha`.
+    /// 添加一个对颜色 uniform 的 alpha 做动画的补间。
+    /// 映射到 CesiumJS `TweenCollection.addAlpha`。
     pub fn add_alpha(
         &mut self,
         duration: f64,
@@ -350,8 +350,8 @@ impl TweenCollection {
         self.add(options)
     }
 
-    /// Adds a tween that increments an offset uniform.
-    /// Maps to CesiumJS `TweenCollection.addOffsetIncrement`.
+    /// 添加一个递增 offset uniform 的补间。
+    /// 映射到 CesiumJS `TweenCollection.addOffsetIncrement`。
     pub fn add_offset_increment(
         &mut self,
         duration: f64,
@@ -383,7 +383,7 @@ impl TweenCollection {
         self.add(options)
     }
 
-    /// Removes a tween by index, calling its cancel callback.
+    /// 按索引移除一个补间，并调用其 cancel 回调。
     pub fn remove(&mut self, index: usize) -> bool {
         if index >= self.tweens.len() {
             return false;
@@ -395,8 +395,8 @@ impl TweenCollection {
         true
     }
 
-    /// Removes a tween found by searching for a matching tween.
-    /// Returns true if found and removed.
+    /// 通过搜索匹配的补间来移除一个补间。
+    /// 若找到并移除则返回 true。
     pub fn remove_tween(&mut self, tween_ptr: *const Tween) -> bool {
         if let Some(pos) = self.tweens.iter().position(|t| t as *const Tween == tween_ptr) {
             self.remove(pos)
@@ -405,7 +405,7 @@ impl TweenCollection {
         }
     }
 
-    /// Removes all tweens, calling cancel on each.
+    /// 移除所有补间，对每个调用 cancel。
     pub fn remove_all(&mut self) {
         for tween in self.tweens.drain(..) {
             let mut tween = tween;
@@ -415,23 +415,23 @@ impl TweenCollection {
         }
     }
 
-    /// Returns true if the collection contains a tween at the given index.
+    /// 若集合在给定索引处包含补间则返回 true。
     pub fn contains(&self, index: usize) -> bool {
         index < self.tweens.len()
     }
 
-    /// Gets a reference to a tween by index.
+    /// 按索引获取对某个补间的引用。
     pub fn get(&self, index: usize) -> Option<&Tween> {
         self.tweens.get(index)
     }
 
-    /// Cancels a tween (removes it and calls cancel callback).
+    /// 取消一个补间（移除它并调用 cancel 回调）。
     pub fn cancel_tween(&mut self, index: usize) -> bool {
         self.remove(index)
     }
 
-    /// Updates all tweens to the given time (seconds).
-    /// Tweens that complete are removed from the collection.
+    /// 将所有补间更新到给定时间（秒）。
+    /// 已完成的补间会从集合中移除。
     pub fn update(&mut self, time: f64) {
         let mut i = 0;
         while i < self.tweens.len() {
@@ -451,22 +451,22 @@ impl TweenCollection {
             }
 
             if elapsed >= duration {
-                // Tween completed
+                // 补间已完成
                 let repeat = self.tweens[i].repeat;
                 let repeat_count = self.tweens[i].repeat_count;
 
                 if repeat_count < repeat {
-                    // Restart
+                    // 重新开始
                     self.tweens[i].repeat_count += 1.0;
                     self.tweens[i].start_time = Some(time);
                     i += 1;
                 } else {
-                    // Complete and remove
+                    // 完成并移除
                     let mut tween = self.tweens.swap_remove(i);
                     if let Some(ref mut complete_cb) = tween.complete_callback {
                         complete_cb();
                     }
-                    // Don't increment i since swap_remove moved an element
+                    // 不递增 i，因为 swap_remove 已移来一个元素
                 }
             } else {
                 i += 1;

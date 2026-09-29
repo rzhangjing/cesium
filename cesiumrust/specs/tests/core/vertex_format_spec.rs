@@ -1,9 +1,9 @@
-//! VertexFormat spec tests.
+//! VertexFormat 规格测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Core/VertexFormatSpec.js
 //!
-//! A-class tests: clone, pack/unpack, constants.
+//! A 类测试：clone、pack/unpack、常量。
 
 use cesium_geospatial::VertexFormat;
 
@@ -70,8 +70,8 @@ fn vertex_format_packed_length() {
 
 #[test]
 fn vertex_format_constants() {
-    // Bind the preset tables to locals so each `assert!` is a real field read
-    // rather than a compile-time constant the lint (correctly) calls vacuous.
+    // 将预置的查找表绑定到局部变量，使每个 `assert!` 都是真正的字段读取，
+    // 而非被 lint（正确地）判定为空转的编译期常量。
     let all = VertexFormat::ALL;
     assert!(all.position);
     assert!(all.normal);

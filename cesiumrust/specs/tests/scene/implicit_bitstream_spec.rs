@@ -1,4 +1,4 @@
-//! Tests ported from CesiumJS ImplicitAvailabilityBitstreamSpec.js (5 A-class tests)
+//! 移植自 CesiumJS ImplicitAvailabilityBitstreamSpec.js 的测试（5 个 A 类测试）
 
 use cesium_scene::implicit_availability_bitstream::{
     ImplicitAvailabilityBitstream, ImplicitAvailabilityBitstreamOptions,
@@ -22,7 +22,7 @@ fn test_reads_bits_from_constant() {
 
 #[test]
 fn test_reads_bits_from_bitstream() {
-    // Packed representation of 0b0101 1111  1xxx xxxx
+    // 0b0101 1111  1xxx xxxx 的打包表示
     let bitstream_u8 = vec![0xfa, 0x01];
     let expected = [false, true, false, true, true, true, true, true, true];
     let bitstream = ImplicitAvailabilityBitstream::new(ImplicitAvailabilityBitstreamOptions {

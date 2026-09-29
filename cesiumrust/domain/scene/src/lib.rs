@@ -1,25 +1,24 @@
-//! cesium-scene: Scene graph and rendering pipeline domain models
+//! cesium-scene：场景图与渲染流水线的领域模型
 //!
-//! STATUS (P2 code-health audit, 2026-09-27): implemented and covered by the
-//! `cesium-specs` suite, but **not wired into any production runtime path**. Its
-//! former Bevy bridge (`adapters/bevy-render/src/scene_pipeline.rs`) was deleted
-//! at P1-2 because the golden globe path is the `dynamic_globe` ECS renderer (see
-//! docs/ARCHITECTURE.md "Render Main Path"), so no adapter/application crate
-//! depends on this crate today. Retained as a CesiumJS feature-parity domain
-//! model reserved for a future generic draw-command pipeline; do NOT read it as a
-//! shipped capability. See docs/ARCHITECTURE.md "Test-only domain crates".
+//! 状态（P2 代码健康审计，2026-09-27）：已实现并由 `cesium-specs` 套件覆盖，
+//! 但**尚未接入任何生产运行时路径**。其旧的 Bevy 桥接（`adapters/bevy-render/src/scene_pipeline.rs`）
+//! 已在 P1-2 删除，因为黄金地球路径是 `dynamic_globe` ECS 渲染器（见
+//! docs/ARCHITECTURE.md "Render Main Path"），因此目前没有任何 adapter/application
+//! crate 依赖本 crate。作为 CesiumJS 功能对等性的领域模型保留，
+//! 预留给未来的通用 draw-command 流水线；不要将其误读为已交付的能力。参见
+//! docs/ARCHITECTURE.md "Test-only domain crates"。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Scene/Scene.js`
 //! - `Scene/Primitive.js`
 //! - `Renderer/DrawCommand.js`
 //! - `Scene/Pass.js`
 //!
-//! # Features
-//! - Scene graph node hierarchy with transforms
-//! - Frustum culling and visibility determination
-//! - Draw command generation and render pass management
-//! - Frame statistics tracking
+//! # 特性
+//! - 带变换的场景图节点层次结构
+//! - 视景体剔除与可见性判定
+//! - draw command 生成与渲染通道管理
+//! - 帧统计跟踪
 
 pub mod scene_graph;
 pub mod culling;

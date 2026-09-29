@@ -1,11 +1,11 @@
-//! Miscellaneous Core specs - ported from:
-//! - packages/engine/Specs/Core/isLeapYearSpec.js (4 it(), 1 A-class)
-//! - packages/engine/Specs/Core/IntervalSpec.js (2 it(), 2 A-class)
-//! - packages/engine/Specs/Core/NearFarScalarSpec.js (5 it(), 2 A-class)
-//! - packages/engine/Specs/Core/VertexFormatSpec.js (2 it(), 1 A-class)
-//! - packages/engine/Specs/Core/TridiagonalSystemSolverSpec.js (9 it(), 2 A-class)
+//! 杂项 Core 规格测试 - 移植自：
+//! - packages/engine/Specs/Core/isLeapYearSpec.js（4 个 it()，1 个 A 类）
+//! - packages/engine/Specs/Core/IntervalSpec.js（2 个 it()，2 个 A 类）
+//! - packages/engine/Specs/Core/NearFarScalarSpec.js（5 个 it()，2 个 A 类）
+//! - packages/engine/Specs/Core/VertexFormatSpec.js（2 个 it()，1 个 A 类）
+//! - packages/engine/Specs/Core/TridiagonalSystemSolverSpec.js（9 个 it()，2 个 A 类）
 //!
-//! Total A-class tests: 8
+//! A 类测试总计：8 个
 
 use cesium_animation::tridiagonal_solve;
 use cesium_datasource::primitives::NearFarScalar;
@@ -82,7 +82,7 @@ fn vertex_format_clone() {
         tangent: false,
         bitangent: false,
     };
-    let cloned = vf; // VertexFormat is Copy
+    let cloned = vf; // VertexFormat 是 Copy
     assert_eq!(cloned.position, vf.position);
     assert_eq!(cloned.normal, vf.normal);
     assert_eq!(cloned.st, vf.st);

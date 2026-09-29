@@ -1,7 +1,7 @@
-//! Ported from CesiumJS `Core/WallGeometrySpec.js` (expanded A-class tests).
+//! 移植自 CesiumJS `Core/WallGeometrySpec.js`（扩展的 A 类测试）。
 //!
-//! Tests: closed loop, duplicate handling, EPSILON10 boundary, height selection,
-//! all attributes, texture coordinates.
+//! 测试：闭合环路、重复点处理、EPSILON10 边界、高度选择、
+//! 全部属性、纹理坐标。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -28,7 +28,7 @@ const EPSILON8: f64 = 1e-8;
 
 // ---------------------------------------------------------------------------
 // "creates positions relative to ellipsoid"
-// 2 positions → 4 vertices (2 bottom + 2 top), 2 triangles
+// 2 个位置 → 4 个顶点（2 底 + 2 顶），2 个三角形
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -46,12 +46,12 @@ fn wall_creates_positions_relative_to_ellipsoid() {
     };
     let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
 
-    // CesiumJS: numPositions = 4, numTriangles = 2
-    // With granularity=1°, 1° arc → 2 points per segment → 2 corners × 2 (top+bottom) = 4
+    // CesiumJS：numPositions = 4，numTriangles = 2
+    // granularity=1° 时，1° 弧 → 每段 2 个点 → 2 个拐角 × 2（顶+底）= 4
     assert_eq!(geo.positions.len(), 4, "expected 4 positions");
     assert_eq!(geo.indices.len(), 6, "expected 6 indices (2 triangles)");
 
-    // First position should be at height 0 (bottom)
+    // 第一个位置应位于高度 0（底部）
     let c0 = to_cartographic(geo.positions[0]);
     assert!(
         (c0.height - 0.0).abs() < EPSILON8,
@@ -59,7 +59,7 @@ fn wall_creates_positions_relative_to_ellipsoid() {
         c0.height
     );
 
-    // Second position should be at height 1000 (top)
+    // 第二个位置应位于高度 1000（顶部）
     let c1 = to_cartographic(geo.positions[1]);
     assert!(
         (c1.height - 1000.0).abs() < EPSILON8,
@@ -70,7 +70,7 @@ fn wall_creates_positions_relative_to_ellipsoid() {
 
 // ---------------------------------------------------------------------------
 // "creates positions when first and last positions are equal"
-// Closed loop: 5 positions (first=last) → 16 vertices, 8 triangles
+// 闭合环路：5 个位置（首=尾）→ 16 个顶点，8 个三角形
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -80,7 +80,7 @@ fn wall_creates_positions_closed_loop() {
         from_degrees(-106.0, 43.0, 1000.0),
         from_degrees(-106.0, 42.0, 1000.0),
         from_degrees(-107.0, 42.0, 1000.0),
-        from_degrees(-107.0, 43.0, 1000.0), // same as first
+        from_degrees(-107.0, 43.0, 1000.0), // 与首个相同
     ];
 
     let opts = WallOptions {
@@ -91,12 +91,12 @@ fn wall_creates_positions_closed_loop() {
     };
     let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
 
-    // CesiumJS: numPositions = 16, numTriangles = 8
-    // 4 segments × 2 points each × 2 (top+bottom) = 16
+    // CesiumJS：numPositions = 16，numTriangles = 8
+    // 4 段 × 每段 2 个点 × 2（顶+底）= 16
     assert_eq!(geo.positions.len(), 16, "expected 16 positions for closed loop");
     assert_eq!(geo.indices.len(), 24, "expected 24 indices (8 triangles)");
 
-    // First position should be at height 0 (bottom)
+    // 第一个位置应位于高度 0（底部）
     let c0 = to_cartographic(geo.positions[0]);
     assert!(
         (c0.height - 0.0).abs() < EPSILON8,
@@ -104,7 +104,7 @@ fn wall_creates_positions_closed_loop() {
         c0.height
     );
 
-    // Second position should be at height 1000 (top)
+    // 第二个位置应位于高度 1000（顶部）
     let c1 = to_cartographic(geo.positions[1]);
     assert!(
         (c1.height - 1000.0).abs() < EPSILON8,
@@ -115,20 +115,20 @@ fn wall_creates_positions_closed_loop() {
 
 // ---------------------------------------------------------------------------
 // "cleans positions with duplicates"
-// 7 input positions with duplicates → 8 vertices (4 unique corners × 2)
+// 7 个含重复的输入位置 → 8 个顶点（4 个唯一拐角 × 2）
 // ---------------------------------------------------------------------------
 
 #[test]
 fn wall_cleans_positions_with_duplicates() {
-    // Input: 49,18 → 49,18(dup) → 50,18 → 50,18(dup) → 50,18(dup) → 51,18 → 51,18(dup)
+    // 输入：49,18 → 49,18(重复) → 50,18 → 50,18(重复) → 50,18(重复) → 51,18 → 51,18(重复)
     let positions = vec![
         from_degrees(49.0, 18.0, 1000.0),
-        from_degrees(49.0, 18.0, 2000.0), // same lon/lat, different height
+        from_degrees(49.0, 18.0, 2000.0), // 相同经/纬度，不同高度
         from_degrees(50.0, 18.0, 1000.0),
-        from_degrees(50.0, 18.0, 1000.0), // duplicate
-        from_degrees(50.0, 18.0, 1000.0), // duplicate
+        from_degrees(50.0, 18.0, 1000.0), // 重复
+        from_degrees(50.0, 18.0, 1000.0), // 重复
         from_degrees(51.0, 18.0, 1000.0),
-        from_degrees(51.0, 18.0, 1000.0), // duplicate
+        from_degrees(51.0, 18.0, 1000.0), // 重复
     ];
 
     let opts = WallOptions {
@@ -139,15 +139,15 @@ fn wall_cleans_positions_with_duplicates() {
     };
     let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
 
-    // CesiumJS: numPositions = 8, numTriangles = 4
-    // After removing duplicates: 3 unique corners (49, 50, 51)
-    // But 49 and 49 share lon/lat so merged → 3 corners
-    // 3 corners × 2 (top+bottom) = 6... but CesiumJS expects 8
-    // Actually: 2 segments (49→50, 50→51) × 2 points each × 2 (top+bottom) = 8
+    // CesiumJS：numPositions = 8，numTriangles = 4
+    // 去重后：3 个唯一拐角（49、50、51）
+    // 但 49 与 49 共享经/纬度因而被合并 → 3 个拐角
+    // 3 个拐角 × 2（顶+底）= 6……但 CesiumJS 期望为 8
+    // 实际上是：2 段（49→50、50→51）× 每段 2 个点 × 2（顶+底）= 8
     assert_eq!(geo.positions.len(), 8, "expected 8 positions after duplicate removal");
     assert_eq!(geo.indices.len(), 12, "expected 12 indices (4 triangles)");
 
-    // First position should be at height 0 (bottom)
+    // 第一个位置应位于高度 0（底部）
     let c0 = to_cartographic(geo.positions[0]);
     assert!(
         (c0.height - 0.0).abs() < EPSILON8,
@@ -155,7 +155,7 @@ fn wall_cleans_positions_with_duplicates() {
         c0.height
     );
 
-    // Second position should be at height 2000 (max of 1000 and 2000)
+    // 第二个位置应位于高度 2000（1000 与 2000 的最大值）
     let c1 = to_cartographic(geo.positions[1]);
     assert!(
         (c1.height - 2000.0).abs() < EPSILON8,
@@ -166,16 +166,16 @@ fn wall_cleans_positions_with_duplicates() {
 
 // ---------------------------------------------------------------------------
 // "removes duplicates with very small difference"
-// Positions differing by < EPSILON10 should be merged
+// 相差 < EPSILON10 的位置应被合并
 // ---------------------------------------------------------------------------
 
 #[test]
 fn wall_removes_duplicates_with_small_difference() {
-    // These positions differ by < EPSILON10 in cartesian coordinates
+    // 这些位置在直角坐标下相差 < EPSILON10
     let positions = vec![
         DVec3::new(4347090.215457887, 1061403.4237998386, 4538066.036525028),
         DVec3::new(4348147.589624987, 1043897.8776143644, 4541092.234751661),
-        DVec3::new(4348147.589882754, 1043897.8776762491, 4541092.234492364), // very close to previous
+        DVec3::new(4348147.589882754, 1043897.8776762491, 4541092.234492364), // 与前一个非常接近
         DVec3::new(4335659.882947743, 1047571.602084736, 4552098.654605664),
     ];
 
@@ -187,24 +187,24 @@ fn wall_removes_duplicates_with_small_difference() {
     };
     let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
 
-    // CesiumJS: numPositions = 8, numTriangles = 4
-    // After removing the near-duplicate: 3 unique corners
-    // 2 segments × 2 points × 2 (top+bottom) = 8
+    // CesiumJS：numPositions = 8，numTriangles = 4
+    // 去除近似重复点后：3 个唯一拐角
+    // 2 段 × 2 个点 × 2（顶+底）= 8
     assert_eq!(geo.positions.len(), 8, "expected 8 positions after near-duplicate removal");
     assert_eq!(geo.indices.len(), 12, "expected 12 indices (4 triangles)");
 }
 
 // ---------------------------------------------------------------------------
 // "does not clean positions that add up past EPSILON10"
-// Small differences that accumulate past EPSILON10 should NOT be merged
+// 累积超过 EPSILON10 的微小差异不应被合并
 // ---------------------------------------------------------------------------
 
 #[test]
 fn wall_does_not_clean_positions_past_epsilon10() {
     let eighty_percent_of_epsilon10: f64 = 0.8 * 1e-10;
 
-    // 4 positions, each differing by 0.8×EPSILON10 in latitude
-    // Adjacent pairs differ by < EPSILON10, but accumulated difference > EPSILON10
+    // 4 个位置，每个在纬度上相差 0.8×EPSILON10
+    // 相邻对相差 < EPSILON10，但累积差异 > EPSILON10
     let lat0: f64 = 1.0;
     let positions = vec![
         from_degrees(
@@ -237,9 +237,9 @@ fn wall_does_not_clean_positions_past_epsilon10() {
     };
     let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
 
-    // CesiumJS expects this to produce geometry (not return undefined)
-    // The first and third positions differ by 1.6×EPSILON10 > EPSILON10
-    // So they should NOT be merged
+    // CesiumJS 期望此情形生成几何（而非返回 undefined）
+    // 第一个与第三个位置相差 1.6×EPSILON10 > EPSILON10
+    // 因此不应被合并
     assert!(
         !geo.positions.is_empty(),
         "should produce geometry for positions accumulating past EPSILON10"
@@ -248,17 +248,17 @@ fn wall_does_not_clean_positions_past_epsilon10() {
 
 // ---------------------------------------------------------------------------
 // "cleans selects maximum height from duplicates"
-// When positions share lon/lat, keep the maximum height
+// 当位置共享经/纬度时，保留最大高度
 // ---------------------------------------------------------------------------
 
 #[test]
 fn wall_selects_maximum_height_from_duplicates() {
-    // 50,18 appears 3 times with heights 1000, 6000, 10000
+    // 50,18 出现 3 次，高度分别为 1000、6000、10000
     let positions = vec![
         from_degrees(49.0, 18.0, 1000.0),
         from_degrees(50.0, 18.0, 1000.0),
-        from_degrees(50.0, 18.0, 6000.0),  // same lon/lat, higher
-        from_degrees(50.0, 18.0, 10000.0), // same lon/lat, highest
+        from_degrees(50.0, 18.0, 6000.0),  // 相同经/纬度，更高
+        from_degrees(50.0, 18.0, 10000.0), // 相同经/纬度，最高
         from_degrees(51.0, 18.0, 1000.0),
     ];
 
@@ -270,11 +270,11 @@ fn wall_selects_maximum_height_from_duplicates() {
     };
     let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
 
-    // CesiumJS: numPositions = 8, numTriangles = 4
+    // CesiumJS：numPositions = 8，numTriangles = 4
     assert_eq!(geo.positions.len(), 8, "expected 8 positions");
     assert_eq!(geo.indices.len(), 12, "expected 12 indices (4 triangles)");
 
-    // First position should be at height 0 (bottom)
+    // 第一个位置应位于高度 0（底部）
     let c0 = to_cartographic(geo.positions[0]);
     assert!(
         (c0.height - 0.0).abs() < EPSILON8,
@@ -282,10 +282,10 @@ fn wall_selects_maximum_height_from_duplicates() {
         c0.height
     );
 
-    // Position at index 9 (5th top vertex) should be at height 10000 (max)
-    // The 50° longitude corner should have the maximum height
-    // In the output, positions are interleaved: bottom0, top0, bottom1, top1, ...
-    // Index 9 = 5th top vertex (index 4 in top array)
+    // 索引 9（第 5 个顶部顶点）应位于高度 10000（最大值）
+    // 50° 经度的拐角应具有最大高度
+    // 在输出中，位置是交错的：bottom0, top0, bottom1, top1, ...
+    // 索引 9 = 第 5 个顶部顶点（顶部数组中索引 4）
     if geo.positions.len() > 9 {
         let c9 = to_cartographic(geo.positions[9]);
         assert!(
@@ -317,12 +317,12 @@ fn wall_creates_all_attributes() {
     };
     let geo = wall_geometry(&opts, VertexFormat::ALL);
 
-    // CesiumJS: numPositions = 8, numTriangles = 4
+    // CesiumJS：numPositions = 8，numTriangles = 4
     let num_positions = 8;
     assert_eq!(geo.positions.len(), num_positions, "expected {} positions", num_positions);
     assert_eq!(geo.indices.len(), 12, "expected 12 indices (4 triangles)");
 
-    // Check all attributes are present
+    // 检查所有属性都存在
     assert!(geo.normals.is_some(), "normals should be present");
     assert!(geo.tangents.is_some(), "tangents should be present");
     assert!(geo.bitangents.is_some(), "bitangents should be present");
@@ -341,7 +341,7 @@ fn wall_creates_all_attributes() {
 
 // ---------------------------------------------------------------------------
 // "creates correct texture coordinates"
-// ST values should be [0,0, 0,1, 0.5,0, 0.5,1, 0.5,0, 0.5,1, 1,0, 1,1]
+// ST 值应为 [0,0, 0,1, 0.5,0, 0.5,1, 0.5,0, 0.5,1, 1,0, 1,1]
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -362,14 +362,14 @@ fn wall_creates_correct_texture_coordinates() {
 
     let st = geo.tex_coords.as_ref().expect("tex_coords should be present");
 
-    // CesiumJS expected ST values for 3 positions (2 segments):
+    // CesiumJS 对 3 个位置（2 段）的期望 ST 值：
     // [0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 0.5, 1.0, 0.5, 0.0, 0.5, 1.0, 1.0, 0.0, 1.0, 1.0]
-    // Pattern: for each corner, bottom has v=0, top has v=1
-    // u goes from 0 to 1 across segments
+    // 规律：对每个拐角，底部 v=0，顶部 v=1
+    // u 在各段之间从 0 到 1
 
     assert_eq!(st.len(), 8, "expected 8 texture coordinates");
 
-    // Check pattern: alternating v=0 (bottom) and v=1 (top)
+    // 检查规律：v=0（底部）与 v=1（顶部）交替
     for (i, uv) in st.iter().enumerate() {
         let expected_v = if i % 2 == 0 { 0.0 } else { 1.0 };
         assert!(
@@ -381,23 +381,23 @@ fn wall_creates_correct_texture_coordinates() {
         );
     }
 
-    // First u should be 0, last u should be 1
+    // 第一个 u 应为 0，最后一个 u 应为 1
     assert!((st[0][0] - 0.0).abs() < 1e-6, "first u should be 0");
     assert!((st[st.len() - 2][0] - 1.0).abs() < 1e-6, "last u should be 1");
 }
 
 // ---------------------------------------------------------------------------
 // "creates correct texture coordinates when there are duplicate wall positions"
-// Same ST values even with duplicate input positions
+// 即使输入位置有重复，ST 值也相同
 // ---------------------------------------------------------------------------
 
 #[test]
 fn wall_texture_coordinates_with_duplicates() {
-    // 50,18 appears twice (duplicate)
+    // 50,18 出现两次（重复）
     let positions = vec![
         from_degrees(49.0, 18.0, 1000.0),
         from_degrees(50.0, 18.0, 1000.0),
-        from_degrees(50.0, 18.0, 1000.0), // duplicate
+        from_degrees(50.0, 18.0, 1000.0), // 重复
         from_degrees(51.0, 18.0, 1000.0),
     ];
 
@@ -411,10 +411,10 @@ fn wall_texture_coordinates_with_duplicates() {
 
     let st = geo.tex_coords.as_ref().expect("tex_coords should be present");
 
-    // After duplicate removal, should have same ST as without duplicates
+    // 去重后，应与无重复时拥有相同的 ST
     assert_eq!(st.len(), 8, "expected 8 texture coordinates after duplicate removal");
 
-    // Check pattern: alternating v=0 (bottom) and v=1 (top)
+    // 检查规律：v=0（底部）与 v=1（顶部）交替
     for (i, uv) in st.iter().enumerate() {
         let expected_v = if i % 2 == 0 { 0.0 } else { 1.0 };
         assert!(
@@ -429,7 +429,7 @@ fn wall_texture_coordinates_with_duplicates() {
 
 // ---------------------------------------------------------------------------
 // "creates positions with constant minimum and maximum heights"
-// fromConstantHeights with min=1000, max=2000
+// fromConstantHeights，min=1000、max=2000
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -449,7 +449,7 @@ fn wall_from_constant_heights_detailed() {
     assert_eq!(geo.positions.len(), 4, "expected 4 positions");
     assert_eq!(geo.indices.len(), 6, "expected 6 indices (2 triangles)");
 
-    // Check heights: bottom=min, top=max
+    // 检查高度：底部=min，顶部=max
     let c0 = to_cartographic(geo.positions[0]);
     assert!(
         (c0.height - min).abs() < EPSILON8,
@@ -485,7 +485,7 @@ fn wall_from_constant_heights_detailed() {
 
 // ---------------------------------------------------------------------------
 // "creates positions with minimum and maximum heights"
-// Variable height arrays (not constant)
+// 可变高度数组（非常量）
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -509,8 +509,8 @@ fn wall_creates_positions_with_variable_minimum_maximum_heights() {
     assert_eq!(geo.positions.len(), 4, "expected 4 positions");
     assert_eq!(geo.indices.len(), 6, "expected 6 indices (2 triangles)");
 
-    // Check that bottom height varies (follows minimum_heights)
-    // Position pattern: bottom0, top0, bottom1, top1
+    // 检查底部高度会变化（遵循 minimum_heights）
+    // 位置规律：bottom0, top0, bottom1, top1
     let c0 = to_cartographic(geo.positions[0]);
     assert!((c0.height - 500.0).abs() < EPSILON8, "bottom height at pos0 should be 500");
 
@@ -525,7 +525,7 @@ fn wall_creates_positions_with_variable_minimum_maximum_heights() {
 }
 
 // ---------------------------------------------------------------------------
-// Wall with granularity larger than arc (minimal subdivision)
+// granularity 大于弧长的 Wall（最少细分）
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -537,19 +537,19 @@ fn wall_coarse_granularity_minimal_subdivision() {
 
     let opts = WallOptions {
         positions,
-        granularity: std::f64::consts::PI / 3.0, // 60 degrees (large)
+        granularity: std::f64::consts::PI / 3.0, // 60 度（很大）
         ellipsoid: wgs84(),
         ..Default::default()
     };
     let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
 
-    // With coarse granularity, should still produce valid geometry
+    // 即使 granularity 较粗，也应仍生成有效几何
     assert!(geo.positions.len() >= 4, "should produce at least 4 positions");
     assert!(geo.indices.len() >= 6);
 }
 
 // ---------------------------------------------------------------------------
-// Wall with 3+ positions, non-constant heights
+// 含 3+ 个位置、高度非常量的 Wall
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -576,15 +576,15 @@ fn wall_three_positions_gradient_heights() {
 }
 
 // ---------------------------------------------------------------------------
-// Wall: positions differ by EPSILON10 boundary
+// Wall：位置相差 EPSILON10 边界
 // ---------------------------------------------------------------------------
 
 #[test]
 fn wall_positions_at_epsilon_boundary_survive_cleaning() {
-    // Same as the existing test but verify geometry is produced
+    // 与现有测试相同，但验证会生成几何
     let p1 = DVec3::new(4347090.215457887, 1061403.4237998386, 4538066.036525028);
     let p2 = DVec3::new(4348147.589624987, 1043897.8776143644, 4541092.234751661);
-    // p3 differs by ~1.5*EPSILON10 from p2 (should NOT be merged)
+    // p3 与 p2 相差约 1.5*EPSILON10（不应被合并）
     let p3 = DVec3::new(4348147.58998, 1043897.8780, 4541092.2350);
 
     let positions = vec![p1, p2, p3];
@@ -600,7 +600,7 @@ fn wall_positions_at_epsilon_boundary_survive_cleaning() {
 }
 
 // ---------------------------------------------------------------------------
-// Wall outline: closed loop
+// Wall 轮廓：闭合环路
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -612,7 +612,7 @@ fn wall_outline_forms_closed_loop() {
         from_degrees(1.0, 0.0, 0.0),
         from_degrees(1.0, 1.0, 0.0),
         from_degrees(0.0, 1.0, 0.0),
-        from_degrees(0.0, 0.0, 0.0), // closed
+        from_degrees(0.0, 0.0, 0.0), // 闭合
     ];
 
     let opts = WallOptions {
@@ -624,7 +624,7 @@ fn wall_outline_forms_closed_loop() {
     let geo = wall_outline_geometry(&opts);
     assert!(geo.positions.len() >= 4);
     assert_eq!(geo.indices.len() % 2, 0);
-    // All indices valid
+    // 所有索引均有效
     let n = geo.positions.len() as u32;
     for &idx in &geo.indices {
         assert!(idx < n);

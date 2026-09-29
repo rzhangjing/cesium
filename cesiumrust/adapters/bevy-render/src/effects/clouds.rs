@@ -1,62 +1,61 @@
-//! M6.6: cesiumrust **Clouds** adapter — screen-space cumulus composite node.
+//! M6.6：cesiumrust **云** 适配器——屏幕空间积云合成节点。
 //!
-//! Ports the upstream CesiumJS cumulus-cloud capability
-//! (`Scene/CloudCollection.js` + `Scene/CumulusCloud.js` +
-//! `Shaders/CloudCollectionFS.glsl`) onto the M5-E render-graph infrastructure
-//! (`graph.rs`). Mirrors the [`super::clipping_planes`] / [`super::ibl`] pattern:
-//! this module registers the node / resources / systems **but never creates graph
-//! edges** — the single linear `Core3d` chain in `graph.rs::wire_m6_edges` owns
-//! them, so no diamond can form. Wiring the clouds node into that chain is
-//! integration task (阶段三 FIX-INTEG).
+//! 将上游 CesiumJS 的积云能力
+//!（`Scene/CloudCollection.js` + `Scene/CumulusCloud.js` +
+//! `Shaders/CloudCollectionFS.glsl`）移植到 M5-E 渲染图基础设施
+//!（`graph.rs`）。对应 [`super::clipping_planes`] / [`super::ibl`] 模式：
+//! 本模块注册节点 / 资源 / 系统，**但从不创建图边**——
+//! `graph.rs::wire_m6_edges` 中的单一线性 `Core3d` 链拥有这些边，
+//! 所以不会形成菱形。将云节点接入该链是
+//! 集成任务（阶段三 FIX-INTEG）。
 //!
-//! # Scoped deliverable (阶段二 FIX-CLOUD-FULL)
-//! This adapter fully implements the **`clouds.wgsl` screen-space composite**
-//! path: the [`CesiumClouds`] component, the [`CloudsUniform`] f64 → f32 GPU
-//! boundary, the [`CloudsPipeline`] bind-group layout, the 3D noise texture, the
-//! [`CloudsNode`] `ViewNode`, and the three-段式 `register_clouds_node*`. The
-//! three WGSL shaders (`clouds.wgsl` / `cloud_noise.wgsl` / `cloud_billboard.wgsl`)
-//! each get a naga parse + validate + binding-coverage defence test, and
-//! [`CloudsUniform::from_domain`] is cross-checked against the domain f64 CPU
-//! reference (`cesium-effects::cloud`).
+//! # 范围交付物（阶段二 FIX-CLOUD-FULL）
+//! 本适配器完整实现 **`clouds.wgsl` 屏幕空间合成**
+//! 路径：[`CesiumClouds`] 组件、[`CloudsUniform`] f64 → f32 GPU
+//! 边界、[`CloudsPipeline`] bind-group layout、3D 噪声纹理、
+//! [`CloudsNode`] `ViewNode`，以及三段式 `register_clouds_node*`。三个
+//! WGSL shader（`clouds.wgsl` / `cloud_noise.wgsl` / `cloud_billboard.wgsl`）
+//! 各自获得一个 naga 解析 + 校验 + binding 覆盖防线测试，且
+//! [`CloudsUniform::from_domain`] 与领域 f64 CPU 参考
+//!（`cesium-effects::cloud`）交叉校验。
 //!
-//! The **billboard** (`cloud_billboard.wgsl`) and **GPU noise generator**
-//! (`cloud_noise.wgsl`) render passes are *not* graph-wired here: their
-//! `RenderPipelineDescriptor` / instance buffers / compute dispatch belong to
-//! 阶段三 FIX-INTEG and real-GPU 取证. The CPU reference [`cesium_effects::cloud::NoiseVolume`]
-//! supplies the 3D texture the composite path samples, so the screen-space node
-//! is self-contained without the compute generator. See
-//! `docs/deviations.md#dev-032`.
+//! **billboard**（`cloud_billboard.wgsl`）和 **GPU 噪声生成器**
+//!（`cloud_noise.wgsl`）渲染 pass 在此*未*接入图：它们的
+//! `RenderPipelineDescriptor` / 实例缓冲 / compute dispatch 属于
+//! 阶段三 FIX-INTEG 与真实 GPU 取证。CPU 参考 [`cesium_effects::cloud::NoiseVolume`]
+//! 提供合成路径所采样的 3D 纹理，所以屏幕空间节点
+//! 无需 compute 生成器即可自足。参见
+//! `docs/deviations.md#dev-032`。
 //!
-//! # SPIKE payoff — real `texture_3d`
-//! Upstream packs the 128³ volume into a 2D atlas and hand-rolls trilinear
-//! (`voxelToUV` + `lerpSamplesX`, CloudCollectionFS.glsl L25-65). The M6.6 SPIKE
-//! confirmed wgpu/naga 3D-texture support, so `clouds.wgsl` samples a real
-//! `texture_3d` with a single hardware-trilinear `textureSampleLevel(…, vec3, 0.0)`
-//! and this adapter uploads [`NoiseVolume::to_rgba8_bytes`] straight into a
-//! `TextureDimension::D3` via `initial_data` — the atlas index gymnastics collapse
-//! away.
+//! # SPIKE 回报——真正的 `texture_3d`
+//! 上游将 128³ 体数据打包进一个 2D atlas 并手写三线性插值
+//!（`voxelToUV` + `lerpSamplesX`，CloudCollectionFS.glsl L25-65）。M6.6 SPIKE
+//! 确认了 wgpu/naga 的 3D 纹理支持，所以 `clouds.wgsl` 用单个硬件三线性
+//! `textureSampleLevel(…, vec3, 0.0)` 采样一个真正的 `texture_3d`，
+//! 且本适配器通过 `initial_data` 将 [`NoiseVolume::to_rgba8_bytes`] 直接上传进
+//! `TextureDimension::D3`——atlas 索引的花式变换就此消解。
 //!
-//! # Gate (single source of truth)
-//! The gate name is owned by the app-layer registry
-//! `application/cesium-app/src/feature_flags.rs` (`ENV_ENABLE_CLOUDS` /
-//! `clouds_enabled()`); [`ENV_ENABLE_CLOUDS`] below is a byte-identical mirror
-//! forced by the crate dependency direction (`cesium-app` → `cesium-bevy-render`).
-//! Default OFF ⇒ `register_clouds_node` is never called by the graph plugin ⇒ no
-//! `Core3d` edges exist ⇒ the node never runs ⇒ dynamic_globe v0 baselines stay
-//! pixel-neutral (PSNR = ∞). The shader's `count <= 0` early-out returns the
-//! source colour untouched as a second belt-and-braces guarantee.
+//! # 门控（单一真相源）
+//! 门控名由应用层注册表
+//! `application/cesium-app/src/feature_flags.rs`（`ENV_ENABLE_CLOUDS` /
+//! `clouds_enabled()`）拥有；下方的 [`ENV_ENABLE_CLOUDS`] 是一个字节一致的镜像，
+//! 由 crate 依赖方向（`cesium-app` → `cesium-bevy-render`）强制。默认
+//! OFF ⇒ 图插件从不调用 `register_clouds_node` ⇒ 不存在
+//! `Core3d` 边 ⇒ 节点从不运行 ⇒ dynamic_globe v0 基线保持
+//! 像素中性（PSNR = ∞）。shader 的 `count <= 0` 提前退出会原样返回
+//! 源颜色，作为第二重保险。
 //!
-//! # Red lines honoured
-//! - domain stays metric **f64**; the metric → render-unit conversion
-//!   (`/ METERS_PER_RENDER_UNIT`, `METERS_PER_RENDER_UNIT = 6378137`) and the
-//!   `0.82·maximumSize` ellipsoid shrink happen ONLY at
-//!   [`CloudsUniform::from_domain`] (the GPU boundary).
-//! - `clouds.wgsl` keeps the Gardner sum, `dot(n,p) + w`, and the march
-//!   accumulation as separate IEEE roundings (NO FMA contraction).
-//! - `mod` is a WGSL reserved word; the shader uses `fract` / `%` instead.
-//! - glam fast-math disabled repo-wide (nothing here relies on non-IEEE floats).
+//! # 已遵守的红线
+//! - 领域保持度量 **f64**；度量→渲染单位的转换
+//!   （`/ METERS_PER_RENDER_UNIT`，`METERS_PER_RENDER_UNIT = 6378137`）以及
+//!   `0.82·maximumSize` 椭球收缩仅发生在
+//!   [`CloudsUniform::from_domain`]（GPU 边界）。
+//! - `clouds.wgsl` 将 Gardner 求和、`dot(n,p) + w` 和行进
+//!   累积保持为各自独立的 IEEE 舍入（无 FMA 融合）。
+//! - `mod` 是 WGSL 保留字；shader 改用 `fract` / `%`。
+//! - glam fast-math 全仓禁用（此处不依赖非 IEEE 浮点）。
 //!
-//! # Blueprint
+//! # 蓝图
 //! - `packages/engine/Source/Scene/CloudCollection.js` + `CumulusCloud.js`
 //! - `packages/engine/Source/Shaders/CloudCollectionFS.glsl` L1-263
 //! - `domain/effects/src/cloud.rs` — the f64 CPU reference (cross-validated)
@@ -95,96 +94,95 @@ use cesium_effects::cloud::{
 use crate::resources::METERS_PER_RENDER_UNIT;
 use super::graph::gate_from_env_value;
 
-// ─── Shader handles ──────────────────────────────────────────────────────────
+// ─── Shader handle ──────────────────────────────────────────────────────────
 
-/// Handle for the embedded `clouds.wgsl` screen-space composite shader (driven
-/// by [`CloudsNode`]).
+/// 内嵌 `clouds.wgsl` 屏幕空间合成 shader 的 handle（由
+/// [`CloudsNode`] 驱动）。
 pub const CLOUDS_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0xCE51_C10D_0006_0006);
 
-/// Handle for the embedded `cloud_billboard.wgsl` billboard pass. Registered as
-/// an asset so the source is validated + available, but its render pipeline is
-/// NOT yet driven — billboard instancing is 阶段三 FIX-INTEG
-/// (`docs/deviations.md#dev-032`).
+/// 内嵌 `cloud_billboard.wgsl` billboard pass 的 handle。注册为一个
+/// 资源，所以源码被校验 + 可用，但其渲染 pipeline 尚
+/// 未被驱动——billboard 实例化属于阶段三 FIX-INTEG
+///（`docs/deviations.md#dev-032`）。
 pub const CLOUD_BILLBOARD_SHADER_HANDLE: Handle<Shader> =
     Handle::weak_from_u128(0xCE51_C10D_0006_0007);
 
-/// Handle for the embedded `cloud_noise.wgsl` compute generator. Same status as
-/// [`CLOUD_BILLBOARD_SHADER_HANDLE`]: registered, not yet dispatched (the CPU
-/// [`NoiseVolume`] feeds the composite path in this scope).
+/// 内嵌 `cloud_noise.wgsl` compute 生成器的 handle。与
+/// [`CLOUD_BILLBOARD_SHADER_HANDLE`] 状态相同：已注册，尚未 dispatch（本范围内
+/// CPU [`NoiseVolume`] 为合成路径供数据）。
 pub const CLOUD_NOISE_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0xCE51_C10D_0006_0008);
 
-/// Maximum number of clouds uploaded to the GPU uniform array. Must equal the
-/// `array<vec4<f32>, 8>` size and `MAX_CLOUDS` in `clouds.wgsl` (asserted by
-/// `wgsl_max_clouds_matches_rust_const`).
+/// 上传到 GPU uniform 数组的云的最大数量。必须等于 `clouds.wgsl` 中的
+/// `array<vec4<f32>, 8>` 大小和 `MAX_CLOUDS`（由
+/// `wgsl_max_clouds_matches_rust_const` 断言）。
 pub const MAX_CLOUDS: usize = 8;
 
-/// Noise volume edge length uploaded to the GPU (matches
-/// `NOISE_TEXTURE_DIMENSIONS` in the domain and `info.y` in `clouds.wgsl`).
+/// 上传到 GPU 的噪声体边长（对应领域中的
+/// `NOISE_TEXTURE_DIMENSIONS` 和 `clouds.wgsl` 中的 `info.y`）。
 pub const CLOUDS_NOISE_DIMENSIONS: usize = NOISE_TEXTURE_DIMENSIONS;
 
-// ─── Gate (mirror of the app-layer registry — see module doc) ────────────────
+// ─── 门控（应用层注册表的镜像——参见模块 doc） ────────────────
 
-/// Env var gating the M6.6 clouds node. **Mirror** of the app-layer registry
-/// owner `application/cesium-app/src/feature_flags.rs` (`ENV_ENABLE_CLOUDS` /
-/// `clouds_enabled()`); `pub` so
-/// `feature_flags::adapter_gate_mirrors_are_byte_identical_to_the_registry` can
-/// assert byte-equality across the crate boundary. Default OFF.
+/// 门控 M6.6 云节点的环境变量。应用层注册表
+/// 拥有者的*镜像* `application/cesium-app/src/feature_flags.rs`（`ENV_ENABLE_CLOUDS` /
+/// `clouds_enabled()`）；为 `pub` 以便
+/// `feature_flags::adapter_gate_mirrors_are_byte_identical_to_the_registry` 能
+/// 跨 crate 边界断言字节相等。默认 OFF。
 pub const ENV_ENABLE_CLOUDS: &str = "CESIUM_ENABLE_CLOUDS";
 
-/// Returns `true` when the clouds gate is enabled. Reuses the single
-/// authoritative truthy parser (`gate_from_env_value`, the crate-wide
-/// `{1, true, yes, on}` set) so it agrees with every other cesium gate.
+/// 当云门控启用时返回 `true`。复用单一权威的
+/// truthy 解析器（`gate_from_env_value`，全 crate 的
+/// `{1, true, yes, on}` 集），所以它与其他所有 cesium 门控一致。
 #[inline]
 pub fn clouds_gate_enabled() -> bool {
     gate_from_env_value(std::env::var(ENV_ENABLE_CLOUDS).ok())
 }
 
-// ─── Render graph label (local — 阶段三 wires it into the Core3d chain) ───────
+// ─── 渲染图 label（本地——阶段三将其接入 Core3d 链） ───────
 
-/// Node label for the cesium clouds node in `Core3d`. Defined locally so this
-/// module does not edit the shared `graph.rs` label enums; 阶段三 FIX-INTEG
-/// creates the edges (recommended position: after the main opaque pass, reading
-/// the HDR scene colour + depth prepass, before AO / tonemapping).
+/// cesium 云节点在 `Core3d` 中的节点 label。本地定义，以便本
+/// 模块不必编辑 `graph.rs` 中共享的 label 枚举；阶段三 FIX-INTEG
+/// 创建边（推荐位置：主不透明 pass 之后，读取
+/// HDR 场景颜色 + 深度前置 pass，在 AO / tonemapping 之前）。
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
 pub struct CesiumCloudsLabel;
 
-// ─── Shading mode ────────────────────────────────────────────────────────────
+// ─── 着色模式 ────────────────────────────────────────────────────────────
 
-/// Which of `clouds.wgsl`'s two shading paths [`params.z`] selects.
+/// [`params.z`] 选择 `clouds.wgsl` 两条着色路径中的哪一条。
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum CloudsShadingMode {
-    /// FAITHFUL upstream `drawCloud`: single ray/ellipsoid intersection shaded
-    /// with the Gardner sine texture + Worley-FBM erosion. This is exactly what
-    /// upstream CesiumJS renders.
+    /// 忠实的上游 `drawCloud`：单条光线/椭球相交，以 Gardner 正弦纹理 + Worley-FBM
+    /// 侵蚀着色。这正是上游 CesiumJS 所渲染的内容。
     #[default]
     Faithful,
-    /// ADDITIVE physically-based volumetric march (Beer-Lambert + Henyey-Greenstein,
-    /// g = 0.6). NOT upstream — the deviation this path introduces is recorded as
-    /// `docs/deviations.md#dev-032`.
+    /// 加法式的物理体积行进（Beer-Lambert + Henyey-Greenstein，
+    /// g = 0.6）。非上游——该路径引入的偏差记录为
+    /// `docs/deviations.md#dev-032`。
     Volumetric,
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// ─── 组件 ───────────────────────────────────────────────────────────────
 
-/// Component carrying an active [`CloudCollection`] for a view.
+/// 为一个视图携带活跃 [`CloudCollection`] 的组件。
 ///
-/// Placed on the camera (like [`super::clipping_planes::CesiumClippingPlanes`]) to
-/// drive the screen-space node. Extracted to the render world via
-/// `ExtractComponentPlugin`. The node early-returns when `enabled == false` or the
-/// collection is empty / hidden (zero GPU cost, pixel-neutral). `Default` is
-/// derived: `enabled = false` (conservative).
+/// 放在相机上（像 [`super::clipping_planes::CesiumClippingPlanes`]）以
+/// 驱动屏幕空间节点。经 `ExtractComponentPlugin` 提取到 render world。
+/// 当 `enabled == false` 或集合为空 / 隐藏时节点提前
+/// return（零 GPU 开销，像素中性）。`Default` 为派生：
+/// `enabled = false`（保守）。
 #[derive(Component, Clone, Debug, Default, ExtractComponent)]
 pub struct CesiumClouds {
-    /// Master enable for the clouds node on this view.
+    /// 该视图上云节点的主开关。
     pub enabled: bool,
-    /// The domain cloud collection (metric f64).
+    /// 领域云集合（度量 f64）。
     pub collection: CloudCollection,
-    /// Which shading path the composite uses.
+    /// 合成所使用的着色路径。
     pub shading: CloudsShadingMode,
 }
 
 impl CesiumClouds {
-    /// Convenience constructor for an enabled view collection (faithful shading).
+    /// 一个便捷构造函数，创建启用的视图集合（忠实着色）。
     pub fn new(collection: CloudCollection) -> Self {
         Self {
             enabled: true,
@@ -193,45 +191,45 @@ impl CesiumClouds {
         }
     }
 
-    /// With an explicit shading mode.
+    /// 带显式着色模式。
     pub fn with_shading(mut self, shading: CloudsShadingMode) -> Self {
         self.shading = shading;
         self
     }
 
-    /// Whether clouds should actually render (component + collection agree). The
-    /// gate itself is checked at registration time, not here.
+    /// 云是否应当真正渲染（组件 + 集合一致）。门控
+    /// 本身在注册时检查，不在此处。
     #[inline]
     pub fn is_active(&self) -> bool {
         self.enabled && self.collection.show && !self.collection.is_empty()
     }
 }
 
-/// Per-view cached pipeline ID for the clouds node.
+/// 云节点的逐视图缓存 pipeline ID。
 #[derive(Component)]
 pub struct CameraCloudsPipeline {
     pub pipeline_id: CachedRenderPipelineId,
 }
 
-/// Per-view GPU uniform buffer holding the packed cloud data.
+/// 持有打包后云数据的逐视图 GPU uniform 缓冲。
 #[derive(Component)]
 pub struct ViewCloudsUniform {
     pub buffer: UniformBuffer<CloudsUniform>,
 }
 
-// ─── GPU uniform (f32 boundary) ──────────────────────────────────────────────
+// ─── GPU uniform（f32 边界） ──────────────────────────────────────────────
 
-/// GPU-facing clouds uniform. **f32 only** — the domain collection stays metric
-/// f64; [`CloudsUniform::from_domain`] performs the single metric → render-unit
-/// conversion + `0.82·maximumSize` shrink at this boundary (red line).
+/// GPU 面向的云 uniform。**仅 f32**——领域集合保持度量
+/// f64；[`CloudsUniform::from_domain`] 在此边界执行唯一的度量 → 渲染单位
+/// 转换 + `0.82·maximumSize` 收缩（红线）。
 ///
-/// Layout must match `struct CloudsData` in `shaders/clouds.wgsl` (encase std140).
+/// 布局必须与 `shaders/clouds.wgsl` 中的 `struct CloudsData` 匹配（encase std140）。
 ///
-/// The struct lives in a private `clouds_uniform` module carrying
-/// `#![allow(dead_code)]` (the `clipping_planes.rs` convention): the encase
-/// `ShaderType` derive emits a module-level helper the dead-code pass flags even
-/// though every field is uploaded via `write_buffer`. Field values are asserted in
-/// the `from_domain_*` unit tests.
+/// 该 struct 住在带 `#![allow(dead_code)]` 的私有 `clouds_uniform`
+/// 模块中（`clipping_planes.rs` 约定）：encase 的
+/// `ShaderType` derive 会生成一个模块级 helper，死代码分析会标记它，
+/// 尽管每个字段都通过 `write_buffer` 上传。字段值在
+/// `from_domain_*` 单元测试中被断言。
 pub use clouds_uniform::CloudsUniform;
 
 mod clouds_uniform {
@@ -240,26 +238,26 @@ mod clouds_uniform {
     use bevy::prelude::Vec4;
     use bevy::render::render_resource::ShaderType;
 
-    /// GPU clouds uniform; layout matches `struct CloudsData` in
-    /// `shaders/clouds.wgsl` (encase std140).
+    /// GPU 云 uniform；布局匹配 `shaders/clouds.wgsl` 中的
+    /// `struct CloudsData`（encase std140）。
     #[derive(ShaderType, Clone, Debug)]
     pub struct CloudsUniform {
-        /// `xyz` = ellipsoid centre (RENDER UNITS), `w` = active flag (1 = shade).
+        /// `xyz` = 椭球中心（RENDER UNITS），`w` = 激活标志（1 = 着色）。
         pub centers: [Vec4; MAX_CLOUDS],
-        /// `xyz` = ellipsoid scale (RENDER UNITS, already `0.82·maximumSize`),
-        /// `w` = slice.
+        /// `xyz` = 椭球缩放（RENDER UNITS，已是 `0.82·maximumSize`），
+        /// `w` = slice。
         pub scales: [Vec4; MAX_CLOUDS],
-        /// `rgba` cloud colour (`v_color`).
+        /// `rgba` 云颜色（`v_color`）。
         pub colors: [Vec4; MAX_CLOUDS],
-        /// `x` = u_noiseDetail, `y` = raymarch steps, `z` = mode (0 faithful /
-        /// 1 volumetric), `w` = Beer-Lambert extinction.
+        /// `x` = u_noiseDetail，`y` = raymarch 步数，`z` = 模式（0 忠实 /
+        /// 1 体积），`w` = Beer-Lambert 消光。
         pub params: Vec4,
-        /// `xyz` = camera world position (unused: the shader reads
-        /// `view.world_from_view[3].xyz`), `w` = brightness.
+        /// `xyz` = 相机世界位置（未用：shader 读取
+        /// `view.world_from_view[3].xyz`），`w` = 亮度。
         pub camera: Vec4,
-        /// `xyz` = light direction (shader normalises), `w` = Henyey-Greenstein g.
+        /// `xyz` = 光方向（shader 归一化），`w` = Henyey-Greenstein g。
         pub light: Vec4,
-        /// `x` = active cloud count, `y` = noise volume edge (128), `zw` = pad.
+        /// `x` = 活跃云数，`y` = 噪声体边长（128），`zw` = 填充。
         pub info: Vec4,
     }
 }
@@ -270,39 +268,39 @@ impl Default for CloudsUniform {
             centers: [Vec4::ZERO; MAX_CLOUDS],
             scales: [Vec4::ZERO; MAX_CLOUDS],
             colors: [Vec4::ZERO; MAX_CLOUDS],
-            // params.z = 0 (faithful) by default; camera.w = 1.0 so a stray
-            // activation without clouds is a pure pass-through (info.x = 0).
+            // 默认 params.z = 0（忠实）；camera.w = 1.0，所以一次
+            // 无云的意外激活是纯透传（info.x = 0）。
             params: Vec4::new(0.0, RAYMARCH_STEPS_DEFAULT as f32, 0.0, BEER_LAMBERT_EXTINCTION as f32),
             camera: Vec4::new(0.0, 0.0, 0.0, 1.0),
-            // light.xyz defaults to the (unnormalised) CLOUD_LIGHT_DIR; the shader
-            // normalises. light.w = HG g.
+            // light.xyz 默认为（未归一化的）CLOUD_LIGHT_DIR；shader
+            // 归一化。light.w = HG g。
             light: Vec4::new(
                 CLOUD_LIGHT_DIR.x as f32,
                 CLOUD_LIGHT_DIR.y as f32,
                 CLOUD_LIGHT_DIR.z as f32,
                 HG_PHASE_G as f32,
             ),
-            // info.x = 0 ⇒ the shader returns the source colour untouched.
+            // info.x = 0 ⇒ shader 原样返回源颜色。
             info: Vec4::new(0.0, CLOUDS_NOISE_DIMENSIONS as f32, 0.0, 0.0),
         }
     }
 }
 
 impl CloudsUniform {
-    /// Packs a domain [`CloudCollection`] into the GPU uniform.
+    /// 将一个领域 [`CloudCollection`] 打包进 GPU uniform。
     ///
-    /// - Each visible cloud's metric `position` is divided by
-    ///   [`METERS_PER_RENDER_UNIT`] to enter render-unit world space (the same
-    ///   space `world_from_view` lives in); its `maximum_size` is shrunk by
-    ///   [`ELLIPSOID_SCALE_FACTOR`] (0.82, the ellipsoid radius the upstream
-    ///   `drawCloud` uses) and likewise divided into render units.
-    /// - `centers[i].w = 1.0` marks the slot active; count is clamped to
-    ///   [`MAX_CLOUDS`].
-    /// - `camera.w` (brightness) collapses the per-cloud `brightness` to a single
-    ///   global (the first visible cloud) — `clouds.wgsl` has one brightness slot.
-    ///   This is the documented deviation `docs/deviations.md#dev-032`.
-    /// - `info.x = 0` when the collection is hidden or empty ⇒ pure pass-through
-    ///   (pixel-neutral).
+    /// - 每朵可见云的度量 `position` 除以
+    ///   [`METERS_PER_RENDER_UNIT`] 以进入渲染单位世界空间（即
+    ///   `world_from_view` 所住的同一空间）；其 `maximum_size` 按
+    ///   [`ELLIPSOID_SCALE_FACTOR`]（0.82，上游 `drawCloud` 所用的椭球半径）
+    ///   收缩，并同样除以渲染单位。
+    /// - `centers[i].w = 1.0` 标记该槽激活；数量被限幅到
+    ///   [`MAX_CLOUDS`]。
+    /// - `camera.w`（亮度）将逐云的 `brightness` 归并为一个
+    ///   全局值（第一朵可见云）——`clouds.wgsl` 只有一个亮度槽。
+    ///   这就是记录在案的偏差 `docs/deviations.md#dev-032`。
+    /// - 当集合隐藏或为空时 `info.x = 0` ⇒ 纯透传
+    ///   （像素中性）。
     pub fn from_domain(collection: &CloudCollection, shading: CloudsShadingMode) -> Self {
         let mut centers = [Vec4::ZERO; MAX_CLOUDS];
         let mut scales = [Vec4::ZERO; MAX_CLOUDS];
@@ -324,9 +322,9 @@ impl CloudsUniform {
                 (cloud.position.x / METERS_PER_RENDER_UNIT) as f32,
                 (cloud.position.y / METERS_PER_RENDER_UNIT) as f32,
                 (cloud.position.z / METERS_PER_RENDER_UNIT) as f32,
-                1.0, // active flag
+                1.0, // 激活标志
             );
-            // 0.82·maximumSize (render units), slice carried in .w.
+            // 0.82·maximumSize（渲染单位），slice 存于 .w。
             scales[count] = Vec4::new(
                 (cloud.maximum_size.x * ELLIPSOID_SCALE_FACTOR / METERS_PER_RENDER_UNIT) as f32,
                 (cloud.maximum_size.y * ELLIPSOID_SCALE_FACTOR / METERS_PER_RENDER_UNIT) as f32,
@@ -380,16 +378,16 @@ impl CloudsUniform {
 
 // ─── Pipeline ────────────────────────────────────────────────────────────────
 
-/// Render-world resource: bind group layout + samplers for the clouds node.
+/// Render-world 资源：云节点的 bind group layout + 采样器。
 ///
-/// Group 0 bindings (must match `clouds.wgsl` + the binding-coverage test):
-/// - 0: depth prepass (`texture_depth_2d`) — occlusion + ray reconstruction
-/// - 1: 3D noise volume (`texture_3d<f32>`) — Worley-FBM erosion channels
-/// - 2: colour source (`texture_2d<f32>`) — post-process input
-/// - 3: linear sampler (Filtering — colour + trilinear noise)
-/// - 4: point sampler (NonFiltering — depth)
-/// - 5: `ViewUniform` (dynamic offset) — `world_from_view` / `view_from_clip`
-/// - 6: `CloudsUniform` — the packed cloud data
+/// Group 0 bindings（必须匹配 `clouds.wgsl` + binding 覆盖测试）：
+/// - 0：深度前置 pass（`texture_depth_2d`）——遮挡 + 光线重建
+/// - 1：3D 噪声体（`texture_3d<f32>`）——Worley-FBM 侵蚀通道
+/// - 2：颜色源（`texture_2d<f32>`）——后处理输入
+/// - 3：线性采样器（Filtering——颜色 + 三线性噪声）
+/// - 4：点采样器（NonFiltering——深度）
+/// - 5：`ViewUniform`（动态偏移）——`world_from_view` / `view_from_clip`
+/// - 6：`CloudsUniform`——打包后的云数据
 #[derive(Resource)]
 pub struct CloudsPipeline {
     pub bind_group_layout: BindGroupLayout,
@@ -425,10 +423,10 @@ impl FromWorld for CloudsPipeline {
             ..Default::default()
         });
 
-        // Clamp-to-edge on the 2D colour source; Repeat on the 3D noise is set by
-        // the sampler the shader binds here. A single Filtering sampler serves both
-        // colour + noise in this scope (noise wrapping relies on the shader's
-        // `fract` recentering, see `sample_noise`).
+        // 2D 颜色源用 Clamp-to-edge；3D 噪声的 Repeat 由 shader 在此
+        // 绑定的采样器设定。本范围内单个 Filtering 采样器同时服务
+        // 颜色 + 噪声（噪声环绕依赖 shader 的
+        // `fract` 重居中，参见 `sample_noise`）。
         let linear_sampler = render_device.create_sampler(&SamplerDescriptor {
             label: Some("cesium_clouds_linear_sampler"),
             mag_filter: FilterMode::Linear,
@@ -445,23 +443,23 @@ impl FromWorld for CloudsPipeline {
     }
 }
 
-// ─── 3D noise texture ────────────────────────────────────────────────────────
+// ─── 3D 噪声纹理 ────────────────────────────────────────────────────────
 
-/// Render-world resource: the 128³ Worley-FBM noise volume uploaded as a real
-/// `texture_3d` (the SPIKE payoff). Created once in
-/// [`initialize_clouds_noise`] from the domain CPU [`NoiseVolume`] reference so
-/// the composite path is self-contained without the `cloud_noise.wgsl` compute
-/// generator (deferred to 阶段三 / GPU).
+/// Render-world 资源：128³ Worley-FBM 噪声体，作为真正的
+/// `texture_3d` 上传（SPIKE 回报）。在
+/// [`initialize_clouds_noise`] 中从领域 CPU [`NoiseVolume`] 参考创建一次，所以
+/// 合成路径无需 `cloud_noise.wgsl` compute
+/// 生成器即可自足（推迟到阶段三 / GPU）。
 #[derive(Resource)]
 pub struct CloudsNoiseTexture {
-    /// Owns the GPU texture (the view alone can dangle in some backends).
+    /// 拥有 GPU 纹理（某些后端中仅有 view 可能悬空）。
     #[allow(dead_code)]
     texture: Texture,
     view: TextureView,
 }
 
 impl CloudsNoiseTexture {
-    /// The bound 3D texture view.
+    /// 已绑定的 3D 纹理视图。
     #[inline]
     pub fn view(&self) -> &TextureView {
         &self.view
@@ -470,12 +468,12 @@ impl CloudsNoiseTexture {
 
 // ─── ViewNode ────────────────────────────────────────────────────────────────
 
-/// Screen-space clouds composite `ViewNode`.
+/// 屏幕空间云合成 `ViewNode`。
 ///
-/// Reconstructs the world ray from the depth prepass + `view_from_clip`, marches
-/// the (max 8) cloud ellipsoids and over-composites them front-to-back onto the
-/// HDR scene colour. Early-returns (pixel-neutral) when the component is inactive
-/// or the depth prepass / pipeline / noise texture is unavailable.
+/// 从深度前置 pass + `view_from_clip` 重建世界光线，行进
+/// （最多 8 个）云椭球，并将它们从前到后叠加合成到
+/// HDR 场景颜色上。当组件未激活，或深度前置 pass / pipeline / 噪声纹理
+/// 不可用时提前 return（像素中性）。
 #[derive(Default)]
 pub struct CloudsNode;
 
@@ -502,7 +500,7 @@ impl ViewNode for CloudsNode {
             return Ok(());
         }
 
-        // The composite reads the depth prepass for occlusion + ray reconstruction.
+        // 合成读取深度前置 pass 以做遮挡 + 光线重建。
         let Some(depth_view) = prepass.depth_view() else {
             return Ok(());
         };
@@ -559,21 +557,21 @@ impl ViewNode for CloudsNode {
             .begin_render_pass(&pass_descriptor);
 
         render_pass.set_pipeline(pipeline);
-        // Binding 5 (ViewUniform) is dynamic-offset; supply its offset (Ryan C2
-        // lesson: a `&[]` offset list would fail dynamic-buffer validation).
+        // Binding 5（ViewUniform）是动态偏移；提供其偏移（Ryan C2
+        // 教训：`&[]` 偏移列表会使动态缓冲校验失败）。
         render_pass.set_bind_group(0, &bind_group, &[view_uniform_offset.offset]);
-        render_pass.draw(0..3, 0..1); // fullscreen triangle
+        render_pass.draw(0..3, 0..1); // 全屏三角形
 
         Ok(())
     }
 }
 
-// ─── Render systems ──────────────────────────────────────────────────────────
+// ─── 渲染系统 ──────────────────────────────────────────────────────────
 
-/// Creates the 128³ noise texture once from the CPU [`NoiseVolume`] reference.
-/// Runs in `Render`, `RenderSet::Prepare` (idempotent via a resource guard). The
-/// volume uses the default production detail (16.0); per-collection detail /
-/// offset regeneration is a 阶段三 / GPU refinement (see `#dev-032`).
+/// 从 CPU [`NoiseVolume`] 参考创建 128³ 噪声纹理一次。
+/// 运行在 `Render`、`RenderSet::Prepare`（通过资源守卫幂等）。该
+/// 体使用默认的生产 detail（16.0）；逐集合的 detail /
+/// offset 重生成是阶段三 / GPU 的改进（参见 `#dev-032`）。
 pub fn initialize_clouds_noise(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
@@ -586,7 +584,7 @@ pub fn initialize_clouds_noise(
 
     let volume = NoiseVolume::generate(
         CLOUDS_NOISE_DIMENSIONS,
-        // Default production noise detail (matches CloudCollection::default()).
+        // 默认生产噪声 detail（匹配 CloudCollection::default()）。
         16.0,
         glam::DVec3::ZERO,
     );
@@ -605,12 +603,12 @@ pub fn initialize_clouds_noise(
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D3,
-            // Linear data (worley channels), never sRGB.
+            // 线性数据（worley 通道），绝非 sRGB。
             format: TextureFormat::Rgba8Unorm,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
             view_formats: &[],
         },
-        // z-slowest / row-major matches NoiseVolume::to_rgba8_bytes ordering.
+        // z 最慢 / 行主序匹配 NoiseVolume::to_rgba8_bytes 的顺序。
         wgpu::util::TextureDataOrder::default(),
         &bytes,
     );
@@ -619,8 +617,8 @@ pub fn initialize_clouds_noise(
     commands.insert_resource(CloudsNoiseTexture { texture, view });
 }
 
-/// Prepares the clouds pipeline + per-view uniform buffer for each active view.
-/// Runs in `Render`, `RenderSet::Prepare` (before the render graph executes).
+/// 为每个活跃视图准备云 pipeline + 逐视图 uniform 缓冲。
+/// 运行在 `Render`、`RenderSet::Prepare`（在渲染图执行之前）。
 pub fn prepare_clouds(
     mut commands: Commands,
     pipeline_cache: Res<PipelineCache>,
@@ -661,8 +659,8 @@ pub fn prepare_clouds(
             zero_initialize_workgroup_memory: false,
         });
 
-        // Pack the domain collection (metric f64) into the GPU uniform (f32,
-        // render-unit positions/scales) and upload it.
+        // 将领域集合（度量 f64）打包进 GPU uniform（f32，
+        // 渲染单位位置/缩放）并上传。
         let mut buffer = UniformBuffer::from(CloudsUniform::from_domain(
             &clouds.collection,
             clouds.shading,
@@ -676,13 +674,13 @@ pub fn prepare_clouds(
     }
 }
 
-// ─── Main-world systems ──────────────────────────────────────────────────────
+// ─── 主 world 系统 ──────────────────────────────────────────────────────
 
-/// Ensures cameras driving an active cloud collection carry [`DepthPrepass`]
-/// (the node's occlusion / ray-reconstruction input). Adapter-layer enablement so
-/// the app-layer camera bundle stays untouched (same discipline as
-/// `setup_clipping_prepass`). Insert-only (never removes — DEF-033 guard lives in
-/// `ao.rs`). Registered only when the clouds gate is ON.
+/// 确保驱动一个活跃云集合的相机携带 [`DepthPrepass`]
+///（该节点的遮挡 / 光线重建输入）。适配层启用，以便
+/// 应用层相机束保持不变（与 `setup_clipping_prepass`
+/// 同一纪律）。仅插入（绝不移除——DEF-033 守卫住在
+/// `ao.rs`）。仅当云门控 ON 时注册。
 pub fn setup_clouds_prepass(mut commands: Commands, cameras: Query<(Entity, &CesiumClouds)>) {
     for (entity, clouds) in &cameras {
         if clouds.is_active() {
@@ -691,35 +689,36 @@ pub fn setup_clouds_prepass(mut commands: Commands, cameras: Query<(Entity, &Ces
     }
 }
 
-// ─── Registration ────────────────────────────────────────────────────────────
+// ─── 注册 ────────────────────────────────────────────────────────────
 
-/// Register the clouds node into `RenderApp` (shader + extract + node + systems).
+/// 将云节点注册进 `RenderApp`（shader + extract + 节点 + 系统）。
 ///
-/// Called by `effects::graph::M6WaveARenderGraphPlugin` (阶段三 FIX-INTEG) when
-/// [`clouds_gate_enabled()`] is true; the `Core3d` edges are created by
-/// `wire_m6_edges` (this function registers the node but never wires edges, so
-/// the shared linear chain in `graph.rs` stays the single owner).
+/// 当 [`clouds_gate_enabled()`] 为 true 时由
+/// `effects::graph::M6WaveARenderGraphPlugin`（阶段三 FIX-INTEG）调用；
+/// `Core3d` 边由 `wire_m6_edges` 创建
+///（本函数注册节点但从不接边，所以 `graph.rs` 中
+/// 共享的线性链仍是唯一拥有者）。
 ///
-/// Headless-safe: degrades to a no-op without a `RenderApp` (MinimalPlugins).
+/// 无头安好：没有 `RenderApp`（MinimalPlugins）时降级为 no-op。
 #[deprecated = "DEV-029 / FIX-REG-FACADE: call `register_clouds_node_main_world` from `Plugin::build` and `register_clouds_node_render_world` from `Plugin::finish`; this facade runs the finish half against a possibly device-less render world."]
 pub fn register_clouds_node(app: &mut App) {
     register_clouds_node_main_world(app);
-    // Headless `MinimalPlugins` has no `RenderApp` — degrade gracefully.
+    // 无头 `MinimalPlugins` 没有 `RenderApp`——优雅降级。
     if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
         register_clouds_node_render_world(render_app);
     }
 }
 
-/// `Plugin::build`-time half of [`register_clouds_node`]: the **main**-world WGSL
-/// shader assets + `ExtractComponentPlugin` + the `setup_clouds_prepass` system.
+/// [`register_clouds_node`] 的 `Plugin::build` 时前半：**主** world 的 WGSL
+/// shader 资源 + `ExtractComponentPlugin` + `setup_clouds_prepass` 系统。
 ///
-/// Split per the DEV-029 / §5.1 discipline — the pipeline's `FromWorld` reads
-/// `RenderDevice`, which Bevy only inserts into the render world in
-/// `RenderPlugin::finish`, so the render-world half must run from `finish`.
+/// 按 DEV-029 / §5.1 纪律拆分——pipeline 的 `FromWorld` 读取
+/// `RenderDevice`，而 Bevy 只在 `RenderPlugin::finish` 中把它插入
+/// render world，所以 render-world 半必须从 `finish` 运行。
 pub fn register_clouds_node_main_world(app: &mut App) {
-    // Register the three cloud WGSL shaders (headless-safe via shader_registry).
-    // Only `clouds.wgsl` is pipeline-driven in this scope; the other two are
-    // registered so their sources are available + validated (阶段三 wires them).
+    // 注册三个云 WGSL shader（经 shader_registry 无头安好）。
+    // 本范围内只有 `clouds.wgsl` 由 pipeline 驱动；另外两个被
+    // 注册以便其源码可用 + 已校验（阶段三接它们）。
     crate::shader_registry::try_load_internal_shader(
         app,
         CLOUDS_SHADER_HANDLE,
@@ -739,19 +738,19 @@ pub fn register_clouds_node_main_world(app: &mut App) {
         "shaders/cloud_noise.wgsl",
     );
 
-    // ExtractComponentPlugin: main → render world each frame (ExtractSchedule).
+    // ExtractComponentPlugin：每帧 main → render world（ExtractSchedule）。
     app.add_plugins(ExtractComponentPlugin::<CesiumClouds>::default());
 
-    // Main-world: attach DepthPrepass to cameras driving an active collection.
+    // 主 world：为驱动活跃集合的相机附加 DepthPrepass。
     app.add_systems(Update, setup_clouds_prepass);
 }
 
-/// `Plugin::finish`-time half of [`register_clouds_node`]: the render-world
-/// pipeline resource + noise texture + `Render` systems + the `Core3d` node.
+/// [`register_clouds_node`] 的 `Plugin::finish` 时后半：render-world
+/// pipeline 资源 + 噪声纹理 + `Render` 系统 + `Core3d` 节点。
 pub fn register_clouds_node_render_world(render_app: &mut bevy::app::SubApp) {
-    // FIX-REG-FACADE (DEV-029): degrade to a no-op when `RenderDevice` is absent
-    // (finish half reached from `build`, or a bare render world). See
-    // `crate::effects::render_world_missing_device`.
+    // FIX-REG-FACADE（DEV-029）：当 `RenderDevice` 缺失时降级为 no-op
+    //（从 `build` 到达 finish 半，或一个裸 render world）。参见
+    // `crate::effects::render_world_missing_device`。
     if crate::effects::render_world_missing_device(render_app) {
         return;
     }
@@ -767,11 +766,11 @@ pub fn register_clouds_node_render_world(render_app: &mut bevy::app::SubApp) {
                 .chain(),
         )
         .add_render_graph_node::<ViewNodeRunner<CloudsNode>>(Core3d, CesiumCloudsLabel);
-    // NOTE: edges are created by `effects::graph::wire_m6_edges` (阶段三 FIX-INTEG),
-    // the single owner of the shared `Core3d` chain.
+    // NOTE：边由 `effects::graph::wire_m6_edges`（阶段三 FIX-INTEG）创建，
+    // 它是共享 `Core3d` 链的唯一拥有者。
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────────────
+// ─── 测试 ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -788,14 +787,14 @@ mod tests {
 
     #[test]
     fn clouds_gate_const_is_byte_stable() {
-        // The gate env var is a *mirror* of the registry (asserted cross-crate in
-        // feature_flags); pinned here so a local rename turns red.
+        // 门控环境变量是注册表的一个*镜像*（在 feature_flags 中跨 crate
+        // 断言）；在此钉住，所以一次本地重命名会变红。
         assert_eq!(ENV_ENABLE_CLOUDS, "CESIUM_ENABLE_CLOUDS");
         assert_ne!(ENV_ENABLE_CLOUDS, "CESIUM_ENABLE_OIT");
-        // Well-formed env name: already fully upper-cased (a lowercase rename
-        // would break the registry mirror contract asserted in feature_flags).
+        // 规范的 env 名：已完全大写（小写重命名
+        // 会破坏 feature_flags 中断言的注册表镜像契约）。
         assert_eq!(ENV_ENABLE_CLOUDS, ENV_ENABLE_CLOUDS.to_uppercase().as_str());
-        // Reuses the authoritative truthy parser.
+        // 复用权威的 truthy 解析器。
         assert!(!gate_from_env_value(None));
         assert!(gate_from_env_value(Some("1".into())));
     }
@@ -817,18 +816,18 @@ mod tests {
 
     #[test]
     fn clouds_headless_graceful() {
-        // No RenderApp (headless) → register must not panic.
+        // 没有 RenderApp（无头）→ 注册不得 panic。
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         #[allow(deprecated)]
         register_clouds_node(&mut app);
     }
 
-    // ─── Uniform packing: the metric → render-unit boundary (red line) ────────
+    // ─── Uniform 打包：度量→渲染单位边界（红线） ────────
 
     #[test]
     fn from_domain_empty_is_pixel_neutral() {
-        // Empty collection ⇒ info.x = 0 ⇒ the shader passes the source through.
+        // 空集合 ⇒ info.x = 0 ⇒ shader 透传源。
         let collection = CloudCollection::new();
         let u = CloudsUniform::from_domain(&collection, CloudsShadingMode::Faithful);
         assert_eq!(u.info.x, 0.0, "no clouds ⇒ count 0 ⇒ pixel-neutral");
@@ -837,7 +836,7 @@ mod tests {
 
     #[test]
     fn from_domain_divides_position_and_scales_into_render_units() {
-        // A cloud 6_378_137 m along +X with a maximumSize of one render unit cube.
+        // 一朵云沿 +X 方向 6_378_137 m，maximumSize 为一个渲染单位立方体。
         let mut collection = CloudCollection::new();
         collection.add(CumulusCloud::new(
             DVec3::new(METERS_PER_RENDER_UNIT, 0.0, 0.0),
@@ -846,10 +845,10 @@ mod tests {
         let u = CloudsUniform::from_domain(&collection, CloudsShadingMode::Faithful);
 
         assert!((u.info.x - 1.0).abs() < 1e-6, "one active cloud");
-        // position ÷ 6378137 ⇒ 1 render unit on X.
+        // 位置 ÷ 6378137 ⇒ X 上 1 渲染单位。
         assert!((u.centers[0].x - 1.0).abs() < 1e-5, "centre.x = 1 render unit");
         assert!((u.centers[0].w - 1.0).abs() < 1e-6, "active flag set");
-        // scale = 0.82 · maximumSize ÷ MPU ⇒ 0.82 render units on X.
+        // 缩放 = 0.82 · maximumSize ÷ MPU ⇒ X 上 0.82 渲染单位。
         assert!(
             (u.scales[0].x - DOM_SCALE_FACTOR as f32).abs() < 1e-5,
             "scale.x = 0.82 (ELLIPSOID_SCALE_FACTOR) render units"
@@ -858,7 +857,7 @@ mod tests {
 
     #[test]
     fn from_domain_copies_physical_constants_to_uniform() {
-        // params.w extinction, light.w HG g, info.y noise edge mirror the domain.
+        // params.w 消光、light.w HG g、info.y 噪声边长反映领域值。
         let collection = CloudCollection::new();
         let u = CloudsUniform::from_domain(&collection, CloudsShadingMode::Volumetric);
         assert!((u.params.w - BEER_LAMBERT_EXTINCTION as f32).abs() < 1e-6);
@@ -879,7 +878,7 @@ mod tests {
         }
         let u = CloudsUniform::from_domain(&collection, CloudsShadingMode::Faithful);
         assert_eq!(u.info.x as usize, MAX_CLOUDS, "count clamped to MAX_CLOUDS");
-        // All 8 slots active; the 9th+ are dropped (still ZERO).
+        // 全部 8 个槽激活；第 9 个及以后被丢弃（仍为 ZERO）。
         assert_eq!(u.centers[MAX_CLOUDS - 1].w, 1.0);
     }
 
@@ -893,9 +892,9 @@ mod tests {
         assert!((u.camera.w - 0.4).abs() < 1e-6, "camera.w = first cloud brightness");
     }
 
-    // ─── Naga defence line: parse + validate + binding coverage ───────────────
+    // ─── Naga 防线：解析 + 校验 + binding 覆盖 ───────────────
 
-    /// Stubs for `#import` directives that naga cannot resolve.
+    /// 用于 naga 无法解析的 `#import` 指令的 stub。
     const CLOUD_WGSL_IMPORT_STUBS: &str = "\
 struct FullscreenVertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -918,8 +917,8 @@ struct View {
 }
 ";
 
-    /// Strips `#import` lines and prepends the stub structs so naga (which has no
-    /// Bevy prelude to resolve `#import` against) can parse the module.
+    /// 剥离 `#import` 行并在前面加回 stub struct，以便 naga（没有
+    /// Bevy prelude 来解析 `#import`）能解析该模块。
     fn cloud_stubbed_wgsl(path: &str) -> String {
         let mut source = String::from(CLOUD_WGSL_IMPORT_STUBS);
         for line in path.lines() {
@@ -932,8 +931,8 @@ struct View {
         source
     }
 
-    /// Collect the `(group, binding)` pairs reachable from an entry point by
-    /// walking its expression tree (and transitively, called functions).
+    /// 通过遍历入口点的表达式树（以及传递性地，被调用的函数），
+    /// 收集从该入口点可达的 `(group, binding)` 对。
     fn used_bindings(
         module: &naga::Module,
         entry_name: &str,
@@ -1011,7 +1010,7 @@ struct View {
 
     #[test]
     fn cloud_noise_wgsl_parses_and_type_checks_under_naga() {
-        // cloud_noise.wgsl has no `#import` directives; validate it raw.
+        // cloud_noise.wgsl 没有 `#import` 指令；原样校验它。
         let source = include_str!("../../shaders/cloud_noise.wgsl");
         let module = validate(source, "cloud_noise.wgsl");
         let has_compute = module
@@ -1026,7 +1025,7 @@ struct View {
 
     #[test]
     fn cloud_billboard_wgsl_parses_and_type_checks_under_naga() {
-        // cloud_billboard.wgsl uses `#import bevy_render::view::View`; stub it.
+        // cloud_billboard.wgsl 使用 `#import bevy_render::view::View`；为它做 stub。
         let source = cloud_stubbed_wgsl(include_str!("../../shaders/cloud_billboard.wgsl"));
         let module = validate(&source, "cloud_billboard.wgsl");
         let mut has_vertex = false;
@@ -1046,9 +1045,9 @@ struct View {
 
     #[test]
     fn wgsl_max_clouds_matches_rust_const() {
-        // The WGSL `MAX_CLOUDS` + the `array<vec4<f32>, 8>` uniform sizes must
-        // stay in lockstep with the Rust `MAX_CLOUDS` (a silent skew would drop
-        // or read-out-of-range clouds on the GPU).
+        // WGSL 的 `MAX_CLOUDS` + `array<vec4<f32>, 8>` uniform 大小必须
+        // 与 Rust 的 `MAX_CLOUDS` 保持同步（一次静默的偏移会导致
+        // GPU 上丢弃或越界读云）。
         let wgsl = include_str!("../../shaders/clouds.wgsl");
         assert!(
             wgsl.contains(&format!("const MAX_CLOUDS: i32 = {MAX_CLOUDS};")),
@@ -1062,8 +1061,8 @@ struct View {
 
     #[test]
     fn domain_physical_constants_mirror_wgsl() {
-        // The domain f64 constants the shader hard-codes must match, so the
-        // domain↔GPU parity the composite relies on does not silently drift.
+        // shader 硬编码的领域 f64 常量必须匹配，所以合成所依赖的
+        // 领域↔GPU 一致性不会静默漂移。
         assert!((ELLIPSOID_SCALE_FACTOR - 0.82).abs() < 1e-12);
         assert!((HG_PHASE_G - 0.6).abs() < 1e-12);
         assert_eq!(NOISE_TEXTURE_DIMENSIONS, 128);

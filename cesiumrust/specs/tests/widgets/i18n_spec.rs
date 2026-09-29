@@ -1,9 +1,9 @@
-//! I18n (internationalization) spec tests.
+//! I18n（国际化）规范测试。
 //!
-//! Maps to CesiumJS:
-//! - Widgets/I18nSpec.js (locale management, string resources, fallback)
+//! 对应 CesiumJS：
+//! - Widgets/I18nSpec.js（区域设置管理、字符串资源、回退）
 //!
-//! A-class tests: locale codes, string resources, I18n manager, key-path lookup.
+//! A 类测试：区域设置代码、字符串资源、I18n 管理器、键路径查找。
 
 use cesium_widgets::i18n::{I18n, Locale, WidgetStrings};
 
@@ -173,7 +173,7 @@ fn i18n_set_locale_changes_strings() {
 #[test]
 fn i18n_fallback_to_english() {
     let mut i18n = I18n::new();
-    // French is not registered by default
+    // 默认未注册法语
     i18n.set_locale(Locale::Fr);
     assert_eq!(i18n.strings().animation.play, "Play");
 }
@@ -181,11 +181,11 @@ fn i18n_fallback_to_english() {
 #[test]
 fn i18n_strings_for_specific_locale() {
     let i18n = I18n::new();
-    // Current locale is En, but get strings for ZhCn
+    // 当前区域设置为 En，但获取 ZhCn 的字符串
     let zh = i18n.strings_for(Locale::ZhCn);
     assert_eq!(zh.animation.play, "播放");
 
-    // Unregistered locale falls back to English
+    // 未注册的区域设置回退到英文
     let fr = i18n.strings_for(Locale::Fr);
     assert_eq!(fr.animation.play, "Play");
 }
@@ -214,7 +214,7 @@ fn i18n_register_custom_locale() {
 fn i18n_available_locales_default() {
     let i18n = I18n::new();
     let locales = i18n.available_locales();
-    // Default registers: En, ZhCn, Ja
+    // 默认注册：En、ZhCn、Ja
     assert_eq!(locales.len(), 3);
     assert!(locales.contains(&Locale::En));
     assert!(locales.contains(&Locale::ZhCn));

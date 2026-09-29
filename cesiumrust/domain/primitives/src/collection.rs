@@ -1,37 +1,37 @@
-//! Primitive collection and batching.
+//! 基本体集合与合批（batching）。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Scene/Primitive.js`
 //! - `Scene/PrimitiveCollection.js`
-//! - Geometry batching for performance
+//! - 面向性能的几何合批
 
 use crate::geometry_instance::{Appearance, GeometryInstance};
 use cesium_geospatial::bounding::BoundingSphere;
 use glam::DVec3;
 
-/// A primitive that renders geometry instances with an appearance.
+/// 一个以某种外观渲染几何实例的基本体。
 ///
-/// Maps to CesiumJS `Scene/Primitive.js`
+/// 映射到 CesiumJS `Scene/Primitive.js`
 #[derive(Debug, Clone)]
 pub struct Primitive {
-    /// Unique identifier.
+    /// 唯一标识符。
     pub id: String,
-    /// Geometry instances to render.
+    /// 待渲染的几何实例。
     pub instances: Vec<GeometryInstance>,
-    /// Appearance for rendering.
+    /// 用于渲染的外观。
     pub appearance: Appearance,
-    /// Whether the primitive is shown.
+    /// 基本体是否显示。
     pub show: bool,
-    /// Whether to cull back faces.
+    /// 是否敲除背面。
     pub cull: bool,
-    /// Whether to compress vertices for performance.
+    /// 是否压缩顶点以提升性能。
     pub compress_vertices: bool,
-    /// Computed bounding sphere.
+    /// 计算出的包围球。
     pub bounding_sphere: Option<BoundingSphere>,
 }
 
 impl Primitive {
-    /// Creates a new primitive.
+    /// 创建一个新基本体。
     pub fn new(id: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -44,26 +44,26 @@ impl Primitive {
         }
     }
 
-    /// Adds a geometry instance.
+    /// 添加一个几何实例。
     pub fn add_instance(&mut self, instance: GeometryInstance) {
         self.instances.push(instance);
-        self.bounding_sphere = None; // Invalidate
+        self.bounding_sphere = None; // 使缓存失效
     }
 
-    /// Sets the appearance.
+    /// 设置外观。
     pub fn with_appearance(mut self, appearance: Appearance) -> Self {
         self.appearance = appearance;
         self
     }
 
-    /// Computes the combined bounding sphere.
+    /// 计算合并后的包围球。
     pub fn compute_bounding_sphere(&mut self) {
         if self.instances.is_empty() {
             self.bounding_sphere = None;
             return;
         }
 
-        // Compute bounding spheres for all instances
+        // 为所有实例计算包围球
         let spheres: Vec<BoundingSphere> = self
             .instances
             .iter()
@@ -73,11 +73,11 @@ impl Primitive {
             })
             .collect();
 
-        // Compute union
+        // 计算并集
         self.bounding_sphere = Some(compute_bounding_sphere_union(&spheres));
     }
 
-    /// Returns the total vertex count estimate.
+    /// 返回顶点总数的估算值。
     pub fn total_vertex_count(&self) -> u32 {
         self.instances
             .iter()
@@ -86,19 +86,19 @@ impl Primitive {
     }
 }
 
-/// A collection of primitives.
+/// 基本体的集合。
 ///
-/// Maps to CesiumJS `Scene/PrimitiveCollection.js`
+/// 映射到 CesiumJS `Scene/PrimitiveCollection.js`
 #[derive(Debug, Default)]
 pub struct PrimitiveCollection {
-    /// Primitives in the collection.
+    /// 集合中的基本体。
     primitives: Vec<Primitive>,
-    /// Whether the collection is shown.
+    /// 集合是否显示。
     pub show: bool,
 }
 
 impl PrimitiveCollection {
-    /// Creates a new primitive collection.
+    /// 创建一个新基本体集合。
     pub fn new() -> Self {
         Self {
             primitives: Vec::new(),
@@ -106,12 +106,12 @@ impl PrimitiveCollection {
         }
     }
 
-    /// Adds a primitive to the collection.
+    /// 向集合添加一个基本体。
     pub fn add(&mut self, primitive: Primitive) {
         self.primitives.push(primitive);
     }
 
-    /// Removes a primitive by ID.
+    /// 按 ID 移除一个基本体。
     pub fn remove(&mut self, id: &str) -> Option<Primitive> {
         if let Some(idx) = self.primitives.iter().position(|p| p.id == id) {
             Some(self.primitives.remove(idx))
@@ -120,37 +120,37 @@ impl PrimitiveCollection {
         }
     }
 
-    /// Gets a primitive by ID.
+    /// 按 ID 获取一个基本体。
     pub fn get(&self, id: &str) -> Option<&Primitive> {
         self.primitives.iter().find(|p| p.id == id)
     }
 
-    /// Gets a mutable primitive by ID.
+    /// 按 ID 获取一个可变基本体。
     pub fn get_mut(&mut self, id: &str) -> Option<&mut Primitive> {
         self.primitives.iter_mut().find(|p| p.id == id)
     }
 
-    /// Returns the number of primitives.
+    /// 返回基本体的数量。
     pub fn len(&self) -> usize {
         self.primitives.len()
     }
 
-    /// Returns true if the collection is empty.
+    /// 若集合为空则返回 true。
     pub fn is_empty(&self) -> bool {
         self.primitives.is_empty()
     }
 
-    /// Returns an iterator over primitives.
+    /// 返回一个遍历基本体的迭代器。
     pub fn iter(&self) -> impl Iterator<Item = &Primitive> {
         self.primitives.iter()
     }
 
-    /// Returns a mutable iterator over primitives.
+    /// 返回一个可变遍历基本体的迭代器。
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Primitive> {
         self.primitives.iter_mut()
     }
 
-    /// Computes the combined bounding sphere.
+    /// 计算合并后的包围球。
     pub fn compute_bounding_sphere(&self) -> Option<BoundingSphere> {
         let spheres: Vec<BoundingSphere> = self
             .primitives
@@ -180,13 +180,13 @@ impl PrimitiveCollection {
         }
     }
 
-    /// Returns visible primitives.
+    /// 返回可见的基本体。
     pub fn visible_primitives(&self) -> impl Iterator<Item = &Primitive> {
         self.primitives.iter().filter(|p| p.show && self.show)
     }
 }
 
-/// Computes the union of multiple bounding spheres.
+/// 计算多个包围球的并集。
 pub fn compute_bounding_sphere_union(spheres: &[BoundingSphere]) -> BoundingSphere {
     if spheres.is_empty() {
         return BoundingSphere::new(DVec3::ZERO, 0.0);
@@ -196,14 +196,14 @@ pub fn compute_bounding_sphere_union(spheres: &[BoundingSphere]) -> BoundingSphe
         return spheres[0];
     }
 
-    // Compute centroid
+    // 计算形心
     let mut center = DVec3::ZERO;
     for sphere in spheres {
         center += sphere.center;
     }
     center /= spheres.len() as f64;
 
-    // Compute max distance from centroid
+    // 计算到形心的最大距离
     let mut max_radius = 0.0f64;
     for sphere in spheres {
         let dist = (sphere.center - center).length() + sphere.radius;
@@ -213,14 +213,14 @@ pub fn compute_bounding_sphere_union(spheres: &[BoundingSphere]) -> BoundingSphe
     BoundingSphere::new(center, max_radius)
 }
 
-/// Batch configuration for geometry merging.
+/// 几何合并的合批配置。
 #[derive(Debug, Clone)]
 pub struct BatchConfig {
-    /// Maximum instances per batch.
+    /// 每批最大实例数。
     pub max_instances_per_batch: usize,
-    /// Whether to merge geometries with the same material.
+    /// 是否合并材质相同的几何。
     pub merge_by_material: bool,
-    /// Whether to sort by distance for transparency.
+    /// 是否为透明效果按距离排序。
     pub sort_by_distance: bool,
 }
 
@@ -234,21 +234,21 @@ impl Default for BatchConfig {
     }
 }
 
-/// A batch of geometry instances for efficient rendering.
+/// 一个用于高效渲染的几何实例批次。
 #[derive(Debug, Clone)]
 pub struct GeometryBatch {
-    /// Batch ID.
+    /// 批次 ID。
     pub id: u32,
-    /// Instances in this batch.
+    /// 本批次中的实例。
     pub instances: Vec<GeometryInstance>,
-    /// Shared appearance.
+    /// 共享外观。
     pub appearance: Appearance,
-    /// Combined bounding sphere.
+    /// 合并后的包围球。
     pub bounding_sphere: Option<BoundingSphere>,
 }
 
 impl GeometryBatch {
-    /// Creates a new batch.
+    /// 创建一个新批次。
     pub fn new(id: u32, appearance: Appearance) -> Self {
         Self {
             id,
@@ -258,18 +258,18 @@ impl GeometryBatch {
         }
     }
 
-    /// Adds an instance to the batch.
+    /// 向批次添加一个实例。
     pub fn add(&mut self, instance: GeometryInstance) {
         self.instances.push(instance);
-        self.bounding_sphere = None; // Invalidate
+        self.bounding_sphere = None; // 使缓存失效
     }
 
-    /// Returns true if the batch is full.
+    /// 若批次已满则返回 true。
     pub fn is_full(&self, config: &BatchConfig) -> bool {
         self.instances.len() >= config.max_instances_per_batch
     }
 
-    /// Computes the batch bounding sphere.
+    /// 计算批次的包围球。
     pub fn compute_bounding_sphere(&mut self) {
         let spheres: Vec<BoundingSphere> = self
             .instances
@@ -288,7 +288,7 @@ impl GeometryBatch {
     }
 }
 
-/// Batches geometry instances for efficient rendering.
+/// 为高效渲染对几何实例进行合批。
 pub fn batch_instances(
     instances: Vec<GeometryInstance>,
     appearance: Appearance,
@@ -349,7 +349,7 @@ mod tests {
         primitive.compute_bounding_sphere();
         let bs = primitive.bounding_sphere.unwrap();
 
-        // Center should be at origin, radius should cover both spheres
+        // 中心应在原点，半径应覆盖两个球
         assert!(bs.center.length() < 1e-10);
         assert!(bs.radius >= 110.0);
     }
@@ -470,7 +470,7 @@ mod tests {
 
         let batches = batch_instances(instances, Appearance::default(), &config);
 
-        // 5 instances / 2 per batch = 3 batches (2, 2, 1)
+        // 5 个实例 / 每批 2 个 = 3 批（2, 2, 1）
         assert_eq!(batches.len(), 3);
         assert_eq!(batches[0].instances.len(), 2);
         assert_eq!(batches[1].instances.len(), 2);

@@ -1,6 +1,6 @@
-//! Camera controller for orbit, pan, and zoom interactions.
+//! 用于环绕、平移与缩放交互的相机控制器。
 //!
-//! Maps to CesiumJS `Scene/ScreenSpaceCameraController.js`
+//! 映射到 CesiumJS `Scene/ScreenSpaceCameraController.js`
 
 use cesium_camera::Camera;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -8,26 +8,26 @@ use glam::{DVec2, DVec3};
 
 use crate::inertia::{InertiaController, InertiaSample, InertiaState};
 
-/// Camera controller configuration.
+/// 相机控制器配置。
 #[derive(Debug, Clone)]
 pub struct CameraControllerConfig {
-    /// Minimum zoom distance from the surface (meters).
+    /// 距地表的最小缩放距离（米）。
     pub minimum_zoom_distance: f64,
-    /// Maximum zoom distance from the surface (meters).
+    /// 距地表的最大缩放距离（米）。
     pub maximum_zoom_distance: f64,
-    /// Rotation speed factor.
+    /// 旋转速度因子。
     pub rotation_speed: f64,
-    /// Pan speed factor.
+    /// 平移速度因子。
     pub pan_speed: f64,
-    /// Zoom speed factor.
+    /// 缩放速度因子。
     pub zoom_speed: f64,
-    /// Whether rotation is enabled.
+    /// 是否启用旋转。
     pub enable_rotation: bool,
-    /// Whether panning is enabled.
+    /// 是否启用平移。
     pub enable_pan: bool,
-    /// Whether zooming is enabled.
+    /// 是否启用缩放。
     pub enable_zoom: bool,
-    /// Whether collision detection with the ellipsoid is enabled.
+    /// 是否启用与椭球的碰撞检测。
     pub enable_collision_detection: bool,
 }
 
@@ -47,19 +47,19 @@ impl Default for CameraControllerConfig {
     }
 }
 
-/// The camera controller that processes user input and updates the camera.
+/// 处理用户输入并更新相机的控制器。
 ///
-/// Maps to CesiumJS `ScreenSpaceCameraController`
+/// 映射到 CesiumJS `ScreenSpaceCameraController`
 #[derive(Debug, Clone)]
 pub struct CameraController {
-    /// Configuration.
+    /// 配置。
     pub config: CameraControllerConfig,
-    /// The ellipsoid for surface calculations.
+    /// 用于表面计算的椭球。
     pub ellipsoid: Ellipsoid,
 }
 
 impl CameraController {
-    /// Creates a new camera controller.
+    /// 创建一个新的相机控制器。
     pub fn new(ellipsoid: Ellipsoid) -> Self {
         Self {
             config: CameraControllerConfig::default(),
@@ -67,14 +67,14 @@ impl CameraController {
         }
     }
 
-    /// Orbits the camera around a target point.
+    /// 使相机围绕一个目标点环绕。
     ///
-    /// # Arguments
-    /// * `camera` - The camera to update
-    /// * `target` - The point to orbit around (ECEF)
-    /// * `delta_heading` - Change in heading (radians)
-    /// * `delta_pitch` - Change in pitch (radians)
-    /// * `delta_range` - Change in distance (meters, positive = zoom out)
+    /// # 参数
+    /// * `camera` - 要更新的相机
+    /// * `target` - 围绕环绕的点（ECEF）
+    /// * `delta_heading` - 航向角的变化（弧度）
+    /// * `delta_pitch` - 俯仰角的变化（弧度）
+    /// * `delta_range` - 距离的变化（米，正值 = 缩小）
     pub fn orbit(
         &self,
         camera: &mut Camera,
@@ -90,11 +90,11 @@ impl CameraController {
         let heading = delta_heading * self.config.rotation_speed;
         let pitch = delta_pitch * self.config.rotation_speed;
 
-        // Vector from target to camera
+        // 从目标到相机的向量
         let offset = camera.position - target;
         let range = offset.length() + delta_range * self.config.zoom_speed;
 
-        // Clamp range
+        // 钳制距离
         let range = range.max(self.config.minimum_zoom_distance);
         let range = if self.config.maximum_zoom_distance.is_finite() {
             range.min(self.config.maximum_zoom_distance)
@@ -102,20 +102,20 @@ impl CameraController {
             range
         };
 
-        // Convert to spherical coordinates
+        // 转换为球坐标
         let mut current_heading = offset.z.atan2(offset.x);
         let horizontal_dist = (offset.x * offset.x + offset.z * offset.z).sqrt();
         let mut current_pitch = offset.y.atan2(horizontal_dist);
 
-        // Apply deltas
+        // 应用增量
         current_heading += heading;
         current_pitch += pitch;
 
-        // Clamp pitch to avoid gimbal issues
+        // 钳制俯仰角以避免万向节问题
         let max_pitch = std::f64::consts::FRAC_PI_2 - 0.001;
         current_pitch = current_pitch.clamp(-max_pitch, max_pitch);
 
-        // Convert back to Cartesian
+        // 转换回笛卡尔坐标
         let cos_pitch = current_pitch.cos();
         let new_offset = DVec3::new(
             range * cos_pitch * current_heading.cos(),
@@ -129,18 +129,18 @@ impl CameraController {
         camera.up = camera.right.cross(camera.direction).normalize();
     }
 
-    /// Pans the camera along the view plane.
+    /// 沿视平面平移相机。
     ///
-    /// # Arguments
-    /// * `camera` - The camera to update
-    /// * `delta_x` - Horizontal pan amount (normalized, -1 to 1)
-    /// * `delta_y` - Vertical pan amount (normalized, -1 to 1)
+    /// # 参数
+    /// * `camera` - 要更新的相机
+    /// * `delta_x` - 水平平移量（归一化，-1 到 1）
+    /// * `delta_y` - 垂直平移量（归一化，-1 到 1）
     pub fn pan(&self, camera: &mut Camera, delta_x: f64, delta_y: f64) {
         if !self.config.enable_pan {
             return;
         }
 
-        // Scale pan by distance to surface
+        // 按到地表的距离缩放平移
         let height = camera.position.length() - self.ellipsoid.maximum_radius();
         let pan_scale = height.abs().max(1000.0) * 0.001 * self.config.pan_speed;
 
@@ -150,45 +150,45 @@ impl CameraController {
         camera.position += move_right + move_up;
     }
 
-    /// Zooms the camera in or out.
+    /// 将相机放大或缩小。
     ///
-    /// # Arguments
-    /// * `camera` - The camera to update
-    /// * `delta` - Zoom amount (positive = zoom in, negative = zoom out)
+    /// # 参数
+    /// * `camera` - 要更新的相机
+    /// * `delta` - 缩放量（正值 = 放大，负值 = 缩小）
     pub fn zoom(&self, camera: &mut Camera, delta: f64) {
         if !self.config.enable_zoom {
             return;
         }
 
-        // Scale zoom by distance to surface
+        // 按到地表的距离缩放
         let height = camera.position.length() - self.ellipsoid.maximum_radius();
         let zoom_amount = height.abs().max(1000.0) * 0.1 * delta * self.config.zoom_speed;
 
         let movement = camera.direction * zoom_amount;
         let new_position = camera.position + movement;
 
-        // Collision detection
+        // 碰撞检测
         if self.config.enable_collision_detection {
             let new_height = new_position.length() - self.ellipsoid.maximum_radius();
             if new_height < self.config.minimum_zoom_distance {
-                return; // Don't zoom below minimum distance
+                return; // 不缩到最小距离以下
             }
         }
 
         camera.position = new_position;
     }
 
-    /// Tilts the camera (changes pitch while looking at a target).
+    /// 俯仰倾斜相机（在看向目标时改变俯仰角）。
     ///
-    /// # Arguments
-    /// * `camera` - The camera to update
-    /// * `target` - The point to look at (ECEF)
-    /// * `delta_pitch` - Change in pitch (radians)
+    /// # 参数
+    /// * `camera` - 要更新的相机
+    /// * `target` - 要看向的点（ECEF）
+    /// * `delta_pitch` - 俯仰角的变化（弧度）
     pub fn tilt(&self, camera: &mut Camera, target: DVec3, delta_pitch: f64) {
         let offset = camera.position - target;
         let range = offset.length();
 
-        // Rotate offset around the right axis
+        // 将偏移绕 right 轴旋转
         let surface_normal = target.normalize();
         let right = offset.cross(surface_normal).normalize();
         let rotated = rotate_around_axis(offset.normalize(), right, delta_pitch * self.config.rotation_speed);
@@ -199,19 +199,18 @@ impl CameraController {
         camera.up = camera.right.cross(camera.direction).normalize();
     }
 
-    /// Spins (rotates) the camera about the ellipsoid center: the position and
-    /// the orientation rotate together, so the globe appears to turn under the
-    /// viewer.
+    /// 绕椭球中心旋转（自转）相机：位置与
+    /// 朝向一同旋转，因此地球看起来在观察者下方转动。
     ///
-    /// Maps to CesiumJS `rotate3D`/`spin3D` — blueprint L1963-1968
-    /// (`camera.rotate_right(delta_phi)` then `camera.rotate_up(delta_theta)`).
-    /// The pixel→radian scaling is the adapter's responsibility; this method
-    /// takes signed angles in radians.
+    /// 映射到 CesiumJS `rotate3D`/`spin3D` — 蓝图 L1963-1968
+    /// （先 `camera.rotate_right(delta_phi)`，再 `camera.rotate_up(delta_theta)`）。
+    /// 像素→弧度的缩放是适配器的职责；本方法
+    /// 接受带符号的角度（以弧度计）。
     ///
-    /// # Arguments
-    /// * `camera` - The camera to update
-    /// * `delta_heading` - Rotation about the camera up axis (radians)
-    /// * `delta_pitch` - Rotation about the camera right axis (radians)
+    /// # 参数
+    /// * `camera` - 要更新的相机
+    /// * `delta_heading` - 绕相机 up 轴的旋转（弧度）
+    /// * `delta_pitch` - 绕相机 right 轴的旋转（弧度）
     pub fn spin(&self, camera: &mut Camera, delta_heading: f64, delta_pitch: f64) {
         if !self.config.enable_rotation {
             return;
@@ -222,16 +221,16 @@ impl CameraController {
         camera.rotate_up(pitch);
     }
 
-    /// Looks around in place: rotates the orientation (direction/up) without
-    /// moving the position.
+    /// 原地环视：旋转朝向（direction/up）而
+    /// 不移动位置。
     ///
-    /// Maps to CesiumJS `look3D` — blueprint L2814-2851 (horizontal
-    /// `camera.look_left(angle)` then a vertical `look` about the right axis).
+    /// 映射到 CesiumJS `look3D` — 蓝图 L2814-2851（先水平
+    /// `camera.look_left(angle)`，再绕 right 轴垂直 `look`）。
     ///
-    /// # Arguments
-    /// * `camera` - The camera to update
-    /// * `delta_heading` - Yaw angle (radians)
-    /// * `delta_pitch` - Pitch angle (radians)
+    /// # 参数
+    /// * `camera` - 要更新的相机
+    /// * `delta_heading` - 偏航角（弧度）
+    /// * `delta_pitch` - 俯仰角（弧度）
     pub fn look(&self, camera: &mut Camera, delta_heading: f64, delta_pitch: f64) {
         if !self.config.enable_rotation {
             return;
@@ -242,13 +241,13 @@ impl CameraController {
         camera.look_up(Some(pitch));
     }
 
-    /// Twists (rolls) the camera about its own view direction.
+    /// 绕自身视线方向扭转（滚动）相机。
     ///
-    /// Maps to CesiumJS `twist2D` — blueprint L1178 (`camera.twist_right(theta)`).
+    /// 映射到 CesiumJS `twist2D` — 蓝图 L1178（`camera.twist_right(theta)`）。
     ///
-    /// # Arguments
-    /// * `camera` - The camera to update
-    /// * `delta_angle` - Roll angle (radians, positive = clockwise)
+    /// # 参数
+    /// * `camera` - 要更新的相机
+    /// * `delta_angle` - 翻滚角（弧度，正值 = 顺时针）
     pub fn twist(&self, camera: &mut Camera, delta_angle: f64) {
         if !self.config.enable_rotation {
             return;
@@ -257,99 +256,98 @@ impl CameraController {
     }
 
     // ========================================================================
-    // Two-finger (pinch) touch gestures — M2.6
+    // 双指（捻合）触控手势 — M2.6
     // ========================================================================
     //
-    // These map the decomposed two-finger metrics produced by
-    // [`crate::event_aggregator::CameraEventAggregator`] (`pinch_distance_delta`,
-    // `pinch_angle_delta`, `pinch_midpoint_delta`) onto camera transforms:
+    // 这些将 [`crate::event_aggregator::CameraEventAggregator`] 产生的
+    // 分解后的双指度量（`pinch_distance_delta`、`pinch_angle_delta`、
+    // `pinch_midpoint_delta`）映射到相机变换上：
     //
-    // | Gesture | Metric | Camera action |
+    // | 手势 | 度量 | 相机动作 |
     // |---------|--------|---------------|
-    // | pinch (fingers spread/close) | distance Δ (px) | [`Self::zoom`] |
-    // | rotate (fingers turn about midpoint) | angle Δ (rad) | [`Self::spin`] (heading) |
-    // | drag (fingers translate together) | midpoint Δ (px) | [`Self::pan`] |
+    // | 捻合（手指张开/合拢） | 距离 Δ（px） | [`Self::zoom`] |
+    // | 旋转（手指绕中点转动） | 角度 Δ（rad） | [`Self::spin`]（航向） |
+    // | 拖拽（手指一同平移） | 中点 Δ（px） | [`Self::pan`] |
     //
-    // Per the M2.6 gesture model the two-finger **rotate maps to spin** (the
-    // globe turns under the viewer), not to CesiumJS's `twist2D` roll; the
-    // roll mapping remains available via [`Self::twist`] +
-    // `pinch_twist_pixels` for applications that prefer it.
+    // 根据 M2.6 手势模型，双指 **旋转映射到 spin**（
+    // 地球在观察者下方转动），而非 CesiumJS 的 `twist2D` 滚动；
+    // 滚动映射仍可通过 [`Self::twist`] +
+    // `pinch_twist_pixels` 为偏好它的应用保留。
     //
-    // Pixel→world magnitude scaling stays at the adapter boundary: the pixel
-    // deltas are passed through with an adapter-supplied `scale` (mirroring
-    // [`Self::coast_inertia`]), so the domain owns only the gesture→action
-    // *semantics* (which component drives which motion, and its sign) and
-    // stays resolution-independent and free of render-unit concerns.
+    // 像素→世界的量级缩放留在适配器边界：像素
+    // 增量经适配器提供的 `scale` 透传（镜像
+    // [`Self::coast_inertia`]），因此领域只拥有手势→动作的
+    // *语义*（哪个分量驱动哪个运动，及其符号），
+    // 并保持与分辨率无关、不受 render-unit 干扰。
 
-    /// Two-finger **pinch → zoom**.
+    /// 双指 **捻合 → 缩放**。
     ///
-    /// `distance_delta` is the change in finger separation in pixels
-    /// (positive = fingers spreading apart = zoom **in**, matching the
-    /// conventional pinch-to-zoom feel). `scale` converts pixels to the
-    /// unitless zoom delta consumed by [`Self::zoom`] (adapter-supplied, e.g.
-    /// a sensitivity over the canvas height). Honors `enable_zoom`.
+    /// `distance_delta` 为手指间距的变化（以像素计）
+    /// （正值 = 手指张开 = **放大**，与惯常的捻合缩放手感一致）。`scale` 将像素转换为
+    /// [`Self::zoom`] 所消费的无维度缩放量（由适配器提供，例如
+    /// 基于画布高度的敏感度）。遵循 `enable_zoom`。
     ///
-    /// # Arguments
-    /// * `camera` - The camera to update
-    /// * `distance_delta` - Finger-separation change this frame (pixels)
-    /// * `scale` - Pixel→zoom-delta scale supplied by the adapter boundary
+    /// # 参数
+    /// * `camera` - 要更新的相机
+    /// * `distance_delta` - 本帧手指间距的变化（像素）
+    /// * `scale` - 由适配器边界提供的像素→缩放量缩放
     pub fn pinch_zoom(&self, camera: &mut Camera, distance_delta: f64, scale: f64) {
-        // Spreading fingers (positive delta) zoom in (positive zoom delta).
+        // 张开手指（正增量）放大（正缩放量）。
         self.zoom(camera, distance_delta * scale);
     }
 
-    /// Two-finger **rotate → spin** (heading).
+    /// 双指 **旋转 → spin**（航向）。
     ///
-    /// `angle_delta` is the rotation of the finger-connecting line in radians
-    /// (positive = counter-clockwise on screen, from `atan2`). It is already an
-    /// angle, so no pixel scaling is applied; it is mapped directly to the
-    /// heading component of [`Self::spin`] (pitch = 0). Honors `enable_rotation`.
+    /// `angle_delta` 为手指连线的旋转（以弧度计）
+    /// （正值 = 屏幕上逆时针，来自 `atan2`）。它已经是
+    /// 一个角度，因此不施加像素缩放；直接映射到
+    /// [`Self::spin`] 的航向分量（pitch = 0）。遵循 `enable_rotation`。
     ///
-    /// # Arguments
-    /// * `camera` - The camera to update
-    /// * `angle_delta` - Finger-line rotation this frame (radians)
+    /// # 参数
+    /// * `camera` - 要更新的相机
+    /// * `angle_delta` - 本帧手指连线的旋转（弧度）
     pub fn pinch_rotate(&self, camera: &mut Camera, angle_delta: f64) {
         self.spin(camera, angle_delta, 0.0);
     }
 
-    /// Two-finger **drag → translate** (pan).
+    /// 双指 **拖拽 → 平移**（pan）。
     ///
-    /// `midpoint_delta` is the common translation of both fingers in pixels
-    /// (the change in the two-finger midpoint). `scale` converts pixels to the
-    /// normalized pan delta consumed by [`Self::pan`] (adapter-supplied); the
-    /// existing `pan` sign convention (`-delta_x` along right, `+delta_y` along
-    /// up) gives the grab-the-globe feel. Honors `enable_pan`.
+    /// `midpoint_delta` 为两指共同的平移（以像素计）
+    /// （两指中点的变化）。`scale` 将像素转换为
+    /// [`Self::pan`] 所消费的归一化平移量（由适配器提供）；
+    /// 现有的 `pan` 符号约定（沿 right 的 `-delta_x`、沿 up 的 `+delta_y`）
+    /// 给出抓住地球的手感。遵循 `enable_pan`。
     ///
-    /// # Arguments
-    /// * `camera` - The camera to update
-    /// * `midpoint_delta` - Common finger translation this frame (pixels)
-    /// * `scale` - Pixel→pan-delta scale supplied by the adapter boundary
+    /// # 参数
+    /// * `camera` - 要更新的相机
+    /// * `midpoint_delta` - 本帧两指共同的平移（像素）
+    /// * `scale` - 由适配器边界提供的像素→平移量缩放
     pub fn pinch_translate(&self, camera: &mut Camera, midpoint_delta: DVec2, scale: f64) {
         self.pan(camera, midpoint_delta.x * scale, midpoint_delta.y * scale);
     }
 
-    /// Applies one inertial coasting step for `slot`, driving the matching
-    /// camera motion with the decayed motion returned by
-    /// [`InertiaController::maintain`].
+    /// 为 `slot` 应用一步惯性滑行，用
+    /// [`InertiaController::maintain`] 返回的衰减运动驱动相应的
+    /// 相机运动。
     ///
-    /// This is the domain-level integration of CesiumJS `maintainInertia`
-    /// (blueprint L796-875): the stored pixel motion is tapered by the
-    /// [`crate::inertia::decay`] exponential and fed to `spin`/`zoom`/`pan`/
-    /// `tilt`. `scale` converts the pixel delta into radians (for spin/tilt) or
-    /// meters (for zoom/pan); supplying it here keeps the pixel→world
-    /// conversion — including any render-unit scaling — at the adapter boundary.
+    /// 这是 CesiumJS `maintainInertia`（蓝图 L796-875）的
+    /// 领域级整合：存储的像素运动按
+    /// [`crate::inertia::decay`] 指数函数收窄，并馈入 `spin`/`zoom`/`pan`/
+    /// `tilt`。`scale` 将像素增量转换为弧度（用于 spin/tilt）或
+    /// 米（用于 zoom/pan）；在此提供它可将像素→世界的
+    /// 转换 ——— 包括任何 render-unit 缩放 ——— 留在适配器边界。
     ///
-    /// # Returns
-    /// `true` while the camera is still coasting, `false` once the inertia has
-    /// stopped (released, held too long, or decayed below the stop distance).
+    /// # 返回
+    /// 相机仍在滑行时返回 `true`，惯性停止后（被释放、
+    /// 按下太久，或衰减到停止距离以下）返回 `false`。
     ///
-    /// # Arguments
-    /// * `camera` - The camera to update
-    /// * `inertia` - The inertia controller holding the captured motion
-    /// * `slot` - Which inertia state to coast
-    /// * `target` - The pivot point for tilt inertia (ECEF)
-    /// * `sample` - Per-frame timing + decay coefficient
-    /// * `scale` - Pixel→radian/meter scale applied to the decayed delta
+    /// # 参数
+    /// * `camera` - 要更新的相机
+    /// * `inertia` - 持有已捕获运动的惯性控制器
+    /// * `slot` - 要滑行哪个惯性状态
+    /// * `target` - tilt 惯性的支点（ECEF）
+    /// * `sample` - 逐帧时序 + 衰减系数
+    /// * `scale` - 应用于衰减后增量的像素→弧度/米缩放
     pub fn coast_inertia(
         &self,
         camera: &mut Camera,
@@ -372,7 +370,7 @@ impl CameraController {
         true
     }
 
-    /// Ensures the camera is not below the ellipsoid surface.
+    /// 确保相机不处于椭球表面以下。
     pub fn enforce_collision(&self, camera: &mut Camera) {
         if !self.config.enable_collision_detection {
             return;
@@ -386,7 +384,7 @@ impl CameraController {
     }
 }
 
-/// Rotates a vector around an axis by an angle (Rodrigues' formula).
+/// 将向量绕轴旋转一个角度（Rodrigues 公式）。
 fn rotate_around_axis(v: DVec3, axis: DVec3, angle: f64) -> DVec3 {
     let cos_a = angle.cos();
     let sin_a = angle.sin();
@@ -398,7 +396,7 @@ mod tests {
     use super::*;
 
     fn create_test_camera() -> Camera {
-        // Camera above the equator looking down
+        // 位于赤道上方、向下看的相机
         Camera::new(
             DVec3::new(6378137.0 * 2.0, 0.0, 0.0),
             DVec3::new(-1.0, 0.0, 0.0),
@@ -420,7 +418,7 @@ mod tests {
         let mut camera = create_test_camera();
         let initial_distance = camera.position.length();
 
-        controller.zoom(&mut camera, 1.0); // Zoom in
+        controller.zoom(&mut camera, 1.0); // 放大
 
         assert!(camera.position.length() < initial_distance);
     }
@@ -431,7 +429,7 @@ mod tests {
         let mut camera = create_test_camera();
         let initial_distance = camera.position.length();
 
-        controller.zoom(&mut camera, -1.0); // Zoom out
+        controller.zoom(&mut camera, -1.0); // 缩小
 
         assert!(camera.position.length() > initial_distance);
     }
@@ -468,7 +466,7 @@ mod tests {
 
         controller.orbit(&mut camera, target, 0.1, 0.0, 0.0);
 
-        // Distance should be preserved during pure rotation
+        // 纯旋转期间距离应保持不变
         let new_distance = (camera.position - target).length();
         assert!((new_distance - initial_distance).abs() / initial_distance < 0.01);
     }
@@ -477,7 +475,7 @@ mod tests {
     fn test_collision_detection() {
         let controller = CameraController::new(Ellipsoid::WGS84);
         let mut camera = Camera::new(
-            DVec3::new(6378137.0 + 0.5, 0.0, 0.0), // Very close to surface
+            DVec3::new(6378137.0 + 0.5, 0.0, 0.0), // 非常贴近表面
             DVec3::new(-1.0, 0.0, 0.0),
             DVec3::new(0.0, 0.0, 1.0),
         );
@@ -496,7 +494,7 @@ mod tests {
 
         let rotated = rotate_around_axis(v, axis, angle);
 
-        // 90 degrees around Z: X → Y
+        // 绕 Z 轴 90 度：X → Y
         assert!((rotated.x).abs() < 1e-10);
         assert!((rotated.y - 1.0).abs() < 1e-10);
         assert!((rotated.z).abs() < 1e-10);
@@ -511,10 +509,10 @@ mod tests {
 
         controller.spin(&mut camera, 0.1, 0.0);
 
-        // Position moved but stayed on the same sphere about the center.
+        // 位置移动了，但仍处于绕中心的同一球面上。
         assert!((camera.position - initial_pos).length() > 1.0);
         assert!((camera.position.length() - initial_distance).abs() / initial_distance < 1e-9);
-        // Orientation stays orthonormal.
+        // 朝向保持正交归一。
         assert!((camera.direction.length() - 1.0).abs() < 1e-12);
     }
 
@@ -539,7 +537,7 @@ mod tests {
 
         controller.look(&mut camera, 0.2, 0.0);
 
-        // Position is untouched; direction changes.
+        // 位置不受影响；方向改变。
         assert_eq!(camera.position, initial_pos);
         assert!(camera.direction.dot(initial_dir) < 0.999999);
         assert!((camera.direction.length() - 1.0).abs() < 1e-12);
@@ -567,7 +565,7 @@ mod tests {
 
         controller.twist(&mut camera, 0.3);
 
-        // Rolling keeps position and view direction, but rotates `up`.
+        // 滚动保持位置与视线方向，但旋转 `up`。
         assert_eq!(camera.position, initial_pos);
         assert!(camera.direction.dot(initial_dir) > 0.999999);
         assert!(camera.up.dot(initial_up) < 0.999999);
@@ -584,7 +582,7 @@ mod tests {
         let mut inertia = InertiaController::new();
         inertia.capture(InertiaState::Spin, DVec2::ZERO, DVec2::new(2000.0, 0.0));
 
-        // pixel→radian scale supplied by the adapter boundary.
+        // 像素→弧度缩放由适配器边界提供。
         let scale = 1e-4;
         let target = DVec3::ZERO;
 
@@ -594,7 +592,7 @@ mod tests {
         let step1 = (camera.position - pos0).length();
         assert!(step1 > 0.0);
 
-        // A later frame has decayed further → a smaller step.
+        // 较后的帧衰减得更多 → 步长更小。
         let s2 = InertiaSample::new(0.9, 0.0, 0.0, 600.0);
         let pos1 = camera.position;
         assert!(controller.coast_inertia(&mut camera, &mut inertia, InertiaState::Spin, target, &s2, scale));
@@ -628,16 +626,15 @@ mod tests {
     }
 
     // ========================================================================
-    // M2.6 two-finger (pinch) touch-gesture sequences
+    // M2.6 双指（捻合）触控手势序列
     // ========================================================================
 
     use crate::event_aggregator::CameraEventAggregator;
 
-    /// Advance one frame of a two-finger gesture. The aggregator seeds `start`
-    /// on the first `pinch_move` of a frame and extends `end` on the second
-    /// (reproducing CesiumJS's per-frame pinch), so feeding the frame's opening
-    /// pair `(a1,a2)` and closing pair `(b1,b2)` yields a per-frame delta of
-    /// `metrics(b) - metrics(a)`.
+    /// 推进一步双指手势的单帧。聚合器在一帧的首个
+    /// `pinch_move` 上播种 `start`，在第二个上延长 `end`
+    /// （复现 CesiumJS 的逐帧捻合），因此喂入帧的起始对
+    /// `(a1,a2)` 与结束对 `(b1,b2)` 会产生 `metrics(b) - metrics(a)` 的逐帧增量。
     fn pinch_frame(
         agg: &mut CameraEventAggregator,
         t: f64,
@@ -651,9 +648,9 @@ mod tests {
         agg.pinch_move(b1, b2);
     }
 
-    /// Apply a full two-finger frame (zoom + rotate + translate) to the camera.
-    /// `a`/`b` are the frame's opening/closing finger pairs; `scales` is
-    /// `(zoom_scale, translate_scale)`.
+    /// 将一个完整的双指帧（缩放 + 旋转 + 平移）应用到相机。
+    /// `a`/`b` 为帧的起始/结束手指对；`scales` 为
+    /// `(zoom_scale, translate_scale)`。
     fn apply_pinch_frame(
         agg: &mut CameraEventAggregator,
         ctrl: &CameraController,
@@ -674,7 +671,7 @@ mod tests {
         let ctrl = CameraController::new(Ellipsoid::WGS84);
         let mut camera = create_test_camera();
         let initial = camera.position.length();
-        // Fingers spread apart: separation 100 → 200 px (distance_delta = +100).
+        // 手指张开：间距 100 → 200 px（distance_delta = +100）。
         ctrl.pinch_zoom(&mut camera, 100.0, 0.01);
         assert!(
             camera.position.length() < initial,
@@ -687,7 +684,7 @@ mod tests {
         let ctrl = CameraController::new(Ellipsoid::WGS84);
         let mut camera = create_test_camera();
         let initial = camera.position.length();
-        // Fingers pinch together: separation 200 → 100 px (distance_delta = -100).
+        // 手指捻合：间距 200 → 100 px（distance_delta = -100）。
         ctrl.pinch_zoom(&mut camera, -100.0, 0.01);
         assert!(
             camera.position.length() > initial,
@@ -701,9 +698,9 @@ mod tests {
         let mut camera = create_test_camera();
         let initial = camera.position.length();
         let pos0 = camera.position;
-        // A counter-clockwise two-finger rotation of +0.2 rad → heading spin.
+        // 逆时针双指旋转 +0.2 rad → 航向 spin。
         ctrl.pinch_rotate(&mut camera, 0.2);
-        // Spin rotates about the center: distance preserved, position moved.
+        // Spin 绕中心旋转：距离保持，位置移动。
         assert!((camera.position.length() - initial).abs() / initial < 1e-9);
         assert!((camera.position - pos0).length() > 1.0);
         assert!((camera.direction.length() - 1.0).abs() < 1e-12);
@@ -712,7 +709,7 @@ mod tests {
     #[test]
     fn pinch_rotate_sign_follows_angle_direction() {
         let ctrl = CameraController::new(Ellipsoid::WGS84);
-        // CCW (+) and CW (−) rotations must move the camera in opposite senses.
+        // 逆时针（+）与顺时针（−）旋转必须使相机反向移动。
         let mut ccw = create_test_camera();
         let mut cw = create_test_camera();
         let pos0 = ccw.position;
@@ -720,7 +717,7 @@ mod tests {
         ctrl.pinch_rotate(&mut cw, -0.2);
         let d_ccw = ccw.position - pos0;
         let d_cw = cw.position - pos0;
-        // Opposite rotation directions → displacements point opposite ways.
+        // 相反的旋转方向 → 位移指向相反方向。
         assert!(
             d_ccw.dot(d_cw) < 0.0,
             "CCW and CW pinch-rotate must spin oppositely"
@@ -730,7 +727,7 @@ mod tests {
     #[test]
     fn pinch_drag_translates_opposite_directions() {
         let ctrl = CameraController::new(Ellipsoid::WGS84);
-        // +x and −x midpoint drags must translate the camera oppositely.
+        // +x 与 −x 的中点拖拽必须使相机反向平移。
         let mut right = create_test_camera();
         let mut left = create_test_camera();
         let pos0 = right.position;
@@ -744,7 +741,7 @@ mod tests {
             "opposite drags must translate oppositely"
         );
 
-        // Same check for the vertical axis.
+        // 对垂直轴做同样的检查。
         let mut up = create_test_camera();
         let mut down = create_test_camera();
         let pos1 = up.position;
@@ -783,9 +780,8 @@ mod tests {
         assert_eq!(camera.position, pos0);
     }
 
-    /// A three-frame pinch-open sequence: each frame spreads the fingers a bit
-    /// more, so every frame's `distance_delta` is positive and the camera keeps
-    /// zooming in monotonically.
+    /// 一个三帧捻开序列：每帧将手指多张开一些，
+    /// 因此每帧的 `distance_delta` 为正，相机单调地持续放大。
     #[test]
     fn multi_frame_pinch_open_zooms_in_monotonically() {
         let ctrl = CameraController::new(Ellipsoid::WGS84);
@@ -794,7 +790,7 @@ mod tests {
         agg.pinch_start(DVec2::new(-50.0, 0.0), DVec2::new(50.0, 0.0));
 
         let mut prev_len = camera.position.length();
-        // Frame k opens the separation from w_k to w_{k+1} about a fixed midpoint.
+        // 帧 k 绕固定中点将间距从 w_k 开到 w_{k+1}。
         let widths = [50.0, 80.0, 120.0, 170.0];
         for k in 0..3 {
             let (a, b) = (widths[k], widths[k + 1]);
@@ -816,9 +812,9 @@ mod tests {
         }
     }
 
-    /// A combined gesture over two frames: fingers spread (zoom in), rotate CCW
-    /// (spin), and drift right (translate) simultaneously. All three camera
-    /// effects must be present.
+    /// 一个跨两帧的组合手势：手指张开（缩放）、逆时针旋转
+    /// （spin），并同时向右漂移（平移）。三种相机效果
+    /// 都必须存在。
     #[test]
     fn combined_pinch_applies_zoom_spin_and_translate() {
         let ctrl = CameraController::new(Ellipsoid::WGS84);
@@ -828,8 +824,8 @@ mod tests {
         let len0 = pos0.length();
 
         agg.pinch_start(DVec2::new(-50.0, 0.0), DVec2::new(50.0, 0.0));
-        // Frame 1: spread 50→90, rotate the finger line slightly CCW, drift the
-        // midpoint right by 40 px.
+        // 帧 1：张开 50→90，将手指连线略微逆时针旋转，中点
+        // 向右漂 40 px。
         apply_pinch_frame(
             &mut agg,
             &ctrl,
@@ -840,18 +836,18 @@ mod tests {
             (0.002, 0.001),
         );
 
-        // Zoom-in component: distance to the center shrank.
+        // 缩放分量：到中心的距离变小。
         assert!(camera.position.length() < len0, "combined gesture must zoom in");
-        // Spin + translate component: the position moved off the pure-zoom ray.
+        // spin + 平移分量：位置偏离了纯缩放射线。
         let radial = camera.position.normalize();
         let tangential = camera.position - pos0;
-        // Not purely radial → spin/translate contributed.
+        // 非纯径向 → spin/平移有贡献。
         let perp = tangential - radial * tangential.dot(radial);
         assert!(perp.length() > 1.0, "combined gesture must spin/translate");
     }
 
-    /// After a two-finger rotate is released, the spin velocity is captured
-    /// into the [`InertiaController`] and coasts to a stop (inertia handoff).
+    /// 双指旋转释放后，旋转速度被捕获
+    /// 到 [`InertiaController`] 中并滑行直至停下（惯性交接）。
     #[test]
     fn pinch_rotate_release_hands_off_to_spin_inertia() {
         use crate::inertia::{InertiaController, InertiaSample, InertiaState};
@@ -861,7 +857,7 @@ mod tests {
         let mut camera = create_test_camera();
         agg.pinch_start(DVec2::new(-50.0, 0.0), DVec2::new(50.0, 0.0));
 
-        // One rotating frame: finger line turns CCW; capture the angle delta.
+        // 一个旋转帧：手指连线逆时针转动；捕获角度增量。
         pinch_frame(
             &mut agg,
             0.0,
@@ -874,13 +870,13 @@ mod tests {
         assert!(angle_delta.abs() > 1e-6, "gesture must produce a rotation");
         ctrl.pinch_rotate(&mut camera, angle_delta);
 
-        // On release the adapter captures the spin velocity (radians → pixels at
-        // the boundary; here a representative pixel motion) into the inertia.
+        // 释放时适配器在边界处捕获旋转速度（弧度 → 像素；
+        // 这里用代表性的像素运动）到惯性中。
         let mut inertia = InertiaController::new();
         inertia.capture(InertiaState::Spin, DVec2::ZERO, DVec2::new(angle_delta * 2e4, 0.0));
         inertia.activate(Some(InertiaState::Spin));
 
-        // Coasting continues the spin and decays frame over frame.
+        // 滑行持续 spin 并逐帧衰减。
         let scale = 1e-4;
         let s1 = InertiaSample::new(0.9, 0.0, 0.0, 16.0);
         let p0 = camera.position;

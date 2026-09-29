@@ -1,5 +1,5 @@
-//! StructuralMetadata specs - ported from Scene/StructuralMetadataSpec, PropertyTableSpec, etc.
-//! Covers: MetadataType, MetadataComponentType, MetadataValue, MetadataClass,
+//! StructuralMetadata 规范 - 移植自 Scene/StructuralMetadataSpec、PropertyTableSpec 等。
+//! 覆盖：MetadataType、MetadataComponentType、MetadataValue、MetadataClass、
 //! MetadataEnum, PropertyTable, PropertyTexture, PropertyAttribute, StructuralMetadata
 
 use cesium_tileset::structural_metadata::{

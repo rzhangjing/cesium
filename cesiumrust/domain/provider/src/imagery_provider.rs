@@ -1,6 +1,6 @@
-//! Imagery providers for tile-based map services.
+//! 用于基于瓦片的地图服务的影像提供者。
 //!
-//! Maps to CesiumJS imagery providers:
+//! 映射到 CesiumJS 影像提供者：
 //! - `UrlTemplateImageryProvider`
 //! - `WebMapTileServiceImageryProvider` (WMTS)
 //! - `WebMapServiceImageryProvider` (WMS)
@@ -10,57 +10,57 @@
 
 use std::collections::HashMap;
 
-/// Tile coordinate (x, y, level).
+/// 瓦片坐标（x, y, level）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TileCoord {
-    /// Tile column (x).
+    /// 瓦片列（x）。
     pub x: u32,
-    /// Tile row (y).
+    /// 瓦片行（y）。
     pub y: u32,
-    /// Zoom level.
+    /// 缩放层级。
     pub level: u32,
 }
 
 impl TileCoord {
-    /// Creates a new tile coordinate.
+    /// 创建一个新的瓦片坐标。
     pub fn new(x: u32, y: u32, level: u32) -> Self {
         Self { x, y, level }
     }
 }
 
-/// Subdomain selection strategy for load balancing.
+/// 用于负载均衡的子域名选择策略。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum SubdomainStrategy {
-    /// No subdomains.
+    /// 无子域名。
     #[default]
     None,
-    /// Round-robin through subdomains.
+    /// 在子域名间轮询。
     RoundRobin(Vec<String>),
 }
 
-/// An imagery provider that generates tile URLs from a template.
+/// 一个从模板生成瓦片 URL 的影像提供者。
 ///
-/// Maps to CesiumJS `UrlTemplateImageryProvider`
+/// 映射到 CesiumJS `UrlTemplateImageryProvider`
 #[derive(Debug, Clone)]
 pub struct UrlTemplateImageryProvider {
-    /// URL template with placeholders: {x}, {y}, {z}, {s}, {reverseY}.
+    /// 带有占位符的 URL 模板：{x}, {y}, {z}, {s}, {reverseY}。
     pub url_template: String,
-    /// Minimum zoom level.
+    /// 最小缩放层级。
     pub minimum_level: u32,
-    /// Maximum zoom level.
+    /// 最大缩放层级。
     pub maximum_level: u32,
-    /// Tile width in pixels.
+    /// 瓦片宽度（以像素计）。
     pub tile_width: u32,
-    /// Tile height in pixels.
+    /// 瓦片高度（以像素计）。
     pub tile_height: u32,
-    /// Subdomain strategy.
+    /// 子域名策略。
     pub subdomains: SubdomainStrategy,
-    /// Credit/attribution string.
+    /// 署名/来源归属字符串。
     pub credit: Option<String>,
 }
 
 impl UrlTemplateImageryProvider {
-    /// Creates a new URL template imagery provider.
+    /// 创建一个新的 URL 模板影像提供者。
     pub fn new(url_template: impl Into<String>) -> Self {
         Self {
             url_template: url_template.into(),
@@ -73,26 +73,26 @@ impl UrlTemplateImageryProvider {
         }
     }
 
-    /// Sets the maximum zoom level.
+    /// 设置最大缩放层级。
     pub fn with_max_level(mut self, level: u32) -> Self {
         self.maximum_level = level;
         self
     }
 
-    /// Sets the tile size.
+    /// 设置瓦片尺寸。
     pub fn with_tile_size(mut self, width: u32, height: u32) -> Self {
         self.tile_width = width;
         self.tile_height = height;
         self
     }
 
-    /// Sets subdomains for load balancing.
+    /// 设置用于负载均衡的子域名。
     pub fn with_subdomains(mut self, subdomains: Vec<String>) -> Self {
         self.subdomains = SubdomainStrategy::RoundRobin(subdomains);
         self
     }
 
-    /// Generates the URL for a given tile.
+    /// 为给定瓦片生成 URL。
     pub fn get_tile_url(&self, coord: &TileCoord, subdomain_index: usize) -> String {
         let mut url = self.url_template.clone();
 
@@ -100,12 +100,12 @@ impl UrlTemplateImageryProvider {
         url = url.replace("{y}", &coord.y.to_string());
         url = url.replace("{z}", &coord.level.to_string());
 
-        // Reverse Y (TMS-style: origin at bottom-left)
+        // 反转 Y（TMS 风格：原点在左下角）
         let tiles_y = 1u32 << coord.level;
         let reverse_y = tiles_y - 1 - coord.y;
         url = url.replace("{reverseY}", &reverse_y.to_string());
 
-        // Subdomain
+        // 子域名
         if let SubdomainStrategy::RoundRobin(subdomains) = &self.subdomains {
             if !subdomains.is_empty() {
                 let s = &subdomains[subdomain_index % subdomains.len()];
@@ -118,41 +118,41 @@ impl UrlTemplateImageryProvider {
         url
     }
 
-    /// Checks if a tile is available at the given level.
+    /// 检查在给定层级下某个瓦片是否可用。
     pub fn is_available(&self, level: u32) -> bool {
         level >= self.minimum_level && level <= self.maximum_level
     }
 }
 
-/// A WMTS (Web Map Tile Service) imagery provider.
+/// 一个 WMTS（Web Map Tile Service）影像提供者。
 ///
-/// Maps to CesiumJS `WebMapTileServiceImageryProvider`
+/// 映射到 CesiumJS `WebMapTileServiceImageryProvider`
 #[derive(Debug, Clone)]
 pub struct WmtsImageryProvider {
-    /// Base URL of the WMTS service.
+    /// WMTS 服务的基础 URL。
     pub url: String,
-    /// Layer identifier.
+    /// 图层标识符。
     pub layer: String,
-    /// Style identifier.
+    /// 样式标识符。
     pub style: String,
-    /// Tile matrix set identifier.
+    /// 瓦片矩阵集标识符。
     pub tile_matrix_set_id: String,
-    /// Image format (e.g., "image/png").
+    /// 图像格式（例如 "image/png"）。
     pub format: String,
-    /// Minimum zoom level.
+    /// 最小缩放层级。
     pub minimum_level: u32,
-    /// Maximum zoom level.
+    /// 最大缩放层级。
     pub maximum_level: u32,
-    /// Tile width in pixels.
+    /// 瓦片宽度（以像素计）。
     pub tile_width: u32,
-    /// Tile height in pixels.
+    /// 瓦片高度（以像素计）。
     pub tile_height: u32,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
 }
 
 impl WmtsImageryProvider {
-    /// Creates a new WMTS provider.
+    /// 创建一个新的 WMTS 提供者。
     pub fn new(url: impl Into<String>, layer: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -168,19 +168,19 @@ impl WmtsImageryProvider {
         }
     }
 
-    /// Sets the tile matrix set ID.
+    /// 设置瓦片矩阵集 ID。
     pub fn with_tile_matrix_set(mut self, id: impl Into<String>) -> Self {
         self.tile_matrix_set_id = id.into();
         self
     }
 
-    /// Sets the image format.
+    /// 设置图像格式。
     pub fn with_format(mut self, format: impl Into<String>) -> Self {
         self.format = format.into();
         self
     }
 
-    /// Generates a KVP (Key-Value Pair) request URL for a tile.
+    /// 为某个瓦片生成一个 KVP（Key-Value Pair）请求 URL。
     pub fn get_tile_url_kvp(&self, coord: &TileCoord) -> String {
         let separator = if self.url.contains('?') { "&" } else { "?" };
         format!(
@@ -197,7 +197,7 @@ impl WmtsImageryProvider {
         )
     }
 
-    /// Generates a RESTful request URL for a tile.
+    /// 为某个瓦片生成一个 RESTful 请求 URL。
     pub fn get_tile_url_rest(&self, coord: &TileCoord) -> String {
         let base = self.url.trim_end_matches('/');
         format!(
@@ -213,7 +213,7 @@ impl WmtsImageryProvider {
         )
     }
 
-    /// Gets the file extension from the format.
+    /// 从格式中获取文件扩展名。
     fn format_extension(&self) -> &str {
         match self.format.as_str() {
             "image/png" => "png",
@@ -225,33 +225,33 @@ impl WmtsImageryProvider {
     }
 }
 
-/// A WMS (Web Map Service) imagery provider.
+/// 一个 WMS（Web Map Service）影像提供者。
 ///
-/// Maps to CesiumJS `WebMapServiceImageryProvider`
+/// 映射到 CesiumJS `WebMapServiceImageryProvider`
 #[derive(Debug, Clone)]
 pub struct WmsImageryProvider {
-    /// Base URL of the WMS service.
+    /// WMS 服务的基础 URL。
     pub url: String,
-    /// Comma-separated layer names.
+    /// 以逗号分隔的图层名。
     pub layers: String,
-    /// Image format.
+    /// 图像格式。
     pub format: String,
-    /// Whether to use transparent background.
+    /// 是否使用透明背景。
     pub transparent: bool,
-    /// CRS/SRS identifier.
+    /// CRS/SRS 标识符。
     pub crs: String,
-    /// Tile width in pixels.
+    /// 瓦片宽度（以像素计）。
     pub tile_width: u32,
-    /// Tile height in pixels.
+    /// 瓦片高度（以像素计）。
     pub tile_height: u32,
-    /// Additional parameters.
+    /// 附加参数。
     pub parameters: HashMap<String, String>,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
 }
 
 impl WmsImageryProvider {
-    /// Creates a new WMS provider.
+    /// 创建一个新的 WMS 提供者。
     pub fn new(url: impl Into<String>, layers: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -266,12 +266,12 @@ impl WmsImageryProvider {
         }
     }
 
-    /// Generates a GetMap request URL for a tile.
+    /// 为某个瓦片生成一个 GetMap 请求 URL。
     ///
-    /// Computes the bounding box from tile coordinates assuming
-    /// a geographic tiling scheme (EPSG:4326).
+    /// 假设采用地理裁剪方案（EPSG:4326），
+    /// 从瓦片坐标计算边界框。
     pub fn get_tile_url(&self, coord: &TileCoord) -> String {
-        // Geographic tiling scheme: 2 tiles wide at level 0
+        // 地理裁剪方案：在层级 0 为 2 瓦宽
         let tiles_x = 2u32 << coord.level;
         let tiles_y = 1u32 << coord.level;
 
@@ -302,25 +302,25 @@ impl WmsImageryProvider {
     }
 }
 
-/// A TMS (Tile Map Service) imagery provider.
+/// 一个 TMS（Tile Map Service）影像提供者。
 ///
-/// Maps to CesiumJS `TileMapServiceImageryProvider`
+/// 映射到 CesiumJS `TileMapServiceImageryProvider`
 #[derive(Debug, Clone)]
 pub struct TmsImageryProvider {
-    /// Base URL of the TMS service.
+    /// TMS 服务的基础 URL。
     pub url: String,
-    /// File extension (png, jpg).
+    /// 文件扩展名（png、jpg）。
     pub file_extension: String,
-    /// Minimum zoom level.
+    /// 最小缩放层级。
     pub minimum_level: u32,
-    /// Maximum zoom level.
+    /// 最大缩放层级。
     pub maximum_level: u32,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
 }
 
 impl TmsImageryProvider {
-    /// Creates a new TMS provider.
+    /// 创建一个新的 TMS 提供者。
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -331,8 +331,8 @@ impl TmsImageryProvider {
         }
     }
 
-    /// Generates the URL for a tile.
-    /// TMS uses bottom-left origin (reverse Y).
+    /// 为某个瓦片生成 URL。
+    /// TMS 使用左下角原点（反转 Y）。
     pub fn get_tile_url(&self, coord: &TileCoord) -> String {
         let tiles_y = 1u32 << coord.level;
         let tms_y = tiles_y - 1 - coord.y;
@@ -344,16 +344,16 @@ impl TmsImageryProvider {
     }
 }
 
-/// OpenStreetMap imagery provider.
+/// OpenStreetMap 影像提供者。
 ///
-/// Maps to CesiumJS `OpenStreetMapImageryProvider`
+/// 映射到 CesiumJS `OpenStreetMapImageryProvider`
 #[derive(Debug, Clone)]
 pub struct OpenStreetMapImageryProvider {
-    /// Base URL.
+    /// 基础 URL。
     pub url: String,
-    /// Maximum zoom level.
+    /// 最大缩放层级。
     pub maximum_level: u32,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
 }
 
@@ -368,48 +368,48 @@ impl Default for OpenStreetMapImageryProvider {
 }
 
 impl OpenStreetMapImageryProvider {
-    /// Creates a new OSM provider.
+    /// 创建一个新的 OSM 提供者。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Generates the URL for a tile.
+    /// 为某个瓦片生成 URL。
     pub fn get_tile_url(&self, coord: &TileCoord) -> String {
         let base = self.url.trim_end_matches('/');
         format!("{}/{}/{}/{}.png", base, coord.level, coord.x, coord.y)
     }
 }
 
-/// Bing Maps imagery provider.
+/// Bing Maps 影像提供者。
 ///
-/// Maps to CesiumJS `BingMapsImageryProvider`
+/// 映射到 CesiumJS `BingMapsImageryProvider`
 #[derive(Debug, Clone)]
 pub struct BingMapsImageryProvider {
-    /// Bing Maps key.
+    /// Bing Maps 密钥。
     pub key: String,
-    /// Map style (Aerial, Road, AerialWithLabels).
+    /// 地图样式（Aerial、Road、AerialWithLabels）。
     pub map_style: BingMapStyle,
-    /// Culture (language).
+    /// 语言区域（language）。
     pub culture: String,
 }
 
-/// Bing Maps style.
+/// Bing Maps 样式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BingMapStyle {
-    /// Aerial imagery.
+    /// 航拍影像。
     Aerial,
-    /// Road map.
+    /// 道路地图。
     Road,
-    /// Aerial with labels.
+    /// 带注记的航拍影像。
     AerialWithLabels,
-    /// Canvas dark.
+    /// 深色画布。
     CanvasDark,
-    /// Canvas light.
+    /// 浅色画布。
     CanvasLight,
 }
 
 impl BingMapStyle {
-    /// Gets the Bing Maps quadkey imagery set.
+    /// 获取 Bing Maps 的 quadkey 影像集。
     pub fn imagery_set(&self) -> &str {
         match self {
             Self::Aerial => "Aerial",
@@ -422,7 +422,7 @@ impl BingMapStyle {
 }
 
 impl BingMapsImageryProvider {
-    /// Creates a new Bing Maps provider.
+    /// 创建一个新的 Bing Maps 提供者。
     pub fn new(key: impl Into<String>) -> Self {
         Self {
             key: key.into(),
@@ -431,7 +431,7 @@ impl BingMapsImageryProvider {
         }
     }
 
-    /// Converts tile coordinates to a Bing Maps quadkey.
+    /// 将瓦片坐标转换为 Bing Maps 的 quadkey。
     pub fn tile_to_quadkey(coord: &TileCoord) -> String {
         let mut quadkey = String::with_capacity(coord.level as usize);
         for i in (0..coord.level).rev() {
@@ -448,10 +448,10 @@ impl BingMapsImageryProvider {
         quadkey
     }
 
-    /// Generates a Bing Maps tile URL (simplified, without metadata).
+    /// 生成一个 Bing Maps 瓦片 URL（简化版，不含元数据）。
     pub fn get_tile_url(&self, coord: &TileCoord) -> String {
         let quadkey = Self::tile_to_quadkey(coord);
-        // Subdomain based on quadkey hash
+        // 基于 quadkey 哈希选择子域名
         let subdomain = (coord.x + coord.y) % 4;
         format!(
             "https://ecn.t{}.tiles.virtualearth.net/tiles/{}{}.jpeg?g=1&mkt={}",
@@ -463,48 +463,48 @@ impl BingMapsImageryProvider {
     }
 }
 
-/// A unified imagery provider descriptor with tiling scheme.
+/// 带有裁剪方案的统一影像提供者描述符。
 ///
-/// Maps to CesiumJS `ImageryProvider` base interface
+/// 映射到 CesiumJS `ImageryProvider` 基础接口
 #[derive(Debug, Clone)]
 pub struct ImageryProviderDescriptor {
-    /// The provider kind.
+    /// 提供者类型。
     pub kind: ImageryProviderKind,
-    /// The tiling scheme used by this provider.
+    /// 该提供者使用的裁剪方案。
     pub tiling_scheme: crate::tiling_scheme::TilingScheme,
-    /// Minimum zoom level.
+    /// 最小缩放层级。
     pub minimum_level: u32,
-    /// Maximum zoom level.
+    /// 最大缩放层级。
     pub maximum_level: u32,
-    /// Tile width in pixels.
+    /// 瓦片宽度（以像素计）。
     pub tile_width: u32,
-    /// Tile height in pixels.
+    /// 瓦片高度（以像素计）。
     pub tile_height: u32,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
-    /// Whether the provider supports time-dynamic imagery.
+    /// 该提供者是否支持时间动态影像。
     pub has_time_dynamic: bool,
 }
 
-/// The kind of imagery provider.
+/// 影像提供者的类型。
 #[derive(Debug, Clone)]
 pub enum ImageryProviderKind {
-    /// URL template provider.
+    /// URL 模板提供者。
     UrlTemplate(UrlTemplateImageryProvider),
-    /// WMTS provider.
+    /// WMTS 提供者。
     Wmts(WmtsImageryProvider),
-    /// WMS provider.
+    /// WMS 提供者。
     Wms(WmsImageryProvider),
-    /// TMS provider.
+    /// TMS 提供者。
     Tms(TmsImageryProvider),
-    /// OpenStreetMap provider.
+    /// OpenStreetMap 提供者。
     Osm(OpenStreetMapImageryProvider),
-    /// Bing Maps provider.
+    /// Bing Maps 提供者。
     Bing(BingMapsImageryProvider),
 }
 
 impl ImageryProviderDescriptor {
-    /// Creates a descriptor from a URL template provider.
+    /// 从 URL 模板提供者创建描述符。
     pub fn url_template(provider: UrlTemplateImageryProvider) -> Self {
         let max_level = provider.maximum_level;
         Self {
@@ -519,7 +519,7 @@ impl ImageryProviderDescriptor {
         }
     }
 
-    /// Creates a descriptor from a WMTS provider.
+    /// 从 WMTS 提供者创建描述符。
     pub fn wmts(provider: WmtsImageryProvider) -> Self {
         let max_level = provider.maximum_level;
         Self {
@@ -534,7 +534,7 @@ impl ImageryProviderDescriptor {
         }
     }
 
-    /// Creates a descriptor from a WMS provider.
+    /// 从 WMS 提供者创建描述符。
     pub fn wms(provider: WmsImageryProvider) -> Self {
         Self {
             tiling_scheme: crate::tiling_scheme::TilingScheme::geographic(),
@@ -548,7 +548,7 @@ impl ImageryProviderDescriptor {
         }
     }
 
-    /// Creates a descriptor from an OSM provider.
+    /// 从 OSM 提供者创建描述符。
     pub fn osm(provider: OpenStreetMapImageryProvider) -> Self {
         let max_level = provider.maximum_level;
         Self {
@@ -563,7 +563,7 @@ impl ImageryProviderDescriptor {
         }
     }
 
-    /// Gets the tile URL for a given coordinate.
+    /// 获取给定坐标的瓦片 URL。
     pub fn get_tile_url(&self, coord: &TileCoord, subdomain_index: usize) -> String {
         match &self.kind {
             ImageryProviderKind::UrlTemplate(p) => p.get_tile_url(coord, subdomain_index),
@@ -575,37 +575,37 @@ impl ImageryProviderDescriptor {
         }
     }
 
-    /// Checks if a tile is available at the given level.
+    /// 检查在给定层级下某个瓦片是否可用。
     pub fn is_available(&self, level: u32) -> bool {
         level >= self.minimum_level && level <= self.maximum_level
     }
 }
 
-/// Time-dynamic imagery interval.
-/// Maps to CesiumJS time-dynamic imagery support
+/// 时间动态影像区间。
+/// 映射到 CesiumJS 时间动态影像支持
 #[derive(Debug, Clone)]
 pub struct TimeDynamicInterval {
-    /// Start time (seconds since epoch).
+    /// 起始时间（自 epoch 起的秒数）。
     pub start: f64,
-    /// Stop time (seconds since epoch).
+    /// 结束时间（自 epoch 起的秒数）。
     pub stop: f64,
-    /// URL template for this interval (may include {time} placeholder).
+    /// 该区间的 URL 模板（可能包含 {time} 占位符）。
     pub url_template: String,
 }
 
-/// Time-dynamic imagery provider.
+/// 时间动态影像提供者。
 ///
-/// Maps to CesiumJS `TimeDynamicImagery`
+/// 映射到 CesiumJS `TimeDynamicImagery`
 #[derive(Debug, Clone)]
 pub struct TimeDynamicImagery {
-    /// Time intervals with associated URLs.
+    /// 带有相关 URL 的时间区间。
     pub intervals: Vec<TimeDynamicInterval>,
-    /// Whether to interpolate between intervals.
+    /// 是否在区间之间进行插值。
     pub interpolate: bool,
 }
 
 impl TimeDynamicImagery {
-    /// Creates a new time-dynamic imagery provider.
+    /// 创建一个新的时间动态影像提供者。
     pub fn new() -> Self {
         Self {
             intervals: Vec::new(),
@@ -613,7 +613,7 @@ impl TimeDynamicImagery {
         }
     }
 
-    /// Adds a time interval.
+    /// 添加一个时间区间。
     pub fn add_interval(&mut self, start: f64, stop: f64, url_template: impl Into<String>) {
         self.intervals.push(TimeDynamicInterval {
             start,
@@ -622,12 +622,12 @@ impl TimeDynamicImagery {
         });
     }
 
-    /// Gets the URL for a given time and tile coordinate.
+    /// 获取给定时间和瓦片坐标的 URL。
     pub fn get_tile_url(&self, time: f64, coord: &TileCoord) -> Option<String> {
-        // Find the interval containing this time
+        // 找到包含该时间的区间
         let interval = self.intervals.iter().find(|i| time >= i.start && time <= i.stop)?;
 
-        // Replace placeholders
+        // 替换占位符
         let mut url = interval.url_template.clone();
         url = url.replace("{x}", &coord.x.to_string());
         url = url.replace("{y}", &coord.y.to_string());
@@ -637,7 +637,7 @@ impl TimeDynamicImagery {
         Some(url)
     }
 
-    /// Returns the number of intervals.
+    /// 返回区间的数量。
     pub fn interval_count(&self) -> usize {
         self.intervals.len()
     }
@@ -649,25 +649,25 @@ impl Default for TimeDynamicImagery {
     }
 }
 
-/// WMS GetFeatureInfo request builder.
+/// WMS GetFeatureInfo 请求构建器。
 ///
-/// Maps to CesiumJS WMS GetFeatureInfo support
+/// 映射到 CesiumJS WMS GetFeatureInfo 支持
 #[derive(Debug, Clone)]
 pub struct WmsGetFeatureInfo {
-    /// Base URL of the WMS service.
+    /// WMS 服务的基础 URL。
     pub url: String,
-    /// Comma-separated layer names.
+    /// 以逗号分隔的图层名。
     pub layers: String,
-    /// Info format (e.g., "application/json", "text/html").
+    /// 信息格式（例如 "application/json"、"text/html"）。
     pub info_format: String,
-    /// CRS/SRS identifier.
+    /// CRS/SRS 标识符。
     pub crs: String,
-    /// Feature count limit.
+    /// 要素数量上限。
     pub feature_count: u32,
 }
 
 impl WmsGetFeatureInfo {
-    /// Creates a new GetFeatureInfo builder.
+    /// 创建一个新的 GetFeatureInfo 构建器。
     pub fn new(url: impl Into<String>, layers: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -678,20 +678,20 @@ impl WmsGetFeatureInfo {
         }
     }
 
-    /// Sets the info format.
+    /// 设置信息格式。
     pub fn with_info_format(mut self, format: impl Into<String>) -> Self {
         self.info_format = format.into();
         self
     }
 
-    /// Generates a GetFeatureInfo request URL.
+    /// 生成一个 GetFeatureInfo 请求 URL。
     ///
-    /// # Arguments
-    /// * `bbox` - Bounding box [west, south, east, north] in degrees
-    /// * `width` - Image width in pixels
-    /// * `height` - Image height in pixels
-    /// * `x` - Click x coordinate in pixels
-    /// * `y` - Click y coordinate in pixels
+    /// # 参数
+    /// * `bbox` - 边界框 [west, south, east, north]，以度为单位
+    /// * `width` - 图像宽度（以像素计）
+    /// * `height` - 图像高度（以像素计）
+    /// * `x` - 点击处 x 坐标（以像素计）
+    /// * `y` - 点击处 y 坐标（以像素计）
     pub fn get_url(
         &self,
         bbox: [f64; 4],
@@ -723,29 +723,29 @@ impl WmsGetFeatureInfo {
 // ArcGISMapServerImageryProvider
 // ============================================================================
 
-/// ArcGIS MapServer imagery provider.
+/// ArcGIS MapServer 影像提供者。
 ///
-/// Maps to CesiumJS `Scene/ArcGISMapServerImageryProvider.js`.
+/// 映射到 CesiumJS `Scene/ArcGISMapServerImageryProvider.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArcGisMapServerImageryProvider {
-    /// Base URL of the ArcGIS MapServer.
+    /// ArcGIS MapServer 的基础 URL。
     pub url: String,
-    /// Layer IDs to display (comma-separated).
+    /// 要显示的图层 ID（以逗号分隔）。
     pub layers: Option<String>,
-    /// Tile width in pixels.
+    /// 瓦片宽度（以像素计）。
     pub tile_width: u32,
-    /// Tile height in pixels.
+    /// 瓦片高度（以像素计）。
     pub tile_height: u32,
-    /// Maximum zoom level.
+    /// 最大缩放层级。
     pub maximum_level: u32,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
-    /// Whether to use HTTPS.
+    /// 是否使用 HTTPS。
     pub use_https: bool,
 }
 
 impl ArcGisMapServerImageryProvider {
-    /// Create a new ArcGIS MapServer provider.
+    /// 创建一个新的 ArcGIS MapServer 提供者。
     pub fn new(url: &str) -> Self {
         Self {
             url: url.trim_end_matches('/').to_string(),
@@ -758,13 +758,13 @@ impl ArcGisMapServerImageryProvider {
         }
     }
 
-    /// Set the layers to display.
+    /// 设置要显示的图层。
     pub fn with_layers(mut self, layers: &str) -> Self {
         self.layers = Some(layers.to_string());
         self
     }
 
-    /// Get the tile URL for a given coordinate.
+    /// 获取给定坐标的瓦片 URL。
     pub fn get_tile_url(&self, coord: &TileCoord) -> String {
         let layers_param = self
             .layers
@@ -783,25 +783,25 @@ impl ArcGisMapServerImageryProvider {
 // MapboxImageryProvider
 // ============================================================================
 
-/// Mapbox imagery provider.
+/// Mapbox 影像提供者。
 ///
-/// Maps to CesiumJS `Scene/MapboxImageryProvider.js`.
+/// 映射到 CesiumJS `Scene/MapboxImageryProvider.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct MapboxImageryProvider {
-    /// Map ID (e.g., "mapbox.satellite").
+    /// 地图 ID（例如 "mapbox.satellite"）。
     pub map_id: String,
-    /// Access token.
+    /// 访问令牌。
     pub access_token: String,
-    /// Tile size (256 or 512).
+    /// 瓦片尺寸（256 或 512）。
     pub tile_size: u32,
-    /// Maximum zoom level.
+    /// 最大缩放层级。
     pub maximum_level: u32,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
 }
 
 impl MapboxImageryProvider {
-    /// Create a new Mapbox provider.
+    /// 创建一个新的 Mapbox 提供者。
     pub fn new(map_id: &str, access_token: &str) -> Self {
         Self {
             map_id: map_id.to_string(),
@@ -812,7 +812,7 @@ impl MapboxImageryProvider {
         }
     }
 
-    /// Get the tile URL for a given coordinate.
+    /// 获取给定坐标的瓦片 URL。
     pub fn get_tile_url(&self, coord: &TileCoord) -> String {
         format!(
             "https://api.mapbox.com/v4/{}/{}/{}/{}.png?access_token={}",
@@ -825,25 +825,25 @@ impl MapboxImageryProvider {
 // MapboxStyleImageryProvider
 // ============================================================================
 
-/// Mapbox Style imagery provider (uses Mapbox Styles API).
+/// Mapbox Style 影像提供者（使用 Mapbox Styles API）。
 ///
-/// Maps to CesiumJS `Scene/MapboxStyleImageryProvider.js`.
+/// 映射到 CesiumJS `Scene/MapboxStyleImageryProvider.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct MapboxStyleImageryProvider {
-    /// Style ID (e.g., "mapbox/streets-v11").
+    /// 样式 ID（例如 "mapbox/streets-v11"）。
     pub style_id: String,
-    /// Access token.
+    /// 访问令牌。
     pub access_token: String,
-    /// Tile size.
+    /// 瓦片尺寸。
     pub tile_size: u32,
-    /// Maximum zoom level.
+    /// 最大缩放层级。
     pub maximum_level: u32,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
 }
 
 impl MapboxStyleImageryProvider {
-    /// Create a new Mapbox Style provider.
+    /// 创建一个新的 Mapbox Style 提供者。
     pub fn new(style_id: &str, access_token: &str) -> Self {
         Self {
             style_id: style_id.to_string(),
@@ -854,7 +854,7 @@ impl MapboxStyleImageryProvider {
         }
     }
 
-    /// Get the tile URL for a given coordinate.
+    /// 获取给定坐标的瓦片 URL。
     pub fn get_tile_url(&self, coord: &TileCoord) -> String {
         format!(
             "https://api.mapbox.com/styles/v1/{}/tiles/{}/{}/{}?access_token={}",
@@ -867,21 +867,21 @@ impl MapboxStyleImageryProvider {
 // SingleTileImageryProvider
 // ============================================================================
 
-/// Single tile imagery provider (displays one image over the entire globe).
+/// 单瓦片影像提供者（在整个 globe 上显示一张图像）。
 ///
-/// Maps to CesiumJS `Scene/SingleTileImageryProvider.js`.
+/// 映射到 CesiumJS `Scene/SingleTileImageryProvider.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct SingleTileImageryProvider {
-    /// URL of the image.
+    /// 图像的 URL。
     pub url: String,
-    /// Rectangle covered by the image [west, south, east, north] in radians.
+    /// 图像覆盖的矩形 [west, south, east, north]，以弧度表示。
     pub rectangle: [f64; 4],
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
 }
 
 impl SingleTileImageryProvider {
-    /// Create a new single tile provider.
+    /// 创建一个新的单瓦片提供者。
     pub fn new(url: &str) -> Self {
         Self {
             url: url.to_string(),
@@ -890,13 +890,13 @@ impl SingleTileImageryProvider {
         }
     }
 
-    /// Create with a specific rectangle.
+    /// 使用指定的矩形创建。
     pub fn with_rectangle(mut self, rectangle: [f64; 4]) -> Self {
         self.rectangle = rectangle;
         self
     }
 
-    /// Get the image URL (always returns the same URL).
+    /// 获取图像 URL（始终返回同一个 URL）。
     pub fn get_tile_url(&self, _coord: &TileCoord) -> String {
         self.url.clone()
     }
@@ -906,18 +906,18 @@ impl SingleTileImageryProvider {
 // TileCoordinatesImageryProvider
 // ============================================================================
 
-/// Debug provider that draws tile coordinates on each tile.
+/// 一个调试用的提供者，在每个瓦片上绘制瓦片坐标。
 ///
-/// Maps to CesiumJS `Scene/TileCoordinatesImageryProvider.js`.
+/// 映射到 CesiumJS `Scene/TileCoordinatesImageryProvider.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TileCoordinatesImageryProvider {
-    /// Tile width in pixels.
+    /// 瓦片宽度（以像素计）。
     pub tile_width: u32,
-    /// Tile height in pixels.
+    /// 瓦片高度（以像素计）。
     pub tile_height: u32,
-    /// Background color [R, G, B, A].
+    /// 背景颜色 [R, G, B, A]。
     pub color: [f64; 4],
-    /// Text color [R, G, B, A].
+    /// 文本颜色 [R, G, B, A]。
     pub text_color: [f64; 4],
 }
 
@@ -933,12 +933,12 @@ impl Default for TileCoordinatesImageryProvider {
 }
 
 impl TileCoordinatesImageryProvider {
-    /// Create a new tile coordinates provider.
+    /// 创建一个新的瓦片坐标提供者。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Get the text to display for a tile.
+    /// 获取某个瓦片要显示的文本。
     pub fn get_tile_text(&self, coord: &TileCoord) -> String {
         format!("L{}: X{} Y{}", coord.level, coord.x, coord.y)
     }
@@ -948,23 +948,23 @@ impl TileCoordinatesImageryProvider {
 // IonImageryProvider
 // ============================================================================
 
-/// Cesium Ion imagery provider.
+/// Cesium Ion 影像提供者。
 ///
-/// Maps to CesiumJS `Scene/IonImageryProvider.js`.
+/// 映射到 CesiumJS `Scene/IonImageryProvider.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct IonImageryProvider {
-    /// Ion asset ID.
+    /// Ion 资产 ID。
     pub asset_id: u64,
-    /// Ion access token.
+    /// Ion 访问令牌。
     pub access_token: Option<String>,
-    /// Ion server URL.
+    /// Ion 服务器 URL。
     pub server: String,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
 }
 
 impl IonImageryProvider {
-    /// Create a new Ion imagery provider.
+    /// 创建一个新的 Ion 影像提供者。
     pub fn new(asset_id: u64) -> Self {
         Self {
             asset_id,
@@ -974,13 +974,13 @@ impl IonImageryProvider {
         }
     }
 
-    /// Set the access token.
+    /// 设置访问令牌。
     pub fn with_access_token(mut self, token: &str) -> Self {
         self.access_token = Some(token.to_string());
         self
     }
 
-    /// Get the endpoint URL for this asset.
+    /// 获取该资产的端点 URL。
     pub fn get_endpoint_url(&self) -> String {
         let token_param = self
             .access_token
@@ -991,29 +991,29 @@ impl IonImageryProvider {
     }
 }
 
-/// Google Earth Enterprise imagery provider.
+/// Google Earth Enterprise 影像提供者。
 ///
-/// Maps to CesiumJS `Scene/GoogleEarthEnterpriseImageryProvider.js`
+/// 映射到 CesiumJS `Scene/GoogleEarthEnterpriseImageryProvider.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct GoogleEarthEnterpriseImageryProvider {
-    /// Base URL of the Google Earth Enterprise server.
+    /// Google Earth Enterprise 服务器的基础 URL。
     pub url: String,
-    /// The path to the imagery database.
+    /// 影像数据库的路径。
     pub path: String,
-    /// Channel ID for the imagery.
+    /// 影像的通道 ID。
     pub channel: u32,
-    /// Tile width in pixels.
+    /// 瓦片宽度（以像素计）。
     pub tile_width: u32,
-    /// Tile height in pixels.
+    /// 瓦片高度（以像素计）。
     pub tile_height: u32,
-    /// Maximum zoom level.
+    /// 最大缩放层级。
     pub maximum_level: u32,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
 }
 
 impl GoogleEarthEnterpriseImageryProvider {
-    /// Create a new Google Earth Enterprise imagery provider.
+    /// 创建一个新的 Google Earth Enterprise 影像提供者。
     pub fn new(url: &str, path: &str, channel: u32) -> Self {
         Self {
             url: url.trim_end_matches('/').to_string(),
@@ -1026,13 +1026,13 @@ impl GoogleEarthEnterpriseImageryProvider {
         }
     }
 
-    /// Set the credit.
+    /// 设置署名。
     pub fn with_credit(mut self, credit: &str) -> Self {
         self.credit = Some(credit.to_string());
         self
     }
 
-    /// Get the tile URL for a given tile coordinate.
+    /// 获取给定瓦片坐标的瓦片 URL。
     pub fn get_tile_url(&self, level: u32, x: u32, y: u32) -> String {
         format!(
             "{}/query?request=ImageryMaps&channel={}&version=1&x={}&y={}&z={}",
@@ -1040,33 +1040,33 @@ impl GoogleEarthEnterpriseImageryProvider {
         )
     }
 
-    /// Get the metadata URL.
+    /// 获取元数据 URL。
     pub fn get_metadata_url(&self) -> String {
         format!("{}/query?request=DatabaseMetadata&path={}", self.url, self.path)
     }
 }
 
-/// Google Earth Enterprise Maps imagery provider.
+/// Google Earth Enterprise Maps 影像提供者。
 ///
-/// Maps to CesiumJS `Scene/GoogleEarthEnterpriseMapsProvider.js`
+/// 映射到 CesiumJS `Scene/GoogleEarthEnterpriseMapsProvider.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct GoogleEarthEnterpriseMapsProvider {
-    /// Base URL of the Google Earth Enterprise Maps server.
+    /// Google Earth Enterprise Maps 服务器的基础 URL。
     pub url: String,
-    /// Channel ID.
+    /// 通道 ID。
     pub channel: u32,
-    /// Tile width in pixels.
+    /// 瓦片宽度（以像素计）。
     pub tile_width: u32,
-    /// Tile height in pixels.
+    /// 瓦片高度（以像素计）。
     pub tile_height: u32,
-    /// Maximum zoom level.
+    /// 最大缩放层级。
     pub maximum_level: u32,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
 }
 
 impl GoogleEarthEnterpriseMapsProvider {
-    /// Create a new Google Earth Enterprise Maps provider.
+    /// 创建一个新的 Google Earth Enterprise Maps 提供者。
     pub fn new(url: &str, channel: u32) -> Self {
         Self {
             url: url.trim_end_matches('/').to_string(),
@@ -1078,13 +1078,13 @@ impl GoogleEarthEnterpriseMapsProvider {
         }
     }
 
-    /// Set the credit.
+    /// 设置署名。
     pub fn with_credit(mut self, credit: &str) -> Self {
         self.credit = Some(credit.to_string());
         self
     }
 
-    /// Get the tile URL for a given tile coordinate.
+    /// 获取给定瓦片坐标的瓦片 URL。
     pub fn get_tile_url(&self, level: u32, x: u32, y: u32) -> String {
         format!(
             "{}/query?request=ImageryMaps&channel={}&version=1&x={}&y={}&z={}",
@@ -1113,7 +1113,7 @@ mod tests {
             "https://example.com/{z}/{x}/{reverseY}.png",
         );
 
-        // Level 2: tiles_y = 4, reverseY = 4 - 1 - 1 = 2
+        // 层级 2：tiles_y = 4, reverseY = 4 - 1 - 1 = 2
         let url = provider.get_tile_url(&TileCoord::new(0, 1, 2), 0);
         assert_eq!(url, "https://example.com/2/0/2.png");
     }
@@ -1132,7 +1132,7 @@ mod tests {
         assert_eq!(url1, "https://b.example.com/1/0/0.png");
 
         let url3 = provider.get_tile_url(&TileCoord::new(0, 0, 1), 3);
-        assert_eq!(url3, "https://a.example.com/1/0/0.png"); // Wraps around
+        assert_eq!(url3, "https://a.example.com/1/0/0.png"); // 回绕
     }
 
     #[test]
@@ -1193,7 +1193,7 @@ mod tests {
     fn test_tms_url() {
         let provider = TmsImageryProvider::new("https://example.com/tms");
 
-        // Level 1: tiles_y = 2, tms_y = 2 - 1 - 0 = 1
+        // 层级 1：tiles_y = 2, tms_y = 2 - 1 - 0 = 1
         let url = provider.get_tile_url(&TileCoord::new(0, 0, 1));
         assert_eq!(url, "https://example.com/tms/1/0/1.png");
     }
@@ -1207,7 +1207,7 @@ mod tests {
 
     #[test]
     fn test_bing_quadkey() {
-        // Known quadkey examples from Bing Maps documentation
+        // 来自 Bing Maps 文档的已知 quadkey 示例
         assert_eq!(
             BingMapsImageryProvider::tile_to_quadkey(&TileCoord::new(0, 0, 1)),
             "0"
@@ -1224,7 +1224,7 @@ mod tests {
             BingMapsImageryProvider::tile_to_quadkey(&TileCoord::new(1, 1, 1)),
             "3"
         );
-        // Level 3, tile (3, 5) → quadkey "213"
+        // 层级 3，瓦片 (3, 5) → quadkey "213"
         assert_eq!(
             BingMapsImageryProvider::tile_to_quadkey(&TileCoord::new(3, 5, 3)),
             "213"
@@ -1292,16 +1292,16 @@ mod tests {
 
         assert_eq!(td.interval_count(), 2);
 
-        // Time within first interval
+        // 时间位于第一个区间内
         let url = td.get_tile_url(50.0, &TileCoord::new(1, 2, 3)).unwrap();
         assert!(url.contains("50"));
         assert!(url.contains("/3/1/2.png"));
 
-        // Time within second interval
+        // 时间位于第二个区间内
         let url = td.get_tile_url(150.0, &TileCoord::new(1, 2, 3)).unwrap();
         assert!(url.contains("late"));
 
-        // Time outside all intervals
+        // 时间在所有区间之外
         let url = td.get_tile_url(300.0, &TileCoord::new(1, 2, 3));
         assert!(url.is_none());
     }
@@ -1326,7 +1326,7 @@ mod tests {
         let gfi = WmsGetFeatureInfo::new("https://wms.example.com", "layer1");
         let url = gfi.get_url([10.0, 20.0, 30.0, 40.0], 512, 512, 256, 256);
 
-        // BBOX should be south,west,north,east for WMS 1.3.0
+        // WMS 1.3.0 的 BBOX 应为 south,west,north,east
         assert!(url.contains("bbox=20,10,40,30"));
     }
 

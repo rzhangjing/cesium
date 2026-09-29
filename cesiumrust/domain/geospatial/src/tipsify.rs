@@ -1,18 +1,19 @@
-//! Tipsify - triangle reordering for post-vertex-shader cache optimization.
+//! Tipsify —— 用于顶点着色器后缓存优化的三角形重排序。
 //!
-//! Faithful port of CesiumJS `Core/Tipsify.js`.
-//! Based on the 2007 SIGGRAPH paper "Fast Triangle Reordering for Vertex Locality
-//! and Reduced Overdraw" by Sander, Nehab, and Barczak.
+//! CesiumJS `Core/Tipsify.js` 的忠实移植。
+//! 基于 2007 年 SIGGRAPH 论文 "Fast Triangle Reordering for Vertex Locality
+//! and Reduced Overdraw"（作者：Sander、Nehab 和 Barczak）。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::manual_is_multiple_of)]
-/// Calculates the average cache miss ratio (ACMR) for a given set of indices.
+/// 计算给定索引集合的平均缓存未命中率（ACMR）。
 ///
-/// Maps to `Tipsify.calculateACMR`.
+/// 映射到 `Tipsify.calculateACMR`。
 ///
-/// # Panics
-/// - `indices.len()` must be >= 3 and a multiple of 3.
-/// - `cache_size` must be >= 3.
+/// # Panic
+/// - `indices.len()` 必须 >= 3 且为 3 的倍数。
+/// - `cache_size` 必须 >= 3。
 pub fn calculate_acmr(indices: &[u32], maximum_index: Option<u32>, cache_size: u32) -> f64 {
     let num_indices = indices.len();
     assert!(
@@ -21,7 +22,7 @@ pub fn calculate_acmr(indices: &[u32], maximum_index: Option<u32>, cache_size: u
     );
     assert!(cache_size >= 3, "cacheSize must be greater than two");
 
-    // Compute the maximum index if not given
+    // 若未给定则计算最大索引
     let max_idx = match maximum_index {
         Some(m) => m,
         None => {
@@ -37,10 +38,10 @@ pub fn calculate_acmr(indices: &[u32], maximum_index: Option<u32>, cache_size: u
 
     assert!(max_idx > 0, "maximumIndex must be greater than zero");
 
-    // Vertex time stamps
+    // 顶点时间戳
     let mut vertex_time_stamps = vec![0u32; (max_idx + 1) as usize];
 
-    // Cache processing
+    // 缓存处理
     let mut s = cache_size + 1;
     for &idx in indices {
         if s - vertex_time_stamps[idx as usize] > cache_size {
@@ -52,14 +53,14 @@ pub fn calculate_acmr(indices: &[u32], maximum_index: Option<u32>, cache_size: u
     (s - cache_size + 1) as f64 / (num_indices as f64 / 3.0)
 }
 
-/// Optimizes triangles for the post-vertex shader cache.
+/// 为顶点着色器后缓存优化三角形。
 ///
-/// Maps to `Tipsify.tipsify`.
-/// Returns a list of the input indices in an optimized order.
+/// 映射到 `Tipsify.tipsify`。
+/// 以优化后的顺序返回输入索引的列表。
 ///
-/// # Panics
-/// - `indices.len()` must be >= 3 and a multiple of 3.
-/// - `cache_size` must be >= 3.
+/// # Panic
+/// - `indices.len()` 必须 >= 3 且为 3 的倍数。
+/// - `cache_size` 必须 >= 3。
 pub fn tipsify(indices: &[u32], maximum_index: Option<u32>, cache_size: u32) -> Vec<u32> {
     let num_indices = indices.len();
     assert!(
@@ -68,7 +69,7 @@ pub fn tipsify(indices: &[u32], maximum_index: Option<u32>, cache_size: u32) -> 
     );
     assert!(cache_size >= 3, "cacheSize must be greater than two");
 
-    // Determine maximum index + 1
+    // 确定最大索引 + 1
     let maximum_index_plus_one: usize = match maximum_index {
         Some(m) => {
             assert!(m > 0, "maximumIndex must be greater than zero");
@@ -85,7 +86,7 @@ pub fn tipsify(indices: &[u32], maximum_index: Option<u32>, cache_size: u32) -> 
         }
     };
 
-    // Vertex data
+    // 顶点数据
     let mut vertices: Vec<VertexData> = (0..maximum_index_plus_one)
         .map(|_| VertexData {
             num_live_triangles: 0,
@@ -94,7 +95,7 @@ pub fn tipsify(indices: &[u32], maximum_index: Option<u32>, cache_size: u32) -> 
         })
         .collect();
 
-    // Build vertex-triangle adjacency
+    // 构建顶点-三角形邻接关系
     let num_triangles = num_indices / 3;
     let mut triangle = 0usize;
     let mut current_index = 0usize;
@@ -112,9 +113,9 @@ pub fn tipsify(indices: &[u32], maximum_index: Option<u32>, cache_size: u32) -> 
         current_index += 3;
     }
 
-    // Starting index
+    // 起始索引
     let mut f: i64 = 0;
-    // Time stamp
+    // 时间戳
     let mut s = cache_size + 1;
     let mut cursor: usize = 1;
 

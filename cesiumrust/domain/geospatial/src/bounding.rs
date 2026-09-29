@@ -1,7 +1,8 @@
-//! Bounding volumes - BoundingSphere, OrientedBoundingBox, AxisAlignedBoundingBox.
-//! Maps to CesiumJS `Core/BoundingSphere.js`, `Core/OrientedBoundingBox.js`, `Core/AxisAlignedBoundingBox.js`
+//! 包围体 - BoundingSphere、OrientedBoundingBox、AxisAlignedBoundingBox。
+//! 映射到 CesiumJS `Core/BoundingSphere.js`, `Core/OrientedBoundingBox.js`, `Core/AxisAlignedBoundingBox.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::needless_range_loop, clippy::assign_op_pattern)]
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
@@ -12,13 +13,13 @@ use crate::rectangle::Rectangle;
 use glam::{DMat3, DMat4, DVec2, DVec3};
 use serde::{Deserialize, Serialize};
 
-/// A bounding sphere defined by a center point and radius.
-/// Maps to CesiumJS `BoundingSphere`
+/// 由一个中心点和半径定义的包围球。
+/// 映射到 CesiumJS `BoundingSphere`
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct BoundingSphere {
-    /// The center of the sphere.
+    /// 球的中心。
     pub center: DVec3,
-    /// The radius of the sphere.
+    /// 球的半径。
     pub radius: f64,
 }
 
@@ -27,9 +28,9 @@ impl BoundingSphere {
         Self { center, radius }
     }
 
-    /// Computes a tight-fitting bounding sphere enclosing a list of 3D points.
-    /// Runs both a naive algorithm and Ritter's algorithm and returns the smaller sphere.
-    /// Maps to `BoundingSphere.fromPoints`
+    /// 计算一个紧贴包围一组 3D 点的包围球。
+    /// 同时运行一种朴素算法和 Ritter 算法，并返回较小的那个球。
+    /// 映射到 `BoundingSphere.fromPoints`
     pub fn from_points(points: &[DVec3]) -> Self {
         if points.is_empty() {
             return Self {
@@ -38,7 +39,7 @@ impl BoundingSphere {
             };
         }
 
-        // Find the points with the smallest/largest x, y, z components.
+        // 找出 x、y、z 分量最小/最大的点。
         let mut x_min = points[0];
         let mut y_min = points[0];
         let mut z_min = points[0];
@@ -69,9 +70,9 @@ impl BoundingSphere {
         Self::from_points_with_extremes(points, x_min, y_min, z_min, x_max, y_max, z_max)
     }
 
-    /// Shared Ritter + Naive core used by `from_points`, `from_vertices`, and
-    /// `from_encoded_cartesian_vertices`. `points` is the full list of positions and the
-    /// `*_min`/`*_max` arguments are the extreme points along each axis.
+    /// `from_points`、`from_vertices` 和
+    /// `from_encoded_cartesian_vertices` 共用的 Ritter + 朴素核心。`points` 是位置的完整列表，而
+    /// `*_min`/`*_max` 参数是沿各轴的极值点。
     fn from_points_with_extremes(
         points: &[DVec3],
         x_min: DVec3,
@@ -81,12 +82,12 @@ impl BoundingSphere {
         y_max: DVec3,
         z_max: DVec3,
     ) -> Self {
-        // Compute x-, y-, and z-spans (squared distances between each component's min and max).
+        // 计算 x-、y-、z- 跨度（每个分量最小值与最大值之间的距离平方）。
         let x_span = (x_max - x_min).length_squared();
         let y_span = (y_max - y_min).length_squared();
         let z_span = (z_max - z_min).length_squared();
 
-        // Set the diameter endpoints to the largest span.
+        // 将直径端点设为最大的那个跨度。
         let mut diameter1 = x_min;
         let mut diameter2 = x_max;
         let mut max_span = x_span;
@@ -100,17 +101,17 @@ impl BoundingSphere {
             diameter2 = z_max;
         }
 
-        // Initial sphere from Ritter's algorithm.
+        // 由 Ritter 算法得到的初始球。
         let mut ritter_center = (diameter1 + diameter2) * 0.5;
         let mut radius_squared = (diameter2 - ritter_center).length_squared();
         let mut ritter_radius = radius_squared.sqrt();
 
-        // Center of the sphere found using the Naive method.
+        // 使用朴素方法找到的球心。
         let min_box_pt = DVec3::new(x_min.x, y_min.y, z_min.z);
         let max_box_pt = DVec3::new(x_max.x, y_max.y, z_max.z);
         let naive_center = (min_box_pt + max_box_pt) * 0.5;
 
-        // 2nd pass: find naive radius and modify the Ritter sphere to include all points.
+        // 第二遍：找到朴素半径，并修正 Ritter 球以包含所有点。
         let mut naive_radius: f64 = 0.0;
         for &current_pos in points {
             let r = (current_pos - naive_center).length();
@@ -142,9 +143,9 @@ impl BoundingSphere {
         }
     }
 
-    /// Computes a tight-fitting bounding sphere from points stored in a flat array
-    /// (X, Y, Z order) with an optional relative center and stride.
-    /// Maps to `BoundingSphere.fromVertices`
+    /// 由以扁平数组存储的点（X, Y, Z 顺序）计算紧贴包围球，
+    /// 可选带相对中心和 stride。
+    /// 映射到 `BoundingSphere.fromVertices`
     pub fn from_vertices(vertices: &[f64], center: DVec3, stride: usize) -> Self {
         debug_assert!(stride >= 3, "stride must be at least 3");
         if vertices.is_empty() {
@@ -204,8 +205,8 @@ impl BoundingSphere {
         )
     }
 
-    /// Computes a tight-fitting bounding sphere from encoded (high/low) flat arrays.
-    /// Maps to `BoundingSphere.fromEncodedCartesianVertices`
+    /// 由编码的（高/低）扁平数组计算紧贴包围球。
+    /// 映射到 `BoundingSphere.fromEncodedCartesianVertices`
     pub fn from_encoded_cartesian_vertices(positions_high: &[f64], positions_low: &[f64]) -> Self {
         if positions_high.len() != positions_low.len() || positions_high.is_empty() {
             return Self {
@@ -264,15 +265,14 @@ impl BoundingSphere {
         )
     }
 
-    /// Computes a bounding sphere from a rectangle projected in 2D.
-    /// Maps to `BoundingSphere.fromRectangle2D`
+    /// 由 2D 投影下的矩形计算包围球。
+    /// 映射到 `BoundingSphere.fromRectangle2D`
     pub fn from_rectangle_2d(rectangle: &Rectangle, projection: &dyn MapProjection) -> Self {
         Self::from_rectangle_with_heights_2d(rectangle, projection, 0.0, 0.0)
     }
 
-    /// Computes a bounding sphere from a rectangle projected in 2D, accounting for
-    /// minimum and maximum heights.
-    /// Maps to `BoundingSphere.fromRectangleWithHeights2D`
+    /// 由 2D 投影下的矩形计算包围球，并考虑最小和最大高度。
+    /// 映射到 `BoundingSphere.fromRectangleWithHeights2D`
     pub fn from_rectangle_with_heights_2d(
         rectangle: &Rectangle,
         projection: &dyn MapProjection,
@@ -301,8 +301,8 @@ impl BoundingSphere {
         }
     }
 
-    /// Computes a bounding sphere from a rectangle in 3D using a subsample of points.
-    /// Maps to `BoundingSphere.fromRectangle3D`
+    /// 使用采样的点在 3D 中由矩形计算包围球。
+    /// 映射到 `BoundingSphere.fromRectangle3D`
     pub fn from_rectangle_3d(
         rectangle: &Rectangle,
         ellipsoid: &crate::ellipsoid::Ellipsoid,
@@ -312,16 +312,16 @@ impl BoundingSphere {
         Self::from_points(&positions)
     }
 
-    /// Computes a bounding sphere from the corner points of an axis-aligned box.
-    /// Maps to `BoundingSphere.fromCornerPoints`
+    /// 由轴对齐盒子的角点计算包围球。
+    /// 映射到 `BoundingSphere.fromCornerPoints`
     pub fn from_corner_points(corner: DVec3, opposite_corner: DVec3) -> Self {
         let center = (corner + opposite_corner) * 0.5;
         let radius = center.distance(opposite_corner);
         Self { center, radius }
     }
 
-    /// Creates a bounding sphere encompassing an ellipsoid.
-    /// Maps to `BoundingSphere.fromEllipsoid`
+    /// 创建一个涵盖椭球的包围球。
+    /// 映射到 `BoundingSphere.fromEllipsoid`
     pub fn from_ellipsoid(ellipsoid: &crate::ellipsoid::Ellipsoid) -> Self {
         Self {
             center: DVec3::ZERO,
@@ -329,8 +329,8 @@ impl BoundingSphere {
         }
     }
 
-    /// Computes a tight-fitting bounding sphere enclosing the provided bounding spheres.
-    /// Maps to `BoundingSphere.fromBoundingSpheres`
+    /// 计算紧贴包围所提供的一组包围球的包围球。
+    /// 映射到 `BoundingSphere.fromBoundingSpheres`
     pub fn from_bounding_spheres(spheres: &[BoundingSphere]) -> Self {
         if spheres.is_empty() {
             return Self {
@@ -356,8 +356,8 @@ impl BoundingSphere {
         result
     }
 
-    /// Computes a tight-fitting bounding sphere enclosing an affine transformation.
-    /// Maps to `BoundingSphere.fromTransformation`
+    /// 计算紧贴包围一个仿射变换的包围球。
+    /// 映射到 `BoundingSphere.fromTransformation`
     pub fn from_transformation(transformation: &glam::DMat4) -> Self {
         let center = transformation.w_axis.truncate();
         let scale = DVec3::new(
@@ -369,15 +369,15 @@ impl BoundingSphere {
         Self { center, radius }
     }
 
-    /// Computes the distance from the closest point on the sphere to a point.
-    /// (Non-squared convenience wrapper; CesiumJS exposes `distanceSquaredTo`.)
+    /// 计算从球上最近点到某个点的距离。
+    /// （非平方的便捷封装；CesiumJS 暴露的是 `distanceSquaredTo`。）
     pub fn distance_to(&self, point: DVec3) -> f64 {
         let dist = (point - self.center).length();
         (dist - self.radius).max(0.0)
     }
 
-    /// Computes the estimated distance squared from the closest point on the sphere to a point.
-    /// Maps to `BoundingSphere.distanceSquaredTo`
+    /// 计算从球上最近点到某个点的估计距离平方。
+    /// 映射到 `BoundingSphere.distanceSquaredTo`
     pub fn distance_squared_to(&self, cartesian: DVec3) -> f64 {
         let distance = (self.center - cartesian).length() - self.radius;
         if distance <= 0.0 {
@@ -387,13 +387,13 @@ impl BoundingSphere {
         }
     }
 
-    /// Determines if a point is inside the sphere.
+    /// 判断某个点是否在球内。
     pub fn contains(&self, point: DVec3) -> bool {
         (point - self.center).length_squared() <= self.radius * self.radius
     }
 
-    /// Computes the bounding sphere that contains both spheres.
-    /// Maps to `BoundingSphere.union`
+    /// 计算同时包含两个球的包围球。
+    /// 映射到 `BoundingSphere.union`
     pub fn union(&self, other: &Self) -> Self {
         let left_center = self.center;
         let left_radius = self.radius;
@@ -404,15 +404,15 @@ impl BoundingSphere {
         let center_separation = to_right_center.length();
 
         if left_radius >= center_separation + right_radius {
-            // Left sphere wins.
+            // 左侧球胜出。
             return *self;
         }
         if right_radius >= center_separation + left_radius {
-            // Right sphere wins.
+            // 右侧球胜出。
             return *other;
         }
 
-        // Two tangent points, one on the far side of each sphere.
+        // 两个切点，各位于每个球的远侧。
         let half_distance_between_tangent_points =
             (left_radius + center_separation + right_radius) * 0.5;
         let center = left_center
@@ -425,8 +425,8 @@ impl BoundingSphere {
         }
     }
 
-    /// Enlarges the sphere to contain the provided point.
-    /// Maps to `BoundingSphere.expand`
+    /// 扩大该球以包含所提供的点。
+    /// 映射到 `BoundingSphere.expand`
     pub fn expand(&self, point: DVec3) -> Self {
         let radius = (point - self.center).length();
         Self {
@@ -435,8 +435,8 @@ impl BoundingSphere {
         }
     }
 
-    /// Determines which side of a plane the sphere is located.
-    /// Maps to `BoundingSphere.intersectPlane`
+    /// 判断球位于平面的哪一侧。
+    /// 映射到 `BoundingSphere.intersectPlane`
     pub fn intersect_plane(&self, normal: DVec3, distance: f64) -> Intersect {
         let distance_to_plane = normal.dot(self.center) + distance;
 
@@ -449,8 +449,8 @@ impl BoundingSphere {
         }
     }
 
-    /// Applies a 4x4 affine transformation matrix to the sphere.
-    /// Maps to `BoundingSphere.transform`
+    /// 将一个 4x4 仿射变换矩阵应用于该球。
+    /// 映射到 `BoundingSphere.transform`
     pub fn transform(&self, matrix: &glam::DMat4) -> Self {
         let center = matrix.transform_point3(self.center);
         let scale_x = matrix.x_axis.truncate().length();
@@ -463,8 +463,8 @@ impl BoundingSphere {
         }
     }
 
-    /// Applies a 4x4 transformation matrix assuming no scale.
-    /// Maps to `BoundingSphere.transformWithoutScale`
+    /// 应用一个 4x4 变换矩阵，假设无缩放。
+    /// 映射到 `BoundingSphere.transformWithoutScale`
     pub fn transform_without_scale(&self, matrix: &glam::DMat4) -> Self {
         Self {
             center: matrix.transform_point3(self.center),
@@ -472,8 +472,8 @@ impl BoundingSphere {
         }
     }
 
-    /// Computes the nearest and farthest distances from a position along a direction.
-    /// Maps to `BoundingSphere.computePlaneDistances`
+    /// 计算沿某方向从某个位置出发的最近和最远距离。
+    /// 映射到 `BoundingSphere.computePlaneDistances`
     pub fn compute_plane_distances(&self, position: DVec3, direction: DVec3) -> Interval {
         let to_center = self.center - position;
         let mag = direction.dot(to_center);
@@ -483,21 +483,21 @@ impl BoundingSphere {
         }
     }
 
-    /// Computes the volume of the sphere.
-    /// Maps to `BoundingSphere.prototype.volume`
+    /// 计算球的体积。
+    /// 映射到 `BoundingSphere.prototype.volume`
     pub fn volume(&self) -> f64 {
         let radius = self.radius;
         (4.0 / 3.0) * std::f64::consts::PI * radius * radius * radius
     }
 }
 
-/// A numeric interval with a start and stop value.
-/// Maps to CesiumJS `Interval`
+/// 带有起始值和终止值的数值区间。
+/// 映射到 CesiumJS `Interval`
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct Interval {
-    /// The start (minimum) value.
+    /// 起始（最小）值。
     pub start: f64,
-    /// The stop (maximum) value.
+    /// 终止（最大）值。
     pub stop: f64,
 }
 
@@ -507,13 +507,13 @@ impl Interval {
     }
 }
 
-/// An oriented bounding box defined by a center and half-axes.
-/// Maps to CesiumJS `OrientedBoundingBox`
+/// 由一个中心和半轴定义的方向包围盒。
+/// 映射到 CesiumJS `OrientedBoundingBox`
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct OrientedBoundingBox {
-    /// The center of the box.
+    /// 盒子的中心。
     pub center: DVec3,
-    /// The three half-axis vectors (columns define the box orientation and size).
+    /// 三个半轴向量（各列定义盒子的朝向和尺寸）。
     pub half_axes: DMat3,
 }
 
@@ -531,7 +531,7 @@ impl OrientedBoundingBox {
         Self { center, half_axes }
     }
 
-    /// Creates an OBB from center, direction axes, and half-lengths.
+    /// 由中心、方向轴和半长创建一个 OBB。
     pub fn from_axes_half_lengths(
         center: DVec3,
         u_axis: DVec3,
@@ -549,8 +549,8 @@ impl OrientedBoundingBox {
         Self { center, half_axes }
     }
 
-    /// Computes the distance from the closest point on the OBB to a point.
-    /// Maps to `OrientedBoundingBox.distanceTo`
+    /// 计算从 OBB 上最近点到某个点的距离。
+    /// 映射到 `OrientedBoundingBox.distanceTo`
     pub fn distance_to(&self, point: DVec3) -> f64 {
         let offset = point - self.center;
 
@@ -574,7 +574,7 @@ impl OrientedBoundingBox {
         outside.length()
     }
 
-    /// Converts this OBB to a bounding sphere.
+    /// 将该 OBB 转换为一个包围球。
     pub fn to_bounding_sphere(&self) -> BoundingSphere {
         let radius = self.half_axes.x_axis.length().max(
             self.half_axes.y_axis.length().max(self.half_axes.z_axis.length()),
@@ -585,7 +585,7 @@ impl OrientedBoundingBox {
         }
     }
 
-    /// Determines the intersection of this OBB with a plane.
+    /// 判断该 OBB 与一个平面的相交情况。
     pub fn intersect_plane(&self, normal: DVec3, distance: f64) -> Intersect {
         let u = self.half_axes.x_axis;
         let v = self.half_axes.y_axis;
@@ -595,7 +595,7 @@ impl OrientedBoundingBox {
             normal.dot(u).abs() + normal.dot(v).abs() + normal.dot(w).abs();
         let dist_to_center = normal.dot(self.center) + distance;
 
-        // CesiumJS convention: plane normals point inward.
+        // CesiumJS 约定：平面法线朝内。
         if dist_to_center <= -rad_effective {
             Intersect::Outside
         } else if dist_to_center >= rad_effective {
@@ -605,13 +605,12 @@ impl OrientedBoundingBox {
         }
     }
 
-    /// Computes an OrientedBoundingBox of the given positions.
+    /// 为由给定位置计算一个 OrientedBoundingBox。
     ///
-    /// This is an implementation of Stefan Gottschalk's Collision Queries using
-    /// Oriented Bounding Boxes solution (PhD thesis): it builds the covariance
-    /// matrix of the points, extracts its eigen-decomposition (classical Jacobi)
-    /// to obtain the box orientation, then fits the extents along each eigen-axis.
-    /// Maps to `OrientedBoundingBox.fromPoints`
+    /// 这是 Stefan Gottschalk 的《Collision Queries using Oriented Bounding Boxes》
+    /// （博士论文）解法的实现：它构建点的协方差矩阵，提取其特征分解
+    /// （经典 Jacobi）以获得盒子朝向，然后沿每个特征轴拟合范围。
+    /// 映射到 `OrientedBoundingBox.fromPoints`
     pub fn from_points(points: &[DVec3]) -> Self {
         if points.is_empty() {
             return Self {
@@ -651,7 +650,7 @@ impl OrientedBoundingBox {
         eyz *= inv_length;
         ezz *= inv_length;
 
-        // Column-major covariance matrix (matches CesiumJS flat-array layout).
+        // 列主序协方差矩阵（与 CesiumJS 扁平数组布局一致）。
         let covariance = DMat3::from_cols_array(&[
             exx, exy, exz, exy, eyy, eyz, exz, eyz, ezz,
         ]);
@@ -690,16 +689,15 @@ impl OrientedBoundingBox {
         Self { center, half_axes }
     }
 
-    /// Computes an OrientedBoundingBox that bounds a `Rectangle` on the surface of an `Ellipsoid`.
+    /// 计算一个 OrientedBoundingBox，约束 `Ellipsoid` 表面上的一个 `Rectangle`。
     ///
-    /// For rectangles no wider than half the ellipsoid (`width <= PI`) the box is aligned
-    /// with the tangent plane at the rectangle center; wider rectangles use a plane that
-    /// rotates about the Z axis. Maps to `OrientedBoundingBox.fromRectangle`
+    /// 对于宽度不超过半个椭球的矩形（`width <= PI`），盒子与矩形中心处的
+    /// 切平面对齐；更宽的矩形使用一个绕 Z 轴旋转的平面。映射到 `OrientedBoundingBox.fromRectangle`
     ///
-    /// # Panics
-    /// Mirrors the CesiumJS debug-only `DeveloperError` checks (via `debug_assert!`):
-    /// `rectangle.width` must be in `[0, 2*PI]`, `rectangle.height` in `[0, PI]`, and the
-    /// ellipsoid must be an ellipsoid of revolution (`radii.x == radii.y`).
+    /// # Panic
+    /// 对应 CesiumJS 仅在 debug 下进行的 `DeveloperError` 检查（通过 `debug_assert!`）：
+    /// `rectangle.width` 必须在 `[0, 2*PI]` 内，`rectangle.height` 在 `[0, PI]` 内，且
+    /// 椭球必须是旋转椭球（`radii.x == radii.y`）。
     pub fn from_rectangle(
         rectangle: &Rectangle,
         minimum_height: f64,
@@ -725,14 +723,14 @@ impl OrientedBoundingBox {
         );
 
         if rectangle.width() <= PI_F64 {
-            // The bounding box will be aligned with the tangent plane at the center of the rectangle.
+            // 边界盒将与矩形中心处的切平面对齐。
             let tangent_point_cartographic = rectangle.center();
             let tangent_point = ellipsoid.cartographic_to_cartesian(&tangent_point_cartographic);
             let (tp_origin, x_axis, y_axis, z_axis) = tangent_plane_frame(tangent_point, ellipsoid);
             let plane = Plane::from_point_normal(tp_origin, z_axis);
 
-            // If the rectangle spans the equator, CW is instead aligned with the equator
-            // (because it sticks out the farthest at the equator).
+            // 若矩形跨越赤道，则 CW 改为与赤道对齐
+            // （因为它在赤道处向外突出最远）。
             let lon_center = tangent_point_cartographic.longitude;
             let lat_center = if rectangle.south < 0.0 && rectangle.north > 0.0 {
                 0.0
@@ -740,7 +738,7 @@ impl OrientedBoundingBox {
                 tangent_point_cartographic.latitude
             };
 
-            // Compute XY extents using the rectangle at maximum height.
+            // 使用最大高度处的矩形计算 XY 范围。
             let nc = ellipsoid.cartographic_to_cartesian(&Cartographic::from_radians(
                 lon_center,
                 rectangle.north,
@@ -774,13 +772,12 @@ impl OrientedBoundingBox {
             let p_sc = project_to_nearest(tp_origin, x_axis, y_axis, z_axis, sc);
 
             let min_x = p_nw.x.min(p_cw.x).min(p_sw.x);
-            let max_x = -min_x; // symmetrical
+            let max_x = -min_x; // 对称
 
             let max_y = p_nw.y.max(p_nc.y);
             let min_y = p_sw.y.min(p_sc.y);
 
-            // Compute minimum Z using the rectangle at minimum height, since it will be
-            // deeper than the maximum height.
+            // 使用最小高度处的矩形计算最小 Z，因为它比最大高度处更深。
             let nw_low = ellipsoid.cartographic_to_cartesian(&Cartographic::from_radians(
                 rectangle.west,
                 rectangle.north,
@@ -792,15 +789,14 @@ impl OrientedBoundingBox {
                 minimum_height,
             ));
             let min_z = plane.point_distance(nw_low).min(plane.point_distance(sw_low));
-            let max_z = maximum_height; // tangent plane touches the surface at height = 0
+            let max_z = maximum_height; // 切平面在 height = 0 处接触表面
 
             return from_plane_extents(
                 tp_origin, x_axis, y_axis, z_axis, min_x, max_x, min_y, max_y, min_z, max_z,
             );
         }
 
-        // Handle the case where rectangle width is greater than PI (wraps around more than
-        // half the ellipsoid).
+        // 处理矩形宽度大于 PI 的情形（环绕超过半个椭球）。
         let fully_above_equator = rectangle.south > 0.0;
         let fully_below_equator = rectangle.north < 0.0;
         let latitude_nearest_to_equator = if fully_above_equator {
@@ -812,14 +808,14 @@ impl OrientedBoundingBox {
         };
         let center_longitude = rectangle.center().longitude;
 
-        // Plane is located at the rectangle's center longitude and the rectangle's latitude
-        // that is closest to the equator. It rotates around the Z axis.
+        // 平面位于矩形的中心经度以及矩形中最接近赤道的那个纬度。
+        // 它绕 Z 轴旋转。
         let mut plane_origin = ellipsoid.cartographic_to_cartesian(&Cartographic::from_radians(
             center_longitude,
             latitude_nearest_to_equator,
             maximum_height,
         ));
-        plane_origin.z = 0.0; // center the plane on the equator to simplify plane normal calculation
+        plane_origin.z = 0.0; // 将平面置于赤道上，以简化平面法线的计算
         let is_pole = plane_origin.x.abs() < EPSILON10 && plane_origin.y.abs() < EPSILON10;
         let plane_normal = if !is_pole {
             plane_origin.normalize()
@@ -830,8 +826,7 @@ impl OrientedBoundingBox {
         let plane_x_axis = plane_normal.cross(plane_y_axis);
         let plane = Plane::from_point_normal(plane_origin, plane_normal);
 
-        // Get the horizon point relative to the center. This will be the farthest extent in
-        // the plane's X dimension.
+        // 获取相对于中心点的地平线点。这将是平面 X 维度上最远的范围。
         let horizon_cartesian = ellipsoid.cartographic_to_cartesian(&Cartographic::from_radians(
             center_longitude + math_utils::PI_OVER_TWO,
             latitude_nearest_to_equator,
@@ -840,9 +835,9 @@ impl OrientedBoundingBox {
         let max_x = plane
             .project_point_onto_plane(horizon_cartesian)
             .dot(plane_x_axis);
-        let min_x = -max_x; // symmetrical
+        let min_x = -max_x; // 对称
 
-        // Get the min and max Y, using the height that will give the largest extent.
+        // 获取最小和最大 Y，使用能给出最大范围的高度。
         let max_y = ellipsoid
             .cartographic_to_cartesian(&Cartographic::from_radians(
                 0.0,
@@ -872,9 +867,9 @@ impl OrientedBoundingBox {
             maximum_height,
         ));
         let min_z = plane.point_distance(far_z);
-        let max_z = 0.0; // plane origin starts at maxZ already
+        let max_z = 0.0; // 平面原点已位于 maxZ
 
-        // min and max are local to the plane axes
+        // min 和 max 均相对于平面坐标轴
         from_plane_extents(
             plane_origin,
             plane_x_axis,
@@ -889,8 +884,8 @@ impl OrientedBoundingBox {
         )
     }
 
-    /// Computes an OrientedBoundingBox that bounds an affine transformation.
-    /// Maps to `OrientedBoundingBox.fromTransformation`
+    /// 计算一个包围仿射变换的 OrientedBoundingBox。
+    /// 映射到 `OrientedBoundingBox.fromTransformation`
     pub fn from_transformation(transformation: &DMat4) -> Self {
         let center = transformation.w_axis.truncate();
         let half_axes = DMat3::from_cols(
@@ -901,13 +896,13 @@ impl OrientedBoundingBox {
         Self { center, half_axes }
     }
 
-    /// Computes the estimated distance squared from the closest point on the box to a point.
-    /// Returns 0 if the point is inside the box.
+    /// 计算从盒子中最近的点到某个点的估计距离平方。
+    /// 若点位于盒子内部则返回 0。
     ///
-    /// Faithfully ports the degenerate-axis handling (one/two/three zero-length half-axes)
-    /// from CesiumJS. Maps to `OrientedBoundingBox.distanceSquaredTo`
+    /// 忠实移植了 CesiumJS 中退化轴的处理（一条/两条/三条零长度半轴）。
+    /// 映射到 `OrientedBoundingBox.distanceSquaredTo`
     pub fn distance_squared_to(&self, cartesian: DVec3) -> f64 {
-        // See Geometric Tools for Computer Graphics 10.4.2
+        // 参见 Geometric Tools for Computer Graphics 10.4.2
         let offset = cartesian - self.center;
 
         let mut u = self.half_axes.x_axis;
@@ -964,7 +959,7 @@ impl OrientedBoundingBox {
             }
         } else if number_of_degenerate_axes == 2 {
             let mut valid_axis1 = u;
-            let mut valid_axis1_is = 0u8; // 0 => u, 1 => v, 2 => w
+            let mut valid_axis1_is = 0u8; // 0 => u，1 => v，2 => w
             if v_valid {
                 valid_axis1 = v;
                 valid_axis1_is = 1;
@@ -1035,9 +1030,8 @@ impl OrientedBoundingBox {
         distance_squared
     }
 
-    /// Computes the nearest and farthest distances, along `direction` from `position`,
-    /// to the planes that intersect the bounding box.
-    /// Maps to `OrientedBoundingBox.computePlaneDistances`
+    /// 计算沿 `direction`、从 `position` 到与包围盒相交的各平面的最近和最远距离。
+    /// 映射到 `OrientedBoundingBox.computePlaneDistances`
     pub fn compute_plane_distances(&self, position: DVec3, direction: DVec3) -> Interval {
         let mut min_dist = f64::INFINITY;
         let mut max_dist = f64::NEG_INFINITY;
@@ -1069,9 +1063,9 @@ impl OrientedBoundingBox {
         Interval::new(min_dist, max_dist)
     }
 
-    /// Computes the eight corners of the box, ordered by
-    /// `(-X,-Y,-Z), (-X,-Y,+Z), (-X,+Y,-Z), (-X,+Y,+Z), (+X,-Y,-Z), (+X,-Y,+Z), (+X,+Y,-Z), (+X,+Y,+Z)`.
-    /// Maps to `OrientedBoundingBox.computeCorners`
+    /// 计算盒子的八个角点，按以下顺序排列：
+    /// `(-X,-Y,-Z), (-X,-Y,+Z), (-X,+Y,-Z), (-X,+Y,+Z), (+X,-Y,-Z), (+X,-Y,+Z), (+X,+Y,-Z), (+X,+Y,+Z)`。
+    /// 映射到 `OrientedBoundingBox.computeCorners`
     pub fn compute_corners(&self) -> [DVec3; 8] {
         let center = self.center;
         let x_axis = self.half_axes.x_axis;
@@ -1090,9 +1084,9 @@ impl OrientedBoundingBox {
         ]
     }
 
-    /// Computes a transformation matrix (a `DMat4`) from the oriented bounding box:
-    /// a uniform scale of 2 applied to the half-axes, plus the center as translation.
-    /// Maps to `OrientedBoundingBox.computeTransformation`
+    /// 由带向包围盒计算一个变换矩阵（`DMat4`）：
+    /// 对半轴施加统一缩放 2，并加上中心作为平移。
+    /// 映射到 `OrientedBoundingBox.computeTransformation`
     pub fn compute_transformation(&self) -> DMat4 {
         let rotation_scale = self.half_axes * 2.0;
         DMat4::from_cols(
@@ -1104,9 +1098,9 @@ impl OrientedBoundingBox {
     }
 }
 
-/// Builds the tangent-plane frame `(origin, x_axis, y_axis, z_axis)` for an ellipsoid at a
-/// point, mirroring CesiumJS `EllipsoidTangentPlane` (origin projected to the geodetic
-/// surface, axes taken from the East-North-Up frame).
+/// 为椭球在某个点处构建切平面标架 `(origin, x_axis, y_axis, z_axis)`，
+/// 对应 CesiumJS `EllipsoidTangentPlane`（原点投影到大地水准面，
+/// 坐标轴取自 East-North-Up 标架）。
 fn tangent_plane_frame(origin: DVec3, ellipsoid: &Ellipsoid) -> (DVec3, DVec3, DVec3, DVec3) {
     let origin = ellipsoid
         .scale_to_geodetic_surface(origin)
@@ -1118,8 +1112,8 @@ fn tangent_plane_frame(origin: DVec3, ellipsoid: &Ellipsoid) -> (DVec3, DVec3, D
     (origin, x_axis, y_axis, z_axis)
 }
 
-/// Projects a 3D point onto the tangent plane along the plane normal, returning local 2D
-/// coordinates. Mirrors CesiumJS `EllipsoidTangentPlane.projectPointToNearestOnPlane`.
+/// 沿平面法线将一个 3D 点投影到切平面上，返回局部 2D 坐标。
+/// 对应 CesiumJS `EllipsoidTangentPlane.projectPointToNearestOnPlane`。
 fn project_to_nearest(
     origin: DVec3,
     x_axis: DVec3,
@@ -1139,8 +1133,8 @@ fn project_to_nearest(
     DVec2::new(x_axis.dot(v), y_axis.dot(v))
 }
 
-/// Builds an OrientedBoundingBox from a plane origin/axes and local min/max extents.
-/// Mirrors CesiumJS `fromPlaneExtents`.
+/// 由一个平面的原点/坐标轴以及局部 min/max 范围构建一个 OrientedBoundingBox。
+/// 对应 CesiumJS `fromPlaneExtents`。
 #[allow(clippy::too_many_arguments)]
 fn from_plane_extents(
     plane_origin: DVec3,
@@ -1180,10 +1174,10 @@ fn from_plane_extents(
     }
 }
 
-// --- Matrix3 eigen decomposition (classical Jacobi algorithm) ---
-// Maps to CesiumJS `Matrix3.computeEigenDecomposition` (Golub & Van Loan, 3rd ed., 8.4.3)
-// and its helpers `computeFrobeniusNorm`, `offDiagonalFrobeniusNorm`, `shurDecomposition`.
-// The flat indexing `[col * 3 + row]` matches CesiumJS `Matrix3.getElementIndex(col, row)`.
+// --- Matrix3 特征分解（经典 Jacobi 算法）---
+// 映射到 CesiumJS `Matrix3.computeEigenDecomposition`（Golub & Van Loan，第 3 版，8.4.3）
+// 及其辅助函数 `computeFrobeniusNorm`、`offDiagonalFrobeniusNorm`、`shurDecomposition`。
+// 扁平索引 `[col * 3 + row]` 与 CesiumJS `Matrix3.getElementIndex(col, row)` 一致。
 
 #[inline]
 fn frobenius_norm(m: &[f64; 9]) -> f64 {
@@ -1194,7 +1188,7 @@ fn frobenius_norm(m: &[f64; 9]) -> f64 {
     norm.sqrt()
 }
 
-// Off-diagonal pairs (col, row): (2,1), (2,0), (1,0) — matches CesiumJS colVal/rowVal.
+// 非对角元素对 (col, row)：(2,1)、(2,0)、(1,0) —— 与 CesiumJS colVal/rowVal 一致。
 const EIGEN_COL_VAL: [usize; 3] = [2, 2, 1];
 const EIGEN_ROW_VAL: [usize; 3] = [1, 0, 0];
 
@@ -1208,8 +1202,8 @@ fn off_diagonal_frobenius_norm(m: &[f64; 9]) -> f64 {
     norm.sqrt()
 }
 
-/// 2-by-2 symmetric Schur decomposition (Golub & Van Loan 8.4.2). Returns the Jacobi
-/// rotation matrix that reduces the largest off-diagonal term of `matrix`.
+/// 2x2 对称 Schur 分解（Golub & Van Loan 8.4.2）。返回用于削减 `matrix`
+/// 中最大非对角项的 Jacobi 旋转矩阵。
 fn shur_decomposition(matrix: &[f64; 9]) -> [f64; 9] {
     let tolerance = math_utils::EPSILON15;
 
@@ -1245,7 +1239,7 @@ fn shur_decomposition(matrix: &[f64; 9]) -> [f64; 9] {
         s = t * c;
     }
 
-    // Identity with the (p, q) Givens rotation applied.
+    // 已施加 (p, q) Givens 旋转的单位矩阵。
     let mut result = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
     result[p * 3 + p] = c;
     result[q * 3 + q] = c;
@@ -1254,9 +1248,9 @@ fn shur_decomposition(matrix: &[f64; 9]) -> [f64; 9] {
     result
 }
 
-/// Computes the eigen decomposition of a symmetric 3x3 matrix, returning
-/// `(unitary, diagonal)` such that `matrix = unitary * diagonal * unitary^T`.
-/// Maps to `Matrix3.computeEigenDecomposition`.
+/// 计算一个对称 3x3 矩阵的特征分解，返回 `(unitary, diagonal)`，
+/// 使得 `matrix = unitary * diagonal * unitary^T`。
+/// 映射到 `Matrix3.computeEigenDecomposition`。
 fn compute_eigen_decomposition(matrix: DMat3) -> (DMat3, DMat3) {
     let tolerance = EPSILON20;
     let max_sweeps = 10;
@@ -1286,22 +1280,22 @@ fn compute_eigen_decomposition(matrix: DMat3) -> (DMat3, DMat3) {
     (unitary, diag)
 }
 
-/// An axis-aligned bounding box defined by minimum and maximum corners.
-/// Maps to CesiumJS `AxisAlignedBoundingBox`
+/// 由最小和最大角点定义的轴对齐包围盒。
+/// 映射到 CesiumJS `AxisAlignedBoundingBox`
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct AxisAlignedBoundingBox {
-    /// The minimum corner.
+    /// 最小角点。
     pub minimum: DVec3,
-    /// The maximum corner.
+    /// 最大角点。
     pub maximum: DVec3,
-    /// The center (computed).
+    /// 中心（计算得出）。
     pub center: DVec3,
 }
 
 impl AxisAlignedBoundingBox {
-    /// Creates an AABB from minimum/maximum corners, computing the center as the midpoint.
-    /// Maps to the CesiumJS constructor `new AxisAlignedBoundingBox(minimum, maximum)`
-    /// and `AxisAlignedBoundingBox.fromCorners`.
+    /// 由最小/最大角点创建一个 AABB，并将中心计算为其中点。
+    /// 映射到 CesiumJS 构造函数 `new AxisAlignedBoundingBox(minimum, maximum)`
+    /// 以及 `AxisAlignedBoundingBox.fromCorners`。
     pub fn new(minimum: DVec3, maximum: DVec3) -> Self {
         let center = (minimum + maximum) * 0.5;
         Self {
@@ -1311,14 +1305,14 @@ impl AxisAlignedBoundingBox {
         }
     }
 
-    /// Creates an AABB from its corners.
-    /// Maps to `AxisAlignedBoundingBox.fromCorners`
+    /// 由其角点创建一个 AABB。
+    /// 映射到 `AxisAlignedBoundingBox.fromCorners`
     pub fn from_corners(minimum: DVec3, maximum: DVec3) -> Self {
         Self::new(minimum, maximum)
     }
 
-    /// Creates an AABB with an explicit center.
-    /// Maps to the CesiumJS constructor `new AxisAlignedBoundingBox(minimum, maximum, center)`
+    /// 创建一个带显式中心的 AABB。
+    /// 映射到 CesiumJS 构造函数 `new AxisAlignedBoundingBox(minimum, maximum, center)`
     pub fn with_center(minimum: DVec3, maximum: DVec3, center: DVec3) -> Self {
         Self {
             minimum,
@@ -1327,8 +1321,8 @@ impl AxisAlignedBoundingBox {
         }
     }
 
-    /// Creates an AABB from a set of points.
-    /// Maps to `AxisAlignedBoundingBox.fromPoints`
+    /// 由一组点创建一个 AABB。
+    /// 映射到 `AxisAlignedBoundingBox.fromPoints`
     pub fn from_points(points: &[DVec3]) -> Self {
         if points.is_empty() {
             return Self::new(DVec3::ZERO, DVec3::ZERO);
@@ -1345,7 +1339,7 @@ impl AxisAlignedBoundingBox {
         Self::new(minimum, maximum)
     }
 
-    /// Determines if a point is inside the AABB.
+    /// 判断一个点是否位于 AABB 内部。
     pub fn contains(&self, point: DVec3) -> bool {
         point.x >= self.minimum.x
             && point.x <= self.maximum.x
@@ -1355,7 +1349,7 @@ impl AxisAlignedBoundingBox {
             && point.z <= self.maximum.z
     }
 
-    /// Computes the union of two AABBs.
+    /// 计算两个 AABB 的并集。
     pub fn union(&self, other: &Self) -> Self {
         Self::new(
             self.minimum.min(other.minimum),
@@ -1363,21 +1357,21 @@ impl AxisAlignedBoundingBox {
         )
     }
 
-    /// Converts to a bounding sphere.
+    /// 转换为一个包围球。
     pub fn to_bounding_sphere(&self) -> BoundingSphere {
         let center = self.center;
         let radius = (self.maximum - self.minimum).length() * 0.5;
         BoundingSphere { center, radius }
     }
 
-    /// Determines the intersection with a plane.
+    /// 确定与一个平面的相交情况。
     pub fn intersect_plane(&self, normal: DVec3, distance: f64) -> Intersect {
         let center_dist = normal.dot(self.center) + distance;
         let half_extents = (self.maximum - self.minimum) * 0.5;
         let rad_effective =
             normal.x.abs() * half_extents.x + normal.y.abs() * half_extents.y + normal.z.abs() * half_extents.z;
 
-        // CesiumJS convention: plane normals point inward.
+        // CesiumJS 约定：平面法线朝内。
         if center_dist - rad_effective > 0.0 {
             Intersect::Inside
         } else if center_dist + rad_effective < 0.0 {
@@ -1388,17 +1382,17 @@ impl AxisAlignedBoundingBox {
     }
 }
 
-/// A bounding rectangle given by a corner, width and height.
-/// Maps to CesiumJS `BoundingRectangle`
+/// 由一个角点、宽度和高度定义的包围矩形。
+/// 映射到 CesiumJS `BoundingRectangle`
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct BoundingRectangle {
-    /// The x coordinate of the rectangle (lower-left corner).
+    /// 矩形的 x 坐标（左下角）。
     pub x: f64,
-    /// The y coordinate of the rectangle (lower-left corner).
+    /// 矩形的 y 坐标（左下角）。
     pub y: f64,
-    /// The width of the rectangle.
+    /// 矩形的宽度。
     pub width: f64,
-    /// The height of the rectangle.
+    /// 矩形的高度。
     pub height: f64,
 }
 
@@ -1412,8 +1406,8 @@ impl BoundingRectangle {
         }
     }
 
-    /// Computes a bounding rectangle enclosing a list of 2D points.
-    /// Maps to `BoundingRectangle.fromPoints`
+    /// 计算一个包围一组 2D 点的包围矩形。
+    /// 映射到 `BoundingRectangle.fromPoints`
     pub fn from_points(points: &[DVec2]) -> Self {
         if points.is_empty() {
             return Self::default();
@@ -1439,8 +1433,8 @@ impl BoundingRectangle {
         }
     }
 
-    /// Computes a bounding rectangle from a geographic rectangle via a projection.
-    /// Maps to `BoundingRectangle.fromRectangle`
+    /// 通过一个投影由地理矩形计算包围矩形。
+    /// 映射到 `BoundingRectangle.fromRectangle`
     pub fn from_rectangle(rectangle: &Rectangle, projection: &dyn MapProjection) -> Self {
         let lower_left = projection.project(&rectangle.southwest());
         let upper_right = projection.project(&rectangle.northeast());
@@ -1453,8 +1447,8 @@ impl BoundingRectangle {
         }
     }
 
-    /// Computes the union of two bounding rectangles.
-    /// Maps to `BoundingRectangle.union`
+    /// 计算两个包围矩形的并集。
+    /// 映射到 `BoundingRectangle.union`
     pub fn union(&self, other: &Self) -> Self {
         let lower_left_x = self.x.min(other.x);
         let lower_left_y = self.y.min(other.y);
@@ -1469,8 +1463,8 @@ impl BoundingRectangle {
         }
     }
 
-    /// Enlarges the rectangle until it contains the given point.
-    /// Maps to `BoundingRectangle.expand`
+    /// 扩大矩形直到它包含给定的点。
+    /// 映射到 `BoundingRectangle.expand`
     pub fn expand(&self, point: DVec2) -> Self {
         let mut result = *self;
 
@@ -1494,8 +1488,8 @@ impl BoundingRectangle {
         result
     }
 
-    /// Determines if two bounding rectangles intersect.
-    /// Maps to `BoundingRectangle.intersect`
+    /// 判断两个包围矩形是否相交。
+    /// 映射到 `BoundingRectangle.intersect`
     pub fn intersect(&self, other: &Self) -> Intersect {
         let left_x = self.x;
         let left_y = self.y;
@@ -1569,10 +1563,10 @@ mod tests {
                 DVec3::new(0.0, 0.0, 1.0),
             ),
         );
-        // Point outside along x
+        // 沿 x 方向位于外部的点
         let dist = obb.distance_to(DVec3::new(3.0, 0.0, 0.0));
         assert!((dist - 2.0).abs() < 1e-10);
-        // Point inside
+        // 内部的点
         let dist = obb.distance_to(DVec3::new(0.5, 0.0, 0.0));
         assert!((dist - 0.0).abs() < 1e-10);
     }

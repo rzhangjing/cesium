@@ -1,18 +1,19 @@
-//! Cartesian3 CesiumJS extension functions.
-//! Maps to CesiumJS `Core/Cartesian3.js` static methods that go beyond basic vector math.
+//! Cartesian3 的 CesiumJS 扩展函数。
+//! 映射到 CesiumJS `Core/Cartesian3.js` 中超越基础向量运算的静态方法。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::manual_is_multiple_of)]
 use crate::ellipsoid::Ellipsoid;
 use crate::math_utils;
 use crate::spherical::Spherical;
 use glam::DVec3;
 
-/// The packed length of a Cartesian3: 3.
+/// 一个 Cartesian3 的打包长度：3。
 pub const PACKED_LENGTH: usize = 3;
 
-/// Converts Spherical coordinates to Cartesian3.
-/// Maps to CesiumJS `Cartesian3.fromSpherical`
+/// 将 Spherical 坐标转换为 Cartesian3。
+/// 映射到 CesiumJS `Cartesian3.fromSpherical`
 pub fn from_spherical(spherical: &Spherical) -> DVec3 {
     let clock = spherical.clock;
     let cone = spherical.cone;
@@ -25,8 +26,8 @@ pub fn from_spherical(spherical: &Spherical) -> DVec3 {
     )
 }
 
-/// Returns the axis that is most orthogonal to the provided Cartesian.
-/// Maps to CesiumJS `Cartesian3.mostOrthogonalAxis`
+/// 返回与给定的 Cartesian 最正交的轴。
+/// 映射到 CesiumJS `Cartesian3.mostOrthogonalAxis`
 pub fn most_orthogonal_axis(cartesian: DVec3) -> DVec3 {
     let f = cartesian.normalize_or_zero();
     let f = DVec3::new(f.x.abs(), f.y.abs(), f.z.abs());
@@ -44,15 +45,15 @@ pub fn most_orthogonal_axis(cartesian: DVec3) -> DVec3 {
     }
 }
 
-/// Projects vector a onto vector b.
-/// Maps to CesiumJS `Cartesian3.projectVector`
+/// 将向量 a 投影到向量 b 上。
+/// 映射到 CesiumJS `Cartesian3.projectVector`
 pub fn project_vector(a: DVec3, b: DVec3) -> DVec3 {
     let scalar = a.dot(b) / b.dot(b);
     b * scalar
 }
 
-/// Computes the midpoint between left and right.
-/// Maps to CesiumJS `Cartesian3.midpoint`
+/// 计算 left 与 right 之间的中点。
+/// 映射到 CesiumJS `Cartesian3.midpoint`
 pub fn midpoint(left: DVec3, right: DVec3) -> DVec3 {
     DVec3::new(
         (left.x + right.x) * 0.5,
@@ -61,8 +62,8 @@ pub fn midpoint(left: DVec3, right: DVec3) -> DVec3 {
     )
 }
 
-/// Returns true if left and right are equal within the provided epsilon.
-/// Maps to CesiumJS `Cartesian3.equalsEpsilon`
+/// 若在给定的 epsilon 范围内 left 与 right 相等则返回 true。
+/// 映射到 CesiumJS `Cartesian3.equalsEpsilon`
 pub fn equals_epsilon(
     left: DVec3,
     right: DVec3,
@@ -74,16 +75,16 @@ pub fn equals_epsilon(
         && math_utils::equals_epsilon(left.z, right.z, relative_epsilon, absolute_epsilon)
 }
 
-/// Packs a Cartesian3 into an array at the given starting index.
-/// Maps to CesiumJS `Cartesian3.pack`
+/// 将一个 Cartesian3 打包到数组中给定的起始索引处。
+/// 映射到 CesiumJS `Cartesian3.pack`
 pub fn pack(value: DVec3, array: &mut [f64], starting_index: usize) {
     array[starting_index] = value.x;
     array[starting_index + 1] = value.y;
     array[starting_index + 2] = value.z;
 }
 
-/// Unpacks a Cartesian3 from an array at the given starting index.
-/// Maps to CesiumJS `Cartesian3.unpack`
+/// 从数组中给定的起始索引处解包出一个 Cartesian3。
+/// 映射到 CesiumJS `Cartesian3.unpack`
 pub fn unpack(array: &[f64], starting_index: usize) -> DVec3 {
     DVec3::new(
         array[starting_index],
@@ -92,8 +93,8 @@ pub fn unpack(array: &[f64], starting_index: usize) -> DVec3 {
     )
 }
 
-/// Returns a Cartesian3 position from longitude and latitude values given in degrees.
-/// Maps to CesiumJS `Cartesian3.fromDegrees`
+/// 根据以度为单位的经度和纬度值返回一个 Cartesian3 位置。
+/// 映射到 CesiumJS `Cartesian3.fromDegrees`
 pub fn from_degrees(
     longitude: f64,
     latitude: f64,
@@ -105,8 +106,8 @@ pub fn from_degrees(
     from_radians(lon_rad, lat_rad, height, ellipsoid)
 }
 
-/// Returns a Cartesian3 position from longitude and latitude values given in radians.
-/// Maps to CesiumJS `Cartesian3.fromRadians`
+/// 根据以弧度为单位的经度和纬度值返回一个 Cartesian3 位置。
+/// 映射到 CesiumJS `Cartesian3.fromRadians`
 pub fn from_radians(
     longitude: f64,
     latitude: f64,
@@ -135,8 +136,8 @@ pub fn from_radians(
     k + n
 }
 
-/// Returns an array of Cartesian3 positions from an array of [lon, lat, lon, lat, ...] in degrees.
-/// Maps to CesiumJS `Cartesian3.fromDegreesArray`
+/// 根据以度为单位的 [lon, lat, lon, lat, ...] 数组返回一个 Cartesian3 位置数组。
+/// 映射到 CesiumJS `Cartesian3.fromDegreesArray`
 pub fn from_degrees_array(coordinates: &[f64], ellipsoid: &Ellipsoid) -> Vec<DVec3> {
     assert!(
         coordinates.len() >= 2 && coordinates.len() % 2 == 0,
@@ -149,8 +150,8 @@ pub fn from_degrees_array(coordinates: &[f64], ellipsoid: &Ellipsoid) -> Vec<DVe
     result
 }
 
-/// Returns an array of Cartesian3 positions from an array of [lon, lat, lon, lat, ...] in radians.
-/// Maps to CesiumJS `Cartesian3.fromRadiansArray`
+/// 根据以弧度为单位的 [lon, lat, lon, lat, ...] 数组返回一个 Cartesian3 位置数组。
+/// 映射到 CesiumJS `Cartesian3.fromRadiansArray`
 pub fn from_radians_array(coordinates: &[f64], ellipsoid: &Ellipsoid) -> Vec<DVec3> {
     assert!(
         coordinates.len() >= 2 && coordinates.len() % 2 == 0,
@@ -163,8 +164,8 @@ pub fn from_radians_array(coordinates: &[f64], ellipsoid: &Ellipsoid) -> Vec<DVe
     result
 }
 
-/// Returns an array of Cartesian3 positions from [lon, lat, height, ...] in degrees.
-/// Maps to CesiumJS `Cartesian3.fromDegreesArrayHeights`
+/// 根据以度为单位的 [lon, lat, height, ...] 返回一个 Cartesian3 位置数组。
+/// 映射到 CesiumJS `Cartesian3.fromDegreesArrayHeights`
 pub fn from_degrees_array_heights(coordinates: &[f64], ellipsoid: &Ellipsoid) -> Vec<DVec3> {
     assert!(
         coordinates.len() >= 3 && coordinates.len() % 3 == 0,
@@ -177,8 +178,8 @@ pub fn from_degrees_array_heights(coordinates: &[f64], ellipsoid: &Ellipsoid) ->
     result
 }
 
-/// Returns an array of Cartesian3 positions from [lon, lat, height, ...] in radians.
-/// Maps to CesiumJS `Cartesian3.fromRadiansArrayHeights`
+/// 根据以弧度为单位的 [lon, lat, height, ...] 返回一个 Cartesian3 位置数组。
+/// 映射到 CesiumJS `Cartesian3.fromRadiansArrayHeights`
 pub fn from_radians_array_heights(coordinates: &[f64], ellipsoid: &Ellipsoid) -> Vec<DVec3> {
     assert!(
         coordinates.len() >= 3 && coordinates.len() % 3 == 0,
@@ -191,8 +192,8 @@ pub fn from_radians_array_heights(coordinates: &[f64], ellipsoid: &Ellipsoid) ->
     result
 }
 
-/// Converts a Cartesian3 to Spherical coordinates.
-/// Maps to CesiumJS `Spherical.fromCartesian3` (already in spherical.rs, re-exported here for convenience)
+/// 将一个 Cartesian3 转换为 Spherical 坐标。
+/// 映射到 CesiumJS `Spherical.fromCartesian3`（已在 spherical.rs 中，为便捷起见在此重新导出）
 pub fn to_spherical(cartesian: DVec3) -> Spherical {
     Spherical::from_cartesian3(cartesian)
 }

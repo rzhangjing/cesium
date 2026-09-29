@@ -1,31 +1,31 @@
-//! Quantized-mesh terrain format decoder.
+//! Quantized-mesh 地形格式解码器。
 //!
-//! Binary format specification:
-//! - Header (88 bytes):
-//!   - center: 3 x f64 (24 bytes)
-//!   - minimumHeight: f32 (4 bytes)
-//!   - maximumHeight: f32 (4 bytes)
-//!   - boundingSphere: 4 x f64 (32 bytes)
-//!   - horizonOcclusionPoint: 3 x f64 (24 bytes)
-//! - Vertex data:
-//!   - vertexCount: u32
-//!   - u, v, height: vertexCount * 3 x u16 (zigzag delta encoded)
-//! - Index data:
-//!   - triangleCount: u32
-//!   - indices: triangleCount * 3 x u16/u32 (high water mark encoded)
-//! - Edge indices:
-//!   - west/south/east/north vertex counts and indices
-//! - Extensions (optional):
-//!   - OCT_VERTEX_NORMALS (id=1)
-//!   - WATER_MASK (id=2)
-//!   - METADATA (id=4)
+//! 二进制格式规范：
+//! - 头部（88 字节）：
+//!   - center：3 x f64（24 字节）
+//!   - minimumHeight：f32（4 字节）
+//!   - maximumHeight：f32（4 字节）
+//!   - boundingSphere：4 x f64（32 字节）
+//!   - horizonOcclusionPoint：3 x f64（24 字节）
+//! - 顶点数据：
+//!   - vertexCount：u32
+//!   - u、v、height：vertexCount * 3 x u16（zigzag 增量编码）
+//! - 索引数据：
+//!   - triangleCount：u32
+//!   - indices：triangleCount * 3 x u16/u32（高水位标记编码）
+//! - 边缘索引：
+//!   - 西/南/东/北 顶点数量与索引
+//! - 扩展（可选）：
+//!   - OCT_VERTEX_NORMALS（id=1）
+//!   - WATER_MASK（id=2）
+//!   - METADATA（id=4）
 
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_terrain::QuantizedMeshTerrainData;
 use glam::DVec3;
 use thiserror::Error;
 
-/// Errors that can occur during quantized-mesh decoding.
+/// Quantized-mesh 解码过程中可能出现的错误。
 #[derive(Debug, Error)]
 pub enum QuantizedMeshError {
     #[error("Buffer too small: expected at least {expected} bytes, got {actual}")]
@@ -41,7 +41,7 @@ pub enum QuantizedMeshError {
     InvalidIndex(u32),
 }
 
-/// Extension IDs for quantized-mesh format.
+/// Quantized-mesh 格式的扩展 ID。
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuantizedMeshExtensionId {
@@ -50,17 +50,17 @@ pub enum QuantizedMeshExtensionId {
     Metadata = 4,
 }
 
-/// Header size in bytes.
+/// 头部大小（字节）。
 const HEADER_SIZE: usize = 88;
 
-/// Decodes a quantized-mesh terrain tile from binary data.
+/// 从二进制数据解码一个 quantized-mesh 地形瓦片。
 ///
-/// # Arguments
-/// * `buffer` - The raw binary data
-/// * `skirt_height` - The skirt height to use for the tile
+/// # 参数
+/// * `buffer` - 原始二进制数据
+/// * `skirt_height` - 该瓦片使用的裙边高度
 ///
-/// # Returns
-/// A `QuantizedMeshTerrainData` containing the decoded terrain data
+/// # 返回
+/// 包含已解码地形数据的 `QuantizedMeshTerrainData`
 pub fn decode_quantized_mesh(
     buffer: &[u8],
     skirt_height: f64,
@@ -74,7 +74,7 @@ pub fn decode_quantized_mesh(
 
     let mut pos = 0;
 
-    // Parse header
+    // 解析头部
     let _center = read_cartesian3(buffer, &mut pos);
     let minimum_height = read_f32(buffer, &mut pos) as f64;
     let maximum_height = read_f32(buffer, &mut pos) as f64;
@@ -84,13 +84,13 @@ pub fn decode_quantized_mesh(
 
     let bounding_sphere = BoundingSphere::new(bounding_sphere_center, bounding_sphere_radius);
 
-    // Parse vertex data
+    // 解析顶点数据
     let vertex_count = read_u32(buffer, &mut pos) as usize;
     if vertex_count == 0 {
         return Err(QuantizedMeshError::InvalidVertexCount(0));
     }
 
-    let vertex_buffer_size = vertex_count * 3 * 2; // 3 components * 2 bytes each
+    let vertex_buffer_size = vertex_count * 3 * 2; // 3 个分量 * 每个 2 字节
     if pos + vertex_buffer_size > buffer.len() {
         return Err(QuantizedMeshError::BufferTooSmall {
             expected: pos + vertex_buffer_size,
@@ -98,7 +98,7 @@ pub fn decode_quantized_mesh(
         });
     }
 
-    // Read u, v, height buffers
+    // 读取 u、v、height 缓冲区
     let mut u_buffer = Vec::with_capacity(vertex_count);
     let mut v_buffer = Vec::with_capacity(vertex_count);
     let mut height_buffer = Vec::with_capacity(vertex_count);
@@ -113,24 +113,24 @@ pub fn decode_quantized_mesh(
         height_buffer.push(read_u16(buffer, &mut pos));
     }
 
-    // Zigzag delta decode
+    // Zigzag 增量解码
     zigzag_delta_decode(&mut u_buffer);
     zigzag_delta_decode(&mut v_buffer);
     zigzag_delta_decode(&mut height_buffer);
 
-    // Combine into quantized_vertices format [u0, u1, ..., v0, v1, ..., h0, h1, ...]
+    // 合并为 quantized_vertices 格式 [u0, u1, ..., v0, v1, ..., h0, h1, ...]
     let mut quantized_vertices = Vec::with_capacity(vertex_count * 3);
     quantized_vertices.extend_from_slice(&u_buffer);
     quantized_vertices.extend_from_slice(&v_buffer);
     quantized_vertices.extend_from_slice(&height_buffer);
 
-    // Align to index size
+    // 对齐到索引大小
     let bytes_per_index = if vertex_count > 64 * 1024 { 4 } else { 2 };
     if pos % bytes_per_index != 0 {
         pos += bytes_per_index - (pos % bytes_per_index);
     }
 
-    // Parse triangle indices
+    // 解析三角形索引
     let triangle_count = read_u32(buffer, &mut pos) as usize;
     let index_count = triangle_count * 3;
 
@@ -144,16 +144,16 @@ pub fn decode_quantized_mesh(
         indices.push(idx);
     }
 
-    // High water mark decode
+    // 高水位标记解码
     high_water_mark_decode(&mut indices);
 
-    // Parse edge indices
+    // 解析边缘索引
     let west_indices = read_edge_indices(buffer, &mut pos, bytes_per_index)?;
     let south_indices = read_edge_indices(buffer, &mut pos, bytes_per_index)?;
     let east_indices = read_edge_indices(buffer, &mut pos, bytes_per_index)?;
     let north_indices = read_edge_indices(buffer, &mut pos, bytes_per_index)?;
 
-    // Parse extensions
+    // 解析扩展
     let mut encoded_normals = None;
     let mut water_mask = None;
 
@@ -180,7 +180,7 @@ pub fn decode_quantized_mesh(
                 water_mask = Some(buffer[pos..pos + extension_length].to_vec());
             }
             _ => {
-                // Unknown extension, skip
+                // 未知扩展，跳过
             }
         }
 
@@ -209,7 +209,7 @@ pub fn decode_quantized_mesh(
     })
 }
 
-/// Reads edge indices from the buffer.
+/// 从缓冲区读取边缘索引。
 fn read_edge_indices(
     buffer: &[u8],
     pos: &mut usize,
@@ -230,26 +230,26 @@ fn read_edge_indices(
     Ok(indices)
 }
 
-/// Zigzag delta decodes a buffer in place.
+/// 就地对一个缓冲区进行 zigzag 增量解码。
 ///
-/// The encoding stores differences between consecutive values using zigzag encoding
-/// to efficiently represent both positive and negative deltas.
+/// 该编码使用 zigzag 编码存储相邻值之间的差，从而高效地
+/// 表示正负增量。
 fn zigzag_delta_decode(buffer: &mut [u16]) {
     let mut value: u16 = 0;
 
     for item in buffer.iter_mut() {
         let encoded = *item;
-        // Zigzag decode: (n >> 1) ^ -(n & 1)
+        // Zigzag 解码：(n >> 1) ^ -(n & 1)
         let delta = ((encoded >> 1) as i32) ^ -((encoded & 1) as i32);
         value = (value as i32 + delta) as u16;
         *item = value;
     }
 }
 
-/// High water mark decodes indices in place.
+/// 就地对索引进行高水位标记解码。
 ///
-/// This is a compression technique where indices are stored as offsets from
-/// a "high water mark" that increases when a new vertex is encountered.
+/// 这是一种压缩技术：索引以相对于“高水位标记”的偏移量存储，
+/// 当遇到新顶点时该标记会递增。
 fn high_water_mark_decode(indices: &mut [u32]) {
     let mut highest: u32 = 0;
 
@@ -262,7 +262,7 @@ fn high_water_mark_decode(indices: &mut [u32]) {
     }
 }
 
-// Helper functions for reading binary data (little-endian)
+// 读取二进制数据的辅助函数（小端序）
 
 fn read_u16(buffer: &[u8], pos: &mut usize) -> u16 {
     let value = u16::from_le_bytes([buffer[*pos], buffer[*pos + 1]]);
@@ -320,24 +320,24 @@ mod tests {
 
     #[test]
     fn test_zigzag_delta_decode() {
-        // Test zigzag encoding: 0 -> 0, 1 -> -1, 2 -> 1, 3 -> -2, 4 -> 2
+        // 测试 zigzag 编码：0 -> 0, 1 -> -1, 2 -> 1, 3 -> -2, 4 -> 2
         let mut buffer = vec![0, 2, 2, 2]; // 0, +1, +1, +1
         zigzag_delta_decode(&mut buffer);
         assert_eq!(buffer, vec![0, 1, 2, 3]);
 
         let mut buffer2 = vec![0, 1, 1, 1]; // 0, -1, -1, -1
         zigzag_delta_decode(&mut buffer2);
-        assert_eq!(buffer2, vec![0, 65535, 65534, 65533]); // Wrapped around
+        assert_eq!(buffer2, vec![0, 65535, 65534, 65533]); // 发生了回绕
     }
 
     #[test]
     fn test_high_water_mark_decode() {
-        // Simple test: [0, 0, 0] -> [0, 1, 2]
+        // 简单测试：[0, 0, 0] -> [0, 1, 2]
         let mut indices = vec![0, 0, 0];
         high_water_mark_decode(&mut indices);
         assert_eq!(indices, vec![0, 1, 2]);
 
-        // [0, 0, 1] -> [0, 1, 1] (third index references vertex 1)
+        // [0, 0, 1] -> [0, 1, 1]（第三个索引引用顶点 1）
         let mut indices2 = vec![0, 0, 1];
         high_water_mark_decode(&mut indices2);
         assert_eq!(indices2, vec![0, 1, 1]);

@@ -1,16 +1,16 @@
-//! M8 / P2.3 — `ResourceBackend` port: bulk asset streaming via a
-//! pipeline-managed cache hierarchy.
+//! M8 / P2.3 — `ResourceBackend` 端口：经由管线托管的缓存层级
+//! 进行批量资源流式加载。
 //!
-//! Concretized from the M1.1 placeholder (`name()` / `is_available()` only)
-//! into the real streaming contract below, following the M1.1 dyn-compatibility
-//! ruling (PIPELINE_PROMOTION_PLAN.md L95): async methods use
-//! `Pin<Box<dyn Future + Send>>`, no generic methods, no `Self: Sized` bounds.
-//! The trait is generic over the asset key `K` exactly like
-//! `TilePipeline<K, Payload>` — it is dyn-compatible once `K` is concrete.
+//! 由 M1.1 占位实现（仅 `name()` / `is_available()`）具体化
+//! 为下方的真实流式加载契约，遵循 M1.1 的 dyn 兼容性
+//! 裁决（PIPELINE_PROMOTION_PLAN.md L95）：异步方法使用
+//! `Pin<Box<dyn Future + Send>>`，无泛型方法，无 `Self: Sized` 约束。
+//! 该 trait 对资产 key `K` 泛型，与 `TilePipeline<K, Payload>` 完全一致 ——
+//! 一旦 `K` 具体化即为 dyn 兼容。
 //!
-//! The ports layer stays **runtime-agnostic**: no tokio, no executor, no glam.
-//! The cache-hierarchy semantics (Hot/Warm/Cold) are defined here; the concrete
-//! reuse of `GpuCache` / `HiddenLru` / `Dedup` lives in `adapters/pipeline`.
+//! ports 层保持**运行时无关**：无 tokio，无 executor，无 glam。
+//! 缓存层级语义（Hot/Warm/Cold）在此定义；对 `GpuCache` / `HiddenLru` /
+//! `Dedup` 的具体复用则位于 `adapters/pipeline`。
 
 use std::future::Future;
 use std::hash::Hash;
@@ -18,121 +18,118 @@ use std::pin::Pin;
 
 use crate::PortResult;
 
-/// Position of a bulk asset within the pipeline-managed cache hierarchy.
+/// 批量资产在管线托管的缓存层级中的位置。
 ///
-/// The three tiers mirror the M1.2 `cesium-pipeline` cache structures that the
-/// adapter is **required to reuse** (no parallel cache system — that would
-/// break the three eviction invariants protecting the `dynamic_globe` golden
-/// path from 花屏 / blank frames):
+/// 这三个层级镜像 M1.2 `cesium-pipeline` 的缓存结构，adapter
+/// **必须复用**它们（不得另建平行的缓存系统 —— 那会破坏
+/// 保护 `dynamic_globe` 黄金路径免于花屏 / 空帧的三条驱逐不变量）：
 ///
-/// - [`CacheTier::Hot`] — resident in the GPU handle cache (`GpuCache`) and
-///   actively referenced; immediately usable, no round-trip.
-/// - [`CacheTier::Warm`] — resident in `GpuCache` but tracked by the hidden LRU
-///   (`HiddenLru`): a warm fallback retained across visibility changes,
-///   re-activatable without a network fetch, evictable LRU-first under budget.
-/// - [`CacheTier::Cold`] — not cached anywhere; must be streamed from the
-///   network backend before use.
+/// - [`CacheTier::Hot`] —— 常驻 GPU 句柄缓存（`GpuCache`）且
+///   正被活跃引用；立即可用，无需往返。
+/// - [`CacheTier::Warm`] —— 常驻 `GpuCache` 但由隐藏 LRU
+///   （`HiddenLru`）追踪：一种跨可见性变化保留的暖回退，
+///   无需网络抓取即可重新激活，超预算时按 LRU 优先驱逐。
+/// - [`CacheTier::Cold`] —— 任何地方都未缓存；使用前必须
+///   从网络后端流式加载。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheTier {
-    /// Resident in the hot GPU cache and actively referenced.
+    /// 常驻热 GPU 缓存且正被活跃引用。
     Hot,
-    /// Resident in cache but hidden (warm LRU fallback).
+    /// 常驻缓存但处于隐藏状态（暖 LRU 回退）。
     Warm,
-    /// Not cached; must be streamed from the network.
+    /// 未缓存；必须从网络流式加载。
     Cold,
 }
 
-/// Statistics snapshot for the [`ResourceBackend`] streaming cache hierarchy.
+/// [`ResourceBackend`] 流式缓存层级的统计快照。
 ///
-/// Field semantics are intentionally aligned with [`crate::PipelineStats`] (the
-/// tile pipeline snapshot) so a host can fold resource-streaming counters into
-/// the same M0.4 `PerfCounters` observation path.
+/// 字段语义有意与 [`crate::PipelineStats`]（瓦片管线快照）对齐，
+/// 使宿主可以将资源流式计数器折叠进同一套 M0.4 `PerfCounters`
+/// 观测路径。
 #[derive(Debug, Clone, Default)]
 pub struct ResourceStats {
-    /// Assets resident in the hot tier (`GpuCache`, actively referenced).
+    /// 常驻热层的资产（`GpuCache`，正被活跃引用）。
     pub hot_entries: u32,
-    /// Assets resident in the warm tier (`GpuCache` + `HiddenLru`).
+    /// 常驻暖层的资产（`GpuCache` + `HiddenLru`）。
     pub warm_entries: u32,
-    /// Assets with an in-flight stream request (`Dedup` set size).
+    /// 有传输中流式请求的资产（`Dedup` 集合大小）。
     pub in_flight: u32,
-    /// Cumulative assets streamed successfully into the cache.
+    /// 累计成功流式加载进缓存的资产。
     pub streamed: u32,
-    /// Cumulative cold requests deduplicated (already in-flight or cached).
+    /// 累计被去重的冷请求（已在传输中或已缓存）。
     pub deduped: u32,
-    /// Cumulative hot-tier evictions (FIFO, respecting the three invariants).
+    /// 累计热层驱逐（FIFO，遵守三条不变量）。
     pub evicted: u32,
 }
 
-/// Bulk asset streaming backend (textures / meshes / 3D Tiles content) via a
-/// pipeline-managed cache hierarchy.
+/// 批量资产流式加载后端（纹理 / mesh / 3D Tiles 内容），经由
+/// 管线托管的缓存层级。
 ///
-/// # Naming clarification (M8 vs M12 — do NOT conflate)
+/// # 命名澄清（M8 vs M12 —— 切勿混淆）
 ///
-/// This trait shares a name prefix with
-/// `feature_flags.rs:ENV_ENABLE_RESOURCE_BACKEND` (the **M12** plugin gate for
-/// CesiumJS-style `Resource` objects), but the two are **semantically
-/// unrelated** and must never be wired to each other:
+/// 该 trait 与 `feature_flags.rs:ENV_ENABLE_RESOURCE_BACKEND`
+/// 共享一个名称前缀（这是针对 CesiumJS 风格 `Resource` 对象的
+/// **M12** 插件门），但两者**语义上毫不相关**，绝不可互相接线：
 ///
-/// - **This `ResourceBackend` trait (M8 / P2.3)**: bulk asset streaming
-///   (textures, meshes, 3D Tiles content) through a pipeline-managed cache
-///   hierarchy (`GpuCache` hot tier + `HiddenLru` warm tier + `Dedup`
-///   in-flight), reusing the M1.2 `cesium-pipeline` eviction/dedup semantics.
-///   It is an **IO/cache-layer** contract — no coordinate math, no glam.
-/// - **`ENV_ENABLE_RESOURCE_BACKEND` (M12)**: toggles the `Resource` object
-///   abstraction (URL templates, query parameters, retry headers) used for
-///   tileset/imagery provider *configuration* (`domain/resource`).
+/// - **本 `ResourceBackend` trait（M8 / P2.3）**：批量资产流式加载
+///   （纹理、mesh、3D Tiles 内容）通过管线托管的缓存层级
+///   （`GpuCache` 热层 + `HiddenLru` 暖层 + `Dedup` 传输中），
+///   复用 M1.2 `cesium-pipeline` 的驱逐/去重语义。
+///   它是一个 **IO/缓存层**契约 —— 无坐标运算，无 glam。
+/// - **`ENV_ENABLE_RESOURCE_BACKEND`（M12）**：切换 `Resource` 对象
+///   抽象（URL 模板、查询参数、重试 header），用于
+///   tileset/imagery provider 的*配置*（`domain/resource`）。
 ///
-/// M8 must **not** reuse the `ENV_ENABLE_RESOURCE_BACKEND` flag, and the M12
-/// `Resource` abstraction must not be implemented through this trait.
+/// M8 **不得**复用 `ENV_ENABLE_RESOURCE_BACKEND` flag，且 M12 的
+/// `Resource` 抽象也不得通过本 trait 实现。
 ///
-/// # Dyn-compatibility
+/// # Dyn 兼容性
 ///
-/// Generic over the asset key `K` (mirroring `TilePipeline<K, Payload>`);
-/// dyn-compatible once `K` is concrete. Async methods return
-/// `Pin<Box<dyn Future + Send>>` (matching [`crate::TileFetcher`] style). No
-/// generic methods, no `Self: Sized` bounds.
+/// 对资产 key `K` 泛型（镜像 `TilePipeline<K, Payload>`）；
+/// 一旦 `K` 具体化即为 dyn 兼容。异步方法返回
+/// `Pin<Box<dyn Future + Send>>`（与 [`crate::TileFetcher`] 风格一致）。
+/// 无泛型方法，无 `Self: Sized` 约束。
 pub trait ResourceBackend<K>: Send + Sync
 where
     K: Hash + Eq + Copy + Send + 'static,
 {
-    /// Initiate a streaming request for the bulk asset identified by `key`.
+    /// 为 `key` 标识的批量资产发起一个流式加载请求。
     ///
-    /// `priority` orders the fetch when the backend queue is deep (higher =
-    /// sooner), matching [`crate::TilePipeline::submit`]. The returned future
-    /// resolves with the streamed asset bytes:
+    /// 当后端队列很深时 `priority` 决定抓取顺序（越大 = 越早），
+    /// 与 [`crate::TilePipeline::submit`] 一致。返回的 future
+    /// 携流式加载的资产字节 resolve：
     ///
-    /// - **Cache hit** ([`CacheTier::Hot`] / [`CacheTier::Warm`]): resolves
-    ///   immediately with the cached bytes (a warm hit is promoted to hot).
-    /// - **Cache miss** ([`CacheTier::Cold`]): the request is deduplicated via
-    ///   the in-flight set and streamed through the blocking worker pool; the
-    ///   future resolves once the asset lands in the cache. Concurrent requests
-    ///   for the same cold key share a single network fetch.
+    /// - **缓存命中**（[`CacheTier::Hot`] / [`CacheTier::Warm`]）：立即
+    ///   以缓存字节 resolve（暖命中会被提升为热）。
+    /// - **缓存未命中**（[`CacheTier::Cold`]）：请求通过传输中集合
+    ///   去重，并经阻塞 worker 池流式加载；资产落入缓存后 future
+    ///   才 resolve。对同一冷 key 的并发请求共享一次网络抓取。
     ///
-    /// Errors map to [`PortError`]: `Cancelled` (aborted mid-flight),
-    /// `Network` (retries exhausted), `NotFound` (no usable asset).
+    /// 错误映射到 [`PortError`]：`Cancelled`（传输途中中止）、
+    /// `Network`（重试耗尽）、`NotFound`（无可用资产）。
     fn request_stream<'a>(
         &'a self,
         key: K,
         priority: f64,
     ) -> Pin<Box<dyn Future<Output = PortResult<Vec<u8>>> + Send + 'a>>;
 
-    /// Cancel a pending / in-flight stream for `key`.
+    /// 取消 `key` 的挂起 / 传输中流。
     ///
-    /// Removes the key from the wanted set so the worker gate produces an
-    /// aborted result, and clears the in-flight dedup entry so the asset can be
-    /// re-requested later. Mirrors [`crate::TilePipeline::cancel`].
+    /// 将 key 从 wanted 集合移除，使 worker 门控产生一个中止
+    /// 结果，并清除传输中去重条目，使该资产稍后可被
+    /// 重新请求。镜像 [`crate::TilePipeline::cancel`]。
     fn cancel(&self, key: &K);
 
-    /// Report which tier of the cache hierarchy currently holds `key`.
+    /// 报告缓存层级当前将 `key` 置于哪一层。
     fn cache_tier(&self, key: &K) -> CacheTier;
 
-    /// Snapshot the streaming / cache-hierarchy statistics.
+    /// 快照流式加载 / 缓存层级统计。
     fn stats(&self) -> ResourceStats;
 
-    /// Returns a human-readable name for this backend (diagnostics).
+    /// 返回此后端的人类可读名称（诊断用）。
     fn name(&self) -> &str;
 
-    /// Returns true if this backend is currently operational.
+    /// 若此后端当前可运行则返回 true。
     fn is_available(&self) -> bool;
 }
 
@@ -140,7 +137,7 @@ where
 mod tests {
     use super::*;
 
-    /// Minimal concrete impl used purely to prove the trait is object-safe.
+    /// 仅用于证明该 trait 是对象安全的最小具体实现。
     struct DummyResourceBackend;
 
     type DummyKey = (u32, u32, u32);
@@ -168,12 +165,11 @@ mod tests {
         }
     }
 
-    /// Compile-time + runtime verification that `ResourceBackend<K>` is
-    /// dyn-compatible (object-safe) once `K` is concrete. Mirrors the M1.1
-    /// ruling and the `*_is_dyn_compatible` tests in `cesium-pipeline`
-    /// (`retry.rs` / `staleness.rs`). If the trait ever gains a generic method
-    /// or a `Self: Sized` bound, the `Box<dyn ...>` coercion below stops
-    /// compiling — which is exactly the guard we want.
+    /// 编译期 + 运行期验证：一旦 `K` 具体化，`ResourceBackend<K>` 即
+    /// dyn 兼容（对象安全）。镜像 M1.1 裁决以及 `cesium-pipeline`
+    /// （`retry.rs` / `staleness.rs`）中的 `*_is_dyn_compatible` 测试。
+    /// 若该 trait 一旦获得泛型方法或 `Self: Sized` 约束，下方的
+    /// `Box<dyn ...>` 强制转换就会停止编译 —— 这正是我们想要的守卫。
     #[test]
     fn resource_backend_is_dyn_compatible() {
         let boxed: Box<dyn ResourceBackend<DummyKey>> = Box::new(DummyResourceBackend);
@@ -183,8 +179,8 @@ mod tests {
         assert_eq!(boxed.stats().hot_entries, 0);
     }
 
-    /// The three cache tiers are pairwise distinct (Hot/Warm/Cold must never be
-    /// merged — they drive different eviction/promotion behavior).
+    /// 三个缓存层级两两不同（Hot/Warm/Cold 绝不可合并 ——
+    /// 它们驱动不同的驱逐/提升行为）。
     #[test]
     fn cache_tiers_are_distinct() {
         let tiers = [CacheTier::Hot, CacheTier::Warm, CacheTier::Cold];

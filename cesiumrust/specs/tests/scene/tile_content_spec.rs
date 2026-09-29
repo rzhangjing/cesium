@@ -1,5 +1,5 @@
-//! TileContent specs - ported from Scene/B3dmParserSpec, I3dmParserSpec, PntsParserSpec
-//! Covers: detect_content_type, parse_b3dm, parse_i3dm, parse_pnts, decode_tile_content
+//! TileContent 规范 - 移植自 Scene/B3dmParserSpec、I3dmParserSpec、PntsParserSpec
+//! 覆盖：detect_content_type、parse_b3dm、parse_i3dm、parse_pnts、decode_tile_content
 
 use cesium_tileset::content_decoder::{
     detect_content_type, parse_b3dm, TileContentType,
@@ -60,16 +60,16 @@ fn parse_b3dm_too_small() {
 
 #[test]
 fn parse_b3dm_minimal() {
-    // Construct a minimal valid b3dm header (28 bytes) + 1 byte glTF body
+    // 构造一个最小的有效 b3dm 头（28 字节）+ 1 字节 glTF 体
     let mut data = Vec::new();
-    data.extend_from_slice(b"b3dm"); // magic
-    data.extend_from_slice(&1u32.to_le_bytes()); // version
-    data.extend_from_slice(&29u32.to_le_bytes()); // byteLength (header + 1 byte gltf)
+    data.extend_from_slice(b"b3dm"); // 魔数
+    data.extend_from_slice(&1u32.to_le_bytes()); // 版本
+    data.extend_from_slice(&29u32.to_le_bytes()); // byteLength（头 + 1 字节 gltf）
     data.extend_from_slice(&0u32.to_le_bytes()); // featureTableJsonByteLength
     data.extend_from_slice(&0u32.to_le_bytes()); // featureTableBinaryByteLength
     data.extend_from_slice(&0u32.to_le_bytes()); // batchTableJsonByteLength
     data.extend_from_slice(&0u32.to_le_bytes()); // batchTableBinaryByteLength
-    data.push(0x00); // minimal glTF body byte
+    data.push(0x00); // 最小 glTF 体字节
 
     let result = parse_b3dm(&data);
     assert!(result.is_ok());

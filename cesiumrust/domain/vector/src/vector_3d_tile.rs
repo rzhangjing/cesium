@@ -1,6 +1,6 @@
-//! Vector 3D Tile content types.
+//! Vector 3D Tile 内容类型。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Scene/Vector3DTileContent.js`
 //! - `Scene/Vector3DTilePoints.js`
 //! - `Scene/Vector3DTilePolylines.js`
@@ -13,14 +13,14 @@ use glam::DVec3;
 // Vector3DTileType
 // ============================================================================
 
-/// Type of vector geometry in a 3D Tile.
+/// 3D Tile 中矢量几何的类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Vector3DTileType {
-    /// Point features.
+    /// 点要素。
     Points,
-    /// Polyline features.
+    /// 折线要素。
     Polylines,
-    /// Polygon features.
+    /// 多边形要素。
     Polygons,
 }
 
@@ -28,25 +28,25 @@ pub enum Vector3DTileType {
 // Vector3DTilePoints
 // ============================================================================
 
-/// Point features in a vector 3D tile.
+/// 矢量 3D 瓦片中的点要素。
 ///
-/// Maps to CesiumJS `Scene/Vector3DTilePoints.js`.
+/// 映射到 CesiumJS `Scene/Vector3DTilePoints.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Vector3DTilePoints {
-    /// Positions of points (world coordinates).
+    /// 点的位置（世界坐标）。
     pub positions: Vec<DVec3>,
-    /// Batch IDs for each point (maps to batch table).
+    /// 每个点的批次 ID（映射到批次表）。
     pub batch_ids: Vec<u32>,
-    /// Point colors (RGBA, 0-1).
+    /// 点颜色（RGBA，0-1）。
     pub colors: Vec<[f64; 4]>,
-    /// Point sizes in pixels.
+    /// 点大小（像素）。
     pub sizes: Vec<f64>,
-    /// Whether points are clamped to ground.
+    /// 点是否贴地。
     pub clamp_to_ground: bool,
 }
 
 impl Vector3DTilePoints {
-    /// Create empty points.
+    /// 创建空的点集合。
     pub fn new() -> Self {
         Self {
             positions: Vec::new(),
@@ -57,18 +57,18 @@ impl Vector3DTilePoints {
         }
     }
 
-    /// Get the number of points.
+    /// 获取点的数量。
     pub fn points_length(&self) -> usize {
         self.positions.len()
     }
 
-    /// Get the byte length of geometry data.
+    /// 获取几何数据的字节长度。
     pub fn geometry_byte_length(&self) -> usize {
-        // 3 f64 per position + 1 u32 per batch_id
+        // 每个位置 3 个 f64 + 每个 batch_id 1 个 u32
         self.positions.len() * 24 + self.batch_ids.len() * 4
     }
 
-    /// Add a point.
+    /// 添加一个点。
     pub fn add_point(&mut self, position: DVec3, batch_id: u32) {
         self.positions.push(position);
         self.batch_ids.push(batch_id);
@@ -85,29 +85,29 @@ impl Default for Vector3DTilePoints {
 // Vector3DTilePolylines
 // ============================================================================
 
-/// Polyline features in a vector 3D tile.
+/// 矢量 3D 瓦片中的折线要素。
 ///
-/// Maps to CesiumJS `Scene/Vector3DTilePolylines.js`.
+/// 映射到 CesiumJS `Scene/Vector3DTilePolylines.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Vector3DTilePolylines {
-    /// Positions for all polylines (flattened).
+    /// 所有折线的位置（展平存储）。
     pub positions: Vec<DVec3>,
-    /// Start index of each polyline in positions.
+    /// 每条折线在 positions 中的起始索引。
     pub polyline_starts: Vec<usize>,
-    /// Number of vertices in each polyline.
+    /// 每条折线的顶点数。
     pub polyline_counts: Vec<usize>,
-    /// Batch IDs for each polyline.
+    /// 每条折线的批次 ID。
     pub batch_ids: Vec<u32>,
-    /// Polyline widths in meters.
+    /// 折线宽度（米）。
     pub widths: Vec<f64>,
-    /// Polyline colors (RGBA).
+    /// 折线颜色（RGBA）。
     pub colors: Vec<[f64; 4]>,
-    /// Whether polylines are clamped to ground.
+    /// 折线是否贴地。
     pub clamp_to_ground: bool,
 }
 
 impl Vector3DTilePolylines {
-    /// Create empty polylines.
+    /// 创建空的折线集合。
     pub fn new() -> Self {
         Self {
             positions: Vec::new(),
@@ -120,24 +120,24 @@ impl Vector3DTilePolylines {
         }
     }
 
-    /// Get the number of polylines.
+    /// 获取折线的数量。
     pub fn polylines_length(&self) -> usize {
         self.polyline_starts.len()
     }
 
-    /// Get the number of triangles (for rendering as quads).
+    /// 获取三角形数量（以四边形渲染）。
     pub fn triangles_length(&self) -> usize {
-        // Each segment becomes 2 triangles
+        // 每段变为 2 个三角形
         let segments: usize = self.polyline_counts.iter().map(|c| c.saturating_sub(1)).sum();
         segments * 2
     }
 
-    /// Get the byte length of geometry data.
+    /// 获取几何数据的字节长度。
     pub fn geometry_byte_length(&self) -> usize {
         self.positions.len() * 24
     }
 
-    /// Add a polyline.
+    /// 添加一条折线。
     pub fn add_polyline(&mut self, positions: &[DVec3], batch_id: u32, width: f64) {
         let start = self.positions.len();
         self.positions.extend_from_slice(positions);
@@ -147,7 +147,7 @@ impl Vector3DTilePolylines {
         self.widths.push(width);
     }
 
-    /// Get positions for a specific polyline.
+    /// 获取指定折线的位置。
     pub fn get_polyline(&self, index: usize) -> Option<&[DVec3]> {
         if index >= self.polyline_starts.len() {
             return None;
@@ -168,33 +168,33 @@ impl Default for Vector3DTilePolylines {
 // Vector3DTilePolygons
 // ============================================================================
 
-/// Polygon features in a vector 3D tile.
+/// 矢量 3D 瓦片中的多边形要素。
 ///
-/// Maps to CesiumJS `Scene/Vector3DTilePolygons.js`.
+/// 映射到 CesiumJS `Scene/Vector3DTilePolygons.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Vector3DTilePolygons {
-    /// Positions for all polygons (flattened).
+    /// 所有多边形的位置（展平存储）。
     pub positions: Vec<DVec3>,
-    /// Polygon indices (triangulated).
+    /// 多边形索引（已三角化）。
     pub indices: Vec<u32>,
-    /// Start index of each polygon's indices.
+    /// 每个多边形索引的起始索引。
     pub polygon_index_starts: Vec<usize>,
-    /// Number of indices for each polygon.
+    /// 每个多边形的索引数量。
     pub polygon_index_counts: Vec<usize>,
-    /// Batch IDs for each polygon.
+    /// 每个多边形的批次 ID。
     pub batch_ids: Vec<u32>,
-    /// Polygon colors (RGBA).
+    /// 多边形颜色（RGBA）。
     pub colors: Vec<[f64; 4]>,
-    /// Polygon heights (for extrusion).
+    /// 多边形高度（用于拉伸）。
     pub heights: Vec<f64>,
-    /// Polygon extruded heights.
+    /// 多边形拉伸高度。
     pub extruded_heights: Vec<f64>,
-    /// Whether polygons are clamped to ground.
+    /// 多边形是否贴地。
     pub clamp_to_ground: bool,
 }
 
 impl Vector3DTilePolygons {
-    /// Create empty polygons.
+    /// 创建空的多边形集合。
     pub fn new() -> Self {
         Self {
             positions: Vec::new(),
@@ -209,22 +209,22 @@ impl Vector3DTilePolygons {
         }
     }
 
-    /// Get the number of polygons.
+    /// 获取多边形的数量。
     pub fn polygons_length(&self) -> usize {
         self.polygon_index_starts.len()
     }
 
-    /// Get the number of triangles.
+    /// 获取三角形的数量。
     pub fn triangles_length(&self) -> usize {
         self.indices.len() / 3
     }
 
-    /// Get the byte length of geometry data.
+    /// 获取几何数据的字节长度。
     pub fn geometry_byte_length(&self) -> usize {
         self.positions.len() * 24 + self.indices.len() * 4
     }
 
-    /// Add a polygon with triangulated indices.
+    /// 添加一个带三角化索引的多边形。
     pub fn add_polygon(
         &mut self,
         positions: &[DVec3],
@@ -237,7 +237,7 @@ impl Vector3DTilePolygons {
         self.positions.extend_from_slice(positions);
 
         let index_start = self.indices.len();
-        // Offset indices by vertex offset
+        // 按顶点偏移量调整索引
         self.indices.extend(indices.iter().map(|i| i + vertex_offset));
 
         self.polygon_index_starts.push(index_start);
@@ -258,33 +258,33 @@ impl Default for Vector3DTilePolygons {
 // Vector3DTileContent
 // ============================================================================
 
-/// Complete vector 3D tile content.
+/// 完整的矢量 3D 瓦片内容。
 ///
-/// Maps to CesiumJS `Scene/Vector3DTileContent.js`.
+/// 映射到 CesiumJS `Scene/Vector3DTileContent.js`。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Vector3DTileContent {
-    /// Point features.
+    /// 点要素。
     pub points: Option<Vector3DTilePoints>,
-    /// Polyline features.
+    /// 折线要素。
     pub polylines: Option<Vector3DTilePolylines>,
-    /// Polygon features.
+    /// 多边形要素。
     pub polygons: Option<Vector3DTilePolygons>,
-    /// Feature count from batch table.
+    /// 来自批次表的要素数量。
     pub features_length: usize,
 }
 
 impl Vector3DTileContent {
-    /// Create empty vector tile content.
+    /// 创建空的矢量瓦片内容。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Get the total number of points.
+    /// 获取点的总数。
     pub fn points_length(&self) -> usize {
         self.points.as_ref().map_or(0, |p| p.points_length())
     }
 
-    /// Get the total number of triangles.
+    /// 获取三角形的总数。
     pub fn triangles_length(&self) -> usize {
         let mut count = 0;
         if let Some(ref polys) = self.polygons {
@@ -296,7 +296,7 @@ impl Vector3DTileContent {
         count
     }
 
-    /// Get the total geometry byte length.
+    /// 获取几何数据的总字节长度。
     pub fn geometry_byte_length(&self) -> usize {
         let mut bytes = 0;
         if let Some(ref pts) = self.points {
@@ -311,7 +311,7 @@ impl Vector3DTileContent {
         bytes
     }
 
-    /// Get the content types present.
+    /// 获取当前存在的内容类型。
     pub fn content_types(&self) -> Vec<Vector3DTileType> {
         let mut types = Vec::new();
         if self.points.is_some() {
@@ -328,41 +328,41 @@ impl Vector3DTileContent {
 }
 
 // ============================================================================
-// MVT (Mapbox Vector Tile) support
+// MVT（Mapbox Vector Tile）支持
 // ============================================================================
 
-/// MVT geometry types.
+/// MVT 几何类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MvtGeometryType {
-    /// Unknown geometry.
+    /// 未知几何。
     Unknown,
-    /// Point geometry.
+    /// 点几何。
     Point,
-    /// LineString geometry.
+    /// 线串（LineString）几何。
     LineString,
-    /// Polygon geometry.
+    /// 多边形几何。
     Polygon,
 }
 
-/// An MVT layer.
+/// 一个 MVT 图层。
 #[derive(Debug, Clone, PartialEq)]
 pub struct MvtLayer {
-    /// Layer name.
+    /// 图层名称。
     pub name: String,
-    /// Layer version.
+    /// 图层版本。
     pub version: u32,
-    /// Tile extent (typically 4096).
+    /// 瓦片 extent（通常为 4096）。
     pub extent: u32,
-    /// Features in this layer.
+    /// 本图层中的要素。
     pub features: Vec<MvtFeature>,
-    /// Keys (property names).
+    /// 键（属性名）。
     pub keys: Vec<String>,
-    /// Values (property values).
+    /// 值（属性值）。
     pub values: Vec<MvtValue>,
 }
 
 impl MvtLayer {
-    /// Create a new MVT layer.
+    /// 创建一个新的 MVT 图层。
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -375,21 +375,21 @@ impl MvtLayer {
     }
 }
 
-/// An MVT feature.
+/// 一个 MVT 要素。
 #[derive(Debug, Clone, PartialEq)]
 pub struct MvtFeature {
-    /// Feature ID.
+    /// 要素 ID。
     pub id: Option<u64>,
-    /// Geometry type.
+    /// 几何类型。
     pub geometry_type: MvtGeometryType,
-    /// Geometry commands (encoded).
+    /// 几何命令（已编码）。
     pub geometry: Vec<u32>,
-    /// Property tags (key_idx, value_idx pairs).
+    /// 属性标签（key_idx、value_idx 成对）。
     pub tags: Vec<u32>,
 }
 
 impl MvtFeature {
-    /// Create a new feature.
+    /// 创建一个新的要素。
     pub fn new(geometry_type: MvtGeometryType) -> Self {
         Self {
             id: None,
@@ -400,31 +400,31 @@ impl MvtFeature {
     }
 }
 
-/// MVT property value.
+/// MVT 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum MvtValue {
-    /// String value.
+    /// 字符串值。
     String(String),
-    /// Float value.
+    /// 单精度浮点值。
     Float(f64),
-    /// Double value.
+    /// 双精度浮点值。
     Double(f64),
-    /// Integer value.
+    /// 整数值。
     Int(i64),
-    /// Unsigned integer value.
+    /// 无符号整数值。
     Uint(u64),
-    /// Signed integer value.
+    /// 有符号整数值。
     Sint(i64),
-    /// Boolean value.
+    /// 布尔值。
     Bool(bool),
 }
 
-/// Decode MVT geometry commands into positions.
+/// 将 MVT 几何命令解码为位置。
 ///
-/// MVT uses a command-based encoding:
-/// - MoveTo (command_id = 1)
-/// - LineTo (command_id = 2)
-/// - ClosePath (command_id = 7)
+/// MVT 使用基于命令的编码：
+/// - MoveTo（command_id = 1）
+/// - LineTo（command_id = 2）
+/// - ClosePath（command_id = 7）
 pub fn decode_mvt_geometry(commands: &[u32], extent: u32) -> Vec<Vec<DVec3>> {
     let mut rings: Vec<Vec<DVec3>> = Vec::new();
     let mut current_ring: Vec<DVec3> = Vec::new();
@@ -498,13 +498,13 @@ pub fn decode_mvt_geometry(commands: &[u32], extent: u32) -> Vec<Vec<DVec3>> {
     rings
 }
 
-/// Zigzag decode an unsigned integer to signed.
+/// 将无符号整数进行 zigzag 解码为有符号。
 fn zigzag_decode(n: u32) -> i32 {
     ((n >> 1) as i32) ^ (-((n & 1) as i32))
 }
 
 // ============================================================================
-// Tests
+// 测试
 // ============================================================================
 
 #[cfg(test)]
@@ -532,7 +532,7 @@ mod tests {
         polylines.add_polyline(&[DVec3::ZERO, DVec3::new(0.0, 1.0, 0.0)], 1, 1.0);
 
         assert_eq!(polylines.polylines_length(), 2);
-        assert_eq!(polylines.triangles_length(), 6); // (2 + 1) segments * 2 triangles
+        assert_eq!(polylines.triangles_length(), 6); // (2 + 1) 段 * 2 三角形
         assert_eq!(polylines.get_polyline(0).unwrap().len(), 3);
         assert_eq!(polylines.get_polyline(1).unwrap().len(), 2);
         assert!(polylines.get_polyline(5).is_none());
@@ -541,7 +541,7 @@ mod tests {
     #[test]
     fn test_vector_polygons() {
         let mut polygons = Vector3DTilePolygons::new();
-        // Triangle
+        // 三角形
         polygons.add_polygon(
             &[
                 DVec3::new(0.0, 0.0, 0.0),
@@ -626,7 +626,7 @@ mod tests {
         ];
         let rings = decode_mvt_geometry(&commands, 4096);
         assert_eq!(rings.len(), 1);
-        assert_eq!(rings[0].len(), 3); // 1 moveto + 2 lineto
+        assert_eq!(rings[0].len(), 3); // 1 个 moveto + 2 个 lineto
     }
 
     #[test]
@@ -645,7 +645,7 @@ mod tests {
         ];
         let rings = decode_mvt_geometry(&commands, 4096);
         assert_eq!(rings.len(), 1);
-        // Should be closed (first == last)
+        // 应为闭合（first == last）
         assert_eq!(rings[0].first(), rings[0].last());
     }
 }

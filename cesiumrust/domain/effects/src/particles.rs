@@ -1,72 +1,72 @@
-//! Particle system for visual effects (fire, smoke, snow, etc.).
+//! 用于视觉效果（火焰、烟雾、降雪等）的粒子系统。
 //!
-//! Maps to CesiumJS `Scene/ParticleSystem.js`:
-//! - Particle emitters (point, cone, box, sphere)
-//! - Particle lifecycle (birth, update, death)
-//! - Particle forces (gravity, drag, wind)
+//! 映射到 CesiumJS `Scene/ParticleSystem.js`：
+//! - 粒子发射器（point、cone、box、sphere）
+//! - 粒子生命周期（出生、更新、死亡）
+//! - 粒子受力（重力、阻力、风）
 
 use glam::DVec3;
 
-/// Particle emitter shape.
+/// 粒子发射器形状。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum EmitterShape {
-    /// Emits from a single point.
+    /// 从单个点发射。
     #[default]
     Point,
-    /// Emits from a cone shape.
+    /// 从圆锥形状发射。
     Cone {
-        /// Cone angle in radians.
+        /// 圆锥角度（弧度）。
         angle: f64,
     },
-    /// Emits from a box volume.
+    /// 从立方体体积发射。
     Box {
-        /// Half-extents of the box.
+        /// 立方体的半长。
         half_extents: DVec3,
     },
-    /// Emits from a sphere surface.
+    /// 从球面发射。
     Sphere {
-        /// Sphere radius.
+        /// 球半径。
         radius: f64,
     },
-    /// Emits from a circle (disc).
+    /// 从圆（圆盘）发射。
     Circle {
-        /// Circle radius.
+        /// 圆半径。
         radius: f64,
     },
 }
 
 
-/// A single particle in the system.
+/// 系统中的单个粒子。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Particle {
-    /// Unique particle ID.
+    /// 唯一粒子 ID。
     pub id: u64,
-    /// Current position (world space).
+    /// 当前位置（世界空间）。
     pub position: DVec3,
-    /// Current velocity.
+    /// 当前速度。
     pub velocity: DVec3,
-    /// Current color (RGBA, 0-1).
+    /// 当前颜色（RGBA，0-1）。
     pub color: [f64; 4],
-    /// Current size (pixels or world units depending on config).
+    /// 当前尺寸（根据配置为像素或世界单位）。
     pub size: f64,
-    /// Age in seconds.
+    /// 年龄（秒）。
     pub age: f64,
-    /// Maximum lifetime in seconds.
+    /// 最大寿命（秒）。
     pub lifetime: f64,
-    /// Mass in kilograms.
+    /// 质量（千克）。
     pub mass: f64,
-    /// Start scale.
+    /// 起始缩放。
     pub start_scale: f64,
-    /// End scale.
+    /// 结束缩放。
     pub end_scale: f64,
-    /// Image size [width, height] in pixels.
+    /// 图像尺寸 [宽, 高]，以像素计。
     pub image_size: [f64; 2],
-    /// Whether the particle is alive.
+    /// 粒子是否存活。
     pub alive: bool,
 }
 
 impl Particle {
-    /// Creates a new particle.
+    /// 创建一个新粒子。
     pub fn new(id: u64, position: DVec3, velocity: DVec3, lifetime: f64) -> Self {
         Self {
             id,
@@ -84,18 +84,18 @@ impl Particle {
         }
     }
 
-    /// Returns the normalized age (0.0 to 1.0).
+    /// 返回归一化年龄（0.0 到 1.0）。
     pub fn normalized_age(&self) -> f64 {
         (self.age / self.lifetime).clamp(0.0, 1.0)
     }
 
-    /// Returns the interpolated scale at current age.
+    /// 返回当前年龄处的插值缩放。
     pub fn current_scale(&self) -> f64 {
         let t = self.normalized_age();
         self.start_scale + (self.end_scale - self.start_scale) * t
     }
 
-    /// Updates the particle by a time delta.
+    /// 按一个时间增量更新粒子。
     pub fn update(&mut self, dt: f64, forces: &[ParticleForce]) {
         if !self.alive {
             return;
@@ -108,54 +108,54 @@ impl Particle {
             return;
         }
 
-        // Apply forces
+        // 施加受力
         let mut acceleration = DVec3::ZERO;
         for force in forces {
             acceleration += force.compute_acceleration(self);
         }
 
-        // Integrate velocity and position
+        // 积分速度与位置
         self.velocity += acceleration * dt;
         self.position += self.velocity * dt;
     }
 }
 
-/// A force that affects particles.
+/// 影响粒子的一个力。
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParticleForce {
-    /// Constant gravity acceleration.
+    /// 恒定重力加速度。
     Gravity {
-        /// Gravity vector (e.g., (0, -9.81, 0)).
+        /// 重力向量（例如 (0, -9.81, 0)）。
         acceleration: DVec3,
     },
-    /// Linear drag (air resistance).
+    /// 线性阻力（空气阻力）。
     Drag {
-        /// Drag coefficient.
+        /// 阻力系数。
         coefficient: f64,
     },
-    /// Wind force.
+    /// 风力。
     Wind {
-        /// Wind direction and speed.
+        /// 风向与风速。
         velocity: DVec3,
     },
-    /// Attractor point (pulls particles towards a point).
+    ///  attractor 点（将粒子拉向一个点）。
     Attractor {
-        /// Attractor position.
+        /// attractor 位置。
         position: DVec3,
-        /// Attraction strength.
+        /// 吸引力强度。
         strength: f64,
     },
-    /// Vortex force (spiral motion).
+    /// 漩涡力（螺旋运动）。
     Vortex {
-        /// Vortex axis.
+        /// 漩涡轴。
         axis: DVec3,
-        /// Vortex strength.
+        /// 漩涡强度。
         strength: f64,
     },
 }
 
 impl ParticleForce {
-    /// Computes the acceleration this force applies to a particle.
+    /// 计算本力施加到粒子上的加速度。
     pub fn compute_acceleration(&self, particle: &Particle) -> DVec3 {
         match self {
             Self::Gravity { acceleration } => *acceleration,
@@ -174,23 +174,23 @@ impl ParticleForce {
     }
 }
 
-/// A burst of particles at a specific time in the system's lifetime.
+/// 在系统寿命内特定时刻发生的一批粒子爆发。
 ///
-/// Maps to CesiumJS `Scene/ParticleBurst.js`.
+/// 映射到 CesiumJS `Scene/ParticleBurst.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParticleBurst {
-    /// Time in seconds after system start when the burst occurs.
+    /// 爆发发生的时刻，以系统启动后的秒数计。
     pub time: f64,
-    /// Minimum number of particles emitted in the burst.
+    /// 爆发中发射的最小粒子数。
     pub minimum: u32,
-    /// Maximum number of particles emitted in the burst.
+    /// 爆发中发射的最大粒子数。
     pub maximum: u32,
-    /// Whether this burst has already fired.
+    /// 本次爆发是否已触发。
     pub complete: bool,
 }
 
 impl ParticleBurst {
-    /// Creates a new particle burst.
+    /// 创建一个新的粒子爆发。
     pub fn new(time: f64, minimum: u32, maximum: u32) -> Self {
         Self {
             time,
@@ -200,60 +200,60 @@ impl ParticleBurst {
         }
     }
 
-    /// Resets the burst for looping.
+    /// 重置爆发以便循环。
     pub fn reset(&mut self) {
         self.complete = false;
     }
 }
 
-/// Particle system configuration.
+/// 粒子系统配置。
 #[derive(Debug, Clone)]
 pub struct ParticleSystemConfig {
-    /// Emitter shape.
+    /// 发射器形状。
     pub emitter_shape: EmitterShape,
-    /// Emission rate (particles per second).
+    /// 发射速率（每秒粒子数）。
     pub emission_rate: f64,
-    /// Minimum particle lifetime (seconds).
+    /// 最小粒子寿命（秒）。
     pub min_lifetime: f64,
-    /// Maximum particle lifetime (seconds).
+    /// 最大粒子寿命（秒）。
     pub max_lifetime: f64,
-    /// Minimum initial speed.
+    /// 最小初始速度。
     pub min_speed: f64,
-    /// Maximum initial speed.
+    /// 最大初始速度。
     pub max_speed: f64,
-    /// Minimum particle size.
+    /// 最小粒子尺寸。
     pub min_size: f64,
-    /// Maximum particle size.
+    /// 最大粒子尺寸。
     pub max_size: f64,
-    /// Start color (RGBA).
+    /// 起始颜色（RGBA）。
     pub start_color: [f64; 4],
-    /// End color (RGBA).
+    /// 结束颜色（RGBA）。
     pub end_color: [f64; 4],
-    /// Maximum number of particles.
+    /// 最大粒子数。
     pub max_particles: usize,
-    /// Whether the system loops.
+    /// 系统是否循环。
     pub looping: bool,
-    /// Forces applied to particles.
+    /// 施加到粒子上的力。
     pub forces: Vec<ParticleForce>,
-    /// Bursts of particles at specific times.
+    /// 特定时刻的粒子爆发。
     pub bursts: Vec<ParticleBurst>,
-    /// System lifetime in seconds (f64::MAX = infinite).
+    /// 系统寿命（秒）（f64::MAX = 无限）。
     pub system_lifetime: f64,
-    /// Minimum particle mass in kilograms.
+    /// 最小粒子质量（千克）。
     pub min_mass: f64,
-    /// Maximum particle mass in kilograms.
+    /// 最大粒子质量（千克）。
     pub max_mass: f64,
-    /// Start scale for particles.
+    /// 粒子的起始缩放。
     pub start_scale: f64,
-    /// End scale for particles.
+    /// 粒子的结束缩放。
     pub end_scale: f64,
-    /// Minimum image size [width, height] in pixels.
+    /// 最小图像尺寸 [宽, 高]，以像素计。
     pub min_image_size: [f64; 2],
-    /// Maximum image size [width, height] in pixels.
+    /// 最大图像尺寸 [宽, 高]，以像素计。
     pub max_image_size: [f64; 2],
-    /// Whether particle size is in meters (true) or pixels (false).
+    /// 粒子尺寸是否以米为单位（true）还是像素（false）。
     pub size_in_meters: bool,
-    /// Image URI for particle billboard.
+    /// 粒子 billboard 的图像 URI。
     pub image: Option<String>,
 }
 
@@ -289,35 +289,35 @@ impl Default for ParticleSystemConfig {
     }
 }
 
-/// The particle system that manages particle lifecycle.
+/// 管理粒子生命周期的粒子系统。
 #[derive(Debug)]
 pub struct ParticleSystem {
-    /// Configuration.
+    /// 配置。
     pub config: ParticleSystemConfig,
-    /// Active particles.
+    /// 活跃粒子。
     pub particles: Vec<Particle>,
-    /// Emitter position (world space).
+    /// 发射器位置（世界空间）。
     pub emitter_position: DVec3,
-    /// Emitter direction (for cone emitters).
+    /// 发射器方向（用于 cone 发射器）。
     pub emitter_direction: DVec3,
-    /// Accumulated time for emission.
+    /// 用于发射的累计时间。
     emission_accumulator: f64,
-    /// Next particle ID.
+    /// 下一个粒子 ID。
     next_id: u64,
-    /// Total elapsed time.
+    /// 总流逝时间。
     pub elapsed_time: f64,
-    /// Whether the system is running.
+    /// 系统是否正在运行。
     pub running: bool,
 }
 
 impl ParticleSystem {
-    /// Creates a new particle system.
+    /// 创建一个新的粒子系统。
     pub fn new(config: ParticleSystemConfig, emitter_position: DVec3) -> Self {
         Self {
             config,
             particles: Vec::new(),
             emitter_position,
-            emitter_direction: DVec3::Y, // Default up
+            emitter_direction: DVec3::Y, // 默认向上
             emission_accumulator: 0.0,
             next_id: 0,
             elapsed_time: 0.0,
@@ -325,7 +325,7 @@ impl ParticleSystem {
         }
     }
 
-    /// Creates a fire particle system preset.
+    /// 创建一个火焰粒子系统预设。
     pub fn fire(emitter_position: DVec3) -> Self {
         let config = ParticleSystemConfig {
             emitter_shape: EmitterShape::Cone { angle: 0.3 },
@@ -336,13 +336,13 @@ impl ParticleSystem {
             max_speed: 5.0,
             min_size: 0.5,
             max_size: 1.5,
-            start_color: [1.0, 0.8, 0.2, 1.0], // Orange-yellow
-            end_color: [0.8, 0.2, 0.0, 0.0],   // Dark red, transparent
+            start_color: [1.0, 0.8, 0.2, 1.0], // 橙黄
+            end_color: [0.8, 0.2, 0.0, 0.0],   // 深红，透明
             max_particles: 500,
             looping: true,
             forces: vec![
                 ParticleForce::Gravity {
-                    acceleration: DVec3::new(0.0, 2.0, 0.0), // Upward (buoyancy)
+                    acceleration: DVec3::new(0.0, 2.0, 0.0), // 向上（浮力）
                 },
                 ParticleForce::Drag { coefficient: 0.5 },
             ],
@@ -351,7 +351,7 @@ impl ParticleSystem {
         Self::new(config, emitter_position)
     }
 
-    /// Creates a smoke particle system preset.
+    /// 创建一个烟雾粒子系统预设。
     pub fn smoke(emitter_position: DVec3) -> Self {
         let config = ParticleSystemConfig {
             emitter_shape: EmitterShape::Sphere { radius: 0.5 },
@@ -362,13 +362,13 @@ impl ParticleSystem {
             max_speed: 2.0,
             min_size: 1.0,
             max_size: 3.0,
-            start_color: [0.4, 0.4, 0.4, 0.8], // Gray
-            end_color: [0.6, 0.6, 0.6, 0.0],   // Light gray, transparent
+            start_color: [0.4, 0.4, 0.4, 0.8], // 灰色
+            end_color: [0.6, 0.6, 0.6, 0.0],   // 浅灰，透明
             max_particles: 300,
             looping: true,
             forces: vec![
                 ParticleForce::Gravity {
-                    acceleration: DVec3::new(0.0, 0.5, 0.0), // Slight upward
+                    acceleration: DVec3::new(0.0, 0.5, 0.0), // 略微向上
                 },
                 ParticleForce::Wind {
                     velocity: DVec3::new(1.0, 0.0, 0.0),
@@ -379,7 +379,7 @@ impl ParticleSystem {
         Self::new(config, emitter_position)
     }
 
-    /// Creates a snow particle system preset.
+    /// 创建一个降雪粒子系统预设。
     pub fn snow(emitter_position: DVec3) -> Self {
         let config = ParticleSystemConfig {
             emitter_shape: EmitterShape::Box {
@@ -392,13 +392,13 @@ impl ParticleSystem {
             max_speed: 3.0,
             min_size: 0.1,
             max_size: 0.3,
-            start_color: [1.0, 1.0, 1.0, 1.0], // White
-            end_color: [1.0, 1.0, 1.0, 0.5],   // Semi-transparent
+            start_color: [1.0, 1.0, 1.0, 1.0], // 白色
+            end_color: [1.0, 1.0, 1.0, 0.5],   // 半透明
             max_particles: 2000,
             looping: true,
             forces: vec![
                 ParticleForce::Gravity {
-                    acceleration: DVec3::new(0.0, -1.0, 0.0), // Gentle fall
+                    acceleration: DVec3::new(0.0, -1.0, 0.0), // 缓慢下落
                 },
                 ParticleForce::Wind {
                     velocity: DVec3::new(0.5, 0.0, 0.3),
@@ -409,11 +409,11 @@ impl ParticleSystem {
         Self::new(config, emitter_position)
     }
 
-    /// Updates the particle system by a time delta.
+    /// 按一个时间增量更新粒子系统。
     ///
-    /// # Arguments
-    /// * `dt` - Time delta in seconds
-    /// * `rng_seed` - Simple seed for deterministic randomness
+    /// # 参数
+    /// * `dt` - 时间增量（秒）
+    /// * `rng_seed` - 用于确定性随机性的简单种子
     pub fn update(&mut self, dt: f64, rng_seed: u64) {
         if !self.running {
             return;
@@ -421,15 +421,15 @@ impl ParticleSystem {
 
         self.elapsed_time += dt;
 
-        // Update existing particles
+        // 更新现有粒子
         for particle in &mut self.particles {
             particle.update(dt, &self.config.forces);
         }
 
-        // Remove dead particles
+        // 移除已死亡的粒子
         self.particles.retain(|p| p.alive);
 
-        // Emit new particles
+        // 发射新粒子
         if self.config.looping || self.elapsed_time < self.config.max_lifetime {
             self.emission_accumulator += dt * self.config.emission_rate;
 
@@ -441,7 +441,7 @@ impl ParticleSystem {
             }
         }
 
-        // Process bursts
+        // 处理爆发
         let bursts_to_fire: Vec<(usize, u32)> = self
             .config
             .bursts
@@ -460,7 +460,7 @@ impl ParticleSystem {
             self.config.bursts[idx].complete = true;
         }
 
-        // Check system lifetime
+        // 检查系统寿命
         if self.elapsed_time >= self.config.system_lifetime {
             if self.config.looping {
                 self.elapsed_time = 0.0;
@@ -473,20 +473,20 @@ impl ParticleSystem {
         }
     }
 
-    /// Emits a single particle.
+    /// 发射单个粒子。
     fn emit_particle(&mut self, seed: u64) {
         let rng = SimpleRng::new(seed);
 
-        // Random lifetime
+        // 随机寿命
         let lifetime = rng.range(self.config.min_lifetime, self.config.max_lifetime);
 
-        // Random speed
+        // 随机速度
         let speed = rng.range(self.config.min_speed, self.config.max_speed);
 
-        // Random size
+        // 随机尺寸
         let size = rng.range(self.config.min_size, self.config.max_size);
 
-        // Compute emission position and direction based on emitter shape
+        // 根据发射器形状计算发射位置与方向
         let (position, direction) = self.compute_emission(&rng);
 
         let velocity = direction * speed;
@@ -499,12 +499,12 @@ impl ParticleSystem {
         self.next_id += 1;
     }
 
-    /// Computes emission position and direction based on emitter shape.
+    /// 根据发射器形状计算发射位置与方向。
     fn compute_emission(&self, rng: &SimpleRng) -> (DVec3, DVec3) {
         match &self.config.emitter_shape {
             EmitterShape::Point => (self.emitter_position, self.emitter_direction),
             EmitterShape::Cone { angle } => {
-                // Random direction within cone
+                // 圆锥内的随机方向
                 let theta = rng.range(0.0, std::f64::consts::TAU);
                 let phi = rng.range(0.0, *angle);
 
@@ -526,7 +526,7 @@ impl ParticleSystem {
                 (self.emitter_position + offset, self.emitter_direction)
             }
             EmitterShape::Sphere { radius } => {
-                // Random point on sphere surface
+                // 球面上的随机点
                 let theta = rng.range(0.0, std::f64::consts::TAU);
                 let phi = rng.range(0.0, std::f64::consts::PI);
 
@@ -548,12 +548,12 @@ impl ParticleSystem {
         }
     }
 
-    /// Returns the number of alive particles.
+    /// 返回存活粒子的数量。
     pub fn particle_count(&self) -> usize {
         self.particles.len()
     }
 
-    /// Interpolates particle color based on age.
+    /// 根据年龄插值粒子颜色。
     pub fn particle_color(&self, particle: &Particle) -> [f64; 4] {
         let t = particle.normalized_age();
         let start = &self.config.start_color;
@@ -567,17 +567,17 @@ impl ParticleSystem {
         ]
     }
 
-    /// Stops the particle system (no new emissions, existing particles continue).
+    /// 停止粒子系统（不再发射，现有粒子继续）。
     pub fn stop(&mut self) {
         self.running = false;
     }
 
-    /// Starts/resumes the particle system.
+    /// 启动/恢复粒子系统。
     pub fn start(&mut self) {
         self.running = true;
     }
 
-    /// Resets the particle system.
+    /// 重置粒子系统。
     pub fn reset(&mut self) {
         self.particles.clear();
         self.emission_accumulator = 0.0;
@@ -587,7 +587,7 @@ impl ParticleSystem {
     }
 }
 
-/// Simple deterministic RNG for particle emission.
+/// 用于粒子发射的简单确定性 RNG。
 #[derive(Debug, Clone)]
 struct SimpleRng {
     state: u64,
@@ -606,7 +606,7 @@ impl SimpleRng {
         self.state ^= self.state >> 7;
         self.state ^= self.state << 17;
 
-        // Convert to [0, 1)
+        // 转换为 [0, 1)
         (self.state >> 11) as f64 / ((1u64 << 53) as f64)
     }
 
@@ -652,7 +652,7 @@ mod tests {
 
         particle.update(1.0, &forces);
 
-        // After 1 second with -10 m/s² gravity
+        // 在 -10 m/s² 重力下经过 1 秒后
         assert!((particle.velocity.y - (-10.0)).abs() < 1e-10);
         assert!((particle.position.y - (-10.0)).abs() < 1e-10);
     }
@@ -665,7 +665,7 @@ mod tests {
         particle.update(0.5, &forces);
         assert!(particle.alive);
 
-        particle.update(0.6, &forces); // Total age = 1.1 > lifetime
+        particle.update(0.6, &forces); // 总年龄 = 1.1 > 寿命
         assert!(!particle.alive);
     }
 
@@ -676,7 +676,7 @@ mod tests {
 
         particle.update(1.0, &forces);
 
-        // Velocity should decrease due to drag
+        // 由于阻力，速度应下降
         assert!(particle.velocity.x < 10.0);
         assert!(particle.velocity.x > 0.0);
     }
@@ -695,14 +695,14 @@ mod tests {
     #[test]
     fn test_particle_system_emission() {
         let config = ParticleSystemConfig {
-            emission_rate: 100.0, // 100 particles per second
+            emission_rate: 100.0, // 每秒 100 个粒子
             ..Default::default()
         };
         let mut system = ParticleSystem::new(config, DVec3::ZERO);
 
-        system.update(1.0, 42); // 1 second
+        system.update(1.0, 42); // 1 秒
 
-        // Should have emitted ~100 particles
+        // 应已发射约 100 个粒子
         assert!(system.particle_count() > 50);
         assert!(system.particle_count() <= 100);
     }
@@ -735,8 +735,8 @@ mod tests {
         system.stop();
         system.update(0.5, 42);
 
-        // No new particles emitted after stop
-        // (some may have died, so count could be less)
+        // stop 后不再发射新粒子
+        // （部分可能已死亡，因此计数可能更少）
         assert!(system.particle_count() <= count_before);
     }
 
@@ -784,18 +784,18 @@ mod tests {
     #[test]
     fn test_particle_color_interpolation() {
         let config = ParticleSystemConfig {
-            start_color: [1.0, 0.0, 0.0, 1.0], // Red
-            end_color: [0.0, 0.0, 1.0, 0.0],   // Blue, transparent
+            start_color: [1.0, 0.0, 0.0, 1.0], // 红色
+            end_color: [0.0, 0.0, 1.0, 0.0],   // 蓝色，透明
             ..Default::default()
         };
         let system = ParticleSystem::new(config, DVec3::ZERO);
 
         let mut particle = Particle::new(1, DVec3::ZERO, DVec3::Y, 2.0);
-        particle.age = 1.0; // 50% through lifetime
+        particle.age = 1.0; // 处于寿命的 50%
 
         let color = system.particle_color(&particle);
 
-        // Should be halfway between red and blue
+        // 应处于红色与蓝色的中点
         assert!((color[0] - 0.5).abs() < 1e-10);
         assert!((color[2] - 0.5).abs() < 1e-10);
         assert!((color[3] - 0.5).abs() < 1e-10);
@@ -811,7 +811,7 @@ mod tests {
         let particle = Particle::new(1, DVec3::ZERO, DVec3::ZERO, 10.0);
         let accel = force.compute_acceleration(&particle);
 
-        // Should accelerate towards the attractor (+X direction)
+        // 应向 attractor 方向（+X 方向）加速
         assert!(accel.x > 0.0);
     }
 
@@ -825,7 +825,7 @@ mod tests {
         let particle = Particle::new(1, DVec3::new(1.0, 0.0, 0.0), DVec3::ZERO, 10.0);
         let accel = force.compute_acceleration(&particle);
 
-        // Should create circular motion (perpendicular to position and axis)
+        // 应产生圆周运动（垂直于位置与轴）
         assert!(accel.length() > 0.0);
     }
 

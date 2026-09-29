@@ -1,9 +1,9 @@
-//! Per-tile Bing Maps imagery loader plugin.
+//! 逐瓦片的 Bing Maps 影像加载器插件。
 //!
-//! Downloads Bing Maps Aerial tiles individually and applies each
-//! tile's texture directly to its corresponding globe tile entity.
+//! 逐个下载 Bing Maps Aerial 瓦片，并将每块瓦片的纹理直接
+//! 应用到其对应的地球瓦片实体。
 //!
-//! Bing Maps uses a quadkey tiling system, which we convert from standard XYZ tiles.
+//! Bing Maps 使用 quadkey 切分系统，我们从标准 XYZ 瓦片转换而来。
 
 use bevy::prelude::*;
 use std::io::Read;
@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use crate::tile_mesh::GlobeTile;
 
-/// Plugin that loads Bing Maps satellite tiles per-tile and applies them to globe entities.
+/// 逐瓦片加载 Bing Maps 卫星瓦片并应用到地球实体的插件。
 pub struct BingTileLoaderPlugin;
 
 impl Plugin for BingTileLoaderPlugin {
@@ -23,10 +23,10 @@ impl Plugin for BingTileLoaderPlugin {
     }
 }
 
-/// Zoom level for globe view (3 = 8×8 tiles = 64 requests).
+/// 地球视图的缩放级别（3 = 8×8 瓦片 = 64 个请求）。
 const ZOOM: u32 = 3;
 
-/// Resource tracking the per-tile loading progress.
+/// 追踪逐瓦片加载进度（per-tile）的资源。
 #[derive(Resource)]
 struct BingTileLoadState {
     receiver: Mutex<Option<mpsc::Receiver<BingTileResult>>>,
@@ -45,18 +45,18 @@ impl Default for BingTileLoadState {
     }
 }
 
-/// Result of downloading a single Bing tile.
+/// 单块 Bing 瓦片下载的结果。
 struct BingTileResult {
     x: u32,
     y: u32,
     z: u32,
-    /// RGBA pixel data (256x256).
+    /// RGBA 像素数据（256x256）。
     rgba_data: Vec<u8>,
     width: u32,
     height: u32,
 }
 
-/// Converts tile coordinates (x, y, z) to Bing Maps quadkey.
+/// 将瓦片坐标 (x, y, z) 转换为 Bing Maps quadkey。
 fn tile_to_quadkey(x: u32, y: u32, level: u32) -> String {
     let mut quadkey = String::with_capacity(level as usize);
 
@@ -77,7 +77,7 @@ fn tile_to_quadkey(x: u32, y: u32, level: u32) -> String {
     quadkey
 }
 
-/// Spawns a background thread to download all Bing Maps satellite tiles at the configured zoom.
+/// 生成一个后台线程，在配置的缩放级别下载所有 Bing Maps 卫星瓦片。
 fn spawn_bing_tile_downloads(state: ResMut<BingTileLoadState>) {
     let (tx, rx) = mpsc::channel();
     *state.receiver.lock().unwrap() = Some(rx);
@@ -95,11 +95,11 @@ fn spawn_bing_tile_downloads(state: ResMut<BingTileLoadState>) {
 
         for ty in 0..num_tiles {
             for tx_px in 0..num_tiles {
-                // Convert XYZ tile coordinates to Bing Maps quadkey
+                // 将 XYZ 瓦片坐标转换为 Bing Maps quadkey
                 let quadkey = tile_to_quadkey(tx_px, ty, ZOOM);
 
-                // Bing Maps Aerial imagery (no API key required for basic usage)
-                // Using subdomain rotation for load balancing
+                // Bing Maps Aerial 影像（基本使用无需 API key）
+                // 使用子域名轮换做负载均衡
                 let subdomain = (tx_px + ty) % 8;
                 let url = format!(
                     "https://ecn.t{}.tiles.virtualearth.net/tiles/a{}.jpeg?g=14393",
@@ -114,7 +114,7 @@ fn spawn_bing_tile_downloads(state: ResMut<BingTileLoadState>) {
                             if let Ok(img) = image::load_from_memory(&data) {
                                 let rgba_img = img.to_rgba8();
                                 let (w, h) = rgba_img.dimensions();
-                                // Send the tile immediately (progressive loading)
+                                // 立即发送该瓦片（渐进式加载）
                                 let _ = tx.send(BingTileResult {
                                     x: tx_px,
                                     y: ty,
@@ -144,14 +144,14 @@ fn spawn_bing_tile_downloads(state: ResMut<BingTileLoadState>) {
     });
 }
 
-/// System that receives downloaded tiles and applies textures to globe tile entities.
+/// 接收已下载瓦片并将纹理应用到地球瓦片实体的系统。
 fn apply_bing_tile_textures(
     mut state: ResMut<BingTileLoadState>,
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     tile_query: Query<(&GlobeTile, &MeshMaterial3d<StandardMaterial>)>,
 ) {
-    // Try to receive all available results (non-blocking, batch)
+    // 尝试接收所有可用结果（非阻塞，批量）
     let results: Vec<BingTileResult> = {
         let guard = state.receiver.lock().unwrap();
         match &*guard {
@@ -171,7 +171,7 @@ fn apply_bing_tile_textures(
     }
 
     for result in results {
-        // Create a Bevy Image from the tile's RGBA data
+        // 从瓦片的 RGBA 数据创建一个 Bevy Image
         let texture = Image::new(
             bevy::render::render_resource::Extent3d {
                 width: result.width,
@@ -185,14 +185,14 @@ fn apply_bing_tile_textures(
         );
         let texture_handle = images.add(texture);
 
-        // Find the matching globe tile entity and update its material
+        // 找到匹配的地球瓦片实体并更新其材质
         for (globe_tile, mat_handle) in tile_query.iter() {
             if globe_tile.x == result.x && globe_tile.y == result.y && globe_tile.z == result.z {
                 if let Some(material) = materials.get_mut(mat_handle) {
                     material.base_color_texture = Some(texture_handle.clone());
-                    // Reset base_color to white: Bevy multiplies base_color with
-                    // base_color_texture, so the initial ocean-blue fallback would
-                    // otherwise tint the satellite imagery dark blue.
+                    // 将 base_color 重置为白色：Bevy 会将 base_color 与
+                    // base_color_texture 相乘，否则初始的海洋蓝回退色
+                    // 会把卫星影像染成暗蓝。
                     material.base_color = Color::WHITE;
                 }
                 break;

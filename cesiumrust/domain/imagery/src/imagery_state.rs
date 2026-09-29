@@ -1,43 +1,43 @@
-//! Imagery state machine.
-//! Maps to CesiumJS `Scene/ImageryState.js`
+//! 影像状态机。
+//! 映射到 CesiumJS `Scene/ImageryState.js`
 
 use serde::{Deserialize, Serialize};
 
-/// The state of an imagery tile.
-/// Maps to CesiumJS `ImageryState`
+/// 影像瓦片的状态。
+/// 映射到 CesiumJS `ImageryState`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum ImageryState {
-    /// Imagery has not been requested yet.
+    /// 尚未请求影像。
     #[default]
     Unloaded,
-    /// Imagery request is in progress.
+    /// 影像请求正在进行中。
     Transitioning,
-    /// Imagery data has been received but not yet processed.
+    /// 已收到影像数据但尚未处理。
     Received,
-    /// Texture has been loaded but not yet ready.
+    /// 纹理已加载但尚未就绪。
     TextureLoaded,
-    /// Imagery is ready for rendering.
+    /// 影像已可供渲染。
     Ready,
-    /// Imagery request failed.
+    /// 影像请求失败。
     Failed,
-    /// Imagery is invalid (e.g., wrong format).
+    /// 影像无效（例如格式错误）。
     Invalid,
-    /// Placeholder imagery (used while loading).
+    /// 占位影像（加载期间使用）。
     Placeholder,
 }
 
 impl ImageryState {
-    /// Returns true if the imagery is in a terminal state (Ready, Failed, Invalid).
+    /// 若影像处于终态（Ready、Failed、Invalid）则返回 true。
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Ready | Self::Failed | Self::Invalid)
     }
 
-    /// Returns true if the imagery can be rendered.
+    /// 若影像可被渲染则返回 true。
     pub fn is_renderable(&self) -> bool {
         matches!(self, Self::Ready | Self::Placeholder)
     }
 
-    /// Returns true if a request should be made for this state.
+    /// 若此状态应发起请求则返回 true。
     pub fn should_request(&self) -> bool {
         matches!(self, Self::Unloaded | Self::Failed)
     }

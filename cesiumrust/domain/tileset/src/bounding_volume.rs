@@ -1,7 +1,7 @@
-//! 3D Tiles bounding volume definitions.
+//! 3D Tiles 包围体定义。
 //!
-//! Maps to CesiumJS `Scene/Cesium3DTileBoundingVolume.js`
-//! Supports three types: Box (OBB), Region (geographic), and Sphere.
+//! 镜像 CesiumJS `Scene/Cesium3DTileBoundingVolume.js`
+//! 支持三种类型：Box（OBB）、Region（地理）和 Sphere。
 
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -9,26 +9,26 @@ use cesium_geospatial::rectangle::Rectangle;
 use glam::DVec3;
 use serde::{Deserialize, Serialize};
 
-/// A bounding volume for a 3D Tile.
+/// 一个 3D Tile 的包围体。
 ///
-/// Maps to the `boundingVolume` property in tileset.json.
-/// Three types are supported per the 3D Tiles specification:
-/// - `box`: An oriented bounding box (center + 3 half-axis vectors)
-/// - `region`: A geographic region [west, south, east, north, minHeight, maxHeight]
-/// - `sphere`: A bounding sphere [centerX, centerY, centerZ, radius]
+/// 映射到 tileset.json 中的 `boundingVolume` 属性。
+/// 根据 3D Tiles 规范支持三种类型：
+/// - `box`：定向包围盒（中心 + 3 个半轴向量）
+/// - `region`：地理区域 [west, south, east, north, minHeight, maxHeight]
+/// - `sphere`：包围球 [centerX, centerY, centerZ, radius]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BoundingVolume {
-    /// Oriented bounding box: [cx, cy, cz, xDirX, xDirY, xDirZ, yDirX, yDirY, yDirZ, zDirX, zDirY, zDirZ]
+    /// 定向包围盒：[cx, cy, cz, xDirX, xDirY, xDirZ, yDirX, yDirY, yDirZ, zDirX, zDirY, zDirZ]
     Box([f64; 12]),
-    /// Geographic region: [west, south, east, north, minHeight, maxHeight] (radians + meters)
+    /// 地理区域：[west, south, east, north, minHeight, maxHeight]（弧度 + 米）
     Region([f64; 6]),
-    /// Bounding sphere: [centerX, centerY, centerY, radius]
+    /// 包围球：[centerX, centerY, centerY, radius]
     Sphere([f64; 4]),
 }
 
 impl BoundingVolume {
-    /// Creates a bounding box from center and half-axis vectors.
+    /// 由中心和半轴向量创建包围盒。
     pub fn from_box(center: DVec3, half_x: DVec3, half_y: DVec3, half_z: DVec3) -> Self {
         BoundingVolume::Box([
             center.x, center.y, center.z,
@@ -38,17 +38,17 @@ impl BoundingVolume {
         ])
     }
 
-    /// Creates a bounding sphere from center and radius.
+    /// 由中心和半径创建包围球。
     pub fn from_sphere(center: DVec3, radius: f64) -> Self {
         BoundingVolume::Sphere([center.x, center.y, center.z, radius])
     }
 
-    /// Creates a geographic region bounding volume.
+    /// 创建一个地理区域包围体。
     pub fn from_region(west: f64, south: f64, east: f64, north: f64, min_height: f64, max_height: f64) -> Self {
         BoundingVolume::Region([west, south, east, north, min_height, max_height])
     }
 
-    /// Gets the center of the bounding volume in ECEF coordinates.
+    /// 获取包围体在 ECEF 坐标系中的中心。
     pub fn center(&self, ellipsoid: &Ellipsoid) -> DVec3 {
         match self {
             BoundingVolume::Box(data) => DVec3::new(data[0], data[1], data[2]),
@@ -64,7 +64,7 @@ impl BoundingVolume {
         }
     }
 
-    /// Converts this bounding volume to a BoundingSphere for distance calculations.
+    /// 将该包围体转换为 BoundingSphere，用于距离计算。
     pub fn to_bounding_sphere(&self, ellipsoid: &Ellipsoid) -> BoundingSphere {
         match self {
             BoundingVolume::Sphere(data) => {
@@ -75,7 +75,7 @@ impl BoundingVolume {
                 let half_x = DVec3::new(data[3], data[4], data[5]);
                 let half_y = DVec3::new(data[6], data[7], data[8]);
                 let half_z = DVec3::new(data[9], data[10], data[11]);
-                // Radius is the length of the longest diagonal
+                // 半径是最长对角线的长度
                 let radius = (half_x.length_squared()
                     + half_y.length_squared()
                     + half_z.length_squared())
@@ -86,7 +86,7 @@ impl BoundingVolume {
                 let rect = Rectangle::new(data[0], data[1], data[2], data[3]);
                 let min_h = data[4];
                 let max_h = data[5];
-                // Approximate with a sphere
+                // 用球体近似
                 let center_carto = cesium_geospatial::cartographic::Cartographic::from_radians(
                     (rect.west + rect.east) / 2.0,
                     (rect.south + rect.north) / 2.0,
@@ -94,7 +94,7 @@ impl BoundingVolume {
                 );
                 let center = ellipsoid.cartographic_to_cartesian(&center_carto);
 
-                // Compute radius from corner distances
+                // 由角点距离计算半径
                 let sw = ellipsoid.cartographic_to_cartesian(
                     &cesium_geospatial::cartographic::Cartographic::from_radians(
                         rect.west, rect.south, min_h,
@@ -111,9 +111,9 @@ impl BoundingVolume {
         }
     }
 
-    /// Computes the distance from a point to the bounding volume.
+    /// 计算一个点到包围体的距离。
     ///
-    /// Returns 0 if the point is inside the volume.
+    /// 若点位于体内则返回 0。
     pub fn distance_to(&self, point: DVec3, ellipsoid: &Ellipsoid) -> f64 {
         match self {
             BoundingVolume::Sphere(data) => {
@@ -127,7 +127,7 @@ impl BoundingVolume {
                 let half_y = DVec3::new(data[6], data[7], data[8]);
                 let half_z = DVec3::new(data[9], data[10], data[11]);
 
-                // Transform point to box-local coordinates
+                // 将点变换到 box 局部坐标系
                 let offset = point - center;
                 let dx = offset.dot(half_x.normalize_or_zero());
                 let dy = offset.dot(half_y.normalize_or_zero());
@@ -140,14 +140,14 @@ impl BoundingVolume {
                 (ex * ex + ey * ey + ez * ez).sqrt()
             }
             BoundingVolume::Region(_) => {
-                // Use bounding sphere approximation for region
+                // 对 region 使用包围球近似
                 let sphere = self.to_bounding_sphere(ellipsoid);
                 (point.distance(sphere.center) - sphere.radius).max(0.0)
             }
         }
     }
 
-    /// Gets the geographic rectangle if this is a region volume.
+    /// 若这是 region 体则获取其地理矩形。
     pub fn as_region(&self) -> Option<Rectangle> {
         match self {
             BoundingVolume::Region(data) => {
@@ -177,7 +177,7 @@ mod tests {
             DVec3::new(0.0, 0.0, 1.0),
         );
         if let BoundingVolume::Box(data) = bv {
-            assert_eq!(data[0], 0.0); // center x
+            assert_eq!(data[0], 0.0); // 中心 x
             assert_eq!(data[3], 1.0); // half_x x
         } else {
             panic!("Expected Box variant");
@@ -217,7 +217,7 @@ mod tests {
             DVec3::new(0.0, 5.0, 0.0),
             DVec3::new(0.0, 0.0, 5.0),
         );
-        // Point outside on X axis
+        // X 轴上方的外部点
         let point = DVec3::new(10.0, 0.0, 0.0);
         let dist = bv.distance_to(point, &Ellipsoid::WGS84);
         assert!((dist - 5.0).abs() < 1e-10);

@@ -1,5 +1,5 @@
-//! GPX Parser specs
-//! Ported from CesiumJS DataSources/GpxDataSourceSpec.js
+//! GPX 解析器规范
+//! 移植自 CesiumJS DataSources/GpxDataSourceSpec.js
 
 use cesium_gpx::parser::{
     gpx_to_datasource, parse_gpx_simple, GpxDocument, GpxRoutePoint, GpxTrackPoint, GpxWaypoint,
@@ -47,7 +47,7 @@ const SIMPLE_GPX: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   </rte>
 </gpx>"#;
 
-// ==================== Parsing: Metadata ====================
+// ==================== 解析：元数据 ====================
 
 #[test]
 fn parse_metadata_name_and_desc() {
@@ -56,7 +56,7 @@ fn parse_metadata_name_and_desc() {
     assert_eq!(doc.metadata.description.as_deref(), Some("A test GPX file"));
 }
 
-// ==================== Parsing: Waypoints ====================
+// ==================== 解析：航点 ====================
 
 #[test]
 fn parse_waypoints_count() {
@@ -97,7 +97,7 @@ fn waypoint_to_cartographic() {
     assert!((carto.height).abs() < 1e-10);
 }
 
-// ==================== Parsing: Tracks ====================
+// ==================== 解析：轨迹 ====================
 
 #[test]
 fn parse_track_count_and_name() {
@@ -120,7 +120,7 @@ fn parse_track_segment_points() {
     assert!((p0.elevation.unwrap() - 5.0).abs() < 1e-10);
     assert_eq!(p0.time.as_deref(), Some("2024-01-01T06:00:00Z"));
 
-    // Third point has no elevation/time
+    // 第三个点无高程/时间
     let p2 = &seg.points[2];
     assert!(p2.elevation.is_none());
     assert!(p2.time.is_none());
@@ -134,7 +134,7 @@ fn track_point_to_cartographic() {
     assert!((carto.longitude - 60.0_f64.to_radians()).abs() < 1e-10);
 }
 
-// ==================== Parsing: Routes ====================
+// ==================== 解析：航线 ====================
 
 #[test]
 fn parse_route_count_and_name() {
@@ -168,7 +168,7 @@ fn route_point_to_cartographic() {
     assert!((carto.longitude - 120.0_f64.to_radians()).abs() < 1e-10);
 }
 
-// ==================== DataSource conversion ====================
+// ==================== DataSource 转换 ====================
 
 #[test]
 fn gpx_to_datasource_name() {
@@ -181,7 +181,7 @@ fn gpx_to_datasource_name() {
 fn gpx_to_datasource_entity_count() {
     let doc = parse_gpx_simple(SIMPLE_GPX).unwrap();
     let ds = gpx_to_datasource(&doc);
-    // 2 waypoints + 1 track segment + 1 route = 4 entities
+    // 2 航点 + 1 轨迹段 + 1 航线 = 4 个实体
     assert_eq!(ds.entities.len(), 4);
 }
 
@@ -192,7 +192,7 @@ fn gpx_to_datasource_default_name() {
     assert_eq!(ds.name, "GPX");
 }
 
-// ==================== Edge cases ====================
+// ==================== 边缘情形 ====================
 
 #[test]
 fn parse_empty_gpx() {

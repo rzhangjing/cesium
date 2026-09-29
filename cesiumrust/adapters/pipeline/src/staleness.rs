@@ -1,30 +1,30 @@
-//! Default staleness policy — three-state result classification.
+//! 默认过期策略 —— 三态结果分类。
 //!
-//! Mirrors the dispatch at `dynamic_globe.rs:1052-1098`. The three failure
-//! states are **semantically distinct and must never be merged**:
+//! 照搬 `dynamic_globe.rs:1052-1098` 的分派。三个失败态
+//! **语义上互不相同，绝不能合并**：
 //!
-//! - `Aborted` (L1052-1060): tile left the wanted set mid-flight. Only clears
-//!   `in_flight` + reupload guard and counts a `stale_skip`. No permanent
-//!   state change — the tile may be re-requested next frame.
-//! - `Failed` (L1062-1072): all worker retries exhausted (transient
-//!   throttle/timeout). Enters the `retry_after` cooldown (10 s). NOT
-//!   permanent no-data.
-//! - `Placeholder` (L1074-1098): no usable imagery (e.g. Bing gradient JPEG).
-//!   Stamps **permanent** no-data and inherits ancestor coverage via UV
-//!   upsample. Never retried.
+//! - `Aborted`（L1052-1060）：瓦片在在途期间离开了 wanted 集。仅清除
+//!   `in_flight` + 重上传守卫，并计入一次 `stale_skip`。无永久
+//!   状态变更 —— 该瓦片可能在下一帧被重新请求。
+//! - `Failed`（L1062-1072）：所有工作线程重试均已耗尽（瞬时的
+//!   限速/超时）。进入 `retry_after` 冷却（10 s）。并非
+//!   永久性的无数据。
+//! - `Placeholder`（L1074-1098）：无可用影像（例如 Bing 渐变 JPEG）。
+//!   会戳上**永久性**的无数据标记，并通过 UV 上采样继承
+//!   祖先覆盖。绝不重试。
 //!
-//! A fourth `Fresh` verdict represents a successful download with payload.
+//! 第四个 `Fresh` 判决代表一次带载荷的成功下载。
 
 use std::time::Duration;
 
 use cesium_ports_driven::{StalenessPolicy, StalenessVerdict};
 
-/// Default staleness policy matching `dynamic_globe.rs:1052-1098`.
+/// 与 `dynamic_globe.rs:1052-1098` 一致的默认过期策略。
 #[derive(Debug, Clone, Copy)]
 pub struct DefaultStaleness;
 
 impl DefaultStaleness {
-    /// `dynamic_globe.rs:1070` — retry cooldown after a `Failed` verdict.
+    /// `dynamic_globe.rs:1070` —— 一个 `Failed` 判决后的重试冷却。
     pub const RETRY_COOLDOWN: Duration = Duration::from_secs(10);
 }
 
@@ -35,12 +35,12 @@ impl Default for DefaultStaleness {
 }
 
 impl StalenessPolicy for DefaultStaleness {
-    /// Classify a download result into one of the four verdicts.
+    /// 将一个下载结果分类为四个判决之一。
     ///
-    /// Precedence matches `dynamic_globe.rs` dispatch order (L1052 → L1098):
-    /// `aborted` is checked first (the wanted-set gate at L2161 fires before
-    /// any decode), then `failed` (retries exhausted), then `placeholder`
-    /// (decode returned no usable imagery). If none apply the tile is `Fresh`.
+    /// 优先级与 `dynamic_globe.rs` 的分派顺序一致（L1052 → L1098）：
+    /// 首先检查 `aborted`（L2161 的 wanted-集门控在任何解码之前触发），
+    /// 然后是 `failed`（重试耗尽），再是 `placeholder`（解码未返回可用
+    /// 影像）。若都不适用，则该瓦片为 `Fresh`。
     fn classify(&self, aborted: bool, failed: bool, placeholder: bool) -> StalenessVerdict {
         if aborted {
             StalenessVerdict::Aborted
@@ -66,13 +66,13 @@ mod tests {
     #[test]
     fn three_states_are_not_merged() {
         let s = DefaultStaleness;
-        // Each single-flag input maps to a distinct verdict.
+        // 每个单-flag 输入都映射到一个不同的判决。
         assert_eq!(s.classify(true, false, false), StalenessVerdict::Aborted);
         assert_eq!(s.classify(false, true, false), StalenessVerdict::Failed);
         assert_eq!(s.classify(false, false, true), StalenessVerdict::Placeholder);
         assert_eq!(s.classify(false, false, false), StalenessVerdict::Fresh);
 
-        // All four verdicts are pairwise distinct.
+        // 四个判决彼此两两不同。
         let verdicts = [
             s.classify(true, false, false),
             s.classify(false, true, false),
@@ -90,8 +90,8 @@ mod tests {
 
     #[test]
     fn aborted_takes_precedence() {
-        // The wanted-set gate (L2161) fires before decode, so `aborted` wins
-        // even if other flags are coincidentally set.
+        // wanted-集门控（L2161）在解码之前触发，因此即使其他 flag
+        // 碰巧也被置位，`aborted` 仍然胜出。
         let s = DefaultStaleness;
         assert_eq!(s.classify(true, true, true), StalenessVerdict::Aborted);
         assert_eq!(s.classify(false, true, true), StalenessVerdict::Failed);
@@ -99,7 +99,7 @@ mod tests {
 
     #[test]
     fn retry_cooldown_is_10s() {
-        // L1070: `retry_after.insert(key, now + 10s)`
+        // L1070：`retry_after.insert(key, now + 10s)`
         let s = DefaultStaleness;
         assert_eq!(s.retry_cooldown(), Duration::from_secs(10));
     }

@@ -1,13 +1,13 @@
-//! Multi-layer imagery blending.
+//! 多层影像混合。
 //!
-//! Implements color compositing for multiple imagery layers with support for
-//! different blending modes, day/night alpha, and split direction.
-//! Maps to CesiumJS `Scene/ImageryLayer.js` blending logic.
+//! 为多个影像图层实现颜色合成，支持不同的混合模式、昼/夜 alpha
+//! 以及分割方向。
+//! 映射到 CesiumJS `Scene/ImageryLayer.js` 的混合逻辑。
 
 use crate::imagery_layer::ImageryLayer;
 use crate::AlphaBlendingMode;
 
-/// A pixel color in linear RGBA space (each channel 0.0..1.0).
+/// 线性 RGBA 空间中的像素颜色（每个通道 0.0..1.0）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PixelColor {
     pub r: f64,
@@ -17,7 +17,7 @@ pub struct PixelColor {
 }
 
 impl PixelColor {
-    /// Transparent black.
+    /// 透明黑。
     pub const TRANSPARENT: Self = Self {
         r: 0.0,
         g: 0.0,
@@ -25,7 +25,7 @@ impl PixelColor {
         a: 0.0,
     };
 
-    /// Opaque black.
+    /// 不透明黑。
     pub const BLACK: Self = Self {
         r: 0.0,
         g: 0.0,
@@ -33,7 +33,7 @@ impl PixelColor {
         a: 1.0,
     };
 
-    /// Opaque white.
+    /// 不透明白。
     pub const WHITE: Self = Self {
         r: 1.0,
         g: 1.0,
@@ -41,31 +41,31 @@ impl PixelColor {
         a: 1.0,
     };
 
-    /// Creates a new pixel color.
+    /// 创建一个新的像素颜色。
     pub fn new(r: f64, g: f64, b: f64, a: f64) -> Self {
         Self { r, g, b, a }
     }
 
-    /// Creates an opaque color from RGB.
+    /// 由 RGB 创建一个不透明颜色。
     pub fn opaque(r: f64, g: f64, b: f64) -> Self {
         Self { r, g, b, a: 1.0 }
     }
 }
 
-/// Computes the effective alpha for a layer given day/night conditions.
+/// 给定昼/夜条件计算图层的有效 alpha。
 ///
-/// Maps to CesiumJS `ImageryLayer._computeAlpha`
+/// 映射到 CesiumJS `ImageryLayer._computeAlpha`
 ///
-/// # Arguments
-/// * `layer` - The imagery layer
-/// * `is_day` - Whether the tile is on the day side of the globe
+/// # 参数
+/// * `layer` - 影像图层
+/// * `is_day` - 瓦片是否位于地球昼侧
 ///
-/// # Returns
-/// The effective alpha value
+/// # 返回
+/// 有效 alpha 值
 pub fn compute_effective_alpha(layer: &ImageryLayer, is_day: bool) -> f64 {
     let mut alpha = layer.alpha;
 
-    // Apply day/night alpha modulation
+    // 应用昼/夜 alpha 调制
     if is_day {
         alpha *= layer.day_alpha;
     } else {
@@ -75,36 +75,36 @@ pub fn compute_effective_alpha(layer: &ImageryLayer, is_day: bool) -> f64 {
     alpha.clamp(0.0, 1.0)
 }
 
-/// Applies brightness, contrast, hue, saturation, and gamma adjustments to a pixel.
+/// 对像素应用亮度、对比度、色相、饱和度和 gamma 调整。
 ///
-/// Maps to CesiumJS imagery layer color adjustments.
+/// 映射到 CesiumJS 影像图层的颜色调整。
 ///
-/// # Arguments
-/// * `color` - The input pixel color
-/// * `layer` - The imagery layer with adjustment parameters
+/// # 参数
+/// * `color` - 输入的像素颜色
+/// * `layer` - 带调整参数的影像图层
 ///
-/// # Returns
-/// The adjusted pixel color
+/// # 返回
+/// 调整后的像素颜色
 pub fn apply_color_adjustments(color: PixelColor, layer: &ImageryLayer) -> PixelColor {
     let mut r = color.r;
     let mut g = color.g;
     let mut b = color.b;
 
-    // Apply brightness
+    // 应用亮度
     if (layer.brightness - 1.0).abs() > 1e-10 {
         r *= layer.brightness;
         g *= layer.brightness;
         b *= layer.brightness;
     }
 
-    // Apply contrast
+    // 应用对比度
     if (layer.contrast - 1.0).abs() > 1e-10 {
         r = apply_contrast(r, layer.contrast);
         g = apply_contrast(g, layer.contrast);
         b = apply_contrast(b, layer.contrast);
     }
 
-    // Apply saturation
+    // 应用饱和度
     if (layer.saturation - 1.0).abs() > 1e-10 {
         let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
         r = luminance + (r - luminance) * layer.saturation;
@@ -112,7 +112,7 @@ pub fn apply_color_adjustments(color: PixelColor, layer: &ImageryLayer) -> Pixel
         b = luminance + (b - luminance) * layer.saturation;
     }
 
-    // Apply gamma
+    // 应用 gamma
     if (layer.gamma - 1.0).abs() > 1e-10 {
         let inv_gamma = 1.0 / layer.gamma;
         r = r.max(0.0).powf(inv_gamma);
@@ -128,21 +128,21 @@ pub fn apply_color_adjustments(color: PixelColor, layer: &ImageryLayer) -> Pixel
     }
 }
 
-/// Applies contrast adjustment to a single channel.
+/// 对单个通道应用对比度调整。
 fn apply_contrast(value: f64, contrast: f64) -> f64 {
     ((value - 0.5) * contrast + 0.5).clamp(0.0, 1.0)
 }
 
-/// Blends a source pixel onto a destination pixel using the specified blending mode.
+/// 使用指定的混合模式将源像素混合到目标像素上。
 ///
-/// # Arguments
-/// * `dst` - The destination (background) pixel
-/// * `src` - The source (foreground) pixel
-/// * `mode` - The alpha blending mode
-/// * `layer_alpha` - The effective layer alpha
+/// # 参数
+/// * `dst` - 目标（背景）像素
+/// * `src` - 源（前景）像素
+/// * `mode` - alpha 混合模式
+/// * `layer_alpha` - 有效的图层 alpha
 ///
-/// # Returns
-/// The blended pixel
+/// # 返回
+/// 混合后的像素
 pub fn blend_pixel(
     dst: PixelColor,
     src: PixelColor,
@@ -153,7 +153,7 @@ pub fn blend_pixel(
 
     match mode {
         AlphaBlendingMode::Standard => {
-            // Standard alpha compositing: result = src * src_alpha + dst * (1 - src_alpha)
+            // 标准 alpha 合成：result = src * src_alpha + dst * (1 - src_alpha)
             let inv_alpha = 1.0 - src_alpha;
             PixelColor {
                 r: src.r * src_alpha + dst.r * inv_alpha,
@@ -163,7 +163,7 @@ pub fn blend_pixel(
             }
         }
         AlphaBlendingMode::Additive => {
-            // Additive blending: result = src * src_alpha + dst
+            // 叠加混合：result = src * src_alpha + dst
             PixelColor {
                 r: (dst.r + src.r * src_alpha).clamp(0.0, 1.0),
                 g: (dst.g + src.g * src_alpha).clamp(0.0, 1.0),
@@ -172,7 +172,7 @@ pub fn blend_pixel(
             }
         }
         AlphaBlendingMode::Multiplicative => {
-            // Multiplicative blending: result = src * dst (modulated by alpha)
+            // 正片叠底混合：result = src * dst（受 alpha 调制）
             let inv_alpha = 1.0 - src_alpha;
             PixelColor {
                 r: src.r * dst.r * src_alpha + dst.r * inv_alpha,
@@ -184,16 +184,16 @@ pub fn blend_pixel(
     }
 }
 
-/// Composites multiple imagery layers from bottom to top.
+/// 从底到顶合成多个影像图层。
 ///
-/// # Arguments
-/// * `layers` - The layers in bottom-to-top order
-/// * `layer_colors` - The pixel color from each layer's texture
-/// * `is_day` - Whether the tile is on the day side
-/// * `base_color` - The base (terrain) color before any imagery
+/// # 参数
+/// * `layers` - 按从底到顶顺序排列的图层
+/// * `layer_colors` - 来自每个图层纹理的像素颜色
+/// * `is_day` - 瓦片是否位于昼侧
+/// * `base_color` - 应用任何影像之前的基础（地形）颜色
 ///
-/// # Returns
-/// The final composited pixel color
+/// # 返回
+/// 最终合成的像素颜色
 pub fn composite_layers(
     layers: &[&ImageryLayer],
     layer_colors: &[PixelColor],
@@ -212,25 +212,25 @@ pub fn composite_layers(
             continue;
         }
 
-        // Apply color adjustments
+        // 应用颜色调整
         let adjusted = apply_color_adjustments(src_color, layer);
 
-        // Blend onto result
+        // 混合到结果上
         result = blend_pixel(result, adjusted, layer.alpha_blending_mode, effective_alpha);
     }
 
     result
 }
 
-/// Determines if a layer should be rendered for a given split position.
+/// 判断对于给定的分割位置，图层是否应被渲染。
 ///
-/// # Arguments
-/// * `layer` - The imagery layer
-/// * `split_position` - The normalized split position (0.0 to 1.0)
-/// * `tile_center_x` - The normalized X center of the tile (0.0 to 1.0)
+/// # 参数
+/// * `layer` - 影像图层
+/// * `split_position` - 归一化的分割位置（0.0 到 1.0）
+/// * `tile_center_x` - 瓦片的归一化 X 中心（0.0 到 1.0）
 ///
-/// # Returns
-/// True if the layer should render for this tile
+/// # 返回
+/// 若该图层应为此瓦片渲染则为 True
 pub fn should_render_for_split(
     layer: &ImageryLayer,
     split_position: f64,
@@ -280,12 +280,12 @@ mod tests {
 
     #[test]
     fn test_blend_standard() {
-        let dst = PixelColor::opaque(0.0, 0.0, 1.0); // blue background
-        let src = PixelColor::opaque(1.0, 0.0, 0.0); // red foreground
+        let dst = PixelColor::opaque(0.0, 0.0, 1.0); // 蓝色背景
+        let src = PixelColor::opaque(1.0, 0.0, 0.0); // 红色前景
 
         let result = blend_pixel(dst, src, AlphaBlendingMode::Standard, 0.5);
 
-        // 50% red + 50% blue = purple
+        // 50% 红 + 50% 蓝 = 紫
         assert!((result.r - 0.5).abs() < 1e-10);
         assert!((result.b - 0.5).abs() < 1e-10);
     }
@@ -320,14 +320,14 @@ mod tests {
 
         let layers = vec![&layer1, &layer2];
         let colors = vec![
-            PixelColor::opaque(1.0, 0.0, 0.0), // red
-            PixelColor::opaque(0.0, 0.0, 1.0), // blue
+            PixelColor::opaque(1.0, 0.0, 0.0), // 红
+            PixelColor::opaque(0.0, 0.0, 1.0), // 蓝
         ];
 
         let result = composite_layers(&layers, &colors, true, PixelColor::TRANSPARENT);
 
-        // Layer1 (red, alpha=1) on transparent → red
-        // Layer2 (blue, alpha=1) on red → blue (fully covers)
+        // 图层1（红，alpha=1）叠加到透明 → 红
+        // 图层2（蓝，alpha=1）叠加到红 → 蓝（完全覆盖）
         assert!((result.r - 0.0).abs() < 1e-10);
         assert!((result.b - 1.0).abs() < 1e-10);
     }
@@ -340,14 +340,14 @@ mod tests {
 
         let layers = vec![&layer1, &layer2];
         let colors = vec![
-            PixelColor::opaque(1.0, 0.0, 0.0), // red at 50%
-            PixelColor::new(0.0, 0.0, 1.0, 0.5), // blue at 50% pixel alpha
+            PixelColor::opaque(1.0, 0.0, 0.0), // 50% 的红
+            PixelColor::new(0.0, 0.0, 1.0, 0.5), // 50% 像素 alpha 的蓝
         ];
 
         let result = composite_layers(&layers, &colors, true, PixelColor::BLACK);
 
-        // After layer1: 0.5*red + 0.5*black = (0.5, 0, 0)
-        // After layer2: 0.5*blue + 0.5*(0.5, 0, 0) = (0.25, 0, 0.5)
+        // 图层1之后：0.5*红 + 0.5*黑 = (0.5, 0, 0)
+        // 图层2之后：0.5*蓝 + 0.5*(0.5, 0, 0) = (0.25, 0, 0.5)
         assert!((result.r - 0.25).abs() < 1e-10);
         assert!((result.b - 0.5).abs() < 1e-10);
     }
@@ -368,12 +368,12 @@ mod tests {
     #[test]
     fn test_color_adjustments_saturation() {
         let mut layer = create_test_layer();
-        layer.saturation = 0.0; // fully desaturate
+        layer.saturation = 0.0; // 完全去饱和
 
         let color = PixelColor::opaque(1.0, 0.0, 0.0);
         let adjusted = apply_color_adjustments(color, &layer);
 
-        // Luminance of pure red = 0.2126
+        // 纯红的亮度 = 0.2126
         let lum = 0.2126;
         assert!((adjusted.r - lum).abs() < 1e-6);
         assert!((adjusted.g - lum).abs() < 1e-6);
@@ -386,17 +386,17 @@ mod tests {
 
         let mut layer = create_test_layer();
 
-        // No split - always render
+        // 无分割 - 始终渲染
         layer.split_direction = SplitDirection::None;
         assert!(should_render_for_split(&layer, 0.5, 0.3));
         assert!(should_render_for_split(&layer, 0.5, 0.7));
 
-        // Left split - render only left of split
+        // 左分割 - 仅渲染分割线左侧
         layer.split_direction = SplitDirection::Left;
         assert!(should_render_for_split(&layer, 0.5, 0.3));
         assert!(!should_render_for_split(&layer, 0.5, 0.7));
 
-        // Right split - render only right of split
+        // 右分割 - 仅渲染分割线右侧
         layer.split_direction = SplitDirection::Right;
         assert!(!should_render_for_split(&layer, 0.5, 0.3));
         assert!(should_render_for_split(&layer, 0.5, 0.7));

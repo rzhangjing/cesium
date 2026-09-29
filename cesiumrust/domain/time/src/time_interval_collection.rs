@@ -1,12 +1,11 @@
-//! TimeIntervalCollection - a non-overlapping collection of `TimeInterval`
-//! instances sorted by start time.
+//! TimeIntervalCollection - 按开始时间排序的、互不重叠的 `TimeInterval`
+//! 实例集合。
 //!
-//! Maps to CesiumJS `Core/TimeIntervalCollection.js`.
+//! 映射到 CesiumJS `Core/TimeIntervalCollection.js`。
 //!
-//! The collection keeps intervals sorted by start time and guarantees that no
-//! two intervals overlap. Adding an interval merges it with adjacent intervals
-//! that carry the same data, or splits/truncates existing intervals when the
-//! data differs (the newly added interval's data takes precedence).
+//! 该集合按开始时间排序保存各区间，并保证任意两个区间互不重叠。添加一个
+//! 区间时，若其携带相同数据则与相邻区间合并；若数据不同则拆分/截断已有
+//! 区间（新添加区间的数据优先）。
 
 // deferred.md #13: `is_leap_year` 目前仅由 julian_date.rs 经全路径调用，本文件暂未使用。
 #[allow(unused_imports)]
@@ -15,37 +14,37 @@ use crate::julian_date::JulianDate;
 use crate::time_interval::TimeInterval;
 use std::cmp::Ordering;
 
-/// A `TimeInterval` together with an optional data payload.
+/// 一个 `TimeInterval` 及其可选的数据负载。
 ///
-/// Maps to CesiumJS `TimeInterval` (which carries a `data` property).
+/// 映射到 CesiumJS `TimeInterval`（它携带一个 `data` 属性）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimeIntervalData<T> {
-    /// The underlying interval (start/stop/inclusion flags).
+    /// 底层区间（开始/停止/包含标志）。
     pub interval: TimeInterval,
-    /// The data associated with this interval.
+    /// 与该区间关联的数据。
     pub data: Option<T>,
 }
 
 impl<T> TimeIntervalData<T> {
-    /// Creates a new interval with data.
+    /// 创建一个带数据的新区间。
     pub fn new(interval: TimeInterval, data: Option<T>) -> Self {
         Self { interval, data }
     }
 
-    /// Returns true if the interval is empty.
+    /// 若区间为空则返回 true。
     pub fn is_empty(&self) -> bool {
         self.interval.is_empty()
     }
 
-    /// Returns true if the interval contains the given time.
+    /// 若区间包含给定时间则返回 true。
     pub fn contains(&self, time: &JulianDate) -> bool {
         self.interval.contains(time)
     }
 }
 
-/// A non-overlapping collection of `TimeInterval` instances sorted by start time.
+/// 按开始时间排序的、互不重叠的 `TimeInterval` 实例集合。
 ///
-/// Maps to CesiumJS `TimeIntervalCollection`.
+/// 映射到 CesiumJS `TimeIntervalCollection`。
 #[derive(Debug, Clone)]
 pub struct TimeIntervalCollection<T> {
     intervals: Vec<TimeIntervalData<T>>,
@@ -58,14 +57,14 @@ impl<T> Default for TimeIntervalCollection<T> {
 }
 
 impl<T> TimeIntervalCollection<T> {
-    /// Creates an empty collection.
+    /// 创建一个空集合。
     pub fn new() -> Self {
         Self {
             intervals: Vec::new(),
         }
     }
 
-    /// Creates a collection pre-populated with the given intervals.
+    /// 创建一个以给定区间预填充的集合。
     pub fn from_intervals<F>(intervals: Vec<TimeIntervalData<T>>, same_data: &F) -> Self
     where
         T: Clone,
@@ -78,26 +77,26 @@ impl<T> TimeIntervalCollection<T> {
         collection
     }
 
-    /// The number of intervals in the collection.
-    /// Maps to `TimeIntervalCollection.prototype.length`.
+    /// 集合中区间数量。
+    /// 映射到 `TimeIntervalCollection.prototype.length`。
     pub fn len(&self) -> usize {
         self.intervals.len()
     }
 
-    /// Returns true if the collection is empty.
-    /// Maps to `TimeIntervalCollection.prototype.isEmpty`.
+    /// 若集合为空则返回 true。
+    /// 映射到 `TimeIntervalCollection.prototype.isEmpty`。
     pub fn is_empty(&self) -> bool {
         self.intervals.is_empty()
     }
 
-    /// The start time of the collection (start of the first interval).
-    /// Maps to `TimeIntervalCollection.prototype.start`.
+    /// 集合的开始时间（第一个区间的开始）。
+    /// 映射到 `TimeIntervalCollection.prototype.start`。
     pub fn start(&self) -> Option<JulianDate> {
         self.intervals.first().map(|i| i.interval.start)
     }
 
-    /// Whether the start time is included in the collection.
-    /// Maps to `TimeIntervalCollection.prototype.isStartIncluded`.
+    /// 开始时间是否包含在集合内。
+    /// 映射到 `TimeIntervalCollection.prototype.isStartIncluded`。
     pub fn is_start_included(&self) -> bool {
         self.intervals
             .first()
@@ -105,14 +104,14 @@ impl<T> TimeIntervalCollection<T> {
             .unwrap_or(false)
     }
 
-    /// The stop time of the collection (stop of the last interval).
-    /// Maps to `TimeIntervalCollection.prototype.stop`.
+    /// 集合的停止时间（最后一个区间的停止）。
+    /// 映射到 `TimeIntervalCollection.prototype.stop`。
     pub fn stop(&self) -> Option<JulianDate> {
         self.intervals.last().map(|i| i.interval.stop)
     }
 
-    /// Whether the stop time is included in the collection.
-    /// Maps to `TimeIntervalCollection.prototype.isStopIncluded`.
+    /// 停止时间是否包含在集合内。
+    /// 映射到 `TimeIntervalCollection.prototype.isStopIncluded`。
     pub fn is_stop_included(&self) -> bool {
         self.intervals
             .last()
@@ -120,32 +119,31 @@ impl<T> TimeIntervalCollection<T> {
             .unwrap_or(false)
     }
 
-    /// Gets the interval at the specified index.
-    /// Maps to `TimeIntervalCollection.prototype.get`.
+    /// 获取指定索引处的区间。
+    /// 映射到 `TimeIntervalCollection.prototype.get`。
     pub fn get(&self, index: usize) -> Option<&TimeIntervalData<T>> {
         self.intervals.get(index)
     }
 
-    /// Returns an iterator over the intervals.
+    /// 返回遍历各区间的迭代器。
     pub fn iter(&self) -> std::slice::Iter<'_, TimeIntervalData<T>> {
         self.intervals.iter()
     }
 
-    /// Removes all intervals from the collection.
-    /// Maps to `TimeIntervalCollection.prototype.removeAll`.
+    /// 从集合中移除所有区间。
+    /// 映射到 `TimeIntervalCollection.prototype.removeAll`。
     pub fn remove_all(&mut self) {
         self.intervals.clear();
     }
 
-    /// Finds and returns the index of the interval that contains the specified
-    /// date. Returns a negative number (bitwise complement of the insertion
-    /// index) when no interval contains the date, matching CesiumJS semantics.
+    /// 查找并返回包含指定日期的区间的索引。当没有区间包含该日期时，
+    /// 返回一个负数（插入索引的按位取反），与 CesiumJS 语义一致。
     ///
-    /// Maps to `TimeIntervalCollection.prototype.indexOf`.
+    /// 映射到 `TimeIntervalCollection.prototype.indexOf`。
     pub fn index_of(&self, date: &JulianDate) -> isize {
         let intervals = &self.intervals;
 
-        // Binary search on start times for an interval whose start == date.
+        // 对开始时间进行二分查找，寻找 start == date 的区间。
         let mut index = binary_search_start(intervals, date);
 
         if index >= 0 {
@@ -173,14 +171,14 @@ impl<T> TimeIntervalCollection<T> {
         !index
     }
 
-    /// Returns true if the collection contains the specified date.
-    /// Maps to `TimeIntervalCollection.prototype.contains`.
+    /// 若集合包含指定日期则返回 true。
+    /// 映射到 `TimeIntervalCollection.prototype.contains`。
     pub fn contains(&self, date: &JulianDate) -> bool {
         self.index_of(date) >= 0
     }
 
-    /// Finds and returns the interval that contains the specified date.
-    /// Maps to `TimeIntervalCollection.prototype.findIntervalContainingDate`.
+    /// 查找并返回包含指定日期的区间。
+    /// 映射到 `TimeIntervalCollection.prototype.findIntervalContainingDate`。
     pub fn find_interval_containing_date(&self, date: &JulianDate) -> Option<&TimeIntervalData<T>> {
         let index = self.index_of(date);
         if index >= 0 {
@@ -190,17 +188,17 @@ impl<T> TimeIntervalCollection<T> {
         }
     }
 
-    /// Finds and returns the data for the interval that contains the specified date.
-    /// Maps to `TimeIntervalCollection.prototype.findDataForIntervalContainingDate`.
+    /// 查找并返回包含指定日期的区间的数据。
+    /// 映射到 `TimeIntervalCollection.prototype.findDataForIntervalContainingDate`。
     pub fn find_data_for_interval_containing_date(&self, date: &JulianDate) -> Option<&T> {
         self.find_interval_containing_date(date)
             .and_then(|i| i.data.as_ref())
     }
 
-    /// Returns the first interval matching the optional start/stop/inclusion
-    /// parameters. `None` parameters are treated as don't-care.
+    /// 返回匹配可选 start/stop/inclusion 参数的第一个区间。
+    /// 为 `None` 的参数视为不关心。
     ///
-    /// Maps to `TimeIntervalCollection.prototype.findInterval`.
+    /// 映射到 `TimeIntervalCollection.prototype.findInterval`。
     pub fn find_interval(
         &self,
         start: Option<&JulianDate>,
@@ -222,15 +220,13 @@ impl<T> TimeIntervalCollection<T> {
         })
     }
 
-    /// Adds an interval to the collection, merging intervals that contain the
-    /// same data and splitting intervals of different data as needed in order
-    /// to maintain a non-overlapping collection. The data in the new interval
-    /// takes precedence over any existing intervals.
+    /// 向集合添加一个区间，合并包含相同数据的区间，并在需要时拆分数据
+    /// 不同的区间，以维持一个互不重叠的集合。新区间中的数据优先于任何
+    /// 已有区间。
     ///
-    /// `same_data` compares two data payloads to decide whether adjacent
-    /// intervals can be merged.
+    /// `same_data` 比较两个数据负载，以决定相邻区间能否合并。
     ///
-    /// Maps to `TimeIntervalCollection.prototype.addInterval`.
+    /// 映射到 `TimeIntervalCollection.prototype.addInterval`。
     pub fn add_interval<F>(&mut self, mut interval: TimeIntervalData<T>, same_data: &F)
     where
         T: Clone,
@@ -240,7 +236,7 @@ impl<T> TimeIntervalCollection<T> {
             return;
         }
 
-        // Fast path: appending after everything already present.
+        // 快速路径：追加在所有已有内容之后。
         if self.intervals.is_empty()
             || interval.interval.start > self.intervals[self.intervals.len() - 1].interval.stop
         {
@@ -248,7 +244,7 @@ impl<T> TimeIntervalCollection<T> {
             return;
         }
 
-        // Keep the list sorted by start date.
+        // 保持列表按开始日期排序。
         let mut index = binary_search_start(&self.intervals, &interval.interval.start);
         if index < 0 {
             index = !index;
@@ -273,7 +269,7 @@ impl<T> TimeIntervalCollection<T> {
         let mut idx = index as usize;
 
         if idx > 0 {
-            // See if the interval before this one overlaps this one.
+            // 查看前一个区间是否与此区间重叠。
             let cmp = compare(
                 &self.intervals[idx - 1].interval.stop,
                 &interval.interval.start,
@@ -289,7 +285,7 @@ impl<T> TimeIntervalCollection<T> {
                     same_data,
                 );
                 if same {
-                    // Overlapping intervals have the same data, so combine them.
+                    // 重叠的区间具有相同数据，因此将它们合并。
                     if interval.interval.stop > self.intervals[idx - 1].interval.stop {
                         interval = TimeIntervalData {
                             interval: TimeInterval::new(
@@ -317,8 +313,8 @@ impl<T> TimeIntervalCollection<T> {
                     self.intervals.remove(idx - 1);
                     idx -= 1;
                 } else {
-                    // Different data: the new interval wins; truncate the previous
-                    // interval, splitting it if it extends past the new one.
+                    // 数据不同：新区间胜出；截断前一个区间，
+                    // 若其延伸超过新区间则拆分它。
                     let cmp2 = compare(
                         &self.intervals[idx - 1].interval.stop,
                         &interval.interval.stop,
@@ -355,7 +351,7 @@ impl<T> TimeIntervalCollection<T> {
         }
 
         while idx < self.intervals.len() {
-            // See if the intervals after this one overlap this one.
+            // 查看此区间之后的区间是否与此区间重叠。
             let cmp = compare(&interval.interval.stop, &self.intervals[idx].interval.start);
             if cmp == Ordering::Greater
                 || (cmp == Ordering::Equal
@@ -368,7 +364,7 @@ impl<T> TimeIntervalCollection<T> {
                     same_data,
                 );
                 if same {
-                    // Same data: combine them.
+                    // 相同数据：将它们合并。
                     let next_stop = self.intervals[idx].interval.stop;
                     let (new_stop, new_stop_included) = if next_stop > interval.interval.stop {
                         (next_stop, self.intervals[idx].interval.is_stop_included)
@@ -386,7 +382,7 @@ impl<T> TimeIntervalCollection<T> {
                     };
                     self.intervals.remove(idx);
                 } else {
-                    // Different data: the new interval wins; truncate the next interval.
+                    // 数据不同：新区间胜出；截断下一个区间。
                     let next = &self.intervals[idx];
                     let truncated = TimeIntervalData {
                         interval: TimeInterval::new(
@@ -401,12 +397,12 @@ impl<T> TimeIntervalCollection<T> {
                         self.intervals.remove(idx);
                     } else {
                         self.intervals[idx] = truncated;
-                        // Found a partial span; the next interval cannot be spanned.
+                        // 找到部分跨越；下一个区间无法被跨越。
                         break;
                     }
                 }
             } else {
-                // Found the last one we're spanning; stop looking.
+                // 找到我们跨越的最后一个区间；停止查找。
                 break;
             }
         }
@@ -414,11 +410,10 @@ impl<T> TimeIntervalCollection<T> {
         self.intervals.insert(idx, interval);
     }
 
-    /// Removes the specified interval from this collection, creating a hole
-    /// over the specified interval. The data of the input interval is ignored.
-    /// Returns true if any part of the interval was in the collection.
+    /// 从本集合移除指定区间，在指定区间处创建一个空洞。输入的区间数据被忽略。
+    /// 若区间的任何部分原本在集合中则返回 true。
     ///
-    /// Maps to `TimeIntervalCollection.prototype.removeInterval`.
+    /// 映射到 `TimeIntervalCollection.prototype.removeInterval`。
     pub fn remove_interval(&mut self, interval: &TimeInterval) -> bool
     where
         T: Clone,
@@ -435,7 +430,7 @@ impl<T> TimeIntervalCollection<T> {
 
         let mut result = false;
 
-        // Check for truncation of the end of the previous interval.
+        // 检查前一个区间末尾的截断。
         if idx > 0
             && (self.intervals[idx - 1].interval.stop > interval.start
                 || (self.intervals[idx - 1].interval.stop == interval.start
@@ -449,7 +444,7 @@ impl<T> TimeIntervalCollection<T> {
                     && !interval.is_stop_included
                     && self.intervals[idx - 1].interval.stop == interval.stop)
             {
-                // Break the existing interval into two pieces.
+                // 将已有区间拆成两段。
                 let tail = TimeIntervalData {
                     interval: TimeInterval::new(
                         interval.stop,
@@ -474,7 +469,7 @@ impl<T> TimeIntervalCollection<T> {
             self.intervals[idx - 1] = truncated;
         }
 
-        // Keep the start point if interval.start matches but is not included.
+        // 若 interval.start 匹配但不包含，则保留该起始点。
         if idx < self.intervals.len()
             && !interval.is_start_included
             && self.intervals[idx].interval.is_start_included
@@ -494,18 +489,18 @@ impl<T> TimeIntervalCollection<T> {
             idx += 1;
         }
 
-        // Remove any intervals completely overlapped by the input interval.
+        // 移除被输入区间完全覆盖的所有区间。
         while idx < self.intervals.len() && interval.stop > self.intervals[idx].interval.stop {
             result = true;
             self.intervals.remove(idx);
         }
 
-        // Handle the case where the input interval ends on the same date as an
-        // existing interval.
+        // 处理输入区间与某个已有区间
+        // 结束于同一日期的情况。
         if idx < self.intervals.len() && interval.stop == self.intervals[idx].interval.stop {
             result = true;
             if !interval.is_stop_included && self.intervals[idx].interval.is_stop_included {
-                // The last point should remain.
+                // 最后一个点应当保留。
                 let stop_time = interval.stop;
                 let cur = &self.intervals[idx];
                 self.intervals[idx] = TimeIntervalData {
@@ -517,7 +512,7 @@ impl<T> TimeIntervalCollection<T> {
             }
         }
 
-        // Truncate any partially-overlapped intervals.
+        // 截断任何部分重叠的区间。
         if idx < self.intervals.len()
             && (interval.stop > self.intervals[idx].interval.start
                 || (interval.stop == self.intervals[idx].interval.start
@@ -541,10 +536,9 @@ impl<T> TimeIntervalCollection<T> {
         result
     }
 
-    /// Creates a new collection that is the intersection of this collection
-    /// and the provided collection.
+    /// 创建一个新集合，为本集合与所提供集合的交集。
     ///
-    /// Maps to `TimeIntervalCollection.prototype.intersect`.
+    /// 映射到 `TimeIntervalCollection.prototype.intersect`。
     pub fn intersect<F>(&self, other: &TimeIntervalCollection<T>, same_data: &F) -> TimeIntervalCollection<T>
     where
         T: Clone,
@@ -597,10 +591,9 @@ impl<T> TimeIntervalCollection<T> {
         result
     }
 
-    /// Compares this collection to another for equality, using `same_data` to
-    /// compare interval data.
+    /// 将本集合与另一个集合比较是否相等，使用 `same_data` 比较区间数据。
     ///
-    /// Maps to `TimeIntervalCollection.prototype.equals`.
+    /// 映射到 `TimeIntervalCollection.prototype.equals`。
     pub fn equals<F>(&self, other: &TimeIntervalCollection<T>, same_data: &F) -> bool
     where
         F: Fn(&T, &T) -> bool,
@@ -620,18 +613,18 @@ impl<T> TimeIntervalCollection<T> {
     }
 }
 
-/// Iso8601.MINIMUM_VALUE equivalent: 0001-01-01T00:00:00Z
+/// Iso8601.MINIMUM_VALUE 的等价：0001-01-01T00:00:00Z
 fn iso8601_minimum_value() -> JulianDate {
     JulianDate::from_iso8601("0001-01-01T00:00:00Z").unwrap()
 }
 
-/// Iso8601.MAXIMUM_VALUE equivalent: 9999-12-31T24:00:00Z
+/// Iso8601.MAXIMUM_VALUE 的等价：9999-12-31T24:00:00Z
 fn iso8601_maximum_value() -> JulianDate {
     JulianDate::from_iso8601("9999-12-31T24:00:00Z").unwrap()
 }
 
-/// A duration represented as GregorianDate components.
-/// Maps to the scratch GregorianDate used in CesiumJS `parseDuration` / `addToDate`.
+/// 以 GregorianDate 分量表示的时长。
+/// 映射到 CesiumJS `parseDuration` / `addToDate` 中使用的临时 GregorianDate。
 #[derive(Debug, Clone, Copy, Default)]
 struct Duration {
     year: f64,
@@ -655,9 +648,9 @@ impl Duration {
     }
 }
 
-/// Parses an ISO8601 duration string (e.g. "P1Y2M3DT1H2M3.5S") or a date-based
-/// duration (e.g. "0001-02-03T01:02:03.5").
-/// Maps to CesiumJS `parseDuration`.
+/// 解析 ISO8601 时长字符串（如 "P1Y2M3DT1H2M3.5S"）或基于日期的
+/// 时长（如 "0001-02-03T01:02:03.5"）。
+/// 映射到 CesiumJS `parseDuration`。
 fn parse_duration(iso8601: Option<&str>) -> Option<Duration> {
     let iso8601 = iso8601?;
     if iso8601.is_empty() {
@@ -669,15 +662,15 @@ fn parse_duration(iso8601: Option<&str>) -> Option<Duration> {
     // deferred.md #13: 手动 strip 'P' 前缀，等价 strip_prefix('P')；风格问题非逻辑错误。
     #[allow(clippy::manual_strip)]
     if iso8601.starts_with('P') {
-        // ISO8601 duration format: P[n]Y[n]M[n]W[n]DT[n]H[n]M[n]S
-        let s = &iso8601[1..]; // strip 'P'
+        // ISO8601 时长格式：P[n]Y[n]M[n]W[n]DT[n]H[n]M[n]S
+        let s = &iso8601[1..]; // 去掉 'P'
         let (date_part, time_part) = if let Some(idx) = s.find('T') {
             (&s[..idx], Some(&s[idx + 1..]))
         } else {
             (s, None)
         };
 
-        // Parse date part: [n]Y[n]M[n]W[n]D
+        // 解析日期部分：[n]Y[n]M[n]W[n]D
         let mut remaining = date_part;
         while !remaining.is_empty() {
             let num_end = remaining
@@ -699,7 +692,7 @@ fn parse_duration(iso8601: Option<&str>) -> Option<Duration> {
             }
         }
 
-        // Parse time part: [n]H[n]M[n]S
+        // 解析时间部分：[n]H[n]M[n]S
         if let Some(tp) = time_part {
             let mut remaining = tp;
             while !remaining.is_empty() {
@@ -725,7 +718,7 @@ fn parse_duration(iso8601: Option<&str>) -> Option<Duration> {
             }
         }
     } else {
-        // Date-based duration: parse as a date and extract GregorianDate components
+        // 基于日期的时长：解析为日期并提取 GregorianDate 各分量
         let s = if iso8601.ends_with('Z') {
             iso8601.to_string()
         } else {
@@ -749,8 +742,8 @@ fn parse_duration(iso8601: Option<&str>) -> Option<Duration> {
     }
 }
 
-/// Adds a duration (represented as GregorianDate components) to a JulianDate.
-/// Maps to CesiumJS `addToDate`.
+/// 将一个时长（以 GregorianDate 各分量表示）加到一个 JulianDate 上。
+/// 映射到 CesiumJS `addToDate`。
 fn add_to_date(julian_date: &JulianDate, duration: &Duration) -> JulianDate {
     let g = julian_date.to_gregorian_date();
 
@@ -782,7 +775,7 @@ fn add_to_date(julian_date: &JulianDate, duration: &Duration) -> JulianDate {
         hour %= 24.0;
     }
 
-    // Adjust days/months/years
+    // 调整日/月/年
     let mut year_i = year as i32;
     let mut month_i = month as u32;
     let mut day_i = day as u32;
@@ -825,23 +818,23 @@ fn add_to_date(julian_date: &JulianDate, duration: &Duration) -> JulianDate {
     JulianDate::from_gregorian_date(&result_g)
 }
 
-/// Options for `from_iso8601` and related constructors.
+/// `from_iso8601` 及相关构造函数的选项。
 pub struct FromIso8601Options {
-    /// The ISO8601 interval string ("start/stop" or "start/stop/duration").
+    /// ISO8601 区间字符串（"start/stop" 或 "start/stop/duration"）。
     pub iso8601: String,
-    /// Whether the start time is included (default true).
+    /// 是否包含开始时间（默认 true）。
     pub is_start_included: Option<bool>,
-    /// Whether the stop time is included (default true).
+    /// 是否包含停止时间（默认 true）。
     pub is_stop_included: Option<bool>,
-    /// Add a leading interval from MINIMUM_VALUE to start.
+    /// 添加一个从 MINIMUM_VALUE 到 start 的前置区间。
     pub leading_interval: bool,
-    /// Add a trailing interval from stop to MAXIMUM_VALUE.
+    /// 添加一个从 stop 到 MAXIMUM_VALUE 的后置区间。
     pub trailing_interval: bool,
 }
 
 impl<T> TimeIntervalCollection<T> {
-    /// Creates a collection from an ISO8601 interval string.
-    /// Maps to `TimeIntervalCollection.fromIso8601`.
+    /// 从 ISO8601 区间字符串创建集合。
+    /// 映射到 `TimeIntervalCollection.fromIso8601`。
     pub fn from_iso8601<F>(options: &FromIso8601Options, same_data: &F) -> Self
     where
         T: Clone + From<usize>,
@@ -887,8 +880,8 @@ impl<T> TimeIntervalCollection<T> {
         )
     }
 
-    /// Creates a collection from an array of JulianDates.
-    /// Maps to `TimeIntervalCollection.fromJulianDateArray`.
+    /// 从 JulianDate 数组创建集合。
+    /// 映射到 `TimeIntervalCollection.fromJulianDateArray`。
     pub fn from_julian_date_array<F>(
         julian_dates: &[JulianDate],
         is_start_included: bool,
@@ -958,8 +951,8 @@ impl<T> TimeIntervalCollection<T> {
         result
     }
 
-    /// Creates a collection from an array of ISO8601 duration strings relative to an epoch.
-    /// Maps to `TimeIntervalCollection.fromIso8601DurationArray`.
+    /// 从一个相对于纪元的 ISO8601 时长字符串数组创建集合。
+    /// 映射到 `TimeIntervalCollection.fromIso8601DurationArray`。
     // deferred.md #13: 参数 8/7，保持与 CesiumJS fromIso8601DurationArray 签名一一对应。
     #[allow(clippy::too_many_arguments)]
     pub fn from_iso8601_duration_array<F>(
@@ -981,7 +974,7 @@ impl<T> TimeIntervalCollection<T> {
 
         for (i, dur_str) in iso8601_durations.iter().enumerate() {
             let dur = parse_duration(Some(dur_str));
-            // Allow a duration of 0 on the first iteration (it is just the epoch)
+            // 允许首次迭代时时长为 0（它仅是纪元）
             if dur.is_some() || i == 0 {
                 let effective_dur = dur.unwrap_or_default();
                 let date = if relative_to_previous {
@@ -1009,8 +1002,8 @@ impl<T> TimeIntervalCollection<T> {
     }
 }
 
-/// Compares two optional data payloads. Two `None`s are equal; a `None` and a
-/// `Some` are not; two `Some`s are compared with `same_data`.
+/// 比较两个可选数据负载。两个 `None` 视为相等；一个 `None` 与一个
+/// `Some` 视为不等；两个 `Some` 用 `same_data` 比较。
 fn data_equals<T, F>(a: Option<&T>, b: Option<&T>, same_data: &F) -> bool
 where
     F: Fn(&T, &T) -> bool,
@@ -1026,8 +1019,8 @@ fn compare(a: &JulianDate, b: &JulianDate) -> Ordering {
     a.cmp(b)
 }
 
-/// Binary search over interval start times. Returns the index of an interval
-/// whose start equals `time`, or the bitwise complement of the insertion index.
+/// 对各区间的开始时间进行二分查找。返回 start 等于 `time` 的区间索引，
+/// 或插入索引的按位取反。
 fn binary_search_start<T>(intervals: &[TimeIntervalData<T>], time: &JulianDate) -> isize {
     let mut low: isize = 0;
     let mut high: isize = intervals.len() as isize - 1;
@@ -1077,7 +1070,7 @@ mod tests {
     fn test_merge_same_data() {
         let mut c = TimeIntervalCollection::new();
         c.add_interval(iv(jd(2012, 8, 1, 0), jd(2012, 8, 1, 6), 1), &same);
-        // Adjacent interval with the same data should merge.
+        // 携带相同数据的相邻区间应当合并。
         c.add_interval(iv(jd(2012, 8, 1, 6), jd(2012, 8, 1, 12), 1), &same);
         assert_eq!(c.len(), 1);
         assert_eq!(c.get(0).unwrap().interval.start, jd(2012, 8, 1, 0));
@@ -1096,7 +1089,7 @@ mod tests {
     fn test_overlapping_new_wins() {
         let mut c = TimeIntervalCollection::new();
         c.add_interval(iv(jd(2012, 8, 1, 0), jd(2012, 8, 1, 12), 1), &same);
-        // New interval in the middle with different data truncates the old one.
+        // 中间插入的数据不同的新区间会截断旧区间。
         c.add_interval(iv(jd(2012, 8, 1, 4), jd(2012, 8, 1, 8), 2), &same);
         assert_eq!(c.len(), 3);
         assert_eq!(c.get(0).unwrap().data, Some(1));
@@ -1115,7 +1108,7 @@ mod tests {
         assert_eq!(c.index_of(&jd(2012, 8, 1, 3)), 0);
         assert_eq!(c.index_of(&jd(2012, 8, 1, 9)), 1);
         assert!(c.contains(&jd(2012, 8, 1, 3)));
-        // Stop is exclusive, so 12:00 is not contained.
+        // 停止时间为开区间，因此 12:00 不被包含。
         assert!(!c.contains(&jd(2012, 8, 1, 12)));
         assert!(!c.contains(&jd(2012, 8, 2, 0)));
     }

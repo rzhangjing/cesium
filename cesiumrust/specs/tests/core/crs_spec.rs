@@ -1,6 +1,6 @@
-//! CRS (Coordinate Reference Systems) spec - Datum + Projections
-//! Tests: Datum constants/derived, HelmertTransform, MolodenskyTransform, DatumConverter,
-//!        WebMercator, UTM, PolarStereographic, Equirectangular
+//! CRS（坐标系）规格 - 基准 + 投影
+//! 测试：Datum 常量/派生、HelmertTransform、MolodenskyTransform、DatumConverter、
+//!        WebMercator、UTM、PolarStereographic、Equirectangular
 
 use cesium_crs::{
     Datum, DatumConverter, Equirectangular, GeographicCoordinate, HelmertTransform,
@@ -26,7 +26,7 @@ fn datum_wgs84_constants() {
 #[test]
 fn datum_semi_minor_axis() {
     let b = Datum::WGS84.semi_minor_axis();
-    // Known value: 6356752.314245179
+    // 已知值：6356752.314245179
     assert!((b - 6356752.314245).abs() < 0.001);
 }
 
@@ -49,7 +49,7 @@ fn datum_cgcs2000_differs_from_wgs84() {
     let wgs = Datum::WGS84;
     let cgcs = Datum::CGCS2000;
     assert_eq!(wgs.semi_major_axis, cgcs.semi_major_axis);
-    // Different inverse flattening
+    // 不同的扁率倒数
     assert!((wgs.inverse_flattening - cgcs.inverse_flattening).abs() > 1e-6);
 }
 
@@ -104,7 +104,7 @@ fn helmert_scale_factor() {
     };
     let ecef = DVec3::new(1000000.0, 0.0, 0.0);
     let result = t.apply(ecef);
-    // Should scale by 1 + 1e-6
+    // 应按 1 + 1e-6 缩放
     assert!((result.x - 1000001.0).abs() < 0.001);
 }
 
@@ -160,7 +160,7 @@ fn datum_converter_roundtrip() {
 #[test]
 fn datum_converter_southern_hemisphere() {
     let conv = DatumConverter::new(Datum::WGS84);
-    let lon = (-58.0_f64).to_radians(); // Buenos Aires
+    let lon = (-58.0_f64).to_radians(); // 布宜诺斯艾利斯
     let lat = (-34.6_f64).to_radians();
     let ecef = conv.geographic_to_ecef(lon, lat, 25.0);
     let (lon2, lat2, h2) = conv.ecef_to_geographic(ecef);
@@ -336,7 +336,7 @@ fn equirectangular_linear_scaling() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ProjectedCoordinate / GeographicCoordinate helpers
+// ProjectedCoordinate / GeographicCoordinate 辅助
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]

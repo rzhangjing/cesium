@@ -1,12 +1,12 @@
-//! Camera flight/morphing + DataSourceDisplay → Rust integration tests.
+//! 相机飞行/变形 + DataSourceDisplay → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Scene/Camera.js (flyTo/flyHome/lookAt)
 //! - Scene/SceneMode.js (morphing)
 //! - DataSources/DataSourceDisplay.js
 //!
-//! A-class tests: flight interpolation, morph state machine, display sync.
-//! C-class omitted: requestAnimationFrame, DOM events, WebGL rendering.
+//! A 类测试：飞行插值、变形状态机、显示同步。
+//! C 类省略：requestAnimationFrame、DOM 事件、WebGL 渲染。
 
 use cesium_camera::{Camera, SceneMode};
 use cesium_interaction::flight::{CameraFlight, FlightOptions, compute_look_at};
@@ -44,14 +44,14 @@ fn flight_update_interpolates_position() {
     let destination = DVec3::new(10000000.0, 0.0, 0.0);
     let mut flight = CameraFlight::fly_to(&camera, destination, None, None, 2.0);
 
-    // Half way
+    // 中途
     let result = flight.update(1.0);
     assert!(result.is_some());
     let progress = flight.progress();
     assert!(progress > 0.4 && progress < 0.6);
     assert!(!flight.complete);
 
-    // Complete
+    // 完成
     let _result = flight.update(1.5);
     assert!(flight.complete);
     assert!((flight.progress() - 1.0).abs() < 1e-10);
@@ -81,14 +81,14 @@ fn flight_apply_to_camera_updates_position() {
     let destination = DVec3::new(1000000.0, 0.0, 0.0);
     let mut flight = CameraFlight::fly_to(&camera, destination, None, None, 1.0);
 
-    // Apply partial - still in progress
+    // 部分应用 - 仍在进行中
     let in_progress = flight.apply_to_camera(&mut camera, 0.5);
     assert!(in_progress);
 
-    // Apply past duration - completes
+    // 超过时长应用 - 完成
     flight.apply_to_camera(&mut camera, 1.0);
     assert!(flight.complete);
-    // Camera should be at or very near destination
+    // 相机应位于或非常接近目标点
     assert!((camera.position - destination).length() < 1.0);
 }
 
@@ -104,7 +104,7 @@ fn flight_fly_home() {
 
     assert_eq!(flight.duration, 3.0);
     assert!(!flight.complete);
-    // End position should be above the ellipsoid surface
+    // 结束位置应高于椭球表面
     assert!(flight.end_position.length() > ellipsoid.radii().x);
 }
 
@@ -118,11 +118,11 @@ fn flight_compute_look_at() {
     let expected_pos = target + offset;
     assert!((position - expected_pos).length() < 1e-6);
 
-    // Direction should point from position to target
+    // Direction 应从 position 指向 target
     let expected_dir = (target - position).normalize();
     assert!((direction - expected_dir).length() < 1e-6);
 
-    // Up should be perpendicular to direction
+    // Up 应垂直于 direction
     assert!(direction.dot(up).abs() < 1e-6);
 }
 
@@ -155,7 +155,7 @@ fn flight_fly_to_bounding_sphere() {
 
     assert_eq!(flight.duration, 2.0);
     assert!(!flight.complete);
-    // End position should be offset from sphere center
+    // 结束位置应偏离球心
     let dist_to_center = (flight.end_position - bs.center).length();
     assert!(dist_to_center > bs.radius);
 }
@@ -181,12 +181,12 @@ fn morph_start_and_update() {
     morph.start_morph(&camera, SceneMode::Scene3D, SceneMode::Scene2D, &Ellipsoid::WGS84, 2.0);
     assert!(morph.is_morphing());
 
-    // Update halfway
+    // 更新到一半
     morph.update(1.0, &mut camera);
     assert!(morph.is_morphing());
     assert!(morph.progress() > 0.0);
 
-    // Update past duration
+    // 超过时长更新
     morph.update(1.5, &mut camera);
     assert!(!morph.is_morphing());
 }
@@ -205,9 +205,9 @@ fn morph_complete() {
 
     morph.complete_morph(&mut camera);
     assert!(!morph.is_morphing());
-    // After complete, state is Idle so progress() == 0
+    // 完成后，状态为 Idle，因此 progress() == 0
     assert_eq!(morph.progress(), 0.0);
-    // Camera should be at end position
+    // 相机应位于结束位置
     assert_eq!(camera.position, morph.end_position);
 }
 
@@ -226,9 +226,9 @@ fn morph_cancel() {
 
     morph.cancel_morph(&mut camera);
     assert!(!morph.is_morphing());
-    // After cancel, state is Idle so progress() == 0
+    // 取消后，状态为 Idle，因此 progress() == 0
     assert_eq!(morph.progress(), 0.0);
-    // Camera should be restored to start position
+    // 相机应恢复到起始位置
     assert_eq!(camera.position, morph.start_position);
 }
 
@@ -254,7 +254,7 @@ fn datasource_display_update_with_entities() {
     let mut display = DataSourceDisplay::wgs84();
     let mut entities = EntityCollection::new();
 
-    // Add entity with point graphics
+    // 添加带点图形的实体
     let mut entity = Entity::new("test-entity");
     entity.position = Property::Constant([0.0, 0.0, 6378137.0]);
     entity.point = Some(PointGraphics::default());

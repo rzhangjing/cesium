@@ -1,9 +1,9 @@
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留 CesiumJS 移植风格债（deferred.md #18）；将在 M13 lint 清理，或本文件在其所属里程碑被重写时重新审视
 #![allow(clippy::manual_div_ceil)]
-/// An availability bitstream for use in an ImplicitSubtree.
-/// Handles both Uint8Array bitstreams and constant values.
+/// 用于 ImplicitSubtree 的可用性位流。
+/// 同时处理 Uint8Array 位流和常量值。
 ///
-/// Faithful port of CesiumJS `ImplicitAvailabilityBitstream`.
+/// 对 CesiumJS `ImplicitAvailabilityBitstream` 忠实移植。
 #[derive(Clone, Debug)]
 pub struct ImplicitAvailabilityBitstream {
     length_bits: usize,
@@ -28,7 +28,7 @@ impl ImplicitAvailabilityBitstream {
         let bitstream = options.bitstream;
 
         if constant.is_some() {
-            // if defined, constant must be true which means all tiles are available
+            // 若已定义，constant 必为 true，意味着所有瓦片均可用
             available_count = Some(length_bits);
         } else if let Some(ref bs) = bitstream {
             let expected_length = (length_bits + 7) / 8;
@@ -54,18 +54,18 @@ impl ImplicitAvailabilityBitstream {
         }
     }
 
-    /// The length of the bitstream in bits.
+    /// 位流以位（bit）计的长度。
     pub fn length_bits(&self) -> usize {
         self.length_bits
     }
 
-    /// The number of bits in the bitstream with value 1.
+    /// 位流中值为 1 的位的数量。
     pub fn available_count(&self) -> Option<usize> {
         self.available_count
     }
 
-    /// Get a bit from the availability bitstream as a Boolean.
-    /// If the bitstream is a constant, the constant value is returned instead.
+    /// 以布尔值形式从可用性位流中获取一个位。
+    /// 若位流为常量，则返回该常量值。
     pub fn get_bit(&self, index: usize) -> bool {
         assert!(
             index < self.length_bits,
@@ -83,7 +83,7 @@ impl ImplicitAvailabilityBitstream {
     }
 }
 
-/// Count the number of bits with value 1 in the bitstream.
+/// 统计位流中值为 1 的位的数量。
 fn count_1_bits(bitstream: &[u8], length_bits: usize) -> usize {
     let mut count = 0;
     for i in 0..length_bits {

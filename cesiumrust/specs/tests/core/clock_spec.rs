@@ -1,11 +1,11 @@
-//! Clock spec - ported from packages/engine/Specs/Core/ClockSpec.js
-//! 27 original it() blocks → 16 A-class tests ported
-//! Skipped 11 C-class: 1 throws + 2 events(onStop) + 8 SYSTEM_CLOCK modes (jasmine.clock mock)
+//! Clock 规格 - 移植自 packages/engine/Specs/Core/ClockSpec.js
+//! 27 个原始 it() 块 → 已移植 16 个 A 类测试
+//! 跳过 11 个 C 类：1 throws + 2 events(onStop) + 8 SYSTEM_CLOCK 模式（jasmine.clock 模拟）
 
 use cesium_time::{Clock, ClockOptions, ClockRange, ClockStep, JulianDate};
 
 // ============================================================================
-// Constructor tests (8)
+// 构造函数测试（8）
 // ============================================================================
 
 #[test]
@@ -87,7 +87,7 @@ fn works_when_constructed_with_no_current_time_parameter() {
 
     assert_eq!(clock.start_time, start);
     assert_eq!(clock.stop_time, stop);
-    // currentTime defaults to startTime
+    // currentTime 默认为 startTime
     assert_eq!(clock.current_time, start);
     assert_eq!(clock.clock_step, step);
     assert_eq!(clock.clock_range, range);
@@ -113,7 +113,7 @@ fn works_when_constructed_with_no_start_time_parameter() {
         ..Default::default()
     });
 
-    // startTime defaults to currentTime
+    // startTime 默认为 currentTime
     assert_eq!(clock.start_time, current_time);
     assert_eq!(clock.stop_time, stop);
     assert_eq!(clock.current_time, current_time);
@@ -140,9 +140,9 @@ fn works_when_constructed_with_no_start_time_or_stop_time() {
     });
 
     let expected_stop = current_time.add_days(1.0);
-    // startTime defaults to currentTime
+    // startTime 默认为 currentTime
     assert_eq!(clock.start_time, current_time);
-    // stopTime defaults to startTime + 1 day
+    // stopTime 默认为 startTime + 1 天
     assert_eq!(clock.stop_time, expected_stop);
     assert_eq!(clock.current_time, current_time);
     assert_eq!(clock.clock_step, step);
@@ -167,7 +167,7 @@ fn works_when_constructed_with_no_start_time_or_current_time() {
         ..Default::default()
     });
 
-    // currentTime defaults to stopTime - 1 day
+    // currentTime 默认为 stopTime - 1 天
     let expected_start = stop.add_days(-1.0);
     assert_eq!(clock.start_time, expected_start);
     assert_eq!(clock.stop_time, stop);
@@ -197,7 +197,7 @@ fn works_when_constructed_with_no_current_time_or_stop_time() {
     let expected_stop = start.add_days(1.0);
     assert_eq!(clock.start_time, start);
     assert_eq!(clock.stop_time, expected_stop);
-    // currentTime defaults to startTime
+    // currentTime 默认为 startTime
     assert_eq!(clock.current_time, start);
     assert_eq!(clock.clock_step, step);
     assert_eq!(clock.clock_range, range);
@@ -235,7 +235,7 @@ fn works_when_constructed_with_no_stop_time_parameter() {
 }
 
 // ============================================================================
-// TICK_DEPENDENT mode tests (8)
+// TICK_DEPENDENT 模式测试（8）
 // ============================================================================
 
 #[test]
@@ -377,14 +377,14 @@ fn loops_back_to_start_time_when_animating_forward_past_stop_in_loop_stop_tick_d
     });
     assert_eq!(clock.current_time, current_time);
 
-    // First tick: stop + 1.5 overflows → loops to start + 1.5
+    // 第一次 tick：stop + 1.5 溢出 → 回绕到 start + 1.5
     let mut expected = start.add_seconds(multiplier);
     let result = clock.tick(0.0);
     assert_eq!(result, expected);
     assert_eq!(clock.current_time, expected);
 
-    // Second tick: (start + 1.5) + 1.5 = start + 3.0, overflows → start + (3.0 - 1day_secs)
-    // But 1 day = 86400s, so start + 3.0 < stop. No overflow.
+    // 第二次 tick：(start + 1.5) + 1.5 = start + 3.0，溢出 → start + (3.0 - 1day_secs)
+    // 但 1 天 = 86400 秒，因此 start + 3.0 < stop。无溢出。
     expected = expected.add_seconds(multiplier);
     let result = clock.tick(0.0);
     assert_eq!(result, expected);
@@ -464,7 +464,7 @@ fn stops_at_start_time_when_animating_backwards_past_start_in_clamped_tick_depen
 }
 
 // ============================================================================
-// SYSTEM_CLOCK_MULTIPLIER mode test (adapted from C-class jasmine.clock test)
+// SYSTEM_CLOCK_MULTIPLIER 模式测试（改编自 C 类 jasmine.clock 测试）
 // ============================================================================
 
 #[test]
@@ -483,11 +483,11 @@ fn uses_multiplier_in_system_clock_multiplier_mode() {
         ..Default::default()
     });
 
-    // First tick with 0 elapsed → no advance
+    // 第一次 tick，elapsed 为 0 → 不推进
     let time1 = clock.tick(0.0);
     assert_eq!(time1, start);
 
-    // Second tick with 1.0 seconds elapsed → advances by 2.0 * 1.0 = 2.0 seconds
+    // 第二次 tick，elapsed 为 1.0 秒 → 推进 2.0 * 1.0 = 2.0 秒
     let time2 = clock.tick(1.0);
     let expected = start.add_seconds(2.0);
     assert_eq!(time2, expected);
@@ -509,18 +509,18 @@ fn does_not_advance_if_should_animate_is_false() {
         ..Default::default()
     });
 
-    // shouldAnimate = false → no advance
+    // shouldAnimate = false → 不推进
     let time1 = clock.tick(1.0);
     assert_eq!(time1, start);
     assert_eq!(clock.current_time, start);
 
-    // Enable animation
+    // 启用动画
     clock.should_animate = true;
     let time2 = clock.tick(1.0);
     let expected = start.add_seconds(1.0);
     assert_eq!(time2, expected);
 
-    // Switch to TICK_DEPENDENT
+    // 切换到 TICK_DEPENDENT
     clock.current_time = start;
     clock.clock_step = ClockStep::TickDependent;
 

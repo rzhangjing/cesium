@@ -1,7 +1,7 @@
-//! Stereographic specs - ported from:
-//! - packages/engine/Specs/Core/StereographicSpec.js (15 it())
+//! Stereographic（球面投影）规格测试 - 移植自：
+//! - packages/engine/Specs/Core/StereographicSpec.js（15 个 it()）
 //!
-//! A-class tests: 12 (skipping 3 clone/result-parameter tests)
+//! A 类测试：12 个（跳过 3 个 clone/result 参数类测试）
 
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_geospatial::math_utils;
@@ -17,7 +17,7 @@ fn from_degrees(lon_deg: f64, lat_deg: f64) -> glam::DVec3 {
 }
 
 // ============================================================
-// Construction
+// 构造
 // ============================================================
 
 #[test]
@@ -77,7 +77,7 @@ fn stereographic_from_cartesian_southern_hemisphere() {
 }
 
 // ============================================================
-// Longitude
+// 经度
 // ============================================================
 
 #[test]
@@ -121,7 +121,7 @@ fn stereographic_longitude_southern_hemisphere() {
 }
 
 // ============================================================
-// Conformal Latitude
+// 等量纬度（Conformal Latitude）
 // ============================================================
 
 #[test]

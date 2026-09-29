@@ -1,5 +1,5 @@
-//! PostProcess + Geocoder + Panorama specs
-//! Ported from CesiumJS Scene/PostProcessStageLibrarySpec.js + Core/GeocoderServiceSpec.js + Scene/PanoramaSpec.js
+//! PostProcess + Geocoder + Panorama 规范
+//! 移植自 CesiumJS Scene/PostProcessStageLibrarySpec.js + Core/GeocoderServiceSpec.js + Scene/PanoramaSpec.js
 
 use cesium_effects::{
     AmbientOcclusionConfig, BloomConfig, ColorCorrectionConfig, CubeMapPanorama, FogConfig,
@@ -37,11 +37,11 @@ fn bloom_above_threshold() {
 
 #[test]
 fn bloom_disabled_returns_zero() {
-    let bloom = BloomConfig::default(); // disabled
+    let bloom = BloomConfig::default(); // 禁用
     assert!((bloom.compute_bloom(10.0)).abs() < 1e-10);
 }
 
-// ==================== Ambient Occlusion ====================
+// ==================== 环境光遮蔽 ====================
 
 #[test]
 fn ao_no_occlusion_returns_one() {
@@ -60,12 +60,12 @@ fn ao_full_occlusion_clamped() {
         intensity: 3.0,
         ..Default::default()
     };
-    assert!((ao.compute_ao(1.0)).abs() < 1e-10); // clamped to 0
+    assert!((ao.compute_ao(1.0)).abs() < 1e-10); // 钳制到 0
 }
 
 #[test]
 fn ao_disabled_returns_one() {
-    let ao = AmbientOcclusionConfig::default(); // disabled
+    let ao = AmbientOcclusionConfig::default(); // 禁用
     assert!((ao.compute_ao(1.0) - 1.0).abs() < 1e-10);
 }
 
@@ -111,7 +111,7 @@ fn fog_apply_blends_color() {
     assert!(result.y > 0.9);
 }
 
-// ==================== Tone Mapping ====================
+// ==================== 色调映射 ====================
 
 #[test]
 fn tone_mapping_none_passthrough() {
@@ -134,7 +134,7 @@ fn tone_mapping_reinhard_compresses() {
     };
     let hdr = DVec3::new(2.0, 2.0, 2.0);
     let ldr = config.apply(hdr);
-    // Simple Reinhard: x/(1+x) ≈ 2/3
+    // 简化 Reinhard: x/(1+x) ≈ 2/3
     assert!((ldr.x - 2.0 / 3.0).abs() < 0.01);
 }
 
@@ -163,11 +163,11 @@ fn tone_mapping_exposure_scales() {
     assert!((ldr.x - 0.6).abs() < 1e-10);
 }
 
-// ==================== Color Correction ====================
+// ==================== 颜色校正 ====================
 
 #[test]
 fn color_correction_disabled_passthrough() {
-    let cc = ColorCorrectionConfig::default(); // disabled
+    let cc = ColorCorrectionConfig::default(); // 禁用
     let color = DVec3::new(0.3, 0.5, 0.7);
     let result = cc.apply(color);
     assert!((result - color).length() < 1e-10);
@@ -208,7 +208,7 @@ fn color_correction_saturation_zero_grayscale() {
 fn pipeline_default_enabled_stages() {
     let pipeline = PostProcessPipeline::new();
     let stages = pipeline.enabled_stages();
-    // Default: fog enabled + tone mapping ACES
+    // 默认：雾启用 + 色调映射 ACES
     assert_eq!(stages.len(), 2);
     assert!(stages.contains(&PostProcessStageType::Fog));
     assert!(stages.contains(&PostProcessStageType::ToneMapping));

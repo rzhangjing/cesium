@@ -1,27 +1,27 @@
-//! Spline interpolation system.
+//! 样条插值系统。
 //!
-//! Maps to CesiumJS:
-//! - `Core/Spline.js` (base)
+//! 映射到 CesiumJS：
+//! - `Core/Spline.js`（基础）
 //! - `Core/LinearSpline.js`
 //! - `Core/CatmullRomSpline.js`
 //! - `Core/HermiteSpline.js`
 //! - `Core/QuaternionSpline.js`
-//! - `Core/SteppedSpline.js` (via SteppedSpline in CesiumJS)
-//! - `Core/ConstantSpline.js` (via MorphWeightSpline)
+//! - `Core/SteppedSpline.js`（在 CesiumJS 中经由 SteppedSpline）
+//! - `Core/ConstantSpline.js`（经由 MorphWeightSpline）
 
 use glam::{DQuat, DVec3};
 
 // ============================================================================
-// Spline trait
+// Spline 特质
 // ============================================================================
 
-/// Common spline operations.
+/// 通用的样条操作。
 pub trait Spline {
-    /// Get the time values.
+    /// 获取时间值。
     fn times(&self) -> &[f64];
 
-    /// Find the time interval index for a given time.
-    /// Returns index i such that times[i] <= time <= times[i+1].
+    /// 查找给定时间对应的时间区间索引。
+    /// 返回满足 times[i] <= time <= times[i+1] 的索引 i。
     fn find_time_interval(&self, time: f64) -> usize {
         let times = self.times();
         if times.is_empty() {
@@ -34,7 +34,7 @@ pub trait Spline {
         if time >= times[last] {
             return last.saturating_sub(1);
         }
-        // Binary search
+        // 二分查找
         let mut lo = 0;
         let mut hi = last;
         while lo < hi {
@@ -50,7 +50,7 @@ pub trait Spline {
         lo.min(last.saturating_sub(1))
     }
 
-    /// Wrap time to the spline's period.
+    /// 将时间环绕到样条的周期。
     fn wrap_time(&self, time: f64) -> f64 {
         let times = self.times();
         if times.len() < 2 {
@@ -69,7 +69,7 @@ pub trait Spline {
         start + t
     }
 
-    /// Clamp time to the spline's range.
+    /// 将时间夹取到样条的范围内。
     fn clamp_time(&self, time: f64) -> f64 {
         let times = self.times();
         if times.is_empty() {
@@ -83,26 +83,26 @@ pub trait Spline {
 // LinearSpline
 // ============================================================================
 
-/// Piecewise linear interpolation spline.
+/// 分段线性插值样条。
 ///
-/// Maps to CesiumJS `Core/LinearSpline.js`.
+/// 映射到 CesiumJS `Core/LinearSpline.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinearSpline {
-    /// Time values (strictly increasing).
+    /// 时间值（严格递增）。
     pub times: Vec<f64>,
-    /// Control points.
+    /// 控制点。
     pub points: Vec<DVec3>,
 }
 
 impl LinearSpline {
-    /// Create a new linear spline.
+    /// 创建一个新的线性样条。
     pub fn new(times: Vec<f64>, points: Vec<DVec3>) -> Self {
         assert!(points.len() >= 2, "points.length must be >= 2");
         assert_eq!(times.len(), points.len(), "times and points must match");
         Self { times, points }
     }
 
-    /// Evaluate the spline at a given time.
+    /// 在给定时间处求样条的值。
     pub fn evaluate(&self, time: f64) -> DVec3 {
         let i = self.find_time_interval(time);
         let t0 = self.times[i];
@@ -126,25 +126,25 @@ impl Spline for LinearSpline {
 // CatmullRomSpline
 // ============================================================================
 
-/// Catmull-Rom spline for smooth C1-continuous curves.
+/// 用于平滑 C1 连续曲线的 Catmull-Rom 样条。
 ///
-/// Maps to CesiumJS `Core/CatmullRomSpline.js`.
+/// 映射到 CesiumJS `Core/CatmullRomSpline.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct CatmullRomSpline {
-    /// Time values.
+    /// 时间值。
     pub times: Vec<f64>,
-    /// Control points.
+    /// 控制点。
     pub points: Vec<DVec3>,
-    /// Tangent at the first point.
+    /// 首点处的切线。
     pub first_tangent: DVec3,
-    /// Tangent at the last point.
+    /// 末点处的切线。
     pub last_tangent: DVec3,
 }
 
 impl CatmullRomSpline {
-    /// Create a new Catmull-Rom spline with auto-computed tangents.
+    /// 创建一个带有自动计算切线的新 Catmull-Rom 样条。
     ///
-    /// Maps to CesiumJS CatmullRomSpline constructor (without firstTangent/lastTangent).
+    /// 映射到 CesiumJS CatmullRomSpline 构造函数（不带 firstTangent/lastTangent）。
     pub fn new(times: Vec<f64>, points: Vec<DVec3>) -> Self {
         assert!(points.len() >= 2, "points.length must be >= 2");
         assert_eq!(times.len(), points.len(), "times and points must match");
@@ -168,9 +168,9 @@ impl CatmullRomSpline {
         }
     }
 
-    /// Create with explicit tangents.
+    /// 使用显式切线创建。
     ///
-    /// Maps to CesiumJS CatmullRomSpline constructor with firstTangent/lastTangent.
+    /// 映射到带 firstTangent/lastTangent 的 CesiumJS CatmullRomSpline 构造函数。
     pub fn with_tangents(
         times: Vec<f64>,
         points: Vec<DVec3>,
@@ -187,13 +187,13 @@ impl CatmullRomSpline {
         }
     }
 
-    /// Evaluate the spline at a given time.
+    /// 在给定时间处求样条的值。
     ///
-    /// Uses Hermite basis for first/last segments, Catmull-Rom matrix for interior.
+    /// 首/末段使用 Hermite 基，内部段使用 Catmull-Rom 矩阵。
     pub fn evaluate(&self, time: f64) -> DVec3 {
         let n = self.points.len();
         if n < 3 {
-            // Fall back to linear
+            // 回退到线性
             let t0 = self.times[0];
             let inv_span = 1.0 / (self.times[1] - t0);
             let u = (time - t0) * inv_span;
@@ -213,7 +213,7 @@ impl CatmullRomSpline {
         let u3 = u2 * u;
 
         if i == 0 {
-            // First segment: Hermite with firstTangent
+            // 首段：带 firstTangent 的 Hermite
             let p0 = self.points[0];
             let p1 = self.points[1];
             let m0 = self.first_tangent;
@@ -226,7 +226,7 @@ impl CatmullRomSpline {
 
             p0 * h00 + m0 * h10 + p1 * h01 + m1 * h11
         } else if i == n - 2 {
-            // Last segment: Hermite with lastTangent
+            // 末段：带 lastTangent 的 Hermite
             let p0 = self.points[i];
             let p1 = self.points[i + 1];
             let m0 = (self.points[i + 1] - self.points[i - 1]) * 0.5;
@@ -239,7 +239,7 @@ impl CatmullRomSpline {
 
             p0 * h00 + m0 * h10 + p1 * h01 + m1 * h11
         } else {
-            // Interior: Catmull-Rom coefficient matrix
+            // 内部：Catmull-Rom 系数矩阵
             // Matrix: [-0.5, 1.5, -1.5, 0.5; 1.0, -2.5, 2.0, -0.5; -0.5, 0.0, 0.5, 0.0; 0.0, 1.0, 0.0, 0.0]
             let p0 = self.points[i - 1];
             let p1 = self.points[i];
@@ -266,27 +266,27 @@ impl Spline for CatmullRomSpline {
 // HermiteSpline
 // ============================================================================
 
-/// Hermite spline with explicit tangents.
+/// 带显式切线的 Hermite 样条。
 ///
-/// Maps to CesiumJS `Core/HermiteSpline.js`.
-/// inTangents and outTangents have length `points.len() - 1`.
-/// For segment [i, i+1]: out_tangents[i] is outgoing tangent at points[i],
-/// in_tangents[i] is incoming tangent at points[i+1].
+/// 映射到 CesiumJS `Core/HermiteSpline.js`。
+/// inTangents 与 outTangents 的长度为 `points.len() - 1`。
+/// 对于段 [i, i+1]：out_tangents[i] 是 points[i] 处的出向切线，
+/// in_tangents[i] 是 points[i+1] 处的入向切线。
 #[derive(Debug, Clone, PartialEq)]
 pub struct HermiteSpline {
-    /// Time values.
+    /// 时间值。
     pub times: Vec<f64>,
-    /// Control points.
+    /// 控制点。
     pub points: Vec<DVec3>,
-    /// Incoming tangents (length = points.len() - 1).
+    /// 入向切线（长度 = points.len() - 1）。
     pub in_tangents: Vec<DVec3>,
-    /// Outgoing tangents (length = points.len() - 1).
+    /// 出向切线（长度 = points.len() - 1）。
     pub out_tangents: Vec<DVec3>,
 }
 
 impl HermiteSpline {
-    /// Create a new Hermite spline.
-    /// in_tangents and out_tangents must have length == points.len() - 1.
+    /// 创建一个新的 Hermite 样条。
+    /// in_tangents 与 out_tangents 的长度必须等于 points.len() - 1。
     pub fn new(
         times: Vec<f64>,
         points: Vec<DVec3>,
@@ -313,8 +313,8 @@ impl HermiteSpline {
         }
     }
 
-    /// Creates a C1-continuous spline from shared tangents at each point.
-    /// Maps to CesiumJS `HermiteSpline.createC1`.
+    /// 由每个点处共享的切线创建 C1 连续样条。
+    /// 映射到 CesiumJS `HermiteSpline.createC1`。
     pub fn create_c1(times: Vec<f64>, points: Vec<DVec3>, tangents: Vec<DVec3>) -> Self {
         assert!(points.len() >= 2, "points.length must be >= 2");
         assert_eq!(times.len(), points.len(), "times and points must match");
@@ -324,8 +324,8 @@ impl HermiteSpline {
         Self { times, points, in_tangents, out_tangents }
     }
 
-    /// Creates a natural cubic spline (C2 continuous).
-    /// Maps to CesiumJS `HermiteSpline.createNaturalCubic`.
+    /// 创建自然三次样条（C2 连续）。
+    /// 映射到 CesiumJS `HermiteSpline.createNaturalCubic`。
     pub fn create_natural_cubic(times: Vec<f64>, points: Vec<DVec3>) -> Self {
         assert!(points.len() >= 2, "points.length must be >= 2");
         assert_eq!(times.len(), points.len(), "times and points must match");
@@ -346,8 +346,8 @@ impl HermiteSpline {
         Self { times, points, in_tangents, out_tangents }
     }
 
-    /// Creates a clamped cubic spline (C2 with specified endpoint tangents).
-    /// Maps to CesiumJS `HermiteSpline.createClampedCubic`.
+    /// 创建夹取三次样条（C2，带指定的端点切线）。
+    /// 映射到 CesiumJS `HermiteSpline.createClampedCubic`。
     pub fn create_clamped_cubic(
         times: Vec<f64>,
         points: Vec<DVec3>,
@@ -373,8 +373,8 @@ impl HermiteSpline {
         Self { times, points, in_tangents, out_tangents }
     }
 
-    /// Evaluate the spline at a given time.
-    /// Uses CesiumJS hermite coefficient matrix with timesDelta scaling.
+    /// 在给定时间处求样条的值。
+    /// 使用带 timesDelta 缩放的 CesiumJS hermite 系数矩阵。
     pub fn evaluate(&self, time: f64) -> DVec3 {
         let i = self.find_time_interval(time);
         let t0 = self.times[i];
@@ -388,7 +388,7 @@ impl HermiteSpline {
 
         let u2 = u * u;
         let u3 = u2 * u;
-        // Hermite basis from hermiteCoefficientMatrix, tangent coefs scaled by timesDelta
+        // Hermite 基来自 hermiteCoefficientMatrix，切线系数按 timesDelta 缩放
         let coef_start = 2.0 * u3 - 3.0 * u2 + 1.0;
         let coef_end = -2.0 * u3 + 3.0 * u2;
         let coef_out = (u3 - 2.0 * u2 + u) * times_delta;
@@ -407,8 +407,8 @@ impl Spline for HermiteSpline {
     }
 }
 
-/// Solves a tridiagonal system using the Thomas Algorithm.
-/// Maps to CesiumJS `TridiagonalSystemSolver.solve`.
+/// 使用 Thomas 算法求解三对角方程组。
+/// 映射到 CesiumJS `TridiagonalSystemSolver.solve`。
 pub fn tridiagonal_solve(
     lower: &[f64],
     diagonal: &[f64],
@@ -441,8 +441,8 @@ pub fn tridiagonal_solve(
     x
 }
 
-/// Generates tangents for a natural cubic spline.
-/// Maps to CesiumJS `generateNatural`.
+/// 为自然三次样条生成切线。
+/// 映射到 CesiumJS `generateNatural`。
 fn generate_natural(points: &[DVec3]) -> Vec<DVec3> {
     let n = points.len();
     let mut l = vec![0.0f64; n - 1];
@@ -468,8 +468,8 @@ fn generate_natural(points: &[DVec3]) -> Vec<DVec3> {
     tridiagonal_solve(&l, &d, &u, &r)
 }
 
-/// Generates tangents for a clamped cubic spline.
-/// Maps to CesiumJS `generateClamped`.
+/// 为夹取三次样条生成切线。
+/// 映射到 CesiumJS `generateClamped`。
 fn generate_clamped(points: &[DVec3], first_tangent: DVec3, last_tangent: DVec3) -> Vec<DVec3> {
     let n = points.len();
     let mut l = vec![0.0f64; n - 1];
@@ -505,26 +505,26 @@ fn generate_clamped(points: &[DVec3], first_tangent: DVec3, last_tangent: DVec3)
 // QuaternionSpline
 // ============================================================================
 
-/// Quaternion spline using SLERP interpolation.
+/// 使用 SLERP 插值的四元数样条。
 ///
-/// Maps to CesiumJS `Core/QuaternionSpline.js`.
+/// 映射到 CesiumJS `Core/QuaternionSpline.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct QuaternionSpline {
-    /// Time values.
+    /// 时间值。
     pub times: Vec<f64>,
-    /// Quaternion control points.
+    /// 四元数控制点。
     pub points: Vec<DQuat>,
 }
 
 impl QuaternionSpline {
-    /// Create a new quaternion spline.
+    /// 创建一个新的四元数样条。
     pub fn new(times: Vec<f64>, points: Vec<DQuat>) -> Self {
         assert!(points.len() >= 2, "points.length must be >= 2");
         assert_eq!(times.len(), points.len(), "times and points must match");
         Self { times, points }
     }
 
-    /// Evaluate the spline at a given time using SLERP.
+    /// 使用 SLERP 在给定时间处求样条的值。
     pub fn evaluate(&self, time: f64) -> DQuat {
         let i = self.find_time_interval(time);
         let t0 = self.times[i];
@@ -548,26 +548,26 @@ impl Spline for QuaternionSpline {
 // SteppedSpline
 // ============================================================================
 
-/// Stepped (piecewise constant) spline - holds value until next keyframe.
+/// 阶梯（分段常量）样条 —— 保持取值直到下一个关键帧。
 ///
-/// Maps to CesiumJS `Core/SteppedSpline.js`.
+/// 映射到 CesiumJS `Core/SteppedSpline.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct SteppedSpline {
-    /// Time values.
+    /// 时间值。
     pub times: Vec<f64>,
-    /// Control points.
+    /// 控制点。
     pub points: Vec<DVec3>,
 }
 
 impl SteppedSpline {
-    /// Create a new stepped spline.
+    /// 创建一个新的阶梯样条。
     pub fn new(times: Vec<f64>, points: Vec<DVec3>) -> Self {
         assert!(points.len() >= 2, "points.length must be >= 2");
         assert_eq!(times.len(), points.len(), "times and points must match");
         Self { times, points }
     }
 
-    /// Evaluate the spline at a given time (returns previous keyframe value).
+    /// 在给定时间处求样条的值（返回上一个关键帧的值）。
     pub fn evaluate(&self, time: f64) -> DVec3 {
         let i = self.find_time_interval(time);
         self.points[i]
@@ -584,19 +584,19 @@ impl Spline for SteppedSpline {
 // ConstantSpline
 // ============================================================================
 
-/// Constant spline - always returns the same value.
+/// 常量样条 —— 始终返回同一个值。
 ///
-/// Maps to CesiumJS `Core/ConstantSpline.js` / MorphWeightSpline.
+/// 映射到 CesiumJS `Core/ConstantSpline.js` / MorphWeightSpline。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstantSpline {
-    /// The constant value.
+    /// 常量值。
     pub value: DVec3,
-    /// Time range (for interface compatibility).
+    /// 时间范围（用于接口兼容）。
     pub times: Vec<f64>,
 }
 
 impl ConstantSpline {
-    /// Create a new constant spline.
+    /// 创建一个新的常量样条。
     pub fn new(value: DVec3) -> Self {
         Self {
             value,
@@ -604,7 +604,7 @@ impl ConstantSpline {
         }
     }
 
-    /// Create with a specific time range.
+    /// 使用特定的时间范围创建。
     pub fn with_time_range(value: DVec3, start: f64, end: f64) -> Self {
         Self {
             value,
@@ -612,17 +612,17 @@ impl ConstantSpline {
         }
     }
 
-    /// Evaluate (always returns the constant value).
+    /// 求值（始终返回常量值）。
     pub fn evaluate(&self, _time: f64) -> DVec3 {
         self.value
     }
 
-    /// wrapTime always returns 0.0 for a constant spline.
+    /// 对于常量样条，wrapTime 始终返回 0.0。
     pub fn wrap_time(&self, _time: f64) -> f64 {
         0.0
     }
 
-    /// clampTime always returns 0.0 for a constant spline.
+    /// 对于常量样条，clampTime 始终返回 0.0。
     pub fn clamp_time(&self, _time: f64) -> f64 {
         0.0
     }
@@ -638,26 +638,26 @@ impl Spline for ConstantSpline {
 // MorphWeightSpline
 // ============================================================================
 
-/// Spline for morph target weights (scalar values).
+/// 用于形变目标权重（标量值）的样条。
 ///
-/// Maps to CesiumJS `Core/MorphWeightSpline.js`.
+/// 映射到 CesiumJS `Core/MorphWeightSpline.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct MorphWeightSpline {
-    /// Time values.
+    /// 时间值。
     pub times: Vec<f64>,
-    /// Weight values (0.0 to 1.0 typically).
+    /// 权重值（通常在 0.0 到 1.0 之间）。
     pub weights: Vec<f64>,
 }
 
 impl MorphWeightSpline {
-    /// Create a new morph weight spline.
+    /// 创建一个新的形变权重样条。
     pub fn new(times: Vec<f64>, weights: Vec<f64>) -> Self {
         assert!(weights.len() >= 2, "weights.length must be >= 2");
         assert_eq!(times.len(), weights.len(), "times and weights must match");
         Self { times, weights }
     }
 
-    /// Evaluate the weight at a given time (linear interpolation).
+    /// 在给定时间处求权重（线性插值）。
     pub fn evaluate(&self, time: f64) -> f64 {
         let i = self.find_time_interval(time);
         let t0 = self.times[i];
@@ -681,24 +681,24 @@ impl Spline for MorphWeightSpline {
 // ScalarSpline
 // ============================================================================
 
-/// Spline for scalar values (linear interpolation).
+/// 用于标量值的样条（线性插值）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScalarSpline {
-    /// Time values.
+    /// 时间值。
     pub times: Vec<f64>,
-    /// Scalar values.
+    /// 标量值。
     pub values: Vec<f64>,
 }
 
 impl ScalarSpline {
-    /// Create a new scalar spline.
+    /// 创建一个新的标量样条。
     pub fn new(times: Vec<f64>, values: Vec<f64>) -> Self {
         assert!(values.len() >= 2, "values.length must be >= 2");
         assert_eq!(times.len(), values.len(), "times and values must match");
         Self { times, values }
     }
 
-    /// Evaluate the scalar at a given time.
+    /// 在给定时间处求标量值。
     pub fn evaluate(&self, time: f64) -> f64 {
         let i = self.find_time_interval(time);
         let t0 = self.times[i];
@@ -719,7 +719,7 @@ impl Spline for ScalarSpline {
 }
 
 // ============================================================================
-// Tests
+// 测试
 // ============================================================================
 
 #[cfg(test)]

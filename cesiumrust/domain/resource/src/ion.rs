@@ -1,132 +1,131 @@
-//! Cesium Ion asset endpoint URL construction.
+//! Cesium Ion 资产端点 URL 构造。
 //!
-//! Maps to CesiumJS `Core/IonResource.js` + `Core/Ion.js`:
-//! - `IonResource.fromAssetId(assetId, options)` — builds the endpoint URL.
-//! - `IonResource._createEndpointResource(assetId, options)` — constructs the
-//!   Resource used to fetch the ion endpoint JSON.
-//! - Token injection via `access_token` query parameter and/or
-//!   `Authorization: Bearer <token>` header.
+//! 映射到 CesiumJS `Core/IonResource.js` + `Core/Ion.js`：
+//! - `IonResource.fromAssetId(assetId, options)` —— 构建端点 URL。
+//! - `IonResource._createEndpointResource(assetId, options)` —— 构造用于
+//!   获取 ion 端点 JSON 的 Resource。
+//! - 通过 `access_token` 查询参数和/或
+//!   `Authorization: Bearer <token>` 头部注入令牌。
 //!
-//! **This module is pure URL/header construction — it does NOT make network
-//! requests.** The actual HTTP fetch is the caller's responsibility (via the
-//! adapter layer).
+//! **本模块是纯 URL/头部构造 —— 它不会发出网络请求。**
+//! 实际的 HTTP 获取由调用方负责（通过适配层）。
 //!
 //! # Cesium Ion REST API
 //!
-//! The ion endpoint for an asset is:
+//! 某个资产的 ion 端点为：
 //! ```text
 //! GET {server}/v1/assets/{assetId}/endpoint?access_token={token}
 //! ```
 //!
-//! The response contains:
-//! - `url` — the actual asset content URL
-//! - `accessToken` — a short-lived token for the content URL
-//! - `externalType` — if this is an external asset ("3DTILES", "STK_TERRAIN_SERVER", etc.)
-//! - `options.url` — for external assets, the URL of the external resource
-//! - `attributions` — credit information
+//! 响应包含：
+//! - `url` —— 实际的资产内容 URL
+//! - `accessToken` —— 用于内容 URL 的短期令牌
+//! - `externalType` —— 若这是一个外部资产（"3DTILES"、"STK_TERRAIN_SERVER" 等）
+//! - `options.url` —— 对于外部资产，外部资源的 URL
+//! - `attributions` —— 致谢信息
 
 use std::collections::HashMap;
 
-/// Default Cesium Ion API server URL.
+/// 默认的 Cesium Ion API 服务器 URL。
 ///
-/// Maps to CesiumJS `Ion.defaultServer` = `"https://api.cesium.com/"`.
+/// 映射到 CesiumJS `Ion.defaultServer` = `"https://api.cesium.com/"`。
 pub const DEFAULT_ION_SERVER: &str = "https://api.cesium.com/";
 
-/// Options for constructing an Ion asset endpoint resource.
+/// 构造 Ion 资产端点资源的选项。
 ///
-/// Maps to CesiumJS `IonResource.fromAssetId(assetId, options)`.
+/// 映射到 CesiumJS `IonResource.fromAssetId(assetId, options)`。
 #[derive(Debug, Clone, Default)]
 pub struct IonAssetOptions {
-    /// The access token to use. If None, no token is injected.
+    /// 要使用的访问令牌。若为 None 则不注入令牌。
     ///
-    /// Maps to `options.accessToken` (falls back to `Ion.defaultAccessToken`).
+    /// 映射到 `options.accessToken`（回退到 `Ion.defaultAccessToken`）。
     pub access_token: Option<String>,
 
-    /// The url of the Cesium ion API server.
+    /// Cesium ion API 服务器的 url。
     ///
-    /// Maps to `options.server` (falls back to `Ion.defaultServer`).
+    /// 映射到 `options.server`（回退到 `Ion.defaultServer`）。
     pub server: Option<String>,
 
-    /// Additional query parameters for the endpoint request.
+    /// 端点请求的额外查询参数。
     ///
-    /// Maps to `options.queryParameters` (merged into the endpoint URL).
+    /// 映射到 `options.queryParameters`（合并进端点 URL）。
     pub query_parameters: Option<HashMap<String, String>>,
 
-    /// Whether to inject the `Authorization: Bearer` header in addition to
-    /// (or instead of) the `access_token` query parameter.
+    /// 除了在 `access_token` 查询参数之外（或替代它），
+    /// 是否注入 `Authorization: Bearer` 头部。
     ///
-    /// CesiumJS uses both: the query parameter for the endpoint request and
-    /// the Bearer header for subsequent content requests. Default: `true`.
+    /// CesiumJS 两者都用：端点请求用查询参数，后续的
+    /// 内容请求用 Bearer 头部。默认：`true`。
     pub use_bearer_header: Option<bool>,
 }
 
-/// The asset endpoint data returned from the Cesium Ion endpoint service.
+/// 从 Cesium Ion 端点服务返回的资产端点数据。
 ///
-/// This is the **parsed response** structure. Construction from JSON is the
-/// caller's responsibility (the domain layer does not depend on serde_json
-/// for this; the adapter or application layer deserializes).
+/// 这是 **解析后的响应** 结构。从 JSON 构造由调用方负责
+/// （领域层不为此依赖 serde_json；适配器或应用层
+/// 进行反序列化）。
 ///
-/// Maps to the ion endpoint JSON response fields used by `IonResource`.
+/// 映射到 `IonResource` 使用的 ion 端点 JSON 响应字段。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IonEndpoint {
-    /// The URL of the asset content (tiles, terrain, imagery).
+    /// 资产内容的 URL（瓦片、地形、影像）。
     pub url: String,
 
-    /// The external asset type (`"3DTILES"`, `"STK_TERRAIN_SERVER"`, etc.),
-    /// if this is an external asset. `None` for native ion assets.
+    /// 外部资产类型（`"3DTILES"`、`"STK_TERRAIN_SERVER"` 等），
+    /// 仅当这是一个外部资产时。对于原生 ion 资产为 `None`。
     pub external_type: Option<String>,
 
-    /// A short-lived access token for requests against the content URL.
+    /// 用于针对内容 URL 请求的短期访问令牌。
     ///
-    /// Maps to `endpoint.accessToken`.
+    /// 映射到 `endpoint.accessToken`。
     pub access_token: Option<String>,
 
-    /// For external assets: `endpoint.options.url` (the actual external URL).
+    /// 对于外部资产：`endpoint.options.url`（实际的外部 URL）。
     pub options_url: Option<String>,
 
-    /// Attribution/credit HTML strings.
+    /// 致谢/信用 HTML 字符串。
     ///
-    /// Maps to `endpoint.attributions`.
+    /// 映射到 `endpoint.attributions`。
     pub attributions: Vec<IonAttribution>,
 }
 
-/// A single attribution entry from the ion endpoint response.
+/// 来自 ion 端点响应的单条致谢条目。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IonAttribution {
-    /// HTML content of the attribution.
+    /// 致谢的 HTML 内容。
     pub html: String,
-    /// Whether this attribution is collapsible.
+    /// 该致谢是否可折叠。
     pub collapsible: bool,
 }
 
-/// Describes a fully-constructed Ion resource request (URL + headers).
+/// 描述一个已完全构造的 Ion 资源请求（URL + 头部）。
 ///
-/// This is the output of the pure URL-building logic — it tells the caller
-/// *what* to request without actually requesting it.
+/// 这是纯 URL 构建逻辑的输出 —— 它告诉调用方
+/// 要请求 *什么*，而不实际发起请求。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IonResourceRequest {
-    /// The fully-constructed endpoint URL (with query parameters).
+    /// 已完全构造的端点 URL（含查询参数）。
     pub url: String,
 
-    /// HTTP headers to send with the request (may include Authorization).
+    /// 随请求发送的 HTTP 头部（可能包含 Authorization）。
     pub headers: HashMap<String, String>,
 
-    /// The asset ID this request is for.
+    /// 本请求对应的资产 ID。
     pub asset_id: u64,
 
-    /// The ion server base URL used.
+    /// 所使用的 ion 服务器基础 URL。
     pub server: String,
 }
 
-/// Builds the Ion endpoint URL for a given asset ID.
+/// 为给定的资产 ID 构建 Ion 端点 URL。
 ///
-/// Maps to `IonResource._createEndpointResource(assetId, options)`.
+/// 映射到 `IonResource._createEndpointResource(assetId, options)`。
 ///
-/// This function is **pure** — it constructs the URL and headers without
-/// making any network request. The caller (adapter layer) is responsible for
-/// actually fetching the endpoint.
+/// 本函数是 **纯函数** —— 它构造 URL 和头部而不
+/// 发起任何网络请求。调用方（适配层）负责
+/// 实际获取端点。
 ///
-/// # Examples
+/// # 示例
 /// ```
 /// use cesium_resource::ion::{build_endpoint_request, IonAssetOptions};
 ///
@@ -143,17 +142,17 @@ pub fn build_endpoint_request(asset_id: u64, options: IonAssetOptions) -> IonRes
         .server
         .unwrap_or_else(|| DEFAULT_ION_SERVER.to_string());
 
-    // Normalize server URL: ensure trailing slash for path joining.
+    // 规范化服务器 URL：确保末尾有斜杠以便拼接路径。
     let server_base = if server.ends_with('/') {
         server.clone()
     } else {
         format!("{}/", server)
     };
 
-    // Build the endpoint path: v1/assets/{assetId}/endpoint
+    // 构建端点路径：v1/assets/{assetId}/endpoint
     let endpoint_path = format!("v1/assets/{}/endpoint", asset_id);
 
-    // Build query parameters.
+    // 构建查询参数。
     let mut query_parts: Vec<String> = Vec::new();
 
     if let Some(ref token) = options.access_token {
@@ -162,7 +161,7 @@ pub fn build_endpoint_request(asset_id: u64, options: IonAssetOptions) -> IonRes
         }
     }
 
-    // Merge additional query parameters.
+    // 合并额外的查询参数。
     if let Some(ref extra) = options.query_parameters {
         let mut sorted_keys: Vec<&String> = extra.keys().collect();
         sorted_keys.sort();
@@ -188,17 +187,17 @@ pub fn build_endpoint_request(asset_id: u64, options: IonAssetOptions) -> IonRes
         )
     };
 
-    // Build headers.
+    // 构建头部。
     let mut headers = HashMap::new();
 
-    // CesiumJS client identification header.
-    // Maps to `addClientHeaders(headers)` in IonResource.js.
+    // CesiumJS 客户端识别头部。
+    // 映射到 IonResource.js 中的 `addClientHeaders(headers)`。
     headers.insert(
         "X-Cesium-Client".to_string(),
         "cesium-rust".to_string(),
     );
 
-    // Authorization: Bearer header (if configured and token available).
+    // Authorization: Bearer 头部（若已配置且有可用令牌）。
     let use_bearer = options.use_bearer_header.unwrap_or(true);
     if use_bearer {
         if let Some(ref token) = options.access_token {
@@ -219,13 +218,13 @@ pub fn build_endpoint_request(asset_id: u64, options: IonAssetOptions) -> IonRes
     }
 }
 
-/// Builds the content URL for an Ion asset given the endpoint response.
+/// 在给定端点响应的情况下，为 Ion 资产构建内容 URL。
 ///
-/// After the endpoint is fetched, the content URL needs the endpoint's
-/// `accessToken` appended as a query parameter (CesiumJS does this in
-/// `IonResource.fromEndpoint`).
+/// 端点获取后，内容 URL 需要将端点的
+/// `accessToken` 作为查询参数追加（CesiumJS 在
+/// `IonResource.fromEndpoint` 中完成这一操作）。
 ///
-/// Maps to the token injection in `new IonResource(endpoint, endpointResource)`:
+/// 映射到 `new IonResource(endpoint, endpointResource)` 中的令牌注入：
 /// ```js
 /// resource = new Resource({ url: endpoint.url });
 /// resource.setQueryParameters({ access_token: endpoint.accessToken });
@@ -247,10 +246,10 @@ pub fn build_content_url(endpoint: &IonEndpoint) -> String {
     }
 }
 
-/// Builds headers for content requests to an Ion asset.
+/// 为向 Ion 资产发起的内容请求构建头部。
 ///
-/// Includes the Bearer token from the endpoint response (if available) and
-/// the standard Cesium client identification header.
+/// 包含来自端点响应的 Bearer 令牌（若可用）以及
+/// 标准的 Cesium 客户端识别头部。
 pub fn build_content_headers(endpoint: &IonEndpoint) -> HashMap<String, String> {
     let mut headers = HashMap::new();
     headers.insert(
@@ -270,20 +269,20 @@ pub fn build_content_headers(endpoint: &IonEndpoint) -> HashMap<String, String> 
     headers
 }
 
-/// Determines whether an Ion endpoint represents an external asset.
+/// 判断一个 Ion 端点是否代表一个外部资产。
 ///
-/// Maps to `IonResource._isExternal` logic: an asset is external when
-/// `endpoint.externalType` is defined.
+/// 映射到 `IonResource._isExternal` 逻辑：当
+/// `endpoint.externalType` 已定义时，资产为外部资产。
 pub fn is_external_asset(endpoint: &IonEndpoint) -> bool {
     endpoint.external_type.is_some()
 }
 
-/// For external assets, returns the effective content URL.
+/// 对于外部资产，返回有效的内容 URL。
 ///
-/// Maps to `IonResource.fromEndpoint` where external assets use
-/// `endpoint.options.url` instead of `endpoint.url`.
+/// 映射到 `IonResource.fromEndpoint`，其中外部资产使用
+/// `endpoint.options.url` 而非 `endpoint.url`。
 ///
-/// Returns `None` for non-external assets or when the options URL is missing.
+/// 对于非外部资产或缺少 options URL 的情况返回 `None`。
 pub fn external_asset_url(endpoint: &IonEndpoint) -> Option<&str> {
     if !is_external_asset(endpoint) {
         return None;
@@ -291,9 +290,9 @@ pub fn external_asset_url(endpoint: &IonEndpoint) -> Option<&str> {
     endpoint.options_url.as_deref()
 }
 
-/// Checks if an external asset type is supported as a Resource.
+/// 检查某个外部资产类型是否受支持为 Resource。
 ///
-/// Maps to the CesiumJS guard:
+/// 映射到 CesiumJS 的守卫：
 /// ```js
 /// if (externalType !== '3DTILES' && externalType !== 'STK_TERRAIN_SERVER') {
 ///   throw new RuntimeError('Ion.createResource does not support external imagery assets...');
@@ -302,15 +301,15 @@ pub fn external_asset_url(endpoint: &IonEndpoint) -> Option<&str> {
 pub fn is_supported_external_type(endpoint: &IonEndpoint) -> bool {
     match endpoint.external_type.as_deref() {
         Some("3DTILES") | Some("STK_TERRAIN_SERVER") => true,
-        Some(_) => false, // e.g. "IMAGERY" — not supported as Resource
-        None => true,     // Non-external assets are always supported
+        Some(_) => false, // 例如 "IMAGERY" —— 不支持作为 Resource
+        None => true,     // 非外部资产始终受支持
     }
 }
 
-/// Percent-encodes a query parameter value.
+/// 对查询参数值进行百分号编码。
 ///
-/// Encodes all characters except unreserved RFC 3986 chars
-/// (`A-Z a-z 0-9 - _ . ~`).
+/// 编码除未保留的 RFC 3986 字符
+/// （`A-Z a-z 0-9 - _ . ~`）之外的一切字符。
 fn percent_encode_value(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     for byte in s.bytes() {
@@ -384,7 +383,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        // Token still in query param but no Authorization header
+        // 令牌仍在查询参数中，但没有 Authorization 头部
         assert!(req.url.contains("access_token=tok"));
         assert!(!req.headers.contains_key("Authorization"));
     }
@@ -403,7 +402,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        // Query params are sorted
+        // 查询参数已排序
         assert!(req.url.contains("access_token=t"));
         assert!(req.url.contains("baz=qux"));
         assert!(req.url.contains("foo=bar"));

@@ -1,18 +1,18 @@
-//! The edit bridge (plan §8, M6): turns selection + keyboard / drag gestures
-//! into reversible [`PlotCommand`]s, applies them to the [`PlotDocument`] and
-//! records them on the [`PlotHistory`] stack so every edit is undoable.
+//! 编辑桥接层（计划 §8，M6）：将选择集 + 键盘 / 拖拽手势转化为
+//! 可撤销的 [`PlotCommand`]，应用到 [`PlotDocument`] 并记录到
+//! [`PlotHistory`] 栈，使每次编辑都可撤销。
 //!
-//! The command builders ([`delete_commands`], [`duplicate_commands`],
-//! [`translate_commands`]) are *pure over the document* — no ECS, no window —
-//! so the whole move / duplicate / delete / nudge contract is unit-testable
-//! headless, exactly like the core ops. The two systems are thin shells:
-//!  * [`edit_system`] drives them from the keyboard (Delete / Ctrl+D / Ctrl+Z /
-//!    Ctrl+Y / arrow nudge);
-//!  * [`drag_move_system`] folds a pointer drag over an already-selected element
-//!    into a single translate command (one drag == one undo step, plan §8).
+//! 命令构建器（[`delete_commands`]、[`duplicate_commands`]、
+//! [`translate_commands`]）*对文档是纯函数*——无 ECS、无窗口——
+//! 因此整个移动 / 复制 / 删除 / 微调契约可以 headless 单测，
+//! 与核心 ops 一致。两个系统只是薄壳：
+//!  * [`edit_system`] 从键盘驱动（Delete / Ctrl+D / Ctrl+Z /
+//!    Ctrl+Y / 方向键微调）；
+//!  * [`drag_move_system`] 将指针在已选元素上的拖拽折叠为单个
+//!    平移命令（一次拖拽 == 一步撤销，计划 §8）。
 //!
-//! Editing is inert while a draw tool is active (the draw FSM owns the keys) and
-//! while headless (no camera / window), so the golden baseline never sees these.
+//! 绘制工具激活时（绘制 FSM 拥有按键）以及 headless 时（无相机 / 窗口），
+//! 编辑处于惰性状态，因此黄金基线绝不会触发它们。
 
 use bevy::input::mouse::MouseButton;
 use bevy::prelude::*;
@@ -30,14 +30,14 @@ use crate::resources::{
     PlotDocument, PlotHistory, PlotHover, PlotInputCapture, PlotSelection, PlotViewCtx,
 };
 
-/// Screen distance (logical pixels) the pointer must travel before a press turns
-/// into a drag (so a plain click on a selected element does not nudge it).
+/// 指针必须移动的最小屏幕距离（逻辑像素），超过此阈值按下才转为拖拽
+/// （这样对已选元素的普通点击不会意外微调它）。
 const DRAG_THRESHOLD_PX: f32 = 4.0;
-/// A single arrow-key nudge, in degrees of lon/lat (a coarse but view-independent
-/// step; fine positioning uses the drag).
+/// 单次方向键微调的步长，单位为经纬度（粗粒度但与视图无关的
+/// 步进；精确定位使用拖拽）。
 const NUDGE_DEG: f64 = 0.05;
 
-/// Build a remove command for every selected id that still lives in a layer.
+/// 为每个仍存在于层中的已选 id 构建移除命令。
 pub fn delete_commands(doc: &Document, ids: impl IntoIterator<Item = ElementId>) -> PlotCommand {
     let steps: Vec<PlotCommand> = ids
         .into_iter()
@@ -53,13 +53,13 @@ pub fn delete_commands(doc: &Document, ids: impl IntoIterator<Item = ElementId>)
     PlotCommand::Composite { steps }
 }
 
-/// Build an add command per selected element, cloning its geometry / style /
-/// attributes into a freshly allocated id in the same layer. Names get a copy
-/// suffix so duplicated elements are distinguishable in the panel (M7).
+/// 为每个已选元素构建新增命令，将其几何 / 样式 /
+/// 属性克隆到新分配的 id 上并放入同一层。名称追加
+/// “副本”后缀以在面板中区分复制元素（M7）。
 pub fn duplicate_commands(doc: &mut Document, ids: &[ElementId]) -> PlotCommand {
     let mut steps = Vec::new();
     for &id in ids {
-        // Snapshot the source before allocating so `make_element`'s borrow ends.
+        // 在分配之前快照源，以便 `make_element` 的借用结束。
         let src = match doc.element(id) {
             Some(e) => e.clone(),
             None => continue,
@@ -82,8 +82,8 @@ pub fn duplicate_commands(doc: &mut Document, ids: &[ElementId]) -> PlotCommand 
     PlotCommand::Composite { steps }
 }
 
-/// Build a move command: translate every editable selected element by
-/// `(dlon, dlat)` degrees, folding them into one composite (one undo step).
+/// 构建移动命令：将每个可编辑的已选元素平移
+/// `(dlon, dlat)` 度，折叠为一个 composite（一步撤销）。
 pub fn translate_commands(doc: &Document, ids: &[ElementId], dlon: f64, dlat: f64) -> PlotCommand {
     let steps: Vec<PlotCommand> = ids
         .iter()
@@ -104,26 +104,26 @@ pub fn translate_commands(doc: &Document, ids: &[ElementId], dlon: f64, dlat: f6
     PlotCommand::Composite { steps }
 }
 
-/// A pointer-drag move of the current selection (plan §8 "拖拽选中集"). The
-/// pressed element must already be selected + editable; the move is applied live
-/// from the stored `before` geometries and folded into one command on release.
+/// 当前选择集的指针拖拽移动（计划 §8 “拖拽选中集”）。按下的元素必须
+/// 已被选中且可编辑；移动从存储的 `before` 几何实时应用，
+/// 并在释放时折叠为单条命令。
 #[derive(Resource, Default)]
 pub struct PlotDrag {
-    /// A press grabbed a selection (not yet past the movement threshold).
+    /// 按下已抓住一个选中集（尚未超过移动阈值）。
     active: bool,
-    /// The pointer has crossed [`DRAG_THRESHOLD_PX`] — the move is now live.
+    /// 指针已超过 [`DRAG_THRESHOLD_PX`]——移动现已激活。
     armed: bool,
-    /// Screen position at press (for the threshold test).
+    /// 按下时的屏幕位置（用于阈值判断）。
     start_px: Vec2,
-    /// Geographic coordinate under the cursor when the move armed.
+    /// 移动激活时光标下的地理坐标。
     start_geo: Option<GeoPoint>,
-    /// The elements being moved.
+    /// 正在被移动的元素。
     moving: Vec<ElementId>,
-    /// Their geometry captured at arm time (the undo `before`).
+    /// 在激活时抓取的它们的几何（撤销时的 `before`）。
     before: Vec<(ElementId, Geometry)>,
 }
 
-/// Apply a command to the document and record it (skipping empty composites).
+/// 将命令应用到文档并记录（跳过空 composite）。
 fn commit(plot_doc: &mut PlotDocument, history: &mut PlotHistory, command: PlotCommand) {
     if matches!(&command, PlotCommand::Composite { steps } if steps.is_empty()) {
         return;
@@ -133,17 +133,17 @@ fn commit(plot_doc: &mut PlotDocument, history: &mut PlotHistory, command: PlotC
     plot_doc.mark_dirty();
 }
 
-/// Public entry point to the commit path so the M7 panels can route style and
-/// geometry edits through the same undo-recording pipeline the keyboard / drag
-/// systems use (one panel edit == one undo step).
+/// 提交路径的公开入口，以便 M7 面板能将样式和
+/// 几何编辑路由到键盘 / 拖拽系统使用的同一撤销记录管线
+/// （一次面板编辑 == 一步撤销）。
 pub fn apply_command(plot_doc: &mut PlotDocument, history: &mut PlotHistory, command: PlotCommand) {
     commit(plot_doc, history, command);
 }
 
-/// Build a style-edit command for every selected element whose style actually
-/// changes under `mutate`, capturing before/after so the edit is reversible.
-/// Elements already carrying the target style are skipped, so a no-op produces
-/// an empty composite (which [`apply_command`] drops without recording).
+/// 为每个在 `mutate` 下样式确实改变的已选元素构建样式编辑命令，
+/// 捕获 before/after 以使编辑可撤销。
+/// 已携带目标样式的元素被跳过，因此空操作产生
+/// 空 composite（[`apply_command`] 会丢弃它而不记录）。
 pub fn style_command(
     doc: &Document,
     ids: &[ElementId],
@@ -168,7 +168,7 @@ pub fn style_command(
     PlotCommand::Composite { steps }
 }
 
-/// Drop selection ids that no longer exist (after an undo of an add).
+/// 移除不再存在于文档中的选择 id（撤销新增后）。
 fn prune_selection(
     selection: &mut PlotSelection,
     doc: &Document,
@@ -183,7 +183,7 @@ fn prune_selection(
     }
 }
 
-/// The keyboard edit system (see module docs).
+/// 键盘编辑系统（参见模块文档）。
 pub fn edit_system(
     mut plot_doc: ResMut<PlotDocument>,
     mut history: ResMut<PlotHistory>,
@@ -192,14 +192,14 @@ pub fn edit_system(
     keys: Res<ButtonInput<KeyCode>>,
     mut selection_events: EventWriter<PlotSelectionChanged>,
 ) {
-    // Editing hotkeys belong to the draw FSM while a draw is active.
+    // 绘制激活时编辑热键属于绘制 FSM。
     if interaction.is_drawing() {
         return;
     }
     let ctrl = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
 
-    // Undo / redo first (they act even with an empty selection).
+    // 先撤销 / 重做（它们在空选择时也起作用）。
     if ctrl && keys.just_pressed(KeyCode::KeyZ) {
         let moved = if shift {
             history.0.redo(&mut plot_doc.doc)
@@ -225,7 +225,7 @@ pub fn edit_system(
         return;
     }
 
-    // Delete.
+    // 删除。
     if keys.just_pressed(KeyCode::Delete) {
         let command = delete_commands(&plot_doc.doc, ids);
         commit(&mut plot_doc, &mut history, command);
@@ -235,7 +235,7 @@ pub fn edit_system(
         return;
     }
 
-    // Duplicate (Ctrl+D).
+    // 复制（Ctrl+D）。
     if ctrl && keys.just_pressed(KeyCode::KeyD) {
         let command = duplicate_commands(&mut plot_doc.doc, &ids);
         let new_ids = command.targets();
@@ -247,7 +247,7 @@ pub fn edit_system(
         return;
     }
 
-    // Nudge (arrows, one step per tap so holding does not flood the history).
+    // 微调（方向键，每次按下只走一步以免按住时洪泛历史）。
     let mut dlon = 0.0;
     let mut dlat = 0.0;
     if keys.just_pressed(KeyCode::ArrowLeft) {
@@ -268,7 +268,7 @@ pub fn edit_system(
     }
 }
 
-/// The pointer-drag move system (see module docs).
+/// 指针拖拽移动系统（参见模块文档）。
 #[allow(clippy::too_many_arguments)]
 pub fn drag_move_system(
     mut drag: ResMut<PlotDrag>,
@@ -284,7 +284,7 @@ pub fn drag_move_system(
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
 ) {
-    // While drawing the FSM owns the pointer; Ctrl+drag is box-select (M7).
+    // 绘制期间 FSM 拥有指针；Ctrl+拖拽是框选（M7）。
     if interaction.is_drawing() {
         return;
     }
@@ -336,8 +336,8 @@ pub fn drag_move_system(
         return;
     }
 
-    // Grab a drag on a press over an already-selected, editable element; a plain
-    // click on a new element is left to the picker.
+    // 在已选且可编辑的元素上按下时抓住拖拽；对新元素的
+    // 普通点击留给拾取器处理。
     if mouse.just_pressed(MouseButton::Left) && !ctrl {
         if let Some(hit) = hover.0 {
             if selection.contains(hit.element) {
@@ -351,7 +351,7 @@ pub fn drag_move_system(
     }
 }
 
-/// Fold a finished drag into one recorded move command (no-op if nothing moved).
+/// 将已完成的拖拽折叠为单条记录的移动命令（无移动则为空操作）。
 fn end_drag(plot_doc: &mut PlotDocument, history: &mut PlotHistory, drag: &mut PlotDrag) {
     if !drag.armed {
         return;
@@ -377,8 +377,8 @@ fn end_drag(plot_doc: &mut PlotDocument, history: &mut PlotHistory, drag: &mut P
     }
 }
 
-/// Choose the active camera for the view mode (projection match first, else any
-/// active) — the same rule the pick / sync systems use.
+/// 为视图模式选择激活相机（先匹配投影类型，否则任选
+/// 一个激活的）——与拾取 / 同步系统使用相同的规则。
 fn active_cam<'q>(
     cams: &'q Query<(&Camera, &GlobalTransform, &Projection)>,
     mode: ViewMode,
@@ -498,7 +498,7 @@ mod tests {
             dirty: false,
         };
         let mut history = PlotHistory::default();
-        // Move the element in the document, then fold it as a completed drag.
+        // 先在文档中移动元素，然后将其折叠为已完成的拖拽。
         let base = Geometry::Polyline(Polyline {
             positions: vec![p(0.0, 0.0), p(1.0, 1.0)],
         });
@@ -529,7 +529,7 @@ mod tests {
             dirty: false,
         };
         let mut history = PlotHistory::default();
-        // Pressed (active) but never crossed the movement threshold (not armed).
+        // 已按下（active）但从未超过移动阈值（未 armed）。
         let mut drag = PlotDrag {
             active: true,
             ..PlotDrag::default()

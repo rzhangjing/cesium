@@ -1,7 +1,7 @@
-//! Entity visualization rendering.
+//! 实体可视化渲染。
 //!
-//! Converts domain Entity graphics to Bevy meshes and materials.
-//! Maps to CesiumJS `DataSources/GeometryVisualizer.js`
+//! 将领域 Entity 图形转换为 Bevy mesh 与材质。
+//! 对应 CesiumJS `DataSources/GeometryVisualizer.js`
 
 use bevy::prelude::*;
 use cesium_datasource::entity::{Entity, PolygonGraphics, PolylineGraphics};
@@ -9,14 +9,14 @@ use cesium_datasource::property::{Color, Property};
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
 
-/// Component marking an entity visualization.
+/// 标记一个实体可视化的组件。
 #[derive(Component)]
 pub struct EntityVisual {
-    /// The entity ID this visual represents.
+    /// 此可视化所表示的实体 ID。
     pub entity_id: String,
 }
 
-/// Converts a domain Color to a Bevy Color.
+/// 将领域 Color 转换为 Bevy Color。
 pub fn domain_color_to_bevy(color: &Color) -> bevy::prelude::Color {
     bevy::prelude::Color::srgba(
         color.red as f32,
@@ -26,14 +26,14 @@ pub fn domain_color_to_bevy(color: &Color) -> bevy::prelude::Color {
     )
 }
 
-/// Resolves a color property at time 0.
+/// 在时刻 0 解析一个颜色属性。
 fn resolve_color(prop: &Property<Color>, default: Color) -> Color {
     prop.get_value(0.0).copied().unwrap_or(default)
 }
 
-/// Creates a polyline mesh from positions on the ellipsoid.
+/// 从椭球上的位置创建一条 polyline mesh。
 ///
-/// Generates a triangle strip along the line with the given width.
+/// 沿线以给定宽度生成一条 triangle strip。
 pub fn create_polyline_mesh(
     polyline: &PolylineGraphics,
     ellipsoid: &Ellipsoid,
@@ -45,10 +45,10 @@ pub fn create_polyline_mesh(
     }
 
     let width = polyline.width.get_value(time).copied().unwrap_or(1.0);
-    // Convert pixel width to approximate world width (rough heuristic)
-    let world_width = width * 1000.0; // Approximate meters per pixel at medium zoom
+    // 将像素宽度转换为近似的世界宽度（粗略启发式）
+    let world_width = width * 1000.0; // 中等缩放下的近似米/像素
 
-    // Convert cartographic positions to ECEF
+    // 将测绘学位置转换为 ECEF
     let ecef_points: Vec<glam::DVec3> = positions
         .iter()
         .map(|p| {
@@ -57,26 +57,26 @@ pub fn create_polyline_mesh(
         })
         .collect();
 
-    // Generate a flat ribbon (triangle strip) along the line
+    // 沿线生成一条扁平带状体（triangle strip）
     let mut vertices: Vec<[f32; 3]> = Vec::new();
     let mut normals: Vec<[f32; 3]> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
 
     for i in 0..ecef_points.len() {
         let point = ecef_points[i];
-        let normal = point.normalize(); // Surface normal (approximate)
+        let normal = point.normalize(); // 表面法线（近似）
 
-        // Compute tangent direction
+        // 计算切线方向
         let tangent = if i < ecef_points.len() - 1 {
             (ecef_points[i + 1] - point).normalize()
         } else {
             (point - ecef_points[i - 1]).normalize()
         };
 
-        // Side vector (perpendicular to tangent and normal)
+        // 侧向量（垂直于切线与法线）
         let side = tangent.cross(normal).normalize();
 
-        // Two vertices per point (left and right of center)
+        // 每点两个顶点（中心的左与右）
         let half_width = world_width / 2.0;
         let left = point + side * half_width;
         let right = point - side * half_width;
@@ -88,7 +88,7 @@ pub fn create_polyline_mesh(
         normals.push(n);
         normals.push(n);
 
-        // Generate triangle indices
+        // 生成三角形索引
         if i < ecef_points.len() - 1 {
             let base = (i * 2) as u32;
             indices.extend_from_slice(&[base, base + 1, base + 2]);
@@ -107,9 +107,9 @@ pub fn create_polyline_mesh(
     Some(mesh)
 }
 
-/// Creates a polygon mesh from positions on the ellipsoid.
+/// 从椭球上的位置创建一个 polygon mesh。
 ///
-/// Uses simple fan triangulation for convex polygons.
+/// 对凸多边形使用简单的扇形三角剖分。
 pub fn create_polygon_mesh(
     polygon: &PolygonGraphics,
     ellipsoid: &Ellipsoid,
@@ -122,7 +122,7 @@ pub fn create_polygon_mesh(
 
     let height = polygon.height.get_value(time).copied().unwrap_or(0.0);
 
-    // Convert to ECEF
+    // 转换为 ECEF
     let ecef_points: Vec<glam::DVec3> = positions
         .iter()
         .map(|p| {
@@ -131,7 +131,7 @@ pub fn create_polygon_mesh(
         })
         .collect();
 
-    // Compute centroid for fan triangulation
+    // 为扇形三角剖分计算质心
     let centroid = ecef_points.iter().fold(glam::DVec3::ZERO, |acc, p| acc + *p)
         / ecef_points.len() as f64;
     let centroid_normal = centroid.normalize();
@@ -140,18 +140,18 @@ pub fn create_polygon_mesh(
     let mut normals: Vec<[f32; 3]> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
 
-    // Add centroid vertex
+    // 添加质心顶点
     vertices.push([centroid.x as f32, centroid.y as f32, centroid.z as f32]);
     normals.push([centroid_normal.x as f32, centroid_normal.y as f32, centroid_normal.z as f32]);
 
-    // Add ring vertices
+    // 添加环顶点
     for point in &ecef_points {
         vertices.push([point.x as f32, point.y as f32, point.z as f32]);
         let n = point.normalize();
         normals.push([n.x as f32, n.y as f32, n.z as f32]);
     }
 
-    // Fan triangulation from centroid
+    // 从质心做扇形三角剖分
     let n_points = ecef_points.len();
     for i in 0..n_points {
         let next = (i + 1) % n_points;
@@ -169,9 +169,9 @@ pub fn create_polygon_mesh(
     Some(mesh)
 }
 
-/// Creates a Bevy material from entity graphics.
+/// 从实体图形创建一个 Bevy 材质。
 pub fn create_entity_material(entity: &Entity, _time: f64) -> StandardMaterial {
-    // Try to get color from different graphics types
+    // 尝试从不同图形类型获取颜色
     let color = if let Some(ref point) = entity.point {
         resolve_color(&point.color, Color::WHITE)
     } else if let Some(ref polyline) = entity.polyline {
@@ -188,7 +188,7 @@ pub fn create_entity_material(entity: &Entity, _time: f64) -> StandardMaterial {
     }
 }
 
-/// Converts an entity's position to a Bevy Transform on the ellipsoid.
+/// 将实体的位置转换为椭球上的一个 Bevy Transform。
 pub fn entity_position_to_transform(
     entity: &Entity,
     ellipsoid: &Ellipsoid,
@@ -258,7 +258,7 @@ mod tests {
         let mesh = mesh.unwrap();
         let positions = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap();
         if let bevy::render::mesh::VertexAttributeValues::Float32x3(pos) = positions {
-            // Centroid + 4 ring vertices = 5
+            // 质心 + 4 个环顶点 = 5
             assert_eq!(pos.len(), 5);
         }
     }
@@ -287,7 +287,7 @@ mod tests {
         assert!(transform.is_some());
 
         let t = transform.unwrap();
-        // At lon=0, lat=0, the position should be on the X axis (approximately 6378137m)
+        // 在 lon=0, lat=0 处，位置应位于 X 轴上（约 6378137m）
         assert!(t.translation.x > 6_000_000.0);
         assert!(t.translation.y.abs() < 1.0);
         assert!(t.translation.z.abs() < 1.0);

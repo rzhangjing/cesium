@@ -1,107 +1,107 @@
-//! PerfCounters — Bevy Resource exposing dynamic_globe TileManager metrics.
+//! PerfCounters —— 暴露 dynamic_globe TileManager 指标的 Bevy Resource。
 //!
-//! ## Design
+//! ## 设计
 //!
-//! `PerfCounters` is a **pure observation surface**: dynamic_globe writes
-//! into it every frame, and the M0.5 perf-trace plugin reads from it to
-//! produce CSV rows. It holds **no control logic** — no budget, no
-//! eviction, no download decision lives here. This separation is what
-//! makes the M0.4 injection pixel-neutral: the golden path in
-//! `dynamic_globe.rs` keeps its exact semantics, and the only added work
-//! is a handful of integer stores per frame.
+//! `PerfCounters` 是一个**纯观测面**：dynamic_globe 每帧写入
+//! 它，M0.5 perf-trace 插件从中读取，以
+//! 生成 CSV 行。它**不含控制逻辑** —— 预算、
+//! 淘汰、下载决策都不在此处。正是这种分离
+//! 使得 M0.4 的注入保持像素中性：
+//! `dynamic_globe.rs` 中的黄金路径保留其精确语义，唯一新增的工作
+//! 是每帧若干次整数存储。
 //!
-//! ## Counter taxonomy
+//! ## 计数器分类
 //!
-//! The 11 categories requested by the plan map onto three shapes:
+//! 计划所要求的 11 个类别映射为三种形态：
 //!
-//! 1. **Gauges** (instantaneous sizes, read straight from TileManager
-//!    collections): `in_flight`, `gpu_tex_order`, `tile_entities`,
-//!    `spawn_queue`, `backlog`, `retry_after`.
-//! 2. **Per-frame deltas** (reset to 0 at the start of each frame, then
-//!    incremented by the pipeline as it does work): `frame_mesh`,
-//!    `frame_tex`, `frame_spawn`, `frame_despawn`.
-//! 3. **Cumulative totals** (monotonic since process start): `stale_skips`
-//!    (aborted downloads because the tile left the wanted set),
-//!    `evict_total` (GPU cache entries actually removed), `evict_deferred`
-//!    (eviction candidates skipped because the tile was still rendered).
+//! 1. **仪表值**（瞬时大小，直接从 TileManager 集合
+//!    读取）：`in_flight`、`gpu_tex_order`、`tile_entities`、
+//!    `spawn_queue`、`backlog`、`retry_after`。
+//! 2. **每帧增量**（每帧开始重置为 0，随后由管线在干活时
+//!    递增）：`frame_mesh`、
+//!    `frame_tex`、`frame_spawn`、`frame_despawn`。
+//! 3. **累计总量**（自进程启动单调递增）：`stale_skips`
+//!    （因瓦片离开 wanted 集合而中止的下载）、
+//!    `evict_total`（实际移除的 GPU 缓存条目）、`evict_deferred`
+//!    （因瓦片仍在渲染而跳过的淘汰候选）。
 //!
-//! ## Thread-safety
+//! ## 线程安全
 //!
-//! All fields are plain integers behind Bevy's `ResMut` access, so the
-//! frame thread is the only writer. The perf-trace plugin reads them on
-//! the same thread (in an `Update` system) and hands a snapshot to a
-//! dedicated writer thread via a channel — no lock, no atomics, no
-//! contention with the render loop.
+//! 所有字段都是 Bevy `ResMut` 访问下的普通整数，因此帧线程
+//! 是唯一的写入者。perf-trace 插件在同一线程（在一个 `Update` 系统
+//! 中）读取它们，并通过通道把快照交给一个专用写入线程 —— 无锁、
+//! 无原子操作、与渲染循环
+//! 无竞争。
 
 use bevy::prelude::*;
 
-/// Per-frame + cumulative counters for the dynamic_globe tile pipeline.
+/// dynamic_globe 瓦片管线的每帧 + 累计计数器。
 ///
-/// Default is all-zero, which is the correct state for frame 0 (nothing
-/// has been uploaded / spawned / evicted yet).
+/// Default 全为零，即帧 0 的正确状态（此时尚未
+/// 上传 / 生成 / 淘汰任何内容）。
 #[derive(Resource, Debug, Clone, Default)]
 pub struct PerfCounters {
-    // ── Gauges (instantaneous collection sizes) ────────────────────────
+    // ── 仪表值（瞬时集合大小） ────────────────────────
 
-    /// Downloads currently in flight (`TileManager::in_flight.len()`).
+    /// 当前在途的下载（`TileManager::in_flight.len()`）。
     pub in_flight: u32,
-    /// GPU texture cache entries (`TileManager::gpu_tex_order.len()`).
-    /// This is the FIFO eviction order, so it equals the live texture count.
+    /// GPU 纹理缓存条目（`TileManager::gpu_tex_order.len()`）。
+    /// 这就是 FIFO 淘汰顺序，因此它等于活跃纹理数。
     pub gpu_tex_order: u32,
-    /// Spawned tile entities (`TileManager::tile_entities.len()`).
+    /// 已生成的瓦片实体（`TileManager::tile_entities.len()`）。
     pub tile_entities: u32,
-    /// Tiles waiting for mesh build + spawn (`TileManager::spawn_queue.len()`).
+    /// 等待网格构建 + 生成的瓦片（`TileManager::spawn_queue.len()`）。
     pub spawn_queue: u32,
-    /// Finished meshes waiting for GPU upload (`MeshPipeline::backlog.len()`).
+    /// 等待 GPU 上传的已完成网格（`MeshPipeline::backlog.len()`）。
     pub backlog: u32,
-    /// Tiles in download cooldown after a transient failure
-    /// (`TileManager::retry_after.len()`).
+    /// 瞬时失败后处于下载冷却的瓦片
+    /// （`TileManager::retry_after.len()`）。
     pub retry_after: u32,
-    /// Tiles in the load set — still loading but NOT in the render partition
-    /// (KICK-blocked children). `TileManager::load_set.len()`.
+    /// 处于 load 集的瓦片 —— 仍在加载但未进入渲染划分
+    ///（被 KICK 阻塞的子节点）。`TileManager::load_set.len()`。
     pub load_set: u32,
 
-    // ── Per-frame deltas (reset each frame, then incremented) ──────────
+    // ── 每帧增量（每帧重置，随后递增） ──────────
 
-    /// Mesh uploads performed this frame (capped by `MAX_MESH_UPLOADS_PER_FRAME`).
+    /// 本帧执行的网格上传（受 `MAX_MESH_UPLOADS_PER_FRAME` 上限约束）。
     pub frame_mesh: u32,
-    /// Texture uploads applied this frame (capped by `MAX_TEXTURE_UPLOADS_PER_FRAME`).
+    /// 本帧应用的纹理上传（受 `MAX_TEXTURE_UPLOADS_PER_FRAME` 上限约束）。
     pub frame_tex: u32,
-    /// Entities spawned this frame (capped by `MAX_SPAWNS_PER_FRAME`).
+    /// 本帧生成的实体（受 `MAX_SPAWNS_PER_FRAME` 上限约束）。
     pub frame_spawn: u32,
-    /// Entities despawned this frame (capped by `MAX_DESPAWNS_PER_FRAME`).
+    /// 本帧反生成的实体（受 `MAX_DESPAWNS_PER_FRAME` 上限约束）。
     pub frame_despawn: u32,
 
-    // ── Cumulative totals (monotonic since process start) ──────────────
+    // ── 累计总量（自进程启动单调递增） ──────────────
 
-    /// Downloads aborted because the tile left the wanted set mid-flight
-    /// (the "stale skip" path in `download_worker`).
+    /// 因瓦片在途中离开 wanted 集合而中止的下载
+    ///（`download_worker` 中的 "stale skip" 路径）。
     pub stale_skips: u32,
-    /// GPU cache entries actually evicted (removed from `gpu_textures` etc.).
+    /// 实际被淘汰的 GPU 缓存条目（从 `gpu_textures` 等中移除）。
     pub evict_total: u32,
-    /// Eviction candidates deferred because the tile was still rendered
-    /// (pushed back onto `gpu_tex_order` instead of removed).
+    /// 因瓦片仍在渲染而被推迟的淘汰候选
+    ///（推回 `gpu_tex_order` 而非移除）。
     pub evict_deferred: u32,
 
-    // ── Frame bookkeeping (used by the trace writer) ───────────────────
+    // ── 帧记账（供 trace 写入器使用） ───────────────────
 
-    /// Monotonic frame index, incremented once per frame by the trace
-    /// system. Starts at 0; the first CSV row is frame 1.
+    /// 单调帧索引，由 trace 系统每帧递增一次。
+    /// 从 0 开始；第一行 CSV 是帧 1。
     pub frame_idx: u32,
-    /// Wall-clock delta of the last frame in milliseconds (from Bevy's
-    /// `Time::delta_secs_f64`). Written by the trace system, not by
-    /// dynamic_globe.
+    /// 上一帧的墙钟增量（毫秒，取自 Bevy 的
+    /// `Time::delta_secs_f64`）。由 trace 系统写入，而非
+    /// dynamic_globe。
     pub dt_ms: f64,
 }
 
 impl PerfCounters {
-    /// Reset the four per-frame delta counters to zero. Called at the
-    /// **start** of each frame (before the pipeline runs) so the deltas
-    /// reflect only this frame's work.
+    /// 将四个每帧增量计数器重置为零。在每帧的
+    /// **开始**（管线运行前）调用，使这些增量
+    /// 仅反映本帧的工作。
     ///
-    /// Gauges and cumulative totals are intentionally NOT reset here:
-    /// gauges are re-read from TileManager every frame, and cumulative
-    /// totals must stay monotonic.
+    /// 仪表值和累计总量刻意不在此处重置：
+    /// 仪表值每帧从 TileManager 重新读取，而累计
+    /// 总量必须保持单调。
     #[inline]
     pub fn begin_frame(&mut self) {
         self.frame_mesh = 0;
@@ -110,20 +110,20 @@ impl PerfCounters {
         self.frame_despawn = 0;
     }
 
-    /// Advance the frame index and record the wall-clock delta. Called
-    /// **once per frame** by the trace system after the pipeline has run,
-    /// so `frame_idx` in the CSV row matches the frame that produced the
-    /// counters.
+    /// 推进帧索引并记录墙钟增量。管线运行后由 trace 系统
+    /// **每帧一次**调用，
+    /// 使 CSV 行中的 `frame_idx` 与产生这些
+    /// 计数器的帧相匹配。
     #[inline]
     pub fn end_frame(&mut self, dt_ms: f64) {
         self.frame_idx = self.frame_idx.wrapping_add(1);
         self.dt_ms = dt_ms;
     }
 
-    /// One-line human summary, mirroring the legacy `[stats]` printf so a
-    /// reviewer can eyeball-consistency between the old log and the new
-    /// counters. Used by the M0.4 acceptance check ("PerfCounters 与手工
-    /// printf 校对一致").
+    /// 一行人类可读摘要，仿照遗留的 `[stats]` printf，以便
+    /// 审阅者能目测旧日志与新计数器的一致性。
+    /// 供 M0.4 验收检查使用（"PerfCounters 与手工
+    /// printf 校对一致"）。
     pub fn summary_line(&self) -> String {
         format!(
             "frame={} dt={:.2}ms ents={} vis_q={} backlog={} inflight={} retry={} load={} \
@@ -149,7 +149,7 @@ impl PerfCounters {
     }
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────
+// ── 测试 ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -182,7 +182,7 @@ mod tests {
         assert_eq!(c.frame_tex, 0);
         assert_eq!(c.frame_spawn, 0);
         assert_eq!(c.frame_despawn, 0);
-        // Gauges + cumulative untouched.
+        // 仪表值 + 累计值未受影响。
         assert_eq!(c.in_flight, 10);
         assert_eq!(c.tile_entities, 20);
         assert_eq!(c.stale_skips, 30);

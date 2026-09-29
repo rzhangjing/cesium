@@ -1,16 +1,16 @@
-//! Extended CZML + GeoJSON parsing tests.
+//! CZML + GeoJSON 扩展解析测试。
 //!
-//! Maps to CesiumJS:
-//! - DataSources/CzmlDataSourceSpec.js (time-tagged positions, materials, colors)
-//! - DataSources/GeoJsonDataSourceSpec.js (Multi*, GeometryCollection, properties)
+//! 对应 CesiumJS：
+//! - DataSources/CzmlDataSourceSpec.js（带时间标记的位置、材质、颜色）
+//! - DataSources/GeoJsonDataSourceSpec.js（Multi*、GeometryCollection、properties）
 //!
-//! A-class tests: parsing logic, coordinate conversion, entity creation.
+//! A 类测试：解析逻辑、坐标转换、实体创建。
 
 use cesium_datasource::czml::parse_czml;
 use cesium_datasource::geojson::{parse_geojson, GeoJsonOptions};
 use cesium_datasource::property::Property;
 
-// === CZML Extended ===
+// === CZML 扩展 ===
 
 #[test]
 fn czml_time_tagged_position() {
@@ -24,7 +24,7 @@ fn czml_time_tagged_position() {
     assert_eq!(entities.len(), 1);
     let e = &entities[0];
     assert_eq!(e.id, "sat");
-    // Position should be defined (either sampled or constant)
+    // Position 应有定义（采样或常量）
     assert!(e.position.is_defined());
 }
 
@@ -38,7 +38,7 @@ fn czml_position_flat_array() {
     let entities: Vec<_> = ds.entities.values().collect();
     assert_eq!(entities.len(), 1);
     let e = &entities[0];
-    // Flat array [lon, lat, height] in degrees → stored as radians
+    // 扁平数组 [lon, lat, height] 以度为单位 → 存为弧度
     match &e.position {
         Property::Constant(pos) => {
             assert!((pos[0] - 100.0_f64.to_radians()).abs() < 1e-10);
@@ -58,7 +58,7 @@ fn czml_point_with_color() {
     let ds = parse_czml(json).unwrap();
     let e = ds.entities.values().next().unwrap();
     let point = e.point.as_ref().unwrap();
-    // pixel_size is NumberProperty = Property<f64>
+    // pixel_size 为 NumberProperty = Property<f64>
     assert_eq!(*point.pixel_size.get_value(0.0).unwrap(), 10.0);
 }
 
@@ -262,7 +262,7 @@ fn czml_corridor_width_height() {
     assert_eq!(*corridor.height.get_value(0.0).unwrap(), 10000.0);
 }
 
-// === GeoJSON Extended ===
+// === GeoJSON 扩展 ===
 
 #[test]
 fn geojson_multi_point() {

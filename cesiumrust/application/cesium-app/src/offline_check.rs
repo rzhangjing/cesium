@@ -1,20 +1,20 @@
-//! Headless offline self-check (`CESIUM_OFFLINE_SELFCHECK`).
+//! 无窗口离线自检（`CESIUM_OFFLINE_SELFCHECK`）。
 //!
-//! Proves — **without a window or GPU** — that the offline determinism wiring
-//! is real:
+//! 在**无窗口、无 GPU** 的情况下证明 —— 离线确定性接线
+//! 是真实的：
 //!
-//! 1. the `OFFLINE_IMAGERY_ROOT` / `OFFLINE_TERRAIN_ROOT` fixtures (produced by
-//!    `tools/gen_offline_assets`, M3.2) are read back successfully through the
-//!    *actual* M3.1 fetchers (`FileTileFetcher` / `FileTerrainFetcher`), and
-//! 2. `STRICT_OFFLINE=1` makes any `http(s)` request panic synchronously (no
-//!    network fallback), the core offline-determinism guarantee.
+//! 1. `OFFLINE_IMAGERY_ROOT` / `OFFLINE_TERRAIN_ROOT` fixture（由
+//!    `tools/gen_offline_assets` 生成，M3.2）能通过*实际的* M3.1 fetcher
+//!    （`FileTileFetcher` / `FileTerrainFetcher`）成功读回，且
+//! 2. `STRICT_OFFLINE=1` 使任何 `http(s)` 请求同步 panic（无
+//!    网络回退），这是离线确定性的核心保证。
 //!
-//! `main()` invokes [`run`] and exits *before* building the Bevy app when the
-//! self-check flag is set, so this path is CI/headless friendly.
+//! 当设置了自检 flag 时，`main()` 会调用 [`run`] 并在构建 Bevy 应用*之前*
+//! 退出，因此该路径对 CI/无头环境友好。
 //!
-//! The port methods return boxed futures that the offline fetchers resolve on
-//! the first poll (synchronous `std::fs::read`); we drive them with a
-//! [`Waker::noop`]-based [`block_on`] rather than starting a tokio runtime.
+//! 端口方法返回装箱的 future，离线 fetcher 会在首次 poll 时 resolve
+//! 它们（同步的 `std::fs::read`）；我们用一个基于 [`Waker::noop`] 的
+//! [`block_on`] 驱动它们，而非启动 tokio 运行时。
 
 use cesium_network::{FileTerrainFetcher, FileTileFetcher, FileTileScheme, TerrainScheme};
 use cesium_ports_driven::{TerrainProvider, TileFetcher};
@@ -25,13 +25,13 @@ use std::task::{Context, Poll, Waker};
 
 use crate::feature_flags;
 
-/// Heightmap-1.0 grid cell count (`65×65`); a decoded terrain tile must have
-/// exactly this many positions.
+/// Heightmap-1.0 网格单元数（`65×65`）；一块解码后的地形瓦片必须
+/// 恰好有这么多个 position。
 const TERRAIN_POSITIONS: usize = 65 * 65;
-/// PNG magic prefix (`\x89PNG`); proves an imagery tile is a real encoded PNG.
+/// PNG 魔数前缀（`\x89PNG`）；证明一张影像瓦片是真实编码的 PNG。
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
-/// Drives an immediately-ready future to completion without a runtime.
+/// 无需运行时即可将一个立即就绪的 future 驱动至完成。
 fn block_on<F: Future>(fut: F) -> F::Output {
     let mut fut = Box::pin(fut);
     let mut cx = Context::from_waker(Waker::noop());
@@ -44,14 +44,14 @@ fn block_on<F: Future>(fut: F) -> F::Output {
     }
 }
 
-/// Canonicalizes `p`, falling back to the original when it does not exist yet
-/// (so the subsequent read surfaces a clean NotFound rather than an IO error).
+/// 规范化 `p`，在其尚不存在时回退到原路径（从而后续的读取会
+/// 报出干净的 NotFound 而非 IO 错误）。
 fn canon(p: &Path) -> PathBuf {
     p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
 }
 
-/// Runs the offline self-check, printing a report. Returns the process exit
-/// code: `0` when every check is green, `2` on any failure.
+/// 运行离线自检，打印一份报告。返回进程退出码：每项检查均绿时为
+/// `0`，任一失败时为 `2`。
 pub fn run() -> i32 {
     println!("[selfcheck] offline determinism self-check (headless, no GPU)");
     let strict = feature_flags::strict_offline();
@@ -65,7 +65,7 @@ pub fn run() -> i32 {
     let mut checks = 0usize;
     let mut failures: Vec<String> = Vec::new();
 
-    // ── Imagery read-back through FileTileFetcher (Xyz) ────────────────────
+    // ── 影像通过 FileTileFetcher (Xyz) 读回 ────────────────────
     match &imagery {
         Some(raw) => {
             let root = canon(raw);
@@ -81,12 +81,12 @@ pub fn run() -> i32 {
         None => println!("[selfcheck] OFFLINE_IMAGERY_ROOT unset — imagery read-back skipped"),
     }
 
-    // ── Terrain read-back through FileTerrainFetcher (Tms, from layer.json) ─
+    // ── 地形通过 FileTerrainFetcher (Tms，从 layer.json) 读回 ─
     match &terrain {
         Some(raw) => {
             let root = canon(raw);
             let layer = root.join("layer.json");
-            // A bare (canonicalized) absolute path is accepted by from_layer_url.
+            // from_layer_url 接受一个裸的（已规范化的）绝对路径。
             match FileTerrainFetcher::from_layer_url(
                 &layer.display().to_string(),
                 TerrainScheme::Tms,
@@ -116,7 +116,7 @@ pub fn run() -> i32 {
         None => println!("[selfcheck] OFFLINE_TERRAIN_ROOT unset — terrain read-back skipped"),
     }
 
-    // ── STRICT_OFFLINE: http(s) must panic synchronously ────────────────────
+    // ── STRICT_OFFLINE：http(s) 必须同步 panic ────────────────────
     if strict {
         if strict_offline_panics_on_http(imagery.as_deref()) {
             println!("[selfcheck] STRICT_OFFLINE: http(s) fetch panicked as required");
@@ -140,18 +140,18 @@ pub fn run() -> i32 {
     }
 }
 
-/// Returns `true` when a STRICT_OFFLINE `FileTileFetcher` panics on an `https`
-/// URL (the required no-network-fallback behavior). The panic hook is silenced
-/// so the expected panic does not pollute the report.
+/// 当一个 STRICT_OFFLINE 的 `FileTileFetcher` 对 `https` URL panic 时
+/// 返回 `true`（所需的无网络回退行为）。panic hook 被静默，
+/// 使预期的 panic 不污染报告。
 fn strict_offline_panics_on_http(imagery_root: Option<&Path>) -> bool {
     let root = imagery_root.map_or_else(|| PathBuf::from("."), Path::to_path_buf);
     let fetcher = FileTileFetcher::new(root, FileTileScheme::Xyz).with_strict_offline(true);
     let prev_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
     let panicked = catch_unwind(AssertUnwindSafe(|| {
-        // Under STRICT_OFFLINE an http(s) URL panics synchronously *inside*
-        // `fetch` (before the future is built / any IO happens). `drop` the
-        // never-run future so clippy's `let_underscore_future` stays quiet.
+        // 在 STRICT_OFFLINE 下，一个 http(s) URL 会在 `fetch` *内部*同步
+        // panic（在 future 构建 / 任何 IO 发生之前）。`drop` 那个从未运行的
+        // future，使 clippy 的 `let_underscore_future` 保持静默。
         drop(fetcher.fetch("https://example.com/0/0/0.png", 1.0));
     }))
     .is_err();
@@ -170,8 +170,8 @@ mod tests {
 
     #[test]
     fn strict_offline_fetcher_panics_on_https() {
-        // No fixture needed: the panic fires synchronously inside `fetch`
-        // before any disk access, so any root works.
+        // 无需 fixture：panic 在任何磁盘访问之前就在 `fetch` 内部
+        // 同步触发，因此任意 root 都可以。
         assert!(strict_offline_panics_on_http(None));
     }
 

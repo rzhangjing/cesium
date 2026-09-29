@@ -1,22 +1,21 @@
-//! The layer / property / visibility panels (plan §9, §10, M7).
+//! 图层 / 属性 / 可见性面板（计划 §9, §10, M7）。
 //!
-//! Everything user-facing folds into one reversible action enum
-//! ([`PanelAction`]) applied by the free function [`apply_panel_action`]. That
-//! function touches only plain resources — the [`PlotDocument`], [`PlotHistory`],
-//! [`PlotFilters`] and [`PlotSelection`] — so the *entire* panel contract (layer
-//! tree order / visibility / lock / focus / opacity, the ten-dimension
-//! visibility switches, and the selected-element style editor) is unit-testable
-//! headless, exactly like the M6 edit bridge. The Bevy UI is a thin shell:
-//!  * [`panel_startup`] spawns the docked root;
-//!  * [`bind_panel_camera`] keeps its `TargetCamera` pointed at whichever camera
-//!    is active every frame (the multi-camera UI invariant — see the labels
-//!    module note), so the panel is visible in both the 2D and the 3D view;
-//!  * [`panel_click_system`] maps a pressed button to its [`PanelAction`];
-//!  * [`panel_sync_system`] rebuilds the button tree when a signature derived
-//!    from the document / filters / selection changes.
+//! 所有用户面向的操作都折叠为一个可撤销的动作枚举
+//! （[`PanelAction`]），由自由函数 [`apply_panel_action`] 应用。该
+//! 函数只操作普通资源——[`PlotDocument`]、[`PlotHistory`]、
+//! [`PlotFilters`] 和 [`PlotSelection`]——因此*整个*面板契约（层
+//! 树顺序 / 可见性 / 锁定 / 聚焦 / 不透明度，十维
+//! 可见性开关，以及已选元素的样式编辑器）可以 headless 单测，
+//! 与 M6 编辑桥接一致。Bevy UI 是薄壳：
+//!  * [`panel_startup`] 创建停靠根节点；
+//!  * [`bind_panel_camera`] 每帧保持其 `TargetCamera` 指向当前激活相机
+//!    （多相机 UI 不变量——参见 labels 模块注释），
+//!    因此面板在 2D 和 3D 视图中都可见；
+//!  * [`panel_click_system`] 将按钮按下映射为其 [`PanelAction`]；
+//!  * [`panel_sync_system`] 当从文档 / 筛选 / 选择派生的签名变化时重建按钮树。
 //!
-//! The panel lives only on the windowed branch (the whole bridge plugin does),
-//! so the headless offscreen baseline never instantiates it.
+//! 面板仅存在于窗口分支（整个桥接插件也是如此），
+//! 因此 headless 离屏基线永远不会实例化它。
 
 use bevy::prelude::*;
 
@@ -28,16 +27,16 @@ use cesium_plot::model::Rgba;
 use crate::edit::{apply_command, delete_commands, duplicate_commands, style_command};
 use crate::resources::{PlotDocument, PlotFilters, PlotHistory, PlotSelection};
 
-/// One discrete thing a panel control can do. `Copy` so it can ride along on a
-/// button component and be replayed directly in tests.
+/// 面板控件能做的一个离散操作。`Copy` 以便它可以搭载在按钮组件上
+/// 并在测试中直接回放。
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum PanelAction {
-    // §10.1 / §10.8 master + focus switches.
+    // §10.1 / §10.8 总开关 + 聚焦开关。
     ToggleOverlay,
     ToggleOnlySelected,
-    /// §10.5 type dimension: flip one geometry kind.
+    /// §10.5 类型维度：翻转一个几何类型。
     ToggleType(GeometryKind),
-    // §9 / §10.2 layer-tree controls.
+    // §9 / §10.2 层树控件。
     ToggleLayerVisible(LayerId),
     ToggleLayerLock(LayerId),
     ToggleLayerSelectable(LayerId),
@@ -45,54 +44,54 @@ pub enum PanelAction {
     NudgeLayer(LayerId, i32),
     CycleLayerOpacity(LayerId),
     AddLayer,
-    // Selected-element style editor (undoable).
+    // 已选元素样式编辑器（可撤销）。
     SetSelectionColor(Rgba),
     AdjustWidth(f32),
     ToggleFill,
     ToggleDepthTest,
     ToggleShowFlat,
     ToggleShowGlobe,
-    // Selected-element batch ops (undoable).
+    // 已选元素批量操作（可撤销）。
     DeleteSelection,
     DuplicateSelection,
     ToggleSelectionVisible,
 }
 
-/// Opaque UI markers: a button carrying the action it fires.
+/// 不透明 UI 标记：携带按钮所触发的动作。
 #[derive(Component, Clone, Copy, Debug)]
 pub(crate) struct PanelButton(PanelAction);
 
-/// Marker on the docked panel root so the camera-bind + rebuild systems find it.
+/// 停靠面板根的标记，以便相机绑定 + 重建系统找到它。
 #[derive(Component)]
 pub(crate) struct PanelRoot;
 
-/// Resource remembering the spawned panel root (spawned once in [`panel_startup`]).
+/// 记住已创建面板根的资源（在 [`panel_startup`] 中创建一次）。
 #[derive(Resource, Default)]
 pub struct PanelRootEntity {
     pub root: Option<Entity>,
 }
 
-/// Cycle of layer opacity presets (the panel has a single cycle button rather
-/// than a slider — enough to exercise the §9 opacity multiplier).
+/// 层不透明度预设的循环（面板使用单循环按钮而非
+/// 滑条——足以触发 §9 不透明度乘数）。
 const OPACITY_STEPS: [f32; 4] = [1.0, 0.75, 0.5, 0.25];
 
-/// Swatch colours offered by the style editor.
+/// 样式编辑器提供的色板颜色。
 const COLOR_PRESETS: [Rgba; 5] = [
-    [0.90, 0.20, 0.20, 1.0], // red
-    [0.20, 0.75, 0.30, 1.0], // green
-    [0.20, 0.45, 0.90, 1.0], // blue
-    [0.95, 0.75, 0.15, 1.0], // amber
-    [0.95, 0.95, 0.95, 1.0], // white
+    [0.90, 0.20, 0.20, 1.0], // 红
+    [0.20, 0.75, 0.30, 1.0], // 绿
+    [0.20, 0.45, 0.90, 1.0], // 蓝
+    [0.95, 0.75, 0.15, 1.0], // 琥珀
+    [0.95, 0.95, 0.95, 1.0], // 白
 ];
 
-/// The next element-id-ordered snapshot of the selection (deterministic).
+/// 选择集的按元素 id 排序的快照（确定性）。
 fn selected_ids(selection: &PlotSelection) -> Vec<ElementId> {
     let mut ids: Vec<ElementId> = selection.0.iter().copied().collect();
     ids.sort_by_key(|id| id.raw());
     ids
 }
 
-/// The layer opacity preset following `cur` in [`OPACITY_STEPS`].
+/// [`OPACITY_STEPS`] 中 `cur` 之后的下一个不透明度预设。
 fn next_opacity(cur: f32) -> f32 {
     for i in 0..OPACITY_STEPS.len() {
         if (cur - OPACITY_STEPS[i]).abs() < 1e-3 {
@@ -102,7 +101,7 @@ fn next_opacity(cur: f32) -> f32 {
     OPACITY_STEPS[0]
 }
 
-/// A button label for a geometry kind (the type-filter row).
+/// 几何类型的按钮标签（类型筛选行）。
 pub fn kind_label(kind: GeometryKind) -> &'static str {
     match kind {
         GeometryKind::Point => "点",
@@ -119,8 +118,8 @@ pub fn kind_label(kind: GeometryKind) -> &'static str {
     }
 }
 
-/// Apply one panel action. This is the single funnel every control routes
-/// through and the heart of the M7 unit tests — no ECS, no window.
+/// 应用一个面板动作。这是每个控件经过的唯一入口，
+/// 也是 M7 单元测试的核心——无 ECS、无窗口。
 pub fn apply_panel_action(
     action: PanelAction,
     plot_doc: &mut PlotDocument,
@@ -134,8 +133,8 @@ pub fn apply_panel_action(
             plot_doc.mark_dirty();
         }
         PanelAction::ToggleOnlySelected => {
-            // Seed the focus set from the live selection so turning it on keeps
-            // the current picks visible (the evaluator reads `filters.selected`).
+            // 从实时选择集注入聚焦集，因此开启时保持
+            // 当前选取可见（评估器读取 `filters.selected`）。
             filters.selected = selected_ids(selection).into_iter().collect();
             filters.toggle_only_selected();
             plot_doc.mark_dirty();
@@ -188,10 +187,10 @@ pub fn apply_panel_action(
         PanelAction::DuplicateSelection => {
             let ids = selected_ids(selection);
             let command = duplicate_commands(&mut plot_doc.doc, &ids);
-            // duplicate_commands mints fresh ids and stages AddElement steps; the
-            // new ids are recorded on the (already applied after apply_command)
-            // document. Select them by diffing before / after count is overkill —
-            // just clear and let the user re-pick; keep the edit undoable.
+            // duplicate_commands 铸造新 id 并暂存 AddElement 步；新 id
+            // 记录在（apply_command 后已应用的）文档上。通过 diff
+            // 前后数量来选择它们是多余的——
+            // 直接清除并让用户重新拾取；保持编辑可撤销。
             apply_command(plot_doc, history, command);
         }
         PanelAction::ToggleSelectionVisible => {
@@ -248,7 +247,7 @@ pub fn apply_panel_action(
     }
 }
 
-/// Build + apply an undoable style command over the current selection.
+/// 在当前选择集上构建 + 应用一个可撤销的样式命令。
 fn route_style(
     plot_doc: &mut PlotDocument,
     history: &mut PlotHistory,
@@ -260,8 +259,8 @@ fn route_style(
     apply_command(plot_doc, history, command);
 }
 
-/// Fold the panel-relevant state into a small signature so the tree is only
-/// rebuilt when something actually changes (idle frames do not churn entities).
+/// 将面板相关状态折叠为一个小的签名，以便只在真正发生变化时才重建按钮树
+/// （空闲帧不会 churn 实体）。
 fn panel_signature(doc: &PlotDocument, filters: &PlotFilters, selection: &PlotSelection) -> u64 {
     let mut h = 0u64;
     let mut mix = |v: u64| {
@@ -271,11 +270,11 @@ fn panel_signature(doc: &PlotDocument, filters: &PlotFilters, selection: &PlotSe
     mix(selection.0.len() as u64);
     mix(filters.overlay_enabled as u64);
     mix(filters.only_selected as u64);
-    // Type mask: one bit per kind (None == all on).
+    // 类型掩码：每种类型一个 bit（None == 全开）。
     for k in GeometryKind::all() {
         mix(filters.type_enabled(*k) as u64 + (*k as u64));
     }
-    // Per-layer flags.
+    // 每层标志。
     mix(doc.doc.layers().len() as u64);
     for l in doc.doc.layers_ordered() {
         mix(l.id.raw());
@@ -286,7 +285,7 @@ fn panel_signature(doc: &PlotDocument, filters: &PlotFilters, selection: &PlotSe
         mix(l.order as u64);
         mix((l.opacity * 100.0) as u64);
     }
-    // Selected elements' manual visibility (drives the eye button label).
+    // 已选元素的手动可见性（驱动眼睛按钮标签）。
     let mut sel: Vec<ElementId> = selection.0.iter().copied().collect();
     sel.sort_by_key(|id| id.raw());
     for id in sel {
@@ -298,8 +297,8 @@ fn panel_signature(doc: &PlotDocument, filters: &PlotFilters, selection: &PlotSe
     h
 }
 
-/// Resolve the active camera by projection match, falling back to any active one
-/// (same rule the sync system uses) — returns the entity to bind the UI root to.
+/// 通过投影匹配解析激活相机，回退到任意一个激活的
+/// （与同步系统使用相同的规则）——返回要绑定 UI 根节点的实体。
 fn active_camera(cams: &Query<(Entity, &Camera, &Projection)>, mode: ViewMode) -> Option<Entity> {
     let mut fallback: Option<Entity> = None;
     for (e, c, p) in cams.iter() {
@@ -320,8 +319,8 @@ fn active_camera(cams: &Query<(Entity, &Camera, &Projection)>, mode: ViewMode) -
     fallback
 }
 
-/// Spawn the docked panel root (a Startup system). The button tree is filled in
-/// by [`panel_sync_system`]; here we only create the empty right-docked column.
+/// 创建停靠面板根节点（一个 Startup 系统）。按钮树由
+/// [`panel_sync_system`] 填充；这里只创建空的右侧停靠列。
 pub(crate) fn panel_startup(mut commands: Commands, mut root: ResMut<PanelRootEntity>) {
     let entity = commands
         .spawn((
@@ -344,9 +343,9 @@ pub(crate) fn panel_startup(mut commands: Commands, mut root: ResMut<PanelRootEn
     root.root = Some(entity);
 }
 
-/// Keep the panel root's `TargetCamera` pointed at the active camera every frame
-/// (the multi-camera UI invariant). Writes only when the binding changes so idle
-/// frames do not emit change ticks.
+/// 每帧保持面板根的 `TargetCamera` 指向激活相机
+/// （多相机 UI 不变量）。只在绑定变化时写入，因此空闲
+/// 帧不会发出 change tick。
 pub(crate) fn bind_panel_camera(
     mut commands: Commands,
     ctx: Res<crate::resources::PlotViewCtx>,
@@ -366,7 +365,7 @@ pub(crate) fn bind_panel_camera(
     }
 }
 
-/// Map a pressed panel button to its action.
+/// 将按下的面板按钮映射为其动作。
 pub(crate) fn panel_click_system(
     interactions: Query<(&Interaction, &PanelButton), Changed<Interaction>>,
     mut plot_doc: ResMut<PlotDocument>,
@@ -381,7 +380,7 @@ pub(crate) fn panel_click_system(
     }
 }
 
-/// Rebuild the button tree whenever the panel signature changes.
+/// 当面板签名变化时重建按钮树。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn panel_sync_system(
     mut commands: Commands,
@@ -400,8 +399,8 @@ pub(crate) fn panel_sync_system(
     let root = *root_ent;
     commands.entity(root).despawn_descendants();
 
-    // Snapshot everything we need to render (avoid borrowing `commands` while we
-    // still hold document refs).
+    // 快照渲染所需的一切（避免在持有文档引用时
+    // 借用 `commands`）。
     let overlay_on = filters.overlay_enabled;
     let focus_on = filters.only_selected;
     let kinds: Vec<(GeometryKind, bool)> = GeometryKind::all()
@@ -565,7 +564,7 @@ fn label(text: String) -> (Text, TextFont, TextColor) {
     )
 }
 
-/// "on" shows `on_text`; "off" shows `off_text` (often empty for a type chip).
+/// "on" 显示 `on_text`；"off" 显示 `off_text`（类型 chip 常为空）。
 fn on_off(on: bool, on_text: &'static str, off_text: &'static str) -> &'static str {
     if on {
         on_text
@@ -653,7 +652,7 @@ mod tests {
         assert!(!f.overlay_enabled);
         apply_panel_action(PanelAction::ToggleOverlay, &mut d, &mut h, &mut f, &mut s);
         assert!(f.overlay_enabled);
-        // Toggling focus on seeds the selected set from the live selection.
+        // 开启聚焦时从实时选择集注入已选集。
         let e = add_point(&mut d, 1.0, 2.0);
         s.select_one(e);
         apply_panel_action(PanelAction::ToggleOnlySelected, &mut d, &mut h, &mut f, &mut s);
@@ -675,14 +674,14 @@ mod tests {
         let (mut d, mut h, mut f, mut s) = fresh();
         let a = d.doc.active_layer().unwrap();
         let b = d.doc.new_layer("B");
-        // Visibility / lock / selectable toggles.
+        // 可见性 / 锁定 / 可选择性切换。
         apply_panel_action(PanelAction::ToggleLayerVisible(a), &mut d, &mut h, &mut f, &mut s);
         assert!(!d.doc.layer(a).unwrap().visible);
         apply_panel_action(PanelAction::ToggleLayerLock(a), &mut d, &mut h, &mut f, &mut s);
         assert!(!d.doc.layer(a).unwrap().editable);
         apply_panel_action(PanelAction::ToggleLayerSelectable(a), &mut d, &mut h, &mut f, &mut s);
         assert!(!d.doc.layer(a).unwrap().selectable);
-        // Focus moves the active marker; nudge changes order; opacity cycles.
+        // 聚焦移动活动标记；nudge 改变顺序；不透明度循环。
         apply_panel_action(PanelAction::FocusLayer(b), &mut d, &mut h, &mut f, &mut s);
         assert_eq!(d.doc.active_layer(), Some(b));
         let before = d.doc.layer(b).unwrap().order;
@@ -691,7 +690,7 @@ mod tests {
         assert_eq!(d.doc.layer(b).unwrap().opacity, 1.0);
         apply_panel_action(PanelAction::CycleLayerOpacity(b), &mut d, &mut h, &mut f, &mut s);
         assert_eq!(d.doc.layer(b).unwrap().opacity, OPACITY_STEPS[1]);
-        // Add layer grows the tree and focuses it.
+        // 新建层增长树并聚焦它。
         let n = d.doc.layers().len();
         apply_panel_action(PanelAction::AddLayer, &mut d, &mut h, &mut f, &mut s);
         assert_eq!(d.doc.layers().len(), n + 1);
@@ -712,18 +711,18 @@ mod tests {
             &mut s,
         );
         assert_eq!(d.doc.element(e1).unwrap().style.color, [1.0, 0.0, 0.0, 1.0]);
-        // The unselected element keeps its default colour.
+        // 未选元素保持其默认颜色。
         assert_eq!(
             d.doc.element(e2).unwrap().style.color,
             cesium_plot::model::Style::default().color
         );
-        // Undo restores the previous style.
+        // 撤销恢复之前的样式。
         h.0.undo(&mut d.doc);
         assert_eq!(
             d.doc.element(e1).unwrap().style.color,
             cesium_plot::model::Style::default().color
         );
-        // A no-op style edit records nothing (empty composite is dropped).
+        // 空操作样式编辑不记录任何内容（空 composite 被丢弃）。
         let before_len = h.0.undo_len();
         apply_panel_action(
             PanelAction::SetSelectionColor(cesium_plot::model::Style::default().color),
@@ -739,21 +738,21 @@ mod tests {
     fn delete_and_duplicate_and_visibility_route_through_history() {
         let (mut d, mut h, mut f, mut s) = fresh();
         let e = add_point(&mut d, 5.0, 6.0);
-        // Delete → element gone, undo restores.
+        // 删除 → 元素消失，撤销恢复。
         s.select_one(e);
         apply_panel_action(PanelAction::DeleteSelection, &mut d, &mut h, &mut f, &mut s);
         assert!(d.doc.element(e).is_none());
         assert!(s.0.is_empty(), "delete clears the selection");
         h.0.undo(&mut d.doc);
         assert!(d.doc.element(e).is_some());
-        // Duplicate → new element appears (count grows), undo removes it.
+        // 复制 → 新元素出现（计数增长），撤销移除它。
         let count0 = d.doc.element_count();
         s.select_one(e);
         apply_panel_action(PanelAction::DuplicateSelection, &mut d, &mut h, &mut f, &mut s);
         assert_eq!(d.doc.element_count(), count0 + 1);
         h.0.undo(&mut d.doc);
         assert_eq!(d.doc.element_count(), count0);
-        // Toggle manual visibility → flag flips, reversible.
+        // 切换手动可见性 → 标志翻转，可撤销。
         s.select_one(e);
         apply_panel_action(PanelAction::ToggleSelectionVisible, &mut d, &mut h, &mut f, &mut s);
         assert!(!d.doc.element(e).unwrap().flags.visible_manual);
@@ -769,7 +768,7 @@ mod tests {
         s.select_one(e);
         let base = panel_signature(&d, &f, &s);
         assert_eq!(base, panel_signature(&d, &f, &s), "idle frames are stable");
-        // Turning a layer off (revision bump + flag flip) changes the signature.
+        // 关闭一层（revision bump + 标志翻转）改变签名。
         apply_panel_action(PanelAction::ToggleLayerVisible(a), &mut d, &mut h, &mut f, &mut s);
         assert_ne!(base, panel_signature(&d, &f, &s));
     }
@@ -778,7 +777,7 @@ mod tests {
     fn opacity_cycle_wraps() {
         assert_eq!(next_opacity(1.0), OPACITY_STEPS[1]);
         assert_eq!(next_opacity(OPACITY_STEPS[3]), OPACITY_STEPS[0]);
-        // Unknown value restarts the cycle at full.
+        // 未知值从头开始循环为全不透明。
         assert_eq!(next_opacity(0.33), OPACITY_STEPS[0]);
     }
 }

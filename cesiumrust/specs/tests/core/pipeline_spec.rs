@@ -1,5 +1,5 @@
-//! Core/GeometryPipelineSpec.js, PolygonPipelineSpec.js, PolylinePipelineSpec.js
-//! → Rust integration tests for geometry pipeline functions
+//! Core/GeometryPipelineSpec.js、PolygonPipelineSpec.js、PolylinePipelineSpec.js
+//! → 几何管线函数的 Rust 集成测试
 
 use cesium_geospatial::geometry::{
     box_geometry, box_outline_geometry, compute_area2d, compute_normal,
@@ -14,7 +14,7 @@ use cesium_geospatial::rectangle::Rectangle;
 use cesium_geospatial::Ellipsoid;
 use glam::{DVec2, DVec3};
 
-// === Geometry Generators ===
+// === 几何生成器 ===
 
 #[test]
 fn test_ellipsoid_geometry() {
@@ -74,7 +74,7 @@ fn test_rectangle_geometry() {
     assert!(geo.normals.is_some());
 }
 
-// === Outline Geometry ===
+// === 轮廓几何 ===
 
 #[test]
 fn test_box_outline_geometry() {
@@ -128,7 +128,7 @@ fn test_triangulate_polygon_quad() {
         DVec2::new(0.0, 1.0),
     ];
     let indices = triangulate_polygon(&positions, &[]);
-    assert_eq!(indices.len(), 6); // 2 triangles for a quad
+    assert_eq!(indices.len(), 6); // 一个四边形对应 2 个三角形
 }
 
 #[test]
@@ -139,7 +139,7 @@ fn test_triangulate_polygon_triangle() {
         DVec2::new(0.5, 1.0),
     ];
     let indices = triangulate_polygon(&positions, &[]);
-    assert_eq!(indices.len(), 3); // 1 triangle
+    assert_eq!(indices.len(), 3); // 1 个三角形
 }
 
 #[test]
@@ -199,7 +199,7 @@ fn test_compute_normal() {
     assert!(geo.normals.is_some());
     let normals = geo.normals.unwrap();
     assert_eq!(normals.len(), geo.positions.len());
-    // All normals should be unit length
+    // 所有法线都应为单位长度
     for n in &normals {
         let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
         assert!((len - 1.0).abs() < 1e-6);
@@ -247,7 +247,7 @@ fn test_generate_arc() {
         &cesium_geospatial::Cartographic::from_degrees(10.0, 0.0, 0.0),
     );
     let arc = generate_arc(&[start, end], to_radians(1.0), &ellipsoid);
-    assert!(arc.len() > 2); // Should have intermediate points
+    assert!(arc.len() > 2); // 应包含中间点
 }
 
 #[test]

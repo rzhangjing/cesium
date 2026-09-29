@@ -1,5 +1,5 @@
-//! Renderer/BufferSpec.js, BufferUsageSpec.js, VertexArraySpec.js
-//! → Rust integration tests
+//! Renderer/BufferSpec.js、BufferUsageSpec.js、VertexArraySpec.js
+//! → Rust 集成测试
 
 use cesium_scene::{GpuBuffer, BufferUsage};
 

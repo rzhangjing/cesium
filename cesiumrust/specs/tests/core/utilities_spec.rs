@@ -1,13 +1,13 @@
-//! Ported from multiple Core Specs:
-//! - binarySearchSpec.js (8 it(), 5 A-class)
-//! - barycentricCoordinatesSpec.js (13 it(), 9 A-class)
-//! - pointInsideTriangleSpec.js (10 it(), 6 A-class)
-//! - RaySpec.js (10 it(), 5 A-class)
-//! - SphericalSpec.js (12 it(), 8 A-class)
-//! - subdivideArraySpec.js (5 it(), 3 A-class)
+//! 移植自多个 Core Specs：
+//! - binarySearchSpec.js（8 个 it()，5 个 A 类）
+//! - barycentricCoordinatesSpec.js（13 个 it()，9 个 A 类）
+//! - pointInsideTriangleSpec.js（10 个 it()，6 个 A 类）
+//! - RaySpec.js（10 个 it()，5 个 A 类）
+//! - SphericalSpec.js（12 个 it()，8 个 A 类）
+//! - subdivideArraySpec.js（5 个 it()，3 个 A 类）
 //!
-//! throws tests omitted (C-class: Rust type system enforces valid inputs).
-//! result-parameter variants merged (Rust owned-return idiom).
+//! throws 测试省略（C 类：Rust 类型系统强制输入合法）。
+//! result 参数变体已合并（Rust 所有权返回惯用法）。
 
 use cesium_geospatial::ray::Ray;
 use cesium_geospatial::spherical::Spherical;
@@ -186,7 +186,7 @@ fn point_inside_triangle_has_point_on_edge() {
 #[test]
 fn ray_default_constructor_creates_zero_valued() {
     let ray = Ray::new(DVec3::ZERO, DVec3::ZERO);
-    // direction.normalize() of ZERO is ZERO in glam
+    // glam 中对 ZERO 调用 direction.normalize() 结果仍是 ZERO
     assert_eq!(ray.origin, DVec3::ZERO);
 }
 

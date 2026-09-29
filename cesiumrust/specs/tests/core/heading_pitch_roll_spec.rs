@@ -1,10 +1,10 @@
-//! Ported from HeadingPitchRollSpec.js (15 it(), 11 A-class)
-//! + HeadingPitchRangeSpec.js (4 it(), 2 A-class)
-//! + TranslationRotationScaleSpec.js (3 it(), 3 A-class)
+//! 移植自 HeadingPitchRollSpec.js（15 个 it()，11 个 A 类）
+//! + HeadingPitchRangeSpec.js（4 个 it()，2 个 A 类）
+//! + TranslationRotationScaleSpec.js（3 个 it()，3 个 A 类）
 //!
-//! 4 throws = C-class (Rust type system).
-//! clone/result-parameter variants = C-class (Rust Copy/Clone idiom).
-//! Some tests already in transform_spec.rs (to_quaternion, from_degrees basic).
+//! 4 个 throws = C 类（Rust 类型系统）。
+//! clone/result 参数变体 = C 类（Rust Copy/Clone 惯用法）。
+//! 部分测试已在 transform_spec.rs 中（to_quaternion、from_degrees 基础用例）。
 
 use cesium_geospatial::transforms::{HeadingPitchRoll, HeadingPitchRange, TranslationRotationScale};
 use glam::{DQuat, DVec3};
@@ -202,7 +202,7 @@ fn trs_equals() {
     );
     assert_eq!(left, right);
 
-    // Different scale
+    // 不同的 scale
     let right2 = TranslationRotationScale::new(
         DVec3::Y,
         DQuat::from_xyzw(0.5, 0.5, 0.5, 0.5),
@@ -210,7 +210,7 @@ fn trs_equals() {
     );
     assert_ne!(left, right2);
 
-    // Different translation
+    // 不同的平移
     let right3 = TranslationRotationScale::new(
         DVec3::ZERO,
         DQuat::from_xyzw(0.5, 0.5, 0.5, 0.5),
@@ -218,7 +218,7 @@ fn trs_equals() {
     );
     assert_ne!(left, right3);
 
-    // Different rotation
+    // 不同的旋转
     let right4 = TranslationRotationScale::new(
         DVec3::Y,
         DQuat::from_xyzw(0.0, 0.0, 0.0, 0.0),

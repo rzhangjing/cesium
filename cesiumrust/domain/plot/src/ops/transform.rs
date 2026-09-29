@@ -1,13 +1,12 @@
-//! Pure geometry transforms (plan §8): the vertex-level edits an element can
-//! undergo — translate, rotate about a pivot, scale about a pivot, and replace a
-//! single vertex. All operate in lon/lat space so they are view-mode independent
-//! (rotate / scale are the 2D planar approximation the plan allows for element
-//! transforms; the true extent of circles / ellipses is rescaled analytically).
+//! 纯几何变换（计划 §8）：一个元素可以经历的顶点级编辑 —— 平移、
+//! 绕主枢轴旋转、绕主枢轴缩放，以及替换单个顶点。全部在经/纬度
+//! 空间操作，因此与视图模式无关（rotate / scale 是计划允许的
+//! 元素变换的 2D 平面近似；圆 / 椭圆的真实尺寸被解析地重新缩放）。
 
 use crate::geo::GeoPoint;
 use crate::model::geometry::{Geometry, PathSegment};
 
-/// Shift every stored vertex of `geo` by `(dlon, dlat)` degrees.
+/// 将 `geo` 的每个存储顶点平移 `(dlon, dlat)` 度。
 pub fn translate(geo: &Geometry, dlon: f64, dlat: f64) -> Geometry {
     let mut out = geo.clone();
     map_vertices_in_place(&mut out, &mut |p| {
@@ -17,9 +16,9 @@ pub fn translate(geo: &Geometry, dlon: f64, dlat: f64) -> Geometry {
     out
 }
 
-/// Rotate every vertex about `pivot` (lon/lat) by `deg` degrees (CCW in the
-/// planar lon/lat frame). Parametric faces keep their size, only re-anchoring
-/// their defining centre.
+/// 将每个顶点绕 `pivot`（经/纬度）旋转 `deg` 度（在平面
+/// 经/纬度坐标系中逆时针）。参数化面保持其尺寸，仅重新锁定
+/// 它们的定义中心。
 pub fn rotate(geo: &Geometry, pivot: (f64, f64), deg: f64) -> Geometry {
     let rad = deg.to_radians();
     let (cos, sin) = (rad.cos(), rad.sin());
@@ -33,8 +32,8 @@ pub fn rotate(geo: &Geometry, pivot: (f64, f64), deg: f64) -> Geometry {
     out
 }
 
-/// Scale every vertex's distance from `pivot` by `factor`. Radii / semi-axes of
-/// parametric faces scale by the same factor.
+/// 将每个顶点到 `pivot` 的距离按 `factor` 缩放。参数化面的
+/// 半径 / 半轴按同一因子缩放。
 pub fn scale(geo: &Geometry, pivot: (f64, f64), factor: f64) -> Geometry {
     let mut out = geo.clone();
     map_vertices_in_place(&mut out, &mut |p| {
@@ -52,9 +51,8 @@ pub fn scale(geo: &Geometry, pivot: (f64, f64), factor: f64) -> Geometry {
     out
 }
 
-/// Replace the `index`-th stored vertex (ordering follows [`Geometry::vertices`])
-/// with `at`. Returns `None` when the index is out of range or the geometry has
-/// no addressable vertices.
+/// 用 `at` 替换第 `index` 个存储顶点（顺序遵循 [`Geometry::vertices`]）。
+/// 当索引越界或几何无可寻址顶点时返回 `None`。
 pub fn set_vertex(geo: &Geometry, index: usize, at: GeoPoint) -> Option<Geometry> {
     let mut out = geo.clone();
     let mut next = 0usize;
@@ -155,8 +153,8 @@ pub fn set_vertex(geo: &Geometry, index: usize, at: GeoPoint) -> Option<Geometry
     }
 }
 
-/// Apply `f` to every stored vertex, in the same order [`Geometry::vertices`]
-/// yields them. Circles / ellipses expose only their centre.
+/// 对每个存储顶点应用 `f`，顺序与 [`Geometry::vertices`]
+/// 产出它们时一致。圆 / 椭圆只暴露它们的核心。
 fn map_vertices_in_place(geo: &mut Geometry, f: &mut dyn FnMut(&mut GeoPoint)) {
     match geo {
         Geometry::Point(p) => f(p),
@@ -206,7 +204,7 @@ fn map_vertices_in_place(geo: &mut Geometry, f: &mut dyn FnMut(&mut GeoPoint)) {
     }
 }
 
-/// Set the flattened-index vertex across an outer ring + holes.
+/// 在一个外环 + 孔洞上设置扁平化索引的顶点。
 fn set_in_rings(outer: &mut [GeoPoint], holes: &mut [Vec<GeoPoint>], index: usize, at: GeoPoint) -> bool {
     if index < outer.len() {
         outer[index] = at;
@@ -295,13 +293,13 @@ mod tests {
             outer: vec![p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0)],
             holes: vec![vec![p(5.0, 5.0)]],
         });
-        // Index 3 is the single hole vertex.
+        // 索引 3 是那个单顶点孔洞。
         let edited = set_vertex(&g, 3, p(9.0, 9.0)).unwrap();
         match edited {
             Geometry::Polygon(pg) => assert_eq!(pg.holes[0][0], p(9.0, 9.0)),
             _ => unreachable!(),
         }
-        // Out of range → None.
+        // 越界 → None。
         assert!(set_vertex(&g, 4, p(0.0, 0.0)).is_none());
     }
 

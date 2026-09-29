@@ -1,5 +1,5 @@
-//! Map projections - Geographic and Web Mercator.
-//! Maps to CesiumJS `Core/GeographicProjection.js`, `Core/WebMercatorProjection.js`
+//! 地图投影 —— 经纬度（等角圆柱）投影与 Web Mercator 投影。
+//! 映射到 CesiumJS `Core/GeographicProjection.js`, `Core/WebMercatorProjection.js`
 
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
@@ -7,18 +7,18 @@ use crate::math_utils;
 use glam::DVec3;
 use serde::{Deserialize, Serialize};
 
-/// Trait for map projections.
+/// 地图投影的 trait。
 pub trait MapProjection: Send + Sync {
-    /// Projects a cartographic position to projected coordinates (x, y, z=height).
+    /// 将测绘位置投影为投影坐标 (x, y, z=height)。
     fn project(&self, cartographic: &Cartographic) -> DVec3;
-    /// Unprojects projected coordinates back to cartographic.
+    /// 将投影坐标反投影回测绘坐标。
     fn unproject(&self, projected: DVec3) -> Cartographic;
-    /// The ellipsoid used by this projection.
+    /// 本投影所使用的椭球。
     fn ellipsoid(&self) -> &Ellipsoid;
 }
 
-/// Geographic (equirectangular) projection.
-/// Maps to CesiumJS `GeographicProjection`
+/// 经纬度（等角圆柱）投影。
+/// 映射到 CesiumJS `GeographicProjection`
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct GeographicProjection {
     ellipsoid: Ellipsoid,
@@ -68,8 +68,8 @@ impl MapProjection for GeographicProjection {
     }
 }
 
-/// Web Mercator projection (EPSG:3857).
-/// Maps to CesiumJS `WebMercatorProjection`
+/// Web Mercator 投影（EPSG:3857）。
+/// 映射到 CesiumJS `WebMercatorProjection`
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct WebMercatorProjection {
     ellipsoid: Ellipsoid,
@@ -79,8 +79,8 @@ pub struct WebMercatorProjection {
 }
 
 impl WebMercatorProjection {
-    /// The maximum latitude for Web Mercator (~85.0511287798 degrees).
-    /// Computed as: PI/2 - 2*atan(exp(-PI))
+    /// Web Mercator 的最大纬度（约 85.0511287798 度）。
+    /// 计算方式为：PI/2 - 2*atan(exp(-PI))
     pub const MAXIMUM_LATITUDE: f64 = 1.4844222297453324;
 
     pub fn new(ellipsoid: Ellipsoid) -> Self {
@@ -107,16 +107,16 @@ impl WebMercatorProjection {
         self.maximum_latitude
     }
 
-    /// Computes the mercator angle from a latitude.
-    /// Maps to `WebMercatorProjection.geodeticLatitudeToMercatorAngle`
+    /// 由纬度计算 mercator 角。
+    /// 映射到 `WebMercatorProjection.geodeticLatitudeToMercatorAngle`
     pub fn geodetic_latitude_to_mercator_angle(latitude: f64) -> f64 {
         let clamped = math_utils::clamp(latitude, -Self::MAXIMUM_LATITUDE, Self::MAXIMUM_LATITUDE);
         let sin_latitude = clamped.sin();
         0.5 * ((1.0 + sin_latitude) / (1.0 - sin_latitude)).ln()
     }
 
-    /// Computes the latitude from a mercator angle.
-    /// Maps to `WebMercatorProjection.mercatorAngleToGeodeticLatitude`
+    /// 由 mercator 角计算纬度。
+    /// 映射到 `WebMercatorProjection.mercatorAngleToGeodeticLatitude`
     pub fn mercator_angle_to_geodetic_latitude(mercator_angle: f64) -> f64 {
         math_utils::PI_OVER_TWO - 2.0 * (-mercator_angle).exp().atan()
     }

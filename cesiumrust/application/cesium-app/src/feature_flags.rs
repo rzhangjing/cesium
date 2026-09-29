@@ -1,90 +1,86 @@
-//! Feature flag registry — centralizes all `CESIUM_ENABLE_*` env parsing.
+//! Feature 标志注册表 —— 集中处理所有 `CESIUM_ENABLE_*` 环境变量解析。
 //!
-//! ## Design
+//! ## 设计
 //!
-//! This module is the **single source of truth** for every opt-in feature
-//! gate in the cesium-app. It replaces the previously scattered `env_enabled`
-//! helper in `main.rs` and exposes a typed, discoverable API.
+//! 本模块是 cesium-app 中每一个 opt-in feature 门控的
+//! **单一真相源**。它取代了 `main.rs` 中先前散落的 `env_enabled`
+//! 辅助函数，并暴露一套类型安全、可发现的 API。
 //!
-//! Two categories of flags are provided:
+//! 提供两类标志：
 //!
-//! 1. **Active flags** — consumed by `main.rs` today to decide which plugins
-//!    to wire in. All of them preserve the exact pre-M0.3 semantics (default
-//!    OFF, `1`/`true`/`yes`/`on` enables, case-insensitive, whitespace-tolerant).
-//!    Current active set (as of M6 Wave A):
-//!    - *chains / harness*: `TERRAIN`, `TILESET`, `NEW_CHAINS` (umbrella),
-//!      screenshot + offline + fixed-time + perf-trace + headless runtime switches;
-//!    - *lighting* (M4.1): `CESIUM_LIGHTING_MODE` (`lighting_mode()`);
-//!    - *post-process* (M4.2 built-in + M5-E1/E2 self-implemented):
-//!      `POSTPROCESS_BUILTIN`, `POSTPROCESS`, plus the two M5-E **sub-gates**
-//!      `FXAA` / `AO` (see [`fxaa_enabled`] — sub-gate default is ON, unlike
-//!      every `CESIUM_ENABLE_*` feature gate);
-//!    - *sky* (M5-B/M5-C): `SKYDOME` (and its inverse-derived `glow_enabled()`);
-//!    - *material* (M5-D): `MATERIAL_SHOWCASE`;
-//!    - *M6 Wave A* (task #81 integration): `CLIPPING` (M6.2), `PANORAMA`
-//!      (M6.3), `IBL` (M6.5) — each gates both the camera component inserted
-//!      by `main.rs` and the `Core3d` render-graph edges built by
-//!      `effects/graph.rs::register_m6_render_graph`.
+//! 1. **激活标志** —— 目前由 `main.rs` 消费，以决定接入哪些插件。
+//!    它们均保留 M0.3 之前的确切语义（默认
+//!    OFF，`1`/`true`/`yes`/`on` 启用，大小写不敏感，容忍空白）。
+//!    当前激活集合（截至 M6 Wave A）：
+//!    - *chains / harness*：`TERRAIN`、`TILESET`、`NEW_CHAINS`（总伞），
+//!      screenshot + offline + fixed-time + perf-trace + headless 运行时开关；
+//!    - *lighting*（M4.1）：`CESIUM_LIGHTING_MODE`（`lighting_mode()`）；
+//!    - *post-process*（M4.2 内置 + M5-E1/E2 自实现）：
+//!      `POSTPROCESS_BUILTIN`、`POSTPROCESS`，外加两个 M5-E **子门控**
+//!      `FXAA` / `AO`（参见 [`fxaa_enabled`] —— 子门控默认 ON，不同于
+//!      每个 `CESIUM_ENABLE_*` feature 门控）；
+//!    - *sky*（M5-B/M5-C）：`SKYDOME`（及其反向推导的 `glow_enabled()`）；
+//!    - *material*（M5-D）：`MATERIAL_SHOWCASE`；
+//!    - *M6 Wave A*（任务 #81 集成）：`CLIPPING`（M6.2）、`PANORAMA`
+//!      （M6.3）、`IBL`（M6.5）—— 各自同时门控 `main.rs` 插入的
+//!      相机组件与 `effects/graph.rs::register_m6_render_graph`
+//!      构建的 `Core3d` 渲染图边。
 //!
-//! 2. **Reserved namespace flags** — declared now so downstream milestones
-//!    (M1–M17) can adopt them without another round of `main.rs` edits.
-//!    Each reserved flag has a stable constant + accessor; consumers are
-//!    wired in later milestones. **Declaring a reserved flag never changes
-//!    runtime behavior** (no plugin currently reads them).
-//!    **Rule**: once a milestone wires a reserved flag into `main.rs`, that
-//!    flag becomes *active* — its accessor doc must be re-labelled ACTIVE
-//!    (naming the milestone + the code path it gates) and it must be listed
-//!    in the Active set above. Membership of [`RESERVED_FLAGS`] is kept stable
-//!    for diagnostics comparability across milestones (see the note at that
-//!    constant), so "moved out of the Reserved 分区" means *documentation and
-//!    accessor classification*, not deletion from the diagnostic list.
+//! 2. **保留命名空间标志** —— 现在就声明，以便下游里程碑
+//!    （M1–M17）无需再改一轮 `main.rs` 即可采用它们。
+//!    每个保留标志都有稳定的常量 + 访问器；消费者在后续
+//!    里程碑接入。**声明一个保留标志从不改变运行时行为**
+//!    （目前没有插件读取它们）。
+//!    **规则**：一旦某里程碑将保留标志接入 `main.rs`，该
+//!    标志就变为 *active* —— 其访问器文档必须重新标注为 ACTIVE
+//!    （写明里程碑 + 它所门控的代码路径），且必须列入上方
+//!    的 Active 集合。[`RESERVED_FLAGS`] 的成员关系保持稳定，
+//!    以便跨里程碑的诊断可比性（参见该常量处的说明），
+//!    因此“移出 Reserved 分区”指的是*文档与访问器分类*，
+//!    而非从诊断列表中删除。
 //!
-//! ## Pixel-neutrality contract
+//! ## 像素中性契约
 //!
-//! Migration from `main.rs::env_enabled` to this module is **source-only**:
-//! the parsing predicate, the default value, and every env var name are
-//! byte-identical. No feature gate flips by default, so the rendered frame
-//! is unchanged.
+//! 从 `main.rs::env_enabled` 迁移到本模块是**仅源码层面**的：
+//! 解析谓词、默认值，以及每个环境变量名都是字节相同的。
+//! 没有 feature 门控会默认翻转，因此渲染帧保持不变。
 //!
-//! ## Env var naming
+//! ## 环境变量命名
 //!
-//! All flags follow `CESIUM_ENABLE_<UPPER_SNAKE>`. Active flags additionally
-//! support the legacy alias `CESIUM_ENABLE_NEW_CHAINS` which enables both
-//! terrain and tileset simultaneously (kept for capture-harness compat).
+//! 所有标志均遵循 `CESIUM_ENABLE_<UPPER_SNAKE>`。激活标志另外
+//! 还支持旧别名 `CESIUM_ENABLE_NEW_CHAINS`，它同时启用 terrain
+//! 和 tileset（为 capture-harness 兼容而保留）。
 //!
-//! ## Two default semantics coexist (read this before adding a gate)
+//! ## 两种默认语义共存（添加门控前请先读此）
 //!
-//! * **Feature gates** (`env_flag`) default **OFF** when the var is unset.
-//!   Every M4/M5/M6 capability gate uses this, so the golden path and the v0
-//!   pixel baselines stay untouched by default.
-//! * **Post-process sub-gates** (`sub_gate_flag`) default **ON** when unset.
-//!   `FXAA` / `AO` are *sub-gates of the master `POSTPROCESS` gate*: leaving
-//!   them unset must reproduce the pre-M5-E behaviour where the master gate
-//!   alone enables both effects (`specs/scripts/v2_fxaa.toml` / `v2_ao.toml`
-//!   depend on it). They are registered here so this module remains the single
-//!   source of truth for the env **names** and their exact parse semantics —
-//!   a registry that reported "default OFF" for a gate that is actually
-//!   default ON would be worse than no registry at all.
+//! * **Feature 门控**（`env_flag`）在变量未设置时默认 **OFF**。
+//!   每个 M4/M5/M6 能力门控都使用此语义，因此 golden 路径和 v0
+//!   像素基线默认保持不受影响。
+//! * **后处理子门控**（`sub_gate_flag`）在未设置时默认 **ON**。
+//!   `FXAA` / `AO` 是*主 `POSTPROCESS` 门控的子门控*：将它们保持
+//!   未设置必须复现 M5-E 之前的行为，即仅主门控就同时启用
+//!   两个效果（`specs/scripts/v2_fxaa.toml` / `v2_ao.toml` 依赖于此）。
+//!   它们在此注册，以使本模块仍是环境变量**名称**及其确切解析
+//!   语义的单一真相源 —— 一个对一个实际默认 ON 的门控报告
+//!   “默认 OFF”的注册表，会比根本没有注册表更糟糕。
 //!
-//! ## Adapter-layer mirrors (DDD)
+//! ## 适配器层镜像（DDD）
 //!
-//! `adapters/bevy-render` cannot import this `application` crate (layering
-//! rule, see `effects/graph.rs` L65-71), and `cesium-app` is a binary crate
-//! with no lib target. Each adapter therefore keeps a byte-identical local
-//! `const` + `*_gate_enabled()` mirror reading the **same env name** through
-//! the same authoritative 4-token predicate
-//! (`pipeline::fetch::gate_from_env_value`). This module is the *authoritative*
-//! registry: the tests below pin every env name as a string literal so a
-//! one-sided rename on either side turns the test suite red instead of
-//! silently splitting a gate in two.
+//! `adapters/bevy-render` 无法导入这个 `application` crate（分层
+//! 规则，参见 `effects/graph.rs` L65-71），而 `cesium-app` 是一个
+//! 无 lib 目标的可执行 crate。因此每个适配器都保留一份字节相同的本地
+//! `const` + `*_gate_enabled()` 镜像，通过同一个权威的 4-token 谓词
+//! （`pipeline::fetch::gate_from_env_value`）读取**相同的环境变量名**。
+//! 本模块是*权威的*注册表：下方的测试将每个环境变量名
+//! 固定为字符串字面量，因此任意一侧的单边重命名会让测试套件
+//! 变红，而不是静默地将一个门控拆成两半。
 
-// The reserved namespace (constants + accessors for M1–M17) is intentionally
-// declared before any consumer exists, so the compiler would flag every entry
-// as dead code. That is by design: this module is a REGISTRY, and a registry
-// entry's value is the stable contract it offers downstream milestones, not
-// whether today's binary reads it. The allow is scoped to this module only;
-// active flags (terrain/tileset/new_chains) ARE consumed by main.rs and would
-// still warn if they ever became genuinely dead.
+// 保留命名空间（M1–M17 的常量 + 访问器）故意在任何消费者存在
+// 之前就声明，因此编译器会将每个条目标记为死代码。这是有意为之：
+// 本模块是一个注册表，而注册表条目的价值在于它为下游里程碑提供的
+// 稳定契约，而不在于今天的可执行文件是否读取它。此 allow 仅作
+// 用于本模块；激活标志（terrain/tileset/new_chains）确实由 main.rs
+// 消费，若它们真的变为死代码仍会告警。
 #![allow(dead_code)]
 
 use std::path::PathBuf;
@@ -92,237 +88,233 @@ use std::sync::OnceLock;
 
 use cesium_bevy_render::LightingMode;
 
-// ── Active flags (consumed by main.rs today) ───────────────────────────
+// ── 激活标志（目前由 main.rs 消费）───────────────────────
 
-/// `CESIUM_ENABLE_TERRAIN` — enables the Cesium World Terrain chain.
+/// `CESIUM_ENABLE_TERRAIN` —— 启用 Cesium World Terrain 链路。
 pub const ENV_ENABLE_TERRAIN: &str = "CESIUM_ENABLE_TERRAIN";
-/// `CESIUM_ENABLE_TILESET` — enables the 3D Tiles tileset chain.
+/// `CESIUM_ENABLE_TILESET` —— 启用 3D Tiles 瓦片集链路。
 pub const ENV_ENABLE_TILESET: &str = "CESIUM_ENABLE_TILESET";
-/// `CESIUM_ENABLE_NEW_CHAINS` — legacy umbrella: enables BOTH terrain and
-/// tileset. Preserved for `capture_baseline.ps1` compat.
+/// `CESIUM_ENABLE_NEW_CHAINS` —— 旧总伞：同时启用 terrain 和
+/// tileset。为 `capture_baseline.ps1` 兼容而保留。
 pub const ENV_ENABLE_NEW_CHAINS: &str = "CESIUM_ENABLE_NEW_CHAINS";
-/// `CESIUM_ENABLE_PLOT` — the 2D/3D situational plotting overlay bridge.
-/// **Windowed-only** (main.rs also requires `!headless`) and **defaults ON**
-/// when unset: `CESIUM_ENABLE_PLOT=0` opts out. Headless never registers it, so
-/// the offscreen baseline is untouched regardless of this flag.
+/// `CESIUM_ENABLE_PLOT` —— 2D/3D 态势标绘 overlay 桥接。
+/// **仅窗口模式**（main.rs 还要求 `!headless`）且未设置时
+/// **默认 ON**：`CESIUM_ENABLE_PLOT=0` 退出。无头模式从不注册它，因此
+/// 无论此标志如何，离屏基线都不受影响。
 pub const ENV_ENABLE_PLOT: &str = "CESIUM_ENABLE_PLOT";
 
-// ── Runtime mode switches (M0.5 perf-trace / headless) ─────────────────
+// ── 运行时模式开关（M0.5 perf-trace / headless）─────────────────
 //
-// These are NOT feature-enable flags (they don't gate a plugin); they
-// configure the runtime mode of the perf-trace subsystem. Registered here
-// to fulfill the "single env-read path" contract: ALL `CESIUM_*` env vars
-// are documented in this module, even if their consumers live elsewhere.
-// Read via `env_flag()` for booleans or `std::env::var()` for typed values.
+// 这些不是 feature 启用标志（它们不门控插件）；它们
+// 配置 perf-trace 子系统的运行时模式。在此注册是为了
+// 履约“单一环境读取路径”契约：所有 `CESIUM_*` 环境变量
+// 都在本模块文档化，即使它们的消费者位于他处。
+// 布尔值通过 `env_flag()` 读取，类型化值通过 `std::env::var()` 读取。
 
-/// `CESIUM_HEADLESS` — truthy: run in non-interactive auto-exit mode.
+/// `CESIUM_HEADLESS` —— truthy：以非交互式自动退出模式运行。
 pub const ENV_HEADLESS: &str = "CESIUM_HEADLESS";
-/// `CESIUM_PERF_TRACE` — path: CSV perf-trace output file.
+/// `CESIUM_PERF_TRACE` —— 路径：CSV perf-trace 输出文件。
 pub const ENV_PERF_TRACE: &str = "CESIUM_PERF_TRACE";
-/// `CESIUM_CAMERA_SCRIPT` — path: TOML camera-script for trajectory playback.
+/// `CESIUM_CAMERA_SCRIPT` —— 路径：用于轨迹播放的 TOML 相机脚本。
 pub const ENV_CAMERA_SCRIPT: &str = "CESIUM_CAMERA_SCRIPT";
-/// `CESIUM_TRACE_INTERVAL` — u32: emit one CSV row every N frames (default 1).
+/// `CESIUM_TRACE_INTERVAL` —— u32：每 N 帧发出一行 CSV（默认 1）。
 pub const ENV_TRACE_INTERVAL: &str = "CESIUM_TRACE_INTERVAL";
-/// `CESIUM_HEADLESS_FRAMES` — u32: frame-count safety cap for headless exit.
+/// `CESIUM_HEADLESS_FRAMES` —— u32：headless 退出的帧数安全上限。
 pub const ENV_HEADLESS_FRAMES: &str = "CESIUM_HEADLESS_FRAMES";
-/// `CESIUM_HEADLESS_SECS` — f64: wall-clock seconds before headless exit.
+/// `CESIUM_HEADLESS_SECS` —— f64：headless 退出前的墙钟秒数。
 pub const ENV_HEADLESS_SECS: &str = "CESIUM_HEADLESS_SECS";
-/// `CESIUM_HEADLESS_OUTPUT` — path: PNG written by the M11.3 offscreen capture.
+/// `CESIUM_HEADLESS_OUTPUT` —— 路径：M11.3 离屏捕获写出的 PNG。
 pub const ENV_HEADLESS_OUTPUT: &str = "CESIUM_HEADLESS_OUTPUT";
-/// FIX-HL-HDRMIRROR: cross-crate mirror of the adapter-private
-/// `cesium_bevy_render::headless::ENV_HEADLESS_HDR` (`"CESIUM_HEADLESS_HDR"`, the
-/// M11.4 HDR offscreen-target gate). Declared here *only* so the byte-identical
-/// drift guard in
-/// `adapter_gate_mirrors_are_byte_identical_to_the_registry` can pin both sides;
-/// deliberately NOT added to `RESERVED_FLAGS` (the gate is read locally inside the
-/// adapter crate, mirroring how the `fx::ENV_ENABLE_*` consts are consumed).
-/// Consolidation of the adapter's private `hdr_truthy` into this registry is
-/// deferred to M11.6 (see `docs/deferred.md`).
+/// FIX-HL-HDRMIRROR：适配器私有
+/// `cesium_bevy_render::headless::ENV_HEADLESS_HDR`（`"CESIUM_HEADLESS_HDR"`，
+/// M11.4 HDR 离屏目标门控）的跨 crate 镜像。在此声明*仅*是为了
+/// 使 `adapter_gate_mirrors_are_byte_identical_to_the_registry`
+/// 中的字节相同漂移守卫能固定两侧；故意**不**加入
+/// `RESERVED_FLAGS`（该门控在适配器 crate 内本地读取，与
+/// `fx::ENV_ENABLE_*` 常量的消费方式一致）。将适配器私有的
+/// `hdr_truthy` 归并到本注册表的工作推迟到 M11.6（参见 `docs/deferred.md`）。
 pub const ENV_HEADLESS_HDR: &str = "CESIUM_HEADLESS_HDR";
 
-// ── Offline determinism env family (M3.3) ──────────────────────────────
+// ── 离线确定性环境家族（M3.3）──────────────────────────────
 //
-// These gate the offline deterministic capture path (M3.3 / M3.4). They are
-// NOT `CESIUM_ENABLE_*` feature gates: they configure *where assets come
-// from* and *whether the run is frozen for reproducibility*. Registered here
-// so this module stays the single source of truth for every env var the app
-// reads. All default OFF / unset, so the online default path and the
-// dynamic_globe golden path stay byte-for-byte unchanged.
+// 这些门控离线确定性捕获路径（M3.3 / M3.4）。它们不是
+// `CESIUM_ENABLE_*` feature 门控：它们配置*资产来自何处*
+// 以及*本次运行是否因可重现性而冻结*。在此注册，以使
+// 本模块仍是应用读取的每个环境变量的单一真相源。
+// 均默认 OFF / 未设置，因此在线默认路径与
+// dynamic_globe golden 路径保持逐字节不变。
 //
-// Consumed by main.rs (self-check / FIXED_TIME / FIXED_CAMERA / screenshot
-// script) and by the bevy-render offline loader gate (M3.3), which read the
-// SAME names — this registry is the contract both sides honor.
+// 由 main.rs（self-check / FIXED_TIME / FIXED_CAMERA / screenshot
+// script）以及 bevy-render 离线加载器门控（M3.3）消费，它们读取
+// 相同的名称 —— 本注册表是双方共同遵守的契约。
 
-/// `OFFLINE_IMAGERY_ROOT` — directory of an offline imagery XYZ pyramid
-/// (`{root}/{z}/{x}/{y}.png`, the `gen_offline_assets` layout). When set,
-/// imagery is served by `FileTileFetcher` instead of online Bing/OSM.
+/// `OFFLINE_IMAGERY_ROOT` —— 离线影像 XYZ 金字塔目录
+/// （`{root}/{z}/{x}/{y}.png`，即 `gen_offline_assets` 布局）。设置后，
+/// 影像由 `FileTileFetcher` 供送，而非在线 Bing/OSM。
 pub const ENV_OFFLINE_IMAGERY_ROOT: &str = "OFFLINE_IMAGERY_ROOT";
-/// `OFFLINE_TERRAIN_ROOT` — directory of an offline heightmap-1.0 tileset
-/// (`layer.json` + `{root}/{z}/{x}/{y}.terrain`). When set, terrain is served
-/// by `FileTerrainFetcher` instead of Cesium ion.
+/// `OFFLINE_TERRAIN_ROOT` —— 离线 heightmap-1.0 瓦片集目录
+/// （`layer.json` + `{root}/{z}/{x}/{y}.terrain`）。设置后，terrain 由
+/// `FileTerrainFetcher` 供送，而非 Cesium ion。
 pub const ENV_OFFLINE_TERRAIN_ROOT: &str = "OFFLINE_TERRAIN_ROOT";
-/// `STRICT_OFFLINE` — truthy: construct offline fetchers with
-/// `with_strict_offline(true)` so any `http(s)` request panics synchronously
-/// (no network fallback), guaranteeing offline determinism.
+/// `STRICT_OFFLINE` —— truthy：以 `with_strict_offline(true)` 构造
+/// 离线 fetcher，使任何 `http(s)` 请求都同步 panic（无网络回退），
+/// 保证离线确定性。
 pub const ENV_STRICT_OFFLINE: &str = "STRICT_OFFLINE";
-/// `FIXED_TIME` — truthy: freeze the Bevy clock (zero delta) for
-/// deterministic lighting/celestial state (M4 shadow-baseline groundwork).
+/// `FIXED_TIME` —— truthy：冻结 Bevy 时钟（零 delta），以获得
+/// 确定性的光照/天体状态（M4 阴影基线铺垫）。
 pub const ENV_FIXED_TIME: &str = "FIXED_TIME";
-/// `FIXED_CAMERA` — path to a TOML with a single `[camera]` `pos`/`quat`/
-/// `fov_y`, re-applied every frame (deterministic viewpoint for pixel_diff).
+/// `FIXED_CAMERA` —— 指向一个 TOML 的路径，内含单个 `[camera]` 的 `pos`/`quat`/
+/// `fov_y`，每帧重新应用（为 pixel_diff 提供确定性视角）。
 pub const ENV_FIXED_CAMERA: &str = "FIXED_CAMERA";
-/// `CESIUM_SCREENSHOT_SCRIPT` — path to a TOML batch-capture script
-/// (`[[shot]]` entries: `frame` + camera pose + output `name`). M3.4.
+/// `CESIUM_SCREENSHOT_SCRIPT` —— 指向 TOML 批量捕获脚本的路径
+/// （`[[shot]]` 条目：`frame` + 相机姿态 + 输出 `name`）。M3.4。
 pub const ENV_SCREENSHOT_SCRIPT: &str = "CESIUM_SCREENSHOT_SCRIPT";
-/// `CESIUM_OFFLINE_SELFCHECK` — truthy: run the headless offline self-check
-/// (read fixtures back through the real fetchers + assert STRICT_OFFLINE
-/// panics on http) and exit before building the GPU app. No window needed.
+/// `CESIUM_OFFLINE_SELFCHECK` —— truthy：运行无头离线自检
+/// （通过真实 fetcher 回读 fixtures + 断言 STRICT_OFFLINE 在 http 时
+/// panic），并在构建 GPU 应用前退出。无需窗口。
 pub const ENV_OFFLINE_SELFCHECK: &str = "CESIUM_OFFLINE_SELFCHECK";
-/// `CESIUM_GIT_SHA` — optional git SHA stamped into screenshot metadata (set
-/// by the capture harness / CI; falls back to `"unknown"` when unset).
+/// `CESIUM_GIT_SHA` —— 可选的 git SHA，烙印到截图元数据（由捕获
+/// harness / CI 设置；未设置时回退到 `"unknown"`）。
 pub const ENV_GIT_SHA: &str = "CESIUM_GIT_SHA";
-// (Retired 建议1 / P1-1, 2026-09-27): `CESIUMRST_LEGACY_DYNAMIC_GLOBE` and its
-// frozen legacy monolith were removed after G4 proved the M1.5 thin shell is
-// pixel-neutral with it. See docs/PIPELINE_PROMOTION_PLAN.md + verification_evidence/g4/.
+// （已退役 建议1 / P1-1，2026-09-27）：`CESIUMRST_LEGACY_DYNAMIC_GLOBE` 及其
+// 冻结的 legacy 单体在 G4 证明 M1.5 薄壳与它像素中性后被移除。
+// 参见 docs/PIPELINE_PROMOTION_PLAN.md + verification_evidence/g4/。
 
-// ── Lighting / post-process mode switches (M4.1) ─────────────────────
+// ── 光照 / 后处理模式开关（M4.1）─────────────────────
 //
-// These gate the lighting rig and built-in post-process stack. They are
-// NOT `CESIUM_ENABLE_*` feature gates in the reserved namespace: they
-// configure *how* the scene is lit / post-processed at startup.
+// 这些门控光照装置与内置后处理栈。它们不是保留
+// 命名空间中的 `CESIUM_ENABLE_*` feature 门控：它们
+// 配置场景在启动时*如何*被照亮 / 进后处理。
 
-/// `CESIUM_LIGHTING_MODE` — selects the lighting rig.
-/// Accepted values (case-insensitive): `full_ambient` (default), `day_night`.
-/// Any unrecognized value falls back to `full_ambient`.
+/// `CESIUM_LIGHTING_MODE` —— 选择光照装置。
+/// 接受值（大小写不敏感）：`full_ambient`（默认）、`day_night`。
+/// 任何无法识别的值都回退到 `full_ambient`。
 pub const ENV_LIGHTING_MODE: &str = "CESIUM_LIGHTING_MODE";
 
-/// `CESIUM_ENABLE_POSTPROCESS_BUILTIN` — truthy: enable the Bevy built-in
-/// post-process stack (tonemapping / bloom / HDR) wired by M4.2+.
-/// **Independent** from the reserved `CESIUM_ENABLE_POSTPROCESS` (L133)
-/// which is the slot for M5.5/M5.6 custom post-process stages.
+/// `CESIUM_ENABLE_POSTPROCESS_BUILTIN` —— truthy：启用由 M4.2+ 接入的
+/// Bevy 内置后处理栈（tone-mapping / bloom / HDR）。
+/// 与保留的 `CESIUM_ENABLE_POSTPROCESS`（L133）**相互独立**，
+/// 后者是 M5.5/M5.6 自定义后处理阶段的预留位。
 pub const ENV_ENABLE_POSTPROCESS_BUILTIN: &str = "CESIUM_ENABLE_POSTPROCESS_BUILTIN";
 
-/// `CESIUM_ENABLE_FXAA` — **sub-gate** of `ENV_ENABLE_POSTPROCESS` selecting the
-/// M5-E1 self-implemented FXAA node (quality preset 12 only).
+/// `CESIUM_ENABLE_FXAA` —— `ENV_ENABLE_POSTPROCESS` 的**子门控**，选择
+/// M5-E1 自实现的 FXAA 节点（仅质量预设 12）。
 ///
-/// **ACTIVE since M5-E1**; registered here by M6 Wave A (task #81) to close the
-/// Terry M5-Verify Medium finding that the name lived only as a module-private
-/// `const` inside `adapters/bevy-render/src/effects/post_process.rs`.
+/// **自 M5-E1 起为 ACTIVE**；由 M6 Wave A（任务 #81）在此注册，以
+/// 解决 Terry 在 M5-Verify 提出的 Medium 发现：该名称仅作为模块私有的
+/// `const` 存在于 `adapters/bevy-render/src/effects/post_process.rs` 内。
 ///
-/// ⚠ **Not a default-OFF feature gate.** Unset ⇒ ON (see [`sub_gate_flag`]), so
-/// the master `CESIUM_ENABLE_POSTPROCESS` gate alone still enables FXAA exactly
-/// as it did before M5-E1. Effective enablement is
-/// `postprocess_enabled() && fxaa_enabled()`.
+/// ⚠ **不是默认 OFF 的 feature 门控。** 未设置 ⇒ ON（参见 [`sub_gate_flag`]），
+/// 因此仅主 `CESIUM_ENABLE_POSTPROCESS` 门控仍会像 M5-E1 之前那样恰好启用 FXAA。
+/// 实际启用为 `postprocess_enabled() && fxaa_enabled()`。
 pub const ENV_ENABLE_FXAA: &str = "CESIUM_ENABLE_FXAA";
 
-/// `CESIUM_ENABLE_AO` — **sub-gate** of `ENV_ENABLE_POSTPROCESS` selecting the
-/// M5-E2 self-implemented SSAO node (hemisphere 16-sample + 4×4 blur).
+/// `CESIUM_ENABLE_AO` —— `ENV_ENABLE_POSTPROCESS` 的**子门控**，选择
+/// M5-E2 自实现的 SSAO 节点（半球 16 采样 + 4×4 模糊）。
 ///
-/// Same registration rationale and same ⚠ **unset ⇒ ON** sub-gate semantics as
-/// [`ENV_ENABLE_FXAA`]. Effective enablement is
-/// `postprocess_enabled() && ao_enabled()`.
+/// 与 [`ENV_ENABLE_FXAA`] 相同的注册理由，也相同的 ⚠ **未设置 ⇒ ON**
+/// 子门控语义。实际启用为 `postprocess_enabled() && ao_enabled()`。
 pub const ENV_ENABLE_AO: &str = "CESIUM_ENABLE_AO";
 
-// ── Reserved namespace (declared now, consumed by later milestones) ────
+// ── 保留命名空间（现在就声明，由后续里程碑消费）────
 //
-// Each constant documents the milestone that will wire it in. Declaring
-// them here costs nothing at runtime (no env read happens unless the
-// accessor is called) and gives downstream work a stable contract.
+// 每个常量都文档化将接入它的里程碑。在此声明它们
+// 在运行时不花费任何代价（除非调用访问器，否则不会发生环境读取），
+// 并为下游工作提供稳定契约。
 //
-// NOTE (M5 收口): two entries declared here have since been WIRED by later
-// milestones and are therefore *active* today — `ENV_ENABLE_POSTPROCESS`
-// (M5-E1 FXAA + M5-E2 SSAO render-graph nodes) and `ENV_ENABLE_SKYDOME`
-// (M5-B/M5-C procedural sky dome). They are kept in this block and in
-// [`RESERVED_FLAGS`] so the diagnostic namespace stays comparable across
-// milestones; their accessors below are labelled ACTIVE accordingly.
-// `ENV_ENABLE_MATERIAL_SHOWCASE` (M5-D) is declared adjacent to
-// `ENV_ENABLE_SKYDOME` because it belongs to the same M5 gate family, but it
-// was born active (never reserved) and is therefore NOT in `RESERVED_FLAGS`.
+// 注（M5 收口）：在此声明的两个条目后续已被里程碑
+// WIRED，因此今天为 *active* —— `ENV_ENABLE_POSTPROCESS`
+// （M5-E1 FXAA + M5-E2 SSAO 渲染图节点）与 `ENV_ENABLE_SKYDOME`
+// （M5-B/M5-C 过天穹）。它们保留在本块和 [`RESERVED_FLAGS`]
+// 中，以便诊断命名空间跨里程碑保持可比；下方它们的
+// 访问器相应标注为 ACTIVE。
+// `ENV_ENABLE_MATERIAL_SHOWCASE`（M5-D）声明在
+// `ENV_ENABLE_SKYDOME` 旁边，因为它属于同一个 M5 门控家族，但它
+// 天生就是 active（从未保留），因此**不**在 `RESERVED_FLAGS` 中。
 //
-// NOTE (M6 Wave A, task #81): three more entries declared here are now WIRED
-// and therefore *active* — `ENV_ENABLE_CLIPPING` (M6.2), `ENV_ENABLE_PANORAMA`
-// (M6.3) and `ENV_ENABLE_IBL` (M6.5). Per the rule above they stay in this
-// block and in [`RESERVED_FLAGS`] (documentation/classification changes, not
-// deletion) so the diagnostic namespace remains diffable. `ENV_ENABLE_CLOUDS`
-// (M6.6) is newly *added* to the list by this task, which moves the
-// `summary_line()` denominator from `reserved=n/17` to `reserved=n/18`.
-// `ENV_ENABLE_FXAA` / `ENV_ENABLE_AO` are also newly registered here but are
-// **active sub-gates** (born wired by M5-E1/E2), so — like
-// `ENV_ENABLE_MATERIAL_SHOWCASE` and the `CESIUM_HEADLESS` runtime switch —
-// they are NOT listed in `RESERVED_FLAGS`.
+// 注（M6 Wave A，任务 #81）：在此声明的另外三个条目现已 WIRED，
+// 因此为 *active* —— `ENV_ENABLE_CLIPPING`（M6.2）、`ENV_ENABLE_PANORAMA`
+// （M6.3）和 `ENV_ENABLE_IBL`（M6.5）。根据上方规则，它们保留在本块
+// 和 [`RESERVED_FLAGS`] 中（文档/分类变更，而非删除），以便诊断命名空间
+// 保持可 diff。`ENV_ENABLE_CLOUDS`（M6.6）由本任务新*加入*列表，
+// 它将 `summary_line()` 的分母从 `reserved=n/17` 移到 `reserved=n/18`。
+// `ENV_ENABLE_FXAA` / `ENV_ENABLE_AO` 也新注册在此，但它们是
+// **active 子门控**（由 M5-E1/E2 天生接入），因此 —— 与
+// `ENV_ENABLE_MATERIAL_SHOWCASE` 和 `CESIUM_HEADLESS` 运行时开关一样 ——
+// 它们**不**列在 `RESERVED_FLAGS` 中。
 
-/// M1 — unified render pipeline (replaces per-system branching).
+/// M1 —— 统一渲染管线（取代逐系统分支）。
 pub const ENV_ENABLE_PIPELINE: &str = "CESIUM_ENABLE_PIPELINE";
-/// M5.5/M5.6 — post-process stack (custom WGSL stages: bloom / AO / tone-mapping / color grade).
+/// M5.5/M5.6 —— 后处理栈（自定义 WGSL 阶段：bloom / AO / tone-mapping / 颜色分级）。
 pub const ENV_ENABLE_POSTPROCESS: &str = "CESIUM_ENABLE_POSTPROCESS";
-/// M3.x — cascaded shadow maps.
+/// M3.x —— 级联阴影贴图。
 pub const ENV_ENABLE_CSM: &str = "CESIUM_ENABLE_CSM";
-/// M5.2/M5.3 — procedural skydome (atmosphere + sun + moon). Mutually exclusive
-/// with AtmosphereGlowPlugin: SKYDOME=1 → glow forced OFF.
-/// **ACTIVE since M5-B/M5-C** (consumed at `main.rs` sky-dome branch).
+/// M5.2/M5.3 —— 程序化天穹（大气 + 太阳 + 月亮）。与
+/// AtmosphereGlowPlugin 互斥：SKYDOME=1 → glow 强制 OFF。
+/// **自 M5-B/M5-C 起为 ACTIVE**（在 `main.rs` 天穹分支消费）。
 pub const ENV_ENABLE_SKYDOME: &str = "CESIUM_ENABLE_SKYDOME";
-/// M5.4/M5-D — Fabric material showcase scene (built-in materials + the three
-/// Water sea states Calm/Medium/Rough ported from `Water.glsl` `case 17u`).
-/// **ACTIVE since M5-D** (consumed at `main.rs` material-showcase branch).
-/// Default **OFF** → `MaterialShowcasePlugin` is not registered → no extra
-/// entities/materials in the scene → the v0 baselines stay pixel-neutral
-/// (PSNR=∞). Purely additive: no existing plugin registration is altered.
+/// M5.4/M5-D —— Fabric 材质展示场景（内置材质 + 从
+/// `Water.glsl` `case 17u` 移植的三种海浪状态 Calm/Medium/Rough）。
+/// **自 M5-D 起为 ACTIVE**（在 `main.rs` material-showcase 分支消费）。
+/// 默认 **OFF** → `MaterialShowcasePlugin` 不会注册 → 场景
+/// 中无额外实体/材质 → v0 基线保持像素中性
+/// （PSNR=∞）。纯追加：不 altered 任何现有插件注册。
 pub const ENV_ENABLE_MATERIAL_SHOWCASE: &str = "CESIUM_ENABLE_MATERIAL_SHOWCASE";
-/// M5.x — entity draping onto terrain (ground primitives).
+/// M5.x —— 实体垂贴到 terrain（地表图元）。
 pub const ENV_ENABLE_DRAPING: &str = "CESIUM_ENABLE_DRAPING";
-/// M6.2 — view-frustum clipping planes (cross-section / box).
-/// **ACTIVE since M6 Wave A** (task #81): gates
-/// `effects::register_clipping_planes_node` + the `CesiumClippingPlanes`
-/// camera component + the `CesiumClippingLabel` render-graph edges.
+/// M6.2 —— 视锥裁剪平面（剖面 / 盒体）。
+/// **自 M6 Wave A 起为 ACTIVE**（任务 #81）：门控
+/// `effects::register_clipping_planes_node` + `CesiumClippingPlanes`
+/// 相机组件 + `CesiumClippingLabel` 渲染图边。
 pub const ENV_ENABLE_CLIPPING: &str = "CESIUM_ENABLE_CLIPPING";
-/// M6.3 — 360° panorama capture mode.
-/// **ACTIVE since M6 Wave A** (task #81): gates
-/// `effects::register_panorama_node` + the `CesiumPanorama` camera component +
-/// the in-`MainPass` serial insertion
-/// `MainOpaquePass → CesiumPanoramaLabel → MainTransmissivePass`.
+/// M6.3 —— 360° 全景捕获模式。
+/// **自 M6 Wave A 起为 ACTIVE**（任务 #81）：门控
+/// `effects::register_panorama_node` + `CesiumPanorama` 相机组件 +
+/// `MainOpaquePass → CesiumPanoramaLabel → MainTransmissivePass`
+/// 的 `MainPass` 内串行插入。
 pub const ENV_ENABLE_PANORAMA: &str = "CESIUM_ENABLE_PANORAMA";
-/// M6.5 — image-based lighting (IBL) for PBR materials.
-/// **ACTIVE since M6 Wave A** (task #81): gates `effects::register_ibl_node` +
-/// the `CesiumIbl` camera component + the `CesiumIblLabel` render-graph edges.
+/// M6.5 —— 面向 PBR 材质的基于图像的光照（IBL）。
+/// **自 M6 Wave A 起为 ACTIVE**（任务 #81）：门控 `effects::register_ibl_node` +
+/// `CesiumIbl` 相机组件 + `CesiumIblLabel` 渲染图边。
 pub const ENV_ENABLE_IBL: &str = "CESIUM_ENABLE_IBL";
-/// M6.4 — order-independent transparency (OIT).
+/// M6.4 —— 与顺序无关的透明度（OIT）。
 pub const ENV_ENABLE_OIT: &str = "CESIUM_ENABLE_OIT";
-/// M6.1 — split-screen multi-view rendering.
+/// M6.1 —— 分屏多视图渲染。
 pub const ENV_ENABLE_SPLIT: &str = "CESIUM_ENABLE_SPLIT";
-/// M6.6 — volumetric / procedural cloud layer.
-/// **Pre-provisioned by M6 Wave A** (task #81, from the #51 milestone audit:
-/// five M6 gates existed but `CLOUDS` was missing). Registered so M6.6 can wire
-/// a consumer without another registry edit. **No consumer yet** — declaring it
-/// changes no runtime behaviour, and it defaults OFF like every feature gate.
+/// M6.6 —— 体积/程序化云层。
+/// **由 M6 Wave A 预置**（任务 #81，源自 #51 里程碑审计：
+/// 已有五个 M6 门控但缺少 `CLOUDS`）。注册它是为了让 M6.6 无需
+/// 再改注册表即可接入消费者。**尚无消费者** —— 声明它
+/// 不改变任何运行时行为，且它像每个 feature 门控一样默认 OFF。
 pub const ENV_ENABLE_CLOUDS: &str = "CESIUM_ENABLE_CLOUDS";
-/// M2 — new camera controller (replaces orbit_camera).
+/// M2 —— 新相机控制器（取代 orbit_camera）。
 pub const ENV_ENABLE_NEW_CAMERA: &str = "CESIUM_ENABLE_NEW_CAMERA";
-/// M8 — pluggable resource backend (asset streaming).
+/// M8 —— 可插拔资源后端（资产流式加载）。
 pub const ENV_ENABLE_RESOURCE_BACKEND: &str = "CESIUM_ENABLE_RESOURCE_BACKEND";
-/// M7 — 3D Tiles styling JSEP expression evaluator (completed).
+/// M7 —— 3D Tiles 样式 JSEP 表达式求值器（已完成）。
 pub const ENV_ENABLE_STYLING_JSEP: &str = "CESIUM_ENABLE_STYLING_JSEP";
-/// M14.x — KML export path.
+/// M14.x —— KML 导出路径。
 pub const ENV_ENABLE_KML_EXPORT: &str = "CESIUM_ENABLE_KML_EXPORT";
-/// M15.x — glTF upgrade pipeline (KHR extensions / Draco).
+/// M15.x —— glTF 升级管线（KHR 扩展 / Draco）。
 pub const ENV_ENABLE_GLTF_UPGRADE: &str = "CESIUM_ENABLE_GLTF_UPGRADE";
-/// M16.x — Draco mesh compression decode path.
+/// M16.x —— Draco 网格压缩解码路径。
 pub const ENV_ENABLE_DRACO: &str = "CESIUM_ENABLE_DRACO";
-/// M17.x — point-cloud rendering pipeline.
+/// M17.x —— 点云渲染管线。
 pub const ENV_ENABLE_POINT_CLOUD: &str = "CESIUM_ENABLE_POINT_CLOUD";
 
-/// Full reserved namespace, for diagnostics / `--list-flags` style tools.
-/// Order is milestone-ascending so a UI can group by wave.
+/// 完整保留命名空间，供诊断 / `--list-flags` 类工具使用。
+/// 顺序按里程碑递增，以便 UI 可按 wave 分组。
 ///
-/// Membership is **frozen against removal**: `POSTPROCESS` (M5-E1/E2),
-/// `SKYDOME` (M5-B/C), `CLIPPING` (M6.2), `PANORAMA` (M6.3) and `IBL` (M6.5)
-/// have all been wired and are active, but dropping them here would change
-/// `FlagSnapshot::summary_line()`'s `reserved=n/N` denominator and break
-/// cross-milestone diffing of captured metadata. **Additions** are allowed and
-/// do move the denominator: M6 Wave A appended `CLOUDS` (M6.6 pre-provision),
-/// taking it 17 → 18 — a reader of `summary_line()` must compare the printed
-/// denominator, never assume 17. Flags born active (e.g.
-/// `ENV_ENABLE_MATERIAL_SHOWCASE`, M5-D; `ENV_ENABLE_FXAA` / `ENV_ENABLE_AO`,
-/// M5-E sub-gates) are NOT listed.
+/// 成员关系**禁止移除**：`POSTPROCESS`（M5-E1/E2）、
+/// `SKYDOME`（M5-B/C）、`CLIPPING`（M6.2）、`PANORAMA`（M6.3）与 `IBL`（M6.5）
+/// 都已接入并处于 active，但在此删除它们会改变
+/// `FlagSnapshot::summary_line()` 的 `reserved=n/N` 分母并破坏
+/// 跨里程碑的捕获元数据 diff。**新增**是允许的且
+/// 会移动分母：M6 Wave A 追加了 `CLOUDS`（M6.6 预置），使它
+/// 从 17 → 18 —— `summary_line()` 的读者必须比对打印出的
+/// 分母，切勿假定 17。天生 active 的标志（如
+/// `ENV_ENABLE_MATERIAL_SHOWCASE`，M5-D；`ENV_ENABLE_FXAA` / `ENV_ENABLE_AO`，
+/// M5-E 子门控）**不**列在此处。
 pub const RESERVED_FLAGS: &[&str] = &[
     ENV_ENABLE_PIPELINE,
     ENV_ENABLE_POSTPROCESS,
@@ -344,14 +336,13 @@ pub const RESERVED_FLAGS: &[&str] = &[
     ENV_ENABLE_POINT_CLOUD,
 ];
 
-// ── Core predicate ─────────────────────────────────────────────────────
+// ── 核心谓词 ─────────────────────────────────────────────────────
 
-/// Truthy-token predicate. **Byte-identical** to the pre-M0.3 `main.rs`
-/// implementation — do not "improve" it without re-validating every
-/// consumer's default.
+/// truthy-token 谓词。**与 M0.3 之前的 `main.rs` 实现字节相同** —— 未重新
+/// 验证每个消费者的默认值前不要“改进”它。
 ///
-/// Accepts (case-insensitive, surrounding whitespace trimmed):
-/// `1`, `true`, `yes`, `on`. Everything else (including unset) is `false`.
+/// 接受（大小写不敏感，修剪四周空白）：
+/// `1`、`true`、`yes`、`on`。其他所有值（包括未设置）均为 `false`。
 fn truthy(raw: &str) -> bool {
     matches!(
         raw.trim().to_ascii_lowercase().as_str(),
@@ -359,10 +350,10 @@ fn truthy(raw: &str) -> bool {
     )
 }
 
-/// Read a single env flag. Returns `false` when unset or unparsable.
+/// 读取单个环境标志。未设置或无法解析时返回 `false`。
 ///
-/// This is the **only** env read path for feature gates; every accessor
-/// below funnels through it so behavior is uniform.
+/// 这是 feature 门控的**唯一**环境读取路径；下方每个访问器都
+/// 汇聚到它，以使行为统一。
 pub fn env_flag(name: &str) -> bool {
     match std::env::var(name) {
         Ok(v) => truthy(&v),
@@ -370,18 +361,17 @@ pub fn env_flag(name: &str) -> bool {
     }
 }
 
-/// Read a **post-process sub-gate**. Returns `true` when the var is unset.
+/// 读取一个**后处理子门控**。变量未设置时返回 `true`。
 ///
-/// This is the mirror of `effects/post_process.rs::sub_gate_enabled` (which
-/// calls the authoritative `pipeline::fetch::gate_from_env_value(Some(raw))`,
-/// i.e. the very same [`truthy`] predicate) — the *only* difference from
-/// [`env_flag`] is the `Err(_) => true` arm. It exists so `fxaa_enabled()` /
-/// `ao_enabled()` can report the real runtime behaviour: an unset sub-gate is
-/// ON, letting the master `CESIUM_ENABLE_POSTPROCESS` gate alone enable both
-/// effects exactly as it did before M5-E1/E2 split them out.
+/// 这是 `effects/post_process.rs::sub_gate_enabled` 的镜像（它调用权威的
+/// `pipeline::fetch::gate_from_env_value(Some(raw))`，即同一个 [`truthy`] 谓词）——
+/// 与 [`env_flag`] 的*唯一*区别在于 `Err(_) => true` 分支。它存在是为了
+/// 使 `fxaa_enabled()` / `ao_enabled()` 能报告真实的运行时行为：未设置的子门控
+/// 为 ON，仅主 `CESIUM_ENABLE_POSTPROCESS` 门控就能像 M5-E1/E2 拆分它们
+/// 之前那样同时启用两个效果。
 ///
-/// Do **not** use this for feature gates — every capability gate defaults OFF
-/// through [`env_flag`] so the golden path stays pixel-neutral.
+/// **不要**将其用于 feature 门控 —— 每个能力门控都通过 [`env_flag`]
+/// 默认 OFF，以使 golden 路径保持像素中性。
 fn sub_gate_flag(name: &str) -> bool {
     match std::env::var(name) {
         Ok(v) => truthy(&v),
@@ -389,58 +379,53 @@ fn sub_gate_flag(name: &str) -> bool {
     }
 }
 
-// ── Active-flag accessors ──────────────────────────────────────────────
+// ── 激活标志访问器 ──────────────────────────────────────────────
 
-/// Terrain chain enabled? (`CESIUM_ENABLE_TERRAIN` OR `CESIUM_ENABLE_NEW_CHAINS`)
+/// 是否启用 terrain 链路？（`CESIUM_ENABLE_TERRAIN` 或 `CESIUM_ENABLE_NEW_CHAINS`）
 ///
-/// Preserves the pre-M0.3 semantics exactly: the umbrella flag turns on
-/// both chains, and either individual flag turns on its own chain.
+/// 完整保留 M0.3 之前的语义：总伞标志开启两条链路，
+/// 而任一单独标志只开启自己的链路。
 pub fn terrain_enabled() -> bool {
     env_flag(ENV_ENABLE_NEW_CHAINS) || env_flag(ENV_ENABLE_TERRAIN)
 }
 
-/// 3D Tiles tileset chain enabled? (`CESIUM_ENABLE_TILESET` OR `CESIUM_ENABLE_NEW_CHAINS`)
+/// 是否启用 3D Tiles 瓦片集链路？（`CESIUM_ENABLE_TILESET` 或 `CESIUM_ENABLE_NEW_CHAINS`）
 pub fn tileset_enabled() -> bool {
     env_flag(ENV_ENABLE_NEW_CHAINS) || env_flag(ENV_ENABLE_TILESET)
 }
 
-/// Plotting overlay bridge enabled? (`CESIUM_ENABLE_PLOT`, **defaults ON**).
+/// 是否启用标绘 overlay 桥接？（`CESIUM_ENABLE_PLOT`，**默认 ON**）。
 ///
-/// Consumed by `main.rs`'s windowed branch (`!headless && plot_enabled()`) to
-/// register `cesium_plot_bevy::CesiumPlotBridgePlugin`. Uses the same
-/// unset-means-true semantics as the post-process sub-gates so the feature is
-/// live by default in an interactive session while staying opt-outable; it has
-/// no effect on the headless golden path because headless never adds the
-/// plugin. M0 registers resources only — no visible output.
+/// 由 `main.rs` 的窗口分支（`!headless && plot_enabled()`）消费，以注册
+/// `cesium_plot_bevy::CesiumPlotBridgePlugin`。使用后处理子门控相同的
+/// 未设置即为 true 语义，因此该特性在交互式会话中默认开启，
+/// 同时保留可选退出能力；它对无头 golden 路径无影响，因为无头
+/// 从不添加该插件。M0 仅注册资源 —— 无可见输出。
 pub fn plot_enabled() -> bool {
     sub_gate_flag(ENV_ENABLE_PLOT)
 }
 
-// ── Runtime-mode accessors (M0.5 perf-trace / M11.3 headless) ──────────
+// ── 运行时模式访问器（M0.5 perf-trace / M11.3 headless）─────────
 
-/// Headless offscreen-render mode enabled? (`CESIUM_HEADLESS`)
+/// 是否启用无头离屏渲染模式？（`CESIUM_HEADLESS`）
 ///
-/// When truthy, `main.rs` swaps the windowed `WindowPlugin` for the
-/// surface-less configuration and adds
-/// [`cesium_bevy_render::headless::CesiumHeadlessPlugin`], which renders the
-/// scene to an offscreen target, captures a PNG, then exits cleanly.
+/// 为 truthy 时，`main.rs` 将窗口版 `WindowPlugin` 换为无 surface
+/// 配置，并添加 [`cesium_bevy_render::headless::CesiumHeadlessPlugin`]，
+/// 它将场景渲染到离屏目标、捕获一张 PNG，然后干净退出。
 ///
-/// **Default OFF**: when the var is unset the windowed startup path is
-/// byte-for-byte unchanged (golden-path neutrality). This is a runtime-mode
-/// switch, not a feature-enable gate, so it is intentionally outside the
-/// frozen `RESERVED_FLAGS` comparability namespace.
+/// **默认 OFF**：变量未设置时，窗口启动路径逐字节不变（golden 路径
+/// 中性）。这是一个运行时模式开关，不是 feature 启用门控，因此
+/// 故意处于冻结的 `RESERVED_FLAGS` 可比性命名空间之外。
 pub fn headless_enabled() -> bool {
     env_flag(ENV_HEADLESS)
 }
 
-/// Default warm-up frames rendered before the M11.3 headless capture fires.
-/// Enough for the base sphere + first LOD ring to settle; overridable via
-/// `CESIUM_HEADLESS_FRAMES`.
+/// M11.3 无头捕获触发前默认渲染的热身帧数。足够基础球体 + 首圈
+/// LOD 环稳定；可通过 `CESIUM_HEADLESS_FRAMES` 覆盖。
 pub const DEFAULT_HEADLESS_FRAMES: usize = 120;
 
-/// Number of frames to render before the headless offscreen capture
-/// (`CESIUM_HEADLESS_FRAMES`). Falls back to [`DEFAULT_HEADLESS_FRAMES`] when
-/// unset or unparsable.
+/// 无头离屏捕获前需渲染的帧数（`CESIUM_HEADLESS_FRAMES`）。未设置
+/// 或无法解析时回退到 [`DEFAULT_HEADLESS_FRAMES`]。
 pub fn headless_frames() -> usize {
     match std::env::var(ENV_HEADLESS_FRAMES) {
         Ok(v) => v.trim().parse::<usize>().unwrap_or(DEFAULT_HEADLESS_FRAMES),
@@ -448,17 +433,17 @@ pub fn headless_frames() -> usize {
     }
 }
 
-/// Output PNG path for the headless offscreen capture (`CESIUM_HEADLESS_OUTPUT`).
-/// Defaults to `headless_capture.png` in the working directory when unset/blank.
+/// 无头离屏捕获的输出 PNG 路径（`CESIUM_HEADLESS_OUTPUT`）。
+/// 未设置/空值时默认为工作目录下的 `headless_capture.png`。
 pub fn headless_output() -> PathBuf {
     env_path(ENV_HEADLESS_OUTPUT).unwrap_or_else(|| PathBuf::from("headless_capture.png"))
 }
 
-// ── Offline determinism accessors (M3.3) ───────────────────────────────
+// ── 离线确定性访问器（M3.3）───────────────────────────────
 
-/// Reads a path-valued env var, returning `None` when unset or blank.
-/// Whitespace is trimmed; a blank value is treated as unset so an empty
-/// `OFFLINE_IMAGERY_ROOT=` never accidentally enables the offline path.
+/// 读取一个路径型环境变量，未设置或空时返回 `None`。
+/// 会修剪空白；空值被视为未设置，因此一个空的
+/// `OFFLINE_IMAGERY_ROOT=` 绝不会意外启用离线路径。
 fn env_path(name: &str) -> Option<PathBuf> {
     match std::env::var(name) {
         Ok(v) if !v.trim().is_empty() => Some(PathBuf::from(v.trim())),
@@ -466,12 +451,12 @@ fn env_path(name: &str) -> Option<PathBuf> {
     }
 }
 
-/// Offline imagery pyramid root (`OFFLINE_IMAGERY_ROOT`), if set.
+/// 离线影像金字塔根目录（`OFFLINE_IMAGERY_ROOT`），若已设置。
 pub fn offline_imagery_root() -> Option<PathBuf> {
     env_path(ENV_OFFLINE_IMAGERY_ROOT)
 }
 
-/// Offline terrain tileset root (`OFFLINE_TERRAIN_ROOT`), if set.
+/// 离线 terrain 瓦片集根目录（`OFFLINE_TERRAIN_ROOT`），若已设置。
 pub fn offline_terrain_root() -> Option<PathBuf> {
     env_path(ENV_OFFLINE_TERRAIN_ROOT)
 }
@@ -486,39 +471,39 @@ pub fn strict_offline() -> bool {
     env_flag(ENV_STRICT_OFFLINE)
 }
 
-/// FIXED_TIME: freeze the clock for deterministic lighting/celestial state.
+/// FIXED_TIME：冻结时钟以获得确定性的光照/天体状态。
 pub fn fixed_time_enabled() -> bool {
     env_flag(ENV_FIXED_TIME)
 }
 
-/// FIXED_CAMERA TOML path (single deterministic viewpoint), if set.
+/// FIXED_CAMERA TOML 路径（单一确定性视角），若已设置。
 pub fn fixed_camera_path() -> Option<PathBuf> {
     env_path(ENV_FIXED_CAMERA)
 }
 
-/// `CESIUM_SCREENSHOT_SCRIPT` batch-capture TOML path (M3.4), if set.
+/// `CESIUM_SCREENSHOT_SCRIPT` 批量捕获 TOML 路径（M3.4），若已设置。
 pub fn screenshot_script_path() -> Option<PathBuf> {
     env_path(ENV_SCREENSHOT_SCRIPT)
 }
 
-/// Run the headless offline self-check and exit before the GPU app builds?
+/// 是否运行无头离线自检并在 GPU 应用构建前退出？
 pub fn offline_selfcheck() -> bool {
     env_flag(ENV_OFFLINE_SELFCHECK)
 }
 
-// (Retired 建议1 / P1-1, 2026-09-27): `legacy_dynamic_globe()` accessor removed
-// together with the frozen `dynamic_globe_legacy.rs` monolith (G4-verified
-// pixel-neutral with the M1.5 thin shell; golden path is now shell-only).
+// （已退役 建议1 / P1-1，2026-09-27）：`legacy_dynamic_globe()` 访问器与
+// 冻结的 `dynamic_globe_legacy.rs` 单体一并移除（G4 验证与 M1.5
+// 薄壳像素中性；golden 路径现在仅为薄壳）。
 
-// ── Lighting / post-process accessors (M4.1) ─────────────────────────
+// ── 光照 / 后处理访问器（M4.1）─────────────────────────
 
-/// Parse `CESIUM_LIGHTING_MODE` into a [`LightingMode`].
+/// 将 `CESIUM_LIGHTING_MODE` 解析为 [`LightingMode`]。
 ///
-/// Accepted tokens (case-insensitive, whitespace-trimmed):
+/// 接受的 token（大小写不敏感，修剪空白）：
 /// - `day_night` | `daynight` | `day-night` → [`LightingMode::DayNight`]
-/// - everything else (including unset) → [`LightingMode::FullAmbient`]
+/// - 其他所有值（包括未设置）→ [`LightingMode::FullAmbient`]
 ///
-/// Default is `FullAmbient` so the v0 baseline path is pixel-identical.
+/// 默认为 `FullAmbient`，因此 v0 基线路径像素相同。
 pub fn lighting_mode() -> LightingMode {
     match std::env::var(ENV_LIGHTING_MODE) {
         Ok(raw) => {
@@ -532,39 +517,37 @@ pub fn lighting_mode() -> LightingMode {
     }
 }
 
-/// `CESIUM_ENABLE_POSTPROCESS_BUILTIN`: enable Bevy built-in post-process
-/// (tonemapping / bloom / HDR). Default OFF. Independent from the reserved
-/// `CESIUM_ENABLE_POSTPROCESS` which gates M5.5/M5.6 custom stages.
+/// `CESIUM_ENABLE_POSTPROCESS_BUILTIN`：启用 Bevy 内置后处理
+/// （tone-mapping / bloom / HDR）。默认 OFF。与保留的
+/// `CESIUM_ENABLE_POSTPROCESS`（它门控 M5.5/M5.6 自定义阶段）相互独立。
 pub fn postprocess_builtin_enabled() -> bool {
     env_flag(ENV_ENABLE_POSTPROCESS_BUILTIN)
 }
 
-/// M5-E1 FXAA **sub-gate** — **ACTIVE**, and ⚠ **defaults ON when unset**.
+/// M5-E1 FXAA **子门控** —— **ACTIVE**，且 ⚠ **未设置时默认 ON**。
 ///
-/// Consumed by `effects/post_process.rs::CesiumEffectsPlugin::build`, which
-/// writes the value into `PostProcessConfig::fxaa_enabled` and therefore onto
-/// the camera's `CesiumFxaa` component. This accessor is the registry-side
-/// statement of that contract; the adapter keeps a byte-identical local mirror
-/// because it may not import the application layer (DDD).
+/// 由 `effects/post_process.rs::CesiumEffectsPlugin::build` 消费，它将
+/// 该值写入 `PostProcessConfig::fxaa_enabled`，因此写入相机的 `CesiumFxaa`
+/// 组件。本访问器是该契约在注册表侧的陈述；由于适配器不得
+/// 导入应用层（DDD），它保留一份字节相同的本地镜像。
 ///
-/// Effective enablement requires the master gate as well:
-/// `postprocess_enabled() && fxaa_enabled()`. With `POSTPROCESS` unset the FXAA
-/// render-graph node is never registered at all, so the sub-gate's ON default
-/// cannot leak into the golden path.
+/// 实际启用还需要主门控：`postprocess_enabled() && fxaa_enabled()`。
+/// `POSTPROCESS` 未设置时，FXAA 渲染图节点根本不会注册，因此子门控的
+/// ON 默认值无法泄漏到 golden 路径。
 pub fn fxaa_enabled() -> bool {
     sub_gate_flag(ENV_ENABLE_FXAA)
 }
 
-/// M5-E2 SSAO **sub-gate** — **ACTIVE**, and ⚠ **defaults ON when unset**.
+/// M5-E2 SSAO **子门控** —— **ACTIVE**，且 ⚠ **未设置时默认 ON**。
 ///
-/// Mirror contract of [`fxaa_enabled`] for the AO node
-/// (`PostProcessConfig::ambient_occlusion_enabled` → `CesiumAmbientOcclusion`).
-/// Effective enablement: `postprocess_enabled() && ao_enabled()`.
+/// [`fxaa_enabled`] 针对 AO 节点的镜像契约
+/// （`PostProcessConfig::ambient_occlusion_enabled` → `CesiumAmbientOcclusion`）。
+/// 实际启用：`postprocess_enabled() && ao_enabled()`。
 pub fn ao_enabled() -> bool {
     sub_gate_flag(ENV_ENABLE_AO)
 }
 
-/// Git SHA for screenshot metadata (`CESIUM_GIT_SHA`, else `"unknown"`).
+/// 截图元数据的 Git SHA（`CESIUM_GIT_SHA`，否则 `"unknown"`）。
 pub fn git_sha() -> String {
     std::env::var(ENV_GIT_SHA)
         .ok()
@@ -573,106 +556,104 @@ pub fn git_sha() -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-// ── Flag accessors (active + reserved) ─────────────────────────────────
+// ── 标志访问器（active + reserved）────────────────────────
 //
-// This block mixes flags that `main.rs` consumes today (post-process,
-// sky dome / glow, material showcase) with flags still awaiting their
-// milestone; each accessor's doc states which. Each accessor is `#[inline]`
-// and compiles to a single `env_flag` call.
-// They are intentionally NOT cached: a future milestone may want to flip
-// a flag at runtime (e.g. via a debug console), and caching would lock
-// in the startup value. If a milestone needs caching it can wrap the
-// accessor in its own `OnceLock`.
+// 本块混合了 `main.rs` 今天消费的标志（后处理、
+// 天穹 / glow、材质展示）与仍在等待其里程碑的标志；
+// 每个访问器的文档都写明属于哪类。每个访问器都是 `#[inline]`
+// 并编译为单个 `env_flag` 调用。
+// 它们故意**不**缓存：未来里程碑可能想在运行时切换
+// 一个标志（例如通过调试控制台），而缓存会锁定
+// 启动值。若某里程碑需要缓存，它可将访问器包装在自己的
+// `OnceLock` 中。
 
-/// M1 pipeline flag (reserved — no consumer yet).
+/// M1 pipeline 标志（保留 —— 尚无消费者）。
 #[inline]
 pub fn pipeline_enabled() -> bool {
     env_flag(ENV_ENABLE_PIPELINE)
 }
-/// M5.5/M5.6 post-process flag — **ACTIVE since M5-E1/E2**: gates the
-/// self-implemented FXAA (preset 12) + SSAO (hemisphere 16-sample + 4×4 blur)
-/// render-graph nodes registered by `effects/graph.rs::register_render_graph`
-/// (`CesiumPostProcessLabel::{Fxaa, AmbientOcclusion}`), consumed at
-/// `main.rs`'s `CesiumEffectsPlugin` branch. No longer a "custom WGSL stages"
-/// reservation: it is wired. Independent from `POSTPROCESS_BUILTIN` (M4.2
-/// Bevy built-in tonemapping/bloom/HDR on the camera bundle).
+/// M5.5/M5.6 后处理标志 —— **自 M5-E1/E2 起为 ACTIVE**：门控由
+/// `effects/graph.rs::register_render_graph` 注册的自实现 FXAA（预设 12）+ SSAO
+/// （半球 16 采样 + 4×4 模糊）渲染图节点（`CesiumPostProcessLabel::{Fxaa,
+/// AmbientOcclusion}`），在 `main.rs` 的 `CesiumEffectsPlugin` 分支消费。不再是
+/// “自定义 WGSL 阶段”的预留：它已接入。与 `POSTPROCESS_BUILTIN`（M4.2
+/// 相机 bundle 上的 Bevy 内置 tone-mapping/bloom/HDR）相互独立。
 #[inline]
 pub fn postprocess_enabled() -> bool {
     env_flag(ENV_ENABLE_POSTPROCESS)
 }
-/// M3.x CSM flag (reserved).
+/// M3.x CSM 标志（保留）。
 #[inline]
 pub fn csm_enabled() -> bool {
     env_flag(ENV_ENABLE_CSM)
 }
-/// M5.2/M5.3 skydome flag — **ACTIVE since M5-B/M5-C**: gates
-/// `CesiumAtmospherePlugin` (procedural sky dome, single-scattering WGSL).
-/// When ON, glow is forced OFF (mutual exclusion) and the dome should be
-/// paired with `POSTPROCESS_BUILTIN` (see `main.rs` warning) so the
-/// un-normalized in-scattered radiance is tonemapped instead of clipped.
+/// M5.2/M5.3 天穹标志 —— **自 M5-B/M5-C 起为 ACTIVE**：门控
+/// `CesiumAtmospherePlugin`（程序化天穹，单次散射 WGSL）。
+/// 开启时，glow 被强制 OFF（互斥），且天穹应与
+/// `POSTPROCESS_BUILTIN` 配对（见 `main.rs` 警告），以使未归一化的
+/// 内散射辐亮度被 tone-mapped 而非被截断。
 #[inline]
 pub fn skydome_enabled() -> bool {
     env_flag(ENV_ENABLE_SKYDOME)
 }
-/// AtmosphereGlow gate — inverse of skydome.
+/// AtmosphereGlow 门控 —— skydome 的反向。
 ///
-/// Mutual exclusion rule: SKYDOME=1 → glow forced 0. The 8-shell fallback
-/// glow (AtmosphereGlowPlugin) and the procedural sky dome
-/// (CesiumAtmospherePlugin) render overlapping atmospheric effects; enabling
-/// both simultaneously would double-paint the limb. This accessor centralises
-/// the rule so main.rs simply calls `glow_enabled()` without duplicating logic.
+/// 互斥规则：SKYDOME=1 → glow 强制 0。8-shell 回退
+/// glow（AtmosphereGlowPlugin）与程序化天穹
+/// （CesiumAtmospherePlugin）渲染重叠的大气效果；同时启用
+/// 两者会双重绘制临边。本访问器集中该规则，使 main.rs
+/// 只需调用 `glow_enabled()` 而不重复逻辑。
 ///
-/// Default (SKYDOME unset/OFF): returns true → glow ON → v0 zero-diff.
+/// 默认（SKYDOME 未设置/OFF）：返回 true → glow ON → v0 零 diff。
 #[inline]
 pub fn glow_enabled() -> bool {
     !skydome_enabled()
 }
-/// M5.4/M5-D material showcase flag — **ACTIVE**: gates
-/// `MaterialShowcasePlugin` (built-in Fabric materials + Water Calm/Medium/
-/// Rough sea states for the `specs/baselines/v2_water` captures).
+/// M5.4/M5-D 材质展示标志 —— **ACTIVE**：门控
+/// `MaterialShowcasePlugin`（内置 Fabric 材质 + 用于
+/// `specs/baselines/v2_water` 捕获的 Water Calm/Medium/Rough 海浪状态）。
 ///
-/// Default (unset/OFF): returns false → plugin not registered → no extra
-/// entities → v0 baselines pixel-neutral (PSNR=∞). Registered here rather
-/// than read via a bare string literal in `main.rs` so this module stays the
-/// single source of truth for every `CESIUM_*` env name.
+/// 默认（未设置/OFF）：返回 false → 插件未注册 → 无额外
+/// 实体 → v0 基线像素中性（PSNR=∞）。在此注册而非在
+/// `main.rs` 中以裸字符串字面量读取，以使本模块仍是每个
+/// `CESIUM_*` 环境名的单一真相源。
 #[inline]
 pub fn material_showcase_enabled() -> bool {
     env_flag(ENV_ENABLE_MATERIAL_SHOWCASE)
 }
-/// M5.x draping flag (reserved).
+/// M5.x draping 标志（保留）。
 #[inline]
 pub fn draping_enabled() -> bool {
     env_flag(ENV_ENABLE_DRAPING)
 }
-/// M6.2 clipping flag — **ACTIVE since M6 Wave A** (task #81): gates
-/// `effects::register_clipping_planes_node`, the `CesiumClippingPlanes` camera
-/// component inserted by `main.rs`, and the `CesiumClippingLabel` edges in the
-/// `Core3d` post-process region.
+/// M6.2 clipping 标志 —— **自 M6 Wave A 起为 ACTIVE**（任务 #81）：门控
+/// `effects::register_clipping_planes_node`、`main.rs` 插入的 `CesiumClippingPlanes`
+/// 相机组件，以及 `Core3d` 后处理区域中的 `CesiumClippingLabel` 边。
 ///
-/// Default (unset/OFF): node not registered, no edges, component not inserted
-/// → v0 baselines pixel-neutral (PSNR=∞).
+/// 默认（未设置/OFF）：节点未注册、无边、组件未插入
+/// → v0 基线像素中性（PSNR=∞）。
 #[inline]
 pub fn clipping_enabled() -> bool {
     env_flag(ENV_ENABLE_CLIPPING)
 }
-/// M6.3 panorama flag — **ACTIVE since M6 Wave A** (task #81): gates
-/// `effects::register_panorama_node`, the `CesiumPanorama` camera component, and
-/// the serial in-`MainPass` insertion
-/// `MainOpaquePass → CesiumPanoramaLabel → MainTransmissivePass`.
+/// M6.3 panorama 标志 —— **自 M6 Wave A 起为 ACTIVE**（任务 #81）：门控
+/// `effects::register_panorama_node`、`CesiumPanorama` 相机组件，以及
+/// `MainOpaquePass → CesiumPanoramaLabel → MainTransmissivePass`
+/// 的串行 `MainPass` 内插入。
 ///
-/// Default (unset/OFF): node not registered and — critically — the existing
-/// `MainOpaquePass → MainTransmissivePass` edge is **left intact**, so the main
-/// pass chain is byte-for-byte the pre-M6 one → v0 pixel-neutral.
+/// 默认（未设置/OFF）：节点未注册且 —— 关键地 —— 现有的
+/// `MainOpaquePass → MainTransmissivePass` 边**保持原样**，因此主 pass
+/// 链逐字节就是 M6 之前的那条 → v0 像素中性。
 #[inline]
 pub fn panorama_enabled() -> bool {
     env_flag(ENV_ENABLE_PANORAMA)
 }
-/// M6.5 IBL flag — **ACTIVE since M6 Wave A** (task #81): gates
-/// `effects::register_ibl_node`, the `CesiumIbl` camera component, and the
-/// `CesiumIblLabel` edges (HDR region, immediately after clipping).
+/// M6.5 IBL 标志 —— **自 M6 Wave A 起为 ACTIVE**（任务 #81）：门控
+/// `effects::register_ibl_node`、`CesiumIbl` 相机组件，以及
+/// `CesiumIblLabel` 边（HDR 区域，紧接 clipping 之后）。
 ///
-/// Default (unset/OFF): node not registered, no edges, component not inserted
-/// → v0 baselines pixel-neutral (PSNR=∞).
+/// 默认（未设置/OFF）：节点未注册、无边、组件未插入
+/// → v0 基线像素中性（PSNR=∞）。
 #[inline]
 pub fn ibl_enabled() -> bool {
     env_flag(ENV_ENABLE_IBL)
@@ -682,62 +663,61 @@ pub fn ibl_enabled() -> bool {
 pub fn oit_enabled() -> bool {
     env_flag(ENV_ENABLE_OIT)
 }
-/// M6.1 split-screen flag (reserved).
+/// M6.1 分屏标志（保留）。
 #[inline]
 pub fn split_enabled() -> bool {
     env_flag(ENV_ENABLE_SPLIT)
 }
-/// M6.6 clouds flag (**reserved** — pre-provisioned by M6 Wave A, no consumer
-/// yet). Declaring it changes no runtime behaviour; it defaults OFF.
+/// M6.6 clouds 标志（**保留** —— 由 M6 Wave A 预置，尚无消费者）。
+/// 声明它不改变任何运行时行为；它默认 OFF。
 #[inline]
 pub fn clouds_enabled() -> bool {
     env_flag(ENV_ENABLE_CLOUDS)
 }
-/// M2 new-camera flag (reserved — replaces orbit_camera).
+/// M2 新相机标志（保留 —— 取代 orbit_camera）。
 #[inline]
 pub fn new_camera_enabled() -> bool {
     env_flag(ENV_ENABLE_NEW_CAMERA)
 }
-/// M8 resource-backend flag (reserved — pluggable asset streaming).
+/// M8 资源后端标志（保留 —— 可插拔资产流式加载）。
 #[inline]
 pub fn resource_backend_enabled() -> bool {
     env_flag(ENV_ENABLE_RESOURCE_BACKEND)
 }
-/// M7 styling-JSEP flag (completed — expression evaluator landed).
+/// M7 样式-JSEP 标志（已完成 —— 表达式求值器已落地）。
 #[inline]
 pub fn styling_jsep_enabled() -> bool {
     env_flag(ENV_ENABLE_STYLING_JSEP)
 }
-/// M14.x KML-export flag (reserved).
+/// M14.x KML 导出标志（保留）。
 #[inline]
 pub fn kml_export_enabled() -> bool {
     env_flag(ENV_ENABLE_KML_EXPORT)
 }
-/// M15.x glTF-upgrade flag (reserved).
+/// M15.x glTF 升级标志（保留）。
 #[inline]
 pub fn gltf_upgrade_enabled() -> bool {
     env_flag(ENV_ENABLE_GLTF_UPGRADE)
 }
-/// M16.x Draco flag (reserved).
+/// M16.x Draco 标志（保留）。
 #[inline]
 pub fn draco_enabled() -> bool {
     env_flag(ENV_ENABLE_DRACO)
 }
-/// M17.x point-cloud flag (reserved).
+/// M17.x 点云标志（保留）。
 #[inline]
 pub fn point_cloud_enabled() -> bool {
     env_flag(ENV_ENABLE_POINT_CLOUD)
 }
 
-// ── Snapshot (for diagnostics / trace headers) ─────────────────────────
+// ── 快照（供诊断 / trace 头使用）─────────────────────────
 
-/// Immutable snapshot of every flag's value at first call. Useful for
-/// stamping a perf-trace CSV header or a startup log line so a reviewer
-/// can tell which features were on for a given run.
+/// 首次调用时每个标志值的不可变快照。适用于烙印到 perf-trace
+/// CSV 头或启动日志行，以便评审者能分辨某次运行开了哪些功能。
 ///
-/// Lazily initialized: the first call reads env, subsequent calls return
-/// the cached snapshot. This is safe because env vars are process-global
-/// and the snapshot is only used for diagnostics (never for control flow).
+/// 懒初始化：首次调用读取环境，后续调用返回缓存的快照。
+/// 这很安全，因为环境变量是进程全局的，且快照仅用于诊断
+/// （从不用于控制流）。
 #[derive(Debug, Clone)]
 pub struct FlagSnapshot {
     pub terrain: bool,
@@ -747,7 +727,7 @@ pub struct FlagSnapshot {
 }
 
 impl FlagSnapshot {
-    /// Capture the current env into a snapshot.
+    /// 将当前环境捕获到快照中。
     pub fn capture() -> Self {
         Self {
             terrain: terrain_enabled(),
@@ -757,9 +737,9 @@ impl FlagSnapshot {
         }
     }
 
-    /// One-line human summary, e.g. `"terrain=off tileset=off reserved=0/18"`.
-    /// The denominator is `RESERVED_FLAGS.len()` and therefore moves when the
-    /// namespace gains an entry (M6 Wave A: 17 → 18 via `CLOUDS`).
+    /// 单行人类可读摘要，例如 `"terrain=off tileset=off reserved=0/18"`。
+    /// 分母是 `RESERVED_FLAGS.len()`，因此当命名空间新增条目时会
+    /// 移动（M6 Wave A：通过 `CLOUDS` 从 17 → 18）。
     pub fn summary_line(&self) -> String {
         let on = self.reserved.iter().filter(|(_, v)| *v).count();
         format!(
@@ -781,10 +761,10 @@ fn yn(b: bool) -> &'static str {
     }
 }
 
-/// Process-wide cached snapshot (first call captures, later calls reuse).
+/// 进程级缓存快照（首次调用捕获，后续调用复用）。
 static SNAPSHOT: OnceLock<FlagSnapshot> = OnceLock::new();
 
-/// Return the cached [`FlagSnapshot`], capturing on first call.
+/// 返回缓存的 [`FlagSnapshot`]，首次调用时捕获。
 pub fn snapshot() -> &'static FlagSnapshot {
     SNAPSHOT.get_or_init(FlagSnapshot::capture)
 }
@@ -811,28 +791,28 @@ mod tests {
 
     #[test]
     fn env_flag_unset_is_false() {
-        // Use a name that no test sets, so the result is deterministic.
+        // 使用一个没有测试设置的名字，以使结果确定性。
         assert!(!env_flag("CESIUM_ENABLE___DEFINITELY_UNSET___"));
     }
 
     #[test]
     fn env_path_unset_is_none() {
-        // Path accessors mirror env_flag: unset → None (offline default OFF).
+        // 路径访问器镜像 env_flag：未设置 → None（offline 默认 OFF）。
         assert!(env_path("CESIUM___DEFINITELY_UNSET___").is_none());
     }
 
     #[test]
     fn git_sha_falls_back_to_unknown() {
-        // Never empty: unset CESIUM_GIT_SHA yields the "unknown" sentinel so
-        // screenshot metadata always has a sha field.
+        // 从不为空：未设置的 CESIUM_GIT_SHA 产出 "unknown" 哨兵值，因此
+        // 截图元数据总是有一个 sha 字段。
         assert!(!git_sha().is_empty());
     }
 
     #[test]
     fn offline_accessors_are_contracts_only() {
-        // Reading the offline accessors must never panic and never flip a
-        // default: they are pure env reads. (Values depend on the ambient
-        // env, so we only assert the call contract, not a specific result.)
+        // 读取 offline 访问器必须从不 panic、也从不翻转一个
+        // 默认值：它们是纯环境读取。（值取决于周围
+        // 环境，因此我们只断言调用契约，而非具体结果。）
         let _ = offline_imagery_root();
         let _ = offline_terrain_root();
         let _ = offline_mode();
@@ -845,21 +825,21 @@ mod tests {
 
     #[test]
     fn reserved_namespace_is_complete() {
-        // Guard against accidentally dropping a reserved flag from the list.
-        // M6 Wave A (task #81) appended ENV_ENABLE_CLOUDS: 17 -> 18. The count
-        // is pinned so a *removal* (which would silently change summary_line()'s
-        // denominator and break cross-milestone metadata diffing) turns red.
+        // 防止意外地从列表中删除一个保留标志。
+        // M6 Wave A（任务 #81）追加了 ENV_ENABLE_CLOUDS：17 -> 18。计数
+        // 被固定，因此一次*删除*（它会静默改变 summary_line() 的
+        // 分母并破坏跨里程碑元数据 diff）会变红。
         assert_eq!(RESERVED_FLAGS.len(), 18);
         assert!(RESERVED_FLAGS.contains(&ENV_ENABLE_PIPELINE));
         assert!(RESERVED_FLAGS.contains(&ENV_ENABLE_POINT_CLOUD));
-        // The three M6 Wave A gates stay listed even though they are now wired
-        // (frozen against removal, see the note at RESERVED_FLAGS).
+        // 三个 M6 Wave A 门控即使现已接入仍保持列出
+        // （禁止移除，参见 RESERVED_FLAGS 处的说明）。
         assert!(RESERVED_FLAGS.contains(&ENV_ENABLE_CLIPPING));
         assert!(RESERVED_FLAGS.contains(&ENV_ENABLE_PANORAMA));
         assert!(RESERVED_FLAGS.contains(&ENV_ENABLE_IBL));
-        // The M6.6 pre-provision added by this task.
+        // 本任务添加的 M6.6 预置。
         assert!(RESERVED_FLAGS.contains(&ENV_ENABLE_CLOUDS));
-        // No duplicates: a repeated entry would inflate the denominator.
+        // 无重复：重复的条目会抬高分母。
         let mut sorted: Vec<&str> = RESERVED_FLAGS.to_vec();
         let before = sorted.len();
         sorted.sort_unstable();
@@ -881,14 +861,14 @@ mod tests {
         );
     }
 
-    // ── M4.1 lighting / post-process tests ────────────────────────────
+    // ── M4.1 光照 / 后处理测试 ────────────────────────────
 
     #[test]
     fn lighting_mode_default_is_full_ambient() {
-        // When CESIUM_LIGHTING_MODE is unset (normal test env), default is
-        // FullAmbient — guarantees v0 pixel-neutrality.
-        // NOTE: if the ambient env happens to set it, this still validates
-        // the parse contract (no panic, returns a valid variant).
+        // 当 CESIUM_LIGHTING_MODE 未设置（普通测试环境）时，默认为
+        // FullAmbient —— 保证 v0 像素中性。
+        // 注：即使周围环境碰巧设置了它，这仍然验证
+        // 解析契约（不 panic，返回一个合法变体）。
         let mode = lighting_mode();
         assert!(
             mode == LightingMode::FullAmbient || mode == LightingMode::DayNight,
@@ -898,7 +878,7 @@ mod tests {
 
     #[test]
     fn lighting_mode_parses_day_night_tokens() {
-        // Validate the parsing logic directly (env-independent).
+        // 直接验证解析逻辑（与环境无关）。
         for token in ["day_night", "DayNight", "DAY_NIGHT", " day-night ", "daynight"] {
             let normalized = token.trim().to_ascii_lowercase().replace('-', "_");
             let mode = match normalized.as_str() {
@@ -923,101 +903,100 @@ mod tests {
 
     #[test]
     fn postprocess_builtin_default_is_off() {
-        // CESIUM_ENABLE_POSTPROCESS_BUILTIN unset → false (no built-in PP).
-        // Uses the same truthy predicate as every other flag.
-        let _ = postprocess_builtin_enabled(); // must not panic
+        // CESIUM_ENABLE_POSTPROCESS_BUILTIN 未设置 → false（无内置 PP）。
+        // 使用与所有其他标志相同的 truthy 谓词。
+        let _ = postprocess_builtin_enabled(); // 不得 panic
     }
 
     #[test]
     fn postprocess_builtin_is_independent_from_reserved() {
-        // The two post-process constants must be distinct strings.
+        // 两个后处理常量必须是不同的字符串。
         assert_ne!(ENV_ENABLE_POSTPROCESS_BUILTIN, ENV_ENABLE_POSTPROCESS);
     }
 
     #[test]
     fn glow_enabled_is_inverse_of_skydome() {
-        // Mutual exclusion: glow_enabled() == !skydome_enabled().
-        // Both read the same env var (CESIUM_ENABLE_SKYDOME) so in any
-        // process state they must be logical inverses.
+        // 互斥：glow_enabled() == !skydome_enabled()。
+        // 两者都读取同一个环境变量（CESIUM_ENABLE_SKYDOME），因此在任何
+        // 进程状态下它们都必须是逻辑上的反值。
         assert_eq!(glow_enabled(), !skydome_enabled());
     }
 
-    // ── M5-D material showcase gate tests ─────────────────────────────
+    // ── M5-D 材质展示门控测试 ─────────────────────────────
 
     #[test]
     fn material_showcase_defaults_off() {
-        // (1) The registry constant must match the env name M5-D documented,
-        //     so no bare-string drift can reappear in main.rs.
+        // (1) 注册表常量必须匹配 M5-D 文档化的环境名，
+        //     因此 main.rs 中不会再重现裸字符串漂移。
         assert_eq!(ENV_ENABLE_MATERIAL_SHOWCASE, "CESIUM_ENABLE_MATERIAL_SHOWCASE");
-        // (2) The accessor must funnel through the single env_flag predicate
-        //     (no private caching, no alternative parse).
+        // (2) 访问器必须汇聚到单个 env_flag 谓词
+        //     （无私有缓存，无替代解析）。
         assert_eq!(
             material_showcase_enabled(),
             env_flag(ENV_ENABLE_MATERIAL_SHOWCASE)
         );
-        // (3) Default OFF: when the var is unset (normal test/CI env) the gate
-        //     is false → MaterialShowcasePlugin not registered → v0 pixel-neutral.
-        //     Guarded by var_os so a deliberately opt-in ambient env (e.g. a
-        //     capture harness run) does not produce a false red.
+        // (3) 默认 OFF：变量未设置（普通测试/CI 环境）时该门控
+        //     为 false → MaterialShowcasePlugin 未注册 → v0 像素中性。
+        //     由 var_os 保护，因此故意 opt-in 的周围环境（例如
+        //     一次 capture harness 运行）不会产生假红。
         if std::env::var_os(ENV_ENABLE_MATERIAL_SHOWCASE).is_none() {
             assert!(
                 !material_showcase_enabled(),
                 "CESIUM_ENABLE_MATERIAL_SHOWCASE unset must default to OFF"
             );
         }
-        // (4) Born-active flag: NOT part of the frozen reserved namespace list.
+        // (4) 天生 active 的标志：**不**属于冻结的保留命名空间列表。
         assert!(!RESERVED_FLAGS.contains(&ENV_ENABLE_MATERIAL_SHOWCASE));
-        // (5) It must be a distinct env var from every other registered flag
-        //     (no accidental aliasing of the skydome/post-process gates).
+        // (5) 它必须与每个其他已注册标志都是不同的环境变量
+        //     （不会意外别名化 skydome/post-process 门控）。
         assert_ne!(ENV_ENABLE_MATERIAL_SHOWCASE, ENV_ENABLE_SKYDOME);
         assert_ne!(ENV_ENABLE_MATERIAL_SHOWCASE, ENV_ENABLE_POSTPROCESS);
         assert_ne!(ENV_ENABLE_MATERIAL_SHOWCASE, ENV_ENABLE_POSTPROCESS_BUILTIN);
     }
 
-    // ── M11.3 headless runtime-mode gate tests ────────────────────────
+    // ── M11.3 无头运行时模式门控测试 ────────────────────────
 
     #[test]
     fn headless_defaults_off() {
-        // (1) Registry constant matches the documented env name so no
-        //     bare-string drift can reappear at the main.rs branch.
+        // (1) 注册表常量匹配文档化的环境名，因此
+        //     main.rs 分支处不会再重现裸字符串漂移。
         assert_eq!(ENV_HEADLESS, "CESIUM_HEADLESS");
-        // (2) The accessor funnels through the single env_flag predicate
-        //     (no private caching, no alternative parse).
+        // (2) 访问器汇聚到单个 env_flag 谓词
+        //     （无私有缓存，无替代解析）。
         assert_eq!(headless_enabled(), env_flag(ENV_HEADLESS));
-        // (3) Default OFF: when unset (normal test/CI env) the windowed golden
-        //     path is untouched. Guarded by var_os so a deliberately opt-in
-        //     capture-harness env does not produce a false red.
+        // (3) 默认 OFF：未设置（普通测试/CI 环境）时窗口 golden
+        //     路径不受影响。由 var_os 保护，因此故意 opt-in
+        //     的 capture-harness 环境不会产生假红。
         if std::env::var_os(ENV_HEADLESS).is_none() {
             assert!(
                 !headless_enabled(),
                 "CESIUM_HEADLESS unset must default to OFF"
             );
         }
-        // (4) Runtime-mode switch, not a frozen feature gate: must not be in
-        //     the RESERVED_FLAGS comparability namespace.
+        // (4) 运行时模式开关，而非冻结的 feature 门控：**不得**处于
+        //     RESERVED_FLAGS 可比性命名空间中。
         assert!(!RESERVED_FLAGS.contains(&ENV_HEADLESS));
     }
 
-    // ── M6 Wave A gate tests (task #81 integration) ───────────────────
+    // ── M6 Wave A 门控测试（任务 #81 集成）──────────────
 
-    /// The three wired M6 Wave A gates: env names pinned as literals (so a
-    /// one-sided rename against the adapter-layer mirrors in
-    /// `effects/{clipping_planes,panorama,ibl}.rs` turns red), accessors funnel
-    /// through the single `env_flag` predicate, and all three default OFF so the
-    /// v0 baselines stay pixel-neutral.
+    /// 三个已接入的 M6 Wave A 门控：环境名以字面量固定（因此相对于
+    /// `effects/{clipping_planes,panorama,ibl}.rs` 中的适配器层镜像的
+    /// 单边重命名会变红），访问器汇聚到单个 `env_flag` 谓词，且三者
+    /// 都默认 OFF，使 v0 基线保持像素中性。
     #[test]
     fn m6_wave_a_gates_default_off() {
-        // (1) Registry constants must match the env names the M6.2/M6.3/M6.5
-        //     adapters documented, byte for byte.
+        // (1) 注册表常量必须匹配 M6.2/M6.3/M6.5 适配器
+        //     文档化的环境名，逐字节。
         assert_eq!(ENV_ENABLE_CLIPPING, "CESIUM_ENABLE_CLIPPING");
         assert_eq!(ENV_ENABLE_PANORAMA, "CESIUM_ENABLE_PANORAMA");
         assert_eq!(ENV_ENABLE_IBL, "CESIUM_ENABLE_IBL");
-        // (2) Feature-gate semantics: unset/falsy => false, {1,true,yes,on} => true.
+        // (2) Feature 门控语义：未设置/falsy => false，{1,true,yes,on} => true。
         assert_eq!(clipping_enabled(), env_flag(ENV_ENABLE_CLIPPING));
         assert_eq!(panorama_enabled(), env_flag(ENV_ENABLE_PANORAMA));
         assert_eq!(ibl_enabled(), env_flag(ENV_ENABLE_IBL));
-        // (3) Default OFF, guarded by var_os so an opt-in capture harness (e.g.
-        //     a v3_clipping baseline run) cannot produce a false red.
+        // (3) 默认 OFF，由 var_os 保护，因此 opt-in 的 capture harness（例如
+        //     一次 v3_clipping 基线运行）不能产生假红。
         if std::env::var_os(ENV_ENABLE_CLIPPING).is_none() {
             assert!(!clipping_enabled(), "CESIUM_ENABLE_CLIPPING unset must default to OFF");
         }
@@ -1027,12 +1006,12 @@ mod tests {
         if std::env::var_os(ENV_ENABLE_IBL).is_none() {
             assert!(!ibl_enabled(), "CESIUM_ENABLE_IBL unset must default to OFF");
         }
-        // (4) Pairwise distinct: three separate env vars, no aliasing.
+        // (4) 两两不同：三个独立的环境变量，无别名。
         assert_ne!(ENV_ENABLE_CLIPPING, ENV_ENABLE_PANORAMA);
         assert_ne!(ENV_ENABLE_CLIPPING, ENV_ENABLE_IBL);
         assert_ne!(ENV_ENABLE_PANORAMA, ENV_ENABLE_IBL);
-        // (5) They are feature gates, not post-process sub-gates: the two
-        //     predicates must disagree on the unset default (false vs true).
+        // (5) 它们是 feature 门控，而非后处理子门控：两个
+        //     谓词必须在未设置默认值上不一致（false 对 true）。
         assert_ne!(
             env_flag("CESIUM_ENABLE___DEFINITELY_UNSET___"),
             sub_gate_flag("CESIUM_ENABLE___DEFINITELY_UNSET___"),
@@ -1040,8 +1019,8 @@ mod tests {
         );
     }
 
-    /// M6.6 pre-provision: `CLOUDS` is declared + listed + accessor exists, and
-    /// has **no consumer** yet, so it must default OFF and change nothing.
+    /// M6.6 预置：`CLOUDS` 已声明 + 已列出 + 访问器存在，且**尚无
+    /// 消费者**，因此它必须默认 OFF 并不改变任何东西。
     #[test]
     fn clouds_gate_is_reserved_and_defaults_off() {
         assert_eq!(ENV_ENABLE_CLOUDS, "CESIUM_ENABLE_CLOUDS");
@@ -1053,39 +1032,39 @@ mod tests {
         assert_ne!(ENV_ENABLE_CLOUDS, ENV_ENABLE_SKYDOME);
     }
 
-    /// FXAA / AO are **sub-gates of the master POSTPROCESS gate**, so their
-    /// unset default is ON (pre-M5-E1/E2 behaviour preserved) — deliberately
-    /// unlike every feature gate above. Registered here per the Terry M5-Verify
-    /// Medium finding; the accessor must state the real runtime semantics.
+    /// FXAA / AO 是**主 POSTPROCESS 门控的子门控**，因此它们的未设置
+    /// 默认值为 ON（保留 M5-E1/E2 之前的行为）—— 故意不同于上方
+    /// 每个 feature 门控。根据 Terry 的 M5-Verify Medium 发现在此注册；
+    /// 访问器必须陈述真实的运行时语义。
     #[test]
     fn postprocess_sub_gates_default_on() {
-        // (1) Names pinned: these were module-private consts in
-        //     effects/post_process.rs before this task registered them.
+        // (1) 名称固定：在本任务注册它们之前，这些是
+        //     effects/post_process.rs 中的模块私有常量。
         assert_eq!(ENV_ENABLE_FXAA, "CESIUM_ENABLE_FXAA");
         assert_eq!(ENV_ENABLE_AO, "CESIUM_ENABLE_AO");
         assert_ne!(ENV_ENABLE_FXAA, ENV_ENABLE_AO);
-        // (2) Sub-gate predicate, not the feature-gate one: unset => true.
+        // (2) 子门控谓词，而非 feature 门控谓词：未设置 => true。
         assert!(sub_gate_flag("CESIUM_ENABLE___DEFINITELY_UNSET___"));
         assert!(!env_flag("CESIUM_ENABLE___DEFINITELY_UNSET___"));
-        // (3) Falsy tokens still disable, using the shared truthy predicate.
+        // (3) falsy token 仍会禁用，使用共享的 truthy 谓词。
         for t in ["0", "false", "no", "off", ""] {
             assert!(!truthy(t), "sub-gate must honour the falsy token {:?}", t);
         }
-        // (4) When unset the accessors report ON (the documented sub-gate
-        //     default). Guarded by var_os so an explicit opt-out env in a
-        //     capture harness does not produce a false red.
+        // (4) 未设置时访问器报告 ON（文档化的子门控默认值）。
+        //     由 var_os 保护，因此 capture harness 中显式 opt-out 的
+        //     环境不会产生假红。
         if std::env::var_os(ENV_ENABLE_FXAA).is_none() {
             assert!(fxaa_enabled(), "unset CESIUM_ENABLE_FXAA sub-gate defaults ON");
         }
         if std::env::var_os(ENV_ENABLE_AO).is_none() {
             assert!(ao_enabled(), "unset CESIUM_ENABLE_AO sub-gate defaults ON");
         }
-        // (5) Active sub-gates are NOT part of the frozen reserved namespace
-        //     (same classification as MATERIAL_SHOWCASE / HEADLESS).
+        // (5) active 子门控**不**属于冻结的保留命名空间
+        //     （与 MATERIAL_SHOWCASE / HEADLESS 相同的分类）。
         assert!(!RESERVED_FLAGS.contains(&ENV_ENABLE_FXAA));
         assert!(!RESERVED_FLAGS.contains(&ENV_ENABLE_AO));
-        // (6) The ON default cannot leak into the golden path: without the
-        //     master gate the FXAA/AO render-graph nodes are never registered.
+        // (6) ON 默认值不能泄漏到 golden 路径：没有主门控时，FXAA/AO
+        //     渲染图节点从不注册。
         if std::env::var_os(ENV_ENABLE_POSTPROCESS).is_none() {
             assert!(
                 !postprocess_enabled(),
@@ -1094,8 +1073,8 @@ mod tests {
         }
     }
 
-    /// The five M6 gates form a distinct namespace (no accidental reuse of an
-    /// existing flag name for a new capability).
+    /// 五个 M6 门控构成一个不相交的命名空间（不会为新能力
+    /// 意外复用现有标志名）。
     #[test]
     fn m6_gate_namespace_is_disjoint() {
         let m6 = [
@@ -1111,53 +1090,51 @@ mod tests {
                 assert_ne!(a, b, "M6 gate names must be pairwise distinct");
             }
         }
-        // M6.1/M6.4 (SPLIT/OIT) stay listed in RESERVED_FLAGS by convention (the
-        // set is a stable diagnostic vocabulary; gaining a consumer is a
-        // documentation reclassification, not a removal — see the note atop this
-        // module). Both now have an adapter node wired (Phase-3 FIX-INTEG/FIX-SPLIT).
+        // M6.1/M6.4（SPLIT/OIT）按惯例仍列在 RESERVED_FLAGS 中（该
+        // 集合是一个稳定的诊断词汇表；获得一个消费者是一次
+        // 文档重分类，而非移除 —— 参见本模块顶部的说明）。
+        // 两者现在都已接入一个适配器节点（Phase-3 FIX-INTEG/FIX-SPLIT）。
         assert!(RESERVED_FLAGS.contains(&ENV_ENABLE_SPLIT));
         assert!(RESERVED_FLAGS.contains(&ENV_ENABLE_OIT));
     }
 
-    /// **Cross-crate drift guard for the single source of truth** (task #81,
-    /// PORTING_CONVENTIONS.md §gate registry).
+    /// **单一真相源的跨 crate 漂移守卫**（任务 #81，
+    /// PORTING_CONVENTIONS.md §gate registry）。
     ///
-    /// `cesium-app` depends on `cesium-bevy-render` — never the reverse — so the
-    /// adapter-side effect modules cannot import this registry and each carries a
-    /// *mirror* const of its gate name. Every other test here pins the registry
-    /// side against a string literal, which only catches a rename if nobody also
-    /// updates the literal. This test closes the loop by comparing against the
-    /// **real adapter consts**, so renaming either side alone turns red, and it
-    /// additionally proves the adapter's truthy parser is token-for-token
-    /// identical to [`truthy`] (the `{1, true, yes, on}` set, trimmed +
-    /// lowercased) — the property the M6 gate accessors rely on when they read
-    /// the env directly inside the adapter crate.
+    /// `cesium-app` 依赖 `cesium-bevy-render` —— 从不反向 —— 因此
+    /// 适配器侧的效果模块无法导入本注册表，各自携带一个门控名
+    /// 的*镜像*常量。这里其他测试都将注册表一侧与字符串字面量
+    /// 固定，这只有在无人同时更新字面量时才能捕获重命名。本测试
+    /// 通过与**真实适配器常量**比较来闭环，因此单边重命名任一侧
+    /// 都会变红，且它额外证明适配器的 truthy 解析器与 [`truthy`]
+    /// （`{1, true, yes, on}` 集合，修剪 + 小写）逐 token 相同 ——
+    /// 这正是 M6 门控访问器在适配器 crate 内直接读取环境时所依赖的性质。
     #[test]
     fn adapter_gate_mirrors_are_byte_identical_to_the_registry() {
         use cesium_bevy_render::effects as fx;
 
-        // (1) M6 Wave A feature gates (all default OFF, all in RESERVED_FLAGS).
+        // (1) M6 Wave A feature 门控（均默认 OFF，均在 RESERVED_FLAGS 中）。
         assert_eq!(ENV_ENABLE_CLIPPING, fx::ENV_ENABLE_CLIPPING);
         assert_eq!(ENV_ENABLE_PANORAMA, fx::ENV_ENABLE_PANORAMA);
         assert_eq!(ENV_ENABLE_IBL, fx::ENV_ENABLE_IBL);
 
-        // (1b) Phase-2/Phase-3 M6.4 OIT + M6.6 CLOUDS + M6.1 SPLIT adapter mirrors.
-        //      All three gate consts live adapter-side (`effects/oit.rs`,
-        //      `effects/clouds.rs`, `effects/split.rs`); pinning them against the
-        //      registry closes the rename-drift loop the same way as the Wave A
-        //      gates (see docs/deviations.md#dev-031 / #dev-032 / #dev-034).
+        // (1b) Phase-2/Phase-3 M6.4 OIT + M6.6 CLOUDS + M6.1 SPLIT 适配器镜像。
+        //      这三个门控常量都位于适配器侧（`effects/oit.rs`、
+        //      `effects/clouds.rs`、`effects/split.rs`）；将它们与注册表固定可以
+        //      像 Wave A 门控那样闭环重命名漂移（参见
+        //      docs/deviations.md#dev-031 / #dev-032 / #dev-034）。
         assert_eq!(ENV_ENABLE_OIT, fx::ENV_ENABLE_OIT);
         assert_eq!(ENV_ENABLE_CLOUDS, fx::ENV_ENABLE_CLOUDS);
         assert_eq!(ENV_ENABLE_SPLIT, fx::ENV_ENABLE_SPLIT);
 
-        // (2) M5-E post-process sub-gates (default ON — sub_gate_flag semantics).
-        //     These were module-private consts in `effects/post_process.rs` until
-        //     this task registered them (Terry M5-Verify Medium finding); they are
-        //     `pub` now precisely so this assertion can exist.
+        // (2) M5-E 后处理子门控（默认 ON —— sub_gate_flag 语义）。
+        //     在本任务注册它们之前，这些是 `effects/post_process.rs` 中的
+        //     模块私有常量（Terry M5-Verify Medium 发现）；它们现在为 `pub`
+        //     正是为了让这条断言得以存在。
         assert_eq!(ENV_ENABLE_FXAA, fx::ENV_ENABLE_FXAA);
         assert_eq!(ENV_ENABLE_AO, fx::ENV_ENABLE_AO);
 
-        // (3) The adapter's parser must accept exactly the canonical tokens.
+        // (3) 适配器的解析器必须恰好接受规范 token。
         for t in ["1", "true", "TRUE", "True", "yes", "YES", "on", "ON", " 1 ", "\ttrue\n"] {
             assert!(
                 fx::gate_from_env_value(Some(t.to_string())),
@@ -1167,7 +1144,7 @@ mod tests {
             assert!(truthy(t), "registry truthy must accept {:?}", t);
         }
 
-        // (4) …and reject everything else, including the empty string.
+        // (4) …并拒绝其他所有值，包括空字符串。
         for t in ["", "0", "false", "no", "off", "2", "maybe", "enabled"] {
             assert!(
                 !fx::gate_from_env_value(Some(t.to_string())),
@@ -1177,9 +1154,9 @@ mod tests {
             assert!(!truthy(t), "registry truthy must reject {:?}", t);
         }
 
-        // (5) Unset (None) is OFF for a *feature* gate. The FXAA/AO sub-gates are
-        //     the deliberate exception and are handled by `sub_gate_enabled` in
-        //     `effects/post_process.rs`, not by `gate_from_env_value`.
+        // (5) 未设置（None）对*feature* 门控为 OFF。FXAA/AO 子门控是
+        //     故意的例外，由 `effects/post_process.rs` 中的 `sub_gate_enabled`
+        //     处理，而非由 `gate_from_env_value` 处理。
         assert!(!fx::gate_from_env_value(None));
         assert!(!fx::clipping_gate_enabled() || std::env::var_os(ENV_ENABLE_CLIPPING).is_some());
         assert!(!fx::panorama_gate_enabled() || std::env::var_os(ENV_ENABLE_PANORAMA).is_some());
@@ -1188,11 +1165,10 @@ mod tests {
         assert!(!fx::clouds_gate_enabled() || std::env::var_os(ENV_ENABLE_CLOUDS).is_some());
         assert!(!fx::split_gate_enabled() || std::env::var_os(ENV_ENABLE_SPLIT).is_some());
 
-        // (6) FIX-HL-HDRMIRROR: the M11.4 headless HDR offscreen-target gate is an
-        //     adapter-private const (`headless/mod.rs`); mirror it here so a rename
-        //     on either side turns this drift guard red. The adapter's `hdr_truthy`
-        //     stays a deliberate duplicate (dependency direction forbids importing
-        //     this registry) — full consolidation is deferred to M11.6.
+        // (6) FIX-HL-HDRMIRROR：M11.4 无头 HDR 离屏目标门控是一个适配器
+        //     私有常量（`headless/mod.rs`）；在此镜像它，以便任一侧的重命名
+        //     都会使该漂移守卫变红。适配器的 `hdr_truthy` 仍是一个
+        //     故意的重复（依赖方向禁止导入本注册表）—— 完全归并推迟到 M11.6。
         assert_eq!(ENV_HEADLESS_HDR, cesium_bevy_render::headless::ENV_HEADLESS_HDR);
     }
 }

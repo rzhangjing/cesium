@@ -1,12 +1,12 @@
-//! Core/InterpolationAlgorithms → Rust integration tests.
+//! Core/InterpolationAlgorithms → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Core/LinearApproximation.js
 //! - Core/HermitePolynomialApproximation.js
 //! - Core/LagrangePolynomialApproximation.js
 //! - Core/InterpolationAlgorithm.js
 //!
-//! A-class tests: lerp/hermite/lagrange/catmull_rom/slerp/interpolate dispatch.
+//! A 类测试：lerp/hermite/lagrange/catmull_rom/slerp/interpolate 分派。
 
 use cesium_animation::interpolation::{
     catmull_rom, catmull_rom_vec3, hermite, hermite_vec3, interpolate, lagrange_interpolate,
@@ -30,7 +30,7 @@ fn lerp_midpoint() {
 
 #[test]
 fn lerp_extrapolate() {
-    // t outside [0,1] extrapolates
+    // t 在 [0,1] 外则外推
     assert!((lerp(0.0, 10.0, 2.0) - 20.0).abs() < 1e-10);
     assert!((lerp(0.0, 10.0, -1.0) - (-10.0)).abs() < 1e-10);
 }
@@ -57,14 +57,14 @@ fn hermite_passes_through_endpoints() {
 
 #[test]
 fn hermite_zero_tangents_midpoint() {
-    // With zero tangents, midpoint = average
+    // 切线为零时，中点 = 平均值
     let result = hermite(0.0, 0.0, 10.0, 0.0, 0.5);
     assert!((result - 5.0).abs() < 1e-10);
 }
 
 #[test]
 fn hermite_nonzero_tangents() {
-    // Hermite with tangents should overshoot
+    // 带切线的 Hermite 应会过冲
     let result = hermite(0.0, 10.0, 0.0, 10.0, 0.5);
     // h00=0.5, h10=0.125, h01=0.5, h11=-0.125
     // = 0 + 10*0.125 + 0 + 10*(-0.125) = 0
@@ -177,7 +177,7 @@ fn slerp_endpoints() {
     assert!((r1.y - 1.0).abs() < 1e-10);
 }
 
-// === interpolate dispatch ===
+// === interpolate 分派 ===
 
 #[test]
 fn interpolate_linear_dispatch() {

@@ -1,12 +1,12 @@
-//! Widgets/Animation/AnimationViewModel + Timeline → Rust integration tests.
+//! Widgets/Animation/AnimationViewModel + Timeline → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Widgets/Animation/AnimationViewModel.js
 //! - Widgets/Timeline/Timeline.js
 //!
-//! A-class tests: AnimationController play/pause/reverse/stop/tick/loop/seek,
-//! shuttle ring, progress, TimelineConfig, SpeedPreset.
-//! C-class omitted: DOM elements, SVG rendering, drag events.
+//! A 类测试：AnimationController play/pause/reverse/stop/tick/loop/seek、
+//! 移动环、进度、TimelineConfig、SpeedPreset。
+//! C 类省略：DOM 元素、SVG 渲染、拖拽事件。
 
 use cesium_animation::timeline::{AnimationController, SpeedPreset, TimelineConfig};
 use cesium_time::clock::Clock;
@@ -14,7 +14,7 @@ use cesium_time::julian_date::JulianDate;
 
 fn make_clock() -> Clock {
     let start = JulianDate::from_date_components(2024, 6, 1, 0, 0, 0, 0.0);
-    let stop = start.add_seconds(3600.0); // 1 hour duration
+    let stop = start.add_seconds(3600.0); // 1 小时时长
     Clock::new(start, stop, start)
 }
 
@@ -38,11 +38,11 @@ fn timeline_config_seconds_per_pixel() {
     let start = JulianDate::from_date_components(2024, 1, 1, 0, 0, 0, 0.0);
     let end = start.add_seconds(1000.0);
     let config = TimelineConfig::new(start, end);
-    // Default: duration / 1000 pixels
+    // 默认：duration / 1000 像素
     assert!((config.seconds_per_pixel - 1.0).abs() < 1e-10);
 }
 
-// === AnimationController creation ===
+// === AnimationController 创建 ===
 
 #[test]
 fn controller_default_state() {
@@ -53,7 +53,7 @@ fn controller_default_state() {
     assert!((controller.shuttle_ring_angle - 0.0).abs() < 1e-10);
 }
 
-// === Play / Pause / Reverse ===
+// === 播放 / 暂停 / 倒放 ===
 
 #[test]
 fn controller_play() {
@@ -112,7 +112,7 @@ fn controller_tick_with_speed_multiplier() {
     let start = controller.clock.current_time;
     controller.set_speed(60.0);
     controller.play();
-    let new_time = controller.tick(1.0); // 1 real second at 60x
+    let new_time = controller.tick(1.0); // 以 60x 过 1 个真实秒
     let elapsed = new_time.seconds_difference(&start);
     assert!((elapsed - 60.0).abs() < 1e-10);
 }
@@ -121,7 +121,7 @@ fn controller_tick_with_speed_multiplier() {
 fn controller_tick_paused_no_change() {
     let mut controller = make_controller();
     let start = controller.clock.current_time;
-    // Default is paused
+    // 默认已暂停
     let result = controller.tick(10.0);
     assert_eq!(result, start);
 }
@@ -129,16 +129,16 @@ fn controller_tick_paused_no_change() {
 #[test]
 fn controller_tick_reverse() {
     let mut controller = make_controller();
-    // Move to middle first
+    // 先移到中间
     controller.seek_fraction(0.5);
     let mid = controller.clock.current_time;
     controller.play_reverse();
     let new_time = controller.tick(1.0);
-    // Should have moved backwards
+    // 应已向后移动
     assert!(new_time.less_than(&mid));
 }
 
-// === Looping ===
+// === 循环 ===
 
 #[test]
 fn controller_loop_wraps_around() {
@@ -146,7 +146,7 @@ fn controller_loop_wraps_around() {
     let start = controller.clock.start_time;
     controller.looping = true;
     controller.play();
-    // Advance past end (3600 + 100 = 3700 seconds)
+    // 越过终点前进（3600 + 100 = 3700 秒）
     let new_time = controller.tick(3700.0);
     let elapsed = new_time.seconds_difference(&start);
     assert!((elapsed - 100.0).abs() < 1e-10);
@@ -160,7 +160,7 @@ fn controller_no_loop_clamps_at_end() {
     controller.play();
     let new_time = controller.tick(5000.0);
     assert_eq!(new_time, stop);
-    assert!(controller.paused); // Auto-paused
+    assert!(controller.paused); // 自动暂停
 }
 
 #[test]
@@ -169,12 +169,12 @@ fn controller_no_loop_clamps_at_start_reverse() {
     let start = controller.clock.start_time;
     controller.looping = false;
     controller.play_reverse();
-    let new_time = controller.tick(100.0); // Reverse past start
+    let new_time = controller.tick(100.0); // 倒放过起点
     assert_eq!(new_time, start);
     assert!(controller.paused);
 }
 
-// === Seek ===
+// === 定位 ===
 
 #[test]
 fn controller_seek() {
@@ -198,11 +198,11 @@ fn controller_seek_fraction() {
 fn controller_seek_fraction_clamped() {
     let mut controller = make_controller();
     let stop = controller.clock.stop_time;
-    controller.seek_fraction(2.0); // > 1.0 clamped
+    controller.seek_fraction(2.0); // > 1.0 被钳制
     assert_eq!(controller.clock.current_time, stop);
 }
 
-// === Progress ===
+// === 进度 ===
 
 #[test]
 fn controller_progress() {
@@ -217,7 +217,7 @@ fn controller_progress_at_start() {
     assert!((controller.progress() - 0.0).abs() < 1e-10);
 }
 
-// === Shuttle Ring ===
+// === 移动环 ===
 
 #[test]
 fn controller_shuttle_ring_positive() {
@@ -272,9 +272,9 @@ fn controller_set_speed_while_playing() {
 #[test]
 fn controller_set_speed_while_paused() {
     let mut controller = make_controller();
-    // paused by default
+    // 默认暂停
     controller.set_speed(100.0);
     assert!((controller.speed_multiplier - 100.0).abs() < 1e-10);
-    // Clock multiplier should NOT change while paused
+    // 暂停时时钟倍率不应改变
     assert!((controller.clock.multiplier - 1.0).abs() < 1e-10);
 }

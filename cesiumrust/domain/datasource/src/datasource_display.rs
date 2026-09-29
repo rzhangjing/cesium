@@ -1,9 +1,9 @@
-//! DataSourceDisplay: central coordinator for entity visualization.
+//! DataSourceDisplay：实体可视化的中央协调器。
 //!
-//! Maps to CesiumJS `DataSources/DataSourceDisplay.js`
+//! 映射到 CesiumJS `DataSources/DataSourceDisplay.js`
 //!
-//! Coordinates all visualizers (geometry, billboard, label, point, model, path)
-//! for a collection of data sources, updating them each frame.
+//! 为一组数据源协调所有 visualizer（geometry、billboard、label、point、model、path），
+//! 并在每帧更新它们。
 
 use cesium_geospatial::Ellipsoid;
 
@@ -15,29 +15,29 @@ use crate::primitives::{
 };
 use crate::visualizer::GeometryVisualizer;
 
-/// The display state of all data sources.
+/// 所有数据源的显示状态。
 ///
-/// Maps to CesiumJS `DataSources/DataSourceDisplay.js`
+/// 映射到 CesiumJS `DataSources/DataSourceDisplay.js`
 #[derive(Debug)]
 pub struct DataSourceDisplay {
-    /// The geometry visualizer.
+    /// 几何 visualizer。
     geometry_visualizer: GeometryVisualizer,
-    /// Billboard collection for all entities.
+    /// 所有实体的 billboard 集合。
     pub billboards: BillboardCollection,
-    /// Label collection for all entities.
+    /// 所有实体的 label 集合。
     pub labels: LabelCollection,
-    /// Point primitive collection for all entities.
+    /// 所有实体的 point 图元集合。
     pub points: PointPrimitiveCollection,
-    /// The ellipsoid used for coordinate conversion.
+    /// 用于坐标转换的椭球。
     ellipsoid: Ellipsoid,
-    /// Whether the display has been initialized.
+    /// 显示是否已初始化。
     initialized: bool,
-    /// Last update time.
+    /// 上一次更新的时间。
     last_time: f64,
 }
 
 impl DataSourceDisplay {
-    /// Creates a new data source display.
+    /// 创建新的数据源显示。
     pub fn new(ellipsoid: Ellipsoid) -> Self {
         Self {
             geometry_visualizer: GeometryVisualizer::new(ellipsoid),
@@ -50,21 +50,21 @@ impl DataSourceDisplay {
         }
     }
 
-    /// Creates a new data source display with WGS84 ellipsoid.
+    /// 创建一个使用 WGS84 椭球的新数据源显示。
     pub fn wgs84() -> Self {
         Self::new(Ellipsoid::WGS84)
     }
 
-    /// Updates the display for the given entity collection at the given time.
+    /// 在给定时间处为给定实体集合更新显示。
     ///
-    /// This is the main per-frame update method. It:
-    /// 1. Updates geometry visualizer
-    /// 2. Syncs billboard/label/point collections with entities
+    /// 这是每帧的主更新方法。它会：
+    /// 1. 更新几何 visualizer
+    /// 2. 将 billboard/label/point 集合与实体同步
     pub fn update(&mut self, entities: &EntityCollection, time: f64) {
-        // Update geometry
+        // 更新几何
         self.geometry_visualizer.update(entities, time);
 
-        // Sync billboard/label/point collections
+        // 同步 billboard/label/point 集合
         if !self.initialized || (time - self.last_time).abs() > f64::EPSILON {
             self.sync_primitives(entities, time);
             self.initialized = true;
@@ -73,7 +73,7 @@ impl DataSourceDisplay {
         self.last_time = time;
     }
 
-    /// Syncs billboard, label, and point collections with entity graphics.
+    /// 将 billboard、label 和 point 集合与实体图形同步。
     fn sync_primitives(&mut self, entities: &EntityCollection, time: f64) {
         self.billboards.clear();
         self.labels.clear();
@@ -94,7 +94,7 @@ impl DataSourceDisplay {
                 })
                 .unwrap_or([0.0; 3]);
 
-            // Billboard
+            // Billboard（广告牌）
             if let Some(ref bb_graphics) = entity.billboard {
                 let show = bb_graphics.show.get_value(time).copied().unwrap_or(true);
                 if show {
@@ -114,7 +114,7 @@ impl DataSourceDisplay {
                 }
             }
 
-            // Label
+            // Label（标签）
             if let Some(ref label_graphics) = entity.label {
                 let show = label_graphics.show.get_value(time).copied().unwrap_or(true);
                 if show {
@@ -133,7 +133,7 @@ impl DataSourceDisplay {
                 }
             }
 
-            // Point
+            // Point（点）
             if let Some(ref point_graphics) = entity.point {
                 let show = point_graphics.show.get_value(time).copied().unwrap_or(true);
                 if show {
@@ -153,56 +153,56 @@ impl DataSourceDisplay {
         }
     }
 
-    /// Gets the geometry visualizer.
+    /// 获取几何 visualizer。
     pub fn geometry_visualizer(&self) -> &GeometryVisualizer {
         &self.geometry_visualizer
     }
 
-    /// Gets geometry for a specific entity.
+    /// 获取特定实体的几何。
     pub fn get_entity_geometry(&self, entity_id: &str) -> Option<&EntityGeometry> {
         self.geometry_visualizer.get_geometry(entity_id)
     }
 
-    /// Total number of geometry instances.
+    /// 几何实例总数。
     pub fn geometry_instance_count(&self) -> usize {
         self.geometry_visualizer.instance_count()
     }
 
-    /// Number of billboards.
+    /// billboard 数量。
     pub fn billboard_count(&self) -> usize {
         self.billboards.len()
     }
 
-    /// Number of labels.
+    /// label 数量。
     pub fn label_count(&self) -> usize {
         self.labels.len()
     }
 
-    /// Number of points.
+    /// point 数量。
     pub fn point_count(&self) -> usize {
         self.points.len()
     }
 
-    /// Marks the display as needing a full rebuild.
+    /// 将显示标记为需要完全重建。
     pub fn mark_dirty(&mut self) {
         self.geometry_visualizer.mark_dirty();
         self.initialized = false;
     }
 }
 
-/// A data source display that manages multiple data sources.
+/// 管理多个数据源的数据源显示。
 ///
-/// Maps to CesiumJS `DataSources/DataSourceDisplay.js` with multiple sources
+/// 映射到 CesiumJS `DataSources/DataSourceDisplay.js`（多数据源版本）
 #[derive(Debug)]
 pub struct MultiDataSourceDisplay {
-    /// The underlying display.
+    /// 底层显示。
     display: DataSourceDisplay,
-    /// Tracked data sources.
+    /// 被跟踪的数据源。
     sources: Vec<DataSource>,
 }
 
 impl MultiDataSourceDisplay {
-    /// Creates a new multi-data-source display.
+    /// 创建新的多数据源显示。
     pub fn new(ellipsoid: Ellipsoid) -> Self {
         Self {
             display: DataSourceDisplay::new(ellipsoid),
@@ -210,18 +210,18 @@ impl MultiDataSourceDisplay {
         }
     }
 
-    /// Creates a new multi-data-source display with WGS84 ellipsoid.
+    /// 创建一个使用 WGS84 椭球的新多数据源显示。
     pub fn wgs84() -> Self {
         Self::new(Ellipsoid::WGS84)
     }
 
-    /// Adds a data source.
+    /// 添加一个数据源。
     pub fn add_data_source(&mut self, source: DataSource) {
         self.sources.push(source);
         self.display.mark_dirty();
     }
 
-    /// Removes a data source by name.
+    /// 按名称移除一个数据源。
     pub fn remove_data_source(&mut self, name: &str) -> Option<DataSource> {
         if let Some(idx) = self.sources.iter().position(|s| s.name == name) {
             self.display.mark_dirty();
@@ -231,9 +231,9 @@ impl MultiDataSourceDisplay {
         }
     }
 
-    /// Updates all data sources at the given time.
+    /// 在给定时间处更新所有数据源。
     pub fn update(&mut self, time: f64) {
-        // Merge all entities from all sources
+        // 合并来自所有数据源的实体
         let mut merged = EntityCollection::new();
         for source in &self.sources {
             for entity in source.entities.values() {
@@ -243,12 +243,12 @@ impl MultiDataSourceDisplay {
         self.display.update(&merged, time);
     }
 
-    /// Gets the underlying display.
+    /// 获取底层显示。
     pub fn display(&self) -> &DataSourceDisplay {
         &self.display
     }
 
-    /// Number of data sources.
+    /// 数据源数量。
     pub fn source_count(&self) -> usize {
         self.sources.len()
     }
@@ -263,7 +263,7 @@ mod tests {
     fn make_entities() -> EntityCollection {
         let mut collection = EntityCollection::new();
 
-        // Entity with box geometry
+        // 带方框几何的实体
         collection.add(
             Entity::new("box-1")
                 .with_position(0.0, 0.0, 0.0)
@@ -273,7 +273,7 @@ mod tests {
                 }),
         );
 
-        // Entity with billboard
+        // 带 billboard 的实体
         collection.add(
             Entity::new("bb-1")
                 .with_position(0.1, 0.1, 0.0)
@@ -284,7 +284,7 @@ mod tests {
                 }),
         );
 
-        // Entity with label
+        // 带 label 的实体
         collection.add(
             Entity::new("label-1")
                 .with_position(0.2, 0.2, 0.0)
@@ -294,7 +294,7 @@ mod tests {
                 }),
         );
 
-        // Entity with point
+        // 带 point 的实体
         collection.add(
             Entity::new("point-1")
                 .with_position(0.3, 0.3, 0.0)
@@ -315,7 +315,7 @@ mod tests {
 
         display.update(&entities, 0.0);
 
-        assert_eq!(display.geometry_instance_count(), 1); // box
+        assert_eq!(display.geometry_instance_count(), 1); // 方框
         assert_eq!(display.billboard_count(), 1);
         assert_eq!(display.label_count(), 1);
         assert_eq!(display.point_count(), 1);

@@ -1,10 +1,10 @@
-//! M6.4: cesiumrust OIT (Order-Independent Transparency) — MRT render graph adapter.
+//! M6.4：cesiumrust OIT（与顺序无关的透明度）—— MRT 渲染图适配器。
 //!
-//! Implements the Bevy ViewNode infrastructure for weighted-blended OIT using
-//! two MRT render targets (Rgba16Float accumulation + R8Unorm revealage) and a
-//! fullscreen composite pass.
+//! 为加权混合 OIT 实现 Bevy ViewNode 基础设施，使用
+//! 两个 MRT 渲染目标（Rgba16Float 累积 + R8Unorm revealage）以及一个
+//! 全屏合成 pass。
 //!
-//! # Blueprints
+//! # 蓝图
 //! - `packages/engine/Source/Scene/OIT.js` L1-947 (28KB main implementation)
 //!   - L30-34: capability detection (drawBuffers && colorBufferFloat && depthTexture && floatBlend)
 //!   - L137-156: updateTextures (accumulation RGBA FLOAT + revealage RGBA FLOAT)
@@ -17,18 +17,18 @@
 //! - `packages/engine/Source/Shaders/Builtin/Functions/alphaWeight.glsl` L4-11
 //! - `domain/effects/src/oit.rs` L1-366 (CPU reference: compute_weight, accumulate, composite)
 //!
-//! # Architecture
-//! - `OitNode`: ViewNode running the MRT accumulate pass (reads scene colour + depth,
-//!   outputs to 2 attachments with appropriate blend states).
-//! - `OitCompositeNode`: ViewNode running the fullscreen composite (reads accumulate +
-//!   revealage + opaque, writes final colour to destination).
-//! - `OitTextureCache`: render-world resource holding per-view accumulate + revealage
-//!   textures (recreated on viewport resize).
-//! - Capability probe: `Plugin::finish` reads `RenderDevice::limits()` to verify
-//!   `max_color_attachments >= 2` (MRT). Probe failure → gate OFF, no panic.
+//! # 架构
+//! - `OitNode`：运行 MRT 累积 pass 的 ViewNode（读取场景颜色 + 深度，
+//!   以相应的混合状态输出到 2 个 attachment）。
+//! - `OitCompositeNode`：运行全屏合成的 ViewNode（读取累积 +
+//!   revealage + 不透明，将最终颜色写入目标）。
+//! - `OitTextureCache`：持有逐视图累积 + revealage
+//!   纹理的 render-world 资源（在视口尺寸变化时重建）。
+//! - 能力探测：`Plugin::finish` 读取 `RenderDevice::limits()` 以验证
+//!   `max_color_attachments >= 2`（MRT）。探测失败 → 门控 OFF，不 panic。
 //!
-//! # DEVIATIONS
-//! See `docs/deviations.md#dev-031` (draft, integrator registers).
+//! # 偏差
+//! 参见 `docs/deviations.md#dev-031`（草稿，由集成者登记）。
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -59,64 +59,64 @@ use bevy::render::{
     view::{ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
     Render, RenderApp, RenderSet,
 };
-// `wgpu::Color` is not re-exported by name through Bevy's `render_resource`
-// (only `ColorTargetState`/`ColorWrites` are); the MRT accumulate pass needs it
-// for per-frame attachment clears. See `Cargo.toml` for why the direct dep is
-// version-safe (unifies to the same 23.0.1 instance Bevy uses).
+// `wgpu::Color` 不通过 Bevy 的 `render_resource` 按名重新导出
+//（只有 `ColorTargetState`/`ColorWrites` 会）；MRT 累积 pass 需要它
+// 来做逐帧 attachment 清除。关于为何该直接依赖是版本安全的
+//（统一为 Bevy 所用的同一个 23.0.1 实例）参见 `Cargo.toml`。
 use wgpu::Color as GpuColor;
 use cesium_effects::{OitCapabilities, OitConfig as DomainOitConfig, OitMode};
 
 use super::graph::gate_from_env_value;
 
-// ─── Shader handles ─────────────────────────────────────────────────────────
+// ─── Shader handle ─────────────────────────────────────────────────────────
 
-/// Unique handle for the embedded `oit_accumulate.wgsl` shader.
+/// 内嵌 `oit_accumulate.wgsl` shader 的唯一 handle。
 pub const OIT_ACCUMULATE_SHADER_HANDLE: Handle<Shader> =
     Handle::weak_from_u128(0xCE51_0170_0006_0004);
 
-/// Unique handle for the embedded `oit_composite.wgsl` shader.
+/// 内嵌 `oit_composite.wgsl` shader 的唯一 handle。
 pub const OIT_COMPOSITE_SHADER_HANDLE: Handle<Shader> =
     Handle::weak_from_u128(0xCE51_0170_0006_0005);
 
-// ─── Gate ───────────────────────────────────────────────────────────────────
+// ─── 门控 ───────────────────────────────────────────────────────────────────
 
-/// Env var gating the M6.4 OIT node.
+/// 门控 M6.4 OIT 节点的环境变量。
 ///
-/// **Single source of truth (task #81)**: the owner of this name is the app-layer
-/// registry `application/cesium-app/src/feature_flags.rs` (`ENV_ENABLE_OIT`
-/// listed in `RESERVED_FLAGS`, default OFF). This const is a *mirror* that
-/// exists only because `cesium-app` depends on `cesium-bevy-render` (never the
-/// reverse). Integration task #93 promotes it to ACTIVE.
+/// **单一真相源（task #81）**：该名的拥有者是应用层
+/// 注册表 `application/cesium-app/src/feature_flags.rs`（`ENV_ENABLE_OIT`
+/// 列在 `RESERVED_FLAGS`，默认 OFF）。本 const 是一个*镜像*，
+/// 仅因 `cesium-app` 依赖 `cesium-bevy-render`（绝不反向）而存在。
+/// 集成任务 #93 将其提升为 ACTIVE。
 pub const ENV_ENABLE_OIT: &str = "CESIUM_ENABLE_OIT";
 
-/// Returns `true` when the OIT gate is enabled. Reuses the single authoritative
-/// truthy parser (`gate_from_env_value`, the crate-wide `{1, true, yes, on}` set).
+/// 当 OIT 门控启用时返回 `true`。复用单一权威的
+/// truthy 解析器（`gate_from_env_value`，全 crate 的 `{1, true, yes, on}` 集）。
 #[inline]
 pub fn oit_gate_enabled() -> bool {
     gate_from_env_value(std::env::var(ENV_ENABLE_OIT).ok())
 }
 
-// ─── Render graph labels ────────────────────────────────────────────────────
+// ─── 渲染图 label ────────────────────────────────────────────────────
 
-/// Node label for the OIT accumulate (MRT) pass in `Core3d`.
+/// OIT 累积（MRT）pass 在 `Core3d` 中的节点 label。
 ///
-/// Recommended insertion: `MainTransmissivePass → CesiumOitLabel → CesiumOitCompositeLabel → EndMainPass`.
+/// 推荐插入位置：`MainTransmissivePass → CesiumOitLabel → CesiumOitCompositeLabel → EndMainPass`。
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
 pub struct CesiumOitLabel;
 
-/// Node label for the OIT composite pass in `Core3d`.
+/// OIT 合成 pass 在 `Core3d` 中的节点 label。
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
 pub struct CesiumOitCompositeLabel;
 
-// ─── Component ──────────────────────────────────────────────────────────────
+// ─── 组件 ──────────────────────────────────────────────────────────────
 
-/// Marker component enabling cesiumrust OIT on a camera entity.
+/// 在相机实体上启用 cesiumrust OIT 的标记组件。
 ///
-/// Extracted to render world via `ExtractComponentPlugin`. The `OitNode`
-/// early-returns when `enabled == false` (zero GPU cost, gate OFF = v0 zero diff).
+/// 经 `ExtractComponentPlugin` 提取到 render world。当 `enabled == false` 时
+/// `OitNode` 提前 return（零 GPU 开销，门控 OFF = v0 零差异）。
 #[derive(Component, Clone, Debug, ExtractComponent)]
 pub struct CesiumOit {
-    /// Master enable for the OIT pass on this camera.
+    /// 该相机上 OIT pass 的主开关。
     pub enabled: bool,
 }
 
@@ -126,19 +126,19 @@ impl Default for CesiumOit {
     }
 }
 
-/// Per-view cached pipeline ID for the OIT accumulate node.
+/// OIT 累积节点的逐视图缓存 pipeline ID。
 #[derive(Component)]
 pub struct CameraOitPipeline {
     pub pipeline_id: CachedRenderPipelineId,
 }
 
-/// Per-view cached pipeline ID for the OIT composite node.
+/// OIT 合成节点的逐视图缓存 pipeline ID。
 #[derive(Component)]
 pub struct CameraOitCompositePipeline {
     pub pipeline_id: CachedRenderPipelineId,
 }
 
-// ─── Adapter OitConfig Resource (preserved from scaffold) ───────────────────
+// ─── 适配器 OitConfig 资源（从脚手架保留） ───────────────────
 
 #[derive(Resource, Debug, Clone)]
 pub struct OitConfig {
@@ -177,9 +177,9 @@ impl OitConfig {
 }
 
 // ─── OITPlugin ──────────────────────────────────────────────────────────────
-// M6.1 Split scaffolding (`SplitConfig` / `SplitDragEvent` /
-// `split_direction_system`) migrated to `effects::split` in FIX-SPLIT (Phase 3);
-// this plugin now initialises only the OIT config.
+// M6.1 Split 脚手架（`SplitConfig` / `SplitDragEvent` /
+// `split_direction_system`）在 FIX-SPLIT（Phase 3）中迁移到了 `effects::split`；
+// 本插件现在只初始化 OIT 配置。
 pub struct OITPlugin;
 
 impl Plugin for OITPlugin {
@@ -188,18 +188,18 @@ impl Plugin for OITPlugin {
     }
 }
 
-// ─── OIT Pipeline Resource ──────────────────────────────────────────────────
+// ─── OIT Pipeline 资源 ──────────────────────────────────────────────────
 
-/// Render-world resource: bind group layouts + samplers for OIT passes.
+/// Render-world 资源：OIT pass 的 bind group layout + 采样器。
 #[derive(Resource)]
 pub struct OitPipeline {
-    /// Layout for the accumulate pass (depth + scene_colour + sampler + view uniform).
+    /// 累积 pass 的 layout（depth + scene_colour + 采样器 + view uniform）。
     pub accumulate_bind_group_layout: BindGroupLayout,
-    /// Layout for the composite pass (opaque + accumulation + revealage + sampler).
+    /// 合成 pass 的 layout（不透明 + 累积 + revealage + 采样器）。
     pub composite_bind_group_layout: BindGroupLayout,
-    /// Point sampler (non-filtering, for depth).
+    /// 点采样器（非过滤，用于深度）。
     pub point_sampler: GpuSampler,
-    /// Linear sampler (filtering, for colour textures).
+    /// 线性采样器（过滤，用于颜色纹理）。
     pub linear_sampler: GpuSampler,
 }
 
@@ -260,12 +260,12 @@ impl FromWorld for OitPipeline {
     }
 }
 
-// ─── OIT Texture Cache ──────────────────────────────────────────────────────
+// ─── OIT 纹理缓存 ──────────────────────────────────────────────────────
 
-/// Per-view OIT intermediate textures (accumulation + revealage).
+/// 逐视图 OIT 中间纹理（累积 + revealage）。
 ///
-/// Recreated on viewport resize. Shared between `OitNode` (writes) and
-/// `OitCompositeNode` (reads) within the same frame.
+/// 在视口尺寸变化时重建。在同一帧内于 `OitNode`（写）与
+/// `OitCompositeNode`（读）之间共享。
 #[derive(Resource, Default)]
 pub struct OitTextureCache {
     pub cache: Mutex<HashMap<Entity, OitViewTextures>>,
@@ -276,12 +276,12 @@ pub struct OitViewTextures {
     pub height: u32,
     pub accumulation_texture: Texture,
     pub revealage_texture: Texture,
-    /// Bindable views for the composite pass (kept as TextureView objects).
+    /// 合成 pass 的可绑定视图（保留为 TextureView 对象）。
     pub accumulation_bind_view: TextureView,
     pub revealage_bind_view: TextureView,
 }
 
-/// Create or retrieve OIT textures for a view entity. Returns `None` if allocation fails.
+/// 为一个视图实体创建或检索 OIT 纹理。若分配失败则返回 `None`。
 fn ensure_oit_textures(
     cache: &OitTextureCache,
     render_device: &RenderDevice,
@@ -292,11 +292,11 @@ fn ensure_oit_textures(
     let mut map = cache.cache.lock().unwrap();
     if let Some(existing) = map.get(&entity) {
         if existing.width == width && existing.height == height {
-            return true; // Already allocated at correct size.
+            return true; // 已按正确尺寸分配。
         }
     }
 
-    // Allocate accumulation texture (Rgba16Float).
+    // 分配累积纹理（Rgba16Float）。
     let accumulation_texture = render_device.create_texture(&TextureDescriptor {
         label: Some("cesium_oit_accumulation"),
         size: Extent3d { width, height, depth_or_array_layers: 1 },
@@ -310,7 +310,7 @@ fn ensure_oit_textures(
 
     let accumulation_bind_view = accumulation_texture.create_view(&Default::default());
 
-    // Allocate revealage texture (R8Unorm).
+    // 分配 revealage 纹理（R8Unorm）。
     let revealage_texture = render_device.create_texture(&TextureDescriptor {
         label: Some("cesium_oit_revealage"),
         size: Extent3d { width, height, depth_or_array_layers: 1 },
@@ -338,13 +338,13 @@ fn ensure_oit_textures(
     true
 }
 
-// ─── OitNode (MRT accumulate pass) ─────────────────────────────────────────
+// ─── OitNode（MRT 累积 pass） ─────────────────────────────────────────
 
-/// ViewNode that runs the OIT MRT accumulate pass.
+/// 运行 OIT MRT 累积 pass 的 ViewNode。
 ///
-/// Reads scene colour + depth prepass, outputs to two render targets:
-/// - Attachment 0 (Rgba16Float): additive blend → Σ(Ci·wzi), Σ(ai·wzi)
-/// - Attachment 1 (R8Unorm): multiplicative blend → Π(1−ai)
+/// 读取场景颜色 + 深度前置 pass，输出到两个渲染目标：
+/// - Attachment 0（Rgba16Float）：加法混合 → Σ(Ci·wzi), Σ(ai·wzi)
+/// - Attachment 1（R8Unorm）：乘法混合 → Π(1−ai)
 #[derive(Default)]
 pub struct OitNode;
 
@@ -382,26 +382,26 @@ impl ViewNode for OitNode {
             return Ok(());
         };
 
-        // Ensure OIT textures exist for this view.
+        // 确保该视图的 OIT 纹理存在。
         let target_size = target.main_texture_view();
-        let _ = target_size; // Used indirectly through the texture cache.
+        let _ = target_size; // 通过纹理缓存间接使用。
         let viewport_size = world.resource::<OitCapabilitiesResource>();
         if !viewport_size.mrt_supported {
-            return Ok(()); // Capability probe failed — graceful exit.
+            return Ok(()); // 能力探测失败——优雅退出。
         }
 
-        // Get texture dimensions from the view target.
+        // 从视图目标获取纹理尺寸。
         let (width, height) = {
             let cache = texture_cache.cache.lock().unwrap();
             if let Some(tex) = cache.get(&entity) {
                 (tex.width, tex.height)
             } else {
-                return Ok(()); // Textures not yet prepared.
+                return Ok(()); // 纹理尚未准备。
             }
         };
         let _ = (width, height);
 
-        // Build bind group: depth + scene source + sampler + view uniform.
+        // 构建 bind group：depth + scene source + 采样器 + view uniform。
         let post_process = target.post_process_write();
         let source = post_process.source;
 
@@ -421,7 +421,7 @@ impl ViewNode for OitNode {
             )),
         );
 
-        // Get the OIT texture views for MRT attachments.
+        // 获取用于 MRT attachment 的 OIT 纹理视图。
         let cache = texture_cache.cache.lock().unwrap();
         let Some(textures) = cache.get(&entity) else {
             return Ok(());
@@ -430,7 +430,7 @@ impl ViewNode for OitNode {
         let pass_descriptor = RenderPassDescriptor {
             label: Some("cesium_oit_accumulate_pass"),
             color_attachments: &[
-                // Attachment 0: accumulation (Rgba16Float, additive blend)
+                // Attachment 0：累积（Rgba16Float，加法混合）
                 Some(RenderPassColorAttachment {
                     view: &textures.accumulation_bind_view,
                     resolve_target: None,
@@ -439,7 +439,7 @@ impl ViewNode for OitNode {
                         store: bevy::render::render_resource::StoreOp::Store,
                     },
                 }),
-                // Attachment 1: revealage (R8Unorm, multiplicative blend)
+                // Attachment 1：revealage（R8Unorm，乘法混合）
                 Some(RenderPassColorAttachment {
                     view: &textures.revealage_bind_view,
                     resolve_target: None,
@@ -460,18 +460,18 @@ impl ViewNode for OitNode {
 
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &bind_group, &[view_uniform_offset.offset]);
-        render_pass.draw(0..3, 0..1); // fullscreen triangle
+        render_pass.draw(0..3, 0..1); // 全屏三角形
 
         Ok(())
     }
 }
 
-// ─── OitCompositeNode (fullscreen composite) ────────────────────────────────
+// ─── OitCompositeNode（全屏合成） ────────────────────────────────
 
-/// ViewNode that composites OIT buffers with the opaque scene.
+/// 将 OIT 缓冲与不透明场景合成的 ViewNode。
 ///
-/// Reads accumulation + revealage textures and the opaque scene colour,
-/// applies the CompositeOITFS formula, writes the final blended result.
+/// 读取累积 + revealage 纹理和不透明场景颜色，
+/// 应用 CompositeOITFS 公式，写入最终混合结果。
 #[derive(Default)]
 pub struct OitCompositeNode;
 
@@ -503,10 +503,10 @@ impl ViewNode for OitCompositeNode {
         };
 
         let post_process = target.post_process_write();
-        let source = post_process.source; // opaque scene
+        let source = post_process.source; // 不透明场景
         let destination = post_process.destination;
 
-        // Get OIT texture views.
+        // 获取 OIT 纹理视图。
         let cache = texture_cache.cache.lock().unwrap();
         let Some(textures) = cache.get(&entity) else {
             return Ok(());
@@ -542,18 +542,18 @@ impl ViewNode for OitCompositeNode {
 
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &bind_group, &[]);
-        render_pass.draw(0..3, 0..1); // fullscreen triangle
+        render_pass.draw(0..3, 0..1); // 全屏三角形
 
         Ok(())
     }
 }
 
-// ─── Capability probe resource ──────────────────────────────────────────────
+// ─── 能力探测资源 ──────────────────────────────────────────────
 
-/// Render-world resource storing the OIT capability probe result.
+/// 存储 OIT 能力探测结果的 render-world 资源。
 ///
-/// Populated during `Plugin::finish` by reading `RenderDevice::limits()`.
-/// Probe failure → `mrt_supported = false` → nodes early-return (never panic).
+/// 在 `Plugin::finish` 期间通过读取 `RenderDevice::limits()` 填充。
+/// 探测失败 → `mrt_supported = false` → 节点提前 return（绝不 panic）。
 #[derive(Resource, Debug, Clone, Default)]
 pub struct OitCapabilitiesResource {
     pub mrt_supported: bool,
@@ -561,14 +561,14 @@ pub struct OitCapabilitiesResource {
 }
 
 impl OitCapabilitiesResource {
-    /// Probe the render device for OIT MRT support.
+    /// 探测渲染设备对 OIT MRT 的支持。
     ///
-    /// The only reliable runtime discriminator in wgpu/WebGPU is
-    /// `max_color_attachments >= 2` (maps to upstream `context.drawBuffers`).
-    /// Float blending and color-buffer-float are core-guaranteed in WebGPU
-    /// (no runtime query API exists); depth textures likewise.
+    /// wgpu/WebGPU 中唯一可靠的运行时判别依据是
+    /// `max_color_attachments >= 2`（对应上游 `context.drawBuffers`）。
+    /// 浮点混合和 color-buffer-float 在 WebGPU 中由核心保证
+    ///（不存在运行时查询 API）；深度纹理同理。
     ///
-    /// Corresponds to OIT.js L30-34:
+    /// 对应 OIT.js L30-34：
     /// ```js
     /// extensionsSupported = colorBufferFloat && depthTexture && floatBlend;
     /// _translucentMRTSupport = drawBuffers && extensionsSupported;
@@ -584,11 +584,11 @@ impl OitCapabilitiesResource {
         }
     }
 
-    /// Convert to domain capabilities for interop.
+    /// 转换为领域 capabilities 以便互操作。
     pub fn to_domain_caps(&self) -> OitCapabilities {
         OitCapabilities {
             mrt_supported: self.mrt_supported,
-            // In wgpu/WebGPU these are core-guaranteed when Rgba16Float is renderable.
+            // 在 wgpu/WebGPU 中，当 Rgba16Float 可渲染时这些由核心保证。
             float_blend_supported: self.mrt_supported,
             depth_texture_supported: true,
             color_buffer_float: true,
@@ -596,10 +596,10 @@ impl OitCapabilitiesResource {
     }
 }
 
-// ─── Render systems ─────────────────────────────────────────────────────────
+// ─── 渲染系统 ─────────────────────────────────────────────────────────
 
-/// Prepares OIT textures and specialized pipelines per camera view.
-/// Runs in `Render` schedule, `RenderSet::Prepare`.
+/// 为每个相机视图准备 OIT 纹理和专用 pipeline。
+/// 运行在 `Render` 调度的 `RenderSet::Prepare`。
 pub fn prepare_oit_pipelines(
     mut commands: Commands,
     pipeline_cache: Res<PipelineCache>,
@@ -621,10 +621,10 @@ pub fn prepare_oit_pipelines(
         let width = view.viewport.z.max(1);
         let height = view.viewport.w.max(1);
 
-        // Ensure OIT intermediate textures are allocated.
+        // 确保 OIT 中间纹理已分配。
         ensure_oit_textures(&texture_cache, &render_device, entity, width, height);
 
-        // Accumulate pipeline: 2 color targets (Rgba16Float additive + R8Unorm multiplicative).
+        // 累积 pipeline：2 个颜色目标（Rgba16Float 加法 + R8Unorm 乘法）。
         let accumulate_pipeline_id = pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
             label: Some("cesium_oit_accumulate_pipeline".into()),
             layout: vec![oit_pipeline.accumulate_bind_group_layout.clone()],
@@ -634,7 +634,7 @@ pub fn prepare_oit_pipelines(
                 shader_defs: Vec::new(),
                 entry_point: "fragment".into(),
                 targets: vec![
-                    // Attachment 0: Rgba16Float, additive blend (ONE + ONE)
+                    // Attachment 0：Rgba16Float，加法混合（ONE + ONE）
                     Some(ColorTargetState {
                         format: TextureFormat::Rgba16Float,
                         blend: Some(BlendState {
@@ -651,7 +651,7 @@ pub fn prepare_oit_pipelines(
                         }),
                         write_mask: ColorWrites::ALL,
                     }),
-                    // Attachment 1: R8Unorm, multiplicative blend (ZERO + ONE_MINUS_SRC)
+                    // Attachment 1：R8Unorm，乘法混合（ZERO + ONE_MINUS_SRC）
                     Some(ColorTargetState {
                         format: TextureFormat::R8Unorm,
                         blend: Some(BlendState {
@@ -677,7 +677,7 @@ pub fn prepare_oit_pipelines(
             zero_initialize_workgroup_memory: false,
         });
 
-        // Composite pipeline: single target (view format), no blend.
+        // 合成 pipeline：单个目标（view format），无混合。
         let output_format = if view.hdr {
             ViewTarget::TEXTURE_FORMAT_HDR
         } else {
@@ -712,9 +712,9 @@ pub fn prepare_oit_pipelines(
     }
 }
 
-/// Main-world system: attaches `DepthPrepass` to cameras with `CesiumOit`.
+/// 主 world 系统：为带 `CesiumOit` 的相机附加 `DepthPrepass`。
 ///
-/// The accumulate pass needs depth for weight computation.
+/// 累积 pass 需要深度来进行权重计算。
 pub fn setup_oit_prepass(
     mut commands: Commands,
     cameras: Query<Entity, (With<CesiumOit>, Without<DepthPrepass>)>,
@@ -724,28 +724,28 @@ pub fn setup_oit_prepass(
     }
 }
 
-// ─── Registration ───────────────────────────────────────────────────────────
+// ─── 注册 ───────────────────────────────────────────────────────────
 
-/// Register the OIT nodes into `RenderApp` (shader + extract + nodes + systems).
+/// 将 OIT 节点注册进 `RenderApp`（shader + extract + 节点 + 系统）。
 ///
-/// Called from `M6WaveARenderGraphPlugin` when the OIT gate is ON.
-/// Does NOT create graph edges — integrator #93 owns the chain topology.
+/// 当 OIT 门控 ON 时由 `M6WaveARenderGraphPlugin` 调用。
+/// 不创建图边——集成者 #93 拥有链拓扑。
 #[deprecated = "DEV-029 / FIX-REG-FACADE: call `register_oit_node_main_world` from `Plugin::build` and `register_oit_node_render_world` from `Plugin::finish`; this facade runs the finish half against a possibly device-less render world."]
 pub fn register_oit_node(app: &mut App) {
     register_oit_node_main_world(app);
-    // Headless `MinimalPlugins` has no `RenderApp` — degrade gracefully.
+    // 无头 `MinimalPlugins` 没有 `RenderApp`——优雅降级。
     if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
         register_oit_node_render_world(render_app);
     }
 }
 
-/// `Plugin::build`-time half: everything that lives in the **main** world.
+/// `Plugin::build` 时的前半：所有住在**主** world 中的东西。
 ///
-/// Split out per DEV-029 pattern. `OitPipeline`'s `FromWorld` reads `RenderDevice`,
-/// and Bevy only inserts `RenderDevice` into the render world in `RenderPlugin::finish`,
-/// so the render-world half must be called from `finish`.
+/// 按 DEV-029 模式拆出。`OitPipeline` 的 `FromWorld` 读取 `RenderDevice`，
+/// 而 Bevy 只在 `RenderPlugin::finish` 中把 `RenderDevice` 插入 render world，
+/// 所以 render-world 半必须从 `finish` 调用。
 pub fn register_oit_node_main_world(app: &mut App) {
-    // Register OIT WGSL shaders (headless-safe).
+    // 注册 OIT WGSL shader（无头安好）。
     crate::shader_registry::try_load_internal_shader(
         app,
         OIT_ACCUMULATE_SHADER_HANDLE,
@@ -759,27 +759,27 @@ pub fn register_oit_node_main_world(app: &mut App) {
         "shaders/oit_composite.wgsl",
     );
 
-    // ExtractComponentPlugin for CesiumOit.
+    // CesiumOit 的 ExtractComponentPlugin。
     app.add_plugins(ExtractComponentPlugin::<CesiumOit>::default());
 
-    // Main-world prepass setup.
+    // 主 world 前置 pass 设置。
     app.add_systems(bevy::app::Last, setup_oit_prepass);
 }
 
-/// `Plugin::finish`-time half: the render-world pipeline resources + nodes.
+/// `Plugin::finish` 时的后半：render-world pipeline 资源 + 节点。
 ///
-/// **MUST** be called from `Plugin::finish` (DEV-029: RenderDevice only exists
-/// after RenderPlugin::finish inserts it).
+/// **必须**从 `Plugin::finish` 调用（DEV-029：RenderDevice 只在
+/// RenderPlugin::finish 插入它之后存在）。
 pub fn register_oit_node_render_world(render_app: &mut bevy::app::SubApp) {
-    // FIX-REG-FACADE (DEV-029): degrade to a no-op when `RenderDevice` is absent
-    // (finish half reached from `build`, or a bare render world) — the capability
-    // probe below dereferences it. See
-    // `crate::effects::render_world_missing_device`.
+    // FIX-REG-FACADE（DEV-029）：当 `RenderDevice` 缺失时降级为 no-op
+    //（从 `build` 到达 finish 半，或一个裸 render world）——下面的能力
+    // 探测会解引用它。参见
+    // `crate::effects::render_world_missing_device`。
     if crate::effects::render_world_missing_device(render_app) {
         return;
     }
 
-    // Capability probe — reads RenderDevice.limits() (only available in finish).
+    // 能力探测——读取 RenderDevice.limits()（仅在 finish 中可用）。
     let render_device = render_app
         .world()
         .resource::<RenderDevice>()
@@ -793,10 +793,10 @@ pub fn register_oit_node_render_world(render_app: &mut bevy::app::SubApp) {
         .add_systems(Render, prepare_oit_pipelines.in_set(RenderSet::Prepare))
         .add_render_graph_node::<ViewNodeRunner<OitNode>>(Core3d, CesiumOitLabel)
         .add_render_graph_node::<ViewNodeRunner<OitCompositeNode>>(Core3d, CesiumOitCompositeLabel);
-    // NOTE: edges are created by integrator #93 (wire_m6_edges or equivalent).
+    // NOTE：边由集成者 #93 创建（wire_m6_edges 或等价物）。
 }
 
-// ─── Tests ──────────────────────────────────────────────────────────────────
+// ─── 测试 ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -832,14 +832,14 @@ mod tests {
         assert_eq!(config.mode, OitMode::WeightedBlendedMrt);
     }
 
-    // M6.1 Split tests (`test_split_config_*` / `test_split_direction_properties`)
-    // migrated with the scaffolding to `effects::split` in FIX-SPLIT (Phase 3).
+    // M6.1 Split 测试（`test_split_config_*` / `test_split_direction_properties`）
+    // 随脚手架一起在 FIX-SPLIT（Phase 3）中迁移到了 `effects::split`。
 
-    // ─── New M6.4 tests ─────────────────────────────────────────────────────
+    // ─── 新增 M6.4 测试 ─────────────────────────────────────────────────────
 
     #[test]
     fn test_oit_gate_default_off() {
-        // Without env var set, gate should be OFF.
+        // 未设置环境变量时，门控应为 OFF。
         std::env::remove_var(ENV_ENABLE_OIT);
         assert!(!oit_gate_enabled());
     }
@@ -884,14 +884,14 @@ mod tests {
     fn test_oit_headless_graceful() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
-        // Should not panic (no RenderApp).
+        // 不应 panic（没有 RenderApp）。
         #[allow(deprecated)]
         register_oit_node(&mut app);
     }
 
-    // ─── Naga defence line: parse + validate + binding coverage ─────────────
+    // ─── Naga 防线：解析 + 校验 + binding 覆盖 ─────────────
 
-    /// Stubs for `#import` directives that naga cannot resolve.
+    /// 用于 naga 无法解析的 `#import` 指令的 stub。
     const OIT_WGSL_IMPORT_STUBS: &str = "\
 struct FullscreenVertexOutput {
     @builtin(position) position: vec4<f32>,

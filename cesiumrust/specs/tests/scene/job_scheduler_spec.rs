@@ -1,7 +1,7 @@
-//! Scene/JobSchedulerSpec.js → Rust integration tests
+//! Scene/JobSchedulerSpec.js → Rust 集成测试
 //!
-//! Original: 11 it() → 10 A-class (1 C-class: throws)
-//! Tests: constructs(1) + executes(1) + disable(1) + different_types(1) +
+//! 原始：11 个 it() → 10 个 A 类（1 个 C 类：throws）
+//! 测试：constructs(1) + executes(1) + disable(1) + different_types(1) +
 //!        second_job(1) + exceeds_total(1) + steals(1) + no_steal_same_frame(1) +
 //!        no_steal_starving(1) + allows_progress(1) + long_job(1)
 
@@ -68,18 +68,18 @@ fn test_does_not_execute_second_job_exceeds_total() {
 fn test_executes_second_job_texture_steals_program_budget() {
     let mut js = JobScheduler::new(Some([1.0, 1.0, 0.0]));
     assert!(js.execute(JobType::Texture));
-    assert!(js.execute(JobType::Texture)); // steals from PROGRAM
+    assert!(js.execute(JobType::Texture)); // 从 PROGRAM 窃取
     assert_eq!(js.total_used_this_frame, 2.0);
 
-    assert_eq!(js.budgets[JobType::Texture as usize].used_this_frame, 1.0); // own budget only
+    assert_eq!(js.budgets[JobType::Texture as usize].used_this_frame, 1.0); // 仅用自己的预算
     assert!(js.budgets[JobType::Texture as usize].starved_this_frame);
     assert_eq!(js.budgets[JobType::Program as usize].used_this_frame, 0.0);
     assert_eq!(js.budgets[JobType::Program as usize].stolen_from_me_this_frame, 1.0);
     assert!(!js.budgets[JobType::Program as usize].starved_this_frame);
 
-    // No budgets left to steal from
+    // 没有可窃取的剩余预算
     assert!(!js.execute(JobType::Texture));
-    // PROGRAM still gets progress once per frame
+    // PROGRAM 每帧仍获得一次进展
     assert!(js.execute(JobType::Program));
     assert!(!js.execute(JobType::Program));
     assert!(js.budgets[JobType::Program as usize].starved_this_frame);
@@ -92,12 +92,12 @@ fn test_does_not_steal_in_same_frame() {
     assert!(js.execute(JobType::Program));
     assert!(js.execute(JobType::Buffer));
 
-    // Exhaust budget for all job types
+    // 耗尽所有作业类型的预算
     assert!(!js.execute(JobType::Texture));
     assert!(!js.execute(JobType::Program));
     assert!(!js.execute(JobType::Buffer));
 
-    // Next frame: no stealing since all were starved last frame
+    // 下一帧：不窃取，因为上一帧所有类型都挨饿了
     js.reset_budgets();
     assert!(js.execute(JobType::Texture));
     assert!(!js.execute(JobType::Texture));
@@ -113,26 +113,26 @@ fn test_does_not_steal_in_same_frame() {
 fn test_does_not_steal_from_starving_over_multiple_frames() {
     let mut js = JobScheduler::new(Some([1.0, 1.0, 0.0]));
 
-    // Frame 1: exhaust
+    // 第 1 帧：耗尽
     assert!(js.execute(JobType::Texture));
-    assert!(js.execute(JobType::Texture)); // stolen from PROGRAM
+    assert!(js.execute(JobType::Texture)); // 从 PROGRAM 窃取
     assert!(!js.execute(JobType::Texture));
 
-    // Frame 2: TEXTURE was starved last frame, can't steal
+    // 第 2 帧：TEXTURE 上一帧挨饿，不能窃取
     js.reset_budgets();
     assert!(js.execute(JobType::Program));
-    assert!(!js.execute(JobType::Program)); // Can't steal from TEXTURE (requester was starved)
-    assert!(js.execute(JobType::Texture)); // progress guarantee
-    assert!(!js.execute(JobType::Texture)); // TEXTURE was starved last frame, can't steal
+    assert!(!js.execute(JobType::Program)); // 不能从 TEXTURE 窃取（请求者上一帧挨饿）
+    assert!(js.execute(JobType::Texture)); // 进展保证
+    assert!(!js.execute(JobType::Texture)); // TEXTURE 上一帧挨饿，不能窃取
 
-    // Frame 3: PROGRAM was starved in Frame 2
+    // 第 3 帧：PROGRAM 在第 2 帧挨饿
     js.reset_budgets();
-    assert!(js.execute(JobType::Program)); // progress guarantee
+    assert!(js.execute(JobType::Program)); // 进展保证
 
-    // Frame 4: PROGRAM was starved in Frame 3, but TEXTURE was NOT starved in Frame 3
+    // 第 4 帧：PROGRAM 在第 3 帧挨饿，但 TEXTURE 在第 3 帧未挨饿
     js.reset_budgets();
-    assert!(js.execute(JobType::Program)); // progress guarantee
-    assert!(js.execute(JobType::Program)); // Can steal from TEXTURE (not starved last frame)
+    assert!(js.execute(JobType::Program)); // 进展保证
+    assert!(js.execute(JobType::Program)); // 可以从 TEXTURE 窃取（上一帧未挨饿）
 }
 
 #[test]
@@ -140,12 +140,12 @@ fn test_allows_progress_on_all_job_types_once_per_frame() {
     let mut js = JobScheduler::new(Some([1.0, 1.0, 1.0]));
 
     assert!(js.execute(JobType::Texture));
-    assert!(js.execute(JobType::Texture)); // Steal from PROGRAM
-    assert!(js.execute(JobType::Texture)); // Steal from BUFFER
+    assert!(js.execute(JobType::Texture)); // 从 PROGRAM 窃取
+    assert!(js.execute(JobType::Texture)); // 从 BUFFER 窃取
 
     assert!(!js.execute(JobType::Texture));
 
-    // Still gets progress once this frame
+    // 本帧仍获得一次进展
     assert!(js.execute(JobType::Program));
     assert!(!js.execute(JobType::Program));
 
@@ -155,9 +155,9 @@ fn test_allows_progress_on_all_job_types_once_per_frame() {
 
 #[test]
 fn test_long_job_allows_progress() {
-    // Budget is less than 1.0 per job, but each type still gets one execution
+    // 每个作业的预算小于 1.0，但每种类型仍获得一次执行
     let mut js = JobScheduler::new(Some([0.5, 0.2, 0.2]));
-    assert!(js.execute(JobType::Texture)); // Goes over budget
-    assert!(js.execute(JobType::Program)); // Still gets progress
-    assert!(js.execute(JobType::Buffer)); // Still gets progress
+    assert!(js.execute(JobType::Texture)); // 超出预算
+    assert!(js.execute(JobType::Program)); // 仍获得进展
+    assert!(js.execute(JobType::Buffer)); // 仍获得进展
 }

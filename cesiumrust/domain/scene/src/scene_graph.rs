@@ -1,54 +1,54 @@
-//! Scene graph node structure and traversal.
+//! 场景图节点结构与遍历。
 //!
-//! Maps to CesiumJS `Scene/Scene.js` and `Scene/Primitive.js`
+//! 映射到 CesiumJS `Scene/Scene.js` 与 `Scene/Primitive.js`
 
 use cesium_geospatial::bounding::BoundingSphere;
 use std::collections::HashMap;
 
-/// Unique identifier for a scene node.
+/// 场景节点的唯一标识符。
 pub type NodeId = u64;
 
-/// A node in the scene graph.
+/// 场景图中的一个节点。
 ///
-/// Maps to CesiumJS scene primitives and model nodes.
+/// 映射到 CesiumJS 场景图元与模型节点。
 #[derive(Debug, Clone)]
 pub struct SceneNode {
-    /// Unique identifier.
+    /// 唯一标识符。
     pub id: NodeId,
 
-    /// Optional name for debugging.
+    /// 用于调试的可选名称。
     pub name: Option<String>,
 
-    /// Local transform relative to parent.
+    /// 相对于父节点的局部变换。
     pub local_transform: glam::DMat4,
 
-    /// World transform (computed during traversal).
+    /// 世界变换（在遍历时计算）。
     pub world_transform: glam::DMat4,
 
-    /// Bounding volume in local space.
+    /// 局部空间的包围体。
     pub bounding_volume: Option<BoundingSphere>,
 
-    /// Whether this node is visible.
+    /// 该节点是否可见。
     pub visible: bool,
 
-    /// Whether this node casts shadows.
+    /// 该节点是否投射阴影。
     pub shadows_enabled: bool,
 
-    /// Child node IDs.
+    /// 子节点 ID。
     pub children: Vec<NodeId>,
 
-    /// Parent node ID (None for root).
+    /// 父节点 ID（根节点为 None）。
     pub parent: Option<NodeId>,
 
-    /// Renderable content (if any).
+    /// 可渲染内容（若有）。
     pub renderable: Option<RenderableContent>,
 
-    /// User-defined metadata.
+    /// 用户自定义元数据。
     pub metadata: HashMap<String, String>,
 }
 
 impl SceneNode {
-    /// Creates a new scene node with the given ID.
+    /// 使用给定 ID 创建一个新的场景节点。
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
@@ -65,35 +65,35 @@ impl SceneNode {
         }
     }
 
-    /// Creates a node with a name.
+    /// 创建一个带名称的节点。
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
     }
 
-    /// Sets the local transform.
+    /// 设置局部变换。
     pub fn with_transform(mut self, transform: glam::DMat4) -> Self {
         self.local_transform = transform;
         self
     }
 
-    /// Sets the bounding volume.
+    /// 设置包围体。
     pub fn with_bounding_volume(mut self, bv: BoundingSphere) -> Self {
         self.bounding_volume = Some(bv);
         self
     }
 
-    /// Sets the renderable content.
+    /// 设置可渲染内容。
     pub fn with_renderable(mut self, renderable: RenderableContent) -> Self {
         self.renderable = Some(renderable);
         self
     }
 
-    /// Computes the world-space bounding sphere.
+    /// 计算世界空间的包围球。
     pub fn world_bounding_sphere(&self) -> Option<BoundingSphere> {
         self.bounding_volume.map(|bv| {
             let center = self.world_transform.transform_point3(bv.center);
-            // Scale radius by the maximum scale factor
+            // 按最大缩放因子缩放半径
             let scale = self.world_transform.x_axis.truncate().length()
                 .max(self.world_transform.y_axis.truncate().length())
                 .max(self.world_transform.z_axis.truncate().length());
@@ -102,53 +102,53 @@ impl SceneNode {
     }
 }
 
-/// Renderable content types.
+/// 可渲染内容类型。
 #[derive(Debug, Clone)]
 pub enum RenderableContent {
-    /// A mesh with material.
+    /// 带材质的网格。
     Mesh {
-        /// Mesh asset ID.
+        /// 网格资产 ID。
         mesh_id: u64,
-        /// Material ID.
+        /// 材质 ID。
         material_id: u64,
     },
 
-    /// A model (glTF).
+    /// 一个模型（glTF）。
     Model {
-        /// Model asset ID.
+        /// 模型资产 ID。
         model_id: u64,
     },
 
-    /// A point cloud.
+    /// 一个点云。
     PointCloud {
-        /// Point cloud asset ID.
+        /// 点云资产 ID。
         point_cloud_id: u64,
-        /// Number of points.
+        /// 点的数量。
         point_count: usize,
     },
 
-    /// A wireframe bounding volume (for debugging).
+    /// 一个线框包围体（用于调试）。
     DebugWireframe {
-        /// Color [r, g, b, a].
+        /// 颜色 [r, g, b, a]。
         color: [f32; 4],
     },
 }
 
-/// The scene graph containing all nodes.
+/// 包含所有节点的场景图。
 #[derive(Debug, Default)]
 pub struct SceneGraph {
-    /// All nodes in the scene.
+    /// 场景中的所有节点。
     nodes: HashMap<NodeId, SceneNode>,
 
-    /// Root node IDs.
+    /// 根节点 ID。
     roots: Vec<NodeId>,
 
-    /// Next available node ID.
+    /// 下一个可用的节点 ID。
     next_id: NodeId,
 }
 
 impl SceneGraph {
-    /// Creates a new empty scene graph.
+    /// 创建一个空的场景图。
     pub fn new() -> Self {
         Self {
             nodes: HashMap::new(),
@@ -157,9 +157,9 @@ impl SceneGraph {
         }
     }
 
-    /// Adds a node to the scene graph.
+    /// 向场景图添加一个节点。
     ///
-    /// Returns the assigned node ID.
+    /// 返回被分配的节点 ID。
     pub fn add_node(&mut self, mut node: SceneNode) -> NodeId {
         let id = self.next_id;
         self.next_id += 1;
@@ -173,7 +173,7 @@ impl SceneGraph {
         id
     }
 
-    /// Adds a child node to a parent.
+    /// 向父节点添加一个子节点。
     pub fn add_child(&mut self, parent_id: NodeId, mut child: SceneNode) -> Option<NodeId> {
         if !self.nodes.contains_key(&parent_id) {
             return None;
@@ -192,21 +192,21 @@ impl SceneGraph {
         Some(id)
     }
 
-    /// Removes a node and all its descendants.
+    /// 移除一个节点及其所有后代。
     pub fn remove_node(&mut self, id: NodeId) -> Option<SceneNode> {
         let node = self.nodes.remove(&id)?;
 
-        // Remove from parent's children
+        // 从父节点的子列表中移除
         if let Some(parent_id) = node.parent {
             if let Some(parent) = self.nodes.get_mut(&parent_id) {
                 parent.children.retain(|&c| c != id);
             }
         }
 
-        // Remove from roots if it's a root
+        // 若为根节点，则从 roots 中移除
         self.roots.retain(|&r| r != id);
 
-        // Remove all descendants
+        // 移除所有后代
         for child_id in &node.children {
             self.remove_node_recursive(*child_id);
         }
@@ -214,7 +214,7 @@ impl SceneGraph {
         Some(node)
     }
 
-    /// Recursively removes a node and its descendants.
+    /// 递归移除一个节点及其后代。
     fn remove_node_recursive(&mut self, id: NodeId) {
         if let Some(node) = self.nodes.remove(&id) {
             for child_id in node.children {
@@ -223,27 +223,27 @@ impl SceneGraph {
         }
     }
 
-    /// Gets a node by ID.
+    /// 按 ID 获取节点。
     pub fn get(&self, id: NodeId) -> Option<&SceneNode> {
         self.nodes.get(&id)
     }
 
-    /// Gets a mutable node by ID.
+    /// 按 ID 获取可变节点。
     pub fn get_mut(&mut self, id: NodeId) -> Option<&mut SceneNode> {
         self.nodes.get_mut(&id)
     }
 
-    /// Returns the root node IDs.
+    /// 返回根节点 ID。
     pub fn roots(&self) -> &[NodeId] {
         &self.roots
     }
 
-    /// Returns the total number of nodes.
+    /// 返回节点总数。
     pub fn node_count(&self) -> usize {
         self.nodes.len()
     }
 
-    /// Updates world transforms for all nodes.
+    /// 更新所有节点的世界变换。
     pub fn update_world_transforms(&mut self) {
         let roots: Vec<NodeId> = self.roots.clone();
         for root_id in roots {
@@ -251,7 +251,7 @@ impl SceneGraph {
         }
     }
 
-    /// Recursively updates a node's world transform.
+    /// 递归更新一个节点的世界变换。
     fn update_node_transform(&mut self, id: NodeId, parent_world: glam::DMat4) {
         let (world_transform, children) = if let Some(node) = self.nodes.get_mut(&id) {
             node.world_transform = parent_world * node.local_transform;
@@ -265,7 +265,7 @@ impl SceneGraph {
         }
     }
 
-    /// Traverses the scene graph, calling the visitor for each visible node.
+    /// 遍历场景图，对每个可见节点调用访问器。
     pub fn traverse<F>(&self, mut visitor: F)
     where
         F: FnMut(&SceneNode),
@@ -275,7 +275,7 @@ impl SceneGraph {
         }
     }
 
-    /// Recursively traverses a node and its descendants.
+    /// 递归遍历一个节点及其后代。
     fn traverse_node<F>(&self, id: NodeId, visitor: &mut F)
     where
         F: FnMut(&SceneNode),
@@ -291,7 +291,7 @@ impl SceneGraph {
         }
     }
 
-    /// Collects all renderable node IDs.
+    /// 收集所有可渲染节点的 ID。
     pub fn collect_renderable_ids(&self) -> Vec<NodeId> {
         let mut renderables = Vec::new();
         self.traverse(|node| {
@@ -382,12 +382,12 @@ mod tests {
 
         scene.update_world_transforms();
 
-        // Parent world = identity * local = translation(10, 0, 0)
+        // 父节点世界 = identity * local = translation(10, 0, 0)
         let parent_node = scene.get(parent_id).unwrap();
         let parent_pos = parent_node.world_transform.w_axis.truncate();
         assert!((parent_pos.x - 10.0).abs() < 1e-10);
 
-        // Child world = parent_world * child_local = translation(15, 0, 0)
+        // 子节点世界 = parent_world * child_local = translation(15, 0, 0)
         let child_id = parent_node.children[0];
         let child_node = scene.get(child_id).unwrap();
         let child_pos = child_node.world_transform.w_axis.truncate();
@@ -444,7 +444,7 @@ mod tests {
             .with_transform(glam::DMat4::from_translation(DVec3::new(100.0, 0.0, 0.0)))
             .with_bounding_volume(BoundingSphere::new(DVec3::ZERO, 10.0));
 
-        // Set world transform manually for this test
+        // 本测试中手动设置世界变换
         let mut node = node;
         node.world_transform = node.local_transform;
 

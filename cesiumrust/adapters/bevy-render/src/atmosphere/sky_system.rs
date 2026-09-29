@@ -14,15 +14,14 @@ use crate::entity::time_system::AnimationClock;
 #[derive(Resource, Debug, Clone)]
 pub struct SkyAtmosphere {
     pub enabled: bool,
-    /// When `true`, the sky is rendered by the GPU single-scattering dome
-    /// (`sky_atmosphere.wgsl`) instead of the CPU `ClearColor` approximation.
+    /// 为 `true` 时，天空由 GPU 单次散射 dome
+    /// （`sky_atmosphere.wgsl`）渲染，而非 CPU 的 `ClearColor` 近似。
     ///
-    /// Seeded from `CESIUM_ENABLE_SKYDOME` by [`super::CesiumAtmospherePlugin`];
-    /// defaults to `true` because that plugin is itself only registered when
-    /// `feature_flags::skydome_enabled()` is true (main.rs L513-516), so the
-    /// gate is already closed by the time this resource exists. Setting it to
-    /// `false` at runtime falls back to the pre-M5-C `ClearColor` path and
-    /// tears any live dome down — that is the escape hatch the unit tests use.
+    /// 由 [`super::CesiumAtmospherePlugin`] 从 `CESIUM_ENABLE_SKYDOME` 播种；
+    /// 默认为 `true`，因为该插件本身仅在 `feature_flags::skydome_enabled()`
+    /// 为真时才注册（main.rs L513-516），所以到这个资源存在时门控
+    /// 已经关闭。在运行时将其设为 `false` 会回退到 M5-C 之前的
+    /// `ClearColor` 路径，并拆掉任何活动的 dome——这正是单元测试使用的逃生舱。
     pub dome: bool,
     pub atmosphere_params: AtmosphereParameters,
 }
@@ -37,15 +36,14 @@ impl Default for SkyAtmosphere {
     }
 }
 
-/// Idempotent sky-dome spawn / tear-down, driven by [`SkyAtmosphere::dome`].
+/// 由 [`SkyAtmosphere::dome`] 驱动的幂等 sky-dome spawn / 拆除。
 ///
-/// Runs in `Update` (chained before [`sky_system`]) rather than `Startup` so
-/// that toggling `dome` at runtime is honoured, and so that a headless
-/// `MinimalPlugins` app — where `MaterialPlugin::<SkyDomeMaterial>` was skipped
-/// by `shader_registry::asset_backend_available` and therefore
-/// `Assets<SkyDomeMaterial>` does not exist — degrades to a no-op instead of
-/// panicking on the missing resource. Both asset storages are taken as
-/// `Option<ResMut<_>>` for exactly that reason.
+/// 运行在 `Update`（链在 [`sky_system`] 之前）而非 `Startup`，以便
+/// 在运行时切换 `dome` 能被响应，也以便一个无头的 `MinimalPlugins` 应用——
+/// 其中 `MaterialPlugin::<SkyDomeMaterial>` 被 `shader_registry::asset_backend_available`
+/// 跳过，因而 `Assets<SkyDomeMaterial>` 不存在——降级为空操作，
+/// 而不是因缺失资源而 panic。出于这一原因，两个 asset 存储都被取为
+/// `Option<ResMut<_>>`。
 pub fn sky_dome_setup(
     mut commands: Commands,
     sky: Res<SkyAtmosphere>,
@@ -54,8 +52,8 @@ pub fn sky_dome_setup(
     mut materials: Option<ResMut<Assets<SkyDomeMaterial>>>,
 ) {
     if !sky.enabled || !sky.dome {
-        // Gate OFF branch: the CPU ClearColor path below is the only sky
-        // contributor, so no dome may remain alive to double-paint it.
+        // 门控 OFF 分支：下面的 CPU ClearColor 路径是唯一的天空
+        // 贡献者，因此不得有 dome 残留着去重复绘制它。
         if !existing.is_empty() {
             despawn_sky_dome(&mut commands, existing.iter());
         }
@@ -113,12 +111,12 @@ pub fn sky_system(
         sun_dir
     };
 
-    // ── GPU single-scattering path (M5-C) ─────────────────────────────────
-    // `sky_atmosphere.wgsl` owns the sky colour, so the CPU ClearColor below
-    // must NOT also be written (that would double-paint the dome composite).
-    // Only the sun-direction uniform is refreshed, and only when it actually
-    // moved: under `FIXED_TIME` the clock is frozen, so this settles after the
-    // first frame and the baseline capture stays bit-reproducible.
+    // ── GPU 单次散射路径 (M5-C) ─────────────────────────────────
+    // `sky_atmosphere.wgsl` 拥有天空颜色，所以下面的 CPU ClearColor
+    // 绝不应也被写入（那会重复绘制 dome 合成结果）。
+    // 只刷新太阳方向 uniform，且仅当它确实
+    // 移动时：在 `FIXED_TIME` 下时钟被冻结，所以这会在
+    // 首帧之后稳定下来，基线捕获保持逐位可复现。
     if sky.dome {
         if let Ok(dome_material) = dome_query.get_single() {
             if let Some(materials) = materials.as_deref_mut() {
@@ -129,7 +127,7 @@ pub fn sky_system(
         return;
     }
 
-    // ── gate OFF path: byte-for-byte the pre-M5-C CPU ClearColor sky ───────
+    // ── 门控 OFF 路径：逐字节复现 M5-C 之前的 CPU ClearColor 天空 ───────
     let sky_color = compute_sky_color(view_dir, sun_dir, 1000.0, &sky.atmosphere_params);
     let horizon_glow = compute_horizon_glow(sun_elevation);
 

@@ -1,9 +1,9 @@
-//! RenderState / ClearCommand / ComputeCommand / Texture / Framebuffer / TextureAtlas specs
-//! Ported from CesiumJS Renderer/RenderState.js + ClearCommand.js + Texture.js + TextureAtlas.js
+//! RenderState / ClearCommand / ComputeCommand / Texture / Framebuffer / TextureAtlas 规范
+//! 移植自 CesiumJS Renderer/RenderState.js + ClearCommand.js + Texture.js + TextureAtlas.js
 //!
-//! A-class tests: RenderState presets, ClearCommand variants, ComputeCommand uniforms,
-//! PassState defaults, Texture construction/mipmaps, Framebuffer attachments,
-//! TextureAtlas packing, GpuBuffer
+//! A 类测试：RenderState 预设、ClearCommand 变体、ComputeCommand uniform、
+//! PassState 默认值、Texture 构造/mipmap、Framebuffer 附件、
+//! TextureAtlas 打包、GpuBuffer
 
 use cesium_scene::{
     BufferUsage, ClearCommand, ComputeCommand, ComputeUniformValue, CullFace, DepthFunc,
@@ -13,7 +13,7 @@ use cesium_scene::{
 };
 use glam::DVec4;
 
-// ─── RenderState presets ───────────────────────────────────────────────────────
+// ─── RenderState 预设 ───────────────────────────────────────────────────────
 
 #[test]
 fn render_state_opaque_preset() {
@@ -31,7 +31,7 @@ fn render_state_translucent_preset() {
     let rs = RenderState::translucent();
     assert!(rs.cull_enabled);
     assert!(rs.depth_test_enabled);
-    assert!(!rs.depth_write_enabled); // No depth write for transparency
+    assert!(!rs.depth_write_enabled); // 透明不写深度
     assert!(rs.blend_enabled);
 }
 
@@ -204,14 +204,14 @@ fn texture_atlas_add_entries() {
 
     let e2 = atlas.add_entry(64, 64).unwrap();
     assert_eq!(atlas.entry_count(), 2);
-    // Entries should not overlap
+    // 条目不应重叠
     assert!(e2.x >= e1.x + e1.width + 2 || e2.y >= e1.y + e1.height + 2);
 }
 
 #[test]
 fn texture_atlas_full_returns_none() {
     let mut atlas = TextureAtlas::new(0, 64, 64, 2);
-    // Try to add an entry larger than atlas
+    // 尝试添加比 atlas 更大的条目
     let result = atlas.add_entry(100, 100);
     assert!(result.is_none());
 }

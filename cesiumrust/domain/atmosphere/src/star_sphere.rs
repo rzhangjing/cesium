@@ -1,43 +1,43 @@
-//! Star sphere and sky atmosphere enhancements.
+//! 星球与天空大气增强。
 //!
-//! Maps to CesiumJS:
-//! - `Scene/StarSphere.js` — star catalog rendering
-//! - `Scene/SkyAtmosphere.js` — HSB shifts, dynamic lighting, per-fragment
-//! - `Scene/SkyBox.js` — TEME frame sky box
+//! 映射到 CesiumJS：
+//! - `Scene/StarSphere.js` —— 星表渲染
+//! - `Scene/SkyAtmosphere.js` —— HSB 偏移、动态光照、逐片元
+//! - `Scene/SkyBox.js` —— TEME 框架天空盒
 //!
-//! Domain layer — pure Rust, f64 precision.
+//! 领域层 —— 纯 Rust，f64 精度。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint 清理或本文件在其里程碑被重写时重新审视
 #![allow(clippy::field_reassign_with_default)]
 use glam::DVec3;
 
-// ─── Star Catalog ───────────────────────────────────────────────────────────
+// ─── 星表 ───────────────────────────────────────────────────────────
 
-/// A single star entry in the star catalog.
+/// 星表中的单颗恒星条目。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Star {
-    /// Right ascension (radians, 0..2π).
+    /// 赤经（弧度，0..2π）。
     pub right_ascension: f64,
-    /// Declination (radians, -π/2..π/2).
+    /// 赤纬（弧度，-π/2..π/2）。
     pub declination: f64,
-    /// Apparent magnitude (lower = brighter).
+    /// 视星等（越小越亮）。
     pub magnitude: f64,
-    /// Star color temperature (Kelvin), used for spectral color.
+    /// 恒星色温（开尔文），用于光谱颜色。
     pub color_temperature: f64,
 }
 
 impl Star {
-    /// Creates a star from RA/Dec in degrees and magnitude.
+    /// 由以度为单位的赤经/赤纬和星等创建一颗恒星。
     pub fn from_degrees(ra_deg: f64, dec_deg: f64, magnitude: f64) -> Self {
         Self {
             right_ascension: ra_deg.to_radians(),
             declination: dec_deg.to_radians(),
             magnitude,
-            color_temperature: 6500.0, // Default white
+            color_temperature: 6500.0, // 默认白色
         }
     }
 
-    /// Computes the unit direction vector (ECI/TEME frame) for this star.
+    /// 计算这颗恒星的单位方向向量（ECI/TEME 框架）。
     pub fn direction(&self) -> DVec3 {
         let cos_dec = self.declination.cos();
         DVec3::new(
@@ -47,40 +47,40 @@ impl Star {
         )
     }
 
-    /// Computes the visual brightness (0..1) from magnitude.
+    /// 由星等计算视觉亮度（0..1）。
     ///
-    /// Uses the Pogson scale: brightness ∝ 10^(-0.4 * magnitude).
-    /// Normalized so magnitude 0 → 1.0, magnitude 6 → ~0.004.
+    /// 使用 Pogson 标度：亮度 ∝ 10^(-0.4 * magnitude)。
+    /// 归一化使得星等 0 → 1.0，星等 6 → 约 0.004。
     pub fn brightness(&self) -> f64 {
         10.0_f64.powf(-0.4 * self.magnitude)
     }
 
-    /// Computes an approximate RGB color from the star's color temperature.
+    /// 根据恒星的色温计算近似的 RGB 颜色。
     ///
-    /// Based on blackbody radiation approximation (Tanner Helland algorithm).
+    /// 基于黑体辐射近似（Tanner Helland 算法）。
     pub fn spectral_color(&self) -> [f64; 3] {
         color_from_temperature(self.color_temperature)
     }
 }
 
-/// Star sphere configuration and rendering parameters.
+/// 星球配置与渲染参数。
 ///
-/// Maps to CesiumJS `StarSphere` which renders stars on a celestial sphere.
+/// 映射到 CesiumJS `StarSphere`，它在天球上渲染恒星。
 #[derive(Debug, Clone)]
 pub struct StarSphere {
-    /// Whether the star sphere is shown.
+    /// 是否显示星球。
     pub show: bool,
-    /// The star catalog.
+    /// 星表。
     pub stars: Vec<Star>,
-    /// Minimum magnitude to render (stars dimmer than this are culled).
+    /// 渲染的最小星等（比它暗的恒星会被剔除）。
     pub minimum_magnitude: f64,
-    /// Maximum magnitude to render (stars brighter than this are culled).
+    /// 渲染的最大星等（比它亮的恒星会被剔除）。
     pub maximum_magnitude: f64,
-    /// Star point size in pixels (base size for magnitude 0).
+    /// 恒星的点大小（像素，星等 0 的基准大小）。
     pub base_point_size: f64,
-    /// Whether to use HDR rendering for stars.
+    /// 是否对恒星使用 HDR 渲染。
     pub use_hdr: bool,
-    /// Overall brightness multiplier.
+    /// 整体亮度乘子。
     pub brightness_multiplier: f64,
 }
 
@@ -99,7 +99,7 @@ impl Default for StarSphere {
 }
 
 impl StarSphere {
-    /// Creates a star sphere with a built-in bright star catalog.
+    /// 创建一个带有内置亮星星表的星球。
     pub fn with_builtin_catalog() -> Self {
         Self {
             stars: builtin_bright_stars(),
@@ -107,27 +107,27 @@ impl StarSphere {
         }
     }
 
-    /// Returns stars visible within the magnitude range.
+    /// 返回在星等范围内可见的恒星。
     pub fn visible_stars(&self) -> impl Iterator<Item = &Star> {
         self.stars
             .iter()
             .filter(|s| s.magnitude >= self.minimum_magnitude && s.magnitude <= self.maximum_magnitude)
     }
 
-    /// Computes the rendered point size for a star based on its magnitude.
+    /// 根据星等计算恒星的渲染点大小。
     ///
-    /// Brighter stars (lower magnitude) get larger point sizes.
+    /// 较亮的恒星（较低星等）获得较大的点大小。
     pub fn star_point_size(&self, star: &Star) -> f64 {
         let magnitude_range = self.maximum_magnitude - self.minimum_magnitude;
         if magnitude_range <= 0.0 {
             return self.base_point_size;
         }
         let t = (star.magnitude - self.minimum_magnitude) / magnitude_range;
-        // Brighter (lower mag) → larger size
+        // 较亮（较低星等）→ 较大大小
         self.base_point_size * (1.0 - t * 0.7)
     }
 
-    /// Computes the final rendered color for a star (with brightness applied).
+    /// 计算恒星的最终渲染颜色（应用亮度后）。
     pub fn star_render_color(&self, star: &Star) -> [f64; 3] {
         let base_color = star.spectral_color();
         let brightness = star.brightness() * self.brightness_multiplier;
@@ -138,21 +138,21 @@ impl StarSphere {
         ]
     }
 
-    /// Adds a star to the catalog.
+    /// 向星表添加一颗恒星。
     pub fn add_star(&mut self, star: Star) {
         self.stars.push(star);
     }
 
-    /// Returns the number of stars in the catalog.
+    /// 返回星表中恒星的数量。
     pub fn star_count(&self) -> usize {
         self.stars.len()
     }
 }
 
-/// Built-in catalog of the brightest stars (subset of Hipparcos/Yale BSC).
+/// 最亮恒星的内置星表（Hipparcos/Yale BSC 的子集）。
 fn builtin_bright_stars() -> Vec<Star> {
     vec![
-        // Sirius (α CMa) — brightest star
+        // Sirius (α CMa) —— 最亮的恒星
         Star { right_ascension: 101.287_f64.to_radians(), declination: (-16.716_f64).to_radians(), magnitude: -1.46, color_temperature: 9940.0 },
         // Canopus (α Car)
         Star { right_ascension: 95.988_f64.to_radians(), declination: (-52.696_f64).to_radians(), magnitude: -0.74, color_temperature: 7350.0 },
@@ -190,18 +190,18 @@ fn builtin_bright_stars() -> Vec<Star> {
         Star { right_ascension: 81.283_f64.to_radians(), declination: 6.350_f64.to_radians(), magnitude: 1.64, color_temperature: 22000.0 },
         // Alnilam (ε Ori)
         Star { right_ascension: 84.053_f64.to_radians(), declination: (-1.202_f64).to_radians(), magnitude: 1.69, color_temperature: 27500.0 },
-        // Polaris (α UMi) — North Star
+        // Polaris (α UMi) —— 北极星
         Star { right_ascension: 37.954_f64.to_radians(), declination: 89.264_f64.to_radians(), magnitude: 1.98, color_temperature: 6015.0 },
     ]
 }
 
-/// Approximates an RGB color from a blackbody temperature (Kelvin).
+/// 从黑体温度（开尔文）近似 RGB 颜色。
 ///
-/// Based on Tanner Helland's algorithm for color temperature to RGB.
+/// 基于 Tanner Helland 的色温转 RGB 算法。
 fn color_from_temperature(kelvin: f64) -> [f64; 3] {
     let temp = kelvin.clamp(1000.0, 40000.0) / 100.0;
 
-    // Red
+    // 红
     let r = if temp <= 66.0 {
         1.0
     } else {
@@ -209,7 +209,7 @@ fn color_from_temperature(kelvin: f64) -> [f64; 3] {
         (329.698727446 * x.powf(-0.1332047592) / 255.0).clamp(0.0, 1.0)
     };
 
-    // Green
+    // 绿
     let g = if temp <= 66.0 {
         (99.4708025861 * temp.ln() - 161.1195681661) / 255.0
     } else {
@@ -218,7 +218,7 @@ fn color_from_temperature(kelvin: f64) -> [f64; 3] {
     };
     let g = g.clamp(0.0, 1.0);
 
-    // Blue
+    // 蓝
     let b = if temp >= 66.0 {
         1.0
     } else if temp <= 19.0 {
@@ -232,24 +232,24 @@ fn color_from_temperature(kelvin: f64) -> [f64; 3] {
     [r, g, b]
 }
 
-// ─── Sky Atmosphere Enhancements ──────────────────────────────────────────
+// ─── 天空大气增强 ──────────────────────────────────────
 
-/// Dynamic atmosphere lighting type.
+/// 动态大气光照类型。
 ///
-/// Maps to CesiumJS `DynamicAtmosphereLightingType`.
+/// 映射到 CesiumJS `DynamicAtmosphereLightingType`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DynamicAtmosphereLighting {
-    /// Use the sun position for lighting.
+    /// 使用太阳位置进行光照。
     #[default]
     Sun,
-    /// Use the moon position for lighting.
+    /// 使用月亮位置进行光照。
     Moon,
-    /// Treat the light as always directly overhead (no dynamic lighting).
+    /// 将光源视为始终在头顶正上方（无动态光照）。
     None,
 }
 
 impl DynamicAtmosphereLighting {
-    /// Returns the enum value used in shader uniforms.
+    /// 返回在 shader uniform 中使用的枚举值。
     pub fn to_shader_value(&self) -> f64 {
         match self {
             Self::Sun => 1.0,
@@ -259,23 +259,23 @@ impl DynamicAtmosphereLighting {
     }
 }
 
-/// Hue-Saturation-Brightness shift for atmosphere rendering.
+/// 用于大气渲染的色相-饱和度-亮度偏移。
 ///
-/// Maps to CesiumJS SkyAtmosphere `hueShift`, `saturationShift`, `brightnessShift`.
+/// 映射到 CesiumJS SkyAtmosphere 的 `hueShift`、`saturationShift`、`brightnessShift`。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct HsbShift {
-    /// Hue shift (0.0 = no shift, 1.0 = full rotation).
+    /// 色相偏移（0.0 = 无偏移，1.0 = 完整旋转）。
     pub hue: f64,
-    /// Saturation shift (-1.0 = monochrome, 0.0 = no shift).
+    /// 饱和度偏移（-1.0 = 单色，0.0 = 无偏移）。
     pub saturation: f64,
-    /// Brightness shift (-1.0 = complete darkness, 0.0 = no shift).
+    /// 亮度偏移（-1.0 = 完全黑暗，0.0 = 无偏移）。
     pub brightness: f64,
 }
 
 impl HsbShift {
-    /// Applies the HSB shift to an RGB color.
+    /// 将 HSB 偏移应用到 RGB 颜色。
     ///
-    /// Converts to HSB, applies shifts, converts back.
+    /// 转换为 HSB，应用偏移，再转换回来。
     pub fn apply(&self, color: [f64; 3]) -> [f64; 3] {
         if self.hue == 0.0 && self.saturation == 0.0 && self.brightness == 0.0 {
             return color;
@@ -283,50 +283,50 @@ impl HsbShift {
 
         let (mut h, mut s, mut b) = rgb_to_hsb(color[0], color[1], color[2]);
 
-        // Apply hue shift (wrapping)
+        // 应用色相偏移（环绕）
         h = (h + self.hue) % 1.0;
         if h < 0.0 {
             h += 1.0;
         }
 
-        // Apply saturation shift
+        // 应用饱和度偏移
         s = (s + self.saturation).clamp(0.0, 1.0);
 
-        // Apply brightness shift
+        // 应用亮度偏移
         b = (b + self.brightness).clamp(0.0, 1.0);
 
         hsb_to_rgb(h, s, b)
     }
 }
 
-/// Enhanced sky atmosphere parameters.
+/// 增强的天空大气参数。
 ///
-/// Extends `AtmosphereParameters` with CesiumJS SkyAtmosphere features.
+/// 用 CesiumJS SkyAtmosphere 特性扩展 `AtmosphereParameters`。
 #[derive(Debug, Clone)]
 pub struct SkyAtmosphereConfig {
-    /// Whether the atmosphere is shown.
+    /// 是否显示大气。
     pub show: bool,
-    /// Compute atmosphere per-fragment instead of per-vertex.
+    /// 逐片元而非逐顶点计算大气。
     pub per_fragment_atmosphere: bool,
-    /// The intensity of the light used for computing sky atmosphere color.
+    /// 用于计算天空大气颜色的光照强度。
     pub light_intensity: f64,
-    /// Rayleigh scattering coefficient [R, G, B].
+    /// Rayleigh 散射系数 [R, G, B]。
     pub rayleigh_coefficient: DVec3,
-    /// Mie scattering coefficient [R, G, B].
+    /// Mie 散射系数 [R, G, B]。
     pub mie_coefficient: DVec3,
-    /// Rayleigh scale height (meters).
+    /// Rayleigh 标高（米）。
     pub rayleigh_scale_height: f64,
-    /// Mie scale height (meters).
+    /// Mie 标高（米）。
     pub mie_scale_height: f64,
-    /// Mie anisotropy (g parameter, -1..1).
+    /// Mie 各向异性（g 参数，-1..1）。
     pub mie_anisotropy: f64,
-    /// HSB shift for atmosphere color.
+    /// 大气颜色的 HSB 偏移。
     pub hsb_shift: HsbShift,
-    /// Dynamic lighting type.
+    /// 动态光照类型。
     pub dynamic_lighting: DynamicAtmosphereLighting,
-    /// Outer ellipsoid scale factor (atmosphere extends beyond surface).
+    /// 外椭球缩放因子（大气延伸到表面之外）。
     pub outer_ellipsoid_scale: f64,
-    /// Inner radius (Earth surface, meters).
+    /// 内半径（地球表面，米）。
     pub inner_radius: f64,
 }
 
@@ -344,23 +344,23 @@ impl Default for SkyAtmosphereConfig {
             hsb_shift: HsbShift::default(),
             dynamic_lighting: DynamicAtmosphereLighting::Sun,
             outer_ellipsoid_scale: 1.025,
-            inner_radius: 6378137.0, // WGS84 equatorial radius
+            inner_radius: 6378137.0, // WGS84 赤道半径
         }
     }
 }
 
 impl SkyAtmosphereConfig {
-    /// Computes the outer radius (atmosphere boundary).
+    /// 计算外半径（大气边界）。
     pub fn outer_radius(&self) -> f64 {
         self.inner_radius * self.outer_ellipsoid_scale
     }
 
-    /// Computes the atmosphere color for a given view/sun configuration.
+    /// 针对给定的视角/太阳配置计算大气颜色。
     ///
-    /// # Arguments
-    /// * `view_direction` - Normalized view direction from camera
-    /// * `sun_direction` - Normalized direction to the sun
-    /// * `camera_height` - Camera height above surface (meters)
+    /// # 参数
+    /// * `view_direction` - 来自相机的归一化视线方向
+    /// * `sun_direction` - 指向太阳的归一化方向
+    /// * `camera_height` - 相机距表面高度（米）
     pub fn compute_color(
         &self,
         view_direction: DVec3,
@@ -373,16 +373,16 @@ impl SkyAtmosphereConfig {
 
         let cos_theta = view_direction.dot(sun_direction);
 
-        // Phase functions
+        // 相位函数
         let rayleigh_p = rayleigh_phase_fn(cos_theta);
         let mie_p = mie_phase_fn(cos_theta, self.mie_anisotropy);
 
-        // Density at camera height
+        // 相机高度处的密度
         let height = camera_height.max(0.0);
         let rayleigh_density = (-height / self.rayleigh_scale_height).exp();
         let mie_density = (-height / self.mie_scale_height).exp();
 
-        // Optical depth
+        // 光学深度
         let path_length = self.outer_radius() - self.inner_radius;
 
         let mut color = [0.0f64; 3];
@@ -394,13 +394,13 @@ impl SkyAtmosphereConfig {
             *c = (rayleigh_val + mie_val) * self.light_intensity;
         }
 
-        // Apply HSB shift
+        // 应用 HSB 偏移
         self.hsb_shift.apply(color)
     }
 
-    /// Returns the radii and dynamic atmosphere color uniform vector.
+    /// 返回半径与动态大气颜色的 uniform 向量。
     ///
-    /// Maps to CesiumJS `u_radiiAndDynamicAtmosphereColor`.
+    /// 映射到 CesiumJS `u_radiiAndDynamicAtmosphereColor`。
     pub fn radii_and_dynamic_color(&self) -> DVec3 {
         DVec3::new(
             self.outer_radius(),
@@ -410,12 +410,12 @@ impl SkyAtmosphereConfig {
     }
 }
 
-/// Rayleigh phase function.
+/// Rayleigh 相位函数。
 fn rayleigh_phase_fn(cos_theta: f64) -> f64 {
     3.0 / (16.0 * std::f64::consts::PI) * (1.0 + cos_theta * cos_theta)
 }
 
-/// Henyey-Greenstein (Mie) phase function.
+/// Henyey-Greenstein（Mie）相位函数。
 fn mie_phase_fn(cos_theta: f64, g: f64) -> f64 {
     let g2 = g * g;
     let num = (1.0 - g2) * (1.0 + cos_theta * cos_theta);
@@ -423,18 +423,18 @@ fn mie_phase_fn(cos_theta: f64, g: f64) -> f64 {
     num / (4.0 * std::f64::consts::PI * denom)
 }
 
-// ─── Sky Box TEME Frame ─────────────────────────────────────────────────────
+// ─── Sky Box TEME 框架 ─────────────────────────────────────────────────
 
-/// Sky box with TEME (True Equator Mean Equinox) frame support.
+/// 支持 TEME（True Equator Mean Equinox）框架的天空盒。
 ///
-/// Maps to CesiumJS `SkyBox` which uses TEME axes for star rendering.
+/// 映射到 CesiumJS `SkyBox`，它使用 TEME 轴进行恒星渲染。
 #[derive(Debug, Clone)]
 pub struct SkyBoxState {
-    /// Whether the sky box is shown.
+    /// 是否显示天空盒。
     pub show: bool,
-    /// Source URIs for the 6 cube map faces [+X, -X, +Y, -Y, +Z, -Z].
+    /// 6 个立方体贴图面的源 URI [+X, -X, +Y, -Y, +Z, -Z]。
     pub sources: [Option<String>; 6],
-    /// Rotation angle around Z axis (radians) for TEME alignment.
+    /// 用于 TEME 对齐、绕 Z 轴旋转的角度（弧度）。
     pub teme_rotation: f64,
 }
 
@@ -449,16 +449,16 @@ impl Default for SkyBoxState {
 }
 
 impl SkyBoxState {
-    /// Computes the TEME-to-ECEF rotation matrix for a given GMST angle.
+    /// 针对给定的 GMST 角度计算 TEME 到 ECEF 的旋转矩阵。
     ///
-    /// The sky box is defined in TEME axes and must be rotated to align
-    /// with the ECEF frame for rendering.
+    /// 天空盒定义在 TEME 轴中，必须旋转以与 ECEF 框架对齐
+    /// 后进行渲染。
     pub fn teme_to_ecef_rotation(&self, gmst: f64) -> [[f64; 3]; 3] {
         let angle = gmst + self.teme_rotation;
         let cos_a = angle.cos();
         let sin_a = angle.sin();
 
-        // Rotation around Z axis
+        // 绕 Z 轴旋转
         [
             [cos_a, sin_a, 0.0],
             [-sin_a, cos_a, 0.0],
@@ -466,7 +466,7 @@ impl SkyBoxState {
         ]
     }
 
-    /// Transforms a TEME direction to ECEF.
+    /// 将 TEME 方向变换到 ECEF。
     pub fn teme_to_ecef(&self, teme_dir: DVec3, gmst: f64) -> DVec3 {
         let rot = self.teme_to_ecef_rotation(gmst);
         DVec3::new(
@@ -476,15 +476,15 @@ impl SkyBoxState {
         )
     }
 
-    /// Returns whether all 6 face sources are defined.
+    /// 返回是否已定义全部 6 个面源。
     pub fn is_complete(&self) -> bool {
         self.sources.iter().all(|s| s.is_some())
     }
 }
 
-// ─── HSB Conversion Utilities ───────────────────────────────────────────────
+// ─── HSB 转换工具 ───────────────────────────────────────────────
 
-/// Converts RGB (0..1) to HSB (H: 0..1, S: 0..1, B: 0..1).
+/// 将 RGB（0..1）转换为 HSB（H: 0..1, S: 0..1, B: 0..1）。
 fn rgb_to_hsb(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
     let max = r.max(g).max(b);
     let min = r.min(g).min(b);
@@ -507,7 +507,7 @@ fn rgb_to_hsb(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
     (h, s, brightness)
 }
 
-/// Converts HSB (H: 0..1, S: 0..1, B: 0..1) to RGB (0..1).
+/// 将 HSB（H: 0..1, S: 0..1, B: 0..1）转换为 RGB（0..1）。
 fn hsb_to_rgb(h: f64, s: f64, b: f64) -> [f64; 3] {
     if s == 0.0 {
         return [b, b, b];
@@ -535,7 +535,7 @@ mod tests {
     use super::*;
     use std::f64::consts::PI;
 
-    // ─── Star tests ─────────────────────────────────────────────────────
+    // ─── 恒星测试 ─────────────────────────────────────────────────────
 
     #[test]
     fn test_star_direction_normalized() {
@@ -546,7 +546,7 @@ mod tests {
 
     #[test]
     fn test_star_direction_poles() {
-        // Star at north celestial pole
+        // 位于北天极的恒星
         let star = Star {
             right_ascension: 0.0,
             declination: PI / 2.0,
@@ -564,28 +564,28 @@ mod tests {
         let bright = Star { magnitude: 0.0, ..Star::from_degrees(0.0, 0.0, 0.0) };
         let dim = Star { magnitude: 5.0, ..Star::from_degrees(0.0, 0.0, 5.0) };
 
-        // Magnitude 0 → brightness 1.0
+        // 星等 0 → 亮度 1.0
         assert!((bright.brightness() - 1.0).abs() < 1e-10);
-        // Magnitude 5 → ~0.01
+        // 星等 5 → 约 0.01
         assert!(dim.brightness() < 0.02);
         assert!(dim.brightness() > 0.005);
     }
 
     #[test]
     fn test_star_spectral_color_hot() {
-        // Hot blue star (20000K)
+        // 炽热的蓝色恒星（20000K）
         let star = Star { color_temperature: 20000.0, ..Star::from_degrees(0.0, 0.0, 0.0) };
         let color = star.spectral_color();
-        // Blue should dominate
+        // 蓝色应占主导
         assert!(color[2] > color[0]);
     }
 
     #[test]
     fn test_star_spectral_color_cool() {
-        // Cool red star (3000K)
+        // 较冷的红色恒星（3000K）
         let star = Star { color_temperature: 3000.0, ..Star::from_degrees(0.0, 0.0, 0.0) };
         let color = star.spectral_color();
-        // Red should dominate
+        // 红色应占主导
         assert!(color[0] > color[2]);
     }
 
@@ -601,9 +601,9 @@ mod tests {
         let mut sphere = StarSphere::default();
         sphere.minimum_magnitude = 0.0;
         sphere.maximum_magnitude = 2.0;
-        sphere.add_star(Star::from_degrees(0.0, 0.0, -1.0)); // Too bright (below min)
-        sphere.add_star(Star::from_degrees(10.0, 10.0, 1.0)); // Visible
-        sphere.add_star(Star::from_degrees(20.0, 20.0, 5.0)); // Too dim (above max)
+        sphere.add_star(Star::from_degrees(0.0, 0.0, -1.0)); // 太亮（低于最小值）
+        sphere.add_star(Star::from_degrees(10.0, 10.0, 1.0)); // 可见
+        sphere.add_star(Star::from_degrees(20.0, 20.0, 5.0)); // 太暗（高于最大值）
 
         let visible: Vec<_> = sphere.visible_stars().collect();
         assert_eq!(visible.len(), 1);
@@ -625,9 +625,9 @@ mod tests {
         let bright_size = sphere.star_point_size(&bright);
         let dim_size = sphere.star_point_size(&dim);
 
-        // Brighter stars should be larger
+        // 较亮的恒星应更大
         assert!(bright_size > dim_size);
-        assert!((bright_size - 4.0).abs() < 1e-10); // Full base size
+        assert!((bright_size - 4.0).abs() < 1e-10); // 完整基准大小
     }
 
     #[test]
@@ -640,13 +640,13 @@ mod tests {
         let color = sphere.star_render_color(&star);
 
         // brightness = 10^(-0.4*0) * 2.0 = 2.0
-        // All channels should be > 0
+        // 所有通道都应 > 0
         assert!(color[0] > 0.0);
         assert!(color[1] > 0.0);
         assert!(color[2] > 0.0);
     }
 
-    // ─── Sky Atmosphere tests ───────────────────────────────────────────
+    // ─── 天空大气测试 ─────────────────────────────────────────────
 
     #[test]
     fn test_dynamic_lighting_values() {
@@ -668,18 +668,18 @@ mod tests {
     #[test]
     fn test_hsb_shift_brightness_down() {
         let shift = HsbShift { brightness: -0.5, ..Default::default() };
-        let color = [1.0, 0.0, 0.0]; // Pure red, B=1.0
+        let color = [1.0, 0.0, 0.0]; // 纯红，B=1.0
         let result = shift.apply(color);
-        // Brightness should decrease
+        // 亮度应下降
         assert!(result[0] < 1.0);
     }
 
     #[test]
     fn test_hsb_shift_saturation_zero() {
         let shift = HsbShift { saturation: -1.0, ..Default::default() };
-        let color = [1.0, 0.0, 0.0]; // Pure red, S=1.0
+        let color = [1.0, 0.0, 0.0]; // 纯红，S=1.0
         let result = shift.apply(color);
-        // Should become grayscale (all channels equal)
+        // 应变为灰度（所有通道相等）
         assert!((result[0] - result[1]).abs() < 1e-6);
         assert!((result[1] - result[2]).abs() < 1e-6);
     }
@@ -709,7 +709,7 @@ mod tests {
 
         let color = config.compute_color(view, sun, 0.0);
 
-        // Should produce non-zero color
+        // 应产生非零颜色
         assert!(color[0] > 0.0 || color[1] > 0.0 || color[2] > 0.0);
     }
 
@@ -726,17 +726,17 @@ mod tests {
         let v = config.radii_and_dynamic_color();
         assert!((v.x - config.outer_radius()).abs() < 1e-6);
         assert!((v.y - config.inner_radius).abs() < 1e-6);
-        assert!((v.z - 1.0).abs() < 1e-10); // Sun
+        assert!((v.z - 1.0).abs() < 1e-10); // 太阳
     }
 
-    // ─── Sky Box tests ──────────────────────────────────────────────────
+    // ─── Sky Box 测试 ─────────────────────────────────────────────────
 
     #[test]
     fn test_sky_box_teme_rotation() {
         let sky_box = SkyBoxState::default();
         let rot = sky_box.teme_to_ecef_rotation(0.0);
 
-        // At GMST=0, rotation should be identity
+        // 在 GMST=0 时，旋转应为单位矩阵
         assert!((rot[0][0] - 1.0).abs() < 1e-10);
         assert!((rot[1][1] - 1.0).abs() < 1e-10);
         assert!((rot[2][2] - 1.0).abs() < 1e-10);
@@ -747,11 +747,11 @@ mod tests {
         let sky_box = SkyBoxState::default();
         let dir = DVec3::new(1.0, 0.0, 0.0);
 
-        // At GMST=0, should be unchanged
+        // 在 GMST=0 时，应保持不变
         let ecef = sky_box.teme_to_ecef(dir, 0.0);
         assert!((ecef - dir).length() < 1e-10);
 
-        // At GMST=π/2, X should rotate to -Y
+        // 在 GMST=π/2 时，X 应旋转到 -Y
         let ecef_90 = sky_box.teme_to_ecef(dir, PI / 2.0);
         assert!(ecef_90.x.abs() < 1e-10);
         assert!((ecef_90.y - (-1.0)).abs() < 1e-10);
@@ -770,7 +770,7 @@ mod tests {
         assert!(sky_box.is_complete());
     }
 
-    // ─── HSB conversion tests ───────────────────────────────────────────
+    // ─── HSB 转换测试 ─────────────────────────────────────────────
 
     #[test]
     fn test_rgb_hsb_roundtrip() {
@@ -794,7 +794,7 @@ mod tests {
 
     #[test]
     fn test_color_temperature_white() {
-        // ~6500K should be roughly white
+        // 约 6500K 应大致为白色
         let color = color_from_temperature(6500.0);
         assert!(color[0] > 0.9);
         assert!(color[1] > 0.9);

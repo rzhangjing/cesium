@@ -1,5 +1,5 @@
-//! Core/Matrix4Spec.js (CesiumJS-specific extensions) → Rust integration tests
-//! Covers: fromRotationTranslation, fromTranslation, fromScale, fromUniformScale,
+//! Core/Matrix4Spec.js（CesiumJS 特有扩展）→ Rust 集成测试
+//! 覆盖：fromRotationTranslation, fromTranslation, fromScale, fromUniformScale,
 //! getTranslation, getScale, getMaximumScale, getRotation, multiplyByTranslation,
 //! multiplyByScale, computePerspectiveFieldOfView, pack/unpack, equalsEpsilon
 
@@ -41,18 +41,18 @@ fn from_rotation_translation_basic() {
 
 #[test]
 fn from_rotation_translation_with_rotation() {
-    // 90° rotation around Z axis
+    // 绕 Z 轴旋转 90°
     let rotation = DMat3::from_rotation_z(FRAC_PI_2);
     let translation = DVec3::new(10.0, 20.0, 30.0);
     let result = matrix4_ext::from_rotation_translation(&rotation, translation);
 
-    // Check translation column
+    // 检查平移列
     assert!((result.w_axis.x - 10.0).abs() < EPS);
     assert!((result.w_axis.y - 20.0).abs() < EPS);
     assert!((result.w_axis.z - 30.0).abs() < EPS);
     assert!((result.w_axis.w - 1.0).abs() < EPS);
 
-    // Check rotation part (cos90≈0, sin90≈1)
+    // 检查旋转部分（cos90≈0，sin90≈1）
     assert!(result.x_axis.x.abs() < EPS); // cos(90) ≈ 0
     assert!((result.x_axis.y - 1.0).abs() < EPS); // sin(90) ≈ 1
 }
@@ -164,7 +164,7 @@ fn get_rotation_identity() {
 fn get_rotation_removes_scale() {
     let rotation = DMat3::from_rotation_z(FRAC_PI_4);
     let m = matrix4_ext::from_rotation_translation(&rotation, DVec3::new(1.0, 2.0, 3.0));
-    // Apply scale
+    // 应用缩放
     let scaled = DMat4::from_cols(
         m.x_axis * 2.0,
         m.y_axis * 3.0,
@@ -172,7 +172,7 @@ fn get_rotation_removes_scale() {
         m.w_axis,
     );
     let r = matrix4_ext::get_rotation(&scaled);
-    // Should recover the original rotation
+    // 应恢复原始旋转
     let r_arr = r.to_cols_array();
     let rot_arr = rotation.to_cols_array();
     for i in 0..9 {
@@ -201,7 +201,7 @@ fn multiply_by_translation_composed() {
     let m = DMat4::from_translation(DVec3::new(10.0, 0.0, 0.0));
     let t = DVec3::new(0.0, 5.0, 0.0);
     let result = matrix4_ext::multiply_by_translation(&m, t);
-    // Should be equivalent to m * fromTranslation(t)
+    // 应等价于 m * fromTranslation(t)
     let expected = m * DMat4::from_translation(t);
     assert_mat4_eq(&result, &expected, "multiplyByTranslation composed");
 }
@@ -237,7 +237,7 @@ fn multiply_by_scale_composed() {
 
 #[test]
 fn compute_perspective_fov_basic() {
-    let fov_y = FRAC_PI_2; // 90 degrees
+    let fov_y = FRAC_PI_2; // 90 度
     let aspect = 1.0;
     let near = 1.0;
     let far = 100.0;
@@ -314,12 +314,12 @@ fn equals_epsilon_outside() {
 
 #[test]
 fn compute_view_basic() {
-    // Looking down -Z from origin
+    // 从原点沿 -Z 方向观察
     let position = DVec3::ZERO;
     let direction = DVec3::new(0.0, 0.0, -1.0);
     let up = DVec3::Y;
     let view = matrix4_ext::compute_view(position, direction, up);
-    // Should be identity-like (right=X, up=Y, -direction=Z)
+    // 应近似单位矩阵（right=X，up=Y，-direction=Z）
     let expected = DMat4::from_cols_array(&[
         1.0, 0.0, 0.0, 0.0,
         0.0, 1.0, 0.0, 0.0,
@@ -335,7 +335,7 @@ fn compute_view_with_translation() {
     let direction = DVec3::new(0.0, 0.0, -1.0);
     let up = DVec3::Y;
     let view = matrix4_ext::compute_view(position, direction, up);
-    // Translation column should be -position (since axes are identity)
+    // 平移列应为 -position（因为坐标轴为单位矩阵）
     let t = matrix4_ext::get_translation(&view);
     assert!((t.x - (-1.0)).abs() < EPS);
     assert!((t.y - (-2.0)).abs() < EPS);
@@ -386,7 +386,7 @@ fn multiply_transformation_composed() {
     assert!((t.x - 1.0).abs() < EPS);
     assert!((t.y - 2.0).abs() < EPS);
     assert!((t.z - 0.0).abs() < EPS);
-    // 4th row should be [0,0,0,1]
+    // 第 4 行应为 [0,0,0,1]
     assert!((result.x_axis.w).abs() < EPS);
     assert!((result.w_axis.w - 1.0).abs() < EPS);
 }
@@ -398,7 +398,7 @@ fn multiply_by_point_as_vector_ignores_translation() {
     let m = DMat4::from_translation(DVec3::new(100.0, 200.0, 300.0));
     let v = DVec3::new(1.0, 0.0, 0.0);
     let result = matrix4_ext::multiply_by_point_as_vector(&m, v);
-    // Translation should not affect direction
+    // 平移不应影响方向
     assert!((result.x - 1.0).abs() < EPS);
     assert!((result.y).abs() < EPS);
     assert!((result.z).abs() < EPS);
@@ -410,7 +410,7 @@ fn multiply_by_point_as_vector_ignores_translation() {
 fn inverse_transformation_roundtrip() {
     let rot = DMat3::from_rotation_y(FRAC_PI_4);
     let m = matrix4_ext::from_rotation_translation(&rot, DVec3::new(1.0, 2.0, 3.0));
-    // First verify glam's own inverse works
+    // 先验证 glam 自身的求逆可用
     let glam_inv = m.inverse();
     let glam_product = m * glam_inv;
     let gp = glam_product.to_cols_array();
@@ -419,7 +419,7 @@ fn inverse_transformation_roundtrip() {
         assert!((gp[i] - expected).abs() < 1e-8,
             "glam M*M^-1 element {i}: got {} expected {}", gp[i], expected);
     }
-    // Now verify our inverse matches glam's
+    // 再验证我们的求逆与 glam 结果一致
     let inv = matrix4_ext::inverse_transformation(&m);
     let ic = inv.to_cols_array();
     let gc = glam_inv.to_cols_array();
@@ -446,10 +446,10 @@ fn set_rotation_basic() {
     let m = DMat4::from_translation(DVec3::new(1.0, 2.0, 3.0));
     let rot = DMat3::from_rotation_z(FRAC_PI_2);
     let result = matrix4_ext::set_rotation(&m, &rot);
-    // Translation preserved
+    // 平移保持不变
     let t = matrix4_ext::get_translation(&result);
     assert!((t.x - 1.0).abs() < EPS);
-    // Rotation set
+    // 旋转已设置
     let r = matrix4_ext::get_rotation(&result);
     let expected_r = rot;
     let ra = r.to_cols_array();
@@ -484,7 +484,7 @@ fn set_scale_basic() {
 #[test]
 fn compute_orthographic_off_center_basic() {
     let m = matrix4_ext::compute_orthographic_off_center(-1.0, 1.0, -1.0, 1.0, 0.0, 10.0);
-    // For symmetric [-1,1] x [-1,1], diagonal should be [1, 1, -2/(far-near)]
+    // 对于对称的 [-1,1] x [-1,1]，对角线应为 [1, 1, -2/(far-near)]
     let cols = m.to_cols_array();
     assert!((cols[0] - 1.0).abs() < EPS); // col0_row0 = 2/(right-left) = 1
     assert!((cols[5] - 1.0).abs() < EPS); // col1_row1 = 2/(top-bottom) = 1
@@ -514,7 +514,7 @@ fn compute_infinite_perspective_off_center_basic() {
     let cols = m.to_cols_array();
     assert!((cols[0] - 1.0).abs() < EPS);
     assert!((cols[5] - 1.0).abs() < EPS);
-    // col2_row2 = -1 (infinite far)
+    // col2_row2 = -1（无限远）
     assert!((cols[10] - (-1.0)).abs() < EPS);
     // col3_row2 = -2*near = -2
     assert!((cols[14] - (-2.0)).abs() < EPS);

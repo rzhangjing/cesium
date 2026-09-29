@@ -1,61 +1,61 @@
-//! In-flight deduplication set.
+//! 在途去重集合。
 //!
-//! Mirrors `dynamic_globe.rs` dedup logic in `enqueue_tiles` (L406, L417):
-//! a tile already in `in_flight` or `queued` is never re-submitted, preventing
-//! duplicate downloads and redundant mesh builds.
+//! 照搬 `dynamic_globe.rs` 中 `enqueue_tiles` 的去重逻辑（L406、L417）：
+//! 一个已在 `in_flight` 或 `queued` 中的瓦片绝不会被重复提交，从而
+//! 防止重复下载和冗余的网格构建。
 
 use std::collections::HashSet;
 use std::hash::Hash;
 use std::sync::Mutex;
 
-/// Thread-safe deduplication tracker for in-flight tile requests.
+/// 面向在途瓦片请求的线程安全去重追踪器。
 ///
-/// Corresponds to `TileManager::in_flight: HashSet<TileKey>` and
-/// `TileManager::queued: HashSet<TileKey>` in dynamic_globe.rs.
+/// 对应 dynamic_globe.rs 中的 `TileManager::in_flight: HashSet<TileKey>` 和
+/// `TileManager::queued: HashSet<TileKey>`。
 pub struct Dedup<K: Hash + Eq + Copy> {
     inner: Mutex<HashSet<K>>,
 }
 
 impl<K: Hash + Eq + Copy> Dedup<K> {
-    /// Create an empty dedup set.
+    /// 创建一个空去重集。
     pub fn new() -> Self {
         Self {
             inner: Mutex::new(HashSet::new()),
         }
     }
 
-    /// Try to insert a key. Returns `true` if newly inserted (not a duplicate),
-    /// `false` if already present (deduplicated — skip submission).
+    /// 尝试插入一个键。若为新插入（非重复）则返回 `true`，
+    /// 若已存在（被去重 —— 跳过提交）则返回 `false`。
     ///
-    /// Corresponds to L406: `if mgr.tile_entities.contains_key(&key) || mgr.queued.contains(&key) { continue; }`
-    /// and L417: `!mgr.in_flight.contains(&key)`.
+    /// 对应 L406：`if mgr.tile_entities.contains_key(&key) || mgr.queued.contains(&key) { continue; }`
+    /// 以及 L417：`!mgr.in_flight.contains(&key)`。
     pub fn insert(&self, key: K) -> bool {
         self.inner.lock().unwrap().insert(key)
     }
 
-    /// Remove a key (tile completed or cancelled).
+    /// 移除一个键（瓦片已完成或被取消）。
     ///
-    /// Corresponds to L1051: `mgr.in_flight.remove(&key)`.
+    /// 对应 L1051：`mgr.in_flight.remove(&key)`。
     pub fn remove(&self, key: &K) -> bool {
         self.inner.lock().unwrap().remove(key)
     }
 
-    /// Check if a key is currently in-flight.
+    /// 检查一个键当前是否在途。
     pub fn contains(&self, key: &K) -> bool {
         self.inner.lock().unwrap().contains(key)
     }
 
-    /// Current number of in-flight keys.
+    /// 当前在途键的数量。
     pub fn len(&self) -> usize {
         self.inner.lock().unwrap().len()
     }
 
-    /// Returns true if no keys are in-flight.
+    /// 若没有在途键则返回 true。
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Clear all entries (e.g. on pipeline reset).
+    /// 清空所有条目（例如在流水线重置时）。
     pub fn clear(&self) {
         self.inner.lock().unwrap().clear();
     }

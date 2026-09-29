@@ -1,17 +1,17 @@
-//! Binary format specs - ported from GltfLoaderSpec.js (GLB parsing),
-//! Batched3DModel3DTileContentSpec.js (B3DM parsing)
+//! 二进制格式 specs - 移植自 GltfLoaderSpec.js（GLB 解析），
+//! Batched3DModel3DTileContentSpec.js（B3DM 解析）
 //!
-//! Tests GLB header validation, chunk parsing, B3DM header/feature table parsing.
+//! 测试 GLB 头部校验、chunk 解析、B3DM 头部/要素表解析。
 
 use cesium_gltf::{
     B3dmData, BinaryFormatError, GlbData, B3DM_MAGIC, GLB_CHUNK_BIN, GLB_CHUNK_JSON, GLB_MAGIC,
 };
 
-/// Helper: build a minimal valid GLB with JSON chunk only.
+/// 辅助函数：构造一个仅含 JSON chunk 的最小有效 GLB。
 fn make_glb(json: &str, binary: Option<&[u8]>) -> Vec<u8> {
     let json_bytes = json.as_bytes();
     let json_len = json_bytes.len();
-    // Pad JSON to 4-byte alignment with spaces
+    // 用空格将 JSON 填充到 4 字节对齐
     let json_padding = (4 - (json_len % 4)) % 4;
     let json_chunk_len = json_len + json_padding;
 
@@ -23,12 +23,12 @@ fn make_glb(json: &str, binary: Option<&[u8]>) -> Vec<u8> {
     let total_len = 12 + 8 + json_chunk_len + bin_chunk_len.map(|l| 8 + l).unwrap_or(0);
 
     let mut data = Vec::with_capacity(total_len);
-    // Header
+    // 头部
     data.extend_from_slice(&GLB_MAGIC.to_le_bytes());
-    data.extend_from_slice(&2u32.to_le_bytes()); // version
+    data.extend_from_slice(&2u32.to_le_bytes()); // 版本
     data.extend_from_slice(&(total_len as u32).to_le_bytes());
 
-    // JSON chunk
+    // JSON 块
     data.extend_from_slice(&(json_chunk_len as u32).to_le_bytes());
     data.extend_from_slice(&GLB_CHUNK_JSON.to_le_bytes());
     data.extend_from_slice(json_bytes);
@@ -36,7 +36,7 @@ fn make_glb(json: &str, binary: Option<&[u8]>) -> Vec<u8> {
         data.push(b' ');
     }
 
-    // BIN chunk (optional)
+    // BIN 块（可选）
     if let Some(bin) = binary {
         let bin_padding = (4 - (bin.len() % 4)) % 4;
         let padded_len = bin.len() + bin_padding;
@@ -51,7 +51,7 @@ fn make_glb(json: &str, binary: Option<&[u8]>) -> Vec<u8> {
     data
 }
 
-/// Helper: build a minimal B3DM with given feature table JSON and GLB.
+/// 辅助函数：用给定的要素表 JSON 和 GLB 构造一个最小 B3DM。
 fn make_b3dm(ft_json: &str, glb: &[u8]) -> Vec<u8> {
     let ft_bytes = ft_json.as_bytes();
     let ft_len = ft_bytes.len();
@@ -61,12 +61,12 @@ fn make_b3dm(ft_json: &str, glb: &[u8]) -> Vec<u8> {
     let total = 28 + ft_padded + glb.len();
     let mut data = Vec::with_capacity(total);
     data.extend_from_slice(B3DM_MAGIC);
-    data.extend_from_slice(&1u32.to_le_bytes()); // version
+    data.extend_from_slice(&1u32.to_le_bytes()); // 版本
     data.extend_from_slice(&(total as u32).to_le_bytes());
-    data.extend_from_slice(&(ft_padded as u32).to_le_bytes()); // FT JSON length
-    data.extend_from_slice(&0u32.to_le_bytes()); // FT binary length
-    data.extend_from_slice(&0u32.to_le_bytes()); // BT JSON length
-    data.extend_from_slice(&0u32.to_le_bytes()); // BT binary length
+    data.extend_from_slice(&(ft_padded as u32).to_le_bytes()); // FT JSON 长度
+    data.extend_from_slice(&0u32.to_le_bytes()); // FT 二进制长度
+    data.extend_from_slice(&0u32.to_le_bytes()); // BT JSON 长度
+    data.extend_from_slice(&0u32.to_le_bytes()); // BT 二进制长度
     data.extend_from_slice(ft_bytes);
     for _ in 0..ft_padding {
         data.push(b' ');
@@ -75,7 +75,7 @@ fn make_b3dm(ft_json: &str, glb: &[u8]) -> Vec<u8> {
     data
 }
 
-// ─── GLB parsing ───────────────────────────────────────────────────────────
+// ─── GLB 解析 ───────────────────────────────────────────────────────────
 
 #[test]
 fn glb_parse_json_only() {
@@ -100,7 +100,7 @@ fn glb_parse_with_binary_chunk() {
 #[test]
 fn glb_invalid_magic() {
     let mut glb = make_glb(r#"{"asset":{"version":"2.0"}}"#, None);
-    glb[0] = 0xFF; // corrupt magic
+    glb[0] = 0xFF; // 损坏的魔数
     let err = GlbData::from_bytes(&glb).unwrap_err();
     assert!(matches!(err, BinaryFormatError::InvalidMagic { .. }));
 }
@@ -108,7 +108,7 @@ fn glb_invalid_magic() {
 #[test]
 fn glb_unsupported_version() {
     let mut glb = make_glb(r#"{"asset":{"version":"2.0"}}"#, None);
-    // Set version to 1
+    // 将版本设为 1
     glb[4..8].copy_from_slice(&1u32.to_le_bytes());
     let err = GlbData::from_bytes(&glb).unwrap_err();
     assert!(matches!(err, BinaryFormatError::UnsupportedVersion(1)));
@@ -116,7 +116,7 @@ fn glb_unsupported_version() {
 
 #[test]
 fn glb_buffer_too_short() {
-    let data = [0u8; 8]; // less than 12 bytes
+    let data = [0u8; 8]; // 少于 12 字节
     let err = GlbData::from_bytes(&data).unwrap_err();
     assert!(matches!(err, BinaryFormatError::BufferTooShort { expected: 12, actual: 8 }));
 }
@@ -135,7 +135,7 @@ fn glb_parse_with_meshes() {
     assert_eq!(result.model.vertex_count(), 3);
 }
 
-// ─── B3DM parsing ──────────────────────────────────────────────────────────
+// ─── B3DM 解析 ──────────────────────────────────────────────────────────
 
 #[test]
 fn b3dm_parse_basic() {
@@ -172,14 +172,14 @@ fn b3dm_no_rtc_center() {
 fn b3dm_invalid_magic() {
     let glb = make_glb(r#"{"asset":{"version":"2.0"}}"#, None);
     let mut b3dm = make_b3dm(r#"{"BATCH_LENGTH":0}"#, &glb);
-    b3dm[0] = b'x'; // corrupt magic
+    b3dm[0] = b'x'; // 损坏的魔数
     let err = B3dmData::from_bytes(&b3dm).unwrap_err();
     assert!(matches!(err, BinaryFormatError::InvalidMagic { .. }));
 }
 
 #[test]
 fn b3dm_buffer_too_short() {
-    let data = [0u8; 20]; // less than 28 bytes
+    let data = [0u8; 20]; // 少于 28 字节
     let err = B3dmData::from_bytes(&data).unwrap_err();
     assert!(matches!(err, BinaryFormatError::BufferTooShort { .. }));
 }

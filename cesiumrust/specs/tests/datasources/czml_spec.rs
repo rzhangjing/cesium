@@ -1,8 +1,8 @@
-//! DataSources/CzmlDataSourceSpec.js → Rust integration tests
+//! DataSources/CzmlDataSourceSpec.js → Rust 集成测试
 
 use cesium_datasource::czml::parse_czml;
 
-// === Basic parsing ===
+// === 基本解析 ===
 
 #[test]
 fn test_czml_document_packet_only() {
@@ -17,7 +17,7 @@ fn test_czml_document_packet_only() {
 
 #[test]
 fn test_czml_missing_document() {
-    // CZML without document packet should still parse (document is optional in our impl)
+    // 无 document 数据包的 CZML 仍应能解析（我们的实现中 document 可选）
     let json = r#"[
         {"id": "entity1", "name": "Test"}
     ]"#;
@@ -238,7 +238,7 @@ fn test_czml_entity_with_path() {
     assert!(entity.path.is_some());
 }
 
-// === Name and description ===
+// === Name 与 description ===
 
 #[test]
 fn test_czml_entity_name() {
@@ -262,7 +262,7 @@ fn test_czml_entity_description() {
     assert_eq!(entity.description.as_deref(), Some("A test entity"));
 }
 
-// === Multiple entities ===
+// === 多个实体 ===
 
 #[test]
 fn test_czml_multiple_entities() {
@@ -279,7 +279,7 @@ fn test_czml_multiple_entities() {
     assert!(ds.entities.contains("e3"));
 }
 
-// === DataSource name from document ===
+// === 从 document 获取的 DataSource 名称 ===
 
 #[test]
 fn test_czml_datasource_name_from_document() {

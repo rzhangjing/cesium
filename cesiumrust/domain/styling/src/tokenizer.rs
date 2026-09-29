@@ -1,65 +1,64 @@
-//! Tokenizer for the 3D Tiles Styling expression language.
+//! 3D Tiles Styling 表达式语言的词法分析器。
 //!
-//! Ported from `cesium-rs/crates/cesium-scene/src/expression.rs` L447-633
-//! (`Token` + `Tokenizer` + char predicates + string/number/identifier/operator
-//! lexing), the Rust reproduction of the subset of jsep 1.3.8 semantics the
-//! styling language needs (upstream `packages/engine/Source/Scene/Expression.js`
-//! parses with jsep plus `addBinaryOp("=~"/"!~", 0)`).
+//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs` L447-633
+//! （`Token` + `Tokenizer` + 字符谓词 + 字符串/数字/标识符/运算符
+//! 词法），它是 styling 语言所需的 jsep 1.3.8 语义子集的 Rust 复现
+//! （上游 `packages/engine/Source/Scene/Expression.js`
+//! 用 jsep 加 `addBinaryOp("=~"/"!~", 0)` 解析）。
 //!
-//! # M7-A scope notes
+//! # M7-A 作用域说明
 //!
-//! * DEVIATION (jsep): there is **no regex-literal lexing**. [`Token::RegEx`] is
-//!   a PLACEHOLDER variant reserved for M7-B (`regex.rs`); the M7-A tokenizer
-//!   never produces it. Cesium styling builds regexes via the `regExp()`
-//!   function rather than `/.../` literals, so the blueprint tokenizer has no
-//!   regex-literal path either — the variant exists so M7-B can extend lexing
-//!   without a breaking change to `Token`.
-//! * The `is_whitespace` predicate mentioned in the task brief is the builtin
-//!   `char::is_whitespace`, used directly in [`Tokenizer::skip_whitespace`]
-//!   (blueprint-faithful; no redundant wrapper is introduced).
-//! * Minor idiom adaptation: the two-character operator dispatch uses `matches!`
-//!   instead of the blueprint's `match { .. , _ => {} }` to stay clippy-clean
-//!   (`clippy::single_match`); semantics are identical.
+//! * 偏离（jsep）：**没有正则字面量词法**。[`Token::RegEx`] 是一个
+//!   为 M7-B（`regex.rs`）预留的占位变体；M7-A 词法器从不产出它。Cesium styling
+//!   通过 `regExp()` 函数构造正则而非 `/.../` 字面量，所以 blueprint 词法器
+//!   也没有正则字面量路径 —— 该变体存在是为了让 M7-B 能在不破坏 `Token`
+//!   的前提下扩展词法。
+//! * 任务简报里提到的 `is_whitespace` 谓词就是内建的
+//!   `char::is_whitespace`，在 [`Tokenizer::skip_whitespace`] 中直接使用
+//!   （忠于 blueprint；不引入冗余包装）。
+//! * 小的惯用法调整：双字符运算符分派用 `matches!`
+//!   而非 blueprint 的 `match { .. , _ => {} }`，以保持 clippy 干净
+//!   （`clippy::single_match`）；语义完全一致。
 
 use crate::value::{runtime_error, RuntimeError};
 
-/// A lexical token, mirroring the jsep token stream.
+/// 一个词法 token，镜像 jsep 的 token 流。
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Number(f64),
     Str(String),
     Ident(String),
     Op(String),
-    /// M7-B placeholder for a `/pattern/flags` regex literal — never produced by
-    /// the M7-A tokenizer (see module docs).
-    #[allow(dead_code)] // M7-B placeholder; not constructed in the M7-A base layer
+    /// 一个 `/pattern/flags` 正则字面量的 M7-B 占位 —— M7-A 词法器
+    /// 从不产出（见模块文档）。
+    #[allow(dead_code)] // M7-B 占位；在 M7-A 基础层中不构造
     RegEx { pattern: String, flags: String },
 }
 
-/// A hand-written tokenizer mirroring jsep 1.3.8's lexer.
+/// 一个手写的词法分析器，镜像 jsep 1.3.8 的词法器。
 pub struct Tokenizer<'a> {
     chars: Vec<char>,
     index: usize,
     source: &'a str,
 }
 
-/// `true` for `[A-Za-z_$]` — the set jsep allows to start an identifier.
+/// 对 `[A-Za-z_$]` 为 `true` —— jsep 允许标识符起始的字符集。
 pub fn is_identifier_start(c: char) -> bool {
     c.is_ascii_alphabetic() || c == '_' || c == '$'
 }
 
-/// `true` for `[A-Za-z0-9_$]` — the set jsep allows inside an identifier.
+/// 对 `[A-Za-z0-9_$]` 为 `true` —— jsep 允许出现在标识符内的字符集。
 pub fn is_identifier_char(c: char) -> bool {
     is_identifier_start(c) || c.is_ascii_digit()
 }
 
-/// `true` for `[0-9]`.
+/// 对 `[0-9]` 为 `true`。
 pub fn is_digit(c: char) -> bool {
     c.is_ascii_digit()
 }
 
 impl<'a> Tokenizer<'a> {
-    /// Creates a tokenizer over `source`.
+    /// 在 `source` 上创建一个词法分析器。
     pub fn new(source: &'a str) -> Tokenizer<'a> {
         Tokenizer {
             chars: source.chars().collect(),
@@ -94,7 +93,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    /// Lexes the whole input into a token vector.
+    /// 把整个输入词法分析为一个 token 向量。
     pub fn tokenize(&mut self) -> Result<Vec<Token>, RuntimeError> {
         let mut tokens = Vec::new();
         loop {
@@ -116,9 +115,8 @@ impl<'a> Tokenizer<'a> {
         Ok(tokens)
     }
 
-    /// Strings carry no escape processing: backslashes were already replaced
-    /// with `"@#%"` by `removeBackslashes`, mirroring jsep's behavior after the
-    /// preprocessing step.
+    /// 字符串不做转义处理：反斜杠已由 `removeBackslashes` 被替换为
+    /// `"@#%"`，模仿 jsep 在预处理步骤之后的行为。
     fn read_string(&mut self, quote: char) -> Result<String, RuntimeError> {
         self.advance();
         let start = self.index;
@@ -158,8 +156,8 @@ impl<'a> Tokenizer<'a> {
             }
         }
         let text: String = self.chars[start..self.index].iter().collect();
-        // jsep parses with parseFloat semantics; the tokenizer guarantees a
-        // well-formed numeric literal here.
+        // jsep 以 parseFloat 语义解析；词法器在此保证一个
+        // 良构的数字字面量。
         text.parse::<f64>().unwrap_or(f64::NAN)
     }
 
@@ -186,8 +184,8 @@ impl<'a> Tokenizer<'a> {
             return Ok(two);
         }
         let c = self.advance().unwrap();
-        // jsep accepts these operators; unsupported ones are rejected later by
-        // create_runtime_ast with `Unexpected operator "{op}".`.
+        // jsep 接受这些运算符；不支持的稍后由
+        // create_runtime_ast 以 `Unexpected operator "{op}".` 拒绝。
         if matches!(
             c,
             '+' | '-'
@@ -213,7 +211,7 @@ impl<'a> Tokenizer<'a> {
         ) {
             return Ok(c.to_string());
         }
-        let _ = self.source; // kept for parity with jsep error context
+        let _ = self.source; // 为与 jsep 错误上下文对齐而保留
         Err(runtime_error(&format!("Unexpected \"{c}\"")))
     }
 }
@@ -329,8 +327,7 @@ mod tests {
 
     #[test]
     fn regex_token_placeholder_is_constructible() {
-        // The M7-B placeholder variant exists and is matchable even though the
-        // M7-A tokenizer never emits it.
+        // M7-B 占位变体存在且可被匹配，即便 M7-A 词法器从不发出它。
         let t = Token::RegEx {
             pattern: r"\d+".to_string(),
             flags: "g".to_string(),

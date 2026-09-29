@@ -1,5 +1,5 @@
-//! Coordinate transforms - ENU frames, HeadingPitchRoll, ICRF.
-//! Maps to CesiumJS `Core/Transforms.js`, `Core/HeadingPitchRoll.js`, `Core/HeadingPitchRange.js`, `Core/TranslationRotationScale.js`
+//! 坐标变换 —— ENU 参考系、HeadingPitchRoll、ICRF。
+//! 映射到 CesiumJS `Core/Transforms.js`, `Core/HeadingPitchRoll.js`, `Core/HeadingPitchRange.js`, `Core/TranslationRotationScale.js`
 
 use crate::ellipsoid::Ellipsoid;
 use crate::math_utils;
@@ -7,15 +7,15 @@ use crate::projection::MapProjection;
 use glam::{DMat3, DMat4, DQuat, DVec3};
 use serde::{Deserialize, Serialize};
 
-/// Heading, pitch, and roll angles (in radians).
-/// Maps to CesiumJS `HeadingPitchRoll`
+/// 航向、俯仰与翻滚角（弧度制）。
+/// 映射到 CesiumJS `HeadingPitchRoll`
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct HeadingPitchRoll {
-    /// Heading angle (rotation about the local Z/up axis), in radians.
+    /// 航向角（绕局部 Z/up 轴旋转），弧度制。
     pub heading: f64,
-    /// Pitch angle (rotation about the local Y/right axis), in radians.
+    /// 俯仰角（绕局部 Y/right 轴旋转），弧度制。
     pub pitch: f64,
-    /// Roll angle (rotation about the local X/forward axis), in radians.
+    /// 翻滚角（绕局部 X/forward 轴旋转），弧度制。
     pub roll: f64,
 }
 
@@ -30,7 +30,7 @@ impl HeadingPitchRoll {
         Self { heading, pitch, roll }
     }
 
-    /// Creates from degrees.
+    /// 由角度（度）创建。
     pub fn from_degrees(heading: f64, pitch: f64, roll: f64) -> Self {
         Self {
             heading: math_utils::to_radians(heading),
@@ -39,14 +39,13 @@ impl HeadingPitchRoll {
         }
     }
 
-    /// Converts to a quaternion.
-    /// Maps to `Quaternion.fromHeadingPitchRoll`:
+    /// 转换为四元数。
+    /// 映射到 `Quaternion.fromHeadingPitchRoll`：
     ///   heading(Z, -heading) * (pitch(Y, -pitch) * roll(X, +roll))
     ///
-    /// Note the CesiumJS sign convention: heading and pitch are negated when
-    /// converted to axis-angle rotations (heading is a rotation about the
-    /// negative Z axis, pitch about the negative Y axis, roll about the
-    /// positive X axis).
+    /// 注意 CesiumJS 的符号约定：转换为轴角旋转时航向与俯仰会被取负
+    /// （航向是绕负 Z 轴的旋转，俯仰绕负 Y 轴，翻滚绕
+    /// 正 X 轴）。
     pub fn to_quaternion(&self) -> DQuat {
         let roll = DQuat::from_axis_angle(DVec3::X, self.roll);
         let pitch = DQuat::from_axis_angle(DVec3::Y, -self.pitch);
@@ -54,8 +53,8 @@ impl HeadingPitchRoll {
         heading * (pitch * roll)
     }
 
-    /// Computes heading/pitch/roll from a quaternion.
-    /// Maps to `HeadingPitchRoll.fromQuaternion`
+    /// 由四元数计算航向/俯仰/翻滚。
+    /// 映射到 `HeadingPitchRoll.fromQuaternion`
     pub fn from_quaternion(quaternion: DQuat) -> Self {
         let test = 2.0 * (quaternion.w * quaternion.y - quaternion.z * quaternion.x);
         let denominator_roll =
@@ -71,8 +70,8 @@ impl HeadingPitchRoll {
         }
     }
 
-    /// Compares with relative/absolute epsilon tolerance.
-    /// Maps to `HeadingPitchRoll.equalsEpsilon`
+    /// 以相对/绝对 epsilon 容差进行比较。
+    /// 映射到 `HeadingPitchRoll.equalsEpsilon`
     pub fn equals_epsilon(&self, other: &Self, relative_epsilon: f64) -> bool {
         fn eq_eps(left: f64, right: f64, rel_eps: f64) -> bool {
             let abs_diff = (left - right).abs();
@@ -90,15 +89,15 @@ impl std::fmt::Display for HeadingPitchRoll {
     }
 }
 
-/// Heading, pitch, and range (distance).
-/// Maps to CesiumJS `HeadingPitchRange`
+/// 航向、俯仰与距离（range）。
+/// 映射到 CesiumJS `HeadingPitchRange`
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct HeadingPitchRange {
-    /// Heading angle in radians.
+    /// 航向角，弧度制。
     pub heading: f64,
-    /// Pitch angle in radians.
+    /// 俯仰角，弧度制。
     pub pitch: f64,
-    /// Range (distance) in meters.
+    /// 距离（range），单位米。
     pub range: f64,
 }
 
@@ -114,15 +113,15 @@ impl HeadingPitchRange {
     }
 }
 
-/// Translation, rotation, and scale.
-/// Maps to CesiumJS `TranslationRotationScale`
+/// 平移、旋转与缩放。
+/// 映射到 CesiumJS `TranslationRotationScale`
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct TranslationRotationScale {
-    /// Translation vector.
+    /// 平移向量。
     pub translation: DVec3,
-    /// Rotation quaternion.
+    /// 旋转四元数。
     pub rotation: DQuat,
-    /// Scale vector.
+    /// 缩放向量。
     pub scale: DVec3,
 }
 
@@ -141,8 +140,8 @@ impl TranslationRotationScale {
         Self { translation, rotation, scale }
     }
 
-    /// Converts to a 4x4 matrix.
-    /// Maps to `Matrix4.fromTranslationRotationScale`
+    /// 转换为 4x4 矩阵。
+    /// 映射到 `Matrix4.fromTranslationRotationScale`
     pub fn to_matrix4(&self) -> DMat4 {
         let rotation_matrix = DMat3::from_quat(self.rotation);
         let scaled = DMat3::from_cols(
@@ -159,9 +158,9 @@ impl TranslationRotationScale {
     }
 }
 
-/// Axis identifiers for local frame construction.
-/// Maps to the string axis names ("east", "north", "up", "west", "south",
-/// "down") accepted by CesiumJS `localFrameToFixedFrameGenerator`.
+/// 用于构建局部参考系的轴标识符。
+/// 映射到 CesiumJS `localFrameToFixedFrameGenerator` 所接受的
+/// 字符串轴名（"east"、"north"、"up"、"west"、"south"、"down"）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LocalFrameAxis {
     East,
@@ -174,9 +173,9 @@ pub enum LocalFrameAxis {
 
 use LocalFrameAxis::*;
 
-/// The third axis completing a right-handed local frame (`first × second`).
-/// Maps to CesiumJS `vectorProductLocalFrame`. Returns `None` when the two
-/// axes are identical or opposite (CesiumJS rejects this with a DeveloperError).
+/// 补全右手局部参考系的第三轴（`first × second`）。
+/// 映射到 CesiumJS `vectorProductLocalFrame`。当两轴相同或相反时返回
+/// `None`（CesiumJS 会以 DeveloperError 拒绝这种情况）。
 fn third_axis(first: LocalFrameAxis, second: LocalFrameAxis) -> Option<LocalFrameAxis> {
     match (first, second) {
         (Up, South) => Some(East),
@@ -207,8 +206,8 @@ fn third_axis(first: LocalFrameAxis, second: LocalFrameAxis) -> Option<LocalFram
     }
 }
 
-/// The local-frame axis vector in the degenerate case (ellipsoid center).
-/// Maps to CesiumJS `degeneratePositionLocalFrame`.
+/// 退化情形（椭球中心）下的局部参考系轴向量。
+/// 映射到 CesiumJS `degeneratePositionLocalFrame`。
 fn degenerate_axis(axis: LocalFrameAxis) -> DVec3 {
     match axis {
         North => DVec3::new(-1.0, 0.0, 0.0),
@@ -220,12 +219,12 @@ fn degenerate_axis(axis: LocalFrameAxis) -> DVec3 {
     }
 }
 
-/// Whether the axis is east or west (never sign-flipped at a pole).
+/// 该轴是否为 east 或 west（在极点处从不翻转符号）。
 fn is_east_west(axis: LocalFrameAxis) -> bool {
     matches!(axis, East | West)
 }
 
-/// Selects the concrete vector for a named axis from the six computed directions.
+/// 从六个已计算的方向中，为具名轴选取具体的向量。
 fn pick_axis(
     axis: LocalFrameAxis,
     east: DVec3,
@@ -245,28 +244,26 @@ fn pick_axis(
     }
 }
 
-/// Componentwise `Cartesian3.equalsEpsilon` (the original compares each
-/// component with `CesiumMath.equalsEpsilon`, absolute epsilon defaulting to
-/// the relative epsilon).
+/// 逐分量的 `Cartesian3.equalsEpsilon`（原版用 `CesiumMath.equalsEpsilon`
+/// 比较每个分量，绝对 epsilon 默认取相对 epsilon 的值）。
 fn vec3_equals_epsilon(left: DVec3, right: DVec3, epsilon: f64) -> bool {
     math_utils::equals_epsilon(left.x, right.x, epsilon, epsilon)
         && math_utils::equals_epsilon(left.y, right.y, epsilon, epsilon)
         && math_utils::equals_epsilon(left.z, right.z, epsilon, epsilon)
 }
 
-/// Computes a local reference frame at a given origin.
-/// Maps to `Transforms.localFrameToFixedFrameGenerator(firstAxis, secondAxis)`
+/// 在给定原点计算一个局部参考系。
+/// 映射到 `Transforms.localFrameToFixedFrameGenerator(firstAxis, secondAxis)`
 ///
-/// `first_axis` and `second_axis` define which geodetic directions map to the
-/// matrix's X and Y columns; the Z column is the right-handed third axis
-/// (`first × second`).
+/// `first_axis` 与 `second_axis` 决定哪些大地测量方向映射到矩阵的
+/// X 和 Y 列；Z 列是右手的第三轴（`first × second`）。
 ///
-/// Faithful port of the generated CesiumJS function:
-/// - At the ellipsoid center: the degenerate local frame is used.
-/// - At a pole (x and y both ~0): the degenerate frame is used, with every
-///   non-east/west axis multiplied by `sign(z)`.
-/// - Otherwise: up = geodetic surface normal, east = normalize(-origin.y,
-///   origin.x, 0), north = up × east, and the opposites down/west/south.
+/// 对 CesiumJS 生成函数的忠实移植：
+/// - 在椭球中心：使用退化的局部参考系。
+/// - 在极点（x 和 y 都约为 0）：使用退化参考系，每个
+///   非 east/west 轴都乘以 `sign(z)`。
+/// - 否则：up = 大地表面法线，east = normalize(-origin.y,
+///   origin.x, 0)，north = up × east，以及相反的 down/west/south。
 pub fn local_frame_to_fixed_frame(
     first_axis: LocalFrameAxis,
     second_axis: LocalFrameAxis,
@@ -278,7 +275,7 @@ pub fn local_frame_to_fixed_frame(
 
     let eps = math_utils::EPSILON14;
     let (first, second, third_vec) = if vec3_equals_epsilon(origin, DVec3::ZERO, eps) {
-        // If x, y, and z are zero, use the degenerate local frame.
+        // 若 x、y、z 均为零，使用退化的局部参考系。
         (
             degenerate_axis(first_axis),
             degenerate_axis(second_axis),
@@ -287,7 +284,7 @@ pub fn local_frame_to_fixed_frame(
     } else if math_utils::equals_epsilon(origin.x, 0.0, eps, eps)
         && math_utils::equals_epsilon(origin.y, 0.0, eps, eps)
     {
-        // If x and y are zero, assume origin is at a pole.
+        // 若 x 和 y 为零，假定原点位于极点。
         let sign = math_utils::sign(origin.z);
         let mut first = degenerate_axis(first_axis);
         if !is_east_west(first_axis) {
@@ -303,7 +300,7 @@ pub fn local_frame_to_fixed_frame(
         }
         (first, second, third_vec)
     } else {
-        // General position.
+        // 一般位置。
         let up = ellipsoid
             .geodetic_surface_normal(origin)
             .expect("origin must not be at the center of the ellipsoid");
@@ -327,33 +324,33 @@ pub fn local_frame_to_fixed_frame(
     )
 }
 
-/// Computes the East-North-Up (ENU) reference frame at a given origin.
-/// Maps to `Transforms.eastNorthUpToFixedFrame`
+/// 在给定原点计算 East-North-Up (ENU) 参考系。
+/// 映射到 `Transforms.eastNorthUpToFixedFrame`
 pub fn east_north_up_to_fixed_frame(origin: DVec3, ellipsoid: &Ellipsoid) -> DMat4 {
     local_frame_to_fixed_frame(East, North, origin, ellipsoid)
 }
 
-/// Computes the North-East-Down (NED) reference frame at a given origin.
-/// Maps to `Transforms.northEastDownToFixedFrame`
+/// 在给定原点计算 North-East-Down (NED) 参考系。
+/// 映射到 `Transforms.northEastDownToFixedFrame`
 pub fn north_east_down_to_fixed_frame(origin: DVec3, ellipsoid: &Ellipsoid) -> DMat4 {
     local_frame_to_fixed_frame(North, East, origin, ellipsoid)
 }
 
-/// Computes the North-Up-East (NUE) reference frame at a given origin.
-/// Maps to `Transforms.northUpEastToFixedFrame`
+/// 在给定原点计算 North-Up-East (NUE) 参考系。
+/// 映射到 `Transforms.northUpEastToFixedFrame`
 pub fn north_up_east_to_fixed_frame(origin: DVec3, ellipsoid: &Ellipsoid) -> DMat4 {
     local_frame_to_fixed_frame(North, Up, origin, ellipsoid)
 }
 
-/// Computes the North-West-Up (NWU) reference frame at a given origin.
-/// Maps to `Transforms.northWestUpToFixedFrame`
+/// 在给定原点计算 North-West-Up (NWU) 参考系。
+/// 映射到 `Transforms.northWestUpToFixedFrame`
 pub fn north_west_up_to_fixed_frame(origin: DVec3, ellipsoid: &Ellipsoid) -> DMat4 {
     local_frame_to_fixed_frame(North, West, origin, ellipsoid)
 }
 
-/// Computes a 4x4 matrix from heading/pitch/roll at a given origin, using the
-/// default East-North-Up local frame.
-/// Maps to `Transforms.headingPitchRollToFixedFrame`
+/// 在给定原点由航向/俯仰/翻滚计算 4x4 矩阵，使用默认的
+/// East-North-Up 局部参考系。
+/// 映射到 `Transforms.headingPitchRollToFixedFrame`
 pub fn heading_pitch_roll_to_fixed_frame(
     hpr: &HeadingPitchRoll,
     origin: DVec3,
@@ -362,14 +359,14 @@ pub fn heading_pitch_roll_to_fixed_frame(
     heading_pitch_roll_to_fixed_frame_with_local_frame(hpr, origin, ellipsoid, East, North)
 }
 
-/// Computes a 4x4 matrix from heading/pitch/roll at a given origin, using a
-/// custom local frame defined by `first_axis`/`second_axis`.
-/// Maps to `Transforms.headingPitchRollToFixedFrame` with a custom
-/// `fixedFrameTransform`.
+/// 在给定原点由航向/俯仰/翻滚计算 4x4 矩阵，使用由
+/// `first_axis`/`second_axis` 定义的自定义局部参考系。
+/// 映射到带自定义 `fixedFrameTransform` 的
+/// `Transforms.headingPitchRollToFixedFrame`。
 ///
-/// Faithful port: builds the local-frame-to-fixed matrix, then multiplies by
-/// the heading/pitch/roll rotation matrix (as a rigid transform), matching
-/// CesiumJS `Matrix4.multiply(fixedFrame, hprMatrix)`.
+/// 忠实移植：先构建局部参考系到 fixed 的矩阵，再乘以
+/// 航向/俯仰/翻滚的旋转矩阵（作为刚体变换），对应
+/// CesiumJS 的 `Matrix4.multiply(fixedFrame, hprMatrix)`。
 pub fn heading_pitch_roll_to_fixed_frame_with_local_frame(
     hpr: &HeadingPitchRoll,
     origin: DVec3,
@@ -388,9 +385,9 @@ pub fn heading_pitch_roll_to_fixed_frame_with_local_frame(
     fixed_frame * hpr_matrix
 }
 
-/// Computes a quaternion from heading/pitch/roll at a given origin, using the
-/// default East-North-Up local frame.
-/// Maps to `Transforms.headingPitchRollQuaternion`
+/// 在给定原点由航向/俯仰/翻滚计算四元数，使用默认的
+/// East-North-Up 局部参考系。
+/// 映射到 `Transforms.headingPitchRollQuaternion`
 pub fn heading_pitch_roll_quaternion(
     hpr: &HeadingPitchRoll,
     origin: DVec3,
@@ -399,10 +396,9 @@ pub fn heading_pitch_roll_quaternion(
     heading_pitch_roll_quaternion_with_local_frame(hpr, origin, ellipsoid, East, North)
 }
 
-/// Computes a quaternion from heading/pitch/roll at a given origin, using a
-/// custom local frame.
-/// Maps to `Transforms.headingPitchRollQuaternion` with a custom
-/// `fixedFrameTransform`.
+/// 在给定原点由航向/俯仰/翻滚计算四元数，使用自定义局部参考系。
+/// 映射到带自定义 `fixedFrameTransform` 的
+/// `Transforms.headingPitchRollQuaternion`。
 pub fn heading_pitch_roll_quaternion_with_local_frame(
     hpr: &HeadingPitchRoll,
     origin: DVec3,
@@ -425,12 +421,12 @@ pub fn heading_pitch_roll_quaternion_with_local_frame(
     DQuat::from_mat3(&rotation)
 }
 
-/// Computes the rotation matrix from ICRF (inertial) to fixed frame.
-/// Simplified: uses Earth rotation angle approximation.
-/// Maps to `Transforms.computeIcrfToFixedMatrix`
+/// 计算从 ICRF（惯性系）到 fixed 参考系的旋转矩阵。
+/// 简化版：使用地球自转角度近似。
+/// 映射到 `Transforms.computeIcrfToFixedMatrix`
 pub fn compute_icrf_to_fixed_matrix(julian_date_seconds: f64) -> Option<DMat3> {
-    // Simplified Earth rotation: GMST approximation
-    // Full implementation would use IAU 2006/2000A precession-nutation
+    // 简化的地球自转：GMST 近似
+    // 完整实现应使用 IAU 2006/2000A 岁差-章动
     let days_since_j2000 = julian_date_seconds / 86400.0 - 2451545.0;
     let gmst = math_utils::zero_to_two_pi(
         math_utils::to_radians(280.46061837 + 360.98564736629 * days_since_j2000),
@@ -439,7 +435,7 @@ pub fn compute_icrf_to_fixed_matrix(julian_date_seconds: f64) -> Option<DMat3> {
     let cos_gmst = gmst.cos();
     let sin_gmst = gmst.sin();
 
-    // Rotation about Z axis by GMST
+    // 绕 Z 轴按 GMST 旋转
     Some(DMat3::from_cols_array(&[
         cos_gmst, -sin_gmst, 0.0,
         sin_gmst, cos_gmst, 0.0,
@@ -447,14 +443,14 @@ pub fn compute_icrf_to_fixed_matrix(julian_date_seconds: f64) -> Option<DMat3> {
     ]))
 }
 
-/// Computes the rotation matrix from fixed frame to ICRF (inertial).
-/// Maps to `Transforms.computeFixedToIcrfMatrix`
+/// 计算从 fixed 参考系到 ICRF（惯性系）的旋转矩阵。
+/// 映射到 `Transforms.computeFixedToIcrfMatrix`
 pub fn compute_fixed_to_icrf_matrix(julian_date_seconds: f64) -> Option<DMat3> {
     compute_icrf_to_fixed_matrix(julian_date_seconds).map(|m| m.transpose())
 }
 
-/// Computes a view matrix looking at a target from a position.
-/// Maps to `Transforms.lookAt` (simplified)
+/// 计算从某一位置看向目标的视图矩阵。
+/// 映射到 `Transforms.lookAt`（简化版）
 pub fn look_at(eye: DVec3, target: DVec3, up: DVec3) -> DMat4 {
     let z_axis = (eye - target).normalize();
     let x_axis = up.cross(z_axis).normalize();
@@ -468,12 +464,12 @@ pub fn look_at(eye: DVec3, target: DVec3, up: DVec3) -> DMat4 {
     )
 }
 
-/// Computes a rotation matrix from a position and velocity (flight direction).
-/// Maps to `Transforms.rotationMatrixFromPositionVelocity`
+/// 由位置和速度（飞行方向）计算旋转矩阵。
+/// 映射到 `Transforms.rotationMatrixFromPositionVelocity`
 ///
-/// The resulting matrix's columns are `[velocity, right, up]`, matching the
-/// CesiumJS implementation which assigns `result[0..2]=velocity,
-/// result[3..5]=right, result[6..8]=up` (column-major storage).
+/// 所得矩阵的各列为 `[velocity, right, up]`，对应 CesiumJS 的实现，
+/// 后者赋值 `result[0..2]=velocity, result[3..5]=right,
+/// result[6..8]=up`（列主序存储）。
 pub fn rotation_matrix_from_position_velocity(
     position: DVec3,
     velocity: DVec3,
@@ -495,8 +491,8 @@ pub fn rotation_matrix_from_position_velocity(
     DMat3::from_cols(velocity, right, up)
 }
 
-/// Inverts a rigid (orthonormal rotation + translation) transformation.
-/// Maps to `Matrix4.inverseTransformation`: `[R^T | -R^T * t]`.
+/// 求一个刚体（正交旋转 + 平移）变换的逆。
+/// 映射到 `Matrix4.inverseTransformation`：`[R^T | -R^T * t]`。
 pub fn inverse_transformation(matrix: &DMat4) -> DMat4 {
     let rotation = DMat3::from_cols(
         matrix.x_axis.truncate(),
@@ -513,9 +509,9 @@ pub fn inverse_transformation(matrix: &DMat4) -> DMat4 {
     )
 }
 
-/// The swizzle matrix mapping (x, y, z) -> (z, x, y), used to convert a 3D
-/// ENU frame into a 2D projected frame.
-/// Maps to `Transforms.SWIZZLE_3D_TO_2D_MATRIX` (column-major columns [Y, Z, X]).
+/// 将 (x, y, z) 映射为 (z, x, y) 的 swizzle 矩阵，用于把 3D ENU 参考系
+/// 转换为 2D 投影参考系。
+/// 映射到 `Transforms.SWIZZLE_3D_TO_2D_MATRIX`（列主序的列为 [Y, Z, X]）。
 fn swizzle_3d_to_2d_matrix() -> DMat4 {
     DMat4::from_cols(
         DVec3::Y.extend(0.0),
@@ -525,8 +521,8 @@ fn swizzle_3d_to_2d_matrix() -> DMat4 {
     )
 }
 
-/// Computes heading/pitch/roll angles from a transform in the fixed frame.
-/// Maps to `Transforms.fixedFrameToHeadingPitchRoll`
+/// 由 fixed 参考系中的变换计算航向/俯仰/翻滚角。
+/// 映射到 `Transforms.fixedFrameToHeadingPitchRoll`
 pub fn fixed_frame_to_heading_pitch_roll(
     transform: &DMat4,
     ellipsoid: &Ellipsoid,
@@ -537,9 +533,9 @@ pub fn fixed_frame_to_heading_pitch_roll(
     }
     let to_fixed_frame = inverse_transformation(&east_north_up_to_fixed_frame(center, ellipsoid));
 
-    // Matrix4.setScale(transform, (1,1,1)): normalize each rotation column
-    // (divide xyz by its length), preserving the w component; then
-    // Matrix4.setTranslation(.., ZERO).
+    // Matrix4.setScale(transform, (1,1,1))：归一化每个旋转列
+    // （将 xyz 除以其长度），保留 w 分量；然后
+    // Matrix4.setTranslation(.., ZERO)。
     let mut transform_copy = *transform;
     let x_scale = transform.x_axis.truncate().length();
     let y_scale = transform.y_axis.truncate().length();
@@ -558,8 +554,8 @@ pub fn fixed_frame_to_heading_pitch_roll(
     HeadingPitchRoll::from_quaternion(DQuat::from_mat3(&rotation).normalize())
 }
 
-/// Computes a 2D transformation from a 3D basis using the given projection.
-/// Maps to `Transforms.basisTo2D`
+/// 使用给定投影，由 3D 基计算 2D 变换。
+/// 映射到 `Transforms.basisTo2D`
 pub fn basis_to_2d<P: MapProjection>(projection: &P, matrix: &DMat4) -> DMat4 {
     let rtc_center = matrix.w_axis.truncate();
     let ellipsoid = *projection.ellipsoid();
@@ -593,8 +589,8 @@ pub fn basis_to_2d<P: MapProjection>(projection: &P, matrix: &DMat4) -> DMat4 {
     result
 }
 
-/// Computes a 2D model matrix from a 3D ellipsoid-centered frame.
-/// Maps to `Transforms.ellipsoidTo2DModelMatrix`
+/// 由以椭球为中心的 3D 参考系计算 2D 模型矩阵。
+/// 映射到 `Transforms.ellipsoidTo2DModelMatrix`
 pub fn ellipsoid_to_2d_model_matrix<P: MapProjection>(projection: &P, center: DVec3) -> DMat4 {
     let ellipsoid = *projection.ellipsoid();
     let from_enu = east_north_up_to_fixed_frame(center, &ellipsoid);
@@ -619,7 +615,7 @@ mod tests {
         let origin = DVec3::new(6378137.0, 0.0, 0.0);
         let frame = east_north_up_to_fixed_frame(origin, &ellipsoid);
 
-        // At (lat=0, lon=0): East = (0,1,0), North = (0,0,1), Up = (1,0,0)
+        // 在 (lat=0, lon=0) 处：East = (0,1,0), North = (0,0,1), Up = (1,0,0)
         let east = frame.x_axis.truncate();
         let north = frame.y_axis.truncate();
         let up = frame.z_axis.truncate();
@@ -636,7 +632,7 @@ mod tests {
         let origin = DVec3::new(0.0, 0.0, 6356752.3142451793);
         let frame = east_north_up_to_fixed_frame(origin, &ellipsoid);
 
-        // At north pole: Up = (0,0,1)
+        // 在北极：Up = (0,0,1)
         let up = frame.z_axis.truncate();
         assert!(up.abs_diff_eq(DVec3::Z, 1e-10), "Up at pole: {:?}", up);
     }
@@ -655,8 +651,8 @@ mod tests {
     fn test_heading_pitch_roll_heading_90() {
         let hpr = HeadingPitchRoll::new(PI / 2.0, 0.0, 0.0);
         let quat = hpr.to_quaternion();
-        // 90° heading → rotation about -Z by 90° (CesiumJS convention), so
-        // z = -sin(PI/4), w = cos(PI/4).
+        // 90° 航向 → 绕 -Z 旋转 90°（CesiumJS 约定），因此
+        // z = -sin(PI/4), w = cos(PI/4)。
         assert!((quat.z + (PI / 4.0).sin()).abs() < 1e-10);
         assert!((quat.w - (PI / 4.0).cos()).abs() < 1e-10);
     }
@@ -674,10 +670,10 @@ mod tests {
 
     #[test]
     fn test_icrf_to_fixed() {
-        // At J2000 epoch, GMST ≈ 280.46° → rotation should be non-identity
+        // 在 J2000 历元，GMST ≈ 280.46° → 旋转应非单位阵
         let j2000_seconds = 2451545.0 * 86400.0;
         let mat = compute_icrf_to_fixed_matrix(j2000_seconds).unwrap();
-        // Should be a valid rotation matrix (det ≈ 1)
+        // 应为一个有效的旋转矩阵（det ≈ 1）
         let det = mat.determinant();
         assert!((det - 1.0).abs() < 1e-10);
     }
@@ -688,7 +684,7 @@ mod tests {
         let icrf_to_fixed = compute_icrf_to_fixed_matrix(seconds).unwrap();
         let fixed_to_icrf = compute_fixed_to_icrf_matrix(seconds).unwrap();
         let product = icrf_to_fixed * fixed_to_icrf;
-        // Should be identity
+        // 应为单位阵
         assert!(product.abs_diff_eq(DMat3::IDENTITY, 1e-10));
     }
 }

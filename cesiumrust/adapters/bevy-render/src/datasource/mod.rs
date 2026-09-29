@@ -1,6 +1,6 @@
-//! Cesium data source plugins for Bevy.
+//! 用于 Bevy 的 Cesium 数据源插件。
 //!
-//! Aggregates all data source loaders (CZML, GeoJSON, KML, GPX).
+//! 汇总所有数据源加载器（CZML、GeoJSON、KML、GPX）。
 
 pub mod czml_loader;
 pub mod geojson_loader;

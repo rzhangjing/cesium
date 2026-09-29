@@ -1,7 +1,7 @@
-//! Rectangle geometry detailed specs - ported from Core/RectangleGeometrySpec.js
+//! 矩形几何详细规格 - 移植自 Core/RectangleGeometrySpec.js
 //!
-//! Tests position counts, corner positions, vertex attributes, IDL crossing,
-//! pole handling, and height parameter.
+//! 测试位置计数、角点位置、顶点属性、IDL 穿越、
+//! 极点处理与高度参数。
 
 use cesium_geospatial::geometry::{rectangle_geometry, PrimitiveType};
 use cesium_geospatial::{Cartographic, Ellipsoid, Rectangle, VertexFormat};
@@ -14,23 +14,23 @@ fn wgs84() -> Ellipsoid {
     Ellipsoid::WGS84
 }
 
-// ─── Position counts (from RectangleGeometrySpec.js) ───────────────────────
+// ─── 位置计数（来自 RectangleGeometrySpec.js） ───────────────────────
 
 #[test]
 fn rectangle_computes_positions() {
     // RectangleGeometrySpec: "computes positions"
-    // Rectangle(-2, -1, 0, 1) with granularity=1.0 radian
+    // Rectangle(-2, -1, 0, 1)，granularity=1.0 弧度
     let e = wgs84();
     let rect = Rectangle::new(-2.0, -1.0, 0.0, 1.0);
     let geo = rectangle_geometry(&rect, &e, 1.0, 0.0, VertexFormat::POSITION_ONLY);
 
-    // With granularity=1.0: width=2, height=2 → cols=3, rows=3 → 9 vertices
+    // 当 granularity=1.0：width=2, height=2 → cols=3, rows=3 → 9 个顶点
     assert_eq!(geo.positions.len(), 9);
     // 2*2 quads * 2 triangles * 3 = 24 indices
     assert_eq!(geo.indices.len(), 8 * 3);
     assert_eq!(geo.primitive_type, PrimitiveType::Triangles);
 
-    // Verify NW and SE corners exist in positions
+    // 验证 NW 与 SE 角点存在于 positions 中
     let nw = e.cartographic_to_cartesian(&Cartographic::from_radians(rect.west, rect.north, 0.0));
     let se = e.cartographic_to_cartesian(&Cartographic::from_radians(rect.east, rect.south, 0.0));
 
@@ -45,14 +45,14 @@ fn rectangle_computes_positions_across_idl() {
     // RectangleGeometrySpec: "computes positions across IDL"
     let e = wgs84();
     let rect = Rectangle::from_degrees(179.0, -1.0, -179.0, 1.0);
-    let granularity = std::f64::consts::PI / 180.0; // default
+    let granularity = std::f64::consts::PI / 180.0; // 默认
     let geo = rectangle_geometry(&rect, &e, granularity, 0.0, VertexFormat::POSITION_ONLY);
 
-    // Should produce valid geometry across IDL
+    // 应在穿越 IDL 时产生有效几何
     assert!(geo.positions.len() >= 4, "IDL-crossing rectangle should have positions");
     assert!(!geo.indices.is_empty());
 
-    // All positions should be valid (not NaN)
+    // 所有位置应有效（非 NaN）
     for p in &geo.positions {
         assert!(p[0].is_finite() && p[1].is_finite() && p[2].is_finite());
     }
@@ -69,7 +69,7 @@ fn rectangle_computes_positions_at_north_pole() {
     assert!(geo.positions.len() >= 4);
     assert!(!geo.indices.is_empty());
 
-    // All positions should be near the north pole (high z value)
+    // 所有位置应接近北极（z 值较大）
     for p in &geo.positions {
         let carto = e.cartesian_to_cartographic(DVec3::from(*p)).unwrap();
         assert!(
@@ -90,7 +90,7 @@ fn rectangle_computes_positions_at_south_pole() {
     assert!(geo.positions.len() >= 4);
     assert!(!geo.indices.is_empty());
 
-    // All positions should be near the south pole (low z value)
+    // 所有位置应接近南极（z 值较小）
     for p in &geo.positions {
         let carto = e.cartesian_to_cartographic(DVec3::from(*p)).unwrap();
         assert!(
@@ -100,7 +100,7 @@ fn rectangle_computes_positions_at_south_pole() {
     }
 }
 
-// ─── Vertex attributes ─────────────────────────────────────────────────────
+// ─── 顶点属性 ─────────────────────────────────────────────────────
 
 #[test]
 fn rectangle_computes_all_attributes() {
@@ -118,10 +118,10 @@ fn rectangle_computes_all_attributes() {
 
 #[test]
 fn rectangle_normals_point_outward() {
-    // All normals should point away from the ellipsoid center
+    // 所有法线应背离椭球中心
     let e = wgs84();
     let rect = Rectangle::from_degrees(-10.0, -10.0, 10.0, 10.0);
-    let granularity = std::f64::consts::PI / 18.0; // 10 degrees
+    let granularity = std::f64::consts::PI / 18.0; // 10 度
     let geo = rectangle_geometry(&rect, &e, granularity, 0.0, VertexFormat::POSITION_AND_NORMAL);
     let normals = geo.normals.as_ref().unwrap();
 
@@ -136,10 +136,10 @@ fn rectangle_normals_point_outward() {
 
 #[test]
 fn rectangle_tex_coords_in_unit_range() {
-    // Texture coordinates should be in [0, 1] range
+    // 纹理坐标应在 [0, 1] 范围内
     let e = wgs84();
     let rect = Rectangle::from_degrees(-20.0, -10.0, 20.0, 10.0);
-    let granularity = std::f64::consts::PI / 36.0; // 5 degrees
+    let granularity = std::f64::consts::PI / 36.0; // 5 度
     let geo = rectangle_geometry(&rect, &e, granularity, 0.0, VertexFormat::POSITION_AND_ST);
     let st = geo.tex_coords.as_ref().unwrap();
 
@@ -155,11 +155,11 @@ fn rectangle_tex_coords_in_unit_range() {
     }
 }
 
-// ─── Height parameter ──────────────────────────────────────────────────────
+// ─── 高度参数 ──────────────────────────────────────────────────────
 
 #[test]
 fn rectangle_with_height() {
-    // Positions should be at the specified height
+    // 位置应位于指定高度
     let e = wgs84();
     let rect = Rectangle::from_degrees(-5.0, -5.0, 5.0, 5.0);
     let height = 10000.0;
@@ -177,7 +177,7 @@ fn rectangle_with_height() {
 
 #[test]
 fn rectangle_with_negative_height() {
-    // Negative height (below ellipsoid surface)
+    // 负高度（椭球表面以下）
     let e = wgs84();
     let rect = Rectangle::from_degrees(-5.0, -5.0, 5.0, 5.0);
     let height = -5000.0;
@@ -193,11 +193,11 @@ fn rectangle_with_negative_height() {
     }
 }
 
-// ─── Grid structure ────────────────────────────────────────────────────────
+// ─── 网格结构 ────────────────────────────────────────────────────────
 
 #[test]
 fn rectangle_grid_density_matches_granularity() {
-    // Finer granularity should produce more vertices
+    // 更细的 granularity 应产生更多顶点
     let e = wgs84();
     let rect = Rectangle::from_degrees(-10.0, -10.0, 10.0, 10.0);
 
@@ -246,11 +246,11 @@ fn rectangle_bounding_sphere_contains_all_positions() {
     }
 }
 
-// ─── Edge cases ────────────────────────────────────────────────────────────
+// ─── 边界情形 ────────────────────────────────────────────────────────────
 
 #[test]
 fn rectangle_very_small() {
-    // Very small rectangle should still produce valid geometry
+    // 极小的矩形仍应产生有效几何
     let e = wgs84();
     let rect = Rectangle::from_degrees(0.0, 0.0, 0.001, 0.001);
     let granularity = std::f64::consts::PI / 180.0;
@@ -262,10 +262,10 @@ fn rectangle_very_small() {
 
 #[test]
 fn rectangle_full_longitude_range() {
-    // Full 360° longitude range
+    // 完整 360° 经度范围
     let e = wgs84();
     let rect = Rectangle::from_degrees(-180.0, -10.0, 180.0, 10.0);
-    let granularity = std::f64::consts::PI / 6.0; // 30 degrees
+    let granularity = std::f64::consts::PI / 6.0; // 30 度
     let geo = rectangle_geometry(&rect, &e, granularity, 0.0, VertexFormat::POSITION_ONLY);
 
     assert!(geo.positions.len() >= 4);
@@ -273,21 +273,21 @@ fn rectangle_full_longitude_range() {
     assert_eq!(geo.indices.len() % 3, 0);
 }
 
-// ─── Rotation parameter verification ─────────────────────────────────────────
+// ─── 旋转参数验证 ─────────────────────────────────────────
 
 #[test]
 fn rectangle_rotation_zero_no_effect() {
-    // rotation=0 should produce same positions as default
+    // rotation=0 应产生与默认相同的位置
     let e = wgs84();
     let rect = Rectangle::from_degrees(-10.0, -10.0, 10.0, 10.0);
     let granularity = std::f64::consts::PI / 18.0;
 
     let geo1 = rectangle_geometry(&rect, &e, granularity, 0.0, VertexFormat::POSITION_ONLY);
-    // Positions stay same since our API doesn't take rotation directly
+    // 由于我们的 API 不直接接受 rotation，位置保持不变
     let _center = rect.center();
     for p in &geo1.positions {
         let carto = e.cartesian_to_cartographic(DVec3::from(*p)).unwrap();
-        // Longitude should be within rect bounds
+        // 经度应在 rect 范围内
         assert!(carto.longitude >= rect.west - 1e-6 && carto.longitude <= rect.east + 1e-6);
         assert!(carto.latitude >= rect.south - 1e-6 && carto.latitude <= rect.north + 1e-6);
     }
@@ -298,9 +298,9 @@ fn rectangle_position_count_depends_on_granularity() {
     let e = wgs84();
     let rect = Rectangle::from_degrees(-10.0, -10.0, 10.0, 10.0);
 
-    // Wide granularity
+    // 粗粒度
     let geo1 = rectangle_geometry(&rect, &e, 1.0, 0.0, VertexFormat::POSITION_ONLY);
-    // Fine granularity
+    // 细粒度
     let geo2 = rectangle_geometry(&rect, &e, 0.1, 0.0, VertexFormat::POSITION_ONLY);
 
     assert!(geo2.positions.len() > geo1.positions.len(),
@@ -310,7 +310,7 @@ fn rectangle_position_count_depends_on_granularity() {
 
 #[test]
 fn rectangle_tex_coords_corner_values() {
-    // Texture coordinates at corners should be (0,0) (1,0) (0,1) (1,1)
+    // 角点处纹理坐标应为 (0,0) (1,0) (0,1) (1,1)
     let e = wgs84();
     let rect = Rectangle::from_degrees(-10.0, -10.0, 10.0, 10.0);
     let granularity = std::f64::consts::PI / 18.0;
@@ -319,17 +319,17 @@ fn rectangle_tex_coords_corner_values() {
     let num_vertices = geo.positions.len();
 
     assert_eq!(st.len(), num_vertices);
-    // First vertex is at (west, south) → ST should be (0, 0)
+    // 第一个顶点位于 (west, south) → ST 应为 (0, 0)
     assert!((st[0][0]).abs() < 1e-6);
     assert!((st[0][1]).abs() < 1e-6);
-    // Last vertex is at (east, north) → ST should be (1, 1)
+    // 最后一个顶点位于 (east, north) → ST 应为 (1, 1)
     assert!((st[num_vertices - 1][0] - 1.0).abs() < 1e-6);
     assert!((st[num_vertices - 1][1] - 1.0).abs() < 1e-6);
 }
 
 #[test]
 fn rectangle_extreme_latitudes_near_poles() {
-    // Rectangle near north pole (85° to 89°)
+    // 接近北极的矩形（85° 到 89°）
     let e = wgs84();
     let rect = Rectangle::from_degrees(-180.0, 85.0, 180.0, 89.0);
     let granularity = std::f64::consts::PI / 6.0;

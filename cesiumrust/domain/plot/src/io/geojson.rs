@@ -1,19 +1,19 @@
-//! GeoJSON encode / decode for the scene document (plan §12, M8).
+//! 场景文档的 GeoJSON 编码 / 解码（计划 §12，M8）。
 //!
-//! Two guarantees, deliberately layered:
-//!  * **Interoperability** — every feature carries a standard GeoJSON geometry
-//!    (`Point` / `LineString` / `Polygon`) so other tools read the file; free
-//!    business attributes are spread into `properties`.
-//!  * **Losslessness** — a top-level `x-plot` extension member embeds the whole
-//!    [`Document`] (layers, groups, ids, styles, flags, scale / time windows).
-//!    Our reader prefers that payload, so `to_geojson` → `from_geojson` restores
-//!    the document *exactly* (verified by a round-trip test). A file with no
-//!    `x-plot` (foreign GeoJSON) still imports best-effort: a default layer plus
-//!    one element per feature.
+//! 两个保证，有意分层设计：
+//!  * **互操作性** —— 每个要素都携带一个标准 GeoJSON 几何
+//!    （`Point` / `LineString` / `Polygon`），使其他工具能读取文件；自由
+//!    业务属性被展开到 `properties` 中。
+//!  * **无损性** —— 一个顶层 `x-plot` 扩展成员嵌入了整个
+//!    [`Document`]（图层、组、id、样式、标志、比例 / 时间窗口）。
+//!    我们的读取器优先采用那个载荷，因此 `to_geojson` → `from_geojson` 会
+//!    *精确* 恢复文档（由一个往返测试验证）。一个没有
+//!    `x-plot` 的文件（外部 GeoJSON）仍会尽力导入：一个默认图层加
+//!    每要素一个元素。
 //!
-//! Geometry kinds with no GeoJSON equivalent (circle / ellipse / arc / path /
-//! composite) still export a representative `Point` for interop; their exact
-//! parameters survive in the `x-plot` document.
+//! 没有 GeoJSON 对应形式的几何类型（圆 / 椭圆 / 弧 / 路径 /
+//! 复合）仍会导出一个代表性的 `Point` 以供互操作；它们的精确
+//! 参数存活在 `x-plot` 文档中。
 
 use serde_json::{json, Map, Value};
 
@@ -21,25 +21,25 @@ use crate::geo::GeoPoint;
 use crate::model::geometry::{Geometry, Polygon, Polyline};
 use crate::model::Document;
 
-/// IO failure surface.
+/// IO 失败面。
 #[derive(Debug, thiserror::Error)]
 pub enum PlotIoError {
-    /// Malformed or unreadable JSON.
+    /// 格式错误或不可读的 JSON。
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
-    /// Input was neither an `x-plot` document nor a GeoJSON `FeatureCollection`.
+    /// 输入既不是一个 `x-plot` 文档也不是一个 GeoJSON `FeatureCollection`。
     #[error("expected a GeoJSON FeatureCollection")]
     NotFeatureCollection,
 }
 
-/// Serialise the whole document as a GeoJSON `FeatureCollection` (pretty).
+/// 将整个文档序列化为一个 GeoJSON `FeatureCollection`（美化输出）。
 pub fn to_geojson(doc: &Document) -> Result<String, PlotIoError> {
     let mut features: Vec<Value> = Vec::new();
     for id in doc.flatten_draw_order() {
         let Some(el) = doc.element(id) else {
             continue;
         };
-        // `properties` = business attributes (spread) + `name` + `x-plot`.
+        // `properties` = 业务属性（展开）+ `name` + `x-plot`。
         let mut props = match serde_json::to_value(&el.attributes)? {
             Value::Object(m) => m,
             _ => Map::new(),
@@ -63,20 +63,20 @@ pub fn to_geojson(doc: &Document) -> Result<String, PlotIoError> {
     Ok(serde_json::to_string_pretty(&Value::Object(fc))?)
 }
 
-/// Parse a GeoJSON string back into a [`Document`]. Prefers the lossless
-/// `x-plot.document` payload; otherwise imports foreign GeoJSON best-effort
-/// into a single fresh layer.
+/// 将一个 GeoJSON 字符串解析回一个 [`Document`]。优先采用无损的
+/// `x-plot.document` 载荷；否则尽力将外部 GeoJSON 导入
+/// 到单个全新图层中。
 pub fn from_geojson(s: &str) -> Result<Document, PlotIoError> {
     let v: Value = serde_json::from_str(s)?;
 
-    // Lossless path: our own export embeds the full document.
+    // 无损路径：我们自己的导出嵌入了完整文档。
     if let Some(dv) = v.get("x-plot").and_then(|x| x.get("document")) {
         let mut doc: Document = serde_json::from_value(dv.clone())?;
         doc.rebuild_parents();
         return Ok(doc);
     }
 
-    // Foreign GeoJSON: one default active layer, one element per feature.
+    // 外部 GeoJSON：一个默认活动图层，每要素一个元素。
     let feats = v
         .get("features")
         .and_then(|f| f.as_array())
@@ -112,13 +112,13 @@ pub fn from_geojson(s: &str) -> Result<Document, PlotIoError> {
 
 // ── geometry ⇄ GeoJSON ──────────────────────────────────────────────────────
 
-/// A position `[lon, lat, height]`.
+/// 一个位置 `[lon, lat, height]`。
 fn coord(p: GeoPoint) -> Value {
     json!([p.lon_deg, p.lat_deg, p.height_m])
 }
 
-/// A linear-ring coordinate list, closing the ring (GeoJSON wants first == last;
-/// the model stores it open).
+/// 一个线性环坐标列表，闭合该环（GeoJSON 要求首 == 尾；
+/// 模型以开放形式存储）。
 fn closed_ring(ring: &[GeoPoint]) -> Vec<Value> {
     let mut v: Vec<Value> = ring.iter().map(|p| coord(*p)).collect();
     if let Some(first) = ring.first() {
@@ -127,8 +127,8 @@ fn closed_ring(ring: &[GeoPoint]) -> Vec<Value> {
     v
 }
 
-/// Best-effort standard GeoJSON geometry for interop. Kinds without an exact
-/// equivalent fall back to a representative anchor `Point` (or `null`).
+/// 为互操作而做的尽力标准 GeoJSON 几何。没有精确
+/// 对应形式的类型回退到一个代表性的锚点 `Point`（或 `null`）。
 fn geometry_to_gj(g: &Geometry) -> Option<Value> {
     match g {
         Geometry::Point(p) => Some(json!({"type": "Point", "coordinates": coord(*p)})),
@@ -154,15 +154,15 @@ fn geometry_to_gj(g: &Geometry) -> Option<Value> {
             }
             Some(json!({"type": "Polygon", "coordinates": rings}))
         }
-        // No standard form: representative point for interop (exact params live
-        // in the x-plot document).
+        // 无标准形式：为互操作提供一个代表点（精确参数存在于
+        // x-plot 文档中）。
         other => other
             .anchor()
             .map(|a| json!({"type": "Point", "coordinates": coord(a)})),
     }
 }
 
-/// A single GeoJSON position `[lon, lat, h]`.
+/// 单个 GeoJSON 位置 `[lon, lat, h]`。
 fn position(v: &Value) -> Option<GeoPoint> {
     let p = v.as_array()?;
     if p.len() < 2 {
@@ -174,15 +174,15 @@ fn position(v: &Value) -> Option<GeoPoint> {
     Some(GeoPoint::new(lon, lat, h))
 }
 
-/// Parse a flat coordinate array (`[lon, lat, h]`…) into model points, dropping a
-/// trailing duplicated closing vertex when present.
+/// 将一个扁平坐标数组（`[lon, lat, h]`…）解析为模型点，并在存在时
+/// 去除一个尾部重复的闭合顶点。
 fn positions(v: &Value) -> Option<Vec<GeoPoint>> {
     let arr = v.as_array()?;
     let mut out: Vec<GeoPoint> = Vec::with_capacity(arr.len());
     for c in arr {
         out.push(position(c)?);
     }
-    // Strip the closing duplicate (first == last) GeoJSON mandates but we omit.
+    // 剔除 GeoJSON 强制但我们省略的闭合重复项（first == last）。
     if out.len() >= 2 {
         let (a, b) = (out.first().unwrap().lon_deg, out.last().unwrap().lon_deg);
         let (al, bl) = (out.first().unwrap().lat_deg, out.last().unwrap().lat_deg);
@@ -193,7 +193,7 @@ fn positions(v: &Value) -> Option<Vec<GeoPoint>> {
     Some(out)
 }
 
-/// Foreign GeoJSON geometry → model (best-effort; unsupported kinds → `None`).
+/// 外部 GeoJSON 几何 → 模型（尽力而为；不支持的类型 → `None`）。
 fn gj_to_geometry(v: &Value) -> Option<Geometry> {
     let ty = v.get("type")?.as_str()?;
     match ty {
@@ -239,8 +239,8 @@ mod tests {
         GeoPoint::surface(lon, lat)
     }
 
-    /// A document exercising layers, a group, several geometry kinds, styles,
-    /// attributes and layer flags / order.
+    /// 一个文档，涵盖图层、一个组、多种几何类型、样式、
+    /// 属性以及图层标志 / 顺序。
     fn rich_doc() -> Document {
         let mut doc = Document::default();
         let back = doc.new_layer("底图");
@@ -251,7 +251,7 @@ mod tests {
         doc.layer_mut(front).unwrap().opacity = 0.5;
         doc.focus_layer(front);
 
-        // Plain point with a colour + attribute.
+        // 带一个颜色 + 属性的普通点。
         let mut pt = doc.make_element("观察点", Geometry::Point(p(116.4, 39.9)));
         pt.element.style = Style::default().with_color([1.0, 0.0, 0.0, 1.0]);
         pt.element
@@ -259,7 +259,7 @@ mod tests {
             .insert("side".into(), Value::String("friend".into()));
         doc.add_element_to_layer(front, pt);
 
-        // A group in the back layer holding a labelled element + a rectangle.
+        // 后层图层中的一个组，容纳一个带标签的元素 + 一个矩形。
         let g = doc.new_group_in_layer(back, "编队");
         let lbl = doc.make_element(
             "标签",
@@ -282,7 +282,7 @@ mod tests {
         );
         doc.add_element_to_group(g, rect);
 
-        // A polyline and a polygon-with-hole and a circle in the front layer.
+        // 前层图层中的一条折线、一个带孔多边形和一个圆。
         let line = doc.make_element(
             "路线",
             Geometry::Polyline(Polyline {
@@ -317,7 +317,7 @@ mod tests {
         let doc = rich_doc();
         let text = to_geojson(&doc).unwrap();
         let back = from_geojson(&text).unwrap();
-        // Full structural equality (layers, groups, ids, styles, flags, order).
+        // 完全结构相等（图层、组、id、样式、标志、顺序）。
         assert_eq!(back, doc);
         assert_eq!(back.layers().len(), 2);
         assert_eq!(back.element_count(), 6);
@@ -354,7 +354,7 @@ mod tests {
         assert_eq!(feats[0]["geometry"]["coordinates"], json!([1.5, 2.5, 0.0]));
         assert_eq!(feats[1]["geometry"]["type"], "LineString");
         assert_eq!(feats[1]["geometry"]["coordinates"].as_array().unwrap().len(), 2);
-        // Polygon ring is closed: first coord == last coord (3 stored → 4 emitted).
+        // 多边形环是闭合的：first coord == last coord（存 3 → 发出 4）。
         let ring = feats[2]["geometry"]["coordinates"][0].as_array().unwrap();
         assert_eq!(ring.len(), 4);
         assert_eq!(ring[0], ring[3]);
@@ -377,7 +377,7 @@ mod tests {
             ]
         }"#;
         let doc = from_geojson(text).unwrap();
-        // The unsupported MultiPolygon feature is skipped → 2 elements.
+        // 不支持的 MultiPolygon 要素被跳过 → 2 个元素。
         assert_eq!(doc.element_count(), 2);
         let layer = doc.active_layer().unwrap();
         assert_eq!(doc.layer(layer).unwrap().name, "导入");
@@ -391,7 +391,7 @@ mod tests {
         );
         let border = doc.element(ids[1]).unwrap();
         assert!(matches!(border.geometry, Geometry::Polygon(_)));
-        // The imported polygon ring is de-closed (4 unique vertices, not 5).
+        // 导入的多边形环被去闭合（4 个唯一顶点，而非 5）。
         match &border.geometry {
             Geometry::Polygon(pg) => assert_eq!(pg.outer.len(), 4),
             _ => unreachable!(),

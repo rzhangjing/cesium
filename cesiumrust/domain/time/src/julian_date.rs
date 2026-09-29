@@ -1,15 +1,15 @@
-//! JulianDate - astronomical Julian date representation.
-//! Maps to CesiumJS `Core/JulianDate.js`
+//! JulianDate - 天文儒略日表示。
+//! 映射到 CesiumJS `Core/JulianDate.js`
 //!
-//! Stores time as dayNumber + secondsOfDay (TAI standard internally).
-//! The Julian date is the number of days since noon on January 1, -4712 (4713 BC).
+//! 以 dayNumber + secondsOfDay 存储时间（内部采用 TAI 标准）。
+//! 儒略日是自 -4712 年（即公元前 4713 年）1 月 1 日正午起经过的天数。
 
 use crate::gregorian_date::GregorianDate;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
-/// Time constants used for conversions.
-/// Maps to CesiumJS `Core/TimeConstants.js`
+/// 用于换算的时间常量。
+/// 映射到 CesiumJS `Core/TimeConstants.js`
 pub mod constants {
     pub const SECONDS_PER_MILLISECOND: f64 = 0.001;
     pub const SECONDS_PER_MINUTE: f64 = 60.0;
@@ -24,29 +24,29 @@ pub mod constants {
 
 use constants::*;
 
-/// The time standard used to represent a date.
-/// Maps to CesiumJS `TimeStandard`
+/// 用于表示日期的时间标准。
+/// 映射到 CesiumJS `TimeStandard`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum TimeStandard {
-    /// Coordinated Universal Time.
+    /// 协调世界时。
     #[default]
     UTC,
-    /// International Atomic Time.
+    /// 国际原子时。
     TAI,
 }
 
-/// A leap second entry: the TAI Julian date at which it occurs and the cumulative TAI-UTC offset.
+/// 一个闰秒条目：其发生的 TAI 儒略日期以及累计的 TAI-UTC 偏移。
 #[derive(Debug, Clone, Copy)]
 struct LeapSecond {
-    /// The Julian date (day_number, seconds_of_day) in TAI when this leap second occurs.
+    /// 该闰秒发生时对应的 TAI 儒略日期 (day_number, seconds_of_day)。
     day_number: i64,
     seconds_of_day: f64,
-    /// Cumulative TAI-UTC offset in seconds after this leap second.
+    /// 该闰秒之后累计的 TAI-UTC 偏移（秒）。
     offset: f64,
 }
 
-/// The leap second table used throughout Cesium.
-/// Maps to CesiumJS `JulianDate.leapSeconds`
+/// Cesium 各处使用的闰秒表。
+/// 映射到 CesiumJS `JulianDate.leapSeconds`
 const LEAP_SECONDS: &[LeapSecond] = &[
     LeapSecond { day_number: 2441317, seconds_of_day: 43210.0, offset: 10.0 }, // 1972-01-01
     LeapSecond { day_number: 2441499, seconds_of_day: 43211.0, offset: 11.0 }, // 1972-07-01
@@ -78,8 +78,8 @@ const LEAP_SECONDS: &[LeapSecond] = &[
     LeapSecond { day_number: 2457754, seconds_of_day: 43237.0, offset: 37.0 }, // 2017-01-01
 ];
 
-/// Binary search for the leap second index. Returns the index of the leap second
-/// whose TAI date is >= the given (day_number, seconds_of_day), or the insertion point.
+/// 二分查找闰秒索引。返回其 TAI 日期 >= 给定 (day_number, seconds_of_day)
+/// 的闰秒索引，或插入点。
 fn find_leap_second_index(day_number: i64, seconds_of_day: f64) -> usize {
     let mut lo = 0usize;
     let mut hi = LEAP_SECONDS.len();
@@ -103,11 +103,11 @@ fn find_leap_second_index(day_number: i64, seconds_of_day: f64) -> usize {
             Ordering::Greater => hi = mid,
         }
     }
-    lo // insertion point
+    lo // 插入点
 }
 
-/// Converts a JulianDate in-place from UTC to TAI.
-/// Maps to CesiumJS `convertUtcToTai`
+/// 将一个 JulianDate 从 UTC 就地转换为 TAI。
+/// 映射到 CesiumJS `convertUtcToTai`
 fn convert_utc_to_tai(day_number: &mut i64, seconds_of_day: &mut f64) {
     let mut index = find_leap_second_index(*day_number, *seconds_of_day);
 
@@ -117,8 +117,8 @@ fn convert_utc_to_tai(day_number: &mut i64, seconds_of_day: &mut f64) {
 
     let mut offset = LEAP_SECONDS[index].offset;
     if index > 0 {
-        // Check if we're off by one: the difference between the leap second's TAI date
-        // and our UTC date (treated as TAI) should not exceed the offset.
+        // 检查是否差了一个：闰秒的 TAI 日期与我们的 UTC 日期（当作 TAI）
+        // 之间的差值不应超过该偏移。
         let ls = &LEAP_SECONDS[index];
         let difference = (ls.day_number as f64 - *day_number as f64) * SECONDS_PER_DAY
             + (ls.seconds_of_day - *seconds_of_day);
@@ -128,9 +128,9 @@ fn convert_utc_to_tai(day_number: &mut i64, seconds_of_day: &mut f64) {
         }
     }
 
-    // Add offset seconds
+    // 加上偏移秒数
     *seconds_of_day += offset;
-    // Normalize
+    // 归一化
     let extra_days = (*seconds_of_day / SECONDS_PER_DAY) as i64;
     *day_number += extra_days;
     *seconds_of_day -= SECONDS_PER_DAY * extra_days as f64;
@@ -140,46 +140,46 @@ fn convert_utc_to_tai(day_number: &mut i64, seconds_of_day: &mut f64) {
     }
 }
 
-/// Converts a TAI JulianDate to UTC. Returns None if the date falls during a leap second
-/// (ambiguous conversion).
-/// Maps to CesiumJS `convertTaiToUtc`
+/// 将一个 TAI JulianDate 转换为 UTC。若该日期落在闰秒期间
+/// （转换存在歧义）则返回 None。
+/// 映射到 CesiumJS `convertTaiToUtc`
 fn convert_tai_to_utc(day_number: i64, seconds_of_day: f64) -> Option<(i64, f64)> {
     let index = find_leap_second_index(day_number, seconds_of_day);
 
-    // All times before our first leap second get the first offset.
+    // 第一个闰秒之前的所有时间都使用第一个偏移。
     if index == 0 {
         let offset = LEAP_SECONDS[0].offset;
         return Some(apply_offset(day_number, seconds_of_day, -offset));
     }
 
-    // All times after our last leap second get the last offset.
+    // 最后一个闰秒之后的所有时间都使用最后一个偏移。
     if index >= LEAP_SECONDS.len() {
         let offset = LEAP_SECONDS[LEAP_SECONDS.len() - 1].offset;
         return Some(apply_offset(day_number, seconds_of_day, -offset));
     }
 
-    // Compute the difference between the found leap second and the time we are converting.
+    // 计算找到的闰秒与我们正在转换的时间之间的差值。
     let ls = &LEAP_SECONDS[index];
     let difference = (ls.day_number as f64 - day_number as f64) * SECONDS_PER_DAY
         + (ls.seconds_of_day - seconds_of_day);
 
     if difference.abs() < 1e-10 {
-        // The date is exactly at a leap second table entry.
+        // 该日期恰好位于闰秒表条目处。
         let offset = LEAP_SECONDS[index].offset;
         return Some(apply_offset(day_number, seconds_of_day, -offset));
     }
 
     if difference <= 1.0 {
-        // The requested date is during the moment of a leap second, cannot convert to UTC.
+        // 请求的日期正处于闰秒的那一刻，无法转换为 UTC。
         return None;
     }
 
-    // The time is between two leap seconds; use the previous one's offset.
+    // 该时间位于两个闰秒之间；使用上一个闰秒的偏移。
     let offset = LEAP_SECONDS[index - 1].offset;
     Some(apply_offset(day_number, seconds_of_day, -offset))
 }
 
-/// Helper: apply a seconds offset to (day_number, seconds_of_day) and normalize.
+/// 辅助函数：向 (day_number, seconds_of_day) 施加一个秒数偏移并归一化。
 fn apply_offset(day_number: i64, seconds_of_day: f64, offset: f64) -> (i64, f64) {
     let mut sod = seconds_of_day + offset;
     let mut dn = day_number;
@@ -193,29 +193,28 @@ fn apply_offset(day_number: i64, seconds_of_day: f64, offset: f64) -> (i64, f64)
     (dn, sod)
 }
 
-/// Represents an astronomical Julian date.
-/// Maps to CesiumJS `JulianDate`
+/// 表示一个天文儒略日。
+/// 映射到 CesiumJS `JulianDate`
 ///
-/// For increased precision, stores the whole number part of the date and the
-/// seconds part in separate components. Internally stored in TAI.
+/// 为提高精度，将日期的整数部分与秒数部分分开存储。内部以 TAI 存储。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct JulianDate {
-    /// The number of whole days.
+    /// 整天数。
     pub day_number: i64,
-    /// The number of seconds into the current day.
+    /// 当前天内的秒数。
     pub seconds_of_day: f64,
 }
 
 impl JulianDate {
-    /// Creates a new JulianDate from day number and seconds of day.
-    /// Maps to `new JulianDate(julianDayNumber, secondsOfDay, timeStandard)`
+    /// 从儒略日数与当日秒数创建一个新的 JulianDate。
+    /// 映射到 `new JulianDate(julianDayNumber, secondsOfDay, timeStandard)`
     ///
-    /// If `time_standard` is UTC (default), converts to TAI internally.
+    /// 若 `time_standard` 为 UTC（默认），则在内部转换为 TAI。
     pub fn new(julian_day_number: f64, seconds_of_day: f64) -> Self {
         Self::with_time_standard(julian_day_number, seconds_of_day, TimeStandard::UTC)
     }
 
-    /// Creates a new JulianDate with an explicit time standard.
+    /// 使用显式时间标准创建一个新的 JulianDate。
     pub fn with_time_standard(
         julian_day_number: f64,
         seconds_of_day: f64,
@@ -231,8 +230,8 @@ impl JulianDate {
         result
     }
 
-    /// Creates a JulianDate from date components (UTC assumed, with leap second correction).
-    /// Maps to `JulianDate.fromGregorianDate` / `computeJulianDateComponents`
+    /// 从日期分量创建 JulianDate（假定 UTC，含闰秒校正）。
+    /// 映射到 `JulianDate.fromGregorianDate` / `computeJulianDateComponents`
     pub fn from_date_components(
         year: i32,
         month: u32,
@@ -245,12 +244,12 @@ impl JulianDate {
         let (day_number, seconds_of_day) =
             compute_julian_date_components(year, month, day, hour, minute, second, millisecond);
         let mut result = Self::set_components(day_number, seconds_of_day);
-        // from_date_components is UTC, convert to TAI
+        // from_date_components 为 UTC，转换为 TAI
         convert_utc_to_tai(&mut result.day_number, &mut result.seconds_of_day);
         result
     }
 
-    /// Creates a JulianDate from a GregorianDate.
+    /// 从 GregorianDate 创建 JulianDate。
     pub fn from_gregorian_date(date: &GregorianDate) -> Self {
         Self::from_date_components(
             date.year,
@@ -263,19 +262,19 @@ impl JulianDate {
         )
     }
 
-    /// Creates a JulianDate from an ISO 8601 date string.
-    /// Maps to `JulianDate.fromIso8601`
+    /// 从 ISO 8601 日期字符串创建 JulianDate。
+    /// 映射到 `JulianDate.fromIso8601`
     ///
-    /// Supports: calendar dates (basic/extended), ordinal dates, week dates,
-    /// time with fractional seconds, UTC offsets (Z/±HH/±HH:MM), leap seconds (second=60),
-    /// and 24:00:00 midnight notation.
+    /// 支持：日历日期（基本/扩展格式）、序数日期、周日期、
+    /// 带小数秒的时间、UTC 偏移（Z/±HH/±HH:MM）、闰秒（second=60），
+    /// 以及 24:00:00 午夜表示法。
     ///
-    /// Returns None if the string is not a valid ISO 8601 date.
+    /// 若字符串不是有效的 ISO 8601 日期则返回 None。
     pub fn from_iso8601(iso8601_string: &str) -> Option<Self> {
-        // Comma and decimal point both indicate a fractional number according to ISO 8601
+        // 根据 ISO 8601，逗号和圆点都表示小数
         let iso8601_string = iso8601_string.replace(',', ".");
 
-        // Split into date and time components by mandatory 'T'
+        // 按必需的 'T' 拆分为日期与时间分量
         let parts: Vec<&str> = iso8601_string.splitn(2, 'T').collect();
         let date_str = parts[0];
         let time_str = parts.get(1).copied();
@@ -292,7 +291,7 @@ impl JulianDate {
         let mut second: f64 = 0.0;
         let mut millisecond: f64 = 0.0;
 
-        // Parse date component
+        // 解析日期分量
         if let Some((y, m, d)) = parse_calendar_date(date_str) {
             year = y;
             month = m;
@@ -308,14 +307,14 @@ impl JulianDate {
             if doy < 1 || (in_leap_year && doy > 366) || (!in_leap_year && doy > 365) {
                 return None;
             }
-            // Convert ordinal date to month/day
+            // 将序数日期转换为月/日
             let (m, d) = ordinal_to_month_day(y, doy);
             month = m;
             day = d;
         } else if let Some((y, w, d)) = parse_week_date(date_str) {
             year = y;
-            // ISO week date to ordinal date
-            let jan4_weekday = day_of_week(y, 1, 4); // 0=Sunday
+            // 将 ISO 周日期转换为序数日期
+            let jan4_weekday = day_of_week(y, 1, 4); // 0=周日
             let day_of_year = w * 7 + d - jan4_weekday - 3;
             let (m, dd) = ordinal_to_month_day(y, day_of_year);
             month = m;
@@ -324,7 +323,7 @@ impl JulianDate {
             return None;
         }
 
-        // Validate date components
+        // 校验日期分量
         // deferred.md #13: 手动范围判断，等价 !(1..=12).contains(&month)。
         #[allow(clippy::manual_range_contains)]
         if month < 1 || month > 12 || day < 1 {
@@ -345,14 +344,14 @@ impl JulianDate {
             second = parsed.2;
             millisecond = parsed.3;
 
-            // Validate time ranges
+            // 校验时间范围
             if minute >= 60 || second >= 61.0 || hour > 24
                 || (hour == 24 && (minute > 0 || second > 0.0 || millisecond > 0.0))
             {
                 return None;
             }
 
-            // Apply UTC offset
+            // 应用 UTC 偏移
             let offset = parsed.4;
             let offset_hours = parsed.5;
             let offset_minutes = parsed.6;
@@ -365,19 +364,19 @@ impl JulianDate {
                     hour += offset_hours;
                     minute += offset_minutes;
                 }
-                'Z' => {} // UTC, no adjustment
-                _ => {} // No offset specified - treat as UTC (Rust has no local timezone concept)
+                'Z' => {} // UTC，无需调整
+                _ => {} // 未指定偏移 - 视为 UTC（Rust 没有本地时区概念）
             }
         }
 
-        // ISO8601 denotes a leap second by second=60.
-        // Temporarily subtract a second to build a valid UTC date, then add it back after TAI conversion.
+        // ISO8601 用 second=60 表示闰秒。
+        // 暂时减去一秒以构造有效的 UTC 日期，然后在 TAI 转换后加回。
         let is_leap_second = second == 60.0;
         if is_leap_second {
             second -= 1.0;
         }
 
-        // Normalize after UTC offset application
+        // 在应用 UTC 偏移后归一化
         while minute >= 60 {
             minute -= 60;
             hour += 1;
@@ -416,7 +415,7 @@ impl JulianDate {
             day += tmp_max_day;
         }
 
-        // Create the JulianDate from components (UTC)
+        // 从分量创建 JulianDate（UTC）
         let (dn, sod) = compute_julian_date_components(
             year,
             month as u32,
@@ -429,7 +428,7 @@ impl JulianDate {
         let mut result = Self::set_components(dn, sod);
         convert_utc_to_tai(&mut result.day_number, &mut result.seconds_of_day);
 
-        // If we were on a leap second, add it back
+        // 若我们处于闰秒，则将其加回
         if is_leap_second {
             result = result.add_seconds(1.0);
         }
@@ -437,12 +436,12 @@ impl JulianDate {
         Some(result)
     }
 
-    /// Computes the number of seconds the provided instance is ahead of UTC.
-    /// Maps to `JulianDate.computeTaiMinusUtc`
+    /// 计算给定实例领先 UTC 的秒数。
+    /// 映射到 `JulianDate.computeTaiMinusUtc`
     pub fn compute_tai_minus_utc(&self) -> f64 {
         let insertion_or_match = find_leap_second_index(self.day_number, self.seconds_of_day);
 
-        // Determine if this is an exact match or an insertion point
+        // 判断这是精确匹配还是插入点
         let is_exact_match = insertion_or_match < LEAP_SECONDS.len()
             && LEAP_SECONDS[insertion_or_match].day_number == self.day_number
             && (LEAP_SECONDS[insertion_or_match].seconds_of_day - self.seconds_of_day).abs() < 1e-10;
@@ -450,7 +449,7 @@ impl JulianDate {
         let index = if is_exact_match {
             insertion_or_match
         } else {
-            // insertion_or_match is the insertion point (first entry > date)
+            // insertion_or_match 是插入点（第一个 > 该日期的条目）
             // CesiumJS: index = ~index; --index; => insertion_point - 1
             if insertion_or_match == 0 { 0 } else { insertion_or_match - 1 }
         };
@@ -458,39 +457,39 @@ impl JulianDate {
         LEAP_SECONDS[index].offset
     }
 
-    /// Converts this TAI date to UTC components (day_number, seconds_of_day).
-    /// Returns None if the date falls during a leap second.
+    /// 将此 TAI 日期转换为 UTC 分量 (day_number, seconds_of_day)。
+    /// 若该日期落在闰秒期间则返回 None。
     pub fn to_utc_components(&self) -> Option<(i64, f64)> {
         convert_tai_to_utc(self.day_number, self.seconds_of_day)
     }
 
-    /// Creates a JulianDate representing the current system time.
-    /// Maps to `JulianDate.now()`
+    /// 创建表示当前系统时间的 JulianDate。
+    /// 映射到 `JulianDate.now()`
     pub fn now() -> Self {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default();
         let unix_seconds = now.as_secs_f64();
-        // Unix epoch (1970-01-01) = Julian date 2440587.5
+        // Unix 纪元（1970-01-01）= 儒略日 2440587.5
         let julian_days = unix_seconds / SECONDS_PER_DAY + 2440587.5;
         Self::new(julian_days, 0.0)
     }
 
-    /// Creates a JulianDate from seconds since Unix epoch.
+    /// 从自 Unix 纪元起的秒数创建 JulianDate。
     pub fn from_unix_seconds(unix_seconds: f64) -> Self {
         let julian_days = unix_seconds / SECONDS_PER_DAY + 2440587.5;
         Self::new(julian_days, 0.0)
     }
 
-    /// Converts to seconds since Unix epoch (UTC-based).
-    /// Maps to CesiumJS `JulianDate.toDate` → `Date.getTime() / 1000`
+    /// 转换为自 Unix 纪元起的秒数（基于 UTC）。
+    /// 映射到 CesiumJS `JulianDate.toDate` → `Date.getTime() / 1000`
     pub fn to_unix_seconds(&self) -> f64 {
         let g = self.to_gregorian_date();
         let second = if g.is_leap_second { g.second - 1 } else { g.second };
         let (dn, sod) = compute_julian_date_components(
             g.year, g.month, g.day, g.hour, g.minute, second, g.millisecond,
         );
-        // These are UTC components; convert to total days and subtract Unix epoch
+        // 这些是 UTC 分量；转换为总天数并减去 Unix 纪元
         let extra_days = (sod / SECONDS_PER_DAY) as i64;
         let mut day_number = dn + extra_days;
         let mut seconds_of_day = sod - SECONDS_PER_DAY * extra_days as f64;
@@ -502,8 +501,8 @@ impl JulianDate {
         (total_utc_days - 2440587.5) * SECONDS_PER_DAY
     }
 
-    /// Normalizes day_number and seconds_of_day components.
-    /// Maps to `setComponents`
+    /// 归一化 day_number 与 seconds_of_day 分量。
+    /// 映射到 `setComponents`
     fn set_components(whole_days: i64, seconds_of_day: f64) -> Self {
         let extra_days = (seconds_of_day / SECONDS_PER_DAY) as i64;
         let mut day_number = whole_days + extra_days;
@@ -520,35 +519,35 @@ impl JulianDate {
         }
     }
 
-    /// Computes the total number of whole and fractional days.
-    /// Maps to `JulianDate.totalDays`
+    /// 计算整数与小数天的总数。
+    /// 映射到 `JulianDate.totalDays`
     pub fn total_days(&self) -> f64 {
         self.day_number as f64 + self.seconds_of_day / SECONDS_PER_DAY
     }
 
-    /// Computes the difference in seconds between two dates (left - right).
-    /// Maps to `JulianDate.secondsDifference`
+    /// 计算两个日期之间的秒数差（left - right）。
+    /// 映射到 `JulianDate.secondsDifference`
     pub fn seconds_difference(&self, other: &Self) -> f64 {
         let day_diff = (self.day_number - other.day_number) as f64 * SECONDS_PER_DAY;
         day_diff + (self.seconds_of_day - other.seconds_of_day)
     }
 
-    /// Computes the difference in days between two dates (left - right).
-    /// Maps to `JulianDate.daysDifference`
+    /// 计算两个日期之间的天数差（left - right）。
+    /// 映射到 `JulianDate.daysDifference`
     pub fn days_difference(&self, other: &Self) -> f64 {
         let day_diff = (self.day_number - other.day_number) as f64;
         let second_diff = (self.seconds_of_day - other.seconds_of_day) / SECONDS_PER_DAY;
         day_diff + second_diff
     }
 
-    /// Adds seconds to this date.
-    /// Maps to `JulianDate.addSeconds`
+    /// 向此日期加上秒数。
+    /// 映射到 `JulianDate.addSeconds`
     pub fn add_seconds(&self, seconds: f64) -> Self {
         Self::set_components(self.day_number, self.seconds_of_day + seconds)
     }
 
-    /// Adds minutes to this date.
-    /// Maps to `JulianDate.addMinutes`
+    /// 向此日期加上分钟数。
+    /// 映射到 `JulianDate.addMinutes`
     pub fn add_minutes(&self, minutes: f64) -> Self {
         Self::set_components(
             self.day_number,
@@ -556,8 +555,8 @@ impl JulianDate {
         )
     }
 
-    /// Adds hours to this date.
-    /// Maps to `JulianDate.addHours`
+    /// 向此日期加上小时数。
+    /// 映射到 `JulianDate.addHours`
     pub fn add_hours(&self, hours: f64) -> Self {
         Self::set_components(
             self.day_number,
@@ -565,8 +564,8 @@ impl JulianDate {
         )
     }
 
-    /// Adds days to this date.
-    /// Maps to `JulianDate.addDays`
+    /// 向此日期加上天数。
+    /// 映射到 `JulianDate.addDays`
     pub fn add_days(&self, days: f64) -> Self {
         let extra_days = days as i64;
         let remaining_seconds = (days - extra_days as f64) * SECONDS_PER_DAY;
@@ -576,42 +575,42 @@ impl JulianDate {
         )
     }
 
-    /// Returns true if this date is before the other.
-    /// Maps to `JulianDate.lessThan`
+    /// 若此日期早于另一个则返回 true。
+    /// 映射到 `JulianDate.lessThan`
     pub fn less_than(&self, other: &Self) -> bool {
         self.day_number < other.day_number
             || (self.day_number == other.day_number
                 && self.seconds_of_day < other.seconds_of_day)
     }
 
-    /// Returns true if this date is after the other.
-    /// Maps to `JulianDate.greaterThan`
+    /// 若此日期晚于另一个则返回 true。
+    /// 映射到 `JulianDate.greaterThan`
     pub fn greater_than(&self, other: &Self) -> bool {
         self.day_number > other.day_number
             || (self.day_number == other.day_number
                 && self.seconds_of_day > other.seconds_of_day)
     }
 
-    /// Returns true if the two dates are within epsilon seconds of each other.
-    /// Maps to `JulianDate.equalsEpsilon`
+    /// 若两个日期相差在 epsilon 秒以内则返回 true。
+    /// 映射到 `JulianDate.equalsEpsilon`
     pub fn equals_epsilon(&self, other: &Self, epsilon: f64) -> bool {
         self.seconds_difference(other).abs() <= epsilon
     }
 
-    /// Converts to a GregorianDate.
-    /// Maps to `JulianDate.toGregorianDate`
+    /// 转换为 GregorianDate。
+    /// 映射到 `JulianDate.toGregorianDate`
     ///
-    /// Internally converts TAI→UTC. If during a leap second, marks `is_leap_second = true`
-    /// and uses second=60.
+    /// 内部将 TAI→UTC。若处于闰秒期间，则标记 `is_leap_second = true`
+    /// 并使用 second=60。
     pub fn to_gregorian_date(&self) -> GregorianDate {
         let mut is_leap_second = false;
 
-        // Convert TAI to UTC
+        // 将 TAI 转换为 UTC
         let (utc_day_number, utc_seconds_of_day) =
             match convert_tai_to_utc(self.day_number, self.seconds_of_day) {
                 Some(v) => v,
                 None => {
-                    // During a leap second: subtract 1 second and convert again
+                    // 处于闰秒期间：减去 1 秒并再次转换
                     let adjusted = self.add_seconds(-1.0);
                     is_leap_second = true;
                     convert_tai_to_utc(adjusted.day_number, adjusted.seconds_of_day)
@@ -626,8 +625,8 @@ impl JulianDate {
             julian_day_number += 1;
         }
 
-        // Algorithm from page 604 of the Explanatory Supplement to the
-        // Astronomical Almanac (Seidelmann 1992).
+        // 算法取自《Explanatory Supplement to the
+        // Astronomical Almanac》（Seidelmann 1992）第 604 页。
         let l = julian_day_number + 68569;
         let n = (4 * l) / 146097;
         let l = l - (146097 * n + 3) / 4;
@@ -646,13 +645,13 @@ impl JulianDate {
         let mut second = remaining_seconds as u32;
         let millisecond = (remaining_seconds - second as f64) / SECONDS_PER_MILLISECOND;
 
-        // JulianDates are noon-based
+        // JulianDate 以正午为基准
         hour += 12;
         if hour > 23 {
             hour -= 24;
         }
 
-        // If we were on a leap second, add it back (second becomes 60)
+        // 若我们处于闰秒，则将其加回（second 变为 60）
         if is_leap_second {
             second += 1;
         }
@@ -660,16 +659,16 @@ impl JulianDate {
         GregorianDate::new(year, month, day, hour, minute, second, millisecond, is_leap_second)
     }
 
-    /// Converts to ISO 8601 string representation.
-    /// Maps to `JulianDate.toIso8601`
+    /// 转换为 ISO 8601 字符串表示。
+    /// 映射到 `JulianDate.toIso8601`
     ///
-    /// If `precision` is None, uses the most precise representation (trims trailing zeros).
-    /// If `precision` is Some(n), formats fractional seconds with exactly n digits.
+    /// 若 `precision` 为 None，使用最高精度的表示（去除尾随零）。
+    /// 若 `precision` 为 Some(n)，小数秒恰好格式化为 n 位。
     pub fn to_iso8601(&self) -> String {
         self.to_iso8601_with_precision(None)
     }
 
-    /// Converts to ISO 8601 string with specified precision.
+    /// 以指定精度转换为 ISO 8601 字符串。
     pub fn to_iso8601_with_precision(&self, precision: Option<usize>) -> String {
         let g = self.to_gregorian_date();
         let mut year = g.year;
@@ -680,7 +679,7 @@ impl JulianDate {
         let second = g.second;
         let millisecond = g.millisecond;
 
-        // Special case: Iso8601.MAXIMUM_VALUE (10000-01-01T00:00:00 = 9999-12-31T24:00:00)
+        // 特殊情况：Iso8601.MAXIMUM_VALUE (10000-01-01T00:00:00 = 9999-12-31T24:00:00)
         if year == 10000 && month == 1 && day == 1 && hour == 0 && minute == 0 && second == 0
             && millisecond.abs() < 1e-10
         {
@@ -698,25 +697,25 @@ impl JulianDate {
         match precision {
             Some(0) => format!("{}Z", base),
             Some(p) => {
-                // Replicate CesiumJS: (millisecond * 0.01).toFixed(precision).replace(".","").slice(0,precision)
+                // 复刻 CesiumJS：(millisecond * 0.01).toFixed(precision).replace(".","").slice(0,precision)
                 let frac = millisecond * 0.01;
                 let s = format!("{:.prec$}", frac, prec = p);
-                // s = "0.050" for p=3 → remove '.' → "0050" → take first p chars → "005"
+                // p=3 时 s = "0.050" → 去掉 '.' → "0050" → 取前 p 个字符 → "005"
                 let no_dot: String = s.chars().filter(|&c| c != '.').collect();
                 let result = &no_dot[..p.min(no_dot.len())];
                 format!("{}.{}Z", base, result)
             }
             None => {
-                // Most precise representation: trim trailing zeros
+                // 最高精度表示：去除尾随零
                 if millisecond.abs() < 1e-10 {
                     format!("{}Z", base)
                 } else {
                     let frac_seconds = millisecond / 1000.0;
-                    // Use enough precision to capture the value
+                    // 使用足够的精度以捕获该值
                     let frac_str = format!("{:.15}", frac_seconds);
-                    // Strip trailing zeros and the leading "0"
+                    // 去除尾随零和前导的 "0"
                     let trimmed = frac_str.trim_end_matches('0');
-                    let digits = &trimmed[1..]; // strip leading "0"
+                    let digits = &trimmed[1..]; // 去除前导 "0"
                     if digits == "." || digits.is_empty() {
                         format!("{}Z", base)
                     } else {
@@ -727,13 +726,13 @@ impl JulianDate {
         }
     }
 
-    /// The Julian date of the Unix epoch (1970-01-01T00:00:00Z).
+    /// Unix 纪元（1970-01-01T00:00:00Z）的儒略日。
     pub const UNIX_EPOCH: Self = Self {
         day_number: 2440588,
-        seconds_of_day: 0.0, // noon-based, so midnight = 43200 seconds before noon
+        seconds_of_day: 0.0, // 以正午为基准，因此午夜 = 正午前 43200 秒
     };
 
-    /// The Julian date of the J2000 epoch (2000-01-01T12:00:00 TAI).
+    /// J2000 纪元（2000-01-01T12:00:00 TAI）的儒略日。
     pub const J2000: Self = Self {
         day_number: 2451545,
         seconds_of_day: 0.0,
@@ -766,10 +765,10 @@ impl Default for JulianDate {
     }
 }
 
-/// Computes Julian date components from Gregorian date components.
-/// Algorithm from page 604 of the Explanatory Supplement to the
-/// Astronomical Almanac (Seidelmann 1992).
-/// Maps to `computeJulianDateComponents`
+/// 从格里高利日期分量计算儒略日分量。
+/// 算法取自《Explanatory Supplement to the
+/// Astronomical Almanac》（Seidelmann 1992）第 604 页。
+/// 映射到 `computeJulianDateComponents`
 fn compute_julian_date_components(
     year: i32,
     month: u32,
@@ -787,7 +786,7 @@ fn compute_julian_date_components(
         + day as i64
         - 32075;
 
-    // JulianDates are noon-based
+    // JulianDate 以正午为基准
     let mut hour = hour as f64 - 12.0;
     if hour < 0.0 {
         hour += 24.0;
@@ -806,10 +805,10 @@ fn compute_julian_date_components(
 }
 
 // ============================================================================
-// ISO 8601 parsing helpers
+// ISO 8601 解析辅助函数
 // ============================================================================
 
-/// Parse YYYY-MM-DD or YYYYMMDD
+/// 解析 YYYY-MM-DD 或 YYYYMMDD
 fn parse_calendar_date(s: &str) -> Option<(i32, i32, i32)> {
     let bytes = s.as_bytes();
     if bytes.len() == 10 && bytes[4] == b'-' && bytes[7] == b'-' {
@@ -829,7 +828,7 @@ fn parse_calendar_date(s: &str) -> Option<(i32, i32, i32)> {
     }
 }
 
-/// Parse YYYY-MM (exactly one dash at position 4)
+/// 解析 YYYY-MM（第 4 位恰好一个短横线）
 fn parse_calendar_month(s: &str) -> Option<(i32, i32)> {
     let bytes = s.as_bytes();
     if bytes.len() == 7 && bytes[4] == b'-' {
@@ -841,7 +840,7 @@ fn parse_calendar_month(s: &str) -> Option<(i32, i32)> {
     }
 }
 
-/// Parse YYYY (exactly 4 digits)
+/// 解析 YYYY（恰好 4 位数字）
 fn parse_calendar_year(s: &str) -> Option<i32> {
     if s.len() == 4 && s.bytes().all(|b| b.is_ascii_digit()) {
         s.parse().ok()
@@ -850,7 +849,7 @@ fn parse_calendar_year(s: &str) -> Option<i32> {
     }
 }
 
-/// Parse YYYY-DDD or YYYYDDD (ordinal date)
+/// 解析 YYYY-DDD 或 YYYYDDD（序数日期）
 fn parse_ordinal_date(s: &str) -> Option<(i32, i32)> {
     let bytes = s.as_bytes();
     if bytes.len() == 8 && bytes[4] == b'-' {
@@ -868,11 +867,11 @@ fn parse_ordinal_date(s: &str) -> Option<(i32, i32)> {
     }
 }
 
-/// Parse YYYY-Www-D, YYYYWwwD, YYYY-Www, or YYYYWww (week date)
+/// 解析 YYYY-Www-D、YYYYWwwD、YYYY-Www 或 YYYYWww（周日期）
 fn parse_week_date(s: &str) -> Option<(i32, i32, i32)> {
     let bytes = s.as_bytes();
     if bytes.len() == 8 && bytes[4] == b'-' && bytes[5] == b'W' && bytes[6].is_ascii_digit() && bytes[7].is_ascii_digit() {
-        // YYYY-Www (no day)
+        // YYYY-Www（无日）
         let y: i32 = s[0..4].parse().ok()?;
         let w: i32 = s[6..8].parse().ok()?;
         Some((y, w, 0))
@@ -898,7 +897,7 @@ fn parse_week_date(s: &str) -> Option<(i32, i32, i32)> {
     }
 }
 
-/// Convert ordinal day-of-year to (month, day)
+/// 将序数日（一年中的第几天）转换为 (month, day)
 fn ordinal_to_month_day(year: i32, day_of_year: i32) -> (i32, i32) {
     let days_in_month_arr: [i32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let mut remaining = day_of_year;
@@ -918,49 +917,49 @@ fn ordinal_to_month_day(year: i32, day_of_year: i32) -> (i32, i32) {
     (12, remaining)
 }
 
-/// Compute day of week for a given date. Returns 0=Sunday, 1=Monday, ..., 6=Saturday.
-/// Uses the Julian day number algorithm.
+/// 计算给定日期的星期。返回 0=周日、1=周一、……、6=周六。
+/// 使用儒略日数算法。
 fn day_of_week(year: i32, month: i32, day: i32) -> i32 {
     let (dn, _) = compute_julian_date_components(year, month as u32, day as u32, 12, 0, 0, 0.0);
-    // Julian day 0 is a Monday. (dn + 1) % 7 gives 0=Sunday.
+    // 儒略日 0 是周一。(dn + 1) % 7 得到 0=周日。
     ((dn + 1) % 7) as i32
 }
 
-/// Parse time string: HH, HH:MM, HH:MM:SS with optional fractional part and UTC offset.
-/// Returns (hour, minute, second, millisecond, offset_char, offset_hours, offset_minutes)
-/// offset_char: 'Z', '+', '-', or '\0' (none)
+/// 解析时间字符串：HH、HH:MM、HH:MM:SS，可带小数部分和 UTC 偏移。
+/// 返回 (hour, minute, second, millisecond, offset_char, offset_hours, offset_minutes)
+/// offset_char：'Z'、'+'、'-' 或 '\0'（无）
 #[allow(clippy::type_complexity)]
 fn parse_time(s: &str) -> Option<(i32, i32, f64, f64, char, i32, i32)> {
-    // Try HH:MM:SS or HHMMSS first (most specific)
+    // 先尝试 HH:MM:SS 或 HHMMSS（最具体）
     if let Some(result) = parse_hms(s) {
         return Some(result);
     }
-    // Try HH:MM or HHMM
+    // 尝试 HH:MM 或 HHMM
     if let Some(result) = parse_hm(s) {
         return Some(result);
     }
-    // Try HH
+    // 尝试 HH
     parse_h(s)
 }
 
-/// Parse HH:MM:SS.fraction with optional UTC offset
+/// 解析 HH:MM:SS.fraction，可带 UTC 偏移
 fn parse_hms(s: &str) -> Option<(i32, i32, f64, f64, char, i32, i32)> {
-    // Find where the time digits end and offset begins
+    // 找到时间数字结束、偏移开始的位置
     let (time_part, offset_char, offset_hours, offset_minutes) = split_offset(s)?;
 
-    // time_part should be HH:MM:SS, HHMMSS, HH:MM:SS.fraction, HHMMSS.fraction
+    // time_part 应为 HH:MM:SS、HHMMSS、HH:MM:SS.fraction、HHMMSS.fraction
     let bytes = time_part.as_bytes();
     if bytes.len() < 6 {
         return None;
     }
 
     let (h_str, m_str, s_str) = if bytes.len() >= 5 && bytes[2] == b':' {
-        // Extended format: HH:MM:SS...
+        // 扩展格式：HH:MM:SS...
         if bytes.len() < 8 || bytes[5] != b':' {
             return None;
         }
         let rest = &time_part[6..];
-        // rest is SS or SS.fraction
+        // rest 为 SS 或 SS.fraction
         let dot_pos = rest.find('.');
         let (sec_str, _frac_str) = match dot_pos {
             Some(p) => (&rest[..p], &rest[p..]),
@@ -971,9 +970,9 @@ fn parse_hms(s: &str) -> Option<(i32, i32, f64, f64, char, i32, i32)> {
         }
         (&time_part[0..2], &time_part[3..5], rest)
     } else {
-        // Basic format: HHMMSS...
-        let rest = &time_part[4..]; // SS or SS.fraction
-        // If rest starts with '.', this is HHMM.fraction (fractional minutes), not HHMMSS
+        // 基本格式：HHMMSS...
+        let rest = &time_part[4..]; // SS 或 SS.fraction
+        // 若 rest 以 '.' 开头，则为 HHMM.fraction（小数分钟），而非 HHMMSS
         if rest.is_empty() || rest.as_bytes()[0] == b'.' {
             return None;
         }
@@ -983,7 +982,7 @@ fn parse_hms(s: &str) -> Option<(i32, i32, f64, f64, char, i32, i32)> {
     let hour: i32 = h_str.parse().ok()?;
     let minute: i32 = m_str.parse().ok()?;
 
-    // Parse seconds with optional fraction
+    // 解析秒，可带小数部分
     let second: f64 = s_str.parse().ok()?;
     let sec_int = second as i32;
     let millisecond = (second - sec_int as f64) * 1000.0;
@@ -991,7 +990,7 @@ fn parse_hms(s: &str) -> Option<(i32, i32, f64, f64, char, i32, i32)> {
     Some((hour, minute, sec_int as f64, millisecond, offset_char, offset_hours, offset_minutes))
 }
 
-/// Parse HH:MM or HHMM with optional fraction and UTC offset
+/// 解析 HH:MM 或 HHMM，可带小数部分和 UTC 偏移
 fn parse_hm(s: &str) -> Option<(i32, i32, f64, f64, char, i32, i32)> {
     let (time_part, offset_char, offset_hours, offset_minutes) = split_offset(s)?;
 
@@ -1001,19 +1000,19 @@ fn parse_hm(s: &str) -> Option<(i32, i32, f64, f64, char, i32, i32)> {
     }
 
     let (h_str, m_str) = if bytes.len() >= 5 && bytes[2] == b':' {
-        // Extended: HH:MM or HH:MM.fraction
+        // 扩展格式：HH:MM 或 HH:MM.fraction
         (&time_part[0..2], &time_part[3..])
     } else if bytes.len() >= 4 && bytes[0].is_ascii_digit() && bytes[1].is_ascii_digit()
         && bytes[2].is_ascii_digit() && bytes[3].is_ascii_digit()
     {
-        // Basic: HHMM or HHMM.fraction
+        // 基本格式：HHMM 或 HHMM.fraction
         (&time_part[0..2], &time_part[2..])
     } else {
         return None;
     };
 
     let hour: i32 = h_str.parse().ok()?;
-    // m_str might have a fractional part
+    // m_str 可能带小数部分
     let minute_val: f64 = m_str.parse().ok()?;
     let minute_int = minute_val as i32;
     let second = (minute_val - minute_int as f64) * 60.0;
@@ -1021,7 +1020,7 @@ fn parse_hm(s: &str) -> Option<(i32, i32, f64, f64, char, i32, i32)> {
     Some((hour, minute_int, second, 0.0, offset_char, offset_hours, offset_minutes))
 }
 
-/// Parse HH with optional fraction and UTC offset
+/// 解析 HH，可带小数部分和 UTC 偏移
 fn parse_h(s: &str) -> Option<(i32, i32, f64, f64, char, i32, i32)> {
     let (time_part, offset_char, offset_hours, offset_minutes) = split_offset(s)?;
 
@@ -1030,7 +1029,7 @@ fn parse_h(s: &str) -> Option<(i32, i32, f64, f64, char, i32, i32)> {
     }
 
     let hour: i32 = time_part[0..2].parse().ok()?;
-    // Optional fractional hours
+    // 可选的小数小时
     let minute = if time_part.len() > 2 {
         let frac: f64 = time_part[2..].parse().ok()?;
         frac * 60.0
@@ -1041,11 +1040,11 @@ fn parse_h(s: &str) -> Option<(i32, i32, f64, f64, char, i32, i32)> {
     Some((hour, minute as i32, (minute - minute as i32 as f64) * 60.0, 0.0, offset_char, offset_hours, offset_minutes))
 }
 
-/// Split a time string into (time_digits, offset_char, offset_hours, offset_minutes).
-/// Handles: Z, +HH, +HH:MM, -HH, -HH:MM, or no offset.
+/// 将时间字符串拆分为 (time_digits, offset_char, offset_hours, offset_minutes)。
+/// 处理：Z、+HH、+HH:MM、-HH、-HH:MM 或无偏移。
 fn split_offset(s: &str) -> Option<(&str, char, i32, i32)> {
-    // Look for Z, +, or - that indicates an offset
-    // The offset can only appear after the time digits
+    // 查找表示偏移的 Z、+ 或 -
+    // 偏移只能出现在时间数字之后
     if let Some(z_pos) = s.find('Z') {
         if z_pos == s.len() - 1 {
             return Some((&s[..z_pos], 'Z', 0, 0));
@@ -1053,7 +1052,7 @@ fn split_offset(s: &str) -> Option<(&str, char, i32, i32)> {
         return None;
     }
 
-    // Look for + or - (but not at position 0)
+    // 查找 + 或 -（但不在位置 0）
     for (i, c) in s.char_indices() {
         if (c == '+' || c == '-') && i > 0 {
             let time_part = &s[..i];
@@ -1063,11 +1062,11 @@ fn split_offset(s: &str) -> Option<(&str, char, i32, i32)> {
         }
     }
 
-    // No offset
+    // 无偏移
     Some((s, '\0', 0, 0))
 }
 
-/// Parse offset value: HH, HH:MM, or HHMM
+/// 解析偏移值：HH、HH:MM 或 HHMM
 fn parse_offset_value(s: &str) -> Option<(i32, i32)> {
     if s.is_empty() {
         return Some((0, 0));
@@ -1094,10 +1093,10 @@ mod tests {
 
     #[test]
     fn test_from_date_components_j2000() {
-        // J2000 epoch: 2000-01-01T12:00:00 UTC
-        // Internally stored as TAI (UTC + 32s at this date)
+        // J2000 纪元：2000-01-01T12:00:00 UTC
+        // 内部以 TAI 存储（在该日期为 UTC + 32s）
         let jd = JulianDate::from_date_components(2000, 1, 1, 12, 0, 0, 0.0);
-        // Verify via roundtrip
+        // 通过往返转换校验
         let g = jd.to_gregorian_date();
         assert_eq!(g.year, 2000);
         assert_eq!(g.month, 1);
@@ -1109,9 +1108,9 @@ mod tests {
 
     #[test]
     fn test_from_date_components_unix_epoch() {
-        // Unix epoch: 1970-01-01T00:00:00 UTC
+        // Unix 纪元：1970-01-01T00:00:00 UTC
         let jd = JulianDate::from_date_components(1970, 1, 1, 0, 0, 0, 0.0);
-        // Verify via roundtrip
+        // 通过往返转换校验
         let g = jd.to_gregorian_date();
         assert_eq!(g.year, 1970);
         assert_eq!(g.month, 1);
@@ -1177,9 +1176,9 @@ mod tests {
 
     #[test]
     fn test_total_days() {
-        // TAI-based total_days for J2000 includes 32s leap offset
+        // J2000 基于 TAI 的 total_days 包含 32s 闰偏移
         let jd = JulianDate::from_date_components(2000, 1, 1, 12, 0, 0, 0.0);
-        // total_days is TAI: 2451545 + 32/86400
+        // total_days 为 TAI：2451545 + 32/86400
         let expected = 2451545.0 + 32.0 / 86400.0;
         assert!((jd.total_days() - expected).abs() < 1e-10);
     }

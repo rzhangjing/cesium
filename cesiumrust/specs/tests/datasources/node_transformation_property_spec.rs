@@ -1,6 +1,6 @@
-//! Tests for NodeTransformationProperty - ported from NodeTransformationPropertySpec.js
+//! NodeTransformationProperty 的测试 - 移植自 NodeTransformationPropertySpec.js
 //!
-//! Original: 7 it() → 5 A-class (2 C-class: result-param/definitionChanged omitted)
+//! 原始：7 个 it() → 5 个 A 类（2 个 C 类：result-param/definitionChanged 已省略）
 
 use cesium_datasource::node_transformation_property::NodeTransformationProperty;
 use cesium_datasource::property_system::property::{
@@ -15,7 +15,7 @@ fn jd(seconds: f64) -> JulianDate {
     JulianDate::new(0.0, seconds)
 }
 
-// === Default constructor ===
+// === 默认构造函数 ===
 
 #[test]
 fn test_node_transformation_default_constructor() {
@@ -31,7 +31,7 @@ fn test_node_transformation_default_constructor() {
     assert_eq!(result.scale, DVec3::ONE);
 }
 
-// === Constructor with options ===
+// === 带选项的构造函数 ===
 
 #[test]
 fn test_node_transformation_constructor_with_options() {
@@ -50,7 +50,7 @@ fn test_node_transformation_constructor_with_options() {
     assert_eq!(result.scale, scale);
 }
 
-// === Works with constant values ===
+// === 适用于常量值 ===
 
 #[test]
 fn test_node_transformation_constant_values() {
@@ -71,7 +71,7 @@ fn test_node_transformation_constant_values() {
     assert_eq!(result.scale, DVec3::X);
 }
 
-// === Works with dynamic values ===
+// === 适用于动态值 ===
 
 #[test]
 fn test_node_transformation_dynamic_values() {
@@ -137,13 +137,13 @@ fn test_node_transformation_equals() {
 
     assert!(left.equals(&right));
 
-    // Different scale
+    // 不同的 scale
     right.set_scale(Some(Arc::new(ConstantProperty::new(
         PropertyValue::Cartesian3(DVec3::ZERO),
     ))));
     assert!(!left.equals(&right));
 
-    // Restore scale, different translation
+    // 恢复 scale，不同的 translation
     right.set_scale(Some(Arc::new(ConstantProperty::new(
         PropertyValue::Cartesian3(DVec3::X),
     ))));
@@ -152,7 +152,7 @@ fn test_node_transformation_equals() {
     ))));
     assert!(!left.equals(&right));
 
-    // Restore translation, different rotation
+    // 恢复 translation，不同的 rotation
     right.set_translation(Some(Arc::new(ConstantProperty::new(
         PropertyValue::Cartesian3(DVec3::Y),
     ))));

@@ -1,6 +1,6 @@
-//! PropertyBag - a dynamic key-value property container.
+//! PropertyBag - 一个动态键值属性容器。
 //!
-//! Maps to CesiumJS `DataSources/PropertyBag.js`
+//! 映射到 CesiumJS `DataSources/PropertyBag.js`
 
 use crate::property_system::property::{ConstantProperty, DynProperty};
 use crate::property_system::value::PropertyValue;
@@ -8,20 +8,19 @@ use cesium_time::JulianDate;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// A property whose value is a key-value mapping of property names to computed
-/// values of other properties.
+/// 一个属性，其值是属性名到其他属性计算值之间的键值映射。
 ///
-/// Maps to CesiumJS `DataSources/PropertyBag.js`
+/// 映射到 CesiumJS `DataSources/PropertyBag.js`
 #[derive(Clone)]
 pub struct PropertyBag {
-    /// Ordered property names.
+    /// 有序的属性名。
     property_names: Vec<String>,
-    /// Property values indexed by name.
+    /// 按名称索引的属性值。
     properties: HashMap<String, Arc<dyn DynProperty>>,
 }
 
 impl PropertyBag {
-    /// Creates a new empty PropertyBag.
+    /// 创建新的空 PropertyBag。
     pub fn new() -> Self {
         Self {
             property_names: Vec::new(),
@@ -29,10 +28,10 @@ impl PropertyBag {
         }
     }
 
-    /// Creates a PropertyBag from a set of key-value pairs where values are
-    /// raw values that get wrapped in ConstantProperty.
+    /// 由一组键值对创建 PropertyBag，其中值是
+    /// 被包裹在 ConstantProperty 中的原始值。
     ///
-    /// Maps to `new PropertyBag({a: 1, b: 2})`
+    /// 映射到 `new PropertyBag({a: 1, b: 2})`
     pub fn from_values(values: &[(&str, PropertyValue)]) -> Self {
         let mut bag = Self::new();
         for (name, value) in values {
@@ -42,7 +41,7 @@ impl PropertyBag {
         bag
     }
 
-    /// Creates a PropertyBag from existing properties.
+    /// 由现有属性创建 PropertyBag。
     pub fn from_properties(props: &[(&str, Arc<dyn DynProperty>)]) -> Self {
         let mut bag = Self::new();
         for (name, prop) in props {
@@ -51,14 +50,14 @@ impl PropertyBag {
         bag
     }
 
-    /// Gets the names of all properties registered on this instance.
-    /// Maps to `PropertyBag.prototype.propertyNames`
+    /// 获取此实例上注册的所有属性名。
+    /// 映射到 `PropertyBag.prototype.propertyNames`
     pub fn property_names(&self) -> &[String] {
         &self.property_names
     }
 
-    /// Returns true if this property is constant (all members are constant).
-    /// Maps to `PropertyBag.prototype.isConstant`
+    /// 若此属性为常量（所有成员均为常量）则返回 true。
+    /// 映射到 `PropertyBag.prototype.isConstant`
     pub fn is_constant(&self) -> bool {
         self.property_names.iter().all(|name| {
             match self.properties.get(name) {
@@ -68,14 +67,14 @@ impl PropertyBag {
         })
     }
 
-    /// Determines if this object has defined a property with the given name.
-    /// Maps to `PropertyBag.prototype.hasProperty`
+    /// 判断此对象是否定义了具有给定名称的属性。
+    /// 映射到 `PropertyBag.prototype.hasProperty`
     pub fn has_property(&self, property_name: &str) -> bool {
         self.property_names.contains(&property_name.to_string())
     }
 
-    /// Adds a property with no value.
-    /// Maps to `PropertyBag.prototype.addProperty(name)`
+    /// 添加一个无值的属性。
+    /// 映射到 `PropertyBag.prototype.addProperty(name)`
     pub fn add_property(&mut self, property_name: &str) {
         assert!(
             !property_name.is_empty(),
@@ -88,8 +87,8 @@ impl PropertyBag {
         self.property_names.push(property_name.to_string());
     }
 
-    /// Adds a property with a property value.
-    /// Maps to `PropertyBag.prototype.addProperty(name, value)`
+    /// 添加一个带属性值的属性。
+    /// 映射到 `PropertyBag.prototype.addProperty(name, value)`
     pub fn add_property_with(&mut self, property_name: &str, value: Arc<dyn DynProperty>) {
         assert!(
             !property_name.is_empty(),
@@ -103,15 +102,15 @@ impl PropertyBag {
         self.properties.insert(property_name.to_string(), value);
     }
 
-    /// Adds a property with a raw value (wrapped in ConstantProperty).
-    /// Maps to `PropertyBag.prototype.addProperty(name, rawValue)`
+    /// 添加一个带原始值的属性（包裹在 ConstantProperty 中）。
+    /// 映射到 `PropertyBag.prototype.addProperty(name, rawValue)`
     pub fn add_property_value(&mut self, property_name: &str, value: PropertyValue) {
         let prop = ConstantProperty::new(value);
         self.add_property_with(property_name, Arc::new(prop));
     }
 
-    /// Removes a property previously added with addProperty.
-    /// Maps to `PropertyBag.prototype.removeProperty`
+    /// 移除之前通过 addProperty 添加的属性。
+    /// 映射到 `PropertyBag.prototype.removeProperty`
     pub fn remove_property(&mut self, property_name: &str) {
         assert!(
             !property_name.is_empty(),
@@ -130,12 +129,12 @@ impl PropertyBag {
         self.properties.remove(property_name);
     }
 
-    /// Gets the property with the given name.
+    /// 获取具有给定名称的属性。
     pub fn get_property(&self, property_name: &str) -> Option<&Arc<dyn DynProperty>> {
         self.properties.get(property_name)
     }
 
-    /// Sets the property value for an existing property name.
+    /// 为已存在的属性名设置属性值。
     pub fn set_property(&mut self, property_name: &str, value: Arc<dyn DynProperty>) {
         assert!(
             self.property_names.contains(&property_name.to_string()),
@@ -144,11 +143,11 @@ impl PropertyBag {
         self.properties.insert(property_name.to_string(), value);
     }
 
-    /// Gets the value of this property at the given time.
-    /// Each contained property is evaluated at the given time, and the overall
-    /// result is a mapping of property names to those values.
+    /// 获取此属性在给定时间处的值。
+    /// 其中包含的每个属性都在给定时间处求值，整体
+    /// 结果是属性名到这些值的映射。
     ///
-    /// Maps to `PropertyBag.prototype.getValue`
+    /// 映射到 `PropertyBag.prototype.getValue`
     pub fn get_value(&self, time: &JulianDate) -> HashMap<String, PropertyValue> {
         let mut result = HashMap::new();
         for name in &self.property_names {
@@ -161,8 +160,8 @@ impl PropertyBag {
         result
     }
 
-    /// Gets the value, merging into an existing result map.
-    /// Properties in result that are not part of this PropertyBag are left as-is.
+    /// 获取值，并合并到已有的结果映射中。
+    /// result 中不属于此 PropertyBag 的属性保持原样。
     pub fn get_value_with_result(
         &self,
         time: &JulianDate,
@@ -177,8 +176,8 @@ impl PropertyBag {
         }
     }
 
-    /// Assigns each unassigned property on this object from the source.
-    /// Maps to `PropertyBag.prototype.merge`
+    /// 从源为此对象上的每个未赋值属性赋值。
+    /// 映射到 `PropertyBag.prototype.merge`
     pub fn merge(&mut self, source: &PropertyBag) {
         for name in &source.property_names {
             if !self.property_names.contains(name) {
@@ -190,8 +189,8 @@ impl PropertyBag {
         }
     }
 
-    /// Compares this property to the provided property.
-    /// Maps to `PropertyBag.prototype.equals`
+    /// 将此属性与提供的属性进行比较。
+    /// 映射到 `PropertyBag.prototype.equals`
     pub fn equals(&self, other: &PropertyBag) -> bool {
         if self.property_names.len() != other.property_names.len() {
             return false;

@@ -1,9 +1,9 @@
-//! CZML deep specs - detailed property parsing, edge cases, object formats
-//! Ported from DataSources/CzmlDataSourceSpec.js (deeper A-class paths)
+//! CZML 深度规范 - 详细属性解析、边缘情形、对象格式
+//! 移植自 DataSources/CzmlDataSourceSpec.js（更深层的 A 类路径）
 
 use cesium_datasource::{parse_czml, Property};
 
-// ─── Rectangle object coordinates ───────────────────────────────────────────
+// ─── Rectangle 对象坐标 ───────────────────────────────────────────
 
 #[test]
 fn czml_rectangle_object_degrees() {
@@ -19,7 +19,7 @@ fn czml_rectangle_object_degrees() {
     assert!(entity.rectangle.is_some());
     let rect = entity.rectangle.as_ref().unwrap();
     let coords = rect.coordinates.get_value(0.0).unwrap();
-    // Should be converted to radians
+    // 应被转换为弧度
     assert!((coords[0] - (-10.0f64).to_radians()).abs() < 1e-10);
     assert!((coords[1] - (-20.0f64).to_radians()).abs() < 1e-10);
     assert!((coords[2] - (30.0f64).to_radians()).abs() < 1e-10);
@@ -43,7 +43,7 @@ fn czml_rectangle_array_format() {
     assert!((coords[2] - (90.0f64).to_radians()).abs() < 1e-10);
 }
 
-// ─── Wall with heights ──────────────────────────────────────────────────────
+// ─── 带高度的 Wall ──────────────────────────────────────────────────────
 
 #[test]
 fn czml_wall_with_max_min_heights() {
@@ -66,7 +66,7 @@ fn czml_wall_with_max_min_heights() {
     assert!((min_h[1] - 100.0).abs() < 1e-10);
 }
 
-// ─── Ellipsoid with radii (cartesian3 object) ───────────────────────────────
+// ─── 带半径的 Ellipsoid（cartesian3 对象） ───────────────────────────────
 
 #[test]
 fn czml_ellipsoid_radii_object() {
@@ -96,7 +96,7 @@ fn czml_ellipsoid_radii_array() {
     assert_eq!(*radii, [50.0, 50.0, 50.0]);
 }
 
-// ─── Corridor with height ───────────────────────────────────────────────────
+// ─── 带高度的 Corridor ───────────────────────────────────────────────────
 
 #[test]
 fn czml_corridor_with_height_and_width() {
@@ -120,7 +120,7 @@ fn czml_corridor_with_height_and_width() {
     assert_eq!(positions.len(), 3);
 }
 
-// ─── Ellipse with height and material ───────────────────────────────────────
+// ─── 带高度和材质的 Ellipse ───────────────────────────────────────
 
 #[test]
 fn czml_ellipse_with_height_and_material() {
@@ -140,13 +140,13 @@ fn czml_ellipse_with_height_and_material() {
     assert!((*ell.semi_major_axis.get_value(0.0).unwrap() - 500.0).abs() < 1e-10);
     assert!((*ell.semi_minor_axis.get_value(0.0).unwrap() - 300.0).abs() < 1e-10);
     assert!((*ell.height.get_value(0.0).unwrap() - 200.0).abs() < 1e-10);
-    // Material color should be extracted
+    // 应提取材质颜色
     let mat = ell.material.get_value(0.0).unwrap();
     assert!((mat.blue - 1.0).abs() < 1e-10);
     assert!((mat.alpha - 200.0 / 255.0).abs() < 1e-10);
 }
 
-// ─── Position object format ─────────────────────────────────────────────────
+// ─── Position 对象格式 ─────────────────────────────────────────────────
 
 #[test]
 fn czml_position_object_format() {
@@ -166,7 +166,7 @@ fn czml_position_object_format() {
     }
 }
 
-// ─── Color edge cases ───────────────────────────────────────────────────────
+// ─── Color 边缘情形 ───────────────────────────────────────────────────────
 
 #[test]
 fn czml_point_color_object_format() {
@@ -204,7 +204,7 @@ fn czml_point_outline_color() {
     assert!((*ow - 3.0).abs() < 1e-10);
 }
 
-// ─── Multiple graphics on one entity ────────────────────────────────────────
+// ─── 单个实体上的多个图元 ────────────────────────────────────────
 
 #[test]
 fn czml_entity_with_multiple_graphics() {
@@ -224,7 +224,7 @@ fn czml_entity_with_multiple_graphics() {
     assert!(entity.has_graphics());
 }
 
-// ─── Box with material ──────────────────────────────────────────────────────
+// ─── 带材质的 Box ──────────────────────────────────────────────────────
 
 #[test]
 fn czml_box_with_material_color() {
@@ -243,7 +243,7 @@ fn czml_box_with_material_color() {
     assert!((mat.blue - 128.0 / 255.0).abs() < 1e-10);
 }
 
-// ─── Cylinder with material ─────────────────────────────────────────────────
+// ─── 带材质的 Cylinder ─────────────────────────────────────────────────
 
 #[test]
 fn czml_cylinder_with_material() {
@@ -265,7 +265,7 @@ fn czml_cylinder_with_material() {
     assert!((mat.red - 1.0).abs() < 1e-10);
 }
 
-// ─── Path with material ─────────────────────────────────────────────────────
+// ─── 带材质的 Path ─────────────────────────────────────────────────────
 
 #[test]
 fn czml_path_with_material() {
@@ -288,7 +288,7 @@ fn czml_path_with_material() {
     assert!((mat.green - 1.0).abs() < 1e-10);
 }
 
-// ─── Empty/minimal packets ──────────────────────────────────────────────────
+// ─── 空/最简数据包 ──────────────────────────────────────────────────
 
 #[test]
 fn czml_entity_no_graphics() {
@@ -310,7 +310,7 @@ fn czml_document_only() {
     assert_eq!(ds.entities.len(), 0);
 }
 
-// ─── Billboard with rotation/width/height ───────────────────────────────────
+// ─── 带 rotation/width/height 的 Billboard ───────────────────────────────────
 
 #[test]
 fn czml_billboard_full_properties() {
@@ -334,7 +334,7 @@ fn czml_billboard_full_properties() {
     assert!((*bb.height.get_value(0.0).unwrap() - 48.0).abs() < 1e-10);
 }
 
-// ─── Model with minimumPixelSize ────────────────────────────────────────────
+// ─── 带 minimumPixelSize 的 Model ────────────────────────────────────────────
 
 #[test]
 fn czml_model_with_minimum_pixel_size() {
@@ -354,7 +354,7 @@ fn czml_model_with_minimum_pixel_size() {
     assert!((*model.minimum_pixel_size.get_value(0.0).unwrap() - 64.0).abs() < 1e-10);
 }
 
-// ─── Polyline material color extraction ─────────────────────────────────────
+// ─── Polyline 材质颜色提取 ─────────────────────────────────────
 
 #[test]
 fn czml_polyline_material_color() {
@@ -373,7 +373,7 @@ fn czml_polyline_material_color() {
     assert!((color.blue - 1.0).abs() < 1e-10);
 }
 
-// ─── Polygon material color ─────────────────────────────────────────────────
+// ─── Polygon 材质颜色 ─────────────────────────────────────────────────
 
 #[test]
 fn czml_polygon_material_color() {

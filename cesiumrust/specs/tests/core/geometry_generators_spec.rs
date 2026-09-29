@@ -1,10 +1,10 @@
-//! Geometry generator specs - ported from Core/BoxGeometrySpec.js,
-//! Core/SphereGeometrySpec.js, Core/CylinderGeometrySpec.js,
-//! Core/EllipsoidGeometrySpec.js, Core/FrustumGeometrySpec.js,
+//! 几何生成器规格测试 - 移植自 Core/BoxGeometrySpec.js、
+//! Core/SphereGeometrySpec.js、Core/CylinderGeometrySpec.js、
+//! Core/EllipsoidGeometrySpec.js、Core/FrustumGeometrySpec.js、
 //! Core/RectangleGeometrySpec.js
 //!
-//! Tests vertex counts, index counts, bounding spheres, normals, and
-//! mathematical properties of generated geometry.
+//! 测试生成几何体的顶点数、索引数、包围球、法线以及
+//! 数学性质。
 
 use cesium_geospatial::geometry::{
     box_geometry, cylinder_geometry, ellipsoid_geometry, sphere_geometry,
@@ -17,7 +17,7 @@ use glam::DVec3;
 const EPSILON10: f64 = 1e-10;
 const EPSILON7: f64 = 1e-7;
 
-// ─── BoxGeometry (from BoxGeometrySpec.js) ─────────────────────────────────
+// ─── BoxGeometry（来自 BoxGeometrySpec.js） ─────────────────────────────────
 
 #[test]
 fn box_position_only_creates_optimized_positions() {
@@ -27,9 +27,9 @@ fn box_position_only_creates_optimized_positions() {
         DVec3::new(1.0, 2.0, 3.0),
         VertexFormat::POSITION_ONLY,
     );
-    // 6 faces * 4 vertices = 24 positions (per-face vertices for flat shading)
+    // 6 面 * 4 顶点 = 24 位置（用于平面着色的每面独立顶点）
     assert_eq!(geo.positions.len(), 24);
-    // 6 faces * 2 triangles * 3 indices = 36
+    // 6 面 * 2 三角形 * 3 索引 = 36
     assert_eq!(geo.indices.len(), 36);
     assert!(geo.normals.is_none());
     assert!(geo.tex_coords.is_none());
@@ -42,24 +42,24 @@ fn box_computes_all_vertex_attributes() {
     let max = DVec3::new(1.0, 1.0, 1.0);
     let geo = box_geometry(min, max, VertexFormat::ALL);
 
-    let num_vertices = 24; // 6 faces * 4 vertices
-    let num_triangles = 12; // 6 faces * 2 triangles
+    let num_vertices = 24; // 6 面 * 4 顶点
+    let num_triangles = 12; // 6 面 * 2 三角形
     assert_eq!(geo.positions.len(), num_vertices);
     assert_eq!(geo.normals.as_ref().unwrap().len(), num_vertices);
     assert_eq!(geo.tex_coords.as_ref().unwrap().len(), num_vertices);
     assert_eq!(geo.indices.len(), num_triangles * 3);
 
-    // Bounding sphere center should be at center of box
+    // 包围球中心应位于盒子的中心
     let center = (min + max) * 0.5;
     assert!((geo.bounding_sphere.center - center).length() < EPSILON10);
-    // Radius = half diagonal
+    // 半径 = 半条对角线
     let expected_radius = (max - min).length() * 0.5;
     assert!((geo.bounding_sphere.radius - expected_radius).abs() < EPSILON10);
 }
 
 #[test]
 fn box_from_dimensions_concept() {
-    // BoxGeometrySpec: "fromDimensions" - box centered at origin with given dimensions
+    // BoxGeometrySpec："fromDimensions" - 以原点为中心、具有给定尺寸的盒子
     let dimensions = DVec3::new(1.0, 2.0, 3.0);
     let half = dimensions * 0.5;
     let geo = box_geometry(-half, half, VertexFormat::POSITION_ONLY);
@@ -67,7 +67,7 @@ fn box_from_dimensions_concept() {
     assert_eq!(geo.positions.len(), 24);
     assert_eq!(geo.indices.len(), 36);
 
-    // All positions should be within [-half, half]
+    // 所有位置应位于 [-half, half] 内
     for p in &geo.positions {
         assert!((p[0] - (-half.x).min(half.x)).abs() < EPSILON10 || (p[0] - half.x).abs() < EPSILON10);
     }
@@ -75,7 +75,7 @@ fn box_from_dimensions_concept() {
 
 #[test]
 fn box_normals_perpendicular_to_faces() {
-    // Verify each face has consistent unit normals
+    // 验证每个面都有一致的单位法线
     let geo = box_geometry(
         DVec3::new(-1.0, -1.0, -1.0),
         DVec3::new(1.0, 1.0, 1.0),
@@ -83,7 +83,7 @@ fn box_normals_perpendicular_to_faces() {
     );
     let normals = geo.normals.as_ref().unwrap();
 
-    // Each group of 4 vertices (one face) should have the same normal
+    // 每 4 个顶点（一个面）应具有相同的法线
     for face in 0..6 {
         let base = face * 4;
         let n0 = DVec3::from(normals[base]);
@@ -91,7 +91,7 @@ fn box_normals_perpendicular_to_faces() {
             let nv = DVec3::from(normals[base + v]);
             assert!((n0 - nv).length() < EPSILON10, "face {} normals should be uniform", face);
         }
-        // Normal should be unit length
+        // 法线应为单位长度
         assert!((n0.length() - 1.0).abs() < EPSILON10);
     }
 }
@@ -99,30 +99,30 @@ fn box_normals_perpendicular_to_faces() {
 #[test]
 fn box_degenerate_min_equals_max() {
     // BoxGeometrySpec: "undefined is returned if min and max are equal"
-    // Rust implementation produces zero-size box
+    // Rust 实现生成零尺寸盒子
     let p = DVec3::new(250000.0, 250000.0, 250000.0);
     let geo = box_geometry(p, p, VertexFormat::POSITION_ONLY);
-    // All positions collapse to the same point
+    // 所有位置坠缩到同一点
     for pos in &geo.positions {
         assert!((pos[0] - 250000.0).abs() < EPSILON10);
         assert!((pos[1] - 250000.0).abs() < EPSILON10);
         assert!((pos[2] - 250000.0).abs() < EPSILON10);
     }
-    // Bounding sphere radius should be 0
+    // 包围球半径应为 0
     assert!(geo.bounding_sphere.radius < EPSILON10);
 }
 
-// ─── SphereGeometry (from SphereGeometrySpec.js) ───────────────────────────
+// ─── SphereGeometry（来自 SphereGeometrySpec.js） ───────────────────────────
 
 #[test]
 fn sphere_computes_positions() {
-    // SphereGeometrySpec: "computes positions" with stackPartitions=3, slicePartitions=3
+    // SphereGeometrySpec："computes positions"，stackPartitions=3、slicePartitions=3
     let geo = sphere_geometry(1.0, 3, 3, VertexFormat::POSITION_ONLY);
 
-    // Rust: (stacks+1) * (slices+1) = 4 * 4 = 16 vertices
+    // Rust：(stacks+1) * (slices+1) = 4 * 4 = 16 顶点
     let num_vertices = (3 + 1) * (3 + 1);
     assert_eq!(geo.positions.len(), num_vertices);
-    // stacks * slices * 6 = 3 * 3 * 6 = 54 indices
+    // stacks * slices * 6 = 3 * 3 * 6 = 54 索引
     let num_indices = 3 * 3 * 6;
     assert_eq!(geo.indices.len(), num_indices);
     assert!((geo.bounding_sphere.radius - 1.0).abs() < EPSILON10);
@@ -150,13 +150,13 @@ fn sphere_positions_on_unit_sphere() {
         let pos = DVec3::from(geo.positions[i]);
         let normal = DVec3::from(normals[i]);
 
-        // Position magnitude should be ≈ 1.0
+        // 位置模长应 ≈ 1.0
         assert!(
             (pos.length() - 1.0).abs() < EPSILON10,
             "position {} magnitude {} != 1.0", i, pos.length()
         );
 
-        // Normal should equal normalized position (for unit sphere)
+        // 法线应等于归一化后的位置（对于单位球）
         if pos.length() > EPSILON10 {
             let expected_normal = pos.normalize();
             assert!(
@@ -169,7 +169,7 @@ fn sphere_positions_on_unit_sphere() {
 
 #[test]
 fn sphere_radius_scales_positions() {
-    // Positions should be at distance = radius from center
+    // 位置到中心的距离应 = radius
     let radius = 5.0;
     let geo = sphere_geometry(radius, 4, 4, VertexFormat::POSITION_ONLY);
 
@@ -183,17 +183,17 @@ fn sphere_radius_scales_positions() {
     assert!((geo.bounding_sphere.radius - radius).abs() < EPSILON10);
 }
 
-// ─── CylinderGeometry (from CylinderGeometrySpec.js) ───────────────────────
+// ─── CylinderGeometry（来自 CylinderGeometrySpec.js） ───────────────────────
 
 #[test]
 fn cylinder_computes_positions() {
-    // CylinderGeometrySpec: "computes positions" with slices=3
+    // CylinderGeometrySpec："computes positions"，slices=3
     let geo = cylinder_geometry(1.0, 1.0, 1.0, 3, VertexFormat::POSITION_ONLY);
 
-    // Rust: (slices+1) * 2 = 8 vertices (side only, no caps)
+    // Rust：(slices+1) * 2 = 8 顶点（仅侧面，无端盖）
     let num_vertices = (3 + 1) * 2;
     assert_eq!(geo.positions.len(), num_vertices);
-    // slices * 6 = 18 indices (2 triangles per slice)
+    // slices * 6 = 18 索引（每切片 2 三角形）
     let num_indices = 3 * 6;
     assert_eq!(geo.indices.len(), num_indices);
     assert_eq!(geo.primitive_type, PrimitiveType::Triangles);
@@ -220,7 +220,7 @@ fn cylinder_top_radius_zero_cone() {
     assert_eq!(geo.positions.len(), num_vertices);
     assert_eq!(geo.indices.len(), 3 * 6);
 
-    // Top vertices should be at origin (radius=0)
+    // 顶部顶点应位于原点（radius=0）
     for i in (1..geo.positions.len()).step_by(2) {
         let p = DVec3::from(geo.positions[i]);
         assert!(p.x.abs() < EPSILON10 && p.y.abs() < EPSILON10,
@@ -237,7 +237,7 @@ fn cylinder_bottom_radius_zero_inverted_cone() {
     assert_eq!(geo.positions.len(), num_vertices);
     assert_eq!(geo.indices.len(), 3 * 6);
 
-    // Bottom vertices should be at origin (radius=0)
+    // 底部顶点应位于原点（radius=0）
     for i in (0..geo.positions.len()).step_by(2) {
         let p = DVec3::from(geo.positions[i]);
         assert!(p.x.abs() < EPSILON10 && p.y.abs() < EPSILON10,
@@ -247,7 +247,7 @@ fn cylinder_bottom_radius_zero_inverted_cone() {
 
 #[test]
 fn cylinder_bounding_sphere() {
-    // Bounding sphere should encompass the cylinder
+    // 包围球应包含该圆柱
     let length = 2.0;
     let radius = 1.0;
     let geo = cylinder_geometry(length, radius, radius, 8, VertexFormat::POSITION_ONLY);
@@ -255,18 +255,18 @@ fn cylinder_bounding_sphere() {
     let half_length = length * 0.5;
     let expected_radius = (radius * radius + half_length * half_length).sqrt();
     assert!((geo.bounding_sphere.radius - expected_radius).abs() < EPSILON10);
-    assert!(geo.bounding_sphere.center.length() < EPSILON10); // centered at origin
+    assert!(geo.bounding_sphere.center.length() < EPSILON10); // 以原点为中心
 }
 
-// ─── EllipsoidGeometry (from EllipsoidGeometrySpec.js) ─────────────────────
+// ─── EllipsoidGeometry（来自 EllipsoidGeometrySpec.js） ─────────────────────
 
 #[test]
 fn ellipsoid_computes_positions() {
-    // EllipsoidGeometrySpec: "computes positions" with slicePartitions=3, stackPartitions=3
+    // EllipsoidGeometrySpec："computes positions"，slicePartitions=3、stackPartitions=3
     let radii = DVec3::new(1.0, 1.0, 1.0);
     let geo = ellipsoid_geometry(radii, 3, 3, VertexFormat::POSITION_ONLY);
 
-    // Rust: (stacks+1) * (slices+1) = 4 * 4 = 16
+    // Rust：(stacks+1) * (slices+1) = 4 * 4 = 16
     let num_vertices = (3 + 1) * (3 + 1);
     assert_eq!(geo.positions.len(), num_vertices);
     // stacks * slices * 6 = 54
@@ -298,13 +298,13 @@ fn ellipsoid_unit_sphere_properties() {
         let pos = DVec3::from(geo.positions[i]);
         let normal = DVec3::from(normals[i]);
 
-        // Position magnitude ≈ 1.0 for unit sphere
+        // 对于单位球，位置模长 ≈ 1.0
         assert!(
             (pos.length() - 1.0).abs() < EPSILON10,
             "position {} magnitude {} != 1.0", i, pos.length()
         );
 
-        // Normal should equal normalized position
+        // 法线应等于归一化后的位置
         if pos.length() > EPSILON10 {
             let expected_normal = pos.normalize();
             assert!(
@@ -317,14 +317,14 @@ fn ellipsoid_unit_sphere_properties() {
 
 #[test]
 fn ellipsoid_non_uniform_radii() {
-    // Non-uniform radii should scale positions accordingly
+    // 非均匀半径应相应地缩放位置
     let radii = DVec3::new(1.0, 2.0, 3.0);
     let geo = ellipsoid_geometry(radii, 4, 4, VertexFormat::POSITION_ONLY);
 
-    // Bounding sphere radius should be max radii
+    // 包围球半径应为最大半径
     assert!((geo.bounding_sphere.radius - 3.0).abs() < EPSILON10);
 
-    // All positions should satisfy (x/rx)² + (y/ry)² + (z/rz)² ≈ 1
+    // 所有位置应满足 (x/rx)² + (y/ry)² + (z/rz)² ≈ 1
     for p in &geo.positions {
         let normalized = DVec3::new(p[0] / radii.x, p[1] / radii.y, p[2] / radii.z);
         assert!(
@@ -334,7 +334,7 @@ fn ellipsoid_non_uniform_radii() {
     }
 }
 
-// ─── FrustumGeometry (from FrustumGeometrySpec.js) ─────────────────────────
+// ─── FrustumGeometry（来自 FrustumGeometrySpec.js） ─────────────────────────
 
 #[test]
 fn frustum_computes_all_vertex_attributes() {
@@ -349,8 +349,8 @@ fn frustum_computes_all_vertex_attributes() {
     });
     let geo = frustum_geometry(&frustum, DVec3::ZERO, glam::DQuat::IDENTITY, VertexFormat::ALL);
 
-    let num_vertices = 24; // 6 planes * 4 vertices
-    let num_triangles = 12; // 6 planes * 2 triangles
+    let num_vertices = 24; // 6 平面 * 4 顶点
+    let num_triangles = 12; // 6 平面 * 2 三角形
     assert_eq!(geo.positions.len(), num_vertices);
     assert_eq!(geo.normals.as_ref().unwrap().len(), num_vertices);
     assert_eq!(geo.tex_coords.as_ref().unwrap().len(), num_vertices);
@@ -359,7 +359,7 @@ fn frustum_computes_all_vertex_attributes() {
 
 #[test]
 fn frustum_bounding_sphere() {
-    // FrustumGeometrySpec: bounding sphere center at midpoint of frustum axis
+    // FrustumGeometrySpec：包围球中心位于视锥轴的中点
     let frustum = FrustumDef::Perspective(PerspectiveFrustum {
         fov: (30.0_f64).to_radians(),
         aspect_ratio: 1920.0 / 1080.0,
@@ -370,8 +370,8 @@ fn frustum_bounding_sphere() {
     });
     let geo = frustum_geometry(&frustum, DVec3::ZERO, glam::DQuat::IDENTITY, VertexFormat::POSITION_ONLY);
 
-    // Bounding sphere should be centered along -Z axis (frustum looks down -Z)
-    // Center should be between near and far planes
+    // 包围球应沿 -Z 轴居中（视锥朝向 -Z 方向）
+    // 中心应位于 near 与 far 平面之间
     assert!(geo.bounding_sphere.radius > 1.0);
     assert!(geo.bounding_sphere.radius < 3.0);
 }
@@ -401,11 +401,11 @@ fn rectangle_produces_grid_positions() {
     use cesium_geospatial::Rectangle;
     let ellipsoid = Ellipsoid::WGS84;
     let rect = Rectangle::from_degrees(-10.0, -10.0, 10.0, 10.0);
-    let granularity = std::f64::consts::PI / 18.0; // 10 degrees
+    let granularity = std::f64::consts::PI / 18.0; // 10 度
 
     let geo = rectangle_geometry(&rect, &ellipsoid, granularity, 0.0, VertexFormat::POSITION_ONLY);
 
-    // Should produce a grid of positions
+    // 应生成位置网格
     assert!(geo.positions.len() >= 4, "rectangle should have at least 4 positions");
     assert!(!geo.indices.is_empty());
     assert_eq!(geo.indices.len() % 3, 0, "indices should be triangles");
@@ -417,12 +417,12 @@ fn rectangle_normals_point_outward() {
     use cesium_geospatial::Rectangle;
     let ellipsoid = Ellipsoid::WGS84;
     let rect = Rectangle::from_degrees(-5.0, -5.0, 5.0, 5.0);
-    let granularity = std::f64::consts::PI / 180.0; // 1 degree
+    let granularity = std::f64::consts::PI / 180.0; // 1 度
 
     let geo = rectangle_geometry(&rect, &ellipsoid, granularity, 0.0, VertexFormat::POSITION_AND_NORMAL);
     let normals = geo.normals.as_ref().unwrap();
 
-    // Each normal should point outward (dot with position direction > 0)
+    // 每个法线应朝外（与位置方向的点积 > 0）
     for i in 0..geo.positions.len() {
         let pos = DVec3::from(geo.positions[i]);
         let normal = DVec3::from(normals[i]);
@@ -437,7 +437,7 @@ fn rectangle_bounding_sphere_contains_all_positions() {
     use cesium_geospatial::Rectangle;
     let ellipsoid = Ellipsoid::WGS84;
     let rect = Rectangle::from_degrees(-20.0, -10.0, 20.0, 10.0);
-    let granularity = std::f64::consts::PI / 36.0; // 5 degrees
+    let granularity = std::f64::consts::PI / 36.0; // 5 度
 
     let geo = rectangle_geometry(&rect, &ellipsoid, granularity, 0.0, VertexFormat::POSITION_ONLY);
 
@@ -454,11 +454,11 @@ fn rectangle_bounding_sphere_contains_all_positions() {
     }
 }
 
-// ─── Cross-cutting invariants ──────────────────────────────────────────────
+// ─── 横切不变量 ──────────────────────────────────────────────
 
 #[test]
 fn all_generators_produce_valid_indices() {
-    // All indices should reference valid vertices
+    // 所有索引应引用有效顶点
     let geometries = vec![
         box_geometry(DVec3::new(-1.0, -1.0, -1.0), DVec3::new(1.0, 1.0, 1.0), VertexFormat::ALL),
         sphere_geometry(1.0, 4, 4, VertexFormat::ALL),

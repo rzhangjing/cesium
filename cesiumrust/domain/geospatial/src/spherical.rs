@@ -1,17 +1,17 @@
-//! Spherical coordinates.
-//! Maps to CesiumJS `Core/Spherical.js`
+//! 球坐标。
+//! 映射到 CesiumJS `Core/Spherical.js`
 
 use glam::DVec3;
 
-/// A set of curvilinear 3D coordinates: clock, cone, and magnitude.
-/// Maps to CesiumJS `Spherical`
+/// 一组曲线 3D 坐标：clock、cone 和 magnitude。
+/// 映射到 CesiumJS `Spherical`
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Spherical {
-    /// The angular coordinate lying in the equatorial plane, measured from the x-axis.
+    /// 位于赤道平面内、从 x 轴起量的角度坐标。
     pub clock: f64,
-    /// The angular coordinate measured from the z-axis (polar angle / cone angle).
+    /// 从 z 轴起量的角度坐标（极角 / 锥角）。
     pub cone: f64,
-    /// The linear coordinate measured from the origin.
+    /// 从原点起量的线性坐标。
     pub magnitude: f64,
 }
 
@@ -26,8 +26,8 @@ impl Spherical {
         Self { clock, cone, magnitude }
     }
 
-    /// Converts a Cartesian3 to Spherical coordinates.
-    /// Maps to `Spherical.fromCartesian3`
+    /// 将 Cartesian3 转换为球坐标。
+    /// 映射到 `Spherical.fromCartesian3`
     pub fn from_cartesian3(cartesian: DVec3) -> Self {
         let magnitude = cartesian.length();
         let mut cone = 0.0;
@@ -35,7 +35,7 @@ impl Spherical {
 
         if magnitude > 0.0 {
             let rad = cartesian.z / magnitude;
-            // Clamp to [-1, 1] for acos safety
+            // 为 acos 安全地限制到 [-1, 1]
             cone = rad.clamp(-1.0, 1.0).acos();
             clock = cartesian.y.atan2(cartesian.x);
             if clock < 0.0 {
@@ -46,8 +46,8 @@ impl Spherical {
         Self { clock, cone, magnitude }
     }
 
-    /// Returns a normalized copy (magnitude = 1.0).
-    /// Maps to `Spherical.normalize`
+    /// 返回一个归一化的副本（magnitude = 1.0）。
+    /// 映射到 `Spherical.normalize`
     pub fn normalize(&self) -> Self {
         Self {
             clock: self.clock,
@@ -56,8 +56,8 @@ impl Spherical {
         }
     }
 
-    /// Returns true if this spherical equals other within epsilon.
-    /// Maps to `Spherical.equalsEpsilon`
+    /// 若在 epsilon 范围内此球坐标等于 other 则返回 true。
+    /// 映射到 `Spherical.equalsEpsilon`
     pub fn equals_epsilon(&self, other: &Self, epsilon: f64) -> bool {
         (self.clock - other.clock).abs() <= epsilon
             && (self.cone - other.cone).abs() <= epsilon

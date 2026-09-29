@@ -1,9 +1,9 @@
-//! A heap data structure with a user-defined comparator.
-//! Maps to CesiumJS `Core/Heap.js`
+//! 一个带用户自定义比较器的堆（heap）数据结构。
+//! 映射到 CesiumJS `Core/Heap.js`
 
-/// A heap that uses a comparator function to maintain the heap property.
-/// The comparator should return a negative value if `a` has higher priority,
-/// zero if equal, and positive if `b` has higher priority (min-heap by default).
+/// 一个使用比较器函数来维持堆性质的堆。
+/// 比较器应在 `a` 优先级更高时返回负值，相等时返回零，
+/// `b` 优先级更高时返回正值（默认为最小堆）。
 pub struct Heap<T, F>
 where
     F: Fn(&T, &T) -> std::cmp::Ordering,
@@ -17,7 +17,7 @@ impl<T, F> Heap<T, F>
 where
     F: Fn(&T, &T) -> std::cmp::Ordering,
 {
-    /// Creates a new Heap with the given comparator.
+    /// 使用给定的比较器创建一个新 Heap。
     pub fn new(comparator: F) -> Self {
         Self {
             comparator,
@@ -26,21 +26,21 @@ where
         }
     }
 
-    /// Returns the number of elements in the heap.
+    /// 返回堆中的元素个数。
     pub fn length(&self) -> usize {
         self.array.len()
     }
 
-    /// Returns the maximum length constraint, if set.
+    /// 返回最大长度约束，若已设置。
     pub fn maximum_length(&self) -> Option<usize> {
         self.maximum_length
     }
 
-    /// Sets the maximum length. If the current length exceeds this,
-    /// excess elements are removed.
+    /// 设置最大长度。若当前长度超过此值，
+    /// 则移除多余的元素。
     ///
-    /// # Panics
-    /// Panics if `maximum_length` would be negative (not applicable for usize).
+    /// # Panic
+    /// 若 `maximum_length` 为负则 Panic（对 usize 不适用）。
     pub fn set_maximum_length(&mut self, maximum_length: usize) {
         self.maximum_length = Some(maximum_length);
         if self.array.len() > maximum_length {
@@ -48,44 +48,42 @@ where
         }
     }
 
-    /// Returns a reference to the internal array.
+    /// 返回内部数组的引用。
     pub fn internal_array(&self) -> &[T] {
         &self.array
     }
 
-    /// Inserts a value into the heap.
-    /// Returns the removed element if maximumLength was exceeded, otherwise None.
+    /// 向堆中插入一个值。
+    /// 若超过 maximumLength 则返回被移除的元素，否则返回 None。
     pub fn insert(&mut self, value: T) -> Option<T> {
         let mut removed = None;
 
         if let Some(max_len) = self.maximum_length {
             if self.array.len() >= max_len {
-                // Insert at end, bubble up, then remove the last (least priority)
+                // 末尾插入，上浮，然后移除最后一个（优先级最低的）
                 self.array.push(value);
                 self.bubble_up(self.array.len() - 1);
-                // The element to remove is the one with least priority (last after heapify)
-                // In a min-heap, the max element is somewhere in the leaves.
-                // CesiumJS approach: insert, then if over max, remove the last element
-                // after bubbling. Actually CesiumJS inserts then pops the last from internal array.
-                // Let's follow CesiumJS: insert normally, if length > maximumLength,
-                // remove the element at the end of the internal array (which after bubble-up
-                // is the one that was displaced).
-                // Actually CesiumJS does: array[length] = value, length++, bubbleUp,
-                // then if length > maximumLength: removed = array[--length], array.length = length
-                // This means it removes the LAST element in the array (not the root).
-                // After bubble-up, the newly inserted element is in its correct position,
-                // and the last position holds whatever was displaced. But that's not necessarily
-                // the least-priority element.
+                // 要移除的是优先级最低的元素（heapify 后位于末尾）
+                // 在最小堆中，最大元素位于某个叶子节点。
+                // CesiumJS 的做法：插入，然后若超过最大值，则在上浮后
+                // 移除内部数组的最后一个元素。
+                // 我们遵循 CesiumJS：正常插入，若 length > maximumLength，
+                // 就移除内部数组末尾的元素（上浮后被置换的那个）。
+                // 实际上 CesiumJS 做的是：array[length] = value, length++, bubbleUp,
+                // 然后若 length > maximumLength：removed = array[--length], array.length = length
+                // 这意味着它移除数组中的最后一个元素（而非根）。
+                // 上浮后，新插入的元素已移到其正确位置，而被交换下来的
+                // 内容位于末尾。因此被移除的，就是上浮过程中被挤到最底部的
+                // 那个元素。
                 //
-                // Looking at CesiumJS source more carefully:
+                // 更仔细地查看 CesiumJS 源码：
                 // insert: this._array[this._length] = value; this._length++; bubbleUp;
                 //         if defined maximumLength && this._length > maximumLength:
                 //           removed = this._array[this._length - 1]; this._length--;
-                //           this._array.length = this._length; (truncates)
-                // So it removes the LAST element in the array after bubble-up.
-                // After bubble-up, the new value has been moved to its correct position,
-                // and whatever was swapped down is at the end. So the removed element
-                // is the one that got pushed to the bottom during bubble-up.
+                //           this._array.length = this._length; (截断)
+                // 因此它移除上浮后数组中的最后一个元素。
+                // 上浮后，新值已移到其正确位置，而被交换下来的内容位于末尾。
+                // 所以被移除的元素，就是上浮过程中被挤到最底部的那个。
                 removed = self.array.pop();
             } else {
                 self.array.push(value);
@@ -99,8 +97,8 @@ where
         removed
     }
 
-    /// Removes and returns the root (highest priority) element.
-    /// Returns None if the heap is empty.
+    /// 移除并返回根（优先级最高的）元素。
+    /// 若堆为空则返回 None。
     pub fn pop(&mut self) -> Option<T> {
         if self.array.is_empty() {
             return None;
@@ -117,13 +115,13 @@ where
         result
     }
 
-    /// Re-establishes the heap property after elements have been modified externally.
+    /// 在元素被外部修改后重新建立堆性质。
     pub fn resort(&mut self) {
         let len = self.array.len();
         if len <= 1 {
             return;
         }
-        // Build heap from bottom up
+        // 自底向上构建堆
         let mut i = len / 2;
         while i > 0 {
             i -= 1;

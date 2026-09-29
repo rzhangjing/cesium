@@ -1,5 +1,5 @@
-//! Performance + Cache specs
-//! Ported from CesiumJS Scene/FrameRateControllerSpec.js + ResourceCacheSpec.js
+//! 性能 + 缓存规范
+//! 移植自 CesiumJS Scene/FrameRateControllerSpec.js + ResourceCacheSpec.js
 
 use cesium_performance::{
     CacheStatistics, FrameRateConfig, FrameRateController, LruCache, MemoryBudget, MemoryTracker,
@@ -33,7 +33,7 @@ fn frame_rate_controller_render_always() {
         render_on_demand: false,
         ..Default::default()
     });
-    // Always renders regardless of request state
+    // 无论请求状态如何都始终渲染
     assert!(controller.should_render());
     assert!(controller.should_render());
     assert!(controller.should_render());
@@ -45,12 +45,12 @@ fn frame_rate_controller_render_on_demand() {
         render_on_demand: true,
         ..Default::default()
     });
-    // Initially requested
+    // 初始已请求
     assert!(controller.should_render());
-    // After consumed, no more
+    // 消费后，不再有
     assert!(!controller.should_render());
     assert!(!controller.should_render());
-    // Request again
+    // 再次请求
     controller.request_render();
     assert!(controller.should_render());
     assert!(!controller.should_render());
@@ -59,7 +59,7 @@ fn frame_rate_controller_render_on_demand() {
 #[test]
 fn frame_rate_controller_average_without_history() {
     let controller = FrameRateController::new(FrameRateConfig::default());
-    // Without frames, average = 1/target_fps
+    // 无帧时，平均值 = 1/target_fps
     assert!((controller.average_frame_time() - 1.0 / 60.0).abs() < 1e-10);
     assert!((controller.current_fps() - 60.0).abs() < 1e-10);
 }
@@ -99,7 +99,7 @@ fn request_scheduler_priority_ordering() {
     let _normal = scheduler.schedule(RequestPriority::Normal, 1);
     let critical = scheduler.schedule(RequestPriority::Critical, 1);
 
-    // Critical first, then High
+    // 先 Critical，再 High
     let r1 = scheduler.next_request().unwrap();
     assert_eq!(r1.id, critical);
     let r2 = scheduler.next_request().unwrap();
@@ -113,13 +113,13 @@ fn request_scheduler_capacity_limit() {
     scheduler.schedule(RequestPriority::Normal, 1);
     scheduler.schedule(RequestPriority::Normal, 1);
 
-    // Can only take 2
+    // 只能取 2 个
     assert!(scheduler.next_request().is_some());
     assert!(scheduler.next_request().is_some());
     assert!(!scheduler.has_capacity());
     assert!(scheduler.next_request().is_none());
 
-    // Complete one → capacity restored
+    // 完成一个 → 容量恢复
     scheduler.complete_request();
     assert!(scheduler.has_capacity());
     assert!(scheduler.next_request().is_some());
@@ -134,7 +134,7 @@ fn request_scheduler_cancel() {
     scheduler.cancel(id1);
     assert_eq!(scheduler.pending_count(), 1);
 
-    // Cancelled request not returned
+    // 已取消的请求不会被返回
     let req = scheduler.next_request().unwrap();
     assert_eq!(req.priority, RequestPriority::High);
 }
@@ -177,7 +177,7 @@ fn memory_tracker_allocate_and_free() {
 
     tracker.free_texture(400);
     assert_eq!(tracker.texture_bytes, 600);
-    // Saturating sub
+    // 饱和减法
     tracker.free_geometry(9999);
     assert_eq!(tracker.geometry_bytes, 0);
 }
@@ -232,7 +232,7 @@ fn cache_statistics_byte_tracking() {
 
     stats.remove_geometry(500);
     assert_eq!(stats.total_bytes, 2500);
-    assert_eq!(stats.peak_bytes, 3000); // peak unchanged
+    assert_eq!(stats.peak_bytes, 3000); // 峰值不变
 }
 
 #[test]
@@ -268,9 +268,9 @@ fn lru_cache_eviction_order() {
     let mut cache = LruCache::new(2);
     cache.put("a", 1);
     cache.put("b", 2);
-    // Access "a" to make it recently used
+    // 访问 "a" 使其成为最近使用
     cache.get(&"a");
-    // Insert "c" → should evict "b" (LRU)
+    // 插入 "c" → 应淘汰 "b"（LRU）
     cache.put("c", 3);
     assert_eq!(cache.len(), 2);
     assert!(cache.contains(&"a"));
@@ -304,9 +304,9 @@ fn lru_cache_peek_does_not_update_order() {
     let mut cache = LruCache::new(2);
     cache.put("a", 1);
     cache.put("b", 2);
-    // Peek "a" (does NOT make it recently used)
+    // Peek "a"（不会使其成为最近使用）
     assert_eq!(cache.peek(&"a"), Some(&1));
-    // Insert "c" → "a" is still LRU → evicted
+    // 插入 "c" → "a" 仍是 LRU → 被淘汰
     cache.put("c", 3);
     assert!(!cache.contains(&"a"));
     assert!(cache.contains(&"b"));
@@ -327,10 +327,10 @@ fn lru_cache_clear() {
 fn lru_cache_stats_tracking() {
     let mut cache = LruCache::new(2);
     cache.put("a", 1);
-    cache.get(&"a"); // hit
-    cache.get(&"z"); // miss
+    cache.get(&"a"); // 命中
+    cache.get(&"z"); // 未命中
     cache.put("b", 2);
-    cache.put("c", 3); // eviction
+    cache.put("c", 3); // 淘汰
 
     assert_eq!(cache.stats.hits, 1);
     assert_eq!(cache.stats.misses, 1);

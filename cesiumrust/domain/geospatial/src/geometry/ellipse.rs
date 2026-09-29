@@ -1,11 +1,9 @@
-//! Ellipse / circle geometry on the ellipsoid surface.
+//! 椭球表面上的椭圆 / 圆形几何。
 //!
-//! Faithful port of CesiumJS `EllipseGeometryLibrary.js`, `EllipseGeometry.js`
-//! and `EllipseOutlineGeometry.js`. The ellipse is tessellated in "columns"
-//! that run east→west: the first and last columns hold a single position (the
-//! eastern-/western-most points) and every interior column holds an even number
-//! of positions, producing the characteristic diamond-ish fan shown in the
-//! CesiumJS source comments.
+//! 对 CesiumJS `EllipseGeometryLibrary.js`、`EllipseGeometry.js`
+//! 与 `EllipseOutlineGeometry.js` 的忠实移植。椭圆按自东→西的“列”进行剖分：
+//! 首列和末列各含一个位置（最东/最西点），而每个内部列含偶数个
+//! 位置，形成 CesiumJS 源码注释中所展示的那种类菱形扇形。
 
 use crate::bounding::BoundingSphere;
 use crate::ellipsoid::Ellipsoid;
@@ -13,12 +11,11 @@ use crate::geometry::{GeometryData, PrimitiveType, VertexFormat};
 use crate::projection::{GeographicProjection, MapProjection};
 use glam::{DMat3, DQuat, DVec3};
 
-/// Computes a single point on the boundary of the ellipse.
+/// 计算椭圆边界上的单个点。
 ///
-/// Port of `pointOnEllipsoid` in `EllipseGeometryLibrary.js`. Given a parameter
-/// angle `theta`, it finds the point on the ellipsoid surface that lies on the
-/// ellipse boundary by rotating the centre's unit position vector about an axis
-/// in the local east/north plane by the ellipse's angular radius at `theta`.
+/// 移植自 `EllipseGeometryLibrary.js` 中的 `pointOnEllipsoid`。给定参数角
+/// `theta`，它通过将中心的单位位置矢量绕局部东/北平面内的一根轴旋转
+/// 椭圆在 `theta` 处的角半径，找到位于椭圆边界上、椭球表面的点。
 #[allow(clippy::too_many_arguments)]
 fn point_on_ellipsoid(
     theta: f64,
@@ -41,7 +38,7 @@ fn point_on_ellipsoid(
     let radius = ab / (b_sqr * cos_theta_squared + a_sqr * sin_theta_squared).sqrt();
     let angle = radius / mag;
 
-    // Rotate the position vector to the boundary of the ellipse.
+    // 将位置矢量旋转到椭圆的边界。
     let unit_quat = DQuat::from_axis_angle(rot_axis.normalize(), angle);
     let rot_mtx = DMat3::from_quat(unit_quat);
 
@@ -50,26 +47,26 @@ fn point_on_ellipsoid(
     result
 }
 
-/// Result of [`compute_ellipse_positions`].
+/// [`compute_ellipse_positions`] 的结果。
 pub struct EllipsePositions {
-    /// Fill positions (column-major tessellation), if requested.
+    /// 填充位置（列优先剖分），若已请求。
     pub positions: Vec<[f64; 3]>,
-    /// Number of points in the first quadrant (drives the tessellation).
+    /// 第一象限中的点数（驱动剖分）。
     pub num_pts: usize,
-    /// Outer boundary positions (ordered ring), if requested.
+    /// 外边界位置（有序环路），若已请求。
     pub outer_positions: Vec<[f64; 3]>,
 }
 
-/// Computes the positions that make up the ellipse.
+/// 计算构成椭圆的那些位置。
 ///
-/// Port of `EllipseGeometryLibrary.computeEllipsePositions`.
+/// 移植自 `EllipseGeometryLibrary.computeEllipsePositions`。
 ///
-/// * `semi_minor_axis` / `semi_major_axis` – ellipse radii in metres.
-/// * `rotation` – rotation of the ellipse about its centre (radians).
-/// * `center` – centre position (cartesian, on/near the ellipsoid).
-/// * `granularity` – angular granularity (radians); scaled by 8 internally.
-/// * `add_fill_positions` – produce the filled tessellation positions.
-/// * `add_edge_positions` – produce the outer boundary ring positions.
+/// * `semi_minor_axis` / `semi_major_axis` – 椭圆半径（米）。
+/// * `rotation` – 椭圆绕其中心的旋转（弧度）。
+/// * `center` – 中心位置（笛卡尔，位于/靠近椭球）。
+/// * `granularity` – 角度粒度（弧度）；内部会乘以 8。
+/// * `add_fill_positions` – 生成填充剖分位置。
+/// * `add_edge_positions` – 生成外边界环路位置。
 pub fn compute_ellipse_positions(
     semi_minor_axis: f64,
     semi_major_axis: f64,
@@ -79,8 +76,8 @@ pub fn compute_ellipse_positions(
     add_fill_positions: bool,
     add_edge_positions: bool,
 ) -> EllipsePositions {
-    // Scaling the angle delta makes the distance along the ellipse boundary
-    // more closely match the granularity (see CesiumJS comment).
+    // 缩放角度增量会使沿椭圆边界的距离与粒度更紧密地匹配
+    // （参见 CesiumJS 注释）。
     let granularity = granularity * 8.0;
 
     let a_sqr = semi_minor_axis * semi_minor_axis;
@@ -93,7 +90,7 @@ pub fn compute_ellipse_positions(
     let east_vec = DVec3::Z.cross(center).normalize();
     let north_vec = unit_pos.cross(east_vec);
 
-    // The number of points in the first quadrant.
+    // 第一象限中的点数。
     let mut num_pts = 1 + (std::f64::consts::FRAC_PI_2 / granularity).ceil() as usize;
 
     let delta_theta = std::f64::consts::FRAC_PI_2 / (num_pts - 1) as f64;
@@ -110,16 +107,16 @@ pub fn compute_ellipse_positions(
     };
 
     let outer_positions_length = num_pts * 4;
-    // The outer ring is filled from both ends towards the middle.
+    // 外环路从两端向中间填充。
     let mut outer_positions: Vec<[f64; 3]> = if add_edge_positions {
         vec![[0.0; 3]; outer_positions_length]
     } else {
         Vec::new()
     };
-    let mut outer_right_index = outer_positions_length; // exclusive, decrements
+    let mut outer_right_index = outer_positions_length; // 排他，递减
     let mut outer_left_index = 0usize;
 
-    // Compute points in the 'eastern' half of the ellipse.
+    // 计算椭圆“东侧”半部的点。
     let mut theta = std::f64::consts::FRAC_PI_2;
     let position = point_on_ellipsoid(
         theta, rotation, north_vec, east_vec, a_sqr, ab, b_sqr, mag, unit_pos,
@@ -173,7 +170,7 @@ pub fn compute_ellipse_positions(
         theta = std::f64::consts::FRAC_PI_2 - (i + 1) as f64 * delta_theta;
     }
 
-    // Compute points in the 'western' half of the ellipse.
+    // 计算椭圆“西侧”半部的点。
     for i in (2..=num_pts).rev() {
         let theta = std::f64::consts::FRAC_PI_2 - (i - 1) as f64 * delta_theta;
 
@@ -233,19 +230,19 @@ pub fn compute_ellipse_positions(
     }
 }
 
-/// Generates the triangle indices for the filled ellipse tessellation.
+/// 为填充的椭圆剖分生成三角形索引。
 ///
-/// Port of `topIndices` in `EllipseGeometry.js`. The index arithmetic mirrors
-/// the column layout produced by [`compute_ellipse_positions`].
+/// 移植自 `EllipseGeometry.js` 中的 `topIndices`。索引算术与
+/// [`compute_ellipse_positions`] 产生的列布局相对应。
 pub fn top_indices(num_pts: usize) -> Vec<u32> {
-    // total triangles = 2 * (-1 + 4 * (n*(n+1)/2)); indices = triangles * 3.
+    // 总三角形数 = 2 * (-1 + 4 * (n*(n+1)/2))；索引数 = 三角形数 * 3。
     let total = 12 * (num_pts * (num_pts + 1)) - 6;
     let mut indices: Vec<u32> = Vec::with_capacity(total);
 
     let mut prev_index: u32 = 0;
     let mut position_index: u32 = 1;
 
-    // Triangles to the 'right' of the north vector (first fan).
+    // 北向量“右侧”的三角形（第一个扇形）。
     for _ in 0..3 {
         indices.push(position_index);
         position_index += 1;
@@ -281,7 +278,7 @@ pub fn top_indices(num_pts: usize) -> Vec<u32> {
         indices.push(position_index);
     }
 
-    // Indices for the centre column of triangles.
+    // 中间一列三角形的索引。
     let num_interior = num_pts * 2;
     position_index += 1;
     prev_index += 1;
@@ -308,7 +305,7 @@ pub fn top_indices(num_pts: usize) -> Vec<u32> {
     prev_index += 1;
     indices.push(prev_index);
 
-    // Reverse the process creating indices to the 'left' of the north vector.
+    // 反转过程，生成北向量“左侧”的索引。
     prev_index += 1;
     for i in (2..=num_pts - 1).rev() {
         indices.push(prev_index);
@@ -347,23 +344,23 @@ pub fn top_indices(num_pts: usize) -> Vec<u32> {
     indices
 }
 
-/// Options for ellipse geometry generation.
+/// 椭圆几何生成的选项。
 pub struct EllipseOptions {
-    /// Centre position (cartesian).
+    /// 中心位置（笛卡尔）。
     pub center: DVec3,
-    /// Semi-major axis in metres.
+    /// 半长轴（米）。
     pub semi_major_axis: f64,
-    /// Semi-minor axis in metres.
+    /// 半短轴（米）。
     pub semi_minor_axis: f64,
-    /// Ellipsoid.
+    /// 椭球。
     pub ellipsoid: Ellipsoid,
-    /// Angular granularity in radians.
+    /// 角度粒度（弧度）。
     pub granularity: f64,
-    /// Height above the ellipsoid in metres.
+    /// 椭球上方的高度（米）。
     pub height: f64,
-    /// Rotation of the ellipse about its centre in radians.
+    /// 椭圆绕其中心的旋转（弧度）。
     pub rotation: f64,
-    /// Texture-coordinate rotation in radians.
+    /// 纹理坐标旋转（弧度）。
     pub st_rotation: f64,
 }
 
@@ -382,10 +379,10 @@ impl Default for EllipseOptions {
     }
 }
 
-/// Generates a filled ellipse geometry on the ellipsoid.
+/// 在椭球上生成一个实心椭圆几何。
 ///
-/// Maps to CesiumJS `EllipseGeometry`. `CircleGeometry` is the special case
-/// where `semi_major_axis == semi_minor_axis`.
+/// 映射到 CesiumJS `EllipseGeometry`。`CircleGeometry` 是
+/// `semi_major_axis == semi_minor_axis` 的特殊情形。
 pub fn ellipse_geometry(options: &EllipseOptions, vf: VertexFormat) -> GeometryData {
     let ellipsoid = options.ellipsoid;
 
@@ -400,7 +397,7 @@ pub fn ellipse_geometry(options: &EllipseOptions, vf: VertexFormat) -> GeometryD
     );
     let num_pts = cep.num_pts;
 
-    // Raise positions to height and compute attributes.
+    // 将位置抬升到高度并计算属性。
     let positions = raise_positions_to_height(&cep.positions, &ellipsoid, options.height);
 
     let indices = top_indices(num_pts);
@@ -432,7 +429,7 @@ pub fn ellipse_geometry(options: &EllipseOptions, vf: VertexFormat) -> GeometryD
         }
     }
 
-    // Bounding sphere: centre raised to height, radius = semi-major axis.
+    // 包围球：中心抬升到高度，半径 = 半长轴。
     let bs_center = options
         .center
         + ellipsoid
@@ -453,9 +450,9 @@ pub fn ellipse_geometry(options: &EllipseOptions, vf: VertexFormat) -> GeometryD
     }
 }
 
-/// Generates an ellipse outline geometry (line segments).
+/// 生成一个椭圆线框几何（线段序列）。
 ///
-/// Maps to CesiumJS `EllipseOutlineGeometry`.
+/// 映射到 CesiumJS `EllipseOutlineGeometry`。
 pub fn ellipse_outline_geometry(options: &EllipseOptions) -> GeometryData {
     let ellipsoid = options.ellipsoid;
 
@@ -471,7 +468,7 @@ pub fn ellipse_outline_geometry(options: &EllipseOptions) -> GeometryData {
 
     let positions = raise_positions_to_height(&cep.outer_positions, &ellipsoid, options.height);
 
-    // Line-loop around the outer ring.
+    // 沿外环路的线循环。
     let n = positions.len();
     let mut indices: Vec<u32> = Vec::with_capacity(n * 2);
     for i in 0..n {
@@ -499,9 +496,9 @@ pub fn ellipse_outline_geometry(options: &EllipseOptions) -> GeometryData {
     }
 }
 
-/// Raises positions to the given height above the ellipsoid surface.
+/// 将位置抬升到椭球表面上方的给定高度。
 ///
-/// Port of `EllipseGeometryLibrary.raisePositionsToHeight` (non-extruded case).
+/// 移植自 `EllipseGeometryLibrary.raisePositionsToHeight`（非拉伸情形）。
 fn raise_positions_to_height(positions: &[[f64; 3]], ellipsoid: &Ellipsoid, height: f64) -> Vec<[f64; 3]> {
     positions
         .iter()
@@ -542,9 +539,9 @@ mod tests {
             true,
             true,
         );
-        // Fill count must match the column formula 2*n*(n+2).
+        // 填充数必须符合列公式 2*n*(n+2)。
         assert_eq!(cep.positions.len(), 2 * cep.num_pts * (cep.num_pts + 2));
-        // Outer ring count must be 4*n.
+        // 外环路数必须为 4*n。
         assert_eq!(cep.outer_positions.len(), 4 * cep.num_pts);
     }
 
@@ -554,7 +551,7 @@ mod tests {
             let indices = top_indices(num_pts);
             let expected = 12 * (num_pts * (num_pts + 1)) - 6;
             assert_eq!(indices.len(), expected, "num_pts={}", num_pts);
-            // All indices must be within the fill-position range.
+            // 所有索引都必须在填充位置范围内。
             let max_index = 2 * num_pts * (num_pts + 2);
             assert!(
                 indices.iter().all(|&i| (i as usize) < max_index),
@@ -578,7 +575,7 @@ mod tests {
         assert_eq!(geo.positions.len(), geo.tex_coords.as_ref().unwrap().len());
         assert_eq!(geo.indices.len() % 3, 0);
         assert_eq!(geo.primitive_type, PrimitiveType::Triangles);
-        // Bounding sphere radius equals the semi-major axis.
+        // 包围球半径等于半长轴。
         assert!((geo.bounding_sphere.radius - 500_000.0).abs() < 1e-6);
     }
 
@@ -607,15 +604,15 @@ mod tests {
         };
         let geo = ellipse_outline_geometry(&opts);
         assert_eq!(geo.primitive_type, PrimitiveType::Lines);
-        // Line indices come in pairs and form a closed loop.
+        // 线索引成对出现并构成一个闭合环路。
         assert_eq!(geo.indices.len(), geo.positions.len() * 2);
         assert_eq!(geo.indices.len() % 2, 0);
     }
 
     #[test]
     fn test_ellipse_positions_on_surface() {
-        // Every generated position should be (approximately) on the ellipsoid
-        // surface raised to the requested height.
+        // 每个生成的位置都应（大致）位于抬升到请求
+        // 高度的椭球表面上。
         let opts = EllipseOptions {
             center: equator_center(),
             semi_major_axis: 500_000.0,
@@ -635,8 +632,8 @@ mod tests {
 
     #[test]
     fn test_ellipse_triangles_non_degenerate() {
-        // Every triangle must reference three pairwise-distinct vertices and
-        // have non-zero area, confirming the column tessellation is valid.
+        // 每个三角形都必须引用三个两两不同的顶点并具有
+        // 非零面积，以确认列剖分有效。
         let opts = EllipseOptions {
             center: equator_center(),
             semi_major_axis: 500_000.0,

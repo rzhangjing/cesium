@@ -1,13 +1,13 @@
-//! Scene/PointCloud + PointCloudShading → Rust integration tests.
+//! Scene/PointCloud + PointCloudShading → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Scene/PointCloud.js
 //! - Scene/PointCloudShading.js
 //! - Scene/PointCloudEyeDomeLighting.js
 //!
-//! A-class tests: PointCloudShading defaults/attenuation/EDL,
-//! QuantizedPositions dequantize, PointCloud from_feature_table.
-//! C-class omitted: WebGL shader rendering, framebuffer operations.
+//! A 类测试：PointCloudShading 默认值/衰减/EDL、
+//! QuantizedPositions 反量化、PointCloud from_feature_table。
+//! C 类省略：WebGL 着色器渲染、framebuffer 操作。
 
 use cesium_tileset::point_cloud::{PointCloud, PointCloudShading, QuantizedPositions};
 use cesium_tileset::batch_table::FeatureTable;
@@ -31,7 +31,7 @@ fn shading_defaults() {
 fn shading_attenuation_disabled() {
     let shading = PointCloudShading::default(); // attenuation = false
     let size = shading.compute_attenuated_size(5.0, 100.0, 1080.0);
-    // When disabled, returns base_size
+    // 禁用时，返回 base_size
     assert!((size - 5.0).abs() < 1e-10);
 }
 
@@ -51,7 +51,7 @@ fn shading_attenuation_close_larger() {
     shading.attenuation = true;
     let size_close = shading.compute_attenuated_size(5.0, 100.0, 1080.0);
     let size_far = shading.compute_attenuated_size(5.0, 1000.0, 1080.0);
-    // Closer points should appear larger
+    // 更近的点应显得更大
     assert!(size_close > size_far);
 }
 
@@ -59,10 +59,10 @@ fn shading_attenuation_close_larger() {
 fn shading_attenuation_clamped() {
     let mut shading = PointCloudShading::default();
     shading.attenuation = true;
-    // Very close → should be clamped to max 64
+    // 非常近 → 应被钳制到最大 64
     let size = shading.compute_attenuated_size(10.0, 1.0, 1080.0);
     assert!(size <= 64.0);
-    // Very far → should be clamped to min 1
+    // 非常远 → 应被钳制到最小 1
     let size_far = shading.compute_attenuated_size(10.0, 1000000.0, 1080.0);
     assert!(size_far >= 1.0);
 }
@@ -72,11 +72,11 @@ fn shading_attenuation_zero_distance() {
     let mut shading = PointCloudShading::default();
     shading.attenuation = true;
     let size = shading.compute_attenuated_size(5.0, 0.0, 1080.0);
-    // Zero distance returns base_size
+    // 距离为零时返回 base_size
     assert!((size - 5.0).abs() < 1e-10);
 }
 
-// === Eye Dome Lighting ===
+// === 眼罩光照 ===
 
 #[test]
 fn edl_disabled_returns_one() {
@@ -97,16 +97,16 @@ fn edl_no_neighbors_returns_one() {
 fn edl_same_depth_returns_one() {
     let shading = PointCloudShading::default();
     let response = shading.compute_edl_response(100.0, &[100.0, 100.0, 100.0]);
-    // Same depth → no difference → response = 1.0
+    // 相同深度 → 无差异 → response = 1.0
     assert!((response - 1.0).abs() < 1e-10);
 }
 
 #[test]
 fn edl_occluding_edge_darker() {
     let shading = PointCloudShading::default();
-    // Point is much closer than neighbors (occluding edge)
+    // 点比相邻点近得多（遮挡边缘）
     let response = shading.compute_edl_response(10.0, &[1000.0, 1000.0, 1000.0, 1000.0]);
-    // Should be darker (less than 1.0)
+    // 应更暗（小于 1.0）
     assert!(response < 1.0);
     assert!(response >= 0.0);
 }
@@ -114,9 +114,9 @@ fn edl_occluding_edge_darker() {
 #[test]
 fn edl_behind_neighbors_no_darkening() {
     let shading = PointCloudShading::default();
-    // Point is farther than neighbors (not occluding)
+    // 点比相邻点远（非遮挡）
     let response = shading.compute_edl_response(1000.0, &[10.0, 10.0]);
-    // diff = max(log2(10) - log2(1000), 0) = 0 → no darkening
+    // diff = max(log2(10) - log2(1000), 0) = 0 → 无变暗
     assert!((response - 1.0).abs() < 1e-10);
 }
 
@@ -130,13 +130,13 @@ fn quantized_dequantize_basic() {
         volume_scale: [10.0, 20.0, 30.0],
     };
 
-    // Point 0: (0/65535, 32768/65535, 65535/65535) * scale + offset
+    // 点 0：(0/65535, 32768/65535, 65535/65535) * scale + offset
     let p0 = qp.dequantize(0);
     assert!((p0[0] - 0.0).abs() < 0.01); // 0/65535 * 10
     assert!((p0[1] - 10.0).abs() < 0.01); // ~0.5 * 20
     assert!((p0[2] - 30.0).abs() < 0.01); // 1.0 * 30
 
-    // Point 1: (65535/65535, 0/65535, 32768/65535) * scale
+    // 点 1：(65535/65535, 0/65535, 32768/65535) * scale
     let p1 = qp.dequantize(1);
     assert!((p1[0] - 10.0).abs() < 0.01); // 1.0 * 10
     assert!((p1[1] - 0.0).abs() < 0.01); // 0.0 * 20
@@ -163,16 +163,16 @@ fn quantized_dequantize_out_of_range() {
         volume_offset: [0.0, 0.0, 0.0],
         volume_scale: [1.0, 1.0, 1.0],
     };
-    // Index 1 is out of range (only 1 point = 3 values)
+    // 索引 1 越界（只有 1 个点 = 3 个值）
     let p = qp.dequantize(5);
     assert_eq!(p, [0.0, 0.0, 0.0]);
 }
 
-// === PointCloud from FeatureTable ===
+// === 从 FeatureTable 构造 PointCloud ===
 
 #[test]
 fn point_cloud_from_feature_table() {
-    // Create a feature table with 2 points
+    // 创建含 2 个点的要素表
     let mut binary = Vec::new();
     binary.extend_from_slice(&1.0f32.to_le_bytes());
     binary.extend_from_slice(&2.0f32.to_le_bytes());

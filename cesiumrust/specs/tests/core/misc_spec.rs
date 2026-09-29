@@ -1,5 +1,5 @@
-//! Core/EventSpec.js, ResourceSpec.js, RequestSchedulerSpec.js, ColorSpec.js,
-//! and other utility specs → Rust integration tests
+//! Core/EventSpec.js、ResourceSpec.js、RequestSchedulerSpec.js、ColorSpec.js
+//! 及其他工具类规格 → Rust 集成测试
 
 use cesium_event::{Event, SimpleEvent};
 use cesium_resource::{Request, RequestScheduler, RequestState, RequestType, Resource};
@@ -70,7 +70,7 @@ fn test_event_remove_listener() {
 
     assert!(event.remove_listener(id));
     event.raise(&0);
-    assert_eq!(count.get(), 1); // Should not increment
+    assert_eq!(count.get(), 1); // 不应自增
 }
 
 #[test]
@@ -209,7 +209,7 @@ fn test_request_scheduler_server_throttling() {
     let mut scheduler = RequestScheduler::new();
     scheduler.maximum_requests_per_server = 2;
 
-    // Schedule 2 requests to the same server
+    // 向同一服务器调度 2 个请求
     for i in 0..2 {
         let request = Request::throttled(
             format!("https://example.com/tile{}.b3dm", i),
@@ -220,7 +220,7 @@ fn test_request_scheduler_server_throttling() {
     }
     scheduler.update();
 
-    // Check server has no more open slots (server key includes default port)
+    // 检查服务器已无空闲槽位（服务器键包含默认端口）
     assert!(!scheduler.server_has_open_slots("example.com:443", 1));
 }
 

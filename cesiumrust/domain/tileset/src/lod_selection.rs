@@ -1,35 +1,35 @@
-//! Level-of-Detail (LOD) selection for 3D Tiles.
+//! 3D Tiles 的 Detail-of-Detail (LOD) 选择。
 //!
-//! Implements screen-space error (SSE) computation and tile traversal
-//! for selecting which tiles to render.
+//! 实现屏幕空间误差（SSE）计算与瓦片遍历，
+//! 以选择要渲染哪些瓦片。
 //!
-//! Maps to CesiumJS `Scene/Cesium3DTilesetTraversal.js`
+//! 镜像 CesiumJS `Scene/Cesium3DTilesetTraversal.js`
 
 use crate::tile::{Tile, TileRefine};
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use glam::DVec3;
 
-/// Camera state for LOD computation.
+/// 用于 LOD 计算的相机状态。
 #[derive(Debug, Clone)]
 pub struct CameraState {
-    /// Camera position in ECEF coordinates.
+    /// 相机位置，ECEF 坐标。
     pub position: DVec3,
 
-    /// Camera view direction (normalized).
+    /// 相机视线方向（已归一化）。
     pub direction: DVec3,
 
-    /// Camera up direction (normalized).
+    /// 相机上方方向（已归一化）。
     pub up: DVec3,
 
-    /// Vertical field of view in radians.
+    /// 垂直视野角，弧度。
     pub fov_y: f64,
 
-    /// Viewport height in pixels.
+    /// 视口高度，像素。
     pub viewport_height: f64,
 }
 
 impl CameraState {
-    /// Creates a new camera state.
+    /// 创建一个新的相机状态。
     pub fn new(position: DVec3, direction: DVec3, up: DVec3, fov_y: f64, viewport_height: f64) -> Self {
         Self {
             position,
@@ -40,11 +40,11 @@ impl CameraState {
         }
     }
 
-    /// Computes the screen space error for a given geometric error and distance.
+    /// 为给定的几何误差和距离计算屏幕空间误差。
     ///
     /// SSE = (geometricError * viewportHeight) / (distance * 2 * tan(fovY / 2))
     ///
-    /// Maps to CesiumJS `Cesium3DTileset._computeScreenSpaceError`
+    /// 映射到 CesiumJS `Cesium3DTileset._computeScreenSpaceError`
     pub fn compute_screen_space_error(&self, geometric_error: f64, distance: f64) -> f64 {
         if distance <= 0.0 {
             return f64::MAX;
@@ -55,43 +55,43 @@ impl CameraState {
     }
 }
 
-/// Result of tile selection for a single tile.
+/// 单个瓦片的选择结果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TileSelectionResult {
-    /// Tile should be rendered (content loaded).
+    /// 应渲染该瓦片（内容已加载）。
     Render,
-    /// Tile should be refined (children should be considered).
+    /// 应细化该瓦片（需考虑子瓦片）。
     Refine,
-    /// Tile is culled (not visible).
+    /// 该瓦片被剔除（不可见）。
     Culled,
 }
 
-/// A selected tile with its selection result.
+/// 一个被选中的瓦片及其选择结果。
 #[derive(Debug, Clone)]
 pub struct SelectedTile {
-    /// Path to the tile in the tree (indices from root).
+    /// 瓦片在树中的路径（从根开始的索引）。
     pub path: Vec<usize>,
 
-    /// The selection result.
+    /// 选择结果。
     pub result: TileSelectionResult,
 
-    /// Screen space error for this tile.
+    /// 本瓦片的屏幕空间误差。
     pub screen_space_error: f64,
 
-    /// Distance from camera to tile.
+    /// 到瓦片的相机距离。
     pub distance_to_camera: f64,
 }
 
-/// LOD selection context.
+/// LOD 选择上下文。
 #[derive(Debug, Clone)]
 pub struct LodSelectionContext {
-    /// Maximum screen space error threshold.
+    /// 最大屏幕空间误差阈值。
     pub maximum_screen_space_error: f64,
 
-    /// Whether to cull tiles outside the view frustum.
+    /// 是否剔除视锥体外的瓦片。
     pub cull_with_frustum: bool,
 
-    /// Whether to skip tiles that have already been refined.
+    /// 是否跳过已被细化的瓦片。
     pub skip_level_of_detail: bool,
 }
 
@@ -105,7 +105,7 @@ impl Default for LodSelectionContext {
     }
 }
 
-/// Computes the distance from the camera to a tile's bounding volume.
+/// 计算相机到瓦片包围体的距离。
 pub fn compute_distance_to_tile(
     camera: &CameraState,
     tile: &Tile,
@@ -114,7 +114,7 @@ pub fn compute_distance_to_tile(
     tile.bounding_volume.distance_to(camera.position, ellipsoid)
 }
 
-/// Computes the screen space error for a tile.
+/// 计算瓦片的屏幕空间误差。
 pub fn compute_tile_sse(
     camera: &CameraState,
     tile: &Tile,
@@ -124,10 +124,9 @@ pub fn compute_tile_sse(
     camera.compute_screen_space_error(tile.geometric_error, distance)
 }
 
-/// Determines if a tile should be refined based on its screen space error.
+/// 根据瓦片的屏幕空间误差判断它是否应被细化。
 ///
-/// A tile should be refined if its SSE exceeds the maximum threshold
-/// and it has children.
+/// 若瓦片的 SSE 超过最大阈值且有子瓦片，则应被细化。
 pub fn should_refine_tile(
     sse: f64,
     max_sse: f64,
@@ -136,21 +135,21 @@ pub fn should_refine_tile(
     has_children && sse > max_sse
 }
 
-/// Selects tiles for rendering using a simple traversal algorithm.
+/// 使用简单的遍历算法选择要渲染的瓦片。
 ///
-/// This implements a basic top-down traversal that:
-/// 1. Computes SSE for each tile
-/// 2. If SSE <= threshold, selects the tile for rendering
-/// 3. If SSE > threshold and tile has children, refines to children
+/// 实现一个基本的自上而下遍历，它会：
+/// 1. 为每个瓦片计算 SSE
+/// 2. 若 SSE <= 阈值，选中该瓦片渲染
+/// 3. 若 SSE > 阈值且有子瓦片，细化到子瓦片
 ///
-/// # Arguments
-/// * `root` - The root tile of the tileset
-/// * `camera` - The camera state for SSE computation
-/// * `context` - The LOD selection context
-/// * `ellipsoid` - The ellipsoid for coordinate conversions
+/// # 参数
+/// * `root` - 瓦片集的根瓦片
+/// * `camera` - 用于 SSE 计算的相机状态
+/// * `context` - LOD 选择上下文
+/// * `ellipsoid` - 用于坐标转换的椭球体
 ///
-/// # Returns
-/// A list of selected tiles with their selection results
+/// # 返回
+/// 被选中瓦片及其选择结果的列表
 pub fn select_tiles(
     root: &Tile,
     camera: &CameraState,
@@ -170,7 +169,7 @@ pub fn select_tiles(
     selected
 }
 
-/// Recursive tile selection helper.
+/// 递归瓦片选择辅助函数。
 #[allow(clippy::too_many_arguments)]
 fn select_tiles_recursive(
     tile: &Tile,
@@ -189,7 +188,7 @@ fn select_tiles_recursive(
     let should_refine = should_refine_tile(sse, context.maximum_screen_space_error, has_children);
 
     if should_refine {
-        // Refine: traverse children
+        // 细化：遍历子瓦片
         for (i, child) in tile.children.iter().enumerate() {
             let mut child_path = path.to_vec();
             child_path.push(i);
@@ -204,7 +203,7 @@ fn select_tiles_recursive(
             );
         }
 
-        // For ADD refinement, also render the parent
+        // 对于 ADD 细化，同时也渲染父瓦片
         if refine_mode == TileRefine::Add && tile.has_content() {
             selected.push(SelectedTile {
                 path: path.to_vec(),
@@ -214,7 +213,7 @@ fn select_tiles_recursive(
             });
         }
     } else {
-        // Render this tile
+        // 渲染本瓦片
         if tile.has_content() {
             selected.push(SelectedTile {
                 path: path.to_vec(),
@@ -223,7 +222,7 @@ fn select_tiles_recursive(
                 distance_to_camera: distance,
             });
         } else if has_children {
-            // Empty tile with children: refine anyway
+            // 空瓦片带子瓦片：仍然细化
             for (i, child) in tile.children.iter().enumerate() {
                 let mut child_path = path.to_vec();
                 child_path.push(i);
@@ -241,7 +240,7 @@ fn select_tiles_recursive(
     }
 }
 
-/// Gets a tile by its path in the tree.
+/// 根据瓦片在树中的路径获取它。
 pub fn get_tile_by_path<'a>(root: &'a Tile, path: &[usize]) -> Option<&'a Tile> {
     let mut current = root;
     for &index in path {
@@ -261,7 +260,7 @@ mod tests {
             DVec3::new(0.0, 0.0, 1000.0),
             DVec3::new(0.0, 0.0, -1.0),
             DVec3::new(0.0, 1.0, 0.0),
-            std::f64::consts::FRAC_PI_4, // 45 degrees
+            std::f64::consts::FRAC_PI_4, // 45 度
             1080.0,
         )
     }
@@ -339,14 +338,14 @@ mod tests {
 
     #[test]
     fn test_should_refine_tile() {
-        assert!(should_refine_tile(20.0, 16.0, true)); // SSE > threshold, has children
-        assert!(!should_refine_tile(10.0, 16.0, true)); // SSE < threshold
-        assert!(!should_refine_tile(20.0, 16.0, false)); // No children
+        assert!(should_refine_tile(20.0, 16.0, true)); // SSE > 阈值，有子瓦片
+        assert!(!should_refine_tile(10.0, 16.0, true)); // SSE < 阈值
+        assert!(!should_refine_tile(20.0, 16.0, false)); // 无子瓦片
     }
 
     #[test]
     fn test_select_tiles_no_refinement() {
-        let root = create_test_tile(10.0, false); // Low error, no children
+        let root = create_test_tile(10.0, false); // 低误差，无子瓦片
         let camera = create_test_camera();
         let context = LodSelectionContext::default();
 
@@ -358,13 +357,13 @@ mod tests {
 
     #[test]
     fn test_select_tiles_with_refinement() {
-        let root = create_test_tile(1000.0, true); // High error, has children
+        let root = create_test_tile(1000.0, true); // 高误差，有子瓦片
         let camera = create_test_camera();
         let context = LodSelectionContext::default();
 
         let selected = select_tiles(&root, &camera, &context, &Ellipsoid::WGS84);
 
-        // Should refine to children
+        // 应细化到子瓦片
         assert!(selected.iter().any(|t| t.path == vec![0]));
     }
 
@@ -372,17 +371,17 @@ mod tests {
     fn test_get_tile_by_path() {
         let root = create_test_tile(100.0, true);
 
-        // Root has empty path
+        // 根拥有空路径
         let root_tile = get_tile_by_path(&root, &[]);
         assert!(root_tile.is_some());
         assert_eq!(root_tile.unwrap().geometric_error, 100.0);
 
-        // Child has path [0]
+        // 子瓦片拥有路径 [0]
         let child_tile = get_tile_by_path(&root, &[0]);
         assert!(child_tile.is_some());
         assert_eq!(child_tile.unwrap().geometric_error, 50.0);
 
-        // Invalid path
+        // 无效路径
         let invalid = get_tile_by_path(&root, &[1]);
         assert!(invalid.is_none());
     }
@@ -403,8 +402,8 @@ mod tests {
         };
 
         let distance = compute_distance_to_tile(&camera, &tile, &Ellipsoid::WGS84);
-        // Camera at (0, 0, 1000), sphere at origin with radius 100
-        // Distance = 1000 - 100 = 900
+        // 相机在 (0, 0, 1000)，球体位于原点，半径 100
+        // 距离 = 1000 - 100 = 900
         assert!((distance - 900.0).abs() < 1e-10);
     }
 
@@ -418,8 +417,8 @@ mod tests {
 
         let selected = select_tiles(&root, &camera, &context, &Ellipsoid::WGS84);
 
-        // With ADD refinement, both parent and children should be rendered
-        assert!(selected.iter().any(|t| t.path.is_empty())); // Parent
-        assert!(selected.iter().any(|t| t.path == vec![0])); // Child
+        // 采用 ADD 细化时，父瓦片和子瓦片都应渲染
+        assert!(selected.iter().any(|t| t.path.is_empty())); // 父瓦片
+        assert!(selected.iter().any(|t| t.path == vec![0])); // 子瓦片
     }
 }

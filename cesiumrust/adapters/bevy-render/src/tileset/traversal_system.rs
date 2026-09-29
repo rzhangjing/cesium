@@ -23,12 +23,12 @@ impl TileSelection {
         self.selected_tiles.clear();
     }
 
-    /// Starts a frame: snapshots the previous frame's selection, *then* clears
-    /// the per-frame queues and bumps the frame counter.
+    /// 开始一帧：快照上一帧的选择集，*然后*清空
+    /// 逐帧队列并递增帧计数。
     ///
-    /// Ordering matters: reading `selected_tiles` after `clear()` yields an
-    /// empty set, so every visible tile would look new on every frame and be
-    /// re-requested forever (the infinite-reload bug this replaces).
+    /// 顺序很重要：在 `clear()` 之后读 `selected_tiles` 会得到一个
+    /// 空集，于是每个可见 tile 都会在每帧看起来是新被选中的，从而被
+    /// 永久重新请求（本函数所取代的那个无限重载 bug）。
     pub fn begin_frame(&mut self) -> Vec<Vec<usize>> {
         let prev_tiles = self
             .selected_tiles
@@ -42,8 +42,8 @@ impl TileSelection {
         prev_tiles
     }
 
-    /// Diffs this frame's `selected` tiles against `prev_tiles` and fills the
-    /// load/unload queues with only the differences.
+    /// 把本帧的 `selected` tile 与 `prev_tiles` 做 diff，并只把差异填入
+    /// load/unload 队列。
     pub fn finish_frame(&mut self, prev_tiles: &[Vec<usize>], selected: Vec<SelectedTile>) {
         let new_tile_paths: Vec<Vec<usize>> =
             selected.iter().map(|t| t.path.clone()).collect();
@@ -75,8 +75,8 @@ pub fn tileset_traversal_system(
         None => return,
     };
 
-    // Snapshot last frame's selection before clearing it; the early returns
-    // below keep the original "always clear at frame start" behaviour.
+    // 在清空之前快照上一帧的选择集；下面的早返回
+    // 保留了原先“总在帧首清空”的行为。
     let prev_tiles = selection.begin_frame();
 
     let tileset_json = match &loaded.tileset_json {
@@ -119,8 +119,8 @@ fn get_camera_state(
 
     let viewport_height = window.physical_height() as f64;
 
-    // Camera position is in render units; convert to ECEF metres for the
-    // domain traversal which expects bounding volumes in metres.
+    // 相机位置以 render unit 为单位；转为 ECEF 米以供
+    // 期望包围体以米为单位的领域 traversal。
     let t = transform.translation();
     let position = glam::DVec3::new(
         t.x as f64 * METERS_PER_RENDER_UNIT,
@@ -207,14 +207,14 @@ mod tests {
         }
     }
 
-    /// Regression test for the infinite-reload bug: the previous-frame snapshot
-    /// used to be read *after* `clear()`, so `prev_tiles` was always empty and
-    /// every visible tile looked new on every frame.
+    /// 针对无限重载 bug 的回归测试：上一帧的快照此前被在
+    /// `clear()` *之后*读取，所以 `prev_tiles` 总是为空且
+    /// 每个可见 tile 在每帧都看起来是新被选中的。
     #[test]
     fn test_prev_tiles_snapshot_before_clear() {
         let mut selection = TileSelection::default();
 
-        // Frame 1: nothing was selected before, so everything is new.
+        // 帧 1：此前没有任何东西被选中，所以一切皆为新增。
         let prev = selection.begin_frame();
         assert!(prev.is_empty(), "frame 1 has no previous selection");
         assert_eq!(selection.frame_number, 1);
@@ -222,12 +222,12 @@ mod tests {
         assert_eq!(selection.tiles_to_load, vec![vec![0], vec![0, 1]]);
         assert!(selection.tiles_to_unload.is_empty());
 
-        // The loader is the sole consumer of `tiles_to_load`; emulate that.
+        // loader 是 `tiles_to_load` 的唯一消费者；模拟这一点。
         selection.tiles_to_load.clear();
 
-        // Frame 2: identical selection. The snapshot must still report last
-        // frame's tiles even though `begin_frame` clears them, otherwise every
-        // tile is re-requested forever.
+        // 帧 2：相同的选择集。快照必须仍报告上一帧
+        // 的 tile，即使 `begin_frame` 将它们清空，否则每个
+        // tile 都会被永久重新请求。
         let prev = selection.begin_frame();
         assert_eq!(
             prev,
@@ -241,7 +241,7 @@ mod tests {
         );
         assert!(selection.tiles_to_unload.is_empty());
 
-        // Frame 3: one tile leaves the selection -> exactly that tile unloads.
+        // 帧 3：一个 tile 离开选择集 -> 恰好那个 tile 被卸载。
         let prev = selection.begin_frame();
         selection.finish_frame(&prev, vec![selected(vec![0, 1])]);
         assert!(selection.tiles_to_load.is_empty());

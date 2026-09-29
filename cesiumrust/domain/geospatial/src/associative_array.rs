@@ -1,12 +1,12 @@
-//! Maps to CesiumJS `Core/AssociativeArray.js`
+//! 映射到 CesiumJS `Core/AssociativeArray.js`
 //!
-//! A collection of key-value pairs that is stored as a hash for easy lookup
-//! but also provides an array for fast iteration.
+//! 一个键值对集合，以哈希存储以便快速查找，
+//! 同时也提供一个数组以便快速迭代。
 
 use std::collections::HashMap;
 
-/// A collection of key-value pairs stored as a hash for easy lookup while
-/// also maintaining an array of values for fast iteration.
+/// 一个键值对集合，以哈希存储以便快速查找，
+/// 同时维护一个值数组以便快速迭代。
 pub struct AssociativeArray<T> {
     array: Vec<T>,
     hash: HashMap<String, T>,
@@ -25,7 +25,7 @@ impl<T> AssociativeArray<T>
 where
     T: Clone + PartialEq,
 {
-    /// Creates a new, empty associative array.
+    /// 创建新的空关联数组。
     pub fn new() -> Self {
         Self {
             array: Vec::new(),
@@ -33,23 +33,23 @@ where
         }
     }
 
-    /// Gets the number of items in the collection.
+    /// 获取集合中项的数量。
     pub fn length(&self) -> usize {
         self.array.len()
     }
 
-    /// Gets the array of all values in the collection.
+    /// 获取集合中所有值的数组。
     pub fn values(&self) -> &[T] {
         &self.array
     }
 
-    /// Determines if the provided key is in the array.
+    /// 判断所提供的键是否在数组中。
     pub fn contains(&self, key: &str) -> bool {
         self.hash.contains_key(key)
     }
 
-    /// Associates the provided key with the provided value. If the key already
-    /// exists, it is overwritten with the new value.
+    /// 将所提供的键与所提供的值关联。若键已
+    /// 存在，则用新值覆盖。
     pub fn set(&mut self, key: &str, value: T) {
         let needs_update = match self.hash.get(key) {
             Some(old) => *old != value,
@@ -62,14 +62,14 @@ where
         }
     }
 
-    /// Retrieves the value associated with the provided key, or `None` if the
-    /// key does not exist in the collection.
+    /// 检索与所提供键关联的值，若
+    /// 集合中不存在该键则返回 `None`。
     pub fn get(&self, key: &str) -> Option<&T> {
         self.hash.get(key)
     }
 
-    /// Removes a key-value pair from the collection.
-    /// Returns `true` if it was removed, `false` if the key was not present.
+    /// 从集合中移除一个键值对。
+    /// 若已移除则返回 `true`，若键不存在则返回 `false`。
     pub fn remove(&mut self, key: &str) -> bool {
         if let Some(value) = self.hash.remove(key) {
             if let Some(idx) = self.array.iter().position(|v| *v == value) {
@@ -81,7 +81,7 @@ where
         }
     }
 
-    /// Clears the collection.
+    /// 清除集合。
     pub fn remove_all(&mut self) {
         if !self.array.is_empty() {
             self.hash.clear();

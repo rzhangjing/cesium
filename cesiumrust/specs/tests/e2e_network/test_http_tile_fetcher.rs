@@ -1,15 +1,15 @@
-//! e2e skeleton: `HttpTileFetcher` against a `wiremock::MockServer`.
+//! 端到端骨架：针对 `wiremock::MockServer` 的 `HttpTileFetcher`。
 //!
-//! Verifies the domain-side `FetchDescriptor` construction today; the actual
-//! HTTP round-trip through `HttpTileFetcher` is deferred to M11.1 (see
-//! docs/deferred.md "M8-wiremock skeleton").
+//! 今天验证域侧的 `FetchDescriptor` 构造；经由 `HttpTileFetcher`
+//! 的真实 HTTP 往返被推迟至 M11.1（参见
+//! docs/deferred.md "M8-wiremock skeleton"）。
 //!
-//! **M8.3 (#66) wiring proof**: [`m83_backend_types_are_wired`] below is a
-//! non-ignored compile-time assertion that the real `HttpTileFetcher` +
-//! `NetworkResourceBackend` + `resource_fetch_backend_enabled` types are
-//! reachable from the specs crate. This makes `cargo test --no-run` a hard
-//! gate on the M8.3 adapter surface existing, without needing the async
-//! harness that M11.1 will provide.
+//! **M8.3 (#66) 接线证明**：下方的 [`m83_backend_types_are_wired`] 是一条
+//! 未被忽略的编译期断言，确认真正的 `HttpTileFetcher` +
+//! `NetworkResourceBackend` + `resource_fetch_backend_enabled` 类型可从
+//! specs crate 访问。这使得 `cargo test --no-run` 成为对 M8.3 适配器
+//! 接口存在的硬门槛，且无需 M11.1 将提供的
+//! 异步框架。
 
 use cesium_network::{
     resource_fetch_backend_enabled, HttpTileFetcher, NetworkResourceBackend,
@@ -20,24 +20,24 @@ use cesium_resource::{FetchDescriptor, HttpMethod, RequestType, Resource, Respon
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, ResponseTemplate};
 
-/// M8.3 (#66) compile-time wiring proof — **not ignored**.
+/// M8.3 (#66) 编译期接线证明 —— **未被忽略**。
 ///
-/// Asserts the real network-adapter surface is reachable from `cesium-specs`:
-/// * [`HttpTileFetcher`] can be constructed and holds a
-///   [`NetworkResourceBackend`] (the M8.3 delegate target).
-/// * [`NetworkResourceBackend`] implements
-///   [`cesium_ports_driven::ResourceBackend<u64>`] (dyn-compatible).
-/// * [`resource_fetch_backend_enabled`] defaults OFF when the env var is unset
-///   (the golden-path invariant that keeps v0 byte-identical).
-/// * [`ENV_ENABLE_RESOURCE_FETCH_BACKEND`] is the exact gate name (guards
-///   against accidental rename / conflation with the M12
-///   `ENV_ENABLE_RESOURCE_BACKEND`).
+/// 断言真正的网络适配器接口可从 `cesium-specs` 访问：
+/// * [`HttpTileFetcher`] 可被构造并持有一个
+///   [`NetworkResourceBackend`]（M8.3 的委托目标）。
+/// * [`NetworkResourceBackend`] 实现
+///   [`cesium_ports_driven::ResourceBackend<u64>`]（dyn 兼容）。
+/// * 环境变量未设置时 [`resource_fetch_backend_enabled`] 默认为 OFF
+///   （使 v0 保持逐字节一致的黄金路径不变式）。
+/// * [`ENV_ENABLE_RESOURCE_FETCH_BACKEND`] 是确切的门槛名（防止
+///   意外重命名／与 M12 的
+///   `ENV_ENABLE_RESOURCE_BACKEND` 混淆）。
 ///
-/// No network calls, no wiremock mount, no async runtime required.
+/// 无需网络调用、无需 wiremock 挂载、无需异步运行时。
 #[test]
 fn m83_backend_types_are_wired() {
-    // (a) The M8.3 gate name is exactly the isolated M8.3 identifier, not the
-    //     M12 `ENV_ENABLE_RESOURCE_BACKEND`.
+    // (a) M8.3 门槛名恰为独立的 M8.3 标识符，而非
+    //     M12 的 `ENV_ENABLE_RESOURCE_BACKEND`。
     assert_eq!(
         ENV_ENABLE_RESOURCE_FETCH_BACKEND,
         "CESIUM_ENABLE_RESOURCE_FETCH_BACKEND"
@@ -48,52 +48,52 @@ fn m83_backend_types_are_wired() {
         "M8.3 gate must NOT be conflated with the M12 Resource-backend flag"
     );
 
-    // (b) The gate defaults OFF when the env var is unset (golden-path
-    //     invariant). We only assert this when the ambient env is clean, so
-    //     parallel tests that legitimately flip the gate are not disturbed.
+    // (b) 环境变量未设置时门槛默认 OFF（黄金路径
+    //     不变式）。仅在周围环境变量干净时才断言此点，以免
+    //     干扰那些合理切换门槛的并行测试。
     if std::env::var(ENV_ENABLE_RESOURCE_FETCH_BACKEND).is_err() {
         assert!(!resource_fetch_backend_enabled());
     }
 
-    // (c) `HttpTileFetcher` still implements `TileFetcher` (the port the
-    //     golden path consumes) and can be constructed with the default ureq
-    //     agent.
+    // (c) `HttpTileFetcher` 仍实现 `TileFetcher`（黄金路径
+    //     所消费的端口），并可用默认 ureq agent
+    //     构造。
     let fetcher = HttpTileFetcher::new("https://tiles.example.com");
     let _: &dyn TileFetcher = &fetcher;
 
-    // (d) `NetworkResourceBackend` is dyn-compatible as
-    //     `ResourceBackend<u64>` — this is the M8.3 delegate target that
-    //     `HttpTileFetcher::fetch` consults when the gate is ON.
+    // (d) `NetworkResourceBackend` 作为
+    //     `ResourceBackend<u64>` 是 dyn 兼容的 —— 这是门槛 ON 时
+    //     `HttpTileFetcher::fetch` 会查询的 M8.3 委托目标。
     let backend = NetworkResourceBackend::new();
     let boxed: Box<dyn ResourceBackend<u64>> = Box::new(backend);
     assert_eq!(boxed.name(), "cesium-network-resource");
     assert!(boxed.is_available());
 }
 
-/// M8.4 (#67) wiring proof — **not ignored**, runs the real adapter execution.
+/// M8.4 (#67) 接线证明 —— **未被忽略**，运行真正的适配器执行。
 ///
-/// Proves the M8.4 convergence gate (`Resource::fetch` 全量切换收敛): the
-/// IO-free domain descriptors produced by `Resource::fetch_*`/`post` are
-/// executed by the adapter's [`HttpTileFetcher::fetch_descriptor_blocking`] —
-/// the single gate-guarded entry point — not by ad-hoc HTTP calls scattered in
-/// loaders. Two branches are exercised here with zero network / no async
-/// runtime:
-/// * a `data:` URI descriptor short-circuits through the pure domain decoder,
-/// * a non-GET (`post`) descriptor surfaces a `PortError::Network` because the
-///   `NetworkBackend::fetch(url)` trait executes GET only (docs/deferred.md).
+/// 证明 M8.4 收敛门槛（`Resource::fetch` 全量切换收敛）：由
+/// `Resource::fetch_*`/`post` 产生的无 IO 域描述符
+/// 由适配器的 [`HttpTileFetcher::fetch_descriptor_blocking`] 执行 ——
+/// 即那唯一的受门槛保护的入口 —— 而非散落于
+/// 加载器中的临时 HTTP 调用。此处以零网络／无异步
+/// 运行时演练两个分支：
+/// * `data:` URI 描述符经纯域解码器短路，
+/// * 非 GET（`post`）描述符浮现一个 `PortError::Network`，因为
+///   `NetworkBackend::fetch(url)` trait 仅执行 GET（docs/deferred.md）。
 ///
-/// The gate-ON (backend) and gate-OFF (direct) live HTTP round-trip branches
-/// are covered by the `adapters/network/src/lib.rs` unit tests against a local
-/// ephemeral server; the wiremock-driven end-to-end assertions below stay
-/// `#[ignore]`d until M11.1 provides the async harness.
+/// 门槛 ON（后端）与 OFF（直连）的真实 HTTP 往返分支
+/// 由 `adapters/network/src/lib.rs` 针对本地
+/// 临时服务器的单元测试覆盖；下方 wiremock 驱动的端到端断言
+/// 在 M11.1 提供异步框架之前保持 `#[ignore]`。
 #[test]
 fn m84_fetch_descriptor_executes_through_adapter() {
     use cesium_ports_driven::PortError;
 
     let fetcher = HttpTileFetcher::new("https://tiles.example.com");
 
-    // (a) data: URI descriptor -> short-circuit decode, zero network.
-    //     "QUJDRA==" is base64 for "ABCD".
+    // (a) data: URI 描述符 -> 短路解码，零网络。
+    //     "QUJDRA==" 是 "ABCD" 的 base64。
     let data_resource = Resource::new("data:application/octet-stream;base64,QUJDRA==");
     let data_descriptor = data_resource.fetch_array_buffer(None);
     assert!(data_descriptor.is_data_uri);
@@ -102,8 +102,8 @@ fn m84_fetch_descriptor_executes_through_adapter() {
         .expect("data URI decodes without network");
     assert_eq!(decoded, b"ABCD");
 
-    // (b) non-GET descriptor -> the backend trait boundary surfaces an error
-    //     rather than silently downgrading to GET.
+    // (b) 非 GET 描述符 -> 后端 trait 边界浮现一个错误，
+    //     而非静默降级为 GET。
     let post_resource = Resource::new("https://tiles.example.com/api");
     let post_descriptor = post_resource.post(vec![1, 2, 3], None);
     assert!(matches!(post_descriptor.method, HttpMethod::Post));
@@ -112,10 +112,10 @@ fn m84_fetch_descriptor_executes_through_adapter() {
         .unwrap_err();
     assert!(matches!(err, PortError::Network(_)));
 
-    // (c) a GET descriptor for a non-data URL is routed by the gate: with the
-    //     ambient env unset (golden path) it takes the byte-identical direct
-    //     path. Assert the gate default; the live round-trip is the
-    //     local-server unit test in adapters/network.
+    // (c) 非 data URL 的 GET 描述符由门槛路由：当
+    //     周围环境变量未设置时（黄金路径）它走逐字节一致的直连
+    //     路径。断言门槛默认值；真实往返由
+    //     adapters/network 中的本地服务器单元测试覆盖。
     let get_resource = Resource::new("https://tiles.example.com/tiles/0/0/0.b3dm");
     let get_descriptor = get_resource.fetch_array_buffer(None);
     assert!(matches!(get_descriptor.method, HttpMethod::Get));
@@ -125,26 +125,26 @@ fn m84_fetch_descriptor_executes_through_adapter() {
     }
 }
 
-/// Skeleton: a 200 tile fetch through the real `HttpTileFetcher`.
+/// 骨架：经由真正 `HttpTileFetcher` 的一次 200 瓦片获取。
 ///
-/// The `Mock`/`ResponseTemplate` below are constructed synchronously to prove
-/// the wiremock dev-dependency resolves offline. Mounting on a `MockServer`
-/// and driving `HttpTileFetcher::fetch(url, priority)` requires an async
-/// runtime (M11.1).
+/// 下方的 `Mock`/`ResponseTemplate` 同步构造以证明
+/// wiremock dev-dependency 可离线解析。挂载到 `MockServer` 并
+/// 驱动 `HttpTileFetcher::fetch(url, priority)` 需要异步
+/// 运行时（M11.1）。
 #[test]
 #[ignore = "M8-wiremock skeleton: needs MockServer async runtime + HttpTileFetcher wiring (M11.1). See docs/deferred.md."]
 fn http_tile_fetcher_returns_200_bytes() {
-    // ── wiremock skeleton (sync construction; async mount deferred) ──
+    // ── wiremock 骨架（同步构造；异步挂载被推迟） ──
     let _mock = Mock::given(method("GET"))
         .and(path("/tiles/0/0/0.b3dm"))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_raw(b"glb-payload", "application/octet-stream"),
         );
-    // TODO(M11.1): `_mock.mount(&mock_server).await;` then drive
-    // `HttpTileFetcher::fetch(&url, 0.0)` and assert the returned bytes.
+    // TODO(M11.1): 先 `_mock.mount(&mock_server).await;`，再驱动
+    // `HttpTileFetcher::fetch(&url, 0.0)` 并断言返回的字节。
 
-    // ── domain-side assertion (pure; already implemented) ──
+    // ── 域侧断言（纯函数；已实现） ──
     let resource = Resource::new("https://tiles.example.com/tiles/0/0/0.b3dm");
     let descriptor: FetchDescriptor = resource
         .fetch_array_buffer(None)
@@ -157,7 +157,7 @@ fn http_tile_fetcher_returns_200_bytes() {
     assert!(!descriptor.is_data_uri);
 }
 
-/// Skeleton: proxy rewrite is applied for untrusted servers before the fetch.
+/// 骨架：获取前对不受信任的服务器应用代理重写。
 #[test]
 #[ignore = "M8-wiremock skeleton: needs MockServer async runtime + HttpTileFetcher wiring (M11.1). See docs/deferred.md."]
 fn http_tile_fetcher_applies_proxy_for_untrusted_server() {
@@ -173,19 +173,19 @@ fn http_tile_fetcher_applies_proxy_for_untrusted_server() {
     let resource = Resource::new("https://untrusted.example.com/tile.b3dm");
     let descriptor = resource.fetch_array_buffer(Some(&policy));
 
-    // The proxy prefix is applied and the original URL is preserved as a query.
+    // 应用代理前缀，并将原始 URL 保留为查询参数。
     assert!(descriptor.url.starts_with("https://proxy.example.com/"));
     assert!(descriptor.url.contains("untrusted.example.com"));
 }
 
-/// Skeleton: a data: URI short-circuits the network entirely.
+/// 骨架：data: URI 完全短路网络。
 #[test]
 #[ignore = "M8-wiremock skeleton: needs MockServer async runtime + HttpTileFetcher wiring (M11.1). See docs/deferred.md."]
 fn data_uri_never_hits_mock_server() {
     let resource = Resource::new("data:application/octet-stream;base64,QUJDRA==");
     let descriptor = resource.fetch_array_buffer(None);
 
-    // No mock would ever be matched: the descriptor is flagged inline.
+    // 不会有 mock 被匹配：该描述符被标记为内联。
     assert!(descriptor.is_data_uri);
     assert!(descriptor.server_key.is_empty());
     assert!(descriptor.url.starts_with("data:"));

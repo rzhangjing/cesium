@@ -1,6 +1,6 @@
-//! 3D Tiles Feature Table and Batch Table.
+//! 3D Tiles Feature Table 与 Batch Table。
 //!
-//! Maps to CesiumJS:
+//! 镜像 CesiumJS：
 //! - `Scene/Cesium3DTileFeatureTable.js`
 //! - `Scene/Cesium3DTileBatchTable.js`
 //! - `Scene/BatchTableHierarchy.js`
@@ -9,31 +9,31 @@
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// Component data types for binary accessors.
+/// 二进制访问器的分量数据类型。
 ///
-/// Maps to CesiumJS `Core/ComponentDatatype.js`
+/// 映射到 CesiumJS `Core/ComponentDatatype.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComponentType {
-    /// Signed 8-bit integer
+    /// 有符号 8 位整数
     Int8,
-    /// Unsigned 8-bit integer
+    /// 无符号 8 位整数
     Uint8,
-    /// Signed 16-bit integer
+    /// 有符号 16 位整数
     Int16,
-    /// Unsigned 16-bit integer
+    /// 无符号 16 位整数
     Uint16,
-    /// Signed 32-bit integer
+    /// 有符号 32 位整数
     Int32,
-    /// Unsigned 32-bit integer
+    /// 无符号 32 位整数
     Uint32,
-    /// 32-bit float
+    /// 32 位浮点数
     Float32,
-    /// 64-bit float
+    /// 64 位浮点数
     Float64,
 }
 
 impl ComponentType {
-    /// Returns the byte size of this component type.
+    /// 返回本分量类型的字节大小。
     pub fn byte_size(&self) -> usize {
         match self {
             Self::Int8 | Self::Uint8 => 1,
@@ -43,7 +43,7 @@ impl ComponentType {
         }
     }
 
-    /// Parses from a string name (as used in batch table binary references).
+    /// 从字符串名称解析（如 batch table 二进制引用中所用）。
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "SCALAR" | "BYTE" | "INT8" => Some(Self::Int8),
@@ -59,23 +59,23 @@ impl ComponentType {
     }
 }
 
-/// The number of components per element (type).
+/// 每个元素的分量数量（类型）。
 ///
-/// Maps to glTF accessor types.
+/// 映射到 glTF 访问器类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessorType {
-    /// Single component
+    /// 单个分量
     Scalar,
-    /// 2 components
+    /// 2 个分量
     Vec2,
-    /// 3 components
+    /// 3 个分量
     Vec3,
-    /// 4 components
+    /// 4 个分量
     Vec4,
 }
 
 impl AccessorType {
-    /// Returns the number of components.
+    /// 返回分量数量。
     pub fn component_count(&self) -> usize {
         match self {
             Self::Scalar => 1,
@@ -85,7 +85,7 @@ impl AccessorType {
         }
     }
 
-    /// Parses from a string name.
+    /// 从字符串名称解析。
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "SCALAR" => Some(Self::Scalar),
@@ -97,36 +97,36 @@ impl AccessorType {
     }
 }
 
-/// A binary property reference within a feature/batch table.
+/// feature/batch table 内的一个二进制属性引用。
 #[derive(Debug, Clone)]
 pub struct BinaryPropertyRef {
-    /// Byte offset into the binary body.
+    /// 二进制主体内的字节偏移。
     pub byte_offset: usize,
-    /// Component type (override from JSON if present).
+    /// 分量类型（若 JSON 中存在则为覆盖值）。
     pub component_type: Option<ComponentType>,
-    /// Accessor type (override from JSON if present).
+    /// 访问器类型（若 JSON 中存在则为覆盖值）。
     pub accessor_type: Option<AccessorType>,
 }
 
-/// Feature Table for 3D Tiles content.
+/// 3D Tiles 内容的 Feature Table。
 ///
-/// Maps to CesiumJS `Scene/Cesium3DTileFeatureTable.js`
+/// 映射到 CesiumJS `Scene/Cesium3DTileFeatureTable.js`
 ///
-/// The feature table contains per-tile global properties (like POINTS_LENGTH)
-/// and per-feature properties (like POSITION, COLOR) that can be stored
-/// either as JSON arrays or as binary data.
+/// feature table 包含逐瓦片的全局属性（如 POINTS_LENGTH）
+/// 以及逐 feature 属性（如 POSITION、COLOR），它们可以
+/// 存储为 JSON 数组或二进制数据。
 #[derive(Debug, Clone)]
 pub struct FeatureTable {
-    /// Parsed JSON header.
+    /// 已解析的 JSON 头部。
     pub json: Value,
-    /// Binary body data.
+    /// 二进制主体数据。
     pub binary: Vec<u8>,
-    /// Number of features (POINTS_LENGTH, BATCH_LENGTH, or INSTANCES_LENGTH).
+    /// feature 数量（POINTS_LENGTH、BATCH_LENGTH 或 INSTANCES_LENGTH）。
     pub features_length: u32,
 }
 
 impl FeatureTable {
-    /// Creates a new feature table from JSON and binary data.
+    /// 从 JSON 和二进制数据创建一个新的 feature table。
     pub fn new(json: Option<Value>, binary: Vec<u8>) -> Self {
         let json = json.unwrap_or(Value::Null);
         let features_length = json
@@ -143,27 +143,27 @@ impl FeatureTable {
         }
     }
 
-    /// Returns true if the given semantic property exists.
+    /// 若给定的语义属性存在则返回 true。
     pub fn has_property(&self, semantic: &str) -> bool {
         self.json.get(semantic).is_some()
     }
 
-    /// Gets a global property value (scalar or small array stored directly in JSON).
+    /// 获取一个全局属性值（直接存储于 JSON 的标量或小型数组）。
     pub fn get_global_property(&self, semantic: &str) -> Option<&Value> {
         self.json.get(semantic)
     }
 
-    /// Gets a global property as u32.
+    /// 将全局属性作为 u32 获取。
     pub fn get_global_u32(&self, semantic: &str) -> Option<u32> {
         self.json.get(semantic).and_then(|v| v.as_u64()).map(|v| v as u32)
     }
 
-    /// Gets a global property as f64.
+    /// 将全局属性作为 f64 获取。
     pub fn get_global_f64(&self, semantic: &str) -> Option<f64> {
         self.json.get(semantic).and_then(|v| v.as_f64())
     }
 
-    /// Gets a global property as [f64; 3] (e.g., RTC_CENTER).
+    /// 将全局属性作为 [f64; 3] 获取（例如 RTC_CENTER）。
     pub fn get_global_vec3(&self, semantic: &str) -> Option<[f64; 3]> {
         self.json.get(semantic).and_then(|v| {
             let arr = v.as_array()?;
@@ -179,14 +179,14 @@ impl FeatureTable {
         })
     }
 
-    /// Gets a per-feature property as a JSON array.
+    /// 将逐 feature 属性作为 JSON 数组获取。
     pub fn get_property_array(&self, semantic: &str) -> Option<&Vec<Value>> {
         self.json.get(semantic).and_then(|v| v.as_array())
     }
 
-    /// Gets the binary property reference for a semantic.
+    /// 获取某个语义对应的二进制属性引用。
     ///
-    /// Returns the byte offset if the property is stored in binary.
+    /// 若属性以二进制存储则返回字节偏移。
     pub fn get_binary_ref(&self, semantic: &str) -> Option<BinaryPropertyRef> {
         self.json.get(semantic).and_then(|v| {
             let byte_offset = v.get("byteOffset")?.as_u64()? as usize;
@@ -206,7 +206,7 @@ impl FeatureTable {
         })
     }
 
-    /// Reads f32 values from the binary body at the given byte offset.
+    /// 从给定字节偏移处的二进制主体读取 f32 值。
     pub fn read_f32_array(&self, byte_offset: usize, count: usize) -> Option<Vec<f32>> {
         let end = byte_offset + count * 4;
         if end > self.binary.len() {
@@ -226,7 +226,7 @@ impl FeatureTable {
         Some(result)
     }
 
-    /// Reads u8 values from the binary body at the given byte offset.
+    /// 从给定字节偏移处的二进制主体读取 u8 值。
     pub fn read_u8_array(&self, byte_offset: usize, count: usize) -> Option<Vec<u8>> {
         let end = byte_offset + count;
         if end > self.binary.len() {
@@ -235,7 +235,7 @@ impl FeatureTable {
         Some(self.binary[byte_offset..end].to_vec())
     }
 
-    /// Reads u16 values from the binary body at the given byte offset.
+    /// 从给定字节偏移处的二进制主体读取 u16 值。
     pub fn read_u16_array(&self, byte_offset: usize, count: usize) -> Option<Vec<u16>> {
         let end = byte_offset + count * 2;
         if end > self.binary.len() {
@@ -250,7 +250,7 @@ impl FeatureTable {
         Some(result)
     }
 
-    /// Gets per-feature positions (POSITION semantic) as Vec<[f32; 3]>.
+    /// 将逐 feature 位置（POSITION 语义）作为 Vec<[f32; 3]> 获取。
     pub fn get_positions(&self) -> Option<Vec<[f32; 3]>> {
         let bin_ref = self.get_binary_ref("POSITION")?;
         let count = self.features_length as usize;
@@ -263,9 +263,9 @@ impl FeatureTable {
         )
     }
 
-    /// Gets per-feature colors (COLOR or RGB semantic) as Vec<[f32; 3]>.
+    /// 将逐 feature 颜色（COLOR 或 RGB 语义）作为 Vec<[f32; 3]> 获取。
     pub fn get_colors_rgb(&self) -> Option<Vec<[f32; 3]>> {
-        // Try RGB first (normalized u8), then COLOR (float)
+        // 先尝试 RGB（归一化的 u8），再尝试 COLOR（浮点）
         if let Some(bin_ref) = self.get_binary_ref("RGB") {
             let count = self.features_length as usize;
             let values = self.read_u8_array(bin_ref.byte_offset, count * 3)?;
@@ -289,7 +289,7 @@ impl FeatureTable {
         None
     }
 
-    /// Gets per-feature RGBA colors as Vec<[f32; 4]>.
+    /// 将逐 feature 的 RGBA 颜色作为 Vec<[f32; 4]> 获取。
     pub fn get_colors_rgba(&self) -> Option<Vec<[f32; 4]>> {
         if let Some(bin_ref) = self.get_binary_ref("RGBA") {
             let count = self.features_length as usize;
@@ -311,7 +311,7 @@ impl FeatureTable {
         None
     }
 
-    /// Gets per-feature normals (NORMAL semantic) as Vec<[f32; 3]>.
+    /// 将逐 feature 法线（NORMAL 语义）作为 Vec<[f32; 3]> 获取。
     pub fn get_normals(&self) -> Option<Vec<[f32; 3]>> {
         let bin_ref = self.get_binary_ref("NORMAL")?;
         let count = self.features_length as usize;
@@ -324,7 +324,7 @@ impl FeatureTable {
         )
     }
 
-    /// Gets the batch ID for each feature (BATCH_ID semantic).
+    /// 获取每个 feature 的 batch ID（BATCH_ID 语义）。
     pub fn get_batch_ids(&self) -> Option<Vec<u16>> {
         let bin_ref = self.get_binary_ref("BATCH_ID")?;
         let count = self.features_length as usize;
@@ -332,37 +332,37 @@ impl FeatureTable {
     }
 }
 
-/// A single property value in a batch table (can be JSON array or binary reference).
+/// batch table 中的单个属性值（可为 JSON 数组或二进制引用）。
 #[derive(Debug, Clone)]
 pub enum BatchPropertyValue {
-    /// JSON array of values (one per feature).
+    /// 值的 JSON 数组（每个 feature 一个）。
     JsonArray(Vec<Value>),
-    /// Binary reference.
+    /// 二进制引用。
     Binary(BinaryPropertyRef),
 }
 
-/// Batch Table for 3D Tiles content.
+/// 3D Tiles 内容的 Batch Table。
 ///
-/// Maps to CesiumJS `Scene/Cesium3DTileBatchTable.js`
+/// 映射到 CesiumJS `Scene/Cesium3DTileBatchTable.js`
 ///
-/// The batch table stores per-feature metadata (properties like height, name, etc.)
-/// that can be used for styling, picking, and feature inspection.
+/// batch table 存储逐 feature 元数据（如 height、name 等属性），
+/// 可用于样式化、拾取与 feature 检查。
 #[derive(Debug, Clone)]
 pub struct BatchTable {
-    /// Number of features (batch length).
+    /// feature 数量（batch length）。
     pub features_length: u32,
-    /// Property name → value mapping.
+    /// 属性名 → 值 的映射。
     pub properties: HashMap<String, BatchPropertyValue>,
-    /// Binary body data for binary properties.
+    /// 二进制属性的二进制主体数据。
     pub binary: Vec<u8>,
-    /// Extensions (e.g., 3DTILES_batch_table_hierarchy).
+    /// 扩展（例如 3DTILES_batch_table_hierarchy）。
     pub extensions: HashMap<String, Value>,
-    /// Optional batch table hierarchy.
+    /// 可选的 batch table 层级结构。
     pub hierarchy: Option<BatchTableHierarchy>,
 }
 
 impl BatchTable {
-    /// Creates a new batch table from parsed JSON and binary data.
+    /// 从已解析的 JSON 和二进制数据创建一个新的 batch table。
     pub fn new(
         json: Option<Value>,
         binary: Vec<u8>,
@@ -384,7 +384,7 @@ impl BatchTable {
                 }
                 if key == "extras" || key == "HIERARCHY" {
                     if key == "HIERARCHY" {
-                        // Legacy hierarchy property
+                        // 遗留的 hierarchy 属性
                         extensions.insert(
                             "3DTILES_batch_table_hierarchy".to_string(),
                             value.clone(),
@@ -393,7 +393,7 @@ impl BatchTable {
                     continue;
                 }
 
-                // Check if it's a binary reference
+                // 检查它是否为二进制引用
                 if let Some(byte_offset) = value.get("byteOffset").and_then(|v| v.as_u64()) {
                     let component_type = value
                         .get("componentType")
@@ -419,7 +419,7 @@ impl BatchTable {
                 }
             }
 
-            // Parse hierarchy extension if present
+            // 若存在则解析 hierarchy 扩展
             if let Some(hierarchy_json) =
                 extensions.get("3DTILES_batch_table_hierarchy")
             {
@@ -436,17 +436,17 @@ impl BatchTable {
         }
     }
 
-    /// Returns the property names available in this batch table.
+    /// 返回本 batch table 中可用的属性名。
     pub fn property_names(&self) -> Vec<&str> {
         self.properties.keys().map(|s| s.as_str()).collect()
     }
 
-    /// Returns true if the given property exists.
+    /// 若给定的属性存在则返回 true。
     pub fn has_property(&self, name: &str) -> bool {
         self.properties.contains_key(name)
     }
 
-    /// Gets a property value for a specific feature (batch ID).
+    /// 获取特定 feature（batch ID）的属性值。
     pub fn get_property(&self, name: &str, batch_id: u32) -> Option<Value> {
         let prop = self.properties.get(name)?;
         match prop {
@@ -459,7 +459,7 @@ impl BatchTable {
         }
     }
 
-    /// Gets all values for a property as a JSON array.
+    /// 将一个属性的所有值作为 JSON 数组获取。
     pub fn get_property_all(&self, name: &str) -> Option<Vec<Value>> {
         let prop = self.properties.get(name)?;
         match prop {
@@ -476,7 +476,7 @@ impl BatchTable {
         }
     }
 
-    /// Sets a property value for a specific feature.
+    /// 为特定 feature 设置属性值。
     pub fn set_property(&mut self, name: &str, batch_id: u32, value: Value) -> bool {
         if let Some(BatchPropertyValue::JsonArray(arr)) = self.properties.get_mut(name) {
             if (batch_id as usize) < arr.len() {
@@ -487,7 +487,7 @@ impl BatchTable {
         false
     }
 
-    /// Reads a binary property value for a specific batch ID.
+    /// 为特定的 batch ID 读取一个二进制属性值。
     fn get_binary_value(&self, bin_ref: &BinaryPropertyRef, batch_id: u32) -> Option<Value> {
         let component_type = bin_ref.component_type.unwrap_or(ComponentType::Float32);
         let accessor_type = bin_ref.accessor_type.unwrap_or(AccessorType::Scalar);
@@ -561,45 +561,45 @@ impl BatchTable {
         }
     }
 
-    /// Returns the total byte length of binary data.
+    /// 返回二进制数据的总字节长度。
     pub fn byte_length(&self) -> usize {
         self.binary.len()
     }
 }
 
-/// A class in the batch table hierarchy.
+/// batch table 层级结构中的一个类。
 ///
-/// Maps to CesiumJS `Scene/BatchTableHierarchy.js`
+/// 映射到 CesiumJS `Scene/BatchTableHierarchy.js`
 #[derive(Debug, Clone)]
 pub struct HierarchyClass {
-    /// Class name (e.g., "Building", "Floor").
+    /// 类名（例如 "Building"、"Floor"）。
     pub name: String,
-    /// Number of instances of this class.
+    /// 本类的实例数量。
     pub length: u32,
-    /// Property names for this class.
+    /// 本类的属性名。
     pub property_names: Vec<String>,
 }
 
-/// Batch Table Hierarchy extension (3DTILES_batch_table_hierarchy).
+/// Batch Table Hierarchy 扩展（3DTILES_batch_table_hierarchy）。
 ///
-/// Provides a class-based hierarchy for organizing features.
-/// Maps to CesiumJS `Scene/BatchTableHierarchy.js`
+/// 提供一个基于类的层级结构来组织 feature。
+/// 映射到 CesiumJS `Scene/BatchTableHierarchy.js`
 #[derive(Debug, Clone)]
 pub struct BatchTableHierarchy {
-    /// Classes in the hierarchy.
+    /// 层级结构中的类。
     pub classes: Vec<HierarchyClass>,
-    /// Number of instances total.
+    /// 实例总数。
     pub instances_length: u32,
-    /// Class index for each instance.
+    /// 每个实例的类索引。
     pub class_ids: Vec<u32>,
-    /// Parent index for each instance (u32::MAX = no parent).
+    /// 每个实例的父索引（u32::MAX = 无父级）。
     pub parent_ids: Vec<u32>,
-    /// Property values per class (class_index → property_name → values).
+    /// 逐类的属性值（class_index → property_name → values）。
     pub class_properties: HashMap<usize, HashMap<String, Vec<Value>>>,
 }
 
 impl BatchTableHierarchy {
-    /// Parses a hierarchy from the extension JSON.
+    /// 从扩展 JSON 解析一个层级结构。
     pub fn from_json(json: &Value, binary: &[u8]) -> Option<Self> {
         let classes_json = json.get("classes")?.as_array()?;
         let instances_length = json.get("instancesLength")?.as_u64()? as u32;
@@ -622,7 +622,7 @@ impl BatchTableHierarchy {
                     } else if let Some(byte_offset) =
                         prop_value.get("byteOffset").and_then(|v| v.as_u64())
                     {
-                        // Binary property — read as f32 array
+                        // 二进制属性 — 作为 f32 数组读取
                         let offset = byte_offset as usize;
                         let count = length as usize;
                         let end = offset + count * 4;
@@ -653,9 +653,9 @@ impl BatchTableHierarchy {
             class_properties.insert(i, props);
         }
 
-        // Parse classIds
+        // 解析 classIds
         let class_ids = parse_id_array(json.get("classIds")?, instances_length as usize);
-        // Parse parentIds (optional)
+        // 解析 parentIds（可选）
         let parent_ids = json
             .get("parentIds")
             .map(|v| parse_id_array(v, instances_length as usize))
@@ -670,23 +670,23 @@ impl BatchTableHierarchy {
         })
     }
 
-    /// Gets the class index for an instance.
+    /// 获取一个实例的类索引。
     pub fn get_class_id(&self, instance_id: u32) -> Option<u32> {
         self.class_ids.get(instance_id as usize).copied()
     }
 
-    /// Gets the parent instance ID for an instance.
+    /// 获取一个实例的父实例 ID。
     pub fn get_parent_id(&self, instance_id: u32) -> Option<u32> {
         self.parent_ids.get(instance_id as usize).copied()
     }
 
-    /// Gets a property value for an instance.
+    /// 获取一个实例的属性值。
     pub fn get_property(&self, instance_id: u32, property_name: &str) -> Option<Value> {
         let class_id = self.get_class_id(instance_id)? as usize;
         let class_props = self.class_properties.get(&class_id)?;
         let values = class_props.get(property_name)?;
 
-        // Find the index within the class
+        // 在该类中查找索引
         let mut index_in_class = 0u32;
         for i in 0..instance_id {
             if self.class_ids.get(i as usize) == Some(&(class_id as u32)) {
@@ -697,22 +697,22 @@ impl BatchTableHierarchy {
         values.get(index_in_class as usize).cloned()
     }
 
-    /// Gets the class name for an instance.
+    /// 获取一个实例的类名。
     pub fn get_class_name(&self, instance_id: u32) -> Option<&str> {
         let class_id = self.get_class_id(instance_id)? as usize;
         self.classes.get(class_id).map(|c| c.name.as_str())
     }
 }
 
-/// Parses an ID array from JSON (either direct array or binary reference).
+/// 从 JSON 解析一个 ID 数组（直接数组或二进制引用）。
 fn parse_id_array(json: &Value, count: usize) -> Vec<u32> {
     if let Some(arr) = json.as_array() {
         arr.iter()
             .filter_map(|v| v.as_u64().map(|n| n as u32))
             .collect()
     } else if let Some(byte_offset) = json.get("byteOffset").and_then(|v| v.as_u64()) {
-        // Binary reference — but we don't have the binary here
-        // This would need the binary buffer passed in
+        // 二进制引用 — 但我们此处没有二进制数据
+        // 这需要传入二进制缓冲区
         let _ = byte_offset;
         vec![0; count]
     } else {
@@ -720,19 +720,19 @@ fn parse_id_array(json: &Value, count: usize) -> Vec<u32> {
     }
 }
 
-/// A feature in a 3D Tile (wraps batch table access for a single batch ID).
+/// 3D Tile 中的一个 feature（为单个 batch ID 封装 batch table 访问）。
 ///
-/// Maps to CesiumJS `Scene/Cesium3DTileFeature.js`
+/// 映射到 CesiumJS `Scene/Cesium3DTileFeature.js`
 #[derive(Debug, Clone)]
 pub struct TileFeature {
-    /// The batch ID of this feature.
+    /// 本 feature 的 batch ID。
     pub batch_id: u32,
-    /// Property values for this feature.
+    /// 本 feature 的属性值。
     pub properties: HashMap<String, Value>,
 }
 
 impl TileFeature {
-    /// Creates a feature by extracting all properties from a batch table.
+    /// 通过从一个 batch table 提取所有属性来创建一个 feature。
     pub fn from_batch_table(batch_table: &BatchTable, batch_id: u32) -> Self {
         let mut properties = HashMap::new();
         for name in batch_table.property_names() {
@@ -746,22 +746,22 @@ impl TileFeature {
         }
     }
 
-    /// Gets a property value.
+    /// 获取一个属性值。
     pub fn get_property(&self, name: &str) -> Option<&Value> {
         self.properties.get(name)
     }
 
-    /// Gets a property as f64.
+    /// 将一个属性作为 f64 获取。
     pub fn get_property_f64(&self, name: &str) -> Option<f64> {
         self.properties.get(name).and_then(|v| v.as_f64())
     }
 
-    /// Gets a property as string.
+    /// 将一个属性作为字符串获取。
     pub fn get_property_str(&self, name: &str) -> Option<&str> {
         self.properties.get(name).and_then(|v| v.as_str())
     }
 
-    /// Returns all property IDs (names).
+    /// 返回所有属性 ID（名称）。
     pub fn property_ids(&self) -> Vec<&str> {
         self.properties.keys().map(|s| s.as_str()).collect()
     }
@@ -811,7 +811,7 @@ mod tests {
 
     #[test]
     fn test_feature_table_binary_positions() {
-        // 3 points with positions
+        // 3 个带位置的点
         let positions: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
         let mut binary = Vec::new();
         for p in &positions {
@@ -831,8 +831,8 @@ mod tests {
 
     #[test]
     fn test_feature_table_rgb_colors() {
-        // 2 points with RGB colors (u8)
-        let binary = vec![255u8, 0, 0, 0, 255, 0]; // red, green
+        // 2 个带 RGB 颜色（u8）的点
+        let binary = vec![255u8, 0, 0, 0, 255, 0]; // 红、绿
         let json = json!({
             "POINTS_LENGTH": 2,
             "RGB": { "byteOffset": 0 }
@@ -840,8 +840,8 @@ mod tests {
         let ft = FeatureTable::new(Some(json), binary);
         let colors = ft.get_colors_rgb().unwrap();
         assert_eq!(colors.len(), 2);
-        assert!((colors[0][0] - 1.0).abs() < 1e-6); // red channel
-        assert!((colors[1][1] - 1.0).abs() < 1e-6); // green channel
+        assert!((colors[0][0] - 1.0).abs() < 1e-6); // 红色通道
+        assert!((colors[1][1] - 1.0).abs() < 1e-6); // 绿色通道
     }
 
     #[test]
@@ -874,12 +874,12 @@ mod tests {
 
         assert_eq!(bt.get_property("height", 0), Some(json!(10.5)));
         assert_eq!(bt.get_property("name", 2), Some(json!("C")));
-        assert_eq!(bt.get_property("height", 5), None); // out of bounds
+        assert_eq!(bt.get_property("height", 5), None); // 越界
     }
 
     #[test]
     fn test_batch_table_binary_properties() {
-        // 3 float32 values
+        // 3 个 float32 值
         let values: Vec<f32> = vec![1.5, 2.5, 3.5];
         let mut binary = Vec::new();
         for v in &values {
@@ -908,8 +908,8 @@ mod tests {
         let mut bt = BatchTable::new(Some(json), vec![], 2);
         assert!(bt.set_property("height", 0, json!(99.0)));
         assert_eq!(bt.get_property("height", 0), Some(json!(99.0)));
-        assert!(!bt.set_property("height", 5, json!(0.0))); // out of bounds
-        assert!(!bt.set_property("missing", 0, json!(0.0))); // no property
+        assert!(!bt.set_property("height", 5, json!(0.0))); // 越界
+        assert!(!bt.set_property("missing", 0, json!(0.0))); // 无此属性
     }
 
     #[test]
@@ -935,7 +935,7 @@ mod tests {
         });
         let bt = BatchTable::new(Some(json), vec![], 1);
         assert!(bt.extensions.contains_key("custom_ext"));
-        // "extensions" should not be a property
+        // "extensions" 不应是一个属性
         assert!(!bt.has_property("extensions"));
     }
 

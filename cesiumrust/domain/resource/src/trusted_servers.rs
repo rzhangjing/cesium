@@ -1,47 +1,47 @@
-//! Trusted servers registry.
+//! 可信服务器注册表。
 //!
-//! Maps to CesiumJS `Core/TrustedServers.js`.
+//! 映射到 CesiumJS `Core/TrustedServers.js`。
 //!
-//! A registry of servers that are trusted. Credentials will be sent
-//! with any requests to these servers.
+//! 一个可信服务器的注册表。向这些服务器发出的
+//! 任何请求都会附带凭据。
 
 use std::collections::HashSet;
 
-/// A registry of trusted servers.
+/// 一个可信服务器注册表。
 ///
-/// Maps to CesiumJS `TrustedServers`.
+/// 映射到 CesiumJS `TrustedServers`。
 #[derive(Debug, Default, Clone)]
 pub struct TrustedServers {
     servers: HashSet<String>,
 }
 
 impl TrustedServers {
-    /// Creates a new empty registry.
+    /// 创建一个空的新注册表。
     pub fn new() -> Self {
         Self {
             servers: HashSet::new(),
         }
     }
 
-    /// Adds a trusted server to the registry.
+    /// 向注册表添加一个可信服务器。
     ///
-    /// Maps to `TrustedServers.add`.
+    /// 映射到 `TrustedServers.add`。
     pub fn add(&mut self, host: &str, port: u16) {
         let authority = format!("{}:{}", host.to_lowercase(), port);
         self.servers.insert(authority);
     }
 
-    /// Removes a trusted server from the registry.
+    /// 从注册表移除一个可信服务器。
     ///
-    /// Maps to `TrustedServers.remove`.
+    /// 映射到 `TrustedServers.remove`。
     pub fn remove(&mut self, host: &str, port: u16) {
         let authority = format!("{}:{}", host.to_lowercase(), port);
         self.servers.remove(&authority);
     }
 
-    /// Returns whether a URL is trusted.
+    /// 返回某个 URL 是否可信。
     ///
-    /// Maps to `TrustedServers.isTrusted`.
+    /// 映射到 `TrustedServers.isTrusted`。
     pub fn is_trusted(&self, url: &str) -> bool {
         match Self::get_authority(url) {
             Some(authority) => self.servers.contains(&authority),
@@ -49,33 +49,33 @@ impl TrustedServers {
         }
     }
 
-    /// Clears all trusted servers.
+    /// 清除所有可信服务器。
     pub fn clear(&mut self) {
         self.servers.clear();
     }
 
-    /// Returns the number of trusted servers.
+    /// 返回可信服务器的数量。
     pub fn len(&self) -> usize {
         self.servers.len()
     }
 
-    /// Returns whether the registry is empty.
+    /// 返回注册表是否为空。
     pub fn is_empty(&self) -> bool {
         self.servers.is_empty()
     }
 
-    /// Extracts the authority (host:port) from a URL.
+    /// 从 URL 中提取权限（host:port）。
     ///
-    /// Handles:
-    /// - http/https schemes with default ports (80/443)
-    /// - Username:password@ prefix stripping
-    /// - Protocol-relative URLs (//host/path)
+    /// 处理：
+    /// - 带默认端口（80/443）的 http/https 协议
+    /// - Username:password@ 前缀剔除
+    /// - 协议相对 URL（//host/path）
     ///
-    /// Returns None for relative URLs or unknown schemes.
+    /// 对相对 URL 或未知协议返回 None。
     fn get_authority(url: &str) -> Option<String> {
         let url = url.trim();
 
-        // Handle protocol-relative URLs
+        // 处理协议相对 URL
         // deferred.md #14: 手动 strip "//" 前缀，等价 url.strip_prefix("//")；风格问题。
         #[allow(clippy::manual_strip)]
         if url.starts_with("//") {
@@ -85,19 +85,19 @@ impl TrustedServers {
                 return None;
             }
             let authority = Self::strip_credentials(authority);
-            // No scheme → can't determine default port
+            // 无协议 → 无法确定默认端口
             if authority.contains(':') {
                 return Some(authority.to_lowercase());
             }
             return None;
         }
 
-        // Parse scheme
+        // 解析协议
         let scheme_end = url.find("://")?;
         let scheme = &url[..scheme_end].to_lowercase();
         let rest = &url[scheme_end + 3..];
 
-        // Extract authority (before first /)
+        // 提取权限（首个 / 之前）
         let authority = rest.split('/').next().unwrap_or("");
         if authority.is_empty() {
             return None;
@@ -105,7 +105,7 @@ impl TrustedServers {
 
         let authority = Self::strip_credentials(authority);
 
-        // Add default port if missing
+        // 若缺失则添加默认端口
         if authority.contains(':') {
             Some(authority.to_lowercase())
         } else {
@@ -117,7 +117,7 @@ impl TrustedServers {
         }
     }
 
-    /// Strips username:password@ from an authority string.
+    /// 从权限字符串中剔除 username:password@。
     fn strip_credentials(authority: &str) -> &str {
         if let Some(at_pos) = authority.find('@') {
             &authority[at_pos + 1..]

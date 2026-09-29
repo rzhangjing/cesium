@@ -1,6 +1,6 @@
-//! Geocoding service interface and types.
+//! 地理编码服务接口与类型。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Core/GeocoderService.js`
 //! - `Core/GeocodeType.js`
 //! - `Core/BingMapsGeocoderService.js`
@@ -9,94 +9,94 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The type of geocode to perform.
+/// 要执行的地理编码类型。
 ///
-/// Maps to CesiumJS `Core/GeocodeType.js`.
+/// 映射到 CesiumJS `Core/GeocodeType.js`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum GeocodeType {
-    /// Search for a location by name/address.
+    /// 按名称/地址搜索位置。
     #[default]
     Search,
-    /// Reverse geocode a location to get name/address.
+    /// 对位置进行逆向地理编码以获取名称/地址。
     Reverse,
 }
 
-/// A result from a geocoding operation.
+/// 地理编码操作的结果。
 ///
-/// Maps to CesiumJS `GeocoderService.Result`.
+/// 映射到 CesiumJS `GeocoderService.Result`。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeocoderResult {
-    /// Display name for the location.
+    /// 位置的显示名称。
     pub display_name: String,
-    /// Destination as a bounding rectangle [west, south, east, north] in radians,
-    /// or a point [lon, lat, height] in radians/meters.
+    /// 目标，可为边界矩形 [west, south, east, north]（弧度），
+    /// 或一个点 [lon, lat, height]（弧度/米）。
     pub destination: GeocoderDestination,
-    /// Attribution credits for the result.
+    /// 结果的归属鸣谢。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attributions: Vec<GeocoderAttribution>,
 }
 
-/// Destination of a geocoder result - either a rectangle or a point.
+/// 地理编码结果的目标——矩形或点二选一。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum GeocoderDestination {
-    /// A bounding rectangle [west, south, east, north] in radians.
+    /// 边界矩形 [west, south, east, north]（弧度）。
     Rectangle([f64; 4]),
-    /// A point [longitude, latitude] in radians with optional height.
+    /// 一个点 [经度, 纬度]（弧度），带可选高度。
     Point {
-        /// Longitude in radians.
+        /// 经度（弧度）。
         longitude: f64,
-        /// Latitude in radians.
+        /// 纬度（弧度）。
         latitude: f64,
-        /// Height in meters (optional).
+        /// 高度（米，可选）。
         #[serde(default)]
         height: Option<f64>,
     },
 }
 
-/// An attribution credit from a geocoder result.
+/// 来自地理编码结果的归属鸣谢。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeocoderAttribution {
-    /// Whether the attribution must be shown.
+    /// 该归属是否必须展示。
     #[serde(default)]
     pub mandatory: bool,
-    /// Whether the attribution is collapsible.
+    /// 该归属是否可折叠。
     #[serde(default)]
     pub collapsible: bool,
-    /// HTML content of the attribution.
+    /// 归属的 HTML 内容。
     pub html: String,
 }
 
-/// Trait for geocoding services.
+/// 地理编码服务的 trait。
 ///
-/// Maps to CesiumJS `Core/GeocoderService.js`.
+/// 映射到 CesiumJS `Core/GeocoderService.js`。
 pub trait GeocoderService {
-    /// Get the credit to display after a geocode is performed.
+    /// 获取执行一次地理编码后要显示的 credit。
     fn credit(&self) -> Option<&str>;
 
-    /// Perform a geocode operation.
+    /// 执行一次地理编码操作。
     ///
-    /// Returns a list of results matching the query.
+    /// 返回与查询匹配的结果列表。
     fn geocode(&self, query: &str, geocode_type: GeocodeType) -> Vec<GeocoderResult>;
 }
 
-/// A mock geocoder service for testing.
+/// 用于测试的模拟地理编码服务。
 #[derive(Debug, Clone, Default)]
 pub struct MockGeocoderService {
-    /// Results to return for any query.
+    /// 对任意查询都返回的结果。
     pub results: Vec<GeocoderResult>,
-    /// Credit string.
+    /// credit 字符串。
     pub credit: Option<String>,
 }
 
 impl MockGeocoderService {
-    /// Create a new mock geocoder.
+    /// 创建一个新的模拟地理编码器。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Create with predefined results.
+    /// 使用预定义结果创建。
     pub fn with_results(results: Vec<GeocoderResult>) -> Self {
         Self {
             results,
@@ -115,9 +115,9 @@ impl GeocoderService for MockGeocoderService {
     }
 }
 
-/// Parse credits from geocoder result attributions.
+/// 从地理编码结果的归属中解析 credit。
 ///
-/// Maps to CesiumJS `GeocoderService.getCreditsFromResult`.
+/// 映射到 CesiumJS `GeocoderService.getCreditsFromResult`。
 pub fn get_credits_from_result(result: &GeocoderResult) -> Vec<&GeocoderAttribution> {
     result.attributions.iter().collect()
 }
@@ -142,8 +142,8 @@ mod tests {
         };
         assert_eq!(result.display_name, "New York, NY");
         if let GeocoderDestination::Rectangle(r) = result.destination {
-            assert!(r[0] < r[2]); // west < east
-            assert!(r[1] < r[3]); // south < north
+            assert!(r[0] < r[2]); // 西 < 东
+            assert!(r[1] < r[3]); // 南 < 北
         } else {
             panic!("Expected Rectangle");
         }

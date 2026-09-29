@@ -1,6 +1,6 @@
-//! Camera extended specs — flyTo, rectangle camera, 2D mode, frustum, pick ray
-//! Ported from: packages/engine/Specs/Scene/CameraSpec.js
-//! A-class pure math tests
+//! 相机扩展规格 — flyTo、矩形相机、2D 模式、视锥、拾取射线
+//! 移植自：packages/engine/Specs/Scene/CameraSpec.js
+//! A 类纯数学测试
 
 use cesium_camera::{Camera, EasingFunction, Frustum, SceneMode};
 use cesium_geospatial::{Cartographic, Ellipsoid, Rectangle, HeadingPitchRange};
@@ -30,7 +30,7 @@ fn assert_vec3_epsilon(a: DVec3, b: DVec3, eps: f64, msg: &str) {
 }
 
 // ============================================================================
-// CameraFlight — flyTo interpolation tests
+// CameraFlight — flyTo 插值测试
 // ============================================================================
 
 #[test]
@@ -59,7 +59,7 @@ fn flight_easing_linear_midpoint() {
     let mut flight = CameraFlight::fly_to(&camera, dest, None, None, 2.0);
     flight.easing = EasingFunction::Linear;
 
-    // At t=1.0 (midpoint), position should be exactly halfway
+    // 在 t=1.0（中点）处，位置应恰好在中间
     let (pos, _, _) = flight.update(1.0).unwrap();
     let midpoint = start_pos.lerp(dest, 0.5);
     assert_vec3_epsilon(pos, midpoint, EPSILON10, "linear midpoint");
@@ -87,7 +87,7 @@ fn flight_easing_quadraticin_quarter() {
     let mut flight = CameraFlight::fly_to(&camera, dest, None, None, 4.0);
     flight.easing = EasingFunction::QuadraticIn;
 
-    // At t=1.0 (25%), quadratic in gives t²=0.0625
+    // 在 t=1.0（25%）处，quadratic in 得 t²=0.0625
     let (pos, _, _) = flight.update(1.0).unwrap();
     let expected = camera.position.lerp(dest, 0.0625);
     assert_vec3_epsilon(pos, expected, EPSILON10, "quadraticIn 25%");
@@ -100,7 +100,7 @@ fn flight_completes_exactly() {
 
     let mut flight = CameraFlight::fly_to(&camera, dest, None, None, 2.0);
 
-    // Full duration
+    // 完整时长
     let (pos, _, _) = flight.update(2.0).unwrap();
     assert_vec3_epsilon(pos, dest, EPSILON10, "flight complete position");
     assert!(flight.complete);
@@ -127,7 +127,7 @@ fn flight_can_be_overrun() {
 
     let mut flight = CameraFlight::fly_to(&camera, dest, None, None, 2.0);
 
-    // Overrun past duration
+    // 超出时长
     let (pos, _, _) = flight.update(5.0).unwrap();
     assert_vec3_epsilon(pos, dest, EPSILON10, "overrun position");
     assert!(flight.complete);
@@ -139,7 +139,7 @@ fn flight_zero_duration_clamps() {
     let dest = DVec3::new(50.0, 0.0, 0.0);
 
     let flight = CameraFlight::fly_to(&camera, dest, None, None, 0.0);
-    // Duration is clamped to 0.001 minimum
+    // 时长被限制在最小 0.001
     assert!(flight.duration >= 0.001);
 }
 
@@ -165,7 +165,7 @@ fn flight_direction_interpolation() {
 
     let mut flight = CameraFlight::fly_to(&camera, dest, Some(end_dir), None, 2.0);
 
-    // At midpoint (linear), direction should blend between them
+    // 在中点（linear）处，direction 应在两者间混合
     let (_, dir, _) = flight.update(2.0).unwrap();
     assert_vec3_epsilon(dir, end_dir.normalize(), EPSILON10, "end direction");
 }
@@ -201,7 +201,7 @@ fn flight_fly_to_bounding_sphere() {
 
     assert_eq!(flight.duration, 3.0);
     assert!(!flight.complete);
-    // Destination should be above Earth surface
+    // destination 应位于地球表面之上
     let dest_height = flight.end_position.length() - sphere.radius;
     assert!(dest_height > 0.0);
 }
@@ -233,13 +233,13 @@ fn flight_fly_home() {
 
     assert_eq!(flight.duration, 2.0);
     assert!(!flight.complete);
-    // Home position should be ~2.5x Earth radius from center
+    // home 位置应距中心约 2.5 倍地球半径
     let home_height = flight.end_position.length();
     assert!(home_height > Ellipsoid::WGS84.maximum_radius() * 2.0);
 }
 
 // ============================================================================
-// Rectangle camera coordinates
+// 矩形相机坐标
 // ============================================================================
 
 #[test]
@@ -249,7 +249,7 @@ fn get_rectangle_camera_coordinates_3d_global() {
     let rect = Rectangle::new(-PI, -PI / 2.0, PI, PI / 2.0);
     let pos = camera.get_rectangle_camera_coordinates(&rect, &Ellipsoid::WGS84);
 
-    // Should be on positive X axis (center of global rectangle is (0,0))
+    // 应位于正 X 轴（全球矩形中心为 (0,0)）
     assert!(pos.x > 0.0);
     assert!(pos.y.abs() < EPSILON6);
     assert!(pos.z.abs() < EPSILON6);
@@ -260,14 +260,14 @@ fn get_rectangle_camera_coordinates_3d_global() {
 fn get_rectangle_camera_coordinates_3d_idl() {
     let mut camera = test_camera();
     camera.mode = SceneMode::Scene3D;
-    // Rectangle crossing the date line: west=0.1 rad, east=-0.1 rad
-    // center_lon = (0.1 + (-0.1) + 2*PI) / 2 = PI if we handle wrapping,
-    // but the Rust implementation just does (west + east) * 0.5 = 0.0
+    // 穿越日界线的矩形：west=0.1 rad, east=-0.1 rad
+    // 若处理环绕，则 center_lon = (0.1 + (-0.1) + 2*PI) / 2 = PI，
+    // 但 Rust 实现直接计算 (west + east) * 0.5 = 0.0
     let rect = Rectangle::new(0.1, -PI / 2.0, -0.1, PI / 2.0);
     let pos = camera.get_rectangle_camera_coordinates(&rect, &Ellipsoid::WGS84);
 
-    // The implementation computes simple average longitude, not IDL-aware wrapping
-    // So center is near 0 longitude (positive X)
+    // 该实现计算简单平均经度，而非 IDL 感知的环绕
+    // 因此中心接近 0 经度（正 X）
     let height = pos.length() - Ellipsoid::WGS84.maximum_radius();
     assert!(height > 0.0, "height should be positive: {}", height);
 }
@@ -297,10 +297,10 @@ fn set_view_rectangle_3d() {
 
     camera.set_view_rectangle(&rect, &Ellipsoid::WGS84);
 
-    // Position should be above the rectangle center
+    // 位置应位于矩形中心之上
     let height = camera.position.length() - Ellipsoid::WGS84.maximum_radius();
     assert!(height > 0.0);
-    // Direction should point towards center
+    // direction 应指向中心
     let to_center = -camera.position.normalize();
     assert!(camera.direction.dot(to_center) > 0.99);
 }
@@ -320,7 +320,7 @@ fn compute_set_view_looking_down() {
 
     let pos_height = position.length() - Ellipsoid::WGS84.maximum_radius();
     assert!((pos_height - height).abs() / height < 0.01);
-    // Looking straight down → direction ≈ -surface_normal
+    // 垂直向下看 → direction ≈ -surface_normal
     assert!(direction.dot(-position.normalize()) > 0.9);
 }
 
@@ -332,7 +332,7 @@ fn compute_set_view_with_heading() {
     let (position, _direction, _up) = compute_set_view(
         &carto,
         height,
-        PI / 2.0, // Heading east
+        PI / 2.0, // 朝向东
         -PI / 2.0,
         &Ellipsoid::WGS84,
     );
@@ -342,7 +342,7 @@ fn compute_set_view_with_heading() {
 }
 
 // ============================================================================
-// Camera coordinate transform roundtrips
+// 相机坐标变换往返
 // ============================================================================
 
 #[test]
@@ -376,19 +376,19 @@ fn world_to_camera_to_world_roundtrip_vector() {
 }
 
 // ============================================================================
-// 2D mode camera tests
+// 2D 模式相机测试
 // ============================================================================
 
 #[test]
 fn scene_mode_2d_no_look_rotation() {
-    // Note: The Camera struct does not itself enforce 2D no-look behavior;
-    // that logic resides in the CesiumJS scene update loop.
-    // This test verifies the camera remains orthonormal in any mode.
+    // 注意：Camera 结构体本身并不强制 2D 禁止旋转行为；
+    // 该逻辑位于 CesiumJS 的场景更新循环中。
+    // 本测试验证相机在任意模式下都保持正交归一。
     let mut camera = test_camera();
     camera.mode = SceneMode::Scene2D;
     camera.look_left(Some(PI / 4.0));
 
-    // Camera should remain orthonormal
+    // 相机应保持正交归一
     assert!((camera.direction.length() - 1.0).abs() < EPSILON14);
     assert!((camera.up.length() - 1.0).abs() < EPSILON14);
     assert!((camera.right.length() - 1.0).abs() < EPSILON14);
@@ -407,7 +407,7 @@ fn morphing_mode_rejects_setview() {
 }
 
 // ============================================================================
-// Frustum tests
+// 视锥测试
 // ============================================================================
 
 #[test]
@@ -429,7 +429,7 @@ fn frustum_projection_matrix_is_valid() {
     let frustum = Frustum::default();
     let proj = frustum.projection_matrix();
 
-    // Check non-degenerate
+    // 检查非退化
     assert!(proj.determinant().abs() > EPSILON15);
 }
 
@@ -441,7 +441,7 @@ fn frustum_sse_denominator() {
 }
 
 // ============================================================================
-// Pick ray tests (extended)
+// 拾取射线测试（扩展）
 // ============================================================================
 
 #[test]
@@ -453,7 +453,7 @@ fn pick_ray_center_is_along_view_direction() {
     );
     let ray = camera.get_pick_ray(400.0, 300.0, 800.0, 600.0).unwrap();
 
-    // Center pick ray direction should match camera direction
+    // 中心拾取射线的 direction 应与相机 direction 一致
     let dot = ray.direction.dot(camera.direction);
     assert!(dot > 0.9, "center pick ray direction alignment: {}", dot);
 }
@@ -471,7 +471,7 @@ fn pick_ray_corners_diverge() {
     let ray_bl = camera.get_pick_ray(0.0, 600.0, 800.0, 600.0).unwrap();
     let ray_br = camera.get_pick_ray(800.0, 600.0, 800.0, 600.0).unwrap();
 
-    // Top-left and bottom-right should diverge
+    // 左上与右下应当发散
     assert!(ray_tl.direction.dot(ray_br.direction) < 0.999);
     assert!(ray_tr.direction.dot(ray_bl.direction) < 0.999);
 }
@@ -511,14 +511,14 @@ fn pick_ellipsoid_corner_misses() {
         DVec3::new(-1.0, 0.0, 0.0),
         DVec3::new(0.0, 0.0, 1.0),
     );
-    // Far corner might miss the ellipsoid
+    // 远角可能未命中椭球
     let hit = camera.pick_ellipsoid(0.0, 0.0, 800.0, 600.0, &Ellipsoid::WGS84);
-    // This may or may not hit depending on FOV; just verify it doesn't panic
+    // 是否命中取决于 FOV；仅验证不会 panic
     let _ = hit;
 }
 
 // ============================================================================
-// Camera change detection
+// 相机变化检测
 // ============================================================================
 
 #[test]
@@ -548,24 +548,24 @@ fn change_detection_direction_change() {
         DVec3::new(0.0, 0.0, -1.0),
         DVec3::Y,
     );
-    let ref_dir = DVec3::new(0.0, 1.0, 0.0); // 90° different
+    let ref_dir = DVec3::new(0.0, 1.0, 0.0); // 相差 90°
     let percentage = camera.compute_change_percentage(camera.position, ref_dir);
     assert!(percentage > 0.0);
 }
 
 // ============================================================================
-// Heading/pitch/roll in 3D
+// 3D 中的 heading/pitch/roll
 // ============================================================================
 
 #[test]
 fn heading_3d_at_equator_north() {
     let ellipsoid = Ellipsoid::WGS84;
     let mut camera = test_camera();
-    let pos = DVec3::new(6378137.0, 0.0, 0.0); // Prime meridian, equator
+    let pos = DVec3::new(6378137.0, 0.0, 0.0); // 本初子午线，赤道
     camera.set_view_hpr(pos, 0.0, 0.0, 0.0, &ellipsoid);
 
     let heading = camera.heading_3d(&ellipsoid);
-    // heading=0 means looking north (after ENU transform)
+    // heading=0 表示朝北（经 ENU 变换后）
     assert!(heading.abs() < 0.01 || (heading - 2.0 * PI).abs() < 0.01,
         "heading should be ~0: {}", heading);
 }
@@ -592,7 +592,7 @@ fn heading_pitch_roll_roundtrip_enu() {
     let mut camera = test_camera();
     camera.set_view_hpr(pos, h, p, r, &ellipsoid);
 
-    // Check that heading/pitch/roll are approximately preserved
+    // 检查 heading/pitch/roll 近似保持不变
     let h2 = camera.heading_3d(&ellipsoid);
     let p2 = camera.pitch_3d(&ellipsoid);
     let r2 = camera.roll_3d(&ellipsoid);
@@ -603,7 +603,7 @@ fn heading_pitch_roll_roundtrip_enu() {
 }
 
 // ============================================================================
-// Constrained rotation tests
+// 受限旋转测试
 // ============================================================================
 
 #[test]
@@ -624,10 +624,10 @@ fn constrained_axis_prevents_crossing() {
     let mut camera = test_camera();
     camera.constrained_axis = Some(DVec3::Y);
 
-    // Rotate 180° degrees — with Y constraint, up should not cross Y
+    // 旋转 180° — 在 Y 约束下，up 不应越过 Y
     camera.rotate_constrained(DVec3::X, PI);
 
-    // up should not have negative Y dot
+    // up 与 Y 的点积不应为负
     let dot = camera.up.dot(DVec3::Y);
     assert!(dot >= -EPSILON10, "up should not cross +Y: dot={}", dot);
 }
@@ -638,16 +638,16 @@ fn constrained_up_down_mirror() {
     camera.constrained_axis = Some(DVec3::Y);
 
     camera.rotate_up_constrained(PI / 2.0);
-    // After rotating up 90°, direction should be up (Z), up should be -Z
+    // 将 up 旋转 90° 后，direction 应为 up (Z)，up 应为 -Z
     assert_vec3_epsilon(camera.position, DVec3::new(0.0, -1.0, 0.0), EPSILON10, "rotated up position");
 
     camera.rotate_down_constrained(PI / 2.0);
-    // Should be back to original
+    // 应回到原始状态
     assert_vec3_epsilon(camera.position, DVec3::new(0.0, 0.0, 1.0), EPSILON10, "back to original position");
 }
 
 // ============================================================================
-// Camera magnitude by mode
+// 按模式获取相机模长
 // ============================================================================
 
 #[test]
@@ -671,11 +671,11 @@ fn get_magnitude_columbus_view() {
     let mut camera = test_camera();
     camera.mode = SceneMode::ColumbusView;
     let mag = camera.get_magnitude();
-    assert!((mag - 1.0).abs() < EPSILON10); // position is (0,0,1), CV uses abs(z)
+    assert!((mag - 1.0).abs() < EPSILON10); // position 为 (0,0,1)，CV 使用 abs(z)
 }
 
 // ============================================================================
-// Pixel size / distance to bounding sphere
+// 像素大小 / 到包围球的距离
 // ============================================================================
 
 #[test]
@@ -687,7 +687,7 @@ fn distance_to_bounding_sphere_front() {
     );
     let sphere = cesium_geospatial::BoundingSphere::new(DVec3::new(0.0, 0.0, 0.0), 10.0);
     let dist = camera.distance_to_bounding_sphere(&sphere);
-    // Distance along Z = 100, minus sphere radius = 90
+    // 沿 Z 的距离 = 100，减去球半径 = 90
     assert!((dist - 90.0).abs() < EPSILON10, "distance: {}", dist);
 }
 
@@ -700,7 +700,7 @@ fn distance_to_bounding_sphere_behind() {
     );
     let sphere = cesium_geospatial::BoundingSphere::new(DVec3::new(0.0, 0.0, 200.0), 10.0);
     let dist = camera.distance_to_bounding_sphere(&sphere);
-    // Behind camera → clamped to 0
+    // 相机后方 → 被限制为 0
     assert!((dist).abs() < EPSILON10, "distance behind: {}", dist);
 }
 
@@ -719,7 +719,7 @@ fn get_pixel_size_valid() {
 }
 
 // ============================================================================
-// lookAt variants
+// lookAt 变体
 // ============================================================================
 
 #[test]
@@ -730,13 +730,13 @@ fn look_at_offset_positions_camera() {
 
     camera.look_at(target, &offset, &Ellipsoid::WGS84);
 
-    // Position should be ~100km from target
+    // 位置应距 target 约 100km
     let dist = (camera.position_wc() - target).length();
     assert!((dist - 100000.0).abs() < 1000.0, "lookAt distance: {}", dist);
 }
 
 // ============================================================================
-// Default home position
+// 默认 home 位置
 // ============================================================================
 
 #[test]
@@ -747,7 +747,7 @@ fn default_home_position_above_surface() {
 }
 
 // ============================================================================
-// View matrix consistency
+// 视图矩阵一致性
 // ============================================================================
 
 #[test]
@@ -785,13 +785,13 @@ fn view_bounding_sphere_positions_camera() {
 
     camera.view_bounding_sphere(center, 10000.0, 0.0, &Ellipsoid::WGS84);
 
-    // Position should have changed
+    // 位置应已改变
     assert!(camera.position.length() > 0.0);
     assert!((camera.position - init_pos).length() > 0.0);
 }
 
 // ============================================================================
-// Normalized up vectors after any operation
+// 任意操作后归一化的 up 向量
 // ============================================================================
 
 #[test]

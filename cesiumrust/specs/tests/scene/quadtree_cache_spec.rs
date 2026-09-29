@@ -1,11 +1,11 @@
-//! Scene/QuadtreePrimitive tile cache & loading queue → Rust integration tests.
+//! Scene/QuadtreePrimitive 瓦片缓存与加载队列 → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
-//! - Scene/QuadtreePrimitive.js (tile loading/caching behavior)
+//! 对应 CesiumJS：
+//! - Scene/QuadtreePrimitive.js（瓦片加载/缓存行为）
 //!
-//! A-class tests: TileLoadQueue priority/distance ordering, max_size eviction,
-//! TileCache LRU eviction/access ordering, SchedulerConfig/Stats defaults.
-//! C-class omitted: WebGL rendering, asynchronous network loading.
+//! A 类测试：TileLoadQueue 优先级/距离排序、max_size 淘汰、
+//! TileCache LRU 淘汰/访问排序、SchedulerConfig/Stats 默认值。
+//! C 类省略：WebGL 渲染、异步网络加载。
 
 use cesium_quadtree::{
     QueuedTile, SchedulerConfig, SchedulerStats, TileCache, TileId, TileLoadQueue, TilePriority,
@@ -107,7 +107,7 @@ fn queue_distance_tiebreak_same_priority() {
     queue.enqueue(make_queued(TileId::new(1, 1, 1), TilePriority::Normal, 100.0));
     queue.enqueue(make_queued(TileId::new(2, 2, 2), TilePriority::Normal, 1000.0));
 
-    // Closest first (same priority)
+    // 最近的在前（相同优先级）
     let first = queue.dequeue().unwrap();
     assert_eq!(first.id, TileId::new(1, 1, 1));
     let second = queue.dequeue().unwrap();
@@ -121,11 +121,11 @@ fn queue_max_size_evicts_lowest_priority() {
     let mut queue = TileLoadQueue::new(2);
     queue.enqueue(make_queued(TileId::new(0, 0, 0), TilePriority::Low, 100.0));
     queue.enqueue(make_queued(TileId::new(1, 1, 1), TilePriority::Normal, 100.0));
-    // This should evict the Low priority tile
+    // 这应淘汰 Low 优先级瓦片
     queue.enqueue(make_queued(TileId::new(2, 2, 2), TilePriority::High, 100.0));
 
     assert_eq!(queue.len(), 2);
-    // The remaining should be Normal and High
+    // 剩余的应为 Normal 和 High
     let first = queue.dequeue().unwrap();
     assert_eq!(first.priority, TilePriority::High);
     let second = queue.dequeue().unwrap();
@@ -176,11 +176,11 @@ fn cache_lru_eviction_order() {
     cache.insert(TileId::new(0, 0, 0), "a");
     cache.insert(TileId::new(1, 1, 1), "b");
     cache.insert(TileId::new(2, 2, 2), "c");
-    // Cache full: [a, b, c]. Insert d → evicts a (LRU)
+    // 缓存已满：[a, b, c]。插入 d → 淘汰 a（LRU）
     cache.insert(TileId::new(3, 3, 3), "d");
 
     assert_eq!(cache.len(), 3);
-    assert!(!cache.contains(&TileId::new(0, 0, 0))); // evicted
+    assert!(!cache.contains(&TileId::new(0, 0, 0))); // 被淘汰
     assert!(cache.contains(&TileId::new(1, 1, 1)));
     assert!(cache.contains(&TileId::new(2, 2, 2)));
     assert!(cache.contains(&TileId::new(3, 3, 3)));
@@ -193,14 +193,14 @@ fn cache_access_refreshes_lru() {
     cache.insert(TileId::new(1, 1, 1), "b");
     cache.insert(TileId::new(2, 2, 2), "c");
 
-    // Access 'a' to refresh it
+    // 访问 'a' 刷新它
     cache.get(&TileId::new(0, 0, 0));
 
-    // Insert d → should evict 'b' (now LRU), not 'a'
+    // 插入 d → 应淘汰 'b'（现为 LRU），而非 'a'
     cache.insert(TileId::new(3, 3, 3), "d");
 
-    assert!(cache.contains(&TileId::new(0, 0, 0))); // refreshed
-    assert!(!cache.contains(&TileId::new(1, 1, 1))); // evicted
+    assert!(cache.contains(&TileId::new(0, 0, 0))); // 已刷新
+    assert!(!cache.contains(&TileId::new(1, 1, 1))); // 被淘汰
     assert!(cache.contains(&TileId::new(2, 2, 2)));
     assert!(cache.contains(&TileId::new(3, 3, 3)));
 }
@@ -210,14 +210,14 @@ fn cache_take_evicted() {
     let mut cache = TileCache::new(2);
     cache.insert(TileId::new(0, 0, 0), "a");
     cache.insert(TileId::new(1, 1, 1), "b");
-    cache.insert(TileId::new(2, 2, 2), "c"); // evicts "a"
+    cache.insert(TileId::new(2, 2, 2), "c"); // 淘汰 "a"
 
     let evicted = cache.take_evicted();
     assert_eq!(evicted.len(), 1);
     assert_eq!(evicted[0].0, TileId::new(0, 0, 0));
     assert_eq!(evicted[0].1, "a");
 
-    // Second call returns empty
+    // 第二次调用返回空
     let evicted2 = cache.take_evicted();
     assert!(evicted2.is_empty());
 }

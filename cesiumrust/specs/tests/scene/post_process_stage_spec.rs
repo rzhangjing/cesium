@@ -1,5 +1,5 @@
-//! PostProcessStage/Composite/Collection specs
-//! Ported from CesiumJS Scene/PostProcessStageSpec.js + PostProcessStageCollectionSpec.js
+//! PostProcessStage/Composite/Collection 规范
+//! 移植自 CesiumJS Scene/PostProcessStageSpec.js + PostProcessStageCollectionSpec.js
 
 use cesium_effects::{
     create_ambient_occlusion_composite, create_auto_exposure_stage, create_bloom_composite,
@@ -130,7 +130,7 @@ fn composite_is_ready() {
     composite.add_stage(s1);
     composite.add_stage(s2);
 
-    assert!(!composite.is_ready()); // s2 not ready
+    assert!(!composite.is_ready()); // s2 未就绪
 
     composite.stages[1].ready = true;
     assert!(composite.is_ready());
@@ -139,17 +139,17 @@ fn composite_is_ready() {
 #[test]
 fn composite_empty_is_ready() {
     let composite = PostProcessStageComposite::new("empty");
-    // Empty composite: all() on empty iterator returns true
+    // 空 composite：all() 对空迭代器返回 true
     assert!(composite.is_ready());
 }
 
-// ==================== Built-in Stage Factories ====================
+// ==================== 内置 Stage 工厂 ====================
 
 #[test]
 fn fxaa_stage_defaults() {
     let fxaa = create_fxaa_stage();
     assert_eq!(fxaa.name, "czm_fxaa");
-    assert!(!fxaa.enabled); // Disabled by default
+    assert!(!fxaa.enabled); // 默认禁用
     assert_eq!(fxaa.sample_mode, SampleMode::Linear);
     assert!(fxaa.fragment_shader.contains("fxaa"));
 }
@@ -161,14 +161,14 @@ fn bloom_composite_structure() {
     assert!(!bloom.enabled);
     assert_eq!(bloom.len(), 2); // brightness + blur
 
-    // Bright pass uniforms
+    // 亮部 pass uniform
     let bright = &bloom.stages[0];
     assert_eq!(bright.name, "czm_bloom_brightness");
     assert_eq!(bright.get_uniform("contrast"), Some(&UniformValue::Float(128.0)));
     assert_eq!(bright.get_uniform("brightness"), Some(&UniformValue::Float(-0.3)));
     assert_eq!(bright.get_uniform("glowOnly"), Some(&UniformValue::Bool(false)));
 
-    // Blur pass uniforms
+    // 模糊 pass uniform
     let blur = &bloom.stages[1];
     assert_eq!(blur.name, "czm_bloom_blur");
     assert_eq!(blur.get_uniform("sigma"), Some(&UniformValue::Float(3.8)));
@@ -255,7 +255,7 @@ fn collection_remove() {
     assert_eq!(removed.unwrap().name, "s2");
     assert_eq!(collection.len(), 2);
     assert!(collection.get_by_name("s2").is_none());
-    // s1 and s3 still accessible
+    // s1 和 s3 仍可访问
     assert!(collection.get_by_name("s1").is_some());
     assert!(collection.get_by_name("s3").is_some());
 }
@@ -309,9 +309,9 @@ fn collection_execution_order_skips_disabled_user() {
     collection.add(enabled);
 
     let order = collection.execution_order();
-    // Only enabled user stage + tonemapping
+    // 仅启用的用户 stage + tonemapping
     assert_eq!(order.len(), 2);
-    assert_eq!(order[0], StageRef::User(1)); // index 1 is the enabled one
+    assert_eq!(order[0], StageRef::User(1)); // index 1 是启用的那个
     assert_eq!(order[1], StageRef::Tonemapping);
 }
 

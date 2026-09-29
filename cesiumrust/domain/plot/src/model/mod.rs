@@ -1,8 +1,8 @@
-//! The serialisable scene-document model (plan §5).
+//! 可序列化的场景文档模型（计划 §5）。
 //!
-//! `Document` (a tree of layers → groups → elements) plus the value types each
-//! node is built from. Everything here is plain data (`Serialize`/`Deserialize`)
-//! with no engine dependency, so it is diffable and unit-testable headless.
+//! `Document`（一棵图层 → 组 → 元素的树）加上每个
+//! 节点由其构建的各值类型。这里的一切都是普通数据（`Serialize`/`Deserialize`）
+//! ，无引擎依赖，因此可在无头环境下进行 diff 与单元测试。
 
 pub mod document;
 pub mod element;

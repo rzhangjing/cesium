@@ -1,6 +1,6 @@
-//! Screen-space picking: convert screen coordinates to world rays.
+//! 屏幕空间拾取：将屏幕坐标转换为世界射线。
 //!
-//! Maps to CesiumJS `Scene/Scene.js` pick methods:
+//! 映射到 CesiumJS `Scene/Scene.js` 的拾取方法：
 //! - `Scene.pick`
 //! - `Scene.drillPick`
 //! - `Camera.getPickRay`
@@ -10,36 +10,36 @@ use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_geospatial::ray::Ray;
 use glam::{DVec2, DVec3, DVec4};
 
-/// Viewport dimensions.
+/// 视口尺寸。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Viewport {
-    /// Width in pixels.
+    /// 宽度（以像素计）。
     pub width: f64,
-    /// Height in pixels.
+    /// 高度（以像素计）。
     pub height: f64,
 }
 
 impl Viewport {
-    /// Creates a new viewport.
+    /// 创建一个新的视口。
     pub fn new(width: f64, height: f64) -> Self {
         Self { width, height }
     }
 
-    /// Aspect ratio (width / height).
+    /// 宽高比（宽度 / 高度）。
     pub fn aspect_ratio(&self) -> f64 {
         self.width / self.height
     }
 }
 
-/// Computes a picking ray from screen coordinates.
+/// 从屏幕坐标计算一条拾取射线。
 ///
-/// # Arguments
-/// * `screen_position` - Screen coordinates (pixels, origin top-left)
-/// * `viewport` - Viewport dimensions
-/// * `camera` - The camera
+/// # 参数
+/// * `screen_position` - 屏幕坐标（像素，原点在左上角）
+/// * `viewport` - 视口尺寸
+/// * `camera` - 相机
 ///
-/// # Returns
-/// A ray in world space, or None if the ray cannot be computed
+/// # 返回
+/// 世界空间中的一条射线，若无法计算该射线则返回 None
 pub fn get_pick_ray(
     screen_position: DVec2,
     viewport: &Viewport,
@@ -49,22 +49,22 @@ pub fn get_pick_ray(
         return None;
     }
 
-    // Convert screen coordinates to NDC (-1 to 1)
+    // 将屏幕坐标转换为 NDC（-1 到 1）
     let ndc_x = (2.0 * screen_position.x / viewport.width) - 1.0;
-    let ndc_y = 1.0 - (2.0 * screen_position.y / viewport.height); // Flip Y
+    let ndc_y = 1.0 - (2.0 * screen_position.y / viewport.height); // 翻转 Y
 
-    // Compute the inverse view-projection matrix
+    // 计算逆视图-投影矩阵
     let view_proj = camera.view_projection_matrix();
     let inv_view_proj = view_proj.inverse();
 
-    // Unproject near and far points
+    // 反投影近点和远点
     let near_point = DVec4::new(ndc_x, ndc_y, -1.0, 1.0);
     let far_point = DVec4::new(ndc_x, ndc_y, 1.0, 1.0);
 
     let near_world = inv_view_proj * near_point;
     let far_world = inv_view_proj * far_point;
 
-    // Perspective divide
+    // 透视除法
     let near_world = DVec3::new(
         near_world.x / near_world.w,
         near_world.y / near_world.w,
@@ -81,16 +81,16 @@ pub fn get_pick_ray(
     Some(Ray::new(near_world, direction))
 }
 
-/// Computes the intersection of a pick ray with the ellipsoid surface.
+/// 计算拾取射线与椭球表面的交点。
 ///
-/// # Arguments
-/// * `ray` - The picking ray
-/// * `ellipsoid` - The ellipsoid to intersect
+/// # 参数
+/// * `ray` - 拾取射线
+/// * `ellipsoid` - 要求交的椭球
 ///
-/// # Returns
-/// The intersection point in ECEF, or None if no intersection
+/// # 返回
+/// ECEF 中的交点，若无交点则返回 None
 pub fn pick_ellipsoid(ray: &Ray, ellipsoid: &Ellipsoid) -> Option<DVec3> {
-    // Ray-ellipsoid intersection using quadratic formula
+    // 使用二次方程求解射线-椭球相交
     // Ellipsoid: x²/a² + y²/b² + z²/c² = 1
     let radii = ellipsoid.radii();
     let inv_radii_sq = DVec3::new(
@@ -102,7 +102,7 @@ pub fn pick_ellipsoid(ray: &Ray, ellipsoid: &Ellipsoid) -> Option<DVec3> {
     let origin = ray.origin;
     let direction = ray.direction;
 
-    // Quadratic coefficients: at² + bt + c = 0
+    // 二次项系数：at² + bt + c = 0
     let a = direction.x * direction.x * inv_radii_sq.x
         + direction.y * direction.y * inv_radii_sq.y
         + direction.z * direction.z * inv_radii_sq.z;
@@ -119,34 +119,34 @@ pub fn pick_ellipsoid(ray: &Ray, ellipsoid: &Ellipsoid) -> Option<DVec3> {
     let discriminant = b * b - 4.0 * a * c;
 
     if discriminant < 0.0 {
-        return None; // No intersection
+        return None; // 无交点
     }
 
     let sqrt_disc = discriminant.sqrt();
     let t1 = (-b - sqrt_disc) / (2.0 * a);
     let t2 = (-b + sqrt_disc) / (2.0 * a);
 
-    // Choose the nearest positive intersection
+    // 选择最近的正交点
     let t = if t1 > 0.0 {
         t1
     } else if t2 > 0.0 {
         t2
     } else {
-        return None; // Both intersections behind the ray
+        return None; // 两个交点都在射线后方
     };
 
     Some(ray.origin + ray.direction * t)
 }
 
-/// Converts a world position to screen coordinates.
+/// 将一个世界坐标位置转换为屏幕坐标。
 ///
-/// # Arguments
-/// * `world_position` - Position in ECEF
-/// * `viewport` - Viewport dimensions
-/// * `camera` - The camera
+/// # 参数
+/// * `world_position` - ECEF 中的位置
+/// * `viewport` - 视口尺寸
+/// * `camera` - 相机
 ///
-/// # Returns
-/// Screen coordinates (pixels), or None if behind the camera
+/// # 返回
+/// 屏幕坐标（像素），若在该相机后方则返回 None
 pub fn world_to_screen(
     world_position: DVec3,
     viewport: &Viewport,
@@ -155,29 +155,29 @@ pub fn world_to_screen(
     let view_proj = camera.view_projection_matrix();
     let clip = view_proj * DVec4::new(world_position.x, world_position.y, world_position.z, 1.0);
 
-    // Behind camera check
+    // 相机后方检查
     if clip.w <= 0.0 {
         return None;
     }
 
-    // Perspective divide → NDC
+    // 透视除法 → NDC
     let ndc_x = clip.x / clip.w;
     let ndc_y = clip.y / clip.w;
     let ndc_z = clip.z / clip.w;
 
-    // Outside clip volume
+    // 在裁剪体之外
     if !(-1.0..=1.0).contains(&ndc_z) {
         return None;
     }
 
-    // NDC → screen
+    // NDC → 屏幕
     let screen_x = (ndc_x + 1.0) * 0.5 * viewport.width;
-    let screen_y = (1.0 - ndc_y) * 0.5 * viewport.height; // Flip Y
+    let screen_y = (1.0 - ndc_y) * 0.5 * viewport.height; // 翻转 Y
 
     Some(DVec2::new(screen_x, screen_y))
 }
 
-/// Computes the window center as a DVec2.
+/// 以 DVec2 计算窗口中心。
 pub fn window_center(viewport: &Viewport) -> DVec2 {
     DVec2::new(viewport.width * 0.5, viewport.height * 0.5)
 }
@@ -187,7 +187,7 @@ mod tests {
     use super::*;
 
     fn create_test_camera() -> Camera {
-        // Camera above the equator looking at the center
+        // 相机位于赤道上空，朝向中心
         Camera::new(
             DVec3::new(6378137.0 * 3.0, 0.0, 0.0),
             DVec3::new(-1.0, 0.0, 0.0),
@@ -209,11 +209,11 @@ mod tests {
 
         let ray = get_pick_ray(center, &viewport, &camera).unwrap();
 
-        // Ray origin should be near the camera (at the near plane)
+        // 射线原点应靠近相机（在近裁剪面上）
         let dist_to_camera = (ray.origin - camera.position).length();
         assert!(dist_to_camera < camera.position.length() * 0.1);
 
-        // Ray direction should be roughly towards -X (looking at center of Earth)
+        // 射线方向应大致朝向 -X（看向地心）
         assert!(ray.direction.x < -0.9);
     }
 
@@ -238,7 +238,7 @@ mod tests {
         assert!(hit.is_some());
         let hit_point = hit.unwrap();
 
-        // Hit point should be on the ellipsoid surface
+        // 命中点应位于椭球表面上
         let radii = Ellipsoid::WGS84.radii();
         let normalized = DVec3::new(
             hit_point.x / radii.x,
@@ -250,10 +250,10 @@ mod tests {
 
     #[test]
     fn test_pick_ellipsoid_miss() {
-        // Ray pointing away from the ellipsoid
+        // 射线指向远离椭球的方向
         let ray = Ray::new(
             DVec3::new(6378137.0 * 3.0, 0.0, 0.0),
-            DVec3::new(1.0, 0.0, 0.0), // Pointing away
+            DVec3::new(1.0, 0.0, 0.0), // 指向远离方向
         );
 
         let hit = pick_ellipsoid(&ray, &Ellipsoid::WGS84);
@@ -265,13 +265,13 @@ mod tests {
         let camera = create_test_camera();
         let viewport = Viewport::new(800.0, 600.0);
 
-        // A point directly in front of the camera should project to screen center
+        // 相机正前方的一个点应投影到屏幕中心
         let world_point = DVec3::new(6378137.0 * 2.0, 0.0, 0.0);
         let screen = world_to_screen(world_point, &viewport, &camera);
 
         assert!(screen.is_some());
         let screen = screen.unwrap();
-        // Should be near center
+        // 应靠近中心
         assert!((screen.x - 400.0).abs() < 50.0);
         assert!((screen.y - 300.0).abs() < 50.0);
     }
@@ -281,7 +281,7 @@ mod tests {
         let camera = create_test_camera();
         let viewport = Viewport::new(800.0, 600.0);
 
-        // A point behind the camera
+        // 相机后方的一个点
         let world_point = DVec3::new(6378137.0 * 5.0, 0.0, 0.0);
         let screen = world_to_screen(world_point, &viewport, &camera);
 
@@ -301,14 +301,14 @@ mod tests {
         let camera = create_test_camera();
         let viewport = Viewport::new(800.0, 600.0);
 
-        // Pick at top-left corner
+        // 在左上角拾取
         let ray = get_pick_ray(DVec2::new(0.0, 0.0), &viewport, &camera).unwrap();
 
-        // Should be different from center ray
+        // 应与中心射线不同
         let center_ray = get_pick_ray(DVec2::new(400.0, 300.0), &viewport, &camera).unwrap();
 
-        // Directions should differ
+        // 方向应不同
         let dot = ray.direction.dot(center_ray.direction);
-        assert!(dot < 0.999); // Not the same direction
+        assert!(dot < 0.999); // 不是同一方向
     }
 }

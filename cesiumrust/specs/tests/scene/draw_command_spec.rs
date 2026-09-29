@@ -1,8 +1,8 @@
-//! DrawCommand / RenderCommandList / FrameStatistics specs
-//! Ported from CesiumJS Renderer/DrawCommand.js + Scene/Pass.js
+//! DrawCommand / RenderCommandList / FrameStatistics 规范
+//! 移植自 CesiumJS Renderer/DrawCommand.js + Scene/Pass.js
 //!
-//! A-class tests: DrawCommand construction/builder, RenderPass ordering,
-//! RenderCommandList push/sort/clear, BlendState/DepthState, FrameStatistics merge/reset
+//! A 类测试：DrawCommand 构造/builder、RenderPass 排序、
+//! RenderCommandList push/sort/clear、BlendState/DepthState、FrameStatistics merge/reset
 
 use cesium_scene::{
     BlendState, DepthState, DrawCommand, FrameStatistics, RenderCommandList, RenderPass,
@@ -70,7 +70,7 @@ fn draw_command_is_transparent_variants() {
         .is_transparent());
 }
 
-// ─── RenderPass ordering ───────────────────────────────────────────────────────
+// ─── RenderPass 排序 ───────────────────────────────────────────────────────
 
 #[test]
 fn render_pass_ordering() {
@@ -131,9 +131,9 @@ fn command_list_sort_translucent_back_to_front() {
     list.sort();
 
     let translucent = list.commands_for_pass(RenderPass::Translucent);
-    assert_eq!(translucent[0].geometry_id, 2); // 300 (farthest)
+    assert_eq!(translucent[0].geometry_id, 2); // 300（最远）
     assert_eq!(translucent[1].geometry_id, 3); // 200
-    assert_eq!(translucent[2].geometry_id, 1); // 100 (nearest)
+    assert_eq!(translucent[2].geometry_id, 1); // 100（最近）
 }
 
 #[test]
@@ -189,7 +189,7 @@ fn frame_statistics_merge() {
     assert_eq!(stats.texture_binds, 15);
     assert_eq!(stats.shader_switches, 8);
     assert_eq!(stats.culled_objects, 30);
-    // frame_time_ms is NOT merged (it's per-frame)
+    // frame_time_ms 不合并（它是每帧的）
     assert_eq!(stats.frame_time_ms, 16.0);
 }
 

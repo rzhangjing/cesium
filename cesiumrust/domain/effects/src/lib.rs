@@ -1,8 +1,8 @@
-//! cesium-effects: Post-processing effects and particle systems.
+//! cesium-effects：后处理效果与粒子系统。
 //!
-//! Domain layer - pure Rust, f64 precision.
+//! 领域层——纯 Rust，f64 精度。
 //!
-//! CesiumJS mapping:
+//! CesiumJS 映射：
 //! - `Scene/PostProcessStageLibrary.js` → post_process
 //! - `Scene/PostProcessStage.js` → post_process_stage
 //! - `Scene/PostProcessStageCollection.js` → post_process_stage

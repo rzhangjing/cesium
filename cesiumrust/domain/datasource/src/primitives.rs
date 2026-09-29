@@ -1,78 +1,78 @@
-//! Billboard, Label, and PointPrimitive collections.
+//! billboard、label 与 PointPrimitive 集合。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Scene/Billboard.js`, `Scene/BillboardCollection.js`
 //! - `Scene/Label.js`, `Scene/LabelCollection.js`
 //! - `Scene/PointPrimitive.js`, `Scene/PointPrimitiveCollection.js`
 
 use crate::property::Color;
 
-/// Vertical origin for billboard/label positioning.
+/// 用于 billboard/label 定位的垂直对齐原点。
 ///
-/// Maps to CesiumJS `Scene/VerticalOrigin.js`
+/// 映射到 CesiumJS `Scene/VerticalOrigin.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VerticalOrigin {
-    /// Origin is at the top of the item.
+    /// 原点位于条目顶部。
     Top,
-    /// Origin is at the center of the item.
+    /// 原点位于条目中心。
     #[default]
     Center,
-    /// Origin is at the bottom of the item.
+    /// 原点位于条目底部。
     Bottom,
-    /// Origin is at the baseline of the text (labels only).
+    /// 原点位于文本基线（仅 label）。
     Baseline,
 }
 
-/// Horizontal origin for billboard/label positioning.
+/// 用于 billboard/label 定位的水平对齐原点。
 ///
-/// Maps to CesiumJS `Scene/HorizontalOrigin.js`
+/// 映射到 CesiumJS `Scene/HorizontalOrigin.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HorizontalOrigin {
-    /// Origin is at the left of the item.
+    /// 原点位于条目左侧。
     Left,
-    /// Origin is at the center of the item.
+    /// 原点位于条目中心。
     #[default]
     Center,
-    /// Origin is at the right of the item.
+    /// 原点位于条目右侧。
     Right,
 }
 
-/// Label style (fill, outline, or both).
+/// label 样式（填充、轮廓，或两者）。
 ///
-/// Maps to CesiumJS `Scene/LabelStyle.js`
+/// 映射到 CesiumJS `Scene/LabelStyle.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LabelStyle {
-    /// Fill only.
+    /// 仅填充。
     #[default]
     Fill,
-    /// Outline only.
+    /// 仅轮廓。
     Outline,
-    /// Fill and outline.
+    /// 填充与轮廓。
     FillAndOutline,
 }
 
-/// A distance-based scaling condition.
+/// 基于距离的缩放条件。
 ///
-/// Maps to CesiumJS `Core/NearFarScalar.js`
+/// 映射到 CesiumJS `Core/NearFarScalar.js`
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NearFarScalar {
-    /// Near distance.
+    /// 近距。
     pub near: f64,
-    /// Value at near distance.
+    /// 近距处的值。
     pub near_value: f64,
-    /// Far distance.
+    /// 远距。
     pub far: f64,
-    /// Value at far distance.
+    /// 远距处的值。
     pub far_value: f64,
 }
 
 impl NearFarScalar {
-    /// Creates a new near-far scalar.
+    /// 创建新的 near-far scalar。
     pub fn new(near: f64, near_value: f64, far: f64, far_value: f64) -> Self {
         Self { near, near_value, far, far_value }
     }
 
-    /// Interpolates the value at the given distance.
+    /// 在给定距离处插值。
     pub fn value_at_distance(&self, distance: f64) -> f64 {
         if distance <= self.near {
             self.near_value
@@ -91,42 +91,42 @@ impl Default for NearFarScalar {
     }
 }
 
-/// A distance display condition (near/far clipping).
+/// 距离显示条件（近/远裁剪）。
 ///
-/// Maps to CesiumJS `Core/DistanceDisplayCondition.js`
+/// 映射到 CesiumJS `Core/DistanceDisplayCondition.js`
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DistanceDisplayCondition {
-    /// Near distance (meters).
+    /// 近距（米）。
     pub near: f64,
-    /// Far distance (meters).
+    /// 远距（米）。
     pub far: f64,
 }
 
 impl DistanceDisplayCondition {
-    /// The number of elements used to pack the object into an array.
+    /// 将该对象打包进数组所用的元素数量。
     pub const PACKED_LENGTH: usize = 2;
 
-    /// Creates a new distance display condition.
+    /// 创建新的距离显示条件。
     pub fn new(near: f64, far: f64) -> Self {
         Self { near, far }
     }
 
-    /// Returns true if the given distance is within the condition.
+    /// 若给定距离落在条件范围内则返回 true。
     pub fn is_visible(&self, distance: f64) -> bool {
         distance >= self.near && distance <= self.far
     }
 
-    /// Stores the provided instance into the provided array.
+    /// 将所提供实例存入所提供数组。
     ///
-    /// Maps to CesiumJS `DistanceDisplayCondition.pack`
+    /// 映射到 CesiumJS `DistanceDisplayCondition.pack`
     pub fn pack(&self, array: &mut [f64], starting_index: usize) {
         array[starting_index] = self.near;
         array[starting_index + 1] = self.far;
     }
 
-    /// Retrieves an instance from a packed array.
+    /// 从打包数组中取出一个实例。
     ///
-    /// Maps to CesiumJS `DistanceDisplayCondition.unpack`
+    /// 映射到 CesiumJS `DistanceDisplayCondition.unpack`
     pub fn unpack(array: &[f64], starting_index: usize) -> Self {
         Self {
             near: array[starting_index],
@@ -134,9 +134,9 @@ impl DistanceDisplayCondition {
         }
     }
 
-    /// Determines if two distance display conditions are equal.
+    /// 判断两个距离显示条件是否相等。
     ///
-    /// Maps to CesiumJS `DistanceDisplayCondition.equals`
+    /// 映射到 CesiumJS `DistanceDisplayCondition.equals`
     pub fn equals(&self, other: &Self) -> bool {
         self.near == other.near && self.far == other.far
     }
@@ -148,46 +148,46 @@ impl Default for DistanceDisplayCondition {
     }
 }
 
-/// A billboard in a billboard collection.
+/// billboard 集合中的一个 billboard。
 ///
-/// Maps to CesiumJS `Scene/Billboard.js`
+/// 映射到 CesiumJS `Scene/Billboard.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct Billboard {
-    /// Whether the billboard is shown.
+    /// billboard 是否显示。
     pub show: bool,
-    /// Position in Cartesian3 [x, y, z].
+    /// Cartesian3 位置 [x, y, z]。
     pub position: [f64; 3],
-    /// Pixel offset [x, y].
+    /// 像素偏移 [x, y]。
     pub pixel_offset: [f64; 2],
-    /// Eye offset [x, y, z].
+    /// 眼睛偏移 [x, y, z]。
     pub eye_offset: [f64; 3],
-    /// Vertical origin.
+    /// 垂直对齐原点。
     pub vertical_origin: VerticalOrigin,
-    /// Horizontal origin.
+    /// 水平对齐原点。
     pub horizontal_origin: HorizontalOrigin,
-    /// Scale factor.
+    /// 缩放因子。
     pub scale: f64,
-    /// Color tint.
+    /// 颜色染色。
     pub color: Color,
-    /// Rotation in radians.
+    /// 旋转（弧度）。
     pub rotation: f64,
-    /// Aligned axis [x, y, z].
+    /// 对齐轴 [x, y, z]。
     pub aligned_axis: [f64; 3],
-    /// Width in pixels (None = use image width).
+    /// 宽度（像素）（None = 使用图像宽度）。
     pub width: Option<f64>,
-    /// Height in pixels (None = use image height).
+    /// 高度（像素）（None = 使用图像高度）。
     pub height: Option<f64>,
-    /// Whether size is in meters instead of pixels.
+    /// 尺寸是否以米而非像素计。
     pub size_in_meters: bool,
-    /// Image URI or ID.
+    /// 图像 URI 或 ID。
     pub image: Option<String>,
-    /// Scale by distance.
+    /// 按距离缩放。
     pub scale_by_distance: Option<NearFarScalar>,
-    /// Translucency by distance.
+    /// 按距离半透明。
     pub translucency_by_distance: Option<NearFarScalar>,
-    /// Distance display condition.
+    /// 距离显示条件。
     pub distance_display_condition: Option<DistanceDisplayCondition>,
-    /// User-defined ID.
+    /// 用户自定义 ID。
     pub id: Option<String>,
 }
 
@@ -216,9 +216,9 @@ impl Default for Billboard {
     }
 }
 
-/// A collection of billboards.
+/// billboard 的集合。
 ///
-/// Maps to CesiumJS `Scene/BillboardCollection.js`
+/// 映射到 CesiumJS `Scene/BillboardCollection.js`
 #[derive(Debug, Default)]
 pub struct BillboardCollection {
     billboards: Vec<Billboard>,
@@ -226,19 +226,19 @@ pub struct BillboardCollection {
 }
 
 impl BillboardCollection {
-    /// Creates a new empty collection.
+    /// 创建新的空集合。
     pub fn new() -> Self {
         Self { billboards: Vec::new(), show: true }
     }
 
-    /// Adds a billboard to the collection.
+    /// 向集合添加一个 billboard。
     pub fn add(&mut self, billboard: Billboard) -> usize {
         let index = self.billboards.len();
         self.billboards.push(billboard);
         index
     }
 
-    /// Removes a billboard by index.
+    /// 按索引移除一个 billboard。
     pub fn remove(&mut self, index: usize) -> Option<Billboard> {
         if index < self.billboards.len() {
             Some(self.billboards.remove(index))
@@ -247,91 +247,91 @@ impl BillboardCollection {
         }
     }
 
-    /// Gets a billboard by index.
+    /// 按索引获取一个 billboard。
     pub fn get(&self, index: usize) -> Option<&Billboard> {
         self.billboards.get(index)
     }
 
-    /// Gets a mutable billboard by index.
+    /// 按索引获取一个可变 billboard。
     pub fn get_mut(&mut self, index: usize) -> Option<&mut Billboard> {
         self.billboards.get_mut(index)
     }
 
-    /// Number of billboards.
+    /// billboard 数量。
     pub fn len(&self) -> usize {
         self.billboards.len()
     }
 
-    /// Returns true if empty.
+    /// 若为空则返回 true。
     pub fn is_empty(&self) -> bool {
         self.billboards.is_empty()
     }
 
-    /// Iterates over billboards.
+    /// 遍历 billboards。
     pub fn iter(&self) -> impl Iterator<Item = &Billboard> {
         self.billboards.iter()
     }
 
-    /// Whether the collection is shown.
+    /// 集合是否显示。
     pub fn show(&self) -> bool {
         self.show
     }
 
-    /// Sets whether the collection is shown.
+    /// 设置集合是否显示。
     pub fn set_show(&mut self, show: bool) {
         self.show = show;
     }
 
-    /// Clears all billboards.
+    /// 清除所有 billboards。
     pub fn clear(&mut self) {
         self.billboards.clear();
     }
 }
 
-/// A label in a label collection.
+/// label 集合中的一个 label。
 ///
-/// Maps to CesiumJS `Scene/Label.js`
+/// 映射到 CesiumJS `Scene/Label.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct Label {
-    /// Whether the label is shown.
+    /// label 是否显示。
     pub show: bool,
-    /// Position in Cartesian3 [x, y, z].
+    /// Cartesian3 位置 [x, y, z]。
     pub position: [f64; 3],
-    /// Text content.
+    /// 文本内容。
     pub text: String,
-    /// Font (CSS format).
+    /// 字体（CSS 格式）。
     pub font: String,
-    /// Fill color.
+    /// 填充颜色。
     pub fill_color: Color,
-    /// Outline color.
+    /// 轮廓颜色。
     pub outline_color: Color,
     /// Outline width.
     pub outline_width: f64,
-    /// Label style.
+    /// label 样式。
     pub style: LabelStyle,
-    /// Whether to show background.
+    /// 是否显示背景。
     pub show_background: bool,
-    /// Background color.
+    /// 背景颜色。
     pub background_color: Color,
-    /// Background padding [x, y].
+    /// 背景内边距 [x, y]。
     pub background_padding: [f64; 2],
-    /// Vertical origin.
+    /// 垂直对齐原点。
     pub vertical_origin: VerticalOrigin,
-    /// Horizontal origin.
+    /// 水平对齐原点。
     pub horizontal_origin: HorizontalOrigin,
-    /// Pixel offset [x, y].
+    /// 像素偏移 [x, y]。
     pub pixel_offset: [f64; 2],
-    /// Eye offset [x, y, z].
+    /// 眼睛偏移 [x, y, z]。
     pub eye_offset: [f64; 3],
-    /// Scale factor.
+    /// 缩放因子。
     pub scale: f64,
-    /// Scale by distance.
+    /// 按距离缩放。
     pub scale_by_distance: Option<NearFarScalar>,
-    /// Translucency by distance.
+    /// 按距离半透明。
     pub translucency_by_distance: Option<NearFarScalar>,
-    /// Distance display condition.
+    /// 距离显示条件。
     pub distance_display_condition: Option<DistanceDisplayCondition>,
-    /// User-defined ID.
+    /// 用户自定义 ID。
     pub id: Option<String>,
 }
 
@@ -362,9 +362,9 @@ impl Default for Label {
     }
 }
 
-/// A collection of labels.
+/// label 的集合。
 ///
-/// Maps to CesiumJS `Scene/LabelCollection.js`
+/// 映射到 CesiumJS `Scene/LabelCollection.js`
 #[derive(Debug, Default)]
 pub struct LabelCollection {
     labels: Vec<Label>,
@@ -372,19 +372,19 @@ pub struct LabelCollection {
 }
 
 impl LabelCollection {
-    /// Creates a new empty collection.
+    /// 创建新的空集合。
     pub fn new() -> Self {
         Self { labels: Vec::new(), show: true }
     }
 
-    /// Adds a label to the collection.
+    /// 向集合添加一个 label。
     pub fn add(&mut self, label: Label) -> usize {
         let index = self.labels.len();
         self.labels.push(label);
         index
     }
 
-    /// Removes a label by index.
+    /// 按索引移除一个 label。
     pub fn remove(&mut self, index: usize) -> Option<Label> {
         if index < self.labels.len() {
             Some(self.labels.remove(index))
@@ -393,71 +393,71 @@ impl LabelCollection {
         }
     }
 
-    /// Gets a label by index.
+    /// 按索引获取一个 label。
     pub fn get(&self, index: usize) -> Option<&Label> {
         self.labels.get(index)
     }
 
-    /// Gets a mutable label by index.
+    /// 按索引获取一个可变 label。
     pub fn get_mut(&mut self, index: usize) -> Option<&mut Label> {
         self.labels.get_mut(index)
     }
 
-    /// Number of labels.
+    /// label 数量。
     pub fn len(&self) -> usize {
         self.labels.len()
     }
 
-    /// Returns true if empty.
+    /// 若为空则返回 true。
     pub fn is_empty(&self) -> bool {
         self.labels.is_empty()
     }
 
-    /// Iterates over labels.
+    /// 遍历 labels。
     pub fn iter(&self) -> impl Iterator<Item = &Label> {
         self.labels.iter()
     }
 
-    /// Whether the collection is shown.
+    /// 集合是否显示。
     pub fn show(&self) -> bool {
         self.show
     }
 
-    /// Sets whether the collection is shown.
+    /// 设置集合是否显示。
     pub fn set_show(&mut self, show: bool) {
         self.show = show;
     }
 
-    /// Clears all labels.
+    /// 清除所有 labels。
     pub fn clear(&mut self) {
         self.labels.clear();
     }
 }
 
-/// A point primitive in a point primitive collection.
+/// 点图元集合中的一个点图元。
 ///
-/// Maps to CesiumJS `Scene/PointPrimitive.js`
+/// 映射到 CesiumJS `Scene/PointPrimitive.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct PointPrimitive {
-    /// Whether the point is shown.
+    /// 点是否显示。
     pub show: bool,
-    /// Position in Cartesian3 [x, y, z].
+    /// Cartesian3 位置 [x, y, z]。
     pub position: [f64; 3],
-    /// Point color.
+    /// 点颜色。
     pub color: Color,
-    /// Outline color.
+    /// 轮廓颜色。
     pub outline_color: Color,
-    /// Outline width in pixels.
+    /// 轮廓宽度（像素）。
     pub outline_width: f64,
-    /// Pixel size.
+    /// 像素尺寸。
     pub pixel_size: f64,
-    /// Scale by distance.
+    /// 按距离缩放。
     pub scale_by_distance: Option<NearFarScalar>,
-    /// Translucency by distance.
+    /// 按距离半透明。
     pub translucency_by_distance: Option<NearFarScalar>,
-    /// Distance display condition.
+    /// 距离显示条件。
     pub distance_display_condition: Option<DistanceDisplayCondition>,
-    /// User-defined ID.
+    /// 用户自定义 ID。
     pub id: Option<String>,
 }
 
@@ -478,9 +478,9 @@ impl Default for PointPrimitive {
     }
 }
 
-/// A collection of point primitives.
+/// 点图元的集合。
 ///
-/// Maps to CesiumJS `Scene/PointPrimitiveCollection.js`
+/// 映射到 CesiumJS `Scene/PointPrimitiveCollection.js`
 #[derive(Debug, Default)]
 pub struct PointPrimitiveCollection {
     points: Vec<PointPrimitive>,
@@ -488,19 +488,19 @@ pub struct PointPrimitiveCollection {
 }
 
 impl PointPrimitiveCollection {
-    /// Creates a new empty collection.
+    /// 创建新的空集合。
     pub fn new() -> Self {
         Self { points: Vec::new(), show: true }
     }
 
-    /// Adds a point to the collection.
+    /// 向集合添加一个点。
     pub fn add(&mut self, point: PointPrimitive) -> usize {
         let index = self.points.len();
         self.points.push(point);
         index
     }
 
-    /// Removes a point by index.
+    /// 按索引移除一个点。
     pub fn remove(&mut self, index: usize) -> Option<PointPrimitive> {
         if index < self.points.len() {
             Some(self.points.remove(index))
@@ -509,42 +509,42 @@ impl PointPrimitiveCollection {
         }
     }
 
-    /// Gets a point by index.
+    /// 按索引获取一个点。
     pub fn get(&self, index: usize) -> Option<&PointPrimitive> {
         self.points.get(index)
     }
 
-    /// Gets a mutable point by index.
+    /// 按索引获取一个可变点。
     pub fn get_mut(&mut self, index: usize) -> Option<&mut PointPrimitive> {
         self.points.get_mut(index)
     }
 
-    /// Number of points.
+    /// 点数量。
     pub fn len(&self) -> usize {
         self.points.len()
     }
 
-    /// Returns true if empty.
+    /// 若为空则返回 true。
     pub fn is_empty(&self) -> bool {
         self.points.is_empty()
     }
 
-    /// Iterates over points.
+    /// 遍历 points。
     pub fn iter(&self) -> impl Iterator<Item = &PointPrimitive> {
         self.points.iter()
     }
 
-    /// Whether the collection is shown.
+    /// 集合是否显示。
     pub fn show(&self) -> bool {
         self.show
     }
 
-    /// Sets whether the collection is shown.
+    /// 设置集合是否显示。
     pub fn set_show(&mut self, show: bool) {
         self.show = show;
     }
 
-    /// Clears all points.
+    /// 清除所有 points。
     pub fn clear(&mut self) {
         self.points.clear();
     }

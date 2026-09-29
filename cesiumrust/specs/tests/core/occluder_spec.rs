@@ -1,6 +1,6 @@
-//! Ported from `packages/engine/Specs/Core/OccluderSpec.js` (30 it(), 18 A-class)
+//! 移植自 `packages/engine/Specs/Core/OccluderSpec.js`（30 个 it()，18 个 A 类）
 //!
-//! B-class (throws) tests are omitted since Rust's type system enforces valid inputs.
+//! 省略 B 类（throws）测试，因为 Rust 的类型系统会强制输入合法。
 
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::occluder::{Occluder, Visibility};

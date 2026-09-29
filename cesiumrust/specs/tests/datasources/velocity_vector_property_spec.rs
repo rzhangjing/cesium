@@ -1,6 +1,6 @@
-//! DataSources/VelocityVectorPropertySpec.js → Rust integration tests
-//! Covers: construction, isConstant, getValue (normalized/unnormalized),
-//! equals, position changes
+//! DataSources/VelocityVectorPropertySpec.js → Rust 集成测试
+//! 覆盖：构造、isConstant、getValue（归一化/非归一化）、
+//! equals、position 变化
 
 use cesium_datasource::property_system::position::SampledPositionProperty;
 use cesium_datasource::property_system::value::ReferenceFrame;
@@ -9,7 +9,7 @@ use cesium_time::JulianDate;
 use glam::DVec3;
 use std::sync::Arc;
 
-// ─── Construction ───────────────────────────────────────────────────────────
+// ─── 构造 ───────────────────────────────────────────────────────────
 
 #[test]
 fn vvp_default_construct() {
@@ -33,7 +33,7 @@ fn vvp_construct_with_arguments() {
     assert!(!property.normalize());
 }
 
-// ─── getValue normalized ────────────────────────────────────────────────────
+// ─── getValue 归一化 ────────────────────────────────────────────────────
 
 #[test]
 fn vvp_normalized_value() {
@@ -62,7 +62,7 @@ fn vvp_normalized_value() {
     assert!((v.z - expected_direction.z).abs() < 1e-10);
 }
 
-// ─── getValue unnormalized ──────────────────────────────────────────────────
+// ─── getValue 非归一化 ──────────────────────────────────────────────────
 
 #[test]
 fn vvp_unnormalized_value() {
@@ -91,7 +91,7 @@ fn vvp_unnormalized_value() {
     assert!((v.z - expected_velocity.z).abs() < 1e-10);
 }
 
-// ─── Zero velocity ──────────────────────────────────────────────────────────
+// ─── 零速度 ──────────────────────────────────────────────────────────
 
 #[test]
 fn vvp_normalized_zero_velocity_returns_none() {
@@ -111,7 +111,7 @@ fn vvp_normalized_zero_velocity_returns_none() {
         true,
     );
 
-    // Zero velocity with normalize=true should return None
+    // normalize=true 的零速度应返回 None
     let result = property.get_value(&times[0]);
     assert!(result.is_none());
 }
@@ -134,7 +134,7 @@ fn vvp_unnormalized_zero_velocity_returns_zero() {
         false,
     );
 
-    // Zero velocity with normalize=false should return zero vector
+    // normalize=false 的零速度应返回零向量
     let result = property.get_value(&times[0]);
     assert!(result.is_some());
     let v = result.unwrap();
@@ -143,7 +143,7 @@ fn vvp_unnormalized_zero_velocity_returns_zero() {
     assert!((v.z).abs() < 1e-10);
 }
 
-// ─── No position ────────────────────────────────────────────────────────────
+// ─── 无 position ────────────────────────────────────────────────────────────
 
 #[test]
 fn vvp_no_position_returns_none() {
@@ -199,7 +199,7 @@ fn vvp_set_normalize() {
     assert!(property.normalize());
 }
 
-// ─── 3D velocity direction ──────────────────────────────────────────────────
+// ─── 3D 速度方向 ──────────────────────────────────────────────────
 
 #[test]
 fn vvp_3d_normalized_direction() {
@@ -223,12 +223,12 @@ fn vvp_3d_normalized_direction() {
     assert!(result.is_some());
     let v = result.unwrap();
 
-    // Should be normalized (1,1,1)/sqrt(3)
+    // 应被归一化为 (1,1,1)/sqrt(3)
     let expected = 1.0 / 3.0_f64.sqrt();
     assert!((v.x - expected).abs() < 1e-10);
     assert!((v.y - expected).abs() < 1e-10);
     assert!((v.z - expected).abs() < 1e-10);
 
-    // Verify it's unit length
+    // 验证其为单位长度
     assert!((v.length() - 1.0).abs() < 1e-10);
 }

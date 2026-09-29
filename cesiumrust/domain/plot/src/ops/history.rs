@@ -1,33 +1,32 @@
-//! The undo / redo history stack (plan §8 / §14): a pure, view-independent
-//! recorder of [`PlotCommand`]s the bridge drives from its edit gestures and
-//! keyboard shortcuts.
+//! 撤销 / 重做历史栈（计划 §8 / §14）：一个纯、与视图无关的
+//! [`PlotCommand`] 记录器，桥接层从它的编辑手势和键盘快捷键驱动。
 //!
-//! The stack is deliberately dumb so it is trivially testable: it stores the
-//! forward commands, applies their inverses on `undo`, and never inspects the
-//! [`Document`] itself. `record` clears the redo branch (a fresh edit after an
-//! undo invalidates the redo tail), matching every desktop editor's contract.
+//! 这个栈有意设计得很笨，以便极易测试：它存储正向命令，
+//! 在 `undo` 时应用它们的逆命令，且从不检查 [`Document`] 本身。
+//! `record` 会清空重做分支（一次撤销后的新编辑会使重做尾部失效），
+//! 符合每个桌面编辑器的契约。
 
 use crate::model::document::Document;
 
 use super::command::PlotCommand;
 
-/// An unbounded (bounded by an optional cap) undo / redo stack.
+/// 一个无界（由一个可选上限约束）的撤销 / 重做栈。
 #[derive(Debug, Clone, Default)]
 pub struct HistoryStack {
     undo: Vec<PlotCommand>,
     redo: Vec<PlotCommand>,
-    /// `Some(n)` trims the undo branch to the newest `n` entries; `None` = unlim
-    /// ited (the memory footprint of one plot session is small enough to keep).
+    /// `Some(n)` 将撤销分支修剪为最新的 `n` 个条目；`None` = 无限
+    /// （一次标绘会话的内存占用小到可以保留）。
     cap: Option<usize>,
 }
 
 impl HistoryStack {
-    /// An unlimited stack.
+    /// 一个无限的栈。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// A stack that keeps at most `cap` undo steps.
+    /// 一个至多保留 `cap` 个撤销步骤的栈。
     pub fn with_cap(cap: usize) -> Self {
         Self {
             undo: Vec::new(),
@@ -36,7 +35,7 @@ impl HistoryStack {
         }
     }
 
-    /// Record a just-applied command, dropping the redo branch.
+    /// 记录一个刚应用的命令，丢弃重做分支。
     pub fn record(&mut self, command: PlotCommand) {
         self.undo.push(command);
         self.redo.clear();
@@ -47,29 +46,29 @@ impl HistoryStack {
         }
     }
 
-    /// True when there is at least one command to undo.
+    /// 当至少有一个命令可撤销时为 true。
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
 
-    /// True when there is at least one command to redo.
+    /// 当至少有一个命令可重做时为 true。
     pub fn can_redo(&self) -> bool {
         !self.redo.is_empty()
     }
 
-    /// Number of recorded undo steps (for a "undo N" label / tests).
+    /// 已记录的撤销步骤数（用于一个“撤销 N”标签 / 测试）。
     pub fn undo_len(&self) -> usize {
         self.undo.len()
     }
 
-    /// Number of pending redo steps.
+    /// 待处理的重做步骤数。
     pub fn redo_len(&self) -> usize {
         self.redo.len()
     }
 
-    /// Undo the most recent command: apply its inverse, move it to the redo
-    /// branch. Returns the ids the command touched so the bridge can reconcile
-    /// those visuals; `None` when the stack is empty.
+    /// 撤销最近的命令：应用它的逆命令，将其移到重做
+    /// 分支。返回该命令触及的 id，以便桥接层调和
+    /// 那些视觉效果；栈为空时返回 `None`。
     pub fn undo(&mut self, doc: &mut Document) -> Option<Vec<crate::model::ids::ElementId>> {
         let command = self.undo.pop()?;
         let inverse = command.inverse();
@@ -79,8 +78,8 @@ impl HistoryStack {
         Some(targets)
     }
 
-    /// Redo the most recently undone command: re-apply it, move it back to the
-    /// undo branch. Returns the touched ids; `None` when nothing is redoable.
+    /// 重做最近被撤销的命令：重新应用它，将其移回撤销
+    /// 分支。返回触及的 id；无可重做项时返回 `None`。
     pub fn redo(&mut self, doc: &mut Document) -> Option<Vec<crate::model::ids::ElementId>> {
         let command = self.redo.pop()?;
         command.apply(doc);
@@ -89,7 +88,7 @@ impl HistoryStack {
         Some(targets)
     }
 
-    /// Forget all history (e.g. after loading a fresh document).
+    /// 遗忘所有历史（例如在加载一个新文档之后）。
     pub fn clear(&mut self) {
         self.undo.clear();
         self.redo.clear();
@@ -115,8 +114,8 @@ mod tests {
         }
     }
 
-    /// Mirror the bridge contract: apply a command to the document, then record
-    /// it so it becomes undoable.
+    /// 镜像桥接层契约：将一个命令应用到文档，然后记录
+    /// 它，使其可撤销。
     fn commit(h: &mut HistoryStack, doc: &mut Document, command: PlotCommand) {
         command.apply(doc);
         h.record(command);
@@ -140,18 +139,18 @@ mod tests {
         assert_eq!(doc.element_count(), 2);
         assert!(h.can_undo() && !h.can_redo());
 
-        // Undo the second add → element 2 gone, it becomes redoable.
+        // 撤销第二个 add → 元素 2 消失，它变为可重做。
         let touched = h.undo(&mut doc).unwrap();
         assert_eq!(touched, vec![ElementId(2)]);
         assert!(doc.element(ElementId(2)).is_none());
         assert!(h.can_undo() && h.can_redo());
 
-        // Undo the first → doc empty.
+        // 撤销第一个 → 文档为空。
         h.undo(&mut doc);
         assert!(doc.element(ElementId(1)).is_none());
         assert!(!h.can_undo() && h.can_redo());
 
-        // Redo both back in original order.
+        // 按原始顺序重做两个。
         h.redo(&mut doc);
         h.redo(&mut doc);
         assert!(doc.element(ElementId(1)).is_some());
@@ -167,10 +166,10 @@ mod tests {
         commit(&mut h, &mut doc, add(1, layer));
         h.undo(&mut doc);
         assert!(h.can_redo());
-        // A new edit clears the redo tail.
+        // 一次新编辑会清除重做尾部。
         commit(&mut h, &mut doc, add(3, layer));
         assert!(!h.can_redo());
-        // The undone add1 left the undo branch empty; add3 is now the sole step.
+        // 被撤销的 add1 使撤销分支变空；add3 现在是唯一的步骤。
         assert_eq!(h.undo_len(), 1);
     }
 

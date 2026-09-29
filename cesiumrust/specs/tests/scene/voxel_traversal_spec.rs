@@ -1,5 +1,5 @@
-//! Voxel traversal tests ported from CesiumJS SpatialNodeSpec.js + VoxelShapeTypeSpec.js
-//! Tests: SpatialNode children coordinates, VoxelShapeType bounds, traversal basics
+//! 体素遍历测试，移植自 CesiumJS SpatialNodeSpec.js + VoxelShapeTypeSpec.js
+//! 测试：SpatialNode 子节点坐标、VoxelShapeType 边界、遍历基础
 
 use cesium_voxel::{
     SpatialNode, VoxelBoxShape, VoxelCylinderShape, VoxelEllipsoidShape, VoxelShape,
@@ -8,12 +8,12 @@ use cesium_voxel::{
 use glam::{DMat4, DVec3};
 
 // ============================================================================
-// SpatialNode: constructs (from SpatialNodeSpec.js)
+// SpatialNode：构造（来自 SpatialNodeSpec.js）
 // ============================================================================
 
 #[test]
 fn test_spatial_node_constructs() {
-    // Ported from: SpatialNodeSpec "constructs"
+    // 移植自：SpatialNodeSpec "constructs"
     let node = SpatialNode::new(2, 1, 2, 3, [2, 3, 4]);
     assert_eq!(node.level, 2);
     assert_eq!(node.x, 1);
@@ -22,15 +22,15 @@ fn test_spatial_node_constructs() {
 }
 
 // ============================================================================
-// SpatialNode: returns coordinates of child (from SpatialNodeSpec.js)
+// SpatialNode：返回子节点坐标（来自 SpatialNodeSpec.js）
 // ============================================================================
 
 #[test]
 fn test_spatial_node_children_coordinates() {
-    // Ported from: SpatialNodeSpec "returns coordinates of child"
+    // 移植自：SpatialNodeSpec "returns coordinates of child"
     let node = SpatialNode::new(2, 1, 2, 3, [2, 3, 4]);
 
-    // CesiumJS expected child coordinates: [level, x, y, z]
+    // CesiumJS 期望的子节点坐标：[level, x, y, z]
     let expected: [(u32, u32, u32, u32); 8] = [
         (3, 2, 4, 6),
         (3, 3, 4, 6),
@@ -53,7 +53,7 @@ fn test_spatial_node_children_coordinates() {
 }
 
 // ============================================================================
-// SpatialNode: root and parent
+// SpatialNode：根节点与父节点
 // ============================================================================
 
 #[test]
@@ -74,12 +74,12 @@ fn test_spatial_node_root_and_parent() {
 }
 
 // ============================================================================
-// VoxelShapeType: getMinBounds works (from VoxelShapeTypeSpec.js)
+// VoxelShapeType：getMinBounds 工作正常（来自 VoxelShapeTypeSpec.js）
 // ============================================================================
 
 #[test]
 fn test_voxel_shape_type_min_bounds() {
-    // Ported from: VoxelShapeTypeSpec "getMinBounds works"
+    // 移植自：VoxelShapeTypeSpec "getMinBounds works"
     let box_min = VoxelShapeType::Box.default_min_bounds();
     assert_eq!(box_min, DVec3::new(-1.0, -1.0, -1.0));
 
@@ -95,12 +95,12 @@ fn test_voxel_shape_type_min_bounds() {
 }
 
 // ============================================================================
-// VoxelShapeType: getMaxBounds works (from VoxelShapeTypeSpec.js)
+// VoxelShapeType：getMaxBounds 工作正常（来自 VoxelShapeTypeSpec.js）
 // ============================================================================
 
 #[test]
 fn test_voxel_shape_type_max_bounds() {
-    // Ported from: VoxelShapeTypeSpec "getMaxBounds works"
+    // 移植自：VoxelShapeTypeSpec "getMaxBounds works"
     let box_max = VoxelShapeType::Box.default_max_bounds();
     assert_eq!(box_max, DVec3::new(1.0, 1.0, 1.0));
 
@@ -116,12 +116,12 @@ fn test_voxel_shape_type_max_bounds() {
 }
 
 // ============================================================================
-// VoxelShapeType: bounds consistency with shapes
+// VoxelShapeType：边界与各 shape 一致
 // ============================================================================
 
 #[test]
 fn test_voxel_shape_type_bounds_match_shapes() {
-    // Verify VoxelShapeType bounds match the actual shape defaults
+    // 验证 VoxelShapeType 边界与实际 shape 默认值一致
     let box_shape = VoxelBoxShape::new();
     assert_eq!(
         VoxelShapeType::Box.default_min_bounds(),
@@ -154,12 +154,12 @@ fn test_voxel_shape_type_bounds_match_shapes() {
 }
 
 // ============================================================================
-// VoxelTraversal: basic traversal
+// VoxelTraversal：基础遍历
 // ============================================================================
 
 #[test]
 fn test_voxel_traversal_basic() {
-    // Basic traversal with box shape
+    // 使用 box shape 的基础遍历
     let traversal = VoxelTraversal::default();
     assert!(traversal.is_level_available(0));
     assert!(traversal.is_level_available(1));
@@ -169,27 +169,27 @@ fn test_voxel_traversal_basic() {
 
     let result = traversal.traverse(&shape, DVec3::new(0.0, 0.0, 5.0), 1024.0, std::f64::consts::FRAC_PI_2);
 
-    // Should visit at least the root
+    // 至少应访问根节点
     assert!(result.nodes_visited > 0);
-    // Should have some render or refine nodes
+    // 应有若干 render 或 refine 节点
     assert!(!result.render_nodes.is_empty() || !result.refine_nodes.is_empty());
 }
 
 // ============================================================================
-// VoxelTraversal: level availability
+// VoxelTraversal：层级可用性
 // ============================================================================
 
 #[test]
 fn test_voxel_traversal_level_availability() {
     let mut traversal = VoxelTraversal::default();
 
-    // Disable level 2
+    // 禁用第 2 层
     traversal.set_level_available(2, false);
     assert!(traversal.is_level_available(0));
     assert!(traversal.is_level_available(1));
     assert!(!traversal.is_level_available(2));
-    assert!(traversal.is_level_available(3)); // Still available
+    assert!(traversal.is_level_available(3)); // 仍可用
 
-    // Non-existent level
+    // 不存在的层级
     assert!(!traversal.is_level_available(100));
 }

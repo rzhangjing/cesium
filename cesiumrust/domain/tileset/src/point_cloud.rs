@@ -1,34 +1,34 @@
-//! Point cloud rendering support for 3D Tiles.
+//! 3D Tiles 的点云渲染支持。
 //!
-//! Maps to CesiumJS:
+//! 镜像 CesiumJS：
 //! - `Scene/PointCloud.js`
 //! - `Scene/PointCloudShading.js`
 //! - `Scene/PointCloudEyeDomeLighting.js`
 //! - `Scene/TimeDynamicPointCloud.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格债务（deferred.md #18）；在 M13 lint-cleanup 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::field_reassign_with_default)]
 use crate::batch_table::FeatureTable;
 use glam::DVec3;
 
-/// Point cloud shading configuration.
+/// 点云着色配置。
 ///
-/// Maps to CesiumJS `Scene/PointCloudShading.js`
+/// 映射到 CesiumJS `Scene/PointCloudShading.js`
 #[derive(Debug, Clone)]
 pub struct PointCloudShading {
-    /// Whether attenuation is enabled (points shrink with distance).
+    /// 是否启用衰减（点随距离缩小）。
     pub attenuation: bool,
-    /// Base point size in pixels.
+    /// 基准点大小，像素。
     pub base_resolution: f64,
-    /// Whether eye dome lighting is enabled.
+    /// 是否启用 eye dome 光照。
     pub eye_dome_lighting: bool,
-    /// Eye dome lighting strength.
+    /// eye dome 光照强度。
     pub eye_dome_lighting_strength: f64,
-    /// Eye dome lighting radius.
+    /// eye dome 光照半径。
     pub eye_dome_lighting_radius: f64,
-    /// Back face culling enabled.
+    /// 背面 culing 启用。
     pub back_face_culling: bool,
-    /// Normal shading enabled (use normals for lighting).
+    /// 法线着色启用（使用法线进行光照）。
     pub normal_shading: bool,
 }
 
@@ -47,9 +47,9 @@ impl Default for PointCloudShading {
 }
 
 impl PointCloudShading {
-    /// Computes the attenuated point size based on distance.
+    /// 根据距离计算衰减后的点大小。
     ///
-    /// Maps to CesiumJS point cloud attenuation formula:
+    /// 映射到 CesiumJS 的点云衰减公式：
     /// `pointSize = baseSize * (attenuationFactor / distance)`
     pub fn compute_attenuated_size(
         &self,
@@ -61,18 +61,18 @@ impl PointCloudShading {
             return base_size;
         }
 
-        // Attenuation formula from CesiumJS
+        // 来自 CesiumJS 的衰减公式
         let attenuation_factor = viewport_height * 0.5;
         let attenuated = base_size * (attenuation_factor / distance);
 
-        // Clamp to reasonable range
+        // 鈐制到合理范围
         attenuated.clamp(1.0, 64.0)
     }
 
-    /// Computes eye dome lighting contribution for a point.
+    /// 计算一个点的 eye dome 光照贡献。
     ///
-    /// EDL enhances edges and silhouettes by comparing depths of neighboring pixels.
-    /// This is a simplified CPU-side computation for domain logic.
+    /// EDL 通过比较相邻像素的深度来增强边缘和轮廓。
+    /// 这是用于 domain 逻辑的简化 CPU 侧计算。
     pub fn compute_edl_response(
         &self,
         point_depth: f64,
@@ -82,62 +82,62 @@ impl PointCloudShading {
             return 1.0;
         }
 
-        // EDL: log2(depth) difference with neighbors
-        // When point is closer than neighbors (occluding edge), response < 1
+        // EDL：与邻居之间的 log2(depth) 差值
+        // 当点比邻居更近（遮挡边缘）时，响应 < 1
         let log_depth = (point_depth.max(1e-10)).log2();
         let mut response = 0.0;
 
         for &neighbor_depth in neighbor_depths {
             let log_neighbor = (neighbor_depth.max(1e-10)).log2();
-            // Positive when neighbor is farther (point is occluding)
+            // 当邻居更远时为正（点在遮挡）
             let diff = (log_neighbor - log_depth).max(0.0);
             response += diff;
         }
 
         response /= neighbor_depths.len() as f64;
 
-        // Apply strength and convert to shading factor
+        // 应用强度并转换为着色因子
         let shading = 1.0 - (response * self.eye_dome_lighting_strength * 0.1);
         shading.clamp(0.0, 1.0)
     }
 }
 
-/// A decoded point cloud from pnts content.
+/// 从 pnts 内容解码出的点云。
 ///
-/// Maps to CesiumJS `Scene/PointCloud.js`
+/// 映射到 CesiumJS `Scene/PointCloud.js`
 #[derive(Debug, Clone)]
 pub struct PointCloud {
-    /// Number of points.
+    /// 点数量。
     pub points_length: u32,
-    /// Point positions (relative to RTC_CENTER if present).
+    /// 点位置（若存在则相对于 RTC_CENTER）。
     pub positions: Vec<[f32; 3]>,
-    /// Point colors (RGB or RGBA, normalized 0-1).
+    /// 点颜色（RGB 或 RGBA，归一化 0-1）。
     pub colors: Option<Vec<[f32; 4]>>,
-    /// Point normals (for lighting).
+    /// 点法线（用于光照）。
     pub normals: Option<Vec<[f32; 3]>>,
-    /// Batch IDs (for feature association).
+    /// Batch ID（用于 feature 关联）。
     pub batch_ids: Option<Vec<u16>>,
-    /// Relative-to-center (RTC) translation.
+    /// 相对中心（RTC）平移。
     pub rtc_center: Option<[f64; 3]>,
-    /// Constant RGBA color (if all points share the same color).
+    /// 常量 RGBA 颜色（若所有点共享同一颜色）。
     pub constant_rgba: Option<[f32; 4]>,
-    /// Quantized positions (if using quantization).
+    /// 量子化位置（若使用量子化）。
     pub quantized_positions: Option<QuantizedPositions>,
 }
 
-/// Quantized position data for point clouds.
+/// 点云的量子化位置数据。
 #[derive(Debug, Clone)]
 pub struct QuantizedPositions {
-    /// Quantized position values (u16).
+    /// 量子化位置值（u16）。
     pub values: Vec<u16>,
-    /// Volume offset for dequantization.
+    /// 用于反量子化的体积偏移。
     pub volume_offset: [f32; 3],
-    /// Volume scale for dequantization.
+    /// 用于反量子化的体积缩放。
     pub volume_scale: [f32; 3],
 }
 
 impl QuantizedPositions {
-    /// Dequantizes a position at the given index.
+    /// 对给定索引处的位置进行反量子化。
     pub fn dequantize(&self, index: usize) -> [f32; 3] {
         let base = index * 3;
         if base + 2 >= self.values.len() {
@@ -157,19 +157,19 @@ impl QuantizedPositions {
 }
 
 impl PointCloud {
-    /// Decodes a point cloud from a feature table.
+    /// 从 feature table 解码点云。
     ///
-    /// Maps to CesiumJS `PntsParser.parse` + `PointCloud` constructor
+    /// 映射到 CesiumJS `PntsParser.parse` + `PointCloud` 构造函数
     pub fn from_feature_table(feature_table: &FeatureTable) -> Option<Self> {
         let points_length = feature_table.get_global_u32("POINTS_LENGTH")?;
 
-        // Get positions (either direct or quantized)
+        // 获取位置（直接量子化两种之一）
         let positions = if let Some(pos) = feature_table.get_positions() {
             pos
         } else if feature_table.has_property("POSITION_QUANTIZED") {
-            // Handle quantized positions
+            // 处理量子化位置
             let quantized = Self::decode_quantized_positions(feature_table)?;
-            // Dequantize all positions
+            // 对所有位置反量子化
             let mut positions = Vec::with_capacity(points_length as usize);
             for i in 0..points_length as usize {
                 positions.push(quantized.dequantize(i));
@@ -179,19 +179,19 @@ impl PointCloud {
             return None;
         };
 
-        // Get colors
+        // 获取颜色
         let colors = Self::decode_colors(feature_table, points_length);
 
-        // Get normals
+        // 获取法线
         let normals = feature_table.get_normals();
 
-        // Get batch IDs
+        // 获取 batch ID
         let batch_ids = feature_table.get_batch_ids();
 
-        // Get RTC center
+        // 获取 RTC 中心
         let rtc_center = feature_table.get_global_vec3("RTC_CENTER");
 
-        // Get constant RGBA
+        // 获取常量 RGBA
         let constant_rgba = feature_table
             .get_global_property("CONSTANT_RGBA")
             .and_then(|v| v.as_array())
@@ -208,7 +208,7 @@ impl PointCloud {
                 }
             });
 
-        // Get quantized positions metadata (for reference)
+        // 获取量子化位置元数据（供参考）
         let quantized_positions = if feature_table.has_property("POSITION_QUANTIZED") {
             Self::decode_quantized_positions(feature_table)
         } else {
@@ -227,13 +227,13 @@ impl PointCloud {
         })
     }
 
-    /// Decodes quantized positions from the feature table.
+    /// 从 feature table 解码量子化位置。
     fn decode_quantized_positions(feature_table: &FeatureTable) -> Option<QuantizedPositions> {
         let bin_ref = feature_table.get_binary_ref("POSITION_QUANTIZED")?;
         let count = feature_table.features_length as usize;
         let values = feature_table.read_u16_array(bin_ref.byte_offset, count * 3)?;
 
-        // Get quantization volume
+        // 获取量子化体积
         let volume_offset = feature_table
             .get_global_property("QUANTIZED_VOLUME_OFFSET")
             .and_then(|v| v.as_array())
@@ -265,22 +265,22 @@ impl PointCloud {
         })
     }
 
-    /// Decodes colors from the feature table.
+    /// 从 feature table 解码颜色。
     fn decode_colors(
         feature_table: &FeatureTable,
         points_length: u32,
     ) -> Option<Vec<[f32; 4]>> {
-        // Try RGBA first
+        // 先尝试 RGBA
         if let Some(rgba) = feature_table.get_colors_rgba() {
             return Some(rgba);
         }
 
-        // Try RGB (add alpha = 1.0)
+        // 尝试 RGB（添加 alpha = 1.0）
         if let Some(rgb) = feature_table.get_colors_rgb() {
             return Some(rgb.iter().map(|c| [c[0], c[1], c[2], 1.0]).collect());
         }
 
-        // Try RGB565 (compressed format)
+        // 尝试 RGB565（压缩格式）
         if let Some(bin_ref) = feature_table.get_binary_ref("RGB565") {
             let count = points_length as usize;
             let values = feature_table.read_u16_array(bin_ref.byte_offset, count)?;
@@ -299,7 +299,7 @@ impl PointCloud {
         None
     }
 
-    /// Gets the world position of a point (applying RTC center if present).
+    /// 获取一个点的世界位置（若存在则应用 RTC 中心）。
     pub fn get_world_position(&self, index: usize) -> Option<DVec3> {
         if index >= self.positions.len() {
             return None;
@@ -315,48 +315,48 @@ impl PointCloud {
         Some(world)
     }
 
-    /// Gets the color of a point.
+    /// 获取一个点的颜色。
     pub fn get_color(&self, index: usize) -> [f32; 4] {
-        // Use per-point color if available
+        // 若可用则使用逐点颜色
         if let Some(colors) = &self.colors {
             if index < colors.len() {
                 return colors[index];
             }
         }
 
-        // Use constant color if available
+        // 若可用则使用常量颜色
         if let Some(rgba) = self.constant_rgba {
             return rgba;
         }
 
-        // Default: white
+        // 默认：白色
         [1.0, 1.0, 1.0, 1.0]
     }
 
-    /// Gets the normal of a point.
+    /// 获取一个点的法线。
     pub fn get_normal(&self, index: usize) -> Option<[f32; 3]> {
         self.normals.as_ref().and_then(|n| n.get(index).copied())
     }
 
-    /// Computes the bounding sphere of the point cloud.
+    /// 计算点云的包围球。
     pub fn compute_bounding_sphere(&self) -> Option<(DVec3, f64)> {
         if self.positions.is_empty() {
             return None;
         }
 
-        // Compute center
+        // 计算中心
         let mut center = DVec3::ZERO;
         for pos in &self.positions {
             center += DVec3::new(pos[0] as f64, pos[1] as f64, pos[2] as f64);
         }
         center /= self.positions.len() as f64;
 
-        // Add RTC center
+        // 加上 RTC 中心
         if let Some(rtc) = self.rtc_center {
             center += DVec3::new(rtc[0], rtc[1], rtc[2]);
         }
 
-        // Compute radius
+        // 计算半径
         let mut radius_sq = 0.0f64;
         for pos in &self.positions {
             let mut world = DVec3::new(pos[0] as f64, pos[1] as f64, pos[2] as f64);
@@ -371,23 +371,23 @@ impl PointCloud {
     }
 }
 
-/// Time-dynamic point cloud configuration.
+/// 时间动态点云配置。
 ///
-/// Maps to CesiumJS `Scene/TimeDynamicPointCloud.js`
+/// 映射到 CesiumJS `Scene/TimeDynamicPointCloud.js`
 #[derive(Debug, Clone)]
 pub struct TimeDynamicPointCloud {
-    /// Whether the point cloud is time-dynamic.
+    /// 点云是否为时间动态。
     pub is_time_dynamic: bool,
-    /// Frame timestamps (in seconds from epoch).
+    /// 帧时间戳（以自历元起的秒计）。
     pub timestamps: Vec<f64>,
-    /// URIs for each frame.
+    /// 每帧的 URI。
     pub uris: Vec<String>,
-    /// Whether to interpolate between frames.
+    /// 是否在帧之间插值。
     pub interpolate: bool,
 }
 
 impl TimeDynamicPointCloud {
-    /// Creates a new time-dynamic point cloud.
+    /// 创建一个新的时间动态点云。
     pub fn new(timestamps: Vec<f64>, uris: Vec<String>) -> Self {
         Self {
             is_time_dynamic: !timestamps.is_empty(),
@@ -397,36 +397,36 @@ impl TimeDynamicPointCloud {
         }
     }
 
-    /// Gets the frame index for a given time.
+    /// 获取给定时间对应的帧索引。
     pub fn get_frame_index(&self, time: f64) -> Option<usize> {
         if self.timestamps.is_empty() {
             return None;
         }
 
-        // Find the frame at or just before the given time
+        // 查找在给定时间处或紧接其前的帧
         for (i, &ts) in self.timestamps.iter().enumerate() {
             if ts >= time {
                 return Some(i);
             }
         }
 
-        // Return last frame if time is after all timestamps
+        // 若时间晚于所有时间戳则返回最后一帧
         Some(self.timestamps.len() - 1)
     }
 
-    /// Gets the URI for a given time.
+    /// 获取给定时间对应的 URI。
     pub fn get_uri(&self, time: f64) -> Option<&str> {
         let index = self.get_frame_index(time)?;
         self.uris.get(index).map(|s| s.as_str())
     }
 
-    /// Gets the interpolation factor between two frames.
+    /// 获取两帧之间的插值因子。
     pub fn get_interpolation_factor(&self, time: f64) -> Option<(usize, usize, f64)> {
         if !self.interpolate || self.timestamps.len() < 2 {
             return None;
         }
 
-        // Find surrounding frames
+        // 查找相邻的帧
         for i in 0..self.timestamps.len() - 1 {
             let t0 = self.timestamps[i];
             let t1 = self.timestamps[i + 1];
@@ -489,7 +489,7 @@ mod tests {
         let mut shading = PointCloudShading::default();
         shading.attenuation = true;
 
-        // Closer points should be larger
+        // 更近的点应更大
         let size_near = shading.compute_attenuated_size(5.0, 100.0, 1080.0);
         let size_far = shading.compute_attenuated_size(5.0, 1000.0, 1080.0);
         assert!(size_near > size_far);
@@ -499,11 +499,11 @@ mod tests {
     fn test_edl_response() {
         let shading = PointCloudShading::default();
 
-        // Point at same depth as neighbors: no edge
+        // 点与邻居深度相同：无边缘
         let response_flat = shading.compute_edl_response(100.0, &[100.0, 100.0, 100.0, 100.0]);
         assert!((response_flat - 1.0).abs() < 0.01);
 
-        // Point closer than neighbors: edge detected
+        // 点比邻居更近：检测到边缘
         let response_edge = shading.compute_edl_response(50.0, &[100.0, 100.0, 100.0, 100.0]);
         assert!(response_edge < 1.0);
     }
@@ -523,15 +523,15 @@ mod tests {
     #[test]
     fn test_point_cloud_with_colors() {
         let mut binary = Vec::new();
-        // Positions
+        // 位置
         for i in 0..2u32 {
             binary.extend_from_slice(&(i as f32).to_le_bytes());
             binary.extend_from_slice(&0.0f32.to_le_bytes());
             binary.extend_from_slice(&0.0f32.to_le_bytes());
         }
-        // RGB colors (u8)
-        binary.extend_from_slice(&[255u8, 0, 0]); // red
-        binary.extend_from_slice(&[0u8, 255, 0]); // green
+        // RGB 颜色（u8）
+        binary.extend_from_slice(&[255u8, 0, 0]); // 红
+        binary.extend_from_slice(&[0u8, 255, 0]); // 绿
 
         let json = json!({
             "POINTS_LENGTH": 2,
@@ -543,8 +543,8 @@ mod tests {
         let pc = PointCloud::from_feature_table(&ft).unwrap();
 
         let colors = pc.colors.as_ref().unwrap();
-        assert!((colors[0][0] - 1.0).abs() < 0.01); // red
-        assert!((colors[1][1] - 1.0).abs() < 0.01); // green
+        assert!((colors[0][0] - 1.0).abs() < 0.01); // 红
+        assert!((colors[1][1] - 1.0).abs() < 0.01); // 绿
     }
 
     #[test]
@@ -576,14 +576,14 @@ mod tests {
         let ft = create_feature_table_with_positions(1);
         let mut pc = PointCloud::from_feature_table(&ft).unwrap();
 
-        // Default: white
+        // 默认：白色
         assert_eq!(pc.get_color(0), [1.0, 1.0, 1.0, 1.0]);
 
-        // With constant color
+        // 带常量颜色
         pc.constant_rgba = Some([1.0, 0.0, 0.0, 1.0]);
         assert_eq!(pc.get_color(0), [1.0, 0.0, 0.0, 1.0]);
 
-        // With per-point colors
+        // 带逐点颜色
         pc.colors = Some(vec![[0.0, 1.0, 0.0, 1.0]]);
         assert_eq!(pc.get_color(0), [0.0, 1.0, 0.0, 1.0]);
     }
@@ -595,7 +595,7 @@ mod tests {
 
         let (center, radius) = pc.compute_bounding_sphere().unwrap();
 
-        // Center should be average of positions
+        // 中心应为位置的平均值
         assert!((center.x - 1.0).abs() < 1e-6); // (0+1+2)/3
         assert!((center.y - 2.0).abs() < 1e-6); // (0+2+4)/3
         assert!((center.z - 3.0).abs() < 1e-6); // (0+3+6)/3
@@ -613,8 +613,8 @@ mod tests {
 
         let pos = quantized.dequantize(0);
         assert!((pos[0] - 0.0).abs() < 0.01);
-        assert!((pos[1] - 10.0).abs() < 0.01); // 50% of 20
-        assert!((pos[2] - 30.0).abs() < 0.01); // 100% of 30
+        assert!((pos[1] - 10.0).abs() < 0.01); // 20 的 50%
+        assert!((pos[2] - 30.0).abs() < 0.01); // 30 的 100%
     }
 
     #[test]
@@ -632,7 +632,7 @@ mod tests {
         assert!(tdpc.is_time_dynamic);
         assert_eq!(tdpc.get_frame_index(0.5), Some(1));
         assert_eq!(tdpc.get_frame_index(1.5), Some(2));
-        assert_eq!(tdpc.get_frame_index(5.0), Some(3)); // after all timestamps
+        assert_eq!(tdpc.get_frame_index(5.0), Some(3)); // 在所有时间戳之后
 
         assert_eq!(tdpc.get_uri(0.5), Some("frame1.pnts"));
         assert_eq!(tdpc.get_uri(2.5), Some("frame3.pnts"));
@@ -660,11 +660,11 @@ mod tests {
     #[test]
     fn test_point_cloud_with_normals() {
         let mut binary = Vec::new();
-        // Positions
+        // 位置
         binary.extend_from_slice(&0.0f32.to_le_bytes());
         binary.extend_from_slice(&0.0f32.to_le_bytes());
         binary.extend_from_slice(&0.0f32.to_le_bytes());
-        // Normals
+        // 法线
         binary.extend_from_slice(&0.0f32.to_le_bytes());
         binary.extend_from_slice(&0.0f32.to_le_bytes());
         binary.extend_from_slice(&1.0f32.to_le_bytes());

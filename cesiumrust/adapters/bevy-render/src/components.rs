@@ -1,15 +1,15 @@
-//! Bevy ECS components for CesiumRust domain types.
+//! 面向 CesiumRust 领域类型的 Bevy ECS 组件。
 //!
-//! In "hybrid mode", these domain-component structs are used directly as
-//! Bevy Components for rendering, while IO uses port traits.
+//! 在“混合模式”下，这些领域组件结构体被直接用作渲染的
+//! Bevy Component，而 IO 则使用 port trait。
 
 use bevy::prelude::*;
 
-/// Marker component for the main globe entity (root of all globe children).
+/// 主地球实体的标记组件（所有地球子实体的根）。
 #[derive(Component)]
 pub struct CesiumGlobe;
 
-/// Component for terrain tile entities.
+/// 地形瓦片实体的组件。
 #[derive(Component)]
 pub struct CesiumTerrainTile {
     pub x: u32,
@@ -17,14 +17,14 @@ pub struct CesiumTerrainTile {
     pub level: u32,
 }
 
-/// Component for 3D Tiles tileset root entity.
+/// 3D Tiles 瓦片集根实体的组件。
 #[derive(Component)]
 pub struct CesiumTilesetRoot {
     pub url: String,
     pub loading_state: TilesetLoadingState,
 }
 
-/// Loading states for tilesets.
+/// 瓦片集的加载状态。
 pub enum TilesetLoadingState {
     NotLoaded,
     Loading,
@@ -32,7 +32,7 @@ pub enum TilesetLoadingState {
     Failed(String),
 }
 
-/// Component for individual 3D Tiles tile entities.
+/// 单个 3D Tiles 瓦片实体的组件。
 #[derive(Component)]
 pub struct CesiumTileNode {
     pub path: Vec<usize>,
@@ -52,7 +52,7 @@ pub enum TileContentState {
     Refined,
 }
 
-/// Component for loaded tile content (mesh + texture).
+/// 已加载瓦片内容的组件（mesh + texture）。
 #[derive(Component)]
 pub struct TileContent {
     pub mesh_handle: Option<Handle<Mesh>>,
@@ -60,7 +60,7 @@ pub struct TileContent {
     pub has_batch_table: bool,
 }
 
-/// Component for imagery layer entities (children of globe).
+/// 影像图层实体的组件（地球的子节点）。
 #[derive(Component)]
 pub struct CesiumImageryLayer {
     pub layer_index: u32,

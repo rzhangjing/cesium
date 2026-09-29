@@ -1,5 +1,5 @@
 //! Core/IntersectionTestsSpec.js → Rust integration tests
-//! Faithful port of A-class test cases (excludes "throws" tests).
+//! A 类测试用例的忠实移植（不含 "throws" 测试）。
 
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::ray::{
@@ -264,7 +264,7 @@ fn ray_sphere_outside_intersections() {
     let (start, _stop) = ray_sphere(&ray, &unit_sphere).unwrap();
     assert_approx!(start, 1.0, epsilon::EPSILON14);
 
-    // Pointing away: no intersection
+    // 背离：无相交
     let ray = Ray::new(DVec3::new(-2.0, 0.0, 0.0), DVec3::new(-1.0, 0.0, 0.0));
     assert!(ray_sphere(&ray, &unit_sphere).is_none());
 
@@ -365,7 +365,7 @@ fn ray_sphere_intersection_with_non_origin_center() {
     let (start, _stop) = ray_sphere(&ray, &sphere).unwrap();
     assert_approx!(start, 1.0, epsilon::EPSILON14);
 
-    // Pointing away
+    // 背离
     let ray = Ray::new(DVec3::new(198.0, 0.0, 0.0), DVec3::new(-1.0, 0.0, 0.0));
     assert!(ray_sphere(&ray, &sphere).is_none());
 
@@ -422,7 +422,7 @@ fn ray_ellipsoid_outside_intersections() {
     let (start, _stop) = ray_ellipsoid(&ray, &unit_sphere).unwrap();
     assert_approx!(start, 1.0, epsilon::EPSILON14);
 
-    // Pointing away
+    // 背离
     let ray = Ray::new(DVec3::new(-2.0, 0.0, 0.0), DVec3::new(-1.0, 0.0, 0.0));
     assert!(ray_ellipsoid(&ray, &unit_sphere).is_none());
 

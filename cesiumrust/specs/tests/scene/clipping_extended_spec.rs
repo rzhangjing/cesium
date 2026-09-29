@@ -1,5 +1,5 @@
-//! ClippingPlane + ClippingPlaneCollection extended specs
-//! Ported from CesiumJS Scene/ClippingPlaneSpec.js + Scene/ClippingPlaneCollectionSpec.js
+//! ClippingPlane + ClippingPlaneCollection 扩展 specs
+//! 移植自 CesiumJS Scene/ClippingPlaneSpec.js + Scene/ClippingPlaneCollectionSpec.js
 
 use cesium_effects::{ClippingPlane, ClippingPlaneCollection, Intersect};
 use glam::{DMat4, DVec3};
@@ -17,20 +17,20 @@ fn clipping_plane_new_normalizes() {
 #[test]
 fn clipping_plane_signed_distance() {
     let plane = ClippingPlane::new(DVec3::new(1.0, 0.0, 0.0), 0.0);
-    // Point on positive side
+    // 位于正侧的点
     assert!((plane.signed_distance(DVec3::new(5.0, 0.0, 0.0)) - 5.0).abs() < 1e-10);
-    // Point on negative side
+    // 位于负侧的点
     assert!((plane.signed_distance(DVec3::new(-3.0, 0.0, 0.0)) - (-3.0)).abs() < 1e-10);
-    // Point on plane
+    // 位于平面上的点
     assert!((plane.signed_distance(DVec3::new(0.0, 5.0, 3.0))).abs() < 1e-10);
 }
 
 #[test]
 fn clipping_plane_is_inside() {
     let plane = ClippingPlane::new(DVec3::new(0.0, 1.0, 0.0), -2.0);
-    // Inside: dot(normal, point) + distance >= 0 → y - 2 >= 0 → y >= 2
+    // 内部：dot(normal, point) + distance >= 0 → y - 2 >= 0 → y >= 2
     assert!(plane.is_inside(DVec3::new(0.0, 3.0, 0.0)));
-    assert!(plane.is_inside(DVec3::new(0.0, 2.0, 0.0))); // On plane
+    assert!(plane.is_inside(DVec3::new(0.0, 2.0, 0.0))); // 在平面上
     assert!(!plane.is_inside(DVec3::new(0.0, 1.0, 0.0)));
 }
 
@@ -46,12 +46,12 @@ fn clipping_plane_to_from_vec4() {
 #[test]
 fn clipping_plane_transform_translation() {
     let plane = ClippingPlane::new(DVec3::new(1.0, 0.0, 0.0), 0.0);
-    // Translate by (5, 0, 0)
+    // 平移 (5, 0, 0)
     let matrix = DMat4::from_translation(DVec3::new(5.0, 0.0, 0.0));
     let transformed = plane.transform(&matrix);
-    // Normal should remain the same (translation doesn't affect normals)
+    // 法线应保持不变（平移不影响法线）
     assert!((transformed.normal.x - 1.0).abs() < 1e-10);
-    // Distance should change: plane at x=0 moved to x=5 → distance = -5
+    // 距离应改变：位于 x=0 的平面移动到 x=5 → distance = -5
     assert!((transformed.distance - (-5.0)).abs() < 1e-10);
 }
 
@@ -89,7 +89,7 @@ fn collection_remove() {
     let removed = collection.remove(0);
     assert!(removed.is_some());
     assert_eq!(collection.len(), 1);
-    // Out of bounds
+    // 越界
     assert!(collection.remove(5).is_none());
 }
 
@@ -110,37 +110,37 @@ fn collection_clipping_planes_state() {
         ClippingPlane::new(DVec3::new(0.0, 1.0, 0.0), 0.0),
         ClippingPlane::new(DVec3::new(0.0, 0.0, 1.0), 0.0),
     ]);
-    // Intersection mode (default): negative
+    // 相交模式（默认）：结果为负
     assert_eq!(collection.clipping_planes_state(), -3);
-    // Union mode: positive
+    // 并集模式：结果为正
     collection.union_clipping_regions = true;
     assert_eq!(collection.clipping_planes_state(), 3);
 }
 
 #[test]
 fn collection_is_clipped_intersection_mode() {
-    // Intersection mode: clip only if outside ALL planes
+    // 相交模式：仅当位于所有平面之外时才裁剪
     let collection = ClippingPlaneCollection::with_planes(vec![
         ClippingPlane::new(DVec3::new(1.0, 0.0, 0.0), 0.0), // x >= 0
         ClippingPlane::new(DVec3::new(-1.0, 0.0, 0.0), 10.0), // x <= 10
     ]);
-    // Inside both → not clipped
+    // 同时在两个内部 → 不裁剪
     assert!(!collection.is_clipped(DVec3::new(5.0, 0.0, 0.0)));
-    // Outside one but inside other → not clipped (intersection mode)
+    // 在一个之外但在另一个之内 → 不裁剪（相交模式）
     assert!(!collection.is_clipped(DVec3::new(-1.0, 0.0, 0.0)));
     // Outside both (x>10: outside plane1's x>=0? No. Let's use x=-5: outside x>=0 AND outside x<=10)
     // x=-5: plane1 signed_dist=-5<0(outside), plane2 signed_dist=5+10=15>0(inside)
     // Need outside BOTH: x=15 → plane1: 15>0(inside), plane2: -15+10=-5<0(outside)
-    // Actually for intersection mode, we need a point outside ALL planes.
-    // Plane1 keeps x>=0, Plane2 keeps x<=10. Outside both = impossible for finite x.
-    // Use a different setup: two planes forming a corner
+    // 实际上对于相交模式，我们需要一个位于所有平面之外的点。
+    // Plane1 保留 x>=0，Plane2 保留 x<=10。同时在两者之外 = 对有限 x 不可能。
+    // 改用另一种设置：两个平面构成一个角
     let collection2 = ClippingPlaneCollection::with_planes(vec![
         ClippingPlane::new(DVec3::new(1.0, 0.0, 0.0), 0.0), // x >= 0
         ClippingPlane::new(DVec3::new(0.0, 1.0, 0.0), 0.0), // y >= 0
     ]);
-    // Outside both: x<0 AND y<0
+    // 同时在两者之外：x<0 且 y<0
     assert!(collection2.is_clipped(DVec3::new(-1.0, -1.0, 0.0)));
-    // Outside one only → not clipped in intersection mode
+    // 仅在一个之外 → 相交模式下不裁剪
     assert!(!collection2.is_clipped(DVec3::new(-1.0, 5.0, 0.0)));
 }
 
@@ -151,9 +151,9 @@ fn collection_is_clipped_union_mode() {
         ClippingPlane::new(DVec3::new(0.0, 1.0, 0.0), 0.0), // y >= 0
     ]);
     collection.union_clipping_regions = true;
-    // Inside both → not clipped
+    // 同时在两个内部 → 不裁剪
     assert!(!collection.is_clipped(DVec3::new(1.0, 1.0, 0.0)));
-    // Outside ANY → clipped (union mode)
+    // 位于任一之外 → 裁剪（并集模式）
     assert!(collection.is_clipped(DVec3::new(-1.0, 1.0, 0.0)));
     assert!(collection.is_clipped(DVec3::new(1.0, -1.0, 0.0)));
 }
@@ -174,7 +174,7 @@ fn collection_intersect_bounding_sphere_inside() {
         DVec3::new(1.0, 0.0, 0.0),
         0.0,
     )]);
-    // Sphere fully on positive side
+    // 球体完全位于正侧
     let result = collection.intersect_bounding_sphere(DVec3::new(10.0, 0.0, 0.0), 1.0);
     assert_eq!(result, Intersect::Inside);
 }
@@ -185,7 +185,7 @@ fn collection_intersect_bounding_sphere_outside() {
         DVec3::new(1.0, 0.0, 0.0),
         0.0,
     )]);
-    // Sphere fully on negative side
+    // 球体完全位于负侧
     let result = collection.intersect_bounding_sphere(DVec3::new(-10.0, 0.0, 0.0), 1.0);
     assert_eq!(result, Intersect::Outside);
 }
@@ -196,7 +196,7 @@ fn collection_intersect_bounding_sphere_intersecting() {
         DVec3::new(1.0, 0.0, 0.0),
         0.0,
     )]);
-    // Sphere straddles the plane
+    // 球体横跨平面
     let result = collection.intersect_bounding_sphere(DVec3::new(0.5, 0.0, 0.0), 1.0);
     assert_eq!(result, Intersect::Intersecting);
 }
@@ -209,8 +209,8 @@ fn collection_pack_planes() {
     ]);
     let packed = collection.pack_planes();
     assert_eq!(packed.len(), 8); // 2 planes * 4 values
-    assert!((packed[0] - 1.0).abs() < 1e-10); // First plane normal.x
-    assert!((packed[3] - 5.0).abs() < 1e-10); // First plane distance
-    assert!((packed[5] - 1.0).abs() < 1e-10); // Second plane normal.y
-    assert!((packed[7] - (-3.0)).abs() < 1e-10); // Second plane distance
+    assert!((packed[0] - 1.0).abs() < 1e-10); // 第一个平面 normal.x
+    assert!((packed[3] - 5.0).abs() < 1e-10); // 第一个平面 distance
+    assert!((packed[5] - 1.0).abs() < 1e-10); // 第二个平面 normal.y
+    assert!((packed[7] - (-3.0)).abs() < 1e-10); // 第二个平面 distance
 }

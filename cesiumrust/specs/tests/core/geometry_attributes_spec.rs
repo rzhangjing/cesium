@@ -1,8 +1,8 @@
-//! Detailed geometry attribute specs - ported from Core/WallGeometrySpec.js,
-//! Core/CorridorGeometrySpec.js, Core/EllipseGeometrySpec.js,
+//! 详细几何属性规格 - 移植自 Core/WallGeometrySpec.js、
+//! Core/CorridorGeometrySpec.js、Core/EllipseGeometrySpec.js、
 //! Core/PolylineGeometrySpec.js
 //!
-//! Tests mathematical properties: heights, widths, normals, positions on surface.
+//! 测试数学属性：高度、宽度、法线、表面上的位置。
 
 use cesium_geospatial::geometry::{
     corridor_geometry, wall_geometry, wall_outline_geometry,
@@ -18,7 +18,7 @@ fn wgs84() -> Ellipsoid {
     Ellipsoid::WGS84
 }
 
-// ─── WallGeometry (from WallGeometrySpec.js) ───────────────────────────────
+// ─── WallGeometry（来自 WallGeometrySpec.js）───────────────────────────────
 
 #[test]
 fn wall_creates_positions_relative_to_ellipsoid() {
@@ -40,7 +40,7 @@ fn wall_creates_positions_relative_to_ellipsoid() {
     assert!(geo.positions.len() >= 4, "wall should have at least 4 positions");
     assert!(!geo.indices.is_empty());
 
-    // First position should be at height 0 (bottom)
+    // 第一个位置应在高度 0（底部）
     let first = DVec3::from(geo.positions[0]);
     let carto = e.cartesian_to_cartographic(first).unwrap();
     assert!(
@@ -68,7 +68,7 @@ fn wall_creates_positions_with_min_max_heights() {
 
     assert!(geo.positions.len() >= 4);
 
-    // Verify heights are within the specified range
+    // 验证高度在指定范围内
     for p in &geo.positions {
         let carto = e.cartesian_to_cartographic(DVec3::from(*p)).unwrap();
         assert!(
@@ -82,7 +82,7 @@ fn wall_creates_positions_with_min_max_heights() {
 fn wall_cleans_positions_with_duplicates() {
     // WallGeometrySpec: "cleans positions with duplicates"
     let e = wgs84();
-    // Three positions where first two are the same lon/lat (different height)
+    // 三个位置，前两个经纬度相同（高度不同）
     let positions = vec![
         e.cartographic_to_cartesian(&Cartographic::from_degrees(49.0, 18.0, 1000.0)),
         e.cartographic_to_cartesian(&Cartographic::from_degrees(49.0, 18.0, 5000.0)),
@@ -97,7 +97,7 @@ fn wall_cleans_positions_with_duplicates() {
     };
     let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
 
-    // Should still produce valid geometry (duplicates merged)
+    // 仍应产生有效几何（重复项已合并）
     assert!(!geo.positions.is_empty());
     assert!(!geo.indices.is_empty());
 }
@@ -141,7 +141,7 @@ fn wall_from_constant_heights() {
     let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
 
     assert!(!geo.positions.is_empty());
-    // All positions should be between 0 and 5000 height
+    // 所有位置的高度应在 0 到 5000 之间
     for p in &geo.positions {
         let carto = e.cartesian_to_cartographic(DVec3::from(*p)).unwrap();
         assert!(
@@ -151,11 +151,11 @@ fn wall_from_constant_heights() {
     }
 }
 
-// ─── CorridorGeometry (from CorridorGeometrySpec.js) ───────────────────────
+// ─── CorridorGeometry（来自 CorridorGeometrySpec.js）──────────────────────
 
 #[test]
 fn corridor_computes_positions_mitered() {
-    // CorridorGeometrySpec: "computes positions" with MITERED corner
+    // CorridorGeometrySpec: "computes positions"，MITERED 拐角
     let e = wgs84();
     let opts = CorridorOptions {
         positions: vec![
@@ -201,8 +201,8 @@ fn corridor_computes_all_vertex_attributes() {
 
 #[test]
 fn corridor_width_is_respected() {
-    // Verify corridor width by checking distance between left and right edges
-    // Corridor goes northward at lon=0, so width extends in y-direction (east-west)
+    // 通过检查左右边缘之间的距离来验证通道宽度
+    // 通道在 lon=0 处向北延伸，因此宽度沿 y 方向（东西向）扩展
     let e = wgs84();
     let width = 50000.0;
     let opts = CorridorOptions {
@@ -218,8 +218,8 @@ fn corridor_width_is_respected() {
     };
     let geo = corridor_geometry(&opts, VertexFormat::POSITION_ONLY);
 
-    // At lon=0, lat=0: east direction is y-axis in ECEF
-    // Compute the extent perpendicular to the path (east-west = y-axis)
+    // 在 lon=0, lat=0：东方向在 ECEF 中为 y 轴
+    // 计算垂直于路径的范围（东西向 = y 轴）
     let mut min_y = f64::MAX;
     let mut max_y = f64::MIN;
     for p in &geo.positions {
@@ -228,7 +228,7 @@ fn corridor_width_is_respected() {
     }
     let y_extent = max_y - min_y;
 
-    // y-extent should be approximately equal to width (±30%)
+    // y 方向范围应近似等于宽度（±30%）
     assert!(
         (y_extent - width).abs() < width * 0.3,
         "corridor y-extent {} should ≈ width {}", y_extent, width
@@ -262,7 +262,7 @@ fn corridor_corner_types_produce_different_geometry() {
         ..Default::default()
     }, VertexFormat::POSITION_ONLY);
 
-    // Rounded corners should produce more vertices than mitered
+    // 圆角应比斜角产生更多顶点
     assert!(
         rounded.positions.len() >= mitered.positions.len(),
         "rounded ({}) should have >= vertices than mitered ({})",
@@ -270,7 +270,7 @@ fn corridor_corner_types_produce_different_geometry() {
     );
 }
 
-// ─── EllipseGeometry (from EllipseGeometrySpec.js) ─────────────────────────
+// ─── EllipseGeometry（来自 EllipseGeometrySpec.js）──────────────────────
 
 #[test]
 fn ellipse_computes_positions() {
@@ -317,7 +317,7 @@ fn ellipse_computes_all_vertex_attributes() {
 
 #[test]
 fn ellipse_positions_on_surface() {
-    // All positions should be on the ellipsoid surface (at height 0)
+    // 所有位置应在椭球表面上（高度 0）
     let e = wgs84();
     let center = e.cartographic_to_cartesian(&Cartographic::from_degrees(10.0, 20.0, 0.0));
     let opts = EllipseOptions {
@@ -360,7 +360,7 @@ fn ellipse_outline_produces_lines() {
     assert_eq!(geo.indices.len() % 2, 0, "outline indices should be line pairs");
 }
 
-// ─── PolylineGeometry (from PolylineGeometrySpec.js) ───────────────────────
+// ─── PolylineGeometry（来自 PolylineGeometrySpec.js）─────────────────────
 
 #[test]
 fn polyline_computes_positions() {
@@ -385,7 +385,7 @@ fn polyline_computes_positions() {
 
 #[test]
 fn polyline_width_is_respected() {
-    // Verify polyline produces geometry with width
+    // 验证折线产生带宽度的几何
     let e = wgs84();
     let width = 1000.0;
     let opts = PolylineOptions {
@@ -400,7 +400,7 @@ fn polyline_width_is_respected() {
     };
     let geo = polyline_geometry(&opts, VertexFormat::POSITION_ONLY);
 
-    // Should have positions on both sides of the centerline
+    // 应在中心线两侧都有位置
     assert!(geo.positions.len() >= 4, "polyline with width should have >= 4 positions");
 }
 
@@ -426,7 +426,7 @@ fn polyline_computes_all_vertex_attributes() {
     }
 }
 
-// ─── Cross-cutting: bounding sphere contains all positions ─────────────────
+// ─── 交叉测试：包围球包含所有位置 ─────────────────
 
 #[test]
 fn wall_bounding_sphere_contains_all_positions() {

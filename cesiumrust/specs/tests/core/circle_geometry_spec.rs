@@ -1,6 +1,6 @@
-//! CircleGeometry specs - ported from Core/CircleGeometrySpec.js
+//! CircleGeometry 规格 - 移植自 Core/CircleGeometrySpec.js
 //!
-//! Tests circle geometry generation on ellipsoid surface.
+//! 测试椭球面上的圆几何生成。
 
 use cesium_geospatial::geometry::{circle_geometry, VertexFormat};
 use cesium_geospatial::Ellipsoid;
@@ -9,12 +9,12 @@ use glam::DVec3;
 const EPSILON10: f64 = 1e-10;
 const EPSILON7: f64 = 1e-7;
 
-// ─── CircleGeometry (from CircleGeometrySpec.js) ──────────────────────────────
+// ─── CircleGeometry（来自 CircleGeometrySpec.js）──────────────────────────────
 
 #[test]
 fn circle_geometry_throws_without_center() {
     // CircleGeometrySpec: "throws without a center"
-    // Rust implementation returns default geometry instead of throwing
+    // Rust 实现返回默认几何而非抛出异常
     let geo = circle_geometry(
         DVec3::ZERO, // center
         1.0, // radius
@@ -22,13 +22,13 @@ fn circle_geometry_throws_without_center() {
         16, // segments
         VertexFormat::POSITION_ONLY,
     );
-    assert_eq!(geo.positions.len(), 18); // 1 center + 17 ring vertices (0..=16)
+    assert_eq!(geo.positions.len(), 18); // 1 个中心 + 17 个环顶点（0..=16）
 }
 
 #[test]
 fn circle_geometry_throws_without_radius() {
     // CircleGeometrySpec: "throws without a radius"
-    // Rust implementation requires radius parameter
+    // Rust 实现要求 radius 参数
     let geo = circle_geometry(
         DVec3::new(1.0, 0.0, 0.0), // center
         1.0, // radius
@@ -42,8 +42,8 @@ fn circle_geometry_throws_without_radius() {
 #[test]
 fn circle_geometry_throws_with_negative_segments() {
     // CircleGeometrySpec: "throws with a negative granularity"
-    // Rust implementation uses u32 for segments, so negative not possible
-    // Test with 0 segments instead
+    // Rust 实现的 segments 使用 u32，因此负值不可能
+    // 改用 0 段测试
     let geo = circle_geometry(
         DVec3::new(1.0, 0.0, 0.0),
         1.0,
@@ -51,7 +51,7 @@ fn circle_geometry_throws_with_negative_segments() {
         0, // segments = 0
         VertexFormat::POSITION_ONLY,
     );
-    // With segments=0, produces 1 center + 1 ring vertex = 2 vertices
+    // segments=0 时，产生 1 个中心 + 1 个环顶点 = 2 个顶点
     assert_eq!(geo.positions.len(), 2);
 }
 
@@ -62,13 +62,13 @@ fn circle_geometry_computes_positions() {
         DVec3::ZERO,
         1.0,
         &Ellipsoid::WGS84,
-        16, // granularity ~0.1 radians
+        16, // 粒度 ~0.1 弧度
         VertexFormat::POSITION_ONLY,
     );
 
-    // 1 center + 17 ring vertices = 18 positions (0..=16)
+    // 1 个中心 + 17 个环顶点 = 18 个位置（0..=16）
     assert_eq!(geo.positions.len(), 18);
-    // 16 triangles (center + 2 ring vertices each, i from 0 to segments-1)
+    // 16 个三角形（中心 + 每处 2 个环顶点，i 从 0 到 segments-1）
     assert_eq!(geo.indices.len(), 48); // 16 * 3
     assert!((geo.bounding_sphere.radius - 1.0).abs() < EPSILON10);
 }
@@ -94,7 +94,7 @@ fn circle_geometry_compute_all_vertex_attributes() {
 #[test]
 fn circle_geometry_degenerate_radius_zero() {
     // CircleGeometrySpec: "undefined is returned if radius is equal to or less than zero"
-    // Rust implementation produces minimal geometry
+    // Rust 实现产生最小几何
     let geo = circle_geometry(
         DVec3::new(250000.0, 250000.0, 250000.0),
         0.0,
@@ -103,16 +103,16 @@ fn circle_geometry_degenerate_radius_zero() {
         VertexFormat::POSITION_ONLY,
     );
 
-    // Current implementation doesn't degenerate for zero/negative radius
-    // Still produces full circle geometry
+    // 当前实现对零/负半径不产生退化
+    // 仍产生完整的圆几何
     assert_eq!(geo.positions.len(), 18);
-    // Bounding sphere radius should be very small (center only)
+    // 包围球半径应非常小（仅中心）
     assert!(geo.bounding_sphere.radius < EPSILON10);
 }
 
 #[test]
 fn circle_geometry_degenerate_radius_negative() {
-    // Similar to radius zero case
+    // 类似于半径为零的情况
     let geo = circle_geometry(
         DVec3::new(250000.0, 250000.0, 250000.0),
         -1.0,
@@ -127,7 +127,7 @@ fn circle_geometry_degenerate_radius_negative() {
 
 #[test]
 fn circle_geometry_bounding_sphere_contains_all_positions() {
-    // Verify bounding sphere contains all positions
+    // 验证包围球包含所有位置
     let geo = circle_geometry(
         DVec3::ZERO,
         1.0,
@@ -136,7 +136,7 @@ fn circle_geometry_bounding_sphere_contains_all_positions() {
         VertexFormat::POSITION_ONLY,
     );
 
-    // Calculate actual bounding sphere from positions
+    // 由位置计算实际的包围球
     let mut min_x = f64::MAX;
     let mut max_x = f64::MIN;
     let mut min_y = f64::MAX;
@@ -169,7 +169,7 @@ fn circle_geometry_bounding_sphere_contains_all_positions() {
 
 #[test]
 fn circle_geometry_normals_point_outward() {
-    // Verify normals point outward from center
+    // 验证法线从中心朝外
     let geo = circle_geometry(
         DVec3::ZERO,
         1.0,
@@ -182,13 +182,13 @@ fn circle_geometry_normals_point_outward() {
     for i in 0..geo.positions.len() {
         let pos = DVec3::from(geo.positions[i]);
         let normal = DVec3::from(normals[i]);
-        // Skip center vertex (i=0) as it may be at origin
+        // 跳过中心顶点（i=0），因为它可能位于原点
         if i == 0 {
             continue;
         }
         let pos_dir = pos.normalize();
         let dot = normal.dot(pos_dir);
-        // For circle geometry, normals should point roughly outward
+        // 对于圆几何，法线应大致朝外
         assert!(dot > 0.5, "normal {} should point outward, dot = {}", i, dot);
     }
 }

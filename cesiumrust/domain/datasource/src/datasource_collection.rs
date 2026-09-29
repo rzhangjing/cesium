@@ -1,12 +1,12 @@
-//! DataSourceCollection - a collection of DataSource instances.
+//! DataSourceCollection - DataSource 实例的集合。
 //!
-//! Maps to CesiumJS `DataSources/DataSourceCollection.js`
+//! 映射到 CesiumJS `DataSources/DataSourceCollection.js`
 
 use crate::entity_collection::DataSource;
 
-/// A collection of DataSource instances with ordering and event support.
+/// 一个支持顺序与事件机制的 DataSource 实例集合。
 ///
-/// Maps to CesiumJS `DataSources/DataSourceCollection.js`
+/// 映射到 CesiumJS `DataSources/DataSourceCollection.js`
 #[derive(Debug, Default)]
 pub struct DataSourceCollection {
     data_sources: Vec<DataSource>,
@@ -14,7 +14,7 @@ pub struct DataSourceCollection {
 }
 
 impl DataSourceCollection {
-    /// Creates a new empty collection.
+    /// 创建新的空集合。
     pub fn new() -> Self {
         Self {
             data_sources: Vec::new(),
@@ -22,29 +22,29 @@ impl DataSourceCollection {
         }
     }
 
-    /// Gets the number of data sources in this collection.
-    /// Maps to `DataSourceCollection.prototype.length`
+    /// 获取此集合中数据源的数量。
+    /// 映射到 `DataSourceCollection.prototype.length`
     pub fn length(&self) -> usize {
         self.data_sources.len()
     }
 
-    /// Adds a data source to the collection.
-    /// Maps to `DataSourceCollection.prototype.add`
+    /// 向集合添加一个数据源。
+    /// 映射到 `DataSourceCollection.prototype.add`
     pub fn add(&mut self, data_source: DataSource) {
         assert!(!self.destroyed, "This object was destroyed.");
         self.data_sources.push(data_source);
     }
 
-    /// Inserts a data source at a specific index.
+    /// 在指定索引处插入一个数据源。
     pub fn insert(&mut self, index: usize, data_source: DataSource) {
         assert!(!self.destroyed, "This object was destroyed.");
         let idx = index.min(self.data_sources.len());
         self.data_sources.insert(idx, data_source);
     }
 
-    /// Removes a data source from this collection, if present.
-    /// Returns true if the data source was in the collection and was removed.
-    /// Maps to `DataSourceCollection.prototype.remove`
+    /// 从此集合中移除一个数据源（若存在）。
+    /// 若数据源原本在集合中并被移除则返回 true。
+    /// 映射到 `DataSourceCollection.prototype.remove`
     pub fn remove(&mut self, name: &str) -> bool {
         assert!(!self.destroyed, "This object was destroyed.");
         if let Some(index) = self.data_sources.iter().position(|ds| ds.name == name) {
@@ -55,7 +55,7 @@ impl DataSourceCollection {
         }
     }
 
-    /// Removes a data source by index.
+    /// 按索引移除一个数据源。
     pub fn remove_at(&mut self, index: usize) -> Option<DataSource> {
         assert!(!self.destroyed, "This object was destroyed.");
         if index < self.data_sources.len() {
@@ -65,44 +65,44 @@ impl DataSourceCollection {
         }
     }
 
-    /// Removes all data sources from this collection.
-    /// Maps to `DataSourceCollection.prototype.removeAll`
+    /// 从此集合中移除所有数据源。
+    /// 映射到 `DataSourceCollection.prototype.removeAll`
     pub fn remove_all(&mut self) {
         assert!(!self.destroyed, "This object was destroyed.");
         self.data_sources.clear();
     }
 
-    /// Checks to see if the collection contains a given data source by name.
-    /// Maps to `DataSourceCollection.prototype.contains`
+    /// 按名称检查集合是否包含给定数据源。
+    /// 映射到 `DataSourceCollection.prototype.contains`
     pub fn contains(&self, name: &str) -> bool {
         self.data_sources.iter().any(|ds| ds.name == name)
     }
 
-    /// Determines the index of a given data source in the collection.
-    /// Maps to `DataSourceCollection.prototype.indexOf`
+    /// 确定给定数据源在集合中的索引。
+    /// 映射到 `DataSourceCollection.prototype.indexOf`
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.data_sources.iter().position(|ds| ds.name == name)
     }
 
-    /// Gets a data source by index from the collection.
-    /// Maps to `DataSourceCollection.prototype.get`
+    /// 按索引从集合中获取一个数据源。
+    /// 映射到 `DataSourceCollection.prototype.get`
     pub fn get(&self, index: usize) -> Option<&DataSource> {
         self.data_sources.get(index)
     }
 
-    /// Gets a mutable data source by index.
+    /// 按索引获取一个可变数据源。
     pub fn get_mut(&mut self, index: usize) -> Option<&mut DataSource> {
         self.data_sources.get_mut(index)
     }
 
-    /// Gets all data sources matching the provided name.
-    /// Maps to `DataSourceCollection.prototype.getByName`
+    /// 获取所有匹配所提供名称的数据源。
+    /// 映射到 `DataSourceCollection.prototype.getByName`
     pub fn get_by_name(&self, name: &str) -> Vec<&DataSource> {
         self.data_sources.iter().filter(|ds| ds.name == name).collect()
     }
 
-    /// Raises a data source up one position in the collection.
-    /// Maps to `DataSourceCollection.prototype.raise`
+    /// 将数据源在集合中向上提升一个位置。
+    /// 映射到 `DataSourceCollection.prototype.raise`
     pub fn raise(&mut self, name: &str) {
         let index = self
             .index_of(name)
@@ -114,8 +114,8 @@ impl DataSourceCollection {
         }
     }
 
-    /// Lowers a data source down one position in the collection.
-    /// Maps to `DataSourceCollection.prototype.lower`
+    /// 将数据源在集合中向下降低一个位置。
+    /// 映射到 `DataSourceCollection.prototype.lower`
     pub fn lower(&mut self, name: &str) {
         let index = self
             .index_of(name)
@@ -125,8 +125,8 @@ impl DataSourceCollection {
         }
     }
 
-    /// Raises a data source to the top of the collection.
-    /// Maps to `DataSourceCollection.prototype.raiseToTop`
+    /// 将数据源提升到集合顶部。
+    /// 映射到 `DataSourceCollection.prototype.raiseToTop`
     pub fn raise_to_top(&mut self, name: &str) {
         let index = self
             .index_of(name)
@@ -138,8 +138,8 @@ impl DataSourceCollection {
         }
     }
 
-    /// Lowers a data source to the bottom of the collection.
-    /// Maps to `DataSourceCollection.prototype.lowerToBottom`
+    /// 将数据源降低到集合底部。
+    /// 映射到 `DataSourceCollection.prototype.lowerToBottom`
     pub fn lower_to_bottom(&mut self, name: &str) {
         let index = self
             .index_of(name)
@@ -150,20 +150,20 @@ impl DataSourceCollection {
         }
     }
 
-    /// Returns true if this object was destroyed.
-    /// Maps to `DataSourceCollection.prototype.isDestroyed`
+    /// 若此对象已被销毁则返回 true。
+    /// 映射到 `DataSourceCollection.prototype.isDestroyed`
     pub fn is_destroyed(&self) -> bool {
         self.destroyed
     }
 
-    /// Destroys the collection.
-    /// Maps to `DataSourceCollection.prototype.destroy`
+    /// 销毁集合。
+    /// 映射到 `DataSourceCollection.prototype.destroy`
     pub fn destroy(&mut self) {
         self.data_sources.clear();
         self.destroyed = true;
     }
 
-    /// Returns an iterator over the data sources.
+    /// 返回一个遍历数据源的迭代器。
     pub fn iter(&self) -> impl Iterator<Item = &DataSource> {
         self.data_sources.iter()
     }

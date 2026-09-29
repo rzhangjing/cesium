@@ -1,8 +1,8 @@
-//! Camera extended specs - ported from Scene/CameraSpec.js
+//! 相机扩展规格 - 移植自 Scene/CameraSpec.js
 //!
-//! Tests camera orientation queries (heading_3d/pitch_3d/roll_3d),
-//! distance_to_bounding_sphere, get_magnitude, get_rectangle_camera_coordinates,
-//! move operations correctness, and coordinate transform roundtrips.
+//! 测试相机朝向查询（heading_3d/pitch_3d/roll_3d）、
+//! distance_to_bounding_sphere、get_magnitude、get_rectangle_camera_coordinates、
+//! move 操作正确性，以及坐标变换往返。
 
 use cesium_camera::{Camera, SceneMode};
 use cesium_geospatial::bounding::BoundingSphere;
@@ -44,7 +44,7 @@ fn camera_position_magnitude_at_origin() {
 #[test]
 fn camera_heading_3d_looking_north() {
     let e = wgs84();
-    // Camera at equator looking north
+    // 位于赤道朝北看的相机
     let pos = e.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 100_000.0));
     let enu = east_north_up_to_fixed_frame(pos, &e);
     let north = DVec3::new(enu.col(1).x, enu.col(1).y, enu.col(1).z).normalize();
@@ -52,7 +52,7 @@ fn camera_heading_3d_looking_north() {
 
     let cam = make_camera(pos, north, up);
     let heading = cam.heading_3d(&e);
-    // Looking north → heading ≈ 0
+    // 朝北看 → heading ≈ 0
     assert!(
         heading.abs() < 0.1 || (heading - 2.0 * PI).abs() < 0.1,
         "heading_3d looking north should be ≈ 0, got {}", heading
@@ -64,7 +64,7 @@ fn camera_pitch_3d_looking_down() {
     let e = wgs84();
     let pos = e.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 100_000.0));
     let surface_normal = pos.normalize();
-    // Camera looking straight down
+    // 相机垂直向下看
     let direction = -surface_normal;
     let up = DVec3::new(0.0, 0.0, 1.0);
     let right = direction.cross(up).normalize();
@@ -73,7 +73,7 @@ fn camera_pitch_3d_looking_down() {
     let cam = make_camera(pos, direction, up);
 
     let pitch = cam.pitch_3d(&e);
-    // Looking straight down → pitch ≈ -PI/2
+    // 垂直向下看 → pitch ≈ -PI/2
     assert!(
         (pitch + PI / 2.0).abs() < 0.1,
         "pitch_3d looking down should be ≈ -PI/2, got {}", pitch
@@ -90,7 +90,7 @@ fn camera_roll_3d_level() {
 
     let cam = make_camera(pos, north, up);
     let roll = cam.roll_3d(&e);
-    // Level flight → roll ≈ 0
+    // 水平飞行 → roll ≈ 0
     assert!(
         roll.abs() < 0.1 || (roll - 2.0 * PI).abs() < 0.1,
         "roll_3d level should be ≈ 0, got {}", roll
@@ -107,7 +107,7 @@ fn camera_heading_pitch_roll_consistency() {
     let cam = make_camera(pos, dir, up);
     let hpr = cam.heading_pitch_roll();
 
-    // heading_pitch_roll should match individual queries
+    // heading_pitch_roll 应与各个单独查询一致
     assert!((hpr.heading - cam.heading()).abs() < EPSILON10);
     assert!((hpr.pitch - cam.pitch()).abs() < EPSILON10);
     assert!((hpr.roll - cam.roll()).abs() < EPSILON10);
@@ -119,12 +119,12 @@ fn camera_heading_pitch_roll_consistency() {
 fn camera_distance_to_bounding_sphere_in_front() {
     let cam = make_camera(
         DVec3::ZERO,
-        DVec3::X, // looking along +X
+        DVec3::X, // 沿 +X 方向看
         DVec3::Z,
     );
     let sphere = BoundingSphere::new(DVec3::new(100.0, 0.0, 0.0), 10.0);
     let dist = cam.distance_to_bounding_sphere(&sphere);
-    // Camera at origin looking +X, sphere at 100 with radius 10 → distance ≈ 90
+    // 相机位于原点朝 +X 看，球体位于 100 半径 10 → 距离 ≈ 90
     assert!(
         (dist - 90.0).abs() < 1.0,
         "distance to bounding sphere should be ≈ 90, got {}", dist
@@ -135,12 +135,12 @@ fn camera_distance_to_bounding_sphere_in_front() {
 fn camera_distance_to_bounding_sphere_behind() {
     let cam = make_camera(
         DVec3::ZERO,
-        DVec3::X, // looking along +X
+        DVec3::X, // 沿 +X 方向看
         DVec3::Z,
     );
     let sphere = BoundingSphere::new(DVec3::new(-100.0, 0.0, 0.0), 10.0);
     let dist = cam.distance_to_bounding_sphere(&sphere);
-    // Behind camera: signed projection = -100, -100 - 10 = -110, max(0) = 0
+    // 相机后方：带符号投影 = -100，-100 - 10 = -110，max(0) = 0
     assert!(
         dist.abs() < EPSILON10,
         "distance behind camera should be 0, got {}", dist
@@ -156,7 +156,7 @@ fn camera_distance_to_bounding_sphere_enclosing() {
     );
     let sphere = BoundingSphere::new(DVec3::new(50.0, 0.0, 0.0), 100.0);
     let dist = cam.distance_to_bounding_sphere(&sphere);
-    // Camera inside sphere: signed dist = 50 - 100 = -50, max(0) = 0
+    // 相机在球内：带符号距离 = 50 - 100 = -50，max(0) = 0
     assert!(
         dist.abs() < EPSILON10,
         "camera inside sphere → distance should be 0, got {}", dist
@@ -184,7 +184,7 @@ fn camera_get_magnitude_columbus_view() {
         DVec3::Y,
     );
     cam.mode = SceneMode::ColumbusView;
-    // CV uses z component
+    // CV 使用 z 分量
     assert!((cam.get_magnitude() - 5.0).abs() < EPSILON10);
 }
 
@@ -196,7 +196,7 @@ fn camera_get_magnitude_2d() {
         DVec3::Y,
     );
     cam.mode = SceneMode::Scene2D;
-    // 2D always returns 1.0
+    // 2D 始终返回 1.0
     assert!((cam.get_magnitude() - 1.0).abs() < EPSILON10);
 }
 
@@ -213,7 +213,7 @@ fn camera_get_rectangle_camera_coordinates_above_center() {
     let rect = Rectangle::from_degrees(-10.0, -10.0, 10.0, 10.0);
     let result = cam.get_rectangle_camera_coordinates(&rect, &e);
 
-    // Result should be above the center of the rectangle
+    // 结果应位于矩形中心之上
     let carto = e.cartesian_to_cartographic(result).unwrap();
     let center_lon = 0.0_f64.to_radians();
     let center_lat = 0.0_f64.to_radians();
@@ -254,7 +254,7 @@ fn camera_get_rectangle_camera_coordinates_larger_rect_higher() {
     );
 }
 
-// ─── move operations correctness ─────────────────────────────────────────────
+// ─── move 操作正确性 ─────────────────────────────────────────────
 
 #[test]
 fn camera_move_forward_increases_position_along_direction() {
@@ -340,7 +340,7 @@ fn camera_move_left_then_right_returns() {
     );
 }
 
-// ─── coordinate transform roundtrips ────────────────────────────────────────
+// ─── 坐标变换往返 ────────────────────────────────────────
 
 #[test]
 fn camera_world_to_camera_to_world_roundtrip() {
@@ -374,7 +374,7 @@ fn camera_world_to_camera_vector_roundtrip() {
     );
 }
 
-// ─── view matrix properties ──────────────────────────────────────────────────
+// ─── 视图矩阵性质 ──────────────────────────────────────────────────
 
 #[test]
 fn camera_view_matrix_is_orthogonal() {
@@ -386,7 +386,7 @@ fn camera_view_matrix_is_orthogonal() {
     let view = cam.view_matrix();
     let inv = cam.inverse_view_matrix();
     let product = view * inv;
-    // Should be identity
+    // 应为单位矩阵
     for i in 0..4 {
         for j in 0..4 {
             let expected = if i == j { 1.0 } else { 0.0 };
@@ -434,11 +434,11 @@ fn camera_look_at_points_direction_at_target() {
     let offset = HeadingPitchRange::new(0.0, -PI / 4.0, 50.0);
     cam.look_at(target, &offset, &e);
 
-    // After look_at, direction should roughly point towards target
+    // look_at 之后，direction 应大致指向 target
     let to_target = (target - cam.position).normalize();
     let dot = cam.direction.dot(to_target);
-    // The camera is offset from target, so direction won't exactly match
-    // but should be in the general direction (positive dot product)
+    // 相机相对 target 有偏移，因此 direction 不会完全吻合
+    // 但应处于总体方向上（点积为正）
     assert!(
         dot > -0.5,
         "camera direction should be roughly towards target, dot={}", dot

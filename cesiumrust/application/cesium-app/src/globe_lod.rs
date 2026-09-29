@@ -1,17 +1,17 @@
-//! Screen-space-error quadtree LOD extracted from the dynamic_globe golden
-//! path (M1.5). Byte-identical logic — only module boundary changes.
+//! 从 dynamic_globe 黄金路径中提取的屏幕空间误差四叉树 LOD
+//!（M1.5）。逻辑逐字节一致 —— 仅模块边界改变。
 //!
-//! Original locations in `dynamic_globe.rs`:
-//! - Constants: L39-44, L75
+//! 原始位置位于 `dynamic_globe.rs`：
+//! - 常量：L39-44、L75
 //! - `compute_segments`: L2066-2069
 //! - `focal_pixels`: L1507-1513
 //! - `compute_sub_camera_point`: L1719-1730
 //! - `Visit` enum: L1563-1567
 //! - `compute_visible_tiles`: L1528-1552
 //! - `visit_tile`: L1569-1714
-//! - Display-set stability (refine_cover / blocked / coarsening): L505-577
+//! - 显示集稳定性（refine_cover / blocked / coarsening）：L505-577
 
-// frozen legacy golden-path style debt; local allow to satisfy strict CI clippy gate
+// 冻结的遗留黄金路径风格债务；局部 allow 以满足严格 CI clippy 门槛
 #![allow(clippy::type_complexity, clippy::unnecessary_map_or)]
 
 use bevy::prelude::*;
@@ -19,40 +19,40 @@ use std::collections::{HashMap, HashSet};
 
 use crate::orbit_camera::{OrbitState, CAMERA_FOV_Y};
 
-// ── Constants (golden-path verbatim) ─────────────────────────────────────
+// ── 常量（黄金路径逐字保留） ─────────────────────────────────────
 
 pub const MIN_ZOOM: u32 = 3;
 pub const MAX_ZOOM: u32 = 21;
 pub const BASE_SEGMENTS: u32 = 48;
-/// WGS84 semi-major axis (meters), for screen-space-error math.
+/// WGS84 半长轴（米），用于屏幕空间误差计算。
 /// METERS_PER_RENDER_UNIT = 6378137 (硬约束).
 pub const EARTH_RADIUS_M: f64 = 6378137.0;
 pub const MAX_TILE_SCREEN_PX: f64 = 288.0;
-/// Coarsest levels kept resident as a permanent global fallback layer.
+/// 保留最粗层级作为永久性的全球回退层。
 pub const BASE_LAYER_ZOOM: u32 = 3;
 
 // ── LodContext trait ─────────────────────────────────────────────────────
 
-/// Abstracts the TileManager state that the LOD traversal queries.
-/// Both thin-shell and legacy TileManager implement this.
+/// 抽象 LOD 遍历所查询的 TileManager 状态。
+/// 薄壳与遗留 TileManager 都实现此 trait。
 pub trait LodContext {
     fn has_entity(&self, key: &(u32, u32, u32)) -> bool;
     fn tex_size(&self, key: &(u32, u32, u32)) -> Option<u32>;
 }
 
-// ── Tile key type ────────────────────────────────────────────────────────
+// ── 瓦片键类型 ────────────────────────────────────────────────────────
 
 pub type TileKey = (u32, u32, u32);
 
-// ── Functions ────────────────────────────────────────────────────────────
+// ── 函数 ────────────────────────────────────────────────────────────
 
-/// Original: `dynamic_globe.rs:2066-2069`.
+/// 原始：`dynamic_globe.rs:2066-2069`。
 pub fn compute_segments(zoom: u32) -> u32 {
     (BASE_SEGMENTS >> zoom.saturating_sub(MIN_ZOOM)).max(8)
 }
 
-/// Vertical focal length in pixels: (H/2) / tan(fov/2).
-/// Original: `dynamic_globe.rs:1507-1513`.
+/// 以像素为单位的垂直焦距：(H/2) / tan(fov/2)。
+/// 原始：`dynamic_globe.rs:1507-1513`。
 pub fn focal_pixels(windows: &Query<&Window>) -> f64 {
     let h = windows
         .get_single()
@@ -61,7 +61,7 @@ pub fn focal_pixels(windows: &Query<&Window>) -> f64 {
     (h * 0.5) / ((CAMERA_FOV_Y as f64) * 0.5).tan()
 }
 
-/// Original: `dynamic_globe.rs:1719-1730`.
+/// 原始：`dynamic_globe.rs:1719-1730`。
 pub fn compute_sub_camera_point(orbit: &OrbitState) -> (f64, f64) {
     let cos_pitch = orbit.pitch.cos();
     let sin_pitch = orbit.pitch.sin();
@@ -75,16 +75,16 @@ pub fn compute_sub_camera_point(orbit: &OrbitState) -> (f64, f64) {
     (lat, lon)
 }
 
-/// Traversal outcome — mirror of CesiumJS `TraversalDetails.allAreRenderable`.
-/// Original: `dynamic_globe.rs:1563-1567`.
+/// 遍历结果 —— 对应 CesiumJS `TraversalDetails.allAreRenderable`。
+/// 原始：`dynamic_globe.rs:1563-1567`。
 pub enum Visit {
     Ready,
     NotReady,
     Culled,
 }
 
-/// CesiumJS-style KICK-aware quadtree partition.
-/// Original: `dynamic_globe.rs:1528-1552`.
+/// CesiumJS 风格、感知 KICK 的四叉树划分。
+/// 原始：`dynamic_globe.rs:1528-1552`。
 pub fn compute_visible_tiles<C: LodContext>(
     lat_rad: f64,
     lon_rad: f64,
@@ -92,9 +92,9 @@ pub fn compute_visible_tiles<C: LodContext>(
     focal_px: f64,
     ctx: &C,
 ) -> (Vec<(TileKey, f32)>, Vec<(TileKey, f32)>) {
-    // Floor the LOD distance just below the camera's closest min_distance
-    // (1.0000157 ≈ 100 m) so it never binds; a coarser floor here would cap
-    // the deepest reachable tile level no matter how close the camera descends.
+    // 将 LOD 距离下限设为略低于相机最近的 min_distance
+    //（1.0000157 ≈ 100 米），使其永不生效；此处更粗的下限会封顶
+    // 可达的最深瓦片层级，无论相机降得多低。
     let d = distance.max(1.00001);
     let cx = lat_rad.cos() * lon_rad.cos();
     let cy = lat_rad.cos() * lon_rad.sin();
@@ -112,7 +112,7 @@ pub fn compute_visible_tiles<C: LodContext>(
     (render, load)
 }
 
-/// Original: `dynamic_globe.rs:1569-1714` (逐字节保留).
+/// 原始：`dynamic_globe.rs:1569-1714`（逐字节保留）。
 #[allow(clippy::too_many_arguments)]
 pub fn visit_tile<C: LodContext>(
     x: u32,
@@ -214,12 +214,12 @@ pub fn visit_tile<C: LodContext>(
     }
 }
 
-// ── Display-set stability (CesiumJS allAreRenderable) ────────────────────
+// ── 显示集稳定性（CesiumJS allAreRenderable） ────────────────────
 
-/// Compute the stable display set from old/new partitions.
-/// Original: `dynamic_globe.rs:505-577` (逐字节保留).
+/// 从旧/新划分计算稳定的显示集。
+/// 原始：`dynamic_globe.rs:505-577`（逐字节保留）。
 ///
-/// Returns `(display_set, partition_changed)`.
+/// 返回 `(display_set, partition_changed)`。
 pub fn compute_display_set(
     old_set: &HashSet<TileKey>,
     new_set: &HashSet<TileKey>,

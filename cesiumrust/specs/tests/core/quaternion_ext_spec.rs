@@ -1,7 +1,7 @@
-//! Tests for Quaternion extension functions - ported from QuaternionSpec.js
+//! Quaternion 扩展函数的测试 - 移植自 QuaternionSpec.js
 //!
-//! Original: 124 it() → 12 A-class (CesiumJS-specific: computeAxis/computeAngle/log/exp/squad/fastSlerp/fastSquad)
-//! B-class (glam delegates: fromAxisAngle/slerp/dot/multiply/conjugate/normalize/inverse etc.) already covered.
+//! 原始：124 个 it() → 12 个 A 类（CesiumJS 特有：computeAxis/computeAngle/log/exp/squad/fastSlerp/fastSquad）
+//! B 类（glam 代理：fromAxisAngle/slerp/dot/multiply/conjugate/normalize/inverse 等）已被覆盖。
 
 use cesium_geospatial::math_utils;
 use cesium_geospatial::quaternion_ext::*;
@@ -32,7 +32,7 @@ fn from_axis_angle(axis: DVec3, angle: f64) -> DQuat {
 
 #[test]
 fn test_compute_axis_works() {
-    // 60 degrees to ensure sin/cos of half angle are not equal
+    // 使用 60 度以确保半角的 sin/cos 不相等
     let angle = PI / 3.0;
     let cos = (angle / 2.0).cos();
     let sin = (angle / 2.0).sin();
@@ -72,7 +72,7 @@ fn test_compute_axis_w_equals_neg_1() {
 
 #[test]
 fn test_compute_angle_works() {
-    // 60 degrees to ensure sin/cos of half angle are not equal
+    // 使用 60 度以确保半角的 sin/cos 不相等
     let angle = PI / 3.0;
     let cos = (angle / 2.0).cos();
     let sin = (angle / 2.0).sin();

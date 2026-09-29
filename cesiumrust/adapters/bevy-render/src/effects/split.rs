@@ -1,40 +1,40 @@
-//! M6.1: Split-screen (`Splitter` / `SplitDirection`) infrastructure.
+//! M6.1：分屏（`Splitter` / `SplitDirection`）基础设施。
 //!
-//! FIX-SPLIT (Phase 3): the split scaffolding was originally parasitic on
-//! [`super::oit`] (`oit.rs:43-75` in the pre-migration tree) because M6.1 was the
-//! "last merged" capability and borrowed OIT's plugin slot. This module decouples
-//! it: the `SplitConfig` resource, the `SplitDragEvent`, and the
-//! `split_direction_system` (the CPU-side divider-drag interaction) now live here,
-//! alongside a proper screen-space render node that draws the visible divider.
+//! FIX-SPLIT（Phase 3）：分屏脚手架原本寄生于
+//! [`super::oit`]（迁移前树中的 `oit.rs:43-75`），因为 M6.1 是
+//! “最后合并”的能力，借用了 OIT 的插件槽位。本模块将其解耦：
+//! `SplitConfig` 资源、`SplitDragEvent`，以及
+//! `split_direction_system`（CPU 侧分隔线拖拽交互）现在住在这里，
+//! 并配有
+//! 一个绘制可见分隔线的真正屏幕空间渲染节点。
 //!
-//! # What the node does (and does not) draw
-//! Upstream CesiumJS splits by *per-primitive discard*: imagery / primitives tagged
-//! `SplitDirection.LEFT` render only on the left of `Scene.splitPosition` and
-//! `RIGHT` only on the right, so the two halves show two different layer states.
-//! That faithful path is a *material-shader* injection
-//! (`SplitterConfig::wgsl_shader_modification()`), which touches the globe / tileset
-//! shaders (out of this module's file scope) and is deferred to the real-GPU task
-//! (`docs/deviations.md#dev-034`).
+//! # 节点绘制（与不绘制）什么
+//! 上游 CesiumJS 通过*逐图元丢弃*来分屏：标记为
+//! `SplitDirection.LEFT` 的影像 / 图元只在 `Scene.splitPosition` 左侧渲染，
+//! `RIGHT` 只在右侧，所以两半展示两套不同的图层状态。
+//! 那条忠实路径是一次*材质 shader* 注入
+//!（`SplitterConfig::wgsl_shader_modification()`），它触及 globe / tileset
+//! shader（超出本模块文件范围），并暂缓到真实 GPU 任务
+//!（`docs/deviations.md#dev-034`）。
 //!
-//! What *is* owned by the screen space is the draggable divider handle itself — a
-//! thin vertical line at `splitPosition`. [`SplitNode`] renders exactly that: a
-//! pass-through of the resolved scene colour with a `split.wgsl` overlay line drawn
-//! on top. With the gate OFF the node is never registered and no `Core3d` edge
-//! exists, so the v0 baselines stay bit-exact (PSNR = ∞).
+//! 属于屏幕空间的是可拖拽的分隔线把手本身 —— 一条位于 `splitPosition`
+//! 的细竖线。[`SplitNode`]  精确地渲染它：对已解析场景色的
+//! pass-through，上层绘制一条 `split.wgsl` 叠加线。门控 OFF 时节点从不被注册且没有 `Core3d`
+//! 边，所以 v0 baseline 保持位精确（PSNR = ∞）。
 //!
-//! # Gate (single source of truth)
-//! The gate name is owned by the app-layer registry
-//! `application/cesium-app/src/feature_flags.rs` (`ENV_ENABLE_SPLIT` /
-//! `split_enabled()`); [`ENV_ENABLE_SPLIT`] below is a byte-identical mirror forced
-//! by the crate dependency direction (`cesium-app` → `cesium-bevy-render`). Default
-//! OFF ⇒ `effects::graph::M6WaveARenderGraphPlugin` returns early and
-//! [`register_split_node`] is never called.
+//! # 门控（单一真相源）
+//! 门控名由应用层注册表
+//! `application/cesium-app/src/feature_flags.rs`（`ENV_ENABLE_SPLIT` /
+//! `split_enabled()`）拥有；下方的 [`ENV_ENABLE_SPLIT`] 是一个字节一致的镜像，由
+//! crate 依赖方向（`cesium-app` → `cesium-bevy-render`）强制。默认
+//! OFF ⇒ `effects::graph::M6WaveARenderGraphPlugin` 提前 return 且
+//! [`register_split_node`] 从不被调用。
 //!
-//! # Red lines honoured
-//! - domain stays **f64** (`split_position` is a `[0, 1]` fraction); the fraction →
-//!   viewport-pixel conversion happens ONLY at the [`SplitUniform::from_domain`]
-//!   GPU boundary.
-//! - No FMA contraction, no swizzle assignment in `split.wgsl`.
+//! # 已遵守的红线
+//! - 领域保持 **f64**（`split_position` 是一个 `[0, 1]` 分数）；分数→
+//!   viewport-像素的转换仅在 [`SplitUniform::from_domain`]
+//!   GPU 边界发生。
+//! - `split.wgsl` 中无 FMA 收缩，无 swizzle 赋值。
 
 use bevy::core_pipeline::{
     core_3d::graph::Core3d, fullscreen_vertex_shader::fullscreen_shader_vertex_state,
@@ -64,35 +64,35 @@ use super::graph::gate_from_env_value;
 
 // ─── Shader handle ───────────────────────────────────────────────────────────
 
-/// Unique handle for the embedded `split.wgsl` shader. Chosen to avoid collision
-/// with every other cesium shader handle (asserted by `split_shader_handle_unique`).
+/// 内嵌 `split.wgsl` shader 的唯一 handle。选取时避开了与其他所有
+/// cesium shader handle 的碰撞（由 `split_shader_handle_unique` 断言）。
 pub const SPLIT_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0xCE51_5F11_0006_00AA);
 
-// ─── Gate ────────────────────────────────────────────────────────────────────
+// ─── 门控 ────────────────────────────────────────────────────────────────────
 
-/// Env var gating the M6.1 split node. Byte-identical mirror of
-/// `feature_flags::ENV_ENABLE_SPLIT` (see the module docs for why it is local).
+/// 门控 M6.1 split 节点的环境变量。与
+/// `feature_flags::ENV_ENABLE_SPLIT` 字节一致（为何本地化参见模块 doc）。
 pub const ENV_ENABLE_SPLIT: &str = "CESIUM_ENABLE_SPLIT";
 
-/// Returns `true` when the split gate is enabled. Reuses the single authoritative
-/// truthy parser (`gate_from_env_value`, the crate-wide `{1, true, yes, on}` set).
+/// 当 split 门控启用时返回 `true`。复用单一权威的
+/// truthy 解析器（`gate_from_env_value`，全 crate 的 `{1, true, yes, on}` 集）。
 #[inline]
 pub fn split_gate_enabled() -> bool {
     gate_from_env_value(std::env::var(ENV_ENABLE_SPLIT).ok())
 }
 
-// ─── Render graph label ──────────────────────────────────────────────────────
+// ─── 渲染图 label ──────────────────────────────────────────────────────
 
-/// Node label for the cesium split node in `Core3d`.
+/// cesium split 节点在 `Core3d` 中的节点 label。
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
 pub struct CesiumSplitLabel;
 
 // ─── SplitConfig / SplitDragEvent / split_direction_system ───────────────────
-// Migrated verbatim from `oit.rs` (FIX-SPLIT). These are the CPU-side divider
-// interaction: a resource holding the drag state, an event carrying a new
-// position, and a system that turns `CursorMoved` while dragging into events.
+// 从 `oit.rs` 逐字迁移（FIX-SPLIT）。这些是 CPU 侧分隔线
+// 交互：一个持有拖拽状态的资源、一个携带新位置的
+// 事件，以及一个在拖拽时将 `CursorMoved` 转为事件的系统。
 
-/// Divider-drag state resource (main world).
+/// 分隔线拖拽状态资源（主 world）。
 #[derive(Resource, Debug, Clone)]
 pub struct SplitConfig {
     pub enabled: bool,
@@ -113,7 +113,7 @@ impl Default for SplitConfig {
 }
 
 impl SplitConfig {
-    /// Build from the domain [`SplitterConfig`] value object.
+    /// 从领域 [`SplitterConfig`] 值对象构建。
     pub fn from_splitter(config: &SplitterConfig) -> Self {
         Self {
             enabled: config.enabled,
@@ -123,15 +123,15 @@ impl SplitConfig {
     }
 }
 
-/// Emitted while the divider is dragged, carrying the new `[0, 1]` position.
+/// 在拖拽分隔线时发出，携带新的 `[0, 1]` 位置。
 #[derive(Event)]
 pub struct SplitDragEvent {
     pub position: f64,
 }
 
-/// Turns `CursorMoved` events into [`SplitDragEvent`]s while [`SplitConfig.dragging`].
+/// 在 [`SplitConfig.dragging`] 时将 `CursorMoved` 事件转为 [`SplitDragEvent`]。
 ///
-/// Inert when the split is disabled, so it never perturbs the golden path.
+/// 分屏禁用时惰性，所以它从不扰动黄金路径。
 pub fn split_direction_system(
     config: Res<SplitConfig>,
     _mouse_input: Res<ButtonInput<MouseButton>>,
@@ -155,28 +155,28 @@ pub fn split_direction_system(
     }
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// ─── 组件 ───────────────────────────────────────────────────────────────
 
-/// Component carrying the split state for a view (per-camera).
+/// 为一个视图携带分屏状态的组件（逐相机）。
 ///
-/// Placed on the camera (like [`super::clouds::CesiumClouds`]) to drive the
-/// screen-space node; extracted to the render world via `ExtractComponentPlugin`.
-/// The node early-returns when `enabled == false` (zero GPU cost, pixel-neutral).
-/// `Default` is derived: `enabled = false` (conservative).
+/// 放在相机上（像 [`super::clouds::CesiumClouds`]）以驱动
+/// 屏幕空间节点；经 `ExtractComponentPlugin` 提取到 render world。
+/// 当 `enabled == false` 时节点提前 return（零 GPU 开销，像素中性）。
+/// `Default` 为派生：`enabled = false`（保守）。
 #[derive(Component, Clone, Debug, Default, ExtractComponent)]
 pub struct CesiumSplit {
-    /// Master enable for the split node on this view.
+    /// 该视图上 split 节点的主开关。
     pub enabled: bool,
-    /// Divider centre as a `[0, 1]` fraction of the viewport width (domain f64).
+    /// 分隔线中心，作为视口宽度的 `[0, 1]` 分数（领域 f64）。
     pub split_position: f64,
-    /// Divider thickness in PIXELS.
+    /// 分隔线粗细，以 PIXELS 计。
     pub line_width_px: f64,
-    /// Divider colour RGBA `[0, 1]`.
+    /// 分隔线颜色 RGBA `[0, 1]`。
     pub color: [f64; 4],
 }
 
 impl CesiumSplit {
-    /// Convenience constructor for an enabled divider at `split_position`.
+    /// 一个便捷构造函数，在 `split_position` 处创建一个启用的分隔线。
     pub fn new(split_position: f64) -> Self {
         Self {
             enabled: true,
@@ -186,34 +186,34 @@ impl CesiumSplit {
         }
     }
 
-    /// Whether the divider should actually render.
+    /// 分隔线是否应当真正渲染。
     #[inline]
     pub fn is_active(&self) -> bool {
         self.enabled
     }
 }
 
-/// Per-view cached pipeline ID for the split node.
+/// split 节点的逐视图缓存 pipeline ID。
 #[derive(Component)]
 pub struct CameraSplitPipeline {
     pub pipeline_id: CachedRenderPipelineId,
 }
 
-/// Per-view GPU uniform buffer holding the packed divider parameters.
+/// 持有打包后分隔线参数的逐视图 GPU uniform 缓冲。
 #[derive(Component)]
 pub struct ViewSplitUniform {
     pub buffer: UniformBuffer<SplitUniform>,
 }
 
-// ─── GPU uniform (f32 boundary) ──────────────────────────────────────────────
+// ─── GPU uniform（f32 边界） ──────────────────────────────────────────────
 
-/// GPU-facing split uniform. **f32 only** — the component's `[0, 1]` f64 fraction
-/// and pixel width narrow here ([`SplitUniform::from_domain`], red line).
+/// GPU 面向的 split uniform。**仅 f32** —— 组件的 `[0, 1]` f64 分数
+/// 和像素宽度在此收窄（[`SplitUniform::from_domain`]，红线）。
 ///
-/// Layout must match `struct SplitData` in `shaders/split.wgsl` (encase std140).
-/// Lives in a private module with `#![allow(dead_code)]` (the `clipping_planes.rs`
-/// convention — the encase `ShaderType` derive emits a helper the dead-code pass
-/// flags even though every field is uploaded via `write_buffer`).
+/// 布局必须与 `shaders/split.wgsl` 中的 `struct SplitData` 匹配（encase std140）。
+/// 住在私有模块中并带 `#![allow(dead_code)]`（`clipping_planes.rs`
+/// 约定 —— encase 的 `ShaderType` derive 会生成一个 helper，死代码分析会
+/// 标记它，尽管每个字段都通过 `write_buffer` 上传）。
 pub use split_uniform::SplitUniform;
 
 mod split_uniform {
@@ -221,14 +221,14 @@ mod split_uniform {
     use bevy::prelude::Vec4;
     use bevy::render::render_resource::ShaderType;
 
-    /// Matches `struct SplitData` in `shaders/split.wgsl` (encase std140).
+    /// 匹配 `shaders/split.wgsl` 中的 `struct SplitData`（encase std140）。
     #[derive(ShaderType, Clone, Copy, Debug)]
     pub struct SplitUniform {
-        /// Divider centre in viewport pixels (std140: offset 0).
+        /// 分隔线中心，以视口像素计（std140：偏移 0）。
         pub split_position_px: f32,
-        /// Divider thickness in pixels (std140: offset 4).
+        /// 分隔线粗细，以像素计（std140：偏移 4）。
         pub line_width_px: f32,
-        /// Divider colour RGBA (std140: 16-byte aligned, offset 16).
+        /// 分隔线颜色 RGBA（std140：16 字节对齐，偏移 16）。
         pub color: Vec4,
     }
 }
@@ -244,9 +244,9 @@ impl Default for SplitUniform {
 }
 
 impl SplitUniform {
-    /// Packs a [`CesiumSplit`] into the GPU uniform. `split_position` is the
-    /// `[0, 1]` domain fraction; it is multiplied by `viewport_width_px` **here**
-    /// (the single f64 → f32, fraction → pixel boundary).
+    /// 将一个 [`CesiumSplit`] 打包进 GPU uniform。`split_position` 是
+    /// `[0, 1]` 领域分数；它**在此**乘以 `viewport_width_px`
+    ///（唯一的 f64 → f32、分数 → 像素边界）。
     pub fn from_domain(component: &CesiumSplit, viewport_width_px: f32) -> Self {
         Self {
             split_position_px: (component.split_position * f64::from(viewport_width_px)) as f32,
@@ -263,10 +263,10 @@ impl SplitUniform {
 
 // ─── Pipeline ────────────────────────────────────────────────────────────────
 
-/// Render-world resource: the two bind group layouts + sampler for the split node.
+/// Render-world 资源：split 节点的两个 bind group 布局 + 采样器。
 ///
-/// - group 0: `screen_texture` (`texture_2d<f32>`, binding 0) + linear sampler (1)
-/// - group 1: `SplitUniform` (binding 0)
+/// - group 0：`screen_texture`（`texture_2d<f32>`，binding 0）+ 线性采样器（1）
+/// - group 1：`SplitUniform`（binding 0）
 #[derive(Resource)]
 pub struct SplitPipeline {
     pub source_bind_group_layout: BindGroupLayout,
@@ -383,15 +383,15 @@ impl ViewNode for SplitNode {
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &source_bind_group, &[]);
         render_pass.set_bind_group(1, &split_bind_group, &[]);
-        render_pass.draw(0..3, 0..1); // fullscreen triangle
+        render_pass.draw(0..3, 0..1); // 全屏三角形
 
         Ok(())
     }
 }
 
-// ─── Render systems ──────────────────────────────────────────────────────────
+// ─── 渲染系统 ──────────────────────────────────────────────────────────
 
-/// Prepares the split pipeline + per-view uniform for each active view.
+/// 为每个活动视图准备 split pipeline + 逐视图 uniform。
 pub fn prepare_split(
     mut commands: Commands,
     pipeline_cache: Res<PipelineCache>,
@@ -448,10 +448,10 @@ pub fn prepare_split(
     }
 }
 
-// ─── Registration ────────────────────────────────────────────────────────────
+// ─── 注册 ────────────────────────────────────────────────────────────
 
-/// Register the split node (three-stage, DEV-029). Convenience wrapper around the
-/// main / render halves; headless-safe (no `RenderApp` → render half skipped).
+/// 注册 split 节点（三段式，DEV-029）。是对 main / render
+/// 两半的便捷包装；无头安好（没有 `RenderApp` → render 半边被跳过）。
 #[deprecated = "DEV-029 / FIX-REG-FACADE: call `register_split_node_main_world` from `Plugin::build` and `register_split_node_render_world` from `Plugin::finish`; this facade runs the finish half against a possibly device-less render world."]
 pub fn register_split_node(app: &mut App) {
     register_split_node_main_world(app);
@@ -460,8 +460,8 @@ pub fn register_split_node(app: &mut App) {
     }
 }
 
-/// `Plugin::build`-time half: WGSL shader + `ExtractComponentPlugin` + the
-/// divider-drag scaffolding (resource + event + system). Main world only.
+/// `Plugin::build` 时半边：WGSL shader + `ExtractComponentPlugin` +
+/// 分隔线拖拽脚手架（资源 + 事件 + 系统）。仅主 world。
 pub fn register_split_node_main_world(app: &mut App) {
     crate::shader_registry::try_load_internal_shader(
         app,
@@ -472,18 +472,18 @@ pub fn register_split_node_main_world(app: &mut App) {
 
     app.add_plugins(ExtractComponentPlugin::<CesiumSplit>::default());
 
-    // Migrated divider-drag interaction (formerly in `OITPlugin`).
+    // 迁移过来的分隔线拖拽交互（原先在 `OITPlugin`）。
     app.init_resource::<SplitConfig>()
         .add_event::<SplitDragEvent>()
         .add_systems(Update, split_direction_system);
 }
 
-/// `Plugin::finish`-time half: render-world pipeline resource + `Core3d` node.
-/// Reads `RenderDevice` (via `SplitPipeline`'s `FromWorld`), hence `finish`.
+/// `Plugin::finish` 时半边：render-world pipeline 资源 + `Core3d` 节点。
+/// 读取 `RenderDevice`（经 `SplitPipeline` 的 `FromWorld`），故为 `finish`。
 pub fn register_split_node_render_world(render_app: &mut bevy::app::SubApp) {
-    // FIX-REG-FACADE (DEV-029): degrade to a no-op when `RenderDevice` is absent
-    // (finish half reached from `build`, or a bare render world). See
-    // `crate::effects::render_world_missing_device`.
+    // FIX-REG-FACADE（DEV-029）：当 `RenderDevice` 缺失时降级为 no-op
+    //（finish 半边从 `build` 到达，或一个裸 render world）。参见
+    // `crate::effects::render_world_missing_device`。
     if crate::effects::render_world_missing_device(render_app) {
         return;
     }
@@ -492,11 +492,11 @@ pub fn register_split_node_render_world(render_app: &mut bevy::app::SubApp) {
         .init_resource::<SplitPipeline>()
         .add_systems(Render, prepare_split.in_set(RenderSet::Prepare))
         .add_render_graph_node::<ViewNodeRunner<SplitNode>>(Core3d, CesiumSplitLabel);
-    // NOTE: edges are created by `effects::graph::wire_m6_edges`, the single owner
-    // of the shared `Core3d` chain — never here, so no diamond can form.
+    // 注意：边由 `effects::graph::wire_m6_edges`（共享 `Core3d` 链的唯一所有者）
+    // 创建 —— 从不在此，所以不会形成菱形。
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────────────
+// ─── 测试 ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -525,7 +525,7 @@ mod tests {
     #[test]
     fn split_gate_const_is_stable_and_independent() {
         assert_eq!(ENV_ENABLE_SPLIT, "CESIUM_ENABLE_SPLIT");
-        // The const must be a byte-identical uppercase env name.
+        // 该 const 必须是一个字节一致的大写 env 名。
         assert_eq!(ENV_ENABLE_SPLIT, ENV_ENABLE_SPLIT.to_uppercase().as_str());
         assert_ne!(ENV_ENABLE_SPLIT, "CESIUM_ENABLE_OIT");
         assert_ne!(ENV_ENABLE_SPLIT, "CESIUM_ENABLE_POSTPROCESS");
@@ -548,7 +548,7 @@ mod tests {
         assert_ne!(SPLIT_SHADER_HANDLE, crate::effects::CLOUDS_SHADER_HANDLE);
     }
 
-    /// The fraction → pixel narrowing at the GPU boundary (red line, f64 → f32).
+    /// GPU 边界处的分数→像素收窄（红线，f64 → f32）。
     #[test]
     fn split_uniform_narrows_fraction_to_pixels() {
         let component = CesiumSplit {
@@ -563,10 +563,10 @@ mod tests {
         assert_eq!(u.color, Vec4::new(0.1, 0.2, 0.3, 1.0));
     }
 
-    // ─── Naga defence line: parse + validate + binding coverage ─────────────
+    // ─── Naga 防线：解析 + 校验 + binding 覆盖 ─────────────
 
-    /// Stubs for the `#import` directive naga cannot resolve without the Bevy
-    /// prelude (same technique as `clouds.rs`).
+    /// 为 `#import` 指令提供的 stub，naga 在没有 Bevy prelude 时无法解析它
+    ///（与 `clouds.rs` 同技术）。
     const SPLIT_WGSL_IMPORT_STUBS: &str = "\
 struct FullscreenVertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -638,8 +638,8 @@ struct FullscreenVertexOutput {
     fn split_wgsl_bindings_covered_by_layout() {
         let source = split_stubbed_wgsl(include_str!("../../shaders/split.wgsl"));
         let module = validate(&source, "split.wgsl");
-        // SplitPipeline: group 0 bindings 0..=1 (texture, sampler) + group 1
-        // binding 0 (uniform).
+        // SplitPipeline：group 0 bindings 0..=1（纹理、采样器）+ group 1
+        // binding 0（uniform）。
         let layout: std::collections::BTreeSet<(u32, u32)> =
             [(0, 0), (0, 1), (1, 0)].into_iter().collect();
         let used = used_bindings(&module, "fragment");

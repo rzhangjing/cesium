@@ -1,7 +1,8 @@
-//! EllipsoidRhumbLine - a rhumb line (loxodrome) on an ellipsoid.
-//! Faithful port of CesiumJS `Source/Core/EllipsoidRhumbLine.js`
+//! EllipsoidRhumbLine - 椭球上的恒向线（斜航线）。
+//! 忠实移植自 CesiumJS `Source/Core/EllipsoidRhumbLine.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::too_many_arguments, clippy::needless_late_init)]
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
@@ -182,9 +183,9 @@ fn calculate_arc_length(
 ) -> f64 {
     let distance;
 
-    // Check to see if the rhumb line has constant latitude
+    // 检查该恒向线是否具有恒定纬度
     if equals_epsilon(heading.abs(), PI_OVER_TWO, EPSILON8, EPSILON8) {
-        // If heading is close to 90 degrees
+        // 若 heading 接近 90 度
         if major == minor {
             distance = major * first_latitude.cos() * negative_pi_to_pi(delta_longitude);
         } else {
@@ -216,15 +217,15 @@ fn interpolate_using_surface_distance(
     let longitude;
     let latitude;
 
-    // Check to see if the rhumb line has constant latitude
+    // 检查该恒向线是否具有恒定纬度
     if (PI_OVER_TWO - heading.abs()).abs() > EPSILON8 {
-        // Calculate latitude of the second point
+        // 计算第二个点的纬度
         let m1 = calculate_m(ellipticity, major, start.latitude);
         let delta_m = distance * heading.cos();
         let m2 = m1 + delta_m;
         latitude = calculate_inverse_m(m2, ellipticity, major);
 
-        // Now find the longitude of the second point
+        // 现在查找第二个点的经度
         if heading.abs() < EPSILON10 {
             longitude = negative_pi_to_pi(start.longitude);
         } else {
@@ -234,7 +235,7 @@ fn interpolate_using_surface_distance(
             longitude = negative_pi_to_pi(start.longitude + delta_longitude);
         }
     } else {
-        // If heading is close to 90 degrees
+        // 若 heading 接近 90 度
         latitude = start.latitude;
         let local_rad;
 
@@ -257,8 +258,8 @@ fn interpolate_using_surface_distance(
     Cartographic::from_radians(longitude, latitude, 0.0)
 }
 
-/// A rhumb line (loxodrome) on an ellipsoid.
-/// Maps to CesiumJS `EllipsoidRhumbLine`
+/// 椭球上的恒向线（斜航线）。
+/// 映射到 CesiumJS `EllipsoidRhumbLine`
 #[derive(Clone, Debug)]
 pub struct EllipsoidRhumbLine {
     start: Cartographic,
@@ -273,7 +274,7 @@ pub struct EllipsoidRhumbLine {
 }
 
 impl EllipsoidRhumbLine {
-    /// Creates a new rhumb line from start and end cartographic points on the given ellipsoid.
+    /// 由给定椭球上的起点和终点测绘坐标创建一条新的恒向线。
     pub fn new(start: &Cartographic, end: &Cartographic, ellipsoid: &Ellipsoid) -> Self {
         let major = ellipsoid.maximum_radius();
         let minor = ellipsoid.minimum_radius();
@@ -319,7 +320,7 @@ impl EllipsoidRhumbLine {
         }
     }
 
-    /// Sets new endpoints and recomputes properties.
+    /// 设置新的端点并重新计算各属性。
     pub fn set_end_points(&mut self, start: &Cartographic, end: &Cartographic) {
         let heading = calculate_heading(
             self.ellipticity,
@@ -352,29 +353,29 @@ impl EllipsoidRhumbLine {
         self.distance = distance;
     }
 
-    /// Gets the surface distance between start and end.
+    /// 获取起点与终点之间的表面距离。
     pub fn surface_distance(&self) -> f64 {
         self.distance
     }
 
-    /// Gets the heading of the rhumb line.
+    /// 获取恒向线的方位角。
     pub fn heading(&self) -> f64 {
         self.heading
     }
 
-    /// Gets the start point.
+    /// 获取起点。
     pub fn start(&self) -> Cartographic {
         self.start
     }
 
-    /// Gets the end point.
+    /// 获取终点。
     pub fn end(&self) -> Cartographic {
         self.end
     }
 
-    /// Creates a rhumb line from a start point, heading, and distance.
+    /// 由起点、方位角和距离创建一条恒向线。
     ///
-    /// Maps to `EllipsoidRhumbLine.fromStartHeadingDistance`.
+    /// 映射到 `EllipsoidRhumbLine.fromStartHeadingDistance`。
     pub fn from_start_heading_distance(
         start: &Cartographic,
         heading: f64,
@@ -394,10 +395,10 @@ impl EllipsoidRhumbLine {
         Self::new(start, &end, ellipsoid)
     }
 
-    /// Finds the intersection of the rhumb line with the given longitude.
+    /// 查找恒向线与给定经度的交点。
     ///
-    /// Returns `None` for N-S lines where the longitude doesn't match.
-    /// Maps to `EllipsoidRhumbLine.prototype.findIntersectionWithLongitude`.
+    /// 对于经度不匹配的南北向线返回 `None`。
+    /// 映射到 `EllipsoidRhumbLine.prototype.findIntersectionWithLongitude`。
     pub fn find_intersection_with_longitude(&self, intersection_longitude: f64) -> Option<Cartographic> {
         let ellipticity = self.ellipticity;
         let heading = self.heading;
@@ -410,12 +411,12 @@ impl EllipsoidRhumbLine {
             intersection_longitude = sign(start.longitude) * std::f64::consts::PI;
         }
 
-        // E-W rhumb line (heading ~ ±PI/2)
+        // 东西向恒向线（heading ~ ±PI/2）
         if (PI_OVER_TWO - abs_heading).abs() <= EPSILON8 {
             return Some(Cartographic::from_radians(intersection_longitude, start.latitude, 0.0));
         }
 
-        // N-S rhumb line (heading ~ 0 or PI)
+        // 南北向恒向线（heading ~ 0 或 PI）
         if equals_epsilon((PI_OVER_TWO - abs_heading).abs(), PI_OVER_TWO, EPSILON8, EPSILON8) {
             if equals_epsilon(intersection_longitude, start.longitude, EPSILON12, EPSILON12) {
                 return None;
@@ -424,7 +425,7 @@ impl EllipsoidRhumbLine {
             return Some(Cartographic::from_radians(intersection_longitude, latitude, 0.0));
         }
 
-        // Iterative solver from Equation 9 from http://edwilliams.org/ellipsoid/ellipsoid.pdf
+        // 来自 http://edwilliams.org/ellipsoid/ellipsoid.pdf 第 9 个公式的迭代求解器
         let phi1 = start.latitude;
         let e_sin_phi1 = ellipticity * phi1.sin();
         let left_component = (0.5 * (PI_OVER_TWO + phi1)).tan()
@@ -449,16 +450,16 @@ impl EllipsoidRhumbLine {
         Some(Cartographic::from_radians(intersection_longitude, new_phi_result, 0.0))
     }
 
-    /// Finds the intersection of the rhumb line with the given latitude.
+    /// 查找恒向线与给定纬度的交点。
     ///
-    /// Returns `None` for E-W lines (constant latitude).
-    /// Maps to `EllipsoidRhumbLine.prototype.findIntersectionWithLatitude`.
+    /// 对于东西向线（恒定纬度）返回 `None`。
+    /// 映射到 `EllipsoidRhumbLine.prototype.findIntersectionWithLatitude`。
     pub fn find_intersection_with_latitude(&self, intersection_latitude: f64) -> Option<Cartographic> {
         let ellipticity = self.ellipticity;
         let heading = self.heading;
         let start = &self.start;
 
-        // E-W rhumb line: no intersection or infinite intersections
+        // 东西向恒向线：无交点或有无穷多个交点
         if equals_epsilon(heading.abs(), PI_OVER_TWO, EPSILON8, EPSILON8) {
             return None;
         }
@@ -471,12 +472,12 @@ impl EllipsoidRhumbLine {
         Some(Cartographic::from_radians(longitude, intersection_latitude, 0.0))
     }
 
-    /// Interpolates a point at the given fraction (0..1) along the rhumb line.
+    /// 在恒向线上按给定比例（0..1）插值一个点。
     pub fn interpolate_using_fraction(&self, fraction: f64) -> Cartographic {
         self.interpolate_using_surface_distance(fraction * self.distance)
     }
 
-    /// Interpolates a point at the given surface distance along the rhumb line.
+    /// 在恒向线上按给定表面距离插值一个点。
     pub fn interpolate_using_surface_distance(&self, distance: f64) -> Cartographic {
         interpolate_using_surface_distance(
             &self.start,

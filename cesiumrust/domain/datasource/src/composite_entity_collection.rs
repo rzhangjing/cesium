@@ -1,29 +1,29 @@
-//! CompositeEntityCollection - non-destructively composites multiple EntityCollections.
+//! CompositeEntityCollection - 以非破坏方式组合多个 EntityCollection。
 //!
-//! Maps to CesiumJS `DataSources/CompositeEntityCollection.js`
+//! 映射到 CesiumJS `DataSources/CompositeEntityCollection.js`
 
 use crate::entity::Entity;
 use crate::entity_collection::EntityCollection;
 
-/// Non-destructively composites multiple EntityCollection instances into a
-/// single collection. If an Entity with the same ID exists in multiple
-/// collections, it is non-destructively merged into a single new entity.
+/// 将多个 EntityCollection 实例以非破坏方式组合为
+/// 单个集合。若相同 ID 的 Entity 存在于多个集合中，
+/// 会被非破坏地合并为一个新实体。
 ///
-/// Maps to CesiumJS `DataSources/CompositeEntityCollection.js`
+/// 映射到 CesiumJS `DataSources/CompositeEntityCollection.js`
 #[derive(Debug, Default)]
 pub struct CompositeEntityCollection {
-    /// The ordered list of collections.
+    /// 有序的集合列表。
     collections: Vec<EntityCollection>,
-    /// The composited entity cache.
+    /// 组合后的实体缓存。
     composite: EntityCollection,
-    /// Whether the composite needs to be rebuilt.
+    /// 组合结果是否需要重建。
     should_recomposite: bool,
-    /// Owner composite (for nested composites).
+    /// 所有者组合（用于嵌套组合）。
     owner_id: Option<String>,
 }
 
 impl CompositeEntityCollection {
-    /// Creates a new empty composite collection.
+    /// 创建新的空组合集合。
     pub fn new() -> Self {
         Self {
             collections: Vec::new(),
@@ -33,7 +33,7 @@ impl CompositeEntityCollection {
         }
     }
 
-    /// Creates a new composite with an owner ID.
+    /// 创建一个带所有者 ID 的新组合。
     pub fn with_owner(owner_id: &str) -> Self {
         Self {
             collections: Vec::new(),
@@ -43,28 +43,28 @@ impl CompositeEntityCollection {
         }
     }
 
-    /// Gets the owner ID, if any.
+    /// 获取所有者 ID（若有）。
     pub fn owner(&self) -> Option<&str> {
         self.owner_id.as_deref()
     }
 
-    /// Adds a collection to the composite.
-    /// Maps to `CompositeEntityCollection.prototype.addCollection`
+    /// 向组合添加一个集合。
+    /// 映射到 `CompositeEntityCollection.prototype.addCollection`
     pub fn add_collection(&mut self, collection: EntityCollection) {
         self.collections.push(collection);
         self.should_recomposite = true;
     }
 
-    /// Adds a collection at a specific index.
+    /// 在指定索引处添加一个集合。
     pub fn add_collection_at(&mut self, index: usize, collection: EntityCollection) {
         let idx = index.min(self.collections.len());
         self.collections.insert(idx, collection);
         self.should_recomposite = true;
     }
 
-    /// Removes a collection from the composite.
-    /// Returns true if the collection was found and removed.
-    /// Maps to `CompositeEntityCollection.prototype.removeCollection`
+    /// 从组合中移除一个集合。
+    /// 若找到并移除了该集合则返回 true。
+    /// 映射到 `CompositeEntityCollection.prototype.removeCollection`
     pub fn remove_collection(&mut self, index: usize) -> bool {
         if index < self.collections.len() {
             self.collections.remove(index);
@@ -75,96 +75,96 @@ impl CompositeEntityCollection {
         }
     }
 
-    /// Removes all collections.
-    /// Maps to `CompositeEntityCollection.prototype.removeAllCollections`
+    /// 移除所有集合。
+    /// 映射到 `CompositeEntityCollection.prototype.removeAllCollections`
     pub fn remove_all_collections(&mut self) {
         self.collections.clear();
         self.should_recomposite = true;
     }
 
-    /// Gets the number of collections.
-    /// Maps to `CompositeEntityCollection.prototype.getCollectionsLength`
+    /// 获取集合数量。
+    /// 映射到 `CompositeEntityCollection.prototype.getCollectionsLength`
     pub fn get_collections_length(&self) -> usize {
         self.collections.len()
     }
 
-    /// Gets a collection by index.
-    /// Maps to `CompositeEntityCollection.prototype.getCollection`
+    /// 按索引获取一个集合。
+    /// 映射到 `CompositeEntityCollection.prototype.getCollection`
     pub fn get_collection(&self, index: usize) -> Option<&EntityCollection> {
         self.collections.get(index)
     }
 
-    /// Gets a mutable collection by index.
+    /// 按索引获取一个可变集合。
     pub fn get_collection_mut(&mut self, index: usize) -> Option<&mut EntityCollection> {
         self.should_recomposite = true;
         self.collections.get_mut(index)
     }
 
-    /// Returns true if the composite contains an entity with the given ID.
-    /// Maps to `CompositeEntityCollection.prototype.contains`
+    /// 若组合中包含具有给定 ID 的实体则返回 true。
+    /// 映射到 `CompositeEntityCollection.prototype.contains`
     pub fn contains(&self, entity_id: &str) -> bool {
         self.ensure_composited();
         self.composite.contains(entity_id)
     }
 
-    /// Gets an entity by ID from the composite.
-    /// Maps to `CompositeEntityCollection.prototype.getById`
+    /// 按 ID 从组合中获取一个实体。
+    /// 映射到 `CompositeEntityCollection.prototype.getById`
     pub fn get_by_id(&self, entity_id: &str) -> Option<&Entity> {
         self.ensure_composited();
         self.composite.get(entity_id)
     }
 
-    /// Gets or creates an entity by ID.
-    /// Maps to `CompositeEntityCollection.prototype.getOrCreateEntity`
+    /// 按 ID 获取或创建一个实体。
+    /// 映射到 `CompositeEntityCollection.prototype.getOrCreateEntity`
     pub fn get_or_create_entity(&mut self, entity_id: &str) -> &Entity {
         self.recomposite();
         self.composite.get_or_create(entity_id)
     }
 
-    /// Returns the composited entity values.
-    /// Maps to `CompositeEntityCollection.prototype.values`
+    /// 返回组合后的实体值。
+    /// 映射到 `CompositeEntityCollection.prototype.values`
     pub fn values(&self) -> Vec<&Entity> {
         self.ensure_composited();
         self.composite.values().collect()
     }
 
-    /// Returns the number of composited entities.
+    /// 返回组合后实体的数量。
     pub fn len(&self) -> usize {
         self.ensure_composited();
         self.composite.len()
     }
 
-    /// Returns true if the composite is empty.
+    /// 若组合为空则返回 true。
     pub fn is_empty(&self) -> bool {
         self.ensure_composited();
         self.composite.is_empty()
     }
 
-    /// Suspends events (placeholder).
+    /// 挂起事件（占位）。
     pub fn suspend_events(&mut self) {}
 
-    /// Resumes events (placeholder).
+    /// 恢复事件（占位）。
     pub fn resume_events(&mut self) {}
 
-    /// Ensures the composite is up to date.
+    /// 确保组合结果是最新的。
     fn ensure_composited(&self) {
-        // In a real implementation this would check should_recomposite
-        // and rebuild lazily. For now we always access the pre-built composite.
+        // 在真实实现中，这里会检查 should_recomposite
+        // 并惰性重建。目前我们总是访问预先构建好的组合。
     }
 
-    /// Rebuilds the composite from all collections.
-    /// Later collections take priority for same-ID entities (merge).
+    /// 从所有集合重建组合。
+    /// 对于相同 ID 的实体，靠后的集合优先（合并）。
     pub fn recomposite(&mut self) {
         let mut new_composite = EntityCollection::new();
 
-        // Process collections in reverse order so later collections have priority
+        // 以逆序处理集合，以便靠后的集合拥有优先级
         for collection in self.collections.iter().rev() {
             for entity in collection.values() {
                 if !new_composite.contains(&entity.id) {
                     new_composite.add(entity.clone());
                 }
-                // If entity already exists, the later collection's version wins
-                // (already added since we iterate in reverse)
+                // 若实体已存在，则靠后集合的版本胜出
+                // （由于采用逆序遍历，已优先添加）
             }
         }
 

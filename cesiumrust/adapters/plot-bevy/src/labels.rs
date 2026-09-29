@@ -1,12 +1,10 @@
-//! Label rendering via bevy_ui text glued to projected geographic anchors.
+//! 通过紧贴已投影地理锚点的 bevy_ui 文本渲染标签。
 //!
-//! Labels are the one overlay primitive that lives in the UI pass rather than
-//! the render layer: a single [`PlotUiRoot`] node owns a [`TargetCamera`] that
-//! the sync system re-points at whichever camera is active, and every label is a
-//! child whose absolute `left` / `top` track the on-screen projection of its
-//! anchor. Because the projection comes from the same [`Camera`] the meshes are
-//! measured against, a label sits exactly where its geometry is drawn in both
-//! the 2D and the 3D view (plan §2 "同显").
+//! 标签是唯一一个存活在 UI 而非渲染层里的叠加层图元：单个
+//! [`PlotUiRoot`] 节点拥有一个 [`TargetCamera`]，同步系统会将其重新指向当前
+//! 激活的相机，而每个标签都是一个子节点，其绝对 `left` / `top`
+//! 跟踪其锚点的屏幕投影。因为投影来自用于度量网格的同一个 [`Camera`]，
+//! 标签会在 2D 与 3D 视图下都恰好位于其几何被绘制的位置（计划 §2 “同显”）。
 
 use bevy::prelude::*;
 use cesium_plot::model::geometry::LabelGeometry;
@@ -14,13 +12,13 @@ use cesium_plot::model::{LabelAnchor, Style};
 
 use crate::resources::PlotLabel;
 
-/// Marker for the single UI root every plot label parents to.
+/// 每个标绘标签都作为子节点挂到的唯一 UI 根节点的标记。
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct PlotUiRoot;
 
-/// Spawn the plot UI root (a full-window, transparent container). Only one
-/// exists; the sync system creates it lazily and keeps its `TargetCamera`
-/// pointed at the active camera.
+/// spawn 标绘 UI 根节点（一个满窗口、透明的容器）。只存在
+/// 一个；同步系统惰性地创建它，并使其 `TargetCamera`
+/// 指向当前激活的相机。
 pub fn spawn_ui_root(commands: &mut Commands) -> Entity {
     commands
         .spawn((
@@ -39,16 +37,14 @@ pub fn spawn_ui_root(commands: &mut Commands) -> Entity {
         .id()
 }
 
-/// Project a world point to the active camera's viewport, returning logical
-/// pixel coordinates (top-left origin). `None` when the point is behind the
-/// camera or the projection fails.
+/// 将一个世界点投影到当前激活相机的视口，返回逻辑像素坐标
+/// （左上角原点）。当点位于相机后方或投影失败时返回 `None`。
 pub fn world_to_screen(camera: &Camera, ct: &GlobalTransform, world: Vec3) -> Option<Vec2> {
     camera.world_to_viewport(ct, world).ok()
 }
 
-/// Per-anchor pixel translation applied to a label's projected screen point so
-/// the text box is aligned as the [`LabelAnchor`] requests. `text_px` is the
-/// rough measured size of the text box.
+/// 逐锚点的像素平移，作用于标签的投影屏幕点，以便文本框按
+/// [`LabelAnchor`] 的要求对齐。`text_px` 是文本框的粗略测量尺寸。
 pub fn anchor_offset(anchor: LabelAnchor, offset_px: [f32; 2], text_px: Vec2) -> Vec2 {
     let (ax, ay) = match anchor {
         LabelAnchor::Center => (-text_px.x * 0.5, -text_px.y * 0.5),
@@ -60,8 +56,8 @@ pub fn anchor_offset(anchor: LabelAnchor, offset_px: [f32; 2], text_px: Vec2) ->
     Vec2::new(ax + offset_px[0], ay + offset_px[1])
 }
 
-/// Spawn a label text node under `root` for one element. The node starts
-/// off-screen; the sync system writes its absolute position every frame.
+/// 在 `root` 下为一个元素 spawn 一个标签文本节点。该节点开始时
+/// 在屏幕外；同步系统每帧写入其绝对位置。
 pub fn spawn_label(
     commands: &mut Commands,
     root: Entity,

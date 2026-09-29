@@ -1,25 +1,25 @@
-//! Proxy URL rewriting with trusted-server integration.
+//! 带可信服务器集成的代理 URL 重写。
 //!
-//! Maps to CesiumJS `Core/DefaultProxy.js` + the proxy logic in
-//! `Resource.prototype.getUrlComponent(query, proxy)` and
-//! `Resource.prototype.fetch` (the `_Implementations.loadAndExecuteScript` /
-//! `loadWithXhr` proxy branch).
+//! 映射到 CesiumJS `Core/DefaultProxy.js` 以及
+//! `Resource.prototype.getUrlComponent(query, proxy)` 和
+//! `Resource.prototype.fetch`（`_Implementations.loadAndExecuteScript` /
+//! `loadWithXhr` 代理分支）中的代理逻辑。
 //!
-//! A [`DefaultProxy`] prepends a proxy URL to the resource URL so that
-//! cross-origin requests can be routed through a same-origin server. When a
-//! [`TrustedServers`] registry is configured, the proxy is **only applied to
-//! untrusted** servers — trusted servers are accessed directly (credentials
-//! flow without CORS preflight).
+//! [`DefaultProxy`] 会在资源 URL 前拼上一个代理 URL，以便
+//! 将跨源请求路由到一个同源服务器。当配置了
+//! [`TrustedServers`] 注册表时，代理 **仅应用于不可信**
+//! 的服务器 —— 可信服务器会被直接访问（凭据
+//! 无需 CORS 预检即可流动）。
 //!
-//! This module is **pure domain logic** — no network IO, no framework
-//! dependency.
+//! 本模块是 **纯领域逻辑** —— 无网络 IO，无框架
+//! 依赖。
 
 use crate::trusted_servers::TrustedServers;
 
-/// A simple proxy that appends the desired resource URL as the sole query
-/// parameter to the proxy base URL.
+/// 一个简单的代理，它将所需的资源 URL 作为唯一的查询
+/// 参数拼接到代理基础 URL 之后。
 ///
-/// Maps to CesiumJS `DefaultProxy`:
+/// 映射到 CesiumJS `DefaultProxy`：
 /// ```js
 /// function DefaultProxy(proxy) { this.proxy = proxy; }
 /// DefaultProxy.prototype.getURL = function(resource) {
@@ -29,63 +29,62 @@ use crate::trusted_servers::TrustedServers;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefaultProxy {
-    /// The proxy base URL (e.g. `/proxy/` or `https://proxy.example.com/?url=`).
+    /// 代理基础 URL（例如 `/proxy/` 或 `https://proxy.example.com/?url=`）。
     proxy_url: String,
 }
 
 impl DefaultProxy {
-    /// Creates a new proxy from the given proxy base URL.
+    /// 从给定的代理基础 URL 创建一个新代理。
     ///
-    /// # Panics
-    /// Panics if `proxy_url` is empty (mirrors CesiumJS `Check.typeOf.string`).
+    /// # Panic
+    /// 若 `proxy_url` 为空则 panic（对应 CesiumJS 的 `Check.typeOf.string`）。
     pub fn new(proxy_url: impl Into<String>) -> Self {
         let url = proxy_url.into();
         assert!(!url.is_empty(), "DefaultProxy: proxy URL must not be empty");
         Self { proxy_url: url }
     }
 
-    /// Returns the proxy base URL.
+    /// 返回代理基础 URL。
     pub fn proxy_url(&self) -> &str {
         &self.proxy_url
     }
 
-    /// Rewrites `resource_url` to go through this proxy.
+    /// 重写 `resource_url` 使其经由本代理。
     ///
-    /// If the proxy URL already contains a `?`, the resource is appended
-    /// directly (assumes the proxy expects the URL as the last query param
-    /// value). Otherwise a `?` separator is inserted.
+    /// 若代理 URL 已包含 `?`，则直接拼接资源（假设代理
+    /// 期望该 URL 作为最后一个查询参数
+    /// 值）。否则插入一个 `?` 分隔符。
     ///
-    /// Maps to `DefaultProxy.prototype.getURL`.
+    /// 映射到 `DefaultProxy.prototype.getURL`。
     pub fn get_url(&self, resource_url: &str) -> String {
         let prefix = if self.proxy_url.contains('?') { "" } else { "?" };
         format!("{}{}{}", self.proxy_url, prefix, resource_url)
     }
 }
 
-/// A proxy policy that decides whether to proxy a given URL based on the
-/// trusted-servers registry.
+/// 一个代理策略，根据可信服务器注册表
+/// 决定是否代理某个给定 URL。
 ///
-/// Maps to CesiumJS `Resource.prototype.getUrlComponent(query, proxy)` where
-/// the proxy is applied only when the resource's server is NOT in
-/// `TrustedServers`:
+/// 映射到 CesiumJS `Resource.prototype.getUrlComponent(query, proxy)`，其中
+/// 仅当资源的服务器不在 `TrustedServers` 中时才应用代理：
 /// ```js
 /// if (proxy && !TrustedServers.isTrusted(url)) {
 ///   url = proxy.getURL(url);
 /// }
 /// ```
 ///
-/// The policy encapsulates this decision so callers don't need to know about
-/// the trusted-servers check.
+/// 该策略封装了这一决策，使调用方无需知道
+/// 可信服务器的检查。
 #[derive(Debug, Clone)]
 pub struct ProxyPolicy {
-    /// The proxy to use for untrusted servers (None = never proxy).
+    /// 用于不可信服务器的代理（None = 从不代理）。
     proxy: Option<DefaultProxy>,
-    /// Registry of trusted servers (accessed directly, credentials allowed).
+    /// 可信服务器注册表（直接访问，允许凭据）。
     trusted_servers: TrustedServers,
 }
 
 impl ProxyPolicy {
-    /// Creates a policy with no proxy (all URLs pass through unchanged).
+    /// 创建一个不带代理的策略（所有 URL 原样通过）。
     pub fn no_proxy() -> Self {
         Self {
             proxy: None,
@@ -93,7 +92,7 @@ impl ProxyPolicy {
         }
     }
 
-    /// Creates a policy that proxies untrusted servers through `proxy`.
+    /// 创建一个将不可信服务器经由 `proxy` 代理的策略。
     pub fn with_proxy(proxy: DefaultProxy) -> Self {
         Self {
             proxy: Some(proxy),
@@ -101,8 +100,8 @@ impl ProxyPolicy {
         }
     }
 
-    /// Creates a policy with both a proxy and a pre-populated trusted servers
-    /// registry.
+    /// 创建一个同时带有代理和已预填可信服务器
+    /// 注册表的策略。
     pub fn new(proxy: Option<DefaultProxy>, trusted_servers: TrustedServers) -> Self {
         Self {
             proxy,
@@ -110,66 +109,66 @@ impl ProxyPolicy {
         }
     }
 
-    /// Returns a mutable reference to the trusted servers registry so hosts
-    /// can add/remove entries at runtime.
+    /// 返回可信服务器注册表的可变引用，以便宿主
+    /// 在运行时添加/移除条目。
     pub fn trusted_servers_mut(&mut self) -> &mut TrustedServers {
         &mut self.trusted_servers
     }
 
-    /// Returns a reference to the trusted servers registry.
+    /// 返回可信服务器注册表的引用。
     pub fn trusted_servers(&self) -> &TrustedServers {
         &self.trusted_servers
     }
 
-    /// Returns a reference to the proxy, if configured.
+    /// 返回代理的引用（若已配置）。
     pub fn proxy(&self) -> Option<&DefaultProxy> {
         self.proxy.as_ref()
     }
 
-    /// Sets or replaces the proxy.
+    /// 设置或替换代理。
     pub fn set_proxy(&mut self, proxy: Option<DefaultProxy>) {
         self.proxy = proxy;
     }
 
-    /// Determines whether `url` should be proxied.
+    /// 判断 `url` 是否应被代理。
     ///
-    /// Returns `true` when:
-    /// 1. A proxy is configured, AND
-    /// 2. The URL's server is NOT in the trusted registry.
+    /// 在以下情况下返回 `true`：
+    /// 1. 配置了代理，且
+    /// 2. URL 的服务器不在可信注册表中。
     ///
-    /// Data URIs and blob URIs are never proxied (they have no server).
+    /// Data URI 和 blob URI 从不代理（它们没有服务器）。
     pub fn should_proxy(&self, url: &str) -> bool {
         if self.proxy.is_none() {
             return false;
         }
-        // Data URIs and blob URIs bypass proxying.
+        // Data URI 和 blob URI 绕过代理。
         if url.starts_with("data:") || url.starts_with("blob:") {
             return false;
         }
         !self.trusted_servers.is_trusted(url)
     }
 
-    /// Applies the proxy to `url` if the policy says it should be proxied.
-    /// Otherwise returns the URL unchanged.
+    /// 若策略认为应代理，则将代理应用到 `url`。
+    /// 否则原样返回该 URL。
     ///
-    /// This is the single entry point for Resource's URL-building pipeline:
+    /// 这是 Resource 的 URL 构建管道的唯一入口点：
     /// ```ignore
     /// let final_url = policy.apply(&resource.build_url());
     /// ```
     pub fn apply(&self, url: &str) -> String {
         if self.should_proxy(url) {
-            // Safe to unwrap: should_proxy returns true only when proxy is Some.
+            // 可安全 unwrap：should_proxy 仅在 proxy 为 Some 时返回 true。
             self.proxy.as_ref().unwrap().get_url(url)
         } else {
             url.to_string()
         }
     }
 
-    /// Applies the proxy and also passes through additional query parameters
-    /// that should be appended to the *original* (pre-proxy) URL.
+    /// 应用代理，并额外透传应拼接到 *原始*（代理前）
+    /// URL 上的附加查询参数。
     ///
-    /// This supports the CesiumJS pattern where `Resource.queryParameters` are
-    /// appended before the proxy wraps the URL:
+    /// 这支持 CesiumJS 的模式：`Resource.queryParameters` 在
+    /// 代理包裹 URL 之前拼接：
     /// ```text
     /// proxy.getURL(baseUrl + "?" + queryString)
     /// ```
@@ -245,12 +244,12 @@ mod tests {
         ts.add("trusted.com", 443);
         let policy = ProxyPolicy::new(Some(proxy), ts);
 
-        // Trusted: no proxy
+        // 可信：不代理
         assert_eq!(
             policy.apply("https://trusted.com/data"),
             "https://trusted.com/data"
         );
-        // Untrusted: proxied
+        // 不可信：代理
         assert_eq!(
             policy.apply("https://other.com/data"),
             "/proxy?https://other.com/data"
@@ -284,12 +283,12 @@ mod tests {
             policy.apply_with_query("https://example.com/api", "key=value&foo=bar"),
             "https://example.com/api?key=value&foo=bar"
         );
-        // Already has query
+        // 已有查询
         assert_eq!(
             policy.apply_with_query("https://example.com/api?existing=1", "key=value"),
             "https://example.com/api?existing=1&key=value"
         );
-        // Empty query
+        // 空查询
         assert_eq!(
             policy.apply_with_query("https://example.com/api", ""),
             "https://example.com/api"

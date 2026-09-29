@@ -1,9 +1,9 @@
-//! Approximation algorithm specs - ported from:
-//! - packages/engine/Specs/Core/LinearApproximationSpec.js (7 it())
-//! - packages/engine/Specs/Core/LagrangePolynomialApproximationSpec.js (3 it())
-//! - packages/engine/Specs/Core/HermitePolynomialApproximationSpec.js (4 it())
+//! 近似算法规格测试 - 移植自：
+//! - packages/engine/Specs/Core/LinearApproximationSpec.js（7 个 it()）
+//! - packages/engine/Specs/Core/LagrangePolynomialApproximationSpec.js（3 个 it()）
+//! - packages/engine/Specs/Core/HermitePolynomialApproximationSpec.js（4 个 it()）
 //!
-//! A-class tests: 11 (skipping "result parameter" pattern tests)
+//! A 类测试：11 个（跳过"result 参数"模式测试）
 
 use cesium_datasource::property_system::interpolation::{
     HermitePolynomialApproximation, InterpolationAlgorithm, LagrangePolynomialApproximation,
@@ -83,7 +83,7 @@ fn linear_get_required_data_points_returns_2() {
 // LagrangePolynomialApproximation
 // ============================================================
 
-/// Validated against STK Components (www.agi.com/components/)
+/// 已对照 STK Components（www.agi.com/components/）验证
 const LAGRANGE_X_TABLE: [f64; 8] = [0.0, 60.0, 120.0, 180.0, 240.0, 300.0, 360.0, 420.0];
 
 #[allow(clippy::excessive_precision)]
@@ -126,7 +126,7 @@ fn lagrange_get_required_data_points() {
 // HermitePolynomialApproximation
 // ============================================================
 
-/// Validated against STK Components (www.agi.com/components/)
+/// 已对照 STK Components（www.agi.com/components/）验证
 const HERMITE_X_TABLE: [f64; 8] = [0.0, 60.0, 120.0, 180.0, 240.0, 300.0, 360.0, 420.0];
 
 #[allow(clippy::excessive_precision)]
@@ -153,7 +153,7 @@ const HERMITE_DY_TABLE: [f64; 16] = [
     -930.82512793439, 0.0,
 ];
 
-/// Build the combined yTable with yStride=4: [y0, y1, dy0, dy1] per point.
+/// 构造 yStride=4 的组合 yTable：每点 [y0, y1, dy0, dy1]。
 fn hermite_combined_table() -> Vec<f64> {
     let mut combined = vec![0.0f64; 32];
     for i in 0..8 {
@@ -172,7 +172,7 @@ fn hermite_interpolating_produces_correct_results() {
     let result = alg.interpolate_order_zero(100.0, &HERMITE_X_TABLE, &combined, 4);
 
     let expected = 13367002.870928625;
-    // The accuracy is lower because we are no longer using derivative info
+    // 精度较低，因为不再使用导数信息
     assert!(
         (result[0] - expected).abs() <= 1e-6 * expected.abs(),
         "result[0] = {}, expected {}",

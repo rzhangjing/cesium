@@ -1,7 +1,7 @@
-//! cesium-time: JulianDate, Clock, TimeInterval
-//! Domain layer - pure Rust, no framework dependency.
+//! cesium-time：JulianDate、Clock、TimeInterval
+//! 领域层 - 纯 Rust，无框架依赖。
 //!
-//! CesiumJS mapping: `packages/engine/Source/Core/JulianDate.js`, `Clock.js`, `TimeInterval.js`
+//! CesiumJS 映射：`packages/engine/Source/Core/JulianDate.js`、`Clock.js`、`TimeInterval.js`
 
 pub mod julian_date;
 pub mod gregorian_date;

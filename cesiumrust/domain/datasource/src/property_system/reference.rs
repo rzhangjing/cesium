@@ -1,6 +1,6 @@
-//! Reference properties: transparent links to properties on other entities.
+//! 引用属性：指向其他实体上属性的透明链接。
 //!
-//! Maps to CesiumJS `DataSources/ReferenceProperty.js`.
+//! 映射到 CesiumJS `DataSources/ReferenceProperty.js`。
 
 use crate::property_system::property::DynProperty;
 use crate::property_system::value::{PropertyValue, ReferenceFrame};
@@ -9,23 +9,23 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Resolves a property reference to a concrete property.
+/// 将一个属性引用解析为一个具体属性。
 ///
-/// This decouples `ReferenceProperty` from any concrete entity-collection
-/// type. Implementors map a target entity id and a path of property names to
-/// the referenced property.
+/// 这将 `ReferenceProperty` 与任何具体的实体集合类型解耦。
+/// 实现者将目标实体 id 与一条属性名路径映射到
+/// 被引用的属性。
 pub trait PropertyResolver: Send + Sync {
-    /// Resolves the property identified by `target_id` and `property_names`.
-    /// Returns `None` if the target entity or property path cannot be found.
+    /// 解析由 `target_id` 与 `property_names` 标识的属性。
+    /// 若无法找到目标实体或属性路径则返回 `None`。
     fn resolve(&self, target_id: &str, property_names: &[String])
         -> Option<Arc<dyn DynProperty>>;
 }
 
-/// Parses a reference string of the form `"objectId#foo.bar"`, where `#`
-/// separates the id from the property path and `.` separates sub-properties.
-/// The `#`, `.` and `\` characters may be escaped with a backslash.
+/// 解析形如 `"objectId#foo.bar"` 的引用字符串，其中 `#`
+/// 分隔 id 与属性路径，`.` 分隔子属性。
+/// `#`、`.` 和 `\` 字符可用反斜杠转义。
 ///
-/// Returns `(identifier, property_names)`.
+/// 返回 `(identifier, property_names)`。
 fn parse_reference_string(reference_string: &str) -> (String, Vec<String>) {
     let mut identifier = String::new();
     let mut values: Vec<String> = Vec::new();
@@ -56,10 +56,10 @@ fn parse_reference_string(reference_string: &str) -> (String, Vec<String>) {
     (identifier, values)
 }
 
-/// A property which transparently links to another property on a provided
-/// object.
+/// 一种透明地链接到所提供对象上另一个属性的
+/// 属性。
 ///
-/// Maps to CesiumJS `DataSources/ReferenceProperty.js`.
+/// 映射到 CesiumJS `DataSources/ReferenceProperty.js`。
 #[derive(Clone)]
 pub struct ReferenceProperty {
     resolver: Arc<dyn PropertyResolver>,
@@ -68,8 +68,8 @@ pub struct ReferenceProperty {
 }
 
 impl ReferenceProperty {
-    /// Creates a new reference property.
-    /// Maps to `new ReferenceProperty(targetCollection, targetId, targetPropertyNames)`.
+    /// 创建新的引用属性。
+    /// 映射到 `new ReferenceProperty(targetCollection, targetId, targetPropertyNames)`。
     pub fn new(
         resolver: Arc<dyn PropertyResolver>,
         target_id: &str,
@@ -82,27 +82,27 @@ impl ReferenceProperty {
         }
     }
 
-    /// Creates a new instance from a reference string of the form
-    /// `"objectId#foo.bar"`.
-    /// Maps to `ReferenceProperty.fromString`.
+    /// 从形如 `"objectId#foo.bar"` 的引用字符串
+    /// 创建新实例。
+    /// 映射到 `ReferenceProperty.fromString`。
     pub fn from_string(resolver: Arc<dyn PropertyResolver>, reference_string: &str) -> Self {
         let (identifier, values) = parse_reference_string(reference_string);
         Self::new(resolver, &identifier, values)
     }
 
-    /// The id of the entity being referenced. Maps to `targetId`.
+    /// 被引用实体的 id。映射到 `targetId`。
     pub fn target_id(&self) -> &str {
         &self.target_id
     }
 
-    /// The array of property names used to retrieve the referenced property.
-    /// Maps to `targetPropertyNames`.
+    /// 用于获取被引用属性的属性名数组。
+    /// 映射到 `targetPropertyNames`。
     pub fn target_property_names(&self) -> &[String] {
         &self.target_property_names
     }
 
-    /// The resolved instance of the underlying referenced property, or `None`
-    /// if it cannot be resolved. Maps to `resolvedProperty`.
+    /// 底层被引用属性的已解析实例，若无法解析
+    /// 则为 `None`。映射到 `resolvedProperty`。
     pub fn resolved_property(&self) -> Option<Arc<dyn DynProperty>> {
         self.resolver
             .resolve(&self.target_id, &self.target_property_names)
@@ -111,8 +111,8 @@ impl ReferenceProperty {
 
 impl DynProperty for ReferenceProperty {
     fn is_constant(&self) -> bool {
-        // CesiumJS `Property.isConstant(resolve(this))` is true when the
-        // target cannot be resolved.
+        // CesiumJS 的 `Property.isConstant(resolve(this))` 在目标
+        // 无法解析时为 true。
         match self.resolved_property() {
             None => true,
             Some(p) => p.is_constant(),
@@ -163,23 +163,23 @@ impl DynProperty for ReferenceProperty {
     }
 }
 
-/// A simple `PropertyResolver` backed by a map keyed on
-/// `"targetId#name1.name2..."`. Useful for testing and simple use cases.
+/// 一个由映射支持的简单 `PropertyResolver`，键为
+/// `"targetId#name1.name2..."`。适用于测试与简单场景。
 #[derive(Default, Clone)]
 pub struct MapPropertyResolver {
     entries: Arc<HashMap<String, Arc<dyn DynProperty>>>,
 }
 
 impl MapPropertyResolver {
-    /// Creates an empty resolver.
+    /// 创建一个空解析器。
     pub fn new() -> Self {
         Self {
             entries: Arc::new(HashMap::new()),
         }
     }
 
-    /// Inserts a property under the key formed from `target_id` and
-    /// `property_names`.
+    /// 在由 `target_id` 与 `property_names` 构成的键下
+    /// 插入一个属性。
     pub fn insert(
         &mut self,
         target_id: &str,
@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn test_parse_reference_string_escaped() {
-        // "\#object\.4#billboard.scale" -> id "#object.4", props [billboard, scale].
+        // "\#object\.4#billboard.scale" -> id "#object.4"，props [billboard, scale]。
         let (id, props) = parse_reference_string("\\#object\\.4#billboard.scale");
         assert_eq!(id, "#object.4");
         assert_eq!(props, names(&["billboard", "scale"]));
@@ -272,7 +272,7 @@ mod tests {
             "missing",
             names(&["foo"]),
         );
-        // Unresolved reference is constant and yields undefined.
+        // 未解析的引用为常量且产生 undefined。
         assert!(prop.is_constant());
         assert_eq!(
             prop.get_value(&JulianDate::now()),
@@ -323,7 +323,7 @@ mod tests {
         );
         assert!(!a.equals(&c));
 
-        // Different resolver -> not equal.
+        // 不同的解析器 -> 不相等。
         let other_resolver = Arc::new(MapPropertyResolver::new());
         let d = ReferenceProperty::new(
             other_resolver as Arc<dyn PropertyResolver>,

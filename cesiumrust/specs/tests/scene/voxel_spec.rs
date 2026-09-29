@@ -1,5 +1,5 @@
-//! Scene/VoxelBoxShapeSpec.js, VoxelCylinderShapeSpec.js, VoxelEllipsoidShapeSpec.js
-//! → Rust integration tests
+//! Scene/VoxelBoxShapeSpec.js、VoxelCylinderShapeSpec.js、VoxelEllipsoidShapeSpec.js
+//! → Rust 集成测试
 
 use cesium_voxel::{VoxelShapeType, VoxelBoxShape, VoxelCylinderShape, VoxelEllipsoidShape};
 use glam::DVec3;
@@ -34,7 +34,7 @@ fn test_voxel_box_shape_new() {
 #[test]
 fn test_voxel_box_shape_contains_local() {
     let shape = VoxelBoxShape::new();
-    // Origin should be inside default box
+    // 原点应在默认盒内
     assert!(shape.contains_local(DVec3::ZERO));
 }
 

@@ -1,49 +1,48 @@
-//! Custom shader system for glTF models and 3D Tiles.
+//! 用于 glTF 模型与 3D Tiles 的 custom shader 系统。
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Scene/Model/CustomShader.js`
 //! - `Scene/Model/CustomShaderMode.js`
 //! - `Scene/Model/CustomShaderTranslucencyMode.js`
 //! - `Scene/Model/UniformType.js`
 //! - `Scene/Model/VaryingType.js`
 //!
-//! The CustomShader system allows users to inject custom GLSL code into the
-//! model rendering pipeline, modifying vertex positions and fragment material
-//! properties.
+//! CustomShader 系统允许用户将自定义 GLSL 代码注入模型
+//! 渲染流水线，修改顶点位置与片元 material 属性。
 
 use std::collections::HashMap;
 
-/// Custom shader mode determining how fragment shader code is applied.
+/// custom shader 模式，决定片元 shader 代码如何应用。
 ///
-/// Maps to CesiumJS `CustomShaderMode`
+/// 映射到 CesiumJS `CustomShaderMode`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CustomShaderMode {
-    /// Modify the material after the material pipeline stage.
-    /// The custom fragment shader has access to the computed material
-    /// and can modify it.
+    /// 在 material 流水线阶段之后修改 material。
+    /// 自定义片元 shader 可以访问已计算出的 material
+    /// 并对其进行修改。
     #[default]
     ModifyMaterial,
-    /// Replace the material entirely with the custom shader output.
+    /// 用自定义 shader 的输出完全替换 material。
     ReplaceMaterial,
 }
 
-/// Translucency mode for custom shaders.
+/// custom shader 的半透明模式。
 ///
-/// Maps to CesiumJS `CustomShaderTranslucencyMode`
+/// 映射到 CesiumJS `CustomShaderTranslucencyMode`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CustomShaderTranslucencyMode {
-    /// Inherit translucency from the model's material settings.
+    /// 从模型的 material 设置继承半透明度。
     #[default]
     Inherit,
-    /// Force opaque rendering.
+    /// 强制不透明渲染。
     Opaque,
-    /// Force translucent rendering.
+    /// 强制半透明渲染。
     Translucent,
 }
 
-/// GLSL uniform types for custom shaders.
+/// custom shader 的 GLSL uniform 类型。
 ///
-/// Maps to CesiumJS `UniformType`
+/// 映射到 CesiumJS `UniformType`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UniformType {
     /// `float`
@@ -81,7 +80,7 @@ pub enum UniformType {
 }
 
 impl UniformType {
-    /// Returns the GLSL type string.
+    /// 返回 GLSL 类型字符串。
     pub fn glsl_type(&self) -> &'static str {
         match self {
             Self::Float => "float",
@@ -103,7 +102,7 @@ impl UniformType {
         }
     }
 
-    /// Returns the number of components for this type.
+    /// 返回该类型的分量数量。
     pub fn component_count(&self) -> usize {
         match self {
             Self::Float | Self::Int | Self::Bool => 1,
@@ -117,15 +116,15 @@ impl UniformType {
         }
     }
 
-    /// Returns true if this is a sampler type.
+    /// 若这是一个 sampler 类型则返回 true。
     pub fn is_sampler(&self) -> bool {
         matches!(self, Self::Sampler2D)
     }
 }
 
-/// GLSL varying types for custom shaders.
+/// custom shader 的 GLSL varying 类型。
 ///
-/// Maps to CesiumJS `VaryingType`
+/// 映射到 CesiumJS `VaryingType`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VaryingType {
     /// `float`
@@ -145,7 +144,7 @@ pub enum VaryingType {
 }
 
 impl VaryingType {
-    /// Returns the GLSL type string.
+    /// 返回 GLSL 类型字符串。
     pub fn glsl_type(&self) -> &'static str {
         match self {
             Self::Float => "float",
@@ -159,66 +158,66 @@ impl VaryingType {
     }
 }
 
-/// A uniform value that can be set on a custom shader.
+/// 可在 custom shader 上设置的 uniform 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum UniformValue {
-    /// A single float.
+    /// 单个 float。
     Float(f64),
-    /// A vec2.
+    /// 一个 vec2。
     Vec2([f64; 2]),
-    /// A vec3.
+    /// 一个 vec3。
     Vec3([f64; 3]),
-    /// A vec4.
+    /// 一个 vec4。
     Vec4([f64; 4]),
-    /// A single integer.
+    /// 单个整数。
     Int(i32),
-    /// An ivec2.
+    /// 一个 ivec2。
     IntVec2([i32; 2]),
-    /// An ivec3.
+    /// 一个 ivec3。
     IntVec3([i32; 3]),
-    /// An ivec4.
+    /// 一个 ivec4。
     IntVec4([i32; 4]),
-    /// A boolean.
+    /// 一个布尔值。
     Bool(bool),
-    /// A mat3 (column-major).
+    /// 一个 mat3（列主序）。
     Mat3([f64; 9]),
-    /// A mat4 (column-major).
+    /// 一个 mat4（列主序）。
     Mat4([f64; 16]),
-    /// A texture uniform (URL or resource path).
+    /// 一个 texture uniform（URL 或资源路径）。
     Texture(String),
 }
 
-/// A uniform declaration with type and initial value.
+/// 一个带有类型与初始值的 uniform 声明。
 ///
-/// Maps to CesiumJS `UniformSpecifier`
+/// 映射到 CesiumJS `UniformSpecifier`
 #[derive(Debug, Clone)]
 pub struct UniformDeclaration {
-    /// The GLSL type of the uniform.
+    /// 该 uniform 的 GLSL 类型。
     pub uniform_type: UniformType,
-    /// The initial value.
+    /// 初始值。
     pub value: UniformValue,
 }
 
-/// Variables used in custom shader code (for optimization).
+/// custom shader 代码中使用的变量（用于优化）。
 ///
-/// Maps to CesiumJS `VariableSet`
+/// 映射到 CesiumJS `VariableSet`
 #[derive(Debug, Clone, Default)]
 pub struct UsedVariables {
-    /// Attribute variables used (e.g., positionMC, normalEC).
+    /// 使用的 attribute 变量（例如 positionMC、normalEC）。
     pub attribute_set: Vec<String>,
-    /// Feature ID variables used.
+    /// 使用的 feature ID 变量。
     pub feature_id_set: Vec<String>,
-    /// Metadata variables used.
+    /// 使用的 metadata 变量。
     pub metadata_set: Vec<String>,
-    /// Material variables used (fragment shader only).
+    /// 使用的 material 变量（仅片元 shader）。
     pub material_set: Vec<String>,
 }
 
-/// A user-defined GLSL shader for models and 3D Tiles.
+/// 用于模型与 3D Tiles 的用户自定义 GLSL shader。
 ///
-/// Maps to CesiumJS `Scene/Model/CustomShader.js`
+/// 映射到 CesiumJS `Scene/Model/CustomShader.js`
 ///
-/// # Example
+/// # 示例
 /// ```ignore
 /// let shader = CustomShader::new(
 ///     CustomShaderMode::ModifyMaterial,
@@ -228,21 +227,21 @@ pub struct UsedVariables {
 /// ```
 #[derive(Debug, Clone)]
 pub struct CustomShader {
-    /// How the custom shader interacts with the fragment shader.
+    /// custom shader 与片元 shader 的交互方式。
     pub mode: CustomShaderMode,
-    /// Translucency mode.
+    /// 半透明模式。
     pub translucency_mode: CustomShaderTranslucencyMode,
-    /// User-defined uniforms.
+    /// 用户定义的 uniforms。
     pub uniforms: HashMap<String, UniformDeclaration>,
-    /// User-defined varyings.
+    /// 用户定义的 varyings。
     pub varyings: HashMap<String, VaryingType>,
-    /// Custom vertex shader GLSL code.
+    /// 自定义顶点 shader 的 GLSL 代码。
     pub vertex_shader_text: Option<String>,
-    /// Custom fragment shader GLSL code.
+    /// 自定义片元 shader 的 GLSL 代码。
     pub fragment_shader_text: Option<String>,
-    /// Variables used in the vertex shader (parsed from code).
+    /// 顶点 shader 中使用的变量（从代码解析）。
     pub used_variables_vertex: UsedVariables,
-    /// Variables used in the fragment shader (parsed from code).
+    /// 片元 shader 中使用的变量（从代码解析）。
     pub used_variables_fragment: UsedVariables,
 }
 
@@ -262,7 +261,7 @@ impl Default for CustomShader {
 }
 
 impl CustomShader {
-    /// Creates a new custom shader with the given mode and shader text.
+    /// 创建一个具有给定模式与 shader 文本的新 custom shader。
     pub fn new(
         mode: CustomShaderMode,
         vertex_shader_text: Option<String>,
@@ -278,7 +277,7 @@ impl CustomShader {
         shader
     }
 
-    /// Adds a uniform declaration.
+    /// 添加一个 uniform 声明。
     pub fn with_uniform(
         mut self,
         name: &str,
@@ -295,13 +294,13 @@ impl CustomShader {
         self
     }
 
-    /// Adds a varying declaration.
+    /// 添加一个 varying 声明。
     pub fn with_varying(mut self, name: &str, varying_type: VaryingType) -> Self {
         self.varyings.insert(name.to_string(), varying_type);
         self
     }
 
-    /// Sets the translucency mode.
+    /// 设置半透明模式。
     pub fn with_translucency_mode(
         mut self,
         mode: CustomShaderTranslucencyMode,
@@ -310,9 +309,9 @@ impl CustomShader {
         self
     }
 
-    /// Updates a uniform value.
+    /// 更新一个 uniform 值。
     ///
-    /// Maps to CesiumJS `CustomShader.prototype.setUniform`
+    /// 映射到 CesiumJS `CustomShader.prototype.setUniform`
     pub fn set_uniform(&mut self, name: &str, value: UniformValue) -> Result<(), ShaderError> {
         if let Some(decl) = self.uniforms.get_mut(name) {
             decl.value = value;
@@ -322,9 +321,9 @@ impl CustomShader {
         }
     }
 
-    /// Parses used variables from shader text.
+    /// 从 shader 文本解析使用的变量。
     ///
-    /// Maps to CesiumJS `findUsedVariables`
+    /// 映射到 CesiumJS `findUsedVariables`
     fn find_used_variables(&mut self) {
         if let Some(ref vs_text) = self.vertex_shader_text {
             self.used_variables_vertex = parse_variables(vs_text);
@@ -334,11 +333,11 @@ impl CustomShader {
         }
     }
 
-    /// Validates built-in variable usage.
+    /// 校验内置变量的使用。
     ///
-    /// Maps to CesiumJS `validateBuiltinVariables`
+    /// 映射到 CesiumJS `validateBuiltinVariables`
     pub fn validate(&self) -> Result<(), ShaderError> {
-        // Check vertex shader for fragment-only variables
+        // 检查顶点 shader 中是否用了仅限片元的变量
         let vs_attrs = &self.used_variables_vertex.attribute_set;
         for name in vs_attrs {
             if name == "position" || name == "normal" || name == "tangent" || name == "bitangent" {
@@ -365,7 +364,7 @@ impl CustomShader {
             }
         }
 
-        // Check fragment shader for vertex-only variables
+        // 检查片元 shader 中是否用了仅限顶点的变量
         let fs_attrs = &self.used_variables_fragment.attribute_set;
         for name in fs_attrs {
             if name == "position" || name == "normal" || name == "tangent" || name == "bitangent" {
@@ -388,7 +387,7 @@ impl CustomShader {
         Ok(())
     }
 
-    /// Generates GLSL uniform declarations.
+    /// 生成 GLSL uniform 声明。
     pub fn generate_uniform_declarations(&self) -> String {
         let mut result = String::new();
         for (name, decl) in &self.uniforms {
@@ -401,7 +400,7 @@ impl CustomShader {
         result
     }
 
-    /// Generates GLSL varying declarations.
+    /// 生成 GLSL varying 声明。
     pub fn generate_varying_declarations(&self) -> String {
         let mut result = String::new();
         for (name, vtype) in &self.varyings {
@@ -411,39 +410,39 @@ impl CustomShader {
     }
 }
 
-/// Errors that can occur in custom shader processing.
+/// custom shader 处理中可能出现的错误。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ShaderError {
-    /// Uniform not declared in the constructor.
+    /// 构造函数中未声明的 uniform。
     #[error("Uniform '{0}' must be declared in the CustomShader constructor")]
     UniformNotDeclared(String),
 
-    /// Ambiguous variable name (missing coordinate suffix).
+    /// 歧义的变量名（缺少坐标系后缀）。
     #[error("'{name}' is ambiguous in the {shader} shader. Did you mean '{suggestion}'?")]
     AmbiguousVariable {
-        /// The ambiguous name.
+        /// 歧义的名称。
         name: String,
-        /// Which shader it was found in.
+        /// 在哪个 shader 中找到。
         shader: String,
-        /// The suggested correct name.
+        /// 建议的正确名称。
         suggestion: String,
     },
 
-    /// Variable used in wrong shader stage.
+    /// 变量用在了错误的 shader 阶段。
     #[error("'{name}' is not available in the {found_in} shader. Did you mean '{suggestion}'?")]
     WrongShaderVariable {
-        /// The variable name.
+        /// 变量名。
         name: String,
-        /// Which shader it was found in.
+        /// 在哪个 shader 中找到。
         found_in: String,
-        /// The suggested correct name.
+        /// 建议的正确名称。
         suggestion: String,
     },
 }
 
-/// Parses used variables from shader text.
+/// 从 shader 文本解析使用的变量。
 ///
-/// Extracts variable names from patterns like:
+/// 从如下模式中提取变量名：
 /// - `vsInput.attributes.positionMC` → attribute "positionMC"
 /// - `fsInput.featureIds.featureId_0` → feature ID "featureId_0"
 /// - `vsInput.metadata.height` → metadata "height"
@@ -451,21 +450,21 @@ pub enum ShaderError {
 fn parse_variables(shader_text: &str) -> UsedVariables {
     let mut vars = UsedVariables::default();
 
-    // Parse attribute references: [vf]sInput.attributes.(\w+)
+    // 解析 attribute 引用：[vf]sInput.attributes.(\w+)
     extract_matches(shader_text, ".attributes.", &mut vars.attribute_set);
 
-    // Parse feature ID references: [vf]sInput.featureIds.(\w+)
+    // 解析 feature ID 引用：[vf]sInput.featureIds.(\w+)
     extract_matches(shader_text, ".featureIds.", &mut vars.feature_id_set);
 
-    // Parse metadata references: [vf]sInput.metadata.(\w+) or .metadataClass. or .metadataStatistics.
+    // 解析 metadata 引用：[vf]sInput.metadata.(\w+) 或 .metadataClass. 或 .metadataStatistics.
     extract_matches(shader_text, ".metadata.", &mut vars.metadata_set);
     extract_matches(shader_text, ".metadataClass.", &mut vars.metadata_set);
     extract_matches(shader_text, ".metadataStatistics.", &mut vars.metadata_set);
 
-    // Parse material references: material.(\w+)
+    // 解析 material 引用：material.(\w+)
     extract_matches(shader_text, "material.", &mut vars.material_set);
 
-    // De-duplicate
+    // 去重
     vars.attribute_set.sort();
     vars.attribute_set.dedup();
     vars.feature_id_set.sort();
@@ -478,7 +477,7 @@ fn parse_variables(shader_text: &str) -> UsedVariables {
     vars
 }
 
-/// Extracts variable names following a pattern prefix.
+/// 提取位于某个模式前缀之后的变量名。
 fn extract_matches(text: &str, pattern: &str, output: &mut Vec<String>) {
     let mut search_start = 0;
     while let Some(pos) = text[search_start..].find(pattern) {

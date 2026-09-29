@@ -1,51 +1,50 @@
-//! Inertial camera motion (coasting after a gesture is released).
+//! 惯性相机运动（手势释放后的滑行）。
 //!
-//! Pure f64 domain logic with **no** Bevy / render-unit dependency. Pixel-space
-//! motion is kept as-is; the pixel→radian/meter scaling is applied by the
-//! adapter boundary (see [`crate::camera_controller::CameraController::coast_inertia`]).
+//! 纯 f64 领域逻辑，**不**依赖 Bevy / render-unit。像素空间的运动保持原样；
+//! 像素→弧度/米 的缩放由适配层边界施加（参见
+//! [`crate::camera_controller::CameraController::coast_inertia`]）。
 //!
-//! Maps to CesiumJS `Scene/ScreenSpaceCameraController.js` inertia helpers, and
-//! to the Rust blueprint `cesium-rs/crates/cesium-scene/src/screen_space_camera_controller.rs`:
-//! - `InertiaState` — blueprint L164-173 (`Spin`/`Zoom`/`Translate`/`Tilt`).
-//! - `decay(time, coefficient)` — blueprint L107-113 (`exp(-tau*time)`,
-//!   `tau = (1 - coefficient) * 25`).
-//! - `activateInertia` — blueprint L766-786 (re-enable a state and disable the
-//!   conflicting states from CesiumJS's `_inertiaDisablers`).
-//! - `maintainInertia` — blueprint L796-875 (taper the last movement with the
-//!   decay exponential while the button is up, so the camera coasts to a stop).
+//! 映射到 CesiumJS `Scene/ScreenSpaceCameraController.js` 的惯性辅助函数，以及
+//! Rust 蓝图 `cesium-rs/crates/cesium-scene/src/screen_space_camera_controller.rs`：
+//! - `InertiaState` — 蓝图 L164-173（`Spin`/`Zoom`/`Translate`/`Tilt`）。
+//! - `decay(time, coefficient)` — 蓝图 L107-113（`exp(-tau*time)`、
+//!   `tau = (1 - coefficient) * 25`）。
+//! - `activateInertia` — 蓝图 L766-786（重新启用某个状态，并禁用来自 CesiumJS
+//!   `_inertiaDisablers` 的冲突状态）。
+//! - `maintainInertia` — 蓝图 L796-875（在按钮抬起期间用衰减指数函数收窄最后一次
+//!   移动，使相机滑行直至停下）。
 //!
-//! The CesiumJS `inertiaMaxClickTimeThreshold` guard (blueprint L98-102) is
-//! reproduced here as [`INERTIA_MAX_CLICK_TIME_THRESHOLD`].
+//! CesiumJS 的 `inertiaMaxClickTimeThreshold` 保护（蓝图 L98-102）在此以
+//! [`INERTIA_MAX_CLICK_TIME_THRESHOLD`] 重现。
 
 use glam::DVec2;
 
-/// If the time between mouse-down and mouse-up is not below this threshold
-/// (seconds), the gesture is treated as a deliberate hold and the camera will
-/// **not** coast with inertia.
+/// 若鼠标按下与抬起之间的时间不低于该阈值
+/// （秒），则将该手势视为有意的按住，相机将
+/// **不**会带惯性滑行。
 ///
-/// CesiumJS `inertiaMaxClickTimeThreshold` (blueprint L102).
+/// CesiumJS `inertiaMaxClickTimeThreshold`（蓝图 L102）。
 pub const INERTIA_MAX_CLICK_TIME_THRESHOLD: f64 = 0.4;
 
-/// The motion below which coasting is considered stopped (pixels).
+/// 低于该运动值即视为滑行停止（像素）。
 ///
-/// CesiumJS bails out of `maintainInertia` once `Cartesian2.distance(start, end)
-/// < 0.5` (blueprint L865); a near-zero exponential can otherwise produce NaN or
-/// an endless stream of sub-pixel updates.
+/// 一旦 `Cartesian2.distance(start, end) < 0.5`，CesiumJS 就会退出
+/// `maintainInertia`（蓝图 L865）；否则接近零的指数函数可能产生 NaN 或
+/// 无尽的亚像素更新流。
 pub const INERTIA_STOP_DISTANCE: f64 = 0.5;
 
-/// `decay(time, coefficient)` — the decreasing exponential used to taper
-/// inertial motion.
+/// `decay(time, coefficient)` — 用于收窄惯性运动的递减指数函数。
 ///
-/// Returns `exp(-tau * time)` where `tau = (1 - coefficient) * 25`. A larger
-/// `coefficient` (closer to `1.0`) yields a smaller `tau` and therefore a
-/// slower decay (the motion coasts longer). Negative `time` clamps to `0.0`.
+/// 返回 `exp(-tau * time)`，其中 `tau = (1 - coefficient) * 25`。更大的
+/// `coefficient`（更接近 `1.0`）会得到更小的 `tau`，从而衰减更慢
+/// （运动滑行更久）。负的 `time` 会被钳制为 `0.0`。
 ///
-/// Faithful to blueprint L107-113.
+/// 忠实于蓝图 L107-113。
 ///
-/// # Arguments
-/// * `time` - Elapsed time since the gesture was released (seconds).
-/// * `coefficient` - The inertia coefficient in `[0, 1]` (e.g. CesiumJS
-///   `inertiaSpin`/`inertiaZoom`/`inertiaTranslate`/`inertiaTilt`).
+/// # 参数
+/// * `time` - 自手势释放以来的经过时间（秒）。
+/// * `coefficient` - `[0, 1]` 范围内的惯性系数（例如 CesiumJS 的
+///   `inertiaSpin`/`inertiaZoom`/`inertiaTranslate`/`inertiaTilt`）。
 #[inline]
 pub fn decay(time: f64, coefficient: f64) -> f64 {
     if time < 0.0 {
@@ -55,27 +54,27 @@ pub fn decay(time: f64, coefficient: f64) -> f64 {
     (-tau * time).exp()
 }
 
-/// The four inertia movement states, replacing CesiumJS's string field names.
+/// 四个惯性运动状态，替代 CesiumJS 的字符串字段名。
 ///
-/// Maps to blueprint `InertiaState` (L164-173):
-/// - [`InertiaState::Spin`] — `_lastInertiaSpinMovement`.
-/// - [`InertiaState::Zoom`] — `_lastInertiaZoomMovement`.
-/// - [`InertiaState::Translate`] — `_lastInertiaTranslateMovement`.
-/// - [`InertiaState::Tilt`] — `_lastInertiaTiltMovement`.
+/// 映射到蓝图 `InertiaState`（L164-173）：
+/// - [`InertiaState::Spin`] — `_lastInertiaSpinMovement`。
+/// - [`InertiaState::Zoom`] — `_lastInertiaZoomMovement`。
+/// - [`InertiaState::Translate`] — `_lastInertiaTranslateMovement`。
+/// - [`InertiaState::Tilt`] — `_lastInertiaTiltMovement`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InertiaState {
-    /// Rotational spin (rotate3D / spin3D coasting).
+    /// 旋转自转（rotate3D / spin3D 滑行）。
     Spin,
-    /// Zoom coasting.
+    /// 缩放滑行。
     Zoom,
-    /// Translate (pan) coasting.
+    /// 平移（pan）滑行。
     Translate,
-    /// Tilt coasting.
+    /// 俯仰倾斜滑行。
     Tilt,
 }
 
 impl InertiaState {
-    /// All states in declaration order.
+    /// 按声明顺序排列的所有状态。
     pub const ALL: [InertiaState; 4] = [
         InertiaState::Spin,
         InertiaState::Zoom,
@@ -83,7 +82,7 @@ impl InertiaState {
         InertiaState::Tilt,
     ];
 
-    /// Stable index used for internal storage.
+    /// 用于内部存储的稳定索引。
     #[inline]
     const fn index(self) -> usize {
         match self {
@@ -94,12 +93,12 @@ impl InertiaState {
         }
     }
 
-    /// The states whose inertia CesiumJS's `_inertiaDisablers` map turns off
-    /// when `self` is activated (blueprint L776-780).
+    /// 当 `self` 被激活时，CesiumJS 的 `_inertiaDisablers` 映射会关闭其惯性的
+    /// 那些状态（蓝图 L776-780）。
     ///
-    /// - `Zoom` disables `[Spin, Translate, Tilt]`.
-    /// - `Tilt` disables `[Spin, Translate]`.
-    /// - `Spin` / `Translate` disable nothing.
+    /// - `Zoom` 禁用 `[Spin, Translate, Tilt]`。
+    /// - `Tilt` 禁用 `[Spin, Translate]`。
+    /// - `Spin` / `Translate` 不禁用任何状态。
     #[inline]
     const fn disablers(self) -> &'static [InertiaState] {
         match self {
@@ -114,20 +113,20 @@ impl InertiaState {
     }
 }
 
-/// The `{ startPosition, endPosition, motion, inertiaEnabled }` object CesiumJS
-/// stores under each `_lastInertia*Movement` field.
+/// CesiumJS 在每个 `_lastInertia*Movement` 字段下存储的
+/// `{ startPosition, endPosition, motion, inertiaEnabled }` 对象。
 ///
-/// Maps to blueprint `InertiaMovementState` (L178-188). Positions are pixel
-/// coordinates; `motion` is half of the last movement delta (blueprint L852-853).
+/// 映射到蓝图 `InertiaMovementState`（L178-188）。位置为像素
+/// 坐标；`motion` 为最后一次移动增量的一半（蓝图 L852-853）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InertiaMovementState {
-    /// `startPosition` — the anchor pixel of the coasting motion.
+    /// `startPosition` — 滑行运动的锚定像素。
     pub start_position: DVec2,
-    /// `endPosition` — `start_position + motion * decay(...)` for this frame.
+    /// `endPosition` — 本帧的 `start_position + motion * decay(...)`。
     pub end_position: DVec2,
-    /// `motion` — half of the last movement's delta (pixels).
+    /// `motion` — 最后一次移动增量的一半（像素）。
     pub motion: DVec2,
-    /// `inertiaEnabled` — whether this state is allowed to coast.
+    /// `inertiaEnabled` — 该状态是否允许滑行。
     pub inertia_enabled: bool,
 }
 
@@ -142,25 +141,24 @@ impl Default for InertiaMovementState {
     }
 }
 
-/// A per-frame inertia sample: the timing and coefficient needed to evaluate
-/// [`InertiaController::maintain`].
+/// 逐帧的惯性样本：求值 [`InertiaController::maintain`] 所需的时序与系数。
 ///
-/// Bundling these keeps the public API within clippy's argument budget while
-/// mirroring the blueprint's `(decayCoef, pressTime, releaseTime, now)` inputs.
+/// 将这些打包在一起，可使公共 API 保持在 clippy 的参数预算之内，同时
+/// 镜像蓝图的 `(decayCoef, pressTime, releaseTime, now)` 输入。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InertiaSample {
-    /// The inertia coefficient in `[0, 1]` passed to [`decay`].
+    /// 传入 [`decay`] 的惯性系数，范围 `[0, 1]`。
     pub decay_coef: f64,
-    /// The button press timestamp (milliseconds).
+    /// 按钮按下时间戳（毫秒）。
     pub press_time: f64,
-    /// The button release timestamp (milliseconds).
+    /// 按钮释放时间戳（毫秒）。
     pub release_time: f64,
-    /// The current timestamp (milliseconds).
+    /// 当前时间戳（毫秒）。
     pub now: f64,
 }
 
 impl InertiaSample {
-    /// Creates a new sample.
+    /// 创建一个新样本。
     pub fn new(decay_coef: f64, press_time: f64, release_time: f64, now: f64) -> Self {
         Self {
             decay_coef,
@@ -170,66 +168,66 @@ impl InertiaSample {
         }
     }
 
-    /// The press→release duration in seconds (`(release - press) / 1000`).
+    /// 按下→释放的时长（秒）（`(release - press) / 1000`）。
     ///
-    /// Blueprint L824.
+    /// 蓝图 L824。
     #[inline]
     pub fn click_threshold(&self) -> f64 {
         (self.release_time - self.press_time) / 1000.0
     }
 
-    /// The elapsed time since release in seconds (`(now - release) / 1000`).
+    /// 自释放以来的经过时间（秒）（`(now - release) / 1000`）。
     ///
-    /// Blueprint L831.
+    /// 蓝图 L831。
     #[inline]
     pub fn from_now(&self) -> f64 {
         (self.now - self.release_time) / 1000.0
     }
 }
 
-/// Holds the four [`InertiaMovementState`] slots and drives the coasting decay.
+/// 持有四个 [`InertiaMovementState`] 槽位并驱动滑行衰减。
 ///
-/// Maps to the CesiumJS `ScreenSpaceCameraController` inertia fields plus its
-/// `activateInertia` / `maintainInertia` helpers. This is a pure domain object:
-/// it neither reads a live aggregator nor touches the camera — callers capture
-/// the last movement on release, then feed a per-frame [`InertiaSample`] and
-/// apply the returned delta (see
-/// [`crate::camera_controller::CameraController::coast_inertia`]).
+/// 映射到 CesiumJS `ScreenSpaceCameraController` 的惯性字段及其
+/// `activateInertia` / `maintainInertia` 辅助函数。这是一个纯领域对象：
+/// 它既不读取活动的事件聚合器，也不触碰相机 —— 调用方在释放时捕获
+/// 最后一次移动，然后喂入逐帧的 [`InertiaSample`] 并
+/// 应用返回的增量（参见
+/// [`crate::camera_controller::CameraController::coast_inertia`]）。
 #[derive(Debug, Clone, Default)]
 pub struct InertiaController {
     states: [Option<InertiaMovementState>; 4],
 }
 
 impl InertiaController {
-    /// Creates an empty controller with no captured inertia.
+    /// 创建一个未捕获任何惯性的空控制器。
     pub fn new() -> Self {
         Self {
             states: [None, None, None, None],
         }
     }
 
-    /// The stored state for `slot`, if any.
+    /// `slot` 已存储的状态，若有。
     #[inline]
     pub fn state(&self, slot: InertiaState) -> Option<&InertiaMovementState> {
         self.states[slot.index()].as_ref()
     }
 
-    /// Mutable access to the stored state for `slot`, if any.
+    /// 对 `slot` 已存储状态的可变访问，若有。
     #[inline]
     pub fn state_mut(&mut self, slot: InertiaState) -> Option<&mut InertiaMovementState> {
         self.states[slot.index()].as_mut()
     }
 
-    /// Clears every stored state (e.g. on a mode change or camera reset).
+    /// 清除所有已存储的状态（例如在模式改变或相机重置时）。
     pub fn clear(&mut self) {
         self.states = [None, None, None, None];
     }
 
-    /// Records the last movement of a gesture so it can coast on release.
+    /// 记录一次手势的最后移动，以便在释放时能够滑行。
     ///
-    /// `motion` is stored as half of `(last_end - last_start)` (blueprint
-    /// L852-853) and the state is enabled. Called by the adapter when a drag
-    /// gesture ends.
+    /// `motion` 存储为 `(last_end - last_start)` 的一半（蓝图
+    /// L852-853），并启用该状态。由适配层在拖拽
+    /// 手势结束时调用。
     pub fn capture(&mut self, slot: InertiaState, last_start: DVec2, last_end: DVec2) {
         let state = self.states[slot.index()].get_or_insert_with(Default::default);
         state.start_position = last_start;
@@ -238,12 +236,12 @@ impl InertiaController {
         state.inertia_enabled = true;
     }
 
-    /// `activateInertia(controller, inertiaStateName)` (blueprint L766-786).
+    /// `activateInertia(controller, inertiaStateName)`（蓝图 L766-786）。
     ///
-    /// Re-enables inertia on `slot` and disables it on the states listed in
-    /// CesiumJS's `_inertiaDisablers` map. `None` (CesiumJS `undefined`, e.g.
-    /// `look3D`) is a no-op. Only existing slots are mutated, exactly as the
-    /// blueprint guards each write with `if let Some(...)`.
+    /// 在 `slot` 上重新启用惯性，并禁用列在 CesiumJS
+    /// `_inertiaDisablers` 映射中的那些状态。`None`（CesiumJS 的 `undefined`，例如
+    /// `look3D`）为空操作。仅修改已存在的槽位，正如蓝图用 `if let Some(...)`
+    /// 保护每一次写入。
     pub fn activate(&mut self, slot: Option<InertiaState>) {
         let slot = match slot {
             Some(slot) => slot,
@@ -260,27 +258,27 @@ impl InertiaController {
         }
     }
 
-    /// Disables coasting for `slot` so it stops immediately on the next
-    /// [`Self::maintain`] call (the "released ⇒ stop" path).
+    /// 禁用 `slot` 的滑行，使其在下一次
+    /// [`Self::maintain`] 调用时立即停止（即"释放 ⇒ 停止"路径）。
     pub fn deactivate(&mut self, slot: InertiaState) {
         if let Some(state) = self.states[slot.index()].as_mut() {
             state.inertia_enabled = false;
         }
     }
 
-    /// `maintainInertia(...)` (blueprint L796-875), reduced to its pure math.
+    /// `maintainInertia(...)`（蓝图 L796-875），简化为其纯数学部分。
     ///
-    /// Tapers the captured motion with the [`decay`] exponential and returns the
-    /// delta (pixels) to apply this frame, or `None` when coasting should stop.
-    /// Coasting stops when:
-    /// - nothing was captured for `slot`;
-    /// - the state was disabled (`inertia_enabled == false`);
-    /// - the press→release duration reached [`INERTIA_MAX_CLICK_TIME_THRESHOLD`]
-    ///   (a deliberate hold, not a flick);
-    /// - the decayed delta is NaN or shorter than [`INERTIA_STOP_DISTANCE`].
+    /// 用 [`decay`] 指数函数收窄捕获的运动，并返回本帧要应用的
+    /// 增量（像素），当滑行应停止时返回 `None`。
+    /// 在以下情况下滑行停止：
+    /// - `slot` 未捕获任何内容；
+    /// - 该状态被禁用（`inertia_enabled == false`）；
+    /// - 按下→释放的时长达到 [`INERTIA_MAX_CLICK_TIME_THRESHOLD`]
+    ///   （有意的按住，而非轻扫）；
+    /// - 衰减后的增量为 NaN 或短于 [`INERTIA_STOP_DISTANCE`]。
     ///
-    /// The stored state's `end_position` is updated in place (blueprint L858-860)
-    /// so repeated calls observe the tapered motion.
+    /// 所存储状态的 `end_position` 会被原地更新（蓝图 L858-860），
+    /// 以便重复调用能观察到收窄后的运动。
     pub fn maintain(&mut self, slot: InertiaState, sample: &InertiaSample) -> Option<DVec2> {
         let state = self.states[slot.index()].as_mut()?;
         if !state.inertia_enabled {
@@ -326,12 +324,12 @@ mod tests {
 
     #[test]
     fn decay_higher_coefficient_decays_slower() {
-        // coefficient 0.95 (tau = 1.25) decays slower than 0.5 (tau = 12.5).
+        // 系数 0.95（tau = 1.25）比 0.5（tau = 12.5）衰减更慢。
         assert!(decay(1.0, 0.95) > decay(1.0, 0.5));
     }
 
-    /// Task requirement: an initial velocity `v0` decays below `0.01 * v0`
-    /// after 60 frames (≈1 second at 60 fps).
+    /// 任务要求：初速度 `v0` 在 60 帧后衰减到 `0.01 * v0` 以下
+    /// （在 60 fps 下约 1 秒）。
     #[test]
     fn inertia_decays_below_one_percent_after_60_frames() {
         let mut controller = InertiaController::new();
@@ -339,7 +337,7 @@ mod tests {
         controller.capture(InertiaState::Spin, DVec2::ZERO, DVec2::new(2000.0, 0.0));
         let v0 = 1000.0;
 
-        // A quick flick: press and release at the same instant (threshold 0).
+        // 一次快速轻扫：在同一瞬间按下并释放（阈值为 0）。
         let sample = InertiaSample::new(0.8, 0.0, 0.0, 60.0 * FRAME_MS);
         let delta = controller.maintain(InertiaState::Spin, &sample).expect("still coasting");
 
@@ -349,11 +347,11 @@ mod tests {
             "after 60 frames speed {speed} should be < {} (1% of v0)",
             0.01 * v0
         );
-        // And it has not yet been clamped to a full stop.
+        // 并且它尚未被钳制到完全停止。
         assert!(speed >= INERTIA_STOP_DISTANCE);
     }
 
-    /// Task requirement: with inertia disabled the motion stops immediately.
+    /// 任务要求：禁用惯性时运动立即停止。
     #[test]
     fn maintain_stops_immediately_when_disabled() {
         let mut controller = InertiaController::new();
@@ -375,7 +373,7 @@ mod tests {
     fn maintain_suppressed_for_deliberate_hold() {
         let mut controller = InertiaController::new();
         controller.capture(InertiaState::Spin, DVec2::ZERO, DVec2::new(2000.0, 0.0));
-        // Held for 0.5s ≥ INERTIA_MAX_CLICK_TIME_THRESHOLD → no coasting.
+        // 按住 0.5s ≥ INERTIA_MAX_CLICK_TIME_THRESHOLD → 无滑行。
         let sample = InertiaSample::new(0.9, 0.0, 500.0, 516.0);
         assert!(controller.maintain(InertiaState::Spin, &sample).is_none());
     }
@@ -383,7 +381,7 @@ mod tests {
     #[test]
     fn maintain_stops_when_delta_below_stop_distance() {
         let mut controller = InertiaController::new();
-        // Small motion → decays under INERTIA_STOP_DISTANCE quickly.
+        // 小运动 → 迅速衰减到 INERTIA_STOP_DISTANCE 以下。
         controller.capture(InertiaState::Tilt, DVec2::ZERO, DVec2::new(2.0, 0.0));
         let sample = InertiaSample::new(0.5, 0.0, 0.0, 5000.0);
         assert!(controller.maintain(InertiaState::Tilt, &sample).is_none());
@@ -464,7 +462,7 @@ mod tests {
         let mut controller = InertiaController::new();
         controller.capture(InertiaState::Spin, DVec2::ZERO, DVec2::new(2000.0, 0.0));
         controller.capture(InertiaState::Zoom, DVec2::ZERO, DVec2::new(2000.0, 0.0));
-        // A zoom gesture wins → spin inertia is disabled.
+        // 缩放手势胜出 → 自转惯性被禁用。
         controller.activate(Some(InertiaState::Zoom));
 
         let sample = InertiaSample::new(0.9, 0.0, 0.0, FRAME_MS);

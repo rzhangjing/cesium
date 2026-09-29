@@ -1,11 +1,11 @@
-//! Faithful port of CesiumJS DataSources property specs:
+//! 忠实移植自 CesiumJS DataSources 属性规范：
 //! - ConstantPropertySpec.js (10 it())
 //! - SampledPropertySpec.js (36 it())
 //! - TimeIntervalCollectionPropertySpec.js (8 it())
 //! - CompositePropertySpec.js (7 it())
 //! - CallbackPropertySpec.js (8 it())
 //!
-//! A-class tests (pure logic, no DOM/events): ~35 tests
+//! A 类测试（纯逻辑，无 DOM/事件）：约 35 个测试
 
 use cesium_datasource::property_system::{
     CallbackFn, CallbackProperty, CompositeProperty, ConstantProperty, DynProperty,
@@ -21,7 +21,7 @@ fn jd(day: f64, seconds: f64) -> JulianDate {
 }
 
 // ===========================================================================
-// ConstantProperty (from ConstantPropertySpec.js)
+// ConstantProperty（源自 ConstantPropertySpec.js）
 // ===========================================================================
 
 #[test]
@@ -42,7 +42,7 @@ fn constant_property_works_with_objects() {
     let time = jd(2451545.0, 0.0);
 
     let result = property.get_value(&time);
-    // Result equals value (clone semantics in Rust, always a new copy)
+    // 结果等于值（Rust 中的 clone 语义，始终是新副本）
     assert_eq!(result, PropertyValue::Cartesian3(value));
     assert_eq!(*property.value(), PropertyValue::Cartesian3(value));
 }
@@ -94,7 +94,7 @@ fn constant_property_set_value_changes_value() {
 }
 
 // ===========================================================================
-// SampledProperty (from SampledPropertySpec.js)
+// SampledProperty（源自 SampledPropertySpec.js）
 // ===========================================================================
 
 #[test]
@@ -110,7 +110,7 @@ fn sampled_property_constructor_sets_expected_defaults() {
     assert_eq!(property.property_type(), PackableType::Cartesian3);
     assert!(property.derivative_types().is_none());
 
-    // With derivative types
+    // 带导数类型
     let property2 = SampledProperty::with_derivative_types(
         PackableType::Quaternion,
         Some(vec![PackableType::Quaternion, PackableType::Quaternion]),
@@ -212,7 +212,7 @@ fn sampled_property_get_value_interpolates() {
 
 #[test]
 fn sampled_property_extrapolation_type_none() {
-    // Default extrapolation is NONE - returns undefined outside range
+    // 默认外推为 NONE - 超出范围返回 undefined
     let mut property = SampledProperty::new(PackableType::Number);
     property.add_sample(jd(0.0, 0.0), &PropertyValue::Number(0.0), &[]);
     property.add_sample(jd(1.0, 0.0), &PropertyValue::Number(10.0), &[]);
@@ -276,22 +276,22 @@ fn sampled_property_extrapolation_duration() {
     property.set_backward_extrapolation_type(ExtrapolationType::Hold);
     property.set_backward_extrapolation_duration(5.0);
 
-    // Forward within duration (20 + 3 = 23, diff=3 < 5)
+    // 向前且在时长内 (20 + 3 = 23, diff=3 < 5)
     assert_eq!(
         property.get_value(&jd(0.0, 23.0)),
         PropertyValue::Number(200.0)
     );
-    // Forward beyond duration (20 + 7 = 27, diff=7 > 5)
+    // 向前超出时长 (20 + 7 = 27, diff=7 > 5)
     assert_eq!(
         property.get_value(&jd(0.0, 27.0)),
         PropertyValue::Undefined
     );
-    // Backward within duration (10 - 3 = 7, diff=3 < 5)
+    // 向后且在时长内 (10 - 3 = 7, diff=3 < 5)
     assert_eq!(
         property.get_value(&jd(0.0, 7.0)),
         PropertyValue::Number(100.0)
     );
-    // Backward beyond duration (10 - 7 = 3, diff=7 > 5)
+    // 向后超出时长 (10 - 7 = 3, diff=7 > 5)
     assert_eq!(
         property.get_value(&jd(0.0, 3.0)),
         PropertyValue::Undefined
@@ -326,7 +326,7 @@ fn sampled_property_lagrange_interpolation() {
     property.add_sample(jd(0.0, 1.0), &PropertyValue::Number(1.0), &[]);
     property.add_sample(jd(0.0, 2.0), &PropertyValue::Number(4.0), &[]);
 
-    // Midpoint between 0 and 1: Lagrange degree 2 should give 0.25
+    // 0 和 1 的中点：Lagrange 2 阶应给出 0.25
     let val = property.get_value(&jd(0.0, 0.5));
     if let PropertyValue::Number(v) = val {
         assert!((v - 0.25).abs() < 1e-10, "expected 0.25, got {v}");
@@ -391,7 +391,7 @@ fn sampled_property_remove_samples_interval_works() {
     }
     let interval = TimeInterval::new(jd(0.0, 3.0), jd(0.0, 7.0), true, true);
     property.remove_samples_interval(&interval);
-    // Removed t=3,4,5,6,7 → 6 remain
+    // 移除 t=3,4,5,6,7 → 剩余 6 个
     assert_eq!(property.sample_count(), 6);
 }
 
@@ -434,7 +434,7 @@ fn sampled_property_get_value_with_cartesian3() {
 
 #[test]
 fn sampled_property_out_of_order_insertion() {
-    // Samples inserted out of order are maintained sorted
+    // 乱序插入的样本会保持排序
     let mut property = SampledProperty::new(PackableType::Number);
     property.add_sample(jd(0.0, 10.0), &PropertyValue::Number(100.0), &[]);
     property.add_sample(jd(0.0, 0.0), &PropertyValue::Number(0.0), &[]);
@@ -452,7 +452,7 @@ fn sampled_property_out_of_order_insertion() {
 
 #[test]
 fn sampled_property_overwrite_existing_sample() {
-    // Adding a sample at an existing time overwrites the value
+    // 在已存在时间添加样本会覆盖该值
     let mut property = SampledProperty::new(PackableType::Number);
     property.add_sample(jd(0.0, 0.0), &PropertyValue::Number(0.0), &[]);
     property.add_sample(jd(0.0, 10.0), &PropertyValue::Number(100.0), &[]);
@@ -467,16 +467,16 @@ fn sampled_property_overwrite_existing_sample() {
 
 #[test]
 fn sampled_property_single_sample_returns_undefined_for_interpolation() {
-    // With a single sample, interpolation is impossible
+    // 单个样本无法插值
     let mut property = SampledProperty::new(PackableType::Number);
     property.add_sample(jd(0.0, 5.0), &PropertyValue::Number(42.0), &[]);
 
-    // Exact match works
+    // 精确匹配生效
     assert_eq!(
         property.get_value(&jd(0.0, 5.0)),
         PropertyValue::Number(42.0)
     );
-    // Interpolation impossible
+    // 无法插值
     assert_eq!(
         property.get_value(&jd(0.0, 6.0)),
         PropertyValue::Undefined
@@ -484,7 +484,7 @@ fn sampled_property_single_sample_returns_undefined_for_interpolation() {
 }
 
 // ===========================================================================
-// TimeIntervalCollectionProperty (from TimeIntervalCollectionPropertySpec.js)
+// TimeIntervalCollectionProperty（源自 TimeIntervalCollectionPropertySpec.js）
 // ===========================================================================
 
 #[test]
@@ -621,7 +621,7 @@ fn tic_property_equals_works_for_complex_type_intervals() {
 }
 
 // ===========================================================================
-// CompositeProperty (from CompositePropertySpec.js)
+// CompositeProperty（源自 CompositePropertySpec.js）
 // ===========================================================================
 
 #[test]
@@ -671,7 +671,7 @@ fn composite_property_works_without_result_parameter() {
 
 #[test]
 fn composite_property_works_with_sampled_inner() {
-    // Composite with a SampledProperty as inner property
+    // 以 SampledProperty 作为内部属性的 Composite
     let mut sampled = SampledProperty::new(PackableType::Number);
     sampled.add_sample(jd(10.0, 0.0), &PropertyValue::Number(10.0), &[]);
     sampled.add_sample(jd(20.0, 0.0), &PropertyValue::Number(20.0), &[]);
@@ -695,7 +695,7 @@ fn composite_property_works_with_sampled_inner() {
         property.get_value(&jd(20.0, 0.0)),
         PropertyValue::Number(20.0)
     );
-    // Outside interval
+    // 区间之外
     assert_eq!(
         property.get_value(&jd(25.0, 0.0)),
         PropertyValue::Undefined
@@ -756,7 +756,7 @@ fn callback_property_get_value_returns_callback_result() {
 #[test]
 fn callback_property_receives_time_parameter() {
     // "callback received proper parameters"
-    // Use a closure that captures a known value to verify time is passed
+    // 使用捕获已知值的闭包以验证传入了 time
     use std::sync::atomic::{AtomicBool, Ordering};
     static CALLED: AtomicBool = AtomicBool::new(false);
     let property = CallbackProperty::new(
@@ -790,7 +790,7 @@ fn callback_property_is_constant_returns_correct_value() {
 
 #[test]
 fn callback_property_set_callback_works() {
-    // "setCallback raises definitionChanged event" (test the set_callback logic)
+    // "setCallback raises definitionChanged event" (测试 set_callback 逻辑)
     let mut property = CallbackProperty::new(
         |_time: &JulianDate| PropertyValue::Number(1.0),
         true,
@@ -814,18 +814,18 @@ fn callback_property_equals_works() {
     let right = CallbackProperty::from_arc(Arc::clone(&shared), true);
     assert!(left.equals(&right));
 
-    // Different is_constant → not equal
+    // is_constant 不同 → 不相等
     let right2 = CallbackProperty::from_arc(Arc::clone(&shared), false);
     assert!(!left.equals(&right2));
 
-    // Different callback → not equal
+    // callback 不同 → 不相等
     let other: CallbackFn = Arc::new(|_time: &JulianDate| PropertyValue::Number(2.0));
     let right3 = CallbackProperty::from_arc(other, true);
     assert!(!left.equals(&right3));
 }
 
 // ===========================================================================
-// Cross-type equality
+// 跨类型相等性
 // ===========================================================================
 
 #[test]

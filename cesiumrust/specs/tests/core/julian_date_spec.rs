@@ -15,7 +15,7 @@ fn from_utc(y: i32, m: u32, d: u32, h: u32, min: u32, s: u32, ms: f64) -> Julian
 fn construct_default_date() {
     // CesiumJS: new JulianDate() → dayNumber=0, secondsOfDay=10 (UTC 0 + 10s offset)
     let d = JulianDate::new(0.0, 0.0);
-    // Default is UTC, so internally TAI = UTC + 10 (first leap second offset)
+    // 默认是 UTC，因此内部 TAI = UTC + 10（第一个闰秒偏移）
     assert_eq!(d.day_number, 0);
     assert!((d.seconds_of_day - 10.0).abs() < 1e-10);
 }
@@ -522,7 +522,7 @@ fn to_date_second_before_leap_second() {
 fn to_date_on_leap_second() {
     let jd = JulianDate::with_time_standard(2450630.0, 43230.0, TimeStandard::TAI);
     let g = jd.to_gregorian_date();
-    // During leap second: second=60 or repeated 59
+    // 闰秒期间：second=60 或重复的 59
     assert_eq!(g.year, 1997);
     assert_eq!(g.month, 6);
     assert_eq!(g.day, 30);

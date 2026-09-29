@@ -1,7 +1,7 @@
-//! DataSources/ColorMaterialPropertySpec.js, GridMaterialPropertySpec.js,
-//! StripeMaterialPropertySpec.js, CheckerboardMaterialPropertySpec.js,
-//! ImageMaterialPropertySpec.js, Polyline*MaterialPropertySpec.js
-//! → Rust integration tests
+//! DataSources/ColorMaterialPropertySpec.js、GridMaterialPropertySpec.js、
+//! StripeMaterialPropertySpec.js、CheckerboardMaterialPropertySpec.js、
+//! ImageMaterialPropertySpec.js、Polyline*MaterialPropertySpec.js
+//! → Rust 集成测试
 
 use cesium_datasource::property_system::{
     ColorMaterialProperty, GridMaterialProperty, StripeMaterialProperty,
@@ -133,7 +133,7 @@ fn test_stripe_material_property_set_orientation() {
     let mut prop = StripeMaterialProperty::new();
     prop.set_orientation(StripeOrientation::Vertical);
     let uniforms = prop.get_value(&epoch());
-    // Vertical orientation means horizontal=false
+    // 垂直方向意味着 horizontal=false
     assert_eq!(
         uniforms.get("horizontal").unwrap(),
         &PropertyValue::Boolean(false)
@@ -144,17 +144,17 @@ fn test_stripe_material_property_set_orientation() {
 fn test_stripe_material_property_defaults() {
     let prop = StripeMaterialProperty::new();
     let uniforms = prop.get_value(&epoch());
-    // Default orientation is horizontal (horizontal=true)
+    // 默认方向为水平（horizontal=true）
     assert_eq!(
         uniforms.get("horizontal").unwrap(),
         &PropertyValue::Boolean(true)
     );
-    // Default even color is white
+    // 默认偶数颜色为白色
     assert_eq!(
         uniforms.get("evenColor").unwrap(),
         &PropertyValue::Color(COLOR_WHITE)
     );
-    // Default odd color is black
+    // 默认奇数颜色为黑色
     assert_eq!(
         uniforms.get("oddColor").unwrap(),
         &PropertyValue::Color(COLOR_BLACK)
@@ -249,7 +249,7 @@ fn test_image_material_property_set_image() {
 fn test_image_material_property_default_repeat() {
     let prop = ImageMaterialProperty::new();
     let uniforms = prop.get_value(&epoch());
-    // Default repeat is (1, 1)
+    // 默认 repeat 为 (1, 1)
     if let PropertyValue::Cartesian2(v) = uniforms.get("repeat").unwrap() {
         assert!((v.x - 1.0).abs() < 1e-10);
         assert!((v.y - 1.0).abs() < 1e-10);

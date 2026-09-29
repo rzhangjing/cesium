@@ -1,21 +1,21 @@
-//! Vertical exaggeration utilities.
-//! Maps to CesiumJS `Core/VerticalExaggeration.js`
+//! 垂直夸大工具。
+//! 映射到 CesiumJS `Core/VerticalExaggeration.js`
 
 use crate::ellipsoid::Ellipsoid;
 use crate::Cartographic;
 use glam::DVec3;
 
-/// Scales a height relative to a reference height by a given scale factor.
+/// 按给定的缩放因子，相对于参考高度缩放一个高度。
 ///
 /// `result = (height - relative_height) * scale + relative_height`
 pub fn get_height(height: f64, scale: f64, relative_height: f64) -> f64 {
     (height - relative_height) * scale + relative_height
 }
 
-/// Scales a position's height component relative to a reference height.
+/// 相对于参考高度缩放位置的高度分量。
 ///
-/// Converts position to cartographic, applies vertical exaggeration to the height,
-/// then converts back to cartesian.
+/// 将 position 转换为 cartographic，对高度应用垂直夸大，
+/// 然后转回 cartesian。
 pub fn get_position(
     position: DVec3,
     ellipsoid: &Ellipsoid,
@@ -40,9 +40,9 @@ pub fn get_position(
     }
 }
 
-/// Converts an sRGB component value to linear color space.
+/// 将 sRGB 分量值转换到线性颜色空间。
 ///
-/// Maps to CesiumJS `Core/srgbToLinear.js`
+/// 映射到 CesiumJS `Core/srgbToLinear.js`
 pub fn srgb_to_linear(srgb: f64) -> f64 {
     if srgb <= 0.04045 {
         srgb / 12.92

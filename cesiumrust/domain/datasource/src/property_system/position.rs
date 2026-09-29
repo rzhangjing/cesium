@@ -1,10 +1,10 @@
-//! Position properties: properties whose value is a world location
-//! (`Cartesian3`) with an associated reference frame.
+//! 位置属性：其值为一个世界位置（`Cartesian3`）并带有
+//! 相关联参考系的属性。
 //!
-//! Maps to CesiumJS `DataSources/PositionProperty.js` and the concrete
-//! implementations `ConstantPositionProperty`, `SampledPositionProperty`,
-//! `CompositePositionProperty`, `TimeIntervalCollectionPositionProperty` and
-//! `CallbackPositionProperty`.
+//! 映射到 CesiumJS `DataSources/PositionProperty.js` 及具体实现
+//! `ConstantPositionProperty`、`SampledPositionProperty`、
+//! `CompositePositionProperty`、`TimeIntervalCollectionPositionProperty` 与
+//! `CallbackPositionProperty`。
 
 use crate::property_system::interpolation::{ExtrapolationType, InterpolationAlgorithmKind};
 use crate::property_system::property::{CompositeProperty, DynProperty, SampledProperty};
@@ -15,12 +15,12 @@ use glam::DVec3;
 use std::any::Any;
 use std::sync::Arc;
 
-/// Converts a position from one reference frame to another at the given time.
+/// 在给定时间处将一个位置从一个参考系转换到另一个。
 ///
-/// Maps to `PositionProperty.convertToReferenceFrame`. When the frames match
-/// the value is returned unchanged. Otherwise the ICRF-to-fixed rotation
-/// matrix is computed for `time`; inertial→fixed multiplies by the matrix and
-/// fixed→inertial multiplies by its transpose.
+/// 映射到 `PositionProperty.convertToReferenceFrame`。当两参考系相同
+/// 时值原样返回。否则为 `time` 计算 ICRF 到 fixed 的旋转
+/// 矩阵；inertial→fixed 乘以该矩阵，
+/// fixed→inertial 乘以其转置。
 pub fn convert_to_reference_frame(
     time: &JulianDate,
     value: DVec3,
@@ -39,7 +39,7 @@ pub fn convert_to_reference_frame(
     }
 }
 
-/// Wraps an optional position into a `PropertyValue`.
+/// 将可选位置包装为 `PropertyValue`。
 fn position_to_value(position: Option<DVec3>) -> PropertyValue {
     match position {
         Some(p) => PropertyValue::Cartesian3(p),
@@ -51,10 +51,10 @@ fn position_to_value(position: Option<DVec3>) -> PropertyValue {
 // ConstantPositionProperty
 // ---------------------------------------------------------------------------
 
-/// A position property whose value does not change with respect to the
-/// reference frame in which it is defined.
+/// 一种位置属性，其值相对于其定义所在的参考系
+/// 不发生变化。
 ///
-/// Maps to CesiumJS `DataSources/ConstantPositionProperty.js`.
+/// 映射到 CesiumJS `DataSources/ConstantPositionProperty.js`。
 #[derive(Debug, Clone, Default)]
 pub struct ConstantPositionProperty {
     value: Option<DVec3>,
@@ -62,7 +62,7 @@ pub struct ConstantPositionProperty {
 }
 
 impl ConstantPositionProperty {
-    /// Creates a new constant position property in the fixed frame.
+    /// 在 fixed 参考系中创建新的常量位置属性。
     pub fn new(value: DVec3) -> Self {
         Self {
             value: Some(value),
@@ -70,8 +70,8 @@ impl ConstantPositionProperty {
         }
     }
 
-    /// Creates a new constant position property in the given reference frame.
-    /// Maps to `new ConstantPositionProperty(value, referenceFrame)`.
+    /// 在指定参考系中创建新的常量位置属性。
+    /// 映射到 `new ConstantPositionProperty(value, referenceFrame)`。
     pub fn with_reference_frame(value: DVec3, reference_frame: ReferenceFrame) -> Self {
         Self {
             value: Some(value),
@@ -79,7 +79,7 @@ impl ConstantPositionProperty {
         }
     }
 
-    /// Creates a constant position property with no value.
+    /// 创建无值的常量位置属性。
     pub fn undefined() -> Self {
         Self {
             value: None,
@@ -87,8 +87,8 @@ impl ConstantPositionProperty {
         }
     }
 
-    /// Sets the value and optionally the reference frame.
-    /// Maps to `ConstantPositionProperty.prototype.setValue`.
+    /// 设置值，并可选地设置参考系。
+    /// 映射到 `ConstantPositionProperty.prototype.setValue`。
     pub fn set_value(&mut self, value: Option<DVec3>, reference_frame: Option<ReferenceFrame>) {
         self.value = value;
         if let Some(frame) = reference_frame {
@@ -96,13 +96,13 @@ impl ConstantPositionProperty {
         }
     }
 
-    /// The stored value (in this property's reference frame).
+    /// 已存储的值（在此属性的参考系中）。
     pub fn value(&self) -> Option<DVec3> {
         self.value
     }
 
-    /// Gets the position at `time` in the provided reference frame.
-    /// Maps to `ConstantPositionProperty.prototype.getValueInReferenceFrame`.
+    /// 在所提供的参考系中获取 `time` 处的位置。
+    /// 映射到 `ConstantPositionProperty.prototype.getValueInReferenceFrame`。
     pub fn position_in_reference_frame(
         &self,
         time: &JulianDate,
@@ -115,8 +115,8 @@ impl ConstantPositionProperty {
 
 impl DynProperty for ConstantPositionProperty {
     fn is_constant(&self) -> bool {
-        // An inertial-frame position varies with time when expressed in the
-        // fixed frame, so it is only constant when undefined or fixed-frame.
+        // 惯性系位置在用 fixed 系表示时会随时间变化，因此仅当未定义
+        // 或为 fixed 系时才是常量。
         self.value.is_none() || self.reference_frame == ReferenceFrame::Fixed
     }
 
@@ -157,9 +157,9 @@ impl DynProperty for ConstantPositionProperty {
 // SampledPositionProperty
 // ---------------------------------------------------------------------------
 
-/// A `SampledProperty` which is also a position property.
+/// 一个同时也是位置属性的 `SampledProperty`。
 ///
-/// Maps to CesiumJS `DataSources/SampledPositionProperty.js`.
+/// 映射到 CesiumJS `DataSources/SampledPositionProperty.js`。
 #[derive(Debug, Clone)]
 pub struct SampledPositionProperty {
     property: SampledProperty,
@@ -168,9 +168,9 @@ pub struct SampledPositionProperty {
 }
 
 impl SampledPositionProperty {
-    /// Creates a new sampled position property.
+    /// 创建新的采样位置属性。
     ///
-    /// Maps to `new SampledPositionProperty(referenceFrame, numberOfDerivatives)`.
+    /// 映射到 `new SampledPositionProperty(referenceFrame, numberOfDerivatives)`。
     pub fn new(reference_frame: ReferenceFrame, number_of_derivatives: usize) -> Self {
         let derivative_types = if number_of_derivatives > 0 {
             Some(vec![PackableType::Cartesian3; number_of_derivatives])
@@ -187,35 +187,34 @@ impl SampledPositionProperty {
         }
     }
 
-    /// Creates a new sampled position property in the fixed frame with no
-    /// derivatives.
+    /// 在 fixed 参考系中创建新的采样位置属性，不带导数。
     pub fn fixed() -> Self {
         Self::new(ReferenceFrame::Fixed, 0)
     }
 
-    /// The number of derivatives that accompany each position.
-    /// Maps to `numberOfDerivatives`.
+    /// 随每个位置一同提供的导数数量。
+    /// 映射到 `numberOfDerivatives`。
     pub fn number_of_derivatives(&self) -> usize {
         self.number_of_derivatives
     }
 
-    /// The interpolation degree. Maps to `interpolationDegree`.
+    /// 插值次数。映射到 `interpolationDegree`。
     pub fn interpolation_degree(&self) -> usize {
         self.property.interpolation_degree()
     }
 
-    /// The interpolation algorithm. Maps to `interpolationAlgorithm`.
+    /// 插值算法。映射到 `interpolationAlgorithm`。
     pub fn interpolation_algorithm(&self) -> InterpolationAlgorithmKind {
         self.property.interpolation_algorithm()
     }
 
-    /// The number of samples currently stored.
+    /// 当前存储的样本数量。
     pub fn sample_count(&self) -> usize {
         self.property.sample_count()
     }
 
-    /// Sets the algorithm and degree to use when interpolating a position.
-    /// Maps to `SampledPositionProperty.prototype.setInterpolationOptions`.
+    /// 设置插值位置时所使用的算法与次数。
+    /// 映射到 `SampledPositionProperty.prototype.setInterpolationOptions`。
     pub fn set_interpolation_options(
         &mut self,
         algorithm: Option<InterpolationAlgorithmKind>,
@@ -224,30 +223,30 @@ impl SampledPositionProperty {
         self.property.set_interpolation_options(algorithm, degree);
     }
 
-    /// Sets the forward extrapolation type. Maps to `forwardExtrapolationType`.
+    /// 设置前推外推类型。映射到 `forwardExtrapolationType`。
     pub fn set_forward_extrapolation_type(&mut self, value: ExtrapolationType) {
         self.property.set_forward_extrapolation_type(value);
     }
 
-    /// Sets the forward extrapolation duration.
-    /// Maps to `forwardExtrapolationDuration`.
+    /// 设置前推外推时长。
+    /// 映射到 `forwardExtrapolationDuration`。
     pub fn set_forward_extrapolation_duration(&mut self, value: f64) {
         self.property.set_forward_extrapolation_duration(value);
     }
 
-    /// Sets the backward extrapolation type.
-    /// Maps to `backwardExtrapolationType`.
+    /// 设置后推外推类型。
+    /// 映射到 `backwardExtrapolationType`。
     pub fn set_backward_extrapolation_type(&mut self, value: ExtrapolationType) {
         self.property.set_backward_extrapolation_type(value);
     }
 
-    /// Sets the backward extrapolation duration.
-    /// Maps to `backwardExtrapolationDuration`.
+    /// 设置后推外推时长。
+    /// 映射到 `backwardExtrapolationDuration`。
     pub fn set_backward_extrapolation_duration(&mut self, value: f64) {
         self.property.set_backward_extrapolation_duration(value);
     }
 
-    /// Adds a new sample. Maps to `SampledPositionProperty.prototype.addSample`.
+    /// 添加一个新样本。映射到 `SampledPositionProperty.prototype.addSample`。
     pub fn add_sample(&mut self, time: JulianDate, position: DVec3, derivatives: &[DVec3]) {
         let value = PropertyValue::Cartesian3(position);
         let deriv_values: Vec<PropertyValue> = derivatives
@@ -257,8 +256,8 @@ impl SampledPositionProperty {
         self.property.add_sample(time, &value, &deriv_values);
     }
 
-    /// Adds multiple samples via parallel arrays.
-    /// Maps to `SampledPositionProperty.prototype.addSamples`.
+    /// 通过并行数组添加多个样本。
+    /// 映射到 `SampledPositionProperty.prototype.addSamples`。
     pub fn add_samples(
         &mut self,
         times: &[JulianDate],
@@ -278,29 +277,29 @@ impl SampledPositionProperty {
             .add_samples(times, &values, deriv_values.as_deref());
     }
 
-    /// Adds samples as a single packed array where each sample is a time
-    /// offset (seconds from `epoch`) followed by the packed position and
-    /// derivatives.
-    /// Maps to `SampledPositionProperty.prototype.addSamplesPackedArray`.
+    /// 以单个打包数组添加样本，其中每个样本为一个时间偏移
+    /// （相对于 `epoch` 的秒数）后接打包的位置与
+    /// 导数。
+    /// 映射到 `SampledPositionProperty.prototype.addSamplesPackedArray`。
     pub fn add_samples_packed_array(&mut self, packed_samples: &[f64], epoch: &JulianDate) {
         self.property
             .add_samples_packed_array(packed_samples, epoch);
     }
 
-    /// Removes the sample at the given time, if present.
-    /// Maps to `SampledPositionProperty.prototype.removeSample`.
+    /// 若存在则移除给定时间处的样本。
+    /// 映射到 `SampledPositionProperty.prototype.removeSample`。
     pub fn remove_sample(&mut self, time: &JulianDate) -> bool {
         self.property.remove_sample(time)
     }
 
-    /// Removes all samples within the given time interval.
-    /// Maps to `SampledPositionProperty.prototype.removeSamples`.
+    /// 移除给定时间区间内的所有样本。
+    /// 映射到 `SampledPositionProperty.prototype.removeSamples`。
     pub fn remove_samples_interval(&mut self, time_interval: &TimeInterval) {
         self.property.remove_samples_interval(time_interval);
     }
 
-    /// Gets the position at `time` in the provided reference frame.
-    /// Maps to `SampledPositionProperty.prototype.getValueInReferenceFrame`.
+    /// 在所提供的参考系中获取 `time` 处的位置。
+    /// 映射到 `SampledPositionProperty.prototype.getValueInReferenceFrame`。
     pub fn position_in_reference_frame(
         &self,
         time: &JulianDate,
@@ -359,12 +358,12 @@ impl DynProperty for SampledPositionProperty {
 // CompositePositionProperty
 // ---------------------------------------------------------------------------
 
-/// A `CompositeProperty` which is also a position property.
+/// 一个同时也是位置属性的 `CompositeProperty`。
 ///
-/// Each interval's data is itself a position property; evaluation delegates
-/// to the inner property's `getValueInReferenceFrame`.
+/// 每个区间的数据本身就是一个位置属性；求值时委托给
+/// 内部属性的 `getValueInReferenceFrame`。
 ///
-/// Maps to CesiumJS `DataSources/CompositePositionProperty.js`.
+/// 映射到 CesiumJS `DataSources/CompositePositionProperty.js`。
 #[derive(Clone)]
 pub struct CompositePositionProperty {
     composite: CompositeProperty,
@@ -372,8 +371,8 @@ pub struct CompositePositionProperty {
 }
 
 impl CompositePositionProperty {
-    /// Creates a new composite position property.
-    /// Maps to `new CompositePositionProperty(referenceFrame)`.
+    /// 创建新的组合位置属性。
+    /// 映射到 `new CompositePositionProperty(referenceFrame)`。
     pub fn new(reference_frame: ReferenceFrame) -> Self {
         Self {
             composite: CompositeProperty::new(),
@@ -381,24 +380,24 @@ impl CompositePositionProperty {
         }
     }
 
-    /// The underlying interval collection. Maps to `intervals`.
+    /// 底层的区间集合。映射到 `intervals`。
     pub fn intervals(&self) -> &TimeIntervalCollection<Arc<dyn DynProperty>> {
         self.composite.intervals()
     }
 
-    /// Adds an interval whose data is another (position) property.
+    /// 添加一个数据为另一个（位置）属性的区间。
     pub fn add_interval(&mut self, interval: TimeInterval, data: Option<Arc<dyn DynProperty>>) {
         self.composite.add_interval(interval, data);
     }
 
-    /// Sets the "preferred" reference frame this position presents itself as.
-    /// Maps to the `referenceFrame` setter.
+    /// 设置此位置自我呈现的“首选”参考系。
+    /// 映射到 `referenceFrame` setter。
     pub fn set_reference_frame(&mut self, frame: ReferenceFrame) {
         self.reference_frame = frame;
     }
 
-    /// Gets the position at `time` in the provided reference frame.
-    /// Maps to `CompositePositionProperty.prototype.getValueInReferenceFrame`.
+    /// 在所提供的参考系中获取 `time` 处的位置。
+    /// 映射到 `CompositePositionProperty.prototype.getValueInReferenceFrame`。
     pub fn position_in_reference_frame(
         &self,
         time: &JulianDate,
@@ -464,9 +463,9 @@ fn position_same_data(left: &DVec3, right: &DVec3) -> bool {
     *left == *right
 }
 
-/// A `TimeIntervalCollectionProperty` which is also a position property.
+/// 一个同时也是位置属性的 `TimeIntervalCollectionProperty`。
 ///
-/// Maps to CesiumJS `DataSources/TimeIntervalCollectionPositionProperty.js`.
+/// 映射到 CesiumJS `DataSources/TimeIntervalCollectionPositionProperty.js`。
 #[derive(Debug, Clone)]
 pub struct TimeIntervalCollectionPositionProperty {
     intervals: TimeIntervalCollection<DVec3>,
@@ -474,8 +473,8 @@ pub struct TimeIntervalCollectionPositionProperty {
 }
 
 impl TimeIntervalCollectionPositionProperty {
-    /// Creates a new time interval collection position property.
-    /// Maps to `new TimeIntervalCollectionPositionProperty(referenceFrame)`.
+    /// 创建新的时间区间集合位置属性。
+    /// 映射到 `new TimeIntervalCollectionPositionProperty(referenceFrame)`。
     pub fn new(reference_frame: ReferenceFrame) -> Self {
         Self {
             intervals: TimeIntervalCollection::new(),
@@ -483,21 +482,21 @@ impl TimeIntervalCollectionPositionProperty {
         }
     }
 
-    /// The underlying interval collection. Maps to `intervals`.
+    /// 底层的区间集合。映射到 `intervals`。
     pub fn intervals(&self) -> &TimeIntervalCollection<DVec3> {
         &self.intervals
     }
 
-    /// Adds an interval with the given position data.
+    /// 添加一个带给定位置数据的区间。
     pub fn add_interval(&mut self, interval: TimeInterval, data: Option<DVec3>) {
         let tid = TimeIntervalData::new(interval, data);
         self.intervals.add_interval(tid, &position_same_data);
     }
 
-    /// Gets the position at `time` in the provided reference frame.
+    /// 在所提供的参考系中获取 `time` 处的位置。
     ///
-    /// Maps to
-    /// `TimeIntervalCollectionPositionProperty.prototype.getValueInReferenceFrame`.
+    /// 映射到
+    /// `TimeIntervalCollectionPositionProperty.prototype.getValueInReferenceFrame`。
     pub fn position_in_reference_frame(
         &self,
         time: &JulianDate,
@@ -556,13 +555,13 @@ impl DynProperty for TimeIntervalCollectionPositionProperty {
 // CallbackPositionProperty
 // ---------------------------------------------------------------------------
 
-/// The callback signature used by `CallbackPositionProperty`: given a time,
-/// returns the position in the property's reference frame (or `None`).
+/// `CallbackPositionProperty` 使用的回调签名：给定时间，
+/// 返回属性参考系中的位置（或 `None`）。
 pub type PositionCallbackFn = Arc<dyn Fn(&JulianDate) -> Option<DVec3> + Send + Sync>;
 
-/// A position property whose value is lazily evaluated by a callback function.
+/// 其值由回调函数延迟求值的位置属性。
 ///
-/// Maps to CesiumJS `DataSources/CallbackPositionProperty.js`.
+/// 映射到 CesiumJS `DataSources/CallbackPositionProperty.js`。
 pub struct CallbackPositionProperty {
     callback: PositionCallbackFn,
     is_constant: bool,
@@ -570,9 +569,9 @@ pub struct CallbackPositionProperty {
 }
 
 impl CallbackPositionProperty {
-    /// Creates a new callback position property.
+    /// 创建新的回调位置属性。
     ///
-    /// Maps to `new CallbackPositionProperty(callback, isConstant, referenceFrame)`.
+    /// 映射到 `new CallbackPositionProperty(callback, isConstant, referenceFrame)`。
     pub fn new(
         callback: PositionCallbackFn,
         is_constant: bool,
@@ -585,16 +584,16 @@ impl CallbackPositionProperty {
         }
     }
 
-    /// Replaces the callback and constancy flag.
-    /// Maps to `CallbackPositionProperty.prototype.setCallback`.
+    /// 替换回调与常量标志。
+    /// 映射到 `CallbackPositionProperty.prototype.setCallback`。
     pub fn set_callback(&mut self, callback: PositionCallbackFn, is_constant: bool) {
         self.callback = callback;
         self.is_constant = is_constant;
     }
 
-    /// Gets the position at `time` in the provided reference frame.
+    /// 在所提供的参考系中获取 `time` 处的位置。
     ///
-    /// Maps to `CallbackPositionProperty.prototype.getValueInReferenceFrame`.
+    /// 映射到 `CallbackPositionProperty.prototype.getValueInReferenceFrame`。
     pub fn position_in_reference_frame(
         &self,
         time: &JulianDate,
@@ -677,7 +676,7 @@ mod tests {
         let time = t(43200.0);
         let fixed = convert_to_reference_frame(&time, v, ReferenceFrame::Inertial, ReferenceFrame::Fixed)
             .unwrap();
-        // Rotation preserves length.
+        // 旋转保持长度。
         assert!((fixed.length() - v.length()).abs() < 1e-6);
         let back =
             convert_to_reference_frame(&time, fixed, ReferenceFrame::Fixed, ReferenceFrame::Inertial)
@@ -687,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_convert_changes_with_time() {
-        // The fixed-frame expression of an inertial position rotates over time.
+        // 惯性位置在用 fixed 系表示时会随时间旋转。
         let v = DVec3::new(1_000_000.0, 0.0, 0.0);
         let f1 = convert_to_reference_frame(&t(0.0), v, ReferenceFrame::Inertial, ReferenceFrame::Fixed)
             .unwrap();
@@ -718,10 +717,10 @@ mod tests {
     fn test_constant_position_inertial_frame_not_constant() {
         let p = DVec3::new(1.0, 2.0, 3.0);
         let prop = ConstantPositionProperty::with_reference_frame(p, ReferenceFrame::Inertial);
-        // Inertial-frame positions are NOT constant (they rotate in fixed frame).
+        // 惯性系位置并非常量（它们在 fixed 系中旋转）。
         assert!(!prop.is_constant());
 
-        // Value in its own frame is the stored value at any time.
+        // 在其自身参考系中的值，在任意时间都是已存储的值。
         assert_eq!(
             prop.get_value_in_reference_frame(&t(0.0), ReferenceFrame::Inertial),
             Some(PropertyValue::Cartesian3(p))
@@ -731,10 +730,10 @@ mod tests {
             Some(PropertyValue::Cartesian3(p))
         );
 
-        // Fixed-frame value differs from the stored inertial value...
+        // fixed 系的值不同于已存储的惯性值……
         let fixed = prop.get_value(&t(0.0));
         assert_ne!(fixed, PropertyValue::Cartesian3(p));
-        // ...and round-trips back to the stored value.
+        // ……并可回环转换回已存储的值。
         match fixed {
             PropertyValue::Cartesian3(fp) => {
                 let back = convert_to_reference_frame(
@@ -781,7 +780,7 @@ mod tests {
         let mid = prop.position_in_reference_frame(&t(5.0), ReferenceFrame::Fixed).unwrap();
         assert!(mid.abs_diff_eq(DVec3::new(5.0, 10.0, 15.0), 1e-12));
 
-        // Exact sample times return exact values.
+        // 精确的采样时间返回精确的值。
         let at0 = prop.position_in_reference_frame(&t(0.0), ReferenceFrame::Fixed).unwrap();
         assert!(at0.abs_diff_eq(DVec3::ZERO, 1e-12));
     }
@@ -792,13 +791,13 @@ mod tests {
         prop.add_sample(t(0.0), DVec3::new(1.0, 0.0, 0.0), &[]);
         prop.add_sample(t(10.0), DVec3::new(2.0, 0.0, 0.0), &[]);
 
-        // In its own (inertial) frame, interpolation is direct.
+        // 在其自身（惯性）系中，插值是直接的。
         let inertial = prop
             .position_in_reference_frame(&t(5.0), ReferenceFrame::Inertial)
             .unwrap();
         assert!(inertial.abs_diff_eq(DVec3::new(1.5, 0.0, 0.0), 1e-12));
 
-        // Fixed-frame value is the rotated interpolated value.
+        // fixed 系的值是旋转后的插值。
         let fixed = prop.position_in_reference_frame(&t(5.0), ReferenceFrame::Fixed).unwrap();
         let expected = convert_to_reference_frame(
             &t(5.0),
@@ -812,7 +811,7 @@ mod tests {
 
     #[test]
     fn test_sampled_position_with_derivatives() {
-        // Hermite interpolation using velocity derivatives reconstructs a cubic.
+        // 使用速度导数的 Hermite 插值可重建一个三次曲线。
         let mut prop = SampledPositionProperty::new(ReferenceFrame::Fixed, 1);
         prop.set_interpolation_options(Some(InterpolationAlgorithmKind::Hermite), Some(1));
         // p(t) = t^3 along x; p'(t) = 3t^2.
@@ -833,7 +832,7 @@ mod tests {
         let mut prop = SampledPositionProperty::fixed();
         prop.add_sample(t(0.0), DVec3::new(0.0, 0.0, 0.0), &[]);
         prop.add_sample(t(10.0), DVec3::new(10.0, 0.0, 0.0), &[]);
-        // Default extrapolation is NONE: outside the samples → undefined.
+        // 默认外推为 NONE：在样本之外 → undefined。
         assert_eq!(prop.get_value(&t(20.0)), PropertyValue::Undefined);
         assert_eq!(
             prop.position_in_reference_frame(&t(20.0), ReferenceFrame::Fixed),
@@ -873,14 +872,14 @@ mod tests {
 
         assert_eq!(prop.get_value(&t(5.0)), PropertyValue::Cartesian3(p1));
         assert_eq!(prop.get_value(&t(15.0)), PropertyValue::Cartesian3(p2));
-        // Outside all intervals → undefined.
+        // 在所有区间之外 → undefined。
         assert_eq!(prop.get_value(&t(30.0)), PropertyValue::Undefined);
     }
 
     #[test]
     fn test_composite_position_inner_inertial() {
-        // Inner properties handle their own frame conversion: an inertial
-        // inner property queried for INERTIAL returns its stored value.
+        // 内部属性自行处理其参考系转换：一个惯性内部
+        // 属性在为 INERTIAL 查询时返回其已存储的值。
         let mut prop = CompositePositionProperty::new(ReferenceFrame::Fixed);
         let p = DVec3::new(5.0, 6.0, 7.0);
         prop.add_interval(
@@ -901,7 +900,7 @@ mod tests {
     #[test]
     fn test_tic_position_property() {
         let mut prop = TimeIntervalCollectionPositionProperty::new(ReferenceFrame::Fixed);
-        assert!(prop.is_constant()); // empty → constant
+        assert!(prop.is_constant()); // 空 → 常量
 
         let p = DVec3::new(100.0, 200.0, 300.0);
         prop.add_interval(TimeInterval::new(t(0.0), t(10.0), true, true), Some(p));
@@ -917,12 +916,12 @@ mod tests {
         let p = DVec3::new(100.0, 200.0, 300.0);
         prop.add_interval(TimeInterval::new(t(0.0), t(10.0), true, true), Some(p));
 
-        // Own frame: stored value.
+        // 自身系：已存储的值。
         assert_eq!(
             prop.position_in_reference_frame(&t(5.0), ReferenceFrame::Inertial),
             Some(p)
         );
-        // Fixed frame: rotated.
+        // fixed 系：已旋转。
         let fixed = prop.position_in_reference_frame(&t(5.0), ReferenceFrame::Fixed).unwrap();
         let expected = convert_to_reference_frame(
             &t(5.0),

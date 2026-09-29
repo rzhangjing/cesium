@@ -1,15 +1,15 @@
-//! Texture utilities extracted from the dynamic_globe golden path (M1.5).
+//! 从 dynamic_globe 黄金路径抽取的纹理工具（M1.5）。
 //!
-//! Shared by the thin-shell `dynamic_globe.rs` golden path. Every function is
-//! a byte-identical lift of the original monolith (the frozen
-//! `dynamic_globe_legacy.rs` A/B arm was retired 2026-09-27 after G4 proved
-//! shell/legacy pixel-neutrality) — no logic changes, only module boundary changes.
+//! 由薄壳 `dynamic_globe.rs` 黄金路径共享。每个函数都是原单体
+//! 的逐字节提升（冻结的 `dynamic_globe_legacy.rs` A/B 臂已于
+//! 2026-09-27 退役，因 G4 已证明薄壳/legacy 像素中性）—— 无逻辑变更，
+//! 仅为模块边界变更。
 
 use bevy::image::{ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
 
-/// Append a box-filtered mip chain (2x2 average per level) to the base
-/// level, returning the full data blob and the mip level count.
+/// 向基层追加一个盒滤波的 mip 链（每级 2x2 平均），返回完整数据
+/// 块与 mip 层级数。
 ///
 /// Original: `dynamic_globe.rs:1824-1859` (逐字节保留).
 pub fn build_mip_chain(base: Vec<u8>, width: u32, height: u32) -> (Vec<u8>, u32) {
@@ -49,10 +49,9 @@ pub fn build_mip_chain(base: Vec<u8>, width: u32, height: u32) -> (Vec<u8>, u32)
     (data, levels)
 }
 
-/// Create a GPU texture from worker-prepared RGBA data (base level + mip
-/// chain already built off the frame thread) with the CesiumJS imagery
-/// sampler (trilinear mipmap + anisotropic filtering), so minified horizon
-/// tiles don't shimmer and oblique tiles stay crisp.
+/// 从 worker 预先准备好的 RGBA 数据（基础层 + mip 链已在帧线程外
+/// 构建完毕）创建一张 GPU 纹理，并使用 CesiumJS 影像采样器（三线性
+/// mipmap + 各向异性过滤），使缩小的地平线瓦片不闪烁、斜视瓦片保持清晰。
 ///
 /// Original: `dynamic_globe.rs:1866-1898` (逐字节保留).
 /// sRGB format: `Rgba8UnormSrgb` + `base_color = WHITE` (硬约束).
@@ -87,8 +86,8 @@ pub fn make_image(
     images.add(img)
 }
 
-/// Smoothness + palette metric: average / max RGB difference between
-/// sampled pixel pairs 4px apart, plus mean channel levels.
+/// 平滑度 + 调色板度量：相隔 4px 的采样像素对之间的平均 / 最大 RGB
+/// 差异，加上各通道均值。
 ///
 /// Original: `dynamic_globe.rs:1765-1801` (逐字节保留).
 pub fn smoothness_stats(rgba: &image::RgbaImage) -> (f64, u32, u32, u32, u32) {
@@ -130,8 +129,8 @@ pub fn smoothness_stats(rgba: &image::RgbaImage) -> (f64, u32, u32, u32, u32) {
     )
 }
 
-/// True when the decoded image is Bing's smooth bright cool-tinted no-imagery
-/// placeholder rather than real satellite imagery.
+/// 当解码后的图像是 Bing 那种平滑、明亮、冷色调的无影像占位图，
+/// 而非真实卫星影像时返回 true。
 ///
 /// Original: `dynamic_globe.rs:1811-1819` (逐字节保留).
 pub fn is_placeholder_tile(rgba: &image::RgbaImage) -> (bool, f64, u32) {

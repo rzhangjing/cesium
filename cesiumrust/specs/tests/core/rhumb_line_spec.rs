@@ -1,7 +1,7 @@
-//! Ported from `packages/engine/Specs/Core/EllipsoidRhumbLineSpec.js` (49 it(), ~40 A-class)
+//! 移植自 `packages/engine/Specs/Core/EllipsoidRhumbLineSpec.js`（49 个 it()，约 40 个 A 类）
 //!
-//! 7 throws tests are omitted (C-class: Rust type system enforces valid construction).
-//! 2 result-parameter tests are merged into their owned-return counterparts.
+//! 省略 7 个 throws 测试（C 类：Rust 类型系统强制构造合法）。
+//! 2 个 result 参数测试被合并到其“返回所有权”对应的测试中。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;

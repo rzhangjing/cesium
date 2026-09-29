@@ -1,7 +1,7 @@
-//! Box voxel shape implementation.
+//! 长方体体素形状实现。
 //!
-//! Maps to CesiumJS `Scene/VoxelBoxShape.js`.
-//! Bounds are in [-1, 1]^3 by default.
+//! 映射到 CesiumJS `Scene/VoxelBoxShape.js`。
+//! 边界默认为 [-1, 1]^3。
 
 use glam::{DMat3, DMat4, DVec3};
 
@@ -9,38 +9,38 @@ use crate::shape::{
     clamp_vec3, lerp, BoundingSphere, OrientedBoundingBox, VoxelShape,
 };
 
-/// Default minimum bounds for box shape: (-1, -1, -1).
+/// 长方体形状的默认最小边界：(-1, -1, -1)。
 pub const BOX_DEFAULT_MIN_BOUNDS: DVec3 = DVec3::new(-1.0, -1.0, -1.0);
-/// Default maximum bounds for box shape: (1, 1, 1).
+/// 长方体形状的默认最大边界：(1, 1, 1)。
 pub const BOX_DEFAULT_MAX_BOUNDS: DVec3 = DVec3::new(1.0, 1.0, 1.0);
 
-/// A box-shaped voxel region.
+/// 长方体形状的体素区域。
 ///
-/// The box shape maps voxel data to a rectangular region in 3D space.
-/// Bounds are specified as minimum and maximum XYZ coordinates.
+/// 长方体形状将体素数据映射到 3D 空间中的一个矩形区域。
+/// 边界以最小和最大 XYZ 坐标指定。
 #[derive(Debug, Clone)]
 pub struct VoxelBoxShape {
-    /// Oriented bounding box containing the bounded shape.
+    /// 包含有界形状的有向包围盒。
     obb: OrientedBoundingBox,
-    /// Bounding sphere containing the bounded shape.
+    /// 包含有界形状的包围球。
     bounding_sphere: BoundingSphere,
-    /// Transform for the bounded shape.
+    /// 有界形状的变换。
     bound_transform: DMat4,
-    /// Transform for the shape ignoring bounds.
+    /// 形状的变换，忽略边界。
     shape_transform: DMat4,
-    /// Minimum bounds.
+    /// 最小边界。
     min_bounds: DVec3,
-    /// Maximum bounds.
+    /// 最大边界。
     max_bounds: DVec3,
-    /// Minimum render bounds (after clipping).
+    /// 最小渲染边界（裁剪后）。
     render_min_bounds: DVec3,
-    /// Maximum render bounds (after clipping).
+    /// 最大渲染边界（裁剪后）。
     render_max_bounds: DVec3,
-    /// UV scale for local-to-shape-UV transform.
+    /// 用于局部到形状 UV 变换的 UV 缩放。
     local_to_shape_uv_scale: DVec3,
-    /// UV translate for local-to-shape-UV transform.
+    /// 用于局部到形状 UV 变换的 UV 平移。
     local_to_shape_uv_translate: DVec3,
-    /// Maximum intersections count.
+    /// 最大相交数量。
     max_intersections: u32,
 }
 
@@ -63,32 +63,32 @@ impl Default for VoxelBoxShape {
 }
 
 impl VoxelBoxShape {
-    /// Create a new box shape with default bounds.
+    /// 创建具有默认边界的新长方体形状。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Get the minimum bounds.
+    /// 获取最小边界。
     pub fn min_bounds(&self) -> DVec3 {
         self.min_bounds
     }
 
-    /// Get the maximum bounds.
+    /// 获取最大边界。
     pub fn max_bounds(&self) -> DVec3 {
         self.max_bounds
     }
 
-    /// Get the render minimum bounds.
+    /// 获取渲染最小边界。
     pub fn render_min_bounds(&self) -> DVec3 {
         self.render_min_bounds
     }
 
-    /// Get the render maximum bounds.
+    /// 获取渲染最大边界。
     pub fn render_max_bounds(&self) -> DVec3 {
         self.render_max_bounds
     }
 
-    /// Check if a point in local coordinates is inside the render bounds.
+    /// 检查局部坐标中的点是否位于渲染边界内部。
     pub fn contains_local(&self, point: DVec3) -> bool {
         point.x >= self.render_min_bounds.x
             && point.x <= self.render_max_bounds.x
@@ -98,7 +98,7 @@ impl VoxelBoxShape {
             && point.z <= self.render_max_bounds.z
     }
 
-    /// Compute the OBB for a subregion of the box.
+    /// 计算长方体某个子区域的 OBB。
     fn compute_chunk_obb(&self, min_b: DVec3, max_b: DVec3) -> OrientedBoundingBox {
         let is_default = (min_b - BOX_DEFAULT_MIN_BOUNDS).length() < 1e-10
             && (max_b - BOX_DEFAULT_MAX_BOUNDS).length() < 1e-10;
@@ -126,7 +126,7 @@ impl VoxelBoxShape {
                 scale.z * 0.5 * (max_b.z - min_b.z),
             );
 
-            // Extract rotation from shape transform
+            // 从形状变换中提取旋转
             let rotation = extract_rotation(&self.shape_transform);
             let half_axes = DMat3::from_cols(
                 rotation.col(0) * half_scale.x,
@@ -178,7 +178,7 @@ impl VoxelShape for VoxelBoxShape {
         self.render_min_bounds = render_min;
         self.render_max_bounds = render_max;
 
-        // Check visibility
+        // 检查可见性
         let scale = DVec3::new(
             model_matrix.col(0).truncate().length(),
             model_matrix.col(1).truncate().length(),
@@ -189,8 +189,8 @@ impl VoxelShape for VoxelBoxShape {
             + (if (render_min.y - render_max.y).abs() < 1e-10 { 1 } else { 0 })
             + (if (render_min.z - render_max.z).abs() < 1e-10 { 1 } else { 0 });
 
-        // CesiumJS: invisible if ANY scale component is zero
-        // ("too annoying to reconstruct rotation matrix")
+        // CesiumJS：任一缩放分量为零即不可见
+        // （“重建旋转矩阵太麻烦”）
         if render_min.x > render_max.x
             || render_min.y > render_max.y
             || render_min.z > render_max.z
@@ -206,7 +206,7 @@ impl VoxelShape for VoxelBoxShape {
         self.obb = self.compute_chunk_obb(render_min, render_max);
         self.bounding_sphere = BoundingSphere::from_obb(&self.obb);
 
-        // Bound transform from OBB
+        // 由 OBB 得到边界变换
         self.bound_transform = DMat4::from_cols(
             self.obb.half_axes.col(0).extend(0.0),
             self.obb.half_axes.col(1).extend(0.0),
@@ -214,7 +214,7 @@ impl VoxelShape for VoxelBoxShape {
             self.obb.center.extend(1.0),
         );
 
-        // Compute UV scale and translate
+        // 计算 UV 缩放与平移
         self.local_to_shape_uv_scale = DVec3::new(
             bound_scale(min_bounds.x, max_bounds.x),
             bound_scale(min_bounds.y, max_bounds.y),
@@ -256,7 +256,7 @@ impl VoxelShape for VoxelBoxShape {
     }
 }
 
-/// Compute scale factor for UV mapping.
+/// 计算用于 UV 映射的缩放因子。
 fn bound_scale(min_bound: f64, max_bound: f64) -> f64 {
     if (min_bound - max_bound).abs() < 1e-7 {
         1.0
@@ -265,7 +265,7 @@ fn bound_scale(min_bound: f64, max_bound: f64) -> f64 {
     }
 }
 
-/// Extract rotation matrix from a transform (normalize columns).
+/// 从变换中提取旋转矩阵（对列归一化）。
 fn extract_rotation(matrix: &DMat4) -> DMat3 {
     let col0 = matrix.col(0).truncate();
     let col1 = matrix.col(1).truncate();
@@ -330,14 +330,14 @@ mod tests {
             None,
         );
         assert!(visible);
-        // Bounding sphere radius should reflect scaled box
+        // 包围球半径应反映缩放后的长方体
         assert!(shape.bounding_sphere.radius > 4.0);
     }
 
     #[test]
     fn test_box_shape_invisible_degenerate() {
         let mut shape = VoxelBoxShape::new();
-        // Zero scale for any single component => invisible (CesiumJS behavior)
+        // 任一分量缩放为零 => 不可见（CesiumJS 行为）
         let matrix = DMat4::from_scale(DVec3::new(0.0, 1.0, 1.0));
         let visible = shape.update(
             matrix,
@@ -348,7 +348,7 @@ mod tests {
         );
         assert!(!visible);
 
-        // Two zero scales => also invisible
+        // 两个缩放为零 => 同样不可见
         let matrix2 = DMat4::from_scale(DVec3::new(0.0, 0.0, 1.0));
         let visible2 = shape.update(
             matrix2,
@@ -363,7 +363,7 @@ mod tests {
     #[test]
     fn test_box_shape_invisible_clipped_away() {
         let mut shape = VoxelBoxShape::new();
-        // Clip bounds that exclude the entire shape
+        // 裁剪边界排除了整个形状
         let visible = shape.update(
             DMat4::IDENTITY,
             BOX_DEFAULT_MIN_BOUNDS,
@@ -384,13 +384,13 @@ mod tests {
             None,
             None,
         );
-        // Center of [-1,1] should map to UV (0.5, 0.5, 0.5)
+        // [-1,1] 的中心应映射到 UV (0.5, 0.5, 0.5)
         let uv = shape.convert_local_to_shape_uv_space(DVec3::ZERO);
         assert!((uv.x - 0.5).abs() < 1e-10);
         assert!((uv.y - 0.5).abs() < 1e-10);
         assert!((uv.z - 0.5).abs() < 1e-10);
 
-        // Min corner should map to (0, 0, 0)
+        // 最小角应映射到 (0, 0, 0)
         let uv_min = shape.convert_local_to_shape_uv_space(BOX_DEFAULT_MIN_BOUNDS);
         assert!(uv_min.x.abs() < 1e-10);
         assert!(uv_min.y.abs() < 1e-10);
@@ -407,11 +407,11 @@ mod tests {
             None,
             None,
         );
-        // Level 0, tile (0,0,0) should be the full box
+        // 级别 0，瓦片 (0,0,0) 应为完整长方体
         let obb = shape.compute_obb_for_tile(0, 0, 0, 0);
         assert!(obb.center.length() < 1e-10);
 
-        // Level 1, tile (0,0,0) should be the first octant
+        // 级别 1，瓦片 (0,0,0) 应为第一挂限
         let obb_octant = shape.compute_obb_for_tile(1, 0, 0, 0);
         assert!((obb_octant.center - DVec3::new(-0.5, -0.5, -0.5)).length() < 1e-10);
     }
@@ -438,10 +438,10 @@ mod tests {
         let max_b = DVec3::new(1.0, 1.0, 1.0);
         let visible = shape.update(DMat4::IDENTITY, min_b, max_b, None, None);
         assert!(visible);
-        // UV of (0,0,0) should be (0,0,0)
+        // (0,0,0) 的 UV 应为 (0,0,0)
         let uv = shape.convert_local_to_shape_uv_space(DVec3::ZERO);
         assert!(uv.x.abs() < 1e-10);
-        // UV of (1,1,1) should be (1,1,1)
+        // (1,1,1) 的 UV 应为 (1,1,1)
         let uv_max = shape.convert_local_to_shape_uv_space(DVec3::ONE);
         assert!((uv_max.x - 1.0).abs() < 1e-10);
     }

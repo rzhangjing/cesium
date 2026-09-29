@@ -1,11 +1,11 @@
-//! Faithful port of CesiumJS DataSources position property specs:
+//! 忠实移植自 CesiumJS DataSources 位置属性规范：
 //! - ConstantPositionPropertySpec.js (15 it())
 //! - SampledPositionPropertySpec.js (27 it())
 //! - CompositePositionPropertySpec.js (12 it())
 //! - TimeIntervalCollectionPositionPropertySpec.js (10 it())
 //! - CallbackPositionPropertySpec.js (8 it())
 //!
-//! A-class tests (pure logic, no DOM/events/spy): ~42 tests
+//! A 类测试（纯逻辑，无 DOM/事件/spy）：约 42 个测试
 
 use cesium_datasource::property_system::{
     convert_to_reference_frame, CallbackPositionProperty, CompositePositionProperty,
@@ -22,7 +22,7 @@ fn jd(day: f64, seconds: f64) -> JulianDate {
 }
 
 // ===========================================================================
-// ConstantPositionProperty (from ConstantPositionPropertySpec.js)
+// ConstantPositionProperty（源自 ConstantPositionPropertySpec.js）
 // ===========================================================================
 
 #[test]
@@ -137,7 +137,7 @@ fn constant_position_equals_works() {
 }
 
 // ===========================================================================
-// SampledPositionProperty (from SampledPositionPropertySpec.js)
+// SampledPositionProperty（源自 SampledPositionPropertySpec.js）
 // ===========================================================================
 
 #[test]
@@ -310,11 +310,11 @@ fn sampled_position_can_remove_sample() {
     let mut property = SampledPositionProperty::fixed();
     property.add_samples(&times, &values, None);
 
-    // Remove non-existent
+    // 移除不存在的
     let result = property.remove_sample(&jd(4.0, 0.0));
     assert!(!result);
 
-    // Remove middle sample
+    // 移除中间样本
     let result = property.remove_sample(&times[1]);
     assert!(result);
 
@@ -322,7 +322,7 @@ fn sampled_position_can_remove_sample() {
         property.get_value(&times[0]),
         PropertyValue::Cartesian3(values[0])
     );
-    // Removing middle causes interpolation between first and last
+    // 移除中间样本导致首尾之间插值
     assert_eq!(
         property.get_value(&times[1]),
         PropertyValue::Cartesian3(DVec3::new(8.0, 9.0, 10.0))
@@ -354,7 +354,7 @@ fn sampled_position_can_remove_samples_interval() {
         property.get_value(&times[0]),
         PropertyValue::Cartesian3(values[0])
     );
-    // Removing middle samples causes interpolation
+    // 移除中间样本导致插值
     assert_eq!(
         property.get_value(&times[1]),
         PropertyValue::Cartesian3(DVec3::new(8.0, 9.0, 10.0))
@@ -476,7 +476,7 @@ fn sampled_position_returns_undefined_not_enough_samples() {
         property.get_value(&time),
         PropertyValue::Cartesian3(value)
     );
-    // With only 1 sample, interpolation at a different time returns undefined
+    // 仅 1 个样本时，在其他时间插值返回 undefined
     assert_eq!(
         property.get_value(&jd(0.0, 4.0)),
         PropertyValue::Undefined
@@ -546,7 +546,7 @@ fn sampled_position_equals_samples_differ() {
 
 #[test]
 fn sampled_position_extrapolation_hold() {
-    // Extrapolation works for position properties
+    // 外推对位置属性生效
     let mut property = SampledPositionProperty::fixed();
     property.add_sample(jd(0.0, 0.0), DVec3::new(0.0, 0.0, 0.0), &[]);
     property.add_sample(jd(1.0, 0.0), DVec3::new(10.0, 10.0, 10.0), &[]);
@@ -564,7 +564,7 @@ fn sampled_position_extrapolation_hold() {
 }
 
 // ===========================================================================
-// CompositePositionProperty (from CompositePositionPropertySpec.js)
+// CompositePositionProperty（源自 CompositePositionPropertySpec.js）
 // ===========================================================================
 
 #[test]
@@ -645,7 +645,7 @@ fn composite_position_equals() {
 
 // ===========================================================================
 // TimeIntervalCollectionPositionProperty
-// (from TimeIntervalCollectionPositionPropertySpec.js)
+// （源自 TimeIntervalCollectionPositionPropertySpec.js）
 // ===========================================================================
 
 #[test]
@@ -720,14 +720,14 @@ fn tic_position_equals() {
     left.add_interval(interval, Some(DVec3::new(1.0, 2.0, 3.0)));
     assert!(!left.equals(&right));
 
-    // Different reference frames
+    // 不同的参考系
     let left2 = TimeIntervalCollectionPositionProperty::new(ReferenceFrame::Fixed);
     let right2 = TimeIntervalCollectionPositionProperty::new(ReferenceFrame::Inertial);
     assert!(!left2.equals(&right2));
 }
 
 // ===========================================================================
-// CallbackPositionProperty (from CallbackPositionPropertySpec.js)
+// CallbackPositionProperty（源自 CallbackPositionPropertySpec.js）
 // ===========================================================================
 
 #[test]
@@ -787,7 +787,7 @@ fn callback_position_equals() {
     );
     assert!(left.equals(&right));
 
-    // Different is_constant
+    // 不同的 is_constant
     let right2 = CallbackPositionProperty::new(
         Arc::clone(&callback),
         true,
@@ -795,7 +795,7 @@ fn callback_position_equals() {
     );
     assert!(!left.equals(&right2));
 
-    // Different reference frame
+    // 不同的参考系
     let right3 = CallbackPositionProperty::new(
         callback,
         false,
@@ -806,7 +806,7 @@ fn callback_position_equals() {
 
 #[test]
 fn callback_position_returns_undefined_when_callback_returns_none() {
-    // Callback returning None → Undefined
+    // 回调返回 None → Undefined
     let callback: PositionCallbackFn = Arc::new(|_| None);
     let property = CallbackPositionProperty::new(callback, false, ReferenceFrame::Fixed);
 

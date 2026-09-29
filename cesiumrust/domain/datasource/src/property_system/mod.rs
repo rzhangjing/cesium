@@ -1,14 +1,14 @@
-//! The complete CesiumJS-compatible Property system.
+//! 完整的、与 CesiumJS 兼容的 Property 系统。
 //!
-//! Maps to CesiumJS `DataSources/Property.js` and its ~25 concrete
-//! implementations (ConstantProperty, SampledProperty,
-//! TimeIntervalCollectionProperty, CompositeProperty, CallbackProperty,
-//! ReferenceProperty, PositionProperty family, MaterialProperty family, ...).
+//! 映射到 CesiumJS `DataSources/Property.js` 及其约 25 个具体
+//! 实现（ConstantProperty、SampledProperty、
+//! TimeIntervalCollectionProperty、CompositeProperty、CallbackProperty、
+//! ReferenceProperty、PositionProperty 家族、MaterialProperty 家族……）。
 //!
-//! Unlike the legacy `property` module (a simple enum kept for backward
-//! compatibility with the GeoJSON/CZML parsers), this module implements the
-//! full trait-object based, time-dynamic property system with type-erased
-//! values, packed-array interpolation and reference-frame aware positions.
+//! 与遗留的 `property` 模块（为兼容 GeoJSON/CZML 解析器
+//! 而保留的简单枚举）不同，本模块实现了完整的
+//! 基于 trait-object、时间动态的属性系统，具备类型擦除
+//! 值、打包数组插值与参考系感知的位置。
 
 pub mod interpolation;
 pub mod material;

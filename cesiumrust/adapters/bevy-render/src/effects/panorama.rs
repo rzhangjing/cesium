@@ -1,84 +1,78 @@
-//! M6.3 — Panorama / SkyBox render node (cubemap + equirectangular).
+//! M6.3 — Panorama / SkyBox 渲染节点（cubemap + equirectangular）。
 //!
-//! Implements the cesiumrust panorama draw as a `Core3d` [`ViewNode`], following the
-//! M5-E0 render-graph house pattern established by [`super::fxaa`] and
-//! [`super::graph`].
+//! 将 cesiumrust panorama 绘制实现为一个 `Core3d` [`ViewNode`]，遵循
+//! [`super::fxaa`] 和 [`super::graph`] 所确立的 M5-E0 渲染图内部模式。
 //!
-//! # Blueprint (upstream truth source, `packages/engine/Source/`)
-//! - `Scene/SkyBox.js` (164 lines) — delegates **completely** to `CubeMapPanorama`
-//!   (L39-43, L100 comment "Delegate completely").
-//! - `Scene/CubeMapPanorama.js` (352 lines) — `pass: Pass.ENVIRONMENT` (L105-106,
-//!   comment "render before everything else"), 2×2×2 `BoxGeometry` scaled to
-//!   `czm_entireFrustum.y`, `depthTest: {enabled: false}`, `depthMask: false`,
-//!   `blending: ALPHA_BLEND`, and L232 `if (!defined(this._cubeMap)) return undefined;`.
-//! - `Scene/EquirectangularPanorama.js` (266 lines) — `DEFAULT_RADIUS = 100000.0` m,
-//!   `SphereGeometry`, Fabric `Image` material with
-//!   `repeat: new Cartesian2(-repeatHorizontal, repeatVertical)` (L117),
-//!   `MaterialAppearance({ closed: true, translucent: false, renderState: { cull: { enabled: false } } })`.
-//! - `Shaders/SkyBoxVS.glsl`, `Shaders/SkyBoxFS.glsl`, `Shaders/CubeMapPanoramaVS.glsl`.
-//! - `Renderer/AutomaticUniforms.js` L329/L341 (`czm_viewRotation` is a **mat3**),
-//!   L1064 (`czm_entireFrustum` is a **vec2** `(near, far)`).
+//! # 蓝图（上游真相源，`packages/engine/Source/`）
+//! - `Scene/SkyBox.js`（164 行）——**完全**委托给 `CubeMapPanorama`
+//!   （L39-43，L100 注释 "Delegate completely"）。
+//! - `Scene/CubeMapPanorama.js`（352 行）——`pass: Pass.ENVIRONMENT`（L105-106，
+//!   注释 "render before everything else"），一个 2×2×2 `BoxGeometry` 缩放到
+//!   `czm_entireFrustum.y`，`depthTest: {enabled: false}`，`depthMask: false`，
+//!   `blending: ALPHA_BLEND`，以及 L232 `if (!defined(this._cubeMap)) return undefined;`。
+//! - `Scene/EquirectangularPanorama.js`（266 行）——`DEFAULT_RADIUS = 100000.0` m，
+//!   `SphereGeometry`，带 `repeat: new Cartesian2(-repeatHorizontal, repeatVertical)`（L117）
+//!   的 Fabric `Image` 材质，以及
+//!   `MaterialAppearance({ closed: true, translucent: false, renderState: { cull: { enabled: false } } })`。
+//! - `Shaders/SkyBoxVS.glsl`、`Shaders/SkyBoxFS.glsl`、`Shaders/CubeMapPanoramaVS.glsl`。
+//! - `Renderer/AutomaticUniforms.js` L329/L341（`czm_viewRotation` 是一个 **mat3**），
+//!   L1064（`czm_entireFrustum` 是一个 **vec2** `(near, far)`）。
 //!
-//! The domain half lives in `cesium_effects::panorama` (`domain/effects/src/panorama.rs`)
-//! and carries all f64 geometry plus the CPU reference for the upstream vertex
-//! shader. This file only narrows to f32 at the uniform boundary.
+//! 领域半位于 `cesium_effects::panorama`（`domain/effects/src/panorama.rs`），
+//! 承载全部 f64 几何以及上游顶点 shader 的 CPU 参考。
+//! 本文件仅在 uniform 边界收窄到 f32。
 //!
-//! # Gate
-//! [`ENV_ENABLE_PANORAMA`] (`CESIUM_ENABLE_PANORAMA`), **default OFF**. The gate is
-//! evaluated by the *application* layer, which decides whether to call
-//! [`register_panorama_node`] at all; [`panorama_gate_enabled`] is the adapter-local
-//! mirror used by tests and by any adapter that has to ask. With the gate OFF the
-//! node is never added to the graph, no entity ever carries [`CesiumPanorama`], and
-//! the eight v0 baselines are untouched (PSNR = infinity).
+//! # 门控
+//! [`ENV_ENABLE_PANORAMA`]（`CESIUM_ENABLE_PANORAMA`），**默认 OFF**。门控由
+//! *application* 层求值，由它决定是否调用 [`register_panorama_node`]；
+//! [`panorama_gate_enabled`] 是供测试以及任何必须询问的适配器使用的
+//! 适配层本地镜像。门控 OFF 时节点从不被加入图，
+//! 没有实体携带 [`CesiumPanorama`]，八个 v0 基线保持不变（PSNR = infinity）。
 //!
-//! The env name is duplicated here rather than imported from
-//! `application/cesium-app/src/feature_flags.rs` because the adapter layer cannot
-//! depend on the application layer (DDD) — same convention as
-//! [`crate::atmosphere::sky_dome::ENV_ENABLE_SKYDOME`] and
-//! `effects::graph::ENV_ENABLE_POSTPROCESS`.
+//! 此 env 名在此重复而非从 `application/cesium-app/src/feature_flags.rs` 导入，
+//! 因为适配层不能依赖应用层（DDD）——与
+//! [`crate::atmosphere::sky_dome::ENV_ENABLE_SKYDOME`] 和
+//! `effects::graph::ENV_ENABLE_POSTPROCESS` 同一约定。
 //!
-//! # Render order — where the node belongs, and why
+//! # 渲染顺序——节点归属何处，以及为何
 //!
-//! Upstream draws the panorama in `Pass.ENVIRONMENT`, i.e. *before everything else*,
-//! with depth test and depth write disabled. Bevy cannot express that literally:
+//! 上游在 `Pass.ENVIRONMENT` 中绘制 panorama，即*先于其他一切*，
+//! 并禁用深度测试与深度写入。Bevy 无法逐字表达这一点：
 //!
 //! * `MainOpaquePass3dNode`
-//!   (`bevy_core_pipeline-0.15.3/src/core_3d/main_opaque_pass_3d_node.rs` L66) takes
-//!   its colour attachment through `ViewTarget::get_color_attachment()`, whose
+//!   （`bevy_core_pipeline-0.15.3/src/core_3d/main_opaque_pass_3d_node.rs` L66）经
+//!   `ViewTarget::get_color_attachment()` 取其颜色 attachment，其
 //!   `ColorAttachment::get_attachment`
-//!   (`bevy_render-0.15.3/src/texture/texture_attachment.rs` L62-74) issues
-//!   `LoadOp::Clear` on the **first** call and `LoadOp::Load` on every later one.
-//!   `DepthAttachment::get_attachment` (same file, L102-106) behaves identically.
-//!   A node placed *before* `Node3d::MainOpaquePass` therefore has its output erased
-//!   by the clear, and a node placed before it cannot draw at all because no pass is
-//!   open yet.
-//! * Drawing *after* the whole main pass with depth test off would paint over the
-//!   globe, which is the opposite of what is wanted.
+//!   （`bevy_render-0.15.3/src/texture/texture_attachment.rs` L62-74）在**首次**调用时发出
+//!   `LoadOp::Clear`，此后每次发 `LoadOp::Load`。
+//!   `DepthAttachment::get_attachment`（同文件，L102-106）行为完全相同。
+//!   因此，放在 `Node3d::MainOpaquePass` *之前* 的节点，其输出会被 clear 擦除，
+//!   而放在其前的节点根本无法绘制，因为还没有 pass 打开。
+//! * 在深度测试关闭的情况下*整个主 pass 之后*绘制会覆盖到地球上，
+//!   这与所希望的恰恰相反。
 //!
-//! So the node goes **between `Node3d::MainOpaquePass` and
-//! `Node3d::MainTransmissivePass`**, with `depth_compare = GreaterEqual` and
-//! `frag_depth = 0.0` (Bevy uses reversed-Z, so `0.0` is the far plane). The opaque
-//! pass has already claimed every pixel that has geometry and left the rest at the
-//! cleared far depth, so this node writes **exactly** the sky pixels. The final
-//! framebuffer is bit-identical to upstream's "skybox first, everything over it",
-//! because upstream's `ALPHA_BLEND` with `a = czm_morphTime = 1.0` is a plain
-//! overwrite (see DEVIATION 4 in `shaders/panorama.wgsl`).
+//! 所以节点放在 **`Node3d::MainOpaquePass` 与 `Node3d::MainTransmissivePass` 之间**，
+//! 配 `depth_compare = GreaterEqual` 和 `frag_depth = 0.0`（Bevy 用反向 Z，
+//! 所以 `0.0` 是远平面）。不透明 pass 已经占据了每个有几何的像素，
+//! 并把其余留在被清除的远深度，所以本节点**恰好**只写天空像素。
+//! 最终 framebuffer 与上游的"先画 skybox，其余覆盖其上"逐位相同，
+//! 因为上游 `ALPHA_BLEND` 在 `a = czm_morphTime = 1.0` 下就是一次直接
+//! 覆盖（参见 `shaders/panorama.wgsl` 中的 DEVIATION 4）。
 //!
-//! Bevy reaches the same conclusion on its own: `MainOpaquePass3dNode` L113-127 draws
-//! the built-in skybox as a fullscreen triangle *after* the opaque and alpha-mask
-//! phases, with exactly this depth state
-//! (`bevy_core_pipeline-0.15.3/src/skybox/mod.rs` L201-216:
-//! `depth_write_enabled: false, depth_compare: GreaterEqual`).
+//! Bevy 自己也得出同样结论：`MainOpaquePass3dNode` L113-127 把内置 skybox 绘制为
+//! 一个全屏三角形，位于不透明和 alpha-mask 阶段*之后*，配的正是这一深度状态
+//!（`bevy_core_pipeline-0.15.3/src/skybox/mod.rs` L201-216：
+//! `depth_write_enabled: false, depth_compare: GreaterEqual`）。
 //!
-//! ## Relative to the starfield and the sky dome
-//! Both are `Transparent3d` entities centred on the world origin —
-//! `application/cesium-app/src/starfield.rs` L114/L162-173 (`radius = 50.0`,
-//! `AlphaMode::Blend`, `unlit: true`, `cull_mode: None`, one draw call) and
-//! `atmosphere/sky_dome.rs` (`SKY_DOME_RADIUS = 40.0`, `AlphaMode::Premultiplied`,
-//! `SKY_DOME_DEPTH_BIAS = 1000.0` pinning it after the starfield, `cull_mode =
-//! Some(Face::Front)`). `Transparent3d` runs in `MainTransparentPass3dNode`, which is
-//! **after** `Node3d::MainTransmissivePass`. Placing the panorama before that node
-//! therefore gives, per pixel:
+//! ## 相对于 starfield 和 sky dome
+//! 两者都是以世界原点为中心的 `Transparent3d` 实体——
+//! `application/cesium-app/src/starfield.rs` L114/L162-173（`radius = 50.0`、
+//! `AlphaMode::Blend`、`unlit: true`、`cull_mode: None`、单次 draw call）和
+//! `atmosphere/sky_dome.rs`（`SKY_DOME_RADIUS = 40.0`、`AlphaMode::Premultiplied`、
+//! `SKY_DOME_DEPTH_BIAS = 1000.0` 把它固定在 starfield 之后、`cull_mode =
+//! Some(Face::Front)`）。`Transparent3d` 运行于 `MainTransparentPass3dNode`，它位于
+//! `Node3d::MainTransmissivePass` **之后**。因此把 panorama 放在该节点之前，
+//! 逐像素地得到：
 //!
 //! ```text
 //!   1. MainOpaquePass        globe writes colour + depth
@@ -89,37 +83,35 @@
 //!                            (r = 40, Premultiplied, depth_bias 1000)
 //! ```
 //!
-//! which is upstream's ordering exactly: `Pass.ENVIRONMENT` panorama first, then
-//! primitives, then the star box (`SkyBox` is itself a `CubeMapPanorama`). The sky
-//! dome's transmittance still extinguishes the starfield, and the starfield still
-//! blends over the panorama, because neither depth state nor sort order of the two
-//! transparent entities is touched. In `BUBBLE` placement the panorama additionally
-//! writes real depth, so it correctly occludes the starfield and dome — the
-//! equivalent of upstream's `translucent: false` opaque sphere.
+//! 这正是上游的顺序：`Pass.ENVIRONMENT` panorama 先，然后 primitives，
+//! 然后是星箱（`SkyBox` 本身就是一个 `CubeMapPanorama`）。sky dome 的透射率
+//! 仍会消光 starfield，而 starfield 仍会在 panorama 之上混合，
+//! 因为两个透明实体的深度状态和排序顺序都未被触碰。在 `BUBBLE` 放置中
+//! panorama 额外写入真实深度，所以它正确地遮挡 starfield 和 dome——
+//! 等价于上游 `translucent: false` 的不透明球。
 //!
-//! **No edge is created here.** [`register_panorama_node`] adds the node only;
-//! `effects::graph::register_render_graph` owns the single linear `Core3d` chain
-//! (Daniel H2, upstream CesiumJS parity) and task #81 wires the edges. See
-//! [`insertion_hint`].
+//! **此处不创建任何边。** [`register_panorama_node`] 只添加节点；
+//! `effects::graph::register_render_graph` 拥有单一线性 `Core3d` 链
+//!（Daniel H2，上游 CesiumJS 一致性），task #81 接线边。参见 [`insertion_hint`]。
 //!
-//! # DEVIATIONS
-//! Logged in `docs/deviations.md#dev-025`; the shader-side ones are listed in the
-//! header of `shaders/panorama.wgsl`.
-//! 1. Fullscreen triangle instead of far-plane-scaled box geometry (Bevy uses an
-//!    infinite-reverse projection, so the far plane is at infinity).
-//! 2. Depth-test substitution for `Pass.ENVIRONMENT` (above).
-//! 3. No `czm_gammaCorrect` — sRGB texture format + sRGB framebuffer do it in hardware.
-//! 4. No `czm_morphTime` alpha — cesiumrust has no 2D/Columbus-View morph.
-//! 5. Non-HDR colour target format is `TextureFormat::bevy_default()`
-//!    (`Bgra8UnormSrgb`), not `Rgba8UnormSrgb`. This is the format of the
-//!    `ViewTarget` main texture; `super::fxaa` uses `Rgba8UnormSrgb` because it
-//!    writes to a `create_post_process_texture` intermediate instead. Both are sRGB,
-//!    so the project red line ("sRGB colour textures use an sRGB format") holds —
-//!    and the panorama *asset* itself is created as `Rgba8UnormSrgb`.
-//! 6. Cube-map **placement** works for both texture layouts and vice versa, because
-//!    `mode` (placement) and `source` (layout) are independent uniforms. Upstream
-//!    hard-wires `CubeMapPanorama` = (skybox, cube) and `EquirectangularPanorama`
-//!    = (bubble, equirect).
+//! # 偏差
+//! 记录于 `docs/deviations.md#dev-025`；shader 侧的那些列在
+//! `shaders/panorama.wgsl` 的头里。
+//! 1. 全屏三角形而非远平面缩放的 box 几何（Bevy 用无限反向投影，
+//!    所以远平面在无穷远）。
+//! 2. 以深度测试替代 `Pass.ENVIRONMENT`（见上）。
+//! 3. 无 `czm_gammaCorrect`——sRGB 纹理格式 + sRGB framebuffer 在硬件中完成。
+//! 4. 无 `czm_morphTime` alpha——cesiumrust 没有 2D/Columbus-View 变形。
+//! 5. 非 HDR 颜色目标格式是 `TextureFormat::bevy_default()`
+//!    （`Bgra8UnormSrgb`），而非 `Rgba8UnormSrgb`。这是
+//!    `ViewTarget` 主纹理的格式；`super::fxaa` 用 `Rgba8UnormSrgb` 是因为它
+//!    改为写入一个 `create_post_process_texture` 中间纹理。两者都是 sRGB，
+//!    所以项目红线（"sRGB 颜色纹理使用 sRGB 格式"）成立——
+//!    而 panorama *asset* 本身创建为 `Rgba8UnormSrgb`。
+//! 6. Cube-map **放置**对两种纹理布局都适用，反之亦然，因为
+//!    `mode`（放置）和 `source`（布局）是独立的 uniform。上游
+//!    硬连线 `CubeMapPanorama` = (skybox, cube) 和 `EquirectangularPanorama`
+//!    = (bubble, equirect)。
 
 use std::fmt::Write as _;
 
@@ -163,27 +155,26 @@ use cesium_effects::panorama::{
 };
 use glam::{DMat3, DMat4, DVec3};
 
-// ─── Gate ────────────────────────────────────────────────────────────────────
+// ─── 门控 ────────────────────────────────────────────────────────────────────
 
-/// Env var gating panorama registration. **Default OFF.**
+/// 门控 panorama 注册的 env 变量。**默认 OFF。**
 ///
-/// **Single source of truth (task #81)**: the owner of this name is the app-layer
-/// registry `application/cesium-app/src/feature_flags.rs` (`ENV_ENABLE_PANORAMA`
-/// and the `panorama_enabled()` accessor, listed in `RESERVED_FLAGS`). This const is
-/// a *mirror* that exists only because `cesium-app` depends on
-/// `cesium-bevy-render` (never the reverse), so this crate cannot import the
-/// registry. It is `pub` so
-/// `feature_flags::adapter_gate_mirrors_are_byte_identical_to_the_registry` can
-/// assert byte-equality across the crate boundary; the registration itself is
-/// driven by `effects::graph::M6WaveARenderGraphPlugin`, which reads
-/// [`panorama_gate_enabled`] once per plugin phase.
+/// **单一真相源（task #81）**：此名的拥有者是应用层注册表
+/// `application/cesium-app/src/feature_flags.rs`（`ENV_ENABLE_PANORAMA` 和
+/// `panorama_enabled()` accessor，列在 `RESERVED_FLAGS` 中）。此 const 是一个*镜像*，
+/// 仅因 `cesium-app` 依赖 `cesium-bevy-render`（绝不反向）而存在，
+/// 所以本 crate 不能导入注册表。它是 `pub`，以便
+/// `feature_flags::adapter_gate_mirrors_are_byte_identical_to_the_registry` 能
+/// 跨 crate 边界断言字节相等；注册本身由
+/// `effects::graph::M6WaveARenderGraphPlugin` 驱动，它每 plugin 阶段读一次
+/// [`panorama_gate_enabled`]。
 pub const ENV_ENABLE_PANORAMA: &str = "CESIUM_ENABLE_PANORAMA";
 
-/// Adapter-local evaluation of [`ENV_ENABLE_PANORAMA`].
+/// [`ENV_ENABLE_PANORAMA`] 的适配层本地求值。
 ///
-/// Truthy set is `crate::pipeline::fetch::gate_from_env_value`'s
-/// (`"1"|"true"|"yes"|"on"`, trimmed + lowercased), byte-identical to
-/// `feature_flags::env_flag`.
+/// 真值集即 `crate::pipeline::fetch::gate_from_env_value` 的那套
+///（`"1"|"true"|"yes"|"on"`，trim + 转小写），与
+/// `feature_flags::env_flag` 字节一致。
 #[inline]
 pub fn panorama_gate_enabled() -> bool {
     crate::pipeline::fetch::gate_from_env_value(std::env::var(ENV_ENABLE_PANORAMA).ok())
@@ -191,78 +182,74 @@ pub fn panorama_gate_enabled() -> bool {
 
 // ─── Shader handle ───────────────────────────────────────────────────────────
 
-/// Unique handle for the embedded `shaders/panorama.wgsl`.
+/// 内嵌 `shaders/panorama.wgsl` 的唯一 handle。
 ///
-/// Follows the `CE51` ("CESI") prefix convention of
-/// `super::fxaa::FXAA_SHADER_HANDLE` (`0xCE51_E1E1_F4AA_0012`); the `9A4E_0A70`
-/// middle is a phonetic `PAN` + `ORAMA`, and the trailing `0063` is the M6.3
-/// milestone number in hex.
+/// 遵循 `super::fxaa::FXAA_SHADER_HANDLE`（`0xCE51_E1E1_F4AA_0012`）的
+/// `CE51`（"CESI"）前缀约定；`9A4E_0A70` 中间段是 `PAN` + `ORAMA` 的谐音，
+/// 结尾的 `0063` 是 M6.3 里程碑编号的十六进制。
 pub const PANORAMA_SHADER_HANDLE: Handle<Shader> =
     Handle::weak_from_u128(0xCE51_9A4E_0A70_0063);
 
-// ─── Shader constant mirrors ─────────────────────────────────────────────────
+// ─── Shader 常量镜像 ─────────────────────────────────────────────────
 
-/// `shaders/panorama.wgsl` `MODE_SKYBOX`. Wire value of [`PanoramaPlacement::Skybox`].
+/// `shaders/panorama.wgsl` 的 `MODE_SKYBOX`。[`PanoramaPlacement::Skybox`] 的 wire 值。
 pub const MODE_SKYBOX: u32 = PanoramaPlacement::Skybox.as_u32();
 
-/// `shaders/panorama.wgsl` `MODE_BUBBLE`. Wire value of [`PanoramaPlacement::Bubble`].
+/// `shaders/panorama.wgsl` 的 `MODE_BUBBLE`。[`PanoramaPlacement::Bubble`] 的 wire 值。
 pub const MODE_BUBBLE: u32 = PanoramaPlacement::Bubble.as_u32();
 
-/// `shaders/panorama.wgsl` `SOURCE_CUBEMAP`. Wire value of [`PanoramaSource::CubeMap`].
+/// `shaders/panorama.wgsl` 的 `SOURCE_CUBEMAP`。[`PanoramaSource::CubeMap`] 的 wire 值。
 pub const SOURCE_CUBEMAP: u32 = PanoramaSource::CubeMap.as_u32();
 
-/// `shaders/panorama.wgsl` `SOURCE_EQUIRECTANGULAR`. Wire value of
-/// [`PanoramaSource::Equirectangular`].
+/// `shaders/panorama.wgsl` 的 `SOURCE_EQUIRECTANGULAR`。[`PanoramaSource::Equirectangular`]
+/// 的 wire 值。
 pub const SOURCE_EQUIRECTANGULAR: u32 = PanoramaSource::Equirectangular.as_u32();
 
-/// f32 mirror of `shaders/panorama.wgsl`
-/// `const DEGENERATE_DIRECTION_SQUARED_EPSILON: f32 = 1.0e-24;`.
+/// `shaders/panorama.wgsl` 的
+/// `const DEGENERATE_DIRECTION_SQUARED_EPSILON: f32 = 1.0e-24;` 的 f32 镜像。
 ///
-/// Deliberately an independent literal rather than
-/// `cesium_effects::panorama::DEGENERATE_DIRECTION_SQUARED_EPSILON as f32`: the f64
-/// constant is correctly rounded from decimal once, and casting it would round a
-/// second time, so the two could differ by an ULP.
-/// [`tests::the_wgsl_literals_match_the_rust_mirrors_bit_for_bit`] parses the
-/// literal straight out of the shader source and compares `to_bits()`, which closes
-/// the loop without any double rounding.
+/// 刻意是一个独立字面量而非
+/// `cesium_effects::panorama::DEGENERATE_DIRECTION_SQUARED_EPSILON as f32`：f64
+/// 常量从十进制正确舍入一次，而对其强制转换会二次舍入，所以两者
+/// 可能相差一个 ULP。
+/// [`tests::the_wgsl_literals_match_the_rust_mirrors_bit_for_bit`] 直接从 shader 源码
+/// 解析该字面量并比较 `to_bits()`，从而在无双重舍入的情况下闭环校验。
 pub const PANORAMA_DEGENERATE_DIRECTION_SQUARED_EPSILON_F32: f32 = 1.0e-24;
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// ─── 组件 ───────────────────────────────────────────────────────────────
 
-/// Marker component enabling the cesiumrust panorama draw on a camera entity.
+/// 在相机实体上启用 cesiumrust panorama 绘制的标记组件。
 ///
-/// Extracted to the render world via [`ExtractComponentPlugin`]. [`PanoramaNode`]
-/// early-returns when `enabled == false`, and [`prepare_panorama_pipelines`] skips
-/// such views entirely, so a disabled panorama costs nothing on the GPU.
+/// 经 [`ExtractComponentPlugin`] 提取到 render world。当 `enabled == false` 时
+/// [`PanoramaNode`] 提前 return，且 [`prepare_panorama_pipelines`] 完全跳过
+/// 这些视图，所以一个禁用的 panorama 在 GPU 上零开销。
 #[derive(Component, Clone, Debug, ExtractComponent)]
 pub struct CesiumPanorama {
-    /// Master enable for this camera.
+    /// 该相机的主开关。
     pub enabled: bool,
-    /// Infinite camera-centred skybox, or finite anchored sphere.
+    /// 无限、以相机为中心的 skybox，或有限的锚定球。
     pub placement: PanoramaPlacement,
-    /// Cube-map or 2:1 equirectangular texture.
+    /// Cube-map 或 2:1 equirectangular 纹理。
     pub source: PanoramaSource,
-    /// The panorama colour image. Create it as `Rgba8UnormSrgb` (project red line
-    /// for sRGB colour textures) so the hardware performs the sRGB→linear decode
-    /// that upstream's `czm_gammaCorrect` did by hand.
+    /// panorama 颜色图像。将其创建为 `Rgba8UnormSrgb`（项目对 sRGB 颜色纹理的
+    /// 红线），以便硬件执行上游 `czm_gammaCorrect` 手工完成的 sRGB→linear 解码。
     pub image: Handle<Image>,
-    /// Radiance multiplier. `1.0` is neutral; upstream has no equivalent.
+    /// 辐射度乘子。`1.0` 为中性；上游无对应物。
     pub brightness: f32,
-    /// **world → local** panorama transform (the inverse of the domain transform,
-    /// with its translation expressed in render units). Directions are multiplied by
-    /// it with `w = 0.0`, so only its rotation matters in `Skybox` placement; the
-    /// bubble centre travels in [`Self::center`] instead.
+    /// **world → local** panorama transform（领域 transform 的逆，其平移以
+    /// render 单位表示）。方向以 `w = 0.0` 乘上它，所以在 `Skybox` 放置中只有它的
+    /// 旋转有意义；bubble 中心改为在 [`Self::center`] 中移动。
     ///
-    /// Same convention as Bevy's `SkyboxUniforms.transform`
-    /// (`bevy_core_pipeline-0.15.3/src/skybox/mod.rs` L127-129).
+    /// 与 Bevy 的 `SkyboxUniforms.transform` 同约定
+    ///（`bevy_core_pipeline-0.15.3/src/skybox/mod.rs` L127-129）。
     pub transform: Mat4,
-    /// Bubble centre in world render units. Unused in `Skybox` placement.
+    /// bubble 中心，以世界 render 单位表示。`Skybox` 放置中不用。
     pub center: Vec3,
-    /// Bubble radius in render units. Unused in `Skybox` placement.
+    /// bubble 半径，以 render 单位表示。`Skybox` 放置中不用。
     pub radius: f32,
-    /// Sampler repeat, `(-repeat_horizontal, repeat_vertical)` — upstream
-    /// `EquirectangularPanorama.js` L117. Must be paired with
-    /// `AddressMode::Repeat`, which [`PanoramaPipeline::from_world`] provides.
+    /// 采样器 repeat，`(-repeat_horizontal, repeat_vertical)`——上游
+    /// `EquirectangularPanorama.js` L117。必须与 `AddressMode::Repeat` 配对，
+    /// 由 [`PanoramaPipeline::from_world`] 提供。
     pub repeat: Vec2,
 }
 
@@ -283,30 +270,28 @@ impl Default for CesiumPanorama {
 }
 
 impl CesiumPanorama {
-    /// Build the component from a domain [`EquirectangularPanorama`].
+    /// 从领域 [`EquirectangularPanorama`] 构建组件。
     ///
-    /// This is the **only** place f64 domain geometry is narrowed to f32: every
-    /// `as f32` in this function sits on the uniform boundary, per the project red
-    /// line. `image` is supplied by the caller because the domain layer holds a URL
-    /// string and knows nothing about Bevy asset handles.
+    /// 这是 f64 领域几何收窄到 f32 的**唯一**位置：本函数中每个
+    /// `as f32` 都位于 uniform 边界上，遵循项目红线。`image` 由调用方
+    /// 提供，因为领域层只持有一个 URL 字符串，对 Bevy asset handle 一无所知。
     pub fn from_domain_equirectangular(
         panorama: &EquirectangularPanorama,
         image: Handle<Image>,
         brightness: f32,
     ) -> Self {
-        // Upstream composes `transform` from a position plus heading/pitch/roll
-        // (`EquirectangularPanorama.js` L46-61), i.e. a rigid transform: an orthonormal
-        // 3x3 plus a translation in metres. Only the translation needs rescaling.
+        // 上游由一个位置加 heading/pitch/roll 组合出 `transform`
+        //（`EquirectangularPanorama.js` L46-61），即一个刚体 transform：一个正交归一
+        // 3x3 加上以米为单位的平移。只有平移需要重新缩放。
         let mut world_from_local = panorama.transform;
         world_from_local.w_axis.x /= PANORAMA_METERS_PER_RENDER_UNIT;
         world_from_local.w_axis.y /= PANORAMA_METERS_PER_RENDER_UNIT;
         world_from_local.w_axis.z /= PANORAMA_METERS_PER_RENDER_UNIT;
 
-        // `DMat4::inverse()` returns a NaN/inf-filled matrix for a singular input
-        // (e.g. a zero scale) rather than erroring, which would silently poison the
-        // uniform and blank the panorama. Guard on a finite, well-conditioned
-        // determinant; on failure fall back to identity (render the panorama
-        // untransformed) and warn instead of propagating NaNs.
+        // `DMat4::inverse()` 对奇异输入（例如零缩放）返回一个填满 NaN/inf 的矩阵
+        // 而非报错，那会悄无声息地污染 uniform 并使 panorama 变白。以
+        // 有限、良态的行列式做守卫；失败时回退到单位矩阵（不对 panorama
+        // 做变换地渲染）并发出 warn，而非传播 NaN。
         let det = world_from_local.determinant();
         let world_from_local_inv = if det.is_finite() && det.abs() > 1.0e-12 {
             world_from_local.inverse()
@@ -330,11 +315,11 @@ impl CesiumPanorama {
         }
     }
 
-    /// Build the component from a domain [`CubeMapPanorama`].
+    /// 从领域 [`CubeMapPanorama`] 构建组件。
     ///
-    /// Upstream's cube-map transform is a **`Matrix3`** — a skybox has orientation
-    /// but no position — so only [`CubeMapPanorama::orientation`] is carried over and
-    /// [`Self::center`] / [`Self::radius`] stay at zero.
+    /// 上游的 cube-map transform 是一个 **`Matrix3`**——skybox 有朝向
+    /// 但无位置——所以只搬运 [`CubeMapPanorama::orientation`]，
+    /// [`Self::center`] / [`Self::radius`] 保持为零。
     pub fn from_domain_cubemap(
         panorama: &CubeMapPanorama,
         image: Handle<Image>,
@@ -354,18 +339,17 @@ impl CesiumPanorama {
     }
 }
 
-/// Per-view cached pipeline id, mirroring `super::fxaa::CameraFxaaPipeline`.
+/// 逐视图缓存的 pipeline id，对应 `super::fxaa::CameraFxaaPipeline`。
 #[derive(Component)]
 pub struct CameraPanoramaPipeline {
     pub pipeline_id: CachedRenderPipelineId,
 }
 
-/// Per-view bind group plus the uniform buffer that backs it.
+/// 逐视图 bind group 加上其后端的 uniform 缓冲。
 ///
-/// The buffer is stored alongside the bind group on purpose: `UniformBuffer::binding`
-/// hands out a `BufferBinding` that borrows the GPU buffer, and dropping the
-/// `UniformBuffer` before the render pass consumes the bind group would release the
-/// last Rust-side handle to it.
+/// 刻意把缓冲与 bind group 一起存储：`UniformBuffer::binding` 交出一个借用
+/// GPU 缓冲的 `BufferBinding`，而在 render pass 消费 bind group 之前 drop 掉
+/// `UniformBuffer` 会释放对它的最后一个 Rust 侧 handle。
 #[derive(Component)]
 pub struct CameraPanoramaBindGroup {
     pub bind_group: BindGroup,
@@ -374,18 +358,17 @@ pub struct CameraPanoramaBindGroup {
 
 // ─── Uniforms ────────────────────────────────────────────────────────────────
 
-/// `shaders/panorama.wgsl` `struct PanoramaUniforms` — 112 bytes.
+/// `shaders/panorama.wgsl` 的 `struct PanoramaUniforms`——112 字节。
 ///
-/// Field order and padding are the contract; the shader-side layout table is in that
-/// file's header. `center` is a `Vec3` (align 16, size 12) so `_pad_c` is required
-/// before the `Mat4`.
+/// 字段顺序和 padding 就是契约；shader 侧的布局表在该文件的头里。
+/// `center` 是 `Vec3`（align 16，size 12），所以 `Mat4` 前需要 `_pad_c`。
 ///
-/// The struct lives in a private `panorama_uniform` module carrying
-/// `#![allow(dead_code)]` — the `sky_dome.rs` / `clipping_planes.rs` / `ibl.rs`
-/// convention: the encase `ShaderType` derive emits a module-level `check` helper the
-/// dead-code pass flags even though every field is uploaded through `write_buffer`.
-/// Offsets are pinned field-for-field against the WGSL text by
-/// [`tests::the_uniform_layout_matches_the_wgsl_struct_field_for_field`].
+/// 该 struct 位于一个带 `#![allow(dead_code)]` 的私有 `panorama_uniform` 模块中
+///——即 `sky_dome.rs` / `clipping_planes.rs` / `ibl.rs` 的约定：encase
+/// `ShaderType` derive 会发出一个模块级 `check` helper，dead-code pass 会标记它，
+/// 尽管每个字段都通过 `write_buffer` 上传。偏移由
+/// [`tests::the_uniform_layout_matches_the_wgsl_struct_field_for_field`] 逐字段
+/// 对照 WGSL 文本钉死。
 pub use panorama_uniform::PanoramaUniforms;
 
 mod panorama_uniform {
@@ -393,52 +376,52 @@ mod panorama_uniform {
     use bevy::prelude::{Mat4, Vec2, Vec3};
     use bevy::render::render_resource::ShaderType;
 
-    /// GPU panorama uniform; layout matches `struct PanoramaUniforms` in
-    /// `shaders/panorama.wgsl` (encase std140, 112 bytes).
+    /// GPU panorama uniform；布局匹配 `shaders/panorama.wgsl` 中的
+    /// `struct PanoramaUniforms`（encase std140，112 字节）。
     #[derive(ShaderType, Clone, Copy, Debug, PartialEq)]
     pub struct PanoramaUniforms {
-        /// [`super::MODE_SKYBOX`] or [`super::MODE_BUBBLE`].
+        /// [`super::MODE_SKYBOX`] 或 [`super::MODE_BUBBLE`]。
         pub mode: u32,
-        /// [`super::SOURCE_CUBEMAP`] or [`super::SOURCE_EQUIRECTANGULAR`].
+        /// [`super::SOURCE_CUBEMAP`] 或 [`super::SOURCE_EQUIRECTANGULAR`]。
         pub source: u32,
-        /// Radiance multiplier.
+        /// 辐射度乘子。
         pub brightness: f32,
-        /// Bubble radius in render units.
+        /// bubble 半径，以 render 单位表示。
         pub radius: f32,
         /// `(-repeat_horizontal, repeat_vertical)`.
         pub repeat: Vec2,
-        /// Aligns `center` to 16 bytes.
+        /// 将 `center` 对齐到 16 字节。
         pub _pad_b: Vec2,
-        /// Bubble centre in world render units.
+        /// bubble 中心，以世界 render 单位表示。
         pub center: Vec3,
-        /// Aligns `transform` to 16 bytes.
+        /// 将 `transform` 对齐到 16 字节。
         pub _pad_c: u32,
-        /// world → local panorama transform.
+        /// world → local 的 panorama 变换。
         pub transform: Mat4,
     }
 }
 
 // ─── Pipeline ────────────────────────────────────────────────────────────────
 
-/// Render-world resource: bind group layout, sampler, and the two placeholder
-/// texture views that let one layout serve all four mode × source combinations.
+/// Render-world 资源：bind group layout、采样器，以及让一个 layout 服务全部
+/// 四种 mode × source 组合的两个占位纹理 view。
 #[derive(Resource)]
 pub struct PanoramaPipeline {
     pub bind_group_layout: BindGroupLayout,
     pub sampler: GpuSampler,
-    /// Bound into the `texture_cube` slot when the active source is equirectangular.
+    /// 当活跃 source 为 equirectangular 时绑定进 `texture_cube` 槽。
     pub placeholder_cube_view: TextureView,
-    /// Bound into the `texture_2d` slot when the active source is a cube map.
+    /// 当活跃 source 为 cube map 时绑定进 `texture_2d` 槽。
     pub placeholder_flat_view: TextureView,
-    /// Keeps the placeholder cube's GPU buffer alive for the resource's lifetime.
+    /// 在该资源的整个生命周期内保持占位 cube 的 GPU 缓冲存活。
     placeholder_cube: Texture,
-    /// Keeps the placeholder flat texture's GPU buffer alive.
+    /// 保持占位平面纹理的 GPU 缓冲存活。
     placeholder_flat: Texture,
 }
 
 impl PanoramaPipeline {
-    /// One 1×1 texel per face, `Rgba8UnormSrgb` (an sRGB format, so it satisfies the
-    /// `Float { filterable: true }` sample type of the cube slot).
+    /// 每个面 1×1 一个 texel，`Rgba8UnormSrgb`（sRGB 格式，所以满足 cube 槽的
+    /// `Float { filterable: true }` sample 类型）。
     fn placeholder_cube(device: &RenderDevice) -> (Texture, TextureView) {
         let texture = device.create_texture(&TextureDescriptor {
             label: Some("cesium_panorama_placeholder_cube"),
@@ -463,8 +446,8 @@ impl PanoramaPipeline {
         (texture, view)
     }
 
-    /// One 1×1 texel, `Rgba8UnormSrgb` (the format the project red line requires for
-    /// sRGB panorama colour textures).
+    /// 1×1 一个 texel，`Rgba8UnormSrgb`（项目红线对 sRGB panorama 颜色纹理
+    /// 所要求的格式）。
     fn placeholder_flat(device: &RenderDevice) -> (Texture, TextureView) {
         let texture = device.create_texture(&TextureDescriptor {
             label: Some("cesium_panorama_placeholder_flat"),
@@ -500,29 +483,27 @@ impl FromWorld for PanoramaPipeline {
                     texture_cube(TextureSampleType::Float { filterable: true }),
                     texture_2d(TextureSampleType::Float { filterable: true }),
                     sampler(SamplerBindingType::Filtering),
-                    // The view uniform is read by the fragment stage too (bubble
-                    // depth + ray reconstruction), and Bevy binds it dynamically.
+                    // view uniform 也被 fragment 阶段读取（bubble 深度 + 光线重建），
+                    // 且 Bevy 以动态方式绑定它。
                     uniform_buffer::<ViewUniform>(true)
                         .visibility(ShaderStages::VERTEX_FRAGMENT),
-                    // **Not** dynamic. `prepare_panorama_bind_groups` writes a plain
-                    // `UniformBuffer` per camera (`uniform_buffer.binding()`, no
-                    // dynamic offset), so `set_bind_group` supplies exactly one
-                    // dynamic offset — the view uniform's. Declaring this binding
-                    // dynamic made wgpu expect 2 offsets and fail validation at
-                    // `RenderPass::end` ("BindGroup with
+                    // **不**动态。`prepare_panorama_bind_groups` 每相机写入一个普通
+                    // `UniformBuffer`（`uniform_buffer.binding()`，无动态 offset），
+                    // 所以 `set_bind_group` 恰好提供一个动态 offset——view uniform 的那个。
+                    // 把此 binding 声明为动态让 wgpu 期望 2 个 offset 并在
+                    // `RenderPass::end` 处校验失败（"BindGroup with
                     // 'cesium_panorama_bind_group' label 0 expects 2 dynamic
-                    // offsets. However 1 dynamic offset were provided."), found by
-                    // the first real-GPU run with `CESIUM_ENABLE_PANORAMA=1`
-                    // (task #81). Matches the sibling nodes: `ibl.rs` L307 and
-                    // `clipping_planes.rs` L293 both use `(false)`.
+                    // offsets. However 1 dynamic offset were provided."），由首次
+                    // 带 `CESIUM_ENABLE_PANORAMA=1` 的真实 GPU 运行发现（task #81）。
+                    // 与同级节点一致：`ibl.rs` L307 和 `clipping_planes.rs` L293
+                    // 都用 `(false)`。
                     uniform_buffer::<PanoramaUniforms>(false),
                 ),
             ),
         );
 
-        // `AddressMode::Repeat` is mandatory: `PanoramaUniforms::repeat` carries
-        // upstream's negative horizontal component, so the sampled u is negative for
-        // every direction and must wrap exactly like GL_REPEAT.
+        // `AddressMode::Repeat` 是强制的：`PanoramaUniforms::repeat` 携带上游的
+        // 负水平分量，所以采样的 u 对每个方向都为负，必须恰如 GL_REPEAT 那样回绕。
         let sampler = render_device.create_sampler(&SamplerDescriptor {
             label: Some("cesium_panorama_sampler"),
             address_mode_u: bevy::render::render_resource::AddressMode::Repeat,
@@ -546,15 +527,13 @@ impl FromWorld for PanoramaPipeline {
             placeholder_flat,
         };
 
-        // The two `Texture` fields exist purely to keep the GPU objects behind
-        // `placeholder_*_view` alive: `wgpu::TextureView` holds only `Arc<C>` and
-        // `Box<Data>` (wgpu-23.0.1/src/api/texture_view.rs L12-15) and **not** a
-        // reference to its `Texture`, while dropping a `Texture` destroys the backing
-        // resource — so without them the views would dangle. Nothing else reads the
-        // fields, so reading them here turns that keep-alive invariant into a checked
-        // fact rather than an `#[allow(dead_code)]`, and a placeholder with the wrong
-        // shape (which would be bound into a slot whose sample type it does not
-        // satisfy) fails loudly in every debug build and test run.
+        // 这两个 `Texture` 字段纯粹是为了保持 `placeholder_*_view` 背后的 GPU 对象
+        // 存活：`wgpu::TextureView` 只持有 `Arc<C>` 和 `Box<Data>`
+        //（wgpu-23.0.1/src/api/texture_view.rs L12-15）而**不**持有对其 `Texture` 的
+        // 引用，而 drop 一个 `Texture` 会摧毁其后端资源——所以没有它们 view 就会悬垂。
+        // 没有别的东西读这些字段，所以在此读它们把那条 keep-alive 不变式变成一个被校验
+        // 的事实而非一个 `#[allow(dead_code)]`，且一个形状错误的占位（它会被绑定进
+        // 一个其 sample 类型不满足的槽）会在每个 debug 构建和测试运行中响亮地失败。
         debug_assert_eq!(
             pipeline.placeholder_cube.depth_or_array_layers(),
             6,
@@ -572,9 +551,8 @@ impl FromWorld for PanoramaPipeline {
     }
 }
 
-/// Specialization key. `placement` is part of the key because it is the only axis
-/// that changes pipeline state: `Bubble` writes depth (a finite sphere must occlude
-/// the transparent draws that follow it) while `Skybox` does not.
+/// 特化 key。`placement` 是 key 的一部分，因为它是唯一改变 pipeline 状态的轴：
+/// `Bubble` 写深度（有限球必须遮挡其后的透明绘制），而 `Skybox` 不写。
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct PanoramaPipelineKey {
     pub hdr: bool,
@@ -600,16 +578,14 @@ impl SpecializedRenderPipeline for PanoramaPipeline {
             primitive: PrimitiveState::default(),
             depth_stencil: Some(DepthStencilState {
                 format: key.depth_format,
-                // BUBBLE writes real depth so the starfield (r = 50) and the sky dome
-                // (r = 40) are correctly occluded by a finite panorama. SKYBOX must
-                // not: it sits at the far plane and would block nothing anyway, and
-                // not writing keeps the depth buffer pristine for the transparent
-                // pass that follows.
+                // BUBBLE 写入真实深度，所以 starfield（r = 50）和 sky dome
+                //（r = 40）被一个有限 panorama 正确遮挡。SKYBOX 必须不写：它位于
+                // 远平面，无论如何都遮挡不了任何东西，且不写入能让深度缓冲为随后的
+                // 透明 pass 保持原样。
                 depth_write_enabled: key.placement == PanoramaPlacement::Bubble,
-                // Reversed-Z: cleared depth is 0.0 (the far plane), so GreaterEqual
-                // admits the panorama only where the opaque pass left sky. Identical
-                // to Bevy's own skybox (skybox/mod.rs L204) and to
-                // `atmosphere/sky_dome.rs`'s premultiplied dome.
+                // 反向 Z：被清除的深度是 0.0（远平面），所以 GreaterEqual 只在不透明
+                // pass 留下天空的地方放行 panorama。与 Bevy 自身的 skybox
+                //（skybox/mod.rs L204）以及 `atmosphere/sky_dome.rs` 的 premultiplied dome 一致。
                 depth_compare: CompareFunction::GreaterEqual,
                 stencil: StencilState {
                     front: StencilFaceState::IGNORE,
@@ -636,11 +612,11 @@ impl SpecializedRenderPipeline for PanoramaPipeline {
                     format: if key.hdr {
                         ViewTarget::TEXTURE_FORMAT_HDR
                     } else {
-                        // The ViewTarget main texture's format — see DEVIATION 5.
+                        // ViewTarget 主纹理的格式——见偏差 5。
                         TextureFormat::bevy_default()
                     },
-                    // `None` == REPLACE. Upstream's `ALPHA_BLEND` with
-                    // `a = czm_morphTime = 1.0` degenerates to exactly this.
+                    // `None` == REPLACE。上游的 `ALPHA_BLEND` 在
+                    // `a = czm_morphTime = 1.0` 下退化得恰好就是此。
                     blend: None,
                     write_mask: ColorWrites::ALL,
                 })],
@@ -650,20 +626,20 @@ impl SpecializedRenderPipeline for PanoramaPipeline {
     }
 }
 
-// ─── Render graph label ──────────────────────────────────────────────────────
+// ─── 渲染图 label ──────────────────────────────────────────────────────
 
-/// `Core3d` node label for the panorama draw.
+/// panorama 绘制的 `Core3d` 节点 label。
 ///
-/// Defined here rather than as a `CesiumPostProcessLabel` variant because that enum
-/// lives in `effects/graph.rs`, which the M6 Wave A integration task (#81) owns.
+/// 在此定义而非作为 `CesiumPostProcessLabel` 变体，因为那个 enum 位于
+/// `effects/graph.rs`，由 M6 Wave A 集成任务（#81）拥有。
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
 pub struct CesiumPanoramaLabel;
 
-/// The edges task #81 must add, spelled out for the integration report.
+/// task #81 必须添加的边，为集成报告完整拼出。
 ///
 /// `effects::graph::insert_node_in_core3d(render_app, CesiumPanoramaLabel,
-/// Node3d::MainOpaquePass, Node3d::MainTransmissivePass)` — see the module docs for
-/// why this slot and not another.
+/// Node3d::MainOpaquePass, Node3d::MainTransmissivePass)`——关于为何是这个槽位
+/// 而非其他，参见模块文档。
 pub fn insertion_hint() -> String {
     let mut hint = String::new();
     let _ = write!(
@@ -677,13 +653,12 @@ pub fn insertion_hint() -> String {
 
 // ─── ViewNode ────────────────────────────────────────────────────────────────
 
-/// The panorama draw. Runs between `Node3d::MainOpaquePass` and
-/// `Node3d::MainTransmissivePass`; see the module docs.
+/// panorama 绘制。运行于 `Node3d::MainOpaquePass` 与 `Node3d::MainTransmissivePass`
+/// 之间；参见模块文档。
 ///
-/// Stateless by design: unlike `super::fxaa::FxaaNode` there is nothing to cache,
-/// because the bind group is rebuilt per frame in
-/// [`prepare_panorama_bind_groups`] (its content depends on the current image and
-/// view uniforms) and the pipeline is looked up by id.
+/// 设计上无状态：与 `super::fxaa::FxaaNode` 不同，没有东西需要缓存，
+/// 因为 bind group 在 [`prepare_panorama_bind_groups`] 中逐帧重建
+///（其内容取决于当前的 image 和 view uniform），且 pipeline 按 id 查找。
 #[derive(Default)]
 pub struct PanoramaNode;
 
@@ -715,10 +690,10 @@ impl ViewNode for PanoramaNode {
             return Ok(());
         };
 
-        // Both attachments are second-or-later users this frame, so
+        // 两个 attachment 都是本帧第二或更后的使用者，所以
         // `ColorAttachment::get_attachment` / `DepthAttachment::get_attachment`
-        // return `LoadOp::Load` (bevy_render-0.15.3/src/texture/texture_attachment.rs
-        // L62-74, L102-106). The opaque pass already did the clearing.
+        // 返回 `LoadOp::Load`（bevy_render-0.15.3/src/texture/texture_attachment.rs
+        // L62-74, L102-106）。不透明 pass 已经完成了清除。
         let pass_descriptor = RenderPassDescriptor {
             label: Some("cesium_panorama_pass"),
             color_attachments: &[Some(target.get_color_attachment())],
@@ -733,16 +708,16 @@ impl ViewNode for PanoramaNode {
 
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &bind_group.bind_group, &[view_uniform_offset.offset]);
-        render_pass.draw(0..3, 0..1); // fullscreen triangle
+        render_pass.draw(0..3, 0..1); // 全屏三角形
 
         Ok(())
     }
 }
 
-// ─── Render systems ──────────────────────────────────────────────────────────
+// ─── 渲染系统 ──────────────────────────────────────────────────────────
 
-/// Prepares the specialized panorama pipeline for every enabled view.
-/// Runs in `Render`, `RenderSet::Prepare`.
+/// 为每个启用的视图准备特化的 panorama pipeline。
+/// 运行于 `Render` 的 `RenderSet::Prepare`。
 pub fn prepare_panorama_pipelines(
     mut commands: Commands,
     pipeline_cache: Res<PipelineCache>,
@@ -770,14 +745,14 @@ pub fn prepare_panorama_pipelines(
     }
 }
 
-/// Builds the per-view bind group. Runs in `Render`, `RenderSet::PrepareBindGroups`
-/// (after `write_view_uniforms`), the same set Bevy's own
-/// `prepare_skybox_bind_groups` uses.
+/// 构建逐视图 bind group。运行于 `Render` 的 `RenderSet::PrepareBindGroups`
+///（在 `write_view_uniforms` 之后），与 Bevy 自身的 `prepare_skybox_bind_groups`
+/// 所用的同一集合。
 ///
-/// Views whose image is not resident yet are **skipped**, which is upstream parity:
-/// `CubeMapPanorama.js` L232 returns `undefined` — no draw command at all — while the
-/// cube map is still loading. A skipped view has no [`CameraPanoramaBindGroup`], so
-/// [`PanoramaNode`]'s query does not match it and nothing is drawn.
+/// image 尚未常驻的视图会被**跳过**，这是上游一致性：cube map 仍在加载时
+/// `CubeMapPanorama.js` L232 返回 `undefined`——完全不发出 draw command。
+/// 被跳过的视图没有 [`CameraPanoramaBindGroup`]，所以 [`PanoramaNode`] 的 query
+/// 不匹配它，什么都不绘制。
 pub fn prepare_panorama_bind_groups(
     mut commands: Commands,
     pipeline: Res<PanoramaPipeline>,
@@ -796,19 +771,16 @@ pub fn prepare_panorama_bind_groups(
             continue;
         };
 
-        // The active source decides which slot the real image goes into; the other
-        // slot takes a 1×1 placeholder so a single bind group layout serves all four
-        // mode × source combinations. A resident image whose shape does not match its
-        // slot is treated as "not loaded yet" rather than bound anyway — wgpu rejects
-        // a `D2` view in a `texture_cube` slot at bind-group creation time, which would
-        // be a hard panic on the render thread.
+        // 活跃 source 决定真实 image 进入哪个槽；另一个槽取一个 1×1 占位，
+        // 从而一个 bind group layout 服务全部四种 mode × source 组合。一个常驻
+        // image 若其形状与其槽不匹配，则被视为"尚未加载"而非强行绑定——wgpu 会在
+        // bind-group 创建时拒绝把 `D2` view 放进 `texture_cube` 槽，那会在 render
+        // 线程上造成硬 panic。
         //
-        // `GpuImage` does not carry `Image::texture_view_dimension`, so the cube test
-        // is the array-layer count: a wgpu cube texture is a 2D array texture with
-        // exactly six layers, while an ordinary equirectangular image has one. Being
-        // conservative here is upstream parity, not a workaround —
-        // `CubeMapPanorama.js` L232 likewise emits no draw command until the cube map
-        // is fully resident.
+        // `GpuImage` 不携带 `Image::texture_view_dimension`，所以 cube 判据是
+        // array-layer 数：一个 wgpu cube 纹理是恰好六层的 2D array 纹理，而一个普通
+        // equirectangular image 只有一层。此处保守是上游一致性，而非 workaround——
+        // `CubeMapPanorama.js` L232 同样在 cube map 完全常驻之前不发出任何 draw command。
         let dimension_matches = match panorama.source {
             PanoramaSource::CubeMap => gpu_image.texture.depth_or_array_layers() == 6,
             PanoramaSource::Equirectangular => gpu_image.texture.depth_or_array_layers() == 1,
@@ -864,37 +836,37 @@ pub fn prepare_panorama_bind_groups(
     }
 }
 
-// ─── Registration ────────────────────────────────────────────────────────────
+// ─── 注册 ────────────────────────────────────────────────────────────
 
-/// Register the panorama node into `RenderApp` (shader + extract + node + systems).
+/// 把 panorama 节点注册进 `RenderApp`（shader + extract + 节点 + 系统）。
 ///
-/// Called from cesium-app's `main.rs` only when [`ENV_ENABLE_PANORAMA`] is truthy —
-/// same shape as `atmosphere::CesiumAtmospherePlugin` and `register_fxaa_node`.
+/// 仅当 [`ENV_ENABLE_PANORAMA`] 为真时由 cesium-app 的 `main.rs` 调用——
+/// 与 `atmosphere::CesiumAtmospherePlugin` 和 `register_fxaa_node` 同一形态。
 ///
-/// This function registers the node **but does not create graph edges**:
-/// `effects::graph::register_m6_render_graph` owns the single linear `Core3d`
-/// chain (Daniel H2 / Lee M6.3 diamond warning). Task #81 wired it — see
-/// [`insertion_hint`] for the shape actually produced.
+/// 本函数注册节点**但不创建图边**：
+/// `effects::graph::register_m6_render_graph` 拥有单一线性 `Core3d`
+/// 链（Daniel H2 / Lee M6.3 菱形告警）。task #81 完成接线——实际
+/// 产出的形态参见 [`insertion_hint`]。
 #[deprecated = "DEV-029 / FIX-REG-FACADE: call `register_panorama_node_main_world` from `Plugin::build` and `register_panorama_node_render_world` from `Plugin::finish`; this facade runs the finish half against a possibly device-less render world."]
 pub fn register_panorama_node(app: &mut App) {
     register_panorama_node_main_world(app);
-    // Headless `MinimalPlugins` has no `RenderApp` — degrade gracefully.
+    // 无头 `MinimalPlugins` 没有 `RenderApp`——优雅降级。
     if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
         register_panorama_node_render_world(render_app);
     }
 }
 
-/// `Plugin::build`-time half of [`register_panorama_node`]: everything that
-/// lives in the **main** world (WGSL shader asset + `ExtractComponentPlugin`).
+/// [`register_panorama_node`] 在 `Plugin::build` 时执行的半：所有活在
+/// **主** world 中的东西（WGSL shader 资产 + `ExtractComponentPlugin`）。
 ///
-/// Split out by task #81 — see `docs/deviations.md#dev-029`. `PanoramaPipeline`'s
-/// `FromWorld` (L471) reads `RenderDevice`, which Bevy only inserts into the
-/// render world in `RenderPlugin::finish` (`bevy_render/src/lib.rs` L399-430),
-/// so the render-world half below must run from a plugin's `finish` — calling it
-/// from `build` panics with "RenderDevice does not exist in the World".
+/// 由 task #81 拆出——见 `docs/deviations.md#dev-029`。`PanoramaPipeline` 的
+/// `FromWorld`（L471）读取 `RenderDevice`，而 Bevy 只在 `RenderPlugin::finish`
+///（`bevy_render/src/lib.rs` L399-430）把它插入 render world，
+/// 所以下面的 render-world 半必须从 plugin 的 `finish` 运行——从 `build`
+/// 调用它会以 "RenderDevice does not exist in the World" panic。
 pub fn register_panorama_node_main_world(app: &mut App) {
-    // Headless-safe: a no-op when `Assets<Shader>` is absent, instead of the
-    // `load_internal_asset!` panic (docs/deviations.md#dev-005).
+    // 无头安全：当 `Assets<Shader>` 缺失时是 no-op，而非
+    // `load_internal_asset!` panic（docs/deviations.md#dev-005）。
     crate::shader_registry::try_load_internal_shader(
         app,
         PANORAMA_SHADER_HANDLE,
@@ -905,12 +877,12 @@ pub fn register_panorama_node_main_world(app: &mut App) {
     app.add_plugins(ExtractComponentPlugin::<CesiumPanorama>::default());
 }
 
-/// `Plugin::finish`-time half of [`register_panorama_node`]: the render-world
-/// pipeline resources + the `Core3d` node.
+/// [`register_panorama_node`] 在 `Plugin::finish` 时执行的半：render-world
+/// pipeline 资源 + `Core3d` 节点。
 pub fn register_panorama_node_render_world(render_app: &mut bevy::app::SubApp) {
-    // FIX-REG-FACADE (DEV-029): degrade to a no-op when `RenderDevice` is absent
-    // (finish half reached from `build`, or a bare render world). See
-    // `crate::effects::render_world_missing_device`.
+    // FIX-REG-FACADE（DEV-029）：当 `RenderDevice` 缺失时降级为 no-op
+    //（finish 半从 `build` 到达，或一个裸 render world）。见
+    // `crate::effects::render_world_missing_device`。
     if crate::effects::render_world_missing_device(render_app) {
         return;
     }
@@ -927,15 +899,15 @@ pub fn register_panorama_node_render_world(render_app: &mut bevy::app::SubApp) {
         )
         .add_render_graph_node::<ViewNodeRunner<PanoramaNode>>(Core3d, CesiumPanoramaLabel);
 
-    // NOTE: edges are created by `effects::graph::wire_m6_edges` (task #81) — see
-    // `insertion_hint()`.
+    // 注意：边由 `effects::graph::wire_m6_edges`（task #81）创建——见
+    // `insertion_hint()`。
 }
 
-// ─── f64 → f32 boundary helpers ──────────────────────────────────────────────
+// ─── f64 → f32 边界 helper ──────────────────────────────────────────────
 
-/// Narrow a domain `DMat3` to the `Mat3` the uniform buffer needs.
+/// 把领域 `DMat3` 收窄为 uniform 缓冲所需的 `Mat3`。
 ///
-/// Column-major, matching glam's `from_cols_array` and WGSL's `mat3x3` layout.
+/// 列主序，与 glam 的 `from_cols_array` 和 WGSL 的 `mat3x3` 布局一致。
 pub fn f32_mat3(value: DMat3) -> Mat3 {
     Mat3::from_cols_array(&[
         value.x_axis.x as f32,
@@ -950,7 +922,7 @@ pub fn f32_mat3(value: DMat3) -> Mat3 {
     ])
 }
 
-/// Narrow a domain `DMat4` to the `Mat4` the uniform buffer needs.
+/// 把领域 `DMat4` 收窄为 uniform 缓冲所需的 `Mat4`。
 pub fn f32_mat4(value: DMat4) -> Mat4 {
     Mat4::from_cols_array(&[
         value.x_axis.x as f32,
@@ -972,12 +944,12 @@ pub fn f32_mat4(value: DMat4) -> Mat4 {
     ])
 }
 
-/// Narrow a domain `DVec3` to render-unit `Vec3`.
+/// 把领域 `DVec3` 收窄为 render-unit `Vec3`。
 pub fn f32_vec3(value: DVec3) -> Vec3 {
     Vec3::new(value.x as f32, value.y as f32, value.z as f32)
 }
 
-/// Narrow a domain `DVec2` (here: the texture repeat) to `Vec2`.
+/// 把领域 `DVec2`（此处：纹理 repeat）收窄为 `Vec2`。
 pub fn f32_vec2_from_dvec2(value: glam::DVec2) -> Vec2 {
     Vec2::new(value.x as f32, value.y as f32)
 }
@@ -990,16 +962,16 @@ mod tests {
     use naga::valid::{Capabilities, ValidationFlags, Validator};
     use std::collections::BTreeSet;
 
-    // ─── naga defence line (M5 Ultra Review findings C1 / C2) ────────────────
+    // ─── naga 防线（M5 Ultra Review 发现 C1 / C2）────────────────────
 
-    /// Stand-in for `#import bevy_render::view::View`.
+    /// 对 `#import bevy_render::view::View` 的替身。
     ///
-    /// Name- and type-faithful for every field `panorama.wgsl` reads
-    /// (`view_from_clip`, `clip_from_view`, `world_from_view`, `view_from_world`,
-    /// `world_position`, `viewport` — all present in
-    /// `bevy_render-0.15.3/src/view/view.wgsl` L17-27), but *not* offset-faithful:
-    /// naga only type-checks, it does not know the real buffer layout, and at runtime
-    /// Bevy supplies the genuine `View`.
+    /// 对 `panorama.wgsl` 读取的每个字段都是名称与类型忠实的
+    ///（`view_from_clip`、`clip_from_view`、`world_from_view`、`view_from_world`、
+    /// `world_position`、`viewport`——均存在于
+    /// `bevy_render-0.15.3/src/view/view.wgsl` L17-27），但*不是*偏移忠实的：
+    /// naga 只做类型检查，不知道真实缓冲布局，而运行时
+    /// Bevy 提供真正的 `View`。
     const PANORAMA_WGSL_IMPORT_STUBS: &str = "\
 struct View {
     view_from_clip: mat4x4<f32>,
@@ -1011,7 +983,7 @@ struct View {
 }
 ";
 
-    /// The shader source with `#import` lines replaced by [`PANORAMA_WGSL_IMPORT_STUBS`].
+    /// 把 `#import` 行替换为 [`PANORAMA_WGSL_IMPORT_STUBS`] 后的 shader 源码。
     fn panorama_stubbed_wgsl() -> String {
         let mut source = String::from(PANORAMA_WGSL_IMPORT_STUBS);
         for line in include_str!("../../shaders/panorama.wgsl").lines() {
@@ -1028,18 +1000,18 @@ struct View {
         include_str!("../../shaders/panorama.wgsl")
     }
 
-    /// Line-ending normalisation for **multi-line** `contains` assertions.
+    /// 用于**多行** `contains` 断言的行尾归一化。
     ///
-    /// `include_str!` embeds whatever line endings the file has on disk, and this
-    /// checkout is on Windows, where both files are CRLF. A needle written with `\n`
-    /// therefore never matches a byte-identical source file. `str::lines()` already
-    /// strips a trailing `\r`, which is why the line-oriented assertions in this
-    /// module never needed the helper — only the ones that span a line break do.
+    /// `include_str!` 嵌入文件在磁盘上的任意行尾，而本 checkout 在
+    /// Windows 上，两个文件都是 CRLF。因此用 `\n` 写的 needle 从不
+    /// 匹配一个字节一致的源文件。`str::lines()` 已会剔去尾部
+    /// 的 `\r`，这就是为何本模块中面向行的断言从不需要 helper——
+    /// 只有跨行换行的那些才需要。
     fn normalized(source: &str) -> String {
         source.replace("\r\n", "\n")
     }
 
-    /// Parse one `const NAME: f32 = LITERAL;` out of the shader source.
+    /// 从 shader 源码中解析一个 `const NAME: f32 = LITERAL;`。
     fn wgsl_f32_const(source: &str, name: &str) -> f32 {
         let prefix = format!("const {name}: f32 = ");
         let tail = source
@@ -1056,7 +1028,7 @@ struct View {
             .unwrap_or_else(|error| panic!("`const {name}` literal {literal:?} is not an f32: {error}"))
     }
 
-    /// Parse one `const NAME: u32 = LITERALu;` out of the shader source.
+    /// 从 shader 源码中解析一个 `const NAME: u32 = LITERALu;`。
     fn wgsl_u32_const(source: &str, name: &str) -> u32 {
         let prefix = format!("const {name}: u32 = ");
         let tail = source
@@ -1074,8 +1046,8 @@ struct View {
             .unwrap_or_else(|error| panic!("`const {name}` literal {literal:?} is not a u32: {error}"))
     }
 
-    /// C1-class regression: a new WGSL file must parse **and** type-check under the
-    /// exact front end Bevy compiles with.
+    /// C1 类回归：新 WGSL 文件必须在 Bevy 编译所用的确切前端下
+    /// **同时**通过解析**和**类型检查。
     #[test]
     fn panorama_wgsl_parses_and_type_checks_under_naga() {
         let source = panorama_stubbed_wgsl();
@@ -1086,10 +1058,9 @@ struct View {
             )
         });
 
-        // `ValidationFlags::all()` includes the uniformity analysis, which is what
-        // makes the `uniforms.mode` / `uniforms.source` branches around
-        // `textureSample` legal — a non-uniform branch there is a hard error, not a
-        // warning.
+        // `ValidationFlags::all()` 包含 uniformity 分析，正是它使
+        // `textureSample` 周围的 `uniforms.mode` / `uniforms.source` 分支合法——
+        // 那里的非一致分支是硬错误，不是警告。
         Validator::new(ValidationFlags::all(), Capabilities::all())
             .validate(&module)
             .expect("panorama.wgsl does not validate");
@@ -1109,8 +1080,8 @@ struct View {
         );
     }
 
-    /// C2-class regression: every global the entry points actually touch must have a
-    /// slot in the Rust bind group layout, or the pipeline silently binds garbage.
+    /// C2 类回归：entry point 实际触及的每个全局变量必须在 Rust bind group
+    /// 布局中有一个槽位，否则 pipeline 会静默地绑定乱码。
     #[test]
     fn panorama_wgsl_entry_bindings_are_covered_by_the_rust_layout() {
         let source = panorama_stubbed_wgsl();
@@ -1120,19 +1091,18 @@ struct View {
             .validate(&module)
             .expect("panorama.wgsl does not validate");
 
-        // Mirrors `PanoramaPipeline::from_world`: cube, flat, sampler, view, uniforms.
+        // 对应 `PanoramaPipeline::from_world`：cube、flat、sampler、view、uniforms。
         let layout: BTreeSet<(u32, u32)> =
             [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)].into_iter().collect();
 
         let mut used: BTreeSet<(u32, u32)> = BTreeSet::new();
 
-        // Walk the **whole module**, not just the entry points. `panorama_fragment`
-        // reaches `panorama_cube` / `panorama_equirect` / `panorama_sampler` only
-        // through the `sample_panorama` helper it calls, and naga keeps each
-        // function's expressions in its own arena. Scanning entry points alone would
-        // under-report `used` by exactly those three slots, which would make the
-        // "no slot is paid for and left unused" assertion below fail on bindings that
-        // are very much used.
+        // 遍历**整个 module**，而非只遍历 entry points。`panorama_fragment`
+        // 只通过它调用的 `sample_panorama` helper 触及 `panorama_cube` /
+        // `panorama_equirect` / `panorama_sampler`，而 naga 把每个函数的
+        // 表达式存在它自己的 arena 里。只扫描 entry points 会把 `used`
+        // 恰好少报那三个槽位，从而使下面的“无槽位被付费却未使用”
+        // 断言在那些确实被使用的绑定上失败。
         let visit = |expressions: &naga::Arena<naga::Expression>,
                      used: &mut BTreeSet<(u32, u32)>| {
             for (_, expression) in expressions.iter() {
@@ -1157,7 +1127,7 @@ struct View {
              (C2-class regression: the pipeline would validate but sample garbage)"
         );
 
-        // And the converse: no slot is paid for and left unused.
+        // 反向同理：无槽位被付费却未使用。
         let unused: Vec<(u32, u32)> = layout.difference(&used).copied().collect();
         assert!(
             unused.is_empty(),
@@ -1165,8 +1135,8 @@ struct View {
         );
     }
 
-    /// The shader's mode/source literals must equal the domain enum discriminants,
-    /// or `PanoramaUniforms` selects the wrong branch on the GPU.
+    /// shader 的 mode/source 字面量必须等于领域 enum 的判别值，
+    /// 否则 `PanoramaUniforms` 会在 GPU 上选错分支。
     #[test]
     fn the_wgsl_mode_and_source_literals_match_the_domain_discriminants() {
         let source = panorama_wgsl_source();
@@ -1179,7 +1149,7 @@ struct View {
             SOURCE_EQUIRECTANGULAR
         );
 
-        // And they are the domain's, not a local re-invention.
+        // 且它们来自领域，而非本地重新发明。
         assert_eq!(MODE_SKYBOX, PanoramaPlacement::Skybox.as_u32());
         assert_eq!(MODE_BUBBLE, PanoramaPlacement::Bubble.as_u32());
         assert_eq!(SOURCE_CUBEMAP, PanoramaSource::CubeMap.as_u32());
@@ -1194,10 +1164,10 @@ struct View {
         );
     }
 
-    /// Bit-exact cross-check of every f32 constant the shader and Rust share.
+    /// 对 shader 与 Rust 共享的每个 f32 常量做位一致交叉校验。
     ///
-    /// The literals are parsed **out of the shader source** rather than cast from the
-    /// domain's f64 constants, so double rounding cannot hide a mismatch.
+    /// 字面量是**从 shader 源码中解析**而非从领域的 f64 常量 cast，
+    /// 所以双重舍入无法掩盖不一致。
     #[test]
     fn the_wgsl_literals_match_the_rust_mirrors_bit_for_bit() {
         let source = panorama_wgsl_source();
@@ -1220,22 +1190,21 @@ struct View {
             PANORAMA_DEGENERATE_DIRECTION_SQUARED_EPSILON_F32.to_bits()
         );
 
-        // The domain's f64 epsilon is the same decimal, so the two guards reject the
-        // same class of input even though they live in different precisions.
+        // 领域的 f64 epsilon 是同一十进制值，所以两个护栏拒绝同一类
+        // 输入，即使它们存活于不同精度。
         assert_eq!(
             cesium_effects::panorama::DEGENERATE_DIRECTION_SQUARED_EPSILON,
             1.0e-24
         );
     }
 
-    // ─── Gate ────────────────────────────────────────────────────────────────
+    // ─── 门控 ────────────────────────────────────────────────────────────────
 
-    /// The gate must default OFF so the golden path stays pixel-neutral.
+    /// 门控必须默认 OFF，以便黄金路径保持像素中性。
     ///
-    /// Runs with the env var removed; `std::env::remove_var` is unsafe-free on this
-    /// toolchain but is *not* thread-safe, so the assertion is written to tolerate a
-    /// parallel test having set it — the invariant that matters is that an unset or
-    /// empty value reads as OFF.
+    /// 在 env 变量移除的情况下运行；`std::env::remove_var` 在本 toolchain 上
+    /// 非 unsafe，但并*不*线程安全，所以断言写为容忍一个并行测试已将其
+    /// 设置——真正重要的不变量是：未设置或空值都读为 OFF。
     #[test]
     fn an_unset_or_empty_gate_reads_as_off() {
         use crate::pipeline::fetch::gate_from_env_value;
@@ -1255,15 +1224,14 @@ struct View {
 
         assert_eq!(ENV_ENABLE_PANORAMA, "CESIUM_ENABLE_PANORAMA");
 
-        // `CesiumPanorama::default()` is disabled even when the plugin is registered,
-        // so a stray component cannot turn the draw on by accident.
+        // `CesiumPanorama::default()` 即使 plugin 已注册也是禁用，
+        // 所以一个孤立组件不会意外打开绘制。
         assert!(!CesiumPanorama::default().enabled);
     }
 
-    // ─── Render order ────────────────────────────────────────────────────────
+    // ─── 渲染顺序 ────────────────────────────────────────────────────────
 
-    /// Graph labels must be unique, or `add_render_graph_node` silently overwrites an
-    /// existing node's runner.
+    /// 图 label 必须唯一，否则 `add_render_graph_node` 会静默覆盖现有节点的 runner。
     #[test]
     fn the_panorama_label_collides_with_no_existing_label() {
         let panorama = format!("{CesiumPanoramaLabel:?}");
@@ -1296,29 +1264,28 @@ struct View {
             );
         }
 
-        // The documented insertion point, so the integration task has a machine-checkable
-        // string rather than prose.
+        // 文档中记录的插入点，以便集成任务有一个机器可校验的
+        // 字符串而非 prose。
         let hint = insertion_hint();
         assert!(hint.contains("CesiumPanoramaLabel"), "{hint}");
         assert!(hint.contains("MainOpaquePass"), "{hint}");
         assert!(hint.contains("MainTransmissivePass"), "{hint}");
     }
 
-    /// `Skybox` and `Bubble` must not share a pipeline: only `Bubble` writes depth.
+    /// `Skybox` 与 `Bubble` 不得共享一个 pipeline：只有 `Bubble` 写深度。
     ///
-    /// This is deliberately **key-level**, not descriptor-level. `PanoramaPipeline`
-    /// holds a `BindGroupLayout`, a `GpuSampler` and two placeholder `Texture`s,
-    /// none of which can be fabricated without a `RenderDevice` — and `RenderDevice`
-    /// does not exist under `MinimalPlugins` (M5 Ultra Review / Robin #80 headless
-    /// work makes the same point). Specializing a fake pipeline would `panic!`, so
-    /// the descriptor facts are pinned device-free by
-    /// [`the_pipeline_descriptor_shape_is_pinned_by_source`] instead, which asserts
-    /// the exact source lines `specialize` emits.
+    /// 这故意是**键级**而非 descriptor 级。`PanoramaPipeline`
+    /// 持有一个 `BindGroupLayout`、一个 `GpuSampler` 和两个占位 `Texture`，
+    /// 没有 `RenderDevice` 都无法伪造——而 `MinimalPlugins` 下 `RenderDevice`
+    /// 并不存在（M5 Ultra Review / Robin #80 的无头工作提出同一观点）。
+    /// 特化一个假 pipeline 会 `panic!`，所以 descriptor 事实改由
+    /// [`the_pipeline_descriptor_shape_is_pinned_by_source`] 在无设备下钉住，
+    /// 它断言 `specialize` 发出的确切源码行。
     ///
-    /// What *is* provable headlessly, and is the actual correctness requirement, is
-    /// that the two placements produce **different keys**: `SpecializedRenderPipelines`
-    /// caches by `Hash + Eq` of the key, so equal keys would hand the skybox a
-    /// depth-writing pipeline (or the bubble a depth-blind one) and corrupt the frame.
+    /// *能*在无头下证明、且是真正正确性要求的，是两个放置产生
+    /// **不同的 key**：`SpecializedRenderPipelines` 按 key 的 `Hash + Eq`
+    /// 缓存，所以相等的 key 会把一个写深度的 pipeline 交给 skybox（或把
+    /// 一个盲深度的交给 bubble）从而破坏帧。
     #[test]
     fn the_pipeline_key_separates_the_placements_because_depth_write_differs() {
         let skybox = PanoramaPipelineKey {
@@ -1336,8 +1303,8 @@ struct View {
             "placement is a specialization axis; equal keys would share one pipeline"
         );
 
-        // Hash must separate them too, not just Eq: `SpecializedRenderPipelines`
-        // looks up through a `HashMap`.
+        // Hash 也必须分隔它们，而不仅是 Eq：`SpecializedRenderPipelines`
+        // 透过一个 `HashMap` 查找。
         let hash_of = |key: &PanoramaPipelineKey| {
             let mut state = std::collections::hash_map::DefaultHasher::new();
             std::hash::Hash::hash(key, &mut state);
@@ -1349,8 +1316,7 @@ struct View {
             "two placements that hash identically would collide in the pipeline cache"
         );
 
-        // And the other two axes stay independent, so a key is not accidentally
-        // degenerate.
+        // 且其余两个轴保持独立，所以 key 不会意外地退化。
         assert_ne!(
             skybox,
             PanoramaPipelineKey { hdr: true, ..skybox },
@@ -1364,9 +1330,9 @@ struct View {
         assert_ne!(
             skybox,
             PanoramaPipelineKey {
-                // Not `Depth32Float`: that **is** `CORE_3D_DEPTH_FORMAT` in Bevy 0.15
-                // (reversed-Z needs a float depth buffer), so it would compare equal
-                // to `skybox` and the assertion would test nothing.
+                // 不是 `Depth32Float`：在 Bevy 0.15 中那**就是** `CORE_3D_DEPTH_FORMAT`
+                //（反向 Z 需要一个浮点深度缓冲），所以它会与 `skybox` 相等
+                // 而使断言什么也测不到。
                 depth_format: TextureFormat::Depth24PlusStencil8,
                 ..skybox
             },
@@ -1379,15 +1345,14 @@ struct View {
              pick a different counter-example"
         );
 
-        // The placement discriminants the key carries are the same wire values the
-        // shader branches on, so a reorder of `PanoramaPlacement` cannot silently
-        // swap the two pipelines.
+        // key 所携带的 placement 判别值就是 shader 分支依据的同一 wire
+        // 值，所以 `PanoramaPlacement` 的重排不会静默地互换两个 pipeline。
         assert_eq!(PanoramaPlacement::Skybox.as_u32(), MODE_SKYBOX);
         assert_eq!(PanoramaPlacement::Bubble.as_u32(), MODE_BUBBLE);
     }
 
-    /// Device-free pin of the descriptor facts that the GPU-backed test above cannot
-    /// reach under `MinimalPlugins`: the specialization source text itself.
+    /// 对上述 GPU 支撑的测试在 `MinimalPlugins` 下无法触及的 descriptor 事实做无设备
+    /// 钉住：特化源码文本本身。
     #[test]
     fn the_pipeline_descriptor_shape_is_pinned_by_source() {
         let source = normalized(include_str!("panorama.rs"));
@@ -1433,10 +1398,10 @@ struct View {
         );
     }
 
-    // ─── Domain → adapter mapping ────────────────────────────────────────────
+    // ─── 领域 → 适配层映射 ────────────────────────────────────────────
 
-    /// The scale constant must agree with the adapter's own, or every panorama radius
-    /// and centre is wrong by the ratio.
+    /// 缩放常量必须与适配层自己的常量一致，否则每个 panorama 半径
+    /// 和中心都会错一个比例。
     #[test]
     fn panorama_meters_per_render_unit_matches_the_adapter_constant() {
         assert_eq!(PANORAMA_METERS_PER_RENDER_UNIT, 6_378_137.0);
@@ -1447,12 +1412,12 @@ struct View {
         );
     }
 
-    /// FIX-PANO-INVERSE: a singular (zero-scale) domain transform must not poison
-    /// the uniform with NaN — the guard falls back to identity instead.
+    /// FIX-PANO-INVERSE：一个奇异（零缩放）的领域 transform 不得用 NaN
+    /// 污染 uniform——护栏改为回退到单位阵。
     #[test]
     fn singular_transform_falls_back_to_identity_instead_of_nan() {
         let mut broken = EquirectangularPanorama::new("panorama.jpg");
-        broken.transform = DMat4::from_scale(DVec3::ZERO); // determinant == 0
+        broken.transform = DMat4::from_scale(DVec3::ZERO); // 行列式 == 0
         let component =
             CesiumPanorama::from_domain_equirectangular(&broken, Handle::default(), 1.0);
         for col in component.transform.to_cols_array_2d() {
@@ -1460,17 +1425,17 @@ struct View {
         }
         assert_eq!(component.transform, Mat4::IDENTITY);
 
-        // A well-conditioned rigid transform still inverts correctly.
+        // 一个良条件的刚体 transform 仍能正确求逆。
         let mut ok = EquirectangularPanorama::new("panorama.jpg");
         ok.transform = DMat4::from_rotation_z(std::f64::consts::FRAC_PI_2);
         let ok_component = CesiumPanorama::from_domain_equirectangular(&ok, Handle::default(), 1.0);
         assert_ne!(ok_component.transform, Mat4::IDENTITY, "a real rotation must not be dropped");
     }
 
-    /// f64 stays f64 in the domain; the narrowing happens here and only here.
+    /// f64 在领域里保持 f64；收窄发生在此处且仅在此处。
     #[test]
     fn the_domain_constructors_narrow_to_f32_only_at_the_uniform_boundary() {
-        // Equirectangular: 100 km bubble anchored 1 render unit up the +Z axis.
+        // Equirectangular：100 km bubble 锚定在 +Z 轴上 1 个 render unit 处。
         let anchored = EquirectangularPanorama::with_transform(
             DMat4::from_translation(DVec3::new(0.0, 0.0, PANORAMA_METERS_PER_RENDER_UNIT)),
             "panorama.jpg",
@@ -1487,10 +1452,10 @@ struct View {
             "100 km must be ~0.015678 render units, got {}",
             component.radius
         );
-        // Upstream L117: repeat = (-repeatHorizontal, repeatVertical).
+        // 上游 L117：repeat = (-repeatHorizontal, repeatVertical)。
         assert_eq!(component.repeat, Vec2::new(-1.0, 1.0));
 
-        // `transform` is world→local, so it inverts the domain transform.
+        // `transform` 是 world→local，所以它求逆领域 transform。
         let round_trip = component.transform.inverse();
         assert!(
             (round_trip.w_axis - Vec4::new(0.0, 0.0, 1.0, 1.0)).length() < 1.0e-6,
@@ -1498,20 +1463,20 @@ struct View {
             round_trip
         );
 
-        // A heading rotation must survive the round trip.
+        // 一个航向旋转必须在往返中存活。
         let mut oriented = EquirectangularPanorama::new("panorama.jpg");
         oriented.transform = DMat4::from_rotation_z(std::f64::consts::FRAC_PI_2);
         let oriented_component =
             CesiumPanorama::from_domain_equirectangular(&oriented, Handle::default(), 2.0);
         assert_eq!(oriented_component.brightness, 2.0);
-        // world→local of Rz(+90°) is Rz(-90°): +X maps to -Y.
+        // Rz(+90°) 的 world→local 是 Rz(-90°)：+X 映射到 -Y。
         let mapped = oriented_component.transform.transform_vector3(Vec3::X);
         assert!(
             (mapped - Vec3::new(0.0, -1.0, 0.0)).length() < 1.0e-6,
             "{mapped}"
         );
 
-        // CubeMap: orientation only, never a position (upstream Matrix3).
+        // CubeMap：只有朝向，绝无位置（上游 Matrix3）。
         let mut cube = CubeMapPanorama::new([
             "px.jpg".into(),
             "nx.jpg".into(),
@@ -1537,13 +1502,13 @@ struct View {
             (cube_mapped - Vec3::new(0.0, -1.0, 0.0)).length() < 1.0e-6,
             "{cube_mapped}"
         );
-        // The rotation part stays orthonormal after narrowing.
+        // 旋转部分在收窄后仍保持标准正交。
         let basis = cube_component.transform;
         assert!((basis.x_axis.truncate().length() - 1.0).abs() < 1.0e-6);
         assert!((basis.y_axis.truncate().length() - 1.0).abs() < 1.0e-6);
         assert!((basis.z_axis.truncate().length() - 1.0).abs() < 1.0e-6);
 
-        // `show = false` propagates, so a hidden panorama never reaches the GPU.
+        // `show = false` 会传播，所以隐藏 panorama 永不抵达 GPU。
         let mut hidden = EquirectangularPanorama::new("panorama.jpg");
         hidden.show = false;
         assert!(!CesiumPanorama::from_domain_equirectangular(&hidden, Handle::default(), 1.0).enabled);
@@ -1554,14 +1519,13 @@ struct View {
         assert!(!CesiumPanorama::from_domain_cubemap(&hidden_cube, Handle::default(), 1.0).enabled);
     }
 
-    /// The uniform struct must be 112 bytes with the documented field offsets, or the
-    /// shader reads a different field than the Rust side wrote.
+    /// uniform 结构必须是 112 字节且带文档中的字段偏移，否则 shader
+    /// 会读到 Rust 侧写入的不同字段。
     ///
-    /// `encase` is **not** a direct dependency of this crate (Bevy re-exports only the
-    /// `ShaderType` derive, not `encase::internal::SizeValue`), so the size is derived
-    /// here from the WGSL text using the uniform address space's alignment rules —
-    /// which is a stronger check anyway, because it validates the *shader's* declared
-    /// layout rather than trusting the derive macro to have produced it.
+    /// `encase` **不是**本 crate 的直接依赖（Bevy 只重新导出
+    /// `ShaderType` derive，而非 `encase::internal::SizeValue`），所以此处从 WGSL
+    /// 文本用 uniform 地址空间的对齐规则推出大小——无论如何这是更强的
+    /// 校验，因为它验证的是 *shader* 声明的布局，而非信任 derive 宏已产出它。
     #[test]
     fn the_uniform_layout_matches_the_wgsl_struct_field_for_field() {
         let source = panorama_wgsl_source();
@@ -1584,7 +1548,7 @@ struct View {
             })
             .collect();
 
-        // The field ORDER is the contract, so check it before anything else.
+        // 字段顺序就是契约，所以先于其他一切检查它。
         assert_eq!(
             wgsl_fields
                 .iter()
@@ -1604,16 +1568,15 @@ struct View {
             "reordering these fields silently changes every offset"
         );
 
-        // Walk the WGSL uniform address-space layout rules: each member starts at the
-        // next multiple of its own alignment, and the struct's size rounds up to the
-        // largest member alignment.
+        // 遍历 WGSL uniform 地址空间布局规则：每个成员从其自身对齐的
+        // 下一个倍数开始，而结构体大小向上取整到最大成员对齐。
         let align_and_size = |ty: &str| -> (usize, usize) {
             match ty {
                 "u32" | "i32" | "f32" => (4, 4),
                 "vec2<f32>" => (8, 8),
-                // vec3 aligns like vec4 but only occupies 12 bytes.
+                // vec3 像 vec4 一样对齐，但只占 12 字节。
                 "vec3<f32>" => (16, 12),
-                // Four vec4 columns, each 16-aligned.
+                // 四个 vec4 列，每个 16 对齐。
                 "mat4x4<f32>" => (16, 64),
                 other => panic!("unhandled WGSL uniform type {other:?}"),
             }
@@ -1635,7 +1598,7 @@ struct View {
             "shaders/panorama.wgsl documents a 112-byte PanoramaUniforms"
         );
 
-        // The offsets the module doc's layout table advertises, field for field.
+        // 模块文档的布局表所宣传的偏移，逐字段。
         let documented = [
             ("mode", 0),
             ("source", 4),
@@ -1649,23 +1612,21 @@ struct View {
         ];
         assert_eq!(computed.as_slice(), documented.as_slice());
 
-        // And the Rust side must declare the same names in the same order with types
-        // that map onto the WGSL ones, otherwise `#[derive(ShaderType)]` writes a
-        // different buffer than the shader reads.
+        // 而 Rust 侧必须以相同顺序声明相同名称，并带能映射到 WGSL
+        // 那些的名称，否则 `#[derive(ShaderType)]` 写出的缓冲与 shader 读的不同。
         let rust_source = include_str!("panorama.rs");
         let rust_body = rust_source
             .split("pub struct PanoramaUniforms {")
             .nth(1)
             .expect("this file must define pub struct PanoramaUniforms");
-        // `str::lines()` (not `split('\n')` + `collect::<String>()`): collecting the
-        // slices back into a `String` drops every newline, which fuses the whole
-        // struct body into one line that starts with the first field's `///` doc
-        // comment and is then filtered out wholesale.
+        // `str::lines()`（而非 `split('\n')` + `collect::<String>()`）：把切片
+        // collect 回一个 `String` 会丢掉每个换行，从而将整个结构体体
+        // 融合成一行，以第一个字段的 `///` doc 注释开头，随后被整体过滤。
         let rust_fields: Vec<(String, String)> = rust_body
             .lines()
-            // `trim_start` before the `}` test: the struct now lives inside the
-            // private `panorama_uniform` module, so its closing brace is indented and
-            // would otherwise be parsed as a field.
+            // `}` 测试前先 `trim_start`：结构体现存活于私有的
+            // `panorama_uniform` module 内，所以它的闭合大括号是缩进的，
+            // 否则会被当作一个字段解析。
             .take_while(|line| !line.trim_start().starts_with('}'))
             .map(str::trim)
             .filter(|line| !line.is_empty() && !line.starts_with("//"))
@@ -1701,11 +1662,11 @@ struct View {
         );
     }
 
-    // ─── Headless registration ───────────────────────────────────────────────
+    // ─── 无头注册 ───────────────────────────────────────────────
 
-    /// `register_panorama_node` must not panic under `MinimalPlugins` (no
-    /// `Assets<Shader>`, no `RenderApp`) — the `load_internal_asset!` panic class of
-    /// `docs/deviations.md#dev-005`.
+    /// `register_panorama_node` 在 `MinimalPlugins`（无 `Assets<Shader>`、
+    /// 无 `RenderApp`）下不得 panic——即 `docs/deviations.md#dev-005` 的
+    /// `load_internal_asset!` panic 类。
     #[test]
     fn registering_under_minimal_plugins_degrades_gracefully() {
         let mut app = App::new();
@@ -1713,14 +1674,14 @@ struct View {
         #[allow(deprecated)]
         register_panorama_node(&mut app);
 
-        // No shader storage, so nothing was inserted...
+        // 没有 shader 存储，所以什么也没有插入……
         assert!(!crate::shader_registry::shader_assets_available(&app));
-        // ...and the extract-component plugin is still there, because it is pure ECS.
+        // ……而 extract-component plugin 仍在，因为它是纯 ECS。
         app.update();
     }
 
-    /// With an asset backend but no render app the shader is registered and the node
-    /// registration still degrades instead of panicking.
+    /// 有资产后端但无 render app 时，shader 被注册，而节点注册仍降级
+    /// 而非 panic。
     #[test]
     fn registering_with_an_asset_backend_but_no_render_app_loads_the_shader() {
         let mut app = App::new();
@@ -1739,8 +1700,8 @@ struct View {
         app.update();
     }
 
-    /// The embedded shader source really is the file on disk, and it really does
-    /// carry the two entry points the pipeline asks for.
+    /// 内嵌 shader 源码确实就是磁盘上的文件，且它确实携带 pipeline
+    /// 所要求的两个 entry point。
     #[test]
     fn the_embedded_shader_is_the_file_on_disk() {
         let owned = normalized(panorama_wgsl_source());
@@ -1749,7 +1710,7 @@ struct View {
         assert!(source.contains("@fragment\nfn panorama_fragment"));
         assert!(source.contains("#import bevy_render::view::View"));
 
-        // The five bindings, in slot order.
+        // 五个绑定，按槽位顺序。
         for declaration in [
             "@group(0) @binding(0) var panorama_cube: texture_cube<f32>;",
             "@group(0) @binding(1) var panorama_equirect: texture_2d<f32>;",
@@ -1763,7 +1724,7 @@ struct View {
             );
         }
 
-        // The upstream-faithful bits that must not be "cleaned up" later.
+        // 上游忠实、后续不应被“清理”的那些部分。
         assert!(
             source.contains("vec3(1.0, 1.0, -1.0)"),
             "the left-handed cube correction must stay"
@@ -1782,12 +1743,12 @@ struct View {
         );
     }
 
-    /// `PanoramaNode` must stay stateless: a cached bind group keyed on a texture
-    /// view id would go stale the moment the panorama image asset is reloaded.
+    /// `PanoramaNode` 必须保持无状态：一个以纹理 view id 为键的缓存 bind group
+    /// 会在 panorama image 资产重载的那一刻失效。
     #[test]
     fn the_node_is_stateless_and_early_returns_when_disabled() {
-        // The struct has no fields, so there is nothing to cache and nothing to
-        // invalidate; this test pins that fact against a future refactor.
+        // 结构体无字段，所以既无物可缓存也无物可失效；本测试
+        // 针对未来重构钉住这一事实。
         let node = PanoramaNode;
         let _ = &node;
         assert_eq!(
@@ -1796,8 +1757,8 @@ struct View {
             "PanoramaNode must stay a zero-sized, stateless ViewNode"
         );
 
-        // A disabled component is skipped by both prepare systems, so no pipeline id
-        // and no bind group ever reach the node's query.
+        // 禁用的组件会被两个 prepare 系统都跳过，所以无 pipeline id
+        // 也无 bind group 会到达节点的 query。
         let component = CesiumPanorama::default();
         assert!(!component.enabled);
         assert_eq!(component.placement.as_u32(), MODE_SKYBOX);

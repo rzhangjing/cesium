@@ -1,9 +1,9 @@
-//! Math utilities - maps to CesiumJS `Core/Math.js` (CesiumMath)
-//! All constants and helper functions used across the geospatial domain.
+//! 数学工具 —— 映射到 CesiumJS `Core/Math.js`（CesiumMath）
+//! 在整个 geospatial 领域中使用的常量和辅助函数。
 
 use std::f64::consts::PI;
 
-/// PI constant
+/// PI 常量
 pub const PI_F64: f64 = PI;
 
 /// 2 * PI
@@ -24,79 +24,79 @@ pub const PI_OVER_SIX: f64 = PI / 6.0;
 /// 3 * PI / 2
 pub const THREE_PI_OVER_TWO: f64 = 3.0 * PI / 2.0;
 
-/// The mean radius of the Moon, in meters (IAU 2009). Used by CesiumJS
-/// `Ellipsoid.MOON` (a sphere of this radius). Maps to `CesiumMath.LUNAR_RADIUS`.
+/// 月球的平均半径，以米为单位（IAU 2009）。CesiumJS
+/// `Ellipsoid.MOON`（一个具有此半径的球体）会使用它。映射到 `CesiumMath.LUNAR_RADIUS`。
 pub const LUNAR_RADIUS: f64 = 1737400.0;
 
-/// 1e-1 epsilon
+/// 1e-1 epsilon（相对容差）
 pub const EPSILON1: f64 = 1e-1;
-/// 1e-2 epsilon
+/// 1e-2 epsilon（相对容差）
 pub const EPSILON2: f64 = 1e-2;
-/// 1e-3 epsilon
+/// 1e-3 epsilon（相对容差）
 pub const EPSILON3: f64 = 1e-3;
-/// 1e-4 epsilon
+/// 1e-4 epsilon（相对容差）
 pub const EPSILON4: f64 = 1e-4;
-/// 1e-5 epsilon
+/// 1e-5 epsilon（相对容差）
 pub const EPSILON5: f64 = 1e-5;
-/// 1e-6 epsilon
+/// 1e-6 epsilon（相对容差）
 pub const EPSILON6: f64 = 1e-6;
-/// 1e-7 epsilon
+/// 1e-7 epsilon（相对容差）
 pub const EPSILON7: f64 = 1e-7;
-/// 1e-8 epsilon
+/// 1e-8 epsilon（相对容差）
 pub const EPSILON8: f64 = 1e-8;
-/// 1e-9 epsilon
+/// 1e-9 epsilon（相对容差）
 pub const EPSILON9: f64 = 1e-9;
-/// 1e-10 epsilon
+/// 1e-10 epsilon（相对容差）
 pub const EPSILON10: f64 = 1e-10;
-/// 1e-11 epsilon
+/// 1e-11 epsilon（相对容差）
 pub const EPSILON11: f64 = 1e-11;
-/// 1e-12 epsilon
+/// 1e-12 epsilon（相对容差）
 pub const EPSILON12: f64 = 1e-12;
-/// 1e-13 epsilon
+/// 1e-13 epsilon（相对容差）
 pub const EPSILON13: f64 = 1e-13;
-/// 1e-14 epsilon
+/// 1e-14 epsilon（相对容差）
 pub const EPSILON14: f64 = 1e-14;
-/// 1e-15 epsilon
+/// 1e-15 epsilon（相对容差）
 pub const EPSILON15: f64 = 1e-15;
-/// 1e-16 epsilon
+/// 1e-16 epsilon（相对容差）
 pub const EPSILON16: f64 = 1e-16;
-/// 1e-17 epsilon
+/// 1e-17 epsilon（相对容差）
 pub const EPSILON17: f64 = 1e-17;
-/// 1e-18 epsilon
+/// 1e-18 epsilon（相对容差）
 pub const EPSILON18: f64 = 1e-18;
-/// 1e-19 epsilon
+/// 1e-19 epsilon（相对容差）
 pub const EPSILON19: f64 = 1e-19;
-/// 1e-20 epsilon
+/// 1e-20 epsilon（相对容差）
 pub const EPSILON20: f64 = 1e-20;
-/// 1e-21 epsilon
+/// 1e-21 epsilon（相对容差）
 pub const EPSILON21: f64 = 1e-21;
 
-/// The number used to determine if a value is zero.
+/// 用于判断一个值是否为零的数值。
 pub const ZERO: f64 = 0.0;
 
-/// Converts degrees to radians.
-/// Maps to CesiumMath.toRadians
+/// 将角度转换为弧度。
+/// 映射到 CesiumMath.toRadians
 #[inline]
 pub fn to_radians(degrees: f64) -> f64 {
     degrees * PI / 180.0
 }
 
-/// Converts radians to degrees.
-/// Maps to CesiumMath.toDegrees
+/// 将弧度转换为角度。
+/// 映射到 CesiumMath.toDegrees
 #[inline]
 pub fn to_degrees(radians: f64) -> f64 {
     radians * 180.0 / PI
 }
 
-/// Constrains a value to lie between two values.
-/// Maps to CesiumMath.clamp
+/// 将一个值约束在两个值之间。
+/// 映射到 CesiumMath.clamp
 #[inline]
 pub fn clamp(value: f64, min: f64, max: f64) -> f64 {
     value.max(min).min(max)
 }
 
-/// Returns the sign of the value: 1 if positive, -1 if negative, 0 if zero, NaN if NaN.
-/// Maps to CesiumMath.sign
+/// 返回值的符号：正为 1，负为 -1，零为 0，NaN 为 NaN。
+/// 映射到 CesiumMath.sign
 #[inline]
 pub fn sign(value: f64) -> f64 {
     if value > 0.0 {
@@ -104,27 +104,27 @@ pub fn sign(value: f64) -> f64 {
     } else if value < 0.0 {
         -1.0
     } else {
-        value // preserves 0.0, -0.0, and NaN
+        value // 保留 0.0、-0.0 和 NaN
     }
 }
 
-/// Returns the sign of the value using signNotZero:
-/// 1 if >= 0, -1 if < 0.
-/// Maps to CesiumMath.signNotZero
+/// 使用 signNotZero 返回值的符号：
+/// 若 >= 0 为 1，若 < 0 为 -1。
+/// 映射到 CesiumMath.signNotZero
 #[inline]
 pub fn sign_not_zero(value: f64) -> f64 {
     if value < 0.0 { -1.0 } else { 1.0 }
 }
 
-/// Linearly interpolates between two values.
-/// Maps to CesiumMath.lerp
+/// 在两个值之间线性插值。
+/// 映射到 CesiumMath.lerp
 #[inline]
 pub fn lerp(p: f64, q: f64, time: f64) -> f64 {
     (1.0 - time) * p + time * q
 }
 
-/// Returns the angle in radians normalized to [-PI, PI].
-/// Maps to CesiumMath.negativePiToPi
+/// 返回归一化到 [-PI, PI] 的弧度角。
+/// 映射到 CesiumMath.negativePiToPi
 pub fn negative_pi_to_pi(angle: f64) -> f64 {
     if (-PI..=PI).contains(&angle) {
         return angle;
@@ -132,8 +132,8 @@ pub fn negative_pi_to_pi(angle: f64) -> f64 {
     (angle + PI).rem_euclid(TWO_PI) - PI
 }
 
-/// Returns the angle in radians normalized to [0, 2*PI].
-/// Maps to CesiumMath.zeroToTwoPi
+/// 返回归一化到 [0, 2*PI] 的弧度角。
+/// 映射到 CesiumMath.zeroToTwoPi
 pub fn zero_to_two_pi(angle: f64) -> f64 {
     let mod_val = angle % TWO_PI;
     if (mod_val.abs() < EPSILON14 && angle.abs() > EPSILON14) || mod_val < 0.0 {
@@ -143,85 +143,85 @@ pub fn zero_to_two_pi(angle: f64) -> f64 {
     }
 }
 
-/// Determines if two values are equal within an epsilon.
-/// Maps to CesiumMath.equalsEpsilon
+/// 判断两个值是否在一个 epsilon 范围内相等。
+/// 映射到 CesiumMath.equalsEpsilon
 #[inline]
 pub fn equals_epsilon(left: f64, right: f64, relative_epsilon: f64, absolute_epsilon: f64) -> bool {
     let diff = (left - right).abs();
     diff <= absolute_epsilon || diff <= relative_epsilon * left.abs().max(right.abs())
 }
 
-/// Computes the factorial of a number.
+/// 计算一个数的阶乘。
 pub fn factorial(n: u32) -> u64 {
     (1..=n as u64).product()
 }
 
-/// Computes the chord length of a circle given an angle and radius.
-/// Maps to CesiumMath.chordLength
+/// 给定角度和半径，计算圆的弦长。
+/// 映射到 CesiumMath.chordLength
 #[inline]
 pub fn chord_length(angle: f64, radius: f64) -> f64 {
     2.0 * radius * (angle * 0.5).sin()
 }
 
-/// Computes the cosine of the angle between two vectors given their magnitudes and dot product.
+/// 给定两个向量的量级和点积，计算它们之间夹角的余弦值。
 #[inline]
 pub fn cos_angle(dot: f64, mag_a: f64, mag_b: f64) -> f64 {
     clamp(dot / (mag_a * mag_b), -1.0, 1.0)
 }
 
-/// Converts a longitude in radians to the range [-PI, PI].
+/// 将一个以弧度为单位的经度转换到 [-PI, PI] 范围。
 #[inline]
 pub fn convert_longitude_range(longitude: f64) -> f64 {
     negative_pi_to_pi(longitude)
 }
 
-/// Computes the log base of a value.
+/// 计算一个值以指定底数的对数。
 #[inline]
 pub fn log_base(value: f64, base: f64) -> f64 {
     value.ln() / base.ln()
 }
 
-/// Computes the base 2 logarithm of a number.
-/// Maps to CesiumMath.log2 (`Math.log(number) * Math.LOG2E`).
+/// 计算一个数的以 2 为底的对数。
+/// 映射到 CesiumMath.log2（`Math.log(number) * Math.LOG2E`）。
 #[inline]
 pub fn log2(number: f64) -> f64 {
     number.ln() * std::f64::consts::LOG2_E
 }
 
-/// Computes the cube root of a value.
+/// 计算一个值的立方根。
 #[inline]
 pub fn cbrt(value: f64) -> f64 {
     value.cbrt()
 }
 
-/// Computes the remainder of a division using floored division.
+/// 使用向下取整除法计算除法的余数。
 #[inline]
 pub fn mod_f64(m: f64, n: f64) -> f64 {
     ((m % n) + n) % n
 }
 
-/// Determines if a value is within the given epsilon of zero.
+/// 判断一个值是否在给定的 epsilon 范围内接近零。
 #[inline]
 pub fn is_zero(value: f64) -> bool {
     value.abs() < EPSILON14
 }
 
-/// Converts a scalar in the range [-1.0, 1.0] to a SNORM in [0, range_maximum].
-/// Maps to CesiumMath.toSNorm
+/// 将 [-1.0, 1.0] 范围内的标量转换为 [0, range_maximum] 范围内的 SNORM。
+/// 映射到 CesiumMath.toSNorm
 #[inline]
 pub fn to_snorm(value: f64, range_maximum: f64) -> f64 {
     ((clamp(value, -1.0, 1.0) * 0.5 + 0.5) * range_maximum).round()
 }
 
-/// Converts a SNORM value in [0, range_maximum] to a scalar in [-1.0, 1.0].
-/// Maps to CesiumMath.fromSNorm
+/// 将 [0, range_maximum] 范围内的 SNORM 值转换为 [-1.0, 1.0] 范围内的标量。
+/// 映射到 CesiumMath.fromSNorm
 #[inline]
 pub fn from_snorm(value: f64, range_maximum: f64) -> f64 {
     (clamp(value, 0.0, range_maximum) / range_maximum) * 2.0 - 1.0
 }
 
-/// Normalizes a value from [range_minimum, range_maximum] to [0.0, 1.0].
-/// Maps to CesiumMath.normalize
+/// 将一个值从 [range_minimum, range_maximum] 归一化到 [0.0, 1.0]。
+/// 映射到 CesiumMath.normalize
 #[inline]
 pub fn normalize(value: f64, range_minimum: f64, range_maximum: f64) -> f64 {
     let range = (range_maximum - range_minimum).max(0.0);
@@ -232,58 +232,58 @@ pub fn normalize(value: f64, range_minimum: f64, range_maximum: f64) -> f64 {
     }
 }
 
-/// Clamps an angle to the latitude range [-PI/2, PI/2].
-/// Maps to CesiumMath.clampToLatitudeRange
+/// 将一个角度约束到纬度范围 [-PI/2, PI/2]。
+/// 映射到 CesiumMath.clampToLatitudeRange
 #[inline]
 pub fn clamp_to_latitude_range(angle: f64) -> f64 {
     clamp(angle, -PI_OVER_TWO, PI_OVER_TWO)
 }
 
-/// Determines if left < right, considering values within epsilon as equal.
-/// Maps to CesiumMath.lessThan
+/// 判断 left < right，将在 epsilon 范围内的值视为相等。
+/// 映射到 CesiumMath.lessThan
 #[inline]
 pub fn less_than(left: f64, right: f64, absolute_epsilon: f64) -> bool {
     left - right < -absolute_epsilon
 }
 
-/// Determines if left <= right, considering values within epsilon as equal.
-/// Maps to CesiumMath.lessThanOrEquals
+/// 判断 left <= right，将在 epsilon 范围内的值视为相等。
+/// 映射到 CesiumMath.lessThanOrEquals
 #[inline]
 pub fn less_than_or_equals(left: f64, right: f64, absolute_epsilon: f64) -> bool {
     left - right < absolute_epsilon
 }
 
-/// Determines if left > right, considering values within epsilon as equal.
-/// Maps to CesiumMath.greaterThan
+/// 判断 left > right，将在 epsilon 范围内的值视为相等。
+/// 映射到 CesiumMath.greaterThan
 #[inline]
 pub fn greater_than(left: f64, right: f64, absolute_epsilon: f64) -> bool {
     left - right > absolute_epsilon
 }
 
-/// Determines if left >= right, considering values within epsilon as equal.
-/// Maps to CesiumMath.greaterThanOrEquals
+/// 判断 left >= right，将在 epsilon 范围内的值视为相等。
+/// 映射到 CesiumMath.greaterThanOrEquals
 #[inline]
 pub fn greater_than_or_equals(left: f64, right: f64, absolute_epsilon: f64) -> bool {
     left - right > -absolute_epsilon
 }
 
-/// Increments n and wraps to minimum_value when exceeding maximum_value.
-/// Maps to CesiumMath.incrementWrap
+/// 递增 n，当超过 maximum_value 时回绕到 minimum_value。
+/// 映射到 CesiumMath.incrementWrap
 #[inline]
 pub fn increment_wrap(n: i64, maximum_value: i64, minimum_value: i64) -> i64 {
     let n = n + 1;
     if n > maximum_value { minimum_value } else { n }
 }
 
-/// Determines if a non-negative integer is a power of two.
-/// Maps to CesiumMath.isPowerOfTwo
+/// 判断一个非负整数是否为 2 的幂。
+/// 映射到 CesiumMath.isPowerOfTwo
 #[inline]
 pub fn is_power_of_two(n: u32) -> bool {
     n != 0 && (n & (n - 1)) == 0
 }
 
-/// Computes the next power-of-two >= n.
-/// Maps to CesiumMath.nextPowerOfTwo
+/// 计算 >= n 的下一个 2 的幂。
+/// 映射到 CesiumMath.nextPowerOfTwo
 pub fn next_power_of_two(n: u32) -> u32 {
     if n == 0 {
         return 0;
@@ -297,8 +297,8 @@ pub fn next_power_of_two(n: u32) -> u32 {
     v + 1
 }
 
-/// Computes the previous power-of-two <= n.
-/// Maps to CesiumMath.previousPowerOfTwo
+/// 计算 <= n 的上一个 2 的幂。
+/// 映射到 CesiumMath.previousPowerOfTwo
 pub fn previous_power_of_two(n: u32) -> u32 {
     if n == 0 {
         return 0;
@@ -312,29 +312,29 @@ pub fn previous_power_of_two(n: u32) -> u32 {
     v - (v >> 1)
 }
 
-/// Computes acos(clamp(value, -1, 1)), never returns NaN.
-/// Maps to CesiumMath.acosClamped
+/// 计算 acos(clamp(value, -1, 1))，永不返回 NaN。
+/// 映射到 CesiumMath.acosClamped
 #[inline]
 pub fn acos_clamped(value: f64) -> f64 {
     clamp(value, -1.0, 1.0).acos()
 }
 
-/// Computes asin(clamp(value, -1, 1)), never returns NaN.
-/// Maps to CesiumMath.asinClamped
+/// 计算 asin(clamp(value, -1, 1))，永不返回 NaN。
+/// 映射到 CesiumMath.asinClamped
 #[inline]
 pub fn asin_clamped(value: f64) -> f64 {
     clamp(value, -1.0, 1.0).asin()
 }
 
-/// Fast approximate atan using polynomial approximation.
-/// Maps to CesiumMath.fastApproximateAtan
+/// 使用多项式逼近的快速近似 atan。
+/// 映射到 CesiumMath.fastApproximateAtan
 #[inline]
 pub fn fast_approximate_atan(x: f64) -> f64 {
     x * (-0.1784 * x.abs() - 0.0663 * x * x + 1.0301)
 }
 
-/// Fast approximate atan2 using range reduction + fast_approximate_atan.
-/// Maps to CesiumMath.fastApproximateAtan2
+/// 使用范围规约 + fast_approximate_atan 的快速近似 atan2。
+/// 映射到 CesiumMath.fastApproximateAtan2
 pub fn fast_approximate_atan2(x: f64, y: f64) -> f64 {
     let t = x.abs();
     let opposite = y.abs();
@@ -342,7 +342,7 @@ pub fn fast_approximate_atan2(x: f64, y: f64) -> f64 {
     let opposite = t.min(opposite);
     let opposite_over_adjacent = opposite / adjacent;
     let mut t = fast_approximate_atan(opposite_over_adjacent);
-    // Undo range reduction
+    // 撤销范围规约
     t = if y.abs() > x.abs() { PI_OVER_TWO - t } else { t };
     t = if x < 0.0 { PI - t } else { t };
     if y < 0.0 { -t } else { t }

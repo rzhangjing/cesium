@@ -1,14 +1,14 @@
-//! GltfModel deep specs - ported from GltfLoaderSpec.js, ModelReaderSpec.js
+//! GltfModel 深度规范 - 移植自 GltfLoaderSpec.js、ModelReaderSpec.js
 //!
-//! Tests GltfModel parsing, triangle_count, vertex_count, Node::local_transform,
-//! Accessor component/element sizes, and binary data reading (f32/u16/u32).
+//! 测试 GltfModel 解析、triangle_count、vertex_count、Node::local_transform、
+//! Accessor 分量/元素大小、以及二进制数据读取（f32/u16/u32）。
 
 use cesium_gltf::{
     Accessor, AccessorType, BufferView, ComponentType, GltfModel, Node,
     PrimitiveMode,
 };
 
-// ─── GltfModel parsing ─────────────────────────────────────────────────────
+// ─── GltfModel 解析 ─────────────────────────────────────────────────────
 
 #[test]
 fn parse_minimal_gltf() {
@@ -100,7 +100,7 @@ fn triangle_count_ignores_non_triangle_mode() {
         "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 0, "mode": 0}]}]
     }"#;
     let model = GltfModel::from_json(json).unwrap();
-    assert_eq!(model.triangle_count(), 0); // mode=0 is Points
+    assert_eq!(model.triangle_count(), 0); // mode=0 是 Points
 }
 
 #[test]
@@ -153,7 +153,7 @@ fn node_transform_from_trs() {
         skin: None,
         matrix: None,
         translation: Some([10.0, 20.0, 30.0]),
-        rotation: Some([0.0, 0.0, 0.0, 1.0]), // identity
+        rotation: Some([0.0, 0.0, 0.0, 1.0]), // 单位变换
         scale: Some([2.0, 2.0, 2.0]),
         extensions: None,
     };
@@ -162,7 +162,7 @@ fn node_transform_from_trs() {
     assert!((translation.x - 10.0).abs() < 1e-10);
     assert!((translation.y - 20.0).abs() < 1e-10);
     assert!((translation.z - 30.0).abs() < 1e-10);
-    // Scale on diagonal
+    // 对角线上为缩放
     assert!((mat.x_axis.x - 2.0).abs() < 1e-10);
     assert!((mat.y_axis.y - 2.0).abs() < 1e-10);
     assert!((mat.z_axis.z - 2.0).abs() < 1e-10);
@@ -188,7 +188,7 @@ fn node_transform_identity_default() {
     assert!((mat.w_axis.w - 1.0).abs() < 1e-10);
 }
 
-// ─── Accessor component/element sizes ──────────────────────────────────────
+// ─── Accessor 分量/元素大小 ──────────────────────────────────────
 
 #[test]
 fn accessor_components_per_element() {
@@ -249,7 +249,7 @@ fn accessor_element_byte_size() {
         min: vec![],
         sparse: None,
     };
-    assert_eq!(acc.element_byte_size(), 12); // 3 components * 4 bytes
+    assert_eq!(acc.element_byte_size(), 12); // 3 分量 * 4 字节
 }
 
 #[test]
@@ -282,11 +282,11 @@ fn accessor_is_sparse() {
     assert!(acc.is_sparse());
 }
 
-// ─── Accessor binary data reading ──────────────────────────────────────────
+// ─── Accessor 二进制数据读取 ──────────────────────────────────────────
 
 #[test]
 fn read_f32_data_basic() {
-    // 3 VEC3 vertices: (1,2,3), (4,5,6), (7,8,9)
+    // 3 个 VEC3 顶点: (1,2,3), (4,5,6), (7,8,9)
     let mut buffer: Vec<u8> = Vec::new();
     for v in [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0] {
         buffer.extend_from_slice(&v.to_le_bytes());
@@ -321,8 +321,8 @@ fn read_f32_data_basic() {
 
 #[test]
 fn read_f32_data_with_offset() {
-    // Buffer with 4 bytes padding before data
-    let mut buffer: Vec<u8> = vec![0, 0, 0, 0]; // padding
+    // 数据前有 4 字节填充的 Buffer
+    let mut buffer: Vec<u8> = vec![0, 0, 0, 0]; // 填充
     for v in [10.0f32, 20.0] {
         buffer.extend_from_slice(&v.to_le_bytes());
     }
@@ -330,7 +330,7 @@ fn read_f32_data_with_offset() {
     let buffer_views = vec![BufferView {
         name: None,
         buffer: 0,
-        byte_offset: 4, // skip padding
+        byte_offset: 4, // 跳过填充
         byte_length: 8,
         byte_stride: None,
         target: None,
@@ -355,7 +355,7 @@ fn read_f32_data_with_offset() {
 
 #[test]
 fn read_u16_data_basic() {
-    // 6 u16 indices: 0, 1, 2, 2, 1, 3
+    // 6 个 u16 索引: 0, 1, 2, 2, 1, 3
     let mut buffer: Vec<u8> = Vec::new();
     for v in [0u16, 1, 2, 2, 1, 3] {
         buffer.extend_from_slice(&v.to_le_bytes());

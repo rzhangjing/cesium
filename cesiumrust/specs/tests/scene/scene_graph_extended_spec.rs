@@ -1,19 +1,19 @@
-//! Scene/SceneSpec.js (extended) → Rust integration tests.
+//! Scene/SceneSpec.js（扩展）→ Rust 集成测试。
 //!
-//! Maps to CesiumJS:
-//! - Scene/Scene.js (scene graph traversal, world transforms)
-//! - Scene/Primitive.js (renderable collection)
+//! 对应 CesiumJS：
+//! - Scene/Scene.js（场景图遍历、世界变换）
+//! - Scene/Primitive.js（可渲染集合）
 //!
-//! A-class tests: world transform propagation, traverse visible-only,
-//! collect renderables, remove with descendants, world bounding sphere,
-//! multi-level hierarchy, add_child to invalid parent.
-//! C-class omitted: WebGL rendering, canvas operations, pick.
+//! A 类测试：世界变换传播、仅遍历可见、
+//! 收集可渲染项、连同后代移除、世界包围球、
+//! 多级层次、add_child 到无效父节点。
+//! C 类省略：WebGL 渲染、canvas 操作、pick。
 
 use cesium_scene::{RenderableContent, SceneGraph, SceneNode};
 use cesium_geospatial::bounding::BoundingSphere;
 use glam::{DMat4, DVec3};
 
-// === World transform propagation ===
+// === 世界变换传播 ===
 
 #[test]
 fn world_transform_root_identity() {
@@ -93,7 +93,7 @@ fn world_transform_with_scale() {
     assert!((pos.x - 10.0).abs() < 1e-10);
 }
 
-// === Traverse ===
+// === 遍历 ===
 
 #[test]
 fn traverse_visits_visible_only() {
@@ -108,7 +108,7 @@ fn traverse_visits_visible_only() {
     hidden.visible = false;
     let hidden_id = graph.add_child(root_id, hidden).unwrap();
 
-    // Child of hidden node should also not be visited
+    // 隐藏节点的子节点也不应被访问
     let child_of_hidden = SceneNode::new(0).with_name("ChildOfHidden");
     graph.add_child(hidden_id, child_of_hidden);
 
@@ -132,7 +132,7 @@ fn traverse_empty_graph() {
     assert_eq!(count, 0);
 }
 
-// === Collect renderables ===
+// === 收集可渲染项 ===
 
 #[test]
 fn collect_renderable_ids_mixed() {
@@ -173,7 +173,7 @@ fn collect_renderable_skips_hidden() {
     assert_eq!(renderables.len(), 0);
 }
 
-// === Remove with descendants ===
+// === 连同后代移除 ===
 
 #[test]
 fn remove_node_cascades_to_grandchildren() {
@@ -202,7 +202,7 @@ fn remove_root_node() {
     assert!(graph.roots().is_empty());
 }
 
-// === Add child to invalid parent ===
+// === 添加子节点到无效父节点 ===
 
 #[test]
 fn add_child_invalid_parent_returns_none() {
@@ -212,7 +212,7 @@ fn add_child_invalid_parent_returns_none() {
     assert_eq!(graph.node_count(), 0);
 }
 
-// === World bounding sphere ===
+// === 世界包围球 ===
 
 #[test]
 fn world_bounding_sphere_translation() {
@@ -234,7 +234,7 @@ fn world_bounding_sphere_with_scale() {
     node.world_transform = node.local_transform;
 
     let ws = node.world_bounding_sphere().unwrap();
-    // Radius scaled by max axis scale (3.0)
+    // 半径按最大轴缩放比（3.0）缩放
     assert!((ws.radius - 15.0).abs() < 1e-10);
 }
 
@@ -244,7 +244,7 @@ fn world_bounding_sphere_none() {
     assert!(node.world_bounding_sphere().is_none());
 }
 
-// === Roots tracking ===
+// === 根节点跟踪 ===
 
 #[test]
 fn roots_tracked_correctly() {

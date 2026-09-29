@@ -1,10 +1,10 @@
-//! PBR material extensions for glTF 2.0.
+//! 用于 glTF 2.0 的 PBR material 扩展。
 //!
-//! Maps to CesiumJS:
-//! - `Scene/ModelComponents.js` (MetallicRoughness, SpecularGlossiness, Specular, Clearcoat, Anisotropy)
-//! - `Scene/Model/GltfLoaderUtility.js` (extension parsing)
+//! 映射到 CesiumJS：
+//! - `Scene/ModelComponents.js`（MetallicRoughness、SpecularGlossiness、Specular、Clearcoat、Anisotropy）
+//! - `Scene/Model/GltfLoaderUtility.js`（扩展解析）
 //!
-//! Supported KHR extensions:
+//! 支持的 KHR 扩展：
 //! - KHR_materials_pbrSpecularGlossiness
 //! - KHR_materials_specular
 //! - KHR_materials_clearcoat
@@ -20,80 +20,80 @@
 use crate::gltf_model::TextureInfo;
 use serde::{Deserialize, Serialize};
 
-/// Extended material properties combining base PBR with all KHR extensions.
+/// 扩展的 material 属性，将基础 PBR 与所有 KHR 扩展组合在一起。
 ///
-/// Maps to CesiumJS `ModelComponents.Material`
+/// 映射到 CesiumJS `ModelComponents.Material`
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtendedMaterial {
-    /// Base PBR metallic-roughness (always present in glTF 2.0).
+    /// 基础 PBR metallic-roughness（在 glTF 2.0 中始终存在）。
     #[serde(default)]
     pub metallic_roughness: MetallicRoughness,
 
-    /// KHR_materials_pbrSpecularGlossiness extension.
+    /// KHR_materials_pbrSpecularGlossiness 扩展。
     #[serde(default)]
     pub specular_glossiness: Option<SpecularGlossiness>,
 
-    /// KHR_materials_specular extension.
+    /// KHR_materials_specular 扩展。
     #[serde(default)]
     pub specular: Option<Specular>,
 
-    /// KHR_materials_clearcoat extension.
+    /// KHR_materials_clearcoat 扩展。
     #[serde(default)]
     pub clearcoat: Option<Clearcoat>,
 
-    /// KHR_materials_anisotropy extension.
+    /// KHR_materials_anisotropy 扩展。
     #[serde(default)]
     pub anisotropy: Option<Anisotropy>,
 
-    /// KHR_materials_transmission extension.
+    /// KHR_materials_transmission 扩展。
     #[serde(default)]
     pub transmission: Option<Transmission>,
 
-    /// KHR_materials_ior extension.
+    /// KHR_materials_ior 扩展。
     #[serde(default)]
     pub ior: Option<Ior>,
 
-    /// KHR_materials_emissive_strength extension.
+    /// KHR_materials_emissive_strength 扩展。
     #[serde(default)]
     pub emissive_strength: Option<EmissiveStrength>,
 
-    /// KHR_materials_sheen extension.
+    /// KHR_materials_sheen 扩展。
     #[serde(default)]
     pub sheen: Option<Sheen>,
 
-    /// KHR_materials_volume extension.
+    /// KHR_materials_volume 扩展。
     #[serde(default)]
     pub volume: Option<Volume>,
 
-    /// KHR_materials_unlit extension present.
+    /// 存在 KHR_materials_unlit 扩展。
     #[serde(default)]
     pub unlit: bool,
 }
 
-/// PBR metallic-roughness shading model.
+/// PBR metallic-roughness 明暗模型。
 ///
-/// Maps to CesiumJS `ModelComponents.MetallicRoughness`
+/// 映射到 CesiumJS `ModelComponents.MetallicRoughness`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MetallicRoughness {
-    /// Base color factor [r, g, b, a]. Default [1,1,1,1].
+    /// 基础颜色因子 [r, g, b, a]。默认 [1,1,1,1]。
     #[serde(default = "default_base_color_factor")]
     pub base_color_factor: [f64; 4],
 
-    /// Base color texture.
+    /// 基础颜色贴图。
     #[serde(default)]
     pub base_color_texture: Option<TextureTransformInfo>,
 
-    /// Metallic factor. Default 1.0.
+    /// 金属度因子。默认 1.0。
     #[serde(default = "default_one")]
     pub metallic_factor: f64,
 
-    /// Roughness factor. Default 1.0.
+    /// 粗糙度因子。默认 1.0。
     #[serde(default = "default_one")]
     pub roughness_factor: f64,
 
-    /// Metallic-roughness texture (G=roughness, B=metallic).
+    /// 金属度-粗糙度贴图（G=粗糙度，B=金属度）。
     #[serde(default)]
     pub metallic_roughness_texture: Option<TextureTransformInfo>,
 }
@@ -110,29 +110,29 @@ impl Default for MetallicRoughness {
     }
 }
 
-/// KHR_materials_pbrSpecularGlossiness extension.
+/// KHR_materials_pbrSpecularGlossiness 扩展。
 ///
-/// Maps to CesiumJS `ModelComponents.SpecularGlossiness`
+/// 映射到 CesiumJS `ModelComponents.SpecularGlossiness`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpecularGlossiness {
-    /// Diffuse factor [r, g, b, a]. Default [1,1,1,1].
+    /// 漫反射因子 [r, g, b, a]。默认 [1,1,1,1]。
     #[serde(default = "default_base_color_factor")]
     pub diffuse_factor: [f64; 4],
 
-    /// Diffuse texture.
+    /// 漫反射贴图。
     #[serde(default)]
     pub diffuse_texture: Option<TextureTransformInfo>,
 
-    /// Specular factor [r, g, b]. Default [1,1,1].
+    /// 高光因子 [r, g, b]。默认 [1,1,1]。
     #[serde(default = "default_specular_factor")]
     pub specular_factor: [f64; 3],
 
-    /// Glossiness factor. Default 1.0.
+    /// 光滑度因子。默认 1.0。
     #[serde(default = "default_one")]
     pub glossiness_factor: f64,
 
-    /// Specular-glossiness texture.
+    /// 高光-光滑度贴图。
     #[serde(default)]
     pub specular_glossiness_texture: Option<TextureTransformInfo>,
 }
@@ -149,25 +149,25 @@ impl Default for SpecularGlossiness {
     }
 }
 
-/// KHR_materials_specular extension.
+/// KHR_materials_specular 扩展。
 ///
-/// Maps to CesiumJS `ModelComponents.Specular`
+/// 映射到 CesiumJS `ModelComponents.Specular`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Specular {
-    /// Specular factor. Default 1.0.
+    /// 高光因子。默认 1.0。
     #[serde(default = "default_one")]
     pub specular_factor: f64,
 
-    /// Specular texture.
+    /// 高光贴图。
     #[serde(default)]
     pub specular_texture: Option<TextureTransformInfo>,
 
-    /// Specular color factor [r, g, b]. Default [1,1,1].
+    /// 高光颜色因子 [r, g, b]。默认 [1,1,1]。
     #[serde(default = "default_specular_factor")]
     pub specular_color_factor: [f64; 3],
 
-    /// Specular color texture.
+    /// 高光颜色贴图。
     #[serde(default)]
     pub specular_color_texture: Option<TextureTransformInfo>,
 }
@@ -183,29 +183,29 @@ impl Default for Specular {
     }
 }
 
-/// KHR_materials_clearcoat extension.
+/// KHR_materials_clearcoat 扩展。
 ///
-/// Maps to CesiumJS `ModelComponents.Clearcoat`
+/// 映射到 CesiumJS `ModelComponents.Clearcoat`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Clearcoat {
-    /// Clearcoat layer intensity. Default 0.0.
+    /// clearcoat 层强度。默认 0.0。
     #[serde(default)]
     pub clearcoat_factor: f64,
 
-    /// Clearcoat intensity texture.
+    /// clearcoat 强度贴图。
     #[serde(default)]
     pub clearcoat_texture: Option<TextureTransformInfo>,
 
-    /// Clearcoat roughness. Default 0.0.
+    /// clearcoat 粗糙度。默认 0.0。
     #[serde(default)]
     pub clearcoat_roughness_factor: f64,
 
-    /// Clearcoat roughness texture.
+    /// clearcoat 粗糙度贴图。
     #[serde(default)]
     pub clearcoat_roughness_texture: Option<TextureTransformInfo>,
 
-    /// Clearcoat normal map texture.
+    /// clearcoat 法线贴图。
     #[serde(default)]
     pub clearcoat_normal_texture: Option<NormalTextureInfo>,
 }
@@ -222,21 +222,21 @@ impl Default for Clearcoat {
     }
 }
 
-/// KHR_materials_anisotropy extension.
+/// KHR_materials_anisotropy 扩展。
 ///
-/// Maps to CesiumJS `ModelComponents.Anisotropy`
+/// 映射到 CesiumJS `ModelComponents.Anisotropy`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Anisotropy {
-    /// Anisotropy strength. Default 0.0.
+    /// 各向异性强度。默认 0.0。
     #[serde(default)]
     pub anisotropy_strength: f64,
 
-    /// Anisotropy rotation in radians. Default 0.0.
+    /// 各向异性旋转（弧度）。默认 0.0。
     #[serde(default)]
     pub anisotropy_rotation: f64,
 
-    /// Anisotropy texture.
+    /// 各向异性贴图。
     #[serde(default)]
     pub anisotropy_texture: Option<TextureTransformInfo>,
 }
@@ -251,15 +251,15 @@ impl Default for Anisotropy {
     }
 }
 
-/// KHR_materials_transmission extension.
+/// KHR_materials_transmission 扩展。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Transmission {
-    /// Transmission factor. Default 0.0.
+    /// 透射因子。默认 0.0。
     #[serde(default)]
     pub transmission_factor: f64,
 
-    /// Transmission texture.
+    /// 透射贴图。
     #[serde(default)]
     pub transmission_texture: Option<TextureTransformInfo>,
 }
@@ -273,11 +273,11 @@ impl Default for Transmission {
     }
 }
 
-/// KHR_materials_ior extension.
+/// KHR_materials_ior 扩展。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Ior {
-    /// Index of refraction. Default 1.5.
+    /// 折射率。默认 1.5。
     #[serde(default = "default_ior")]
     pub ior: f64,
 }
@@ -288,11 +288,11 @@ impl Default for Ior {
     }
 }
 
-/// KHR_materials_emissive_strength extension.
+/// KHR_materials_emissive_strength 扩展。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmissiveStrength {
-    /// Emissive strength multiplier. Default 1.0.
+    /// 自发光强度乘数。默认 1.0。
     #[serde(default = "default_one")]
     pub emissive_strength: f64,
 }
@@ -305,23 +305,23 @@ impl Default for EmissiveStrength {
     }
 }
 
-/// KHR_materials_sheen extension.
+/// KHR_materials_sheen 扩展。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Sheen {
-    /// Sheen color factor [r, g, b]. Default [0,0,0].
+    /// 包边颜色因子 [r, g, b]。默认 [0,0,0]。
     #[serde(default)]
     pub sheen_color_factor: [f64; 3],
 
-    /// Sheen color texture.
+    /// 包边颜色贴图。
     #[serde(default)]
     pub sheen_color_texture: Option<TextureTransformInfo>,
 
-    /// Sheen roughness factor. Default 0.0.
+    /// 包边粗糙度因子。默认 0.0。
     #[serde(default)]
     pub sheen_roughness_factor: f64,
 
-    /// Sheen roughness texture.
+    /// 包边粗糙度贴图。
     #[serde(default)]
     pub sheen_roughness_texture: Option<TextureTransformInfo>,
 }
@@ -337,23 +337,23 @@ impl Default for Sheen {
     }
 }
 
-/// KHR_materials_volume extension.
+/// KHR_materials_volume 扩展。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Volume {
-    /// Thickness factor. Default 0.0.
+    /// 厚度因子。默认 0.0。
     #[serde(default)]
     pub thickness_factor: f64,
 
-    /// Thickness texture.
+    /// 厚度贴图。
     #[serde(default)]
     pub thickness_texture: Option<TextureTransformInfo>,
 
-    /// Attenuation distance. Default +infinity.
+    /// 衰减距离。默认 +无穷大。
     #[serde(default = "default_attenuation_distance")]
     pub attenuation_distance: f64,
 
-    /// Attenuation color [r, g, b]. Default [1,1,1].
+    /// 衰减颜色 [r, g, b]。默认 [1,1,1]。
     #[serde(default = "default_specular_factor")]
     pub attenuation_color: [f64; 3],
 }
@@ -369,56 +369,56 @@ impl Default for Volume {
     }
 }
 
-/// Texture info with KHR_texture_transform extension support.
+/// 支持 KHR_texture_transform 扩展的 texture info。
 ///
-/// Maps to CesiumJS `ModelComponents.TextureReader`
+/// 映射到 CesiumJS `ModelComponents.TextureReader`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextureTransformInfo {
-    /// Index of the texture.
+    /// texture 的索引。
     pub index: usize,
 
-    /// Texture coordinate set.
+    /// texture 坐标集。
     #[serde(default)]
     pub tex_coord: usize,
 
-    /// KHR_texture_transform extension.
+    /// KHR_texture_transform 扩展。
     #[serde(default)]
     pub extensions: Option<TextureTransformExtensions>,
 
-    /// Normal map scale (only for normal textures).
+    /// 法线贴图缩放（仅用于法线贴图）。
     #[serde(default)]
     pub scale: Option<f64>,
 }
 
-/// Container for texture transform extension.
+/// texture transform 扩展的容器。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextureTransformExtensions {
-    /// KHR_texture_transform data.
+    /// KHR_texture_transform 数据。
     #[serde(default, rename = "KHR_texture_transform")]
     pub texture_transform: Option<TextureTransform>,
 }
 
-/// KHR_texture_transform extension data.
+/// KHR_texture_transform 扩展数据。
 ///
-/// Provides UV transformation: offset, rotation, scale, and texCoord override.
+/// 提供 UV 变换：偏移、旋转、缩放以及 texCoord 覆盖。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextureTransform {
-    /// UV offset [u, v]. Default [0, 0].
+    /// UV 偏移 [u, v]。默认 [0, 0]。
     #[serde(default)]
     pub offset: [f64; 2],
 
-    /// Rotation in radians (counter-clockwise). Default 0.
+    /// 旋转（弧度，逆时针）。默认 0。
     #[serde(default)]
     pub rotation: f64,
 
-    /// UV scale [u, v]. Default [1, 1].
+    /// UV 缩放 [u, v]。默认 [1, 1]。
     #[serde(default = "default_uv_scale")]
     pub scale: [f64; 2],
 
-    /// Override texCoord set index.
+    /// 覆盖的 texCoord 集索引。
     #[serde(default)]
     pub tex_coord: Option<usize>,
 }
@@ -435,15 +435,15 @@ impl Default for TextureTransform {
 }
 
 impl TextureTransform {
-    /// Computes the 3x3 UV transformation matrix.
+    /// 计算 3x3 的 UV 变换矩阵。
     ///
-    /// The transformation order is: T(offset) * R(rotation) * S(scale).
-    /// Maps to CesiumJS `GltfLoaderUtility.getTextureTransformMatrix`
+    /// 变换顺序为：T(offset) * R(rotation) * S(scale)。
+    /// 映射到 CesiumJS `GltfLoaderUtility.getTextureTransformMatrix`
     pub fn compute_matrix(&self) -> [f64; 9] {
         let cos_r = self.rotation.cos();
         let sin_r = self.rotation.sin();
 
-        // Column-major 3x3: T * R * S
+        // 列主序 3x3：T * R * S
         // T = [1 0 ox; 0 1 oy; 0 0 1]
         // R = [cos -sin 0; sin cos 0; 0 0 1]
         // S = [sx 0 0; 0 sy 0; 0 0 1]
@@ -452,24 +452,24 @@ impl TextureTransform {
         let ox = self.offset[0];
         let oy = self.offset[1];
 
-        // Combined: T * R * S (row-major for clarity, stored column-major)
-        // Row 0: [cos*sx, -sin*sy, ox]
-        // Row 1: [sin*sx,  cos*sy, oy]
-        // Row 2: [0,       0,      1 ]
+        // 合并：T * R * S（为清晰起见行主序，存储为列主序）
+        // 行 0：[cos*sx, -sin*sy, ox]
+        // 行 1：[sin*sx,  cos*sy, oy]
+        // 行 2：[0,       0,      1 ]
         [
             cos_r * sx,
             sin_r * sx,
-            0.0, // column 0
+            0.0, // 列 0
             -sin_r * sy,
             cos_r * sy,
-            0.0, // column 1
+            0.0, // 列 1
             ox,
             oy,
-            1.0, // column 2
+            1.0, // 列 2
         ]
     }
 
-    /// Transforms a UV coordinate using this transform.
+    /// 使用本变换对一个 UV 坐标进行变换。
     pub fn transform_uv(&self, u: f64, v: f64) -> [f64; 2] {
         let cos_r = self.rotation.cos();
         let sin_r = self.rotation.sin();
@@ -484,28 +484,28 @@ impl TextureTransform {
     }
 }
 
-/// Normal texture info with scale.
+/// 带缩放的法线贴图 texture info。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NormalTextureInfo {
-    /// Index of the texture.
+    /// texture 的索引。
     pub index: usize,
 
-    /// Texture coordinate set.
+    /// texture 坐标集。
     #[serde(default)]
     pub tex_coord: usize,
 
-    /// Normal map scale. Default 1.0.
+    /// 法线贴图缩放。默认 1.0。
     #[serde(default = "default_one")]
     pub scale: f64,
 
-    /// KHR_texture_transform extension.
+    /// KHR_texture_transform 扩展。
     #[serde(default)]
     pub extensions: Option<TextureTransformExtensions>,
 }
 
 impl TextureTransformInfo {
-    /// Creates from a basic TextureInfo.
+    /// 由一个基础的 TextureInfo 创建。
     pub fn from_texture_info(info: &TextureInfo) -> Self {
         Self {
             index: info.index,
@@ -515,7 +515,7 @@ impl TextureTransformInfo {
         }
     }
 
-    /// Gets the effective texCoord (considering KHR_texture_transform override).
+    /// 获取生效的 texCoord（考虑 KHR_texture_transform 覆盖）。
     pub fn effective_tex_coord(&self) -> usize {
         self.extensions
             .as_ref()
@@ -524,7 +524,7 @@ impl TextureTransformInfo {
             .unwrap_or(self.tex_coord)
     }
 
-    /// Gets the texture transform if present.
+    /// 若存在则获取 texture transform。
     pub fn get_transform(&self) -> Option<&TextureTransform> {
         self.extensions
             .as_ref()
@@ -532,9 +532,9 @@ impl TextureTransformInfo {
     }
 }
 
-/// Parses extended material from a glTF material's extensions JSON.
+/// 从 glTF material 的扩展 JSON 解析扩展的 material。
 ///
-/// Maps to CesiumJS `GltfLoaderUtility` material extension parsing.
+/// 映射到 CesiumJS `GltfLoaderUtility` 的 material 扩展解析。
 pub fn parse_material_extensions(
     extensions: &serde_json::Value,
 ) -> ExtendedMaterial {
@@ -596,7 +596,7 @@ pub fn parse_material_extensions(
     mat
 }
 
-// Default value functions for serde
+// serde 使用的默认值函数
 fn default_one() -> f64 {
     1.0
 }
@@ -778,7 +778,7 @@ mod tests {
     fn test_texture_transform_matrix_identity() {
         let transform = TextureTransform::default();
         let m = transform.compute_matrix();
-        // Column-major identity
+        // 列主序单位矩阵
         assert!((m[0] - 1.0).abs() < 1e-10);
         assert!((m[4] - 1.0).abs() < 1e-10);
         assert!((m[8] - 1.0).abs() < 1e-10);

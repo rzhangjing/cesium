@@ -1,15 +1,15 @@
 //! Scene/BillboardCollectionSpec.js + LabelCollectionSpec.js + PointPrimitiveCollectionSpec.js
-//! → Rust integration tests.
+//! → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Scene/Billboard.js, Scene/BillboardCollection.js
 //! - Scene/Label.js, Scene/LabelCollection.js
 //! - Scene/PointPrimitive.js, Scene/PointPrimitiveCollection.js
 //! - Core/NearFarScalar.js, Core/DistanceDisplayCondition.js
 //!
-//! A-class tests: collection CRUD, defaults, NearFarScalar interpolation,
-//! DistanceDisplayCondition visibility, enum defaults.
-//! C-class omitted: WebGL texture atlas, shader programs, picking.
+//! A 类测试：集合 CRUD、默认值、NearFarScalar 插值、
+//! DistanceDisplayCondition 可见性、枚举默认值。
+//! C 类已省略：WebGL 纹理图集、着色器程序、拾取。
 
 use cesium_datasource::primitives::{
     Billboard, BillboardCollection, DistanceDisplayCondition, HorizontalOrigin,
@@ -62,9 +62,9 @@ fn billboard_collection_remove() {
     let removed = c.remove(1).unwrap();
     assert_eq!(removed.scale, 2.0);
     assert_eq!(c.len(), 2);
-    // After remove, index 1 is now the old index 2
+    // 移除后，索引 1 现为旧的索引 2
     assert_eq!(c.get(1).unwrap().scale, 3.0);
-    // Out of bounds
+    // 越界
     assert!(c.remove(5).is_none());
 }
 
@@ -196,16 +196,16 @@ fn point_defaults() {
 #[test]
 fn near_far_scalar_interpolation() {
     let nfs = NearFarScalar::new(100.0, 1.0, 1000.0, 0.0);
-    // Before near → near_value
+    // near 之前 → near_value
     assert!((nfs.value_at_distance(0.0) - 1.0).abs() < 1e-10);
     assert!((nfs.value_at_distance(100.0) - 1.0).abs() < 1e-10);
-    // Midpoint
+    // 中点
     assert!((nfs.value_at_distance(550.0) - 0.5).abs() < 1e-10);
-    // Quarter
+    // 四分之一处
     assert!((nfs.value_at_distance(325.0) - 0.75).abs() < 1e-10);
-    // At far → far_value
+    // 到达 far → far_value
     assert!((nfs.value_at_distance(1000.0) - 0.0).abs() < 1e-10);
-    // Beyond far → far_value
+    // 超出 far → far_value
     assert!((nfs.value_at_distance(5000.0) - 0.0).abs() < 1e-10);
 }
 
@@ -250,7 +250,7 @@ fn distance_display_condition_default() {
     assert!(ddc.is_visible(999999.0));
 }
 
-// === Enum defaults ===
+// === 枚举默认值 ===
 
 #[test]
 fn enum_defaults() {

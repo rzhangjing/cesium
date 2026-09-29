@@ -1,7 +1,7 @@
-//! Scene/JsonMetadataTableSpec.js → Rust integration tests
+//! Scene/JsonMetadataTableSpec.js → Rust 集成测试
 //!
-//! Original: 19 it() → 11 A-class (8 C-class: throws)
-//! A-class: constructor_clones(1) + hasProperty(2) + getPropertyIds(1) +
+//! 原始：19 it() → 11 A 类（8 C 类：throws）
+//! A 类：constructor_clones(1) + hasProperty(2) + getPropertyIds(1) +
 //!          getProperty(4) + setProperty(3)
 
 use cesium_tileset::json_metadata_table::JsonMetadataTable;
@@ -45,8 +45,8 @@ fn test_constructor_clones_properties() {
 
     table.set_property(0, "sizeInfo", new_value.clone());
 
-    // Original value should be unchanged (we can't check the original HashMap
-    // since it was moved, but we can verify the new value is set)
+    // 原值应保持不变（我们无法检查原始 HashMap
+    // 因为它已被移动，但可验证新值已设置）
     assert_eq!(table.get_property(0, "sizeInfo"), Some(new_value));
 }
 
@@ -90,7 +90,7 @@ fn test_get_property_returns_copy() {
     let value2 = table.get_property(1, "sizeInfo").unwrap();
     assert_eq!(value1, json!({"vertices": 3000, "faces": 1000}));
     assert_eq!(value1, value2);
-    // In Rust, cloned values are independent (no reference sharing)
+    // 在 Rust 中，克隆的值相互独立（无引用共享）
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn test_set_property_copies_value() {
     let mut size_info = json!({"lengthBytes": 1024});
     table.set_property(1, "sizeInfo", size_info.clone());
 
-    // Modify the original - table should not be affected
+    // 修改原值 - table 不应受影响
     size_info["offset"] = json!(8);
     assert_ne!(table.get_property(1, "sizeInfo"), Some(size_info));
 }

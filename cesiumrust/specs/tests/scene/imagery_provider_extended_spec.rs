@@ -1,8 +1,8 @@
-//! Extended imagery provider specs - ported from Scene/*ImageryProviderSpec.js
+//! 扩展影像提供者规范 - 移植自 Scene/*ImageryProviderSpec.js
 //!
-//! Covers: TimeDynamicImagery, WmsGetFeatureInfo, Bing quadkey values,
-//! WMS bbox computation, ArcGIS, Mapbox, MapboxStyle, SingleTile,
-//! TileCoordinates, Ion providers.
+//! 覆盖：TimeDynamicImagery、WmsGetFeatureInfo、Bing quadkey 值、
+//! WMS bbox 计算、ArcGIS、Mapbox、MapboxStyle、SingleTile、
+//! TileCoordinates、Ion 提供者。
 
 use cesium_provider::imagery_provider::{
     ArcGisMapServerImageryProvider, BingMapsImageryProvider, IonImageryProvider,
@@ -51,10 +51,10 @@ fn time_dynamic_get_tile_url_at_boundary() {
     let mut td = TimeDynamicImagery::new();
     td.add_interval(10.0, 20.0, "https://tiles.example.com/{z}/{x}/{y}?t={time}");
     let coord = TileCoord::new(1, 2, 3);
-    // At start boundary
+    // 在起始边界
     let url = td.get_tile_url(10.0, &coord).unwrap();
     assert!(url.contains("t=10"));
-    // At stop boundary
+    // 在终止边界
     let url = td.get_tile_url(20.0, &coord).unwrap();
     assert!(url.contains("t=20"));
 }
@@ -98,7 +98,7 @@ fn wms_gfi_get_url() {
     assert!(url.contains("i=128"));
     assert!(url.contains("j=64"));
     assert!(url.contains("feature_count=10"));
-    // bbox order: south,west,north,east for WMS 1.3.0
+    // bbox 顺序：WMS 1.3.0 为 south,west,north,east
     assert!(url.contains("bbox=-5,-10,5,10"));
 }
 
@@ -154,14 +154,14 @@ fn bing_tile_url_contains_quadkey() {
     assert!(url.contains("aerial3.jpeg"));
 }
 
-// ─── WMS bbox computation ──────────────────────────────────────────────────
+// ─── WMS bbox 计算 ──────────────────────────────────────────────────
 
 #[test]
 fn wms_bbox_level_0_tile_0_0() {
     let provider = WmsImageryProvider::new("https://wms.example.com", "layer1");
     let coord = TileCoord::new(0, 0, 0);
     let url = provider.get_tile_url(&coord);
-    // Level 0: tiles_x=2, tiles_y=1
+    // 第 0 级：tiles_x=2, tiles_y=1
     // west=-180, east=0, north=90, south=-90
     assert!(url.contains("bbox=-90,-180,90,0"));
 }
@@ -171,7 +171,7 @@ fn wms_bbox_level_1_tile_1_0() {
     let provider = WmsImageryProvider::new("https://wms.example.com", "layer1");
     let coord = TileCoord::new(1, 0, 1);
     let url = provider.get_tile_url(&coord);
-    // Level 1: tiles_x=4, tiles_y=2
+    // 第 1 级：tiles_x=4, tiles_y=2
     // x=1: west=-180+(1/4)*360=-90, east=-180+(2/4)*360=0
     // y=0: north=90-(0/2)*180=90, south=90-(1/2)*180=0
     assert!(url.contains("bbox=0,-90,90,0"));
@@ -255,7 +255,7 @@ fn mapbox_style_get_tile_url() {
 fn single_tile_creation() {
     let provider = SingleTileImageryProvider::new("https://example.com/world.png");
     assert_eq!(provider.url, "https://example.com/world.png");
-    // Default rectangle covers the whole globe
+    // 默认 rectangle 覆盖整个地球
     assert!((provider.rectangle[0] - (-std::f64::consts::PI)).abs() < 1e-10);
     assert!((provider.rectangle[2] - std::f64::consts::PI).abs() < 1e-10);
 }

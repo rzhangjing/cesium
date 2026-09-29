@@ -1,5 +1,5 @@
-//! GLB/b3dm binary format + Vector3DTile specs
-//! Tests: GlbData parsing, B3dmData parsing, Vector3DTilePoints/Polylines/Polygons, MVT decode
+//! GLB/b3dm 二进制格式 + Vector3DTile specs
+//! 测试：GlbData 解析、B3dmData 解析、Vector3DTilePoints/Polylines/Polygons、MVT 解码
 
 use cesium_gltf::binary_format::{
     B3dmData, BinaryFormatError, GlbData, GLB_CHUNK_BIN, GLB_CHUNK_JSON, GLB_MAGIC,
@@ -11,7 +11,7 @@ use cesium_vector::{
 use glam::DVec3;
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// GLB Parsing
+// GLB 解析
 // ═══════════════════════════════════════════════════════════════════════════════
 
 fn make_glb(json: &str, binary: Option<&[u8]>) -> Vec<u8> {
@@ -19,7 +19,7 @@ fn make_glb(json: &str, binary: Option<&[u8]>) -> Vec<u8> {
     let json_padded: Vec<u8> = {
         let mut v = json_bytes.to_vec();
         while v.len() % 4 != 0 {
-            v.push(0x20); // space padding
+            v.push(0x20); // 空格填充
         }
         v
     };
@@ -37,15 +37,15 @@ fn make_glb(json: &str, binary: Option<&[u8]>) -> Vec<u8> {
     };
 
     let mut data = Vec::with_capacity(total);
-    // Header
+    // 头部
     data.extend_from_slice(&GLB_MAGIC.to_le_bytes());
     data.extend_from_slice(&2u32.to_le_bytes());
     data.extend_from_slice(&(total as u32).to_le_bytes());
-    // JSON chunk
+    // JSON 块
     data.extend_from_slice(&(json_padded.len() as u32).to_le_bytes());
     data.extend_from_slice(&GLB_CHUNK_JSON.to_le_bytes());
     data.extend_from_slice(&json_padded);
-    // BIN chunk
+    // BIN 块
     if binary.is_some() {
         data.extend_from_slice(&(bin_padded.len() as u32).to_le_bytes());
         data.extend_from_slice(&GLB_CHUNK_BIN.to_le_bytes());
@@ -89,7 +89,7 @@ fn glb_error_buffer_too_short() {
 #[test]
 fn glb_error_invalid_magic() {
     let mut glb = make_glb(r#"{"asset":{"version":"2.0"}}"#, None);
-    glb[0] = 0xFF; // corrupt magic
+    glb[0] = 0xFF; // 损坏的魔数
     let result = GlbData::from_bytes(&glb);
     assert!(matches!(result, Err(BinaryFormatError::InvalidMagic { .. })));
 }
@@ -97,14 +97,14 @@ fn glb_error_invalid_magic() {
 #[test]
 fn glb_error_unsupported_version() {
     let mut glb = make_glb(r#"{"asset":{"version":"2.0"}}"#, None);
-    // Set version to 1
+    // 将版本设为 1
     glb[4..8].copy_from_slice(&1u32.to_le_bytes());
     let result = GlbData::from_bytes(&glb);
     assert!(matches!(result, Err(BinaryFormatError::UnsupportedVersion(1))));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// b3dm Parsing
+// b3dm 解析
 // ═══════════════════════════════════════════════════════════════════════════════
 
 fn make_b3dm(glb: &[u8], batch_length: u32) -> Vec<u8> {
@@ -117,12 +117,12 @@ fn make_b3dm(glb: &[u8], batch_length: u32) -> Vec<u8> {
     let total = 28 + ft_bytes.len() + glb.len();
     let mut data = Vec::with_capacity(total);
     data.extend_from_slice(b"b3dm");
-    data.extend_from_slice(&1u32.to_le_bytes()); // version
+    data.extend_from_slice(&1u32.to_le_bytes()); // 版本
     data.extend_from_slice(&(total as u32).to_le_bytes());
-    data.extend_from_slice(&(ft_bytes.len() as u32).to_le_bytes()); // ft json len
-    data.extend_from_slice(&0u32.to_le_bytes()); // ft binary len
-    data.extend_from_slice(&0u32.to_le_bytes()); // bt json len
-    data.extend_from_slice(&0u32.to_le_bytes()); // bt binary len
+    data.extend_from_slice(&(ft_bytes.len() as u32).to_le_bytes()); // ft json 长度
+    data.extend_from_slice(&0u32.to_le_bytes()); // ft 二进制长度
+    data.extend_from_slice(&0u32.to_le_bytes()); // bt json 长度
+    data.extend_from_slice(&0u32.to_le_bytes()); // bt 二进制长度
     data.extend_from_slice(&ft_bytes);
     data.extend_from_slice(glb);
     data
@@ -150,7 +150,7 @@ fn b3dm_error_too_short() {
 fn b3dm_error_invalid_magic() {
     let glb = make_glb(r#"{"asset":{"version":"2.0"}}"#, None);
     let mut b3dm = make_b3dm(&glb, 5);
-    b3dm[0] = b'x'; // corrupt magic
+    b3dm[0] = b'x'; // 损坏的魔数
     let result = B3dmData::from_bytes(&b3dm);
     assert!(result.is_err());
 }
@@ -258,7 +258,7 @@ fn vector_content_types() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MVT Layer/Feature
+// MVT 图层/要素
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -279,7 +279,7 @@ fn mvt_feature_creation() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MVT Geometry Decode
+// MVT 几何解码
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -309,17 +309,17 @@ fn mvt_decode_linestring() {
     let rings = decode_mvt_geometry(&commands, 4096);
     assert_eq!(rings.len(), 1);
     assert_eq!(rings[0].len(), 3);
-    // First point: (2/4096, 2/4096)
+    // 第一个点：(2/4096, 2/4096)
     assert!((rings[0][0].x - 2.0 / 4096.0).abs() < 1e-10);
-    // Second point: (3/4096, 2/4096)
+    // 第二个点：(3/4096, 2/4096)
     assert!((rings[0][1].x - 3.0 / 4096.0).abs() < 1e-10);
-    // Third point: (3/4096, 3/4096)
+    // 第三个点：(3/4096, 3/4096)
     assert!((rings[0][2].y - 3.0 / 4096.0).abs() < 1e-10);
 }
 
 #[test]
 fn mvt_decode_polygon_closed() {
-    // Square: MoveTo + LineTo(2) + ClosePath
+    // 正方形：MoveTo + LineTo(2) + ClosePath
     let commands = vec![
         (1 << 3) | 1, // MoveTo count=1
         0,            // x=0
@@ -335,7 +335,7 @@ fn mvt_decode_polygon_closed() {
     ];
     let rings = decode_mvt_geometry(&commands, 4096);
     assert_eq!(rings.len(), 1);
-    // Ring should be closed (first == last)
+    // 环应当闭合（first == last）
     assert_eq!(rings[0].first(), rings[0].last());
 }
 
@@ -344,12 +344,12 @@ fn mvt_decode_multipoint() {
     // MoveTo count=3
     let commands = vec![
         (3 << 3) | 1, // MoveTo count=3
-        2, 4,         // point 1: (1, 2)
-        2, 0,         // point 2: (2, 2) delta
-        0, 2,         // point 3: (2, 3) delta
+        2, 4,         // 点 1：(1, 2)
+        2, 0,         // 点 2：(2, 2) 增量
+        0, 2,         // 点 3：(2, 3) 增量
     ];
     let rings = decode_mvt_geometry(&commands, 4096);
-    // Each MoveTo starts a new ring
+    // 每个 MoveTo 开始一个新环
     assert_eq!(rings.len(), 3);
 }
 

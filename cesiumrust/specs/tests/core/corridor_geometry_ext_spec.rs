@@ -1,7 +1,7 @@
-//! Ported from CesiumJS `Core/CorridorGeometrySpec.js` (expanded A-class tests).
+//! 移植自 CesiumJS `Core/CorridorGeometrySpec.js`（扩展的 A 类测试）。
 //!
-//! Tests: positions, all attributes, right/left turn, rounded/beveled corners,
-//! straight corridors, edge cases, texture coordinates, normals.
+//! 测试内容：位置、全部属性、右转/左转、圆角/斜角、
+//! 直线通道、边界情形、纹理坐标、法线。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -21,8 +21,8 @@ fn from_degrees(lon: f64, lat: f64, h: f64) -> DVec3 {
 }
 
 // ---------------------------------------------------------------------------
-// "computes positions" - 2 positions 5° apart, MITERED, width=30000
-// CesiumJS: 12 vertices, 10 triangles. Rust strip triangulation may differ.
+// "computes positions" - 相距 5° 的 2 个位置，MITERED，width=30000
+// CesiumJS：12 个顶点，10 个三角形。Rust 的条带三角化可能不同。
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -37,20 +37,20 @@ fn corridor_computes_positions_mitered() {
     };
     let geo = corridor_geometry(&opts, VertexFormat::POSITION_ONLY);
 
-    // Should produce at least 4 vertices (2 right + 2 left minimum)
+    // 应产生至少 4 个顶点（右侧 2 + 左侧 2，最少）
     assert!(
         geo.positions.len() >= 4,
         "expected >= 4 positions, got {}",
         geo.positions.len()
     );
-    // Indices must be divisible by 3 (triangles)
+    // 索引必须能被 3 整除（三角形）
     assert_eq!(geo.indices.len() % 3, 0, "indices must form complete triangles");
     assert!(
         geo.indices.len() >= 6,
         "expected >= 2 triangles, got {} indices",
         geo.indices.len()
     );
-    // Bounding sphere should be valid
+    // 包围球应有效
     assert!(geo.bounding_sphere.radius > 0.0);
 }
 
@@ -73,7 +73,7 @@ fn corridor_computes_all_vertex_attributes() {
     let num_verts = geo.positions.len();
     assert!(num_verts >= 4, "expected >= 4 positions");
 
-    // All attributes should be present
+    // 所有属性都应存在
     assert!(geo.normals.is_some(), "normals should be present");
     assert!(geo.tangents.is_some(), "tangents should be present");
     assert!(geo.bitangents.is_some(), "bitangents should be present");
@@ -91,8 +91,8 @@ fn corridor_computes_all_vertex_attributes() {
 }
 
 // ---------------------------------------------------------------------------
-// "computes right turn" - 3 positions making a right turn, MITERED
-// CesiumJS: 8 vertices, 6 triangles
+// "computes right turn" - 构成右转的 3 个位置，MITERED
+// CesiumJS：8 个顶点，6 个三角形
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -121,8 +121,8 @@ fn corridor_computes_right_turn() {
 }
 
 // ---------------------------------------------------------------------------
-// "computes left turn" - 3 positions making a left turn, MITERED
-// CesiumJS: 8 vertices, 6 triangles
+// "computes left turn" - 构成左转的 3 个位置，MITERED
+// CesiumJS：8 个顶点，6 个三角形
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -151,8 +151,8 @@ fn corridor_computes_left_turn() {
 }
 
 // ---------------------------------------------------------------------------
-// "computes with rounded corners" - 4 positions, ROUNDED
-// Rounded corners should produce more vertices than beveled
+// "computes with rounded corners" - 4 个位置，ROUNDED
+// 圆角应比斜角产生更多顶点
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -180,12 +180,12 @@ fn corridor_computes_with_rounded_corners() {
         geo_rounded.positions.len()
     );
     assert_eq!(geo_rounded.indices.len() % 3, 0);
-    // ST should be present
+    // ST 应存在
     assert!(geo_rounded.tex_coords.is_some());
     let st = geo_rounded.tex_coords.as_ref().unwrap();
     assert_eq!(st.len(), geo_rounded.positions.len());
 
-    // Compare with beveled: rounded should have more vertices
+    // 与斜角对比：圆角应有更多顶点
     let opts_beveled = CorridorOptions {
         positions,
         width: 30000.0,
@@ -205,8 +205,8 @@ fn corridor_computes_with_rounded_corners() {
 }
 
 // ---------------------------------------------------------------------------
-// "computes with beveled corners" - 4 positions, BEVELED
-// CesiumJS: 10 vertices, 8 triangles
+// "computes with beveled corners" - 4 个位置，BEVELED
+// CesiumJS：10 个顶点，8 个三角形
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -236,8 +236,8 @@ fn corridor_computes_with_beveled_corners() {
 }
 
 // ---------------------------------------------------------------------------
-// "computes sharp turns" - 5 positions with sharp angles, BEVELED
-// CesiumJS: 13 vertices, 11 triangles
+// "computes sharp turns" - 夹角尖锐的 5 个位置，BEVELED
+// CesiumJS：13 个顶点，11 个三角形
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -268,8 +268,8 @@ fn corridor_computes_sharp_turns() {
 }
 
 // ---------------------------------------------------------------------------
-// "computes straight corridors" - 3 collinear positions, BEVELED, granularity=PI/6
-// CesiumJS: 4 vertices, 2 triangles (collinear → no corners, minimal subdivision)
+// "computes straight corridors" - 3 个共线位置，BEVELED，granularity=PI/6
+// CesiumJS：4 个顶点，2 个三角形（共线 → 无拐角，最少细分）
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -288,7 +288,7 @@ fn corridor_computes_straight_corridors() {
     };
     let geo = corridor_geometry(&opts, VertexFormat::POSITION_ONLY);
 
-    // Straight corridor: should produce geometry with minimal vertices
+    // 直线通道：应产生顶点数最少的几何体
     assert!(
         geo.positions.len() >= 4,
         "straight corridor should produce >= 4 positions, got {}",
@@ -306,7 +306,7 @@ fn corridor_computes_straight_corridors() {
 fn corridor_returns_empty_for_invalid_input() {
     let e = wgs84();
 
-    // Only 1 position
+    // 仅 1 个位置
     let opts1 = CorridorOptions {
         positions: vec![from_degrees(-72.0, 35.0, 0.0)],
         width: 100000.0,
@@ -316,7 +316,7 @@ fn corridor_returns_empty_for_invalid_input() {
     let geo1 = corridor_geometry(&opts1, VertexFormat::POSITION_ONLY);
     assert!(geo1.positions.is_empty(), "1 position should return empty");
 
-    // Width = 0
+    // 宽度 = 0
     let opts2 = CorridorOptions {
         positions: vec![
             from_degrees(-67.655, 0.0, 0.0),
@@ -330,7 +330,7 @@ fn corridor_returns_empty_for_invalid_input() {
     let geo2 = corridor_geometry(&opts2, VertexFormat::POSITION_ONLY);
     assert!(geo2.positions.is_empty(), "width=0 should return empty");
 
-    // Width < 0
+    // 宽度 < 0
     let opts3 = CorridorOptions {
         positions: vec![
             from_degrees(-67.655, 0.0, 0.0),
@@ -347,12 +347,12 @@ fn corridor_returns_empty_for_invalid_input() {
 
 // ---------------------------------------------------------------------------
 // "createGeometry returns undefined without 2 unique positions"
-// Duplicate positions (same lon/lat) should produce empty geometry
+// 重复位置（相同经纬度）应产生空几何体
 // ---------------------------------------------------------------------------
 
 #[test]
 fn corridor_returns_empty_for_duplicate_positions() {
-    // Same position twice
+    // 同一位置出现两次
     let opts = CorridorOptions {
         positions: vec![from_degrees(90.0, -30.0, 0.0), from_degrees(90.0, -30.0, 0.0)],
         width: 10000.0,
@@ -367,7 +367,7 @@ fn corridor_returns_empty_for_duplicate_positions() {
 }
 
 // ---------------------------------------------------------------------------
-// Texture coordinates: right edge v=0, left edge v=1
+// 纹理坐标：右边缘 v=0，左边缘 v=1
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -386,8 +386,8 @@ fn corridor_texture_coordinates_pattern() {
     let num_verts = geo.positions.len();
     assert_eq!(st.len(), num_verts);
 
-    // The implementation stores right edge first (v=0), then left edge (v=1)
-    // Right edge: first half of vertices
+    // 实现先存储右边缘（v=0），再存左边缘（v=1）
+    // 右边缘：顶点的前半部分
     let half = num_verts / 2;
     for i in 0..half {
         assert!(
@@ -397,7 +397,7 @@ fn corridor_texture_coordinates_pattern() {
             st[i][1]
         );
     }
-    // Left edge: second half
+    // 左边缘：顶点的后半部分
     for i in half..num_verts {
         assert!(
             (st[i][1] - 1.0).abs() < 1e-6,
@@ -407,7 +407,7 @@ fn corridor_texture_coordinates_pattern() {
         );
     }
 
-    // First right u should be 0, last right u should be 1
+    // 第一个右边缘 u 应为 0，最后一个右边缘 u 应为 1
     assert!((st[0][0] - 0.0).abs() < 1e-6, "first right u should be 0");
     if half > 1 {
         assert!(
@@ -419,7 +419,7 @@ fn corridor_texture_coordinates_pattern() {
 }
 
 // ---------------------------------------------------------------------------
-// Normals should be unit length and point away from ellipsoid center
+// 法线应为单位长度并背离椭球中心
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -445,7 +445,7 @@ fn corridor_normals_are_valid() {
         );
     }
 
-    // Normals should generally point outward (dot with position > 0)
+    // 法线通常应朝外（与位置的点积 > 0）
     for (i, (p, n)) in geo.positions.iter().zip(normals.iter()).enumerate() {
         let dot = p[0] * n[0] + p[1] * n[1] + p[2] * n[2];
         assert!(
@@ -458,7 +458,7 @@ fn corridor_normals_are_valid() {
 }
 
 // ---------------------------------------------------------------------------
-// Outline geometry: closed loop with line pairs
+// 轮廓几何：由线段对构成的闭合环
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -481,21 +481,21 @@ fn corridor_outline_forms_closed_loop() {
         geo.positions.len() >= 4,
         "outline should have >= 4 positions"
     );
-    // Indices are line pairs
+    // 索引为线段对
     assert_eq!(geo.indices.len() % 2, 0, "outline indices must be pairs");
-    // Should form a closed loop: last index pair connects back to 0
+    // 应构成闭合环：最后一对索引连回 0
     let n = geo.positions.len() as u32;
     for &idx in &geo.indices {
         assert!(idx < n, "index {} out of bounds (n={})", idx, n);
     }
-    // Last pair should be (n-1, 0) closing the loop
+    // 最后一对应为 (n-1, 0) 以闭合环
     let last_pair_start = geo.indices.len() - 2;
     assert_eq!(geo.indices[last_pair_start], n - 1);
     assert_eq!(geo.indices[last_pair_start + 1], 0);
 }
 
 // ---------------------------------------------------------------------------
-// Corridor with height: positions should be raised above ellipsoid
+// 带高度的通道：位置应被抬升到椭球之上
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -514,9 +514,9 @@ fn corridor_with_height_raises_positions() {
 
     assert!(!geo.positions.is_empty());
 
-    // All positions should be above the ellipsoid surface
-    // Note: corridor positions are offset from centerline by half_width,
-    // so normal-based height raising is approximate (tolerance ~50m for 30km width)
+    // 所有位置应位于椭球表面之上
+    // 注意：通道位置由中线偏移 half_width，
+    // 因此基于法线的高度抬升是近似的（30km 宽度容差约 50m）
     let e = wgs84();
     for (i, p) in geo.positions.iter().enumerate() {
         let pos = DVec3::new(p[0], p[1], p[2]);
@@ -532,7 +532,7 @@ fn corridor_with_height_raises_positions() {
 }
 
 // ---------------------------------------------------------------------------
-// Granularity affects vertex count
+// 粒度影响顶点数
 // ---------------------------------------------------------------------------
 
 #[test]

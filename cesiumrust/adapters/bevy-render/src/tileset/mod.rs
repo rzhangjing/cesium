@@ -25,17 +25,17 @@ impl Plugin for CesiumTilesetPlugin {
             .init_resource::<TileSelection>()
             .init_resource::<TileRenderMap>()
             .init_resource::<content_loader::PendingTileLoads>()
-            // Explicit ordering: the tileset JSON must be loaded before traversal
-            // can select tiles from it.
+            // 显式顺序：tileset JSON 必须先被加载，遍历
+            // 才能从中选取 tile。
             .add_systems(
                 PreUpdate,
                 (tileset_load_system, tileset_traversal_system).chain(),
             )
-            // Explicit ordering: the loader consumes `tiles_to_load` and flips
-            // tiles to `Ready` (with mesh handles) before the render system scans
-            // them, and styling runs last so it sees the freshly created
-            // materials. Without `.chain()` Bevy may run these in parallel and
-            // the render side would lag a full frame behind the loader.
+            // 显式顺序：loader 消费 `tiles_to_load` 并把 tile 翻为
+            // `Ready`（带 mesh handle），赶在渲染系统扫描它们之前，而样式化最后
+            // 运行，使它能看到新创建的材质。若没
+            // `.chain()`，Bevy 可能并行运行这些，而
+            // 渲染侧会落后 loader 整整一帧。
             .add_systems(
                 Update,
                 (

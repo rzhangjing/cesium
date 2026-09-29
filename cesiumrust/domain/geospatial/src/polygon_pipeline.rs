@@ -1,8 +1,9 @@
-//! PolygonPipeline - subdivision algorithms for polygon meshes on an ellipsoid.
-//! Faithful port of CesiumJS `Source/Core/PolygonPipeline.js`
-//! (computeSubdivision + computeRhumbLineSubdivision)
+//! PolygonPipeline —— 椭球上多边形网格的细分算法。
+//! 对 CesiumJS `Source/Core/PolygonPipeline.js`
+//! （computeSubdivision + computeRhumbLineSubdivision）的忠实移植
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::manual_is_multiple_of, clippy::len_zero)]
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
@@ -12,29 +13,29 @@ use glam::{DVec2, DVec3};
 use std::collections::HashMap;
 use std::f64::consts::PI;
 
-/// Result of a subdivision operation.
-/// Maps to the Geometry object returned by PolygonPipeline.computeSubdivision
+/// 一次细分操作的结果。
+/// 映射到 PolygonPipeline.computeSubdivision 返回的 Geometry 对象
 #[derive(Debug, Clone)]
 pub struct SubdivisionResult {
-    /// Flattened position values [x0, y0, z0, x1, y1, z1, ...]
+    /// 扁平的位置值 [x0, y0, z0, x1, y1, z1, ...]
     pub positions: Vec<f64>,
-    /// Triangle indices
+    /// 三角形索引
     pub indices: Vec<u32>,
-    /// Optional flattened texture coordinates [u0, v0, u1, v1, ...]
+    /// 可选的扁平纹理坐标 [u0, v0, u1, v1, ...]
     pub texcoords: Option<Vec<f64>>,
 }
 
 const RADIANS_PER_DEGREE: f64 = PI / 180.0;
 
-/// Subdivides positions and raises points to the surface of the ellipsoid.
-/// Maps to `PolygonPipeline.computeSubdivision`
+/// 细分位置并将点抬升到椭球表面。
+/// 映射到 `PolygonPipeline.computeSubdivision`
 ///
-/// # Arguments
-/// * `ellipsoid` - The ellipsoid the polygon is on
-/// * `positions` - Array of Cartesian3 positions
-/// * `indices` - Triangle indices
-/// * `texcoords` - Optional texture coordinates
-/// * `granularity` - Distance in radians between subdivisions (default: RADIANS_PER_DEGREE)
+/// # 参数
+/// * `ellipsoid` - 多边形所在的椭球
+/// * `positions` - Cartesian3 位置数组
+/// * `indices` - 三角形索引
+/// * `texcoords` - 可选的纹理坐标
+/// * `granularity` - 相邻细分之间的距离（弧度）（默认：RADIANS_PER_DEGREE）
 pub fn compute_subdivision(
     ellipsoid: &Ellipsoid,
     positions: &[DVec3],
@@ -49,10 +50,10 @@ pub fn compute_subdivision(
     debug_assert!(indices.len() % 3 == 0, "Number of indices must be divisible by three");
     debug_assert!(granularity > 0.0, "Granularity must be greater than zero");
 
-    // triangles that need (or might need) to be subdivided
+    // 需要（或可能需要）细分的三角形
     let mut triangles: Vec<u32> = indices.to_vec();
 
-    // New positions due to edge splits are appended to the positions list.
+    // 由边拆分产生的新位置会被追加到位置列表末尾。
     let mut subdivided_positions: Vec<f64> = Vec::with_capacity(positions.len() * 3);
     let mut subdivided_texcoords: Vec<f64> = if has_texcoords {
         Vec::with_capacity(positions.len() * 2)
@@ -74,7 +75,7 @@ pub fn compute_subdivision(
 
     let mut subdivided_indices: Vec<u32> = Vec::new();
 
-    // Used to make sure shared edges are not split more than once.
+    // 用于确保共享的边不会被拆分多次。
     let mut edges: HashMap<(u32, u32), u32> = HashMap::new();
 
     let radius = ellipsoid.maximum_radius();
@@ -235,8 +236,8 @@ pub fn compute_subdivision(
     }
 }
 
-/// Subdivides positions on rhumb lines and raises points to the surface of the ellipsoid.
-/// Maps to `PolygonPipeline.computeRhumbLineSubdivision`
+/// 在恒向线上细分位置并将点抬升到椭球表面。
+/// 映射到 `PolygonPipeline.computeRhumbLineSubdivision`
 pub fn compute_rhumb_line_subdivision(
     ellipsoid: &Ellipsoid,
     positions: &[DVec3],
@@ -278,7 +279,7 @@ pub fn compute_rhumb_line_subdivision(
     let radius = ellipsoid.maximum_radius();
     let min_distance = chord_length(granularity, radius);
 
-    // Dummy rhumb line for computation (will be reset per edge)
+    // 用于计算的占位恒向线（会逐边重置）
     let dummy_start = Cartographic::from_radians(0.0, 0.0, 0.0);
     let dummy_end = Cartographic::from_radians(0.0, 0.1, 0.0);
     let mut rhumb0 = EllipsoidRhumbLine::new(&dummy_start, &dummy_end, ellipsoid);

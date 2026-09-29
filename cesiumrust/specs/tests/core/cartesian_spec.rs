@@ -1,6 +1,6 @@
-//! Core/Cartesian3Spec.js, Cartesian2Spec.js, Cartesian4Spec.js → Rust integration tests
-//! In CesiumRust, Cartesian3 = glam::DVec3, Cartesian2 = glam::DVec2, Cartesian4 = glam::DVec4
-//! These tests verify the vector operations used in the geospatial domain.
+//! Core/Cartesian3Spec.js、Cartesian2Spec.js、Cartesian4Spec.js → Rust 集成测试
+//! 在 CesiumRust 中，Cartesian3 = glam::DVec3、Cartesian2 = glam::DVec2、Cartesian4 = glam::DVec4
+//! 这些测试验证地理空间领域所使用的向量运算。
 
 use cesium_specs::{assert_approx, assert_vec3_epsilon, assert_vec2_epsilon, assert_vec4_epsilon, epsilon};
 use glam::{DVec2, DVec3, DVec4};

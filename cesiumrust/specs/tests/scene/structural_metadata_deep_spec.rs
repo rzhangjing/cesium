@@ -1,8 +1,8 @@
-//! Structural metadata deep specs - ported from MetadataClassPropertySpec.js,
-//! MetadataEntitySpec.js, GroupMetadataSpec.js, TilesetMetadataSpec.js
+//! 结构元数据深入规范 - 移植自 MetadataClassPropertySpec.js、
+//! MetadataEntitySpec.js、GroupMetadataSpec.js、TilesetMetadataSpec.js
 //!
-//! Tests MetadataClassProperty validation, MetadataClass, MetadataEnum,
-//! PropertyTable get/set, PropertyTexture, PropertyAttribute, StructuralMetadata container.
+//! 测试 MetadataClassProperty 校验、MetadataClass、MetadataEnum、
+//! PropertyTable get/set、PropertyTexture、PropertyAttribute、StructuralMetadata 容器。
 
 use cesium_tileset::structural_metadata::{
     MetadataClass, MetadataClassProperty, MetadataComponentType, MetadataEnum, MetadataType,
@@ -149,7 +149,7 @@ fn property_table_set_get() {
     assert_eq!(table.get_value("height", 0), Some(&MetadataValue::Float(10.5)));
     assert_eq!(table.get_value("height", 2), Some(&MetadataValue::Float(15.3)));
     assert_eq!(table.get_value("name", 1), Some(&MetadataValue::String("B".into())));
-    // Unset index returns default Bool(false) due to initialization
+    // 未设置的索引由于初始化返回默认 Bool(false)
     assert_eq!(table.get_value("name", 2), Some(&MetadataValue::Bool(false)));
     assert_eq!(table.get_value("missing", 0), None);
 }
@@ -162,7 +162,7 @@ fn property_table_count_and_ids() {
 
     let mut table = PropertyTable::new(10, class);
     assert_eq!(table.count, 10);
-    // property_count reflects values map (properties with data set)
+    // property_count 反映 values map（已设置数据的属性）
     assert_eq!(table.property_count(), 0);
     table.set_value("a", 0, MetadataValue::Int(1));
     table.set_value("b", 0, MetadataValue::Int(2));
@@ -239,28 +239,28 @@ fn structural_metadata_empty() {
 fn structural_metadata_add_and_query() {
     let mut sm = StructuralMetadata::new();
 
-    // Add class
+    // 添加 class
     let mut class = MetadataClass::new("building");
     class.add_property(MetadataClassProperty::new_scalar("height", MetadataType::Float32));
     sm.add_class(class);
 
-    // Add enum
+    // 添加 enum
     let mut e = MetadataEnum::new("use_type", MetadataType::Uint8);
     e.add_value("res", 0);
     sm.add_enum(e);
 
-    // Add property table
+    // 添加 property table
     let mut table_class = MetadataClass::new("building");
     table_class.add_property(MetadataClassProperty::new_scalar("height", MetadataType::Float32));
     let mut table = PropertyTable::new(2, table_class);
     table.set_value("height", 0, MetadataValue::Float(30.0));
     sm.add_property_table(table);
 
-    // Add property texture
+    // 添加 property texture
     let tex_class = MetadataClass::new("texture");
     sm.add_property_texture(PropertyTexture::new(tex_class));
 
-    // Add property attribute
+    // 添加 property attribute
     let attr_class = MetadataClass::new("attr");
     sm.add_property_attribute(PropertyAttribute::new(attr_class));
 

@@ -1,5 +1,5 @@
-//! Core/JulianDateSpec.js, ClockSpec.js, TimeIntervalSpec.js → Rust integration tests
-//! Tests for cesium_time crate
+//! Core/JulianDateSpec.js、ClockSpec.js、TimeIntervalSpec.js → Rust 集成测试
+//! 针对 cesium_time crate 的测试
 
 use cesium_time::{JulianDate, GregorianDate, TimeInterval, Clock, ClockRange, ClockStep};
 use cesium_specs::{assert_approx, epsilon};
@@ -8,9 +8,9 @@ use cesium_specs::{assert_approx, epsilon};
 
 #[test]
 fn test_julian_date_new() {
-    // JulianDate::new treats input as UTC and converts to TAI internally
+    // JulianDate::new 将输入视为 UTC 并在内部转换为 TAI
     let jd = JulianDate::new(2451545.0, 0.0);
-    // Verify via roundtrip through GregorianDate
+    // 通过 GregorianDate 往返验证
     let g = jd.to_gregorian_date();
     assert_eq!(g.year, 2000);
     assert_eq!(g.month, 1);
@@ -23,7 +23,7 @@ fn test_julian_date_new() {
 #[test]
 fn test_julian_date_from_date_components() {
     let jd = JulianDate::from_date_components(2000, 1, 1, 12, 0, 0, 0.0);
-    // total_days is TAI-based (includes 32s leap offset at J2000)
+    // total_days 基于 TAI（在 J2000 处包含 32 秒闰秒偏移）
     let expected = 2451545.0 + 32.0 / 86400.0;
     assert_approx!(jd.total_days(), expected, epsilon::EPSILON6);
 }
@@ -31,7 +31,7 @@ fn test_julian_date_from_date_components() {
 #[test]
 fn test_julian_date_from_date_components_epoch() {
     let jd = JulianDate::from_date_components(1970, 1, 1, 0, 0, 0, 0.0);
-    // total_days is TAI-based (includes 10s leap offset before 1972)
+    // total_days 基于 TAI（1972 年前包含 10 秒闰秒偏移）
     let expected = 2440587.5 + 10.0 / 86400.0;
     assert_approx!(jd.total_days(), expected, epsilon::EPSILON6);
 }
@@ -40,7 +40,7 @@ fn test_julian_date_from_date_components_epoch() {
 fn test_julian_date_from_gregorian_date() {
     let greg = GregorianDate::new(2000, 1, 1, 12, 0, 0, 0.0, false);
     let jd = JulianDate::from_gregorian_date(&greg);
-    // Verify via roundtrip
+    // 通过往返验证
     let result = jd.to_gregorian_date();
     assert_eq!(result.year, 2000);
     assert_eq!(result.month, 1);
@@ -77,7 +77,7 @@ fn test_julian_date_gregorian_roundtrip() {
 #[test]
 fn test_julian_date_from_unix_seconds() {
     let jd = JulianDate::from_unix_seconds(0.0);
-    // Verify via roundtrip: unix_seconds should be 0
+    // 通过往返验证：unix_seconds 应为 0
     assert_approx!(jd.to_unix_seconds(), 0.0, epsilon::EPSILON3);
 }
 

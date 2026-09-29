@@ -1,5 +1,5 @@
-//! Renderer/RenderStateSpec.js, ClearCommandSpec.js, ComputeCommandSpec.js, PassStateSpec.js
-//! → Rust integration tests
+//! Renderer/RenderStateSpec.js、ClearCommandSpec.js、ComputeCommandSpec.js、PassStateSpec.js
+//! → Rust 集成测试
 
 use cesium_scene::{
     RenderState, CullFace, DepthFunc, StencilOp, StencilState,
@@ -7,7 +7,7 @@ use cesium_scene::{
 };
 use glam::DVec4;
 
-// === RenderState presets ===
+// === RenderState 预设 ===
 
 #[test]
 fn test_render_state_default() {

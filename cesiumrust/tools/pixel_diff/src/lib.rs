@@ -19,15 +19,15 @@ use image::{DynamicImage, GenericImageView};
 /// 比对结果
 #[derive(Debug, Clone)]
 pub struct DiffMetrics {
-    /// Peak Signal-to-Noise Ratio (dB). `f64::INFINITY` when images are identical.
+    /// 峰值信噪比（dB）。两图完全相同时为 `f64::INFINITY`。
     pub psnr_db: f64,
-    /// Structural Similarity Index (0.0 – 1.0).
+    /// 结构相似性指数（0.0 – 1.0）。
     pub ssim: f64,
-    /// Mean Absolute Error per channel, normalized to [0, 1].
+    /// 每通道平均绝对误差，归一化到 [0, 1]。
     pub mean_abs_err: f64,
-    /// Whether psnr_db >= threshold.
+    /// 是否 psnr_db >= 阈值。
     pub pass: bool,
-    /// The threshold used.
+    /// 所使用的阈值。
     pub threshold: f64,
 }
 
@@ -105,7 +105,7 @@ pub fn compute_ssim(a: &[f64], b: &[f64], w: u32, h: u32) -> f64 {
     const WINDOW: u32 = 8;
     const K1: f64 = 0.01;
     const K2: f64 = 0.03;
-    // L = 1.0 (normalized)
+    // L = 1.0（归一化）
     let c1 = (K1 * 1.0).powi(2);
     let c2 = (K2 * 1.0).powi(2);
 
@@ -298,7 +298,7 @@ mod tests {
         let black = make_solid_rgb(16, 16, 0, 0, 0);
         let white = make_solid_rgb(16, 16, 255, 255, 255);
         let result = compare_images(&black, &white, 40.0).unwrap();
-        // MSE = 1.0, PSNR = 10*log10(1/1) = 0 dB
+        // MSE = 1.0，PSNR = 10*log10(1/1) = 0 dB
         assert!((result.psnr_db - 0.0).abs() < 1e-10);
         assert!(!result.pass);
         assert!((result.mean_abs_err - 1.0).abs() < 1e-10);
@@ -308,7 +308,7 @@ mod tests {
     fn psnr_known_value() {
         // MSE = 0.01 → PSNR = 10*log10(1/0.01) = 20 dB
         let a: Vec<f64> = vec![0.5; 100];
-        let b: Vec<f64> = vec![0.4; 100]; // diff = 0.1, MSE = 0.01
+        let b: Vec<f64> = vec![0.4; 100]; // diff = 0.1，MSE = 0.01
         let psnr = compute_psnr(&a, &b);
         assert!((psnr - 20.0).abs() < 1e-10);
     }
@@ -336,7 +336,7 @@ mod tests {
         let (a, w, h) = to_rgb_f64(&black);
         let (b, _, _) = to_rgb_f64(&white);
         let ssim = compute_ssim(&a, &b, w, h);
-        // SSIM for uniform black vs uniform white should be very low
+        // 纯黑 vs 纯白的均匀图，SSIM 应非常低
         assert!(ssim < 0.05);
     }
 
@@ -365,30 +365,30 @@ mod tests {
         let m = compare_images(&black, &white, 40.0).unwrap();
         let json = metrics_to_json(&m);
         assert!(json.contains("\"pass\": false"));
-        // Should not contain "inf"
+        // 不应包含 "inf"
         assert!(!json.contains("\"inf\""));
     }
 
     #[test]
     fn threshold_boundary() {
-        // PSNR exactly at threshold should pass
+        // PSNR 恰好等于阈值时应通过
         let a: Vec<f64> = vec![0.5; 3 * 16 * 16];
-        // Create b such that MSE yields exactly 20 dB PSNR
+        // 构造 b，使 MSE 恰好得出 20 dB 的 PSNR
         // PSNR = 10*log10(1/MSE) = 20 → MSE = 0.01 → diff = 0.1
         let b: Vec<f64> = vec![0.4; 3 * 16 * 16];
         let psnr = compute_psnr(&a, &b);
         assert!((psnr - 20.0).abs() < 1e-10);
-        // pass when threshold = 20.0
+        // 当阈值 = 20.0 时通过
         assert!(psnr >= 20.0);
     }
 
     #[test]
     fn small_image_ssim_fallback() {
-        // 4x4 image is smaller than 8x8 window → global SSIM
+        // 4x4 图像小于 8x8 窗口 → 全局 SSIM
         let img = make_solid_rgb(4, 4, 100, 100, 100);
         let (a, w, h) = to_rgb_f64(&img);
         let ssim = compute_ssim(&a, &a, w, h);
-        // Identical images → SSIM should be 1.0 (or very close)
+        // 相同的图 → SSIM 应为 1.0（或极其接近）
         assert!((ssim - 1.0).abs() < 1e-6);
     }
 
@@ -427,7 +427,7 @@ mod tests {
 
     #[test]
     fn rgba_image_ignores_alpha() {
-        // Create RGBA images with different alpha but same RGB
+        // 构造 RGBA 图像，alpha 不同但 RGB 相同
         let mut img1 = RgbaImage::new(16, 16);
         let mut img2 = RgbaImage::new(16, 16);
         for pixel in img1.pixels_mut() {

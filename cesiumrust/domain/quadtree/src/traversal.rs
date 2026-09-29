@@ -1,36 +1,36 @@
-//! Quadtree traversal for terrain tile selection.
+//! 用于地形瓦片选择的四叉树遍历。
 //!
-//! Maps to CesiumJS `Scene/QuadtreePrimitive.js`:
-//! - Quadtree tile traversal
-//! - Screen-space error (SSE) based LOD selection
-//! - Tile refinement decisions
+//! 映射到 CesiumJS `Scene/QuadtreePrimitive.js`：
+//! - 四叉树瓦片遍历
+//! - 基于屏幕空间误差（SSE）的 LOD 选择
+//! - 瓦片细化决策
 
 use cesium_geospatial::bounding::BoundingSphere;
 use glam::DVec3;
 
-/// A tile in the quadtree.
+/// 四叉树中的一个瓦片。
 #[derive(Debug, Clone, PartialEq)]
 pub struct QuadtreeTile {
-    /// Tile X coordinate.
+    /// 瓦片 X 坐标。
     pub x: u32,
-    /// Tile Y coordinate.
+    /// 瓦片 Y 坐标。
     pub y: u32,
-    /// Tile level (zoom).
+    /// 瓦片层级（缩放）。
     pub level: u32,
-    /// Bounding sphere of the tile.
+    /// 瓦片的包围球。
     pub bounding_sphere: BoundingSphere,
-    /// Geometric error of the tile (meters).
+    /// 瓦片的几何误差（米）。
     pub geometric_error: f64,
-    /// Whether the tile has renderable content.
+    /// 瓦片是否有可渲染内容。
     pub has_content: bool,
-    /// Whether the tile is refineable (has children).
+    /// 瓦片是否可细化（是否有子节点）。
     pub refineable: bool,
-    /// Tile state.
+    /// 瓦片状态。
     pub state: TileState,
 }
 
 impl QuadtreeTile {
-    /// Creates a new quadtree tile.
+    /// 创建一个新四叉树瓦片。
     pub fn new(
         x: u32,
         y: u32,
@@ -50,15 +50,15 @@ impl QuadtreeTile {
         }
     }
 
-    /// Computes the screen-space error for this tile.
+    /// 计算该瓦片的屏幕空间误差。
     ///
-    /// # Arguments
-    /// * `camera_position` - Camera position in world space
-    /// * `viewport_height` - Viewport height in pixels
-    /// * `fov_y` - Vertical field of view (radians)
+    /// # 参数
+    /// * `camera_position` - 相机的世界空间位置
+    /// * `viewport_height` - 视口高度（像素）
+    /// * `fov_y` - 垂直视场角（弧度）
     ///
-    /// # Returns
-    /// Screen-space error in pixels
+    /// # 返回
+    /// 屏幕空间误差（像素）
     pub fn compute_screen_space_error(
         &self,
         camera_position: DVec3,
@@ -67,14 +67,14 @@ impl QuadtreeTile {
     ) -> f64 {
         let distance = (camera_position - self.bounding_sphere.center).length()
             - self.bounding_sphere.radius;
-        let distance = distance.max(1.0); // Avoid division by zero
+        let distance = distance.max(1.0); // 避免除以零
 
         // SSE = (geometric_error * viewport_height) / (distance * 2 * tan(fov_y / 2))
         let sse_denominator = 2.0 * (fov_y / 2.0).tan();
         (self.geometric_error * viewport_height) / (distance * sse_denominator)
     }
 
-    /// Returns the children tile coordinates.
+    /// 返回子瓦片坐标。
     pub fn children_coords(&self) -> [(u32, u32); 4] {
         let child_x = self.x * 2;
         let child_y = self.y * 2;
@@ -87,34 +87,34 @@ impl QuadtreeTile {
     }
 }
 
-/// Tile loading/rendering state.
+/// 瓦片加载/渲染状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TileState {
-    /// Tile is not loaded.
+    /// 瓦片未加载。
     #[default]
     Unloaded,
-    /// Tile is being loaded.
+    /// 瓦片止在加载。
     Loading,
-    /// Tile is loaded and ready to render.
+    /// 瓦片已加载并可渲染。
     Loaded,
-    /// Tile is currently being rendered.
+    /// 瓦片当前正在渲染。
     Rendered,
-    /// Tile is refined (children are rendered instead).
+    /// 瓦片已细化（改为渲染其子节点）。
     Refined,
 }
 
-/// Quadtree traversal configuration.
+/// 四叉树遍历配置。
 #[derive(Debug, Clone)]
 pub struct QuadtreeConfig {
-    /// Maximum screen-space error threshold (pixels).
+    /// 最大屏幕空间误差阈值（像素）。
     pub maximum_screen_space_error: f64,
-    /// Maximum tile level.
+    /// 最大瓦片层级。
     pub maximum_level: u32,
-    /// Minimum tile level.
+    /// 最小瓦片层级。
     pub minimum_level: u32,
-    /// Whether to enable fog culling.
+    /// 是否启用雾敲除。
     pub fog_culling: bool,
-    /// Fog density for culling.
+    /// 用于敲除的雾密度。
     pub fog_density: f64,
 }
 
@@ -130,43 +130,43 @@ impl Default for QuadtreeConfig {
     }
 }
 
-/// Result of quadtree traversal.
+/// 四叉树遍历的结果。
 #[derive(Debug, Clone, Default)]
 pub struct TraversalResult {
-    /// Tiles to render.
+    /// 待渲染的瓦片。
     pub tiles_to_render: Vec<QuadtreeTile>,
-    /// Tiles to load.
+    /// 待加载的瓦片。
     pub tiles_to_load: Vec<QuadtreeTile>,
-    /// Total tiles visited.
+    /// 访问的瓦片总数。
     pub tiles_visited: u32,
-    /// Maximum depth reached.
+    /// 到达的最大深度。
     pub max_depth: u32,
 }
 
-/// A quadtree primitive for terrain tile management.
+/// 用于地形瓦片管理的四叉树基本体。
 ///
-/// Maps to CesiumJS `Scene/QuadtreePrimitive.js`
+/// 映射到 CesiumJS `Scene/QuadtreePrimitive.js`
 #[derive(Debug)]
 pub struct QuadtreePrimitive {
-    /// Root tiles (typically 2 for WGS84: western and eastern hemispheres).
+    /// 根瓦片（WGS84 通常为 2 个：西半球与东半球）。
     pub root_tiles: Vec<QuadtreeTile>,
-    /// Traversal configuration.
+    /// 遍历配置。
     pub config: QuadtreeConfig,
 }
 
 impl QuadtreePrimitive {
-    /// Creates a new quadtree primitive.
+    /// 创建一个新四叉树基本体。
     pub fn new(root_tiles: Vec<QuadtreeTile>, config: QuadtreeConfig) -> Self {
         Self { root_tiles, config }
     }
 
-    /// Traverses the quadtree and selects tiles for rendering.
+    /// 遍历四叉树并为渲染选择瓦片。
     ///
-    /// # Arguments
-    /// * `camera_position` - Camera position in world space
-    /// * `viewport_height` - Viewport height in pixels
-    /// * `fov_y` - Vertical field of view (radians)
-    /// * `tile_provider` - Function to get child tiles
+    /// # 参数
+    /// * `camera_position` - 相机的世界空间位置
+    /// * `viewport_height` - 视口高度（像素）
+    /// * `fov_y` - 垂直视场角（弧度）
+    /// * `tile_provider` - 获取子瓦片的函数
     pub fn traverse<F>(
         &self,
         camera_position: DVec3,
@@ -207,19 +207,19 @@ impl QuadtreePrimitive {
         result.tiles_visited += 1;
         result.max_depth = result.max_depth.max(tile.level);
 
-        // Check if tile is visible (frustum culling would go here)
-        // For now, assume all tiles are visible
+        // 检查瓦片是否可见（视锥敲除可在此实现）
+        // 目前提设所有瓦片都可见
 
-        // Compute screen-space error
+        // 计算屏幕空间误差
         let sse = tile.compute_screen_space_error(camera_position, viewport_height, fov_y);
 
-        // Check if we should refine this tile
+        // 检查是否应细化该瓦片
         let should_refine = tile.refineable
             && tile.level < self.config.maximum_level
             && sse > self.config.maximum_screen_space_error;
 
         if should_refine {
-            // Try to load and visit children
+            // 尝试加载并访问子节点
             let children_coords = tile.children_coords();
             let mut all_children_loaded = true;
 
@@ -243,12 +243,12 @@ impl QuadtreePrimitive {
                 }
             }
 
-            // If not all children are loaded, render this tile as fallback
+            // 若并非所有子节点都已加载，则回退渲染该瓦片
             if !all_children_loaded && tile.has_content {
                 result.tiles_to_render.push(tile.clone());
             }
         } else if tile.has_content {
-            // Render this tile
+            // 渲染该瓦片
             result.tiles_to_render.push(tile.clone());
         }
     }
@@ -283,13 +283,13 @@ mod tests {
         let tile = create_test_tile(0, 0, 0, 10000.0);
         let camera_position = DVec3::new(0.0, 0.0, 2000000.0);
         let viewport_height = 1080.0;
-        let fov_y = std::f64::consts::FRAC_PI_4; // 45 degrees
+        let fov_y = std::f64::consts::FRAC_PI_4; // 45 度
 
         let sse = tile.compute_screen_space_error(camera_position, viewport_height, fov_y);
 
-        // SSE should be positive and reasonable
+        // SSE 应为正且合理
         assert!(sse > 0.0);
-        assert!(sse < 10000.0); // Not absurdly large
+        assert!(sse < 10000.0); // 不应大得离谱
     }
 
     #[test]
@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn test_traversal_single_tile() {
-        let root = create_test_tile(0, 0, 0, 100.0); // Low geometric error = low SSE
+        let root = create_test_tile(0, 0, 0, 100.0); // 低几何误差 = 低 SSE
         let primitive = QuadtreePrimitive::new(
             vec![root],
             QuadtreeConfig {
@@ -344,17 +344,17 @@ mod tests {
             },
         );
 
-        let camera_position = DVec3::new(0.0, 0.0, 10000000.0); // Far away
+        let camera_position = DVec3::new(0.0, 0.0, 10000000.0); // 远处
         let result = primitive.traverse(camera_position, 1080.0, std::f64::consts::FRAC_PI_4, &|_, _, _| None);
 
-        // Should render the root tile (SSE below threshold)
+        // 应渲染根瓦片（SSE 低于阈值）
         assert_eq!(result.tiles_to_render.len(), 1);
         assert_eq!(result.tiles_visited, 1);
     }
 
     #[test]
     fn test_traversal_with_refinement() {
-        let root = create_test_tile(0, 0, 0, 1000000.0); // High geometric error = high SSE
+        let root = create_test_tile(0, 0, 0, 1000000.0); // 高几何误差 = 高 SSE
         let primitive = QuadtreePrimitive::new(
             vec![root],
             QuadtreeConfig {
@@ -364,9 +364,9 @@ mod tests {
             },
         );
 
-        let camera_position = DVec3::new(0.0, 0.0, 2000000.0); // Close
+        let camera_position = DVec3::new(0.0, 0.0, 2000000.0); // 近处
 
-        // Provide children (they will be Unloaded, so added to load queue)
+        // 提供子节点（它们将为 Unloaded，因此加入加载队列）
         let result = primitive.traverse(camera_position, 1080.0, std::f64::consts::FRAC_PI_4, &|x, y, level| {
             if level <= 2 {
                 Some(create_test_tile(x, y, level, 1000000.0 / (level as f64 + 1.0)))
@@ -375,9 +375,9 @@ mod tests {
             }
         });
 
-        // Root tile should be rendered as fallback (children not loaded)
+        // 根瓦片应作为回退被渲染（子瓦片尚未加载）
         assert_eq!(result.tiles_to_render.len(), 1);
-        // Children should be queued for loading
+        // 子瓦片应被排入加载队列
         assert_eq!(result.tiles_to_load.len(), 4);
         assert_eq!(result.tiles_visited, 1);
     }

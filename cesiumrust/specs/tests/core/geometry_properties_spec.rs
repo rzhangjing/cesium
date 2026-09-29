@@ -1,7 +1,7 @@
-//! Ported from CesiumJS EllipsoidGeometrySpec/SphereGeometrySpec/BoxGeometrySpec/
-//! CylinderGeometrySpec/RectangleOutlineGeometrySpec + GeometryPipeline extended.
+//! 移植自 CesiumJS EllipsoidGeometrySpec/SphereGeometrySpec/BoxGeometrySpec/
+//! CylinderGeometrySpec/RectangleOutlineGeometrySpec + GeometryPipeline 扩展。
 //!
-//! Mathematical property verification tests for geometry generators.
+//! 针对几何生成器的数学属性验证测试。
 
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -21,13 +21,13 @@ fn wgs84() -> Ellipsoid {
 }
 
 // ===========================================================================
-// EllipsoidGeometry - unit sphere mathematical properties
+// EllipsoidGeometry - 单位球数学属性
 // ===========================================================================
 
 #[test]
 fn ellipsoid_unit_sphere_positions_have_unit_magnitude() {
     // CesiumJS: "computes attributes for a unit sphere"
-    // For a unit sphere, all positions should have magnitude 1.0
+    // 对于单位球，所有位置的模长应为 1.0
     let geo = ellipsoid_geometry(DVec3::splat(1.0), 3, 3, VertexFormat::POSITION_AND_NORMAL);
 
     for (i, p) in geo.positions.iter().enumerate() {
@@ -43,7 +43,7 @@ fn ellipsoid_unit_sphere_positions_have_unit_magnitude() {
 
 #[test]
 fn ellipsoid_unit_sphere_normals_equal_normalized_positions() {
-    // CesiumJS: normal === normalize(position) for unit sphere
+    // CesiumJS：单位球下 normal === normalize(position)
     let geo = ellipsoid_geometry(DVec3::splat(1.0), 3, 3, VertexFormat::POSITION_AND_NORMAL);
     let normals = geo.normals.as_ref().expect("normals should be present");
 
@@ -63,7 +63,7 @@ fn ellipsoid_unit_sphere_normals_equal_normalized_positions() {
 
 #[test]
 fn ellipsoid_scaled_radii_positions_on_ellipsoid() {
-    // For radii (2, 3, 4), positions should satisfy x²/4 + y²/9 + z²/16 = 1
+    // 对于半径 (2, 3, 4)，位置应满足 x²/4 + y²/9 + z²/16 = 1
     let radii = DVec3::new(2.0, 3.0, 4.0);
     let geo = ellipsoid_geometry(radii, 8, 8, VertexFormat::POSITION_ONLY);
 
@@ -91,7 +91,7 @@ fn ellipsoid_bounding_sphere_radius_equals_max_radii() {
 
 #[test]
 fn ellipsoid_vertex_count_formula() {
-    // CesiumJS: (stacks+1) * (slices+1) vertices, stacks*slices*2 triangles
+    // CesiumJS：(stacks+1) * (slices+1) 个顶点，stacks*slices*2 个三角形
     let stacks = 6u32;
     let slices = 8u32;
     let geo = ellipsoid_geometry(DVec3::splat(1.0), stacks, slices, VertexFormat::POSITION_ONLY);
@@ -103,7 +103,7 @@ fn ellipsoid_vertex_count_formula() {
 }
 
 // ===========================================================================
-// SphereGeometry - radius scaling
+// SphereGeometry - 半径缩放
 // ===========================================================================
 
 #[test]
@@ -157,12 +157,12 @@ fn sphere_tex_coords_in_unit_range() {
 }
 
 // ===========================================================================
-// BoxGeometry - mathematical properties
+// BoxGeometry - 数学属性
 // ===========================================================================
 
 #[test]
 fn box_bounding_sphere_center_is_midpoint() {
-    // CesiumJS: boundingSphere.center === Cartesian3.ZERO for symmetric box
+    // CesiumJS：对称盒子的 boundingSphere.center === Cartesian3.ZERO
     let min = DVec3::new(-2.0, -3.0, -4.0);
     let max = DVec3::new(2.0, 3.0, 4.0);
     let geo = box_geometry(min, max, VertexFormat::POSITION_ONLY);
@@ -190,7 +190,7 @@ fn box_bounding_sphere_radius_is_half_diagonal() {
 
 #[test]
 fn box_normals_perpendicular_to_faces() {
-    // Each face normal should be axis-aligned (one component ±1, others 0)
+    // 每个面法线应与坐标轴对齐（一个分量为 ±1，其余为 0）
     let geo = box_geometry(
         DVec3::new(-1.0, -1.0, -1.0),
         DVec3::new(1.0, 1.0, 1.0),
@@ -200,9 +200,9 @@ fn box_normals_perpendicular_to_faces() {
 
     for (i, n) in normals.iter().enumerate() {
         let nrm = DVec3::new(n[0], n[1], n[2]);
-        // Should be unit length
+        // 应为单位长度
         assert!((nrm.length() - 1.0).abs() < 1e-10, "normal[{}] not unit", i);
-        // Should be axis-aligned: max component should be 1.0
+        // 应与坐标轴对齐：最大分量应为 1.0
         let max_comp = nrm.x.abs().max(nrm.y.abs()).max(nrm.z.abs());
         assert!(
             (max_comp - 1.0).abs() < 1e-10,
@@ -218,7 +218,7 @@ fn box_positions_at_correct_corners() {
     let max = DVec3::new(1.0, 2.0, 3.0);
     let geo = box_geometry(min, max, VertexFormat::POSITION_ONLY);
 
-    // All positions should have coordinates at min or max for each axis
+    // 每条轴上所有位置的坐标都应取 min 或 max
     for (i, p) in geo.positions.iter().enumerate() {
         let x_ok = (p[0] - min.x).abs() < 1e-10 || (p[0] - max.x).abs() < 1e-10;
         let y_ok = (p[1] - min.y).abs() < 1e-10 || (p[1] - max.y).abs() < 1e-10;
@@ -233,7 +233,7 @@ fn box_positions_at_correct_corners() {
 
 #[test]
 fn box_24_vertices_36_indices() {
-    // CesiumJS: 24 vertices (6 faces × 4), 36 indices (12 triangles × 3)
+    // CesiumJS：24 个顶点（6 面 × 4），36 个索引（12 三角形 × 3）
     let geo = box_geometry(
         DVec3::new(-1.0, -1.0, -1.0),
         DVec3::new(1.0, 1.0, 1.0),
@@ -244,7 +244,7 @@ fn box_24_vertices_36_indices() {
 }
 
 // ===========================================================================
-// CylinderGeometry - cone and bounding sphere
+// CylinderGeometry - 圆锥与包围球
 // ===========================================================================
 
 #[test]
@@ -252,7 +252,7 @@ fn cylinder_cone_top_radius_zero_positions() {
     // CesiumJS: "computes positions with topRadius equals 0"
     let geo = cylinder_geometry(2.0, 0.0, 1.0, 3, VertexFormat::POSITION_ONLY);
 
-    // Top vertices should all be at (0, 0, half_length)
+    // 顶部顶点应全部位于 (0, 0, half_length)
     let half_length = 1.0;
     let top_verts: Vec<_> = geo
         .positions
@@ -326,7 +326,7 @@ fn cylinder_side_vertices_on_radius() {
 }
 
 // ===========================================================================
-// RectangleOutlineGeometry - extended
+// RectangleOutlineGeometry - 扩展
 // ===========================================================================
 
 #[test]
@@ -338,7 +338,7 @@ fn rectangle_outline_positions_on_ellipsoid() {
     assert!(!geo.positions.is_empty());
     assert_eq!(geo.primitive_type, PrimitiveType::Lines);
 
-    // All positions should be on the ellipsoid surface
+    // 所有位置应位于椭球表面上
     for (i, p) in geo.positions.iter().enumerate() {
         let pos = DVec3::new(p[0], p[1], p[2]);
         let surface = ell.scale_to_geodetic_surface(pos).unwrap_or(pos);
@@ -353,7 +353,7 @@ fn rectangle_outline_indices_form_line_pairs() {
     let geo = rectangle_outline_geometry(&rect, &wgs84(), std::f64::consts::PI / 180.0);
 
     assert_eq!(geo.indices.len() % 2, 0, "indices must form line pairs");
-    // All indices should reference valid positions
+    // 所有索引应引用有效位置
     let max_idx = geo.positions.len() as u32;
     for &idx in &geo.indices {
         assert!(idx < max_idx, "index {} out of range", idx);
@@ -394,7 +394,7 @@ fn rectangle_outline_bounding_sphere_contains_all() {
 }
 
 // ===========================================================================
-// Outline geometries - structural properties
+// 轮廓几何 - 结构属性
 // ===========================================================================
 
 #[test]
@@ -408,11 +408,11 @@ fn box_outline_8_vertices_12_edges() {
 #[test]
 fn ellipsoid_outline_three_great_circles() {
     let geo = ellipsoid_outline_geometry(DVec3::splat(1.0), 8, 8);
-    // 3 circles: (slices+1) + (stacks+1) + (stacks+1) vertices
+    // 3 个圆：(slices+1) + (stacks+1) + (stacks+1) 个顶点
     let expected = (8 + 1) + (8 + 1) + (8 + 1);
     assert_eq!(geo.positions.len(), expected);
     assert_eq!(geo.primitive_type, PrimitiveType::Lines);
-    // All positions on unit sphere
+    // 所有位置位于单位球上
     for p in &geo.positions {
         let mag = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
         assert!((mag - 1.0).abs() < 1e-10, "outline position should be on unit sphere");
@@ -423,7 +423,7 @@ fn ellipsoid_outline_three_great_circles() {
 fn cylinder_outline_two_circles_plus_verticals() {
     let slices = 8u32;
     let geo = cylinder_outline_geometry(2.0, 1.0, 1.0, slices);
-    // 2 circles: (slices+1)*2 vertices + verticals: slices.min(16)*2
+    // 2 个圆：(slices+1)*2 个顶点 + 竖线：slices.min(16)*2
     let circle_verts = (slices + 1) * 2;
     let num_verticals = slices.min(16);
     let vertical_verts = num_verticals * 2;
@@ -436,21 +436,21 @@ fn cylinder_outline_two_circles_plus_verticals() {
 fn plane_outline_4_vertices_4_edges() {
     let geo = plane_outline_geometry();
     assert_eq!(geo.positions.len(), 4);
-    assert_eq!(geo.indices.len(), 8); // 4 edges × 2
+    assert_eq!(geo.indices.len(), 8); // 4 条边 × 2
     assert_eq!(geo.primitive_type, PrimitiveType::Lines);
-    // All in z=0 plane
+    // 全部位于 z=0 平面
     for p in &geo.positions {
         assert!(p[2].abs() < 1e-10, "plane outline should be in z=0");
     }
 }
 
 // ===========================================================================
-// GeometryPipeline - extended property tests
+// GeometryPipeline - 扩展属性测试
 // ===========================================================================
 
 #[test]
 fn combine_geometries_drops_mixed_attributes() {
-    // If one geometry has normals and another doesn't, result drops normals
+    // 若一个几何体有法线而另一个没有，结果会丢弃法线
     let geo_with = box_geometry(
         DVec3::new(-1.0, -1.0, -1.0),
         DVec3::new(1.0, 1.0, 1.0),
@@ -490,13 +490,13 @@ fn combine_geometries_preserves_shared_attributes() {
 
 #[test]
 fn combine_geometries_offsets_indices() {
-    let geo1 = plane_geometry(VertexFormat::POSITION_ONLY); // 4 verts, 6 indices
-    let geo2 = plane_geometry(VertexFormat::POSITION_ONLY); // 4 verts, 6 indices
+    let geo1 = plane_geometry(VertexFormat::POSITION_ONLY); // 4 顶点、6 索引
+    let geo2 = plane_geometry(VertexFormat::POSITION_ONLY); // 4 顶点、6 索引
 
     let combined = combine_geometries(&[geo1, geo2]);
     assert_eq!(combined.positions.len(), 8);
     assert_eq!(combined.indices.len(), 12);
-    // Second geometry indices should be offset by 4
+    // 第二个几何体的索引应偏移 4
     assert!(combined.indices[6] >= 4, "second geo indices should be offset");
 }
 
@@ -514,7 +514,7 @@ fn combine_geometries_bounding_sphere_encompasses_all() {
     );
 
     let combined = combine_geometries(&[geo1, geo2]);
-    // Bounding sphere should contain all positions
+    // 包围球应包含所有位置
     for p in &combined.positions {
         let pos = DVec3::new(p[0], p[1], p[2]);
         let dist = (pos - combined.bounding_sphere.center).length();
@@ -527,14 +527,14 @@ fn combine_geometries_bounding_sphere_encompasses_all() {
 
 #[test]
 fn reorder_removes_unused_vertices_and_remaps() {
-    // Create geometry with unused vertices
+    // 创建一个含未使用顶点的几何体
     let mut geo = GeometryData {
         positions: vec![
-            [0.0, 0.0, 0.0], // 0 - used
-            [1.0, 0.0, 0.0], // 1 - used
-            [0.0, 1.0, 0.0], // 2 - used
-            [5.0, 5.0, 5.0], // 3 - UNUSED
-            [1.0, 1.0, 0.0], // 4 - used
+            [0.0, 0.0, 0.0], // 0 - 已使用
+            [1.0, 0.0, 0.0], // 1 - 已使用
+            [0.0, 1.0, 0.0], // 2 - 已使用
+            [5.0, 5.0, 5.0], // 3 - 未使用
+            [1.0, 1.0, 0.0], // 4 - 已使用
         ],
         normals: None,
         tex_coords: None,
@@ -547,7 +547,7 @@ fn reorder_removes_unused_vertices_and_remaps() {
 
     reorder_for_pre_vertex_cache(&mut geo);
     assert_eq!(geo.positions.len(), 4, "unused vertex should be removed");
-    // All indices should be valid
+    // 所有索引应有效
     for &idx in &geo.indices {
         assert!((idx as usize) < geo.positions.len());
     }
@@ -571,9 +571,9 @@ fn create_line_segments_doubles_positions() {
     assert_eq!(geo.indices.len(), 6, "should have 3 line segments × 2 indices");
     assert_eq!(geo.primitive_type, PrimitiveType::Lines);
 
-    // End points should be offset by normal * length
+    // 端点应按 normal * length 偏移
     let end0 = DVec3::new(geo.positions[1][0], geo.positions[1][1], geo.positions[1][2]);
-    let expected_end0 = DVec3::new(0.0, 0.0, 2.0); // origin + (0,0,1)*2
+    let expected_end0 = DVec3::new(0.0, 0.0, 2.0); // 原点 + (0,0,1)*2
     assert!((end0 - expected_end0).length() < 1e-10);
 }
 
@@ -610,15 +610,15 @@ fn compute_tangent_bitangent_orthogonal_to_normal() {
         let t = DVec3::from(tangents[i]);
         let b = DVec3::from(bitangents[i]);
 
-        // tangent ⊥ normal
+        // 切线 ⊥ 法线
         let nt_dot = n.dot(t).abs();
         assert!(nt_dot < 1e-6, "tangent[{}] should be ⊥ normal, dot={}", i, nt_dot);
 
-        // bitangent ⊥ normal
+        // 副切线 ⊥ 法线
         let nb_dot = n.dot(b).abs();
         assert!(nb_dot < 1e-6, "bitangent[{}] should be ⊥ normal, dot={}", i, nb_dot);
 
-        // bitangent = cross(normal, tangent)
+        // 副切线 = cross(normal, tangent)
         let expected_b = n.cross(t);
         let diff = (b - expected_b).length();
         assert!(diff < 1e-6, "bitangent[{}] should = cross(n,t), diff={}", i, diff);

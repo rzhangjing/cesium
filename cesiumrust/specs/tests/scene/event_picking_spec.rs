@@ -1,5 +1,5 @@
-//! Event Aggregator + Picking specs
-//! Ported from CesiumJS Scene/CameraEventAggregatorSpec.js + Scene/SceneSpec.js (pick)
+//! 事件聚合 + 拾取规范
+//! 移植自 CesiumJS Scene/CameraEventAggregatorSpec.js + Scene/SceneSpec.js（pick）
 
 use cesium_camera::Camera;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -80,7 +80,7 @@ fn aggregate_movement_reset_frame_clears_motion() {
     m.reset_frame();
     assert!(!m.is_moving);
     assert_eq!(m.movement, DVec2::ZERO);
-    // button still down
+    // 按钮仍按下
     assert!(m.is_button_down);
 }
 
@@ -129,7 +129,7 @@ fn event_aggregator_reset_preserves_button_state() {
     agg.mouse_move(MouseButton::Middle, DVec2::new(30.0, 40.0));
     assert!(agg.is_moving(CameraEventType::MiddleDrag));
 
-    // New frame
+    // 新帧
     agg.reset(1.0 / 60.0);
     assert!(!agg.is_moving(CameraEventType::MiddleDrag));
     assert!(agg.is_button_down(MouseButton::Middle));
@@ -153,7 +153,7 @@ fn event_aggregator_unknown_event_returns_zero() {
     assert!(!agg.is_moving(CameraEventType::LeftDrag));
 }
 
-// ==================== Picking: Viewport ====================
+// ==================== 拾取：Viewport ====================
 
 #[test]
 fn viewport_aspect_ratio() {
@@ -169,7 +169,7 @@ fn window_center_computation() {
     assert!((c.y - 300.0).abs() < 1e-10);
 }
 
-// ==================== Picking: get_pick_ray ====================
+// ==================== 拾取：get_pick_ray ====================
 
 fn test_camera() -> Camera {
     Camera::new(
@@ -184,7 +184,7 @@ fn pick_ray_center_points_toward_earth() {
     let camera = test_camera();
     let vp = Viewport::new(800.0, 600.0);
     let ray = get_pick_ray(DVec2::new(400.0, 300.0), &vp, &camera).unwrap();
-    // Direction should be roughly -X
+    // 方向应大致为 -X
     assert!(ray.direction.x < -0.9);
 }
 
@@ -205,7 +205,7 @@ fn pick_ray_corner_differs_from_center() {
     assert!(dot < 0.999);
 }
 
-// ==================== Picking: pick_ellipsoid ====================
+// ==================== 拾取：pick_ellipsoid ====================
 
 #[test]
 fn pick_ellipsoid_hit_on_surface() {
@@ -213,7 +213,7 @@ fn pick_ellipsoid_hit_on_surface() {
     let vp = Viewport::new(800.0, 600.0);
     let ray = get_pick_ray(DVec2::new(400.0, 300.0), &vp, &camera).unwrap();
     let hit = pick_ellipsoid(&ray, &Ellipsoid::WGS84).unwrap();
-    // Verify on surface
+    // 验证在表面上
     let radii = Ellipsoid::WGS84.radii();
     let norm = DVec3::new(hit.x / radii.x, hit.y / radii.y, hit.z / radii.z);
     assert!((norm.length() - 1.0).abs() < 1e-6);
@@ -230,16 +230,16 @@ fn pick_ellipsoid_ray_away_misses() {
 
 #[test]
 fn pick_ellipsoid_tangent_ray() {
-    // Ray tangent to the surface (just barely misses)
+    // 射线与表面相切（恰好擦过）
     let ray = Ray::new(
         DVec3::new(6378137.0, 6378137.0 * 2.0, 0.0),
         DVec3::new(0.0, 1.0, 0.0),
     );
-    // Should miss (far from surface in Y direction)
+    // 应未命中（在 Y 方向远离表面）
     assert!(pick_ellipsoid(&ray, &Ellipsoid::WGS84).is_none());
 }
 
-// ==================== Picking: world_to_screen ====================
+// ==================== 拾取：world_to_screen ====================
 
 #[test]
 fn world_to_screen_point_in_front() {
@@ -247,7 +247,7 @@ fn world_to_screen_point_in_front() {
     let vp = Viewport::new(800.0, 600.0);
     let point = DVec3::new(6378137.0 * 2.0, 0.0, 0.0);
     let screen = world_to_screen(point, &vp, &camera).unwrap();
-    // Should be near center
+    // 应靠近中心
     assert!((screen.x - 400.0).abs() < 50.0);
     assert!((screen.y - 300.0).abs() < 50.0);
 }

@@ -1,43 +1,42 @@
-//! Offline disk-backed terrain fetcher (heightmap-1.0 format).
+//! 离线磁盘支撑的地形获取器（heightmap-1.0 格式）。
 //!
-//! Implements the [`TerrainProvider`] port by reading `.terrain` tiles from a
-//! local directory laid out as `{root}/{level}/{x}/{y}.terrain`, mirroring the
-//! viewer-demo offline heightmap fixture (blueprint:
-//! `cesium-rs/examples/viewer-demo/src/main.rs` L638-686, `ensure_offline_terrain`).
+//! 通过从本地目录读取 `.terrain` 瓦片来实现 [`TerrainProvider`] 驱动端口，
+//! 目录布局为 `{root}/{level}/{x}/{y}.terrain`，与 viewer-demo 的离线
+//! heightmap fixture 相对应（参考实现：
+//! `cesium-rs/examples/viewer-demo/src/main.rs` L638-686，`ensure_offline_terrain`）。
 //!
-//! # On-disk format: heightmap-1.0
+//! # 磁盘格式：heightmap-1.0
 //!
-//! Each tile is a `65×65` grid of `u16`-LE encoded heights followed by one
-//! childTileMask byte and one water-mask byte (`65*65*2 + 2 = 8452` bytes
-//! total). The metric height is recovered as
+//! 每个瓦片都是一个 `65×65` 的 `u16`-LE 编码高度网格，后跟一个
+//! childTileMask 字节和一个 water-mask 字节（共 `65*65*2 + 2 = 8452`
+//! 字节）。度量高度按如下方式还原：
 //!
 //! ```text
 //! height_m = encoded / 5 - 1000
 //! ```
 //!
-//! which is the inverse of the blueprint's `encode_terrain_height`
-//! (`encoded = (height_m + 1000) * 5`).
+//! 这正是参考实现中 `encode_terrain_height`（`encoded = (height_m + 1000) * 5`）
+//! 的逆变换。
 //!
-//! # Y-order convention
+//! # Y 序约定
 //!
-//! [`TerrainScheme::Tms`] stores row `y = 0` at the **south** pole (the
-//! heightmap-1.0 / `layer.json` `"scheme": "tms"` default), so the disk row is
-//! `(1 << level) - 1 - y_geo`. [`TerrainScheme::Geographic`] stores row 0 at
-//! the north (no flip). The viewer-demo fixture writes TMS on disk.
+//! [`TerrainScheme::Tms`] 将行 `y = 0` 存于**南**极（即 heightmap-1.0 /
+//! `layer.json` 的 `"scheme": "tms"` 默认），因此磁盘行为
+//! `(1 << level) - 1 - y_geo`。[`TerrainScheme::Geographic`] 将行 0 存于
+//! 北极（不做翻转）。viewer-demo fixture 向磁盘写入 TMS。
 //!
-//! # Geometry contract (IO layer, f64 preserved)
+//! # 几何契约（IO 层，保留 f64）
 //!
-//! The decoded [`GeometryData`] places vertices on a unit tile frame:
-//! `u ∈ [-1, 1]` west→east, `v ∈ [-1, 1]` north→south (row 0 = north), and
-//! `z = height_m`. Indices form a `64×64` triangle grid. All values stay
-//! `f64` — the IO layer never downcasts to `f32` (that happens only at the
-//! GPU boundary).
+//! 解码后的 [`GeometryData`] 将顶点置于一个单位瓦片坐标系上：
+//! `u ∈ [-1, 1]` 西→东，`v ∈ [-1, 1]` 北→南（行 0 = 北），且
+//! `z = height_m`。索引构成一个 `64×64` 的三角形网格。所有值均保持
+//! `f64` —— IO 层从不向下转换到 `f32`（那只在 GPU 边界才发生）。
 //!
-//! # STRICT_OFFLINE contract
+//! # STRICT_OFFLINE 契约
 //!
-//! [`FileTerrainFetcher::from_layer_url`] panics when STRICT_OFFLINE is
-//! enabled and the `layer.json` URL is an `http://`/`https://` URL — the
-//! offline path has no network fallback.
+//! 当启用 STRICT_OFFLINE 且 `layer.json` URL 是一个 `http://`/`https://`
+//! URL 时，[`FileTerrainFetcher::from_layer_url`] 会 panic —— 离线路径
+//! 没有网络回退。
 
 use cesium_geospatial::geometry::PrimitiveType;
 use cesium_geospatial::{BoundingSphere, GeometryData, Rectangle};
@@ -47,27 +46,27 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-/// Heightmap grid width (heightmap-1.0 default; blueprint `TERRAIN_GRID_SIZE`).
+/// Heightmap 网格宽度（heightmap-1.0 默认；参考实现的 `TERRAIN_GRID_SIZE`）。
 const HEIGHTMAP_GRID_SIZE: usize = 65;
-/// Total byte size of one heightmap-1.0 tile (`65*65` u16 + childTileMask + waterMask).
+/// 单个 heightmap-1.0 瓦片的总字节数（`65*65` u16 + childTileMask + waterMask）。
 const HEIGHTMAP_TILE_BYTES: usize = HEIGHTMAP_GRID_SIZE * HEIGHTMAP_GRID_SIZE * 2 + 2;
-/// heightmap-1.0 decode scale: `height_m = encoded / 5 - 1000`.
+/// heightmap-1.0 解码缩放：`height_m = encoded / 5 - 1000`。
 const HEIGHTMAP_SCALE: f64 = 1.0 / 5.0;
-/// heightmap-1.0 decode offset (meters).
+/// heightmap-1.0 解码偏移（米）。
 const HEIGHTMAP_OFFSET: f64 = -1000.0;
 
-/// On-disk y-order convention for terrain tiles.
+/// 地形瓦片在磁盘上的 y 序约定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerrainScheme {
-    /// TMS: row `y = 0` stored at the **south** pole; the disk row is
-    /// `(1 << level) - 1 - y_geo`. This is the heightmap-1.0 / `layer.json`
-    /// `"scheme": "tms"` default used by the viewer-demo fixture.
+    /// TMS：行 `y = 0` 存于**南**极；磁盘行为
+    /// `(1 << level) - 1 - y_geo`。这是 viewer-demo fixture 使用的
+    /// heightmap-1.0 / `layer.json` `"scheme": "tms"` 默认。
     Tms,
-    /// Geographic: row `y = 0` stored at the **north** pole (no flip).
+    /// Geographic：行 `y = 0` 存于**北**极（不做翻转）。
     Geographic,
 }
 
-/// Offline terrain fetcher reading heightmap-1.0 tiles from a local directory.
+/// 从本地目录读取 heightmap-1.0 瓦片的离线地形获取器。
 #[derive(Debug, Clone)]
 pub struct FileTerrainFetcher {
     root: PathBuf,
@@ -78,11 +77,11 @@ pub struct FileTerrainFetcher {
 }
 
 impl FileTerrainFetcher {
-    /// Creates a fetcher rooted at `root`.
+    /// 创建一个以 `root` 为根的获取器。
     ///
-    /// `maximum_level` is the deepest level served (the viewer-demo fixture
-    /// uses `4`). The rectangle defaults to the full globe
-    /// ([`Rectangle::MAX_VALUE`]).
+    /// `maximum_level` 是所提供服务的最深层级（viewer-demo fixture
+    /// 使用 `4`）。rectangle 默认为整地球
+    /// （[`Rectangle::MAX_VALUE`]）。
     pub fn new(root: impl AsRef<Path>, scheme: TerrainScheme, maximum_level: u32) -> Self {
         Self {
             root: root.as_ref().to_path_buf(),
@@ -93,30 +92,29 @@ impl FileTerrainFetcher {
         }
     }
 
-    /// Enables STRICT_OFFLINE semantics: a network `layer.json` URL passed to
-    /// [`Self::from_layer_url`] triggers an immediate panic.
+    /// 启用 STRICT_OFFLINE 语义：传给 [`Self::from_layer_url`] 的网络
+    /// `layer.json` URL 会触发立即 panic。
     pub fn with_strict_offline(mut self, strict: bool) -> Self {
         self.strict_offline = strict;
         self
     }
 
-    /// Overrides the covered rectangle (default: full globe).
+    /// 覆盖所覆盖的 rectangle（默认：整地球）。
     pub fn with_rectangle(mut self, rectangle: Rectangle) -> Self {
         self.rectangle = rectangle;
         self
     }
 
-    /// Loads a fetcher from a `layer.json` URL.
+    /// 从 `layer.json` URL 加载一个获取器。
     ///
-    /// Only `file://` URLs are supported; the root directory is the parent of
-    /// `layer.json`. The `maximum_level` is read from the JSON's `maxzoom`
-    /// field when present, defaulting to `0`.
+    /// 仅支持 `file://` URL；根目录是 `layer.json` 的父目录。当 JSON 中存在
+    /// `maxzoom` 字段时，`maximum_level` 从其读取，默认为 `0`。
     ///
-    /// # Panics
+    /// # Panic
     ///
-    /// Panics if `strict_offline` is `true` and `layer_json_url` is an
-    /// `http://`/`https://` URL — the STRICT_OFFLINE contract forbids network
-    /// fallback.
+    /// 当 `strict_offline` 为 `true` 且 `layer_json_url` 是一个
+    /// `http://`/`https://` URL 时 panic —— STRICT_OFFLINE 契约禁止网络
+    /// 回退。
     pub fn from_layer_url(
         layer_json_url: &str,
         scheme: TerrainScheme,
@@ -149,23 +147,23 @@ impl FileTerrainFetcher {
         })
     }
 
-    /// Root directory of the terrain tileset.
+    /// 地形瓦片集的根目录。
     pub fn root(&self) -> &Path {
         &self.root
     }
 
-    /// Active y-order scheme.
+    /// 当前启用的 y 序方案。
     pub fn scheme(&self) -> TerrainScheme {
         self.scheme
     }
 
-    /// Whether STRICT_OFFLINE semantics are active.
+    /// STRICT_OFFLINE 语义是否处于激活状态。
     pub fn strict_offline(&self) -> bool {
         self.strict_offline
     }
 
-    /// Resolves the disk path of tile `(x, y, level)`, applying the TMS y-flip
-    /// when [`TerrainScheme::Tms`] is active.
+    /// 解析瓦片 `(x, y, level)` 的磁盘路径，当 [`TerrainScheme::Tms`]
+    /// 处于激活时应用 TMS 的 y 翻转。
     fn tile_path(&self, x: u32, y: u32, level: u32) -> PathBuf {
         let disk_y = match self.scheme {
             TerrainScheme::Tms => (1u32 << level).saturating_sub(1).saturating_sub(y),
@@ -177,7 +175,7 @@ impl FileTerrainFetcher {
             .join(format!("{}.terrain", disk_y))
     }
 
-    /// Reads and decodes one heightmap-1.0 tile into a [`GeometryData`].
+    /// 读取并解码一个 heightmap-1.0 瓦片为 [`GeometryData`]。
     fn read_tile(&self, x: u32, y: u32, level: u32) -> PortResult<GeometryData> {
         let path = self.tile_path(x, y, level);
         let bytes = std::fs::read(&path).map_err(|e| {
@@ -221,7 +219,7 @@ impl TerrainProvider for FileTerrainFetcher {
                 )))
             });
         }
-        // Read synchronously; the future resolves on first poll (offline IO).
+        // 同步读取；future 在首次 poll 时即完成（离线 IO）。
         let result = self.read_tile(x, y, level);
         Box::pin(async move { result })
     }
@@ -234,11 +232,11 @@ impl TerrainProvider for FileTerrainFetcher {
     }
 }
 
-/// Decodes a heightmap-1.0 payload into a [`GeometryData`] grid.
+/// 将一个 heightmap-1.0 载荷解码为 [`GeometryData`] 网格。
 ///
-/// The payload must be at least [`HEIGHTMAP_TILE_BYTES`] bytes: a `65×65`
-/// grid of `u16`-LE encoded heights, then one childTileMask byte and one
-/// water-mask byte (the two mask bytes are ignored for geometry).
+/// 载荷至少要有 [`HEIGHTMAP_TILE_BYTES`] 字节：一个 `65×65` 的 `u16`-LE
+/// 编码高度网格，然后一个 childTileMask 字节和一个 water-mask 字节（两个
+/// mask 字节对几何而言被忽略）。
 fn decode_heightmap(bytes: &[u8]) -> PortResult<GeometryData> {
     if bytes.len() < HEIGHTMAP_TILE_BYTES {
         return Err(PortError::Decode(format!(
@@ -255,14 +253,14 @@ fn decode_heightmap(bytes: &[u8]) -> PortResult<GeometryData> {
             let i = (row * grid + col) * 2;
             let encoded = u16::from_le_bytes([bytes[i], bytes[i + 1]]);
             let height = encoded as f64 * HEIGHTMAP_SCALE + HEIGHTMAP_OFFSET;
-            // Unit tile frame: u ∈ [-1, 1] west→east, v ∈ [-1, 1] north→south
-            // (row 0 = north), z = height in meters. f64 throughout.
+            // 单位瓦片坐标系：u ∈ [-1, 1] 西→东，v ∈ [-1, 1] 北→南
+            // （行 0 = 北），z = 高度（米）。全程 f64。
             let u = (col as f64 / last) * 2.0 - 1.0;
             let v = 1.0 - (row as f64 / last) * 2.0;
             positions.push([u, v, height]);
         }
     }
-    // 64×64 triangle grid (two triangles per cell).
+    // 64×64 三角形网格（每单元格两个三角形）。
     let mut indices: Vec<u32> = Vec::with_capacity((grid - 1) * (grid - 1) * 6);
     for row in 0..(grid - 1) {
         for col in 0..(grid - 1) {
@@ -286,9 +284,9 @@ fn decode_heightmap(bytes: &[u8]) -> PortResult<GeometryData> {
     })
 }
 
-/// Computes a bounding sphere enclosing all positions (AABB center + max
-/// distance). Avoids a glam dependency in the hot path by working on
-/// `[f64; 3]` directly.
+/// 计算一个包裹所有位置的包围球（AABB 中心 + 最大
+/// 距离）。通过直接在 `[f64; 3]` 上运算来避免热路径上的
+/// glam 依赖。
 fn sphere_from_positions(positions: &[[f64; 3]]) -> BoundingSphere {
     if positions.is_empty() {
         return BoundingSphere {
@@ -329,17 +327,17 @@ fn sphere_from_positions(positions: &[[f64; 3]]) -> BoundingSphere {
     }
 }
 
-/// Returns `true` when `url` starts with `http://` or `https://`
-/// (case-insensitive).
+/// 当 `url` 以 `http://` 或 `https://` 开头时返回 `true`
+/// （大小写不敏感）。
 fn is_http_url(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();
     lower.starts_with("http://") || lower.starts_with("https://")
 }
 
-/// Converts a `layer.json` URL to a filesystem path.
+/// 将一个 `layer.json` URL 转换为文件系统路径。
 ///
-/// Accepts `file:///abs/path/layer.json`, bare absolute paths, and relative
-/// paths. Network URLs are rejected (the offline fetcher has no HTTP backend).
+/// 接受 `file:///abs/path/layer.json`、裸的绝对路径以及相对路径。网络
+/// URL 会被拒绝（离线获取器没有 HTTP 后端）。
 fn layer_url_to_path(url: &str) -> PortResult<PathBuf> {
     let tail = if let Some(idx) = url.find("://") {
         let scheme = &url[..idx];
@@ -350,9 +348,9 @@ fn layer_url_to_path(url: &str) -> PortResult<PathBuf> {
             )));
         }
         let after = &url[idx + 3..];
-        // file:///abs/path → /abs/path (keep leading slash); on Windows
-        // file:///C:/path → C:/path (drop the leading slash so the drive
-        // letter becomes the path prefix).
+        // file:///abs/path → /abs/path（保留前导斜杠）；在 Windows 上
+        // file:///C:/path → C:/path（去掉前导斜杠，好让盘符
+        // 成为路径前缀）。
         match after.find('/') {
             Some(slash) => strip_windows_drive_slash(&after[slash..]),
             None => after,
@@ -368,9 +366,8 @@ fn layer_url_to_path(url: &str) -> PortResult<PathBuf> {
     Ok(PathBuf::from(tail))
 }
 
-/// On Windows, a `file:///C:/path` URL yields a tail of `/C:/path`; the
-/// leading slash must be dropped so the drive letter becomes the path
-/// prefix. POSIX tails (`/abs/path`) are returned unchanged.
+/// 在 Windows 上，`file:///C:/path` URL 产生的尾部为 `/C:/path`；必须去掉
+/// 前导斜杠，好让盘符成为路径前缀。POSIX 尾部（`/abs/path`）原样返回。
 fn strip_windows_drive_slash(tail: &str) -> &str {
     let b = tail.as_bytes();
     if b.len() >= 3 && b[0] == b'/' && b[2] == b':' && b[1].is_ascii_alphabetic() {
@@ -380,17 +377,17 @@ fn strip_windows_drive_slash(tail: &str) -> &str {
     }
 }
 
-/// Reads the `maxzoom` field from a `layer.json` file. Returns `None` when
-/// the file is absent or the field is missing/unparseable.
+/// 从 `layer.json` 文件读取 `maxzoom` 字段。当文件缺失或该字段
+/// 不存在/无法解析时返回 `None`。
 ///
-/// A minimal scan (no JSON dependency): finds `"maxzoom"` and parses the
-/// following integer. Sufficient for the deterministic offline fixture.
+/// 一次极简扫描（无 JSON 依赖）：找到 `"maxzoom"` 并解析其后的
+/// 整数。对于确定性的离线 fixture 已足够。
 fn read_maxzoom(layer_json: &Path) -> Option<u32> {
     let text = std::fs::read_to_string(layer_json).ok()?;
     let key = "\"maxzoom\"";
     let start = text.find(key)? + key.len();
     let rest = &text[start..];
-    // Skip whitespace and the ':' separator, then collect digits.
+    // 跳过空白和 ':' 分隔符，然后收集数字。
     let digits: String = rest
         .chars()
         .skip_while(|c| !c.is_ascii_digit())
@@ -400,7 +397,7 @@ fn read_maxzoom(layer_json: &Path) -> Option<u32> {
 }
 
 // ============================================================================
-// Tests
+// 测试
 // ============================================================================
 
 #[cfg(test)]
@@ -423,30 +420,30 @@ mod tests {
         dir
     }
 
-    /// Encodes a metric height into the heightmap-1.0 u16 domain
-    /// (inverse of `decode_heightmap`: `encoded = (height_m + 1000) * 5`).
+    /// 将一个度量高度编码到 heightmap-1.0 的 u16 域
+    /// （`decode_heightmap` 的逆变换：`encoded = (height_m + 1000) * 5`）。
     fn encode_height(height_m: f64) -> u16 {
         ((height_m + 1000.0) * 5.0).round() as u16
     }
 
-    /// Builds a heightmap-1.0 tile payload from a `65×65` grid of metric
-    /// heights (row-major, row 0 = north), plus the two trailing mask bytes.
+    /// 从一个 `65×65` 的度量高度网格（行优先，行 0 = 北）加两个尾部的
+    /// mask 字节，构造一个 heightmap-1.0 瓦片载荷。
     fn build_heightmap_payload(heights: &[f64; HEIGHTMAP_GRID_SIZE * HEIGHTMAP_GRID_SIZE]) -> Vec<u8> {
         let mut buffer: Vec<u8> = Vec::with_capacity(HEIGHTMAP_TILE_BYTES);
         for h in heights {
             buffer.extend_from_slice(&encode_height(*h).to_le_bytes());
         }
-        buffer.push(0x0F); // childTileMask: all four children
-        buffer.push(0); // water mask: all land
+        buffer.push(0x0F); // childTileMask：四个子瓦片均存在
+        buffer.push(0); // water mask：全为陆地
         buffer
     }
 
-    /// A flat tile at `height_m` everywhere.
+    /// 处处都为 `height_m` 的平坦瓦片。
     fn flat_heights(height_m: f64) -> [f64; HEIGHTMAP_GRID_SIZE * HEIGHTMAP_GRID_SIZE] {
         [height_m; HEIGHTMAP_GRID_SIZE * HEIGHTMAP_GRID_SIZE]
     }
 
-    // --- helpers -------------------------------------------------------------
+    // --- 辅助函数 -------------------------------------------------------------
 
     #[test]
     fn test_is_http_url() {
@@ -494,7 +491,7 @@ mod tests {
         assert_eq!(read_maxzoom(&path), None);
     }
 
-    // --- heightmap decode ----------------------------------------------------
+    // --- heightmap 解码 ----------------------------------------------------
 
     #[test]
     fn test_decode_heightmap_flat() {
@@ -506,11 +503,11 @@ mod tests {
             (HEIGHTMAP_GRID_SIZE - 1) * (HEIGHTMAP_GRID_SIZE - 1) * 6
         );
         assert_eq!(geom.primitive_type, PrimitiveType::Triangles);
-        // Every vertex sits at height 100 m (± u16 rounding).
+        // 每个顶点都位于高度 100 m（± u16 舍入）。
         for p in &geom.positions {
             assert!((p[2] - 100.0).abs() < 0.21, "height {} off", p[2]);
         }
-        // Corner UVs span the unit tile frame.
+        // 角点的 UV 覆盖整个单位瓦片坐标系。
         let first = geom.positions[0];
         assert!((first[0] - (-1.0)).abs() < 1e-9);
         assert!((first[1] - 1.0).abs() < 1e-9);
@@ -521,7 +518,7 @@ mod tests {
 
     #[test]
     fn test_decode_heightmap_ramp() {
-        // West→east ramp matching the blueprint fixture (height = 300 * u).
+        // 与参考实现 fixture 一致的西→东斜坡（height = 300 * u）。
         let mut heights = [0.0f64; HEIGHTMAP_GRID_SIZE * HEIGHTMAP_GRID_SIZE];
         for row in 0..HEIGHTMAP_GRID_SIZE {
             for col in 0..HEIGHTMAP_GRID_SIZE {
@@ -531,7 +528,7 @@ mod tests {
         }
         let payload = build_heightmap_payload(&heights);
         let geom = decode_heightmap(&payload).unwrap();
-        // West edge (col 0) ≈ 0 m, east edge (col 64) ≈ 300 m.
+        // 西边缘（col 0）≈ 0 m，东边缘（col 64）≈ 300 m。
         let west = geom.positions[0][2];
         let east = geom.positions[HEIGHTMAP_GRID_SIZE - 1][2];
         assert!((west - 0.0).abs() < 0.21, "west {}", west);
@@ -551,16 +548,16 @@ mod tests {
         assert_eq!(s.radius, 0.0);
     }
 
-    // --- tile_path / TMS flip ------------------------------------------------
+    // --- tile_path / TMS 翻转 ------------------------------------------------
 
     #[test]
     fn test_tile_path_tms_flips_y() {
         let dir = unique_temp_dir("tile-path-tms");
         let fetcher = FileTerrainFetcher::new(&dir, TerrainScheme::Tms, 4);
-        // level 2 → 4 rows; geographic y=0 (north) → disk y=3.
+        // level 2 → 4 行；geographic y=0（北）→ 磁盘 y=3。
         let path = fetcher.tile_path(1, 0, 2);
         assert_eq!(path, dir.join("2").join("1").join("3.terrain"));
-        // geographic y=3 (south) → disk y=0.
+        // geographic y=3（南）→ 磁盘 y=0。
         let path = fetcher.tile_path(1, 3, 2);
         assert_eq!(path, dir.join("2").join("1").join("0.terrain"));
     }
@@ -613,15 +610,15 @@ mod tests {
             FileTerrainFetcher::from_layer_url(&url, TerrainScheme::Tms, true).unwrap();
         assert_eq!(fetcher.maximum_level(), 3);
         assert!(fetcher.strict_offline());
-        // The resolved root must point back at the same directory on disk
-        // (separator-agnostic: works on Windows and POSIX).
+        // 解析出的 root 必须回指磁盘上的同一个目录
+        // （与分隔符无关：在 Windows 和 POSIX 上都能工作）。
         assert!(fetcher.root().join("layer.json").is_file());
     }
 
     #[test]
     fn test_from_layer_url_not_strict_rejects_https_with_error() {
-        // Without STRICT_OFFLINE, an https URL is still rejected (no HTTP
-        // backend) but as a PortError rather than a panic.
+        // 不开 STRICT_OFFLINE 时，https URL 仍会被拒绝（无 HTTP
+        // 后端），但以 PortError 而非 panic 的形式。
         let err = FileTerrainFetcher::from_layer_url(
             "https://example.com/terrain/layer.json",
             TerrainScheme::Tms,
@@ -631,12 +628,12 @@ mod tests {
         assert!(matches!(err, PortError::NotFound(_)));
     }
 
-    // --- end-to-end request_tile_geometry ------------------------------------
+    // --- 端到端 request_tile_geometry ------------------------------------
 
     #[tokio::test]
     async fn test_request_tile_geometry_returns_grid() {
         let dir = unique_temp_dir("request-geom");
-        // Write a level-0 TMS tile: geographic (0,0) → disk y = 0.
+        // 写入一个 level-0 的 TMS 瓦片：geographic (0,0) → 磁盘 y = 0。
         std::fs::create_dir_all(dir.join("0").join("0")).unwrap();
         let payload = build_heightmap_payload(&flat_heights(50.0));
         std::fs::write(dir.join("0").join("0").join("0.terrain"), &payload).unwrap();
@@ -668,12 +665,12 @@ mod tests {
         let dir = unique_temp_dir("availability");
         std::fs::create_dir_all(dir.join("1").join("0")).unwrap();
         let payload = build_heightmap_payload(&flat_heights(0.0));
-        // level 1 TMS: geographic (0,0) → disk y = 1.
+        // level 1 TMS：geographic (0,0) → 磁盘 y = 1。
         std::fs::write(dir.join("1").join("0").join("1.terrain"), &payload).unwrap();
 
         let fetcher = FileTerrainFetcher::new(&dir, TerrainScheme::Tms, 4);
         assert!(fetcher.get_availability(0, 0, 1));
-        assert!(!fetcher.get_availability(1, 0, 1)); // disk y=0 absent
+        assert!(!fetcher.get_availability(1, 0, 1)); // 磁盘 y=0 不存在
         assert!(!fetcher.get_availability(0, 0, 9)); // level > max
     }
 

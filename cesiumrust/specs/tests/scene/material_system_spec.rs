@@ -1,7 +1,7 @@
-//! Material system specs - ported from Scene/MaterialSpec.js
+//! 材质系统规范 - 移植自 Scene/MaterialSpec.js
 //!
-//! Tests MaterialSystem, FabricTemplate, Material, MaterialComponents,
-//! UniformValue, TranslucentSpec, and built-in materials.
+//! 测试 MaterialSystem、FabricTemplate、Material、MaterialComponents、
+//! UniformValue、TranslucentSpec 及内置材质。
 
 use cesium_material::{
     FabricTemplate, MaterialComponents, MaterialOptions, MaterialSystem,
@@ -57,7 +57,7 @@ fn material_components_iter_canonical_order() {
     );
 }
 
-// ─── FabricTemplate from JSON ────────────────────────────────────────────────
+// ─── 从 JSON 构造 FabricTemplate ────────────────────────────────────────────────
 
 #[test]
 fn fabric_template_from_json_with_type() {
@@ -100,7 +100,7 @@ fn fabric_template_from_json_with_source() {
 
 #[test]
 fn fabric_template_validate_source_and_components_exclusive() {
-    // Both source and components should be rejected
+    // source 和 components 应都被拒绝
     let json_val = json!({
         "source": "czm_material czm_getMaterial(czm_materialInput input) { ... }",
         "components": {
@@ -108,11 +108,11 @@ fn fabric_template_validate_source_and_components_exclusive() {
         }
     });
     let result = FabricTemplate::from_json(&json_val);
-    // Should either fail validation or handle gracefully
+    // 应校验失败或优雅处理
     match result {
-        Err(_) => {} // Expected - validation should reject
+        Err(_) => {} // 预期 - 校验应拒绝
         Ok(t) => {
-            // If it doesn't reject, validate() should catch it
+            // 若未拒绝，validate() 应捕获它
             let v = t.validate();
             assert!(v.is_err(), "source+components should be invalid");
         }
@@ -127,9 +127,9 @@ fn fabric_template_validate_rejects_unknown_component() {
         }
     });
     let result = FabricTemplate::from_json(&json_val);
-    // Should either fail parsing or validation
+    // 应解析或校验失败
     match result {
-        Err(_) => {} // Expected
+        Err(_) => {} // 预期
         Ok(t) => {
             let v = t.validate();
             assert!(v.is_err(), "unknown component should fail validation");
@@ -153,7 +153,7 @@ fn fabric_template_merge_over() {
     let base = FabricTemplate::from_json(&base_json).unwrap();
     let mut overlay = FabricTemplate::from_json(&overlay_json).unwrap();
     overlay.merge_over(&base);
-    // Overlay uniforms should win
+    // 覆盖的 uniforms 应生效
     assert!(overlay.uniforms.contains_key("color"));
     assert!(overlay.uniforms.contains_key("strength"));
 }
@@ -256,7 +256,7 @@ fn material_is_translucent_with_alpha() {
         ..Default::default()
     };
     let mat = sys.create_material(opts).unwrap();
-    // Material with alpha < 1.0 should be translucent
+    // alpha < 1.0 的材质应为半透明
     assert!(mat.is_translucent());
 }
 
@@ -355,12 +355,12 @@ fn uniform_value_ivector3() {
     }
 }
 
-// ─── Built-in material types ─────────────────────────────────────────────────
+// ─── 内置材质类型 ─────────────────────────────────────────────────
 
 #[test]
 fn builtin_material_types_available() {
     let sys = MaterialSystem::with_builtin_materials();
-    // Check some common built-in material types
+    // 检查一些常见的内置材质类型
     let expected_types = ["Color", "DiffuseMap", "NormalMap", "Water", "Grid"];
     for type_name in &expected_types {
         assert!(
@@ -396,7 +396,7 @@ fn builtin_material_grid_has_uniforms() {
     assert!(!mat.uniforms().is_empty(), "Grid should have uniforms");
 }
 
-// ─── FabricTemplate edge cases ───────────────────────────────────────────────
+// ─── FabricTemplate 边缘情形 ───────────────────────────────────────────────
 
 #[test]
 fn fabric_template_empty_json() {

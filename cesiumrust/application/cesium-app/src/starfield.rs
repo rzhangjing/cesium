@@ -1,17 +1,17 @@
-//! Starfield background — renders stars on a large celestial sphere.
+//! 星野背景 —— 在一个巨大的天球上渲染星星。
 //!
-//! Uses the domain-layer `StarSphere` builtin catalog for bright stars,
-//! plus procedurally scattered dim stars for a realistic night sky.
+//! 使用领域层的 `StarSphere` 内置星表提供亮星，
+//! 加上过程化散布的暗星，构成逼真的夜空。
 //!
-//! ALL stars are merged into ONE mesh (camera-facing quads) so the whole
-//! sky costs a single draw call — spawning one entity per star would add
-//! ~1500 draw calls and tank the frame rate.
+//! 所有恒星都合并到一个 mesh（面向 camera 的 quad）中，使整片天空
+//! 只花费一次 draw call —— 每颗恒星 spawn 一个实体会多出
+//! ~1500 次 draw call 并拖垮帧率。
 
 use bevy::image::{ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
 use cesium_atmosphere::StarSphere;
 
-/// Plugin that spawns the starfield.
+/// spawn 星野的插件。
 pub struct StarfieldPlugin;
 
 impl Plugin for StarfieldPlugin {
@@ -20,7 +20,7 @@ impl Plugin for StarfieldPlugin {
     }
 }
 
-/// Simple deterministic hash-based pseudo-random [0, 1).
+/// 简单的确定性 hash 伪随机 [0, 1)。
 fn hash_rand(seed: u32) -> f32 {
     let mut x = seed.wrapping_mul(1664525).wrapping_add(1013904223);
     x ^= x >> 16;
@@ -29,9 +29,9 @@ fn hash_rand(seed: u32) -> f32 {
     (x & 0x00FF_FFFF) as f32 / 16777216.0
 }
 
-/// Appends one camera-facing quad (4 verts / 2 tris) centered at `center`
-/// with half-size `size`. The quad plane is perpendicular to the radial
-/// direction, so it always faces a camera near the origin.
+/// 追加一个以 `center` 为中心、半尺寸为 `size` 的面向 camera 的 quad
+/// （4 顶点 / 2 三角）。quad 平面垂直于径向，因此它总朝向
+/// 靠近原点的 camera。
 fn push_star_quad(
     positions: &mut Vec<[f32; 3]>,
     normals: &mut Vec<[f32; 3]>,
@@ -41,7 +41,7 @@ fn push_star_quad(
     size: f32,
 ) {
     let radial = center.normalize();
-    // Tangent frame in the plane perpendicular to the radial direction.
+    // 垂直于径向的平面内的切标架。
     let up = if radial.dot(Vec3::Z).abs() > 0.95 {
         Vec3::X
     } else {
@@ -66,9 +66,8 @@ fn push_star_quad(
     indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
-/// Procedural 64x64 star sprite: bright round core with a soft gaussian
-/// halo fading to fully transparent, so the camera-facing quads read as
-/// round glows instead of solid white squares.
+/// 过程化的 64x64 星点 sprite：明亮的圆形核心带一个向全透明淡出的
+/// 柔和高斯晕光，使面向 camera 的 quad 读作圆形光晕而非白色实心方块。
 fn make_star_sprite(images: &mut Assets<Image>) -> Handle<Image> {
     const N: u32 = 64;
     let mut data = Vec::with_capacity((N * N * 4) as usize);
@@ -76,7 +75,7 @@ fn make_star_sprite(images: &mut Assets<Image>) -> Handle<Image> {
     for y in 0..N {
         for x in 0..N {
             let d = (((x as f32 - c).powi(2) + (y as f32 - c).powi(2)).sqrt() / c).min(1.0);
-            // Sharp core + wide faint halo, clamped to 1.
+            // 锐利核心 + 宽大微弱晕光，钳位到 1。
             let a = (-(d / 0.22).powi(2)).exp() + 0.28 * (-(d / 0.62).powi(2)).exp();
             let a = a.min(1.0);
             data.push(255);
@@ -118,10 +117,10 @@ fn setup_starfield(
     let mut uvs: Vec<[f32; 2]> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
 
-    // --- Bright stars from domain catalog ---
+    // --- 来自领域星表的亮星 ---
     let star_sphere = StarSphere::with_builtin_catalog();
     for star in star_sphere.visible_stars() {
-        // Convert RA/Dec to 3D position on celestial sphere
+        // 将 RA/Dec 转换为天球上的 3D 位置
         let ra = star.right_ascension as f32;
         let dec = star.declination as f32;
         let pos = Vec3::new(
@@ -129,18 +128,18 @@ fn setup_starfield(
             radius * dec.sin(),
             radius * dec.cos() * ra.sin(),
         );
-        // Brighter stars (lower magnitude) -> larger glow quad. Sized so the
-        // brightest star spans only a few pixels at the default view.
+        // 更亮的星（星等越低）-> 更大的光晕 quad。尺寸设定使最亮的星
+        // 在默认视图下仅跨几个像素。
         let half = 0.08 + 0.03 * (6.0 - star.magnitude as f32).max(0.0);
         push_star_quad(&mut positions, &mut normals, &mut uvs, &mut indices, pos, half);
     }
 
-    // --- Procedural dim stars (~1500 random points) ---
+    // --- 过程化暗星（~1500 个随机点）---
     let dim_count = 1500u32;
     for i in 0..dim_count {
-        // Uniform distribution on sphere via hash
-        let theta = hash_rand(i * 3 + 1) * std::f32::consts::TAU; // azimuth
-        let phi = (hash_rand(i * 3 + 2) * 2.0 - 1.0).acos(); // polar
+        // 通过 hash 在球面上均匀分布
+        let theta = hash_rand(i * 3 + 1) * std::f32::consts::TAU; // 方位角
+        let phi = (hash_rand(i * 3 + 2) * 2.0 - 1.0).acos(); // 极角
         let pos = Vec3::new(
             radius * phi.sin() * theta.cos(),
             radius * phi.cos(),
@@ -163,12 +162,12 @@ fn setup_starfield(
         base_color: Color::WHITE,
         base_color_texture: Some(make_star_sprite(&mut images)),
         unlit: true,
-        // Alpha-blended round glow; the quad corners are fully transparent.
+        // Alpha 混合的圆形光晕；quad 四角完全透明。
         alpha_mode: AlphaMode::Blend,
-        cull_mode: None, // Visible from both sides
+        cull_mode: None, // 两侧都可见
         ..default()
     });
 
-    // ONE entity / ONE draw call for the entire sky.
+    // 整个天空：一个实体 / 一次 draw call。
     commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(star_material)));
 }

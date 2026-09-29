@@ -1,5 +1,5 @@
-//! VoxelEllipsoidShape extended tests — sampling, bounds, visibility edge cases
-//! Additional ports from CesiumJS VoxelEllipsoidShapeSpec.js
+//! VoxelEllipsoidShape 扩展测试——采样、边界、可见性边缘情形
+//! 补充移植自 CesiumJS VoxelEllipsoidShapeSpec.js
 
 use cesium_voxel::{VoxelEllipsoidShape, VoxelShape};
 use glam::{DMat4, DQuat, DVec3};
@@ -24,7 +24,7 @@ fn assert_vec3_eq(a: DVec3, b: DVec3, msg: &str) {
 }
 
 // ============================================================================
-// Default state
+// 默认状态
 // ============================================================================
 
 #[test]
@@ -42,7 +42,7 @@ fn test_custom_radii() {
 }
 
 // ============================================================================
-// UV space transform
+// UV 空间变换
 // ============================================================================
 
 #[test]
@@ -50,13 +50,13 @@ fn test_convert_local_to_shape_uv_space_default() {
     let mut shape = VoxelEllipsoidShape::new();
     shape.update(DMat4::IDENTITY, ellipsoid_default_min(), ellipsoid_default_max(), None, None);
 
-    // Min corner → (0, 0, 0)
+    // 最小角点 → (0, 0, 0)
     let uv = shape.convert_local_to_shape_uv_space(ellipsoid_default_min());
     assert!(uv.x.abs() < EPSILON12, "uv_min.x: {}", uv.x);
     assert!(uv.y.abs() < EPSILON12, "uv_min.y: {}", uv.y);
     assert!(uv.z.abs() < EPSILON12, "uv_min.z: {}", uv.z);
 
-    // Max corner → (1, 1, 1)
+    // 最大角点 → (1, 1, 1)
     let uv = shape.convert_local_to_shape_uv_space(ellipsoid_default_max());
     assert!((uv.x - 1.0).abs() < EPSILON12, "uv_max.x: {}", uv.x);
     assert!((uv.y - 1.0).abs() < EPSILON12, "uv_max.y: {}", uv.y);
@@ -80,7 +80,7 @@ fn test_convert_local_to_shape_uv_space_north_america() {
 }
 
 // ============================================================================
-// OBB tile computation
+// OBB 瓦片计算
 // ============================================================================
 
 #[test]
@@ -89,9 +89,9 @@ fn test_compute_obb_for_tile_equator() {
     let model_matrix = DMat4::IDENTITY;
     shape.update(model_matrix, ellipsoid_default_min(), ellipsoid_default_max(), None, None);
 
-    // Level 1, tile (0, 0, 0) → longitude [-PI, 0], latitude [-PI/2, 0], height [-1, 0]
+    // 第 1 级，瓦片 (0, 0, 0) → 经度 [-PI, 0]，纬度 [-PI/2, 0]，高度 [-1, 0]
     let obb = shape.compute_obb_for_tile(1, 0, 0, 0);
-    // Should be in the "southwest" octant near negative X
+    // 应位于接近负 X 的"西南"卦限
     assert!(obb.center.x < 0.0, "center.x should be negative");
 }
 
@@ -101,14 +101,14 @@ fn test_compute_obb_for_tile_north_pole() {
     let model_matrix = DMat4::IDENTITY;
     shape.update(model_matrix, ellipsoid_default_min(), ellipsoid_default_max(), None, None);
 
-    // Level 1, tile (0, 1, 0) → longitude [-PI, 0], latitude [0, PI/2], height [-1, 0]
+    // 第 1 级，瓦片 (0, 1, 0) → 经度 [-PI, 0]，纬度 [0, PI/2]，高度 [-1, 0]
     let obb = shape.compute_obb_for_tile(1, 0, 1, 0);
-    // Should be in the "northwest" octant — center near negative X, positive Z
+    // 应位于"西北"卦限——中心接近负 X、正 Z
     assert!(obb.center.z > 0.0, "center.z should be positive for north");
 }
 
 // ============================================================================
-// Visibility: zero scale
+// 可见性：零缩放
 // ============================================================================
 
 #[test]
@@ -128,7 +128,7 @@ fn test_invisible_zero_scale_two_components() {
 }
 
 // ============================================================================
-// Bounding sphere
+// 包围球
 // ============================================================================
 
 #[test]
@@ -142,7 +142,7 @@ fn test_bounding_sphere_all_horizons() {
 }
 
 // ============================================================================
-// Update with rotation
+// 带旋转的更新
 // ============================================================================
 
 #[test]
@@ -157,8 +157,8 @@ fn test_update_with_rotation() {
     assert!(visible);
 
     let obb = shape.oriented_bounding_box();
-    // Center may not equal translation exactly for ellipsoid shape
-    // Just verify non-zero and shape transform preserved
+    // 椭球形状下中心可能不恰好等于平移量
+    // 仅验证非零且形状变换被保留
     assert!(obb.center.length() > 0.0);
     assert_eq!(shape.shape_transform(), model);
 }

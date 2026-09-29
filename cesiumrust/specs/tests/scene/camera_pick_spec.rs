@@ -1,6 +1,6 @@
-//! Camera picking and pixel size tests.
-//! Ported from CesiumJS CameraSpec.js: getPickRay orthographic, getPixelSize,
-//! distanceToBoundingSphere, getPickRay with lookAt.
+//! 相机拾取与像素大小测试。
+//! 移植自 CesiumJS CameraSpec.js：getPickRay 正射、getPixelSize、
+//! distanceToBoundingSphere、带 lookAt 的 getPickRay。
 
 use cesium_camera::{Camera, Frustum};
 use cesium_geospatial::{
@@ -14,17 +14,17 @@ const EPSILON9: f64 = 1e-9;
 const EPSILON6: f64 = 1e-6;
 
 fn default_camera() -> Camera {
-    // Same as CesiumJS test setup: position=(0,0,1), dir=(0,0,-1), up=(0,1,0)
+    // 与 CesiumJS 测试设置相同：position=(0,0,1), dir=(0,0,-1), up=(0,1,0)
     Camera::new(DVec3::Z, -DVec3::Z, DVec3::Y)
 }
 
 // ============================================================================
-// getPickRay orthographic
+// getPickRay 正射
 // ============================================================================
 
 #[test]
 fn test_get_pick_ray_orthographic_3d() {
-    // Ported from: "get pick ray orthographic in 3D"
+    // 移植自: "get pick ray orthographic in 3D"
     let mut camera = default_camera();
     camera.frustum = Frustum::Orthographic(OrthographicFrustum::new(20.0, 1.0, 1.0, 21.0));
 
@@ -61,7 +61,7 @@ fn test_get_pick_ray_orthographic_3d() {
 
 #[test]
 fn test_get_pick_ray_orthographic_center() {
-    // Pick ray at center of screen should have origin = camera position
+    // 屏幕中心的拾取射线应有 origin = 相机位置
     let mut camera = default_camera();
     camera.frustum = Frustum::Orthographic(OrthographicFrustum::new(20.0, 1.0, 1.0, 21.0));
 
@@ -74,7 +74,7 @@ fn test_get_pick_ray_orthographic_center() {
         .get_pick_ray_orthographic(window_x, window_y, canvas_width, canvas_height)
         .expect("should produce a ray");
 
-    // At center: x_ndc=0, y_ndc=0 → origin = camera position
+    // 在中心：x_ndc=0, y_ndc=0 → origin = 相机位置
     let expected_origin = DVec3::new(0.0, 0.0, 1.0);
     assert!(
         (ray.origin - expected_origin).length() < EPSILON14,
@@ -91,17 +91,17 @@ fn test_get_pick_ray_orthographic_center() {
 
 #[test]
 fn test_get_pick_ray_orthographic_returns_none_for_perspective() {
-    let camera = default_camera(); // default is perspective
+    let camera = default_camera(); // 默认为透视
     let result = camera.get_pick_ray_orthographic(100.0, 100.0, 512.0, 384.0);
     assert!(result.is_none());
 }
 
 #[test]
 fn test_get_pick_ray_dispatches_perspective() {
-    let camera = default_camera(); // perspective frustum
+    let camera = default_camera(); // 透视视锥
     let ray = camera.get_pick_ray(256.0, 192.0, 512.0, 384.0);
     assert!(ray.is_some());
-    // At center of screen, direction should be camera direction
+    // 在屏幕中心，direction 应为相机 direction
     let ray = ray.unwrap();
     assert!(
         (ray.direction - DVec3::new(0.0, 0.0, -1.0)).length() < EPSILON10,
@@ -116,7 +116,7 @@ fn test_get_pick_ray_dispatches_orthographic() {
     camera.frustum = Frustum::Orthographic(OrthographicFrustum::new(20.0, 1.0, 1.0, 21.0));
     let ray = camera.get_pick_ray(256.0, 192.0, 512.0, 384.0);
     assert!(ray.is_some());
-    // At center, orthographic ray origin = camera position, direction = camera direction
+    // 在中心，正射射线 origin = 相机位置，direction = 相机 direction
     let ray = ray.unwrap();
     assert!(
         (ray.origin - DVec3::new(0.0, 0.0, 1.0)).length() < EPSILON14,
@@ -131,9 +131,9 @@ fn test_get_pick_ray_dispatches_orthographic() {
 
 #[test]
 fn test_get_pixel_size_perspective() {
-    // Ported from: "getPixelSize"
+    // 移植自: "getPixelSize"
     let camera = default_camera();
-    // Default perspective: fov=60°, aspect=16/9, near=1, far=500M
+    // 默认透视：fov=60°, aspect=16/9, near=1, far=500M
 
     let sphere = BoundingSphere::new(DVec3::ZERO, 0.5);
     let drawing_buffer_width = 1024.0;
@@ -146,7 +146,7 @@ fn test_get_pixel_size_perspective() {
     let distance = camera.distance_to_bounding_sphere(&sphere);
     assert!((distance - 0.5).abs() < EPSILON10, "distance: {}", distance);
 
-    // Expected: max(pixelWidth, pixelHeight)
+    // 期望值：max(pixelWidth, pixelHeight)
     // tan_phi = tan(30°) ≈ 0.5774
     // tan_theta = (16/9) * tan(30°) ≈ 1.0264
     // pixelWidth = 2*1*0.5*1.0264/1024 ≈ 0.001003
@@ -208,7 +208,7 @@ fn test_get_pixel_size_with_pixel_ratio() {
 
 #[test]
 fn test_distance_to_bounding_sphere() {
-    // Ported from: "distanceToBoundingSphere"
+    // 移植自: "distanceToBoundingSphere"
     let camera = default_camera();
     // Camera at (0,0,1), direction (0,0,-1)
     // Sphere at origin, radius 0.5
@@ -227,7 +227,7 @@ fn test_distance_to_bounding_sphere() {
 #[test]
 fn test_distance_to_bounding_sphere_behind() {
     let camera = default_camera();
-    // Sphere behind camera
+    // 球体在相机后方
     let sphere = BoundingSphere::new(DVec3::new(0.0, 0.0, 5.0), 0.5);
     let distance = camera.distance_to_bounding_sphere(&sphere);
     // to_center = sphere.center - camera.pos = (0,0,4)
@@ -241,23 +241,23 @@ fn test_distance_to_bounding_sphere_behind() {
 }
 
 // ============================================================================
-// getPickRay with lookAt
+// 带 lookAt 的 getPickRay
 // ============================================================================
 
 #[test]
 fn test_get_pick_ray_with_look_at_perspective_3d() {
-    // Ported from: "get pick ray with lookAt perspective in 3D"
+    // 移植自: "get pick ray with lookAt perspective in 3D"
     let ellipsoid = Ellipsoid::WGS84;
     let mut camera = default_camera();
 
-    // lookAt target=(6378137,0,0) with Cartesian3 offset (0,-1,0)
+    // lookAt target=(6378137,0,0)，带 Cartesian3 偏移 (0,-1,0)
     let target = DVec3::new(6378137.0, 0.0, 0.0);
     let offset = DVec3::new(0.0, -1.0, 0.0);
     camera.look_at_offset(target, offset, &ellipsoid);
 
     let canvas_width = 512.0;
     let canvas_height = 384.0;
-    // Pick at bottom center
+    // 在底部中心拾取
     let window_x = canvas_width / 2.0;
     let window_y = canvas_height;
 
@@ -265,7 +265,7 @@ fn test_get_pick_ray_with_look_at_perspective_3d() {
         .get_pick_ray_perspective(window_x, window_y, canvas_width, canvas_height)
         .expect("should produce a ray");
 
-    // After lookAt:
+    // lookAt 之后：
     // ENU at (6378137,0,0): east=(0,1,0), north=(0,0,1), up=(1,0,0)
     // transform = ENU matrix
     // local position = offset = (0,-1,0)
@@ -293,7 +293,7 @@ fn test_get_pick_ray_with_look_at_perspective_3d() {
     let tan_phi = (std::f64::consts::PI / 6.0).tan(); // tan(30°)
     let expected_dir = DVec3::new(-tan_phi, 0.0, 1.0).normalize();
 
-    // Verify origin
+    // 验证 origin
     let expected_origin = DVec3::new(6378137.0, 0.0, -1.0);
     assert!(
         (ray.origin - expected_origin).length() < EPSILON6,
@@ -302,7 +302,7 @@ fn test_get_pick_ray_with_look_at_perspective_3d() {
         expected_origin
     );
 
-    // Verify direction
+    // 验证 direction
     assert!(
         (ray.direction - expected_dir).length() < EPSILON9,
         "direction: {:?}, expected: {:?}",
@@ -313,7 +313,7 @@ fn test_get_pick_ray_with_look_at_perspective_3d() {
 
 #[test]
 fn test_get_pick_ray_with_look_at_center() {
-    // Pick ray at center of screen after lookAt should be camera direction
+    // lookAt 后屏幕中心的拾取射线应为相机 direction
     let ellipsoid = Ellipsoid::WGS84;
     let mut camera = default_camera();
 
@@ -327,7 +327,7 @@ fn test_get_pick_ray_with_look_at_center() {
         .get_pick_ray_perspective(canvas_width / 2.0, canvas_height / 2.0, canvas_width, canvas_height)
         .expect("should produce a ray");
 
-    // At center: x_ndc=0, y_ndc=0 → direction = normalize(dirWC * near) = dirWC
+    // 在中心：x_ndc=0, y_ndc=0 → direction = normalize(dirWC * near) = dirWC
     let expected_dir = camera.direction_wc();
     assert!(
         (ray.direction - expected_dir).length() < EPSILON10,
@@ -339,7 +339,7 @@ fn test_get_pick_ray_with_look_at_center() {
 
 #[test]
 fn test_get_pick_ray_with_look_at_hpr() {
-    // Use lookAt with HeadingPitchRange, then get pick ray
+    // 使用带 HeadingPitchRange 的 lookAt，然后获取拾取射线
     let ellipsoid = Ellipsoid::WGS84;
     let mut camera = default_camera();
 
@@ -353,7 +353,7 @@ fn test_get_pick_ray_with_look_at_hpr() {
         .get_pick_ray(canvas_width / 2.0, canvas_height / 2.0, canvas_width, canvas_height)
         .expect("should produce a ray");
 
-    // At center, pick ray direction = camera directionWC
+    // 在中心，拾取射线 direction = 相机 directionWC
     let expected_dir = camera.direction_wc();
     assert!(
         (ray.direction - expected_dir).length() < EPSILON10,
@@ -362,7 +362,7 @@ fn test_get_pick_ray_with_look_at_hpr() {
         expected_dir
     );
 
-    // Origin should be camera positionWC
+    // origin 应为相机 positionWC
     let expected_origin = camera.position_wc();
     assert!(
         (ray.origin - expected_origin).length() < EPSILON10,
@@ -373,12 +373,12 @@ fn test_get_pick_ray_with_look_at_hpr() {
 }
 
 // ============================================================================
-// Frustum pixel_dimensions verification
+// 视锥 pixel_dimensions 验证
 // ============================================================================
 
 #[test]
 fn test_perspective_pixel_dimensions_formula() {
-    // Verify the formula matches CesiumJS PerspectiveOffCenterFrustum.getPixelDimensions
+    // 验证公式与 CesiumJS PerspectiveOffCenterFrustum.getPixelDimensions 一致
     let frustum = PerspectiveFrustum::new(
         cesium_geospatial::math_utils::to_radians(60.0),
         16.0 / 9.0,
@@ -393,7 +393,7 @@ fn test_perspective_pixel_dimensions_formula() {
 
     let (pw, ph) = frustum.pixel_dimensions(width, height, distance, pixel_ratio);
 
-    // CesiumJS formula:
+    // CesiumJS 公式：
     // top = near * tan(fovy/2) = 1 * tan(30°)
     // pixelHeight = 2 * pixelRatio * distance * (top/near) / drawingBufferHeight
     //             = 2 * 1 * 1000 * tan(30°) / 768
@@ -417,12 +417,12 @@ fn test_perspective_pixel_dimensions_formula() {
 
 #[test]
 fn test_orthographic_pixel_dimensions_formula() {
-    // Verify the formula matches CesiumJS OrthographicOffCenterFrustum.getPixelDimensions
+    // 验证公式与 CesiumJS OrthographicOffCenterFrustum.getPixelDimensions 一致
     let frustum = OrthographicFrustum::new(20.0, 2.0, 1.0, 100.0);
 
     let (pw, ph) = frustum.pixel_dimensions(1024.0, 768.0, 50.0, 1.0);
 
-    // CesiumJS formula:
+    // CesiumJS 公式：
     // frustumWidth = right - left = width = 20
     // frustumHeight = top - bottom = height = width/aspect = 10
     // pixelWidth = pixelRatio * frustumWidth / drawingBufferWidth = 1*20/1024

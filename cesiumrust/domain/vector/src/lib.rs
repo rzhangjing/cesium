@@ -1,9 +1,9 @@
-//! cesium-vector: Vector data formats (WKT, TopoJSON, 3D Tiles Vector).
+//! cesium-vector：矢量数据格式（WKT、TopoJSON、3D Tiles Vector）。
 //!
-//! Domain layer - pure Rust, f64 precision.
+//! 领域层 —— 纯 Rust，f64 精度。
 //!
-//! CesiumJS mapping:
-//! - WKT geometry parsing
+//! CesiumJS 映射：
+//! - WKT 几何解析
 //! - `ThirdParty/topojson.js` → topojson
 //! - `Scene/Vector3DTileContent.js` → vector_3d_tile
 

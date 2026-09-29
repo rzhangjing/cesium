@@ -1,8 +1,8 @@
-//! GlobeSurface extended specs - ported from GlobeSpec.js
+//! GlobeSurface 扩展 specs - 移植自 GlobeSpec.js
 //!
-//! Tests NearFarScalar interpolation, GlobeSurface ray picking,
-//! horizon distance/dip angle, visible hemisphere, tile SSE computation,
-//! GlobeTranslucency, ShadowMode, GlobeConfig defaults.
+//! 测试 NearFarScalar 插值、GlobeSurface 射线拾取、
+//! 地平距离/俯角、可见半球、瓦片 SSE 计算、
+//! GlobeTranslucency、ShadowMode、GlobeConfig 默认值。
 
 use cesium_globe::{GlobeConfig, GlobeSurface, GlobeTranslucency, NearFarScalar, ShadowMode};
 use cesium_geospatial::Ellipsoid;
@@ -46,7 +46,7 @@ fn near_far_scalar_quarter() {
     assert!((nfs.interpolate(25.0) - 50.0).abs() < 1e-10);
 }
 
-// ─── GlobeSurface Pick ─────────────────────────────────────────────────────
+// ─── GlobeSurface 拾取 ─────────────────────────────────────────────────────
 
 #[test]
 fn globe_pick_from_above_hits() {
@@ -57,16 +57,16 @@ fn globe_pick_from_above_hits() {
     let hit = globe.pick(origin, direction);
     assert!(hit.is_some());
     let point = hit.unwrap();
-    // Should hit near the north pole (z ≈ polar radius)
+    // 应在靠近北极处命中（z ≈ 极半径）
     assert!(point.z > 6300000.0);
 }
 
 #[test]
 fn globe_pick_misses() {
     let globe = GlobeSurface::new();
-    // Ray pointing away from globe
+    // 射线背向球体
     let origin = DVec3::new(0.0, 0.0, Ellipsoid::WGS84.maximum_radius() + 1000000.0);
-    let direction = DVec3::new(0.0, 0.0, 1.0); // pointing away
+    let direction = DVec3::new(0.0, 0.0, 1.0); // 背向
 
     let hit = globe.pick(origin, direction);
     assert!(hit.is_none());
@@ -75,10 +75,10 @@ fn globe_pick_misses() {
 #[test]
 fn globe_pick_tangent_misses() {
     let globe = GlobeSurface::new();
-    // Ray parallel to surface, far from globe
+    // 射线平行于表面，远离球体
     let r = Ellipsoid::WGS84.maximum_radius();
     let origin = DVec3::new(0.0, r + 100000.0, 0.0);
-    let direction = DVec3::new(1.0, 0.0, 0.0); // parallel
+    let direction = DVec3::new(1.0, 0.0, 0.0); // 平行
 
     let hit = globe.pick(origin, direction);
     assert!(hit.is_none());
@@ -87,18 +87,18 @@ fn globe_pick_tangent_misses() {
 #[test]
 fn globe_pick_from_inside() {
     let globe = GlobeSurface::new();
-    // Origin inside the ellipsoid
+    // 原点位于椭球内部
     let origin = DVec3::new(0.0, 0.0, 0.0);
     let direction = DVec3::new(0.0, 0.0, 1.0);
 
     let hit = globe.pick(origin, direction);
     assert!(hit.is_some());
     let point = hit.unwrap();
-    // Should hit the surface in +z direction
+    // 应沿 +z 方向命中表面
     assert!(point.z > 6300000.0);
 }
 
-// ─── Horizon Distance / Dip Angle ─────────────────────────────────────────
+// ─── 地平距离 / 俯角 ─────────────────────────────────────────
 
 #[test]
 fn horizon_distance_zero_height() {
@@ -115,7 +115,7 @@ fn horizon_distance_positive_height() {
     let expected = (2.0 * r * h + h * h).sqrt();
     let d = globe.horizon_distance(h);
     assert!((d - expected).abs() < 1.0);
-    // Should be roughly 357 km for 10km height on Earth
+    // 在地球上 10km 高度处应约为 357 km
     assert!(d > 300000.0 && d < 400000.0);
 }
 
@@ -130,18 +130,18 @@ fn horizon_dip_angle_zero_height() {
 fn horizon_dip_angle_positive() {
     let globe = GlobeSurface::new();
     let dip = globe.horizon_dip_angle(10000.0);
-    // Dip angle should be small positive (a few degrees)
+    // 俯角应为较小的正值（几度）
     assert!(dip > 0.0);
-    assert!(dip < 0.1); // less than ~5.7 degrees
+    assert!(dip < 0.1); // 小于约 5.7 度
 }
 
-// ─── Visible Hemisphere ────────────────────────────────────────────────────
+// ─── 可见半球 ────────────────────────────────────────────────────
 
 #[test]
 fn visible_hemisphere_facing_camera() {
     let globe = GlobeSurface::new();
     let r = Ellipsoid::WGS84.maximum_radius();
-    // Point on +Z surface, camera further along +Z
+    // +Z 表面上的点，相机沿 +Z 更远处
     let position = DVec3::new(0.0, 0.0, r * 0.99);
     let camera = DVec3::new(0.0, 0.0, r * 2.0);
     assert!(globe.is_on_visible_hemisphere(position, camera));
@@ -151,13 +151,13 @@ fn visible_hemisphere_facing_camera() {
 fn visible_hemisphere_facing_away() {
     let globe = GlobeSurface::new();
     let r = Ellipsoid::WGS84.maximum_radius();
-    // Point on -Z surface, camera on +Z side
+    // -Z 表面上的点，相机在 +Z 一侧
     let position = DVec3::new(0.0, 0.0, -r * 0.99);
     let camera = DVec3::new(0.0, 0.0, r * 2.0);
     assert!(!globe.is_on_visible_hemisphere(position, camera));
 }
 
-// ─── Tile SSE ──────────────────────────────────────────────────────────────
+// ─── 瓦片 SSE ──────────────────────────────────────────────────────────────
 
 #[test]
 fn compute_tile_sse_basic() {
@@ -177,10 +177,10 @@ fn compute_tile_sse_zero_distance() {
 #[test]
 fn should_refine_tile_above_threshold() {
     let globe = GlobeSurface::new();
-    // Default maximum_screen_space_error = 2.0
+    // 默认 maximum_screen_space_error = 2.0
     assert!(globe.should_refine_tile(5.0));
     assert!(!globe.should_refine_tile(1.0));
-    assert!(!globe.should_refine_tile(2.0)); // not strictly greater
+    assert!(!globe.should_refine_tile(2.0)); // 并非严格大于
 }
 
 // ─── GlobeTranslucency ─────────────────────────────────────────────────────
@@ -226,7 +226,7 @@ fn globe_config_defaults() {
     assert!(config.tile_cache_size > 0);
 }
 
-// ─── GlobeSurface Normal ───────────────────────────────────────────────────
+// ─── GlobeSurface 法线 ───────────────────────────────────────────────────
 
 #[test]
 fn surface_normal_at_equator() {
@@ -234,7 +234,7 @@ fn surface_normal_at_equator() {
     let r = Ellipsoid::WGS84.maximum_radius();
     let position = DVec3::new(r, 0.0, 0.0);
     let normal = globe.get_surface_normal(position);
-    // At equator on X axis, normal should point in +X
+    // 在赤道的 X 轴上，法线应指向 +X
     assert!((normal.x - 1.0).abs() < 0.01);
     assert!(normal.y.abs() < 0.01);
     assert!(normal.z.abs() < 0.01);
@@ -246,7 +246,7 @@ fn surface_normal_at_pole() {
     let r = Ellipsoid::WGS84.minimum_radius();
     let position = DVec3::new(0.0, 0.0, r);
     let normal = globe.get_surface_normal(position);
-    // At north pole, normal should point in +Z
+    // 在北极，法线应指向 +Z
     assert!(normal.x.abs() < 0.01);
     assert!(normal.y.abs() < 0.01);
     assert!((normal.z - 1.0).abs() < 0.01);

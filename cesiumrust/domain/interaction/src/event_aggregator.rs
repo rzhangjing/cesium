@@ -1,82 +1,82 @@
-//! Camera event aggregation system.
+//! 相机事件聚合系统。
 //!
-//! Maps to CesiumJS `Scene/CameraEventAggregator.js`
+//! 映射到 CesiumJS `Scene/CameraEventAggregator.js`
 //!
-//! Aggregates mouse/keyboard events per frame for camera control.
+//! 为相机控制逐帧聚合鼠标/键盘事件。
 
 use glam::DVec2;
 
-/// Mouse button identifiers.
+/// 鼠标按钮标识。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MouseButton {
-    /// Left mouse button.
+    /// 鼠标左键。
     Left,
-    /// Right mouse button.
+    /// 鼠标右键。
     Right,
-    /// Middle mouse button.
+    /// 鼠标中键。
     Middle,
 }
 
-/// Camera event types.
-/// Maps to CesiumJS `CameraEventType`
+/// 相机事件类型。
+/// 映射到 CesiumJS `CameraEventType`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CameraEventType {
-    /// Left mouse button down.
+    /// 鼠标左键按下。
     LeftDown,
-    /// Left mouse button up.
+    /// 鼠标左键抬起。
     LeftUp,
-    /// Left mouse button drag.
+    /// 鼠标左键拖拽。
     LeftDrag,
-    /// Right mouse button down.
+    /// 鼠标右键按下。
     RightDown,
-    /// Right mouse button up.
+    /// 鼠标右键抬起。
     RightUp,
-    /// Right mouse button drag.
+    /// 鼠标右键拖拽。
     RightDrag,
-    /// Middle mouse button down.
+    /// 鼠标中键按下。
     MiddleDown,
-    /// Middle mouse button up.
+    /// 鼠标中键抬起。
     MiddleUp,
-    /// Middle mouse button drag.
+    /// 鼠标中键拖拽。
     MiddleDrag,
-    /// Mouse wheel scroll.
+    /// 鼠标滚轮滚动。
     Wheel,
-    /// Pinch (touch).
+    /// 捻合（触控）。
     Pinch,
 }
 
-/// Aggregated movement data for a single event type.
+/// 单个事件类型的聚合移动数据。
 #[derive(Debug, Clone, Default)]
 pub struct AggregateMovement {
-    /// Starting position of the movement.
+    /// 移动的起始位置。
     pub start_position: DVec2,
-    /// Ending position of the movement.
+    /// 移动的结束位置。
     pub end_position: DVec2,
-    /// Total movement delta.
+    /// 总移动增量。
     pub movement: DVec2,
-    /// Whether the button is currently down.
+    /// 按钮当前是否处于按下状态。
     pub is_button_down: bool,
-    /// Whether a movement occurred this frame.
+    /// 本帧是否发生了移动。
     pub is_moving: bool,
-    /// Time the movement started (seconds).
+    /// 移动开始的时间（秒）。
     pub start_time: f64,
-    /// Time the last movement occurred (seconds).
+    /// 最后一次移动发生的时间（秒）。
     pub last_time: f64,
 }
 
 impl AggregateMovement {
-    /// Creates a new empty aggregate movement.
+    /// 创建一个空的新聚合移动。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Resets the movement state for a new frame.
+    /// 为新的一帧重置移动状态。
     pub fn reset_frame(&mut self) {
         self.movement = DVec2::ZERO;
         self.is_moving = false;
     }
 
-    /// Records a button down event.
+    /// 记录一次按钮按下事件。
     pub fn button_down(&mut self, position: DVec2, time: f64) {
         self.is_button_down = true;
         self.start_position = position;
@@ -85,13 +85,13 @@ impl AggregateMovement {
         self.last_time = time;
     }
 
-    /// Records a button up event.
+    /// 记录一次按钮抬起事件。
     pub fn button_up(&mut self, time: f64) {
         self.is_button_down = false;
         self.last_time = time;
     }
 
-    /// Records a drag/move event.
+    /// 记录一次拖拽/移动事件。
     pub fn drag(&mut self, position: DVec2, time: f64) {
         if self.is_button_down {
             self.end_position = position;
@@ -101,7 +101,7 @@ impl AggregateMovement {
         }
     }
 
-    /// Records a wheel event.
+    /// 记录一次滚轮事件。
     pub fn wheel(&mut self, delta: f64, time: f64) {
         self.movement = DVec2::new(0.0, delta);
         self.is_moving = true;
@@ -109,50 +109,48 @@ impl AggregateMovement {
     }
 }
 
-/// A start/end position pair for one aggregated sub-movement.
+/// 一个聚合子移动的起始/结束位置对。
 ///
-/// Port of the blueprint `MouseMovement` (`camera_event_aggregator.rs` L96-102),
-/// the `{ startPosition, endPosition }` object CesiumJS nests inside a pinch.
+/// 蓝图 `MouseMovement`（`camera_event_aggregator.rs` L96-102）的移植，
+/// 即 CesiumJS 嵌套在捻合内部的 `{ startPosition, endPosition }` 对象。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct StartEnd {
-    /// The aggregated start position.
+    /// 聚合后的起始位置。
     pub start_position: DVec2,
-    /// The aggregated end position.
+    /// 聚合后的结束位置。
     pub end_position: DVec2,
 }
 
-/// Aggregated two-finger pinch movement (touch).
+/// 聚合的双指捻合移动（触控）。
 ///
-/// Port of the blueprint `PinchMovement` (`camera_event_aggregator.rs` L108-116)
-/// and the CesiumJS `{ distance, angleAndHeight, prevAngle }` shape
-/// (`CameraEventAggregator.js` L111-143):
-/// - `distance` holds the two-finger separation (scalar in `.y`); its delta
-///   drives zoom.
-/// - `angle_and_height` holds the finger-line angle (radians, `.x`) and the
-///   midpoint height (`.y`); the angle delta drives twist.
-/// - `prev_angle` keeps the angle aggregation from flipping over 360°.
+/// 蓝图 `PinchMovement`（`camera_event_aggregator.rs` L108-116）以及
+/// CesiumJS 的 `{ distance, angleAndHeight, prevAngle }` 形状
+/// （`CameraEventAggregator.js` L111-143）的移植：
+/// - `distance` 保存两指间距（标量存于 `.y`）；其增量
+///   驱动缩放。
+/// - `angle_and_height` 保存手指连线角度（弧度，`.x`）与
+///   中点高度（`.y`）；角度增量驱动旋转。
+/// - `prev_angle` 防止角度聚合在 360° 处翻转。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct PinchMovement {
-    /// Finger separation (start/end), scalar stored in `.y`.
+    /// 手指间距（起始/结束），标量存于 `.y`。
     pub distance: StartEnd,
-    /// Finger angle (`.x`, radians) and midpoint height (`.y`), start/end.
+    /// 手指角度（`.x`，弧度）与中点高度（`.y`），起始/结束。
     pub angle_and_height: StartEnd,
-    /// Two-finger midpoint (center between the fingers), start/end. Its
-    /// per-frame delta is the common translation of both fingers and drives
-    /// the two-finger **drag → translate** gesture (M2.6). CesiumJS does not
-    /// track this (its two-finger drag is zoom+twist only), so it is an
-    /// addition for the spin/translate touch model.
+    /// 两指中点（手指之间的中心），起始/结束。其
+    /// 逐帧增量是两指共同的平移，驱动
+    /// 双指 **拖拽 → 平移** 手势（M2.6）。CesiumJS 不
+    /// 跟踪这一项（其双指拖拽仅为缩放+旋转），因此它是
+    /// 为旋转/平移触控模型新增的部分。
     pub midpoint: StartEnd,
-    /// Previous angle for the anti-flip wrap.
+    /// 用于防翻转回绕的上一个角度。
     pub prev_angle: f64,
 }
 
-/// Computes the pinch metrics `(separation, angle, midpoint_height)` for two
-/// finger positions.
+/// 计算两个手指位置的捻合度量 `(separation, angle, midpoint_height)`。
 ///
-/// `angle` is the direction of the `finger1 → finger2` line in radians; the
-/// midpoint height is the average screen `y`, matching CesiumJS's pinch
-/// `angleAndHeight`.
+/// `angle` 为 `finger1 → finger2` 连线的方向（弧度）；中点
+/// 高度为屏幕 `y` 的平均值，与 CesiumJS 的捻合 `angleAndHeight` 一致。
 fn pinch_metrics(finger1: DVec2, finger2: DVec2) -> (f64, f64, f64) {
     let delta = finger2 - finger1;
     let distance = delta.length();
@@ -161,19 +159,19 @@ fn pinch_metrics(finger1: DVec2, finger2: DVec2) -> (f64, f64, f64) {
     (distance, angle, height)
 }
 
-/// Aggregates camera events per frame.
-/// Maps to CesiumJS `CameraEventAggregator`
+/// 逐帧聚合相机事件。
+/// 映射到 CesiumJS `CameraEventAggregator`
 #[derive(Debug, Clone)]
 pub struct CameraEventAggregator {
-    /// Movement state for each event type.
+    /// 每个事件类型的移动状态。
     movements: Vec<(CameraEventType, AggregateMovement)>,
-    /// Current frame time.
+    /// 当前帧时间。
     current_time: f64,
-    /// Aggregated two-finger pinch movement.
+    /// 聚合的双指捻合移动。
     pinch: PinchMovement,
-    /// Whether a pinch gesture is currently in progress.
+    /// 捻合手势当前是否正在进行。
     pinching: bool,
-    /// Whether the next pinch move should re-seed the per-frame start values.
+    /// 下一次捻合移动是否应重新播种每帧的起始值。
     pinch_update_pending: bool,
 }
 
@@ -184,7 +182,7 @@ impl Default for CameraEventAggregator {
 }
 
 impl CameraEventAggregator {
-    /// Creates a new event aggregator.
+    /// 创建一个新的事件聚合器。
     pub fn new() -> Self {
         Self {
             movements: Vec::new(),
@@ -195,20 +193,20 @@ impl CameraEventAggregator {
         }
     }
 
-    /// Resets all movements for a new frame.
+    /// 为新一帧重置所有移动。
     pub fn reset(&mut self, time: f64) {
         self.current_time = time;
         for (_, movement) in &mut self.movements {
             movement.reset_frame();
         }
-        // Re-seed the pinch start/prev-angle on the first move of the new frame
-        // (CesiumJS `update[key] = true` on reset, CameraEventAggregator.js).
+        // 在新帧的首次移动上重新播种捻合的起始/prev-angle
+        // （CesiumJS 在重置时 `update[key] = true`，CameraEventAggregator.js）。
         if self.pinching {
             self.pinch_update_pending = true;
         }
     }
 
-    /// Gets or creates the movement state for an event type.
+    /// 获取或创建某个事件类型的移动状态。
     fn get_movement_mut(&mut self, event_type: CameraEventType) -> &mut AggregateMovement {
         let found = self.movements.iter().position(|(t, _)| *t == event_type);
         let idx = match found {
@@ -221,12 +219,12 @@ impl CameraEventAggregator {
         &mut self.movements[idx].1
     }
 
-    /// Gets the movement state for an event type.
+    /// 获取某个事件类型的移动状态。
     pub fn get_movement(&self, event_type: CameraEventType) -> Option<&AggregateMovement> {
         self.movements.iter().find(|(t, _)| *t == event_type).map(|(_, m)| m)
     }
 
-    /// Records a button down event.
+    /// 记录一次按钮按下事件。
     pub fn button_down(&mut self, button: MouseButton, position: DVec2) {
         let time = self.current_time;
         let event_type = match button {
@@ -236,7 +234,7 @@ impl CameraEventAggregator {
         };
         self.get_movement_mut(event_type).button_down(position, time);
 
-        // Also mark the drag event as button down
+        // 同时将拖拽事件标记为按钮按下
         let drag_type = match button {
             MouseButton::Left => CameraEventType::LeftDrag,
             MouseButton::Right => CameraEventType::RightDrag,
@@ -245,7 +243,7 @@ impl CameraEventAggregator {
         self.get_movement_mut(drag_type).button_down(position, time);
     }
 
-    /// Records a button up event.
+    /// 记录一次按钮抬起事件。
     pub fn button_up(&mut self, button: MouseButton) {
         let time = self.current_time;
         let event_type = match button {
@@ -255,7 +253,7 @@ impl CameraEventAggregator {
         };
         self.get_movement_mut(event_type).button_up(time);
 
-        // Also mark the drag event as button up
+        // 同时将拖拽事件标记为按钮抬起
         let drag_type = match button {
             MouseButton::Left => CameraEventType::LeftDrag,
             MouseButton::Right => CameraEventType::RightDrag,
@@ -264,7 +262,7 @@ impl CameraEventAggregator {
         self.get_movement_mut(drag_type).button_up(time);
     }
 
-    /// Records a mouse move/drag event.
+    /// 记录一次鼠标移动/拖拽事件。
     pub fn mouse_move(&mut self, button: MouseButton, position: DVec2) {
         let time = self.current_time;
         let drag_type = match button {
@@ -275,18 +273,18 @@ impl CameraEventAggregator {
         self.get_movement_mut(drag_type).drag(position, time);
     }
 
-    /// Records a wheel scroll event.
+    /// 记录一次滚轮滚动事件。
     pub fn wheel(&mut self, delta: f64) {
         let time = self.current_time;
         self.get_movement_mut(CameraEventType::Wheel).wheel(delta, time);
     }
 
-    /// Checks if a specific event type is currently moving.
+    /// 检查某个特定事件类型当前是否在移动。
     pub fn is_moving(&self, event_type: CameraEventType) -> bool {
         self.get_movement(event_type).is_some_and(|m| m.is_moving)
     }
 
-    /// Checks if a button is currently down.
+    /// 检查某个按钮当前是否处于按下状态。
     pub fn is_button_down(&self, button: MouseButton) -> bool {
         let drag_type = match button {
             MouseButton::Left => CameraEventType::LeftDrag,
@@ -296,19 +294,19 @@ impl CameraEventAggregator {
         self.get_movement(drag_type).is_some_and(|m| m.is_button_down)
     }
 
-    /// Gets the movement delta for an event type.
+    /// 获取某个事件类型的移动增量。
     pub fn get_movement_delta(&self, event_type: CameraEventType) -> DVec2 {
         self.get_movement(event_type).map_or(DVec2::ZERO, |m| m.movement)
     }
 
     // ========================================================================
-    // Pinch (touch) aggregation
+    // 捻合（触控）聚合
     // ========================================================================
 
-    /// Begins a two-finger pinch gesture.
+    /// 开始一个双指捻合手势。
     ///
-    /// Maps to CesiumJS `PINCH_START` (CameraEventAggregator.js L84-98): seeds
-    /// the distance / angle-and-height start and end from the initial fingers.
+    /// 映射到 CesiumJS `PINCH_START`（CameraEventAggregator.js L84-98）：
+    /// 由初始的手指播种距离 / 角度与高度的起始和结束。
     pub fn pinch_start(&mut self, finger1: DVec2, finger2: DVec2) {
         let (distance, angle, height) = pinch_metrics(finger1, finger2);
         let midpoint = (finger1 + finger2) * 0.5;
@@ -334,12 +332,11 @@ impl CameraEventAggregator {
             .button_down(midpoint, time);
     }
 
-    /// Updates an in-progress pinch with the current finger positions.
+    /// 用当前手指位置更新正在进行的捻合。
     ///
-    /// Faithful to CesiumJS `PINCH_MOVE` (CameraEventAggregator.js L111-143): the
-    /// first move of a frame re-seeds the start and `prevAngle`, later moves
-    /// aggregate into the end, and the angle is wrapped to stay within `π` of
-    /// `prevAngle` so it never flips over 360°.
+    /// 忠实于 CesiumJS `PINCH_MOVE`（CameraEventAggregator.js L111-143）：一帧
+    /// 的首次移动重新播种起始和 `prevAngle`，后续移动聚合到结束，
+    /// 且角度会回绕以保持与 `prevAngle` 相差在 `π` 以内，从而不会在 360° 处翻转。
     pub fn pinch_move(&mut self, finger1: DVec2, finger2: DVec2) {
         if !self.pinching {
             return;
@@ -358,7 +355,7 @@ impl CameraEventAggregator {
         self.pinch.angle_and_height.end_position = DVec2::new(angle, height);
         self.pinch.midpoint.end_position = midpoint;
 
-        // Anti-flip wrap (CesiumJS L129-138).
+        // 防翻转回绕（CesiumJS L129-138）。
         let mut wrapped = angle;
         let prev = self.pinch.prev_angle;
         let two_pi = std::f64::consts::TAU;
@@ -375,9 +372,9 @@ impl CameraEventAggregator {
             .drag((finger1 + finger2) * 0.5, time);
     }
 
-    /// Ends the pinch gesture.
+    /// 结束捻合手势。
     ///
-    /// Maps to CesiumJS `PINCH_END` (CameraEventAggregator.js L101-108).
+    /// 映射到 CesiumJS `PINCH_END`（CameraEventAggregator.js L101-108）。
     pub fn pinch_end(&mut self) {
         self.pinching = false;
         self.pinch_update_pending = false;
@@ -385,66 +382,66 @@ impl CameraEventAggregator {
         self.get_movement_mut(CameraEventType::Pinch).button_up(time);
     }
 
-    /// Whether a pinch gesture is currently in progress.
+    /// 捻合手势当前是否正在进行。
     pub fn is_pinching(&self) -> bool {
         self.pinching
     }
 
-    /// Whether the pinch event slot has `is_button_down` set (i.e. between
-    /// `pinch_start` and `pinch_end`).
+    /// 捻合事件槽位是否设置了 `is_button_down`（即处于
+    /// `pinch_start` 与 `pinch_end` 之间）。
     pub fn is_button_down_pinch(&self) -> bool {
         self.get_movement(CameraEventType::Pinch).is_some_and(|m| m.is_button_down)
     }
 
-    /// The aggregated pinch movement for this frame.
+    /// 本帧聚合后的捻合移动。
     pub fn pinch(&self) -> &PinchMovement {
         &self.pinch
     }
 
-    /// The change in finger separation this frame (pixels); drives zoom.
+    /// 本帧手指间距的变化（像素）；驱动缩放。
     pub fn pinch_distance_delta(&self) -> f64 {
         self.pinch.distance.end_position.y - self.pinch.distance.start_position.y
     }
 
-    /// The change in finger angle this frame (radians); drives twist.
+    /// 本帧手指角度的变化（弧度）；驱动旋转。
     pub fn pinch_angle_delta(&self) -> f64 {
         self.pinch.angle_and_height.end_position.x - self.pinch.prev_angle
     }
 
-    /// The change in the two-finger midpoint this frame (pixels); drives the
-    /// two-finger **drag → translate** gesture. Like the distance/angle deltas
-    /// it is re-seeded each frame, so it is the per-frame common translation
-    /// of both fingers rather than the cumulative offset since `pinch_start`.
+    /// 本帧两指中点的变化（像素）；驱动双指
+    /// **拖拽 → 平移** 手势。与距离/角度增量一样，它每帧
+    /// 重新播种，因此它是两指共同的逐帧平移，而非自 `pinch_start`
+    /// 以来的累积偏移。
     pub fn pinch_midpoint_delta(&self) -> DVec2 {
         self.pinch.midpoint.end_position - self.pinch.midpoint.start_position
     }
 
-    /// The twist delta in pixels, reproducing CesiumJS's
-    /// `(-angle * canvas.clientWidth) / 12` scaling
-    /// (CameraEventAggregator.js L139-142). The canvas width is supplied by the
-    /// adapter boundary so the domain stays resolution-independent.
+    /// 旋转增量（以像素计），复现 CesiumJS 的
+    /// `(-angle * canvas.clientWidth) / 12` 缩放
+    /// （CameraEventAggregator.js L139-142）。画布宽度由适配层
+    /// 边界提供，以使领域保持与分辨率无关。
     pub fn pinch_twist_pixels(&self, canvas_width: f64) -> f64 {
         (-self.pinch_angle_delta() * canvas_width) / 12.0
     }
 
     // ========================================================================
-    // Semantic gesture deltas (feed the controller's spin / look actions)
+    // 语义手势增量（为控制器的 spin / look 动作提供输入）
     // ========================================================================
 
-    /// The aggregated spin gesture delta (left-drag, pixels).
+    /// 聚合的旋转手势增量（左键拖拽，像素）。
     ///
-    /// Feeds [`crate::camera_controller::CameraController::spin`]. Maps to the
-    /// CesiumJS default `LEFT_DRAG → spin3D` binding; whether a left-drag
-    /// becomes a spin, pan, or look is decided by the controller (based on
-    /// picking), not the aggregator.
+    /// 为 [`crate::camera_controller::CameraController::spin`] 提供输入。映射到
+    /// CesiumJS 默认的 `LEFT_DRAG → spin3D` 绑定；左键拖拽究竟
+    /// 变成旋转、平移还是环视，由控制器（基于拾取）决定，
+    /// 而非聚合器。
     pub fn spin_delta(&self) -> DVec2 {
         self.get_movement_delta(CameraEventType::LeftDrag)
     }
 
-    /// The aggregated look gesture delta (right-drag, pixels).
+    /// 聚合的环视手势增量（右键拖拽，像素）。
     ///
-    /// Feeds [`crate::camera_controller::CameraController::look`]. The binding is
-    /// a port default; the application may re-map it.
+    /// 为 [`crate::camera_controller::CameraController::look`] 提供输入。该绑定是
+    /// 移植默认值；应用可重新映射。
     pub fn look_delta(&self) -> DVec2 {
         self.get_movement_delta(CameraEventType::RightDrag)
     }
@@ -516,10 +513,10 @@ mod tests {
         agg.button_down(MouseButton::Left, DVec2::new(100.0, 100.0));
         agg.mouse_move(MouseButton::Left, DVec2::new(200.0, 200.0));
 
-        // Reset for new frame
+        // 为新一帧重置
         agg.reset(1.0 / 60.0);
         assert!(!agg.is_moving(CameraEventType::LeftDrag));
-        // Button should still be down
+        // 按钮应仍处于按下状态
         assert!(agg.is_button_down(MouseButton::Left));
     }
 
@@ -570,7 +567,7 @@ mod tests {
         let mut agg = CameraEventAggregator::new();
         agg.reset(0.0);
         agg.pinch_start(DVec2::new(0.0, 0.0), DVec2::new(100.0, 0.0));
-        // First move seeds the per-frame start; second aggregates into the end.
+        // 首次移动播种每帧的起始；第二次聚合到结束。
         agg.pinch_move(DVec2::new(0.0, 0.0), DVec2::new(100.0, 0.0));
         agg.pinch_move(DVec2::new(0.0, 0.0), DVec2::new(200.0, 0.0));
         assert!((agg.pinch_distance_delta() - 100.0).abs() < 1e-9);
@@ -581,10 +578,10 @@ mod tests {
         let mut agg = CameraEventAggregator::new();
         agg.reset(0.0);
         agg.pinch_start(DVec2::new(0.0, 0.0), DVec2::new(100.0, 0.0));
-        agg.pinch_move(DVec2::new(0.0, 0.0), DVec2::new(100.0, 0.0)); // seed angle 0
-        agg.pinch_move(DVec2::new(0.0, 0.0), DVec2::new(0.0, 100.0)); // rotate to 90°
+        agg.pinch_move(DVec2::new(0.0, 0.0), DVec2::new(100.0, 0.0)); // 播种角度 0
+        agg.pinch_move(DVec2::new(0.0, 0.0), DVec2::new(0.0, 100.0)); // 旋转到 90°
         assert!((agg.pinch_angle_delta() - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
-        // Pixel scaling reproduces CesiumJS (-angle * width) / 12.
+        // 像素缩放复现 CesiumJS 的 (-angle * width) / 12。
         let expected = (-std::f64::consts::FRAC_PI_2 * 1200.0) / 12.0;
         assert!((agg.pinch_twist_pixels(1200.0) - expected).abs() < 1e-9);
     }
@@ -594,9 +591,9 @@ mod tests {
         let mut agg = CameraEventAggregator::new();
         agg.reset(0.0);
         agg.pinch_start(DVec2::new(0.0, 0.0), DVec2::new(100.0, 0.0));
-        // Seed prev_angle just below +π.
+        // 将 prev_angle 播种到略低于 +π。
         agg.pinch_move(DVec2::new(0.0, 0.0), DVec2::new(-100.0, 1.0));
-        // Cross to just above -π; the wrap keeps the delta tiny instead of ~2π.
+        // 越过到略高于 -π；回绕使增量保持微小而非 ~2π。
         agg.pinch_move(DVec2::new(0.0, 0.0), DVec2::new(-100.0, -1.0));
         let delta = agg.pinch_angle_delta();
         assert!(delta.abs() < 0.1, "anti-flip failed, delta = {delta}");
@@ -607,8 +604,8 @@ mod tests {
         let mut agg = CameraEventAggregator::new();
         agg.reset(0.0);
         agg.pinch_start(DVec2::new(0.0, 0.0), DVec2::new(100.0, 0.0));
-        // First move seeds the per-frame midpoint start; second extends the end.
-        // Both fingers drift right by 50 px → midpoint delta = (+50, 0).
+        // 首次移动播种每帧的中点起始；第二次延长结束。
+        // 两指都向右漂 50 px → 中点增量 = (+50, 0)。
         agg.pinch_move(DVec2::new(0.0, 0.0), DVec2::new(100.0, 0.0));
         agg.pinch_move(DVec2::new(50.0, 0.0), DVec2::new(150.0, 0.0));
         let mid = agg.pinch_midpoint_delta();
@@ -620,13 +617,13 @@ mod tests {
     fn test_pinch_midpoint_delta_re_seeds_each_frame() {
         let mut agg = CameraEventAggregator::new();
         agg.pinch_start(DVec2::new(0.0, 0.0), DVec2::new(100.0, 0.0));
-        // Frame 1: midpoint drifts +30 x.
+        // 帧 1：中点向 +30 x 漂移。
         agg.reset(0.0);
         agg.pinch_move(DVec2::new(0.0, 0.0), DVec2::new(100.0, 0.0));
         agg.pinch_move(DVec2::new(30.0, 0.0), DVec2::new(130.0, 0.0));
         assert!((agg.pinch_midpoint_delta().x - 30.0).abs() < 1e-9);
-        // Frame 2 re-seeds: drift is measured from frame 2's own start, not
-        // cumulative from pinch_start.
+        // 帧 2 重新播种：漂移从帧 2 自身的起始量起，而非
+        // 从 pinch_start 累积。
         agg.reset(1.0 / 60.0);
         agg.pinch_move(DVec2::new(30.0, 0.0), DVec2::new(130.0, 0.0));
         agg.pinch_move(DVec2::new(30.0, 40.0), DVec2::new(130.0, 40.0));

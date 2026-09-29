@@ -1,11 +1,12 @@
-//! Color - RGBA color with CSS parsing, HSL conversion, and arithmetic.
-//! Maps to CesiumJS `Core/Color.js`
+//! Color —— 带有 CSS 解析、HSL 转换与算术运算的 RGBA 颜色。
+//! 映射到 CesiumJS `Core/Color.js`
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::manual_strip)]
 use crate::math_utils;
 
-/// A color specified using red, green, blue, and alpha values (0.0 to 1.0).
+/// 使用红、绿、蓝、 alpha 值（0.0 到 1.0）指定的一种颜色。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Color {
     pub red: f64,
@@ -25,7 +26,7 @@ impl Color {
         Self { red, green, blue, alpha }
     }
 
-    // --- Named color constants (subset used in tests + common ones) ---
+    // --- 命名颜色常量（测试中使用的一部分 + 常见颜色） ---
     pub const WHITE: Self = Self { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 };
     pub const BLACK: Self = Self { red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0 };
     pub const RED: Self = Self { red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0 };
@@ -66,7 +67,7 @@ impl Color {
     pub const VIOLET: Self = Self { red: 0.9333333333333333, green: 0.5098039215686274, blue: 0.9333333333333333, alpha: 1.0 };
     pub const WHEAT: Self = Self { red: 0.9607843137254902, green: 0.8705882352941177, blue: 0.7019607843137254, alpha: 1.0 };
 
-    /// Creates a Color from byte values (0-255).
+    /// 从字节值（0-255）创建一个 Color。
     pub fn from_bytes(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
         Self {
             red: red as f64 / 255.0,
@@ -76,7 +77,7 @@ impl Color {
         }
     }
 
-    /// Converts to byte values [r, g, b, a] (0-255).
+    /// 转换为字节值 [r, g, b, a]（0-255）。
     pub fn to_bytes(&self) -> [u8; 4] {
         [
             Self::float_to_byte(self.red),
@@ -86,12 +87,12 @@ impl Color {
         ]
     }
 
-    /// Converts a byte (0-255) to float (0-1).
+    /// 将一个字节（0-255）转换为浮点数（0-1）。
     pub fn byte_to_float(value: u8) -> f64 {
         value as f64 / 255.0
     }
 
-    /// Converts a float (0-1) to byte (0-255).
+    /// 将一个浮点数（0-1）转换为字节（0-255）。
     pub fn float_to_byte(value: f64) -> u8 {
         if value == 1.0 {
             255
@@ -100,12 +101,12 @@ impl Color {
         }
     }
 
-    /// Creates a Color from a Cartesian4 (x=red, y=green, z=blue, w=alpha).
+    /// 从一个 Cartesian4（x=red、y=green、z=blue、w=alpha）创建一个 Color。
     pub fn from_cartesian4(x: f64, y: f64, z: f64, w: f64) -> Self {
         Self { red: x, green: y, blue: z, alpha: w }
     }
 
-    /// Creates a Color from HSL values. Hue is 0..1 (wraps), saturation 0..1, lightness 0..1.
+    /// 从 HSL 值创建一个 Color。色相 Hue 为 0..1（环绕），饱和度 saturation 0..1，亮度 lightness 0..1。
     pub fn from_hsl(hue: f64, saturation: f64, lightness: f64, alpha: f64) -> Self {
         let hue = hue % 1.0;
         let mut red = lightness;
@@ -127,18 +128,18 @@ impl Color {
         Self { red, green, blue, alpha }
     }
 
-    /// Creates a Color from a CSS color string.
-    /// Supports: #rgb, #rgba, #rrggbb, #rrggbbaa, rgb(), rgba(), hsl(), hsla(), named colors.
-    /// Returns None if the string is not a valid CSS color.
+    /// 从一个 CSS 颜色字符串创建一个 Color。
+    /// 支持：#rgb、#rgba、#rrggbb、#rrggbbaa、rgb()、rgba()、hsl()、hsla()、命名颜色。
+    /// 若该字符串不是一个有效的 CSS 颜色则返回 None。
     pub fn from_css_color_string(color: &str) -> Option<Self> {
         let color = color.trim();
 
-        // Check named colors
+        // 检查命名颜色
         if let Some(named) = Self::named_color(color) {
             return Some(named);
         }
 
-        // #rgba or #rgb
+        // #rgba 或 #rgb
         if let Some(hex) = color.strip_prefix('#') {
             let hex_lower = hex.to_lowercase();
             let chars: Vec<char> = hex_lower.chars().collect();
@@ -173,13 +174,13 @@ impl Color {
             }
         }
 
-        // rgb() / rgba()
+        // rgb() / rgba() 函数
         let lower = color.to_lowercase();
         if lower.starts_with("rgb") {
             return Self::parse_rgb_functional(color);
         }
 
-        // hsl() / hsla()
+        // hsl() / hsla() 函数
         if lower.starts_with("hsl") {
             return Self::parse_hsl_functional(color);
         }
@@ -188,12 +189,12 @@ impl Color {
     }
 
     fn parse_rgb_functional(color: &str) -> Option<Self> {
-        // Extract content between parentheses
+        // 提取括号之间的内容
         let open = color.find('(')?;
         let close = color.rfind(')')?;
         let inner = &color[open + 1..close];
 
-        // Split by comma or whitespace, handling '/' for alpha
+        // 按逗号或空白拆分，并处理用于 alpha 的 '/'
         let normalized = inner.replace('/', " ");
         let parts: Vec<&str> = normalized
             .split(|c: char| c == ',' || c.is_whitespace())
@@ -306,7 +307,7 @@ impl Color {
         }
     }
 
-    /// Returns a CSS rgb()/rgba() string.
+    /// 返回一个 CSS rgb()/rgba() 字符串。
     pub fn to_css_color_string(&self) -> String {
         let r = Self::float_to_byte(self.red);
         let g = Self::float_to_byte(self.green);
@@ -318,7 +319,7 @@ impl Color {
         }
     }
 
-    /// Returns a CSS hex string (#rrggbb or #rrggbbaa).
+    /// 返回一个 CSS 十六进制字符串（#rrggbb 或 #rrggbbaa）。
     pub fn to_css_hex_string(&self) -> String {
         let r = Self::float_to_byte(self.red);
         let g = Self::float_to_byte(self.green);
@@ -331,7 +332,7 @@ impl Color {
         }
     }
 
-    /// Converts to a u32 RGBA value (little-endian byte order: R in lowest byte).
+    /// 转换为一个 u32 RGBA 值（小端字节序：R 在最低字节）。
     pub fn to_rgba(&self) -> u32 {
         let r = Self::float_to_byte(self.red) as u32;
         let g = Self::float_to_byte(self.green) as u32;
@@ -340,7 +341,7 @@ impl Color {
         r | (g << 8) | (b << 16) | (a << 24)
     }
 
-    /// Creates a Color from a u32 RGBA value (little-endian byte order).
+    /// 从一个 u32 RGBA 值（小端字节序）创建一个 Color。
     pub fn from_rgba(rgba: u32) -> Self {
         Self::from_bytes(
             (rgba & 0xFF) as u8,
@@ -350,17 +351,17 @@ impl Color {
         )
     }
 
-    /// Returns a new Color with the given alpha.
+    /// 返回一个具有给定 alpha 的新 Color。
     pub fn with_alpha(&self, alpha: f64) -> Self {
         Self { alpha, ..*self }
     }
 
-    /// Creates a new Color from an existing color with a different alpha.
+    /// 从一个已有颜色及不同的 alpha 创建一个新 Color。
     pub fn from_alpha(color: &Self, alpha: f64) -> Self {
         Self { alpha, ..*color }
     }
 
-    /// Brightens this color by the given magnitude (0..1).
+    /// 将当前颜色按给定亮度幅度（0..1）提亮。
     pub fn brighten(&self, magnitude: f64) -> Self {
         let magnitude = 1.0 - magnitude;
         Self {
@@ -371,7 +372,7 @@ impl Color {
         }
     }
 
-    /// Darkens this color by the given magnitude (0..1).
+    /// 将当前颜色按给定幅度（0..1）加暗。
     pub fn darken(&self, magnitude: f64) -> Self {
         let magnitude = 1.0 - magnitude;
         Self {
@@ -382,7 +383,7 @@ impl Color {
         }
     }
 
-    /// Component-wise addition.
+    /// 按分量相加。
     pub fn add(&self, other: &Self) -> Self {
         Self {
             red: self.red + other.red,
@@ -392,7 +393,7 @@ impl Color {
         }
     }
 
-    /// Component-wise subtraction.
+    /// 按分量相减。
     pub fn subtract(&self, other: &Self) -> Self {
         Self {
             red: self.red - other.red,
@@ -402,7 +403,7 @@ impl Color {
         }
     }
 
-    /// Component-wise multiplication.
+    /// 按分量相乘。
     pub fn multiply(&self, other: &Self) -> Self {
         Self {
             red: self.red * other.red,
@@ -412,7 +413,7 @@ impl Color {
         }
     }
 
-    /// Component-wise division.
+    /// 按分量相除。
     pub fn divide(&self, other: &Self) -> Self {
         Self {
             red: self.red / other.red,
@@ -422,7 +423,7 @@ impl Color {
         }
     }
 
-    /// Component-wise modulo.
+    /// 按分量取模。
     pub fn modulo(&self, other: &Self) -> Self {
         Self {
             red: self.red % other.red,
@@ -432,7 +433,7 @@ impl Color {
         }
     }
 
-    /// Multiplies all components by a scalar.
+    /// 将所有分量乘以一个标量。
     pub fn multiply_by_scalar(&self, scalar: f64) -> Self {
         Self {
             red: self.red * scalar,
@@ -442,7 +443,7 @@ impl Color {
         }
     }
 
-    /// Divides all components by a scalar.
+    /// 将所有分量除以一个标量。
     pub fn divide_by_scalar(&self, scalar: f64) -> Self {
         Self {
             red: self.red / scalar,
@@ -452,7 +453,7 @@ impl Color {
         }
     }
 
-    /// Linear interpolation between two colors.
+    /// 两个颜色之间的线性插值。
     pub fn lerp(start: &Self, end: &Self, t: f64) -> Self {
         Self {
             red: math_utils::lerp(start.red, end.red, t),
@@ -462,7 +463,7 @@ impl Color {
         }
     }
 
-    /// Returns true if this color equals other within the given epsilon.
+    /// 若当前颜色在给定 epsilon 范围内与 other 相等则返回 true。
     pub fn equals_epsilon(&self, other: &Self, epsilon: f64) -> bool {
         (self.red - other.red).abs() <= epsilon
             && (self.green - other.green).abs() <= epsilon
@@ -470,7 +471,7 @@ impl Color {
             && (self.alpha - other.alpha).abs() <= epsilon
     }
 
-    /// Packs into an array [red, green, blue, alpha] starting at index.
+    /// 打包到从 index 开始的数组 [red, green, blue, alpha] 中。
     pub fn pack(&self, array: &mut [f64], starting_index: usize) {
         array[starting_index] = self.red;
         array[starting_index + 1] = self.green;
@@ -478,7 +479,7 @@ impl Color {
         array[starting_index + 3] = self.alpha;
     }
 
-    /// Unpacks from an array starting at index.
+    /// 从 index 开始的数组中解包。
     pub fn unpack(array: &[f64], starting_index: usize) -> Self {
         Self {
             red: array[starting_index],
@@ -495,7 +496,7 @@ impl std::fmt::Display for Color {
     }
 }
 
-/// HSL to RGB helper (maps to CesiumJS hue2rgb).
+/// HSL 转 RGB 的辅助函数（映射到 CesiumJS hue2rgb）。
 fn hue2rgb(m1: f64, m2: f64, mut h: f64) -> f64 {
     if h < 0.0 {
         h += 1.0;

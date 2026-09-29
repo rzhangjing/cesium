@@ -1,5 +1,5 @@
-//! Tiling scheme - divides the globe into a grid of tiles.
-//! Maps to CesiumJS `Core/GeographicTilingScheme.js`, `Core/WebMercatorTilingScheme.js`
+//! Tiling scheme - 将地球划分成瓦片网格。
+//! 映射到 CesiumJS `Core/GeographicTilingScheme.js`, `Core/WebMercatorTilingScheme.js`
 
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
@@ -8,20 +8,20 @@ use crate::rectangle::Rectangle;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
 
-/// Defines how the globe is subdivided into tiles.
+/// 定义地球如何被细分为瓦片。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TilingScheme {
-    /// The projection used by this tiling scheme.
+    /// 本瓦片方案所使用的投影。
     projection: TilingProjection,
-    /// The rectangle covered by the tiling scheme.
+    /// 瓦片方案覆盖的矩形。
     rectangle: Rectangle,
-    /// Number of tiles in the X direction at level 0.
+    /// level 0 时 X 方向的瓦片数。
     root_tiles_x: u32,
-    /// Number of tiles in the Y direction at level 0.
+    /// level 0 时 Y 方向的瓦片数。
     root_tiles_y: u32,
 }
 
-/// Projection variants for tiling schemes.
+/// 瓦片方案的投影变体。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TilingProjection {
     Geographic(GeographicProjection),
@@ -29,8 +29,8 @@ pub enum TilingProjection {
 }
 
 impl TilingScheme {
-    /// Creates a geographic tiling scheme (2 tiles wide, 1 tile tall at level 0).
-    /// Maps to `GeographicTilingScheme`
+    /// 创建地理瓦片方案（level 0 时宽 2 瓦、高 1 瓦）。
+    /// 映射到 `GeographicTilingScheme`
     pub fn geographic(ellipsoid: Ellipsoid) -> Self {
         Self {
             projection: TilingProjection::Geographic(GeographicProjection::new(ellipsoid)),
@@ -40,8 +40,8 @@ impl TilingScheme {
         }
     }
 
-    /// Creates a Web Mercator tiling scheme (1 tile wide, 1 tile tall at level 0).
-    /// Maps to `WebMercatorTilingScheme`
+    /// 创建 Web Mercator 瓦片方案（level 0 时宽 1 瓦、高 1 瓦）。
+    /// 映射到 `WebMercatorTilingScheme`
     pub fn web_mercator(ellipsoid: Ellipsoid) -> Self {
         let max_lat = WebMercatorProjection::MAXIMUM_LATITUDE;
         Self {
@@ -52,7 +52,7 @@ impl TilingScheme {
         }
     }
 
-    /// Creates a custom tiling scheme.
+    /// 创建自定义瓦片方案。
     pub fn new(
         projection: TilingProjection,
         rectangle: Rectangle,
@@ -67,35 +67,35 @@ impl TilingScheme {
         }
     }
 
-    /// Gets the projection used by this tiling scheme.
+    /// 获取本瓦片方案所使用的投影。
     pub fn projection(&self) -> &TilingProjection {
         &self.projection
     }
 
-    /// Gets the rectangle covered by this tiling scheme.
+    /// 获取本瓦片方案覆盖的矩形。
     pub fn rectangle(&self) -> &Rectangle {
         &self.rectangle
     }
 
-    /// Gets the number of tiles in X at level 0.
+    /// 获取 level 0 时 X 方向的瓦片数。
     pub fn root_tiles_x(&self) -> u32 {
         self.root_tiles_x
     }
 
-    /// Gets the number of tiles in Y at level 0.
+    /// 获取 level 0 时 Y 方向的瓦片数。
     pub fn root_tiles_y(&self) -> u32 {
         self.root_tiles_y
     }
 
-    /// Computes the number of tiles in X and Y at a given level.
-    /// Maps to `TilingScheme.getNumberOfXTilesAtLevel` / `getNumberOfYTilesAtLevel`
+    /// 计算给定层级下 X 和 Y 方向的瓦片数。
+    /// 映射到 `TilingScheme.getNumberOfXTilesAtLevel` / `getNumberOfYTilesAtLevel`
     pub fn tiles_at_level(&self, level: u32) -> (u32, u32) {
         let scale = 1u32 << level;
         (self.root_tiles_x * scale, self.root_tiles_y * scale)
     }
 
-    /// Computes the rectangle covered by a tile at the given x, y, level.
-    /// Maps to `TilingScheme.tileXYToRectangle`
+    /// 计算给定 x、y、level 处瓦片所覆盖的矩形。
+    /// 映射到 `TilingScheme.tileXYToRectangle`
     pub fn tile_to_rectangle(&self, x: u32, y: u32, level: u32) -> Rectangle {
         let (tiles_x, tiles_y) = self.tiles_at_level(level);
         let tile_width = self.rectangle.width() / tiles_x as f64;
@@ -107,7 +107,7 @@ impl TilingScheme {
         Rectangle::new(west, north - tile_height, west + tile_width, north)
     }
 
-    /// Computes the native rectangle for a tile (in projected coordinates).
+    /// 计算瓦片的原生矩形（以投影坐标表示）。
     pub fn tile_to_native_rectangle(&self, x: u32, y: u32, level: u32) -> Rectangle {
         let geo_rect = self.tile_to_rectangle(x, y, level);
         let sw = self.project(&Cartographic::from_radians(geo_rect.west, geo_rect.south, 0.0));
@@ -115,8 +115,8 @@ impl TilingScheme {
         Rectangle::new(sw.x, sw.y, ne.x, ne.y)
     }
 
-    /// Determines which tile contains the given cartographic position at a level.
-    /// Maps to `TilingScheme.positionToTileXY`
+    /// 判断在某个层级下哪个瓦片包含给定的测绘坐标位置。
+    /// 映射到 `TilingScheme.positionToTileXY`
     pub fn position_to_tile(&self, position: &Cartographic, level: u32) -> Option<(u32, u32)> {
         let (tiles_x, tiles_y) = self.tiles_at_level(level);
         let tile_width = self.rectangle.width() / tiles_x as f64;
@@ -132,7 +132,7 @@ impl TilingScheme {
         Some((x as u32, y as u32))
     }
 
-    /// Projects a cartographic position using this tiling scheme's projection.
+    /// 使用本瓦片方案的投影将一个测绘坐标位置投影。
     pub fn project(&self, cartographic: &Cartographic) -> glam::DVec3 {
         match &self.projection {
             TilingProjection::Geographic(p) => p.project(cartographic),
@@ -140,7 +140,7 @@ impl TilingScheme {
         }
     }
 
-    /// Unprojects coordinates using this tiling scheme's projection.
+    /// 使用本瓦片方案的投影反投影坐标。
     pub fn unproject(&self, projected: glam::DVec3) -> Cartographic {
         match &self.projection {
             TilingProjection::Geographic(p) => p.unproject(projected),
@@ -148,7 +148,7 @@ impl TilingScheme {
         }
     }
 
-    /// Gets the ellipsoid used by this tiling scheme.
+    /// 获取本瓦片方案所使用的椭球。
     pub fn ellipsoid(&self) -> &Ellipsoid {
         match &self.projection {
             TilingProjection::Geographic(p) => p.ellipsoid(),
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn test_tile_to_rectangle() {
         let ts = TilingScheme::geographic(Ellipsoid::WGS84);
-        // Level 0, tile (0,0) should be the western hemisphere
+        // level 0，瓦片 (0,0) 应为西半球
         let rect = ts.tile_to_rectangle(0, 0, 0);
         assert!((rect.west - (-PI)).abs() < 1e-10);
         assert!((rect.east - 0.0).abs() < 1e-10);
@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn test_position_to_tile() {
         let ts = TilingScheme::geographic(Ellipsoid::WGS84);
-        // Position at (0, 0) at level 0 should be tile (1, 0)
+        // (0, 0) 处在 level 0 应属于瓦片 (1, 0)
         let pos = Cartographic::from_radians(0.001, 0.0, 0.0);
         let (x, y) = ts.position_to_tile(&pos, 0).unwrap();
         assert_eq!(x, 1);
@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn test_position_to_tile_out_of_bounds() {
         let ts = TilingScheme::geographic(Ellipsoid::WGS84);
-        // Position way outside should return None
+        // 远远超出范围的位置应返回 None
         let pos = Cartographic::from_radians(PI + 1.0, 0.0, 0.0);
         assert!(ts.position_to_tile(&pos, 0).is_none());
     }

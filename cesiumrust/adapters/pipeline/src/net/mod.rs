@@ -1,7 +1,7 @@
-//! Network backend abstraction + implementations.
+//! 网络后端抽象 + 实现。
 //!
-//! The pipeline uses a **synchronous blocking pool** (ureq, 16 workers with
-//! keep-alive) as the default network path, matching `dynamic_globe.rs:2148-2151`:
+//! 流水线使用一个**同步阻塞池**（ureq，16 个带 keep-alive 的工作线程）
+//! 作为默认网络路径，对应 `dynamic_globe.rs:2148-2151`：
 //!
 //! ```text
 //! let agent = ureq::AgentBuilder::new()
@@ -10,10 +10,9 @@
 //!     .build();
 //! ```
 //!
-//! An optional `reqwest`-based async backend is available behind the
-//! `reqwest-backend` feature flag for future integration (M1.4+), but
-//! **tokio is NOT the pipeline main runtime** — it is at most a transitive
-//! dependency of the optional reqwest backend.
+//! 一个可选的、基于 `reqwest` 的 async 后端在 `reqwest-backend` feature flag
+//! 后可用，供未来集成（M1.4+），但 **tokio 并非流水线的主运行时** ——
+//! 它至多是可选 reqwest 后端的一个传递依赖。
 
 pub mod ureq_backend;
 
@@ -22,42 +21,41 @@ pub mod reqwest_backend;
 
 use std::time::Duration;
 
-/// Result of a network fetch attempt.
+/// 一次网络获取尝试的结果。
 #[derive(Debug, Clone)]
 pub enum FetchResult {
-    /// Successful fetch with raw bytes.
+    /// 带原始字节的成功获取。
     Ok(Vec<u8>),
-    /// Transient failure (timeout, 403, 429, network error).
-    /// The worker will retry according to `RetryPolicy`.
+    /// 瞬时失败（超时、403、429、网络错误）。
+    /// 工作线程会根据 `RetryPolicy` 重试。
     Transient(String),
-    /// Permanent failure (404, invalid URL). No retry.
+    /// 永久失败（404、无效 URL）。不重试。
     Permanent(String),
 }
 
-/// Trait for network backends used by the worker pool.
+/// 供工作池使用的网络后端 trait。
 ///
-/// Implementations must be `Send + Sync` (shared across worker threads).
-/// The default implementation is `UreqBackend` (blocking, keep-alive pool).
+/// 实现必须是 `Send + Sync`（跨工作线程共享）。默认实现是
+/// `UreqBackend`（阻塞、keep-alive 池）。
 ///
-/// Corresponds to the ureq agent in `dynamic_globe.rs:2148-2151` and the
-/// fetch loop at L2192-2203.
+/// 对应 `dynamic_globe.rs:2148-2151` 的 ureq agent 以及 L2192-2203 的
+/// 获取循环。
 pub trait NetworkBackend: Send + Sync {
-    /// Fetch bytes from a URL. Blocks until complete or timeout.
+    /// 从 URL 获取字节。阻塞直到完成或超时。
     ///
-    /// This is called from worker threads (not the frame thread), so blocking
-    /// is acceptable and expected.
+    /// 此函数从工作线程（而非帧线程）调用，因此阻塞是可接受且预期的。
     fn fetch(&self, url: &str) -> FetchResult;
 
-    /// Backend name for diagnostics.
+    /// 用于诊断的后端名称。
     fn name(&self) -> &str;
 
-    /// Connection timeout (L2150: 10 s).
+    /// 连接超时（L2150：10 s）。
     fn timeout(&self) -> Duration;
 }
 
-/// Minimal keep-alive HTTP server used by backend tests (offline, ephemeral
-/// port). Tracks the number of accepted TCP connections vs served requests so
-/// tests can assert connection reuse (keep-alive pooling, L2148-2151).
+/// 由后端测试使用的极简 keep-alive HTTP 服务器（离线、临时端口）。它
+/// 追踪接受的 TCP 连接数与已服务请求数，以便测试可以断言连接复用
+/// （keep-alive 池化，L2148-2151）。
 #[cfg(test)]
 pub(crate) mod test_server {
     use std::io::{BufRead, BufReader, Write};
@@ -66,29 +64,29 @@ pub(crate) mod test_server {
     use std::sync::Arc;
     use std::thread;
 
-    /// Counters observed by tests.
+    /// 由测试观察的计数器。
     pub(crate) struct ServerStats {
-        /// TCP connections accepted (keep-alive ⇒ fewer than requests).
+        /// 接受的 TCP 连接数（keep-alive ⇒ 少于请求数）。
         pub(crate) connections: AtomicUsize,
-        /// HTTP requests served.
+        /// 已服务的 HTTP 请求数。
         pub(crate) requests: AtomicUsize,
     }
 
-    /// Handle to a running test server.
+    /// 一个运行中的测试服务器的句柄。
     pub(crate) struct TestServer {
         base: String,
-        /// Shared stats.
+        /// 共享的统计。
         pub(crate) stats: Arc<ServerStats>,
     }
 
     impl TestServer {
-        /// Build a full URL for `path` (e.g. `/tile`).
+        /// 为 `path`（例如 `/tile`）构造一个完整 URL。
         pub(crate) fn url(&self, path: &str) -> String {
             format!("{}{}", self.base, path)
         }
     }
 
-    /// Spawn a server returning `body` (HTTP 200, keep-alive) for every GET.
+    /// 启动一个服务器，对每个 GET 都返回 `body`（HTTP 200，keep-alive）。
     pub(crate) fn spawn(body: Vec<u8>) -> TestServer {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
         let port = listener.local_addr().expect("local_addr").port();
@@ -119,14 +117,14 @@ pub(crate) mod test_server {
         };
         let mut reader = BufReader::new(reader_stream);
         loop {
-            // Read the request line; EOF (0 bytes) means the client closed.
+            // 读取请求行；EOF（0 字节）意味着客户端已关闭。
             let mut line = String::new();
             match reader.read_line(&mut line) {
                 Ok(0) => return,
                 Ok(_) => {}
                 Err(_) => return,
             }
-            // Drain remaining headers until the blank line terminator.
+            // 排空剩余的头部，直到遇到空行终止符。
             loop {
                 let mut h = String::new();
                 match reader.read_line(&mut h) {

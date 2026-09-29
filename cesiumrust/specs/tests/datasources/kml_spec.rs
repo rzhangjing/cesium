@@ -1,6 +1,6 @@
-//! KML specs - ported from DataSources/KmlDataSourceSpec, KmlTourSpec, exportKmlSpec
-//! Covers: parse_kml_simple, parse_coordinates, parse_kml_color, kml_to_datasource,
-//! KmlTour, KmlTourFlyTo, KmlExporter, rgba_to_kml_color
+//! KML 规范 - 移植自 DataSources/KmlDataSourceSpec、KmlTourSpec、exportKmlSpec
+//! 覆盖：parse_kml_simple、parse_coordinates、parse_kml_color、kml_to_datasource、
+//! KmlTour、KmlTourFlyTo、KmlExporter、rgba_to_kml_color
 
 use cesium_kml::{
     parse_coordinates, parse_kml_color, parse_kml_simple, rgba_to_kml_color,
@@ -51,7 +51,7 @@ fn parse_kml_simple_placemark_names() {
 #[test]
 fn parse_kml_simple_invalid() {
     let result = parse_kml_simple("not valid xml at all");
-    // Should either error or produce empty document
+    // 应报错或产生空文档
     if let Ok(doc) = result {
         assert!(doc.placemarks.is_empty());
     }
@@ -85,8 +85,8 @@ fn parse_coordinates_empty() {
 
 #[test]
 fn parse_kml_color_aabbggrr() {
-    // KML color format: aabbggrr
-    let color = parse_kml_color("ff0000ff"); // red, full opacity
+    // KML 颜色格式：aabbggrr
+    let color = parse_kml_color("ff0000ff"); // 红色，完全不透明
     assert!(color.is_some());
     let c = color.unwrap();
     assert!((c.red - 1.0).abs() < 0.01);
@@ -97,7 +97,7 @@ fn parse_kml_color_aabbggrr() {
 
 #[test]
 fn parse_kml_color_green() {
-    let color = parse_kml_color("ff00ff00"); // green
+    let color = parse_kml_color("ff00ff00"); // 绿色
     let c = color.unwrap();
     assert!((c.red - 0.0).abs() < 0.01);
     assert!((c.green - 1.0).abs() < 0.01);
@@ -127,7 +127,7 @@ fn rgba_to_kml_color_green() {
 #[test]
 fn rgba_to_kml_color_semi_transparent() {
     let kml_color = rgba_to_kml_color(1.0, 1.0, 1.0, 0.5);
-    // Alpha 0.5 → 0x80 = 128 → "80" or 0x7f = 127 → "7f"
+    // Alpha 0.5 → 0x80 = 128 → "80" 或 0x7f = 127 → "7f"
     assert!(kml_color.starts_with("80") || kml_color.starts_with("7f"));
 }
 
@@ -171,5 +171,5 @@ fn kml_tour_empty() {
 #[test]
 fn kml_exporter_creation() {
     let exporter = KmlExporter::new();
-    let _ = exporter; // Just verify it can be created
+    let _ = exporter; // 仅验证其可被创建
 }

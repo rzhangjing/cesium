@@ -1,11 +1,11 @@
-//! HermiteSplineSpec.js → Rust integration tests
+//! HermiteSplineSpec.js → Rust 集成测试
 //!
-//! Original: packages/engine/Specs/Core/HermiteSplineSpec.js (34 it())
-//! A-class ported: 8 (create_spline, C1, natural_cubic, clamped_cubic, evaluate_number,
-//!                    evaluate_cartesian3, natural_2pts_lerp, clamped_2pts_lerp)
-//! C-class omitted: 22 throws (compile-time type safety)
-//! Omitted: 2 quaternion evaluate (Rust type-system: would need separate QuaternionHermiteSpline)
-//! Merged: 2 result-parameter variants → owned-return
+//! 原始：packages/engine/Specs/Core/HermiteSplineSpec.js（34 个 it()）
+//! A 类已移植：8 个（create_spline、C1、natural_cubic、clamped_cubic、evaluate_number、
+//!                    evaluate_cartesian3、natural_2pts_lerp、clamped_2pts_lerp）
+//! C 类已省略：22 个 throws（编译期类型安全）
+//! 已省略：2 个 quaternion evaluate（Rust 类型系统：需要单独的 QuaternionHermiteSpline）
+//! 已合并：2 个结果参数变体 → owned 返回
 
 use cesium_animation::spline::*;
 use cesium_specs::epsilon;
@@ -15,7 +15,7 @@ use std::f64::consts::PI;
 const FRAC_PI_2: f64 = PI / 2.0;
 const THREE_PI_OVER_TWO: f64 = 3.0 * PI / 2.0;
 
-/// Hermite basis function matching CesiumJS spec helper `createHermiteBasis(p, pT, q, qT)`.
+/// 与 CesiumJS 规格辅助函数 `createHermiteBasis(p, pT, q, qT)` 匹配的 Hermite 基函数。
 fn hermite_basis(p: DVec3, pt: DVec3, q: DVec3, qt: DVec3, u: f64) -> DVec3 {
     let a = 2.0 * u * u * u - 3.0 * u * u + 1.0;
     let b = -2.0 * u * u * u + 3.0 * u * u;
@@ -36,14 +36,14 @@ fn create_spline() {
             DVec3::new(-2821260.0, -5248423.0, 4021290.0),
             DVec3::new(-2539788.0, -4724797.0, 3620093.0),
         ],
-        // inTangents (length 4 = points.len()-1)
+        // inTangents（长度 4 = points.len()-1）
         vec![
             DVec3::new(-1993381.0, -731813.0, 368057.0),
             DVec3::new(-4193834.0, 96759.0, -585367.0),
             DVec3::new(-1781805.0, 817999.0, -894230.0),
             DVec3::new(1165345.0, 112641.0, 47281.0),
         ],
-        // outTangents (length 4 = points.len()-1)
+        // outTangents（长度 4 = points.len()-1）
         vec![
             DVec3::new(1125196.0, -161816.0, 270551.0),
             DVec3::new(-996690.5, -365906.5, 184028.5),
@@ -96,7 +96,7 @@ fn c1_spline() {
     let granularity = 0.1;
     let mut j = times[0];
     while j < times[1] {
-        // For first segment: u = (j - times[0]) / (times[1] - times[0])
+        // 对于第一段：u = (j - times[0]) / (times[1] - times[0])
         let u = (j - times[0]) / (times[1] - times[0]);
         let expected = hermite_basis(points[0], tangents[0], points[1], tangents[1], u);
         let actual = hs.evaluate(j);
@@ -141,8 +141,8 @@ fn natural_cubic_spline() {
 }
 
 /// "clamped cubic spline"
-/// Note: The CesiumJS spec has a bug (loop uses undefined .time property → loop never executes).
-/// We verify construction succeeds and first/last point evaluation.
+/// 注意：CesiumJS 规格有一个 bug（循环使用未定义的 .time 属性 → 循环从不执行）。
+/// 我们验证构造成功以及首/末点的求值。
 #[test]
 fn clamped_cubic_spline() {
     let points = vec![
@@ -162,13 +162,13 @@ fn clamped_cubic_spline() {
         last_tangent,
     );
 
-    // Verify endpoints
+    // 验证端点
     let p0 = hs.evaluate(times[0]);
     assert!((p0 - points[0]).length() < epsilon::EPSILON10);
     let p_last = hs.evaluate(times[3]);
     assert!((p_last - points[3]).length() < epsilon::EPSILON10);
 
-    // Verify first segment uses firstTangent
+    // 验证第一段使用 firstTangent
     let u = 0.5;
     let time = times[0] + u * (times[1] - times[0]);
     let expected = hermite_basis(points[0], first_tangent, points[1], hs.in_tangents[0], u);
@@ -180,12 +180,12 @@ fn clamped_cubic_spline() {
 }
 
 /// "evaluate returns number value"
-/// Uses DVec3 with x-component encoding scalar (Rust type-system: no generic HermiteSpline<f64>).
+/// 使用 DVec3，其 x 分量编码标量（Rust 类型系统：无泛型 HermiteSpline<f64>）。
 #[test]
 fn evaluate_returns_number_value() {
-    // Original: times=[0, 0.5, 1.0], points=[0, 1, 0], inTangents=[0, 1], outTangents=[0, -3]
-    // Expected: evaluate(0.5) == 1.0, evaluate(0.75) == 0.25
-    // We verify with DVec3 x-component:
+    // 原始：times=[0, 0.5, 1.0], points=[0, 1, 0], inTangents=[0, 1], outTangents=[0, -3]
+    // 期望：evaluate(0.5) == 1.0, evaluate(0.75) == 0.25
+    // 我们用 DVec3 的 x 分量验证：
     let times = vec![0.0, 0.5, 1.0];
     let points = vec![
         DVec3::new(0.0, 0.0, 0.0),

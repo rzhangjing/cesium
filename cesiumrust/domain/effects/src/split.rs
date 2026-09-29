@@ -1,25 +1,25 @@
-//! Split direction for imagery layer splitting.
+//! 用于影像图层分割的分割方向。
 //!
-//! Maps to CesiumJS `Scene/SplitDirection.js`.
+//! 映射到 CesiumJS `Scene/SplitDirection.js`。
 
 use serde::{Deserialize, Serialize};
 
-/// The direction to display a primitive or ImageryLayer relative to the split position.
+/// 相对于分割位置显示某个图元或 ImageryLayer 的方向。
 ///
-/// Maps to CesiumJS `Scene/SplitDirection.js`.
+/// 映射到 CesiumJS `Scene/SplitDirection.js`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum SplitDirection {
-    /// Display to the left of the split position.
+    /// 显示在分割位置的左侧。
     Left,
-    /// Always display (no splitting).
+    /// 始终显示（不分割）。
     #[default]
     None,
-    /// Display to the right of the split position.
+    /// 显示在分割位置的右侧。
     Right,
 }
 
 impl SplitDirection {
-    /// Get the numeric value for shader use.
+    /// 获取用于 shader 的数值。
     ///
     /// - Left: -1.0
     /// - None: 0.0
@@ -32,7 +32,7 @@ impl SplitDirection {
         }
     }
 
-    /// Create from a shader value.
+    /// 从 shader 数值创建。
     pub fn from_shader_value(value: f64) -> Self {
         if value < -0.5 {
             Self::Left
@@ -43,15 +43,15 @@ impl SplitDirection {
         }
     }
 
-    /// Check if splitting is active (not None).
+    /// 检查分割是否处于激活状态（非 None）。
     pub fn is_split(&self) -> bool {
         !matches!(self, Self::None)
     }
 
-    /// Check if this direction should show at a given split position.
+    /// 检查在给定分割位置下此方向是否应当显示。
     ///
-    /// `split_position` is in [0, 1] range (0 = left edge, 1 = right edge).
-    /// `screen_x` is the normalized screen X coordinate [0, 1].
+    /// `split_position` 处于 [0, 1] 范围（0 = 左边缘，1 = 右边缘）。
+    /// `screen_x` 是归一化的屏幕 X 坐标 [0, 1]。
     pub fn should_show_at(&self, screen_x: f64, split_position: f64) -> bool {
         match self {
             Self::None => true,
@@ -61,14 +61,14 @@ impl SplitDirection {
     }
 }
 
-/// Splitter configuration for the scene.
+/// 场景的分割器配置。
 ///
-/// Maps to CesiumJS `Scene/Splitter.js` and `Scene.splitPosition`.
+/// 映射到 CesiumJS `Scene/Splitter.js` 和 `Scene.splitPosition`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct SplitterConfig {
-    /// Whether splitting is enabled.
+    /// 分割是否启用。
     pub enabled: bool,
-    /// The split position as a fraction of the screen width [0, 1].
+    /// 分割位置，以屏幕宽度分数表示 [0, 1]。
     pub split_position: f64,
 }
 
@@ -82,7 +82,7 @@ impl Default for SplitterConfig {
 }
 
 impl SplitterConfig {
-    /// Create a new splitter config.
+    /// 创建一个新的分割器配置。
     pub fn new(enabled: bool, split_position: f64) -> Self {
         Self {
             enabled,
@@ -90,23 +90,22 @@ impl SplitterConfig {
         }
     }
 
-    /// Set the split position, clamped to [0, 1].
+    /// 设置分割位置，限制到 [0, 1]。
     pub fn set_split_position(&mut self, position: f64) {
         self.split_position = position.clamp(0.0, 1.0);
     }
 
-    /// Get the split position in pixels for a given viewport width.
+    /// 针对给定的视口宽度获取以像素计的分割位置。
     pub fn split_position_pixels(&self, viewport_width: f64) -> f64 {
         self.split_position * viewport_width
     }
 
-    /// Modify a fragment shader to include split logic.
+    /// 修改片元 shader 以纳入分割逻辑。
     ///
-    /// Returns the additional shader code to insert.
+    /// 返回要插入的额外 shader 代码。
     ///
-    /// **GLSL form** — mirrors upstream `SplitDirection.js` / `czm_splitPosition`,
-    /// using `gl_FragCoord` (pixel space) and `discard`. Kept verbatim for the
-    /// GLSL blueprint parity test.
+    /// **GLSL 形式** — 镜像上游 `SplitDirection.js` / `czm_splitPosition`，
+    /// 使用 `gl_FragCoord`（像素空间）和 `discard`。为 GLSL blueprint 奇偶校验测试而逐字保留。
     pub fn shader_modification(&self) -> &str {
         if self.enabled {
             r#"
@@ -124,20 +123,18 @@ impl SplitterConfig {
         }
     }
 
-    /// WGSL form of [`Self::shader_modification`] for the Bevy/wgpu backend.
+    /// [`Self::shader_modification`] 面向 Bevy/wgpu 后端的 WGSL 形式。
     ///
-    /// Two mechanical differences from the GLSL source, both forced by the
-    /// target language (recorded as `docs/deviations.md#dev-034`):
-    /// - WGSL has no `discard` statement; the idiomatic equivalent is an early
-    ///   `return` from the fragment entry point before the colour output is
-    ///   written (leaves the render-target sample untouched, matching `discard`).
-    /// - `gl_FragCoord` becomes the `@builtin(position)` builtin (also in pixel
-    ///   space, `.xy` from the top-left), and `czm_splitPosition` becomes a plain
-    ///   `split_position_px` scalar (the adapter multiplies the `[0, 1]` fraction
-    ///   by the viewport width before packing it).
+    /// 与 GLSL 源码相比有两个机械性差异，两者都由目标语言强制要求
+    /// （记录为 `docs/deviations.md#dev-034`）：
+    /// - WGSL 没有 `discard` 语句；惯用的等价写法是在写入颜色输出之前
+    ///   从片元入口点提前 `return`（保留渲染目标采样不变，与 `discard` 对应）。
+    /// - `gl_FragCoord` 变为 `@builtin(position)` 内建量（同样处于像素空间，
+    ///   `.xy` 从左上角起算），而 `czm_splitPosition` 变为一个普通的
+    ///   `split_position_px` 标量（适配器在打包前会将 [0, 1] 分数乘以视口宽度）。
     ///
-    /// `split_direction` is the per-primitive varying (`-1`/`0`/`1`, exactly the
-    /// values [`SplitDirection::to_shader_value`] produces).
+    /// `split_direction` 是每个图元的 varying（`-1`/`0`/`1`，恰好是
+    /// [`SplitDirection::to_shader_value`] 产生的值）。
     pub fn wgsl_shader_modification(&self) -> &str {
         if self.enabled {
             r#"
@@ -191,17 +188,17 @@ mod tests {
     fn test_split_direction_should_show() {
         let split_pos = 0.5;
 
-        // None always shows
+        // None 始终显示
         assert!(SplitDirection::None.should_show_at(0.0, split_pos));
         assert!(SplitDirection::None.should_show_at(0.5, split_pos));
         assert!(SplitDirection::None.should_show_at(1.0, split_pos));
 
-        // Left shows at or before split
+        // Left 在分割处或之前显示
         assert!(SplitDirection::Left.should_show_at(0.0, split_pos));
         assert!(SplitDirection::Left.should_show_at(0.5, split_pos));
         assert!(!SplitDirection::Left.should_show_at(0.6, split_pos));
 
-        // Right shows after split
+        // Right 在分割之后显示
         assert!(!SplitDirection::Right.should_show_at(0.0, split_pos));
         assert!(!SplitDirection::Right.should_show_at(0.5, split_pos));
         assert!(SplitDirection::Right.should_show_at(0.6, split_pos));
@@ -220,7 +217,7 @@ mod tests {
         assert!(config.enabled);
         assert_eq!(config.split_position, 0.7);
 
-        // Clamped
+        // 被限制
         let config2 = SplitterConfig::new(true, 1.5);
         assert_eq!(config2.split_position, 1.0);
 
@@ -258,14 +255,14 @@ mod tests {
 
     #[test]
     fn test_splitter_wgsl_shader_modification() {
-        // The WGSL variant must be empty when disabled, exactly like the GLSL one.
+        // WGSL 变体在禁用时必须为空，与 GLSL 完全一致。
         let disabled = SplitterConfig::default();
         assert_eq!(disabled.wgsl_shader_modification(), "");
 
         let enabled = SplitterConfig::new(true, 0.5);
         let shader = enabled.wgsl_shader_modification();
-        // WGSL has no `discard` / `gl_FragCoord` / `czm_` — the whole point of the
-        // variant is that it uses the target-language spellings instead.
+        // WGSL 没有 `discard` / `gl_FragCoord` / `czm_` —— 该变体的全部意义
+        // 就在于它改用目标语言的拼写。
         assert!(!shader.contains("discard"), "WGSL must not use GLSL `discard`");
         assert!(
             !shader.contains("gl_FragCoord"),

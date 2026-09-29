@@ -1,18 +1,18 @@
-//! e2e skeleton: `priority_function` consumption through the scheduler and
-//! (eventually) `HttpTileFetcher`.
+//! 端到端骨架：通过调度器（以及最终的
+//! `HttpTileFetcher`）消费 `priority_function`。
 //!
-//! The pure `PriorityFunction` / `RequestScheduler::update_with_context`
-//! machinery is implemented in `cesium-resource` and exercised here. Wiring the
-//! computed priority into `HttpTileFetcher::fetch(url, priority)` — which
-//! currently ignores `_priority` (`adapters/network/src/lib.rs:186`) — is the
-//! joint M8.3 (#66) + M11.1 deliverable.
+//! 纯函数 `PriorityFunction` / `RequestScheduler::update_with_context`
+//! 机制已在 `cesium-resource` 中实现并在此演练。将计算出的
+//! 优先级接入 `HttpTileFetcher::fetch(url, priority)`——它
+//! 目前忽略 `_priority`（`adapters/network/src/lib.rs:186`）——
+//! 是 M8.3 (#66) + M11.1 的联合交付物。
 
 use cesium_resource::priority::{
     DistanceDecayPriority, FrameContext, PriorityFunction, PriorityKey, SsedPriority,
 };
 use cesium_resource::{Request, RequestScheduler, RequestType};
 
-/// Skeleton: SSED priority orders a near tile ahead of a far tile.
+/// 骨架：SSED 优先级将较近瓦片排在较远瓦片之前。
 #[test]
 #[ignore = "M8-wiremock skeleton: needs HttpTileFetcher to consume `_priority` (M8.3/#66 + M11.1). See docs/deferred.md."]
 fn ssed_priority_orders_near_before_far() {
@@ -28,16 +28,16 @@ fn ssed_priority_orders_near_before_far() {
 
     let p_near = ssed.compute_priority(&near, &ctx);
     let p_far = ssed.compute_priority(&far, &ctx);
-    // Lower value = higher priority; the near tile must sort first.
+    // 值越小 = 优先级越高；较近瓦片必须排在最前。
     assert!(p_near <= p_far, "near={p_near} far={p_far}");
 }
 
-/// Skeleton: the scheduler recomputes pending priorities from frame context.
+/// 骨架：调度器从帧上下文重新计算待处理优先级。
 #[test]
 #[ignore = "M8-wiremock skeleton: needs HttpTileFetcher to consume `_priority` (M8.3/#66 + M11.1). See docs/deferred.md."]
 fn scheduler_recomputes_priority_with_context() {
     let mut scheduler = RequestScheduler::new();
-    scheduler.maximum_requests = 0; // keep the request pending
+    scheduler.maximum_requests = 0; // 使请求保持待处理
     let pf: Box<dyn PriorityFunction> = Box::new(SsedPriority::new());
     scheduler.set_priority_function(pf);
     assert_eq!(scheduler.priority_function_name(), Some("SSED"));
@@ -51,7 +51,7 @@ fn scheduler_recomputes_priority_with_context() {
             Request::throttled(
                 "https://tiles.example.com/1/1/14.b3dm".to_string(),
                 RequestType::Tiles3D,
-                12345.0, // sentinel priority that the function must overwrite
+                12345.0, // 该函数必须覆盖的哨兵优先级
             )
             .with_priority_key(key),
         )
@@ -67,7 +67,7 @@ fn scheduler_recomputes_priority_with_context() {
     );
 }
 
-/// Skeleton: distance-decay priority is a valid alternative signal.
+/// 骨架：距离衰减优先级是一种有效的替代信号。
 #[test]
 #[ignore = "M8-wiremock skeleton: needs HttpTileFetcher to consume `_priority` (M8.3/#66 + M11.1). See docs/deferred.md."]
 fn distance_decay_priority_is_monotonic() {

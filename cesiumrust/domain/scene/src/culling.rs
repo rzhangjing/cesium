@@ -1,6 +1,6 @@
-//! Frustum culling and visibility determination.
+//! 视锥剔除与可见性判定。
 //!
-//! Maps to CesiumJS `Scene/Scene.js` culling logic and
+//! 映射到 CesiumJS `Scene/Scene.js` 的剔除逻辑与
 //! `Core/CullingVolume.js`
 
 use cesium_geospatial::bounding::BoundingSphere;
@@ -10,39 +10,39 @@ use glam::DVec3;
 
 use crate::scene_graph::{NodeId, SceneGraph, SceneNode};
 
-/// Result of a culling test.
+/// 一次剔除测试的结果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CullResult {
-    /// The object is completely outside the frustum.
+    /// 对象完全在视锥之外。
     Outside,
-    /// The object intersects the frustum boundary.
+    /// 对象与视锥边界相交。
     Intersecting,
-    /// The object is completely inside the frustum.
+    /// 对象完全在视锥之内。
     Inside,
 }
 
 impl CullResult {
-    /// Returns true if the object is at least partially visible.
+    /// 若对象至少部分可见则返回 true。
     pub fn is_visible(&self) -> bool {
         !matches!(self, CullResult::Outside)
     }
 }
 
-/// Frustum culling context for a frame.
+/// 一帧的视锥剔除上下文。
 #[derive(Debug, Clone)]
 pub struct CullingContext {
-    /// The culling volume (6 planes).
+    /// 剔除体（6 个平面）。
     pub culling_volume: CullingVolume,
 
-    /// Camera position for distance calculations.
+    /// 用于距离计算的相机位置。
     pub camera_position: DVec3,
 
-    /// Whether culling is enabled.
+    /// 是否启用剔除。
     pub enabled: bool,
 }
 
 impl CullingContext {
-    /// Creates a culling context from a perspective frustum.
+    /// 从透视视锥创建一个剔除上下文。
     pub fn from_perspective_frustum(
         frustum: &PerspectiveFrustum,
         position: DVec3,
@@ -57,7 +57,7 @@ impl CullingContext {
         }
     }
 
-    /// Tests a bounding sphere against the frustum.
+    /// 测试一个包围球与视锥的关系。
     pub fn test_bounding_sphere(&self, sphere: &BoundingSphere) -> CullResult {
         if !self.enabled {
             return CullResult::Inside;
@@ -69,32 +69,32 @@ impl CullingContext {
         }
     }
 
-    /// Computes the distance from the camera to a bounding sphere.
+    /// 计算从相机到包围球的距离。
     pub fn distance_to(&self, sphere: &BoundingSphere) -> f64 {
         let dist = self.camera_position.distance(sphere.center) - sphere.radius;
         dist.max(0.0)
     }
 }
 
-/// Result of visibility determination for a node.
+/// 一个节点的可见性判定结果。
 #[derive(Debug, Clone)]
 pub struct VisibilityResult {
-    /// The node ID.
+    /// 节点 ID。
     pub node_id: NodeId,
 
-    /// Whether the node is visible.
+    /// 节点是否可见。
     pub visible: bool,
 
-    /// Distance from camera (for sorting).
+    /// 到相机的距离（用于排序）。
     pub distance: f64,
 
-    /// The cull result.
+    /// 剔除结果。
     pub cull_result: CullResult,
 }
 
-/// Performs frustum culling on the scene graph.
+/// 对场景图执行视锥剔除。
 ///
-/// Returns a list of visible node IDs with their distances.
+/// 返回可见节点 ID 及其距离的列表。
 pub fn cull_scene(
     scene: &SceneGraph,
     context: &CullingContext,
@@ -109,9 +109,9 @@ pub fn cull_scene(
     results
 }
 
-/// Performs culling test on a single node.
+/// 对单个节点执行剔除测试。
 fn cull_node(node: &SceneNode, context: &CullingContext) -> VisibilityResult {
-    // If node has no bounding volume, assume visible
+    // 若节点没有包围体，则假定其可见
     let world_bv = match node.world_bounding_sphere() {
         Some(bv) => bv,
         None => {
@@ -135,17 +135,17 @@ fn cull_node(node: &SceneNode, context: &CullingContext) -> VisibilityResult {
     }
 }
 
-/// Sorts visibility results by distance (front-to-back).
+/// 按距离对可见性结果排序（从前到后）。
 pub fn sort_front_to_back(results: &mut [VisibilityResult]) {
     results.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
 }
 
-/// Sorts visibility results by distance (back-to-front) for transparency.
+/// 按距离对可见性结果排序（从后到前），用于透明渲染。
 pub fn sort_back_to_front(results: &mut [VisibilityResult]) {
     results.sort_by(|a, b| b.distance.partial_cmp(&a.distance).unwrap_or(std::cmp::Ordering::Equal));
 }
 
-/// Filters results to only visible nodes.
+/// 过滤结果，仅保留可见节点。
 pub fn filter_visible(results: Vec<VisibilityResult>) -> Vec<VisibilityResult> {
     results.into_iter().filter(|r| r.visible).collect()
 }
@@ -181,7 +181,7 @@ mod tests {
     fn test_sphere_in_frustum() {
         let context = create_test_context();
 
-        // Sphere in front of camera
+        // 相机前方的球体
         let sphere = BoundingSphere::new(DVec3::new(0.0, 0.0, -100.0), 10.0);
         let result = context.test_bounding_sphere(&sphere);
         assert!(result.is_visible());
@@ -191,7 +191,7 @@ mod tests {
     fn test_sphere_behind_camera() {
         let context = create_test_context();
 
-        // Sphere behind camera
+        // 相机后方的球体
         let sphere = BoundingSphere::new(DVec3::new(0.0, 0.0, 100.0), 10.0);
         let result = context.test_bounding_sphere(&sphere);
         assert!(!result.is_visible());
@@ -210,12 +210,12 @@ mod tests {
     fn test_cull_scene() {
         let mut scene = SceneGraph::new();
 
-        // Visible node in front
+        // 前方可见的节点
         let visible_node = SceneNode::new(0)
             .with_bounding_volume(BoundingSphere::new(DVec3::new(0.0, 0.0, -100.0), 10.0));
         scene.add_node(visible_node);
 
-        // Hidden node behind
+        // 后方隐藏的节点
         let hidden_node = SceneNode::new(0)
             .with_bounding_volume(BoundingSphere::new(DVec3::new(0.0, 0.0, 100.0), 10.0));
         scene.add_node(hidden_node);
@@ -289,7 +289,7 @@ mod tests {
         let mut context = create_test_context();
         context.enabled = false;
 
-        // Even a sphere behind camera should be "visible" when culling is disabled
+        // 即使禁用到除后，相机后方的球体也应当“可见”
         let sphere = BoundingSphere::new(DVec3::new(0.0, 0.0, 100.0), 10.0);
         let result = context.test_bounding_sphere(&sphere);
         assert!(result.is_visible());

@@ -1,4 +1,4 @@
-//! Widgets/AnimationViewModelSpec.js → Rust integration tests
+//! Widgets/AnimationViewModelSpec.js → Rust 集成测试
 
 use cesium_widgets::{AnimationViewModel, ShuttleRing};
 
@@ -87,7 +87,7 @@ fn test_shuttle_ring_angle_to_multiplier_zero() {
 #[test]
 fn test_shuttle_ring_angle_to_multiplier_realtime() {
     let ring = ShuttleRing::default();
-    // At realtime angle (15 degrees), multiplier should be 1.0
+    // 处于实时角度（15 度）时，倍率应为 1.0
     let m = ring.angle_to_multiplier(15.0);
     assert!((m - 1.0).abs() < 1e-10);
 }
@@ -103,12 +103,12 @@ fn test_shuttle_ring_multiplier_to_angle() {
 fn test_shuttle_ring_multiplier_to_angle_system_clock() {
     let ring = ShuttleRing::default();
     let angle = ring.multiplier_to_angle(5.0, true);
-    assert!((angle - 15.0).abs() < 1e-10); // Always realtime in system clock mode
+    assert!((angle - 15.0).abs() < 1e-10); // 系统时钟模式下始终为实时
 }
 
 #[test]
 fn test_shuttle_ring_with_ticks() {
     let ring = ShuttleRing::with_ticks(vec![10.0, 1.0, 5.0]);
-    // Should be sorted
+    // 应已排序
     assert_eq!(ring.ticks, vec![1.0, 5.0, 10.0]);
 }

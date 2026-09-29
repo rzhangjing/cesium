@@ -1,6 +1,6 @@
-//! Particle system extended specs - tests for Particle, ParticleForce, Burst, and ParticleSystem
+//! 粒子系统扩展规范 - 测试 Particle、ParticleForce、Burst 及 ParticleSystem
 //!
-//! Covers: particle lifecycle, forces, burst emission, system presets
+//! 覆盖：粒子生命周期、力、爆发发射、系统预设
 
 use cesium_effects::{Particle, ParticleForce, ParticleSystem, ParticleSystemConfig};
 use glam::DVec3;
@@ -8,7 +8,7 @@ use glam::DVec3;
 const EPSILON3: f64 = 1e-3;
 const EPSILON6: f64 = 1e-6;
 
-// ─── Particle lifecycle ──────────────────────────────────────────────────────
+// ─── 粒子生命周期 ──────────────────────────────────────────────────────
 
 #[test]
 fn particle_new() {
@@ -78,7 +78,7 @@ fn particle_force_wind() {
     };
     let p = Particle::new(1, DVec3::ZERO, DVec3::ZERO, 2.0);
     let accel = force.compute_acceleration(&p);
-    // Wind acceleration = (wind - particle_velocity) * 0.1 = (5,0,0) * 0.1 = (0.5,0,0)
+    // 风力加速度 = (wind - particle_velocity) * 0.1 = (5,0,0) * 0.1 = (0.5,0,0)
     assert!((accel.x - 0.5).abs() < EPSILON6, "wind accel should be 0.5, got {}", accel.x);
 }
 
@@ -90,7 +90,7 @@ fn particle_force_drag() {
     let mut p = Particle::new(1, DVec3::ZERO, DVec3::new(10.0, 0.0, 0.0), 2.0);
     p.velocity = DVec3::new(10.0, 0.0, 0.0);
     let accel = force.compute_acceleration(&p);
-    // Drag should oppose velocity
+    // 阻力应阻碍速度
     assert!(accel.x < 0.0, "drag should oppose velocity");
 }
 
@@ -109,12 +109,12 @@ fn particle_force_multiple() {
     for force in &forces {
         total_accel += force.compute_acceleration(&p);
     }
-    // Gravity: (0, -9.8, 0), Wind: (2,0,0) * 0.1 = (0.2, 0, 0)
+    // 重力：(0, -9.8, 0)，风力：(2,0,0) * 0.1 = (0.2, 0, 0)
     assert!((total_accel.y - (-9.8)).abs() < EPSILON6);
     assert!((total_accel.x - 0.2).abs() < EPSILON6);
 }
 
-// ─── ParticleSystem construction ─────────────────────────────────────────────
+// ─── ParticleSystem 构造 ─────────────────────────────────────────────
 
 #[test]
 fn particle_system_fire_preset() {
@@ -141,14 +141,14 @@ fn particle_system_new_with_config() {
     assert_eq!(sys.particle_count(), 0, "a fresh system has not emitted yet");
 }
 
-// ─── ParticleSystem update ───────────────────────────────────────────────────
+// ─── ParticleSystem 更新 ───────────────────────────────────────────────────
 
 #[test]
 fn particle_system_update_emits_particles() {
     let mut sys = ParticleSystem::fire(DVec3::ZERO);
     let initial_count = sys.particle_count();
     sys.update(0.1, 42);
-    // After update, should have emitted some particles
+    // 更新后，应已发射一些粒子
     let new_count = sys.particle_count();
     assert!(
         new_count >= initial_count,
@@ -161,7 +161,7 @@ fn particle_system_update_advances_age() {
     let mut sys = ParticleSystem::fire(DVec3::ZERO);
     sys.update(0.5, 42);
     sys.update(0.5, 43);
-    // After 1 second, some particles should have aged
+    // 1 秒后，一些粒子应已老化
     let count = sys.particle_count();
     assert!(count > 0, "fire preset should emit particles after 1s of updates");
 }
@@ -171,25 +171,25 @@ fn particle_system_particle_color() {
     let sys = ParticleSystem::fire(DVec3::ZERO);
     let p = Particle::new(1, DVec3::ZERO, DVec3::ZERO, 2.0);
     let color = sys.particle_color(&p);
-    // Color should be valid RGBA
+    // 颜色应为有效 RGBA
     assert!(color[0] >= 0.0 && color[0] <= 1.0);
     assert!(color[1] >= 0.0 && color[1] <= 1.0);
     assert!(color[2] >= 0.0 && color[2] <= 1.0);
     assert!(color[3] >= 0.0 && color[3] <= 1.0);
 }
 
-// ─── ParticleSystem presets emit different particles ─────────────────────────
+// ─── ParticleSystem 预设发射不同粒子 ─────────────────────────
 
 #[test]
 fn particle_system_fire_vs_smoke_differ() {
     let fire = ParticleSystem::fire(DVec3::ZERO);
     let smoke = ParticleSystem::smoke(DVec3::ZERO);
-    // Fire and smoke should have different configurations
+    // 火焰和烟雾应有不同配置
     let fire_p = Particle::new(1, DVec3::ZERO, DVec3::ZERO, 2.0);
     let smoke_p = Particle::new(1, DVec3::ZERO, DVec3::ZERO, 2.0);
     let fire_color = fire.particle_color(&fire_p);
     let smoke_color = smoke.particle_color(&smoke_p);
-    // Colors should differ
+    // 颜色应不同
     let diff = ((fire_color[0] - smoke_color[0]).abs()
         + (fire_color[1] - smoke_color[1]).abs()
         + (fire_color[2] - smoke_color[2]).abs())
@@ -206,7 +206,7 @@ fn particle_system_fire_vs_smoke_differ() {
 fn particle_system_emitter_position_matters() {
     let sys1 = ParticleSystem::fire(DVec3::new(0.0, 0.0, 0.0));
     let sys2 = ParticleSystem::fire(DVec3::new(100.0, 0.0, 0.0));
-    // Systems at different positions should both be valid (fresh, none emitted)
+    // 位于不同位置的系统都应有效（全新，未发射）
     assert_eq!(sys1.particle_count(), 0);
     assert_eq!(sys2.particle_count(), 0);
 }

@@ -1,5 +1,5 @@
-//! Entity graphics specs - builder methods, has_graphics, graphics defaults
-//! Ported from DataSources/EntitySpec.js (graphics construction paths)
+//! Entity 图元规范 - 构建方法、has_graphics、图元默认值
+//! 移植自 DataSources/EntitySpec.js（图元构造路径）
 
 use cesium_datasource::{
     BillboardGraphics, BoxGraphics, CorridorGraphics, CylinderGraphics,
@@ -8,7 +8,7 @@ use cesium_datasource::{
     Property, RectangleGraphics, WallGraphics, CornerType, ShadowMode,
 };
 
-// ─── Builder methods ────────────────────────────────────────────────────────
+// ─── 构建方法 ────────────────────────────────────────────────────────
 
 #[test]
 fn builder_with_point() {
@@ -154,7 +154,7 @@ fn has_graphics_true_for_ellipse() {
     assert!(e.has_graphics());
 }
 
-// ─── Graphics defaults ──────────────────────────────────────────────────────
+// ─── 图元默认值 ──────────────────────────────────────────────────────
 
 #[test]
 fn point_graphics_defaults() {

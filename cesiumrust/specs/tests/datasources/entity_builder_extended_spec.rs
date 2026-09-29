@@ -1,5 +1,5 @@
-//! Entity builder extended specs - with_* methods/has_graphics/merge/enums
-//! Ported from DataSources/EntitySpec.js (A-class builder/logic)
+//! Entity 构建器扩展规范 - with_* 方法/has_graphics/merge/枚举
+//! 移植自 DataSources/EntitySpec.js（A 类构建器/逻辑）
 
 use cesium_datasource::entity::{
     Entity, PointGraphics, PolylineGraphics, PolygonGraphics, BillboardGraphics,
@@ -8,7 +8,7 @@ use cesium_datasource::entity::{
     PolylineVolumeGraphics, HeightReference, CornerType, ClassificationType, ShadowMode,
 };
 
-// ─── Builder methods ────────────────────────────────────────────────────────
+// ─── 构建方法 ────────────────────────────────────────────────────────
 
 #[test]
 fn builder_with_name() {
@@ -148,7 +148,7 @@ fn has_graphics_true_for_any_graphics() {
     assert!(e.has_graphics());
 }
 
-// ─── Enums ──────────────────────────────────────────────────────────────────
+// ─── 枚举 ──────────────────────────────────────────────────────────────────
 
 #[test]
 fn height_reference_default_is_none() {
@@ -170,7 +170,7 @@ fn shadow_mode_default_is_disabled() {
     assert_eq!(ShadowMode::default(), ShadowMode::Disabled);
 }
 
-// ─── Merge ──────────────────────────────────────────────────────────────────
+// ─── 合并 ──────────────────────────────────────────────────────────────────
 
 #[test]
 fn merge_fills_missing_graphics() {

@@ -1,50 +1,50 @@
-//! Scene mode morphing (transitions between 2D/3D/Columbus View).
+//! 场景模式变形（在 2D/3D/Columbus View 之间切换）。
 //!
-//! Maps to CesiumJS `Scene/SceneMode.js` morphing behavior
-//! and `Scene/Scene.js` morph transitions.
+//! 映射到 CesiumJS `Scene/SceneMode.js` 的变形行为
+//! 以及 `Scene/Scene.js` 的变形过渡。
 
 use cesium_camera::{Camera, SceneMode};
 use cesium_geospatial::Ellipsoid;
 use glam::DVec3;
 
-/// The state of a morph transition.
+/// 变形过渡的状态。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum MorphState {
-    /// Not morphing - stable in a scene mode.
+    /// 未在变形 - 稳定处于某个场景模式。
     #[default]
     Idle,
-    /// Morphing from one mode to another.
+    /// 从一个模式变形到另一个模式。
     Morphing {
-        /// Source mode.
+        /// 源模式。
         from: SceneMode,
-        /// Target mode.
+        /// 目标模式。
         to: SceneMode,
-        /// Progress (0.0 to 1.0).
+        /// 进度（0.0 到 1.0）。
         progress: f64,
     },
 }
 
-/// Manages scene mode morphing transitions.
-/// Maps to CesiumJS morph behavior in `Scene.js`
+/// 管理场景模式的变形过渡。
+/// 映射到 CesiumJS 在 `Scene.js` 中的变形行为
 #[derive(Debug, Clone)]
 pub struct SceneMorph {
-    /// Current morph state.
+    /// 当前的变形状态。
     pub state: MorphState,
-    /// Duration of the morph transition in seconds.
+    /// 变形过渡的时长（以秒计）。
     pub duration: f64,
-    /// Elapsed time in the current morph.
+    /// 当前变形中已经过的时间。
     pub elapsed: f64,
-    /// Start camera position.
+    /// 起始相机位置。
     pub start_position: DVec3,
-    /// End camera position.
+    /// 结束相机位置。
     pub end_position: DVec3,
-    /// Start camera direction.
+    /// 起始相机方向。
     pub start_direction: DVec3,
-    /// End camera direction.
+    /// 结束相机方向。
     pub end_direction: DVec3,
-    /// Start camera up vector.
+    /// 起始相机 up 向量。
     pub start_up: DVec3,
-    /// End camera up vector.
+    /// 结束相机 up 向量。
     pub end_up: DVec3,
 }
 
@@ -65,17 +65,17 @@ impl Default for SceneMorph {
 }
 
 impl SceneMorph {
-    /// Creates a new scene morph manager.
+    /// 创建一个新的场景变形管理器。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Returns whether a morph is currently in progress.
+    /// 返回当前是否正在进行变形。
     pub fn is_morphing(&self) -> bool {
         matches!(self.state, MorphState::Morphing { .. })
     }
 
-    /// Returns the current progress (0.0 to 1.0), or 0 if not morphing.
+    /// 返回当前进度（0.0 到 1.0），若未变形则返回 0。
     pub fn progress(&self) -> f64 {
         match self.state {
             MorphState::Morphing { progress, .. } => progress,
@@ -83,14 +83,14 @@ impl SceneMorph {
         }
     }
 
-    /// Starts a morph transition between scene modes.
+    /// 在场景模式之间启动一次变形过渡。
     ///
-    /// # Arguments
-    /// * `camera` - Current camera state
-    /// * `from` - Source scene mode
-    /// * `to` - Target scene mode
-    /// * `ellipsoid` - The ellipsoid for coordinate conversions
-    /// * `duration` - Transition duration in seconds
+    /// # 参数
+    /// * `camera` - 当前相机状态
+    /// * `from` - 源场景模式
+    /// * `to` - 目标场景模式
+    /// * `ellipsoid` - 用于坐标转换的椭球
+    /// * `duration` - 以秒计的过渡时长
     pub fn start_morph(
         &mut self,
         camera: &Camera,
@@ -111,12 +111,12 @@ impl SceneMorph {
         self.duration = duration.max(0.001);
         self.elapsed = 0.0;
 
-        // Save start state
+        // 保存起始状态
         self.start_position = camera.position;
         self.start_direction = camera.direction;
         self.start_up = camera.up;
 
-        // Compute end state based on target mode
+        // 根据目标模式计算结束状态
         let (end_pos, end_dir, end_up) =
             compute_morph_target(camera, from, to, ellipsoid);
         self.end_position = end_pos;
@@ -124,14 +124,14 @@ impl SceneMorph {
         self.end_up = end_up;
     }
 
-    /// Updates the morph transition.
+    /// 更新变形过渡。
     ///
-    /// # Arguments
-    /// * `dt` - Time delta in seconds
-    /// * `camera` - Camera to update
+    /// # 参数
+    /// * `dt` - 以秒计的时间增量
+    /// * `camera` - 要更新的相机
     ///
-    /// # Returns
-    /// `true` if morphing is still in progress, `false` if complete.
+    /// # 返回
+    /// 若仍在变形则返回 `true`，若已完成则返回 `false`。
     pub fn update(&mut self, dt: f64, camera: &mut Camera) -> bool {
         let (from, to) = match self.state {
             MorphState::Morphing { from, to, .. } => (from, to),
@@ -141,10 +141,10 @@ impl SceneMorph {
         self.elapsed += dt;
         let t = (self.elapsed / self.duration).clamp(0.0, 1.0);
 
-        // Smooth step easing
+        // 平滑阶跃缓动
         let t_smooth = t * t * (3.0 - 2.0 * t);
 
-        // Interpolate camera state
+        // 插值相机状态
         camera.position = self.start_position.lerp(self.end_position, t_smooth);
         camera.direction = self.start_direction.lerp(self.end_direction, t_smooth).normalize();
         camera.up = self.start_up.lerp(self.end_up, t_smooth).normalize();
@@ -166,7 +166,7 @@ impl SceneMorph {
         }
     }
 
-    /// Immediately completes the morph transition.
+    /// 立即完成变形过渡。
     pub fn complete_morph(&mut self, camera: &mut Camera) {
         if let MorphState::Morphing { to, .. } = self.state {
             camera.position = self.end_position;
@@ -179,7 +179,7 @@ impl SceneMorph {
         self.state = MorphState::Idle;
     }
 
-    /// Cancels the morph and returns to the source mode.
+    /// 取消变形并返回到源模式。
     pub fn cancel_morph(&mut self, camera: &mut Camera) {
         if let MorphState::Morphing { from, .. } = self.state {
             camera.position = self.start_position;
@@ -193,7 +193,7 @@ impl SceneMorph {
     }
 }
 
-/// Computes the target camera state for a morph transition.
+/// 计算变形过渡的目标相机状态。
 fn compute_morph_target(
     camera: &Camera,
     from: SceneMode,
@@ -201,7 +201,7 @@ fn compute_morph_target(
     ellipsoid: &Ellipsoid,
 ) -> (DVec3, DVec3, DVec3) {
     match (from, to) {
-        // 3D → 2D: Move camera to top-down view
+        // 3D → 2D：将相机移动到俯视视角
         (SceneMode::Scene3D, SceneMode::Scene2D) => {
             let height = camera.position.length() - ellipsoid.maximum_radius();
             let carto = ellipsoid.cartesian_to_cartographic(camera.position);
@@ -221,22 +221,22 @@ fn compute_morph_target(
                 (camera.position, camera.direction, camera.up)
             }
         }
-        // 2D → 3D: Move camera to angled view
+        // 2D → 3D：将相机移动到倾斜视角
         (SceneMode::Scene2D, SceneMode::Scene3D) => {
             let pos = camera.position;
             let normal = pos.normalize();
-            // Tilt to look at horizon
+            // 倾斜以看向地平线
             let dir = (-normal + DVec3::new(0.0, 0.0, 0.3)).normalize();
             let right = dir.cross(DVec3::Z).normalize();
             let up = right.cross(dir).normalize();
             (pos, dir, up)
         }
-        // 3D → Columbus View: Flatten to 2.5D
+        // 3D → Columbus View：压平为 2.5D
         (SceneMode::Scene3D, SceneMode::ColumbusView) => {
             let carto = ellipsoid.cartesian_to_cartographic(camera.position);
             if let Some(carto) = carto {
                 let height = carto.height.max(1000.0);
-                // In CV, position is in a flat coordinate system
+                // 在 CV 中，位置处于平面坐标系
                 let pos = DVec3::new(
                     carto.longitude * ellipsoid.maximum_radius(),
                     carto.latitude * ellipsoid.maximum_radius(),
@@ -251,7 +251,7 @@ fn compute_morph_target(
         }
         // Columbus View → 3D
         (SceneMode::ColumbusView, SceneMode::Scene3D) => {
-            // Convert flat CV coordinates back to 3D
+            // 将平面 CV 坐标转换回 3D
             let lon = camera.position.x / ellipsoid.maximum_radius();
             let lat = camera.position.y / ellipsoid.maximum_radius();
             let height = camera.position.z;
@@ -262,7 +262,7 @@ fn compute_morph_target(
             let up = if up.length_squared() < 1e-10 { DVec3::Y } else { up };
             (pos, dir, up)
         }
-        // Default: keep current state
+        // 默认：保持当前状态
         _ => (camera.position, camera.direction, camera.up),
     }
 }
@@ -334,13 +334,13 @@ mod tests {
             2.0,
         );
 
-        // Halfway through
+        // 进行到一半
         let still_morphing = morph.update(1.0, &mut camera);
         assert!(still_morphing);
         assert!((morph.progress() - 0.5).abs() < 0.01);
         assert_eq!(camera.mode, SceneMode::Morphing);
 
-        // Complete
+        // 完成
         let still_morphing = morph.update(1.0, &mut camera);
         assert!(!still_morphing);
         assert!(!morph.is_morphing());
@@ -408,7 +408,7 @@ mod tests {
 
         assert!(morph.is_morphing());
 
-        // Complete the morph
+        // 完成变形
         morph.update(1.0, &mut camera);
         assert_eq!(camera.mode, SceneMode::ColumbusView);
     }
@@ -423,7 +423,7 @@ mod tests {
             SceneMode::Scene3D,
             SceneMode::Scene2D,
             &Ellipsoid::WGS84,
-            0.0, // Should be clamped to 0.001
+            0.0, // 应被钳制到 0.001
         );
 
         assert!(morph.duration >= 0.001);

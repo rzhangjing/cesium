@@ -1,11 +1,11 @@
-//! Per-tile map imagery loader plugin.
+//! 逐瓦片的地图影像加载器插件。
 //!
-//! Downloads Gaode (AutoNavi) satellite tiles individually and applies each
-//! tile's texture directly to its corresponding globe tile entity.
-//! No global resampling needed — each tile maps directly to its geographic extent.
+//! 逐个下载高德（AutoNavi）卫星瓦片，并将每块瓦片的纹理直接
+//! 应用到其对应的地球瓦片实体。无需全局重采样 —— 每块瓦片
+//! 直接映射到其地理范围。
 //!
-//! Architecture follows CesiumJS: each terrain tile has its own imagery texture,
-//! mapped via UV coordinates normalized to [0,1] within the tile's bounds.
+//! 架构沿用 CesiumJS：每块地形瓦片拥有自己的影像纹理，
+//! 通过归一化到 [0,1]（在瓦片边界内）的 UV 坐标映射。
 
 use bevy::prelude::*;
 use std::io::Read;
@@ -14,7 +14,7 @@ use std::sync::Mutex;
 
 use crate::tile_mesh::GlobeTile;
 
-/// Plugin that loads real satellite map tiles per-tile and applies them to globe entities.
+/// 逐瓦片加载真实卫星地图瓦片并应用到地球实体的插件。
 pub struct TileLoaderPlugin;
 
 impl Plugin for TileLoaderPlugin {
@@ -25,10 +25,10 @@ impl Plugin for TileLoaderPlugin {
     }
 }
 
-/// Zoom level for globe view (3 = 8×8 tiles = 64 requests).
+/// 地球视图的缩放级别（3 = 8×8 瓦片 = 64 个请求）。
 const ZOOM: u32 = 3;
 
-/// Resource tracking the per-tile loading progress.
+/// 追踪逐瓦片加载进度（per-tile）的资源。
 #[derive(Resource)]
 struct TileLoadState {
     receiver: Mutex<Option<mpsc::Receiver<TileResult>>>,
@@ -47,18 +47,18 @@ impl Default for TileLoadState {
     }
 }
 
-/// Result of downloading a single tile.
+/// 单块瓦片下载的结果。
 struct TileResult {
     x: u32,
     y: u32,
     z: u32,
-    /// RGBA pixel data (256x256).
+    /// RGBA 像素数据（256x256）。
     rgba_data: Vec<u8>,
     width: u32,
     height: u32,
 }
 
-/// Spawns a background thread to download all Gaode satellite tiles at the configured zoom.
+/// 生成一个后台线程，在配置的缩放级别下载所有高德卫星瓦片。
 fn spawn_tile_downloads(state: ResMut<TileLoadState>) {
     let (tx, rx) = mpsc::channel();
     *state.receiver.lock().unwrap() = Some(rx);
@@ -76,7 +76,7 @@ fn spawn_tile_downloads(state: ResMut<TileLoadState>) {
 
         for ty in 0..num_tiles {
             for tx_px in 0..num_tiles {
-                // Gaode satellite imagery (style=6), rotate subdomains
+                // 高德卫星影像（style=6），轮换子域名
                 let url = format!(
                     "https://webst0{}.is.autonavi.com/appmaptile?style=6&x={}&y={}&z={}",
                     (tx_px + ty) % 4 + 1,
@@ -93,7 +93,7 @@ fn spawn_tile_downloads(state: ResMut<TileLoadState>) {
                             if let Ok(img) = image::load_from_memory(&data) {
                                 let rgba_img = img.to_rgba8();
                                 let (w, h) = rgba_img.dimensions();
-                                // Send the tile immediately (progressive loading)
+                                // 立即发送该瓦片（渐进式加载）
                                 let _ = tx.send(TileResult {
                                     x: tx_px,
                                     y: ty,
@@ -123,14 +123,14 @@ fn spawn_tile_downloads(state: ResMut<TileLoadState>) {
     });
 }
 
-/// System that receives downloaded tiles and applies textures to globe tile entities.
+/// 接收已下载瓦片并将纹理应用到地球瓦片实体的系统。
 fn apply_tile_textures(
     mut state: ResMut<TileLoadState>,
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     tile_query: Query<(&GlobeTile, &MeshMaterial3d<StandardMaterial>)>,
 ) {
-    // Try to receive all available results (non-blocking, batch)
+    // 尝试接收所有可用结果（非阻塞，批量）
     let results: Vec<TileResult> = {
         let guard = state.receiver.lock().unwrap();
         match &*guard {
@@ -150,7 +150,7 @@ fn apply_tile_textures(
     }
 
     for result in results {
-        // Create a Bevy Image from the tile's RGBA data
+        // 从瓦片的 RGBA 数据创建一个 Bevy Image
         let texture = Image::new(
             bevy::render::render_resource::Extent3d {
                 width: result.width,
@@ -164,14 +164,14 @@ fn apply_tile_textures(
         );
         let texture_handle = images.add(texture);
 
-        // Find the matching globe tile entity and update its material
+        // 找到匹配的地球瓦片实体并更新其材质
         for (globe_tile, mat_handle) in tile_query.iter() {
             if globe_tile.x == result.x && globe_tile.y == result.y && globe_tile.z == result.z {
                 if let Some(material) = materials.get_mut(mat_handle) {
                     material.base_color_texture = Some(texture_handle.clone());
-                    // Reset base_color to white: Bevy multiplies base_color with
-                    // base_color_texture, so the initial ocean-blue fallback would
-                    // otherwise tint the satellite imagery dark blue.
+                    // 将 base_color 重置为白色：Bevy 会将 base_color 与
+                    // base_color_texture 相乘，否则初始的海洋蓝回退色
+                    // 会把卫星影像染成暗蓝。
                     material.base_color = Color::WHITE;
                 }
                 break;

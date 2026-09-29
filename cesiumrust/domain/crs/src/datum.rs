@@ -1,200 +1,200 @@
-//! Datum transformations between geodetic reference systems.
+//! 大地测量参考系之间的基准（Datum）转换。
 //!
-//! Implements coordinate transformations between different geodetic datums:
-//! - WGS84 (World Geodetic System 1984)
-//! - CGCS2000 (China Geodetic Coordinate System 2000)
-//! - ITRF (International Terrestrial Reference Frame)
-//! - NAD83 (North American Datum 1983)
-//! - GRS80 (Geodetic Reference System 1980)
+//! 实现不同大地基准之间的坐标转换：
+//! - WGS84（World Geodetic System 1984）
+//! - CGCS2000（China Geodetic Coordinate System 2000）
+//! - ITRF（International Terrestrial Reference Frame）
+//! - NAD83（North American Datum 1983）
+//! - GRS80（Geodetic Reference System 1980）
 
 use glam::{DMat3, DVec3};
 use std::f64::consts::PI;
 
-/// A geodetic datum definition.
+/// 一个大地基准定义。
 #[derive(Debug, Clone, Copy)]
 pub struct Datum {
-    /// Datum name.
+    /// 基准名称。
     pub name: &'static str,
-    /// Semi-major axis (meters).
+    /// 长半轴（米）。
     pub semi_major_axis: f64,
-    /// Inverse flattening (1/f).
+    /// 扁率倒数（1/f）。
     pub inverse_flattening: f64,
 }
 
 impl Datum {
-    /// WGS84 datum.
+    /// WGS84 基准。
     pub const WGS84: Self = Self {
         name: "WGS84",
         semi_major_axis: 6378137.0,
         inverse_flattening: 298.257223563,
     };
 
-    /// CGCS2000 datum (China).
+    /// CGCS2000 基准（中国）。
     pub const CGCS2000: Self = Self {
         name: "CGCS2000",
         semi_major_axis: 6378137.0,
         inverse_flattening: 298.257222101,
     };
 
-    /// GRS80 datum.
+    /// GRS80 基准。
     pub const GRS80: Self = Self {
         name: "GRS80",
         semi_major_axis: 6378137.0,
         inverse_flattening: 298.257222101,
     };
 
-    /// ITRF2014 datum.
+    /// ITRF2014 基准。
     pub const ITRF2014: Self = Self {
         name: "ITRF2014",
         semi_major_axis: 6378137.0,
         inverse_flattening: 298.257222101,
     };
 
-    /// NAD83 datum (North America).
+    /// NAD83 基准（北美）。
     pub const NAD83: Self = Self {
         name: "NAD83",
         semi_major_axis: 6378137.0,
         inverse_flattening: 298.257222101,
     };
 
-    /// International 1924 (Hayford) datum.
+    /// International 1924（Hayford）基准。
     pub const INTERNATIONAL_1924: Self = Self {
         name: "International 1924",
         semi_major_axis: 6378388.0,
         inverse_flattening: 297.0,
     };
 
-    /// Airy 1830 datum (UK).
+    /// Airy 1830 基准（英国）。
     pub const AIRY_1830: Self = Self {
         name: "Airy 1830",
         semi_major_axis: 6377563.396,
         inverse_flattening: 299.3249646,
     };
 
-    /// Returns the flattening factor (f = 1 / inverse_flattening).
+    /// 返回扁率因子（f = 1 / inverse_flattening）。
     pub fn flattening(&self) -> f64 {
         1.0 / self.inverse_flattening
     }
 
-    /// Returns the semi-minor axis (b = a * (1 - f)).
+    /// 返回短半轴（b = a * (1 - f)）。
     pub fn semi_minor_axis(&self) -> f64 {
         self.semi_major_axis * (1.0 - self.flattening())
     }
 
-    /// Returns the first eccentricity squared (e² = 2f - f²).
+    /// 返回第一偏心率平方（e² = 2f - f²）。
     pub fn eccentricity_squared(&self) -> f64 {
         let f = self.flattening();
         2.0 * f - f * f
     }
 
-    /// Returns the radii as a DVec3 (a, a, b).
+    /// 以 DVec3 返回各半径 (a, a, b)。
     pub fn radii(&self) -> DVec3 {
         DVec3::new(self.semi_major_axis, self.semi_major_axis, self.semi_minor_axis())
     }
 }
 
-/// 7-parameter Helmert transformation (Bursa-Wolf model).
+/// 7 参数 Helmert 变换（Bursa-Wolf 模型）。
 ///
-/// Transforms coordinates from one datum to another using:
-/// - 3 translations (dx, dy, dz)
-/// - 3 rotations (rx, ry, rz) in arcseconds
-/// - 1 scale factor (ds) in ppm
+/// 使用以下参数将一个基准的坐标变换到另一个基准：
+/// - 3 个平移 (dx, dy, dz)
+/// - 3 个旋转 (rx, ry, rz)，单位为弧秒
+/// - 1 个尺度因子 (ds)，单位为 ppm
 #[derive(Debug, Clone, Copy)]
 pub struct HelmertTransform {
-    /// Translation in X (meters).
+    /// X 方向平移（米）。
     pub dx: f64,
-    /// Translation in Y (meters).
+    /// Y 方向平移（米）。
     pub dy: f64,
-    /// Translation in Z (meters).
+    /// Z 方向平移（米）。
     pub dz: f64,
-    /// Rotation around X (arcseconds).
+    /// 绕 X 轴旋转（弧秒）。
     pub rx: f64,
-    /// Rotation around Y (arcseconds).
+    /// 绕 Y 轴旋转（弧秒）。
     pub ry: f64,
-    /// Rotation around Z (arcseconds).
+    /// 绕 Z 轴旋转（弧秒）。
     pub rz: f64,
-    /// Scale difference (ppm, parts per million).
+    /// 尺度差异（ppm，百万分之一）。
     pub ds: f64,
 }
 
 impl HelmertTransform {
-    /// Identity transformation (no change).
+    /// 恒等变换（无变化）。
     pub const IDENTITY: Self = Self {
         dx: 0.0, dy: 0.0, dz: 0.0,
         rx: 0.0, ry: 0.0, rz: 0.0,
         ds: 0.0,
     };
 
-    /// WGS84 to CGCS2000 transformation (essentially identity for most purposes).
+    /// WGS84 到 CGCS2000 的变换（对多数用途而言基本等同恒等）。
     pub const WGS84_TO_CGCS2000: Self = Self {
         dx: 0.0, dy: 0.0, dz: 0.0,
         rx: 0.0, ry: 0.0, rz: 0.0,
         ds: 0.0,
     };
 
-    /// WGS84 to ITRF2014 transformation.
+    /// WGS84 到 ITRF2014 的变换。
     pub const WGS84_TO_ITRF2014: Self = Self {
         dx: 0.0, dy: 0.0, dz: 0.0,
         rx: 0.0, ry: 0.0, rz: 0.0,
         ds: 0.0,
     };
 
-    /// WGS84 to NAD83 transformation.
+    /// WGS84 到 NAD83 的变换。
     pub const WGS84_TO_NAD83: Self = Self {
         dx: 1.004, dy: -1.910, dz: -0.515,
         rx: 0.0267, ry: 0.00034, rz: 0.011,
         ds: -0.0015,
     };
 
-    /// ED50 to WGS84 transformation (Europe).
+    /// ED50 到 WGS84 的变换（欧洲）。
     pub const ED50_TO_WGS84: Self = Self {
         dx: -87.0, dy: -98.0, dz: -121.0,
         rx: 0.0, ry: 0.0, rz: 0.0,
         ds: 0.0,
     };
 
-    /// Tokyo Datum to WGS84 transformation (Japan).
+    /// Tokyo 基准到 WGS84 的变换（日本）。
     pub const TOKYO_TO_WGS84: Self = Self {
         dx: -146.414, dy: 507.337, dz: 680.507,
         rx: 0.0, ry: 0.0, rz: 0.0,
         ds: 0.0,
     };
 
-    /// Applies the transformation to ECEF coordinates.
+    /// 将变换应用于 ECEF 坐标。
     ///
-    /// Uses the Bursa-Wolf formula:
+    /// 使用 Bursa-Wolf 公式：
     /// X_target = dx + (1 + ds*1e-6) * (X + rz*Y - ry*Z)
     /// Y_target = dy + (1 + ds*1e-6) * (-rz*X + Y + rx*Z)
     /// Z_target = dz + (1 + ds*1e-6) * (ry*X - rx*Y + Z)
     ///
-    /// # Arguments
-    /// * `ecef` - ECEF coordinates in the source datum
+    /// # 参数
+    /// * `ecef` - 源基准下的 ECEF 坐标
     ///
-    /// # Returns
-    /// ECEF coordinates in the target datum
+    /// # 返回
+    /// 目标基准下的 ECEF 坐标
     pub fn apply(&self, ecef: DVec3) -> DVec3 {
-        // Convert arcseconds to radians
+        // 将弧秒转为弧度
         let arcsec_to_rad = PI / (180.0 * 3600.0);
         let rx_rad = self.rx * arcsec_to_rad;
         let ry_rad = self.ry * arcsec_to_rad;
         let rz_rad = self.rz * arcsec_to_rad;
 
-        // Scale factor (ppm to dimensionless)
+        // 尺度因子（ppm 转无量纲）
         let scale = 1.0 + self.ds * 1e-6;
 
-        // Build rotation matrix
+        // 构建旋转矩阵
         let rotation = DMat3::from_cols_array(&[
             1.0, rx_rad, -ry_rad,
             -rx_rad, 1.0, rz_rad,
             ry_rad, -rz_rad, 1.0,
         ]);
 
-        // Apply transformation
+        // 应用变换
         let translated = DVec3::new(self.dx, self.dy, self.dz);
         translated + scale * (rotation * ecef)
     }
 
-    /// Returns the inverse transformation.
+    /// 返回逆变换。
     pub fn inverse(&self) -> Self {
         Self {
             dx: -self.dx,
@@ -208,47 +208,47 @@ impl HelmertTransform {
     }
 }
 
-/// Molodensky transformation (3-parameter datum shift).
+/// Molodensky 变换（3 参数基准偏移）。
 ///
-/// A simplified transformation that only uses translations (dx, dy, dz).
-/// Suitable for low-accuracy applications (< 10m).
+/// 一种仅使用平移 (dx, dy, dz) 的简化变换。
+/// 适用于低精度应用（< 10m）。
 #[derive(Debug, Clone, Copy)]
 pub struct MolodenskyTransform {
-    /// Translation in X (meters).
+    /// X 方向平移（米）。
     pub dx: f64,
-    /// Translation in Y (meters).
+    /// Y 方向平移（米）。
     pub dy: f64,
-    /// Translation in Z (meters).
+    /// Z 方向平移（米）。
     pub dz: f64,
 }
 
 impl MolodenskyTransform {
-    /// Applies the Molodensky transformation to ECEF coordinates.
+    /// 将 Molodensky 变换应用于 ECEF 坐标。
     ///
-    /// # Arguments
-    /// * `ecef` - ECEF coordinates in the source datum
+    /// # 参数
+    /// * `ecef` - 源基准下的 ECEF 坐标
     ///
-    /// # Returns
-    /// ECEF coordinates in the target datum
+    /// # 返回
+    /// 目标基准下的 ECEF 坐标
     pub fn apply(&self, ecef: DVec3) -> DVec3 {
         ecef + DVec3::new(self.dx, self.dy, self.dz)
     }
 }
 
-/// Converts between geographic (lat/lon/h) and ECEF coordinates for a given datum.
+/// 在给定基准下，于地理坐标（纬度/经度/高度）与 ECEF 坐标之间转换。
 #[derive(Debug, Clone, Copy)]
 pub struct DatumConverter {
-    /// The datum to use.
+    /// 所使用的基准。
     pub datum: Datum,
 }
 
 impl DatumConverter {
-    /// Creates a new datum converter.
+    /// 创建一个新的基准转换器。
     pub fn new(datum: Datum) -> Self {
         Self { datum }
     }
 
-    /// Converts geographic coordinates (lon, lat in radians, height in meters) to ECEF.
+    /// 将地理坐标（lon、lat 为弧度，height 为米）转换为 ECEF。
     pub fn geographic_to_ecef(&self, lon: f64, lat: f64, height: f64) -> DVec3 {
         let a = self.datum.semi_major_axis;
         let e2 = self.datum.eccentricity_squared();
@@ -267,9 +267,9 @@ impl DatumConverter {
         DVec3::new(x, y, z)
     }
 
-    /// Converts ECEF coordinates to geographic (lon, lat in radians, height in meters).
+    /// 将 ECEF 坐标转换为地理坐标（lon、lat 为弧度，height 为米）。
     ///
-    /// Uses iterative method for latitude calculation.
+    /// 纬度计算使用迭代方法。
     pub fn ecef_to_geographic(&self, ecef: DVec3) -> (f64, f64, f64) {
         let a = self.datum.semi_major_axis;
         let e2 = self.datum.eccentricity_squared();
@@ -282,7 +282,7 @@ impl DatumConverter {
 
         let p = (x * x + y * y).sqrt();
 
-        // Iterative calculation for latitude
+        // 纬度的迭代计算
         let mut lat = z.atan2(p * (1.0 - e2));
         let mut n = a;
 
@@ -309,11 +309,11 @@ impl DatumConverter {
     }
 }
 
-/// Gets the Helmert transformation between two datums.
+/// 获取两个基准之间的 Helmert 变换。
 ///
-/// Returns None if no predefined transformation exists.
+/// 若不存在预定义的变换则返回 None。
 pub fn get_helmert_transform(from: &Datum, to: &Datum) -> Option<HelmertTransform> {
-    // Check for predefined transformations
+    // 检查是否存在预定义的变换
     if from.name == "WGS84" && to.name == "CGCS2000" {
         return Some(HelmertTransform::WGS84_TO_CGCS2000);
     }
@@ -342,9 +342,9 @@ pub fn get_helmert_transform(from: &Datum, to: &Datum) -> Option<HelmertTransfor
     None
 }
 
-/// Transforms ECEF coordinates from one datum to another.
+/// 将一个基准的 ECEF 坐标变换到另一个基准。
 ///
-/// Uses Helmert transformation if available, otherwise returns identity.
+/// 若有可用的 Helmert 变换则使用，否则返回恒等。
 pub fn transform_ecef(ecef: DVec3, from: &Datum, to: &Datum) -> DVec3 {
     if from.name == to.name {
         return ecef;
@@ -352,7 +352,7 @@ pub fn transform_ecef(ecef: DVec3, from: &Datum, to: &Datum) -> DVec3 {
 
     match get_helmert_transform(from, to) {
         Some(transform) => transform.apply(ecef),
-        None => ecef, // Fallback: no transformation
+        None => ecef, // 回退：不做变换
     }
 }
 
@@ -373,7 +373,7 @@ mod tests {
     fn test_datum_cgcs2000() {
         let datum = Datum::CGCS2000;
         assert_eq!(datum.semi_major_axis, 6378137.0);
-        // CGCS2000 has slightly different flattening
+        // CGCS2000 的扁率略有不同
         assert!((datum.inverse_flattening - 298.257222101).abs() < 1e-10);
     }
 
@@ -407,7 +407,7 @@ mod tests {
 
     #[test]
     fn test_helmert_wgs84_to_cgcs2000() {
-        // WGS84 to CGCS2000 is essentially identity
+        // WGS84 到 CGCS2000 基本等同恒等
         let transform = HelmertTransform::WGS84_TO_CGCS2000;
         let ecef = DVec3::new(6378137.0, 0.0, 0.0);
 
@@ -494,7 +494,7 @@ mod tests {
         let ecef = DVec3::new(6378137.0, 0.0, 0.0);
         let result = transform_ecef(ecef, &Datum::WGS84, &Datum::CGCS2000);
 
-        // Should be essentially the same (identity transform)
+        // 应基本相同（恒等变换）
         assert!((result - ecef).length() < 0.001);
     }
 

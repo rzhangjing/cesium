@@ -1,5 +1,5 @@
-//! Geometry utility specs - generate_arc/triangulate_polygon/compute_area2d/winding_order
-//! Ported from Core/GeometryPipelineSpec.js + Core/PolygonPipelineSpec.js (A-class utility paths)
+//! 几何工具规格测试 - generate_arc/triangulate_polygon/compute_area2d/winding_order
+//! 移植自 Core/GeometryPipelineSpec.js + Core/PolygonPipelineSpec.js（A 类工具路径）
 
 use cesium_geospatial::geometry::{
     compute_area2d, compute_winding_order, generate_arc, triangulate_polygon, WindingOrder,
@@ -24,16 +24,16 @@ fn arc_single_point_returns_same() {
 #[test]
 fn arc_two_points_produces_intermediates() {
     let e = wgs84();
-    // Two points on equator, 10 degrees apart
+    // 赤道上的两点，相距 10 度
     let start = e.cartographic_to_cartesian(&cesium_geospatial::Cartographic::from_degrees(0.0, 0.0, 0.0));
     let end = e.cartographic_to_cartesian(&cesium_geospatial::Cartographic::from_degrees(10.0, 0.0, 0.0));
     let positions = vec![start, end];
-    // granularity = 1 degree in radians
+    // granularity = 以弧度计的 1 度
     let granularity = (1.0f64).to_radians();
     let result = generate_arc(&positions, granularity, &e);
-    // Should have ~10 segments + 1 endpoint
+    // 应有约 10 段 + 1 个端点
     assert!(result.len() >= 10, "expected >= 10 points, got {}", result.len());
-    // Last point should be the end
+    // 最后一个点应为终点
     let last = result.last().unwrap();
     assert!((last.x - end.x).abs() < 1.0);
     assert!((last.y - end.y).abs() < 1.0);
@@ -50,7 +50,7 @@ fn arc_coarse_granularity_min_segments() {
     let e = wgs84();
     let start = e.cartographic_to_cartesian(&cesium_geospatial::Cartographic::from_degrees(0.0, 0.0, 0.0));
     let end = e.cartographic_to_cartesian(&cesium_geospatial::Cartographic::from_degrees(1.0, 0.0, 0.0));
-    // Very coarse granularity (larger than distance) → still at least 1 segment
+    // 极粗的 granularity（大于距离）→ 仍至少有 1 段
     let result = generate_arc(&[start, end], std::f64::consts::PI, &e);
     assert!(result.len() >= 2, "should have at least start + end");
 }
@@ -102,21 +102,21 @@ fn triangulate_less_than_3_points() {
 
 #[test]
 fn triangulate_with_hole() {
-    // Outer square + inner square hole
+    // 外部正方形 + 内部正方形孔洞
     let positions = vec![
-        // Outer (CCW)
+        // 外侧（逆时针）
         DVec2::new(0.0, 0.0),
         DVec2::new(10.0, 0.0),
         DVec2::new(10.0, 10.0),
         DVec2::new(0.0, 10.0),
-        // Inner hole (CW)
+        // 内侧孔洞（顺时针）
         DVec2::new(3.0, 3.0),
         DVec2::new(7.0, 3.0),
         DVec2::new(7.0, 7.0),
         DVec2::new(3.0, 7.0),
     ];
     let indices = triangulate_polygon(&positions, &[4]);
-    // 8 vertices with 1 hole → (8-2)*3 = 18 indices? Actually (n-2)*3 for n=8 → 18
+    // 8 个顶点带 1 个孔洞 → (8-2)*3 = 18 个索引？实际 (n-2)*3，n=8 → 18
     assert!(!indices.is_empty(), "should produce triangles");
     assert!(indices.len() >= 18, "expected >= 18 indices, got {}", indices.len());
 }
@@ -167,7 +167,7 @@ fn area_less_than_3_points() {
 
 #[test]
 fn area_larger_polygon() {
-    // Regular hexagon with radius 1: area = (3*sqrt(3))/2 ≈ 2.598
+    // 半径为 1 的正六边形：面积 = (3*sqrt(3))/2 ≈ 2.598
     let positions: Vec<DVec2> = (0..6)
         .map(|i| {
             let angle = i as f64 * std::f64::consts::PI / 3.0;

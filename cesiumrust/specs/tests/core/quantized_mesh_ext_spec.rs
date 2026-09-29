@@ -1,6 +1,6 @@
-//! Tests ported from CesiumJS QuantizedMeshTerrainDataSpec.js
-//! A-class tests: 7 (isChildAvailable coordinate-based + interpolateHeight)
-//! C-class omitted: 4 throws + upsample (complex mesh splitting)
+//! 移植自 CesiumJS QuantizedMeshTerrainDataSpec.js 的测试
+//! A 类测试：7 个（isChildAvailable 基于坐标 + interpolateHeight）
+//! C 类已省略：4 个 throws + upsample（复杂的网格拆分）
 
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::rectangle::Rectangle;
@@ -11,11 +11,11 @@ use glam::DVec3;
 fn create_test_data(child_tile_mask: u8) -> QuantizedMeshTerrainData {
     QuantizedMeshTerrainData {
         quantized_vertices: vec![
-            // u values (sw, nw, se, ne)
+            // u 值（sw, nw, se, ne）
             0, 0, 32767, 32767,
-            // v values
+            // v 值
             0, 32767, 0, 32767,
-            // height values
+            // 高度值
             16384, 0, 32767, 16384,
         ],
         indices: vec![0, 3, 1, 0, 2, 3],
@@ -38,12 +38,12 @@ fn create_test_data(child_tile_mask: u8) -> QuantizedMeshTerrainData {
     }
 }
 
-// ===== isChildAvailable (coordinate-based) =====
+// ===== isChildAvailable（基于坐标）=====
 
 #[test]
 fn is_child_available_returns_true_for_all_children_when_mask_not_specified() {
     // Ported from: "returns true for all children when child mask is not explicitly specified"
-    // Default mask = 15 (all children)
+    // 默认掩码 = 15（所有子块）
     let data = create_test_data(15);
 
     assert!(data.is_child_available_coords(10, 20, 20, 40)); // SW
@@ -55,8 +55,8 @@ fn is_child_available_returns_true_for_all_children_when_mask_not_specified() {
 #[test]
 fn is_child_available_works_when_only_southwest_child() {
     // Ported from: "works when only southwest child is available"
-    // CesiumJS tile coords: Y increases southward
-    // relative_y=0 → north row, relative_y=1 → south row
+    // CesiumJS 瓦片坐标：Y 向南增大
+    // relative_y=0 → 北行，relative_y=1 → 南行
     let data = create_test_data(1); // bit 0 = SW
 
     assert!(!data.is_child_available_coords(10, 20, 20, 40)); // NW (bit 2) → false
@@ -103,17 +103,17 @@ fn is_child_available_works_when_only_northeast_child() {
 #[test]
 fn interpolate_height_clamps_coordinates_outside_mesh() {
     // Ported from: "clamps coordinates if given a position outside the mesh"
-    // Original uses tilingScheme.tileXYToRectangle(7, 6, 5)
+    // 原始使用 tilingScheme.tileXYToRectangle(7, 6, 5)
     let tiling_scheme = GeographicTilingScheme::default();
     let rectangle = tiling_scheme.tile_xy_to_rectangle(7, 6, 5);
 
     let data = QuantizedMeshTerrainData {
         quantized_vertices: vec![
-            // u (sw, nw, se, ne)
+            // u（sw, nw, se, ne）
             0, 0, 32767, 32767,
             // v
             0, 32767, 0, 32767,
-            // heights: 32767/4, 2*32767/4, 3*32767/4, 32767
+            // 高度：32767/4, 2*32767/4, 3*32767/4, 32767
             8191, 16383, 24575, 32767,
         ],
         indices: vec![0, 3, 1, 0, 2, 3],
@@ -135,7 +135,7 @@ fn interpolate_height_clamps_coordinates_outside_mesh() {
         water_mask: None,
     };
 
-    // Position (0,0) is outside this tile rectangle → should clamp to nearest edge
+    // 位置 (0,0) 在此瓦片矩形之外 → 应钳制到最近的边
     let h_outside = data.interpolate_height(&rectangle, 0.0, 0.0);
     let h_corner = data.interpolate_height(&rectangle, rectangle.east, rectangle.south);
     assert!(
@@ -149,25 +149,25 @@ fn interpolate_height_clamps_coordinates_outside_mesh() {
 #[test]
 fn interpolate_height_returns_correct_triangle_interpolation() {
     // Ported from: "returns a height interpolated from the correct triangle"
-    // Heights: sw=16384(→0), nw=0(→-16384), se=32767(→16383), ne=16384(→0)
-    // Zero height along SW-NE diagonal, negative in NW, positive in SE
+    // 高度：sw=16384(→0), nw=0(→-16384), se=32767(→16383), ne=16384(→0)
+    // 沿 SW-NE 对角线高度为零，NW 为负，SE 为正
     let data = create_test_data(15);
 
     let rectangle = Rectangle::from_degrees(-10.0, -10.0, 10.0, 10.0);
 
-    // Position in northwest quadrant → should be negative
+    // 位于西北象限的位置 → 应为负
     let longitude = rectangle.west + (rectangle.east - rectangle.west) * 0.25;
     let latitude = rectangle.south + (rectangle.north - rectangle.south) * 0.75;
     let result = data.interpolate_height(&rectangle, longitude, latitude);
     assert!(result < 0.0, "NW quadrant height should be negative, got {}", result);
 
-    // Position in southeast quadrant → should be positive
+    // 位于东南象限的位置 → 应为正
     let longitude = rectangle.west + (rectangle.east - rectangle.west) * 0.75;
     let latitude = rectangle.south + (rectangle.north - rectangle.south) * 0.25;
     let result = data.interpolate_height(&rectangle, longitude, latitude);
     assert!(result > 0.0, "SE quadrant height should be positive, got {}", result);
 
-    // Position on SW-NE diagonal → should be approximately zero
+    // 位于 SW-NE 对角线上的位置 → 应近似为零
     let longitude = rectangle.west + (rectangle.east - rectangle.west) * 0.5;
     let latitude = rectangle.south + (rectangle.north - rectangle.south) * 0.5;
     let result = data.interpolate_height(&rectangle, longitude, latitude);

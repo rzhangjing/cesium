@@ -1,9 +1,9 @@
-//! Scene/ImageryLayerCollection → Rust integration tests.
+//! Scene/ImageryLayerCollection → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Scene/ImageryLayerCollection.js
 //!
-//! A-class tests: add/add_at/remove/remove_at/get/raise/lower/raise_to_top/
+//! A 类测试：add/add_at/remove/remove_at/get/raise/lower/raise_to_top/
 //! lower_to_bottom/index_of/visible_layers/compute_blended_alpha.
 
 use cesium_imagery::{ImageryLayer, ImageryLayerCollection};
@@ -40,7 +40,7 @@ fn collection_add_at_index() {
     let mut c = ImageryLayerCollection::new();
     let id1 = c.add(test_layer());
     let id2 = c.add(test_layer());
-    let id3 = c.add_at(test_layer(), 1); // Insert in middle
+    let id3 = c.add_at(test_layer(), 1); // 插入中间
     assert_eq!(c.index_of(id1), Some(0));
     assert_eq!(c.index_of(id3), Some(1));
     assert_eq!(c.index_of(id2), Some(2));
@@ -50,7 +50,7 @@ fn collection_add_at_index() {
 fn collection_add_at_clamped() {
     let mut c = ImageryLayerCollection::new();
     let id1 = c.add(test_layer());
-    // Index beyond length → appended at end
+    // 索引超出长度 → 追加到末尾
     let id2 = c.add_at(test_layer(), 100);
     assert_eq!(c.index_of(id2), Some(1));
     assert_eq!(c.index_of(id1), Some(0));
@@ -109,9 +109,9 @@ fn collection_raise_top_no_op() {
     let mut c = ImageryLayerCollection::new();
     let id1 = c.add(test_layer());
     c.add(test_layer());
-    // Raise already-top layer
-    c.raise(id1); // id1 is at 0, moves to 1
-    c.raise(id1); // id1 is at 1 (top), no-op
+    // 提升已在顶层的图层
+    c.raise(id1); // id1 在 0，移到 1
+    c.raise(id1); // id1 在 1（顶层），无操作
     assert_eq!(c.index_of(id1), Some(1));
 }
 
@@ -130,8 +130,8 @@ fn collection_lower_bottom_no_op() {
     let mut c = ImageryLayerCollection::new();
     let id1 = c.add(test_layer());
     c.add(test_layer());
-    // Lower already-bottom layer
-    c.lower(id1); // id1 is at 0, no-op
+    // 下移已在底层的图层
+    c.lower(id1); // id1 在 0，无操作
     assert_eq!(c.index_of(id1), Some(0));
 }
 
@@ -203,7 +203,7 @@ fn blended_alpha_hidden_layer_skipped() {
     let mut c = ImageryLayerCollection::new();
     c.add(test_layer().with_show(false));
     c.add(test_layer());
-    // Hidden layer skipped, only second contributes
+    // 隐藏图层被跳过，仅第二个参与
     let result = c.compute_blended_alpha(&[1.0, 0.5]);
     assert!((result - 0.5).abs() < 1e-10);
 }

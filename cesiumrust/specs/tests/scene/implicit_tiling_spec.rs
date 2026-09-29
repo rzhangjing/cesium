@@ -1,4 +1,4 @@
-//! Scene/Implicit3DTileContentSpec.js → Rust integration tests
+//! Scene/Implicit3DTileContentSpec.js → Rust 集成测试
 
 use cesium_implicit_tiling::{
     morton_2d, morton_3d, AvailabilityBitstream, ImplicitTileCoord, ImplicitTilingConfig,
@@ -24,13 +24,13 @@ fn test_subdivision_scheme_default() {
     assert_eq!(SubdivisionScheme::default(), SubdivisionScheme::Quadtree);
 }
 
-// === Morton codes ===
+// === Morton 码 ===
 
 #[test]
 fn test_morton_2d_basic() {
     assert_eq!(morton_2d(0, 0), 0);
-    assert_eq!(morton_2d(1, 0), 1); // x at even bits
-    assert_eq!(morton_2d(0, 1), 2); // y at odd bits
+    assert_eq!(morton_2d(1, 0), 1); // x 在偶数位
+    assert_eq!(morton_2d(0, 1), 2); // y 在奇数位
     assert_eq!(morton_2d(1, 1), 3);
 }
 
@@ -43,9 +43,9 @@ fn test_morton_2d_larger() {
 #[test]
 fn test_morton_3d_basic() {
     assert_eq!(morton_3d(0, 0, 0), 0);
-    assert_eq!(morton_3d(1, 0, 0), 1); // x at positions 0,3,6...
-    assert_eq!(morton_3d(0, 1, 0), 2); // y at positions 1,4,7...
-    assert_eq!(morton_3d(0, 0, 1), 4); // z at positions 2,5,8...
+    assert_eq!(morton_3d(1, 0, 0), 1); // x 在位置 0,3,6...
+    assert_eq!(morton_3d(0, 1, 0), 2); // y 在位置 1,4,7...
+    assert_eq!(morton_3d(0, 0, 1), 4); // z 在位置 2,5,8...
     assert_eq!(morton_3d(1, 1, 1), 7);
 }
 
@@ -134,7 +134,7 @@ fn test_availability_bitstream_set_get() {
     assert!(!bs.is_available(1));
     assert!(bs.is_available(5));
     assert!(bs.is_available(15));
-    assert!(!bs.is_available(16)); // out of bounds
+    assert!(!bs.is_available(16)); // 越界
 }
 
 #[test]
@@ -157,7 +157,7 @@ fn test_availability_bitstream_count() {
 
 #[test]
 fn test_availability_bitstream_from_bytes() {
-    // 0b00000101 = bits 0 and 2 set
+    // 0b00000101 = 位 0 和 2 置位
     let bs = AvailabilityBitstream::from_bytes(vec![0x05], 8);
     assert!(bs.is_available(0));
     assert!(!bs.is_available(1));
@@ -217,6 +217,6 @@ fn test_subtree_local_index() {
     let root = ImplicitTileCoord::quadtree(0, 0, 0);
     let coord = ImplicitTileCoord::quadtree(1, 1, 0);
     let index = Subtree::local_index(&coord, &root, SubdivisionScheme::Quadtree);
-    // Level 1 offset = 1, morton(1,0) = 1 (CesiumJS: x at even bits)
+    // 第 1 层偏移 = 1, morton(1,0) = 1（CesiumJS: x 在偶数位）
     assert_eq!(index, 2);
 }

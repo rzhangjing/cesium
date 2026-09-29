@@ -1,11 +1,10 @@
-//! `CesiumPlotBridgePlugin` — the windowed-only overlay bridge.
+//! `CesiumPlotBridgePlugin` —— 仅在窗口模式下注册的叠加层桥接。
 //!
-//! M2–M6 register the shared resources, the view-sync system that projects the
-//! scene document onto render layer 3 (2D / 3D simultaneously), the picking
-//! system (hover + click-to-select), the draw FSM and the edit layer (move /
-//! duplicate / delete / undo-redo). The plugin is only added on the windowed
-//! branch of the app, so the headless offscreen baseline never even instantiates
-//! it and stays byte-exact.
+//! M2–M6 注册共享资源、将场景文档投影到渲染层 3（同时 2D / 3D）的
+//! 视图同步系统、拾取系统（悬停 + 点击选择）、绘制 FSM 与编辑层（移动 /
+//! 复制 / 删除 / 撤销重做）。该插件只在应用的窗口分
+//! 支上添加，因此 headless 离屏基线根本不会实例化
+//! 它，并保持字节一致。
 
 use bevy::prelude::*;
 
@@ -24,8 +23,8 @@ use crate::resources::{
 use crate::sync::sync_visuals;
 use crate::ui::{plot_toolbar, toolbar_click_system};
 
-/// Bevy plugin wiring the plotting overlay bridge. Registered by the app only
-/// on the windowed branch, so headless offscreen captures stay unchanged.
+/// 接线标绘叠加层桥接的 Bevy 插件。仅由应用在窗口分支上注册，
+/// 因此 headless 离屏捕获保持不变。
 pub struct CesiumPlotBridgePlugin;
 
 impl Plugin for CesiumPlotBridgePlugin {

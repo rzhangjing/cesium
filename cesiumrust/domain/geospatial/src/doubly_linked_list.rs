@@ -1,25 +1,26 @@
-//! Maps to CesiumJS `Core/DoublyLinkedList.js`
+//! 映射到 CesiumJS `Core/DoublyLinkedList.js`
 //!
-//! A doubly linked list. Nodes are shared via `Rc<RefCell<_>>` so that callers
-//! can hold handles to nodes (mirroring CesiumJS object references) and compare
-//! them by identity.
+//! 一个双向链表。节点通过 `Rc<RefCell<_>>` 共享，以便调用方
+//! 可以持有节点的句柄（对应 CesiumJS 的对象引用）并按标识
+//! 进行比较。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::unnecessary_map_or)]
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// A shared reference to a doubly linked list node.
+/// 对双向链表节点的共享引用。
 pub type NodeRef<T> = Rc<RefCell<DoublyLinkedListNode<T>>>;
 
-/// A node in the doubly linked list.
+/// 双向链表中的一个节点。
 pub struct DoublyLinkedListNode<T> {
     pub item: T,
     pub previous: Option<NodeRef<T>>,
     pub next: Option<NodeRef<T>>,
 }
 
-/// A doubly linked list.
+/// 一个双向链表。
 pub struct DoublyLinkedList<T> {
     head: Option<NodeRef<T>>,
     tail: Option<NodeRef<T>>,
@@ -33,7 +34,7 @@ impl<T> Default for DoublyLinkedList<T> {
 }
 
 impl<T> DoublyLinkedList<T> {
-    /// Creates a new, empty doubly linked list.
+    /// 创建新的空双向链表。
     pub fn new() -> Self {
         Self {
             head: None,
@@ -42,22 +43,22 @@ impl<T> DoublyLinkedList<T> {
         }
     }
 
-    /// Gets the number of nodes in the list.
+    /// 获取链表中节点的数量。
     pub fn length(&self) -> usize {
         self.length
     }
 
-    /// Gets the head node, if any.
+    /// 获取头节点（若有）。
     pub fn head(&self) -> Option<NodeRef<T>> {
         self.head.clone()
     }
 
-    /// Gets the tail node, if any.
+    /// 获取尾节点（若有）。
     pub fn tail(&self) -> Option<NodeRef<T>> {
         self.tail.clone()
     }
 
-    /// Adds the item to the end of the list, returning the new node.
+    /// 将项添加到链表末尾，返回新节点。
     pub fn add(&mut self, item: T) -> NodeRef<T> {
         let node = Rc::new(RefCell::new(DoublyLinkedListNode {
             item,
@@ -78,8 +79,8 @@ impl<T> DoublyLinkedList<T> {
         node
     }
 
-    /// Removes the given node from the list. Does nothing if `node` is `None`
-    /// (mirrors CesiumJS `remove(undefined)`).
+    /// 从链表中移除给定节点。若 `node` 为 `None` 则不做任何事
+    /// （对应 CesiumJS `remove(undefined)`）。
     pub fn remove(&mut self, node: Option<&NodeRef<T>>) {
         if let Some(node) = node {
             remove_node(self, node);
@@ -87,19 +88,19 @@ impl<T> DoublyLinkedList<T> {
         }
     }
 
-    /// Moves `next_node` after `node`.
+    /// 将 `next_node` 移到 `node` 之后。
     pub fn splice(&mut self, node: &NodeRef<T>, next_node: &NodeRef<T>) {
         if Rc::ptr_eq(node, next_node) {
             return;
         }
 
-        // Remove next_node, then insert after node.
+        // 移除 next_node，然后插入到 node 之后。
         remove_node(self, next_node);
 
         let old_node_next = node.borrow().next.clone();
         node.borrow_mut().next = Some(next_node.clone());
 
-        // next_node is the new tail if node was the tail.
+        // 若 node 是尾节点，则 next_node 成为新的尾节点。
         let node_is_tail = self
             .tail
             .as_ref()
@@ -123,15 +124,15 @@ fn remove_node<T>(list: &mut DoublyLinkedList<T>, node: &NodeRef<T>) {
         prev.borrow_mut().next = Some(next.clone());
         next.borrow_mut().previous = Some(prev.clone());
     } else if let Some(prev) = &previous {
-        // Remove last node.
+        // 移除最后一个节点。
         prev.borrow_mut().next = None;
         list.tail = Some(prev.clone());
     } else if let Some(next) = &next {
-        // Remove first node.
+        // 移除第一个节点。
         next.borrow_mut().previous = None;
         list.head = Some(next.clone());
     } else {
-        // Remove the only node in the list.
+        // 移除链表中唯一的节点。
         list.head = None;
         list.tail = None;
     }

@@ -1,38 +1,36 @@
-//! Core/TransformsSpec.js → Rust integration tests (faithful port).
+//! Core/TransformsSpec.js → Rust 集成测试（忠实移植）。
 //!
-//! Also retains the existing ports of `HeadingPitchRollSpec.js`,
-//! `HeadingPitchRangeSpec.js`, and `TranslationRotationScaleSpec.js`.
+//! 同时保留 `HeadingPitchRollSpec.js`、
+//! `HeadingPitchRangeSpec.js` 和 `TranslationRotationScaleSpec.js` 的现有移植版本。
 //!
-//! ## Platform adaptations (documented, not silent relaxations)
+//! ## 平台适配（均有文档说明，而非静默放宽）
 //!
-//! - **result-parameter variants**: CesiumJS `f(.., result)` overloads mutate a
-//!   caller-supplied `result` and return it (`expect(result).toBe(returnedResult)`).
-//!   Rust uses owned return values, so each "works with a result parameter" case is
-//!   merged into its "without a result parameter" counterpart (identical numeric
-//!   assertions).
-//! - **"throws without/with no <arg>"** cases: these assert CesiumJS's runtime
-//!   `undefined`/`null` argument validation (`toThrowDeveloperError`). Rust's type
-//!   system makes the corresponding misuse a compile error, so these cases have no
-//!   runtime counterpart and are omitted.
-//! - **`localFrameToFixedFrameGenerator` invalid axis-name** cases (`undefined`,
-//!   `"northe"`): CesiumJS validates string axis names at runtime. Rust's
-//!   `LocalFrameAxis` enum makes invalid names unrepresentable (compile-time
-//!   safety), so only the same/opposite-axis panic cases are ported.
-//! - **`toEqualEpsilon` on `Cartesian4` translation**: in
-//!   `ellipsoidTo2DModelMatrix`, the spec builds `expectedTranslation` with
-//!   `new Cartesian4()` (w = 0) while `getTranslation` yields w = 1. We compare
-//!   the xyz components only, which is the semantic translation being verified.
+//! - **result-parameter 变体**：CesiumJS 的 `f(.., result)` 重载会修改调用方
+//!   传入的 `result` 并将其返回（`expect(result).toBe(returnedResult)`）。
+//!   Rust 使用拥有所有权的返回值，因此每个 "works with a result parameter" 用例
+//!   都被合并进对应的 "without a result parameter" 版本（数值断言完全相同）。
+//! - **"throws without/with no <arg>"** 用例：这些断言 CesiumJS 运行时的
+//!   `undefined`/`null` 参数校验（`toThrowDeveloperError`）。Rust 的类型系统
+//!   使相应的误用成为编译错误，因此这些用例没有运行时对应版本，予以省略。
+//! - **`localFrameToFixedFrameGenerator` 非法轴名**用例（`undefined`、
+//!   `"northe"`）：CesiumJS 在运行时校验字符串轴名。Rust 的
+//!   `LocalFrameAxis` 枚举使非法名称无法表示（编译期安全），因此仅移植
+//!   相同/相反轴的 panic 用例。
+//! - **对 `Cartesian4` 平移使用 `toEqualEpsilon`**：在
+//!   `ellipsoidTo2DModelMatrix` 中，规范用 `new Cartesian4()`（w = 0）构造
+//!   `expectedTranslation`，而 `getTranslation` 得到 w = 1。我们仅比较
+//!   xyz 分量，这正是所要验证的语义平移。
 //!
-//! ## Not ported here (tracked, not dropped)
+//! ## 此处未移植（已跟踪，并非遗漏）
 //!
-//! - `computeTemeToPseudoFixedMatrix` (3 cases): requires `JulianDate` + leap-second
-//!   data — deferred to the time-module task (t9).
+//! - `computeTemeToPseudoFixedMatrix`（3 个用例）：需要 `JulianDate` + 闰秒
+//!   数据——推迟到 time 模块任务（t9）。
 //! - `computeIcrfToMoonFixedMatrix` / `computeIcrfToFixedMatrix` / `Iau2006XysData`
-//!   / Earth-orientation-parameter cases (~15): **C-class** — require external
-//!   EOP/XYS data files and the full IAU 2006/2000A pipeline.
-//! - `pointToGLWindowCoordinates` / `pointToWindowCoordinates` (8 cases): require
+//!   / 地球定向参数用例（约 15 个）：**C 类**——需要外部
+//!   EOP/XYS 数据文件以及完整的 IAU 2006/2000A 处理管线。
+//! - `pointToGLWindowCoordinates` / `pointToWindowCoordinates`（8 个用例）：需要
 //!   `Matrix4.computePerspectiveFieldOfView` / `computeViewportTransformation` /
-//!   `fromCamera` helpers — deferred until those Matrix4 helpers are ported.
+//!   `fromCamera` 辅助函数——推迟到这些 Matrix4 辅助函数被移植之后。
 
 use cesium_geospatial::transforms::{
     basis_to_2d, east_north_up_to_fixed_frame, ellipsoid_to_2d_model_matrix,
@@ -53,10 +51,10 @@ use std::f64::consts::PI;
 
 use LocalFrameAxis::*;
 
-// === Local helpers mirroring CesiumJS Matrix4 statics ===
+// === 对应 CesiumJS Matrix4 静态方法的本地辅助函数 ===
 
-/// Mirrors `Matrix4.inverseTransformation` (`[R^T | -R^T * t]`), used by the
-/// basisTo2D / ellipsoidTo2DModelMatrix specs.
+/// 对应 `Matrix4.inverseTransformation`（`[R^T | -R^T * t]`），供
+/// basisTo2D / ellipsoidTo2DModelMatrix 规范使用。
 fn inverse_transformation(matrix: &DMat4) -> DMat4 {
     let rotation = DMat3::from_cols(
         matrix.x_axis.truncate(),
@@ -73,9 +71,8 @@ fn inverse_transformation(matrix: &DMat4) -> DMat4 {
     )
 }
 
-/// Maps a local-frame axis name to the corresponding (possibly negated) column
-/// of a classical East-North-Up matrix, mirroring the axis-name dispatch in the
-/// "normal use of localFrameToFixedFrameGenerator" spec.
+/// 将本地坐标系轴名映射到经典 East-North-Up 矩阵中对应的（可能取反的）列，
+/// 对应 "normal use of localFrameToFixedFrameGenerator" 规范中的轴名分发。
 fn enu_column(enu: &DMat4, axis: LocalFrameAxis) -> DVec4 {
     match axis {
         East => enu.x_axis,
@@ -119,7 +116,7 @@ fn test_hpr_to_quaternion_identity() {
 fn test_hpr_to_quaternion_heading_90() {
     let hpr = HeadingPitchRoll::new(PI / 2.0, 0.0, 0.0);
     let q = hpr.to_quaternion();
-    // CesiumJS convention: heading rotates about -Z, so z = -sin(PI/4).
+    // CesiumJS 约定：heading 绕 -Z 旋转，故 z = -sin(PI/4)。
     assert_approx!(q.z, -(PI / 4.0).sin(), epsilon::EPSILON10);
     assert_approx!(q.w, (PI / 4.0).cos(), epsilon::EPSILON10);
 }
@@ -128,7 +125,7 @@ fn test_hpr_to_quaternion_heading_90() {
 fn test_hpr_to_quaternion_pitch_90() {
     let hpr = HeadingPitchRoll::new(0.0, PI / 2.0, 0.0);
     let q = hpr.to_quaternion();
-    // CesiumJS convention: pitch rotates about -Y, so y = -sin(PI/4).
+    // CesiumJS 约定：pitch 绕 -Y 旋转，故 y = -sin(PI/4)。
     assert_approx!(q.y, -(PI / 4.0).sin(), epsilon::EPSILON10);
     assert_approx!(q.w, (PI / 4.0).cos(), epsilon::EPSILON10);
 }
@@ -198,10 +195,10 @@ fn test_enu_works_without_a_result_parameter() {
     let expected_translation = DVec4::new(origin.x, origin.y, origin.z, 1.0);
 
     let m = east_north_up_to_fixed_frame(origin, &Ellipsoid::UNIT_SPHERE);
-    assert_vec4_epsilon!(m.x_axis, DVec4::Y, epsilon::EPSILON15); // east
-    assert_vec4_epsilon!(m.y_axis, DVec4::Z, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.z_axis, DVec4::X, epsilon::EPSILON15); // up
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, DVec4::Y, epsilon::EPSILON15); // 东
+    assert_vec4_epsilon!(m.y_axis, DVec4::Z, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.z_axis, DVec4::X, epsilon::EPSILON15); // 上
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 #[test]
@@ -210,10 +207,10 @@ fn test_enu_works_at_the_north_pole() {
     let expected_translation = DVec4::new(0.0, 0.0, 1.0, 1.0);
 
     let m = east_north_up_to_fixed_frame(north_pole, &Ellipsoid::UNIT_SPHERE);
-    assert_vec4_epsilon!(m.x_axis, DVec4::Y, epsilon::EPSILON15); // east
-    assert_vec4_epsilon!(m.y_axis, -DVec4::X, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.z_axis, DVec4::Z, epsilon::EPSILON15); // up
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, DVec4::Y, epsilon::EPSILON15); // 东
+    assert_vec4_epsilon!(m.y_axis, -DVec4::X, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.z_axis, DVec4::Z, epsilon::EPSILON15); // 上
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 #[test]
@@ -222,10 +219,10 @@ fn test_enu_works_at_the_south_pole() {
     let expected_translation = DVec4::new(0.0, 0.0, -1.0, 1.0);
 
     let m = east_north_up_to_fixed_frame(south_pole, &Ellipsoid::UNIT_SPHERE);
-    assert_vec4_epsilon!(m.x_axis, DVec4::Y, epsilon::EPSILON15); // east
-    assert_vec4_epsilon!(m.y_axis, DVec4::X, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.z_axis, -DVec4::Z, epsilon::EPSILON15); // up
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, DVec4::Y, epsilon::EPSILON15); // 东
+    assert_vec4_epsilon!(m.y_axis, DVec4::X, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.z_axis, -DVec4::Z, epsilon::EPSILON15); // 上
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 #[test]
@@ -233,10 +230,10 @@ fn test_enu_works_at_the_origin() {
     let expected_translation = DVec4::new(0.0, 0.0, 0.0, 1.0);
 
     let m = east_north_up_to_fixed_frame(DVec3::ZERO, &Ellipsoid::WGS84);
-    assert_vec4_epsilon!(m.x_axis, DVec4::Y, epsilon::EPSILON15); // east
-    assert_vec4_epsilon!(m.y_axis, -DVec4::X, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.z_axis, DVec4::Z, epsilon::EPSILON15); // up
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, DVec4::Y, epsilon::EPSILON15); // 东
+    assert_vec4_epsilon!(m.y_axis, -DVec4::X, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.z_axis, DVec4::Z, epsilon::EPSILON15); // 上
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 // === northEastDownToFixedFrame ===
@@ -247,10 +244,10 @@ fn test_ned_works_without_a_result_parameter() {
     let expected_translation = DVec4::new(origin.x, origin.y, origin.z, 1.0);
 
     let m = north_east_down_to_fixed_frame(origin, &Ellipsoid::UNIT_SPHERE);
-    assert_vec4_epsilon!(m.x_axis, DVec4::Z, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.y_axis, DVec4::Y, epsilon::EPSILON15); // east
-    assert_vec4_epsilon!(m.z_axis, -DVec4::X, epsilon::EPSILON15); // down
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, DVec4::Z, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.y_axis, DVec4::Y, epsilon::EPSILON15); // 东
+    assert_vec4_epsilon!(m.z_axis, -DVec4::X, epsilon::EPSILON15); // 下
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 #[test]
@@ -259,10 +256,10 @@ fn test_ned_works_at_the_north_pole() {
     let expected_translation = DVec4::new(0.0, 0.0, 1.0, 1.0);
 
     let m = north_east_down_to_fixed_frame(north_pole, &Ellipsoid::UNIT_SPHERE);
-    assert_vec4_epsilon!(m.x_axis, -DVec4::X, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.y_axis, DVec4::Y, epsilon::EPSILON15); // east
-    assert_vec4_epsilon!(m.z_axis, -DVec4::Z, epsilon::EPSILON15); // down
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, -DVec4::X, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.y_axis, DVec4::Y, epsilon::EPSILON15); // 东
+    assert_vec4_epsilon!(m.z_axis, -DVec4::Z, epsilon::EPSILON15); // 下
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 #[test]
@@ -271,10 +268,10 @@ fn test_ned_works_at_the_south_pole() {
     let expected_translation = DVec4::new(0.0, 0.0, -1.0, 1.0);
 
     let m = north_east_down_to_fixed_frame(south_pole, &Ellipsoid::UNIT_SPHERE);
-    assert_vec4_epsilon!(m.x_axis, DVec4::X, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.y_axis, DVec4::Y, epsilon::EPSILON15); // east
-    assert_vec4_epsilon!(m.z_axis, DVec4::Z, epsilon::EPSILON15); // down
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, DVec4::X, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.y_axis, DVec4::Y, epsilon::EPSILON15); // 东
+    assert_vec4_epsilon!(m.z_axis, DVec4::Z, epsilon::EPSILON15); // 下
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 #[test]
@@ -282,10 +279,10 @@ fn test_ned_works_at_the_origin() {
     let expected_translation = DVec4::new(0.0, 0.0, 0.0, 1.0);
 
     let m = north_east_down_to_fixed_frame(DVec3::ZERO, &Ellipsoid::UNIT_SPHERE);
-    assert_vec4_epsilon!(m.x_axis, -DVec4::X, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.y_axis, DVec4::Y, epsilon::EPSILON15); // east
-    assert_vec4_epsilon!(m.z_axis, -DVec4::Z, epsilon::EPSILON15); // down
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, -DVec4::X, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.y_axis, DVec4::Y, epsilon::EPSILON15); // 东
+    assert_vec4_epsilon!(m.z_axis, -DVec4::Z, epsilon::EPSILON15); // 下
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 // === northUpEastToFixedFrame ===
@@ -296,10 +293,10 @@ fn test_nue_works_without_a_result_parameter() {
     let expected_translation = DVec4::new(origin.x, origin.y, origin.z, 1.0);
 
     let m = north_up_east_to_fixed_frame(origin, &Ellipsoid::UNIT_SPHERE);
-    assert_vec4_epsilon!(m.x_axis, DVec4::Z, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.y_axis, DVec4::X, epsilon::EPSILON15); // up
-    assert_vec4_epsilon!(m.z_axis, DVec4::Y, epsilon::EPSILON15); // east
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, DVec4::Z, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.y_axis, DVec4::X, epsilon::EPSILON15); // 上
+    assert_vec4_epsilon!(m.z_axis, DVec4::Y, epsilon::EPSILON15); // 东
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 #[test]
@@ -308,10 +305,10 @@ fn test_nue_works_at_the_north_pole() {
     let expected_translation = DVec4::new(0.0, 0.0, 1.0, 1.0);
 
     let m = north_up_east_to_fixed_frame(north_pole, &Ellipsoid::UNIT_SPHERE);
-    assert_vec4_epsilon!(m.x_axis, -DVec4::X, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.y_axis, DVec4::Z, epsilon::EPSILON15); // up
-    assert_vec4_epsilon!(m.z_axis, DVec4::Y, epsilon::EPSILON15); // east
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, -DVec4::X, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.y_axis, DVec4::Z, epsilon::EPSILON15); // 上
+    assert_vec4_epsilon!(m.z_axis, DVec4::Y, epsilon::EPSILON15); // 东
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 #[test]
@@ -320,10 +317,10 @@ fn test_nue_works_at_the_south_pole() {
     let expected_translation = DVec4::new(0.0, 0.0, -1.0, 1.0);
 
     let m = north_up_east_to_fixed_frame(south_pole, &Ellipsoid::UNIT_SPHERE);
-    assert_vec4_epsilon!(m.x_axis, DVec4::X, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.y_axis, -DVec4::Z, epsilon::EPSILON15); // up
-    assert_vec4_epsilon!(m.z_axis, DVec4::Y, epsilon::EPSILON15); // east
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, DVec4::X, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.y_axis, -DVec4::Z, epsilon::EPSILON15); // 上
+    assert_vec4_epsilon!(m.z_axis, DVec4::Y, epsilon::EPSILON15); // 东
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 #[test]
@@ -331,10 +328,10 @@ fn test_nue_works_at_the_origin() {
     let expected_translation = DVec4::new(0.0, 0.0, 0.0, 1.0);
 
     let m = north_up_east_to_fixed_frame(DVec3::ZERO, &Ellipsoid::UNIT_SPHERE);
-    assert_vec4_epsilon!(m.x_axis, -DVec4::X, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.y_axis, DVec4::Z, epsilon::EPSILON15); // up
-    assert_vec4_epsilon!(m.z_axis, DVec4::Y, epsilon::EPSILON15); // east
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, -DVec4::X, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.y_axis, DVec4::Z, epsilon::EPSILON15); // 上
+    assert_vec4_epsilon!(m.z_axis, DVec4::Y, epsilon::EPSILON15); // 东
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 // === northWestUpToFixedFrame ===
@@ -345,10 +342,10 @@ fn test_nwu_works_without_a_result_parameter() {
     let expected_translation = DVec4::new(origin.x, origin.y, origin.z, 1.0);
 
     let m = north_west_up_to_fixed_frame(origin, &Ellipsoid::UNIT_SPHERE);
-    assert_vec4_epsilon!(m.x_axis, DVec4::Z, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.y_axis, -DVec4::Y, epsilon::EPSILON15); // west
-    assert_vec4_epsilon!(m.z_axis, DVec4::X, epsilon::EPSILON15); // up
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, DVec4::Z, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.y_axis, -DVec4::Y, epsilon::EPSILON15); // 西
+    assert_vec4_epsilon!(m.z_axis, DVec4::X, epsilon::EPSILON15); // 上
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 #[test]
@@ -357,10 +354,10 @@ fn test_nwu_works_at_the_north_pole() {
     let expected_translation = DVec4::new(0.0, 0.0, 1.0, 1.0);
 
     let m = north_west_up_to_fixed_frame(north_pole, &Ellipsoid::UNIT_SPHERE);
-    assert_vec4_epsilon!(m.x_axis, -DVec4::X, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.y_axis, -DVec4::Y, epsilon::EPSILON15); // west
-    assert_vec4_epsilon!(m.z_axis, DVec4::Z, epsilon::EPSILON15); // up
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, -DVec4::X, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.y_axis, -DVec4::Y, epsilon::EPSILON15); // 西
+    assert_vec4_epsilon!(m.z_axis, DVec4::Z, epsilon::EPSILON15); // 上
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 #[test]
@@ -369,10 +366,10 @@ fn test_nwu_works_at_the_south_pole() {
     let expected_translation = DVec4::new(0.0, 0.0, -1.0, 1.0);
 
     let m = north_west_up_to_fixed_frame(south_pole, &Ellipsoid::UNIT_SPHERE);
-    assert_vec4_epsilon!(m.x_axis, DVec4::X, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.y_axis, -DVec4::Y, epsilon::EPSILON15); // west
-    assert_vec4_epsilon!(m.z_axis, -DVec4::Z, epsilon::EPSILON15); // up
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, DVec4::X, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.y_axis, -DVec4::Y, epsilon::EPSILON15); // 西
+    assert_vec4_epsilon!(m.z_axis, -DVec4::Z, epsilon::EPSILON15); // 上
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 #[test]
@@ -380,10 +377,10 @@ fn test_nwu_works_at_the_origin() {
     let expected_translation = DVec4::new(0.0, 0.0, 0.0, 1.0);
 
     let m = north_west_up_to_fixed_frame(DVec3::ZERO, &Ellipsoid::UNIT_SPHERE);
-    assert_vec4_epsilon!(m.x_axis, -DVec4::X, epsilon::EPSILON15); // north
-    assert_vec4_epsilon!(m.y_axis, -DVec4::Y, epsilon::EPSILON15); // west
-    assert_vec4_epsilon!(m.z_axis, DVec4::Z, epsilon::EPSILON15); // up
-    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // translation
+    assert_vec4_epsilon!(m.x_axis, -DVec4::X, epsilon::EPSILON15); // 北
+    assert_vec4_epsilon!(m.y_axis, -DVec4::Y, epsilon::EPSILON15); // 西
+    assert_vec4_epsilon!(m.z_axis, DVec4::Z, epsilon::EPSILON15); // 上
+    assert_vec4_epsilon!(m.w_axis, expected_translation, epsilon::EPSILON15); // 平移
 }
 
 // === localFrameToFixedFrameGenerator ===
@@ -399,7 +396,7 @@ fn test_local_frame_to_fixed_frame_generator_normal_use() {
         DVec3::new(9.0, 0.0, -7.0),
     ];
 
-    // (firstAxis, secondAxis, expected column order)
+    //（firstAxis、secondAxis、预期的列顺序）
     let converter_tab: [(LocalFrameAxis, LocalFrameAxis, [LocalFrameAxis; 3]); 20] = [
         (North, East, [North, East, Down]),
         (North, West, [North, West, Up]),
@@ -429,10 +426,10 @@ fn test_local_frame_to_fixed_frame_generator_normal_use() {
             let converter_matrix =
                 local_frame_to_fixed_frame(first, second, position, &Ellipsoid::UNIT_SPHERE);
 
-            // check translation
+            // 检查平移
             assert_vec4_epsilon!(converter_matrix.w_axis, enu.w_axis, epsilon::EPSILON15);
 
-            // check axes
+            // 检查各轴
             let converter_cols = [
                 converter_matrix.x_axis,
                 converter_matrix.y_axis,
@@ -448,9 +445,9 @@ fn test_local_frame_to_fixed_frame_generator_normal_use() {
 
 #[test]
 fn test_local_frame_to_fixed_frame_generator_abnormal_use() {
-    // Identical or opposite axis pairs must panic (CesiumJS DeveloperError).
-    // The `undefined` / invalid-name cases are compile-time safe in Rust and
-    // therefore omitted (see module docs).
+    // 相同或相反的轴对必须 panic（CesiumJS DeveloperError）。
+    // `undefined` / 非法名称用例在 Rust 中是编译期安全的，
+    // 因此予以省略（见模块文档）。
     let bad_pairs = [
         (North, North),
         (North, South),
@@ -492,8 +489,8 @@ fn test_hpr_to_fixed_frame_default() {
     let expected_x = expected_rotation.x_axis;
     let expected_y = expected_rotation.y_axis;
     let expected_z = expected_rotation.z_axis;
-    // At (1,0,0) on the unit sphere the ENU frame is a cyclic permutation, so
-    // each fixed-frame column is the HPR column mapped (x, y, z) -> (z, x, y).
+    // 在单位球上的 (1,0,0) 处，ENU 坐标系是一个循环置换，因此
+    // 每个固定帧列都是将 HPR 列按 (x, y, z) -> (z, x, y) 映射所得。
     let expected_x = DVec3::new(expected_x.z, expected_x.x, expected_x.y);
     let expected_y = DVec3::new(expected_y.z, expected_y.x, expected_y.y);
     let expected_z = DVec3::new(expected_z.z, expected_z.x, expected_z.y);
@@ -523,7 +520,7 @@ fn test_hpr_to_fixed_frame_custom_frame() {
     let expected_north = DVec3::new(expected_north.z, expected_north.x, expected_north.y);
     let expected_up = DVec3::new(expected_up.z, expected_up.x, expected_up.y);
 
-    // Custom local frame ("west", "south") — i.e. up/north/east ordering.
+    // 自定义本地坐标系（"west"、"south"）——即 up/north/east 顺序。
     let m = heading_pitch_roll_to_fixed_frame_with_local_frame(
         &hpr,
         origin,
@@ -600,8 +597,8 @@ fn test_hpr_quaternion_custom_frame() {
 
 #[test]
 fn test_rotation_matrix_from_position_velocity() {
-    // CesiumJS `new Matrix3(...)` literals are row-major; converted to glam
-    // column-major columns here.
+    // CesiumJS 的 `new Matrix3(...)` 字面量是行主序；此处已转换为
+    // glam 的列主序列。
     let m = rotation_matrix_from_position_velocity(DVec3::X, DVec3::Y, &Ellipsoid::WGS84);
     let expected = DMat3::from_cols(
         DVec3::new(0.0, 1.0, 0.0),
@@ -676,8 +673,8 @@ fn test_basis_to_2d_transforms_rotation() {
         hpr_plus_translate.z_axis.truncate(),
     );
 
-    // expected rows = (hpr2.row2, hpr2.row0, hpr2.row1); equivalently each
-    // expected column is the corresponding hpr2 column mapped (x,y,z)->(z,x,y).
+    // 预期的各行 = (hpr2.row2, hpr2.row0, hpr2.row1)；等价地，每个
+    // 预期列都是将对应的 hpr2 列按 (x,y,z)->(z,x,y) 映射所得。
     let expected = DMat3::from_cols(
         DVec3::new(hpr2.x_axis.z, hpr2.x_axis.x, hpr2.x_axis.y),
         DVec3::new(hpr2.y_axis.z, hpr2.y_axis.x, hpr2.y_axis.y),
@@ -724,8 +721,8 @@ fn test_ellipsoid_to_2d_model_matrix() {
     );
     let actual_translation = actual.w_axis.truncate();
 
-    // Compare xyz only: the spec's `expectedTranslation` is a default
-    // `Cartesian4` (w = 0) whereas `getTranslation` yields w = 1 (see docs).
+    // 仅比较 xyz：规范的 `expectedTranslation` 是默认的
+    // `Cartesian4`（w = 0），而 `getTranslation` 得到 w = 1（见文档）。
     assert_vec3_epsilon!(actual_translation, expected_translation, epsilon::EPSILON14);
 }
 

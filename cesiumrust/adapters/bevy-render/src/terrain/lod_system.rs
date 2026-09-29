@@ -51,11 +51,11 @@ fn create_root_tiles() -> Vec<QuadtreeTile> {
 }
 
 fn tile_sphere(ellipsoid: &Ellipsoid, x: u32, y: u32, level: u32) -> BoundingSphere {
-    // Quadtree (CesiumJS) semantics: level L has 2^(L+1) columns x 2^L rows,
-    // so each level doubles the resolution. The exponent is clamped to 31 to
-    // guard the `u32` shift: `saturating_add` alone would still let level >= 31
-    // overflow the shift (debug panic / release wrap to 0 → divide-by-zero NaN).
-    // `.max(2)` keeps the level-0 base grid non-degenerate (n=1 → zero radius).
+    // 四叉树（CesiumJS）语义：level L 有 2^(L+1) 列 x 2^L 行，
+    // 所以每 level 分辨率翻倍。指数被钳位到 31 以
+    // 保护 `u32` 移位：仅靠 `saturating_add`仍会让 level >= 31
+    // 溢出移位（debug panic / release 回绕到 0 → 除零 NaN）。
+    // `.max(2)` 使 level-0 基础网格非退化（n=1 → 零半径）。
     let n = 2u32.pow(level.saturating_add(1).min(31)).max(2) as f64;
     let west = (x as f64 / n) * 360.0 - 180.0;
     let east = ((x as f64 + 1.0) / n) * 360.0 - 180.0;
@@ -103,12 +103,12 @@ pub fn terrain_lod_system(
         Err(_) => return,
     };
 
-    // Camera transform is in render units (~1 for an Earth-radius globe); the
-    // tile bounding spheres below are in ECEF metres (~6.4e6). Convert the camera
-    // to metres so camera-tile distances — and thus screen-space error — are
-    // meaningful. Otherwise the ~6.4e6 offset dominates the distance, SSE is
-    // ~constant, and the quadtree never refines past the root tiles (the terrain
-    // "only loaded=2" symptom). Mirrors tileset/traversal_system.rs.
+    // 相机 transform 以 render 单位表示（一个地球半径的 globe 约为 ~1）；下面的
+    // tile 包围球以 ECEF 米表示（~6.4e6）。把相机转换
+    // 到米，以便相机-tile 距离——从而屏幕空间误差——是
+    // 有意义的。否则 ~6.4e6 的偏移会主导距离，SSE 约为
+    // ~常量，四叉树从不细化到超过根 tile（terrain
+    // “only loaded=2”症状）。镜像 tileset/traversal_system.rs。
     let t = transform.translation();
     let camera_position = glam::DVec3::new(
         t.x as f64 * METERS_PER_RENDER_UNIT,

@@ -1,19 +1,17 @@
-//! Agent-facing **intent protocol** (plan P0).
+//! 面向 agent 的**意图协议**（计划 P0）。
 //!
-//! An external agent (LLM tool-caller, script, service) never touches the
-//! renderer, vertices or GPU — it produces a small, stable, JSON-serialisable
-//! [`AgentAction`]. [`compile`] turns an action into a reversible
-//! [`PlotCommand`] by filling in the facts the server owns and the agent must
-//! *not* guess: the `before` state it reads from the live [`Document`], the
-//! freshly-minted element id, and the resolved target layer. [`apply_action`]
-//! then applies + records the command as one undo step.
+//! 一个外部 agent（LLM 工具调用者、脚本、服务）从不触及渲染器、
+//! 顶点或 GPU —— 它产生一个小巧、稳定、可 JSON 序列化的
+//! [`AgentAction`]。[`compile`] 通过填入服务器拥有的、agent 必须
+//! *不能* 猜测的事实，将一个动作编译为可逆的 [`PlotCommand`]：
+//! 它从实时 [`Document`] 读到的 `before` 状态、新铸造的元素 id，
+//! 以及解析后的目标图层。[`apply_action`] 随后作为单个 undo 步骤
+//! 应用 + 记录该命令。
 //!
-//! Why a façade instead of exposing [`PlotCommand`] directly: commands carry
-//! `before` / `id` / `layer`, are an internal recording unit, and would freeze
-//! implementation details into the public contract. The intent layer keeps the
-//! outside stable while the inside evolves, and it is where every write is
-//! *validated* (unknown id, too-few points, no active layer) before it can touch
-//! the document.
+//! 为何用一个外障而非直接暴露 [`PlotCommand`]：命令携带
+//! `before` / `id` / `layer`，是一个内部的记录单元，会将实现
+//! 细节冻结进公共契约。意图层使外部保持稳定而内部演进，且它是
+//! 每一次写入在触及文档前被*校验*（未知 id、点太少、无活动图层）的地方。
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -25,15 +23,15 @@ use crate::model::{Document, HeightReference, Rgba, Style};
 use crate::ops::transform;
 use crate::ops::{commit_draft, DrawKind, HistoryStack, PlotCommand};
 
-/// A minimal, incremental style edit — every field optional, only the present
-/// ones are copied onto the element's current [`Style`] by
-/// [`StylePatch::apply_to`]. Mirrors the agent-relevant subset of `Style`.
+/// 一个最小的、渐进式的样式编辑 —— 每个字段都可选，只有存在的那些
+/// 会被 [`StylePatch::apply_to`] 复制到元素当前的 [`Style`] 上。
+/// 镜像 `Style` 中与 agent 相关的子集。
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct StylePatch {
     pub color: Option<Rgba>,
     pub opacity: Option<f32>,
     pub width_px: Option<f32>,
-    /// Polygon fill colour; a `Some(_)` sets it, `None` leaves it untouched.
+    /// 多边形填充色；`Some(_)` 设置它，`None` 保持不变。
     pub fill: Option<Rgba>,
     pub point_size_px: Option<f32>,
     pub z_order: Option<i32>,
@@ -44,7 +42,7 @@ pub struct StylePatch {
 }
 
 impl StylePatch {
-    /// Fold this patch over `base`, returning the new style.
+    /// 将本补丁折叠到 `base` 上，返回新样式。
     pub fn apply_to(&self, base: &Style) -> Style {
         let mut s = base.clone();
         if let Some(v) = self.color {
@@ -81,14 +79,14 @@ impl StylePatch {
     }
 }
 
-/// A single high-level editing intent. It deliberately carries **no** server-owned
-/// facts (no `before`, no minted id, no resolved layer): [`compile`] supplies
-/// those and validates the request.
+/// 单个高层编辑意图。它有意**不**携带任何服务器拥有的事实
+/// （无 `before`、无铸造的 id、无解析的图层）：[`compile`] 提供
+/// 这些并校验请求。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AgentAction {
-    /// Create a primitive from a draw kind + its control points, folded through
-    /// the same [`commit_draft`] rules the interactive draw tool uses. Richer
-    /// geometry is placed with a follow-up [`AgentAction::SetGeometry`].
+    /// 从一个绘制类型 + 其控制点创建一个图元，折叠经过交互绘制
+    /// 工具所用的同一 [`commit_draft`] 规则。更丰富的几何用后续
+    /// [`AgentAction::SetGeometry`] 放置。
     Create {
         kind: DrawKind,
         positions: Vec<GeoPoint>,
@@ -98,48 +96,48 @@ pub enum AgentAction {
         style: Option<StylePatch>,
         #[serde(default)]
         attributes: Option<Map<String, Value>>,
-        /// Target layer; defaults to the document's active layer.
+        /// 目标图层；默认为文档的活动图层。
         #[serde(default)]
         layer: Option<LayerId>,
     },
-    /// Delete an element by id (kept whole in the command so undo restores it).
+    /// 按 id 删除一个元素（在命令中保留完整以便 undo 恢复它）。
     Delete { target: ElementId },
-    /// Translate every vertex of an element by `(dlon, dlat)` degrees.
+    /// 将元素的所有顶点平移 `(dlon, dlat)` 度。
     Move {
         target: ElementId,
         delta_lonlat: [f64; 2],
     },
-    /// Replace an element's whole geometry (any [`Geometry`] variant).
+    /// 替换一个元素的整个几何（任意 [`Geometry`] 变体）。
     SetGeometry {
         target: ElementId,
         geometry: Geometry,
     },
-    /// Patch an element's style (only the present fields change).
+    /// 修补一个元素的样式（只有存在的字段会改变）。
     Style {
         target: ElementId,
         patch: StylePatch,
     },
-    /// Merge free-form business attributes (敌我 / 番号 / 状态 …); existing keys
-    /// with the same name are overwritten, others kept.
+    /// 合并自由形式的业务属性（敌我 / 番号 / 状态 …）；同名的现有键
+    /// 被覆盖，其他保留。
     SetAttributes {
         target: ElementId,
         merge: Map<String, Value>,
     },
-    /// Flip the manual visibility flag.
+    /// 翻转手动可见性标志。
     SetVisible {
         target: ElementId,
         visible: bool,
     },
-    /// Several actions compiled into one [`PlotCommand::Composite`] — a single
-    /// undo step. Sub-actions must reference pre-existing elements (a batch does
-    /// not resolve references to elements created by an earlier sub-action in the
-    /// same batch); use sequential [`apply_action`] calls for that.
+    /// 多个动作编译成一个 [`PlotCommand::Composite`] —— 单个
+    /// undo 步骤。子动作必须引用已存在的元素（一个批次不会
+    /// 解析指向同批次中早前子动作所创建元素的引用）；要那样做请用
+    /// 顺序的 [`apply_action`] 调用。
     Batch { actions: Vec<AgentAction> },
 }
 
-/// Why an action cannot be compiled. Every failure is detected in [`compile`],
-/// *before* the document is mutated, so a rejected action leaves the scene
-/// unchanged (aside from an invisibly-consumed id counter).
+/// 一个动作无法编译的原因。每个失败都在 [`compile`] 中、*在*
+/// 文档被变更之前检测到，因此一个被拒绝的动作会使场景保持
+/// 不变（除了一个隐式消耗的 id 计数器）。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ActionError {
     #[error("no element with id {0:?}")]
@@ -158,18 +156,18 @@ pub enum ActionError {
     OutOfRange { field: &'static str },
 }
 
-/// What an applied action did — enough for a host to reconcile its view.
+/// 一个已应用动作做了什么 —— 足够让宿主调和它的视图。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Applied {
-    /// Every leaf element id the resulting command touched.
+    /// 结果命令触及的每个叶子元素 id。
     pub touched_ids: Vec<ElementId>,
-    /// The id of a newly created element, when this action created one.
+    /// 当一个动作创建了新元素时，那个新建元素的 id。
     pub new_id: Option<ElementId>,
 }
 
-/// Validate `action` against `doc` and produce the reversible command it maps to
-/// — **without** applying it. This reads `before` state, resolves the target
-/// layer, and (for a create) mints a fresh id via [`Document::make_element`].
+/// 针对 `doc` 校验 `action` 并产出它映射到的可逆命令 —— 但**不**应用
+/// 它。这会读取 `before` 状态、解析目标图层，并（对于创建）通过
+/// [`Document::make_element`] 铸造一个新 id。
 pub fn compile(doc: &mut Document, action: &AgentAction) -> Result<PlotCommand, ActionError> {
     match action {
         AgentAction::Create {
@@ -295,8 +293,8 @@ pub fn compile(doc: &mut Document, action: &AgentAction) -> Result<PlotCommand, 
     }
 }
 
-/// Compile, apply and record `action` on `doc` as one undo step. Validation
-/// failures short-circuit before any mutation and are **not** recorded.
+/// 在 `doc` 上编译、应用并记录 `action` 作为单个 undo 步骤。校验
+/// 失败会在任何变更之前短路，且**不会**被记录。
 pub fn apply_action(
     doc: &mut Document,
     history: &mut HistoryStack,
@@ -349,7 +347,7 @@ mod tests {
         let id = applied.new_id.expect("created id reported");
         assert_eq!(doc.element_count(), 1);
         assert_eq!(doc.element(id).unwrap().name, "watch");
-        // A single undo removes it again.
+        // 单次 undo 会再次移除它。
         h.undo(&mut doc);
         assert_eq!(doc.element_count(), 0);
     }
@@ -440,7 +438,7 @@ mod tests {
         .unwrap()
         .new_id
         .unwrap();
-        // Set geometry to a polyline.
+        // 将几何设为一条折线。
         apply_action(
             &mut doc,
             &mut h,
@@ -455,7 +453,7 @@ mod tests {
         assert_eq!(doc.element(id).unwrap().geometry.kind(), crate::model::GeometryKind::Line);
         h.undo(&mut doc);
         assert_eq!(doc.element(id).unwrap().geometry.kind(), crate::model::GeometryKind::Point);
-        // Style patch colour then undo.
+        // 样式补丁颜色，然后 undo。
         apply_action(
             &mut doc,
             &mut h,
@@ -513,7 +511,7 @@ mod tests {
         assert_eq!(e.attributes["a"], Value::from(1));
         assert_eq!(e.attributes["b"], Value::from(2));
         h.undo(&mut doc);
-        // Undo drops the merged key but keeps the original.
+        // Undo 丢弃合并的键但保留原始的。
         let e = doc.element(id).unwrap();
         assert!(e.attributes.contains_key("a"));
         assert!(!e.attributes.contains_key("b"));
@@ -642,7 +640,7 @@ mod tests {
 
     #[test]
     fn no_active_layer_errors() {
-        // A document with no layers at all.
+        // 一个完全没有图层的文档。
         let mut doc = Document::default();
         let mut h = HistoryStack::new();
         let err = apply_action(

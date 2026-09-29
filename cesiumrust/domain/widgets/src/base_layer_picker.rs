@@ -1,18 +1,18 @@
-//! Base layer picker view model.
+//! 基础图层选择器视图模型。
 //!
-//! Maps to CesiumJS `BaseLayerPicker/BaseLayerPickerViewModel.js`.
+//! 映射到 CesiumJS `BaseLayerPicker/BaseLayerPickerViewModel.js`。
 
-/// A category of providers (e.g., "Imagery", "Terrain").
+/// 一个提供器类别（例如 "Imagery"、"Terrain"）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProviderCategory {
-    /// Category name.
+    /// 类别名称。
     pub name: String,
-    /// Provider view models in this category.
+    /// 该类别中的提供器视图模型。
     pub providers: Vec<ProviderViewModel>,
 }
 
 impl ProviderCategory {
-    /// Create a new provider category.
+    /// 创建一个新的提供器类别。
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -20,36 +20,36 @@ impl ProviderCategory {
         }
     }
 
-    /// Add a provider to this category.
+    /// 向该类别添加一个提供器。
     pub fn add_provider(&mut self, provider: ProviderViewModel) {
         self.providers.push(provider);
     }
 
-    /// Get the number of providers.
+    /// 获取提供器数量。
     pub fn provider_count(&self) -> usize {
         self.providers.len()
     }
 }
 
-/// A view model representing a single imagery/terrain provider option.
+/// 表示单个影像/地形提供器选项的视图模型。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProviderViewModel {
-    /// Display name.
+    /// 显示名称。
     pub name: String,
-    /// Tooltip text.
+    /// 提示文本。
     pub tooltip: String,
-    /// Icon URL or identifier.
+    /// 图标 URL 或标识符。
     pub icon_url: String,
-    /// Provider category name.
+    /// 提供器类别名称。
     pub category: String,
-    /// Whether this provider is currently selected.
+    /// 该提供器当前是否选中。
     pub is_selected: bool,
-    /// The provider creation parameters (URL, key, etc.).
+    /// 提供器的创建参数（URL、密钥等）。
     pub creation_parameters: serde_json::Value,
 }
 
 impl ProviderViewModel {
-    /// Create a new provider view model.
+    /// 创建一个新的提供器视图模型。
     pub fn new(name: impl Into<String>, category: impl Into<String>) -> Self {
         let name = name.into();
         Self {
@@ -62,39 +62,39 @@ impl ProviderViewModel {
         }
     }
 
-    /// Set the tooltip.
+    /// 设置提示文本。
     pub fn with_tooltip(mut self, tooltip: impl Into<String>) -> Self {
         self.tooltip = tooltip.into();
         self
     }
 
-    /// Set the icon URL.
+    /// 设置图标 URL。
     pub fn with_icon(mut self, icon_url: impl Into<String>) -> Self {
         self.icon_url = icon_url.into();
         self
     }
 
-    /// Set creation parameters.
+    /// 设置创建参数。
     pub fn with_parameters(mut self, params: serde_json::Value) -> Self {
         self.creation_parameters = params;
         self
     }
 }
 
-/// Base layer picker view model.
+/// 基础图层选择器视图模型。
 ///
-/// Controls selection of imagery and terrain providers.
+/// 控制影像与地形提供器的选择。
 #[derive(Debug, Clone)]
 pub struct BaseLayerPickerViewModel {
-    /// Whether the picker dropdown is open.
+    /// 选择器下拉菜单是否打开。
     pub is_dropdown_open: bool,
-    /// Whether the widget is visible.
+    /// widget 是否可见。
     pub show: bool,
-    /// Provider categories.
+    /// 提供器类别。
     pub categories: Vec<ProviderCategory>,
-    /// Index of the selected imagery provider (within its category).
+    /// 选中影像提供器的索引（在其类别内）。
     pub selected_imagery_index: Option<(usize, usize)>,
-    /// Index of the selected terrain provider (within its category).
+    /// 选中地形提供器的索引（在其类别内）。
     pub selected_terrain_index: Option<(usize, usize)>,
 }
 
@@ -111,29 +111,29 @@ impl Default for BaseLayerPickerViewModel {
 }
 
 impl BaseLayerPickerViewModel {
-    /// Create a new base layer picker.
+    /// 创建一个新的基础图层选择器。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Add a provider category.
+    /// 添加一个提供器类别。
     pub fn add_category(&mut self, category: ProviderCategory) {
         self.categories.push(category);
     }
 
-    /// Toggle the dropdown.
+    /// 切换下拉菜单。
     pub fn toggle_dropdown(&mut self) {
         self.is_dropdown_open = !self.is_dropdown_open;
     }
 
-    /// Close the dropdown.
+    /// 关闭下拉菜单。
     pub fn close_dropdown(&mut self) {
         self.is_dropdown_open = false;
     }
 
-    /// Select an imagery provider by category and provider index.
+    /// 按类别与提供器索引选择一个影像提供器。
     pub fn select_imagery(&mut self, category_idx: usize, provider_idx: usize) {
-        // Deselect previous
+        // 取消选择上一个
         if let Some((ci, pi)) = self.selected_imagery_index {
             if let Some(cat) = self.categories.get_mut(ci) {
                 if let Some(prov) = cat.providers.get_mut(pi) {
@@ -142,7 +142,7 @@ impl BaseLayerPickerViewModel {
             }
         }
 
-        // Select new
+        // 选择新的
         if let Some(cat) = self.categories.get_mut(category_idx) {
             if let Some(prov) = cat.providers.get_mut(provider_idx) {
                 prov.is_selected = true;
@@ -153,9 +153,9 @@ impl BaseLayerPickerViewModel {
         self.is_dropdown_open = false;
     }
 
-    /// Select a terrain provider by category and provider index.
+    /// 按类别与提供器索引选择一个地形提供器。
     pub fn select_terrain(&mut self, category_idx: usize, provider_idx: usize) {
-        // Deselect previous
+        // 取消选择上一个
         if let Some((ci, pi)) = self.selected_terrain_index {
             if let Some(cat) = self.categories.get_mut(ci) {
                 if let Some(prov) = cat.providers.get_mut(pi) {
@@ -164,7 +164,7 @@ impl BaseLayerPickerViewModel {
             }
         }
 
-        // Select new
+        // 选择新的
         if let Some(cat) = self.categories.get_mut(category_idx) {
             if let Some(prov) = cat.providers.get_mut(provider_idx) {
                 prov.is_selected = true;
@@ -175,24 +175,24 @@ impl BaseLayerPickerViewModel {
         self.is_dropdown_open = false;
     }
 
-    /// Get the currently selected imagery provider.
+    /// 获取当前选中的影像提供器。
     pub fn selected_imagery_provider(&self) -> Option<&ProviderViewModel> {
         let (ci, pi) = self.selected_imagery_index?;
         self.categories.get(ci)?.providers.get(pi)
     }
 
-    /// Get the currently selected terrain provider.
+    /// 获取当前选中的地形提供器。
     pub fn selected_terrain_provider(&self) -> Option<&ProviderViewModel> {
         let (ci, pi) = self.selected_terrain_index?;
         self.categories.get(ci)?.providers.get(pi)
     }
 
-    /// Get the total number of providers across all categories.
+    /// 获取所有类别中提供器的总数。
     pub fn total_provider_count(&self) -> usize {
         self.categories.iter().map(|c| c.provider_count()).sum()
     }
 
-    /// Get the button tooltip showing the current selection.
+    /// 获取显示当前选择的按钮提示文本。
     pub fn button_tooltip(&self) -> String {
         if let Some(prov) = self.selected_imagery_provider() {
             format!("Current imagery: {}", prov.name)
@@ -305,8 +305,8 @@ mod tests {
     #[test]
     fn test_invalid_selection() {
         let mut vm = make_test_picker();
-        vm.select_imagery(99, 0); // Invalid category
-        // Selection should not be set for invalid indices
+        vm.select_imagery(99, 0); // 无效类别
+        // 对于无效索引不应设置选中项
         assert!(vm.selected_imagery_index.is_none());
         assert!(vm.selected_imagery_provider().is_none());
     }

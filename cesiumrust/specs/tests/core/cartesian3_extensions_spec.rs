@@ -1,7 +1,7 @@
-//! Core/Cartesian3Spec.js (CesiumJS-specific extensions) → Rust integration tests
-//! Covers: fromSpherical, mostOrthogonalAxis, projectVector, midpoint,
-//! equalsEpsilon, pack/unpack, fromDegrees, fromRadians, fromDegreesArray,
-//! fromRadiansArray, fromDegreesArrayHeights, fromRadiansArrayHeights
+//! Core/Cartesian3Spec.js（CesiumJS 特有扩展）→ Rust 集成测试
+//! 覆盖：fromSpherical、mostOrthogonalAxis、projectVector、midpoint、
+//! equalsEpsilon、pack/unpack、fromDegrees、fromRadians、fromDegreesArray、
+//! fromRadiansArray、fromDegreesArrayHeights、fromRadiansArrayHeights
 
 use cesium_geospatial::cartesian3_ext;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -27,10 +27,10 @@ fn assert_vec3_eq(actual: DVec3, expected: DVec3, msg: &str) {
 
 #[test]
 fn from_spherical_basic() {
-    // clock=60°, cone=135°, magnitude=√8
+    // 时钟角=60°、锥角=135°、幅值=√8
     let spherical = Spherical::new(FRAC_PI_3, FRAC_PI_4 + FRAC_PI_2, 8.0_f64.sqrt());
     let result = cartesian3_ext::from_spherical(&spherical);
-    // radial = √8 * sin(135°) = √8 * √2/2 = 2
+    // 径向 = √8 * sin(135°) = √8 * √2/2 = 2
     // x = 2 * cos(60°) = 1, y = 2 * sin(60°) = √3, z = √8 * cos(135°) = -2
     let expected = DVec3::new(1.0, 3.0_f64.sqrt(), -2.0);
     assert_vec3_eq(result, expected, "fromSpherical");
@@ -48,44 +48,44 @@ fn from_spherical_roundtrip() {
 
 #[test]
 fn most_orthogonal_axis_x_dominant() {
-    // (1, 0, 0) → abs normalized = (1, 0, 0) → y <= z → UNIT_Y
+    // (1, 0, 0) → 绝对值归一化 = (1, 0, 0) → y <= z → UNIT_Y
     let result = cartesian3_ext::most_orthogonal_axis(DVec3::new(1.0, 0.0, 0.0));
     assert_eq!(result, DVec3::Y);
 }
 
 #[test]
 fn most_orthogonal_axis_y_dominant() {
-    // (0, 1, 0) → abs normalized = (0, 1, 0) → x <= y, x <= z → UNIT_X
+    // (0, 1, 0) → 绝对值归一化 = (0, 1, 0) → x <= y, x <= z → UNIT_X
     let result = cartesian3_ext::most_orthogonal_axis(DVec3::new(0.0, 1.0, 0.0));
     assert_eq!(result, DVec3::X);
 }
 
 #[test]
 fn most_orthogonal_axis_z_dominant() {
-    // (0, 0, 1) → abs normalized = (0, 0, 1) → x <= y, x <= z → UNIT_X
+    // (0, 0, 1) → 绝对值归一化 = (0, 0, 1) → x <= y, x <= z → UNIT_X
     let result = cartesian3_ext::most_orthogonal_axis(DVec3::new(0.0, 0.0, 1.0));
     assert_eq!(result, DVec3::X);
 }
 
 #[test]
 fn most_orthogonal_axis_mixed() {
-    // (1, 2, 3) → normalized abs ≈ (0.267, 0.535, 0.802) → x <= y, x <= z → UNIT_X
+    // (1, 2, 3) → 归一化绝对值 ≈ (0.267, 0.535, 0.802) → x <= y, x <= z → UNIT_X
     let result = cartesian3_ext::most_orthogonal_axis(DVec3::new(1.0, 2.0, 3.0));
     assert_eq!(result, DVec3::X);
 }
 
 #[test]
 fn most_orthogonal_axis_y_smallest() {
-    // (0.1, 0.9, 0.5) → normalized abs: y is largest, x < z → x <= y but x <= z → UNIT_X
-    // Actually: f.x=0.097, f.y=0.873, f.z=0.485 → x <= y, x <= z → UNIT_X
+    // (0.1, 0.9, 0.5) → 归一化绝对值：y 最大，x < z → x <= y 且 x <= z → UNIT_X
+    // 实际：f.x=0.097, f.y=0.873, f.z=0.485 → x <= y, x <= z → UNIT_X
     let result = cartesian3_ext::most_orthogonal_axis(DVec3::new(0.1, 0.9, 0.5));
     assert_eq!(result, DVec3::X);
 }
 
 #[test]
 fn most_orthogonal_axis_z_smallest() {
-    // (0.5, 0.9, 0.1) → normalized abs: f.x=0.485, f.y=0.873, f.z=0.097
-    // x <= y? yes. x <= z? no → UNIT_Z
+    // (0.5, 0.9, 0.1) → 归一化绝对值：f.x=0.485, f.y=0.873, f.z=0.097
+    // x <= y？是。x <= z？否 → UNIT_Z
     let result = cartesian3_ext::most_orthogonal_axis(DVec3::new(0.5, 0.9, 0.1));
     assert_eq!(result, DVec3::Z);
 }
@@ -212,7 +212,7 @@ fn from_degrees_matches_ellipsoid() {
 fn from_degrees_zero_height() {
     let ellipsoid = Ellipsoid::WGS84;
     let actual = cartesian3_ext::from_degrees(0.0, 0.0, 0.0, &ellipsoid);
-    // At (0, 0) on WGS84, position should be (semi-major axis, 0, 0)
+    // 在 WGS84 上的 (0, 0)，位置应为（长半轴, 0, 0）
     let expected = DVec3::new(6378137.0, 0.0, 0.0);
     assert!(
         (actual.x - expected.x).abs() < 1e-3 && actual.y.abs() < 1e-3 && actual.z.abs() < 1e-3,
@@ -237,7 +237,7 @@ fn from_radians_matches_ellipsoid() {
 fn from_radians_north_pole() {
     let ellipsoid = Ellipsoid::WGS84;
     let actual = cartesian3_ext::from_radians(0.0, FRAC_PI_2, 0.0, &ellipsoid);
-    // At north pole, position should be (0, 0, semi-minor axis)
+    // 在北极点，位置应为 (0, 0, 短半轴)
     let expected_z = 6356752.314245179; // WGS84 b
     assert!(
         actual.x.abs() < 1e-3 && actual.y.abs() < 1e-3 && (actual.z - expected_z).abs() < 1e-3,

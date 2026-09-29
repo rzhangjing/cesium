@@ -1,13 +1,13 @@
-//! Scene/ModelAnimation + CameraFlightPath → Rust integration tests.
+//! Scene/ModelAnimation + CameraFlightPath → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
-//! - Scene/Model/ModelAnimation.js (animation state machine, spline evaluation)
-//! - Scene/Camera.js flyTo (flight path interpolation)
+//! 对应 CesiumJS：
+//! - Scene/Model/ModelAnimation.js（动画状态机、样条求值）
+//! - Scene/Camera.js flyTo（飞行路径插值）
 //!
-//! A-class tests: RuntimeAnimation state machine (play/pause/stop/advance/loop),
-//! AnimationSpline evaluation (Step/Linear/CubicSpline/QuaternionSlerp),
-//! CameraFlight update interpolation.
-//! C-class omitted: WebGL rendering, actual model loading, Scene integration.
+//! A 类测试：RuntimeAnimation 状态机（play/pause/stop/advance/loop），
+//! AnimationSpline 求值（Step/Linear/CubicSpline/QuaternionSlerp），
+//! CameraFlight update 插值。
+//! C 类省略：WebGL 渲染、实际模型加载、Scene 集成。
 
 use cesium_gltf::animation_runtime::{
     AnimationLoop, AnimationSpline, AnimationState, CubicSpline, LinearSpline,
@@ -18,7 +18,7 @@ use cesium_interaction::flight::CameraFlight;
 use cesium_camera::Camera;
 use glam::DVec3;
 
-// === RuntimeAnimation State Machine ===
+// === RuntimeAnimation 状态机 ===
 
 fn make_animation(duration: f64) -> RuntimeAnimation {
     let anim = Animation {
@@ -76,7 +76,7 @@ fn runtime_animation_advance_playing() {
 #[test]
 fn runtime_animation_advance_stopped_noop() {
     let mut anim = make_animation(2.0);
-    // Not playing - advance returns false
+    // 未播放 - advance 返回 false
     let active = anim.advance(0.5);
     assert!(!active);
     assert_eq!(anim.local_time, 0.0);
@@ -160,9 +160,9 @@ fn step_spline_holds_previous_value() {
         components: 1,
     });
     assert_eq!(spline.evaluate(0.0), vec![0.0]);
-    assert_eq!(spline.evaluate(0.5), vec![0.0]); // holds first
+    assert_eq!(spline.evaluate(0.5), vec![0.0]); // 保持第一个
     assert_eq!(spline.evaluate(1.0), vec![10.0]);
-    assert_eq!(spline.evaluate(1.5), vec![10.0]); // holds second
+    assert_eq!(spline.evaluate(1.5), vec![10.0]); // 保持第二个
     assert_eq!(spline.evaluate(2.0), vec![20.0]);
 }
 
@@ -210,7 +210,7 @@ fn linear_spline_vec3() {
 
 #[test]
 fn quaternion_slerp_identity_to_90_deg() {
-    // Slerp from identity [0,0,0,1] to 90° around Z [0,0,sin(45°),cos(45°)]
+    // Slerp 从 identity [0,0,0,1] 到 绕 Z 90° [0,0,sin(45°),cos(45°)]
     let sin45 = std::f64::consts::FRAC_1_SQRT_2;
     let cos45 = std::f64::consts::FRAC_1_SQRT_2;
     let spline = AnimationSpline::QuaternionSlerp(QuaternionSpline {
@@ -218,16 +218,16 @@ fn quaternion_slerp_identity_to_90_deg() {
         values: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, sin45, cos45],
     });
 
-    // At t=0: identity
+    // 在 t=0：identity
     let r0 = spline.evaluate(0.0);
     assert!((r0[3] - 1.0).abs() < 1e-10);
 
-    // At t=1: 90° around Z
+    // 在 t=1：绕 Z 90°
     let r1 = spline.evaluate(1.0);
     assert!((r1[2] - sin45).abs() < 1e-10);
     assert!((r1[3] - cos45).abs() < 1e-10);
 
-    // At t=0.5: 45° around Z -> [0, 0, sin(22.5°), cos(22.5°)]
+    // 在 t=0.5：绕 Z 45° -> [0, 0, sin(22.5°), cos(22.5°)]
     let r_mid = spline.evaluate(0.5);
     let sin22_5 = (std::f64::consts::FRAC_PI_4 / 2.0).sin();
     let cos22_5 = (std::f64::consts::FRAC_PI_4 / 2.0).cos();
@@ -239,17 +239,17 @@ fn quaternion_slerp_identity_to_90_deg() {
 
 #[test]
 fn cubic_spline_evaluates_at_keyframes() {
-    // CubicSpline with 2 keyframes, 1 component
-    // Data layout per keyframe: [inTangent, value, outTangent]
+    // CubicSpline，含 2 个关键帧、1 个分量
+    // 每个关键帧的数据布局：[inTangent, value, outTangent]
     let spline = AnimationSpline::CubicSpline(CubicSpline {
         times: vec![0.0, 1.0],
-        values: vec![0.0, 10.0], // values at keyframes
-        in_tangents: vec![0.0],   // in-tangent at keyframe 1
-        out_tangents: vec![0.0],  // out-tangent at keyframe 0
+        values: vec![0.0, 10.0], // 关键帧处的值
+        in_tangents: vec![0.0],   // 关键帧 1 的 in-tangent
+        out_tangents: vec![0.0],  // 关键帧 0 的 out-tangent
         components: 1,
     });
 
-    // At keyframes, should return exact values
+    // 在关键帧处，应返回精确值
     let r0 = spline.evaluate(0.0);
     assert!((r0[0] - 0.0).abs() < 1e-10);
     let r1 = spline.evaluate(1.0);
@@ -267,7 +267,7 @@ fn from_keyframes_single_keyframe_constant() {
         AnimationPath::Translation,
         3,
     );
-    // Single keyframe -> constant
+    // 单个关键帧 -> 常量
     assert_eq!(spline.evaluate(0.0), vec![5.0, 10.0, 15.0]);
     assert_eq!(spline.evaluate(100.0), vec![5.0, 10.0, 15.0]);
 }
@@ -370,13 +370,13 @@ fn camera_flight_update_interpolates_position() {
         2.0,
     );
 
-    // After 1 second (half duration), position should be interpolated
+    // 1 秒后（时长的一半），position 应被插值
     let result = flight.update(1.0);
     assert!(result.is_some());
     let (pos, _dir, _up) = result.unwrap();
-    // With sinusoidal easing at t=0.5: eased = 0.5
+    // 使用正弦缓动，在 t=0.5：eased = 0.5
     // position = lerp(10000, 0, 0.5) = 5000
-    assert!((pos.z - 5000.0).abs() < 100.0); // allow easing tolerance
+    assert!((pos.z - 5000.0).abs() < 100.0); // 允许缓动容差
 }
 
 #[test]
@@ -409,7 +409,7 @@ fn camera_flight_returns_none_after_complete() {
         1.0,
     );
 
-    flight.update(2.0); // overshoot
+    flight.update(2.0); // 过冲
     assert!(flight.complete);
     assert!(flight.update(0.1).is_none());
 }
@@ -426,7 +426,7 @@ fn camera_flight_end_position_reached() {
         1.0,
     );
 
-    // Advance to completion
+    // 推进至完成
     let result = flight.update(1.0);
     assert!(result.is_some());
     let (pos, _dir, _up) = result.unwrap();

@@ -1,8 +1,8 @@
-//! A single plot element: geometry + style + business attributes + per-element
-//! flags and scale/time visibility windows (plan §5).
+//! 单个标绘元素：几何 + 样式 + 业务属性 + 逐元素
+//! 标志以及尺度/时间可见性窗口（计划 §5）。
 //!
-//! The geographic bounds are cached on the element and refreshed whenever the
-//! geometry changes, so culling / zoom-band checks stay O(1).
+//! 地理包围盒缓存于元素上，并在几何变化时刷新，因此
+//! 裁剪 / 缩放波段检查保持 O(1)。
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -12,14 +12,14 @@ use super::geometry::Geometry;
 use super::ids::ElementId;
 use super::style::Style;
 
-/// Manual / interaction flags (independent of the visibility dimensions).
+/// 手动 / 交互标志（与可见性维度无关）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ElementFlags {
-    /// The element's own visibility toggle (AND-ed with layer/group chain).
+    /// 元素自身的可见性开关（与图层/组链进行 AND）。
     pub visible_manual: bool,
-    /// Can it be picked / selected?
+    /// 可被拾取 / 选中吗？
     pub selectable: bool,
-    /// Can editing move / deform it?
+    /// 编辑可移动 / 变形它吗？
     pub editable: bool,
 }
 
@@ -33,10 +33,10 @@ impl Default for ElementFlags {
     }
 }
 
-/// Screen-/ground-scale visibility band (§10.7). Each bound is optional; the
-/// element is shown only when the current view falls inside every present
-/// bound. Units: `*_px` are pixels-per-world-unit (bigger == zoomed in),
-/// `*_meters` are ground metres-per-pixel (bigger == zoomed out).
+/// 屏幕/地面尺度可见性波段（§10.7）。每个边界都是可选的；
+/// 仅当当前视图落入每个存在的边界内时才显示该元素。单位：`*_px` 是
+/// 每世界单位像素数（越大 == 越放大），`*_meters` 是地面每像素米数
+/// （越大 == 越缩小）。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct ScaleVisibility {
     pub min_pixels_per_world: Option<f64>,
@@ -46,9 +46,9 @@ pub struct ScaleVisibility {
 }
 
 impl ScaleVisibility {
-    /// True when there is no band, or both known metrics satisfy it. A metric
-    /// of `0.0` (unknown) never *violates* a bound it can't be compared to
-    /// conservatively — the bridge is expected to fill the metric for its mode.
+    /// 当没有波段，或两个已知度量都满足时返回 true。`0.0`
+    /// （未知）的度量永不*违反*一个无法保守比较的边界
+    /// —— 期望桥接层为其模式填充该度量。
     pub fn allows(&self, pixels_per_world: f64, meters_per_pixel: f64) -> bool {
         if let Some(m) = self.min_pixels_per_world {
             if pixels_per_world > 0.0 && pixels_per_world < m {
@@ -74,7 +74,7 @@ impl ScaleVisibility {
     }
 }
 
-/// A plotted element.
+/// 一个标绘元素。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Element {
     pub id: ElementId,
@@ -85,16 +85,16 @@ pub struct Element {
     pub attributes: Map<String, Value>,
     pub flags: ElementFlags,
     pub scale_visibility: ScaleVisibility,
-    /// Reserved time window `[start, end)` in seconds-since-epoch (§10.10).
-    /// `None` == always. M1 does not gate on it (see `visibility`).
+    /// 保留的时间窗口 `[start, end)`，以自历元起的秒数表示（§10.10）。
+    /// `None` == 总是。M1 不据此门控（见 `visibility`）。
     pub time_window: Option<(f64, f64)>,
-    /// Cached geographic bounds, kept in sync with `geometry`.
+    /// 缓存的地理包围盒，与 `geometry` 保持同步。
     pub bounds: GeoBounds,
 }
 
 impl Element {
-    /// Build an element, minting no id (caller supplies the id the document
-    /// allocates) and computing its bounds.
+    /// 构建一个元素，不自行铸造 id（调用方提供文档
+    /// 分配的 id）并计算其包围盒。
     pub fn new(id: ElementId, name: impl Into<String>, geometry: Geometry) -> Self {
         let bounds = geometry.bounds();
         Self {
@@ -110,7 +110,7 @@ impl Element {
         }
     }
 
-    /// Replace the geometry and refresh the cached bounds.
+    /// 替换几何并刷新缓存的包围盒。
     pub fn set_geometry(&mut self, geometry: Geometry) {
         self.bounds = geometry.bounds();
         self.geometry = geometry;
@@ -139,8 +139,8 @@ mod tests {
         e.set_geometry(Geometry::Polyline(super::super::geometry::Polyline {
             positions: vec![GeoPoint::surface(-5.0, -5.0), GeoPoint::surface(7.0, 9.0)],
         }));
-        // The bounds are the conservative (great-circle densified) box: it must
-        // contain both endpoints and stay within a tight margin of their span.
+        // 包围盒是保守的（大圆加密）盒子：它必须
+        // 同时包含两个端点，并保持在跨度一个紧密边距内。
         let b = e.bounds;
         assert!(
             b.west_deg <= -5.0 && b.south_deg <= -5.0 && b.east_deg >= 7.0 && b.north_deg >= 9.0,
@@ -159,9 +159,9 @@ mod tests {
         assert!(sv.allows(500.0, 0.0));
         assert!(!sv.allows(50.0, 0.0), "too far out");
         assert!(!sv.allows(5000.0, 0.0), "too far in");
-        // unknown metric (0) never violates.
+        // 未知度量 (0) 永不违反。
         assert!(sv.allows(0.0, 0.0));
-        // empty band always allows.
+        // 空波段总是允许。
         assert!(ScaleVisibility::default().allows(1.0, 1.0));
     }
 

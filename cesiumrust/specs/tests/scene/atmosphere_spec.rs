@@ -1,39 +1,39 @@
-//! Scene/SkyAtmosphereSpec.js, SunSpec.js, MoonSpec.js → Rust integration tests
+//! Scene/SkyAtmosphereSpec.js、SunSpec.js、MoonSpec.js → Rust 集成测试
 
 use cesium_atmosphere::{
     compute_sun_position_eci, compute_moon_position_eci,
     rayleigh_phase, mie_phase, AU_IN_METERS,
 };
 
-// === Constants ===
+// === 常量 ===
 
 #[test]
 fn test_au_in_meters() {
     assert!((AU_IN_METERS - 1.495978707e11).abs() < 1e5);
 }
 
-// === Sun position ===
+// === 太阳位置 ===
 
 #[test]
 fn test_sun_position_eci() {
-    // J2000 epoch
+    // J2000 历元
     let pos = compute_sun_position_eci(0.0);
-    // Sun should be roughly 1 AU away
+    // 太阳应约 1 AU 远
     let distance = (pos.x * pos.x + pos.y * pos.y + pos.z * pos.z).sqrt();
-    assert!((distance - AU_IN_METERS).abs() / AU_IN_METERS < 0.02); // Within 2%
+    assert!((distance - AU_IN_METERS).abs() / AU_IN_METERS < 0.02); // 在 2% 以内
 }
 
-// === Moon position ===
+// === 月球位置 ===
 
 #[test]
 fn test_moon_position_eci() {
     let pos = compute_moon_position_eci(0.0);
-    // Moon should be roughly 384,400 km away
+    // 月球应约 384,400 km 远
     let distance = (pos.x * pos.x + pos.y * pos.y + pos.z * pos.z).sqrt();
     assert!(distance > 3.5e8 && distance < 4.1e8);
 }
 
-// === Scattering ===
+// === 散射 ===
 
 #[test]
 fn test_rayleigh_phase() {

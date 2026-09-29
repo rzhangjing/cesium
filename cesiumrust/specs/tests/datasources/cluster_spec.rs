@@ -1,5 +1,5 @@
-//! Tests ported from CesiumJS EntityClusterSpec.js (A-class logic)
-//! Clustering: grid-based spatial hash, EntityCluster options, update, counts
+//! 移植自 CesiumJS EntityClusterSpec.js 的测试（A 类逻辑）
+//! 聚类：基于网格的空间哈希、EntityCluster 选项、更新、计数
 
 use cesium_datasource::cluster::{EntityCluster, EntityClusterOptions};
 use cesium_datasource::entity::Entity;
@@ -14,7 +14,7 @@ fn make_collection_with_positions(positions: &[(f64, f64, f64)]) -> EntityCollec
     collection
 }
 
-// ===== EntityCluster Options =====
+// ===== EntityCluster 选项 =====
 
 #[test]
 fn test_cluster_default_options() {
@@ -36,7 +36,7 @@ fn test_cluster_custom_options() {
     assert_eq!(cluster.options.minimum_cluster_size, 3);
 }
 
-// ===== Update =====
+// ===== 更新 =====
 
 #[test]
 fn test_cluster_update_empty_collection() {
@@ -53,7 +53,7 @@ fn test_cluster_update_disabled() {
         pixel_range: 80.0,
         minimum_cluster_size: 2,
     });
-    // Two entities at same position
+    // 两个实体位于同一位置
     let collection = make_collection_with_positions(&[(0.0, 0.0, 0.0), (0.0, 0.0, 0.0)]);
     cluster.update(&collection, 0.0);
     assert_eq!(cluster.cluster_count(), 0);
@@ -64,7 +64,7 @@ fn test_cluster_single_entity_not_clustered() {
     let mut cluster = EntityCluster::new();
     let collection = make_collection_with_positions(&[(0.5, 0.5, 0.0)]);
     cluster.update(&collection, 0.0);
-    // Single entity → 1 cluster with count=1
+    // 单实体 → 1 个 count=1 的聚类
     assert_eq!(cluster.cluster_count(), 1);
     assert!(cluster.clusters()[0].is_single());
     assert_eq!(cluster.actual_cluster_count(), 0);
@@ -73,13 +73,13 @@ fn test_cluster_single_entity_not_clustered() {
 #[test]
 fn test_cluster_nearby_entities_form_cluster() {
     let mut cluster = EntityCluster::new();
-    // Two entities very close together (same grid cell)
+    // 两个实体非常接近（同一网格单元）
     let collection = make_collection_with_positions(&[
         (0.001, 0.001, 0.0),
         (0.002, 0.002, 0.0),
     ]);
     cluster.update(&collection, 0.0);
-    // Should form 1 cluster with count=2
+    // 应形成 1 个 count=2 的聚类
     assert_eq!(cluster.actual_cluster_count(), 1);
     assert_eq!(cluster.clustered_entity_count(), 2);
 }
@@ -87,13 +87,13 @@ fn test_cluster_nearby_entities_form_cluster() {
 #[test]
 fn test_cluster_far_entities_not_clustered() {
     let mut cluster = EntityCluster::new();
-    // Two entities far apart (different grid cells)
+    // 两个实体相隔很远（不同网格单元）
     let collection = make_collection_with_positions(&[
         (0.0, 0.0, 0.0),
         (1.0, 1.0, 0.0),
     ]);
     cluster.update(&collection, 0.0);
-    // Should be 2 separate clusters
+    // 应为 2 个独立聚类
     assert_eq!(cluster.cluster_count(), 2);
     assert_eq!(cluster.actual_cluster_count(), 0);
 }
@@ -108,7 +108,7 @@ fn test_cluster_hidden_entities_excluded() {
     collection.add(e1);
     collection.add(e2);
     cluster.update(&collection, 0.0);
-    // Only 1 visible entity → no actual cluster
+    // 仅 1 个可见实体 → 无实际聚类
     assert_eq!(cluster.actual_cluster_count(), 0);
 }
 
@@ -135,12 +135,12 @@ fn test_cluster_minimum_cluster_size_respected() {
         pixel_range: 80.0,
         minimum_cluster_size: 3,
     });
-    // Two entities close together - below minimum cluster size
+    // 两个实体接近 - 低于最小聚类规模
     let collection = make_collection_with_positions(&[
         (0.001, 0.001, 0.0),
         (0.002, 0.002, 0.0),
     ]);
     cluster.update(&collection, 0.0);
-    // With min size 3, two entities should NOT form a cluster
+    // 最小规模为 3 时，两个实体不应形成聚类
     assert_eq!(cluster.actual_cluster_count(), 0);
 }

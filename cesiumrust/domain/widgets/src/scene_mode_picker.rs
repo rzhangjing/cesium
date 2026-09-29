@@ -1,21 +1,21 @@
-//! Scene mode picker view model.
+//! 场景模式选择器视图模型。
 //!
-//! Maps to CesiumJS `SceneModePicker/SceneModePickerViewModel.js`.
+//! 映射到 CesiumJS `SceneModePicker/SceneModePickerViewModel.js`。
 
 use cesium_scene_mode::SceneMode;
 
-/// Scene mode picker view model.
+/// 场景模式选择器视图模型。
 ///
-/// Controls switching between 3D, 2D, and Columbus View modes.
+/// 控制 3D、2D 与 Columbus View 模式之间的切换。
 #[derive(Debug, Clone)]
 pub struct SceneModePickerViewModel {
-    /// The currently selected scene mode.
+    /// 当前选中的场景模式。
     pub selected_mode: SceneMode,
-    /// Whether the dropdown is expanded.
+    /// 下拉菜单是否展开。
     pub is_dropdown_open: bool,
-    /// Whether the widget is visible.
+    /// widget 是否可见。
     pub show: bool,
-    /// Duration of mode morph transitions in seconds.
+    /// 模式渐变（morph）过渡的时长（秒）。
     pub morph_duration: f64,
 }
 
@@ -31,12 +31,12 @@ impl Default for SceneModePickerViewModel {
 }
 
 impl SceneModePickerViewModel {
-    /// Create a new scene mode picker.
+    /// 创建一个新的场景模式选择器。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Select a scene mode and trigger morphing.
+    /// 选择一个场景模式并触发渐变。
     pub fn select_mode(&mut self, mode: SceneMode) {
         if mode != SceneMode::Morphing {
             self.selected_mode = mode;
@@ -44,32 +44,32 @@ impl SceneModePickerViewModel {
         }
     }
 
-    /// Select 3D mode.
+    /// 选择 3D 模式。
     pub fn select_3d(&mut self) {
         self.select_mode(SceneMode::Scene3D);
     }
 
-    /// Select 2D mode.
+    /// 选择 2D 模式。
     pub fn select_2d(&mut self) {
         self.select_mode(SceneMode::Scene2D);
     }
 
-    /// Select Columbus View mode.
+    /// 选择 Columbus View 模式。
     pub fn select_columbus_view(&mut self) {
         self.select_mode(SceneMode::ColumbusView);
     }
 
-    /// Toggle the dropdown.
+    /// 切换下拉菜单。
     pub fn toggle_dropdown(&mut self) {
         self.is_dropdown_open = !self.is_dropdown_open;
     }
 
-    /// Close the dropdown.
+    /// 关闭下拉菜单。
     pub fn close_dropdown(&mut self) {
         self.is_dropdown_open = false;
     }
 
-    /// Get the display label for the current mode.
+    /// 获取当前模式的显示标签。
     pub fn current_label(&self) -> &'static str {
         match self.selected_mode {
             SceneMode::Scene3D => "3D",
@@ -79,7 +79,7 @@ impl SceneModePickerViewModel {
         }
     }
 
-    /// Get the tooltip for a given mode.
+    /// 获取给定模式的提示文本。
     pub fn tooltip_for_mode(mode: SceneMode) -> &'static str {
         match mode {
             SceneMode::Scene3D => "3D globe view",
@@ -89,12 +89,12 @@ impl SceneModePickerViewModel {
         }
     }
 
-    /// Get all selectable modes (excludes Morphing).
+    /// 获取所有可选模式（不包括 Morphing）。
     pub fn available_modes() -> &'static [SceneMode] {
         &[SceneMode::Scene3D, SceneMode::Scene2D, SceneMode::ColumbusView]
     }
 
-    /// Check if a mode is currently selected.
+    /// 检查某个模式当前是否已选中。
     pub fn is_mode_selected(&self, mode: SceneMode) -> bool {
         self.selected_mode == mode
     }
@@ -126,7 +126,7 @@ mod tests {
     fn test_select_morphing_ignored() {
         let mut vm = SceneModePickerViewModel::new();
         vm.select_mode(SceneMode::Morphing);
-        // Should not change to Morphing
+        // 不应变为 Morphing
         assert_eq!(vm.selected_mode, SceneMode::Scene3D);
     }
 

@@ -1,60 +1,60 @@
-//! Debug inspector domain models.
+//! 调试检查器的领域模型。
 //!
-//! Maps to CesiumJS `Scene/DebugInspector.js` and related debug visualization
-//! utilities. Provides runtime inspection of scene state, tilesets, and
-//! rendering statistics.
+//! 映射到 CesiumJS `Scene/DebugInspector.js` 及相关调试可视化
+//! 工具。提供对场景状态、瓦片集与
+//! 渲染统计的运行时检查。
 
 use std::collections::HashMap;
 
-/// Debug inspector for scene diagnostics.
+/// 用于场景诊断的调试检查器。
 ///
-/// Maps to CesiumJS `Scene/DebugInspector.js`
+/// 映射到 CesiumJS `Scene/DebugInspector.js`
 #[derive(Debug, Clone, Default)]
 pub struct DebugInspector {
-    /// Whether the inspector is enabled.
+    /// 检查器是否启用。
     pub enabled: bool,
-    /// Show wireframe rendering.
+    /// 显示线框渲染。
     pub wireframe: bool,
-    /// Show bounding volumes.
+    /// 显示包围体。
     pub show_bounding_volumes: bool,
-    /// Show tile coordinates.
+    /// 显示瓦片坐标。
     pub show_tile_coordinates: bool,
-    /// Show render statistics overlay.
+    /// 显示渲染统计覆盖层。
     pub show_statistics: bool,
-    /// Show frustum culling visualization.
+    /// 显示视锥剔除可视化。
     pub show_frustums: bool,
-    /// Show depth buffer visualization.
+    /// 显示深度缓冲可视化。
     pub show_depth: bool,
-    /// Show normals visualization.
+    /// 显示法线可视化。
     pub show_normals: bool,
-    /// Show picking debug colors.
+    /// 显示拾取调试颜色。
     pub show_pick_debug: bool,
-    /// Highlight mode for tiles.
+    /// 瓦片的高亮模式。
     pub highlight_mode: HighlightMode,
-    /// Per-tile debug info.
+    /// 逐瓦片的调试信息。
     pub tile_debug_info: HashMap<u64, TileDebugInfo>,
-    /// Frame statistics.
+    /// 帧统计。
     pub frame_stats: FrameDebugStats,
 }
 
-/// Highlight mode for tile inspection.
+/// 用于瓦片检查的高亮模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HighlightMode {
     #[default]
     None,
-    /// Highlight by depth in the tree.
+    /// 按树中深度高亮。
     Depth,
-    /// Highlight by geometric error.
+    /// 按几何误差高亮。
     GeometricError,
-    /// Highlight by distance from camera.
+    /// 按到相机的距离高亮。
     Distance,
-    /// Highlight by rendering state.
+    /// 按渲染状态高亮。
     RenderState,
-    /// Random color per tile.
+    /// 每瓦片随机颜色。
     RandomColor,
 }
 
-/// Per-tile debug information.
+/// 逐瓦片的调试信息。
 #[derive(Debug, Clone, Default)]
 pub struct TileDebugInfo {
     pub tile_id: u64,
@@ -71,7 +71,7 @@ pub struct TileDebugInfo {
     pub load_time_ms: f64,
 }
 
-/// Frame-level debug statistics.
+/// 帧级别的调试统计。
 #[derive(Debug, Clone, Default)]
 pub struct FrameDebugStats {
     pub frame_number: u64,
@@ -96,7 +96,7 @@ impl DebugInspector {
         Self::default()
     }
 
-    /// Enable all debug visualizations.
+    /// 启用所有调试可视化。
     pub fn enable_all(&mut self) {
         self.enabled = true;
         self.wireframe = true;
@@ -106,7 +106,7 @@ impl DebugInspector {
         self.show_frustums = true;
     }
 
-    /// Disable all debug visualizations.
+    /// 禁用所有调试可视化。
     pub fn disable_all(&mut self) {
         self.enabled = false;
         self.wireframe = false;
@@ -120,27 +120,27 @@ impl DebugInspector {
         self.highlight_mode = HighlightMode::None;
     }
 
-    /// Record tile debug info.
+    /// 记录瓦片调试信息。
     pub fn record_tile(&mut self, info: TileDebugInfo) {
         self.tile_debug_info.insert(info.tile_id, info);
     }
 
-    /// Get debug info for a specific tile.
+    /// 获取特定瓦片的调试信息。
     pub fn get_tile_info(&self, tile_id: u64) -> Option<&TileDebugInfo> {
         self.tile_debug_info.get(&tile_id)
     }
 
-    /// Clear per-tile debug info (call at start of frame).
+    /// 清除逐瓦片的调试信息（在帧开始时调用）。
     pub fn clear_tile_info(&mut self) {
         self.tile_debug_info.clear();
     }
 
-    /// Update frame statistics.
+    /// 更新帧统计。
     pub fn update_frame_stats(&mut self, stats: FrameDebugStats) {
         self.frame_stats = stats;
     }
 
-    /// Get a summary string for display.
+    /// 获取用于显示的摘要字符串。
     pub fn summary(&self) -> String {
         let s = &self.frame_stats;
         format!(
@@ -156,7 +156,7 @@ impl DebugInspector {
     }
 }
 
-/// Performance overlay data for HUD display.
+/// 用于 HUD 显示的性能覆盖层数据。
 #[derive(Debug, Clone, Default)]
 pub struct PerformanceOverlay {
     pub fps: f64,
@@ -175,7 +175,7 @@ impl PerformanceOverlay {
         Self::default()
     }
 
-    /// Record a frame time sample.
+    /// 记录一个帧时间采样。
     pub fn record_frame(&mut self, frame_time_ms: f64) {
         self.frame_time_ms = frame_time_ms;
         self.fps = if frame_time_ms > 0.0 { 1000.0 / frame_time_ms } else { 0.0 };
@@ -185,7 +185,7 @@ impl PerformanceOverlay {
         }
     }
 
-    /// Average frame time over history.
+    /// 历史帧时间的平均值。
     pub fn average_frame_time(&self) -> f64 {
         if self.history.is_empty() {
             return 0.0;
@@ -193,29 +193,29 @@ impl PerformanceOverlay {
         self.history.iter().sum::<f64>() / self.history.len() as f64
     }
 
-    /// Minimum FPS over history.
+    /// 历史中的最低 FPS。
     pub fn min_fps(&self) -> f64 {
         let max_time = self.history.iter().cloned().fold(0.0f64, f64::max);
         if max_time > 0.0 { 1000.0 / max_time } else { 0.0 }
     }
 }
 
-/// Tileset inspector for examining 3D Tiles content.
+/// 用于检视 3D Tiles 内容的瓦片集检查器。
 #[derive(Debug, Clone, Default)]
 pub struct TilesetInspector {
-    /// Whether the inspector is active.
+    /// 检查器是否激活。
     pub active: bool,
-    /// Currently selected tile ID.
+    /// 当前选中的瓦片 ID。
     pub selected_tile: Option<u64>,
-    /// Show content bounding volume.
+    /// 显示内容包围体。
     pub show_content_volume: bool,
-    /// Show viewer request volume.
+    /// 显示查看器请求体。
     pub show_viewer_volume: bool,
-    /// Colorize by tileset.
+    /// 按瓦片集着色。
     pub colorize_tileset: bool,
-    /// Freeze frame (stop updating).
+    /// 冻结帧（停止更新）。
     pub freeze_frame: bool,
-    /// Maximum screen space error override.
+    /// 最大屏幕空间误差覆盖值。
     pub max_sse_override: Option<f64>,
 }
 
@@ -224,12 +224,12 @@ impl TilesetInspector {
         Self::default()
     }
 
-    /// Select a tile for inspection.
+    /// 选中一个瓦片进行检查。
     pub fn select_tile(&mut self, tile_id: u64) {
         self.selected_tile = Some(tile_id);
     }
 
-    /// Deselect the current tile.
+    /// 取消选择当前瓦片。
     pub fn deselect(&mut self) {
         self.selected_tile = None;
     }

@@ -1,6 +1,6 @@
-//! Renderer/ShaderProgramSpec.js, ShaderSourceSpec.js, ShaderBuilderSpec.js,
-//! ShaderCacheSpec.js, ShaderFunctionSpec.js, ShaderStructSpec.js
-//! → Rust integration tests
+//! Renderer/ShaderProgramSpec.js、ShaderSourceSpec.js、ShaderBuilderSpec.js、
+//! ShaderCacheSpec.js、ShaderFunctionSpec.js、ShaderStructSpec.js
+//! → Rust 集成测试
 
 use cesium_scene::{
     ShaderStage, ShaderSource, ShaderUniform, ShaderFunction,

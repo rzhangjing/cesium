@@ -1,7 +1,7 @@
-//! Ported from `packages/engine/Specs/Core/EllipsoidGeodesicSpec.js` (22 it(), 14 A-class)
+//! 移植自 `packages/engine/Specs/Core/EllipsoidGeodesicSpec.js`（22 个 it()，14 个 A 类）
 //!
-//! 8 throws tests are omitted (C-class: Rust type system enforces valid construction).
-//! 2 result-parameter tests are merged into their owned-return counterparts.
+//! 省略 8 个 throws 测试（C 类：Rust 类型系统强制构造合法）。
+//! 2 个 result 参数测试被合并到其“返回所有权”对应的测试中。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -84,7 +84,7 @@ fn computes_distance_at_equator() {
 
 #[test]
 fn computes_distance_very_close_to_equator() {
-    // See https://github.com/CesiumGS/cesium/issues/9248
+    // 参见 https://github.com/CesiumGS/cesium/issues/9248
     let ellipsoid = Ellipsoid::new(6.0, 6.0, 3.0);
     let epsilon10: f64 = 1e-10;
     let start = Cartographic::from_radians(-epsilon10, epsilon10, 0.0);

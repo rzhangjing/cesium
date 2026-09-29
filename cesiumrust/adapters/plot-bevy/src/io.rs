@@ -1,15 +1,14 @@
-//! GeoJSON import / export for the live overlay (plan §12 / §14, M8).
+//! 面向实时叠加层的 GeoJSON 导入 / 导出（计划 §12 / §14，M8）。
 //!
-//! Thin bridge over the pure [`cesium_plot::io::geojson`] codec. Import folds
-//! every parsed element into an **add command targeting the current active
-//! layer** (ids are re-minted by the live document, so pasting never collides),
-//! applied through the M6 commit path so a whole import is a *single* undo step
-//! (plan §14 "粘贴落活动层"). Export serialises the live document, styles and
-//! `x-plot` payload included.
+//! 基于纯函数 [`cesium_plot::io::geojson`] 编解码器的薄桥接。导入将每个
+//! 解析出的元素折叠为一个**面向当前活动层的新增命令**（id 由实时文档
+//! 重新铸造，因此粘贴绝不会碰撞），并通过 M6 提交路径应用，以便
+//! 整个导入是*单个*撤销步（计划 §14 “粘贴落活动层”）。导出序列化
+//! 实时文档，包含样式与 `x-plot` 载荷。
 //!
-//! Both are free functions over the plain [`PlotDocument`] / [`PlotHistory`]
-//! resources — no window, no file dialog — so they unit-test headless; the app
-//! decides when to call them (menu / drop / clipboard).
+//! 两者都是作用于普通 [`PlotDocument`] / [`PlotHistory`] 资源的自由函数——无窗口、
+//! 无文件对话框——因此它们可 headless 单测；应用决定何时调用
+//! 它们（菜单 / 拖放 / 剪贴板）。
 
 use cesium_plot::io::geojson::{self, PlotIoError};
 use cesium_plot::model::Document;
@@ -18,9 +17,9 @@ use cesium_plot::ops::PlotCommand;
 use crate::edit::apply_command;
 use crate::resources::{PlotDocument, PlotHistory};
 
-/// Parse a GeoJSON string and paste its elements into the active layer as one
-/// undoable command, returning how many were placed. An empty / foreign file with
-/// no supported geometry adds nothing (still not an error).
+/// 解析一个 GeoJSON 字符串并将其元素作为一个可撤销命令粘贴到活动层，
+/// 返回放置的数量。一个不含受支持几何的空 / 外部文件不会新增任何内容
+/// （仍不是错误）。
 pub fn import_geojson(
     plot_doc: &mut PlotDocument,
     history: &mut PlotHistory,
@@ -33,16 +32,15 @@ pub fn import_geojson(
     Ok(count)
 }
 
-/// Serialise the live document to a pretty GeoJSON `FeatureCollection` string.
+/// 将实时文档序列化为一个美观的 GeoJSON `FeatureCollection` 字符串。
 pub fn export_geojson(plot_doc: &PlotDocument) -> Result<String, PlotIoError> {
     geojson::to_geojson(&plot_doc.doc)
 }
 
-/// Build the add commands that drop every element of `src` into `dst`'s active
-/// layer (creating + focusing one if it has none), **re-minting each id** in
-/// `dst`'s counter so pasted elements never collide with existing ones. Pure over
-/// both documents, so the id allocation / active-layer fallback is unit-testable
-/// without a resource window.
+/// 构建将 `src` 的每个元素丢到 `dst` 活动层的新增命令（若 `dst` 没有活动层则
+/// 创建并聚焦一个），在 `dst` 的计数器中**重新铸造每个 id**，
+/// 以便粘贴的元素绝不会与现有元素碰撞。对两个文档都是纯函数，因此
+/// id 分配 / 活动层回退无需资源窗口即可单测。
 fn build_import_commands(dst: &mut Document, src: &Document) -> Vec<PlotCommand> {
     let target = ensure_active_layer(dst);
     let mut steps = Vec::new();
@@ -50,8 +48,8 @@ fn build_import_commands(dst: &mut Document, src: &Document) -> Vec<PlotCommand>
         let Some(el) = src.element(id) else {
             continue;
         };
-        // Fresh id from `dst`; copy every other payload across (mirrors M6
-        // duplicate). `make_element` recomputes bounds from the geometry clone.
+        // 来自 `dst` 的新鲜 id；复制其他所有载荷（镜像 M6
+        // 复制）。`make_element` 从几何副本重新计算 bounds。
         let mut ne = dst.make_element(el.name.clone(), el.geometry.clone());
         ne.element.style = el.style.clone();
         ne.element.attributes = el.attributes.clone();
@@ -66,8 +64,8 @@ fn build_import_commands(dst: &mut Document, src: &Document) -> Vec<PlotCommand>
     steps
 }
 
-/// Ensure the document has an active layer to paste into, creating a fresh one
-/// when it has none. Returns the (possibly new) active layer id.
+/// 确保文档有一个可粘贴到的活动层，当它没有时创建一个全新的。
+/// 返回（可能是新建的）活动层 id。
 fn ensure_active_layer(doc: &mut Document) -> cesium_plot::model::ids::LayerId {
     if let Some(l) = doc.active_layer() {
         return l;
@@ -120,13 +118,13 @@ mod tests {
         let n = import_geojson(&mut d, &mut h, &geojson_text()).unwrap();
         assert_eq!(n, 2, "two imported features");
         assert_eq!(d.doc.element_count(), before + 2);
-        // Everything landed in the pre-existing active layer.
+        // 所有内容都落在已存在的活动层中。
         for id in d.doc.element_ids() {
             if d.doc.element(id).unwrap().name.starts_with('甲') || d.doc.element(id).unwrap().name.starts_with('乙') {
                 assert_eq!(d.doc.element_context(id).unwrap().0, active);
             }
         }
-        // One undo removes the whole import (single composite step).
+        // 一次撤销移除整个导入（单个 composite 步）。
         h.0.undo(&mut d.doc);
         assert_eq!(d.doc.element_count(), before);
     }
@@ -137,7 +135,7 @@ mod tests {
         let mut h = PlotHistory(HistoryStack::new());
         let existing: Vec<_> = d.doc.element_ids().collect();
         import_geojson(&mut d, &mut h, &geojson_text()).unwrap();
-        // No imported id equals a pre-existing id.
+        // 没有任何导入 id 等于一个已存在的 id。
         let after: Vec<_> = d.doc.element_ids().collect();
         for id in &after {
             if existing.contains(id) {

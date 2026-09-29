@@ -1,80 +1,80 @@
-//! Imagery layer configuration.
-//! Maps to CesiumJS `Scene/ImageryLayer.js`
+//! 影像图层配置。
+//! 映射到 CesiumJS `Scene/ImageryLayer.js`
 
 use cesium_geospatial::rectangle::Rectangle;
 use serde::{Deserialize, Serialize};
 
 use crate::{AlphaBlendingMode, SplitDirection};
 
-/// Configuration for an imagery layer.
+/// 影像图层的配置。
 ///
-/// This contains all the visual properties that can be applied to an imagery layer.
-/// Maps to CesiumJS `ImageryLayer`
+/// 它包含可应用于影像图层的所有视觉属性。
+/// 映射到 CesiumJS `ImageryLayer`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageryLayer {
-    /// Unique identifier for this layer.
+    /// 此图层的唯一标识符。
     pub id: u64,
 
-    /// The rectangle covered by this layer.
+    /// 此图层覆盖的矩形区域。
     pub rectangle: Rectangle,
 
-    /// Alpha blending value (0.0 to 1.0).
+    /// alpha 混合值（0.0 到 1.0）。
     #[serde(default = "default_alpha")]
     pub alpha: f64,
 
-    /// Alpha on the night side of the globe (0.0 to 1.0).
+    /// 地球夜侧的 alpha（0.0 到 1.0）。
     #[serde(default = "default_alpha")]
     pub night_alpha: f64,
 
-    /// Alpha on the day side of the globe (0.0 to 1.0).
+    /// 地球昼侧的 alpha（0.0 到 1.0）。
     #[serde(default = "default_alpha")]
     pub day_alpha: f64,
 
-    /// Brightness adjustment (1.0 = unmodified).
+    /// 亮度调整（1.0 = 不变）。
     #[serde(default = "default_one")]
     pub brightness: f64,
 
-    /// Contrast adjustment (1.0 = unmodified).
+    /// 对比度调整（1.0 = 不变）。
     #[serde(default = "default_one")]
     pub contrast: f64,
 
-    /// Hue rotation in radians (0.0 = unmodified).
+    /// 色相旋转（弧度）（0.0 = 不变）。
     #[serde(default)]
     pub hue: f64,
 
-    /// Saturation adjustment (1.0 = unmodified).
+    /// 饱和度调整（1.0 = 不变）。
     #[serde(default = "default_one")]
     pub saturation: f64,
 
-    /// Gamma correction (1.0 = unmodified).
+    /// Gamma 校正（1.0 = 不变）。
     #[serde(default = "default_one")]
     pub gamma: f64,
 
-    /// Whether the layer is visible.
+    /// 图层是否可见。
     #[serde(default = "default_true")]
     pub show: bool,
 
-    /// The alpha blending mode.
+    /// alpha 混合模式。
     #[serde(default)]
     pub alpha_blending_mode: AlphaBlendingMode,
 
-    /// The split direction for split-screen comparison.
+    /// 用于分屏对比的分割方向。
     #[serde(default)]
     pub split_direction: SplitDirection,
 
-    /// Minimum zoom level.
+    /// 最小缩放级别。
     #[serde(default)]
     pub minimum_level: u32,
 
-    /// Maximum zoom level.
+    /// 最大缩放级别。
     #[serde(default = "default_max_level")]
     pub maximum_level: u32,
 
-    /// Tile width in pixels.
+    /// 瓦片宽度（像素）。
     #[serde(default = "default_tile_size")]
     pub tile_width: u32,
 
-    /// Tile height in pixels.
+    /// 瓦片高度（像素）。
     #[serde(default = "default_tile_size")]
     pub tile_height: u32,
 }
@@ -100,7 +100,7 @@ fn default_tile_size() -> u32 {
 }
 
 impl ImageryLayer {
-    /// Creates a new imagery layer with default settings.
+    /// 使用默认设置创建一个新的影像图层。
     pub fn new(id: u64, rectangle: Rectangle) -> Self {
         Self {
             id,
@@ -123,83 +123,83 @@ impl ImageryLayer {
         }
     }
 
-    /// Sets the alpha value.
+    /// 设置 alpha 值。
     pub fn with_alpha(mut self, alpha: f64) -> Self {
         self.alpha = alpha.clamp(0.0, 1.0);
         self
     }
 
-    /// Sets the brightness.
+    /// 设置亮度。
     pub fn with_brightness(mut self, brightness: f64) -> Self {
         self.brightness = brightness.max(0.0);
         self
     }
 
-    /// Sets the contrast.
+    /// 设置对比度。
     pub fn with_contrast(mut self, contrast: f64) -> Self {
         self.contrast = contrast.max(0.0);
         self
     }
 
-    /// Sets the saturation.
+    /// 设置饱和度。
     pub fn with_saturation(mut self, saturation: f64) -> Self {
         self.saturation = saturation.max(0.0);
         self
     }
 
-    /// Sets the gamma.
+    /// 设置 gamma。
     pub fn with_gamma(mut self, gamma: f64) -> Self {
         self.gamma = gamma.max(0.001);
         self
     }
 
-    /// Sets visibility.
+    /// 设置可见性。
     pub fn with_show(mut self, show: bool) -> Self {
         self.show = show;
         self
     }
 
-    /// Sets the alpha blending mode.
+    /// 设置 alpha 混合模式。
     pub fn with_alpha_blending_mode(mut self, mode: AlphaBlendingMode) -> Self {
         self.alpha_blending_mode = mode;
         self
     }
 
-    /// Sets the split direction.
+    /// 设置分割方向。
     pub fn with_split_direction(mut self, direction: SplitDirection) -> Self {
         self.split_direction = direction;
         self
     }
 
-    /// Sets the zoom level range.
+    /// 设置缩放级别范围。
     pub fn with_level_range(mut self, min: u32, max: u32) -> Self {
         self.minimum_level = min;
         self.maximum_level = max;
         self
     }
 
-    /// Sets the tile size.
+    /// 设置瓦片大小。
     pub fn with_tile_size(mut self, width: u32, height: u32) -> Self {
         self.tile_width = width;
         self.tile_height = height;
         self
     }
 
-    /// Computes the effective alpha for a given lighting condition.
+    /// 计算给定光照条件下的有效 alpha。
     ///
-    /// # Arguments
-    /// * `is_night` - Whether the tile is on the night side of the globe
+    /// # 参数
+    /// * `is_night` - 瓦片是否位于地球夜侧
     pub fn effective_alpha(&self, is_night: bool) -> f64 {
         let base_alpha = if is_night { self.night_alpha } else { self.day_alpha };
         base_alpha * self.alpha
     }
 
-    /// Checks if a level is within the valid range for this layer.
+    /// 检查级别是否处于此图层的有效范围内。
     pub fn is_level_valid(&self, level: u32) -> bool {
         level >= self.minimum_level && level <= self.maximum_level
     }
 
-    /// Checks if a rectangle intersects with this layer's rectangle.
+    /// 检查矩形是否与此图层的矩形相交。
     pub fn intersects(&self, rectangle: &Rectangle) -> bool {
         self.rectangle.intersection(rectangle).is_some()
     }
@@ -249,8 +249,8 @@ mod tests {
         let layer = ImageryLayer::new(1, Rectangle::MAX_VALUE)
             .with_alpha(0.8);
 
-        assert_eq!(layer.effective_alpha(false), 0.8); // day
-        assert_eq!(layer.effective_alpha(true), 0.8); // night (same by default)
+        assert_eq!(layer.effective_alpha(false), 0.8); // 白天
+        assert_eq!(layer.effective_alpha(true), 0.8); // 夜晚（默认相同）
     }
 
     #[test]

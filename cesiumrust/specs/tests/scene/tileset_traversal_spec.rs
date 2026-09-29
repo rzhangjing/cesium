@@ -1,13 +1,13 @@
-//! Scene/Cesium3DTilesetTraversal → Rust integration tests.
+//! Scene/Cesium3DTilesetTraversal → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Scene/Cesium3DTilesetTraversal.js (base/skip/mostDetailed)
 //! - Scene/Cesium3DTilesetSkipTraversal.js
 //! - Scene/Cesium3DTilesetMostDetailedTraversal.js
 //!
-//! A-class tests: TilePriority ordering, MemoryAdjustedSse computation,
-//! traverse strategies (Base/Skip/MostDetailed), can_traverse, sort_children.
-//! C-class omitted: WebGL rendering, actual tileset loading, request scheduler.
+//! A 类测试：TilePriority 排序、MemoryAdjustedSse 计算、
+//! traverse 策略（Base/Skip/MostDetailed）、can_traverse、sort_children。
+//! C 类省略：WebGL 渲染、实际 tileset 加载、请求调度器。
 
 use cesium_tileset::traversal::{
     can_traverse, sort_children_by_distance, traverse, MemoryAdjustedSse, TilePriority,
@@ -19,7 +19,7 @@ use cesium_tileset::bounding_volume::BoundingVolume;
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use glam::DVec3;
 
-// === Helpers ===
+// === 辅助函数 ===
 
 fn make_camera() -> CameraState {
     CameraState::new(
@@ -179,27 +179,27 @@ fn traversal_context_defaults() {
     assert_eq!(ctx.max_tiles_per_frame, 0);
 }
 
-// === Base Traversal ===
+// === 基础遍历 ===
 
 #[test]
 fn base_traversal_selects_root_when_sse_low() {
-    // Camera far away, root SSE below threshold → select root only
+    // 相机很远，根 SSE 低于阈值 → 仅选择根
     let root = make_tile(1.0, "root.b3dm", vec![
         make_leaf(0.1, "c0.b3dm"),
         make_leaf(0.1, "c1.b3dm"),
     ]);
     let camera = make_camera();
     let mut ctx = TraversalContext::default();
-    ctx.memory_sse = MemoryAdjustedSse::new(16.0, 0); // no memory adjustment
+    ctx.memory_sse = MemoryAdjustedSse::new(16.0, 0); // 无内存调整
 
     let result = traverse(&root, &camera, &ctx, &Ellipsoid::WGS84);
-    // With geometric_error=1 and distance~900, SSE is very low → don't refine
+    // geometric_error=1 且 distance~900 时，SSE 很低 → 不细分
     assert!(!result.selected_tiles.is_empty());
 }
 
 #[test]
 fn base_traversal_refines_when_sse_high() {
-    // Root has very high geometric error → should refine to children
+    // 根有非常高的 geometric error → 应细分到子瓦片
     let root = make_tile(100000.0, "root.b3dm", vec![
         make_leaf(0.0, "c0.b3dm"),
         make_leaf(0.0, "c1.b3dm"),
@@ -208,7 +208,7 @@ fn base_traversal_refines_when_sse_high() {
     let ctx = TraversalContext::default();
 
     let result = traverse(&root, &camera, &ctx, &Ellipsoid::WGS84);
-    // Should have selected tiles (children or root)
+    // 应已选择瓦片（子瓦片或根）
     assert!(!result.selected_tiles.is_empty());
     assert!(result.visited_count > 0);
 }
@@ -225,7 +225,7 @@ fn base_traversal_generates_load_requests() {
     assert!(!result.requested_tiles.is_empty());
 }
 
-// === Skip Traversal ===
+// === 跳过遍历 ===
 
 #[test]
 fn skip_traversal_visits_multiple_levels() {
@@ -254,14 +254,14 @@ fn skip_traversal_preloads_ancestors() {
     ctx.preload_ancestors = true;
 
     let result = traverse(&root, &camera, &ctx, &Ellipsoid::WGS84);
-    // Should have ancestor requests
+    // 应有祖先请求
     let has_ancestor = result.requested_tiles.iter().any(|r| r.priority.is_ancestor);
-    // May or may not have ancestor requests depending on SSE values
+    // 依 SSE 值而定，可能有也可能没有祖先请求
     assert!(result.visited_count > 0);
-    let _ = has_ancestor; // informational
+    let _ = has_ancestor; // 仅供参考
 }
 
-// === MostDetailed Traversal ===
+// === MostDetailed 遍历 ===
 
 #[test]
 fn most_detailed_selects_deepest_leaf() {
@@ -274,7 +274,7 @@ fn most_detailed_selects_deepest_leaf() {
     ctx.strategy = TraversalStrategy::MostDetailed;
 
     let result = traverse(&root, &camera, &ctx, &Ellipsoid::WGS84);
-    // Should select the grandchild (path [0, 0])
+    // 应选择孙瓦片（路径 [0, 0]）
     assert!(result.selected_tiles.iter().any(|t| t.path == vec![0, 0]));
     assert_eq!(result.max_depth, 2);
 }
@@ -290,7 +290,7 @@ fn most_detailed_add_refinement_renders_parent_and_child() {
     ctx.strategy = TraversalStrategy::MostDetailed;
 
     let result = traverse(&root, &camera, &ctx, &Ellipsoid::WGS84);
-    // ADD: both root (path []) and child (path [0]) rendered
+    // ADD：根（路径 []）和子瓦片（路径 [0]）都被渲染
     assert!(result.selected_tiles.iter().any(|t| t.path.is_empty()));
     assert!(result.selected_tiles.iter().any(|t| t.path == vec![0]));
 }
@@ -305,7 +305,7 @@ fn most_detailed_replace_only_leaf() {
     ctx.strategy = TraversalStrategy::MostDetailed;
 
     let result = traverse(&root, &camera, &ctx, &Ellipsoid::WGS84);
-    // REPLACE: only leaf rendered, not parent
+    // REPLACE：仅渲染叶子，不渲染父
     assert!(result.selected_tiles.iter().any(|t| t.path == vec![0]));
     assert!(!result.selected_tiles.iter().any(|t| t.path.is_empty()));
 }
@@ -343,13 +343,13 @@ fn sort_children_farthest_first() {
     let child_near = make_tile_at(10.0, "near.b3dm", DVec3::new(0.0, 0.0, 500.0), vec![]);
     let child_far = make_tile_at(10.0, "far.b3dm", DVec3::new(0.0, 0.0, -500.0), vec![]);
 
-    let camera = make_camera(); // at z=1000
+    let camera = make_camera(); // 位于 z=1000
     let children = vec![(0, &child_near), (1, &child_far)];
     let sorted = sort_children_by_distance(&children, &camera, &Ellipsoid::WGS84);
 
-    // child_far (z=-500) is farther from camera (z=1000) than child_near (z=500)
-    assert_eq!(sorted[0], 1); // far first
-    assert_eq!(sorted[1], 0); // near second
+    // child_far (z=-500) 比 child_near (z=500) 离相机 (z=1000) 更远
+    assert_eq!(sorted[0], 1); // 远的在前
+    assert_eq!(sorted[1], 0); // 近的其次
 }
 
 // === TraversalResult ===

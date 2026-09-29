@@ -1,151 +1,149 @@
-//! Panorama rendering (Equirectangular + CubeMap).
+//! 全景渲染（Equirectangular + CubeMap）。
 //!
-//! Maps to CesiumJS:
-//! - `Scene/EquirectangularPanorama.js` (266 lines)
-//! - `Scene/CubeMapPanorama.js` (352 lines)
-//! - `Scene/SkyBox.js` (164 lines) — delegates **completely** to `CubeMapPanorama`
-//!   (L39-43 `this._panorama = new CubeMapPanorama({...})`, L100 comment
-//!   "Delegate completely"), so the cube-map panorama *is* the skybox truth source.
+//! 映射到 CesiumJS：
+//! - `Scene/EquirectangularPanorama.js`（266 行）
+//! - `Scene/CubeMapPanorama.js`（352 行）
+//! - `Scene/SkyBox.js`（164 行）—— **完全**委托给 `CubeMapPanorama`
+//!   （L39-43 `this._panorama = new CubeMapPanorama({...})`，L100 注释
+//!   "Delegate completely"），因此 cube-map 全景*就是* skybox 的真值源。
 //! - `Scene/PanoramaProvider.js`
-//! - `Shaders/SkyBoxVS.glsl`, `Shaders/SkyBoxFS.glsl`,
+//! - `Shaders/SkyBoxVS.glsl`、`Shaders/SkyBoxFS.glsl`、
 //!   `Shaders/CubeMapPanoramaVS.glsl`
 //!
-//! # f64 discipline
-//! Every geometric quantity in this module is `f64` and stays `f64`. The only place
-//! it is narrowed to `f32` is the GPU uniform boundary
-//! (`adapters/bevy-render/src/effects/panorama.rs::PanoramaUniforms`). The `*_render_units`
-//! accessors below return `f64` render units — they convert **scale**, never
-//! **precision** — so a caller still decides when to round.
+//! # f64 纪律
+//! 本模块中每一个几何量都是 `f64` 并始终保持 `f64`。它被窄化
+//! 为 `f32` 的唯一位置是 GPU uniform 边界
+//! （`adapters/bevy-render/src/effects/panorama.rs::PanoramaUniforms`）。下面的 `*_render_units`
+//! 访问器返回 `f64` 渲染单位——它们转换的是**尺度**，从不
+//! 转换**精度**——因此调用方仍自行决定何时取整。
 //!
-//! # Two placements, two texture layouts
-//! Upstream ships exactly two pairings, and this module models both axes
-//! independently ([`PanoramaPlacement`] × [`PanoramaSource`]):
+//! # 两种摆放，两种 texture 布局
+//! 上游恰好只提供了两种配对，本模块独立地建模两个轴
+//! （[`PanoramaPlacement`] × [`PanoramaSource`]）：
 //!
 //! | upstream primitive           | placement | source        | transform type |
 //! |------------------------------|-----------|---------------|----------------|
 //! | `CubeMapPanorama` / `SkyBox` | `Skybox`  | `CubeMap`     | **`Matrix3`** |
 //! | `EquirectangularPanorama`    | `Bubble`  | `Equirectangular` | `Matrix4` |
 //!
-//! ## DEVIATION — `CubeMapPanorama::transform` is `DMat4`, upstream is `Matrix3`
-//! Upstream `CubeMapPanorama` stores a **`Matrix3`** (`CubeMapPanorama.js` L143-149,
-//! bound as `uniform mat3 u_cubeMapPanoramaTransform` in `CubeMapPanoramaVS.glsl`
-//! L1): a cube-map skybox is *always* centred on the camera, so it has orientation
-//! but no position. This module stores `DMat4` for symmetry with
-//! [`EquirectangularPanorama`]. [`CubeMapPanorama::orientation`] is therefore the
-//! accessor that reproduces the upstream `Matrix3` — it discards the fourth row and
-//! column, which upstream never had. The `DMat4` field is left untouched: changing
-//! its type would be a breaking semantic change to an existing published field.
+//! ## 偏差 —— `CubeMapPanorama::transform` 是 `DMat4`，上游是 `Matrix3`
+//! 上游 `CubeMapPanorama` 存储一个 **`Matrix3`**（`CubeMapPanorama.js` L143-149，
+//! 在 `CubeMapPanoramaVS.glsl` L1 中绑定为 `uniform mat3 u_cubeMapPanoramaTransform`）：
+//! cube-map skybox *总是*以相机为中心，因此它有朝向但无位置。本模块
+//! 存储 `DMat4` 以与 [`EquirectangularPanorama`] 保持对称。因此
+//! [`CubeMapPanorama::orientation`] 是重现上游 `Matrix3` 的访问器——它丢弃
+//! 第四行和第四列，而上游本来就没有它们。`DMat4` 字段保持不动：改变
+//! 它的类型将是对一个已发布的现有字段的破坏性语义变更。
 
 use glam::{DMat3, DMat4, DVec2, DVec3, DVec4};
 
-/// Default panorama radius in meters.
+/// 以米为单位的默认全景半径。
 ///
-/// Upstream `EquirectangularPanorama.js` L15 `const DEFAULT_RADIUS = 100000.0;`.
+/// 上游 `EquirectangularPanorama.js` L15 `const DEFAULT_RADIUS = 100000.0;`。
 pub const DEFAULT_PANORAMA_RADIUS: f64 = 100000.0;
 
-/// Meters per render unit — the project-wide scale constant.
+/// 每渲染单位的米数——项目级的尺度常量。
 ///
-/// Value-identical mirror of
-/// `adapters/bevy-render/src/resources.rs::METERS_PER_RENDER_UNIT`, duplicated here
-/// because the domain layer must not depend on an adapter (DDD). Asserted equal by
-/// `adapters/bevy-render`'s `panorama_meters_per_render_unit_matches_the_domain`.
+/// 与
+/// `adapters/bevy-render/src/resources.rs::METERS_PER_RENDER_UNIT` 值一致的镜像，在此重复
+/// 是因为领域层不得依赖适配器（DDD）。由
+/// `adapters/bevy-render` 的 `panorama_meters_per_render_unit_matches_the_domain` 断言相等。
 ///
-/// At this scale the upstream default radius is
-/// `100_000 / 6_378_137 = 0.015678` render units — a **local bubble** roughly
-/// 1.6 % of the globe radius, not an infinite sky. That is why
-/// [`PanoramaPlacement`] has two members at all.
+/// 在此尺度下，上游默认半径为
+/// `100_000 / 6_378_137 = 0.015678` 渲染单位——一个大致为地球
+/// 半径 1.6 % 的**局部 bubble**，而非无限远的天空。这就是
+/// [`PanoramaPlacement`] 究竟为何有两个成员。
 pub const PANORAMA_METERS_PER_RENDER_UNIT: f64 = 6_378_137.0;
 
-/// Below this squared length a direction is treated as degenerate.
+/// 低于此平方长度时，一个方向被视为退化。
 ///
-/// `normalize` of a shorter vector is `0/0 = NaN`, and NaN propagates into every
-/// texture coordinate derived from it, silently poisoning a whole frame. The same
-/// class of defect as the atmosphere first-frame `sun_direction == ZERO` bug
-/// (M5 Ultra Review finding H1). Mirrored in f32 as
-/// `DEGENERATE_DIRECTION_SQUARED_EPSILON` in `shaders/panorama.wgsl`; the two are
-/// independent literals rather than a cast, so double rounding cannot separate them.
+/// 对更短的向量做 `normalize` 得到 `0/0 = NaN`，而 NaN 会传播进由它派生的每一个
+/// texture 坐标，静默地污染整帧。与大气首帧 `sun_direction == ZERO` bug
+/// 属同类缺陷（M5 Ultra Review 发现项 H1）。在
+/// `shaders/panorama.wgsl` 中以 f32 镜像为 `DEGENERATE_DIRECTION_SQUARED_EPSILON`；两者是
+/// 独立字面量而非一次转换，因此双重舍入无法将它们分离。
 pub const DEGENERATE_DIRECTION_SQUARED_EPSILON: f64 = 1.0e-24;
 
-/// Half extent of the upstream skybox box, in box-local units.
+/// 上游 skybox 盒的半长，以盒局部单位计。
 ///
-/// `CubeMapPanorama.js` L189-192:
+/// `CubeMapPanorama.js` L189-192：
 /// `BoxGeometry.fromDimensions({ dimensions: new Cartesian3(2.0, 2.0, 2.0),
-/// vertexFormat: VertexFormat.POSITION_ONLY })` — a 2×2×2 box centred on the
-/// origin, so every corner coordinate is `±1`.
+/// vertexFormat: VertexFormat.POSITION_ONLY })`——一个以原点为中心的 2×2×2 盒，
+/// 因此每个角坐标都是 `±1`。
 pub const SKYBOX_BOX_HALF_EXTENT: f64 = 1.0;
 
-/// How a panorama is placed relative to the camera.
+/// 全景相对于相机的摆放方式。
 ///
-/// The `u32` discriminants are the wire format: they are written verbatim into
-/// `PanoramaUniforms::mode` and compared against `MODE_SKYBOX` / `MODE_BUBBLE` in
-/// `shaders/panorama.wgsl`. Reordering the variants is therefore a breaking change,
-/// and is guarded by [`tests::placement_and_source_discriminants_match_the_shader`].
+/// `u32` 判别值是线格式（wire format）：它们被逐字写入
+/// `PanoramaUniforms::mode`，并在 `shaders/panorama.wgsl` 中与 `MODE_SKYBOX` / `MODE_BUBBLE`
+/// 比较。因此重排变体是破坏性变更，
+/// 并由 [`tests::placement_and_source_discriminants_match_the_shader`] 守护。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]
 pub enum PanoramaPlacement {
-    /// Infinite, camera-centred. Upstream `CubeMapPanorama` /
-    /// `SkyBox`: `pass: Pass.ENVIRONMENT` (`CubeMapPanorama.js` L105-106, comment
-    /// "render before everything else"), `depthTest: { enabled: false }`,
-    /// `depthMask: false`. Placement carries no depth, so the GPU side writes the
-    /// reversed-Z far plane instead.
+    /// 无限、以相机为中心。上游 `CubeMapPanorama` /
+    /// `SkyBox`：`pass: Pass.ENVIRONMENT`（`CubeMapPanorama.js` L105-106，注释
+    /// "render before everything else"）、`depthTest: { enabled: false }`、
+    /// `depthMask: false`。摆放不携深度，因此 GPU 端写入
+    /// 反转 Z 的远平面。
     Skybox = 0,
-    /// Finite sphere of [`EquirectangularPanorama::radius`] metres placed by
-    /// [`EquirectangularPanorama::transform`]. Upstream renders this as an ordinary
-    /// opaque `Primitive` (`EquirectangularPanorama.js` L123-138,
-    /// `translucent: false`) so it depth-tests and depth-writes normally, and the
-    /// camera can be inside it — the street-view case.
+    /// 一个有限球体，半径为 [`EquirectangularPanorama::radius`] 米，由
+    /// [`EquirectangularPanorama::transform`] 摆放。上游将其作为一个普通的不透明
+    /// `Primitive` 渲染（`EquirectangularPanorama.js` L123-138，
+    /// `translucent: false`），因此它正常地做深度测试和深度写入，且相机
+    /// 可以在其内部——即街景情形。
     Bubble = 1,
 }
 
 impl PanoramaPlacement {
-    /// Wire value written into `PanoramaUniforms::mode`.
+    /// 写入 `PanoramaUniforms::mode` 的线值。
     #[inline]
     pub const fn as_u32(self) -> u32 {
         self as u32
     }
 }
 
-/// How the panorama image is laid out in its texture.
+/// 全景图像在其 texture 中的布局方式。
 ///
-/// Discriminants are the wire format for `PanoramaUniforms::source`; see
-/// [`PanoramaPlacement`].
+/// 判别值是 `PanoramaUniforms::source` 的线格式；参见
+/// [`PanoramaPlacement`]。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]
 pub enum PanoramaSource {
-    /// Six square faces addressed by direction: `[+X, -X, +Y, -Y, +Z, -Z]`
-    /// (upstream `SkyBox.js` `createEarthSkyBox` uses `px/mx/py/my/pz/mz`).
+    /// 由方向寻址的六个方形面：`[+X, -X, +Y, -Y, +Z, -Z]`
+    /// （上游 `SkyBox.js` `createEarthSkyBox` 使用 `px/mx/py/my/pz/mz`）。
     CubeMap = 0,
-    /// One 2:1 image, longitude on x and latitude on y. Upstream comment at
-    /// `EquirectangularPanorama.js` L116: "2:1 360 degrees equirectangular image path".
+    /// 一张 2:1 图像，经度在 x、纬度在 y。上游
+    /// `EquirectangularPanorama.js` L116 的注释："2:1 360 degrees equirectangular image path"。
     Equirectangular = 1,
 }
 
 impl PanoramaSource {
-    /// Wire value written into `PanoramaUniforms::source`.
+    /// 写入 `PanoramaUniforms::source` 的线值。
     #[inline]
     pub const fn as_u32(self) -> u32 {
         self as u32
     }
 }
 
-/// An equirectangular panorama rendered on a sphere.
+/// 在球体上渲染的 equirectangular 全景。
 ///
-/// Maps to CesiumJS `Scene/EquirectangularPanorama.js`.
+/// 映射到 CesiumJS `Scene/EquirectangularPanorama.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct EquirectangularPanorama {
-    /// 4x4 transformation matrix defining position and orientation.
+    /// 定义位置与朝向的 4x4 变换矩阵。
     pub transform: DMat4,
-    /// Image URL or resource identifier.
+    /// 图像 URL 或资源标识符。
     pub image: String,
-    /// Radius of the panorama sphere in meters.
+    /// 以米为单位的全景球半径。
     pub radius: f64,
-    /// Number of times to repeat the texture horizontally.
+    /// texture 在水平方向重复的次数。
     pub repeat_horizontal: f64,
-    /// Number of times to repeat the texture vertically.
+    /// texture 在垂直方向重复的次数。
     pub repeat_vertical: f64,
-    /// Credit/attribution string.
+    /// 版权/署名字符串。
     pub credit: Option<String>,
-    /// Whether the panorama is visible.
+    /// 全景是否可见。
     pub show: bool,
 }
 
@@ -172,7 +170,7 @@ impl EquirectangularPanorama {
         }
     }
 
-    /// Create with transform and image.
+    /// 由变换与图像创建。
     pub fn with_transform(transform: DMat4, image: impl Into<String>) -> Self {
         Self {
             transform,
@@ -181,60 +179,60 @@ impl EquirectangularPanorama {
         }
     }
 
-    /// Set the radius.
+    /// 设置半径。
     pub fn set_radius(&mut self, radius: f64) -> &mut Self {
         self.radius = radius;
         self
     }
 
-    /// Set horizontal repeat.
+    /// 设置水平重复。
     pub fn set_repeat_horizontal(&mut self, repeat: f64) -> &mut Self {
         self.repeat_horizontal = repeat;
         self
     }
 
-    /// Set vertical repeat.
+    /// 设置垂直重复。
     pub fn set_repeat_vertical(&mut self, repeat: f64) -> &mut Self {
         self.repeat_vertical = repeat;
         self
     }
 
-    /// Set the credit.
+    /// 设置版权信息。
     pub fn set_credit(&mut self, credit: impl Into<String>) -> &mut Self {
         self.credit = Some(credit.into());
         self
     }
 
-    /// Compute the texture coordinate for a given direction.
+    /// 计算给定方向的 texture 坐标。
     ///
-    /// Direction should be a unit vector in local space.
-    /// Returns (u, v) in [0, 1] range (before repeat).
+    /// direction 应为局部空间中的单位向量。
+    /// 返回 [0, 1] 范围内的 (u, v)（在 repeat 之前）。
     pub fn direction_to_uv(&self, direction: glam::DVec3) -> [f64; 2] {
-        // Totality guards mirroring `ray_sphere_entry` below and the GPU twin
-        // (`panorama.wgsl` `direction_to_equirect_uv`): `normalize()` of a zero /
-        // non-finite direction yields NaN, and even after f64 normalization
-        // `|z|` can be `1.0 + ε` (rounding), so a bare `asin` returns NaN. Clamp
-        // the latitude argument (the GPU already does `asin(clamp(z, -1, 1))`) and
-        // fall back to a neutral UV on a degenerate direction so NaN never escapes.
+        // 完全性守护，与下方的 `ray_sphere_entry` 及 GPU 同胞
+        // （`panorama.wgsl` `direction_to_equirect_uv`）一致：对零 /
+        // 非有限方向做 `normalize()` 会产生 NaN，且即使经过 f64 归一化
+        // `|z|` 仍可能是 `1.0 + ε`（舍入），因此裸的 `asin` 返回 NaN。钳制
+        // 纬度参数（GPU 已经做 `asin(clamp(z, -1, 1))`），并在
+        // 退化方向上回退到一个中性 UV，以便 NaN 永不逸出。
         let squared_length = direction.length_squared();
         if !squared_length.is_finite() || squared_length <= DEGENERATE_DIRECTION_SQUARED_EPSILON {
             return [0.5 * self.repeat_horizontal, 0.5 * self.repeat_vertical];
         }
         let dir = direction / squared_length.sqrt();
-        // Longitude: atan2(y, x) -> [-π, π] -> [0, 1]
+        // 经度：atan2(y, x) -> [-π, π] -> [0, 1]
         let lon = dir.y.atan2(dir.x);
         let u = (lon + std::f64::consts::PI) / std::f64::consts::TAU;
 
-        // Latitude: asin(clamp(z, -1, 1)) -> [-π/2, π/2] -> [0, 1]
+        // 纬度：asin(clamp(z, -1, 1)) -> [-π/2, π/2] -> [0, 1]
         let lat = dir.z.clamp(-1.0, 1.0).asin();
         let v = (lat + std::f64::consts::FRAC_PI_2) / std::f64::consts::PI;
 
         [u * self.repeat_horizontal, v * self.repeat_vertical]
     }
 
-    /// Compute a direction vector from texture coordinates.
+    /// 由 texture 坐标计算方向向量。
     ///
-    /// UV should be in [0, 1] range (after repeat division).
+    /// UV 应在 [0, 1] 范围内（在除以 repeat 之后）。
     pub fn uv_to_direction(&self, u: f64, v: f64) -> glam::DVec3 {
         let u_norm = u / self.repeat_horizontal;
         let v_norm = v / self.repeat_vertical;
@@ -250,75 +248,74 @@ impl EquirectangularPanorama {
         )
     }
 
-    // ─── M6.3 additions (upstream-faithful orientation / projection semantics) ──
+    // ─── M6.3 补充（忠实于上游的朝向 / 投影语义）──
 
-    /// Texture-layout axis of [`PanoramaPlacement`] × [`PanoramaSource`].
+    /// [`PanoramaPlacement`] × [`PanoramaSource`] 的 texture 布局轴。
     #[inline]
     pub const fn source(&self) -> PanoramaSource {
         PanoramaSource::Equirectangular
     }
 
-    /// Placement axis: a finite sphere placed by [`Self::transform`].
+    /// 摆放轴：由 [`Self::transform`] 摆放的一个有限球体。
     #[inline]
     pub const fn placement(&self) -> PanoramaPlacement {
         PanoramaPlacement::Bubble
     }
 
-    /// The texture-repeat vector handed to the sampler, exactly as upstream builds it.
+    /// 递给采样器的 texture 重复向量，与上游构建的方式完全一致。
     ///
-    /// `EquirectangularPanorama.js` L117:
+    /// `EquirectangularPanorama.js` L117：
     /// ```text
     /// repeat: new Cartesian2(-this._repeatHorizontal, this._repeatVertical),
     /// // flip horizontally by default to match expected orientation of images
     /// // inside a sphere, but allow user to override
     /// ```
     ///
-    /// ## DEVIATION — [`Self::direction_to_uv`] does **not** apply this flip
-    /// The pre-existing [`Self::direction_to_uv`] multiplies by the *positive*
-    /// `repeat_horizontal`, so its u is mirror-imaged relative to upstream. Its
-    /// sign is deliberately **not** corrected here: [`Self::uv_to_direction`] is
-    /// its exact inverse (`tests::test_equirectangular_uv_roundtrip` asserts a
-    /// 1e-10 round trip), so negating one without the other would break the pair,
-    /// and negating both would be a semantic change to two published methods.
-    /// [`Self::sample_uv`] below is the upstream-faithful accessor, and the GPU
-    /// path (`shaders/panorama.wgsl::direction_to_equirect_uv`) uses this repeat
-    /// vector — so the rendered image matches CesiumJS, while the legacy pair stays
-    /// bit-for-bit as it was.
+    /// ## 偏差 —— [`Self::direction_to_uv`] **不**应用此翻转
+    /// 预先存在的 [`Self::direction_to_uv`] 乘以*正的*
+    /// `repeat_horizontal`，因此其 u 相对于上游是镜像的。这里
+    /// 故意**不**纠正它的符号：[`Self::uv_to_direction`] 是它的精确
+    /// 逆运算（`tests::test_equirectangular_uv_roundtrip` 断言了
+    /// 1e-10 的往返），因此只取反其中一个会破坏这一对，
+    /// 而两个都取则是对两个已发布方法的语义变更。
+    /// 下方的 [`Self::sample_uv`] 是忠实于上游的访问器，而 GPU
+    /// 路径（`shaders/panorama.wgsl::direction_to_equirect_uv`）使用这个 repeat
+    /// 向量——因此渲染的图像与 CesiumJS 一致，而旧的那一对保持
+    /// 逐字不变。
     #[inline]
     pub fn texture_repeat(&self) -> DVec2 {
         DVec2::new(-self.repeat_horizontal, self.repeat_vertical)
     }
 
-    /// The GPU texture coordinate for `direction`, upstream-faithful.
+    /// `direction` 的 GPU texture 坐标，忠实于上游。
     ///
-    /// `direction` is a **unit** vector in the panorama's local frame (i.e. after
-    /// [`Self::orientation`]'s inverse has been applied — the same frame in which
-    /// [`Self::direction_to_uv`] works).
+    /// `direction` 是全景局部坐标系中的一个**单位**向量（即在
+    /// [`Self::orientation`] 的逆应用之后——与 [`Self::direction_to_uv`]
+    /// 工作的同一坐标系）。
     ///
-    /// Equals [`Self::direction_to_uv`] with x negated, which is algebraically the
-    /// same as scaling the base uv by [`Self::texture_repeat`]:
+    /// 等于将 [`Self::direction_to_uv`] 的 x 取反，这在代数上与
+    /// 将基础 uv 乘以 [`Self::texture_repeat`] 相同：
     /// ```text
     ///   base = (u * repeat_h, v * repeat_v)
     ///   want = (u * (-repeat_h), v * repeat_v) = (-base.x, base.y)
     /// ```
-    /// and IEEE-754 multiplication is exactly sign-symmetric (`(-a) * b == -(a * b)`
-    /// bit for bit), so the two forms cannot drift. Asserted by
-    /// [`tests::sample_uv_is_the_horizontal_mirror_of_direction_to_uv`].
+    /// 而 IEEE-754 乘法是精确符号对称的（`(-a) * b == -(a * b)`
+    /// 逐位相同），因此两种形式不会漂移。由
+    /// [`tests::sample_uv_is_the_horizontal_mirror_of_direction_to_uv`] 断言。
     ///
-    /// The result is generally **outside** `[0, 1]` whenever the repeat is not `1`,
-    /// or always for x because of the flip; run it through [`wrap_uv`] to get the
-    /// coordinate a `GL_REPEAT` / `AddressMode::Repeat` sampler would use.
+    /// 只要 repeat 不为 `1`，结果通常**超出** `[0, 1]`，或者由于翻转而对 x 总是如此；
+    /// 将它通过 [`wrap_uv`] 运行以得到 `GL_REPEAT` / `AddressMode::Repeat` 采样器会使用的
+    /// 坐标。
     pub fn sample_uv(&self, direction: DVec3) -> DVec2 {
         let base = self.direction_to_uv(direction);
         DVec2::new(-base[0], base[1])
     }
 
-    /// Rotation-only part of [`Self::transform`].
+    /// [`Self::transform`] 中仅旋转的部分。
     ///
-    /// Upstream composes this from a position plus heading/pitch/roll via
-    /// `Transforms.headingPitchRollToFixedFrame` (`EquirectangularPanorama.js`
-    /// L46-61), so the upper-left 3×3 is the orientation and the fourth column is
-    /// the anchor position — see [`Self::center`].
+    /// 上游通过 `Transforms.headingPitchRollToFixedFrame`（`EquirectangularPanorama.js`
+    /// L46-61）从一个位置加上 heading/pitch/roll 合成它，因此左上角 3×3
+    /// 是朝向，第四列是锚点位置——参见 [`Self::center`]。
     #[inline]
     pub fn orientation(&self) -> DMat3 {
         DMat3::from_cols(
@@ -328,53 +325,51 @@ impl EquirectangularPanorama {
         )
     }
 
-    /// Anchor position of the panorama sphere, in meters, in the same frame as
-    /// [`Self::transform`]. This is the bubble's centre.
+    /// 全景球体的锚点位置，以米为单位，与 [`Self::transform`] 处于同一坐标系。
+    /// 这就是 bubble 的中心。
     #[inline]
     pub fn center(&self) -> DVec3 {
         self.transform.w_axis.truncate()
     }
 
-    /// [`Self::radius`] expressed in render units (still `f64`).
+    /// 以渲染单位表示的 [`Self::radius`]（仍为 `f64`）。
     ///
-    /// At the upstream default this is `100_000 / 6_378_137 = 0.015678…` — a local
-    /// bubble, not an infinite sky. See [`PANORAMA_METERS_PER_RENDER_UNIT`].
+    /// 在上游默认值下这是 `100_000 / 6_378_137 = 0.015678…`——一个局部
+    /// bubble，而非无限远的天空。参见 [`PANORAMA_METERS_PER_RENDER_UNIT`]。
     #[inline]
     pub fn radius_render_units(&self) -> f64 {
         self.radius / PANORAMA_METERS_PER_RENDER_UNIT
     }
 
-    /// [`Self::center`] expressed in render units (still `f64`).
+    /// 以渲染单位表示的 [`Self::center`]（仍为 `f64`）。
     #[inline]
     pub fn center_render_units(&self) -> DVec3 {
         self.center() / PANORAMA_METERS_PER_RENDER_UNIT
     }
 
-    /// Nearest positive distance at which `origin + t * direction` enters this
-    /// panorama's sphere, in meters; `None` when the ray never reaches it.
+    /// `origin + t * direction` 进入此全景球体的最近正距离，以米为单位；
+    /// 当射线从不到达时返回 `None`。
     ///
-    /// This is the f64 CPU reference for `ray_sphere_entry` in
-    /// `shaders/panorama.wgsl`, which drives the `MODE_BUBBLE` branch and its
-    /// `frag_depth`. The geometric (project-the-centre) form is used rather than the
-    /// quadratic `a t² + b t + c` because `direction` is normalised inside, so
-    /// `a == 1` and the whole `2a` denominator — and its divide-by-zero NaN path —
-    /// disappears.
+    /// 这是 `shaders/panorama.wgsl` 中 `ray_sphere_entry` 的 f64 CPU 参考，
+    /// 后者驱动 `MODE_BUBBLE` 分支及其 `frag_depth`。使用几何形式（投影中心）
+    /// 而非二次形式 `a t² + b t + c`，因为 `direction` 在其中已归一化，
+    /// 因此 `a == 1`，整个 `2a` 分母——及其除零 NaN 路径——
+    /// 都消失了。
     ///
-    /// Returns `None` for a degenerate/non-finite `direction`, a non-finite or
-    /// negative `radius`, a miss, or a sphere entirely behind the origin. When the
-    /// origin is *inside* the sphere the far intersection is returned, which is the
-    /// street-view case: the camera sits at the bubble centre and sees the inside of
-    /// the far wall.
+    /// 对退化的/非有限的 `direction`、非有限或负的 `radius`、未命中，
+    /// 或完全位于 origin 后方的球体返回 `None`。当 origin *在*球内
+    /// 时，返回远的交点，这就是街景情形：相机位于 bubble 中心，
+    /// 看到远壁的内侧。
     pub fn ray_sphere_entry(&self, origin: DVec3, direction: DVec3) -> Option<f64> {
         ray_sphere_entry(origin, direction, self.center(), self.radius)
     }
 }
 
-/// Nearest positive ray/sphere entry distance, or `None`.
+/// 最近的射线/球体正入射距离，或 `None`。
 ///
-/// Free-function form of [`EquirectangularPanorama::ray_sphere_entry`] for callers
-/// whose sphere is not a panorama (tests, CPU/GPU cross-checks). Every rejection is
-/// a *totality* guard, not a semantic choice: NaN and `±inf` never escape.
+/// [`EquirectangularPanorama::ray_sphere_entry`] 的自由函数形式，供其
+/// 球体不是全景的调用方使用（测试、CPU/GPU 交叉校验）。每一项拒绝都是一个
+/// *完全性*守护，而非语义选择：NaN 和 `±inf` 永不逸出。
 pub fn ray_sphere_entry(
     origin: DVec3,
     direction: DVec3,
@@ -412,45 +407,45 @@ pub fn ray_sphere_entry(
     None
 }
 
-/// Wrap a texture coordinate the way `GL_REPEAT` / `AddressMode::Repeat` does:
-/// `x - floor(x)`, giving a result in `[0, 1)` for finite input.
+/// 按 `GL_REPEAT` / `AddressMode::Repeat` 的方式包裹一个 texture 坐标：
+/// `x - floor(x)`，对有限输入给出 `[0, 1)` 内的结果。
 ///
-/// Needed because [`EquirectangularPanorama::sample_uv`] deliberately returns
-/// out-of-range coordinates (the upstream horizontal flip makes x negative for
-/// every direction). Non-finite input yields `0.0` rather than NaN, so a garbage
-/// uniform degrades to "sample the first texel" instead of poisoning a frame.
+/// 之所以需要，是因为 [`EquirectangularPanorama::sample_uv`] 故意返回
+/// 越界的坐标（上游的水平翻转使每个方向的 x 都为负）。非有限输入
+/// 产生 `0.0` 而非 NaN，因此一个垃圾 uniform 会退化为“采样第一个 texel”
+/// 而不是污染整帧。
 pub fn wrap_uv(uv: DVec2) -> DVec2 {
     DVec2::new(wrap_repeat(uv.x), wrap_repeat(uv.y))
 }
 
-/// Scalar half of [`wrap_uv`].
+/// [`wrap_uv`] 的标量部分。
 pub fn wrap_repeat(value: f64) -> f64 {
     if !value.is_finite() {
         return 0.0;
     }
     let wrapped = value - value.floor();
-    // `floor` of an exact integer returns itself, so `wrapped` is `0.0`; the only
-    // way to reach `1.0` is a rounding artefact for values just below an integer.
+    // `floor` 对一个精确整数返回自身，因此 `wrapped` 为 `0.0`；达到 `1.0`
+    // 的唯一方式是刚好低于一个整数的值的舍入误差。
     if wrapped >= 1.0 {
         return 0.0;
     }
     wrapped
 }
 
-/// A cube map panorama rendered from 6 face images.
+/// 由 6 个面图像渲染的 cube map 全景。
 ///
-/// Maps to CesiumJS `Scene/CubeMapPanorama.js`.
+/// 映射到 CesiumJS `Scene/CubeMapPanorama.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct CubeMapPanorama {
-    /// 4x4 transformation matrix.
+    /// 4x4 变换矩阵。
     pub transform: DMat4,
-    /// Image URLs for the 6 faces: [+X, -X, +Y, -Y, +Z, -Z].
+    /// 6 个面的图像 URL：[+X, -X, +Y, -Y, +Z, -Z]。
     pub faces: [String; 6],
-    /// Radius of the panorama sphere in meters.
+    /// 以米为单位的全景球半径。
     pub radius: f64,
-    /// Credit/attribution string.
+    /// 版权/署名字符串。
     pub credit: Option<String>,
-    /// Whether the panorama is visible.
+    /// 全景是否可见。
     pub show: bool,
 }
 
@@ -474,7 +469,7 @@ impl Default for CubeMapPanorama {
 }
 
 impl CubeMapPanorama {
-    /// Create a new cube map panorama with 6 face images.
+    /// 用 6 张面图像创建一个新的 cube map 全景。
     pub fn new(faces: [String; 6]) -> Self {
         Self {
             faces,
@@ -482,14 +477,14 @@ impl CubeMapPanorama {
         }
     }
 
-    /// Check if all faces have images.
+    /// 检查是否所有面都有图像。
     pub fn is_complete(&self) -> bool {
         self.faces.iter().all(|f| !f.is_empty())
     }
 
-    /// Determine which face a direction vector maps to.
+    /// 判定一个方向向量映射到哪个面。
     ///
-    /// Returns face index (0-5) and (u, v) coordinates on that face.
+    /// 返回面索引（0-5）以及该面上的 (u, v) 坐标。
     pub fn direction_to_face_uv(&self, direction: glam::DVec3) -> (usize, [f64; 2]) {
         let dir = direction.normalize();
         let ax = dir.x.abs();
@@ -498,68 +493,68 @@ impl CubeMapPanorama {
 
         if ax >= ay && ax >= az {
             if dir.x > 0.0 {
-                // +X face
+                // +X 面
                 let u = (-dir.z / ax + 1.0) * 0.5;
                 let v = (-dir.y / ax + 1.0) * 0.5;
                 (0, [u, v])
             } else {
-                // -X face
+                // -X 面
                 let u = (dir.z / ax + 1.0) * 0.5;
                 let v = (-dir.y / ax + 1.0) * 0.5;
                 (1, [u, v])
             }
         } else if ay >= ax && ay >= az {
             if dir.y > 0.0 {
-                // +Y face
+                // +Y 面
                 let u = (dir.x / ay + 1.0) * 0.5;
                 let v = (dir.z / ay + 1.0) * 0.5;
                 (2, [u, v])
             } else {
-                // -Y face
+                // -Y 面
                 let u = (dir.x / ay + 1.0) * 0.5;
                 let v = (-dir.z / ay + 1.0) * 0.5;
                 (3, [u, v])
             }
         } else if dir.z > 0.0 {
-            // +Z face
+            // +Z 面
             let u = (dir.x / az + 1.0) * 0.5;
             let v = (dir.y / az + 1.0) * 0.5;
             (4, [u, v])
         } else {
-            // -Z face
+            // -Z 面
             let u = (dir.x / az + 1.0) * 0.5;
             let v = (-dir.y / az + 1.0) * 0.5;
             (5, [u, v])
         }
     }
 
-    // ─── M6.3 additions (upstream-faithful orientation / projection semantics) ──
+    // ─── M6.3 补充（忠实于上游的朝向 / 投影语义）──
 
-    /// Texture-layout axis of [`PanoramaPlacement`] × [`PanoramaSource`].
+    /// [`PanoramaPlacement`] × [`PanoramaSource`] 的 texture 布局轴。
     #[inline]
     pub const fn source(&self) -> PanoramaSource {
         PanoramaSource::CubeMap
     }
 
-    /// Placement axis: infinite and camera-centred.
+    /// 摆放轴：无限且以相机为中心。
     #[inline]
     pub const fn placement(&self) -> PanoramaPlacement {
         PanoramaPlacement::Skybox
     }
 
-    /// Upstream face order, as `[+X, -X, +Y, -Y, +Z, -Z]`.
+    /// 上游的面顺序，即 `[+X, -X, +Y, -Y, +Z, -Z]`。
     ///
-    /// Matches [`Self::faces`] and the `px/mx/py/my/pz/mz` suffixes of
-    /// `SkyBox.js::getDefaultSkyBoxUrl` / `createEarthSkyBox`.
+    /// 与 [`Self::faces`] 以及 `SkyBox.js::getDefaultSkyBoxUrl` /
+    /// `createEarthSkyBox` 的 `px/mx/py/my/pz/mz` 后缀一致。
     pub const FACE_NAMES: [&'static str; 6] = ["+X", "-X", "+Y", "-Y", "+Z", "-Z"];
 
-    /// The upstream `u_cubeMapPanoramaTransform` value: a **`Matrix3`**.
+    /// 上游 `u_cubeMapPanoramaTransform` 的值：一个 **`Matrix3`**。
     ///
-    /// `CubeMapPanorama.js` L143-149 stores a `Matrix3` and
-    /// `CubeMapPanoramaVS.glsl` L1 declares `uniform mat3
-    /// u_cubeMapPanoramaTransform`. A cube-map skybox is always centred on the
-    /// camera, so it has orientation but no position — see the module-level
-    /// DEVIATION note for why this struct still carries a `DMat4`.
+    /// `CubeMapPanorama.js` L143-149 存储一个 `Matrix3`，而
+    /// `CubeMapPanoramaVS.glsl` L1 声明 `uniform mat3
+    /// u_cubeMapPanoramaTransform`。cube-map skybox 总以相机为中心，
+    /// 因此它有朝向却无位置——至于本结构为何仍携带一个 `DMat4`，参见模块级的
+    /// 偏差说明。
     #[inline]
     pub fn orientation(&self) -> DMat3 {
         DMat3::from_cols(
@@ -569,18 +564,17 @@ impl CubeMapPanorama {
         )
     }
 
-    /// [`Self::radius`] expressed in render units (still `f64`).
+    /// 以渲染单位表示的 [`Self::radius`]（仍为 `f64`）。
     #[inline]
     pub fn radius_render_units(&self) -> f64 {
         self.radius / PANORAMA_METERS_PER_RENDER_UNIT
     }
 
-    /// Cube face addressing exactly as the OpenGL / WebGPU cube-map specification
-    /// defines it, and therefore exactly as a wgpu `texture_cube` samples it.
+    /// 完全按 OpenGL / WebGPU cube-map 规范定义的 cube 面寻址方式，
+    /// 因而也与 wgpu `texture_cube` 的采样方式完全一致。
     ///
-    /// Returns the same face index as [`Self::direction_to_face_uv`] — the face
-    /// **selection** rule is identical — but corrects the `(s, t)` of the two faces
-    /// where the legacy method diverges from the spec:
+    /// 返回与 [`Self::direction_to_face_uv`] 相同的面索引——面**选择**
+    /// 规则完全相同——但修正了旧方法与规范产生分歧的那两个面的 `(s, t)`：
     ///
     /// | face | major axis `ma` | `sc` | `tc` | legacy | spec |
     /// |------|-----------------|------|------|--------|------|
@@ -591,23 +585,22 @@ impl CubeMapPanorama {
     /// | `+Z` (4) | `+z` | `+x` | **`-y`** | `tc = +y` ✗ | `tc = -y` ✓ |
     /// | `-Z` (5) | `-z` | **`-x`** | `-y` | `sc = +x` ✗ | `sc = -x` ✓ |
     ///
-    /// with `s = (sc / |ma| + 1) / 2` and `t = (tc / |ma| + 1) / 2`.
+    /// 其中 `s = (sc / |ma| + 1) / 2` 且 `t = (tc / |ma| + 1) / 2`。
     ///
-    /// ## DEVIATION — [`Self::direction_to_face_uv`] is left as-is
-    /// The legacy method is **not** corrected in place. Its published behaviour is
-    /// covered by `tests::test_cubemap_direction_to_face` and by downstream callers;
-    /// silently flipping two faces would change results for anyone already relying
-    /// on them. This spec-faithful sibling is what the GPU path is validated
-    /// against, and the divergence between the two is pinned by
-    /// [`tests::cube_face_uv_legacy_and_spec_diverge_only_on_the_z_faces`].
+    /// ## 偏差 —— [`Self::direction_to_face_uv`] 保持原样
+    /// 旧方法并**不**就地修正。其已发布的行为由
+    /// `tests::test_cubemap_direction_to_face` 以及下游调用方覆盖；静默地翻转两个面
+    /// 会改变那些已经依赖它们的人的结果。这个忠于规范的同胞方法正是 GPU 路径
+    /// 所验证的依据，而两者之间的分歧由
+    /// [`tests::cube_face_uv_legacy_and_spec_diverge_only_on_the_z_faces`] 锁定。
     pub fn direction_to_face_uv_spec(&self, direction: DVec3) -> (usize, [f64; 2]) {
         let dir = direction.normalize();
         let ax = dir.x.abs();
         let ay = dir.y.abs();
         let az = dir.z.abs();
 
-        // Face selection is copied verbatim from `direction_to_face_uv` so the two
-        // methods can never disagree about *which* face, only about its (s, t).
+        // 面选择逐字复制自 `direction_to_face_uv`，使两个方法绝不会
+        // 对*哪个*面产生分歧，只在它的 (s, t) 上不同。
         if ax >= ay && ax >= az {
             if dir.x > 0.0 {
                 (0, face_uv(-dir.z, -dir.y, ax))
@@ -627,14 +620,14 @@ impl CubeMapPanorama {
         }
     }
 
-    /// Inverse of [`Self::direction_to_face_uv_spec`]: rebuild the unit direction
-    /// from a face index and its `(s, t)`.
+    /// [`Self::direction_to_face_uv_spec`] 的逆运算：由面索引及其 `(s, t)`
+    /// 重建单位方向。
     ///
-    /// `face` is taken modulo 6 so an out-of-range uniform degrades instead of
-    /// panicking. Round-tripped over a deterministic direction set by
-    /// [`tests::cube_face_uv_spec_round_trips_in_both_directions`].
+    /// `face` 按 6 取模，因此一个越界的 uniform 会降级而非 panic。
+    /// 在一组确定性方向上由
+    /// [`tests::cube_face_uv_spec_round_trips_in_both_directions`] 双向回环验证。
     pub fn face_uv_to_direction_spec(&self, face: usize, uv: [f64; 2]) -> DVec3 {
-        // s, t in [0, 1] -> sc/|ma|, tc/|ma| in [-1, 1]
+        // s, t 在 [0, 1] -> sc/|ma|, tc/|ma| 在 [-1, 1]
         let s = uv[0] * 2.0 - 1.0;
         let t = uv[1] * 2.0 - 1.0;
         let raw = match face % 6 {
@@ -649,12 +642,12 @@ impl CubeMapPanorama {
     }
 }
 
-/// One cube-face `(s, t)` from the spec's `(sc, tc, ma)` triple:
-/// `s = (sc / |ma| + 1) / 2`, `t = (tc / |ma| + 1) / 2`.
+/// 由规范的 `(sc, tc, ma)` 三元组得到一个 cube 面的 `(s, t)`：
+/// `s = (sc / |ma| + 1) / 2`，`t = (tc / |ma| + 1) / 2`。
 ///
-/// `ma` is passed as an already-absolute major component, so it is never zero for a
-/// normalised direction; a zero still yields `0.5` rather than NaN because
-/// `0.0 / 0.0` is guarded by the caller's face selection.
+/// `ma` 以已取绝对值的主分量传入，因此对一个归一化方向它永不为零；
+/// 零仍会返回 `0.5` 而非 NaN，因为
+/// `0.0 / 0.0` 被调用方的面选择所守护。
 #[inline]
 fn face_uv(sc: f64, tc: f64, ma: f64) -> [f64; 2] {
     if ma <= 0.0 {
@@ -663,48 +656,45 @@ fn face_uv(sc: f64, tc: f64, ma: f64) -> [f64; 2] {
     [(sc / ma + 1.0) * 0.5, (tc / ma + 1.0) * 0.5]
 }
 
-// ─── CPU reference for the upstream skybox vertex shader ─────────────────────
+// ─── 上游 skybox 顶点 shader 的 CPU 参考 ─────────────────────
 
-/// Result of [`skybox_vertex_transform`]: one transformed skybox vertex.
+/// [`skybox_vertex_transform`] 的结果：一个变换后的 skybox 顶点。
 pub struct SkyBoxVertexOutput {
-    /// `czm_projection * vec4(p, 1.0)` — the clip-space position to write.
+    /// `czm_projection * vec4(p, 1.0)`——要写入的裁剪空间位置。
     pub clip_position: DVec4,
-    /// `position.xyz` — the **untransformed** box coordinate, used directly as the
-    /// cube-map sampling direction (`v_texCoord = position.xyz`).
+    /// `position.xyz`——**未变换**的盒坐标，直接用作
+    /// cube-map 采样方向（`v_texCoord = position.xyz`）。
     pub texture_coordinate: DVec3,
 }
 
-/// f64 CPU reference for `Shaders/CubeMapPanoramaVS.glsl` L8-10 (and, with
-/// `panorama_orientation` replaced by `czm_temeToPseudoFixed`, for
-/// `Shaders/SkyBoxVS.glsl` L7-9):
+/// `Shaders/CubeMapPanoramaVS.glsl` L8-10 的 f64 CPU 参考（以及，
+/// 将 `panorama_orientation` 换成 `czm_temeToPseudoFixed` 后，对应
+/// `Shaders/SkyBoxVS.glsl` L7-9）：
 /// ```glsl
 /// vec3 p = czm_viewRotation * (u_cubeMapPanoramaTransform * (czm_entireFrustum.y * position));
 /// gl_Position = czm_projection * vec4(p, 1.0);
 /// v_texCoord = position.xyz;
 /// ```
 ///
-/// Types are pinned from `Renderer/AutomaticUniforms.js`:
-/// * `czm_viewRotation` is a **`mat3`** (L329 `uniform mat3 czm_viewRotation;`,
-///   `datatype: WebGLConstants.FLOAT_MAT3` at L341) — the rotation-only part of the
-///   view matrix, which is what makes the skybox follow the camera without
-///   translating with it.
-/// * `czm_entireFrustum` is a **`vec2`** `(near, far)` (L1064 `uniform vec2
-///   czm_entireFrustum;`), so `.y` is the far-plane distance. Scaling the unit box
-///   by it pushes the skybox onto the far plane.
+/// 类型由 `Renderer/AutomaticUniforms.js` 锁定：
+/// * `czm_viewRotation` 是一个 **`mat3`**（L329 `uniform mat3 czm_viewRotation;`，
+///   L341 `datatype: WebGLConstants.FLOAT_MAT3`）——视图矩阵中仅含旋转的部分，
+///   正是它使 skybox 跟随相机而不同时平移。
+/// * `czm_entireFrustum` 是一个 **`vec2`** `(near, far)`（L1064 `uniform vec2
+///   czm_entireFrustum;`），因此 `.y` 是远平面距离。用它将单位盒缩放，
+///   会把 skybox 推到远平面上。
 ///
-/// The multiplication order matters and is preserved exactly: scale, then orient,
-/// then view-rotate. Because `f64` matrix–vector multiplication is not associative
-/// under rounding, re-associating these three steps would produce a different
-/// last-bit result — the same class of defect as the M5 Ultra Review finding M2.
+/// 乘法顺序至关重要，并原样保留：先缩放，再定向，最后视图旋转。因为
+/// `f64` 矩阵–向量乘法在舍入下不满足结合律，重新结合这三步会产生
+/// 不同的末位结果——与 M5 Ultra Review 发现项 M2 同类的缺陷。
 ///
-/// ## Why this is a *reference* and not the GPU path
-/// `shaders/panorama.wgsl` draws a fullscreen triangle and reconstructs the ray in
-/// the fragment stage instead of rasterising a far-plane-scaled box, because Bevy
-/// uses an infinite-reverse projection whose far plane is at infinity (see
-/// DEVIATION 1 in that file's header, and `bevy_core_pipeline-0.15.3/src/skybox/skybox.wgsl`
-/// L19-46 which does the same). This function exists so a test can prove the two
-/// agree on the **sampling direction** — the only part of the upstream vertex stage
-/// that survives into the fragment path, as `v_texCoord`.
+/// ## 为何这是*参考*而非 GPU 路径
+/// `shaders/panorama.wgsl` 绘制一个全屏三角形，并在片段阶段重建光线，
+/// 而非光栅化一个按远平面缩放的盒，因为 Bevy 使用无穷远反转投影，
+/// 其远平面在无穷远（参见该文件头部的偏差 1，以及做了同样事情的
+/// `bevy_core_pipeline-0.15.3/src/skybox/skybox.wgsl` L19-46）。本函数
+/// 的存在是为了让测试能够证明两者在**采样方向**上一致——那是上游顶点阶段
+/// 中唯一并入了片段路径的部分，即 `v_texCoord`。
 pub fn skybox_vertex_transform(
     view_rotation: DMat3,
     panorama_orientation: DMat3,
@@ -728,11 +718,11 @@ pub fn skybox_vertex_transform(
     }
 }
 
-/// The eight corners of the upstream skybox box.
+/// 上游 skybox 盒的八个角点。
 ///
-/// `CubeMapPanorama.js` L189-192 builds a `2.0 × 2.0 × 2.0` `BoxGeometry` centred
-/// on the origin, so every corner coordinate is `±SKYBOX_BOX_HALF_EXTENT`. Order is
-/// `-x` fastest, then `-y`, then `-z`.
+/// `CubeMapPanorama.js` L189-192 构建一个以原点为中心的 `2.0 × 2.0 × 2.0`
+/// `BoxGeometry`，因此每个角坐标都是 `±SKYBOX_BOX_HALF_EXTENT`。顺序为
+/// `-x` 最快，然后 `-y`，然后 `-z`。
 pub fn skybox_box_vertices() -> [DVec3; 8] {
     let h = SKYBOX_BOX_HALF_EXTENT;
     let mut out = [DVec3::ZERO; 8];
@@ -745,12 +735,12 @@ pub fn skybox_box_vertices() -> [DVec3; 8] {
     out
 }
 
-/// Panorama provider trait for loading panorama data.
+/// 用于加载全景数据的全景 provider trait。
 pub trait PanoramaProvider {
-    /// Get the panorama type name.
+    /// 获取全景类型名称。
     fn provider_type(&self) -> &str;
 
-    /// Check if the provider is ready.
+    /// 检查 provider 是否就绪。
     fn is_ready(&self) -> bool;
 }
 
@@ -788,22 +778,22 @@ mod tests {
     fn test_equirectangular_uv_roundtrip() {
         let pano = EquirectangularPanorama::new("test.jpg");
 
-        // Test forward direction (lon=0, lat=0)
+        // 测试前向方向（lon=0, lat=0）
         let dir = DVec3::new(1.0, 0.0, 0.0);
         let uv = pano.direction_to_uv(dir);
-        assert!((uv[0] - 0.5).abs() < 1e-10); // u = 0.5 at lon=0
-        assert!((uv[1] - 0.5).abs() < 1e-10); // v = 0.5 at lat=0
+        assert!((uv[0] - 0.5).abs() < 1e-10); // lon=0 处 u = 0.5
+        assert!((uv[1] - 0.5).abs() < 1e-10); // lat=0 处 v = 0.5
 
-        // Roundtrip
+        // 回环
         let dir_back = pano.uv_to_direction(uv[0], uv[1]);
         assert!((dir_back - dir).length() < 1e-10);
     }
 
     #[test]
     fn test_direction_to_uv_clamps_and_guards_degenerate() {
-        // FIX-PANO-UVCLAMP: `|z| == 1.0 + ε` after normalize must not yield NaN
-        // (matches the GPU `asin(clamp(z, -1, 1))`); and a degenerate direction
-        // falls back to a neutral finite UV instead of NaN.
+        // FIX-PANO-UVCLAMP：`normalize` 后 `|z| == 1.0 + ε` 必须不产生 NaN
+        //（与 GPU 的 `asin(clamp(z, -1, 1))` 一致）；而退化方向
+        // 回退到一个中性的有限 UV 而非 NaN。
         let pano = EquirectangularPanorama::new("test.jpg");
 
         let pole = pano.direction_to_uv(DVec3::new(0.0, 0.0, 1.0 + 1e-16));
@@ -821,12 +811,12 @@ mod tests {
     fn test_equirectangular_uv_poles() {
         let pano = EquirectangularPanorama::new("test.jpg");
 
-        // North pole (lat = π/2)
+        // 北极（lat = π/2）
         let north = DVec3::new(0.0, 0.0, 1.0);
         let uv_north = pano.direction_to_uv(north);
         assert!((uv_north[1] - 1.0).abs() < 1e-10);
 
-        // South pole (lat = -π/2)
+        // 南极（lat = -π/2）
         let south = DVec3::new(0.0, 0.0, -1.0);
         let uv_south = pano.direction_to_uv(south);
         assert!(uv_south[1].abs() < 1e-10);
@@ -869,29 +859,29 @@ mod tests {
     fn test_cubemap_direction_to_face() {
         let pano = CubeMapPanorama::default();
 
-        // +X direction -> face 0
+        // +X 方向 -> 面 0
         let (face, uv) = pano.direction_to_face_uv(DVec3::new(1.0, 0.0, 0.0));
         assert_eq!(face, 0);
         assert!((uv[0] - 0.5).abs() < 1e-10);
         assert!((uv[1] - 0.5).abs() < 1e-10);
 
-        // -X direction -> face 1
+        // -X 方向 -> 面 1
         let (face, _) = pano.direction_to_face_uv(DVec3::new(-1.0, 0.0, 0.0));
         assert_eq!(face, 1);
 
-        // +Y direction -> face 2
+        // +Y 方向 -> 面 2
         let (face, _) = pano.direction_to_face_uv(DVec3::new(0.0, 1.0, 0.0));
         assert_eq!(face, 2);
 
-        // -Y direction -> face 3
+        // -Y 方向 -> 面 3
         let (face, _) = pano.direction_to_face_uv(DVec3::new(0.0, -1.0, 0.0));
         assert_eq!(face, 3);
 
-        // +Z direction -> face 4
+        // +Z 方向 -> 面 4
         let (face, _) = pano.direction_to_face_uv(DVec3::new(0.0, 0.0, 1.0));
         assert_eq!(face, 4);
 
-        // -Z direction -> face 5
+        // -Z 方向 -> 面 5
         let (face, _) = pano.direction_to_face_uv(DVec3::new(0.0, 0.0, -1.0));
         assert_eq!(face, 5);
     }
@@ -910,12 +900,12 @@ mod tests {
         assert_eq!(pano.credit, Some("Test Credit".to_string()));
     }
 
-    // ─── M6.3 additions ─────────────────────────────────────────────
+    // ─── M6.3 补充 ─────────────────────────────────────────────
 
-    /// `EquirectangularPanorama.js` L117 hands the sampler
-    /// `Cartesian2(-repeatHorizontal, repeatVertical)`; the comment on that line is
+    /// `EquirectangularPanorama.js` L117 向 sampler 传入
+    /// `Cartesian2(-repeatHorizontal, repeatVertical)`；那一行的注释是
     /// "flip horizontally by default to match expected orientation of images inside
-    /// a sphere, but allow user to override".
+    /// a sphere, but allow user to override"。
     #[test]
     fn texture_repeat_carries_the_upstream_horizontal_flip() {
         let pano = EquirectangularPanorama::default();
@@ -925,17 +915,17 @@ mod tests {
         repeated.set_repeat_horizontal(2.0).set_repeat_vertical(0.5);
         assert_eq!(repeated.texture_repeat(), DVec2::new(-2.0, 0.5));
 
-        // The flip is unconditional: it survives repeat == 0 and negative repeats,
-        // which upstream also passes straight through to the sampler.
+        // 这个翻转是无条件的：它在 repeat == 0 和负 repeat 时仍保留，
+        // 而上游也把这些值直接传给 sampler。
         let mut degenerate = EquirectangularPanorama::new("test.jpg");
         degenerate.set_repeat_horizontal(0.0).set_repeat_vertical(-3.0);
         assert_eq!(degenerate.texture_repeat(), DVec2::new(-0.0, -3.0));
     }
 
-    /// [`EquirectangularPanorama::sample_uv`] is the upstream-faithful coordinate;
-    /// the legacy [`EquirectangularPanorama::direction_to_uv`] keeps its positive
-    /// horizontal repeat so its inverse [`EquirectangularPanorama::uv_to_direction`]
-    /// stays a true round trip.
+    /// [`EquirectangularPanorama::sample_uv`] 是忠于上游的坐标；
+    /// 旧方法 [`EquirectangularPanorama::direction_to_uv`] 保持其正的水平 repeat，
+    /// 以便其逆运算 [`EquirectangularPanorama::uv_to_direction`]
+    /// 仍是一个真正的回环。
     #[test]
     fn sample_uv_is_the_horizontal_mirror_of_direction_to_uv() {
         let mut pano = EquirectangularPanorama::new("test.jpg");
@@ -954,13 +944,13 @@ mod tests {
             let base = pano.direction_to_uv(dir);
             let sample = pano.sample_uv(dir);
 
-            // Bit-exact negation: IEEE-754 multiplication is sign-symmetric, so
-            // `u * (-repeat)` and `-(u * repeat)` cannot drift apart.
+            // 逐位精确的取负：IEEE-754 乘法对符号对称，因此
+            // `u * (-repeat)` 与 `-(u * repeat)` 不会分离。
             assert_eq!(sample.x.to_bits(), (-base[0]).to_bits(), "dir {dir:?}");
             assert_eq!(sample.y.to_bits(), base[1].to_bits(), "dir {dir:?}");
 
-            // And that equals scaling the base uv by `texture_repeat()` elementwise,
-            // which is literally what the GLSL/WGSL sampler does.
+            // 并且它等于将 base uv 逐元素乘以 `texture_repeat()`，
+            // 这正是 GLSL/WGSL sampler 所做的。
             let repeat = pano.texture_repeat();
             let u = base[0] / pano.repeat_horizontal;
             let v = base[1] / pano.repeat_vertical;
@@ -968,15 +958,15 @@ mod tests {
             assert!((sample.y - v * repeat.y).abs() < 1e-12, "dir {dir:?}");
         }
 
-        // Concrete upstream check: at lon = +pi/2 the base u is 0.75, so the flipped
-        // sample u is -1.5 for repeat_horizontal = 2.
+        // 具体的上游校验：在 lon = +pi/2 处 base u 为 0.75，因此对于
+        // repeat_horizontal = 2，翻转后的采样 u 为 -1.5。
         let east = pano.sample_uv(DVec3::Y);
         assert!((east.x - (-0.75 * 2.0)).abs() < 1e-12, "{}", east.x);
         assert!((east.y - (0.5 * 3.0)).abs() < 1e-12, "{}", east.y);
     }
 
-    /// `sample_uv` deliberately returns out-of-range coordinates; [`wrap_uv`] is the
-    /// `GL_REPEAT` / `AddressMode::Repeat` half of the contract.
+    /// `sample_uv` 故意返回越界坐标；[`wrap_uv`] 是契约中
+    /// `GL_REPEAT` / `AddressMode::Repeat` 的那一半。
     #[test]
     fn wrap_uv_reproduces_gl_repeat_semantics() {
         assert_eq!(wrap_repeat(0.25), 0.25);
@@ -988,8 +978,8 @@ mod tests {
         assert_eq!(wrap_repeat(-1.5), 0.5);
         assert_eq!(wrap_repeat(-2.0), 0.0);
 
-        // Non-finite input degrades to "first texel" instead of propagating NaN into
-        // every texture coordinate of the frame.
+        // 非有限输入降级为“首个 texel”，而非将 NaN 传播进整帧的每一个
+        // texture 坐标。
         assert_eq!(wrap_repeat(f64::NAN), 0.0);
         assert_eq!(wrap_repeat(f64::INFINITY), 0.0);
         assert_eq!(wrap_repeat(f64::NEG_INFINITY), 0.0);
@@ -1001,12 +991,12 @@ mod tests {
         assert!(wrapped.y >= 0.0 && wrapped.y < 1.0);
     }
 
-    /// The enum discriminants are the wire format for `PanoramaUniforms::mode` and
-    /// `::source`; `shaders/panorama.wgsl` compares against `MODE_SKYBOX = 0u`,
-    /// `MODE_BUBBLE = 1u`, `SOURCE_CUBEMAP = 0u`, `SOURCE_EQUIRECTANGULAR = 1u`.
-    /// The adapter-side test
+    /// 枚举的判别值是 `PanoramaUniforms::mode` 和 `::source` 的线格式；
+    /// `shaders/panorama.wgsl` 与 `MODE_SKYBOX = 0u`、
+    /// `MODE_BUBBLE = 1u`、`SOURCE_CUBEMAP = 0u`、`SOURCE_EQUIRECTANGULAR = 1u` 比较。
+    /// 适配器端的测试
     /// `panorama_wgsl_mode_and_source_literals_match_the_domain_discriminants`
-    /// closes the loop against the shader source text.
+    /// 与 shader 源码文本闭环验证。
     #[test]
     fn placement_and_source_discriminants_match_the_shader() {
         assert_eq!(PanoramaPlacement::Skybox.as_u32(), 0);
@@ -1014,7 +1004,7 @@ mod tests {
         assert_eq!(PanoramaSource::CubeMap.as_u32(), 0);
         assert_eq!(PanoramaSource::Equirectangular.as_u32(), 1);
 
-        // Upstream's two pairings.
+        // 上游的两种配对。
         let cube = CubeMapPanorama::default();
         assert_eq!(cube.placement(), PanoramaPlacement::Skybox);
         assert_eq!(cube.source(), PanoramaSource::CubeMap);
@@ -1024,8 +1014,8 @@ mod tests {
         assert_eq!(equirect.source(), PanoramaSource::Equirectangular);
     }
 
-    /// The metres -> render-unit conversion changes **scale only**, never precision:
-    /// the accessors still return `f64`.
+    /// 米 -> 渲染单位的换算**只**改变尺度，从不改变精度：
+    /// 访问器仍返回 `f64`。
     #[test]
     fn radius_render_units_converts_scale_without_narrowing_precision() {
         assert_eq!(PANORAMA_METERS_PER_RENDER_UNIT, 6_378_137.0);
@@ -1035,8 +1025,8 @@ mod tests {
         let expected = DEFAULT_PANORAMA_RADIUS / PANORAMA_METERS_PER_RENDER_UNIT;
         assert_eq!(render_units.to_bits(), expected.to_bits());
 
-        // 100 km is a *local bubble*: ~1.57 % of the globe's 1.0 render unit. This
-        // is the whole reason `PanoramaPlacement` has two members.
+        // 100 km 是一个*局部 bubble*：约占地球 1.0 渲染单位的 1.57 %。这正是
+        // `PanoramaPlacement` 有两个成员的全部原因。
         assert!(
             render_units > 0.0156 && render_units < 0.0157,
             "expected ~0.015678 render units, got {render_units}"
@@ -1046,7 +1036,7 @@ mod tests {
             "the default panorama must be far smaller than the globe radius"
         );
 
-        // Centre conversion is exact for whole-render-unit translations.
+        // 对于整渲染单位的平移，中心换算是精确的。
         let anchored = EquirectangularPanorama::with_transform(
             DMat4::from_translation(DVec3::new(6_378_137.0, 0.0, -6_378_137.0)),
             "test.jpg",
@@ -1063,8 +1053,8 @@ mod tests {
         );
     }
 
-    /// `orientation()` is the accessor that reproduces upstream's `Matrix3`; the
-    /// `DMat4` field it is derived from is untouched (see the module DEVIATION note).
+    /// `orientation()` 是重现上游 `Matrix3` 的访问器；派生它的
+    /// `DMat4` 字段保持不变（参见模块级的偏差说明）。
     #[test]
     fn cube_orientation_drops_the_translation_the_upstream_matrix3_never_had() {
         let translated = CubeMapPanorama {
@@ -1088,9 +1078,8 @@ mod tests {
             );
         }
 
-        // The equirectangular variant splits the same Matrix4 the other way: the
-        // fourth column *is* meaningful there, because that panorama is a bubble
-        // anchored in the world.
+        // equirectangular 变体以另一种方式拆分同一个 Matrix4：在那里
+        // 第四列*确实*是有意义的，因为那个全景是一个锚定在世界中的 bubble。
         let equirect = EquirectangularPanorama::with_transform(transform, "test.jpg");
         assert_eq!(equirect.center(), transform.w_axis.truncate());
         assert!((equirect.center() - DVec3::new(5.0, 6.0, 7.0)).length() > 1.0);
@@ -1102,8 +1091,8 @@ mod tests {
         }
     }
 
-    /// `direction_to_face_uv` (legacy) and `direction_to_face_uv_spec` must agree on
-    /// the face **everywhere**, and on `(s, t)` everywhere except the two Z faces.
+    /// `direction_to_face_uv`（旧）与 `direction_to_face_uv_spec` 必须在**所有**
+    /// 地方就面达成一致，并在除两个 Z 面之外的所有地方就 `(s, t)` 一致。
     #[test]
     fn cube_face_uv_legacy_and_spec_diverge_only_on_the_z_faces() {
         let pano = CubeMapPanorama::default();
@@ -1129,7 +1118,7 @@ mod tests {
                 component(bits, 32),
             );
             if raw.length_squared() < 1.0e-12 {
-                continue; // a degenerate sample proves nothing about face addressing
+                continue; // 一个退化样本证明不了任何关于面寻址的东西
             }
             let dir = raw.normalize();
             swept += 1;
@@ -1160,7 +1149,7 @@ mod tests {
             "the sweep must actually witness the divergence, or it proves nothing"
         );
 
-        // The exact divergence, spelled out: +Z flips `t`, -Z flips `s`.
+        // 确切的分歧，逐字列出：+Z 翻转 `t`，-Z 翻转 `s`。
         let tilted = DVec3::new(0.2, 0.3, 0.9).normalize();
         let (plus_z, legacy_uv) = pano.direction_to_face_uv(tilted);
         let (_, spec_uv) = pano.direction_to_face_uv_spec(tilted);
@@ -1176,8 +1165,8 @@ mod tests {
         assert_eq!(legacy_uv[1].to_bits(), spec_uv[1].to_bits());
     }
 
-    /// `direction_to_face_uv_spec` and `face_uv_to_direction_spec` are exact
-    /// inverses over all six faces.
+    /// `direction_to_face_uv_spec` 与 `face_uv_to_direction_spec` 在全部六个面上
+    /// 是精确的互逆。
     #[test]
     fn cube_face_uv_spec_round_trips_in_both_directions() {
         let pano = CubeMapPanorama::default();
@@ -1203,7 +1192,7 @@ mod tests {
             );
         }
 
-        // And the other way: every face's centre maps back to its own major axis.
+        // 另一个方向：每个面的中心都映射回自身的主轴。
         let majors = [
             DVec3::X,
             -DVec3::X,
@@ -1221,7 +1210,7 @@ mod tests {
             );
         }
 
-        // Out-of-range face indices wrap instead of panicking.
+        // 越界的面索引会回绕而非 panic。
         assert_eq!(
             pano.face_uv_to_direction_spec(6, [0.5, 0.5]),
             pano.face_uv_to_direction_spec(0, [0.5, 0.5])
@@ -1229,8 +1218,8 @@ mod tests {
         assert_eq!(CubeMapPanorama::FACE_NAMES.len(), 6);
     }
 
-    /// The camera-at-the-centre street-view case: the ray leaves the bubble centre
-    /// and meets the **far** wall at exactly `radius`.
+    /// 相机在中心的街景情形：光线从 bubble 中心出发，
+    /// 恰好在 `radius` 处遇到**远**墙。
     #[test]
     fn ray_sphere_entry_hits_the_far_wall_from_inside_the_bubble() {
         let pano = EquirectangularPanorama::default();
@@ -1242,21 +1231,21 @@ mod tests {
             .expect("a centred ray must hit the bubble");
         assert_eq!(hit, DEFAULT_PANORAMA_RADIUS);
 
-        // The sampling direction is then the ray direction itself, which is what
-        // makes `direction_to_uv`/`sample_uv` valid straight from the camera ray.
+        // 采样方向随后就是光线方向本身，这正是使
+        // `direction_to_uv`/`sample_uv` 直接从相机光线起就有效的原因。
         let hit_point = DVec3::ZERO + DVec3::X * hit;
         assert!(
             ((hit_point - pano.center()).normalize() - DVec3::X).length() < 1.0e-12
         );
 
-        // From outside: the NEAR wall wins, matching upstream's depth-tested opaque
-        // sphere with `cull: { enabled: false }`.
+        // 从外部：近墙胜出，与上游那个做了深度测试的不透明球体
+        // `cull: { enabled: false }` 一致。
         let near = pano
             .ray_sphere_entry(DVec3::new(-300_000.0, 0.0, 0.0), DVec3::X)
             .expect("must hit");
         assert!((near - 200_000.0).abs() < 1.0e-9, "{near}");
 
-        // A tangent-free miss, and a sphere entirely behind the origin.
+        // 一个无切点的错过，以及一个完全在原点后方的球体。
         assert!(pano
             .ray_sphere_entry(DVec3::new(-300_000.0, 0.0, 0.0), DVec3::Y)
             .is_none());
@@ -1265,8 +1254,8 @@ mod tests {
             .is_none());
     }
 
-    /// No input can make [`ray_sphere_entry`] return NaN, infinity or a
-    /// non-positive distance.
+    /// 没有任何输入能使 [`ray_sphere_entry`] 返回 NaN、无穷大或
+    /// 非正距离。
     #[test]
     fn ray_sphere_entry_rejects_degenerate_input_instead_of_returning_nan() {
         let pano = EquirectangularPanorama::default();
@@ -1290,9 +1279,8 @@ mod tests {
         bad.radius = -1.0;
         assert!(bad.ray_sphere_entry(DVec3::ZERO, DVec3::X).is_none());
 
-        // A short-but-representable direction is normalised, not rejected: 1e-8
-        // squares to 1e-16, which is eight orders of magnitude above the
-        // `1.0e-24` squared-length epsilon.
+        // 一个短但可表示的方向会被归一化而非拒绝：1e-8
+        // 平方得 1e-16，比 `1.0e-24` 的平方长度 epsilon 高八个数量级。
         let short = ray_sphere_entry(
             DVec3::ZERO,
             DVec3::new(1.0e-8, 0.0, 0.0),
@@ -1302,8 +1290,8 @@ mod tests {
         .expect("1e-8 squares to 1e-16, well above the degenerate epsilon");
         assert!((short - 1.0).abs() < 1.0e-12, "{short}");
 
-        // 1e-20 squares to 1e-40, which is *below* the epsilon, so it is rejected
-        // too: the guard is on the squared length, not on the length.
+        // 1e-20 平方得 1e-40，它*低于* epsilon，因此也会被拒绝：
+        // 守护是针对平方长度，而非长度。
         assert!(
             ray_sphere_entry(
                 DVec3::ZERO,
@@ -1315,8 +1303,8 @@ mod tests {
             "a squared length below the epsilon must be rejected, not normalised"
         );
 
-        // 1e-200 squares to 1e-400, which underflows to exactly 0.0 in f64: the
-        // guard must catch that rather than dividing by it.
+        // 1e-200 平方得 1e-400，它在 f64 中下溢为恰好 0.0：
+        // 守护必须捕获那种情况而不是去除以它。
         assert!(
             ray_sphere_entry(
                 DVec3::ZERO,
@@ -1328,7 +1316,7 @@ mod tests {
             "underflow to zero must be rejected, not normalised into NaN"
         );
 
-        // Whatever comes back is always finite and strictly positive.
+        // 无论返回什么总是有限且严格为正的。
         for dir in [DVec3::X, DVec3::Y, DVec3::Z, -DVec3::X] {
             if let Some(t) = pano.ray_sphere_entry(DVec3::ZERO, dir) {
                 assert!(t.is_finite() && t > 0.0, "{dir:?} -> {t}");
@@ -1336,9 +1324,9 @@ mod tests {
         }
     }
 
-    /// The intersection is invariant under the metres -> render-unit rescaling,
-    /// because origin, centre and radius are all divided by the same constant. That
-    /// invariance is what lets the f64 domain reference validate the f32 GPU result.
+    /// 交点在米 -> 渲染单位的重缩下放是不变的，
+    /// 因为原点、中心和半径都除以同一个常量。那种不变性正是
+    /// 使 f64 领域参考能验证 f32 GPU 结果的原因。
     #[test]
     fn ray_sphere_entry_is_scale_invariant_under_render_unit_conversion() {
         let pano = EquirectangularPanorama::with_transform(
@@ -1366,8 +1354,8 @@ mod tests {
         );
     }
 
-    /// `CubeMapPanorama.js` L189-192 builds a `2.0 x 2.0 x 2.0` box centred on the
-    /// origin, so all eight corners sit at `+-SKYBOX_BOX_HALF_EXTENT`.
+    /// `CubeMapPanorama.js` L189-192 构建一个以原点为中心的 `2.0 x 2.0 x 2.0`
+    /// 盒，因此全部八个角都位于 `+-SKYBOX_BOX_HALF_EXTENT`。
     #[test]
     fn skybox_box_vertices_are_the_unit_cube_corners() {
         let vertices = skybox_box_vertices();
@@ -1395,15 +1383,15 @@ mod tests {
         }
     }
 
-    /// f64 CPU reference for `CubeMapPanoramaVS.glsl` L8-10. Pins the
-    /// scale-then-orient-then-view-rotate order and the fact that `v_texCoord` is
-    /// the **raw** box coordinate.
+    /// `CubeMapPanoramaVS.glsl` L8-10 的 f64 CPU 参考。锁定
+    /// 先缩放再定向再视图旋转的顺序，以及 `v_texCoord` 是
+    /// **原始**盒坐标这一事实。
     #[test]
     fn skybox_vertex_transform_scales_then_orients_then_view_rotates() {
         let far = 200.0_f64;
         let box_position = DVec3::new(1.0, -1.0, 1.0);
 
-        // Identity everything: p = far * position, clip = (p, 1).
+        // 全部取单位阵：p = far * position，clip = (p, 1)。
         let identity = skybox_vertex_transform(
             DMat3::IDENTITY,
             DMat3::IDENTITY,
@@ -1417,11 +1405,11 @@ mod tests {
             identity.clip_position
         );
         assert_eq!(identity.clip_position.w, 1.0);
-        // `v_texCoord = position.xyz` — the RAW box coordinate, never the scaled one.
+        // `v_texCoord = position.xyz`——原始的盒坐标，绝非缩放后的那个。
         assert_eq!(identity.texture_coordinate, box_position);
 
-        // The multiplication order is observable: swapping the orientation and the
-        // view rotation gives a different eye-space point.
+        // 乘法顺序是可观察的：交换定向和视图旋转
+        // 会得到不同的眼空间点。
         let orientation = DMat3::from_rotation_z(std::f64::consts::FRAC_PI_2);
         let view_rotation = DMat3::from_rotation_x(std::f64::consts::FRAC_PI_4);
         let reference = skybox_vertex_transform(
@@ -1450,8 +1438,8 @@ mod tests {
             "the test vectors must actually distinguish the two orders"
         );
 
-        // Scaling by `czm_entireFrustum.y` is a pure similarity: doubling the far
-        // plane doubles the eye-space point.
+        // 乘以 `czm_entireFrustum.y` 是一个纯粹的相似变换：将远平面加倍
+        // 会将眼空间点加倍。
         let unit_far = skybox_vertex_transform(
             DMat3::IDENTITY,
             DMat3::IDENTITY,
@@ -1470,7 +1458,7 @@ mod tests {
             (scaled_far.clip_position.xyz() - unit_far.clip_position.xyz() * far).length() < 1.0e-9
         );
 
-        // All eight box corners land on the far plane at identity view/projection.
+        // 在单位视图/投影下，八个盒角都落在远平面上。
         for vertex in skybox_box_vertices() {
             let out = skybox_vertex_transform(
                 DMat3::IDENTITY,
@@ -1488,9 +1476,9 @@ mod tests {
         }
     }
 
-    /// The upstream `v_texCoord` is the panorama-**local** direction, which is why
-    /// `shaders/panorama.wgsl` multiplies the world ray by the world->local
-    /// `uniforms.transform` before sampling instead of by the forward transform.
+    /// 上游的 `v_texCoord` 是全景**局部**方向，这就是为什么
+    /// `shaders/panorama.wgsl` 在采样前将世界光线乘以世界->局部的
+    /// `uniforms.transform`，而非前向变换。
     #[test]
     fn skybox_texture_coordinate_is_the_panorama_local_direction() {
         let orientation = DMat3::from_rotation_z(std::f64::consts::FRAC_PI_2);
@@ -1498,20 +1486,20 @@ mod tests {
             skybox_vertex_transform(DMat3::IDENTITY, orientation, DMat4::IDENTITY, 100.0, DVec3::X);
         assert_eq!(out.texture_coordinate, DVec3::X);
 
-        // The same vertex in world space points along +Y...
+        // 同一个顶点在世界空间中指向 +Y...
         let world_direction = (orientation * DVec3::X).normalize();
         assert!((world_direction - DVec3::Y).length() < 1.0e-15, "{world_direction:?}");
 
-        // ...and the inverse orientation maps it straight back to the raw box
-        // coordinate, which is the cube-map sampling direction.
+        // ...而逆定向将它直接映回原始盒
+        // 坐标，那正是 cube-map 的采样方向。
         let local = orientation.inverse() * world_direction;
         assert!(
             (local - out.texture_coordinate.normalize()).length() < 1.0e-15,
             "{local:?}"
         );
 
-        // A cube map is camera-centred, so the orientation never carries a
-        // translation: applying it to the zero vector is still zero.
+        // cube map 以相机为中心，因此定向从不携带
+        // 平移：将它作用于零向量仍得零。
         assert_eq!(orientation * DVec3::ZERO, DVec3::ZERO);
     }
 }

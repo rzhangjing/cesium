@@ -1,16 +1,16 @@
-//! Voxel shape trait and shape type enum.
+//! 体素形状特质与形状类型枚举。
 //!
-//! Maps to CesiumJS `Scene/VoxelShape.js` and `Scene/VoxelShapeType.js`.
+//! 映射到 CesiumJS `Scene/VoxelShape.js` 与 `Scene/VoxelShapeType.js`。
 
 use glam::{DMat4, DVec3};
 use serde::{Deserialize, Serialize};
 
-/// An oriented bounding box in 3D space.
+/// 3D 空间中的有向包围盒。
 #[derive(Debug, Clone, PartialEq)]
 pub struct OrientedBoundingBox {
-    /// Center of the bounding box.
+    /// 包围盒的中心。
     pub center: DVec3,
-    /// Half-axes as columns of a 3x3 matrix (stored as DMat4 upper-left).
+    /// 半轴作为 3x3 矩阵的列（存储为 DMat4 的左上部分）。
     pub half_axes: glam::DMat3,
 }
 
@@ -24,12 +24,12 @@ impl Default for OrientedBoundingBox {
 }
 
 impl OrientedBoundingBox {
-    /// Create a new OBB from center and half-axes.
+    /// 由中心和半轴创建新的 OBB。
     pub fn new(center: DVec3, half_axes: glam::DMat3) -> Self {
         Self { center, half_axes }
     }
 
-    /// Compute the bounding sphere radius from the half-axes.
+    /// 由半轴计算包围球半径。
     pub fn bounding_sphere_radius(&self) -> f64 {
         let col0 = self.half_axes.col(0);
         let col1 = self.half_axes.col(1);
@@ -37,10 +37,10 @@ impl OrientedBoundingBox {
         (col0.length_squared() + col1.length_squared() + col2.length_squared()).sqrt()
     }
 
-    /// Test if a point is inside the OBB.
+    /// 测试点是否位于 OBB 内部。
     pub fn contains(&self, point: DVec3) -> bool {
         let offset = point - self.center;
-        // Project onto each axis
+        // 投影到每个轴
         for i in 0..3 {
             let axis = self.half_axes.col(i);
             let half_len = axis.length();
@@ -56,7 +56,7 @@ impl OrientedBoundingBox {
         true
     }
 
-    /// Compute distance from a point to the OBB surface (0 if inside).
+    /// 计算点到 OBB 表面的距离（若在内部则为 0）。
     pub fn distance_to(&self, point: DVec3) -> f64 {
         let offset = point - self.center;
         let mut dist_sq = 0.0;
@@ -77,12 +77,12 @@ impl OrientedBoundingBox {
     }
 }
 
-/// A bounding sphere in 3D space.
+/// 3D 空间中的包围球。
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoundingSphere {
-    /// Center of the sphere.
+    /// 球心。
     pub center: DVec3,
-    /// Radius of the sphere.
+    /// 球的半径。
     pub radius: f64,
 }
 
@@ -96,7 +96,7 @@ impl Default for BoundingSphere {
 }
 
 impl BoundingSphere {
-    /// Create from an oriented bounding box.
+    /// 由有向包围盒创建。
     pub fn from_obb(obb: &OrientedBoundingBox) -> Self {
         Self {
             center: obb.center,
@@ -104,33 +104,33 @@ impl BoundingSphere {
         }
     }
 
-    /// Test if a point is inside the sphere.
+    /// 测试点是否位于球内部。
     pub fn contains(&self, point: DVec3) -> bool {
         (point - self.center).length() <= self.radius
     }
 
-    /// Compute distance from a point to the sphere surface.
+    /// 计算点到球表面的距离。
     pub fn distance_to(&self, point: DVec3) -> f64 {
         ((point - self.center).length() - self.radius).max(0.0)
     }
 }
 
-/// The type of voxel shape, controlling how the voxel grid maps to 3D space.
+/// 体素形状的类型，控制体素网格如何映射到 3D 空间。
 ///
-/// Maps to CesiumJS `VoxelShapeType`.
+/// 映射到 CesiumJS `VoxelShapeType`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum VoxelShapeType {
-    /// A box shape with bounds in [-1, 1]^3.
+    /// 边界位于 [-1, 1]^3 的长方体形状。
     Box,
-    /// An ellipsoid shape with bounds in [lon, lat, height].
+    /// 边界位于 [lon, lat, height] 的椭球体形状。
     Ellipsoid,
-    /// A cylinder shape with bounds in [radius, angle, height].
+    /// 边界位于 [radius, angle, height] 的圆柱体形状。
     Cylinder,
 }
 
 impl VoxelShapeType {
-    /// Get the default minimum bounds for this shape type.
+    /// 获取此形状类型的默认最小边界。
     pub fn default_min_bounds(&self) -> DVec3 {
         match self {
             Self::Box => DVec3::new(-1.0, -1.0, -1.0),
@@ -139,7 +139,7 @@ impl VoxelShapeType {
         }
     }
 
-    /// Get the default maximum bounds for this shape type.
+    /// 获取此形状类型的默认最大边界。
     pub fn default_max_bounds(&self) -> DVec3 {
         match self {
             Self::Box => DVec3::new(1.0, 1.0, 1.0),
@@ -149,26 +149,26 @@ impl VoxelShapeType {
     }
 }
 
-/// Trait for voxel shapes that control culling and rendering of voxel grids.
+/// 体素形状的特质，控制体素网格的剔除与渲染。
 ///
-/// Maps to CesiumJS `VoxelShape` interface.
+/// 映射到 CesiumJS `VoxelShape` 接口。
 pub trait VoxelShape {
-    /// Get the oriented bounding box containing the bounded shape.
+    /// 获取包含有界形状的有向包围盒。
     fn oriented_bounding_box(&self) -> &OrientedBoundingBox;
 
-    /// Get the bounding sphere containing the bounded shape.
+    /// 获取包含有界形状的包围球。
     fn bounding_sphere(&self) -> &BoundingSphere;
 
-    /// Get the transformation matrix containing the bounded shape.
+    /// 获取包含有界形状的变换矩阵。
     fn bound_transform(&self) -> DMat4;
 
-    /// Get the transformation matrix containing the shape, ignoring bounds.
+    /// 获取包含形状的变换矩阵，忽略边界。
     fn shape_transform(&self) -> DMat4;
 
-    /// Get the maximum number of ray-shape intersections for any direction.
+    /// 获取任意方向上射线-形状相交的最大数量。
     fn maximum_intersections_length(&self) -> u32;
 
-    /// Update the shape's state. Returns whether the shape is visible.
+    /// 更新形状状态。返回形状是否可见。
     fn update(
         &mut self,
         model_matrix: DMat4,
@@ -178,10 +178,10 @@ pub trait VoxelShape {
         clip_max_bounds: Option<DVec3>,
     ) -> bool;
 
-    /// Convert a local coordinate to the shape's UV space.
+    /// 将局部坐标转换为形状的 UV 空间。
     fn convert_local_to_shape_uv_space(&self, position_local: DVec3) -> DVec3;
 
-    /// Compute an oriented bounding box for a specified tile.
+    /// 为指定瓦片计算有向包围盒。
     fn compute_obb_for_tile(
         &self,
         tile_level: u32,
@@ -191,13 +191,13 @@ pub trait VoxelShape {
     ) -> OrientedBoundingBox;
 }
 
-/// Linear interpolation.
+/// 线性插值。
 #[inline]
 pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t
 }
 
-/// Clamp a value component-wise between min and max vectors.
+/// 在 min 与 max 向量之间逐分量钳制值。
 #[inline]
 pub fn clamp_vec3(v: DVec3, min: DVec3, max: DVec3) -> DVec3 {
     DVec3::new(

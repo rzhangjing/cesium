@@ -1,15 +1,15 @@
-//! Core/GregorianDateSpec.js → Rust integration tests
-//! 21 original it() blocks ported (1 skipped: JS type-checking N/A in Rust)
+//! Core/GregorianDateSpec.js → Rust 集成测试
+//! 移植了 21 个原始 it() 块（跳过 1 个：JS 类型检查在 Rust 中不适用）
 
 use cesium_time::GregorianDate;
 use cesium_time::{is_leap_year, days_in_month};
 
-/// Helper: create GregorianDate with defaults for missing params (matches CesiumJS constructor)
+/// 辅助函数：用缺省值创建 GregorianDate 的缺失参数（与 CesiumJS 构造函数一致）
 fn greg(y: i32, m: u32, d: u32, h: u32, min: u32, s: u32, ms: f64, leap: bool) -> GregorianDate {
     GregorianDate::new(y, m, d, h, min, s, ms, leap)
 }
 
-// === With valid parameters ===
+// === 使用合法参数 ===
 
 #[test]
 fn constructs_any_valid_date() {
@@ -52,10 +52,10 @@ fn constructs_minimum_date_when_no_parameters() {
 
 #[test]
 fn constructs_valid_dates_for_edge_cases_of_days() {
-    // All max days for each month should not panic
+    // 每个月的最大天数都不应 panic
     let _ = greg(2022, 1, 31, 0, 0, 0, 0.0, false);
     let _ = greg(2000, 2, 28, 0, 0, 0, 0.0, false);
-    let _ = greg(2020, 2, 29, 0, 0, 0, 0.0, false); // leap year
+    let _ = greg(2020, 2, 29, 0, 0, 0, 0.0, false); // 闰年
     let _ = greg(2022, 3, 31, 0, 0, 0, 0.0, false);
     let _ = greg(2022, 4, 30, 0, 0, 0, 0.0, false);
     let _ = greg(2022, 5, 31, 0, 0, 0, 0.0, false);
@@ -70,7 +70,7 @@ fn constructs_valid_dates_for_edge_cases_of_days() {
 
 #[test]
 fn constructs_minimum_date_with_only_year() {
-    // CesiumJS: new GregorianDate(2022) → defaults for rest
+    // CesiumJS：new GregorianDate(2022) → 其余使用缺省值
     let d = greg(2022, 1, 1, 0, 0, 0, 0.0, false);
     assert_eq!(d.year, 2022);
     assert_eq!(d.month, 1);
@@ -160,7 +160,7 @@ fn constructs_date_with_leap_second() {
     assert!(d.is_leap_second);
 }
 
-// === With invalid parameters (debug_assert! panics in debug builds) ===
+// === 使用非法参数（debug_assert! 在 debug 构建中会 panic）===
 
 #[test]
 #[should_panic]
@@ -282,7 +282,7 @@ fn throws_for_invalid_millisecond_negative() {
     let _ = greg(2022, 2, 4, 15, 1, 0, -1.0, false);
 }
 
-// === is_leap_year / days_in_month utility ===
+// === is_leap_year / days_in_month 工具函数 ===
 
 #[test]
 fn test_is_leap_year() {

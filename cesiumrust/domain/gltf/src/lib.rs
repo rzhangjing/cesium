@@ -1,19 +1,19 @@
-//! cesium-gltf: glTF 2.0 domain models
+//! cesium-gltf：glTF 2.0 领域模型
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Scene/GltfLoader.js`
 //! - `Scene/Batched3DModel3DTileContent.js`
-//! - `Scene/Model/` (model rendering pipeline)
-//! - `Scene/ModelComponents.js` (PBR materials, animation, skinning)
-//! - `Scene/Model/CustomShader.js` (custom shader system)
+//! - `Scene/Model/`（model 渲染管线）
+//! - `Scene/ModelComponents.js`（PBR material、动画、蒙皮）
+//! - `Scene/Model/CustomShader.js`（自定义 shader 系统）
 //!
-//! # Features
-//! - glTF 2.0 JSON structure parsing (with sparse accessors)
-//! - GLB binary container format
-//! - b3dm (Batched 3D Model) format
-//! - PBR material model with all KHR extensions
-//! - Skeletal animation runtime (splines, skinning, morph targets)
-//! - Custom shader system (uniforms, varyings, variable parsing)
+//! # 特性
+//! - glTF 2.0 JSON 结构解析（含 sparse accessor）
+//! - GLB 二进制容器格式
+//! - b3dm（Batched 3D Model）格式
+//! - 带有全部 KHR 扩展的 PBR material 模型
+//! - 骨骼动画运行时（样条、蒙皮、morph target）
+//! - 自定义 shader 系统（uniform、varying、变量解析）
 
 pub mod animation_runtime;
 pub mod binary_format;

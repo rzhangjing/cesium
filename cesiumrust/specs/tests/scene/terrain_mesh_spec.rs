@@ -1,17 +1,17 @@
-//! TerrainMesh + QuantizedMesh extended tests.
+//! TerrainMesh + QuantizedMesh 扩展测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Core/TerrainMesh.js
-//! - Core/QuantizedMeshTerrainData.js (mesh creation, normals)
+//! - Core/QuantizedMeshTerrainData.js（网格创建、法线）
 //!
-//! A-class tests: mesh computation, normals, vertex/triangle counts.
+//! A 类测试：网格计算、法线、顶点/三角形数量。
 
 use cesium_terrain::TerrainMesh;
 use cesium_geospatial::bounding::BoundingSphere;
 use glam::DVec3;
 
 fn make_simple_mesh() -> TerrainMesh {
-    // A simple quad (2 triangles) in the XY plane
+    // XY 平面中的一个简单四边形（2 个三角形）
     TerrainMesh {
         positions: vec![
             [0.0, 0.0, 0.0],
@@ -49,7 +49,7 @@ fn terrain_mesh_compute_normals_flat() {
     let normals = mesh.normals.as_ref().unwrap();
     assert_eq!(normals.len(), 4);
 
-    // All normals should point in +Z for a flat XY quad
+    // 平坦 XY 四边形的所有法线应指向 +Z
     for n in normals {
         assert!((n[0]).abs() < 1e-6, "nx should be 0, got {}", n[0]);
         assert!((n[1]).abs() < 1e-6, "ny should be 0, got {}", n[1]);
@@ -64,13 +64,13 @@ fn terrain_mesh_compute_normals_preserves_existing() {
     mesh.normals = Some(existing_normals.clone());
 
     mesh.compute_normals();
-    // Should not overwrite existing normals
+    // 不应覆盖已有法线
     assert_eq!(mesh.normals.as_ref().unwrap(), &existing_normals);
 }
 
 #[test]
 fn terrain_mesh_compute_normals_tilted() {
-    // A single triangle tilted 45 degrees
+    // 单个倾斜 45 度的三角形
     let mut mesh = TerrainMesh {
         positions: vec![
             [0.0, 0.0, 0.0],
@@ -89,7 +89,7 @@ fn terrain_mesh_compute_normals_tilted() {
     let normals = mesh.normals.as_ref().unwrap();
     assert_eq!(normals.len(), 3);
 
-    // All vertices should have the same normal (single triangle)
+    // 所有顶点应有相同法线（单个三角形）
     let n0 = normals[0];
     for n in normals.iter().skip(1) {
         assert!((n[0] - n0[0]).abs() < 1e-6);
@@ -97,7 +97,7 @@ fn terrain_mesh_compute_normals_tilted() {
         assert!((n[2] - n0[2]).abs() < 1e-6);
     }
 
-    // Normal should be normalized
+    // 法线应被归一化
     let len = (n0[0] * n0[0] + n0[1] * n0[1] + n0[2] * n0[2]).sqrt();
     assert!((len - 1.0).abs() < 1e-6);
 }

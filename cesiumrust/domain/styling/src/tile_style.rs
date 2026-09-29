@@ -1,116 +1,116 @@
-//! 3D Tiles Styling Language implementation.
+//! 3D Tiles Styling 语言实现。
 //!
-//! Maps to CesiumJS `Scene/Cesium3DTileStyle.js`:
-//! - Declarative styling expressions
-//! - Property-based conditions
-//! - Color and show expressions
+//! 镜像 CesiumJS `Scene/Cesium3DTileStyle.js`：
+//! - 声明式 styling 表达式
+//! - 基于属性的条件
+//! - 颜色与 show 表达式
 
 use std::collections::HashMap;
 
-/// A style expression that evaluates to a value.
+/// 求值为某个值的样式表达式。
 ///
-/// Maps to CesiumJS `Scene/Expression.js`
+/// 镜像 CesiumJS `Scene/Expression.js`
 #[derive(Debug, Clone, PartialEq)]
 pub enum StyleExpression {
-    /// A constant color [r, g, b, a] (0.0-1.0).
+    /// 常量颜色 [r, g, b, a]（0.0-1.0）。
     Color([f64; 4]),
-    /// A constant boolean.
+    /// 常量布尔值。
     Bool(bool),
-    /// A constant number.
+    /// 常量数字。
     Number(f64),
-    /// A constant string.
+    /// 常量字符串。
     String(String),
-    /// Reference to a feature property: `${propertyName}`.
+    /// 对 feature 属性的引用：`${propertyName}`。
     Property(String),
-    /// A conditional expression: `condition ? true_expr : false_expr`.
+    /// 条件表达式：`condition ? true_expr : false_expr`。
     Conditional {
-        /// The condition expression.
+        /// 条件表达式。
         condition: Box<StyleExpression>,
-        /// Expression when condition is true.
+        /// 条件为真时求值的表达式。
         true_expr: Box<StyleExpression>,
-        /// Expression when condition is false.
+        /// 条件为假时求值的表达式。
         false_expr: Box<StyleExpression>,
     },
-    /// Comparison: `left op right`.
+    /// 比较：`left op right`。
     Compare {
-        /// Left operand.
+        /// 左操作数。
         left: Box<StyleExpression>,
-        /// Comparison operator.
+        /// 比较运算符。
         op: CompareOp,
-        /// Right operand.
+        /// 右操作数。
         right: Box<StyleExpression>,
     },
-    /// Logical AND: `a && b`.
+    /// 逻辑与：`a && b`。
     And(Box<StyleExpression>, Box<StyleExpression>),
-    /// Logical OR: `a || b`.
+    /// 逻辑或：`a || b`。
     Or(Box<StyleExpression>, Box<StyleExpression>),
-    /// Logical NOT: `!expr`.
+    /// 逻辑非：`!expr`。
     Not(Box<StyleExpression>),
-    /// Arithmetic: `left op right`.
+    /// 算术：`left op right`。
     Arithmetic {
-        /// Left operand.
+        /// 左操作数。
         left: Box<StyleExpression>,
-        /// Arithmetic operator.
+        /// 算术运算符。
         op: ArithmeticOp,
-        /// Right operand.
+        /// 右操作数。
         right: Box<StyleExpression>,
     },
-    /// Function call: `func(args...)`.
+    /// 函数调用：`func(args...)`。
     Function {
-        /// Function name.
+        /// 函数名。
         name: String,
-        /// Arguments.
+        /// 参数。
         args: Vec<StyleExpression>,
     },
 }
 
-/// Comparison operators.
+/// 比较运算符。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompareOp {
-    /// Equal (==).
+    /// 等于 (==)。
     Equal,
-    /// Not equal (!=).
+    /// 不等于 (!=)。
     NotEqual,
-    /// Less than (<).
+    /// 小于 (<)。
     LessThan,
-    /// Less than or equal (<=).
+    /// 小于等于 (<=)。
     LessThanOrEqual,
-    /// Greater than (>).
+    /// 大于 (>)。
     GreaterThan,
-    /// Greater than or equal (>=).
+    /// 大于等于 (>=)。
     GreaterThanOrEqual,
 }
 
-/// Arithmetic operators.
+/// 算术运算符。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArithmeticOp {
-    /// Addition (+).
+    /// 加法 (+)。
     Add,
-    /// Subtraction (-).
+    /// 减法 (-)。
     Subtract,
-    /// Multiplication (*).
+    /// 乘法 (*)。
     Multiply,
-    /// Division (/).
+    /// 除法 (/)。
     Divide,
-    /// Modulo (%).
+    /// 取模 (%)。
     Modulo,
 }
 
-/// Feature property values for expression evaluation.
+/// 用于表达式求值的 feature 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum PropertyValue {
-    /// Boolean value.
+    /// 布尔值。
     Bool(bool),
-    /// Numeric value.
+    /// 数值。
     Number(f64),
-    /// String value.
+    /// 字符串值。
     String(String),
-    /// Color value [r, g, b, a].
+    /// 颜色值 [r, g, b, a]。
     Color([f64; 4]),
 }
 
 impl StyleExpression {
-    /// Evaluates the expression with the given feature properties.
+    /// 在给定的 feature 属性下求值表达式。
     pub fn evaluate(&self, properties: &HashMap<String, PropertyValue>) -> PropertyValue {
         match self {
             Self::Color(c) => PropertyValue::Color(*c),
@@ -163,7 +163,7 @@ impl StyleExpression {
         }
     }
 
-    /// Checks if a value is truthy.
+    /// 检查一个值是否为真值（truthy）。
     fn is_truthy(value: &PropertyValue) -> bool {
         match value {
             PropertyValue::Bool(b) => *b,
@@ -173,7 +173,7 @@ impl StyleExpression {
         }
     }
 
-    /// Compares two values.
+    /// 比较两个值。
     fn compare(left: &PropertyValue, op: CompareOp, right: &PropertyValue) -> bool {
         match (left, right) {
             (PropertyValue::Number(l), PropertyValue::Number(r)) => match op {
@@ -198,7 +198,7 @@ impl StyleExpression {
         }
     }
 
-    /// Performs arithmetic on two values.
+    /// 对两个值执行算术运算。
     fn arithmetic(left: &PropertyValue, op: ArithmeticOp, right: &PropertyValue) -> PropertyValue {
         match (left, right) {
             (PropertyValue::Number(l), PropertyValue::Number(r)) => {
@@ -215,7 +215,7 @@ impl StyleExpression {
         }
     }
 
-    /// Evaluates a built-in function.
+    /// 求值一个内置函数。
     fn evaluate_function(
         name: &str,
         args: &[StyleExpression],
@@ -223,7 +223,7 @@ impl StyleExpression {
     ) -> PropertyValue {
         match name {
             "color" => {
-                // color(cssColor) or color(r, g, b, a)
+                // color(cssColor) 或 color(r, g, b, a)
                 if args.len() == 1 {
                     if let StyleExpression::String(css) = &args[0] {
                         return PropertyValue::Color(Self::parse_css_color(css));
@@ -279,7 +279,7 @@ impl StyleExpression {
                 let max = Self::get_number_arg(args, 2, properties);
                 PropertyValue::Number(v.clamp(min, max))
             }
-            // Trigonometric functions
+            // 三角函数
             "cos" => {
                 let v = Self::get_number_arg(args, 0, properties);
                 PropertyValue::Number(v.cos())
@@ -309,7 +309,7 @@ impl StyleExpression {
                 let x = Self::get_number_arg(args, 1, properties);
                 PropertyValue::Number(y.atan2(x))
             }
-            // Angle conversion
+            // 角度转换
             "radians" => {
                 let v = Self::get_number_arg(args, 0, properties);
                 PropertyValue::Number(v.to_radians())
@@ -318,7 +318,7 @@ impl StyleExpression {
                 let v = Self::get_number_arg(args, 0, properties);
                 PropertyValue::Number(v.to_degrees())
             }
-            // Rounding / sign
+            // 取整 / 符号
             "sign" => {
                 let v = Self::get_number_arg(args, 0, properties);
                 let s = if v > 0.0 { 1.0 } else if v < 0.0 { -1.0 } else { 0.0 };
@@ -340,7 +340,7 @@ impl StyleExpression {
                 let v = Self::get_number_arg(args, 0, properties);
                 PropertyValue::Number(v - v.floor())
             }
-            // Exponential / logarithmic
+            // 指数 / 对数
             "exp" => {
                 let v = Self::get_number_arg(args, 0, properties);
                 PropertyValue::Number(v.exp())
@@ -367,14 +367,14 @@ impl StyleExpression {
                 let b = Self::get_number_arg(args, 1, properties);
                 PropertyValue::Number(if b != 0.0 { a % b } else { 0.0 })
             }
-            // Interpolation
+            // 插值
             "mix" => {
                 let a = Self::get_number_arg(args, 0, properties);
                 let b = Self::get_number_arg(args, 1, properties);
                 let t = Self::get_number_arg(args, 2, properties);
                 PropertyValue::Number(a * (1.0 - t) + b * t)
             }
-            // HSL color constructors
+            // HSL 颜色构造器
             "hsl" => {
                 let h = Self::get_number_arg(args, 0, properties);
                 let s = Self::get_number_arg(args, 1, properties);
@@ -390,7 +390,7 @@ impl StyleExpression {
                 let rgb = Self::hsl_to_rgb(h, s, l);
                 PropertyValue::Color([rgb[0], rgb[1], rgb[2], a])
             }
-            // Vector operations (operate on arrays encoded as Color for vec3/vec4)
+            // 向量运算（对以 Color 编码的 vec3/vec4 数组进行操作）
             "length" => {
                 let v = Self::get_vec_arg(args, 0, properties);
                 let len: f64 = v.iter().map(|c| c * c).sum::<f64>().sqrt();
@@ -436,7 +436,7 @@ impl StyleExpression {
         }
     }
 
-    /// Gets a numeric argument value.
+    /// 获取一个数值参数。
     fn get_number_arg(
         args: &[StyleExpression],
         index: usize,
@@ -450,7 +450,7 @@ impl StyleExpression {
         0.0
     }
 
-    /// Gets a vector argument value (from Color or Number).
+    /// 获取一个向量参数（来自 Color 或 Number）。
     fn get_vec_arg(
         args: &[StyleExpression],
         index: usize,
@@ -466,7 +466,7 @@ impl StyleExpression {
         vec![0.0, 0.0, 0.0]
     }
 
-    /// Converts a vector back to a PropertyValue.
+    /// 将向量转换回 PropertyValue。
     fn vec_to_property(v: &[f64]) -> PropertyValue {
         match v.len() {
             4 => PropertyValue::Color([v[0], v[1], v[2], v[3]]),
@@ -476,7 +476,7 @@ impl StyleExpression {
         }
     }
 
-    /// Converts HSL to RGB. h in [0,360], s in [0,1], l in [0,1].
+    /// 将 HSL 转换为 RGB。h 属于 [0,360]，s 属于 [0,1]，l 属于 [0,1]。
     fn hsl_to_rgb(h: f64, s: f64, l: f64) -> [f64; 3] {
         let h = ((h % 360.0) + 360.0) % 360.0;
         let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
@@ -498,7 +498,7 @@ impl StyleExpression {
         [r1 + m, g1 + m, b1 + m]
     }
 
-    /// Parses a CSS color string.
+    /// 解析一个 CSS 颜色字符串。
     fn parse_css_color(css: &str) -> [f64; 4] {
         let css = css.trim().to_lowercase();
         match css.as_str() {
@@ -513,7 +513,7 @@ impl StyleExpression {
             "orange" => [1.0, 0.647, 0.0, 1.0],
             "gray" | "grey" => [0.5, 0.5, 0.5, 1.0],
             _ => {
-                // Try hex format
+                // 尝试十六进制格式
                 if css.starts_with('#') {
                     Self::parse_hex_color(&css)
                 } else {
@@ -523,7 +523,7 @@ impl StyleExpression {
         }
     }
 
-    /// Parses a hex color string.
+    /// 解析一个十六进制颜色字符串。
     fn parse_hex_color(hex: &str) -> [f64; 4] {
         let hex = hex.trim_start_matches('#');
         match hex.len() {
@@ -545,28 +545,28 @@ impl StyleExpression {
     }
 }
 
-/// A 3D Tiles style definition.
+/// 一个 3D Tiles 样式定义。
 ///
-/// Maps to CesiumJS `Scene/Cesium3DTileStyle.js`
+/// 镜像 CesiumJS `Scene/Cesium3DTileStyle.js`
 #[derive(Debug, Clone, Default)]
 pub struct TileStyle {
-    /// Show expression (visibility).
+    /// show 表达式（可见性）。
     pub show: Option<StyleExpression>,
-    /// Color expression.
+    /// 颜色表达式。
     pub color: Option<StyleExpression>,
-    /// Point size expression.
+    /// point size 表达式。
     pub point_size: Option<StyleExpression>,
-    /// Meta properties (key-value expressions).
+    /// 元属性（键值表达式）。
     pub meta: HashMap<String, StyleExpression>,
 }
 
 impl TileStyle {
-    /// Creates a new empty style.
+    /// 创建一个空样式。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Creates a style with a constant color.
+    /// 创建一个带常量颜色的样式。
     pub fn with_color(color: [f64; 4]) -> Self {
         Self {
             color: Some(StyleExpression::Color(color)),
@@ -574,7 +574,7 @@ impl TileStyle {
         }
     }
 
-    /// Evaluates the show expression for a feature.
+    /// 为某个 feature 求值 show 表达式。
     pub fn evaluate_show(&self, properties: &HashMap<String, PropertyValue>) -> bool {
         match &self.show {
             Some(expr) => {
@@ -588,7 +588,7 @@ impl TileStyle {
         }
     }
 
-    /// Evaluates the color expression for a feature.
+    /// 为某个 feature 求值颜色表达式。
     pub fn evaluate_color(&self, properties: &HashMap<String, PropertyValue>) -> [f64; 4] {
         match &self.color {
             Some(expr) => {
@@ -602,7 +602,7 @@ impl TileStyle {
         }
     }
 
-    /// Evaluates the point size expression for a feature.
+    /// 为某个 feature 求值 point size 表达式。
     pub fn evaluate_point_size(&self, properties: &HashMap<String, PropertyValue>) -> f64 {
         match &self.point_size {
             Some(expr) => {

@@ -1,11 +1,11 @@
-//! 3D Tiles Styling language implementation.
+//! 3D Tiles Styling 语言实现。
 //!
-//! Maps to CesiumJS:
+//! 镜像 CesiumJS：
 //! - `Scene/Cesium3DTileStyle.js`
 //! - `Scene/Expression.js`
 //! - `Scene/ConditionsExpression.js`
 //!
-//! The 3D Tiles Styling language allows defining styles based on feature properties:
+//! 3D Tiles Styling 语言允许基于 feature 属性定义样式：
 //! ```json
 //! {
 //!   "color": {
@@ -23,19 +23,18 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-// ── M7-D: JSEP styling-engine feature gate ───────────────────────────────
+// ── M7-D：JSEP styling 引擎 feature 门控 ────────────────────────────────────
 
-/// Env var toggling the new `cesium-styling` JSEP expression engine.
+/// 切换新 `cesium-styling` JSEP 表达式引擎的环境变量。
 ///
-/// Mirrors the M0.3 feature-flag registry constant `ENV_ENABLE_STYLING_JSEP`
-/// (env string `CESIUM_ENABLE_STYLING_JSEP`). This crate is a **domain** crate
-/// and must not depend on the application-layer `feature_flags` module (DDD
-/// dependency direction), so the truthy read is duplicated locally with
-/// byte-identical M0.3 semantics. Default OFF → legacy naive parser.
+/// 镜像 M0.3 feature-flag 注册表常量 `ENV_ENABLE_STYLING_JSEP`
+///（环境字符串 `CESIUM_ENABLE_STYLING_JSEP`）。本 crate 是一个 **domain** crate，
+/// 不得依赖应用层的 `feature_flags` 模块（DDD 依赖方向），因此
+/// truthy 读取在本地重复实现，与 M0.3 语义逐字节一致。默认 OFF → 遗留的朴素解析器。
 const ENV_ENABLE_STYLING_JSEP: &str = "CESIUM_ENABLE_STYLING_JSEP";
 
-/// M0.3 truthy tokens: case-insensitive, whitespace-trimmed `1|true|yes|on`.
-/// Byte-identical to `cesium-app::feature_flags::truthy`.
+/// M0.3 truthy token：大小写不敏感、去空白后匹配的 `1|true|yes|on`。
+/// 与 `cesium-app::feature_flags::truthy` 逐字节一致。
 fn truthy(raw: &str) -> bool {
     matches!(
         raw.trim().to_ascii_lowercase().as_str(),
@@ -43,11 +42,11 @@ fn truthy(raw: &str) -> bool {
     )
 }
 
-/// Returns `true` when the JSEP styling engine gate is enabled (default OFF).
+/// 当 JSEP styling 引擎门控启用时返回 `true`（默认 OFF）。
 ///
-/// When enabled, [`Expression::parse`] compiles via `cesium_styling` and
-/// evaluation delegates to the new engine (with a legacy fallback for forms the
-/// engine rejects). When disabled, the legacy naive parser is used unchanged.
+/// 启用时，[`Expression::parse`] 通过 `cesium_styling` 编译，且
+/// 求值委托给新引擎（对引擎拒绝的形式保留遗留回退）。当禁用时，
+/// 则原样使用遗留的朴素解析器。
 pub fn styling_jsep_enabled() -> bool {
     match std::env::var(ENV_ENABLE_STYLING_JSEP) {
         Ok(v) => truthy(&v),
@@ -55,76 +54,73 @@ pub fn styling_jsep_enabled() -> bool {
     }
 }
 
-/// A parsed expression that can be evaluated against feature properties.
+/// 一个可针对一组 feature 属性求值的已解析表达式。
 ///
-/// Maps to CesiumJS `Scene/Expression.js`
+/// 映射到 CesiumJS `Scene/Expression.js`
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
-    /// A constant boolean value.
+    /// 常量布尔值。
     BoolConstant(bool),
-    /// A constant numeric value.
+    /// 常量数值。
     NumberConstant(f64),
-    /// A constant string value.
+    /// 常量字符串值。
     StringConstant(String),
-    /// A property reference: `${propertyName}`
+    /// 属性引用：`${propertyName}`
     PropertyRef(String),
-    /// A binary operation (e.g., `${Height} >= 100`)
+    /// 二元运算（例如 `${Height} >= 100`）
     BinaryOp {
-        /// Left operand.
+        /// 左操作数。
         left: Box<Expression>,
-        /// Operator.
+        /// 运算符。
         op: BinaryOperator,
-        /// Right operand.
+        /// 右操作数。
         right: Box<Expression>,
     },
-    /// A unary operation (e.g., `!${visible}`)
+    /// 一元运算（例如 `!${visible}`）
     UnaryOp {
-        /// Operator.
+        /// 运算符。
         op: UnaryOperator,
-        /// Operand.
+        /// 操作数。
         operand: Box<Expression>,
     },
-    /// A function call (e.g., `color('red', 0.5)`)
+    /// 函数调用（例如 `color('red', 0.5)`）
     FunctionCall {
-        /// Function name.
+        /// 函数名。
         name: String,
-        /// Arguments.
+        /// 参数。
         args: Vec<Expression>,
     },
-    /// A color literal (parsed from `color('name')` or `color(r, g, b, a)`)
+    /// 颜色字面量（从 `color('name')` 或 `color(r, g, b, a)` 解析）
     ColorLiteral([f64; 4]),
-    /// M7-D: an expression compiled by the `cesium-styling` JSEP engine.
+    /// M7-D：由 `cesium-styling` JSEP 引擎编译的表达式。
     ///
-    /// Only produced when [`styling_jsep_enabled()`] is true. Evaluation
-    /// delegates to the new engine and falls back to the legacy parser when the
-    /// engine rejects an expression form it does not model (e.g. `color(r,g,b,a)`
-    /// with numeric components). Additive variant: no existing consumer matches
-    /// [`Expression`] exhaustively.
+    /// 仅当 [`styling_jsep_enabled()`] 为 true 时产生。求值委托给新引擎，
+    /// 并在引擎拒绝它所建模的表达式形式时（例如带数值分量的
+    /// `color(r,g,b,a)`）回退到遗留解析器。新增变体：现有消费者不会
+    /// 对 [`Expression`] 做穷尽匹配。
     Jsep(JsepExpression),
 }
 
-/// A JSEP-compiled expression (M7-D double-track wrapper).
+/// 一个 JSEP 编译的表达式（M7-D 双轨包装器）。
 ///
-/// `cesium_styling::Expression` carries no `Clone`/`Debug`/`PartialEq` derives,
-/// so it is held behind an [`Arc`] and the three traits are implemented
-/// manually: `Clone` shares the compiled AST, `Debug` prints only the source
-/// text, and `PartialEq` compares sources. This keeps [`Expression`]'s derives
-/// (and thus `TileStyle: Clone/Debug`) intact.
+/// `cesium_styling::Expression` 不携带 `Clone`/`Debug`/`PartialEq` derive，
+/// 因此它被持有在一个 [`Arc`] 后面，且这三个 trait 手动实现：`Clone`
+/// 共享已编译的 AST，`Debug` 仅打印源代码文本，`PartialEq` 比较源文本。这保持了
+/// [`Expression`] 的 derive（以及 `TileStyle: Clone/Debug`）完整。
 pub struct JsepExpression {
-    /// The original expression source (pre-define/variable expansion), also used
-    /// to re-parse via the legacy fallback when the engine errors at eval time.
+    /// 原始表达式源码（预 define/变量展开前），也用于在引擎于求值时
+    /// 出错时通过遗留回退重新解析。
     pub source: String,
-    /// The compiled engine expression, shared cheaply on clone.
+    /// 已编译的引擎表达式，克隆时廉价共享。
     compiled: Arc<cesium_styling::Expression>,
 }
 
 impl JsepExpression {
-    /// Compiles `source` with the JSEP engine, or `None` on parse failure.
+    /// 用 JSEP 引擎编译 `source`，解析失败时返回 `None`。
     ///
-    /// `defines` are not threaded through [`Expression::parse`]'s signature; the
-    /// legacy parser likewise stored-but-never-expanded defines, so passing
-    /// `None` preserves bit-exact parity. Define expansion needs an API change
-    /// and is deferred (M7.7).
+    /// `defines` 不会穿过 [`Expression::parse`] 的签名传递；遗留解析器同样
+    /// 只存储而从不展开 define，因此传 `None` 可保持位精确的一致性。
+    /// Define 展开需要 API 变更，已推迟（M7.7）。
     fn compile(source: &str) -> Option<Self> {
         cesium_styling::Expression::try_new(source, None)
             .ok()
@@ -156,7 +152,7 @@ impl PartialEq for JsepExpression {
     }
 }
 
-/// Binary operators for expressions.
+/// 表达式的二元运算符。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOperator {
     /// `+`
@@ -187,42 +183,42 @@ pub enum BinaryOperator {
     Or,
 }
 
-/// Unary operators for expressions.
+/// 表达式的一元运算符。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOperator {
-    /// `!` (logical not)
+    /// `!`（逻辑非）
     Not,
-    /// `-` (negation)
+    /// `-`（取负）
     Negate,
 }
 
-/// The result of evaluating an expression.
+/// 表达式求值的结果。
 #[derive(Debug, Clone, PartialEq)]
 pub enum EvalResult {
-    /// Boolean result.
+    /// 布尔结果。
     Bool(bool),
-    /// Numeric result.
+    /// 数值结果。
     Number(f64),
-    /// String result.
+    /// 字符串结果。
     String(String),
-    /// Color result [r, g, b, a] in 0-1 range.
+    /// 颜色结果 [r, g, b, a]，范围为 0-1。
     Color([f64; 4]),
 }
 
 impl EvalResult {
-    /// Converts to boolean (for show expressions).
+    /// 转换为布尔（用于 show 表达式）。
     pub fn as_bool(&self) -> bool {
         match self {
             Self::Bool(b) => *b,
-            // JS `Boolean(NaN)` === false; guard NaN so an `undefined`-derived
-            // NaN (gate=1 strict coercion) stays falsy, matching upstream `show`.
+            // JS `Boolean(NaN)` === false；守卫 NaN 以使源自 `undefined`
+            // 的 NaN（gate=1 严格强转）保持为 falsy，与上游 `show` 一致。
             Self::Number(n) => *n != 0.0 && !n.is_nan(),
             Self::String(s) => !s.is_empty() && s != "false",
             Self::Color(_) => true,
         }
     }
 
-    /// Converts to number (for pointSize expressions).
+    /// 转换为数值（用于 pointSize 表达式）。
     pub fn as_number(&self) -> f64 {
         match self {
             Self::Bool(b) => {
@@ -238,7 +234,7 @@ impl EvalResult {
         }
     }
 
-    /// Converts to color (for color expressions).
+    /// 转换为颜色（用于 color 表达式）。
     pub fn as_color(&self) -> [f64; 4] {
         match self {
             Self::Color(c) => *c,
@@ -256,7 +252,7 @@ impl EvalResult {
 }
 
 impl Expression {
-    /// Evaluates the expression against a set of feature properties.
+    /// 针对一组 feature 属性求值表达式。
     pub fn evaluate(&self, properties: &HashMap<String, Value>) -> EvalResult {
         match self {
             Self::BoolConstant(b) => EvalResult::Bool(*b),
@@ -289,10 +285,9 @@ impl Expression {
                 let feature = JsonFeature(properties);
                 match jsep.compiled.evaluate(Some(&feature)) {
                     Ok(value) => cesium_value_to_eval_result(&value),
-                    // The engine rejects some legacy-accepted forms (e.g.
-                    // `color(r,g,b,a)` with numeric components). Fall back to the
-                    // legacy parser on the original source so `evaluate` stays
-                    // total and bit-exact with the pre-M7-D behaviour.
+                    // 引擎拒绝某些遗留接受的格式（例如带数值分量的
+                    // `color(r,g,b,a)`）。在原始源码上回退到遗留解析器，以使 `evaluate`
+                    // 保持全函数并与 M7-D 之前的行为位精确一致。
                     Err(_) => {
                         #[allow(deprecated)]
                         legacy_parse(&jsep.source).evaluate(properties)
@@ -302,20 +297,19 @@ impl Expression {
         }
     }
 
-    /// Parses an expression from a string.
+    /// 从字符串解析一个表达式。
     ///
-    /// M7-D double-track dispatch: when [`styling_jsep_enabled()`] is true the
-    /// input is compiled by the `cesium-styling` JSEP engine and wrapped as
-    /// [`Expression::Jsep`]; otherwise (gate default OFF) it delegates to the
-    /// legacy naive parser [`legacy_parse`]. `parse` stays infallible: a JSEP
-    /// compile failure falls back to the legacy parser.
+    /// M7-D 双轨分发：当 [`styling_jsep_enabled()`] 为 true 时，输入由
+    /// `cesium-styling` JSEP 引擎编译并包装为 [`Expression::Jsep`]；否则
+    ///（门控默认 OFF）委托给遗留的朴素解析器 [`legacy_parse`]。`parse` 保持不会失败：
+    /// JSEP 编译失败会回退到遗留解析器。
     ///
-    /// Supports:
-    /// - Property references: `${Height}`
-    /// - Comparisons: `${Height} >= 100`
-    /// - Boolean literals: `true`, `false`
-    /// - Numeric literals: `2.0`, `100`
-    /// - Function calls: `color('red')`, `color(1.0, 0.0, 0.0, 1.0)`
+    /// 支持：
+    /// - 属性引用：`${Height}`
+    /// - 比较：`${Height} >= 100`
+    /// - 布尔字面量：`true`、`false`
+    /// - 数值字面量：`2.0`、`100`
+    /// - 函数调用：`color('red')`、`color(1.0, 0.0, 0.0, 1.0)`
     pub fn parse(input: &str) -> Self {
         if styling_jsep_enabled() {
             if let Some(jsep) = JsepExpression::compile(input) {
@@ -327,18 +321,17 @@ impl Expression {
     }
 }
 
-/// The legacy naive expression parser (pre-M7-D).
+/// 遗留的朴素表达式解析器（M7-D 之前）。
 ///
-/// Retained verbatim behind the [`styling_jsep_enabled()`] gate and as the
-/// fallback for expression forms the JSEP engine rejects (e.g. `color(r,g,b,a)`
-/// with numeric components). Known defects: first-match operator precedence and
-/// `defines` stored but never expanded. The JSEP engine is the corrected
-/// replacement; scheduled for removal after 2026-10-15 (M7.7).
+/// 原样保留在 [`styling_jsep_enabled()`] 门控之后，并作为 JSEP 引擎拒绝的
+/// 表达式形式（例如带数值分量的 `color(r,g,b,a)`）的回退。已知缺陷：首次
+/// 匹配的运算符优先级，以及 `defines` 只存储不展开。JSEP 引擎是修正后的
+/// 替代物；计定于 2026-10-15 之后移除（M7.7）。
 #[deprecated(note = "use cesium_styling::Expression; remove after 2026-10-15")]
 fn legacy_parse(input: &str) -> Expression {
     let input = input.trim();
 
-    // Boolean literals
+    // 布尔字面量
     if input == "true" {
         return Expression::BoolConstant(true);
     }
@@ -346,29 +339,29 @@ fn legacy_parse(input: &str) -> Expression {
         return Expression::BoolConstant(false);
     }
 
-    // Numeric literal
+    // 数值字面量
     if let Ok(n) = input.parse::<f64>() {
         return Expression::NumberConstant(n);
     }
 
-    // String literal
+    // 字符串字面量
     if (input.starts_with('\'') && input.ends_with('\''))
         || (input.starts_with('"') && input.ends_with('"'))
     {
         return Expression::StringConstant(input[1..input.len() - 1].to_string());
     }
 
-    // Property reference (only if the entire string is a single property ref)
+    // 属性引用（仅当整个字符串是一个单一属性引用时）
     if input.starts_with("${") && input.ends_with('}') {
-        // Check if this is a single property ref (no other content after the closing })
+        // 检查这是否是一个单一属性引用（闭合的 } 之后没有其他内容）
         let inner = &input[2..input.len() - 1];
-        // Make sure there's no nested ${ or } inside
+        // 确保内部没有嵌套的 ${ 或 }
         if !inner.contains("${") && !inner.contains('}') {
             return Expression::PropertyRef(inner.to_string());
         }
     }
 
-    // Function call: color(...), rgb(...), etc.
+    // 函数调用：color(...)、rgb(...) 等。
     if let Some(paren_start) = input.find('(') {
         if input.ends_with(')') {
             let func_name = input[..paren_start].trim();
@@ -382,8 +375,8 @@ fn legacy_parse(input: &str) -> Expression {
         }
     }
 
-    // Binary operations (simple parsing for common cases)
-    // Try comparison operators first
+    // 二元运算（对常见情况的简单解析）
+    // 先尝试比较运算符
     for op_str in [">=", "<=", "!=", "==", ">", "<"] {
         if let Some(pos) = find_operator(input, op_str) {
             let left_str = input[..pos].trim();
@@ -407,7 +400,7 @@ fn legacy_parse(input: &str) -> Expression {
         }
     }
 
-    // Arithmetic operators
+    // 算术运算符
     for op_str in ["+", "-", "*", "/"] {
         if let Some(pos) = find_operator(input, op_str) {
             let left_str = input[..pos].trim();
@@ -431,7 +424,7 @@ fn legacy_parse(input: &str) -> Expression {
         }
     }
 
-    // Logical operators
+    // 逻辑运算符
     for op_str in ["&&", "||"] {
         if let Some(pos) = input.find(op_str) {
             let left_str = input[..pos].trim();
@@ -451,7 +444,7 @@ fn legacy_parse(input: &str) -> Expression {
         }
     }
 
-    // Unary not
+    // 一元非
     if let Some(stripped) = input.strip_prefix('!') {
         let operand = legacy_parse(stripped);
         return Expression::UnaryOp {
@@ -460,11 +453,11 @@ fn legacy_parse(input: &str) -> Expression {
         };
     }
 
-    // Fallback: treat as string
+    // 回退：视为字符串
     Expression::StringConstant(input.to_string())
 }
 
-/// Finds an operator position, avoiding matches inside `${...}` or quotes.
+/// 查找一个运算符位置，避免匹配 `${...}` 或引号内的内容。
 fn find_operator(input: &str, op: &str) -> Option<usize> {
     let mut in_property = false;
     let mut in_quote = false;
@@ -505,7 +498,7 @@ fn find_operator(input: &str, op: &str) -> Option<usize> {
             continue;
         }
 
-        // Check for operator match
+        // 检查运算符匹配
         if i + op_chars.len() <= chars.len() {
             let matches = op_chars
                 .iter()
@@ -522,10 +515,10 @@ fn find_operator(input: &str, op: &str) -> Option<usize> {
     None
 }
 
-/// Parses function arguments from a comma-separated string.
+/// 从逗号分隔的字符串解析函数参数。
 ///
-/// Legacy-only helper: recursion stays on [`legacy_parse`] so the fallback path
-/// never mixes in JSEP-compiled sub-expressions.
+/// 仅遗留的辅助函数：递归始终落在 [`legacy_parse`] 上，因此回退路径
+/// 永不会混入 JSEP 编译的子表达式。
 #[deprecated(note = "use cesium_styling::Expression; remove after 2026-10-15")]
 #[allow(deprecated)]
 fn parse_function_args(args_str: &str) -> Vec<Expression> {
@@ -578,7 +571,7 @@ fn parse_function_args(args_str: &str) -> Vec<Expression> {
     args
 }
 
-/// Evaluates a binary operation.
+/// 求值一个二元运算。
 fn eval_binary_op(left: &EvalResult, op: BinaryOperator, right: &EvalResult) -> EvalResult {
     match op {
         BinaryOperator::Add => EvalResult::Number(left.as_number() + right.as_number()),
@@ -615,7 +608,7 @@ fn eval_binary_op(left: &EvalResult, op: BinaryOperator, right: &EvalResult) -> 
     }
 }
 
-/// Evaluates a function call.
+/// 求值一个函数调用。
 fn eval_function(
     name: &str,
     args: &[Expression],
@@ -627,7 +620,7 @@ fn eval_function(
                 return EvalResult::Color([1.0, 1.0, 1.0, 1.0]);
             }
 
-            // color('name') or color('name', alpha)
+            // color('name') 或 color('name', alpha)
             if let Expression::StringConstant(color_name) = &args[0] {
                 let base_color = parse_color_name(color_name);
                 let alpha = if args.len() > 1 {
@@ -638,7 +631,7 @@ fn eval_function(
                 return EvalResult::Color([base_color[0], base_color[1], base_color[2], alpha]);
             }
 
-            // color(r, g, b) or color(r, g, b, a)
+            // color(r, g, b) 或 color(r, g, b, a)
             if args.len() >= 3 {
                 let r = args[0].evaluate(properties).as_number();
                 let g = args[1].evaluate(properties).as_number();
@@ -673,7 +666,7 @@ fn eval_function(
             EvalResult::Color([1.0, 1.0, 1.0, 1.0])
         }
         "vec4" => {
-            // vec4(value) -> grayscale color
+            // vec4(value) -> 灰度颜色
             if !args.is_empty() {
                 let v = args[0].evaluate(properties).as_number();
                 return EvalResult::Color([v, v, v, 1.0]);
@@ -715,15 +708,15 @@ fn eval_function(
                 let v = args[0].evaluate(properties).as_number();
                 let min = args[1].evaluate(properties).as_number();
                 let max = args[2].evaluate(properties).as_number();
-                // `f64::clamp` panics when `min > max` or on NaN (a DoS vector
-                // for attacker-supplied styling). Use the non-panicking
-                // conditional form; NaN falls through to `v`.
+                // 当 `min > max` 或遇到 NaN 时 `f64::clamp` 会 panic（对攻击者
+                // 提供的 styling 而言是一个 DoS 向量）。使用不会 panic 的条件
+                // 形式；NaN 会直接落到 `v`。
                 let clamped = if v < min { min } else if v > max { max } else { v };
                 return EvalResult::Number(clamped);
             }
             EvalResult::Number(0.0)
         }
-        // Trigonometric
+        // 三角函数
         "cos" => {
             let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
             EvalResult::Number(v.cos())
@@ -756,7 +749,7 @@ fn eval_function(
             }
             EvalResult::Number(0.0)
         }
-        // Angle conversion
+        // 角度转换
         "radians" => {
             let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
             EvalResult::Number(v.to_radians())
@@ -765,11 +758,11 @@ fn eval_function(
             let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
             EvalResult::Number(v.to_degrees())
         }
-        // Rounding / sign
+        // 取整 / 符号
         "sign" => {
             let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
-            // `else { v }` (not `0.0`): returns the original value for NaN and
-            // ±0, matching CesiumMath.sign.
+            // `else { v }`（而非 `0.0`）：对 NaN 和 ±0 返回原始值，
+            // 与 CesiumMath.sign 一致。
             let s = if v > 0.0 { 1.0 } else if v < 0.0 { -1.0 } else { v };
             EvalResult::Number(s)
         }
@@ -783,15 +776,15 @@ fn eval_function(
         }
         "round" => {
             let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
-            // JS Math.round is half-toward-+∞ (Math.round(-0.5) === 0), whereas
-            // `f64::round` is half-away-from-zero. Use `(v + 0.5).floor()`.
+            // JS Math.round 是向 +∞ 方向取半（Math.round(-0.5) === 0），而
+            // `f64::round` 是远离零取半。使用 `(v + 0.5).floor()`。
             EvalResult::Number((v + 0.5).floor())
         }
         "fract" => {
             let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
             EvalResult::Number(v - v.floor())
         }
-        // Exponential / logarithmic
+        // 指数 / 对数
         "exp" => {
             let v = args.first().map(|a| a.evaluate(properties).as_number()).unwrap_or(0.0);
             EvalResult::Number(v.exp())
@@ -824,7 +817,7 @@ fn eval_function(
             }
             EvalResult::Number(0.0)
         }
-        // Interpolation
+        // 插值
         "mix" => {
             if args.len() >= 3 {
                 let a = args[0].evaluate(properties).as_number();
@@ -834,7 +827,7 @@ fn eval_function(
             }
             EvalResult::Number(0.0)
         }
-        // HSL color
+        // HSL 颜色
         "hsl" => {
             if args.len() >= 3 {
                 let h = args[0].evaluate(properties).as_number();
@@ -860,7 +853,7 @@ fn eval_function(
     }
 }
 
-/// Parses a CSS color name to [r, g, b] in 0-1 range.
+/// 将一个 CSS 颜色名解析为 [r, g, b]，范围为 0-1。
 fn parse_color_name(name: &str) -> [f64; 3] {
     match name.to_lowercase().as_str() {
         "red" => [1.0, 0.0, 0.0],
@@ -882,11 +875,11 @@ fn parse_color_name(name: &str) -> [f64; 3] {
         "olive" => [0.502, 0.502, 0.0],
         "aqua" => [0.0, 1.0, 1.0],
         "silver" => [0.753, 0.753, 0.753],
-        _ => [1.0, 1.0, 1.0], // default white
+        _ => [1.0, 1.0, 1.0], // 默认为白色
     }
 }
 
-/// Converts HSL to RGB. h in [0,360], s in [0,1], l in [0,1].
+/// 将 HSL 转换为 RGB。h 范围为 [0,360]，s 范围为 [0,1]，l 范围为 [0,1]。
 fn hsl_to_rgb(h: f64, s: f64, l: f64) -> [f64; 3] {
     let h = ((h % 360.0) + 360.0) % 360.0;
     let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
@@ -908,7 +901,7 @@ fn hsl_to_rgb(h: f64, s: f64, l: f64) -> [f64; 3] {
     [r1 + m, g1 + m, b1 + m]
 }
 
-/// Converts a JSON value to an EvalResult.
+/// 将一个 JSON 值转换为 EvalResult。
 fn json_to_eval_result(value: &Value) -> EvalResult {
     match value {
         Value::Bool(b) => EvalResult::Bool(*b),
@@ -934,11 +927,11 @@ fn json_to_eval_result(value: &Value) -> EvalResult {
     }
 }
 
-// ── M7-D: JSEP engine bridge (feature adapter + value converters) ────────
+// ── M7-D：JSEP 引擎 bridge（feature 适配器 + 值转换器）────────────────
 
-/// Adapter exposing `&HashMap<String, serde_json::Value>` as a
-/// [`cesium_styling::ExpressionFeature`] so the JSEP engine can read feature
-/// properties during evaluation.
+/// 适配器：将 `&HashMap<String, serde_json::Value>` 暴露为一个
+/// [`cesium_styling::ExpressionFeature`]，以便 JSEP 引擎在求值期间
+/// 能读取 feature 属性。
 struct JsonFeature<'a>(&'a HashMap<String, Value>);
 
 impl cesium_styling::ExpressionFeature for JsonFeature<'_> {
@@ -947,8 +940,8 @@ impl cesium_styling::ExpressionFeature for JsonFeature<'_> {
     }
 }
 
-/// Converts a `serde_json::Value` feature property into a
-/// [`cesium_styling::Value`] for the JSEP engine.
+/// 将一个 `serde_json::Value` feature 属性转换为供 JSEP 引擎使用的
+/// [`cesium_styling::Value`]。
 fn json_to_cesium_value(value: &Value) -> cesium_styling::Value {
     match value {
         Value::Null => cesium_styling::Value::Null,
@@ -962,13 +955,13 @@ fn json_to_cesium_value(value: &Value) -> cesium_styling::Value {
     }
 }
 
-/// Converts a [`cesium_styling::Value`] evaluation result into an [`EvalResult`].
+/// 将一个 [`cesium_styling::Value`] 求值结果转换为 [`EvalResult`]。
 ///
-/// Gate=1 (JSEP) strict-upstream coercion: `Undefined` -> `Number(NaN)` and
-/// `Null` -> `Number(0.0)`, mirroring JS `Number(undefined)` / `Number(null)`.
-/// This keeps `${x} + 1` on a missing property `NaN` rather than `1.0`. The
-/// legacy "missing property -> 0.0" fallback is preserved only on the gate=0
-/// track (`Expression::PropertyRef` / `json_to_eval_result`).
+/// Gate=1（JSEP）严格对齐上游的强转：`Undefined` -> `Number(NaN)` 且
+/// `Null` -> `Number(0.0)`，镜像 JS 的 `Number(undefined)` / `Number(null)`。
+/// 这使属性缺失时的 `${x} + 1` 保持为 `NaN` 而非 `1.0`。遗留的
+/// “缺失属性 -> 0.0”回退仅在 gate=0 轨道上保留
+///（[`Expression::PropertyRef`] / `json_to_eval_result`）。
 fn cesium_value_to_eval_result(value: &cesium_styling::Value) -> EvalResult {
     use cesium_styling::Value as CV;
     match value {
@@ -980,36 +973,36 @@ fn cesium_value_to_eval_result(value: &cesium_styling::Value) -> EvalResult {
         CV::Cartesian4(v) => EvalResult::Color([v.x, v.y, v.z, v.w]),
         CV::Cartesian3(v) => EvalResult::Color([v.x, v.y, v.z, 1.0]),
         CV::Cartesian2(v) => EvalResult::Color([v.x, v.y, 0.0, 1.0]),
-        // RegExp / Array results have no EvalResult equivalent; match the legacy
-        // safe default (see `json_to_eval_result`).
+        // RegExp / Array 结果没有对应的 EvalResult；匹配遗留的
+        // 安全默认值（参见 `json_to_eval_result`）。
         CV::RegExp(_) | CV::Array(_) => EvalResult::Number(0.0),
     }
 }
 
-/// A condition in a conditions expression: [condition, result].
+/// conditions 表达式中的一个条件：[condition, result]。
 #[derive(Debug, Clone)]
 pub struct Condition {
-    /// The condition expression (evaluates to boolean).
+    /// 条件表达式（求值为布尔）。
     pub condition: Expression,
-    /// The result expression (evaluated if condition is true).
+    /// 结果表达式（当条件为真时求值）。
     pub result: Expression,
 }
 
-/// A conditions expression: a list of [condition, result] pairs.
+/// 一个 conditions 表达式：[condition, result] 对的列表。
 ///
-/// Maps to CesiumJS `Scene/ConditionsExpression.js`
+/// 映射到 CesiumJS `Scene/ConditionsExpression.js`
 ///
-/// The first condition that evaluates to true determines the result.
+/// 第一个求值为真的条件决定结果。
 #[derive(Debug, Clone)]
 pub struct ConditionsExpression {
-    /// The conditions in order.
+    /// 按顺序排列的条件。
     pub conditions: Vec<Condition>,
 }
 
 impl ConditionsExpression {
-    /// Parses a conditions expression from JSON.
+    /// 从 JSON 解析一个 conditions 表达式。
     ///
-    /// Expected format:
+    /// 预期格式：
     /// ```json
     /// {
     ///   "conditions": [
@@ -1037,9 +1030,9 @@ impl ConditionsExpression {
         Some(Self { conditions })
     }
 
-    /// Evaluates the conditions against feature properties.
+    /// 针对一组 feature 属性求值条件。
     ///
-    /// Returns the result of the first condition that evaluates to true.
+    /// 返回第一个求值为真的条件的结果。
     pub fn evaluate(&self, properties: &HashMap<String, Value>) -> EvalResult {
         for cond in &self.conditions {
             let cond_result = cond.condition.evaluate(properties);
@@ -1047,22 +1040,22 @@ impl ConditionsExpression {
                 return cond.result.evaluate(properties);
             }
         }
-        // Default: return white color for color expressions, true for show
+        // 默认：对 color 表达式返回白色，对 show 返回 true
         EvalResult::Color([1.0, 1.0, 1.0, 1.0])
     }
 }
 
-/// A style expression that can be either a simple expression or conditions.
+/// 一个样式表达式，可以是简单表达式或 conditions。
 #[derive(Debug, Clone)]
 pub enum StyleExpression {
-    /// A simple expression.
+    /// 一个简单表达式。
     Simple(Expression),
-    /// A conditions expression.
+    /// 一个 conditions 表达式。
     Conditions(ConditionsExpression),
 }
 
 impl StyleExpression {
-    /// Parses a style expression from JSON.
+    /// 从 JSON 解析一个样式表达式。
     pub fn from_json(json: &Value) -> Option<Self> {
         match json {
             Value::String(s) => Some(Self::Simple(Expression::parse(s))),
@@ -1081,7 +1074,7 @@ impl StyleExpression {
         }
     }
 
-    /// Evaluates the expression against feature properties.
+    /// 针对一组 feature 属性求值表达式。
     pub fn evaluate(&self, properties: &HashMap<String, Value>) -> EvalResult {
         match self {
             Self::Simple(expr) => expr.evaluate(properties),
@@ -1090,33 +1083,33 @@ impl StyleExpression {
     }
 }
 
-/// A 3D Tiles style definition.
+/// 一个 3D Tiles 样式定义。
 ///
-/// Maps to CesiumJS `Scene/Cesium3DTileStyle.js`
+/// 映射到 CesiumJS `Scene/Cesium3DTileStyle.js`
 #[derive(Debug, Clone, Default)]
 pub struct TileStyle {
-    /// The show expression (determines visibility).
+    /// show 表达式（决定可见性）。
     pub show: Option<StyleExpression>,
-    /// The color expression.
+    /// color 表达式。
     pub color: Option<StyleExpression>,
-    /// The point size expression (for point clouds).
+    /// point size 表达式（用于点云）。
     pub point_size: Option<StyleExpression>,
-    /// Point outline color expression.
+    /// 点轮廓颜色表达式。
     pub point_outline_color: Option<StyleExpression>,
-    /// Point outline width expression.
+    /// 点轮廓宽度表达式。
     pub point_outline_width: Option<StyleExpression>,
-    /// Label text expression.
+    /// 标签文本表达式。
     pub label_text: Option<StyleExpression>,
-    /// Label color expression.
+    /// 标签颜色表达式。
     pub label_color: Option<StyleExpression>,
-    /// Meta expressions (for feature metadata).
+    /// Meta 表达式（用于 feature 元数据）。
     pub meta: HashMap<String, StyleExpression>,
-    /// Defines (reusable expressions).
+    /// Defines（可复用的表达式）。
     pub defines: HashMap<String, String>,
 }
 
 impl TileStyle {
-    /// Parses a style from JSON.
+    /// 从 JSON 解析一个样式。
     pub fn from_json(json: &Value) -> Self {
         let mut style = Self::default();
 
@@ -1142,7 +1135,7 @@ impl TileStyle {
             style.label_color = StyleExpression::from_json(lc);
         }
 
-        // Parse meta
+        // 解析 meta
         if let Some(meta_obj) = json.get("meta").and_then(|m| m.as_object()) {
             for (key, value) in meta_obj {
                 if let Some(expr) = StyleExpression::from_json(value) {
@@ -1151,7 +1144,7 @@ impl TileStyle {
             }
         }
 
-        // Parse defines
+        // 解析 defines
         if let Some(defines_obj) = json.get("defines").and_then(|d| d.as_object()) {
             for (key, value) in defines_obj {
                 if let Some(s) = value.as_str() {
@@ -1163,31 +1156,31 @@ impl TileStyle {
         style
     }
 
-    /// Evaluates the show expression for a feature.
+    /// 针对一个 feature 求值 show 表达式。
     pub fn evaluate_show(&self, properties: &HashMap<String, Value>) -> bool {
         match &self.show {
             Some(expr) => expr.evaluate(properties).as_bool(),
-            None => true, // default: show all
+            None => true, // 默认：全部显示
         }
     }
 
-    /// Evaluates the color expression for a feature.
+    /// 针对一个 feature 求值 color 表达式。
     pub fn evaluate_color(&self, properties: &HashMap<String, Value>) -> [f64; 4] {
         match &self.color {
             Some(expr) => expr.evaluate(properties).as_color(),
-            None => [1.0, 1.0, 1.0, 1.0], // default: white
+            None => [1.0, 1.0, 1.0, 1.0], // 默认：白色
         }
     }
 
-    /// Evaluates the point size expression for a feature.
+    /// 针对一个 feature 求值 point size 表达式。
     pub fn evaluate_point_size(&self, properties: &HashMap<String, Value>) -> f64 {
         match &self.point_size {
             Some(expr) => expr.evaluate(properties).as_number(),
-            None => 1.0, // default: 1.0
+            None => 1.0, // 默认：1.0
         }
     }
 
-    /// Evaluates a meta expression for a feature.
+    /// 针对一个 feature 求值一个 meta 表达式。
     pub fn evaluate_meta(
         &self,
         key: &str,
@@ -1330,14 +1323,14 @@ mod tests {
         assert!(!style.evaluate_show(&props_hidden));
 
         let color = style.evaluate_color(&props_visible);
-        // purple = rgb(128,0,128). The legacy color table rounds to 0.502 while
-        // the JSEP engine yields the exact 128/255 = 0.50196 (upstream-faithful).
-        // Tolerance-based assertion accepts both double-track results, matching
-        // the sibling color tests in this module.
+        // purple = rgb(128,0,128)。遗留颜色表舍入到 0.502，而 JSEP
+        // 引擎产生精确的 128/255 = 0.50196（忠实于上游）。基于
+        // 容差的断言同时接受两种双轨结果，与本模块中其他颜色
+        // 测试一致。
         assert!((color[0] - 0.502).abs() < 1e-3, "r={}", color[0]);
         assert!(color[1].abs() < 1e-3, "g={}", color[1]);
         assert!((color[2] - 0.502).abs() < 1e-3, "b={}", color[2]);
-        assert!((color[3] - 0.5).abs() < 1e-3, "a={}", color[3]); // purple with alpha
+        assert!((color[3] - 0.5).abs() < 1e-3, "a={}", color[3]); // 带 alpha 的 purple
 
         assert_eq!(style.evaluate_point_size(&props_visible), 2.0);
     }
@@ -1353,8 +1346,8 @@ mod tests {
         let style = TileStyle::from_json(&json);
         let props = make_props(vec![("Height", json!(100.0))]);
 
-        // Note: string concatenation is not fully implemented,
-        // but the meta expression should be parseable
+        // 注意：字符串拼接尚未完全实现，
+        // 但 meta 表达式应当可解析
         let result = style.evaluate_meta("description", &props);
         assert!(result.is_some());
     }
@@ -1435,11 +1428,11 @@ mod tests {
         assert_eq!(parse_color_name("black"), [0.0, 0.0, 0.0]);
     }
 
-    // ── M7-D: gate helper + JSEP bridge ──────────────────────────────────
+    // ── M7-D：gate 辅助函数 + JSEP bridge ──────────────────────────────
 
     #[test]
     fn test_truthy_tokens() {
-        // M0.3 semantics: case-insensitive, whitespace-trimmed 1|true|yes|on.
+        // M0.3 语义：大小写不敏感、去空白的 1|true|yes|on。
         for t in ["1", "true", "TRUE", "True", "yes", "YES", "on", " on ", "\ttrue\n"] {
             assert!(truthy(t), "expected truthy: {t:?}");
         }
@@ -1450,13 +1443,13 @@ mod tests {
 
     #[test]
     fn test_styling_jsep_gate_is_bool() {
-        // Only asserts the accessor is total; the value depends on the ambient
-        // env (default OFF). Env mutation is avoided to keep tests deterministic.
+        // 仅断言访问器是全函数；具体值取决于环境（默认 OFF）。
+        // 避免修改环境变量以保持测试的确定性。
         let _ = styling_jsep_enabled();
     }
 
-    /// Builds a JSEP-backed expression directly (gate-independent) so the bridge
-    /// is exercised deterministically without mutating the process env.
+    /// 直接构造一个由 JSEP 支撑的表达式（与 gate 无关），以便在不修改
+    /// 进程 env 的情况下确定性地调用 bridge。
     fn jsep(src: &str) -> Expression {
         Expression::Jsep(JsepExpression::compile(src).expect("jsep compile"))
     }
@@ -1483,32 +1476,31 @@ mod tests {
 
     #[test]
     fn test_jsep_bridge_missing_property_is_nan() {
-        // Task #46: gate=1 (JSEP) strict-upstream semantics — a missing property
-        // resolves to `undefined`, which coerces to `Number(NaN)` (JS
-        // `Number(undefined)`), NOT the legacy `0.0`. NaN != NaN, so assert via
-        // `is_nan()`. The legacy "missing -> 0.0" fallback now lives only on the
-        // gate=0 track (`Expression::PropertyRef` / `json_to_eval_result`).
+        // 任务 #46：gate=1（JSEP）严格对齐上游的语义——缺失的属性
+        // 解析为 `undefined`，它强转为 `Number(NaN)`（JS 的
+        // `Number(undefined)`），而非遗留的 `0.0`。NaN != NaN，因此通过
+        // `is_nan()` 断言。遗留的“缺失 -> 0.0”回退现在仅存在于
+        // gate=0 轨道（[`Expression::PropertyRef`] / `json_to_eval_result`）。
         match jsep("${missing}").evaluate(&make_props(vec![])) {
             EvalResult::Number(n) => assert!(n.is_nan(), "expected NaN, got {n}"),
             other => panic!("expected Number(NaN), got {other:?}"),
         }
-        // JSON `null` -> Value::Null -> Number(0.0) (JS `Number(null)`).
+        // JSON `null` -> Value::Null -> Number(0.0)（JS `Number(null)`）。
         assert_eq!(
             jsep("${n}").evaluate(&make_props(vec![("n", json!(null))])),
             EvalResult::Number(0.0)
         );
-        // Note: `${missing} + 1` is *not* asserted here. The faithful engine
-        // raises a RuntimeError for `undefined + 1` (CesiumJS `evaluatePlus`
-        // throws on a non-number/non-string operand — it does not yield NaN),
-        // and `Expression::evaluate` is infallible, so that form falls back to
-        // the legacy parser. That arithmetic path is governed by the engine's
-        // type-checked operators, not by this value bridge.
+        // 注意：这里*不*断言 `${missing} + 1`。忠实引擎会对 `undefined + 1`
+        // 报出 RuntimeError（CesiumJS 的 `evaluatePlus` 对非数值/非字符串
+        // 操作数会抛错——它不会产出 NaN），而 `Expression::evaluate` 不会失败，
+        // 因此该形式回退到遗留解析器。那条算术路径由引擎的
+        // 类型检查运算符控制，而非由本值 bridge 控制。
     }
 
     #[test]
     fn test_legacy_math_functions_match_js_semantics() {
-        // Directly exercise the deprecated legacy `eval_function` path
-        // (gate-independent) to prove the task #46 fixes.
+        // 直接调用已弃用的遗留 `eval_function` 路径（与 gate 无关），
+        // 以证明任务 #46 的修复。
         fn call(name: &str, args: Vec<f64>) -> EvalResult {
             Expression::FunctionCall {
                 name: name.to_string(),
@@ -1516,17 +1508,17 @@ mod tests {
             }
             .evaluate(&make_props(vec![]))
         }
-        // clamp: `f64::clamp` panics when min > max; the non-panicking
-        // conditional form follows CesiumMath.clamp (`v<min?min:v>max?max:v`).
+        // clamp：当 min > max 时 `f64::clamp` 会 panic；不会 panic 的条件
+        // 形式遵循 CesiumMath.clamp（`v<min?min:v>max?max:v`）。
         assert_eq!(call("clamp", vec![5.0, 10.0, 0.0]), EvalResult::Number(10.0));
         assert_eq!(call("clamp", vec![5.0, 0.0, 10.0]), EvalResult::Number(5.0));
         assert_eq!(call("clamp", vec![-5.0, 0.0, 10.0]), EvalResult::Number(0.0));
         assert_eq!(call("clamp", vec![50.0, 0.0, 10.0]), EvalResult::Number(10.0));
-        // round: half-toward-+inf (JS Math.round), not half-away-from-zero.
+        // round：向 +inf 取半（JS Math.round），而非远离零取半。
         assert_eq!(call("round", vec![2.5]), EvalResult::Number(3.0));
         assert_eq!(call("round", vec![-0.5]), EvalResult::Number(0.0));
         assert_eq!(call("round", vec![-2.5]), EvalResult::Number(-2.0));
-        // sign: original value for +-0 (CesiumMath.sign), 1/-1 otherwise.
+        // sign：对 +-0 返回原始值（CesiumMath.sign），其余返回 1/-1。
         assert_eq!(call("sign", vec![0.0]), EvalResult::Number(0.0));
         assert_eq!(call("sign", vec![3.0]), EvalResult::Number(1.0));
         assert_eq!(call("sign", vec![-3.0]), EvalResult::Number(-1.0));
@@ -1534,8 +1526,8 @@ mod tests {
 
     #[test]
     fn test_jsep_bridge_numeric_color_falls_back_to_legacy() {
-        // The engine errors on color(r,g,b,a) numeric components; evaluate()
-        // falls back to the legacy parser, preserving the pre-M7-D result.
+        // 引擎会对带数值分量的 color(r,g,b,a) 报错；evaluate()
+        // 回退到遗留解析器，保留 M7-D 之前的结果。
         let expr = jsep("color(1.0, 0.5, 0.0, 1.0)");
         assert_eq!(
             expr.evaluate(&make_props(vec![])),

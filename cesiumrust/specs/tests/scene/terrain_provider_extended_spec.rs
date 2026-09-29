@@ -1,13 +1,13 @@
-//! Terrain provider extended spec tests.
+//! 地形 provider 扩展规格测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - Core/CesiumTerrainProviderSpec.js
 //! - Core/HeightmapTerrainProviderSpec.js
 //! - Core/VRTheWorldTerrainProviderSpec.js
 //! - Core/ArcGISTerrainProviderSpec.js
 //! - Core/GoogleEarthEnterpriseTerrainProviderSpec.js
 //!
-//! A-class tests: URL generation, layer.json parsing, availability, descriptors.
+//! A 类测试：URL 生成、layer.json 解析、可用性、描述符。
 
 use cesium_provider::terrain_provider::{
     ArcGisTerrainProvider, AvailabilityStrategy, CesiumTerrainProvider, EllipsoidTerrainProvider,
@@ -179,7 +179,7 @@ fn arcgis_provider_defaults() {
 #[test]
 fn arcgis_provider_tile_url() {
     let p = ArcGisTerrainProvider::new("https://elevation.arcgis.com");
-    // ArcGIS uses /tile/{level}/{row}/{col} = /tile/{level}/{y}/{x}
+    // ArcGIS 使用 /tile/{level}/{row}/{col} = /tile/{level}/{y}/{x}
     assert_eq!(
         p.get_tile_url(5, 10, 15),
         "https://elevation.arcgis.com/tile/5/15/10"

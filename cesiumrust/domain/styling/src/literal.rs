@@ -1,26 +1,25 @@
-//! Color and vector literal evaluation for the styling language.
+//! styling 语言的颜色与向量字面量求值。
 //!
-//! Ported from `cesium-rs/crates/cesium-scene/src/expression.rs` L1956-2102
-//! (`to_byte` / `evaluate_literal_color` / `evaluate_literal_vector`), the Rust
-//! port of upstream `packages/engine/Source/Scene/Expression.js`
-//! (`_evaluateLiteralColor` / `_evaluateLiteralVector`).
+//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs` L1956-2102
+//! （`to_byte` / `evaluate_literal_color` / `evaluate_literal_vector`），它是上游
+//! `packages/engine/Source/Scene/Expression.js`
+//! （`_evaluateLiteralColor` / `_evaluateLiteralVector`）的 Rust 移植。
 //!
-//! The CSS color parsing (`color("...")` / named colors / `#rgb` / `#rrggbb` /
-//! `rgb()` / `hsl()`) is ported from the blueprint
-//! `cesium-rs/crates/cesium-core/src/color.rs` (`from_css_color_string`,
-//! `from_hsl`, `hue2rgb`, `parse_rgb_functional`, `parse_hsl_functional`,
-//! `parse_float_js`, `is_css_whitespace`, the 148-entry named-color table).
+//! CSS 颜色解析（`color("...")` / 命名颜色 / `#rgb` / `#rrggbb` /
+//! `rgb()` / `hsl()`）移植自 blueprint
+//! `cesium-rs/crates/cesium-core/src/color.rs`（`from_css_color_string`、
+//! `from_hsl`、`hue2rgb`、`parse_rgb_functional`、`parse_hsl_functional`、
+//! `parse_float_js`、`is_css_whitespace`，以及 148 项的命名颜色表）。
 //!
-//! # DEVIATION (deps)
+//! # 偏离（依赖）
 //!
-//! The blueprint draws `Color` and `Cartesian2/3/4` from `cesium_core`. This
-//! isolated domain crate only depends on `glam`, so:
-//! * A color is represented directly as `glam::DVec4` (rgba, components 0..1);
-//!   `evaluate_literal_color` returns `Value::Cartesian4` exactly as the
-//!   blueprint does after `Color -> Cartesian4::from_elements`.
-//! * The full CSS color parser is re-implemented here (byte-exact against
-//!   `color.rs`) rather than importing the blueprint `Color`, which lives in a
-//!   read-only crate this domain must not depend on.
+//! blueprint 从 `cesium_core` 取 `Color` 和 `Cartesian2/3/4`。这个孤立的
+//! domain crate 只依赖 `glam`，所以：
+//! * 颜色直接用 `glam::DVec4` 表示（rgba，分量 0..1）；
+//!   `evaluate_literal_color` 返回 `Value::Cartesian4`，与 blueprint 在
+//!   `Color -> Cartesian4::from_elements` 之后的做法完全一致。
+//! * 完整的 CSS 颜色解析器在此重新实现（与 `color.rs` 逐字节一致），
+//!   而非导入 blueprint 的 `Color`——后者位于一个只读 crate，本 domain 不得依赖。
 
 use glam::{DVec2, DVec3, DVec4};
 
@@ -29,22 +28,22 @@ use crate::runtime::ExpressionFeature;
 use crate::value::{runtime_error, RuntimeError, Value};
 
 // ---------------------------------------------------------------------------
-// JS/CSS numeric helpers (ported from color.rs)
+// JS/CSS 数值辅助函数（移植自 color.rs）
 // ---------------------------------------------------------------------------
 
-/// Mirrors `Color.fromBytes` argument clamping (`CesiumMath.clamp` to byte):
-/// clamp to `[0, 255]`, round, truncate to `u8`.
+/// 镜像 `Color.fromBytes` 的参数钳制（`CesiumMath.clamp` 到字节）：
+/// 钳制到 `[0, 255]`，四舍五入，截断为 `u8`。
 ///
-/// NOTE: `evaluate_literal_color`'s `rgb()`/`rgba()` paths divide by 255.0
-/// directly (blueprint-faithful `byteToFloat`, no rounding/clamping), so this
-/// helper is exposed for callers/tests that need the `Color.fromBytes` byte
-/// quantization rather than being used internally here.
+/// 注意：`evaluate_literal_color` 的 `rgb()`/`rgba()` 路径直接除以 255.0
+/// （忠于 blueprint 的 `byteToFloat`，不做取整/钳制），所以本辅助函数
+/// 是为需要 `Color.fromBytes` 字节量化的调用方/测试而暴露，
+/// 并非在此内部使用。
 pub fn to_byte(value: f64) -> u8 {
     value.clamp(0.0, 255.0).round() as u8
 }
 
-/// Emulates ECMAScript `parseFloat`: parses the longest leading numeric prefix
-/// and returns NaN if none exists (never recognises "inf"/"NaN").
+/// 模拟 ECMAScript `parseFloat`：解析最长的前导数字前缀，
+/// 若不存在则返回 NaN（永不识别 "inf"/"NaN"）。
 fn parse_float_js(s: &str) -> f64 {
     for end in (1..=s.len()).rev() {
         let Some(candidate) = s.get(..end) else {
@@ -62,8 +61,8 @@ fn parse_float_js(s: &str) -> f64 {
     f64::NAN
 }
 
-/// The `\s` character set of the original JS color regular expressions
-/// (ECMAScript WhiteSpace + LineTerminator).
+/// 原始 JS 颜色正则表达式的 `\s` 字符集
+/// （ECMAScript WhiteSpace + LineTerminator）。
 fn is_css_whitespace(c: char) -> bool {
     matches!(
         c,
@@ -83,7 +82,7 @@ fn is_css_whitespace(c: char) -> bool {
     ) || ('\u{2000}'..='\u{200A}').contains(&c)
 }
 
-/// Helper: convert hue to an rgb component (ported from `color.rs::hue2rgb`).
+/// 辅助函数：将色相（hue）转换为 rgb 分量（移植自 `color.rs::hue2rgb`）。
 fn hue2rgb(m1: f64, m2: f64, mut h: f64) -> f64 {
     if h < 0.0 {
         h += 1.0;
@@ -103,7 +102,7 @@ fn hue2rgb(m1: f64, m2: f64, mut h: f64) -> f64 {
     m1
 }
 
-/// `Color.fromHsl(hue, saturation, lightness, alpha)` (all inputs 0..1).
+/// `Color.fromHsl(hue, saturation, lightness, alpha)`（所有输入均为 0..1）。
 fn from_hsl(hue: f64, saturation: f64, lightness: f64, alpha: f64) -> DVec4 {
     let hue = hue % 1.0;
     let mut red = lightness;
@@ -125,8 +124,8 @@ fn from_hsl(hue: f64, saturation: f64, lightness: f64, alpha: f64) -> DVec4 {
     DVec4::new(red, green, blue, alpha)
 }
 
-/// The 148 CSS named colors as 24-bit `(r, g, b)` triples (uppercase keys).
-/// Aliases (`DARKGREY`, `GREY`, ...) are folded into their canonical entry.
+/// 148 个 CSS 命名颜色，以 24 位 `(r, g, b)` 三元组表示（键为大写）。
+/// 别名（`DARKGREY`、`GREY` 等）归并到其规范条目。
 fn named_color_rgb(name: &str) -> Option<(u8, u8, u8)> {
     Some(match name {
         "ALICEBLUE" => (0xF0, 0xF8, 0xFF),
@@ -271,8 +270,8 @@ fn named_color_rgb(name: &str) -> Option<(u8, u8, u8)> {
     })
 }
 
-/// `Color.namedColor` + `TRANSPARENT`: resolves a (case-insensitive) CSS named
-/// color to rgba floats in 0..1.
+/// `Color.namedColor` + `TRANSPARENT`：把一个（大小写不敏感的）CSS 命名
+/// 颜色解析为 0..1 的 rgba 浮点值。
 fn named_color(name_upper: &str) -> Option<DVec4> {
     if name_upper == "TRANSPARENT" {
         return Some(DVec4::new(0.0, 0.0, 0.0, 0.0));
@@ -286,8 +285,8 @@ fn named_color(name_upper: &str) -> Option<DVec4> {
     ))
 }
 
-/// Mirrors `rgbParenthesesMatcher` (see `color.rs::parse_rgb_functional`);
-/// returns `(r, g, b, a)` already scaled to 0..1.
+/// 镜像 `rgbParenthesesMatcher`（见 `color.rs::parse_rgb_functional`）；
+/// 返回已缩放到 0..1 的 `(r, g, b, a)`。
 fn parse_rgb_functional(color: &str) -> Option<(f64, f64, f64, f64)> {
     let chars: Vec<char> = color.chars().collect();
     let n = chars.len();
@@ -387,8 +386,8 @@ fn parse_rgb_functional(color: &str) -> Option<(f64, f64, f64, f64)> {
     ))
 }
 
-/// Mirrors `hslParenthesesMatcher` (see `color.rs::parse_hsl_functional`);
-/// returns the raw `(hue, saturation, lightness, alpha)` captures.
+/// 镜像 `hslParenthesesMatcher`（见 `color.rs::parse_hsl_functional`）；
+/// 返回原始的 `(hue, saturation, lightness, alpha)` 捕获值。
 fn parse_hsl_functional(color: &str) -> Option<(f64, f64, f64, f64)> {
     let chars: Vec<char> = color.chars().collect();
     let n = chars.len();
@@ -440,7 +439,7 @@ fn parse_hsl_functional(color: &str) -> Option<(f64, f64, f64, f64)> {
             return None;
         }
         let token: String = chars[start..i].iter().collect();
-        i += 1; // consume '%'
+        i += 1; // 消耗 '%'
         *slot = parse_float_js(&token);
     }
 
@@ -485,8 +484,8 @@ fn parse_hsl_functional(color: &str) -> Option<(f64, f64, f64, f64)> {
     Some((hue, captured[0], captured[1], alpha))
 }
 
-/// Mirrors `Color.fromCssColorString`: named -> `#rgb`/`#rgba` ->
-/// `#rrggbb`/`#rrggbbaa` -> `rgb()`/`rgba()` -> `hsl()`/`hsla()`.
+/// 镜像 `Color.fromCssColorString`：命名色 -> `#rgb`/`#rgba` ->
+/// `#rrggbb`/`#rrggbbaa` -> `rgb()`/`rgba()` -> `hsl()`/`hsla()`。
 pub fn from_css_color_string(color: &str) -> Option<DVec4> {
     let color = color.trim();
 
@@ -528,10 +527,10 @@ pub fn from_css_color_string(color: &str) -> Option<DVec4> {
 }
 
 // ---------------------------------------------------------------------------
-// Literal evaluation
+// 字面量求值
 // ---------------------------------------------------------------------------
 
-/// Mirrors `_evaluateLiteralColor`.
+/// 镜像 `_evaluateLiteralColor`。
 pub fn evaluate_literal_color(
     name: &str,
     args: Option<&[Node]>,
@@ -557,8 +556,8 @@ pub fn evaluate_literal_color(
         },
         "rgb" => {
             let a = args.expect("rgb requires arguments");
-            // Mirrors Color.fromBytes(r, g, b, 255): byteToFloat is a plain
-            // divide by 255 with no rounding/clamping.
+            // 镜像 Color.fromBytes(r, g, b, 255)：byteToFloat 只是简单地
+            // 除以 255，不做取整/钳制。
             DVec4::new(
                 a[0].evaluate(feature)?.number_conversion() / 255.0,
                 a[1].evaluate(feature)?.number_conversion() / 255.0,
@@ -568,8 +567,8 @@ pub fn evaluate_literal_color(
         }
         "rgba" => {
             let a = args.expect("rgba requires arguments");
-            // convert between css alpha (0 to 1) and cesium alpha (0 to 255);
-            // byteToFloat divides back by 255 so alpha is preserved exactly.
+            // 在 css alpha（0 到 1）与 cesium alpha（0 到 255）之间转换；
+            // byteToFloat 再除以 255，故 alpha 被精确保留。
             let alpha = a[3].evaluate(feature)?.number_conversion() * 255.0;
             DVec4::new(
                 a[0].evaluate(feature)?.number_conversion() / 255.0,
@@ -601,7 +600,7 @@ pub fn evaluate_literal_color(
     Ok(Value::Cartesian4(color))
 }
 
-/// Mirrors `_evaluateLiteralVector`.
+/// 镜像 `_evaluateLiteralVector`。
 pub fn evaluate_literal_vector(
     call: &str,
     args: &[Node],
@@ -646,7 +645,7 @@ pub fn evaluate_literal_vector(
     }
 
     if components_length == 1 {
-        // Add the same component 3 more times
+        // 把同一个分量再添加 3 次
         let component = components[0];
         components.extend([component, component, component]);
     }
@@ -689,9 +688,9 @@ mod tests {
     fn named_colors_byte_exact() {
         // RED == #FF0000 == (1, 0, 0, 1)
         assert_eq!(from_css_color_string("red").unwrap(), DVec4::new(1.0, 0.0, 0.0, 1.0));
-        // Case-insensitive.
+        // 大小写不敏感。
         assert_eq!(from_css_color_string("RED").unwrap(), DVec4::new(1.0, 0.0, 0.0, 1.0));
-        // GREY alias == GRAY == #808080
+        // GREY 别名 == GRAY == #808080
         let grey = from_css_color_string("grey").unwrap();
         assert!((grey.x - 0x80 as f64 / 255.0).abs() < 1e-12);
         // TRANSPARENT == (0,0,0,0)
@@ -699,20 +698,20 @@ mod tests {
             from_css_color_string("transparent").unwrap(),
             DVec4::new(0.0, 0.0, 0.0, 0.0)
         );
-        // Unknown name -> None.
+        // 未知名称 -> None。
         assert!(from_css_color_string("notacolor").is_none());
     }
 
     #[test]
     fn hex_forms() {
-        // #fff == white
+        // #fff == 白色
         assert_eq!(from_css_color_string("#fff").unwrap(), DVec4::new(1.0, 1.0, 1.0, 1.0));
         // #ff000080 -> alpha 0x80/255
         let c = from_css_color_string("#ff0000").unwrap();
         assert_eq!(c, DVec4::new(1.0, 0.0, 0.0, 1.0));
         let c8 = from_css_color_string("#ff000080").unwrap();
         assert!((c8.w - 0x80 as f64 / 255.0).abs() < 1e-12);
-        // #rgba 4-digit
+        // #rgba 4 位
         let c4 = from_css_color_string("#f00f").unwrap();
         assert_eq!(c4, DVec4::new(1.0, 0.0, 0.0, 1.0));
     }
@@ -729,7 +728,7 @@ mod tests {
 
     #[test]
     fn hsl_functional() {
-        // hsl(0, 100%, 50%) == red
+        // hsl(0, 100%, 50%) == 红色
         let c = from_css_color_string("hsl(0, 100%, 50%)").unwrap();
         assert!((c.x - 1.0).abs() < 1e-12);
         assert!((c.y - 0.0).abs() < 1e-12);
@@ -738,7 +737,7 @@ mod tests {
 
     #[test]
     fn from_hsl_greyscale_when_unsaturated() {
-        // saturation 0 -> all channels == lightness
+        // saturation 为 0 -> 所有通道 == lightness
         let c = from_hsl(0.0, 0.0, 0.5, 1.0);
         assert_eq!(c, DVec4::new(0.5, 0.5, 0.5, 1.0));
     }

@@ -1,19 +1,18 @@
-//! Off-center frustum specs - ported from:
-//! - packages/engine/Specs/Core/PerspectiveOffCenterFrustumSpec.js (31 it())
-//! - packages/engine/Specs/Core/OrthographicOffCenterFrustumSpec.js (30 it())
+//! 偏心视锥规范 —— 移植自：
+//! - packages/engine/Specs/Core/PerspectiveOffCenterFrustumSpec.js（31 个 it()）
+//! - packages/engine/Specs/Core/OrthographicOffCenterFrustumSpec.js（30 个 it()）
 //!
-//! A-class tests: 29 (15 perspective + 14 orthographic).
+//! A 类测试：29 个（15 个透视 + 14 个正交）。
 //!
-//! Omitted (C-class): all `throws` tests (near/far out of range, left>right,
-//! bottom>top, undefined params, getPixelDimensions arg validation — Rust type
-//! safety / debug_assert), `equals undefined` (JS undefined handling), and
-//! `clone with result parameter` (JS result-param API).
+//! 已省略（C 类）：所有 `throws` 测试（near/far 超出范围、left>right、
+//! bottom>top、未定义参数、getPixelDimensions 参数校验——Rust 类型
+//! 安全 / debug_assert）、`equals undefined`（JS undefined 处理），以及
+//! `clone with result parameter`（JS result-param API）。
 //!
-//! Note on "constructs": CesiumJS asserts `f.width === options.width` and
-//! `f.aspectRatio === options.aspectRatio`, but both are `undefined` on an
-//! off-center frustum (it has no width/aspectRatio properties), so those two
-//! comparisons are trivially `undefined === undefined`. The Rust port therefore
-//! only asserts the meaningful `near`/`far` values.
+//! 关于 "constructs" 的说明：CesiumJS 断言 `f.width === options.width` 且
+//! `f.aspectRatio === options.aspectRatio`，但两者在偏心视锥上都是 `undefined`（它没有 width/aspectRatio 属性），因此这两个
+//! 比较平凡地是 `undefined === undefined`。Rust 移植版本因此
+//! 仅断言有意义的 `near`/`far` 值。
 
 use cesium_geospatial::frustum::{OrthographicOffCenterFrustum, PerspectiveOffCenterFrustum};
 use glam::{DMat4, DVec3};
@@ -36,7 +35,7 @@ fn assert_approx(a: f64, b: f64, eps: f64, msg: &str) {
     );
 }
 
-/// Compares two DMat4 elementwise within epsilon.
+/// 在 epsilon 内逐元素比较两个 DMat4。
 fn assert_mat4_approx(actual: &DMat4, expected: &DMat4, eps: f64, msg: &str) {
     for col in 0..4 {
         for row in 0..4 {
@@ -51,8 +50,8 @@ fn assert_mat4_approx(actual: &DMat4, expected: &DMat4, eps: f64, msg: &str) {
 }
 
 // ============================================================================
-// PerspectiveOffCenterFrustum (from PerspectiveOffCenterFrustumSpec.js)
-// Setup: left=-1, right=1, bottom=-1, top=1, near=1, far=2
+// PerspectiveOffCenterFrustum（来自 PerspectiveOffCenterFrustumSpec.js）
+// 设置：left=-1, right=1, bottom=-1, top=1, near=1, far=2
 // ============================================================================
 
 fn make_perspective_off_center() -> PerspectiveOffCenterFrustum {
@@ -74,9 +73,9 @@ fn perspective_off_center_planes() -> [(DVec3, f64); 6] {
 
 #[test]
 fn test_perspective_off_center_constructs() {
-    // Ported from: PerspectiveOffCenterFrustumSpec "constructs"
-    // width/aspectRatio are undefined on an off-center frustum (trivially equal),
-    // so only near/far are asserted.
+    // 移植自：PerspectiveOffCenterFrustumSpec "constructs"
+    // width/aspectRatio 在偏心视锥上是 undefined（平凡相等），
+    // 因此仅断言 near/far。
     let f = PerspectiveOffCenterFrustum::from_bounds(-1.0, 2.0, -1.0, 5.0, 3.0, 4.0);
     assert_eq!(f.near, 3.0);
     assert_eq!(f.far, 4.0);
@@ -84,7 +83,7 @@ fn test_perspective_off_center_constructs() {
 
 #[test]
 fn test_perspective_off_center_default_constructs() {
-    // Ported from: PerspectiveOffCenterFrustumSpec "default constructs"
+    // 移植自： PerspectiveOffCenterFrustumSpec "default constructs"
     let f = PerspectiveOffCenterFrustum::new();
     assert!(f.left.is_none());
     assert!(f.right.is_none());
@@ -96,8 +95,8 @@ fn test_perspective_off_center_default_constructs() {
 
 #[test]
 fn test_perspective_off_center_left_plane() {
-    // Ported from: "get frustum left plane"
-    // Expected: Cartesian4(x, 0, -x, 0) where x = 1/sqrt(2)
+    // 移植自： "get frustum left plane"
+    // 期望：Cartesian4(x, 0, -x, 0)，其中 x = 1/sqrt(2)
     let planes = perspective_off_center_planes();
     let (normal, distance) = planes[0];
     let x = 1.0 / 2.0_f64.sqrt();
@@ -109,8 +108,8 @@ fn test_perspective_off_center_left_plane() {
 
 #[test]
 fn test_perspective_off_center_right_plane() {
-    // Ported from: "get frustum right plane"
-    // Expected: Cartesian4(-x, 0, -x, 0)
+    // 移植自： "get frustum right plane"
+    // 期望：Cartesian4(-x, 0, -x, 0)
     let planes = perspective_off_center_planes();
     let (normal, distance) = planes[1];
     let x = 1.0 / 2.0_f64.sqrt();
@@ -122,8 +121,8 @@ fn test_perspective_off_center_right_plane() {
 
 #[test]
 fn test_perspective_off_center_bottom_plane() {
-    // Ported from: "get frustum bottom plane"
-    // Expected: Cartesian4(0, x, -x, 0)
+    // 移植自： "get frustum bottom plane"
+    // 期望：Cartesian4(0, x, -x, 0)
     let planes = perspective_off_center_planes();
     let (normal, distance) = planes[2];
     let x = 1.0 / 2.0_f64.sqrt();
@@ -135,8 +134,8 @@ fn test_perspective_off_center_bottom_plane() {
 
 #[test]
 fn test_perspective_off_center_top_plane() {
-    // Ported from: "get frustum top plane"
-    // Expected: Cartesian4(0, -x, -x, 0)
+    // 移植自： "get frustum top plane"
+    // 期望：Cartesian4(0, -x, -x, 0)
     let planes = perspective_off_center_planes();
     let (normal, distance) = planes[3];
     let x = 1.0 / 2.0_f64.sqrt();
@@ -148,8 +147,8 @@ fn test_perspective_off_center_top_plane() {
 
 #[test]
 fn test_perspective_off_center_near_plane() {
-    // Ported from: "get frustum near plane"
-    // Expected: Cartesian4(0, 0, -1, -1)
+    // 移植自： "get frustum near plane"
+    // 期望：Cartesian4(0, 0, -1, -1)
     let planes = perspective_off_center_planes();
     let (normal, distance) = planes[4];
     assert_approx(normal.x, 0.0, EPSILON15, "near.x");
@@ -160,8 +159,8 @@ fn test_perspective_off_center_near_plane() {
 
 #[test]
 fn test_perspective_off_center_far_plane() {
-    // Ported from: "get frustum far plane"
-    // Expected: Cartesian4(0, 0, 1, 2)
+    // 移植自： "get frustum far plane"
+    // 期望：Cartesian4(0, 0, 1, 2)
     let planes = perspective_off_center_planes();
     let (normal, distance) = planes[5];
     assert_approx(normal.x, 0.0, EPSILON15, "far.x");
@@ -172,8 +171,8 @@ fn test_perspective_off_center_far_plane() {
 
 #[test]
 fn test_perspective_off_center_projection_matrix() {
-    // Ported from: "get perspective projection matrix"
-    // Expected: Matrix4.computePerspectiveOffCenter(-1, 1, -1, 1, 1, 2)
+    // 移植自： "get perspective projection matrix"
+    // 期望：Matrix4.computePerspectiveOffCenter(-1, 1, -1, 1, 1, 2)
     let f = make_perspective_off_center();
     let proj = f.projection_matrix();
     let expected = DMat4::from_cols_array(&[
@@ -187,8 +186,8 @@ fn test_perspective_off_center_projection_matrix() {
 
 #[test]
 fn test_perspective_off_center_infinite_projection_matrix() {
-    // Ported from: "get infinite perspective matrix"
-    // Expected: Matrix4.computeInfinitePerspectiveOffCenter(-1, 1, -1, 1, 1)
+    // 移植自： "get infinite perspective matrix"
+    // 期望：Matrix4.computeInfinitePerspectiveOffCenter(-1, 1, -1, 1, 1)
     let f = make_perspective_off_center();
     let proj = f.infinite_projection_matrix();
     let expected = DMat4::from_cols_array(&[
@@ -202,7 +201,7 @@ fn test_perspective_off_center_infinite_projection_matrix() {
 
 #[test]
 fn test_perspective_off_center_pixel_dimensions() {
-    // Ported from: "get pixel dimensions"
+    // 移植自： "get pixel dimensions"
     let f = make_perspective_off_center();
     let (pw, ph) = f.pixel_dimensions(1.0, 1.0, 1.0, 1.0);
     assert_eq!(pw, 2.0);
@@ -211,7 +210,7 @@ fn test_perspective_off_center_pixel_dimensions() {
 
 #[test]
 fn test_perspective_off_center_pixel_dimensions_with_pixel_ratio() {
-    // Ported from: "get pixel dimensions with pixel ratio"
+    // 移植自： "get pixel dimensions with pixel ratio"
     let f = make_perspective_off_center();
     let (pw, ph) = f.pixel_dimensions(1.0, 1.0, 1.0, 2.0);
     assert_eq!(pw, 4.0);
@@ -220,7 +219,7 @@ fn test_perspective_off_center_pixel_dimensions_with_pixel_ratio() {
 
 #[test]
 fn test_perspective_off_center_equals() {
-    // Ported from: "equals"
+    // 移植自： "equals"
     let f = make_perspective_off_center();
     let f2 = PerspectiveOffCenterFrustum::from_bounds(-1.0, 1.0, -1.0, 1.0, 1.0, 2.0);
     assert!(f.equals(&f2));
@@ -228,7 +227,7 @@ fn test_perspective_off_center_equals() {
 
 #[test]
 fn test_perspective_off_center_equals_epsilon() {
-    // Ported from: "equals epsilon"
+    // 移植自： "equals epsilon"
     let f = make_perspective_off_center();
 
     let f2 = PerspectiveOffCenterFrustum::from_bounds(-1.0, 1.0, -1.0, 1.0, 1.0, 2.0);
@@ -243,15 +242,15 @@ fn test_perspective_off_center_equals_epsilon() {
 
 #[test]
 fn test_perspective_off_center_clone() {
-    // Ported from: "clone"
+    // 移植自： "clone"
     let f = make_perspective_off_center();
-    let f2 = f; // Copy semantics mirror CesiumJS clone()
+    let f2 = f; // Copy 语义对应 CesiumJS clone()
     assert!(f.equals(&f2));
 }
 
 // ============================================================================
-// OrthographicOffCenterFrustum (from OrthographicOffCenterFrustumSpec.js)
-// Setup: left=-1, right=1, bottom=-1, top=1, near=1, far=3
+// OrthographicOffCenterFrustum（来自 OrthographicOffCenterFrustumSpec.js）
+// 设置：left=-1, right=1, bottom=-1, top=1, near=1, far=3
 // ============================================================================
 
 fn make_orthographic_off_center() -> OrthographicOffCenterFrustum {
@@ -273,9 +272,9 @@ fn orthographic_off_center_planes() -> [(DVec3, f64); 6] {
 
 #[test]
 fn test_orthographic_off_center_constructs() {
-    // Ported from: OrthographicOffCenterFrustumSpec "constructs"
-    // width/aspectRatio are undefined on an off-center frustum (trivially equal),
-    // so only near/far are asserted.
+    // 移植自：OrthographicOffCenterFrustumSpec "constructs"
+    // width/aspectRatio 在偏心视锥上是 undefined（平凡相等），
+    // 因此仅断言 near/far。
     let f = OrthographicOffCenterFrustum::from_bounds(-1.0, 2.0, -1.0, 5.0, 3.0, 4.0);
     assert_eq!(f.near, 3.0);
     assert_eq!(f.far, 4.0);
@@ -283,7 +282,7 @@ fn test_orthographic_off_center_constructs() {
 
 #[test]
 fn test_orthographic_off_center_default_constructs() {
-    // Ported from: OrthographicOffCenterFrustumSpec "default constructs"
+    // 移植自： OrthographicOffCenterFrustumSpec "default constructs"
     let f = OrthographicOffCenterFrustum::new();
     assert!(f.left.is_none());
     assert!(f.right.is_none());
@@ -295,8 +294,8 @@ fn test_orthographic_off_center_default_constructs() {
 
 #[test]
 fn test_orthographic_off_center_left_plane() {
-    // Ported from: "get frustum left plane"
-    // Expected: Cartesian4(1, 0, 0, 1)
+    // 移植自： "get frustum left plane"
+    // 期望：Cartesian4(1, 0, 0, 1)
     let planes = orthographic_off_center_planes();
     let (normal, distance) = planes[0];
     assert_approx(normal.x, 1.0, EPSILON4, "left.x");
@@ -307,8 +306,8 @@ fn test_orthographic_off_center_left_plane() {
 
 #[test]
 fn test_orthographic_off_center_right_plane() {
-    // Ported from: "get frustum right plane"
-    // Expected: Cartesian4(-1, 0, 0, 1)
+    // 移植自： "get frustum right plane"
+    // 期望：Cartesian4(-1, 0, 0, 1)
     let planes = orthographic_off_center_planes();
     let (normal, distance) = planes[1];
     assert_approx(normal.x, -1.0, EPSILON4, "right.x");
@@ -319,8 +318,8 @@ fn test_orthographic_off_center_right_plane() {
 
 #[test]
 fn test_orthographic_off_center_bottom_plane() {
-    // Ported from: "get frustum bottom plane"
-    // Expected: Cartesian4(0, 1, 0, 1)
+    // 移植自： "get frustum bottom plane"
+    // 期望：Cartesian4(0, 1, 0, 1)
     let planes = orthographic_off_center_planes();
     let (normal, distance) = planes[2];
     assert_approx(normal.x, 0.0, EPSILON4, "bottom.x");
@@ -331,8 +330,8 @@ fn test_orthographic_off_center_bottom_plane() {
 
 #[test]
 fn test_orthographic_off_center_top_plane() {
-    // Ported from: "get frustum top plane"
-    // Expected: Cartesian4(0, -1, 0, 1)
+    // 移植自： "get frustum top plane"
+    // 期望：Cartesian4(0, -1, 0, 1)
     let planes = orthographic_off_center_planes();
     let (normal, distance) = planes[3];
     assert_approx(normal.x, 0.0, EPSILON4, "top.x");
@@ -343,8 +342,8 @@ fn test_orthographic_off_center_top_plane() {
 
 #[test]
 fn test_orthographic_off_center_near_plane() {
-    // Ported from: "get frustum near plane"
-    // Expected: Cartesian4(0, 0, -1, -1)
+    // 移植自： "get frustum near plane"
+    // 期望：Cartesian4(0, 0, -1, -1)
     let planes = orthographic_off_center_planes();
     let (normal, distance) = planes[4];
     assert_approx(normal.x, 0.0, EPSILON4, "near.x");
@@ -355,8 +354,8 @@ fn test_orthographic_off_center_near_plane() {
 
 #[test]
 fn test_orthographic_off_center_far_plane() {
-    // Ported from: "get frustum far plane"
-    // Expected: Cartesian4(0, 0, 1, 3)
+    // 移植自： "get frustum far plane"
+    // 期望：Cartesian4(0, 0, 1, 3)
     let planes = orthographic_off_center_planes();
     let (normal, distance) = planes[5];
     assert_approx(normal.x, 0.0, EPSILON4, "far.x");
@@ -367,8 +366,8 @@ fn test_orthographic_off_center_far_plane() {
 
 #[test]
 fn test_orthographic_off_center_projection_matrix() {
-    // Ported from: "get orthographic projection matrix"
-    // Expected: Matrix4.computeOrthographicOffCenter(-1, 1, -1, 1, 1, 3)
+    // 移植自： "get orthographic projection matrix"
+    // 期望：Matrix4.computeOrthographicOffCenter(-1, 1, -1, 1, 1, 3)
     let f = make_orthographic_off_center();
     let proj = f.projection_matrix();
     let expected = DMat4::from_cols_array(&[
@@ -382,7 +381,7 @@ fn test_orthographic_off_center_projection_matrix() {
 
 #[test]
 fn test_orthographic_off_center_pixel_dimensions() {
-    // Ported from: "get pixel dimensions"
+    // 移植自： "get pixel dimensions"
     let f = make_orthographic_off_center();
     let (pw, ph) = f.pixel_dimensions(1.0, 1.0, 0.0, 1.0);
     assert_eq!(pw, 2.0);
@@ -391,7 +390,7 @@ fn test_orthographic_off_center_pixel_dimensions() {
 
 #[test]
 fn test_orthographic_off_center_pixel_dimensions_with_pixel_ratio() {
-    // Ported from: "get pixel dimensions with pixel ratio"
+    // 移植自： "get pixel dimensions with pixel ratio"
     let f = make_orthographic_off_center();
     let (pw, ph) = f.pixel_dimensions(1.0, 1.0, 0.0, 2.0);
     assert_eq!(pw, 4.0);
@@ -400,7 +399,7 @@ fn test_orthographic_off_center_pixel_dimensions_with_pixel_ratio() {
 
 #[test]
 fn test_orthographic_off_center_equals() {
-    // Ported from: "equals"
+    // 移植自： "equals"
     let f = make_orthographic_off_center();
     let f2 = OrthographicOffCenterFrustum::from_bounds(-1.0, 1.0, -1.0, 1.0, 1.0, 3.0);
     assert!(f.equals(&f2));
@@ -408,7 +407,7 @@ fn test_orthographic_off_center_equals() {
 
 #[test]
 fn test_orthographic_off_center_equals_epsilon() {
-    // Ported from: "equals epsilon"
+    // 移植自： "equals epsilon"
     let f = make_orthographic_off_center();
 
     let f2 = OrthographicOffCenterFrustum::from_bounds(-1.0, 1.0, -1.0, 1.0, 1.0, 3.0);
@@ -423,8 +422,8 @@ fn test_orthographic_off_center_equals_epsilon() {
 
 #[test]
 fn test_orthographic_off_center_clone() {
-    // Ported from: "clone"
+    // 移植自： "clone"
     let f = make_orthographic_off_center();
-    let f2 = f; // Copy semantics mirror CesiumJS clone()
+    let f2 = f; // Copy 语义对应 CesiumJS clone()
     assert!(f.equals(&f2));
 }

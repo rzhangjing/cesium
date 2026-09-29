@@ -5,10 +5,10 @@
 //! pixel_diff <baseline.png> <candidate.png> [--threshold <dB>] [--json]
 //! ```
 //!
-//! ## Exit codes
-//! - 0: PASS (PSNR ≥ threshold)
-//! - 1: FAIL (PSNR < threshold)
-//! - 2: ERROR (文件不存在、尺寸不一致、解码失败等)
+//! ## 退出码
+//! - 0：PASS（PSNR ≥ 阈值）
+//! - 1：FAIL（PSNR < 阈值）
+//! - 2：ERROR（文件不存在、尺寸不一致、解码失败等）
 //!
 //! ## 约定
 //! - Alpha 通道被忽略，仅比对 RGB
@@ -39,7 +39,7 @@ fn main() {
         process::exit(if args.is_empty() { 2 } else { 0 });
     }
 
-    // Parse positional args and flags
+    // 解析位置参数与标志位
     let mut positional: Vec<String> = Vec::new();
     let mut threshold: f64 = 40.0;
     let mut json_output = false;
@@ -79,7 +79,7 @@ fn main() {
     let baseline_path = &positional[0];
     let candidate_path = &positional[1];
 
-    // Load images
+    // 加载图像
     let baseline = match image::open(baseline_path) {
         Ok(img) => img,
         Err(e) => {
@@ -95,7 +95,7 @@ fn main() {
         }
     };
 
-    // Compare
+    // 比对
     let metrics = match pixel_diff::compare_images(&baseline, &candidate, threshold) {
         Ok(m) => m,
         Err(e) => {
@@ -104,13 +104,13 @@ fn main() {
         }
     };
 
-    // Output
+    // 输出
     if json_output {
         println!("{}", pixel_diff::metrics_to_json(&metrics));
     } else {
         println!("{}", pixel_diff::metrics_to_human(&metrics));
     }
 
-    // Exit code
+    // 退出码
     process::exit(if metrics.pass { 0 } else { 1 });
 }

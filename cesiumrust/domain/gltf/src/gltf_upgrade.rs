@@ -1,49 +1,47 @@
-//! glTF 1.0 → 2.0 JSON upgrade chain.
+//! glTF 1.0 → 2.0 JSON 升级链。
 //!
-//! Mirrors CesiumJS `packages/engine/Source/Scene/GltfPipeline/updateVersion.js`
-//! (the real source of truth for version upgrading — `GltfLoader.js` itself
-//! contains no upgrade logic). The entry point [`update_version`] reproduces
-//! `updateVersion` (L41), which:
+//! 镜像 CesiumJS `packages/engine/Source/Scene/GltfPipeline/updateVersion.js`
+//!（版本升级真正的事实来源——`GltfLoader.js` 本身
+//! 不包含升级逻辑）。入口点 [`update_version`] 复现了
+//! `updateVersion`（L41），它：
 //!
-//! 1. ensures `asset` / `asset.version` (defaulting to `"1.0"`),
-//! 2. detects the version ([`detect_version`], L44–63),
-//! 3. applies the chain of update functions until `2.0` (or `targetVersion`),
-//! 4. unless `keepLegacyExtensions`, converts the legacy technique /
-//!    `KHR_materials_common` material models to PBR.
+//! 1. 确保 `asset` / `asset.version`（默认为 `"1.0"`），
+//! 2. 检测版本（[`detect_version`]，L44–63），
+//! 3. 逐步应用升级函数链直到 `2.0`（或 `targetVersion`），
+//! 4. 除非设置了 `keepLegacyExtensions`，否则将遗留的 technique /
+//!    `KHR_materials_common` 材质模型转换为 PBR。
 //!
-//! Per the milestone decision only the `1.0 → 2.0` step ([`gl_tf10to20`],
-//! upstream L943) is implemented; `0.8 → 1.0` (`glTF08to10`) is deferred and
-//! reported as [`GltfUpgradeError::UnsupportedVersion08`].
+//! 根据里程碑决定，仅实现了 `1.0 → 2.0` 这一步（[`gl_tf10to20`]，
+//! 上游 L943）；`0.8 → 1.0`（`glTF08to10`）被推迟，
+//! 上报为 [`GltfUpgradeError::UnsupportedVersion08`]。
 //!
-//! # Scope: JSON transforms + binary stage
+//! # 范围：JSON 变换 + 二进制阶段
 //!
-//! The upgrade operates on raw [`serde_json::Value`] (glTF 1.0 stores its
-//! top-level collections as object-keyed dictionaries which the array-based
-//! typed [`crate::gltf_model::GltfModel`] cannot deserialize). The JSON-only
-//! entry point [`update_version`] runs the structural transforms; the upstream
-//! steps that depend on the decoded binary buffer (`extras._pipeline.source`)
-//! live in [`crate::gltf_binary_stage`] and run only via
-//! [`update_version_with_buffers`], which threads the decoded buffers through
-//! [`gl_tf10to20`]:
+//! 升级作用于原始的 [`serde_json::Value`]（glTF 1.0 将其
+//! 顶层集合存储为以对象为键的字典，基于数组的
+//! 强类型 [`crate::gltf_model::GltfModel`] 无法反序列化）。仅 JSON 的
+//! 入口点 [`update_version`] 运行结构变换；依赖于已解码二进制
+//! buffer（`extras._pipeline.source`）的上游步骤
+//! 位于 [`crate::gltf_binary_stage`]，仅通过
+//! [`update_version_with_buffers`] 运行，后者将已解码的 buffer 贯穿
+//! 传递经由 [`gl_tf10to20`]：
 //!
-//! * `buffer.byteLength` from the decoded source (`requireByteLength`, buffer half),
+//! * 从已解码源得到的 `buffer.byteLength`（`requireByteLength`，buffer 那一半），
 //! * `requirePositionAccessorMinMax` / `requireAnimationAccessorMinMax` /
-//!   `validatePresentAccessorMinMax` (all call `findAccessorMinMax`),
-//! * `updateAccessorComponentTypes` (repacks JOINTS/WEIGHTS data),
-//! * `removeUnusedElements` (invoked by `moveByteStrideToBufferView`).
+//!   `validatePresentAccessorMinMax`（均调用 `findAccessorMinMax`），
+//! * `updateAccessorComponentTypes`（重新打包 JOINTS/WEIGHTS 数据），
+//! * `removeUnusedElements`（由 `moveByteStrideToBufferView` 调用）。
 //!
-//! With no buffers supplied the chain is byte-for-byte identical to the
-//! JSON-only M9.1 behaviour.
+//! 未提供 buffer 时，本链与仅 JSON 的 M9.1 行为逐字节一致。
 //!
-//! # Deviation: collection ordering
+//! # 偏差：集合排序
 //!
-//! The workspace pins `serde_json = "1"` **without** the `preserve_order`
-//! feature, so [`serde_json::Map`] is a `BTreeMap` iterating keys in
-//! alphabetical order. `objectsToArrays` therefore assigns array indices in
-//! alphabetical key order rather than JS insertion order. Every reference is
-//! remapped through the same `global_mapping`, so the upgraded asset remains
-//! internally consistent and semantically equivalent; only the ordering of
-//! elements within a converted collection may differ for multi-entry objects.
+//! 工作区锁定 `serde_json = "1"` 且**未**启用 `preserve_order`
+//! 特性，因此 [`serde_json::Map`] 是一个按字母序遍历键的
+//! `BTreeMap`。因此 `objectsToArrays` 按字母键序而非 JS 插入序分配
+//! 数组索引。每个引用都通过同一个 `global_mapping` 重映射，
+//! 因此升级后的资源保持内部一致且语义等价；对于多条目对象，
+//! 仅已转换集合内元素的顺序可能不同。
 //!
 //! DEVIATION: serde_json 无 preserve_order → objectsToArrays 索引按 BTreeMap
 //! 字母序，经同一 global_mapping 一致重映射语义等价；see docs/deviations.md#dev-012
@@ -60,21 +58,21 @@ use crate::gltf_upgrade_util::{
     object_to_array,
 };
 
-/// The glTF asset version detected on the root `version` or `asset.version`.
+/// 从根 `version` 或 `asset.version` 检测到的 glTF 资源版本。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GltfVersion {
-    /// glTF 0.8 (upgrade to 1.0 is deferred / unsupported here).
+    /// glTF 0.8（升级到 1.0 在此被推迟 / 不支持）。
     V08,
-    /// glTF 1.0 — upgraded to 2.0 by [`gl_tf10to20`].
+    /// glTF 1.0 — 由 [`gl_tf10to20`] 升级到 2.0。
     V10,
-    /// glTF 2.0 — passthrough (no structural upgrade).
+    /// glTF 2.0 — 直接透传（无结构升级）。
     V20,
-    /// Could not be determined; upstream defaults to `1.0`.
+    /// 无法确定；上游默认为 `1.0`。
     Unknown,
 }
 
 impl GltfVersion {
-    /// The canonical version string (`"0.8"` / `"1.0"` / `"2.0"`).
+    /// 规范化的版本字符串（`"0.8"` / `"1.0"` / `"2.0"`）。
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -86,48 +84,47 @@ impl GltfVersion {
     }
 }
 
-/// Errors produced by the upgrade chain.
+/// 升级链产生的错误。
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum GltfUpgradeError {
-    /// The asset is glTF 0.8; only `1.0 → 2.0` is implemented (Q5 decision).
+    /// 该资源是 glTF 0.8；仅实现了 `1.0 → 2.0`（Q5 决定）。
     #[error("glTF 0.8 -> 1.0 upgrade is deferred; only 1.0 -> 2.0 is supported")]
     UnsupportedVersion08,
-    /// The root JSON value is not an object.
+    /// 根 JSON 值不是一个对象。
     #[error("glTF asset root is not a JSON object")]
     NotAnObject,
 }
 
-/// Options mirroring `updateVersion(gltf, options)` (updateVersion.js L33–36).
+/// 镜像 `updateVersion(gltf, options)` 的选项（updateVersion.js L33–36）。
 #[derive(Debug, Clone, Default)]
 pub struct UpgradeOptions {
-    /// Stop upgrading once this version is reached (`options.targetVersion`).
+    /// 一旦达到此版本就停止升级（`options.targetVersion`）。
     pub target_version: Option<String>,
-    /// When set, skip the legacy technique / `KHR_materials_common` → PBR
-    /// conversion (`options.keepLegacyExtensions`).
+    /// 设置时，跳过遗留的 technique / `KHR_materials_common` → PBR
+    /// 转换（`options.keepLegacyExtensions`）。
     pub keep_legacy_extensions: bool,
-    /// Uniform names indicating a base-color *texture*
-    /// (`options.baseColorTextureNames`); defaults to
-    /// [`DEFAULT_BASE_COLOR_TEXTURE_NAMES`].
+    /// 表示 base-color *纹理* 的 uniform 名称
+    ///（`options.baseColorTextureNames`）；默认为
+    /// [`DEFAULT_BASE_COLOR_TEXTURE_NAMES`]。
     pub base_color_texture_names: Option<Vec<String>>,
-    /// Uniform names indicating a base-color *factor*
-    /// (`options.baseColorFactorNames`); defaults to
-    /// [`DEFAULT_BASE_COLOR_FACTOR_NAMES`].
+    /// 表示 base-color *因子* 的 uniform 名称
+    ///（`options.baseColorFactorNames`）；默认为
+    /// [`DEFAULT_BASE_COLOR_FACTOR_NAMES`]。
     pub base_color_factor_names: Option<Vec<String>>,
 }
 
-/// Detects the glTF version without mutating the asset.
+/// 检测 glTF 版本而不改变资源。
 ///
-/// Mirrors the version resolution in `updateVersion` (L44–63): the root-level
-/// `version` (a glTF 0.8 convention) takes precedence over `asset.version`;
-/// unknown values are truncated to three characters and finally default to
-/// `"1.0"`.
+/// 镜像 `updateVersion` 中的版本解析（L44–63）：根级
+/// `version`（glTF 0.8 约定）优先于 `asset.version`；
+/// 未知值会被截断为三个字符，最终默认为 `"1.0"`。
 #[must_use]
 pub fn detect_version(gltf: &Value) -> GltfVersion {
     normalize_version(&version_string(gltf))
 }
 
-/// Reads the raw version string (root `version`, else `asset.version`, else
-/// `"1.0"`), tolerating a numeric root `version` (e.g. `0.8`).
+/// 读取原始版本字符串（根 `version`，否则 `asset.version`，否则
+/// `"1.0"`），并容忍数值型的根 `version`（例如 `0.8`）。
 fn version_string(gltf: &Value) -> String {
     if let Some(v) = gltf.get("version") {
         match v {
@@ -142,7 +139,7 @@ fn version_string(gltf: &Value) -> String {
     "1.0".to_string()
 }
 
-/// `updateFunctions` membership test + truncation fallback (L54–63).
+/// `updateFunctions` 成员测试 + 截断回退（L54–63）。
 fn normalize_version(v: &str) -> GltfVersion {
     match v {
         "0.8" => GltfVersion::V08,
@@ -154,45 +151,45 @@ fn normalize_version(v: &str) -> GltfVersion {
                 "0.8" => GltfVersion::V08,
                 "1.0" => GltfVersion::V10,
                 "2.0" => GltfVersion::V20,
-                // Default to 1.0 if it cannot be determined (L61).
+                // 无法确定时默认为 1.0（L61）。
                 _ => GltfVersion::V10,
             }
         }
     }
 }
 
-/// Upgrades `gltf` in place to version 2.0 (or `options.target_version`).
+/// 就地将 `gltf` 升级到版本 2.0（或 `options.target_version`）。
 ///
-/// Faithful port of `updateVersion` (updateVersion.js L41–82). For a plain 2.0
-/// asset this is a passthrough: the update loop does not run and the trailing
-/// PBR converters are no-ops when the legacy extensions are absent, leaving the
-/// asset unchanged.
+/// 对 `updateVersion`（updateVersion.js L41–82）的忠实移植。对于一个普通的 2.0
+/// 资源，这是直接透传：升级循环不会运行，且当遗留扩展缺失时
+/// 末尾的 PBR 转换器为无操作，使资源
+/// 保持不变。
 ///
-/// JSON-only: the binary-buffer-dependent steps (min/max, JOINTS/WEIGHTS
-/// repackaging, unused-element removal) are skipped. Use
-/// [`update_version_with_buffers`] to run the full chain against decoded
-/// buffers.
+/// 仅 JSON：依赖于二进制 buffer 的步骤（min/max、JOINTS/WEIGHTS
+/// 重打包、无用元素移除）会被跳过。使用
+/// [`update_version_with_buffers`] 针对已解码 buffer
+/// 运行完整链。
 ///
-/// # Errors
-/// Returns [`GltfUpgradeError::NotAnObject`] if the root is not an object, or
-/// [`GltfUpgradeError::UnsupportedVersion08`] if the asset is glTF 0.8 and the
-/// target version requires the (deferred) `0.8 → 1.0` step.
+/// # 错误
+/// 若根不是一个对象则返回 [`GltfUpgradeError::NotAnObject`]，或
+/// 若资源是 glTF 0.8 且目标版本需要（被推迟的）`0.8 → 1.0`
+/// 步骤，则返回 [`GltfUpgradeError::UnsupportedVersion08`]。
 pub fn update_version(gltf: &mut Value, options: &UpgradeOptions) -> Result<(), GltfUpgradeError> {
     update_version_impl(gltf, options, None)
 }
 
-/// Like [`update_version`], but also runs the binary-buffer-dependent steps of
-/// `glTF10to20` (`requirePositionAccessorMinMax` / `requireAnimationAccessorMinMax`
+/// 类似 [`update_version`]，但还针对已解码的 buffer 源运行
+/// `glTF10to20` 中依赖于二进制 buffer 的步骤
+///（`requirePositionAccessorMinMax` / `requireAnimationAccessorMinMax`
 /// / `validatePresentAccessorMinMax` / `updateAccessorComponentTypes` /
-/// `removeUnusedElements` / buffer-level `requireByteLength`) against the
-/// decoded buffer sources.
+/// `removeUnusedElements` / buffer 级的 `requireByteLength`）。
 ///
-/// `buffers[i]` must be the decoded source of `gltf.buffers[i]` (for a GLB,
-/// `buffers = vec![binary_chunk]`). The vec may grow when
-/// `updateAccessorComponentTypes` repacks JOINTS/WEIGHTS into new buffers.
+/// `buffers[i]` 必须是 `gltf.buffers[i]` 的已解码源（对于 GLB，
+/// `buffers = vec![binary_chunk]`）。当 `updateAccessorComponentTypes`
+/// 将 JOINTS/WEIGHTS 重打包到新 buffer 时，该 vec 可能增长。
 ///
-/// # Errors
-/// Same as [`update_version`].
+/// # 错误
+/// 与 [`update_version`] 相同。
 pub fn update_version_with_buffers(
     gltf: &mut Value,
     options: &UpgradeOptions,
@@ -206,7 +203,7 @@ fn update_version_impl(
     options: &UpgradeOptions,
     mut buffers: Option<&mut Vec<Vec<u8>>>,
 ) -> Result<(), GltfUpgradeError> {
-    // Ensure asset + asset.version (L46–50).
+    // 确保 asset + asset.version（L46–50）。
     {
         let root = gltf.as_object_mut().ok_or(GltfUpgradeError::NotAnObject)?;
         if root.get("asset").is_none() {
@@ -230,7 +227,7 @@ fn update_version_impl(
                 if target == Some("0.8") {
                     break;
                 }
-                // glTF08to10 is deferred (Q5: only 1.0 -> 2.0).
+                // glTF08to10 被推迟（Q5：仅 1.0 -> 2.0）。
                 return Err(GltfUpgradeError::UnsupportedVersion08);
             }
             GltfVersion::V10 => {
@@ -238,7 +235,7 @@ fn update_version_impl(
                     break;
                 }
                 gl_tf10to20(gltf, buffers.take());
-                // version = gltf.asset.version (now "2.0") -> loop exits.
+                // version = gltf.asset.version（现为 "2.0"）-> 循环退出。
                 version = normalize_version(
                     gltf.pointer("/asset/version")
                         .and_then(Value::as_str)
@@ -264,10 +261,10 @@ fn update_version_impl(
     Ok(())
 }
 
-/// `glTF10to20` (updateVersion.js L943–989): the structural 1.0 → 2.0 transform.
+/// `glTF10to20`（updateVersion.js L943–989）：结构上的 1.0 → 2.0 变换。
 ///
-/// Steps that require the decoded binary buffer are skipped here and documented
-/// inline; see the module header for the full deferral list.
+/// 需要已解码二进制 buffer 的步骤在此跳过并内联注释；
+/// 完整推迟列表见模块头。
 fn gl_tf10to20(gltf: &mut Value, mut buffers: Option<&mut Vec<Vec<u8>>>) {
     // gltf.asset.version = "2.0" (L944–945).
     if let Some(root) = gltf.as_object_mut() {
@@ -286,12 +283,12 @@ fn gl_tf10to20(gltf: &mut Value, mut buffers: Option<&mut Vec<Vec<u8>>>) {
     remove_animation_sampler_names(gltf); // L955
     strip_asset(gltf); // L957
     require_known_extensions(gltf); // L959
-    require_byte_length(gltf, buffers.as_deref()); // L961 (buffer half needs decoded source)
+    require_byte_length(gltf, buffers.as_deref()); // L961（buffer 那一半需要已解码源）
     move_byte_stride_to_buffer_view(gltf); // L963
-    // Binary-buffer-dependent steps (M9.2): run only when decoded buffers are
-    // supplied; with `None` the chain is byte-for-byte the JSON-only M9.1 path.
+    // 依赖于二进制 buffer 的步骤（M9.2）：仅当提供了已解码 buffer 时运行；
+    // 为 `None` 时本链逐字节等同于仅 JSON 的 M9.1 路径。
     if let Some(bufs) = buffers.as_mut() {
-        crate::gltf_binary_stage::remove_unused_elements(gltf, bufs); // L837 (end of moveByteStride)
+        crate::gltf_binary_stage::remove_unused_elements(gltf, bufs); // L837（moveByteStride 末尾）
         crate::gltf_binary_stage::require_position_accessor_min_max(gltf, bufs); // L965
         crate::gltf_binary_stage::require_animation_accessor_min_max(gltf, bufs); // L967
         crate::gltf_binary_stage::validate_present_accessor_min_max(gltf, bufs); // L970
@@ -309,8 +306,8 @@ fn gl_tf10to20(gltf: &mut Value, mut buffers: Option<&mut Vec<Vec<u8>>>) {
     remove_empty_arrays(gltf); // L988
 }
 
-/// `updateInstanceTechniques` (L84): hoist `material.instanceTechnique`
-/// (`technique` + `values`) onto the material itself.
+/// `updateInstanceTechniques`（L84）：将 `material.instanceTechnique`
+///（`technique` + `values`）提升到 material 自身之上。
 fn update_instance_techniques(gltf: &mut Value) {
     for_each_material_mut(gltf, &mut |material| {
         let Some(obj) = material.as_object_mut() else {
@@ -328,8 +325,8 @@ fn update_instance_techniques(gltf: &mut Value) {
     });
 }
 
-/// `removeAnimationSamplersIndirection` (L270): resolve `sampler.input` /
-/// `sampler.output` through `animation.parameters`, then delete `parameters`.
+/// `removeAnimationSamplersIndirection`（L270）：通过 `animation.parameters`
+/// 解析 `sampler.input` / `sampler.output`，然后删除 `parameters`。
 fn remove_animation_samplers_indirection(gltf: &mut Value) {
     for_each_top_level_mut_named(gltf, "animations", &mut |animation| {
         let Some(obj) = animation.as_object_mut() else {
@@ -355,8 +352,8 @@ fn remove_animation_samplers_indirection(gltf: &mut Value) {
     });
 }
 
-/// `removeEmptyNodes` (L906) + `isNodeEmpty` (L851) + `deleteNode` (L874).
-/// Runs before `objectsToArrays`, so nodes are still object-keyed by id.
+/// `removeEmptyNodes`（L906）+ `isNodeEmpty`（L851）+ `deleteNode`（L874）。
+/// 在 `objectsToArrays` 之前运行，因此节点仍以 id 为对象键。
 fn remove_empty_nodes(gltf: &mut Value) {
     let ids: Vec<String> = match gltf.get("nodes") {
         Some(Value::Object(nodes)) => nodes.keys().cloned().collect(),
@@ -374,7 +371,7 @@ fn remove_empty_nodes(gltf: &mut Value) {
     }
 }
 
-/// `isNodeEmpty` (L851): a node with no content and identity/no transform.
+/// `isNodeEmpty`（L851）：无内容且为单位/无变换的节点。
 fn is_node_empty(node: &Value) -> bool {
     let Some(obj) = node.as_object() else {
         return false;
@@ -416,13 +413,13 @@ fn is_node_empty(node: &Value) -> bool {
     true
 }
 
-/// `deleteNode` (L874): remove a node from scenes and parents, recursing into
-/// parents that become empty, then delete it from `gltf.nodes`.
+/// `deleteNode`（L874）：从各 scene 和父节点中移除一个节点，递归处理
+/// 变为空的父节点，然后从 `gltf.nodes` 中删除它。
 fn delete_node(gltf: &mut Value, node_id: &str) {
-    // Remove from every scene's node list.
+    // 从每个 scene 的节点列表中移除。
     remove_id_from_children(gltf, "scenes", "nodes", node_id);
 
-    // Remove from parents' children; record which parents referenced it.
+    // 从父节点的 children 中移除；记录哪些父节点引用了它。
     let mut parents: Vec<String> = Vec::new();
     if let Some(Value::Object(nodes)) = gltf.get_mut("nodes") {
         for (pid, parent) in nodes.iter_mut() {
@@ -438,12 +435,12 @@ fn delete_node(gltf: &mut Value, node_id: &str) {
         }
     }
 
-    // Delete the node itself.
+    // 删除节点自身。
     if let Some(Value::Object(nodes)) = gltf.get_mut("nodes") {
         nodes.remove(node_id);
     }
 
-    // Recurse into parents that are now empty.
+    // 递归处理现在已为空的父节点。
     for pid in parents {
         let parent_empty = gltf
             .get("nodes")
@@ -456,8 +453,8 @@ fn delete_node(gltf: &mut Value, node_id: &str) {
     }
 }
 
-/// Removes `id` from `gltf[collection][*][children_key]` arrays (object-keyed
-/// or array form of the collection).
+/// 从 `gltf[collection][*][children_key]` 数组（集合的对象键
+/// 或数组形式）中移除 `id`。
 fn remove_id_from_children(gltf: &mut Value, collection: &str, children_key: &str, id: &str) {
     match gltf.get_mut(collection) {
         Some(Value::Object(map)) => {
@@ -482,8 +479,8 @@ fn remove_id_from_children(gltf: &mut Value, collection: &str, children_key: &st
     }
 }
 
-/// `objectsToArrays` (L306–563): convert every object-keyed top-level collection
-/// to an array and rewrite all id references to array indices.
+/// `objectsToArrays`（L306–563）：将每个以对象为键的顶层集合
+/// 转为数组，并将所有 id 引用重写为数组索引。
 fn objects_to_arrays(gltf: &mut Value) {
     const COLLECTIONS: [&str; 16] = [
         "accessors",
@@ -540,7 +537,7 @@ fn objects_to_arrays(gltf: &mut Value) {
         }
     }
 
-    // ---- Fix references (L360–562) ----
+    // ---- 修正引用（L360–562）----
     let empty = HashMap::new();
     let m = |coll: &str| -> &HashMap<String, usize> { global_mapping.get(coll).unwrap_or(&empty) };
 
@@ -634,7 +631,7 @@ fn objects_to_arrays(gltf: &mut Value) {
         }
     }
 
-    // nodes (L427) — collects skin.skeleton assignments and pending mesh nodes.
+    // nodes（L427）— 收集 skin.skeleton 赋值和待处理的 mesh 节点。
     let mut skeleton_assignments: Vec<(u64, u64)> = Vec::new();
     if let Some(Value::Array(nodes)) = root.get_mut("nodes") {
         let nodes_map = m("nodes");
@@ -655,7 +652,7 @@ fn objects_to_arrays(gltf: &mut Value) {
                     *child = mapped;
                 }
             }
-            // meshes -> mesh (+ extra mesh nodes)
+            // meshes -> mesh（+ 额外的 mesh 节点）
             let meshes_val = obj.remove("meshes");
             if let Some(Value::Array(mesh_ids)) = meshes_val {
                 if !mesh_ids.is_empty() {
@@ -695,7 +692,7 @@ fn objects_to_arrays(gltf: &mut Value) {
         nodes.extend(pending);
     }
 
-    // skins (L475) — inverseBindMatrices, jointNames -> joints, + skeleton.
+    // skins（L475）— inverseBindMatrices，jointNames -> joints，+ skeleton。
     if let Some(Value::Array(skins)) = root.get_mut("skins") {
         let accessors = m("accessors");
         for (i, skin) in skins.iter_mut().enumerate() {
@@ -819,8 +816,8 @@ fn objects_to_arrays(gltf: &mut Value) {
     remap_field(root, "textures", "source", m("images"));
 }
 
-/// Rewrites `material.values[name]` (and `KHR_materials_common.values`) string
-/// references into `{ "index": <texture index> }` (L520–538).
+/// 将 `material.values[name]`（以及 `KHR_materials_common.values`）的字符串
+/// 引用重写为 `{ "index": <texture index> }`（L520–538）。
 fn remap_material_values(values: Option<&mut Value>, textures: &HashMap<String, usize>) {
     let Some(Value::Object(map)) = values else {
         return;
@@ -847,8 +844,8 @@ fn remove_animation_sampler_names(gltf: &mut Value) {
     });
 }
 
-/// `removeEmptyArrays` (L573): delete empty top-level arrays and empty
-/// `node.children`.
+/// `removeEmptyArrays`（L573）：删除空白的顶层数组和空
+/// `node.children`。
 fn remove_empty_arrays(gltf: &mut Value) {
     let Some(root) = gltf.as_object_mut() else {
         return;
@@ -877,7 +874,7 @@ fn remove_empty_arrays(gltf: &mut Value) {
     }
 }
 
-/// `stripAsset` (L589): delete `asset.profile` and `asset.premultipliedAlpha`.
+/// `stripAsset`（L589）：删除 `asset.profile` 和 `asset.premultipliedAlpha`。
 fn strip_asset(gltf: &mut Value) {
     if let Some(asset) = gltf.get_mut("asset").and_then(Value::as_object_mut) {
         asset.remove("profile");
@@ -885,8 +882,8 @@ fn strip_asset(gltf: &mut Value) {
     }
 }
 
-/// `requireKnownExtensions` (L595–612): promote the known legacy extensions from
-/// `extensionsUsed` to `extensionsRequired`.
+/// `requireKnownExtensions`（L595–612）：将已知的遗留扩展从
+/// `extensionsUsed` 提升为 `extensionsRequired`。
 fn require_known_extensions(gltf: &mut Value) {
     const KNOWN: [&str; 3] = ["CESIUM_RTC", "KHR_materials_common", "WEB3D_quantized_attributes"];
     let used: Vec<String> = gltf
@@ -905,7 +902,7 @@ fn require_known_extensions(gltf: &mut Value) {
     }
 }
 
-/// `removeBufferType` (L614): delete `buffer.type`.
+/// `removeBufferType`（L614）：删除 `buffer.type`。
 fn remove_buffer_type(gltf: &mut Value) {
     for_each_top_level_mut_named(gltf, "buffers", &mut |buffer| {
         if let Some(obj) = buffer.as_object_mut() {
@@ -914,8 +911,8 @@ fn remove_buffer_type(gltf: &mut Value) {
     });
 }
 
-/// `removeTextureProperties` (L620): delete `format` / `internalFormat` /
-/// `target` / `type` from each texture.
+/// `removeTextureProperties`（L620）：从每个纹理删除 `format` / `internalFormat` /
+/// `target` / `type`。
 fn remove_texture_properties(gltf: &mut Value) {
     for_each_top_level_mut_named(gltf, "textures", &mut |texture| {
         if let Some(obj) = texture.as_object_mut() {
@@ -926,8 +923,8 @@ fn remove_texture_properties(gltf: &mut Value) {
     });
 }
 
-/// `requireAttributeSetIndex` (L629): `TEXCOORD` → `TEXCOORD_0`, `COLOR` →
-/// `COLOR_0` on mesh primitive attributes and technique parameter semantics.
+/// `requireAttributeSetIndex`（L629）：在 mesh 图元属性和 technique 参数语义上
+/// 将 `TEXCOORD` → `TEXCOORD_0`，`COLOR` → `COLOR_0`。
 fn require_attribute_set_index(gltf: &mut Value) {
     if let Some(Value::Array(meshes)) = gltf.get_mut("meshes") {
         for mesh in meshes.iter_mut() {
@@ -936,7 +933,7 @@ fn require_attribute_set_index(gltf: &mut Value) {
                     let Some(attrs) = prim.get_mut("attributes").and_then(Value::as_object_mut) else {
                         continue;
                     };
-                    // Insert renamed keys, then delete the un-suffixed originals.
+                    // 插入重命名后的键，然后删除未加后缀的原始键。
                     let renamed_semantics: Vec<(String, Value)> = attrs
                         .iter()
                         .filter(|(sem, _)| matches!(sem.as_str(), "TEXCOORD" | "COLOR"))
@@ -978,7 +975,7 @@ fn require_attribute_set_index(gltf: &mut Value) {
 /// `underscoreApplicationSpecificSemantics` (L660–721).
 fn underscore_application_specific_semantics(gltf: &mut Value) {
     const KNOWN: [&str; 3] = ["POSITION", "NORMAL", "TANGENT"];
-    // strippedSemantic -> indexed replacement prefix
+    // strippedSemantic -> 带索引的替换前缀
     let indexed = |s: &str| -> Option<&'static str> {
         match s {
             "COLOR" => Some("COLOR"),
@@ -997,13 +994,13 @@ fn underscore_application_specific_semantics(gltf: &mut Value) {
                     let Some(attrs) = prim.get_mut("attributes").and_then(Value::as_object_mut) else {
                         continue;
                     };
-                    // Compute the semantic remapping from the current attribute set.
+                    // 从当前属性集计算语义重映射。
                     let mut local_renames: Vec<(String, String)> = Vec::new();
                     for sem in attrs.keys() {
                         if sem.starts_with('_') {
                             continue;
                         }
-                        // JS: semantic.search(/_[0-9]+/g) -> first "_<digits>".
+                        // JS：semantic.search(/_[0-9]+/g) -> 第一个 "_<digits>"。
                         let stripped;
                         let suffix;
                         match find_indexed_suffix(sem) {
@@ -1054,8 +1051,8 @@ fn underscore_application_specific_semantics(gltf: &mut Value) {
     });
 }
 
-/// Finds the start of the first `_<digits>` suffix in `semantic`
-/// (JS `semantic.search(/_[0-9]+/g)`), returning `None` when absent.
+/// 找到 `semantic` 中第一个 `_<digits>` 后缀的起始位置
+///（JS `semantic.search(/_[0-9]+/g)`），不存在时返回 `None`。
 fn find_indexed_suffix(semantic: &str) -> Option<usize> {
     let bytes = semantic.as_bytes();
     (0..bytes.len()).find(|&i| {
@@ -1063,8 +1060,8 @@ fn find_indexed_suffix(semantic: &str) -> Option<usize> {
     })
 }
 
-/// `clampCameraParameters` (L723): drop a zero `aspectRatio`, coerce a zero
-/// `yfov` to `1.0`.
+/// `clampCameraParameters`（L723）：丢弃零值的 `aspectRatio`，将零值的
+/// `yfov` 强制为 `1.0`。
 fn clamp_camera_parameters(gltf: &mut Value) {
     for_each_top_level_mut_named(gltf, "cameras", &mut |camera| {
         let Some(perspective) = camera.get_mut("perspective").and_then(Value::as_object_mut) else {
@@ -1089,13 +1086,13 @@ fn clamp_camera_parameters(gltf: &mut Value) {
     });
 }
 
-/// `requireByteLength` (L745): `buffer.byteLength` from the decoded source
-/// (when `buffers` is supplied) and `bufferView.byteLength = max(existing,
-/// accessor.byteOffset + count * stride)`.
+/// `requireByteLength`（L745）：从已解码源得到 `buffer.byteLength`
+///（当提供了 `buffers` 时）且 `bufferView.byteLength = max(现有值,
+/// accessor.byteOffset + count * stride)`。
 ///
-/// The buffer-level half needs the decoded buffers and is delegated to
-/// [`crate::gltf_binary_stage::require_byte_length_buffers`]; with `None`
-/// (JSON-only path) it is skipped, preserving M9.1 behaviour byte-for-byte.
+/// buffer 级的那一半需要已解码的 buffer，委托给
+/// [`crate::gltf_binary_stage::require_byte_length_buffers`]；为 `None`
+///（仅 JSON 路径）时跳过，逐字节保留 M9.1 行为。
 fn require_byte_length(gltf: &mut Value, buffers: Option<&Vec<Vec<u8>>>) {
     if let Some(buffers) = buffers {
         crate::gltf_binary_stage::require_byte_length_buffers(gltf, buffers);
@@ -1127,8 +1124,8 @@ fn require_byte_length(gltf: &mut Value, buffers: Option<&Vec<Vec<u8>>>) {
     }
 }
 
-/// `computeAccessorByteStride` (L739): `accessor.byteStride` when present and
-/// non-zero, else the tight stride from the buffer view / component layout.
+/// `computeAccessorByteStride`（L739）：存在且非零时使用 `accessor.byteStride`，
+/// 否则为来自 buffer view / 分量布局的紧凑 stride。
 fn compute_accessor_byte_stride(gltf: &Value, accessor: &Value) -> usize {
     if let Some(bs) = accessor.get("byteStride").and_then(Value::as_u64) {
         if bs != 0 {
@@ -1138,18 +1135,18 @@ fn compute_accessor_byte_stride(gltf: &Value, accessor: &Value) -> usize {
     get_accessor_byte_stride(gltf, accessor)
 }
 
-/// `moveByteStrideToBufferView` (L766): move `accessor.byteStride` onto the
-/// buffer view, splitting a buffer view when its accessors use differing
-/// strides.
+/// `moveByteStrideToBufferView`（L766）：将 `accessor.byteStride` 移到
+/// buffer view 上，当 buffer view 的各 accessor 使用不同 stride 时
+/// 拆分该 buffer view。
 ///
-/// DEVIATION: upstream clones the buffer view for *every* run and relies on
-/// `removeUnusedElements` (deferred) to drop the now-dead original. To avoid
-/// that dependency the first run mutates the original buffer view in place and
-/// only subsequent (differing-stride) runs append new buffer views. For the
-/// common single-stride case the output matches upstream + `removeUnusedElements`
-/// exactly (accessor keeps `bufferView = <original index>`).
+/// 偏差：上游为*每次*运行都克隆 buffer view，并依赖
+/// `removeUnusedElements`（被推迟）丢弃现已失效的原始项。为避免
+/// 该依赖，首次运行就地修改原始 buffer view，
+/// 仅后续（stride 不同的）运行追加新的 buffer view。对于
+/// 常见的单 stride 情形，输出与上游 + `removeUnusedElements`
+/// 完全一致（accessor 保留 `bufferView = <原始索引>`）。
 fn move_byte_stride_to_buffer_view(gltf: &mut Value) {
-    // Accessors referenced by mesh primitive attributes / morph targets.
+    // 被 mesh 图元属性 / morph target 引用的 accessor。
     let mut vertex_accessors: HashSet<u64> = HashSet::new();
     if let Some(Value::Array(meshes)) = gltf.get("meshes") {
         for mesh in meshes {
@@ -1173,7 +1170,7 @@ fn move_byte_stride_to_buffer_view(gltf: &mut Value) {
     let mut buffer_views = take_array(root, "bufferViews");
     let original_buffer_views = buffer_views.clone();
 
-    // accessor index -> bufferView index; bufferView -> vertex-attribute flag.
+    // accessor 索引 -> bufferView 索引；bufferView -> 顶点属性标志。
     let mut bv_has_vertex_attrs: HashSet<u64> = HashSet::new();
     let mut bv_to_accessors: HashMap<u64, Vec<usize>> = HashMap::new();
     for (i, acc) in accessors.iter().enumerate() {
@@ -1185,9 +1182,9 @@ fn move_byte_stride_to_buffer_view(gltf: &mut Value) {
         }
     }
 
-    // Process buffer views in ascending index order to match JS object key
-    // iteration (integer-like keys iterate numerically) and keep the appended
-    // buffer-view indices deterministic.
+    // 按索引升序处理 buffer view，以匹配 JS 对象键遍历
+    //（整数类键按数值顺序遍历）并保持追加的
+    // buffer-view 索引确定。
     let mut bv_ids: Vec<u64> = bv_to_accessors.keys().copied().collect();
     bv_ids.sort_unstable();
     for bv_id in bv_ids {
@@ -1223,7 +1220,7 @@ fn move_byte_stride_to_buffer_view(gltf: &mut Value) {
                 .and_then(Value::as_u64)
                 .unwrap_or(0);
             let byte_length = count * stride;
-            // delete accessor.byteStride (L806)
+            // 删除 accessor.byteStride（L806）
             if let Some(obj) = accessors[acc_indices[i]].as_object_mut() {
                 obj.remove("byteStride");
             }
@@ -1283,8 +1280,7 @@ fn move_byte_stride_to_buffer_view(gltf: &mut Value) {
     root.insert("bufferViews".to_string(), Value::Array(buffer_views));
 }
 
-/// Collects accessor indices from a primitive `attributes` (or morph `target`)
-/// object.
+/// 从图元 `attributes`（或 morph `target`）对象中收集 accessor 索引。
 fn collect_attribute_accessors(attrs: Option<&Value>, out: &mut HashSet<u64>) {
     if let Some(obj) = attrs.and_then(Value::as_object) {
         for (_sem, acc) in obj {
@@ -1295,8 +1291,8 @@ fn collect_attribute_accessors(attrs: Option<&Value>, out: &mut HashSet<u64>) {
     }
 }
 
-/// Stride of an accessor against a fixed buffer-view snapshot (used while the
-/// live buffer views are being mutated).
+/// 相对于固定 buffer-view 快照的 accessor stride（在活动 buffer views
+/// 正在被修改时使用）。
 fn accessor_stride(accessor: &Value, buffer_views: &[Value]) -> usize {
     if let Some(bs) = accessor.get("byteStride").and_then(Value::as_u64) {
         if bs != 0 {
@@ -1317,10 +1313,10 @@ fn accessor_stride(accessor: &Value, buffer_views: &[Value]) -> usize {
     component_size_in_bytes(ct) * number_of_components_for_type(ty)
 }
 
-// ----------------------------- shared helpers -----------------------------
+// ----------------------------- 共享辅助函数 -----------------------------
 
-/// Maps a string id through `mapping` to an index; non-strings (already-indexed
-/// 2.0 values) pass through unchanged.
+/// 通过 `mapping` 将一个字符串 id 映射为索引；非字符串（已索引的
+/// 2.0 值）原样透传。
 fn map_id(mapping: &HashMap<String, usize>, value: &Value) -> Value {
     match value.as_str() {
         Some(id) => match mapping.get(id) {
@@ -1331,8 +1327,7 @@ fn map_id(mapping: &HashMap<String, usize>, value: &Value) -> Value {
     }
 }
 
-/// Remaps `gltf[collection][*][field]` (string id → index) for an array-form
-/// collection.
+/// 对于数组形式的集合，重映射 `gltf[collection][*][field]`（字符串 id → 索引）。
 fn remap_field(root: &mut Map<String, Value>, collection: &str, field: &str, mapping: &HashMap<String, usize>) {
     if let Some(Value::Array(list)) = root.get_mut(collection) {
         for item in list.iter_mut() {
@@ -1341,14 +1336,14 @@ fn remap_field(root: &mut Map<String, Value>, collection: &str, field: &str, map
     }
 }
 
-/// Remaps `value[field]` (string id → index) within a single JSON value.
+/// 在单个 JSON 值内重映射 `value[field]`（字符串 id → 索引）。
 fn remap_field_in(value: &mut Value, field: &str, mapping: &HashMap<String, usize>) {
     if let Some(obj) = value.as_object_mut() {
         remap_field_in_obj(obj, field, mapping);
     }
 }
 
-/// [`remap_field_in`] for an already-unwrapped object.
+/// 作于 [`remap_field_in`]，作用于一个已解包的对象。
 fn remap_field_in_obj(obj: &mut Map<String, Value>, field: &str, mapping: &HashMap<String, usize>) {
     if let Some(current) = obj.get(field).cloned() {
         if current.is_string() {
@@ -1357,12 +1352,12 @@ fn remap_field_in_obj(obj: &mut Map<String, Value>, field: &str, mapping: &HashM
     }
 }
 
-/// `defined()` semantics (Cesium): present and not null.
+/// `defined()` 语义（Cesium）：存在且非 null。
 fn is_defined(obj: &Map<String, Value>, key: &str) -> bool {
     obj.get(key).map(|v| !v.is_null()).unwrap_or(false)
 }
 
-/// Compares a JSON number array against an `f64` slice (exact equality).
+/// 将一个 JSON 数值数组与一个 `f64` 切片比较（完全相等）。
 fn number_array_eq(arr: &[Value], expected: &[f64]) -> bool {
     if arr.len() != expected.len() {
         return false;
@@ -1372,7 +1367,7 @@ fn number_array_eq(arr: &[Value], expected: &[f64]) -> bool {
         .all(|(v, e)| v.as_f64().map(|x| x == *e).unwrap_or(false))
 }
 
-/// True for a 16-element column-major identity matrix.
+/// 对于 16 元素的列主序单位矩阵返回 true。
 fn is_identity_matrix(m: &[Value]) -> bool {
     if m.len() != 16 {
         return false;
@@ -1383,13 +1378,12 @@ fn is_identity_matrix(m: &[Value]) -> bool {
     number_array_eq(m, &identity)
 }
 
-/// Removes `root[key]` and returns it as a `Vec<Value>` (empty when absent or
-/// not an array).
+/// 移除 `root[key]` 并以 `Vec<Value>` 返回（缺失或非数组时为空）。
 fn take_array(root: &mut Map<String, Value>, key: &str) -> Vec<Value> {
     match root.remove(key) {
         Some(Value::Array(a)) => a,
         Some(other) => {
-            // Put back non-array values untouched.
+            // 将非数组值原样放回。
             root.insert(key.to_string(), other);
             Vec::new()
         }
@@ -1397,8 +1391,8 @@ fn take_array(root: &mut Map<String, Value>, key: &str) -> Vec<Value> {
     }
 }
 
-/// Iterates `animation.samplers` mutably whether it is an object (glTF 1.0,
-/// keyed by sampler id) or an array (post-`objectsToArrays`).
+/// 可变遍历 `animation.samplers`，无论它是对象（glTF 1.0，
+/// 以 sampler id 为键）还是数组（`objectsToArrays` 之后）。
 fn for_each_sampler_mut(samplers: &mut Value, mut f: impl FnMut(&mut Value)) {
     match samplers {
         Value::Array(a) => {
@@ -1415,8 +1409,8 @@ fn for_each_sampler_mut(samplers: &mut Value, mut f: impl FnMut(&mut Value)) {
     }
 }
 
-/// Local `addExtensionsRequired` (avoids a cyclic import of the util crate
-/// helper while keeping behaviour identical).
+/// 本地的 `addExtensionsRequired`（避免循环导入 util crate 的
+/// 辅助函数，同时保持行为一致）。
 fn add_extensions_required_local(gltf: &mut Value, extension: &str) {
     let Some(root) = gltf.as_object_mut() else {
         return;
@@ -1441,7 +1435,7 @@ fn add_extensions_required_local(gltf: &mut Value, extension: &str) {
     }
 }
 
-/// Mutable traversal of a top-level collection (array or object form).
+/// 对一个顶层集合的可变遍历（数组或对象形式）。
 fn for_each_top_level_mut_named(gltf: &mut Value, name: &str, f: &mut impl FnMut(&mut Value)) {
     if let Some(coll) = gltf.get_mut(name) {
         match coll {
@@ -1460,13 +1454,13 @@ fn for_each_top_level_mut_named(gltf: &mut Value, name: &str, f: &mut impl FnMut
     }
 }
 
-/// Mutable traversal of `materials` (array or object form).
+/// 对 `materials` 的可变遍历（数组或对象形式）。
 fn for_each_material_mut(gltf: &mut Value, f: &mut impl FnMut(&mut Value)) {
     for_each_top_level_mut_named(gltf, "materials", f);
 }
 
-/// Mutable traversal of techniques, preferring `KHR_techniques_webgl.techniques`
-/// when that extension is used (mirrors `ForEach.technique`).
+/// 对 techniques 的可变遍历，当使用了 `KHR_techniques_webgl.techniques`
+/// 扩展时优先遍历它（镜像 `ForEach.technique`）。
 fn for_each_technique_mut(gltf: &mut Value, f: &mut impl FnMut(&mut Value)) {
     let uses_ext = gltf
         .get("extensionsUsed")
@@ -1502,8 +1496,8 @@ mod tests {
         assert!((a - b).abs() < 1e-12, "{ctx}: {a} != {b}");
     }
 
-    /// The `gltf1` fixture from `Specs/Scene/GltfJsonLoaderSpec.js` (L17-132):
-    /// a glTF 1.0 asset with a technique-based red material.
+    /// 来自 `Specs/Scene/GltfJsonLoaderSpec.js`（L17-132）的 `gltf1` fixture：
+    /// 一个带有基于 technique 的红色材质的 glTF 1.0 资源。
     fn gltf1_fixture() -> Value {
         json!({
             "asset": { "version": "1.0" },
@@ -1603,12 +1597,12 @@ mod tests {
         assert_eq!(detect_version(&json!({"asset":{"version":"2.0"}})), GltfVersion::V20);
         assert_eq!(detect_version(&json!({"version":"0.8"})), GltfVersion::V08);
         assert_eq!(detect_version(&json!({"version":0.8})), GltfVersion::V08);
-        // Absent version defaults to 1.0 (updateVersion.js L50/L61).
+        // 缺失的 version 默认为 1.0（updateVersion.js L50/L61）。
         assert_eq!(detect_version(&json!({})), GltfVersion::V10);
-        // Truncation to three characters (L57).
+        // 截断为三个字符（L57）。
         assert_eq!(detect_version(&json!({"asset":{"version":"2.0.0"}})), GltfVersion::V20);
         assert_eq!(detect_version(&json!({"asset":{"version":"1.0.1"}})), GltfVersion::V10);
-        // Unknown -> default 1.0 (L61).
+        // 未知 -> 默认 1.0（L61）。
         assert_eq!(detect_version(&json!({"asset":{"version":"3.5"}})), GltfVersion::V10);
         assert_eq!(GltfVersion::V20.as_str(), "2.0");
     }
@@ -1619,7 +1613,7 @@ mod tests {
         let err = update_version(&mut gltf, &opts()).unwrap_err();
         assert_eq!(err, GltfUpgradeError::UnsupportedVersion08);
 
-        // targetVersion 0.8 stops before the deferred step -> Ok, unchanged version.
+        // targetVersion 0.8 在被推迟的步骤前停下 -> Ok，版本不变。
         let mut gltf = json!({"version":"0.8"});
         let o = UpgradeOptions { target_version: Some("0.8".to_string()), ..Default::default() };
         assert!(update_version(&mut gltf, &o).is_ok());
@@ -1635,8 +1629,8 @@ mod tests {
         );
     }
 
-    /// A plain 2.0 asset passes through unchanged (update loop is skipped and
-    /// the PBR converters are no-ops without the legacy extensions).
+    /// 一个普通的 2.0 资源原样透传不变（升级循环被跳过，且
+    /// 没有遗留扩展时 PBR 转换器为无操作）。
     #[test]
     fn gltf2_passthrough_is_unchanged() {
         let original = gltf2_fixture();
@@ -1645,38 +1639,38 @@ mod tests {
         assert_eq!(gltf, original, "2.0 passthrough must not mutate the asset");
     }
 
-    /// Full 1.0 -> 2.0 upgrade of the `gltf1` fixture: objectsToArrays,
-    /// reference backfill, byteStride move, technique -> PBR material.
+    /// 对 `gltf1` fixture 的完整 1.0 -> 2.0 升级：objectsToArrays、
+    /// 引用回填、byteStride 移动、technique -> PBR 材质。
     #[test]
     fn gltf1_full_upgrade() {
         let mut gltf = gltf1_fixture();
         update_version(&mut gltf, &opts()).unwrap();
 
-        // Version bumped.
+        // 版本已提升。
         assert_eq!(gltf.pointer("/asset/version").and_then(Value::as_str), Some("2.0"));
 
-        // objectsToArrays: collections are arrays; string ids became indices.
+        // objectsToArrays：集合变为数组；字符串 id 变成索引。
         assert!(gltf.get("accessors").and_then(Value::as_array).is_some());
         assert_eq!(gltf.pointer("/accessors/0/bufferView").and_then(Value::as_u64), Some(0));
         assert_eq!(gltf.pointer("/bufferViews/0/buffer").and_then(Value::as_u64), Some(0));
         assert_eq!(gltf.pointer("/meshes/0/primitives/0/attributes/POSITION").and_then(Value::as_u64), Some(0));
         assert_eq!(gltf.pointer("/meshes/0/primitives/0/material").and_then(Value::as_u64), Some(0));
-        // node.meshes -> node.mesh; scene/scene.nodes remapped.
+        // node.meshes -> node.mesh；scene/scene.nodes 重映射。
         assert_eq!(gltf.pointer("/nodes/0/mesh").and_then(Value::as_u64), Some(0));
         assert!(gltf.pointer("/nodes/0/meshes").is_none());
         assert_eq!(gltf.pointer("/scene").and_then(Value::as_u64), Some(0));
         assert_eq!(gltf.pointer("/scenes/0/nodes/0").and_then(Value::as_u64), Some(0));
-        // name assigned from the object key.
+        // name 从对象键赋值。
         assert_eq!(gltf.pointer("/accessors/0/name").and_then(Value::as_str), Some("accessor"));
 
-        // requireByteLength + moveByteStrideToBufferView (JSON-only parts).
-        // accessor: FLOAT VEC3 count 1 -> tight stride 12.
+        // requireByteLength + moveByteStrideToBufferView（仅 JSON 部分）。
+        // accessor：FLOAT VEC3 count 1 -> 紧凑 stride 12。
         assert_eq!(gltf.pointer("/bufferViews/0/byteLength").and_then(Value::as_u64), Some(12));
         assert_eq!(gltf.pointer("/bufferViews/0/byteStride").and_then(Value::as_u64), Some(12));
-        // componentType preserved through the upgrade.
+        // componentType 在整个升级过程中保留。
         assert_eq!(gltf.pointer("/accessors/0/componentType").and_then(Value::as_u64), Some(5126));
 
-        // technique -> PBR: material has pbrMetallicRoughness, no technique/values.
+        // technique -> PBR：材质有 pbrMetallicRoughness，无 technique/values。
         assert_eq!(gltf.pointer("/materials/0/name").and_then(Value::as_str), Some("red"));
         assert!(gltf.pointer("/materials/0/technique").is_none());
         assert!(gltf.pointer("/materials/0/values").is_none());
@@ -1684,7 +1678,7 @@ mod tests {
         let metallic = gltf.pointer("/materials/0/pbrMetallicRoughness/metallicFactor").and_then(Value::as_f64);
         assert_eq!(roughness, Some(1.0));
         assert_eq!(metallic, Some(0.0));
-        // srgbToLinear(0.8) == 0.6038273388553378 (Spec gltf2 material).
+        // srgbToLinear(0.8) == 0.6038273388553378（Spec gltf2 材质）。
         let bcf = gltf.pointer("/materials/0/pbrMetallicRoughness/baseColorFactor").and_then(Value::as_array).cloned();
         let bcf = bcf.expect("baseColorFactor present");
         assert_close(bcf[0].as_f64().unwrap(), 0.6038273388553378, "baseColorFactor.r");
@@ -1692,7 +1686,7 @@ mod tests {
         assert_close(bcf[2].as_f64().unwrap(), 0.0, "baseColorFactor.b");
         assert_close(bcf[3].as_f64().unwrap(), 1.0, "baseColorFactor.a");
 
-        // Legacy technique collections + the transitional extension are gone.
+        // 遗留的 technique 集合 + 过渡性扩展都已移除。
         assert!(gltf.get("techniques").is_none());
         assert!(gltf.get("programs").is_none());
         assert!(gltf.get("shaders").is_none());
@@ -1700,7 +1694,7 @@ mod tests {
         assert!(!crate::gltf_upgrade_util::uses_extension(&gltf, "KHR_techniques_webgl"));
     }
 
-    /// `KHR_materials_common` (PHONG) -> PBR base color + alphaMode/doubleSided.
+    /// `KHR_materials_common`（PHONG）-> PBR base color + alphaMode/doubleSided。
     #[test]
     fn gltf1_materials_common_to_pbr() {
         let mut gltf = gltf1_materials_common_fixture();
@@ -1708,18 +1702,18 @@ mod tests {
 
         assert_eq!(gltf.pointer("/asset/version").and_then(Value::as_str), Some("2.0"));
         assert_eq!(gltf.pointer("/materials/0/name").and_then(Value::as_str), Some("red"));
-        // diffuse [0.8,0,0,1] -> linear base color.
+        // diffuse [0.8,0,0,1] -> 线性 base color。
         let bcf = gltf.pointer("/materials/0/pbrMetallicRoughness/baseColorFactor").and_then(Value::as_array).cloned();
         let bcf = bcf.expect("baseColorFactor present");
         assert_close(bcf[0].as_f64().unwrap(), 0.6038273388553378, "mc.baseColorFactor.r");
         assert_eq!(gltf.pointer("/materials/0/alphaMode").and_then(Value::as_str), Some("OPAQUE"));
         assert_eq!(gltf.pointer("/materials/0/doubleSided").and_then(Value::as_bool), Some(false));
-        // Extension removed from the material and from extensionsUsed/Required.
+        // 扩展已从材质和 extensionsUsed/Required 中移除。
         assert!(gltf.pointer("/materials/0/extensions/KHR_materials_common").is_none());
         assert!(!crate::gltf_upgrade_util::uses_extension(&gltf, "KHR_materials_common"));
     }
 
-    /// `removeAnimationSamplersIndirection` + objectsToArrays for animations.
+    /// `removeAnimationSamplersIndirection` + 针对动画的 objectsToArrays。
     #[test]
     fn animation_samplers_deindirection() {
         let mut gltf = json!({
@@ -1739,22 +1733,22 @@ mod tests {
         });
         update_version(&mut gltf, &opts()).unwrap();
 
-        // parameters indirection removed; samplers reference accessors by index.
+        // parameters 间接引用已移除；samplers 按索引引用 accessor。
         assert!(gltf.pointer("/animations/0/parameters").is_none());
         assert!(gltf.pointer("/animations/0/samplers").and_then(Value::as_array).is_some());
-        // accTime -> 0, accValue -> 1 (alphabetical key order).
+        // accTime -> 0，accValue -> 1（字母键序）。
         assert_eq!(gltf.pointer("/animations/0/samplers/0/input").and_then(Value::as_u64), Some(0));
         assert_eq!(gltf.pointer("/animations/0/samplers/0/output").and_then(Value::as_u64), Some(1));
-        // sampler name stripped.
+        // sampler name 已被剔除。
         assert!(gltf.pointer("/animations/0/samplers/0/name").is_none());
-        // channel.sampler -> index; target.id -> target.node.
+        // channel.sampler -> 索引；target.id -> target.node。
         assert_eq!(gltf.pointer("/animations/0/channels/0/sampler").and_then(Value::as_u64), Some(0));
         assert_eq!(gltf.pointer("/animations/0/channels/0/target/node").and_then(Value::as_u64), Some(0));
         assert!(gltf.pointer("/animations/0/channels/0/target/id").is_none());
     }
 
-    /// accessor.byteStride (1.0) moves onto the bufferView (2.0); componentType
-    /// is preserved and bufferView.byteLength is derived from the accessor span.
+    /// accessor.byteStride（1.0）移到 bufferView（2.0）上；componentType
+    /// 保留，且 bufferView.byteLength 由 accessor 跨度推导。
     #[test]
     fn accessor_byte_stride_moves_to_buffer_view() {
         let mut gltf = json!({
@@ -1769,44 +1763,44 @@ mod tests {
         });
         update_version(&mut gltf, &opts()).unwrap();
 
-        // byteStride removed from the accessor ...
+        // byteStride 已从 accessor 移除……
         assert!(gltf.pointer("/accessors/0/byteStride").is_none());
-        // ... and moved onto the bufferView.
+        // ……并移到 bufferView 上。
         assert_eq!(gltf.pointer("/bufferViews/0/byteStride").and_then(Value::as_u64), Some(24));
-        // byteLength = byteOffset(0) + count(2) * stride(24) = 48.
+        // byteLength = byteOffset(0) + count(2) * stride(24) = 48。
         assert_eq!(gltf.pointer("/bufferViews/0/byteLength").and_then(Value::as_u64), Some(48));
-        // componentType preserved; bufferView remapped to index.
+        // componentType 保留；bufferView 重映射为索引。
         assert_eq!(gltf.pointer("/accessors/0/componentType").and_then(Value::as_u64), Some(5126));
         assert_eq!(gltf.pointer("/accessors/0/bufferView").and_then(Value::as_u64), Some(0));
     }
 
-    /// `keepLegacyExtensions` preserves the technique extension instead of
-    /// converting it to PBR.
+    /// `keepLegacyExtensions` 保留 technique 扩展，而非
+    /// 将其转换为 PBR。
     #[test]
     fn keep_legacy_extensions_preserves_techniques() {
         let mut gltf = gltf1_fixture();
         let o = UpgradeOptions { keep_legacy_extensions: true, ..Default::default() };
         update_version(&mut gltf, &o).unwrap();
-        // Structural upgrade still ran (version 2.0, arrays) ...
+        // 结构升级仍已运行（版本 2.0，数组）……
         assert_eq!(gltf.pointer("/asset/version").and_then(Value::as_str), Some("2.0"));
-        // ... but the technique lives on in KHR_techniques_webgl, not PBR.
+        // ……但 technique 仍存在于 KHR_techniques_webgl，而非 PBR。
         assert!(gltf.pointer("/extensions/KHR_techniques_webgl/techniques/0").is_some());
         assert!(gltf.pointer("/materials/0/extensions/KHR_techniques_webgl").is_some());
         assert!(gltf.pointer("/materials/0/pbrMetallicRoughness").is_none());
     }
 
-    /// `targetVersion = "1.0"` stops before the 1.0 -> 2.0 step.
+    /// `targetVersion = "1.0"` 在 1.0 -> 2.0 步骤前停下。
     #[test]
     fn target_version_1_0_stops_upgrade() {
         let mut gltf = gltf1_fixture();
         let o = UpgradeOptions { target_version: Some("1.0".to_string()), ..Default::default() };
         update_version(&mut gltf, &o).unwrap();
-        // Still 1.0; collections remain object-keyed (objectsToArrays not run).
+        // 仍为 1.0；集合仍以对象为键（objectsToArrays 未运行）。
         assert_eq!(gltf.pointer("/asset/version").and_then(Value::as_str), Some("1.0"));
         assert!(gltf.get("accessors").and_then(Value::as_object).is_some());
     }
 
-    /// `requireAttributeSetIndex`: TEXCOORD/COLOR gain the `_0` set index.
+    /// `requireAttributeSetIndex`：TEXCOORD/COLOR 获得 `_0` 集合索引。
     #[test]
     fn attribute_set_index_added() {
         let mut gltf = json!({

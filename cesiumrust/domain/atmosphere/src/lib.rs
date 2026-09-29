@@ -1,18 +1,18 @@
-//! cesium-atmosphere: Atmospheric and celestial domain models
+//! cesium-atmosphere：大气与天体领域模型
 //!
-//! Maps to CesiumJS:
+//! 映射到 CesiumJS：
 //! - `Scene/SkyAtmosphere.js`
 //! - `Scene/SkyBox.js`
 //! - `Scene/Sun.js`
 //! - `Scene/Moon.js`
 //! - `Core/Simon1994PlanetaryPositions.js`
 //!
-//! # Features
-//! - Sun/Moon position computation (simplified VSOP87/lunar theory)
-//! - ECI ↔ ECEF coordinate transformation
-//! - Rayleigh/Mie atmospheric scattering model
-//! - Sky color computation
-//! - Lighting configuration
+//! # 特性
+//! - 太阳/月亮位置计算（简化的 VSOP87/月球理论）
+//! - ECI ↔ ECEF 坐标变换
+//! - Rayleigh/Mie 大气散射模型
+//! - 天空颜色计算
+//! - 光照配置
 
 pub mod celestial;
 pub mod scattering;

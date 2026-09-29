@@ -1,8 +1,8 @@
-//! Globe extended specs - pure math functions from cesium-globe
+//! Globe 扩展 specs - 来自 cesium-globe 的纯数学函数
 //!
-//! Tests: horizon_distance, horizon_dip_angle, is_on_visible_hemisphere,
+//! 测试：horizon_distance、horizon_dip_angle、is_on_visible_hemisphere，
 //! compute_tile_sse, should_refine_tile, get_surface_normal, pick,
-//! compute_lit_color, NearFarScalar interpolation, GlobeLighting, etc.
+//! compute_lit_color、NearFarScalar 插值、GlobeLighting 等。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -59,7 +59,7 @@ fn near_far_scalar_clamp_above_far() {
 fn near_far_scalar_non_unit_range() {
     let nfs = NearFarScalar::new(0.0, 10.0, 100.0, 50.0);
     let val = nfs.interpolate(50.0);
-    // Midpoint: 10 + (50 - 10) * 0.5 = 30.0
+    // 中点：10 + (50 - 10) * 0.5 = 30.0
     assert!((val - 30.0).abs() < EPSILON10, "expected 30.0, got {}", val);
 }
 
@@ -71,7 +71,7 @@ fn globe_surface_normal_at_equator() {
     let surface = GlobeSurface::with_ellipsoid(e);
     let pos = e.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0));
     let normal = surface.get_surface_normal(pos);
-    // At equator/prime meridian, normal should point along +X
+    // 在赤道/本初子午线处，法线应沿 +X 方向
     assert!(
         (normal.x - 1.0).abs() < 0.01,
         "normal at equator should be ≈ +X, got {:?}", normal
@@ -84,7 +84,7 @@ fn globe_surface_normal_at_north_pole() {
     let surface = GlobeSurface::with_ellipsoid(e);
     let pos = e.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 90.0, 0.0));
     let normal = surface.get_surface_normal(pos);
-    // At north pole, normal should point along +Z
+    // 在北极处，法线应沿 +Z 方向
     assert!(
         (normal.z - 1.0).abs() < 0.01,
         "normal at north pole should be ≈ +Z, got {:?}", normal
@@ -118,7 +118,7 @@ fn globe_surface_height_returns_zero() {
     assert!(h.unwrap().abs() < 1.0, "ellipsoid surface height should be ≈ 0");
 }
 
-// ─── GlobeSurface horizon calculations ──────────────────────────────────────
+// ─── GlobeSurface 地平线计算 ──────────────────────────────────────
 
 #[test]
 fn globe_surface_horizon_distance_increases_with_height() {
@@ -137,7 +137,7 @@ fn globe_surface_horizon_distance_at_surface() {
     let e = wgs84();
     let surface = GlobeSurface::with_ellipsoid(e);
     let h = surface.horizon_distance(0.0);
-    // At surface level, horizon distance should be 0 (or very small)
+    // 在地表高度，地平距离应为 0（或非常小）
     assert!(
         h.abs() < 1.0,
         "horizon distance at surface should be ≈ 0, got {}", h
@@ -150,14 +150,14 @@ fn globe_surface_horizon_dip_angle_increases_with_height() {
     let surface = GlobeSurface::with_ellipsoid(e);
     let d_low = surface.horizon_dip_angle(1000.0);
     let d_high = surface.horizon_dip_angle(1_000_000.0);
-    // Dip angle should be more negative at higher altitude
+    // 在更高海拔，俯角应更负
     assert!(
         d_high.abs() > d_low.abs(),
         "dip angle magnitude should increase with height: low={}, high={}", d_low, d_high
     );
 }
 
-// ─── GlobeSurface visible hemisphere ────────────────────────────────────────
+// ─── GlobeSurface 可见半球 ────────────────────────────────────────
 
 #[test]
 fn globe_surface_visible_hemisphere_facing() {
@@ -177,14 +177,14 @@ fn globe_surface_visible_hemisphere_opposite() {
     let surface = GlobeSurface::with_ellipsoid(e);
     let pos = e.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0));
     let camera = e.cartographic_to_cartesian(&Cartographic::from_degrees(180.0, 0.0, 100_000.0));
-    // Position on opposite side of globe
+    // 位于球体另一侧的位置
     assert!(
         !surface.is_on_visible_hemisphere(pos, camera),
         "position on opposite side should NOT be visible"
     );
 }
 
-// ─── GlobeSurface tile SSE ───────────────────────────────────────────────────
+// ─── GlobeSurface 瓦片 SSE ───────────────────────────────────────────────────
 
 #[test]
 fn globe_surface_tile_sse_decreases_with_distance() {
@@ -192,7 +192,7 @@ fn globe_surface_tile_sse_decreases_with_distance() {
     let surface = GlobeSurface::with_ellipsoid(e);
     let geometric_error = 100.0;
     let viewport_height = 1080.0;
-    let sse_denominator = 2.0 * (PI / 3.0).tan(); // 60 degree FOV
+    let sse_denominator = 2.0 * (PI / 3.0).tan(); // 60 度 FOV
     let sse_near = surface.compute_tile_sse(geometric_error, 1000.0, viewport_height, sse_denominator);
     let sse_far = surface.compute_tile_sse(geometric_error, 10_000.0, viewport_height, sse_denominator);
     assert!(
@@ -216,19 +216,19 @@ fn globe_surface_tile_sse_zero_geometric_error() {
 fn globe_surface_should_refine_tile() {
     let e = wgs84();
     let surface = GlobeSurface::with_ellipsoid(e);
-    // High SSE → should refine
+    // 高 SSE → 应细分
     assert!(surface.should_refine_tile(20.0), "high SSE should refine");
-    // Low SSE → should not refine
+    // 低 SSE → 不应细分
     assert!(!surface.should_refine_tile(0.1), "low SSE should not refine");
 }
 
-// ─── GlobeSurface pick ───────────────────────────────────────────────────────
+// ─── GlobeSurface 拾取 ───────────────────────────────────────────────────────
 
 #[test]
 fn globe_surface_pick_directly_above() {
     let e = wgs84();
     let surface = GlobeSurface::with_ellipsoid(e);
-    // Ray from above equator looking straight down
+    // 从赤道上方垂直向下的射线
     let origin = e.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 100_000.0));
     let direction = -origin.normalize();
     let hit = surface.pick(origin, direction);
@@ -245,9 +245,9 @@ fn globe_surface_pick_directly_above() {
 fn globe_surface_pick_misses_when_parallel() {
     let e = wgs84();
     let surface = GlobeSurface::with_ellipsoid(e);
-    // Ray parallel to surface, far from globe
-    let origin = DVec3::new(0.0, 0.0, 100_000_000.0); // Very far above
-    let direction = DVec3::X; // Looking sideways
+    // 射线平行于表面，远离球体
+    let origin = DVec3::new(0.0, 0.0, 100_000_000.0); // 极高处
+    let direction = DVec3::X; // 侧向观察
     let hit = surface.pick(origin, direction);
     assert!(hit.is_none(), "parallel ray far from globe should miss");
 }
@@ -287,7 +287,7 @@ fn ground_atmosphere_zenith_vs_horizon() {
     let atm = GroundAtmosphere::default();
     let zenith = atm.compute_zenith_color(0.5);
     let horizon = atm.compute_horizon_glow(0.5);
-    // Zenith and horizon should produce different colors
+    // 天顶和地平线应产生不同的颜色
     let diff = ((zenith[0] - horizon[0]).powi(2)
         + (zenith[1] - horizon[1]).powi(2)
         + (zenith[2] - horizon[2]).powi(2))
@@ -340,7 +340,7 @@ fn sky_atmosphere_config_defaults() {
 #[test]
 fn sky_atmosphere_config_radius() {
     let config = SkyAtmosphereConfig::default();
-    // Atmosphere radius should encompass the atmosphere (~100km for Earth)
+    // 大气半径应包住大气层（地球约 100km）
     assert!(
         config.atmosphere_radius > 6_400_000.0,
         "atmosphere radius should be > 6400km, got {}", config.atmosphere_radius

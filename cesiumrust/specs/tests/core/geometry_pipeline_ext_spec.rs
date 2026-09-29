@@ -1,6 +1,6 @@
-//! GeometryPipeline extended specs - additional A-class tests from
-//! Core/GeometryPipelineSpec.js covering computeNormal, computeTangentAndBitangent,
-//! fitToUnsignedShortIndices, splitLongitude, compressVertices edge cases.
+//! GeometryPipeline 扩展规范 —— 来自
+//! Core/GeometryPipelineSpec.js 的额外 A 类测试，覆盖 computeNormal、computeTangentAndBitangent、
+//! fitToUnsignedShortIndices、splitLongitude、compressVertices 边界情形。
 
 use cesium_geospatial::geometry::{
     combine_geometries, compress_vertices, compute_normal, compute_tangent_and_bitangent,
@@ -24,22 +24,22 @@ fn make_geo(positions: Vec<[f64; 3]>, indices: Vec<u32>, pt: PrimitiveType) -> G
     }
 }
 
-// ─── computeNormal extended ─────────────────────────────────────────────────
+// ─── computeNormal 扩展 ─────────────────────────────────────────────────
 
 #[test]
 fn compute_normal_six_triangles_fan() {
-    // Fan of 6 triangles around vertex 0 (like a pyramid base)
-    // Positions: center + 6 surrounding vertices forming a hexagon in XZ plane
+    // 绕顶点 0 的 6 个三角形扇形（类似棱锥底面）
+    // 位置：中心 + 周围 6 个顶点，在 XZ 平面构成六边形
     let positions = vec![
-        [0.0, 0.0, 0.0],  // 0: center
+        [0.0, 0.0, 0.0],  // 0：中心
         [1.0, 0.0, 0.0],  // 1
         [1.0, 0.0, 1.0],  // 2
         [0.0, 0.0, 1.0],  // 3
         [-1.0, 0.0, 1.0], // 4
         [-1.0, 0.0, 0.0], // 5
-        [0.0, 0.0, -1.0], // 6 (not used in fan but present)
+        [0.0, 0.0, -1.0], // 6（不在扇形中使用，但存在）
     ];
-    // 6 triangles fan: (0,1,2), (0,2,3), (0,3,4), (0,4,5), (0,5,6), (0,6,1)
+    // 6 个三角形扇形：(0,1,2), (0,2,3), (0,3,4), (0,4,5), (0,5,6), (0,6,1)
     let indices = vec![0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 1];
 
     let mut geo = make_geo(positions, indices, PrimitiveType::Triangles);
@@ -48,28 +48,28 @@ fn compute_normal_six_triangles_fan() {
     let normals = geo.normals.as_ref().unwrap();
     assert_eq!(normals.len(), 7);
 
-    // All triangles are in the XZ plane (y=0), so normals should point in Y direction
-    // Vertex 0 is shared by all 6 triangles, its normal should be average = (0, -1, 0) or (0, 1, 0)
+    // 所有三角形都在 XZ 平面（y=0），因此法线应指向 Y 方向
+    // 顶点 0 由 6 个三角形共享，其法线应为平均值 = (0, -1, 0) 或 (0, 1, 0)
     let n0 = DVec3::from(normals[0]);
     assert!(n0.length() > 0.99 && n0.length() < 1.01, "normal should be unit length");
-    // The normal should be predominantly in Y direction
+    // 法线应主要沿 Y 方向
     assert!(n0.y.abs() > 0.9, "center normal should point in Y, got {:?}", n0);
 }
 
 #[test]
 fn compute_normal_coplanar_opposite_winding() {
-    // Two coplanar triangles with opposite winding orders
-    // Triangle 1: CCW in XY plane → normal (0,0,1)
-    // Triangle 2: CW in XY plane → normal (0,0,-1)
-    // Shared vertices should get the first computed normal
+    // 两个共面三角形，绕序方向相反
+    // 三角形 1：XY 平面内 CCW → 法线 (0,0,1)
+    // 三角形 2：XY 平面内 CW → 法线 (0,0,-1)
+    // 共享顶点应获得首个计算出的法线
     let positions = vec![
         [0.0, 0.0, 0.0], // 0
         [1.0, 0.0, 0.0], // 1
         [0.0, 1.0, 0.0], // 2
         [1.0, 1.0, 0.0], // 3
     ];
-    // Triangle 1: (0,1,2) CCW → normal +Z
-    // Triangle 2: (1,3,2) CW → normal -Z (opposite winding)
+    // 三角形 1：(0,1,2) CCW → 法线 +Z
+    // 三角形 2：(1,3,2) CW → 法线 -Z（绕序相反）
     let indices = vec![0, 1, 2, 1, 3, 2];
 
     let mut geo = make_geo(positions, indices, PrimitiveType::Triangles);
@@ -78,19 +78,19 @@ fn compute_normal_coplanar_opposite_winding() {
     let normals = geo.normals.as_ref().unwrap();
     assert_eq!(normals.len(), 4);
 
-    // All normals should be unit length
+    // 所有法线应为单位长度
     for n in normals {
         let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
         assert!((len - 1.0).abs() < 1e-6, "normal not unit: {:?}", n);
     }
 
-    // Vertex 0 is only in triangle 1 → normal should be (0,0,1)
+    // 顶点 0 仅在三角形 1 中 → 法线应为 (0,0,1)
     assert!((normals[0][2] - 1.0).abs() < 1e-6, "v0 normal should be +Z");
 }
 
 #[test]
 fn compute_normal_recomputes_over_existing() {
-    // compute_normal always recomputes normals from triangle faces
+    // compute_normal 总是从三角形面重新计算法线
     let mut geo = make_geo(
         vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
         vec![0, 1, 2],
@@ -100,16 +100,16 @@ fn compute_normal_recomputes_over_existing() {
 
     compute_normal(&mut geo);
 
-    // Normals should be recomputed to face normal (0,0,1) for XY-plane triangle
+    // 对 XY 平面三角形，法线应被重算为面法线 (0,0,1)
     let normals = geo.normals.as_ref().unwrap();
     assert!((normals[0][2] - 1.0).abs() < 1e-6, "normal should be +Z after recompute");
 }
 
-// ─── computeTangentAndBitangent extended ────────────────────────────────────
+// ─── computeTangentAndBitangent 扩展 ────────────────────────────────────
 
 #[test]
 fn compute_tangent_bitangent_two_triangles_shared_edge() {
-    // Two triangles sharing edge (1,2) in XY plane
+    // 两个在 XY 平面内共享边 (1,2) 的三角形
     let positions = vec![
         [0.0, 0.0, 0.0], // 0
         [1.0, 0.0, 0.0], // 1
@@ -147,14 +147,14 @@ fn compute_tangent_bitangent_two_triangles_shared_edge() {
     assert_eq!(tangents.len(), 4);
     assert_eq!(bitangents.len(), 4);
 
-    // All tangents should be unit length and roughly along X
+    // 所有切线应为单位长度且大致沿 X 方向
     for t in tangents {
         let len = (t[0] * t[0] + t[1] * t[1] + t[2] * t[2]).sqrt();
         assert!((len - 1.0).abs() < 1e-6, "tangent not unit: {:?}", t);
         assert!(t[0].abs() > 0.9, "tangent should be along X, got {:?}", t);
     }
 
-    // All bitangents should be unit length and roughly along Y
+    // 所有副切线应为单位长度且大致沿 Y 方向
     for b in bitangents {
         let len = (b[0] * b[0] + b[1] * b[1] + b[2] * b[2]).sqrt();
         assert!((len - 1.0).abs() < 1e-6, "bitangent not unit: {:?}", b);
@@ -164,29 +164,29 @@ fn compute_tangent_bitangent_two_triangles_shared_edge() {
 
 #[test]
 fn compute_tangent_bitangent_without_normals_no_crash() {
-    // Without normals, compute_tangent_and_bitangent should not crash
+    // 没有法线时，compute_tangent_and_bitangent 不应崩溃
     let mut geo = make_geo(
         vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
         vec![0, 1, 2],
         PrimitiveType::Triangles,
     );
     geo.tex_coords = Some(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]);
-    // No normals set - should not panic
+    // 未设置法线 - 不应 panic
 
     compute_tangent_and_bitangent(&mut geo);
 
-    // Implementation may or may not produce tangents without normals;
-    // just verify no crash and consistent state
+    // 实现可能在无法线时产生切线，也可能不产生；
+    // 此处仅验证不崩溃且状态一致
     if let Some(ref t) = geo.tangents {
         assert_eq!(t.len(), geo.positions.len());
     }
 }
 
-// ─── fitToUnsignedShortIndices extended ─────────────────────────────────────
+// ─── fitToUnsignedShortIndices 扩展 ─────────────────────────────────────
 
 #[test]
 fn fit_to_unsigned_short_lines_no_split() {
-    // Small line geometry should not be split
+    // 小尺寸线几何不应被拆分
     let geo = make_geo(
         vec![[0.0; 3], [1.0; 3], [2.0; 3], [3.0; 3]],
         vec![0, 1, 2, 3],
@@ -202,13 +202,13 @@ fn fit_to_unsigned_short_lines_no_split() {
 
 #[test]
 fn fit_to_unsigned_short_lines_splits_large() {
-    // Create line geometry with > 65536 vertices
+    // 创建含 > 65536 个顶点的线几何
     let num_vertices = 70000;
     let positions: Vec<[f64; 3]> = (0..num_vertices)
         .map(|i| [i as f64, 0.0, 0.0])
         .collect();
 
-    // Create line pairs
+    // 创建线对
     let mut indices: Vec<u32> = Vec::new();
     for i in (0..num_vertices - 1).step_by(2) {
         indices.push(i as u32);
@@ -222,7 +222,7 @@ fn fit_to_unsigned_short_lines_splits_large() {
     for sub in &result {
         assert!(sub.positions.len() <= 65536);
         assert_eq!(sub.primitive_type, PrimitiveType::Lines);
-        // All indices should be valid
+        // 所有索引应有效
         for &idx in &sub.indices {
             assert!((idx as usize) < sub.positions.len());
         }
@@ -231,7 +231,7 @@ fn fit_to_unsigned_short_lines_splits_large() {
 
 #[test]
 fn fit_to_unsigned_short_preserves_normals() {
-    // Create geometry with normals that needs splitting
+    // 创建需要拆分的含法线几何
     let num_vertices = 65537;
     let positions: Vec<[f64; 3]> = (0..num_vertices)
         .map(|i| [i as f64, 0.0, 0.0])
@@ -258,12 +258,12 @@ fn fit_to_unsigned_short_preserves_normals() {
     }
 }
 
-// ─── splitLongitude extended ────────────────────────────────────────────────
+// ─── splitLongitude 扩展 ────────────────────────────────────────────────
 
 #[test]
 fn split_longitude_east_hemisphere_only() {
     let ellipsoid = Ellipsoid::WGS84;
-    // Triangle entirely in eastern hemisphere (10°E - 20°E)
+    // 完全位于东半球的三角形（10°E - 20°E）
     let p0 = ellipsoid.cartographic_to_cartesian(
         &cesium_geospatial::Cartographic::from_degrees(10.0, 0.0, 0.0),
     );
@@ -288,7 +288,7 @@ fn split_longitude_east_hemisphere_only() {
 #[test]
 fn split_longitude_west_hemisphere_only() {
     let ellipsoid = Ellipsoid::WGS84;
-    // Triangle entirely in western hemisphere (-20°W - -10°W)
+    // 完全位于西半球的三角形（-20°W - -10°W）
     let p0 = ellipsoid.cartographic_to_cartesian(
         &cesium_geospatial::Cartographic::from_degrees(-20.0, 0.0, 0.0),
     );
@@ -312,7 +312,7 @@ fn split_longitude_west_hemisphere_only() {
 #[test]
 fn split_longitude_crossing_idl_splits() {
     let ellipsoid = Ellipsoid::WGS84;
-    // Triangle crossing the IDL: vertices at 170°E and 170°W
+    // 跨越国际日期变更线的三角形：顶点位于 170°E 和 170°W
     let p0 = ellipsoid.cartographic_to_cartesian(
         &cesium_geospatial::Cartographic::from_degrees(170.0, 0.0, 0.0),
     );
@@ -330,11 +330,11 @@ fn split_longitude_crossing_idl_splits() {
     );
 
     let result = split_longitude(&geo, &ellipsoid);
-    // Our simplified implementation splits into east/west parts
-    // It should produce at least 1 result (may or may not split depending on heuristic)
+    // 我们的简化实现拆分为东/西两部分
+    // 应至少产生 1 个结果（根据启发式可能拆分也可能不拆分）
     assert!(!result.is_empty(), "Should produce at least one geometry");
 
-    // Total positions across all parts should be >= original
+    // 各部分位置总数应 >= 原始数量
     let total_positions: usize = result.iter().map(|g| g.positions.len()).sum();
     assert!(total_positions >= 3, "Split should preserve or add vertices");
 }
@@ -342,7 +342,7 @@ fn split_longitude_crossing_idl_splits() {
 #[test]
 fn split_longitude_non_triangles_unchanged() {
     let ellipsoid = Ellipsoid::WGS84;
-    // Lines primitive should be returned unchanged
+    // Lines 图元应原样返回
     let p0 = ellipsoid.cartographic_to_cartesian(
         &cesium_geospatial::Cartographic::from_degrees(170.0, 0.0, 0.0),
     );
@@ -371,11 +371,11 @@ fn split_longitude_empty_geometry() {
     assert!(result[0].positions.is_empty());
 }
 
-// ─── compressVertices extended ──────────────────────────────────────────────
+// ─── compressVertices 扩展 ──────────────────────────────────────────────
 
 #[test]
 fn compress_vertices_oct_encoding_roundtrip() {
-    // Verify that oct-encoded normals can be decoded back to approximately the same direction
+    // 验证 oct 编码的法线可被解码回大致相同的方向
     let normals = vec![
         [0.0, 0.0, 1.0],  // +Z
         [1.0, 0.0, 0.0],  // +X
@@ -394,12 +394,12 @@ fn compress_vertices_oct_encoding_roundtrip() {
     };
 
     let compressed = compress_vertices(&geo).unwrap();
-    // 4 vertices * 1 u32 (normal only, no ST) = 4 u32s
+    // 4 个顶点 * 1 u32（仅法线，无 ST）= 4 个 u32
     assert_eq!(compressed.len(), 4);
 
-    // Each compressed u32 should be non-zero (valid oct encoding)
+    // 每个压缩后的 u32 应非零（有效的 oct 编码）
     for &c in &compressed {
-        assert!(c != 0 || true); // oct_encode of (0,0,1) maps to center which could be 0
+        assert!(c != 0 || true); // (0,0,1) 的 oct_encode 映射到中心，可能为 0
     }
 }
 
@@ -417,17 +417,17 @@ fn compress_vertices_with_st_packing() {
     };
 
     let compressed = compress_vertices(&geo).unwrap();
-    // 3 vertices * 2 u32 (normal + ST) = 6 u32s
+    // 3 个顶点 * 2 u32（法线 + ST）= 6 个 u32
     assert_eq!(compressed.len(), 6);
 
-    // Verify ST packing: first vertex has ST (0,0) → packed as 0
-    let st0 = compressed[1]; // second u32 for vertex 0
+    // 验证 ST 打包：首个顶点 ST 为 (0,0) → 打包为 0
+    let st0 = compressed[1]; // 顶点 0 的第二个 u32
     let s0 = st0 & 0xFFFF;
     let t0 = (st0 >> 16) & 0xFFFF;
     assert_eq!(s0, 0); // s=0.0 → 0
     assert_eq!(t0, 0); // t=0.0 → 0
 
-    // Second vertex has ST (1,0) → s=65535, t=0
+    // 第二个顶点 ST 为 (1,0) → s=65535、t=0
     let st1 = compressed[3];
     let s1 = st1 & 0xFFFF;
     let t1 = (st1 >> 16) & 0xFFFF;
@@ -435,13 +435,13 @@ fn compress_vertices_with_st_packing() {
     assert_eq!(t1, 0);
 }
 
-// ─── toWireframe extended ───────────────────────────────────────────────────
+// ─── toWireframe 扩展 ───────────────────────────────────────────────────
 
 #[test]
 fn wireframe_empty_indices_no_change() {
     let mut geo = make_geo(vec![[0.0; 3]; 3], vec![], PrimitiveType::Triangles);
     to_wireframe(&mut geo);
-    // Empty indices → should remain unchanged (no conversion)
+    // 空索引 → 应保持不变（不转换）
     assert_eq!(geo.primitive_type, PrimitiveType::Triangles);
     assert!(geo.indices.is_empty());
 }
@@ -454,7 +454,7 @@ fn wireframe_lines_unchanged() {
         PrimitiveType::Lines,
     );
     to_wireframe(&mut geo);
-    // Already lines → should remain unchanged
+    // 已是 lines → 应保持不变
     assert_eq!(geo.primitive_type, PrimitiveType::Lines);
     assert_eq!(geo.indices, vec![0, 1, 2, 3]);
 }
@@ -468,17 +468,17 @@ fn wireframe_single_triangle() {
     );
     to_wireframe(&mut geo);
     assert_eq!(geo.primitive_type, PrimitiveType::Lines);
-    // 1 triangle → 3 edges → 6 indices
+    // 1 个三角形 → 3 条边 → 6 个索引
     assert_eq!(geo.indices.len(), 6);
     assert_eq!(geo.indices, vec![0, 1, 1, 2, 2, 0]);
 }
 
-// ─── splitLongitude: detailed IDL subdivision ──────────────────────────────
+// ─── splitLongitude：详细的 IDL 细分 ──────────────────────────────
 
 #[test]
 fn split_longitude_crossing_idl_p0_behind() {
     // "splitLongitude subdivides triangle crossing the international date line, p0 behind"
-    // Box at x=-1 (simulating behind IDL) - vertices: behind, ahead, ahead
+    // 位于 x=-1 的盒（模拟在 IDL 后方）- 顶点：后方、前方、前方
     let ellipsoid = Ellipsoid::WGS84;
     let p0 = ellipsoid.cartographic_to_cartesian(
         &cesium_geospatial::Cartographic::from_degrees(-170.0, 10.0, 0.0),
@@ -496,7 +496,7 @@ fn split_longitude_crossing_idl_p0_behind() {
         PrimitiveType::Triangles,
     );
     let result = split_longitude(&geo, &ellipsoid);
-    // Should split into east and west parts
+    // 应拆分为东、西两部分
     assert!(!result.is_empty());
     let total_positions: usize = result.iter().map(|g| g.positions.len()).sum();
     assert!(total_positions >= 3);
@@ -551,7 +551,7 @@ fn split_longitude_crossing_idl_p2_behind() {
 #[test]
 fn split_longitude_crossing_idl_p0_ahead() {
     // "splitLongitude subdivides triangle crossing the IDL, p0 ahead"
-    // Two vertices behind, p0 ahead → p0 in west, rest in east or vice versa
+    // 两个顶点在后方，p0 在前方 → p0 在西侧，其余在东侧（或反之）
     let ellipsoid = Ellipsoid::WGS84;
     let p0 = ellipsoid.cartographic_to_cartesian(
         &cesium_geospatial::Cartographic::from_degrees(-170.0, 10.0, 0.0),
@@ -620,7 +620,7 @@ fn split_longitude_crossing_idl_p2_ahead() {
 
 #[test]
 fn split_longitude_crossing_idl_two_triangles_east_west() {
-    // Two triangles - one in east, one in west, plus a crossing triangle
+    // 两个三角形 - 一个在东、一个在西，外加一个跨越三角形
     let ellipsoid = Ellipsoid::WGS84;
     let e0 = ellipsoid.cartographic_to_cartesian(
         &cesium_geospatial::Cartographic::from_degrees(100.0, 0.0, 0.0),
@@ -673,7 +673,7 @@ fn split_longitude_crossing_idl_two_triangles_east_west() {
 
 #[test]
 fn split_longitude_crossing_idl_no_indices_provides_indices() {
-    // splitLongitude should work with un-indexed triangle list
+    // splitLongitude 应能处理无索引的三角形列表
     let ellipsoid = Ellipsoid::WGS84;
     let p0 = ellipsoid.cartographic_to_cartesian(
         &cesium_geospatial::Cartographic::from_degrees(170.0, -10.0, 0.0),
@@ -690,19 +690,19 @@ fn split_longitude_crossing_idl_no_indices_provides_indices() {
         vec![0, 1, 2],
         PrimitiveType::Triangles,
     );
-    // Also test with positions only (no indices would be handled upstream)
+    // 也仅用位置测试（无索引的情况由上游处理）
     let result = split_longitude(&geo, &ellipsoid);
     assert!(!result.is_empty());
 
-    // Even with just indices=empty (un-indexed), split_longitude should work
+    // 即使 indices=空（无索引），split_longitude 也应正常工作
     geo.indices = vec![];
     let result2 = split_longitude(&geo, &ellipsoid);
-    // Un-indexed triangle list: cross-detection may not trigger without indices
-    // But shouldn't crash
+    // 无索引的三角形列表：没有索引时跨越检测可能不会触发
+    // 但不应崩溃
     assert!(!result2.is_empty());
 }
 
-// ─── compressVertices extended: tangents/bitangents ───────────────────────
+// ─── compressVertices 扩展：tangents/bitangents ───────────────────────
 
 #[test]
 fn compress_vertices_with_tangents_bitangents() {
@@ -718,7 +718,7 @@ fn compress_vertices_with_tangents_bitangents() {
     };
 
     let compressed = compress_vertices(&geo).unwrap();
-    // Packs normal + ST = 2 u32 per vertex, tangents/bitangents NOT packed by this impl
+    // 打包法线 + ST = 每顶点 2 个 u32，本实现不打包 tangents/bitangents
     assert_eq!(compressed.len(), 6);
 }
 
@@ -735,11 +735,11 @@ fn compress_vertices_with_st_only_no_normals() {
         primitive_type: PrimitiveType::Triangles,
     };
 
-    // compress_vertices returns None when normals are absent
+    // 当法线缺失时 compress_vertices 返回 None
     assert!(compress_vertices(&geo).is_none());
 }
 
-// ─── createLineSegmentsForVectors extended ────────────────────────────────
+// ─── createLineSegmentsForVectors 扩展 ────────────────────────────────
 
 #[test]
 fn create_line_segments_for_tangents() {
@@ -754,10 +754,10 @@ fn create_line_segments_for_tangents() {
     let lines = create_line_segments_for_vectors(&positions, &tangents, 0.5);
 
     assert_eq!(lines.primitive_type, PrimitiveType::Lines);
-    assert_eq!(lines.positions.len(), 4); // 2 vertices * 2 (start + end)
+    assert_eq!(lines.positions.len(), 4); // 2 个顶点 * 2（起点 + 终点）
     assert_eq!(lines.indices.len(), 4);
 
-    // First line: (0,0,0) → (0.5,0,0)
+    // 首条线：(0,0,0) → (0.5,0,0)
     assert!((lines.positions[1][0] - 0.5).abs() < 1e-10);
 }
 
@@ -775,17 +775,17 @@ fn create_line_segments_for_bitangents() {
 
     assert_eq!(lines.primitive_type, PrimitiveType::Lines);
     assert_eq!(lines.positions.len(), 4);
-    // First line: (0,0,0) → (0,0.25,0)
+    // 首条线：(0,0,0) → (0,0.25,0)
     assert!((lines.positions[1][1] - 0.25).abs() < 1e-10);
-    // Second line: (1,0,0) → (1,0,0.25)
+    // 次条线：(1,0,0) → (1,0,0.25)
     assert!((lines.positions[3][2] - 0.25).abs() < 1e-10);
 }
 
-// ─── fitToUnsignedShortIndices extended ───────────────────────────────────
+// ─── fitToUnsignedShortIndices 扩展 ───────────────────────────────────
 
 #[test]
 fn fit_to_unsigned_short_triangles_no_split() {
-    // Geometry with indices well within u32 range
+    // 索引完全在 u32 范围内的几何
     let geo = make_geo(
         vec![[0.0; 3], [1.0; 3], [2.0; 3], [3.0; 3]],
         vec![0, 1, 2, 2, 1, 3],
@@ -799,7 +799,7 @@ fn fit_to_unsigned_short_triangles_no_split() {
 
 #[test]
 fn fit_to_unsigned_short_lines_split_large_geometry() {
-    // Large line geometry (> 65536 vertices) should be split
+    // 大型线几何（> 65536 个顶点）应被拆分
     let num_vertices = 70000usize;
     let positions: Vec<[f64; 3]> = (0..num_vertices)
         .map(|i| [i as f64, 0.0, 0.0])
@@ -820,12 +820,12 @@ fn fit_to_unsigned_short_lines_split_large_geometry() {
     }
 }
 
-// ─── combineInstances / combineGeometries extended ───────────────────────
+// ─── combineInstances / combineGeometries 扩展 ───────────────────────
 
 #[test]
 fn combine_geometries_with_idl_no_indices() {
     // "combineInstances with geometry that is and is not split by the IDL"
-    // Combine geometries that are on different sides of the IDL
+    // 合并位于 IDL 两侧的几何
     let ellipsoid = Ellipsoid::WGS84;
     let e0 = ellipsoid.cartographic_to_cartesian(
         &cesium_geospatial::Cartographic::from_degrees(45.0, 0.0, 0.0),

@@ -36,18 +36,18 @@ impl CesiumCamera {
     }
 }
 
-/// Request to fly the camera to a cartographic destination.
+/// 请求将相机飞向一个制图目的地。
 #[derive(Event)]
 pub struct FlyToRequest {
     pub destination: cesium_geospatial::Cartographic,
     pub duration_secs: f64,
 }
 
-/// Emitted when a camera flight completes.
+/// 相机飞行完成时发出。
 #[derive(Event)]
 pub struct FlightComplete;
 
-/// Mouse and touch input state for camera control.
+/// 用于相机控制的鼠标与触控输入状态。
 #[derive(Resource, Default)]
 pub struct CameraInputState {
     pub left_mouse_down: bool,
@@ -62,13 +62,13 @@ pub struct CameraInputState {
     pub last_touch_center: Option<Vec2>,
 }
 
-/// Active flight animation state (stored as a resource).
+/// 活动飞行动画状态（存为一个资源）。
 #[derive(Resource, Default)]
 pub struct ActiveFlight {
     pub flight: Option<cesium_interaction::CameraFlight>,
 }
 
-/// Active scene mode morph state.
+/// 活动场景模式渐变状态。
 #[derive(Resource)]
 pub struct ActiveMorph {
     pub state: cesium_scene_mode::MorphState,

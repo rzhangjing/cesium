@@ -1,12 +1,12 @@
-//! DataSourceDisplay + GeometryVisualizer + StaticGeometryBatch + DynamicGeometryUpdater tests.
+//! DataSourceDisplay + GeometryVisualizer + StaticGeometryBatch + DynamicGeometryUpdater 测试。
 //!
-//! Maps to CesiumJS:
+//! 对应 CesiumJS：
 //! - DataSources/DataSourceDisplaySpec.js
 //! - DataSources/GeometryVisualizerSpec.js
 //! - DataSources/StaticGeometryColorBatchSpec.js
 //! - DataSources/DynamicGeometryUpdaterSpec.js
 //!
-//! A-class tests: display coordination, geometry caching, primitive sync, batching.
+//! A 类测试：显示协调、几何缓存、图元同步、批处理。
 
 use cesium_datasource::datasource_display::{DataSourceDisplay, MultiDataSourceDisplay};
 use cesium_datasource::entity::*;
@@ -17,7 +17,7 @@ use cesium_datasource::visualizer::{
 };
 use cesium_geospatial::Ellipsoid;
 
-// === Helper ===
+// === 辅助函数 ===
 
 fn make_test_entities() -> EntityCollection {
     let mut c = EntityCollection::new();
@@ -81,7 +81,7 @@ fn display_update_populates_all_collections() {
     let entities = make_test_entities();
     display.update(&entities, 0.0);
 
-    // box-1 has geometry
+    // box-1 含几何
     assert!(display.geometry_instance_count() >= 1);
     // bb-1 → billboard
     assert_eq!(display.billboard_count(), 1);
@@ -124,14 +124,14 @@ fn display_hidden_entity_excluded() {
 fn display_entity_without_position_uses_default() {
     let mut display = DataSourceDisplay::wgs84();
     let mut entities = EntityCollection::new();
-    // Entity with billboard but no position
+    // 含 billboard 但无 position 的实体
     entities.add(Entity::new("no-pos").with_billboard(BillboardGraphics {
         image: Property::Constant("y.png".to_string()),
         ..Default::default()
     }));
 
     display.update(&entities, 0.0);
-    // Should still create billboard at default position [0,0,0]
+    // 仍应在默认位置 [0,0,0] 创建 billboard
     assert_eq!(display.billboard_count(), 1);
 }
 
@@ -143,11 +143,11 @@ fn display_time_change_resyncs_primitives() {
     display.update(&entities, 0.0);
     let bb_count_1 = display.billboard_count();
 
-    // Same time → no resync
+    // 相同时间 → 不重新同步
     display.update(&entities, 0.0);
     assert_eq!(display.billboard_count(), bb_count_1);
 
-    // Different time → resync
+    // 不同时间 → 重新同步
     display.update(&entities, 1.0);
     assert_eq!(display.billboard_count(), bb_count_1);
 }
@@ -175,7 +175,7 @@ fn display_get_entity_geometry() {
     assert!(geo.is_some());
     assert!(!geo.unwrap().fill_instances.is_empty());
 
-    // Non-existent entity
+    // 不存在的实体
     assert!(display.get_entity_geometry("nonexistent").is_none());
 }
 
@@ -194,7 +194,7 @@ fn visualizer_update_returns_count() {
     let entities = make_test_entities();
 
     let updated = viz.update(&entities, 0.0);
-    // Only box-1 produces geometry (billboard/label/point don't produce geometry instances)
+    // 仅 box-1 产生几何（billboard/label/point 不产生几何实例）
     assert!(updated >= 1);
     assert!(viz.entity_count() >= 1);
 }
@@ -259,7 +259,7 @@ fn visualizer_all_outline_instances() {
     let entities = make_test_entities();
     viz.update(&entities, 0.0);
 
-    // outlines may or may not exist depending on entity config
+    // outlines 可能存在也可能不存在，取决于实体配置
     let _outlines = viz.all_outline_instances();
 }
 
@@ -333,7 +333,7 @@ fn dynamic_updater_add_remove() {
     dynamic.add_entity("e1");
     assert_eq!(dynamic.entity_count(), 1);
 
-    // Duplicate add should not increase count
+    // 重复添加不应增加计数
     dynamic.add_entity("e1");
     assert_eq!(dynamic.entity_count(), 1);
 
@@ -390,7 +390,7 @@ fn multi_display_remove_source() {
     assert_eq!(removed.unwrap().name, "temp");
     assert_eq!(multi.source_count(), 0);
 
-    // Remove non-existent
+    // 移除不存在的
     assert!(multi.remove_data_source("nope").is_none());
 }
 

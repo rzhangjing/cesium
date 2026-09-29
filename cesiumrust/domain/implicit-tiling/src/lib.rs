@@ -1,14 +1,14 @@
-//! cesium-implicit-tiling: 3D Tiles 1.1 implicit tiling.
+//! cesium-implicit-tiling：3D Tiles 1.1 隐式切分。
 //!
-//! STATUS (P2 code-health audit, 2026-09-27): implemented and covered by the
-//! `cesium-specs` suite, but **not wired into any production runtime path** — no
-//! adapter or application crate depends on it. Retained as a CesiumJS
-//! feature-parity domain model reserved for future adapter bridging; do NOT read
-//! it as a shipped capability. See docs/ARCHITECTURE.md "Test-only domain crates".
+//! 状态（P2 代码健康审计，2026-09-27）：已实现并由 `cesium-specs`
+//! 套件覆盖，但**未接入任何生产运行时路径** —— 没有任何
+//! adapter 或 application crate 依赖它。作为为未来 adapter 桥接而保留的
+//! CesiumJS 功能对齐领域模型留存；不要将其理解为已交付的能力。
+//! 参见 docs/ARCHITECTURE.md 中的 "Test-only domain crates"。
 //!
-//! Domain layer - pure Rust, f64 precision.
+//! 领域层 —— 纯 Rust，f64 精度。
 //!
-//! CesiumJS mapping:
+//! CesiumJS 映射：
 //! - `Scene/Implicit3DTileContent.js` → implicit_tiling
 
 pub mod implicit_tiling;

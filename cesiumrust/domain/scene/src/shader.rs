@@ -1,15 +1,15 @@
-//! Shader pipeline domain models.
+//! 着色器管线的领域模型。
 //!
-//! Maps to CesiumJS `Renderer/ShaderProgram.js`, `Renderer/ShaderSource.js`,
-//! `Renderer/ShaderBuilder.js`, `Renderer/ShaderCache.js`,
-//! `Renderer/ShaderFunction.js`, `Renderer/ShaderStruct.js`.
+//! 映射到 CesiumJS `Renderer/ShaderProgram.js`、`Renderer/ShaderSource.js`、
+//! `Renderer/ShaderBuilder.js`、`Renderer/ShaderCache.js`、
+//! `Renderer/ShaderFunction.js`、`Renderer/ShaderStruct.js`。
 //!
-//! These are pure domain models representing the shader compilation pipeline.
-//! The actual GPU compilation is handled by the Bevy render adapter.
+//! 这些是表示着色器编译管线的纯领域模型。
+//! 实际的 GPU 编译由 Bevy 渲染适配器处理。
 
 use std::collections::HashMap;
 
-/// Shader stage.
+/// 着色器阶段。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ShaderStage {
     Vertex,
@@ -17,16 +17,16 @@ pub enum ShaderStage {
     Compute,
 }
 
-/// A GLSL shader source with metadata.
+/// 带元数据的 GLSL 着色器源代码。
 ///
-/// Maps to CesiumJS `Renderer/ShaderSource.js`
+/// 映射到 CesiumJS `Renderer/ShaderSource.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShaderSource {
-    /// GLSL source code.
+    /// GLSL 源代码。
     pub sources: Vec<String>,
-    /// Shader stage.
+    /// 着色器阶段。
     pub stage: ShaderStage,
-    /// Whether this is a built-in shader.
+    /// 这是否为一个内置着色器。
     pub is_builtin: bool,
 }
 
@@ -57,18 +57,18 @@ impl ShaderSource {
         }
     }
 
-    /// Combine multiple sources into one.
+    /// 将多个源代码合并为一个。
     pub fn combined_source(&self) -> String {
         self.sources.join("\n")
     }
 
-    /// Append source code.
+    /// 追加源代码。
     pub fn append(&mut self, source: &str) {
         self.sources.push(source.to_string());
     }
 }
 
-/// A uniform declaration in a shader.
+/// 着色器中的一个 uniform 声明。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShaderUniform {
     pub name: String,
@@ -76,18 +76,18 @@ pub struct ShaderUniform {
     pub count: usize,
 }
 
-/// A struct declaration in a shader.
+/// 着色器中的一个结构体声明。
 ///
-/// Maps to CesiumJS `Renderer/ShaderStruct.js`
+/// 映射到 CesiumJS `Renderer/ShaderStruct.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShaderStruct {
     pub name: String,
     pub fields: Vec<ShaderUniform>,
 }
 
-/// A function declaration in a shader.
+/// 着色器中的一个函数声明。
 ///
-/// Maps to CesiumJS `Renderer/ShaderFunction.js`
+/// 映射到 CesiumJS `Renderer/ShaderFunction.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShaderFunction {
     pub name: String,
@@ -96,9 +96,9 @@ pub struct ShaderFunction {
     pub body: String,
 }
 
-/// A shader builder for constructing shaders incrementally.
+/// 用于逐步构建着色器的着色器构建器。
 ///
-/// Maps to CesiumJS `Renderer/ShaderBuilder.js`
+/// 映射到 CesiumJS `Renderer/ShaderBuilder.js`
 #[derive(Debug, Clone, Default)]
 pub struct ShaderBuilder {
     pub vertex_source: ShaderSource,
@@ -118,7 +118,7 @@ impl ShaderBuilder {
         }
     }
 
-    /// Add a uniform declaration.
+    /// 添加一个 uniform 声明。
     pub fn add_uniform(&mut self, name: &str, glsl_type: &str) -> &mut Self {
         self.uniforms.push(ShaderUniform {
             name: name.to_string(),
@@ -128,7 +128,7 @@ impl ShaderBuilder {
         self
     }
 
-    /// Add a uniform array declaration.
+    /// 添加一个 uniform 数组声明。
     pub fn add_uniform_array(&mut self, name: &str, glsl_type: &str, count: usize) -> &mut Self {
         self.uniforms.push(ShaderUniform {
             name: name.to_string(),
@@ -138,7 +138,7 @@ impl ShaderBuilder {
         self
     }
 
-    /// Add a struct declaration.
+    /// 添加一个结构体声明。
     pub fn add_struct(&mut self, name: &str, fields: Vec<ShaderUniform>) -> &mut Self {
         self.structs.push(ShaderStruct {
             name: name.to_string(),
@@ -147,40 +147,40 @@ impl ShaderBuilder {
         self
     }
 
-    /// Add a function declaration.
+    /// 添加一个函数声明。
     pub fn add_function(&mut self, func: ShaderFunction) -> &mut Self {
         self.functions.push(func);
         self
     }
 
-    /// Add a preprocessor define.
+    /// 添加一个预处理器 define。
     pub fn add_define(&mut self, name: &str, value: &str) -> &mut Self {
         self.defines.insert(name.to_string(), value.to_string());
         self
     }
 
-    /// Append vertex shader source.
+    /// 追加顶点着色器源代码。
     pub fn append_vertex(&mut self, source: &str) -> &mut Self {
         self.vertex_source.append(source);
         self
     }
 
-    /// Append fragment shader source.
+    /// 追加片元着色器源代码。
     pub fn append_fragment(&mut self, source: &str) -> &mut Self {
         self.fragment_source.append(source);
         self
     }
 
-    /// Build the final vertex shader source.
+    /// 构建最终的顶点着色器源代码。
     pub fn build_vertex_source(&self) -> String {
         let mut result = String::new();
 
-        // Defines
+        // 预处理定义
         for (name, value) in &self.defines {
             result.push_str(&format!("#define {} {}\n", name, value));
         }
 
-        // Structs
+        // 结构体
         for s in &self.structs {
             result.push_str(&format!("struct {} {{\n", s.name));
             for f in &s.fields {
@@ -193,7 +193,7 @@ impl ShaderBuilder {
             result.push_str("};\n");
         }
 
-        // Uniforms
+        // Uniform
         for u in &self.uniforms {
             if u.count > 1 {
                 result.push_str(&format!("uniform {} {}[{}];\n", u.glsl_type, u.name, u.count));
@@ -202,7 +202,7 @@ impl ShaderBuilder {
             }
         }
 
-        // Functions
+        // 函数
         for f in &self.functions {
             let params: Vec<String> = f.parameters.iter()
                 .map(|p| format!("{} {}", p.glsl_type, p.name))
@@ -212,12 +212,12 @@ impl ShaderBuilder {
             result.push_str("\n}\n");
         }
 
-        // Main source
+        // 主源代码
         result.push_str(&self.vertex_source.combined_source());
         result
     }
 
-    /// Build the final fragment shader source.
+    /// 构建最终的片元着色器源代码。
     pub fn build_fragment_source(&self) -> String {
         let mut result = String::new();
 
@@ -251,22 +251,22 @@ impl ShaderBuilder {
     }
 }
 
-/// A compiled shader program (domain representation).
+/// 一个已编译的着色器程序（领域表示）。
 ///
-/// Maps to CesiumJS `Renderer/ShaderProgram.js`
+/// 映射到 CesiumJS `Renderer/ShaderProgram.js`
 #[derive(Debug, Clone)]
 pub struct ShaderProgram {
-    /// Unique identifier.
+    /// 唯一标识符。
     pub id: u64,
-    /// Vertex shader source.
+    /// 顶点着色器源代码。
     pub vertex_shader: ShaderSource,
-    /// Fragment shader source.
+    /// 片元着色器源代码。
     pub fragment_shader: ShaderSource,
-    /// Uniform declarations.
+    /// Uniform 声明。
     pub uniforms: Vec<ShaderUniform>,
-    /// Attribute declarations.
+    /// 属性声明。
     pub attributes: Vec<ShaderUniform>,
-    /// Whether the program is ready.
+    /// 该程序是否就绪。
     pub ready: bool,
 }
 
@@ -282,7 +282,7 @@ impl ShaderProgram {
         }
     }
 
-    /// Add a uniform declaration.
+    /// 添加一个 uniform 声明。
     pub fn add_uniform(&mut self, name: &str, glsl_type: &str) {
         self.uniforms.push(ShaderUniform {
             name: name.to_string(),
@@ -291,7 +291,7 @@ impl ShaderProgram {
         });
     }
 
-    /// Add an attribute declaration.
+    /// 添加一个属性声明。
     pub fn add_attribute(&mut self, name: &str, glsl_type: &str) {
         self.attributes.push(ShaderUniform {
             name: name.to_string(),
@@ -300,15 +300,15 @@ impl ShaderProgram {
         });
     }
 
-    /// Mark the program as ready.
+    /// 将该程序标记为就绪。
     pub fn mark_ready(&mut self) {
         self.ready = true;
     }
 }
 
-/// Shader cache for reusing compiled programs.
+/// 用于复用已编译程序的着色器缓存。
 ///
-/// Maps to CesiumJS `Renderer/ShaderCache.js`
+/// 映射到 CesiumJS `Renderer/ShaderCache.js`
 #[derive(Debug, Default)]
 pub struct ShaderCache {
     programs: HashMap<u64, ShaderProgram>,
@@ -320,13 +320,13 @@ impl ShaderCache {
         Self::default()
     }
 
-    /// Get or create a shader program.
+    /// 获取或创建一个着色器程序。
     pub fn get_or_create(
         &mut self,
         vertex: ShaderSource,
         fragment: ShaderSource,
     ) -> u64 {
-        // Simple hash-based dedup
+        // 基于哈希的简单去重
         let hash = {
             let v = vertex.combined_source();
             let f = fragment.combined_source();
@@ -352,12 +352,12 @@ impl ShaderCache {
         id
     }
 
-    /// Get a program by ID.
+    /// 按 ID 获取一个程序。
     pub fn get(&self, id: u64) -> Option<&ShaderProgram> {
         self.programs.values().find(|p| p.id == id)
     }
 
-    /// Number of cached programs.
+    /// 已缓存程序的数量。
     pub fn len(&self) -> usize {
         self.programs.len()
     }
@@ -460,7 +460,7 @@ mod tests {
             ShaderSource::new("void main() {}", ShaderStage::Vertex),
             ShaderSource::new("void main() {}", ShaderStage::Fragment),
         );
-        assert_eq!(id1, id2); // Same source → same ID
+        assert_eq!(id1, id2); // 相同源代码 → 相同 ID
         assert_eq!(cache.len(), 1);
 
         let id3 = cache.get_or_create(

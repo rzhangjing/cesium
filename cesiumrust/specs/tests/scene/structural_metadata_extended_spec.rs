@@ -1,5 +1,5 @@
-//! StructuralMetadata extended specs - ported from MetadataClassPropertySpec.js + PropertyTableSpec.js
-//! Tests: MetadataClassProperty detailed, MetadataClass, MetadataEnum, PropertyTable get/set,
+//! StructuralMetadata 扩展规范 - 移植自 MetadataClassPropertySpec.js + PropertyTableSpec.js
+//! 测试：MetadataClassProperty 细节、MetadataClass、MetadataEnum、PropertyTable get/set、
 //! PropertyTexture, PropertyAttribute, StructuralMetadata
 
 use cesium_tileset::structural_metadata::{
@@ -8,7 +8,7 @@ use cesium_tileset::structural_metadata::{
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MetadataType extended
+// MetadataType 扩展
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -35,7 +35,7 @@ fn metadata_type_equality() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MetadataClassProperty extended
+// MetadataClassProperty 扩展
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -118,7 +118,7 @@ fn class_property_min_max() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MetadataClass extended
+// MetadataClass 扩展
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -150,7 +150,7 @@ fn metadata_class_name_description() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MetadataEnum extended
+// MetadataEnum 扩展
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -186,7 +186,7 @@ fn metadata_enum_int16_type() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PropertyTable extended
+// PropertyTable 扩展
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -235,9 +235,9 @@ fn property_table_out_of_bounds() {
     let mut table = PropertyTable::new(2, class);
     table.set_value("prop", 0, MetadataValue::Int(42));
 
-    // Out of bounds feature index
+    // 越界的要素索引
     assert_eq!(table.get_value("prop", 99), None);
-    // Non-existent property
+    // 不存在的属性
     assert_eq!(table.get_value("nonexistent", 0), None);
 }
 
@@ -288,7 +288,7 @@ fn property_table_array_values() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PropertyTexture extended
+// PropertyTexture 扩展
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -314,7 +314,7 @@ fn property_texture_with_properties() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PropertyAttribute extended
+// PropertyAttribute 扩展
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -336,7 +336,7 @@ fn property_attribute_with_properties() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// StructuralMetadata extended
+// StructuralMetadata 扩展
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -382,7 +382,7 @@ fn structural_metadata_enums() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MetadataValue extended
+// MetadataValue 扩展
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]

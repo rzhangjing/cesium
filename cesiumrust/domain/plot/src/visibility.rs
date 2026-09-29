@@ -1,13 +1,13 @@
-//! The pure multi-dimensional visibility evaluator (plan §10).
+//! 纯多维显隐求值器（计划 §10）。
 //!
-//! [`eval_visibility`] is a total function of `(Document, ViewContext, Filters)`
-//! returning which elements are **visible** and, a subset, which are **pickable**
-//! (visible *and* selectable under their layer / group locks). Every one of the
-//! ten dimensions is an independent gate folded with AND; the time dimension is
-//! a reserved no-op in M1 (returns pass) pending M9's clock wiring.
+//! [`eval_visibility`] 是 `(Document, ViewContext, Filters)` 的一个全函数，
+//! 返回哪些元素**可见**，以及其子集中哪些**可拾取**
+//! （可见*且*在其图层 / 组锁下可选）。十个维度中的每一个
+//! 都是一道独立的关卡，以 AND 折叠；时间维度在 M1 中
+//! 是一个预留的空操作（返回通过），待 M9 接入时钟。
 //!
-//! Keeping this a free function — not a system, not resource-driven — is what
-//! lets the whole显隐 rule table be unit-tested without an engine (plan §15).
+//! 让它保持为一个自由函数 —— 而非系统、非资源驱动 —— 正是这一点
+//! 使得整张显隐规则表无需引擎即可做单元测试（计划 §15）。
 
 use std::collections::BTreeSet;
 
@@ -21,27 +21,27 @@ use crate::model::ids::ElementId;
 use crate::model::layer::Layer;
 use crate::model::view::{ViewContext, ViewMode};
 
-/// Result of a visibility pass.
+/// 一次显隐遍历的结果。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct VisibilityResult {
-    /// Elements to draw, in no particular order (the bridge re-sorts).
+    /// 要绘制的元素，无特定顺序（桥接层会重新排序）。
     pub visible: BTreeSet<ElementId>,
-    /// Visible **and** pickable — the candidate set for hit-testing (plan §7).
+    /// 可见**且**可拾取 —— 用于命中测试的候选集（计划 §7）。
     pub pickable: BTreeSet<ElementId>,
 }
 
-/// Evaluate every element against the ten visibility dimensions.
+/// 针对十个显隐维度评估每个元素。
 pub fn eval_visibility(doc: &Document, view: &ViewContext, filters: &Filters) -> VisibilityResult {
     let mut out = VisibilityResult::default();
 
-    // §10.1 master switch: nothing is visible (nor pickable) when off.
+    // §10.1 总开关：关闭时无任何元素可见（也不可拾取）。
     if !filters.overlay_enabled {
         return out;
     }
 
     for element in doc.elements() {
         let Some((layer_id, group_chain)) = doc.element_context(element.id) else {
-            continue; // orphan node in a corrupt tree — skip defensively
+            continue; // 损坏树中的孤立节点 —— 防御性地跳过
         };
         let Some(layer) = doc.layer(layer_id) else {
             continue;
@@ -59,8 +59,8 @@ pub fn eval_visibility(doc: &Document, view: &ViewContext, filters: &Filters) ->
     out
 }
 
-/// The AND of every *visibility* dimension (§10.2–§10.10, master switch already
-/// checked by the caller).
+/// 每个*可见性*维度的 AND（§10.2–§10.10，总开关已由
+/// 调用方检查）。
 fn is_visible(
     doc: &Document,
     element: &Element,
@@ -69,55 +69,55 @@ fn is_visible(
     view: &ViewContext,
     filters: &Filters,
 ) -> bool {
-    // §10.2 layer on/off.
+    // §10.2 图层开/关。
     if !layer.visible {
         return false;
     }
-    // §10.3 every group up the chain visible.
+    // §10.3 链上每个组都可见。
     if !group_chain.iter().all(|g| {
         doc.group(*g).map(|grp| grp.visible).unwrap_or(false)
     }) {
         return false;
     }
-    // §10.4 element's own manual toggle.
+    // §10.4 元素自身的手动开关。
     if !element.flags.visible_manual {
         return false;
     }
-    // §10.5 type dimension.
+    // §10.5 类型维度。
     if let Some(allowed) = &filters.enabled_types {
         if !allowed.contains(&element.geometry.kind()) {
             return false;
         }
     }
-    // §10.6 view-mode dimension.
+    // §10.6 视图模式维度。
     let style = &element.style;
     match view.mode {
         ViewMode::Globe if !style.show_in_globe => return false,
         ViewMode::Flat if !style.show_in_flat => return false,
         _ => {}
     }
-    // §10.7 scale band.
+    // §10.7 比例尺带。
     if !element
         .scale_visibility
         .allows(view.pixels_per_world, view.meters_per_pixel)
     {
         return false;
     }
-    // §10.8 selection focus.
+    // §10.8 选中聚焦。
     if filters.only_selected && !filters.selected.contains(&element.id) {
         return false;
     }
-    // §10.9 attribute dimension.
+    // §10.9 属性维度。
     if !attributes_pass(element, &filters.attribute_predicates) {
         return false;
     }
-    // §10.10 time window — reserved; always passes in M1.
+    // §10.10 时间窗口 —— 预留；在 M1 中总是通过。
     true
 }
 
-/// Pickability (plan §7/§9): element `selectable`, its layer `selectable`, and
-/// no *locked* group in the chain (a locked group makes members individually
-/// non-grabbable). The selection-focus filter also narrows the pickable set.
+/// 可拾取性（计划 §7/§9）：元素 `selectable`、其图层 `selectable`，且
+/// 链上没有*锁定*的组（锁定的组会使成员各自不可抓取）。
+/// 选中聚焦过滤器也会收窄可拾取集。
 fn is_pickable(
     element: &Element,
     layer: &Layer,
@@ -136,7 +136,7 @@ fn is_pickable(
     if any_locked {
         return false;
     }
-    // When focusing on the selection, only selected ids are pickable too.
+    // 聚焦于选中项时，只有选中的 id 才可拾取。
     if filters.only_selected && !filters.selected.contains(&element.id) {
         return false;
     }
@@ -186,7 +186,7 @@ mod tests {
     fn master_switch_gates_everything() {
         let (mut doc, a, _b) = doc_with_layers();
         let e = add_point(&mut doc, a, 0.0, 0.0);
-        let off = Filters::default(); // overlay_enabled false
+        let off = Filters::default(); // overlay_enabled 为 false
         let r = eval_visibility(&doc, &view(ViewMode::Globe, 0.0, 0.0), &off);
         assert!(r.visible.is_empty() && r.pickable.is_empty());
 
@@ -217,11 +217,11 @@ mod tests {
         let v = view(ViewMode::Globe, 0.0, 0.0);
 
         assert!(eval_visibility(&doc, &v, &f).visible.contains(&e));
-        // Hide the group → element disappears.
+        // 隐藏该组 → 元素消失。
         doc.group_mut(g).unwrap().visible = false;
         assert!(!eval_visibility(&doc, &v, &f).visible.contains(&e));
         doc.group_mut(g).unwrap().visible = true;
-        // Element's own manual off.
+        // 元素自身手动关闭。
         doc.element_mut(e).unwrap().flags.visible_manual = false;
         assert!(!eval_visibility(&doc, &v, &f).visible.contains(&e));
     }
@@ -256,8 +256,8 @@ mod tests {
     fn view_mode_dimension() {
         let (mut doc, a, _b) = doc_with_layers();
         let e = add_point(&mut doc, a, 0.0, 0.0);
-        doc.element_mut(e).unwrap().style.show_in_globe = false; // flat-only
-        // Globe view hides it, flat view shows it.
+        doc.element_mut(e).unwrap().style.show_in_globe = false; // 仅平面
+        // 地球视图隐藏它，平面视图显示它。
         let rg = eval_visibility(&doc, &view(ViewMode::Globe, 0.0, 0.0), &Filters::enabled());
         assert!(!rg.visible.contains(&e));
         let rf = eval_visibility(&doc, &view(ViewMode::Flat, 0.0, 0.0), &Filters::enabled());
@@ -270,7 +270,7 @@ mod tests {
         let e = add_point(&mut doc, a, 0.0, 0.0);
         doc.element_mut(e).unwrap().scale_visibility.min_pixels_per_world = Some(100.0);
         let f = Filters::enabled();
-        // zoomed out (px=50) → hidden; zoomed in (px=200) → shown.
+        // 缩小 (px=50) → 隐藏；放大 (px=200) → 显示。
         assert!(!eval_visibility(&doc, &view(ViewMode::Flat, 50.0, 0.0), &f).visible.contains(&e));
         assert!(eval_visibility(&doc, &view(ViewMode::Flat, 200.0, 0.0), &f).visible.contains(&e));
     }

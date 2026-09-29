@@ -1,5 +1,5 @@
-//! Tests ported from CesiumJS ModelAnimationSpec.js + GltfLoaderSpec.js (A-class)
-//! RuntimeAnimation state machine, AnimationSpline evaluation, loop modes
+//! 移植自 CesiumJS ModelAnimationSpec.js + GltfLoaderSpec.js 的测试（A 类）
+//! RuntimeAnimation 状态机、AnimationSpline 求值、循环模式
 
 use cesium_gltf::animation_runtime::{
     AnimationLoop, AnimationSpline, AnimationState, RuntimeAnimation,
@@ -14,7 +14,7 @@ fn make_animation(name: &str) -> Animation {
     }
 }
 
-// ===== RuntimeAnimation State Machine =====
+// ===== RuntimeAnimation 状态机 =====
 
 #[test]
 fn test_runtime_animation_from_gltf() {
@@ -40,7 +40,7 @@ fn test_runtime_animation_play_pause_stop() {
     rt.pause();
     assert_eq!(rt.state, AnimationState::Paused);
 
-    // Pause when not playing does nothing
+    // 未播放时暂停无操作
     rt.pause();
     assert_eq!(rt.state, AnimationState::Paused);
 
@@ -61,7 +61,7 @@ fn test_runtime_animation_advance_no_loop() {
     assert!(rt.advance(1.0));
     assert!((rt.local_time - 1.5).abs() < 1e-10);
 
-    // Exceeds duration → stops
+    // 超出时长 → 停止
     assert!(!rt.advance(1.0));
     assert_eq!(rt.state, AnimationState::Stopped);
     assert!((rt.local_time - 2.0).abs() < 1e-10);
@@ -161,7 +161,7 @@ fn test_spline_step_interpolation() {
         AnimationPath::Translation,
         1,
     );
-    // Step holds value until next keyframe
+    // Step 保持值直到下一关键帧
     let result = spline.evaluate(0.5);
     assert!((result[0] - 0.0).abs() < 1e-10);
 
@@ -207,8 +207,8 @@ fn test_spline_wrap_time() {
         AnimationPath::Translation,
         1,
     );
-    // 3.0 wraps to 1.0 (duration=2.0)
+    // 3.0 环绕到 1.0（duration=2.0）
     assert!((spline.wrap_time(3.0) - 1.0).abs() < 1e-10);
-    // -0.5 wraps to 1.5
+    // -0.5 环绕到 1.5
     assert!((spline.wrap_time(-0.5) - 1.5).abs() < 1e-10);
 }

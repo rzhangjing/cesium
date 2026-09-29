@@ -1,7 +1,7 @@
-//! AssociativeArray specs - ported from:
-//! - packages/engine/Specs/Core/AssociativeArraySpec.js (5 it())
+//! AssociativeArray 规格测试 - 移植自：
+//! - packages/engine/Specs/Core/AssociativeArraySpec.js（5 个 it()）
 //!
-//! A-class tests: 2 (skipping 3 JS-specific `throws`/undefined-key tests)
+//! A 类测试：2 个（跳过 3 个 JS 特有的 `throws`/undefined-key 测试）
 
 use cesium_geospatial::associative_array::AssociativeArray;
 

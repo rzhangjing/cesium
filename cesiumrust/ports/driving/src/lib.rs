@@ -1,50 +1,50 @@
-//! cesium-ports-driving: Driving ports (External → Domain)
-//! Trait contracts for user/application interactions with the domain.
+//! cesium-ports-driving：驱动端口（Driving ports，外部 → 领域）
+//! 用户/应用与领域交互的 trait 契约。
 //!
-//! In hexagonal architecture, driving ports define how external code
-//! (UI, CLI, tests) interacts with the domain (adapters call these traits).
+//! 在六边形架构中，驱动端口定义外部代码
+//! （UI、CLI、测试）如何与领域交互（adapter 调用这些 trait）。
 
 use cesium_camera::Camera;
 use cesium_geospatial::{Cartographic, Ellipsoid, Rectangle};
 use cesium_time::JulianDate;
 
 // ============================================================================
-// Viewer/Scene Control
+// Viewer/Scene 控制
 // ============================================================================
 
-/// The main viewer interface for controlling the 3D globe.
-/// Maps to CesiumJS `Viewer` / `CesiumWidget` (API surface only)
+/// 控制 3D 地球的主 viewer 接口。
+/// 对应 CesiumJS 的 `Viewer` / `CesiumWidget`（仅 API 表层）
 pub trait ViewerApi {
-    /// Gets a reference to the camera.
+    /// 获取 camera 的引用。
     fn camera(&self) -> &Camera;
 
-    /// Gets a mutable reference to the camera.
+    /// 获取 camera 的可变引用。
     fn camera_mut(&mut self) -> &mut Camera;
 
-    /// Gets the current simulation time.
+    /// 获取当前仿真时间。
     fn current_time(&self) -> JulianDate;
 
-    /// Sets the current simulation time.
+    /// 设置当前仿真时间。
     fn set_current_time(&mut self, time: JulianDate);
 
-    /// Gets the ellipsoid used by this viewer.
+    /// 获取此 viewer 使用的椭球体（ellipsoid）。
     fn ellipsoid(&self) -> &Ellipsoid;
 
-    /// Renders a frame.
+    /// 渲染一帧。
     fn render(&mut self);
 
-    /// Resizes the viewport.
+    /// 调整视口（viewport）大小。
     fn resize(&mut self, width: u32, height: u32);
 }
 
 // ============================================================================
-// Camera Control
+// Camera 控制
 // ============================================================================
 
-/// Camera manipulation interface.
-/// Maps to CesiumJS `Camera` methods exposed to users
+/// Camera 操作接口。
+/// 对应 CesiumJS `Camera` 暴露给用户的方法
 pub trait CameraControl {
-    /// Sets the camera view from position and orientation.
+    /// 由位置与朝向设置 camera 视图。
     fn set_view(
         &mut self,
         position: Cartographic,
@@ -53,7 +53,7 @@ pub trait CameraControl {
         roll: f64,
     );
 
-    /// Flies the camera to a destination.
+    /// 将 camera 飞行（fly）到目标位置。
     fn fly_to(
         &mut self,
         destination: Cartographic,
@@ -63,7 +63,7 @@ pub trait CameraControl {
         duration_secs: f64,
     );
 
-    /// Looks at a target position from a given range.
+    /// 从给定距离注视（look at）目标位置。
     fn look_at(
         &mut self,
         target: Cartographic,
@@ -72,98 +72,98 @@ pub trait CameraControl {
         range: f64,
     );
 
-    /// Zooms in by the given amount.
+    /// 按给定量放大。
     fn zoom_in(&mut self, amount: Option<f64>);
 
-    /// Zooms out by the given amount.
+    /// 按给定量缩小。
     fn zoom_out(&mut self, amount: Option<f64>);
 
-    /// Resets the camera to the home view.
+    /// 将 camera 重置到初始（home）视图。
     fn home(&mut self);
 }
 
 // ============================================================================
-// Data Source Management
+// 数据源管理
 // ============================================================================
 
-/// A unique identifier for a data source.
+/// 数据源的唯一标识。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DataSourceId(pub u64);
 
-/// Manages data sources (GeoJSON, CZML, 3D Tiles, etc.)
+/// 管理数据源（GeoJSON、CZML、3D Tiles 等）
 pub trait DataSourceManager {
-    /// Adds a data source from a URL.
+    /// 从 URL 添加数据源。
     fn add_from_url(&mut self, url: &str) -> DataSourceId;
 
-    /// Removes a data source.
+    /// 移除数据源。
     fn remove(&mut self, id: DataSourceId) -> bool;
 
-    /// Shows/hides a data source.
+    /// 显示/隐藏数据源。
     fn set_visible(&mut self, id: DataSourceId, visible: bool);
 
-    /// Gets the bounding rectangle of a data source.
+    /// 获取数据源的包围矩形（bounding rectangle）。
     fn bounds(&self, id: DataSourceId) -> Option<Rectangle>;
 }
 
 // ============================================================================
-// Imagery Layer Management
+// 影像图层管理
 // ============================================================================
 
-/// A unique identifier for an imagery layer.
+/// 影像图层的唯一标识。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImageryLayerId(pub u64);
 
-/// Manages imagery layers.
+/// 管理影像图层。
 pub trait ImageryLayerManager {
-    /// Adds an imagery layer from a provider URL.
+    /// 从 provider URL 添加影像图层。
     fn add_layer(&mut self, url: &str) -> ImageryLayerId;
 
-    /// Removes an imagery layer.
+    /// 移除影像图层。
     fn remove_layer(&mut self, id: ImageryLayerId) -> bool;
 
-    /// Sets the opacity of a layer (0.0 - 1.0).
+    /// 设置图层的不透明度（0.0 - 1.0）。
     fn set_opacity(&mut self, id: ImageryLayerId, opacity: f64);
 
-    /// Sets the visibility of a layer.
+    /// 设置图层的可见性。
     fn set_visible(&mut self, id: ImageryLayerId, visible: bool);
 
-    /// Raises a layer (increases its z-order).
+    /// 提升图层（增大其 z-order）。
     fn raise(&mut self, id: ImageryLayerId);
 
-    /// Lowers a layer (decreases its z-order).
+    /// 降低图层（减小其 z-order）。
     fn lower(&mut self, id: ImageryLayerId);
 }
 
 // ============================================================================
-// Terrain Management
+// 地形管理
 // ============================================================================
 
-/// Manages terrain providers.
+/// 管理地形 provider。
 pub trait TerrainManager {
-    /// Sets the terrain provider from a URL.
+    /// 从 URL 设置地形 provider。
     fn set_terrain(&mut self, url: &str);
 
-    /// Disables terrain (uses ellipsoid surface).
+    /// 禁用地形（使用椭球面）。
     fn disable_terrain(&mut self);
 
-    /// Gets whether terrain is enabled.
+    /// 获取地形是否启用。
     fn is_terrain_enabled(&self) -> bool;
 
-    /// Gets the height at a cartographic position.
+    /// 获取某 cartographic 位置处的高度。
     fn sample_height(&self, position: &Cartographic) -> Option<f64>;
 }
 
 // ============================================================================
-// Entity/Primitive Management
+// 实体/图元（Primitive）管理
 // ============================================================================
 
-/// A unique identifier for an entity.
+/// 实体的唯一标识。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EntityId(pub u64);
 
-/// Manages entities (points, polylines, polygons, models, etc.)
+/// 管理实体（点、折线、多边形、模型等）
 pub trait EntityManager {
-    /// Adds a point entity.
+    /// 添加点实体。
     fn add_point(
         &mut self,
         position: Cartographic,
@@ -171,7 +171,7 @@ pub trait EntityManager {
         pixel_size: f64,
     ) -> EntityId;
 
-    /// Adds a polyline entity.
+    /// 添加折线（polyline）实体。
     fn add_polyline(
         &mut self,
         positions: &[Cartographic],
@@ -179,14 +179,14 @@ pub trait EntityManager {
         width: f64,
     ) -> EntityId;
 
-    /// Adds a polygon entity.
+    /// 添加多边形（polygon）实体。
     fn add_polygon(
         &mut self,
         positions: &[Cartographic],
         color: [f32; 4],
     ) -> EntityId;
 
-    /// Adds a 3D model entity.
+    /// 添加 3D 模型实体。
     fn add_model(
         &mut self,
         position: Cartographic,
@@ -194,41 +194,41 @@ pub trait EntityManager {
         scale: f64,
     ) -> EntityId;
 
-    /// Removes an entity.
+    /// 移除实体。
     fn remove(&mut self, id: EntityId) -> bool;
 
-    /// Sets the position of an entity.
+    /// 设置实体的位置。
     fn set_position(&mut self, id: EntityId, position: Cartographic);
 
-    /// Shows/hides an entity.
+    /// 显示/隐藏实体。
     fn set_visible(&mut self, id: EntityId, visible: bool);
 }
 
 // ============================================================================
-// Picking/Selection
+// 拾取/选择
 // ============================================================================
 
-/// Result of a pick operation.
+/// 拾取（pick）操作的结果。
 #[derive(Debug, Clone)]
 pub enum PickResult {
-    /// Picked an entity.
+    /// 拾取到实体。
     Entity(EntityId),
-    /// Picked a tile feature (3D Tiles).
+    /// 拾取到瓦片要素（3D Tiles）。
     TileFeature { tileset_id: u64, feature_id: u64 },
-    /// Picked the globe surface.
+    /// 拾取到地球表面。
     GlobeSurface(Cartographic),
-    /// Nothing was picked.
+    /// 未拾取到任何对象。
     None,
 }
 
-/// Provides picking/selection functionality.
+/// 提供拾取/选择功能。
 pub trait Picking {
-    /// Picks at screen coordinates (x, y).
+    /// 在屏幕坐标 (x, y) 处拾取。
     fn pick(&self, x: f64, y: f64) -> PickResult;
 
-    /// Drills pick at screen coordinates (returns all objects at that position).
+    /// 在屏幕坐标处穿透拾取（返回该位置的所有对象）。
     fn drill_pick(&self, x: f64, y: f64) -> Vec<PickResult>;
 
-    /// Gets the cartographic position at screen coordinates.
+    /// 获取屏幕坐标处对应的 cartographic 位置。
     fn pick_position(&self, x: f64, y: f64) -> Option<Cartographic>;
 }

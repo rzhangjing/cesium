@@ -1,7 +1,7 @@
-//! Wireframe index generator.
-//! Maps to CesiumJS `Core/WireframeIndexGenerator.js`
+//! 线框索引生成器。
+//! 映射到 CesiumJS `Core/WireframeIndexGenerator.js`
 
-/// Primitive types for geometry rendering.
+/// 用于几何渲染的图元类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimitiveType {
     Points,
@@ -14,38 +14,37 @@ pub enum PrimitiveType {
 }
 
 impl PrimitiveType {
-    /// Returns true if the value is a valid PrimitiveType.
+    /// 返回该值是否为一个有效的 PrimitiveType。
     ///
-    /// Maps to CesiumJS `PrimitiveType.validate`.
+    /// 映射到 CesiumJS `PrimitiveType.validate`。
     pub fn validate(&self) -> bool {
-        true // All enum variants are valid
+        true // 所有枚举变体均有效
     }
 
-    /// Returns true if the primitive type is a line type.
+    /// 返回该图元类型是否为线类型。
     ///
-    /// Maps to CesiumJS `PrimitiveType.isLines`.
+    /// 映射到 CesiumJS `PrimitiveType.isLines`。
     pub fn is_lines(&self) -> bool {
         matches!(self, Self::Lines | Self::LineLoop | Self::LineStrip)
     }
 
-    /// Returns true if the primitive type is a triangle type.
+    /// 返回该图元类型是否为三角形类型。
     ///
-    /// Maps to CesiumJS `PrimitiveType.isTriangles`.
+    /// 映射到 CesiumJS `PrimitiveType.isTriangles`。
     pub fn is_triangles(&self) -> bool {
         matches!(self, Self::Triangles | Self::TriangleStrip | Self::TriangleFan)
     }
 }
 
-/// Returns the number of wireframe indices that will be generated
-/// for the given primitive type and index count.
+/// 返回对于给定的图元类型和索引数量，将生成多少个线框索引。
 pub fn get_wireframe_indices_count(primitive_type: PrimitiveType, index_count: usize) -> usize {
     match primitive_type {
         PrimitiveType::Triangles => {
-            // Each triangle (3 indices) becomes 3 line segments (6 indices)
+            // 每个三角形（3 个索引）变为 3 条线段（6 个索引）
             (index_count / 3) * 6
         }
         PrimitiveType::TriangleStrip | PrimitiveType::TriangleFan => {
-            // First edge + 2 edges per triangle
+            // 首边 + 每个三角形 2 条边
             if index_count < 3 {
                 0
             } else {
@@ -56,11 +55,11 @@ pub fn get_wireframe_indices_count(primitive_type: PrimitiveType, index_count: u
     }
 }
 
-/// Creates wireframe indices for the given primitive type.
+/// 为给定的图元类型创建线框索引。
 ///
-/// Returns None for non-triangle primitive types.
-/// If `indices` is provided, uses those as the source indices;
-/// otherwise generates sequential indices [0, 1, 2, ...].
+/// 对于非三角形图元类型返回 None。
+/// 若提供了 `indices`，则将其作为源索引；
+/// 否则生成递增索引 [0, 1, 2, ...]。
 pub fn create_wireframe_indices(
     primitive_type: PrimitiveType,
     index_count: usize,
@@ -98,10 +97,10 @@ pub fn create_wireframe_indices(
                 }
             };
             let mut result = Vec::new();
-            // First edge
+            // 首边
             result.push(get(0));
             result.push(get(1));
-            // For each triangle in the strip
+            // 对于带形中的每个三角形
             for i in 0..(index_count - 2) {
                 let i0 = get(i);
                 let i1 = get(i + 1);
@@ -125,12 +124,12 @@ pub fn create_wireframe_indices(
                 }
             };
             let mut result = Vec::new();
-            // First edge
+            // 首边
             result.push(get(0));
             result.push(get(1));
-            // For each triangle in the fan (all share vertex 0)
+            // 对于扇形中的每个三角形（均共享顶点 0）
             for i in 0..(index_count - 2) {
-                let i0 = get(0); // center vertex
+                let i0 = get(0); // 中心顶点
                 let i1 = get(i + 1);
                 let i2 = get(i + 2);
                 result.push(i1);

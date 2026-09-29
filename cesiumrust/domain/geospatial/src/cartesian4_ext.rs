@@ -1,16 +1,17 @@
-//! Cartesian4 CesiumJS extension functions.
-//! Maps to CesiumJS `Core/Cartesian4.js` static methods that go beyond basic vector math.
+//! Cartesian4 的 CesiumJS 扩展函数。
+//! 映射到 CesiumJS `Core/Cartesian4.js` 中超越基础向量运算的静态方法。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
+// 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::needless_range_loop)]
 use crate::math_utils;
 use glam::DVec4;
 
-/// The packed length of a Cartesian4: 4.
+/// 一个 Cartesian4 的打包长度：4。
 pub const PACKED_LENGTH: usize = 4;
 
-/// Packs a Cartesian4 into an array at the given starting index.
-/// Maps to CesiumJS `Cartesian4.pack`
+/// 将一个 Cartesian4 打包到数组中给定的起始索引处。
+/// 映射到 CesiumJS `Cartesian4.pack`
 pub fn pack(value: DVec4, array: &mut [f64], starting_index: usize) {
     array[starting_index] = value.x;
     array[starting_index + 1] = value.y;
@@ -18,8 +19,8 @@ pub fn pack(value: DVec4, array: &mut [f64], starting_index: usize) {
     array[starting_index + 3] = value.w;
 }
 
-/// Unpacks a Cartesian4 from an array at the given starting index.
-/// Maps to CesiumJS `Cartesian4.unpack`
+/// 从数组中给定的起始索引处解包出一个 Cartesian4。
+/// 映射到 CesiumJS `Cartesian4.unpack`
 pub fn unpack(array: &[f64], starting_index: usize) -> DVec4 {
     DVec4::new(
         array[starting_index],
@@ -29,8 +30,8 @@ pub fn unpack(array: &[f64], starting_index: usize) -> DVec4 {
     )
 }
 
-/// Flattens an array of Cartesian4s into an array of components.
-/// Maps to CesiumJS `Cartesian4.packArray`
+/// 将一个 Cartesian4 数组展平为一个分量数组。
+/// 映射到 CesiumJS `Cartesian4.packArray`
 pub fn pack_array(array: &[DVec4]) -> Vec<f64> {
     let length = array.len();
     let mut result = vec![0.0f64; length * 4];
@@ -40,8 +41,8 @@ pub fn pack_array(array: &[DVec4]) -> Vec<f64> {
     result
 }
 
-/// Unpacks an array of components into an array of Cartesian4s.
-/// Maps to CesiumJS `Cartesian4.unpackArray`
+/// 将一个分量数组解包为一个 Cartesian4 数组。
+/// 映射到 CesiumJS `Cartesian4.unpackArray`
 pub fn unpack_array(array: &[f64]) -> Vec<DVec4> {
     let length = array.len() / 4;
     let mut result = Vec::with_capacity(length);
@@ -51,8 +52,8 @@ pub fn unpack_array(array: &[f64]) -> Vec<DVec4> {
     result
 }
 
-/// Creates a Cartesian4 from the first four elements of an array at an offset.
-/// Maps to CesiumJS `Cartesian4.fromArray`
+/// 在偏移处从数组的前四个元素创建一个 Cartesian4。
+/// 映射到 CesiumJS `Cartesian4.fromArray`
 pub fn from_array(array: &[f64], starting_index: usize) -> DVec4 {
     DVec4::new(
         array[starting_index],
@@ -62,20 +63,20 @@ pub fn from_array(array: &[f64], starting_index: usize) -> DVec4 {
     )
 }
 
-/// Returns the component with the maximum value.
-/// Maps to CesiumJS `Cartesian4.maximumComponent`
+/// 返回具有最大值的分量。
+/// 映射到 CesiumJS `Cartesian4.maximumComponent`
 pub fn maximum_component(cartesian: DVec4) -> f64 {
     cartesian.x.max(cartesian.y).max(cartesian.z).max(cartesian.w)
 }
 
-/// Returns the component with the minimum value.
-/// Maps to CesiumJS `Cartesian4.minimumComponent`
+/// 返回具有最小值的分量。
+/// 映射到 CesiumJS `Cartesian4.minimumComponent`
 pub fn minimum_component(cartesian: DVec4) -> f64 {
     cartesian.x.min(cartesian.y).min(cartesian.z).min(cartesian.w)
 }
 
-/// Computes the provided Cartesian's squared magnitude.
-/// Maps to CesiumJS `Cartesian4.magnitudeSquared`
+/// 计算给定的 Cartesian 的平方量级。
+/// 映射到 CesiumJS `Cartesian4.magnitudeSquared`
 pub fn magnitude_squared(cartesian: DVec4) -> f64 {
     cartesian.x * cartesian.x
         + cartesian.y * cartesian.y
@@ -83,32 +84,32 @@ pub fn magnitude_squared(cartesian: DVec4) -> f64 {
         + cartesian.w * cartesian.w
 }
 
-/// Computes the Cartesian's magnitude (length).
-/// Maps to CesiumJS `Cartesian4.magnitude`
+/// 计算 Cartesian 的量级（长度）。
+/// 映射到 CesiumJS `Cartesian4.magnitude`
 pub fn magnitude(cartesian: DVec4) -> f64 {
     magnitude_squared(cartesian).sqrt()
 }
 
-/// Computes the distance between two points.
-/// Maps to CesiumJS `Cartesian4.distance`
+/// 计算两点之间的距离。
+/// 映射到 CesiumJS `Cartesian4.distance`
 pub fn distance(left: DVec4, right: DVec4) -> f64 {
     (left - right).length()
 }
 
-/// Computes the squared distance between two points.
-/// Maps to CesiumJS `Cartesian4.distanceSquared`
+/// 计算两点之间的平方距离。
+/// 映射到 CesiumJS `Cartesian4.distanceSquared`
 pub fn distance_squared(left: DVec4, right: DVec4) -> f64 {
     (left - right).length_squared()
 }
 
-/// Computes the linear interpolation or extrapolation at t using the provided cartesians.
-/// Maps to CesiumJS `Cartesian4.lerp`
+/// 使用给定的 cartesians 计算在 t 处的线性插值或外推。
+/// 映射到 CesiumJS `Cartesian4.lerp`
 pub fn lerp(start: DVec4, end: DVec4, t: f64) -> DVec4 {
     start + (end - start) * t
 }
 
-/// Computes the angle between two vectors.
-/// Maps to CesiumJS `Cartesian4.angleBetween`
+/// 计算两个向量之间的夹角。
+/// 映射到 CesiumJS `Cartesian4.angleBetween`
 pub fn angle_between(left: DVec4, right: DVec4) -> f64 {
     let dot_val = left.dot(right);
     let magnitude_left_sq = left.dot(left);
@@ -119,8 +120,8 @@ pub fn angle_between(left: DVec4, right: DVec4) -> f64 {
     cross_magnitude.atan2(dot_val)
 }
 
-/// Returns true if left and right are equal within the provided epsilon.
-/// Maps to CesiumJS `Cartesian4.equalsEpsilon`
+/// 若在给定的 epsilon 范围内 left 与 right 相等则返回 true。
+/// 映射到 CesiumJS `Cartesian4.equalsEpsilon`
 pub fn equals_epsilon(
     left: DVec4,
     right: DVec4,
@@ -133,8 +134,8 @@ pub fn equals_epsilon(
         && math_utils::equals_epsilon(left.w, right.w, relative_epsilon, absolute_epsilon)
 }
 
-/// Constrains each component to the given min/max range.
-/// Maps to CesiumJS `Cartesian4.clamp`
+/// 将每个分量约束到给定的 min/max 范围内。
+/// 映射到 CesiumJS `Cartesian4.clamp`
 pub fn clamp(value: DVec4, min: DVec4, max: DVec4) -> DVec4 {
     DVec4::new(
         math_utils::clamp(value.x, min.x, max.x),
@@ -144,8 +145,8 @@ pub fn clamp(value: DVec4, min: DVec4, max: DVec4) -> DVec4 {
     )
 }
 
-/// Computes a new Cartesian4 with each component set to the absolute value.
-/// Maps to CesiumJS `Cartesian4.abs`
+/// 计算一个新的 Cartesian4，其每个分量都被设为绝对值。
+/// 映射到 CesiumJS `Cartesian4.abs`
 pub fn abs(cartesian: DVec4) -> DVec4 {
     DVec4::new(
         cartesian.x.abs(),
@@ -155,8 +156,8 @@ pub fn abs(cartesian: DVec4) -> DVec4 {
     )
 }
 
-/// Computes the componentwise product of two Cartesians.
-/// Maps to CesiumJS `Cartesian4.multiplyComponents`
+/// 计算两个 Cartesian 的按分量乘积。
+/// 映射到 CesiumJS `Cartesian4.multiplyComponents`
 pub fn multiply_components(left: DVec4, right: DVec4) -> DVec4 {
     DVec4::new(
         left.x * right.x,
@@ -166,8 +167,8 @@ pub fn multiply_components(left: DVec4, right: DVec4) -> DVec4 {
     )
 }
 
-/// Computes the componentwise quotient of two Cartesians.
-/// Maps to CesiumJS `Cartesian4.divideComponents`
+/// 计算两个 Cartesian 的按分量商。
+/// 映射到 CesiumJS `Cartesian4.divideComponents`
 pub fn divide_components(left: DVec4, right: DVec4) -> DVec4 {
     DVec4::new(
         left.x / right.x,

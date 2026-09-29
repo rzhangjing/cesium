@@ -4,8 +4,8 @@ use bevy::render::camera::Projection;
 use crate::camera::components::CesiumCamera;
 use crate::METERS_PER_RENDER_UNIT;
 
-/// Per-frame camera update: reads the domain Camera and applies its
-/// view/projection state to Bevy's Transform and Projection components.
+/// 逐帧相机更新：读取领域 Camera 并将其
+/// view/projection 状态应用到 Bevy 的 Transform 和 Projection 组件。
 pub fn camera_update_system(
     mut cameras: Query<(&CesiumCamera, &mut Transform, &mut Projection)>,
 ) {

@@ -1,18 +1,18 @@
-//! Asynchronous 3D Tiles content loading (content -> mesh).
+//! 异步 3D Tiles content 加载（content -> mesh）。
 //!
-//! Per-tile pipeline:
-//! 1. `tileset_traversal_system` diffs the selection and pushes new paths into
-//!    `TileSelection::tiles_to_load`.
-//! 2. This system is the *sole* consumer of that queue: it spawns a placeholder
-//!    entity in [`TileContentState::Loading`] and dispatches download + decode +
-//!    mesh building onto Bevy's [`IoTaskPool`] (never blocking the frame thread).
-//! 3. Later frames poll each task exactly once (`poll_once`) and transition the
-//!    placeholder to `Ready` (storing the GPU handles in [`TileContent`]),
-//!    `Failed`, or despawn it when the format is unsupported.
+//! 逐 tile 流水线：
+//! 1. `tileset_traversal_system` 对选择集做 diff，并把新路径推入
+//!    `TileSelection::tiles_to_load`。
+//! 2. 本系统是那个队列的*唯一*消费者：它 spawn 一个处于
+//!    [`TileContentState::Loading`] 的占位 entity，并把下载 + 解码 +
+//!    mesh 构建分派到 Bevy 的 [`IoTaskPool`]（从不阻塞帧线程）。
+//! 3. 后续帧对每个 task 恰好轮询一次（`poll_once`），并把该占位
+//!    entity 转换为 `Ready`（把 GPU handle 存入 [`TileContent`]）、
+//!    `Failed`，或在格式不受支持时将其 despawn。
 //!
-//! The render system scans component state (`Ready` + `mesh_handle.is_some()`)
-//! instead of draining the same queue, which structurally removes the previous
-//! load/render drain race.
+//! 渲染系统改为扫描组件状态（`Ready` + `mesh_handle.is_some()`），
+//! 而不再从同一个队列 drain，这在结构上消除了此前的
+//! load/render drain 竞态。
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -32,29 +32,29 @@ use crate::resources::TileLoadStats;
 use super::loader::LoadedTileset;
 use super::traversal_system::TileSelection;
 
-/// In-flight asynchronous tile content loads.
+/// 处于飞行中的异步 tile content 加载。
 ///
-/// Keyed by tile path; each entry owns the spawned [`IoTaskPool`] task plus the
-/// placeholder entity that receives the decoded mesh once the task resolves.
+/// 以 tile 路径为键；每个条目持有被 spawn 的 [`IoTaskPool`] task，外加
+/// 那个在 task 解析后接收解码 mesh 的占位 entity。
 #[derive(Resource, Default)]
 pub struct PendingTileLoads {
     pub pending: HashMap<Vec<usize>, TileLoadRequest>,
-    /// Content URIs already rejected as unsupported, so a skipped tile is never
-    /// re-dispatched on every frame.
+    /// 已被判定为不受支持、从而拒绝的 content URI，使一个被跳过的 tile 从不
+    /// 在每帧被重新分派。
     pub skipped_uris: HashSet<String>,
-    /// The tileset URL the `skipped_uris` set belongs to. When the active
-    /// [`LoadedTileset`] switches to a different URL the set is cleared, so a
-    /// skip decision from a previous tileset never leaks into the new one.
+    /// `skipped_uris` 集合所归属的 tileset URL。当活跃的
+    /// [`LoadedTileset`] 切换到不同的 URL 时，该集合被清空，于是
+    /// 前一个 tileset 的跳过决定从不泄漏进新的那个。
     pub tileset_url: String,
-    /// Resolved-but-not-yet-uploaded content, drained FIFO up to the per-frame
-    /// tileset mesh budget (gate ON). Always fully drained in-frame when gate
-    /// OFF (budget = `UNBOUNDED`), so the legacy behaviour is unchanged.
+    /// 已解析但尚未上传的 content，按 FIFO 排空至每帧的
+    /// tileset mesh 预算（门控 ON）。门控 OFF 时（budget = `UNBOUNDED`）
+    /// 总是在帧内完全排空，因此旧行为保持不变。
     pub ready_backlog: VecDeque<ResolvedTileLoad>,
 }
 
-/// A content load whose worker task has resolved, awaiting its per-frame mesh
-/// upload slot. Holds everything the poll step needs to build GPU handles and
-/// (re)attach [`CesiumTileNode`] without re-borrowing the domain `Tile`.
+/// 一个其 worker task 已解析、正等待其每帧 mesh 上传名额的
+/// content 加载。持有轮询步骤构建 GPU handle 并（重新）挂上
+/// [`CesiumTileNode`] 所需的一切，无需再次借用领域 `Tile`。
 pub struct ResolvedTileLoad {
     pub path: Vec<usize>,
     pub url: String,
@@ -66,39 +66,39 @@ pub struct ResolvedTileLoad {
 pub struct TileLoadRequest {
     pub path: Vec<usize>,
     pub url: String,
-    /// Placeholder entity spawned in `Loading` state.
+    /// 以 `Loading` 状态 spawn 的占位 entity。
     pub entity: Entity,
-    /// Tile metadata captured at dispatch time (the domain `Tile` borrow cannot
-    /// outlive the frame, and the task resolves on a later one).
+    /// 在分派时捕获的 tile 元数据（领域 `Tile` 的借用无法
+    /// 比帧活得更久，而 task 在更后的一帧才解析）。
     pub meta: TileNodeMeta,
-    /// Background download + decode + mesh build.
+    /// 后台下载 + 解码 + mesh 构建。
     pub task: Task<TileLoadPayload>,
 }
 
-/// Immutable tile metadata needed to (re)build [`CesiumTileNode`].
+/// （重新）构建 [`CesiumTileNode`] 所需的不可变 tile 元数据。
 #[derive(Debug, Clone, Copy)]
 pub struct TileNodeMeta {
     pub geometric_error: f64,
     pub screen_space_error: f64,
-    /// Tile bounding-volume center in ECEF metres (f64) — also the RTC center.
+    /// tile 包围体中心，ECEF 米（f64）—— 同时也是 RTC 中心。
     pub bounding_center: glam::DVec3,
     pub bounding_radius: f64,
 }
 
-/// Worker result: CPU-side data only. GPU handles are created on the frame
-/// thread, because `Assets<T>` is not accessible from a task-pool worker.
+/// Worker 结果：仅 CPU 侧数据。GPU handle 在帧线程上创建，
+/// 因为 `Assets<T>` 无法从 task-pool worker 访问。
 pub struct TileLoadPayload {
     pub bytes_downloaded: u64,
     pub outcome: TileLoadOutcome,
 }
 
 pub enum TileLoadOutcome {
-    /// Decoded successfully; mesh already recentered on the RTC center.
+    /// 解码成功；mesh 已以 RTC 中心重新居中。
     Ready(PreparedTileContent),
-    /// Unsupported format (Draco / pnts / cmpt / subt / external i3dm URI):
-    /// warn + count as skipped, never as a failure.
+    /// 不受支持的格式（Draco / pnts / cmpt / subt / 外部 i3dm URI）：
+    /// warn + 计为 skipped，绝不计为 failure。
     Skipped(String),
-    /// Real failure (network error, malformed payload): count as failed.
+    /// 真正的失败（网络错误、畸形 payload）：计为 failed。
     Failed(String),
 }
 
@@ -107,7 +107,7 @@ pub struct PreparedTileContent {
     pub has_batch_table: bool,
 }
 
-/// Separates "unsupported, degrade gracefully" from "broken, report".
+/// 区分"不受支持，优雅降级"与"损坏，需上报"。
 #[derive(Debug)]
 enum ContentError {
     Unsupported(String),
@@ -129,29 +129,26 @@ struct DecodedGlb {
     has_batch_table: bool,
 }
 
-/// Downloads raw tile bytes.
+/// 下载原始 tile 字节。
 ///
-/// Blocking; intended for an [`IoTaskPool`] worker thread. The fetch is
-/// tokio-free — it routes through the cesium-pipeline core's ureq blocking
-/// backend ([`pipeline::fetch::fetch_gated`]), selecting the shared keep-alive
-/// pool (gate ON) or a fresh per-call client (gate OFF).
+/// 阻塞式；面向一个 [`IoTaskPool`] worker 线程而设计。该 fetch 不依赖 tokio ——
+/// 它经由 cesium-pipeline core 的 ureq 阻塞后端（[`pipeline::fetch::fetch_gated`]），
+/// 选择共享的 keep-alive 池（门控 ON）或每次调用新建的客户端（门控 OFF）。
 fn fetch_tile_bytes(url: &str, use_pipeline: bool) -> Result<Vec<u8>, String> {
     pipeline::fetch::fetch_gated(url, use_pipeline)
 }
 
-/// Classifies the payload by magic bytes, then decodes only supported formats.
+/// 按 magic bytes 分类 payload，然后只解码受支持的格式。
 ///
-/// Classification happens *before* decoding: `decode_tile_content` reports
-/// `InvalidMagic` for e.g. `subt`/`geom`/`vctr`, which would otherwise be
-/// mis-counted as a hard failure instead of a graceful skip.
+/// 分类发生在解码*之前*：`decode_tile_content` 对例如 `subt`/`geom`/`vctr`
+/// 会报 `InvalidMagic`，而它们否则会被误计为一次硬失败，而非一次优雅跳过。
 fn extract_glb(raw: &[u8]) -> Result<DecodedGlb, ContentError> {
     let content_type = detect_content_type(raw);
     match content_type {
-        // Only b3dm and bare GLB are renderable today. i3dm (instanced) is
-        // deliberately excluded here as well as below: rejecting it at the
-        // classification gate guarantees *every* i3dm becomes a graceful skip
-        // (`tiles_skipped`) rather than risking a malformed-instance decode being
-        // mis-counted as a hard failure.
+        // 如今只有 b3dm 与裸 GLB 可渲染。i3dm（instanced）在此处以及
+        // 下面都被刻意排除：在分类卡口拒绝它，保证*每一个* i3dm 都成为一次
+        // 优雅跳过（`tiles_skipped`），而不会冒着某个畸形实例的解码被
+        // 误计为一次硬失败的风险。
         TileContentType::Batched3DModel | TileContentType::GltfBinary => {}
         other => {
             return Err(ContentError::unsupported(format!(
@@ -169,12 +166,11 @@ fn extract_glb(raw: &[u8]) -> Result<DecodedGlb, ContentError> {
             has_batch_table: b3dm.batch_table_json.is_some() || !b3dm.batch_table_binary.is_empty(),
             glb: b3dm.gltf,
         }),
-        // i3dm (instanced) is unsupported: neither the embedded-GLB
-        // (`gltf_format == 1`) nor the external-URI (`== 0`) variant. Drawing the
-        // prototype once would be a wrong half-state (a single copy at the RTC
-        // center, every per-instance transform ignored, yet counted as loaded).
-        // The classification gate above already rejects i3dm, so this arm is a
-        // defensive exhaustive fallback — it must stay a skip, never a render.
+        // i3dm（instanced）不受支持：无论内嵌 GLB（`gltf_format == 1`）
+        // 还是外部 URI（`== 0`）变体皆是如此。只画一次原型会是一个错误的
+        // 半态（在 RTC 中心放一份拷贝、每个逐实例变换被忽略，却仍计为已加载）。
+        // 上面的分类卡口已经拒绝 i3dm，所以这一分支只是一个防御性的
+        // 穷尽兜底 —— 它必须始终是跳过，绝不可渲染。
         DecodedTile::I3dm(_) => Err(ContentError::unsupported(
             "i3dm instancing is not supported yet",
         )),
@@ -191,10 +187,10 @@ fn extract_glb(raw: &[u8]) -> Result<DecodedGlb, ContentError> {
     }
 }
 
-/// Full CPU-side worker: fetch -> classify/decode -> parse glTF -> build the
-/// Bevy mesh with the RTC center subtracted in f64 before the f32 cast.
+/// 完整的 CPU 侧 worker：fetch -> 分类/解码 -> 解析 glTF -> 在 f32 转换
+/// 之前于 f64 中减去 RTC 中心来构建 Bevy mesh。
 ///
-/// Runs on an [`IoTaskPool`] worker thread; returns only CPU-side data.
+/// 运行于一个 [`IoTaskPool`] worker 线程；只返回 CPU 侧数据。
 fn load_tile_content(url: &str, rtc_center: glam::DVec3, use_pipeline: bool) -> TileLoadPayload {
     let raw = match fetch_tile_bytes(url, use_pipeline) {
         Ok(bytes) => bytes,
@@ -224,7 +220,7 @@ fn load_tile_content(url: &str, rtc_center: glam::DVec3, use_pipeline: bool) -> 
     }
 }
 
-/// Neutral material until per-tile materials/textures are wired up.
+/// 在各 tile 的材质/贴图接入之前的一个中性材质。
 fn default_tile_material() -> StandardMaterial {
     StandardMaterial {
         base_color: Color::srgb(0.8, 0.8, 0.8),
@@ -243,14 +239,14 @@ fn tile_node(path: Vec<usize>, meta: TileNodeMeta, state: TileContentState) -> C
     }
 }
 
-/// Polls in-flight tasks (once each, so the frame thread never parks) and
-/// transitions resolved tiles `Loading -> Ready/Failed`, or despawns the
-/// placeholder of a tile whose content format is unsupported.
+/// 轮询飞行中的 task（每个一次，使帧线程从不停车），并把已解析的
+/// tile 转换 `Loading -> Ready/Failed`，或为那个 content 格式不受支持的 tile
+/// despawn 其占位 entity。
 ///
-/// Resolved payloads are moved into a FIFO backlog and uploaded up to `budget`
-/// meshes per frame — `UNBOUNDED` (gate OFF) drains everything in-frame exactly
-/// like the pre-migration code, while gate ON bounds GPU work to the tileset mesh
-/// weight ([`budget::tileset_mesh_budget`]).
+/// 已解析的 payload 被移入一个 FIFO backlog，每帧最多上传 `budget` 个
+/// mesh —— `UNBOUNDED`（门控 OFF）在帧内排空一切，恰如迁移前的代码，
+/// 而门控 ON 把 GPU 工作约束到 tileset mesh 权重
+/// （[`budget::tileset_mesh_budget`]）。
 fn poll_pending_loads(
     commands: &mut Commands,
     pending_loads: &mut PendingTileLoads,
@@ -259,9 +255,9 @@ fn poll_pending_loads(
     materials: &mut Assets<StandardMaterial>,
     budget: usize,
 ) {
-    // 1. Poll every in-flight task once; move resolved payloads into the backlog.
-    //    A finished task is drained here and never re-polled, so the budget can
-    //    defer the GPU upload without touching a completed `Task`.
+    // 1. 对每个飞行中的 task 轮询一次；把已解析的 payload 移入 backlog。
+    //    一个完成的 task 在此被 drain 且从不重轮，所以预算可以在不触碰一个
+    //    已完成 `Task` 的前提下推迟 GPU 上传。
     let mut resolved: Vec<(Vec<usize>, TileLoadPayload)> = Vec::new();
     for (path, request) in pending_loads.pending.iter_mut() {
         if let Some(payload) = block_on(poll_once(&mut request.task)) {
@@ -269,7 +265,7 @@ fn poll_pending_loads(
         }
     }
     for (path, payload) in resolved {
-        // Safe: `path` was just read from `pending` and nothing removed it.
+        // 安全：`path` 刚从 `pending` 读出，且没有任何东西移除它。
         let request = pending_loads
             .pending
             .remove(&path)
@@ -283,7 +279,7 @@ fn poll_pending_loads(
         });
     }
 
-    // 2. Upload up to `budget` meshes this frame (FIFO).
+    // 2. 本帧最多上传 `budget` 个 mesh（FIFO）。
     let mut uploaded = 0;
     while uploaded < budget {
         let Some(resolved_load) = pending_loads.ready_backlog.pop_front() else {
@@ -306,7 +302,7 @@ fn poll_pending_loads(
                 let mesh_handle = meshes.add(content.mesh);
                 let material_handle = materials.add(default_tile_material());
 
-                // `try_insert`: the tile may have been unloaded while in flight.
+                // `try_insert`：该 tile 可能在飞行途中被卸载。
                 commands.entity(entity).try_insert((
                     TileContent {
                         mesh_handle: Some(mesh_handle),
@@ -318,7 +314,7 @@ fn poll_pending_loads(
                 stats.tiles_loaded += 1;
             }
             TileLoadOutcome::Skipped(reason) => {
-                // Graceful degradation: warn + skip, never a failure or a panic.
+                // 优雅降级：warn + skip，绝不失败或 panic。
                 warn!("Skipping tile {:?} ({}): {}", path, url, reason);
                 pending_loads.skipped_uris.insert(url);
                 commands.entity(entity).try_despawn();
@@ -346,9 +342,9 @@ pub fn tile_content_load_system(
     mut materials: ResMut<Assets<StandardMaterial>>,
     tile_query: Query<&CesiumTileNode>,
 ) {
-    // Gate: read once per frame. ON routes fetches through the cesium-pipeline
-    // core's shared keep-alive ureq pool and bounds uploads to the tileset mesh
-    // weight; OFF keeps the legacy per-call fetch and drains all resolved tiles.
+    // 门控：每帧读一次。ON 把 fetch 路由经 cesium-pipeline core 的共享
+    // keep-alive ureq 池，并把上传约束到 tileset mesh 权重；OFF 保留旧的
+    // 每次调用 fetch，并排空所有已解析 tile。
     let use_pipeline = pipeline::fetch::pipeline_gate_enabled();
     let upload_budget = if use_pipeline {
         budget::tileset_mesh_budget()
@@ -356,7 +352,7 @@ pub fn tile_content_load_system(
         budget::UNBOUNDED
     };
 
-    // Retire tasks that resolved since the previous frame.
+    // 退役自上一帧以来已解析的 task。
     poll_pending_loads(
         &mut commands,
         &mut pending_loads,
@@ -376,32 +372,32 @@ pub fn tile_content_load_system(
         None => return,
     };
 
-    // Tileset switch: drop skip decisions that belonged to a different tileset so
-    // they never suppress content in the newly active one.
+    // Tileset 切换：丢弃那些属于另一个 tileset 的跳过决定，使它们
+    // 从不压制新激活那个里的 content。
     if pending_loads.tileset_url != loaded.url {
         pending_loads.skipped_uris.clear();
         pending_loads.tileset_url = loaded.url.clone();
     }
 
-    // Disjoint field borrows of one resource: draining `tiles_to_load` while
-    // reading `selected_tiles` for the per-tile screen space error. `into_inner`
-    // consumes the `ResMut` and flags the change-detection tick.
+    // 对同一个资源做互不相交的字段借用：一边 drain `tiles_to_load`，
+    // 一边读 `selected_tiles` 以取逐 tile 的 screen space error。`into_inner`
+    // 消费那个 `ResMut` 并标记 change-detection tick。
     let sel = selection.into_inner();
 
     let ellipsoid = Ellipsoid::WGS84;
     let pool = IoTaskPool::get();
 
-    // Path index of the tile nodes that already exist. Scanning the query per
-    // requested tile was O(n*m); this also guarantees one entity per path.
+    // 已存在的 tile node 的路径索引。对每个被请求的 tile 都扫描一次 query 曾是
+    // O(n*m)；这同时保证每个路径恰有一个 entity。
     let mut known_paths: HashSet<Vec<usize>> = tile_query
         .iter()
         .map(|node| node.path.clone())
         .collect();
 
     for path in sel.tiles_to_load.drain(..) {
-        // Already loaded/loading/failed in an earlier frame, or in flight now.
-        // Counted as a skip to match the terrain loader's accounting for a
-        // duplicate key (the request is intentionally not re-dispatched).
+        // 在更早的帧里已 loaded/loading/failed，或此刻正在飞行。
+        // 计为一次 skip，以匹配 terrain loader 对一个重复键的记账
+        // （该请求是被刻意地不重新分派）。
         if known_paths.contains(&path) || pending_loads.pending.contains_key(&path) {
             stats.tiles_skipped += 1;
             continue;
@@ -409,11 +405,11 @@ pub fn tile_content_load_system(
 
         let tile = match cesium_tileset::lod_selection::get_tile_by_path(&tileset_json.root, &path) {
             Some(t) => t,
-            // Path not in this tileset (stale selection) — nothing to load.
+            // 路径不在此 tileset 中（过期选择）—— 无可加载之物。
             None => continue,
         };
 
-        // Pure group tiles carry no renderable content of their own.
+        // 纯 group tile 自身不携带任何可渲染的 content。
         let uri = match tile.content_uris().first() {
             Some(u) => (*u).to_string(),
             None => continue,
@@ -421,8 +417,8 @@ pub fn tile_content_load_system(
 
         let url = loaded.state.resolve_uri(&uri);
 
-        // Known-unsupported content: do not re-dispatch it every frame. Counted
-        // as a skip for the same accounting reason as the duplicate-path guard.
+        // 已知不受支持的 content：不要每帧重新分派它。出于与重复路径
+        // 守卫相同的记账原因，计为一次 skip。
         if pending_loads.skipped_uris.contains(&url) {
             stats.tiles_skipped += 1;
             continue;
@@ -444,8 +440,8 @@ pub fn tile_content_load_system(
             bounding_radius: bounding.radius,
         };
 
-        // Placeholder in `Loading` state; the render system only spawns meshes
-        // for `Ready` nodes that actually carry a mesh handle.
+        // 处于 `Loading` 状态的占位；渲染系统只为那些真正携带 mesh handle
+        // 的 `Ready` node spawn mesh。
         let entity = commands
             .spawn((
                 tile_node(path.clone(), meta, TileContentState::Loading),
@@ -460,9 +456,8 @@ pub fn tile_content_load_system(
             .id();
         known_paths.insert(path.clone());
 
-        // RTC center = tile bounding-volume center (ECEF metres, f64). Vertices
-        // are recentered on it in f64 before the f32 cast, and the render entity
-        // is placed back at `center / METERS_PER_RENDER_UNIT`.
+        // RTC 中心 = tile 包围体中心（ECEF 米，f64）。顶点在 f32 转换之前
+        // 于 f64 中以它重新居中，而渲染 entity 被放回 `center / METERS_PER_RENDER_UNIT`。
         let rtc_center = bounding.center;
         let task_url = url.clone();
         let task = pool.spawn(async move { load_tile_content(&task_url, rtc_center, use_pipeline) });
@@ -481,34 +476,33 @@ pub fn tile_content_load_system(
     }
 }
 
-/// `CESIUM_ENABLE_GLTF_UPGRADE` — glTF 1.0 → 2.0 upgrade gate. The name matches
-/// the cesium-app feature-flag registry (`feature_flags::ENV_ENABLE_GLTF_UPGRADE`)
-/// so both read paths observe the identical env var. bevy-render does not depend
-/// on the application layer, so the gate is evaluated here through the M1.4
-/// [`pipeline::fetch::gate_from_env_value`] precedent (defaults OFF).
+/// `CESIUM_ENABLE_GLTF_UPGRADE` —— glTF 1.0 → 2.0 升级门控。名称与
+/// cesium-app feature-flag 注册表（`feature_flags::ENV_ENABLE_GLTF_UPGRADE`）一致，
+/// 使两条读取路径观察到完全相同的环境变量。bevy-render 不依赖应用层，
+/// 所以门控在此经由 M1.4 的
+/// [`pipeline::fetch::gate_from_env_value`] 先例求值（默认 OFF）。
 const ENV_ENABLE_GLTF_UPGRADE: &str = "CESIUM_ENABLE_GLTF_UPGRADE";
 
-/// Reads the glTF-upgrade gate without depending on the application layer.
-/// Defaults OFF, so the existing glTF 2.0 render golden path stays byte-for-byte
-/// unchanged unless `CESIUM_ENABLE_GLTF_UPGRADE` is explicitly truthy.
+/// 在不依赖应用层的前提下读取 glTF-upgrade 门控。默认 OFF，
+/// 所以除非 `CESIUM_ENABLE_GLTF_UPGRADE` 显式为真，现有 glTF 2.0 渲染黄金
+/// 路径都逐字节保持不变。
 fn gltf_upgrade_gate_enabled() -> bool {
     pipeline::fetch::gate_from_env_value(std::env::var(ENV_ENABLE_GLTF_UPGRADE).ok())
 }
 
-/// Decodes an embedded GLB into the typed [`cesium_gltf::gltf_model::GltfModel`]
-/// plus its per-buffer byte sources (`buffers[i]` is the decoded source of
-/// `gltf.buffers[i]`; for a GLB `buffers[0]` is the embedded binary chunk).
+/// 把一个内嵌 GLB 解码为带类型的 [`cesium_gltf::gltf_model::GltfModel`]，
+/// 外加它的逐 buffer 字节源（`buffers[i]` 是 `gltf.buffers[i]` 的解码源；
+/// 对一个 GLB，`buffers[0]` 是内嵌的二进制 chunk）。
 ///
-/// Gate OFF (`upgrade_enabled == false`): delegates straight to
-/// [`GlbData::from_bytes`] — **byte-for-byte identical** to the pre-M9.2 path,
-/// protecting the existing glTF 2.0 render golden path.
+/// 门控 OFF（`upgrade_enabled == false`）：直接委派给
+/// [`GlbData::from_bytes`] —— 与迁移前 M9.2 的路径**逐字节一致**，
+/// 保护现有的 glTF 2.0 渲染黄金路径。
 ///
-/// Gate ON: parses the container *untyped* ([`parse_glb_container`]); a payload
-/// that is not already 2.0 is run through [`detect_version`] +
-/// [`update_version_with_buffers`] (threading the embedded binary chunk as
-/// `buffers[0]` to drive the M9.2 binary stage) before the typed
-/// [`GltfModel::from_value`] deserialization. An already-2.0 payload is a pure
-/// passthrough (zero mutation), so even gate ON never disturbs a valid 2.0 asset.
+/// 门控 ON：把容器*非类型化*地解析（[`parse_glb_container`]）；一个尚不是
+/// 2.0 的 payload 会先经过 [`detect_version`] + [`update_version_with_buffers`]
+/// （把内嵌二进制 chunk 作为 `buffers[0]` 穿线以驱动 M9.2 的 binary 阶段），
+/// 再进入带类型的 [`GltfModel::from_value`] 反序列化。一个已是 2.0 的 payload
+/// 是纯粹的透传（零改动），所以即便门控 ON 也从不扰动一个有效的 2.0 资源。
 fn decode_gltf_model(
     glb: &[u8],
     upgrade_enabled: bool,
@@ -516,7 +510,7 @@ fn decode_gltf_model(
     if !upgrade_enabled {
         let glb_data = cesium_gltf::binary_format::GlbData::from_bytes(glb)
             .map_err(|e| ContentError::invalid(format!("GLB parse: {}", e)))?;
-        // GLB buffer 0 is the embedded binary chunk.
+        // GLB buffer 0 是内嵌的二进制 chunk。
         let buffers = vec![glb_data.binary_chunk.unwrap_or_default()];
         return Ok((glb_data.model, buffers));
     }
@@ -541,28 +535,24 @@ fn decode_gltf_model(
     Ok((model, buffers))
 }
 
-/// Parses an embedded GLB into CPU-side geometry.
+/// 把一个内嵌 GLB 解析为 CPU 侧几何。
 ///
-/// Chunk walking is delegated to the domain parser (12-byte header, then
-/// `length|type|data` chunks). The previous hand-rolled slicing read the JSON
-/// chunk from byte 16 instead of 20, i.e. it tried to parse the 4-byte chunk
-/// type as JSON and therefore failed on every real payload — no tile could ever
-/// produce a mesh.
+/// chunk 遍历委派给领域解析器（12 字节头，随后是 `length|type|data`
+/// chunk）。此前手写的切片从第 16 字节而非第 20 字节读 JSON chunk，
+/// 也就是它试图把 4 字节的 chunk type 当 JSON 解析，因而在每个真实
+/// payload 上都失败 —— 没有任何 tile 能产出一个 mesh。
 ///
-/// The glTF 1.0 → 2.0 upgrade route is selected by the
-/// `CESIUM_ENABLE_GLTF_UPGRADE` gate (see [`decode_gltf_model`]) and defaults
-/// OFF, leaving the existing 2.0 path byte-for-byte unchanged.
+/// glTF 1.0 → 2.0 升级路径由 `CESIUM_ENABLE_GLTF_UPGRADE` 门控选择
+/// （见 [`decode_gltf_model`]）并默认 OFF，使现有的 2.0 路径逐字节保持不变。
 ///
-/// Draco-compressed payloads are rejected as `Unsupported` (the decoder backend
-/// is still a stub) so the caller degrades gracefully instead of emitting an
-/// empty/garbage mesh.
+/// Draco 压缩的 payload 被作为 `Unsupported` 拒绝（解码器后端仍是一个
+/// stub），于是调用方优雅降级，而不去吐出一个空/垃圾 mesh。
 fn parse_glb_to_geometry(glb: &[u8]) -> Result<GeometryData, ContentError> {
     parse_glb_to_geometry_gated(glb, gltf_upgrade_gate_enabled())
 }
 
-/// Testable seam for [`parse_glb_to_geometry`]: `upgrade_enabled` selects the
-/// gate ON/OFF decode route directly, without mutating process-global env
-/// (which would race parallel tests).
+/// [`parse_glb_to_geometry`] 的可测试接缝：`upgrade_enabled` 直接选择门控
+/// ON/OFF 解码路径，而不去改动进程全局环境（那会与并行测试竞态）。
 fn parse_glb_to_geometry_gated(
     glb: &[u8],
     upgrade_enabled: bool,
@@ -676,21 +666,21 @@ fn parse_glb_to_geometry_gated(
 mod tests {
     use super::*;
 
-    /// Builds a minimal GLB container wrapping `json` (4-byte aligned, no BIN
-    /// chunk) so the header/JSON parsing path can be exercised without a file.
+    /// 构建一个最小的 GLB 容器来包裹 `json`（4 字节对齐，无 BIN
+    /// chunk），使 header/JSON 解析路径无需文件即可被演练。
     fn build_glb(json: &str) -> Vec<u8> {
         build_glb_with_bin(json, &[])
     }
 
-    /// Same as [`build_glb`], plus a trailing BIN chunk when `bin` is non-empty.
+    /// 同 [`build_glb`]，另当 `bin` 非空时追加一个尾随 BIN chunk。
     fn build_glb_with_bin(json: &str, bin: &[u8]) -> Vec<u8> {
         let mut json_chunk = json.as_bytes().to_vec();
-        // GLB chunks are 4-byte aligned; JSON is padded with spaces (0x20).
+        // GLB chunk 是 4 字节对齐的；JSON 用空格（0x20）填充。
         let json_pad = (4 - json_chunk.len() % 4) % 4;
         json_chunk.resize(json_chunk.len() + json_pad, b' ');
 
         let mut bin_chunk = bin.to_vec();
-        // BIN chunks are 4-byte aligned too, padded with zeroes.
+        // BIN chunk 也是 4 字节对齐的，用零填充。
         let bin_pad = (4 - bin_chunk.len() % 4) % 4;
         bin_chunk.resize(bin_chunk.len() + bin_pad, 0);
 
@@ -762,8 +752,8 @@ mod tests {
 
     #[test]
     fn test_parse_glb_rejects_draco() {
-        // A required Draco extension must degrade to `Unsupported` (warn + skip),
-        // never to a hard failure or an empty mesh.
+        // 一个被必需的 Draco 扩展必须降级为 `Unsupported`（warn + skip），
+        // 绝不降级为一次硬失败或一个空 mesh。
         let glb = build_glb(
             r#"{"asset":{"version":"2.0"},"extensionsRequired":["KHR_draco_mesh_compression"]}"#,
         );
@@ -778,8 +768,8 @@ mod tests {
 
     #[test]
     fn test_parse_glb_accepts_plain_gltf() {
-        // Same container without the Draco requirement passes the extension gate
-        // (it then fails later only because this fixture has no vertex data).
+        // 去掉该 Draco 要求的同一容器能通过扩展卡口
+        // （它随后只因这个 fixture 没有顶点数据而在更后面失败）。
         let glb = build_glb(r#"{"asset":{"version":"2.0"}}"#);
 
         match parse_glb_to_geometry(&glb) {
@@ -793,9 +783,9 @@ mod tests {
 
     #[test]
     fn test_parse_glb_reads_positions_from_binary_chunk() {
-        // Guards the GLB chunk layout fix: with a spec-correct container the
-        // JSON chunk must be found at byte 20 and the BIN chunk right after it,
-        // so the single triangle is actually decoded.
+        // 守卫 GLB chunk 布局修复：对一个符合规范的容器，JSON chunk
+        // 必须能在第 20 字节处被找到、且 BIN chunk 紧随其后，
+        // 于是那一个三角形才被真正解码。
         let positions: [f32; 9] = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
         let mut bin: Vec<u8> = Vec::new();
         for p in positions {
@@ -814,12 +804,11 @@ mod tests {
         assert_eq!(geometry.positions[1], [1.0, 0.0, 0.0]);
     }
 
-    /// M9.2-b: a glTF **1.0** payload (object-keyed collections) embedded in a
-    /// GLB v2 container. Gate OFF must fail — the array-based typed model cannot
-    /// deserialize object-keyed dictionaries, proving the legacy path is
-    /// unchanged and 1.0 was never silently supported. Gate ON must run
-    /// `detect_version` + `update_version_with_buffers` (objects→arrays, string
-    /// ids→indices, min/max from the binary chunk) and decode the triangle.
+    /// M9.2-b：一个 glTF **1.0** payload（以对象为键的集合）被内嵌在一个
+    /// GLB v2 容器里。门控 OFF 必须失败 —— 基于数组的带类型模型无法
+    /// 反序列化以对象为键的字典，这证明旧路径未被改动且 1.0 从未被静默支持。
+    /// 门控 ON 必须运行 `detect_version` + `update_version_with_buffers`
+    /// （对象→数组、字符串 id→索引、min/max 取自二进制 chunk）并解码该三角形。
     #[test]
     fn test_parse_glb_upgrades_gltf_10_only_when_gate_on() {
         let positions: [f32; 9] = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
@@ -828,8 +817,8 @@ mod tests {
             bin.extend_from_slice(&p.to_le_bytes());
         }
 
-        // glTF 1.0: every top-level collection is an object keyed by string id,
-        // and references (bufferView / buffer / POSITION) are string ids too.
+        // glTF 1.0：每个顶层集合都是一个以字符串 id 为键的对象，
+        // 且引用（bufferView / buffer / POSITION）也是字符串 id。
         let json = r#"{"asset":{"version":"1.0"},
             "buffers":{"buf":{"byteLength":36}},
             "bufferViews":{"bv":{"buffer":"buf","byteOffset":0,"byteLength":36}},
@@ -838,14 +827,14 @@ mod tests {
             "meshes":{"mesh":{"primitives":[{"attributes":{"POSITION":"acc"}}]}}}"#;
         let glb = build_glb_with_bin(json, &bin);
 
-        // Gate OFF: byte-for-byte the pre-M9.2 path → the typed deserialization
-        // of the object-keyed 1.0 collections fails.
+        // 门控 OFF：逐字即迁移前 M9.2 路径 → 对以对象为键的 1.0 集合的
+        // 带类型反序列化失败。
         assert!(
             parse_glb_to_geometry_gated(&glb, false).is_err(),
             "gate OFF must not decode a glTF 1.0 payload"
         );
 
-        // Gate ON: 1.0 → 2.0 upgrade then typed decode.
+        // 门控 ON：1.0 → 2.0 升级随后带类型解码。
         let geometry = parse_glb_to_geometry_gated(&glb, true)
             .expect("gate ON must upgrade a glTF 1.0 payload to 2.0");
         assert_eq!(geometry.positions.len(), 3);
@@ -853,12 +842,11 @@ mod tests {
         assert_eq!(geometry.positions[2], [0.0, 1.0, 0.0]);
     }
 
-    /// M9.2-b gate neutrality: for an already-2.0 GLB the gate ON route is a
-    /// pure passthrough (`detect_version == V20` ⇒ `update_version` is skipped),
-    /// so it must yield geometry byte-identical to the gate OFF (legacy) route.
-    /// Geometry → mesh → pixels is deterministic, hence identical geometry is the
-    /// CPU-side proof of pixel zero-diff on the existing glTF 2.0 render path
-    /// (the full GPU screenshot diff runs in the xvfb headless e2e CI).
+    /// M9.2-b 门控中立性：对一个已是 2.0 的 GLB，门控 ON 路径是一个纯粹
+    /// 透传（`detect_version == V20` ⇒ 跳过 `update_version`），所以它必须产出
+    /// 与门控 OFF（旧）路径逐字节相同的几何。几何 → mesh → 像素是确定的，
+    /// 因而相同的几何就是现有 glTF 2.0 渲染路径上像素零差的 CPU 侧证据
+    /// （完整的 GPU 截图 diff 在 xvfb 无头 e2e CI 中运行）。
     #[test]
     fn test_parse_glb_gate_on_is_passthrough_for_gltf_20() {
         let positions: [f32; 9] = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
@@ -890,7 +878,7 @@ mod tests {
 
     #[test]
     fn test_extract_glb_skips_unsupported_formats() {
-        // pnts / cmpt / subt / unknown magics are skipped, not failed.
+        // pnts / cmpt / subt / unknown magic 被 skip，而非 failed。
         for magic in [b"pnts....", b"cmpt....", b"subt....", b"geom....", b"xxxx...."] {
             match extract_glb(magic) {
                 Err(ContentError::Unsupported(_)) => {}
@@ -911,8 +899,8 @@ mod tests {
         assert_eq!(decoded.glb, glb);
     }
 
-    /// Wraps a GLB body in a minimal b3dm container: 28-byte header (magic,
-    /// version 1, byteLength, then four zero table lengths) followed by the GLB.
+    /// 把一个 GLB body 包进一个最小的 b3dm 容器：28 字节头（magic、
+    /// version 1、byteLength，随后四个零表长）后接该 GLB。
     fn build_b3dm(glb: &[u8]) -> Vec<u8> {
         let total = 28 + glb.len();
         let mut b3dm = Vec::with_capacity(total);
@@ -927,16 +915,15 @@ mod tests {
         b3dm
     }
 
-    /// Always-on end-to-end guard for the numeric `BufferTarget` deserialization.
+    /// 为带类型的 `BufferTarget` 反序列化提供一个始终开启的端到端守卫。
     ///
-    /// A synthetic b3dm whose embedded GLB declares `bufferView.target` as the
-    /// OpenGL integers 34962/34963. Before the fix the derived string-variant
-    /// serde impl rejected these, and after the strictness change an *unknown*
-    /// integer must error rather than silently degrade. Neither behaviour depends
-    /// on an external sample file, so this runs on every CI machine.
+    /// 一个合成的 b3dm，其内嵌 GLB 把 `bufferView.target` 声明为 OpenGL
+    /// 整数 34962/34963。修复前，派生的字符串变体 serde impl 会拒绝这些，而
+    /// 在严格性改动之后，一个*未知*整数必须报错而非静默降级。两种行为
+    /// 都不依赖外部样例文件，所以它在每台 CI 机器上都运行。
     #[test]
     fn test_parse_synthetic_b3dm_numeric_buffer_target() {
-        // 3 positions (36 bytes) then 3 u16 indices (6 bytes), padded to 44.
+        // 3 个 position（36 字节）随后 3 个 u16 index（6 字节），填充到 44。
         let positions: [f32; 9] = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
         let indices: [u16; 3] = [0, 1, 2];
         let mut bin: Vec<u8> = Vec::new();
@@ -948,7 +935,7 @@ mod tests {
         }
         bin.resize(44, 0);
 
-        // Both buffer views carry a numeric `target` (34962 / 34963).
+        // 两个 buffer view 都携带一个数值型 `target`（34962 / 34963）。
         let json = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":44}],
             "bufferViews":[
                 {"buffer":0,"byteOffset":0,"byteLength":36,"target":34962},
@@ -966,16 +953,15 @@ mod tests {
         assert_eq!(geometry.indices, vec![0, 1, 2]);
     }
 
-    /// Regression: a real b3dm from the Cesium sample tileset must decode all the
-    /// way to geometry. Guards the `BufferTarget` numeric-deserialization fix —
-    /// `bufferView.target` is 34962/34963 (integers), which the previously
-    /// derived string-variant serde impl rejected with a JSON parse error.
+    /// 回归：来自 Cesium 样例 tileset 的一个真实 b3dm 必须一路解码到几何。
+    /// 守卫 `BufferTarget` 数值反序列化修复 —— `bufferView.target` 是
+    /// 34962/34963（整数），此前派生的字符串变体 serde impl 会以一个 JSON
+    /// 解析错误拒绝它。
     ///
-    /// The path is resolved relative to `CARGO_MANIFEST_DIR` (three levels up to
-    /// the repo root, which also holds the CesiumJS `Apps/SampleData` tree) so it
-    /// works on any checkout, not just the original author's machine. When the
-    /// sample data is absent the test skips; the synthetic test above is the
-    /// always-on guard.
+    /// 该路径相对于 `CARGO_MANIFEST_DIR` 解析（向上三层到仓库根，那里也存有
+    /// CesiumJS 的 `Apps/SampleData` 树），所以它在任何 checkout 上都能工作，
+    /// 而不只是原作者的机器。当样例数据缺失时该测试跳过；上面那个合成测试
+    /// 才是那个始终开启的守卫。
     #[test]
     fn test_parse_real_parent_b3dm_to_geometry() {
         let path = std::path::Path::new(concat!(

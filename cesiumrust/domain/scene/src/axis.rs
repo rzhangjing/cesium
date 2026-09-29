@@ -1,27 +1,27 @@
-//! Axis conversion matrices for glTF up-axis handling.
+//! 用于 glTF up-axis 处理的坐标轴转换矩阵。
 //!
-//! Maps to CesiumJS `Scene/Axis.js`
+//! 映射到 CesiumJS `Scene/Axis.js`
 
 use glam::DMat4;
 
-/// An enum describing the x, y, and z axes and helper conversion functions.
+/// 描述 x、y、z 轴及辅助转换函数的枚举。
 ///
-/// Maps to CesiumJS `Scene/Axis.js`
+/// 映射到 CesiumJS `Scene/Axis.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Axis {
-    /// Denotes the x-axis.
+    /// 表示 x 轴。
     X = 0,
-    /// Denotes the y-axis.
+    /// 表示 y 轴。
     Y = 1,
-    /// Denotes the z-axis.
+    /// 表示 z 轴。
     Z = 2,
 }
 
 impl Axis {
-    /// Gets the axis by name.
+    /// 按名称获取坐标轴。
     ///
-    /// Maps to CesiumJS `Axis.fromName`.
+    /// 映射到 CesiumJS `Axis.fromName`。
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "X" => Some(Axis::X),
@@ -32,68 +32,68 @@ impl Axis {
     }
 }
 
-/// Matrix used to convert from y-up to z-up.
-/// Rotation about PI/2 around the X-axis.
+/// 用于从 y-up 转换到 z-up 的矩阵。
+/// 绕 X 轴旋转 PI/2。
 ///
-/// Maps to CesiumJS `Axis.Y_UP_TO_Z_UP`.
+/// 映射到 CesiumJS `Axis.Y_UP_TO_Z_UP`。
 pub const Y_UP_TO_Z_UP: DMat4 = DMat4::from_cols_array(&[
-    1.0, 0.0, 0.0, 0.0, // column 0
-    0.0, 0.0, 1.0, 0.0, // column 1
-    0.0, -1.0, 0.0, 0.0, // column 2
-    0.0, 0.0, 0.0, 1.0, // column 3
+    1.0, 0.0, 0.0, 0.0, // 第 0 列
+    0.0, 0.0, 1.0, 0.0, // 第 1 列
+    0.0, -1.0, 0.0, 0.0, // 第 2 列
+    0.0, 0.0, 0.0, 1.0, // 第 3 列
 ]);
 
-/// Matrix used to convert from z-up to y-up.
-/// Rotation about -PI/2 around the X-axis.
+/// 用于从 z-up 转换到 y-up 的矩阵。
+/// 绕 X 轴旋转 -PI/2。
 ///
-/// Maps to CesiumJS `Axis.Z_UP_TO_Y_UP`.
+/// 映射到 CesiumJS `Axis.Z_UP_TO_Y_UP`。
 pub const Z_UP_TO_Y_UP: DMat4 = DMat4::from_cols_array(&[
-    1.0, 0.0, 0.0, 0.0, // column 0
-    0.0, 0.0, -1.0, 0.0, // column 1
-    0.0, 1.0, 0.0, 0.0, // column 2
-    0.0, 0.0, 0.0, 1.0, // column 3
+    1.0, 0.0, 0.0, 0.0, // 第 0 列
+    0.0, 0.0, -1.0, 0.0, // 第 1 列
+    0.0, 1.0, 0.0, 0.0, // 第 2 列
+    0.0, 0.0, 0.0, 1.0, // 第 3 列
 ]);
 
-/// Matrix used to convert from x-up to z-up.
-/// Rotation about -PI/2 around the Y-axis.
+/// 用于从 x-up 转换到 z-up 的矩阵。
+/// 绕 Y 轴旋转 -PI/2。
 ///
-/// Maps to CesiumJS `Axis.X_UP_TO_Z_UP`.
+/// 映射到 CesiumJS `Axis.X_UP_TO_Z_UP`。
 pub const X_UP_TO_Z_UP: DMat4 = DMat4::from_cols_array(&[
-    0.0, 0.0, 1.0, 0.0, // column 0
-    0.0, 1.0, 0.0, 0.0, // column 1
-    -1.0, 0.0, 0.0, 0.0, // column 2
-    0.0, 0.0, 0.0, 1.0, // column 3
+    0.0, 0.0, 1.0, 0.0, // 第 0 列
+    0.0, 1.0, 0.0, 0.0, // 第 1 列
+    -1.0, 0.0, 0.0, 0.0, // 第 2 列
+    0.0, 0.0, 0.0, 1.0, // 第 3 列
 ]);
 
-/// Matrix used to convert from z-up to x-up.
-/// Rotation about PI/2 around the Y-axis.
+/// 用于从 z-up 转换到 x-up 的矩阵。
+/// 绕 Y 轴旋转 PI/2。
 ///
-/// Maps to CesiumJS `Axis.Z_UP_TO_X_UP`.
+/// 映射到 CesiumJS `Axis.Z_UP_TO_X_UP`。
 pub const Z_UP_TO_X_UP: DMat4 = DMat4::from_cols_array(&[
-    0.0, 0.0, -1.0, 0.0, // column 0
-    0.0, 1.0, 0.0, 0.0, // column 1
-    1.0, 0.0, 0.0, 0.0, // column 2
-    0.0, 0.0, 0.0, 1.0, // column 3
+    0.0, 0.0, -1.0, 0.0, // 第 0 列
+    0.0, 1.0, 0.0, 0.0, // 第 1 列
+    1.0, 0.0, 0.0, 0.0, // 第 2 列
+    0.0, 0.0, 0.0, 1.0, // 第 3 列
 ]);
 
-/// Matrix used to convert from x-up to y-up.
-/// Rotation about PI/2 around the Z-axis.
+/// 用于从 x-up 转换到 y-up 的矩阵。
+/// 绕 Z 轴旋转 PI/2。
 ///
-/// Maps to CesiumJS `Axis.X_UP_TO_Y_UP`.
+/// 映射到 CesiumJS `Axis.X_UP_TO_Y_UP`。
 pub const X_UP_TO_Y_UP: DMat4 = DMat4::from_cols_array(&[
-    0.0, 1.0, 0.0, 0.0, // column 0
-    -1.0, 0.0, 0.0, 0.0, // column 1
-    0.0, 0.0, 1.0, 0.0, // column 2
-    0.0, 0.0, 0.0, 1.0, // column 3
+    0.0, 1.0, 0.0, 0.0, // 第 0 列
+    -1.0, 0.0, 0.0, 0.0, // 第 1 列
+    0.0, 0.0, 1.0, 0.0, // 第 2 列
+    0.0, 0.0, 0.0, 1.0, // 第 3 列
 ]);
 
-/// Matrix used to convert from y-up to x-up.
-/// Rotation about -PI/2 around the Z-axis.
+/// 用于从 y-up 转换到 x-up 的矩阵。
+/// 绕 Z 轴旋转 -PI/2。
 ///
-/// Maps to CesiumJS `Axis.Y_UP_TO_X_UP`.
+/// 映射到 CesiumJS `Axis.Y_UP_TO_X_UP`。
 pub const Y_UP_TO_X_UP: DMat4 = DMat4::from_cols_array(&[
-    0.0, -1.0, 0.0, 0.0, // column 0
-    1.0, 0.0, 0.0, 0.0, // column 1
-    0.0, 0.0, 1.0, 0.0, // column 2
-    0.0, 0.0, 0.0, 1.0, // column 3
+    0.0, -1.0, 0.0, 0.0, // 第 0 列
+    1.0, 0.0, 0.0, 0.0, // 第 1 列
+    0.0, 0.0, 1.0, 0.0, // 第 2 列
+    0.0, 0.0, 0.0, 1.0, // 第 3 列
 ]);

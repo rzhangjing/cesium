@@ -1,5 +1,5 @@
-//! Fabric Material System specs
-//! Ported from CesiumJS Scene/MaterialSpec.js
+//! Fabric 材质系统规范
+//! 移植自 CesiumJS Scene/MaterialSpec.js
 
 use cesium_material::{
     uniform_value_from_json, BUILTIN_MATERIAL_TYPES, FabricTemplate,
@@ -9,7 +9,7 @@ use cesium_material::{
 use serde_json::json;
 use std::collections::BTreeMap;
 
-// ==================== Constants ====================
+// ==================== 常量 ====================
 
 #[test]
 fn template_properties_match_cesiumjs() {
@@ -122,7 +122,7 @@ fn material_components_iter_skips_none() {
     assert_eq!(names, vec!["diffuse", "alpha"]);
 }
 
-// ==================== FabricTemplate parsing ====================
+// ==================== FabricTemplate 解析 ====================
 
 #[test]
 fn fabric_parse_empty_object() {
@@ -179,7 +179,7 @@ fn fabric_invalid_component_property_errors() {
     assert!(matches!(err, MaterialError::InvalidPropertyName { .. }));
 }
 
-// ==================== FabricTemplate validation ====================
+// ==================== FabricTemplate 校验 ====================
 
 #[test]
 fn fabric_validate_source_and_components_conflict() {
@@ -217,7 +217,7 @@ fn fabric_validate_valid_template_passes() {
     assert!(t.validate().is_ok());
 }
 
-// ==================== FabricTemplate merge ====================
+// ==================== FabricTemplate 合并 ====================
 
 #[test]
 fn fabric_merge_user_wins_over_base() {
@@ -237,14 +237,14 @@ fn fabric_merge_user_wins_over_base() {
     .unwrap();
 
     user.merge_over(&base);
-    // User's color wins
+    // 用户的 color 生效
     assert_eq!(
         user.uniforms.get("color"),
         Some(&UniformValue::Vec4([0.0, 1.0, 0.0, 1.0]))
     );
-    // Extra filled from base
+    // 从 base 填充 Extra
     assert_eq!(user.uniforms.get("extra"), Some(&UniformValue::Float(2.0)));
-    // Components filled from base
+    // 从 base 填充 Components
     assert!(user.components.is_some());
 }
 
@@ -286,7 +286,7 @@ fn material_system_builtin_has_25_types() {
 
 #[test]
 fn material_system_builtin_types_list() {
-    // Verify some known types exist
+    // 验证一些已知类型存在
     let system = MaterialSystem::with_builtin_materials();
     assert!(system.get_material("Color").is_some());
     assert!(system.get_material("Image").is_some());
@@ -306,7 +306,7 @@ fn material_system_from_type_color() {
     let system = MaterialSystem::with_builtin_materials();
     let material = system.from_type("Color", BTreeMap::new()).unwrap();
     assert_eq!(material.type_name(), "Color");
-    // Default color uniform should exist
+    // 默认 color uniform 应存在
     assert!(material.uniforms().contains_key("color"));
 }
 
@@ -357,11 +357,11 @@ fn material_system_create_material_new_type() {
 #[test]
 fn material_is_translucent_color_alpha() {
     let system = MaterialSystem::with_builtin_materials();
-    // Default Color has alpha=0.5 → translucent
+    // 默认 Color 的 alpha=0.5 → 半透明
     let material = system.from_type("Color", BTreeMap::new()).unwrap();
     assert!(material.is_translucent());
 
-    // Override alpha to 1.0 → opaque
+    // 覆盖 alpha 为 1.0 → 不透明
     let mut overrides = BTreeMap::new();
     overrides.insert(
         "color".to_string(),
@@ -381,7 +381,7 @@ fn material_shader_source_nonempty() {
 
 #[test]
 fn builtin_material_types_constant() {
-    // BUILTIN_MATERIAL_TYPES should list all 25
+    // BUILTIN_MATERIAL_TYPES 应列出全部 25 个
     assert_eq!(BUILTIN_MATERIAL_TYPES.len(), 25);
     assert!(BUILTIN_MATERIAL_TYPES.contains(&"Color"));
     assert!(BUILTIN_MATERIAL_TYPES.contains(&"Water"));

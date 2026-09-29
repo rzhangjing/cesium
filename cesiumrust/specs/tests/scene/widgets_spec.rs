@@ -1,7 +1,7 @@
-//! Widgets view model specs
-//! Ported from CesiumJS widgets/Source/ (SceneModePicker, SelectionIndicator, I18n)
+//! Widgets 视图模型规范
+//! 移植自 CesiumJS widgets/Source/（SceneModePicker、SelectionIndicator、I18n）
 //!
-//! A-class tests: SceneModePickerViewModel, SelectionIndicatorViewModel,
+//! A 类测试：SceneModePickerViewModel、SelectionIndicatorViewModel、
 //! Locale/I18n, ProjectionPickerViewModel
 
 use cesium_scene_mode::SceneMode;
@@ -41,7 +41,7 @@ fn scene_mode_picker_ignores_morphing() {
     let mut vm = SceneModePickerViewModel::new();
     vm.select_2d();
     vm.select_mode(SceneMode::Morphing);
-    // Should not change to Morphing
+    // 不应变为 Morphing
     assert_eq!(vm.selected_mode, SceneMode::Scene2D);
 }
 
@@ -192,7 +192,7 @@ fn i18n_switch_locale() {
     assert_eq!(i18n.current_locale, Locale::ZhCn);
 
     let strings = i18n.strings();
-    // Chinese strings should differ from English
+    // 中文字符串应不同于英文
     assert_ne!(strings.animation.play, "Play");
 }
 

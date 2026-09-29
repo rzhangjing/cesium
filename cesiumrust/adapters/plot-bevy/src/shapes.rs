@@ -1,10 +1,9 @@
-//! Geometry → renderable vertex rings, shared by the view sync and the picker so
-//! both see exactly the same tessellated silhouette (plan §6 / §7).
+//! 几何 → 可渲染的顶点环，由视图同步与拾取器共享，以便两者
+//! 看到完全相同的剖分后轮廓（计划 §6 / §7）。
 //!
-//! The parametric primitives (rectangle / circle / ellipse / arc / path) are
-//! sampled through the pure [`cesium_plot::geom::sample`]; in the globe view the
-//! rings are additionally densified along great circles so a curved boundary
-//! hugs the sphere instead of cutting a chord.
+//! 参数化图元（矩形 / 圆 / 椭圆 / 弧 / 路径）通过纯函数
+//! [`cesium_plot::geom::sample`] 采样；在球面视图下，环还会沿大圆加密度，
+//! 使弯曲的边界紧贴球体而非切出一条弦。
 
 use cesium_plot::geo::GeoPoint;
 use cesium_plot::geom::sample::{
@@ -14,8 +13,8 @@ use cesium_plot::geom::sample::{
 use cesium_plot::model::geometry::{Geometry, PathSegment};
 use cesium_plot::model::ViewMode;
 
-/// Closed boundary rings (outer + holes) for a *filled face* kind, or `None` for
-/// a non-face geometry. Globe faces are great-circle densified.
+/// 针对*填充面*类几何的闭合边界环（外环 + 洞），对非面几何返回 `None`。
+/// 球面会沿大圆加密度。
 pub fn face_rings(geo: &Geometry, mode: ViewMode) -> Option<(Vec<GeoPoint>, Vec<Vec<GeoPoint>>)> {
     let (outer, holes) = match geo {
         Geometry::Polygon(p) => (p.outer.clone(), p.holes.clone()),
@@ -39,9 +38,9 @@ pub fn face_rings(geo: &Geometry, mode: ViewMode) -> Option<(Vec<GeoPoint>, Vec<
     }
 }
 
-/// A single open stroke (vertex chain) for a *line-ish* geometry — polyline, arc
-/// or path — or `None` for a face / point / icon / label. Globe strokes are
-/// great-circle densified so a long line follows the sphere (plan §6).
+/// 针对*线状*几何（多段线、弧或路径）的单条开放笔触（顶点链），
+/// 对点 / 图标 / 标签几何返回 `None`。球面笔触会沿大圆加密度，
+/// 使长线沿着球体行进（计划 §6）。
 pub fn stroke_positions(geo: &Geometry, mode: ViewMode) -> Option<Vec<GeoPoint>> {
     let pts = match geo {
         Geometry::Polyline(pl) => pl.positions.clone(),
@@ -54,8 +53,8 @@ pub fn stroke_positions(geo: &Geometry, mode: ViewMode) -> Option<Vec<GeoPoint>>
                     PathSegment::Arc(a) => arc_ring(a, DEFAULT_SEGMENTS),
                 };
                 for (i, g) in ring.iter().enumerate() {
-                    // Drop a shared join vertex so consecutive segments do not
-                    // duplicate the touching point.
+                    // 丢弃一个共享的连接顶点，以免相邻段重复
+                    // 那个相接点。
                     if i == 0 && v.last().copied() == Some(*g) {
                         continue;
                     }
@@ -128,7 +127,7 @@ mod tests {
             ],
         });
         let stroke = stroke_positions(&geo, ViewMode::Flat).unwrap();
-        // The touching vertex (1,0) appears once → 3 total, not 4.
+        // 相接顶点 (1,0) 只出现一次 → 共 3 个，而非 4 个。
         assert_eq!(stroke.len(), 3, "{stroke:?}");
     }
 

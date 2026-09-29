@@ -1,27 +1,27 @@
-//! Selection indicator widget view model.
+//! 选中指示器（selection indicator）widget 视图模型。
 //!
-//! Maps to CesiumJS `SelectionIndicator/SelectionIndicatorViewModel.js`.
+//! 映射到 CesiumJS `SelectionIndicator/SelectionIndicatorViewModel.js`。
 
-/// Selection indicator widget view model.
+/// 选中指示器 widget 视图模型。
 ///
-/// Shows a visual indicator at the screen position of a selected entity.
+/// 在选中实体的屏幕位置显示一个可视指示器。
 #[derive(Debug, Clone)]
 pub struct SelectionIndicatorViewModel {
-    /// Whether the indicator is visible.
+    /// 指示器是否可见。
     pub show: bool,
-    /// Screen X position in pixels.
+    /// 屏幕 X 坐标（像素）。
     pub screen_x: f64,
-    /// Screen Y position in pixels.
+    /// 屏幕 Y 坐标（像素）。
     pub screen_y: f64,
-    /// Scale of the indicator.
+    /// 指示器的缩放比例。
     pub scale: f64,
-    /// Rotation angle in radians.
+    /// 旋转角度（弧度）。
     pub rotation: f64,
-    /// Whether the indicator is currently animating (appearing/disappearing).
+    /// 指示器当前是否正在动画（出现/消失）。
     pub is_animating: bool,
-    /// Animation progress [0, 1].
+    /// 动画进度 [0, 1]。
     pub animation_progress: f64,
-    /// Whether the selected entity is on screen.
+    /// 选中实体是否在屏幕内。
     pub is_on_screen: bool,
 }
 
@@ -41,12 +41,12 @@ impl Default for SelectionIndicatorViewModel {
 }
 
 impl SelectionIndicatorViewModel {
-    /// Create a new selection indicator.
+    /// 创建一个新的选中指示器。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Show the indicator at a screen position.
+    /// 在指定的屏幕位置显示指示器。
     pub fn show_at(&mut self, x: f64, y: f64) {
         self.show = true;
         self.screen_x = x;
@@ -58,7 +58,7 @@ impl SelectionIndicatorViewModel {
         }
     }
 
-    /// Hide the indicator.
+    /// 隐藏指示器。
     pub fn hide(&mut self) {
         self.show = false;
         self.is_on_screen = false;
@@ -66,23 +66,23 @@ impl SelectionIndicatorViewModel {
         self.animation_progress = 0.0;
     }
 
-    /// Update the screen position.
+    /// 更新屏幕位置。
     pub fn update_position(&mut self, x: f64, y: f64, on_screen: bool) {
         self.screen_x = x;
         self.screen_y = y;
         self.is_on_screen = on_screen;
     }
 
-    /// Update the appear/disappear animation.
-    /// Returns true if animation is complete.
+    /// 更新出现/消失动画。
+    /// 若动画已完成则返回 true。
     pub fn update_animation(&mut self, delta_seconds: f64) -> bool {
         if !self.is_animating {
             return true;
         }
 
-        let duration = 0.3; // 300ms animation
+        let duration = 0.3; // 300ms 动画
         if self.show {
-            // Appearing
+            // 出现中
             self.animation_progress += delta_seconds / duration;
             if self.animation_progress >= 1.0 {
                 self.animation_progress = 1.0;
@@ -90,10 +90,10 @@ impl SelectionIndicatorViewModel {
                 self.scale = 1.0;
                 return true;
             }
-            // Scale from 2.0 to 1.0 (bounce in)
+            // 从 2.0 缩放到 1.0（弹入）
             self.scale = 2.0 - self.animation_progress;
         } else {
-            // Disappearing
+            // 消失中
             self.animation_progress += delta_seconds / duration;
             if self.animation_progress >= 1.0 {
                 self.animation_progress = 1.0;
@@ -106,17 +106,17 @@ impl SelectionIndicatorViewModel {
         false
     }
 
-    /// Set the rotation angle.
+    /// 设置旋转角度。
     pub fn set_rotation(&mut self, radians: f64) {
         self.rotation = radians;
     }
 
-    /// Check if the indicator should be rendered.
+    /// 检查指示器是否应当被渲染。
     pub fn should_render(&self) -> bool {
         self.show && self.is_on_screen
     }
 
-    /// Get the CSS-like transform string for the indicator.
+    /// 获取指示器的类 CSS transform 字符串。
     pub fn transform_description(&self) -> String {
         format!(
             "translate({:.1}px, {:.1}px) scale({:.3}) rotate({:.2}rad)",
@@ -177,13 +177,13 @@ mod tests {
         assert!(vm.is_animating);
         assert_eq!(vm.animation_progress, 0.0);
 
-        // Partial update
+        // 部分更新
         let done = vm.update_animation(0.15);
         assert!(!done);
         assert!((vm.animation_progress - 0.5).abs() < 1e-10);
         assert!(vm.scale > 1.0 && vm.scale < 2.0);
 
-        // Complete
+        // 完成
         let done = vm.update_animation(0.2);
         assert!(done);
         assert!(!vm.is_animating);
@@ -211,7 +211,7 @@ mod tests {
     fn test_transform_description() {
         let mut vm = SelectionIndicatorViewModel::new();
         vm.show_at(100.0, 200.0);
-        vm.update_animation(1.0); // Complete animation
+        vm.update_animation(1.0); // 完成动画
         let desc = vm.transform_description();
         assert!(desc.contains("translate(100.0px, 200.0px)"));
         assert!(desc.contains("scale(1.000)"));

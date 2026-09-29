@@ -1,7 +1,7 @@
-//! Ported from CullingVolumeSpec.js (43 it(), 40 A-class)
+//! 移植自 CullingVolumeSpec.js（43 个 it()，40 个 A 类）
 //!
-//! 3 throws = C-class (Rust type system enforces valid inputs).
-//! Each A-class test verifies both computeVisibility and computeVisibilityWithPlaneMask.
+//! 3 个 throws = C 类（Rust 类型系统强制输入合法）。
+//! 每个 A 类测试同时验证 computeVisibility 和 computeVisibilityWithPlaneMask。
 
 use cesium_geospatial::bounding::{AxisAlignedBoundingBox, BoundingSphere};
 use cesium_geospatial::frustum::{Cullable, CullingVolume, PerspectiveFrustum};
@@ -9,19 +9,19 @@ use cesium_geospatial::ray::Intersect;
 use glam::DVec3;
 use std::f64::consts::PI;
 
-/// Creates the standard test culling volume: perspective frustum fov=PI/3, aspect=1, near=1, far=2,
-/// positioned at origin looking down -Z with up=+Y.
+/// 构造标准测试用剔除体：透视视锥 fov=PI/3、aspect=1、near=1、far=2，
+/// 位于原点、朝 -Z 方向观察、up=+Y。
 fn create_culling_volume() -> CullingVolume {
     let frustum = PerspectiveFrustum::new(PI / 3.0, 1.0, 1.0, 2.0);
     frustum.compute_culling_volume(DVec3::ZERO, -DVec3::Z, DVec3::Y)
 }
 
-/// Mirrors the CesiumJS test helper `testWithAndWithoutPlaneMask`.
+/// 复刻 CesiumJS 测试辅助函数 `testWithAndWithoutPlaneMask`。
 fn assert_visibility(cv: &CullingVolume, volume: &impl Cullable, expected: Intersect) {
-    // Test computeVisibility
+    // 测试 computeVisibility
     assert_eq!(cv.visibility(volume), expected);
 
-    // Test computeVisibilityWithPlaneMask
+    // 测试 computeVisibilityWithPlaneMask
     let mask = cv.visibility_with_plane_mask(volume, CullingVolume::MASK_INDETERMINATE);
     match expected {
         Intersect::Inside => assert_eq!(mask, CullingVolume::MASK_INSIDE),
@@ -31,11 +31,11 @@ fn assert_visibility(cv: &CullingVolume, volume: &impl Cullable, expected: Inter
             assert_ne!(mask, CullingVolume::MASK_OUTSIDE);
         }
     }
-    // Idempotency: applying the mask again returns the same mask
+    // 幂等性：再次应用该掩码会返回相同的掩码
     assert_eq!(cv.visibility_with_plane_mask(volume, mask), mask);
 }
 
-// ===== Box intersections =====
+// ===== 包围盒相交 =====
 
 #[test]
 fn culling_box_inside() {
@@ -193,7 +193,7 @@ fn culling_box_outside_bottom() {
     assert_visibility(&cv, &b, Intersect::Outside);
 }
 
-// ===== Sphere intersections =====
+// ===== 球体相交 =====
 
 #[test]
 fn culling_sphere_inside() {
@@ -325,7 +325,7 @@ fn culling_sphere_outside_bottom() {
     assert_visibility(&cv, &s, Intersect::Outside);
 }
 
-// ===== Construct from bounding sphere =====
+// ===== 从包围球构造 =====
 
 const BS_CENTER: DVec3 = DVec3::new(1000.0, 2000.0, 3000.0);
 const BS_RADIUS: f64 = 100.0;

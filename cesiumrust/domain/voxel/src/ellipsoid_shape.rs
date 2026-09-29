@@ -1,31 +1,31 @@
-//! Ellipsoid voxel shape implementation.
+//! 椭球体体素形状实现。
 //!
-//! Maps to CesiumJS `Scene/VoxelEllipsoidShape.js`.
-//! Bounds are [longitude, latitude, height] with defaults [-π, -π/2, -1] to [π, π/2, 1].
+//! 映射到 CesiumJS `Scene/VoxelEllipsoidShape.js`。
+//! 边界为 [longitude, latitude, height]，默认从 [-π, -π/2, -1] 到 [π, π/2, 1]。
 
 use glam::{DMat3, DMat4, DVec3};
 
 use crate::shape::{lerp, BoundingSphere, OrientedBoundingBox, VoxelShape};
 
-/// Default minimum bounds: (-π, -π/2, -1).
+/// 默认最小边界：(-π, -π/2, -1)。
 pub const ELLIPSOID_DEFAULT_MIN_BOUNDS: DVec3 = DVec3::new(
     -std::f64::consts::PI,
     -std::f64::consts::FRAC_PI_2,
     -1.0,
 );
-/// Default maximum bounds: (π, π/2, 1).
+/// 默认最大边界：(π, π/2, 1)。
 pub const ELLIPSOID_DEFAULT_MAX_BOUNDS: DVec3 = DVec3::new(
     std::f64::consts::PI,
     std::f64::consts::FRAC_PI_2,
     1.0,
 );
 
-/// An ellipsoid-shaped voxel region.
+/// 椭球体形状的体素区域。
 ///
-/// Bounds are specified as (longitude, latitude, height) where:
-/// - longitude: [-π, π]
-/// - latitude: [-π/2, π/2]
-/// - height: normalized height above/below ellipsoid surface
+/// 边界以 (longitude, latitude, height) 指定，其中：
+/// - longitude（经度）：[-π, π]
+/// - latitude（纬度）：[-π/2, π/2]
+/// - height（高度）：椭球面上/下的归一化高度
 #[derive(Debug, Clone)]
 pub struct VoxelEllipsoidShape {
     obb: OrientedBoundingBox,
@@ -36,13 +36,13 @@ pub struct VoxelEllipsoidShape {
     max_bounds: DVec3,
     render_min_bounds: DVec3,
     render_max_bounds: DVec3,
-    /// Ellipsoid radii (a, b, c).
+    /// 椭球半径 (a, b, c)。
     ellipsoid_radii: DVec3,
-    /// UV scale: [longitude, latitude, height].
+    /// UV 缩放：[longitude, latitude, height]。
     local_to_shape_uv_scale: DVec3,
-    /// UV translate: [longitude, latitude, height].
+    /// UV 平移：[longitude, latitude, height]。
     local_to_shape_uv_translate: DVec3,
-    /// Longitude range origin for UV mapping.
+    /// 用于 UV 映射的经度范围原点。
     shape_uv_longitude_range_origin: f64,
     max_intersections: u32,
 }
@@ -72,12 +72,12 @@ impl Default for VoxelEllipsoidShape {
 }
 
 impl VoxelEllipsoidShape {
-    /// Create a new ellipsoid shape with default bounds and WGS84 radii.
+    /// 创建具有默认边界和 WGS84 半径的新椭球体形状。
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Create with custom ellipsoid radii.
+    /// 使用自定义椭球半径创建。
     pub fn with_radii(radii: DVec3) -> Self {
         Self {
             ellipsoid_radii: radii,
@@ -85,32 +85,32 @@ impl VoxelEllipsoidShape {
         }
     }
 
-    /// Get the minimum bounds (longitude, latitude, height).
+    /// 获取最小边界（经度、纬度、高度）。
     pub fn min_bounds(&self) -> DVec3 {
         self.min_bounds
     }
 
-    /// Get the maximum bounds.
+    /// 获取最大边界。
     pub fn max_bounds(&self) -> DVec3 {
         self.max_bounds
     }
 
-    /// Get the render minimum bounds.
+    /// 获取渲染最小边界。
     pub fn render_min_bounds(&self) -> DVec3 {
         self.render_min_bounds
     }
 
-    /// Get the render maximum bounds.
+    /// 获取渲染最大边界。
     pub fn render_max_bounds(&self) -> DVec3 {
         self.render_max_bounds
     }
 
-    /// Get the ellipsoid radii.
+    /// 获取椭球半径。
     pub fn ellipsoid_radii(&self) -> DVec3 {
         self.ellipsoid_radii
     }
 
-    /// Convert geodetic (lon, lat, height) to Cartesian on the ellipsoid.
+    /// 将大地测量坐标 (lon, lat, height) 转换为椭球上的笛卡尔坐标。
     fn geodetic_to_cartesian(&self, lon: f64, lat: f64, height: f64) -> DVec3 {
         let radii = self.ellipsoid_radii;
         let cos_lat = lat.cos();
@@ -118,10 +118,10 @@ impl VoxelEllipsoidShape {
         let cos_lon = lon.cos();
         let sin_lon = lon.sin();
 
-        // Normal direction
+        // 法线方向
         let n = DVec3::new(cos_lat * cos_lon, cos_lat * sin_lon, sin_lat);
 
-        // Radii squared
+        // 半径平方
         let r2 = DVec3::new(radii.x * radii.x, radii.y * radii.y, radii.z * radii.z);
         let n_r2 = DVec3::new(n.x / r2.x, n.y / r2.y, n.z / r2.z);
         let gamma = 1.0 / (n.x * n_r2.x + n.y * n_r2.y + n.z * n_r2.z).sqrt();
@@ -132,13 +132,13 @@ impl VoxelEllipsoidShape {
             gamma * n.z / r2.z * radii.z * radii.z,
         );
 
-        // Simplified: surface + height * normal
+        // 简化：表面 + 高度 * 法线
         surface_point + n * height
     }
 
-    /// Compute OBB for a geodetic region.
+    /// 为大地测量区域计算 OBB。
     fn compute_chunk_obb(&self, min_b: DVec3, max_b: DVec3) -> OrientedBoundingBox {
-        // Sample corners and midpoints to find bounding box
+        // 采样角点和中点以找到包围盒
         let lon_min = min_b.x;
         let lon_max = max_b.x;
         let lat_min = min_b.y;
@@ -154,20 +154,20 @@ impl VoxelEllipsoidShape {
                 }
             }
         }
-        // Add center point
+        // 添加中心点
         let lon_mid = (lon_min + lon_max) * 0.5;
         let lat_mid = (lat_min + lat_max) * 0.5;
         points.push(self.geodetic_to_cartesian(lon_mid, lat_mid, h_min));
         points.push(self.geodetic_to_cartesian(lon_mid, lat_mid, h_max));
 
-        // Compute center
+        // 计算中心
         let mut center = DVec3::ZERO;
         for p in &points {
             center += *p;
         }
         center /= points.len() as f64;
 
-        // Compute max distance as radius
+        // 以最大距离作为半径计算
         let mut max_dist_sq = 0.0_f64;
         for p in &points {
             let d = (*p - center).length_squared();
@@ -177,7 +177,7 @@ impl VoxelEllipsoidShape {
         }
         let radius = max_dist_sq.sqrt();
 
-        // Build OBB with identity orientation scaled to radius
+        // 构造 OBB，方向为单位阵并按半径缩放
         let half_axes = DMat3::from_cols(
             DVec3::new(radius, 0.0, 0.0),
             DVec3::new(0.0, radius, 0.0),
@@ -235,7 +235,7 @@ impl VoxelShape for VoxelEllipsoidShape {
         self.render_min_bounds = render_min;
         self.render_max_bounds = render_max;
 
-        // Check visibility
+        // 检查可见性
         let scale = DVec3::new(
             model_matrix.col(0).truncate().length(),
             model_matrix.col(1).truncate().length(),
@@ -263,7 +263,7 @@ impl VoxelShape for VoxelEllipsoidShape {
             self.obb.center.extend(1.0),
         );
 
-        // Compute UV transforms
+        // 计算 UV 变换
         let lon_range = max_bounds.x - min_bounds.x;
         let lat_range = max_bounds.y - min_bounds.y;
         let height_range = max_bounds.z - min_bounds.z;
@@ -279,14 +279,14 @@ impl VoxelShape for VoxelEllipsoidShape {
             -min_bounds.z * height_scale,
         );
 
-        // Longitude range origin
+        // 经度范围原点
         let default_lon_range = std::f64::consts::TAU;
         let uv_max_lon = (max_bounds.x - ELLIPSOID_DEFAULT_MIN_BOUNDS.x) / default_lon_range;
         let uv_lon_range_zero = 1.0 - lon_range / default_lon_range;
         self.shape_uv_longitude_range_origin = (uv_max_lon + 0.5 * uv_lon_range_zero) % 1.0;
 
-        // Compute intersection count
-        let mut count = 2u32; // height min + max
+        // 计算相交数量
+        let mut count = 2u32; // 高度最小 + 最大
         let epsilon = 1e-10;
         let half_lon_range = default_lon_range * 0.5;
         if lon_range < default_lon_range - epsilon {
@@ -297,7 +297,7 @@ impl VoxelShape for VoxelEllipsoidShape {
             }
         }
         if lat_range < std::f64::consts::PI - epsilon {
-            count += 1; // latitude bound
+            count += 1; // 纬度边界
         }
         self.max_intersections = count;
 
@@ -363,7 +363,7 @@ mod tests {
     #[test]
     fn test_ellipsoid_shape_invisible_clipped() {
         let mut shape = VoxelEllipsoidShape::new();
-        // Clip to a region that doesn't overlap
+        // 裁剪到一个不重叠的区域
         let visible = shape.update(
             DMat4::IDENTITY,
             ELLIPSOID_DEFAULT_MIN_BOUNDS,
@@ -384,7 +384,7 @@ mod tests {
             None,
             None,
         );
-        // Center of bounds should map to UV ~(0.5, 0.5, 0.5)
+        // 边界中心应映射到 UV ~(0.5, 0.5, 0.5)
         let center = (ELLIPSOID_DEFAULT_MIN_BOUNDS + ELLIPSOID_DEFAULT_MAX_BOUNDS) * 0.5;
         let uv = shape.convert_local_to_shape_uv_space(center);
         assert!((uv.x - 0.5).abs() < 1e-10);
@@ -405,10 +405,10 @@ mod tests {
         let obb = shape.compute_obb_for_tile(0, 0, 0, 0);
         assert!(obb.bounding_sphere_radius() > 0.0);
 
-        // Level 1 tiles should also have valid OBBs
+        // 级别 1 的瓦片也应具有有效 OBB
         let obb_l1 = shape.compute_obb_for_tile(1, 0, 0, 0);
         assert!(obb_l1.bounding_sphere_radius() > 0.0);
-        // Sub-tile center should be different from full tile center
+        // 子瓦片中心应不同于完整瓦片中心
         assert!((obb_l1.center - obb.center).length() > 1.0);
     }
 
@@ -435,7 +435,7 @@ mod tests {
     #[test]
     fn test_geodetic_to_cartesian_equator() {
         let shape = VoxelEllipsoidShape::with_radii(DVec3::new(6378137.0, 6378137.0, 6378137.0));
-        // At lon=0, lat=0, height=0, should be at (6378137, 0, 0)
+        // 在 lon=0、lat=0、height=0 处，应位于 (6378137, 0, 0)
         let p = shape.geodetic_to_cartesian(0.0, 0.0, 0.0);
         assert!((p.x - 6378137.0).abs() < 1.0);
         assert!(p.y.abs() < 1.0);

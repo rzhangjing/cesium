@@ -1,22 +1,21 @@
-//! Core/PlaneSpec.js → Rust integration tests
+//! Core/PlaneSpec.js → Rust 集成测试
 //!
-//! Faithful port of CesiumJS `Specs/Core/PlaneSpec.js` (29 `it()` cases).
+//! 对 CesiumJS `Specs/Core/PlaneSpec.js`（29 个 `it()` 用例）的忠实移植。
 //!
-//! ## Platform adaptations
-//! - JS result-parameter variants (e.g. `fromPointNormal(point, normal, result)`,
-//!   `clone(plane, result)`, `projectPointOntoPlane(..., result)`) are merged into the
-//!   owned-return tests: Rust returns owned values, so the "with result" cases carry no
-//!   extra behavior and are omitted.
-//! - JS "throws without a <arg>" cases (null/undefined argument checks) are omitted:
-//!   Rust's type system makes passing `undefined` impossible.
-//! - JS "throws if normal is not normalized" cases are CesiumJS debug-only
-//!   `DeveloperError` checks (stripped in release builds). In Rust these map to
-//!   `debug_assert!`, so the throwing behavior is not part of the public contract and
-//!   the corresponding tests are omitted.
+//! ## 平台适配
+//! - JS 的结果参数变体（例如 `fromPointNormal(point, normal, result)`、
+//!   `clone(plane, result)`、`projectPointOntoPlane(..., result)`）被合并进
+//!   owned 返回的测试：Rust 返回 owned 值，因此 "with result" 用例不带额外
+//!   行为，已省略。
+//! - JS 的 "throws without a <arg>" 用例（null/undefined 参数检查）已省略：
+//!   Rust 的类型系统使传入 `undefined` 成为不可能。
+//! - JS 的 "throws if normal is not normalized" 用例是 CesiumJS 仅限调试的
+//!   `DeveloperError` 检查（在发布构建中被剥离）。在 Rust 中它们对应
+//!   `debug_assert!`，因此抛出行为并非公共契约的一部分，相应测试已省略。
 //!
-//! Ported A-class functional cases: constructs, fromPointNormal, fromCartesian4,
-//! getPointDistance, projectPointOntoPlane, clone, equals, transform (uniform +
-//! non-uniform scale).
+//! 已移植的 A 类功能用例：constructs、fromPointNormal、fromCartesian4、
+//! getPointDistance、projectPointOntoPlane、clone、equals、transform（均匀 +
+//! 非均匀缩放）。
 
 use cesium_geospatial::ray::Plane;
 use cesium_specs::{assert_approx, assert_vec3_epsilon, epsilon};
@@ -83,7 +82,7 @@ fn test_plane_clone() {
     let distance = 4.0;
     let plane = Plane::new(normal, distance);
 
-    let result = plane; // Copy semantics == Plane.clone(plane)
+    let result = plane; // 复制语义 == Plane.clone(plane)
     assert_vec3_epsilon!(result.normal, normal, epsilon::EPSILON15);
     assert_approx!(result.distance, distance, epsilon::EPSILON15);
 }
@@ -94,16 +93,16 @@ fn test_plane_equals() {
     let left = Plane::new(DVec3::X, 0.0);
     let mut right = Plane::new(DVec3::Y, 1.0);
 
-    assert!(!(left == right)); // different normal & distance
+    assert!(!(left == right)); // 法线与距离均不同
 
     right.distance = 0.0;
-    assert!(!(left == right)); // different normal
+    assert!(!(left == right)); // 法线不同
 
     right.normal = DVec3::X;
-    assert!(left == right); // equal
+    assert!(left == right); // 相等
 
     right.distance = 1.0;
-    assert!(!(left == right)); // different distance
+    assert!(!(left == right)); // 距离不同
 }
 
 /// `it("transforms a plane according to a transform")`

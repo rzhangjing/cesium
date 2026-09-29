@@ -1,7 +1,7 @@
-//! Entity operations specs - ported from DataSources/EntitySpec.js
+//! Entity 操作规范 - 移植自 DataSources/EntitySpec.js
 //!
-//! Tests Entity builder methods, has_graphics, is_available, add_property,
-//! remove_property, and merge operations.
+//! 测试 Entity 构建方法、has_graphics、is_available、add_property、
+//! remove_property 以及 merge 操作。
 
 use cesium_datasource::entity::{
     BillboardGraphics, BoxGraphics, CorridorGraphics, CylinderGraphics,
@@ -12,7 +12,7 @@ use cesium_datasource::entity::{
 use cesium_datasource::property::Property;
 use cesium_time::JulianDate;
 
-// ─── Entity builder methods ─────────────────────────────────────────────────
+// ─── Entity 构建方法 ─────────────────────────────────────────────────
 
 #[test]
 fn entity_new_has_id() {
@@ -30,7 +30,7 @@ fn entity_with_name() {
 #[test]
 fn entity_with_position() {
     let e = Entity::new("e1").with_position(10.0, 20.0, 100.0);
-    // position is Property<[f64; 3]>, stores raw [lon, lat, height]
+    // position 为 Property<[f64; 3]>，存储原始 [lon, lat, height]
     match &e.position {
         Property::Constant(v) => {
             assert!((v[0] - 10.0).abs() < 1e-10);
@@ -193,7 +193,7 @@ fn entity_has_graphics_true_with_model() {
 fn entity_is_available_without_availability() {
     let e = Entity::new("no-avail");
     let time = JulianDate::new(0.0, 0.0);
-    // No availability set → always available
+    // 未设置可用性 → 始终可用
     assert!(e.is_available(&time));
 }
 
@@ -296,7 +296,7 @@ fn entity_merge_does_not_overwrite_graphics() {
     let mut target = Entity::new("target").with_point(PointGraphics::default());
     let source = Entity::new("source").with_label(LabelGraphics::default());
     target.merge(&source);
-    // Target keeps its point, gains label from source
+    // target 保留其 point，从 source 获得 label
     assert!(target.point.is_some());
     assert!(target.label.is_some());
 }

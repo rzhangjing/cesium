@@ -1,5 +1,5 @@
-//! Tests for Matrix2 extension functions.
-//! Maps to CesiumJS `Specs/Core/Matrix2Spec.js` A-class tests.
+//! Matrix2 扩展函数的测试。
+//! 对应 CesiumJS `Specs/Core/Matrix2Spec.js` 的 A 类测试。
 
 use cesium_geospatial::matrix2_ext as m2;
 use cesium_geospatial::math_utils;
@@ -9,7 +9,7 @@ const EPSILON14: f64 = math_utils::EPSILON14;
 
 #[test]
 fn from_column_major_array_works() {
-    // Column-major: col0=(1,2), col1=(3,4)
+    // 列主序：col0=(1,2)，col1=(3,4)
     let values = [1.0, 2.0, 3.0, 4.0];
     let m = m2::from_column_major_array(&values);
     assert_eq!(m, [1.0, 2.0, 3.0, 4.0]);
@@ -17,8 +17,8 @@ fn from_column_major_array_works() {
 
 #[test]
 fn from_row_major_array_works() {
-    // Row-major: row0=(1,2), row1=(3,4)
-    // Column-major result: col0=(1,3), col1=(2,4)
+    // 行主序：row0=(1,2)，row1=(3,4)
+    // 列主序结果：col0=(1,3)，col1=(2,4)
     let values = [1.0, 2.0, 3.0, 4.0];
     let m = m2::from_row_major_array(&values);
     assert_eq!(m, [1.0, 3.0, 2.0, 4.0]);
@@ -42,7 +42,7 @@ fn from_rotation_works() {
     let m = m2::from_rotation(angle);
     let cos_a = angle.cos();
     let sin_a = angle.sin();
-    // Column-major: [cos, sin, -sin, cos]
+    // 列主序：[cos, sin, -sin, cos]
     assert!((m[0] - cos_a).abs() < EPSILON14);
     assert!((m[1] - sin_a).abs() < EPSILON14);
     assert!((m[2] - (-sin_a)).abs() < EPSILON14);
@@ -97,9 +97,9 @@ fn set_column_works() {
 #[test]
 fn get_row_works() {
     let m = [1.0, 2.0, 3.0, 4.0];
-    // row 0: elements at index 0 and 2
+    // 第 0 行：位于索引 0 和 2 的元素
     assert_eq!(m2::get_row(&m, 0), DVec2::new(1.0, 3.0));
-    // row 1: elements at index 1 and 3
+    // 第 1 行：位于索引 1 和 3 的元素
     assert_eq!(m2::get_row(&m, 1), DVec2::new(2.0, 4.0));
 }
 

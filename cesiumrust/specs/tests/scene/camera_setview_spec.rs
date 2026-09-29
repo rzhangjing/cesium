@@ -1,6 +1,6 @@
-//! Scene/CameraSpec.js → Rust integration tests (setView/lookAt/heading/pitch/roll)
-//! Ported from: packages/engine/Specs/Scene/CameraSpec.js
-//! A-class pure math tests: heading/pitch/roll getters/setters, lookAt, lookAtTransform
+//! Scene/CameraSpec.js → Rust 集成测试（setView/lookAt/heading/pitch/roll）
+//! 移植自：packages/engine/Specs/Scene/CameraSpec.js
+//! A 类纯数学测试：heading/pitch/roll 读写器、lookAt、lookAtTransform
 
 use cesium_camera::Camera;
 use cesium_geospatial::{math_utils, Ellipsoid, HeadingPitchRange};
@@ -33,7 +33,7 @@ fn assert_scalar_eq(actual: f64, expected: f64, eps: f64, msg: &str) {
 }
 
 // ============================================================================
-// heading getter in 3D
+// 3D 中的 heading 读取器
 // ============================================================================
 
 #[test]
@@ -46,7 +46,7 @@ fn get_heading_in_3d() {
         DVec3::Z,
     );
 
-    // Compute expected heading using ENU frame
+    // 使用 ENU 参考系计算期望 heading
     let enu = cesium_geospatial::transforms::east_north_up_to_fixed_frame(camera.position, &ellipsoid);
     let east = enu.x_axis.truncate();
     let north = enu.y_axis.truncate();
@@ -58,7 +58,7 @@ fn get_heading_in_3d() {
         camera.right.dot(up_enu),
     );
     let expected_heading = math_utils::TWO_PI - math_utils::zero_to_two_pi(local_right.y.atan2(local_right.x));
-    // Normalize: TWO_PI ≡ 0
+    // 归一化：TWO_PI ≡ 0
     let expected_heading = if (expected_heading - math_utils::TWO_PI).abs() < 1e-15 { 0.0 } else { expected_heading };
 
     let heading = camera.heading_3d(&ellipsoid);
@@ -78,7 +78,7 @@ fn set_heading_in_3d() {
     let old_heading = camera.heading_3d(&ellipsoid);
     let new_heading = math_utils::to_radians(45.0);
 
-    // setView preserving pitch and roll, changing heading
+    // setView 保持 pitch 与 roll，改变 heading
     let pitch = camera.pitch_3d(&ellipsoid);
     let roll = camera.roll_3d(&ellipsoid);
     camera.set_view_hpr(camera.position, new_heading, pitch, roll, &ellipsoid);
@@ -100,7 +100,7 @@ fn set_heading_in_3d_preserves_position() {
     );
 
     let mut camera = Camera::new(position, -position.normalize(), DVec3::Z);
-    // Re-orthonormalize
+    // 重新正交归一化
     camera.right = camera.direction.cross(camera.up).normalize();
     camera.up = camera.right.cross(camera.direction).normalize();
 
@@ -112,7 +112,7 @@ fn set_heading_in_3d_preserves_position() {
     assert_scalar_eq(camera.heading_3d(&ellipsoid), std::f64::consts::PI, EPSILON8, "heading = PI");
     assert!(camera.up.z < 0.0, "up.z should be < 0 for heading=PI");
 
-    // Set heading = TWO_PI
+    // 设置 heading = TWO_PI
     camera.set_view_hpr(camera.position, math_utils::TWO_PI, camera.pitch_3d(&ellipsoid), camera.roll_3d(&ellipsoid), &ellipsoid);
 
     assert_vec3_eq(camera.position, old_position, EPSILON8, "position preserved (2)");
@@ -121,7 +121,7 @@ fn set_heading_in_3d_preserves_position() {
 }
 
 // ============================================================================
-// pitch getter in 3D
+// 3D 中的 pitch 读取器
 // ============================================================================
 
 #[test]
@@ -134,7 +134,7 @@ fn get_pitch_in_3d() {
         DVec3::new(0.0, 1.0, 0.0),
     );
 
-    // Expected: PI/2 - acos(dir_local.z) where dir_local.z = direction dot surface_normal
+    // 期望值：PI/2 - acos(dir_local.z)，其中 dir_local.z = direction 与 surface_normal 的点积
     let normal = ellipsoid.geodetic_surface_normal(camera.position).unwrap();
     let expected_pitch = std::f64::consts::FRAC_PI_2
         - camera.direction.dot(normal).clamp(-1.0, 1.0).acos();
@@ -173,7 +173,7 @@ fn set_pitch_in_3d() {
 }
 
 // ============================================================================
-// roll getter in 3D
+// 3D 中的 roll 读取器
 // ============================================================================
 
 #[test]
@@ -187,7 +187,7 @@ fn get_roll_in_3d() {
 
     let camera = Camera::new(position, direction, up);
 
-    // Compute expected roll using ENU
+    // 使用 ENU 计算期望 roll
     let enu = cesium_geospatial::transforms::east_north_up_to_fixed_frame(camera.position, &ellipsoid);
     let east = enu.x_axis.truncate();
     let north = enu.y_axis.truncate();
@@ -251,7 +251,7 @@ fn get_roll_returns_correct_value_past_90_degrees() {
 }
 
 // ============================================================================
-// lookAt with HeadingPitchRange
+// 带 HeadingPitchRange 的 lookAt
 // ============================================================================
 
 #[test]
@@ -274,7 +274,7 @@ fn look_at_with_heading_pitch_range() {
     let hpr = HeadingPitchRange::new(heading, pitch, range);
     camera.look_at(target, &hpr, &ellipsoid);
 
-    // After lookAtTransform(IDENTITY), check distance/heading/pitch
+    // lookAtTransform(IDENTITY) 之后，检查 distance/heading/pitch
     camera.look_at_transform_no_offset(DMat4::IDENTITY);
 
     let dist = (camera.position - target).length();
@@ -282,14 +282,14 @@ fn look_at_with_heading_pitch_range() {
     assert_scalar_eq(camera.heading_3d(&ellipsoid), heading, EPSILON6, "heading after lookAt");
     assert_scalar_eq(camera.pitch_3d(&ellipsoid), pitch, EPSILON6, "pitch after lookAt");
 
-    // Verify unit vectors
+    // 验证单位向量
     assert!((camera.direction.length() - 1.0).abs() < EPSILON14);
     assert!((camera.up.length() - 1.0).abs() < EPSILON14);
     assert!((camera.right.length() - 1.0).abs() < EPSILON14);
 }
 
 // ============================================================================
-// lookAt when target and camera are zero
+// target 与 camera 均为零时的 lookAt
 // ============================================================================
 
 #[test]
@@ -357,7 +357,7 @@ fn look_at_transform_basic() {
     let expected_up = camera.right.cross(camera.direction).normalize();
     assert_vec3_eq(camera.up, expected_up, EPSILON11, "up");
 
-    // Verify unit vectors
+    // 验证单位向量
     assert!((camera.direction.length() - 1.0).abs() < EPSILON14);
     assert!((camera.up.length() - 1.0).abs() < EPSILON14);
     assert!((camera.right.length() - 1.0).abs() < EPSILON14);
@@ -375,9 +375,9 @@ fn look_at_transform_with_no_offset() {
     let cart_with_height = cesium_geospatial::Cartographic::from_degrees(-75.59777, 40.03883, height);
     let position = ellipsoid.cartographic_to_cartesian(&cart_with_height);
 
-    // Set camera looking down at origin
+    // 设置相机向下看向原点
     let mut camera = Camera::new(position, DVec3::ZERO, DVec3::ZERO);
-    // Direction = -column2 of transform (negated up axis)
+    // Direction = transform 的 -column2（取反的 up 轴）
     let up_axis = transform.z_axis.truncate();
     let north_axis = transform.y_axis.truncate();
     let east_axis = transform.x_axis.truncate();
@@ -424,7 +424,7 @@ fn look_at_transform_with_heading_pitch_range() {
     let hpr = HeadingPitchRange::new(heading, pitch, range);
     camera.look_at_transform(transform, &hpr);
 
-    // Reset transform to identity to get world coordinates
+    // 将 transform 重置为单位矩阵以获取世界坐标
     camera.look_at_transform_no_offset(DMat4::IDENTITY);
 
     let dist = (camera.position - target).length();
@@ -432,19 +432,19 @@ fn look_at_transform_with_heading_pitch_range() {
     assert_scalar_eq(camera.heading_3d(&ellipsoid), heading, EPSILON6, "heading");
     assert_scalar_eq(camera.pitch_3d(&ellipsoid), pitch, EPSILON6, "pitch");
 
-    // Verify unit vectors
+    // 验证单位向量
     assert!((camera.direction.length() - 1.0).abs() < EPSILON14);
     assert!((camera.up.length() - 1.0).abs() < EPSILON14);
     assert!((camera.right.length() - 1.0).abs() < EPSILON14);
 }
 
 // ============================================================================
-// setView with destination in 3D
+// 3D 中带 destination 的 setView
 // ============================================================================
 
 #[test]
 fn set_view_with_destination_and_hpr() {
-    // Set camera to a specific position with heading=0, pitch=-PI/2, roll=0
+    // 将相机设置到特定位置，heading=0, pitch=-PI/2, roll=0
     let ellipsoid = Ellipsoid::WGS84;
     let position = ellipsoid.cartographic_to_cartesian(
         &cesium_geospatial::Cartographic::from_degrees(-72.0, 40.0, 100000.0),

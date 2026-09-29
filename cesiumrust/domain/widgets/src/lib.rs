@@ -1,6 +1,6 @@
-//! cesium-widgets: Widget view models and i18n for Cesium viewer UI.
+//! cesium-widgets：Cesium 查看器 UI 的 Widget 视图模型与 i18n。
 //!
-//! Maps to CesiumJS `packages/widgets/Source/`:
+//! 映射到 CesiumJS `packages/widgets/Source/`：
 //! - `Animation/AnimationViewModel.js` → animation
 //! - `Timeline/Timeline.js` → timeline
 //! - `SceneModePicker/SceneModePickerViewModel.js` → scene_mode_picker
@@ -14,14 +14,14 @@
 //! - `InfoBox/InfoBoxViewModel.js` → info_box
 //! - `SelectionIndicator/SelectionIndicatorViewModel.js` → selection_indicator
 //!
-//! # Features
-//! - Pure domain view models (no UI framework dependency)
-//! - Animation control with shuttle ring angle conversion
-//! - Timeline with tracks and highlight ranges
-//! - Scene mode and projection pickers
-//! - Base layer picker with provider view models
-//! - Geocoder with autocomplete
-//! - i18n support for multiple locales
+//! # 特性
+//! - 纯领域视图模型（无 UI 框架依赖）
+//! - 带动感环角度转换的动画控制
+//! - 带轨道与高亮区间的时间轴
+//! - 场景模式与投影选择器
+//! - 带提供器视图模型的基础图层选择器
+//! - 带自动补全的地名搜索
+//! - 多语言区域的 i18n 支持
 
 pub mod animation;
 pub mod timeline;

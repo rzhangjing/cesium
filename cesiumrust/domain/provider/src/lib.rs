@@ -1,14 +1,14 @@
-//! cesium-provider: Imagery and terrain providers for tile-based services.
+//! cesium-provider：面向基于瓦片服务的影像与地形提供者。
 //!
-//! STATUS (P2 code-health audit, 2026-09-27): implemented and covered by the
-//! `cesium-specs` suite, but **not wired into any production runtime path** — no
-//! adapter or application crate depends on it. Retained as a CesiumJS
-//! feature-parity domain model reserved for future adapter bridging; do NOT read
-//! it as a shipped capability. See docs/ARCHITECTURE.md "Test-only domain crates".
+//! 状态（P2 代码健康审计，2026-09-27）：已实现并由 `cesium-specs`
+//! 套件覆盖，但**尚未接入任何生产运行时路径** —— 没有
+//! 适配器或应用 crate 依赖它。作为 CesiumJS
+//! 功能对等的领域模型保留，以供未来适配器桥接使用；不要将其
+//! 视为已交付的能力。参见 docs/ARCHITECTURE.md "Test-only domain crates"。
 //!
-//! Domain layer - pure Rust, f64 precision.
+//! 领域层 —— 纯 Rust，f64 精度。
 //!
-//! CesiumJS mapping:
+//! CesiumJS 映射：
 //! - `Scene/UrlTemplateImageryProvider.js` → imagery_provider
 //! - `Scene/WebMapTileServiceImageryProvider.js` → imagery_provider
 //! - `Scene/WebMapServiceImageryProvider.js` → imagery_provider

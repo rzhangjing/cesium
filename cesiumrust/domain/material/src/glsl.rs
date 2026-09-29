@@ -1,12 +1,12 @@
-//! Built-in material GLSL shader sources.
+//! 内置材质的 GLSL 着色器源码。
 //!
-//! Maps to CesiumJS `Source/Shaders/Materials/*.glsl`. These are the exact
-//! shader sources referenced by the built-in material definitions in
-//! `Scene/Material.js` (imported as `Shaders/Materials/*.js` there).
+//! 映射到 CesiumJS `Source/Shaders/Materials/*.glsl`。这些正是
+//! `Scene/Material.js` 中内置材质定义所引用的着色器源码
+//! （在那里以 `Shaders/Materials/*.js` 导入）。
 //!
-//! The domain layer stores and composes these sources verbatim (pure text
-//! processing, exactly like CesiumJS's `Material` does). The bevy-render
-//! adapter is responsible for translating them to WGSL at render time.
+//! 领域层逐字存储并组合这些源码（纯文本处理，与 CesiumJS 的
+//! `Material` 做法完全一致）。bevy-render 适配器负责在渲染时将它们
+//! 翻译为 WGSL。
 
 /// `Shaders/Materials/AspectRampMaterial.glsl`
 pub const ASPECT_RAMP_MATERIAL: &str = include_str!("../shaders/AspectRampMaterial.glsl");

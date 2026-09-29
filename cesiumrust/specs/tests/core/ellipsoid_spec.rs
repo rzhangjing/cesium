@@ -1,22 +1,21 @@
-//! Core/EllipsoidSpec.js → Rust integration tests (faithful port).
+//! Core/EllipsoidSpec.js → Rust 集成测试（忠实移植）。
 //!
-//! Faithfully ports the original CesiumJS `packages/engine/Specs/Core/EllipsoidSpec.js`
-//! (67 `it()` cases + createPackableSpecs). The original STK-Components reference
-//! values are used verbatim so the Rust implementation is verified against the
-//! exact same ground truth as CesiumJS.
+//! 忠实移植原始 CesiumJS `packages/engine/Specs/Core/EllipsoidSpec.js`
+//! （67 个 `it()` 用例 + createPackableSpecs）。原始 STK-Components 参考值
+//! 逐字沿用，从而针对与 CesiumJS 完全相同的基准真值验证 Rust 实现。
 //!
-//! Platform adaptations (documented, per the verification plan):
-//! - CesiumJS "works with a result parameter" variants test the JS memory-reuse
-//!   API contract (`returnedResult === result`). Rust returns owned values and has
-//!   no result-parameter API, so those variants are subsumed by the owned-return
-//!   tests below (identical computed values, single code path).
-//! - CesiumJS "throws with no <arg>" cases test runtime null-checks. Rust's type
-//!   system makes null arguments unrepresentable (compile-time safety), so those
-//!   error paths have no Rust counterpart.
-//! - `Ellipsoid.default` static mutable setter is a JS global-state pattern with
-//!   no Rust counterpart (ellipsoids are passed explicitly).
-//! - `geocentricSurfaceNormal === Cartesian3.normalize` (function identity) is
-//!   adapted to a behavioral test (returns the normalized vector).
+//! 平台适配（按验证计划均有文档说明）：
+//! - CesiumJS "works with a result parameter" 变体测试的是 JS 内存复用
+//!   API 契约（`returnedResult === result`）。Rust 返回拥有所有权的值且没有
+//!   result-parameter API，因此这些变体被下方拥有返回值的
+//!   测试归并（计算数值完全相同，单一代码路径）。
+//! - CesiumJS "throws with no <arg>" 用例测试运行时空值检查。Rust 的类型
+//!   系统使空参数无法表示（编译期安全），因此这些
+//!   错误路径没有 Rust 对应版本。
+//! - `Ellipsoid.default` 静态可变 setter 是 JS 全局状态模式，在 Rust 中
+//!   没有对应版本（椭球体都是显式传入）。
+//! - `geocentricSurfaceNormal === Cartesian3.normalize`（函数同一性）被
+//!   适配为行为测试（返回归一化后的向量）。
 
 use cesium_geospatial::cartographic::Cartographic;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -25,7 +24,7 @@ use cesium_geospatial::rectangle::Rectangle;
 use cesium_specs::{assert_approx, assert_vec2_epsilon, assert_vec3_epsilon, epsilon};
 use glam::{DVec2, DVec3};
 
-// --- Reference values from the original spec (computed using STK Components) ---
+// --- 来自原始规范的参考值（使用 STK Components 计算）---
 
 fn radii() -> DVec3 {
     DVec3::new(1.0, 2.0, 3.0)
@@ -76,7 +75,7 @@ fn surface_cartographic() -> Cartographic {
     Cartographic::from_radians(to_radians(25.0), to_radians(45.0), 0.0)
 }
 
-// --- Constructor / derived fields ---
+// --- 构造函数 / 派生字段 ---
 
 // "default constructor creates zero Ellipsoid"
 #[test]
@@ -92,7 +91,7 @@ fn test_default_constructor_creates_zero_ellipsoid() {
 }
 
 // "fromCartesian3 creates zero Ellipsoid with no parameters"
-// (JS no-arg fromCartesian3 == zero radii; Rust equivalent is from_cartesian3(ZERO))
+//（JS 无参 fromCartesian3 == 零半径；Rust 等价形式为 from_cartesian3(ZERO)）
 #[test]
 fn test_from_cartesian3_creates_zero_ellipsoid() {
     let e = Ellipsoid::from_cartesian3(DVec3::ZERO);
@@ -131,10 +130,10 @@ fn test_from_cartesian3_computes_correct_values() {
     assert_eq!(e.maximum_radius(), MAXIMUM_RADIUS);
 }
 
-// --- Geodetic surface normal ---
+// --- 大地表面法线 ---
 
 // "geodeticSurfaceNormalCartographic works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned value)
+// （"with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_geodetic_surface_normal_cartographic() {
     let e = Ellipsoid::WGS84;
@@ -147,7 +146,7 @@ fn test_geodetic_surface_normal_cartographic() {
 }
 
 // "geodeticSurfaceNormal works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned value)
+// （"with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_geodetic_surface_normal() {
     let e = Ellipsoid::WGS84;
@@ -169,7 +168,7 @@ fn test_geodetic_surface_normal_returns_none_at_origin() {
 // --- cartographicToCartesian / cartesianToCartographic ---
 
 // "cartographicToCartesian works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned value)
+// （"with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_cartographic_to_cartesian() {
     let e = Ellipsoid::WGS84;
@@ -178,7 +177,7 @@ fn test_cartographic_to_cartesian() {
 }
 
 // "cartographicArrayToCartesianArray works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned Vec)
+// （"with a result parameter" 变体已被归并：Rust 返回拥有所有权的 Vec）
 #[test]
 fn test_cartographic_array_to_cartesian_array() {
     let e = Ellipsoid::WGS84;
@@ -189,7 +188,7 @@ fn test_cartographic_array_to_cartesian_array() {
 }
 
 // "cartesianToCartographic works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned value)
+// （"with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_cartesian_to_cartographic() {
     let e = Ellipsoid::WGS84;
@@ -198,7 +197,7 @@ fn test_cartesian_to_cartographic() {
 }
 
 // "cartesianToCartographic works close to center"
-// Original uses toEqual (exact equality) — verifies the bit-exact FP path.
+// 原始规范使用 toEqual（精确相等）——验证逐位一致的浮点路径。
 #[test]
 #[allow(clippy::excessive_precision)]
 fn test_cartesian_to_cartographic_close_to_center() {
@@ -227,7 +226,7 @@ fn test_cartesian_to_cartographic_none_at_center() {
 }
 
 // "cartesianArrayToCartographicArray works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned Vec)
+// （"with a result parameter" 变体已被归并：Rust 返回拥有所有权的 Vec）
 #[test]
 fn test_cartesian_array_to_cartographic_array() {
     let e = Ellipsoid::WGS84;
@@ -268,7 +267,7 @@ fn test_scale_to_geodetic_surface_z() {
 }
 
 // "scaleToGeodeticSurface works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned value)
+// （"with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 #[allow(clippy::excessive_precision)]
 fn test_scale_to_geodetic_surface_general() {
@@ -312,7 +311,7 @@ fn test_scale_to_geocentric_surface_z() {
 }
 
 // "scaleToGeocentricSurface works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned value)
+// （"with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 #[allow(clippy::excessive_precision)]
 fn test_scale_to_geocentric_surface_general() {
@@ -325,7 +324,7 @@ fn test_scale_to_geocentric_surface_general() {
 // --- transformPositionToScaledSpace / FromScaledSpace ---
 
 // "transformPositionToScaledSpace works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned value)
+// （"with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_transform_position_to_scaled_space() {
     let e = Ellipsoid::new(2.0, 3.0, 4.0);
@@ -334,7 +333,7 @@ fn test_transform_position_to_scaled_space() {
 }
 
 // "transformPositionFromScaledSpace works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned value)
+// （"with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_transform_position_from_scaled_space() {
     let e = Ellipsoid::new(2.0, 3.0, 4.0);
@@ -345,7 +344,7 @@ fn test_transform_position_from_scaled_space() {
 // --- equals / toString ---
 
 // "equals works in all cases"
-// (the `equals(undefined)` case is unrepresentable in Rust — type-safe equality)
+//（`equals(undefined)` 用例在 Rust 中无法表示——类型安全的相等性）
 #[test]
 fn test_equals() {
     let e = Ellipsoid::new(1.0, 0.0, 0.0);
@@ -360,7 +359,7 @@ fn test_to_string() {
     assert_eq!(format!("{}", e), "(1, 2, 3)");
 }
 
-// --- constructor validation ---
+// --- 构造函数校验 ---
 
 // "constructor throws if x less than 0"
 #[test]
@@ -384,9 +383,9 @@ fn test_constructor_throws_z_negative() {
 }
 
 // "expect Ellipsoid.geocentricSurfaceNormal is be Cartesian3.normalize"
-// Adapted from a function-identity check to a behavioral check (Rust has no
-// function-identity semantics): the geocentric surface normal is the normalized
-// position vector.
+// 从函数同一性检查适配为行为检查（Rust 没有
+// 函数同一性语义）：地心表面法线即归一化后的
+// 位置向量。
 #[test]
 fn test_geocentric_surface_normal_is_normalize() {
     let e = Ellipsoid::WGS84;
@@ -397,7 +396,7 @@ fn test_geocentric_surface_normal_is_normalize() {
 // --- clone ---
 
 // "clone copies any object with the proper structure"
-// "clone uses result parameter if provided" (subsumed: Rust Clone returns owned value)
+// "clone uses result parameter if provided"（已归并：Rust Clone 返回拥有所有权的值）
 #[test]
 fn test_clone() {
     let e = Ellipsoid::new(1.0, 2.0, 3.0);
@@ -421,8 +420,8 @@ fn test_surface_normal_intersection_throws_not_revolution() {
 }
 
 // "getSurfaceNormalIntersectionWithZAxis throws if the ellipsoid has radii.z === 0"
-// (original uses Ellipsoid(1,2,0); the revolution check fires first — the point is
-//  that a degenerate ellipsoid panics)
+//（原始使用 Ellipsoid(1,2,0)；旋转体检查先触发——要点在于
+//  退化的椭球体会 panic）
 #[test]
 #[should_panic]
 fn test_surface_normal_intersection_throws_z_zero() {
@@ -431,7 +430,7 @@ fn test_surface_normal_intersection_throws_z_zero() {
 }
 
 // "getSurfaceNormalIntersectionWithZAxis works without a result parameter"
-// (the "with a result parameter" variant is subsumed: Rust returns an owned value)
+// （"with a result parameter" 变体已被归并：Rust 返回拥有所有权的值）
 #[test]
 fn test_surface_normal_intersection_works() {
     let e = Ellipsoid::WGS84;
@@ -488,7 +487,7 @@ fn test_surface_normal_intersection_matches_alternate_computation() {
         .unwrap();
     assert_vec3_epsilon!(result, expected, epsilon::EPSILON8);
 
-    // at the equator
+    // 赤道处
     cartesian_on_the_surface = DVec3::new(e.radii().x, 0.0, 0.0);
     let result = e
         .get_surface_normal_intersection_with_z_axis(cartesian_on_the_surface, None)
@@ -503,7 +502,7 @@ fn test_surface_normal_intersection_matches_alternate_computation() {
 fn test_surface_normal_intersection_produces_accurate_cartographic() {
     let e = Ellipsoid::WGS84;
 
-    // general position
+    // 一般位置
     let mut cartographic = Cartographic::from_degrees(35.23, 33.23, 0.0);
     let mut cartesian_on_the_surface = e.cartographic_to_cartesian(&cartographic);
     let mut surface_normal = e.geodetic_surface_normal(cartesian_on_the_surface).unwrap();
@@ -516,7 +515,7 @@ fn test_surface_normal_intersection_produces_accurate_cartographic() {
     result_cartographic.height = 0.0;
     assert!(result_cartographic.equals_epsilon(&cartographic, epsilon::EPSILON8));
 
-    // at the north pole
+    // 北极处
     cartographic = Cartographic::from_degrees(0.0, 90.0, 0.0);
     cartesian_on_the_surface = DVec3::new(0.0, 0.0, e.radii().z);
     surface_normal = e.geodetic_surface_normal(cartesian_on_the_surface).unwrap();
@@ -575,7 +574,7 @@ fn test_squared_x_over_squared_z() {
 fn test_surface_area() {
     let full = Rectangle::new(-PI_F64, -PI_OVER_TWO, PI_F64, PI_OVER_TWO);
 
-    // area of an oblate spheroid
+    // 扁球体表面积
     let e = Ellipsoid::new(4.0, 4.0, 3.0);
     let a2 = e.radii_squared().x;
     let c2 = e.radii_squared().z;
@@ -583,7 +582,7 @@ fn test_surface_area() {
     let area = TWO_PI * a2 + PI_F64 * (c2 / ecc) * ((1.0 + ecc) / (1.0 - ecc)).ln();
     assert_approx!(e.surface_area(&full), area, epsilon::EPSILON3);
 
-    // area of a prolate spheroid
+    // 长球体表面积
     let e = Ellipsoid::new(3.0, 3.0, 4.0);
     let a2 = e.radii_squared().x;
     let c2 = e.radii_squared().z;
@@ -594,9 +593,9 @@ fn test_surface_area() {
     assert_approx!(e.surface_area(&full), area, epsilon::EPSILON3);
 }
 
-// --- Packable (createPackableSpecs) ---
+// --- Packable（createPackableSpecs）---
 
-// createPackableSpecs: packedLength / pack / unpack round-trip.
+// createPackableSpecs：packedLength / pack / unpack 往返。
 #[test]
 fn test_packed_length() {
     assert_eq!(Ellipsoid::PACKED_LENGTH, 3);

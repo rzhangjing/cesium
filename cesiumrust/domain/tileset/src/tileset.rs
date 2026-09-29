@@ -1,109 +1,109 @@
-//! 3D Tileset definition and tileset.json parsing.
+//! 3D Tileset 定义与 tileset.json 解析。
 //!
-//! Maps to CesiumJS `Scene/Cesium3DTileset.js`
+//! 镜像 CesiumJS `Scene/Cesium3DTileset.js`
 
 use crate::tile::Tile;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Asset metadata for a tileset.
+/// 瓦片集的资产元数据。
 ///
-/// Maps to the `asset` property in tileset.json
+/// 映射到 tileset.json 中的 `asset` 属性
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TilesetAsset {
-    /// The 3D Tiles version (e.g., "1.0" or "1.1").
+    /// 3D Tiles 版本（例如 "1.0" 或 "1.1"）。
     pub version: String,
 
-    /// Optional tileset version for cache busting.
+    /// 用于缓存刷新的可选瓦片集版本。
     #[serde(default)]
     pub tileset_version: Option<String>,
 
-    /// Optional generator information.
+    /// 可选的生成器信息。
     #[serde(default)]
     pub generator: Option<String>,
 
-    /// Optional copyright information.
+    /// 可选的版权信息。
     #[serde(default)]
     pub copyright: Option<String>,
 }
 
-/// Property statistics for batch table properties.
+/// batch table 属性的统计信息。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PropertyStats {
-    /// Minimum value of the property.
+    /// 属性的最小值。
     pub minimum: f64,
-    /// Maximum value of the property.
+    /// 属性的最大值。
     pub maximum: f64,
 }
 
-/// The root tileset structure parsed from tileset.json.
+/// 从 tileset.json 解析出的根瓦片集结构。
 ///
-/// Maps to CesiumJS `Cesium3DTileset`
+/// 镜像 CesiumJS `Cesium3DTileset`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TilesetJson {
-    /// Asset metadata.
+    /// 资产元数据。
     pub asset: TilesetAsset,
 
-    /// The geometric error when the tileset is not rendered at all.
+    /// 瓦片集完全不渲染时的几何误差。
     pub geometric_error: f64,
 
-    /// The root tile of the tileset.
+    /// 瓦片集的根瓦片。
     pub root: Tile,
 
-    /// Optional property statistics.
+    /// 可选的属性统计。
     #[serde(default)]
     pub properties: Option<HashMap<String, PropertyStats>>,
 
-    /// Optional extensions used by this tileset.
+    /// 本瓦片集使用的可选扩展。
     #[serde(default)]
     pub extensions_used: Option<Vec<String>>,
 
-    /// Optional extensions required by this tileset.
+    /// 本瓦片集要求的可选扩展。
     #[serde(default)]
     pub extensions_required: Option<Vec<String>>,
 
-    /// Optional extras (application-specific data).
+    /// 可选的 extras（应用特定数据）。
     #[serde(default)]
     pub extras: Option<serde_json::Value>,
 }
 
 impl TilesetJson {
-    /// Parses a tileset from JSON string.
+    /// 从 JSON 字符串解析瓦片集。
     pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(json)
     }
 
-    /// Parses a tileset from JSON bytes.
+    /// 从 JSON 字节解析瓦片集。
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, serde_json::Error> {
         serde_json::from_slice(bytes)
     }
 
-    /// Serializes the tileset to a JSON string.
+    /// 将瓦片集序列化为 JSON 字符串。
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }
 
-    /// Returns the total number of tiles in the tileset (including root).
+    /// 返回瓦片集中瓦片的总数（包括根）。
     pub fn tile_count(&self) -> usize {
         1 + self.root.descendant_count()
     }
 
-    /// Returns all content URIs in the tileset.
+    /// 返回瓦片集中所有内容 URI。
     pub fn all_content_uris(&self) -> Vec<String> {
         let mut uris = Vec::new();
         collect_content_uris(&self.root, &mut uris);
         uris
     }
 
-    /// Returns the maximum geometric error in the tileset.
+    /// 返回瓦片集中最大的几何误差。
     pub fn max_geometric_error(&self) -> f64 {
         self.geometric_error.max(find_max_geometric_error(&self.root))
     }
 }
 
-/// Recursively collects all content URIs from a tile tree.
+/// 从瓦片树递归收集所有内容 URI。
 fn collect_content_uris(tile: &Tile, uris: &mut Vec<String>) {
     for uri in tile.content_uris() {
         uris.push(uri.to_string());
@@ -113,7 +113,7 @@ fn collect_content_uris(tile: &Tile, uris: &mut Vec<String>) {
     }
 }
 
-/// Recursively finds the maximum geometric error in a tile tree.
+/// 在瓦片树中递归查找最大的几何误差。
 fn find_max_geometric_error(tile: &Tile) -> f64 {
     let mut max_error = tile.geometric_error;
     for child in &tile.children {
@@ -122,28 +122,28 @@ fn find_max_geometric_error(tile: &Tile) -> f64 {
     max_error
 }
 
-/// Runtime state for a tileset.
+/// 瓦片集的运行时状态。
 #[derive(Debug, Clone)]
 pub struct TilesetState {
-    /// Maximum screen space error threshold (default: 16).
+    /// 最大屏幕空间误差阈值（默认：16）。
     pub maximum_screen_space_error: f64,
 
-    /// Maximum memory usage in bytes (default: 512 MB).
+    /// 最大内存使用量（字节，默认：512 MB）。
     pub maximum_memory_bytes: u64,
 
-    /// Current memory usage in bytes.
+    /// 当前内存使用量（字节）。
     pub current_memory_bytes: u64,
 
-    /// Number of tiles currently selected for rendering.
+    /// 当前被选中渲染的瓦片数。
     pub selected_tiles_count: usize,
 
-    /// Number of tiles currently loading.
+    /// 当前正在加载的瓦片数。
     pub loading_tiles_count: usize,
 
-    /// Total number of tiles visited in the last frame.
+    /// 上一帧访问的瓦片总数。
     pub visited_tiles_count: usize,
 
-    /// The base path for resolving relative URIs.
+    /// 解析相对 URI 时使用的基础路径。
     pub base_path: String,
 }
 
@@ -162,7 +162,7 @@ impl Default for TilesetState {
 }
 
 impl TilesetState {
-    /// Creates a new tileset state with the given base path.
+    /// 创建一个新的、带给定基础路径的瓦片集状态。
     pub fn new(base_path: impl Into<String>) -> Self {
         Self {
             base_path: base_path.into(),
@@ -170,9 +170,9 @@ impl TilesetState {
         }
     }
 
-    /// Resolves a relative URI against the base path.
+    /// 基于基础路径解析一个相对 URI。
     pub fn resolve_uri(&self, uri: &str) -> String {
-        // Absolute URLs or empty base path: return as-is
+        // 绝对 URL 或空基础路径：原样返回
         if uri.starts_with("http://") || uri.starts_with("https://") || self.base_path.is_empty() {
             return uri.to_string();
         }
@@ -240,7 +240,7 @@ mod tests {
         let json = create_sample_tileset_json();
         let tileset = TilesetJson::from_json(json).unwrap();
 
-        // root + 2 children = 3
+        // 根 + 2 个子瓦片 = 3
         assert_eq!(tileset.tile_count(), 3);
     }
 
@@ -280,10 +280,10 @@ mod tests {
         let json = create_sample_tileset_json();
         let tileset = TilesetJson::from_json(json).unwrap();
 
-        // Root has region bounding volume
+        // 根拥有 region 包围体
         assert!(matches!(tileset.root.bounding_volume, BoundingVolume::Region(_)));
 
-        // Second child has sphere bounding volume
+        // 第二个子瓦片拥有 sphere 包围体
         assert!(matches!(
             tileset.root.children[1].bounding_volume,
             BoundingVolume::Sphere(_)

@@ -1,49 +1,49 @@
-//! MetadataComponentType enum for 3D Tiles metadata.
+//! 用于 3D Tiles 元数据的 MetadataComponentType 枚举。
 //!
-//! Maps to CesiumJS `Scene/MetadataComponentType.js`
+//! 映射到 CesiumJS `Scene/MetadataComponentType.js`
 
-/// Category of a scalar metadata component type.
+/// 标量元数据分量类型的类别。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScalarCategory {
-    /// Signed integer types (INT8, INT16, INT32, INT64).
+    /// 有符号整数类型（INT8, INT16, INT32, INT64）。
     Integer,
-    /// Unsigned integer types (UINT8, UINT16, UINT32, UINT64).
+    /// 无符号整数类型（UINT8, UINT16, UINT32, UINT64）。
     UnsignedInteger,
-    /// Floating point types (FLOAT32, FLOAT64).
+    /// 浮点类型（FLOAT32, FLOAT64）。
     Float,
 }
 
-/// An enum of metadata component types for 3D Tiles metadata.
+/// 用于 3D Tiles 元数据的元数据分量类型枚举。
 ///
-/// Maps to CesiumJS `Scene/MetadataComponentType.js`
+/// 映射到 CesiumJS `Scene/MetadataComponentType.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MetadataComponentType {
-    /// An 8-bit signed integer.
+    /// 一个 8 位有符号整数。
     Int8,
-    /// An 8-bit unsigned integer.
+    /// 一个 8 位无符号整数。
     Uint8,
-    /// A 16-bit signed integer.
+    /// 一个 16 位有符号整数。
     Int16,
-    /// A 16-bit unsigned integer.
+    /// 一个 16 位无符号整数。
     Uint16,
-    /// A 32-bit signed integer.
+    /// 一个 32 位有符号整数。
     Int32,
-    /// A 32-bit unsigned integer.
+    /// 一个 32 位无符号整数。
     Uint32,
-    /// A 64-bit signed integer.
+    /// 一个 64 位有符号整数。
     Int64,
-    /// A 64-bit unsigned integer.
+    /// 一个 64 位无符号整数。
     Uint64,
-    /// A 32-bit (single precision) floating point number.
+    /// 一个 32 位（单精度）浮点数。
     Float32,
-    /// A 64-bit (double precision) floating point number.
+    /// 一个 64 位（双精度）浮点数。
     Float64,
 }
 
 impl MetadataComponentType {
-    /// Gets the minimum value for the numeric type.
+    /// 获取该数值类型的最小值。
     ///
-    /// Maps to CesiumJS `MetadataComponentType.getMinimum`.
+    /// 映射到 CesiumJS `MetadataComponentType.getMinimum`。
     pub fn get_minimum(&self) -> f64 {
         match self {
             Self::Int8 => i8::MIN as f64,
@@ -59,9 +59,9 @@ impl MetadataComponentType {
         }
     }
 
-    /// Gets the maximum value for the numeric type.
+    /// 获取该数值类型的最大值。
     ///
-    /// Maps to CesiumJS `MetadataComponentType.getMaximum`.
+    /// 映射到 CesiumJS `MetadataComponentType.getMaximum`。
     pub fn get_maximum(&self) -> f64 {
         match self {
             Self::Int8 => i8::MAX as f64,
@@ -77,23 +77,23 @@ impl MetadataComponentType {
         }
     }
 
-    /// Returns whether the type is an integer type.
+    /// 返回该类型是否为整数类型。
     ///
-    /// Maps to CesiumJS `MetadataComponentType.isIntegerType`.
+    /// 映射到 CesiumJS `MetadataComponentType.isIntegerType`。
     pub fn is_integer_type(&self) -> bool {
         self.category() != ScalarCategory::Float
     }
 
-    /// Returns whether the type is an unsigned integer type.
+    /// 返回该类型是否为无符号整数类型。
     ///
-    /// Maps to CesiumJS `MetadataComponentType.isUnsignedIntegerType`.
+    /// 映射到 CesiumJS `MetadataComponentType.isUnsignedIntegerType`。
     pub fn is_unsigned_integer_type(&self) -> bool {
         self.category() == ScalarCategory::UnsignedInteger
     }
 
-    /// Gets the category of the numeric type.
+    /// 获取该数值类型的类别。
     ///
-    /// Maps to CesiumJS `MetadataComponentType.category`.
+    /// 映射到 CesiumJS `MetadataComponentType.category`。
     pub fn category(&self) -> ScalarCategory {
         match self {
             Self::Int8 | Self::Int16 | Self::Int32 | Self::Int64 => ScalarCategory::Integer,
@@ -104,9 +104,9 @@ impl MetadataComponentType {
         }
     }
 
-    /// Gets the size in bytes for the numeric type.
+    /// 获取该数值类型的字节大小。
     ///
-    /// Maps to CesiumJS `MetadataComponentType.getSizeInBytes`.
+    /// 映射到 CesiumJS `MetadataComponentType.getSizeInBytes`。
     pub fn get_size_in_bytes(&self) -> usize {
         match self {
             Self::Int8 | Self::Uint8 => 1,
@@ -116,17 +116,17 @@ impl MetadataComponentType {
         }
     }
 
-    /// Normalizes an integer value to the range [-1.0, 1.0] (signed) or [0.0, 1.0] (unsigned).
+    /// 将一个整数值归一化到 [-1.0, 1.0]（有符号）或 [0.0, 1.0]（无符号）范围。
     ///
-    /// Maps to CesiumJS `MetadataComponentType.normalize`.
+    /// 映射到 CesiumJS `MetadataComponentType.normalize`。
     pub fn normalize(&self, value: f64) -> f64 {
         let max = self.get_maximum();
         (value / max).max(-1.0)
     }
 
-    /// Unnormalizes a value in [-1.0, 1.0] (signed) or [0.0, 1.0] (unsigned) back to integer.
+    /// 将 [-1.0, 1.0]（有符号）或 [0.0, 1.0]（无符号）范围内的值反归一化回整数。
     ///
-    /// Maps to CesiumJS `MetadataComponentType.unnormalize`.
+    /// 映射到 CesiumJS `MetadataComponentType.unnormalize`。
     pub fn unnormalize(&self, value: f64) -> f64 {
         let max = self.get_maximum();
         let min = if self.is_unsigned_integer_type() {
@@ -146,9 +146,9 @@ impl MetadataComponentType {
         result
     }
 
-    /// Converts from a ComponentDatatype value to MetadataComponentType.
+    /// 从 ComponentDatatype 值转换为 MetadataComponentType。
     ///
-    /// Maps to CesiumJS `MetadataComponentType.fromComponentDatatype`.
+    /// 映射到 CesiumJS `MetadataComponentType.fromComponentDatatype`。
     pub fn from_component_datatype(datatype: u32) -> Option<Self> {
         // ComponentDatatype values: BYTE=5120, UNSIGNED_BYTE=5121, SHORT=5122,
         // UNSIGNED_SHORT=5123, INT=5124, UNSIGNED_INT=5125, FLOAT=5126, DOUBLE=5130
@@ -165,10 +165,10 @@ impl MetadataComponentType {
         }
     }
 
-    /// Converts to a ComponentDatatype value.
-    /// Returns None for INT64/UINT64 (no GPU equivalent).
+    /// 转换为 ComponentDatatype 值。
+    /// 对于 INT64/UINT64 返回 None（无对应的 GPU 类型）。
     ///
-    /// Maps to CesiumJS `MetadataComponentType.toComponentDatatype`.
+    /// 映射到 CesiumJS `MetadataComponentType.toComponentDatatype`。
     pub fn to_component_datatype(&self) -> Option<u32> {
         match self {
             Self::Int8 => Some(5120),
@@ -183,10 +183,10 @@ impl MetadataComponentType {
         }
     }
 
-    /// Gets the downcast function result for a value.
-    /// INT64 → clamp to INT32, UINT64 → clamp to UINT32, FLOAT64 → f32 precision.
+    /// 获取某个值的向下转换（downcast）函数结果。
+    /// INT64 → 钳制到 INT32，UINT64 → 钳制到 UINT32，FLOAT64 → f32 精度。
     ///
-    /// Maps to CesiumJS `MetadataComponentType.downcastFunction`.
+    /// 映射到 CesiumJS `MetadataComponentType.downcastFunction`。
     pub fn downcast(&self, value: f64) -> f64 {
         match self {
             Self::Int64 => {

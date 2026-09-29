@@ -1,6 +1,6 @@
-//! KML export functionality.
+//! KML 导出功能。
 //!
-//! Maps to CesiumJS `DataSources/exportKml.js`.
+//! 映射到 CesiumJS `DataSources/exportKml.js`。
 
 use std::collections::HashMap;
 
@@ -8,20 +8,20 @@ use std::collections::HashMap;
 // KmlExportOptions
 // ============================================================================
 
-/// Options for KML export.
+/// KML 导出的选项。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlExportOptions {
-    /// Name of the KML document.
+    /// KML 文档名称。
     pub name: String,
-    /// Description of the KML document.
+    /// KML 文档描述。
     pub description: Option<String>,
-    /// Whether to export time-dynamic data.
+    /// 是否导出时间动态数据。
     pub time_dynamic: bool,
-    /// Whether to export model (glTF) references.
+    /// 是否导出模型（glTF）引用。
     pub export_model: bool,
-    /// Whether to export image resources.
+    /// 是否导出图像资源。
     pub export_images: bool,
-    /// KML version (2.2 is standard).
+    /// KML 版本（2.2 为标准）。
     pub kml_version: String,
 }
 
@@ -42,14 +42,14 @@ impl Default for KmlExportOptions {
 // KmlExportResult
 // ============================================================================
 
-/// Result of a KML export operation.
+/// KML 导出操作的结果。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct KmlExportResult {
-    /// The KML document content.
+    /// KML 文档内容。
     pub kml: String,
-    /// External files (images, models) referenced by the KML.
+    /// KML 引用的外部文件（图像、模型）。
     pub external_files: HashMap<String, Vec<u8>>,
-    /// The KMZ (zipped KML) content, if requested.
+    /// KMZ（压缩的 KML）内容，若已请求。
     pub kmz: Option<Vec<u8>>,
 }
 
@@ -57,21 +57,21 @@ pub struct KmlExportResult {
 // KmlExporter
 // ============================================================================
 
-/// KML exporter for converting entities to KML format.
+/// 用于将实体转换为 KML 格式的 KML 导出器。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlExporter {
-    /// Export options.
+    /// 导出选项。
     pub options: KmlExportOptions,
-    /// Namespace declarations.
+    /// 命名空间声明。
     namespaces: Vec<(String, String)>,
-    /// Style definitions.
+    /// 样式定义。
     styles: Vec<KmlExportStyle>,
-    /// Placemarks.
+    /// 地标。
     placemarks: Vec<KmlExportPlacemark>,
 }
 
 impl KmlExporter {
-    /// Create a new exporter with default options.
+    /// 使用默认选项创建一个新导出器。
     pub fn new() -> Self {
         Self {
             options: KmlExportOptions::default(),
@@ -85,7 +85,7 @@ impl KmlExporter {
         }
     }
 
-    /// Create with custom options.
+    /// 使用自定义选项创建。
     pub fn with_options(options: KmlExportOptions) -> Self {
         Self {
             options,
@@ -93,47 +93,47 @@ impl KmlExporter {
         }
     }
 
-    /// Add a style definition.
+    /// 添加一个样式定义。
     pub fn add_style(&mut self, style: KmlExportStyle) {
         self.styles.push(style);
     }
 
-    /// Add a placemark.
+    /// 添加一个地标。
     pub fn add_placemark(&mut self, placemark: KmlExportPlacemark) {
         self.placemarks.push(placemark);
     }
 
-    /// Generate the KML document.
+    /// 生成 KML 文档。
     pub fn to_kml(&self) -> String {
         let mut kml = String::new();
 
-        // XML declaration
+        // XML 声明
         kml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
 
-        // KML root element with namespaces
+        // 带命名空间的 KML 根元素
         kml.push_str("<kml");
         for (prefix, uri) in &self.namespaces {
             kml.push_str(&format!(" {}=\"{}\"", prefix, uri));
         }
         kml.push_str(">\n");
 
-        // Document
+        // 文档
         kml.push_str("  <Document>\n");
 
-        // Name
+        // 名称
         kml.push_str(&format!("    <name>{}</name>\n", escape_xml(&self.options.name)));
 
-        // Description
+        // 描述
         if let Some(ref desc) = self.options.description {
             kml.push_str(&format!("    <description>{}</description>\n", escape_xml(desc)));
         }
 
-        // Styles
+        // 样式
         for style in &self.styles {
             kml.push_str(&style.to_kml(4));
         }
 
-        // Placemarks
+        // 地标
         for placemark in &self.placemarks {
             kml.push_str(&placemark.to_kml(4));
         }
@@ -144,7 +144,7 @@ impl KmlExporter {
         kml
     }
 
-    /// Export to KmlExportResult.
+    /// 导出为 KmlExportResult。
     pub fn export(&self) -> KmlExportResult {
         KmlExportResult {
             kml: self.to_kml(),
@@ -164,23 +164,23 @@ impl Default for KmlExporter {
 // KmlExportStyle
 // ============================================================================
 
-/// A style definition for KML export.
+/// 用于 KML 导出的样式定义。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlExportStyle {
-    /// Style ID.
+    /// 样式 ID。
     pub id: String,
-    /// Icon style (for points).
+    /// 图标样式（用于点）。
     pub icon_style: Option<KmlExportIconStyle>,
-    /// Line style (for lines).
+    /// 线样式（用于线）。
     pub line_style: Option<KmlExportLineStyle>,
-    /// Poly style (for polygons).
+    /// 面样式（用于多边形）。
     pub poly_style: Option<KmlExportPolyStyle>,
-    /// Label style.
+    /// 标注样式。
     pub label_style: Option<KmlExportLabelStyle>,
 }
 
 impl KmlExportStyle {
-    /// Create a new style.
+    /// 创建一个新的样式。
     pub fn new(id: &str) -> Self {
         Self {
             id: id.to_string(),
@@ -191,7 +191,7 @@ impl KmlExportStyle {
         }
     }
 
-    /// Generate KML for this style.
+    /// 为此样式生成 KML。
     pub fn to_kml(&self, indent: usize) -> String {
         let pad = " ".repeat(indent);
         let mut kml = format!("{}<Style id=\"{}\">\n", pad, self.id);
@@ -233,43 +233,43 @@ impl KmlExportStyle {
     }
 }
 
-/// Icon style for KML export.
+/// 用于 KML 导出的图标样式。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlExportIconStyle {
-    /// Color in KML format (aabbggrr).
+    /// KML 格式的颜色（aabbggrr）。
     pub color: String,
-    /// Scale factor.
+    /// 缩放因子。
     pub scale: f64,
-    /// Icon href.
+    /// 图标 href。
     pub icon_href: Option<String>,
 }
 
-/// Line style for KML export.
+/// 用于 KML 导出的线样式。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlExportLineStyle {
-    /// Color in KML format (aabbggrr).
+    /// KML 格式的颜色（aabbggrr）。
     pub color: String,
-    /// Line width in pixels.
+    /// 线宽（像素）。
     pub width: f64,
 }
 
-/// Poly style for KML export.
+/// 用于 KML 导出的面样式。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlExportPolyStyle {
-    /// Color in KML format (aabbggrr).
+    /// KML 格式的颜色（aabbggrr）。
     pub color: String,
-    /// Whether to fill the polygon.
+    /// 是否填充多边形。
     pub fill: bool,
-    /// Whether to draw the outline.
+    /// 是否绘制轮廓。
     pub outline: bool,
 }
 
-/// Label style for KML export.
+/// 用于 KML 导出的标注样式。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlExportLabelStyle {
-    /// Color in KML format (aabbggrr).
+    /// KML 格式的颜色（aabbggrr）。
     pub color: String,
-    /// Scale factor.
+    /// 缩放因子。
     pub scale: f64,
 }
 
@@ -277,21 +277,21 @@ pub struct KmlExportLabelStyle {
 // KmlExportPlacemark
 // ============================================================================
 
-/// A placemark for KML export.
+/// 用于 KML 导出的地标。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlExportPlacemark {
-    /// Placemark name.
+    /// 地标名称。
     pub name: String,
-    /// Placemark description.
+    /// 地标描述。
     pub description: Option<String>,
-    /// Style URL reference (e.g., "#style1").
+    /// 样式 URL 引用（例如 "#style1"）。
     pub style_url: Option<String>,
-    /// Geometry.
+    /// 几何。
     pub geometry: KmlExportGeometry,
 }
 
 impl KmlExportPlacemark {
-    /// Create a new placemark.
+    /// 创建一个新的地标。
     pub fn new(name: &str, geometry: KmlExportGeometry) -> Self {
         Self {
             name: name.to_string(),
@@ -301,7 +301,7 @@ impl KmlExportPlacemark {
         }
     }
 
-    /// Generate KML for this placemark.
+    /// 为此地标生成 KML。
     pub fn to_kml(&self, indent: usize) -> String {
         let pad = " ".repeat(indent);
         let mut kml = format!("{}<Placemark>\n", pad);
@@ -321,47 +321,47 @@ impl KmlExportPlacemark {
     }
 }
 
-/// Geometry types for KML export.
+/// 用于 KML 导出的几何类型。
 #[derive(Debug, Clone, PartialEq)]
 pub enum KmlExportGeometry {
-    /// Point geometry.
+    /// 点几何。
     Point {
-        /// Longitude, latitude, altitude.
+        /// 经度、纬度、高度。
         coordinates: Vec<[f64; 3]>,
     },
-    /// LineString geometry.
+    /// LineString（线）几何。
     LineString {
-        /// Coordinates.
+        /// 坐标。
         coordinates: Vec<[f64; 3]>,
-        /// Whether to tessellate (follow terrain).
+        /// 是否沿地形细分（tessellate）。
         tessellate: bool,
     },
-    /// Polygon geometry.
+    /// 多边形几何。
     Polygon {
-        /// Outer boundary coordinates.
+        /// 外边界坐标。
         outer_boundary: Vec<[f64; 3]>,
-        /// Inner boundaries (holes).
+        /// 内边界（空洞）。
         inner_boundaries: Vec<Vec<[f64; 3]>>,
     },
-    /// Model (glTF) reference.
+    /// 模型（glTF）引用。
     Model {
-        /// Model href.
+        /// 模型 href。
         href: String,
-        /// Location [lon, lat, alt].
+        /// 位置 [lon, lat, alt]。
         location: [f64; 3],
-        /// Heading in degrees.
+        /// 航向角（度）。
         heading: f64,
-        /// Tilt in degrees.
+        /// 仰俯角（度）。
         tilt: f64,
-        /// Roll in degrees.
+        /// 翻滚角（度）。
         roll: f64,
-        /// Scale.
+        /// 缩放。
         scale: f64,
     },
 }
 
 impl KmlExportGeometry {
-    /// Generate KML for this geometry.
+    /// 为此几何生成 KML。
     pub fn to_kml(&self, indent: usize) -> String {
         let pad = " ".repeat(indent);
         match self {
@@ -423,10 +423,10 @@ impl KmlExportGeometry {
 }
 
 // ============================================================================
-// Helpers
+// 辅助函数
 // ============================================================================
 
-/// Format coordinates as KML coordinate string.
+/// 将坐标格式化为 KML 坐标字符串。
 fn format_coordinates(coords: &[[f64; 3]]) -> String {
     coords
         .iter()
@@ -435,7 +435,7 @@ fn format_coordinates(coords: &[[f64; 3]]) -> String {
         .join(" ")
 }
 
-/// Escape XML special characters.
+/// 转义 XML 特殊字符。
 fn escape_xml(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -444,7 +444,7 @@ fn escape_xml(s: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-/// Convert RGBA color to KML color format (aabbggrr).
+/// 将 RGBA 颜色转换为 KML 颜色格式（aabbggrr）。
 pub fn rgba_to_kml_color(r: f64, g: f64, b: f64, a: f64) -> String {
     format!(
         "{:02x}{:02x}{:02x}{:02x}",
@@ -456,7 +456,7 @@ pub fn rgba_to_kml_color(r: f64, g: f64, b: f64, a: f64) -> String {
 }
 
 // ============================================================================
-// Tests
+// 测试
 // ============================================================================
 
 #[cfg(test)]
@@ -561,9 +561,9 @@ mod tests {
 
     #[test]
     fn test_rgba_to_kml_color() {
-        // Red, fully opaque
+        // 红色，完全不透明
         assert_eq!(rgba_to_kml_color(1.0, 0.0, 0.0, 1.0), "ff0000ff");
-        // Blue, semi-transparent
+        // 蓝色，半透明
         assert_eq!(rgba_to_kml_color(0.0, 0.0, 1.0, 0.5), "7fff0000");
     }
 

@@ -1,7 +1,7 @@
-//! GeoJSON data source parsing.
+//! GeoJSON 数据源解析。
 //!
-//! Maps to CesiumJS `DataSources/GeoJsonDataSource.js`
-//! Parses GeoJSON (RFC 7946) into entities.
+//! 映射到 CesiumJS `DataSources/GeoJsonDataSource.js`
+//! 将 GeoJSON（RFC 7946）解析为实体。
 
 use crate::entity::{Entity, PointGraphics, PolygonGraphics, PolylineGraphics};
 use crate::entity_collection::DataSource;
@@ -9,147 +9,147 @@ use crate::property::{Color, Property};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// GeoJSON parsing errors.
+/// GeoJSON 解析错误。
 #[derive(Debug, Error)]
 pub enum GeoJsonError {
-    /// JSON parsing error.
+    /// JSON 解析错误。
     #[error("JSON parse error: {0}")]
     Json(#[from] serde_json::Error),
 
-    /// Unsupported geometry type.
+    /// 不支持的几何类型。
     #[error("Unsupported geometry type: {0}")]
     UnsupportedGeometry(String),
 
-    /// Invalid coordinate.
+    /// 无效的坐标。
     #[error("Invalid coordinate at index {0}")]
     InvalidCoordinate(usize),
 }
 
-/// A GeoJSON object (top-level).
+/// 一个 GeoJSON 对象（顶层）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum GeoJson {
-    /// A single feature.
+    /// 单个 feature。
     Feature(Feature),
-    /// A collection of features.
+    /// feature 的集合。
     FeatureCollection(FeatureCollection),
-    /// A geometry object.
+    /// Point 几何对象。
     Point(PointGeometry),
-    /// MultiPoint geometry.
+    /// MultiPoint 几何。
     MultiPoint(MultiPointGeometry),
-    /// LineString geometry.
+    /// LineString 几何。
     LineString(LineStringGeometry),
-    /// MultiLineString geometry.
+    /// MultiLineString 几何。
     MultiLineString(MultiLineStringGeometry),
-    /// Polygon geometry.
+    /// Polygon 几何。
     Polygon(PolygonGeometry),
-    /// MultiPolygon geometry.
+    /// MultiPolygon 几何。
     MultiPolygon(MultiPolygonGeometry),
 }
 
-/// A GeoJSON FeatureCollection.
+/// 一个 GeoJSON FeatureCollection。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureCollection {
-    /// The features in this collection.
+    /// 此集合中的 features。
     pub features: Vec<Feature>,
 }
 
-/// A GeoJSON Feature.
+/// 一个 GeoJSON Feature。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Feature {
-    /// The geometry (can be null).
+    /// 几何（可为 null）。
     pub geometry: Option<Geometry>,
-    /// Feature properties.
+    /// feature 属性。
     #[serde(default)]
     pub properties: serde_json::Value,
-    /// Feature ID.
+    /// feature ID。
     #[serde(default)]
     pub id: Option<serde_json::Value>,
 }
 
-/// A GeoJSON Geometry.
+/// 一个 GeoJSON Geometry。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Geometry {
-    /// Point geometry.
+    /// Point 几何。
     Point(PointGeometry),
-    /// MultiPoint geometry.
+    /// MultiPoint 几何。
     MultiPoint(MultiPointGeometry),
-    /// LineString geometry.
+    /// LineString 几何。
     LineString(LineStringGeometry),
-    /// MultiLineString geometry.
+    /// MultiLineString 几何。
     MultiLineString(MultiLineStringGeometry),
-    /// Polygon geometry.
+    /// Polygon 几何。
     Polygon(PolygonGeometry),
-    /// MultiPolygon geometry.
+    /// MultiPolygon 几何。
     MultiPolygon(MultiPolygonGeometry),
-    /// GeometryCollection.
+    /// GeometryCollection。
     GeometryCollection(GeometryCollection),
 }
 
-/// Point geometry.
+/// Point 几何。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PointGeometry {
-    /// [longitude, latitude, optional altitude]
+    /// [经度, 纬度, 可选高度]
     pub coordinates: Vec<f64>,
 }
 
-/// MultiPoint geometry.
+/// MultiPoint 几何。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultiPointGeometry {
-    /// Array of positions.
+    /// 位置数组。
     pub coordinates: Vec<Vec<f64>>,
 }
 
-/// LineString geometry.
+/// LineString 几何。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LineStringGeometry {
-    /// Array of positions.
+    /// 位置数组。
     pub coordinates: Vec<Vec<f64>>,
 }
 
-/// MultiLineString geometry.
+/// MultiLineString 几何。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultiLineStringGeometry {
-    /// Array of LineString coordinate arrays.
+    /// LineString 坐标数组的数组。
     pub coordinates: Vec<Vec<Vec<f64>>>,
 }
 
-/// Polygon geometry.
+/// Polygon 几何。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolygonGeometry {
-    /// Array of rings (first is exterior, rest are holes).
+    /// 环的数组（第一个为外环，其余为内孔）。
     pub coordinates: Vec<Vec<Vec<f64>>>,
 }
 
-/// MultiPolygon geometry.
+/// MultiPolygon 几何。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultiPolygonGeometry {
-    /// Array of Polygon coordinate arrays.
+    /// Polygon 坐标数组的数组。
     pub coordinates: Vec<Vec<Vec<Vec<f64>>>>,
 }
 
-/// GeometryCollection.
+/// GeometryCollection。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeometryCollection {
-    /// The geometries in this collection.
+    /// 此集合中的几何。
     pub geometries: Vec<Geometry>,
 }
 
-/// Options for GeoJSON loading.
+/// GeoJSON 加载的选项。
 #[derive(Debug, Clone)]
 pub struct GeoJsonOptions {
-    /// Default marker color for points.
+    /// 点的默认标记颜色。
     pub marker_color: Color,
-    /// Default marker size (pixels).
+    /// 默认标记尺寸（像素）。
     pub marker_size: f64,
-    /// Default stroke color for lines/outlines.
+    /// 线/轮廓的默认描边颜色。
     pub stroke: Color,
-    /// Default stroke width.
+    /// 默认描边宽度。
     pub stroke_width: f64,
-    /// Default fill color for polygons.
+    /// 多边形的默认填充颜色。
     pub fill: Color,
-    /// Whether to clamp to ground.
+    /// 是否贴合地面。
     pub clamp_to_ground: bool,
 }
 
@@ -160,13 +160,13 @@ impl Default for GeoJsonOptions {
             marker_size: 8.0,
             stroke: Color::YELLOW,
             stroke_width: 2.0,
-            fill: Color::new(1.0, 1.0, 0.0, 0.5), // Semi-transparent yellow
+            fill: Color::new(1.0, 1.0, 0.0, 0.5), // 半透明黄色
             clamp_to_ground: false,
         }
     }
 }
 
-/// Parses a GeoJSON string into a DataSource.
+/// 将 GeoJSON 字符串解析为 DataSource。
 pub fn parse_geojson(json: &str, options: &GeoJsonOptions) -> Result<DataSource, GeoJsonError> {
     let geojson: GeoJson = serde_json::from_str(json)?;
     let mut ds = DataSource::new("GeoJSON");
@@ -178,7 +178,7 @@ pub fn parse_geojson(json: &str, options: &GeoJsonOptions) -> Result<DataSource,
     Ok(ds)
 }
 
-/// Processes a GeoJSON object recursively.
+/// 递归地处理一个 GeoJSON 对象。
 fn process_geojson(
     geojson: &GeoJson,
     options: &GeoJsonOptions,
@@ -234,7 +234,7 @@ fn process_geojson(
     Ok(())
 }
 
-/// Processes a GeoJSON feature.
+/// 处理一个 GeoJSON feature。
 fn process_feature(
     feature: &Feature,
     options: &GeoJsonOptions,
@@ -243,7 +243,7 @@ fn process_feature(
 ) -> Result<(), GeoJsonError> {
     let geometry = match &feature.geometry {
         Some(g) => g,
-        None => return Ok(()), // Skip features without geometry
+        None => return Ok(()), // 跳过没有几何的 feature
     };
 
     let name = extract_name(&feature.properties);
@@ -308,7 +308,7 @@ fn process_feature(
     Ok(())
 }
 
-/// Converts a GeoJSON position [lon_deg, lat_deg, alt?] to radians [lon_rad, lat_rad, height].
+/// 将一个 GeoJSON 位置 [lon_deg, lat_deg, alt?] 转换为弧度 [lon_rad, lat_rad, height]。
 fn position_to_radians(coord: &[f64]) -> [f64; 3] {
     let lon = coord.first().copied().unwrap_or(0.0).to_radians();
     let lat = coord.get(1).copied().unwrap_or(0.0).to_radians();
@@ -316,7 +316,7 @@ fn position_to_radians(coord: &[f64]) -> [f64; 3] {
     [lon, lat, height]
 }
 
-/// Creates a point entity from a GeoJSON position.
+/// 由一个 GeoJSON 位置创建点实体。
 fn create_point_entity(
     id: u64,
     coord: &[f64],
@@ -338,7 +338,7 @@ fn create_point_entity(
     entity
 }
 
-/// Creates a polyline entity from GeoJSON coordinates.
+/// 由 GeoJSON 坐标创建一个 polyline 实体。
 fn create_polyline_entity(
     id: u64,
     coords: &[Vec<f64>],
@@ -361,7 +361,7 @@ fn create_polyline_entity(
     entity
 }
 
-/// Creates a polygon entity from GeoJSON coordinates.
+/// 由 GeoJSON 坐标创建一个多边形实体。
 fn create_polygon_entity(
     id: u64,
     rings: &[Vec<Vec<f64>>],
@@ -395,10 +395,10 @@ fn create_polygon_entity(
     entity
 }
 
-/// Extracts a name from GeoJSON properties.
+/// 从 GeoJSON 属性中提取名称。
 fn extract_name(properties: &serde_json::Value) -> Option<String> {
     if let Some(obj) = properties.as_object() {
-        // Try common name fields
+        // 尝试常见的名称字段
         for key in &["name", "NAME", "Name", "title", "TITLE"] {
             if let Some(serde_json::Value::String(s)) = obj.get(*key) {
                 return Some(s.clone());
@@ -408,7 +408,7 @@ fn extract_name(properties: &serde_json::Value) -> Option<String> {
     None
 }
 
-/// Extracts all properties as a HashMap.
+/// 将所有属性提取为一个 HashMap。
 fn extract_properties(
     properties: &serde_json::Value,
 ) -> std::collections::HashMap<String, serde_json::Value> {
@@ -418,7 +418,7 @@ fn extract_properties(
     }
 }
 
-/// Helper trait for Entity to add bulk properties.
+/// 供 Entity 批量添加属性的辅助 trait。
 trait EntityExt {
     fn with_properties(
         self,

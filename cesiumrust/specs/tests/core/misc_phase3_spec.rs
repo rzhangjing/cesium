@@ -1,11 +1,11 @@
-//! Misc Phase 3 specs - ported from:
-//! - packages/engine/Specs/Core/ConstantSplineSpec.js (14 it())
-//! - packages/engine/Specs/Core/QueueSpec.js (9 it())
-//! - packages/engine/Specs/Core/VerticalExaggerationSpec.js (8 it())
-//! - packages/engine/Specs/Core/srgbToLinearSpec.js (4 it())
-//! - packages/engine/Specs/Core/WireframeIndexGeneratorSpec.js (9 it())
+//! Phase 3 杂项规格测试 - 移植自：
+//! - packages/engine/Specs/Core/ConstantSplineSpec.js（14 个 it()）
+//! - packages/engine/Specs/Core/QueueSpec.js（9 个 it()）
+//! - packages/engine/Specs/Core/VerticalExaggerationSpec.js（8 个 it()）
+//! - packages/engine/Specs/Core/srgbToLinearSpec.js（4 个 it()）
+//! - packages/engine/Specs/Core/WireframeIndexGeneratorSpec.js（9 个 it()）
 //!
-//! A-class tests: 33 (ConstantSpline 5 + Queue 8 + VerticalExaggeration 8 + srgbToLinear 4 + Wireframe 8)
+//! A 类测试：33 个（ConstantSpline 5 + Queue 8 + VerticalExaggeration 8 + srgbToLinear 4 + Wireframe 8）
 
 use cesium_animation::ConstantSpline;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -135,7 +135,7 @@ fn queue_can_sort() {
     queue.enqueue(4);
     queue.enqueue(0);
 
-    queue.dequeue(); // remove 99
+    queue.dequeue(); // 移除 99
 
     queue.sort(|a, b| a.cmp(b));
 
@@ -270,11 +270,11 @@ fn wireframe_works_for_triangles_from_indices() {
 #[test]
 fn wireframe_works_for_triangle_strip() {
     let expected: Vec<u32> = vec![
-        0, 1, // First edge
-        1, 2, 2, 0, // First triangle remaining edges
-        2, 3, 3, 1, // Second triangle
-        3, 4, 4, 2, // Third triangle
-        4, 5, 5, 3, // Fourth triangle
+        0, 1, // 第一条边
+        1, 2, 2, 0, // 第一个三角形的其余边
+        2, 3, 3, 1, // 第二个三角形
+        3, 4, 4, 2, // 第三个三角形
+        4, 5, 5, 3, // 第四个三角形
     ];
     let result = create_wireframe_indices(PrimitiveType::TriangleStrip, 6, None).unwrap();
     assert_eq!(result, expected);
@@ -284,11 +284,11 @@ fn wireframe_works_for_triangle_strip() {
 fn wireframe_works_for_triangle_strip_from_indices() {
     let indices: Vec<u32> = vec![1, 0, 2, 4, 5, 3];
     let expected: Vec<u32> = vec![
-        1, 0, // First edge
-        0, 2, 2, 1, // First triangle
-        2, 4, 4, 0, // Second triangle
-        4, 5, 5, 2, // Third triangle
-        5, 3, 3, 4, // Fourth triangle
+        1, 0, // 第一条边
+        0, 2, 2, 1, // 第一个三角形
+        2, 4, 4, 0, // 第二个三角形
+        4, 5, 5, 2, // 第三个三角形
+        5, 3, 3, 4, // 第四个三角形
     ];
     let result =
         create_wireframe_indices(PrimitiveType::TriangleStrip, 6, Some(&indices)).unwrap();
@@ -298,11 +298,11 @@ fn wireframe_works_for_triangle_strip_from_indices() {
 #[test]
 fn wireframe_works_for_triangle_fan() {
     let expected: Vec<u32> = vec![
-        0, 1, // First edge
-        1, 2, 2, 0, // First triangle
-        2, 3, 3, 0, // Second triangle
-        3, 4, 4, 0, // Third triangle
-        4, 5, 5, 0, // Fourth triangle
+        0, 1, // 第一条边
+        1, 2, 2, 0, // 第一个三角形
+        2, 3, 3, 0, // 第二个三角形
+        3, 4, 4, 0, // 第三个三角形
+        4, 5, 5, 0, // 第四个三角形
     ];
     let result = create_wireframe_indices(PrimitiveType::TriangleFan, 6, None).unwrap();
     assert_eq!(result, expected);
@@ -312,11 +312,11 @@ fn wireframe_works_for_triangle_fan() {
 fn wireframe_works_for_triangle_fan_from_indices() {
     let indices: Vec<u32> = vec![1, 0, 2, 4, 5, 3];
     let expected: Vec<u32> = vec![
-        1, 0, // First edge
-        0, 2, 2, 1, // First triangle
-        2, 4, 4, 1, // Second triangle
-        4, 5, 5, 1, // Third triangle
-        5, 3, 3, 1, // Fourth triangle
+        1, 0, // 第一条边
+        0, 2, 2, 1, // 第一个三角形
+        2, 4, 4, 1, // 第二个三角形
+        4, 5, 5, 1, // 第三个三角形
+        5, 3, 3, 1, // 第四个三角形
     ];
     let result =
         create_wireframe_indices(PrimitiveType::TriangleFan, 6, Some(&indices)).unwrap();

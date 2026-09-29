@@ -1,35 +1,33 @@
-//! Pratt parser: token stream -> jsep AST for the 3D Tiles Styling language.
+//! Pratt 解析器：针对 3D Tiles Styling 语言，把 token 流 -> jsep AST。
 //!
-//! Ported from `cesium-rs/crates/cesium-scene/src/expression.rs` L672-897
-//! (`binary_precedence` / `UNARY_PRECEDENCE` / `Parser`), the Rust reproduction
-//! of jsep 1.3.8's operator-precedence parser plus the Cesium customizations
-//! `addBinaryOp("=~", 0)` and `addBinaryOp("!~", 0)`.
+//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs` L672-897
+//! （`binary_precedence` / `UNARY_PRECEDENCE` / `Parser`），它是 jsep 1.3.8
+//! 运算符优先级解析器加上 Cesium 定制 `addBinaryOp("=~", 0)` 与
+//! `addBinaryOp("!~", 0)` 的 Rust 复现。
 //!
-//! # M7-B scope notes
+//! # M7-B 作用域说明
 //!
-//! * This module ONLY turns tokens into a [`JsepNode`]. The jsep-AST ->
-//!   runtime-AST bridge (`parse_literal` / `parse_keywords_and_variables` /
-//!   `parse_member_expression` / `parse_call` / `create_runtime_ast`) already
-//!   lives in `ast.rs` (M7-A) and is **reused**, not re-implemented here.
-//! * The precedence table and unary handling follow jsep 1.3.8. The ternary
-//!   `?:` is handled at the top level only (`min_prec == 0`), *outside* the
-//!   binary loop, so it binds looser than every binary operator. This
-//!   deliberately fixes a blueprint bug where `?:` was nested inside the binary
-//!   loop and mis-parsed `a || b ? c : d` as `a || (b ? c : d)` (correct:
-//!   `(a || b) ? c : d`) and `a ? b : c || d` as `(a ? b : c) || d` (correct:
-//!   `a ? b : (c || d)`). The negative-numeric-literal fold (`-2` ->
-//!   `Literal(Number(-2))`) likewise happens only in a top-level binary
-//!   context, so `--2` stays `Unary("-", Unary("-", 2))`.
-//! * Ternary right-associativity is preserved: both branches recurse at
-//!   `min_prec == 0`, so `a ? b : c ? d : e` == `a ? b : (c ? d : e)`.
+//! * 本模块**只**把 token 变成 [`JsepNode`]。jsep-AST -> runtime-AST 的桥接
+//!   （`parse_literal` / `parse_keywords_and_variables` /
+//!   `parse_member_expression` / `parse_call` / `create_runtime_ast`）
+//!   已存在于 `ast.rs`（M7-A），这里**复用**而非重新实现。
+//! * 优先级表与一元处理遵循 jsep 1.3.8。三元 `?:` 只在顶层处理
+//!   （`min_prec == 0`），在二元循环*之外*，因此它比所有二元运算符结合得都松。
+//!   这有意修复了 blueprint 的一个 bug：`?:` 被嵌在二元循环内部，会把
+//!   `a || b ? c : d` 误解析为 `a || (b ? c : d)`（正确：`(a || b) ? c : d`），
+//!   把 `a ? b : c || d` 误解析为 `(a ? b : c) || d`（正确：`a ? b : (c || d)`）。
+//!   负数字面量折叠（`-2` -> `Literal(Number(-2))`）同样只在顶层二元上下文中
+//!   发生，所以 `--2` 保持为 `Unary("-", Unary("-", 2))`。
+//! * 三元右结合性得以保留：两个分支都在 `min_prec == 0` 处递归，
+//!   所以 `a ? b : c ? d : e` == `a ? b : (c ? d : e)`。
 
 use crate::ast::{JsepLiteral, JsepNode};
 use crate::tokenizer::{Token, Tokenizer};
 use crate::value::{runtime_error, RuntimeError};
 
-/// Mirrors `jsep.binary_ops` (jsep 1.x) with the Cesium customizations
-/// `addBinaryOp("=~", 0)` and `addBinaryOp("!~", 0)`. Returns `None` for a
-/// token that is not a binary operator (so the Pratt loop stops).
+/// 镜像 `jsep.binary_ops`（jsep 1.x），带 Cesium 定制
+/// `addBinaryOp("=~", 0)` 与 `addBinaryOp("!~", 0)`。对非二元运算符的
+/// token 返回 `None`（于是 Pratt 循环停止）。
 pub fn binary_precedence(operator: &str) -> Option<u8> {
     Some(match operator {
         "=~" | "!~" => 0,
@@ -47,27 +45,25 @@ pub fn binary_precedence(operator: &str) -> Option<u8> {
     })
 }
 
-/// Unary operators bind tighter than any binary operator.
+/// 一元运算符比任何二元运算符结合得更紧。
 pub const UNARY_PRECEDENCE: u8 = 15;
 
-/// A recursive-descent / Pratt parser over the token stream.
+/// 作用于 token 流的递归下降 / Pratt 解析器。
 pub struct Parser {
     tokens: Vec<Token>,
     index: usize,
 }
 
 impl Parser {
-    /// Parses a full expression string. Mirrors `jsep(expression)`: a trailing
-    /// token (multiple expressions / a stray `;`) is rejected with
-    /// `"Provide exactly one expression."`.
+    /// 解析一个完整表达式字符串。镜像 `jsep(expression)`：尾部多余的
+    /// token（多个表达式 / 游离的 `;`）以 `"Provide exactly one expression."` 拒绝。
     pub fn parse(expression: &str) -> Result<JsepNode, RuntimeError> {
         let mut tokenizer = Tokenizer::new(expression);
         let tokens = tokenizer.tokenize()?;
         let mut parser = Parser { tokens, index: 0 };
         let node = parser.parse_expression(0)?;
-        // Multiple expressions (or a trailing ";") yield a Compound node in
-        // jsep, which createRuntimeAst rejects with "Provide exactly one
-        // expression."
+        // 多个表达式（或尾部的 ";"）在 jsep 里产生一个 Compound 节点，
+        // createRuntimeAst 会以 "Provide exactly one expression." 拒绝它。
         if parser.peek().is_some() {
             return Err(runtime_error("Provide exactly one expression."));
         }
@@ -78,11 +74,10 @@ impl Parser {
         self.tokens.get(self.index)
     }
 
-    /// Returns a clone of the next token's operator string, or `None` when the
-    /// next token is not an operator. Cloning releases the borrow on `self` so
-    /// the Pratt loop below can call `advance`; that is why the loop is written
-    /// as a `while let` over an owned `String` rather than matching the borrowed
-    /// `peek()` result directly (which would hold the borrow across `advance`).
+    /// 返回下一个 token 运算符字符串的克隆，若下一个 token 不是运算符则返回
+    /// `None`。克隆会释放对 `self` 的借用，从而下面的 Pratt 循环可以调用
+    /// `advance`；这就是为什么该循环写成对拥有所有权的 `String` 的 `while let`，
+    /// 而非直接匹配借用的 `peek()` 结果（后者会在 `advance` 期间一直持有借用）。
     fn peek_op(&self) -> Option<String> {
         match self.peek() {
             Some(Token::Op(op)) => Some(op.clone()),
@@ -98,14 +93,13 @@ impl Parser {
         token
     }
 
-    /// Parses a full binary-operator chain at `min_prec`, then — only at the top
-    /// level (`min_prec == 0`) — any trailing `?:` conditional.
+    /// 在 `min_prec` 下解析一条完整的二元运算符链，然后——仅在顶层
+    /// （`min_prec == 0`）——处理任何尾随的 `?:` 条件式。
     ///
-    /// The conditional is deliberately handled *outside* [`Self::parse_binary`]
-    /// and only at `min_prec == 0`: the ternary has lower precedence than every
-    /// binary operator (including `||`/`&&`). Recursing at `min_prec == 0` for
-    /// both branches keeps the ternary right-associative and lets either branch
-    /// contain a full binary chain or a nested `?:`.
+    /// 该条件式有意放在 [`Self::parse_binary`] *之外*且仅在 `min_prec == 0`
+    /// 处理：三元的优先级低于每个二元运算符（包括 `||`/`&&`）。两个分支都在
+    /// `min_prec == 0` 处递归，使三元保持右结合，并允许任一分支包含一条完整的
+    /// 二元链或嵌套的 `?:`。
     fn parse_expression(&mut self, min_prec: u8) -> Result<JsepNode, RuntimeError> {
         let mut left = self.parse_binary(min_prec)?;
         if min_prec == 0 {
@@ -127,17 +121,15 @@ impl Parser {
         Ok(left)
     }
 
-    /// The Pratt binary-operator loop: parses the left operand with
-    /// [`Self::parse_unary`], then consumes binary operators whose precedence is
-    /// `>= min_prec`. Ternary `?:` is *not* handled here (see
-    /// [`Self::parse_expression`]).
+    /// Pratt 二元运算符循环：用 [`Self::parse_unary`] 解析左操作数，然后消费
+    /// 优先级 `>= min_prec` 的二元运算符。三元 `?:` 不在此处理
+    /// （见 [`Self::parse_expression`]）。
     fn parse_binary(&mut self, min_prec: u8) -> Result<JsepNode, RuntimeError> {
         let mut left = self.parse_unary()?;
-        // jsep folds a leading `-<number>` into a negative numeric literal, but
-        // only in a top-level binary context (`min_prec == 0`). Folding here —
-        // rather than inside `parse_unary` — is what keeps `--2` as
-        // `Unary("-", Unary("-", 2))` while still folding `-2` (and the left
-        // operand of `-2 + 3`) to `Literal(Number(-2))`.
+        // jsep 会把前导的 `-<number>` 折叠为一个负的数值字面量，但仅在顶层
+        // 二元上下文中（`min_prec == 0`）。折叠放在这里——而非 `parse_unary`
+        // 内部——正是它让 `--2` 保持为 `Unary("-", Unary("-", 2))`，同时仍把
+        // `-2`（以及 `-2 + 3` 的左操作数）折叠为 `Literal(Number(-2))`。
         if min_prec == 0 {
             let folded = match &left {
                 JsepNode::Unary { operator, argument } if operator == "-" => {
@@ -176,9 +168,9 @@ impl Parser {
             if op == "!" || op == "-" || op == "+" || op == "~" {
                 let operator = op.clone();
                 self.advance();
-                // No negative-literal folding here: `-` always yields a `Unary`
-                // node. The top-level fold lives in `parse_binary` so that
-                // nested unary (`--2`) keeps its full `Unary`/`Unary` shape.
+                // 此处不做负字面量折叠：`-` 总是产生一个 `Unary` 节点。
+                // 顶层折叠位于 `parse_binary` 中，从而嵌套一元（`--2`）
+                // 保持其完整的 `Unary`/`Unary` 形态。
                 let argument = self.parse_expression(UNARY_PRECEDENCE)?;
                 return Ok(JsepNode::Unary {
                     operator,
@@ -302,7 +294,7 @@ impl Parser {
 mod tests {
     use super::*;
 
-    // --- precedence table ---
+    // --- 优先级表 ---
 
     #[test]
     fn binary_precedence_table() {
@@ -318,7 +310,7 @@ mod tests {
         assert_eq!(binary_precedence("?"), None);
     }
 
-    // --- literals / identifiers ---
+    // --- 字面量 / 标识符 ---
 
     #[test]
     fn parses_number_and_string_literals() {
@@ -342,19 +334,19 @@ mod tests {
 
     #[test]
     fn negative_numeric_literal_is_folded() {
-        // -2 folds to Literal(Number(-2)), not Unary("-", 2).
+        // -2 折叠为 Literal(Number(-2))，而非 Unary("-", 2)。
         assert!(matches!(
             Parser::parse("-2").unwrap(),
             JsepNode::Literal(JsepLiteral::Number(n)) if n == -2.0
         ));
-        // -x stays a Unary node.
+        // -x 保持为 Unary 节点。
         assert!(matches!(
             Parser::parse("-czm_x").unwrap(),
             JsepNode::Unary { operator, .. } if operator == "-"
         ));
     }
 
-    // --- precedence in the tree shape ---
+    // --- 树形态中的优先级 ---
 
     #[test]
     fn multiplication_binds_tighter_than_addition() {
@@ -384,7 +376,7 @@ mod tests {
 
     #[test]
     fn regex_operators_have_lowest_precedence() {
-        // a + b =~ c  ==  (a + b) =~ c   (=~ precedence 0)
+        // a + b =~ c  ==  (a + b) =~ c  （=~ 优先级 0）
         let node = Parser::parse("czm_a + czm_b =~ czm_c").unwrap();
         match node {
             JsepNode::Binary { operator, left, .. } => {
@@ -420,7 +412,7 @@ mod tests {
         }
     }
 
-    // --- member / call / array ---
+    // --- 成员 / 调用 / 数组 ---
 
     #[test]
     fn member_and_index_access() {
@@ -441,7 +433,7 @@ mod tests {
             JsepNode::Call { arguments, .. } => assert_eq!(arguments.len(), 3),
             _ => panic!("expected Call"),
         }
-        // Nested member call: regExp("a").test("b")
+        // 嵌套成员调用：regExp("a").test("b")
         let node = Parser::parse("regExp('a').test('b')").unwrap();
         assert!(matches!(node, JsepNode::Call { .. }));
     }
@@ -468,7 +460,7 @@ mod tests {
         }
     }
 
-    // --- error paths ---
+    // --- 错误路径 ---
 
     #[test]
     fn trailing_expression_errors() {
@@ -493,12 +485,12 @@ mod tests {
         assert!(err.message().contains("Expected :"));
     }
 
-    // --- ternary precedence relative to binary operators (task #46) ---
+    // --- 三元相对于二元运算符的优先级（任务 #46） ---
 
     #[test]
     fn ternary_binds_looser_than_binary_or() {
         // czm_a || czm_b ? czm_c : czm_d  ==  (a || b) ? c : d
-        // (NOT a || (b ? c : d))
+        // （不是 a || (b ? c : d)）
         let node = Parser::parse("czm_a || czm_b ? czm_c : czm_d").unwrap();
         match node {
             JsepNode::Conditional { test, consequent, alternate } => {
@@ -513,7 +505,7 @@ mod tests {
     #[test]
     fn ternary_alternate_absorbs_trailing_binary() {
         // czm_a ? czm_b : czm_c || czm_d  ==  a ? b : (c || d)
-        // (NOT (a ? b : c) || d)
+        // （不是 (a ? b : c) || d）
         let node = Parser::parse("czm_a ? czm_b : czm_c || czm_d").unwrap();
         match node {
             JsepNode::Conditional { test, consequent, alternate } => {
@@ -525,11 +517,11 @@ mod tests {
         }
     }
 
-    // --- negative-numeric-literal folding shapes (task #46) ---
+    // --- 负数值字面量折叠的形态（任务 #46） ---
 
     #[test]
     fn parenthesized_negative_literal_is_folded() {
-        // (-2) folds to Literal(Number(-2)).
+        // (-2) 折叠为 Literal(Number(-2))。
         assert!(matches!(
             Parser::parse("(-2)").unwrap(),
             JsepNode::Literal(JsepLiteral::Number(n)) if n == -2.0
@@ -538,8 +530,8 @@ mod tests {
 
     #[test]
     fn double_unary_minus_is_not_folded() {
-        // --2 stays Unary("-", Unary("-", Literal(2))): the fold is top-level
-        // only, so the inner `-2` (parsed at UNARY_PRECEDENCE) is never folded.
+        // --2 保持为 Unary("-", Unary("-", Literal(2)))：折叠只在顶层，
+        // 所以内层的 `-2`（在 UNARY_PRECEDENCE 下解析）从不被折叠。
         match Parser::parse("--2").unwrap() {
             JsepNode::Unary { operator, argument } => {
                 assert_eq!(operator, "-");
@@ -557,7 +549,7 @@ mod tests {
 
     #[test]
     fn call_arguments_fold_negative_literals() {
-        // vec2(-1, -2): each argument is parsed at min_prec == 0, so both fold.
+        // vec2(-1, -2)：每个参数都在 min_prec == 0 下解析，所以两者都折叠。
         match Parser::parse("vec2(-1, -2)").unwrap() {
             JsepNode::Call { arguments, .. } => {
                 assert_eq!(arguments.len(), 2);
@@ -570,7 +562,7 @@ mod tests {
 
     #[test]
     fn negative_left_operand_folds_not_the_whole_sum() {
-        // -2 + 3  ==  Literal(-2) + Literal(3)  (NOT Unary("-", 2 + 3)).
+        // -2 + 3  ==  Literal(-2) + Literal(3)  （不是 Unary("-", 2 + 3)）。
         match Parser::parse("-2 + 3").unwrap() {
             JsepNode::Binary { operator, left, right } => {
                 assert_eq!(operator, "+");

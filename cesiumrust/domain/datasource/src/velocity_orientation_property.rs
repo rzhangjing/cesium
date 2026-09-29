@@ -1,6 +1,6 @@
-//! VelocityOrientationProperty - derives orientation quaternion from position velocity.
+//! VelocityOrientationProperty - 从位置速度导出方向四元数。
 //!
-//! Maps to CesiumJS `DataSources/VelocityOrientationProperty.js`
+//! 映射到 CesiumJS `DataSources/VelocityOrientationProperty.js`
 
 use crate::property_system::property::DynProperty;
 use crate::property_system::value::PropertyValue;
@@ -10,21 +10,20 @@ use cesium_time::JulianDate;
 use glam::DQuat;
 use std::sync::Arc;
 
-/// A property that computes an orientation quaternion from the velocity
-/// of a position property. The resulting quaternion represents the rotation
-/// from the ellipsoid-fixed frame to the velocity-aligned frame.
+/// 一个从位置属性的速度计算方向四元数的属性。所得的
+/// 四元数表示从椭球固定参考系到速度对齐参考系的旋转。
 ///
-/// Maps to CesiumJS `DataSources/VelocityOrientationProperty.js`
+/// 映射到 CesiumJS `DataSources/VelocityOrientationProperty.js`
 #[derive(Clone)]
 pub struct VelocityOrientationProperty {
-    /// The position property to derive velocity from.
+    /// 用于导出速度的位置属性。
     position: Option<Arc<dyn DynProperty>>,
-    /// The ellipsoid used to compute the rotation.
+    /// 用于计算旋转的椭球。
     ellipsoid: Ellipsoid,
 }
 
 impl VelocityOrientationProperty {
-    /// Creates a new VelocityOrientationProperty with no position.
+    /// 创建一个无位置的新 VelocityOrientationProperty。
     pub fn new() -> Self {
         Self {
             position: None,
@@ -32,7 +31,7 @@ impl VelocityOrientationProperty {
         }
     }
 
-    /// Creates a VelocityOrientationProperty with a position property and ellipsoid.
+    /// 使用位置属性和椭球创建 VelocityOrientationProperty。
     pub fn with_position(position: Arc<dyn DynProperty>, ellipsoid: Ellipsoid) -> Self {
         Self {
             position: Some(position),
@@ -40,7 +39,7 @@ impl VelocityOrientationProperty {
         }
     }
 
-    /// Gets whether this property is constant.
+    /// 获取此属性是否为常量。
     pub fn is_constant(&self) -> bool {
         match &self.position {
             None => true,
@@ -48,37 +47,37 @@ impl VelocityOrientationProperty {
         }
     }
 
-    /// Gets the position property.
+    /// 获取位置属性。
     pub fn position(&self) -> Option<&Arc<dyn DynProperty>> {
         self.position.as_ref()
     }
 
-    /// Sets the position property.
+    /// 设置位置属性。
     pub fn set_position(&mut self, position: Option<Arc<dyn DynProperty>>) {
         self.position = position;
     }
 
-    /// Gets the ellipsoid.
+    /// 获取椭球。
     pub fn ellipsoid(&self) -> &Ellipsoid {
         &self.ellipsoid
     }
 
-    /// Sets the ellipsoid.
+    /// 设置椭球。
     pub fn set_ellipsoid(&mut self, ellipsoid: Ellipsoid) {
         self.ellipsoid = ellipsoid;
     }
 
-    /// Gets the orientation quaternion at the given time.
+    /// 获取给定时间处的方向四元数。
     ///
-    /// Computes velocity by finite differencing the position property,
-    /// then uses `rotationMatrixFromPositionVelocity` to get the rotation
-    /// matrix, which is converted to a quaternion.
+    /// 通过对位置属性进行有限差分计算速度，
+    /// 然后使用 `rotationMatrixFromPositionVelocity` 获取旋转
+    /// 矩阵，再将其转换为四元数。
     ///
-    /// Maps to `VelocityOrientationProperty.prototype.getValue`
+    /// 映射到 `VelocityOrientationProperty.prototype.getValue`
     pub fn get_value(&self, time: &JulianDate) -> Option<DQuat> {
         let position = self.position.as_ref()?;
 
-        // Use a small time delta for finite differencing
+        // 为有限差分使用一个较小的时间增量
         let dt = 1.0 / 60.0;
         let time_after = time.add_seconds(dt);
 
@@ -106,7 +105,7 @@ impl VelocityOrientationProperty {
         Some(DQuat::from_mat3(&matrix))
     }
 
-    /// Compares this property to another.
+    /// 将此属性与另一个属性进行比较。
     pub fn equals(&self, other: &VelocityOrientationProperty) -> bool {
         self.ellipsoid == other.ellipsoid
             && match (&self.position, &other.position) {

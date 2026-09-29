@@ -1,8 +1,8 @@
-//! Extended mathematical property tests for CircleOutline, FrustumGeometry,
-//! and GroundPolyline geometries.
+//! CircleOutline、FrustumGeometry 与 GroundPolyline
+//! 几何的扩展数学属性测试。
 //!
-//! Ported from CesiumJS CircleOutlineGeometrySpec/FrustumGeometrySpec/
-//! GroundPolylineGeometrySpec A-class tests.
+//! 移植自 CesiumJS CircleOutlineGeometrySpec/FrustumGeometrySpec/
+//! GroundPolylineGeometrySpec 的 A 类测试。
 
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_geospatial::frustum::{OrthographicFrustum, PerspectiveFrustum};
@@ -35,12 +35,12 @@ fn orthographic_frustum() -> FrustumDef {
 }
 
 // ===========================================================================
-// CircleOutlineGeometry - extended mathematical properties
+// CircleOutlineGeometry - 扩展的数学属性
 // ===========================================================================
 
 #[test]
 fn circle_outline_forms_closed_loop() {
-    // The last index pair should connect back to vertex 0 (closed ring)
+    // 最后一个索引对应连回顶点 0（闭合环）
     let center = wgs84().cartographic_to_cartesian(
         &cesium_geospatial::cartographic::Cartographic::from_degrees(0.0, 0.0, 0.0),
     );
@@ -58,7 +58,7 @@ fn circle_outline_forms_closed_loop() {
 
 #[test]
 fn circle_outline_all_positions_approximately_equidistant_from_center() {
-    // All ring positions should be at roughly the same geodesic distance from center
+    // 所有环上位置到中心的测地距离应大致相同
     let ell = wgs84();
     let center = ell.cartographic_to_cartesian(
         &cesium_geospatial::cartographic::Cartographic::from_degrees(10.0, 20.0, 0.0),
@@ -66,7 +66,7 @@ fn circle_outline_all_positions_approximately_equidistant_from_center() {
     let radius = 200_000.0;
     let geo = circle_outline_geometry(center, radius, &ell, std::f64::consts::PI / 36.0);
 
-    // Compute Euclidean distances from center - should be roughly equal
+    // 计算到中心的欧氏距离 - 应大致相等
     let distances: Vec<f64> = geo
         .positions
         .iter()
@@ -125,7 +125,7 @@ fn circle_outline_indices_all_valid() {
             max_idx
         );
     }
-    // Indices should form consecutive pairs: (0,1), (1,2), ..., (n-2,n-1), (n-1,0)
+    // 索引应构成连续的成对：(0,1), (1,2), ..., (n-2,n-1), (n-1,0)
     let n = geo.positions.len() as u32;
     assert_eq!(geo.indices.len(), n as usize * 2);
 }
@@ -152,7 +152,7 @@ fn circle_outline_positions_on_ellipsoid_surface() {
 }
 
 // ===========================================================================
-// FrustumGeometry - extended mathematical properties
+// FrustumGeometry - 扩展的数学属性
 // ===========================================================================
 
 #[test]
@@ -242,8 +242,8 @@ fn frustum_geometry_tex_coords_in_unit_range() {
 
 #[test]
 fn frustum_geometry_near_plane_closer_than_far() {
-    // For a perspective frustum at origin looking along -Z (identity orientation),
-    // near plane vertices should be closer to origin than far plane vertices.
+    // 对于位于原点、沿 -Z 方向观察的透视视锥（单位方位），
+    // 近平面顶点应比远平面顶点更靠近原点。
     let geo = frustum_geometry(
         &perspective_frustum(),
         DVec3::ZERO,
@@ -251,7 +251,7 @@ fn frustum_geometry_near_plane_closer_than_far() {
         VertexFormat::POSITION_ONLY,
     );
 
-    // First 4 vertices = near plane, next 4 = far plane
+    // 前 4 个顶点 = 近平面，接下来 4 个 = 远平面
     let near_dists: Vec<f64> = geo.positions[0..4]
         .iter()
         .map(|p| DVec3::new(p[0], p[1], p[2]).length())
@@ -302,7 +302,7 @@ fn frustum_outline_orthographic_correct_structure() {
     assert_eq!(geo.indices.len(), 24);
     assert_eq!(geo.primitive_type, PrimitiveType::Lines);
 
-    // All indices valid
+    // 所有索引有效
     for &idx in &geo.indices {
         assert!(idx < 8, "index {} out of range", idx);
     }
@@ -332,7 +332,7 @@ fn frustum_geometry_bounding_sphere_contains_all_positions() {
 }
 
 // ===========================================================================
-// GroundPolylineGeometry - extended mathematical properties
+// GroundPolylineGeometry - 扩展的数学属性
 // ===========================================================================
 
 #[test]
@@ -394,7 +394,7 @@ fn ground_polyline_tex_coords_s_monotonic() {
     let geo = ground_polyline_geometry(&opts, VertexFormat::POSITION_AND_ST);
     let st = geo.tex_coords.as_ref().expect("tex_coords should be present");
 
-    // S coordinate should be non-decreasing (pairs: right,left at each station)
+    // S 坐标应非递减（成对：每个站点为 right,left）
     let n = st.len() / 2;
     for i in 1..n {
         let s_prev = st[(i - 1) * 2][0];
@@ -408,7 +408,7 @@ fn ground_polyline_tex_coords_s_monotonic() {
             s_prev
         );
     }
-    // First s should be 0, last should be 1
+    // 第一个 s 应为 0，最后一个应为 1
     assert!(st[0][0].abs() < 1e-10, "first s should be 0");
     assert!((st[st.len() - 2][0] - 1.0).abs() < 1e-10, "last s should be 1");
 }
@@ -433,7 +433,7 @@ fn ground_polyline_ribbon_width_approximately_correct() {
     };
     let geo = ground_polyline_geometry(&opts, VertexFormat::POSITION_ONLY);
 
-    // Each pair of vertices (right, left) should be approximately `width` apart
+    // 每对顶点（right, left）应相距约 `width`
     let n_pairs = geo.positions.len() / 2;
     for i in 0..n_pairs {
         let right = DVec3::new(
@@ -477,7 +477,7 @@ fn ground_polyline_normals_point_outward() {
     let geo = ground_polyline_geometry(&opts, VertexFormat::POSITION_AND_NORMAL);
     let normals = geo.normals.as_ref().expect("normals should be present");
 
-    // Each normal should point away from the ellipsoid center (dot with position > 0)
+    // 每条法线应背离椭球中心（与位置的点积 > 0）
     for (i, (p, n)) in geo.positions.iter().zip(normals.iter()).enumerate() {
         let pos = DVec3::new(p[0], p[1], p[2]);
         let nrm = DVec3::new(n[0], n[1], n[2]);

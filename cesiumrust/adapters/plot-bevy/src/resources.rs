@@ -1,14 +1,14 @@
-//! Bridge resources shared between the app and the plotting overlay.
+//! 应用与标绘叠加层之间共享的桥接资源。
 //!
-//! These are view-side state carriers: the app (which owns the cameras and
-//! `MapMode`) writes [`PlotViewCtx`] every frame, and the bridge's view-sync /
-//! picking / interaction systems read it. From M2 the bridge also owns the
-//! scene document ([`PlotDocument`]), the visibility switches ([`PlotFilters`])
-//! and the element → entity reconciliation registry ([`PlotVisuals`]).
+//! 这些是视图侧的状态载体：应用（拥有相机和
+//! `MapMode`）每帧写入 [`PlotViewCtx`]，桥接层的视图同步 /
+//! 拾取 / 交互系统读取它。从 M2 起桥接层还拥有场景文档
+//! （[`PlotDocument`]）、可见性开关（[`PlotFilters`]）
+//! 以及元素 → 实体协调注册表（[`PlotVisuals`]）。
 //!
-//! The canonical projection mode is the core's [`cesium_plot::model::ViewMode`];
-//! the bridge aliases it (rather than importing the app's `MapMode`) so the
-//! adapter never depends on the application layer (DDD).
+//! 投影模式的权威定义在核心层的 [`cesium_plot::model::ViewMode`]；
+//! 桥接层通过别名引入（而非导入应用的 `MapMode`），因此
+//! 适配器绝不依赖应用层（DDD）。
 
 use std::collections::{HashMap, HashSet};
 
@@ -17,22 +17,22 @@ use cesium_plot::model::ids::ElementId;
 use cesium_plot::model::{Document, Filters, PickHit, ViewMode};
 use cesium_plot::ops::{HistoryStack, SnapConfig};
 
-/// Which projection the overlay renders against — the single workspace-wide
-/// definition, aliased from the pure core (see [`cesium_plot::model::ViewMode`]).
+/// 叠加层渲染所对的投影模式——整个工作区的唯一
+/// 定义，从纯核心层别名引入（参见 [`cesium_plot::model::ViewMode`]）。
 pub type PlotViewMode = ViewMode;
 
-/// Per-frame view context handed to the overlay: active projection mode and the
-/// metrics needed to convert screen ↔ world. Written by the app's
-/// `sync_plot_view_ctx` system; read by the bridge's reprojection / picking.
+/// 每帧传给叠加层的视图上下文：当前激活的投影模式以及
+/// 屏幕 ↔ 世界转换所需的度量。由应用的
+/// `sync_plot_view_ctx` 系统写入；由桥接层的重投影 / 拾取读取。
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct PlotViewCtx {
-    /// Active projection mode.
+    /// 当前激活的投影模式。
     pub mode: PlotViewMode,
-    /// Flat-map scale (pixels per world unit); `0.0` until the 2D camera runs.
+    /// 平面地图缩放（每世界单位像素数）；在 2D 相机启动前为 `0.0`。
     pub flat_zoom: f32,
-    /// Primary window width in logical pixels.
+    /// 主窗口宽度（逻辑像素）。
     pub screen_w: f32,
-    /// Primary window height in logical pixels.
+    /// 主窗口高度（逻辑像素）。
     pub screen_h: f32,
 }
 
@@ -47,31 +47,31 @@ impl Default for PlotViewCtx {
     }
 }
 
-/// Input-capture gate: when `true`, the plotting tool owns the pointer, so the
-/// 3D orbit and 2D pan/zoom camera systems must stand down this frame to avoid
-/// the camera fighting the edit.
+/// 输入捕获门控：为 `true` 时标绘工具拥有指针，因此
+/// 3D 轨道和 2D 平移/缩放相机系统必须在该帧让位，以避免
+/// 相机与编辑操作冲突。
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PlotInputCapture(pub bool);
 
 impl PlotInputCapture {
-    /// Whether pointer input is currently captured by the plot overlay.
+    /// 指针输入当前是否被标绘叠加层捕获。
     #[inline]
     pub fn is_captured(&self) -> bool {
         self.0
     }
 }
 
-/// The scene document the overlay is a view of, plus a change counter the sync
-/// systems read to decide whether to re-reconcile. Structural edits go through
-/// [`PlotDocument::mark_dirty`] so the revision always advances with content.
+/// 叠加层所呈现的场景文档，加上一个变更计数器供同步
+/// 系统读取以决定是否重新协调。结构编辑通过
+/// [`PlotDocument::mark_dirty`] 进行，因此 revision 始终随内容前进。
 #[derive(Resource)]
 pub struct PlotDocument {
-    /// The framework-free document.
+    /// 不依赖框架的文档。
     pub doc: Document,
-    /// Monotonic revision, bumped on every content change (`mark_dirty`).
+    /// 单调递增的 revision，每次内容变更时自增（`mark_dirty`）。
     pub revision: u64,
-    /// Set whenever the document changed since the last full reconcile pass;
-    /// cleared by the sync system after it catches up.
+    /// 文档自上次完整协调以来发生变化时置位；
+    /// 由同步系统追赶后清除。
     pub dirty: bool,
 }
 
@@ -86,17 +86,17 @@ impl Default for PlotDocument {
 }
 
 impl PlotDocument {
-    /// Record a content change: advance the revision and flag for reconcile.
+    /// 记录一次内容变更：推进 revision 并标记为待协调。
     pub fn mark_dirty(&mut self) {
         self.revision = self.revision.wrapping_add(1);
         self.dirty = true;
     }
 }
 
-/// The overlay's visibility switches (plan §10), wrapped so the bridge can
-/// `Deref`/`DerefMut` through to [`Filters`]. Defaults to the master switch ON
-/// with no other restriction — with an empty document nothing is drawn anyway,
-/// so the windowed baseline is unaffected.
+/// 叠加层的可见性开关（计划 §10），包装后桥接层可以
+/// `Deref`/`DerefMut` 到 [`Filters`]。默认总开关为 ON
+/// 且无其他限制——空文档时什么都不绘制，
+/// 因此窗口基线不受影响。
 #[derive(Resource)]
 pub struct PlotFilters(pub Filters);
 
@@ -119,69 +119,69 @@ impl std::ops::DerefMut for PlotFilters {
     }
 }
 
-/// Per-element view-side bookkeeping: which ECS entities currently render it
-/// (a mesh and / or a label), so the next reconcile pass can update or despawn
-/// them instead of leaking.
+/// 每元素的视图侧簿记：当前哪些 ECS 实体在渲染它
+/// （网格 和/或 标签），以便下次协调时能更新或销毁
+/// 而不会泄漏。
 #[derive(Debug, Clone, Default)]
 pub struct VisualEntry {
-    /// Entity carrying the element's mesh (point / icon / polyline ribbon).
+    /// 承载元素网格的实体（点 / 图标 / 多段线 ribbon）。
     pub mesh: Option<Entity>,
-    /// The mesh asset handle, kept so ribbon geometry can be updated in place.
+    /// 网格资产句柄，保留以便就地更新 ribbon 几何。
     pub mesh_handle: Option<Handle<Mesh>>,
-    /// The element's material, kept so colour / opacity edits apply in place.
+    /// 元素的材质，保留以便就地应用颜色 / 不透明度编辑。
     pub mat: Option<Handle<bevy::pbr::StandardMaterial>>,
-    /// Entity carrying a filled face (polygon / rect / circle / ellipse).
+    /// 承载填充面的实体（多边形 / 矩形 / 圆 / 椭圆）。
     pub fill: Option<Entity>,
-    /// The face's triangulated mesh handle (rebuilt per content change).
+    /// 面的剖分网格句柄（每次内容变更重建）。
     pub fill_handle: Option<Handle<Mesh>>,
-    /// The face fill material.
+    /// 面填充材质。
     pub fill_mat: Option<Handle<bevy::pbr::StandardMaterial>>,
-    /// Entity carrying the face's screen-constant-width outline stroke.
+    /// 承载面屏幕恒定宽轮廓描边的实体。
     pub outline: Option<Entity>,
-    /// The outline ribbon mesh handle (rewritten every frame).
+    /// 轮廓 ribbon 网格句柄（每帧重写）。
     pub outline_handle: Option<Handle<Mesh>>,
-    /// The outline material.
+    /// 轮廓材质。
     pub outline_mat: Option<Handle<bevy::pbr::StandardMaterial>>,
-    /// Entity carrying the element's label text node.
+    /// 承载元素标签文本节点的实体。
     pub label: Option<Entity>,
 }
 
-/// Registry mapping each element to its live visual entities. Owned by the sync
-/// system; consulted every reconcile pass.
+/// 将每个元素映射到其活跃视觉实体的注册表。由同步
+/// 系统拥有；每次协调时查阅。
 #[derive(Resource, Default)]
 pub struct PlotVisuals {
-    /// Element → its visual entry.
+    /// 元素 → 其视觉条目。
     pub entries: HashMap<ElementId, VisualEntry>,
-    /// Shared unit-quad mesh handle for point / icon billboards, built lazily.
+    /// 点 / 图标 billboard 的共享单位 quad 网格句柄，懒创建。
     pub quad: Option<Handle<Mesh>>,
 }
 
-/// Marker on a mesh entity spawned to render one element.
+/// 标记在渲染单个元素的网格实体上。
 #[derive(Component, Clone, Copy, Debug)]
 pub struct PlotVisual {
-    /// The element this entity draws.
+    /// 该实体绘制的元素。
     pub element: ElementId,
 }
 
-/// Marker on a UI text entity spawned to render one element's label.
+/// 标记在渲染单个元素标签的 UI 文本实体上。
 #[derive(Component, Clone, Copy, Debug)]
 pub struct PlotLabel {
-    /// The element whose label this is.
+    /// 该标签所属的元素。
     pub element: ElementId,
 }
 
-/// The current selection set (plan §8). Cross-layer; the pick system replaces it
-/// on a plain click and the interaction FSM extends it (ctrl / box select) later.
+/// 当前选择集（计划 §8）。跨层；拾取系统在单击时替换它，
+/// 交互 FSM 后续扩展（ctrl / 框选）。
 #[derive(Resource, Default, Clone, PartialEq, Eq)]
 pub struct PlotSelection(pub HashSet<ElementId>);
 
 impl PlotSelection {
-    /// Whether `id` is currently selected.
+    /// `id` 当前是否被选中。
     #[inline]
     pub fn contains(&self, id: ElementId) -> bool {
         self.0.contains(&id)
     }
-    /// Replace the selection with a single element (returns false if unchanged).
+    /// 用单个元素替换选择（未变则返回 false）。
     pub fn select_one(&mut self, id: ElementId) -> bool {
         if self.0.len() == 1 && self.0.contains(&id) {
             return false;
@@ -190,7 +190,7 @@ impl PlotSelection {
         self.0.insert(id);
         true
     }
-    /// Clear the selection (returns false if it was already empty).
+    /// 清除选择（已为空则返回 false）。
     pub fn clear(&mut self) -> bool {
         if self.0.is_empty() {
             return false;
@@ -200,24 +200,23 @@ impl PlotSelection {
     }
 }
 
-/// The element (if any) currently under the cursor, as resolved by the pick
-/// system each frame. Read by the sync system for hover feedback and by the
-/// interaction FSM (M5) for drag / edit decisions.
+/// 光标当前所指的元素（若有），由拾取系统每帧解析。
+/// 同步系统读取它以产生悬停反馈，交互 FSM（M5）读取它以进行
+/// 拖拽 / 编辑决策。
 #[derive(Resource, Default, Clone, Copy, PartialEq)]
 pub struct PlotHover(pub Option<PickHit>);
 
-/// The undo / redo stack (plan §8 / §14, M6). Every structural edit — a draw
-/// commit, a delete / duplicate, a move / vertex / rotate / scale — is applied
-/// to the [`PlotDocument`] and recorded here in one step, so the pure
-/// [`HistoryStack`] contract (verified headless in the core) drives the live
-/// overlay unchanged.
+/// 撤销 / 重做栈（计划 §8 / §14，M6）。每次结构编辑——绘制提交、
+/// 删除 / 复制、移动 / 顶点 / 旋转 / 缩放——都作用到 [`PlotDocument`]
+/// 并在此记录为单步，因此纯 [`HistoryStack`] 契约（在核心层
+/// headless 验证）可以原封不动地驱动活跃叠加层。
 #[derive(Resource, Default)]
 pub struct PlotHistory(pub HistoryStack);
 
-/// Coordinate-snapping tunables for the draw FSM (plan §16 M9 "吸附"), wrapping
-/// the core's pure [`SnapConfig`]. `Deref`/`DerefMut` straight through to it. The
-/// default is **disabled**, so wiring it into `interaction_system` never changes
-/// existing draw behaviour until the user (or the app) switches it on.
+/// 绘制 FSM 的坐标吸附可调参数（计划 §16 M9 “吸附”），包装核心层的纯
+/// [`SnapConfig`]。`Deref`/`DerefMut` 直通。默认
+/// **禁用**，因此将其接入 `interaction_system` 绝不会改变现有绘制行为，
+/// 直到用户（或应用）开启它。
 #[derive(Resource, Default, Clone, Copy, Debug)]
 pub struct PlotSnap(pub SnapConfig);
 

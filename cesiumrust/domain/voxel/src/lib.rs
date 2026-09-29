@@ -1,21 +1,21 @@
-//! cesium-voxel: Voxel shape system for volumetric data rendering
+//! cesium-voxel：用于体数据渲染的体素形状系统
 //!
-//! Maps to CesiumJS:
-//! - `Scene/VoxelShape.js` — shape interface
-//! - `Scene/VoxelBoxShape.js` — box shape
-//! - `Scene/VoxelCylinderShape.js` — cylinder shape
-//! - `Scene/VoxelEllipsoidShape.js` — ellipsoid shape
-//! - `Scene/VoxelShapeType.js` — shape type enum
-//! - `Scene/VoxelCell.js` — cell metadata access
-//! - `Scene/VoxelTraversal.js` — LOD traversal
+//! 映射到 CesiumJS：
+//! - `Scene/VoxelShape.js` — 形状接口
+//! - `Scene/VoxelBoxShape.js` — 长方体形状
+//! - `Scene/VoxelCylinderShape.js` — 圆柱体形状
+//! - `Scene/VoxelEllipsoidShape.js` — 椭球体形状
+//! - `Scene/VoxelShapeType.js` — 形状类型枚举
+//! - `Scene/VoxelCell.js` — 单元元数据访问
+//! - `Scene/VoxelTraversal.js` — LOD 遍历
 //!
-//! # Features
-//! - Three shape types: Box, Cylinder, Ellipsoid
-//! - Bounds clipping and render bounds computation
-//! - UV space transformations for texture mapping
-//! - Tile and sample OBB computation for LOD
-//! - Cell metadata access and picking
-//! - LOD traversal with screen-space error
+//! # 特性
+//! - 三种形状类型：Box、Cylinder、Ellipsoid
+//! - 边界裁剪与渲染边界计算
+//! - 用于纹理映射的 UV 空间变换
+//! - 用于 LOD 的瓦片与采样 OBB 计算
+//! - 单元元数据访问与拾取
+//! - 带屏幕空间误差的 LOD 遍历
 
 pub mod shape;
 pub mod box_shape;

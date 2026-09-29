@@ -1,6 +1,6 @@
-//! DataSources/PropertySpec.js, ConstantPropertySpec.js, SampledPropertySpec.js,
-//! CompositePropertySpec.js, CallbackPropertySpec.js, ReferencePropertySpec.js
-//! → Rust integration tests
+//! DataSources/PropertySpec.js、ConstantPropertySpec.js、SampledPropertySpec.js、
+//! CompositePropertySpec.js、CallbackPropertySpec.js、ReferencePropertySpec.js
+//! → Rust 集成测试
 
 use cesium_datasource::property::{Color, Property};
 use cesium_datasource::property_system::{
@@ -14,7 +14,7 @@ use cesium_time::JulianDate;
 use glam::DVec3;
 use std::sync::Arc;
 
-// === Simple Property<T> enum (legacy) ===
+// === 简单 Property<T> 枚举（遗留） ===
 
 #[test]
 fn test_property_constant_get_value() {
@@ -67,7 +67,7 @@ fn test_property_vec_sampled() {
     assert_eq!(*val2, [4.0, 5.0, 6.0]);
 }
 
-// === ConstantProperty (property_system) ===
+// === ConstantProperty（property_system） ===
 
 #[test]
 fn test_constant_property_number() {
@@ -154,7 +154,7 @@ fn test_sampled_property_interpolation() {
     prop.add_sample(t0, &PropertyValue::Number(0.0), &[]);
     prop.add_sample(t1, &PropertyValue::Number(100.0), &[]);
 
-    // Exact sample times should return exact values
+    // 精确采样时间应返回精确值
     let val0 = prop.get_value(&t0);
     assert_eq!(val0, PropertyValue::Number(0.0));
     let val1 = prop.get_value(&t1);
@@ -169,7 +169,7 @@ fn test_sampled_property_cartesian3() {
     prop.add_sample(t0, &PropertyValue::Cartesian3(DVec3::new(0.0, 0.0, 0.0)), &[]);
     prop.add_sample(t1, &PropertyValue::Cartesian3(DVec3::new(10.0, 20.0, 30.0)), &[]);
 
-    // Exact sample times should return exact values
+    // 精确采样时间应返回精确值
     let val0 = prop.get_value(&t0);
     assert_eq!(val0, PropertyValue::Cartesian3(DVec3::new(0.0, 0.0, 0.0)));
     let val1 = prop.get_value(&t1);
@@ -198,12 +198,12 @@ fn test_sampled_property_extrapolation() {
     prop.add_sample(t0, &PropertyValue::Number(100.0), &[]);
     prop.add_sample(t1, &PropertyValue::Number(200.0), &[]);
 
-    // Before first sample: should hold first value
+    // 首个样本之前：应保持首个值
     let before = JulianDate::from_unix_seconds(0.0);
     let val = prop.get_value(&before);
     assert_eq!(val, PropertyValue::Number(100.0));
 
-    // After last sample: should hold last value
+    // 末个样本之后：应保持末个值
     let after = JulianDate::from_unix_seconds(30.0);
     let val = prop.get_value(&after);
     assert_eq!(val, PropertyValue::Number(200.0));
@@ -237,10 +237,10 @@ fn test_callback_property_not_constant() {
         false,
     );
     assert!(!prop.is_constant());
-    let time = JulianDate::from_unix_seconds(86400.0); // 1 day
+    let time = JulianDate::from_unix_seconds(86400.0); // 1 天
     let val = prop.get_value(&time);
     if let PropertyValue::Number(v) = val {
-        // Should be roughly 1 day (unix epoch is JD 2440587.5)
+        // 应约为 1 天（unix 纪元为 JD 2440587.5）
         assert!(v > 2440587.0 && v < 2440589.0);
     } else {
         panic!("Expected Number");

@@ -1,5 +1,5 @@
-//! VoxelBoxShape tests ported from CesiumJS VoxelBoxShapeSpec.js
-//! Tests: constructs, update(modelMatrix/bounds/visibility), computeOBBForTile
+//! VoxelBoxShape 测试，移植自 CesiumJS VoxelBoxShapeSpec.js
+//! 测试：constructs、update(modelMatrix/bounds/visibility)、computeOBBForTile
 
 use cesium_voxel::{VoxelBoxShape, VoxelShape};
 use glam::{DMat3, DMat4, DQuat, DVec3};
@@ -36,18 +36,18 @@ fn assert_mat3_eq(a: DMat3, b: DMat3, msg: &str) {
 
 #[test]
 fn test_constructs() {
-    // Ported from: "constructs"
+    // 移植自: "constructs"
     let shape = VoxelBoxShape::new();
     assert_eq!(shape.shape_transform(), DMat4::IDENTITY);
 }
 
 // ============================================================================
-// update works with model matrix
+// update 适用于模型矩阵
 // ============================================================================
 
 #[test]
 fn test_update_with_model_matrix() {
-    // Ported from: "update works with model matrix"
+    // 移植自: "update works with model matrix"
     let mut shape = VoxelBoxShape::new();
 
     let translation = DVec3::new(1.0, 2.0, 3.0);
@@ -60,11 +60,11 @@ fn test_update_with_model_matrix() {
     let visible = shape.update(model_matrix, default_min(), default_max(), None, None);
     assert!(visible);
 
-    // Expected OBB: center = translation, halfAxes = upper-left 3x3 of model matrix
+    // 预期 OBB：center = translation，halfAxes = 模型矩阵的左上 3x3
     let obb = shape.oriented_bounding_box();
     assert_vec3_eq(obb.center, translation, "OBB center");
 
-    // For default bounds, halfAxes = Matrix4.getMatrix3(modelMatrix) = R*S
+    // 对默认边界，halfAxes = Matrix4.getMatrix3(modelMatrix) = R*S
     let expected_half_axes = DMat3::from_cols(
         model_matrix.col(0).truncate(),
         model_matrix.col(1).truncate(),
@@ -72,7 +72,7 @@ fn test_update_with_model_matrix() {
     );
     assert_mat3_eq(obb.half_axes, expected_half_axes, "OBB halfAxes");
 
-    // BoundingSphere: center = translation, radius = |scale|
+    // BoundingSphere：center = translation，radius = |scale|
     let bs = shape.bounding_sphere();
     assert_vec3_eq(bs.center, translation, "BS center");
     let expected_radius = scale.length();
@@ -83,17 +83,17 @@ fn test_update_with_model_matrix() {
         expected_radius
     );
 
-    // boundTransform and shapeTransform
+    // boundTransform 与 shapeTransform
     assert_eq!(shape.shape_transform(), model_matrix);
 }
 
 // ============================================================================
-// update works with non-default bounds
+// update 适用于非默认边界
 // ============================================================================
 
 #[test]
 fn test_update_with_non_default_bounds() {
-    // Ported from: "update works with non-default minimum and maximum bounds"
+    // 移植自: "update works with non-default minimum and maximum bounds"
     let mut shape = VoxelBoxShape::new();
 
     let translation = DVec3::new(1.0, 2.0, 3.0);
@@ -113,7 +113,7 @@ fn test_update_with_non_default_bounds() {
     );
     assert!(visible);
 
-    // Expected: localCenter = midpoint(-0.75, -0.25) = (-0.5, -0.5, -0.5)
+    // 预期：localCenter = midpoint(-0.75, -0.25) = (-0.5, -0.5, -0.5)
     // center = modelMatrix * localCenter = S*localCenter + T
     let expected_translation = DVec3::new(0.0, 0.5, 1.0);
     // scale_half = (2*0.5*0.5, 3*0.5*0.5, 4*0.5*0.5) = (0.5, 0.75, 1.0)
@@ -136,37 +136,37 @@ fn test_update_with_non_default_bounds() {
         expected_radius
     );
 
-    // shapeTransform = original modelMatrix
+    // shapeTransform = 原始 modelMatrix
     assert_eq!(shape.shape_transform(), model_matrix);
 }
 
 // ============================================================================
-// update visibility: zero scale
+// update 可见性：零缩放
 // ============================================================================
 
 #[test]
 fn test_update_invisible_zero_scale_two_or_more() {
-    // Ported from: "update is invisible with zero scale for two or more components"
+    // 移植自: "update is invisible with zero scale for two or more components"
     let mut shape = VoxelBoxShape::new();
     let translation = DVec3::new(1.0, 2.0, 3.0);
     let rotation = DQuat::IDENTITY;
 
-    // 0 scale for X and Y
+    // X 和 Y 缩放为 0
     let scale = DVec3::new(0.0, 0.0, 2.0);
     let mm = DMat4::from_scale_rotation_translation(scale, rotation, translation);
     assert!(!shape.update(mm, default_min(), default_max(), None, None));
 
-    // 0 scale for X and Z
+    // X 和 Z 缩放为 0
     let scale = DVec3::new(0.0, 2.0, 0.0);
     let mm = DMat4::from_scale_rotation_translation(scale, rotation, translation);
     assert!(!shape.update(mm, default_min(), default_max(), None, None));
 
-    // 0 scale for Y and Z
+    // Y 和 Z 缩放为 0
     let scale = DVec3::new(2.0, 0.0, 0.0);
     let mm = DMat4::from_scale_rotation_translation(scale, rotation, translation);
     assert!(!shape.update(mm, default_min(), default_max(), None, None));
 
-    // 0 scale for X, Y, and Z
+    // X、Y、Z 缩放均为 0
     let scale = DVec3::new(0.0, 0.0, 0.0);
     let mm = DMat4::from_scale_rotation_translation(scale, rotation, translation);
     assert!(!shape.update(mm, default_min(), default_max(), None, None));
@@ -174,40 +174,40 @@ fn test_update_invisible_zero_scale_two_or_more() {
 
 #[test]
 fn test_update_invisible_zero_scale_single() {
-    // CesiumJS: ANY zero scale → invisible (comment: "too annoying to reconstruct rotation matrix")
+    // CesiumJS：任意零缩放 → 不可见（注释："too annoying to reconstruct rotation matrix"）
     let mut shape = VoxelBoxShape::new();
     let translation = DVec3::new(1.0, 2.0, 3.0);
     let rotation = DQuat::IDENTITY;
 
-    // 0 scale for X only → still invisible
+    // 仅 X 缩放为 0 → 仍不可见
     let scale = DVec3::new(0.0, 2.0, 2.0);
     let mm = DMat4::from_scale_rotation_translation(scale, rotation, translation);
     assert!(!shape.update(mm, default_min(), default_max(), None, None));
 
-    // 0 scale for Y only
+    // 仅 Y 缩放为 0
     let scale = DVec3::new(2.0, 0.0, 2.0);
     let mm = DMat4::from_scale_rotation_translation(scale, rotation, translation);
     assert!(!shape.update(mm, default_min(), default_max(), None, None));
 
-    // 0 scale for Z only
+    // 仅 Z 缩放为 0
     let scale = DVec3::new(2.0, 2.0, 0.0);
     let mm = DMat4::from_scale_rotation_translation(scale, rotation, translation);
     assert!(!shape.update(mm, default_min(), default_max(), None, None));
 }
 
 // ============================================================================
-// update visibility: zero bounds
+// update 可见性：零边界
 // ============================================================================
 
 #[test]
 fn test_update_visible_zero_bounds_one_component() {
-    // Ported from: "update is visible with zero bounds for one component"
+    // 移植自: "update is visible with zero bounds for one component"
     let mut shape = VoxelBoxShape::new();
     let model_matrix = DMat4::IDENTITY;
     let clip_min = DVec3::new(-1.0, -1.0, -1.0);
     let clip_max = DVec3::new(1.0, 1.0, 1.0);
 
-    // 0 in X bound
+    // X 边界为 0
     let min_bounds = DVec3::new(0.0, -1.0, -1.0);
     let max_bounds = DVec3::new(0.0, 1.0, 1.0);
     let visible = shape.update(
@@ -219,7 +219,7 @@ fn test_update_visible_zero_bounds_one_component() {
     );
     assert!(visible, "zero X bound should be visible");
 
-    // 0 in Y bound
+    // Y 边界为 0
     let min_bounds = DVec3::new(-1.0, 0.0, -1.0);
     let max_bounds = DVec3::new(1.0, 0.0, 1.0);
     let visible = shape.update(
@@ -231,7 +231,7 @@ fn test_update_visible_zero_bounds_one_component() {
     );
     assert!(visible, "zero Y bound should be visible");
 
-    // 0 in Z bound
+    // Z 边界为 0
     let min_bounds = DVec3::new(-1.0, -1.0, 0.0);
     let max_bounds = DVec3::new(1.0, 1.0, 0.0);
     let visible = shape.update(
@@ -246,16 +246,16 @@ fn test_update_visible_zero_bounds_one_component() {
 
 #[test]
 fn test_update_invisible_zero_bounds_two_or_more() {
-    // Ported from: "update is invisible with zero bounds for two or more components"
+    // 移植自: "update is invisible with zero bounds for two or more components"
     let mut shape = VoxelBoxShape::new();
     let model_matrix = DMat4::IDENTITY;
 
-    // 0 in X and Y bounds
+    // X 和 Y 边界为 0
     let min_bounds = DVec3::new(0.0, 0.0, -1.0);
     let max_bounds = DVec3::new(0.0, 0.0, 1.0);
     assert!(!shape.update(model_matrix, min_bounds, max_bounds, None, None));
 
-    // 0 in X and Z bounds
+    // X 和 Z 边界为 0
     let min_bounds = DVec3::new(0.0, -1.0, 0.0);
     let max_bounds = DVec3::new(0.0, 1.0, 0.0);
     assert!(!shape.update(
@@ -266,30 +266,30 @@ fn test_update_invisible_zero_bounds_two_or_more() {
         Some(max_bounds)
     ));
 
-    // 0 in Y and Z bounds
+    // Y 和 Z 边界为 0
     let min_bounds = DVec3::new(-1.0, 0.0, 0.0);
     let max_bounds = DVec3::new(1.0, 0.0, 0.0);
     assert!(!shape.update(model_matrix, min_bounds, max_bounds, None, None));
 
-    // 0 in X, Y, and Z bounds
+    // X、Y、Z 边界均为 0
     let min_bounds = DVec3::new(0.0, 0.0, 0.0);
     let max_bounds = DVec3::new(0.0, 0.0, 0.0);
     assert!(!shape.update(model_matrix, min_bounds, max_bounds, None, None));
 }
 
 // ============================================================================
-// update visibility: min bounds exceed max bounds
+// update 可见性：min 边界超过 max 边界
 // ============================================================================
 
 #[test]
 fn test_update_invisible_min_exceeds_max() {
-    // Ported from: "update is invisible when minimum bounds exceed maximum bounds"
+    // 移植自: "update is invisible when minimum bounds exceed maximum bounds"
     let mut shape = VoxelBoxShape::new();
     let model_matrix = DMat4::IDENTITY;
     let clip_min = DVec3::new(-1.0, -1.0, -1.0);
     let clip_max = DVec3::new(2.0, 2.0, 2.0);
 
-    // Exceeds X
+    // 超出 X
     let min_bounds = DVec3::new(1.0, -1.0, -1.0);
     let max_bounds = DVec3::new(0.9, 1.0, 1.0);
     assert!(!shape.update(
@@ -300,7 +300,7 @@ fn test_update_invisible_min_exceeds_max() {
         Some(clip_max)
     ));
 
-    // Exceeds Y
+    // 超出 Y
     let min_bounds = DVec3::new(-1.0, 1.0, -1.0);
     let max_bounds = DVec3::new(1.0, 0.9, 1.0);
     assert!(!shape.update(
@@ -311,7 +311,7 @@ fn test_update_invisible_min_exceeds_max() {
         Some(clip_max)
     ));
 
-    // Exceeds Z
+    // 超出 Z
     let min_bounds = DVec3::new(-1.0, -1.0, 1.0);
     let max_bounds = DVec3::new(1.0, 1.0, 0.9);
     assert!(!shape.update(
@@ -329,7 +329,7 @@ fn test_update_invisible_min_exceeds_max() {
 
 #[test]
 fn test_compute_obb_for_tile_root() {
-    // Ported from: "computeOrientedBoundingBoxForTile works for root tile"
+    // 移植自: "computeOrientedBoundingBoxForTile works for root tile"
     let mut shape = VoxelBoxShape::new();
     let model_matrix = DMat4::IDENTITY;
     shape.update(model_matrix, default_min(), default_max(), None, None);
@@ -343,7 +343,7 @@ fn test_compute_obb_for_tile_root() {
 
 #[test]
 fn test_compute_obb_for_tile_children() {
-    // Ported from: "computeOrientedBoundingBoxForTile works for children of root tile"
+    // 移植自: "computeOrientedBoundingBoxForTile works for children of root tile"
     let mut shape = VoxelBoxShape::new();
     let model_matrix = DMat4::IDENTITY;
     shape.update(model_matrix, default_min(), default_max(), None, None);
@@ -351,37 +351,37 @@ fn test_compute_obb_for_tile_children() {
     let expected_scale = DVec3::new(0.5, 0.5, 0.5);
     let expected_half_axes = DMat3::from_diagonal(expected_scale);
 
-    // Child (0, 0, 0)
+    // 子瓦片 (0, 0, 0)
     let obb = shape.compute_obb_for_tile(1, 0, 0, 0);
     assert_vec3_eq(obb.center, DVec3::new(-0.5, -0.5, -0.5), "child(0,0,0) center");
     assert_mat3_eq(obb.half_axes, expected_half_axes, "child(0,0,0) halfAxes");
 
-    // Child (1, 0, 0)
+    // 子瓦片 (1, 0, 0)
     let obb = shape.compute_obb_for_tile(1, 1, 0, 0);
     assert_vec3_eq(obb.center, DVec3::new(0.5, -0.5, -0.5), "child(1,0,0) center");
     assert_mat3_eq(obb.half_axes, expected_half_axes, "child(1,0,0) halfAxes");
 
-    // Child (0, 1, 0)
+    // 子瓦片 (0, 1, 0)
     let obb = shape.compute_obb_for_tile(1, 0, 1, 0);
     assert_vec3_eq(obb.center, DVec3::new(-0.5, 0.5, -0.5), "child(0,1,0) center");
     assert_mat3_eq(obb.half_axes, expected_half_axes, "child(0,1,0) halfAxes");
 
-    // Child (0, 0, 1)
+    // 子瓦片 (0, 0, 1)
     let obb = shape.compute_obb_for_tile(1, 0, 0, 1);
     assert_vec3_eq(obb.center, DVec3::new(-0.5, -0.5, 0.5), "child(0,0,1) center");
     assert_mat3_eq(obb.half_axes, expected_half_axes, "child(0,0,1) halfAxes");
 
-    // Child (1, 1, 0)
+    // 子瓦片 (1, 1, 0)
     let obb = shape.compute_obb_for_tile(1, 1, 1, 0);
     assert_vec3_eq(obb.center, DVec3::new(0.5, 0.5, -0.5), "child(1,1,0) center");
     assert_mat3_eq(obb.half_axes, expected_half_axes, "child(1,1,0) halfAxes");
 
-    // Child (1, 0, 1)
+    // 子瓦片 (1, 0, 1)
     let obb = shape.compute_obb_for_tile(1, 1, 0, 1);
     assert_vec3_eq(obb.center, DVec3::new(0.5, -0.5, 0.5), "child(1,0,1) center");
     assert_mat3_eq(obb.half_axes, expected_half_axes, "child(1,0,1) halfAxes");
 
-    // Child (1, 1, 1)
+    // 子瓦片 (1, 1, 1)
     let obb = shape.compute_obb_for_tile(1, 1, 1, 1);
     assert_vec3_eq(obb.center, DVec3::new(0.5, 0.5, 0.5), "child(1,1,1) center");
     assert_mat3_eq(obb.half_axes, expected_half_axes, "child(1,1,1) halfAxes");

@@ -1,16 +1,16 @@
-//! cesium-tileset: 3D Tiles domain models
+//! cesium-tileset：3D Tiles domain 模型
 //!
-//! Maps to CesiumJS:
+//! 镜像 CesiumJS：
 //! - `Scene/Cesium3DTileset.js`
 //! - `Scene/Cesium3DTile.js`
 //! - `Scene/Cesium3DTileBoundingVolume.js`
 //! - `Scene/Cesium3DTilesetTraversal.js`
 //!
-//! # Features
-//! - tileset.json parsing (serde deserialization)
-//! - Bounding volumes (Box, Region, Sphere)
-//! - Tile tree structure with refinement modes
-//! - LOD selection based on screen-space error
+//! # 特性
+//! - tileset.json 解析（serde 反序列化）
+//! - 包围体（Box、Region、Sphere）
+//! - 带 refinement 模式的瓦片树结构
+//! - 基于屏幕空间误差的 LOD 选择
 
 pub mod batch_table;
 pub mod bounding_volume;

@@ -1,9 +1,9 @@
-//! Heap / ManagedArray / mergeSort specs - ported from:
-//! - packages/engine/Specs/Core/HeapSpec.js (9 it())
-//! - packages/engine/Specs/Core/ManagedArraySpec.js (17 it())
-//! - packages/engine/Specs/Core/mergeSortSpec.js (5 it())
+//! Heap / ManagedArray / mergeSort 规格测试 - 移植自：
+//! - packages/engine/Specs/Core/HeapSpec.js（9 个 it()）
+//! - packages/engine/Specs/Core/ManagedArraySpec.js（17 个 it()）
+//! - packages/engine/Specs/Core/mergeSortSpec.js（5 个 it()）
 //!
-//! A-class tests: 22 (Heap 7 + ManagedArray 10 + mergeSort 3, skipping JS-specific throws/undefined tests)
+//! A 类测试：22 个（Heap 7 + ManagedArray 10 + mergeSort 3，跳过 JS 特有的 throws/undefined 测试）
 
 use cesium_geospatial::heap::Heap;
 use cesium_geospatial::managed_array::ManagedArray;
@@ -36,7 +36,7 @@ fn f64_comparator(a: &f64, b: &f64) -> Ordering {
 #[test]
 fn heap_maintains_heap_property_on_insert() {
     let mut heap = Heap::new(f64_comparator);
-    // Use deterministic values instead of random
+    // 用确定性数值代替随机值
     let values: Vec<f64> = (0..100).map(|i| ((i * 37 + 13) % 100) as f64 / 100.0).collect();
     let mut pass = true;
     for v in values {
@@ -100,20 +100,20 @@ fn heap_insert_returns_removed_element_when_maximum_length_set() {
     let values: Vec<f64> = (0..100).map(|i| ((i * 37 + 13) % 100) as f64 / 100.0).collect();
     let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
-    // Push 99 values
+    // 压入 99 个值
     for i in 0..99 {
         heap.insert(values[i]);
     }
 
-    // Push 100th, nothing is removed so it returns None
+    // 压入第 100 个，没有元素被移除，因此返回 None
     let removed = heap.insert(values[99]);
     assert!(removed.is_none());
 
-    // Insert value, an element is removed
+    // 插入值时，有元素被移除
     let removed = heap.insert(max - 0.1);
     assert!(removed.is_some());
 
-    // If this value is the least priority (largest) it will be returned
+    // 若该值是最低优先级（最大），它会被返回
     let removed = heap.insert(max + 0.1);
     assert_eq!(removed, Some(max + 0.1));
 }
@@ -137,7 +137,7 @@ fn heap_resort() {
         });
     }
 
-    // Check that elements are initially sorted
+    // 检查元素初始时已排序
     let mut elements = Vec::new();
     let mut current_id = 0;
     while heap.length() > 0 {
@@ -147,7 +147,7 @@ fn heap_resort() {
         elements.push(element);
     }
 
-    // Add back into heap
+    // 重新加回堆中
     for e in &elements {
         heap.insert(Item {
             distance: e.distance,
@@ -155,8 +155,8 @@ fn heap_resort() {
         });
     }
 
-    // Invert priority by modifying distances
-    // Since we can't modify in-place easily, rebuild with inverted distances
+    // 通过修改 distance 反转优先级
+    // 由于难以就地修改，用反转后的 distance 重建
     let mut heap2 = Heap::new(|a: &Item, b: &Item| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
     for e in &elements {
         heap2.insert(Item {
@@ -165,7 +165,7 @@ fn heap_resort() {
         });
     }
 
-    // Check the elements are popped in the opposite order now
+    // 检查现在元素以相反顺序弹出
     current_id = length - 1;
     while heap2.length() > 0 {
         let element = heap2.pop().unwrap();
@@ -256,7 +256,7 @@ fn managed_array_can_pop_values() {
         let val = *array.get(i);
         assert_eq!(array.pop(), Some(val));
         assert_eq!(array.length(), i);
-        // Capacity is preserved
+        // 容量被保留
         assert_eq!(array.values().len(), 10);
     }
 }
@@ -279,7 +279,7 @@ fn managed_array_reserve() {
     assert_eq!(array.values().len(), 20);
     assert_eq!(array.length(), 2);
     array.reserve(5);
-    assert_eq!(array.values().len(), 20); // doesn't shrink
+    assert_eq!(array.values().len(), 20); // 不缩小
     assert_eq!(array.length(), 2);
 }
 
@@ -293,10 +293,10 @@ fn managed_array_resize_and_trim() {
     assert_eq!(array.values().len(), 20);
     assert_eq!(array.length(), 20);
     array.resize(5);
-    assert_eq!(array.values().len(), 20); // capacity preserved
+    assert_eq!(array.values().len(), 20); // 容量保留
     assert_eq!(array.length(), 5);
 
-    // trim
+    // trim（收缩）
     array.trim(None);
     assert_eq!(array.values().len(), 5);
     array.trim(Some(10));
@@ -332,28 +332,28 @@ fn merge_sort_stable_sorts() {
         Item { value: 0, original_index: 3 },
     ];
     merge_sort(&mut array, |a, b| a.value.cmp(&b.value));
-    // Stable: equal elements maintain original order
-    assert_eq!(array[0].original_index, 3); // value 0
-    assert_eq!(array[1].original_index, 0); // value 5 (first)
-    assert_eq!(array[2].original_index, 2); // value 5 (second)
-    assert_eq!(array[3].original_index, 1); // value 10
+    // 稳定排序：相等元素保持原有顺序
+    assert_eq!(array[0].original_index, 3); // 值 0
+    assert_eq!(array[1].original_index, 0); // 值 5（第一个）
+    assert_eq!(array[2].original_index, 2); // 值 5（第二个）
+    assert_eq!(array[3].original_index, 1); // 值 10
 }
 
 #[test]
 fn merge_sort_sorts_with_user_defined_comparator() {
-    // Sort by distance from origin (descending)
+    // 按距原点距离排序（降序）
     let mut array: Vec<(f64, f64, f64)> = vec![
         (-2.0, 0.0, 0.0),
         (-1.0, 0.0, 0.0),
         (-3.0, 0.0, 0.0),
     ];
-    // Comparator: sort by distance squared descending (b - a)
+    // 比较器：按距离平方降序排序（b - a）
     merge_sort(&mut array, |a, b| {
         let da = a.0 * a.0 + a.1 * a.1 + a.2 * a.2;
         let db = b.0 * b.0 + b.1 * b.1 + b.2 * b.2;
         db.partial_cmp(&da).unwrap_or(Ordering::Equal)
     });
-    // Expected order: (-3,0,0), (-2,0,0), (-1,0,0) - furthest first
+    // 期望顺序：(-3,0,0)、(-2,0,0)、(-1,0,0) —— 最远的在前
     assert_eq!(array[0], (-3.0, 0.0, 0.0));
     assert_eq!(array[1], (-2.0, 0.0, 0.0));
     assert_eq!(array[2], (-1.0, 0.0, 0.0));

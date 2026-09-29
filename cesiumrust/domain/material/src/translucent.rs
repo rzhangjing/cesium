@@ -1,42 +1,39 @@
-//! Translucency specification for Fabric materials.
+//! Fabric 材质的半透明规格。
 //!
-//! CesiumJS stores translucency either as a boolean or as a function of the
-//! material's current uniform values (e.g. `material.uniforms.color.alpha <
-//! 1.0`). This module captures the full set of built-in function shapes with a
-//! single data-driven enum so the domain layer stays closure-free and
-//! serializable.
+//! CesiumJS 将半透明性存储为布尔值，或作为材质当前 uniform 值的
+//! 函数（例如 `material.uniforms.color.alpha < 1.0`）。本模块用一个
+//! 单一的、数据驱动的 enum 捕获完整的内置函数形状，使领域层保持
+//! 无闭包且可序列化。
 
 use crate::uniform::UniformValue;
 use std::collections::BTreeMap;
 
-/// How a material decides whether it is translucent.
+/// 材质如何判断自身是否半透明。
 ///
-/// Maps to the `translucent` member of each entry in CesiumJS
-/// `Material._materialCache`:
+/// 映射到 CesiumJS `Material._materialCache` 中每个条目的 `translucent` 成员：
 /// - `translucent: true`  -> [`TranslucentSpec::Always`]
 /// - `translucent: false` -> [`TranslucentSpec::Never`]
 /// - `translucent: function (material) { return <uniform>.alpha < 1.0 || ... }`
-///   -> [`TranslucentSpec::AnyAlphaLt1`] listing the inspected uniform names.
+///   -> [`TranslucentSpec::AnyAlphaLt1`]，列出被检查的 uniform 名。
 ///
-/// For color (`vec4`) uniforms the function reads the alpha component; for
-/// `float` uniforms (e.g. Grid's `cellAlpha`) it reads the scalar itself. Both
-/// cases are handled by [`UniformValue::alpha_or_scalar`].
+/// 对于 color（`vec4`）uniform，该函数读取 alpha 分量；对于
+/// `float` uniform（如 Grid 的 `cellAlpha`）则读取标量本身。两种
+/// 情况都由 [`UniformValue::alpha_or_scalar`] 处理。
 #[derive(Debug, Clone, PartialEq)]
 pub enum TranslucentSpec {
-    /// Always translucent (`translucent: true`).
+    /// 始终半透明（`translucent: true`）。
     Always,
-    /// Never translucent (`translucent: false`).
+    /// 从不半透明（`translucent: false`）。
     Never,
-    /// Translucent when any of the named uniforms has an alpha/scalar `< 1.0`.
+    /// 当任一命名 uniform 的 alpha/标量 `< 1.0` 时半透明。
     AnyAlphaLt1(Vec<&'static str>),
 }
 
 impl TranslucentSpec {
-    /// Evaluates the spec against a material's current uniform values.
+    /// 针对材质当前的 uniform 值求值该规格。
     ///
-    /// A uniform that is absent or has no alpha/scalar component contributes
-    /// `false` (it cannot make the material translucent), matching the
-    /// CesiumJS functions which only ever read uniforms that exist.
+    /// 缺失或没有 alpha/标量分量的 uniform 贡献 `false`（它无法
+    /// 使材质半透明），与 CesiumJS 函数只读取存在的 uniform 一致。
     pub fn evaluate(&self, uniforms: &BTreeMap<String, UniformValue>) -> bool {
         match self {
             TranslucentSpec::Always => true,
@@ -85,7 +82,7 @@ mod tests {
 
     #[test]
     fn test_any_alpha_lt1_scalar() {
-        // Grid: cellAlpha is a float uniform.
+        // Grid：cellAlpha 是一个 float uniform。
         let spec = TranslucentSpec::AnyAlphaLt1(vec!["color", "cellAlpha"]);
         assert!(spec.evaluate(&uniforms(&[
             ("color", UniformValue::Vec4([0.0, 1.0, 0.0, 1.0])),
@@ -99,7 +96,7 @@ mod tests {
 
     #[test]
     fn test_any_alpha_lt1_multiple_names_or_semantics() {
-        // Stripe: evenColor.alpha < 1.0 || oddColor.alpha < 1.0
+        // Stripe：evenColor.alpha < 1.0 || oddColor.alpha < 1.0
         let spec = TranslucentSpec::AnyAlphaLt1(vec!["evenColor", "oddColor"]);
         assert!(spec.evaluate(&uniforms(&[
             ("evenColor", UniformValue::Vec4([1.0, 1.0, 1.0, 1.0])),

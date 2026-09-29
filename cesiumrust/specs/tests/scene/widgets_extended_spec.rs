@@ -1,9 +1,9 @@
-//! Extended widgets specs: Buttons, BaseLayerPicker, InfoBox
-//! Ported from CesiumJS widgets/Source/ (HomeButton, FullscreenButton, NavigationHelp,
-//! VRButton, BaseLayerPicker, InfoBox)
+//! 扩展控件规范：按钮、BaseLayerPicker、InfoBox
+//! 移植自 CesiumJS widgets/Source/（HomeButton、FullscreenButton、NavigationHelp、
+//! VRButton、BaseLayerPicker、InfoBox）
 //!
-//! A-class tests: ToggleButton, HomeButton, FullscreenButton, NavigationHelp,
-//! VRButton, BaseLayerPicker categories/providers/selection, InfoBox show/clear/tracking
+//! A 类测试：ToggleButton、HomeButton、FullscreenButton、NavigationHelp、
+//! VRButton、BaseLayerPicker 分类/提供者/选择、InfoBox show/clear/tracking
 
 use cesium_widgets::{
     BaseLayerPickerViewModel, FullscreenButtonViewModel, HomeButtonViewModel, InfoBoxViewModel,
@@ -34,10 +34,10 @@ fn toggle_button_disabled_no_toggle() {
     btn.is_enabled = false;
 
     btn.toggle();
-    assert!(!btn.is_toggled); // Should not change
+    assert!(!btn.is_toggled); // 应不变
 
     btn.set_toggled(true);
-    assert!(!btn.is_toggled); // Should not change
+    assert!(!btn.is_toggled); // 应不变
 }
 
 // ─── HomeButtonViewModel ───────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ fn fullscreen_button_unsupported() {
     btn.is_supported = false;
 
     btn.toggle_fullscreen();
-    assert!(!btn.is_fullscreen); // Should not change
+    assert!(!btn.is_fullscreen); // 应不变
 }
 
 // ─── NavigationHelpButtonViewModel ─────────────────────────────────────────────
@@ -213,11 +213,11 @@ fn info_box_clear() {
 fn info_box_toggle_frame() {
     let mut vm = InfoBoxViewModel::new();
 
-    // No content → toggle does nothing
+    // 无内容 → toggle 不做任何事
     vm.toggle_frame();
     assert!(!vm.is_frame_visible);
 
-    // With content → toggle works
+    // 有内容 → toggle 生效
     vm.show_entity("T", "D");
     assert!(vm.is_frame_visible);
     vm.toggle_frame();
@@ -232,7 +232,7 @@ fn info_box_close() {
     vm.show_entity("T", "D");
     vm.close();
     assert!(!vm.is_frame_visible);
-    assert!(vm.has_content); // Content preserved
+    assert!(vm.has_content); // 内容被保留
 }
 
 #[test]

@@ -1,81 +1,81 @@
-//! Shared low-level helpers for the glTF 1.0 → 2.0 upgrade chain.
+//! glTF 1.0 → 2.0 升级链共享的底层辅助函数。
 //!
-//! Mirrors CesiumJS `packages/engine/Source/Scene/GltfPipeline/`:
-//! `ForEach.js`, `addToArray.js`, `addExtensionsUsed.js`,
-//! `addExtensionsRequired.js`, `removeExtensionsUsed.js`,
-//! `removeExtensionsRequired.js`, `removeExtension.js`, `usesExtension.js`,
-//! `numberOfComponentsForType.js`, `getAccessorByteStride.js`, and the numeric
-//! constants from `Core/WebGLConstants.js`.
+//! 镜像 CesiumJS `packages/engine/Source/Scene/GltfPipeline/`：
+//! `ForEach.js`、`addToArray.js`、`addExtensionsUsed.js`、
+//! `addExtensionsRequired.js`、`removeExtensionsUsed.js`、
+//! `removeExtensionsRequired.js`、`removeExtension.js`、`usesExtension.js`、
+//! `numberOfComponentsForType.js`、`getAccessorByteStride.js`，以及来自
+//! `Core/WebGLConstants.js` 的数值常量。
 //!
-//! The upgrade operates on raw [`serde_json::Value`] rather than the typed
-//! [`crate::gltf_model::GltfModel`]: glTF 1.0 stores its top-level collections
-//! as object-keyed dictionaries (`"accessors": { "myAccessor": { .. } }`) which
-//! the array-based 2.0 model cannot deserialize, so the JSON is upgraded first
-//! and only then parsed. Every helper therefore works on untyped JSON and
-//! handles both the 1.0 object form and the 2.0 array form, exactly like
-//! upstream `ForEach.topLevel` (`Array.isArray` branch).
+//! 升级作用于原始 [`serde_json::Value`] 而非强类型的
+//! [`crate::gltf_model::GltfModel`]：glTF 1.0 将其顶层集合
+//! 存储为对象键字典（`"accessors": { "myAccessor": { .. } }`），
+//! 基于数组的 2.0 model 无法反序列化它，因此先升级 JSON，
+//! 然后才解析。因此每个辅助函数都在无类型 JSON 上工作，
+//! 同时处理 1.0 对象形式和 2.0 数组形式，与上游
+//! `ForEach.topLevel`（`Array.isArray` 分支）完全一致。
 
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 
-/// WebGL / glTF numeric constants.
+/// WebGL / glTF 数值常量。
 ///
-/// Source of truth: `packages/engine/Source/Core/WebGLConstants.js`. This is a
-/// faithful mirror of the full constant enum; only the subset exercised by the
-/// glTF 1.0 → 2.0 upgrade path is referenced, hence `#[allow(dead_code)]`.
+/// 真实来源：`packages/engine/Source/Core/WebGLConstants.js`。这是完整
+/// 常量枚举的忠实镜像；仅引用了 glTF 1.0 → 2.0 升级路径
+/// 所使用的那部分子集，因此加 `#[allow(dead_code)]`。
 #[allow(dead_code)]
 pub(crate) mod webgl {
-    /// `BYTE` (signed 8-bit) component type.
+    /// `BYTE`（有符号 8 位）分量类型。
     pub const BYTE: u64 = 0x1400;
-    /// `UNSIGNED_BYTE` component type.
+    /// `UNSIGNED_BYTE` 分量类型。
     pub const UNSIGNED_BYTE: u64 = 0x1401;
-    /// `SHORT` (signed 16-bit) component type.
+    /// `SHORT`（有符号 16 位）分量类型。
     pub const SHORT: u64 = 0x1402;
-    /// `UNSIGNED_SHORT` component type.
+    /// `UNSIGNED_SHORT` 分量类型。
     pub const UNSIGNED_SHORT: u64 = 0x1403;
-    /// `INT` (signed 32-bit) component type.
+    /// `INT`（有符号 32 位）分量类型。
     pub const INT: u64 = 0x1404;
-    /// `UNSIGNED_INT` component type.
+    /// `UNSIGNED_INT` 分量类型。
     pub const UNSIGNED_INT: u64 = 0x1405;
-    /// `FLOAT` component type.
+    /// `FLOAT` 分量类型。
     pub const FLOAT: u64 = 0x1406;
-    /// `DOUBLE` (64-bit float) component type.
+    /// `DOUBLE`（64 位浮点）分量类型。
     pub const DOUBLE: u64 = 0x140A;
-    /// `TRIANGLES` primitive mode.
+    /// `TRIANGLES` primitive 模式。
     pub const TRIANGLES: u64 = 0x0004;
-    /// Blend factor `ZERO`.
+    /// 混合因子 `ZERO`。
     pub const ZERO: u64 = 0;
-    /// Blend factor `ONE`.
+    /// 混合因子 `ONE`。
     pub const ONE: u64 = 1;
-    /// Blend factor `SRC_COLOR`.
+    /// 混合因子 `SRC_COLOR`。
     pub const SRC_COLOR: u64 = 0x0300;
-    /// Blend factor `ONE_MINUS_SRC_COLOR`.
+    /// 混合因子 `ONE_MINUS_SRC_COLOR`。
     pub const ONE_MINUS_SRC_COLOR: u64 = 0x0301;
-    /// Blend factor `SRC_ALPHA`.
+    /// 混合因子 `SRC_ALPHA`。
     pub const SRC_ALPHA: u64 = 0x0302;
-    /// Blend factor `ONE_MINUS_SRC_ALPHA`.
+    /// 混合因子 `ONE_MINUS_SRC_ALPHA`。
     pub const ONE_MINUS_SRC_ALPHA: u64 = 0x0303;
-    /// Blend factor `DST_ALPHA`.
+    /// 混合因子 `DST_ALPHA`。
     pub const DST_ALPHA: u64 = 0x0304;
-    /// Blend factor `ONE_MINUS_DST_ALPHA`.
+    /// 混合因子 `ONE_MINUS_DST_ALPHA`。
     pub const ONE_MINUS_DST_ALPHA: u64 = 0x0305;
-    /// Blend factor `DST_COLOR`.
+    /// 混合因子 `DST_COLOR`。
     pub const DST_COLOR: u64 = 0x0306;
-    /// Blend factor `ONE_MINUS_DST_COLOR`.
+    /// 混合因子 `ONE_MINUS_DST_COLOR`。
     pub const ONE_MINUS_DST_COLOR: u64 = 0x0307;
-    /// Blend equation `FUNC_ADD`.
+    /// 混合方程 `FUNC_ADD`。
     pub const FUNC_ADD: u64 = 0x8006;
-    /// Render state `CULL_FACE`.
+    /// 渲染状态 `CULL_FACE`。
     pub const CULL_FACE: u64 = 0x0b44;
-    /// Render state `BLEND`.
+    /// 渲染状态 `BLEND`。
     pub const BLEND: u64 = 0x0be2;
-    /// Buffer target `ARRAY_BUFFER`.
+    /// buffer 目标 `ARRAY_BUFFER`。
     pub const ARRAY_BUFFER: u64 = 0x8892;
-    /// Buffer target `ELEMENT_ARRAY_BUFFER`.
+    /// buffer 目标 `ELEMENT_ARRAY_BUFFER`。
     pub const ELEMENT_ARRAY_BUFFER: u64 = 0x8893;
 }
 
-/// `numberOfComponentsForType.js`: number of scalar components per element.
+/// `numberOfComponentsForType.js`：每个元素的标量分量数。
 pub(crate) fn number_of_components_for_type(gl_type: &str) -> usize {
     match gl_type {
         "SCALAR" => 1,
@@ -88,7 +88,7 @@ pub(crate) fn number_of_components_for_type(gl_type: &str) -> usize {
     }
 }
 
-/// `ComponentDatatype.getSizeInBytes`: byte width of a component type enum.
+/// `ComponentDatatype.getSizeInBytes`：分量类型枚举的字节宽度。
 pub(crate) fn component_size_in_bytes(component_type: u64) -> usize {
     match component_type {
         webgl::BYTE | webgl::UNSIGNED_BYTE => 1,
@@ -98,10 +98,10 @@ pub(crate) fn component_size_in_bytes(component_type: u64) -> usize {
     }
 }
 
-/// `getAccessorByteStride.js`: byte stride of an accessor.
+/// `getAccessorByteStride.js`：accessor 的字节 stride。
 ///
-/// Uses `bufferView.byteStride` when it is present and positive, otherwise
-/// computes `componentSize * numberOfComponentsForType`.
+/// 当 `bufferView.byteStride` 存在且为正时使用它，否则
+/// 计算 `componentSize * numberOfComponentsForType`。
 pub(crate) fn get_accessor_byte_stride(gltf: &Value, accessor: &Value) -> usize {
     if let Some(bv_id) = accessor.get("bufferView").and_then(Value::as_u64) {
         if let Some(bv) = index_into(gltf, "bufferViews", bv_id) {
@@ -117,8 +117,8 @@ pub(crate) fn get_accessor_byte_stride(gltf: &Value, accessor: &Value) -> usize 
     component_size_in_bytes(component_type) * number_of_components_for_type(gl_type)
 }
 
-/// Reads `gltf[collection][index]` whether the collection is a 2.0 array or a
-/// 1.0 object-keyed dictionary keyed by the (stringified) index.
+/// 读取 `gltf[collection][index]`，无论该集合是 2.0 数组还是
+/// 以（字符串化的）索引为键的 1.0 对象键字典。
 pub(crate) fn index_into<'a>(gltf: &'a Value, collection: &str, index: u64) -> Option<&'a Value> {
     match gltf.get(collection)? {
         Value::Array(arr) => arr.get(index as usize),
@@ -127,8 +127,8 @@ pub(crate) fn index_into<'a>(gltf: &'a Value, collection: &str, index: u64) -> O
     }
 }
 
-/// `addToArray.js`: append `element`, returning its index. When `check_dup` is
-/// set, an existing equal element's index is returned instead of appending.
+/// `addToArray.js`：追加 `element`，返回其索引。当设置了 `check_dup` 时，
+/// 返回已存在的相等元素的索引而非追加。
 pub(crate) fn add_to_array(arr: &mut Vec<Value>, element: Value, check_dup: bool) -> usize {
     if check_dup {
         if let Some(idx) = arr.iter().position(|x| *x == element) {
@@ -139,9 +139,9 @@ pub(crate) fn add_to_array(arr: &mut Vec<Value>, element: Value, check_dup: bool
     arr.len() - 1
 }
 
-/// `objectToArray.js` (updateVersion.js L291): convert an object-keyed
-/// collection into an array, assigning `name` from the key when absent, and
-/// returning the `id -> array index` mapping.
+/// `objectToArray.js`（updateVersion.js L291）：将一个对象键集合
+/// 转换为数组，在缺失时从键赋值 `name`，并
+/// 返回 `id -> array index` 映射。
 pub(crate) fn object_to_array(obj: Map<String, Value>) -> (Vec<Value>, HashMap<String, usize>) {
     let mut arr = Vec::with_capacity(obj.len());
     let mut mapping = HashMap::with_capacity(obj.len());
@@ -158,7 +158,7 @@ pub(crate) fn object_to_array(obj: Map<String, Value>) -> (Vec<Value>, HashMap<S
     (arr, mapping)
 }
 
-/// `usesExtension.js`: whether `extensionsUsed` contains `extension`.
+/// `usesExtension.js`：`extensionsUsed` 是否包含 `extension`。
 pub(crate) fn uses_extension(gltf: &Value, extension: &str) -> bool {
     gltf
         .get("extensionsUsed")
@@ -167,7 +167,7 @@ pub(crate) fn uses_extension(gltf: &Value, extension: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// `addExtensionsUsed.js`: add `extension` to `extensionsUsed` (deduped).
+/// `addExtensionsUsed.js`：将 `extension` 加入 `extensionsUsed`（去重）。
 pub(crate) fn add_extensions_used(gltf: &mut Value, extension: &str) {
     let Some(obj) = gltf.as_object_mut() else { return };
     let slot = obj
@@ -178,8 +178,8 @@ pub(crate) fn add_extensions_used(gltf: &mut Value, extension: &str) {
     }
 }
 
-/// `addExtensionsRequired.js`: add `extension` to `extensionsRequired`
-/// (deduped) and to `extensionsUsed`.
+/// `addExtensionsRequired.js`：将 `extension` 加入 `extensionsRequired`
+/// （去重）以及 `extensionsUsed`。
 pub(crate) fn add_extensions_required(gltf: &mut Value, extension: &str) {
     if let Some(obj) = gltf.as_object_mut() {
         let slot = obj
@@ -192,8 +192,8 @@ pub(crate) fn add_extensions_required(gltf: &mut Value, extension: &str) {
     add_extensions_used(gltf, extension);
 }
 
-/// `removeExtensionsRequired.js`: splice `extension` from `extensionsRequired`,
-/// deleting the array when it becomes empty.
+/// `removeExtensionsRequired.js`：从 `extensionsRequired` 剪辑掉 `extension`，
+/// 当数组变空时删除它。
 pub(crate) fn remove_extensions_required(gltf: &mut Value, extension: &str) {
     let Some(obj) = gltf.as_object_mut() else { return };
     let mut emptied = false;
@@ -208,8 +208,8 @@ pub(crate) fn remove_extensions_required(gltf: &mut Value, extension: &str) {
     }
 }
 
-/// `removeExtensionsUsed.js`: splice `extension` from `extensionsUsed` (and
-/// `extensionsRequired`), deleting the array when it becomes empty.
+/// `removeExtensionsUsed.js`：从 `extensionsUsed`（以及
+/// `extensionsRequired`）剪辑掉 `extension`，当数组变空时删除它。
 pub(crate) fn remove_extensions_used(gltf: &mut Value, extension: &str) {
     let Some(obj) = gltf.as_object_mut() else { return };
     let mut emptied = false;
@@ -230,9 +230,9 @@ pub(crate) fn remove_extensions_used(gltf: &mut Value, extension: &str) {
     }
 }
 
-/// `removeExtension.js`: remove `extension` from `extensionsUsed` /
-/// `extensionsRequired` and from every `extensions` object in the tree. The
-/// `CESIUM_RTC` technique-uniform semantic fix is mirrored too.
+/// `removeExtension.js`：从 `extensionsUsed` /
+/// `extensionsRequired` 以及树中每个 `extensions` 对象中移除 `extension`。也
+/// 镜像了 `CESIUM_RTC` technique-uniform 语义修正。
 pub(crate) fn remove_extension(gltf: &mut Value, extension: &str) {
     remove_extensions_used(gltf, extension);
     if extension == "CESIUM_RTC" {
@@ -241,8 +241,8 @@ pub(crate) fn remove_extension(gltf: &mut Value, extension: &str) {
     remove_extension_and_traverse(gltf, extension);
 }
 
-/// `removeCesiumRTC` (removeExtension.js L23): rewrite the `CESIUM_RTC_MODELVIEW`
-/// technique uniform semantic to `MODELVIEW`.
+/// `removeCesiumRTC`（removeExtension.js L23）：将 `CESIUM_RTC_MODELVIEW`
+/// technique uniform 语义重写为 `MODELVIEW`。
 fn remove_cesium_rtc(gltf: &mut Value) {
     for_each_technique(gltf, &mut |technique| {
         if let Some(uniforms) = technique.get_mut("uniforms").and_then(Value::as_object_mut) {
@@ -257,8 +257,8 @@ fn remove_cesium_rtc(gltf: &mut Value) {
     });
 }
 
-/// `removeExtensionAndTraverse` (removeExtension.js L33): recursively delete
-/// `extensions[extension]` from every plain object in the tree.
+/// `removeExtensionAndTraverse`（removeExtension.js L33）：递归地从树中
+/// 每个普通对象删除 `extensions[extension]`。
 fn remove_extension_and_traverse(value: &mut Value, extension: &str) {
     match value {
         Value::Array(arr) => {
@@ -283,9 +283,9 @@ fn remove_extension_and_traverse(value: &mut Value, extension: &str) {
     }
 }
 
-/// `ForEach.topLevel` (mutable): visit every element of a top-level collection,
-/// handling both the 2.0 array form and the 1.0 object-keyed form. The second
-/// closure argument is the positional index (meaningful for arrays).
+/// `ForEach.topLevel`（可变）：访问顶层集合的每个元素，
+/// 同时处理 2.0 数组形式和 1.0 对象键形式。第二个
+/// 闭包参数是位置索引（对数组有意义）。
 pub(crate) fn for_each_top_level_mut(gltf: &mut Value, name: &str, f: &mut impl FnMut(&mut Value, usize)) {
     let mut i = 0;
     if let Some(coll) = gltf.get_mut(name) {
@@ -307,8 +307,8 @@ pub(crate) fn for_each_top_level_mut(gltf: &mut Value, name: &str, f: &mut impl 
     }
 }
 
-/// `ForEach.technique` (mutable): visits `KHR_techniques_webgl.techniques` when
-/// that extension is used, otherwise the top-level `techniques`.
+/// `ForEach.technique`（可变）：当使用了
+/// 该扩展时访问 `KHR_techniques_webgl.techniques`，否则访问顶层 `techniques`。
 pub(crate) fn for_each_technique(gltf: &mut Value, f: &mut impl FnMut(&mut Value)) {
     if uses_extension(gltf, "KHR_techniques_webgl") {
         if let Some(arr) = gltf
@@ -324,13 +324,13 @@ pub(crate) fn for_each_technique(gltf: &mut Value, f: &mut impl FnMut(&mut Value
     for_each_top_level_mut(gltf, "techniques", &mut |item, _i| f(item));
 }
 
-/// `ForEach.material` (mutable): visits every material (array or object form).
+/// `ForEach.material`（可变）：访问每个 material（数组或对象形式）。
 pub(crate) fn for_each_material(gltf: &mut Value, f: &mut impl FnMut(&mut Value)) {
     for_each_top_level_mut(gltf, "materials", &mut |item, _i| f(item));
 }
 
-/// `srgbToLinear` (updateVersion.js L1019): convert an sRGB RGBA color to
-/// linear space (alpha is preserved verbatim).
+/// `srgbToLinear`（updateVersion.js L1019）：将一个 sRGB RGBA 颜色转换为
+/// 线性空间（alpha 逐字保留）。
 pub(crate) fn srgb_to_linear(srgb: &[f64]) -> Vec<f64> {
     let mut linear = vec![0.0f64; srgb.len()];
     if srgb.len() == 4 {
@@ -347,12 +347,12 @@ pub(crate) fn srgb_to_linear(srgb: &[f64]) -> Vec<f64> {
     linear
 }
 
-/// `isVec4` (updateVersion.js L1015): a JSON array of exactly four numbers.
+/// `isVec4`（updateVersion.js L1015）：一个恰好包含四个数字的 JSON 数组。
 pub(crate) fn is_vec4(value: &Value) -> bool {
     value.as_array().map(|a| a.len() == 4).unwrap_or(false)
 }
 
-/// `isTexture` (updateVersion.js L1011): an object with a defined `index`.
+/// `isTexture`（updateVersion.js L1011）：一个带有已定义 `index` 的对象。
 pub(crate) fn is_texture(value: &Value) -> bool {
     value.get("index").is_some()
 }

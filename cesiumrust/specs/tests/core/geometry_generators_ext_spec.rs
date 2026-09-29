@@ -1,13 +1,13 @@
-//! Geometry generators (Ellipse/Corridor/Wall/Polyline/CoplanarPolygon/Frustum)
-//! + Simon1994PlanetaryPositions + IauOrientation → Rust integration tests.
+//! 几何生成器（Ellipse/Corridor/Wall/Polyline/CoplanarPolygon/Frustum）
+//! + Simon1994PlanetaryPositions + IauOrientation → Rust 集成测试。
 //!
-//! Maps to CesiumJS:
-//! - Core/EllipseGeometry.js, Core/CorridorGeometry.js, Core/WallGeometry.js
-//! - Core/PolylineGeometry.js, Core/CoplanarPolygonGeometry.js
-//! - Core/Simon1994PlanetaryPositions.js, Core/Iau2000Orientation.js
+//! 对应 CesiumJS：
+//! - Core/EllipseGeometry.js、Core/CorridorGeometry.js、Core/WallGeometry.js
+//! - Core/PolylineGeometry.js、Core/CoplanarPolygonGeometry.js
+//! - Core/Simon1994PlanetaryPositions.js、Core/Iau2000Orientation.js
 //!
-//! A-class tests: vertex/index counts, bounding sphere, planetary positions.
-//! C-class omitted: throws, pack/unpack, offsetAttribute (GPU-specific).
+//! A 类测试：顶点/索引数、包围球、行星位置。
+//! C 类已省略：throws、pack/unpack、offsetAttribute（GPU 特有）。
 
 use cesium_geospatial::geometry::{
     box_geometry, coplanar_polygon_geometry, corridor_geometry, corridor_outline_geometry,
@@ -33,7 +33,7 @@ fn wgs84() -> Ellipsoid {
 }
 
 fn equator_center() -> DVec3 {
-    // Cartesian3.fromDegrees(0, 0) on WGS84
+    // WGS84 上的 Cartesian3.fromDegrees(0, 0)
     wgs84().cartographic_to_cartesian(
         &cesium_geospatial::cartographic::Cartographic::from_radians(0.0, 0.0, 0.0),
     )
@@ -52,7 +52,7 @@ fn simon1994_sun_position_j2000() {
     // CesiumJS: new JulianDate(2451545, 0, TimeStandard.TAI)
     let date = JulianDate::with_time_standard(2451545.0, 0.0, TimeStandard::TAI);
     let sun = compute_sun_position_in_earth_inertial_frame(&date);
-    // Expected from STK Components (relative epsilon ~1e-11)
+    // 期望值来自 STK Components（相对 epsilon ~1e-11）
     let eps = 1.0e-11;
     assert!((sun.x - 26500268539.790234).abs() < eps * 26500268539.0_f64.abs().max(1.0));
     assert!((sun.y - (-132756447253.27325)).abs() < eps * 132756447253.0_f64.abs().max(1.0));
@@ -95,12 +95,12 @@ fn simon1994_moon_position_2013() {
 fn iau_compute_moon_j2000() {
     let date = JulianDate::with_time_standard(2451545.0, 0.0, TimeStandard::TAI);
     let params = compute_moon(&date);
-    // Right ascension and declination should be finite radians
+    // 赤经与赤纬应为有限的弧度值
     assert!(params.right_ascension.is_finite());
     assert!(params.declination.is_finite());
     assert!(params.rotation.is_finite());
     assert!(params.rotation_rate.is_finite());
-    // Rotation rate should be positive (Moon rotates)
+    // 自转速率应为正（月球在自转）
     assert!(params.rotation_rate > 0.0);
 }
 
@@ -117,10 +117,10 @@ fn ellipse_computes_positions() {
         ..Default::default()
     };
     let geo = ellipse_geometry(&opts, VertexFormat::POSITION_ONLY);
-    // CesiumJS: 16 vertices (rows 1+4+6+4+1), 22 triangles (rows 3+8+8+3)
+    // CesiumJS：16 顶点（行 1+4+6+4+1），22 三角形（行 3+8+8+3）
     assert_eq!(geo.positions.len(), 16);
     assert_eq!(geo.indices.len(), 22 * 3);
-    // Bounding sphere radius ~1 (small ellipse on surface)
+    // 包围球半径 ~1（表面上的小椭圆）
     assert!((geo.bounding_sphere.radius - 1.0).abs() < 0.01);
 }
 
@@ -154,10 +154,10 @@ fn ellipse_outline_computes_positions() {
         ..Default::default()
     };
     let geo = ellipse_outline_geometry(&opts);
-    // Outline: ring of line segments
+    // 轮廓：由线段组成的环
     assert!(geo.positions.len() >= 8);
     assert!(geo.indices.len() >= 8);
-    // Indices are pairs (lines)
+    // 索引成对（线段）
     assert_eq!(geo.indices.len() % 2, 0);
 }
 
@@ -234,7 +234,7 @@ fn wall_computes_positions() {
         ..Default::default()
     };
     let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
-    // Wall: 2 rows (top+bottom) * num_arc_points
+    // 墙：2 行（顶+底）* 弧线点数
     assert!(geo.positions.len() >= 8);
     assert!(geo.indices.len() >= 6);
     assert!(geo.bounding_sphere.radius > 0.0);
@@ -305,7 +305,7 @@ fn polyline_computes_positions() {
         ellipsoid: e,
     };
     let geo = polyline_geometry(&opts, VertexFormat::POSITION_ONLY);
-    // Ribbon: at least 2 segments * 2 vertices per cross-section
+    // 缎带：至少 2 段 * 每截面 2 顶点
     assert!(geo.positions.len() >= 4);
     assert!(geo.indices.len() >= 6);
     assert!(geo.bounding_sphere.radius > 0.0);
@@ -340,7 +340,7 @@ fn coplanar_polygon_triangle() {
         ..Default::default()
     };
     let geo = coplanar_polygon_geometry(&opts, VertexFormat::POSITION_ONLY);
-    // Triangle: 3 vertices, 1 triangle (3 indices)
+    // 三角形：3 顶点，1 三角形（3 索引）
     assert_eq!(geo.positions.len(), 3);
     assert_eq!(geo.indices.len(), 3);
     assert!(geo.bounding_sphere.radius > 0.0);
@@ -359,7 +359,7 @@ fn coplanar_polygon_quad() {
         ..Default::default()
     };
     let geo = coplanar_polygon_geometry(&opts, VertexFormat::POSITION_ONLY);
-    // Quad: 4 vertices, 2 triangles (6 indices)
+    // 四边形：4 顶点，2 三角形（6 索引）
     assert_eq!(geo.positions.len(), 4);
     assert_eq!(geo.indices.len(), 6);
 }
@@ -376,7 +376,7 @@ fn frustum_geometry_computes_positions() {
     );
     let def = FrustumDef::Perspective(pf);
     let geo = frustum_geometry(&def, DVec3::ZERO, DQuat::IDENTITY, VertexFormat::POSITION_ONLY);
-    // Frustum: 6 planes * 4 vertices = 24
+    // 视锥：6 平面 * 4 顶点 = 24
     assert!(geo.positions.len() >= 8);
     assert!(geo.indices.len() >= 12);
     assert!(geo.bounding_sphere.radius > 0.0);
@@ -401,7 +401,7 @@ fn ground_polyline_computes_positions() {
     assert!(geo.indices.len() >= 6);
 }
 
-// === SphereGeometry detailed ===
+// === SphereGeometry 详细 ===
 
 #[test]
 fn sphere_computes_positions_exact() {
@@ -409,7 +409,7 @@ fn sphere_computes_positions_exact() {
     let geo = sphere_geometry(1.0, 2, 3, VertexFormat::POSITION_ONLY);
     // (stacks+1) * (slices+1) = 3 * 4 = 12
     assert_eq!(geo.positions.len(), 12);
-    // 2 stacks * 3 slices * 6 indices = 36
+    // 2 stacks * 3 slices * 6 索引 = 36
     assert_eq!(geo.indices.len(), 36);
     assert!((geo.bounding_sphere.radius - 1.0).abs() < 1e-10);
 }
@@ -436,16 +436,16 @@ fn sphere_unit_sphere_attributes() {
         let pos = DVec3::new(geo.positions[i][0], geo.positions[i][1], geo.positions[i][2]);
         let n = DVec3::new(normals[i][0], normals[i][1], normals[i][2]);
 
-        // Position should be on unit sphere
+        // 位置应位于单位球面上
         assert!((pos.length() - 1.0).abs() < 1e-10, "pos[{}] not on unit sphere", i);
-        // Normal should equal position (for unit sphere centered at origin)
+        // 法线应等于位置（对于以原点为中心的单位球）
         assert!((n - pos).length() < 1e-10, "normal[{}] != position", i);
-        // Normal should be unit length
+        // 法线应为单位长度
         assert!((n.length() - 1.0).abs() < 1e-10, "normal[{}] not unit", i);
     }
 }
 
-// === CylinderGeometry detailed ===
+// === CylinderGeometry 详细 ===
 
 #[test]
 fn cylinder_top_radius_zero_cone() {
@@ -455,12 +455,12 @@ fn cylinder_top_radius_zero_cone() {
     assert!(!geo.positions.is_empty());
     assert!(geo.indices.len() % 3 == 0);
 
-    // Top vertices should be at z = +half_length (tip of the cone)
+    // 顶部顶点应位于 z = +half_length（锥顶）
     let half = 5.0;
     let mut has_top_tip = false;
     for p in &geo.positions {
         if (p[2] - half).abs() < 1e-6 {
-            // Top positions with radius=0 should collapse to axis (x≈0, y≈0)
+            // radius=0 的顶部位置应坠缩到轴上（x≈0, y≈0）
             if p[0].abs() < 1e-6 && p[1].abs() < 1e-6 {
                 has_top_tip = true;
             }
@@ -481,7 +481,7 @@ fn cylinder_bottom_radius_zero_inverted_cone() {
 
 #[test]
 fn cylinder_both_radii_zero_degenerate() {
-    // Both radii zero → all vertices on Z axis
+    // 两个半径均为零 → 所有顶点在 Z 轴上
     let geo = cylinder_geometry(10.0, 0.0, 0.0, 8, VertexFormat::POSITION_ONLY);
     for p in &geo.positions {
         assert!(p[0].abs() < 1e-10);
@@ -489,7 +489,7 @@ fn cylinder_both_radii_zero_degenerate() {
     }
 }
 
-// === EllipsoidGeometry detailed ===
+// === EllipsoidGeometry 详细 ===
 
 #[test]
 fn ellipsoid_unit_sphere_attributes() {
@@ -507,10 +507,10 @@ fn ellipsoid_unit_sphere_attributes() {
 #[test]
 fn ellipsoid_negated_normals_point_inward() {
     // EllipsoidGeometrySpec: "negates normals on an ellipsoid"
-    // After computing normals, scaling by -1 makes them point inward
+    // 计算出法线后，乘以 -1 使其朝内
     let radii = DVec3::new(2.0, 1.5, 1.0);
     let mut geo = ellipsoid_geometry(radii, 4, 6, VertexFormat::POSITION_AND_NORMAL);
-    // Negate normals
+    // 反转法线
     if let Some(ref mut normals) = geo.normals {
         for n in normals.iter_mut() {
             n[0] = -n[0];
@@ -521,7 +521,7 @@ fn ellipsoid_negated_normals_point_inward() {
 
     let normals = geo.normals.as_ref().unwrap();
     for (p, n) in geo.positions.iter().zip(normals.iter()) {
-        // Inward-pointing normal should have negative dot with position
+        // 朝内的法线与位置的点积应为负
         let dot = p[0] * n[0] + p[1] * n[1] + p[2] * n[2];
         assert!(dot < 0.0, "negated normal should point inward (dot={})", dot);
     }
@@ -529,13 +529,13 @@ fn ellipsoid_negated_normals_point_inward() {
 
 #[test]
 fn ellipsoid_scaled_radii_proportioned_correctly() {
-    // Positions should scale correctly with radii
+    // 位置应随半径正确缩放
     let radii = DVec3::new(3.0, 2.0, 1.0);
     let geo = ellipsoid_geometry(radii, 5, 8, VertexFormat::POSITION_ONLY);
 
     for p in &geo.positions {
         let pos = DVec3::from(*p);
-        // Point on scaled ellipsoid satisfies: (x/rx)^2 + (y/ry)^2 + (z/rz)^2 = 1
+        // 缩放椭球上的点满足：(x/rx)^2 + (y/ry)^2 + (z/rz)^2 = 1
         let scaled_len = (pos.x / radii.x).powi(2) + (pos.y / radii.y).powi(2) + (pos.z / radii.z).powi(2);
         assert!((scaled_len - 1.0).abs() < 1e-10, "position not on ellipsoid surface");
     }
@@ -548,12 +548,12 @@ fn ellipsoid_bounding_sphere_uses_max_radius() {
     assert!((geo.bounding_sphere.radius - 3.0).abs() < 1e-10);
 }
 
-// === BoxGeometry detailed ===
+// === BoxGeometry 详细 ===
 
 #[test]
 fn box_geometry_position_only_reuses_vertices() {
     // BoxGeometrySpec: "constructor creates optimized number of positions for VertexFormat.POSITIONS_ONLY"
-    // With POSITION_ONLY, vertices are shared → 24 vertices (6 faces * 4)
+    // 使用 POSITION_ONLY 时顶点被共享 → 24 顶点（6 面 * 4）
     let geo = box_geometry(
         DVec3::new(-1.0, -1.0, -1.0),
         DVec3::new(1.0, 1.0, 1.0),
@@ -567,7 +567,7 @@ fn box_geometry_position_only_reuses_vertices() {
 
 #[test]
 fn box_asymmetric_dimensions() {
-    // Asymmetric dimensions (-1 to 2, -1 to 3, -2 to 1)
+    // 非对称尺寸（-1 到 2，-1 到 3，-2 到 1）
     let geo = box_geometry(
         DVec3::new(-1.0, -1.0, -2.0),
         DVec3::new(2.0, 3.0, 1.0),
@@ -577,14 +577,14 @@ fn box_asymmetric_dimensions() {
     assert_eq!(geo.indices.len(), 36);
     assert!(geo.normals.is_some());
     assert!(geo.tex_coords.is_some());
-    // Bounding sphere should encompass the box
+    // 包围球应包含该盒子
     let diagonal = DVec3::new(3.0, 4.0, 3.0).length();
     assert!((geo.bounding_sphere.radius - diagonal / 2.0).abs() < 1e-10);
 }
 
 #[test]
 fn box_corner_positions_valid() {
-    // All positions should be at corners of the box (on the surface)
+    // 所有位置应位于盒子的角点（在表面上）
     let min = DVec3::new(0.0, 0.0, 0.0);
     let max = DVec3::new(1.0, 1.0, 1.0);
     let geo = box_geometry(min, max, VertexFormat::POSITION_ONLY);
@@ -593,7 +593,7 @@ fn box_corner_positions_valid() {
         assert!(p[0] >= 0.0 - 1e-10 && p[0] <= 1.0 + 1e-10);
         assert!(p[1] >= 0.0 - 1e-10 && p[1] <= 1.0 + 1e-10);
         assert!(p[2] >= 0.0 - 1e-10 && p[2] <= 1.0 + 1e-10);
-        // Each vertex must be at one extreme of the box (on at least one face)
+        // 每个顶点必须位于盒子的某一极值处（至少在一个面上）
         let on_face = (p[0].abs() < 1e-10 || (p[0] - 1.0).abs() < 1e-10)
             || (p[1].abs() < 1e-10 || (p[1] - 1.0).abs() < 1e-10)
             || (p[2].abs() < 1e-10 || (p[2] - 1.0).abs() < 1e-10);
@@ -601,7 +601,7 @@ fn box_corner_positions_valid() {
     }
 }
 
-// === PolylineGeometry detailed ===
+// === PolylineGeometry 详细 ===
 
 #[test]
 fn polyline_texture_coordinates_monotonic() {
@@ -616,19 +616,19 @@ fn polyline_texture_coordinates_monotonic() {
     };
     let geo = polyline_geometry(&opts, VertexFormat::POSITION_AND_ST);
     let st = geo.tex_coords.as_ref().unwrap();
-    // ST u should go from 0 to 1 monotonically
+    // ST 的 u 应从 0 单调增至 1
     let n = geo.positions.len();
     assert_eq!(st.len(), n);
     assert!((st[0][0]).abs() < 1e-6);
     assert!((st[n - 2][0] - 1.0).abs() < 1e-6);
-    // v should alternate: right=0, left=1
+    // v 应交替：右=0，左=1
     for i in 0..n / 2 {
         assert!((st[i * 2][1]).abs() < 1e-6, "right v should be 0");
         assert!((st[i * 2 + 1][1] - 1.0).abs() < 1e-6, "left v should be 1");
     }
 }
 
-// === WallGeometry with variable heights ===
+// === WallGeometry 带可变高度 ===
 
 #[test]
 fn wall_from_variable_min_max_heights() {
@@ -645,16 +645,16 @@ fn wall_from_variable_min_max_heights() {
     let geo = wall_geometry(&opts, VertexFormat::POSITION_ONLY);
     assert!(geo.positions.len() >= 8);
     assert!(geo.indices.len() >= 6);
-    // Verify that bottom points (even indices) have heights matching minimumHeights
-    // and top points (odd indices) have heights matching maximumHeights
+    // 验证底部点（偶数索引）的高度与 minimumHeights 匹配，
+    // 且顶部点（奇数索引）的高度与 maximumHeights 匹配
     let e = wgs84();
     for i in 0..geo.positions.len() {
         let carto = e.cartesian_to_cartographic(DVec3::from(geo.positions[i])).unwrap();
         if i % 2 == 0 {
-            // Bottom - should be near a minimum height
+            // 底部 - 应接近某个最小高度
             assert!(carto.height >= -10.0, "bottom height {} should be >= 0", carto.height);
         } else {
-            // Top - should be at max of input heights
+            // 顶部 - 应处于输入高度的最大值
             assert!(carto.height > 500.0, "top height {} should be > 0", carto.height);
         }
     }

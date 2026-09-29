@@ -1,5 +1,5 @@
-//! WKT + TopoJSON comprehensive specs
-//! Tests cesium-vector crate: parse_wkt, to_wkt, decode_arc, resolve_linestring, etc.
+//! WKT + TopoJSON 综合规范
+//! 测试 cesium-vector crate：parse_wkt、to_wkt、decode_arc、resolve_linestring 等。
 
 use cesium_vector::{
     decode_arc, decode_arc_reversed, is_clockwise, parse_wkt, resolve_linestring, resolve_polygon,
@@ -8,7 +8,7 @@ use cesium_vector::{
 use glam::DVec2;
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// WKT Parsing
+// WKT 解析
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -131,7 +131,7 @@ fn wkt_parse_geometry_collection() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// WKT Errors
+// WKT 错误
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -139,7 +139,7 @@ fn wkt_error_unknown_type() {
     let result = parse_wkt("INVALID (30 10)");
     assert!(result.is_err());
     if let Err(WktError::UnknownType(_)) = result {
-        // expected
+        // 预期
     } else {
         panic!("Expected UnknownType error");
     }
@@ -158,7 +158,7 @@ fn wkt_error_invalid_number() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// WKT Serialization (to_wkt)
+// WKT 序列化 (to_wkt)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -281,8 +281,8 @@ fn topojson_decode_arc_with_transform() {
 
     let arc = decode_arc(&topo, 0);
     assert_eq!(arc.len(), 3);
-    // Delta encoding: (0,0) → (0+1000, 0+0) → (0+1000+0, 0+0+1000)
-    // After transform: x*scale+translate
+    // 增量编码：(0,0) → (0+1000, 0+0) → (0+1000+0, 0+0+1000)
+    // 变换后：x*scale+translate
     assert!((arc[0].x - 100.0).abs() < 1e-10);
     assert!((arc[0].y - 50.0).abs() < 1e-10);
     assert!((arc[1].x - 101.0).abs() < 1e-10);
@@ -307,8 +307,8 @@ fn topojson_resolve_linestring_single_arc() {
 fn topojson_resolve_linestring_multiple_arcs() {
     let topo = simple_topology();
     let coords = resolve_linestring(&topo, &[0, 1]);
-    // Arc 0: (0,0), (1,0), (1,1) → 3 points
-    // Arc 1 (skip first): (0,1), (0,0) → 2 points
+    // 弧 0：(0,0), (1,0), (1,1) → 3 个点
+    // 弧 1（跳过第一个）：(0,1), (0,0) → 2 个点
     assert_eq!(coords.len(), 5);
     assert_eq!(coords[0], DVec2::new(0.0, 0.0));
     assert_eq!(coords[4], DVec2::new(0.0, 0.0));
@@ -328,7 +328,7 @@ fn topojson_resolve_polygon() {
 
 #[test]
 fn topojson_ring_area_ccw() {
-    // Counter-clockwise unit square → positive area
+    // 逆时针单位正方形 → 正面积
     let ring = vec![
         DVec2::new(0.0, 0.0),
         DVec2::new(1.0, 0.0),
@@ -341,7 +341,7 @@ fn topojson_ring_area_ccw() {
 
 #[test]
 fn topojson_ring_area_cw() {
-    // Clockwise unit square → negative area
+    // 顺时针单位正方形 → 负面积
     let ring = vec![
         DVec2::new(0.0, 0.0),
         DVec2::new(0.0, 1.0),
@@ -354,7 +354,7 @@ fn topojson_ring_area_cw() {
 
 #[test]
 fn topojson_ring_area_degenerate() {
-    // Less than 3 points → 0
+    // 少于 3 个点 → 0
     let ring = vec![DVec2::new(0.0, 0.0), DVec2::new(1.0, 1.0)];
     assert_eq!(ring_area(&ring), 0.0);
 }

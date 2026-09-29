@@ -1,5 +1,5 @@
-//! PrimitiveCollection + GeometryInstance + GeometryBatch specs
-//! Ported from CesiumJS Scene/PrimitiveSpec.js + PrimitiveCollectionSpec.js
+//! PrimitiveCollection + GeometryInstance + GeometryBatch 规范
+//! 移植自 CesiumJS Scene/PrimitiveSpec.js + PrimitiveCollectionSpec.js
 
 use cesium_primitives::{
     batch_instances, compute_bounding_sphere_union, Appearance, BatchConfig, GeometryBatch,
@@ -45,7 +45,7 @@ fn geometry_instance_compute_bounding_sphere() {
     assert!((bs.radius - 10.0).abs() < 1e-10);
 }
 
-// ==================== GeometryType bounding spheres ====================
+// ==================== GeometryType 包围球 ====================
 
 #[test]
 fn geometry_type_sphere_bounding_sphere() {
@@ -94,7 +94,7 @@ fn primitive_add_instance_invalidates_bs() {
     let mut p = Primitive::new("test");
     p.bounding_sphere = Some(BoundingSphere::new(DVec3::ZERO, 1.0));
     p.add_instance(GeometryInstance::new("i1", GeometryType::Sphere { radius: 5.0 }));
-    assert!(p.bounding_sphere.is_none()); // Invalidated
+    assert!(p.bounding_sphere.is_none()); // 已失效
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn primitive_compute_bounding_sphere() {
     );
     p.compute_bounding_sphere();
     let bs = p.bounding_sphere.unwrap();
-    // Union should encompass both spheres
+    // 并集应包含两个球
     assert!(bs.radius >= 110.0);
 }
 

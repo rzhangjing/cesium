@@ -1,5 +1,5 @@
-//! ImageBasedLighting + CloudCollection specs
-//! Ported from CesiumJS Scene/ImageBasedLightingSpec.js + Scene/CloudCollectionSpec.js
+//! ImageBasedLighting + CloudCollection 规范
+//! 移植自 CesiumJS Scene/ImageBasedLightingSpec.js + Scene/CloudCollectionSpec.js
 
 use cesium_effects::{
     default_spherical_harmonics, CloudCollection, CumulusCloud, ImageBasedLighting,
@@ -81,13 +81,13 @@ fn ibl_compute_diffuse_zero_factor() {
 
 #[test]
 fn ibl_compute_specular_default() {
-    // Value-pin the CURRENT placeholder contract exactly (see the DEVIATION note
-    // on `compute_specular_ibl` / docs/deviations.md#dev-024): a fixed neutral
-    // environment tint `[0.1, 0.1, 0.12]` scaled by the specular factor (1.0).
-    // Deliberately NOT the old weak `result[0] > 0.0`, which the placeholder
-    // passed trivially and which could not distinguish placeholder from a real
-    // prefilter. When deferred #54 lands the real roughness-driven prefilter, the
-    // `#[ignore]`d dependence specs below take over and this pin is replaced.
+    // 精确固定当前占位实现的约定（见 DEVIATION 说明
+    // 于 `compute_specular_ibl` / docs/deviations.md#dev-024）：一个固定的中性
+    // 环境色调 `[0.1, 0.1, 0.12]`，按 specular 因子 (1.0) 缩放。
+    // 有意不用旧的弱断言 `result[0] > 0.0`，占位实现
+    // 会平凡通过，且无法区分占位实现与真正的
+    // 预滤波。当延期的 #54 落地真正的粗糙度驱动预滤波时，
+    // 下方被 `#[ignore]` 标记的依赖测试将接管，此固定会被替换。
     let ibl = ImageBasedLighting::default();
     let result = ibl.compute_specular_ibl(DVec3::Y, 0.5);
     assert_eq!(result, [0.1, 0.1, 0.12]);
@@ -96,7 +96,7 @@ fn ibl_compute_specular_default() {
 #[test]
 #[ignore = "awaiting deferred #54 real prefilter — placeholder returns a constant, so roughness/reflection dependence cannot hold yet"]
 fn ibl_compute_specular_scales_linearly_with_specular_factor() {
-    // A real prefiltered sample is linear in the specular IBL factor.
+    // 真正预滤波的采样与 specular IBL 因子成线性。
     let mut ibl = ImageBasedLighting::default();
     ibl.set_factor(1.0, 0.5);
     let half = ibl.compute_specular_ibl(DVec3::Y, 0.5);
@@ -110,8 +110,8 @@ fn ibl_compute_specular_scales_linearly_with_specular_factor() {
 #[test]
 #[ignore = "awaiting deferred #54 real prefilter — placeholder ignores roughness entirely"]
 fn ibl_compute_specular_varies_with_roughness() {
-    // A real prefilter changes with roughness (roughness→mip selection); the
-    // placeholder returns a constant regardless, so this fails today by design.
+    // 真正的预滤波随粗糙度变化（粗糙度→mip 选择）；
+    // 占位实现无论如何都返回常量，因此按设计目前会失败。
     let ibl = ImageBasedLighting::default();
     let smooth = ibl.compute_specular_ibl(DVec3::Y, 0.05);
     let rough = ibl.compute_specular_ibl(DVec3::Y, 0.95);
@@ -121,7 +121,7 @@ fn ibl_compute_specular_varies_with_roughness() {
 #[test]
 #[ignore = "awaiting deferred #54 real prefilter — placeholder ignores the reflection direction entirely"]
 fn ibl_compute_specular_varies_with_reflection_direction() {
-    // Different reflection directions sample different parts of the environment.
+    // 不同的反射方向采样环境的不同部分。
     let ibl = ImageBasedLighting::default();
     let up = ibl.compute_specular_ibl(DVec3::Z, 0.5);
     let side = ibl.compute_specular_ibl(DVec3::X, 0.5);
@@ -248,7 +248,7 @@ fn cloud_collection_remove_reindexes() {
     let removed = collection.remove(0);
     assert!(removed.is_some());
     assert_eq!(collection.len(), 2);
-    // Remaining clouds reindexed
+    // 剩余的云被重新索引
     assert_eq!(collection.get(0).unwrap().index(), 0);
     assert_eq!(collection.get(1).unwrap().index(), 1);
 }

@@ -1,19 +1,18 @@
-//! Geodesic measurement utilities (plan §16 M9 "量测(距离/面积)" integration
-//! point).
+//! 测地线量测工具（计划 §16 M9 “量测(距离/面积)” 集成点）。
 //!
-//! Pure functions over model geometry so distance / area read-outs unit-test
-//! headless; the bridge binds them to a measure tool / status line. Distances
-//! reuse [`GeoPoint::surface_distance`] (great-circle metres); areas use the
-//! spherical trapezoidal (Green's-theorem) ring integral, accurate to well
-//! within a percent for authoring-sized polygons.
+//! 在模型几何上的纯函数，因此距离 / 面积读数可无头单元
+//! 测试；桥接层将它们绑定到一个量测工具 / 状态行。距离
+//! 复用 [`GeoPoint::surface_distance`]（大圆米数）；面积使用
+//! 球面梯形（Green 定理）环积分，对于编辑尺寸的多边形
+//! 其误差远小于一个百分点。
 //!
-//! These are deliberately *not* wired into rendering or history — they are the
-//! stable entry points a later dedicated measurement milestone grows on.
+//! 这些有意*未* 接入渲染或历史 —— 它们是后续专用
+//! 量测里程碑所生长的稳定入口点。
 
 use crate::geo::{GeoPoint, METERS_PER_RENDER_UNIT};
 use crate::model::geometry::{Circle, Geometry, Polygon, Rectangle};
 
-/// Great-circle length of a vertex chain (metres); `0` for fewer than two points.
+/// 一条顶点链的大圆长度（米）；少于两个点时为 `0`。
 pub fn path_length_m(points: &[GeoPoint]) -> f64 {
     points
         .windows(2)
@@ -21,7 +20,7 @@ pub fn path_length_m(points: &[GeoPoint]) -> f64 {
         .sum()
 }
 
-/// Perimeter of a closed ring (last vertex joined back to the first), metres.
+/// 一个闭合环的周长（最后一个顶点连回第一个），米。
 pub fn ring_length_m(ring: &[GeoPoint]) -> f64 {
     if ring.len() < 2 {
         return 0.0;
@@ -31,9 +30,9 @@ pub fn ring_length_m(ring: &[GeoPoint]) -> f64 {
     total
 }
 
-/// Spherical area enclosed by a linear ring (m², unsigned). Uses the trapezoidal
-/// line integral  `A = R² · |Σ (λ_{i+1} − λ_i)(sin φ_i + sin φ_{i+1})| / 2`.
-/// Degenerate rings (< 3 points) have zero area.
+/// 一个线性环包围的球面面积（m²，无符号）。使用梯形
+/// 线积分  `A = R² · |Σ (λ_{i+1} − λ_i)(sin φ_i + sin φ_{i+1})| / 2`。
+/// 退化环（少于 3 点）面积为零。
 pub fn ring_area_m2(ring: &[GeoPoint]) -> f64 {
     let n = ring.len();
     if n < 3 {
@@ -50,7 +49,7 @@ pub fn ring_area_m2(ring: &[GeoPoint]) -> f64 {
     (METERS_PER_RENDER_UNIT * METERS_PER_RENDER_UNIT * sum / 2.0).abs()
 }
 
-/// Area of a polygon = outer ring minus the sum of its holes (m²).
+/// 多边形面积 = 外环减去其孔洞之和（m²）。
 pub fn polygon_area_m2(pg: &Polygon) -> f64 {
     let mut area = ring_area_m2(&pg.outer);
     for h in &pg.holes {
@@ -59,14 +58,14 @@ pub fn polygon_area_m2(pg: &Polygon) -> f64 {
     area.max(0.0)
 }
 
-/// Area of a ground circle treated as flat `π r²` (m²) — the radius is a ground
-/// distance, so the planar form is the intended semantic here.
+/// 一个地面圆的面积，按平面 `π r²` 处理（m²）—— 半径是一个地面
+/// 距离，因此平面形式这里就是预期的语义。
 pub fn circle_area_m2(c: &Circle) -> f64 {
     std::f64::consts::PI * c.radius_m * c.radius_m
 }
 
-/// Rectangle area (m²): width (a great-circle span at the mean latitude) times
-/// height (a meridional span).
+/// 矩形面积（m²）：宽（平均纬度上的一个大圆跨步）乘以
+/// 高（一个子午线跨步）。
 pub fn rectangle_area_m2(r: &Rectangle) -> f64 {
     let mean_lat = (r.south + r.north) / 2.0;
     let west_edge = GeoPoint::surface(r.west, mean_lat);
@@ -76,8 +75,8 @@ pub fn rectangle_area_m2(r: &Rectangle) -> f64 {
     width * height
 }
 
-/// Total measured length of a geometry: polyline length, polygon / rectangle
-/// perimeter, circle circumference; `0` for point-like kinds.
+/// 一个几何的总量测长度：折线长度、多边形 / 矩形周长、圆周长；
+/// 点类类型为 `0`。
 pub fn measure_length_m(g: &Geometry) -> f64 {
     match g {
         Geometry::Polyline(pl) => path_length_m(&pl.positions),
@@ -103,7 +102,7 @@ pub fn measure_length_m(g: &Geometry) -> f64 {
     }
 }
 
-/// Total measured area of a geometry; `0` for open / point-like kinds.
+/// 一个几何的总量测面积；开放 / 点类类型为 `0`。
 pub fn measure_area_m2(g: &Geometry) -> f64 {
     match g {
         Geometry::Polygon(pg) => polygon_area_m2(pg),
@@ -140,7 +139,7 @@ mod tests {
 
     #[test]
     fn unit_square_area_near_equator() {
-        // A 1°×1° ring near the equator ≈ 1.239e10 m².
+        // 赤道附近一个 1°×1° 的环 ≈ 1.239e10 m²。
         let ring = vec![p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0), p(0.0, 1.0)];
         let area = ring_area_m2(&ring);
         let expect = 1.239e10;

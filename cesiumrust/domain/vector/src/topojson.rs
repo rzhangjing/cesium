@@ -1,34 +1,34 @@
-//! TopoJSON decoder.
+//! TopoJSON 解码器。
 //!
-//! Implements TopoJSON specification for topology-based geometry encoding.
-//! Maps to CesiumJS `ThirdParty/topojson.js`
+//! 实现基于拓扑的几何编码的 TopoJSON 规范。
+//! 映射到 CesiumJS `ThirdParty/topojson.js`
 
 use glam::DVec2;
 
-/// A TopoJSON topology object.
+/// 一个 TopoJSON 拓扑对象。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Topology {
-    /// Named geometry objects.
+    /// 命名的几何对象。
     pub objects: Vec<TopoObject>,
-    /// Arc definitions (shared boundaries).
+    /// 弧定义（共享边界）。
     pub arcs: Vec<Vec<DVec2>>,
-    /// Transform (optional quantization).
+    /// 变换（可选的量化）。
     pub transform: Option<Transform>,
-    /// Bounding box [min_x, min_y, max_x, max_y].
+    /// 包围盒 [min_x, min_y, max_x, max_y]。
     pub bbox: Option<[f64; 4]>,
 }
 
-/// Quantization transform.
+/// 量化变换。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Transform {
-    /// Scale factors [sx, sy].
+    /// 缩放因子 [sx, sy]。
     pub scale: [f64; 2],
-    /// Translation offsets [tx, ty].
+    /// 平移偏移 [tx, ty]。
     pub translate: [f64; 2],
 }
 
 impl Transform {
-    /// Applies the transform to a quantized coordinate.
+    /// 将变换应用于一个量化坐标。
     pub fn apply(&self, x: f64, y: f64) -> DVec2 {
         DVec2::new(
             x * self.scale[0] + self.translate[0],
@@ -37,35 +37,35 @@ impl Transform {
     }
 }
 
-/// A named TopoJSON object.
+/// 一个命名的 TopoJSON 对象。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TopoObject {
-    /// Object name.
+    /// 对象名称。
     pub name: String,
-    /// Geometry type.
+    /// 几何类型。
     pub geometry: TopoGeometry,
 }
 
-/// TopoJSON geometry types.
+/// TopoJSON 几何类型。
 #[derive(Debug, Clone, PartialEq)]
 pub enum TopoGeometry {
-    /// A point.
+    /// 一个点。
     Point(DVec2),
-    /// Multiple points.
+    /// 多个点。
     MultiPoint(Vec<DVec2>),
-    /// A line string (arc indices).
+    /// 一条线串（弧索引）。
     LineString(Vec<usize>),
-    /// Multiple line strings.
+    /// 多条线串。
     MultiLineString(Vec<Vec<usize>>),
-    /// A polygon (rings of arc indices).
+    /// 一个多边形（弧索引的环）。
     Polygon(Vec<Vec<usize>>),
-    /// Multiple polygons.
+    /// 多个多边形。
     MultiPolygon(Vec<Vec<Vec<usize>>>),
-    /// A geometry collection.
+    /// 一个几何集合。
     GeometryCollection(Vec<TopoGeometry>),
 }
 
-/// Decodes arcs from a topology into absolute coordinates.
+/// 将拓扑中的弧解码为绝对坐标。
 pub fn decode_arc(topology: &Topology, arc_index: usize) -> Vec<DVec2> {
     if arc_index >= topology.arcs.len() {
         return Vec::new();
@@ -75,7 +75,7 @@ pub fn decode_arc(topology: &Topology, arc_index: usize) -> Vec<DVec2> {
     let mut result = Vec::with_capacity(arc.len());
 
     if let Some(transform) = &topology.transform {
-        // Delta-encoded with transform
+        // 带变换的增量编码
         let mut x = 0.0f64;
         let mut y = 0.0f64;
         for point in arc {
@@ -90,32 +90,32 @@ pub fn decode_arc(topology: &Topology, arc_index: usize) -> Vec<DVec2> {
     result
 }
 
-/// Decodes a reversed arc.
+/// 解码一条反向的弧。
 pub fn decode_arc_reversed(topology: &Topology, arc_index: usize) -> Vec<DVec2> {
     let mut arc = decode_arc(topology, arc_index);
     arc.reverse();
     arc
 }
 
-/// Resolves a line string from arc indices to coordinates.
+/// 将线串从弧索引解析为坐标。
 pub fn resolve_linestring(topology: &Topology, arc_indices: &[usize]) -> Vec<DVec2> {
     let mut coords = Vec::new();
     for (i, &arc_idx) in arc_indices.iter().enumerate() {
         let arc = if arc_idx & (1 << 31) != 0 {
-            // Reversed arc (bitwise complement)
+            // 反向的弧（按位取反）
             decode_arc_reversed(topology, !arc_idx)
         } else {
             decode_arc(topology, arc_idx)
         };
 
-        // Skip first point of subsequent arcs (shared with previous)
+        // 跳过后续弧的首个点（与上一条共享）
         let start = if i > 0 && !arc.is_empty() { 1 } else { 0 };
         coords.extend_from_slice(&arc[start..]);
     }
     coords
 }
 
-/// Resolves a polygon from ring arc indices to coordinates.
+/// 将多边形从环弧索引解析为坐标。
 pub fn resolve_polygon(topology: &Topology, rings: &[Vec<usize>]) -> Vec<Vec<DVec2>> {
     rings
         .iter()
@@ -123,7 +123,7 @@ pub fn resolve_polygon(topology: &Topology, rings: &[Vec<usize>]) -> Vec<Vec<DVe
         .collect()
 }
 
-/// Computes the area of a ring (for determining winding order).
+/// 计算一个环的面积（用于确定绕序方向）。
 pub fn ring_area(ring: &[DVec2]) -> f64 {
     if ring.len() < 3 {
         return 0.0;
@@ -138,7 +138,7 @@ pub fn ring_area(ring: &[DVec2]) -> f64 {
     area / 2.0
 }
 
-/// Returns true if the ring is clockwise (exterior ring in TopoJSON).
+/// 若环为顺时针（TopoJSON 中的外环）则返回 true。
 pub fn is_clockwise(ring: &[DVec2]) -> bool {
     ring_area(ring) < 0.0
 }
@@ -188,8 +188,8 @@ mod tests {
     fn test_resolve_linestring() {
         let topo = create_test_topology();
         let coords = resolve_linestring(&topo, &[0, 1]);
-        // Arc 0: (0,0), (1,0), (1,1)
-        // Arc 1 (skip first): (0,1), (0,0)
+        // 弧 0：(0,0), (1,0), (1,1)
+        // 弧 1（跳过首点）：(0,1), (0,0)
         assert_eq!(coords.len(), 5);
         assert_eq!(coords[0], DVec2::new(0.0, 0.0));
         assert_eq!(coords[4], DVec2::new(0.0, 0.0));
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn test_ring_area() {
-        // Counter-clockwise square
+        // 逆时针正方形
         let ring = vec![
             DVec2::new(0.0, 0.0),
             DVec2::new(1.0, 0.0),
@@ -246,12 +246,12 @@ mod tests {
             DVec2::new(0.0, 1.0),
         ];
         let area = ring_area(&ring);
-        assert!((area - 1.0).abs() < 1e-10); // Positive = CCW
+        assert!((area - 1.0).abs() < 1e-10); // 正值 = 逆时针
     }
 
     #[test]
     fn test_is_clockwise() {
-        // Clockwise square
+        // 顺时针正方形
         let ring = vec![
             DVec2::new(0.0, 0.0),
             DVec2::new(0.0, 1.0),

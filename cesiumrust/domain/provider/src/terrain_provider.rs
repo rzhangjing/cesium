@@ -1,47 +1,47 @@
-//! Terrain providers for elevation data services.
+//! 面向高程数据服务的地形提供者。
 //!
-//! Maps to CesiumJS terrain providers:
-//! - `CesiumTerrainProvider` (quantized-mesh)
-//! - `EllipsoidTerrainProvider` (flat)
+//! 映射到 CesiumJS 地形提供者：
+//! - `CesiumTerrainProvider`（quantized-mesh）
+//! - `EllipsoidTerrainProvider`（平坦）
 //! - `VRTheWorldTerrainProvider`
-//! - Custom heightmap providers
+//! - 自定义高程图提供者
 
-/// Terrain provider availability strategy.
+/// 地形提供者的可用性策略。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum AvailabilityStrategy {
-    /// All tiles are available.
+    /// 所有瓦片均可用。
     #[default]
     All,
-    /// Availability is determined by a tiling scheme.
+    /// 可用性由裁剪方案决定。
     TilingScheme {
-        /// Minimum level.
+        /// 最小层级。
         minimum_level: u32,
-        /// Maximum level.
+        /// 最大层级。
         maximum_level: u32,
     },
-    /// Availability from a layer.json file.
+    /// 来自 layer.json 文件的可用性。
     LayerJson,
 }
 
-/// A Cesium terrain provider (quantized-mesh format).
+/// 一个 Cesium 地形提供者（quantized-mesh 格式）。
 ///
-/// Maps to CesiumJS `CesiumTerrainProvider`
+/// 映射到 CesiumJS `CesiumTerrainProvider`
 #[derive(Debug, Clone)]
 pub struct CesiumTerrainProvider {
-    /// Base URL of the terrain service.
+    /// 地形服务的基础 URL。
     pub url: String,
-    /// Whether to request vertex normals.
+    /// 是否请求顶点法线。
     pub request_vertex_normals: bool,
-    /// Whether to request water mask.
+    /// 是否请求水掩膜。
     pub request_water_mask: bool,
-    /// Availability strategy.
+    /// 可用性策略。
     pub availability: AvailabilityStrategy,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
 }
 
 impl CesiumTerrainProvider {
-    /// Creates a new Cesium terrain provider.
+    /// 创建一个新的 Cesium 地形提供者。
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -52,26 +52,26 @@ impl CesiumTerrainProvider {
         }
     }
 
-    /// Enables vertex normals for lighting.
+    /// 为光照启用顶点法线。
     pub fn with_vertex_normals(mut self) -> Self {
         self.request_vertex_normals = true;
         self
     }
 
-    /// Enables water mask.
+    /// 启用水掩膜。
     pub fn with_water_mask(mut self) -> Self {
         self.request_water_mask = true;
         self
     }
 
-    /// Generates the URL for a terrain tile.
+    /// 生成某个地形瓦片的 URL。
     ///
-    /// Format: `{url}/{level}/{x}/{y}.terrain`
+    /// 格式：`{url}/{level}/{x}/{y}.terrain`
     pub fn get_tile_url(&self, level: u32, x: u32, y: u32) -> String {
         let base = self.url.trim_end_matches('/');
         let mut url = format!("{}/{}/{}/{}.terrain", base, level, x, y);
 
-        // Add query parameters for extensions
+        // 为扩展添加查询参数
         let mut params = Vec::new();
         if self.request_vertex_normals {
             params.push("extensions=octvertexnormals");
@@ -88,13 +88,13 @@ impl CesiumTerrainProvider {
         url
     }
 
-    /// Generates the URL for the layer.json metadata file.
+    /// 生成 layer.json 元数据文件的 URL。
     pub fn get_layer_json_url(&self) -> String {
         let base = self.url.trim_end_matches('/');
         format!("{}/layer.json", base)
     }
 
-    /// Checks if a tile is available at the given level.
+    /// 检查在给定层级下某个瓦片是否可用。
     pub fn is_available(&self, level: u32) -> bool {
         match &self.availability {
             AvailabilityStrategy::All => true,
@@ -102,52 +102,52 @@ impl CesiumTerrainProvider {
                 minimum_level,
                 maximum_level,
             } => level >= *minimum_level && level <= *maximum_level,
-            AvailabilityStrategy::LayerJson => true, // Would need async check
+            AvailabilityStrategy::LayerJson => true, // 需要异步检查
         }
     }
 }
 
-/// An ellipsoid terrain provider (flat, no elevation).
+/// 一个椭球地形提供者（平坦，无高程）。
 ///
-/// Maps to CesiumJS `EllipsoidTerrainProvider`
+/// 映射到 CesiumJS `EllipsoidTerrainProvider`
 #[derive(Debug, Clone, Default)]
 pub struct EllipsoidTerrainProvider;
 
 impl EllipsoidTerrainProvider {
-    /// Creates a new ellipsoid terrain provider.
+    /// 创建一个新的椭球地形提供者。
     pub fn new() -> Self {
         Self
     }
 
-    /// Returns height at any position (always 0).
+    /// 返回任意位置的高度（始终为 0）。
     pub fn get_height(&self, _longitude: f64, _latitude: f64) -> f64 {
         0.0
     }
 }
 
-/// A heightmap terrain provider.
+/// 一个高程图地形提供者。
 ///
-/// Maps to CesiumJS `HeightmapTerrainProvider`
+/// 映射到 CesiumJS `HeightmapTerrainProvider`
 #[derive(Debug, Clone)]
 pub struct HeightmapTerrainProvider {
-    /// Base URL of the heightmap service.
+    /// 高程图服务的基础 URL。
     pub url: String,
-    /// Width of each heightmap tile in samples.
+    /// 每个高程图瓦片的宽度（以采样计）。
     pub width: u32,
-    /// Height of each heightmap tile in samples.
+    /// 每个高程图瓦片的高度（以采样计）。
     pub height: u32,
-    /// File extension.
+    /// 文件扩展名。
     pub file_extension: String,
-    /// Minimum zoom level.
+    /// 最小缩放层级。
     pub minimum_level: u32,
-    /// Maximum zoom level.
+    /// 最大缩放层级。
     pub maximum_level: u32,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
 }
 
 impl HeightmapTerrainProvider {
-    /// Creates a new heightmap terrain provider.
+    /// 创建一个新的高程图地形提供者。
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -160,14 +160,14 @@ impl HeightmapTerrainProvider {
         }
     }
 
-    /// Sets the heightmap dimensions.
+    /// 设置高程图的尺寸。
     pub fn with_dimensions(mut self, width: u32, height: u32) -> Self {
         self.width = width;
         self.height = height;
         self
     }
 
-    /// Generates the URL for a heightmap tile.
+    /// 生成某个高程图瓦片的 URL。
     pub fn get_tile_url(&self, level: u32, x: u32, y: u32) -> String {
         let base = self.url.trim_end_matches('/');
         format!(
@@ -176,25 +176,25 @@ impl HeightmapTerrainProvider {
         )
     }
 
-    /// Checks if a tile is available at the given level.
+    /// 检查在给定层级下某个瓦片是否可用。
     pub fn is_available(&self, level: u32) -> bool {
         level >= self.minimum_level && level <= self.maximum_level
     }
 }
 
-/// VRTheWorld terrain provider.
+/// VRTheWorld 地形提供者。
 ///
-/// Maps to CesiumJS `VRTheWorldTerrainProvider`
+/// 映射到 CesiumJS `VRTheWorldTerrainProvider`
 #[derive(Debug, Clone)]
 pub struct VrTheWorldTerrainProvider {
-    /// Base URL of the VRTheWorld service.
+    /// VRTheWorld 服务的基础 URL。
     pub url: String,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
 }
 
 impl VrTheWorldTerrainProvider {
-    /// Creates a new VRTheWorld terrain provider.
+    /// 创建一个新的 VRTheWorld 地形提供者。
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -202,36 +202,36 @@ impl VrTheWorldTerrainProvider {
         }
     }
 
-    /// Generates the URL for a terrain tile.
+    /// 生成某个地形瓦片的 URL。
     pub fn get_tile_url(&self, level: u32, x: u32, y: u32) -> String {
         let base = self.url.trim_end_matches('/');
         format!("{}/{}/{}/{}.tif", base, level, x, y)
     }
 }
 
-/// Terrain provider configuration for layer.json parsing.
+/// 用于 layer.json 解析的地形提供者配置。
 #[derive(Debug, Clone, Default)]
 pub struct TerrainLayerConfig {
-    /// Tile format ("quantized-mesh-1.0" or "heightmap-1.0").
+    /// 瓦片格式（"quantized-mesh-1.0" 或 "heightmap-1.0"）。
     pub format: String,
-    /// Available levels.
+    /// 可用的最小层级。
     pub min_level: u32,
-    /// Maximum level.
+    /// 最大层级。
     pub max_level: u32,
-    /// Whether vertex normals are available.
+    /// 是否有可用的顶点法线。
     pub has_vertex_normals: bool,
-    /// Whether water mask is available.
+    /// 是否有可用的水掩膜。
     pub has_water_mask: bool,
-    /// Projection ("EPSG:4326" or "EPSG:3857").
+    /// 投影（"EPSG:4326" 或 "EPSG:3857"）。
     pub projection: String,
-    /// Tiling scheme bounds [west, south, east, north] in degrees.
+    /// 裁剪方案边界 [west, south, east, north]，以度为单位。
     pub bounds: Option<[f64; 4]>,
 }
 
 impl TerrainLayerConfig {
-    /// Parses a layer.json content.
+    /// 解析 layer.json 内容。
     pub fn from_json(json: &str) -> Result<Self, String> {
-        // Simple JSON parsing for layer.json
+        // 针对 layer.json 的简单 JSON 解析
         let mut config = Self::default();
 
         if let Some(format) = extract_json_string(json, "format") {
@@ -254,7 +254,7 @@ impl TerrainLayerConfig {
     }
 }
 
-/// Extracts a string value from JSON by key.
+/// 按键从 JSON 中提取一个字符串值。
 fn extract_json_string(json: &str, key: &str) -> Option<String> {
     let pattern = format!("\"{}\"", key);
     let start = json.find(&pattern)? + pattern.len();
@@ -264,14 +264,14 @@ fn extract_json_string(json: &str, key: &str) -> Option<String> {
     Some(json[quote_start..quote_end].to_string())
 }
 
-/// Extracts a number value from JSON by key.
+/// 按键从 JSON 中提取一个数值。
 fn extract_json_number(json: &str, key: &str) -> Option<f64> {
     let pattern = format!("\"{}\"", key);
     let start = json.find(&pattern)? + pattern.len();
     let colon = json[start..].find(':')? + start;
     let value_start = colon + 1;
 
-    // Skip whitespace and find the number
+    // 跳过空白并找到数字
     let remaining = json[value_start..].trim_start();
     let end = remaining
         .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+' && c != 'e' && c != 'E')
@@ -280,40 +280,40 @@ fn extract_json_number(json: &str, key: &str) -> Option<f64> {
     remaining[..end].parse().ok()
 }
 
-/// A unified terrain provider with tiling scheme integration.
+/// 一个集成了裁剪方案的统一地形提供者。
 ///
-/// Maps to CesiumJS `TerrainProvider` interface
+/// 映射到 CesiumJS `TerrainProvider` 接口
 #[derive(Debug, Clone)]
 pub enum TerrainProviderKind {
-    /// Cesium terrain (quantized-mesh).
+    /// Cesium 地形（quantized-mesh）。
     Cesium(CesiumTerrainProvider),
-    /// Flat ellipsoid terrain.
+    /// 平坦椭球地形。
     Ellipsoid(EllipsoidTerrainProvider),
-    /// Heightmap terrain.
+    /// 高程图地形。
     Heightmap(HeightmapTerrainProvider),
-    /// VRTheWorld terrain.
+    /// VRTheWorld 地形。
     VrTheWorld(VrTheWorldTerrainProvider),
 }
 
-/// Terrain provider descriptor with tiling scheme and availability.
+/// 带裁剪方案与可用性的地形提供者描述符。
 ///
-/// Maps to CesiumJS `TerrainProvider` base interface
+/// 映射到 CesiumJS `TerrainProvider` 基础接口
 #[derive(Debug, Clone)]
 pub struct TerrainProviderDescriptor {
-    /// The provider kind.
+    /// 提供者类型。
     pub kind: TerrainProviderKind,
-    /// The tiling scheme used by this provider.
+    /// 该提供者使用的裁剪方案。
     pub tiling_scheme: crate::tiling_scheme::TilingScheme,
-    /// Whether the provider has vertex normals.
+    /// 该提供者是否有顶点法线。
     pub has_vertex_normals: bool,
-    /// Whether the provider has a water mask.
+    /// 该提供者是否有水掩膜。
     pub has_water_mask: bool,
-    /// Maximum available level.
+    /// 最大可用层级。
     pub maximum_level: u32,
 }
 
 impl TerrainProviderDescriptor {
-    /// Creates a descriptor for a Cesium terrain provider.
+    /// 为 Cesium 地形提供者创建描述符。
     pub fn cesium(provider: CesiumTerrainProvider, max_level: u32) -> Self {
         Self {
             has_vertex_normals: provider.request_vertex_normals,
@@ -324,7 +324,7 @@ impl TerrainProviderDescriptor {
         }
     }
 
-    /// Creates a descriptor for an ellipsoid terrain provider.
+    /// 为椭球地形提供者创建描述符。
     pub fn ellipsoid() -> Self {
         Self {
             kind: TerrainProviderKind::Ellipsoid(EllipsoidTerrainProvider),
@@ -335,7 +335,7 @@ impl TerrainProviderDescriptor {
         }
     }
 
-    /// Creates a descriptor for a heightmap terrain provider.
+    /// 为高程图地形提供者创建描述符。
     pub fn heightmap(provider: HeightmapTerrainProvider) -> Self {
         let max_level = provider.maximum_level;
         Self {
@@ -347,7 +347,7 @@ impl TerrainProviderDescriptor {
         }
     }
 
-    /// Gets the tile URL for a given tile coordinate.
+    /// 获取给定瓦片坐标的瓦片 URL。
     pub fn get_tile_url(&self, level: u32, x: u32, y: u32) -> Option<String> {
         match &self.kind {
             TerrainProviderKind::Cesium(p) => Some(p.get_tile_url(level, x, y)),
@@ -357,49 +357,49 @@ impl TerrainProviderDescriptor {
         }
     }
 
-    /// Checks if a tile is available at the given level.
+    /// 检查在给定层级下某个瓦片是否可用。
     pub fn is_available(&self, level: u32) -> bool {
         level <= self.maximum_level
     }
 }
 
-/// Height sampling result.
+/// 高程采样结果。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SampledHeight {
-    /// Longitude in radians.
+    /// 经度（弧度）。
     pub longitude: f64,
-    /// Latitude in radians.
+    /// 纬度（弧度）。
     pub latitude: f64,
-    /// Sampled height in meters (None if no data).
+    /// 采样得到的高度（米，若无数据则为 None）。
     pub height: Option<f64>,
 }
 
-/// Parameters for height sampling from a heightmap grid.
+/// 从高程图网格采样高程的参数。
 #[derive(Debug, Clone)]
 pub struct HeightmapSampleParams<'a> {
-    /// Height data grid (row-major, height x width).
+    /// 高程数据网格（行优先，height x width）。
     pub heightmap: &'a [f64],
-    /// Number of columns in the heightmap.
+    /// 高程图的列数。
     pub grid_width: usize,
-    /// Number of rows in the heightmap.
+    /// 高程图的行数。
     pub grid_height: usize,
-    /// West edge of the tile (radians).
+    /// 瓦片的西边界（弧度）。
     pub tile_west: f64,
-    /// South edge of the tile (radians).
+    /// 瓦片的南边界（弧度）。
     pub tile_south: f64,
-    /// East edge of the tile (radians).
+    /// 瓦片的东边界（弧度）。
     pub tile_east: f64,
-    /// North edge of the tile (radians).
+    /// 瓦片的北边界（弧度）。
     pub tile_north: f64,
-    /// Minimum height value in the grid.
+    /// 网格中的最小高程值。
     pub min_height: f64,
-    /// Maximum height value in the grid.
+    /// 网格中的最大高程值。
     pub max_height: f64,
 }
 
-/// Samples terrain height at a position using bilinear interpolation.
+/// 使用双线性插值在某个位置采样地形高度。
 ///
-/// Maps to CesiumJS `sampleTerrain` / `sampleTerrainMostDetailed`
+/// 映射到 CesiumJS `sampleTerrain` / `sampleTerrainMostDetailed`
 pub fn sample_height_bilinear(
     params: &HeightmapSampleParams<'_>,
     longitude: f64,
@@ -413,14 +413,14 @@ pub fn sample_height_bilinear(
         return None;
     }
 
-    // Check bounds
+    // 检查边界
     if longitude < params.tile_west || longitude > params.tile_east
         || latitude < params.tile_south || latitude > params.tile_north
     {
         return None;
     }
 
-    // Compute fractional grid position
+    // 计算小数形式的网格位置
     let fx = (longitude - params.tile_west) / (params.tile_east - params.tile_west)
         * (grid_width - 1) as f64;
     let fy = (params.tile_north - latitude) / (params.tile_north - params.tile_south)
@@ -434,7 +434,7 @@ pub fn sample_height_bilinear(
     let tx = fx - x0 as f64;
     let ty = fy - y0 as f64;
 
-    // Bilinear interpolation
+    // 双线性插值
     let h00 = heightmap[y0 * grid_width + x0];
     let h10 = heightmap[y0 * grid_width + x1];
     let h01 = heightmap[y1 * grid_width + x0];
@@ -445,32 +445,32 @@ pub fn sample_height_bilinear(
         + h01 * (1.0 - tx) * ty
         + h11 * tx * ty;
 
-    // Clamp to valid range
+    // 钳制到有效范围
     Some(h.clamp(params.min_height, params.max_height))
 }
 
-/// Parameters for height sampling from quantized mesh data.
+/// 从 quantized mesh 数据采样高程的参数。
 #[derive(Debug, Clone)]
 pub struct QuantizedSampleParams<'a> {
-    /// Quantized vertex data [u0..un, v0..vn, h0..hn].
+    /// 量化顶点数据 [u0..un, v0..vn, h0..hn]。
     pub quantized_vertices: &'a [u16],
-    /// Number of vertices.
+    /// 顶点数量。
     pub vertex_count: usize,
-    /// West edge (radians).
+    /// 西边界（弧度）。
     pub tile_west: f64,
-    /// South edge (radians).
+    /// 南边界（弧度）。
     pub tile_south: f64,
-    /// East edge (radians).
+    /// 东边界（弧度）。
     pub tile_east: f64,
-    /// North edge (radians).
+    /// 北边界（弧度）。
     pub tile_north: f64,
-    /// Minimum height.
+    /// 最小高程。
     pub min_height: f64,
-    /// Maximum height.
+    /// 最大高程。
     pub max_height: f64,
 }
 
-/// Samples terrain height from quantized mesh data.
+/// 从 quantized mesh 数据采样地形高度。
 pub fn sample_height_quantized(
     params: &QuantizedSampleParams<'_>,
     longitude: f64,
@@ -483,7 +483,7 @@ pub fn sample_height_quantized(
         return None;
     }
 
-    // Find the nearest vertex
+    // 找到最近的顶点
     let u_query = ((longitude - params.tile_west) / (params.tile_east - params.tile_west)
         * 32767.0) as u16;
     let v_query = ((latitude - params.tile_south) / (params.tile_north - params.tile_south)
@@ -507,7 +507,7 @@ pub fn sample_height_quantized(
         }
     }
 
-    // Dequantize height
+    // 反量化高程
     let t = best_height as f64 / 32767.0;
     Some(params.min_height + t * (params.max_height - params.min_height))
 }
@@ -516,27 +516,27 @@ pub fn sample_height_quantized(
 // ArcGISTerrainProvider
 // ============================================================================
 
-/// ArcGIS terrain provider (ImageServer or ElevationService).
+/// ArcGIS 地形提供者（ImageServer 或 ElevationService）。
 ///
-/// Maps to CesiumJS `ArcGISTerrainProvider` (not yet in CesiumJS, but common pattern).
+/// 映射到 CesiumJS `ArcGISTerrainProvider`（尚未见于 CesiumJS，但为常见模式）。
 #[derive(Debug, Clone)]
 pub struct ArcGisTerrainProvider {
-    /// Base URL of the ArcGIS terrain service.
+    /// ArcGIS 地形服务的基础 URL。
     pub url: String,
-    /// Whether to use HTTPS.
+    /// 是否使用 HTTPS。
     pub use_https: bool,
-    /// Tile width in pixels.
+    /// 瓦片宽度（像素）。
     pub tile_width: u32,
-    /// Tile height in pixels.
+    /// 瓦片高度（像素）。
     pub tile_height: u32,
-    /// Maximum zoom level.
+    /// 最大缩放层级。
     pub maximum_level: u32,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
 }
 
 impl ArcGisTerrainProvider {
-    /// Creates a new ArcGIS terrain provider.
+    /// 创建一个新的 ArcGIS 地形提供者。
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -548,13 +548,13 @@ impl ArcGisTerrainProvider {
         }
     }
 
-    /// Sets the credit.
+    /// 设置署名。
     pub fn with_credit(mut self, credit: impl Into<String>) -> Self {
         self.credit = Some(credit.into());
         self
     }
 
-    /// Gets the tile URL for a given coordinate.
+    /// 获取给定坐标的瓦片 URL。
     pub fn get_tile_url(&self, level: u32, x: u32, y: u32) -> String {
         format!(
             "{}/tile/{}/{}/{}",
@@ -566,27 +566,27 @@ impl ArcGisTerrainProvider {
     }
 }
 
-/// Google Earth Enterprise terrain provider.
+/// Google Earth Enterprise 地形提供者。
 ///
-/// Maps to CesiumJS `Scene/GoogleEarthEnterpriseTerrainProvider.js`
+/// 映射到 CesiumJS `Scene/GoogleEarthEnterpriseTerrainProvider.js`
 #[derive(Debug, Clone, PartialEq)]
 pub struct GoogleEarthEnterpriseTerrainProvider {
-    /// Base URL of the Google Earth Enterprise server.
+    /// Google Earth Enterprise 服务器的基础 URL。
     pub url: String,
-    /// The path to the terrain database.
+    /// 地形数据库的路径。
     pub path: String,
-    /// Tile width.
+    /// 瓦片宽度。
     pub tile_width: u32,
-    /// Tile height.
+    /// 瓦片高度。
     pub tile_height: u32,
-    /// Maximum zoom level.
+    /// 最大缩放层级。
     pub maximum_level: u32,
-    /// Credit/attribution.
+    /// 署名/来源归属。
     pub credit: Option<String>,
 }
 
 impl GoogleEarthEnterpriseTerrainProvider {
-    /// Create a new Google Earth Enterprise terrain provider.
+    /// 创建一个新的 Google Earth Enterprise 地形提供者。
     pub fn new(url: &str, path: &str) -> Self {
         Self {
             url: url.trim_end_matches('/').to_string(),
@@ -598,13 +598,13 @@ impl GoogleEarthEnterpriseTerrainProvider {
         }
     }
 
-    /// Set the credit.
+    /// 设置署名。
     pub fn with_credit(mut self, credit: &str) -> Self {
         self.credit = Some(credit.to_string());
         self
     }
 
-    /// Get the tile URL for a given tile coordinate.
+    /// 获取给定瓦片坐标的瓦片 URL。
     pub fn get_tile_url(&self, level: u32, x: u32, y: u32) -> String {
         format!(
             "{}/query?request=TerrainMaps&path={}&version=1&x={}&y={}&z={}",
@@ -612,7 +612,7 @@ impl GoogleEarthEnterpriseTerrainProvider {
         )
     }
 
-    /// Get the metadata URL.
+    /// 获取元数据 URL。
     pub fn get_metadata_url(&self) -> String {
         format!("{}/query?request=DatabaseMetadata&path={}", self.url, self.path)
     }
@@ -699,7 +699,7 @@ mod tests {
     fn test_cesium_terrain_availability() {
         let provider = CesiumTerrainProvider::new("https://example.com");
         assert!(provider.is_available(0));
-        assert!(provider.is_available(100)); // All available by default
+        assert!(provider.is_available(100)); // 默认全部可用
     }
 
     #[test]
@@ -739,7 +739,7 @@ mod tests {
 
     #[test]
     fn test_sample_height_bilinear_flat() {
-        // 3x3 flat heightmap at 100m
+        // 3x3 平坦高程图，位于 100m
         let heightmap = vec![100.0; 9];
         let params = HeightmapSampleParams {
             heightmap: &heightmap,
@@ -758,7 +758,7 @@ mod tests {
 
     #[test]
     fn test_sample_height_bilinear_gradient() {
-        // 2x2 heightmap: 0, 100, 0, 100 (west-east gradient)
+        // 2x2 高程图：0, 100, 0, 100（西-东梯度）
         let heightmap = vec![0.0, 100.0, 0.0, 100.0];
         let params = HeightmapSampleParams {
             heightmap: &heightmap,
@@ -789,13 +789,13 @@ mod tests {
             min_height: 0.0,
             max_height: 200.0,
         };
-        let h = sample_height_bilinear(&params, 2.0, 0.5); // Outside east
+        let h = sample_height_bilinear(&params, 2.0, 0.5); // 东侧范围外
         assert!(h.is_none());
     }
 
     #[test]
     fn test_sample_height_quantized() {
-        // 4 vertices: u=[0, 32767, 0, 32767], v=[0, 0, 32767, 32767], h=[0, 16383, 32767, 16383]
+        // 4 个顶点：u=[0, 32767, 0, 32767], v=[0, 0, 32767, 32767], h=[0, 16383, 32767, 16383]
         let vertices: Vec<u16> = vec![
             0, 32767, 0, 32767,       // u
             0, 0, 32767, 32767,       // v
@@ -812,7 +812,7 @@ mod tests {
             max_height: 1000.0,
         };
 
-        // Query at SE corner (lon=1.0, lat=0.0) → u=32767, v=0 → nearest vertex 1 (h=16383)
+        // 在东南角查询（lon=1.0, lat=0.0）→ u=32767, v=0 → 最近顶点 1（h=16383）
         let h = sample_height_quantized(&params, 1.0, 0.0);
         let height = h.unwrap();
         // h=16383/32767 * 1000 ≈ 500
@@ -837,7 +837,7 @@ mod tests {
             max_height: 1000.0,
         };
 
-        // Query at SW corner (u=0, v=0) - nearest is vertex 0 (h=0)
+        // 在西南角查询（u=0, v=0）- 最近的是顶点 0（h=0）
         let h = sample_height_quantized(&params, 0.0, 0.0);
         assert!(h.unwrap().abs() < 1.0);
     }
