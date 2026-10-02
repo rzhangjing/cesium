@@ -1,10 +1,10 @@
 //! 内容解码器扩展规格测试（i3dm、pnts、cmpt、detect）。
 //!
-//! 对应 CesiumJS：
-//! - Scene/I3dmParserSpec.js
-//! - Scene/PntsParserSpec.js
-//! - Scene/Composite3DTileContentSpec.js
-//! - Core/getMagicSpec.js
+//! 参考 CesiumJS：
+//! - Scene/I3dmParserSpec
+//! - Scene/PntsParserSpec
+//! - Scene/Composite3DTileContentSpec
+//! - Core/getMagicSpec
 //!
 //! A 类测试：二进制解析、内容类型检测、错误处理。
 

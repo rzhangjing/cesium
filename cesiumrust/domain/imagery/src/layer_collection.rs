@@ -1,5 +1,7 @@
 //! 影像图层集合。
-//! 映射到 CesiumJS `Scene/ImageryLayerCollection.js`
+//!
+//! 按叠放次序管理多个 [`ImageryLayer`]，提供增删、调序、查找与可见性控制，
+//! 是影像叠加的中枢容器。
 
 use crate::imagery_layer::ImageryLayer;
 

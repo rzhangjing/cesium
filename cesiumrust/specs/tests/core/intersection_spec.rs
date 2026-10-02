@@ -1,4 +1,4 @@
-//! Core/IntersectionTestsSpec.js、RaySpec.js、PlaneSpec.js、Intersections2DSpec.js
+//! Core/IntersectionTestsSpec、RaySpec、PlaneSpec、Intersections2DSpec
 //! → Rust 集成测试
 
 use cesium_geospatial::bounding::{AxisAlignedBoundingBox, BoundingSphere, OrientedBoundingBox};

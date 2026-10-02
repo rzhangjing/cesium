@@ -10,8 +10,8 @@
 //!
 //! M5-D 新增三个 Water 海况条目（calm / medium / rough），由域
 //! [`cesium_shadow::OceanSurface`]（Gerstner 波叠加）驱动，带
-//! 程序化生成的法线 / 高光贴图，因此忠实移植的
-//! `Water.glsl`（case 17u）可被捕获为 `specs/baselines/v2_water/*`。
+//! 程序化生成的法线 / 高光贴图，因此复刻的
+//! `Water` 程序化图案（case 17u）可被捕获为 `specs/baselines/v2_water/*`。
 //!
 //! 对应 P1.3 验收标准 "棋盘/条纹/网格材质贴球"（checkerboard /
 //! stripe / grid 材质贴球），外加其他内置图案以及
@@ -36,6 +36,10 @@ use std::collections::BTreeMap;
 pub struct MaterialShowcasePlugin;
 
 impl Plugin for MaterialShowcasePlugin {
+    /// 插件装配入口：挂载材质插件与内置材质资源，启动时生成展示场景。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用。
     fn build(&self, app: &mut App) {
         // `CesiumMaterialPlugin` 打包了 `FabricMaterialPlugin` +
         // `MaterialAnimationTime` 资源 + 每帧 Water 动画系统

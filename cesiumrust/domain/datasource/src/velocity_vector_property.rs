@@ -1,6 +1,6 @@
 //! VelocityVectorProperty - 从位置属性导出速度方向。
 //!
-//! 映射到 CesiumJS `DataSources/VelocityVectorProperty.js`
+//! 它用有限差分对位置属性微分，得到当前时刻的速度向量，可选归一化。
 
 use crate::property_system::property::DynProperty;
 use crate::property_system::value::PropertyValue;
@@ -11,7 +11,7 @@ use std::sync::Arc;
 /// 一个通过有限差分从位置属性计算速度向量（可选归一化）的
 /// 属性。
 ///
-/// 映射到 CesiumJS `DataSources/VelocityVectorProperty.js`
+/// 若未绑定位置属性则无值；归一化时只保留方向单位向量。
 #[derive(Clone)]
 pub struct VelocityVectorProperty {
     /// 用于导出速度的位置属性。
@@ -116,12 +116,14 @@ impl VelocityVectorProperty {
 }
 
 impl Default for VelocityVectorProperty {
+    /// 构造一个未绑定位置属性的默认速度向量属性。
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl std::fmt::Debug for VelocityVectorProperty {
+    /// 输出是否归一化与是否已绑定位置，避免打印不可展示的闭包。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VelocityVectorProperty")
             .field("normalize", &self.normalize)

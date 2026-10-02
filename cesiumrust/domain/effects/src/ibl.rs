@@ -1,6 +1,6 @@
 //! 基于图像的照明（IBL）。
 //!
-//! 映射到 CesiumJS `Scene/ImageBasedLighting.js`：
+//! 包含：
 //! - 用于漫反射 IBL 的球谐系数
 //! - 镜面环境贴图
 //! - IBL factor 缩放
@@ -43,6 +43,7 @@ pub struct ImageBasedLighting {
 }
 
 impl Default for ImageBasedLighting {
+    /// 默认 IBL 状态：factor 为 `[1.0, 1.0]`，无球谐系数与环境贴图。
     fn default() -> Self {
         Self {
             image_based_lighting_factor: [1.0, 1.0],
@@ -209,15 +210,15 @@ pub fn default_spherical_harmonics() -> [[f64; 3]; SH_COEFFICIENT_COUNT] {
 // 忠于 CesiumJS 的 IBL CPU 参考（M6.5）
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// 下面这些函数是对权威 CesiumJS PBR/IBL shader 的 1:1 f64 移植，逐条入口
+// 下面这些函数是对权威 PBR/IBL shader 的 1:1 f64 CPU 移植，逐条入口
 // 镜像 `adapters/bevy-render/src/shaders/ibl.wgsl`，以便 CPU 参考与
 // GPU shader 能相互对照验证：
-//   * `spherical_harmonics`  ← Shaders/Builtin/Functions/sphericalHarmonics.glsl
+//   * `spherical_harmonics`  ← 球谐辐照度求值
 //   * `ggx_ndf` / `smith_visibility_ggx` / `fresnel_schlick2`
-//                            ← Shaders/Builtin/Functions/pbrLighting.glsl
-//   * `prefilter_specular`   ← Shaders/ConvolveSpecularMapFS.glsl
-//   * `integrate_brdf`       ← Shaders/BrdfLutGeneratorFS.glsl
-//   * `texture_ibl`          ← Shaders/Model/ImageBasedLightingStageFS.glsl
+//                            ← PBR 光照核心项
+//   * `prefilter_specular`   ← 镜面环境预过滤
+//   * `integrate_brdf`       ← BRDF LUT 生成
+//   * `texture_ibl`          ← 完整 IBL 合成
 //
 // SH 约定（与上文遗留的 `evaluate_sh` 有意分歧）：
 // CesiumJS 的 `czm_sphericalHarmonics` 消费预缩放（PRE-SCALED）系数——cmgen
@@ -229,9 +230,9 @@ pub fn default_spherical_harmonics() -> [[f64; 3]; SH_COEFFICIENT_COUNT] {
 // 因为 `evaluate_sh` 支撑着既有的 `compute_diffuse_ibl` API
 // （domain 的 f64 语义已冻结）。
 
-/// CesiumJS `czm_sphericalHarmonics` 的 9 个多项式基项 `P_i(x,y,z)`，
-/// 按上游系数顺序 `[L00, L1_1, L10, L11, L2_2, L2_1, L20, L21, L22]`。
-/// 逐字移植自 `sphericalHarmonics.glsl`（不含归一化常量）。
+/// 9 个球谐多项式基项 `P_i(x,y,z)`，
+/// 按系数顺序 `[L00, L1_1, L10, L11, L2_2, L2_1, L20, L21, L22]`。
+/// 与参考实现逐字一致（不含归一化常量）。
 pub fn sh_polynomial_basis(direction: DVec3) -> [f64; SH_COEFFICIENT_COUNT] {
     let x = direction.x;
     let y = direction.y;
@@ -347,7 +348,7 @@ where
     coeffs
 }
 
-/// Van der Corput radical inverse，基 2（移植自 `vdcRadicalInverse`）。通过
+/// Van der Corput radical inverse，基 2。通过
 /// 位运算做精确的整数减半——无浮点 `mod`，因此 WGSL 孪生体完全绕开了
 /// `mod` 保留字隐患。
 pub fn radical_inverse_vdc(bits_in: u32) -> f64 {
@@ -365,7 +366,7 @@ pub fn radical_inverse_vdc(bits_in: u32) -> f64 {
     value
 }
 
-/// Hammersley 2D 低差异点（移植自 `hammersley2D`）。
+/// Hammersley 2D 低差异点。
 pub fn hammersley2d(i: usize, n: usize) -> [f64; 2] {
     [i as f64 / n.max(1) as f64, radical_inverse_vdc(i as u32)]
 }
@@ -387,14 +388,14 @@ pub fn direction_from_uv(uv: [f64; 2]) -> DVec3 {
     DVec3::new(cos_lat * lon.cos(), cos_lat * lon.sin(), lat.sin()).normalize_or_zero()
 }
 
-/// GGX / Trowbridge-Reitz 法线分布（移植自 pbrLighting.glsl 中的 `GGX`）。
+/// GGX / Trowbridge-Reitz 法线分布。
 pub fn ggx_ndf(alpha_roughness: f64, ndoth: f64) -> f64 {
     let a2 = alpha_roughness * alpha_roughness;
     let f = (ndoth * a2 - ndoth) * ndoth + 1.0;
     a2 / (std::f64::consts::PI * f * f)
 }
 
-/// Smith 联合 GGX 可见性 `= G/(4·NdotL·NdotV)`（移植自 `smithVisibilityGGX`）。
+/// Smith 联合 GGX 可见性 `= G/(4·NdotL·NdotV)`。
 pub fn smith_visibility_ggx(alpha_roughness: f64, ndotl: f64, ndotv: f64) -> f64 {
     let a2 = alpha_roughness * alpha_roughness;
     let ggxv = ndotl * (ndotv * ndotv * (1.0 - a2) + a2).max(0.0).sqrt();
@@ -407,7 +408,7 @@ pub fn smith_visibility_ggx(alpha_roughness: f64, ndotl: f64, ndotv: f64) -> f64
     }
 }
 
-/// 依赖 roughness 的 Schlick Fresnel（移植自 `fresnelSchlick2`）。
+/// 依赖 roughness 的 Schlick Fresnel。
 /// `versine^5` 展开为 `vs2*vs2*versine` 并保持非融合（UNFUSED）——以匹配
 /// WGSL 孪生体的两次舍入规则（IBL 数值上不做 FMA 收缩）。
 pub fn fresnel_schlick2(f0: [f64; 3], f90: [f64; 3], vdoth: f64) -> [f64; 3] {
@@ -421,8 +422,8 @@ pub fn fresnel_schlick2(f0: [f64; 3], f90: [f64; 3], vdoth: f64) -> [f64; 3] {
     ]
 }
 
-/// GGX 重要性采样：由二维准随机 `xi` 得到世界空间的半角向量 `H`
-/// （移植自 `importanceSampleGGX`）。注意两个上游调用点传入的参数不同：
+/// GGX 重要性采样：由二维准随机 `xi` 得到世界空间的半角向量 `H`。
+/// 注意两个调用点传入的参数不同：
 /// `ConvolveSpecularMapFS` 传入感知 `roughness`，而 `BrdfLutGeneratorFS`
 /// 传入 `alphaRoughness = roughness²`。本函数内部会对 `alpha_roughness`
 /// 参数取平方，与 GLSL 完全一致，因此调用方必须逐字复现其上游调用点。
@@ -443,8 +444,7 @@ pub fn importance_sample_ggx(xi: [f64; 2], alpha_roughness: f64, n: DVec3) -> DV
     tangent_x * h.x + tangent_y * h.y + n * h.z
 }
 
-/// `dir` / `roughness` 的预过滤镜面 radiance（移植自
-/// `ConvolveSpecularMapFS.glsl`）：对环境做 GGX 重要性采样，按 `NdotL`
+/// `dir` / `roughness` 的预过滤镜面 radiance：对环境做 GGX 重要性采样，按 `NdotL`
 /// 为每个采样点加权，再由累加权重归一化。`radiance(dir)` 在给定方向上
 /// 采样源环境立方贴图。
 pub fn prefilter_specular<F>(radiance: F, roughness: f64, dir: DVec3, samples: usize) -> [f64; 3]
@@ -476,8 +476,7 @@ where
     }
 }
 
-/// split-sum 环境-BRDF 积分 → `(scale, bias)`（移植自
-/// `BrdfLutGeneratorFS.glsl::integrateBrdf`）。按 `(NdotV, roughness)` 索引，
+/// split-sum 环境-BRDF 积分 → `(scale, bias)`。按 `(NdotV, roughness)` 索引，
 /// 正如 `texture(czm_brdfLut, vec2(NdotV, roughness))` 读取 LUT 那样。
 pub fn integrate_brdf(roughness: f64, ndotv: f64, samples: usize) -> [f64; 2] {
     let ndotv = ndotv.clamp(0.0, 1.0);
@@ -521,6 +520,7 @@ pub struct IblMaterial {
 }
 
 impl Default for IblMaterial {
+    /// 默认材质：白色漫反射、介电 F0=0.04、半粗糙、满镜面权重。
     fn default() -> Self {
         Self {
             diffuse: [1.0, 1.0, 1.0],
@@ -531,8 +531,7 @@ impl Default for IblMaterial {
     }
 }
 
-/// 完整的基于图像照明贡献（移植自
-/// `ImageBasedLightingStageFS.glsl::textureIBL`，Fdez-Aguera 单次 +
+/// 完整的基于图像照明贡献（Fdez-Aguera 单次 +
 /// 多次散射）。它将三个参考串联起来：漫反射来自 SH irradiance，镜面来自
 /// 预过滤环境的闭包 `specular_env(dir, roughness)`，再由 split-sum BRDF LUT
 /// 调制。`ibl_factor = [diffuse, specular]`。

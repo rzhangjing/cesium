@@ -59,6 +59,7 @@ pub struct TouchCameraState {
 }
 
 impl Default for TouchCameraState {
+    /// 默认：空手指集、无上一帧对，聚合器全新构造。
     fn default() -> Self {
         Self {
             agg: CameraEventAggregator::new(),

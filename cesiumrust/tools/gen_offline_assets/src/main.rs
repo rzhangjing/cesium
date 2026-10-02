@@ -48,16 +48,24 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// 解析后的命令行选项。
 struct Options {
+    /// 影像输出根目录。
     imagery_root: PathBuf,
+    /// 地形输出根目录。
     terrain_root: PathBuf,
+    /// 影像最深级别。
     imagery_max_level: u32,
+    /// 地形最深级别。
     terrain_max_level: u32,
+    /// 是否强制重新生成（即使输出已存在）。
     force: bool,
+    /// 是否读回校验生成的瓦片。
     verify: bool,
 }
 
 impl Options {
+    /// 基于 workspace 根与领域默认级别构造默认选项。
     fn defaults() -> Self {
         let ws = workspace_root();
         Self {
@@ -71,6 +79,7 @@ impl Options {
     }
 }
 
+/// 向 stderr 打印用法/选项/退出码帮助。
 fn print_help() {
     eprintln!(
         "Usage: gen_offline_assets [OPTIONS]\n\
@@ -93,6 +102,10 @@ fn print_help() {
     );
 }
 
+/// 解析命令行参数为 [`Options`]；未知参数或缺值时返回错误。
+///
+/// # 参数
+/// - `args`：已剔除程序名的参数字符串列表。
 fn parse_args(args: &[String]) -> Result<Options, String> {
     let mut opts = Options::defaults();
     let mut i = 0;
@@ -123,12 +136,22 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     Ok(opts)
 }
 
+/// 取索引 `i` 处的参数值，缺失时报“`flag` 需要一个值”。
+///
+/// # 参数
+/// - `args`：参数字符串列表。
+/// - `i`：待取值的位置。
+/// - `flag`：关联的选项名（用于错误提示）。
 fn next_value(args: &[String], i: usize, flag: &str) -> Result<String, String> {
     args.get(i)
         .cloned()
         .ok_or_else(|| format!("{flag} requires a value"))
 }
 
+/// 将级别字符串解析为 `u32`，非法时报错。
+///
+/// # 参数
+/// - `value`：待解析的级别字符串。
 fn parse_level(value: String) -> Result<u32, String> {
     value
         .parse::<u32>()
@@ -140,6 +163,10 @@ fn fmt_mb(bytes: u64) -> String {
     format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0))
 }
 
+/// 执行一次生成：依次确保影像/地形 fixture 就位，按需读回校验，并打印摘要。
+///
+/// # 参数
+/// - `opts`：已解析的命令行选项。
 fn run(opts: &Options) -> Result<(), String> {
     println!("gen_offline_assets: generating deterministic offline fixtures");
 
@@ -186,6 +213,7 @@ fn run(opts: &Options) -> Result<(), String> {
     Ok(())
 }
 
+/// 程序入口：解析参数、处理 `--help`，运行生成并根据结果设置退出码。
 fn main() {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     if raw.iter().any(|a| a == "--help" || a == "-h") {

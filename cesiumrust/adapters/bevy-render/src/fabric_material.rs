@@ -4,9 +4,9 @@
 //! uniform 值）桥接为原生的 Bevy/WGSL 程序化材质，使其无需运行时 GLSL→WGSL
 //! 转译器即可渲染。
 //!
-//! 对应 CesiumJS `Scene/Material.js` 渲染路径：领域层执行 CesiumJS 所做的确切
+//! 镜像上游内置材质渲染路径：领域层执行既定的确切
 //! 文本组装，而本适配器提供对同一批内置程序化图案的 GPU 侧求值（见
-//! `shaders/fabric_material.wgsl`，它是 `Source/Shaders/Materials/*.glsl` 的一次忠实移植）。
+//! `shaders/fabric_material.wgsl`，它逐图案复刻上游内置材质着色器）。
 //!
 //! 覆盖全部 21 种 CesiumJS 内置程序化材质类型：
 //! Color(0)..Fade(6) 与 PolylineArrow(7)..WaterMask(20)。
@@ -149,7 +149,7 @@ mod fabric_params {
         pub extra_b: Vec4,
         /// x=minHeight(ramp/band), y=maxHeight(ramp/band), z=frameNumber(water), w=animationSpeed.
         pub extra_c: Vec4,
-        /// M5-D Water (Water.glsl)：x=frequency, y=amplitude, z=specularIntensity,
+        /// M5-D Water (Water 着色器)：x=frequency, y=amplitude, z=specularIntensity,
         /// w=fadeFactor。必须保持为最后一个字段，以使每个既有 uniform 偏移
         /// （kind..extra_c）不变 —— 结构体中间的插入会移动 encase 布局并损坏
         /// 全部 21 种情形（WGSL/Rust 必须匹配）。
@@ -157,6 +157,7 @@ mod fabric_params {
     }
 
     impl Default for FabricParams {
+        /// 默认：kind=0(Color)，各 uniform 字段取 CesiumJS 内置默认（water 参数镜像领域 cache）。
         fn default() -> Self {
             Self {
                 kind: 0,
@@ -173,7 +174,7 @@ mod fabric_params {
                 extra_a: Vec4::new(1.0, 0.0, 0.3, 16.0),
                 extra_b: Vec4::new(1000.0, 2.0, 0.5, 255.0),
                 extra_c: Vec4::new(0.0, 1000.0, 0.0, 0.5),
-                // Water.glsl 的默认值镜像领域 material/cache.rs：
+                // Water 着色器 的默认值镜像领域 material/cache.rs：
                 // frequency=10, amplitude=1, specularIntensity=0.5, fadeFactor=1.
                 water_a: Vec4::new(10.0, 1.0, 0.5, 1.0),
             }
@@ -192,14 +193,14 @@ pub struct FabricMaterial {
     #[texture(1)]
     #[sampler(2)]
     pub image: Handle<Image>,
-    /// M5-D Water `normalMap`（Water.glsl）。LINEAR 切线空间数据 → 所绑定的
+    /// M5-D Water `normalMap`（Water 着色器）。LINEAR 切线空间数据 → 所绑定的
     /// [`Image`] 必须使用 `TextureFormat::Rgba8Unorm`（绝不用
     /// `Rgba8UnormSrgb`，那会对法线二次编码）。非 water 类型从不采样此绑定；
     /// 它回退到 `image`。
     #[texture(3)]
     #[sampler(4)]
     pub normal_map: Handle<Image>,
-    /// M5-D Water `specularMap`（Water.glsl）。LINEAR 掩膜数据 → 与 `normal_map`
+    /// M5-D Water `specularMap`（Water 着色器）。LINEAR 掩膜数据 → 与 `normal_map`
     /// 相同的 `Rgba8Unorm` 规则。由 case 17u 以 `.r` 采样。
     #[texture(5)]
     #[sampler(6)]
@@ -210,10 +211,12 @@ pub struct FabricMaterial {
 }
 
 impl Material for FabricMaterial {
+    /// 指向已嵌入二进制的 `fabric_material.wgsl` 片元着色器 handle。
     fn fragment_shader() -> ShaderRef {
         ShaderRef::Handle(FABRIC_MATERIAL_SHADER_HANDLE)
     }
 
+    /// 依 `translucent` 选 Blend（半透）或 Opaque（不透明）。
     fn alpha_mode(&self) -> AlphaMode {
         if self.translucent {
             AlphaMode::Blend
@@ -227,6 +230,7 @@ impl Material for FabricMaterial {
 // Uniform 打包辅助函数
 // ---------------------------------------------------------------------------
 
+/// 将 [`UniformValue`] 尝试读取为 `Vec4`（`Vec3` 补 w=1）。
 fn vec4_of(v: &UniformValue) -> Option<[f32; 4]> {
     match v {
         UniformValue::Vec4(a) => Some([a[0] as f32, a[1] as f32, a[2] as f32, a[3] as f32]),
@@ -235,6 +239,7 @@ fn vec4_of(v: &UniformValue) -> Option<[f32; 4]> {
     }
 }
 
+/// 将 [`UniformValue`] 尝试读取为 `Vec2`。
 fn vec2_of(v: &UniformValue) -> Option<[f32; 2]> {
     match v {
         UniformValue::Vec2(a) => Some([a[0] as f32, a[1] as f32]),
@@ -242,6 +247,7 @@ fn vec2_of(v: &UniformValue) -> Option<[f32; 2]> {
     }
 }
 
+/// 将 [`UniformValue`] 尝试读取为 `f32`。
 fn float_of(v: &UniformValue) -> Option<f32> {
     match v {
         UniformValue::Float(f) => Some(*f as f32),
@@ -249,6 +255,7 @@ fn float_of(v: &UniformValue) -> Option<f32> {
     }
 }
 
+/// 将 [`UniformValue`] 尝试读取为 `bool`。
 fn bool_of(v: &UniformValue) -> Option<bool> {
     match v {
         UniformValue::Bool(b) => Some(*b),
@@ -256,18 +263,22 @@ fn bool_of(v: &UniformValue) -> Option<bool> {
     }
 }
 
+/// 按名取一个 `Vec4` uniform，缺失时回退到默认。
 fn get_vec4(u: &BTreeMap<String, UniformValue>, name: &str, default: [f32; 4]) -> Vec4 {
     Vec4::from_slice(&u.get(name).and_then(vec4_of).unwrap_or(default))
 }
 
+/// 按名取一个 `[f32; 2]` uniform，缺失时回退到默认。
 fn get_vec2(u: &BTreeMap<String, UniformValue>, name: &str, default: [f32; 2]) -> [f32; 2] {
     u.get(name).and_then(vec2_of).unwrap_or(default)
 }
 
+/// 按名取一个 `f32` uniform，缺失时回退到默认。
 fn get_float(u: &BTreeMap<String, UniformValue>, name: &str, default: f32) -> f32 {
     u.get(name).and_then(float_of).unwrap_or(default)
 }
 
+/// 按名取一个 `bool` uniform，缺失时回退到默认。
 fn get_bool(u: &BTreeMap<String, UniformValue>, name: &str, default: bool) -> bool {
     u.get(name).and_then(bool_of).unwrap_or(default)
 }
@@ -397,11 +408,11 @@ pub fn fabric_material_from_domain_with_maps(
             params.extra_b.z = get_float(u, "strength", 0.5);
         }
         FabricKind::Water => {
-            // Water.glsl uniform（默认值镜像领域 material/cache.rs）。
+            // Water 着色器 uniform（默认值镜像领域 material/cache.rs）。
             params.color_a = get_vec4(u, "baseWaterColor", [0.2, 0.3, 0.6, 1.0]);
             params.color_b = get_vec4(u, "blendColor", [0.0, 1.0, 0.699, 1.0]);
             // extra_c.z = czm_frameNumber（按帧计数器，由 material_system 设置）；
-            // extra_c.w = animationSpeed。Water.glsl L18：time = frameNumber * speed。
+            // extra_c.w = animationSpeed。Water 着色器 L18：time = frameNumber * speed。
             params.extra_c.z = 0.0;
             params.extra_c.w = get_float(u, "animationSpeed", 0.01);
             // water_a：frequency / amplitude / specularIntensity / fadeFactor。
@@ -516,7 +527,7 @@ impl WaterPreset {
 /// sRGB 红线：这是 LINEAR 方向数据，因此 [`Image`] 使用 `TextureFormat::Rgba8Unorm`
 /// —— 绝不用 `Rgba8UnormSrgb`（那会对法线二次编码）。米制换算红线：被采样的位置
 /// 与波浪振幅保持在米空间；返回的法线是无量纲方向（坡度 = m/m），因此此处不施加
-/// `METERS_PER_RENDER_UNIT` 除法 —— 该换算在 shader 侧施加于 Water.glsl 的 1e10
+/// `METERS_PER_RENDER_UNIT` 除法 —— 该换算在 shader 侧施加于 Water 着色器 的 1e10
 /// 淡出除数（见 `shaders/fabric_material.wgsl`）。
 pub fn generate_water_normal_map(size: u32, ocean: &OceanSurface, tile_size_m: f64) -> Image {
     let denom = size.saturating_sub(1).max(1) as f64;
@@ -529,7 +540,7 @@ pub fn generate_water_normal_map(size: u32, ocean: &OceanSurface, tile_size_m: f
             let pos = DVec3::new(u * tile_size_m, 0.0, v * tile_size_m);
             // 来自 Gerstner 波叠加的世界空间（Y-up）海洋法线。
             let n = ocean.compute_normal(pos);
-            // Water.glsl 切线空间是 Z-up；将 Y-up 世界重映射为 Z-up 切线。
+            // Water 着色器 切线空间是 Z-up；将 Y-up 世界重映射为 Z-up 切线。
             data.extend_from_slice(&[enc(n.x), enc(n.z), enc(n.y), 255]);
         }
     }
@@ -546,9 +557,9 @@ pub fn generate_water_normal_map(size: u32, ocean: &OceanSurface, tile_size_m: f
     )
 }
 
-/// 从海浪波峰高度生成一个 Water `specularMap`（水/非水掩膜，由 Water.glsl
+/// 从海浪波峰高度生成一个 Water `specularMap`（水/非水掩膜，由 Water 着色器
 /// 以 `.r` 采样）。LINEAR 掩膜数据 → `Rgba8Unorm`（sRGB 红线）。保持明亮
-/// （≈0.6..1.0）以使水面可见：Water.glsl 将 alpha 乘以该值，因此暗掩膜会消失。
+/// （≈0.6..1.0）以使水面可见：Water 着色器 将 alpha 乘以该值，因此暗掩膜会消失。
 pub fn generate_water_specular_map(size: u32, ocean: &OceanSurface, tile_size_m: f64) -> Image {
     let denom = size.saturating_sub(1).max(1) as f64;
     let foam = ocean.config.foam_threshold.max(1e-6);
@@ -560,7 +571,7 @@ pub fn generate_water_specular_map(size: u32, ocean: &OceanSurface, tile_size_m:
             let pos = DVec3::new(u * tile_size_m, 0.0, v * tile_size_m);
             let h = ocean.compute_height(pos); // 米
             // 将波峰高度归一化到 [0,1]，再映射到一个明亮的掩膜带
-            // [0.6, 1.0] 以使水面可见：Water.glsl 将 alpha 乘以该值，
+            // [0.6, 1.0] 以使水面可见：Water 着色器 将 alpha 乘以该值，
             // 因此暗掩膜会使表面消失。
             let crest = ((h / foam) * 0.5 + 0.5).clamp(0.0, 1.0);
             let mask = 0.6 + 0.4 * crest;
@@ -600,6 +611,10 @@ pub fn water_material_from_preset(
 pub struct FabricMaterialPlugin;
 
 impl Plugin for FabricMaterialPlugin {
+    /// 注册 [`FabricMaterial`] 及其内嵌 WGSL 着色器。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用
     fn build(&self, app: &mut App) {
         // 将 WGSL shader 嵌入二进制，因此宿主应用无需外部资产路径。
         //
@@ -784,7 +799,7 @@ mod tests {
 
     #[test]
     fn test_from_domain_water_packs_water_a() {
-        // M5-D：Water.glsl 的 frequency/amplitude/specularIntensity/fadeFactor
+        // M5-D：Water 着色器 的 frequency/amplitude/specularIntensity/fadeFactor
         // 落在 water_a（cache.rs 默认值 10 / 1 / 0.5 / 1）。
         let m = build("Water");
         let fm = fabric_material_from_domain(&m, Handle::<Image>::default());

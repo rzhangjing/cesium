@@ -9,13 +9,11 @@
 //!
 //! Domain 层 - 纯 Rust，f64 精度。
 //!
-//! CesiumJS 映射：
-//! - 帧率控制
-//! - 请求调度
-//! - 内存管理
-//! - `Scene/Cesium3DTilesetCache.js` → cache::TilesetCache
-//! - `Scene/ResourceCache.js` → cache::ResourceCache
-//! - `Scene/ResourceCacheStatistics.js` → cache::CacheStatistics
+//! 能力范围：
+//! - 帧率控制（目标 FPS）
+//! - 请求调度与限流
+//! - 内存预算与跟踪
+//! - 瓦片集缓存、引用计数资源缓存及其统计（[`cache`]）
 
 pub mod cache;
 pub mod performance;

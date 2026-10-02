@@ -1,5 +1,5 @@
 //! Visualizer 扩展规范 - GeometryVisualizer/StaticGeometryBatch/DynamicGeometryUpdater
-//! 移植自 DataSources/GeometryVisualizerSpec.js（A 类逻辑）
+//! 参考自 DataSources/GeometryVisualizerSpec（A 类逻辑）
 
 use cesium_datasource::visualizer::{
     GeometryVisualizer, StaticGeometryBatch, DynamicGeometryUpdater,

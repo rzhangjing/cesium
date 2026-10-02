@@ -41,6 +41,7 @@ impl BaseLayerGuard {
 }
 
 impl Default for BaseLayerGuard {
+    /// 默认构造一个基础图层守卫（等价于 [`BaseLayerGuard::new`]）。
     fn default() -> Self {
         Self::new()
     }

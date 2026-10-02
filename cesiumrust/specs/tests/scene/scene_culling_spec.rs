@@ -1,5 +1,5 @@
 //! 场景剔除 + 场景图规范
-//! 移植自 CesiumJS Scene/SceneSpec.js 剔除逻辑
+//! 参考自 CesiumJS Scene/SceneSpec 剔除逻辑
 
 use cesium_scene::{
     filter_visible, sort_back_to_front, sort_front_to_back,

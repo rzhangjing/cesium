@@ -1,6 +1,6 @@
-//! Core/BoundingRectangleSpec.js → Rust 集成测试
+//! Core/BoundingRectangleSpec → Rust 集成测试
 //!
-//! 忠实移植自 CesiumJS `Specs/Core/BoundingRectangleSpec.js`（28 个 `it()` 用例）。
+//! 对齐实现自 CesiumJS `Specs/Core/BoundingRectangleSpec`（28 个 `it()` 用例）。
 //!
 //! ## 平台适配
 //! - JS 结果参数变体（`clone(result)`、`fromPoints(p, result)`、

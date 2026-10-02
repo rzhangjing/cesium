@@ -24,6 +24,7 @@ pub struct ElementFlags {
 }
 
 impl Default for ElementFlags {
+    /// 缺省：可见、可选、可编辑 —— 一个刚放置元素的自然初值。
     fn default() -> Self {
         Self {
             visible_manual: true,
@@ -39,9 +40,13 @@ impl Default for ElementFlags {
 /// （越大 == 越缩小）。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct ScaleVisibility {
+    /// 显示所需的最小每世界像素（越大越放大）。
     pub min_pixels_per_world: Option<f64>,
+    /// 允许显示的最大每世界像素。
     pub max_pixels_per_world: Option<f64>,
+    /// 显示所需的最小地面每像素米数（越大越缩小）。
     pub min_meters_per_pixel: Option<f64>,
+    /// 允许显示的最大地面每像素米数。
     pub max_meters_per_pixel: Option<f64>,
 }
 
@@ -50,6 +55,7 @@ impl ScaleVisibility {
     /// （未知）的度量永不*违反*一个无法保守比较的边界
     /// —— 期望桥接层为其模式填充该度量。
     pub fn allows(&self, pixels_per_world: f64, meters_per_pixel: f64) -> bool {
+        // 度量 > 0.0（已知）时才参与边界比较；0.0（未知）永不违反。
         if let Some(m) = self.min_pixels_per_world {
             if pixels_per_world > 0.0 && pixels_per_world < m {
                 return false;
@@ -77,13 +83,19 @@ impl ScaleVisibility {
 /// 一个标绘元素。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Element {
+    /// 文档内唯一的元素 id。
     pub id: ElementId,
+    /// 显示名称。
     pub name: String,
+    /// 几何形状（位置 / 形状的单一事实源）。
     pub geometry: Geometry,
+    /// 样式包（颜色 / 宽 / 每模式显示标志 …）。
     pub style: Style,
     /// Free-form business attributes (敌我/番号/状态 …), GeoJSON `properties`.
     pub attributes: Map<String, Value>,
+    /// 手动 / 交互标志集。
     pub flags: ElementFlags,
+    /// 尺度可见性波段。
     pub scale_visibility: ScaleVisibility,
     /// 保留的时间窗口 `[start, end)`，以自历元起的秒数表示（§10.10）。
     /// `None` == 总是。M1 不据此门控（见 `visibility`）。

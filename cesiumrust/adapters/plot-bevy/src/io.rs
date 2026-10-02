@@ -20,6 +20,10 @@ use crate::resources::{PlotDocument, PlotHistory};
 /// 解析一个 GeoJSON 字符串并将其元素作为一个可撤销命令粘贴到活动层，
 /// 返回放置的数量。一个不含受支持几何的空 / 外部文件不会新增任何内容
 /// （仍不是错误）。
+///
+/// # 参数
+/// - `plot_doc`/`history`：目标文档与命令栈。
+/// - `text`：待解析的 GeoJSON 文本。
 pub fn import_geojson(
     plot_doc: &mut PlotDocument,
     history: &mut PlotHistory,
@@ -33,6 +37,9 @@ pub fn import_geojson(
 }
 
 /// 将实时文档序列化为一个美观的 GeoJSON `FeatureCollection` 字符串。
+///
+/// # 参数
+/// - `plot_doc`：待导出的文档。
 pub fn export_geojson(plot_doc: &PlotDocument) -> Result<String, PlotIoError> {
     geojson::to_geojson(&plot_doc.doc)
 }
@@ -41,6 +48,10 @@ pub fn export_geojson(plot_doc: &PlotDocument) -> Result<String, PlotIoError> {
 /// 创建并聚焦一个），在 `dst` 的计数器中**重新铸造每个 id**，
 /// 以便粘贴的元素绝不会与现有元素碰撞。对两个文档都是纯函数，因此
 /// id 分配 / 活动层回退无需资源窗口即可单测。
+///
+/// # 参数
+/// - `dst`：接收导入元素的目标文档（铸造新 id）。
+/// - `src`：已解析的源文档。
 fn build_import_commands(dst: &mut Document, src: &Document) -> Vec<PlotCommand> {
     let target = ensure_active_layer(dst);
     let mut steps = Vec::new();
@@ -66,6 +77,9 @@ fn build_import_commands(dst: &mut Document, src: &Document) -> Vec<PlotCommand>
 
 /// 确保文档有一个可粘贴到的活动层，当它没有时创建一个全新的。
 /// 返回（可能是新建的）活动层 id。
+///
+/// # 参数
+/// - `doc`：待保证活动层的文档。
 fn ensure_active_layer(doc: &mut Document) -> cesium_plot::model::ids::LayerId {
     if let Some(l) = doc.active_layer() {
         return l;
@@ -82,6 +96,7 @@ mod tests {
     use cesium_plot::model::geometry::Geometry;
     use cesium_plot::ops::HistoryStack;
 
+    /// 构造含一个已有点元素的默认层文档，供导入测试使用。
     fn fresh_doc(lon: f64, lat: f64) -> PlotDocument {
         let mut d = PlotDocument {
             doc: Document::with_default_layer(),
@@ -94,6 +109,7 @@ mod tests {
         d
     }
 
+    /// 生成一段含一个点与一条线的源文档 GeoJSON（导入测试用）。
     fn geojson_text() -> String {
         let mut src = Document::default();
         let l = src.new_layer("导入源");
@@ -109,6 +125,7 @@ mod tests {
         geojson::to_geojson(&src).unwrap()
     }
 
+    /// 导入应粘贴到活动层，并作为单个 composite 可一次撤销。
     #[test]
     fn import_pastes_into_active_layer_and_is_undoable() {
         let mut d = fresh_doc(0.0, 0.0);
@@ -129,6 +146,7 @@ mod tests {
         assert_eq!(d.doc.element_count(), before);
     }
 
+    /// 导入应铸造全新 id，绝不与现有元素碰撞。
     #[test]
     fn import_mints_fresh_ids_no_collision() {
         let mut d = fresh_doc(0.0, 0.0);
@@ -146,6 +164,7 @@ mod tests {
         assert_eq!(after.len(), existing.len() + 2);
     }
 
+    /// 导出→解析应回环实时文档（元素与几何保持一致）。
     #[test]
     fn export_roundtrips_live_document() {
         let d = fresh_doc(3.0, 4.0);

@@ -1,8 +1,8 @@
 //! Scene/ModelAnimation + CameraFlightPath → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/Model/ModelAnimation.js（动画状态机、样条求值）
-//! - Scene/Camera.js flyTo（飞行路径插值）
+//! 参考 CesiumJS：
+//! - Scene/Model/ModelAnimation（动画状态机、样条求值）
+//! - Scene/Camera flyTo（飞行路径插值）
 //!
 //! A 类测试：RuntimeAnimation 状态机（play/pause/stop/advance/loop），
 //! AnimationSpline 求值（Step/Linear/CubicSpline/QuaternionSlerp），

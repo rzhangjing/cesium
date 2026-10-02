@@ -2,7 +2,6 @@
 //!
 //! 为多个影像图层实现颜色合成，支持不同的混合模式、昼/夜 alpha
 //! 以及分割方向。
-//! 映射到 CesiumJS `Scene/ImageryLayer.js` 的混合逻辑。
 
 use crate::imagery_layer::ImageryLayer;
 use crate::AlphaBlendingMode;

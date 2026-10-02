@@ -1,7 +1,7 @@
-//! Core/GeographicProjectionSpec.js → Rust 集成测试（忠实移植）。
+//! Core/GeographicProjectionSpec → Rust 集成测试（对齐实现）。
 //!
-//! 忠实移植原始 CesiumJS
-//! `packages/engine/Specs/Core/GeographicProjectionSpec.js`（9 个 `it()` 用例）。
+//! 对齐实现原始 CesiumJS
+//! `Specs/Core/GeographicProjectionSpec`（9 个 `it()` 用例）。
 //! 参考值原样使用，以便针对与 CesiumJS 完全相同的基准真值
 //! 验证 Rust 实现。
 //!

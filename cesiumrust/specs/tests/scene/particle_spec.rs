@@ -1,9 +1,9 @@
-//! Scene/ParticleSystemSpec.js、ParticleSpec.js、EmitterSpec.js → Rust 集成测试
+//! Scene/ParticleSystemSpec、ParticleSpec、EmitterSpec → Rust 集成测试
 //!
-//! 对应 CesiumJS：
-//! - Scene/ParticleSystem.js（发射、生命周期、爆发、力）
-//! - Scene/Particle.js（更新、归一化年龄、缩放插值）
-//! - Scene/BoxEmitter.js, CircleEmitter.js, SphereEmitter.js, ConeEmitter.js
+//! 参考 CesiumJS：
+//! - Scene/ParticleSystem（发射、生命周期、爆发、力）
+//! - Scene/Particle（更新、归一化年龄、缩放插值）
+//! - Scene/BoxEmitter, CircleEmitter, SphereEmitter, ConeEmitter
 //!
 //! A 类测试：粒子生命周期、力（gravity/drag/wind/attractor/vortex）、
 //! ParticleSystem emission/max_particles/stop/reset/bursts、预设（fire/smoke/snow）、

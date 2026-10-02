@@ -1,9 +1,7 @@
 //! 瓦片缓存与加载队列管理。
 //!
-//! 映射到 CesiumJS 的瓦片加载/缓存：
-//! - 面向已加载瓦片的 LRU 缓存
-//! - 基于优先级的加载队列
-//! - 瓦片替换策略
+//! 提供面向已加载瓦片的 LRU 缓存、基于优先级与相机距离的加载队列，
+//! 以及超容量时按 LRU 逐出并交由调用方清理的瓦片替换策略。
 
 use std::collections::{HashMap, VecDeque};
 
@@ -21,6 +19,7 @@ pub struct TileId {
 impl TileId {
     /// 创建一个新的瓦片 ID。
     pub fn new(x: u32, y: u32, level: u32) -> Self {
+        // 三元组 (x, y, level) 唯一标识一个瓦片。
         Self { x, y, level }
     }
 }
@@ -66,6 +65,7 @@ pub struct TileLoadQueue {
 impl TileLoadQueue {
     /// 创建一个新的加载队列。
     pub fn new(max_size: usize) -> Self {
+        // 初始化空队列并设定最大长度。
         Self {
             queue: VecDeque::new(),
             max_size,
@@ -74,8 +74,10 @@ impl TileLoadQueue {
 
     /// 将一个瓦片加入队列。
     pub fn enqueue(&mut self, tile: QueuedTile) {
+        // 队列已满时先淘汰“优先级最低且距离最远”者，为新瓦片腾位。
         if self.queue.len() >= self.max_size {
             // 移除优先级最低的瓦片
+            // 以 (priority, -distance) 取最小：先逐优先级最低且距离最远者。
             if let Some(min_idx) = self
                 .queue
                 .iter()
@@ -91,11 +93,12 @@ impl TileLoadQueue {
 
     /// 获取下一个待加载的瓦片（优先级最高、距离最近）。
     pub fn dequeue(&mut self) -> Option<QueuedTile> {
+        // 队列空则无待加载瓦片。
         if self.queue.is_empty() {
             return None;
         }
 
-        // 找到优先级最高、距离最近的瓦片
+        // 以 (priority, -distance) 取最大：优先返回优先级高且距离近者。
         let best_idx = self
             .queue
             .iter()
@@ -124,7 +127,7 @@ impl TileLoadQueue {
 
 /// 面向已加载瓦片的 LRU 缓存。
 ///
-/// 映射到 CesiumJS 的瓦片缓存行为。
+/// 以访问顺序队列实现最近最少使用逐出，被逐出瓦片暂存以便调用方清理资源。
 #[derive(Debug)]
 pub struct TileCache<T> {
     /// 已缓存的瓦片。
@@ -140,6 +143,7 @@ pub struct TileCache<T> {
 impl<T> TileCache<T> {
     /// 创建一个新的瓦片缓存。
     pub fn new(max_size: usize) -> Self {
+        // 初始化空缓存、空访问顺序与空逐出列表。
         Self {
             tiles: HashMap::new(),
             access_order: VecDeque::new(),
@@ -150,10 +154,12 @@ impl<T> TileCache<T> {
 
     /// 从缓存获取一个瓦片。
     pub fn get(&mut self, id: &TileId) -> Option<&T> {
+        // 命中则把该瓦片移到访问顺序尾部，推迟其被逐出。
         if self.tiles.contains_key(id) {
             // 更新访问顺序
             self.access_order.retain(|x| x != id);
             self.access_order.push_back(*id);
+            // 命中时返回引用；未命中则返回 None（缓存不代为加载）。
             self.tiles.get(id)
         } else {
             None
@@ -162,6 +168,7 @@ impl<T> TileCache<T> {
 
     /// 向缓存插入一个瓦片。
     pub fn insert(&mut self, id: TileId, tile: T) {
+        // 达到容量上限则循环弹出访问顺序首部（最久未用）直至有空位。
         // 必要时逐出
         while self.tiles.len() >= self.max_size {
             if let Some(oldest) = self.access_order.pop_front() {
@@ -174,11 +181,13 @@ impl<T> TileCache<T> {
         }
 
         self.tiles.insert(id, tile);
+        // 将新瓦片置于访问顺序尾部（最近使用）。
         self.access_order.push_back(id);
     }
 
     /// 从缓存移除一个瓦片。
     pub fn remove(&mut self, id: &TileId) -> Option<T> {
+        // 同步从访问顺序中剔除该瓦片。
         self.access_order.retain(|x| x != id);
         self.tiles.remove(id)
     }
@@ -200,11 +209,13 @@ impl<T> TileCache<T> {
 
     /// 取走被逐出的瓦片以供清理。
     pub fn take_evicted(&mut self) -> Vec<(TileId, T)> {
+        // 移交逐出列表所有权，调用方据此释放 GPU/内存资源。
         std::mem::take(&mut self.evicted)
     }
 
     /// 清空缓存。
     pub fn clear(&mut self) {
+        // 同时清空瓦片表与访问顺序队列。
         self.tiles.clear();
         self.access_order.clear();
     }
@@ -224,6 +235,7 @@ pub struct SchedulerConfig {
 }
 
 impl Default for SchedulerConfig {
+    /// 返回缺省调度配置：每帧加载 4、缓存 512、队列 256、按距离优先。
     fn default() -> Self {
         Self {
             max_loads_per_frame: 4,

@@ -1,6 +1,4 @@
 //! 用于 3D Tiles 元数据的 MetadataComponentType 枚举。
-//!
-//! 映射到 CesiumJS `Scene/MetadataComponentType.js`
 
 /// 标量元数据分量类型的类别。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,8 +12,6 @@ pub enum ScalarCategory {
 }
 
 /// 用于 3D Tiles 元数据的元数据分量类型枚举。
-///
-/// 映射到 CesiumJS `Scene/MetadataComponentType.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MetadataComponentType {
     /// 一个 8 位有符号整数。
@@ -43,7 +39,7 @@ pub enum MetadataComponentType {
 impl MetadataComponentType {
     /// 获取该数值类型的最小值。
     ///
-    /// 映射到 CesiumJS `MetadataComponentType.getMinimum`。
+    /// 返回该类型可表示的最小值；无符号整型下界为 0。
     pub fn get_minimum(&self) -> f64 {
         match self {
             Self::Int8 => i8::MIN as f64,
@@ -61,7 +57,7 @@ impl MetadataComponentType {
 
     /// 获取该数值类型的最大值。
     ///
-    /// 映射到 CesiumJS `MetadataComponentType.getMaximum`。
+    /// 返回该类型可表示的最大值，浮点取各自的有限上确界。
     pub fn get_maximum(&self) -> f64 {
         match self {
             Self::Int8 => i8::MAX as f64,
@@ -79,21 +75,21 @@ impl MetadataComponentType {
 
     /// 返回该类型是否为整数类型。
     ///
-    /// 映射到 CesiumJS `MetadataComponentType.isIntegerType`。
+    /// 非浮点类别即视为整数类型（有符号或无符号）。
     pub fn is_integer_type(&self) -> bool {
         self.category() != ScalarCategory::Float
     }
 
     /// 返回该类型是否为无符号整数类型。
     ///
-    /// 映射到 CesiumJS `MetadataComponentType.isUnsignedIntegerType`。
+    /// 仅无符号整数类别（UINT8/16/32/64）返回 true。
     pub fn is_unsigned_integer_type(&self) -> bool {
         self.category() == ScalarCategory::UnsignedInteger
     }
 
     /// 获取该数值类型的类别。
     ///
-    /// 映射到 CesiumJS `MetadataComponentType.category`。
+    /// 按分量类型归入有符号整数、无符号整数或浮点三类。
     pub fn category(&self) -> ScalarCategory {
         match self {
             Self::Int8 | Self::Int16 | Self::Int32 | Self::Int64 => ScalarCategory::Integer,
@@ -106,7 +102,7 @@ impl MetadataComponentType {
 
     /// 获取该数值类型的字节大小。
     ///
-    /// 映射到 CesiumJS `MetadataComponentType.getSizeInBytes`。
+    /// 返回单个分量占用的字节数（1/2/4/8）。
     pub fn get_size_in_bytes(&self) -> usize {
         match self {
             Self::Int8 | Self::Uint8 => 1,
@@ -118,7 +114,7 @@ impl MetadataComponentType {
 
     /// 将一个整数值归一化到 [-1.0, 1.0]（有符号）或 [0.0, 1.0]（无符号）范围。
     ///
-    /// 映射到 CesiumJS `MetadataComponentType.normalize`。
+    /// 以最大值为除数缩放；有符号结果下限钳制到 -1.0。
     pub fn normalize(&self, value: f64) -> f64 {
         let max = self.get_maximum();
         (value / max).max(-1.0)
@@ -126,7 +122,7 @@ impl MetadataComponentType {
 
     /// 将 [-1.0, 1.0]（有符号）或 [0.0, 1.0]（无符号）范围内的值反归一化回整数。
     ///
-    /// 映射到 CesiumJS `MetadataComponentType.unnormalize`。
+    /// 按最大值反缩放并四舍五入，最后钳制到该类型的取值范围。
     pub fn unnormalize(&self, value: f64) -> f64 {
         let max = self.get_maximum();
         let min = if self.is_unsigned_integer_type() {
@@ -148,7 +144,7 @@ impl MetadataComponentType {
 
     /// 从 ComponentDatatype 值转换为 MetadataComponentType。
     ///
-    /// 映射到 CesiumJS `MetadataComponentType.fromComponentDatatype`。
+    /// 依据 GL 枚举值映射到对应分量类型；未知值返回 None。
     pub fn from_component_datatype(datatype: u32) -> Option<Self> {
         // ComponentDatatype values: BYTE=5120, UNSIGNED_BYTE=5121, SHORT=5122,
         // UNSIGNED_SHORT=5123, INT=5124, UNSIGNED_INT=5125, FLOAT=5126, DOUBLE=5130
@@ -168,7 +164,7 @@ impl MetadataComponentType {
     /// 转换为 ComponentDatatype 值。
     /// 对于 INT64/UINT64 返回 None（无对应的 GPU 类型）。
     ///
-    /// 映射到 CesiumJS `MetadataComponentType.toComponentDatatype`。
+    /// 返回对应的 GL 枚举值；无 GPU 对应的 64 位整型返回 None。
     pub fn to_component_datatype(&self) -> Option<u32> {
         match self {
             Self::Int8 => Some(5120),
@@ -186,7 +182,7 @@ impl MetadataComponentType {
     /// 获取某个值的向下转换（downcast）函数结果。
     /// INT64 → 钳制到 INT32，UINT64 → 钳制到 UINT32，FLOAT64 → f32 精度。
     ///
-    /// 映射到 CesiumJS `MetadataComponentType.downcastFunction`。
+    /// 把超宽类型钳制/降精度到 GPU 可表示的范围。
     pub fn downcast(&self, value: f64) -> f64 {
         match self {
             Self::Int64 => {

@@ -32,28 +32,46 @@ use crate::resources::{PlotDocument, PlotFilters, PlotHistory, PlotSelection};
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum PanelAction {
     // §10.1 / §10.8 总开关 + 聚焦开关。
+    /// 翻转叠加层总可见性开关（一键隐藏全部标绘）。
     ToggleOverlay,
+    /// 翻转“仅选中”聚焦模式，开启时只保留当前选中集可见。
     ToggleOnlySelected,
     /// §10.5 类型维度：翻转一个几何类型。
     ToggleType(GeometryKind),
     // §9 / §10.2 层树控件。
+    /// 翻转指定图层的眼图标（可见 / 隐藏）。
     ToggleLayerVisible(LayerId),
+    /// 翻转图层编辑锁定（锁定时不可编辑其元素）。
     ToggleLayerLock(LayerId),
+    /// 翻转图层的可选择性开关。
     ToggleLayerSelectable(LayerId),
+    /// 将图层设为活动（聚焦）层，后续绘制落入该层。
     FocusLayer(LayerId),
+    /// 按 `delta` 微调图层叠放顺序（上移 / 下移）。
     NudgeLayer(LayerId, i32),
+    /// 循环图层不透明度预设（预设滑条）。
     CycleLayerOpacity(LayerId),
+    /// 新建一个图层并聚焦它。
     AddLayer,
     // 已选元素样式编辑器（可撤销）。
+    /// 将当前选择集的颜色设为给定 RGBA。
     SetSelectionColor(Rgba),
+    /// 按 `d` 增减已选元素的线宽（下限 0.5 px）。
     AdjustWidth(f32),
+    /// 翻转已选元素的填充（无填充↔半透明同色）。
     ToggleFill,
+    /// 翻转已选元素的深度测试开关。
     ToggleDepthTest,
+    /// 翻转已选元素在 2D 平面的显示。
     ToggleShowFlat,
+    /// 翻转已选元素在 3D 球面的显示。
     ToggleShowGlobe,
     // 已选元素批量操作（可撤销）。
+    /// 删除当前选择集的全部元素。
     DeleteSelection,
+    /// 复制当前选择集（铸造新 id）。
     DuplicateSelection,
+    /// 翻转已选元素集合的手动可见性标志。
     ToggleSelectionVisible,
 }
 
@@ -68,6 +86,7 @@ pub(crate) struct PanelRoot;
 /// 记住已创建面板根的资源（在 [`panel_startup`] 中创建一次）。
 #[derive(Resource, Default)]
 pub struct PanelRootEntity {
+    /// 已创建的面板根实体（在 [`panel_startup`] 中一次性写入）。
     pub root: Option<Entity>,
 }
 
@@ -85,6 +104,12 @@ const COLOR_PRESETS: [Rgba; 5] = [
 ];
 
 /// 选择集的按元素 id 排序的快照（确定性）。
+///
+/// # 参数
+/// - `selection`：当前选择资源。
+///
+/// # 返回
+/// 按 id 升序排列的已选元素列表。
 fn selected_ids(selection: &PlotSelection) -> Vec<ElementId> {
     let mut ids: Vec<ElementId> = selection.0.iter().copied().collect();
     ids.sort_by_key(|id| id.raw());
@@ -92,6 +117,12 @@ fn selected_ids(selection: &PlotSelection) -> Vec<ElementId> {
 }
 
 /// [`OPACITY_STEPS`] 中 `cur` 之后的下一个不透明度预设。
+///
+/// # 参数
+/// - `cur`：当前不透明度，未匹配预设时从头循环。
+///
+/// # 返回
+/// 下一个预设不透明度值。
 fn next_opacity(cur: f32) -> f32 {
     for i in 0..OPACITY_STEPS.len() {
         if (cur - OPACITY_STEPS[i]).abs() < 1e-3 {
@@ -102,6 +133,12 @@ fn next_opacity(cur: f32) -> f32 {
 }
 
 /// 几何类型的按钮标签（类型筛选行）。
+///
+/// # 参数
+/// - `kind`：几何类型枚举，返回其中文显示名。
+///
+/// # 返回
+/// 与类型对应的静态中文标签字符串。
 pub fn kind_label(kind: GeometryKind) -> &'static str {
     match kind {
         GeometryKind::Point => "点",
@@ -120,6 +157,13 @@ pub fn kind_label(kind: GeometryKind) -> &'static str {
 
 /// 应用一个面板动作。这是每个控件经过的唯一入口，
 /// 也是 M7 单元测试的核心——无 ECS、无窗口。
+///
+/// # 参数
+/// - `action`：待应用的 [`PanelAction`]。
+/// - `plot_doc`：场景文档（大多数动作会 `mark_dirty`）。
+/// - `history`：可撤销命令栈（样式/删除/复制走此处）。
+/// - `filters`：可见性开关（总开关/聚焦/类型）。
+/// - `selection`：当前选择集（样式与批量操作的目标）。
 pub fn apply_panel_action(
     action: PanelAction,
     plot_doc: &mut PlotDocument,
@@ -248,6 +292,11 @@ pub fn apply_panel_action(
 }
 
 /// 在当前选择集上构建 + 应用一个可撤销的样式命令。
+///
+/// # 参数
+/// - `plot_doc`/`history`：文档与命令栈。
+/// - `selection`：已选元素集（命令仅作用于此）。
+/// - `mutate`：将旧样式映射为新样式的闭包。
 fn route_style(
     plot_doc: &mut PlotDocument,
     history: &mut PlotHistory,
@@ -261,6 +310,9 @@ fn route_style(
 
 /// 将面板相关状态折叠为一个小的签名，以便只在真正发生变化时才重建按钮树
 /// （空闲帧不会 churn 实体）。
+///
+/// # 参数
+/// - `doc`/`filters`/`selection`：参与签名的三类状态源。
 fn panel_signature(doc: &PlotDocument, filters: &PlotFilters, selection: &PlotSelection) -> u64 {
     let mut h = 0u64;
     let mut mix = |v: u64| {
@@ -299,6 +351,10 @@ fn panel_signature(doc: &PlotDocument, filters: &PlotFilters, selection: &PlotSe
 
 /// 通过投影匹配解析激活相机，回退到任意一个激活的
 /// （与同步系统使用相同的规则）——返回要绑定 UI 根节点的实体。
+///
+/// # 参数
+/// - `cams`：相机查询（实体 + Camera + Projection）。
+/// - `mode`：当前视图模式，决定优先匹配哪种投影。
 fn active_camera(cams: &Query<(Entity, &Camera, &Projection)>, mode: ViewMode) -> Option<Entity> {
     let mut fallback: Option<Entity> = None;
     for (e, c, p) in cams.iter() {
@@ -321,6 +377,10 @@ fn active_camera(cams: &Query<(Entity, &Camera, &Projection)>, mode: ViewMode) -
 
 /// 创建停靠面板根节点（一个 Startup 系统）。按钮树由
 /// [`panel_sync_system`] 填充；这里只创建空的右侧停靠列。
+///
+/// # 参数
+/// - `commands`：ECS 命令器，用于 spawn 根实体。
+/// - `root`：记住根实体的资源。
 pub(crate) fn panel_startup(mut commands: Commands, mut root: ResMut<PanelRootEntity>) {
     let entity = commands
         .spawn((
@@ -346,6 +406,12 @@ pub(crate) fn panel_startup(mut commands: Commands, mut root: ResMut<PanelRootEn
 /// 每帧保持面板根的 `TargetCamera` 指向激活相机
 /// （多相机 UI 不变量）。只在绑定变化时写入，因此空闲
 /// 帧不会发出 change tick。
+///
+/// # 参数
+/// - `commands`：写入 `TargetCamera` 的命令器。
+/// - `ctx`：视图上下文（提供当前模式）。
+/// - `cams`：相机查询，用于解析激活相机。
+/// - `roots`：面板根实体及其当前绑定。
 pub(crate) fn bind_panel_camera(
     mut commands: Commands,
     ctx: Res<crate::resources::PlotViewCtx>,
@@ -366,6 +432,10 @@ pub(crate) fn bind_panel_camera(
 }
 
 /// 将按下的面板按钮映射为其动作。
+///
+/// # 参数
+/// - `interactions`：变化了的按钮交互查询（携带 [`PanelButton`]）。
+/// - `plot_doc`/`history`/`filters`/`selection`：传给 [`apply_panel_action`] 的四类资源。
 pub(crate) fn panel_click_system(
     interactions: Query<(&Interaction, &PanelButton), Changed<Interaction>>,
     mut plot_doc: ResMut<PlotDocument>,
@@ -381,6 +451,12 @@ pub(crate) fn panel_click_system(
 }
 
 /// 当面板签名变化时重建按钮树。
+///
+/// # 参数
+/// - `commands`： despawn 后代并重新 spawn 按钮实体。
+/// - `plot_doc`/`filters`/`selection`：重建所需的状态快照。
+/// - `root_ent`：面板根实体（按钮树的父）。
+/// - `last`：上一帧签名的 Local 缓存。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn panel_sync_system(
     mut commands: Commands,
@@ -400,7 +476,7 @@ pub(crate) fn panel_sync_system(
     commands.entity(root).despawn_descendants();
 
     // 快照渲染所需的一切（避免在持有文档引用时
-    // 借用 `commands`）。
+    // 借用 `commands`）。先取不变数据再写入 UI 树。
     let overlay_on = filters.overlay_enabled;
     let focus_on = filters.only_selected;
     let kinds: Vec<(GeometryKind, bool)> = GeometryKind::all()
@@ -549,10 +625,21 @@ pub(crate) fn panel_sync_system(
     });
 }
 
+/// 构造一个节标题文本（面板内每个分组的粗体小标题）。
+///
+/// # 参数
+/// - `text`：标题字符串（可为 &str / String）。
+///
+/// # 返回
+/// 一个仅含文本的 [`Text`] 实体束。
 fn section_title(text: impl Into<String>) -> Text {
     Text::new(text.into())
 }
 
+/// 构造一个普通标签实体束（文本 + 字体 + 颜色），用于行内展示。
+///
+/// # 参数
+/// - `text`：标签文本内容。
 fn label(text: String) -> (Text, TextFont, TextColor) {
     (
         Text::new(text),
@@ -565,6 +652,13 @@ fn label(text: String) -> (Text, TextFont, TextColor) {
 }
 
 /// "on" 显示 `on_text`；"off" 显示 `off_text`（类型 chip 常为空）。
+///
+/// # 参数
+/// - `on`：开关当前状态。
+/// - `on_text`/`off_text`：两态各自的显示文本。
+///
+/// # 返回
+/// 根据 `on` 选定的显示文本。
 fn on_off(on: bool, on_text: &'static str, off_text: &'static str) -> &'static str {
     if on {
         on_text
@@ -573,6 +667,11 @@ fn on_off(on: bool, on_text: &'static str, off_text: &'static str) -> &'static s
     }
 }
 
+/// 构造一个面板按钮实体束：携带 [`PanelButton`] 动作标记 + 可见文本。
+///
+/// # 参数
+/// - `action`：按钮按下时触发的 [`PanelAction`]。
+/// - `text`：按钮上的显示文本。
 fn button(action: PanelAction, text: &str) -> (
     PanelButton,
     Button,
@@ -603,6 +702,11 @@ fn button(action: PanelAction, text: &str) -> (
     )
 }
 
+/// 构造一个颜色色块按钮（样式编辑器的色板），背景为给定 RGBA。
+///
+/// # 参数
+/// - `action`：点击时触发的 [`PanelAction`]（通常为设色）。
+/// - `c`：色块的 RGBA 颜色。
 fn color_swatch(action: PanelAction, c: Rgba) -> (PanelButton, Button, Node, BackgroundColor) {
     (
         PanelButton(action),
@@ -623,6 +727,7 @@ mod tests {
     use cesium_plot::model::geometry::Geometry;
     use cesium_plot::ops::HistoryStack;
 
+    /// 构造一组全新的面板资源（默认图层文档 + 空历史/筛选/选择）。
     fn fresh() -> (PlotDocument, PlotHistory, PlotFilters, PlotSelection) {
         let doc = PlotDocument {
             doc: cesium_plot::model::Document::with_default_layer(),
@@ -637,6 +742,7 @@ mod tests {
         )
     }
 
+    /// 向活动层添加一个给定点并返回其元素 id，供操作测试使用。
     fn add_point(doc: &mut PlotDocument, lon: f64, lat: f64) -> ElementId {
         let layer = doc.doc.active_layer().unwrap();
         let ne = doc.doc.make_element("p", Geometry::Point(GeoPoint::surface(lon, lat)));
@@ -645,6 +751,7 @@ mod tests {
         id
     }
 
+    /// 总开关与聚焦开关应路由到 filters；开启聚焦时从实时选择集注入。
     #[test]
     fn overlay_and_focus_toggles_route_to_filters() {
         let (mut d, mut h, mut f, mut s) = fresh();
@@ -660,6 +767,7 @@ mod tests {
         assert!(f.selected.contains(&e));
     }
 
+    /// 类型开关应只翻转对应类型的掩码位，不影响其他类型。
     #[test]
     fn type_toggle_flips_enabled_mask() {
         let (mut d, mut h, mut f, mut s) = fresh();
@@ -669,6 +777,7 @@ mod tests {
         assert!(f.type_enabled(GeometryKind::Point));
     }
 
+    /// 层树控件（可见/锁定/可选择/聚焦/nudge/不透明度/新建）都应改动文档。
     #[test]
     fn layer_tree_controls_mutate_document() {
         let (mut d, mut h, mut f, mut s) = fresh();
@@ -697,6 +806,7 @@ mod tests {
         assert_eq!(d.doc.active_layer(), d.doc.layers().last().map(|l| l.id));
     }
 
+    /// 样式编辑应可撤销且只作用于已选元素；空操作不入栈。
     #[test]
     fn style_edits_are_undoable_and_only_touch_selection() {
         let (mut d, mut h, mut f, mut s) = fresh();
@@ -734,6 +844,7 @@ mod tests {
         assert_eq!(h.0.undo_len(), before_len);
     }
 
+    /// 删除/复制/可见性切换都应经由历史可撤销，并正确维护选择集。
     #[test]
     fn delete_and_duplicate_and_visibility_route_through_history() {
         let (mut d, mut h, mut f, mut s) = fresh();
@@ -760,6 +871,7 @@ mod tests {
         assert!(d.doc.element(e).unwrap().flags.visible_manual);
     }
 
+    /// 面板签名在空闲帧保持稳定，仅在状态真正变化时才改变。
     #[test]
     fn signature_is_stable_until_state_changes() {
         let (mut d, mut h, mut f, mut s) = fresh();
@@ -773,6 +885,7 @@ mod tests {
         assert_ne!(base, panel_signature(&d, &f, &s));
     }
 
+    /// 不透明度循环应按预设前进并在末尾回绕，未知值回到全不透明。
     #[test]
     fn opacity_cycle_wraps() {
         assert_eq!(next_opacity(1.0), OPACITY_STEPS[1]);

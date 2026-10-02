@@ -2,10 +2,10 @@
 //!
 //! 领域层 —— 纯 Rust，f64 精度。
 //!
-//! CesiumJS 映射：
-//! - WKT 几何解析
-//! - `ThirdParty/topojson.js` → topojson
-//! - `Scene/Vector3DTileContent.js` → vector_3d_tile
+//! 领域层提供三类矢量数据格式的解析与建模：
+//! - wkt：WKT（Well-Known Text）几何文本的双向解析与序列化；
+//! - topojson：拓扑编码 JSON 的弧段解码与几何重建；
+//! - vector_3d_tile：3D Tiles 矢量瓦片中的点/线/面内容模型。
 
 pub mod topojson;
 pub mod vector_3d_tile;

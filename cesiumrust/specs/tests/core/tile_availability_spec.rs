@@ -1,4 +1,4 @@
-//! TileAvailability 规格测试 - 移植自 Core/TileAvailabilitySpec.js
+//! TileAvailability 规格测试 - 参考自 Core/TileAvailabilitySpec
 //!
 //! 原始：12 个 it() 测试。移植：11 个 A 类。
 //! 省略：1 个（内部 _rootNodes 结构检查 → 改为功能性测试）。

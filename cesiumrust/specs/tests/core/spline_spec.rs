@@ -1,5 +1,5 @@
-//! Core/CatmullRomSplineSpec.js, HermiteSplineSpec.js, LinearSplineSpec.js,
-//! QuaternionSplineSpec.js, SteppedSplineSpec.js, ConstantSplineSpec.js
+//! Core/CatmullRomSplineSpec, HermiteSplineSpec, LinearSplineSpec,
+//! QuaternionSplineSpec, SteppedSplineSpec, ConstantSplineSpec
 //! → Rust integration tests for cesium_animation::spline
 
 use cesium_animation::spline::*;

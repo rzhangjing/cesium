@@ -1,12 +1,9 @@
 //! 3D Tiles 1.1 的隐式切分。
 //!
-//! 映射到 CesiumJS `Scene/Implicit3DTileContent.js`：
-//! - Quadtree/Octree 隐式细分
-//! - 可用性位流（availability bitstreams）
-//! - Morton 索引计算
-//! - 子树文件解析
+//! 涵盖 Quadtree/Octree 隐式细分、可用性位流（availability bitstreams）、
+//! Morton 索引的编解码，以及子树坐标换算与层级导航。
 
-// 沿自 CesiumJS 移植的 legacy 风格债（deferred.md #18）；在 M13 lint-cleanup 或本文件在其里程碑被重写时重新检视
+// 历史遗留的风格债（见 deferred.md #18）；在 M13 lint-cleanup 或本文件被重写时重新检视
 #![allow(clippy::manual_is_multiple_of)]
 /// 隐式切分的细分方案。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -37,7 +34,8 @@ impl SubdivisionScheme {
 }
 
 /// 隐式切分级层中的一个瓦片坐标。
-/// 映射到 CesiumJS `Scene/ImplicitTileCoordinates.js`
+///
+/// 记录层级与各维坐标，并提供 Morton 索引、父子/子树导航等换算。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImplicitTileCoord {
     /// 树中的层级（0 = 根）。
@@ -132,12 +130,13 @@ impl ImplicitTileCoord {
     }
 
     // ========================================================================
-    // ImplicitTileCoordinates 方法（沿自 CesiumJS）
+    // 坐标换算与层级导航方法
     // ========================================================================
 
     /// 计算子索引（本瓦片是父节点的哪个孩子）。
-    /// 映射到 `ImplicitTileCoordinates.childIndex`
+    /// 位拼接：x→bit0、y→bit1、octree 再叠 z→bit2（各取最低位）。
     pub fn child_index(&self, scheme: SubdivisionScheme) -> u32 {
+        // 逐维取最低位并按维加权拼合为 0..7 的子索引。
         let mut idx = 0u32;
         idx |= self.x & 1;
         idx |= (self.y & 1) << 1;
@@ -148,8 +147,9 @@ impl ImplicitTileCoord {
     }
 
     /// 计算瓦片索引（层级偏移 + morton 索引）。
-    /// 映射到 `ImplicitTileCoordinates.tileIndex`
+    /// 层级内偏移按等比级数求和（quadtree/3、octree/7）再加本层 Morton 索引。
     pub fn tile_index(&self, scheme: SubdivisionScheme) -> u64 {
+        // level_offset 为前 (level-1) 层的累计瓦片数。
         let level_offset = match scheme {
             SubdivisionScheme::Octree => ((1u64 << (3 * self.level)) - 1) / 7,
             SubdivisionScheme::Quadtree => ((1u64 << (2 * self.level)) - 1) / 3,
@@ -158,7 +158,7 @@ impl ImplicitTileCoord {
     }
 
     /// 给定一个相对偏移，计算后代坐标。
-    /// 映射到 `ImplicitTileCoordinates.getDescendantCoordinates`
+    /// 各维左移 offset.level 位后叠加 offset，得到更深层的后代坐标。
     pub fn get_descendant_coordinates(&self, offset: &ImplicitTileCoord) -> Self {
         let descendant_level = self.level + offset.level;
         let descendant_x = (self.x << offset.level) + offset.x;
@@ -174,7 +174,7 @@ impl ImplicitTileCoord {
     }
 
     /// 向上跨越若干层级来计算祖先坐标。
-    /// 映射到 `ImplicitTileCoordinates.getAncestorCoordinates`
+    /// 各维整除 2^offset_levels，层级相应减少，得到上层祖先坐标。
     pub fn get_ancestor_coordinates(&self, offset_levels: u32) -> Self {
         let divisor = 1u32 << offset_levels;
         Self {
@@ -187,7 +187,7 @@ impl ImplicitTileCoord {
     }
 
     /// 计算从本祖先到某个后代的偏移。
-    /// 映射到 `ImplicitTileCoordinates.getOffsetCoordinates`
+    /// 后代坐标对 2^offset_level 取模，得到其相对祖先的局部偏移。
     pub fn get_offset_coordinates(&self, descendant: &ImplicitTileCoord) -> Self {
         let offset_level = descendant.level - self.level;
         let dimension_at_offset = 1u32 << offset_level;
@@ -201,7 +201,7 @@ impl ImplicitTileCoord {
     }
 
     /// 由子索引（父节点内的 morton 索引）获取子坐标。
-    /// 映射到 `ImplicitTileCoordinates.getChildCoordinates`
+    /// 由 child_index 逐位分解出 (x,y,z) 增量，各维乘 2 叠加到父坐标。
     pub fn get_child_coordinates(&self, child_index: u32) -> Self {
         let level = self.level + 1;
         let x = 2 * self.x + (child_index % 2);
@@ -217,20 +217,21 @@ impl ImplicitTileCoord {
     }
 
     /// 获取包含本瓦片的子树根的坐标。
-    /// 映射到 `ImplicitTileCoordinates.getSubtreeCoordinates`
+    /// 上溯 (level mod subtree_levels) 层即得所在子树的根坐标。
     pub fn get_subtree_coordinates(&self) -> Self {
         self.get_ancestor_coordinates(self.level % self.subtree_levels)
     }
 
     /// 获取包含本瓦片的父子树的坐标。
-    /// 映射到 `ImplicitTileCoordinates.getParentSubtreeCoordinates`
+    /// 在上者基础上再上溯一个子树深度，得父子树根坐标。
     pub fn get_parent_subtree_coordinates(&self) -> Self {
         self.get_ancestor_coordinates((self.level % self.subtree_levels) + self.subtree_levels)
     }
 
     /// 返回本瓦片是否为另一瓦片的祖先。
-    /// 映射到 `ImplicitTileCoordinates.isAncestor`
+    /// 将后代各维右移层级差后与自身逐维比较，全部相等则为祖先。
     pub fn is_ancestor(&self, descendant: &ImplicitTileCoord, scheme: SubdivisionScheme) -> bool {
+        // 层级差 <=0 说明不是严格后代，直接返回 false。
         let level_diff = descendant.level as i32 - self.level as i32;
         if level_diff <= 0 {
             return false;
@@ -248,31 +249,32 @@ impl ImplicitTileCoord {
     }
 
     /// 返回本瓦片是否为隐式瓦片集的根（层级 0）。
-    /// 映射到 `ImplicitTileCoordinates.isImplicitTilesetRoot`
+    /// 层级为 0 时即整个隐式瓦片集的根。
     pub fn is_implicit_tileset_root(&self) -> bool {
         self.level == 0
     }
 
     /// 返回本瓦片是否为某个子树的根。
-    /// 映射到 `ImplicitTileCoordinates.isSubtreeRoot`
+    /// 层级能被 subtree_levels 整除时即为某子树的根。
     pub fn is_subtree_root(&self) -> bool {
         self.level % self.subtree_levels == 0
     }
 
     /// 返回本瓦片是否位于其子树的最后一层。
-    /// 映射到 `ImplicitTileCoordinates.isBottomOfSubtree`
+    /// 层级对 subtree_levels 取模等于末层序号时位于子树底部。
     pub fn is_bottom_of_subtree(&self) -> bool {
         self.level % self.subtree_levels == self.subtree_levels - 1
     }
 
     /// 由给定层级的 Morton 索引创建坐标。
-    /// 映射到 `ImplicitTileCoordinates.fromMortonIndex`
+    /// 按方案解码 Morton 位交错的 (x,y[,z])，再组装为坐标。
     pub fn from_morton_index(
         scheme: SubdivisionScheme,
         subtree_levels: u32,
         level: u32,
         morton_index: u64,
     ) -> Self {
+        // 按方案选择对应的 Morton 解码器还原各维坐标，再补齐 subtree_levels。
         match scheme {
             SubdivisionScheme::Octree => {
                 let (x, y, z) = decode_morton_3d(morton_index);
@@ -287,8 +289,9 @@ impl ImplicitTileCoord {
 
     /// 将 URI 中的模板占位符替换为坐标值。
     /// 将 `{level}`、`{x}`、`{y}`、`{z}` 替换为实际的坐标值。
-    /// 映射到 `ImplicitTileCoordinates.getTemplateValues`
+    /// 用实际坐标替换 URI 模板中的 {level}/{x}/{y}/{z} 占位符。
     pub fn get_template_values(&self, template_uri: &str) -> String {
+        // 依次替换四个占位符；未出现的占位符保持原样。
         template_uri
             .replace("{level}", &self.level.to_string())
             .replace("{x}", &self.x.to_string())
@@ -297,7 +300,7 @@ impl ImplicitTileCoord {
     }
 
     /// 由瓦片索引创建坐标。
-    /// 映射到 `ImplicitTileCoordinates.fromTileIndex`
+    /// 由 tile_index 反解出层级与本层内 Morton 索引，再转坐标。
     pub fn from_tile_index(
         scheme: SubdivisionScheme,
         subtree_levels: u32,
@@ -327,19 +330,22 @@ impl ImplicitTileCoord {
 }
 
 /// 计算 2D Morton 码（Z 阶曲线）。
-/// CesiumJS 约定：x 占偶数位（0,2,4...），y 占奇数位（1,3,5...）。
+/// 本实现约定：x 占偶数位（0,2,4...），y 占奇数位（1,3,5...）。
 pub fn morton_2d(x: u32, y: u32) -> u64 {
+    // y 展位后左移 1 位，与 x 展位按位或，得到交错编码。
     (part1by1(y as u64) << 1) | part1by1(x as u64)
 }
 
 /// 计算 3D Morton 码。
-/// CesiumJS 约定：x 占位置 0,3,6...，y 占 1,4,7...，z 占 2,5,8...
+/// 本实现约定：x 占位置 0,3,6...，y 占 1,4,7...，z 占 2,5,8...
 pub fn morton_3d(x: u32, y: u32, z: u32) -> u64 {
+    // z/y/x 依次展位并置于 bit2/bit1/bit0 的交错位置。
     (part1by2(z as u64) << 2) | (part1by2(y as u64) << 1) | part1by2(x as u64)
 }
 
 /// 为 2D Morton 码展开位。
 fn part1by1(mut n: u64) -> u64 {
+    // 反复分块插入 0，把低位每隔一位铺开（spread）。
     n &= 0x0000_0000_ffff_ffff;
     n = (n | (n << 16)) & 0x0000_ffff_0000_ffff;
     n = (n | (n << 8)) & 0x00ff_00ff_00ff_00ff;
@@ -351,6 +357,7 @@ fn part1by1(mut n: u64) -> u64 {
 
 /// 为 3D Morton 码展开位。
 fn part1by2(mut n: u64) -> u64 {
+    // 每 2 位插入 0，将 21 位输入铺成 63 位的 Morton 交错。
     n &= 0x0000_0000_001f_ffff;
     n = (n | (n << 32)) & 0x001f_0000_0000_ffff;
     n = (n | (n << 16)) & 0x001f_0000_ff00_00ff;
@@ -361,16 +368,18 @@ fn part1by2(mut n: u64) -> u64 {
 }
 
 /// 将一个 2D Morton 索引解码为 (x, y) 坐标。
-/// x 取自偶数位，y 取自奇数位（CesiumJS 约定）。
+/// x 取自偶数位，y 取自奇数位（与编码约定一致）。
 pub fn decode_morton_2d(morton: u64) -> (u32, u32) {
+    // 偶数位压缩得 x，右移 1 位后压缩得 y。
     let x = compact1by1(morton) as u32;
     let y = compact1by1(morton >> 1) as u32;
     (x, y)
 }
 
 /// 将一个 3D Morton 索引解码为 (x, y, z) 坐标。
-/// x 取自位置 0,3,6...，y 取自 1,4,7...，z 取自 2,5,8...（CesiumJS 约定）。
+/// x 取自位置 0,3,6...，y 取自 1,4,7...，z 取自 2,5,8...（与编码约定一致）。
 pub fn decode_morton_3d(morton: u64) -> (u32, u32, u32) {
+    // 分别以 0/1/2 位偏移压缩得 x/y/z。
     let x = compact1by2(morton) as u32;
     let y = compact1by2(morton >> 1) as u32;
     let z = compact1by2(morton >> 2) as u32;
@@ -379,6 +388,7 @@ pub fn decode_morton_3d(morton: u64) -> (u32, u32, u32) {
 
 /// 为 2D Morton 解码压缩位（part1by1 的逆运算）。
 fn compact1by1(mut n: u64) -> u64 {
+    // 逐层合并相邻位，回收展位前的原始坐标。
     n &= 0x5555_5555_5555_5555;
     n = (n ^ (n >> 1)) & 0x3333_3333_3333_3333;
     n = (n ^ (n >> 2)) & 0x0f0f_0f0f_0f0f_0f0f;
@@ -390,6 +400,7 @@ fn compact1by1(mut n: u64) -> u64 {
 
 /// 为 3D Morton 解码压缩位（part1by2 的逆运算）。
 fn compact1by2(mut n: u64) -> u64 {
+    // 逐层合并三元位，回收展位前的原始坐标。
     n &= 0x1249_2492_4924_9249;
     n = (n ^ (n >> 2)) & 0x10c3_0c30_c30c_30c3;
     n = (n ^ (n >> 4)) & 0x100f_00f0_0f00_f00f;
@@ -403,14 +414,19 @@ fn compact1by2(mut n: u64) -> u64 {
 #[derive(Debug, Clone)]
 pub struct AvailabilityBitstream {
     /// 位数据（每字节内 LSB 优先）。
+    ///
+    /// 长度为 div_ceil(length/8)，末字节高位可能未被有效位覆盖。
     pub bits: Vec<u8>,
     /// 有效位数。
+    ///
+    /// 等于子树内对应类别的节点总数，越界位读取视为不可用。
     pub length: u64,
 }
 
 impl AvailabilityBitstream {
     /// 创建一个所有位均未置 1 的新位流。
     pub fn new(length: u64) -> Self {
+        // 向上取整到整字节，保证末位也能落位。
         let byte_count = length.div_ceil(8) as usize;
         Self {
             bits: vec![0u8; byte_count],
@@ -420,14 +436,17 @@ impl AvailabilityBitstream {
 
     /// 由原始字节创建。
     pub fn from_bytes(bits: Vec<u8>, length: u64) -> Self {
+        // 直接采纳调用方提供的位数据与有效长度。
         Self { bits, length }
     }
 
     /// 若 index 处的位已置 1 则返回 true。
     pub fn is_available(&self, index: u64) -> bool {
+        // 越界一律视为不可用。
         if index >= self.length {
             return false;
         }
+        // 定位所在字节与字节内 LSB 优先的位偏移，再取出该位。
         let byte_index = (index / 8) as usize;
         let bit_index = (index % 8) as u8;
         (self.bits[byte_index] >> bit_index) & 1 == 1
@@ -435,11 +454,13 @@ impl AvailabilityBitstream {
 
     /// 设置 index 处的位。
     pub fn set(&mut self, index: u64, available: bool) {
+        // 越界写入被忽略，避免破坏位流长度不变式。
         if index >= self.length {
             return;
         }
         let byte_index = (index / 8) as usize;
         let bit_index = (index % 8) as u8;
+        // available 置位用或运算，清零用取反掩码按位与。
         if available {
             self.bits[byte_index] |= 1 << bit_index;
         } else {
@@ -449,6 +470,7 @@ impl AvailabilityBitstream {
 
     /// 返回可用瓦片的数量。
     pub fn count_available(&self) -> u64 {
+        // 逐位遍历有效区间，统计置 1 的瓦片数。
         let mut count = 0u64;
         for i in 0..self.length {
             if self.is_available(i) {
@@ -463,20 +485,31 @@ impl AvailabilityBitstream {
 #[derive(Debug, Clone)]
 pub struct ImplicitTilingConfig {
     /// 细分方案。
+    ///
+    /// 决定分支因子（quadtree=4、octree=8）与各维坐标语义。
     pub subdivision_scheme: SubdivisionScheme,
     /// 每个子树的层数。
+    ///
+    /// 子树文件覆盖的相对层级数，用于对齐子树边界。
     pub subtree_levels: u32,
     /// 树的最大层数。
+    ///
+    /// 超过此层级不再细分，作为遍历的终止条件。
     pub maximum_level: u32,
     /// 子树文件的 URL 模板。
+    ///
+    /// 含 {level}/{x}/{y}/{z} 占位符，按坐标展开为实际路径。
     pub subtree_uri_template: String,
     /// 内容文件的 URL 模板。
+    ///
+    /// 含坐标占位符，按瓦片位置展开为实际内容路径。
     pub content_uri_template: String,
 }
 
 impl ImplicitTilingConfig {
     /// 为给定坐标生成一个子树 URI。
     pub fn get_subtree_uri(&self, coord: &ImplicitTileCoord) -> String {
+        // 以坐标各维值替换子树模板中的占位符。
         self.subtree_uri_template
             .replace("{level}", &coord.level.to_string())
             .replace("{x}", &coord.x.to_string())
@@ -486,6 +519,7 @@ impl ImplicitTilingConfig {
 
     /// 为给定坐标生成一个内容 URI。
     pub fn get_content_uri(&self, coord: &ImplicitTileCoord) -> String {
+        // 以坐标各维值替换内容模板中的占位符。
         self.content_uri_template
             .replace("{level}", &coord.level.to_string())
             .replace("{x}", &coord.x.to_string())
@@ -495,8 +529,10 @@ impl ImplicitTilingConfig {
 
     /// 计算某个瓦片的子树根坐标。
     pub fn get_subtree_root(&self, coord: &ImplicitTileCoord) -> ImplicitTileCoord {
+        // 向下取整到子树边界层，得到子树根的层级。
         let subtree_level = (coord.level / self.subtree_levels) * self.subtree_levels;
         let level_diff = coord.level - subtree_level;
+        // 各维右移层级差，把坐标上溯到子树根的对应位置。
         ImplicitTileCoord {
             level: subtree_level,
             x: coord.x >> level_diff,
@@ -511,12 +547,20 @@ impl ImplicitTilingConfig {
 #[derive(Debug, Clone)]
 pub struct Subtree {
     /// 本子树的根坐标。
+    ///
+    /// 子树以此坐标为层级起点向下展开 subtree_levels 层。
     pub root: ImplicitTileCoord,
     /// 子树内的瓦片可用性。
+    ///
+    /// 位序按子树内各层 Morton 索引线性排布。
     pub tile_availability: AvailabilityBitstream,
     /// 子树内的内容可用性。
+    ///
+    /// 标记哪些瓦片挂载了实际内容文件。
     pub content_availability: AvailabilityBitstream,
     /// 子树的孩子子树可用性。
+    ///
+    /// 标记子树底部各节点是否继续拥有后继子树。
     pub child_subtree_availability: AvailabilityBitstream,
 }
 
@@ -701,7 +745,7 @@ mod tests {
         let root = ImplicitTileCoord::quadtree(0, 0, 0);
         let coord = ImplicitTileCoord::quadtree(1, 1, 0);
         let index = Subtree::local_index(&coord, &root, SubdivisionScheme::Quadtree);
-        // 层级 1 从偏移 1 开始，morton(1,0) = 1（CesiumJS：x 占偶数位）
+        // 层级 1 从偏移 1 开始，morton(1,0) = 1（约定：x 占偶数位）
         assert_eq!(index, 1 + 1);
     }
 

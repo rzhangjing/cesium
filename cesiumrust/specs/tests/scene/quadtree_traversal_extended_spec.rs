@@ -1,4 +1,4 @@
-//! QuadtreePrimitive 遍历扩展 specs - 移植自 QuadtreePrimitiveSpec.js
+//! QuadtreePrimitive 遍历扩展 specs - 参考自 QuadtreePrimitiveSpec
 //!
 //! 测试 QuadtreeTile SSE 计算、子瓦片坐标、
 //! 使用 mock 瓦片提供者的 QuadtreePrimitive.traverse、TraversalResult。

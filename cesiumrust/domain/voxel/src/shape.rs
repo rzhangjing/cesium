@@ -1,11 +1,14 @@
 //! 体素形状特质与形状类型枚举。
 //!
-//! 映射到 CesiumJS `Scene/VoxelShape.js` 与 `Scene/VoxelShapeType.js`。
+//! 定义体素网格映射到 3D 空间的抽象接口 VoxelShape，以及 Box/Ellipsoid/Cylinder
+//! 三种形状类型；同时提供有向包围盒（OBB）与包围球等公共几何类型。
 
 use glam::{DMat4, DVec3};
 use serde::{Deserialize, Serialize};
 
 /// 3D 空间中的有向包围盒。
+///
+/// 由中心与三个半轴（以矩阵列向量存储）定义，可描述任意朝向的长方体区域。
 #[derive(Debug, Clone, PartialEq)]
 pub struct OrientedBoundingBox {
     /// 包围盒的中心。
@@ -15,6 +18,7 @@ pub struct OrientedBoundingBox {
 }
 
 impl Default for OrientedBoundingBox {
+    /// 默认 OBB：中心在原点，半轴为单位矩阵（轴对齐单位立方体）。
     fn default() -> Self {
         Self {
             center: DVec3::ZERO,
@@ -26,11 +30,13 @@ impl Default for OrientedBoundingBox {
 impl OrientedBoundingBox {
     /// 由中心和半轴创建新的 OBB。
     pub fn new(center: DVec3, half_axes: glam::DMat3) -> Self {
+        // 直接保存调用方提供的中心与半轴矩阵
         Self { center, half_axes }
     }
 
     /// 由半轴计算包围球半径。
     pub fn bounding_sphere_radius(&self) -> f64 {
+        // 包围球需覆盖最远的 OBB 顶点，半径为三半轴长度平方和的开方
         let col0 = self.half_axes.col(0);
         let col1 = self.half_axes.col(1);
         let col2 = self.half_axes.col(2);
@@ -40,7 +46,7 @@ impl OrientedBoundingBox {
     /// 测试点是否位于 OBB 内部。
     pub fn contains(&self, point: DVec3) -> bool {
         let offset = point - self.center;
-        // 投影到每个轴
+        // 投影到每个轴：若任一轴上的投影超过半轴长，则点在外
         for i in 0..3 {
             let axis = self.half_axes.col(i);
             let half_len = axis.length();
@@ -48,6 +54,7 @@ impl OrientedBoundingBox {
                 continue;
             }
             let dir = axis / half_len;
+            // 将偏移投影到归一化轴方向，与半轴长比较判断内外
             let proj = offset.dot(dir);
             if proj.abs() > half_len {
                 return false;
@@ -60,6 +67,7 @@ impl OrientedBoundingBox {
     pub fn distance_to(&self, point: DVec3) -> f64 {
         let offset = point - self.center;
         let mut dist_sq = 0.0;
+        // 逐轴累加超出半轴的“越界量”平方，开方即得最近表面距离
         for i in 0..3 {
             let axis = self.half_axes.col(i);
             let half_len = axis.length();
@@ -78,6 +86,8 @@ impl OrientedBoundingBox {
 }
 
 /// 3D 空间中的包围球。
+///
+/// 由球心与半径定义，常用作比 OBB 更廉价但更宽松的快速剔除体。
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoundingSphere {
     /// 球心。
@@ -87,6 +97,7 @@ pub struct BoundingSphere {
 }
 
 impl Default for BoundingSphere {
+    /// 默认包围球：球心在原点，半径为 0（退化为点）。
     fn default() -> Self {
         Self {
             center: DVec3::ZERO,
@@ -98,6 +109,7 @@ impl Default for BoundingSphere {
 impl BoundingSphere {
     /// 由有向包围盒创建。
     pub fn from_obb(obb: &OrientedBoundingBox) -> Self {
+        // 复用 OBB 中心作为球心，半径取 OBB 的包围球半径
         Self {
             center: obb.center,
             radius: obb.bounding_sphere_radius(),
@@ -106,18 +118,20 @@ impl BoundingSphere {
 
     /// 测试点是否位于球内部。
     pub fn contains(&self, point: DVec3) -> bool {
+        // 球心到点的距离不超过半径即在内部
         (point - self.center).length() <= self.radius
     }
 
     /// 计算点到球表面的距离。
     pub fn distance_to(&self, point: DVec3) -> f64 {
+        // 球内点的距离钳为 0，球外点为超出的径段
         ((point - self.center).length() - self.radius).max(0.0)
     }
 }
 
 /// 体素形状的类型，控制体素网格如何映射到 3D 空间。
 ///
-/// 映射到 CesiumJS `VoxelShapeType`。
+/// 三种形状分别以不同的参数空间描述体素网格，决定坐标变换与边界范围。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum VoxelShapeType {
@@ -132,15 +146,19 @@ pub enum VoxelShapeType {
 impl VoxelShapeType {
     /// 获取此形状类型的默认最小边界。
     pub fn default_min_bounds(&self) -> DVec3 {
+        // Box 以 [-1,1] 为单位立方；Ellipsoid 以 (经度,纬度,高度) 为参数域；Cylinder 半径从 0 起
         match self {
             Self::Box => DVec3::new(-1.0, -1.0, -1.0),
+            // Ellipsoid：经度∈[-π,π]，纬度∈[-π/2,π/2]
             Self::Ellipsoid => DVec3::new(-std::f64::consts::PI, -std::f64::consts::FRAC_PI_2, -1.0),
+            // Cylinder：半径∈[0,1]，角度∈[-π,π]
             Self::Cylinder => DVec3::new(0.0, -std::f64::consts::PI, -1.0),
         }
     }
 
     /// 获取此形状类型的默认最大边界。
     pub fn default_max_bounds(&self) -> DVec3 {
+        // 与默认最小边界成对，界定各形状的完整参数范围
         match self {
             Self::Box => DVec3::new(1.0, 1.0, 1.0),
             Self::Ellipsoid => DVec3::new(std::f64::consts::PI, std::f64::consts::FRAC_PI_2, 1.0),
@@ -151,7 +169,7 @@ impl VoxelShapeType {
 
 /// 体素形状的特质，控制体素网格的剔除与渲染。
 ///
-/// 映射到 CesiumJS `VoxelShape` 接口。
+/// 统一的形状接口，供上层以不依赖具体形状类型的方式获取包围体、变换与坐标映射。
 pub trait VoxelShape {
     /// 获取包含有界形状的有向包围盒。
     fn oriented_bounding_box(&self) -> &OrientedBoundingBox;
@@ -169,6 +187,8 @@ pub trait VoxelShape {
     fn maximum_intersections_length(&self) -> u32;
 
     /// 更新形状状态。返回形状是否可见。
+    ///
+    /// 重新计算包围体与裁剪范围，返回值指示经裁剪后形状是否仍需渲染。
     fn update(
         &mut self,
         model_matrix: DMat4,
@@ -182,6 +202,8 @@ pub trait VoxelShape {
     fn convert_local_to_shape_uv_space(&self, position_local: DVec3) -> DVec3;
 
     /// 为指定瓦片计算有向包围盒。
+    ///
+    /// 依据瓦片层级与 x/y/z 索引，返回该瓦片在形状参数空间中对应的 OBB。
     fn compute_obb_for_tile(
         &self,
         tile_level: u32,
@@ -194,12 +216,14 @@ pub trait VoxelShape {
 /// 线性插值。
 #[inline]
 pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
+    // t=0 返回 a，t=1 返回 b，中间按权重线性混合
     a + (b - a) * t
 }
 
 /// 在 min 与 max 向量之间逐分量钳制值。
 #[inline]
 pub fn clamp_vec3(v: DVec3, min: DVec3, max: DVec3) -> DVec3 {
+    // 逐轴独立 clamp，用于将点限制在形状的轴对齐边界内
     DVec3::new(
         v.x.clamp(min.x, max.x),
         v.y.clamp(min.y, max.y),

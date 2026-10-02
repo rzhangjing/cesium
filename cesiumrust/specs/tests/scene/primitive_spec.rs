@@ -1,4 +1,4 @@
-//! Scene/PrimitiveSpec.js, PrimitiveCollectionSpec.js → Rust integration tests
+//! Scene/PrimitiveSpec, PrimitiveCollectionSpec → Rust integration tests
 
 use cesium_primitives::{PrimitiveCollection, GeometryType, CullMode};
 use glam::DVec3;

@@ -1,8 +1,6 @@
-//! 高程图细分为网格：从高程图图像创建网格。
-//!
-//! 映射到 CesiumJS `Core/HeightmapTessellator.js`
+//! 高程图细分为网格：从高程图图像创建带裙边的顶点网格与地形编码。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 历史遗留的风格债（见 deferred.md #18）；在 M13 lint-cleanup 或本文件被重写时重新检视
 #![allow(unused_imports, unused_variables)]
 use cesium_geospatial::bounding::{AxisAlignedBoundingBox, BoundingSphere};
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -15,25 +13,28 @@ use glam::{DVec2, DVec3};
 use crate::terrain_encoding::TerrainEncoding;
 
 /// 高程图的默认结构。
-/// 映射到 CesiumJS `HeightmapTessellator.DEFAULT_STRUCTURE`
+///
+/// 描述如何从原始采样解码单个高度值，各字段含义见下。
 #[derive(Debug, Clone)]
 pub struct HeightmapStructure {
-    /// 高度采样要乘以的因子。
+    /// 高度采样要乘以的因子（无夸张时为 1.0）。
     pub height_scale: f64,
-    /// 添加到缩放后高度的偏移。
+    /// 添加到缩放后高度的偏移（单位：米）。
     pub height_offset: f64,
-    /// 构成单个高度采样的元素数。
+    /// 构成单个高度采样的元素数（多用于多字节高度）。
     pub elements_per_height: usize,
-    /// 高度之间要跳过的元素数。
+    /// 高度之间要跳过的元素数（1 表示紧凑排列）。
     pub stride: usize,
-    /// 当 stride > 1 时用于计算高度的乘数。
+    /// 当 stride > 1 时用于多字节高度累加的乘数（常见 256）。
     pub element_multiplier: f64,
-    /// 当 elementsPerHeight > 1 时指示字节序。
+    /// 当 elementsPerHeight > 1 时指示多字节高度的字节序。
     pub is_big_endian: bool,
 }
 
 impl Default for HeightmapStructure {
+    /// 返回缺省结构：无缩放偏移、单元素、小端、乘数 256。
     fn default() -> Self {
+        // 默认每个高度占 1 个元素，解码后不做额外变换。
         Self {
             height_scale: 1.0,
             height_offset: 0.0,
@@ -48,28 +49,40 @@ impl Default for HeightmapStructure {
 /// `compute_vertices` 的选项。
 pub struct ComputeVerticesOptions {
     /// 高程图数据。
+    ///
+    /// 按行优先排列的高度采样（已解码或待解码的原始元素）。
     pub heightmap: Vec<f64>,
     /// 以高度采样计的宽度。
     pub width: usize,
     /// 以高度采样计的高度。
     pub height: usize,
-    /// 边缘裙边的高度。
+    /// 边缘裙边的高度（单位：米，>0 时生成裙边）。
     pub skirt_height: f64,
     /// 原生坐标中的矩形（地理用度，web mercator 用米）。
     pub native_rectangle: Rectangle,
     /// 可选的大地弧度矩形。
+    ///
+    /// 缺省时由 native_rectangle 换算出四边弧度值。
     pub rectangle: Option<Rectangle>,
     /// 若为地理投影则为 true（默认），web mercator 为 false。
     pub is_geographic: bool,
     /// 椭球体。
+    ///
+    /// 缺省为 WGS84，用于大地坐标到地固坐标的换算。
     pub ellipsoid: Ellipsoid,
     /// 可选的相对位置中心。
+    ///
+    /// 作为 RTE 参考点；缺省为地固系原点。
     pub relative_to_center: Option<DVec3>,
     /// 高度结构描述符。
+    ///
+    /// 缺省取 [`HeightmapStructure::default`]。
     pub structure: Option<HeightmapStructure>,
     /// 是否包含 web mercator 的 T 坐标。
     pub include_web_mercator_t: bool,
     /// 地形夸张缩放。
+    ///
+    /// 1.0 表示不夸张，大于 1.0 沿表面法线拉伸地形。
     pub exaggeration: f64,
     /// 应用夸张所基于的高度。
     pub exaggeration_relative_height: f64,
@@ -84,6 +97,7 @@ impl ComputeVerticesOptions {
         skirt_height: f64,
         native_rectangle: Rectangle,
     ) -> Self {
+        // 其余选项取默认：地理投影、WGS84、无裙边结构、夸张 1.0。
         Self {
             heightmap,
             width,
@@ -105,8 +119,12 @@ impl ComputeVerticesOptions {
 /// `compute_vertices` 的结果。
 pub struct TessellatedVertices {
     /// 顶点缓冲区（每顶点 stride 个浮点数）。
+    ///
+    /// 按 [`TerrainEncoding`] 的步长与属性顺序线性排布。
     pub vertices: Vec<f64>,
     /// 最小高度。
+    ///
+    /// 取自各采样（含裙边下沉后）的下界。
     pub minimum_height: f64,
     /// 最大高度。
     pub maximum_height: f64,
@@ -118,20 +136,23 @@ pub struct TessellatedVertices {
 
 /// 从高程图图像填充顶点数组。
 ///
-/// 映射到 CesiumJS `HeightmapTessellator.computeVertices`
+/// 逐采样计算大地坐标与 ECEF 位置，可选地生成四周裙边顶点，最后统一编码。
 pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices {
     let heightmap = &options.heightmap;
     let width = options.width;
     let height = options.height;
     let skirt_height = options.skirt_height;
+    // 是否生成裙边取决于裙边高度是否为正。
     let has_skirts = skirt_height > 0.0;
 
     let is_geographic = options.is_geographic;
     let ellipsoid = &options.ellipsoid;
+    // 半长轴倒数，用于把 web mercator 米坐标换算为弧度。
     let one_over_globe_semimajor_axis = 1.0 / ellipsoid.maximum_radius();
 
     let native_rectangle = options.native_rectangle;
 
+    // 确定大地矩形四边：优先用显式 rectangle，否则由 native_rectangle 换算。
     let (geographic_west, geographic_south, geographic_east, geographic_north) =
         if let Some(ref rect) = options.rectangle {
             (rect.west, rect.south, rect.east, rect.north)
@@ -143,6 +164,7 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
                 math_utils::to_radians(native_rectangle.north),
             )
         } else {
+            // web mercator：用反投影公式把米坐标还原为纬度弧度。
             let pi_over_two = math_utils::PI_OVER_TWO;
             (
                 native_rectangle.west * one_over_globe_semimajor_axis,
@@ -158,15 +180,18 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
             )
         };
 
+    // 相对位置中心（RTE 参考点），缺省为原点。
     let relative_to_center = options.relative_to_center.unwrap_or(DVec3::ZERO);
     let has_relative_to_center = options.relative_to_center.is_some();
     let _include_web_mercator_t = options.include_web_mercator_t;
 
+    // 垂直夸张仅在缩放因子明显偏离 1.0 时启用。
     let exaggeration = options.exaggeration;
     let exaggeration_relative_height = options.exaggeration_relative_height;
     let has_exaggeration = (exaggeration - 1.0).abs() > f64::EPSILON;
     let _include_geodetic_surface_normals = has_exaggeration;
 
+    // 展开高度结构，供逐采样解码使用。
     let structure = options.structure.clone().unwrap_or_default();
     let height_scale = structure.height_scale;
     let height_offset = structure.height_offset;
@@ -175,20 +200,24 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
     let element_multiplier = structure.element_multiplier;
     let is_big_endian = structure.is_big_endian;
 
+    // 每个采样间隔对应的经纬跨度（网格分辨率）。
     let rectangle_width = native_rectangle.east - native_rectangle.west;
     let rectangle_height = native_rectangle.north - native_rectangle.south;
 
     let granularity_x = rectangle_width / (width - 1) as f64;
     let granularity_y = rectangle_height / (height - 1) as f64;
 
+    // 椭球半径平方，用于由法线求地表点。
     let radii_squared = ellipsoid.radii_squared();
     let radii_squared_x = radii_squared.x;
     let radii_squared_y = radii_squared.y;
     let radii_squared_z = radii_squared.z;
 
+    // 用哨兵值初始化高度区间，遍历时收缩。
     let mut minimum_height = 65536.0f64;
     let mut maximum_height = -65536.0f64;
 
+    // ENU 与地固系之间的双向变换矩阵。
     let from_enu = transforms::east_north_up_to_fixed_frame(relative_to_center, ellipsoid);
     let to_enu = transforms::inverse_transformation(&from_enu);
 
@@ -196,6 +225,7 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
     let mut maximum = DVec3::splat(f64::NEG_INFINITY);
     let mut h_min = f64::INFINITY;
 
+    // 总顶点数 = 网格内部点 + 四周裙边点。
     let grid_vertex_count = width * height;
     let edge_vertex_count = if has_skirts {
         width * 2 + height * 2
@@ -204,10 +234,12 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
     };
     let vertex_count = grid_vertex_count + edge_vertex_count;
 
+    // 位置用 Option 占位，裙边角点将被跳过保持 None。
     let mut positions: Vec<Option<DVec3>> = vec![None; vertex_count];
     let mut heights_arr: Vec<f64> = vec![0.0; vertex_count];
     let mut uvs: Vec<DVec2> = vec![DVec2::ZERO; vertex_count];
 
+    // 有裙边时行列范围向外扩一圈（-1 到 size+1）。
     let (start_row, end_row, start_col, end_col) = if has_skirts {
         (
             -1i32,
@@ -219,11 +251,12 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
         (0, height as i32, 0, width as i32)
     };
 
-    // 注意：CesiumJS 对 lat/lon 应用一个极小的 skirt_offset_percentage（0.00001）
+    // 参考实现对 lat/lon 应用一个极小的 skirt_offset_percentage（0.00001）
     // 以防止 z-fighting。我们跳过它，因为这是一项不影响几何正确性的
     // 渲染优化。
 
     for row_index in start_row..end_row {
+        // 逐行遍历：把越界的裙边行钳制回最近的有效网格行。
         let mut row = row_index;
         if row < 0 {
             row = 0;
@@ -232,6 +265,7 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
             row = height as i32 - 1;
         }
 
+        // 由北向南按间隔推进得到纬度；web mercator 需反投影。
         let mut latitude = native_rectangle.north - granularity_y * row as f64;
 
         if !is_geographic {
@@ -241,6 +275,7 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
             latitude = math_utils::to_radians(latitude);
         }
 
+        // 归一化并钳制纹理纵坐标 v。
         let mut v =
             (latitude - geographic_south) / (geographic_north - geographic_south);
         v = math_utils::clamp(v, 0.0, 1.0);
@@ -248,11 +283,13 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
         let is_north_edge = row_index == start_row;
         let is_south_edge = row_index == end_row - 1;
 
+        // 预算每行的纬度三角函数与法线 z 分量相关项。
         let cos_latitude = latitude.cos();
         let n_z = latitude.sin();
         let k_z = radii_squared_z * n_z;
 
         for col_index in start_col..end_col {
+            // 逐列遍历：把越界的裙边列钳制回最近的有效网格列。
             let mut col = col_index;
             if col < 0 {
                 col = 0;
@@ -261,8 +298,10 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
                 col = width as i32 - 1;
             }
 
+            // 定位该采样在带步长的缓冲区中的起始元素。
             let terrain_offset = row as usize * (width * stride) + col as usize * stride;
 
+            // 解码高度：单元素直取，多元素按字节序乘累加。
             let height_sample = if elements_per_height == 1 {
                 heightmap[terrain_offset]
             } else if is_big_endian {
@@ -279,11 +318,13 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
                 sample
             };
 
+            // 应用缩放与偏移得到真实高程。
             let height_sample = height_sample * height_scale + height_offset;
 
             maximum_height = maximum_height.max(height_sample);
             minimum_height = minimum_height.min(height_sample);
 
+            // 由西向东按间隔推进得到经度；按投影方式换算。
             let mut longitude = native_rectangle.west + granularity_x * col as f64;
 
             if !is_geographic {
@@ -292,22 +333,27 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
                 longitude = math_utils::to_radians(longitude);
             }
 
+            // 归一化并钳制纹理横坐标 u。
             let mut u = (longitude - geographic_west) / (geographic_east - geographic_west);
             u = math_utils::clamp(u, 0.0, 1.0);
 
             let mut index = row as usize * width + col as usize;
 
             if skirt_height > 0.0 {
+                // 裙边处理：识别当前采样是否位于边界或角落。
                 let is_west_edge = col_index == start_col;
                 let is_east_edge = col_index == end_col - 1;
                 let is_edge = is_north_edge || is_south_edge || is_west_edge || is_east_edge;
                 let is_corner =
                     (is_north_edge || is_south_edge) && (is_west_edge || is_east_edge);
                 if is_corner {
+                    // 角点跳过，避免生成退化三角形。
                     continue;
                 } else if is_edge {
+                    // 裙边顶点下沉 skirt_height，形成防止缝隙的垂裙。
                     let height_sample = height_sample - skirt_height;
 
+                    // 按方位把裙边点映射到边缘顶点区的专属索引。
                     if is_west_edge {
                         index = grid_vertex_count + (height - row as usize - 1);
                     } else if is_south_edge {
@@ -318,6 +364,7 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
                         index = grid_vertex_count + height + width + height + col as usize;
                     }
 
+                    // 由经纬度求单位法线，再据椭球半径得地表点。
                     let n_x = cos_latitude * longitude.cos();
                     let n_y = cos_latitude * longitude.sin();
                     let k_x = radii_squared_x * n_x;
@@ -346,6 +393,7 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
                 }
             }
 
+            // 网格内部点同样求地表位置。
             let n_x = cos_latitude * longitude.cos();
             let n_y = cos_latitude * longitude.sin();
             let k_x = radii_squared_x * n_x;
@@ -362,6 +410,7 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
                 r_surface_z + n_z * height_sample,
             );
 
+            // 累积 ENU 包围盒与最低高度，供编码与包围体使用。
             let enu_pos = to_enu.transform_point3(position);
             minimum = minimum.min(enu_pos);
             maximum = maximum.max(enu_pos);
@@ -374,9 +423,11 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
     }
 
     // 从位置计算包围球
+    // 过滤掉被跳过的角点（None）后汇总有效顶点。
     let valid_positions: Vec<DVec3> = positions.iter().filter_map(|p| *p).collect();
     let bounding_sphere_3d = BoundingSphere::from_points(&valid_positions);
 
+    // 用累积的 ENU 包围盒构造地形编码。
     let aa_box = AxisAlignedBoundingBox::new(minimum, maximum);
     let encoding = TerrainEncoding::new(
         relative_to_center,
@@ -391,6 +442,7 @@ pub fn compute_vertices(options: &ComputeVerticesOptions) -> TessellatedVertices
         exaggeration_relative_height,
     );
 
+    // 逐顶点编码进最终缓冲区。
     let mut vertices: Vec<f64> = Vec::with_capacity(vertex_count * encoding.stride);
     for j in 0..vertex_count {
         let pos = positions[j].unwrap_or(DVec3::ZERO);

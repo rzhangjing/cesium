@@ -1,17 +1,16 @@
 //! 可信服务器注册表。
 //!
-//! 映射到 CesiumJS `Core/TrustedServers.js`。
-//!
-//! 一个可信服务器的注册表。向这些服务器发出的
-//! 任何请求都会附带凭据。
+//! 维护一组可信的 host:port 条目。向这些服务器发出的
+//! 任何请求都会附带凭据（cookies、授权头等）。
 
 use std::collections::HashSet;
 
 /// 一个可信服务器注册表。
 ///
-/// 映射到 CesiumJS `TrustedServers`。
+/// 以 `host:port` 权限键为粒度管理可信集合。
 #[derive(Debug, Default, Clone)]
 pub struct TrustedServers {
+    /// 已注册的可信服务器权限集合（小写 host:port）。
     servers: HashSet<String>,
 }
 
@@ -25,7 +24,7 @@ impl TrustedServers {
 
     /// 向注册表添加一个可信服务器。
     ///
-    /// 映射到 `TrustedServers.add`。
+    /// 权限键统一转小写并显式携带端口后插入集合。
     pub fn add(&mut self, host: &str, port: u16) {
         let authority = format!("{}:{}", host.to_lowercase(), port);
         self.servers.insert(authority);
@@ -33,7 +32,7 @@ impl TrustedServers {
 
     /// 从注册表移除一个可信服务器。
     ///
-    /// 映射到 `TrustedServers.remove`。
+    /// 按小写的 host:port 权限键从集合精确移除。
     pub fn remove(&mut self, host: &str, port: u16) {
         let authority = format!("{}:{}", host.to_lowercase(), port);
         self.servers.remove(&authority);
@@ -41,7 +40,7 @@ impl TrustedServers {
 
     /// 返回某个 URL 是否可信。
     ///
-    /// 映射到 `TrustedServers.isTrusted`。
+    /// 先从 URL 提取权限键，再查表判断是否可信。
     pub fn is_trusted(&self, url: &str) -> bool {
         match Self::get_authority(url) {
             Some(authority) => self.servers.contains(&authority),

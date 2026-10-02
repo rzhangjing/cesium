@@ -1,8 +1,7 @@
 //! 用于 glTF 2.0 的 PBR material 扩展。
 //!
-//! 映射到 CesiumJS：
-//! - `Scene/ModelComponents.js`（MetallicRoughness、SpecularGlossiness、Specular、Clearcoat、Anisotropy）
-//! - `Scene/Model/GltfLoaderUtility.js`（扩展解析）
+//! 描述 metallic-roughness 与各 KHR 扩展（含 specular/clearcoat/anisotropy
+//! 等）的强类型结构，并提供扩展 JSON 的解析入口。
 //!
 //! 支持的 KHR 扩展：
 //! - KHR_materials_pbrSpecularGlossiness
@@ -22,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 /// 扩展的 material 属性，将基础 PBR 与所有 KHR 扩展组合在一起。
 ///
-/// 映射到 CesiumJS `ModelComponents.Material`
+/// 各扩展字段均可缺省，反序列化时按 KHR 名称逐一由 [`parse_material_extensions`] 填充。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtendedMaterial {
@@ -73,7 +72,7 @@ pub struct ExtendedMaterial {
 
 /// PBR metallic-roughness 明暗模型。
 ///
-/// 映射到 CesiumJS `ModelComponents.MetallicRoughness`
+/// 以基础颜色/金属度/粗糙度三组因子与贴图描述常规金属-非金属表面。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MetallicRoughness {
@@ -99,6 +98,7 @@ pub struct MetallicRoughness {
 }
 
 impl Default for MetallicRoughness {
+    /// 白基色、全金属全粗糙、无贴图的默认 PBR 参数。
     fn default() -> Self {
         Self {
             base_color_factor: [1.0, 1.0, 1.0, 1.0],
@@ -112,7 +112,7 @@ impl Default for MetallicRoughness {
 
 /// KHR_materials_pbrSpecularGlossiness 扩展。
 ///
-/// 映射到 CesiumJS `ModelComponents.SpecularGlossiness`
+/// 采用旧式 specular-glossiness 工作流，与 metallic-roughness 互斥备选。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpecularGlossiness {
@@ -138,6 +138,7 @@ pub struct SpecularGlossiness {
 }
 
 impl Default for SpecularGlossiness {
+    /// 漫反射白、高光全白、光泽度 1.0、无贴图的默认参数。
     fn default() -> Self {
         Self {
             diffuse_factor: [1.0, 1.0, 1.0, 1.0],
@@ -151,7 +152,7 @@ impl Default for SpecularGlossiness {
 
 /// KHR_materials_specular 扩展。
 ///
-/// 映射到 CesiumJS `ModelComponents.Specular`
+/// 在 metallic-roughness 之上叠加独立的高光强度与颜色控制。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Specular {
@@ -173,6 +174,7 @@ pub struct Specular {
 }
 
 impl Default for Specular {
+    /// 高光因子与颜色均为 1.0、无贴图的默认 specular 参数。
     fn default() -> Self {
         Self {
             specular_factor: 1.0,
@@ -185,7 +187,7 @@ impl Default for Specular {
 
 /// KHR_materials_clearcoat 扩展。
 ///
-/// 映射到 CesiumJS `ModelComponents.Clearcoat`
+/// 模拟车漆类材质表面的一层额外清漆层及其法线细节。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Clearcoat {
@@ -211,6 +213,7 @@ pub struct Clearcoat {
 }
 
 impl Default for Clearcoat {
+    /// 清漆强度/粗糙度均为 0.0、无贴图的默认 clearcoat 参数。
     fn default() -> Self {
         Self {
             clearcoat_factor: 0.0,
@@ -224,7 +227,7 @@ impl Default for Clearcoat {
 
 /// KHR_materials_anisotropy 扩展。
 ///
-/// 映射到 CesiumJS `ModelComponents.Anisotropy`
+/// 描述沿切线方向拉伸的高光（如拉丝金属、头发）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Anisotropy {
@@ -242,6 +245,7 @@ pub struct Anisotropy {
 }
 
 impl Default for Anisotropy {
+    /// 强度与旋转均为 0.0、无贴图的默认各向异性参数。
     fn default() -> Self {
         Self {
             anisotropy_strength: 0.0,
@@ -265,6 +269,7 @@ pub struct Transmission {
 }
 
 impl Default for Transmission {
+    /// 透射因子 0.0（完全不透射）的默认参数。
     fn default() -> Self {
         Self {
             transmission_factor: 0.0,
@@ -283,6 +288,7 @@ pub struct Ior {
 }
 
 impl Default for Ior {
+    /// 折射率 1.5（常见介质）的默认参数。
     fn default() -> Self {
         Self { ior: 1.5 }
     }
@@ -298,6 +304,7 @@ pub struct EmissiveStrength {
 }
 
 impl Default for EmissiveStrength {
+    /// 自发光强度乘数为 1.0（不额外增强）的默认参数。
     fn default() -> Self {
         Self {
             emissive_strength: 1.0,
@@ -327,6 +334,7 @@ pub struct Sheen {
 }
 
 impl Default for Sheen {
+    /// 包边颜色为黑、粗糙度 0.0、无贴图的默认 sheen 参数。
     fn default() -> Self {
         Self {
             sheen_color_factor: [0.0, 0.0, 0.0],
@@ -359,6 +367,7 @@ pub struct Volume {
 }
 
 impl Default for Volume {
+    /// 厚度 0.0、衰减距离无穷大（无吸收）的默认体积参数。
     fn default() -> Self {
         Self {
             thickness_factor: 0.0,
@@ -371,7 +380,7 @@ impl Default for Volume {
 
 /// 支持 KHR_texture_transform 扩展的 texture info。
 ///
-/// 映射到 CesiumJS `ModelComponents.TextureReader`
+/// 在基础 index/texCoord 之外附带可选的 UV 变换与法线缩放。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextureTransformInfo {
@@ -424,6 +433,7 @@ pub struct TextureTransform {
 }
 
 impl Default for TextureTransform {
+    /// 零偏移、零旋转、单位缩放的恒等 UV 变换。
     fn default() -> Self {
         Self {
             offset: [0.0, 0.0],
@@ -437,8 +447,7 @@ impl Default for TextureTransform {
 impl TextureTransform {
     /// 计算 3x3 的 UV 变换矩阵。
     ///
-    /// 变换顺序为：T(offset) * R(rotation) * S(scale)。
-    /// 映射到 CesiumJS `GltfLoaderUtility.getTextureTransformMatrix`
+    /// 变换顺序为：T(offset) * R(rotation) * S(scale)，返回列主序存储。
     pub fn compute_matrix(&self) -> [f64; 9] {
         let cos_r = self.rotation.cos();
         let sin_r = self.rotation.sin();
@@ -471,15 +480,19 @@ impl TextureTransform {
 
     /// 使用本变换对一个 UV 坐标进行变换。
     pub fn transform_uv(&self, u: f64, v: f64) -> [f64; 2] {
+        // 旋转的三角值，与 compute_matrix 保持一致的 T*R*S 语义
         let cos_r = self.rotation.cos();
         let sin_r = self.rotation.sin();
 
+        // 先按 scale 缩放 UV
         let su = u * self.scale[0];
         let sv = v * self.scale[1];
 
+        // 再绕原点旋转
         let ru = cos_r * su - sin_r * sv;
         let rv = sin_r * su + cos_r * sv;
 
+        // 最后平移 offset，得到最终 UV
         [ru + self.offset[0], rv + self.offset[1]]
     }
 }
@@ -507,6 +520,7 @@ pub struct NormalTextureInfo {
 impl TextureTransformInfo {
     /// 由一个基础的 TextureInfo 创建。
     pub fn from_texture_info(info: &TextureInfo) -> Self {
+        // 拷贝 index/texCoord，扩展与法线缩放置空
         Self {
             index: info.index,
             tex_coord: info.tex_coord,
@@ -517,6 +531,7 @@ impl TextureTransformInfo {
 
     /// 获取生效的 texCoord（考虑 KHR_texture_transform 覆盖）。
     pub fn effective_tex_coord(&self) -> usize {
+        // 优先取 KHR_texture_transform 的覆盖，否则回落结构体 tex_coord
         self.extensions
             .as_ref()
             .and_then(|e| e.texture_transform.as_ref())
@@ -526,6 +541,7 @@ impl TextureTransformInfo {
 
     /// 若存在则获取 texture transform。
     pub fn get_transform(&self) -> Option<&TextureTransform> {
+        // 逐层解包 Option，仅当扩展链完整时返回变换引用
         self.extensions
             .as_ref()
             .and_then(|e| e.texture_transform.as_ref())
@@ -534,10 +550,11 @@ impl TextureTransformInfo {
 
 /// 从 glTF material 的扩展 JSON 解析扩展的 material。
 ///
-/// 映射到 CesiumJS `GltfLoaderUtility` 的 material 扩展解析。
+/// 逐个探测常见 KHR 扩展键，将命中的子对象反序列化进对应的可选字段。
 pub fn parse_material_extensions(
     extensions: &serde_json::Value,
 ) -> ExtendedMaterial {
+    // 先取默认材质，再按存在的扩展键逐一覆盖对应字段
     let mut mat = ExtendedMaterial::default();
 
     if let Some(obj) = extensions.as_object() {
@@ -597,36 +614,44 @@ pub fn parse_material_extensions(
 }
 
 // serde 使用的默认值函数
+/// metallic/roughness/specular 因子共用的单位默认值 1.0。
 fn default_one() -> f64 {
     1.0
 }
 
+/// RGBA 基础颜色因子的默认不透明白色。
 fn default_base_color_factor() -> [f64; 4] {
     [1.0, 1.0, 1.0, 1.0]
 }
 
+/// RGB 三元因子的默认全白 [1,1,1]（高光色/衰减色共用）。
 fn default_specular_factor() -> [f64; 3] {
     [1.0, 1.0, 1.0]
 }
 
+/// 折射率的默认值 1.5。
 fn default_ior() -> f64 {
     1.5
 }
 
+/// 衰减距离的默认无穷大（相当于无吸收）。
 fn default_attenuation_distance() -> f64 {
     f64::INFINITY
 }
 
+/// UV 缩放的默认单位 [1,1]。
 fn default_uv_scale() -> [f64; 2] {
     [1.0, 1.0]
 }
 
+// 单元测试：覆盖各扩展默认值、JSON 解析与 UV 变换/矩阵。
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_default_metallic_roughness() {
+        // 验证 MetallicRoughness 默认值
         let mr = MetallicRoughness::default();
         assert_eq!(mr.base_color_factor, [1.0, 1.0, 1.0, 1.0]);
         assert_eq!(mr.metallic_factor, 1.0);
@@ -636,6 +661,7 @@ mod tests {
 
     #[test]
     fn test_specular_glossiness_defaults() {
+        // 验证 SpecularGlossiness 默认因子
         let sg = SpecularGlossiness::default();
         assert_eq!(sg.diffuse_factor, [1.0, 1.0, 1.0, 1.0]);
         assert_eq!(sg.specular_factor, [1.0, 1.0, 1.0]);
@@ -644,6 +670,7 @@ mod tests {
 
     #[test]
     fn test_clearcoat_defaults() {
+        // 验证 Clearcoat 默认强度为 0
         let cc = Clearcoat::default();
         assert_eq!(cc.clearcoat_factor, 0.0);
         assert_eq!(cc.clearcoat_roughness_factor, 0.0);
@@ -651,6 +678,7 @@ mod tests {
 
     #[test]
     fn test_anisotropy_defaults() {
+        // 验证 Anisotropy 默认强度与旋转为 0
         let an = Anisotropy::default();
         assert_eq!(an.anisotropy_strength, 0.0);
         assert_eq!(an.anisotropy_rotation, 0.0);
@@ -658,12 +686,14 @@ mod tests {
 
     #[test]
     fn test_ior_default() {
+        // 验证 Ior 默认折射率 1.5
         let ior = Ior::default();
         assert!((ior.ior - 1.5).abs() < 1e-10);
     }
 
     #[test]
     fn test_parse_specular_glossiness_extension() {
+        // 从 JSON 解析 pbrSpecularGlossiness 扩展字段
         let json = serde_json::json!({
             "KHR_materials_pbrSpecularGlossiness": {
                 "diffuseFactor": [0.8, 0.2, 0.1, 1.0],
@@ -681,6 +711,7 @@ mod tests {
 
     #[test]
     fn test_parse_clearcoat_extension() {
+        // 从 JSON 解析 clearcoat 扩展因子
         let json = serde_json::json!({
             "KHR_materials_clearcoat": {
                 "clearcoatFactor": 0.8,
@@ -696,6 +727,7 @@ mod tests {
 
     #[test]
     fn test_parse_unlit_extension() {
+        // 存在 unlit 键即将 unlit 置为 true
         let json = serde_json::json!({
             "KHR_materials_unlit": {}
         });
@@ -706,6 +738,7 @@ mod tests {
 
     #[test]
     fn test_parse_transmission_extension() {
+        // 从 JSON 解析 transmission 因子
         let json = serde_json::json!({
             "KHR_materials_transmission": {
                 "transmissionFactor": 0.7
@@ -719,6 +752,7 @@ mod tests {
 
     #[test]
     fn test_parse_multiple_extensions() {
+        // 多个扩展同时存在时各自归位，未提供的保持 None
         let json = serde_json::json!({
             "KHR_materials_clearcoat": { "clearcoatFactor": 1.0 },
             "KHR_materials_ior": { "ior": 1.45 },
@@ -734,6 +768,7 @@ mod tests {
 
     #[test]
     fn test_texture_transform_identity() {
+        // 恒等变换不改变 UV
         let transform = TextureTransform::default();
         let uv = transform.transform_uv(0.5, 0.5);
         assert!((uv[0] - 0.5).abs() < 1e-10);
@@ -742,6 +777,7 @@ mod tests {
 
     #[test]
     fn test_texture_transform_offset() {
+        // 仅平移时 UV 逐轴加上 offset
         let transform = TextureTransform {
             offset: [0.1, 0.2],
             ..Default::default()
@@ -753,6 +789,7 @@ mod tests {
 
     #[test]
     fn test_texture_transform_scale() {
+        // 仅缩放时 UV 逐轴乘以 scale
         let transform = TextureTransform {
             scale: [2.0, 3.0],
             ..Default::default()
@@ -764,6 +801,7 @@ mod tests {
 
     #[test]
     fn test_texture_transform_rotation_90() {
+        // 旋转 90° 时 (1,0) 应变为 (0,1)
         let transform = TextureTransform {
             rotation: std::f64::consts::FRAC_PI_2,
             ..Default::default()
@@ -776,6 +814,7 @@ mod tests {
 
     #[test]
     fn test_texture_transform_matrix_identity() {
+        // 默认变换的矩阵应为列主序单位阵
         let transform = TextureTransform::default();
         let m = transform.compute_matrix();
         // 列主序单位矩阵
@@ -788,6 +827,7 @@ mod tests {
 
     #[test]
     fn test_texture_transform_info_effective_tex_coord() {
+        // 存在 transform 覆盖时取覆盖的 texCoord
         let info = TextureTransformInfo {
             index: 0,
             tex_coord: 0,
@@ -804,6 +844,7 @@ mod tests {
 
     #[test]
     fn test_texture_transform_info_no_override() {
+        // 无覆盖时回落到结构体自身 tex_coord
         let info = TextureTransformInfo {
             index: 0,
             tex_coord: 2,
@@ -815,6 +856,7 @@ mod tests {
 
     #[test]
     fn test_extended_material_serde_roundtrip() {
+        // ExtendedMaterial 序列化后再反序列化应保持字段一致
         let mat = ExtendedMaterial {
             clearcoat: Some(Clearcoat {
                 clearcoat_factor: 0.5,
@@ -832,6 +874,7 @@ mod tests {
 
     #[test]
     fn test_parse_sheen_extension() {
+        // 从 JSON 解析 sheen 颜色与粗糙度
         let json = serde_json::json!({
             "KHR_materials_sheen": {
                 "sheenColorFactor": [0.5, 0.3, 0.1],
@@ -847,6 +890,7 @@ mod tests {
 
     #[test]
     fn test_parse_volume_extension() {
+        // 从 JSON 解析 volume 厚度/衰减距离/衰减色
         let json = serde_json::json!({
             "KHR_materials_volume": {
                 "thicknessFactor": 2.0,

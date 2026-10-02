@@ -88,6 +88,7 @@ impl<K: Hash + Eq + Copy> HiddenLru<K> {
 }
 
 impl<K: Hash + Eq + Copy> Default for HiddenLru<K> {
+    /// 默认构造一个空隐藏 LRU（等价于 [`HiddenLru::new`]）。
     fn default() -> Self {
         Self::new()
     }

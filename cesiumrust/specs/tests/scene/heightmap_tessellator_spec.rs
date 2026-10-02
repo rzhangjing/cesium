@@ -1,4 +1,4 @@
-//! 移植自 CesiumJS `Specs/Scene/HeightmapTessellatorSpec.js`
+//! 参考自 CesiumJS `Specs/Scene/HeightmapTessellatorSpec`
 //!
 //! 涵盖：computeVertices 无裙边、带裙边、量化网格、
 //! web mercator、多元素小/大端高度。

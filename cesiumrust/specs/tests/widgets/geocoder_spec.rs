@@ -1,4 +1,4 @@
-//! Geocoder 规范 - 移植自 Widgets/GeocoderSpec、GeocoderViewModelSpec
+//! Geocoder 规范 - 参考自 Widgets/GeocoderSpec、GeocoderViewModelSpec
 //! 覆盖：GeocoderViewModel、GeocoderSearchResult
 
 use cesium_widgets::geocoder::{GeocoderSearchDestination, GeocoderSearchResult, GeocoderViewModel};

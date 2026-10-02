@@ -1,4 +1,4 @@
-//! Core/PolylinePipelineSpec.js → Rust 集成测试
+//! Core/PolylinePipelineSpec → Rust 集成测试
 //! 15 个原始 it() 块 → 移植 8 个 A 类测试
 //!
 //! 跳过的 C 类测试：

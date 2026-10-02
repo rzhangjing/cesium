@@ -1,8 +1,8 @@
 //! Scene/CameraFlight + SceneMorph → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/Camera.js (flyTo/flyToBoundingSphere/flyHome)
-//! - Scene/Scene.js（变形过渡）
+//! 参考 CesiumJS：
+//! - Scene/Camera (flyTo/flyToBoundingSphere/flyHome)
+//! - Scene/Scene（变形过渡）
 //!
 //! A 类测试：CameraFlight 创建/更新/进度/完成/应用、
 //! compute_look_at/compute_set_view、SceneMorph start/update/complete/cancel。

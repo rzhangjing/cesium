@@ -1,5 +1,5 @@
 //! 遍历扩展规范 - TilePriority/MemoryAdjustedSse/can_traverse
-//! 移植自 Scene/Cesium3DTilesetTraversalSpec.js（A 类优先级/内存路径）
+//! 参考自 Scene/Cesium3DTilesetTraversalSpec（A 类优先级/内存路径）
 
 use cesium_tileset::traversal::{can_traverse, MemoryAdjustedSse, TilePriority};
 use cesium_tileset::tile::{Tile, TileContent, TileRefine};

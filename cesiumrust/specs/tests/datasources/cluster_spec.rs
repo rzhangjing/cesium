@@ -1,4 +1,4 @@
-//! 移植自 CesiumJS EntityClusterSpec.js 的测试（A 类逻辑）
+//! 参考自 CesiumJS EntityClusterSpec 的测试（A 类逻辑）
 //! 聚类：基于网格的空间哈希、EntityCluster 选项、更新、计数
 
 use cesium_datasource::cluster::{EntityCluster, EntityClusterOptions};

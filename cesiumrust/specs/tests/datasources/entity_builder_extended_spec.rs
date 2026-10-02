@@ -1,5 +1,5 @@
 //! Entity 构建器扩展规范 - with_* 方法/has_graphics/merge/枚举
-//! 移植自 DataSources/EntitySpec.js（A 类构建器/逻辑）
+//! 参考自 DataSources/EntitySpec（A 类构建器/逻辑）
 
 use cesium_datasource::entity::{
     Entity, PointGraphics, PolylineGraphics, PolygonGraphics, BillboardGraphics,

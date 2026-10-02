@@ -1,7 +1,7 @@
 //! 大气散射模型。
 //!
-//! 映射到 CesiumJS `Scene/SkyAtmosphere.js` 与
-//! `Core/Atmosphere.js`
+//! 提供 Rayleigh/Mie 散射近似所需的大气参数与相函数，
+//! 用于实现天空颜色计算。
 //!
 //! 为实现天空颜色计算而提供的 Rayleigh 散射近似。
 
@@ -60,6 +60,7 @@ pub struct AtmosphereParameters {
 }
 
 impl Default for AtmosphereParameters {
+    /// 默认大气参数：采用地球半径与典型 Rayleigh/Mie 散射系数。
     fn default() -> Self {
         Self {
             inner_radius: constants::EARTH_RADIUS,
@@ -183,6 +184,7 @@ pub struct SkyBoxConfig {
 }
 
 impl Default for SkyBoxConfig {
+    /// 默认天空盒配置：显示、无纹理源、零旋转。
     fn default() -> Self {
         Self {
             show: true,
@@ -210,6 +212,7 @@ pub struct LightingConfig {
 }
 
 impl Default for LightingConfig {
+    /// 默认光照配置：沿 +X 的暖色太阳光与基础环境光。
     fn default() -> Self {
         Self {
             sun_direction: DVec3::new(1.0, 0.0, 0.0),

@@ -1,6 +1,6 @@
-//! Core/EllipsoidSpec.js → Rust 集成测试（忠实移植）。
+//! Core/EllipsoidSpec → Rust 集成测试（对齐实现）。
 //!
-//! 忠实移植原始 CesiumJS `packages/engine/Specs/Core/EllipsoidSpec.js`
+//! 对齐实现原始 CesiumJS `Specs/Core/EllipsoidSpec`
 //! （67 个 `it()` 用例 + createPackableSpecs）。原始 STK-Components 参考值
 //! 逐字沿用，从而针对与 CesiumJS 完全相同的基准真值验证 Rust 实现。
 //!

@@ -1,6 +1,6 @@
-//! DataSources/ColorMaterialPropertySpec.js、GridMaterialPropertySpec.js、
-//! StripeMaterialPropertySpec.js、CheckerboardMaterialPropertySpec.js、
-//! ImageMaterialPropertySpec.js、Polyline*MaterialPropertySpec.js
+//! DataSources/ColorMaterialPropertySpec、GridMaterialPropertySpec、
+//! StripeMaterialPropertySpec、CheckerboardMaterialPropertySpec、
+//! ImageMaterialPropertySpec、Polyline*MaterialPropertySpec
 //! → Rust 集成测试
 
 use cesium_datasource::property_system::{

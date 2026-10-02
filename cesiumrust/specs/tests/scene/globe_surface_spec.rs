@@ -1,5 +1,5 @@
 //! 地球表面 + 大气规范
-//! 移植自 CesiumJS Scene/GlobeSpec.js + Scene/GlobeTranslucencySpec.js
+//! 参考自 CesiumJS Scene/GlobeSpec + Scene/GlobeTranslucencySpec
 
 use cesium_globe::{
     GlobeConfig, GlobeLighting, GlobeSurface, GlobeTranslucency, GroundAtmosphere,

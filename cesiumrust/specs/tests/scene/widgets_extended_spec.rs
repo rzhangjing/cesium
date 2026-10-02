@@ -1,5 +1,5 @@
 //! 扩展控件规范：按钮、BaseLayerPicker、InfoBox
-//! 移植自 CesiumJS widgets/Source/（HomeButton、FullscreenButton、NavigationHelp、
+//! 参考自 CesiumJS widgets/Source/（HomeButton、FullscreenButton、NavigationHelp、
 //! VRButton、BaseLayerPicker、InfoBox）
 //!
 //! A 类测试：ToggleButton、HomeButton、FullscreenButton、NavigationHelp、

@@ -1,6 +1,8 @@
 //! NodeTransformationProperty - 用于模型节点 TRS 变换的组合属性。
 //!
-//! 映射到 CesiumJS `DataSources/NodeTransformationProperty.js`
+//! 它把一个模型节点的平移、旋转与缩放三个子属性组合为一个整体，求值时
+//! 分别取出三个分量并汇成一个 `NodeTransformationValue`；任一子属性缺失则
+//! 采用对应的缺省值（零平移、单位旋转、一缩放）。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -23,6 +25,7 @@ pub struct NodeTransformationValue {
 }
 
 impl Default for NodeTransformationValue {
+    /// 构造恒等变换：零平移、单位旋转、一缩放。
     fn default() -> Self {
         Self {
             translation: DVec3::ZERO,
@@ -35,7 +38,8 @@ impl Default for NodeTransformationValue {
 /// 一个表示模型节点变换的属性，由平移、
 /// 旋转和缩放子属性组合而成。
 ///
-/// 映射到 CesiumJS `DataSources/NodeTransformationProperty.js`
+/// 三个子属性均为可选的 `DynProperty`；只要任一为非常量则整体非常量，
+/// 求值时逐分量取回并组装为 TRS 值，相等判定也比较三个子属性。
 #[derive(Clone)]
 pub struct NodeTransformationProperty {
     /// 平移属性。
@@ -158,6 +162,7 @@ impl NodeTransformationProperty {
     }
 }
 
+/// 比较两个可选子属性是否相等：同为 None 相等，一方有值则逐—比较。
 fn prop_equals(
     a: &Option<Arc<dyn DynProperty>>,
     b: &Option<Arc<dyn DynProperty>>,
@@ -170,12 +175,14 @@ fn prop_equals(
 }
 
 impl Default for NodeTransformationProperty {
+    /// 缺省构造一个三子属性均为空的节点变换属性。
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl std::fmt::Debug for NodeTransformationProperty {
+    /// 以非字段枚举的方式输出结构概要，避免 trait 对象无法直接 Debug。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NodeTransformationProperty")
             .field("has_translation", &self.translation.is_some())

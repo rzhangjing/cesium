@@ -1,5 +1,5 @@
-//! Core/BoundingSphereSpec.js、BoundingRectangleSpec.js、OrientedBoundingBoxSpec.js、
-//! AxisAlignedBoundingBoxSpec.js → Rust 集成测试
+//! Core/BoundingSphereSpec、BoundingRectangleSpec、OrientedBoundingBoxSpec、
+//! AxisAlignedBoundingBoxSpec → Rust 集成测试
 
 use cesium_geospatial::bounding::{BoundingSphere, OrientedBoundingBox, AxisAlignedBoundingBox};
 use cesium_specs::{assert_approx, assert_vec3_epsilon, epsilon};

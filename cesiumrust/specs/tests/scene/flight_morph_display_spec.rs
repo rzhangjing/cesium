@@ -1,9 +1,9 @@
 //! 相机飞行/变形 + DataSourceDisplay → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/Camera.js (flyTo/flyHome/lookAt)
-//! - Scene/SceneMode.js (morphing)
-//! - DataSources/DataSourceDisplay.js
+//! 参考 CesiumJS：
+//! - Scene/Camera (flyTo/flyHome/lookAt)
+//! - Scene/SceneMode (morphing)
+//! - DataSources/DataSourceDisplay
 //!
 //! A 类测试：飞行插值、变形状态机、显示同步。
 //! C 类省略：requestAnimationFrame、DOM 事件、WebGL 渲染。

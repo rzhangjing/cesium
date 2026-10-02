@@ -1,8 +1,8 @@
 //! CZML + GeoJSON 扩展解析测试。
 //!
-//! 对应 CesiumJS：
-//! - DataSources/CzmlDataSourceSpec.js（带时间标记的位置、材质、颜色）
-//! - DataSources/GeoJsonDataSourceSpec.js（Multi*、GeometryCollection、properties）
+//! 参考 CesiumJS：
+//! - DataSources/CzmlDataSourceSpec（带时间标记的位置、材质、颜色）
+//! - DataSources/GeoJsonDataSourceSpec（Multi*、GeometryCollection、properties）
 //!
 //! A 类测试：解析逻辑、坐标转换、实体创建。
 

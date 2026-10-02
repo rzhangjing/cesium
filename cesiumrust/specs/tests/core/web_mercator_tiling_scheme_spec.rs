@@ -1,7 +1,7 @@
-//! Core/WebMercatorTilingSchemeSpec.js → Rust 集成测试（忠实移植）。
+//! Core/WebMercatorTilingSchemeSpec → Rust 集成测试（对齐实现）。
 //!
-//! 忠实移植原始 CesiumJS
-//! `packages/engine/Specs/Core/WebMercatorTilingSchemeSpec.js`（20 个 `it()` 用例）。
+//! 对齐实现原始 CesiumJS
+//! `Specs/Core/WebMercatorTilingSchemeSpec`（20 个 `it()` 用例）。
 //! 参考值逐字使用，以便 Rust 实现针对与 CesiumJS 完全相同的
 //! 基准真值进行验证。
 //!

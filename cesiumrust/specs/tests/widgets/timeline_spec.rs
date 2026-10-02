@@ -1,4 +1,4 @@
-//! Widgets/TimelineSpec.js → Rust integration tests
+//! Widgets/TimelineSpec → Rust integration tests
 
 use cesium_widgets::{Timeline, TimelineTrack, TimelineHighlightRange, TimelineTicScale};
 

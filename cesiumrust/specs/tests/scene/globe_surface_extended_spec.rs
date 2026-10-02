@@ -1,4 +1,4 @@
-//! GlobeSurface 扩展 specs - 移植自 GlobeSpec.js
+//! GlobeSurface 扩展 specs - 参考自 GlobeSpec
 //!
 //! 测试 NearFarScalar 插值、GlobeSurface 射线拾取、
 //! 地平距离/俯角、可见半球、瓦片 SSE 计算、

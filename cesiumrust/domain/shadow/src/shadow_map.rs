@@ -1,6 +1,6 @@
 //! 使用级联阴影贴图（CSM）的阴影贴图。
 //!
-//! 映射到 CesiumJS `Scene/ShadowMap.js`：
+//! 本模块实现：
 //! - 阴影贴图配置
 //! - 用于方向光的级联阴影贴图
 //! - 阴影偏移与过滤
@@ -103,6 +103,7 @@ impl ShadowBias {
         let mut bias = self.depth_bias;
         if self.normal_offset {
             let n_dot_l = normal.dot(-light_dir).abs();
+            // 坡度因子 = sqrt(1 - (N·L)²)：表面越掠射，偏移越大以抑制阴影痤疮。
             let slope_factor = (1.0 - n_dot_l * n_dot_l).sqrt().max(0.0);
             bias += self.normal_offset_scale * slope_factor;
         }
@@ -122,6 +123,7 @@ pub struct PcfConfig {
 }
 
 impl Default for PcfConfig {
+    /// 返回 PCF 缺省配置：启用、3×3 核、网格采样（非泊松盘）。
     fn default() -> Self {
         Self {
             enabled: true,
@@ -220,6 +222,7 @@ pub struct ShadowMapConfig {
 }
 
 impl Default for ShadowMapConfig {
+    /// 返回级联阴影缺省配置：启用、4 级联、2048 分辨率、软阴影开启。
     fn default() -> Self {
         Self {
             enabled: true,

@@ -87,6 +87,7 @@ pub struct WebMercator {
 }
 
 impl Default for WebMercator {
+    /// Web 墨卡托投影的默认构造：以 WGS84 长半轴 6378137.0 米作为地球半径。
     fn default() -> Self {
         Self {
             radius: 6378137.0, // WGS84 长半轴
@@ -205,6 +206,8 @@ pub struct Utm {
 }
 
 impl Default for Utm {
+    /// UTM 投影的默认构造：采用 WGS84 椭球参数，中央经线尺度因子 0.9996、
+    /// 假东偏移 500000.0 米（与通用 UTM 分带约定一致）。
     fn default() -> Self {
         Self {
             semi_major_axis: 6378137.0,           // WGS84
@@ -365,6 +368,7 @@ pub struct PolarStereographic {
 }
 
 impl Default for PolarStereographic {
+    /// 通用极射赤道圆投影的默认构造：WGS84 椭球、标准纬线 71°、默认面向北半球。
     fn default() -> Self {
         Self {
             semi_major_axis: 6378137.0,
@@ -457,6 +461,7 @@ pub struct Equirectangular {
 }
 
 impl Default for Equirectangular {
+    /// 等距圆柱投影的默认构造：以 WGS84 长半轴 6378137.0 米作为球体半径。
     fn default() -> Self {
         Self { radius: 6378137.0 }
     }

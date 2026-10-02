@@ -1,5 +1,5 @@
 //! 量化网格地形数据。
-//! 映射到 CesiumJS `Core/QuantizedMeshTerrainData.js`
+//! 以量化顶点（u/v/height 各限 [0,32767]）紧凑表示单个地形瓦片。
 
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::cartographic::Cartographic;
@@ -20,8 +20,6 @@ use crate::MAX_SHORT;
 /// - u：西边缘为 0，东边缘为 32767
 /// - v：南边缘为 0，北边缘为 32767
 /// - height：最小高度为 0，最大高度为 32767
-///
-/// 映射到 CesiumJS `QuantizedMeshTerrainData`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuantizedMeshTerrainData {
     /// 量化顶点数据：[u0, u1, ..., v0, v1, ..., h0, h1, ...]
@@ -84,6 +82,7 @@ pub struct QuantizedMeshTerrainData {
     pub water_mask: Option<Vec<u8>>,
 }
 
+/// 缺省子瓦片掩码：低 4 位置 1，表示四个子块默认可用。
 fn default_child_tile_mask() -> u8 {
     15 // 默认所有子块都存在
 }
@@ -122,7 +121,7 @@ impl QuantizedMeshTerrainData {
 
     /// 使用图块坐标检查子块是否可用。
     ///
-    /// 映射到 CesiumJS `QuantizedMeshTerrainData.isChildAvailable(thisX, thisY, childX, childY)`
+    /// 由父子坐标算出相对位置，映射到西北/东北/西南/东南对应的掩码位。
     ///
     /// # 参数
     /// * `this_x` - 父块 X
@@ -139,7 +138,7 @@ impl QuantizedMeshTerrainData {
         let relative_x = child_x - this_x * 2;
         let relative_y = child_y - this_y * 2;
 
-        // CesiumJS 图块坐标：Y 向南递增
+        // 图块坐标：Y 向南递增
         // relative_y=0 → 北行，relative_y=1 → 南行
         if relative_y == 0 {
             if relative_x == 0 {
@@ -159,8 +158,6 @@ impl QuantizedMeshTerrainData {
     }
 
     /// 在图块矩形内对给定经度/纬度处的高度进行插值。
-    ///
-    /// 映射到 CesiumJS `QuantizedMeshTerrainData.interpolateHeight(rectangle, longitude, latitude)`
     ///
     /// 使用重心坐标找到包含该点的三角形并进行插值。
     pub fn interpolate_height(&self, rectangle: &Rectangle, longitude: f64, latitude: f64) -> f64 {
@@ -244,8 +241,6 @@ impl QuantizedMeshTerrainData {
     ///
     /// 这是主方法，使用图块矩形和椭球体将量化网格数据
     /// 转换为实际的 3D 位置。
-    ///
-    /// 映射到 CesiumJS `createVerticesFromQuantizedTerrainMesh`
     ///
     /// # 参数
     /// * `rectangle` - 图块矩形（west、south、east、north，以弧度计）
@@ -421,7 +416,6 @@ impl QuantizedMeshTerrainData {
 /// 解码 oct 编码的法线。
 ///
 /// Oct 编码使用八面体投影将单位向量映射为两个字节。
-/// 映射到 CesiumJS `AttributeCompression.octDecode`
 fn decode_oct_normals(encoded: &[u8], vertex_count: usize) -> Vec<[f64; 3]> {
     let mut normals = Vec::with_capacity(vertex_count);
 

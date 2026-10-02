@@ -1,7 +1,7 @@
-//! 几何生成器规格测试 - 移植自 Core/BoxGeometrySpec.js、
-//! Core/SphereGeometrySpec.js、Core/CylinderGeometrySpec.js、
-//! Core/EllipsoidGeometrySpec.js、Core/FrustumGeometrySpec.js、
-//! Core/RectangleGeometrySpec.js
+//! 几何生成器规格测试 - 参考自 Core/BoxGeometrySpec、
+//! Core/SphereGeometrySpec、Core/CylinderGeometrySpec、
+//! Core/EllipsoidGeometrySpec、Core/FrustumGeometrySpec、
+//! Core/RectangleGeometrySpec
 //!
 //! 测试生成几何体的顶点数、索引数、包围球、法线以及
 //! 数学性质。
@@ -17,7 +17,7 @@ use glam::DVec3;
 const EPSILON10: f64 = 1e-10;
 const EPSILON7: f64 = 1e-7;
 
-// ─── BoxGeometry（来自 BoxGeometrySpec.js） ─────────────────────────────────
+// ─── BoxGeometry（来自 BoxGeometrySpec） ─────────────────────────────────
 
 #[test]
 fn box_position_only_creates_optimized_positions() {
@@ -112,7 +112,7 @@ fn box_degenerate_min_equals_max() {
     assert!(geo.bounding_sphere.radius < EPSILON10);
 }
 
-// ─── SphereGeometry（来自 SphereGeometrySpec.js） ───────────────────────────
+// ─── SphereGeometry（来自 SphereGeometrySpec） ───────────────────────────
 
 #[test]
 fn sphere_computes_positions() {
@@ -183,7 +183,7 @@ fn sphere_radius_scales_positions() {
     assert!((geo.bounding_sphere.radius - radius).abs() < EPSILON10);
 }
 
-// ─── CylinderGeometry（来自 CylinderGeometrySpec.js） ───────────────────────
+// ─── CylinderGeometry（来自 CylinderGeometrySpec） ───────────────────────
 
 #[test]
 fn cylinder_computes_positions() {
@@ -258,7 +258,7 @@ fn cylinder_bounding_sphere() {
     assert!(geo.bounding_sphere.center.length() < EPSILON10); // 以原点为中心
 }
 
-// ─── EllipsoidGeometry（来自 EllipsoidGeometrySpec.js） ─────────────────────
+// ─── EllipsoidGeometry（来自 EllipsoidGeometrySpec） ─────────────────────
 
 #[test]
 fn ellipsoid_computes_positions() {
@@ -334,7 +334,7 @@ fn ellipsoid_non_uniform_radii() {
     }
 }
 
-// ─── FrustumGeometry（来自 FrustumGeometrySpec.js） ─────────────────────────
+// ─── FrustumGeometry（来自 FrustumGeometrySpec） ─────────────────────────
 
 #[test]
 fn frustum_computes_all_vertex_attributes() {

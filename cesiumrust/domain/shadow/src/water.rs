@@ -135,6 +135,7 @@ pub struct OceanConfig {
 }
 
 impl Default for OceanConfig {
+    /// 返回海洋缺省配置：启用，深水呈深蓝、浅水偏青。
     fn default() -> Self {
         Self {
             enabled: true,

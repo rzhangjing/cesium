@@ -1,9 +1,9 @@
-//! 杂项 Core 规格测试 - 移植自：
-//! - packages/engine/Specs/Core/isLeapYearSpec.js（4 个 it()，1 个 A 类）
-//! - packages/engine/Specs/Core/IntervalSpec.js（2 个 it()，2 个 A 类）
-//! - packages/engine/Specs/Core/NearFarScalarSpec.js（5 个 it()，2 个 A 类）
-//! - packages/engine/Specs/Core/VertexFormatSpec.js（2 个 it()，1 个 A 类）
-//! - packages/engine/Specs/Core/TridiagonalSystemSolverSpec.js（9 个 it()，2 个 A 类）
+//! 杂项 Core 规格测试 - 参考自：
+//! - Specs/Core/isLeapYearSpec（4 个 it()，1 个 A 类）
+//! - Specs/Core/IntervalSpec（2 个 it()，2 个 A 类）
+//! - Specs/Core/NearFarScalarSpec（5 个 it()，2 个 A 类）
+//! - Specs/Core/VertexFormatSpec（2 个 it()，1 个 A 类）
+//! - Specs/Core/TridiagonalSystemSolverSpec（9 个 it()，2 个 A 类）
 //!
 //! A 类测试总计：8 个
 

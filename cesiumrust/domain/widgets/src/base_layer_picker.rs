@@ -1,6 +1,7 @@
 //! 基础图层选择器视图模型。
 //!
-//! 映射到 CesiumJS `BaseLayerPicker/BaseLayerPickerViewModel.js`。
+//! 以类别聚合影像/地形提供器选项，维护下拉开关、当前选中项与
+//! 提示文本，为图层切换 UI 提供纯领域状态。
 
 /// 一个提供器类别（例如 "Imagery"、"Terrain"）。
 #[derive(Debug, Clone, PartialEq)]
@@ -22,11 +23,13 @@ impl ProviderCategory {
 
     /// 向该类别添加一个提供器。
     pub fn add_provider(&mut self, provider: ProviderViewModel) {
+        // 按插入顺序追加，索引即为后续选择时使用的 provider_idx
         self.providers.push(provider);
     }
 
     /// 获取提供器数量。
     pub fn provider_count(&self) -> usize {
+        // 直接返回本类别下提供器列表的长度
         self.providers.len()
     }
 }
@@ -51,6 +54,7 @@ pub struct ProviderViewModel {
 impl ProviderViewModel {
     /// 创建一个新的提供器视图模型。
     pub fn new(name: impl Into<String>, category: impl Into<String>) -> Self {
+        // 默认提示与名称同名；名称后续被复用，先取出再入结构
         let name = name.into();
         Self {
             tooltip: name.clone(),
@@ -64,6 +68,7 @@ impl ProviderViewModel {
 
     /// 设置提示文本。
     pub fn with_tooltip(mut self, tooltip: impl Into<String>) -> Self {
+        // 链式设置悬停提示，返回自身以便连写
         self.tooltip = tooltip.into();
         self
     }
@@ -99,6 +104,7 @@ pub struct BaseLayerPickerViewModel {
 }
 
 impl Default for BaseLayerPickerViewModel {
+    /// 默认下拉关闭、widget 可见、无类别与选中项。
     fn default() -> Self {
         Self {
             is_dropdown_open: false,
@@ -123,17 +129,20 @@ impl BaseLayerPickerViewModel {
 
     /// 切换下拉菜单。
     pub fn toggle_dropdown(&mut self) {
+        // 就地翻转开合标志，具体互斥交由具体选项选中后的关闭处理
         self.is_dropdown_open = !self.is_dropdown_open;
     }
 
     /// 关闭下拉菜单。
     pub fn close_dropdown(&mut self) {
+        // 无论当前开合，统一置为关闭
         self.is_dropdown_open = false;
     }
 
     /// 按类别与提供器索引选择一个影像提供器。
     pub fn select_imagery(&mut self, category_idx: usize, provider_idx: usize) {
         // 取消选择上一个
+        // 影像选择互斥：先清除旧选中项的高亮标志
         if let Some((ci, pi)) = self.selected_imagery_index {
             if let Some(cat) = self.categories.get_mut(ci) {
                 if let Some(prov) = cat.providers.get_mut(pi) {
@@ -156,6 +165,7 @@ impl BaseLayerPickerViewModel {
     /// 按类别与提供器索引选择一个地形提供器。
     pub fn select_terrain(&mut self, category_idx: usize, provider_idx: usize) {
         // 取消选择上一个
+        // 地形选择互斥：先清除旧选中项的高亮标志
         if let Some((ci, pi)) = self.selected_terrain_index {
             if let Some(cat) = self.categories.get_mut(ci) {
                 if let Some(prov) = cat.providers.get_mut(pi) {
@@ -177,23 +187,27 @@ impl BaseLayerPickerViewModel {
 
     /// 获取当前选中的影像提供器。
     pub fn selected_imagery_provider(&self) -> Option<&ProviderViewModel> {
+        // 依记录的 (类别, 提供器) 索引逐级取出，任一越界则 None
         let (ci, pi) = self.selected_imagery_index?;
         self.categories.get(ci)?.providers.get(pi)
     }
 
     /// 获取当前选中的地形提供器。
     pub fn selected_terrain_provider(&self) -> Option<&ProviderViewModel> {
+        // 与影像同理，依记录索引逐级取出
         let (ci, pi) = self.selected_terrain_index?;
         self.categories.get(ci)?.providers.get(pi)
     }
 
     /// 获取所有类别中提供器的总数。
     pub fn total_provider_count(&self) -> usize {
+        // 汇总各类别的提供器数量，用于展示选项总规模
         self.categories.iter().map(|c| c.provider_count()).sum()
     }
 
     /// 获取显示当前选择的按钮提示文本。
     pub fn button_tooltip(&self) -> String {
+        // 已选影像时提示当前图层名，否则提示去选择基础图层
         if let Some(prov) = self.selected_imagery_provider() {
             format!("Current imagery: {}", prov.name)
         } else {
@@ -207,6 +221,7 @@ mod tests {
     use super::*;
 
     fn make_test_picker() -> BaseLayerPickerViewModel {
+        // 构造一个含 Imagery(2 个)/Terrain(1 个) 两类别的测试选择器
         let mut vm = BaseLayerPickerViewModel::new();
 
         let mut imagery_cat = ProviderCategory::new("Imagery");

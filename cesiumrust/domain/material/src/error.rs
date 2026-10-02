@@ -1,8 +1,7 @@
 //! Fabric 材质系统产生的错误。
 //!
-//! 映射到 CesiumJS `Scene/Material.js` 中抛出的 `DeveloperError`
-//! （`checkForTemplateErrors`、`createUniform`、`createSubMaterials`、
-//! `Material.fromType`）。
+//! 定义 Fabric 材质系统在解析模板与组装材质过程中产生的错误类型，
+//! 覆盖模板校验、uniform 创建、子材质创建与按类型查找等失败情形。
 
 use thiserror::Error;
 
@@ -81,6 +80,7 @@ pub enum MaterialError {
 }
 
 impl From<serde_json::Error> for MaterialError {
+    /// 将底层的 JSON 解析错误包装为 [`MaterialError::Json`]。
     fn from(e: serde_json::Error) -> Self {
         MaterialError::Json(e.to_string())
     }

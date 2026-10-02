@@ -1,4 +1,4 @@
-//! ImplicitTileCoordinates 测试，移植自 CesiumJS ImplicitTileCoordinatesSpec.js
+//! ImplicitTileCoordinates 测试，参考自 CesiumJS ImplicitTileCoordinatesSpec
 //! 测试：getDescendantCoordinates、getAncestorCoordinates、getOffsetCoordinates，
 //! getChildCoordinates, getSubtreeCoordinates, getParentSubtreeCoordinates,
 //! isAncestor, isImplicitTilesetRoot, isSubtreeRoot, isBottomOfSubtree,
@@ -31,7 +31,7 @@ fn ot_s(level: u32, x: u32, y: u32, z: u32, st: u32) -> ImplicitTileCoord {
 
 #[test]
 fn test_get_descendant_coordinates_quadtree() {
-    // 移植自: "getDescendantCoordinates works as expected for quadtree"
+    // 参考自: "getDescendantCoordinates works as expected for quadtree"
     assert_eq!(
         qt(0, 0, 0).get_descendant_coordinates(&qt(0, 0, 0)),
         qt(0, 0, 0)
@@ -48,7 +48,7 @@ fn test_get_descendant_coordinates_quadtree() {
 
 #[test]
 fn test_get_descendant_coordinates_octree() {
-    // 移植自: "getDescendantCoordinates works as expected for octree"
+    // 参考自: "getDescendantCoordinates works as expected for octree"
     assert_eq!(
         ot(0, 0, 0, 0).get_descendant_coordinates(&ot(0, 0, 0, 0)),
         ot(0, 0, 0, 0)
@@ -69,7 +69,7 @@ fn test_get_descendant_coordinates_octree() {
 
 #[test]
 fn test_get_ancestor_coordinates_quadtree() {
-    // 移植自: "getAncestorCoordinates works as expected for quadtree"
+    // 参考自: "getAncestorCoordinates works as expected for quadtree"
     assert_eq!(qt(0, 0, 0).get_ancestor_coordinates(0), qt(0, 0, 0));
     assert_eq!(qt(1, 0, 0).get_ancestor_coordinates(1), qt(0, 0, 0));
     assert_eq!(qt(1, 1, 1).get_ancestor_coordinates(1), qt(0, 0, 0));
@@ -79,7 +79,7 @@ fn test_get_ancestor_coordinates_quadtree() {
 
 #[test]
 fn test_get_ancestor_coordinates_octree() {
-    // 移植自: "getAncestorCoordinates works as expected for octree"
+    // 参考自: "getAncestorCoordinates works as expected for octree"
     assert_eq!(ot(0, 0, 0, 0).get_ancestor_coordinates(0), ot(0, 0, 0, 0));
     assert_eq!(ot(1, 0, 0, 0).get_ancestor_coordinates(1), ot(0, 0, 0, 0));
     assert_eq!(ot(1, 1, 1, 1).get_ancestor_coordinates(1), ot(0, 0, 0, 0));
@@ -93,7 +93,7 @@ fn test_get_ancestor_coordinates_octree() {
 
 #[test]
 fn test_get_offset_coordinates_quadtree() {
-    // 移植自: "getOffsetCoordinates works as expected for quadtree"
+    // 参考自: "getOffsetCoordinates works as expected for quadtree"
     assert_eq!(qt(0, 0, 0).get_offset_coordinates(&qt(0, 0, 0)), qt(0, 0, 0));
     assert_eq!(qt(0, 0, 0).get_offset_coordinates(&qt(1, 1, 1)), qt(1, 1, 1));
     assert_eq!(qt(1, 1, 1).get_offset_coordinates(&qt(3, 7, 7)), qt(2, 3, 3));
@@ -101,7 +101,7 @@ fn test_get_offset_coordinates_quadtree() {
 
 #[test]
 fn test_get_offset_coordinates_octree() {
-    // 移植自: "getOffsetCoordinates works as expected for octree"
+    // 参考自: "getOffsetCoordinates works as expected for octree"
     assert_eq!(
         ot(0, 0, 0, 0).get_offset_coordinates(&ot(0, 0, 0, 0)),
         ot(0, 0, 0, 0)
@@ -122,7 +122,7 @@ fn test_get_offset_coordinates_octree() {
 
 #[test]
 fn test_get_child_coordinates_quadtree() {
-    // 移植自: "getChildCoordinates works as expected for quadtree"
+    // 参考自: "getChildCoordinates works as expected for quadtree"
     let coord = qt(0, 0, 0);
     assert_eq!(coord.get_child_coordinates(0), qt(1, 0, 0));
     assert_eq!(coord.get_child_coordinates(1), qt(1, 1, 0));
@@ -132,7 +132,7 @@ fn test_get_child_coordinates_quadtree() {
 
 #[test]
 fn test_get_child_coordinates_octree() {
-    // 移植自: "getChildCoordinates works as expected for octree"
+    // 参考自: "getChildCoordinates works as expected for octree"
     let coord = ot(0, 0, 0, 0);
     assert_eq!(coord.get_child_coordinates(0), ot(1, 0, 0, 0));
     assert_eq!(coord.get_child_coordinates(1), ot(1, 1, 0, 0));
@@ -150,7 +150,7 @@ fn test_get_child_coordinates_octree() {
 
 #[test]
 fn test_get_subtree_coordinates_quadtree() {
-    // 移植自: "getSubtreeCoordinates works as expected for quadtree"
+    // 参考自: "getSubtreeCoordinates works as expected for quadtree"
     // subtreeLevels=2（默认）
     assert_eq!(qt(0, 0, 0).get_subtree_coordinates(), qt(0, 0, 0));
     assert_eq!(qt(1, 1, 1).get_subtree_coordinates(), qt(0, 0, 0));
@@ -160,7 +160,7 @@ fn test_get_subtree_coordinates_quadtree() {
 
 #[test]
 fn test_get_subtree_coordinates_octree() {
-    // 移植自: "getSubtreeCoordinates works as expected for octree"
+    // 参考自: "getSubtreeCoordinates works as expected for octree"
     assert_eq!(ot(0, 0, 0, 0).get_subtree_coordinates(), ot(0, 0, 0, 0));
     assert_eq!(ot(1, 1, 1, 1).get_subtree_coordinates(), ot(0, 0, 0, 0));
     assert_eq!(ot(2, 3, 3, 3).get_subtree_coordinates(), ot(2, 3, 3, 3));
@@ -169,7 +169,7 @@ fn test_get_subtree_coordinates_octree() {
 
 #[test]
 fn test_get_parent_subtree_coordinates_quadtree() {
-    // 移植自: "getParentSubtreeCoordinates works as expected for quadtree"
+    // 参考自: "getParentSubtreeCoordinates works as expected for quadtree"
     assert_eq!(qt(2, 3, 3).get_parent_subtree_coordinates(), qt(0, 0, 0));
     assert_eq!(qt(3, 7, 7).get_parent_subtree_coordinates(), qt(0, 0, 0));
     assert_eq!(qt(4, 15, 15).get_parent_subtree_coordinates(), qt(2, 3, 3));
@@ -177,7 +177,7 @@ fn test_get_parent_subtree_coordinates_quadtree() {
 
 #[test]
 fn test_get_parent_subtree_coordinates_octree() {
-    // 移植自: "getParentSubtreeCoordinates works as expected for octree"
+    // 参考自: "getParentSubtreeCoordinates works as expected for octree"
     assert_eq!(
         ot(2, 3, 3, 3).get_parent_subtree_coordinates(),
         ot(0, 0, 0, 0)
@@ -198,7 +198,7 @@ fn test_get_parent_subtree_coordinates_octree() {
 
 #[test]
 fn test_is_ancestor_quadtree() {
-    // 移植自: "isAncestor works as expected for quadtree"
+    // 参考自: "isAncestor works as expected for quadtree"
     let scheme = SubdivisionScheme::Quadtree;
     assert!(qt(0, 0, 0).is_ancestor(&qt(1, 0, 0), scheme));
     assert!(qt(0, 0, 0).is_ancestor(&qt(1, 1, 1), scheme));
@@ -210,7 +210,7 @@ fn test_is_ancestor_quadtree() {
 
 #[test]
 fn test_is_ancestor_octree() {
-    // 移植自: "isAncestor works as expected for octree"
+    // 参考自: "isAncestor works as expected for octree"
     let scheme = SubdivisionScheme::Octree;
     assert!(ot(0, 0, 0, 0).is_ancestor(&ot(1, 0, 0, 0), scheme));
     assert!(ot(0, 0, 0, 0).is_ancestor(&ot(1, 1, 1, 1), scheme));
@@ -225,7 +225,7 @@ fn test_is_ancestor_octree() {
 
 #[test]
 fn test_is_implicit_tileset_root() {
-    // 移植自: "isImplicitTilesetRoot works as expected"
+    // 参考自: "isImplicitTilesetRoot works as expected"
     assert!(qt(0, 0, 0).is_implicit_tileset_root());
     assert!(!qt(1, 0, 0).is_implicit_tileset_root());
     assert!(!qt(2, 0, 0).is_implicit_tileset_root());
@@ -233,7 +233,7 @@ fn test_is_implicit_tileset_root() {
 
 #[test]
 fn test_is_subtree_root() {
-    // 移植自: "isSubtreeRoot works as expected" (subtreeLevels=2)
+    // 参考自: "isSubtreeRoot works as expected" (subtreeLevels=2)
     assert!(qt(0, 0, 0).is_subtree_root());
     assert!(!qt(1, 0, 0).is_subtree_root());
     assert!(qt(2, 0, 0).is_subtree_root());
@@ -242,7 +242,7 @@ fn test_is_subtree_root() {
 
 #[test]
 fn test_is_bottom_of_subtree() {
-    // 移植自: "isBottomOfSubtree works as expected" (subtreeLevels=2)
+    // 参考自: "isBottomOfSubtree works as expected" (subtreeLevels=2)
     assert!(!qt(0, 0, 0).is_bottom_of_subtree());
     assert!(qt(1, 0, 0).is_bottom_of_subtree());
     assert!(!qt(2, 0, 0).is_bottom_of_subtree());
@@ -255,14 +255,14 @@ fn test_is_bottom_of_subtree() {
 
 #[test]
 fn test_child_index_quadtree() {
-    // 移植自: "childIndex works as expected for quadtree"
+    // 参考自: "childIndex works as expected for quadtree"
     // x=3=0b11, y=2=0b10, interleave last bits: y0=0, x0=1 → 0b01 = 1
     assert_eq!(qt(4, 3, 2).child_index(SubdivisionScheme::Quadtree), 1);
 }
 
 #[test]
 fn test_child_index_octree() {
-    // 移植自: "childIndex works as expected for octree"
+    // 参考自: "childIndex works as expected for octree"
     // x=3=0b11, y=2=0b10, z=1=0b01
     // interleave: z0=1, y0=0, x0=1 → 0b101 = 5
     assert_eq!(ot(4, 3, 2, 1).child_index(SubdivisionScheme::Octree), 5);
@@ -274,14 +274,14 @@ fn test_child_index_octree() {
 
 #[test]
 fn test_morton_index_quadtree() {
-    // 移植自: "mortonIndex works as expected for quadtree"
+    // 参考自: "mortonIndex works as expected for quadtree"
     // x=5=0b0101, y=11=0b1011, interleave(y,x) = 0b10011011 = 155
     assert_eq!(qt(4, 5, 11).morton_index(SubdivisionScheme::Quadtree), 155);
 }
 
 #[test]
 fn test_morton_index_octree() {
-    // 移植自: "mortonIndex works as expected for octree"
+    // 参考自: "mortonIndex works as expected for octree"
     // x=7, y=15, z=32, interleave(z,y,x) = 132315
     assert_eq!(ot(6, 7, 15, 32).morton_index(SubdivisionScheme::Octree), 132315);
 }
@@ -292,14 +292,14 @@ fn test_morton_index_octree() {
 
 #[test]
 fn test_tile_index_quadtree() {
-    // 移植自: "tileIndex works as expected for quadtree"
+    // 参考自: "tileIndex works as expected for quadtree"
     // level=4, morton=155, levelOffset=(4^4-1)/3=85, tileIndex=85+155=240
     assert_eq!(qt(4, 5, 11).tile_index(SubdivisionScheme::Quadtree), 240);
 }
 
 #[test]
 fn test_tile_index_octree() {
-    // 移植自: "tileIndex works as expected for octree"
+    // 参考自: "tileIndex works as expected for octree"
     // level=6, morton=132315, levelOffset=(8^6-1)/7=37449, tileIndex=37449+132315=169764
     assert_eq!(ot(6, 7, 15, 32).tile_index(SubdivisionScheme::Octree), 169764);
 }
@@ -310,7 +310,7 @@ fn test_tile_index_octree() {
 
 #[test]
 fn test_from_morton_index_quadtree() {
-    // 移植自: "fromMortonIndex works as expected for quadtree"
+    // 参考自: "fromMortonIndex works as expected for quadtree"
     // 42 = 0b101010, deinterleave2D(42) = x=0b000=0, y=0b111=7
     let coord = ImplicitTileCoord::from_morton_index(SubdivisionScheme::Quadtree, 6, 3, 42);
     assert_eq!(coord, qt_s(3, 0, 7, 6));
@@ -318,7 +318,7 @@ fn test_from_morton_index_quadtree() {
 
 #[test]
 fn test_from_morton_index_octree() {
-    // 移植自: "fromMortonIndex works as expected for octree"
+    // 参考自: "fromMortonIndex works as expected for octree"
     // 43 = 0b101011, deinterleave3D(43) = x=0b11=3, y=0b01=1, z=0b10=2
     let coord = ImplicitTileCoord::from_morton_index(SubdivisionScheme::Octree, 6, 2, 43);
     assert_eq!(coord, ot_s(2, 3, 1, 2, 6));
@@ -330,7 +330,7 @@ fn test_from_morton_index_octree() {
 
 #[test]
 fn test_from_tile_index_quadtree() {
-    // 移植自: "fromTileIndex works as expected for quadtree"
+    // 参考自: "fromTileIndex works as expected for quadtree"
     // tileIndex=63, level=floor(log2(3*63+1)/2)=floor(log2(190)/2)=floor(7.57/2)=3
     // levelOffset=(4^3-1)/3=21, morton=63-21=42
     // deinterleave2D(42) = x=0, y=7
@@ -340,7 +340,7 @@ fn test_from_tile_index_quadtree() {
 
 #[test]
 fn test_from_tile_index_octree() {
-    // 移植自: "fromTileIndex works as expected for octree"
+    // 参考自: "fromTileIndex works as expected for octree"
     // tileIndex=52, level=floor(log2(7*52+1)/3)=floor(log2(365)/3)=floor(8.51/3)=2
     // levelOffset=(8^2-1)/7=9, morton=52-9=43
     // deinterleave3D(43) = x=3, y=1, z=2
@@ -645,7 +645,7 @@ fn test_subdivision_scheme_dimensions() {
 
 #[test]
 fn test_get_template_values_quadtree() {
-    // 移植自: "getTemplateValues works as expected for quadtree"
+    // 参考自: "getTemplateValues works as expected for quadtree"
     let coord = qt(4, 3, 7);
     let result = coord.get_template_values("tiles/{level}/{x}/{y}.glb");
     assert_eq!(result, "tiles/4/3/7.glb");
@@ -653,7 +653,7 @@ fn test_get_template_values_quadtree() {
 
 #[test]
 fn test_get_template_values_octree() {
-    // 移植自: "getTemplateValues works as expected for octree"
+    // 参考自: "getTemplateValues works as expected for octree"
     let coord = ot(3, 1, 2, 4);
     let result = coord.get_template_values("{level}/{x}/{y}/{z}.b3dm");
     assert_eq!(result, "3/1/2/4.b3dm");

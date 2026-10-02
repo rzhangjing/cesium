@@ -1,4 +1,4 @@
-//! CesiumJS DataSources/EntityCollectionSpec.js A 类测试的忠实移植。
+//! CesiumJS DataSources/EntityCollectionSpec A 类测试的对齐实现。
 //!
 //! 原始：29 个 it() 测试。A 类（纯逻辑，无 events/spy/DOM）：15 个测试。
 //! 基于事件的测试（collectionChanged、suspendEvents/resumeEvents）为 B 类

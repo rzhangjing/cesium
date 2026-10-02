@@ -1,15 +1,21 @@
 //! 场景模式及它们之间的形态变换。
 //!
-//! 映射到 CesiumJS 的 `Scene/SceneMode.js`：
-//! - 3D（地球）
-//! - 2D（平铺地图）
-//! - Columbus View（2.5D）
-//! - 形态变换过渡
+//! 定义四种渲染形态及其相互过渡：
+//! - 3D（椭圆球地球视图）
+//! - 2D（把椭球展开为平铺地图，Web Mercator）
+//! - Columbus View（2.5D：地图平铺但带透视观察）
+//! - Morphing（模式之间的形态变换过渡）
+//!
+//! 并提供 3D↔2D 的位置投影/反投影、按模式的相机定位，以及形态过渡所用的
+//! [`smoothstep`] 缓动。所有几何以 `f64` 精度、弧度制经纬计算。
 
 use glam::DVec3;
 use std::f64::consts::PI;
 
 /// 场景渲染模式。
+///
+/// 决定地球如何呈现给观察者：立体球面、平面地图、带透视的 Columbus View，
+/// 或正处于相互切换的形态变换中。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SceneMode {
     /// 3D 地球视图。
@@ -36,6 +42,9 @@ impl SceneMode {
 }
 
 /// 场景模式之间的形态变换状态。
+///
+/// 跟踪一次从 `from` 到 `to` 的过渡：以 `elapsed`/`duration` 归一化出 `progress`，
+/// 到达目标后把 `active` 置否。
 #[derive(Debug, Clone)]
 pub struct MorphState {
     /// 起始模式。
@@ -53,6 +62,8 @@ pub struct MorphState {
 }
 
 impl Default for MorphState {
+    /// 默认形态状态：起止同为 3D、进度已置 1.0、未激活，时长 2.0 秒。
+    /// 即一个“已完成且空闲”的初始态，便于直接作为静止场景的形态基线。
     fn default() -> Self {
         Self {
             from: SceneMode::Scene3D,
@@ -67,7 +78,11 @@ impl Default for MorphState {
 
 impl MorphState {
     /// 启动一次形态变换过渡。
+    ///
+    /// 记录起止模式与时长，把进度、已过时间归零并置 `active` 为真，交由 [`update`]
+    /// 逐帧推进直至完成。`duration_secs` 为过渡总时长（秒）。
     pub fn start_morph(&mut self, from: SceneMode, to: SceneMode, duration_secs: f64) {
+        // 复位计时与进度，标记为进行中
         self.from = from;
         self.to = to;
         self.progress = 0.0;
@@ -76,20 +91,24 @@ impl MorphState {
         self.elapsed = 0.0;
     }
 
-    /// 更新变换进度。
+    /// 更新变换进度：按帧增量累加已过时间，并以 elapsed/duration 归一化进度。
+    ///
+    /// 未激活时直接返回；进度钳制到 [0.0, 1.0]，达到 1.0 即自动结束过渡。
     pub fn update(&mut self, delta_secs: f64) {
         if !self.active {
             return;
         }
         self.elapsed += delta_secs;
+        // 线性归一化并夹到 [0,1]，避免超出时长后进度越界
         self.progress = (self.elapsed / self.duration).clamp(0.0, 1.0);
         if self.progress >= 1.0 {
             self.active = false;
         }
     }
 
-    /// 返回当前生效的模式。
+    /// 返回当前生效的模式：过渡进行中报告 [`SceneMode::Morphing`]，否则为目标模式。
     pub fn current_mode(&self) -> SceneMode {
+        // 激活期间不锁定起止任一模式，统一以 Morphing 表示“正在变换”
         if self.active {
             SceneMode::Morphing
         } else {
@@ -107,9 +126,12 @@ impl MorphState {
 /// # 返回
 /// 2D 位置（x = 经度 * 半径，y = 纬度 * 半径）
 pub fn project_to_2d(position: DVec3, ellipsoid_radius: f64) -> DVec3 {
+    // 由 ECEF 反算经度：xy 平面内相对 x 轴的方位角
     let lon = position.y.atan2(position.x);
+    // 纬度用 z 与向量长度之比的反正弦（球面近似）
     let lat = (position.z / position.length()).asin();
 
+    // 输出以 (经度*半径, 纬度*半径, 相对半径高度) 表示展开平面上的位置
     DVec3::new(
         lon * ellipsoid_radius,
         lat * ellipsoid_radius,
@@ -119,11 +141,14 @@ pub fn project_to_2d(position: DVec3, ellipsoid_radius: f64) -> DVec3 {
 
 /// 将 2D 地图坐标反投影为 3D ECEF 位置。
 pub fn unproject_from_2d(position_2d: DVec3, ellipsoid_radius: f64) -> DVec3 {
+    // 2D 平面坐标除以半径还原弧度制经纬
     let lon = position_2d.x / ellipsoid_radius;
     let lat = position_2d.y / ellipsoid_radius;
     let height = position_2d.z;
+    // r 为该点到地心的距离（半径 + 相对高度）
     let r = ellipsoid_radius + height;
 
+    // 标准球面经纬到直角坐标的反投影
     DVec3::new(
         r * lat.cos() * lon.cos(),
         r * lat.cos() * lon.sin(),
@@ -136,6 +161,7 @@ pub fn unproject_from_2d(position_2d: DVec3, ellipsoid_radius: f64) -> DVec3 {
 /// Columbus View 是一种 2.5D 投影：地图是平铺的，
 /// 但以透视方式观察。
 pub fn project_to_columbus_view(position: DVec3, ellipsoid_radius: f64) -> DVec3 {
+    // 与 2D 相同的经纬反算，仅高度直接取相对椭球面的超出量
     let lon = position.y.atan2(position.x);
     let lat = (position.z / position.length()).asin();
     let height = position.length() - ellipsoid_radius;
@@ -159,9 +185,13 @@ pub fn morph_position(
     position_3d.lerp(position_2d, t)
 }
 
-/// 用于缓动的平滑阶跃函数。
+/// 用于缓动的平滑阶跃函数（Hermite 三次插值 3t²-2t³）。
+///
+/// 输入先把 `t` 钳制到 [0,1]，输出在两端点处一阶导为 0，故过渡起止更柔和，
+/// 适合驱动形态变换的插值权重。
 pub fn smoothstep(t: f64) -> f64 {
     let t = t.clamp(0.0, 1.0);
+    // 经典 smoothstep 多项式：t*t*(3 - 2t)
     t * t * (3.0 - 2.0 * t)
 }
 
@@ -174,6 +204,7 @@ pub fn compute_camera_for_mode(
     ellipsoid_radius: f64,
 ) -> DVec3 {
     match mode {
+        // 3D：相机置于半径为 (R+h) 的球面上，按经纬度展开为 ECEF
         SceneMode::Scene3D => {
             let r = ellipsoid_radius + height;
             DVec3::new(
@@ -182,6 +213,7 @@ pub fn compute_camera_for_mode(
                 r * center_lat.sin(),
             )
         }
+        // 2D：地图平铺，相机直接落在 (lon*R, lat*R)，高度即观察距离
         SceneMode::Scene2D => {
             DVec3::new(
                 center_lon * ellipsoid_radius,
@@ -189,6 +221,7 @@ pub fn compute_camera_for_mode(
                 height,
             )
         }
+        // Columbus View：与 2D 相同的平面定位，但以透视相机从上方俯视
         SceneMode::ColumbusView => {
             DVec3::new(
                 center_lon * ellipsoid_radius,

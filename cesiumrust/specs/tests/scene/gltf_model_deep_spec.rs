@@ -1,4 +1,4 @@
-//! GltfModel 深度规范 - 移植自 GltfLoaderSpec.js、ModelReaderSpec.js
+//! GltfModel 深度规范 - 参考自 GltfLoaderSpec、ModelReaderSpec
 //!
 //! 测试 GltfModel 解析、triangle_count、vertex_count、Node::local_transform、
 //! Accessor 分量/元素大小、以及二进制数据读取（f32/u16/u32）。

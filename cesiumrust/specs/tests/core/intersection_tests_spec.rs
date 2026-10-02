@@ -1,5 +1,5 @@
-//! Core/IntersectionTestsSpec.js → Rust integration tests
-//! A 类测试用例的忠实移植（不含 "throws" 测试）。
+//! Core/IntersectionTestsSpec → Rust integration tests
+//! A 类测试用例的对齐实现（不含 "throws" 测试）。
 
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::ray::{

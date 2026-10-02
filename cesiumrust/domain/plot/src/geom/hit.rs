@@ -31,6 +31,7 @@ pub fn distance_to_segment(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
     let apx = p[0] - a[0];
     let apy = p[1] - a[1];
     let len2 = abx * abx + aby * aby;
+    // 将投影参数 t 钳到 [0,1]；退化（零长）线段（len2≈ 0）回退到端点 a。
     let t = if len2 > 1e-12 {
         ((apx * abx + apy * aby) / len2).clamp(0.0, 1.0)
     } else {
@@ -161,6 +162,7 @@ pub fn hit_polygon_multi(
 mod tests {
     use super::*;
 
+    /// 零长线段退化为点距；跨出线段时钳位到最近端点。
     #[test]
     fn segment_distance_clamps_to_endpoints() {
         // 水平线段 (0,0)-(10,0)。

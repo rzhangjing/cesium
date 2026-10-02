@@ -1,5 +1,5 @@
 //! StarSphere + SkyAtmosphere + SkyBox 规范
-//! 移植自 CesiumJS Scene/StarSphereSpec.js + Scene/SkyAtmosphereSpec.js + Scene/SkyBoxSpec.js
+//! 参考自 CesiumJS Scene/StarSphereSpec + Scene/SkyAtmosphereSpec + Scene/SkyBoxSpec
 
 use cesium_atmosphere::{
     DynamicAtmosphereLighting, HsbShift, SkyAtmosphereConfig, SkyBoxState, Star, StarSphere,

@@ -1,5 +1,14 @@
 //! Color —— 带有 CSS 解析、HSL 转换与算术运算的 RGBA 颜色。
-//! 映射到 CesiumJS `Core/Color.js`
+//!
+//! 颜色以四个 `f64` 分量表示，均归一化到 0.0..1.0：`red`、`green`、`blue`
+//! 描述 RGB 通道，`alpha` 描述不透明度。本模块提供：
+//!
+//! - 与字节（0-255）、u32 打包值、扁平 `f64` 数组之间的相互转换（`pack`/
+//!   `unpack`/`to_bytes`/`from_rgba`）；
+//! - 对 CSS 颜色字符串的解析与序列化，涵盖十六进制、`rgb()/rgba()`、
+//!   `hsl()/hsla()` 函数式记法以及命名颜色关键字；
+//! - 逐分量的算术运算（加、减、乘、除、取模、标量缩放）、提亮/加暗，以及
+//!   两色之间的线性插值 `lerp`。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -9,24 +18,42 @@ use crate::math_utils;
 /// 使用红、绿、蓝、 alpha 值（0.0 到 1.0）指定的一种颜色。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Color {
+    /// 红色分量，取值 0.0（无）到 1.0（满）。
     pub red: f64,
+    /// 绿色分量，取值 0.0 到 1.0。
     pub green: f64,
+    /// 蓝色分量，取值 0.0 到 1.0。
     pub blue: f64,
+    /// Alpha 不透明度分量，0.0 全透明、1.0 完全不透明。
     pub alpha: f64,
 }
 
 impl Default for Color {
+    /// 默认颜色：完全不透明的纯白 (1, 1, 1, 1)。
     fn default() -> Self {
         Self { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 }
     }
 }
 
 impl Color {
+    /// 由四个归一化分量直接构造一个颜色。
+    ///
+    /// # 参数
+    /// - `red`/`green`/`blue`：红绿蓝分量，取值 0.0 到 1.0。
+    /// - `alpha`：不透明度，0.0 全透明、1.0 完全不透明。
+    ///
+    /// # 返回
+    /// 各分量取给定值的 `Color`；调用方负责保证分量落在合法区间。
     pub fn new(red: f64, green: f64, blue: f64, alpha: f64) -> Self {
         Self { red, green, blue, alpha }
     }
 
     // --- 命名颜色常量（测试中使用的一部分 + 常见颜色） ---
+    //
+    // 以下每个常量都是一个完全不透明（alpha = 1.0）的预定义颜色，分量以
+    // 0.0..1.0 的浮点表示，与 CSS 颜色关键字一一对应（`named_color` 即据
+    // 此按名称返回常量）。数值如 0.5019607843137255 等于 128/255，来自对
+    // 应 0-255 色标的归一化。仅收录常见与测试所需的名字，并非完整 CSS 列表。
     pub const WHITE: Self = Self { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 };
     pub const BLACK: Self = Self { red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0 };
     pub const RED: Self = Self { red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0 };
@@ -69,6 +96,7 @@ impl Color {
 
     /// 从字节值（0-255）创建一个 Color。
     pub fn from_bytes(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
+        // 每个字节除以 255.0 归一化到 0.0..1.0。
         Self {
             red: red as f64 / 255.0,
             green: green as f64 / 255.0,
@@ -79,6 +107,7 @@ impl Color {
 
     /// 转换为字节值 [r, g, b, a]（0-255）。
     pub fn to_bytes(&self) -> [u8; 4] {
+        // 逐分量经 float_to_byte 转为 0-255（1.0 精确映射为 255）。
         [
             Self::float_to_byte(self.red),
             Self::float_to_byte(self.green),
@@ -94,6 +123,7 @@ impl Color {
 
     /// 将一个浮点数（0-1）转换为字节（0-255）。
     pub fn float_to_byte(value: f64) -> u8 {
+        // 1.0 需精确映射为 255；其余用 value*256 截断以保留 0 端的正确舍入。
         if value == 1.0 {
             255
         } else {
@@ -113,6 +143,7 @@ impl Color {
         let mut green = lightness;
         let mut blue = lightness;
 
+        // 饱和度为 0 时退化为灰阶，红绿蓝均等于亮度。
         if saturation != 0.0 {
             let m2 = if lightness < 0.5 {
                 lightness * (1.0 + saturation)
@@ -141,6 +172,7 @@ impl Color {
 
         // #rgba 或 #rgb
         if let Some(hex) = color.strip_prefix('#') {
+            // 十六进制位数决定格式：3/4 位为缩写（每位复制到两位），6/8 位为完整值。
             let hex_lower = hex.to_lowercase();
             let chars: Vec<char> = hex_lower.chars().collect();
             match chars.len() {
@@ -188,6 +220,17 @@ impl Color {
         None
     }
 
+    /// 解析 CSS `rgb()`/`rgba()` 函数式记法。
+    ///
+    /// 分量可为 0-255 整数或百分比；分隔符允许逗号、空白，以及用于 alpha 的
+    /// `/`。缺少 alpha 时默认为 1.0。
+    ///
+    /// # 参数
+    /// - `color`：形如 `rgb(255, 0, 0)` 或 `rgba(0 128 255 / 0.5)` 的字符串。
+    ///
+    /// # 返回
+    /// 解析成功返回对应 `Color`（分量归一化到 0-1），格式非法或缺少三个分量
+    /// 时返回 `None`。
     fn parse_rgb_functional(color: &str) -> Option<Self> {
         // 提取括号之间的内容
         let open = color.find('(')?;
@@ -205,6 +248,7 @@ impl Color {
             return None;
         }
 
+        // 带 `%` 的分量按 0-100 归一，否则按 0-255 归一。
         let parse_component = |s: &str| -> Option<f64> {
             let s = s.trim();
             if s.ends_with('%') {
@@ -226,6 +270,16 @@ impl Color {
         Some(Self::new(red, green, blue, alpha))
     }
 
+    /// 解析 CSS `hsl()`/`hsla()` 函数式记法。
+    ///
+    /// 色相以度（0-360）给出并归一化到 0-1；饱和度与亮度可为百分比或 0-1
+    /// 数值；alpha 缺省为 1.0。
+    ///
+    /// # 参数
+    /// - `color`：形如 `hsl(120, 50%, 50%)` 的字符串。
+    ///
+    /// # 返回
+    /// 解析成功返回经 HSL→RGB 转换的 `Color`，格式非法时返回 `None`。
     fn parse_hsl_functional(color: &str) -> Option<Self> {
         let open = color.find('(')?;
         let close = color.rfind(')')?;
@@ -241,6 +295,7 @@ impl Color {
             return None;
         }
 
+        // 色相以度给出，除以 360 归一化到 0-1。
         let hue = parts[0].trim().parse::<f64>().ok()? / 360.0;
         let sat_str = parts[1].trim();
         let sat = if sat_str.ends_with('%') {
@@ -263,6 +318,15 @@ impl Color {
         Some(Self::from_hsl(hue, sat, light, alpha))
     }
 
+    /// 将 CSS 颜色关键字映射到对应的命名颜色常量。
+    ///
+    /// 大小写不敏感（先转大写再匹配），`gray` 与 `grey` 视为等价。
+    ///
+    /// # 参数
+    /// - `name`：颜色关键字，如 `Red`、`CornflowerBlue`。
+    ///
+    /// # 返回
+    /// 命中返回对应常量，未知关键字返回 `None`。
     fn named_color(name: &str) -> Option<Self> {
         match name.to_uppercase().as_str() {
             "WHITE" => Some(Self::WHITE),
@@ -312,6 +376,7 @@ impl Color {
         let r = Self::float_to_byte(self.red);
         let g = Self::float_to_byte(self.green);
         let b = Self::float_to_byte(self.blue);
+        // alpha 为 1.0 时省略透明度，输出简写的 rgb()。
         if self.alpha == 1.0 {
             format!("rgb({},{},{})", r, g, b)
         } else {
@@ -324,6 +389,7 @@ impl Color {
         let r = Self::float_to_byte(self.red);
         let g = Self::float_to_byte(self.green);
         let b = Self::float_to_byte(self.blue);
+        // 仅当 alpha 小于 1.0 时才附带输出第 4 个字节（aa）。
         if self.alpha < 1.0 {
             let a = Self::float_to_byte(self.alpha);
             format!("#{:02x}{:02x}{:02x}{:02x}", r, g, b, a)
@@ -338,11 +404,13 @@ impl Color {
         let g = Self::float_to_byte(self.green) as u32;
         let b = Self::float_to_byte(self.blue) as u32;
         let a = Self::float_to_byte(self.alpha) as u32;
+        // R 落在最低字节，Alpha 在最高字节（小端字节序）。
         r | (g << 8) | (b << 16) | (a << 24)
     }
 
     /// 从一个 u32 RGBA 值（小端字节序）创建一个 Color。
     pub fn from_rgba(rgba: u32) -> Self {
+        // 按小端字节序拆出 R/G/B/A 四个字节后转回颜色。
         Self::from_bytes(
             (rgba & 0xFF) as u8,
             ((rgba >> 8) & 0xFF) as u8,
@@ -353,6 +421,7 @@ impl Color {
 
     /// 返回一个具有给定 alpha 的新 Color。
     pub fn with_alpha(&self, alpha: f64) -> Self {
+        // 保留原 RGB，仅替换 alpha 分量。
         Self { alpha, ..*self }
     }
 
@@ -363,6 +432,7 @@ impl Color {
 
     /// 将当前颜色按给定亮度幅度（0..1）提亮。
     pub fn brighten(&self, magnitude: f64) -> Self {
+        // 向白色靠拢：magnitude 越大，各通道越接近 1.0。
         let magnitude = 1.0 - magnitude;
         Self {
             red: 1.0 - (1.0 - self.red) * magnitude,
@@ -374,6 +444,7 @@ impl Color {
 
     /// 将当前颜色按给定幅度（0..1）加暗。
     pub fn darken(&self, magnitude: f64) -> Self {
+        // 以 (1 - magnitude) 为系数缩放各通道，magnitude 越大越暗。
         let magnitude = 1.0 - magnitude;
         Self {
             red: self.red * magnitude,
@@ -435,6 +506,7 @@ impl Color {
 
     /// 将所有分量乘以一个标量。
     pub fn multiply_by_scalar(&self, scalar: f64) -> Self {
+        // 四个分量（含 alpha）统一乘以同一标量。
         Self {
             red: self.red * scalar,
             green: self.green * scalar,
@@ -455,6 +527,7 @@ impl Color {
 
     /// 两个颜色之间的线性插值。
     pub fn lerp(start: &Self, end: &Self, t: f64) -> Self {
+        // 四个分量各按参数 t 在起/止值之间线性插值。
         Self {
             red: math_utils::lerp(start.red, end.red, t),
             green: math_utils::lerp(start.green, end.green, t),
@@ -465,6 +538,7 @@ impl Color {
 
     /// 若当前颜色在给定 epsilon 范围内与 other 相等则返回 true。
     pub fn equals_epsilon(&self, other: &Self, epsilon: f64) -> bool {
+        // 四个分量均在 epsilon 容差内相等时视为两色相等。
         (self.red - other.red).abs() <= epsilon
             && (self.green - other.green).abs() <= epsilon
             && (self.blue - other.blue).abs() <= epsilon
@@ -473,6 +547,7 @@ impl Color {
 
     /// 打包到从 index 开始的数组 [red, green, blue, alpha] 中。
     pub fn pack(&self, array: &mut [f64], starting_index: usize) {
+        // 按 [r, g, b, a] 顺序从 starting_index 起连续写入四个分量。
         array[starting_index] = self.red;
         array[starting_index + 1] = self.green;
         array[starting_index + 2] = self.blue;
@@ -481,6 +556,7 @@ impl Color {
 
     /// 从 index 开始的数组中解包。
     pub fn unpack(array: &[f64], starting_index: usize) -> Self {
+        // 从扁平数组的 starting_index 处按 [r, g, b, a] 读回四个分量。
         Self {
             red: array[starting_index],
             green: array[starting_index + 1],
@@ -491,6 +567,7 @@ impl Color {
 }
 
 impl std::fmt::Display for Color {
+    /// 以 `(r, g, b, a)` 形式打印四个归一化分量。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({}, {}, {}, {})", self.red, self.green, self.blue, self.alpha)
     }
@@ -498,12 +575,14 @@ impl std::fmt::Display for Color {
 
 /// HSL 转 RGB 的辅助函数（映射到 CesiumJS hue2rgb）。
 fn hue2rgb(m1: f64, m2: f64, mut h: f64) -> f64 {
+    // 将色相环绕回 [0, 1] 区间。
     if h < 0.0 {
         h += 1.0;
     }
     if h > 1.0 {
         h -= 1.0;
     }
+    // 按色相所处扇区选择线性插值方式，对应色轮的六等分。
     if h * 6.0 < 1.0 {
         return m1 + (m2 - m1) * 6.0 * h;
     }

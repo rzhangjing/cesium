@@ -1,5 +1,5 @@
 //! Geocoder + Animation 控件视图模型规范
-//! 移植自 CesiumJS widgets/Source/Geocoder + Animation
+//! 参考自 CesiumJS widgets/Source/Geocoder + Animation
 //!
 //! A 类测试：GeocoderViewModel 搜索/结果/导航、
 //! ShuttleRing 角度↔倍率转换、AnimationViewModel

@@ -24,6 +24,10 @@ pub struct GeoJsonLoadQueue {
 pub struct GeoJsonLoadPlugin;
 
 impl Plugin for GeoJsonLoadPlugin {
+    /// 注册队列资源并挂载加载系统。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用
     fn build(&self, app: &mut App) {
         app.init_resource::<GeoJsonLoadQueue>()
             .add_systems(Update, geojson_load_system);
@@ -31,18 +35,25 @@ impl Plugin for GeoJsonLoadPlugin {
 }
 
 /// 加载 .geojson 文件并生成实体的系统。
+///
+/// # 参数
+/// - `commands`：实体命令（生成实体）
+/// - `queue`：待加载文件队列（可写，处理后清空）
 fn geojson_load_system(
     mut commands: Commands,
     mut queue: ResMut<GeoJsonLoadQueue>,
 ) {
+    // 队列为空时无事可做。
     if queue.files.is_empty() {
         return;
     }
 
+    // 先排空队列；使用默认 GeoJSON 选项（后续可传入自定义）。
     let files: Vec<String> = queue.files.drain(..).collect();
     let options = GeoJsonOptions::default();
 
     for file_path in &files {
+        // 读取磁盘文本（失败则记录并跳过）。
         let content = match std::fs::read_to_string(file_path) {
             Ok(c) => c,
             Err(e) => {
@@ -51,6 +62,7 @@ fn geojson_load_system(
             }
         };
 
+        // 按选项解析为领域数据源，失败则记录并跳过。
         let ds = match parse_geojson(&content, &options) {
             Ok(d) => d,
             Err(e) => {
@@ -59,6 +71,7 @@ fn geojson_load_system(
             }
         };
 
+        // 逐个生成数据源中的实体。
         let entity_count = ds.entities.len();
         info!(
             "Loaded {} entities from GeoJSON file {}",
@@ -72,6 +85,10 @@ fn geojson_load_system(
 }
 
 /// 将单个 GeoJSON 实体生成到 Bevy ECS 中。
+///
+/// # 参数
+/// - `commands`：实体命令
+/// - `domain_entity`：领域层实体
 fn spawn_geojson_entity(commands: &mut Commands, domain_entity: &DomainEntity) {
     let cesium_entity = CesiumEntity {
         entity_id: domain_entity.id.clone(),
@@ -81,6 +98,7 @@ fn spawn_geojson_entity(commands: &mut Commands, domain_entity: &DomainEntity) {
         availability: domain_entity.availability.clone(),
     };
 
+    // 采样位置/可用性区间→标记为时动态，供动画系统后续处理。
     let mut time_dyn = TimeDynamicProperties::default();
     if matches!(domain_entity.position, Property::Sampled(_)) {
         time_dyn.has_interpolated_position = true;
@@ -100,6 +118,10 @@ fn spawn_geojson_entity(commands: &mut Commands, domain_entity: &DomainEntity) {
 }
 
 /// Helper：通过将 GeoJSON 文件加入队列来加载它。
+///
+/// # 参数
+/// - `queue`：待加载队列
+/// - `path`：.geojson 文件路径
 pub fn load_geojson_file(queue: &mut GeoJsonLoadQueue, path: impl Into<String>) {
     queue.files.push(path.into());
 }
@@ -109,12 +131,14 @@ mod tests {
     use super::*;
 
     #[test]
+    /// 默认队列应为空。
     fn test_geojson_load_queue_default() {
         let queue = GeoJsonLoadQueue::default();
         assert!(queue.files.is_empty());
     }
 
     #[test]
+    /// load_geojson_file 应将路径追加入队列。
     fn test_load_geojson_file() {
         let mut queue = GeoJsonLoadQueue::default();
         load_geojson_file(&mut queue, "test/data/points.geojson");

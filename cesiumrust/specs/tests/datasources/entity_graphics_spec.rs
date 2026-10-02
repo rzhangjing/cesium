@@ -1,5 +1,5 @@
 //! Entity 图元规范 - 构建方法、has_graphics、图元默认值
-//! 移植自 DataSources/EntitySpec.js（图元构造路径）
+//! 参考自 DataSources/EntitySpec（图元构造路径）
 
 use cesium_datasource::{
     BillboardGraphics, BoxGraphics, CorridorGraphics, CylinderGraphics,

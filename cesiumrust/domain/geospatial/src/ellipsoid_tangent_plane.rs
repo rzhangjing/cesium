@@ -1,5 +1,4 @@
 //! EllipsoidTangentPlane —— 在给定原点处与椭球相切的平面。
-//! 映射到 CesiumJS `Core/EllipsoidTangentPlane.js`
 
 use crate::bounding::AxisAlignedBoundingBox;
 use crate::ellipsoid::Ellipsoid;
@@ -14,10 +13,15 @@ use glam::{DVec2, DVec3};
 /// 映射到 CesiumJS `EllipsoidTangentPlane`
 #[derive(Debug, Clone)]
 pub struct EllipsoidTangentPlane {
+    /// 切平面所依附的参考椭球。
     ellipsoid: Ellipsoid,
+    /// 切平面的原点（位于椭球表面上的笛卡尔坐标）。
     origin: DVec3,
+    /// 切平面内的局部 x 轴单位向量。
     x_axis: DVec3,
+    /// 切平面内的局部 y 轴单位向量。
     y_axis: DVec3,
+    /// 由原点与椭球法线确定的几何平面。
     plane: Plane,
 }
 

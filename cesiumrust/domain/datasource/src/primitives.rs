@@ -1,15 +1,13 @@
 //! billboard、label 与 PointPrimitive 集合。
 //!
-//! 映射到 CesiumJS：
-//! - `Scene/Billboard.js`, `Scene/BillboardCollection.js`
-//! - `Scene/Label.js`, `Scene/LabelCollection.js`
-//! - `Scene/PointPrimitive.js`, `Scene/PointPrimitiveCollection.js`
+//! 本模块提供三类图元及其集合：始终面向屏幕的 billboard、
+//! 随实体定位的 label，以及屏幕空间的点图元；每类集合统一控制可见性。
 
 use crate::property::Color;
 
 /// 用于 billboard/label 定位的垂直对齐原点。
 ///
-/// 映射到 CesiumJS `Scene/VerticalOrigin.js`
+/// 指定 billboard/label 在垂直方向的对齐基准。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VerticalOrigin {
     /// 原点位于条目顶部。
@@ -25,7 +23,7 @@ pub enum VerticalOrigin {
 
 /// 用于 billboard/label 定位的水平对齐原点。
 ///
-/// 映射到 CesiumJS `Scene/HorizontalOrigin.js`
+/// 指定 billboard/label 在水平方向的对齐基准。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HorizontalOrigin {
     /// 原点位于条目左侧。
@@ -39,7 +37,7 @@ pub enum HorizontalOrigin {
 
 /// label 样式（填充、轮廓，或两者）。
 ///
-/// 映射到 CesiumJS `Scene/LabelStyle.js`
+/// 控制 label 是仅填充、仅轮廓还是两者兼具。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LabelStyle {
     /// 仅填充。
@@ -53,7 +51,7 @@ pub enum LabelStyle {
 
 /// 基于距离的缩放条件。
 ///
-/// 映射到 CesiumJS `Core/NearFarScalar.js`
+/// 以近/远距离及其对应值构成一条分段线性插值曲线。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NearFarScalar {
     /// 近距。
@@ -86,6 +84,7 @@ impl NearFarScalar {
 }
 
 impl Default for NearFarScalar {
+    /// 缺省为 near=0、far=1，两端值均为 0。
     fn default() -> Self {
         Self { near: 0.0, near_value: 0.0, far: 1.0, far_value: 0.0 }
     }
@@ -93,7 +92,7 @@ impl Default for NearFarScalar {
 
 /// 距离显示条件（近/远裁剪）。
 ///
-/// 映射到 CesiumJS `Core/DistanceDisplayCondition.js`
+/// 给出按相机距离显示图元的近远裁剪区间。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DistanceDisplayCondition {
     /// 近距（米）。
@@ -143,6 +142,7 @@ impl DistanceDisplayCondition {
 }
 
 impl Default for DistanceDisplayCondition {
+    /// 缺省裁剪区间为 [0, f64::MAX]，即始终显示。
     fn default() -> Self {
         Self { near: 0.0, far: f64::MAX }
     }
@@ -150,7 +150,7 @@ impl Default for DistanceDisplayCondition {
 
 /// billboard 集合中的一个 billboard。
 ///
-/// 映射到 CesiumJS `Scene/Billboard.js`
+/// 承载单个 billboard 图像的位置、对齐与外观设置。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Billboard {
     /// billboard 是否显示。
@@ -192,6 +192,7 @@ pub struct Billboard {
 }
 
 impl Default for Billboard {
+    /// 构造一个居中、白色、缩放 1 的默认可见 billboard。
     fn default() -> Self {
         Self {
             show: true,
@@ -218,10 +219,12 @@ impl Default for Billboard {
 
 /// billboard 的集合。
 ///
-/// 映射到 CesiumJS `Scene/BillboardCollection.js`
+/// 顺序持有一组 billboard，并统一控制整体可见性。
 #[derive(Debug, Default)]
 pub struct BillboardCollection {
+    /// 集合内的 billboard 列表。
     billboards: Vec<Billboard>,
+    /// 整个集合是否可见。
     show: bool,
 }
 
@@ -290,7 +293,7 @@ impl BillboardCollection {
 
 /// label 集合中的一个 label。
 ///
-/// 映射到 CesiumJS `Scene/Label.js`
+/// 承载单个 label 文本的位置、字体与描边设置。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Label {
     /// label 是否显示。
@@ -305,7 +308,7 @@ pub struct Label {
     pub fill_color: Color,
     /// 轮廓颜色。
     pub outline_color: Color,
-    /// Outline width.
+    /// 轮廓宽度（像素）。
     pub outline_width: f64,
     /// label 样式。
     pub style: LabelStyle,
@@ -336,6 +339,7 @@ pub struct Label {
 }
 
 impl Default for Label {
+    /// 构造一个基线左对齐、字体 30px sans-serif、白字黑边的默认 label。
     fn default() -> Self {
         Self {
             show: true,
@@ -364,10 +368,12 @@ impl Default for Label {
 
 /// label 的集合。
 ///
-/// 映射到 CesiumJS `Scene/LabelCollection.js`
+/// 顺序持有一组 label，并统一控制整体可见性。
 #[derive(Debug, Default)]
 pub struct LabelCollection {
+    /// 集合内的 label 列表。
     labels: Vec<Label>,
+    /// 整个集合是否可见。
     show: bool,
 }
 
@@ -436,7 +442,7 @@ impl LabelCollection {
 
 /// 点图元集合中的一个点图元。
 ///
-/// 映射到 CesiumJS `Scene/PointPrimitive.js`
+/// 承载单个屏幕空间点的位置、颜色与轮廓设置。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PointPrimitive {
     /// 点是否显示。
@@ -462,6 +468,7 @@ pub struct PointPrimitive {
 }
 
 impl Default for PointPrimitive {
+    /// 构造一个像素尺寸 10、白色、无轮廓的默认可见点图元。
     fn default() -> Self {
         Self {
             show: true,
@@ -480,10 +487,12 @@ impl Default for PointPrimitive {
 
 /// 点图元的集合。
 ///
-/// 映射到 CesiumJS `Scene/PointPrimitiveCollection.js`
+/// 顺序持有一组点图元，并统一控制整体可见性。
 #[derive(Debug, Default)]
 pub struct PointPrimitiveCollection {
+    /// 集合内的点图元列表。
     points: Vec<PointPrimitive>,
+    /// 整个集合是否可见。
     show: bool,
 }
 

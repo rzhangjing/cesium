@@ -31,6 +31,7 @@ pub fn offset_point(start: GeoPoint, bearing_deg: f64, dist_m: f64) -> GeoPoint 
     let lon1 = start.lon_deg.to_radians();
     let sin_lat2 = lat1.sin() * d.cos() + lat1.cos() * d.sin() * th.cos();
     let lat2 = sin_lat2.clamp(-1.0, 1.0).asin();
+    // 经度增量用 atan2 求解，避免接近极点时的奇点。
     let lon2 = lon1
         + (th.sin() * d.sin() * lat1.cos()).atan2(d.cos() - lat1.sin() * sin_lat2);
     GeoPoint::new(lon2.to_degrees(), lat2.to_degrees(), start.height_m)
@@ -40,6 +41,7 @@ pub fn offset_point(start: GeoPoint, bearing_deg: f64, dist_m: f64) -> GeoPoint 
 /// 从正北开始顺时针扫掠。
 pub fn circle_ring(c: &Circle, segments: usize) -> Ring {
     let n = segments.max(3);
+    // 从正北起每 360/n 度取一个大圆目的点，拼成闭合环。
     (0..n)
         .map(|i| {
             let bearing = i as f64 * 360.0 / n as f64;
@@ -107,12 +109,15 @@ pub fn arc_ring(a: &Arc3, segments: usize) -> Ring {
 
 /// 球面上一个地理点的单位方向（用于大圆 slerp）。
 fn unit_dir(p: GeoPoint) -> glam::DVec3 {
+    // 球坐标：x = cosφcosλ, y = cosφsinλ, z = sinφ。
     let lat = p.lat_deg.to_radians();
     let lon = p.lon_deg.to_radians();
     glam::DVec3::new(lat.cos() * lon.cos(), lat.cos() * lon.sin(), lat.sin())
 }
 
+/// 将球面单位方向反投影回经纬度点（[`unit_dir`] 的逆）；高度取传入值。
 fn dir_to_geo(d: glam::DVec3, height_m: f64) -> GeoPoint {
+    // 纬 = asin(z)，经 = atan2(y,x)，均转回角度。
     let lat = d.z.clamp(-1.0, 1.0).asin().to_degrees();
     let lon = d.y.atan2(d.x).to_degrees();
     GeoPoint::new(lon, lat, height_m)
@@ -122,6 +127,7 @@ fn dir_to_geo(d: glam::DVec3, height_m: f64) -> GeoPoint {
 fn slerp(a: glam::DVec3, b: glam::DVec3, t: f64) -> glam::DVec3 {
     let dot = a.dot(b).clamp(-1.0, 1.0);
     let omega = dot.acos();
+    // 夹角极小时退化为 a，避免除以 sin(ω)≈ 0。
     if omega < 1e-12 {
         return a;
     }
@@ -141,6 +147,7 @@ pub fn subdivide_great_circle(positions: &[GeoPoint], step_rad: f64) -> Vec<GeoP
             let a = unit_dir(*w);
             let b = unit_dir(positions[i + 1]);
             let omega = a.dot(b).clamp(-1.0, 1.0).acos();
+            // 按角跨步切成至多 step_rad 的子步；高度线性插值。
             let n = (omega / step).ceil() as usize;
             out.push(*w);
             for k in 1..n {

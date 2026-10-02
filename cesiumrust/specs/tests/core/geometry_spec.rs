@@ -1,4 +1,4 @@
-//! 几何生成规格测试 - 移植自 Core/*GeometrySpec.js
+//! 几何生成规格测试 - 参考自 Core/*GeometrySpec
 //! 覆盖范围：Corridor、Ellipse、Wall、Polyline、PolylineVolume、CoplanarPolygon、
 //! GroundPolyline、Frustum 几何及其轮廓变体。
 

@@ -1,8 +1,8 @@
-//! Scene/ModelComponentsSpec.js + GltfLoaderUtilitySpec.js → Rust 集成测试。
+//! Scene/ModelComponentsSpec + GltfLoaderUtilitySpec → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/ModelComponents.js（Material、MetallicRoughness、所有 KHR 扩展）
-//! - Scene/Model/GltfLoaderUtility.js（扩展解析、纹理变换）
+//! 参考 CesiumJS：
+//! - Scene/ModelComponents（Material、MetallicRoughness、所有 KHR 扩展）
+//! - Scene/Model/GltfLoaderUtility（扩展解析、纹理变换）
 //!
 //! A 类测试：全部 10 个 KHR 扩展的默认值、parse_material_extensions、
 //! TextureTransform.compute_matrix/transform_uv, TextureTransformInfo.effective_tex_coord,

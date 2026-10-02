@@ -1,4 +1,4 @@
-//! 相机扩展规格 - 移植自 Scene/CameraSpec.js
+//! 相机扩展规格 - 参考自 Scene/CameraSpec
 //!
 //! 测试相机朝向查询（heading_3d/pitch_3d/roll_3d）、
 //! distance_to_bounding_sphere、get_magnitude、get_rectangle_camera_coordinates、

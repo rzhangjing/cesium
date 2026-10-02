@@ -1,5 +1,4 @@
 //! Ellipsoid —— 在笛卡尔坐标中定义的一个二次曲面。
-//! 映射到 CesiumJS `Core/Ellipsoid.js` + `Core/scaleToGeodeticSurface.js`
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -61,7 +60,7 @@ impl Ellipsoid {
     /// 单位球（各方向半径均为 1）。
     pub const UNIT_SPHERE: Self = Self::from_radii_unchecked(1.0, 1.0, 1.0);
 
-    /// 月球椭球。对应 CesiumJS `Ellipsoid.MOON`：一个半径为
+    /// 月球椭球（`Ellipsoid.MOON`）：一个半径为
     /// `CesiumMath.LUNAR_RADIUS`（1737400.0 米）的球。（注意：这不是 IAU 2000
     /// 的三轴月球椭球；CesiumJS 将月球建模为一个球体。）
     pub const MOON: Self = Self::from_radii_unchecked(LUNAR_RADIUS, LUNAR_RADIUS, LUNAR_RADIUS);
@@ -139,36 +138,43 @@ impl Ellipsoid {
         self.radii
     }
 
+    /// 返回三轴半径的平方。
     #[inline]
     pub fn radii_squared(&self) -> DVec3 {
         self.radii_squared
     }
 
+    /// 返回三轴半径的四次方。
     #[inline]
     pub fn radii_to_the_fourth(&self) -> DVec3 {
         self.radii_to_the_fourth
     }
 
+    /// 返回三轴半径的倒数。
     #[inline]
     pub fn one_over_radii(&self) -> DVec3 {
         self.one_over_radii
     }
 
+    /// 返回三轴半径平方的倒数。
     #[inline]
     pub fn one_over_radii_squared(&self) -> DVec3 {
         self.one_over_radii_squared
     }
 
+    /// 返回最短半径（极半径）。
     #[inline]
     pub fn minimum_radius(&self) -> f64 {
         self.minimum_radius
     }
 
+    /// 返回最长半径（赤道半径）。
     #[inline]
     pub fn maximum_radius(&self) -> f64 {
         self.maximum_radius
     }
 
+    /// 返回 X 半径平方与 Z 半径平方的比值（用于大地线法线计算）。
     #[inline]
     pub fn squared_x_over_squared_z(&self) -> f64 {
         self.squared_x_over_squared_z
@@ -256,7 +262,7 @@ impl Ellipsoid {
     }
 
     /// 沿大地表面法线缩放给定的笛卡尔位置，使其落在本椭球表面上。
-    /// 映射到 `Ellipsoid.scaleToGeodeticSurface` → `scaleToGeodeticSurface.js`
+    /// 映射到 `Ellipsoid.scaleToGeodeticSurface`。
     /// 若位置位于椭球中心则返回 None。
     pub fn scale_to_geodetic_surface(&self, cartesian: DVec3) -> Option<DVec3> {
         scale_to_geodetic_surface(
@@ -281,6 +287,7 @@ impl Ellipsoid {
                 + (position_z * position_z) * self.one_over_radii_squared.z)
                 .sqrt();
 
+        // beta 为将点缩放到椭球面上所需的比例因子；非有限（如原点位于中心）则无法缩放。
         if !beta.is_finite() {
             return None;
         }
@@ -290,8 +297,9 @@ impl Ellipsoid {
 
     /// 计算射线与椭球的相交。
     /// 返回沿射线的参数距离区间 (start, stop)，或 None。
-    /// 对 `IntersectionTests.rayEllipsoid` 的忠实移植。
+    /// 与 `IntersectionTests.rayEllipsoid` 语义一致。
     pub fn intersection(&self, ray_origin: DVec3, ray_direction: DVec3) -> Option<(f64, f64)> {
+        // 将射线变换到单位球空间：q 为缩放后的起点，w 为缩放后的方向。
         let q = ray_origin * self.one_over_radii;
         let w = ray_direction * self.one_over_radii;
 
@@ -489,7 +497,7 @@ impl std::fmt::Display for Ellipsoid {
 }
 
 /// 沿大地表面法线缩放给定的笛卡尔位置，使其落在椭球表面上。
-/// 使用牛顿法直接移植自 CesiumJS `scaleToGeodeticSurface.js`。
+/// 使用牛顿迭代法求解。
 fn scale_to_geodetic_surface(
     cartesian: DVec3,
     one_over_radii: DVec3,
@@ -603,7 +611,7 @@ const GAUSS_LEGENDRE_WEIGHTS: [f64; 6] = [
 ];
 
 /// 计算给定定积分的 10 阶 Gauss-Legendre 求积。
-/// 映射到 CesiumJS `gaussLegendreQuadrature`（Ellipsoid.js 中的私有辅助函数）。
+/// 为 `gaussLegendreQuadrature` 的私有辅助实现。
 fn gauss_legendre_quadrature<F: Fn(f64) -> f64>(a: f64, b: f64, func: F) -> f64 {
     // 由于五个权重相加为一（十个权重相加为二），此处的范围是常规范围的一半。
     // 横坐标的值会乘以二以补偿这一点。
@@ -611,6 +619,7 @@ fn gauss_legendre_quadrature<F: Fn(f64) -> f64>(a: f64, b: f64, func: F) -> f64 
     let x_range = 0.5 * (b - a);
 
     let mut sum = 0.0;
+    // 5 点高斯-勒让德求积：在每个采样点将节点向两侧各对称取一个，累加权重乘函数值。
     for i in 0..5 {
         let dx = x_range * GAUSS_LEGENDRE_ABSCISSAS[i];
         sum += GAUSS_LEGENDRE_WEIGHTS[i] * (func(x_mean + dx) + func(x_mean - dx));
@@ -621,6 +630,7 @@ fn gauss_legendre_quadrature<F: Fn(f64) -> f64>(a: f64, b: f64, func: F) -> f64 
 }
 
 impl Default for Ellipsoid {
+    /// 默认椭球为 WGS84。
     fn default() -> Self {
         Self::WGS84
     }

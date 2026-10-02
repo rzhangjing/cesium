@@ -1,7 +1,7 @@
-//! Heap / ManagedArray / mergeSort 规格测试 - 移植自：
-//! - packages/engine/Specs/Core/HeapSpec.js（9 个 it()）
-//! - packages/engine/Specs/Core/ManagedArraySpec.js（17 个 it()）
-//! - packages/engine/Specs/Core/mergeSortSpec.js（5 个 it()）
+//! Heap / ManagedArray / mergeSort 规格测试 - 参考自：
+//! - Specs/Core/HeapSpec（9 个 it()）
+//! - Specs/Core/ManagedArraySpec（17 个 it()）
+//! - Specs/Core/mergeSortSpec（5 个 it()）
 //!
 //! A 类测试：22 个（Heap 7 + ManagedArray 10 + mergeSort 3，跳过 JS 特有的 throws/undefined 测试）
 

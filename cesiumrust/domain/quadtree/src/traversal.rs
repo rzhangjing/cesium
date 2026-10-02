@@ -1,9 +1,7 @@
 //! 用于地形瓦片选择的四叉树遍历。
 //!
-//! 映射到 CesiumJS `Scene/QuadtreePrimitive.js`：
-//! - 四叉树瓦片遍历
-//! - 基于屏幕空间误差（SSE）的 LOD 选择
-//! - 瓦片细化决策
+//! 提供四叉树瓦片遍历、基于屏幕空间误差（SSE）的 LOD 选择
+//! 与瓦片细化决策。
 
 use cesium_geospatial::bounding::BoundingSphere;
 use glam::DVec3;
@@ -119,6 +117,7 @@ pub struct QuadtreeConfig {
 }
 
 impl Default for QuadtreeConfig {
+    /// 返回缺省遍历配置：最大 SSE 2.0、最大层级 22、禁用雾剔除。
     fn default() -> Self {
         Self {
             maximum_screen_space_error: 2.0,
@@ -145,7 +144,7 @@ pub struct TraversalResult {
 
 /// 用于地形瓦片管理的四叉树基本体。
 ///
-/// 映射到 CesiumJS `Scene/QuadtreePrimitive.js`
+/// 从一组根瓦片出发递归遍历，依据屏幕空间误差决定细化或收录。
 #[derive(Debug)]
 pub struct QuadtreePrimitive {
     /// 根瓦片（WGS84 通常为 2 个：西半球与东半球）。
@@ -193,6 +192,7 @@ impl QuadtreePrimitive {
         result
     }
 
+    /// 递归访问单个瓦片：据 SSE 判定是否细化到子瓦片，否则将本瓦片收录用于渲染。
     fn visit_tile<F>(
         &self,
         tile: &QuadtreeTile,

@@ -115,17 +115,22 @@ enum ContentError {
 }
 
 impl ContentError {
+    /// 构造一个“不受支持”变体（优雅降级，不计为硬失败）。
     fn unsupported(msg: impl Into<String>) -> Self {
         ContentError::Unsupported(msg.into())
     }
 
+    /// 构造一个“格式非法”变体（网络/解码错误，计为失败）。
     fn invalid(msg: impl Into<String>) -> Self {
         ContentError::Invalid(msg.into())
     }
 }
 
+/// 从原始 payload 解码出的内嵌 GLB 及其批量表标志。
 struct DecodedGlb {
+    /// 内嵌的 GLB 字节（已从容器剥离）。
     glb: Vec<u8>,
+    /// 是否携带 batch table（供后续拾取/样式使用）。
     has_batch_table: bool,
 }
 
@@ -228,6 +233,12 @@ fn default_tile_material() -> StandardMaterial {
     }
 }
 
+/// 由路径、瓦片元信息与目标状态拼装一个 [`CesiumTileNode`] 组件。
+///
+/// # 参数
+/// - `path`：从根到瓦片的子索引路径
+/// - `meta`：瓦片的误差与包围球元信息
+/// - `state`：当前内容状态（Loading/Ready/Failed）
 fn tile_node(path: Vec<usize>, meta: TileNodeMeta, state: TileContentState) -> CesiumTileNode {
     CesiumTileNode {
         path,
@@ -332,6 +343,16 @@ fn poll_pending_loads(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// 逐帧驱动瓦片内容加载：排空已解析的 task、按预算 spawn 新的下载、更新统计。
+///
+/// # 参数
+/// - `commands`：实体增删改命令
+/// - `loaded`：已加载的 tileset 根信息（可选）
+/// - `selection`：遍历系统选出的待加载/卸载瓦片
+/// - `pending_loads`：飞行中的下载 task 集合
+/// - `stats`：加载统计资源
+/// - `meshes`/`materials`：资产写入器
+/// - `tile_query`：瓦片节点查询
 pub fn tile_content_load_system(
     mut commands: Commands,
     loaded: Option<Res<LoadedTileset>>,

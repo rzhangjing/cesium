@@ -29,6 +29,7 @@ impl DefaultStaleness {
 }
 
 impl Default for DefaultStaleness {
+    /// `DefaultStaleness` 为无字段单元结构，默认值即自身。
     fn default() -> Self {
         Self
     }
@@ -53,6 +54,7 @@ impl StalenessPolicy for DefaultStaleness {
         }
     }
 
+    /// 失败瓦片重试前的冷却时长。
     #[inline]
     fn retry_cooldown(&self) -> Duration {
         Self::RETRY_COOLDOWN

@@ -1,6 +1,6 @@
 //! Scene/Cesium3DTilesetTraversal + LOD 选择 → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
+//! 参考 CesiumJS：
 //! - Cesium3DTileset._computeScreenSpaceError
 //! - Cesium3DTilesetTraversal 遍历逻辑
 //!

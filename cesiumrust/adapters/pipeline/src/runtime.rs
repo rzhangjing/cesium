@@ -40,15 +40,22 @@ where
 
 /// 内部可变的统计计数器（为跨线程的 stats() 读取而采用原子量）。
 struct StatsInner {
+    /// 当前帧序号（递增），供逐帧预算与陈旧判定参考。
     frame_idx: AtomicU32,
+    /// 因数据陈旧而被跳过的上传累计次数。
     stale_skips: AtomicU32,
+    /// 已发起的瓦片驱逐（淘汰）累计总数。
     evict_total: AtomicU32,
+    /// 因超每帧预算而被推迟的驱逐累计数。
     evict_deferred: AtomicU32,
+    /// 当前在途（已提交未完成）的任务数。
     in_flight: AtomicU32,
+    /// 重试冷却结束帧号（在此之前暂停相应瓦片重试）。
     retry_after: AtomicU32,
 }
 
 impl StatsInner {
+    /// 构造一个所有计数器归零的初始统计块。
     fn new() -> Self {
         Self {
             frame_idx: AtomicU32::new(0),

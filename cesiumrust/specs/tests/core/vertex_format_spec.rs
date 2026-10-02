@@ -1,7 +1,7 @@
 //! VertexFormat 规格测试。
 //!
-//! 对应 CesiumJS：
-//! - Core/VertexFormatSpec.js
+//! 参考 CesiumJS：
+//! - Core/VertexFormatSpec
 //!
 //! A 类测试：clone、pack/unpack、常量。
 

@@ -1,9 +1,8 @@
 //! Cesium Ion 资产端点 URL 构造。
 //!
-//! 映射到 CesiumJS `Core/IonResource.js` + `Core/Ion.js`：
-//! - `IonResource.fromAssetId(assetId, options)` —— 构建端点 URL。
-//! - `IonResource._createEndpointResource(assetId, options)` —— 构造用于
-//!   获取 ion 端点 JSON 的 Resource。
+//! 覆盖 Ion 资产端点的 URL 与头部构造：
+//! - 依据资产 ID 与选项构建端点请求 URL。
+//! - 构造用于获取 ion 端点 JSON 的请求描述。
 //! - 通过 `access_token` 查询参数和/或
 //!   `Authorization: Bearer <token>` 头部注入令牌。
 //!
@@ -28,33 +27,33 @@ use std::collections::HashMap;
 
 /// 默认的 Cesium Ion API 服务器 URL。
 ///
-/// 映射到 CesiumJS `Ion.defaultServer` = `"https://api.cesium.com/"`。
+/// 默认端点地址为 `"https://api.cesium.com/"`。
 pub const DEFAULT_ION_SERVER: &str = "https://api.cesium.com/";
 
 /// 构造 Ion 资产端点资源的选项。
 ///
-/// 映射到 CesiumJS `IonResource.fromAssetId(assetId, options)`。
+/// 依据资产 ID 与选项构建端点请求。
 #[derive(Debug, Clone, Default)]
 pub struct IonAssetOptions {
     /// 要使用的访问令牌。若为 None 则不注入令牌。
     ///
-    /// 映射到 `options.accessToken`（回退到 `Ion.defaultAccessToken`）。
+    /// 访问令牌；为空则不注入任何令牌。
     pub access_token: Option<String>,
 
     /// Cesium ion API 服务器的 url。
     ///
-    /// 映射到 `options.server`（回退到 `Ion.defaultServer`）。
+    /// 服务器 URL；为空则回退到默认端点。
     pub server: Option<String>,
 
     /// 端点请求的额外查询参数。
     ///
-    /// 映射到 `options.queryParameters`（合并进端点 URL）。
+    /// 额外查询参数，会合并进端点 URL。
     pub query_parameters: Option<HashMap<String, String>>,
 
     /// 除了在 `access_token` 查询参数之外（或替代它），
     /// 是否注入 `Authorization: Bearer` 头部。
     ///
-    /// CesiumJS 两者都用：端点请求用查询参数，后续的
+    /// 两者可同时使用：端点请求用查询参数，后续的
     /// 内容请求用 Bearer 头部。默认：`true`。
     pub use_bearer_header: Option<bool>,
 }
@@ -65,7 +64,7 @@ pub struct IonAssetOptions {
 /// （领域层不为此依赖 serde_json；适配器或应用层
 /// 进行反序列化）。
 ///
-/// 映射到 `IonResource` 使用的 ion 端点 JSON 响应字段。
+/// 承载 ion 端点 JSON 响应的解析结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IonEndpoint {
     /// 资产内容的 URL（瓦片、地形、影像）。
@@ -77,7 +76,7 @@ pub struct IonEndpoint {
 
     /// 用于针对内容 URL 请求的短期访问令牌。
     ///
-    /// 映射到 `endpoint.accessToken`。
+    /// 从端点响应的 `accessToken` 字段解析而来。
     pub access_token: Option<String>,
 
     /// 对于外部资产：`endpoint.options.url`（实际的外部 URL）。
@@ -85,7 +84,7 @@ pub struct IonEndpoint {
 
     /// 致谢/信用 HTML 字符串。
     ///
-    /// 映射到 `endpoint.attributions`。
+    /// 从端点响应的 `attributions` 字段解析而来。
     pub attributions: Vec<IonAttribution>,
 }
 
@@ -119,7 +118,7 @@ pub struct IonResourceRequest {
 
 /// 为给定的资产 ID 构建 Ion 端点 URL。
 ///
-/// 映射到 `IonResource._createEndpointResource(assetId, options)`。
+/// 构造用于获取端点 JSON 的请求描述。
 ///
 /// 本函数是 **纯函数** —— 它构造 URL 和头部而不
 /// 发起任何网络请求。调用方（适配层）负责
@@ -190,8 +189,8 @@ pub fn build_endpoint_request(asset_id: u64, options: IonAssetOptions) -> IonRes
     // 构建头部。
     let mut headers = HashMap::new();
 
-    // CesiumJS 客户端识别头部。
-    // 映射到 IonResource.js 中的 `addClientHeaders(headers)`。
+    // 客户端识别头部，标识发起请求的实现。
+    // 随请求一并发送，用于服务端的统计归属。
     headers.insert(
         "X-Cesium-Client".to_string(),
         "cesium-rust".to_string(),
@@ -221,14 +220,11 @@ pub fn build_endpoint_request(asset_id: u64, options: IonAssetOptions) -> IonRes
 /// 在给定端点响应的情况下，为 Ion 资产构建内容 URL。
 ///
 /// 端点获取后，内容 URL 需要将端点的
-/// `accessToken` 作为查询参数追加（CesiumJS 在
-/// `IonResource.fromEndpoint` 中完成这一操作）。
+/// `accessToken` 作为查询参数追加，以便后续的
+/// 内容请求直接携带该令牌。
 ///
-/// 映射到 `new IonResource(endpoint, endpointResource)` 中的令牌注入：
-/// ```js
-/// resource = new Resource({ url: endpoint.url });
-/// resource.setQueryParameters({ access_token: endpoint.accessToken });
-/// ```
+/// 追加规则：若基础 URL 已含查询串则以 `&` 分隔，
+/// 否则以 `?` 分隔，再拼接 `access_token=<百分号编码后的令牌>`。
 pub fn build_content_url(endpoint: &IonEndpoint) -> String {
     let base_url = &endpoint.url;
 
@@ -271,16 +267,16 @@ pub fn build_content_headers(endpoint: &IonEndpoint) -> HashMap<String, String> 
 
 /// 判断一个 Ion 端点是否代表一个外部资产。
 ///
-/// 映射到 `IonResource._isExternal` 逻辑：当
-/// `endpoint.externalType` 已定义时，资产为外部资产。
+/// 判定依据：当端点的 `external_type` 字段已定义时，
+/// 该资产即为外部资产。
 pub fn is_external_asset(endpoint: &IonEndpoint) -> bool {
     endpoint.external_type.is_some()
 }
 
 /// 对于外部资产，返回有效的内容 URL。
 ///
-/// 映射到 `IonResource.fromEndpoint`，其中外部资产使用
-/// `endpoint.options.url` 而非 `endpoint.url`。
+/// 外部资产使用其 `options_url`（实际的外部 URL）
+/// 而非端点自身返回的 `url`。
 ///
 /// 对于非外部资产或缺少 options URL 的情况返回 `None`。
 pub fn external_asset_url(endpoint: &IonEndpoint) -> Option<&str> {
@@ -292,12 +288,8 @@ pub fn external_asset_url(endpoint: &IonEndpoint) -> Option<&str> {
 
 /// 检查某个外部资产类型是否受支持为 Resource。
 ///
-/// 映射到 CesiumJS 的守卫：
-/// ```js
-/// if (externalType !== '3DTILES' && externalType !== 'STK_TERRAIN_SERVER') {
-///   throw new RuntimeError('Ion.createResource does not support external imagery assets...');
-/// }
-/// ```
+/// 目前仅支持 3D Tiles 与 STK 地形服务作为外部资源；
+/// 其他类型（如影像）不被支持。
 pub fn is_supported_external_type(endpoint: &IonEndpoint) -> bool {
     match endpoint.external_type.as_deref() {
         Some("3DTILES") | Some("STK_TERRAIN_SERVER") => true,

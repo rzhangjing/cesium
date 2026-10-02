@@ -46,15 +46,25 @@ const LAYER_WEIGHT: i32 = 100_000;
 /// revision 计数器）以及投影器闭包捕获的相机位姿 / 投影。
 #[derive(Clone, PartialEq)]
 pub struct PickKey {
+    /// 光标位置（逻辑像素，double 精度以避免拖拽微抖动误判）。
     cursor: [f64; 2],
+    /// 文档 revision，内容变化时使缓存键失效。
     revision: u64,
+    /// 当前是否为 3D 地球（globe）模式。
     globe: bool,
+    /// 2D 平面缩放（每世界单位像素数）。
     flat_zoom: f32,
+    /// 主窗口宽高（逻辑像素）。
     screen: [f32; 2],
+    /// 相机平移（局部坐标，3D 投影器闭包捕获）。
     cam_t: [f32; 3],
+    /// 相机旋转四元数（投影器闭包捕获）。
     cam_r: [f32; 4],
+    /// 相机焦距（像素），决定透视拾取的投影尺度。
     focal_px: f64,
+    /// 是否启用透视投影（区别于正交）。
     persp: bool,
+    /// 解析后的可拾取元素集（`Filters` 编辑的唯一体现途径）。
     pickable: Vec<ElementId>,
 }
 
@@ -63,7 +73,9 @@ pub struct PickKey {
 /// 黄金基线不受影响。
 #[derive(Resource, Default)]
 pub struct PlotPickCache {
+    /// 上一次计算所用的 [`PickKey`]（为 `None` 表示尚无缓存）。
     key: Option<PickKey>,
+    /// 与 `key` 对应的缓存悬停结果。
     best: Option<PickHit>,
 }
 
@@ -98,6 +110,16 @@ type Projector<'a> = dyn Fn(GeoPoint) -> Option<[f64; 2]> + 'a;
 
 /// 将单个几何与 `cursor` 碰撞，返回 `(part, screen_dist, rank)`。
 /// 只测试 M2/M3 可绘制类型；面 / 圆锥曲线在 M4 采样后获得填充内部命中。
+///
+/// # 参数
+/// - `geo`：待碰撞的几何体（点/图标/标签/线/面等）。
+/// - `style`：元素样式，提供命中容差（point_size、width_px 等）。
+/// - `mode`：视图模式，决定描边是否做大圆加密。
+/// - `project`：地理→屏幕像素的投影器闭包。
+/// - `cursor`：待测光标屏幕坐标。
+///
+/// # 返回
+/// 命中时返回 `(部件, 屏幕距离, 优先级 rank)`，未命中返回 `None`。
 fn hit_geometry(
     geo: &Geometry,
     style: &Style,
@@ -188,6 +210,15 @@ fn is_multi_vertex(geo: &Geometry) -> bool {
 /// 都保守地报告为可能命中。bounds 来自
 /// [`cesium_plot::model::Geometry::bounds`]，即球体加密后的范围，
 /// 因此它也覆盖大圆隆起。
+///
+/// # 参数
+/// - `bounds`：元素的保守地理包围盒。
+/// - `project`：地理→屏幕投影器。
+/// - `cursor`：待测光标屏幕坐标。
+/// - `tol`：屏幕容差（像素），向各方向外扩 AABB。
+///
+/// # 返回
+/// 光标可能命中时返回 `true`（保守），可证明在屏幕外时才返回 `false`。
 fn bounds_might_hit(
     bounds: &GeoBounds,
     project: &Projector<'_>,
@@ -225,6 +256,16 @@ fn bounds_might_hit(
 /// 纯拾取查询（计划 §14）。在 `pickable` 元素中返回 `cursor` 下的最佳
 /// [`PickHit`]，或 `None`。`project` 将地理坐标映射为屏幕像素；
 /// 桥接层提供基于相机的版本。
+///
+/// # 参数
+/// - `doc`：场景文档，提供元素几何/样式/包围盒与层级 order。
+/// - `pickable`：本帧可拾取的元素集（已应用 `Filters`）。
+/// - `cursor`：待测光标屏幕坐标。
+/// - `mode`：视图模式（2D/3D）。
+/// - `project`：地理→屏幕像素投影器。
+///
+/// # 返回
+/// `pickable` 中 `cursor` 下的最佳 [`PickHit`]（按 rank→z_order→屏幕距离排序），否则 `None`。
 pub fn pick_at(
     doc: &Document,
     pickable: &BTreeSet<ElementId>,
@@ -273,6 +314,10 @@ pub fn pick_at(
 }
 
 /// 每帧拾取系统（参见模块文档）。
+///
+/// 从窗口光标与激活相机重建 [`PickKey`]，若与上帧相同则复用
+/// 缓存悬停，仅在键变化时才走廉价的 `pick_at` 全量碰撞。随后根据
+/// 鼠标按键与交互状态发布悬停/选择/右键菜单事件。
 #[allow(clippy::too_many_arguments)]
 pub fn pick_system(
     ctx: Res<PlotViewCtx>,
@@ -433,6 +478,8 @@ mod tests {
         Some([g.lon_deg * 4.0, g.lat_deg * 4.0])
     }
 
+    /// 构造一个含两个点元素（a 在原点、b 在 (50,50)）的单图层文档，
+    /// 返回文档与两个元素 id，供拾取命中/排序测试复用。
     fn point_doc() -> (Document, ElementId, ElementId) {
         let mut doc = Document::default();
         let layer = doc.new_layer("L");
@@ -445,6 +492,7 @@ mod tests {
         (doc, ea, eb)
     }
 
+    /// 光标远离所有已投影元素时应返回 `None`（无任何候选命中）。
     #[test]
     fn pick_at_misses_when_cursor_is_off_every_element() {
         let (doc, _, _) = point_doc();
@@ -490,6 +538,8 @@ mod tests {
         );
     }
 
+    /// 光标精确落在点 a 的投影像素上时，应命中 a 且 rank 为标记级。
+    /// 验证最近点选择与优先级标签均与几何类型一致。
     #[test]
     fn pick_at_hits_the_nearest_point() {
         let (doc, ea, _eb) = point_doc();
@@ -500,6 +550,7 @@ mod tests {
         assert_eq!(hit.rank, cesium_plot::model::RANK_MARKER);
     }
 
+    /// 标记与线共享同一像素时，标记（rank 0）应压过线描边（rank 1）。
     #[test]
     fn marker_outranks_a_line_crossing_the_same_pixel() {
         // A marker at (0,0) and a line through (0,0) → the marker (rank 0) wins
@@ -526,6 +577,8 @@ mod tests {
         assert_eq!(hit.rank, cesium_plot::model::RANK_MARKER);
     }
 
+    /// 同一 rank 内 z_order 更高的点元素应胜出（5 压过 1）。
+    /// 确认堆叠次序作为次级排序键参与最佳命中评选。
     #[test]
     fn higher_z_order_wins_within_the_same_rank() {
         let mut doc = Document::default();
@@ -544,6 +597,7 @@ mod tests {
         assert_eq!(hit.element, high_id, "z_order 5 beats 1");
     }
 
+    /// 仅可拾取集合内的元素参与碰撞：集合外的 `ea` 光标处无命中。
     #[test]
     fn only_the_pickable_set_is_considered() {
         let (doc, _ea, eb) = point_doc();
@@ -554,6 +608,7 @@ mod tests {
         assert_eq!(hit.element, eb);
     }
 
+    /// 折线拾取应先在顶点处报告 Vertex(索引)，远离顶点时报告 Edge(索引)。
     #[test]
     fn polyline_reports_vertex_then_edge() {
         let mut doc = Document::default();
@@ -578,6 +633,7 @@ mod tests {
         assert_eq!(hit.part, Part::Edge(0));
     }
 
+    /// 标签锚点应作为标记级元素可被拾取（rank = RANK_MARKER）。
     #[test]
     fn label_anchor_is_pickable() {
         let mut doc = Document::default();
@@ -598,6 +654,7 @@ mod tests {
         assert_eq!(hit.rank, cesium_plot::model::RANK_MARKER);
     }
 
+    /// 矩形内部命中返回 Body（rank = 面体），边界命中返回 Edge（rank = 边）。
     #[test]
     fn polygon_interior_beats_nothing_and_edge_is_a_ring() {
         // A rectangle (0,0)-(10,10) → screen (0,0)-(40,40). Cursor in the middle
@@ -623,6 +680,7 @@ mod tests {
         assert_eq!(edge.rank, RANK_POLY_EDGE);
     }
 
+    /// 粗相位应保守保留：内部/松弛范围内/投影失败/空盒都不误拒，仅明确在外才剔除。
     #[test]
     fn bounds_broad_phase_includes_overlaps_and_unknowns() {
         let b = GeoBounds::from_points(&[
@@ -646,6 +704,7 @@ mod tests {
         assert!(bounds_might_hit(&b, &flaky, [9999.0, 9999.0], 0.0));
     }
 
+    /// 粗相位网格采样不应丢弃远处角点包围的大矩形内部命中。
     #[test]
     fn broad_phase_does_not_drop_an_interior_face_hit() {
         // A rectangle spanning the cursor: the body hit sits far from every

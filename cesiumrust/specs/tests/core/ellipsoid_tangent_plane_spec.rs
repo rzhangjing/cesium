@@ -1,4 +1,4 @@
-//! 移植自 `packages/engine/Specs/Core/EllipsoidTangentPlaneSpec.js`（27 个 it()，19 个 A 类）
+//! 参考自 `Specs/Core/EllipsoidTangentPlaneSpec`（27 个 it()，19 个 A 类）
 //!
 //! 省略 8 个 throws 测试（C 类：Rust 类型系统强制构造合法）。
 //! result 参数变体被合并到其“返回所有权”对应的测试中。

@@ -8,11 +8,9 @@
 //!
 //! 领域层 —— 纯 Rust，f64 精度。
 //!
-//! CesiumJS 映射：
-//! - `Scene/GeometryInstance.js` → geometry_instance
-//! - `Scene/Appearance.js` → geometry_instance
-//! - `Scene/Primitive.js` → collection
-//! - `Scene/PrimitiveCollection.js` → collection
+//! 子模块：
+//! - [`geometry_instance`]：几何实例、外观、材质与绘制状态
+//! - [`collection`]：基本体、基本体集合与几何合批
 
 pub mod collection;
 pub mod geometry_instance;

@@ -1,6 +1,7 @@
 //! 地名搜索（geocoder）widget 视图模型。
 //!
-//! 映射到 CesiumJS `Geocoder/GeocoderViewModel.js`。
+//! 提供即输即搜的地名编码交互模型：输入文本、自动补全、
+//! 结果高亮与上下选择，以及选中后的飞至目标位置。
 
 /// 用于显示的地名搜索结果。
 #[derive(Debug, Clone, PartialEq)]
@@ -55,6 +56,7 @@ pub struct GeocoderViewModel {
 }
 
 impl Default for GeocoderViewModel {
+    /// 默认空文本、未搜索、widget 可见、自动补全开启、最少 3 字符触发。
     fn default() -> Self {
         Self {
             search_text: String::new(),
@@ -80,7 +82,9 @@ impl GeocoderViewModel {
     /// 设置搜索文本。
     pub fn set_search_text(&mut self, text: impl Into<String>) {
         self.search_text = text.into();
+        // 文本变化后重置高亮，避免旧索引与新结果错位
         self.selected_index = None;
+        // 不足最小字符数时清空并收起结果面板
         if self.search_text.len() < self.min_chars {
             self.results.clear();
             self.show_results = false;
@@ -89,11 +93,13 @@ impl GeocoderViewModel {
 
     /// 检查搜索文本是否足够长以触发搜索。
     pub fn should_search(&self) -> bool {
+        // 需同时满足：文本达最小长度且尚未处于搜索中
         self.search_text.len() >= self.min_chars && !self.is_searching
     }
 
     /// 开始一次搜索操作。
     pub fn begin_search(&mut self) {
+        // 仅当满足触发条件才进入搜索态，防止重复发起
         if self.should_search() {
             self.is_searching = true;
         }
@@ -101,6 +107,7 @@ impl GeocoderViewModel {
 
     /// 以结果完成一次搜索。
     pub fn complete_search(&mut self, results: Vec<GeocoderSearchResult>) {
+        // 结束搜索态并接管新结果；有结果则默认高亮首项
         self.is_searching = false;
         self.results = results;
         self.show_results = !self.results.is_empty();
@@ -109,6 +116,7 @@ impl GeocoderViewModel {
 
     /// 清除搜索。
     pub fn clear_search(&mut self) {
+        // 一次性回到初始空态：清文本、清结果、收起面板、退出搜索
         self.search_text.clear();
         self.results.clear();
         self.show_results = false;
@@ -118,6 +126,7 @@ impl GeocoderViewModel {
 
     /// 向上移动选中项。
     pub fn select_previous(&mut self) {
+        // 空结果直接返回；否则向前循环选择，到顶时回绕到末项
         if self.results.is_empty() {
             return;
         }
@@ -130,6 +139,7 @@ impl GeocoderViewModel {
 
     /// 向下移动选中项。
     pub fn select_next(&mut self) {
+        // 空结果直接返回；否则向后循环选择，到尾时回绕到首项
         if self.results.is_empty() {
             return;
         }
@@ -142,11 +152,13 @@ impl GeocoderViewModel {
 
     /// 获取当前选中的结果。
     pub fn selected_result(&self) -> Option<&GeocoderSearchResult> {
+        // 无高亮索引时 short-circuit 返回 None，否则按索引取项
         self.results.get(self.selected_index?)
     }
 
     /// 激活选中的结果（飞至目标位置）。
     pub fn activate_selected(&mut self) -> Option<GeocoderSearchResult> {
+        // 无选中项则不激活；否则把显示名回填输入框并收起面板，交由上层发起飞行
         let result = self.selected_result()?.clone();
         self.search_text = result.display_name.clone();
         self.show_results = false;
@@ -160,6 +172,7 @@ impl GeocoderViewModel {
 
     /// 显示结果面板。
     pub fn show_results_panel(&mut self) {
+        // 仅在有结果时才展开面板，避免弹出空白列表
         if !self.results.is_empty() {
             self.show_results = true;
         }
@@ -219,6 +232,7 @@ mod tests {
     #[test]
     fn test_min_chars() {
         let mut vm = GeocoderViewModel::new();
+        // 不足 3 字符不应触发，达到 3 字符则可搜索
         vm.set_search_text("Ne");
         assert!(!vm.should_search());
         vm.set_search_text("New");
@@ -228,10 +242,12 @@ mod tests {
     #[test]
     fn test_search_flow() {
         let mut vm = GeocoderViewModel::new();
+        // 达到最小字符后 begin_search 进入搜索态
         vm.set_search_text("New York");
         vm.begin_search();
         assert!(vm.is_searching);
 
+        // 完成搜索后接管结果并高亮首项、展开面板
         vm.complete_search(sample_results());
         assert!(!vm.is_searching);
         assert_eq!(vm.results.len(), 3);
@@ -242,10 +258,12 @@ mod tests {
     #[test]
     fn test_navigation() {
         let mut vm = GeocoderViewModel::new();
+        // 先走一次完整搜索拿到 3 条结果，默认高亮首项
         vm.set_search_text("New");
         vm.begin_search();
         vm.complete_search(sample_results());
 
+        // 向下逐步移动，到尾后回绕到首项
         assert_eq!(vm.selected_index, Some(0));
         vm.select_next();
         assert_eq!(vm.selected_index, Some(1));
@@ -265,6 +283,7 @@ mod tests {
         vm.begin_search();
         vm.complete_search(sample_results());
 
+        // 激活首项后应把显示名回填文本框并收起面板
         let result = vm.activate_selected().unwrap();
         assert_eq!(result.display_name, "New York, NY");
         assert_eq!(vm.search_text, "New York, NY");

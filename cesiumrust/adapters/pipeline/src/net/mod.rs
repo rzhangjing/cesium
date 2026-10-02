@@ -74,6 +74,7 @@ pub(crate) mod test_server {
 
     /// 一个运行中的测试服务器的句柄。
     pub(crate) struct TestServer {
+        /// 服务器基地址（如 `http://127.0.0.1:{port}`），用于拼接请求 URL。
         base: String,
         /// 共享的统计。
         pub(crate) stats: Arc<ServerStats>,
@@ -110,6 +111,8 @@ pub(crate) mod test_server {
         }
     }
 
+    /// 处理一个 keep-alive 连接：循环读取请求行并每次都返回 `body`（200），
+    /// 直至客户端关闭连接（读到 EOF）。
     fn handle_conn(mut stream: TcpStream, body: &[u8], stats: &ServerStats) {
         let reader_stream = match stream.try_clone() {
             Ok(s) => s,

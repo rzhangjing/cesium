@@ -1,12 +1,11 @@
 //! 用于影像图层分割的分割方向。
 //!
-//! 映射到 CesiumJS `Scene/SplitDirection.js`。
+//! 提供左/无/右三种分割方向的 shader 数值映射与屏内显示判定，
+//! 以及分割器配置（启用标志与分割位置）的相干描述。
 
 use serde::{Deserialize, Serialize};
 
 /// 相对于分割位置显示某个图元或 ImageryLayer 的方向。
-///
-/// 映射到 CesiumJS `Scene/SplitDirection.js`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum SplitDirection {
     /// 显示在分割位置的左侧。
@@ -25,6 +24,7 @@ impl SplitDirection {
     /// - None: 0.0
     /// - Right: 1.0
     pub fn to_shader_value(&self) -> f64 {
+        // 方向到浮点符号：左负/中零/右正，供 shader varying 传递
         match self {
             Self::Left => -1.0,
             Self::None => 0.0,
@@ -34,6 +34,7 @@ impl SplitDirection {
 
     /// 从 shader 数值创建。
     pub fn from_shader_value(value: f64) -> Self {
+        // 以 ±0.5 为阈将浮点量归入三档方向
         if value < -0.5 {
             Self::Left
         } else if value > 0.5 {
@@ -45,6 +46,7 @@ impl SplitDirection {
 
     /// 检查分割是否处于激活状态（非 None）。
     pub fn is_split(&self) -> bool {
+        // 只要不是 None 就处于左/右某一侧的激活分割
         !matches!(self, Self::None)
     }
 
@@ -53,6 +55,7 @@ impl SplitDirection {
     /// `split_position` 处于 [0, 1] 范围（0 = 左边缘，1 = 右边缘）。
     /// `screen_x` 是归一化的屏幕 X 坐标 [0, 1]。
     pub fn should_show_at(&self, screen_x: f64, split_position: f64) -> bool {
+        // None 全域显示；Left 取分割位置左侧，Right 取右侧
         match self {
             Self::None => true,
             Self::Left => screen_x <= split_position,
@@ -63,7 +66,7 @@ impl SplitDirection {
 
 /// 场景的分割器配置。
 ///
-/// 映射到 CesiumJS `Scene/Splitter.js` 和 `Scene.splitPosition`。
+/// 记录分割是否启用以及以屏幕宽度分数表示的分割位置。
 #[derive(Debug, Clone, PartialEq)]
 pub struct SplitterConfig {
     /// 分割是否启用。
@@ -73,6 +76,7 @@ pub struct SplitterConfig {
 }
 
 impl Default for SplitterConfig {
+    /// 默认禁用分割、分割位置居中（0.5）。
     fn default() -> Self {
         Self {
             enabled: false,
@@ -84,6 +88,7 @@ impl Default for SplitterConfig {
 impl SplitterConfig {
     /// 创建一个新的分割器配置。
     pub fn new(enabled: bool, split_position: f64) -> Self {
+        // 构造时即把分割位置限到 [0, 1]
         Self {
             enabled,
             split_position: split_position.clamp(0.0, 1.0),
@@ -92,11 +97,13 @@ impl SplitterConfig {
 
     /// 设置分割位置，限制到 [0, 1]。
     pub fn set_split_position(&mut self, position: f64) {
+        // 防止越界写入，保持位置在有效屏幕区间
         self.split_position = position.clamp(0.0, 1.0);
     }
 
     /// 针对给定的视口宽度获取以像素计的分割位置。
     pub fn split_position_pixels(&self, viewport_width: f64) -> f64 {
+        // 将归一化分数乘以视口宽度得到像素坐标
         self.split_position * viewport_width
     }
 
@@ -104,8 +111,8 @@ impl SplitterConfig {
     ///
     /// 返回要插入的额外 shader 代码。
     ///
-    /// **GLSL 形式** — 镜像上游 `SplitDirection.js` / `czm_splitPosition`，
-    /// 使用 `gl_FragCoord`（像素空间）和 `discard`。为 GLSL blueprint 奇偶校验测试而逐字保留。
+    /// **GLSL 形式** — 使用 `czm_splitPosition` uniform 与
+    /// `gl_FragCoord`（像素空间）和 `discard`。为 GLSL blueprint 奇偶校验测试而逐字保留。
     pub fn shader_modification(&self) -> &str {
         if self.enabled {
             r#"
@@ -276,6 +283,7 @@ mod tests {
 
     #[test]
     fn test_split_direction_serialization() {
+        // 方向枚举应能无损往返于 JSON 序列化
         let dir = SplitDirection::Left;
         let json = serde_json::to_string(&dir).unwrap();
         let deserialized: SplitDirection = serde_json::from_str(&json).unwrap();

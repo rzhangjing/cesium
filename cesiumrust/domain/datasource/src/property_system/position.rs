@@ -1,10 +1,11 @@
 //! 位置属性：其值为一个世界位置（`Cartesian3`）并带有
 //! 相关联参考系的属性。
 //!
-//! 映射到 CesiumJS `DataSources/PositionProperty.js` 及具体实现
-//! `ConstantPositionProperty`、`SampledPositionProperty`、
-//! `CompositePositionProperty`、`TimeIntervalCollectionPositionProperty` 与
-//! `CallbackPositionProperty`。
+//! 具体实现包括常量位置 `ConstantPositionProperty`、采样位置
+//! `SampledPositionProperty`、组合位置 `CompositePositionProperty`、
+//! 时间区间集合位置 `TimeIntervalCollectionPositionProperty` 与回调位置
+//! `CallbackPositionProperty`；它们都携带一个与之关联的参考系，
+//! 并可在固定（fixed）与惯性（inertial）两系之间求值。
 
 use crate::property_system::interpolation::{ExtrapolationType, InterpolationAlgorithmKind};
 use crate::property_system::property::{CompositeProperty, DynProperty, SampledProperty};
@@ -51,13 +52,14 @@ fn position_to_value(position: Option<DVec3>) -> PropertyValue {
 // ConstantPositionProperty
 // ---------------------------------------------------------------------------
 
-/// 一种位置属性，其值相对于其定义所在的参考系
-/// 不发生变化。
-///
-/// 映射到 CesiumJS `DataSources/ConstantPositionProperty.js`。
+/// 一种位置属性，其值相对于其定义所在的参考系不发生变化；
+/// 它是位置属性中最简单的形态，内部固化一个可选位置向量
+/// 与一个参考系，任意时刻求值都基于该固定向量做系间转换。
 #[derive(Debug, Clone, Default)]
 pub struct ConstantPositionProperty {
+    /// 已存储的位置向量；为 `None` 时表示该属性未定义值。
     value: Option<DVec3>,
+    /// 位置向量所属的参考系（fixed 或惯性），求值时以此为基准转换。
     reference_frame: ReferenceFrame,
 }
 
@@ -114,20 +116,25 @@ impl ConstantPositionProperty {
 }
 
 impl DynProperty for ConstantPositionProperty {
+    /// 未定义或位于 fixed 系时为常量；惯性系位置以 fixed 表示会随
+    /// 时间旋转，故不为常量。
     fn is_constant(&self) -> bool {
         // 惯性系位置在用 fixed 系表示时会随时间变化，因此仅当未定义
         // 或为 fixed 系时才是常量。
         self.value.is_none() || self.reference_frame == ReferenceFrame::Fixed
     }
 
+    /// 在 fixed 参考系中求值当前位置，包装为 `PropertyValue`。
     fn get_value(&self, time: &JulianDate) -> PropertyValue {
         position_to_value(self.position_in_reference_frame(time, ReferenceFrame::Fixed))
     }
 
+    /// 返回类型名 `ConstantPositionProperty`。
     fn type_name(&self) -> &'static str {
         "ConstantPositionProperty"
     }
 
+    /// 仅当对方同为常量位置属性且内部值与参考系都相等时判定相等。
     fn equals(&self, other: &dyn DynProperty) -> bool {
         match other.as_any().downcast_ref::<ConstantPositionProperty>() {
             Some(o) => self.value == o.value && self.reference_frame == o.reference_frame,
@@ -135,14 +142,17 @@ impl DynProperty for ConstantPositionProperty {
         }
     }
 
+    /// 以 `Any` 引用暴露自身，供向下转型使用。
     fn as_any(&self) -> &dyn Any {
         self
     }
 
+    /// 返回此属性定义所在的参考系。
     fn reference_frame(&self) -> Option<ReferenceFrame> {
         Some(self.reference_frame)
     }
 
+    /// 将已存储位置转换到 `frame` 后求值，缺失时返回 `None`。
     fn get_value_in_reference_frame(
         &self,
         time: &JulianDate,
@@ -157,13 +167,16 @@ impl DynProperty for ConstantPositionProperty {
 // SampledPositionProperty
 // ---------------------------------------------------------------------------
 
-/// 一个同时也是位置属性的 `SampledProperty`。
-///
-/// 映射到 CesiumJS `DataSources/SampledPositionProperty.js`。
+/// 一个同时也是位置属性的 `SampledProperty`：将采样属性按位置
+/// 语义包装，额外携带一个参考系与导数个数，求值时委托内部采样
+/// 属性插值并做系间转换。
 #[derive(Debug, Clone)]
 pub struct SampledPositionProperty {
+    /// 内部的采样属性，存算样本时间、位置与可选导数。
     property: SampledProperty,
+    /// 位置样本所属的参考系，用于插值后的坐标转换。
     reference_frame: ReferenceFrame,
+    /// 每个样本随位置一同提供的导数个数（如速度/加速度）。
     number_of_derivatives: usize,
 }
 
@@ -315,18 +328,22 @@ impl SampledPositionProperty {
 }
 
 impl DynProperty for SampledPositionProperty {
+    /// 直接委托内部采样属性判定常量性。
     fn is_constant(&self) -> bool {
         self.property.is_constant()
     }
 
+    /// 在 fixed 参考系中插值求值当前位置，包装为 `PropertyValue`。
     fn get_value(&self, time: &JulianDate) -> PropertyValue {
         position_to_value(self.position_in_reference_frame(time, ReferenceFrame::Fixed))
     }
 
+    /// 返回类型名 `SampledPositionProperty`。
     fn type_name(&self) -> &'static str {
         "SampledPositionProperty"
     }
 
+    /// 仅当同为采样位置属性、内部采样集相等且参考系一致时判定相等。
     fn equals(&self, other: &dyn DynProperty) -> bool {
         match other.as_any().downcast_ref::<SampledPositionProperty>() {
             Some(o) => {
@@ -336,14 +353,17 @@ impl DynProperty for SampledPositionProperty {
         }
     }
 
+    /// 以 `Any` 引用暴露自身，供向下转型使用。
     fn as_any(&self) -> &dyn Any {
         self
     }
 
+    /// 返回此属性定义所在的参考系。
     fn reference_frame(&self) -> Option<ReferenceFrame> {
         Some(self.reference_frame)
     }
 
+    /// 先按时间插值，再将结果转换到 `frame`；无有效插值时返回 `None`。
     fn get_value_in_reference_frame(
         &self,
         time: &JulianDate,
@@ -360,13 +380,13 @@ impl DynProperty for SampledPositionProperty {
 
 /// 一个同时也是位置属性的 `CompositeProperty`。
 ///
-/// 每个区间的数据本身就是一个位置属性；求值时委托给
-/// 内部属性的 `getValueInReferenceFrame`。
-///
-/// 映射到 CesiumJS `DataSources/CompositePositionProperty.js`。
+/// 每个区间的数据本身就是一个位置属性；求值时定位到包含
+/// 该时刻的区间，再委托内部属性的 `getValueInReferenceFrame`。
 #[derive(Clone)]
 pub struct CompositePositionProperty {
+    /// 内部的组合属性，按时间区间存放若个子位置属性。
     composite: CompositeProperty,
+    /// 此位置自我呈现时采用的“首选”参考系。
     reference_frame: ReferenceFrame,
 }
 
@@ -415,18 +435,22 @@ impl CompositePositionProperty {
 }
 
 impl DynProperty for CompositePositionProperty {
+    /// 委托内部组合属性判定常量性（空区间集即为常量）。
     fn is_constant(&self) -> bool {
         self.composite.is_constant()
     }
 
+    /// 定位包含 `time` 的区间并在 fixed 系求值，包装为 `PropertyValue`。
     fn get_value(&self, time: &JulianDate) -> PropertyValue {
         position_to_value(self.position_in_reference_frame(time, ReferenceFrame::Fixed))
     }
 
+    /// 返回类型名 `CompositePositionProperty`。
     fn type_name(&self) -> &'static str {
         "CompositePositionProperty"
     }
 
+    /// 仅当同为组合位置属性、参考系一致且内部组合相等时判定相等。
     fn equals(&self, other: &dyn DynProperty) -> bool {
         match other.as_any().downcast_ref::<CompositePositionProperty>() {
             Some(o) => {
@@ -437,14 +461,17 @@ impl DynProperty for CompositePositionProperty {
         }
     }
 
+    /// 以 `Any` 引用暴露自身，供向下转型使用。
     fn as_any(&self) -> &dyn Any {
         self
     }
 
+    /// 返回此属性首选的参考系。
     fn reference_frame(&self) -> Option<ReferenceFrame> {
         Some(self.reference_frame)
     }
 
+    /// 定位区间并委托内部属性在 `frame` 中取值；无匹配区间时返回 `None`。
     fn get_value_in_reference_frame(
         &self,
         time: &JulianDate,
@@ -459,16 +486,19 @@ impl DynProperty for CompositePositionProperty {
 // TimeIntervalCollectionPositionProperty
 // ---------------------------------------------------------------------------
 
+/// 比较两个位置数据是否相同，用于区间集合添加/比较时的相等判定。
 fn position_same_data(left: &DVec3, right: &DVec3) -> bool {
     *left == *right
 }
 
-/// 一个同时也是位置属性的 `TimeIntervalCollectionProperty`。
-///
-/// 映射到 CesiumJS `DataSources/TimeIntervalCollectionPositionProperty.js`。
+/// 一个同时也是位置属性的 `TimeIntervalCollectionProperty`：位置数据
+/// 直接以 `DVec3` 形式按不重叠时间区间存放，求值时定位到包含时刻的
+/// 区间取其常量位置，再做系间转换。
 #[derive(Debug, Clone)]
 pub struct TimeIntervalCollectionPositionProperty {
+    /// 按时间区间存放位置数据的集合，区间之间不允许重叠。
     intervals: TimeIntervalCollection<DVec3>,
+    /// 已存位置所属的参考系，用于求值时的坐标转换。
     reference_frame: ReferenceFrame,
 }
 
@@ -508,18 +538,22 @@ impl TimeIntervalCollectionPositionProperty {
 }
 
 impl DynProperty for TimeIntervalCollectionPositionProperty {
+    /// 区间集为空时视为常量（无任何随时间变化的数据）。
     fn is_constant(&self) -> bool {
         self.intervals.is_empty()
     }
 
+    /// 定位包含 `time` 的区间并在 fixed 系求值，包装为 `PropertyValue`。
     fn get_value(&self, time: &JulianDate) -> PropertyValue {
         position_to_value(self.position_in_reference_frame(time, ReferenceFrame::Fixed))
     }
 
+    /// 返回类型名 `TimeIntervalCollectionPositionProperty`。
     fn type_name(&self) -> &'static str {
         "TimeIntervalCollectionPositionProperty"
     }
 
+    /// 仅当同为区间集合位置属性、区间数据相等且参考系一致时判定相等。
     fn equals(&self, other: &dyn DynProperty) -> bool {
         match other
             .as_any()
@@ -533,14 +567,17 @@ impl DynProperty for TimeIntervalCollectionPositionProperty {
         }
     }
 
+    /// 以 `Any` 引用暴露自身，供向下转型使用。
     fn as_any(&self) -> &dyn Any {
         self
     }
 
+    /// 返回此属性定义所在的参考系。
     fn reference_frame(&self) -> Option<ReferenceFrame> {
         Some(self.reference_frame)
     }
 
+    /// 定位区间取位置后转换到 `frame`；无匹配区间时返回 `None`。
     fn get_value_in_reference_frame(
         &self,
         time: &JulianDate,
@@ -559,12 +596,14 @@ impl DynProperty for TimeIntervalCollectionPositionProperty {
 /// 返回属性参考系中的位置（或 `None`）。
 pub type PositionCallbackFn = Arc<dyn Fn(&JulianDate) -> Option<DVec3> + Send + Sync>;
 
-/// 其值由回调函数延迟求值的位置属性。
-///
-/// 映射到 CesiumJS `DataSources/CallbackPositionProperty.js`。
+/// 其值由回调函数延迟求值的位置属性：每次求值都调用内部回调得到
+/// 参考系中的位置，再按需转换；回调可为任意实现 `Fn` 的闭包。
 pub struct CallbackPositionProperty {
+    /// 延迟求值的回调，给定时间返回参考系中的位置（或 `None`）。
     callback: PositionCallbackFn,
+    /// 标志位：告知调用方此回调是否对所有时间返回相同值。
     is_constant: bool,
+    /// 回调返回位置所属的参考系，用于求值时的坐标转换。
     reference_frame: ReferenceFrame,
 }
 
@@ -605,18 +644,22 @@ impl CallbackPositionProperty {
 }
 
 impl DynProperty for CallbackPositionProperty {
+    /// 直接返回构造/设置时给定的常量标志。
     fn is_constant(&self) -> bool {
         self.is_constant
     }
 
+    /// 调用回调取位置并在 fixed 系求值，包装为 `PropertyValue`。
     fn get_value(&self, time: &JulianDate) -> PropertyValue {
         position_to_value(self.position_in_reference_frame(time, ReferenceFrame::Fixed))
     }
 
+    /// 返回类型名 `CallbackPositionProperty`。
     fn type_name(&self) -> &'static str {
         "CallbackPositionProperty"
     }
 
+    /// 仅当回调指针相等（共享同一 `Arc`）且常量标志与参考系都一致时相等。
     fn equals(&self, other: &dyn DynProperty) -> bool {
         match other.as_any().downcast_ref::<CallbackPositionProperty>() {
             Some(o) => {
@@ -628,14 +671,17 @@ impl DynProperty for CallbackPositionProperty {
         }
     }
 
+    /// 以 `Any` 引用暴露自身，供向下转型使用。
     fn as_any(&self) -> &dyn Any {
         self
     }
 
+    /// 返回此属性定义所在的参考系。
     fn reference_frame(&self) -> Option<ReferenceFrame> {
         Some(self.reference_frame)
     }
 
+    /// 调用回调取位置后转换到 `frame`；回调返回 `None` 时结果也为 `None`。
     fn get_value_in_reference_frame(
         &self,
         time: &JulianDate,
@@ -652,10 +698,14 @@ mod tests {
     use cesium_time::TimeInterval;
     use glam::DVec3;
 
+    /// 构造测试用儒略日：固定 JD 2451545.0 基准，仅变化秒偏移，
+    /// 以便在同一基准上比较不同采样时刻。
     fn t(seconds: f64) -> JulianDate {
         JulianDate::new(2451545.0, seconds)
     }
 
+    /// 验证同一参考系之间的转换不改变向量：fixed→fixed 与
+    /// inertial→inertial 都应原样返回输入位置。
     #[test]
     fn test_convert_same_frame_returns_unchanged() {
         let v = DVec3::new(1.0, 2.0, 3.0);
@@ -670,6 +720,8 @@ mod tests {
         assert_eq!(out, Some(v));
     }
 
+    /// 验证惯性↔固定双向转换的回环一致性：先转过去再转回来应
+    /// 重建原向量，且旋转保持向量长度不变。
     #[test]
     fn test_convert_roundtrip_inertial_fixed() {
         let v = DVec3::new(1_000_000.0, 2_000_000.0, 3_000_000.0);
@@ -684,6 +736,8 @@ mod tests {
         assert!(back.abs_diff_eq(v, 1e-6));
     }
 
+    /// 验证同一惯性向量在不同时刻转到 fixed 系会得到不同结果，
+    /// 体现地球自转带来的时变旋转。
     #[test]
     fn test_convert_changes_with_time() {
         // 惯性位置在用 fixed 系表示时会随时间旋转。
@@ -700,6 +754,8 @@ mod tests {
         assert!(!f1.abs_diff_eq(f2, 1.0));
     }
 
+    /// 验证 fixed 系常量位置：为常量、参考系为 fixed，且各接口求值
+    /// 都返回已存储的向量。
     #[test]
     fn test_constant_position_fixed_frame() {
         let p = DVec3::new(1.0, 2.0, 3.0);
@@ -713,6 +769,8 @@ mod tests {
         );
     }
 
+    /// 验证惯性系常量位置并非常量（在 fixed 系中旋转），但在其自身
+    /// 惯性系中任意时刻都返回已存向量，且可回环转换。
     #[test]
     fn test_constant_position_inertial_frame_not_constant() {
         let p = DVec3::new(1.0, 2.0, 3.0);
@@ -749,6 +807,8 @@ mod tests {
         }
     }
 
+    /// 验证未定义常量位置：仍为常量，求值返回未定义哨兵，参考系
+    /// 取值返回 `None`。
     #[test]
     fn test_constant_position_undefined() {
         let prop = ConstantPositionProperty::undefined();
@@ -760,6 +820,7 @@ mod tests {
         );
     }
 
+    /// 验证常量位置相等比较：同值同系相等，参考系不同则不等。
     #[test]
     fn test_constant_position_equals() {
         let p = DVec3::new(1.0, 2.0, 3.0);
@@ -770,6 +831,8 @@ mod tests {
         assert!(!a.equals(&c));
     }
 
+    /// 验证采样位置线性插值：两点间中点取半分，精确采样时刻返回
+    /// 精确值。
     #[test]
     fn test_sampled_position_linear_interpolation() {
         let mut prop = SampledPositionProperty::fixed();
@@ -785,6 +848,8 @@ mod tests {
         assert!(at0.abs_diff_eq(DVec3::ZERO, 1e-12));
     }
 
+    /// 验证惯性系采样位置：自身系插值直接，fixed 系插值需经旋转
+    /// 转换且与显式转换一致。
     #[test]
     fn test_sampled_position_inertial_frame() {
         let mut prop = SampledPositionProperty::new(ReferenceFrame::Inertial, 0);
@@ -809,6 +874,8 @@ mod tests {
         assert!(fixed.abs_diff_eq(expected, 1e-12));
     }
 
+    /// 验证带速度导数的 Hermite 插值可重建三次曲线：以 p(t)=t³ 的
+    /// 样本与导数 3t² 插值得到接近理论中点值。
     #[test]
     fn test_sampled_position_with_derivatives() {
         // 使用速度导数的 Hermite 插值可重建一个三次曲线。
@@ -827,6 +894,8 @@ mod tests {
         assert!((mid.x - 3.375).abs() < 1e-9);
     }
 
+    /// 验证外推类型：默认 NONE 时样本外返回未定义，改为 HOLD 后
+    /// 前推保持末值。
     #[test]
     fn test_sampled_position_extrapolation_none() {
         let mut prop = SampledPositionProperty::fixed();
@@ -844,6 +913,7 @@ mod tests {
         assert!(held.abs_diff_eq(DVec3::new(10.0, 0.0, 0.0), 1e-12));
     }
 
+    /// 验证采样位置相等比较：相同样本与参考系相等，参考系不同则不等。
     #[test]
     fn test_sampled_position_equals() {
         let mut a = SampledPositionProperty::fixed();
@@ -855,6 +925,8 @@ mod tests {
         assert!(!a.equals(&c));
     }
 
+    /// 验证组合位置委托内部属性：不同区间取到对应常量位置，区间
+    /// 之外返回未定义。
     #[test]
     fn test_composite_position_delegates_to_inner() {
         let mut prop = CompositePositionProperty::new(ReferenceFrame::Fixed);
@@ -876,6 +948,8 @@ mod tests {
         assert_eq!(prop.get_value(&t(30.0)), PropertyValue::Undefined);
     }
 
+    /// 验证组合位置对内部惯性属性的透传：以惯性系查询时返回内部
+    /// 属性已存储的值，系间转换由内部属性自行处理。
     #[test]
     fn test_composite_position_inner_inertial() {
         // 内部属性自行处理其参考系转换：一个惯性内部
@@ -897,6 +971,8 @@ mod tests {
         );
     }
 
+    /// 验证区间集合位置：空集合为常量，加入区间后非常量，区间内取值、
+    /// 区间外返回未定义。
     #[test]
     fn test_tic_position_property() {
         let mut prop = TimeIntervalCollectionPositionProperty::new(ReferenceFrame::Fixed);
@@ -910,6 +986,8 @@ mod tests {
         assert_eq!(prop.get_value(&t(11.0)), PropertyValue::Undefined);
     }
 
+    /// 验证惯性系区间集合位置：自身系返回已存值，fixed 系为经旋转的
+    /// 转换结果。
     #[test]
     fn test_tic_position_inertial_frame() {
         let mut prop = TimeIntervalCollectionPositionProperty::new(ReferenceFrame::Inertial);
@@ -933,6 +1011,7 @@ mod tests {
         assert!(fixed.abs_diff_eq(expected, 1e-12));
     }
 
+    /// 验证区间集合位置相等比较：相同区间与参考系相等，参考系不同则不等。
     #[test]
     fn test_tic_position_equals() {
         let mut a = TimeIntervalCollectionPositionProperty::new(ReferenceFrame::Fixed);
@@ -946,6 +1025,7 @@ mod tests {
         assert!(!a.equals(&c));
     }
 
+    /// 验证回调位置属性：按回调返回的日数生成 x 坐标，且标记为非常量。
     #[test]
     fn test_callback_position_property() {
         let callback: PositionCallbackFn = Arc::new(|time: &JulianDate| {
@@ -960,6 +1040,7 @@ mod tests {
         );
     }
 
+    /// 验证回调返回 `None` 时求值取未定义哨兵，同时保留常量标志。
     #[test]
     fn test_callback_position_none_value() {
         let callback: PositionCallbackFn = Arc::new(|_time: &JulianDate| None);
@@ -968,6 +1049,7 @@ mod tests {
         assert_eq!(prop.get_value(&t(0.0)), PropertyValue::Undefined);
     }
 
+    /// 验证惯性系回调位置：自身系返回已算值，fixed 系为经旋转的转换结果。
     #[test]
     fn test_callback_position_inertial() {
         let callback: PositionCallbackFn =
@@ -989,6 +1071,8 @@ mod tests {
         assert!(fixed.abs_diff_eq(expected, 1e-12));
     }
 
+    /// 验证回调位置相等比较：共享同一回调 `Arc` 且标志/参考系一致则相等，
+    /// 常量标志不同则不等。
     #[test]
     fn test_callback_position_equals() {
         let cb: PositionCallbackFn = Arc::new(|_time: &JulianDate| Some(DVec3::ONE));

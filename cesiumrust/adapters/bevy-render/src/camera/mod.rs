@@ -22,7 +22,12 @@ use bevy::prelude::*;
 pub struct CesiumCameraPlugin;
 
 impl Plugin for CesiumCameraPlugin {
+    /// 初始化相机相关资源与事件，并在各阶段挂载控制/触控/更新/飞行/模式系统。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用
     fn build(&self, app: &mut App) {
+        // 输入状态/飞行/渐变/触控/控制端口等资源与两个事件均需提前注册。
         app.init_resource::<CameraInputState>()
             .init_resource::<ActiveFlight>()
             .init_resource::<ActiveMorph>()

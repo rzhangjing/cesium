@@ -1,4 +1,4 @@
-//! 移植自 CesiumJS ModelAnimationSpec.js + GltfLoaderSpec.js 的测试（A 类）
+//! 参考自 CesiumJS ModelAnimationSpec + GltfLoaderSpec 的测试（A 类）
 //! RuntimeAnimation 状态机、AnimationSpline 求值、循环模式
 
 use cesium_gltf::animation_runtime::{

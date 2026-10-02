@@ -1,7 +1,7 @@
 //! Scene/ScreenSpaceCameraController → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/ScreenSpaceCameraController.js（环绕、平移、缩放、倾斜、碰撞）
+//! 参考 CesiumJS：
+//! - Scene/ScreenSpaceCameraController（环绕、平移、缩放、倾斜、碰撞）
 //!
 //! A 类测试：CameraController orbit/pan/zoom/tilt/enforce_collision、
 //! CameraControllerConfig 默认值、rotate_around_axis（Rodrigues）。

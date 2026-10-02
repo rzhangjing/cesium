@@ -1,9 +1,9 @@
 //! 3D Tiles Styling 语言实现。
 //!
-//! 镜像 CesiumJS：
-//! - `Scene/Cesium3DTileStyle.js`
-//! - `Scene/Expression.js`
-//! - `Scene/ConditionsExpression.js`
+//! 对应：
+//! - `Scene/Cesium3DTileStyle`
+//! - `Scene/Expression`
+//! - `Scene/ConditionsExpression`
 //!
 //! 3D Tiles Styling 语言允许基于 feature 属性定义样式：
 //! ```json
@@ -56,7 +56,7 @@ pub fn styling_jsep_enabled() -> bool {
 
 /// 一个可针对一组 feature 属性求值的已解析表达式。
 ///
-/// 映射到 CesiumJS `Scene/Expression.js`
+/// 对应 `Scene/Expression`
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     /// 常量布尔值。
@@ -132,6 +132,7 @@ impl JsepExpression {
 }
 
 impl Clone for JsepExpression {
+    /// 共享已编译 AST（仅 `source` 克隆、`compiled` 经 `Arc` 廉价引用计数共享）。
     fn clone(&self) -> Self {
         Self {
             source: self.source.clone(),
@@ -141,12 +142,14 @@ impl Clone for JsepExpression {
 }
 
 impl std::fmt::Debug for JsepExpression {
+    /// `Debug` 只打印源码文本（引擎表达式本身不实现 `Debug`）。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("Jsep").field(&self.source).finish()
     }
 }
 
 impl PartialEq for JsepExpression {
+    /// 相等性按源文本比较（而非比较不透明的已编译 AST）。
     fn eq(&self, other: &Self) -> bool {
         self.source == other.source
     }
@@ -459,6 +462,8 @@ fn legacy_parse(input: &str) -> Expression {
 
 /// 查找一个运算符位置，避免匹配 `${...}` 或引号内的内容。
 fn find_operator(input: &str, op: &str) -> Option<usize> {
+    // 逐字符扫描，维护“在 ${...} 属性内”与“在引号内”两个状态，
+    // 以避免将属性名/字符串内的符号误判为运算符
     let mut in_property = false;
     let mut in_quote = false;
     let mut quote_char = ' ';
@@ -469,6 +474,7 @@ fn find_operator(input: &str, op: &str) -> Option<usize> {
     while i < chars.len() {
         let c = chars[i];
 
+        // 已在引号内：直到遇到同类引号才退出
         if in_quote {
             if c == quote_char {
                 in_quote = false;
@@ -477,6 +483,7 @@ fn find_operator(input: &str, op: &str) -> Option<usize> {
             continue;
         }
 
+        // 遇单/双引号进入字符串态并记录引号字符
         if c == '\'' || c == '"' {
             in_quote = true;
             quote_char = c;
@@ -484,12 +491,14 @@ fn find_operator(input: &str, op: &str) -> Option<usize> {
             continue;
         }
 
+        // 遇 `${` 进入属性引用态
         if c == '$' && i + 1 < chars.len() && chars[i + 1] == '{' {
             in_property = true;
             i += 2;
             continue;
         }
 
+        // 属性态内：直到 `}` 才退出
         if in_property {
             if c == '}' {
                 in_property = false;
@@ -527,6 +536,7 @@ fn parse_function_args(args_str: &str) -> Vec<Expression> {
         return vec![];
     }
 
+    // 逐字符扫描，按括号深度与引号状态定位顶层逗号作参数分隔
     let mut args = Vec::new();
     let mut current = String::new();
     let mut depth = 0;
@@ -534,6 +544,7 @@ fn parse_function_args(args_str: &str) -> Vec<Expression> {
     let mut quote_char = ' ';
 
     for c in args_str.chars() {
+        // 引号内直接累加，直到闭合引号
         if in_quote {
             current.push(c);
             if c == quote_char {
@@ -557,6 +568,7 @@ fn parse_function_args(args_str: &str) -> Vec<Expression> {
                 current.push(c);
             }
             ',' if depth == 0 => {
+                // 顶层逗号：切分出一个参数
                 args.push(legacy_parse(current.trim()));
                 current = String::new();
             }
@@ -574,10 +586,12 @@ fn parse_function_args(args_str: &str) -> Vec<Expression> {
 /// 求值一个二元运算。
 fn eval_binary_op(left: &EvalResult, op: BinaryOperator, right: &EvalResult) -> EvalResult {
     match op {
+        // 算术：一律先转数值再运算
         BinaryOperator::Add => EvalResult::Number(left.as_number() + right.as_number()),
         BinaryOperator::Sub => EvalResult::Number(left.as_number() - right.as_number()),
         BinaryOperator::Mul => EvalResult::Number(left.as_number() * right.as_number()),
         BinaryOperator::Div => {
+            // 除零保护：返回 0.0 避免产生 inf/NaN
             let r = right.as_number();
             if r == 0.0 {
                 EvalResult::Number(0.0)
@@ -586,6 +600,7 @@ fn eval_binary_op(left: &EvalResult, op: BinaryOperator, right: &EvalResult) -> 
             }
         }
         BinaryOperator::Mod => {
+            // 取模同样需除零保护
             let r = right.as_number();
             if r == 0.0 {
                 EvalResult::Number(0.0)
@@ -594,6 +609,7 @@ fn eval_binary_op(left: &EvalResult, op: BinaryOperator, right: &EvalResult) -> 
             }
         }
         BinaryOperator::Eq => {
+            // 相等按数值差绝对值小于 EPSILON 判定（浮点容差）
             EvalResult::Bool((left.as_number() - right.as_number()).abs() < f64::EPSILON)
         }
         BinaryOperator::Ne => {
@@ -881,10 +897,13 @@ fn parse_color_name(name: &str) -> [f64; 3] {
 
 /// 将 HSL 转换为 RGB。h 范围为 [0,360]，s 范围为 [0,1]，l 范围为 [0,1]。
 fn hsl_to_rgb(h: f64, s: f64, l: f64) -> [f64; 3] {
+    // 将色相归一到 [0,360)，避免负值与越界
     let h = ((h % 360.0) + 360.0) % 360.0;
+    // c：色带chroma 幅度；x：中间轴量；m：亮度补偿
     let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
     let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
     let m = l - c / 2.0;
+    // 根据色相所在 60° 扇区选取 (r,g,b) 初始分量
     let (r1, g1, b1) = if h < 60.0 {
         (c, x, 0.0)
     } else if h < 120.0 {
@@ -908,6 +927,7 @@ fn json_to_eval_result(value: &Value) -> EvalResult {
         Value::Number(n) => EvalResult::Number(n.as_f64().unwrap_or(0.0)),
         Value::String(s) => EvalResult::String(s.clone()),
         Value::Array(arr) => {
+            // 4 分量视为 RGBA，3 分量视为不透明 RGB，其余退为 0
             if arr.len() >= 4 {
                 let r = arr[0].as_f64().unwrap_or(0.0);
                 let g = arr[1].as_f64().unwrap_or(0.0);
@@ -935,6 +955,7 @@ fn json_to_eval_result(value: &Value) -> EvalResult {
 struct JsonFeature<'a>(&'a HashMap<String, Value>);
 
 impl cesium_styling::ExpressionFeature for JsonFeature<'_> {
+    /// 按名读取继承的 feature 属性，转为引擎的 [`cesium_styling::Value`]（缺失则 `None`）。
     fn get_property_inherited(&self, name: &str) -> Option<cesium_styling::Value> {
         self.0.get(name).map(json_to_cesium_value)
     }
@@ -990,7 +1011,7 @@ pub struct Condition {
 
 /// 一个 conditions 表达式：[condition, result] 对的列表。
 ///
-/// 映射到 CesiumJS `Scene/ConditionsExpression.js`
+/// 对应 `Scene/ConditionsExpression`
 ///
 /// 第一个求值为真的条件决定结果。
 #[derive(Debug, Clone)]
@@ -1058,12 +1079,15 @@ impl StyleExpression {
     /// 从 JSON 解析一个样式表达式。
     pub fn from_json(json: &Value) -> Option<Self> {
         match json {
+            // 字符串：按表达式解析
             Value::String(s) => Some(Self::Simple(Expression::parse(s))),
+            // 布尔/数值：直接构造常量表达式
             Value::Bool(b) => Some(Self::Simple(Expression::BoolConstant(*b))),
             Value::Number(n) => {
                 Some(Self::Simple(Expression::NumberConstant(n.as_f64()?)))
             }
             Value::Object(_) => {
+                // 对象：含 conditions 键则解析为条件表达式，否则不支持
                 if json.get("conditions").is_some() {
                     ConditionsExpression::from_json(json).map(Self::Conditions)
                 } else {
@@ -1085,7 +1109,7 @@ impl StyleExpression {
 
 /// 一个 3D Tiles 样式定义。
 ///
-/// 映射到 CesiumJS `Scene/Cesium3DTileStyle.js`
+/// 对应 `Scene/Cesium3DTileStyle`
 #[derive(Debug, Clone, Default)]
 pub struct TileStyle {
     /// show 表达式（决定可见性）。
@@ -1113,6 +1137,7 @@ impl TileStyle {
     pub fn from_json(json: &Value) -> Self {
         let mut style = Self::default();
 
+        // 逐个提取 show/color/pointSize 等顶层样式字段
         if let Some(show) = json.get("show") {
             style.show = StyleExpression::from_json(show);
         }
@@ -1122,12 +1147,14 @@ impl TileStyle {
         if let Some(point_size) = json.get("pointSize") {
             style.point_size = StyleExpression::from_json(point_size);
         }
+        // 点轮廓颜色/宽度（主要用于点云样式）
         if let Some(poc) = json.get("pointOutlineColor") {
             style.point_outline_color = StyleExpression::from_json(poc);
         }
         if let Some(pow) = json.get("pointOutlineWidth") {
             style.point_outline_width = StyleExpression::from_json(pow);
         }
+        // 标签文本/颜色
         if let Some(lt) = json.get("labelText") {
             style.label_text = StyleExpression::from_json(lt);
         }
@@ -1195,33 +1222,44 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// 测试辅助：把 `(&str, Value)` 键值对列表组装为属性 map（键克隆为 String）。
     fn make_props(pairs: Vec<(&str, Value)>) -> HashMap<String, Value> {
+        // 逐项把 &str 键转为拥有的 String，值原样移动
         pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
     }
 
     #[test]
+    /// 常量 `true` 应解析为 BoolConstant 且求值为布尔 true。
     fn test_expression_bool_constant() {
+        // 布尔常量不依赖任何 feature 属性
         let expr = Expression::parse("true");
         let props = make_props(vec![]);
+        // 求值直接得到 Bool(true)
         assert_eq!(expr.evaluate(&props), EvalResult::Bool(true));
     }
 
     #[test]
+    /// 数值字面量 `42.5` 应解析为 NumberConstant。
     fn test_expression_number_constant() {
+        // 浮点字面量应原样求值为 Number(42.5)
         let expr = Expression::parse("42.5");
         let props = make_props(vec![]);
         assert_eq!(expr.evaluate(&props), EvalResult::Number(42.5));
     }
 
     #[test]
+    /// `${Height}` 属性引用应从 feature 属性取值。
     fn test_expression_property_ref() {
+        // PropertyRef 从属性 map 读取 Height=100.0
         let expr = Expression::parse("${Height}");
         let props = make_props(vec![("Height", json!(100.0))]);
         assert_eq!(expr.evaluate(&props), EvalResult::Number(100.0));
     }
 
     #[test]
+    /// `${Height} >= 100`：高值时为 true、低值时为 false。
     fn test_expression_comparison_ge() {
+        // 高值 150>=100 为真、低值 50>=100 为假
         let expr = Expression::parse("${Height} >= 100");
         let props_high = make_props(vec![("Height", json!(150.0))]);
         let props_low = make_props(vec![("Height", json!(50.0))]);
@@ -1231,44 +1269,56 @@ mod tests {
     }
 
     #[test]
+    /// `${Height} < 100` 比较运算求值。
     fn test_expression_comparison_lt() {
+        // 50 < 100 判定为真
         let expr = Expression::parse("${Height} < 100");
         let props = make_props(vec![("Height", json!(50.0))]);
         assert_eq!(expr.evaluate(&props), EvalResult::Bool(true));
     }
 
     #[test]
+    /// `${Height} * 2.0` 算术运算应得 100。
     fn test_expression_arithmetic() {
+        // 50 * 2 = 100（数值算术求值）
         let expr = Expression::parse("${Height} * 2.0");
         let props = make_props(vec![("Height", json!(50.0))]);
         assert_eq!(expr.evaluate(&props), EvalResult::Number(100.0));
     }
 
     #[test]
+    /// `color('red')` 函数应返回红色 RGBA。
     fn test_expression_color_function() {
+        // color('red') 解析颜色名并补默认 alpha=1.0
         let expr = Expression::parse("color('red')");
         let props = make_props(vec![]);
         assert_eq!(expr.evaluate(&props), EvalResult::Color([1.0, 0.0, 0.0, 1.0]));
     }
 
     #[test]
+    /// `color('blue', 0.5)` 应应用指定 alpha。
     fn test_expression_color_with_alpha() {
+        // 第二参数 0.5 覆盖默认 alpha
         let expr = Expression::parse("color('blue', 0.5)");
         let props = make_props(vec![]);
         assert_eq!(expr.evaluate(&props), EvalResult::Color([0.0, 0.0, 1.0, 0.5]));
     }
 
     #[test]
+    /// `color(r,g,b,a)` 数值分量形式应直接构造颜色。
     fn test_expression_color_rgba() {
+        // 数值分量形式直接构造颜色
         let expr = Expression::parse("color(1.0, 0.5, 0.0, 1.0)");
         let props = make_props(vec![]);
         assert_eq!(expr.evaluate(&props), EvalResult::Color([1.0, 0.5, 0.0, 1.0]));
     }
 
     #[test]
+    /// `rgb(255,128,0)` 应按 255 归一化为 [0,1] 颜色。
     fn test_expression_rgb_function() {
         let expr = Expression::parse("rgb(255, 128, 0)");
         let props = make_props(vec![]);
+        // rgb 各分量按 /255 归一化到 [0,1]
         let result = expr.evaluate(&props);
         if let EvalResult::Color(c) = result {
             assert!((c[0] - 1.0).abs() < 0.01);
@@ -1280,6 +1330,7 @@ mod tests {
     }
 
     #[test]
+    /// conditions 表达式：首个为真的条件决定颜色（高/中/低三段）。
     fn test_conditions_expression() {
         let json = json!({
             "conditions": [
@@ -1291,6 +1342,7 @@ mod tests {
 
         let conds = ConditionsExpression::from_json(&json).unwrap();
 
+        // 三个高度区间分别命中 red / yellow / blue 条件
         let props_high = make_props(vec![("Height", json!(150.0))]);
         let props_mid = make_props(vec![("Height", json!(75.0))]);
         let props_low = make_props(vec![("Height", json!(25.0))]);
@@ -1301,7 +1353,9 @@ mod tests {
     }
 
     #[test]
+    /// 完整 TileStyle JSON：show/color/pointSize 均能解析与求值。
     fn test_tile_style_from_json() {
+        // 完整样式 JSON 覆盖 show / color(conditions) / pointSize 三字段
         let json = json!({
             "color": {
                 "conditions": [
@@ -1336,6 +1390,7 @@ mod tests {
     }
 
     #[test]
+    /// meta 表达式可解析并求值（字符串拼接尚未完全实现）。
     fn test_tile_style_meta() {
         let json = json!({
             "meta": {
@@ -1346,6 +1401,7 @@ mod tests {
         let style = TileStyle::from_json(&json);
         let props = make_props(vec![("Height", json!(100.0))]);
 
+        // meta 表达式独立解析与求值
         // 注意：字符串拼接尚未完全实现，
         // 但 meta 表达式应当可解析
         let result = style.evaluate_meta("description", &props);
@@ -1353,7 +1409,9 @@ mod tests {
     }
 
     #[test]
+    /// EvalResult 的 as_bool/as_number/as_color 互转行为。
     fn test_eval_result_conversions() {
+        // 各变体的 as_bool/as_number/as_color 互转预期
         assert!(EvalResult::Bool(true).as_bool());
         assert!(!EvalResult::Bool(false).as_bool());
         assert!(EvalResult::Number(1.0).as_bool());
@@ -1366,7 +1424,9 @@ mod tests {
     }
 
     #[test]
+    /// `!${visible}` 一元非：true 变 false、false 变 true。
     fn test_expression_unary_not() {
+        // 取反：true->false、false->true
         let expr = Expression::parse("!${visible}");
         let props_true = make_props(vec![("visible", json!(true))]);
         let props_false = make_props(vec![("visible", json!(false))]);
@@ -1376,7 +1436,9 @@ mod tests {
     }
 
     #[test]
+    /// `${A} && ${B}` 逻辑与：全真为 true，一假为 false。
     fn test_expression_logical_and() {
+        // 逻辑与：全真才真，一假即假
         let expr = Expression::parse("${A} && ${B}");
         let props = make_props(vec![("A", json!(true)), ("B", json!(true))]);
         assert_eq!(expr.evaluate(&props), EvalResult::Bool(true));
@@ -1386,9 +1448,11 @@ mod tests {
     }
 
     #[test]
+    /// 数学函数 abs/sqrt/clamp 的求值结果。
     fn test_math_functions() {
         let props = make_props(vec![("Value", json!(-5.0))]);
 
+        // abs/sqrt/clamp 各验证一条求值路径
         let abs_expr = Expression::parse("abs(${Value})");
         assert_eq!(abs_expr.evaluate(&props), EvalResult::Number(5.0));
 
@@ -1400,7 +1464,9 @@ mod tests {
     }
 
     #[test]
+    /// 简单字符串样式表达式应从 JSON 解析并求值。
     fn test_style_expression_simple() {
+        // 字符串 JSON 走 Simple 分支求值
         let json = json!("${Height} > 50");
         let expr = StyleExpression::from_json(&json).unwrap();
         let props = make_props(vec![("Height", json!(100.0))]);
@@ -1408,6 +1474,7 @@ mod tests {
     }
 
     #[test]
+    /// conditions 形式的样式表达式应从对象 JSON 解析。
     fn test_style_expression_conditions() {
         let json = json!({
             "conditions": [
@@ -1415,13 +1482,16 @@ mod tests {
                 ["true", "color('white')"]
             ]
         });
+        // 对象 JSON 走 Conditions 分支
         let expr = StyleExpression::from_json(&json).unwrap();
         let props = make_props(vec![("Type", json!(1.0))]);
         assert_eq!(expr.evaluate(&props), EvalResult::Color([1.0, 0.0, 0.0, 1.0]));
     }
 
     #[test]
+    /// CSS 颜色名解析：red/blue/white/black 的 RGB 值。
     fn test_color_names() {
+        // 校验四个基本 CSS 颜色名的 RGB 元组
         assert_eq!(parse_color_name("red"), [1.0, 0.0, 0.0]);
         assert_eq!(parse_color_name("blue"), [0.0, 0.0, 1.0]);
         assert_eq!(parse_color_name("white"), [1.0, 1.0, 1.0]);
@@ -1431,19 +1501,23 @@ mod tests {
     // ── M7-D：gate 辅助函数 + JSEP bridge ──────────────────────────────
 
     #[test]
+    /// truthy 判定应接受 1/true/yes/on（大小写不敏感、去空白）。
     fn test_truthy_tokens() {
         // M0.3 语义：大小写不敏感、去空白的 1|true|yes|on。
         for t in ["1", "true", "TRUE", "True", "yes", "YES", "on", " on ", "\ttrue\n"] {
             assert!(truthy(t), "expected truthy: {t:?}");
         }
+        // 反向：非 truthy token 应全部判 falsy
         for f in ["0", "false", "no", "off", "", "  ", "maybe", "2", "truex"] {
             assert!(!truthy(f), "expected falsy: {f:?}");
         }
     }
 
     #[test]
+    /// JSEP 门控访问器应为全函数（默认 OFF，不断言具体值）。
     fn test_styling_jsep_gate_is_bool() {
         // 仅断言访问器是全函数；具体值取决于环境（默认 OFF）。
+        // 门控读取环境变量，故不断言固定布尔值。
         // 避免修改环境变量以保持测试的确定性。
         let _ = styling_jsep_enabled();
     }
@@ -1451,18 +1525,23 @@ mod tests {
     /// 直接构造一个由 JSEP 支撑的表达式（与 gate 无关），以便在不修改
     /// 进程 env 的情况下确定性地调用 bridge。
     fn jsep(src: &str) -> Expression {
+        // 编译失败即 panic，确保测试内 bridge 一定走 JSEP 轨道
         Expression::Jsep(JsepExpression::compile(src).expect("jsep compile"))
     }
 
     #[test]
+    /// JSEP bridge：`${a} + ${b}` 算术应得 15。
     fn test_jsep_bridge_arithmetic() {
+        // 引擎轨道下 a+b 应得 15
         let expr = jsep("${a} + ${b}");
         let props = make_props(vec![("a", json!(10.0)), ("b", json!(5.0))]);
         assert_eq!(expr.evaluate(&props), EvalResult::Number(15.0));
     }
 
     #[test]
+    /// JSEP bridge：比较与颜色名函数均能经引擎求值。
     fn test_jsep_bridge_comparison_and_color_name() {
+        // 比较与颜色名函数均能经 JSEP 引擎求值
         let cond = jsep("${Height} >= 100");
         assert_eq!(
             cond.evaluate(&make_props(vec![("Height", json!(150.0))])),
@@ -1475,6 +1554,7 @@ mod tests {
     }
 
     #[test]
+    /// JSEP bridge：缺失属性求值为 NaN、JSON null 求值为 0.0。
     fn test_jsep_bridge_missing_property_is_nan() {
         // 任务 #46：gate=1（JSEP）严格对齐上游的语义——缺失的属性
         // 解析为 `undefined`，它强转为 `Number(NaN)`（JS 的
@@ -1491,13 +1571,14 @@ mod tests {
             EvalResult::Number(0.0)
         );
         // 注意：这里*不*断言 `${missing} + 1`。忠实引擎会对 `undefined + 1`
-        // 报出 RuntimeError（CesiumJS 的 `evaluatePlus` 对非数值/非字符串
+        // 报出 RuntimeError（原实现 的 `evaluatePlus` 对非数值/非字符串
         // 操作数会抛错——它不会产出 NaN），而 `Expression::evaluate` 不会失败，
         // 因此该形式回退到遗留解析器。那条算术路径由引擎的
         // 类型检查运算符控制，而非由本值 bridge 控制。
     }
 
     #[test]
+    /// 遗留 eval_function 的 clamp/round/sign 与 JS 语义一致。
     fn test_legacy_math_functions_match_js_semantics() {
         // 直接调用已弃用的遗留 `eval_function` 路径（与 gate 无关），
         // 以证明任务 #46 的修复。
@@ -1525,6 +1606,7 @@ mod tests {
     }
 
     #[test]
+    /// JSEP：color(r,g,b,a) 被引擎拒绝时回退到遗留解析器。
     fn test_jsep_bridge_numeric_color_falls_back_to_legacy() {
         // 引擎会对带数值分量的 color(r,g,b,a) 报错；evaluate()
         // 回退到遗留解析器，保留 M7-D 之前的结果。
@@ -1536,6 +1618,7 @@ mod tests {
     }
 
     #[test]
+    /// clone/Debug/PartialEq 均基于源文本，克隆后表达式仍相等。
     fn test_jsep_expression_clone_debug_eq() {
         let a = jsep("${x} * 2.0");
         let b = a.clone();

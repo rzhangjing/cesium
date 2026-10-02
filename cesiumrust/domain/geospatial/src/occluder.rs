@@ -1,5 +1,10 @@
 //! Occluder - 判断对象是否可见或隐藏在地平线之后。
-//! 映射到 CesiumJS `Core/Occluder.js`
+//!
+//! 遮挡体由一个球（位置与半径）和相机位置共同确定一个“可见地平线”平面：
+//! 当相机在球外时，从相机向球引两条切线，切点所在平面将空间分为可见区与遮挡区。
+//! [`Occluder::set_camera_position`] 预算地平线距离与平面参数，随后各可见性
+//! 判定（[`Occluder::is_bounding_sphere_visible`]、[`Occluder::compute_visibility`]）
+//! 基于被遮挡球心到相机的距离与地平线距离比较得出结论。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -8,7 +13,6 @@ use crate::bounding::BoundingSphere;
 use glam::DVec3;
 
 /// 遮挡查询的可见性结果。
-/// 映射到 CesiumJS `Core/Visibility.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Visibility {
     /// 对象不可见（完全遮挡）。
@@ -25,11 +29,17 @@ pub enum Visibility {
 /// 映射到 CesiumJS `Core/Occluder`
 #[derive(Debug, Clone)]
 pub struct Occluder {
+    /// 遮挡体球心位置（地心固定系，米）。
     occluder_position: DVec3,
+    /// 遮挡体球半径（米）。
     occluder_radius: f64,
+    /// 相机到地平线的距离；相机在球内时为 `f64::MAX`（无地平线）。
     horizon_distance: f64,
+    /// 地平线平面单位法线；相机在球内时为 `None`。
     horizon_plane_normal: Option<DVec3>,
+    /// 地平线平面上的一点；相机在球内时为 `None`。
     horizon_plane_position: Option<DVec3>,
+    /// 当前相机位置（地心固定系，米）。
     camera_position: DVec3,
 }
 
@@ -61,6 +71,11 @@ impl Occluder {
         Self::new(occluder_bounding_sphere, camera_position)
     }
 
+    /// 设置相机位置并重新预算地平线参数。
+    ///
+    /// # 参数
+    /// - `camera_position`：新的相机位置。若相机在遮挡球外，则据切线几何
+    ///   算出地平线距离与平面法线/位置；若相机在球内，地平线置为 `f64::MAX` 且法线为空。
     fn set_camera_position(&mut self, camera_position: DVec3) {
         self.camera_position = camera_position;
 
@@ -69,6 +84,7 @@ impl Occluder {
         let occluder_radius_sqrd = self.occluder_radius * self.occluder_radius;
 
         if inv_camera_to_occluder_distance > occluder_radius_sqrd {
+            // 相机在球外：由直角三角形得切线长（地平线距离）与地平线平面。
             let horizon_distance =
                 (inv_camera_to_occluder_distance - occluder_radius_sqrd).sqrt();
             let inv_dist = 1.0 / inv_camera_to_occluder_distance.sqrt();
@@ -81,13 +97,14 @@ impl Occluder {
             self.horizon_plane_normal = Some(horizon_plane_normal);
             self.horizon_plane_position = Some(horizon_plane_position);
         } else {
+            // 相机在球内（或球面上）：不存在可见地平线。
             self.horizon_distance = f64::MAX;
             self.horizon_plane_normal = None;
             self.horizon_plane_position = None;
         }
     }
 
-    /// 遮挡体的位置。
+    /// 遮挡体的球心位置。
     pub fn position(&self) -> DVec3 {
         self.occluder_position
     }
@@ -103,7 +120,12 @@ impl Occluder {
     }
 
     /// 判断某个球（被遮挡对象）是否因遮挡体而不可见。
-    /// 映射到 `Occluder.prototype.isBoundingSphereVisible`
+    ///
+    /// # 参数
+    /// - `occludee`：待测的被遮挡包围球。
+    ///
+    /// # 返回
+    /// 存在可见地平线且被遮挡球未被完全遮住时返回 `true`；相机在球内（无地平线）时返回 `false`。
     pub fn is_bounding_sphere_visible(&self, occludee: &BoundingSphere) -> bool {
         let occludee_position = occludee.center;
         let occludee_radius = occludee.radius;
@@ -147,12 +169,18 @@ impl Occluder {
     }
 
     /// 确定被遮挡对象的可见程度。
-    /// 映射到 `Occluder.prototype.computeVisibility`
+    ///
+    /// # 参数
+    /// - `occludee_bs`：被遮挡对象的包围球。
+    ///
+    /// # 返回
+    /// [`Visibility`]：完全在遮挡体内为 `None`，跨地平线平面为 `Partial`，否则 `Full`。
     pub fn compute_visibility(&self, occludee_bs: &BoundingSphere) -> Visibility {
         let occludee_position = occludee_bs.center;
         let occludee_radius = occludee_bs.radius;
 
         if occludee_radius > self.occluder_radius {
+            // 被遮挡球比遮挡球还大，不可能被完全遮住，直接完全可见。
             return Visibility::Full;
         }
 
@@ -206,7 +234,17 @@ impl Occluder {
     }
 
     /// 计算一个可作为可见性函数中被遮挡对象位置的点。
-    /// 映射到 `Occluder.computeOccludeePoint`
+    ///
+    /// 沿遮挡体向被遮挡位置方向构造平面，将各候选位置投影到地平线上取最小夹角点，
+    /// 再沿该方向外推至遮挡球面上得到一个代表点。
+    ///
+    /// # 参数
+    /// - `occluder_bounding_sphere`：遮挡球。
+    /// - `occludee_position`：被遮挡对象参考位置。
+    /// - `positions`：候选位置集合（取其中最不利者）。
+    ///
+    /// # 返回
+    /// 代表点（地心固定系）；位置为空、与球心重合或夹角接近 90° 时返回 `None`。
     pub fn compute_occludee_point(
         occluder_bounding_sphere: &BoundingSphere,
         occludee_position: DVec3,
@@ -241,6 +279,7 @@ impl Occluder {
             positions[0],
         )?;
 
+        // 逐个候选位置投影到平面法线，取最小点积（最靠近地平线的切点）。
         for i in 1..positions.len() {
             let temp_dot = Self::horizon_to_plane_normal_dot_product(
                 occluder_bounding_sphere,
@@ -264,7 +303,9 @@ impl Occluder {
     }
 
     /// 由矩形计算被遮挡对象点。
-    /// 映射到 `Occluder.computeOccludeePointFromRectangle`
+    ///
+    /// 先用 [`Rectangle::subsample`] 采样矩形边界点并求其包围球；若包围球中
+    /// 心不在椭球心，则以最小半径球为遮挡体求代表点，否则返回 `None`。
     pub fn compute_occludee_point_from_rectangle(
         rectangle: &crate::rectangle::Rectangle,
         ellipsoid: &crate::ellipsoid::Ellipsoid,
@@ -282,7 +323,13 @@ impl Occluder {
     }
 
     /// 在遮挡体平面内计算任意一个旋转向量。
-    /// 映射到 `Occluder._anyRotationVector`
+    ///
+    /// 选取法线绝对值最大的主轴以避免退化，先取平面上一个候选点，再沿单位轴
+    /// 投影回平面，最后归一化为从球心指向该点的方向。
+    ///
+    /// # 参数
+    /// - `occluder_position`：遮挡球心。
+    /// - `occluder_plane_normal`/`occluder_plane_d`：平面法线与距离系数。
     pub fn any_rotation_vector(
         occluder_position: DVec3,
         occluder_plane_normal: DVec3,
@@ -334,7 +381,9 @@ impl Occluder {
     }
 
     /// 为特定位置计算旋转向量。
-    /// 映射到 `Occluder._rotationVector`
+    ///
+    /// 若位置方向与平面法线不近似平行，则取二者叉积作为旋转轴；否则回退
+    /// 到 [`Occluder::any_rotation_vector`] 预先算好的任意旋转轴。
     fn rotation_vector(
         occluder_position: DVec3,
         occluder_plane_normal: DVec3,
@@ -356,7 +405,10 @@ impl Occluder {
     }
 
     /// 计算地平线到平面法线的点积。
-    /// 映射到 `Occluder._horizonToPlaneNormalDotProduct`
+    ///
+    /// 先由位置到球心的距离算出切线地平线参数，再把 position-to-occluder 向量绕
+    /// 旋转轴转 90° 得到两个切点方向，分别用法线点积后取较小者作为结果。
+    /// 若位置在遮挡球内则返回 `None`。
     fn horizon_to_plane_normal_dot_product(
         occluder_bs: &BoundingSphere,
         occluder_plane_normal: DVec3,

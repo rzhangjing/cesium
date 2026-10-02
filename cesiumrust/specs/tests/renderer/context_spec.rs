@@ -1,4 +1,4 @@
-//! Context 规范 - 移植自 Renderer/ContextSpec、VertexArraySpec
+//! Context 规范 - 参考自 Renderer/ContextSpec、VertexArraySpec
 //! 覆盖：DrawCommand、RenderCommandList、RenderPass、BlendState、DepthState、
 //! FrameStatistics、DebugInspector
 

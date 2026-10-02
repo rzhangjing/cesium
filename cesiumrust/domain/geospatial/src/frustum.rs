@@ -1,5 +1,4 @@
 //! Frustum 与 CullingVolume - 视锥定义与剔除。
-//! 映射到 CesiumJS `Core/PerspectiveFrustum.js`, `Core/OrthographicFrustum.js`, `Core/CullingVolume.js`
 
 use crate::bounding::{AxisAlignedBoundingBox, BoundingSphere};
 use crate::ray::{Intersect, Plane};
@@ -14,12 +13,14 @@ pub trait Cullable {
 }
 
 impl Cullable for BoundingSphere {
+    /// 球的剔除测试：委托给球与平面的相交判定。
     fn cullable_intersect_plane(&self, plane: &Plane) -> Intersect {
         self.intersect_plane(plane.normal, plane.distance)
     }
 }
 
 impl Cullable for AxisAlignedBoundingBox {
+    /// 轴对齐包围盒的剔除测试：委托给盒与平面的相交判定。
     fn cullable_intersect_plane(&self, plane: &Plane) -> Intersect {
         self.intersect_plane(plane.normal, plane.distance)
     }
@@ -143,6 +144,7 @@ pub struct PerspectiveFrustum {
 }
 
 impl PerspectiveFrustum {
+    /// 以给定视野角、宽高比、近/远平面距离构造透视视锥。
     pub fn new(fov: f64, aspect_ratio: f64, near: f64, far: f64) -> Self {
         Self {
             fov,
@@ -166,6 +168,7 @@ impl PerspectiveFrustum {
         2.0 * (self.fov_y_half().tan() * self.aspect_ratio).atan()
     }
 
+    /// 垂直半视野角（弧度），即 fov 的一半。
     fn fov_y_half(&self) -> f64 {
         self.fov * 0.5
     }
@@ -296,6 +299,7 @@ pub struct OrthographicFrustum {
 }
 
 impl OrthographicFrustum {
+    /// 以给定宽度、宽高比、近/远平面距离构造正射视锥。
     pub fn new(width: f64, aspect_ratio: f64, near: f64, far: f64) -> Self {
         Self {
             width,
@@ -385,6 +389,7 @@ pub struct PerspectiveOffCenterFrustum {
 }
 
 impl Default for PerspectiveOffCenterFrustum {
+    /// 默认构造：四边尚未确定（None），近平面 1.0、远平面 5.0e+08。
     fn default() -> Self {
         Self {
             left: None,
@@ -416,7 +421,7 @@ impl PerspectiveOffCenterFrustum {
     }
 
     /// 解析四个侧向边界，若任一未设置则 panic
-    /// （对应 CesiumJS `update()` 抛出 `DeveloperError`）。
+    /// （未设置即等价于抛出 `DeveloperError`）。
     fn bounds(&self) -> (f64, f64, f64, f64) {
         let left = self
             .left
@@ -555,6 +560,7 @@ pub struct OrthographicOffCenterFrustum {
 }
 
 impl Default for OrthographicOffCenterFrustum {
+    /// 默认构造：四边尚未确定（None），近平面 1.0、远平面 5.0e+08。
     fn default() -> Self {
         Self {
             left: None,
@@ -586,7 +592,7 @@ impl OrthographicOffCenterFrustum {
     }
 
     /// 解析四个侧向边界，若任一未设置则 panic
-    /// （对应 CesiumJS `update()` 抛出 `DeveloperError`）。
+    /// （未设置即等价于抛出 `DeveloperError`）。
     fn bounds(&self) -> (f64, f64, f64, f64) {
         let left = self
             .left

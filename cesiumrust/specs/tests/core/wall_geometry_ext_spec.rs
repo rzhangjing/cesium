@@ -1,4 +1,4 @@
-//! 移植自 CesiumJS `Core/WallGeometrySpec.js`（扩展的 A 类测试）。
+//! 参考自 CesiumJS `Core/WallGeometrySpec`（扩展的 A 类测试）。
 //!
 //! 测试：闭合环路、重复点处理、EPSILON10 边界、高度选择、
 //! 全部属性、纹理坐标。

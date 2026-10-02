@@ -1,7 +1,7 @@
 //! M7-C cross-cutting spec: the **JavaScript quirks** the styling expression
 //! engine must reproduce faithfully.
 //!
-//! CesiumJS's `Expression.js` is written in JavaScript, so its semantics are
+//! CesiumJS's `Expression` is written in JavaScript, so its semantics are
 //! inherited from ECMAScript's famously surprising coercion / equality / number
 //! rules. A Rust port that naively used `f64` and `==` would silently diverge.
 //! This file pins the **11 quirk classes** catalogued during the M7 research

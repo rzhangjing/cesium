@@ -1,5 +1,5 @@
 //! Resource URL 操作规格测试。
-//! 移植自 CesiumJS Core/ResourceSpec.js（2744 行，约 60 个 it()）
+//! 参考自 CesiumJS Core/ResourceSpec（2744 行，约 60 个 it()）
 //!
 //! A 类测试：URL 解析、查询参数、模板值、
 //! appendForwardSlash、getDerivedResource、setQueryParameters、getUrlComponent。

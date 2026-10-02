@@ -1,4 +1,4 @@
-//! DataSources 规格测试 - 移植自 packages/engine/Specs/DataSources/
+//! DataSources 规格测试 - 参考自 Specs/DataSources/
 //! 覆盖范围：Entity、Property、GeoJSON、CZML、Visualizer 等。
 
 mod datasources {

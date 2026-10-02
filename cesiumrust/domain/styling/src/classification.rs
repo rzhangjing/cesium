@@ -1,13 +1,13 @@
 //! 3D Tiles 与地形的分类（classification）系统。
 //!
-//! 对应 CesiumJS 的分类图元：
-//! - `Scene/ClassificationPrimitive.js`
-//! - `Scene/ClassificationType.js`
+//! 分类图元涵盖：
+//! - 分类图元本体（ClassificationPrimitive）
+//! - 分类类型（ClassificationType）
 //! - 基于 Feature ID 的分类
 
 /// 分类类型决定受影响的几何体。
 ///
-/// 对应 CesiumJS `Scene/ClassificationType.js`
+/// 取值与 3D Tiles 规范的 `classificationType` 一致。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ClassificationType {
     /// 同时分类地形和 3D Tiles。
@@ -227,6 +227,7 @@ impl FeatureMetadata {
 mod tests {
     use super::*;
 
+    /// 验证链式构造器正确写入 id/类型/颜色。
     #[test]
     fn test_classification_creation() {
         let classification = Classification::new("test")
@@ -238,6 +239,7 @@ mod tests {
         assert_eq!(classification.color, [1.0, 0.0, 0.0, 0.5]);
     }
 
+    /// 验证显式 feature ID 列表的包含/不包含判定。
     #[test]
     fn test_classification_contains() {
         let classification = Classification::new("test")
@@ -248,6 +250,7 @@ mod tests {
         assert!(!classification.contains_feature(4));
     }
 
+    /// 验证空集合默认分类任意 feature（全量语义）。
     #[test]
     fn test_classification_empty_ids() {
         let classification = Classification::new("test");
@@ -272,6 +275,7 @@ mod tests {
         assert_eq!(for_feature_1.len(), 1);
     }
 
+    /// 验证按 ID 移除分类后集合长度递减。
     #[test]
     fn test_classification_removal() {
         let mut collection = ClassificationCollection::new();
@@ -283,6 +287,7 @@ mod tests {
         assert_eq!(collection.len(), 1);
     }
 
+    /// 验证 alpha 混合公式在蓝底叠加半透明红得紫。
     #[test]
     fn test_color_blending() {
         let mut collection = ClassificationCollection::new();

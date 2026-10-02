@@ -1,4 +1,4 @@
-//! Widgets/SceneModePickerSpec.js, ProjectionPickerSpec.js, BaseLayerPickerSpec.js
+//! Widgets/SceneModePickerSpec, ProjectionPickerSpec, BaseLayerPickerSpec
 //! → Rust integration tests
 
 use cesium_widgets::{

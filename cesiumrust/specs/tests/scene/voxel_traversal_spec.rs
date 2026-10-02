@@ -1,4 +1,4 @@
-//! 体素遍历测试，移植自 CesiumJS SpatialNodeSpec.js + VoxelShapeTypeSpec.js
+//! 体素遍历测试，参考自 CesiumJS SpatialNodeSpec + VoxelShapeTypeSpec
 //! 测试：SpatialNode 子节点坐标、VoxelShapeType 边界、遍历基础
 
 use cesium_voxel::{
@@ -8,12 +8,12 @@ use cesium_voxel::{
 use glam::{DMat4, DVec3};
 
 // ============================================================================
-// SpatialNode：构造（来自 SpatialNodeSpec.js）
+// SpatialNode：构造（来自 SpatialNodeSpec）
 // ============================================================================
 
 #[test]
 fn test_spatial_node_constructs() {
-    // 移植自：SpatialNodeSpec "constructs"
+    // 参考自：SpatialNodeSpec "constructs"
     let node = SpatialNode::new(2, 1, 2, 3, [2, 3, 4]);
     assert_eq!(node.level, 2);
     assert_eq!(node.x, 1);
@@ -22,12 +22,12 @@ fn test_spatial_node_constructs() {
 }
 
 // ============================================================================
-// SpatialNode：返回子节点坐标（来自 SpatialNodeSpec.js）
+// SpatialNode：返回子节点坐标（来自 SpatialNodeSpec）
 // ============================================================================
 
 #[test]
 fn test_spatial_node_children_coordinates() {
-    // 移植自：SpatialNodeSpec "returns coordinates of child"
+    // 参考自：SpatialNodeSpec "returns coordinates of child"
     let node = SpatialNode::new(2, 1, 2, 3, [2, 3, 4]);
 
     // CesiumJS 期望的子节点坐标：[level, x, y, z]
@@ -74,12 +74,12 @@ fn test_spatial_node_root_and_parent() {
 }
 
 // ============================================================================
-// VoxelShapeType：getMinBounds 工作正常（来自 VoxelShapeTypeSpec.js）
+// VoxelShapeType：getMinBounds 工作正常（来自 VoxelShapeTypeSpec）
 // ============================================================================
 
 #[test]
 fn test_voxel_shape_type_min_bounds() {
-    // 移植自：VoxelShapeTypeSpec "getMinBounds works"
+    // 参考自：VoxelShapeTypeSpec "getMinBounds works"
     let box_min = VoxelShapeType::Box.default_min_bounds();
     assert_eq!(box_min, DVec3::new(-1.0, -1.0, -1.0));
 
@@ -95,12 +95,12 @@ fn test_voxel_shape_type_min_bounds() {
 }
 
 // ============================================================================
-// VoxelShapeType：getMaxBounds 工作正常（来自 VoxelShapeTypeSpec.js）
+// VoxelShapeType：getMaxBounds 工作正常（来自 VoxelShapeTypeSpec）
 // ============================================================================
 
 #[test]
 fn test_voxel_shape_type_max_bounds() {
-    // 移植自：VoxelShapeTypeSpec "getMaxBounds works"
+    // 参考自：VoxelShapeTypeSpec "getMaxBounds works"
     let box_max = VoxelShapeType::Box.default_max_bounds();
     assert_eq!(box_max, DVec3::new(1.0, 1.0, 1.0));
 

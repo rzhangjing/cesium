@@ -1,4 +1,4 @@
-//! DataSources/CompositeEntityCollectionSpec.js → Rust 集成测试
+//! DataSources/CompositeEntityCollectionSpec → Rust 集成测试
 //! 覆盖：addCollection、removeCollection、getCollectionsLength、getCollection、
 //! contains、getById、values、recomposite
 

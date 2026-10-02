@@ -1,4 +1,4 @@
-//! DataSources/PropertyBagSpec.js → Rust 集成测试
+//! DataSources/PropertyBagSpec → Rust 集成测试
 //! 覆盖：PropertyBag 构造、addProperty、removeProperty、hasProperty、
 //! getValue、isConstant、equals、merge
 

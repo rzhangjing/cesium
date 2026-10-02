@@ -1,12 +1,14 @@
 //! glTF 2.0 领域模型。
 //!
-//! 映射到 CesiumJS `Scene/GltfLoader.js` 和 glTF 2.0 规范。
-//! 本模块定义用于解析与处理的核心 glTF JSON 结构。
+//! 本模块定义用于解析与处理的核心 glTF JSON 结构，覆盖
+//! 根对象、accessor/bufferView/buffer、mesh/primitive、node/scene、
+//! texture/material/sampler、skin/animation 与稀疏 accessor 等实体。
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// 根 glTF 对象。
+/// 汇聚场景/节点/网格/accessor/buffer/材质/纹理/动画等顶层集合。
 ///
 /// 映射到 .gltf 文件的顶层 JSON 结构。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -106,12 +108,14 @@ impl GltfModel {
 
     /// 返回默认 scene，若未设置默认则返回第一个 scene。
     pub fn default_scene(&self) -> Option<&Scene> {
+        // scene 字段缺省视为索引 0，越界时 get 自然返回 None
         let index = self.scene.unwrap_or(0);
         self.scenes.get(index)
     }
 
     /// 返回所有 mesh 中的三角形总数。
     pub fn triangle_count(&self) -> usize {
+        // 仅统计 Triangles 图元；索引数 / 3 即三角形数
         self.meshes
             .iter()
             .flat_map(|m| m.primitives.iter())
@@ -127,6 +131,7 @@ impl GltfModel {
 
     /// 返回所有 mesh 中的顶点总数。
     pub fn vertex_count(&self) -> usize {
+        // 以各图元 POSITION accessor 的元素数累加（未去重共享顶点）
         self.meshes
             .iter()
             .flat_map(|m| m.primitives.iter())
@@ -158,6 +163,7 @@ pub struct Asset {
 }
 
 impl Default for Asset {
+    /// 默认 asset：version 为 "2.0"，其余元信息为空。
     fn default() -> Self {
         Self {
             version: "2.0".to_string(),
@@ -169,6 +175,7 @@ impl Default for Asset {
 }
 
 /// 一个包含根 node 列表的 scene。
+/// 可为空，具体选择交由渲染端的默认 scene 逻辑处理。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Scene {
     /// 可选名称。
@@ -181,6 +188,7 @@ pub struct Scene {
 }
 
 /// 场景图中的一個 node。
+/// 既可用 matrix 直接给定变换，也可用 TRS 三分量组合。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Node {
@@ -224,10 +232,12 @@ pub struct Node {
 impl Node {
     /// 从 TRS 或 matrix 计算局部变换矩阵。
     pub fn local_transform(&self) -> glam::DMat4 {
+        // 显式 matrix 优先，直接按列主序构造，忽略 TRS
         if let Some(m) = self.matrix {
             return glam::DMat4::from_cols_array(&m);
         }
 
+        // 缺省分量：平移 0、旋转恒等、缩放 1
         let translation = self
             .translation
             .map(|t| glam::DVec3::new(t[0], t[1], t[2]))
@@ -243,11 +253,13 @@ impl Node {
             .map(|s| glam::DVec3::new(s[0], s[1], s[2]))
             .unwrap_or(glam::DVec3::ONE);
 
+        // 按 glTF 约定组合为 S * R * T
         glam::DMat4::from_scale_rotation_translation(scale, rotation, translation)
     }
 }
 
 /// 一个包含图元的 mesh。
+/// 可附带 morph target 权重，用于形态渐变动画。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GltfMesh {
     /// 可选名称。
@@ -263,6 +275,7 @@ pub struct GltfMesh {
 }
 
 /// mesh 内的一个图元（几何）。
+/// 属性表以语义名为键映射到 accessor 索引。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Primitive {
@@ -291,6 +304,7 @@ pub struct Primitive {
 }
 
 /// 图元拓扑模式。
+/// 以 OpenGL 绘制模式整数表达点/线/三角形及其变体。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PrimitiveMode {
     /// 点。
@@ -311,6 +325,7 @@ pub enum PrimitiveMode {
 }
 
 impl Serialize for PrimitiveMode {
+    /// 以 OpenGL 图元整数（0..6）序列化。
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -320,6 +335,7 @@ impl Serialize for PrimitiveMode {
 }
 
 impl<'de> Deserialize<'de> for PrimitiveMode {
+    /// 从整数还原图元模式，未知值兜底为 Triangles。
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -355,6 +371,7 @@ pub struct AccessorSparse {
 }
 
 /// 稀疏 accessor 索引。
+/// 定位待覆盖元素，索引本身以某种无符号整型分量存放。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessorSparseIndices {
@@ -370,6 +387,7 @@ pub struct AccessorSparseIndices {
 }
 
 /// 稀疏 accessor 值。
+/// 提供与索引对应的替换数据，可缺省 byte_offset 紧密排布。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessorSparseValues {
@@ -382,6 +400,7 @@ pub struct AccessorSparseValues {
 }
 
 /// 一个用于 buffer 数据的 accessor。
+/// 定义如何从 bufferView 按类型/分量类型/count 解读出元素序列。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Accessor {
@@ -427,6 +446,7 @@ pub struct Accessor {
 impl Accessor {
     /// 返回每个元素的分量数量。
     pub fn components_per_element(&self) -> usize {
+        // 各类型分量数：矩阵按元素展开计数（mat2=4、mat3=9、mat4=16）
         match self.accessor_type {
             AccessorType::Scalar => 1,
             AccessorType::Vec2 => 2,
@@ -440,6 +460,7 @@ impl Accessor {
 
     /// 返回每个分量的字节大小。
     pub fn component_byte_size(&self) -> usize {
+        // 分量位宽：8 位=1、16 位=2、32 位=4
         match self.component_type {
             ComponentType::I8 | ComponentType::U8 => 1,
             ComponentType::I16 | ComponentType::U16 => 2,
@@ -449,18 +470,21 @@ impl Accessor {
 
     /// 返回一个元素的总字节 stride。
     pub fn element_byte_size(&self) -> usize {
+        // 元素 stride = 每元素分量数 × 每分量字节宽度
         self.components_per_element() * self.component_byte_size()
     }
 
     /// 若本 accessor 有稀疏覆盖则返回 true。
     pub fn is_sparse(&self) -> bool {
+        // 存在 sparse 块即视为稀疏 accessor
         self.sparse.is_some()
     }
 
     /// 使用本 accessor 从二进制 buffer 读取 f32 数据。
     ///
-    /// 映射到 CesiumJS `GltfLoaderUtility.getAccessorData`
+    /// 逐元素按 stride 采样小端 f32，并在存在稀疏数据时用其覆盖对应项。
     pub fn read_f32_data(&self, buffers: &[Vec<u8>], buffer_views: &[BufferView]) -> Vec<f32> {
+        // 输出长度 = 元素数 × 每元素分量数，先全部零初始化
         let total_components = self.count * self.components_per_element();
         let mut data = vec![0.0f32; total_components];
 
@@ -468,9 +492,11 @@ impl Accessor {
         if let Some(bv_idx) = self.buffer_view {
             if let Some(bv) = buffer_views.get(bv_idx) {
                 if let Some(buffer) = buffers.get(bv.buffer) {
+                    // stride 缺省时按每元素字节数紧密排布
                     let stride = bv.byte_stride.unwrap_or(self.element_byte_size());
                     let base_offset = bv.byte_offset + self.byte_offset;
 
+                    // 逐元素、逐分量按 4 字节小端读取 f32
                     for i in 0..self.count {
                         let elem_offset = base_offset + i * stride;
                         for c in 0..self.components_per_element() {
@@ -501,6 +527,7 @@ impl Accessor {
 
     /// 从二进制 buffer 读取 u16 索引数据。
     pub fn read_u16_data(&self, buffers: &[Vec<u8>], buffer_views: &[BufferView]) -> Vec<u16> {
+        // 索引每个元素占 2 字节，stride 缺省为 2
         let mut data = vec![0u16; self.count];
 
         if let Some(bv_idx) = self.buffer_view {
@@ -527,6 +554,7 @@ impl Accessor {
 
     /// 从二进制 buffer 读取 u32 索引数据。
     pub fn read_u32_data(&self, buffers: &[Vec<u8>], buffer_views: &[BufferView]) -> Vec<u32> {
+        // 索引每个元素占 4 字节，stride 缺省为 4
         let mut data = vec![0u32; self.count];
 
         if let Some(bv_idx) = self.buffer_view {
@@ -562,6 +590,7 @@ impl Accessor {
         buffer_views: &[BufferView],
     ) {
         // 读取稀疏索引
+        // 索引个数由 sparse.count 决定，逐条映射到待覆盖的目标元素下标
         let indices = self.read_sparse_indices(sparse, buffers, buffer_views);
 
         // 读取稀疏值
@@ -571,6 +600,7 @@ impl Accessor {
                 let base_offset = values_bv.byte_offset + sparse.values.byte_offset;
 
                 for (sparse_idx, &target_idx) in indices.iter().enumerate() {
+                    // 越界目标下标直接跳过，防止写入非法位置
                     if target_idx >= self.count {
                         continue;
                     }
@@ -585,6 +615,7 @@ impl Accessor {
                                 buffer[byte_pos + 3],
                             ];
                             let target = target_idx * components + c;
+                            // 目标位置仍越界则丢弃该分量写回
                             if target < data.len() {
                                 data[target] = f32::from_le_bytes(bytes);
                             }
@@ -602,6 +633,7 @@ impl Accessor {
         buffers: &[Vec<u8>],
         buffer_views: &[BufferView],
     ) -> Vec<usize> {
+        // 按索引分量类型（U8/U16/U32）小端读取，越界补 0
         let mut indices = Vec::with_capacity(sparse.count);
 
         if let Some(bv) = buffer_views.get(sparse.indices.buffer_view) {
@@ -669,6 +701,7 @@ pub enum ComponentType {
 }
 
 impl Serialize for ComponentType {
+    /// 以 glTF 规定的 OpenGL 分量类型整数序列化。
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -686,6 +719,7 @@ impl Serialize for ComponentType {
 }
 
 impl<'de> Deserialize<'de> for ComponentType {
+    /// 从分量类型整数还原；未知时兜底为 F32。
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -704,6 +738,7 @@ impl<'de> Deserialize<'de> for ComponentType {
 }
 
 /// accessor 元素类型。
+/// 以 SCALAR/VECn/MATn 声明每个元素的分量布局。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AccessorType {
     /// 单个标量值。
@@ -773,6 +808,7 @@ pub enum BufferTarget {
 }
 
 impl Serialize for BufferTarget {
+    /// 以数值 34962/34963 序列化 buffer 目标。
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -786,6 +822,7 @@ impl Serialize for BufferTarget {
 }
 
 impl<'de> Deserialize<'de> for BufferTarget {
+    /// 从 34962/34963 还原 buffer 目标，未知值报错而非静默降级。
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -862,6 +899,7 @@ mod buffer_target_tests {
 }
 
 /// 一个二进制数据 buffer。
+/// 嵌入式 GLB 的 buffer 其 uri 为空，数据整体存放在 BIN chunk 中。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Buffer {
@@ -878,6 +916,7 @@ pub struct Buffer {
 }
 
 /// 一个 material 定义。
+/// 汇聚 PBR 参数、各纹理槽、自发光与 alpha 混合方式。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Material {
@@ -923,6 +962,7 @@ pub struct Material {
 }
 
 /// PBR metallic-roughness material 模型。
+/// 各因子均为可选，缺省时由渲染端按规范默认值处理。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PbrMetallicRoughness {
@@ -948,6 +988,7 @@ pub struct PbrMetallicRoughness {
 }
 
 /// 带坐标的 texture 引用。
+/// 指向 texture 数组的索引并指定使用哪套 UV 坐标集。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextureInfo {
@@ -960,6 +1001,7 @@ pub struct TextureInfo {
 }
 
 /// 组合了 image 与 sampler 的 texture。
+/// sampler 与 source 均可缺省，交由渲染端使用默认采样器。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Texture {
     /// 可选名称。
@@ -976,6 +1018,7 @@ pub struct Texture {
 }
 
 /// 一个 image 资源。
+/// 既可经 uri 引用外部文件，也可经 bufferView 内嵌二进制。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Image {
@@ -997,6 +1040,7 @@ pub struct Image {
 }
 
 /// 一个 texture sampler。
+/// 以 OpenGL 枚举整数表达过滤与环绕模式。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Sampler {
@@ -1022,6 +1066,7 @@ pub struct Sampler {
 }
 
 /// 用于骨骼动画的 skin。
+/// joints 列出参与蒙皮的 node，逆变换绑定矩阵由 accessor 提供。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Skin {
@@ -1042,6 +1087,7 @@ pub struct Skin {
 }
 
 /// 一个 animation。
+/// 由若干 channel（目标绑定）与 sampler（关键帧曲线）组成。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Animation {
     /// 可选名称。
@@ -1056,6 +1102,7 @@ pub struct Animation {
 }
 
 /// 一个 animation channel。
+/// 将一个 sampler 的输出驱动到指定 node 的某条属性路径。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnimationChannel {
     /// sampler 的索引。
@@ -1066,6 +1113,7 @@ pub struct AnimationChannel {
 }
 
 /// animation 目标。
+/// 指定被驱动的 node 索引与其上的一条属性路径。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimationTarget {
@@ -1077,6 +1125,7 @@ pub struct AnimationTarget {
 }
 
 /// animation 属性路径。
+/// 可驱动 node 的平移/旋转/缩放或 mesh 的 morph 权重。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AnimationPath {
@@ -1091,6 +1140,7 @@ pub enum AnimationPath {
 }
 
 /// 一个 animation sampler。
+/// input/output 分别指向时间戳与关键帧值的 accessor。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimationSampler {
@@ -1106,6 +1156,7 @@ pub struct AnimationSampler {
 }
 
 /// 插值方法。
+/// 决定关键帧之间的取值方式，默认为线性插值。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Interpolation {
@@ -1119,6 +1170,7 @@ pub enum Interpolation {
 }
 
 /// alpha 混合模式。
+/// 控制片元透明度处理：不透明、阈值遮罩或 alpha 混合。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum AlphaMode {

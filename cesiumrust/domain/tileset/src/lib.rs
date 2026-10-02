@@ -1,16 +1,16 @@
 //! cesium-tileset：3D Tiles domain 模型
 //!
-//! 镜像 CesiumJS：
-//! - `Scene/Cesium3DTileset.js`
-//! - `Scene/Cesium3DTile.js`
-//! - `Scene/Cesium3DTileBoundingVolume.js`
-//! - `Scene/Cesium3DTilesetTraversal.js`
+//! 提供 3D Tiles 的领域侧数据模型：瓦片集根、逐瓦片的包围体与
+//! 层级树、内容解码、特征/批量表、结构性元数据与样式化表达式。
 //!
 //! # 特性
 //! - tileset.json 解析（serde 反序列化）
 //! - 包围体（Box、Region、Sphere）
 //! - 带 refinement 模式的瓦片树结构
 //! - 基于屏幕空间误差的 LOD 选择
+
+// 子模块声明：按职责拆分为包围体、内容解码、元数据、样式、
+// 瓦片树与 LOD/遍历等模块。
 
 pub mod batch_table;
 pub mod bounding_volume;
@@ -25,6 +25,7 @@ pub mod lod_selection;
 pub mod tile_replacement_queue;
 pub mod traversal;
 
+// 对外重新导出各子模块的核心类型与入口函数，聚合为统一命名空间。
 pub use batch_table::{
     AccessorType, BatchPropertyValue, BatchTable, BatchTableHierarchy, BinaryPropertyRef,
     ComponentType, FeatureTable, HierarchyClass, TileFeature,

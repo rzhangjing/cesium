@@ -1,4 +1,4 @@
-//! Renderer/TextureSpec.js、TextureAtlasSpec.js、FramebufferSpec.js
+//! Renderer/TextureSpec、TextureAtlasSpec、FramebufferSpec
 //! → Rust 集成测试
 
 use cesium_scene::{

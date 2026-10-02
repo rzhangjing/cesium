@@ -1,11 +1,10 @@
 //! Clock - 用于时间管理的模拟时钟。
-//! 映射到 CesiumJS `Core/Clock.js`、`Core/ClockRange.js`、`Core/ClockStep.js`
+//! 覆盖时钟范围策略、步进方式与推进 tick 的纯领域语义。
 
 use crate::julian_date::JulianDate;
 use serde::{Deserialize, Serialize};
 
 /// 决定时钟在到达开始/停止时间时的行为。
-/// 映射到 CesiumJS `ClockRange`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ClockRange {
     /// 时钟始终沿当前方向推进。
@@ -18,7 +17,6 @@ pub enum ClockRange {
 }
 
 /// 决定每次 tick 推进多少时间。
-/// 映射到 CesiumJS `ClockStep`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ClockStep {
     /// 按固定的秒数（倍率）推进。
@@ -31,7 +29,6 @@ pub enum ClockStep {
 }
 
 /// 用于跟踪模拟时间的简单时钟。
-/// 映射到 CesiumJS `Clock`
 #[derive(Debug, Clone)]
 pub struct Clock {
     /// 时钟的开始时间。
@@ -56,7 +53,6 @@ pub struct Clock {
 }
 
 /// 构造 Clock 的选项。
-/// 映射到 CesiumJS Clock 构造函数的选项对象。
 #[derive(Debug, Clone, Default)]
 pub struct ClockOptions {
     /// 时钟的开始时间。
@@ -97,8 +93,7 @@ impl Clock {
         }
     }
 
-    /// 从选项创建 Clock，忠实镜像 CesiumJS Clock 构造函数。
-    /// 推导规则：
+    /// 从选项创建 Clock，按下列推导规则补全缺省字段：
     /// - currentTime：若未指定 → 若设置了 startTime 则用它，否则 stopTime - 1 天，否则当前时间
     /// - startTime：若未指定 → currentTime（如上推导）
     /// - stopTime：若未指定 → startTime + 1 天
@@ -139,7 +134,6 @@ impl Clock {
     }
 
     /// 从当前时间推进时钟。
-    /// 映射到 `Clock.tick()`
     ///
     /// `delta_secs` 是自上次 tick 以来流逝的系统时间（秒）
     /// （由调用方提供以保持框架无关）。
@@ -195,6 +189,7 @@ impl Clock {
 }
 
 impl Default for Clock {
+    /// 以当前时间为基准的默认时钟。
     fn default() -> Self {
         Self::default_now()
     }

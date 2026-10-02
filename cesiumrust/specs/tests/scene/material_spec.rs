@@ -1,4 +1,4 @@
-//! Scene/MaterialSpec.js → Rust integration tests
+//! Scene/MaterialSpec → Rust integration tests
 
 use cesium_material::{MaterialSystem, FabricTemplate, BUILTIN_MATERIAL_TYPES};
 

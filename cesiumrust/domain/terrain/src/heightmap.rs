@@ -1,7 +1,7 @@
 //! 高程图地形数据。
-//! 映射到 CesiumJS `Core/HeightmapTerrainData.js`
+//! 提供基于规则网格高度采样的地形瓦片表示及其解码与上采样。
 
-// legacy CesiumJS-port style debt (deferred.md #18); revisit at M13 lint-cleanup 或本文件在其里程碑被重写时
+// 历史遗留的风格债（见 deferred.md #18）；在 M13 lint-cleanup 或本文件被重写时重新检视
 #![allow(clippy::too_many_arguments, clippy::needless_range_loop)]
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::cartographic::Cartographic;
@@ -15,8 +15,7 @@ use crate::terrain_mesh::TerrainMesh;
 
 /// 描述原始缓冲区中高度数据的布局。
 ///
-/// 映射到 CesiumJS `HeightmapTessellator.DEFAULT_STRUCTURE` 以及
-/// `HeightmapTerrainData` 的 `structure` 选项。
+/// 定义如何从原始字节缓冲区逐步解码出单个高度值。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct HeightmapStructure {
     /// 从一个高度到下一个高度需要跳过的元素数。
@@ -38,7 +37,9 @@ pub struct HeightmapStructure {
 }
 
 impl Default for HeightmapStructure {
+    /// 返回缺省结构：单字节、小端、无缩放偏移，乘数 256。
     fn default() -> Self {
+        // 默认每高度占 1 个 8 位元素，无高低钳制。
         Self {
             stride: 1,
             elements_per_height: 1,
@@ -54,20 +55,23 @@ impl Default for HeightmapStructure {
 
 /// 从原始缓冲区中读取给定顶点索引处的高度值。
 ///
-/// 映射到 CesiumJS HeightmapTerrainData.js 中的 `getHeight`。
+/// 按步长定位元素，逐元素乘累加解码（大端正序、小端逆序）。
 pub fn get_height_from_buffer(
     buffer: &[u8],
     structure: &HeightmapStructure,
     index: usize,
 ) -> f64 {
+    // 按步长定位顶点起始元素。
     let offset = index * structure.stride;
     let mut height = 0.0f64;
 
+    // 大端：高位元素在前，正序逐元素乘累加。
     if structure.is_big_endian {
         for i in 0..structure.elements_per_height {
             height = height * structure.element_multiplier + buffer[offset + i] as f64;
         }
     } else {
+        // 小端：低位在前，逆序遍历得到相同累加结果。
         for i in (0..structure.elements_per_height).rev() {
             height = height * structure.element_multiplier + buffer[offset + i] as f64;
         }
@@ -78,7 +82,7 @@ pub fn get_height_from_buffer(
 
 /// 将高度值写入原始缓冲区中给定顶点索引处。
 ///
-/// 映射到 CesiumJS HeightmapTerrainData.js 中的 `setHeight`。
+/// 逆向拆解为多元素并写回，大端正序、小端逆序存放。
 pub fn set_height_in_buffer(
     buffer: &mut [u8],
     structure: &HeightmapStructure,
@@ -202,6 +206,7 @@ pub struct HeightmapTerrainData {
     pub created_by_upsampling: bool,
 }
 
+/// 缺省子瓦片掩码：低 4 位置 1，表示四个子块默认可用。
 fn default_child_mask() -> u8 {
     15
 }
@@ -329,9 +334,7 @@ impl HeightmapTerrainData {
 
     /// 使用带结构编码的原始字节缓冲区对高程图进行上采样。
     ///
-    /// 这是 CesiumJS `HeightmapTerrainData.upsample` 针对
-    /// 多元素/步长/大端缓冲区的忠实移植。它从原始
-    /// 缓冲区解码高度、插值、钳制并重新编码。
+    /// 针对多元素/步长/大端缓冲区，从原始缓冲区解码高度、插值、钳制并重新编码。
     ///
     /// # 参数
     /// * `buffer` - 包含编码高度的原始字节缓冲区

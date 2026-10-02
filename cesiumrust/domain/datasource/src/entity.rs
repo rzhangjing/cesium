@@ -1,13 +1,13 @@
 //! Entity 定义与图形属性。
 //!
-//! 映射到 CesiumJS `DataSources/Entity.js` 及图形类型
-//! （PointGraphics、PolylineGraphics、PolygonGraphics 等）
+//! 本模块定义实体 `Entity` 及其各类图形属性：点、折线、多边形、
+//! billboard、标注、模型、椭圆、方框、圆柱、走廊、矩形、墙等。
 
 use crate::property::{BoolProperty, Color, ColorProperty, NumberProperty, PositionProperty, Property, StringProperty};
 
 /// 相对于地形定位的高度参考。
 ///
-/// 映射到 CesiumJS `Scene/HeightReference.js`
+/// 决定图形高度是绝对值还是相对地形/3D Tiles 表面。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HeightReference {
     /// 位置为绝对值（不做地形调整）。
@@ -25,7 +25,7 @@ pub enum HeightReference {
 
 /// corridor 与 polyline volume 的角部样式。
 ///
-/// 映射到 CesiumJS `Core/CornerType.js`
+/// 控制走廊与立体线在拐角处的连接样式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CornerType {
     /// 圆角。
@@ -39,7 +39,7 @@ pub enum CornerType {
 
 /// 地面图元的分类类型。
 ///
-/// 映射到 CesiumJS `Scene/ClassificationType.js`
+/// 指明地面图元绘制在地形还是 3D Tiles 之上。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ClassificationType {
     /// 同时分类地形与 3D Tiles。
@@ -53,7 +53,7 @@ pub enum ClassificationType {
 
 /// entity 的阴影模式。
 ///
-/// 映射到 CesiumJS `Scene/ShadowMode.js`
+/// 决定实体是否投射与接收阴影。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ShadowMode {
     /// 禁用阴影。
@@ -69,7 +69,7 @@ pub enum ShadowMode {
 
 /// 由法线与到原点距离定义的平面。
 ///
-/// 映射到 CesiumJS `Core/Plane.js`
+/// 以单位法线与带符号距离描述一个无限平面。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlaneDef {
     /// 平面法线 [x, y, z]。
@@ -80,7 +80,7 @@ pub struct PlaneDef {
 
 /// 点图形属性。
 ///
-/// 映射到 CesiumJS `DataSources/PointGraphics.js`
+/// 描述一个屏幕空间点标记的外观与可见性。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PointGraphics {
     /// 点颜色。
@@ -96,6 +96,7 @@ pub struct PointGraphics {
 }
 
 impl Default for PointGraphics {
+    /// 构造各字段取常用缺省值的点图形（白色不透明、尺寸 1、无轮廓）。
     fn default() -> Self {
         Self {
             color: Property::Constant(Color::WHITE),
@@ -109,7 +110,7 @@ impl Default for PointGraphics {
 
 /// 折线图形属性。
 ///
-/// 映射到 CesiumJS `DataSources/PolylineGraphics.js`
+/// 描述一条分段折线的样式与是否贴地。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PolylineGraphics {
     /// 折线位置（[lon, lat, height] 数组）。
@@ -125,6 +126,7 @@ pub struct PolylineGraphics {
 }
 
 impl Default for PolylineGraphics {
+    /// 构造缺省折线图形：位置未定义、线宽 1、白色显示且不贴地。
     fn default() -> Self {
         Self {
             positions: Property::Undefined,
@@ -138,7 +140,7 @@ impl Default for PolylineGraphics {
 
 /// 多边形图形属性。
 ///
-/// 映射到 CesiumJS `DataSources/PolygonGraphics.js`
+/// 描述一个可带孔、可挤出的多边形填充与轮廓。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PolygonGraphics {
     /// 多边形层级位置（外环）。
@@ -164,6 +166,7 @@ pub struct PolygonGraphics {
 }
 
 impl Default for PolygonGraphics {
+    /// 构造缺省多边形图形：默认填充白色、不显示轮廓且不挤出。
     fn default() -> Self {
         Self {
             positions: Property::Undefined,
@@ -182,7 +185,7 @@ impl Default for PolygonGraphics {
 
 /// billboard 图形属性。
 ///
-/// 映射到 CesiumJS `DataSources/BillboardGraphics.js`
+/// 描述一个始终朝向屏幕的图像标记。
 #[derive(Debug, Clone, PartialEq)]
 pub struct BillboardGraphics {
     /// 图像 URI。
@@ -202,6 +205,7 @@ pub struct BillboardGraphics {
 }
 
 impl Default for BillboardGraphics {
+    /// 构造缺省 billboard：图像与尺寸未定义、不染色、不旋转、显示。
     fn default() -> Self {
         Self {
             image: Property::Undefined,
@@ -217,7 +221,7 @@ impl Default for BillboardGraphics {
 
 /// label 图形属性。
 ///
-/// 映射到 CesiumJS `DataSources/LabelGraphics.js`
+/// 描述一段随实体定位的文本标注。
 #[derive(Debug, Clone, PartialEq)]
 pub struct LabelGraphics {
     /// label 文本。
@@ -235,6 +239,7 @@ pub struct LabelGraphics {
 }
 
 impl Default for LabelGraphics {
+    /// 构造缺省标注：文本未定义、字体 30px sans-serif、白字黑边。
     fn default() -> Self {
         Self {
             text: Property::Undefined,
@@ -249,7 +254,7 @@ impl Default for LabelGraphics {
 
 /// model 图形属性。
 ///
-/// 映射到 CesiumJS `DataSources/ModelGraphics.js`
+/// 描述一个 glTF 模型实例的引用与缩放。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelGraphics {
     /// model URI（glTF/glb）。
@@ -263,6 +268,7 @@ pub struct ModelGraphics {
 }
 
 impl Default for ModelGraphics {
+    /// 构造缺省模型：URI 未定义、缩放 1、最小像素尺寸 0、显示。
     fn default() -> Self {
         Self {
             uri: Property::Undefined,
@@ -275,7 +281,7 @@ impl Default for ModelGraphics {
 
 /// 椭圆图形属性。
 ///
-/// 映射到 CesiumJS `DataSources/EllipseGraphics.js`
+/// 描述一个椭圆的轴长、旋转与填充轮廓。
 #[derive(Debug, Clone, PartialEq)]
 pub struct EllipseGraphics {
     /// 半长轴（米）。
@@ -303,6 +309,7 @@ pub struct EllipseGraphics {
 }
 
 impl Default for EllipseGraphics {
+    /// 构造缺省椭圆：轴长未定义、不旋转、填充白色且不显示轮廓。
     fn default() -> Self {
         Self {
             semi_major_axis: Property::Undefined,
@@ -322,7 +329,7 @@ impl Default for EllipseGraphics {
 
 /// 方框图形属性。
 ///
-/// 映射到 CesiumJS `DataSources/BoxGraphics.js`
+/// 描述一个以中心对齐的长方体尺寸与外观。
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoxGraphics {
     /// 方框尺寸 [width, depth, height]（米）。
@@ -346,6 +353,7 @@ pub struct BoxGraphics {
 }
 
 impl Default for BoxGraphics {
+    /// 构造缺省方框：尺寸未定义、填充白色、不显示轮廓且无阴影。
     fn default() -> Self {
         Self {
             dimensions: Property::Undefined,
@@ -363,7 +371,7 @@ impl Default for BoxGraphics {
 
 /// 圆柱图形属性。
 ///
-/// 映射到 CesiumJS `DataSources/CylinderGraphics.js`
+/// 描述一个圆柱/圆锥的长度与两端半径。
 #[derive(Debug, Clone, PartialEq)]
 pub struct CylinderGraphics {
     /// 长度（高度）（米）。
@@ -395,6 +403,7 @@ pub struct CylinderGraphics {
 }
 
 impl Default for CylinderGraphics {
+    /// 构造缺省圆柱：尺寸未定义，垂线 16、切片 128，填充白色无轮廓。
     fn default() -> Self {
         Self {
             length: Property::Undefined,
@@ -416,7 +425,7 @@ impl Default for CylinderGraphics {
 
 /// corridor（走廊）图形属性。
 ///
-/// 映射到 CesiumJS `DataSources/CorridorGraphics.js`
+/// 描述一条沿测地线铺设、具宽度的道路带。
 #[derive(Debug, Clone, PartialEq)]
 pub struct CorridorGraphics {
     /// corridor 中心线位置（[lon, lat, height] 数组）。
@@ -454,6 +463,7 @@ pub struct CorridorGraphics {
 }
 
 impl Default for CorridorGraphics {
+    /// 构造缺省走廊：中心线与宽度未定义、圆角、填充白色且分类到两者。
     fn default() -> Self {
         Self {
             positions: Property::Undefined,
@@ -478,7 +488,7 @@ impl Default for CorridorGraphics {
 
 /// 矩形图形属性。
 ///
-/// 映射到 CesiumJS `DataSources/RectangleGraphics.js`
+/// 描述一个经纬矩形面的填充与轮廓。
 #[derive(Debug, Clone, PartialEq)]
 pub struct RectangleGraphics {
     /// 矩形坐标 [west, south, east, north]（弧度）。
@@ -516,6 +526,7 @@ pub struct RectangleGraphics {
 }
 
 impl Default for RectangleGraphics {
+    /// 构造缺省矩形：坐标未定义、高度 0、不旋转、填充白色且分类到两者。
     fn default() -> Self {
         Self {
             coordinates: Property::Undefined,
@@ -540,7 +551,7 @@ impl Default for RectangleGraphics {
 
 /// 墙（wall）图形属性。
 ///
-/// 映射到 CesiumJS `DataSources/WallGraphics.js`
+/// 描述一面沿折线垂直拉伸的墙。
 #[derive(Debug, Clone, PartialEq)]
 pub struct WallGraphics {
     /// 墙位置（[lon, lat, height] 数组）。
@@ -568,6 +579,7 @@ pub struct WallGraphics {
 }
 
 impl Default for WallGraphics {
+    /// 构造缺省墙：位置与高低度未定义，填充白色、不显示轮廓。
     fn default() -> Self {
         Self {
             positions: Property::Undefined,
@@ -587,7 +599,7 @@ impl Default for WallGraphics {
 
 /// 球体图形属性。
 ///
-/// 映射到 CesiumJS `DataSources/EllipsoidGraphics.js`
+/// 描述一个椭球体的三轴半径与外观。
 #[derive(Debug, Clone, PartialEq)]
 pub struct EllipsoidGraphics {
     /// 外半径 [x, y, z]（米）。
@@ -629,6 +641,7 @@ pub struct EllipsoidGraphics {
 }
 
 impl Default for EllipsoidGraphics {
+    /// 构造缺省椭球：半径未定义，覆盖完整时钟与锥角范围，填充白色。
     fn default() -> Self {
         Self {
             radii: Property::Undefined,
@@ -655,7 +668,7 @@ impl Default for EllipsoidGraphics {
 
 /// 平面图形属性。
 ///
-/// 映射到 CesiumJS `DataSources/PlaneGraphics.js`
+/// 描述一个平面的法线、距离与裁剪范围。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlaneGraphics {
     /// 平面定义（法线 + 距离）。
@@ -679,6 +692,7 @@ pub struct PlaneGraphics {
 }
 
 impl Default for PlaneGraphics {
+    /// 构造缺省平面：平面与尺寸未定义，填充白色、不显示轮廓。
     fn default() -> Self {
         Self {
             plane: Property::Undefined,
@@ -696,7 +710,7 @@ impl Default for PlaneGraphics {
 
 /// path（轨迹）图形属性（轨迹可视化）。
 ///
-/// 映射到 CesiumJS `DataSources/PathGraphics.js`
+/// 描述实体随时间轨迹所形成的尾线。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PathGraphics {
     /// 引导时间（秒）（向前显示多远）。
@@ -714,6 +728,7 @@ pub struct PathGraphics {
 }
 
 impl Default for PathGraphics {
+    /// 构造缺省轨迹：引导/拖尾时间未定义，宽 1、采样 60 秒、白色显示。
     fn default() -> Self {
         Self {
             lead_time: Property::Undefined,
@@ -728,7 +743,7 @@ impl Default for PathGraphics {
 
 /// polyline volume 图形属性。
 ///
-/// 映射到 CesiumJS `DataSources/PolylineVolumeGraphics.js`
+/// 描述一个沿路径扫掠给定截面所形成的立体。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PolylineVolumeGraphics {
     /// 体中心线位置（[lon, lat, height] 数组）。
@@ -756,6 +771,7 @@ pub struct PolylineVolumeGraphics {
 }
 
 impl Default for PolylineVolumeGraphics {
+    /// 构造缺省立体线：中心线与截面未定义、圆角，填充白色且不显轮廓。
     fn default() -> Self {
         Self {
             positions: Property::Undefined,
@@ -775,7 +791,7 @@ impl Default for PolylineVolumeGraphics {
 
 /// 数据源中的一个 entity。
 ///
-/// 映射到 CesiumJS `DataSources/Entity.js`
+/// 聚合位置、朝向与各图形字段，共同描述一个可时变的数据源实体。
 #[derive(Debug, Clone)]
 pub struct Entity {
     /// 唯一标识符。

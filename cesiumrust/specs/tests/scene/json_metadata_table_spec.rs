@@ -1,4 +1,4 @@
-//! Scene/JsonMetadataTableSpec.js → Rust 集成测试
+//! Scene/JsonMetadataTableSpec → Rust 集成测试
 //!
 //! 原始：19 it() → 11 A 类（8 C 类：throws）
 //! A 类：constructor_clones(1) + hasProperty(2) + getPropertyIds(1) +

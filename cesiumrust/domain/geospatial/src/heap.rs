@@ -1,5 +1,4 @@
 //! 一个带用户自定义比较器的堆（heap）数据结构。
-//! 映射到 CesiumJS `Core/Heap.js`
 
 /// 一个使用比较器函数来维持堆性质的堆。
 /// 比较器应在 `a` 优先级更高时返回负值，相等时返回零，
@@ -129,6 +128,7 @@ where
         }
     }
 
+    /// 将指定索引处的元素逐层上浮，直到不小于其父节点（恢复堆序）。
     fn bubble_up(&mut self, mut index: usize) {
         while index > 0 {
             let parent = (index - 1) / 2;
@@ -142,6 +142,7 @@ where
         }
     }
 
+    /// 将指定索引处的元素逐层下渗到与更小子节点交换的正确位置。
     fn bubble_down(&mut self, mut index: usize) {
         let len = self.array.len();
         loop {

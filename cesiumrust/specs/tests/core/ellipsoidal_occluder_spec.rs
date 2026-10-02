@@ -1,4 +1,4 @@
-//! 移植自 `packages/engine/Specs/Core/EllipsoidalOccluderSpec.js`（24 个 it()，约 17 个 A 类）
+//! 参考自 `Specs/Core/EllipsoidalOccluderSpec`（24 个 it()，约 17 个 A 类）
 //!
 //! 省略 1 个 throws 测试（C 类：Rust 类型系统）。
 //! 3 个 grazingAltitudeLocation 测试延后处理（t16c）。

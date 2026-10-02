@@ -1,15 +1,21 @@
 //! 类型擦除的属性值与可打包值类型。
 //!
-//! 映射到 CesiumJS 由 `Cartesian2`、`Cartesian3`、`Quaternion`、`Color`
-//! 以及内部 `PackableNumber` 所实现的 `Packable` 接口
-//! （见 `DataSources/SampledProperty.js`），外加 `DataSources/ReferenceFrame.js`。
+//! 本模块把属性求值可能返回的各类值收敛为一个 `PropertyValue` 枚举：
+//! 标量、二维与三维笛卡尔向量、四元数、颜色、笛卡尔区间、笛卡尔数组、
+//! 弧长区间、单位、布尔、字符串以及 JSON 值等。每种值都实现了向浮点
+//! 数组的打包与反打包，使采样属性能按固定步长对底层数值逐分量插值，
+//! 再在取回时还原为强类型；打包长度与偏移量由分量个数决定。此外还定义
+//! 了位置求值所用的参考系，用于区分地心固连系与瞬时惯性系，并附带把
+//! 颜色解析为 RGBA 分量的辅助逻辑。
 
 use glam::{DQuat, DVec2, DVec3};
 use serde_json::Value as JsonValue;
 
 /// 定义位置时所用的参考系。
 ///
-/// 映射到 CesiumJS `DataSources/ReferenceFrame.js`。
+/// 固定系以地心固连直角坐标描述位置，惯性系则在惯性空间中定义；二者
+/// 之间的转换随时间变化，因此属性求值时需按当前时刻选择正确的参考系
+/// 语义，再决定是否对坐标做时变变换。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ReferenceFrame {
     /// fixed 参考系（例如 ECEF / `FIXED`）。

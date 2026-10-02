@@ -58,6 +58,15 @@ pub fn anchor_offset(anchor: LabelAnchor, offset_px: [f32; 2], text_px: Vec2) ->
 
 /// 在 `root` 下为一个元素 spawn 一个标签文本节点。该节点开始时
 /// 在屏幕外；同步系统每帧写入其绝对位置。
+///
+/// # 参数
+/// - `commands`：spawn 文本节点的 ECS 命令。
+/// - `root`：标签挂接其下的 UI 根实体。
+/// - `element`：该标签所属元素的 id（同步系统据此追踪）。
+/// - `geo`/`style`：文本内容与字体/颜色样式。
+///
+/// # 返回
+/// 新 spawn 的标签节点实体。
 pub fn spawn_label(
     commands: &mut Commands,
     root: Entity,

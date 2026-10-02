@@ -1,4 +1,4 @@
-//! Graphics 规范 - 移植自 DataSources/*GraphicsSpec.js
+//! Graphics 规范 - 参考自 DataSources/*GraphicsSpec
 //! 覆盖：PointGraphics、PolylineGraphics、PolygonGraphics、BillboardGraphics、
 //! LabelGraphics、ModelGraphics、EllipseGraphics、BoxGraphics、CylinderGraphics、
 //! CorridorGraphics、RectangleGraphics、WallGraphics、EllipsoidGraphics、PlaneGraphics、PathGraphics

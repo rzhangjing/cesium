@@ -125,7 +125,7 @@ proptest! {
     /// - `len() <= max_entries + live_count` always holds after eviction.
     ///
     /// Base-layer keys are forced into the live set (semantically faithful: the
-    /// base layer always has live entities). `max` is derived from the non-base
+    /// base layer always has live entities). `max` is computed from the non-base
     /// live count so the FIFO recycle loop is guaranteed to terminate — this is
     /// the same relationship the golden path relies on
     /// (`MAX_TILE_ENTITIES(1800) << MAX_GPU_CACHE_ENTRIES(3000)`).

@@ -1,7 +1,7 @@
 //! Scene/ImageryLayerCollection → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/ImageryLayerCollection.js
+//! 参考 CesiumJS：
+//! - Scene/ImageryLayerCollection
 //!
 //! A 类测试：add/add_at/remove/remove_at/get/raise/lower/raise_to_top/
 //! lower_to_bottom/index_of/visible_layers/compute_blended_alpha.

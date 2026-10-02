@@ -1,11 +1,11 @@
-//! Scene/BillboardCollectionSpec.js + LabelCollectionSpec.js + PointPrimitiveCollectionSpec.js
+//! Scene/BillboardCollectionSpec + LabelCollectionSpec + PointPrimitiveCollectionSpec
 //! → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/Billboard.js, Scene/BillboardCollection.js
-//! - Scene/Label.js, Scene/LabelCollection.js
-//! - Scene/PointPrimitive.js, Scene/PointPrimitiveCollection.js
-//! - Core/NearFarScalar.js, Core/DistanceDisplayCondition.js
+//! 参考 CesiumJS：
+//! - Scene/Billboard, Scene/BillboardCollection
+//! - Scene/Label, Scene/LabelCollection
+//! - Scene/PointPrimitive, Scene/PointPrimitiveCollection
+//! - Core/NearFarScalar, Core/DistanceDisplayCondition
 //!
 //! A 类测试：集合 CRUD、默认值、NearFarScalar 插值、
 //! DistanceDisplayCondition 可见性、枚举默认值。

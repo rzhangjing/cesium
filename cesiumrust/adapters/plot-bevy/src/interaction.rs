@@ -128,6 +128,14 @@ impl PlotInteraction {
 
 /// 通过激活相机的逆变换将逻辑像素光标位置解析为地理坐标——
 /// 拾取路径的对应版本，用于放置草稿顶点（计划 §3，“落点 = screen_to_geo”）。
+///
+/// # 参数
+/// - `cam`/`ct`：激活相机及其全局变换。
+/// - `mode`：视图模式（Flat 走 2D 逆变换，Globe 射线投球面）。
+/// - `cursor`：逻辑像素光标位置。
+///
+/// # 返回
+/// 光标下方的地理坐标（投影失败时为 `None`）。
 pub fn screen_to_geo(
     cam: &Camera,
     ct: &GlobalTransform,
@@ -148,6 +156,14 @@ pub fn screen_to_geo(
 
 /// 将完成的几何提交到文档的活动层（文档为空时创建一个），
 /// 选中它，在历史栈上记录新增并推进 revision。返回新的 id。
+///
+/// # 参数
+/// - `plot_doc`/`history`/`selection`：目标文档、命令栈与选择集。
+/// - `kind`：绘制类型（用作元素名）。
+/// - `geometry`：已折叠的完成几何。
+///
+/// # 返回
+/// 新元素的 [`ElementId`]。
 pub fn commit_geometry(
     plot_doc: &mut PlotDocument,
     history: &mut PlotHistory,
@@ -180,6 +196,13 @@ pub fn commit_geometry(
 /// 为 `mode` 选择激活相机（先匹配投影类型，否则任选一个激活的）
 /// 并构建其 [`ViewMetrics`] + 旋转——与渲染 / 拾取系统使用相同的选择规则，
 /// 以使输入、投影、绘制一致。
+///
+/// # 参数
+/// - `cams`：相机查询（实体 + Camera + GlobalTransform + Projection）。
+/// - `ctx`：视图上下文（模式与屏幕尺寸）。
+///
+/// # 返回
+/// 成功时返回 `(实体, 相机, 变换, 旋转, 度量)`；无激活相机时 `None`。
 fn active_view<'q>(
     cams: &'q Query<(Entity, &Camera, &GlobalTransform, &Projection)>,
     ctx: &PlotViewCtx,
@@ -222,6 +245,14 @@ fn active_view<'q>(
 }
 
 /// 绘制 FSM 系统（参见模块文档）。
+///
+/// # 参数
+/// - `ctx`/`plot_doc`/`history`/`selection`：视图与可编辑状态。
+/// - `interaction`：FSM 资源（工具 + 草稿）。
+/// - `capture`：输入捕获门控（绘制期间置位）。
+/// - `snap_res`：吸附配置（落点前折叠光标）。
+/// - `tool_events`/`done_events`：工具切换入与绘制完成出。
+/// - `windows`/`cams`/`mouse`/`keys`：原始输入与投影。
 #[allow(clippy::too_many_arguments)]
 pub fn interaction_system(
     ctx: Res<PlotViewCtx>,
@@ -305,6 +336,13 @@ pub fn interaction_system(
 /// 进行中草稿的预览：穿过已放置顶点的橡皮筋描边
 /// 加上到光标的实时段（计划 §8 “实时预览”）。临时实体携带
 /// [`PlotPreviewEntity`] 并每帧重建。
+///
+/// # 参数
+/// - `commands`： despawn 旧预览、 spawn 新 ribbon。
+/// - `ctx`/`interaction`：视图与当前草稿。
+/// - `old`：上一帧的预览实体查询。
+/// - `meshes`/`materials`：预览网格与材质资产。
+/// - `windows`/`cams`：光标位置与相机投影。
 #[allow(clippy::too_many_arguments)]
 pub fn draw_preview_system(
     mut commands: Commands,
@@ -367,6 +405,11 @@ pub fn draw_preview_system(
 pub struct PlotPreviewEntity;
 
 /// 预览描边颜色（半透明白、双面、无光照）。
+///
+/// 无需参数：返回一个固定的预览材质。
+///
+/// # 返回
+/// 一个半透明白、无光照、双面的 [`StandardMaterial`]。
 fn preview_material() -> bevy::pbr::StandardMaterial {
     bevy::pbr::StandardMaterial {
         base_color: Color::srgba(1.0, 1.0, 1.0, 0.8),
@@ -383,6 +426,7 @@ mod tests {
     use cesium_plot::model::Document;
     use cesium_plot::ops::SnapConfig;
 
+    /// 构造一个地理点（表面高度）的测试简写。
     fn p(lon: f64, lat: f64) -> GeoPoint {
         GeoPoint::surface(lon, lat)
     }
@@ -437,6 +481,7 @@ mod tests {
         assert!(globe.project(snapped).distance(globe.project(target)) < 1e-9);
     }
 
+    /// 点类型在单次点击时自动完成并回到空闲。
     #[test]
     fn point_auto_completes_on_one_click() {
         let mut fs = PlotInteraction::default();
@@ -446,6 +491,7 @@ mod tests {
         assert!(!fs.is_drawing());
     }
 
+    /// 矩形两次点击完成，并将对角点规范排序为 west/south/east/north。
     #[test]
     fn rectangle_completes_on_two_clicks_and_orders_them() {
         let mut fs = PlotInteraction::default();
@@ -460,6 +506,7 @@ mod tests {
         assert!(!fs.is_drawing());
     }
 
+    /// 多段线保持开放直到 Enter 提交（而非靠固定点数自动完成）。
     #[test]
     fn polyline_finishes_on_enter_not_clicks() {
         let mut fs = PlotInteraction::default();
@@ -476,6 +523,7 @@ mod tests {
         assert!(!fs.is_drawing());
     }
 
+    /// 未达最小点数时 finish 不应提交，保持继续绘制。
     #[test]
     fn finish_needs_the_minimum_so_short_polyline_stays_open() {
         let mut fs = PlotInteraction::default();
@@ -485,6 +533,7 @@ mod tests {
         assert!(fs.is_drawing(), "still drawing");
     }
 
+    /// Backspace 应删除最后一个草稿顶点。
     #[test]
     fn backspace_drops_the_last_vertex() {
         let mut fs = PlotInteraction::default();
@@ -495,6 +544,7 @@ mod tests {
         assert_eq!(fs.draft.len(), 1);
     }
 
+    /// 取消应同时清空草稿与工具，回到空闲。
     #[test]
     fn cancel_clears_draft_and_tool() {
         let mut fs = PlotInteraction::default();
@@ -505,6 +555,7 @@ mod tests {
         assert!(fs.draft.is_empty());
     }
 
+    /// 提交应将元素加入文档、自动建层、选中并记录为可撤销。
     #[test]
     fn commit_adds_to_document_and_selects() {
         let mut plot_doc = PlotDocument {

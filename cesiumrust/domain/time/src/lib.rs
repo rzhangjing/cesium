@@ -1,7 +1,8 @@
 //! cesium-time：JulianDate、Clock、TimeInterval
 //! 领域层 - 纯 Rust，无框架依赖。
 //!
-//! CesiumJS 映射：`packages/engine/Source/Core/JulianDate.js`、`Clock.js`、`TimeInterval.js`
+//! 提供儒略日时间戳、格里高利历日期、时间区间及其集合，
+//! 以及时钟推进与动画枚举等纯领域类型。
 
 pub mod julian_date;
 pub mod gregorian_date;

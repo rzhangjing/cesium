@@ -1,7 +1,7 @@
-//! 移植自 CesiumJS 的测试：
-//! - Simon1994PlanetaryPositionsSpec.js（3 个 A 类：太阳位置、月亮位置、太阳从东方升起）
-//! - Iau2000OrientationSpec.js（1 个 A 类：计算月亮）
-//! - IauOrientationAxesSpec.js（1 个 A 类：计算 ICRF 到月固系）
+//! 参考自 CesiumJS 的测试：
+//! - Simon1994PlanetaryPositionsSpec（3 个 A 类：太阳位置、月亮位置、太阳从东方升起）
+//! - Iau2000OrientationSpec（1 个 A 类：计算月亮）
+//! - IauOrientationAxesSpec（1 个 A 类：计算 ICRF 到月固系）
 
 use cesium_geospatial::simon1994_planetary_positions::{
     compute_moon_position_in_earth_inertial_frame, compute_sun_position_in_earth_inertial_frame,

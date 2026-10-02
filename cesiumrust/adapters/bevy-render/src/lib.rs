@@ -376,6 +376,10 @@ pub enum LightingMode {
 pub struct CesiumCorePlugin;
 
 impl Plugin for CesiumCorePlugin {
+    /// 初始化核心渲染资源（GlobeConfig/RenderScale/TileLoadStats 等）并设置场景光照。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用
     fn build(&self, app: &mut App) {
         app.init_resource::<GlobeConfig>()
             .init_resource::<RenderScale>()

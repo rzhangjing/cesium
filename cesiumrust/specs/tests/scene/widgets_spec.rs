@@ -1,5 +1,5 @@
 //! Widgets 视图模型规范
-//! 移植自 CesiumJS widgets/Source/（SceneModePicker、SelectionIndicator、I18n）
+//! 参考自 CesiumJS widgets/Source/（SceneModePicker、SelectionIndicator、I18n）
 //!
 //! A 类测试：SceneModePickerViewModel、SelectionIndicatorViewModel、
 //! Locale/I18n, ProjectionPickerViewModel

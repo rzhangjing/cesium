@@ -1,6 +1,7 @@
 //! 投影选择器视图模型。
 //!
-//! 映射到 CesiumJS `ProjectionPicker/ProjectionPickerViewModel.js`。
+//! 封装透视与正交两种相机投影的切换、下拉展开状态，
+//! 以及两者之间过渡动画的进度推进。
 
 /// 相机的投影类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -48,6 +49,7 @@ pub struct ProjectionPickerViewModel {
 }
 
 impl Default for ProjectionPickerViewModel {
+    /// 默认选中透视投影、下拉收起、widget 可见、无过渡。
     fn default() -> Self {
         Self {
             selected_projection: ProjectionType::Perspective,
@@ -67,6 +69,7 @@ impl ProjectionPickerViewModel {
 
     /// 选择一种投影类型。
     pub fn select_projection(&mut self, projection: ProjectionType) {
+        // 仅在切换到不同投影时启动过渡；无论否同都收起下拉
         if self.selected_projection != projection {
             self.selected_projection = projection;
             self.is_transitioning = true;
@@ -87,22 +90,26 @@ impl ProjectionPickerViewModel {
 
     /// 切换下拉菜单。
     pub fn toggle_dropdown(&mut self) {
+        // 就地翻转展开标志
         self.is_dropdown_open = !self.is_dropdown_open;
     }
 
     /// 关闭下拉菜单。
     pub fn close_dropdown(&mut self) {
+        // 失焦或外部选择时统一收起下拉
         self.is_dropdown_open = false;
     }
 
     /// 更新过渡动画。
     /// 若过渡已完成则返回 true。
     pub fn update_transition(&mut self, delta_seconds: f64) -> bool {
+        // 未在过渡中则视为已完成，无需推进
         if !self.is_transitioning {
             return true;
         }
 
         let duration = 0.5; // 0.5 秒过渡
+        // 按时长比例推进进度，达 1.0 时收敛并关闭过渡标志
         self.transition_progress += delta_seconds / duration;
 
         if self.transition_progress >= 1.0 {
@@ -116,11 +123,13 @@ impl ProjectionPickerViewModel {
 
     /// 获取当前标签。
     pub fn current_label(&self) -> &'static str {
+        // 直接代理到当前投影类型的显示标签
         self.selected_projection.label()
     }
 
     /// 检查某种投影是否已选中。
     pub fn is_selected(&self, projection: ProjectionType) -> bool {
+        // 供下拉项判断高亮选中样式
         self.selected_projection == projection
     }
 }

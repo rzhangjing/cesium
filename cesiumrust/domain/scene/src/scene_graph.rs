@@ -1,6 +1,7 @@
 //! 场景图节点结构与遍历。
 //!
-//! 映射到 CesiumJS `Scene/Scene.js` 与 `Scene/Primitive.js`
+//! 以 [`SceneNode`] 描述层级节点，以 [`SceneGraph`] 统一管理节点集合，
+//! 并提供变换更新、可见性遍历与渲染内容收集等图操作。
 
 use cesium_geospatial::bounding::BoundingSphere;
 use std::collections::HashMap;
@@ -10,7 +11,8 @@ pub type NodeId = u64;
 
 /// 场景图中的一个节点。
 ///
-/// 映射到 CesiumJS 场景图元与模型节点。
+/// 持有局部/世界变换、包围体、父子关系及可选渲染内容，
+/// 是层级场景描述的基本单元。
 #[derive(Debug, Clone)]
 pub struct SceneNode {
     /// 唯一标识符。
@@ -91,9 +93,10 @@ impl SceneNode {
 
     /// 计算世界空间的包围球。
     pub fn world_bounding_sphere(&self) -> Option<BoundingSphere> {
+        // 无包围体则返回 None；否则把局部球心经世界变换搬到世界空间
         self.bounding_volume.map(|bv| {
             let center = self.world_transform.transform_point3(bv.center);
-            // 按最大缩放因子缩放半径
+            // 非均匀缩放下取三轴最大缩放因子，保守地放大半径以免漏判
             let scale = self.world_transform.x_axis.truncate().length()
                 .max(self.world_transform.y_axis.truncate().length())
                 .max(self.world_transform.z_axis.truncate().length());
@@ -161,10 +164,12 @@ impl SceneGraph {
     ///
     /// 返回被分配的节点 ID。
     pub fn add_node(&mut self, mut node: SceneNode) -> NodeId {
+        // 单调递增分配新 ID，并覆写调用方传入的临时 id
         let id = self.next_id;
         self.next_id += 1;
         node.id = id;
 
+        // 未指定父节点的视为根节点，加入 roots 以便遍历命中
         if node.parent.is_none() {
             self.roots.push(id);
         }
@@ -175,15 +180,18 @@ impl SceneGraph {
 
     /// 向父节点添加一个子节点。
     pub fn add_child(&mut self, parent_id: NodeId, mut child: SceneNode) -> Option<NodeId> {
+        // 父节点不存在则拒绝挂载，返回 None
         if !self.nodes.contains_key(&parent_id) {
             return None;
         }
 
+        // 分配 ID 并回填子节点的父母关系
         let id = self.next_id;
         self.next_id += 1;
         child.id = id;
         child.parent = Some(parent_id);
 
+        // 将新子节点登记到父节点的 children 列表
         if let Some(parent) = self.nodes.get_mut(&parent_id) {
             parent.children.push(id);
         }
@@ -194,6 +202,7 @@ impl SceneGraph {
 
     /// 移除一个节点及其所有后代。
     pub fn remove_node(&mut self, id: NodeId) -> Option<SceneNode> {
+        // 节点不存在则直接返回 None，否则先把它从表中摘出
         let node = self.nodes.remove(&id)?;
 
         // 从父节点的子列表中移除
@@ -216,6 +225,7 @@ impl SceneGraph {
 
     /// 递归移除一个节点及其后代。
     fn remove_node_recursive(&mut self, id: NodeId) {
+        // 自顶向下逐个摘除，无需维护父引用因父已先一步被移除
         if let Some(node) = self.nodes.remove(&id) {
             for child_id in node.children {
                 self.remove_node_recursive(child_id);
@@ -245,6 +255,7 @@ impl SceneGraph {
 
     /// 更新所有节点的世界变换。
     pub fn update_world_transforms(&mut self) {
+        // 先从根开始，将父世界变换作为累乘基准传入递归
         let roots: Vec<NodeId> = self.roots.clone();
         for root_id in roots {
             self.update_node_transform(root_id, glam::DMat4::IDENTITY);
@@ -253,6 +264,7 @@ impl SceneGraph {
 
     /// 递归更新一个节点的世界变换。
     fn update_node_transform(&mut self, id: NodeId, parent_world: glam::DMat4) {
+        // 世界变换 = 父世界变换 × 局部变换；先写下再拿 children 快照避免借用冲突
         let (world_transform, children) = if let Some(node) = self.nodes.get_mut(&id) {
             node.world_transform = parent_world * node.local_transform;
             (node.world_transform, node.children.clone())
@@ -260,6 +272,7 @@ impl SceneGraph {
             return;
         };
 
+        // 以本节点世界变换为基准递归更新各子节点
         for child_id in children {
             self.update_node_transform(child_id, world_transform);
         }
@@ -270,6 +283,7 @@ impl SceneGraph {
     where
         F: FnMut(&SceneNode),
     {
+        // 从每个根节点分别发起先序递归，覆盖整棵森林
         for root_id in &self.roots {
             self.traverse_node(*root_id, &mut visitor);
         }
@@ -281,10 +295,12 @@ impl SceneGraph {
         F: FnMut(&SceneNode),
     {
         if let Some(node) = self.nodes.get(&id) {
+            // 不可见节点连同其子树一起被剪枝，不再向下访问
             if !node.visible {
                 return;
             }
             visitor(node);
+            // 先序访问本节点后，递归深入每个子节点
             for child_id in &node.children {
                 self.traverse_node(*child_id, visitor);
             }
@@ -293,6 +309,7 @@ impl SceneGraph {
 
     /// 收集所有可渲染节点的 ID。
     pub fn collect_renderable_ids(&self) -> Vec<NodeId> {
+        // 复用可见性遍历，只把携带渲染内容的节点 ID 收集下来
         let mut renderables = Vec::new();
         self.traverse(|node| {
             if node.renderable.is_some() {
@@ -322,9 +339,11 @@ mod tests {
     #[test]
     fn test_add_child() {
         let mut scene = SceneGraph::new();
+        // 先建一个根作为父节点
         let parent = SceneNode::new(0).with_name("Parent");
         let parent_id = scene.add_node(parent);
 
+        // 再把子节点挂到父下，验证双向关系回填
         let child = SceneNode::new(0).with_name("Child");
         let child_id = scene.add_child(parent_id, child).unwrap();
 

@@ -12,9 +12,14 @@ use self::components::GlobeEllipsoid;
 use self::time_system::{entity_visibility_system, time_dynamic_update_system, AnimationClock};
 use self::visualizer::{billboard_face_camera_system, entity_visualizer_system};
 
+/// 注册椭球/时钟资源并挂载实体可视化与时间动态系统的 Bevy 插件。
 pub struct CesiumEntityPlugin;
 
 impl Plugin for CesiumEntityPlugin {
+    /// 初始化椭球与动画时钟资源，并在 Update 阶段挂载时动态/可视化/可见性/公告牌系统。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用
     fn build(&self, app: &mut App) {
         app.init_resource::<GlobeEllipsoid>()
             // AnimationClock 也由 CesiumCorePlugin（lib.rs）注册。

@@ -254,7 +254,7 @@ pub const ENV_ENABLE_CSM: &str = "CESIUM_ENABLE_CSM";
 /// **自 M5-B/M5-C 起为 ACTIVE**（在 `main.rs` 天穹分支消费）。
 pub const ENV_ENABLE_SKYDOME: &str = "CESIUM_ENABLE_SKYDOME";
 /// M5.4/M5-D —— Fabric 材质展示场景（内置材质 + 从
-/// `Water.glsl` `case 17u` 移植的三种海浪状态 Calm/Medium/Rough）。
+/// `Water` 程序化材质 `case 17u` 移植的三种海浪状态（Calm/Medium/Rough）。
 /// **自 M5-D 起为 ACTIVE**（在 `main.rs` material-showcase 分支消费）。
 /// 默认 **OFF** → `MaterialShowcasePlugin` 不会注册 → 场景
 /// 中无额外实体/材质 → v0 基线保持像素中性
@@ -753,6 +753,7 @@ impl FlagSnapshot {
     }
 }
 
+/// 将布尔开关渲染为供人阅读的 `on`/`off` 字样。
 fn yn(b: bool) -> &'static str {
     if b {
         "on"

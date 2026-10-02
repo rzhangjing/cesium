@@ -1,5 +1,5 @@
-//! Scene/Cesium3DTilesetSpec.js, Cesium3DTileSpec.js, TileStyleSpec.js,
-//! BatchTableSpec.js, FeatureTableSpec.js → Rust integration tests
+//! Scene/Cesium3DTilesetSpec, Cesium3DTileSpec, TileStyleSpec,
+//! BatchTableSpec, FeatureTableSpec → Rust integration tests
 
 use cesium_tileset::{
     BoundingVolume, TileRefine, TilesetJson, TileStyle, StyleExpression,

@@ -48,6 +48,11 @@ pub struct PendingLoad {
     pub task: Task<Result<TerrainMesh, String>>,
 }
 
+/// 将 `{z}/{x}/{y}` 模板展开为具体瓦片 URL；未配置底图地址时返回 `None`。
+///
+/// # 参数
+/// - `config`：地球配置（携 terrain_provider_url 模板）
+/// - `x`/`y`/`level`：瓦片的列/行/层级
 fn build_terrain_url(config: &GlobeConfig, x: u32, y: u32, level: u32) -> Option<String> {
     let base = config.terrain_provider_url.as_ref()?;
     Some(
@@ -57,6 +62,10 @@ fn build_terrain_url(config: &GlobeConfig, x: u32, y: u32, level: u32) -> Option
     )
 }
 
+/// 由瓦片索引推导其覆盖的经纬度矩形（等经纬度切分）。
+///
+/// # 参数
+/// - `x`/`y`/`level`：瓦片的列/行/层级
 fn tile_rectangle(x: u32, y: u32, level: u32) -> Rectangle {
     let n = 2u32.pow(level.max(1)) as f64;
     let west = (x as f64 / n) * std::f64::consts::TAU - std::f64::consts::PI;
@@ -193,6 +202,16 @@ fn poll_pending_loads(
     }
 }
 
+/// 逐帧驱动地形瓦片加载：排空已解析 task、按选择 spawn 新的下载。
+///
+/// # 参数
+/// - `commands`：实体增删改命令
+/// - `config`：地球配置（可选）
+/// - `selection`：LOD 系统选出的待加载瓦片
+/// - `pending`：飞行中的下载 task 集合
+/// - `load_state`：加载计数状态
+/// - `stats`：加载统计资源
+/// - `terrain_query`：地形瓦片组件查询
 pub fn terrain_tile_load_system(
     mut commands: Commands,
     config: Option<Res<GlobeConfig>>,

@@ -1,4 +1,4 @@
-//! DataSources/EntitySpec.js、EntityCollectionSpec.js → Rust 集成测试
+//! DataSources/EntitySpec、EntityCollectionSpec → Rust 集成测试
 
 use cesium_datasource::entity::{
     BillboardGraphics, BoxGraphics, CylinderGraphics, EllipseGraphics, Entity, HeightReference,

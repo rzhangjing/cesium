@@ -1,5 +1,5 @@
-//! Renderer/ShaderProgramSpec.js、ShaderSourceSpec.js、ShaderBuilderSpec.js、
-//! ShaderCacheSpec.js、ShaderFunctionSpec.js、ShaderStructSpec.js
+//! Renderer/ShaderProgramSpec、ShaderSourceSpec、ShaderBuilderSpec、
+//! ShaderCacheSpec、ShaderFunctionSpec、ShaderStructSpec
 //! → Rust 集成测试
 
 use cesium_scene::{

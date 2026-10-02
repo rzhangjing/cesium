@@ -1,3 +1,6 @@
+//! 地形子模块聚合：LOD 选择、瓦片加载与渲染系统。
+//!
+//! [`CesiumTerrainPlugin`] 注册地形及依赖的影像/统计资源，并固定加载→渲染顺序。
 pub mod lod_system;
 pub mod render_system;
 pub mod tile_loader;
@@ -11,9 +14,14 @@ pub use tile_loader::{terrain_tile_load_system, TerrainLoadState, TerrainPending
 use crate::imagery::{ImageryCache, ImageryLayerManager};
 use crate::resources::TileLoadStats;
 
+/// 注册地形与影像/统计资源、并挂载 LOD/加载/渲染系统的 Bevy 插件。
 pub struct CesiumTerrainPlugin;
 
 impl Plugin for CesiumTerrainPlugin {
+    /// 初始化地形相关资源（并幂等地补齐影像/统计依赖），在 PreUpdate 选择 LOD、Update 加载与渲染。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用
     fn build(&self, app: &mut App) {
         app.init_resource::<TerrainSelection>()
             .init_resource::<TerrainLoadState>()

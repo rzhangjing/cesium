@@ -1,4 +1,4 @@
-//! 轮廓几何规格 - 移植自多个 OutlineGeometrySpec.js 文件
+//! 轮廓几何规格 - 参考自多个 OutlineGeometrySpec 文件
 //!
 //! 测试 box、ellipsoid、circle、rectangle、cylinder、plane、wall、corridor、
 //! ellipse 与 frustum 轮廓几何生成器。

@@ -1,4 +1,4 @@
-//! 移植自 CesiumJS `Core/HeightmapTerrainDataSpec.js`（带 stride/大端序的升采样）。
+//! 参考自 CesiumJS `Core/HeightmapTerrainDataSpec`（带 stride/大端序的升采样）。
 //!
 //! A 类测试：stride、大端 stride、stride + 东侧子块、钳制。
 
@@ -80,7 +80,7 @@ fn set_height_roundtrip_big_endian() {
 
 // ---------------------------------------------------------------------------
 // upsample_with_structure：stride（小端）
-// 移植自 "upsample works with a stride"
+// 参考自 "upsample works with a stride"
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -124,7 +124,7 @@ fn upsample_works_with_stride() {
 
 // ---------------------------------------------------------------------------
 // upsample_with_structure：大端 stride
-// 移植自 "upsample works with a big endian stride"
+// 参考自 "upsample works with a big endian stride"
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -169,7 +169,7 @@ fn upsample_works_with_big_endian_stride() {
 
 // ---------------------------------------------------------------------------
 // upsample_with_structure：stride + 东侧子块
-// 移植自 "upsample works with a stride for an eastern child"
+// 参考自 "upsample works with a stride for an eastern child"
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -212,7 +212,7 @@ fn upsample_works_with_stride_eastern_child() {
 
 // ---------------------------------------------------------------------------
 // upsample_with_structure：钳制越界数据
-// 移植自 "upsample clamps out of range data"
+// 参考自 "upsample clamps out of range data"
 // ---------------------------------------------------------------------------
 
 #[test]

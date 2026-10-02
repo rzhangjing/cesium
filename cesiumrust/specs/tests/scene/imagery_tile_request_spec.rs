@@ -1,5 +1,5 @@
 //! 影像瓦片请求 specs - compute_tile_requests/compute_texture_mapping/ImageryLayer
-//! 移植自 Scene/ImageryLayerSpec.js（A 类瓦片请求计算）
+//! 参考自 Scene/ImageryLayerSpec（A 类瓦片请求计算）
 
 use cesium_imagery::{ImageryLayer, compute_tile_requests, compute_texture_mapping};
 use cesium_geospatial::rectangle::Rectangle;

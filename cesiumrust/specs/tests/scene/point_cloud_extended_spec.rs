@@ -1,5 +1,5 @@
 //! PointCloud 扩展规范 - get_world_position/get_color/get_normal/bounding_sphere/TimeDynamic
-//! 移植自 Scene/PointCloudSpec.js（A 类逻辑路径）
+//! 参考自 Scene/PointCloudSpec（A 类逻辑路径）
 
 use cesium_tileset::point_cloud::{PointCloud, TimeDynamicPointCloud};
 

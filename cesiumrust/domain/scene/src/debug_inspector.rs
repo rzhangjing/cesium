@@ -1,14 +1,17 @@
 //! 调试检查器的领域模型。
 //!
-//! 映射到 CesiumJS `Scene/DebugInspector.js` 及相关调试可视化
-//! 工具。提供对场景状态、瓦片集与
-//! 渲染统计的运行时检查。
+//! 提供面向运行时可视化与诊断的纯数据模型：
+//! - [`DebugInspector`] 汇聚各类调试开关与逐瓦片信息；
+//! - [`PerformanceOverlay`] 承载 HUD 显示所需的帧率与内存采样；
+//! - [`TilesetInspector`] 控制 3D Tiles 内容的检查与高亮。
+//!
+//! 本模块仅描述“检查什么”，具体的绘制与采集由渲染适配器完成。
 
 use std::collections::HashMap;
 
 /// 用于场景诊断的调试检查器。
 ///
-/// 映射到 CesiumJS `Scene/DebugInspector.js`
+/// 聚合各类可视化开关、逐瓦片调试信息与帧统计，供上层按需读取。
 #[derive(Debug, Clone, Default)]
 pub struct DebugInspector {
     /// 检查器是否启用。
@@ -40,6 +43,7 @@ pub struct DebugInspector {
 /// 用于瓦片检查的高亮模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HighlightMode {
+    /// 不做任何高亮（默认）。
     #[default]
     None,
     /// 按树中深度高亮。
@@ -57,41 +61,69 @@ pub enum HighlightMode {
 /// 逐瓦片的调试信息。
 #[derive(Debug, Clone, Default)]
 pub struct TileDebugInfo {
+    /// 瓦片唯一标识。
     pub tile_id: u64,
+    /// 在瓦片树中的深度（根为 0）。
     pub depth: u32,
+    /// 几何误差（世界坐标单位）。
     pub geometric_error: f64,
+    /// 瓦片中心到相机的距离。
     pub distance_to_camera: f64,
+    /// 投影后的屏幕空间误差（SSE，像素）。
     pub screen_space_error: f64,
+    /// 本帧是否被实际渲染。
     pub is_rendered: bool,
+    /// 本帧遍历是否访问过该瓦片。
     pub is_visited: bool,
+    /// 是否被拾取选中。
     pub is_selected: bool,
+    /// 内容类型标识（如 b3dm、pnts）。
     pub content_type: String,
+    /// 三角形数量。
     pub triangles_count: u64,
+    /// 顶点数量。
     pub vertices_count: u64,
+    /// 内容加载耗时（毫秒）。
     pub load_time_ms: f64,
 }
 
 /// 帧级别的调试统计。
 #[derive(Debug, Clone, Default)]
 pub struct FrameDebugStats {
+    /// 帧序号。
     pub frame_number: u64,
+    /// 本帧绘制调用次数。
     pub draw_calls: u32,
+    /// 本帧渲染的三角形总数。
     pub triangles_rendered: u64,
+    /// 本帧渲染的顶点总数。
     pub vertices_rendered: u64,
+    /// 已渲染瓦片数。
     pub tiles_rendered: u32,
+    /// 已访问瓦片数。
     pub tiles_visited: u32,
+    /// 被剔除瓦片数。
     pub tiles_culled: u32,
+    /// 正在加载瓦片数。
     pub tiles_loading: u32,
+    /// 已加载完成瓦片数。
     pub tiles_loaded: u32,
+    /// CPU 帧时（毫秒）。
     pub frame_time_ms: f64,
+    /// GPU 帧时（毫秒）。
     pub gpu_time_ms: f64,
+    /// 已用显存（字节）。
     pub memory_used_bytes: u64,
+    /// 纹理数量。
     pub texture_count: u32,
+    /// 着色器程序数量。
     pub shader_count: u32,
+    /// GPU 缓冲区数量。
     pub buffer_count: u32,
 }
 
 impl DebugInspector {
+    /// 创建一个全部开关关闭、采用默认高亮模式的检查器。
     pub fn new() -> Self {
         Self::default()
     }
@@ -159,18 +191,28 @@ impl DebugInspector {
 /// 用于 HUD 显示的性能覆盖层数据。
 #[derive(Debug, Clone, Default)]
 pub struct PerformanceOverlay {
+    /// 当前瞬时帧率（每秒帧数）。
     pub fps: f64,
+    /// 最近一帧 CPU 帧时（毫秒）。
     pub frame_time_ms: f64,
+    /// 最近一帧 GPU 帧时（毫秒）。
     pub gpu_frame_time_ms: f64,
+    /// 最近一帧绘制调用次数。
     pub draw_calls: u32,
+    /// 最近一帧三角形数。
     pub triangles: u64,
+    /// 纹理占用内存（MB）。
     pub texture_memory_mb: f64,
+    /// 缓冲区占用内存（MB）。
     pub buffer_memory_mb: f64,
+    /// 瓦片占用内存（MB）。
     pub tile_memory_mb: f64,
+    /// 最近帧时采样历史（最多保留 120 个）。
     pub history: Vec<f64>,
 }
 
 impl PerformanceOverlay {
+    /// 创建空的性能覆盖层，历史采样列表初始为空。
     pub fn new() -> Self {
         Self::default()
     }
@@ -220,6 +262,7 @@ pub struct TilesetInspector {
 }
 
 impl TilesetInspector {
+    /// 创建未激活、无选中瓦片的瓦片集检查器。
     pub fn new() -> Self {
         Self::default()
     }

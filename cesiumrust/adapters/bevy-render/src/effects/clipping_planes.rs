@@ -1,8 +1,8 @@
 //! M6.2：ClippingPlanes `ViewNode` + uniform 注入基础设施。
 //!
-//! 将上游 CesiumJS 的裁削平面能力
-//!（`Scene/ClippingPlaneCollection.js` + `Shaders/Model/ModelClippingPlanesStageFS.glsl`）
-//! 移植到 M5-E 渲染图基础设施（`graph.rs`）。对应
+//! 将裁削平面（clipping planes）能力接入 M5-E 渲染图基础设施
+//!（`graph.rs`）：以 Hessian 法式定义平面，逐片元据其正负半空间裁剪模型。
+//! 对应
 //! [`super::fxaa`] / [`super::ao`] 模式：本模块注册节点 /
 //! 资源 / 系统，**但从不创建图边** ——
 //! `graph.rs::register_render_graph` 中的单一线性 `Core3d` 链
@@ -37,12 +37,11 @@
 //! - `clipping.wgsl` 将 `dot(n,p)` 和 `+ w` 保持为两次舍入（无 FMA 融合）。
 //! - glam fast-math 全仓禁用（此处不依赖非 IEEE 浮点）。
 //!
-//! # 蓝图
-//! - `packages/engine/Source/Scene/ClippingPlane.js` (Hessian normal form)
-//! - `packages/engine/Source/Scene/ClippingPlaneCollection.js` L146-152 (union /
-//!   intersection), L251-257 (`clippingPlanesState`), L404-602 (GPU packing)
-//! - `packages/engine/Source/Shaders/Model/ModelClippingPlanesStageFS.glsl` L39-88
-//! - `bevy_pbr-0.15.3/src/ssao/mod.rs` (ViewNode + depth prepass reconstruction)
+//! # 设计要点
+//! - 每个平面用 Hessian 法式（单位法向 + 到原点距离）描述一个半空间。
+//! - 集合可按并集/交集语义组合多个平面的裁剪结果。
+//! - 平面数据在 GPU 边界打包为 uniform；逐片元着色器据符号丢弃被裁像素。
+//! - 节点 / 资源 / 系统注册沿用 fxaa / ao 模式；深度 prepass 重建复用 Bevy PBR 做法。
 
 use bevy::core_pipeline::{
     core_3d::graph::Core3d,
@@ -207,6 +206,7 @@ mod clipping_uniform {
 }
 
 impl Default for ClippingPlanesUniform {
+    /// 默认均匀体：所有平面置零、边缘颜色全透，等效于不裁剪地透传源颜色。
     fn default() -> Self {
         Self {
             planes: [Vec4::ZERO; MAX_CLIPPING_PLANES],
@@ -296,6 +296,14 @@ pub struct ClippingPlanesPipeline {
 }
 
 impl FromWorld for ClippingPlanesPipeline {
+    /// 从 render-world 构建裁削 pass 的设备资源：为深度纹理、裁削平面
+    /// 均匀体、view uniform 与采样器创建 bind group 布局。
+    ///
+    /// # 参数
+    /// - `render_world`：提供 `RenderDevice` 的渲染世界。
+    ///
+    /// # 返回
+    /// 装配好的 [`ClippingPlanesPipeline`] 资源。
     fn from_world(render_world: &mut World) -> Self {
         let render_device = render_world.resource::<RenderDevice>();
 
@@ -358,6 +366,20 @@ impl ViewNode for ClippingPlanesNode {
         &'static ViewUniformOffset,
     );
 
+    /// 运行裁削平面 pass：若未激活则直接返回；否则从深度 prepass 重建
+    /// 世界坐标，据各裁削平面的半空间判定丢弃被裁像素并可选绘制边缘。
+    ///
+    /// # 参数
+    /// - `_graph`：渲染图上下文（本节点无子 pass）。
+    /// - `render_context`：当前 pass 的 GPU 命令记录器。
+    /// - `target`：视图的渲染目标（后处理读写）。
+    /// - `pipeline_handle`：该视图缓存的裁削 pipeline ID。
+    /// - `clipping`：相机级裁削开关；`clipping_uniform`：本帧平面参数。
+    /// - `prepass`：深度 prepass 纹理；`view_uniform_offset`：本视图偏移。
+    /// - `world`：提供 pipeline/texture 资源的 render-world。
+    ///
+    /// # 返回
+    /// 成功提交命令则为 `Ok(())`；前置资源未就绪时返回错误。
     fn run(
         &self,
         _graph: &mut RenderGraphContext,

@@ -1,6 +1,6 @@
 //! Fabric 材质的半透明规格。
 //!
-//! CesiumJS 将半透明性存储为布尔值，或作为材质当前 uniform 值的
+//! 半透明性可存储为布尔值，或作为材质当前 uniform 值的
 //! 函数（例如 `material.uniforms.color.alpha < 1.0`）。本模块用一个
 //! 单一的、数据驱动的 enum 捕获完整的内置函数形状，使领域层保持
 //! 无闭包且可序列化。
@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 /// 材质如何判断自身是否半透明。
 ///
-/// 映射到 CesiumJS `Material._materialCache` 中每个条目的 `translucent` 成员：
+/// 每个材质缓存条目的 `translucent` 成员可取以下形态：
 /// - `translucent: true`  -> [`TranslucentSpec::Always`]
 /// - `translucent: false` -> [`TranslucentSpec::Never`]
 /// - `translucent: function (material) { return <uniform>.alpha < 1.0 || ... }`
@@ -33,12 +33,13 @@ impl TranslucentSpec {
     /// 针对材质当前的 uniform 值求值该规格。
     ///
     /// 缺失或没有 alpha/标量分量的 uniform 贡献 `false`（它无法
-    /// 使材质半透明），与 CesiumJS 函数只读取存在的 uniform 一致。
+    /// 使材质半透明），即只读取实际存在的 uniform。
     pub fn evaluate(&self, uniforms: &BTreeMap<String, UniformValue>) -> bool {
         match self {
             TranslucentSpec::Always => true,
             TranslucentSpec::Never => false,
             TranslucentSpec::AnyAlphaLt1(names) => names.iter().any(|name| {
+                // 任一命名 uniform 的 alpha/标量 < 1.0 即判为半透明
                 uniforms
                     .get(*name)
                     .and_then(UniformValue::alpha_or_scalar)

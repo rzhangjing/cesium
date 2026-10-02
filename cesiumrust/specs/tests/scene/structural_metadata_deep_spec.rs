@@ -1,5 +1,5 @@
-//! 结构元数据深入规范 - 移植自 MetadataClassPropertySpec.js、
-//! MetadataEntitySpec.js、GroupMetadataSpec.js、TilesetMetadataSpec.js
+//! 结构元数据深入规范 - 参考自 MetadataClassPropertySpec、
+//! MetadataEntitySpec、GroupMetadataSpec、TilesetMetadataSpec
 //!
 //! 测试 MetadataClassProperty 校验、MetadataClass、MetadataEnum、
 //! PropertyTable get/set、PropertyTexture、PropertyAttribute、StructuralMetadata 容器。

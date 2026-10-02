@@ -1,11 +1,9 @@
 //! cesium-gltf：glTF 2.0 领域模型
 //!
-//! 映射到 CesiumJS：
-//! - `Scene/GltfLoader.js`
-//! - `Scene/Batched3DModel3DTileContent.js`
-//! - `Scene/Model/`（model 渲染管线）
-//! - `Scene/ModelComponents.js`（PBR material、动画、蒙皮）
-//! - `Scene/Model/CustomShader.js`（自定义 shader 系统）
+//! 涵盖 glTF 2.0 的领域侧建模与模型渲染管线：
+//! - glTF 加载器与批量 3D 模型（b3dm）内容
+//! - 模型组件（PBR material、动画、蒙皮）
+//! - 自定义 shader 系统（uniform、varying、变量解析）
 //!
 //! # 特性
 //! - glTF 2.0 JSON 结构解析（含 sparse accessor）

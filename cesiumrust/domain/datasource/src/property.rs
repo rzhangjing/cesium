@@ -1,7 +1,9 @@
 //! 用于时间动态值的属性系统。
 //!
-//! 映射到 CesiumJS `DataSources/Property.js`、`ConstantProperty.js`、
-//! `SampledProperty.js`、`TimeIntervalCollectionProperty.js`
+//! 本模块定义属性求值的核心数据形态：颜色等基础值类型，以及可在常量、
+//! 采样值与时间区间集合之间切换的泛型 `Property`。属性既可整体为常量，
+//! 也可随时间变化，供实体各视觉外观在每一帧按需取值；缺失时以 `Option`
+//! 表达“未定义”，交由上层回退到默认外观。
 
 use serde::{Deserialize, Serialize};
 
@@ -78,6 +80,7 @@ impl Color {
 
 #[allow(clippy::derivable_impls)]
 impl Default for Color {
+    /// 缺省颜色为不透明白色。
     fn default() -> Self {
         Self::WHITE
     }
@@ -85,7 +88,9 @@ impl Default for Color {
 
 /// 可为常量或随时间变化的属性值。
 ///
-/// 映射到 CesiumJS `DataSources/Property.js`
+/// 属性可以是始终不变的常量，也可以是按采样点或时间区间插值得到的
+/// 动态值；泛型参数 `T` 约束被承载的值必须可克隆且可比较，以便做
+/// 脏检查与缓存。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum Property<T: Clone + PartialEq> {
     /// 一个常量值。

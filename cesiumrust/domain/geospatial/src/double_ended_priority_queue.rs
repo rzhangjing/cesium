@@ -1,5 +1,3 @@
-//! 映射到 CesiumJS `Core/DoubleEndedPriorityQueue.js`
-//!
 //! 双端优先队列的、基于数组的 min-max 堆实现。
 //! 该数据结构支持高效地移除最小和最大元素。
 
@@ -19,7 +17,7 @@ fn level_of(index: usize) -> u32 {
 /// 双端优先队列的、基于数组的 min-max 堆实现。
 ///
 /// 若 `a` 的优先级低于 `b`，比较器返回 `Ordering::Less`
-/// （对应 CesiumJS 的 `comparator(a, b) < 0`）。
+/// （即 `comparator(a, b) < 0`）。
 pub struct DoubleEndedPriorityQueue<T, F>
 where
     F: Fn(&T, &T) -> Ordering,
@@ -238,12 +236,14 @@ where
         (self.comparator)(a, b) == Ordering::Less
     }
 
+    /// 判断 index_a 处的元素是否严格大于 index_b 处的元素。
     fn greater_than(&self, index_a: usize, index_b: usize) -> bool {
         let a = self.array[index_a].as_ref().unwrap();
         let b = self.array[index_b].as_ref().unwrap();
         (self.comparator)(a, b) == Ordering::Greater
     }
 
+    /// 将指定索引处的元素向堆顶方向调整，使其落在正确的 min/max 层上。
     fn push_up(&mut self, mut index: usize) {
         if index == 0 {
             return;
@@ -272,6 +272,7 @@ where
         }
     }
 
+    /// 将指定索引处的元素向堆底方向下沉，维护双端堆的层序不变式。
     fn push_down(&mut self, mut index: usize) {
         let length = self.length;
         let on_min_level = level_of(index) % 2 == 0;

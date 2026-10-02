@@ -1,10 +1,10 @@
 //! Core/InterpolationAlgorithms → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Core/LinearApproximation.js
-//! - Core/HermitePolynomialApproximation.js
-//! - Core/LagrangePolynomialApproximation.js
-//! - Core/InterpolationAlgorithm.js
+//! 参考 CesiumJS：
+//! - Core/LinearApproximation
+//! - Core/HermitePolynomialApproximation
+//! - Core/LagrangePolynomialApproximation
+//! - Core/InterpolationAlgorithm
 //!
 //! A 类测试：lerp/hermite/lagrange/catmull_rom/slerp/interpolate 分派。
 

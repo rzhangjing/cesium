@@ -14,6 +14,7 @@ use crate::model::geometry::{Circle, Geometry, Polygon, Rectangle};
 
 /// 一条顶点链的大圆长度（米）；少于两个点时为 `0`。
 pub fn path_length_m(points: &[GeoPoint]) -> f64 {
+    // 逐相邻顶点对累加大圆距离（windows(2) 对 <2 点自然为空和）。
     points
         .windows(2)
         .map(|w| w[0].surface_distance(w[1]))
@@ -26,6 +27,7 @@ pub fn ring_length_m(ring: &[GeoPoint]) -> f64 {
         return 0.0;
     }
     let mut total = path_length_m(ring);
+    // 再补上末点连回首点的闭合边，构成完整环周长。
     total += ring[ring.len() - 1].surface_distance(ring[0]);
     total
 }
@@ -39,6 +41,7 @@ pub fn ring_area_m2(ring: &[GeoPoint]) -> f64 {
         return 0.0;
     }
     let mut sum = 0.0;
+    // 遍历每条边（% n 实现环回绕），累加 Δλ · (sinφ_i + sinφ_{i+1})。
     for i in 0..n {
         let a = ring[i];
         let b = ring[(i + 1) % n];
@@ -46,11 +49,13 @@ pub fn ring_area_m2(ring: &[GeoPoint]) -> f64 {
         let s = a.lat_deg.to_radians().sin() + b.lat_deg.to_radians().sin();
         sum += dlon * s;
     }
+    // R²·|和|/2 得平方米；取绝对值以消除环朝向（顺 / 逆）的影响。
     (METERS_PER_RENDER_UNIT * METERS_PER_RENDER_UNIT * sum / 2.0).abs()
 }
 
 /// 多边形面积 = 外环减去其孔洞之和（m²）。
 pub fn polygon_area_m2(pg: &Polygon) -> f64 {
+    // 从外环面积起，逐个扣掉每个孔洞的面积，最后钳到非负。
     let mut area = ring_area_m2(&pg.outer);
     for h in &pg.holes {
         area -= ring_area_m2(h);
@@ -67,10 +72,12 @@ pub fn circle_area_m2(c: &Circle) -> f64 {
 /// 矩形面积（m²）：宽（平均纬度上的一个大圆跨步）乘以
 /// 高（一个子午线跨步）。
 pub fn rectangle_area_m2(r: &Rectangle) -> f64 {
+    // 宽：在平均纬度处量东西向的大圆跨步（避免两极畸变）。
     let mean_lat = (r.south + r.north) / 2.0;
     let west_edge = GeoPoint::surface(r.west, mean_lat);
     let east_edge = GeoPoint::surface(r.east, mean_lat);
     let width = west_edge.surface_distance(east_edge);
+    // 高：沿西经线量南北向跨步。
     let height = GeoPoint::surface(r.west, r.south).surface_distance(GeoPoint::surface(r.west, r.north));
     width * height
 }
@@ -81,6 +88,7 @@ pub fn measure_length_m(g: &Geometry) -> f64 {
     match g {
         Geometry::Polyline(pl) => path_length_m(&pl.positions),
         Geometry::Polygon(pg) => {
+            // 多边形总长 = 外环周长 + 各孔洞周长之和。
             let mut t = ring_length_m(&pg.outer);
             for h in &pg.holes {
                 t += ring_length_m(h);
@@ -97,6 +105,7 @@ pub fn measure_length_m(g: &Geometry) -> f64 {
             ring_length_m(&corners)
         }
         Geometry::Circle(c) => 2.0 * std::f64::consts::PI * c.radius_m,
+        // 复合几何 = 各部分长度之和。
         Geometry::Composite(comp) => comp.parts.iter().map(measure_length_m).sum(),
         _ => 0.0,
     }
@@ -104,6 +113,7 @@ pub fn measure_length_m(g: &Geometry) -> f64 {
 
 /// 一个几何的总量测面积；开放 / 点类类型为 `0`。
 pub fn measure_area_m2(g: &Geometry) -> f64 {
+    // 仅闭合类型有面积；复合按部分求和，其余（开放 / 点）为 0。
     match g {
         Geometry::Polygon(pg) => polygon_area_m2(pg),
         Geometry::Rectangle(r) => rectangle_area_m2(r),
@@ -118,16 +128,19 @@ mod tests {
     use super::*;
     use crate::model::geometry::Polyline;
 
+    /// 快捷构造一个地面点（高度 0）。
     fn p(lon: f64, lat: f64) -> GeoPoint {
         GeoPoint::surface(lon, lat)
     }
 
+    /// 一个纬度度在赤道附近的大圆距离≈ 111 km。
     #[test]
     fn one_degree_latitude_is_about_111km() {
         let d = p(0.0, 0.0).surface_distance(p(0.0, 1.0));
         assert!((d - 111_319.0).abs() < 100.0, "got {d}");
     }
 
+    /// 折线总长等于各相邻段之和；单点链长为 0。
     #[test]
     fn path_length_sums_segments() {
         let line = vec![p(0.0, 0.0), p(0.0, 1.0), p(0.0, 2.0)];
@@ -137,6 +150,7 @@ mod tests {
         assert_eq!(path_length_m(&[p(0.0, 0.0)]), 0.0);
     }
 
+    /// 赤道附近 1°×1° 环的面积误差应小于 1%；退化环面积为 0。
     #[test]
     fn unit_square_area_near_equator() {
         // 赤道附近一个 1°×1° 的环 ≈ 1.239e10 m²。
@@ -150,6 +164,7 @@ mod tests {
         assert_eq!(ring_area_m2(&[p(0.0, 0.0), p(1.0, 1.0)]), 0.0, "degenerate ring");
     }
 
+    /// 多边形面积 = 外环减孔洞，且结果为正。
     #[test]
     fn polygon_area_subtracts_holes() {
         let outer = vec![p(0.0, 0.0), p(2.0, 0.0), p(2.0, 2.0), p(0.0, 2.0)];
@@ -164,6 +179,7 @@ mod tests {
         assert!(with_hole > 0.0);
     }
 
+    /// 圆的面积（π r²）与周长（2π r）读数一致。
     #[test]
     fn circle_metrics() {
         let c = Circle {
@@ -174,6 +190,7 @@ mod tests {
         assert!((measure_length_m(&Geometry::Circle(c)) - 2.0 * std::f64::consts::PI * 1000.0).abs() < 1.0);
     }
 
+    /// 按几何类型分派的量测与其部件一致：开放线无面积，矩形≈正方形。
     #[test]
     fn geometry_dispatch_matches_parts() {
         let line = Geometry::Polyline(Polyline {

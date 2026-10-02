@@ -1,5 +1,5 @@
-//! DoublyLinkedList 规格测试 - 移植自：
-//! - packages/engine/Specs/Core/DoublyLinkedListSpec.js（16 个 it()）
+//! DoublyLinkedList 规格测试 - 参考自：
+//! - Specs/Core/DoublyLinkedListSpec（16 个 it()）
 //!
 //! A 类测试：16 个（节点同一性通过 Rc::ptr_eq 比较）
 

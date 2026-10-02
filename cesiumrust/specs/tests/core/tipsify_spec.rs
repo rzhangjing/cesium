@@ -1,4 +1,4 @@
-//! Core/TipsifySpec.js → Rust 集成测试
+//! Core/TipsifySpec → Rust 集成测试
 //! 13 个原始 it() 块 → 移植 4 个 A 类测试（9 个 throws = C 类，编译期安全）
 //!
 //! 跳过的 C 类测试：

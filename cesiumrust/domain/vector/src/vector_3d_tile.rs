@@ -1,11 +1,9 @@
 //! Vector 3D Tile 内容类型。
 //!
-//! 映射到 CesiumJS：
-//! - `Scene/Vector3DTileContent.js`
-//! - `Scene/Vector3DTilePoints.js`
-//! - `Scene/Vector3DTilePolylines.js`
-//! - `Scene/Vector3DTilePolygons.js`
-//! - `Scene/Vector3DTileClampedPolylines.js`
+//! 建模 3D Tiles 中的矢量瓦片内容，覆盖点（Points）、折线（Polylines）
+//! 与多边形（Polygons）三类基本要素。每类要素以展平数组存储顶点位置、
+//! 三角化索引、批次 ID 与样式属性（颜色、高度、是否贴地），并提供
+//! 按要素切片的访问接口、数量查询与几何字节长度估算。
 
 use glam::DVec3;
 
@@ -30,7 +28,7 @@ pub enum Vector3DTileType {
 
 /// 矢量 3D 瓦片中的点要素。
 ///
-/// 映射到 CesiumJS `Scene/Vector3DTilePoints.js`。
+/// 位置、批次 ID、颜色与大小按同一索引对齐，构成并行的属性数组。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Vector3DTilePoints {
     /// 点的位置（世界坐标）。
@@ -70,12 +68,14 @@ impl Vector3DTilePoints {
 
     /// 添加一个点。
     pub fn add_point(&mut self, position: DVec3, batch_id: u32) {
+        // 位置与批次 ID 同步追加，保持并行数组索引对齐
         self.positions.push(position);
         self.batch_ids.push(batch_id);
     }
 }
 
 impl Default for Vector3DTilePoints {
+    /// 默认点集合为空，等价于 [`Vector3DTilePoints::new`]。
     fn default() -> Self {
         Self::new()
     }
@@ -87,7 +87,7 @@ impl Default for Vector3DTilePoints {
 
 /// 矢量 3D 瓦片中的折线要素。
 ///
-/// 映射到 CesiumJS `Scene/Vector3DTilePolylines.js`。
+/// 多条折线共享一个展平的 positions 数组，以 polyline_starts/counts 定位各线。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Vector3DTilePolylines {
     /// 所有折线的位置（展平存储）。
@@ -139,6 +139,7 @@ impl Vector3DTilePolylines {
 
     /// 添加一条折线。
     pub fn add_polyline(&mut self, positions: &[DVec3], batch_id: u32, width: f64) {
+        // 记录当前末尾作为本线起点，追加顶点后同步 starts/counts/widths
         let start = self.positions.len();
         self.positions.extend_from_slice(positions);
         self.polyline_starts.push(start);
@@ -149,6 +150,7 @@ impl Vector3DTilePolylines {
 
     /// 获取指定折线的位置。
     pub fn get_polyline(&self, index: usize) -> Option<&[DVec3]> {
+        // 越界安全：索引超出线数时返回 None
         if index >= self.polyline_starts.len() {
             return None;
         }
@@ -159,6 +161,7 @@ impl Vector3DTilePolylines {
 }
 
 impl Default for Vector3DTilePolylines {
+    /// 默认折线集合为空，等价于 [`Vector3DTilePolylines::new`]。
     fn default() -> Self {
         Self::new()
     }
@@ -170,7 +173,7 @@ impl Default for Vector3DTilePolylines {
 
 /// 矢量 3D 瓦片中的多边形要素。
 ///
-/// 映射到 CesiumJS `Scene/Vector3DTilePolygons.js`。
+/// 多边形已预先三角化，索引按顶点偏移量写入共享的 indices 数组。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Vector3DTilePolygons {
     /// 所有多边形的位置（展平存储）。
@@ -249,6 +252,7 @@ impl Vector3DTilePolygons {
 }
 
 impl Default for Vector3DTilePolygons {
+    /// 默认多边形集合为空，等价于 [`Vector3DTilePolygons::new`]。
     fn default() -> Self {
         Self::new()
     }
@@ -260,7 +264,7 @@ impl Default for Vector3DTilePolygons {
 
 /// 完整的矢量 3D 瓦片内容。
 ///
-/// 映射到 CesiumJS `Scene/Vector3DTileContent.js`。
+/// 聚合点/线/面三类要素（均为可选）与 MVT 图层列表，作为瓦片的统一载体。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Vector3DTileContent {
     /// 点要素。

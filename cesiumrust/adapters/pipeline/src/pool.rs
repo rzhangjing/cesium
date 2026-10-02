@@ -62,6 +62,7 @@ pub struct PoolConfig {
 }
 
 impl Default for PoolConfig {
+    /// 默认池配置：16 工作线程、3 次重试、250 ms 退避基准（与上游经验值对齐）。
     fn default() -> Self {
         Self {
             threads: 16,
@@ -91,9 +92,13 @@ where
     K: Hash + Eq + Copy + Send + 'static,
     Payload: Send + 'static,
 {
+    /// 向 worker 派发任务的发送端（多 worker 共享，故用 `mpsc`）。
     job_tx: mpsc::Sender<Job<K>>,
+    /// 回收已完成结果的接收端；用 `Arc<Mutex<..>>` 包裹以供多 worker 发送。
     result_rx: Arc<Mutex<mpsc::Receiver<JobResult<K, Payload>>>>,
+    /// 当前“仍然想要”的瓦片键集，worker 在抓取前据此门控取消。
     wanted: Arc<Mutex<HashSet<K>>>,
+    /// 各 worker 线程句柄（仅需保活；`shutdown` 依赖通道关闭使其自然退出）。
     _handles: Vec<thread::JoinHandle<()>>,
 }
 
@@ -337,11 +342,13 @@ mod tests {
 
     type TileKey = (u32, u32, u32);
 
+    /// 测试用解码器：非空数据原样返回为 `Some`，空数据返回 `None`（占位符）。
     fn test_decoder(data: &[u8]) -> Option<Vec<u8>> {
         if data.is_empty() { None } else { Some(data.to_vec()) }
     }
 
     #[test]
+    /// 验证给定 URL 命中 wanted 集且 fetch 成功时，任务被处理为 `Success`。
     fn pool_processes_job_successfully() {
         let mock = Arc::new(MockBackend::new());
         mock.add("http://tile/1", FetchResult::Ok(vec![1, 2, 3]));
@@ -371,6 +378,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证未加入 wanted 集的瓦片在抓取前被门控取消，产生 `Aborted`。
     fn pool_aborts_unwanted_tile() {
         let mock = Arc::new(MockBackend::new());
         let decode: Decoder<Vec<u8>> = Arc::new(test_decoder);
@@ -398,6 +406,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证连续 `Transient` 失败会重试至耗尽，最终报为 `Failed`。
     fn pool_retries_transient_failures() {
         let mock = Arc::new(MockBackend::new());
         mock.add(
@@ -430,6 +439,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证解码器返回 `None` 时判定为占位符瓦片，产生 `Placeholder`。
     fn pool_detects_placeholder() {
         let mock = Arc::new(MockBackend::new());
         mock.add("http://tile/ph", FetchResult::Ok(vec![0, 0, 0]));
@@ -460,12 +470,14 @@ mod tests {
     }
 
     #[test]
+    /// 编译期断言 `UreqBackend` 满足 `Send + Sync`（跨线程共享前提）。
     fn ureq_backend_is_send_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<UreqBackend>();
     }
 
     #[test]
+    /// 验证退避计算对移位与上限做饱和，不会溢出或无界休眠。
     fn backoff_for_caps_shift_and_ceiling() {
         // L1 review fix：受限的移位（不会 `1u32 << attempt` 溢出）+ 合理的
         // 上限，这样一个巨大的尝试次数不会休眠数小时。

@@ -1,4 +1,4 @@
-//! Widgets/HomeButtonSpec.js, FullscreenButtonSpec.js, NavigationHelpButtonSpec.js, VRButtonSpec.js
+//! Widgets/HomeButtonSpec, FullscreenButtonSpec, NavigationHelpButtonSpec, VRButtonSpec
 //! → Rust integration tests
 
 use cesium_widgets::{

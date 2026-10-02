@@ -1,6 +1,6 @@
 //! 椭球大地线（椭球上的大圆路径）。
 //!
-//! 忠实移植自 CesiumJS `EllipsoidGeodesic.js`，它使用 Vincenty 反算公式
+//! 使用 Vincenty 反算公式
 //! 计算两个测绘坐标点之间的表面距离和方位角，并使用一个级数展开
 //! 在给定表面距离处插值中间点。
 
@@ -11,21 +11,37 @@ use crate::math_utils::EPSILON12;
 /// 大地线级数展开的预计算常量。
 #[derive(Debug, Clone, Default)]
 struct GeodesicConstants {
+    /// 长半轴（最大曲率半径，赤道半径，米）。
     a: f64,
+    /// 短半轴（最小曲率半径，极半径，米）。
     b: f64,
+    /// 扁率 `f = (a - b) / a`。
     f: f64,
+    /// 起始方位角的余弦。
     cosine_heading: f64,
+    /// 起始方位角的正弦。
     sine_heading: f64,
+    /// 约化纬度的余弦。
     cosine_u: f64,
+    /// 约化纬度的正弦。
     sine_u: f64,
+    /// 球面辅助长度 σ（起始值）。
     sigma: f64,
+    /// 赤道方位角的正弦。
     sine_alpha: f64,
+    /// 赤道方位角余弦的平方。
     cosine_squared_alpha: f64,
+    /// 赤道方位角的余弦。
     cosine_alpha: f64,
+    /// 级数系数 `u²/4`。
     u2_over4: f64,
+    /// 级数系数 `u⁴/16`。
     u4_over16: f64,
+    /// 级数系数 `u⁶/64`。
     u6_over64: f64,
+    /// 级数系数 `u⁸/256`。
     u8_over256: f64,
+    /// 归一化距离比值（用于插值反推 σ）。
     distance_ratio: f64,
 }
 
@@ -34,21 +50,45 @@ struct GeodesicConstants {
 /// 映射到 CesiumJS `EllipsoidGeodesic`。
 #[derive(Debug, Clone)]
 pub struct EllipsoidGeodesic {
+    /// 起点（高度已置 0）。
     start: Cartographic,
+    /// 终点（高度已置 0）。
     end: Cartographic,
+    /// 起点处的方位角（弧度）。
     start_heading: f64,
+    /// 终点处的方位角（弧度）。
     end_heading: f64,
+    /// 两点间的表面距离（米）。
     distance: f64,
+    /// 预计算的级数展开常量。
     constants: GeodesicConstants,
+    /// 椭球最大半径（米）。
     maximum_radius: f64,
+    /// 椭球最小半径（米）。
     minimum_radius: f64,
 }
 
+/// 计算 Vincenty 公式中的辅助量 `C`。
+///
+/// # 参数
+/// - `f`：扁率；`cosine_squared_alpha`：赤道方位角余弦的平方。
+///
+/// # 返回
+/// `f·cos²α·(4 + f·(4 - 3cos²α)) / 16`。
 fn compute_c(f: f64, cosine_squared_alpha: f64) -> f64 {
     f * cosine_squared_alpha * (4.0 + f * (4.0 - 3.0 * cosine_squared_alpha)) / 16.0
 }
 
 #[allow(clippy::too_many_arguments)]
+/// 计算经度修正量 `Δλ`（Vincenty 反算级数项）。
+///
+/// # 参数
+/// - `f`：扁率；`sine_alpha`/`cosine_squared_alpha`：赤道方位角量。
+/// - `sigma`/`sine_sigma`/`cosine_sigma`：球面辅助角及其三角值。
+/// - `cosine_twice_sigma_midpoint`：中点处 `cos(2σₘ)`。
+///
+/// # 返回
+/// `(1 - C)·f·sinα` 乘以一个含 σ 与中点余弦的级数，即 Δλ。
 fn compute_delta_lambda(
     f: f64,
     sine_alpha: f64,
@@ -72,22 +112,43 @@ fn compute_delta_lambda(
 
 /// Vincenty 反算公式的结果。
 struct VincentyResult {
+    /// 两点间的椭球表面距离（米）。
     distance: f64,
+    /// 起点方位角（弧度）。
     start_heading: f64,
+    /// 终点方位角（弧度）。
     end_heading: f64,
+    /// `u² = cos²α·(a² - b²)/b²`，供级数展开使用。
     u_squared: f64,
 }
 
 /// 收敛迭代所产生的中间值。
 struct VincentyIteration {
+    /// 收敛时的球面辅助角 σ。
     sigma: f64,
+    /// σ 的正弦。
     sine_sigma: f64,
+    /// σ 的余弦。
     cosine_sigma: f64,
+    /// 赤道方位角余弦的平方。
     cosine_squared_alpha: f64,
+    /// 中点处 `cos(2σₘ)`。
     cosine_twice_sigma_midpoint: f64,
+    /// 收敛后的经度差 λ。
     lambda: f64,
 }
 
+/// 用 Vincenty 反算公式求椭球上两点间的距离与方位角。
+///
+/// 迭代求解经度差 λ 直到收敛，再由级数展开得到精确弧长。
+///
+/// # 参数
+/// - `major`/`minor`：椭球长/短半轴（米）。
+/// - `first_longitude`/`first_latitude`：起点经纬度（弧度）。
+/// - `second_longitude`/`second_latitude`：终点经纬度（弧度）。
+///
+/// # 返回
+/// 含表面距离、起/止方位角与 `u²` 的 `VincentyResult`。
 fn vincenty_inverse_formula(
     major: f64,
     minor: f64,
@@ -96,9 +157,11 @@ fn vincenty_inverse_formula(
     second_longitude: f64,
     second_latitude: f64,
 ) -> VincentyResult {
+    // 扁率与经度差 L。
     let eff = (major - minor) / major;
     let l = second_longitude - first_longitude;
 
+    // 约化纬度 U1/U2：将大地纬度压缩到辅助球上。
     let u1 = ((1.0 - eff) * first_latitude.tan()).atan();
     let u2 = ((1.0 - eff) * second_latitude.tan()).atan();
 
@@ -107,6 +170,7 @@ fn vincenty_inverse_formula(
     let cosine_u2 = u2.cos();
     let sine_u2 = u2.sin();
 
+    // 预存四个约化纬度的正弦/余弦乘积组合，供迭代复用。
     let cc = cosine_u1 * cosine_u2;
     let cs = cosine_u1 * sine_u2;
     let ss = sine_u1 * sine_u2;
@@ -114,6 +178,7 @@ fn vincenty_inverse_formula(
 
     let mut lambda = l;
 
+    // 反复更新 λ 直至相邻两次差值小于容差（不动点迭代）。
     let iter = loop {
         let cosine_lambda = lambda.cos();
         let sine_lambda = lambda.sin();
@@ -123,6 +188,7 @@ fn vincenty_inverse_formula(
             (cosine_u2 * cosine_u2 * sine_lambda * sine_lambda + temp * temp).sqrt();
         let cosine_sigma = ss + cc * cosine_lambda;
 
+        // σ：球面辅助角，由正弦/余弦联合定象限。
         let sigma = sine_sigma.atan2(cosine_sigma);
 
         let (sine_alpha, cosine_squared_alpha) = if sine_sigma == 0.0 {
@@ -206,6 +272,16 @@ fn vincenty_inverse_formula(
     }
 }
 
+/// 为插值预计算大地线级数展开常量。
+///
+/// # 参数
+/// - `start`：起点大地坐标（高度应为 0）。
+/// - `start_heading`：起点方位角（弧度）。
+/// - `u_squared`：由 Vincenty 反算得到的 `u²`。
+/// - `maximum_radius`/`minimum_radius`：椭球长/短半轴（米）。
+///
+/// # 返回
+/// 汇总余弦/正弦、σ、级数系数与距离比值的 `GeodesicConstants`。
 fn set_constants(
     start: &Cartographic,
     start_heading: f64,
@@ -220,6 +296,7 @@ fn set_constants(
     let cosine_heading = start_heading.cos();
     let sine_heading = start_heading.sin();
 
+    // 由起点纬度求约化纬度正切，进而得 σ₁ 与赤道方位角。
     let tan_u = (1.0 - f) * start.latitude.tan();
 
     let cosine_u = 1.0 / (1.0 + tan_u * tan_u).sqrt();
@@ -238,6 +315,7 @@ fn set_constants(
     let u6_over64 = u4_over16 * u2_over4;
     let u8_over256 = u4_over16 * u4_over16;
 
+    // 级数系数 a0..a3 用于把弧长展开成 σ 的三角级数。
     let a0 = 1.0 + u2_over4 - 3.0 * u4_over16 / 4.0 + 5.0 * u6_over64 / 4.0
         - 175.0 * u8_over256 / 64.0;
     let a1 = 1.0 - u2_over4 + 15.0 * u4_over16 / 8.0 - 35.0 * u6_over64 / 8.0;
@@ -350,6 +428,12 @@ impl EllipsoidGeodesic {
     }
 
     /// 在大地上按给定比例（0..1）插值一个点。
+    ///
+    /// # 参数
+    /// - `fraction`：沿总表面距离的比例。
+    ///
+    /// # 返回
+    /// 对应比例处的 `Cartographic` 点。
     pub fn interpolate_using_fraction(&self, fraction: f64) -> Cartographic {
         self.interpolate_using_surface_distance(self.distance * fraction)
     }
@@ -433,6 +517,7 @@ mod tests {
     use super::*;
     use crate::math_utils::to_radians;
 
+    /// 赤道上 1° 弧长应约等于 半径×角（弧度）。
     #[test]
     fn test_surface_distance_equator() {
         // WGS84 赤道上 1 度约 111319.49 米
@@ -448,6 +533,7 @@ mod tests {
         );
     }
 
+    /// 赤道两点间中点插值：经度应为半程、纬度为 0。
     #[test]
     fn test_interpolate_midpoint() {
         let ell = Ellipsoid::WGS84;
@@ -463,6 +549,7 @@ mod tests {
         assert!(mid.latitude.abs() < 1e-6, "mid lat {}", mid.latitude);
     }
 
+    /// 端点插值：距离 0 与全长应分别还原起点与终点。
     #[test]
     fn test_interpolate_endpoints() {
         let ell = Ellipsoid::WGS84;

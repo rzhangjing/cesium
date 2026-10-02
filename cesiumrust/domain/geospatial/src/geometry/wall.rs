@@ -1,7 +1,6 @@
 //! 围墙几何 —— 在顶部与底部高度之间垂直拉伸出的幕帘。
 //!
-//! 对 CesiumJS `WallGeometryLibrary.js`、`WallGeometry.js` 与
-//! `WallOutlineGeometry.js` 的忠实移植。围墙由一系列表面位置定义，
+//! 围墙由一系列表面位置定义，
 //! 它们在最小和最大高度之间垂直拉伸。相邻位置之间的弧沿大地线细分（参见
 //! [`crate::polyline_pipeline`]）。
 
@@ -34,6 +33,14 @@ pub struct WallOptions {
 impl WallOptions {
     /// 由恒定的顶部/底部高度创建一个围墙（镜像
     /// `WallGeometry.fromConstantHeights`）。
+    ///
+    /// # 参数
+    /// - `positions`：围墙表面位置（≥2）。
+    /// - `minimum_height`/`maximum_height`：恒定的底/顶高度；`None` 分别退化为 0 与逐点自身高度。
+    /// - `ellipsoid`：参考椭球。
+    ///
+    /// # 返回
+    /// 各位置共享同一顶/底高度的 `WallOptions`。
     pub fn from_constant_heights(
         positions: Vec<DVec3>,
         minimum_height: Option<f64>,
@@ -54,6 +61,7 @@ impl WallOptions {
 }
 
 impl Default for WallOptions {
+    /// 默认围墙选项：空位置、无顶/底高度、默认粒度、WGS84 椭球。
     fn default() -> Self {
         Self {
             positions: Vec::new(),
@@ -67,16 +75,33 @@ impl Default for WallOptions {
 
 /// 去重后的清理位置。
 struct CleanedPositions {
+    /// 去重后的位置序列（与下方两个高度数组一一对应）。
     positions: Vec<DVec3>,
+    /// 每个位置的顶部高度（米）。
     top_heights: Vec<f64>,
+    /// 每个位置的底部高度（米）。
     bottom_heights: Vec<f64>,
 }
 
+/// 比较两个大地坐标的经/纬度是否在容差内相等（忽略高度）。
+///
+/// # 参数
+/// - `c0`/`c1`：待比较的大地坐标。
+///
+/// # 返回
+/// 纬度与经度差均不超过 `EPSILON10` 时返回 `true`。
 fn lat_lon_equals(c0: &Cartographic, c1: &Cartographic) -> bool {
     (c0.latitude - c1.latitude).abs() <= EPSILON10
         && (c0.longitude - c1.longitude).abs() <= EPSILON10
 }
 
+/// 判断两个笛卡尔坐标是否在各分量上于 `EPSILON10` 内相等。
+///
+/// # 参数
+/// - `a`/`b`：待比较的三维点。
+///
+/// # 返回
+/// 三分量绝对差均不超过容差时返回 `true`。
 fn cartesian_equals_epsilon(a: DVec3, b: DVec3) -> bool {
     (a.x - b.x).abs() <= EPSILON10
         && (a.y - b.y).abs() <= EPSILON10
@@ -86,6 +111,13 @@ fn cartesian_equals_epsilon(a: DVec3, b: DVec3) -> bool {
 /// 移除连续重复的位置（并合并共享相同经/纬度的位置的高度）。
 ///
 /// 映射到 `WallGeometryLibrary` 的私有 `removeDuplicates`。
+///
+/// # 参数
+/// - `ellipsoid`：参考椭球，用于笛卡尔↔大地坐标转换。
+/// - `positions`/`top_heights`/`bottom_heights`：原始位置与逐点顶/底高度。
+///
+/// # 返回
+/// 去重并合并同经纬度高度后的清理位置；不足 2 点或全退化时返回 `None`。
 fn remove_duplicates(
     ellipsoid: &Ellipsoid,
     positions: &[DVec3],
@@ -105,6 +137,7 @@ fn remove_duplicates(
         return None;
     }
 
+    // 是否提供逐点底/顶高度；缺省则底部按 0 处理。
     let has_bottom = bottom_heights.is_some();
     let has_top = top_heights.is_some();
 
@@ -122,6 +155,7 @@ fn remove_duplicates(
     cleaned_top.push(c0.height);
     cleaned_bottom.push(if has_bottom { bottom_heights.unwrap()[0] } else { 0.0 });
 
+    // 首点若顶==底，则初始认为“全等高”，后续任一点打破即置假。
     let start_top = cleaned_top[0];
     let start_bottom = cleaned_bottom[0];
     let mut has_all_same_heights = (start_top - start_bottom).abs() < f64::EPSILON;
@@ -159,6 +193,11 @@ fn remove_duplicates(
     })
 }
 
+/// 将高度近 0 时持续收窄“全等高”标志。
+///
+/// # 参数
+/// - `flag`：当前“所有顶/底高度相等”的累计标志（原地更新）。
+/// - `height`：待测高度。
 #[inline]
 fn has_all_same_heigths_check(flag: &mut bool, height: f64) {
     *flag = *flag && height.abs() < f64::EPSILON;
@@ -166,8 +205,11 @@ fn has_all_same_heigths_check(flag: &mut bool, height: f64) {
 
 /// [`compute_positions`] 的结果。
 struct WallPositions {
+    /// 细分后的顶部位置序列。
     top_positions: Vec<DVec3>,
+    /// 与顶部逐点对应的底部位置序列。
     bottom_positions: Vec<DVec3>,
+    /// 角点数量（去重后位置数 - 2），用于计算 UV 步长。
     num_corners: usize,
 }
 
@@ -176,6 +218,16 @@ struct WallPositions {
 /// 映射到 `WallGeometryLibrary.computePositions`。当 `duplicate_corners` 为
 /// true（实心几何）时，每段独立细分，因此角点会被重复以获得正确的逐面法线；
 /// 为 false（线框）时，整条路径作为单条弧细分。
+///
+/// # 参数
+/// - `ellipsoid`：参考椭球。
+/// - `wall_positions`：围墙路径位置。
+/// - `maximum_heights`/`minimum_heights`：逐点顶/底高度。
+/// - `granularity`：大地线细分角度（弧度）。
+/// - `duplicate_corners`：是否按段重复角点（实心为 true）。
+///
+/// # 返回
+/// 细分后的顶/底位置数组与角点数；退化输入返回 `None`。
 fn compute_positions(
     ellipsoid: &Ellipsoid,
     wall_positions: &[DVec3],
@@ -190,14 +242,17 @@ fn compute_positions(
     let maximum_heights = cleaned.top_heights;
     let minimum_heights = cleaned.bottom_heights;
 
+    // 去重后的点数；角点数 = 总点数减 2（首尾非角）。
     let length = wall_positions.len();
     let num_corners = length - 2;
 
+    // 实心：逐段独立细分以重复角点；线框：整条路径一次细分。
     let (top_positions, bottom_positions) = if duplicate_corners {
         let mut top_positions: Vec<DVec3> = Vec::new();
         let mut bottom_positions: Vec<DVec3> = Vec::new();
 
         for i in 0..length - 1 {
+            // 取出相邻两点作为一段，分别按顶/底高度生成大地线弧。
             let seg_positions = [wall_positions[i], wall_positions[i + 1]];
 
             let top_heights = [maximum_heights[i], maximum_heights[i + 1]];
@@ -248,6 +303,13 @@ fn compute_positions(
 /// 生成一个实心围墙几何。
 ///
 /// 映射到 CesiumJS `WallGeometry.createGeometry`。
+///
+/// # 参数
+/// - `options`：围墙选项（位置、逐点顶/底高度、粒度、椭球）。
+/// - `vf`：顶点格式，控制是否生成法线/切线/副切线/UV。
+///
+/// # 返回
+/// 顶部与底部之间垂直拉伸、逐面法线的三角幕帘 `GeometryData`。
 pub fn wall_geometry(options: &WallOptions, vf: VertexFormat) -> GeometryData {
     let ellipsoid = &options.ellipsoid;
     let pos = compute_positions(
@@ -275,11 +337,14 @@ pub fn wall_geometry(options: &WallOptions, vf: VertexFormat) -> GeometryData {
     let mut bitangents: Option<Vec<[f64; 3]>> = if vf.bitangent { Some(Vec::new()) } else { None };
     let mut tex_coords: Option<Vec<[f64; 2]>> = if vf.st { Some(Vec::new()) } else { None };
 
+    // 逐面法线/切线状态；recompute_normal 在遇到角点重复时置真以重算。
+    // s 为沿路径累积的 U 纹理坐标。
     let mut normal = DVec3::ZERO;
     let mut tangent = DVec3::ZERO;
     let mut bitangent = DVec3::ZERO;
     let mut recompute_normal = true;
     let mut s = 0.0f64;
+    // U 方向单步增量：总弧长数 = 顶点数 - 角点数 - 1。
     let ds = if length > num_corners + 1 {
         1.0 / (length - num_corners - 1) as f64
     } else {
@@ -290,24 +355,29 @@ pub fn wall_geometry(options: &WallOptions, vf: VertexFormat) -> GeometryData {
         let top_position = top_positions[i];
         let bottom_position = bottom_positions[i];
 
+        // 底、顶两点成对入列，共享同一 U、V 分别为 0/1。
         positions.push([bottom_position.x, bottom_position.y, bottom_position.z]);
         positions.push([top_position.x, top_position.y, top_position.z]);
 
+        // 底部/顶部分别写 V=0/1，U 取当前累积值 s。
         if let Some(ref mut st) = tex_coords {
             st.push([s, 0.0]);
             st.push([s, 1.0]);
         }
 
+        // 仅当请求了朝向相关属性时才计算法线/切线/副切线。
         if normals.is_some() || tangents.is_some() || bitangents.is_some() {
             let mut next_top = DVec3::ZERO;
             let surface_normal = ellipsoid
                 .geodetic_surface_normal(top_position)
                 .unwrap_or(DVec3::Z);
+            // 内侧地面点：沿法线向内一个单位，用于构成面平面。
             let ground_position = top_position - surface_normal;
             if i + 1 < length {
                 next_top = top_positions[i + 1];
             }
 
+            // 由 (地表内侧→下一顶部) 两向量叉积求该面朝向外的法线。
             if recompute_normal {
                 let scaled_next = next_top - top_position;
                 let scaled_ground = ground_position - top_position;
@@ -315,6 +385,7 @@ pub fn wall_geometry(options: &WallOptions, vf: VertexFormat) -> GeometryData {
                 recompute_normal = false;
             }
 
+            // 角点处顶/下一顶重合：标记需重算；否则推进 U 并更新切线/副切线。
             if cartesian_equals_epsilon(top_position, next_top) {
                 recompute_normal = true;
             } else {
@@ -355,6 +426,7 @@ pub fn wall_geometry(options: &WallOptions, vf: VertexFormat) -> GeometryData {
             i += 2;
             continue;
         }
+        // 四边形 (ll,lr,ul,ur) → 三角形 (ul,ll,ur) 与 (ur,ll,lr)。
         let ul = i + 1;
         let ur = i + 3;
         indices.extend_from_slice(&[ul as u32, ll as u32, ur as u32]);
@@ -362,6 +434,7 @@ pub fn wall_geometry(options: &WallOptions, vf: VertexFormat) -> GeometryData {
         i += 2;
     }
 
+    // 由全部交错顶点拟合包围球，供剔除与相交测试。
     let bounding_sphere = BoundingSphere::from_points(
         &positions.iter().map(|p| DVec3::new(p[0], p[1], p[2])).collect::<Vec<_>>(),
     );
@@ -378,9 +451,13 @@ pub fn wall_geometry(options: &WallOptions, vf: VertexFormat) -> GeometryData {
     }
 }
 
-/// 生成一个围墙线框几何（线段序列）。
-///
 /// 映射到 CesiumJS `WallOutlineGeometry.createGeometry`。
+///
+/// # 参数
+/// - `options`：围墙选项；顶/底位置整条路径作为单条弧细分。
+///
+/// # 返回
+/// 勾勒围墙左右竖边与顶底边的线段 `GeometryData`（`Lines` 拓扑）。
 pub fn wall_outline_geometry(options: &WallOptions) -> GeometryData {
     let ellipsoid = &options.ellipsoid;
     let pos = compute_positions(
@@ -402,6 +479,7 @@ pub fn wall_outline_geometry(options: &WallOptions) -> GeometryData {
 
     // 交错底部（偶数）和顶部（奇数）。
     let mut positions: Vec<[f64; 3]> = Vec::with_capacity(length * 2);
+    // 线框同样底/顶交错存放，便于按列取竖边。
     for i in 0..length {
         let bp = bottom_positions[i];
         let tp = top_positions[i];
@@ -421,6 +499,7 @@ pub fn wall_outline_geometry(options: &WallOptions) -> GeometryData {
             i += 2;
             continue;
         }
+        // 每列发射三条边：左竖边、顶边、底边。
         let ul = i + 1;
         let ur = i + 3;
         // 左侧竖边、顶边、底边。
@@ -451,6 +530,10 @@ pub fn wall_outline_geometry(options: &WallOptions) -> GeometryData {
     }
 }
 
+/// 构造一个位置/索引皆空的几何（退化输入的兜底返回值）。
+///
+/// # 参数
+/// - `primitive_type`：回退时使用的拓扑（三角形或线段）。
 fn empty_geometry(primitive_type: PrimitiveType) -> GeometryData {
     GeometryData {
         positions: Vec::new(),
@@ -468,6 +551,7 @@ fn empty_geometry(primitive_type: PrimitiveType) -> GeometryData {
 mod tests {
     use super::*;
 
+    /// 构造一个 4 点、0~10000m 恒定高度的测试围墙选项。
     fn wall_options() -> WallOptions {
         let ell = Ellipsoid::WGS84;
         let positions = vec![
@@ -479,6 +563,7 @@ mod tests {
         WallOptions::from_constant_heights(positions, Some(0.0), Some(10000.0), ell)
     }
 
+    /// 基础用例：实心围墙生成三角、位置成偶数（底/顶交错）且法线/UV 数量与位置匹配。
     #[test]
     fn test_wall_geometry_basic() {
         let geo = wall_geometry(&wall_options(), VertexFormat::ALL);
@@ -491,6 +576,7 @@ mod tests {
         assert_eq!(geo.tex_coords.as_ref().unwrap().len(), geo.positions.len());
     }
 
+    /// 高度校验：偶数位为底部(~0m)、奇数位为顶部(~10000m)。
     #[test]
     fn test_wall_heights_correct() {
         let ell = Ellipsoid::WGS84;
@@ -506,6 +592,7 @@ mod tests {
         }
     }
 
+    /// 线框用例：索引成对且全部落在顶点范围内。
     #[test]
     fn test_wall_outline_basic() {
         let geo = wall_outline_geometry(&wall_options());
@@ -519,6 +606,7 @@ mod tests {
         }
     }
 
+    /// 退化输入：所有顶高为 0 时围墙退化，返回空几何。
     #[test]
     fn test_wall_degenerate_all_zero_heights() {
         // 当所有顶部高度都为 0 时，CesiumJS 认为围墙是退化的。
@@ -532,6 +620,7 @@ mod tests {
         assert!(geo.positions.is_empty());
     }
 
+    /// 退化输入：位置不足 2 个时返回空几何。
     #[test]
     fn test_wall_too_few_positions() {
         let ell = Ellipsoid::WGS84;

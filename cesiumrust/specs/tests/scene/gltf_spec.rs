@@ -1,4 +1,4 @@
-//! Scene/GltfLoaderSpec.js, ModelSpec.js → Rust integration tests
+//! Scene/GltfLoaderSpec, ModelSpec → Rust integration tests
 
 use cesium_gltf::{GltfModel, AccessorType, ComponentType, AlphaMode, PrimitiveMode};
 

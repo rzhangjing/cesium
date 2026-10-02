@@ -18,6 +18,10 @@ use crate::tile_mesh::GlobeTile;
 pub struct TileLoaderPlugin;
 
 impl Plugin for TileLoaderPlugin {
+    /// 插件装配入口：初始化加载状态资源，挂载启动下载与更新应纹理系统。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用。
     fn build(&self, app: &mut App) {
         app.init_resource::<TileLoadState>()
             .add_systems(Startup, spawn_tile_downloads)
@@ -31,12 +35,16 @@ const ZOOM: u32 = 3;
 /// 追踪逐瓦片加载进度（per-tile）的资源。
 #[derive(Resource)]
 struct TileLoadState {
+    /// 已下载瓦片结果的接收端（后台线程→主线程）；尚未启动时为 `None`。
     receiver: Mutex<Option<mpsc::Receiver<TileResult>>>,
+    /// 已接收并应用的瓦片数。
     tiles_received: u32,
+    /// 本层级应下载的总瓦片数。
     total_tiles: u32,
 }
 
 impl Default for TileLoadState {
+    /// 默认：接收端置空，计数器归零，总瓦片数按 ZOOM 层级算为 (2^ZOOM)^2。
     fn default() -> Self {
         let num_tiles = 1u32 << ZOOM;
         Self {
@@ -49,23 +57,30 @@ impl Default for TileLoadState {
 
 /// 单块瓦片下载的结果。
 struct TileResult {
+    /// 瓦片列索引 x。
     x: u32,
+    /// 瓦片行索引 y。
     y: u32,
+    /// 瓦片层级 z。
     z: u32,
     /// RGBA 像素数据（256x256）。
     rgba_data: Vec<u8>,
+    /// 纹理宽度（像素）。
     width: u32,
+    /// 纹理高度（像素）。
     height: u32,
 }
 
 /// 生成一个后台线程，在配置的缩放级别下载所有高德卫星瓦片。
 fn spawn_tile_downloads(state: ResMut<TileLoadState>) {
+    // 创建无界通道，将接收端存回资源供主线程轮询。
     let (tx, rx) = mpsc::channel();
     *state.receiver.lock().unwrap() = Some(rx);
 
     std::thread::spawn(move || {
         let num_tiles = 1u32 << ZOOM;
 
+        // 复用一个带 UA 与 15s 超时的 ureq agent，避免每请求重建连接。
         let agent = ureq::AgentBuilder::new()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) CesiumRust/0.1")
             .timeout(std::time::Duration::from_secs(15))
@@ -131,6 +146,7 @@ fn apply_tile_textures(
     tile_query: Query<(&GlobeTile, &MeshMaterial3d<StandardMaterial>)>,
 ) {
     // 尝试接收所有可用结果（非阻塞，批量）
+    // 未启动下载（receiver 为 None）时直接返回。
     let results: Vec<TileResult> = {
         let guard = state.receiver.lock().unwrap();
         match &*guard {
@@ -165,6 +181,7 @@ fn apply_tile_textures(
         let texture_handle = images.add(texture);
 
         // 找到匹配的地球瓦片实体并更新其材质
+        // 按 (x,y,z) 匹配 GlobeTile 组件，命中则换纹理并跳出。
         for (globe_tile, mat_handle) in tile_query.iter() {
             if globe_tile.x == result.x && globe_tile.y == result.y && globe_tile.z == result.z {
                 if let Some(material) = materials.get_mut(mat_handle) {

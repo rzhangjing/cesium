@@ -1,9 +1,8 @@
 //! `data:` URI 方案的解析与解码。
 //!
-//! 映射到 CesiumJS `Resource.js` 的 data URI 处理：
-//! - `dataUriRegex`（`/^data:(.*?)(;base64)?,(.*)$/`）提取。
-//! - `decodeDataUri(match, responseType)` 的 text/arraybuffer 分支。
-//! - `Resource.prototype.isDataUri` 属性。
+//! 解析 `data:` URI 的媒体类型、base64 标记与负载，并按
+//! 目标响应类型分别走 base64 或百分号解码分支。
+//! 提供识别（是否为 data URI）、拆解、解码与反向构造。
 //!
 //! 同时支持 base64 编码与百分号编码（纯文本）的负载。
 //! 本模块是 **纯领域逻辑** —— 无 IO，无框架依赖。
@@ -34,6 +33,7 @@ pub enum DataUriError {
 }
 
 impl std::fmt::Display for DataUriError {
+    /// 将每种解码/解析错误渲染为一句人类可读的英文说明。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NotaDataUri => write!(f, "URI does not start with 'data:'"),
@@ -48,14 +48,15 @@ impl std::error::Error for DataUriError {}
 
 /// 若给定的 URL 字符串是 `data:` URI 则返回 `true`。
 ///
-/// 映射到 CesiumJS `isDataUri(url)` / `Resource.prototype.isDataUri`。
+/// 忽略前导空白后检查是否以 `data:` 方案开头。
 pub fn is_data_uri(url: &str) -> bool {
     url.trim_start().starts_with("data:")
 }
 
 /// 将 `data:` URI 解析为其组成部分，但不解码负载。
 ///
-/// 镜像 CesiumJS 的正则匹配：`/^data:(.*?)(;base64)?,(.*)$/`
+/// 拆解规则等价于正则 `/^data:(.*?)(;base64)?,(.*)$/`：
+/// 逗号之前为元数据（媒体类型 + 可选 `;base64` 后缀），之后为负载。
 ///
 /// # 示例
 /// ```
@@ -99,9 +100,10 @@ pub fn parse_data_uri(uri: &str) -> Result<DataUriParts, DataUriError> {
 /// 同时处理 base64 与百分号编码的负载。对于百分号编码的
 /// 负载，解码后的字节是百分号解码字符串的 UTF-8 表示。
 ///
-/// 映射到 CesiumJS `decodeDataUriArrayBuffer`（arraybuffer/blob 分支）。
+/// 对应 arraybuffer/blob 响应分支：按字节返回解码后的负载。
 pub fn decode_data_uri_bytes(uri: &str) -> Result<Vec<u8>, DataUriError> {
     let parts = parse_data_uri(uri)?;
+    // base64 负载直接解字节；否则先百分号解码再取 UTF-8 字节
     if parts.is_base64 {
         base64_decode(&parts.raw_payload)
     } else {
@@ -114,7 +116,7 @@ pub fn decode_data_uri_bytes(uri: &str) -> Result<Vec<u8>, DataUriError> {
 /// 对于 base64 负载，解码后的字节按 UTF-8 解释（有损）。
 /// 对于百分号编码的负载，结果为百分号解码后的字符串。
 ///
-/// 映射到 CesiumJS `decodeDataUriText`（text 分支）。
+/// 对应 text 响应分支：以 UTF-8 字符串返回解码后的负载。
 pub fn decode_data_uri_text(uri: &str) -> Result<String, DataUriError> {
     let parts = parse_data_uri(uri)?;
     if parts.is_base64 {
@@ -131,6 +133,7 @@ pub fn decode_data_uri_text(uri: &str) -> Result<String, DataUriError> {
 /// （RFC 2397 将 `text/plain;charset=US-ASCII` 指定为默认值）。
 pub fn media_type_of(uri: &str) -> Option<String> {
     parse_data_uri(uri).ok().map(|parts| {
+        // 媒体类型缺省时回退到 RFC 2397 默认的 text/plain
         if parts.media_type.is_empty() {
             "text/plain".to_string()
         } else {
@@ -143,21 +146,23 @@ pub fn media_type_of(uri: &str) -> Option<String> {
 
 /// 解码字符串中的百分号编码字符（`%XX`）。
 ///
-/// 映射到 JavaScript `decodeURIComponent`。与 JS 不同，非法序列会被
-/// 原样透传而非抛错（增强对现实中格式错误的 data URI 的健壮性）。
+/// 语义对齐 Web 标准的 `decodeURIComponent`。与之不同的是，非法的
+/// 转义序列会被原样透传而非抛错（增强对现实中格式错误的 data URI 的健壮性）。
 pub fn percent_decode(input: &str) -> String {
     let bytes = input.as_bytes();
     let mut result = Vec::with_capacity(bytes.len());
     let mut i = 0;
 
     while i < bytes.len() {
+        // 遇到 '%' 且后接两个字符时，尝试把其后两位解析为十六进制字节
         if bytes[i] == b'%' && i + 2 < bytes.len() {
             if let Some(byte) = hex_pair_to_byte(bytes[i + 1], bytes[i + 2]) {
                 result.push(byte);
-                i += 3;
+                i += 3; // 消费掉 "%XX" 三字符
                 continue;
             }
         }
+        // 非转义序列（或非法转义）原样透传当前字节
         result.push(bytes[i]);
         i += 1;
     }
@@ -167,17 +172,19 @@ pub fn percent_decode(input: &str) -> String {
 
 /// 对 URI 组件进行百分号编码。
 ///
-/// 映射到 JavaScript `encodeURIComponent`。未保留字符
+/// 语义对齐 Web 标准的 `encodeURIComponent`。未保留字符
 /// （`A-Z a-z 0-9 - _ . ! ~ * ' ( )`）原样透传；其余一切
 /// 均被百分号编码。
 pub fn percent_encode(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     for byte in input.bytes() {
         match byte {
+            // 未保留字符集原样保留
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'!' | b'~'
             | b'*' | b'\'' | b'(' | b')' => {
                 result.push(byte as char);
             }
+            // 其余字节一律编码为 %XX（大写十六进制）
             _ => {
                 result.push_str(&format!("%{:02X}", byte));
             }
@@ -188,6 +195,7 @@ pub fn percent_encode(input: &str) -> String {
 
 /// 将一对十六进制字符转换为字节值。
 fn hex_pair_to_byte(hi: u8, lo: u8) -> Option<u8> {
+    // 高 4 位来自第一个字符，低 4 位来自第二个字符
     let h = hex_val(hi)?;
     let l = hex_val(lo)?;
     Some((h << 4) | l)
@@ -205,10 +213,10 @@ fn hex_val(b: u8) -> Option<u8> {
 
 // ── Base64 解码 ─────────────────────────────────────────────────────────
 
-/// 极简 base64 解码器（镜像 `atob` 语义）。
+/// 极简 base64 解码器（对齐浏览器的 `atob` 语义）。
 ///
 /// 处理标准 base64 字母表（`A-Z a-z 0-9 + /`）与 `=` 填充。
-/// 空白字符会被静默跳过（镜像浏览器的宽松行为）。
+/// 空白字符会被静默跳过（沿用宽松解析行为）。
 ///
 /// 输入格式错误时返回 [`DataUriError::InvalidBase64`]。
 pub fn base64_decode(input: &str) -> Result<Vec<u8>, DataUriError> {
@@ -223,6 +231,7 @@ pub fn base64_decode(input: &str) -> Result<Vec<u8>, DataUriError> {
 
     let mut output = Vec::with_capacity(bytes.len() * 3 / 4);
 
+    // 按每 4 个字符一组（一个 base64 "quantum"）迭代解码
     for chunk in bytes.chunks(4) {
         if chunk.len() < 2 {
             return Err(DataUriError::InvalidBase64(
@@ -233,8 +242,10 @@ pub fn base64_decode(input: &str) -> Result<Vec<u8>, DataUriError> {
         // 统计填充
         let padding = chunk.iter().filter(|&&b| b == b'=').count();
 
+        // 把 4 个 6 位字符拼进一个 24 位缓冲区（高位在前）
         let mut buf: u32 = 0;
         for (i, &b) in chunk.iter().enumerate() {
+            // '=' 视为 0 值，其余按 base64 字母表映射为 6 位值
             let v = if b == b'=' {
                 0
             } else {
@@ -248,6 +259,7 @@ pub fn base64_decode(input: &str) -> Result<Vec<u8>, DataUriError> {
             buf |= (v as u32) << (18 - 6 * i);
         }
 
+        // 依填充数量决定本组实际输出 1~3 个字节
         output.push((buf >> 16) as u8);
         if padding < 2 {
             output.push((buf >> 8) as u8);
@@ -268,12 +280,14 @@ pub fn base64_encode(input: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = String::with_capacity(input.len().div_ceil(3) * 4);
 
+    // 每 3 字节一组，拼成一个 24 位值后按 6 位切分为 4 个 base64 字符
     for chunk in input.chunks(3) {
         let b0 = chunk[0] as u32;
         let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
         let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
         let triple = (b0 << 16) | (b1 << 8) | b2;
 
+        // 前两个字符始终输出；不足 3 字节时用 '=' 填充尾部
         result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
         result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
 
@@ -309,8 +323,8 @@ fn base64_char_value(b: u8) -> Option<u8> {
 
 /// 由媒体类型与原始字节构造一个 `data:` URI（base64 编码）。
 ///
-/// 适用于内联嵌入小资源（镜像 CesiumJS
-/// `createResourceFromDataUri` 辅助函数与测试 fixture 中使用的模式）。
+/// 适用于内联嵌入小资源（例如把测试 fixture 或离线生成的
+/// 二进制负载直接编码进 URI，免去外部文件依赖）。
 pub fn build_data_uri_base64(media_type: &str, data: &[u8]) -> String {
     format!("data:{};base64,{}", media_type, base64_encode(data))
 }

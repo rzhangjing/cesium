@@ -1,4 +1,4 @@
-//! 数组工具 - CesiumJS `Core/arrayRemoveDuplicates.js` 的忠实移植。
+//! 数组工具（相邻重复项去重等）。
 
 use crate::math_utils::EPSILON10;
 
@@ -33,6 +33,8 @@ pub fn array_remove_duplicates<T: Clone>(
 
     let mut v0_idx = 0usize;
 
+    // 从前到后扫描：以 v0_idx 为基准与当前项比较，相等则记入 removed_indices，
+    // 否则推进基准并把该值保留到 cleaned_values。
     for i in 1..length {
         if equals_epsilon(&values[v0_idx], &values[i], EPSILON10) {
             if cleaned_values.is_none() {

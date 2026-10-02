@@ -1,6 +1,8 @@
 //! 多边形几何库函数。
 //!
-//! 映射到 CesiumJS `Core/PolygonGeometryLibrary.js`
+//! 提供将跨越赤道（反子午线附近）的多边形拆分为若干部份的工具：
+//! 先按粒度对恒向线/大地线边细分，再找出所有与赤道平面相交的边并插入交点，
+//! 最后以交点为分隔递归地重新连线，把一个跨赤道的环拆为北/南两个不跨接的子环。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -13,8 +15,6 @@ use glam::DVec3;
 use std::f64::consts::PI;
 
 /// 多边形边的弧类型。
-///
-/// 映射到 CesiumJS `Core/ArcType.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ArcType {
     /// 直线（无弧）。
@@ -28,6 +28,14 @@ pub enum ArcType {
 /// 将两点 Cartesian3 之间的恒向线细分为一个扁平的位置数组。
 ///
 /// 映射到 CesiumJS `PolygonGeometryLibrary.subdivideRhumbLine`
+///
+/// # 参数
+/// - `ellipsoid`：参考椭球。
+/// - `p0`、`p1`：线段两端点（地心固定系）。
+/// - `min_distance`：目标最小段长（米），用于确定细分份数。
+///
+/// # 返回
+/// 扁平的 `[x,y,z,...]` 坐标数组；转换失败或已短于 `min_distance` 时仅含 `p0`。
 pub fn subdivide_rhumb_line(
     ellipsoid: &Ellipsoid,
     p0: DVec3,
@@ -84,6 +92,11 @@ struct EdgeOnPlane {
 }
 
 /// 计算一条大地线边与赤道的交点。
+///
+/// 把赤道视为过原点、法线为 +Z 的平面，求线段与该平面的交点并缩回椭球面。
+///
+/// # 返回
+/// 交点（地心固定系）；线段不穿过赤道平面时返回 `None`。
 fn compute_equator_intersection_geodesic(
     start: DVec3,
     end: DVec3,
@@ -96,6 +109,9 @@ fn compute_equator_intersection_geodesic(
 }
 
 /// 计算一条恒向线边与赤道的交点。
+///
+/// 仅当两端点纬度异号时才可能穿赤道；沿恒向线插值得到纬度 0 的交点后，
+/// 还需校验其经度落在两端点经度区间内（含跨国际日期变更线的交换处理）。
 fn compute_equator_intersection_rhumb(
     start: DVec3,
     end: DVec3,
@@ -130,6 +146,8 @@ fn compute_equator_intersection_rhumb(
 }
 
 /// 根据弧类型计算一条边与赤道的交点。
+///
+/// [`ArcType::Rhumb`] 走恒向线算法，其余（大地线/直线）走大地线平面交点算法。
 fn compute_equator_intersection(
     start: DVec3,
     end: DVec3,
@@ -143,6 +161,14 @@ fn compute_equator_intersection(
 }
 
 /// 找出所有与赤道平面相交的边，并将交点拼接进 positions 数组。
+///
+/// # 参数
+/// - `positions`：多边形环顶点；本函数会向其中插入新的赤道交点。
+/// - `ellipsoid`：参考椭球。
+/// - `arc_type`：边所遵循的弧类型。
+///
+/// # 返回
+/// 每条与赤道平面相交（或端点落在平面上）的边对应的 [`EdgeOnPlane`]，含交点索引、类型与排序用经度。
 fn compute_edges_on_plane(
     positions: &mut Vec<DVec3>,
     ellipsoid: &Ellipsoid,
@@ -204,6 +230,21 @@ fn compute_edges_on_plane(
 }
 
 /// 由位置和边信息递归地连线多边形。
+///
+/// 从 `start_index` 出发沿环逐点采集顶点，遇到已插入的赤道交点就跨过平面到另一侧
+/// 继续，从而把一个跨赤道环拆为属于当前半球的子多边形，并对未访问的交点递归地连线另一半。
+///
+/// # 参数
+/// - `polygons`：输出用的多边形环集合，本函数会就地替换/插入结果。
+/// - `polygon_index`：当前正在处理的 `polygons` 下标。
+/// - `positions`：含交点的完整顶点序列。
+/// - `edges_on_plane`：赤道交点边集合（就地标记 `visited`）。
+/// - `to_delete`：替换时需删除的旧环数量。
+/// - `start_index`：本轮连线在 `positions` 中的起始下标。
+/// - `above_plane`：当前子环是否位于北半球（决定遍历方向与跟边条件）。
+///
+/// # 返回
+/// 下一个待处理多边形在 `polygons` 中的下标。
 #[allow(clippy::too_many_arguments)]
 fn wire_polygon(
     polygons: &mut Vec<Vec<DVec3>>,
@@ -230,6 +271,7 @@ fn wire_polygon(
         polygon.push(position);
 
         let edge_index = edges_on_plane.iter().position(|e| e.position == i);
+        // 若当前位置不是交点，则直接前进到下一个顶点。
         let edge = match edge_index {
             Some(idx) => idx,
             None => {
@@ -329,6 +371,14 @@ fn wire_polygon(
 /// 沿赤道拆分一个多边形数组。
 ///
 /// 映射到 CesiumJS `PolygonGeometryLibrary.splitPolygonsOnEquator`
+///
+/// # 参数
+/// - `outer_rings`：各多边形外环（地心固定系顶点序列）。
+/// - `ellipsoid`：参考椭球。
+/// - `arc_type`：边所遵循的弧类型。
+///
+/// # 返回
+/// 拆分后的多边形环数组；不跨赤道的环原样保留，跨赤道的环被拆为北/南多个子环。
 pub fn split_polygons_on_equator(
     outer_rings: &[Vec<DVec3>],
     ellipsoid: &Ellipsoid,

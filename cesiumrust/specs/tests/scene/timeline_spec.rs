@@ -1,8 +1,8 @@
 //! Widgets/Animation/AnimationViewModel + Timeline → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Widgets/Animation/AnimationViewModel.js
-//! - Widgets/Timeline/Timeline.js
+//! 参考 CesiumJS：
+//! - Widgets/Animation/AnimationViewModel
+//! - Widgets/Timeline/Timeline
 //!
 //! A 类测试：AnimationController play/pause/reverse/stop/tick/loop/seek、
 //! 移动环、进度、TimelineConfig、SpeedPreset。

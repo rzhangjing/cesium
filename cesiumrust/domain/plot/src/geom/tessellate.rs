@@ -20,6 +20,9 @@ pub fn triangulate_holes(outer: &[[f64; 2]], holes: &[Vec<[f64; 2]>]) -> Vec<u32
     triangulate_rings(outer, holes.iter().map(|h| h.as_slice()))
 }
 
+/// [`triangulate`] / [`triangulate_holes`] 的共同实现：先把外环与
+/// 各非空孔环拼接成一条顶点流，并记录每个孔在流中的起始下标
+/// （`earcut` 用它来标记孔），再跑耳切算法得到 CCW 三角形索引。
 fn triangulate_rings<'a>(
     outer: &'a [[f64; 2]],
     holes: impl Iterator<Item = &'a [[f64; 2]]>,
@@ -27,12 +30,14 @@ fn triangulate_rings<'a>(
     let mut data: Vec<[f64; 2]> = Vec::with_capacity(outer.len());
     let mut hole_starts: Vec<usize> = Vec::new();
     data.extend_from_slice(outer);
+    // 依次追加每个非空孔，并记下它在拼接流里的起始位置。
     for h in holes {
         if !h.is_empty() {
             hole_starts.push(data.len());
             data.extend_from_slice(h);
         }
     }
+    // 少于 3 个顶点无法构成任何三角形，直接返回空。
     if data.len() < 3 {
         return Vec::new();
     }
@@ -46,6 +51,7 @@ fn triangulate_rings<'a>(
 mod tests {
     use super::*;
 
+    /// 三角形本身即是一个面，无需细分：恰好输出 1 个三角形。
     #[test]
     fn triangle_needs_no_subdivision() {
         let tri = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];

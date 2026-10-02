@@ -1,5 +1,5 @@
-//! DoubleEndedPriorityQueue 规格测试 - 移植自：
-//! - packages/engine/Specs/Core/DoubleEndedPriorityQueueSpec.js（26 个 it()）
+//! DoubleEndedPriorityQueue 规格测试 - 参考自：
+//! - Specs/Core/DoubleEndedPriorityQueueSpec（26 个 it()）
 //!
 //! A 类测试：24 个（跳过 4 个 JS 特有的 `throws` 构造函数/setter 测试）
 

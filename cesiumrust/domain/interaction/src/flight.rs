@@ -1,11 +1,7 @@
-//! 相机飞行动画（flyTo、lookAt）。
+//! 相机飞行动画（fly_to、look_at）。
 //!
-//! 映射到 CesiumJS `Scene/Camera.js` 的飞行方法：
-//! - `Camera.flyTo`
-//! - `Camera.flyToBoundingSphere`
-//! - `Camera.flyHome`
-//! - `Camera.lookAt`
-//! - `Camera.setView`
+//! 提供相机沿大圆弧的飞行动画：按时长与缓动在若干帧内
+//! 插值位置与朝向，覆盖定向飞行、包围球飞行与返航等场景。
 
 use cesium_camera::{Camera, EasingFunction};
 use cesium_geospatial::cartographic::Cartographic;
@@ -35,6 +31,7 @@ pub struct FlightOptions {
 }
 
 impl Default for FlightOptions {
+    /// 默认飞行选项：目的地为原点，朝向/时长均为空（交由自动推导）。
     fn default() -> Self {
         Self {
             destination: DVec3::ZERO,
@@ -146,7 +143,7 @@ impl CameraFlight {
         // 大圆弧（slerp）插值，配合抛物线式高度拱起，使相机沿地球表面
         // 扫掠，而非走一条笔直的弦线。
         // 方向向量同样做 slerp，使旋转保持在最短角路径上
-        // （CesiumJS 的 `Camera` 飞行使用四元数 slerp）。
+        // （四元数 slerp 保证旋转平滑且不过冲）。
         let position = slerp_great_arc(self.start_position, self.end_position, t_eased);
         let direction = slerp_unit(self.start_direction, self.end_direction, t_eased);
         let up = slerp_unit(self.start_up, self.end_up, t_eased);
@@ -173,7 +170,7 @@ impl CameraFlight {
     }
 
     /// 从完整选项创建一个飞行。
-    /// 映射到带完整选项的 `Camera.flyTo`
+    /// 依据目标、朝向、时长与缓动等完整参数构造飞行。
     pub fn fly_to_with_options(camera: &Camera, options: &FlightOptions) -> Self {
         let end_direction = if let Some(dir) = options.direction {
             dir.normalize()
@@ -198,7 +195,7 @@ impl CameraFlight {
     }
 
     /// 创建一个用于查看包围球的飞行。
-    /// 映射到 `Camera.flyToBoundingSphere`
+    /// 计算合适的距离与偏移，飞至可容纳整个包围球。
     pub fn fly_to_bounding_sphere(
         camera: &Camera,
         sphere: &BoundingSphere,
@@ -245,7 +242,7 @@ impl CameraFlight {
     }
 
     /// 创建一个飞往默认 home 视图的飞行。
-    /// 映射到 `Camera.flyHome`
+    /// 飞往由椭球推算的默认 home 位置。
     pub fn fly_home(camera: &Camera, ellipsoid: &Ellipsoid, duration: f64) -> Self {
         let destination = Camera::default_home_position(ellipsoid);
         let direction = -destination.normalize();
@@ -259,8 +256,8 @@ impl CameraFlight {
     /// - `easing` = 短途跳跃（`< 1e6` 米）用五次 in-out，否则用
     ///   三次 in-out（参见 [`select_flight_easing`]）。
     ///
-    /// 当省略 `duration` 时，映射到 CesiumJS `Camera.flyTo`
-    /// （`CameraFlightPath.createTween`，L444-449）。
+    /// 当省略 `duration` 时，采用与距离自适应的缺省时长，
+    /// 由 [`compute_flight_duration`] 推导。
     pub fn fly_to_great_arc(
         camera: &Camera,
         destination: DVec3,
@@ -368,8 +365,7 @@ pub fn compute_set_view(
 
 /// 飞行拱起的峰值半径系数。
 ///
-/// 类似于 CesiumJS 的 `createHeightFunction`，它将飞行中段的
-/// 高度上限设为 `getAltitude(...) * 0.2`（`CameraFlightPath.js` L104-107）。鼓包
+/// 飞行中段的高度上限设为 `get_altitude(...) * 0.2` 的经验系数。鼓包
 /// 按扫过角度缩放，因此共线的端点不会产生拱起。
 const ARC_PEAK_FACTOR: f64 = 0.2;
 
@@ -413,9 +409,9 @@ fn slerp_unit(start: DVec3, end: DVec3, t: f64) -> DVec3 {
     (a * wa + b * wb).normalize()
 }
 
-/// CesiumJS 的 `createHeightFunction`（`CameraFlightPath.js` L75-126）：一个
-/// 幂曲线拱起，当两个端点都低于 `altitude` 时在 `altitude` 处达到峰值，
-/// 否则为普通的线性插值。`power = 8`、`factor = 1e6` 与源文件完全一致；
+/// 一个幂曲线拱起高度函数：当两个端点都低于 `altitude` 时在
+/// `altitude` 处达到峰值，否则退化为普通的线性插值。
+/// `power = 8`、`factor = 1e6` 给出适中拱形；
 /// 在 `t = 0` 和 `t = 1` 处曲线复现端点高度，并在中间平滑地
 /// 向 `altitude` 上升。
 fn arc_height(start_height: f64, end_height: f64, altitude: f64, t: f64) -> f64 {
@@ -460,9 +456,9 @@ fn slerp_great_arc(start: DVec3, end: DVec3, t: f64) -> DVec3 {
 /// 由行进距离计算飞行时长：
 /// `clamp(distance / 1e6, 1.0, 5.0)` 秒。
 ///
-/// 短途跳跃至少给满一秒以免瞬间到位；超长飞行上限为五秒。模拟
-/// CesiumJS 基于距离缩放的 `duration` 启发式
-/// （`CameraFlightPath.createTween`，L444-449）。
+/// 短途跳跃至少给满一秒以免瞬间到位；超长飞行上限为五秒。
+/// 这是一种基于距离缩放的时长启发式，
+/// 使观感随飞行远近平滑变化。
 pub fn compute_flight_duration(distance: f64) -> f64 {
     (distance / 1_000_000.0).clamp(1.0, 5.0)
 }

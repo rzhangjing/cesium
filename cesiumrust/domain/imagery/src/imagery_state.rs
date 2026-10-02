@@ -1,5 +1,6 @@
 //! 影像状态机。
-//! 映射到 CesiumJS `Scene/ImageryState.js`
+//!
+//! 描述单张影像从加载到可用的生命周期状态。
 
 use serde::{Deserialize, Serialize};
 

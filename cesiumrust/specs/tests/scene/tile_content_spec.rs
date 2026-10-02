@@ -1,4 +1,4 @@
-//! TileContent 规范 - 移植自 Scene/B3dmParserSpec、I3dmParserSpec、PntsParserSpec
+//! TileContent 规范 - 参考自 Scene/B3dmParserSpec、I3dmParserSpec、PntsParserSpec
 //! 覆盖：detect_content_type、parse_b3dm、parse_i3dm、parse_pnts、decode_tile_content
 
 use cesium_tileset::content_decoder::{

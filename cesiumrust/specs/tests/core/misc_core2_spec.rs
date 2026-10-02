@@ -1,4 +1,4 @@
-//! Core/TridiagonalSystemSolverSpec.js + Core/NearFarScalarSpec.js → Rust 集成测试
+//! Core/TridiagonalSystemSolverSpec + Core/NearFarScalarSpec → Rust 集成测试
 //!
 //! TridiagonalSystemSolver：9 个 it() → 2 个 A 类（7 个 C 类：throws）
 //! NearFarScalar：5 个 it() + createPackableSpecs → 4 个 A 类（1 个 C 类：result 参数）

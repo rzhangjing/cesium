@@ -90,6 +90,8 @@ pub(crate) struct TileManager {
 }
 
 impl Default for TileManager {
+    /// 构造空管理的瓦片状态：各集合/映射初始化为空，层级取最小值，
+    /// 距离/初始化/视图变更标志归零，等待启动系统首次填充。
     fn default() -> Self {
         Self {
             tile_entities: HashMap::new(), textured_tiles: HashSet::new(),
@@ -109,7 +111,9 @@ impl Default for TileManager {
 }
 
 impl LodContext for TileManager {
+    /// 该瓦片是否已生成对应实体（供 LOD 判断是否可跳过重复生成）。
     fn has_entity(&self, key: &TileKey) -> bool { self.tile_entities.contains_key(key) }
+    /// 查询该瓦片当前 GPU 纹理边长（像素）；未缓存纹理时返回 `None`。
     fn tex_size(&self, key: &TileKey) -> Option<u32> { self.gpu_tex_size.get(key).copied() }
 }
 
@@ -137,6 +141,8 @@ pub(crate) struct TextureReceiver {
 }
 
 impl Default for TextureReceiver {
+    /// 建立纹理接收通道并拉起常驻下载 worker 池：主线程从 `rx` 轮询结果，
+    /// worker 从共享 `job_rx` 取任务、用 `wanted` 集合跳过陈旧请求。
     fn default() -> Self {
         let (tx, rx) = mpsc::channel();
         let (job_tx, job_rx) = mpsc::channel::<(TileKey, bool)>();
@@ -163,6 +169,8 @@ pub(crate) struct MeshPipeline {
 }
 
 impl Default for MeshPipeline {
+    /// 建立网格构建结果的通道：后台线程发来成品网格，主线程经 `backlog`
+    /// 按预算逐帧消化，避免单帧插入过多网格导致卡顿。
     fn default() -> Self {
         let (tx, rx) = mpsc::channel();
         Self { tx, rx: Mutex::new(rx), backlog: VecDeque::new() }
@@ -179,6 +187,11 @@ pub(crate) struct TilePipelineSet;
 pub struct DynamicGlobePlugin;
 
 impl Plugin for DynamicGlobePlugin {
+    /// 插件装配入口：初始化瓦片管理/纹理接收/网格管线三大资源与基础球合成，
+    /// 挂载启动初次生成，并把三段更新系统串成 chain 归入 `TilePipelineSet`。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用。
     fn build(&self, app: &mut App) {
         app.init_resource::<TileManager>()
             .init_resource::<TextureReceiver>()
@@ -211,6 +224,7 @@ fn initial_spawn(
     let (visible, load) = globe_lod::compute_visible_tiles(
         lat_rad, lon_rad, orbit.distance as f64, globe_lod::focal_pixels(&windows), &*mgr,
     );
+    // 取可见集合中最细层级，作为本帧 current_zoom 基准。
     let finest = visible.iter().map(|t| t.0 .2).max().unwrap_or(globe_lod::MIN_ZOOM);
     mgr.visible_set = visible.iter().map(|&(k, _)| k).collect();
     mgr.partition_set = mgr.visible_set.clone();
@@ -243,6 +257,7 @@ fn view_dependent_update(
     mut mesh_pipe: ResMut<MeshPipeline>,
     tex_rx: Res<TextureReceiver>,
 ) {
+    // 启动系统尚未跑过一次时不做增量更新。
     if !mgr.initialized { return; }
     let (lat_rad, lon_rad) = globe_lod::compute_sub_camera_point(&orbit);
     let (new_visible, new_load) = globe_lod::compute_visible_tiles(
@@ -294,6 +309,7 @@ fn process_pipeline(
     tex_rx: Res<TextureReceiver>,
     mut perf: ResMut<PerfCounters>,
 ) {
+    // 每帧的预算化管线主循环：消化网格/纹理结果、生成与淘汰瓦片。
     globe_pipeline::run(
         &mut commands, &mut meshes, &mut materials, &mut images,
         &mut mgr, &mut mesh_pipe, &tex_rx, &mut perf,
@@ -304,6 +320,7 @@ fn process_pipeline(
 
 fn sync_visibility(mgr: Res<TileManager>, mut tiles: Query<(&GlobeTile, &mut Visibility)>) {
     for (tile, mut vis) in &mut tiles {
+        // 仅当瓦片处于当前显示分区时可见，否则隐藏（保留实体以便廉价复用）。
         let in_partition = mgr.visible_set.contains(&(tile.x, tile.y, tile.z));
         let target = if in_partition { Visibility::Inherited } else { Visibility::Hidden };
         if *vis != target { *vis = target; }

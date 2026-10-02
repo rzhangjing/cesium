@@ -1,8 +1,8 @@
 //! GLB 二进制容器与 b3dm 格式解析。
 //!
-//! 映射到 CesiumJS：
-//! - `Scene/GltfLoader.js`（GLB 解析）
-//! - `Scene/Batched3DModel3DTileContent.js`（b3dm）
+//! 提供 GLB 二进制容器解析与 b3dm（Batched 3D Model）内容拆解：
+//! - GLB 容器解析（JSON chunk + BIN chunk）
+//! - b3dm 的 feature table / batch table / 内嵌 GLB
 //!
 //! # GLB 格式
 //! ```text
@@ -101,6 +101,7 @@ fn read_glb_chunks(data: &[u8]) -> Result<GlbChunks, BinaryFormatError> {
         });
     }
 
+    // 读取 4 字节 magic，必须等于 "glTF" 小端表示
     let magic = read_u32_le(&data[0..4]);
     if magic != GLB_MAGIC {
         return Err(BinaryFormatError::InvalidMagic {
@@ -109,11 +110,13 @@ fn read_glb_chunks(data: &[u8]) -> Result<GlbChunks, BinaryFormatError> {
         });
     }
 
+    // GLB 版本字段，本解析器仅接受 v2
     let version = read_u32_le(&data[4..8]);
     if version != 2 {
         return Err(BinaryFormatError::UnsupportedVersion(version));
     }
 
+    // 文件总长度（声明值）：分块遍历以实际字节为准，故此处忽略
     let _total_length = read_u32_le(&data[8..12]);
 
     // 解析 chunks
@@ -121,11 +124,13 @@ fn read_glb_chunks(data: &[u8]) -> Result<GlbChunks, BinaryFormatError> {
     let mut binary_chunk: Option<Vec<u8>> = None;
     let mut offset = 12;
 
+    // 逐块迭代：每块有 8 字节头（长度 + 类型），后接 chunk_length 字节数据
     while offset + 8 <= data.len() {
         let chunk_length = read_u32_le(&data[offset..offset + 4]) as usize;
         let chunk_type = read_u32_le(&data[offset + 4..offset + 8]);
         offset += 8;
 
+        // 块声明长度超出 buffer 实际末尾：视为截断，停止遍历
         if offset + chunk_length > data.len() {
             break;
         }
@@ -133,6 +138,7 @@ fn read_glb_chunks(data: &[u8]) -> Result<GlbChunks, BinaryFormatError> {
         let chunk_data = data[offset..offset + chunk_length].to_vec();
         offset += chunk_length;
 
+        // 按类型分派：JSON 块与 BIN 块各存一份，其余忽略
         match chunk_type {
             GLB_CHUNK_JSON => json_chunk = Some(chunk_data),
             GLB_CHUNK_BIN => binary_chunk = Some(chunk_data),
@@ -157,7 +163,9 @@ fn read_glb_chunks(data: &[u8]) -> Result<GlbChunks, BinaryFormatError> {
 pub fn parse_glb_container(
     data: &[u8],
 ) -> Result<(serde_json::Value, Option<Vec<u8>>), BinaryFormatError> {
+    // 复用统一的 chunk 遍历，仅取出 JSON 块解析为无类型 Value
     let (json_chunk, binary_chunk) = read_glb_chunks(data)?;
+    // GLB 必须含 JSON 块，缺失时用 InvalidChunkType(0) 表示
     let json_data = json_chunk.ok_or(BinaryFormatError::InvalidChunkType(0))?;
     let value = serde_json::from_slice(&json_data)?;
     Ok((value, binary_chunk))
@@ -166,6 +174,7 @@ pub fn parse_glb_container(
 impl GlbData {
     /// 从字节解析一个 GLB 文件。
     pub fn from_bytes(data: &[u8]) -> Result<Self, BinaryFormatError> {
+        // 取出 JSON 块后直接反序列化为强类型 model（要求 JSON 为 glTF 2.0）
         let (json_chunk, binary_chunk) = read_glb_chunks(data)?;
         let json_data = json_chunk.ok_or(BinaryFormatError::InvalidChunkType(0))?;
         let model = GltfModel::from_bytes(&json_data)?;
@@ -234,11 +243,13 @@ impl B3dmData {
             });
         }
 
+        // b3dm 版本字段，本解析器仅接受 v1
         let version = read_u32_le(&data[4..8]);
         if version != 1 {
             return Err(BinaryFormatError::UnsupportedVersion(version));
         }
 
+        // 后续 4 个字段依次给出各段字节长度，用于顺序切片
         let _byte_length = read_u32_le(&data[8..12]);
         let ft_json_length = read_u32_le(&data[12..16]) as usize;
         let ft_binary_length = read_u32_le(&data[16..20]) as usize;

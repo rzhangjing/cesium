@@ -1,4 +1,4 @@
-//! Core/Matrix4Spec.js（CesiumJS 特有扩展）→ Rust 集成测试
+//! Core/Matrix4Spec（CesiumJS 特有扩展）→ Rust 集成测试
 //! 覆盖：fromRotationTranslation, fromTranslation, fromScale, fromUniformScale,
 //! getTranslation, getScale, getMaximumScale, getRotation, multiplyByTranslation,
 //! multiplyByScale, computePerspectiveFieldOfView, pack/unpack, equalsEpsilon

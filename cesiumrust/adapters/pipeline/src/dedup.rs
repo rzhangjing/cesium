@@ -13,6 +13,7 @@ use std::sync::Mutex;
 /// 对应 dynamic_globe.rs 中的 `TileManager::in_flight: HashSet<TileKey>` 和
 /// `TileManager::queued: HashSet<TileKey>`。
 pub struct Dedup<K: Hash + Eq + Copy> {
+    /// 受互斥锁保护的在途/已排队键集（去重集本体）。
     inner: Mutex<HashSet<K>>,
 }
 
@@ -62,6 +63,7 @@ impl<K: Hash + Eq + Copy> Dedup<K> {
 }
 
 impl<K: Hash + Eq + Copy> Default for Dedup<K> {
+    /// 默认构造一个空去重集（等价于 [`Dedup::new`]）。
     fn default() -> Self {
         Self::new()
     }

@@ -1,9 +1,9 @@
 //! Scene/Cesium3DTilesetTraversal → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/Cesium3DTilesetTraversal.js (base/skip/mostDetailed)
-//! - Scene/Cesium3DTilesetSkipTraversal.js
-//! - Scene/Cesium3DTilesetMostDetailedTraversal.js
+//! 参考 CesiumJS：
+//! - Scene/Cesium3DTilesetTraversal (base/skip/mostDetailed)
+//! - Scene/Cesium3DTilesetSkipTraversal
+//! - Scene/Cesium3DTilesetMostDetailedTraversal
 //!
 //! A 类测试：TilePriority 排序、MemoryAdjustedSse 计算、
 //! traverse 策略（Base/Skip/MostDetailed）、can_traverse、sort_children。

@@ -1,16 +1,22 @@
 //! GPX（GPS Exchange Format）解析器。
 //!
-//! 映射到 CesiumJS 的 `DataSources/GpxDataSource.js`：
-//! - 航点（waypoint）解析
-//! - 轨迹（track）解析
-//! - 航线（route）解析
+//! 提供 GPX 1.x 文档的轻量级解析能力，覆盖三类地理要素：
+//! - 航点（waypoint，`<wpt>`）：离散的兴趣点，携带坐标、高程与元信息；
+//! - 轨迹（track，`<trk>`）：按 `<trkseg>` 分段记录的连续定位序列；
+//! - 航线（route，`<rte>`）：由若干 `<rtept>` 航路点连成的规划路径。
+//!
+//! 解析得到的 [`GpxDocument`] 可经 [`gpx_to_datasource`] 转换为通用
+//! [`DataSource`]：航点渲染为点要素，轨迹与航线渲染为折线要素。
 
 use cesium_datasource::entity::{Entity, PointGraphics, PolylineGraphics};
 use cesium_datasource::entity_collection::DataSource;
 use cesium_datasource::property::{Color, Property};
 use cesium_geospatial::cartographic::Cartographic;
 
-/// 一个 GPX 航点（wpt）。
+/// 一个 GPX 航点（`<wpt>`）。
+///
+/// 表示一个独立的地理兴趣点：`latitude`/`longitude` 为 WGS84 经纬度（度），
+/// 可选字段承载高程、时间戳与展示用的名称/描述等元信息。
 #[derive(Debug, Clone, PartialEq)]
 pub struct GpxWaypoint {
     /// 纬度（度）。
@@ -34,7 +40,7 @@ pub struct GpxWaypoint {
 }
 
 impl GpxWaypoint {
-    /// 创建一个新的航点。
+    /// 创建一个新航点，除经纬度外的可选字段全部置为 `None`。
     pub fn new(latitude: f64, longitude: f64) -> Self {
         Self {
             latitude,
@@ -49,7 +55,10 @@ impl GpxWaypoint {
         }
     }
 
-    /// 转换为 Cartographic（弧度）。
+    /// 转换为 [`Cartographic`]。
+    ///
+    /// 输入经纬度以「度」存储，此处转为弧度并按 (longitude, latitude, height)
+    /// 顺序构造；`elevation` 缺省视为 0.0 米。
     pub fn to_cartographic(&self) -> Cartographic {
         Cartographic::from_radians(
             self.longitude.to_radians(),
@@ -59,7 +68,9 @@ impl GpxWaypoint {
     }
 }
 
-/// 一个 GPX 轨迹（trk）。
+/// 一个 GPX 轨迹（`<trk>`）。
+///
+/// 由元信息与若干 `<trkseg>` 轨迹段组成；分段用于表达采集中断造成的不连续。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct GpxTrack {
     /// 轨迹名称。
@@ -72,14 +83,18 @@ pub struct GpxTrack {
     pub segments: Vec<GpxTrackSegment>,
 }
 
-/// 一个 GPX 轨迹段（trkseg）。
+/// 一个 GPX 轨迹段（`<trkseg>`）。
+///
+/// 一段连续的轨迹点序列，段内各点按时序相邻。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct GpxTrackSegment {
     /// 轨迹点。
     pub points: Vec<GpxTrackPoint>,
 }
 
-/// 一个 GPX 轨迹点（trkpt）。
+/// 一个 GPX 轨迹点（`<trkpt>`）。
+///
+/// 轨迹上的单次定位采样，`lat`/`lon` 必填，`ele`/`time` 可选。
 #[derive(Debug, Clone, PartialEq)]
 pub struct GpxTrackPoint {
     /// 纬度（度）。
@@ -93,7 +108,7 @@ pub struct GpxTrackPoint {
 }
 
 impl GpxTrackPoint {
-    /// 创建一个新的轨迹点。
+    /// 创建一个新的轨迹点，`elevation`/`time` 默认为 `None`。
     pub fn new(latitude: f64, longitude: f64) -> Self {
         Self {
             latitude,
@@ -103,7 +118,10 @@ impl GpxTrackPoint {
         }
     }
 
-    /// 转换为 Cartographic（弧度）。
+    /// 转换为 [`Cartographic`]。
+    ///
+    /// 输入经纬度以「度」存储，此处转为弧度并按 (longitude, latitude, height)
+    /// 顺序构造；`elevation` 缺省视为 0.0 米。
     pub fn to_cartographic(&self) -> Cartographic {
         Cartographic::from_radians(
             self.longitude.to_radians(),
@@ -113,7 +131,9 @@ impl GpxTrackPoint {
     }
 }
 
-/// 一个 GPX 航线（rte）。
+/// 一个 GPX 航线（`<rte>`）。
+///
+/// 由若干航路点组成的**规划**路径（区别于实时采集的轨迹），含元信息与点序列。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct GpxRoute {
     /// 航线名称。
@@ -126,7 +146,9 @@ pub struct GpxRoute {
     pub points: Vec<GpxRoutePoint>,
 }
 
-/// 一个 GPX 航线点（rtept）。
+/// 一个 GPX 航线点（`<rtept>`）。
+///
+/// 航线上的一个航路点（检查点/途经点），`lat`/`lon` 必填，`ele`/`name` 可选。
 #[derive(Debug, Clone, PartialEq)]
 pub struct GpxRoutePoint {
     /// 纬度（度）。
@@ -140,7 +162,7 @@ pub struct GpxRoutePoint {
 }
 
 impl GpxRoutePoint {
-    /// 创建一个新的航线点。
+    /// 创建一个新的航线点，`elevation`/`name` 默认为 `None`。
     pub fn new(latitude: f64, longitude: f64) -> Self {
         Self {
             latitude,
@@ -150,7 +172,10 @@ impl GpxRoutePoint {
         }
     }
 
-    /// 转换为 Cartographic（弧度）。
+    /// 转换为 [`Cartographic`]。
+    ///
+    /// 输入经纬度以「度」存储，此处转为弧度并按 (longitude, latitude, height)
+    /// 顺序构造；`elevation` 缺省视为 0.0 米。
     pub fn to_cartographic(&self) -> Cartographic {
         Cartographic::from_radians(
             self.longitude.to_radians(),
@@ -161,6 +186,8 @@ impl GpxRoutePoint {
 }
 
 /// GPX 元数据。
+///
+/// 描述整个 GPX 文档级别的属性（名称、描述、作者、创建时间、关键词）。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct GpxMetadata {
     /// 文档名称。
@@ -176,6 +203,8 @@ pub struct GpxMetadata {
 }
 
 /// 一个 GPX 文档。
+///
+/// 解析结果的顶层容器，聚合元数据与三类要素集合。
 #[derive(Debug, Clone, Default)]
 pub struct GpxDocument {
     /// 元数据。
@@ -188,8 +217,13 @@ pub struct GpxDocument {
     pub routes: Vec<GpxRoute>,
 }
 
-/// 将一个 GPX 文档转换为 DataSource。
+/// 将一个 GPX 文档转换为通用 [`DataSource`]。
+///
+/// 映射规则：每个 `<wpt>` 生成一个带红色点符号的 entity；每个 `<trkseg>`
+/// 生成一条蓝色折线（轨迹）；每条 `<rte>` 生成一条绿色折线（航线）。
+/// entity 名按类型加索引自动编号，几何位置统一把「度」转成「弧度」。
 pub fn gpx_to_datasource(doc: &GpxDocument) -> DataSource {
+    // 数据源名取元数据 name，缺省回退为字面量 "GPX"。
     let name = doc
         .metadata
         .name
@@ -197,7 +231,7 @@ pub fn gpx_to_datasource(doc: &GpxDocument) -> DataSource {
         .unwrap_or_else(|| "GPX".to_string());
     let mut ds = DataSource::new(name);
 
-    // 将航点作为 point 添加
+    // 将航点作为 point 添加：固定红色、像素尺寸 8，位置三元组为 (lon, lat, height) 弧度。
     for (i, wpt) in doc.waypoints.iter().enumerate() {
         let mut entity = Entity::new(format!("waypoint_{}", i));
         entity.name = wpt.name.clone();
@@ -217,12 +251,13 @@ pub fn gpx_to_datasource(doc: &GpxDocument) -> DataSource {
         ds.entities.add(entity);
     }
 
-    // 将轨迹作为折线添加
+    // 将轨迹作为折线添加：逐段（trkseg）产出一条蓝色折线，顶点为该段各 trkpt 的弧度坐标
     for (i, track) in doc.tracks.iter().enumerate() {
         for (j, segment) in track.segments.iter().enumerate() {
             let mut entity = Entity::new(format!("track_{}_{}", i, j));
             entity.name = track.name.clone();
 
+            // 逐点转弧度组装顶点数组，顺序为 (lon, lat, height)，与 entity 位置约定一致
             let positions: Vec<[f64; 3]> = segment
                 .points
                 .iter()
@@ -246,11 +281,12 @@ pub fn gpx_to_datasource(doc: &GpxDocument) -> DataSource {
         }
     }
 
-    // 将航线作为折线添加
+    // 将航线作为折线添加：整条 rte 产出一条绿色折线，顶点为各 rtept 的弧度坐标
     for (i, route) in doc.routes.iter().enumerate() {
         let mut entity = Entity::new(format!("route_{}", i));
         entity.name = route.name.clone();
 
+        // 航线顶点同样转弧度并按 (lon, lat, height) 排列，整条 rte 合成单条折线
         let positions: Vec<[f64; 3]> = route
             .points
             .iter()
@@ -277,10 +313,13 @@ pub fn gpx_to_datasource(doc: &GpxDocument) -> DataSource {
 }
 
 /// 简单的 GPX 解析器（基础实现）。
+///
+/// 基于字符串扫描的宽容解析，不依赖完整 XML 库：只识别 GPX 关心的标签，
+/// 适合结构规整的 GPX 文件；遇到缺必填字段的输入按 Err 返回而非静默纠正。
 pub fn parse_gpx_simple(xml: &str) -> Result<GpxDocument, String> {
     let mut doc = GpxDocument::default();
 
-    // 解析元数据
+    // 解析元数据：顶层只取首个 name/desc 作为文档名与描述
     if let Some(name) = extract_tag_content(xml, "name") {
         doc.metadata.name = Some(name);
     }
@@ -309,8 +348,11 @@ pub fn parse_gpx_simple(xml: &str) -> Result<GpxDocument, String> {
     Ok(doc)
 }
 
-/// 解析一个航点元素。
+/// 解析一个航点元素（`<wpt>`）。
+///
+/// `lat`/`lon` 属性为必填，缺失即返回 Err；其余为可选子标签，逐个填充。
 fn parse_waypoint(xml: &str) -> Result<GpxWaypoint, String> {
+    // 必填：纬度 lat（解析为 f64）
     let lat = extract_attribute(xml, "lat")
         .and_then(|s| s.parse().ok())
         .ok_or("Missing lat attribute")?;
@@ -319,6 +361,7 @@ fn parse_waypoint(xml: &str) -> Result<GpxWaypoint, String> {
         .ok_or("Missing lon attribute")?;
 
     let mut wpt = GpxWaypoint::new(lat, lon);
+    // 可选子标签逐个填充：ele 需解析为 f64，解析失败（含缺失）归为 None；其余为纯文本。
     wpt.elevation = extract_tag_content(xml, "ele").and_then(|s| s.parse().ok());
     wpt.time = extract_tag_content(xml, "time");
     wpt.name = extract_tag_content(xml, "name");
@@ -330,14 +373,18 @@ fn parse_waypoint(xml: &str) -> Result<GpxWaypoint, String> {
     Ok(wpt)
 }
 
-/// 解析一个轨迹元素。
+/// 解析一个轨迹元素（`<trk>`）。
+///
+/// 一条轨迹可含多个 `<trkseg>` 分段；元信息 name/cmt/desc 取自 `<trk>` 直属子标签。
 fn parse_track(xml: &str) -> Result<GpxTrack, String> {
+    // 先逐段解析并收集所有轨迹段，再连同轨迹级元信息组装
     let mut segments = Vec::new();
     for seg_xml in extract_all_tags(xml, "trkseg") {
         let segment = parse_track_segment(&seg_xml)?;
         segments.push(segment);
     }
 
+    // 组装轨迹：name/cmt/desc 取自 trk 直属子标签，segments 为上面逐段解析的结果
     Ok(GpxTrack {
         name: extract_tag_content(xml, "name"),
         comment: extract_tag_content(xml, "cmt"),
@@ -346,10 +393,13 @@ fn parse_track(xml: &str) -> Result<GpxTrack, String> {
     })
 }
 
-/// 解析一个轨迹段元素。
+/// 解析一个轨迹段元素（`<trkseg>`）。
+///
+/// 段内每个 `<trkpt>` 需带 `lat`/`lon` 属性，可选 `ele`（高程）与 `time`（时间戳）。
 fn parse_track_segment(xml: &str) -> Result<GpxTrackSegment, String> {
     let mut segment = GpxTrackSegment::default();
 
+    // 段内每个 trkpt 都必须带 lat/lon，任一点缺必填即整体报错（fail-fast）。
     for pt_xml in extract_all_tags(xml, "trkpt") {
         let lat = extract_attribute(&pt_xml, "lat")
             .and_then(|s| s.parse().ok())
@@ -368,8 +418,11 @@ fn parse_track_segment(xml: &str) -> Result<GpxTrackSegment, String> {
     Ok(segment)
 }
 
-/// 解析一个航线元素。
+/// 解析一个航线元素（`<rte>`）。
+///
+/// 航线是一串有序的 `<rtept>` 航路点（规划路径，区别于实时采集的轨迹）。
 fn parse_route(xml: &str) -> Result<GpxRoute, String> {
+    // 逐个提取 rtept，再与航线级 name/cmt/desc 一起组装
     let mut points = Vec::new();
     for pt_xml in extract_all_tags(xml, "rtept") {
         let lat = extract_attribute(&pt_xml, "lat")
@@ -394,27 +447,36 @@ fn parse_route(xml: &str) -> Result<GpxRoute, String> {
     })
 }
 
-/// 提取标签之间的内容。
+/// 提取成对标签 `<tag>…</tag>` 之间的文本内容。
+///
+/// 只匹配**精确**的开标签 `<tag>`（不含带属性的变体），返回首个出现处的
+/// 内部文本并去除首尾空白；任一端标签缺失都返回 `None`。
 fn extract_tag_content(xml: &str, tag: &str) -> Option<String> {
     let start_tag = format!("<{}>", tag);
     let end_tag = format!("</{}>", tag);
 
+    // 定位开标签之后的内容起点，再在其后查找闭标签
     let start = xml.find(&start_tag)? + start_tag.len();
     let end = xml[start..].find(&end_tag)? + start;
 
+    // 截取的内部文本可能含换行/缩进，trim 去空白后再返回
     Some(xml[start..end].trim().to_string())
 }
 
-/// 提取某个标签的所有出现。
+/// 提取形如 `<tag…>…</tag>`（或自闭合 `<tag…/>`）的所有出现，返回各元素的原始片段。
+///
+/// 采用向前扫描：从 `search_start` 起找下一个开标签，判断是否自闭合后推进行指针，
+/// 因此能正确处理同一父元素下的多个兄弟元素（如多个 `<trkpt>`）。
 fn extract_all_tags(xml: &str, tag: &str) -> Vec<String> {
     let mut results = Vec::new();
     let start_tag = format!("<{}", tag);
     let end_tag = format!("</{}>", tag);
 
+    // 游标式向前扫描：每处理一个元素都把 search_start 推进到其后，避免重复匹配同一开标签。
     let mut search_start = 0;
     while let Some(start) = xml[search_start..].find(&start_tag) {
         let abs_start = search_start + start;
-        // 检查是否为自闭合标签
+        // 定位本开标签的 '>'，据此判断该元素是自闭合还是成对出现。
         let tag_end = match xml[abs_start..].find('>') {
             Some(pos) => pos + abs_start,
             None => break,
@@ -424,10 +486,12 @@ fn extract_all_tags(xml: &str, tag: &str) -> Vec<String> {
             results.push(xml[abs_start..=tag_end].to_string());
             search_start = tag_end + 1;
         } else if let Some(end) = xml[abs_start..].find(&end_tag) {
+            // 成对标签：截取含闭标签在内的完整原始片段，供后续递归解析其内部结构
             let abs_end = abs_start + end + end_tag.len();
             results.push(xml[abs_start..abs_end].to_string());
             search_start = abs_end;
         } else {
+            // 找不到闭标签：输入畸形，停止扫描而不 panic
             break;
         }
     }
@@ -435,9 +499,12 @@ fn extract_all_tags(xml: &str, tag: &str) -> Vec<String> {
     results
 }
 
-/// 从一个 XML 标签中提取属性值。
+/// 从一段 XML 文本中提取 `attr="…"` 形式的属性值（双引号定界）。
+///
+/// 以 `attr="` 为锚点定位起点，取到下一个 `"` 为止；未找到则返回 `None`。
 fn extract_attribute(xml: &str, attr: &str) -> Option<String> {
     let pattern = format!("{}=\"", attr);
+    // 起点跳过整个 `attr="` 锚点；任一锚点缺失都由 `?` 短路返回 None。
     let start = xml.find(&pattern)? + pattern.len();
     let end = xml[start..].find('"')? + start;
     Some(xml[start..end].to_string())

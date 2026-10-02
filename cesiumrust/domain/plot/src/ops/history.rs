@@ -13,7 +13,9 @@ use super::command::PlotCommand;
 /// 一个无界（由一个可选上限约束）的撤销 / 重做栈。
 #[derive(Debug, Clone, Default)]
 pub struct HistoryStack {
+    /// 正向命令栈（最近应用的在栈顶），undo 从这里弹出。
     undo: Vec<PlotCommand>,
+    /// 已被撤销的命令栈，redo 从这里弹出重新应用。
     redo: Vec<PlotCommand>,
     /// `Some(n)` 将撤销分支修剪为最新的 `n` 个条目；`None` = 无限
     /// （一次标绘会话的内存占用小到可以保留）。
@@ -38,7 +40,9 @@ impl HistoryStack {
     /// 记录一个刚应用的命令，丢弃重做分支。
     pub fn record(&mut self, command: PlotCommand) {
         self.undo.push(command);
+        // 一次新编辑使重做分支失效（每个桌面编辑器的契约）。
         self.redo.clear();
+        // 超出上限时从栈底丢弃最旧的撤销步骤。
         if let Some(cap) = self.cap {
             while self.undo.len() > cap {
                 self.undo.remove(0);
@@ -71,6 +75,7 @@ impl HistoryStack {
     /// 那些视觉效果；栈为空时返回 `None`。
     pub fn undo(&mut self, doc: &mut Document) -> Option<Vec<crate::model::ids::ElementId>> {
         let command = self.undo.pop()?;
+        // 应用逆命令回退，并把原命令转入重做分支。
         let inverse = command.inverse();
         inverse.apply(doc);
         let targets = command.targets();
@@ -82,6 +87,7 @@ impl HistoryStack {
     /// 分支。返回触及的 id；无可重做项时返回 `None`。
     pub fn redo(&mut self, doc: &mut Document) -> Option<Vec<crate::model::ids::ElementId>> {
         let command = self.redo.pop()?;
+        // 重新应用命令，将其移回撤销分支。
         command.apply(doc);
         let targets = command.targets();
         self.undo.push(command);
@@ -107,6 +113,7 @@ mod tests {
         GeoPoint::surface(lon, lat)
     }
 
+    /// 构造一个向指定图层添加点的 AddElement 命令（测试用）。
     fn add(id: u64, layer: LayerId) -> PlotCommand {
         PlotCommand::AddElement {
             layer,
@@ -121,6 +128,7 @@ mod tests {
         h.record(command);
     }
 
+    /// 初始栈为空：既不可撤销也不可重做。
     #[test]
     fn starts_empty() {
         let h = HistoryStack::new();
@@ -128,6 +136,7 @@ mod tests {
         assert!(!h.can_redo());
     }
 
+    /// 撤销 / 重做沿栈前后行走，文档状态随之回退与恢复。
     #[test]
     fn undo_redo_walks_the_stack() {
         let mut doc = Document::with_default_layer();
@@ -158,6 +167,7 @@ mod tests {
         assert!(h.can_undo() && !h.can_redo());
     }
 
+    /// 撤销后的一次新记录会清空重做尾部，使重做不可用。
     #[test]
     fn recording_after_undo_drops_the_redo_branch() {
         let mut doc = Document::with_default_layer();
@@ -173,6 +183,7 @@ mod tests {
         assert_eq!(h.undo_len(), 1);
     }
 
+    /// 上限会将最旧的撤销步骤修剪掉，只保留最新的 cap 个。
     #[test]
     fn cap_trims_the_oldest_undos() {
         let doc = Document::with_default_layer();
@@ -184,6 +195,7 @@ mod tests {
         assert_eq!(h.undo_len(), 2);
     }
 
+    /// 在空栈上撤销 / 重做是安全的空操作（返回 None）。
     #[test]
     fn undo_on_empty_stack_is_a_noop() {
         let mut doc = Document::with_default_layer();

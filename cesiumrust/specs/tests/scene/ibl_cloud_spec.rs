@@ -1,5 +1,5 @@
 //! ImageBasedLighting + CloudCollection 规范
-//! 移植自 CesiumJS Scene/ImageBasedLightingSpec.js + Scene/CloudCollectionSpec.js
+//! 参考自 CesiumJS Scene/ImageBasedLightingSpec + Scene/CloudCollectionSpec
 
 use cesium_effects::{
     default_spherical_harmonics, CloudCollection, CumulusCloud, ImageBasedLighting,

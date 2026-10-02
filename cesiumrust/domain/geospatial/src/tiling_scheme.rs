@@ -1,5 +1,4 @@
-//! Tiling scheme - 将地球划分成瓦片网格。
-//! 映射到 CesiumJS `Core/GeographicTilingScheme.js`, `Core/WebMercatorTilingScheme.js`
+//! Tiling scheme - 将地球划分成瓦片网格（经纬度与 Web Mercator 两种）。
 
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
@@ -24,7 +23,9 @@ pub struct TilingScheme {
 /// 瓦片方案的投影变体。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TilingProjection {
+    /// 经纬度（地理）投影。
     Geographic(GeographicProjection),
+    /// Web Mercator 投影。
     WebMercator(WebMercatorProjection),
 }
 
@@ -90,6 +91,7 @@ impl TilingScheme {
     /// 计算给定层级下 X 和 Y 方向的瓦片数。
     /// 映射到 `TilingScheme.getNumberOfXTilesAtLevel` / `getNumberOfYTilesAtLevel`
     pub fn tiles_at_level(&self, level: u32) -> (u32, u32) {
+        // 每升一级，两个方向的瓦片数都翻倍（缩放因子 2^level）。
         let scale = 1u32 << level;
         (self.root_tiles_x * scale, self.root_tiles_y * scale)
     }
@@ -104,6 +106,7 @@ impl TilingScheme {
         let west = self.rectangle.west + x as f64 * tile_width;
         let north = self.rectangle.north - y as f64 * tile_height;
 
+        // Y 自北向南递增，故用 north 减去一个瓦片高得到 south。
         Rectangle::new(west, north - tile_height, west + tile_width, north)
     }
 
@@ -122,6 +125,7 @@ impl TilingScheme {
         let tile_width = self.rectangle.width() / tiles_x as f64;
         let tile_height = self.rectangle.height() / tiles_y as f64;
 
+        // 由西/北边界起算的偏移除以瓦片尺寸并向下取整，得到所在瓦片坐标。
         let x = ((position.longitude - self.rectangle.west) / tile_width).floor() as i64;
         let y = ((self.rectangle.north - position.latitude) / tile_height).floor() as i64;
 
@@ -162,6 +166,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// 验证地理瓦片方案 level 0 为 2×1 瓦。
     fn test_geographic_tiling_scheme_level0() {
         let ts = TilingScheme::geographic(Ellipsoid::WGS84);
         let (nx, ny) = ts.tiles_at_level(0);
@@ -170,6 +175,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证地理瓦片方案 level 1 为 4×2 瓦（每级翻倍）。
     fn test_geographic_tiling_scheme_level1() {
         let ts = TilingScheme::geographic(Ellipsoid::WGS84);
         let (nx, ny) = ts.tiles_at_level(1);
@@ -178,6 +184,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证 Web Mercator 瓦片方案 level 0 为 1×1 瓦。
     fn test_web_mercator_tiling_scheme_level0() {
         let ts = TilingScheme::web_mercator(Ellipsoid::WGS84);
         let (nx, ny) = ts.tiles_at_level(0);
@@ -186,6 +193,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证 level 0 瓦片 (0,0) 覆盖西半球矩形（经度 -π~0）。
     fn test_tile_to_rectangle() {
         let ts = TilingScheme::geographic(Ellipsoid::WGS84);
         // level 0，瓦片 (0,0) 应为西半球
@@ -197,6 +205,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证靠近本初子午线东侧的点在 level 0 属于瓦片 (1,0)。
     fn test_position_to_tile() {
         let ts = TilingScheme::geographic(Ellipsoid::WGS84);
         // (0, 0) 处在 level 0 应属于瓦片 (1, 0)
@@ -207,6 +216,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证经度超出矩形范围的位置返回 None。
     fn test_position_to_tile_out_of_bounds() {
         let ts = TilingScheme::geographic(Ellipsoid::WGS84);
         // 远远超出范围的位置应返回 None

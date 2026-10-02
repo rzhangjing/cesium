@@ -1,18 +1,16 @@
 //! cesium-widgets：Cesium 查看器 UI 的 Widget 视图模型与 i18n。
 //!
-//! 映射到 CesiumJS `packages/widgets/Source/`：
-//! - `Animation/AnimationViewModel.js` → animation
-//! - `Timeline/Timeline.js` → timeline
-//! - `SceneModePicker/SceneModePickerViewModel.js` → scene_mode_picker
-//! - `ProjectionPicker/ProjectionPickerViewModel.js` → projection_picker
-//! - `BaseLayerPicker/BaseLayerPickerViewModel.js` → base_layer_picker
-//! - `Geocoder/GeocoderViewModel.js` → geocoder
-//! - `HomeButton/HomeButtonViewModel.js` → buttons
-//! - `FullscreenButton/FullscreenButtonViewModel.js` → buttons
-//! - `NavigationHelpButton/NavigationHelpButtonViewModel.js` → buttons
-//! - `VRButton/VRButtonViewModel.js` → buttons
-//! - `InfoBox/InfoBoxViewModel.js` → info_box
-//! - `SelectionIndicator/SelectionIndicatorViewModel.js` → selection_indicator
+//! 按子模块划分各视图模型：
+//! - [`animation`]：动画播放控制与动感环
+//! - [`timeline`]：时间轴轨道、刻度与高亮区间
+//! - [`scene_mode_picker`]：3D/2D/Columbus 视图等模式切换
+//! - [`projection_picker`]：透视/正交投影选择
+//! - [`base_layer_picker`]：基础影像与地形图层选择
+//! - [`geocoder`]：地名搜索与自动补全
+//! - [`buttons`]：主页/全屏/导航帮助/VR 等按钮
+//! - [`info_box`]：实体信息展示框
+//! - [`selection_indicator`]：选中项高亮指示
+//! - [`i18n`]：多语言区域的文案与本地化
 //!
 //! # 特性
 //! - 纯领域视图模型（无 UI 框架依赖）

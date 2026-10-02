@@ -16,10 +16,16 @@ use super::components::{CesiumEntity, EntityWrapper, GlobeEllipsoid, TimeDynamic
 /// 用于控制动画播放的资源。
 #[derive(Resource)]
 pub struct AnimationClock {
+    /// 底层动画控制器（持有 Clock 与播放状态）。
     pub controller: AnimationController,
 }
 
 impl AnimationClock {
+    /// 用起止时间新建时钟（当前时间从 start 开始，初始暂停）。
+    ///
+    /// # 参数
+    /// - `start`：起始儒略日
+    /// - `stop`：结束儒略日
     pub fn new(start: JulianDate, stop: JulianDate) -> Self {
         let clock = Clock::new(start, stop, start);
         Self {
@@ -27,38 +33,56 @@ impl AnimationClock {
         }
     }
 
+    /// 开始播放。
     pub fn play(&mut self) {
         self.controller.play();
     }
 
+    /// 暂停（保留当前时间）。
     pub fn pause(&mut self) {
         self.controller.pause();
     }
 
+    /// 停止并回到起点。
     pub fn stop(&mut self) {
         self.controller.stop();
     }
 
+    /// 跳转到指定的绝对时间。
+    ///
+    /// # 参数
+    /// - `time`：目标儒略日
     pub fn seek(&mut self, time: JulianDate) {
         self.controller.seek(time);
     }
 
+    /// 按 [0,1] 比例跳转到时间轴上的对应位置。
+    ///
+    /// # 参数
+    /// - `fraction`：进度比例
     pub fn seek_fraction(&mut self, fraction: f64) {
         self.controller.seek_fraction(fraction);
     }
 
+    /// 设置时间倍速乘子。
+    ///
+    /// # 参数
+    /// - `multiplier`：倍速（1=实时）
     pub fn set_speed(&mut self, multiplier: f64) {
         self.controller.set_speed(multiplier);
     }
 
+    /// 取当前时间（儒略日）。
     pub fn current_time(&self) -> JulianDate {
         self.controller.clock.current_time
     }
 
+    /// 取当前进度比例 [0,1]。
     pub fn progress(&self) -> f64 {
         self.controller.progress()
     }
 
+    /// 是否处于播放（非暂停）状态。
     pub fn is_playing(&self) -> bool {
         !self.controller.paused
     }
@@ -66,6 +90,7 @@ impl AnimationClock {
 
 /// 默认动画时钟（从 epoch 到 epoch+24h）。
 impl Default for AnimationClock {
+    /// 默认：2024-01-01 起、历 24 小时。
     fn default() -> Self {
         let start = JulianDate::from_date_components(2024, 1, 1, 0, 0, 0, 0.0);
         let stop = start.add_seconds(86400.0);
@@ -74,6 +99,12 @@ impl Default for AnimationClock {
 }
 
 /// 推进动画时钟并更新动态实体的系统。
+///
+/// # 参数
+/// - `time`：帧时钟（提供 delta 秒）
+/// - `animation_clock`：动画时钟（可写）
+/// - `ellipsoid`：地球椭球（坐标转换）
+/// - `query`：实体包装、变换、实体属性与时动态标记
 pub fn time_dynamic_update_system(
     time: Res<Time>,
     mut animation_clock: ResMut<AnimationClock>,
@@ -85,28 +116,34 @@ pub fn time_dynamic_update_system(
         &TimeDynamicProperties,
     )>,
 ) {
+    // 未播放时不推进也不重算。
     if !animation_clock.is_playing() {
         return;
     }
 
+    // 按帧时长 tick 时钟，得到当前儒略日。
     let current_jd = animation_clock.controller.tick(time.delta_secs_f64());
 
+    // 换算为从起点算起的秒数，供属性插值取值。
     let start = animation_clock.controller.clock.start_time;
     let elapsed_seconds = current_jd.seconds_difference(&start);
 
     for (entity_wrapper, mut transform, mut cesium_entity, time_dyn) in query.iter_mut() {
         let domain_entity = &entity_wrapper.0;
 
+        // 可用性：当前时刻不在区间内则隐藏。
         if time_dyn.has_availability {
             if let Some(ref avail) = cesium_entity.availability {
                 cesium_entity.show = avail.contains(&current_jd);
             }
         }
 
+        // 隐藏的实体不再计算位置。
         if !cesium_entity.show {
             continue;
         }
 
+        // 位置插值：取当前时刻的测绘学坐标→ECEF→变换平移。
         if time_dyn.has_interpolated_position {
             if let Some(pos) = domain_entity.position.get_value(elapsed_seconds) {
                 let carto = Cartographic::from_radians(pos[0], pos[1], pos[2]);
@@ -122,6 +159,9 @@ pub fn time_dynamic_update_system(
 }
 
 /// 基于 `show` 字段应用实体可见性的系统。
+///
+/// # 参数
+/// - `query`：实体属性与可见性
 pub fn entity_visibility_system(
     mut query: Query<(&CesiumEntity, &mut Visibility)>,
 ) {
@@ -139,6 +179,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// 验证新建时钟初始暂停、进度 0、当前时间为起点。
     fn test_animation_clock_creation() {
         let start = JulianDate::from_date_components(2024, 6, 1, 12, 0, 0, 0.0);
         let stop = start.add_seconds(7200.0);
@@ -150,6 +191,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证 play/pause 切换播放标志。
     fn test_animation_clock_play_pause() {
         let mut clock = AnimationClock::default();
         clock.play();
@@ -159,6 +201,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证按比例跳转后进度约为 0.5。
     fn test_animation_clock_seek() {
         let start = JulianDate::from_date_components(2024, 1, 1, 0, 0, 0, 0.0);
         let stop = start.add_seconds(3600.0);
@@ -169,6 +212,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证默认时钟当前时间为 2024-01-01。
     fn test_animation_clock_default() {
         let clock = AnimationClock::default();
         let start = JulianDate::from_date_components(2024, 1, 1, 0, 0, 0, 0.0);

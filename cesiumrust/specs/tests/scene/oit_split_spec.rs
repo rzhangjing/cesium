@@ -1,5 +1,5 @@
 //! OIT + SplitDirection 规范
-//! 移植自 CesiumJS Scene/OITSpec.js + Scene/SplitDirectionSpec.js
+//! 参考自 CesiumJS Scene/OITSpec + Scene/SplitDirectionSpec
 
 use cesium_effects::{
     BlendEquation, BlendFunction, OitCapabilities, OitConfig, OitMode, SplitDirection,

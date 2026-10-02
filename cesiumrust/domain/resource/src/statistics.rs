@@ -1,7 +1,7 @@
 //! 请求统计聚合。
 //!
-//! 映射到 CesiumJS `RequestScheduler.statistics`（`RequestScheduler.js` 内部的
-//! 私有 `statistics` 对象）以及用于诊断与限流决策的逐服务器 / 逐类型计数器。
+//! 聚合调度器的活动/尝试/成功/失败/取消计数，以及用于
+//! 诊断与限流决策的逐服务器、逐类型分解计数器。
 //!
 //! 这些统计是 **纯计数器** —— 无 IO，无框架依赖。
 //! `lib.rs` 中的 [`RequestScheduler`] 驱动更新这些计数器的状态转移。
@@ -12,21 +12,16 @@ use crate::RequestType;
 
 /// 聚合的请求统计。
 ///
-/// 镜像 CesiumJS `RequestScheduler.statistics`：
-/// ```js
-/// var statistics = {
-///   numberOfAttemptedRequests: 0,
-///   numberOfActiveRequests: 0,
-///   numberOfCancelledRequests: 0,
-///   numberOfCancelledActiveRequests: 0,
-///   numberOfFailedRequests: 0,
-///   numberOfActiveRequestsEver: 0,
-///   lastNumberOfActiveRequests: 0,
-/// };
-/// ```
+/// 记录一个请求从“被调度”到“激活/完成/失败/取消”各阶段的
+/// 计数变迁，是调度器做限流决策与对外暴露诊断的核心状态：
+/// - `attempted`：累计被调度的请求数；
+/// - `active`：当前正在传输的请求数（可增可减）；
+/// - `succeeded`/`failed`：已结束请求的成败计数；
+/// - `cancelled_pending`/`cancelled_active`：待定态与活动态下的取消数；
+/// - `active_ever`：曾被激活过的请求总数（单调递增）。
 ///
-/// 扩展了逐服务器与逐类型的分解，以获得更丰富的诊断
-/// （逐服务器分解镜像 `numberOfActiveRequestsByServer`）。
+/// 在此之上额外维护逐服务器与逐类型的分解映射，以获得更
+/// 丰富的诊断视角（例如定位某个服务器或某类请求的堆积）。
 #[derive(Debug, Clone, Default)]
 pub struct RequestStatistics {
     /// 已被尝试（已调度）的请求总数。
@@ -50,13 +45,13 @@ pub struct RequestStatistics {
     /// 曾被激活的请求总数（单调递增）。
     pub active_ever: u64,
 
-    /// 上一次 `update()` 调用时的活动请求数量。
-    /// 用于增量诊断（JS `lastNumberOfActiveRequests`）。
+    /// 上一次 `update()` 调用时快照的活动请求数量。
+    /// 用于比较相邻两帧的活动数变化（增量诊断）。
     pub last_active: u64,
 
     /// 逐服务器的活动请求计数。
     ///
-    /// 映射到 `RequestScheduler.numberOfActiveRequestsByServer`。
+    /// 以 server_key 为键，跟踪每个服务器当前占用槽位的请求数。
     pub active_by_server: HashMap<String, u64>,
 
     /// 逐服务器的已完成总数。
@@ -88,36 +83,44 @@ impl RequestStatistics {
 
     /// 记录一个请求已被激活。
     pub fn on_activated(&mut self, server_key: &str, request_type: RequestType) {
+        // 全局活动数与“曾激活”单调计数同时加一
         self.active += 1;
         self.active_ever += 1;
+        // 同步累加该服务器与该类型的活动分解计数
         *self.active_by_server.entry(server_key.to_string()).or_insert(0) += 1;
         *self.active_by_type.entry(request_type).or_insert(0) += 1;
     }
 
     /// 记录一个请求成功完成。
     pub fn on_completed(&mut self, server_key: &str, request_type: RequestType) {
+        // 请求成功结束：活动数饱和减一避免下溢，成功数加一
         self.active = self.active.saturating_sub(1);
         self.succeeded += 1;
+        // 同步扣减该服务器与该类型的活动分解计数
         if let Some(count) = self.active_by_server.get_mut(server_key) {
             *count = count.saturating_sub(1);
         }
         if let Some(count) = self.active_by_type.get_mut(&request_type) {
             *count = count.saturating_sub(1);
         }
+        // 累加该服务器与该类型的完成总数
         *self.completed_by_server.entry(server_key.to_string()).or_insert(0) += 1;
         *self.completed_by_type.entry(request_type).or_insert(0) += 1;
     }
 
     /// 记录一个请求失败。
     pub fn on_failed(&mut self, server_key: &str, request_type: RequestType) {
+        // 请求失败结束：活动数饱和减一，失败数加一
         self.active = self.active.saturating_sub(1);
         self.failed += 1;
+        // 同步扣减该服务器与该类型的活动分解计数
         if let Some(count) = self.active_by_server.get_mut(server_key) {
             *count = count.saturating_sub(1);
         }
         if let Some(count) = self.active_by_type.get_mut(&request_type) {
             *count = count.saturating_sub(1);
         }
+        // 累加该服务器与该类型的失败总数
         *self.failed_by_server.entry(server_key.to_string()).or_insert(0) += 1;
         *self.failed_by_type.entry(request_type).or_insert(0) += 1;
     }
@@ -129,6 +132,7 @@ impl RequestStatistics {
 
     /// 记录一个活动请求被取消。
     pub fn on_cancelled_active(&mut self, server_key: &str, request_type: RequestType) {
+        // 活动态取消：活动数饱和减一，取消（活动）计数加一
         self.active = self.active.saturating_sub(1);
         self.cancelled_active += 1;
         if let Some(count) = self.active_by_server.get_mut(server_key) {
@@ -139,10 +143,10 @@ impl RequestStatistics {
         }
     }
 
-    /// 在每个调度器 `update()` 周期开始时调用，以快照
-    /// 之前的活动计数用于增量诊断。
+    /// 在每个调度器 `update()` 周期开始时调用，把当前的
+    /// 活动计数快照到 `last_active`，供下一帧做增量对比。
     ///
-    /// 映射到 JS：`statistics.lastNumberOfActiveRequests = statistics.numberOfActiveRequests`。
+    /// 语义即 `last_active = active` 的一次赋值快照。
     pub fn snapshot_last_active(&mut self) {
         self.last_active = self.active;
     }
@@ -167,9 +171,9 @@ impl RequestStatistics {
         self.active_by_type.get(&request_type).copied().unwrap_or(0)
     }
 
-    /// 将所有计数器重置为零（用于测试 / `clearForSpecs`）。
+    /// 将所有计数器重置为零（用于测试或调度器重新初始化）。
     ///
-    /// 映射到重置统计的 `RequestScheduler.clearForSpecs()`。
+    /// 通过重建一个默认实例覆盖 `self` 达成。
     pub fn reset(&mut self) {
         *self = Self::new();
     }

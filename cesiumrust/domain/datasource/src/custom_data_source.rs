@@ -1,13 +1,13 @@
 //! CustomDataSource - 一个带有实体集合的基础命名 DataSource。
 //!
-//! 映射到 CesiumJS `DataSources/CustomDataSource.js`
+//! 它把名称、实体集合、时钟与可见性打包成一个可直接交付的可自定义数据源。
 
 use crate::datasource_clock::DataSourceClock;
 use crate::entity_collection::EntityCollection;
 
 /// 一个基础的 DataSource，具有名称、实体集合、时钟和可见性。
 ///
-/// 映射到 CesiumJS `DataSources/CustomDataSource.js`
+/// 供上层注册自定义内容，实体全部经由内部集合托管，时钟为可选项。
 #[derive(Debug)]
 pub struct CustomDataSource {
     /// 此数据源的显示名称。

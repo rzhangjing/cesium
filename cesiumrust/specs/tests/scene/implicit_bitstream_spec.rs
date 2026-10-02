@@ -1,4 +1,4 @@
-//! 移植自 CesiumJS ImplicitAvailabilityBitstreamSpec.js 的测试（5 个 A 类测试）
+//! 参考自 CesiumJS ImplicitAvailabilityBitstreamSpec 的测试（5 个 A 类测试）
 
 use cesium_scene::implicit_availability_bitstream::{
     ImplicitAvailabilityBitstream, ImplicitAvailabilityBitstreamOptions,

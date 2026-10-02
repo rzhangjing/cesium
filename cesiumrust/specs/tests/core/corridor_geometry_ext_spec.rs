@@ -1,4 +1,4 @@
-//! 移植自 CesiumJS `Core/CorridorGeometrySpec.js`（扩展的 A 类测试）。
+//! 参考自 CesiumJS `Core/CorridorGeometrySpec`（扩展的 A 类测试）。
 //!
 //! 测试内容：位置、全部属性、右转/左转、圆角/斜角、
 //! 直线通道、边界情形、纹理坐标、法线。

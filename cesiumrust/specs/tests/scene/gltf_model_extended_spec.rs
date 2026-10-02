@@ -1,8 +1,8 @@
-//! Scene/GltfLoaderSpec.js + ModelSpec.js → Rust 集成测试（扩展）。
+//! Scene/GltfLoaderSpec + ModelSpec → Rust 集成测试（扩展）。
 //!
-//! 对应 CesiumJS：
-//! - Scene/GltfLoader.js（JSON 解析、accessor 数据读取、稀疏 accessor）
-//! - Scene/Model/ModelUtility.js（节点变换、三角形/顶点计数）
+//! 参考 CesiumJS：
+//! - Scene/GltfLoader（JSON 解析、accessor 数据读取、稀疏 accessor）
+//! - Scene/Model/ModelUtility（节点变换、三角形/顶点计数）
 //!
 //! A 类测试：Node.local_transform、Accessor 读取方法（f32/u16/u32/sparse/stride）、
 //! GltfModel.triangle_count/vertex_count、PrimitiveMode/ComponentType/Interpolation serde、

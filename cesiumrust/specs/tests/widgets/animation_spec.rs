@@ -1,4 +1,4 @@
-//! Widgets/AnimationViewModelSpec.js → Rust 集成测试
+//! Widgets/AnimationViewModelSpec → Rust 集成测试
 
 use cesium_widgets::{AnimationViewModel, ShuttleRing};
 

@@ -1,4 +1,4 @@
-//! Core/TimeIntervalCollectionSpec.js → Rust 集成测试
+//! Core/TimeIntervalCollectionSpec → Rust 集成测试
 //! 原始共 67 个 it() 块。C 类（throws/changedEvent）已跳过（11 个）。
 //! 合并回调测试已跳过（API 尚未支持）。
 //! 已移植：约 55 个测试，覆盖 construct、contains、indexOf、get、findInterval、

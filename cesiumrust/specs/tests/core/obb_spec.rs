@@ -1,6 +1,6 @@
-//! Core/OrientedBoundingBoxSpec.js → Rust 集成测试
+//! Core/OrientedBoundingBoxSpec → Rust 集成测试
 //!
-//! 忠实移植 CesiumJS `Specs/Core/OrientedBoundingBoxSpec.js`（61 个 `it()` 用例）。
+//! 对齐实现 CesiumJS `Specs/Core/OrientedBoundingBoxSpec`（61 个 `it()` 用例）。
 //!
 //! ## 平台适配
 //! - JS 的 result-parameter 变体（`fromRectangle(.., result)`、`computeCorners(result)`、
@@ -736,7 +736,7 @@ fn test_obb_from_transformation_zero_scale() {
 
 // ======================== intersectPlane ========================
 
-/// 忠实移植规范中的 `intersectPlaneTestCornersEdgesFaces` 辅助函数。
+/// 对齐实现规范中的 `intersectPlaneTestCornersEdgesFaces` 辅助函数。
 /// 在距盒子的面/棱/顶点不同距离处生成平面，并
 /// 验证预期的 Intersect 分类结果。
 fn intersect_plane_test_corners_edges_faces(center: DVec3, axes: DMat3) {

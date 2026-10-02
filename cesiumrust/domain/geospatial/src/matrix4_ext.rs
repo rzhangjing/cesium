@@ -1,6 +1,6 @@
-//! Matrix4 的 CesiumJS 扩展函数。
-//! 映射到 CesiumJS `Core/Matrix4.js` 中超越基础 glam 操作的静态方法。
-//! 注意：CesiumJS 以列主序存储矩阵，与 glam DMat4 相同。
+//! Matrix4 的扩展函数。
+//! 提供超越基础 glam 操作的静态方法。
+//! 注意：矩阵以列主序存储，与 glam DMat4 布局一致。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -13,6 +13,8 @@ pub const PACKED_LENGTH: usize = 16;
 
 /// 从一个旋转（Matrix3）和平移创建一个 Matrix4。
 /// 映射到 CesiumJS `Matrix4.fromRotationTranslation`
+///
+/// 旋转填入左上 3x3（前三列），平移填入第四列，底部一行为 [0,0,0,1]。
 pub fn from_rotation_translation(rotation: &DMat3, translation: DVec3) -> DMat4 {
     DMat4::from_cols_array(&[
         rotation.x_axis.x,
@@ -70,6 +72,8 @@ pub fn get_translation(matrix: &DMat4) -> DVec3 {
 
 /// 获取一个仿射变换矩阵的缩放分量。
 /// 映射到 CesiumJS `Matrix4.getScale`
+///
+/// 取左上 3x3 各列向量的长度作为 X/Y/Z 三轴缩放。
 pub fn get_scale(matrix: &DMat4) -> DVec3 {
     let sx = DVec3::new(matrix.x_axis.x, matrix.x_axis.y, matrix.x_axis.z).length();
     let sy = DVec3::new(matrix.y_axis.x, matrix.y_axis.y, matrix.y_axis.z).length();
@@ -86,6 +90,8 @@ pub fn get_maximum_scale(matrix: &DMat4) -> f64 {
 
 /// 获取旋转分量（左上 3x3，按缩放归一化）。
 /// 映射到 CesiumJS `Matrix4.getRotation`
+///
+/// 将前三列各除以对应轴的缩放长度，剔除缩放后得到纯旋转子矩阵。
 pub fn get_rotation(matrix: &DMat4) -> DMat3 {
     let scale = get_scale(matrix);
     DMat3::from_cols_array(&[
@@ -159,6 +165,8 @@ pub fn multiply_by_scale(matrix: &DMat4, scale: DVec3) -> DMat4 {
 
 /// 从视场角计算一个透视投影矩阵。
 /// 映射到 CesiumJS `Matrix4.computePerspectiveFieldOfView`
+///
+/// 以半视角正切得到高度缩放，再按宽高比得到宽度缩放；第三列编码 near/far 的深度映射。
 pub fn compute_perspective_field_of_view(
     fov_y: f64,
     aspect_ratio: f64,
@@ -240,6 +248,8 @@ pub fn from_translation_quaternion_rotation_scale(
 /// 相乘两个仿射变换矩阵，忽略第 4 行。
 /// 结果的第四行始终为 [0,0,0,1]。
 /// 映射到 CesiumJS `Matrix4.multiplyTransformation`
+///
+/// 前三列只需 3x3 点乘（因右矩阵第 4 行为单位），第 4 列为左矩阵乘以右平移。
 pub fn multiply_transformation(left: &DMat4, right: &DMat4) -> DMat4 {
     let l = left.to_cols_array();
     let r = right.to_cols_array();
@@ -267,6 +277,8 @@ pub fn multiply_transformation(left: &DMat4, right: &DMat4) -> DMat4 {
 /// 使用一个 4x4 矩阵变换一个点，将其视为方向（w=0）。
 /// 忽略平移。
 /// 映射到 CesiumJS `Matrix4.multiplyByPointAsVector`
+///
+/// 仅用左上 3x3 与向量相乘，因 w=0 而自然丢弃第四列的平移。
 pub fn multiply_by_point_as_vector(matrix: &DMat4, point: DVec3) -> DVec3 {
     DVec3::new(
         matrix.x_axis.x * point.x + matrix.y_axis.x * point.y + matrix.z_axis.x * point.z,
@@ -341,6 +353,8 @@ pub fn set_scale(matrix: &DMat4, scale: DVec3) -> DMat4 {
 
 /// 计算一个正交投影矩阵。
 /// 映射到 CesiumJS `Matrix4.computeOrthographicOffCenter`
+///
+/// 将以 left/right×bottom/top×near/far 定义的长方体线性映射到 NDC 立方体，a/b/c 为各轴半宽。
 pub fn compute_orthographic_off_center(
     left: f64, right: f64, bottom: f64, top: f64, near: f64, far: f64,
 ) -> DMat4 {
@@ -406,6 +420,8 @@ pub fn compute_infinite_perspective_off_center(
 
 /// 计算一个视口变换矩阵。
 /// 映射到 CesiumJS `Matrix4.computeViewportTransformation`
+///
+/// 将 NDC 的 −1~1 映射到视口像素矩形，深度范围映射到 near~far，平移位于第四列。
 pub fn compute_viewport_transformation(
     viewport_x: f64, viewport_y: f64,
     viewport_width: f64, viewport_height: f64,

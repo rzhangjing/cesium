@@ -15,6 +15,10 @@ use cesium_atmosphere::StarSphere;
 pub struct StarfieldPlugin;
 
 impl Plugin for StarfieldPlugin {
+    /// 插件装配入口：仅在 Startup 阶段挂载星野生成系统。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用。
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_starfield);
     }
@@ -104,12 +108,14 @@ fn make_star_sprite(images: &mut Assets<Image>) -> Handle<Image> {
     images.add(img)
 }
 
+/// 构建整片星野：将亮星与暗星合并到单一 mesh，配以圆形光晕 sprite 材质。
 fn setup_starfield(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
 ) {
+    // 天球半径：足够大以包裹整个场景。
     let radius = 50.0_f32;
 
     let mut positions: Vec<[f32; 3]> = Vec::new();
@@ -153,11 +159,13 @@ fn setup_starfield(
         bevy::render::mesh::PrimitiveTopology::TriangleList,
         bevy::render::render_asset::RenderAssetUsages::default(),
     );
+    // 将所有星 quad 合并为单一 TriangleList mesh。
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
     mesh.insert_indices(bevy::render::mesh::Indices::U32(indices));
 
+    // 无光照（unlit）白色材质，贴图提供柔和衰减。
     let star_material = materials.add(StandardMaterial {
         base_color: Color::WHITE,
         base_color_texture: Some(make_star_sprite(&mut images)),

@@ -1,5 +1,5 @@
 //! DrawCommand / RenderCommandList / FrameStatistics 规范
-//! 移植自 CesiumJS Renderer/DrawCommand.js + Scene/Pass.js
+//! 参考自 CesiumJS Renderer/DrawCommand + Scene/Pass
 //!
 //! A 类测试：DrawCommand 构造/builder、RenderPass 排序、
 //! RenderCommandList push/sort/clear、BlendState/DepthState、FrameStatistics merge/reset

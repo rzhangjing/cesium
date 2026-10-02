@@ -1,6 +1,6 @@
-//! 扩展几何规格 - 移植自 Core/CircleGeometrySpec.js、
-//! Core/CoplanarPolygonGeometrySpec.js、Core/GroundPolylineGeometrySpec.js、
-//! Core/PolylineVolumeGeometrySpec.js、Core/PlaneGeometrySpec.js
+//! 扩展几何规格 - 参考自 Core/CircleGeometrySpec、
+//! Core/CoplanarPolygonGeometrySpec、Core/GroundPolylineGeometrySpec、
+//! Core/PolylineVolumeGeometrySpec、Core/PlaneGeometrySpec
 //!
 //! 测试其余几何生成器的数学属性。
 
@@ -17,7 +17,7 @@ fn wgs84() -> Ellipsoid {
     Ellipsoid::WGS84
 }
 
-// ─── CircleGeometry（来自 CircleGeometrySpec.js）───────────────────────────
+// ─── CircleGeometry（来自 CircleGeometrySpec）───────────────────────────
 
 #[test]
 fn circle_computes_positions() {
@@ -74,7 +74,7 @@ fn circle_positions_on_surface() {
     }
 }
 
-// ─── CoplanarPolygonGeometry（来自 CoplanarPolygonGeometrySpec.js）─────────
+// ─── CoplanarPolygonGeometry（来自 CoplanarPolygonGeometrySpec）─────────
 
 #[test]
 fn coplanar_polygon_computes_positions() {
@@ -144,7 +144,7 @@ fn coplanar_polygon_triangle() {
     assert_eq!(geo.indices.len(), 3); // 1 个三角形
 }
 
-// ─── GroundPolylineGeometry（来自 GroundPolylineGeometrySpec.js）───────────
+// ─── GroundPolylineGeometry（来自 GroundPolylineGeometrySpec）───────────
 
 #[test]
 fn ground_polyline_computes_positions() {
@@ -192,7 +192,7 @@ fn ground_polyline_positions_on_surface() {
     }
 }
 
-// ─── PolylineVolumeGeometry（来自 PolylineVolumeGeometrySpec.js）───────────
+// ─── PolylineVolumeGeometry（来自 PolylineVolumeGeometrySpec）───────────
 
 #[test]
 fn polyline_volume_computes_positions() {
@@ -248,7 +248,7 @@ fn polyline_volume_computes_all_attributes() {
     }
 }
 
-// ─── PlaneGeometry（来自 PlaneGeometrySpec.js）─────────────────────────────
+// ─── PlaneGeometry（来自 PlaneGeometrySpec）─────────────────────────────
 
 #[test]
 fn plane_computes_positions() {

@@ -1,7 +1,7 @@
-//! Core/ComponentDatatypeSpec.js + Core/IndexDatatypeSpec.js → Rust 集成测试
+//! Core/ComponentDatatypeSpec + Core/IndexDatatypeSpec → Rust 集成测试
 //!
-//! ComponentDatatypeSpec.js：13 个原始 it() 块 → 移植 5 个 A 类测试
-//! IndexDatatypeSpec.js：14 个原始 it() 块 → 移植 5 个 A 类测试
+//! ComponentDatatypeSpec：13 个原始 it() 块 → 移植 5 个 A 类测试
+//! IndexDatatypeSpec：14 个原始 it() 块 → 移植 5 个 A 类测试
 //!
 //! 省略的 C 类测试（JS 类型化数组 / DeveloperError throws）：
 //! - ComponentDatatype：fromTypedArray throws(1)、createTypedArray(2)、createArrayBufferView(4)、

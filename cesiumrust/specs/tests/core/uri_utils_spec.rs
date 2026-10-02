@@ -1,9 +1,9 @@
-//! 移植自 CesiumJS 的测试：
-//! - objectToQuerySpec.js（5 个 A 类）
-//! - queryToObjectSpec.js（4 个 A 类）
-//! - parseResponseHeadersSpec.js（2 个 A 类）
-//! - getFilenameFromUriSpec.js（1 个 A 类）
-//! - getExtensionFromUriSpec.js（1 个 A 类）
+//! 参考自 CesiumJS 的测试：
+//! - objectToQuerySpec（5 个 A 类）
+//! - queryToObjectSpec（4 个 A 类）
+//! - parseResponseHeadersSpec（2 个 A 类）
+//! - getFilenameFromUriSpec（1 个 A 类）
+//! - getExtensionFromUriSpec（1 个 A 类）
 
 use cesium_geospatial::uri_utils::{
     get_extension_from_uri, get_filename_from_uri, object_to_query, parse_response_headers,

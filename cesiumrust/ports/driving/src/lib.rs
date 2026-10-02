@@ -13,7 +13,7 @@ use cesium_time::JulianDate;
 // ============================================================================
 
 /// 控制 3D 地球的主 viewer 接口。
-/// 对应 CesiumJS 的 `Viewer` / `CesiumWidget`（仅 API 表层）
+/// 面向应用层的 viewer / widget 表面（仅 API 表层）。
 pub trait ViewerApi {
     /// 获取 camera 的引用。
     fn camera(&self) -> &Camera;
@@ -42,7 +42,7 @@ pub trait ViewerApi {
 // ============================================================================
 
 /// Camera 操作接口。
-/// 对应 CesiumJS `Camera` 暴露给用户的方法
+/// 向用户暴露的 camera 操作方法集合。
 pub trait CameraControl {
     /// 由位置与朝向设置 camera 视图。
     fn set_view(

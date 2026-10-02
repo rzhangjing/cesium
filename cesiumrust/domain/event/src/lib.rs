@@ -1,12 +1,16 @@
 //! cesium-event：类型安全的事件系统。
-//! 领域层 —— 纯 Rust，无框架依赖。
 //!
-//! CesiumJS 映射：`packages/engine/Source/Core/Event.js`
+//! 领域层 —— 纯 Rust，无框架依赖。提供 [`Event`]（可挂多个监听器、带参数类型
+//! `Args`）与其无参特化 [`SimpleEvent`]：支持注册 / 注销 / 触发 / 清空监听器，
+//! 并借助内部可变性（[`RefCell`]）在只读借用下完成订阅表的增删与派发。
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 
 /// 事件监听器的唯一标识符。
+///
+/// 对新类型封装的自增序号做 opaque 处理：仅用作 [`Event::remove_listener`] 的凭据，
+/// 不暴露内部数值语义；派生 `Hash`/`Eq` 以便作为键或放入集合。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ListenerId(u64);
 
@@ -14,11 +18,14 @@ pub struct ListenerId(u64);
 type ListenerMap<Args> = HashMap<u64, Box<dyn Fn(&Args)>>;
 
 /// 一个可以有多个监听器的通用事件。
-/// 映射到 CesiumJS 的 `Event`
 ///
-/// 类型参数 `Args` 是传递给监听器的参数类型元组。
+/// 类型参数 `Args` 是触发时传递给各监听器的参数类型（通常是一个元组）。
+/// 内部以自增 id 作为键把监听器存入哈希表，因而同一事件可挂载任意多个回调。
 pub struct Event<Args: Clone> {
+    /// 已注册监听器表：键为自增分配的监听器 id，值为擦除类型后的回调闭包。
+    /// 用 [`RefCell`] 包裹以在 `&self`（只读引用）下仍可增删。
     listeners: RefCell<ListenerMap<Args>>,
+    /// 下一次注册要使用的自增 id，从 0 起，每次 `add_listener` 递增 1。
     next_id: RefCell<u64>,
 }
 
@@ -31,63 +38,70 @@ impl<Args: Clone> Event<Args> {
         }
     }
 
-    /// 返回当前已订阅的监听器数量。
-    /// 映射到 `Event.numberOfListeners`
+    /// 返回当前已订阅的监听器数量（等价于集合基数）。
     pub fn number_of_listeners(&self) -> usize {
         self.listeners.borrow().len()
     }
 
-    /// 若没有任何监听器则返回 true。
+    /// 若没有任何监听器则返回 true（等价于 `number_of_listeners() == 0`）。
+    /// 仅做只读借用，不改变订阅表状态。
     pub fn is_empty(&self) -> bool {
         self.listeners.borrow().is_empty()
     }
 
     /// 注册一个回调函数，只要事件被触发就会执行。
-    /// 映射到 `Event.addEventListener`
     ///
-    /// 返回一个可用于移除该监听器的 `ListenerId`。
+    /// 返回一个可用于后续移除该监听器的 [`ListenerId`]。
     pub fn add_listener<F>(&self, listener: F) -> ListenerId
     where
         F: Fn(&Args) + 'static,
     {
+        // 取出并预占下一个自增 id（同一事件内保证唯一）
         let mut next_id = self.next_id.borrow_mut();
         let id = *next_id;
         *next_id += 1;
 
+        // 把闭包装箱擦除具体类型后按 id 存入监听器表，并回传其标识
         self.listeners.borrow_mut().insert(id, Box::new(listener));
         ListenerId(id)
     }
 
     /// 注销先前已注册的回调。
-    /// 映射到 `Event.removeEventListener`
     ///
-    /// 若监听器被移除则返回 true。
+    /// 若该 id 对应的监听器确实存在并被移除则返回 true，否则返回 false。
     pub fn remove_listener(&self, id: ListenerId) -> bool {
         self.listeners.borrow_mut().remove(&id.0).is_some()
     }
 
     /// 触发事件：以给定参数依次调用每个已注册的监听器。
-    /// 映射到 `Event.raiseEvent`
+    ///
+    /// 先以只读借用取得监听器表快照，再遍历所有值同步派发；派发期间不应再次
+    /// 变更监听器集合，否则会因借用冲突而 panic。
     pub fn raise(&self, args: &Args) {
+        // 只读借用整张监听器表，按哈希存储顺序逐个调用
         let listeners = self.listeners.borrow();
         for listener in listeners.values() {
             listener(args);
         }
     }
 
-    /// 移除所有监听器。
+    /// 移除所有监听器，使事件回到空订阅状态。
+    ///
+    /// 以可变借用清空订阅表；此前发放的 [`ListenerId`] 随即失效（再次移除返回 false）。
     pub fn clear(&self) {
         self.listeners.borrow_mut().clear();
     }
 }
 
 impl<Args: Clone> Default for Event<Args> {
+    /// 默认事件即空事件，语义与 [`Event::new`] 一致。
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl<Args: Clone> std::fmt::Debug for Event<Args> {
+    /// 手写 Debug：闭包不可打印，故仅以监听器数量近似呈现事件状态。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Event")
             .field("listener_count", &self.number_of_listeners())

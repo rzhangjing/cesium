@@ -5,7 +5,7 @@
 
 /// 断言两个 f64 值在 epsilon 容差内近似相等。
 ///
-/// 对应 CesiumJS 的 `toEqualEpsilon(expected, epsilon)`。
+/// 参考 CesiumJS 的 `toEqualEpsilon(expected, epsilon)`。
 #[macro_export]
 macro_rules! assert_approx {
     ($a:expr, $b:expr, $eps:expr) => {
@@ -23,7 +23,7 @@ macro_rules! assert_approx {
 
 /// 断言两个 DVec3 值在 epsilon 容差内近似相等。
 ///
-/// 对应 CesiumJS 中 Cartesian3 的 `toEqualEpsilon`。
+/// 参考 CesiumJS 中 Cartesian3 的 `toEqualEpsilon`。
 #[macro_export]
 macro_rules! assert_vec3_epsilon {
     ($a:expr, $b:expr, $eps:expr) => {

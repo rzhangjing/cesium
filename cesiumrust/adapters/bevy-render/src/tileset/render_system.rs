@@ -1,3 +1,5 @@
+//! 瓦片渲染系统：为已就绪的瓦片生成/销毁对应的渲染实体。
+
 use std::collections::HashMap;
 
 use bevy::prelude::*;
@@ -7,11 +9,21 @@ use crate::resources::METERS_PER_RENDER_UNIT;
 
 use super::traversal_system::TileSelection;
 
+/// 瓦片路径到其渲染实体的映射，供增量 spawn/despawn 去重。
 #[derive(Resource, Default)]
 pub struct TileRenderMap {
+    /// 已 spawn 的渲染实体，键为从根到瓦片的子索引路径。
     pub render_entities: HashMap<Vec<usize>, Entity>,
 }
 
+/// 逐帧同步渲染实体：为 `Ready` 且携带 mesh 的瓦片 spawn 渲染实体，
+/// 并为卸载队列中的路径回收实体。
+///
+/// # 参数
+/// - `commands`：实体增删命令
+/// - `selection`：遍历系统产出的加载/卸载选择
+/// - `render_map`：路径到渲染实体的映射
+/// - `tile_query`：瓦片节点与其内容的查询
 pub fn tile_render_system(
     mut commands: Commands,
     mut selection: ResMut<TileSelection>,
@@ -95,6 +107,7 @@ pub fn tile_render_system(
 mod tests {
     use super::*;
 
+    /// 验证渲染映射插入后按键命中、移除后归空。
     #[test]
     fn test_render_map_insert_and_remove() {
         let mut map = TileRenderMap::default();
@@ -106,6 +119,7 @@ mod tests {
         assert!(map.render_entities.is_empty());
     }
 
+    /// 验证多条路径可同时登记且互不覆盖。
     #[test]
     fn test_render_map_multiple_paths() {
         let mut map = TileRenderMap::default();
@@ -116,6 +130,7 @@ mod tests {
         assert!(map.render_entities.contains_key(&vec![1]));
     }
 
+    /// 验证 RTC 变换以 render unit 撤销重新居中并均匀缩放。
     #[test]
     fn test_rtc_transform_matches_render_scale() {
         // 渲染变换必须以 render unit 撤销 RTC 重新居中，并

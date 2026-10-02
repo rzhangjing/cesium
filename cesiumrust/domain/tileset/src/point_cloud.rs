@@ -1,19 +1,14 @@
 //! 3D Tiles 的点云渲染支持。
 //!
-//! 镜像 CesiumJS：
-//! - `Scene/PointCloud.js`
-//! - `Scene/PointCloudShading.js`
-//! - `Scene/PointCloudEyeDomeLighting.js`
-//! - `Scene/TimeDynamicPointCloud.js`
+//! 提供从 pnts 内容解码的点云模型、逐点着色/衰减/EDL 配置、
+//! 量子化位置的反量子化，以及按时间戳组帧的时间动态点云。
 
-// 遗留的 CesiumJS 移植风格债务（deferred.md #18）；在 M13 lint-cleanup 或本文件在其里程碑被重写时重新审视
+// 遗留的 原实现 移植风格债务（deferred.md #18）；在 M13 lint-cleanup 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::field_reassign_with_default)]
 use crate::batch_table::FeatureTable;
 use glam::DVec3;
 
 /// 点云着色配置。
-///
-/// 映射到 CesiumJS `Scene/PointCloudShading.js`
 #[derive(Debug, Clone)]
 pub struct PointCloudShading {
     /// 是否启用衰减（点随距离缩小）。
@@ -33,6 +28,7 @@ pub struct PointCloudShading {
 }
 
 impl Default for PointCloudShading {
+    /// 默认：不开启衰减，开启 EDL 与法线着色，强度/半径均为 1.0。
     fn default() -> Self {
         Self {
             attenuation: false,
@@ -49,7 +45,7 @@ impl Default for PointCloudShading {
 impl PointCloudShading {
     /// 根据距离计算衰减后的点大小。
     ///
-    /// 映射到 CesiumJS 的点云衰减公式：
+    /// 点随距离增大而缩小的衰减公式：
     /// `pointSize = baseSize * (attenuationFactor / distance)`
     pub fn compute_attenuated_size(
         &self,
@@ -61,7 +57,7 @@ impl PointCloudShading {
             return base_size;
         }
 
-        // 来自 CesiumJS 的衰减公式
+        // 衰减因子取视口高度的一半（近似像素与世界的映射比例）
         let attenuation_factor = viewport_height * 0.5;
         let attenuated = base_size * (attenuation_factor / distance);
 
@@ -103,8 +99,6 @@ impl PointCloudShading {
 }
 
 /// 从 pnts 内容解码出的点云。
-///
-/// 映射到 CesiumJS `Scene/PointCloud.js`
 #[derive(Debug, Clone)]
 pub struct PointCloud {
     /// 点数量。
@@ -139,11 +133,13 @@ pub struct QuantizedPositions {
 impl QuantizedPositions {
     /// 对给定索引处的位置进行反量子化。
     pub fn dequantize(&self, index: usize) -> [f32; 3] {
+        // 每点占 3 个 u16，越界时回退为原点
         let base = index * 3;
         if base + 2 >= self.values.len() {
             return [0.0, 0.0, 0.0];
         }
 
+        // u16 除以最大值 65535 归一到 [0,1]，再按 scale/offset 还原
         let qx = self.values[base] as f32 / 65535.0;
         let qy = self.values[base + 1] as f32 / 65535.0;
         let qz = self.values[base + 2] as f32 / 65535.0;
@@ -159,7 +155,7 @@ impl QuantizedPositions {
 impl PointCloud {
     /// 从 feature table 解码点云。
     ///
-    /// 映射到 CesiumJS `PntsParser.parse` + `PointCloud` 构造函数
+    /// 依次提取位置（直接或量子化）、颜色、法线、batch ID 与 RTC 中心。
     pub fn from_feature_table(feature_table: &FeatureTable) -> Option<Self> {
         let points_length = feature_table.get_global_u32("POINTS_LENGTH")?;
 
@@ -234,6 +230,7 @@ impl PointCloud {
         let values = feature_table.read_u16_array(bin_ref.byte_offset, count * 3)?;
 
         // 获取量子化体积
+        // offset/scale 缺失时分别退化为 0 与 1（不影响还原）
         let volume_offset = feature_table
             .get_global_property("QUANTIZED_VOLUME_OFFSET")
             .and_then(|v| v.as_array())
@@ -281,6 +278,7 @@ impl PointCloud {
         }
 
         // 尝试 RGB565（压缩格式）
+        // 按 5/6/5 位掩码拆回 r/g/b 并除各自最大值归一
         if let Some(bin_ref) = feature_table.get_binary_ref("RGB565") {
             let count = points_length as usize;
             let values = feature_table.read_u16_array(bin_ref.byte_offset, count)?;
@@ -301,10 +299,12 @@ impl PointCloud {
 
     /// 获取一个点的世界位置（若存在则应用 RTC 中心）。
     pub fn get_world_position(&self, index: usize) -> Option<DVec3> {
+        // 越界防护：索引超出已存位置数时返回 None
         if index >= self.positions.len() {
             return None;
         }
 
+        // 将局部 f32 位置加宽为 f64，再叠加 RTC 中心到世界坐标
         let pos = self.positions[index];
         let mut world = DVec3::new(pos[0] as f64, pos[1] as f64, pos[2] as f64);
 
@@ -318,6 +318,7 @@ impl PointCloud {
     /// 获取一个点的颜色。
     pub fn get_color(&self, index: usize) -> [f32; 4] {
         // 若可用则使用逐点颜色
+        // 颜色优先级：逐点颜色 > 常量 RGBA > 默认白色
         if let Some(colors) = &self.colors {
             if index < colors.len() {
                 return colors[index];
@@ -357,6 +358,7 @@ impl PointCloud {
         }
 
         // 计算半径
+        // 遍历所有世界坐标取最大距离平方，最后开方得包围球半径
         let mut radius_sq = 0.0f64;
         for pos in &self.positions {
             let mut world = DVec3::new(pos[0] as f64, pos[1] as f64, pos[2] as f64);
@@ -372,8 +374,6 @@ impl PointCloud {
 }
 
 /// 时间动态点云配置。
-///
-/// 映射到 CesiumJS `Scene/TimeDynamicPointCloud.js`
 #[derive(Debug, Clone)]
 pub struct TimeDynamicPointCloud {
     /// 点云是否为时间动态。
@@ -389,6 +389,7 @@ pub struct TimeDynamicPointCloud {
 impl TimeDynamicPointCloud {
     /// 创建一个新的时间动态点云。
     pub fn new(timestamps: Vec<f64>, uris: Vec<String>) -> Self {
+        // 有时间戳即视为时间动态，默认不插值
         Self {
             is_time_dynamic: !timestamps.is_empty(),
             timestamps,
@@ -399,6 +400,7 @@ impl TimeDynamicPointCloud {
 
     /// 获取给定时间对应的帧索引。
     pub fn get_frame_index(&self, time: f64) -> Option<usize> {
+        // 无时间戳时无法定位帧
         if self.timestamps.is_empty() {
             return None;
         }
@@ -422,6 +424,7 @@ impl TimeDynamicPointCloud {
 
     /// 获取两帧之间的插值因子。
     pub fn get_interpolation_factor(&self, time: f64) -> Option<(usize, usize, f64)> {
+        // 未开启插值或帧数不足时无插值
         if !self.interpolate || self.timestamps.len() < 2 {
             return None;
         }
@@ -470,6 +473,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证点云着色的默认开关组合。
     fn test_point_cloud_shading_default() {
         let shading = PointCloudShading::default();
         assert!(!shading.attenuation);
@@ -478,6 +482,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证未开衰减时直接返回基准尺寸。
     fn test_attenuated_size_no_attenuation() {
         let shading = PointCloudShading::default();
         let size = shading.compute_attenuated_size(5.0, 100.0, 1080.0);
@@ -485,6 +490,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证开衰减时近点尺寸大于远点。
     fn test_attenuated_size_with_attenuation() {
         let mut shading = PointCloudShading::default();
         shading.attenuation = true;
@@ -496,6 +502,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证 EDL 响应：平面无边缘为 1，遮挡边缘时 <1。
     fn test_edl_response() {
         let shading = PointCloudShading::default();
 
@@ -509,6 +516,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证从 feature table 解码位置并展平为三元组。
     fn test_point_cloud_from_feature_table() {
         let ft = create_feature_table_with_positions(3);
         let pc = PointCloud::from_feature_table(&ft).unwrap();
@@ -521,6 +529,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证 RGB(u8) 颜色解码为归一化四分量。
     fn test_point_cloud_with_colors() {
         let mut binary = Vec::new();
         // 位置
@@ -548,6 +557,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证 RTC 中心平移到世界坐标。
     fn test_point_cloud_with_rtc_center() {
         let mut binary = Vec::new();
         binary.extend_from_slice(&1.0f32.to_le_bytes());
@@ -572,6 +582,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证颜色回退优先级：逐点 > 常量 > 默认白色。
     fn test_point_cloud_get_color() {
         let ft = create_feature_table_with_positions(1);
         let mut pc = PointCloud::from_feature_table(&ft).unwrap();
@@ -589,6 +600,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证包围球中心为位置均值且半径为正。
     fn test_point_cloud_bounding_sphere() {
         let ft = create_feature_table_with_positions(3);
         let pc = PointCloud::from_feature_table(&ft).unwrap();
@@ -604,6 +616,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证反量子化按 offset+q*scale 还原坐标。
     fn test_quantized_positions() {
         let quantized = QuantizedPositions {
             values: vec![0, 32767, 65535], // 0%, 50%, 100%
@@ -618,6 +631,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证时间动态点云的帧索引与 URI 选取。
     fn test_time_dynamic_point_cloud() {
         let timestamps = vec![0.0, 1.0, 2.0, 3.0];
         let uris = vec![
@@ -639,6 +653,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证相邻帧间插值因子与帧对定位。
     fn test_time_dynamic_interpolation() {
         let timestamps = vec![0.0, 1.0, 2.0];
         let uris = vec!["a.pnts".to_string(), "b.pnts".to_string(), "c.pnts".to_string()];
@@ -658,6 +673,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证法线从 feature table 解码为三元组。
     fn test_point_cloud_with_normals() {
         let mut binary = Vec::new();
         // 位置

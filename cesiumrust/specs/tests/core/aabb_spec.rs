@@ -1,6 +1,6 @@
-//! Core/AxisAlignedBoundingBoxSpec.js → Rust 集成测试
+//! Core/AxisAlignedBoundingBoxSpec → Rust 集成测试
 //!
-//! 忠实移植自 CesiumJS `Specs/Core/AxisAlignedBoundingBoxSpec.js`（22 个 `it()` 用例）。
+//! 对齐实现自 CesiumJS `Specs/Core/AxisAlignedBoundingBoxSpec`（22 个 `it()` 用例）。
 //!
 //! ## 平台适配
 //! - JS 结果参数变体（`fromCorners(min, max, result)`、`clone(result)`）

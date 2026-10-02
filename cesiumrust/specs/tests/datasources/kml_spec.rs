@@ -1,4 +1,4 @@
-//! KML 规范 - 移植自 DataSources/KmlDataSourceSpec、KmlTourSpec、exportKmlSpec
+//! KML 规范 - 参考自 DataSources/KmlDataSourceSpec、KmlTourSpec、exportKmlSpec
 //! 覆盖：parse_kml_simple、parse_coordinates、parse_kml_color、kml_to_datasource、
 //! KmlTour、KmlTourFlyTo、KmlExporter、rgba_to_kml_color
 

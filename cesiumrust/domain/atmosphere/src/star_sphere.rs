@@ -1,13 +1,13 @@
 //! 星球与天空大气增强。
 //!
-//! 映射到 CesiumJS：
-//! - `Scene/StarSphere.js` —— 星表渲染
-//! - `Scene/SkyAtmosphere.js` —— HSB 偏移、动态光照、逐片元
-//! - `Scene/SkyBox.js` —— TEME 框架天空盒
+//! 涵盖三类天空渲染能力的领域模型：
+//! - 天球上的恒星表渲染（星等、颜色与点大小）
+//! - 天空大气的 HSB 偏移、动态光照与逐片元参数
+//! - 基于 TEME 框架的天空盒状态
 //!
 //! 领域层 —— 纯 Rust，f64 精度。
 
-// 遗留 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint 清理或本文件在其里程碑被重写时重新审视
+// 遗留移植风格技术债（deferred.md #18）；在 M13 lint 清理或本文件在其里程碑被重写时重新审视
 #![allow(clippy::field_reassign_with_default)]
 use glam::DVec3;
 
@@ -65,7 +65,7 @@ impl Star {
 
 /// 星球配置与渲染参数。
 ///
-/// 映射到 CesiumJS `StarSphere`，它在天球上渲染恒星。
+/// 在天球上按星表渲染恒星，支持星等剔除与亮度调整。
 #[derive(Debug, Clone)]
 pub struct StarSphere {
     /// 是否显示星球。
@@ -85,6 +85,7 @@ pub struct StarSphere {
 }
 
 impl Default for StarSphere {
+    /// 默认星球：显示星表，星等范围 -2..6，启用 HDR。
     fn default() -> Self {
         Self {
             show: true,
@@ -236,7 +237,7 @@ fn color_from_temperature(kelvin: f64) -> [f64; 3] {
 
 /// 动态大气光照类型。
 ///
-/// 映射到 CesiumJS `DynamicAtmosphereLightingType`。
+/// 指定光照源为太阳、月亮还是固定头顶方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DynamicAtmosphereLighting {
     /// 使用太阳位置进行光照。
@@ -261,7 +262,7 @@ impl DynamicAtmosphereLighting {
 
 /// 用于大气渲染的色相-饱和度-亮度偏移。
 ///
-/// 映射到 CesiumJS SkyAtmosphere 的 `hueShift`、`saturationShift`、`brightnessShift`。
+/// 分别对应大气颜色的色相、饱和度、亮度三个偏移量。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct HsbShift {
     /// 色相偏移（0.0 = 无偏移，1.0 = 完整旋转）。
@@ -301,7 +302,7 @@ impl HsbShift {
 
 /// 增强的天空大气参数。
 ///
-/// 用 CesiumJS SkyAtmosphere 特性扩展 `AtmosphereParameters`。
+/// 在基础 `AtmosphereParameters` 之上扩展逐片元、HSB 偏移与动态光照等能力。
 #[derive(Debug, Clone)]
 pub struct SkyAtmosphereConfig {
     /// 是否显示大气。
@@ -331,6 +332,7 @@ pub struct SkyAtmosphereConfig {
 }
 
 impl Default for SkyAtmosphereConfig {
+    /// 默认天空大气配置：显示、非逐片元、典型散射系数。
     fn default() -> Self {
         Self {
             show: true,
@@ -400,7 +402,7 @@ impl SkyAtmosphereConfig {
 
     /// 返回半径与动态大气颜色的 uniform 向量。
     ///
-    /// 映射到 CesiumJS `u_radiiAndDynamicAtmosphereColor`。
+    /// 将外半径、内半径与光照类型打包为一个三维 uniform。
     pub fn radii_and_dynamic_color(&self) -> DVec3 {
         DVec3::new(
             self.outer_radius(),
@@ -427,7 +429,7 @@ fn mie_phase_fn(cos_theta: f64, g: f64) -> f64 {
 
 /// 支持 TEME（True Equator Mean Equinox）框架的天空盒。
 ///
-/// 映射到 CesiumJS `SkyBox`，它使用 TEME 轴进行恒星渲染。
+/// 使用 TEME 轴进行恒星渲染，并按需施加绕极轴旋转。
 #[derive(Debug, Clone)]
 pub struct SkyBoxState {
     /// 是否显示天空盒。
@@ -439,6 +441,7 @@ pub struct SkyBoxState {
 }
 
 impl Default for SkyBoxState {
+    /// 默认天空盒状态：显示、无纹理面、零 TEME 旋转。
     fn default() -> Self {
         Self {
             show: true,

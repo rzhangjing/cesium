@@ -1,4 +1,4 @@
-//! 矩形几何详细规格 - 移植自 Core/RectangleGeometrySpec.js
+//! 矩形几何详细规格 - 参考自 Core/RectangleGeometrySpec
 //!
 //! 测试位置计数、角点位置、顶点属性、IDL 穿越、
 //! 极点处理与高度参数。
@@ -14,7 +14,7 @@ fn wgs84() -> Ellipsoid {
     Ellipsoid::WGS84
 }
 
-// ─── 位置计数（来自 RectangleGeometrySpec.js） ───────────────────────
+// ─── 位置计数（来自 RectangleGeometrySpec） ───────────────────────
 
 #[test]
 fn rectangle_computes_positions() {

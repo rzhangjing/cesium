@@ -1,8 +1,8 @@
 //! TerrainMesh + QuantizedMesh 扩展测试。
 //!
-//! 对应 CesiumJS：
-//! - Core/TerrainMesh.js
-//! - Core/QuantizedMeshTerrainData.js（网格创建、法线）
+//! 参考 CesiumJS：
+//! - Core/TerrainMesh
+//! - Core/QuantizedMeshTerrainData（网格创建、法线）
 //!
 //! A 类测试：网格计算、法线、顶点/三角形数量。
 

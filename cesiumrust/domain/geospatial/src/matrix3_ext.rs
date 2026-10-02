@@ -1,5 +1,5 @@
-//! Matrix3 的 CesiumJS 扩展函数。
-//! 映射到 CesiumJS `Core/Matrix3.js` 中超越基础矩阵运算（glam）的静态方法。
+//! Matrix3 的扩展函数。
+//! 提供超越基础矩阵运算（glam）的静态方法。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视

@@ -1,6 +1,6 @@
-//! HermiteSplineSpec.js → Rust 集成测试
+//! HermiteSplineSpec → Rust 集成测试
 //!
-//! 原始：packages/engine/Specs/Core/HermiteSplineSpec.js（34 个 it()）
+//! 原始：Specs/Core/HermiteSplineSpec（34 个 it()）
 //! A 类已移植：8 个（create_spline、C1、natural_cubic、clamped_cubic、evaluate_number、
 //!                    evaluate_cartesian3、natural_2pts_lerp、clamped_2pts_lerp）
 //! C 类已省略：22 个 throws（编译期类型安全）

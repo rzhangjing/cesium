@@ -1,6 +1,6 @@
-//! 移植自 HeadingPitchRollSpec.js（15 个 it()，11 个 A 类）
-//! + HeadingPitchRangeSpec.js（4 个 it()，2 个 A 类）
-//! + TranslationRotationScaleSpec.js（3 个 it()，3 个 A 类）
+//! 参考自 HeadingPitchRollSpec（15 个 it()，11 个 A 类）
+//! + HeadingPitchRangeSpec（4 个 it()，2 个 A 类）
+//! + TranslationRotationScaleSpec（3 个 it()，3 个 A 类）
 //!
 //! 4 个 throws = C 类（Rust 类型系统）。
 //! clone/result 参数变体 = C 类（Rust Copy/Clone 惯用法）。

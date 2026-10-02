@@ -1,15 +1,17 @@
 //! DataSourceCollection - DataSource 实例的集合。
 //!
-//! 映射到 CesiumJS `DataSources/DataSourceCollection.js`
+//! 集合按加入顺序维护一组数据源，并提供增删、索引访问与销毁判定。
 
 use crate::entity_collection::DataSource;
 
 /// 一个支持顺序与事件机制的 DataSource 实例集合。
 ///
-/// 映射到 CesiumJS `DataSources/DataSourceCollection.js`
+/// 集合保留数据源的加入顺序，并预留添加/移除事件；销毁后拒绝再变更。
 #[derive(Debug, Default)]
 pub struct DataSourceCollection {
+    /// 按加入顺序存放的数据源列表。
     data_sources: Vec<DataSource>,
+    /// 是否已被销毁；为真时集合拒绝再新增数据源。
     destroyed: bool,
 }
 

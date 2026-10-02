@@ -1,5 +1,5 @@
-//! 分类规范 - 移植自 ClassificationPrimitiveSpec.js
-//! 及 ClassificationTypeSpec.js
+//! 分类规范 - 参考自 ClassificationPrimitiveSpec
+//! 及 ClassificationTypeSpec
 //!
 //! 测试 Classification/ClassificationCollection/FeatureMetadata：
 //! 创建、builder 模式、要素/批次过滤、颜色混合、

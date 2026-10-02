@@ -1,4 +1,4 @@
-//! 视锥测试，移植自 CesiumJS PerspectiveFrustumSpec.js + OrthographicFrustumSpec.js
+//! 视锥测试，参考自 CesiumJS PerspectiveFrustumSpec + OrthographicFrustumSpec
 //! PerspectiveFrustum：16 个 A 类测试（共 32 个；14 个 throws + 2 个 packable = C 类）
 //! OrthographicFrustum：14 个 A 类测试（共 30 个；14 个 throws + 2 个 packable = C 类）
 //!
@@ -26,7 +26,7 @@ fn assert_approx(a: f64, b: f64, eps: f64, msg: &str) {
 }
 
 // ============================================================================
-// PerspectiveFrustum （来自 PerspectiveFrustumSpec.js）
+// PerspectiveFrustum （来自 PerspectiveFrustumSpec）
 // 设置：near=1, far=2, aspectRatio=1, fov=PI/3
 // ============================================================================
 
@@ -49,7 +49,7 @@ fn perspective_planes() -> [(DVec3, f64); 6] {
 
 #[test]
 fn test_perspective_constructs() {
-    // 移植自: PerspectiveFrustumSpec "constructs"
+    // 参考自: PerspectiveFrustumSpec "constructs"
     let f = PerspectiveFrustum {
         fov: 1.0,
         aspect_ratio: 2.0,
@@ -68,7 +68,7 @@ fn test_perspective_constructs() {
 
 #[test]
 fn test_perspective_default_constructs() {
-    // 移植自: PerspectiveFrustumSpec "default constructs"
+    // 参考自: PerspectiveFrustumSpec "default constructs"
     // CesiumJS 默认值： near=1.0, far=500000000.0, xOffset=0, yOffset=0
     let f = PerspectiveFrustum::new(std::f64::consts::FRAC_PI_3, 1.0, 1.0, 500_000_000.0);
     assert_eq!(f.near, 1.0);
@@ -79,7 +79,7 @@ fn test_perspective_default_constructs() {
 
 #[test]
 fn test_perspective_left_plane() {
-    // 移植自: PerspectiveFrustumSpec "get frustum left plane"
+    // 参考自: PerspectiveFrustumSpec "get frustum left plane"
     // 预期: Cartesian4(sqrt(3)/2, 0, -0.5, 0)
     let planes = perspective_planes();
     let (normal, distance) = planes[0];
@@ -92,7 +92,7 @@ fn test_perspective_left_plane() {
 
 #[test]
 fn test_perspective_right_plane() {
-    // 移植自: PerspectiveFrustumSpec "get frustum right plane"
+    // 参考自: PerspectiveFrustumSpec "get frustum right plane"
     // 预期: Cartesian4(-sqrt(3)/2, 0, -0.5, 0)
     let planes = perspective_planes();
     let (normal, distance) = planes[1];
@@ -105,7 +105,7 @@ fn test_perspective_right_plane() {
 
 #[test]
 fn test_perspective_bottom_plane() {
-    // 移植自: PerspectiveFrustumSpec "get frustum bottom plane"
+    // 参考自: PerspectiveFrustumSpec "get frustum bottom plane"
     // 预期: Cartesian4(0, sqrt(3)/2, -0.5, 0)
     let planes = perspective_planes();
     let (normal, distance) = planes[2];
@@ -118,7 +118,7 @@ fn test_perspective_bottom_plane() {
 
 #[test]
 fn test_perspective_top_plane() {
-    // 移植自: PerspectiveFrustumSpec "get frustum top plane"
+    // 参考自: PerspectiveFrustumSpec "get frustum top plane"
     // 预期: Cartesian4(0, -sqrt(3)/2, -0.5, 0)
     let planes = perspective_planes();
     let (normal, distance) = planes[3];
@@ -131,7 +131,7 @@ fn test_perspective_top_plane() {
 
 #[test]
 fn test_perspective_near_plane() {
-    // 移植自: PerspectiveFrustumSpec "get frustum near plane"
+    // 参考自: PerspectiveFrustumSpec "get frustum near plane"
     // 预期: Cartesian4(0, 0, -1, -1)
     let planes = perspective_planes();
     let (normal, distance) = planes[4];
@@ -143,7 +143,7 @@ fn test_perspective_near_plane() {
 
 #[test]
 fn test_perspective_far_plane() {
-    // 移植自: PerspectiveFrustumSpec "get frustum far plane"
+    // 参考自: PerspectiveFrustumSpec "get frustum far plane"
     // 预期: Cartesian4(0, 0, 1, 2)
     let planes = perspective_planes();
     let (normal, distance) = planes[5];
@@ -155,7 +155,7 @@ fn test_perspective_far_plane() {
 
 #[test]
 fn test_perspective_sse_denominator() {
-    // 移植自: PerspectiveFrustumSpec "get sseDenominator"
+    // 参考自: PerspectiveFrustumSpec "get sseDenominator"
     // 预期: ≈ 1.1547 (= 2*tan(PI/6))
     let f = make_perspective();
     let expected = 2.0 * (std::f64::consts::FRAC_PI_3 * 0.5).tan();
@@ -165,7 +165,7 @@ fn test_perspective_sse_denominator() {
 
 #[test]
 fn test_perspective_projection_matrix() {
-    // 移植自: PerspectiveFrustumSpec "get perspective projection matrix"
+    // 参考自: PerspectiveFrustumSpec "get perspective projection matrix"
     // 对照 computePerspectiveFieldOfView 公式验证
     let f = make_perspective();
     let proj = f.projection_matrix();
@@ -196,7 +196,7 @@ fn test_perspective_projection_matrix() {
 
 #[test]
 fn test_perspective_infinite_projection_matrix() {
-    // 移植自: PerspectiveFrustumSpec "get infinite perspective matrix"
+    // 参考自: PerspectiveFrustumSpec "get infinite perspective matrix"
     let f = make_perspective();
     let inf_proj = f.infinite_projection_matrix();
 
@@ -228,7 +228,7 @@ fn test_perspective_infinite_projection_matrix() {
 
 #[test]
 fn test_perspective_pixel_dimensions() {
-    // 移植自: PerspectiveFrustumSpec "get pixel dimensions"
+    // 参考自: PerspectiveFrustumSpec "get pixel dimensions"
     let f = make_perspective();
     let (pw, ph) = f.pixel_dimensions(1.0, 1.0, 1.0, 1.0);
 
@@ -243,7 +243,7 @@ fn test_perspective_pixel_dimensions() {
 
 #[test]
 fn test_perspective_pixel_dimensions_with_pixel_ratio() {
-    // 移植自: PerspectiveFrustumSpec "get pixel dimensions with pixel ratio"
+    // 参考自: PerspectiveFrustumSpec "get pixel dimensions with pixel ratio"
     let f = make_perspective();
     let (pw, ph) = f.pixel_dimensions(1.0, 1.0, 1.0, 2.0);
 
@@ -257,7 +257,7 @@ fn test_perspective_pixel_dimensions_with_pixel_ratio() {
 
 #[test]
 fn test_perspective_equals() {
-    // 移植自: PerspectiveFrustumSpec "equals"
+    // 参考自: PerspectiveFrustumSpec "equals"
     let f1 = make_perspective();
     let f2 = PerspectiveFrustum::new(std::f64::consts::FRAC_PI_3, 1.0, 1.0, 2.0);
     assert_eq!(f1, f2);
@@ -265,7 +265,7 @@ fn test_perspective_equals() {
 
 #[test]
 fn test_perspective_equals_epsilon() {
-    // 移植自: PerspectiveFrustumSpec "equals epsilon"
+    // 参考自: PerspectiveFrustumSpec "equals epsilon"
     let f1 = make_perspective();
 
     // 相同值 → 在任意 epsilon 之内
@@ -287,14 +287,14 @@ fn test_perspective_equals_epsilon() {
 
 #[test]
 fn test_perspective_clone() {
-    // 移植自: PerspectiveFrustumSpec "clone"
+    // 参考自: PerspectiveFrustumSpec "clone"
     let f1 = make_perspective();
     let f2 = f1; // Copy trait = clone
     assert_eq!(f1, f2);
 }
 
 // ============================================================================
-// OrthographicFrustum （来自 OrthographicFrustumSpec.js）
+// OrthographicFrustum （来自 OrthographicFrustumSpec）
 // 设置：near=1, far=3, width=2, aspectRatio=1
 // ============================================================================
 
@@ -317,7 +317,7 @@ fn orthographic_planes() -> [(DVec3, f64); 6] {
 
 #[test]
 fn test_orthographic_constructs() {
-    // 移植自: OrthographicFrustumSpec "constructs"
+    // 参考自: OrthographicFrustumSpec "constructs"
     let f = OrthographicFrustum::new(1.0, 2.0, 3.0, 4.0);
     assert_eq!(f.width, 1.0);
     assert_eq!(f.aspect_ratio, 2.0);
@@ -327,7 +327,7 @@ fn test_orthographic_constructs() {
 
 #[test]
 fn test_orthographic_default_constructs() {
-    // 移植自: OrthographicFrustumSpec "default constructs"
+    // 参考自: OrthographicFrustumSpec "default constructs"
     // CesiumJS 默认值： near=1.0, far=500000000.0
     let f = OrthographicFrustum::new(2.0, 1.0, 1.0, 500_000_000.0);
     assert_eq!(f.near, 1.0);
@@ -336,7 +336,7 @@ fn test_orthographic_default_constructs() {
 
 #[test]
 fn test_orthographic_left_plane() {
-    // 移植自: OrthographicFrustumSpec "get frustum left plane"
+    // 参考自: OrthographicFrustumSpec "get frustum left plane"
     // 预期: Cartesian4(1, 0, 0, 1)
     let planes = orthographic_planes();
     let (normal, distance) = planes[0];
@@ -348,7 +348,7 @@ fn test_orthographic_left_plane() {
 
 #[test]
 fn test_orthographic_right_plane() {
-    // 移植自: OrthographicFrustumSpec "get frustum right plane"
+    // 参考自: OrthographicFrustumSpec "get frustum right plane"
     // 预期: Cartesian4(-1, 0, 0, 1)
     let planes = orthographic_planes();
     let (normal, distance) = planes[1];
@@ -360,7 +360,7 @@ fn test_orthographic_right_plane() {
 
 #[test]
 fn test_orthographic_bottom_plane() {
-    // 移植自: OrthographicFrustumSpec "get frustum bottom plane"
+    // 参考自: OrthographicFrustumSpec "get frustum bottom plane"
     // 预期: Cartesian4(0, 1, 0, 1)
     let planes = orthographic_planes();
     let (normal, distance) = planes[2];
@@ -372,7 +372,7 @@ fn test_orthographic_bottom_plane() {
 
 #[test]
 fn test_orthographic_top_plane() {
-    // 移植自: OrthographicFrustumSpec "get frustum top plane"
+    // 参考自: OrthographicFrustumSpec "get frustum top plane"
     // 预期: Cartesian4(0, -1, 0, 1)
     let planes = orthographic_planes();
     let (normal, distance) = planes[3];
@@ -384,7 +384,7 @@ fn test_orthographic_top_plane() {
 
 #[test]
 fn test_orthographic_near_plane() {
-    // 移植自: OrthographicFrustumSpec "get frustum near plane"
+    // 参考自: OrthographicFrustumSpec "get frustum near plane"
     // 预期: Cartesian4(0, 0, -1, -1)
     let planes = orthographic_planes();
     let (normal, distance) = planes[4];
@@ -396,7 +396,7 @@ fn test_orthographic_near_plane() {
 
 #[test]
 fn test_orthographic_far_plane() {
-    // 移植自: OrthographicFrustumSpec "get frustum far plane"
+    // 参考自: OrthographicFrustumSpec "get frustum far plane"
     // 预期: Cartesian4(0, 0, 1, 3)
     let planes = orthographic_planes();
     let (normal, distance) = planes[5];
@@ -408,7 +408,7 @@ fn test_orthographic_far_plane() {
 
 #[test]
 fn test_orthographic_projection_matrix() {
-    // 移植自: OrthographicFrustumSpec "get orthographic projection matrix"
+    // 参考自: OrthographicFrustumSpec "get orthographic projection matrix"
     let f = make_orthographic();
     let proj = f.projection_matrix();
 
@@ -443,7 +443,7 @@ fn test_orthographic_projection_matrix() {
 
 #[test]
 fn test_orthographic_pixel_dimensions() {
-    // 移植自: OrthographicFrustumSpec "get pixel dimensions"
+    // 参考自: OrthographicFrustumSpec "get pixel dimensions"
     let f = make_orthographic();
     let (pw, ph) = f.pixel_dimensions(1.0, 1.0, 1.0, 1.0);
 
@@ -455,7 +455,7 @@ fn test_orthographic_pixel_dimensions() {
 
 #[test]
 fn test_orthographic_pixel_dimensions_with_pixel_ratio() {
-    // 移植自: OrthographicFrustumSpec "get pixel dimensions with pixel ratio"
+    // 参考自: OrthographicFrustumSpec "get pixel dimensions with pixel ratio"
     let f = make_orthographic();
     let (pw, ph) = f.pixel_dimensions(1.0, 1.0, 1.0, 2.0);
 
@@ -466,7 +466,7 @@ fn test_orthographic_pixel_dimensions_with_pixel_ratio() {
 
 #[test]
 fn test_orthographic_equals() {
-    // 移植自: OrthographicFrustumSpec "equals"
+    // 参考自: OrthographicFrustumSpec "equals"
     let f1 = make_orthographic();
     let f2 = OrthographicFrustum::new(2.0, 1.0, 1.0, 3.0);
     assert_eq!(f1, f2);
@@ -474,7 +474,7 @@ fn test_orthographic_equals() {
 
 #[test]
 fn test_orthographic_equals_epsilon() {
-    // 移植自: OrthographicFrustumSpec "equals epsilon"
+    // 参考自: OrthographicFrustumSpec "equals epsilon"
     let f1 = make_orthographic();
 
     let f2 = OrthographicFrustum::new(2.0, 1.0, 1.0, 3.0);
@@ -494,7 +494,7 @@ fn test_orthographic_equals_epsilon() {
 
 #[test]
 fn test_orthographic_clone() {
-    // 移植自: OrthographicFrustumSpec "clone"
+    // 参考自: OrthographicFrustumSpec "clone"
     let f1 = make_orthographic();
     let f2 = f1; // Copy trait
     assert_eq!(f1, f2);

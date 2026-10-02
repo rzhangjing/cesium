@@ -1,5 +1,4 @@
 //! 球极投影坐标。
-//! 映射到 CesiumJS `Core/Stereographic.js`
 
 use crate::ellipsoid::Ellipsoid;
 use crate::ellipsoid_tangent_plane::EllipsoidTangentPlane;
@@ -18,7 +17,9 @@ pub const SOUTH_POLE: DVec3 = DVec3::new(0.0, 0.0, -0.5);
 /// 标识所使用的极点切平面。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PoleTangentPlane {
+    /// 北极处的切平面。
     North,
+    /// 南极处的切平面。
     South,
 }
 
@@ -35,6 +36,7 @@ pub struct Stereographic {
 }
 
 impl Default for Stereographic {
+    /// 默认构造：位置为原点、使用北极切平面。
     fn default() -> Self {
         Self {
             position: DVec2::ZERO,
@@ -72,6 +74,7 @@ impl Stereographic {
 
     /// 计算共形纬度（将椭球纬度投影到任意球面上）。
     pub fn conformal_latitude(&self) -> f64 {
+        // r 为投影点到原点的平面距离，d 为球直径；由反投影几何恢复共形纬度。
         let r = self.position.length();
         let d = 2.0 * HALF_UNIT_SPHERE.maximum_radius();
         let sign = match self.tangent_plane {

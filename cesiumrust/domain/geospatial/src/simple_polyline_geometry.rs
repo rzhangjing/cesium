@@ -1,6 +1,9 @@
 //! SimplePolylineGeometry —— 一个简单的折线几何生成器。
 //!
-//! 映射到 CesiumJS `Core/SimplePolylineGeometry.js`
+//! 与复杂折线不同，它不生成带固定屏幕宽度的四边形，而是直接输出一组
+//! 逐对相连的线段（Lines）。根据 [`ArcType`] 选择是否沿大地线/恒向线按粒度细分；
+//! 颜色支持逐顶点（沿弧线性插值）或逐段（整段同色）两种模式，最终输出扁平的位置、
+//! RGBA 字节、成对索引与包围球。
 
 use crate::bounding::BoundingSphere;
 use crate::ellipsoid::Ellipsoid;
@@ -12,6 +15,8 @@ use glam::DVec3;
 /// 使用椭球从笛卡尔位置中提取高度。
 ///
 /// 映射到 `PolylinePipeline.extractHeights`。
+///
+/// 逐个位置转为经纬度坐标并取高度；无定义点（如球心）回退为 0。
 pub fn extract_heights(positions: &[DVec3], ellipsoid: &Ellipsoid) -> Vec<f64> {
     positions
         .iter()
@@ -27,24 +32,31 @@ pub fn extract_heights(positions: &[DVec3], ellipsoid: &Ellipsoid) -> Vec<f64> {
 /// 以 RGBA 字节表示的颜色。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColorRgba {
+    /// 红分量（[0,1] 浮点）。
     pub red: f64,
+    /// 绿分量（[0,1] 浮点）。
     pub green: f64,
+    /// 蓝分量（[0,1] 浮点）。
     pub blue: f64,
+    /// 透明度分量（[0,1] 浮点）。
     pub alpha: f64,
 }
 
 impl ColorRgba {
+    /// 由 [0,1] 浮点分量构造一个颜色。
     pub fn new(red: f64, green: f64, blue: f64, alpha: f64) -> Self {
         Self { red, green, blue, alpha }
     }
 
     /// 将浮点颜色分量 [0,1] 转换为字节 [0,255]。
+    /// 先限制到 [0,1] 再乘 255 四舍五入，避免越界。
     /// 映射到 `Color.floatToByte`。
     pub fn float_to_byte(value: f64) -> u8 {
         (value.clamp(0.0, 1.0) * 255.0).round() as u8
     }
 
     /// 以字节数组返回 RGBA。
+    /// 逐分量调用 float_to_byte，将 [0,1] 浮点量化为 [0,255] 字节。
     pub fn to_bytes(&self) -> [u8; 4] {
         [
             Self::float_to_byte(self.red),
@@ -75,16 +87,24 @@ pub struct SimplePolylineResult {
 /// 映射到 CesiumJS `Core/SimplePolylineGeometry`。
 #[derive(Debug, Clone)]
 pub struct SimplePolylineGeometry {
+    /// 折线位置（地心固定系，至少两个）。
     pub positions: Vec<DVec3>,
+    /// 逐顶点或逐段颜色（可为空）。
     pub colors: Option<Vec<ColorRgba>>,
+    /// 为真时颜色按顶点给定，否则按段给定。
     pub colors_per_vertex: bool,
+    /// 边的弧类型（直线/大地线/恒向线）。
     pub arc_type: ArcType,
+    /// 弧细分的角度粒度（弧度）。
     pub granularity: f64,
+    /// 参考椭球。
     pub ellipsoid: Ellipsoid,
 }
 
 impl SimplePolylineGeometry {
     /// 创建一个新的 SimplePolylineGeometry。
+    ///
+    /// 直接包装各字段；位置至少两个，颜色可为逐顶点或逐段两种布局之一。
     pub fn new(
         positions: Vec<DVec3>,
         colors: Option<Vec<ColorRgba>>,
@@ -106,6 +126,10 @@ impl SimplePolylineGeometry {
     /// 计算一条简单折线的几何表示。
     ///
     /// 映射到 `SimplePolylineGeometry.createGeometry`。
+    ///
+    /// # 返回
+    /// [`SimplePolylineResult`]：扁平顶点位置、逐顶点 RGBA 字节（若有颜色）、
+    /// 成对的线条索引、包围球；大地线/恒向线模式下会先按粒度细分，`ArcType::None` 不细分。
     pub fn create_geometry(&self) -> SimplePolylineResult {
         let positions = &self.positions;
         let colors = &self.colors;
@@ -117,10 +141,12 @@ impl SimplePolylineGeometry {
         let per_segment_colors = colors.is_some() && !colors_per_vertex;
         let length = positions.len();
 
+        // 逐段颜色需为每段复制弧顶点，逐顶点颜色则沿弧插值。
         let position_values: Vec<f64>;
         let mut color_values: Option<Vec<u8>> = None;
 
         if arc_type == ArcType::Geodesic || arc_type == ArcType::Rhumb {
+            // 大地线/恒向线：先在椭球面上按粒度插入中间点。
             let heights = extract_heights(positions, ellipsoid);
 
             if per_segment_colors {
@@ -129,6 +155,7 @@ impl SimplePolylineGeometry {
                 let min_distance = chord_length(granularity, ellipsoid.maximum_radius());
 
                 let mut position_count = 0usize;
+                // 先累加预估总顶点数以预留精确容量，避免逐段 push 时反复扩容。
                 for i in 0..length - 1 {
                     position_count += number_of_points(positions[i], positions[i + 1], min_distance) + 1;
                 }
@@ -145,6 +172,7 @@ impl SimplePolylineGeometry {
                     });
 
                     let seg_len = arc_positions.len();
+                    // 整段同色：将该段颜色字节重复填充到每个弧顶点。
                     let color = colors_arr[i];
                     let bytes = color.to_bytes();
                     for _ in 0..seg_len {
@@ -191,6 +219,7 @@ impl SimplePolylineGeometry {
                         let c1 = colors_arr[i + 1];
 
                         let num_pts = number_of_points(p0, p1, min_distance);
+                        // 沿段内参数 t 在两端颜色间线性插值，逐顶点写入 RGBA。
                         for j in 0..num_pts {
                             let t = j as f64 / num_pts as f64;
                             let r = c0.red + (c1.red - c0.red) * t;
@@ -213,6 +242,7 @@ impl SimplePolylineGeometry {
             }
         } else {
             // ArcType::None —— 不进行细分
+            // 逐段颜色时每段需重复端点，故顶点数为 2*(段数)；否则直接用原顶点。
             let number_of_positions = if per_segment_colors {
                 length * 2 - 2
             } else {
@@ -231,6 +261,7 @@ impl SimplePolylineGeometry {
             for i in 0..length {
                 let p = positions[i];
 
+                // 逐段颜色时除首点外每个内部点需重复一次，以便两侧段分别取色。
                 if per_segment_colors && i > 0 {
                     pos_vals.push(p.x);
                     pos_vals.push(p.y);
@@ -262,7 +293,7 @@ impl SimplePolylineGeometry {
             }
         }
 
-        // 生成线条索引
+        // 生成线条索引：每相邻两顶点构成一条段（i, i+1）。
         let number_of_positions = position_values.len() / 3;
         let number_of_indices = (number_of_positions - 1) * 2;
         let mut indices: Vec<u32> = Vec::with_capacity(number_of_indices);
@@ -271,7 +302,7 @@ impl SimplePolylineGeometry {
             indices.push(i + 1);
         }
 
-        // 由原始位置计算包围球
+        // 由原始位置计算包围球（用未细分的输入位置，与 JS 一致）。
         let bounding_sphere = BoundingSphere::from_points(positions);
 
         SimplePolylineResult {

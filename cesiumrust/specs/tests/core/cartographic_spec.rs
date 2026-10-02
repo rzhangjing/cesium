@@ -1,6 +1,6 @@
-//! Core/CartographicSpec.js → Rust 集成测试（忠实移植）。
+//! Core/CartographicSpec → Rust 集成测试（对齐实现）。
 //!
-//! 忠实移植原始 CesiumJS `packages/engine/Specs/Core/CartographicSpec.js`
+//! 对齐实现原始 CesiumJS `Specs/Core/CartographicSpec`
 //!（24 个 `it()` 用例）。参考值逐字使用，以便 Rust 实现
 //! 针对与 CesiumJS 完全相同的基准真值进行验证。
 //!

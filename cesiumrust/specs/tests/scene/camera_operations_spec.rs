@@ -1,5 +1,5 @@
-//! Scene/CameraSpec.js → Rust 集成测试（相机操作）
-//! 移植自：packages/engine/Specs/Scene/CameraSpec.js
+//! Scene/CameraSpec → Rust 集成测试（相机操作）
+//! 参考自：Specs/Scene/CameraSpec
 //! A 类纯数学测试：move、look、rotate、twist、zoom、坐标变换
 
 use cesium_camera::Camera;

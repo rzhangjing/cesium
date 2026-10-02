@@ -252,18 +252,23 @@ impl Cli {
 #[derive(Debug, Deserialize)]
 struct CameraScriptFile {
     #[serde(default)]
+    /// 可选的 `[meta]` 表（名称/时长/描述）。
     meta: Option<ScriptMeta>,
     #[serde(rename = "keyframe")]
+    /// 原始关键帧列表（TOML 中每个 `[keyframe]` 一节）。
     keyframes: Vec<KeyframeRaw>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ScriptMeta {
     #[serde(default)]
+    /// 脚本人类可读名称。
     name: Option<String>,
     #[serde(default)]
+    /// 脚本总时长（秒）。
     duration_s: Option<f64>,
     #[serde(default)]
+    /// 脚本描述，加载时记录日志。
     description: Option<String>,
 }
 
@@ -297,9 +302,13 @@ struct KeyframeRaw {
 /// 已解析、所有字段填充的关键帧（无 `Option`）。
 #[derive(Debug, Clone)]
 struct Keyframe {
+    /// 距脚本开始的秒数。
     t: f64,
+    /// 已解算的方位角（弧度）。
     heading_rad: f32,
+    /// 已解算的俯仰角（弧度）。
     pitch_rad: f32,
+    /// 已解算的轨道距离（渲染单位）。
     distance: f32,
 }
 
@@ -310,6 +319,7 @@ pub struct CameraScript {
     pub duration_s: f64,
     /// 来自 `[meta]` 的可选人类描述，加载时记录日志。
     pub description: Option<String>,
+    /// 已解算、字段全填充的关键帧序列。
     keyframes: Vec<Keyframe>,
 }
 
@@ -450,11 +460,14 @@ enum WriterMsg {
 /// 写入线程的句柄。丢弃它会发送 `Shutdown`，因此即使调用者
 /// 遗忘，线程也会刷新并退出。
 struct WriterHandle {
+    /// 向写入线程发送消息的发送端；`None` 表示已关闭。
     tx: Option<mpsc::Sender<WriterMsg>>,
+    /// 写入线程的 join 句柄；`None` 表示已回收。
     join: Option<std::thread::JoinHandle<()>>,
 }
 
 impl WriterHandle {
+    /// 启动命名写入线程，将轨迹行落盘到 `path`。
     fn spawn(path: PathBuf) -> std::io::Result<Self> {
         let (tx, rx) = mpsc::channel::<WriterMsg>();
         let join = std::thread::Builder::new()
@@ -468,6 +481,7 @@ impl WriterHandle {
         })
     }
 
+    /// 尽力而为地发送一行轨迹；发送端已死则静默丢弃。
     fn send(&self, row: String) {
         if let Some(tx) = &self.tx {
             // 尽力而为：若写入线程已死，丢弃该行而非
@@ -478,6 +492,7 @@ impl WriterHandle {
 }
 
 impl Drop for WriterHandle {
+    /// 丢弃时发送 `Shutdown` 并 join，使写入线程刷新尾部行后退出。
     fn drop(&mut self) {
         if let Some(tx) = self.tx.take() {
             let _ = tx.send(WriterMsg::Shutdown);
@@ -542,6 +557,7 @@ fn writer_loop(path: PathBuf, rx: mpsc::Receiver<WriterMsg>) {
     flush_rows(&mut w, &mut buf);
 }
 
+/// 将缓冲中的轨迹行刷入 `BufWriter` 并清空缓冲。
 fn flush_rows(w: &mut BufWriter<File>, buf: &mut Vec<String>) {
     if buf.is_empty() {
         return;
@@ -585,13 +601,17 @@ fn format_row(c: &PerfCounters) -> String {
 /// 持有 perf-trace 子系统运行时状态的资源。
 #[derive(Resource)]
 struct TraceState {
+    /// 启动时解析的 CLI 配置。
     cli: Cli,
+    /// 写入线程句柄；未启用时为 `None`。
     writer: Option<WriterHandle>,
+    /// 已加载的相机脚本（若有）。
     script: Option<CameraScript>,
     /// 应用启动时刻，作为相机脚本时间基准。
     start: Instant,
     /// 用于 5 秒报告的累计自身开销。
     overhead_accum: Duration,
+    /// 累计的已测帧数（用于 5 秒报告）。
     overhead_frames: u32,
     /// 上一次开销报告时刻。
     last_report: Instant,
@@ -609,16 +629,22 @@ struct TraceState {
 /// 当 `cli.active()` 为 false 时无作用：不注册任何系统，
 /// 不插入任何资源，零运行时开销。
 pub struct PerfTracePlugin {
+    /// 控制子系统是否激活的 CLI 配置。
     cli: Cli,
 }
 
 impl PerfTracePlugin {
+    /// 以给定 CLI 配置构造插件。
     pub fn new(cli: Cli) -> Self {
         Self { cli }
     }
 }
 
 impl Plugin for PerfTracePlugin {
+    /// 插件装配入口：仅当 `cli.active()` 时插入资源并注册系统，否则空操作。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用。
     fn build(&self, app: &mut App) {
         if !self.cli.active() {
             return;

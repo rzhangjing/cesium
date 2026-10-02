@@ -1,11 +1,8 @@
 //! cesium-imagery：影像图层领域模型
 //!
-//! 映射到 CesiumJS：
-//! - `Scene/ImageryLayer.js`
-//! - `Scene/ImageryLayerCollection.js`
-//! - `Scene/Imagery.js`
-//! - `Scene/ImageryState.js`
-//! - `Scene/TileImagery.js`
+//! 组织影像图层的配置（[`ImageryLayer`]）、集合（[`ImageryLayerCollection`]）、
+//! 单张影像的状态机（[`ImageryState`]）、瓦片与影像的关联（[`TileImagery`]）、
+//! 瓦片请求调度（[`compute_tile_requests`]）以及多层像素混合（[`blend_pixel`]）。
 
 pub mod imagery_layer;
 pub mod imagery_state;
@@ -24,7 +21,8 @@ pub use blending::{PixelColor, blend_pixel, composite_layers, compute_effective_
 use serde::{Deserialize, Serialize};
 
 /// 用于分屏对比的影像分割方向。
-/// 映射到 CesiumJS `Scene/SplitDirection`
+///
+/// 指定图层渲染到分割视图的左/右侧，或不分隔占据全屏。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum SplitDirection {
     /// 使用分割器的左侧。

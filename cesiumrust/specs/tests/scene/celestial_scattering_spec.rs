@@ -1,5 +1,5 @@
 //! 天体 + 大气散射规格
-//! 移植自 CesiumJS Core/Simon1994PlanetaryPositionsSpec.js + Scene/SkyAtmosphereSpec.js
+//! 参考自 CesiumJS Core/Simon1994PlanetaryPositionsSpec + Scene/SkyAtmosphereSpec
 
 use cesium_atmosphere::{
     atmospheric_density, compute_gmst, compute_horizon_glow, compute_moon_direction_eci,

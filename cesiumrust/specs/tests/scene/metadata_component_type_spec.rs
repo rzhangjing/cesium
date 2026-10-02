@@ -1,4 +1,4 @@
-//! Scene/MetadataComponentTypeSpec.js → Rust 集成测试
+//! Scene/MetadataComponentTypeSpec → Rust 集成测试
 //!
 //! 原始：37 it() → 20 A 类（17 C 类：throws）
 //! 测试：getMinimum(1) + getMaximum(1) + isIntegerType(1) + isUnsignedIntegerType(1) +

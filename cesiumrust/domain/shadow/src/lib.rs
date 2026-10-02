@@ -2,9 +2,9 @@
 //!
 //! 领域层 —— 纯 Rust，f64 精度。
 //!
-//! CesiumJS 映射：
-//! - `Scene/ShadowMap.js` → shadow_map
-//! - 水/海洋渲染 → water
+//! 包含两个子模块：
+//! - [`shadow_map`]：级联阴影贴图的配置、偏移与过滤
+//! - [`water`]：水/海洋表面渲染参数
 
 pub mod shadow_map;
 pub mod water;

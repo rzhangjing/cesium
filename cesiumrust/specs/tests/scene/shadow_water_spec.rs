@@ -1,5 +1,5 @@
 //! ShadowMap + 海洋/水面规范
-//! 移植自 CesiumJS Scene/ShadowMapSpec.js + 水面渲染逻辑
+//! 参考自 CesiumJS Scene/ShadowMapSpec + 水面渲染逻辑
 
 use cesium_shadow::{
     GerstnerWave, OceanConfig, OceanSurface, PcfConfig, ShadowBias, ShadowBiasType,

@@ -1,5 +1,8 @@
 //! 地图投影 —— 经纬度（等角圆柱）投影与 Web Mercator 投影。
-//! 映射到 CesiumJS `Core/GeographicProjection.js`, `Core/WebMercatorProjection.js`
+//!
+//! 两者都把椭球面上的经纬度（弧度）映射为平面坐标：前者 x=经度×半长轴、y=纬度×半长轴；
+//! 后者纬度方向改用 Mercator 变换（保角）并在 ±85.05° 截断。两者均实现 [`MapProjection`]，
+//! 提供成对的 project/unproject 以保证坐标往返一致。
 
 use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
@@ -21,12 +24,16 @@ pub trait MapProjection: Send + Sync {
 /// 映射到 CesiumJS `GeographicProjection`
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct GeographicProjection {
+    /// 投影所基于的参考椭球。
     ellipsoid: Ellipsoid,
+    /// 半长轴（米），用作经纬度→平面坐标的缩放因子。
     semimajor_axis: f64,
+    /// 半长轴的倒数，用于反投影时的乘法替代除法。
     one_over_semimajor_axis: f64,
 }
 
 impl GeographicProjection {
+    /// 由椭球创建一个经纬度投影，预计算半长轴及其倒数。
     pub fn new(ellipsoid: Ellipsoid) -> Self {
         let semimajor_axis = ellipsoid.maximum_radius();
         Self {
@@ -36,10 +43,12 @@ impl GeographicProjection {
         }
     }
 
+    /// 使用 WGS84 椭球创建默认投影。
     pub fn wgs84() -> Self {
         Self::new(Ellipsoid::WGS84)
     }
 
+    /// 返回半长轴（米）。
     #[inline]
     pub fn semimajor_axis(&self) -> f64 {
         self.semimajor_axis
@@ -47,6 +56,7 @@ impl GeographicProjection {
 }
 
 impl MapProjection for GeographicProjection {
+    /// 将经纬度（弧度）乘以半长轴得到平面坐标，高度直接透传。
     fn project(&self, cartographic: &Cartographic) -> DVec3 {
         DVec3::new(
             cartographic.longitude * self.semimajor_axis,
@@ -55,6 +65,7 @@ impl MapProjection for GeographicProjection {
         )
     }
 
+    /// 用半长轴倒数将平面坐标除回经纬度（弧度），z 还原为高度。
     fn unproject(&self, projected: DVec3) -> Cartographic {
         Cartographic {
             longitude: projected.x * self.one_over_semimajor_axis,
@@ -63,6 +74,7 @@ impl MapProjection for GeographicProjection {
         }
     }
 
+    /// 返回本投影使用的椭球引用。
     fn ellipsoid(&self) -> &Ellipsoid {
         &self.ellipsoid
     }
@@ -72,9 +84,13 @@ impl MapProjection for GeographicProjection {
 /// 映射到 CesiumJS `WebMercatorProjection`
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct WebMercatorProjection {
+    /// 投影所基于的参考椭球。
     ellipsoid: Ellipsoid,
+    /// 半长轴（米），用作缩放因子。
     semimajor_axis: f64,
+    /// 半长轴的倒数，用于反投影时的乘法替代除法。
     one_over_semimajor_axis: f64,
+    /// 纬度截断上限（弧度），超出后 Mercator 变换发散。
     maximum_latitude: f64,
 }
 
@@ -83,6 +99,7 @@ impl WebMercatorProjection {
     /// 计算方式为：PI/2 - 2*atan(exp(-PI))
     pub const MAXIMUM_LATITUDE: f64 = 1.4844222297453324;
 
+    /// 由椭球创建一个 Web Mercator 投影，预计算半长轴、其倒数与最大纬度。
     pub fn new(ellipsoid: Ellipsoid) -> Self {
         let semimajor_axis = ellipsoid.maximum_radius();
         Self {
@@ -93,15 +110,18 @@ impl WebMercatorProjection {
         }
     }
 
+    /// 使用 WGS84 椭球创建默认投影。
     pub fn wgs84() -> Self {
         Self::new(Ellipsoid::WGS84)
     }
 
+    /// 返回半长轴（米）。
     #[inline]
     pub fn semimajor_axis(&self) -> f64 {
         self.semimajor_axis
     }
 
+    /// 返回纬度截断上限（弧度）。
     #[inline]
     pub fn maximum_latitude(&self) -> f64 {
         self.maximum_latitude
@@ -123,6 +143,7 @@ impl WebMercatorProjection {
 }
 
 impl MapProjection for WebMercatorProjection {
+    /// x 为经度×半长轴，y 为纬度先转 Mercator 角再乘半长轴，高度直接透传。
     fn project(&self, cartographic: &Cartographic) -> DVec3 {
         let y = Self::geodetic_latitude_to_mercator_angle(cartographic.latitude)
             * self.semimajor_axis;
@@ -133,6 +154,7 @@ impl MapProjection for WebMercatorProjection {
         )
     }
 
+    /// 由平面 y 除以半长轴得 Mercator 角，再反解回纬度；经度与高度同普通除法。
     fn unproject(&self, projected: DVec3) -> Cartographic {
         let longitude = projected.x * self.one_over_semimajor_axis;
         let mercator_angle = projected.y * self.one_over_semimajor_axis;
@@ -144,6 +166,7 @@ impl MapProjection for WebMercatorProjection {
         }
     }
 
+    /// 返回本投影使用的椭球引用。
     fn ellipsoid(&self) -> &Ellipsoid {
         &self.ellipsoid
     }
@@ -154,6 +177,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// 验证经纬度投影 project/unproject 往返一致。
     fn test_geographic_projection_roundtrip() {
         let proj = GeographicProjection::wgs84();
         let c = Cartographic::from_degrees(45.0, 30.0, 1000.0);
@@ -165,6 +189,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证 Web Mercator 投影坐标往返一致。
     fn test_web_mercator_projection_roundtrip() {
         let proj = WebMercatorProjection::wgs84();
         let c = Cartographic::from_degrees(45.0, 30.0, 500.0);

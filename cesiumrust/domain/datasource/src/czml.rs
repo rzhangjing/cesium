@@ -1,7 +1,9 @@
 //! CZML 数据源解析。
 //!
-//! 映射到 CesiumJS `DataSources/CzmlDataSource.js`
-//! CZML 是一种用于描述时动态 3D 场景的 JSON 格式。
+//! CZML 是一种用于描述时态动态 3D 场景的 JSON 格式：数据包序列以
+//! `document` 包开头描述整体，随后每个包对应一个实体，携带位置与
+//! 各类图形（点、折线、多边形、标签、广告牌、模型等）声明。本模块
+//! 把这些声明解析为内部 `DataSource` 与 `Entity` 集合。
 
 use crate::entity::{
     Entity, PointGraphics, PolylineGraphics, PolygonGraphics,
@@ -14,7 +16,7 @@ use crate::property::{Color, Property};
 use serde::Deserialize;
 use thiserror::Error;
 
-/// CZML 解析错误。
+/// CZML 解析错误：包装 JSON 反序列化失败与缺少 document 包两种情况。
 #[derive(Debug, Error)]
 pub enum CzmlError {
     /// JSON 解析错误。
@@ -26,7 +28,8 @@ pub enum CzmlError {
     MissingDocument,
 }
 
-/// 一个 CZML 数据包。
+/// 一个 CZML 数据包：对应 JSON 数组中的一个对象，以 id 标识实体，
+/// 并可选携带位置与各图形字段。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlPacket {
@@ -106,7 +109,7 @@ pub struct CzmlPacket {
     pub description: Option<String>,
 }
 
-/// CZML 位置值。
+/// CZML 位置值：兼容平铺数组与带字段对象两种写法。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum CzmlPosition {
@@ -114,12 +117,13 @@ pub enum CzmlPosition {
     CartographicDegrees(Vec<f64>),
     /// 带 cartographicDegrees 字段的对象。
     Object {
+        /// 平铺的经纬度数组，对应字段名为 `cartographicDegrees`。
         #[serde(rename = "cartographicDegrees")]
         cartographic_degrees: Vec<f64>,
     },
 }
 
-/// CZML 点图形。
+/// CZML 点图形：以圆点渲染实体，携带颜色、像素尺寸与轮廓参数。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlPoint {
@@ -137,7 +141,7 @@ pub struct CzmlPoint {
     pub outline_width: Option<f64>,
 }
 
-/// CZML polyline（折线）图形。
+/// CZML polyline（折线）图形：连接一系列位置的线，带宽度与材质。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlPolyline {
@@ -152,7 +156,7 @@ pub struct CzmlPolyline {
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML polygon（多边形）图形。
+/// CZML polygon（多边形）图形：由位置环围成的面，可设高度与挤出高度。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlPolygon {
@@ -170,7 +174,7 @@ pub struct CzmlPolygon {
     pub extruded_height: Option<f64>,
 }
 
-/// CZML label。
+/// CZML label：在实体位置绘制文本，带字体与填充/轮廓颜色。
 #[derive(Debug, Clone, Deserialize)]
 pub struct CzmlLabel {
     /// label 文本。
@@ -187,7 +191,7 @@ pub struct CzmlLabel {
     pub outline_color: Option<CzmlColor>,
 }
 
-/// CZML billboard。
+/// CZML billboard：面向屏幕的图像标记，带缩放、颜色、旋转与宽高。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlBillboard {
@@ -211,7 +215,7 @@ pub struct CzmlBillboard {
     pub height: Option<f64>,
 }
 
-/// CZML model。
+/// CZML model：引用 glTF/glb 三维模型，带缩放与最小像素尺寸。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlModel {
@@ -226,7 +230,7 @@ pub struct CzmlModel {
     pub minimum_pixel_size: Option<f64>,
 }
 
-/// CZML 椭圆。
+/// CZML 椭圆：以半长/半短轴定义的地面椭圆，带高度与材质。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlEllipse {
@@ -244,7 +248,7 @@ pub struct CzmlEllipse {
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML 方框。
+/// CZML 方框：以三维尺寸定义的长方体，带材质。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlBox {
@@ -256,7 +260,7 @@ pub struct CzmlBox {
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML 圆柱。
+/// CZML 圆柱：以长度与顶/底半径定义的锥台体，带材质。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlCylinder {
@@ -274,7 +278,7 @@ pub struct CzmlCylinder {
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML corridor。
+/// CZML corridor：沿位置走廊带固定宽度铺设，带高度与材质。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlCorridor {
@@ -292,7 +296,7 @@ pub struct CzmlCorridor {
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML 矩形。
+/// CZML 矩形：以东西南北四边坐标定义的地面矩形，带高度与材质。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlRectangle {
@@ -307,7 +311,7 @@ pub struct CzmlRectangle {
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML 矩形坐标。
+/// CZML 矩形坐标：兼容平铺数组与带 degrees 字段的对象。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum CzmlRectangleCoords {
@@ -317,7 +321,7 @@ pub enum CzmlRectangleCoords {
     Object { degrees: Vec<f64> },
 }
 
-/// CZML 墙体（wall）。
+/// CZML 墙体（wall）：沿位置序列以最小/最大高度竖起的面，带材质。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlWall {
@@ -335,7 +339,7 @@ pub struct CzmlWall {
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML 球体。
+/// CZML 球体：以三轴半径定义的椭球，带材质。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlEllipsoid {
@@ -347,7 +351,7 @@ pub struct CzmlEllipsoid {
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML path（轨迹）。
+/// CZML path（轨迹）：按前导/拖尾时间绘制实体轨迹，带宽度与材质。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlPath {
@@ -365,7 +369,7 @@ pub struct CzmlPath {
     pub material: Option<CzmlMaterial>,
 }
 
-/// CZML Cartesian3 值。
+/// CZML Cartesian3 值：兼容平铺数组与带 cartesian3 字段的对象。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum CzmlCartesian3Value {
@@ -375,7 +379,7 @@ pub enum CzmlCartesian3Value {
     Object { cartesian3: Vec<f64> },
 }
 
-/// CZML 颜色值。
+/// CZML 颜色值：兼容 RGBA 平铺数组与带 rgba 字段的对象。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum CzmlColor {
@@ -385,7 +389,7 @@ pub enum CzmlColor {
     Object { rgba: Vec<f64> },
 }
 
-/// CZML 材质。
+/// CZML 材质：当前仅支持纯色 solidColor 一种形式。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CzmlMaterial {
@@ -394,7 +398,7 @@ pub struct CzmlMaterial {
     pub solid_color: Option<CzmlSolidColor>,
 }
 
-/// CZML 纯色材质。
+/// CZML 纯色材质：携一个 RGBA 颜色供表面填充。
 #[derive(Debug, Clone, Deserialize)]
 pub struct CzmlSolidColor {
     /// 以 RGBA 表示的颜色。
@@ -402,7 +406,11 @@ pub struct CzmlSolidColor {
     pub color: Option<CzmlColor>,
 }
 
-/// 将 CZML 字符串解析为 DataSource。
+/// 将 CZML 字符串解析为 `DataSource`。
+///
+/// 先把整个 JSON 数组反序列化为 `CzmlPacket` 序列，再以默认名
+/// `"CZML"` 建一个空数据源，逐包处理：`document` 包仅用于设置数据源
+/// 名称并跳过，其余每包生成一个实体加入集合，最后标记为已加载。
 pub fn parse_czml(json: &str) -> Result<DataSource, CzmlError> {
     let packets: Vec<CzmlPacket> = serde_json::from_str(json)?;
 
@@ -417,15 +425,21 @@ pub fn parse_czml(json: &str) -> Result<DataSource, CzmlError> {
             continue;
         }
 
+    // 其余每包生成一个实体并加入集合。
         let entity = process_packet(packet);
         ds.entities.add(entity);
     }
 
+    // 全部处理完毕，标记数据源为已加载。
     ds.loaded = true;
     Ok(ds)
 }
 
-/// 处理一个 CZML 数据包并生成 Entity。
+/// 处理一个 CZML 数据包并生成对应的 `Entity`。
+///
+/// 依次尝试各图形字段：存在时以其缺省图形为起点，把 CZML 声明的
+/// 颜色、尺寸、位置等数值逐个包装成常量属性（位置若带时间标记则
+/// 转为采样属性），最终挂到实体上；未出现的字段保持缺省。
 fn process_packet(packet: &CzmlPacket) -> Entity {
     let mut entity = Entity::new(packet.id.clone());
 
@@ -449,8 +463,10 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
                     .filter(|c| c.len() == 4)
                     .map(|c| (c[0], [c[1].to_radians(), c[2].to_radians(), c[3]]))
                     .collect();
+            // 存为按时间采样的位置序列（每样本携带时刻与弧度坐标）。
                 entity.position = Property::Sampled(samples);
             } else {
+                // 无时间标记：单个 [lon, lat, height]，度转弧度后作常量位置。
                 let lon = coords[0].to_radians();
                 let lat = coords[1].to_radians();
                 let height = coords[2];
@@ -459,8 +475,9 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         }
     }
 
-    // 处理点
+    // 处理点：将颜色/像素尺寸/轮廓颜色/轮廓宽度包成常量属性。
     if let Some(ref pt) = packet.point {
+        // 以缺省点图形为起点，逐项覆盖已声明的常量属性。
         let mut point = PointGraphics::default();
         if let Some(ref color) = pt.color {
             point.color = Property::Constant(czml_color_to_color(color));
@@ -477,8 +494,9 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.point = Some(point);
     }
 
-    // 处理 polyline
+    // 处理 polyline：位置转弧度坐标序列，宽度与材质颜色各自常量。
     if let Some(ref pl) = packet.polyline {
+        // 位置经度转弧度存为常量序列，宽度/颜色各自常量。
         let mut polyline = PolylineGraphics::default();
         if let Some(ref pos) = pl.positions {
             let coords = extract_position_coords(pos);
@@ -496,8 +514,9 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.polyline = Some(polyline);
     }
 
-    // 处理 polygon
+    // 处理 polygon：位置/材质/高度/挤出高度均映射为常量属性。
     if let Some(ref pg) = packet.polygon {
+        // 多边形位置/材质/高度/挤出高度均存为常量属性。
         let mut polygon = PolygonGraphics::default();
         if let Some(ref pos) = pg.positions {
             let coords = extract_position_coords(pos);
@@ -518,8 +537,9 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.polygon = Some(polygon);
     }
 
-    // 处理 label
+    // 处理 label：文本、字体与填充/轮廓颜色转成常量属性。
     if let Some(ref lb) = packet.label {
+        // 标签文本/字体与颜色均以常量属性保存。
         let mut label = LabelGraphics::default();
         if let Some(ref text) = lb.text {
             label.text = Property::Constant(text.clone());
@@ -536,8 +556,9 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.label = Some(label);
     }
 
-    // 处理 billboard
+    // 处理 billboard：图像 URI、缩放、颜色、旋转与宽高转成常量属性。
     if let Some(ref bb) = packet.billboard {
+        // 广告牌各字段（URI/缩放/颜色/旋转/宽高）转为常量属性。
         let mut billboard = BillboardGraphics::default();
         if let Some(ref image) = bb.image {
             billboard.image = Property::Constant(image.clone());
@@ -560,8 +581,9 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.billboard = Some(billboard);
     }
 
-    // 处理 model
+    // 处理 model：glTF URI、缩放与最小像素尺寸转成常量属性。
     if let Some(ref mdl) = packet.model {
+        // 模型的 URI/缩放/最小像素尺寸转为常量属性。
         let mut model = ModelGraphics::default();
         if let Some(ref gltf) = mdl.gltf {
             model.uri = Property::Constant(gltf.clone());
@@ -575,8 +597,9 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.model = Some(model);
     }
 
-    // 处理椭圆
+    // 处理椭圆：半长/半短轴、高度与材质颜色转成常量属性。
     if let Some(ref ell) = packet.ellipse {
+        // 椭圆的半轴/高度/材质转为常量属性。
         let mut ellipse = EllipseGraphics::default();
         if let Some(sma) = ell.semi_major_axis {
             ellipse.semi_major_axis = Property::Constant(sma);
@@ -595,8 +618,9 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.ellipse = Some(ellipse);
     }
 
-    // 处理方框
+    // 处理方框：尺寸取前三分量转为常量三维值，材质颜色同样常量。
     if let Some(ref bx) = packet.box_graphics {
+        // 方框尺寸取前三分量，连同材质颜色存为常量属性。
         let mut box_g = BoxGraphics::default();
         if let Some(ref dims) = bx.dimensions {
             let v = extract_cartesian3(dims);
@@ -612,8 +636,9 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.box_graphics = Some(box_g);
     }
 
-    // 处理圆柱
+    // 处理圆柱：长度、顶/底半径与材质颜色各自映射为常量属性。
     if let Some(ref cyl) = packet.cylinder {
+        // 圆柱长度/顶底半径/材质转为常量属性。
         let mut cylinder = CylinderGraphics::default();
         if let Some(l) = cyl.length {
             cylinder.length = Property::Constant(l);
@@ -632,8 +657,9 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.cylinder = Some(cylinder);
     }
 
-    // 处理 corridor
+    // 处理 corridor：位置转坐标序列，宽度/高度/材质转常量属性。
     if let Some(ref cor) = packet.corridor {
+        // 走廊位置/宽度/高度/材质转为常量属性。
         let mut corridor = CorridorGraphics::default();
         if let Some(ref pos) = cor.positions {
             let coords = extract_position_coords(pos);
@@ -654,8 +680,9 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.corridor = Some(corridor);
     }
 
-    // 处理矩形
+    // 处理矩形：四边坐标按度转弧度存为常量，高度与材质常量。
     if let Some(ref rect) = packet.rectangle {
+        // 矩形四边坐标按度转弧度存为常量，高度/材质常量。
         let mut rectangle = RectangleGraphics::default();
         if let Some(ref coords) = rect.coordinates {
             let v = match coords {
@@ -680,8 +707,9 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.rectangle = Some(rectangle);
     }
 
-    // 处理墙体
+    // 处理墙体：位置转坐标序列，最大/最小高度与材质转常量属性。
     if let Some(ref wl) = packet.wall {
+        // 墙体位置/最大最小高度/材质转为常量属性。
         let mut wall = WallGraphics::default();
         if let Some(ref pos) = wl.positions {
             let coords = extract_position_coords(pos);
@@ -702,8 +730,9 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.wall = Some(wall);
     }
 
-    // 处理球体
+    // 处理球体：半径取前三分量转常量三维值，材质颜色常量。
     if let Some(ref el) = packet.ellipsoid {
+        // 球体半径取前三分量存为常量，材质颜色常量。
         let mut ellipsoid = EllipsoidGraphics::default();
         if let Some(ref radii) = el.radii {
             let v = extract_cartesian3(radii);
@@ -719,8 +748,9 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.ellipsoid = Some(ellipsoid);
     }
 
-    // 处理 path
+    // 处理 path：前导/拖尾时间、宽度与材质颜色各自常量。
     if let Some(ref pth) = packet.path {
+        // 轨迹前导/拖尾时间、宽度与材质转为常量属性。
         let mut path = PathGraphics::default();
         if let Some(lt) = pth.lead_time {
             path.lead_time = Property::Constant(lt);
@@ -739,11 +769,14 @@ fn process_packet(packet: &CzmlPacket) -> Entity {
         entity.path = Some(path);
     }
 
+    // 返回填充完毕、携带全部已声明图形的实体。
     entity
 }
 
-/// 从 CZML 位置中提取坐标值。
+/// 从 CZML 位置中提取坐标值：无论写成平铺数组还是带
+/// `cartographicDegrees` 字段的对象，都归一为一个 `f64` 序列。
 fn extract_position_coords(pos: &CzmlPosition) -> Vec<f64> {
+    // 两种位置写法（平铺数组或带字段对象）都归一为同一个坐标序列。
     match pos {
         CzmlPosition::CartographicDegrees(v) => v.clone(),
         CzmlPosition::Object { cartographic_degrees } => cartographic_degrees.clone(),
@@ -751,7 +784,11 @@ fn extract_position_coords(pos: &CzmlPosition) -> Vec<f64> {
 }
 
 /// 将平铺坐标数组 [lon, lat, height, lon, lat, height, ...] 转换为位置。
+///
+/// 每三个分量一组，经度与纬度按度转弧度，高度保持米不变；不足
+/// 三个的尾组会被过滤丢弃。
 fn coords_to_positions(coords: &[f64]) -> Vec<[f64; 3]> {
+    // 每三分量一组，经纬度按度转弧度，高度以米原样保留。
     coords
         .chunks(3)
         .filter(|c| c.len() == 3)
@@ -759,13 +796,17 @@ fn coords_to_positions(coords: &[f64]) -> Vec<[f64; 3]> {
         .collect()
 }
 
-/// 将 CZML 颜色转换为我们的 Color 类型。
+/// 将 CZML 颜色（0-255 的 RGBA）转换为内部 `Color`（0-1 归一）。
+///
+/// 分量不足 4 个时回退为白色；否则各通道除以 255 归一。
 fn czml_color_to_color(czml_color: &CzmlColor) -> Color {
+    // 先归一 RGBA 取值：平铺数组或带 rgba 字段的对象。
     let rgba = match czml_color {
         CzmlColor::Rgba(v) => v.clone(),
         CzmlColor::Object { rgba } => rgba.clone(),
     };
 
+    // 满 4 分量则各通道除以 255 归一到 0-1，否则回退为白色。
     if rgba.len() >= 4 {
         Color::new(
             rgba[0] / 255.0,
@@ -778,16 +819,20 @@ fn czml_color_to_color(czml_color: &CzmlColor) -> Color {
     }
 }
 
-/// 从 CZML 材质中提取颜色。
+/// 从 CZML 材质中提取纯色颜色：仅支持 `solidColor`，沿
+/// solid_color → color 逐级取到后转换为内部 `Color`。
 fn extract_material_color(mat: &CzmlMaterial) -> Option<Color> {
+    // 仅 solidColor 材质可提取颜色，沿嵌套字段逐级取到纯色。
     mat.solid_color
         .as_ref()
         .and_then(|sc| sc.color.as_ref())
         .map(czml_color_to_color)
 }
 
-/// 从 CZML Cartesian3 中提取 Cartesian3 值。
+/// 从 CZML Cartesian3 中提取三维数值：兼容平铺数组与带
+/// `cartesian3` 字段的对象两种写法。
 fn extract_cartesian3(val: &CzmlCartesian3Value) -> Vec<f64> {
+    // 兼容平铺数组与带 cartesian3 字段的对象两种写法。
     match val {
         CzmlCartesian3Value::Array(v) => v.clone(),
         CzmlCartesian3Value::Object { cartesian3 } => cartesian3.clone(),
@@ -798,6 +843,8 @@ fn extract_cartesian3(val: &CzmlCartesian3Value) -> Vec<f64> {
 mod tests {
     use super::*;
 
+    /// 验证含 document 包的完整解析：数据源名取自 document，实体
+    /// 集合包含一个带点图形的实体。
     #[test]
     fn test_parse_czml_document() {
         let json = r#"[
@@ -815,6 +862,8 @@ mod tests {
         assert!(entity.point.is_some());
     }
 
+    /// 验证折线解析：两个经纬度端点转为两条位置，宽度与材质颜色
+    /// 也被填充。
     #[test]
     fn test_parse_czml_polyline() {
         let json = r#"[
@@ -835,6 +884,7 @@ mod tests {
         assert_eq!(positions.len(), 2);
     }
 
+    /// 验证多边形解析：三个顶点转为三位置，挤出高度取到 10000。
     #[test]
     fn test_parse_czml_polygon() {
         let json = r#"[
@@ -858,6 +908,7 @@ mod tests {
         assert!((*eh - 10000.0).abs() < 1e-10);
     }
 
+    /// 验证颜色转换：RGBA(255,128,0,255) 按 255 归一后各通道正确。
     #[test]
     fn test_czml_color_conversion() {
         let color = CzmlColor::Rgba(vec![255.0, 128.0, 0.0, 255.0]);
@@ -868,6 +919,8 @@ mod tests {
         assert!((result.alpha - 1.0).abs() < 1e-10);
     }
 
+    /// 验证平铺坐标转位置：经/纬度按度转弧度，高度保持不变，
+    /// 两个三分量组各自成位。
     #[test]
     fn test_coords_to_positions() {
         let coords = vec![-180.0, -90.0, 0.0, 180.0, 90.0, 1000.0];
@@ -877,6 +930,7 @@ mod tests {
         assert!((positions[1][2] - 1000.0).abs() < 1e-10);
     }
 
+    /// 验证广告牌解析：图像 URI 为 marker.png，缩放为 2.0。
     #[test]
     fn test_parse_czml_billboard() {
         let json = r#"[
@@ -893,6 +947,7 @@ mod tests {
         assert!((*bb.scale.get_value(0.0).unwrap() - 2.0).abs() < 1e-10);
     }
 
+    /// 验证模型解析：gltf URI 取到 model.glb 并挂到实体上。
     #[test]
     fn test_parse_czml_model() {
         let json = r#"[
@@ -908,6 +963,7 @@ mod tests {
         assert_eq!(model.uri.get_value(0.0).unwrap(), "model.glb");
     }
 
+    /// 验证方框解析：dimensions 的 cartesian3 三分量存为常量三维值。
     #[test]
     fn test_parse_czml_box() {
         let json = r#"[
@@ -925,6 +981,8 @@ mod tests {
         assert_eq!(*dims, [100.0, 200.0, 300.0]);
     }
 
+    /// 验证带时间标记的位置解析为采样属性：四个一组的时间/经/纬/高
+    /// 形成两个样本，时间分别为 0 与 60。
     #[test]
     fn test_parse_czml_time_dynamic_position() {
         let json = r#"[
@@ -945,6 +1003,7 @@ mod tests {
         }
     }
 
+    /// 验证圆柱解析：长度 500、顶/底半径与材质都正确映射为常量属性。
     #[test]
     fn test_parse_czml_cylinder() {
         let json = r#"[
@@ -960,6 +1019,7 @@ mod tests {
         assert!((*cyl.length.get_value(0.0).unwrap() - 500.0).abs() < 1e-10);
     }
 
+    /// 验证轨迹解析：前导时间 3600、拖尾时间与宽度均取到常量值。
     #[test]
     fn test_parse_czml_path() {
         let json = r#"[
@@ -974,6 +1034,7 @@ mod tests {
         assert!((*path.lead_time.get_value(0.0).unwrap() - 3600.0).abs() < 1e-10);
     }
 
+    /// 验证标签增强解析：文本与字体字符串都作为常量属性保留。
     #[test]
     fn test_parse_czml_label_enhanced() {
         let json = r#"[

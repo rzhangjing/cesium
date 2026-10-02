@@ -1,4 +1,4 @@
-//! Scene/ImageryLayerSpec.js, ImageryLayerCollectionSpec.js → Rust integration tests
+//! Scene/ImageryLayerSpec, ImageryLayerCollectionSpec → Rust integration tests
 
 use cesium_imagery::{ImageryLayerCollection, ImageryState, SplitDirection, AlphaBlendingMode};
 

@@ -1,11 +1,11 @@
 //! 地形 provider 扩展规格测试。
 //!
-//! 对应 CesiumJS：
-//! - Core/CesiumTerrainProviderSpec.js
-//! - Core/HeightmapTerrainProviderSpec.js
-//! - Core/VRTheWorldTerrainProviderSpec.js
-//! - Core/ArcGISTerrainProviderSpec.js
-//! - Core/GoogleEarthEnterpriseTerrainProviderSpec.js
+//! 参考 CesiumJS：
+//! - Core/CesiumTerrainProviderSpec
+//! - Core/HeightmapTerrainProviderSpec
+//! - Core/VRTheWorldTerrainProviderSpec
+//! - Core/ArcGISTerrainProviderSpec
+//! - Core/GoogleEarthEnterpriseTerrainProviderSpec
 //!
 //! A 类测试：URL 生成、layer.json 解析、可用性、描述符。
 

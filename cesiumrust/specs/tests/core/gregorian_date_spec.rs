@@ -1,4 +1,4 @@
-//! Core/GregorianDateSpec.js → Rust 集成测试
+//! Core/GregorianDateSpec → Rust 集成测试
 //! 移植了 21 个原始 it() 块（跳过 1 个：JS 类型检查在 Rust 中不适用）
 
 use cesium_time::GregorianDate;

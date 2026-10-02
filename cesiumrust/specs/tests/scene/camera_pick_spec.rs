@@ -1,5 +1,5 @@
 //! 相机拾取与像素大小测试。
-//! 移植自 CesiumJS CameraSpec.js：getPickRay 正射、getPixelSize、
+//! 参考自 CesiumJS CameraSpec：getPickRay 正射、getPixelSize、
 //! distanceToBoundingSphere、带 lookAt 的 getPickRay。
 
 use cesium_camera::{Camera, Frustum};
@@ -24,7 +24,7 @@ fn default_camera() -> Camera {
 
 #[test]
 fn test_get_pick_ray_orthographic_3d() {
-    // 移植自: "get pick ray orthographic in 3D"
+    // 参考自: "get pick ray orthographic in 3D"
     let mut camera = default_camera();
     camera.frustum = Frustum::Orthographic(OrthographicFrustum::new(20.0, 1.0, 1.0, 21.0));
 
@@ -131,7 +131,7 @@ fn test_get_pick_ray_dispatches_orthographic() {
 
 #[test]
 fn test_get_pixel_size_perspective() {
-    // 移植自: "getPixelSize"
+    // 参考自: "getPixelSize"
     let camera = default_camera();
     // 默认透视：fov=60°, aspect=16/9, near=1, far=500M
 
@@ -208,7 +208,7 @@ fn test_get_pixel_size_with_pixel_ratio() {
 
 #[test]
 fn test_distance_to_bounding_sphere() {
-    // 移植自: "distanceToBoundingSphere"
+    // 参考自: "distanceToBoundingSphere"
     let camera = default_camera();
     // Camera at (0,0,1), direction (0,0,-1)
     // Sphere at origin, radius 0.5
@@ -246,7 +246,7 @@ fn test_distance_to_bounding_sphere_behind() {
 
 #[test]
 fn test_get_pick_ray_with_look_at_perspective_3d() {
-    // 移植自: "get pick ray with lookAt perspective in 3D"
+    // 参考自: "get pick ray with lookAt perspective in 3D"
     let ellipsoid = Ellipsoid::WGS84;
     let mut camera = default_camera();
 

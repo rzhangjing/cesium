@@ -1,4 +1,4 @@
-//! DataSources/DataSourceCollectionSpec.js → Rust 集成测试
+//! DataSources/DataSourceCollectionSpec → Rust 集成测试
 //! 覆盖：add、remove、contains、indexOf、get、getByName、raise、lower、
 //! raiseToTop、lowerToBottom、removeAll、destroy
 

@@ -4,15 +4,15 @@
 //! 但**尚未接入任何生产运行时路径**。其旧的 Bevy 桥接（`adapters/bevy-render/src/scene_pipeline.rs`）
 //! 已在 P1-2 删除，因为黄金地球路径是 `dynamic_globe` ECS 渲染器（见
 //! docs/ARCHITECTURE.md "Render Main Path"），因此目前没有任何 adapter/application
-//! crate 依赖本 crate。作为 CesiumJS 功能对等性的领域模型保留，
+//! crate 依赖本 crate。作为功能对等性的领域模型保留，
 //! 预留给未来的通用 draw-command 流水线；不要将其误读为已交付的能力。参见
 //! docs/ARCHITECTURE.md "Test-only domain crates"。
 //!
-//! 映射到 CesiumJS：
-//! - `Scene/Scene.js`
-//! - `Scene/Primitive.js`
-//! - `Renderer/DrawCommand.js`
-//! - `Scene/Pass.js`
+//! 建模范围涵盖：
+//! - 场景图节点与层次变换
+//! - 视景体剔除与可见性判定
+//! - draw command 生成与渲染通道
+//! - 帧统计与调试检视
 //!
 //! # 特性
 //! - 带变换的场景图节点层次结构

@@ -41,47 +41,56 @@ impl DefaultBudget {
 }
 
 impl Default for DefaultBudget {
+    /// `DefaultBudget` 为无字段单元结构，默认值即自身。
     fn default() -> Self {
         Self
     }
 }
 
 impl BudgetPolicy for DefaultBudget {
+    /// 下载工作线程数（固定取 [`DefaultBudget::DOWNLOAD_THREADS`]）。
     #[inline]
     fn download_threads(&self) -> usize {
         Self::DOWNLOAD_THREADS
     }
 
+    /// 每帧网格上传预算上限。
     #[inline]
     fn max_mesh_uploads_per_frame(&self) -> usize {
         Self::MAX_MESH_UPLOADS_PER_FRAME
     }
 
+    /// 每帧实体 spawn 预算上限。
     #[inline]
     fn max_spawns_per_frame(&self) -> usize {
         Self::MAX_SPAWNS_PER_FRAME
     }
 
+    /// 每帧纹理上传预算上限。
     #[inline]
     fn max_texture_uploads_per_frame(&self) -> usize {
         Self::MAX_TEXTURE_UPLOADS_PER_FRAME
     }
 
+    /// 每帧实体 despawn 预算上限。
     #[inline]
     fn max_despawns_per_frame(&self) -> usize {
         Self::MAX_DESPAWNS_PER_FRAME
     }
 
+    /// 同时存活的地表瓦片实体总数上限。
     #[inline]
     fn max_tile_entities(&self) -> usize {
         Self::MAX_TILE_ENTITIES
     }
 
+    /// 基础图层（全球预加载）的缩放层级。
     #[inline]
     fn base_layer_zoom(&self) -> u32 {
         Self::BASE_LAYER_ZOOM
     }
 
+    /// GPU 句柄缓存的条目上界。
     #[inline]
     fn max_gpu_cache_entries(&self) -> usize {
         Self::MAX_GPU_CACHE_ENTRIES

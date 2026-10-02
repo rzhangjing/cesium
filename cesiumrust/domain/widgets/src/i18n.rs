@@ -25,6 +25,7 @@ pub enum Locale {
 impl Locale {
     /// 获取区域代码字符串。
     pub fn code(&self) -> &'static str {
+        // 枚举到标准区域代码的映射，供展示与排序
         match self {
             Self::En => "en",
             Self::ZhCn => "zh-CN",
@@ -50,6 +51,7 @@ impl Locale {
 
     /// 获取所有可用区域设置。
     pub fn all() -> &'static [Locale] {
+        // 固定返回六种已定义区域供 UI 枚举
         &[Self::En, Self::ZhCn, Self::Ja, Self::Fr, Self::De, Self::Es]
     }
 }
@@ -185,7 +187,9 @@ pub struct VRButtonStrings {
 }
 
 impl Default for WidgetStrings {
+    /// 默认回退到英语字符串集。
     fn default() -> Self {
+        // 英语作为所有区域的兜底语言
         Self::english()
     }
 }
@@ -193,6 +197,7 @@ impl Default for WidgetStrings {
 impl WidgetStrings {
     /// 获取英语字符串。
     pub fn english() -> Self {
+        // 逐一构造各 widget 的英文 UI 文本；英语亦是回退语言
         Self {
             animation: AnimationStrings {
                 play: "Play".to_string(),
@@ -212,16 +217,19 @@ impl WidgetStrings {
                 tooltip: "Change scene mode".to_string(),
             },
             base_layer_picker: BaseLayerPickerStrings {
+                // 基础图层选择器：影像与地形两类底图
                 tooltip: "Imagery / Terrain".to_string(),
                 imagery: "Imagery".to_string(),
                 terrain: "Terrain".to_string(),
             },
             geocoder: GeocoderStrings {
+                // 地名搜索框：占位符/搜索按钮/无结果提示
                 placeholder: "Enter an address or landmark...".to_string(),
                 search: "Search".to_string(),
                 no_results: "No results found".to_string(),
             },
             navigation_help: NavigationHelpStrings {
+                // 导航帮助：鼠标/触摸两类操作说明
                 tooltip: "Navigation Instructions".to_string(),
                 mouse_title: "Mouse Navigation".to_string(),
                 touch_title: "Touch Navigation".to_string(),
@@ -235,6 +243,7 @@ impl WidgetStrings {
                 exit: "Exit full screen".to_string(),
             },
             info_box: InfoBoxStrings {
+                // 信息框：标题/关闭/无选中
                 title: "Entity Information".to_string(),
                 close: "Close".to_string(),
                 no_selection: "No entity selected".to_string(),
@@ -248,6 +257,7 @@ impl WidgetStrings {
 
     /// 获取简体中文字符串。
     pub fn chinese() -> Self {
+        // 简体中文 UI 文本，结构与 english() 完全对应
         Self {
             animation: AnimationStrings {
                 play: "播放".to_string(),
@@ -277,6 +287,7 @@ impl WidgetStrings {
                 no_results: "未找到结果".to_string(),
             },
             navigation_help: NavigationHelpStrings {
+                // 导航帮助文本
                 tooltip: "导航说明".to_string(),
                 mouse_title: "鼠标导航".to_string(),
                 touch_title: "触摸导航".to_string(),
@@ -303,6 +314,7 @@ impl WidgetStrings {
 
     /// 获取日语字符串。
     pub fn japanese() -> Self {
+        // 日语 UI 文本，结构与 english() 完全对应
         Self {
             animation: AnimationStrings {
                 play: "再生".to_string(),
@@ -332,6 +344,7 @@ impl WidgetStrings {
                 no_results: "結果が見つかりません".to_string(),
             },
             navigation_help: NavigationHelpStrings {
+                // 导航帮助文本
                 tooltip: "操作方法".to_string(),
                 mouse_title: "マウス操作".to_string(),
                 touch_title: "タッチ操作".to_string(),
@@ -369,7 +382,9 @@ pub struct I18n {
 }
 
 impl Default for I18n {
+    /// 默认预注册英/中/日三种区域字符串，当前区域为英语。
     fn default() -> Self {
+        // 仅内置已提供翻译的三种区域，其余区域按需 register_locale 注入
         let mut resources = HashMap::new();
         resources.insert(Locale::En, WidgetStrings::english());
         resources.insert(Locale::ZhCn, WidgetStrings::chinese());
@@ -389,11 +404,13 @@ impl I18n {
 
     /// 设置当前区域设置。
     pub fn set_locale(&mut self, locale: Locale) {
+        // 切换后续 strings() 命中的区域
         self.current_locale = locale;
     }
 
     /// 获取当前区域设置的字符串。
     pub fn strings(&self) -> &WidgetStrings {
+        // 当前区域缺失时回退到英语，保证永不为空
         self.resources
             .get(&self.current_locale)
             .unwrap_or_else(|| self.resources.get(&Locale::En).unwrap())
@@ -401,6 +418,7 @@ impl I18n {
 
     /// 获取特定区域设置的字符串（回退到英语）。
     pub fn strings_for(&self, locale: Locale) -> &WidgetStrings {
+        // 与 strings() 相同的回退策略，但显式指定目标区域
         self.resources
             .get(&locale)
             .unwrap_or_else(|| self.resources.get(&Locale::En).unwrap())
@@ -408,11 +426,13 @@ impl I18n {
 
     /// 为某个区域设置注册字符串。
     pub fn register_locale(&mut self, locale: Locale, strings: WidgetStrings) {
+        // 允许上层注入内置集合之外的区域翻译
         self.resources.insert(locale, strings);
     }
 
     /// 获取可用的区域设置。
     pub fn available_locales(&self) -> Vec<Locale> {
+        // 收集已注册区域并按区域代码排序，输出稳定顺序
         let mut locales: Vec<Locale> = self.resources.keys().copied().collect();
         locales.sort_by_key(|l| l.code());
         locales
@@ -420,11 +440,13 @@ impl I18n {
 
     /// 按键路径获取已翻译的字符串（例如 "animation.play"）。
     pub fn get(&self, key: &str) -> Option<&str> {
+        // 以首个点号拆分为「组名 / 键名」两段，格式不符则视为缺失
         let strings = self.strings();
         let parts: Vec<&str> = key.splitn(2, '.').collect();
         if parts.len() != 2 {
             return None;
         }
+        // 目前仅 animation/geocoder/fullscreen/info_box 四组支持点查
         match parts[0] {
             "animation" => match parts[1] {
                 "play" => Some(&strings.animation.play),
@@ -463,6 +485,7 @@ mod tests {
 
     #[test]
     fn test_locale_codes() {
+        // 各区域枚举映射到标准 BCP 47 代码
         assert_eq!(Locale::En.code(), "en");
         assert_eq!(Locale::ZhCn.code(), "zh-CN");
         assert_eq!(Locale::Ja.code(), "ja");
@@ -470,6 +493,7 @@ mod tests {
 
     #[test]
     fn test_locale_from_code() {
+        // "zh" 与 "zh-CN" 均归一到简体中文；未知代码返回 None
         assert_eq!(Locale::from_code("en"), Some(Locale::En));
         assert_eq!(Locale::from_code("zh-CN"), Some(Locale::ZhCn));
         assert_eq!(Locale::from_code("zh"), Some(Locale::ZhCn));
@@ -484,6 +508,7 @@ mod tests {
 
     #[test]
     fn test_english_strings() {
+        // 抽查英文基线文本，确保回退语言内容正确
         let strings = WidgetStrings::english();
         assert_eq!(strings.animation.play, "Play");
         assert_eq!(strings.geocoder.placeholder, "Enter an address or landmark...");
@@ -491,6 +516,7 @@ mod tests {
 
     #[test]
     fn test_chinese_strings() {
+        // 抽查多处中文翻译均已就位
         let strings = WidgetStrings::chinese();
         assert_eq!(strings.animation.play, "播放");
         assert_eq!(strings.scene_mode_picker.scene_3d, "三维");
@@ -499,6 +525,7 @@ mod tests {
 
     #[test]
     fn test_japanese_strings() {
+        // 抽查日语关键文本
         let strings = WidgetStrings::japanese();
         assert_eq!(strings.animation.play, "再生");
         assert_eq!(strings.geocoder.search, "検索");
@@ -506,6 +533,7 @@ mod tests {
 
     #[test]
     fn test_i18n_default() {
+        // 默认区域为英语，strings() 命中英文文本
         let i18n = I18n::default();
         assert_eq!(i18n.current_locale, Locale::En);
         assert_eq!(i18n.strings().animation.play, "Play");
@@ -513,6 +541,7 @@ mod tests {
 
     #[test]
     fn test_i18n_set_locale() {
+        // 切换到简体中文后 strings() 返回中文文本
         let mut i18n = I18n::new();
         i18n.set_locale(Locale::ZhCn);
         assert_eq!(i18n.strings().animation.play, "播放");
@@ -528,6 +557,7 @@ mod tests {
 
     #[test]
     fn test_i18n_get_key() {
+        // 点路径命中已知键返回文本，未知组/键返回 None
         let mut i18n = I18n::new();
         assert_eq!(i18n.get("animation.play"), Some("Play"));
         assert_eq!(i18n.get("geocoder.search"), Some("Search"));
@@ -540,6 +570,7 @@ mod tests {
 
     #[test]
     fn test_i18n_available_locales() {
+        // 默认仅内置三种区域，数量与排序均预期
         let i18n = I18n::new();
         let locales = i18n.available_locales();
         assert_eq!(locales.len(), 3); // en、ja、zh-CN
@@ -547,6 +578,7 @@ mod tests {
 
     #[test]
     fn test_i18n_register_locale() {
+        // 运行时注入内置集合之外的法语区域并切换生效
         let mut i18n = I18n::new();
         let french = WidgetStrings {
             animation: AnimationStrings {

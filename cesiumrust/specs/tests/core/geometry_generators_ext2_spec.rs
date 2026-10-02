@@ -1,4 +1,4 @@
-//! 移植自 CesiumJS 几何规格（Polyline/Circle/CoplanarPolygon/PolylineVolume）。
+//! 参考自 CesiumJS 几何规格（Polyline/Circle/CoplanarPolygon/PolylineVolume）。
 //!
 //! 针对已有 Rust 实现的几何生成器的扩展 A 类测试。
 

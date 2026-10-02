@@ -1,22 +1,24 @@
 //! Google Earth Enterprise 元数据工具。
 //! 领域层 —— 纯 Rust，无框架依赖。
 //!
-//! CesiumJS 映射：`packages/engine/Source/Core/GoogleEarthEnterpriseMetadata.js`
-//! 及 `packages/engine/Source/Core/decodeGoogleEarthEnterpriseData.js`
+//! 提供 quadkey 与瓦片坐标的相互转换，以及 GEE 数据的解密与包解析。
 
-// 遗留 CesiumJS 移植风格债（deferred.md #18）；将在 M13 lint 清理，或本文件在其所属里程碑被重写时重新审视
+// 历史遗留的风格债（见 deferred.md #18）；将在 M13 lint 清理，或本文件在其所属里程碑被重写时重新审视
 #![allow(clippy::manual_is_multiple_of)]
 /// quadkey 到瓦片转换的结果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuadKeyTile {
+    /// 瓦片列坐标 x。
     pub x: u32,
+    /// 瓦片行坐标 y。
     pub y: u32,
+    /// 缩放层级。
     pub level: u32,
 }
 
 /// 将瓦片坐标转换为 Google Earth Enterprise 的 quadkey 字符串。
 ///
-/// 映射到 CesiumJS `GoogleEarthEnterpriseMetadata.tileXYToQuadKey`。
+/// 自最高层级向最低逐位编码：每级根据 x/y 的对应比特落入 2×2 象限得一位十进制数字。
 ///
 /// 每层级的瓦片布局：
 /// ```text
@@ -52,7 +54,7 @@ pub fn tile_xy_to_quad_key(x: u32, y: u32, level: u32) -> String {
 
 /// 将 Google Earth Enterprise 的 quadkey 字符串转换为瓦片坐标。
 ///
-/// 映射到 CesiumJS `GoogleEarthEnterpriseMetadata.quadKeyToTileXY`。
+/// 与编码互逆：quadkey 长度减一即层级，逐位按其落在哪个象限还原 x/y 的对应比特。
 pub fn quad_key_to_tile_xy(quadkey: &str) -> QuadKeyTile {
     let mut x: u32 = 0;
     let mut y: u32 = 0;
@@ -85,8 +87,7 @@ const COMPRESSED_MAGIC_SWAP: u32 = 0xadde6874;
 
 /// 解码从 Google Earth Enterprise 服务器接收的数据。
 ///
-/// 映射到 CesiumJS `decodeGoogleEarthEnterpriseData`。
-/// 该算法基于 XOR：应用两次会返回原始数据。
+/// 基于 XOR 的可逆解密：对同一数据应用两次会返回原始字节。
 ///
 /// #  Panic
 /// 若 `key` 为空或其长度不是 4 的倍数则 Panic。

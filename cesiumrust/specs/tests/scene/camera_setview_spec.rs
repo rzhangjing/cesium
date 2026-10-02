@@ -1,5 +1,5 @@
-//! Scene/CameraSpec.js → Rust 集成测试（setView/lookAt/heading/pitch/roll）
-//! 移植自：packages/engine/Specs/Scene/CameraSpec.js
+//! Scene/CameraSpec → Rust 集成测试（setView/lookAt/heading/pitch/roll）
+//! 参考自：Specs/Scene/CameraSpec
 //! A 类纯数学测试：heading/pitch/roll 读写器、lookAt、lookAtTransform
 
 use cesium_camera::Camera;

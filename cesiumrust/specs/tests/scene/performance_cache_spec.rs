@@ -1,5 +1,5 @@
 //! 性能 + 缓存规范
-//! 移植自 CesiumJS Scene/FrameRateControllerSpec.js + ResourceCacheSpec.js
+//! 参考自 CesiumJS Scene/FrameRateControllerSpec + ResourceCacheSpec
 
 use cesium_performance::{
     CacheStatistics, FrameRateConfig, FrameRateController, LruCache, MemoryBudget, MemoryTracker,

@@ -1,4 +1,4 @@
-//! 移植自 CesiumJS TransformsSpec.js 的扩展变换测试。
+//! 参考自 CesiumJS TransformsSpec 的扩展变换测试。
 //!
 //! 覆盖：rotationMatrixFromPositionVelocity, fixedFrameToHeadingPitchRoll,
 //! basisTo2D, ellipsoidTo2DModelMatrix，以及额外的参考系测试。

@@ -1,5 +1,5 @@
 //! Globe atmosphere 扩展 specs - GroundAtmosphere/GlobeLighting/SkyAtmosphere/SkyBox
-//! 移植自 Scene/SkyAtmosphereSpec.js + Scene/GlobeSpec.js（A 类散射）
+//! 参考自 Scene/SkyAtmosphereSpec + Scene/GlobeSpec（A 类散射）
 
 use cesium_globe::atmosphere::{
     GroundAtmosphere, GlobeLighting, SkyAtmosphereConfig, SkyBoxConfig,

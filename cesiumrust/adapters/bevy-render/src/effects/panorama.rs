@@ -3,20 +3,15 @@
 //! 将 cesiumrust panorama 绘制实现为一个 `Core3d` [`ViewNode`]，遵循
 //! [`super::fxaa`] 和 [`super::graph`] 所确立的 M5-E0 渲染图内部模式。
 //!
-//! # 蓝图（上游真相源，`packages/engine/Source/`）
-//! - `Scene/SkyBox.js`（164 行）——**完全**委托给 `CubeMapPanorama`
-//!   （L39-43，L100 注释 "Delegate completely"）。
-//! - `Scene/CubeMapPanorama.js`（352 行）——`pass: Pass.ENVIRONMENT`（L105-106，
-//!   注释 "render before everything else"），一个 2×2×2 `BoxGeometry` 缩放到
-//!   `czm_entireFrustum.y`，`depthTest: {enabled: false}`，`depthMask: false`，
-//!   `blending: ALPHA_BLEND`，以及 L232 `if (!defined(this._cubeMap)) return undefined;`。
-//! - `Scene/EquirectangularPanorama.js`（266 行）——`DEFAULT_RADIUS = 100000.0` m，
-//!   `SphereGeometry`，带 `repeat: new Cartesian2(-repeatHorizontal, repeatVertical)`（L117）
-//!   的 Fabric `Image` 材质，以及
-//!   `MaterialAppearance({ closed: true, translucent: false, renderState: { cull: { enabled: false } } })`。
-//! - `Shaders/SkyBoxVS.glsl`、`Shaders/SkyBoxFS.glsl`、`Shaders/CubeMapPanoramaVS.glsl`。
-//! - `Renderer/AutomaticUniforms.js` L329/L341（`czm_viewRotation` 是一个 **mat3**），
-//!   L1064（`czm_entireFrustum` 是一个 **vec2** `(near, far)`）。
+//! # 设计约定
+//! 全景/天空球渲染遵循以下语义：
+//! - SkyBox **完全**委托给 cubemap panorama：一个 2×2×2 盒体缩放到
+//!   整个视锥，在所有其他对象之前绘制（environment pass），关闭深度
+//!   测试与深度写入，使用 alpha blend；cube map 尚未就绪时不发任何 draw command。
+//! - 等距柱状全景以 `DEFAULT_RADIUS = 100000.0` m 的球体承载，带水平/垂直
+//!   重复（`repeat: (-repeatHorizontal, repeatVertical)`）的图像材质，且
+//!   `closed: true, translucent: false`、关闭背面剔除。
+//! - 视图旋转是一个 **mat3**，整个视锥是一个 **vec2** `(near, far)`。
 //!
 //! 领域半位于 `cesium_effects::panorama`（`domain/effects/src/panorama.rs`），
 //! 承载全部 f64 几何以及上游顶点 shader 的 CPU 参考。
@@ -92,7 +87,7 @@
 //!
 //! **此处不创建任何边。** [`register_panorama_node`] 只添加节点；
 //! `effects::graph::register_render_graph` 拥有单一线性 `Core3d` 链
-//!（Daniel H2，上游 CesiumJS 一致性），task #81 接线边。参见 [`insertion_hint`]。
+//!（Daniel H2，与上游渲染图一致），task #81 接线边。参见 [`insertion_hint`]。
 //!
 //! # 偏差
 //! 记录于 `docs/deviations.md#dev-025`；shader 侧的那些列在
@@ -248,12 +243,13 @@ pub struct CesiumPanorama {
     /// bubble 半径，以 render 单位表示。`Skybox` 放置中不用。
     pub radius: f32,
     /// 采样器 repeat，`(-repeat_horizontal, repeat_vertical)`——上游
-    /// `EquirectangularPanorama.js` L117。必须与 `AddressMode::Repeat` 配对，
+    /// `EquirectangularPanorama` L117。必须与 `AddressMode::Repeat` 配对，
     /// 由 [`PanoramaPipeline::from_world`] 提供。
     pub repeat: Vec2,
 }
 
 impl Default for CesiumPanorama {
+    /// 默认：禁用，Skybox 放置 + CubeMap 源，单位亮度、无重复。
     fn default() -> Self {
         Self {
             enabled: false,
@@ -281,7 +277,7 @@ impl CesiumPanorama {
         brightness: f32,
     ) -> Self {
         // 上游由一个位置加 heading/pitch/roll 组合出 `transform`
-        //（`EquirectangularPanorama.js` L46-61），即一个刚体 transform：一个正交归一
+        //（`EquirectangularPanorama` L46-61），即一个刚体 transform：一个正交归一
         // 3x3 加上以米为单位的平移。只有平移需要重新缩放。
         let mut world_from_local = panorama.transform;
         world_from_local.w_axis.x /= PANORAMA_METERS_PER_RENDER_UNIT;
@@ -472,6 +468,7 @@ impl PanoramaPipeline {
 }
 
 impl FromWorld for PanoramaPipeline {
+    /// 从渲染世界取设备，创建 panorama 的 bind group layout。
     fn from_world(render_world: &mut World) -> Self {
         let render_device = render_world.resource::<RenderDevice>();
 
@@ -564,6 +561,7 @@ pub struct PanoramaPipelineKey {
 impl SpecializedRenderPipeline for PanoramaPipeline {
     type Key = PanoramaPipelineKey;
 
+    /// 按 key（放置/源/mode 组合）特化出一个全景渲染管线描述符。
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
         RenderPipelineDescriptor {
             label: Some("cesium_panorama_pipeline".into()),
@@ -672,6 +670,7 @@ impl ViewNode for PanoramaNode {
         &'static CesiumPanorama,
     );
 
+    /// 图节点执行体：未启用时直接返回；否则编码一次全屏 draw。
     fn run(
         &self,
         _graph: &mut RenderGraphContext,
@@ -750,7 +749,7 @@ pub fn prepare_panorama_pipelines(
 /// 所用的同一集合。
 ///
 /// image 尚未常驻的视图会被**跳过**，这是上游一致性：cube map 仍在加载时
-/// `CubeMapPanorama.js` L232 返回 `undefined`——完全不发出 draw command。
+/// `CubeMapPanorama` L232 返回 `undefined`——完全不发出 draw command。
 /// 被跳过的视图没有 [`CameraPanoramaBindGroup`]，所以 [`PanoramaNode`] 的 query
 /// 不匹配它，什么都不绘制。
 pub fn prepare_panorama_bind_groups(
@@ -780,7 +779,7 @@ pub fn prepare_panorama_bind_groups(
         // `GpuImage` 不携带 `Image::texture_view_dimension`，所以 cube 判据是
         // array-layer 数：一个 wgpu cube 纹理是恰好六层的 2D array 纹理，而一个普通
         // equirectangular image 只有一层。此处保守是上游一致性，而非 workaround——
-        // `CubeMapPanorama.js` L232 同样在 cube map 完全常驻之前不发出任何 draw command。
+        // `CubeMapPanorama` L232 同样在 cube map 完全常驻之前不发出任何 draw command。
         let dimension_matches = match panorama.source {
             PanoramaSource::CubeMap => gpu_image.texture.depth_or_array_layers() == 6,
             PanoramaSource::Equirectangular => gpu_image.texture.depth_or_array_layers() == 1,

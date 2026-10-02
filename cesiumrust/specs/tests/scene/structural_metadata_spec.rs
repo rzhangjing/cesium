@@ -1,4 +1,4 @@
-//! StructuralMetadata 规范 - 移植自 Scene/StructuralMetadataSpec、PropertyTableSpec 等。
+//! StructuralMetadata 规范 - 参考自 Scene/StructuralMetadataSpec、PropertyTableSpec 等。
 //! 覆盖：MetadataType、MetadataComponentType、MetadataValue、MetadataClass、
 //! MetadataEnum, PropertyTable, PropertyTexture, PropertyAttribute, StructuralMetadata
 

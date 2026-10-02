@@ -36,7 +36,9 @@ pub const BASE_LAYER_ZOOM: u32 = 3;
 /// 抽象 LOD 遍历所查询的 TileManager 状态。
 /// 薄壳与遗留 TileManager 都实现此 trait。
 pub trait LodContext {
+    /// 查询给定瓦片键是否已有对应实体（已加载并渲染）。
     fn has_entity(&self, key: &(u32, u32, u32)) -> bool;
+    /// 返回给定瓦片键的纹理边长（像素）；尚未就绪时返回 `None`。
     fn tex_size(&self, key: &(u32, u32, u32)) -> Option<u32>;
 }
 
@@ -48,6 +50,7 @@ pub type TileKey = (u32, u32, u32);
 
 /// 原始：`dynamic_globe.rs:2066-2069`。
 pub fn compute_segments(zoom: u32) -> u32 {
+    // 每升高一级段数减半（右移），但不低于下限 8，避免高层级网格过于粗糙。
     (BASE_SEGMENTS >> zoom.saturating_sub(MIN_ZOOM)).max(8)
 }
 
@@ -63,19 +66,21 @@ pub fn focal_pixels(windows: &Query<&Window>) -> f64 {
 
 /// 原始：`dynamic_globe.rs:1719-1730`。
 pub fn compute_sub_camera_point(orbit: &OrbitState) -> (f64, f64) {
+    // 由 heading/pitch 构造视线方向单位向量（以球坐标展开）。
     let cos_pitch = orbit.pitch.cos();
     let sin_pitch = orbit.pitch.sin();
     let dir_x = cos_pitch * orbit.heading.cos();
     let dir_y = cos_pitch * orbit.heading.sin();
     let dir_z = sin_pitch;
 
+    // 将方向向量归一化后反正弦/反正切得到注视点的纬度与经度（弧度）。
     let len = (dir_x * dir_x + dir_y * dir_y + dir_z * dir_z).sqrt();
     let lat = (dir_z / len).asin() as f64;
     let lon = (dir_y as f64).atan2(dir_x as f64);
     (lat, lon)
 }
 
-/// 遍历结果 —— 对应 CesiumJS `TraversalDetails.allAreRenderable`。
+/// 遍历结果：描述整棵子树是否均已就绪可渲染。
 /// 原始：`dynamic_globe.rs:1563-1567`。
 pub enum Visit {
     Ready,
@@ -96,6 +101,7 @@ pub fn compute_visible_tiles<C: LodContext>(
     //（1.0000157 ≈ 100 米），使其永不生效；此处更粗的下限会封顶
     // 可达的最深瓦片层级，无论相机降得多低。
     let d = distance.max(1.00001);
+    // 将相机注视点经纬度投影为单位向量 (cx,cy,cz)，并算出可见地平帽的半角 cap。
     let cx = lat_rad.cos() * lon_rad.cos();
     let cy = lat_rad.cos() * lon_rad.sin();
     let cz = lat_rad.sin();
@@ -103,6 +109,7 @@ pub fn compute_visible_tiles<C: LodContext>(
 
     let mut render = Vec::new();
     let mut load = Vec::new();
+    // 从最粗层级 MIN_ZOOM 的四分瓦片逐个启动递归划分。
     let n0 = 1u32 << MIN_ZOOM;
     for y in 0..n0 {
         for x in 0..n0 {
@@ -128,7 +135,9 @@ pub fn visit_tile<C: LodContext>(
     render: &mut Vec<(TileKey, f32)>,
     load: &mut Vec<(TileKey, f32)>,
 ) -> Visit {
+    // 当前层级每边瓦片数 n = 2^z；取瓦片中心的经纬度并投影为单位向量。
     let n = 1u64 << z;
+    // 经度由列索引均匀划分 2π；纬度用等积投影（sinh/atan 反双曲）并限幅到 ±1.4844 弧度。
     let lon = (x as f64 + 0.5) / n as f64 * 2.0 * std::f64::consts::PI
         - std::f64::consts::PI;
     let lat = (std::f64::consts::PI * (1.0 - 2.0 * (y as f64 + 0.5) / n as f64))
@@ -140,6 +149,7 @@ pub fn visit_tile<C: LodContext>(
     let ty = lat.cos() * lon.sin();
     let tz = lat.sin();
 
+    // 计算瓦片中心与相机方向向量的夹角 theta；若超出可见帽加边界则剔除。
     let dot = (tx * cx + ty * cy + tz * cz).clamp(-1.0, 1.0);
     let theta = dot.acos();
     let margin = 2.0 * std::f64::consts::PI / n as f64;
@@ -147,16 +157,19 @@ pub fn visit_tile<C: LodContext>(
         return Visit::Culled;
     }
 
+    // 估算瓦片到相机的实际距离（米）与该瓦片对应的屏幕像素宽度。
     let ex = tx - cx * d;
     let ey = ty - cy * d;
     let ez = tz - cz * d;
     let dist_m = (ex * ex + ey * ey + ez * ez).sqrt() * EARTH_RADIUS_M;
 
     let w_m = 2.0 * std::f64::consts::PI * EARTH_RADIUS_M / n as f64;
+    // 瓦片实际宽度除以距离再乘以焦距，得到该瓦片在屏幕上的像素宽度。
     let screen_px = w_m / dist_m * focal_px;
 
     let has_ent = ctx.has_entity(&(x, y, z));
 
+    // 屏幕像素足够小或已达最深：直接渲染本页（不再细分）。
     if screen_px <= MAX_TILE_SCREEN_PX || z >= MAX_ZOOM {
         render.push(((x, y, z), screen_px as f32));
         if has_ent {
@@ -165,6 +178,7 @@ pub fn visit_tile<C: LodContext>(
             Visit::NotReady
         }
     } else {
+        // 否则递归访问四个子瓦片，根据子代结果决定用父页回退还是下钻。
         let start = render.len();
         let (x2, y2, z1) = (x * 2, y * 2, z + 1);
         let children = [
@@ -179,6 +193,7 @@ pub fn visit_tile<C: LodContext>(
             visit_tile(x2, y2 + 1, z1, cx, cy, cz, d, cap, focal_px, ctx, render, load),
             visit_tile(x2 + 1, y2 + 1, z1, cx, cy, cz, d, cap, focal_px, ctx, render, load),
         ];
+        // 若四个子代均被剔除，则回退到渲染本页。
         let any_selected = outcomes
             .iter()
             .any(|o| matches!(o, Visit::Ready | Visit::NotReady));
@@ -190,11 +205,13 @@ pub fn visit_tile<C: LodContext>(
                 Visit::NotReady
             };
         }
+        // 若子代未全部就绪，则回退本页并调度未就绪的子瓦片加载（粗化保护）。
         let all_ready = outcomes
             .iter()
             .all(|o| matches!(o, Visit::Ready | Visit::Culled));
         if !all_ready {
             render.truncate(start);
+            // 将未就绪且纹理分辨率不足（<256）的子瓦片加入加载队列，屏幕宽度减半估算。
             for (c, o) in children.iter().zip(outcomes.iter()) {
                 if !matches!(o, Visit::Culled)
                     && (!ctx.has_entity(c) || ctx.tex_size(c).map_or(false, |s| s < 256))
@@ -228,6 +245,8 @@ pub fn compute_display_set(
     prev_load: &HashSet<TileKey>,
     replacement_ready: &dyn Fn(&TileKey) -> bool,
 ) -> (HashSet<TileKey>, bool) {
+    // 建立「粗化覆盖表」：对每个新显示瓦片向上回溯，若某祖先在旧集却不在新集，
+    // 说明该祖先正被这批后代细化替换，记录祖先到后代列表的映射。
     let mut refine_cover: HashMap<TileKey, Vec<TileKey>> = HashMap::new();
     for n in new_set {
         let (mut ax, mut ay, mut az) = *n;
@@ -242,13 +261,17 @@ pub fn compute_display_set(
             }
         }
     }
+    // display 为最终稳定显示集；blocked 记录因替换未就绪而暂时被占位阻塞的瓦片。
     let mut display: HashSet<TileKey> = HashSet::new();
     let mut blocked: HashSet<TileKey> = HashSet::new();
+    // 逐个处理旧集瓦片，决定保留、下钻到子代还是上钻到祖先替换。
     for old in old_set.iter() {
+        // 新旧集交集：无需过渡，直接保留。
         if new_set.contains(old) {
             display.insert(*old);
             continue;
         }
+        // 旧瓦片被粗化：向上寻找新集中的祖先作为替换。
         let (mut ax, mut ay, mut az) = *old;
         let mut ancestor: Option<TileKey> = None;
         while az > 0 {
@@ -260,6 +283,7 @@ pub fn compute_display_set(
                 break;
             }
         }
+        // 若存在祖先替换：就绪则显示祖先，否则保留旧瓦片并阻塞该祖先（避免闪烁）。
         if let Some(a) = ancestor {
             if replacement_ready(&a) {
                 display.insert(a);
@@ -269,6 +293,7 @@ pub fn compute_display_set(
             }
             continue;
         }
+        // 否则查看粗化覆盖表：后代全部就绪则用后代替换，否则保留旧瓦片并阻塞后代。
         if let Some(desc) = refine_cover.get(old) {
             if desc.iter().all(replacement_ready) {
                 display.extend(desc.iter().copied());
@@ -279,10 +304,12 @@ pub fn compute_display_set(
             continue;
         }
     }
+    // 收尾：处理新集中尚未被 display/blocked 覆盖的瓦片，避免与仍保留的粗祖先重叠。
     for n in new_set {
         if blocked.contains(n) || display.contains(n) {
             continue;
         }
+        // 向上回溯判断该瓦片是否被某个仍显示的旧祖先粗覆盖。
         let (mut ax, mut ay, mut az) = *n;
         let mut covered = old_set.contains(n);
         while !covered && az > 0 {
@@ -291,10 +318,12 @@ pub fn compute_display_set(
             az -= 1;
             covered = old_set.contains(&(ax, ay, az));
         }
+        // 未被覆盖则加入显示集。
         if !covered {
             display.insert(*n);
         }
     }
+    // 划分相对上一帧是否改变，供上层决定是否重建显示实体。
     let partition_changed = new_set != prev_partition || new_load_set != prev_load;
     (display, partition_changed)
 }

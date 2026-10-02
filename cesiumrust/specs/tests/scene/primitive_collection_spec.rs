@@ -1,5 +1,5 @@
 //! PrimitiveCollection + GeometryInstance + GeometryBatch 规范
-//! 移植自 CesiumJS Scene/PrimitiveSpec.js + PrimitiveCollectionSpec.js
+//! 参考自 CesiumJS Scene/PrimitiveSpec + PrimitiveCollectionSpec
 
 use cesium_primitives::{
     batch_instances, compute_bounding_sphere_union, Appearance, BatchConfig, GeometryBatch,

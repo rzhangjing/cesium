@@ -19,6 +19,7 @@ pub struct GroupTransform {
 }
 
 impl Default for GroupTransform {
+    /// 恒等变换：不旋转、缩放 1.0、无地理偏移。
     fn default() -> Self {
         Self {
             rotate_deg: 0.0,

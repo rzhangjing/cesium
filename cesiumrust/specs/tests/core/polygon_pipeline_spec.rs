@@ -1,4 +1,4 @@
-//! Core/PolygonPipelineSpec.js → Rust 集成测试
+//! Core/PolygonPipelineSpec → Rust 集成测试
 //! 32 个原始 it() 块 → 已移植 15 个 A 类测试
 //!
 //! 已跳过的 C 类测试（编译期类型安全取代 DeveloperError 抛出）：

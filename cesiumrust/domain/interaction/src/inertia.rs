@@ -4,18 +4,15 @@
 //! 像素→弧度/米 的缩放由适配层边界施加（参见
 //! [`crate::camera_controller::CameraController::coast_inertia`]）。
 //!
-//! 映射到 CesiumJS `Scene/ScreenSpaceCameraController.js` 的惯性辅助函数，以及
-//! Rust 蓝图 `cesium-rs/crates/cesium-scene/src/screen_space_camera_controller.rs`：
-//! - `InertiaState` — 蓝图 L164-173（`Spin`/`Zoom`/`Translate`/`Tilt`）。
-//! - `decay(time, coefficient)` — 蓝图 L107-113（`exp(-tau*time)`、
-//!   `tau = (1 - coefficient) * 25`）。
-//! - `activateInertia` — 蓝图 L766-786（重新启用某个状态，并禁用来自 CesiumJS
-//!   `_inertiaDisablers` 的冲突状态）。
-//! - `maintainInertia` — 蓝图 L796-875（在按钮抬起期间用衰减指数函数收窄最后一次
-//!   移动，使相机滑行直至停下）。
+//! 本模块实现四类惯性滑行能力：
+//! - `InertiaState`：旋转/缩放/平移/俯仰四种惯性通道。
+//! - `decay`：以 `exp(-tau * time)`、`tau = (1 - coefficient) * 25` 收窄运动。
+//! - `activate`：重新启用某个状态，并禁用与之冲突的其他状态。
+//! - `maintain`：在按钮抬起期间用衰减指数函数收窄最后一次
+//!   移动，使相机滑行直至停下。
 //!
-//! CesiumJS 的 `inertiaMaxClickTimeThreshold` 保护（蓝图 L98-102）在此以
-//! [`INERTIA_MAX_CLICK_TIME_THRESHOLD`] 重现。
+//! 有意按住的保护由 [`INERTIA_MAX_CLICK_TIME_THRESHOLD`] 表达：
+//! 按下超过该时长的手势不再滑行。
 
 use glam::DVec2;
 
@@ -23,14 +20,13 @@ use glam::DVec2;
 /// （秒），则将该手势视为有意的按住，相机将
 /// **不**会带惯性滑行。
 ///
-/// CesiumJS `inertiaMaxClickTimeThreshold`（蓝图 L102）。
+/// 阈值经验上取 0.4 秒。
 pub const INERTIA_MAX_CLICK_TIME_THRESHOLD: f64 = 0.4;
 
 /// 低于该运动值即视为滑行停止（像素）。
 ///
-/// 一旦 `Cartesian2.distance(start, end) < 0.5`，CesiumJS 就会退出
-/// `maintainInertia`（蓝图 L865）；否则接近零的指数函数可能产生 NaN 或
-/// 无尽的亚像素更新流。
+/// 一旦起止点距离小于 0.5 像素即退出滑行；否则接近零的
+/// 指数函数可能产生 NaN 或无尽的亚像素更新流。
 pub const INERTIA_STOP_DISTANCE: f64 = 0.5;
 
 /// `decay(time, coefficient)` — 用于收窄惯性运动的递减指数函数。
@@ -39,12 +35,12 @@ pub const INERTIA_STOP_DISTANCE: f64 = 0.5;
 /// `coefficient`（更接近 `1.0`）会得到更小的 `tau`，从而衰减更慢
 /// （运动滑行更久）。负的 `time` 会被钳制为 `0.0`。
 ///
-/// 忠实于蓝图 L107-113。
+/// 衰减常数为 25，与常用惯性手感匹配。
 ///
 /// # 参数
 /// * `time` - 自手势释放以来的经过时间（秒）。
-/// * `coefficient` - `[0, 1]` 范围内的惯性系数（例如 CesiumJS 的
-///   `inertiaSpin`/`inertiaZoom`/`inertiaTranslate`/`inertiaTilt`）。
+/// * `coefficient` - `[0, 1]` 范围内的惯性系数，对应各通道的
+///   滑行敏感度（越接近 1 滑行越久）。
 #[inline]
 pub fn decay(time: f64, coefficient: f64) -> f64 {
     if time < 0.0 {
@@ -54,13 +50,13 @@ pub fn decay(time: f64, coefficient: f64) -> f64 {
     (-tau * time).exp()
 }
 
-/// 四个惯性运动状态，替代 CesiumJS 的字符串字段名。
+/// 四个惯性运动状态，替代字符串字段名进行分派。
 ///
-/// 映射到蓝图 `InertiaState`（L164-173）：
-/// - [`InertiaState::Spin`] — `_lastInertiaSpinMovement`。
-/// - [`InertiaState::Zoom`] — `_lastInertiaZoomMovement`。
-/// - [`InertiaState::Translate`] — `_lastInertiaTranslateMovement`。
-/// - [`InertiaState::Tilt`] — `_lastInertiaTiltMovement`。
+/// 每个状态对应一路惯性运动：
+/// - [`InertiaState::Spin`] — 旋转自转滑行。
+/// - [`InertiaState::Zoom`] — 缩放滑行。
+/// - [`InertiaState::Translate`] — 平移滑行。
+/// - [`InertiaState::Tilt`] — 俯仰倾斜滑行。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InertiaState {
     /// 旋转自转（rotate3D / spin3D 滑行）。
@@ -93,8 +89,8 @@ impl InertiaState {
         }
     }
 
-    /// 当 `self` 被激活时，CesiumJS 的 `_inertiaDisablers` 映射会关闭其惯性的
-    /// 那些状态（蓝图 L776-780）。
+    /// 当 `self` 被激活时，需要一并关闭其惯性的
+    /// 那些冲突状态。
     ///
     /// - `Zoom` 禁用 `[Spin, Translate, Tilt]`。
     /// - `Tilt` 禁用 `[Spin, Translate]`。
@@ -113,11 +109,11 @@ impl InertiaState {
     }
 }
 
-/// CesiumJS 在每个 `_lastInertia*Movement` 字段下存储的
-/// `{ startPosition, endPosition, motion, inertiaEnabled }` 对象。
+/// 记录单路惯性的移动状态：起始/结束像素位置、
+/// 半量运动增量以及是否启用惯性。
 ///
-/// 映射到蓝图 `InertiaMovementState`（L178-188）。位置为像素
-/// 坐标；`motion` 为最后一次移动增量的一半（蓝图 L852-853）。
+/// 位置为像素坐标；`motion` 为最后一次移动增量的一半，
+/// 用作滑行的初速度。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InertiaMovementState {
     /// `startPosition` — 滑行运动的锚定像素。
@@ -131,6 +127,7 @@ pub struct InertiaMovementState {
 }
 
 impl Default for InertiaMovementState {
+    /// 默认惯性状态：零位移、零运动，但允许滑行。
     fn default() -> Self {
         Self {
             start_position: DVec2::ZERO,
@@ -144,7 +141,7 @@ impl Default for InertiaMovementState {
 /// 逐帧的惯性样本：求值 [`InertiaController::maintain`] 所需的时序与系数。
 ///
 /// 将这些打包在一起，可使公共 API 保持在 clippy 的参数预算之内，同时
-/// 镜像蓝图的 `(decayCoef, pressTime, releaseTime, now)` 输入。
+/// 保持与 `(decayCoef, pressTime, releaseTime, now)` 一致的输入形态。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InertiaSample {
     /// 传入 [`decay`] 的惯性系数，范围 `[0, 1]`。
@@ -170,7 +167,7 @@ impl InertiaSample {
 
     /// 按下→释放的时长（秒）（`(release - press) / 1000`）。
     ///
-    /// 蓝图 L824。
+    /// 该时长与按下阈值比较，判断是否有意按住。
     #[inline]
     pub fn click_threshold(&self) -> f64 {
         (self.release_time - self.press_time) / 1000.0
@@ -178,7 +175,7 @@ impl InertiaSample {
 
     /// 自释放以来的经过时间（秒）（`(now - release) / 1000`）。
     ///
-    /// 蓝图 L831。
+    /// 该值作为 [`decay`] 的时间输入。
     #[inline]
     pub fn from_now(&self) -> f64 {
         (self.now - self.release_time) / 1000.0
@@ -187,14 +184,15 @@ impl InertiaSample {
 
 /// 持有四个 [`InertiaMovementState`] 槽位并驱动滑行衰减。
 ///
-/// 映射到 CesiumJS `ScreenSpaceCameraController` 的惯性字段及其
-/// `activateInertia` / `maintainInertia` 辅助函数。这是一个纯领域对象：
+/// 管理四路惯性字段及其 activate/maintain 两类操作。
+/// 这是一个纯领域对象：
 /// 它既不读取活动的事件聚合器，也不触碰相机 —— 调用方在释放时捕获
 /// 最后一次移动，然后喂入逐帧的 [`InertiaSample`] 并
 /// 应用返回的增量（参见
 /// [`crate::camera_controller::CameraController::coast_inertia`]）。
 #[derive(Debug, Clone, Default)]
 pub struct InertiaController {
+    /// 四路惯性通道（Spin/Zoom/Translate/Tilt）各自的存储状态，`None` 表示未捕获。
     states: [Option<InertiaMovementState>; 4],
 }
 
@@ -225,8 +223,8 @@ impl InertiaController {
 
     /// 记录一次手势的最后移动，以便在释放时能够滑行。
     ///
-    /// `motion` 存储为 `(last_end - last_start)` 的一半（蓝图
-    /// L852-853），并启用该状态。由适配层在拖拽
+    /// `motion` 存储为 `(last_end - last_start)` 的一半，
+    /// 并启用该状态。由适配层在拖拽
     /// 手势结束时调用。
     pub fn capture(&mut self, slot: InertiaState, last_start: DVec2, last_end: DVec2) {
         let state = self.states[slot.index()].get_or_insert_with(Default::default);
@@ -236,11 +234,11 @@ impl InertiaController {
         state.inertia_enabled = true;
     }
 
-    /// `activateInertia(controller, inertiaStateName)`（蓝图 L766-786）。
+    /// 激活某个惯性通道（对应 activate 操作）。
     ///
-    /// 在 `slot` 上重新启用惯性，并禁用列在 CesiumJS
-    /// `_inertiaDisablers` 映射中的那些状态。`None`（CesiumJS 的 `undefined`，例如
-    /// `look3D`）为空操作。仅修改已存在的槽位，正如蓝图用 `if let Some(...)`
+    /// 在 `slot` 上重新启用惯性，并禁用与之冲突的那些状态。
+    /// `None`（未指定通道，例如
+    /// 环视 look）为空操作。仅修改已存在的槽位，用 `if let Some(...)`
     /// 保护每一次写入。
     pub fn activate(&mut self, slot: Option<InertiaState>) {
         let slot = match slot {
@@ -266,7 +264,7 @@ impl InertiaController {
         }
     }
 
-    /// `maintainInertia(...)`（蓝图 L796-875），简化为其纯数学部分。
+    /// 维持滑行（maintain），简化为其纯数学部分。
     ///
     /// 用 [`decay`] 指数函数收窄捕获的运动，并返回本帧要应用的
     /// 增量（像素），当滑行应停止时返回 `None`。
@@ -277,7 +275,7 @@ impl InertiaController {
     ///   （有意的按住，而非轻扫）；
     /// - 衰减后的增量为 NaN 或短于 [`INERTIA_STOP_DISTANCE`]。
     ///
-    /// 所存储状态的 `end_position` 会被原地更新（蓝图 L858-860），
+    /// 所存储状态的 `end_position` 会被原地更新，
     /// 以便重复调用能观察到收窄后的运动。
     pub fn maintain(&mut self, slot: InertiaState, sample: &InertiaSample) -> Option<DVec2> {
         let state = self.states[slot.index()].as_mut()?;

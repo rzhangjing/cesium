@@ -70,6 +70,7 @@ pub struct HeadlessConfig {
 }
 
 impl Default for HeadlessConfig {
+    /// 默认：标准宽高常量 + LDR（hdr=false）。
     fn default() -> Self {
         Self {
             width: DEFAULT_HEADLESS_WIDTH,
@@ -80,6 +81,7 @@ impl Default for HeadlessConfig {
 }
 
 impl HeadlessConfig {
+    /// 以指定分辨率构造一个 LDR 离屏配置。
     pub fn new(width: u32, height: u32) -> Self {
         Self {
             width,
@@ -215,8 +217,11 @@ pub fn retarget_cameras_to_offscreen(
 /// [`CesiumHeadlessPlugin`] 的内部捕获状态机。
 #[derive(Resource)]
 struct HeadlessCaptureState {
+    /// 距捕获还剩多少 update tick。
     frames_remaining: usize,
+    /// 捕获图像写入的 PNG 路径。
     output_png: PathBuf,
+    /// 是否已发起捕获（避免重复请求）。
     requested: bool,
 }
 
@@ -239,6 +244,11 @@ pub struct CesiumHeadlessPlugin {
 }
 
 impl CesiumHeadlessPlugin {
+    /// 以输出路径与预热帧数构造插件；HDR 从环境变量读取。
+    ///
+    /// # 参数
+    /// - `output_png`：捕获写入的 PNG 路径
+    /// - `frames`：捕获前的 `Update` tick 数
     pub fn new(output_png: impl Into<PathBuf>, frames: usize) -> Self {
         Self {
             // `main.rs` 经由 `new(output, frames)` 构建插件，且不可被并发编辑，
@@ -250,6 +260,7 @@ impl CesiumHeadlessPlugin {
         }
     }
 
+    /// Builder：显式指定离屏渲染配置（覆盖环境推导的默认）。
     pub fn with_config(mut self, config: HeadlessConfig) -> Self {
         self.config = config;
         self
@@ -257,6 +268,10 @@ impl CesiumHeadlessPlugin {
 }
 
 impl Plugin for CesiumHeadlessPlugin {
+    /// 注入配置与捕获状态，挂载 Startup 创建离屏目标、逐帧改向相机、末尾捕获保存。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用
     fn build(&self, app: &mut App) {
         app.insert_resource(self.config)
             .insert_resource(HeadlessCaptureState {

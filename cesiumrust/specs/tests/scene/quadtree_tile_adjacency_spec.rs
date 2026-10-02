@@ -1,5 +1,5 @@
 //! QuadtreeTile 邻接 specs - 瓦片邻居查找
-//! 移植自 Scene/QuadtreeTileSpec.js（13 个 A 类测试）
+//! 参考自 Scene/QuadtreeTileSpec（13 个 A 类测试）
 
 use cesium_quadtree::quadtree_tile_adjacency::{
     create_level_zero_tiles, find_level_zero_tile, find_tile_to_east, find_tile_to_north,

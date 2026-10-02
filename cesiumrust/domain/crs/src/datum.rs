@@ -249,6 +249,9 @@ impl DatumConverter {
     }
 
     /// 将地理坐标（lon、lat 为弧度，height 为米）转换为 ECEF。
+    ///
+    /// 采用标准的椭球大地坐标正算公式：先求卯酉圈曲率半径 N，再沿椭球面法线
+    /// 方向分解出 (x, y, z)；适用于任意 [`Datum`] 定义的长半轴 a 与第一偏心率的平方 e²。
     pub fn geographic_to_ecef(&self, lon: f64, lat: f64, height: f64) -> DVec3 {
         let a = self.datum.semi_major_axis;
         let e2 = self.datum.eccentricity_squared();
@@ -258,10 +261,13 @@ impl DatumConverter {
         let sin_lon = lon.sin();
         let cos_lon = lon.cos();
 
+        // N：卯酉圈曲率半径，随纬度变化，决定测地点在水平面内的投影尺度
         let n = a / (1.0 - e2 * sin_lat * sin_lat).sqrt();
 
+        // 由法线方向分解直角坐标：(N+h) 为该点到赤道面内椭球法线足的距离
         let x = (n + height) * cos_lat * cos_lon;
         let y = (n + height) * cos_lat * sin_lon;
+        // z 分量用 N(1-e²)+h 体现椭球在自转轴向的压缩
         let z = (n * (1.0 - e2) + height) * sin_lat;
 
         DVec3::new(x, y, z)
@@ -280,6 +286,7 @@ impl DatumConverter {
 
         let lon = y.atan2(x);
 
+        // p：点到地球自转轴的柱坐标半径（赤道面内的投影距离）
         let p = (x * x + y * y).sqrt();
 
         // 纬度的迭代计算
@@ -290,6 +297,7 @@ impl DatumConverter {
             let sin_lat = lat.sin();
             n = a / (1.0 - e2 * sin_lat * sin_lat).sqrt();
             let new_lat = (z + e2 * n * sin_lat).atan2(p);
+            // 两次纬度差小于收敛阈值（1e-12 弧度）即提前退出
             if (new_lat - lat).abs() < 1e-12 {
                 break;
             }
@@ -299,6 +307,7 @@ impl DatumConverter {
         let sin_lat = lat.sin();
         let cos_lat = lat.cos();
 
+        // 高度按纬度分情形求值：近极点时用 z 分量反解，避免 cos_lat 接近 0 导致除零
         let height = if cos_lat.abs() > 1e-10 {
             p / cos_lat - n
         } else {
@@ -339,6 +348,7 @@ pub fn get_helmert_transform(from: &Datum, to: &Datum) -> Option<HelmertTransfor
         return Some(HelmertTransform::ED50_TO_WGS84.inverse());
     }
 
+    // 未内置该基准对：返回 None，交由调用方决定是否用恒等近似回退
     None
 }
 
@@ -346,6 +356,7 @@ pub fn get_helmert_transform(from: &Datum, to: &Datum) -> Option<HelmertTransfor
 ///
 /// 若有可用的 Helmert 变换则使用，否则返回恒等。
 pub fn transform_ecef(ecef: DVec3, from: &Datum, to: &Datum) -> DVec3 {
+    // 同名基准无需变换，直接返回原坐标（省去一次查表）
     if from.name == to.name {
         return ecef;
     }

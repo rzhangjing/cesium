@@ -1,11 +1,11 @@
 //! 材质属性：表示 [`Material`] uniform 的属性。
 //!
-//! 映射到 CesiumJS `DataSources/MaterialProperty.js` 及其具体实现
-//! `ColorMaterialProperty`、`ImageMaterialProperty`、
-//! `CheckerboardMaterialProperty`、`GridMaterialProperty`、
-//! `StripeMaterialProperty`、`PolylineArrowMaterialProperty`、
-//! `PolylineDashMaterialProperty`、`PolylineGlowMaterialProperty`、
-//! `PolylineOutlineMaterialProperty` 与 `CompositeMaterialProperty`。
+//! 本模块定义材质属性统一接口 `MaterialProperty` 及其具体实现：
+//! 纯色 `ColorMaterialProperty`、图像 `ImageMaterialProperty`、棋盘格
+//! `CheckerboardMaterialProperty`、网格 `GridMaterialProperty`、条纹
+//! `StripeMaterialProperty`、箭头 `PolylineArrowMaterialProperty`、虚线
+//! `PolylineDashMaterialProperty`、发光 `PolylineGlowMaterialProperty`、
+//! 轮廓 `PolylineOutlineMaterialProperty` 与组合 `CompositeMaterialProperty`。
 //!
 //! 每个材质属性都会求值为一个材质类型字符串（例如 `"Color"`、
 //! `"Grid"`）加上一组命名 uniform 值。Fabric 材质系统
@@ -34,7 +34,8 @@ pub const COLOR_TRANSPARENT: [f64; 4] = [0.0, 0.0, 0.0, 0.0];
 
 /// 所有表示材质 uniform 的属性的接口。
 ///
-/// 映射到 CesiumJS `DataSources/MaterialProperty.js`。
+/// 每个实现将自身求值为一组命名 uniform 值（`MaterialUniforms`）并提供
+/// 一个材质类型字符串，供上层 Fabric 材质系统据此选择 shader 模板。
 pub trait MaterialProperty: Send + Sync {
     /// 在当前定义下 `get_value` 是否总返回相同结果。映射到 `isConstant`。
     fn is_constant(&self) -> bool;
@@ -126,9 +127,11 @@ fn option_equals(
 
 /// 一种映射到纯色（solid color）材质 uniform 的材质属性。
 ///
-/// 映射到 CesiumJS `DataSources/ColorMaterialProperty.js`.
+/// 仅持有一个可选的颜色属性，求值时以白色为缺省回退，产出单一名为
+/// `color` 的 uniform。它是最简单的材质类型，对应纯色填充。
 #[derive(Clone)]
 pub struct ColorMaterialProperty {
+    /// 可选的颜色属性；缺失时求值回退为白色。
     color: Option<Arc<dyn DynProperty>>,
 }
 
@@ -165,14 +168,17 @@ impl ColorMaterialProperty {
 }
 
 impl MaterialProperty for ColorMaterialProperty {
+    /// 颜色属性为常量（或缺失）时整体为常量。
     fn is_constant(&self) -> bool {
         option_is_constant(&self.color)
     }
 
+    /// 材质类型固定为 `Color`。
     fn get_type(&self, _time: &JulianDate) -> Option<String> {
         Some("Color".to_string())
     }
 
+    /// 求值颜色（缺失回退白色），写入名为 `color` 的 uniform。
     fn get_value(&self, time: &JulianDate) -> MaterialUniforms {
         let mut uniforms = MaterialUniforms::new();
         uniforms.insert(
@@ -182,6 +188,7 @@ impl MaterialProperty for ColorMaterialProperty {
         uniforms
     }
 
+    /// 仅当对方同为颜色材质属性且颜色属性相等时判定相等。
     fn equals(&self, other: &dyn MaterialProperty) -> bool {
         match other.as_any().downcast_ref::<ColorMaterialProperty>() {
             Some(o) => option_equals(&self.color, &o.color),
@@ -189,6 +196,7 @@ impl MaterialProperty for ColorMaterialProperty {
         }
     }
 
+    /// 以 `Any` 引用暴露自身，供向下转型使用。
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -200,12 +208,17 @@ impl MaterialProperty for ColorMaterialProperty {
 
 /// 一种映射到图像材质 uniform 的材质属性。
 ///
-/// 映射到 CesiumJS `DataSources/ImageMaterialProperty.js`.
+/// 持有图像 URL、重复次数、着色颜色与透明标志四个可选属性；当透明
+/// 开启时会将颜色 alpha 压到 0.99 以下，以便与背景混合。
 #[derive(Clone, Default)]
 pub struct ImageMaterialProperty {
+    /// 图像属性（URL/canvas 等），缺失时求值为未定义。
     image: Option<Arc<dyn DynProperty>>,
+    /// 二维重复平铺因子，缺省为 (1, 1)。
     repeat: Option<Arc<dyn DynProperty>>,
+    /// 着色颜色，缺省为白色。
     color: Option<Arc<dyn DynProperty>>,
+    /// 透明标志，为 true 时压低颜色 alpha。
     transparent: Option<Arc<dyn DynProperty>>,
 }
 
@@ -277,14 +290,17 @@ impl ImageMaterialProperty {
 }
 
 impl MaterialProperty for ImageMaterialProperty {
+    /// 图像与 repeat 属性均为常量（或缺失）时整体为常量。
     fn is_constant(&self) -> bool {
         option_is_constant(&self.image) && option_is_constant(&self.repeat)
     }
 
+    /// 材质类型固定为 `Image`。
     fn get_type(&self, _time: &JulianDate) -> Option<String> {
         Some("Image".to_string())
     }
 
+    /// 组装 image/repeat/color 三个 uniform；透明标志为真时压低颜色 alpha。
     fn get_value(&self, time: &JulianDate) -> MaterialUniforms {
         let mut uniforms = MaterialUniforms::new();
         uniforms.insert(
@@ -299,6 +315,7 @@ impl MaterialProperty for ImageMaterialProperty {
                 PropertyValue::Cartesian2(DVec2::new(1.0, 1.0)),
             ),
         );
+        // 颜色默认白色；若透明标志为真则将 alpha 限幅到 0.99 以下。
         let mut color = value_or_default(&self.color, time, PropertyValue::Color(COLOR_WHITE));
         let transparent = value_or_default(
             &self.transparent,
@@ -314,6 +331,7 @@ impl MaterialProperty for ImageMaterialProperty {
         uniforms
     }
 
+    /// 逐字段比较 image/repeat/color/transparent 四个属性。
     fn equals(&self, other: &dyn MaterialProperty) -> bool {
         match other.as_any().downcast_ref::<ImageMaterialProperty>() {
             Some(o) => {
@@ -326,6 +344,7 @@ impl MaterialProperty for ImageMaterialProperty {
         }
     }
 
+    /// 以 `Any` 引用暴露自身，供向下转型使用。
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -337,11 +356,15 @@ impl MaterialProperty for ImageMaterialProperty {
 
 /// 一种映射到棋盘格材质 uniform 的材质属性。
 ///
-/// 映射到 CesiumJS `DataSources/CheckerboardMaterialProperty.js`.
+/// 持有偶数（亮）色、奇数（暗）色与重复次数三个可选属性；求值时将
+/// 它们分别映射为 lightColor/darkColor/repeat 三个 uniform。
 #[derive(Clone, Default)]
 pub struct CheckerboardMaterialProperty {
+    /// 偶数格颜色，缺省白色。
     even_color: Option<Arc<dyn DynProperty>>,
+    /// 奇数格颜色，缺省黑色。
     odd_color: Option<Arc<dyn DynProperty>>,
+    /// 二维重复平铺因子，缺省为 (2, 2)。
     repeat: Option<Arc<dyn DynProperty>>,
 }
 
@@ -398,17 +421,21 @@ impl CheckerboardMaterialProperty {
 }
 
 impl MaterialProperty for CheckerboardMaterialProperty {
+    /// 三个可选属性均为常量（或缺失）时整体为常量。
     fn is_constant(&self) -> bool {
         option_is_constant(&self.even_color)
             && option_is_constant(&self.odd_color)
             && option_is_constant(&self.repeat)
     }
 
+    /// 材质类型固定为 `Checkerboard`。
     fn get_type(&self, _time: &JulianDate) -> Option<String> {
         Some("Checkerboard".to_string())
     }
 
+    /// 将偶/奇颜色与 repeat 求值为 lightColor/darkColor/repeat 三个 uniform。
     fn get_value(&self, time: &JulianDate) -> MaterialUniforms {
+        // 亮/暗格缺省分别为白/黑，重复因子缺省 (2,2)。
         let mut uniforms = MaterialUniforms::new();
         uniforms.insert(
             "lightColor".to_string(),
@@ -429,6 +456,7 @@ impl MaterialProperty for CheckerboardMaterialProperty {
         uniforms
     }
 
+    /// 逐字段比较 even_color/odd_color/repeat 三个属性。
     fn equals(&self, other: &dyn MaterialProperty) -> bool {
         match other.as_any().downcast_ref::<CheckerboardMaterialProperty>() {
             Some(o) => {
@@ -440,6 +468,7 @@ impl MaterialProperty for CheckerboardMaterialProperty {
         }
     }
 
+    /// 以 `Any` 引用暴露自身，供向下转型使用。
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -451,13 +480,19 @@ impl MaterialProperty for CheckerboardMaterialProperty {
 
 /// 一种映射到网格材质 uniform 的材质属性。
 ///
-/// 映射到 CesiumJS `DataSources/GridMaterialProperty.js`.
+/// 持有颜色、单元格透明度、线数、线宽与线偏移五个可选属性，求值时
+/// 映射为 color/cellAlpha/lineCount/lineThickness/lineOffset 五个 uniform。
 #[derive(Clone, Default)]
 pub struct GridMaterialProperty {
+    /// 网格线颜色，缺省白色。
     color: Option<Arc<dyn DynProperty>>,
+    /// 单元格内部透明度（0..1），缺省 0.1。
     cell_alpha: Option<Arc<dyn DynProperty>>,
+    /// 二维线数（各方向的网格划分），缺省 (8, 8)。
     line_count: Option<Arc<dyn DynProperty>>,
+    /// 二维线宽（像素），缺省 (1, 1)。
     line_thickness: Option<Arc<dyn DynProperty>>,
+    /// 二维线偏移，缺省 (0, 0)。
     line_offset: Option<Arc<dyn DynProperty>>,
 }
 
@@ -544,6 +579,7 @@ impl GridMaterialProperty {
 }
 
 impl MaterialProperty for GridMaterialProperty {
+    /// 五个可选属性均为常量（或缺失）时整体为常量。
     fn is_constant(&self) -> bool {
         option_is_constant(&self.color)
             && option_is_constant(&self.cell_alpha)
@@ -552,11 +588,14 @@ impl MaterialProperty for GridMaterialProperty {
             && option_is_constant(&self.line_offset)
     }
 
+    /// 材质类型固定为 `Grid`。
     fn get_type(&self, _time: &JulianDate) -> Option<String> {
         Some("Grid".to_string())
     }
 
+    /// 将五个字段求值为 color/cellAlpha/lineCount/lineThickness/lineOffset 五个 uniform。
     fn get_value(&self, time: &JulianDate) -> MaterialUniforms {
+        // 逐 uniform 求值，缺失时采用各自缺省（白/0.1/(8,8)/(1,1)/(0,0)）。
         let mut uniforms = MaterialUniforms::new();
         uniforms.insert(
             "color".to_string(),
@@ -593,6 +632,7 @@ impl MaterialProperty for GridMaterialProperty {
         uniforms
     }
 
+    /// 逐字段比较五个可选属性。
     fn equals(&self, other: &dyn MaterialProperty) -> bool {
         match other.as_any().downcast_ref::<GridMaterialProperty>() {
             Some(o) => {
@@ -606,6 +646,7 @@ impl MaterialProperty for GridMaterialProperty {
         }
     }
 
+    /// 以 `Any` 引用暴露自身，供向下转型使用。
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -617,7 +658,7 @@ impl MaterialProperty for GridMaterialProperty {
 
 /// `StripeMaterialProperty` 中条纹的方向。
 ///
-/// 映射到 CesiumJS `DataSources/StripeOrientation.js`。
+/// 只有水平与垂直两种取值，分别对应数值 0 与 1。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StripeOrientation {
     /// 水平方向（`StripeOrientation.HORIZONTAL` = 0）。
@@ -654,13 +695,19 @@ impl StripeOrientation {
 
 /// 一种映射到条纹材质 uniform 的材质属性。
 ///
-/// 映射到 CesiumJS `DataSources/StripeMaterialProperty.js`.
+/// 持有条纹方向、偶/奇颜条、偏移与重复因子五个可选属性；求值时将方向
+/// 转为布尔 horizontal，连同 evenColor/oddColor/offset/repeat 写入 uniform。
 #[derive(Clone, Default)]
 pub struct StripeMaterialProperty {
+    /// 条纹方向属性（水平/垂直），缺省水平。
     orientation: Option<Arc<dyn DynProperty>>,
+    /// 偶数条纹颜色，缺省白色。
     even_color: Option<Arc<dyn DynProperty>>,
+    /// 奇数条纹颜色，缺省黑色。
     odd_color: Option<Arc<dyn DynProperty>>,
+    /// 条纹相位偏移（0..1），缺省 0.0。
     offset: Option<Arc<dyn DynProperty>>,
+    /// 沿主方向的重复因子，缺省 1.0。
     repeat: Option<Arc<dyn DynProperty>>,
 }
 
@@ -747,6 +794,7 @@ impl StripeMaterialProperty {
 }
 
 impl MaterialProperty for StripeMaterialProperty {
+    /// 五个可选属性均为常量（或缺失）时整体为常量。
     fn is_constant(&self) -> bool {
         option_is_constant(&self.orientation)
             && option_is_constant(&self.even_color)
@@ -755,12 +803,15 @@ impl MaterialProperty for StripeMaterialProperty {
             && option_is_constant(&self.repeat)
     }
 
+    /// 材质类型固定为 `Stripe`。
     fn get_type(&self, _time: &JulianDate) -> Option<String> {
         Some("Stripe".to_string())
     }
 
+    /// 将方向转为布尔 horizontal，并逐 uniform 求值奇/偶颜色、偏移与重复。
     fn get_value(&self, time: &JulianDate) -> MaterialUniforms {
         let mut uniforms = MaterialUniforms::new();
+        // 先求值方向（缺省水平），再转为水平/垂直布尔量。
         let orientation_value = value_or_default(
             &self.orientation,
             time,
@@ -788,6 +839,7 @@ impl MaterialProperty for StripeMaterialProperty {
         uniforms
     }
 
+    /// 逐字段比较五个可选属性。
     fn equals(&self, other: &dyn MaterialProperty) -> bool {
         match other.as_any().downcast_ref::<StripeMaterialProperty>() {
             Some(o) => {
@@ -801,6 +853,7 @@ impl MaterialProperty for StripeMaterialProperty {
         }
     }
 
+    /// 以 `Any` 引用暴露自身，供向下转型使用。
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -812,9 +865,11 @@ impl MaterialProperty for StripeMaterialProperty {
 
 /// 一种映射到 PolylineArrow 材质 uniform 的材质属性。
 ///
-/// 映射到 CesiumJS `DataSources/PolylineArrowMaterialProperty.js`.
+/// 仅持有一个可选的颜色属性，产出单一 `color` uniform（缺省白色），
+/// 用于渲染折线末端的箭头样式。
 #[derive(Clone)]
 pub struct PolylineArrowMaterialProperty {
+    /// 可选的箭头颜色属性；缺失时求值回退为白色。
     color: Option<Arc<dyn DynProperty>>,
 }
 
@@ -844,14 +899,17 @@ impl PolylineArrowMaterialProperty {
 }
 
 impl MaterialProperty for PolylineArrowMaterialProperty {
+    /// 颜色属性为常量（或缺失）时整体为常量。
     fn is_constant(&self) -> bool {
         option_is_constant(&self.color)
     }
 
+    /// 材质类型固定为 `PolylineArrow`。
     fn get_type(&self, _time: &JulianDate) -> Option<String> {
         Some("PolylineArrow".to_string())
     }
 
+    /// 求值颜色（缺失回退白色），写入名为 `color` 的 uniform。
     fn get_value(&self, time: &JulianDate) -> MaterialUniforms {
         let mut uniforms = MaterialUniforms::new();
         uniforms.insert(
@@ -861,6 +919,7 @@ impl MaterialProperty for PolylineArrowMaterialProperty {
         uniforms
     }
 
+    /// 仅当对方同为箭头材质属性且颜色属性相等时判定相等。
     fn equals(&self, other: &dyn MaterialProperty) -> bool {
         match other.as_any().downcast_ref::<PolylineArrowMaterialProperty>() {
             Some(o) => option_equals(&self.color, &o.color),
@@ -868,6 +927,7 @@ impl MaterialProperty for PolylineArrowMaterialProperty {
         }
     }
 
+    /// 以 `Any` 引用暴露自身，供向下转型使用。
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -879,12 +939,17 @@ impl MaterialProperty for PolylineArrowMaterialProperty {
 
 /// 一种映射到折线虚线材质 uniform 的材质属性。
 ///
-/// 映射到 CesiumJS `DataSources/PolylineDashMaterialProperty.js`.
+/// 持有颜色、间隙颜色、虚线长度与虚线图案四个可选属性；求值时分别
+/// 映射为 color/gapColor/dashLength/dashPattern 四个 uniform。
 #[derive(Clone, Default)]
 pub struct PolylineDashMaterialProperty {
+    /// 虚线段颜色，缺省白色。
     color: Option<Arc<dyn DynProperty>>,
+    /// 间隙颜色，缺省透明。
     gap_color: Option<Arc<dyn DynProperty>>,
+    /// 虚线单元长度（像素），缺省 16.0。
     dash_length: Option<Arc<dyn DynProperty>>,
+    /// 位掩码式虚线图案，缺省 255.0。
     dash_pattern: Option<Arc<dyn DynProperty>>,
 }
 
@@ -956,6 +1021,7 @@ impl PolylineDashMaterialProperty {
 }
 
 impl MaterialProperty for PolylineDashMaterialProperty {
+    /// 四个可选属性均为常量（或缺失）时整体为常量。
     fn is_constant(&self) -> bool {
         option_is_constant(&self.color)
             && option_is_constant(&self.gap_color)
@@ -963,10 +1029,12 @@ impl MaterialProperty for PolylineDashMaterialProperty {
             && option_is_constant(&self.dash_pattern)
     }
 
+    /// 材质类型固定为 `PolylineDash`。
     fn get_type(&self, _time: &JulianDate) -> Option<String> {
         Some("PolylineDash".to_string())
     }
 
+    /// 逐 uniform 求值颜色/间隙色/虚线长/虚线图，缺失时采用各自缺省。
     fn get_value(&self, time: &JulianDate) -> MaterialUniforms {
         let mut uniforms = MaterialUniforms::new();
         uniforms.insert(
@@ -992,6 +1060,7 @@ impl MaterialProperty for PolylineDashMaterialProperty {
         uniforms
     }
 
+    /// 逐字段比较四个可选属性。
     fn equals(&self, other: &dyn MaterialProperty) -> bool {
         match other.as_any().downcast_ref::<PolylineDashMaterialProperty>() {
             Some(o) => {
@@ -1004,6 +1073,7 @@ impl MaterialProperty for PolylineDashMaterialProperty {
         }
     }
 
+    /// 以 `Any` 引用暴露自身，供向下转型使用。
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -1015,11 +1085,15 @@ impl MaterialProperty for PolylineDashMaterialProperty {
 
 /// 一种映射到折线光晕材质 uniform 的材质属性。
 ///
-/// 映射到 CesiumJS `DataSources/PolylineGlowMaterialProperty.js`.
+/// 持有颜色、光晕强度与收缩强度三个可选属性；求值时分别映射为
+/// color/glowPower/taperPower 三个 uniform，对应折线周围的发光效果。
 #[derive(Clone, Default)]
 pub struct PolylineGlowMaterialProperty {
+    /// 光晕颜色，缺省白色。
     color: Option<Arc<dyn DynProperty>>,
+    /// 光晕强度，缺省 0.25。
     glow_power: Option<Arc<dyn DynProperty>>,
+    /// 收缩强度，缺省 1.0。
     taper_power: Option<Arc<dyn DynProperty>>,
 }
 
@@ -1076,6 +1150,7 @@ impl PolylineGlowMaterialProperty {
 }
 
 impl MaterialProperty for PolylineGlowMaterialProperty {
+    /// 三个可选属性均为常量（或缺失）时整体为常量。
     fn is_constant(&self) -> bool {
         // 注意：CesiumJS 在此处检查 `Property.isConstant(this._glow)`，该引用
         // 指向一个不存在的字段，因而总是通过；预期的语义（以及 `equals` 中
@@ -1085,10 +1160,12 @@ impl MaterialProperty for PolylineGlowMaterialProperty {
             && option_is_constant(&self.taper_power)
     }
 
+    /// 材质类型固定为 `PolylineGlow`。
     fn get_type(&self, _time: &JulianDate) -> Option<String> {
         Some("PolylineGlow".to_string())
     }
 
+    /// 逐 uniform 求值颜色/光晕强度/收缩强度，缺省分别为白/0.25/1.0。
     fn get_value(&self, time: &JulianDate) -> MaterialUniforms {
         let mut uniforms = MaterialUniforms::new();
         uniforms.insert(
@@ -1106,6 +1183,7 @@ impl MaterialProperty for PolylineGlowMaterialProperty {
         uniforms
     }
 
+    /// 逐字段比较 color/glow_power/taper_power 三个属性。
     fn equals(&self, other: &dyn MaterialProperty) -> bool {
         match other.as_any().downcast_ref::<PolylineGlowMaterialProperty>() {
             Some(o) => {
@@ -1117,6 +1195,7 @@ impl MaterialProperty for PolylineGlowMaterialProperty {
         }
     }
 
+    /// 以 `Any` 引用暴露自身，供向下转型使用。
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -1128,11 +1207,15 @@ impl MaterialProperty for PolylineGlowMaterialProperty {
 
 /// 一种映射到折线轮廓材质 uniform 的材质属性。
 ///
-/// 映射到 CesiumJS `DataSources/PolylineOutlineMaterialProperty.js`.
+/// 持有颜色、轮廓颜色与轮廓宽度三个可选属性；求值时分别映射为
+/// color/outlineColor/outlineWidth 三个 uniform，对应带描边的折线。
 #[derive(Clone, Default)]
 pub struct PolylineOutlineMaterialProperty {
+    /// 折线主体颜色，缺省白色。
     color: Option<Arc<dyn DynProperty>>,
+    /// 轮廓颜色，缺省黑色。
     outline_color: Option<Arc<dyn DynProperty>>,
+    /// 轮廓宽度（像素），缺省 1.0。
     outline_width: Option<Arc<dyn DynProperty>>,
 }
 
@@ -1189,16 +1272,19 @@ impl PolylineOutlineMaterialProperty {
 }
 
 impl MaterialProperty for PolylineOutlineMaterialProperty {
+    /// 三个可选属性均为常量（或缺失）时整体为常量。
     fn is_constant(&self) -> bool {
         option_is_constant(&self.color)
             && option_is_constant(&self.outline_color)
             && option_is_constant(&self.outline_width)
     }
 
+    /// 材质类型固定为 `PolylineOutline`。
     fn get_type(&self, _time: &JulianDate) -> Option<String> {
         Some("PolylineOutline".to_string())
     }
 
+    /// 逐 uniform 求值颜色/轮廓色/轮廓宽，缺省分别为白/黑/1.0。
     fn get_value(&self, time: &JulianDate) -> MaterialUniforms {
         let mut uniforms = MaterialUniforms::new();
         uniforms.insert(
@@ -1220,6 +1306,7 @@ impl MaterialProperty for PolylineOutlineMaterialProperty {
         uniforms
     }
 
+    /// 逐字段比较 color/outline_color/outline_width 三个属性。
     fn equals(&self, other: &dyn MaterialProperty) -> bool {
         match other.as_any().downcast_ref::<PolylineOutlineMaterialProperty>() {
             Some(o) => {
@@ -1231,6 +1318,7 @@ impl MaterialProperty for PolylineOutlineMaterialProperty {
         }
     }
 
+    /// 以 `Any` 引用暴露自身，供向下转型使用。
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -1240,6 +1328,7 @@ impl MaterialProperty for PolylineOutlineMaterialProperty {
 // CompositeMaterialProperty
 // ---------------------------------------------------------------------------
 
+/// 比较两个 trait-object 材质属性是否携带相同数据，委托给 `arc_material_property_equals`。
 fn material_same_data(
     left: &Arc<dyn MaterialProperty>,
     right: &Arc<dyn MaterialProperty>,
@@ -1249,12 +1338,11 @@ fn material_same_data(
 
 /// 一个既是 `MaterialProperty` 的 `CompositeProperty`。
 ///
-/// 每个区间的数据本身就是一个材质属性；求值时委托给
-/// 内部属性。
-///
-/// 映射到 CesiumJS `DataSources/CompositeMaterialProperty.js`.
+/// 每个区间的数据本身就是一个材质属性；求值时定位包含给定时间的
+/// 区间，再委托该内部材质属性求值，从而在不同时段切换不同材质。
 #[derive(Clone, Default)]
 pub struct CompositeMaterialProperty {
+    /// 按时间划分、每段携带一个子材质属性的区间集合。
     intervals: TimeIntervalCollection<Arc<dyn MaterialProperty>>,
 }
 
@@ -1281,16 +1369,19 @@ impl CompositeMaterialProperty {
 }
 
 impl MaterialProperty for CompositeMaterialProperty {
+    /// 区间集合为空时视为常量。
     fn is_constant(&self) -> bool {
         self.intervals.is_empty()
     }
 
+    /// 定位包含给定时间的区间，若存在则委托内部材质属性返回其类型。
     fn get_type(&self, time: &JulianDate) -> Option<String> {
         self.intervals
             .find_data_for_interval_containing_date(time)?
             .get_type(time)
     }
 
+    /// 定位包含给定时间的区间，若存在则委托内部材质属性求值，否则返回空 uniform 集。
     fn get_value(&self, time: &JulianDate) -> MaterialUniforms {
         match self.intervals.find_data_for_interval_containing_date(time) {
             Some(inner) => inner.get_value(time),
@@ -1298,6 +1389,7 @@ impl MaterialProperty for CompositeMaterialProperty {
         }
     }
 
+    /// 仅当对方同为组合材质属性且底层区间逐相等时判定相等。
     fn equals(&self, other: &dyn MaterialProperty) -> bool {
         match other.as_any().downcast_ref::<CompositeMaterialProperty>() {
             Some(o) => self.intervals.equals(&o.intervals, &material_same_data),
@@ -1305,6 +1397,7 @@ impl MaterialProperty for CompositeMaterialProperty {
         }
     }
 
+    /// 以 `Any` 引用暴露自身，供向下转型使用。
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -1316,14 +1409,20 @@ mod tests {
     use crate::property_system::property::SampledProperty;
     use crate::property_system::value::PackableType;
 
+    /// 构造测试用儒略日：固定 JD 2451545.0 基准，
+    /// 仅变化秒偏移，便于在同一基准上比较采样时刻。
     fn t(seconds: f64) -> JulianDate {
         JulianDate::new(2451545.0, seconds)
     }
 
+    /// 按名称取出指定 uniform，缺失时 panic 并在消息中带上名字，
+    /// 以便快速定位求值遗漏的字段。
     fn uniform<'a>(uniforms: &'a MaterialUniforms, name: &str) -> &'a PropertyValue {
         uniforms.get(name).unwrap_or_else(|| panic!("missing uniform {name}"))
     }
 
+    /// 验证缺省状态下的颜色材质行为：属性为常量，材质类型为 Color，
+    /// 且未提供颜色时 color uniform 回退为白色。
     #[test]
     fn test_color_material_defaults() {
         let prop = ColorMaterialProperty::new(None);
@@ -1336,6 +1435,8 @@ mod tests {
         );
     }
 
+    /// 验证显式指定颜色后的求值：color uniform 应精确等于传入的红色，
+    /// 不再回退到白色缺省。
     #[test]
     fn test_color_material_custom_color() {
         let red = [1.0, 0.0, 0.0, 1.0];
@@ -1344,6 +1445,8 @@ mod tests {
         assert_eq!(uniform(&uniforms, "color"), &PropertyValue::Color(red));
     }
 
+    /// 验证颜色属性可为动态采样属性：接入两端点采样后整体变为非常量，
+    /// 且在中间时刻按线性插值得到红蓝之间的半分颜色。
     #[test]
     fn test_color_material_dynamic() {
         let mut sampled = SampledProperty::new(PackableType::Color);
@@ -1361,6 +1464,8 @@ mod tests {
         );
     }
 
+    /// 验证颜色材质的相等比较：内部颜色相同则相等，颜色不同则不相等，
+    /// 体现逐字段比较语义。
     #[test]
     fn test_color_material_equals() {
         let a = ColorMaterialProperty::from_color([1.0, 0.0, 0.0, 1.0]);
@@ -1370,6 +1475,8 @@ mod tests {
         assert!(!a.equals(&c));
     }
 
+    /// 验证图像材质缺省值：常量为真、类型为 Image，image 未定义、
+    /// repeat 为 (1,1)、着色颜色回退白色。
     #[test]
     fn test_image_material_defaults() {
         let prop = ImageMaterialProperty::new();
@@ -1387,6 +1494,8 @@ mod tests {
         );
     }
 
+    /// 验证透明标志对 alpha 的限幅：开启 transparent 后缺省白色的
+    /// alpha 由 1.0 被压到 0.99，以便与背景混合。
     #[test]
     fn test_image_material_transparent_caps_alpha() {
         let mut prop = ImageMaterialProperty::new();
@@ -1404,6 +1513,8 @@ mod tests {
         );
     }
 
+    /// 验证未开启透明时 alpha 保持原值：自定义半透明颜色的 alpha
+    /// 不被改写，原样透传到 color uniform。
     #[test]
     fn test_image_material_not_transparent_keeps_alpha() {
         let mut prop = ImageMaterialProperty::new();
@@ -1415,6 +1526,8 @@ mod tests {
         );
     }
 
+    /// 验证棋盘格材质缺省值：常量为真、类型为 Checkerboard，亮格白、
+    /// 暗格黑，重复因子缺省为 (2,2)。
     #[test]
     fn test_checkerboard_defaults() {
         let prop = CheckerboardMaterialProperty::new();
@@ -1435,6 +1548,8 @@ mod tests {
         );
     }
 
+    /// 验证棋盘格自定义字段：设置的偶/奇颜色与重复因子应分别映射到
+    /// lightColor/darkColor/repeat 三个 uniform。
     #[test]
     fn test_checkerboard_custom() {
         let mut prop = CheckerboardMaterialProperty::new();
@@ -1456,6 +1571,8 @@ mod tests {
         );
     }
 
+    /// 验证网格材质缺省值：常量为真、类型为 Grid，缺省颜色白、单元
+    /// alpha 0.1、行列数 (8,8)、线宽 (1,1)、线偏移 (0,0)。
     #[test]
     fn test_grid_defaults() {
         let prop = GridMaterialProperty::new();
@@ -1481,6 +1598,8 @@ mod tests {
         );
     }
 
+    /// 验证网格材质的常量性与动态子属性传播：设置常量 cellAlpha 仍为常量，
+    /// 接入采样属性后整体变为非常量并按时间插值取值。
     #[test]
     fn test_grid_custom_and_constancy() {
         let mut prop = GridMaterialProperty::new();
@@ -1499,6 +1618,8 @@ mod tests {
         assert_eq!(uniform(&uniforms, "cellAlpha"), &PropertyValue::Number(0.5));
     }
 
+    /// 验证条纹材质缺省值：常量为真、类型为 Stripe，方向水平、偶色白、
+    /// 奇色黑、偏移 0、重复 1。
     #[test]
     fn test_stripe_defaults() {
         let prop = StripeMaterialProperty::new();
@@ -1518,6 +1639,8 @@ mod tests {
         assert_eq!(uniform(&uniforms, "repeat"), &PropertyValue::Number(1.0));
     }
 
+    /// 验证条纹方向切换：设为垂直后 horizontal uniform 应变为 false，
+    /// 体现方向枚举到布尔 uniform 的转换。
     #[test]
     fn test_stripe_vertical() {
         let mut prop = StripeMaterialProperty::new();
@@ -1529,6 +1652,8 @@ mod tests {
         );
     }
 
+    /// 验证方向枚举与 PropertyValue 的双向转换：水平/垂直经 to_value 与
+    /// from_value 往返一致，且对应数值编码为 0.0 与 1.0。
     #[test]
     fn test_stripe_orientation_value_roundtrip() {
         assert_eq!(
@@ -1543,6 +1668,8 @@ mod tests {
         assert_eq!(StripeOrientation::Vertical.to_number(), 1.0);
     }
 
+    /// 验证折线箭头材质：无颜色时仍为常量、类型为 PolylineArrow，
+    /// color uniform 回退白色。
     #[test]
     fn test_polyline_arrow() {
         let prop = PolylineArrowMaterialProperty::new(None);
@@ -1555,6 +1682,8 @@ mod tests {
         );
     }
 
+    /// 验证虚线材质缺省值：常量为真、类型为 PolylineDash，颜色白、间隙透明、
+    /// 虚线长 16、虚线图案 255。
     #[test]
     fn test_polyline_dash_defaults() {
         let prop = PolylineDashMaterialProperty::new();
@@ -1576,6 +1705,8 @@ mod tests {
         );
     }
 
+    /// 验证虚线材质自定义字段：设置的 dashLength 与 gapColor 应分别映射到
+    /// 对应 uniform，覆盖各自缺省值。
     #[test]
     fn test_polyline_dash_custom() {
         let mut prop = PolylineDashMaterialProperty::new();
@@ -1589,6 +1720,8 @@ mod tests {
         );
     }
 
+    /// 验证发光材质缺省值：常量为真、类型为 PolylineGlow，颜色白、
+    /// glowPower 0.25、taperPower 1.0。
     #[test]
     fn test_polyline_glow_defaults() {
         let prop = PolylineGlowMaterialProperty::new();
@@ -1603,6 +1736,7 @@ mod tests {
         assert_eq!(uniform(&uniforms, "taperPower"), &PropertyValue::Number(1.0));
     }
 
+    /// 验证发光材质：动态 glowPower 必须使整体变为非常量并按时间插值。
     #[test]
     fn test_polyline_glow_dynamic_not_constant() {
         // 修正了 CesiumJS 的 `isConstant` bug（它检查了不存在的 `_glow`）：
@@ -1617,6 +1751,8 @@ mod tests {
         assert_eq!(uniform(&uniforms, "glowPower"), &PropertyValue::Number(0.5));
     }
 
+    /// 验证轮廓材质缺省值：常量为真、类型为 PolylineOutline，颜色白、
+    /// 轮廓色黑、轮廓宽 1。
     #[test]
     fn test_polyline_outline_defaults() {
         let prop = PolylineOutlineMaterialProperty::new();
@@ -1637,6 +1773,8 @@ mod tests {
         );
     }
 
+    /// 验证组合材质按时间区间分派：空组合为常量，加入两个区间后非常量，
+    /// 各时刻求值到对应子材质，区间外则无类型且 uniform 为空。
     #[test]
     fn test_composite_material() {
         let mut prop = CompositeMaterialProperty::new();
@@ -1664,6 +1802,8 @@ mod tests {
         assert!(prop.get_value(&t(30.0)).is_empty());
     }
 
+    /// 验证组合材质的相等比较：区间与子材质一致则相等，子材质颜色不同则
+    /// 不相等，体现逐区间逐字段的比较语义。
     #[test]
     fn test_composite_material_equals() {
         let mut a = CompositeMaterialProperty::new();
@@ -1683,6 +1823,8 @@ mod tests {
         assert!(!a.equals(&c));
     }
 
+    /// 验证各材质类型的 getType 名称字符串：逐一断言 Color/Image/Checkerboard/
+    /// Grid/Stripe 及折线系列返回的类型名与实现一致。
     #[test]
     fn test_material_type_names() {
         assert_eq!(

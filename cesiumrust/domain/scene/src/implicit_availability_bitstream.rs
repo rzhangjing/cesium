@@ -1,26 +1,35 @@
-// 遗留 CesiumJS 移植风格债（deferred.md #18）；将在 M13 lint 清理，或本文件在其所属里程碑被重写时重新审视
+// 位流实现沿用按字节打包的历史约定，待后续里程碑统一整理
 #![allow(clippy::manual_div_ceil)]
 /// 用于 ImplicitSubtree 的可用性位流。
-/// 同时处理 Uint8Array 位流和常量值。
-///
-/// 对 CesiumJS `ImplicitAvailabilityBitstream` 忠实移植。
+/// 同时处理按字节打包的位流和常量值两种来源。
 #[derive(Clone, Debug)]
 pub struct ImplicitAvailabilityBitstream {
+    /// 位流以位（bit）计的总长度。
     length_bits: usize,
+    /// 值为 1 的位的数量；None 表示尚未统计。
     available_count: Option<usize>,
+    /// 常量位值；Some 时整个位流退化为该单一布尔值。
     constant: Option<bool>,
+    /// 按字节打包的位流缓冲；与 constant 互斥。
     bitstream: Option<Vec<u8>>,
 }
 
+/// 构造可用性位流所需的选项。
 pub struct ImplicitAvailabilityBitstreamOptions {
+    /// 位流以位计的总长度。
     pub length_bits: usize,
+    /// 常量位值；Some 时忽略 bitstream。
     pub constant: Option<bool>,
+    /// 按字节打包的位流缓冲。
     pub bitstream: Option<Vec<u8>>,
+    /// 预先给定的可用位数量；None 时按需统计。
     pub available_count: Option<usize>,
+    /// 是否在缺少 available_count 时自动统计 1 位的数量。
     pub compute_available_count_enabled: bool,
 }
 
 impl ImplicitAvailabilityBitstream {
+    /// 依选项创建可用性位流，必要时校验字节长度并统计可用位数。
     pub fn new(options: ImplicitAvailabilityBitstreamOptions) -> Self {
         let length_bits = options.length_bits;
         let mut available_count = options.available_count;

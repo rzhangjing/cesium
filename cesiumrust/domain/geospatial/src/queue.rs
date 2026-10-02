@@ -1,15 +1,16 @@
 //! 一个 FIFO 队列数据结构。
-//! 映射到 CesiumJS `Core/Queue.js`
 
 use std::collections::VecDeque;
 
 /// 一个支持 peek、contains、clear 和 sort 的 FIFO 队列。
 #[derive(Debug, Clone)]
 pub struct Queue<T> {
+    /// 底层双端队列：尾部入队、头部出队。
     deque: VecDeque<T>,
 }
 
 impl<T> Default for Queue<T> {
+    /// 默认构造一个空队列。
     fn default() -> Self {
         Self::new()
     }

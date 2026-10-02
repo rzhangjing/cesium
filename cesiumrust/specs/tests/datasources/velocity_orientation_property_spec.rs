@@ -1,4 +1,4 @@
-//! VelocityOrientationProperty 测试 - 移植自 VelocityOrientationPropertySpec.js
+//! VelocityOrientationProperty 测试 - 参考自 VelocityOrientationPropertySpec
 //!
 //! 原始：14 it() → 7 A 类（7 C 类：events/spy/system-time 已省略）
 

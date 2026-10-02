@@ -1,5 +1,5 @@
 //! VoxelEllipsoidShape 扩展测试——采样、边界、可见性边缘情形
-//! 补充移植自 CesiumJS VoxelEllipsoidShapeSpec.js
+//! 补充参考自 CesiumJS VoxelEllipsoidShapeSpec
 
 use cesium_voxel::{VoxelEllipsoidShape, VoxelShape};
 use glam::{DMat4, DQuat, DVec3};

@@ -1,3 +1,6 @@
+//! 3D Tiles 子模块聚合：加载/遍历/内容/渲染/样式/拾取等系统。
+//!
+//! [`CesiumTilesetPlugin`] 统一注册瓦片集相关资源，并按依赖顺序挂载系统。
 pub mod content_loader;
 pub mod debug_plugin;
 pub mod debug_system;
@@ -16,9 +19,14 @@ pub use render_system::{tile_render_system, TileRenderMap};
 pub use style_system::tile_style_system;
 pub use traversal_system::{tileset_traversal_system, TileSelection};
 
+/// 注册 3D Tiles 资源并按依赖顺序挂载其系统的 Bevy 插件。
 pub struct CesiumTilesetPlugin;
 
 impl Plugin for CesiumTilesetPlugin {
+    /// 初始化瓦片集资源，并以 `.chain()` 固定预更新/更新阶段的系统顺序。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用
     fn build(&self, app: &mut App) {
         app.init_resource::<LoadedTileset>()
             .init_resource::<TilesetFetchState>()

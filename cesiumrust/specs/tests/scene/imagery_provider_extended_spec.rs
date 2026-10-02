@@ -1,4 +1,4 @@
-//! 扩展影像提供者规范 - 移植自 Scene/*ImageryProviderSpec.js
+//! 扩展影像提供者规范 - 参考自 Scene/*ImageryProviderSpec
 //!
 //! 覆盖：TimeDynamicImagery、WmsGetFeatureInfo、Bing quadkey 值、
 //! WMS bbox 计算、ArcGIS、Mapbox、MapboxStyle、SingleTile、

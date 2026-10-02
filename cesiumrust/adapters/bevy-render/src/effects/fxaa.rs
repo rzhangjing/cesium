@@ -4,10 +4,10 @@
 //! 基础设施实现 cesiumrust 的 FXAA 后处理节点。该节点插入在
 //! `Core3d` 的 `Node3d::Tonemapping` 与 `Node3d::EndMainPassPostProcessing` 之间。
 //!
-//! # 蓝图
-//! - `cesium-rs/crates/cesium-shaders/shaders/FXAA3_11.glsl`（651 行，preset 12 = L102-108）
-//! - `packages/engine/Source/Shaders/PostProcessStages/FXAA.glsl`（21 行，接口）
-//! - `packages/engine/Source/Scene/PostProcessStageLibrary.js` L611 `createFXAAStage`
+//! # 设计要点
+//! - FXAA 为纯片元后处理：对已合成的 LDR 颜色做边缘检测与子像素混合。
+//! - 采用单一质量预设（对应高对比边缘搜索的最高迭代档位）。
+//! - 节点位于色调映射之后、主 pass 后处理之前，作用于最终颜色缓冲。
 //!
 //! # 偏差
 //! GLSL FXAA 3.11 的 WGSL 重写；仅实现质量预设 12（计划 L155）。
@@ -61,6 +61,7 @@ pub struct CesiumFxaa {
 }
 
 impl Default for CesiumFxaa {
+    /// 默认启用：相机上的 FXAA pass 默认开启。
     fn default() -> Self {
         Self { enabled: true }
     }
@@ -82,6 +83,14 @@ pub struct FxaaPipeline {
 }
 
 impl FromWorld for FxaaPipeline {
+    /// 从 render-world 构建 FXAA 的设备资源：创建纹理 bind group 布局
+    ///（颜色纹理 + 过滤采样器），并准备一个线性过滤的 GPU 采样器。
+    ///
+    /// # 参数
+    /// - `render_world`：提供 `RenderDevice` 的渲染世界。
+    ///
+    /// # 返回
+    /// 装配好的 [`FxaaPipeline`] 资源。
     fn from_world(render_world: &mut World) -> Self {
         let render_device = render_world.resource::<bevy::render::renderer::RenderDevice>();
 
@@ -120,6 +129,14 @@ pub struct FxaaPipelineKey {
 impl SpecializedRenderPipeline for FxaaPipeline {
     type Key = FxaaPipelineKey;
 
+    /// 按纹理格式特化出全屏 FXAA pipeline：使用固定 shader、单一颜色
+    /// 目标、无混合与深度状态（预设已硬编码在 WGSL 中）。
+    ///
+    /// # 参数
+    /// - `key`：特化键（目前仅携带目标纹理格式）。
+    ///
+    /// # 返回
+    /// 描述完整渲染管线的 [`RenderPipelineDescriptor`]。
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
         RenderPipelineDescriptor {
             label: Some("cesium_fxaa_pipeline".into()),
@@ -152,6 +169,8 @@ impl SpecializedRenderPipeline for FxaaPipeline {
 /// cesiumrust 自己的 WGSL shader（质量预设 12）。
 #[derive(Default)]
 pub struct FxaaNode {
+    /// 缓存的纹理 bind group：记录已绑定纹理视图的 id，仅当输入纹理
+    /// 变化时才重建 bind group（避免逐帧重复创建）。
     cached_texture_bind_group: Mutex<Option<(TextureViewId, BindGroup)>>,
 }
 
@@ -162,6 +181,16 @@ impl ViewNode for FxaaNode {
         &'static CesiumFxaa,
     );
 
+    /// 运行 FXAA pass：读取当前相机开关，未启用则直接返回；否则将源
+    /// 颜色纹理经 FXAA 着色后写入目标。
+    ///
+    /// # 参数
+    /// - `_graph`：渲染图上下文（本节点无子 pass）。
+    /// - `render_context`：当前 pass 的 GPU 命令记录器。
+    /// - `world`：提供 pipeline/texture 资源的 render-world。
+    ///
+    /// # 返回
+    /// 成功提交命令则为 `Ok(())`；pipeline 尚未就绪时返回错误。
     fn run(
         &self,
         _graph: &mut RenderGraphContext,

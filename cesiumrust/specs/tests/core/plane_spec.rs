@@ -1,6 +1,6 @@
-//! Core/PlaneSpec.js → Rust 集成测试
+//! Core/PlaneSpec → Rust 集成测试
 //!
-//! 对 CesiumJS `Specs/Core/PlaneSpec.js`（29 个 `it()` 用例）的忠实移植。
+//! 对 CesiumJS `Specs/Core/PlaneSpec`（29 个 `it()` 用例）的对齐实现。
 //!
 //! ## 平台适配
 //! - JS 的结果参数变体（例如 `fromPointNormal(point, normal, result)`、

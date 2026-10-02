@@ -1,12 +1,12 @@
 //! 3D Tiles Styling 表达式引擎的正则表达式支持。
 //!
-//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs`：
-//! - `RegExpValue` (+ `compile`/`test`/`exec_first_capture`/`to_js_string`) ← L47-104
-//! - `node_value_string`                                                     ← L1131-1140
-//! - `parse_regex`                                                           ← L1143-1201
+//! 本模块提供正则支持：
+//! - `RegExpValue` (+ `compile`/`test`/`exec_first_capture`/`to_js_string`)：编译好的正则值
+//! - `node_value_string`：从 AST 节点还原正则字面量文本
+//! - `parse_regex`：把 `regExp()` 调用解析为 [`RegExpValue`]
 //!
-//! 而后者本身是上游
-//! `packages/engine/Source/Scene/Expression.js`（`regExp()` + `addBinaryOp("=~"/"!~", 0)`）的 Rust 移植。
+//! styling 语言通过 `regExp()` 函数与自定义二元运算符 `=~`/`!~` 使用正则，
+//! 本模块把二者接到工作区锁定的 `regex` crate 上。
 //!
 //! # M7-B 作用域说明
 //!
@@ -35,6 +35,7 @@ use crate::value::{number_to_js_string, runtime_error, RuntimeError};
 /// 一个编译好的正则表达式值，镜像由 `regExp()` 函数产生的 JS `RegExp`。
 #[derive(Debug, Clone)]
 pub struct RegExpValue {
+    /// 真正编译后的正则引擎句柄（`regex` crate 的 `Regex`）。
     compiled: Regex,
     /// 原始（反斜杠已还原的）模式 source。
     pub source: String,
@@ -177,6 +178,7 @@ pub(crate) fn parse_regex(arguments: &[JsepNode]) -> Result<Node, RuntimeError> 
 mod tests {
     use super::*;
 
+    /// 验证基本编译+test 命中/未命中，并保留 source/flags。
     #[test]
     fn compile_and_test_basic() {
         let re = RegExpValue::compile("ab", "").unwrap();
@@ -186,6 +188,7 @@ mod tests {
         assert_eq!(re.flags, "");
     }
 
+    /// 验证 `i` flag 映射为内联 `(?i)` 从而实现大小写不敏感。
     #[test]
     fn compile_flags_case_insensitive() {
         let re = RegExpValue::compile("ab", "i").unwrap();
@@ -203,6 +206,7 @@ mod tests {
         assert_eq!(re.flags, "g");
     }
 
+    /// 验证非法 flag 以 "Invalid flags" 报错。
     #[test]
     fn compile_invalid_flag_errors() {
         let err = RegExpValue::compile("a", "z").unwrap_err();
@@ -215,6 +219,7 @@ mod tests {
         assert!(RegExpValue::compile("(", "").is_err());
     }
 
+    /// 验证 `exec_first_capture` 优先取捕获组 1，否则整匹配，无匹配回 None。
     #[test]
     fn exec_first_capture_prefers_group_one() {
         let re = RegExpValue::compile("a(b)c", "").unwrap();
@@ -226,6 +231,7 @@ mod tests {
         assert_eq!(re2.exec_first_capture("zzz"), None);
     }
 
+    /// 验证 `to_js_string` 按 dgimsuy 顺序对 flags 排序后输出 `/pattern/flags`。
     #[test]
     fn to_js_string_sorts_flags() {
         assert_eq!(RegExpValue::compile("ab", "gi").unwrap().to_js_string(), "/ab/gi");

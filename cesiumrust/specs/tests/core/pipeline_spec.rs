@@ -1,4 +1,4 @@
-//! Core/GeometryPipelineSpec.js、PolygonPipelineSpec.js、PolylinePipelineSpec.js
+//! Core/GeometryPipelineSpec、PolygonPipelineSpec、PolylinePipelineSpec
 //! → 几何管线函数的 Rust 集成测试
 
 use cesium_geospatial::geometry::{

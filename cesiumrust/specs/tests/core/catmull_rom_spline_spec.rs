@@ -1,6 +1,6 @@
-//! CatmullRomSplineSpec.js → Rust 集成测试
+//! CatmullRomSplineSpec → Rust 集成测试
 //!
-//! 原始：packages/engine/Specs/Core/CatmullRomSplineSpec.js（11 个 it()）
+//! 原始：Specs/Core/CatmullRomSplineSpec（11 个 it()）
 //! A 类已移植：5 个（sets_tangents、computes_tangents、check_against_hermite、
 //!                    evaluate_at_control_point、2pts_lerp）
 //! C 类已省略：5 个（构造 throws ×3、求值 throws ×2）

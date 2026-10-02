@@ -1,5 +1,5 @@
 //! M7-C: large-scale port of the upstream CesiumJS
-//! `packages/engine/Specs/Scene/ExpressionSpec.js` (269 `it()` cases).
+//! `Specs/Scene/ExpressionSpec` (269 `it()` cases).
 //!
 //! This file ports the CPU-interpretable subset of the upstream spec against the
 //! new jsep-based styling engine (`cesium_styling::Expression`). Each `#[test]`

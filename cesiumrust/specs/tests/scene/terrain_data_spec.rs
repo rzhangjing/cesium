@@ -1,8 +1,8 @@
 //! Core/HeightmapTerrainData + QuantizedMeshTerrainData → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Core/HeightmapTerrainData.js
-//! - Core/QuantizedMeshTerrainData.js
+//! 参考 CesiumJS：
+//! - Core/HeightmapTerrainData
+//! - Core/QuantizedMeshTerrainData
 //!
 //! A 类测试：heightmap get/interpolate/create_mesh/child_mask、
 //! quantized mesh 顶点访问器/create_mesh/skirts/child_mask。

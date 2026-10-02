@@ -1,5 +1,5 @@
 //! GeometryUpdater 扩展规范 - outline/show/dispatch/plane/polyline_volume
-//! 移植自 DataSources/*GeometryUpdaterSpec.js（outline、show、material 路径）
+//! 参考自 DataSources/*GeometryUpdaterSpec（outline、show、material 路径）
 
 use cesium_datasource::geometry_updater::{
     update_box_graphics, update_corridor_graphics, update_cylinder_graphics,

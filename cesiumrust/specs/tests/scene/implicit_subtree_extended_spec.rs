@@ -1,5 +1,5 @@
-//! 隐式瓦片扩展规范 - 移植自 ImplicitSubtreeSpec.js、
-//! ImplicitTileCoordinatesSpec.js（高级操作）
+//! 隐式瓦片扩展规范 - 参考自 ImplicitSubtreeSpec、
+//! ImplicitTileCoordinatesSpec（高级操作）
 //!
 //! 测试子树的 local_index、total_nodes、祖先/后代/偏移坐标，
 //! Morton 编码/解码往返、ImplicitTilingConfig URI 生成，以及

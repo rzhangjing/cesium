@@ -2,9 +2,10 @@
 //!
 //! 领域层 —— 纯 Rust，f64 精度。
 //!
-//! CesiumJS 映射：
-//! - `Scene/QuadtreePrimitive.js` → traversal
-//! - 瓦片加载/缓存 → cache
+//! 子模块：
+//! - [`traversal`]：四叉树遍历与 SSE 驱动的 LOD 选择
+//! - [`cache`]：瓦片加载队列与 LRU 缓存
+//! - [`quadtree_tile_adjacency`]：瓦片东/西/南/北邻接查询
 
 pub mod cache;
 pub mod quadtree_tile_adjacency;

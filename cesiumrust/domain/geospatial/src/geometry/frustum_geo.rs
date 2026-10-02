@@ -1,6 +1,5 @@
 //! 视锥体几何（相机视锥可视化）。
 //!
-//! 对 CesiumJS `FrustumGeometry.js` 与 `FrustumOutlineGeometry.js` 的忠实移植。
 //! 视锥体由其 8 个角点（4 个近 + 4 个远）构建，这些角点通过将 NDC 角点
 //! 经逆视图-投影矩阵反投影而得，然后组装为 6 个四边形平面（近、远、-x、-y、+x、+y）。
 
@@ -11,7 +10,9 @@ use glam::{DMat3, DMat4, DQuat, DVec3, DVec4};
 
 /// 一个视锥体定义（透视或正交）。
 pub enum FrustumDef {
+    /// 透视视锥（由 fov/aspect/near/far 定义）。
     Perspective(PerspectiveFrustum),
+    /// 正交视锥（由 width/height/near/far 定义）。
     Orthographic(OrthographicFrustum),
 }
 
@@ -23,9 +24,7 @@ const FRUSTUM_CORNERS_NDC: [[f64; 4]; 4] = [
     [-1.0, 1.0, 1.0, 1.0],
 ];
 
-/// 由相机轴构建一个右手视图矩阵。
-///
-/// 移植自 `Matrix4.computeView(position, direction, up, right)`。CesiumJS 以行主序
+/// 视图矩阵构造（`Matrix4.computeView(position, direction, up, right)`）：以行主序
 /// 将矩阵排列为 `[right; up; -direction]`，平移位于最后一列。glam 为列主序，
 /// 因此我们直接提供各列。
 fn compute_view(position: DVec3, direction: DVec3, up: DVec3, right: DVec3) -> DMat4 {
@@ -44,7 +43,7 @@ fn compute_view(position: DVec3, direction: DVec3, up: DVec3, right: DVec3) -> D
 
 /// 计算视锥体的 8 个角点位置（先近平面，后远平面）。
 ///
-/// 移植自 `FrustumGeometry._computeNearFarPlanes`。返回按
+/// 实现 `_computeNearFarPlanes`。返回按
 /// `[near0, near1, near2, near3, far0, far1, far2, far3]` 排列的 8 个位置，
 /// 其中角点顺序与 [`FRUSTUM_CORNERS_NDC`] 一致。
 fn compute_near_far_planes(
@@ -55,6 +54,7 @@ fn compute_near_far_planes(
     let rotation = DMat3::from_quat(orientation);
     let mut x = rotation.col(0).normalize();
     let y = rotation.col(1).normalize();
+    // 取第三列作为看向方（-Z），故下方立即对 x 取负以对齐右手视坐标。
     let z = rotation.col(2).normalize();
     x = -x;
 
@@ -71,6 +71,7 @@ fn compute_near_far_planes(
 
             for i in 0..2 {
                 for j in 0..4 {
+                    // 将 NDC 角点经逆 view-projection 反投影，再沿射线方向定位到具体 split 平面上。
                     let c = FRUSTUM_CORNERS_NDC[j];
                     let corner = inv_vp * DVec4::new(c[0], c[1], c[2], c[3]);
                     // 逆转透视除法。
@@ -86,6 +87,7 @@ fn compute_near_far_planes(
             }
         }
         FrustumDef::Orthographic(o) => {
+            // 正交：无需反透视除法，直接将 NDC 角点映回半宽/半高矩形后由 inv_view 变回世界。
             let inv_view = view.inverse();
             let right = o.width * 0.5;
             let left = -right;
@@ -174,6 +176,7 @@ pub fn frustum_geometry(
     let mut tex_coords: Option<Vec<[f64; 2]>> = if vf.st { Some(Vec::new()) } else { None };
 
     let st_quad = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+    // 逐平面写入常量法线/切线/副切线（每面 4 顶点重复）与一整块 quad 贴图坐标。
     for (normal, tangent, bitangent) in &plane_attrs {
         for _ in 0..4 {
             if let Some(ref mut n) = normals {
@@ -191,7 +194,7 @@ pub fn frustum_geometry(
         }
     }
 
-    // 每个平面两个三角形。
+    // 逐平面拆为两个三角形：索引 [0,1,2, 0,2,3]，共 6 个平面。
     let mut indices: Vec<u32> = Vec::with_capacity(6 * number_of_planes);
     for i in 0..number_of_planes {
         let index = (i * 4) as u32;
@@ -264,6 +267,7 @@ pub fn frustum_outline_geometry(
 mod tests {
     use super::*;
 
+    /// 构造一个透视视锥：60° 垂直视角、16:9 宽高比、near=1、far=100。
     fn perspective() -> FrustumDef {
         FrustumDef::Perspective(PerspectiveFrustum::new(
             std::f64::consts::FRAC_PI_3,
@@ -274,6 +278,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证实心视锥几何的顶点/索引/法线/贴图坐标数量与图元类型。
     fn test_frustum_geometry_counts() {
         let geo = frustum_geometry(&perspective(), DVec3::ZERO, DQuat::IDENTITY, VertexFormat::ALL);
         assert_eq!(geo.positions.len(), 24); // 6 个平面 x 4 个顶点
@@ -284,6 +289,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证透视视锥的近平面角点位于 near 深度、远平面角点位于 far 深度。
     fn test_frustum_corners_at_correct_depth() {
         // 在单位方位下视锥体沿 -Z 方向观看……近平面的
         // 角点都应位于沿视锥轴距离 `near` 处。
@@ -301,6 +307,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证线框视锥由 8 个角点与 24 个索引（12 条边）组成。
     fn test_frustum_outline_counts() {
         let geo = frustum_outline_geometry(&perspective(), DVec3::ZERO, DQuat::IDENTITY);
         assert_eq!(geo.positions.len(), 8);
@@ -309,6 +316,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证正交视锥的顶点/索引数量，且近平面角点构成 width×height 矩形。
     fn test_orthographic_frustum() {
         let frustum = FrustumDef::Orthographic(OrthographicFrustum::new(10.0, 1.0, 1.0, 50.0));
         let geo = frustum_geometry(&frustum, DVec3::ZERO, DQuat::IDENTITY, VertexFormat::POSITION_ONLY);

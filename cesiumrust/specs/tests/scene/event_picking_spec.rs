@@ -1,5 +1,5 @@
 //! 事件聚合 + 拾取规范
-//! 移植自 CesiumJS Scene/CameraEventAggregatorSpec.js + Scene/SceneSpec.js（pick）
+//! 参考自 CesiumJS Scene/CameraEventAggregatorSpec + Scene/SceneSpec（pick）
 
 use cesium_camera::Camera;
 use cesium_geospatial::ellipsoid::Ellipsoid;

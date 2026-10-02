@@ -1,8 +1,8 @@
 //! M6.5：基于图像的照明（IBL）`ViewNode` + 环境 PBR 注入。
 //!
-//! 将上游 CesiumJS 的基于图像照明能力
-//!（`Scene/ImageBasedLighting.js` + `Shaders/Model/ImageBasedLightingStageFS.glsl`
-//! `textureIBL`）移植到 M5-E 渲染图基础设施（`graph.rs`）。对应
+//! 将基于图像的照明（IBL）能力接入 M5-E 渲染图基础设施
+//!（`graph.rs`）：环境立方图经预滤波与球谐后驱动 PBR 镜面/漫反射辐照。
+//! 对应
 //! [`super::clipping_planes`] / [`super::ao`] 模式：本模块注册
 //! 节点 / 资源 / 系统，**但从不创建图边** —— `graph.rs::register_render_graph`
 //! 中的单一线性 `Core3d` 链拥有这些边，所以不会形成菱形。
@@ -38,13 +38,11 @@
 //! - 环境颜色图在 CPU 侧为 sRGB；LUT / prefilter 输出
 //!   为线性（绝非 sRGB）。glam fast-math 全仓禁用。
 //!
-//! # 蓝图
-//! - `packages/engine/Source/Scene/ImageBasedLighting.js`
-//! - `packages/engine/Source/Shaders/Model/ImageBasedLightingStageFS.glsl` (textureIBL)
-//! - `packages/engine/Source/Shaders/Builtin/Functions/{sphericalHarmonics,pbrLighting}.glsl`
-//! - `packages/engine/Source/Shaders/{BrdfLutGeneratorFS,ConvolveSpecularMapFS}.glsl`
-//! - `domain/effects/src/ibl.rs` (f64 CPU reference, cross-validated by these tests)
-//! - `bevy_pbr-0.15.3/src/ssao/mod.rs` (ViewNode + depth/normal prepass reconstruction)
+//! # 设计要点
+//! - 环境立方图先在 CPU 侧按 sRGB 解码，再预滤波成 mip 链并生成 BRDF LUT。
+//! - 漫反射辐照用球谐（irradiance SH）近似；镜面用 split-sum + 预滤波立方图。
+//! - 屏幕空间节点从深度/法线 prepass 重建世界坐标与法线，再叠加环境光照。
+//! - f64 CPU 参考实现位于领域层，供本模块测试交叉校验。
 
 use std::sync::Mutex;
 
@@ -140,9 +138,10 @@ pub struct CesiumIbl {
 }
 
 impl Default for CesiumIbl {
+    /// 默认关闭 IBL，携带默认环境光照与材质参数（与 clipping 保守默认对齐）。
     fn default() -> Self {
         Self {
-            // 保守默认：禁用（对应 CesiumPassThrough / clipping）。
+            // 保守默认：禁用（与其他后处理效果一致）。
             enabled: false,
             ibl: ImageBasedLighting::default(),
             material: IblMaterial::default(),
@@ -220,6 +219,7 @@ mod ibl_uniform {
 }
 
 impl Default for IblUniform {
+    /// GPU 均匀体默认：球谐/材质/漫反射分量全部置零，避免未启用时产生任何光照。
     fn default() -> Self {
         Self {
             sh: [Vec4::ZERO; 9],
@@ -302,6 +302,14 @@ pub struct IblPipeline {
 }
 
 impl FromWorld for IblPipeline {
+    /// 从 render-world 构建 IBL pass 的设备资源：为环境立方图/预滤波纹理、
+    /// BRDF LUT、采样器与 view uniform 创建 bind group 布局。
+    ///
+    /// # 参数
+    /// - `render_world`：提供 `RenderDevice` 的渲染世界。
+    ///
+    /// # 返回
+    /// 装配好的 [`IblPipeline`] 资源。
     fn from_world(render_world: &mut World) -> Self {
         let render_device = render_world.resource::<RenderDevice>();
 
@@ -398,6 +406,20 @@ impl ViewNode for IblNode {
         &'static ViewUniformOffset,
     );
 
+    /// 运行 IBL 屏幕空间 pass：若未激活则直接返回；否则从深度/法线 prepass
+    /// 重建世界坐标与法线，将环境光照叠加到 HDR 场景颜色上。
+    ///
+    /// # 参数
+    /// - `_graph`：渲染图上下文（本节点无子 pass）。
+    /// - `render_context`：当前 pass 的 GPU 命令记录器。
+    /// - `target`：视图的渲染目标（后处理读写）。
+    /// - `pipeline_handle`：该视图缓存的 IBL pipeline ID。
+    /// - `ibl`：相机级 IBL 开关；`ibl_uniform`：本帧环境/材质参数。
+    /// - `prepass`：深度/法线 prepass 纹理；`view_uniform_offset`：本视图偏移。
+    /// - `world`：提供 pipeline/texture 资源的 render-world。
+    ///
+    /// # 返回
+    /// 成功提交命令则为 `Ok(())`；前置资源未就绪时返回错误。
     fn run(
         &self,
         _graph: &mut RenderGraphContext,

@@ -1,4 +1,4 @@
-//! Core/DistanceDisplayConditionSpec.js → Rust integration tests
+//! Core/DistanceDisplayConditionSpec → Rust integration tests
 //! 11 original it() blocks + createPackableSpecs → 12 A-class tests ported
 //!
 //! Omitted C-class tests (JS result-parameter / reference-identity patterns):

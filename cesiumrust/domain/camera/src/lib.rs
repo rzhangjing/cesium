@@ -1,7 +1,7 @@
 //! cesium-camera：相机状态、视图矩阵、移动操作。
 //! 领域层 - 纯 Rust，f64 精度。
 //!
-//! CesiumJS 映射：`packages/engine/Source/Scene/Camera.js`
+//! 描述相机的位置、朝向（direction/up/right）与视锥体，并提供移动、旋转、拾取等操作。
 
 use cesium_geospatial::{
     math_utils, BoundingSphere, Cartographic, CullingVolume, Ellipsoid, HeadingPitchRange,
@@ -11,7 +11,7 @@ use glam::{DMat4, DVec3};
 use serde::{Deserialize, Serialize};
 
 /// 场景渲染模式。
-/// 映射到 CesiumJS `Scene/SceneMode.js`
+/// 决定相机在 2D/3D/ColumbusView/Morphing 各投影模式下的行为。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SceneMode {
     /// 2D 地图投影（俯视）。
@@ -26,7 +26,7 @@ pub enum SceneMode {
 }
 
 /// 用于相机飞行的缓动函数。
-/// 映射到 CesiumJS `Core/EasingFunction.js`
+/// 提供多种插值曲线，控制飞行起止的加减速手感。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum EasingFunction {
     /// 线性插值。
@@ -46,7 +46,7 @@ pub enum EasingFunction {
     /// 五次缓入缓出。
     ///
     /// 用于短暂的相机飞行（`< 1e6` 米），此处期望更平缓的启动/停止。
-    /// 映射到 CesiumJS `EasingFunction.QUINTIC_IN_OUT`。
+    /// 五次多项式曲线在两端更平坦、中段更陡，因而启停更柔和。
     QuinticInOut,
 }
 
@@ -99,6 +99,7 @@ pub enum Frustum {
 }
 
 impl Default for Frustum {
+    /// 默认使用 60° 视场、16:9 宽高比、近平面 1、远平面 5 亿的透视视锥体。
     fn default() -> Self {
         Self::Perspective(PerspectiveFrustum::new(
             math_utils::to_radians(60.0),
@@ -141,7 +142,7 @@ impl Frustum {
 }
 
 /// 相机状态：位置 + 朝向（direction/up/right）+ 视锥体。
-/// 映射到 CesiumJS `Camera`（仅核心状态，无场景依赖）
+/// 仅承载核心视角状态，不依赖任何场景对象。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Camera {
     /// 相机在世界坐标中的位置。
@@ -210,7 +211,7 @@ impl Camera {
     // ========================================================================
 
     /// 计算视图矩阵。
-    /// 映射到 `Matrix4.computeView`
+    /// 由位置与 direction/up/right 正交基构造世界到相机的变换。
     pub fn view_matrix(&self) -> DMat4 {
         compute_view_matrix(self.position, self.direction, self.up, self.right)
     }
@@ -260,37 +261,37 @@ impl Camera {
     // ========================================================================
 
     /// 获取航向角（弧度）（针对 CV/2D 模式简化）。
-    /// 映射到 `Camera.heading`
+    /// 由 direction 与 up 在水平面的投影推算。
     pub fn heading(&self) -> f64 {
         get_heading(self.direction, self.up)
     }
 
     /// 使用相机位置处的 ENU 框架获取 3D 模式下的航向。
-    /// 当模式为 SCENE3D 时映射到 `Camera.heading`
+    /// 将 direction/up 变换到当地东-北-天框架后推算水平角。
     pub fn heading_3d(&self, ellipsoid: &Ellipsoid) -> f64 {
         get_heading_3d(self.position, self.direction, self.up, self.right, ellipsoid)
     }
 
     /// 获取俯仰角（弧度）（针对 CV/2D 模式简化）。
-    /// 映射到 `Camera.pitch`
+    /// 由 direction 的 z 分量与水平面的夹角推算。
     pub fn pitch(&self) -> f64 {
         get_pitch(self.direction)
     }
 
     /// 使用相机位置处的表面法线获取 3D 模式下的俯仰。
-    /// 当模式为 SCENE3D 时映射到 `Camera.pitch`
+    /// 以当地椭球法线为基准，度量视线偏离水平面的角度。
     pub fn pitch_3d(&self, ellipsoid: &Ellipsoid) -> f64 {
         get_pitch_3d(self.position, self.direction, ellipsoid)
     }
 
     /// 获取翻滚角（弧度）（针对 CV/2D 模式简化）。
-    /// 映射到 `Camera.roll`
+    /// 由 right 与 up 的 z 分量经 atan2 推算绕视线的旋转。
     pub fn roll(&self) -> f64 {
         get_roll(self.direction, self.up, self.right)
     }
 
     /// 使用相机位置处的 ENU 框架获取 3D 模式下的翻滚。
-    /// 当模式为 SCENE3D 时映射到 `Camera.roll`
+    /// 将 right/up 变换到当地框架后，度量绕视线的倾斜。
     pub fn roll_3d(&self, ellipsoid: &Ellipsoid) -> f64 {
         get_roll_3d(self.position, self.direction, self.up, self.right, ellipsoid)
     }
@@ -305,58 +306,58 @@ impl Camera {
     // ========================================================================
 
     /// 沿给定方向移动相机给定距离。
-    /// 映射到 `Camera.move`
+    /// 位置沿归一化方向平移 amount，不改变朝向。
     pub fn move_along(&mut self, direction: DVec3, amount: f64) {
         self.position += direction.normalize() * amount;
     }
 
     /// 向前移动相机（沿视线方向）。
-    /// 映射到 `Camera.moveForward`
+    /// 未指定 amount 时使用 default_move_amount。
     pub fn move_forward(&mut self, amount: Option<f64>) {
         let amount = amount.unwrap_or(self.default_move_amount);
         self.move_along(self.direction, amount);
     }
 
     /// 向后移动相机（与视线方向相反）。
-    /// 映射到 `Camera.moveBackward`
+    /// 以 -amount 沿视线方向移动。
     pub fn move_backward(&mut self, amount: Option<f64>) {
         let amount = amount.unwrap_or(self.default_move_amount);
         self.move_along(self.direction, -amount);
     }
 
     /// 向右移动相机。
-    /// 映射到 `Camera.moveRight`
+    /// 沿 right 轴平移 amount。
     pub fn move_right(&mut self, amount: Option<f64>) {
         let amount = amount.unwrap_or(self.default_move_amount);
         self.move_along(self.right, amount);
     }
 
     /// 向左移动相机。
-    /// 映射到 `Camera.moveLeft`
+    /// 沿 -right 轴平移 amount。
     pub fn move_left(&mut self, amount: Option<f64>) {
         let amount = amount.unwrap_or(self.default_move_amount);
         self.move_along(self.right, -amount);
     }
 
     /// 向上移动相机。
-    /// 映射到 `Camera.moveUp`
+    /// 沿 up 轴平移 amount。
     pub fn move_up(&mut self, amount: Option<f64>) {
         let amount = amount.unwrap_or(self.default_move_amount);
         self.move_along(self.up, amount);
     }
 
     /// 向下移动相机。
-    /// 映射到 `Camera.moveDown`
+    /// 沿 -up 轴平移 amount。
     pub fn move_down(&mut self, amount: Option<f64>) {
         let amount = amount.unwrap_or(self.default_move_amount);
         self.move_along(self.up, -amount);
     }
 
     /// 绕某个轴旋转相机一个角度（轨道移动位置 + 旋转朝向）。
-    /// 映射到 `Camera.rotate`
+    /// 位置与三个朝向基向量一同作刚体旋转。
     pub fn rotate(&mut self, axis: DVec3, angle: f64) {
         let axis = axis.normalize();
-        // CesiumJS 对角度取负：Quaternion.fromAxisAngle(axis, -angle)
+        // 约定：对角度取负，即绕轴按 -angle 构造旋转四元数。
         let rotation = glam::DQuat::from_axis_angle(axis, -angle);
         self.position = rotation * self.position;
         self.direction = (rotation * self.direction).normalize();
@@ -366,37 +367,37 @@ impl Camera {
     }
 
     /// 向上旋转相机（绕 right 轴轨道移动）。
-    /// 映射到 `Camera.rotateUp`，它调用 rotateVertical(this, -angle)
+    /// 取负角度绕 right 轴旋转，使视线抬高。
     pub fn rotate_up(&mut self, angle: f64) {
         let axis = self.right;
         self.rotate(axis, -angle);
     }
 
     /// 向下旋转相机（绕 right 轴轨道移动）。
-    /// 映射到 `Camera.rotateDown`，它调用 rotateVertical(this, angle)
+    /// 按正角度绕 right 轴旋转，使视线压低。
     pub fn rotate_down(&mut self, angle: f64) {
         let axis = self.right;
         self.rotate(axis, angle);
     }
 
     /// 向左旋转相机（绕 up 轴轨道移动）。
-    /// 映射到 `Camera.rotateLeft`
+    /// 按正角度绕 up 轴旋转，相机向左环绕。
     pub fn rotate_left(&mut self, angle: f64) {
         let axis = self.up;
         self.rotate(axis, angle);
     }
 
     /// 向右旋转相机（绕 up 轴轨道移动，负角度）。
-    /// 映射到 `Camera.rotateRight`
+    /// 取负角度绕 up 轴旋转，相机向右环绕。
     pub fn rotate_right(&mut self, angle: f64) {
         let axis = self.up;
         self.rotate(axis, -angle);
     }
 
     /// 沿给定轴查看一个角度（仅旋转 direction 和 up，不改变位置）。
-    /// 映射到 `Camera.look`
+    /// 相当于原地转动镜头，与 rotate 的轨道移动相区分。
     pub fn look(&mut self, axis: DVec3, angle: f64) {
-        // CesiumJS 对角度取负：Quaternion.fromAxisAngle(axis, -angle)
+        // 约定：对角度取负，即绕轴按 -angle 构造旋转四元数。
         let rotation = glam::DQuat::from_axis_angle(axis.normalize(), -angle);
         self.direction = (rotation * self.direction).normalize();
         self.up = (rotation * self.up).normalize();
@@ -405,7 +406,7 @@ impl Camera {
     }
 
     /// 按给定角度向左查看。
-    /// 映射到 `Camera.lookLeft`
+    /// 取负角度绕 up 轴原地转动镜头。
     pub fn look_left(&mut self, angle: Option<f64>) {
         let angle = angle.unwrap_or(self.default_look_amount);
         let axis = self.up;
@@ -413,7 +414,7 @@ impl Camera {
     }
 
     /// 按给定角度向右查看。
-    /// 映射到 `Camera.lookRight`
+    /// 按正角度绕 up 轴原地转动镜头。
     pub fn look_right(&mut self, angle: Option<f64>) {
         let angle = angle.unwrap_or(self.default_look_amount);
         let axis = self.up;
@@ -421,7 +422,7 @@ impl Camera {
     }
 
     /// 按给定角度向上查看。
-    /// 映射到 `Camera.lookUp`
+    /// 取负角度绕 right 轴原地转动镜头。
     pub fn look_up(&mut self, angle: Option<f64>) {
         let angle = angle.unwrap_or(self.default_look_amount);
         let axis = self.right;
@@ -429,7 +430,7 @@ impl Camera {
     }
 
     /// 按给定角度向下查看。
-    /// 映射到 `Camera.lookDown`
+    /// 按正角度绕 right 轴原地转动镜头。
     pub fn look_down(&mut self, angle: Option<f64>) {
         let angle = angle.unwrap_or(self.default_look_amount);
         let axis = self.right;
@@ -437,21 +438,21 @@ impl Camera {
     }
 
     /// 向左扭转相机（逆时针翻滚）。
-    /// 映射到 `Camera.twistLeft`
+    /// 绕视线方向（direction 轴）旋转镜头。
     pub fn twist_left(&mut self, angle: f64) {
         let axis = self.direction;
         self.look(axis, angle);
     }
 
     /// 向右扭转相机（顺时针翻滚）。
-    /// 映射到 `Camera.twistRight`
+    /// 取负角度绕 direction 轴旋转镜头。
     pub fn twist_right(&mut self, angle: f64) {
         let axis = self.direction;
         self.look(axis, -angle);
     }
 
     /// 设置相机从当前位置看向一个目标。
-    /// 映射到 `Camera.lookAt`（简化）
+    /// 重算 direction/up/right 使其对准目标（简化实现）。
     pub fn look_at_point(&mut self, target: DVec3, up: DVec3) {
         self.direction = (target - self.position).normalize();
         self.right = self.direction.cross(up).normalize();
@@ -473,7 +474,7 @@ impl Camera {
     // ========================================================================
 
     /// 在某个位置根据 heading/pitch/roll 设置相机的位置和朝向。
-    /// 忠实映射到 CesiumJS `setView3D`：
+    /// 算法步骤：
     /// 1. 计算位置处的 ENU
     /// 2. 调整航向：heading -= PI/2（使得 heading=0 表示北）
     /// 3. 由调整后的 HPR 计算四元数
@@ -495,12 +496,12 @@ impl Camera {
         let north = enu.y_axis.truncate();
         let up_enu = enu.z_axis.truncate();
 
-        // CesiumJS setView3D 第 1285 行：hpr.heading = hpr.heading - PI_OVER_TWO
+        // 调整航向：heading -= PI/2，使 heading=0 表示正北。
         let adjusted_heading = heading - std::f64::consts::FRAC_PI_2;
         let hpr_quat = HeadingPitchRoll::new(adjusted_heading, pitch, roll).to_quaternion();
 
-        // CesiumJS: direction = Matrix3.getColumn(rotMat, 0) = quat * X
-        //           up = Matrix3.getColumn(rotMat, 2) = quat * Z
+        // 局部视线/天顶：direction = quat * X，up = quat * Z（对应旋转矩阵第 0/2 列）。
+        //           四元数乘基向量等价于取对应列。
         let local_direction = hpr_quat * DVec3::X;
         let local_up = hpr_quat * DVec3::Z;
 
@@ -513,7 +514,7 @@ impl Camera {
     }
 
     /// 根据 direction/up 向量设置相机的位置和朝向。
-    /// 映射到带 orientation.direction + orientation.up 的 CesiumJS `setView3D`
+    /// 直接以给定的 direction/up 重新正交化出朝向基。
     pub fn set_view_direction(
         &mut self,
         position: DVec3,
@@ -528,7 +529,7 @@ impl Camera {
     }
 
     /// 设置相机以查看一个包围球。
-    /// 映射到 `Camera.viewBoundingSphere`（简化）
+    /// 按视锥体张角估算距离，把相机后退到能容纳整球的位置（简化）。
     pub fn view_bounding_sphere(
         &mut self,
         center: DVec3,
@@ -550,7 +551,7 @@ impl Camera {
     // ========================================================================
 
     /// 设置参考框架变换。
-    /// 映射到 `Camera._setTransform`
+    /// 先把当前世界状态转局部，再切换到新的参考框架。
     pub fn set_transform(&mut self, transform: DMat4) {
         // 保存世界空间状态
         let position_wc = self.position_wc();
@@ -589,37 +590,37 @@ impl Camera {
     }
 
     /// 将 Cartesian4 从世界坐标变换到相机参考框架。
-    /// 映射到 `Camera.worldToCameraCoordinates`
+    /// 用变换的逆把四维齐次坐标转到相机框架。
     pub fn world_to_camera_coordinates(&self, cartesian: glam::DVec4) -> glam::DVec4 {
         self.transform.inverse() * cartesian
     }
 
     /// 将一个点从世界坐标变换到相机参考框架。
-    /// 映射到 `Camera.worldToCameraCoordinatesPoint`
+    /// 以 w=1 变换点，保留平移分量。
     pub fn world_to_camera_point(&self, point: DVec3) -> DVec3 {
         (self.transform.inverse() * point.extend(1.0)).truncate()
     }
 
     /// 将一个向量从世界坐标变换到相机参考框架。
-    /// 映射到 `Camera.worldToCameraCoordinatesVector`
+    /// 以 w=0 变换向量，忽略平移分量。
     pub fn world_to_camera_vector(&self, vector: DVec3) -> DVec3 {
         (self.transform.inverse() * vector.extend(0.0)).truncate()
     }
 
     /// 将 Cartesian4 从相机参考框架变换到世界坐标。
-    /// 映射到 `Camera.cameraToWorldCoordinates`
+    /// 用变换把四维齐次坐标转回世界框架。
     pub fn camera_to_world_coordinates(&self, cartesian: glam::DVec4) -> glam::DVec4 {
         self.transform * cartesian
     }
 
     /// 将一个点从相机参考框架变换到世界坐标。
-    /// 映射到 `Camera.cameraToWorldCoordinatesPoint`
+    /// 以 w=1 变换点回世界坐标。
     pub fn camera_to_world_point(&self, point: DVec3) -> DVec3 {
         (self.transform * point.extend(1.0)).truncate()
     }
 
     /// 将一个向量从相机参考框架变换到世界坐标。
-    /// 映射到 `Camera.cameraToWorldCoordinatesVector`
+    /// 以 w=0 变换向量回世界坐标。
     pub fn camera_to_world_vector(&self, vector: DVec3) -> DVec3 {
         (self.transform * vector.extend(0.0)).truncate()
     }
@@ -629,7 +630,7 @@ impl Camera {
     // ========================================================================
 
     /// 设置相机视图，包含目标位置和朝向。
-    /// 映射到 `Camera.setView`
+    /// Morphing 模式下忽略；否则委托给 set_view_hpr。
     ///
     /// # 参数
     /// * `destination` - 目标位置（ECEF）或从矩形计算得出
@@ -652,8 +653,7 @@ impl Camera {
     }
 
     /// 设置相机以查看一个矩形。
-    /// 计算查看给定矩形所需的相机位置。
-    /// 映射到带 Rectangle 目标的 `Camera.setView`
+    /// 计算查看给定矩形所需的相机位置，令其垂直俯视矩形中心。
     pub fn set_view_rectangle(
         &mut self,
         rectangle: &Rectangle,
@@ -670,14 +670,14 @@ impl Camera {
     }
 
     /// 设置相机以带 HeadingPitchRange 偏移看向目标。
-    /// 映射到 `Camera.lookAt`
+    /// 以目标的 ENU 框架为参考，应用 HeadingPitchRange 偏移。
     pub fn look_at(&mut self, target: DVec3, offset: &HeadingPitchRange, ellipsoid: &Ellipsoid) {
         let transform = cesium_geospatial::transforms::east_north_up_to_fixed_frame(target, ellipsoid);
         self.look_at_transform(transform, offset);
     }
 
     /// 设置相机以带 Cartesian3 偏移看向目标。
-    /// 映射到带 Cartesian3 偏移的 `Camera.lookAt`
+    /// 以目标 ENU 框架为参考，直接用笛卡尔偏移定位相机。
     pub fn look_at_offset(&mut self, target: DVec3, offset: DVec3, ellipsoid: &Ellipsoid) {
         let transform = cesium_geospatial::transforms::east_north_up_to_fixed_frame(target, ellipsoid);
         self.transform = transform;
@@ -693,7 +693,7 @@ impl Camera {
     }
 
     /// 设置相机变换并相对于新框架定位它。
-    /// 映射到 `Camera.lookAtTransform`
+    /// 切换参考框架后按 HeadingPitchRange 偏移定位相机。
     pub fn look_at_transform(&mut self, transform: DMat4, offset: &HeadingPitchRange) {
         self.set_transform(transform);
 
@@ -716,7 +716,7 @@ impl Camera {
     }
 
     /// 设置相机变换并以 Cartesian3 偏移定位它。
-    /// 映射到带 Cartesian3 偏移的 `Camera.lookAtTransform`
+    /// 切换参考框架后直接用笛卡尔偏移定位相机。
     pub fn look_at_transform_offset(&mut self, transform: DMat4, offset: DVec3) {
         self.set_transform(transform);
         self.position = offset;
@@ -731,7 +731,7 @@ impl Camera {
     }
 
     /// 设置相机变换，保留当前的世界空间位置/朝向。
-    /// 映射到无偏移的 `Camera.lookAtTransform`
+    /// 仅切换参考框架，保持相机局部状态不变。
     pub fn look_at_transform_no_offset(&mut self, transform: DMat4) {
         self.set_transform(transform);
     }
@@ -741,7 +741,7 @@ impl Camera {
     // ========================================================================
 
     /// 计算查看一个矩形所需的相机位置。
-    /// 映射到 `Camera.getRectangleCameraCoordinates`
+    /// 由矩形中心与角范围估算俯视整块区域所需的高度。
     pub fn get_rectangle_camera_coordinates(
         &self,
         rectangle: &Rectangle,
@@ -775,17 +775,16 @@ impl Camera {
     // ========================================================================
 
     /// 计算相机到包围球的距离。
-    /// 映射到 `Camera.distanceToBoundingSphere`
+    /// 沿视线方向的有符号距离减去球半径（不低于 0）。
     pub fn distance_to_bounding_sphere(&self, sphere: &BoundingSphere) -> f64 {
-        // 映射到 CesiumJS Camera.distanceToBoundingSphere：
-        // 沿视线方向的有符号距离减去球半径。
+        // 有符号距离：球心相对相机在视线上的投影减去半径。
         let to_center = sphere.center - self.position;
         let distance = to_center.dot(self.direction) - sphere.radius;
         distance.max(0.0)
     }
 
     /// 根据模式获取相机位置的模长。
-    /// 映射到 `Camera.getMagnitude`
+    /// 3D 取位置模长，CV 取 |z|，2D 简化返回 1。
     pub fn get_magnitude(&self) -> f64 {
         match self.mode {
             SceneMode::Scene3D => self.position.length(),
@@ -796,7 +795,7 @@ impl Camera {
     }
 
     /// 获取参考框架变换的逆。
-    /// 映射到 `Camera.inverseTransform`
+    /// 返回当前参考框架变换矩阵的逆。
     pub fn inverse_transform(&self) -> DMat4 {
         self.transform.inverse()
     }
@@ -806,7 +805,7 @@ impl Camera {
     // ========================================================================
 
     /// 使用透视视锥体从窗口位置创建拾取射线。
-    /// 映射到 `Camera.getPickRay`（透视分支）
+    /// 透视分支：按 NDC 与视锥张角构造汇聚射线。
     ///
     /// # 参数
     /// * `window_x` - 窗口 X 坐标（像素，左=0）
@@ -846,7 +845,7 @@ impl Camera {
     }
 
     /// 拾取窗口位置处的椭球表面。
-    /// 映射到 `Camera.pickEllipsoid`（3D 分支）
+    /// 3D 分支：求拾取射线与椭球的首个交点。
     ///
     /// 返回椭球上的交点，若不可见则返回 None。
     pub fn pick_ellipsoid(
@@ -864,7 +863,7 @@ impl Camera {
     }
 
     /// 使用正交视锥体从窗口位置创建拾取射线。
-    /// 映射到 `Camera.getPickRay`（正交分支）
+    /// 正交分支：射线原点按视锥平面偏移，方向恒为视线。
     ///
     /// 对于正交投影，射线原点按窗口位置在视锥体平面内偏移，
     /// 且方向始终是相机方向。
@@ -897,7 +896,7 @@ impl Camera {
     }
 
     /// 从窗口位置创建拾取射线（分发到透视或正交）。
-    /// 映射到 `Camera.getPickRay`
+    /// 依视锥体类型分发到透视或正交实现。
     pub fn get_pick_ray(
         &self,
         window_x: f64,
@@ -912,7 +911,7 @@ impl Camera {
     }
 
     /// 计算包围球在其距相机距离处的像素大小。
-    /// 映射到 `Camera.getPixelSize`
+    /// 由投影参数把球半径换算为屏幕像素尺寸。
     ///
     /// 返回到包围球距离处一个像素的最大像素尺寸（宽或高）。
     pub fn get_pixel_size(
@@ -936,7 +935,7 @@ impl Camera {
 
     /// 以强制约束轴的方式进行旋转。
     /// 若设置了 constrained_axis，则防止 up 向量越过它。
-    /// 映射到 `Camera._rotateConstrained`
+    /// 沿约束轴作轨道旋转，保持 up 不越过限制。
     pub fn rotate_constrained(&mut self, axis: DVec3, angle: f64) {
         self.rotate(axis, angle);
 
@@ -984,7 +983,7 @@ impl Camera {
 
     /// 检查相机相对于参考状态是否发生了显著变化。
     /// 若变化超过阈值，返回变化百分比（0..1+）。
-    /// 映射到 `Camera._updateCameraChanged`
+    /// 取方向变化与位置变化百分比中的较大值。
     pub fn compute_change_percentage(
         &self,
         reference_position: DVec3,
@@ -1021,7 +1020,7 @@ impl Camera {
     // ========================================================================
 
     /// 返回用于查看默认矩形的默认“家”相机位置。
-    /// 映射到 `Camera.flyHome` 目标位置计算
+    /// 根据默认矩形中心推算俯视高度与位置。
     pub fn default_home_position(ellipsoid: &Ellipsoid) -> DVec3 {
         // 默认视图矩形：大致为北美
         let default_rect = Rectangle::new(
@@ -1042,6 +1041,7 @@ impl Camera {
 }
 
 impl Default for Camera {
+    /// 默认相机：位于原点、沿 -Z 轴向下看。
     fn default() -> Self {
         Self::default_camera()
     }
@@ -1052,7 +1052,7 @@ impl Default for Camera {
 // ============================================================================
 
 /// 从相机向量计算视图矩阵。
-/// 映射到 `Matrix4.computeView`
+/// 用 right/up/-direction 作行向量拼接，最后一列为平移。
 fn compute_view_matrix(position: DVec3, direction: DVec3, up: DVec3, right: DVec3) -> DMat4 {
     DMat4::from_cols_array(&[
         right.x, up.x, -direction.x, 0.0,
@@ -1063,7 +1063,7 @@ fn compute_view_matrix(position: DVec3, direction: DVec3, up: DVec3, right: DVec
 }
 
 /// 从 direction 和 up 向量计算航向。
-/// 映射到 Camera.js 中的 `getHeading`
+/// 由 direction 的水平投影角推算，方向接近垂直时改用 up。
 fn get_heading(direction: DVec3, up: DVec3) -> f64 {
     let heading = if (direction.z.abs() - 1.0).abs() > math_utils::EPSILON3 {
         direction.y.atan2(direction.x) - std::f64::consts::FRAC_PI_2
@@ -1080,13 +1080,13 @@ fn get_heading(direction: DVec3, up: DVec3) -> f64 {
 }
 
 /// 从 direction 向量计算俯仰。
-/// 映射到 Camera.js 中的 `getPitch`
+/// 由 direction 与 z 轴夹角推算偏离水平面的角度。
 fn get_pitch(direction: DVec3) -> f64 {
     std::f64::consts::FRAC_PI_2 - direction.z.clamp(-1.0, 1.0).acos()
 }
 
 /// 从 direction、up 和 right 向量计算翻滚。
-/// 映射到 Camera.js 中的 `getRoll`
+/// 由 right/up 的 z 分量经 atan2 推算绕视线的旋转。
 fn get_roll(direction: DVec3, up: DVec3, right: DVec3) -> f64 {
     if (direction.z.abs() - 1.0).abs() > math_utils::EPSILON3 {
         let roll = (-right.z).atan2(up.z);
@@ -1097,9 +1097,8 @@ fn get_roll(direction: DVec3, up: DVec3, right: DVec3) -> f64 {
 }
 
 /// 将 HeadingPitchRange 偏移转换为局部 ENU 框架中的 Cartesian3 偏移。
-/// 映射到 Camera.js 中的 `offsetFromHeadingPitchRange`
 ///
-/// 忠实映射到 CesiumJS `offsetFromHeadingPitchRange`：
+/// 算法步骤：
 /// 1. 将 pitch 钳制到 [-PI/2, PI/2]
 /// 2. heading = zeroToTwoPi(heading) - PI/2
 /// 3. pitchQuat = fromAxisAngle(Y, -pitch)
@@ -1107,10 +1106,10 @@ fn get_roll(direction: DVec3, up: DVec3, right: DVec3) -> f64 {
 /// 5. rotQuat = headingQuat * pitchQuat
 /// 6. offset = -(rotMatrix * UNIT_X) * range
 ///
-/// 等价的闭式解：直接使用四元数乘积（与 CesiumJS 一致）。
+/// 等价的闭式解：直接以四元数乘积展开，避免构造完整旋转矩阵。
 fn offset_from_heading_pitch_range(heading: f64, pitch: f64, range: f64) -> DVec3 {
     let pitch = pitch.clamp(-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2);
-    // CesiumJS: heading = zeroToTwoPi(heading) - PI_OVER_TWO
+    // 航向调整：归一化到 [0, 2π) 后减 π/2，使 heading=0 表示正北
     let heading = math_utils::zero_to_two_pi(heading) - std::f64::consts::FRAC_PI_2;
     // pitchQuat = fromAxisAngle(Y, -pitch), headingQuat = fromAxisAngle(Z, -heading)
     // rotQuat = headingQuat * pitchQuat
@@ -1132,7 +1131,7 @@ fn offset_from_heading_pitch_range(heading: f64, pitch: f64, range: f64) -> DVec
 }
 
 /// 使用相机位置处的 ENU 框架计算 3D 模式下的航向。
-/// 映射到 CesiumJS Camera.heading getter（SCENE3D 分支）：
+/// SCENE3D 分支：
 /// 将 direction/up 变换到 ENU 局部框架，然后：
 /// heading = TWO_PI - zeroToTwoPi(atan2(dir_local.y, dir_local.x) - PI/2)
 /// 若 |dir_local.z| ≈ 1（垂直向上/向下看），则改用 up_local。
@@ -1161,7 +1160,7 @@ fn get_heading_3d(position: DVec3, direction: DVec3, up: DVec3, _right: DVec3, e
 }
 
 /// 使用相机位置处的 ENU 框架计算 3D 模式下的俯仰。
-/// 映射到 CesiumJS Camera.pitch getter（SCENE3D 分支）：
+/// SCENE3D 分支：
 /// pitch = PI/2 - acosClamped(dir_local.z)
 fn get_pitch_3d(position: DVec3, direction: DVec3, ellipsoid: &Ellipsoid) -> f64 {
     let enu = cesium_geospatial::transforms::east_north_up_to_fixed_frame(position, ellipsoid);
@@ -1173,10 +1172,10 @@ fn get_pitch_3d(position: DVec3, direction: DVec3, ellipsoid: &Ellipsoid) -> f64
 }
 
 /// 使用相机位置处的 ENU 框架计算 3D 模式下的翻滚。
-/// 映射到 CesiumJS Camera.roll getter（SCENE3D 分支）：
+/// SCENE3D 分支：
 /// 若 |dir_local.z| < 1-EPSILON3：roll = zeroToTwoPi(atan2(-right_local.z, up_local.z) + TWO_PI)
 /// 否则：roll = 0
-// 遗留 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint 清理或本文件在其里程碑被重写时重新审视
+// 遗留移植风格技术债（deferred.md #18）；在 M13 lint 清理或本文件在其里程碑被重写时重新审视
 #[allow(clippy::let_and_return)]
 fn get_roll_3d(position: DVec3, direction: DVec3, up: DVec3, right: DVec3, ellipsoid: &Ellipsoid) -> f64 {
     let enu = cesium_geospatial::transforms::east_north_up_to_fixed_frame(position, ellipsoid);
@@ -1545,7 +1544,7 @@ mod tests {
     #[test]
     fn test_offset_from_heading_pitch_range() {
         // Heading=0, Pitch=0, Range=1000 -> 沿 -Y 的偏移（ENU 中的南方，相机朝北看）
-        // CesiumJS：heading 调整为 -PI/2，rotMatrix*X=(0,1,0)，取负→(0,-1,0)
+        // 验证：heading 调整为 -PI/2，rotMatrix*X=(0,1,0)，取负→(0,-1,0)
         let offset = offset_from_heading_pitch_range(0.0, 0.0, 1000.0);
         assert!(offset.x.abs() < 1e-10, "x={}", offset.x);
         assert!((offset.y + 1000.0).abs() < 1e-10, "y={}", offset.y);

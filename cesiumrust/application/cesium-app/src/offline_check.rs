@@ -62,10 +62,12 @@ pub fn run() -> i32 {
         strict, imagery, terrain
     );
 
+    // 累计通过项与失败明细，供末尾报告与退出码使用。
     let mut checks = 0usize;
     let mut failures: Vec<String> = Vec::new();
 
     // ── 影像通过 FileTileFetcher (Xyz) 读回 ────────────────────
+    // 逐个拉取少量固定坐标，验证读回字节流具有真正的 PNG 魔数。
     match &imagery {
         Some(raw) => {
             let root = canon(raw);

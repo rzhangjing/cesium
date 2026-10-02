@@ -1,6 +1,6 @@
 //! 后处理效果流水线。
 //!
-//! 映射到 CesiumJS `Scene/PostProcessStageLibrary.js`：
+//! 内置以下几类后处理效果及其阶段配置：
 //! - Bloom
 //! - 环境光遮蔽
 //! - 雾
@@ -23,8 +23,7 @@ pub enum PostProcessStageType {
     ColorCorrection,
 }
 
-/// Bloom 效果参数。
-/// 映射到 CesiumJS `PostProcessStageLibrary.createBloomStage()`
+/// Bloom（HDR 光晕）效果参数。
 #[derive(Debug, Clone, PartialEq)]
 pub struct BloomConfig {
     /// bloom 是否启用。
@@ -40,6 +39,7 @@ pub struct BloomConfig {
 }
 
 impl Default for BloomConfig {
+    /// 默认禁用，强度 1.0、阈值 0.8、模糊半径 4、4 个模糊 pass。
     fn default() -> Self {
         Self {
             enabled: false,
@@ -64,8 +64,7 @@ impl BloomConfig {
     }
 }
 
-/// 环境光遮蔽参数。
-/// 映射到 CesiumJS `PostProcessStageLibrary.createAmbientOcclusionStage()`
+/// 环境光遮蔽（AO）参数。
 #[derive(Debug, Clone, PartialEq)]
 pub struct AmbientOcclusionConfig {
     /// AO 是否启用。
@@ -83,6 +82,7 @@ pub struct AmbientOcclusionConfig {
 }
 
 impl Default for AmbientOcclusionConfig {
+    /// 默认禁用，强度 3.0、采样半径 0.5、16 采样、带 bias 与长度上限。
     fn default() -> Self {
         Self {
             enabled: false,
@@ -108,8 +108,7 @@ impl AmbientOcclusionConfig {
     }
 }
 
-/// 雾效果参数。
-/// 映射到 CesiumJS `Scene/Fog.js`
+/// 距离雾效果参数。
 #[derive(Debug, Clone, PartialEq)]
 pub struct FogConfig {
     /// 雾是否启用。
@@ -127,6 +126,7 @@ pub struct FogConfig {
 }
 
 impl Default for FogConfig {
+    /// 默认启用，淡蓝雾色、小密度、可见距离跨度极大。
     fn default() -> Self {
         Self {
             enabled: true,
@@ -196,6 +196,7 @@ pub struct ToneMappingConfig {
 }
 
 impl Default for ToneMappingConfig {
+    /// 默认使用 ACES Filmic 算子、曝光 1.0、白点 1.0。
     fn default() -> Self {
         Self {
             operator: ToneMappingOperator::AcesFilmic,
@@ -224,7 +225,9 @@ impl ToneMappingConfig {
         }
     }
 
+    /// Reinhard 色调映射曲线（带白点扩展）。
     fn reinhard(&self, color: DVec3) -> DVec3 {
+        // 逐通道应用扩展 Reinhard：c*(1+c/white^2)/(1+c)
         let white_sq = self.white_point * self.white_point;
         DVec3::new(
             color.x * (1.0 + color.x / white_sq) / (1.0 + color.x),
@@ -233,6 +236,7 @@ impl ToneMappingConfig {
         )
     }
 
+    /// ACES Filmic 色调映射（Narkowicz 近似）。
     fn aces_filmic(&self, color: DVec3) -> DVec3 {
         // 由 Krzysztof Narkowicz 提出的 ACES 近似
         const A: f64 = 2.51;
@@ -248,6 +252,7 @@ impl ToneMappingConfig {
         )
     }
 
+    /// Uncharted 2 色调映射。
     fn uncharted2(&self, color: DVec3) -> DVec3 {
         DVec3::new(
             uncharted2_curve(color.x),
@@ -257,10 +262,13 @@ impl ToneMappingConfig {
     }
 }
 
+/// ACES 近似的单通道曲线。
 fn aces_curve(x: f64, a: f64, b: f64, c: f64, d: f64, e: f64) -> f64 {
+    // 有理多项式曲线，输出限到 [0,1]
     ((x * (a * x + b)) / (x * (c * x + d) + e)).clamp(0.0, 1.0)
 }
 
+/// Uncharted 2 的单通道响应曲线。
 fn uncharted2_curve(x: f64) -> f64 {
     const A: f64 = 0.15;
     const B: f64 = 0.50;
@@ -288,6 +296,7 @@ pub struct ColorCorrectionConfig {
 }
 
 impl Default for ColorCorrectionConfig {
+    /// 默认禁用，亮度 0、对比度与饱和度 1.0、无饱和色相旋转。
     fn default() -> Self {
         Self {
             enabled: false,

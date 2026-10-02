@@ -1,13 +1,12 @@
 //! 绘制命令生成与渲染通道管理。
 //!
-//! 映射到 CesiumJS `Renderer/DrawCommand.js` 与 `Scene/Pass.js`
+//! 定义渲染通道枚举、混合与深度状态，以及承载单次渲染操作的绘制命令。
 
 use glam::DMat4;
 use serde::{Deserialize, Serialize};
 
 /// 渲染通道类型。
-///
-/// 映射到 CesiumJS `Scene/Pass.js`
+/// 枚举的数值序即通道由前到后的绘制顺序。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
 pub enum RenderPass {
     /// 环境通道（天空、大气）。
@@ -47,6 +46,7 @@ pub struct DepthState {
 }
 
 impl Default for DepthState {
+    /// 默认启用深度测试与深度写入。
     fn default() -> Self {
         Self {
             enabled: true,
@@ -57,7 +57,7 @@ impl Default for DepthState {
 
 /// 一个表示单次渲染操作的绘制命令。
 ///
-/// 映射到 CesiumJS `Renderer/DrawCommand.js`
+/// 聚合通道、变换、材质与各类渲染状态，供排序与提交。
 #[derive(Debug, Clone)]
 pub struct DrawCommand {
     /// 该命令所属的渲染通道。
@@ -101,6 +101,7 @@ pub struct DrawCommand {
 }
 
 impl Default for DrawCommand {
+    /// 默认构造：不透明通道、单位变换、默认混合与深度状态。
     fn default() -> Self {
         Self {
             pass: RenderPass::Opaque,

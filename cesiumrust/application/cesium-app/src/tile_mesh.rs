@@ -35,7 +35,7 @@ pub struct GeoRectangle {
 
 /// 计算 Web Mercator 瓦片的地理范围。
 ///
-/// 对应 CesiumJS `WebMercatorTilingScheme.tileXYToRectangle`：
+/// 计算方式（墨卡托投影反算）：
 /// - 全局墨卡托范围：两轴均为 [-PI*R, PI*R]
 /// - 瓦片宽/高（米）= 2*PI*R / 2^z
 /// - 反投影：lon = x_m / R, lat = PI/2 - 2*atan(exp(-y_m / R))

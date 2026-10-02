@@ -1,5 +1,4 @@
 //! EncodedCartesian3 - 用于 GPU 渲染的 Cartesian3 定点编码。
-//! 映射到 CesiumJS `Core/EncodedCartesian3.js`
 
 use glam::DVec3;
 
@@ -14,6 +13,7 @@ pub struct EncodedCartesian3 {
 }
 
 impl Default for EncodedCartesian3 {
+    /// 默认构造：高位与低位均为零向量。
     fn default() -> Self {
         Self {
             high: DVec3::ZERO,

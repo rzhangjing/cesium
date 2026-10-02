@@ -1,4 +1,4 @@
-//! 材质系统规范 - 移植自 Scene/MaterialSpec.js
+//! 材质系统规范 - 参考自 Scene/MaterialSpec
 //!
 //! 测试 MaterialSystem、FabricTemplate、Material、MaterialComponents、
 //! UniformValue、TranslucentSpec 及内置材质。

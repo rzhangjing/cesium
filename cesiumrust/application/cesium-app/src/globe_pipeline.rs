@@ -40,15 +40,25 @@ use cesium_ports_driven::BudgetPolicy;
 /// 来自 worker 池的下载结果（取代遗留的 TileDownloadResult）。
 /// 特化的 ImageryPayload：RGBA + mip 链 + 陈旧标志。
 pub struct TileDownloadResult {
+    /// 瓦片列索引 x。
     pub x: u32,
+    /// 瓦片行索引 y。
     pub y: u32,
+    /// 瓦片层级 z。
     pub z: u32,
+    /// 拼接后的 RGBA 数据（含完整 mip 链）。
     pub rgba_data: Vec<u8>,
+    /// 顶层纹理宽度（像素）。
     pub width: u32,
+    /// 顶层纹理高度（像素）。
     pub height: u32,
+    /// mip 链层级数。
     pub mip_levels: u32,
+    /// 占位图（无数据）标志。
     pub placeholder: bool,
+    /// 因陈旧而中断（未真正获取）标志。
     pub aborted: bool,
+    /// 获取失败标志。
     pub failed: bool,
 }
 
@@ -62,14 +72,17 @@ pub fn enqueue_tiles(
     tex_rx: &TextureReceiver,
     tiles: &[(TileKey, f32)],
 ) {
+    // 三类待办队列：网格构建任务、下载任务、需生成的实体，均来自主循环本地缓冲。
     let mut mesh_jobs: Vec<(TileKey, u32, Option<[f32; 4]>)> = Vec::new();
     let mut downloads: Vec<(TileKey, bool, f32)> = Vec::new();
     let mut to_spawn: Vec<(TileKey, f32)> = Vec::new();
 
     {
+        // 持锁遍历本帧需要的瓦片，按优先级与缓存状态分类排队。
         let cache = tex_rx.cache.lock().unwrap();
         for &(key, prio) in tiles {
             // 分辨率升级：own_full_res 契约（原 L837-841）。
+            // 若当前显存分辨率不足 256 且高优先级/已上采样，则重拉全分辨率。
             if !mgr.no_data.contains(&key)
                 && !mgr.reupload.contains(&key)
                 && (prio > 192.0 || mgr.upsampled.contains(&key))
@@ -80,13 +93,16 @@ pub fn enqueue_tiles(
                 mgr.reupload.insert(key);
                 mgr.in_flight.insert(key);
             }
+            // 已有实体或已在队中：无需重复排队生成。
             if mgr.tile_entities.contains_key(&key) || mgr.queued.contains(&key) {
                 continue;
             }
+            // 新瓦片：加入生成队列；若无网格则同时排队网格构建。
             to_spawn.push((key, prio));
             if !mgr.gpu_meshes.contains_key(&key) {
                 mesh_jobs.push((key, globe_lod::compute_segments(key.2), None));
             }
+            // 若本地/显存/在途均无此瓦片且已过重试时间，则排队下载（低优先级标记降采样）。
             if !cache.contains_key(&key)
                 && !mgr.gpu_textures.contains_key(&key)
                 && !mgr.no_data.contains(&key)
@@ -99,14 +115,17 @@ pub fn enqueue_tiles(
         }
     }
 
+    // 按屏幕占比降序排列，先入队者优先生成/下载。
     to_spawn.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     for (key, _) in to_spawn {
         mgr.spawn_queue.push_back(key);
         mgr.queued.insert(key);
     }
+    // 下载同样按优先级降序，确保高占比瓦片先取回。
     downloads.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
     let downloads: Vec<(TileKey, bool)> = downloads.into_iter().map(|(k, d, _)| (k, d)).collect();
 
+    // 将当前想要的瓦片集合告知 worker（供陈旧跳过判断），再触发后台网格构建与下载。
     { let mut w = tex_rx.wanted.lock().unwrap(); w.extend(mgr.queued.iter().copied()); }
     if !mesh_jobs.is_empty() { start_mesh_builds(mesh_pipe, mesh_jobs); }
     if !downloads.is_empty() { start_downloads(tex_rx, &downloads); }
@@ -126,11 +145,14 @@ pub fn run(
     tex_rx: &TextureReceiver,
     perf: &mut PerfCounters,
 ) {
+    // 未初始化（尚无任何可见集）则直接早退。
     if !mgr.initialized { return; }
     perf.begin_frame();
+    // 本帧淘汰/延迟/陈旧跳过计数，累加后回写至 PerfCounters。
     let mut evict_total_delta: u32 = 0;
     let mut evict_deferred_delta: u32 = 0;
     let mut stale_skips_delta: u32 = 0;
+    // 取本帧视图是否变化（影响后续覆盖修复仅在稳定帧执行）。
     let view_changed = mgr.view_changed_this_frame;
     mgr.view_changed_this_frame = false;
 
@@ -147,16 +169,20 @@ pub fn run(
     let mut mesh_uploads = 0;
     while mesh_uploads < DefaultBudget.max_mesh_uploads_per_frame() {
         let Some((key, mesh, is_fb)) = mesh_pipe.backlog.pop_front() else { break };
+        // 已有同类网格则丢弃重复上传。
         if (is_fb && mgr.gpu_fb_meshes.contains_key(&key))
             || (!is_fb && mgr.gpu_meshes.contains_key(&key)) { continue; }
+        // 不再可见/加载/排队的瓦片：无需上传。
         if !mgr.visible_set.contains(&key) && !mgr.load_set.contains(&key)
             && !mgr.queued.contains(&key) { continue; }
+        // is_fb 表示带 UV 重映射的回退网格，否则为常规网格。
         if is_fb {
             mgr.pending_fb_builds.remove(&key);
             mgr.gpu_fb_meshes.insert(key, meshes.add(mesh));
         } else {
             mgr.gpu_meshes.insert(key, meshes.add(mesh));
         }
+        // 每次新增 GPU 资源后触发淘汰，防止显存无限增长。
         let (e, d) = evict_gpu_cache(mgr);
         evict_total_delta += e; evict_deferred_delta += d;
         mesh_uploads += 1;
@@ -171,9 +197,11 @@ pub fn run(
 
     let cache = tex_rx.cache.lock().unwrap();
     for key in pending {
+        // 已生成或已不在排队集合：跳过。
         let already = mgr.tile_entities.contains_key(&key);
         if already || !mgr.queued.remove(&key) { continue; }
 
+        // 判断该瓦片所需网格是否就绪：无数据瓦片看其实体类型（纯色或回退）对应的网格。
         let nodata = mgr.no_data.contains(&key);
         let mesh_ready = if nodata {
             if mgr.solid_tiles.contains(&key) { mgr.gpu_meshes.contains_key(&key) }
@@ -182,13 +210,17 @@ pub fn run(
             mgr.gpu_meshes.contains_key(&key) || mgr.gpu_fb_meshes.contains_key(&key)
         };
         if !mesh_ready || spawns >= max_spawns {
+            // 网格未就绪或本帧生成预算用尽：重新入队等下一帧。
             still_queued.push(key); mgr.queued.insert(key); continue;
         }
+        // 已离开可见/加载/划分集：放弃生成。
         if !mgr.visible_set.contains(&key) && !mgr.load_set.contains(&key)
             && !mgr.partition_set.contains(&key) { continue; }
 
+        // 无数据瓦片：用纯色或继承祖先材质直接生成（不回退到拉伸祖先）。
         if nodata {
             if mgr.solid_tiles.contains(&key) && has_live_ancestor(mgr, &key) { continue; }
+            // 纯色瓦片用常规网格，否则用回退网格。
             let mesh_handle = if mgr.solid_tiles.contains(&key) {
                 mgr.gpu_meshes[&key].clone()
             } else { mgr.gpu_fb_meshes[&key].clone() };
@@ -229,20 +261,24 @@ pub fn run(
             if key.2 <= BASE_LAYER_ZOOM {
                 // 无影像的基根：直接落入纯色生成。
             } else if mgr.upsampled.contains(&key) {
+                // 已被上采样占位：重新入队等待自身全分辨率纹理。
                 still_queued.push(key); mgr.queued.insert(key); continue;
             } else {
                 // 继承最近的有纹理祖先（UV 重映射）。
                 let (mut ax, mut ay, mut az) = key;
                 let mut ancestor: Option<(TileKey, Handle<Image>)> = None;
+                // 逐级上移父瓦片，首个拥有有效纹理的祖先即为回退源。
                 while az > 0 {
                     ax >>= 1; ay >>= 1; az -= 1;
                     if let Some(t) = mgr.effective_tex.get(&(ax, ay, az)) {
                         ancestor = Some(((ax, ay, az), t.clone())); break;
                     }
                 }
+                // 无可继祖先：放弃本轮（重新入队等下帧）。
                 let Some((anc, tex)) = ancestor else {
                     still_queued.push(key); mgr.queued.insert(key); continue;
                 };
+                // 计算本瓦片在祖先纹理内对应的子矩形 UV（祖先 UV 按 2^dz 划分取第 rx/ry 格）。
                 let dz = key.2 - anc.2;
                 let side = (1u32 << dz) as f32;
                 let rx = (key.0 % (1u32 << dz)) as f32;
@@ -250,6 +286,7 @@ pub fn run(
                 let [au0, av0, au1, av1] = mgr.effective_uv.get(&anc).copied().unwrap_or([0.,0.,1.,1.]);
                 let fu = (au1 - au0) / side; let fv = (av1 - av0) / side;
                 let uv = [au0 + rx*fu, av0 + ry*fv, au0 + (rx+1.)*fu, av0 + (ry+1.)*fv];
+                // 回退网格未就绪则排队构建，本帧先跳过（下帧重试）。
                 let mesh_handle = if let Some(h) = mgr.gpu_fb_meshes.get(&key) { h.clone() }
                 else {
                     if !mgr.pending_fb_builds.contains(&key) {
@@ -280,13 +317,16 @@ pub fn run(
         }
 
         // 自身全分辨率路径（或基根）。
+        // 常规网格未就绪则重新入队。
         let Some(mesh_handle) = mgr.gpu_meshes.get(&key).cloned() else {
             still_queued.push(key); mgr.queued.insert(key); continue;
         };
+        // 若有自身纹理则登记有效纹理/UV（全帧覆盖 0..1）。
         if let Some(tex) = &cached_tex {
             mgr.effective_tex.insert(key, tex.clone());
             mgr.effective_uv.insert(key, [0.0, 0.0, 1.0, 1.0]);
         }
+        // 材质选取：已缓存材质 > 新建带纹理材质 > 新建纯色占位材质。
         let material = if let Some(mat) = mgr.gpu_materials.get(&key) { mat.clone() }
         else if let Some(tex) = cached_tex.clone() {
             let mat = materials.add(StandardMaterial {
@@ -301,6 +341,7 @@ pub fn run(
             });
             mgr.gpu_materials.insert(key, mat.clone()); mat
         };
+        // 新纹理首次入显存时记录 LRU 顺序并触发淘汰。
         if let Some(tex) = cached_tex {
             if !mgr.gpu_textures.contains_key(&key) { mgr.gpu_tex_order.push_back(key); }
             mgr.gpu_textures.insert(key, tex);
@@ -321,21 +362,26 @@ pub fn run(
     // 4) 在预算内应用已下载的纹理。
     let mut tex_uploads = 0;
     while tex_uploads < DefaultBudget::MAX_TEXTURE_UPLOADS_PER_FRAME {
+        // 从接收通道非阻塞取出一帧预算内的下载结果。
         let Ok(result) = tex_rx.rx.lock().unwrap().try_recv() else { break };
         let key = (result.x, result.y, result.z);
         mgr.in_flight.remove(&key);
+        // aborted：worker 已陈旧跳过，计入陈旧跳过并清除重传标记。
         if result.aborted {
             mgr.reupload.remove(&key); stale_skips_delta += 1; continue;
         }
+        // failed：记 10 秒退避重试时间，本帧不处理。
         if result.failed {
             mgr.reupload.remove(&key);
             mgr.retry_after.insert(key, std::time::Instant::now() + std::time::Duration::from_secs(10));
             continue;
         }
+        // placeholder：无数据判定，继承祖先纹理或落入纯色，并排队回退网格。
         if result.placeholder {
             mgr.reupload.remove(&key);
             if mgr.gpu_textures.contains_key(&key) { tex_uploads += 1; continue; }
             if mgr.no_data.insert(key) {
+                // 首次判定无数据：向上寻找最近有纹理祖先，取其纹理按 UV 重映射回退。
                 let (mut ax, mut ay, mut az) = key;
                 let mut ancestor: Option<(TileKey, Handle<Image>)> = None;
                 while az > 0 {
@@ -356,6 +402,7 @@ pub fn run(
                         start_mesh_builds(mesh_pipe, vec![(key, globe_lod::compute_segments(key.2), Some(uv))]);
                     }
                 } else {
+                    // 无纹理祖先可继：向上寻找已有实体的祖先复用其材质；否则标记为纯色瓦片。
                     let mut ix = key.0; let mut iy = key.1; let mut iz = key.2;
                     let mut inherited = false;
                     while iz > 0 {
@@ -377,6 +424,7 @@ pub fn run(
         }
 
         // 纹理下载成功。
+        // 若已有更高分辨率显存纹理则复用，否则新建并记录尺寸/顺序。
         let tex_handle = if matches!(
             (mgr.gpu_textures.get(&key), mgr.gpu_tex_size.get(&key)),
             (Some(_), Some(&sz)) if sz >= result.width
@@ -404,16 +452,19 @@ pub fn run(
                 }
             }
         }
+        // 仅当实体已存在时才标记为已贴纹理（避免未生成时误记）。
         if mgr.tile_entities.contains_key(&key) { mgr.textured_tiles.insert(key); }
         tex_uploads += 1;
     }
 
     // 锐化通道：具有自身全分辨率 + 真实网格的上采样瓦片原子交换。
+    // 找出已同时具备实体、真实网格与≥２５６纹理的上采样瓦片，换回自身高清网格与材质。
     let sharpen: Vec<TileKey> = mgr.upsampled.iter().filter(|k| {
         mgr.tile_entities.contains_key(*k) && mgr.gpu_meshes.contains_key(*k)
             && matches!(mgr.gpu_tex_size.get(*k), Some(&s) if s >= 256)
     }).copied().collect();
     for key in sharpen {
+        // 原子换回自身高清网格与材质，并从 upsampled 集合移除。
         let ent = mgr.tile_entities[&key];
         if let (Some(mesh), Some(mat)) = (mgr.gpu_meshes.get(&key).cloned(), mgr.gpu_materials.get(&key).cloned()) {
             commands.entity(ent).insert((Mesh3d(mesh), MeshMaterial3d(mat)));
@@ -422,10 +473,12 @@ pub fn run(
     }
 
     // 5) 预算化清理（MAX_TILE_ENTITIES 上限，细层优先 LRU）。
+    // 实体数超上限时，优先淘汰非保护、不可见、非基根且最细层/最旧的瓦片。
     let mut removed = 0;
     let max_entities = DefaultBudget::MAX_TILE_ENTITIES;
     let max_despawns = DefaultBudget::MAX_DESPAWNS_PER_FRAME;
     if mgr.tile_entities.len() > max_entities {
+        // 保护链：覆盖所有待定叶节点的祖先不得被淘汰。
         let prot = protected_ancestors(mgr);
         while mgr.tile_entities.len() > max_entities && removed < max_despawns {
             let len = mgr.hide_order.len();
@@ -439,6 +492,7 @@ pub fn run(
             mgr.despawn_tile(&key, commands); removed += 1;
         }
         if mgr.tile_entities.len() > max_entities {
+            // 若仍未降到上限：按生成序逐个淘汰有存活祖先的多余瓦片（淘汰不会留空洞）。
             let mut extras: Vec<(usize, TileKey)> = {
                 let pos = |k: &TileKey| mgr.spawn_order.iter().position(|o| o == k).unwrap_or(usize::MAX);
                 let mut v: Vec<(usize, TileKey)> = mgr.tile_entities.keys().copied()
@@ -455,10 +509,13 @@ pub fn run(
     }
 
     // 覆盖修复（仅稳定帧）。
+    // 视图稳定时，补齐可见/加载集中丢失或因等待而饥饿的瓦片。
     if !view_changed {
+        // missing：可见/加载集中既无实体又未排队的瓦片（最多补 32 个）。
         let missing: Vec<TileKey> = mgr.visible_set.iter().chain(mgr.load_set.iter())
             .filter(|k| !mgr.tile_entities.contains_key(k) && !mgr.queued.contains(k))
             .copied().take(32).collect();
+        // starved：已排队却因网格/纹理/下载均未就位而饥饿的瓦片。
         let starved: Vec<TileKey> = {
             let cache = tex_rx.cache.lock().unwrap();
             mgr.visible_set.iter().filter(|k| {
@@ -468,6 +525,7 @@ pub fn run(
             }).copied().collect()
         };
         if !missing.is_empty() || !starved.is_empty() {
+            // 为丢失/饥饿瓦片重新排队网格构建与下载，并将 missing 重新加入生成队列。
             let mut repair_mesh: Vec<(TileKey, u32, Option<[f32; 4]>)> = Vec::new();
             let mut repair_dl: Vec<(TileKey, bool)> = Vec::new();
             { let cache = tex_rx.cache.lock().unwrap();
@@ -489,12 +547,14 @@ pub fn run(
     }
 
     // wanted 刷新。
+    // 汇总当前排队/可见/加载/已生成实体集合，告知 worker 不再跳过这些瓦片。
     { let mut w = tex_rx.wanted.lock().unwrap(); w.clear();
       w.extend(mgr.queued.iter().copied()); w.extend(mgr.visible_set.iter().copied());
       w.extend(mgr.load_set.iter().copied()); w.extend(mgr.tile_entities.keys().copied());
     }
 
     // PerfCounters 回写（与遗留双向）。
+    // 将本帧各集合长度与上传/生成/淘汰计数回写到性能面板供外部读取。
     perf.in_flight = mgr.in_flight.len() as u32;
     perf.gpu_tex_order = mgr.gpu_tex_order.len() as u32;
     perf.tile_entities = mgr.tile_entities.len() as u32;
@@ -524,8 +584,10 @@ pub fn run(
 ///
 /// 原始：`dynamic_globe.rs:1476-1502`（逐字節保留）。
 pub fn evict_gpu_cache(mgr: &mut TileManager) -> (u32, u32) {
+    // evicted = 实际淘汰数；deferred = 因仍活跃而延迟的个数。
     let mut evicted: u32 = 0;
     let mut deferred: u32 = 0;
+    // 仅当显存纹理 LRU 长度超上限时才淘汰。
     while mgr.gpu_tex_order.len() > DefaultBudget::MAX_GPU_CACHE_ENTRIES {
         let Some(old) = mgr.gpu_tex_order.pop_front() else {
             break;
@@ -540,6 +602,7 @@ pub fn evict_gpu_cache(mgr: &mut TileManager) -> (u32, u32) {
             deferred += 1;
             continue;
         }
+        // 无实体引用：真正释放其纹理/材质/网格/有效纹理/尺寸等 GPU 资源。
         mgr.gpu_textures.remove(&old);
         mgr.gpu_materials.remove(&old);
         mgr.gpu_meshes.remove(&old);
@@ -559,15 +622,19 @@ pub fn evict_gpu_cache(mgr: &mut TileManager) -> (u32, u32) {
 ///
 /// 原始：`dynamic_globe.rs:1435-1446`（逐字節保留）。
 pub fn replacement_ready(mgr: &TileManager, key: &TileKey) -> bool {
+    // 无实体则尚未就绪。
     if !mgr.tile_entities.contains_key(key) {
         return false;
     }
+    // 纯色/无数据均为刻意的真实展示，视为就绪。
     if mgr.solid_tiles.contains(key) || mgr.no_data.contains(key) {
         return true;
     }
+    // 拉伸祖先的上采样不算就绪。
     if mgr.upsampled.contains(key) {
         return false;
     }
+    // 否则需自身纹理≥２５６才算真正展示真实像素。
     matches!(mgr.gpu_tex_size.get(key), Some(&s) if s >= 256)
 }
 
@@ -576,6 +643,7 @@ pub fn replacement_ready(mgr: &TileManager, key: &TileKey) -> bool {
 ///
 /// 原始：`dynamic_globe.rs:1451-1462`（逐字節保留）。
 pub fn has_live_ancestor(mgr: &TileManager, key: &TileKey) -> bool {
+    // 逐级上移父瓦片，任一祖先有实体即返回 true。
     let (mut x, mut y, mut z) = *key;
     while z > 0 {
         x >>= 1;
@@ -594,6 +662,7 @@ pub fn has_live_ancestor(mgr: &TileManager, key: &TileKey) -> bool {
 /// 原始：`dynamic_globe.rs:631-650`（逐字節保留）。
 pub fn protected_ancestors(mgr: &TileManager) -> HashSet<TileKey> {
     let mut prot: HashSet<TileKey> = HashSet::new();
+    // 对每个尚无实体的可见/加载瓦片，向上标记其整条祖先链。
     for v in mgr
         .visible_set
         .iter()
@@ -622,8 +691,10 @@ pub fn protected_ancestors(mgr: &TileManager) -> HashSet<TileKey> {
 pub fn start_mesh_builds(pipe: &mut MeshPipeline, jobs: Vec<(TileKey, u32, Option<[f32; 4]>)>) {
     let tx = pipe.tx.clone();
 
+    // 总调度线程：将任务均匀分片到 DOWNLOAD_THREADS 个并行构建 worker。
     std::thread::spawn(move || {
         let chunks: Vec<Vec<(TileKey, u32, Option<[f32; 4]>)>> = {
+            // 按索引取模分桶，使各 worker 负载大致均衡。
             let mut c: Vec<Vec<(TileKey, u32, Option<[f32; 4]>)>> =
                 (0..DefaultBudget::DOWNLOAD_THREADS).map(|_| Vec::new()).collect();
             for (i, job) in jobs.into_iter().enumerate() {
@@ -636,6 +707,7 @@ pub fn start_mesh_builds(pipe: &mut MeshPipeline, jobs: Vec<(TileKey, u32, Optio
         for chunk in chunks {
             let tx = tx.clone();
             handles.push(std::thread::spawn(move || {
+                // 逐任务构建网格：有 UV 回退矩形则用 UV 变体，否则常规；结果回传通道。
                 for (key, segments, uv) in chunk {
                     let mesh = match uv {
                         Some(rect) => create_tile_mesh_uv(key.0, key.1, key.2, segments, rect),
@@ -658,6 +730,7 @@ pub fn start_mesh_builds(pipe: &mut MeshPipeline, jobs: Vec<(TileKey, u32, Optio
 /// 从瓦片坐标进行 Bing Maps quadkey 编码。
 /// 原始：`dynamic_globe.rs:2112-2126`（逐字節保留）。
 pub fn tile_to_quadkey(x: u32, y: u32, level: u32) -> String {
+    // 从最高层到最低层逐位拼接：每位由 x/y 对应位组合成 0..3 的象限数码。
     let mut qk = String::with_capacity(level as usize);
     for i in (0..level).rev() {
         let mut d = 0u8;
@@ -678,6 +751,7 @@ pub fn tile_to_quadkey(x: u32, y: u32, level: u32) -> String {
 ///
 /// 原始：`dynamic_globe.rs:2133-2137`（逐字節保留）。
 pub fn start_downloads(tex_rx: &TextureReceiver, tiles: &[(TileKey, bool)]) {
+    // 逐个将（瓦片键, 是否降采样）任务投递到常驻 worker 池，非阻塞。
     for &(key, downscale) in tiles {
         let _ = tex_rx.job_tx.send((key, downscale));
     }
@@ -702,11 +776,13 @@ pub fn download_worker(
 ) {
     // 在 worker 启动时一次性解析离线配置（env 是进程全局的，
     // 进入 main() 后不可变 —— 无 TOCTOU 风险）。
+    // 一次性解析离线/严格/管线开关三个环境变量，后续循环直接复用。
     let offline_root = feature_flags::offline_imagery_root();
     let strict = feature_flags::strict_offline();
     let use_pipeline = pipeline_gate_enabled();
 
     loop {
+        // 阻塞式接收一个下载任务；投递通道关闭则退出 worker。
         let job = job_rx.lock().unwrap().recv();
         let Ok(((px, py, pz), downscale)) = job else {
             return;
@@ -723,10 +799,12 @@ pub fn download_worker(
         }
 
         // ── 离线路径：从磁盘读取 ─────────────────────────────────
+        // 若磁盘存在该瓦片 PNG：解码并检测占位图，必要时降采样后构建 mip 链回传。
         if let Some(root) = &offline_root {
             let path = root.join(pz.to_string()).join(px.to_string())
                 .join(format!("{}.png", py));
             match std::fs::read(&path) {
+                // 磁盘命中：解码并走与在线相同的占位/降采样/mip 链流程。
                 Ok(data) => {
                     if let Ok(img) = image::load_from_memory(&data) {
                         let rgba = img.to_rgba8();
@@ -742,6 +820,7 @@ pub fn download_worker(
                             });
                             continue;
                         }
+                        // downscale 且宽>128：三角滤波降采样到 128×128 以节省带宽/显存。
                         let (rgba, w, h) = if downscale && rgba.width() > 128 {
                             let small = image::DynamicImage::ImageRgba8(rgba).resize(
                                 128, 128, image::imageops::FilterType::Triangle,
@@ -783,6 +862,7 @@ pub fn download_worker(
         }
 
         // ── 在线路径：经 fetch_gated 访问 Bing Maps ───────────────────────
+        // 由瓦片坐标编码 quadkey，按 (x+y)%8 选子域拼出 Bing JPEG URL。
         let qk = tile_to_quadkey(px, py, pz);
         let sub = (px + py) % 8;
         let url = format!(
@@ -791,6 +871,7 @@ pub fn download_worker(
         );
 
         // STRICT_OFFLINE：任何 https URL 都是硬错误（M3 门槛 L127）。
+        // 严格模式下禁止任何网络获取，直接 panic 以暴露配置缺失。
         if strict && url.starts_with("https") {
             panic!(
                 "STRICT_OFFLINE=1: network fetch attempted for {} — \
@@ -800,16 +881,20 @@ pub fn download_worker(
         }
 
         // 退避重试：瓦片服务器会限流突发客户端。
+        // 最多 3 次尝试，指数退避；任一尝试成功（含占位判定）即送达并跳出。
         let mut delivered = false;
         for attempt in 0..3u32 {
+            // 重试前按 250ms×2^attempt 指数退避。
             if attempt > 0 {
                 std::thread::sleep(std::time::Duration::from_millis(250u64 << attempt));
             }
+            // 拉取字节并尝试解码为图像；任一步失败则 fetched 为 None。
             let fetched = match fetch_gated(&url, use_pipeline) {
                 Ok(data) => image::load_from_memory(&data).ok(),
                 Err(_) => None,
             };
             if let Some(img) = fetched {
+                // 解码成功：先做占位图检测（全均匀色视为无数据）。
                 let rgba = img.to_rgba8();
                 let (is_ph, ph_avg, ph_maxd) = is_placeholder_tile(&rgba);
                 if is_ph {
@@ -824,6 +909,7 @@ pub fn download_worker(
                     delivered = true;
                     break;
                 }
+                // 非占位图：按需降采样，构建 mip 链后回传成功结果。
                 let (rgba, w, h) = if downscale && rgba.width() > 128 {
                     let small = image::DynamicImage::ImageRgba8(rgba).resize(
                         128, 128, image::imageops::FilterType::Triangle,
@@ -845,6 +931,7 @@ pub fn download_worker(
                 break;
             }
         }
+        // 三次重试均未送达：报 retries-exhausted 并回传失败结果。
         if !delivered {
             eprintln!("[nodata] z{pz} x{px} y{py} verdict=retries-exhausted");
             let _ = tx.send(TileDownloadResult {
@@ -870,15 +957,19 @@ pub fn run_base_sphere_composite(
     materials: &mut Assets<StandardMaterial>,
     sphere: &Query<&MeshMaterial3d<StandardMaterial>, With<BaseSphereMarker>>,
 ) {
+    // 已完成合成则直接返回（一次性任务）。
     if state.done {
         return;
     }
+    // 若烘焙已投递：尝试取回结果，取到则给底球贴合成图并标记完成。
     if let Some(rx) = &state.rx {
         let Ok((chain, levels)) = rx.lock().unwrap().try_recv() else {
             return;
         };
+        // 将烘焙好的 mip 链包装为受限纹理句柄。
         let handle =
             base_sphere::make_clamped_image(images, chain, COMPOSITE_SIZE, COMPOSITE_SIZE, levels);
+        // 找到底球实体材质，换上合成影像作为基础色纹理。
         if let Ok(mat) = sphere.get_single() {
             if let Some(m) = materials.get_mut(&mat.0) {
                 m.base_color = Color::WHITE;
@@ -890,6 +981,7 @@ pub fn run_base_sphere_composite(
         return;
     }
 
+    // 尚未投递烘焙：列出 8×8 个基根（z=3）瓦片，全部就绪（有纹理或无数据）才启动烘焙。
     let keys: Vec<TileKey> = (0..8u32)
         .flat_map(|x| (0..8u32).map(move |y| (x, y, BASE_LAYER_ZOOM)))
         .collect();
@@ -910,6 +1002,7 @@ pub fn run_base_sphere_composite(
             .map(|img| {
                 let w = img.texture_descriptor.size.width;
                 let h = img.texture_descriptor.size.height;
+                // 无纹理的基根瓦片：用海洋纯色块占位。
                 base_sphere::box_downsample(&img.data[..(w * h * 4) as usize], w, COMPOSITE_TILE)
             })
             .unwrap_or_else(base_sphere::ocean_block);

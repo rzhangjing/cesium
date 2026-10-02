@@ -1,8 +1,11 @@
 //! Tipsify —— 用于顶点着色器后缓存优化的三角形重排序。
 //!
-//! CesiumJS `Core/Tipsify.js` 的忠实移植。
 //! 基于 2007 年 SIGGRAPH 论文 "Fast Triangle Reordering for Vertex Locality
 //! and Reduced Overdraw"（作者：Sander、Nehab 和 Barczak）。
+//!
+//! 核心思想：从一个起始顶点出发，反复选择“下一个最优顶点”并输出其邻接且尚未
+//! 发射的三角形，使共享顶点的三角形尽量相邻，从而提升后变换顶点缓存命中率。
+//! [`calculate_acmr`] 度量任意索引序列的平均未命中率，[`tipsify`] 则生成优化后的顺序。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -42,6 +45,7 @@ pub fn calculate_acmr(indices: &[u32], maximum_index: Option<u32>, cache_size: u
     let mut vertex_time_stamps = vec![0u32; (max_idx + 1) as usize];
 
     // 缓存处理
+    // 逐索引模拟 LRU 缓存：若某顶点已跌出缓存窗口则计为一次未命中并推入新时间戳。
     let mut s = cache_size + 1;
     for &idx in indices {
         if s - vertex_time_stamps[idx as usize] > cache_size {
@@ -96,6 +100,7 @@ pub fn tipsify(indices: &[u32], maximum_index: Option<u32>, cache_size: u32) -> 
         .collect();
 
     // 构建顶点-三角形邻接关系
+    // 逐三角形把其三个顶点各自登记到邻接表，并累加 live 三角形计数。
     let num_triangles = num_indices / 3;
     let mut triangle = 0usize;
     let mut current_index = 0usize;
@@ -116,6 +121,7 @@ pub fn tipsify(indices: &[u32], maximum_index: Option<u32>, cache_size: u32) -> 
     // 起始索引
     let mut f: i64 = 0;
     // 时间戳
+    // s 为全局单调递增的时间戳；f 为当前起始顶点，-1 表示遍历结束。
     let mut s = cache_size + 1;
     let mut cursor: usize = 1;
 
@@ -165,12 +171,29 @@ pub fn tipsify(indices: &[u32], maximum_index: Option<u32>, cache_size: u32) -> 
     output_indices
 }
 
+/// 单个顶点在重排序过程中的临时状态。
 struct VertexData {
+    /// 尚包含该顶点且未发射的三角形数量（发射过程中递减）。
     num_live_triangles: i32,
+    /// 该顶点最后一次命中缓存时的时间戳（用于判断是否在缓存窗口内）。
     time_stamp: u32,
+    /// 包含该顶点的三角形索引列表（顶点-三角形邻接表）。
     vertex_triangles: Vec<usize>,
 }
 
+/// 从当前顶点的邻接环中选出一个“下一个顶点”以继续遍历。
+///
+/// # 参数
+/// - `cache_size`：后变换缓存大小（条目数）。
+/// - `one_ring`：当前顶点邻接环内的候选顶点。
+/// - `vertices`：全顶点状态（含 live 三角形数与时间戳）。
+/// - `s`：当前全局时间戳。
+/// - `dead_end`：死胡同顶点栈，无候选时回退使用。
+/// - `maximum_index_plus_one`：顶点总数上界。
+/// - `cursor`：扫描未访问顶点的游标。
+///
+/// # 返回
+/// 下一顶点索引；若 one_ring 无可用则弹 dead_end，再不行则从 cursor 向后扫描；均无时返回 `-1`。
 fn get_next_vertex(
     cache_size: u32,
     one_ring: &[usize],

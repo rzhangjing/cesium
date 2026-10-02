@@ -1,7 +1,7 @@
 //! 椭球体体素形状实现。
 //!
-//! 映射到 CesiumJS `Scene/VoxelEllipsoidShape.js`。
-//! 边界为 [longitude, latitude, height]，默认从 [-π, -π/2, -1] 到 [π, π/2, 1]。
+//! 椭球体形状将体素数据以 (经度, 纬度, 高度) 参数空间映射，
+//! 边界默认从 [-π, -π/2, -1] 到 [π, π/2, 1]。
 
 use glam::{DMat3, DMat4, DVec3};
 
@@ -28,13 +28,21 @@ pub const ELLIPSOID_DEFAULT_MAX_BOUNDS: DVec3 = DVec3::new(
 /// - height（高度）：椭球面上/下的归一化高度
 #[derive(Debug, Clone)]
 pub struct VoxelEllipsoidShape {
+    /// 包含有界形状的有向包围盒。
     obb: OrientedBoundingBox,
+    /// 包含有界形状的包围球。
     bounding_sphere: BoundingSphere,
+    /// 有界形状的边界变换矩阵。
     bound_transform: DMat4,
+    /// 形状变换矩阵（忽略边界）。
     shape_transform: DMat4,
+    /// 形状最小边界（经度、纬度、高度）。
     min_bounds: DVec3,
+    /// 形状最大边界（经度、纬度、高度）。
     max_bounds: DVec3,
+    /// 裁剪后的最小渲染边界。
     render_min_bounds: DVec3,
+    /// 裁剪后的最大渲染边界。
     render_max_bounds: DVec3,
     /// 椭球半径 (a, b, c)。
     ellipsoid_radii: DVec3,
@@ -44,10 +52,12 @@ pub struct VoxelEllipsoidShape {
     local_to_shape_uv_translate: DVec3,
     /// 用于 UV 映射的经度范围原点。
     shape_uv_longitude_range_origin: f64,
+    /// 射线与该椭球体相交的最大数量。
     max_intersections: u32,
 }
 
 impl Default for VoxelEllipsoidShape {
+    /// 默认椭球体：单位包围体与恒等变换、边界 [-π,-π/2,-1]→[π,π/2,1]、WGS84 半径、最大相交 2。
     fn default() -> Self {
         Self {
             obb: OrientedBoundingBox::default(),
@@ -74,11 +84,13 @@ impl Default for VoxelEllipsoidShape {
 impl VoxelEllipsoidShape {
     /// 创建具有默认边界和 WGS84 半径的新椭球体形状。
     pub fn new() -> Self {
+        // 委托默认构造
         Self::default()
     }
 
     /// 使用自定义椭球半径创建。
     pub fn with_radii(radii: DVec3) -> Self {
+        // 仅覆盖半径，其余字段取默认值
         Self {
             ellipsoid_radii: radii,
             ..Default::default()
@@ -86,26 +98,36 @@ impl VoxelEllipsoidShape {
     }
 
     /// 获取最小边界（经度、纬度、高度）。
+    ///
+    /// 形状参数空间的左下角。
     pub fn min_bounds(&self) -> DVec3 {
         self.min_bounds
     }
 
     /// 获取最大边界。
+    ///
+    /// 形状参数空间的右上角。
     pub fn max_bounds(&self) -> DVec3 {
         self.max_bounds
     }
 
     /// 获取渲染最小边界。
+    ///
+    /// 裁剪后实际参与渲染范围的左下角。
     pub fn render_min_bounds(&self) -> DVec3 {
         self.render_min_bounds
     }
 
     /// 获取渲染最大边界。
+    ///
+    /// 裁剪后实际参与渲染范围的右上角。
     pub fn render_max_bounds(&self) -> DVec3 {
         self.render_max_bounds
     }
 
     /// 获取椭球半径。
+    ///
+    /// 依次为赤道半径 a、b 与极半径 c（单位：米）。
     pub fn ellipsoid_radii(&self) -> DVec3 {
         self.ellipsoid_radii
     }
@@ -113,6 +135,7 @@ impl VoxelEllipsoidShape {
     /// 将大地测量坐标 (lon, lat, height) 转换为椭球上的笛卡尔坐标。
     fn geodetic_to_cartesian(&self, lon: f64, lat: f64, height: f64) -> DVec3 {
         let radii = self.ellipsoid_radii;
+        // 纬度/经度的正余弦，用于构造单位法线方向
         let cos_lat = lat.cos();
         let sin_lat = lat.sin();
         let cos_lon = lon.cos();
@@ -124,8 +147,10 @@ impl VoxelEllipsoidShape {
         // 半径平方
         let r2 = DVec3::new(radii.x * radii.x, radii.y * radii.y, radii.z * radii.z);
         let n_r2 = DVec3::new(n.x / r2.x, n.y / r2.y, n.z / r2.z);
+        // gamma 为椭球面参数化中的比例因子
         let gamma = 1.0 / (n.x * n_r2.x + n.y * n_r2.y + n.z * n_r2.z).sqrt();
 
+        // 表面点 = gamma × 法线分量 × 半径平方
         let surface_point = DVec3::new(
             gamma * n.x / r2.x * radii.x * radii.x,
             gamma * n.y / r2.y * radii.y * radii.y,
@@ -139,6 +164,7 @@ impl VoxelEllipsoidShape {
     /// 为大地测量区域计算 OBB。
     fn compute_chunk_obb(&self, min_b: DVec3, max_b: DVec3) -> OrientedBoundingBox {
         // 采样角点和中点以找到包围盒
+        // 提取经度/纬度/高度的区间端点
         let lon_min = min_b.x;
         let lon_max = max_b.x;
         let lat_min = min_b.y;
@@ -147,6 +173,7 @@ impl VoxelEllipsoidShape {
         let h_max = max_b.z;
 
         let mut points = Vec::with_capacity(8);
+        // 三重循环采样 8 个角点的大地转笛卡尔坐标
         for &lon in &[lon_min, lon_max] {
             for &lat in &[lat_min, lat_max] {
                 for &h in &[h_min, h_max] {
@@ -161,6 +188,7 @@ impl VoxelEllipsoidShape {
         points.push(self.geodetic_to_cartesian(lon_mid, lat_mid, h_max));
 
         // 计算中心
+        // 中心取所有采样点的算术平均
         let mut center = DVec3::ZERO;
         for p in &points {
             center += *p;
@@ -168,6 +196,7 @@ impl VoxelEllipsoidShape {
         center /= points.len() as f64;
 
         // 以最大距离作为半径计算
+        // 遍历采样点取到中心的最大距离平方作为包围半径
         let mut max_dist_sq = 0.0_f64;
         for p in &points {
             let d = (*p - center).length_squared();
@@ -178,6 +207,7 @@ impl VoxelEllipsoidShape {
         let radius = max_dist_sq.sqrt();
 
         // 构造 OBB，方向为单位阵并按半径缩放
+        // 采用轴向单位阵乘半径，得到近似立方体包围
         let half_axes = DMat3::from_cols(
             DVec3::new(radius, 0.0, 0.0),
             DVec3::new(0.0, radius, 0.0),
@@ -188,26 +218,32 @@ impl VoxelEllipsoidShape {
 }
 
 impl VoxelShape for VoxelEllipsoidShape {
+    /// 返回包含形状的有向包围盒引用。
     fn oriented_bounding_box(&self) -> &OrientedBoundingBox {
         &self.obb
     }
 
+    /// 返回包含形状的包围球引用。
     fn bounding_sphere(&self) -> &BoundingSphere {
         &self.bounding_sphere
     }
 
+    /// 返回边界变换矩阵。
     fn bound_transform(&self) -> DMat4 {
         self.bound_transform
     }
 
+    /// 返回忽略边界的形状变换矩阵。
     fn shape_transform(&self) -> DMat4 {
         self.shape_transform
     }
 
+    /// 返回射线-形状相交的最大数量。
     fn maximum_intersections_length(&self) -> u32 {
         self.max_intersections
     }
 
+    /// 更新形状状态：设边界、裁剪、重建包围体并计算 UV 变换，返回是否可见。
     fn update(
         &mut self,
         model_matrix: DMat4,
@@ -216,12 +252,14 @@ impl VoxelShape for VoxelEllipsoidShape {
         clip_min_bounds: Option<DVec3>,
         clip_max_bounds: Option<DVec3>,
     ) -> bool {
+        // 未提供裁剪边界时退化为完整边界
         let clip_min = clip_min_bounds.unwrap_or(min_bounds);
         let clip_max = clip_max_bounds.unwrap_or(max_bounds);
 
         self.min_bounds = min_bounds;
         self.max_bounds = max_bounds;
 
+        // 渲染边界 = 形状与裁剪区间的逐轴交集
         let render_min = DVec3::new(
             min_bounds.x.max(clip_min.x),
             min_bounds.y.max(clip_min.y),
@@ -242,6 +280,7 @@ impl VoxelShape for VoxelEllipsoidShape {
             model_matrix.col(2).truncate().length(),
         );
 
+        // 任一区间反转或缩放分量为零则不可见
         if render_min.x > render_max.x
             || render_min.y > render_max.y
             || render_min.z > render_max.z
@@ -256,6 +295,7 @@ impl VoxelShape for VoxelEllipsoidShape {
         self.obb = self.compute_chunk_obb(render_min, render_max);
         self.bounding_sphere = BoundingSphere::from_obb(&self.obb);
 
+        // 重建 OBB、包围球，并由 OBB 的半轴/中心组装边界变换
         self.bound_transform = DMat4::from_cols(
             self.obb.half_axes.col(0).extend(0.0),
             self.obb.half_axes.col(1).extend(0.0),
@@ -263,16 +303,18 @@ impl VoxelShape for VoxelEllipsoidShape {
             self.obb.center.extend(1.0),
         );
 
-        // 计算 UV 变换
+        // 计算 UV 变换：逐轴求参数区间长度
         let lon_range = max_bounds.x - min_bounds.x;
         let lat_range = max_bounds.y - min_bounds.y;
         let height_range = max_bounds.z - min_bounds.z;
 
+        // 区间长度有效时取其倒数作缩放，否则取 0 避免除零
         let lon_scale = if lon_range.abs() > 1e-10 { 1.0 / lon_range } else { 0.0 };
         let lat_scale = if lat_range.abs() > 1e-10 { 1.0 / lat_range } else { 0.0 };
         let height_scale = if height_range.abs() > 1e-10 { 1.0 / height_range } else { 0.0 };
 
         self.local_to_shape_uv_scale = DVec3::new(lon_scale, lat_scale, height_scale);
+        // 平移使最小边界对齐 UV 原点
         self.local_to_shape_uv_translate = DVec3::new(
             -min_bounds.x * lon_scale,
             -min_bounds.y * lat_scale,
@@ -280,15 +322,17 @@ impl VoxelShape for VoxelEllipsoidShape {
         );
 
         // 经度范围原点
+        // 以整圈 TAU 为基准将最大经度归一到 [0,1]，处理跨圈环绕
         let default_lon_range = std::f64::consts::TAU;
         let uv_max_lon = (max_bounds.x - ELLIPSOID_DEFAULT_MIN_BOUNDS.x) / default_lon_range;
         let uv_lon_range_zero = 1.0 - lon_range / default_lon_range;
         self.shape_uv_longitude_range_origin = (uv_max_lon + 0.5 * uv_lon_range_zero) % 1.0;
 
-        // 计算相交数量
+        // 计算相交数量：默认上下高度面各一次
         let mut count = 2u32; // 高度最小 + 最大
         let epsilon = 1e-10;
         let half_lon_range = default_lon_range * 0.5;
+        // 经度区间不足整圈时按跨度追加侧向相交次数
         if lon_range < default_lon_range - epsilon {
             if lon_range >= half_lon_range - epsilon {
                 count += 1;
@@ -296,6 +340,7 @@ impl VoxelShape for VoxelEllipsoidShape {
                 count += 2;
             }
         }
+        // 纬度区间不足全球时追加一个纬度边界相交
         if lat_range < std::f64::consts::PI - epsilon {
             count += 1; // 纬度边界
         }
@@ -304,10 +349,12 @@ impl VoxelShape for VoxelEllipsoidShape {
         true
     }
 
+    /// 将局部坐标线性映射到椭球体的 [0,1] UV 空间。
     fn convert_local_to_shape_uv_space(&self, position_local: DVec3) -> DVec3 {
         self.local_to_shape_uv_scale * position_local + self.local_to_shape_uv_translate
     }
 
+    /// 为指定层级与索引的瓦片计算 OBB。
     fn compute_obb_for_tile(
         &self,
         tile_level: u32,
@@ -315,10 +362,12 @@ impl VoxelShape for VoxelEllipsoidShape {
         tile_y: u32,
         tile_z: u32,
     ) -> OrientedBoundingBox {
+        // 该层级每瓦片在参数空间的边长
         let size_at_level = 1.0 / (2.0_f64.powi(tile_level as i32));
         let min_b = self.min_bounds;
         let max_b = self.max_bounds;
 
+        // 由瓦片索引线性插值得到角点
         let tile_min = DVec3::new(
             lerp(min_b.x, max_b.x, tile_x as f64 * size_at_level),
             lerp(min_b.y, max_b.y, tile_y as f64 * size_at_level),
@@ -330,6 +379,7 @@ impl VoxelShape for VoxelEllipsoidShape {
             lerp(min_b.z, max_b.z, (tile_z + 1) as f64 * size_at_level),
         );
 
+        // 复用区块 OBB 计算得到瓦片包围盒
         self.compute_chunk_obb(tile_min, tile_max)
     }
 }

@@ -1,5 +1,12 @@
 //! EllipsoidRhumbLine - 椭球上的恒向线（斜航线）。
-//! 忠实移植自 CesiumJS `Source/Core/EllipsoidRhumbLine.js`
+//!
+//! 恒向线（loxodrome）是一条与所有经线相交成恒定方位角的曲线。本模块提供
+//! [`EllipsoidRhumbLine`] 及其构造、表面距离/方位角计算、与给定经纬度求交、
+//! 以及沿线的距离/比例插值等方法。
+//!
+//! 内部度量依赖于两组级数展开：`calculate_m` 沿子午线求等距纬度量，
+//! `calculate_inverse_m` 作其反变换；`calculate_sigma` 给出等角纬度量，用于
+//! 在经纬度间换算恒向线的方位角与经度差。当椭球退化为球时各公式自动简化。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -8,6 +15,18 @@ use crate::cartographic::Cartographic;
 use crate::ellipsoid::Ellipsoid;
 use crate::math_utils::{equals_epsilon, negative_pi_to_pi, sign, EPSILON10, EPSILON12, EPSILON14, EPSILON8, PI_OVER_TWO};
 
+/// 由纬度计算子午线弧长 `m`（等距纬度量，米）。
+///
+/// 采用勒让德级数展开到 e¹²，将大地纬度转换为沿子午线的展开长度；椭球退
+/// 化为球（`ellipticity == 0`）时直接返回 `major · latitude`。
+///
+/// # 参数
+/// - `ellipticity`：第一偏心率 e。
+/// - `major`：长半轴（米）。
+/// - `latitude`：大地纬度（弧度）。
+///
+/// # 返回
+/// 对应纬度的子午线弧长（米）。
 fn calculate_m(ellipticity: f64, major: f64, latitude: f64) -> f64 {
     if ellipticity == 0.0 {
         return major * latitude;
@@ -27,6 +46,8 @@ fn calculate_m(ellipticity: f64, major: f64, latitude: f64) -> f64 {
     let sin10_phi = (10.0 * phi).sin();
     let sin12_phi = (12.0 * phi).sin();
 
+    // 子午线弧长的勒让德级数：主项正比于 φ，其余各项按 sin(2kφ) 展开，
+    // 系数为偏心率 e 的偶次幂组合，展开到 e¹² 以保证椭球上的高精度。
     major
         * ((1.0 - e2 / 4.0 - (3.0 * e4) / 64.0 - (5.0 * e6) / 256.0
             - (175.0 * e8) / 16384.0
@@ -59,6 +80,15 @@ fn calculate_m(ellipticity: f64, major: f64, latitude: f64) -> f64 {
             + ((1001.0 * e12) / 8388608.0) * sin12_phi)
 }
 
+/// 由子午线弧长 `m` 反解对应纬度（`calculate_m` 的逆变换）。
+///
+/// # 参数
+/// - `m`：子午线弧长（米）。
+/// - `ellipticity`：第一偏心率 e。
+/// - `major`：长半轴（米）。
+///
+/// # 返回
+/// 归一化纬度（弧度）。
 fn calculate_inverse_m(m: f64, ellipticity: f64, major: f64) -> f64 {
     let d = m / major;
 
@@ -88,6 +118,8 @@ fn calculate_inverse_m(m: f64, ellipticity: f64, major: f64) -> f64 {
     let cos10_d = (10.0 * d).cos();
     let sin12_d = (12.0 * d).sin();
 
+    // 反演级数：以 d = m/major 为变量，把纬度展开为 d 与 e 幂次的多项式，
+    // 含 cos(2k·d) 与 sin(2k·d) 两类修正项，精度同样到 e¹²。
     d + (d * e2) / 4.0
         + (7.0 * d * e4) / 64.0
         + (15.0 * d * e6) / 256.0
@@ -149,16 +181,34 @@ fn calculate_inverse_m(m: f64, ellipticity: f64, major: f64) -> f64 {
         + ((293393.0 * e12) / 251658240.0) * sin12_d
 }
 
+/// 计算纬度对应的等角纬度量 `σ`（isometric latitude）。
+///
+/// # 参数
+/// - `ellipticity`：第一偏心率 e。
+/// - `latitude`：大地纬度（弧度）。
+///
+/// # 返回
+/// `ln(tan(π/4 + φ/2))` 减去含偏心率的修正项。
 fn calculate_sigma(ellipticity: f64, latitude: f64) -> f64 {
     if ellipticity == 0.0 {
         return (0.5 * (PI_OVER_TWO + latitude)).tan().ln();
     }
 
+    // 球面项减去椭球修正项（含 e·sinφ 的对数比）。
     let e_sin_l = ellipticity * latitude.sin();
     (0.5 * (PI_OVER_TWO + latitude)).tan().ln()
         - (ellipticity / 2.0) * ((1.0 + e_sin_l) / (1.0 - e_sin_l)).ln()
 }
 
+/// 计算由起点指向终点的恒向线方位角。
+///
+/// # 参数
+/// - `ellipticity`：第一偏心率 e。
+/// - `first_longitude`/`first_latitude`：起点经纬度（弧度）。
+/// - `second_longitude`/`second_latitude`：终点经纬度（弧度）。
+///
+/// # 返回
+/// 方位角（弧度），由两点等角纬度差与经度差共同确定。
 fn calculate_heading(
     ellipticity: f64,
     first_longitude: f64,
@@ -166,11 +216,23 @@ fn calculate_heading(
     second_longitude: f64,
     second_latitude: f64,
 ) -> f64 {
+    // 方位角即经度差与等角纬度差在切平面上的反正切。
     let sigma1 = calculate_sigma(ellipticity, first_latitude);
     let sigma2 = calculate_sigma(ellipticity, second_latitude);
     (negative_pi_to_pi(second_longitude - first_longitude)).atan2(sigma2 - sigma1)
 }
 
+/// 计算恒向线上两点间的表面弧长（米）。
+///
+/// # 参数
+/// - `ellipticity`/`ellipticity_squared`：第一偏心率 e 与 e²。
+/// - `major`/`minor`：长/短半轴（米）。
+/// - `heading`：恒向线方位角（弧度）。
+/// - `first_latitude`/`second_latitude`：起/止纬度（弧度）。
+/// - `delta_longitude`：经度差（弧度）。
+///
+/// # 返回
+/// 表面弧长的绝对值（米）；东西向（heading≈±π/2）沿平行圈量取。
 fn calculate_arc_length(
     ellipticity: f64,
     ellipticity_squared: f64,
@@ -201,6 +263,17 @@ fn calculate_arc_length(
     distance.abs()
 }
 
+/// 沿恒向线自起点前进给定表面距离，返回终点大地坐标。
+///
+/// # 参数
+/// - `start`：起点大地坐标。
+/// - `heading`：恒向线方位角（弧度）。
+/// - `distance`：沿恒向线行进的表面距离（米）。
+/// - `major`：长半轴（米）。
+/// - `ellipticity`：第一偏心率 e。
+///
+/// # 返回
+/// 距离对应的终点大地坐标（高度置 0）。
 fn interpolate_using_surface_distance(
     start: &Cartographic,
     heading: f64,
@@ -262,13 +335,21 @@ fn interpolate_using_surface_distance(
 /// 映射到 CesiumJS `EllipsoidRhumbLine`
 #[derive(Clone, Debug)]
 pub struct EllipsoidRhumbLine {
+    /// 起点大地坐标（高度已置 0）。
     start: Cartographic,
+    /// 终点大地坐标（高度已置 0）。
     end: Cartographic,
+    /// 恒向线方位角（弧度，正北为 0，顺时针）。
     heading: f64,
+    /// 起终点间的表面距离（米）。
     distance: f64,
+    /// 椭球第一偏心率 e。
     ellipticity: f64,
+    /// 第一偏心率的平方 e²。
     ellipticity_squared: f64,
+    /// 长半轴（米）。
     major: f64,
+    /// 短半轴（米）；当前仅参与偏心率推导，暂未直接读取。
     #[allow(dead_code)]
     minor: f64,
 }
@@ -283,6 +364,7 @@ impl EllipsoidRhumbLine {
         let ellipticity_squared = (major_squared - minor_squared) / major_squared;
         let ellipticity = ellipticity_squared.sqrt();
 
+        // 先求恒向线方位角，再据此计算起终点间的表面距离。
         let heading = calculate_heading(
             ellipticity,
             start.longitude,
@@ -426,6 +508,7 @@ impl EllipsoidRhumbLine {
         }
 
         // 来自 http://edwilliams.org/ellipsoid/ellipsoid.pdf 第 9 个公式的迭代求解器
+        // 反复用等角纬度的闭式解更新 φ，直到相邻两次差值进入 EPSILON12 容差。
         let phi1 = start.latitude;
         let e_sin_phi1 = ellipticity * phi1.sin();
         let left_component = (0.5 * (PI_OVER_TWO + phi1)).tan()
@@ -474,6 +557,7 @@ impl EllipsoidRhumbLine {
 
     /// 在恒向线上按给定比例（0..1）插值一个点。
     pub fn interpolate_using_fraction(&self, fraction: f64) -> Cartographic {
+        // 比例先换算成沿恒向线的表面距离，再委托距离版插值。
         self.interpolate_using_surface_distance(fraction * self.distance)
     }
 

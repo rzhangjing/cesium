@@ -1,8 +1,13 @@
 //! Simon1994PlanetaryPositions - 在地心惯性系中计算日/月位置。
 //!
-//! 忠实移植自 CesiumJS `Simon1994PlanetaryPositions.js`。
 //! 参考：Simon et al. 1994, "Numerical expressions for precession formulae
 //! and mean elements for the Moon and the planets"
+//!
+//! 本模块按 Simon 等人 1994 年的数值展开式，先求地月质心与月球、地球在
+//! Simon1994 参考系中的位置，再经固定的坐标轴变换矩阵换算到 J2000 地心
+//! 惯性系，对外提供 [`compute_sun_position_in_earth_inertial_frame`] 与
+//! [`compute_moon_position_in_earth_inertial_frame`] 两个入口。轨道根数到笛卡尔
+//! 位置的转换基于简化的二体模型，平近点角经牛顿迭代解算为真近点角。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -21,11 +26,25 @@ const DAYS_PER_JULIAN_CENTURY: f64 = 36525.0;
 const TWO_PI: f64 = 2.0 * std::f64::consts::PI;
 const EPSILON8: f64 = 1.0e-8;
 
+/// 计算 TDB 与 TT 的差值（秒），采用 Spencer 的近似公式。
+///
+/// # 参数
+/// - `days_since_j2000_in_terrestrial_time`：以 TT 计的自 J2000 起天数。
+///
+/// # 返回
+/// `TDB - TT`（秒），量级约毫秒，源于地球轨道偏心率引起的周期项。
 fn compute_tdb_minus_tt_spice(days_since_j2000_in_terrestrial_time: f64) -> f64 {
     let g = 6.239996 + 0.0172019696544 * days_since_j2000_in_terrestrial_time;
     1.657e-3 * (g + 1.671e-2 * g.sin()).sin()
 }
 
+/// 将给定的 TAI 儒略日期转换为 TDB 儒略日期。
+///
+/// # 参数
+/// - `date`：以 TAI 计的时刻。
+///
+/// # 返回
+/// 先加固定常数得到 TT，再叠加 TDB-TT 周期项得到的 TDB 时刻。
 fn tai_to_tdb(date: &JulianDate) -> JulianDate {
     // 将 TAI 转换为 TT
     let tt = date.add_seconds(TDT_MINUS_TAI);
@@ -34,6 +53,13 @@ fn tai_to_tdb(date: &JulianDate) -> JulianDate {
     tt.add_seconds(compute_tdb_minus_tt_spice(days))
 }
 
+/// 将任意角度归一化到 `[0, 2π)` 区间。
+///
+/// # 参数
+/// - `angle`：待归一化的角度（弧度）。
+///
+/// # 返回
+/// 与之终边相同、落在 `[0, 2π)` 内的角度。
 fn zero_to_two_pi(angle: f64) -> f64 {
     let mut result = angle % TWO_PI;
     if result < 0.0 {
@@ -42,6 +68,14 @@ fn zero_to_two_pi(angle: f64) -> f64 {
     result
 }
 
+/// 由平近点角求解偏近点角（牛顿-拉夫森迭代解开普勒方程）。
+///
+/// # 参数
+/// - `mean_anomaly`：平近点角 M（弧度）。
+/// - `eccentricity`：轨道偏心率 e。
+///
+/// # 返回
+/// 偏近点角 E，满足 `M = E - e·sinE`；迭代收敛后补回被剥离的整圈数。
 fn mean_anomaly_to_eccentric_anomaly(mean_anomaly: f64, eccentricity: f64) -> f64 {
     let revs = (mean_anomaly / TWO_PI).floor();
     let mut ma = mean_anomaly - revs * TWO_PI;
@@ -66,6 +100,14 @@ fn mean_anomaly_to_eccentric_anomaly(mean_anomaly: f64, eccentricity: f64) -> f6
     iteration_value + revs * TWO_PI
 }
 
+/// 由偏近点角求解真近点角。
+///
+/// # 参数
+/// - `eccentric_anomaly`：偏近点角 E（弧度）。
+/// - `eccentricity`：轨道偏心率 e。
+///
+/// # 返回
+/// 真近点角 ν（弧度），保持与输入的整圈数一致。
 fn eccentric_anomaly_to_true_anomaly(eccentric_anomaly: f64, eccentricity: f64) -> f64 {
     let revs = (eccentric_anomaly / TWO_PI).floor();
     let ea = eccentric_anomaly - revs * TWO_PI;
@@ -82,6 +124,14 @@ fn eccentric_anomaly_to_true_anomaly(eccentric_anomaly: f64, eccentricity: f64) 
     true_anomaly + revs * TWO_PI
 }
 
+/// 由平近点角直接求取真近点角（串联偏近点角两步转换）。
+///
+/// # 参数
+/// - `mean_anomaly`：平近点角 M（弧度）。
+/// - `eccentricity`：轨道偏心率 e。
+///
+/// # 返回
+/// 真近点角 ν（弧度）。
 fn mean_anomaly_to_true_anomaly(mean_anomaly: f64, eccentricity: f64) -> f64 {
     let ea = mean_anomaly_to_eccentric_anomaly(mean_anomaly, eccentricity);
     eccentric_anomaly_to_true_anomaly(ea, eccentricity)
@@ -89,6 +139,11 @@ fn mean_anomaly_to_true_anomaly(mean_anomaly: f64, eccentricity: f64) -> f64 {
 
 /// 计算从近焦点（PQW）系到惯性笛卡尔系的变换矩阵。
 /// 返回一个 DMat3（列主序）。
+///
+/// # 参数
+/// - `argument_of_periapsis`：近地点幅角 ω（弧度）。
+/// - `inclination`：轨道倾角 i（弧度）。
+/// - `right_ascension`：升交点赤经 Ω（弧度）。
 fn perifocal_to_cartesian_matrix(
     argument_of_periapsis: f64,
     inclination: f64,
@@ -115,6 +170,18 @@ fn perifocal_to_cartesian_matrix(
     ])
 }
 
+/// 由轨道根数计算惯性笛卡尔位置（Simon1994 简化二体模型）。
+///
+/// # 参数
+/// - `semimajor_axis`：半长轴（米）。
+/// - `eccentricity`：偏心率 e。
+/// - `inclination`：倾角 i（弧度）；为负时翻转并调整升交点经度。
+/// - `longitude_of_perigee`：近地点经度 ϖ（弧度）。
+/// - `longitude_of_node`：升交点经度 Ω（弧度）。
+/// - `mean_longitude`：平经度 L（弧度）。
+///
+/// # 返回
+/// 近焦点系位置经旋转矩阵变换到惯性系后的笛卡尔坐标。
 fn elements_to_cartesian(
     semimajor_axis: f64,
     eccentricity: f64,
@@ -211,6 +278,12 @@ const SL7: f64 = -112.0e-7;
 const SL8: f64 = -80.0e-7;
 
 /// 获取一个描述地月质心运动的点（第 6 节）。
+///
+/// # 参数
+/// - `date`：儒略日期（TAI），内部换算为 TDB 后求自 J2000 的世纪数。
+///
+/// # 返回
+/// 地月质心在 Simon1994 坐标系中的惯性位置（米）。
 fn compute_simon_earth_moon_barycenter(date: &JulianDate) -> DVec3 {
     let tdb = tai_to_tdb(date);
     let x = tdb.total_days() - J2000D;
@@ -273,6 +346,12 @@ fn compute_simon_earth_moon_barycenter(date: &JulianDate) -> DVec3 {
 }
 
 /// 获取一个描述月球位置的点（第 4 节）。
+///
+/// # 参数
+/// - `date`：儒略日期（TAI），内部换算为 TDB 并求各阶时间幂。
+///
+/// # 返回
+/// 月球在 Simon1994 坐标系中的惯性位置（米），含大量周期撒动项。
 fn compute_simon_moon(date: &JulianDate) -> DVec3 {
     let tdb = tai_to_tdb(date);
     let x = tdb.total_days() - J2000D;
@@ -433,6 +512,13 @@ fn compute_simon_moon(date: &JulianDate) -> DVec3 {
 const MOON_EARTH_MASS_RATIO: f64 = 0.012300034;
 const EARTH_FACTOR: f64 = MOON_EARTH_MASS_RATIO / (MOON_EARTH_MASS_RATIO + 1.0) * -1.0;
 
+/// 计算地球相对地月质心的位置偏移。
+///
+/// # 参数
+/// - `date`：儒略日期（TAI）。
+///
+/// # 返回
+/// 月球位置乘以地月质量比导出的地球因子，即地球绕地月质心的位置。
 fn compute_simon_earth(date: &JulianDate) -> DVec3 {
     compute_simon_moon(date) * EARTH_FACTOR
 }

@@ -1,50 +1,46 @@
-//! 内置材质的 GLSL 着色器源码。
+//! 内置材质的 GLSL 着色器源码常量集合。
 //!
-//! 映射到 CesiumJS `Source/Shaders/Materials/*.glsl`。这些正是
-//! `Scene/Material.js` 中内置材质定义所引用的着色器源码
-//! （在那里以 `Shaders/Materials/*.js` 导入）。
-//!
-//! 领域层逐字存储并组合这些源码（纯文本处理，与 CesiumJS 的
-//! `Material` 做法完全一致）。bevy-render 适配器负责在渲染时将它们
-//! 翻译为 WGSL。
+//! 每个常量以 include_str! 引入 ../shaders/ 目录下对应的着色器文件，
+//! 领域层逐字存储并按 Fabric 规则组合这些源码（纯文本处理）。
+//! 渲染适配器负责在渲染时将它们翻译为目标着色语言。
 
-/// `Shaders/Materials/AspectRampMaterial.glsl`
+/// 宽高比渐变材质的 GLSL 着色器源码。
 pub const ASPECT_RAMP_MATERIAL: &str = include_str!("../shaders/AspectRampMaterial.glsl");
-/// `Shaders/Materials/BumpMapMaterial.glsl`
+/// 凹凸贴图材质的 GLSL 着色器源码。
 pub const BUMP_MAP_MATERIAL: &str = include_str!("../shaders/BumpMapMaterial.glsl");
-/// `Shaders/Materials/CheckerboardMaterial.glsl`
+/// 棋盘格材质的 GLSL 着色器源码。
 pub const CHECKERBOARD_MATERIAL: &str = include_str!("../shaders/CheckerboardMaterial.glsl");
-/// `Shaders/Materials/DotMaterial.glsl`
+/// 点阵材质的 GLSL 着色器源码。
 pub const DOT_MATERIAL: &str = include_str!("../shaders/DotMaterial.glsl");
-/// `Shaders/Materials/ElevationBandMaterial.glsl`
+/// 高程分层材质的 GLSL 着色器源码。
 pub const ELEVATION_BAND_MATERIAL: &str = include_str!("../shaders/ElevationBandMaterial.glsl");
-/// `Shaders/Materials/ElevationContourMaterial.glsl`
+/// 高程等高线材质的 GLSL 着色器源码。
 pub const ELEVATION_CONTOUR_MATERIAL: &str =
     include_str!("../shaders/ElevationContourMaterial.glsl");
-/// `Shaders/Materials/ElevationRampMaterial.glsl`
+/// 高程渐变材质的 GLSL 着色器源码。
 pub const ELEVATION_RAMP_MATERIAL: &str = include_str!("../shaders/ElevationRampMaterial.glsl");
-/// `Shaders/Materials/FadeMaterial.glsl`
+/// 淡出材质的 GLSL 着色器源码。
 pub const FADE_MATERIAL: &str = include_str!("../shaders/FadeMaterial.glsl");
-/// `Shaders/Materials/GridMaterial.glsl`
+/// 网格材质的 GLSL 着色器源码。
 pub const GRID_MATERIAL: &str = include_str!("../shaders/GridMaterial.glsl");
-/// `Shaders/Materials/NormalMapMaterial.glsl`
+/// 法线贴图材质的 GLSL 着色器源码。
 pub const NORMAL_MAP_MATERIAL: &str = include_str!("../shaders/NormalMapMaterial.glsl");
-/// `Shaders/Materials/PolylineArrowMaterial.glsl`
+/// 箭头线材质的 GLSL 着色器源码。
 pub const POLYLINE_ARROW_MATERIAL: &str = include_str!("../shaders/PolylineArrowMaterial.glsl");
-/// `Shaders/Materials/PolylineDashMaterial.glsl`
+/// 虚线材质的 GLSL 着色器源码。
 pub const POLYLINE_DASH_MATERIAL: &str = include_str!("../shaders/PolylineDashMaterial.glsl");
-/// `Shaders/Materials/PolylineGlowMaterial.glsl`
+/// 发光线材质的 GLSL 着色器源码。
 pub const POLYLINE_GLOW_MATERIAL: &str = include_str!("../shaders/PolylineGlowMaterial.glsl");
-/// `Shaders/Materials/PolylineOutlineMaterial.glsl`
+/// 描边线材质的 GLSL 着色器源码。
 pub const POLYLINE_OUTLINE_MATERIAL: &str =
     include_str!("../shaders/PolylineOutlineMaterial.glsl");
-/// `Shaders/Materials/RimLightingMaterial.glsl`
+/// 边缘光照材质的 GLSL 着色器源码。
 pub const RIM_LIGHTING_MATERIAL: &str = include_str!("../shaders/RimLightingMaterial.glsl");
-/// `Shaders/Materials/SlopeRampMaterial.glsl`
+/// 坡度渐变材质的 GLSL 着色器源码。
 pub const SLOPE_RAMP_MATERIAL: &str = include_str!("../shaders/SlopeRampMaterial.glsl");
-/// `Shaders/Materials/StripeMaterial.glsl`
+/// 条纹材质的 GLSL 着色器源码。
 pub const STRIPE_MATERIAL: &str = include_str!("../shaders/StripeMaterial.glsl");
-/// `Shaders/Materials/Water.glsl`
+/// 水面材质的 GLSL 着色器源码。
 pub const WATER_MATERIAL: &str = include_str!("../shaders/Water.glsl");
-/// `Shaders/Materials/WaterMaskMaterial.glsl`
+/// 水面遮罩材质的 GLSL 着色器源码。
 pub const WATER_MASK_MATERIAL: &str = include_str!("../shaders/WaterMaskMaterial.glsl");

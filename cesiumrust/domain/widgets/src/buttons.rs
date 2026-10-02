@@ -1,12 +1,9 @@
 //! 按钮 widget 视图模型。
 //!
-//! 映射到 CesiumJS：
-//! - `HomeButton/HomeButtonViewModel.js`
-//! - `FullscreenButton/FullscreenButtonViewModel.js`
-//! - `NavigationHelpButton/NavigationHelpButtonViewModel.js`
-//! - `VRButton/VRButtonViewModel.js`
-
-// 遗留 CesiumJS 移植风格债（deferred.md #18）；将在 M13 lint 清理，或本文件在其所属里程碑被重写时重新审视
+//! 提供查看器常用按钮的纯领域视图模型：主页、全屏、导航帮助与 VR，
+//! 共享一个通用切换按钮 [`ToggleButtonViewModel`] 作为基础形态。
+//!
+//! 本模块只管按钮的状态与提示文本，不依赖任何具体 UI 框架。
 #![allow(clippy::field_reassign_with_default)]
 /// 一个通用的切换按钮视图模型。
 #[derive(Debug, Clone)]
@@ -34,6 +31,7 @@ impl ToggleButtonViewModel {
 
     /// 切换按钮状态。
     pub fn toggle(&mut self) {
+        // 仅当按钮启用时才翻转，禁用态下点击被忽略
         if self.is_enabled {
             self.is_toggled = !self.is_toggled;
         }
@@ -67,6 +65,7 @@ pub struct HomeButtonViewModel {
 }
 
 impl Default for HomeButtonViewModel {
+    /// 默认提示 "View Home"、可见、飞行时长 1.5 秒，从远处正对赤道眺望地球。
     fn default() -> Self {
         Self {
             tooltip: "View Home".to_string(),
@@ -117,6 +116,7 @@ pub struct FullscreenButtonViewModel {
 }
 
 impl Default for FullscreenButtonViewModel {
+    /// 默认非全屏、双提示文本就绪、可见且环境支持全屏。
     fn default() -> Self {
         Self {
             is_fullscreen: false,
@@ -143,6 +143,7 @@ impl FullscreenButtonViewModel {
 
     /// 获取当前提示文本。
     pub fn current_tooltip(&self) -> &str {
+        // 依当前是否全屏在两套文案间选择
         if self.is_fullscreen {
             &self.exit_tooltip
         } else {
@@ -167,6 +168,7 @@ pub struct NavigationHelpButtonViewModel {
 }
 
 impl Default for NavigationHelpButtonViewModel {
+    /// 默认帮助面板隐藏、提示 "Navigation Instructions"、按钮可见且为鼠标模式。
     fn default() -> Self {
         Self {
             is_help_visible: false,
@@ -227,6 +229,7 @@ pub struct VRButtonViewModel {
 }
 
 impl Default for VRButtonViewModel {
+    /// 默认 VR 未激活、双提示文本就绪、按钮可见但环境不支持 VR。
     fn default() -> Self {
         Self {
             is_vr_active: false,

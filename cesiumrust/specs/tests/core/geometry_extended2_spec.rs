@@ -1,7 +1,7 @@
 //! CircleOutline、FrustumGeometry 与 GroundPolyline
 //! 几何的扩展数学属性测试。
 //!
-//! 移植自 CesiumJS CircleOutlineGeometrySpec/FrustumGeometrySpec/
+//! 参考自 CesiumJS CircleOutlineGeometrySpec/FrustumGeometrySpec/
 //! GroundPolylineGeometrySpec 的 A 类测试。
 
 use cesium_geospatial::ellipsoid::Ellipsoid;

@@ -1,12 +1,13 @@
 //! 3D Tiles Styling 表达式引擎的动态值、JS 强制转换/相等语义与运行时错误类型。
 //!
-//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs`：
-//! - `RegExpValue`            ← L47-104
-//! - `Value` 枚举 + impl     ← L109-224
-//! - `number_to_js_string`    ← L228-240
-//! - `js_parse_number`        ← L244-259
+//! 本模块定义 styling 表达式求值用到的动态值类型：
+//! - `RegExpValue`：编译后的正则值（实际实现在 `regex.rs`，此处仅复用）
+//! - `Value` 枚举 + impl：标量/向量/字符串/数组/正则的统一运行时表示
+//! - `number_to_js_string`：以 JS 字符串插值语义格式化数字
+//! - `js_parse_number`：JS `Number()` / `parseFloat` 风格的宽松数字解析
 //!
-//! 它本身就是上游 `packages/engine/Source/Scene/Expression.js` 的 Rust 移植。
+//! 这些类型共同构成求值器运行时的值域，需要精确复现 JS 的强制转换与
+//! 相等语义（严格 `===` 与宽松 `==` 两条路径）。
 //!
 //! # M7-A 作用域说明（基础层）
 //!
@@ -20,7 +21,7 @@
 //!   本模块只是为 [`Value::RegExp`] 变体、它的 `String()` 形式与相等而复用它；
 //!   `compile` / `test` / `exec_first_capture` 见 `regex.rs`。
 //! * 新增（相对 blueprint）：[`Value::equals_loose`] 实现 JS 抽象相等（`==`）。
-//!   styling 语言本身只定义 `===` / `!==`（Expression.js L1001-1004；blueprint
+//!   styling 语言本身只定义 `===` / `!==`（对应求值器的严格相等分支；blueprint
 //!   `equals_strict`），所以 `PartialEq` 和 `equals_strict` 保持**严格**
 //!   （忠于 blueprint）；提供 `equals_loose` 是为了让完整的 JS 相等怪癖面
 //!   （宽松强制转换）能在此表达并单元测试，并被 M7-B / 横切 specs 复用。
@@ -37,6 +38,7 @@ use crate::regex::RegExpValue;
 /// 镜像 `new RuntimeError(message)`。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeError {
+    /// 人类可读的错误消息文本。
     message: String,
 }
 
@@ -55,6 +57,7 @@ impl RuntimeError {
 }
 
 impl std::fmt::Display for RuntimeError {
+    /// 直接把错误消息文本作为渲染结果输出。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.message)
     }
@@ -227,6 +230,7 @@ impl Value {
 }
 
 impl std::fmt::Display for Value {
+    /// 以 [`Value::string_conversion`] 的 JS `String()` 结果渲染。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.string_conversion())
     }
@@ -238,6 +242,7 @@ impl std::fmt::Display for Value {
 ///
 /// 这是忠于 blueprint 的（严格）。JS `==` 请用 [`Value::equals_loose`]。
 impl PartialEq for Value {
+    /// 深度严格相等：regex 比 source/flags，数组逐元素比较，其余委托 `equals_strict`。
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             // RegExpValue 持有一个编译的 Regex（无 PartialEq）；按
@@ -249,8 +254,8 @@ impl PartialEq for Value {
     }
 }
 
-/// 以 JS 字符串插值的方式格式化一个数字（镜像 Expression.js
-/// 所有 RuntimeError 消息中使用的 `${}` 插值）。
+/// 以 JS 字符串插值的方式格式化一个数字（镜像运行时错误消息里
+/// 所有 `${}` 插值所采用的转换规则）。
 pub fn number_to_js_string(number: f64) -> String {
     if number.is_nan() {
         return "NaN".to_string();
@@ -269,9 +274,11 @@ pub fn number_to_js_string(number: f64) -> String {
 /// 十六进制；空串为 `0`；其他任何都是 `NaN`）。
 pub fn js_parse_number(text: &str) -> f64 {
     let trimmed = text.trim();
+    // 空串（或仅空白）按 JS 语义强制转为 0。
     if trimmed.is_empty() {
         return 0.0;
     }
+    // 0x/0X 前缀走十六进制解析；非法十六进制回 NaN。
     if let Some(hex) = trimmed
         .strip_prefix("0x")
         .or_else(|| trimmed.strip_prefix("0X"))

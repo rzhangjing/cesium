@@ -62,6 +62,7 @@ pub struct SnapConfig {
 }
 
 impl Default for SnapConfig {
+    /// 缺省即禁用：全零阈值 + 无网格，保证未显式开启时现有行为不变。
     fn default() -> Self {
         Self {
             enabled: false,
@@ -75,9 +76,11 @@ impl Default for SnapConfig {
 /// 将一个坐标舍入到规则的 `step_deg` 经纬网格上。非正或非
 /// 有限的步长为空操作。
 pub fn snap_to_grid(p: GeoPoint, step_deg: f64) -> GeoPoint {
+    // 非有限或零步长：原样返回（空操作）。
     if !step_deg.is_finite() || step_deg <= 0.0 {
         return p;
     }
+    // 各自除以步长四舍五入后再乘回，即落到最近的网格线。
     let lon = (p.lon_deg / step_deg).round() * step_deg;
     let lat = (p.lat_deg / step_deg).round() * step_deg;
     GeoPoint::new(lon, lat, p.height_m)
@@ -96,12 +99,15 @@ pub fn snap_to_vertex(
         return None;
     }
     let mut best: Option<(f64, GeoPoint)> = None;
+    // 遍历全部其他元素的顶点，记录阈值内最近的一个。
     for element in doc.elements() {
+        // 正在编辑的元素自身不参与吸附（避免顶点卡入自己）。
         if Some(element.id) == exclude {
             continue;
         }
         for v in element.geometry.vertices() {
             let d = p.surface_distance(v);
+            // 仅在严格更近时刷新最优，保证确定性。
             if d <= threshold_m && best.map(|(bd, _)| d < bd).unwrap_or(true) {
                 best = Some((d, v));
             }
@@ -113,6 +119,7 @@ pub fn snap_to_vertex(
 /// 一个几何的每一条线段，以连续的顶点对表示。环被视为
 /// 闭合（last → first）。点类几何不贡献任何线段。
 fn segments(g: &Geometry) -> Vec<(GeoPoint, GeoPoint)> {
+    // 将一串点展开为相邻顶点对；closed 时补上末→首的闭合边。
     fn chain(pts: &[GeoPoint], closed: bool, out: &mut Vec<(GeoPoint, GeoPoint)>) {
         for w in pts.windows(2) {
             out.push((w[0], w[1]));
@@ -122,6 +129,7 @@ fn segments(g: &Geometry) -> Vec<(GeoPoint, GeoPoint)> {
         }
     }
     let mut out = Vec::new();
+    // 逐几何类型展开为其线段集合；点类不贡献任何段。
     match g {
         Geometry::Polyline(pl) => chain(&pl.positions, false, &mut out),
         Geometry::Polygon(pg) => {
@@ -163,9 +171,11 @@ fn segments(g: &Geometry) -> Vec<(GeoPoint, GeoPoint)> {
 /// 线段 `a`–`b` 上离 `p` 最近的点（在经/纬度上按平面处理，
 /// 在编辑尺度下是一个很好的近似）。
 fn closest_on_segment(a: GeoPoint, b: GeoPoint, p: GeoPoint) -> GeoPoint {
+    // 以经纬度平面近似：求 p 在线段 a–b 上的投影参数 t（钳制到 [0,1]）。
     let dx = b.lon_deg - a.lon_deg;
     let dy = b.lat_deg - a.lat_deg;
     let len2 = dx * dx + dy * dy;
+    // 退化线段（长度≈ 0）→ 直接返回端点 a。
     if len2 <= 1e-24 {
         return a;
     }
@@ -184,6 +194,7 @@ pub fn snap_to_edge(
         return None;
     }
     let mut best: Option<(f64, GeoPoint)> = None;
+    // 遍历其他元素的每条边，取阈值内最近的投影点。
     for element in doc.elements() {
         if Some(element.id) == exclude {
             continue;
@@ -191,6 +202,7 @@ pub fn snap_to_edge(
         for (a, b) in segments(&element.geometry) {
             let c = closest_on_segment(a, b, p);
             let d = p.surface_distance(c);
+            // 仅在严格更近时刷新最优。
             if d <= threshold_m && best.map(|(bd, _)| d < bd).unwrap_or(true) {
                 best = Some((d, c));
             }
@@ -207,15 +219,19 @@ pub fn snap(
     cfg: &SnapConfig,
     exclude: Option<ElementId>,
 ) -> SnapResult {
+    // 总开关关闭 → 原样返回。
     if !cfg.enabled {
         return SnapResult::None(p);
     }
+    // 优先级一：顶点。
     if let Some(v) = snap_to_vertex(doc, p, cfg.vertex_threshold_m, exclude) {
         return SnapResult::Vertex(v);
     }
+    // 优先级二：边。
     if let Some(e) = snap_to_edge(doc, p, cfg.edge_threshold_m, exclude) {
         return SnapResult::Edge(e);
     }
+    // 优先级三：网格（仅当舍入确实改变了坐标时）。
     if let Some(step) = cfg.grid_step_deg {
         let g = snap_to_grid(p, step);
         if g != p {
@@ -231,10 +247,12 @@ mod tests {
     use crate::model::geometry::{Polygon, Polyline, Rectangle};
     use crate::model::Document;
 
+    /// 快捷构造一个地面点（高度 0）。
     fn p(lon: f64, lat: f64) -> GeoPoint {
         GeoPoint::surface(lon, lat)
     }
 
+    /// 构造一份含折线（顶点 (1,1)）与远处矩形的测试文档。
     fn doc() -> Document {
         let mut d = Document::default();
         let l = d.new_layer("L");
@@ -260,15 +278,18 @@ mod tests {
         d
     }
 
+    /// 缺省配置为禁用：吸附是空操作，原样返回。
     #[test]
     fn disabled_by_default_is_a_noop() {
         let d = doc();
         let raw = p(1.0001, 1.0001);
+        // 即便紧邻顶点，未启用时也不应发生吸附。
         let r = snap(&d, raw, &SnapConfig::default(), None);
         assert_eq!(r, SnapResult::None(raw));
         assert!(!r.snapped());
     }
 
+    /// 阈值内的靠近顶点会被卡入到精确顶点坐标。
     #[test]
     fn vertex_snap_latches_within_threshold() {
         let d = doc();
@@ -286,6 +307,7 @@ mod tests {
         }
     }
 
+    /// 排除当前元素后，来自它的顶点 / 边都不应参与吸附。
     #[test]
     fn vertex_snap_respects_exclude() {
         let d = doc();
@@ -308,6 +330,7 @@ mod tests {
         assert!(matches!(r, SnapResult::None(_)), "exclude should drop the line, got {r:?}");
     }
 
+    /// 靠近线段中部但远离顶点的点，应被投影到该边上。
     #[test]
     fn edge_snap_projects_onto_segment() {
         let d = doc();
@@ -330,6 +353,7 @@ mod tests {
         }
     }
 
+    /// 网格吸附把坐标舍入到指定步长；非正步长为空操作。
     #[test]
     fn grid_snap_rounds_to_step() {
         assert_eq!(snap_to_grid(p(1.03, 2.98), 0.5), p(1.0, 3.0));
@@ -338,6 +362,7 @@ mod tests {
         assert_eq!(snap_to_grid(p(1.03, 2.98), 0.0), p(1.03, 2.98));
     }
 
+    /// 顶点 / 边都落空时回退到网格吸附。
     #[test]
     fn grid_used_when_nothing_near() {
         let d = doc();
@@ -349,12 +374,14 @@ mod tests {
         };
         // 远离几何体，偏离网格。
         let far = p(50.13, -30.44);
+        // 只能命中网格：应舍入到 0.5° 的最近格点。
         match snap(&d, far, &cfg, None) {
             SnapResult::Grid(g) => assert_eq!(g, p(50.0, -30.5)),
             other => panic!("expected grid snap, got {other:?}"),
         }
     }
 
+    /// 闭合多边形环应额外产生一条末→首的闭合边（三角形 3 条）。
     #[test]
     fn closed_polygon_rings_yield_closing_segment() {
         let mut d = Document::default();

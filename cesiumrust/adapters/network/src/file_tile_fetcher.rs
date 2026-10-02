@@ -51,9 +51,13 @@ pub enum FileTileScheme {
 /// 可克隆、`Send + Sync`，且不含任何 HTTP 依赖 —— 无需运行时即可跨线程安全共享。
 #[derive(Debug, Clone)]
 pub struct FileTileFetcher {
+    /// 瓦片金字塔在磁盘上的根目录，所有相对 URL 尾部都相对它 join。
     root: PathBuf,
+    /// URL 尾部到磁盘路径的映射方案（XYZ 金字塔或 quadkey）。
     scheme: FileTileScheme,
+    /// STRICT_OFFLINE 开关：为真时收到 `http(s)://` URL 立即 panic。
     strict_offline: bool,
+    /// 调用方省略扩展名时追加的默认瓦片文件扩展名（缺省 `png`）。
     extension: String,
 }
 
@@ -142,6 +146,14 @@ impl FileTileFetcher {
 }
 
 impl TileFetcher for FileTileFetcher {
+    /// 从本地磁盘读取一个瓦片的原始字节。
+    ///
+    /// - `url`：待获取的瓦片 URL（可为 `file://`、裸相对路径或绝对路径）；
+    ///   `_priority`：仅为端口兼容而保留，本地读取不使用优先级。
+    ///
+    /// 返回一个解析为 [`Vec<u8>`] 的 boxed future。当 [`Self::strict_offline`]
+    /// 开启且 `url` 为 `http(s)://` 时*同步地*立即 panic（早于 future 构造）。
+    /// 磁盘读取为朴素 [`std::fs::read`]，future 在首次 poll 时即完成。
     fn fetch<'a>(
         &'a self,
         url: &'a str,
@@ -171,6 +183,8 @@ impl TileFetcher for FileTileFetcher {
         })
     }
 
+    /// 取消一个进行中的获取。磁盘读取是同步且不可取消的（future 首次 poll
+    /// 即完成），因此这里无实际动作，仅为满足 [`TileFetcher`] 契约。
     fn cancel(&self, _url: &str) {
         // 磁盘读取是同步且不可取消的；future 在首次 poll 时即完成，
         // 因此没有可取消的东西。

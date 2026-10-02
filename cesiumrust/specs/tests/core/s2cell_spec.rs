@@ -1,4 +1,4 @@
-//! 移植自 `packages/engine/Specs/Core/S2CellSpec.js`（27 个 it()，15 个 A 类）
+//! 参考自 `Specs/Core/S2CellSpec`（27 个 it()，15 个 A 类）
 //!
 //! 省略 B 类（throws）测试，因为 Rust 的类型系统会强制输入合法。
 

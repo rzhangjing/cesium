@@ -1,9 +1,8 @@
 //! M6.6：cesiumrust **云** 适配器——屏幕空间积云合成节点。
 //!
-//! 将上游 CesiumJS 的积云能力
-//!（`Scene/CloudCollection.js` + `Scene/CumulusCloud.js` +
-//! `Shaders/CloudCollectionFS.glsl`）移植到 M5-E 渲染图基础设施
-//!（`graph.rs`）。对应 [`super::clipping_planes`] / [`super::ibl`] 模式：
+//! 将积云（clouds）能力接入 M5-E 渲染图基础设施（`graph.rs`）：
+//! 一组椭体积云以屏幕空间 ray-marched 体噪声合成，配合逐云 billboard。
+//! 对应 [`super::clipping_planes`] / [`super::ibl`] 模式：
 //! 本模块注册节点 / 资源 / 系统，**但从不创建图边**——
 //! `graph.rs::wire_m6_edges` 中的单一线性 `Core3d` 链拥有这些边，
 //! 所以不会形成菱形。将云节点接入该链是
@@ -28,8 +27,8 @@
 //! `docs/deviations.md#dev-032`。
 //!
 //! # SPIKE 回报——真正的 `texture_3d`
-//! 上游将 128³ 体数据打包进一个 2D atlas 并手写三线性插值
-//!（`voxelToUV` + `lerpSamplesX`，CloudCollectionFS.glsl L25-65）。M6.6 SPIKE
+//! 早期方案将 128³ 体数据打包进一个 2D atlas 并手写三线性插值
+//!（逐体素 UV 展开 + 分段线性混合）。M6.6 SPIKE
 //! 确认了 wgpu/naga 的 3D 纹理支持，所以 `clouds.wgsl` 用单个硬件三线性
 //! `textureSampleLevel(…, vec3, 0.0)` 采样一个真正的 `texture_3d`，
 //! 且本适配器通过 `initial_data` 将 [`NoiseVolume::to_rgba8_bytes`] 直接上传进
@@ -55,11 +54,11 @@
 //! - `mod` 是 WGSL 保留字；shader 改用 `fract` / `%`。
 //! - glam fast-math 全仓禁用（此处不依赖非 IEEE 浮点）。
 //!
-//! # 蓝图
-//! - `packages/engine/Source/Scene/CloudCollection.js` + `CumulusCloud.js`
-//! - `packages/engine/Source/Shaders/CloudCollectionFS.glsl` L1-263
-//! - `domain/effects/src/cloud.rs` — the f64 CPU reference (cross-validated)
-//! - `bevy_pbr-0.15.3/src/ssao/mod.rs` (ViewNode + depth-prepass reconstruction)
+//! # 设计要点
+//! - 云数据模型：每个积云是一个带位置/尺度/覆盖率/各向异性的椭球。
+//! - 集合把椭球打包为 GPU uniform/实例缓冲，屏幕空间节点按相机 ray-march。
+//! - 体噪声用真正的 `texture_3d` 硬件三线性采样（替代 2D atlas 手写插值）。
+//! - f64 CPU 参考实现位于领域层，供本模块测试交叉校验。
 
 use bevy::core_pipeline::{
     core_3d::graph::Core3d,
@@ -152,8 +151,8 @@ pub struct CesiumCloudsLabel;
 /// [`params.z`] 选择 `clouds.wgsl` 两条着色路径中的哪一条。
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum CloudsShadingMode {
-    /// 忠实的上游 `drawCloud`：单条光线/椭球相交，以 Gardner 正弦纹理 + Worley-FBM
-    /// 侵蚀着色。这正是上游 CesiumJS 所渲染的内容。
+    /// 忠实的单云绘制：单条光线/椭球相交，以 Gardner 正弦纹理 + Worley-FBM
+    /// 侵蚀着色。这正是忠实模式所渲染的内容。
     #[default]
     Faithful,
     /// 加法式的物理体积行进（Beer-Lambert + Henyey-Greenstein，
@@ -263,6 +262,7 @@ mod clouds_uniform {
 }
 
 impl Default for CloudsUniform {
+    /// 默认均匀体：所有云的 center/scale/color 置零，params.z 为忠实模式。
     fn default() -> Self {
         Self {
             centers: [Vec4::ZERO; MAX_CLOUDS],
@@ -396,6 +396,14 @@ pub struct CloudsPipeline {
 }
 
 impl FromWorld for CloudsPipeline {
+    /// 从 render-world 构建云合成 pass 的设备资源：为场景颜色、深度、
+    /// 3D 噪声纹理、云均匀体与 view uniform 创建 bind group 布局。
+    ///
+    /// # 参数
+    /// - `render_world`：提供 `RenderDevice` 的渲染世界。
+    ///
+    /// # 返回
+    /// 装配好的 [`CloudsPipeline`] 资源。
     fn from_world(render_world: &mut World) -> Self {
         let render_device = render_world.resource::<RenderDevice>();
 
@@ -455,6 +463,7 @@ pub struct CloudsNoiseTexture {
     /// 拥有 GPU 纹理（某些后端中仅有 view 可能悬空）。
     #[allow(dead_code)]
     texture: Texture,
+    /// 已绑定的 3D 纹理视图（供 bind group 引用）。
     view: TextureView,
 }
 
@@ -487,6 +496,20 @@ impl ViewNode for CloudsNode {
         &'static ViewUniformOffset,
     );
 
+    /// 运行屏幕空间云合成 pass：若未激活则直接返回；否则从深度 prepass
+    /// 重建世界光线，逐个 ray-march 云椭球并从前到后叠加到 HDR 场景色。
+    ///
+    /// # 参数
+    /// - `_graph`：渲染图上下文（本节点无子 pass）。
+    /// - `render_context`：当前 pass 的 GPU 命令记录器。
+    /// - `target`：视图的渲染目标（后处理读写）。
+    /// - `pipeline_handle`：该视图缓存的云合成 pipeline ID。
+    /// - `clouds`：相机级云开关；`clouds_uniform`：本帧云参数。
+    /// - `prepass`：深度 prepass 纹理；`view_uniform_offset`：本视图偏移。
+    /// - `world`：提供 pipeline/noise/texture 资源的 render-world。
+    ///
+    /// # 返回
+    /// 成功提交命令则为 `Ok(())`；前置资源未就绪时返回错误。
     fn run(
         &self,
         _graph: &mut RenderGraphContext,

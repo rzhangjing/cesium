@@ -1,9 +1,7 @@
 //! KML Tour（巡游）支持。
 //!
-//! 映射到 CesiumJS：
-//! - `DataSources/KmlTour.js`
-//! - `DataSources/KmlTourFlyTo.js`
-//! - `DataSources/KmlTourWait.js`
+//! 将 KML 巡游表达为一串播放列表条目（飞行至与等待交替），提供
+//! 播放、逐条目前进与总时长汇总等纯数据层的导航语义。
 
 use glam::DVec3;
 
@@ -13,7 +11,7 @@ use glam::DVec3;
 
 /// KML 巡游播放列表中的一个 fly-to（飞行至）条目。
 ///
-/// 映射到 CesiumJS `DataSources/KmlTourFlyTo.js`。
+/// 描述一次相机飞行：目标位置、时长、航向/仰俯/距离与插值模式。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlTourFlyTo {
     /// fly-to 的时长（秒）。
@@ -31,6 +29,8 @@ pub struct KmlTourFlyTo {
 }
 
 /// fly-to 插值模式。
+///
+/// 决定相机在位置/朝向变化时采用平滑路径还是跳跃式的落地动画。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FlyToMode {
     /// 平滑的相机路径。
@@ -84,7 +84,7 @@ impl KmlTourFlyTo {
 
 /// KML 巡游播放列表中的一个等待条目。
 ///
-/// 映射到 CesiumJS `DataSources/KmlTourWait.js`。
+/// 仅携带一段暂停时长，用于在相邻飞行之间插入停顿。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlTourWait {
     /// 等待时长（秒）。
@@ -103,6 +103,8 @@ impl KmlTourWait {
 // ============================================================================
 
 /// 一个播放列表条目（fly-to 或 wait 之一）。
+///
+/// 统一两种条目的时长接口，供巡游按序迭代。
 #[derive(Debug, Clone, PartialEq)]
 pub enum KmlTourEntry {
     /// 飞行至某个位置。
@@ -127,7 +129,7 @@ impl KmlTourEntry {
 
 /// 一个带有播放列表条目的 KML 巡游。
 ///
-/// 映射到 CesiumJS `DataSources/KmlTour.js`。
+/// 按序保存 fly-to/wait 条目，并跟踪当前播放索引与是否在播。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KmlTour {
     /// 巡游 ID。
@@ -171,6 +173,7 @@ impl KmlTour {
 
     /// 获取巡游的总时长。
     pub fn total_duration(&self) -> f64 {
+        // 各条目时长求和即巡游总时长
         self.playlist.iter().map(|e| e.duration()).sum()
     }
 
@@ -193,6 +196,7 @@ impl KmlTour {
 
     /// 前进到下一个条目。若巡游已完成则返回 false。
     pub fn advance(&mut self) -> bool {
+        // 索引前进一位；越过末尾则置为停止并返回 false
         if self.playlist_index < self.playlist.len() {
             self.playlist_index += 1;
         }

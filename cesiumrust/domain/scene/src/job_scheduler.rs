@@ -1,10 +1,8 @@
 //! 用于管理每帧 GPU 资源创建预算的 JobScheduler。
 //!
-//! 映射到 CesiumJS `Scene/JobScheduler.js`
+//! 按作业类型分配时间预算，并在预算紧张时于类型间借还额度。
 
 /// 作业（GPU 资源创建）的类型。
-///
-/// 映射到 CesiumJS `Scene/JobType.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JobType {
     /// 纹理创建。
@@ -36,6 +34,7 @@ pub struct JobTypeBudget {
 }
 
 impl JobTypeBudget {
+    /// 以给定总预算新建跟踪项，已用量与饿死标志归零。
     fn new(total: f64) -> Self {
         Self {
             total,
@@ -49,7 +48,7 @@ impl JobTypeBudget {
 
 /// 一个为 GPU 资源创建作业管理每帧时间预算的调度器。
 ///
-/// 映射到 CesiumJS `Scene/JobScheduler.js`
+/// 每帧按类型统计已用量与饿死情况，并支持预算窃取与归还。
 #[derive(Debug, Clone)]
 pub struct JobScheduler {
     /// 所有作业类型的总预算。
@@ -65,6 +64,7 @@ pub struct JobScheduler {
 }
 
 impl Default for JobScheduler {
+    /// 默认调度器：采用内置的每类默认预算。
     fn default() -> Self {
         Self::new(None)
     }
@@ -73,7 +73,7 @@ impl Default for JobScheduler {
 impl JobScheduler {
     /// 创建一个新的 JobScheduler，可带自定义预算。
     ///
-    /// 映射到 CesiumJS `new JobScheduler(budgets)`。
+    /// 未传入 budgets 时为各类型采用默认预算划分。
     pub fn new(budgets: Option<[f64; 3]>) -> Self {
         let (tex, prog, buf) = match budgets {
             Some(b) => (b[0], b[1], b[2]),
@@ -97,14 +97,14 @@ impl JobScheduler {
 
     /// 禁用本帧剩余的执行。
     ///
-    /// 映射到 CesiumJS `JobScheduler.disableThisFrame()`。
+    /// 直接把已用量顶满总预算，使本帧后续作业一律判定为预算耗尽。
     pub fn disable_this_frame(&mut self) {
         self.total_used_this_frame = self.total_budget;
     }
 
     /// 为新的一帧重置预算。
     ///
-    /// 映射到 CesiumJS `JobScheduler.resetBudgets()`。
+    /// 将已用量、窃取向与各类执行/饿死标志归零，并把本帧饿死状态下传为上一帧。
     pub fn reset_budgets(&mut self) {
         self.total_used_this_frame = 0.0;
         for i in 0..3 {
@@ -119,7 +119,7 @@ impl JobScheduler {
     /// 尝试执行给定类型的一个作业。
     /// 若作业已执行返回 true，若预算耗尽返回 false。
     ///
-    /// 映射到 CesiumJS `JobScheduler.execute(job, jobType)`。
+    /// 先按总预算与该类型预算判定是否放行，再累加模拟耗时并标记饿死。
     pub fn execute(&mut self, job_type: JobType) -> bool {
         let idx = job_type as usize;
         let time_elapsed = 1.0; // 每个作业模拟 1ms

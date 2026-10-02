@@ -1,8 +1,7 @@
 //! 带精确 ECMAScript 语义的 JS `Math` 辅助函数。
 //!
-//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs` L1576-1596，
-//! 它是上游 `packages/engine/Source/Scene/Expression.js` 所用
-//! `Math.round` / `Math.min` / `Math.max` 行为的 Rust 移植。
+//! 这些辅助函数复现 `Math.round` / `Math.min` / `Math.max` 在 ECMAScript 下的
+//! 精确行为，与朴素 Rust `f64` 方法在取舍方向上存在差异。
 //!
 //! 它们与朴素的 Rust `f64` 对应物在 styling 语言所依赖的方式上有所不同，
 //! 因此逐字移植而非用 `f64::round` / `f64::min` / `f64::max` 替代。

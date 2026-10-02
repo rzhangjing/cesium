@@ -1,4 +1,4 @@
-//! Core/PrimitiveTypeSpec.js + Core/PixelFormatSpec.js → Rust integration tests
+//! Core/PrimitiveTypeSpec + Core/PixelFormatSpec → Rust integration tests
 //!
 //! PrimitiveType: 3 it() → 3 A-class
 //! PixelFormat: 5 it() → 2 A-class (3 C-class: WebGL context)

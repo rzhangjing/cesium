@@ -1,9 +1,9 @@
-//! 忠实移植自 CesiumJS DataSources 位置属性规范：
-//! - ConstantPositionPropertySpec.js (15 it())
-//! - SampledPositionPropertySpec.js (27 it())
-//! - CompositePositionPropertySpec.js (12 it())
-//! - TimeIntervalCollectionPositionPropertySpec.js (10 it())
-//! - CallbackPositionPropertySpec.js (8 it())
+//! 对齐实现自 CesiumJS DataSources 位置属性规范：
+//! - ConstantPositionPropertySpec (15 it())
+//! - SampledPositionPropertySpec (27 it())
+//! - CompositePositionPropertySpec (12 it())
+//! - TimeIntervalCollectionPositionPropertySpec (10 it())
+//! - CallbackPositionPropertySpec (8 it())
 //!
 //! A 类测试（纯逻辑，无 DOM/事件/spy）：约 42 个测试
 
@@ -22,7 +22,7 @@ fn jd(day: f64, seconds: f64) -> JulianDate {
 }
 
 // ===========================================================================
-// ConstantPositionProperty（源自 ConstantPositionPropertySpec.js）
+// ConstantPositionProperty（源自 ConstantPositionPropertySpec）
 // ===========================================================================
 
 #[test]
@@ -137,7 +137,7 @@ fn constant_position_equals_works() {
 }
 
 // ===========================================================================
-// SampledPositionProperty（源自 SampledPositionPropertySpec.js）
+// SampledPositionProperty（源自 SampledPositionPropertySpec）
 // ===========================================================================
 
 #[test]
@@ -564,7 +564,7 @@ fn sampled_position_extrapolation_hold() {
 }
 
 // ===========================================================================
-// CompositePositionProperty（源自 CompositePositionPropertySpec.js）
+// CompositePositionProperty（源自 CompositePositionPropertySpec）
 // ===========================================================================
 
 #[test]
@@ -645,7 +645,7 @@ fn composite_position_equals() {
 
 // ===========================================================================
 // TimeIntervalCollectionPositionProperty
-// （源自 TimeIntervalCollectionPositionPropertySpec.js）
+// （源自 TimeIntervalCollectionPositionPropertySpec）
 // ===========================================================================
 
 #[test]
@@ -727,7 +727,7 @@ fn tic_position_equals() {
 }
 
 // ===========================================================================
-// CallbackPositionProperty（源自 CallbackPositionPropertySpec.js）
+// CallbackPositionProperty（源自 CallbackPositionPropertySpec）
 // ===========================================================================
 
 #[test]

@@ -109,7 +109,9 @@ struct Map2dCamera;
 /// 和它自己的标签实体，因此单个系统能一起重新设置填充 + 文本样式。
 #[derive(Component)]
 struct ModeSegment {
+    /// 该段按钮点击后切入的模式。
     mode: MapMode,
+    /// 该段自己的文本标签实体（选中态一起刷新样式）。
     label: Entity,
 }
 
@@ -146,16 +148,23 @@ struct LevelText;
 /// 无限环绕，而纹理按规范列获取。
 #[derive(Component)]
 struct Map2dTile {
+    /// 规范 Web-Mercator 瓦片键 `(x, y, z)`（纹理按规范列获取）。
     key: (u32, u32, u32),
 }
 
 /// 一个已解码的瓦片图像，由工作线程送回主世界。
 struct Map2dTileImg {
+    /// 规范瓦片列 x。
     x: u32,
+    /// 规范瓦片行 y。
     y: u32,
+    /// 瓦片层级 z。
     z: u32,
+    /// 解码后的 RGBA 像素数据。
     rgba: Vec<u8>,
+    /// 纹理宽度（像素）。
     width: u32,
+    /// 纹理高度（像素）。
     height: u32,
 }
 
@@ -165,18 +174,24 @@ struct Map2dTileImg {
 /// `TileManager` 完全分开，因此 golden 地球路径从不与 2D 平移纠缠。
 #[derive(Resource)]
 struct Map2dTiler {
+    /// 向下载 worker 池发送待取瓦片任务 `(x, y, z)` 的发送端。
     job_tx: mpsc::Sender<(u32, u32, u32)>,
+    /// 接收 worker 送回已解码瓦片的通道（互锁包裹以支持多生产者）。
     rx: Mutex<mpsc::Receiver<Map2dTileImg>>,
+    /// 按规范键缓存的已上传纹理句柄。
     cache: HashMap<(u32, u32, u32), Handle<Image>>,
     /// 按*放置位置*为键的活动 quad —— `(raw_col, raw_row, level)`。级别
     /// 是键的一部分，因为一个视图会将目标瓦片与其下方作为回退显示的
     /// 更粗祖先混在一起。
     live: HashMap<(i64, i64, u32), Entity>,
+    /// 已派发的在途瓦片集，避免重复请求。
     in_flight: HashSet<(u32, u32, u32)>,
+    /// 共享的单位 quad mesh（首次使用时懒建）。
     unit_quad: Option<Handle<Mesh>>,
 }
 
 impl Default for Map2dTiler {
+    /// 建立任务/结果通道并拉起常驻下载 worker 池，各映射置空。
     fn default() -> Self {
         let (job_tx, job_rx) = mpsc::channel::<(u32, u32, u32)>();
         let (res_tx, res_rx) = mpsc::channel::<Map2dTileImg>();
@@ -203,6 +218,7 @@ impl Default for Map2dTiler {
 /// 后者会使 2D 拖拽反转且非 1:1。
 #[derive(Resource, Default)]
 struct Map2dPanCursor {
+    /// 上一帧左键按住时光标位置（逻辑 px）；未拖拽时为 `None`。
     last: Option<Vec2>,
 }
 
@@ -210,6 +226,11 @@ struct Map2dPanCursor {
 pub struct Map2dPlugin;
 
 impl Plugin for Map2dPlugin {
+    /// 插件装配入口：添加 2D 专用系统、启动时 spawn 平面相机与切换 UI，
+    /// 并初始化瓦片器/平移光标资源（`MapMode` 本身由轨道相机插件初始化）。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用。
     fn build(&self, app: &mut App) {
         // MapMode 本身由 OrbitCameraPlugin（总是存在）初始化；
         // 这里我们只添加 2D 专用系统和启动 spawn。
@@ -274,6 +295,7 @@ fn spawn_map2d_camera(mut commands: Commands) {
     ));
 }
 
+/// 构建右下角 2D/3D 分段切换胶囊与左下角经纬度/层级读数 UI。
 fn build_mode_ui(mut commands: Commands) {
     // ── 右下角 2D/3D 分段切换 ─────────────────────────────────
     // 一个容纳两个圆角单元格的胶囊形玻璃外壳；与当前模式匹配的
@@ -438,6 +460,7 @@ type ModeCamsQuery<'w, 's> =
 type UiRootsQuery<'w, 's> =
     Query<'w, 's, Entity, Or<(With<ModeSwitchRoot>, With<ReadoutRoot>)>>;
 
+/// 根据当前地图模式将 UI 根的 [`TargetCamera`] 指向活动相机（2D 或 3D）。
 fn sync_ui_target_camera(
     mode: Res<MapMode>,
     cams: ModeCamsQuery,

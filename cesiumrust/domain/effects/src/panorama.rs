@@ -1,14 +1,13 @@
 //! 全景渲染（Equirectangular + CubeMap）。
 //!
-//! 映射到 CesiumJS：
-//! - `Scene/EquirectangularPanorama.js`（266 行）
-//! - `Scene/CubeMapPanorama.js`（352 行）
-//! - `Scene/SkyBox.js`（164 行）—— **完全**委托给 `CubeMapPanorama`
-//!   （L39-43 `this._panorama = new CubeMapPanorama({...})`，L100 注释
+//! 涵盖三种全景形态：
+//! - 等距柱状全景（Equirectangular）——单个有限的 bubble
+//! - 立方体贴图全景（CubeMap）——以相机为中心的无限远天空
+//! - SkyBox —— **完全**委托给 CubeMap 形态（内部持有一个 CubeMapPanorama，
 //!   "Delegate completely"），因此 cube-map 全景*就是* skybox 的真值源。
-//! - `Scene/PanoramaProvider.js`
-//! - `Shaders/SkyBoxVS.glsl`、`Shaders/SkyBoxFS.glsl`、
-//!   `Shaders/CubeMapPanoramaVS.glsl`
+//!
+//! 另含全景提供方（PanoramaProvider）抽象，以及天空盒/立方体的
+//! 顶点与片元着色器所对应的渲染语义。
 //!
 //! # f64 纪律
 //! 本模块中每一个几何量都是 `f64` 并始终保持 `f64`。它被窄化
@@ -26,9 +25,9 @@
 //! | `CubeMapPanorama` / `SkyBox` | `Skybox`  | `CubeMap`     | **`Matrix3`** |
 //! | `EquirectangularPanorama`    | `Bubble`  | `Equirectangular` | `Matrix4` |
 //!
-//! ## 偏差 —— `CubeMapPanorama::transform` 是 `DMat4`，上游是 `Matrix3`
-//! 上游 `CubeMapPanorama` 存储一个 **`Matrix3`**（`CubeMapPanorama.js` L143-149，
-//! 在 `CubeMapPanoramaVS.glsl` L1 中绑定为 `uniform mat3 u_cubeMapPanoramaTransform`）：
+//! ## 偏差 —— `CubeMapPanorama::transform` 是 `DMat4`，参考实现是 `Matrix3`
+//! 参考实现 `CubeMapPanorama` 存储一个 **`Matrix3`**（在 VS 中绑定为
+//! `uniform mat3 u_cubeMapPanoramaTransform`）：
 //! cube-map skybox *总是*以相机为中心，因此它有朝向但无位置。本模块
 //! 存储 `DMat4` 以与 [`EquirectangularPanorama`] 保持对称。因此
 //! [`CubeMapPanorama::orientation`] 是重现上游 `Matrix3` 的访问器——它丢弃
@@ -39,7 +38,7 @@ use glam::{DMat3, DMat4, DVec2, DVec3, DVec4};
 
 /// 以米为单位的默认全景半径。
 ///
-/// 上游 `EquirectangularPanorama.js` L15 `const DEFAULT_RADIUS = 100000.0;`。
+/// 对应参考实现的默认常量 `const DEFAULT_RADIUS = 100000.0;`。
 pub const DEFAULT_PANORAMA_RADIUS: f64 = 100000.0;
 
 /// 每渲染单位的米数——项目级的尺度常量。
@@ -64,11 +63,10 @@ pub const PANORAMA_METERS_PER_RENDER_UNIT: f64 = 6_378_137.0;
 /// 独立字面量而非一次转换，因此双重舍入无法将它们分离。
 pub const DEGENERATE_DIRECTION_SQUARED_EPSILON: f64 = 1.0e-24;
 
-/// 上游 skybox 盒的半长，以盒局部单位计。
+/// skybox 盒的半长，以盒局部单位计。
 ///
-/// `CubeMapPanorama.js` L189-192：
-/// `BoxGeometry.fromDimensions({ dimensions: new Cartesian3(2.0, 2.0, 2.0),
-/// vertexFormat: VertexFormat.POSITION_ONLY })`——一个以原点为中心的 2×2×2 盒，
+/// 参考实现以 `BoxGeometry.fromDimensions({ dimensions: new Cartesian3(2.0, 2.0, 2.0),
+/// vertexFormat: VertexFormat.POSITION_ONLY })` 构造——一个以原点为中心的 2×2×2 盒，
 /// 因此每个角坐标都是 `±1`。
 pub const SKYBOX_BOX_HALF_EXTENT: f64 = 1.0;
 
@@ -81,16 +79,15 @@ pub const SKYBOX_BOX_HALF_EXTENT: f64 = 1.0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]
 pub enum PanoramaPlacement {
-    /// 无限、以相机为中心。上游 `CubeMapPanorama` /
-    /// `SkyBox`：`pass: Pass.ENVIRONMENT`（`CubeMapPanorama.js` L105-106，注释
+    /// 无限、以相机为中心。参考实现 `CubeMapPanorama` /
+    /// `SkyBox`：`pass: Pass.ENVIRONMENT`（注释
     /// "render before everything else"）、`depthTest: { enabled: false }`、
     /// `depthMask: false`。摆放不携深度，因此 GPU 端写入
     /// 反转 Z 的远平面。
     Skybox = 0,
     /// 一个有限球体，半径为 [`EquirectangularPanorama::radius`] 米，由
     /// [`EquirectangularPanorama::transform`] 摆放。上游将其作为一个普通的不透明
-    /// `Primitive` 渲染（`EquirectangularPanorama.js` L123-138，
-    /// `translucent: false`），因此它正常地做深度测试和深度写入，且相机
+    /// `Primitive` 渲染（`translucent: false`），因此它正常地做深度测试和深度写入，且相机
     /// 可以在其内部——即街景情形。
     Bubble = 1,
 }
@@ -111,10 +108,10 @@ impl PanoramaPlacement {
 #[repr(u32)]
 pub enum PanoramaSource {
     /// 由方向寻址的六个方形面：`[+X, -X, +Y, -Y, +Z, -Z]`
-    /// （上游 `SkyBox.js` `createEarthSkyBox` 使用 `px/mx/py/my/pz/mz`）。
+    /// （参考实现 `createEarthSkyBox` 使用 `px/mx/py/my/pz/mz`）。
     CubeMap = 0,
-    /// 一张 2:1 图像，经度在 x、纬度在 y。上游
-    /// `EquirectangularPanorama.js` L116 的注释："2:1 360 degrees equirectangular image path"。
+    /// 一张 2:1 图像，经度在 x、纬度在 y。
+    /// 参考实现的注释："2:1 360 degrees equirectangular image path"。
     Equirectangular = 1,
 }
 
@@ -127,8 +124,6 @@ impl PanoramaSource {
 }
 
 /// 在球体上渲染的 equirectangular 全景。
-///
-/// 映射到 CesiumJS `Scene/EquirectangularPanorama.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct EquirectangularPanorama {
     /// 定义位置与朝向的 4x4 变换矩阵。
@@ -148,6 +143,7 @@ pub struct EquirectangularPanorama {
 }
 
 impl Default for EquirectangularPanorama {
+    /// 默认全景：单位变换、空图像、默认半径、无重复、可见。
     fn default() -> Self {
         Self {
             transform: DMat4::IDENTITY,
@@ -264,7 +260,7 @@ impl EquirectangularPanorama {
 
     /// 递给采样器的 texture 重复向量，与上游构建的方式完全一致。
     ///
-    /// `EquirectangularPanorama.js` L117：
+    /// 参考实现的构建方式：
     /// ```text
     /// repeat: new Cartesian2(-this._repeatHorizontal, this._repeatVertical),
     /// // flip horizontally by default to match expected orientation of images
@@ -313,8 +309,8 @@ impl EquirectangularPanorama {
 
     /// [`Self::transform`] 中仅旋转的部分。
     ///
-    /// 上游通过 `Transforms.headingPitchRollToFixedFrame`（`EquirectangularPanorama.js`
-    /// L46-61）从一个位置加上 heading/pitch/roll 合成它，因此左上角 3×3
+    /// 上游通过 `Transforms.headingPitchRollToFixedFrame` 从一个位置加上
+    /// heading/pitch/roll 合成它，因此左上角 3×3
     /// 是朝向，第四列是锚点位置——参见 [`Self::center`]。
     #[inline]
     pub fn orientation(&self) -> DMat3 {
@@ -433,8 +429,6 @@ pub fn wrap_repeat(value: f64) -> f64 {
 }
 
 /// 由 6 个面图像渲染的 cube map 全景。
-///
-/// 映射到 CesiumJS `Scene/CubeMapPanorama.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct CubeMapPanorama {
     /// 4x4 变换矩阵。
@@ -450,6 +444,7 @@ pub struct CubeMapPanorama {
 }
 
 impl Default for CubeMapPanorama {
+    /// 默认 cube map 全景：单位变换、6 张空面图像、默认半径、可见。
     fn default() -> Self {
         Self {
             transform: DMat4::IDENTITY,
@@ -544,14 +539,13 @@ impl CubeMapPanorama {
 
     /// 上游的面顺序，即 `[+X, -X, +Y, -Y, +Z, -Z]`。
     ///
-    /// 与 [`Self::faces`] 以及 `SkyBox.js::getDefaultSkyBoxUrl` /
+    /// 与 [`Self::faces`] 以及参考实现 `getDefaultSkyBoxUrl` /
     /// `createEarthSkyBox` 的 `px/mx/py/my/pz/mz` 后缀一致。
     pub const FACE_NAMES: [&'static str; 6] = ["+X", "-X", "+Y", "-Y", "+Z", "-Z"];
 
     /// 上游 `u_cubeMapPanoramaTransform` 的值：一个 **`Matrix3`**。
     ///
-    /// `CubeMapPanorama.js` L143-149 存储一个 `Matrix3`，而
-    /// `CubeMapPanoramaVS.glsl` L1 声明 `uniform mat3
+    /// 参考实现存储一个 `Matrix3`，并在 VS 中声明 `uniform mat3
     /// u_cubeMapPanoramaTransform`。cube-map skybox 总以相机为中心，
     /// 因此它有朝向却无位置——至于本结构为何仍携带一个 `DMat4`，参见模块级的
     /// 偏差说明。
@@ -667,16 +661,16 @@ pub struct SkyBoxVertexOutput {
     pub texture_coordinate: DVec3,
 }
 
-/// `Shaders/CubeMapPanoramaVS.glsl` L8-10 的 f64 CPU 参考（以及，
+/// cube-map VS 主流程 L8-10 的 f64 CPU 参考（以及，
 /// 将 `panorama_orientation` 换成 `czm_temeToPseudoFixed` 后，对应
-/// `Shaders/SkyBoxVS.glsl` L7-9）：
+/// skybox VS L7-9）：
 /// ```glsl
 /// vec3 p = czm_viewRotation * (u_cubeMapPanoramaTransform * (czm_entireFrustum.y * position));
 /// gl_Position = czm_projection * vec4(p, 1.0);
 /// v_texCoord = position.xyz;
 /// ```
 ///
-/// 类型由 `Renderer/AutomaticUniforms.js` 锁定：
+/// 类型由内置 uniform 定义锁定：
 /// * `czm_viewRotation` 是一个 **`mat3`**（L329 `uniform mat3 czm_viewRotation;`，
 ///   L341 `datatype: WebGLConstants.FLOAT_MAT3`）——视图矩阵中仅含旋转的部分，
 ///   正是它使 skybox 跟随相机而不同时平移。
@@ -720,7 +714,7 @@ pub fn skybox_vertex_transform(
 
 /// 上游 skybox 盒的八个角点。
 ///
-/// `CubeMapPanorama.js` L189-192 构建一个以原点为中心的 `2.0 × 2.0 × 2.0`
+/// 参考实现构建一个以原点为中心的 `2.0 × 2.0 × 2.0`
 /// `BoxGeometry`，因此每个角坐标都是 `±SKYBOX_BOX_HALF_EXTENT`。顺序为
 /// `-x` 最快，然后 `-y`，然后 `-z`。
 pub fn skybox_box_vertices() -> [DVec3; 8] {
@@ -902,7 +896,7 @@ mod tests {
 
     // ─── M6.3 补充 ─────────────────────────────────────────────
 
-    /// `EquirectangularPanorama.js` L117 向 sampler 传入
+    /// 参考实现向 sampler 传入
     /// `Cartesian2(-repeatHorizontal, repeatVertical)`；那一行的注释是
     /// "flip horizontally by default to match expected orientation of images inside
     /// a sphere, but allow user to override"。
@@ -1354,7 +1348,7 @@ mod tests {
         );
     }
 
-    /// `CubeMapPanorama.js` L189-192 构建一个以原点为中心的 `2.0 x 2.0 x 2.0`
+    /// 参考实现构建一个以原点为中心的 `2.0 x 2.0 x 2.0`
     /// 盒，因此全部八个角都位于 `+-SKYBOX_BOX_HALF_EXTENT`。
     #[test]
     fn skybox_box_vertices_are_the_unit_cube_corners() {
@@ -1383,7 +1377,7 @@ mod tests {
         }
     }
 
-    /// `CubeMapPanoramaVS.glsl` L8-10 的 f64 CPU 参考。锁定
+    /// cube-map VS 主流程 L8-10 的 f64 CPU 参考。锁定
     /// 先缩放再定向再视图旋转的顺序，以及 `v_texCoord` 是
     /// **原始**盒坐标这一事实。
     #[test]

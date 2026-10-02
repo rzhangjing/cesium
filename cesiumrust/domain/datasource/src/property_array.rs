@@ -1,6 +1,7 @@
 //! PropertyArray 与 PositionPropertyArray - 值为其子属性数组的属性。
 //!
-//! 映射到 CesiumJS `DataSources/PropertyArray.js` 和 `DataSources/PositionPropertyArray.js`。
+//! 数组属性的每一项本身又是一个动态属性；求值时逐个取回当前时刻的
+//! 计算值并汇总为定长数组，位置版则约定元素均为坐标属性。
 
 use std::sync::Arc;
 
@@ -13,13 +14,16 @@ use crate::property_system::value::PropertyValue;
 /// 一个属性，其值是一个数组，数组中的各项是其他属性
 /// 实例的计算值。
 ///
-/// 映射到 CesiumJS `DataSources/PropertyArray`。
+/// 内部只持有一个可选的子属性数组；当为 `None` 时整体无值，
+/// 求值会逐个取回各子属性并拼接为结果数组。
 #[derive(Clone)]
 pub struct PropertyArray {
+    /// 子属性数组；为 `None` 时表示该数组属性未定义。
     value: Option<Vec<Arc<dyn DynProperty>>>,
 }
 
 impl Default for PropertyArray {
+    /// 构造一个值为空的数组属性。
     fn default() -> Self {
         Self::new()
     }
@@ -89,13 +93,16 @@ impl PropertyArray {
 /// 一个属性，其值是位置属性的数组。
 /// 类似于 PropertyArray，但专门用于 Cartesian3 位置。
 ///
-/// 映射到 CesiumJS `DataSources/PositionPropertyArray`。
+/// 与 `PropertyArray` 同构，但约定其元素全部为位置属性，求值时
+/// 把每个子属性解析为 `DVec3` 并返回坐标数组。
 #[derive(Clone)]
 pub struct PositionPropertyArray {
+    /// 位置子属性数组；为 `None` 时表示坐标序列未定义。
     value: Option<Vec<Arc<dyn DynProperty>>>,
 }
 
 impl Default for PositionPropertyArray {
+    /// 构造一个值为空的位置数组属性。
     fn default() -> Self {
         Self::new()
     }

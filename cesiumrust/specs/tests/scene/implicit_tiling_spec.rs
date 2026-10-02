@@ -1,4 +1,4 @@
-//! Scene/Implicit3DTileContentSpec.js → Rust 集成测试
+//! Scene/Implicit3DTileContentSpec → Rust 集成测试
 
 use cesium_implicit_tiling::{
     morton_2d, morton_3d, AvailabilityBitstream, ImplicitTileCoord, ImplicitTilingConfig,

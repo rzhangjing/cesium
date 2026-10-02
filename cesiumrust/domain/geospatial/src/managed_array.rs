@@ -1,11 +1,12 @@
 //! 一个将长度与容量分开跟踪的托管数组。
-//! 映射到 CesiumJS `Core/ManagedArray.js`
 
 /// 一个类数组的数据结构，自行管理容量，
 /// 将逻辑长度与预留容量分开跟踪。
 #[derive(Debug, Clone)]
 pub struct ManagedArray<T: Default + Clone> {
+    /// 底层存储；容量可能大于逻辑 `length`。
     values: Vec<T>,
+    /// 当前逻辑长度（有效元素个数）。
     length: usize,
 }
 

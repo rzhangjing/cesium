@@ -1,5 +1,5 @@
 //! ClippingPlane + ClippingPlaneCollection 扩展 specs
-//! 移植自 CesiumJS Scene/ClippingPlaneSpec.js + Scene/ClippingPlaneCollectionSpec.js
+//! 参考自 CesiumJS Scene/ClippingPlaneSpec + Scene/ClippingPlaneCollectionSpec
 
 use cesium_effects::{ClippingPlane, ClippingPlaneCollection, Intersect};
 use glam::{DMat4, DVec3};

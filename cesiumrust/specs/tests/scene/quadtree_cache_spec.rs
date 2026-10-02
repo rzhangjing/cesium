@@ -1,7 +1,7 @@
 //! Scene/QuadtreePrimitive 瓦片缓存与加载队列 → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/QuadtreePrimitive.js（瓦片加载/缓存行为）
+//! 参考 CesiumJS：
+//! - Scene/QuadtreePrimitive（瓦片加载/缓存行为）
 //!
 //! A 类测试：TileLoadQueue 优先级/距离排序、max_size 淘汰、
 //! TileCache LRU 淘汰/访问排序、SchedulerConfig/Stats 默认值。

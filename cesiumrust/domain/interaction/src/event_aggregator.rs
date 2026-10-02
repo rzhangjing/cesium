@@ -1,8 +1,8 @@
 //! 相机事件聚合系统。
 //!
-//! 映射到 CesiumJS `Scene/CameraEventAggregator.js`
+//! 为相机控制逐帧聚合鼠标/键盘/触控事件。
 //!
-//! 为相机控制逐帧聚合鼠标/键盘事件。
+//! 按事件类型维护各自的移动状态，并在每帧开头重置。
 
 use glam::DVec2;
 
@@ -18,7 +18,7 @@ pub enum MouseButton {
 }
 
 /// 相机事件类型。
-/// 映射到 CesiumJS `CameraEventType`
+/// 描述按下/抬起/拖拽等驱动相机的输入类别。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CameraEventType {
     /// 鼠标左键按下。
@@ -111,8 +111,8 @@ impl AggregateMovement {
 
 /// 一个聚合子移动的起始/结束位置对。
 ///
-/// 蓝图 `MouseMovement`（`camera_event_aggregator.rs` L96-102）的移植，
-/// 即 CesiumJS 嵌套在捻合内部的 `{ startPosition, endPosition }` 对象。
+/// 记录一次聚合子移动的起始与结束坐标，
+/// 上层据此求出差分增量（例如捻合内部的起止对）。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct StartEnd {
     /// 聚合后的起始位置。
@@ -123,9 +123,8 @@ pub struct StartEnd {
 
 /// 聚合的双指捻合移动（触控）。
 ///
-/// 蓝图 `PinchMovement`（`camera_event_aggregator.rs` L108-116）以及
-/// CesiumJS 的 `{ distance, angleAndHeight, prevAngle }` 形状
-/// （`CameraEventAggregator.js` L111-143）的移植：
+/// 保存双指捻合的聚合度量，涵盖间距、角度与中点三部分，
+/// 字段含义如下：
 /// - `distance` 保存两指间距（标量存于 `.y`）；其增量
 ///   驱动缩放。
 /// - `angle_and_height` 保存手指连线角度（弧度，`.x`）与
@@ -139,9 +138,9 @@ pub struct PinchMovement {
     pub angle_and_height: StartEnd,
     /// 两指中点（手指之间的中心），起始/结束。其
     /// 逐帧增量是两指共同的平移，驱动
-    /// 双指 **拖拽 → 平移** 手势（M2.6）。CesiumJS 不
-    /// 跟踪这一项（其双指拖拽仅为缩放+旋转），因此它是
-    /// 为旋转/平移触控模型新增的部分。
+    /// 双指 **拖拽 → 平移** 手势（M2.6）。标准捻合仅
+    /// 含缩放与旋转、不跟踪中点平移，因此这一项是为
+    /// 旋转/平移触控模型新增的部分。
     pub midpoint: StartEnd,
     /// 用于防翻转回绕的上一个角度。
     pub prev_angle: f64,
@@ -150,7 +149,7 @@ pub struct PinchMovement {
 /// 计算两个手指位置的捻合度量 `(separation, angle, midpoint_height)`。
 ///
 /// `angle` 为 `finger1 → finger2` 连线的方向（弧度）；中点
-/// 高度为屏幕 `y` 的平均值，与 CesiumJS 的捻合 `angleAndHeight` 一致。
+/// 高度为屏幕 `y` 的平均值，与捻合的 angleAndHeight 语义一致。
 fn pinch_metrics(finger1: DVec2, finger2: DVec2) -> (f64, f64, f64) {
     let delta = finger2 - finger1;
     let distance = delta.length();
@@ -160,7 +159,7 @@ fn pinch_metrics(finger1: DVec2, finger2: DVec2) -> (f64, f64, f64) {
 }
 
 /// 逐帧聚合相机事件。
-/// 映射到 CesiumJS `CameraEventAggregator`
+/// 按事件类型维护每帧的聚合移动状态。
 #[derive(Debug, Clone)]
 pub struct CameraEventAggregator {
     /// 每个事件类型的移动状态。
@@ -176,6 +175,7 @@ pub struct CameraEventAggregator {
 }
 
 impl Default for CameraEventAggregator {
+    /// 默认聚合器：空状态、无活动手势。
     fn default() -> Self {
         Self::new()
     }
@@ -200,7 +200,7 @@ impl CameraEventAggregator {
             movement.reset_frame();
         }
         // 在新帧的首次移动上重新播种捻合的起始/prev-angle
-        // （CesiumJS 在重置时 `update[key] = true`，CameraEventAggregator.js）。
+        // （重置后在下一帧首次移动时重新播种）。
         if self.pinching {
             self.pinch_update_pending = true;
         }
@@ -305,8 +305,8 @@ impl CameraEventAggregator {
 
     /// 开始一个双指捻合手势。
     ///
-    /// 映射到 CesiumJS `PINCH_START`（CameraEventAggregator.js L84-98）：
-    /// 由初始的手指播种距离 / 角度与高度的起始和结束。
+    /// 捻合起始：由初始的手指位置播种距离、角度与高度
+    /// 的起始与结束（二者相同），并标记手势开始。
     pub fn pinch_start(&mut self, finger1: DVec2, finger2: DVec2) {
         let (distance, angle, height) = pinch_metrics(finger1, finger2);
         let midpoint = (finger1 + finger2) * 0.5;
@@ -334,7 +334,7 @@ impl CameraEventAggregator {
 
     /// 用当前手指位置更新正在进行的捻合。
     ///
-    /// 忠实于 CesiumJS `PINCH_MOVE`（CameraEventAggregator.js L111-143）：一帧
+    /// 捻合更新遵循每帧重新播种的约定：一帧
     /// 的首次移动重新播种起始和 `prevAngle`，后续移动聚合到结束，
     /// 且角度会回绕以保持与 `prevAngle` 相差在 `π` 以内，从而不会在 360° 处翻转。
     pub fn pinch_move(&mut self, finger1: DVec2, finger2: DVec2) {
@@ -355,7 +355,7 @@ impl CameraEventAggregator {
         self.pinch.angle_and_height.end_position = DVec2::new(angle, height);
         self.pinch.midpoint.end_position = midpoint;
 
-        // 防翻转回绕（CesiumJS L129-138）。
+        // 防翻转回绕：把角度约束在 prev 的 ±π 内。
         let mut wrapped = angle;
         let prev = self.pinch.prev_angle;
         let two_pi = std::f64::consts::TAU;
@@ -374,7 +374,7 @@ impl CameraEventAggregator {
 
     /// 结束捻合手势。
     ///
-    /// 映射到 CesiumJS `PINCH_END`（CameraEventAggregator.js L101-108）。
+    /// 清除进行标志并抬起捻合槽位。
     pub fn pinch_end(&mut self) {
         self.pinching = false;
         self.pinch_update_pending = false;
@@ -416,9 +416,9 @@ impl CameraEventAggregator {
         self.pinch.midpoint.end_position - self.pinch.midpoint.start_position
     }
 
-    /// 旋转增量（以像素计），复现 CesiumJS 的
-    /// `(-angle * canvas.clientWidth) / 12` 缩放
-    /// （CameraEventAggregator.js L139-142）。画布宽度由适配层
+    /// 旋转增量（以像素计），采用 `(-angle * canvas_width) / 12`
+    /// 的缩放约定：角度负号给出与手指转动相反的滚转，
+    /// 除 12 为经验敏感度系数。画布宽度由适配层
     /// 边界提供，以使领域保持与分辨率无关。
     pub fn pinch_twist_pixels(&self, canvas_width: f64) -> f64 {
         (-self.pinch_angle_delta() * canvas_width) / 12.0
@@ -430,8 +430,8 @@ impl CameraEventAggregator {
 
     /// 聚合的旋转手势增量（左键拖拽，像素）。
     ///
-    /// 为 [`crate::camera_controller::CameraController::spin`] 提供输入。映射到
-    /// CesiumJS 默认的 `LEFT_DRAG → spin3D` 绑定；左键拖拽究竟
+    /// 为 [`crate::camera_controller::CameraController::spin`] 提供输入，对应
+    /// 默认的左键拖拽旋转绑定；左键拖拽究竟
     /// 变成旋转、平移还是环视，由控制器（基于拾取）决定，
     /// 而非聚合器。
     pub fn spin_delta(&self) -> DVec2 {
@@ -581,7 +581,7 @@ mod tests {
         agg.pinch_move(DVec2::new(0.0, 0.0), DVec2::new(100.0, 0.0)); // 播种角度 0
         agg.pinch_move(DVec2::new(0.0, 0.0), DVec2::new(0.0, 100.0)); // 旋转到 90°
         assert!((agg.pinch_angle_delta() - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
-        // 像素缩放复现 CesiumJS 的 (-angle * width) / 12。
+        // 像素缩放采用 (-angle * width) / 12 的经验系数。
         let expected = (-std::f64::consts::FRAC_PI_2 * 1200.0) / 12.0;
         assert!((agg.pinch_twist_pixels(1200.0) - expected).abs() < 1e-9);
     }

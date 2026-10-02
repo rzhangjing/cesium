@@ -1,4 +1,4 @@
-//! 移植自 CesiumJS PathVisualizerSpec.js + AnimationViewModelSpec.js 的测试
+//! 参考自 CesiumJS PathVisualizerSpec + AnimationViewModelSpec 的测试
 //! A 类逻辑：AnimationClock、interpolate_position、compute_path
 
 use cesium_datasource::animation::{

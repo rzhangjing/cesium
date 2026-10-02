@@ -2,13 +2,13 @@
 //!
 //! 领域层 - 纯 Rust，f64 精度。
 //!
-//! CesiumJS 映射：
-//! - `Scene/ScreenSpaceCameraController.js` → camera_controller
-//! - `Scene/ScreenSpaceCameraController.js` (inertia) → inertia
-//! - `Scene/Camera.js` (flyTo/lookAt) → flight
-//! - `Scene/Scene.js` (pick) → picking
-//! - `Scene/CameraEventAggregator.js` → event_aggregator
-//! - `Scene/SceneMode.js` morphing → morphing
+//! 各子模块职责：
+//! - `camera_controller`：屏幕空间相机的拖拽、缩放与旋转交互。
+//! - `inertia`：平移/旋转的惯性衰减与滚动停止判定。
+//! - `flight`：`fly_to`/`look_at` 相机飞行的时长与缓动计算。
+//! - `picking`：窗口坐标到世界射线的拾取与屏幕投影。
+//! - `event_aggregator`：将鼠标/触摸事件聚合为相机手势。
+//! - `morphing`：2D/3D/ColumbusView 之间的模式变形过渡。
 
 pub mod camera_controller;
 pub mod flight;

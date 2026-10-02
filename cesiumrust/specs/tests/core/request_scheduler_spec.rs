@@ -1,4 +1,4 @@
-//! RequestScheduler 规格测试 - 移植自 packages/engine/Specs/Core/RequestSchedulerSpec.js
+//! RequestScheduler 规格测试 - 参考自 Specs/Core/RequestSchedulerSpec
 //!
 //! A 类测试：15 个（纯逻辑，同步调度器）
 

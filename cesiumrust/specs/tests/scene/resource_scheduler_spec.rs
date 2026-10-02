@@ -1,8 +1,8 @@
 //! Core/Resource + RequestScheduler → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Core/Resource.js（URL 构建、查询参数、derive）
-//! - Core/RequestScheduler.js（节流、优先级、服务器限制）
+//! 参考 CesiumJS：
+//! - Core/Resource（URL 构建、查询参数、derive）
+//! - Core/RequestScheduler（节流、优先级、服务器限制）
 //!
 //! A 类测试：RequestScheduler schedule/complete/cancel/throttle/priority、
 //! Resource build_url/derive/server_key/with_query/with_header.

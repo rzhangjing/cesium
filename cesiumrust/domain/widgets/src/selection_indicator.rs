@@ -1,6 +1,7 @@
 //! 选中指示器（selection indicator）widget 视图模型。
 //!
-//! 映射到 CesiumJS `SelectionIndicator/SelectionIndicatorViewModel.js`。
+//! 在选中实体的屏幕位置维护一个带缩放/旋转的可视指示器，
+//! 含出现/消失的弹入动画推进、屏内判定与 CSS transform 描述。
 
 /// 选中指示器 widget 视图模型。
 ///
@@ -26,6 +27,7 @@ pub struct SelectionIndicatorViewModel {
 }
 
 impl Default for SelectionIndicatorViewModel {
+    /// 默认隐藏、位于原点、缩放 1.0、无旋转、不在屏内且未动画。
     fn default() -> Self {
         Self {
             show: false,
@@ -48,6 +50,7 @@ impl SelectionIndicatorViewModel {
 
     /// 在指定的屏幕位置显示指示器。
     pub fn show_at(&mut self, x: f64, y: f64) {
+        // 定位到屏幕坐标并置为可见；若尚未动画则从头启动弹入动画
         self.show = true;
         self.screen_x = x;
         self.screen_y = y;
@@ -60,6 +63,7 @@ impl SelectionIndicatorViewModel {
 
     /// 隐藏指示器。
     pub fn hide(&mut self) {
+        // 一次性回到隐藏态：清屏内标志并停止动画
         self.show = false;
         self.is_on_screen = false;
         self.is_animating = false;
@@ -68,6 +72,7 @@ impl SelectionIndicatorViewModel {
 
     /// 更新屏幕位置。
     pub fn update_position(&mut self, x: f64, y: f64, on_screen: bool) {
+        // 跟随实体屏幕位置刷新，不改变可见与动画状态
         self.screen_x = x;
         self.screen_y = y;
         self.is_on_screen = on_screen;
@@ -76,6 +81,7 @@ impl SelectionIndicatorViewModel {
     /// 更新出现/消失动画。
     /// 若动画已完成则返回 true。
     pub fn update_animation(&mut self, delta_seconds: f64) -> bool {
+        // 未在动画中则视为已完成，无需推进
         if !self.is_animating {
             return true;
         }
@@ -108,16 +114,19 @@ impl SelectionIndicatorViewModel {
 
     /// 设置旋转角度。
     pub fn set_rotation(&mut self, radians: f64) {
+        // 记录弧度制旋转，供 transform 描述使用
         self.rotation = radians;
     }
 
     /// 检查指示器是否应当被渲染。
     pub fn should_render(&self) -> bool {
+        // 需同时可见且实体在屏内才绘制，屏外实体不画指示器
         self.show && self.is_on_screen
     }
 
     /// 获取指示器的类 CSS transform 字符串。
     pub fn transform_description(&self) -> String {
+        // 把屏幕位移/缩放/旋转拼成可供上层渲染参考的变换描述
         format!(
             "translate({:.1}px, {:.1}px) scale({:.3}) rotate({:.2}rad)",
             self.screen_x, self.screen_y, self.scale, self.rotation
@@ -132,6 +141,7 @@ mod tests {
     #[test]
     fn test_default() {
         let vm = SelectionIndicatorViewModel::default();
+        // 默认隐藏、不在屏内、缩放为中性 1.0
         assert!(!vm.show);
         assert!(!vm.is_on_screen);
         assert_eq!(vm.scale, 1.0);
@@ -140,6 +150,7 @@ mod tests {
     #[test]
     fn test_show_at() {
         let mut vm = SelectionIndicatorViewModel::new();
+        // 定位显示后应同时置为可见、在屏内并启动动画
         vm.show_at(100.0, 200.0);
         assert!(vm.show);
         assert_eq!(vm.screen_x, 100.0);
@@ -151,6 +162,7 @@ mod tests {
     #[test]
     fn test_hide() {
         let mut vm = SelectionIndicatorViewModel::new();
+        // 先显示再隐藏，hide 应回到完全隐藏且停止动画的态
         vm.show_at(100.0, 200.0);
         vm.hide();
         assert!(!vm.show);
@@ -193,6 +205,7 @@ mod tests {
     #[test]
     fn test_should_render() {
         let mut vm = SelectionIndicatorViewModel::new();
+        // 初始不可见不渲染；显示后渲染；实体移出屏幕则停渲染
         assert!(!vm.should_render());
         vm.show_at(100.0, 200.0);
         assert!(vm.should_render());
@@ -210,6 +223,7 @@ mod tests {
     #[test]
     fn test_transform_description() {
         let mut vm = SelectionIndicatorViewModel::new();
+        // 动画完成后 scale 收敛到 1.0，描述含定位与缩放片段
         vm.show_at(100.0, 200.0);
         vm.update_animation(1.0); // 完成动画
         let desc = vm.transform_description();

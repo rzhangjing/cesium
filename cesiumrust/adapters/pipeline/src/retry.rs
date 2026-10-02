@@ -45,22 +45,26 @@ impl DefaultRetry {
 }
 
 impl Default for DefaultRetry {
+    /// `DefaultRetry` 为无字段单元结构，默认值即自身。
     fn default() -> Self {
         Self
     }
 }
 
 impl RetryPolicy for DefaultRetry {
+    /// 单次请求的最大尝试次数（含首次）。
     #[inline]
     fn max_attempts(&self) -> u32 {
         Self::MAX_ATTEMPTS
     }
 
+    /// 指数退避的基础时长。
     #[inline]
     fn backoff_base(&self) -> Duration {
         Self::BACKOFF_BASE
     }
 
+    /// 失败后进入冷却、暂停重试的时长。
     #[inline]
     fn cooldown(&self) -> Duration {
         Self::COOLDOWN

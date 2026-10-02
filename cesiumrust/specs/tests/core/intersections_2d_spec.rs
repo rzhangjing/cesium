@@ -1,6 +1,6 @@
-//! Intersections2DSpec.js → Rust integration tests
+//! Intersections2DSpec → Rust integration tests
 //!
-//! Original: packages/engine/Specs/Core/Intersections2DSpec.js (23 it())
+//! Original: Specs/Core/Intersections2DSpec (23 it())
 //! A-class ported: 23 (clipTriangleAtAxisAlignedThreshold ×14, computeBarycentricCoordinates ×4,
 //!                     computeLineSegmentLineSegmentIntersection ×5)
 

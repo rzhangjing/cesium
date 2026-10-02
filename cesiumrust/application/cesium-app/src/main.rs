@@ -119,6 +119,7 @@ fn resolve_terrain_endpoint() -> Option<String> {
 /// 正在进行的 ion 端点解析；一旦解析完成即被移除。
 #[derive(Resource)]
 struct PendingTerrainEndpoint {
+    /// 后台 ion 端点解析任务句柄；解析完成即被消费并移除。
     task: Task<Option<String>>,
 }
 
@@ -186,11 +187,15 @@ fn spawn_tileset_root(mut commands: Commands) {
 /// 交互式运行就能抓取一个确定性帧（默认或 opt-in 链）。
 #[derive(Resource)]
 struct AutoScreenshot {
+    /// 已推进的帧计数。
     frame: u32,
+    /// 触发捕获的目标帧号。
     at_frame: u32,
+    /// 截图输出路径模板。
     path: String,
 }
 
+/// 达到目标帧时抓取一张截图并在紧随其后请求退出。
 fn auto_screenshot_system(
     mut commands: Commands,
     mut shot: ResMut<AutoScreenshot>,
@@ -249,14 +254,18 @@ fn auto_screenshot_system(
 /// `FIXED_CAMERA` 文件的 TOML schema：单个 `[camera]` 表。
 #[derive(Debug, Deserialize)]
 struct FixedCameraFile {
+    /// 单一 `[camera]` 表解析出的固定相机位姿。
     camera: capture_script::CameraPose,
 }
 
 /// 保存一个每帧 PostUpdate 都应用的冻结相机位姿的资源。
 #[derive(Resource)]
 struct FixedCameraPose {
+    /// 冻结的相机世界位置。
     pos: Vec3,
+    /// 冻结的相机旋转四元数。
     quat: Quat,
+    /// 可选的垂直 FOV（度）；`None` 时保留默认。
     fov_y: Option<f32>,
 }
 
@@ -282,11 +291,17 @@ fn fixed_camera_system(
 /// 驱动批量多视图捕获（`CESIUM_SCREENSHOT_SCRIPT`）的资源。
 #[derive(Resource)]
 struct BatchCapture {
+    /// 脚本中待捕获的 shot 列表。
     script: Vec<capture_script::ShotEntry>,
+    /// 当前推进到的 shot 下标。
     cursor: usize,
+    /// 已推进的帧计数。
     frame: u32,
+    /// 截图与元数据的输出目录。
     output_dir: String,
+    /// 写入元数据的当前 git SHA。
     git_sha: String,
+    /// 冻结的环境变量快照，随每张截图一起写入。
     env_snapshot: serde_json::Value,
 }
 
@@ -403,11 +418,16 @@ fn build_env_snapshot() -> serde_json::Value {
 struct BaseSpherePlugin;
 
 impl Plugin for BaseSpherePlugin {
+    /// 插件装配入口：启动时生成基础球体与极地盖片。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用。
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_base_sphere);
     }
 }
 
+/// 生成基础球体（略小的兼容 composite 的 UV 球）与南/北极盖片。
 fn spawn_base_sphere(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -461,6 +481,7 @@ fn spawn_base_sphere(
     }
 }
 
+/// 应用入口：根据特性开关组装 Bevy 应用并注册各插件与系统。
 fn main() {
     // M3.3：无头离线自检 —— 无需 GPU 即可证明 fetcher 布线。
     // 立即退出（无 Bevy app、无窗口、无需 GPU 上下文）。
@@ -660,7 +681,7 @@ fn main() {
     // ── M5-D：Fabric 材质展示（内置 + 3 种 Water 海况）──────
     // 纯附加，env 门控（默认 OFF → v0 基线像素中性）。
     // 通过 CESIUM_ENABLE_MATERIAL_SHOWCASE=1 opt-in 渲染材质球
-    // —— 包括忠实移植的 Water.glsl（case 17u）calm/medium/rough
+    // —— 包括复刻的 Water 程序化图案（case 17u）calm/medium/rough
     // 基线，捕获到 specs/baselines/v2_water/（4 PNG：3 张海况
     // 特写 + 1 张弧形总览）。现有插件注册未被改动。
     // 该门控通过 feature_flags 注册表读取（每个 CESIUM_* env
@@ -893,8 +914,11 @@ fn main() {
 /// 仅针对真正发生了变化的实体）。
 #[derive(Resource)]
 struct M6WaveAConfig {
+    /// M6.x 裁切平面组件是否启用。
     clipping: bool,
+    /// M6.x 全景组件是否启用。
     panorama: bool,
+    /// M6.x IBL 环组件是否启用。
     ibl: bool,
     /// Phase-3 FIX-INTEG：M6.4 加权混合 OIT 门控。
     oit: bool,
@@ -902,6 +926,7 @@ struct M6WaveAConfig {
     clouds: bool,
     /// Phase-3 FIX-SPLIT：M6.1 分屏分隔线门控。
     split: bool,
+    /// 幂等标志：组件已附加后置 true，后续帧不再重复插入。
     done: bool,
     /// FIX-HL-RESMUT：程序化 sky-cube [`Image`] 句柄，由
     /// [`m6_wave_a_prepare`] 在 `Startup` 中构建一次。[`m6_wave_a_setup`] 读取（克隆）
@@ -1101,7 +1126,7 @@ fn m6_procedural_sky_cube() -> Image {
 
     let mut data = Vec::with_capacity(6 * (FACE * FACE * 4) as usize);
     // 面顺序是上游的 `[+X, -X, +Y, -Y, +Z, -Z]`
-    // （`CubeMapPanorama::FACE_NAMES` ≡ `SkyBox.js::createEarthSkyBox`）。
+    // （与 [`CubeMapPanorama::FACE_NAMES`] 的约定顺序一致）。
     for face in 0..6u32 {
         for y in 0..FACE {
             // `t = 0` 在该面的 zenith 边缘，`1` 在 nadir 边缘。在一个

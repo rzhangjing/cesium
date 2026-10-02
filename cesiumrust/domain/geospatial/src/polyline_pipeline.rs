@@ -1,6 +1,6 @@
 //! 折线流水线 —— 带高度插值的弧细分。
 //!
-//! 对 CesiumJS `PolylinePipeline.js` 的忠实移植。核心例程
+//! 核心例程
 //! [`generate_arc`] 将一条折线细分为椭球上的大地线弧，
 //! 并将每个生成的点抬升到（逐顶点插值的）高度。这是
 //! 围墙、走廊和折线几何的基础。
@@ -21,6 +21,8 @@ pub const DEFAULT_GRANULARITY: f64 = std::f64::consts::PI / 180.0;
 /// 一个线段需细分多少段，才能使每条弦都不超过 `min_distance`。
 ///
 /// 映射到 `PolylinePipeline.numberOfPoints`。
+///
+/// 取两端点直线距离除以最小弦长后向上取整，至少为 1。
 pub fn number_of_points(p0: DVec3, p1: DVec3, min_distance: f64) -> usize {
     let distance = p0.distance(p1);
     (distance / min_distance).ceil() as usize
@@ -29,6 +31,8 @@ pub fn number_of_points(p0: DVec3, p1: DVec3, min_distance: f64) -> usize {
 /// 在 `h0` 和 `h1` 之间将高度线性细分为 `num_points` 个采样。
 ///
 /// 映射到私有的 `subdivideHeights`。
+///
+/// 若两端高度几乎相等则直接全部填 `h0`；否则按等步长从 h0 线性插值到 h1。
 fn subdivide_heights(num_points: usize, h0: f64, h1: f64) -> Vec<f64> {
     let mut heights = vec![0.0; num_points];
     if (h0 - h1).abs() < f64::EPSILON {
@@ -47,6 +51,16 @@ fn subdivide_heights(num_points: usize, h0: f64, h1: f64) -> Vec<f64> {
 /// `p1`），将结果追加到 `out`。返回追加的点数。
 ///
 /// 映射到私有的 `generateCartesianArc`。
+///
+/// # 参数
+/// - `p0`、`p1`：线段两端点（地心固定系）。
+/// - `min_distance`：每条弦的最大长度（米）。
+/// - `ellipsoid`：参考椭球。
+/// - `h0`、`h1`：两端高度（米），沿弧线性插值。
+/// - `out`：输出顶点缓冲（追写）。
+///
+/// # 返回
+/// 本段追加的点数 `num_points`（至少 1）。
 fn generate_cartesian_arc(
     p0: DVec3,
     p1: DVec3,
@@ -98,6 +112,12 @@ pub struct ArcOptions<'a> {
 /// （插值后的）高度。
 ///
 /// 映射到 `PolylinePipeline.generateArc`。
+///
+/// # 参数
+/// - `options`：[`ArcOptions`]，含位置/逐顶点高度/粒度/椭球。
+///
+/// # 返回
+/// 沿大地线细分并抬升高度后的点列（地心固定系）；空输入返回空。单一位置时仅抬升到对应高度。
 pub fn generate_arc(options: &ArcOptions) -> Vec<DVec3> {
     let positions = options.positions;
     let ellipsoid = options.ellipsoid;
@@ -157,6 +177,13 @@ pub struct WrapLongitudeResult {
 /// 将一条折线拆分为若干段，使其不跨越 ±180 度经线。
 ///
 /// 映射到 `PolylinePipeline.wrapLongitude`。
+///
+/// # 参数
+/// - `positions`：折线顶点（地心固定系）。
+/// - `model_matrix`：可选模型矩阵，用于将顶点变回局部坐标系后再判断与国际日期变更线的相交。
+///
+/// # 返回
+/// [`WrapLongitudeResult`]：在交叉处插入两个错位点后重新拼接的位置列，及各段的顶点数。
 pub fn wrap_longitude(positions: &[DVec3], model_matrix: Option<&DMat4>) -> WrapLongitudeResult {
     let mut cartesians: Vec<DVec3> = Vec::new();
     let mut segments: Vec<usize> = Vec::new();
@@ -172,6 +199,7 @@ pub fn wrap_longitude(positions: &[DVec3], model_matrix: Option<&DMat4>) -> Wrap
     let inverse_model = model.inverse();
 
     let origin = (inverse_model * DVec3::ZERO.extend(1.0)).truncate();
+    // 构造两个参考平面：xz 平面（法线沿 Y）与 yz 平面（即国际日期变更线所在平面）。
     let xz_normal = (inverse_model * DVec3::Y.extend(0.0)).truncate().normalize();
     let xz_plane = Plane::from_point_normal(origin, xz_normal);
     let yz_normal = (inverse_model * DVec3::X.extend(0.0)).truncate().normalize();
@@ -189,6 +217,7 @@ pub fn wrap_longitude(positions: &[DVec3], model_matrix: Option<&DMat4>) -> Wrap
             // 并且与 xz 平面相交
             if let Some(intersection) = line_segment_plane(prev, cur, &xz_plane) {
                 // 将 xz 平面上的点略微偏移、远离该平面
+                // 两个错开点分属变更线两侧，使拆分后的两段均不跨线。
                 let mut offset = xz_normal * 5.0e-9;
                 if xz_plane.point_distance(prev) < 0.0 {
                     offset = -offset;
@@ -221,6 +250,7 @@ mod tests {
     use crate::math_utils::to_radians;
 
     #[test]
+    /// 验证段数按弦长向上取整（ceil(10/3)=4、ceil(10/5)=2）。
     fn test_number_of_points() {
         let p0 = DVec3::new(0.0, 0.0, 0.0);
         let p1 = DVec3::new(10.0, 0.0, 0.0);
@@ -229,6 +259,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证单一位置时返回恰好一个点。
     fn test_generate_arc_single_point() {
         let ell = Ellipsoid::WGS84;
         let pos = ell.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0));
@@ -243,6 +274,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证生成的弧保留首尾端点且均落在表面（高度~0）。
     fn test_generate_arc_endpoints_preserved() {
         let ell = Ellipsoid::WGS84;
         let p0 = ell.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0));
@@ -266,6 +298,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证带高度输入时每个点都抬升到指定高度（~1000m）。
     fn test_generate_arc_with_heights() {
         let ell = Ellipsoid::WGS84;
         let p0 = ell.cartographic_to_cartesian(&Cartographic::from_degrees(0.0, 0.0, 0.0));
@@ -286,6 +319,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证同纬度非赤道两点间的大地线中点向极点弯曲（纬度 > 45°）。
     fn test_generate_arc_geodesic_not_linear() {
         // 同一纬度（偏离赤道）两点之间的大地线，相对于等纬度线会向
         // 极点弯曲。

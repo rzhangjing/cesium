@@ -1,6 +1,6 @@
 //! VelocityOrientationProperty - 从位置速度导出方向四元数。
 //!
-//! 映射到 CesiumJS `DataSources/VelocityOrientationProperty.js`
+//! 它取位置属性的速度，在给定椭球上构造一个对齐参考系，输出旋转四元数。
 
 use crate::property_system::property::DynProperty;
 use crate::property_system::value::PropertyValue;
@@ -13,7 +13,7 @@ use std::sync::Arc;
 /// 一个从位置属性的速度计算方向四元数的属性。所得的
 /// 四元数表示从椭球固定参考系到速度对齐参考系的旋转。
 ///
-/// 映射到 CesiumJS `DataSources/VelocityOrientationProperty.js`
+/// 若未绑定位置或当前时刻无速度则无值；椭球决定局部程度参考系。
 #[derive(Clone)]
 pub struct VelocityOrientationProperty {
     /// 用于导出速度的位置属性。
@@ -117,12 +117,14 @@ impl VelocityOrientationProperty {
 }
 
 impl Default for VelocityOrientationProperty {
+    /// 构造一个使用默认椭球且未绑定位置属性的方向属性。
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl std::fmt::Debug for VelocityOrientationProperty {
+    /// 输出是否已绑定位置与所用椭球，避免打印不可展示的闭包。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VelocityOrientationProperty")
             .field("has_position", &self.position.is_some())

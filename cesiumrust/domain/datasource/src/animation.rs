@@ -1,9 +1,9 @@
 //! 动画系统：属性动画、路径动画与路径可视化。
 //!
-//! 映射到 CesiumJS：
-//! - `DataSources/PathVisualizer.js`
-//! - `DataSources/SampledPositionProperty.js`（动画方面）
-//! - `Core/JulianDate.js`（时间管理）
+//! 本模块提供三部分能力：以关键帧序列在时间轴上插值出连续位置的
+//! `interpolate_position`（支持线性/Hermite/Lagrange 三种算法），驱动播放
+//! 进度与循环的 `AnimationClock`，以及沿采样轨迹计算拖尾与前导路径点的
+//! `compute_path`——后者把经纬度高程逐个转换到给定椭球下的 Cartesian3。
 
 use cesium_geospatial::{Cartographic, Ellipsoid};
 
@@ -12,6 +12,9 @@ use crate::entity_collection::EntityCollection;
 use crate::property::Property;
 
 /// 动画中的一个关键帧。
+///
+/// 记录某一时刻及其对应的值，位置分量以 [lon_rad, lat_rad, height_m]
+/// 表示；关键帧序列按时间递增排列，供插值在其间求值。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Keyframe {
     /// 自历元起以秒计的时间。
@@ -33,6 +36,9 @@ pub enum InterpolationAlgorithm {
 }
 
 /// 动画时钟状态。
+///
+/// 维护起止时间、当前时间与播放速率倍率，并以 tick 按帧推动当前时间；
+/// 越界时根据 looping 决定回绕到另一端还是钉在边界并停止播放。
 #[derive(Debug, Clone)]
 pub struct AnimationClock {
     /// 起始时间（秒）。
@@ -63,6 +69,9 @@ impl AnimationClock {
     }
 
     /// 将时钟推进 delta_time 秒。
+    ///
+    /// 仅当处于播放态才前进；推进后若越过停止或起始边界，则依
+    /// looping 对区间长度取模回绕，或钉在边界并置 playing 为假。
     pub fn tick(&mut self, delta_time: f64) {
         if !self.playing {
             return;
@@ -90,6 +99,9 @@ impl AnimationClock {
     }
 
     /// 归一化的进度（0.0 到 1.0）。
+    ///
+    /// 以当前时间在起止区间内的占比计算；当区间退化（长度近零）
+    /// 时直接返回 0.0 以避免除零。
     pub fn progress(&self) -> f64 {
         if (self.stop_time - self.start_time).abs() < f64::EPSILON {
             return 0.0;
@@ -103,12 +115,19 @@ impl AnimationClock {
     }
 
     /// 定位到特定时间。
+    ///
+    /// 将目标时间钉到 [start_time, stop_time] 区间内写入当前时间，
+    /// 不改变播放态。
     pub fn seek(&mut self, time: f64) {
         self.current_time = time.clamp(self.start_time, self.stop_time);
     }
 }
 
 /// 从关键帧在给定的时间处插值出一个位置。
+///
+/// 先处理空序列与单帧的退化情形，再定位相邻关键帧并对区间外的
+/// 时间钳到端值；随后按所选算法在相邻帧间求值：线性直接比例插值，
+/// Hermite 用零切线的 smoothstep，Lagrange 取至多四个邻点构造基函数。
 pub fn interpolate_position(
     keyframes: &[Keyframe],
     time: f64,
@@ -140,6 +159,7 @@ pub fn interpolate_position(
     }
 
     let next_idx = (prev_idx + 1).min(keyframes.len() - 1);
+    // 取相邻两帧及其时间差，时间差为零时直接回退到前帧值。
     let prev = &keyframes[prev_idx];
     let next = &keyframes[next_idx];
 
@@ -148,8 +168,10 @@ pub fn interpolate_position(
         return Some(prev.value);
     }
 
+    // 归一化局部参数 t∈[0,1]，表示查询时刻在 prev→next 区间的位置。
     let t = (time - prev.time) / dt;
 
+    // 按所选算法在相邻帧间求值。
     match algorithm {
         InterpolationAlgorithm::Linear => {
             Some([
@@ -163,6 +185,7 @@ pub fn interpolate_position(
             let t2 = t * t;
             let t3 = t2 * t;
             let h = 3.0 * t2 - 2.0 * t3; // smoothstep
+            // 逐分量用 smoothstep 系数 h 在 prev→next 间插值，起止处切线为零。
             Some([
                 prev.value[0] + h * (next.value[0] - prev.value[0]),
                 prev.value[1] + h * (next.value[1] - prev.value[1]),
@@ -184,6 +207,7 @@ pub fn interpolate_position(
                 ]);
             }
 
+            // 累加各 Lagrange 基函数乘以对应样本分量的贡献。
             let mut result = [0.0; 3];
             for (i, pi) in points.iter().enumerate() {
                 let mut basis = 1.0;
@@ -215,7 +239,9 @@ pub struct PathPoint {
 
 /// 计算给定时间处实体的拖尾/前导路径。
 ///
-/// 映射到 CesiumJS `DataSources/PathVisualizer.js`
+/// 静态（常量位置）实体只产出一个点；采样位置则先在拖尾区间
+/// `[time - trail_time, time]`、再在前导区间 `[time, time + lead_time]` 上
+/// 按 resolution 步长线性插值，逐点转到椭球直角坐标后返回。
 pub fn compute_path(
     entity: &Entity,
     time: f64,
@@ -225,6 +251,8 @@ pub fn compute_path(
     ellipsoid: &Ellipsoid,
 ) -> Vec<PathPoint> {
     let mut path = Vec::new();
+
+    // 实体无采样序列时无法构轨，静态或空位置分支处理。
 
     // 从实体获取位置样本
     let samples = match &entity.position {
@@ -254,6 +282,7 @@ pub fn compute_path(
         .collect();
 
     // 拖尾：从 (time - trail_time) 到 time
+    // 以 resolution 为步长逐时刻插值并转到直角坐标。
     let trail_start = time - trail_time;
     let mut t = trail_start;
     while t <= time {
@@ -289,6 +318,9 @@ pub fn compute_path(
 }
 
 /// 更新所有带 path 图形的实体，计算它们的拖尾/前导路径。
+///
+/// 先过滤出可见且含 path 图形的实体，逐项读取前导/拖尾时长与分辨率
+/// 后调用 compute_path，仅保留非空结果并以实体 id 连同路径点集返回。
 pub fn update_all_paths(
     entities: &EntityCollection,
     time: f64,
@@ -318,6 +350,8 @@ mod tests {
     use super::*;
     use crate::entity::PathGraphics;
 
+    /// 验证播放态时钟逐帧推进：倍率为 1 时每次 tick 10 秒，
+    /// 当前时间依次累加到 10 与 20。
     #[test]
     fn test_animation_clock_tick() {
         let mut clock = AnimationClock::new(0.0, 100.0);
@@ -331,6 +365,8 @@ mod tests {
         assert!((clock.current_time - 20.0).abs() < 1e-10);
     }
 
+    /// 验证循环回绕：超过停止时间时按区间长度取模，110 秒回绕
+    /// 到起点后的 10 秒处。
     #[test]
     fn test_animation_clock_loop() {
         let mut clock = AnimationClock::new(0.0, 100.0);
@@ -341,6 +377,8 @@ mod tests {
         assert!((clock.current_time - 10.0).abs() < 1e-10);
     }
 
+    /// 验证非循环时不取模：越过停止边界后钉在 100 秒并自动
+    /// 停止播放。
     #[test]
     fn test_animation_clock_no_loop() {
         let mut clock = AnimationClock::new(0.0, 100.0);
@@ -352,6 +390,8 @@ mod tests {
         assert!(!clock.playing);
     }
 
+    /// 验证进度归一化：当前时间处于起止中点时 progress 返回 0.5。
+    /// 确保进度仅依赖时间位置而与倍率/播放态无关。
     #[test]
     fn test_animation_clock_progress() {
         let clock = AnimationClock {
@@ -365,6 +405,8 @@ mod tests {
         assert!((clock.progress() - 0.5).abs() < 1e-10);
     }
 
+    /// 验证线性插值：两帧之间取中点时刻 5 秒，各分量按半程比例
+    /// 处于起点与终点之间。
     #[test]
     fn test_interpolate_linear() {
         let keyframes = vec![
@@ -378,6 +420,8 @@ mod tests {
         assert!((pos[2] - 15.0).abs() < 1e-10);
     }
 
+    /// 验证 Hermite(smoothstep) 插值：在中点处对称性仍给出 0.5 比例，
+    /// 因此首分量为 5。
     #[test]
     fn test_interpolate_hermite() {
         let keyframes = vec![
@@ -390,6 +434,8 @@ mod tests {
         assert!((pos[0] - 5.0).abs() < 1e-10);
     }
 
+    /// 验证区间外钳位：时间早于首帧返回首值，晚于末帧返回末值，
+    /// 实现两端的外推钉定。
     #[test]
     fn test_interpolate_boundaries() {
         let keyframes = vec![
@@ -406,6 +452,8 @@ mod tests {
         assert_eq!(pos, [10.0, 20.0, 30.0]);
     }
 
+    /// 验证单帧退化：只有一个关键帧时无论查询时间都直接返回该帧值。
+    /// 确保不会因无法构成区间而报错。
     #[test]
     fn test_interpolate_single_keyframe() {
         let keyframes = vec![Keyframe { time: 0.0, value: [5.0, 5.0, 5.0] }];
@@ -413,6 +461,8 @@ mod tests {
         assert_eq!(pos, [5.0, 5.0, 5.0]);
     }
 
+    /// 验证采样实体路径计算：拖尾加前导共应产生至少 4 个路径点。
+    /// 位置样本经插值后逐个转到直角坐标。
     #[test]
     fn test_compute_path_sampled() {
         let mut entity = Entity::new("sat");
@@ -435,6 +485,7 @@ mod tests {
         assert!(path.len() >= 4);
     }
 
+    /// 验证静态实体路径：常量位置无拖尾/前导，只产出一个当前点。
     #[test]
     fn test_compute_path_static() {
         let entity = Entity::new("static").with_position(0.0, 0.0, 1000.0);
@@ -444,6 +495,8 @@ mod tests {
         assert_eq!(path.len(), 1); // 静态实体只有一个点
     }
 
+    /// 验证批量更新：仅带 path 图形且可见的实体参算，因此两个实体
+    /// 中只有 sat-1 返回非空路径。
     #[test]
     fn test_update_all_paths() {
         let mut entities = EntityCollection::new();
@@ -472,6 +525,8 @@ mod tests {
         assert!(!paths[0].1.is_empty());
     }
 
+    /// 验证 seek 钉位：目标时间超出起止时被钉到区间边界，中点则
+    /// 原样写入。
     #[test]
     fn test_clock_seek() {
         let mut clock = AnimationClock::new(0.0, 100.0);
@@ -485,6 +540,8 @@ mod tests {
         assert!((clock.current_time - 0.0).abs() < 1e-10);
     }
 
+    /// 验证倍率作用：multiplier=2 时 tick 10 秒实际前进 20 秒。
+    /// 确保推进量按倍率缩放。
     #[test]
     fn test_clock_multiplier() {
         let mut clock = AnimationClock::new(0.0, 100.0);

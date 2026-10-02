@@ -1,16 +1,13 @@
 //! 表达式预处理：3D Tiles Styling 语言的 `${...}` defines、反斜杠转义与变量替换。
 //!
-//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs` L372-440
-//! （`VARIABLE_PATTERN` / `replace_defines` / `remove_backslashes` /
-//! `replace_variables`），它是上游 `packages/engine/Source/Scene/Expression.js`
-//! L573-625（`replaceDefines` / `removeBackslashes` / `replaceBackslashes` /
-//! `replaceVariables`）的 Rust 移植。
+//! 核心入口：`VARIABLE_PATTERN` / `replace_defines` / `remove_backslashes` /
+//! `replace_variables`，负责在解析前对表达式源码做 define 与变量展开预处理。
 //!
 //! # 冲突消解（任务简报 vs 事实来源）
 //!
 //! 任务简报把 `replace_defines` 描述为需要**递归展开 + 环检测（`MAX_DEFINES_DEPTH`）**。
-//! 无论 blueprint（`expression.rs` L377-390）还是上游（`Expression.js` L573-587）
-//! 都不这么做：两者都对 `defines` 做**单趟**遍历，每个 `${key}` 只替换一次。
+//! 但无论 blueprint 还是上游实现都不这么做：两者都对 `defines` 做**单趟**遍历，
+//! 每个 `${key}` 只替换一次。
 //! 单趟不可能无限循环，所以 `MAX_DEFINES_DEPTH` 无关紧要。本移植遵循**事实来源**
 //! （单趟，忠于 blueprint），而非简报里臆造的递归保护；该偏离记录在此处与里程碑报告里。
 //!
@@ -23,7 +20,7 @@ use ::regex::Regex;
 
 use crate::value::{runtime_error, RuntimeError};
 
-/// `${name}` 占位符模式，镜像 Expression.js 的 `VARIABLE_PATTERN`。
+/// `${name}` 占位符模式，匹配花括号包裹的变量引用。
 pub const VARIABLE_PATTERN: &str = r"\$\{(.*?)}";
 
 /// 编译好的 `${name}` 模式，为求值热路径而缓存。

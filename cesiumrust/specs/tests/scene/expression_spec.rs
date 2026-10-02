@@ -1,7 +1,7 @@
-//! Scene/ExpressionSpec.js + ConditionsExpressionSpec.js + Cesium3DTileStyleSpec.js
+//! Scene/ExpressionSpec + ConditionsExpressionSpec + Cesium3DTileStyleSpec
 //! → 针对 tileset 样式表达式系统的 Rust 集成测试。
 //!
-//! CesiumJS ExpressionSpec.js（4235 行，15 个 it()，每个含大量断言）
+//! CesiumJS ExpressionSpec（4235 行，15 个 it()，每个含大量断言）
 //! 使用完整的 JavaScript 表达式解析器。Rust 实现
 //! (cesium_tileset::styling) 支持其子集：属性引用、比较、
 //! 算术、逻辑运算、一元运算、函数调用（color/rgb/rgba/abs/sqrt/

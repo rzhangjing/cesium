@@ -1,4 +1,4 @@
-//! KML 导出规范 - 移植自 DataSources/exportKmlSpec.js
+//! KML 导出规范 - 参考自 DataSources/exportKmlSpec
 //! 测试 KmlExporter、KmlExportStyle、KmlExportPlacemark、KmlExportGeometry、rgba_to_kml_color
 
 use cesium_kml::{

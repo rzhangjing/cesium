@@ -109,6 +109,7 @@ pub struct OrbitState {
 }
 
 impl Default for OrbitState {
+    /// 默认视角：俯角 ~23°、距离 3 个渲染单位，旋转/缩放速度取交互手感值。
     fn default() -> Self {
         Self {
             heading: 0.0,
@@ -159,6 +160,7 @@ pub struct OrbitInertiaState {
 }
 
 impl Default for OrbitInertiaState {
+    /// 默认惯性状态：新建控制器，历史角度与时间戳归零。
     fn default() -> Self {
         Self {
             controller: InertiaController::new(),
@@ -227,6 +229,7 @@ struct Arcball {
 }
 
 impl Default for Arcball {
+    /// 默认单位四元数（IDENTITY）朝向，未吐合、无锚点。
     fn default() -> Self {
         Self {
             orientation: DQuat::IDENTITY,
@@ -301,6 +304,11 @@ pub(crate) fn orbit_state_from_env() -> OrbitState {
 pub struct OrbitCameraPlugin;
 
 impl Plugin for OrbitCameraPlugin {
+    /// 插件装配入口：播种初始相机资源，挂载相机/惯性/飞行三段链式
+    /// 更新系统（仅在 3D 地图模式下运行）。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用。
     fn build(&self, app: &mut App) {
         // M0.1：从环境变量播种初始相机（未设置时像素中性）
         let initial_state = orbit_state_from_env();
@@ -324,6 +332,7 @@ impl Plugin for OrbitCameraPlugin {
     }
 }
 
+/// 按当前轨道状态计算变换并 spawn 一个透视投影的 3D 相机实体。
 fn spawn_orbit_camera(mut commands: Commands, state: Res<OrbitState>) {
     let transform = compute_camera_transform(&state);
     // 自定义透视投影：一个小近平面使相机能非常接近表面以检视影像

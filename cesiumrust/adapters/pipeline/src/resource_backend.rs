@@ -78,6 +78,7 @@ struct RbStats {
 }
 
 impl RbStats {
+    /// 构造一个所有计数器归零的后端统计块。
     fn new() -> Self {
         Self {
             streamed: AtomicU32::new(0),
@@ -300,6 +301,10 @@ impl<K> ResourceBackend<K> for PipelineResourceBackend<K>
 where
     K: Hash + Eq + Copy + Send + 'static,
 {
+    /// 流式请求一个资源键的字节。
+    ///
+    /// 在 `intake` 锁下原子地依次：查热/温缓存命中→冷未命中时注册等待者并
+    /// 经去重后提交到 worker 池→阻塞至 dispatcher 交付（仅 std mpsc）。
     fn request_stream<'a>(
         &'a self,
         key: K,
@@ -354,6 +359,8 @@ where
         })
     }
 
+    /// 取消一个在途键：清除去重槽、从 wanted 集摘除并以 `Cancelled`
+    /// 立即唤醒所有等待者。
     fn cancel(&self, key: &K) {
         // 清除在途槽位，以便该资产可被重新请求。
         self.inner.dedup.remove(key);
@@ -368,6 +375,7 @@ where
         }
     }
 
+    /// 查询一个键当前所在的缓存层级（冷/温/热）。
     fn cache_tier(&self, key: &K) -> CacheTier {
         // 冷：完全不在缓存存储中。
         if !self.inner.cache.lock().unwrap().contains_key(key) {
@@ -381,6 +389,7 @@ where
         }
     }
 
+    /// 返回后端的运行时统计快照（热/温条目数、在途、streamed/deduped/evicted）。
     fn stats(&self) -> ResourceStats {
         let cache_len = self.inner.cache.lock().unwrap().len() as u32;
         let hidden_len = self.inner.hidden.lock().unwrap().len() as u32;
@@ -397,10 +406,12 @@ where
         }
     }
 
+    /// 后端的可读名称标识。
     fn name(&self) -> &str {
         &self.inner.name
     }
 
+    /// 后端是否可用：未收到关闭请求时即为可用。
     fn is_available(&self) -> bool {
         !self.inner.shutdown.load(Ordering::Relaxed)
     }
@@ -410,6 +421,8 @@ impl<K> Drop for PipelineResourceBackend<K>
 where
     K: Hash + Eq + Copy + Send + 'static,
 {
+    /// 停止 dispatcher 线程并释放内部 `Arc`；丢弃 `WorkerPool` 会关闭其
+    /// 任务通道，使 worker 自然退出。
     fn drop(&mut self) {
         // 停止 dispatcher，然后让 `Arc<Inner>` 解开：丢弃
         // `WorkerPool` 会关闭其任务通道，（分离的）worker 随之退出。

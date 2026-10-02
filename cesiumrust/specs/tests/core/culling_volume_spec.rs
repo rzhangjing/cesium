@@ -1,4 +1,4 @@
-//! 移植自 CullingVolumeSpec.js（43 个 it()，40 个 A 类）
+//! 参考自 CullingVolumeSpec（43 个 it()，40 个 A 类）
 //!
 //! 3 个 throws = C 类（Rust 类型系统强制输入合法）。
 //! 每个 A 类测试同时验证 computeVisibility 和 computeVisibilityWithPlaneMask。

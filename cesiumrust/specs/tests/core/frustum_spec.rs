@@ -1,4 +1,4 @@
-//! Core/PerspectiveFrustumSpec.js、OrthographicFrustumSpec.js、CullingVolumeSpec.js
+//! Core/PerspectiveFrustumSpec、OrthographicFrustumSpec、CullingVolumeSpec
 //! → Rust 集成测试
 
 use cesium_geospatial::bounding::BoundingSphere;

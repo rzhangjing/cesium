@@ -1,6 +1,6 @@
-//! LinearSplineSpec.js → Rust 集成测试
+//! LinearSplineSpec → Rust 集成测试
 //!
-//! 原始：packages/engine/Specs/Core/LinearSplineSpec.js（8 个 it()）
+//! 原始：Specs/Core/LinearSplineSpec（8 个 it()）
 //! A 类已移植：3 个（evaluate_number、evaluate_cartesian3_no_result、evaluate_cartesian3_with_result）
 //! C 类已省略：5 个（构造函数 throws ×3，evaluate throws ×2 — 编译期类型安全）
 

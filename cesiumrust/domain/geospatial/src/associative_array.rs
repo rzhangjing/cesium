@@ -1,6 +1,4 @@
-//! 映射到 CesiumJS `Core/AssociativeArray.js`
-//!
-//! 一个键值对集合，以哈希存储以便快速查找，
+//! AssociativeArray —— 一个键值对集合，以哈希存储以便快速查找，
 //! 同时也提供一个数组以便快速迭代。
 
 use std::collections::HashMap;
@@ -8,7 +6,9 @@ use std::collections::HashMap;
 /// 一个键值对集合，以哈希存储以便快速查找，
 /// 同时维护一个值数组以便快速迭代。
 pub struct AssociativeArray<T> {
+    /// 值的顺序数组，用于保持插入顺序并支持快速迭代。
     array: Vec<T>,
+    /// 键到值的哈希映射，用于按键快速查找。
     hash: HashMap<String, T>,
 }
 
@@ -16,6 +16,7 @@ impl<T> Default for AssociativeArray<T>
 where
     T: Clone + PartialEq,
 {
+    /// 默认构造一个空的关联数组。
     fn default() -> Self {
         Self::new()
     }

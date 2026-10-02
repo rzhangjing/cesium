@@ -1,4 +1,4 @@
-//! ImageryProvider 规范 - 移植自 Scene/*ImageryProviderSpec
+//! ImageryProvider 规范 - 参考自 Scene/*ImageryProviderSpec
 //! 覆盖：ImageryProviderDescriptor、ImageryProviderKind、BingMapStyle、
 //! UrlTemplate, WMTS, WMS, TMS, OSM, Bing providers
 

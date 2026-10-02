@@ -1,14 +1,13 @@
 //! 用于动画的时间插值算法。
 //!
-//! 映射到 CesiumJS 插值：
-//! - `Core/HermitePolynomialApproximation.js`
-//! - `Core/LagrangePolynomialApproximation.js`
-//! - `Core/LinearApproximation.js`
-//! - `Core/InterpolationAlgorithm.js`
+//! 提供线性、Hermite 三次、Lagrange 多项式与 Catmull-Rom 等
+//! 常用插值内核，均含标量与 DVec3 两个版本，供采样轨迹求值。
 
 use glam::DVec3;
 
 /// 插值算法类型。
+///
+/// 选择对采样点求值时采用的多项式阶数与是否使用导数。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InterpolationType {
     /// 线性插值（1 阶）。
@@ -21,6 +20,8 @@ pub enum InterpolationType {
 }
 
 /// 一个时间-数值采样点。
+///
+/// 记录某时刻的自变量时间与函数值，并可选携带导数供 Hermite 使用。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SamplePoint {
     /// 自纪元起的时间（秒）。
@@ -34,6 +35,7 @@ pub struct SamplePoint {
 impl SamplePoint {
     /// 创建一个新的采样点。
     pub fn new(time: f64, value: f64) -> Self {
+        // 不带导数的默认构造：derivative 置为 None
         Self {
             time,
             value,
@@ -43,6 +45,7 @@ impl SamplePoint {
 
     /// 创建一个带导数的采样点。
     pub fn with_derivative(time: f64, value: f64, derivative: f64) -> Self {
+        // 供 Hermite 插值使用：额外携带该时刻的导数值
         Self {
             time,
             value,
@@ -53,11 +56,13 @@ impl SamplePoint {
 
 /// 两个值之间的线性插值。
 pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
+    // 标准线性插值：从 a 向 b 按参数 t 推进
     a + (b - a) * t
 }
 
 /// DVec3 的线性插值。
 pub fn lerp_vec3(a: DVec3, b: DVec3, t: f64) -> DVec3 {
+    // 向量的线性插值等价于逐分量套用 lerp
     a + (b - a) * t
 }
 
@@ -70,19 +75,23 @@ pub fn lerp_vec3(a: DVec3, b: DVec3, t: f64) -> DVec3 {
 /// * `m1` - 结束切线
 /// * `t` - 参数 [0, 1]
 pub fn hermite(p0: f64, m0: f64, p1: f64, m1: f64, t: f64) -> f64 {
+    // 预计算 t 的二次与三次幂，供基多项式复用
     let t2 = t * t;
     let t3 = t2 * t;
 
+    // 四次 Hermite 基函数 H00/H10/H01/H11（关于 t 的多项式）
     let h00 = 2.0 * t3 - 3.0 * t2 + 1.0;
     let h10 = t3 - 2.0 * t2 + t;
     let h01 = -2.0 * t3 + 3.0 * t2;
     let h11 = t3 - t2;
 
+    // 结果为位置与切线的加权和：两端函数值乘 H00/H01，两端导数乘 H10/H11
     h00 * p0 + h10 * m0 + h01 * p1 + h11 * m1
 }
 
 /// DVec3 的 Hermite 插值。
 pub fn hermite_vec3(p0: DVec3, m0: DVec3, p1: DVec3, m1: DVec3, t: f64) -> DVec3 {
+    // 对 x/y/z 三个分量分别执行标量 Hermite 插值
     DVec3::new(
         hermite(p0.x, m0.x, p1.x, m1.x, t),
         hermite(p0.y, m0.y, p1.y, m1.y, t),
@@ -92,11 +101,14 @@ pub fn hermite_vec3(p0: DVec3, m0: DVec3, p1: DVec3, m1: DVec3, t: f64) -> DVec3
 
 /// Lagrange 多项式插值。
 ///
+/// 以全部采样点构造一个至多 n-1 次多项式，再在 t 处求值。
+///
 /// # 参数
 /// * `points` - 采样点（时间、数值）
 /// * `t` - 要插值的时间
 pub fn lagrange_interpolate(points: &[SamplePoint], t: f64) -> f64 {
     let n = points.len();
+    // 空集返回 0；单点退化为常值
     if n == 0 {
         return 0.0;
     }
@@ -104,11 +116,13 @@ pub fn lagrange_interpolate(points: &[SamplePoint], t: f64) -> f64 {
         return points[0].value;
     }
 
+    // 累加每个基多项式 L_i(t) * y_i
     let mut result = 0.0;
     for i in 0..n {
         let mut basis = points[i].value;
         for j in 0..n {
             if i != j {
+                // 基函数：对所有 j≠i 连乘 (t - x_j) / (x_i - x_j)
                 let denom = points[i].time - points[j].time;
                 if denom.abs() > 1e-15 {
                     basis *= (t - points[j].time) / denom;
@@ -126,11 +140,13 @@ pub fn lagrange_interpolate_vec3(
     values: &[DVec3],
     t: f64,
 ) -> DVec3 {
+    // 取 times 与 values 的公共长度作为有效采样数
     let n = times.len().min(values.len());
     if n == 0 {
         return DVec3::ZERO;
     }
 
+    // 拆出 x/y/z 三条标量采样序列，分别复用标量 Lagrange 插值
     let points_x: Vec<SamplePoint> = (0..n)
         .map(|i| SamplePoint::new(times[i], values[i].x))
         .collect();
@@ -154,9 +170,11 @@ pub fn lagrange_interpolate_vec3(
 /// * `p0`, `p1`, `p2`, `p3` - 四个控制点
 /// * `t` - 参数 [0, 1]（在 p1 与 p2 之间插值）
 pub fn catmull_rom(p0: f64, p1: f64, p2: f64, p3: f64, t: f64) -> f64 {
+    // 预计算 t 的二次与三次幂
     let t2 = t * t;
     let t3 = t2 * t;
 
+    // Catmull-Rom 矩阵形式展开：以 p1、p2 为段端点，p0、p3 提供切线信息
     0.5 * ((2.0 * p1)
         + (-p0 + p2) * t
         + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
@@ -165,6 +183,7 @@ pub fn catmull_rom(p0: f64, p1: f64, p2: f64, p3: f64, t: f64) -> f64 {
 
 /// DVec3 的 Catmull-Rom 样条。
 pub fn catmull_rom_vec3(p0: DVec3, p1: DVec3, p2: DVec3, p3: DVec3, t: f64) -> DVec3 {
+    // 逐分量套用标量 Catmull-Rom 公式
     DVec3::new(
         catmull_rom(p0.x, p1.x, p2.x, p3.x, t),
         catmull_rom(p0.y, p1.y, p2.y, p3.y, t),
@@ -173,7 +192,10 @@ pub fn catmull_rom_vec3(p0: DVec3, p1: DVec3, p2: DVec3, p3: DVec3, t: f64) -> D
 }
 
 /// 单位向量（方向）的球面线性插值。
+///
+/// 沿两单位向量间的大圆弧以恒定角速度插值，保持结果为单位长。
 pub fn slerp_vec3(a: DVec3, b: DVec3, t: f64) -> DVec3 {
+    // 两单位向量夹角的余弦（夹取防浮点越界）
     let dot = a.dot(b).clamp(-1.0, 1.0);
 
     if dot.abs() > 0.9995 {
@@ -181,8 +203,10 @@ pub fn slerp_vec3(a: DVec3, b: DVec3, t: f64) -> DVec3 {
         return lerp_vec3(a, b, t).normalize();
     }
 
+    // 常规情形：按夹角正弦分配两端的权重，再归一化回单位球面
     let theta = dot.acos();
     let sin_theta = theta.sin();
+    // 端点权重：按 (1-t) 与 t 相对夹角的正弦分配
     let wa = ((1.0 - t) * theta).sin() / sin_theta;
     let wb = (t * theta).sin() / sin_theta;
 
@@ -190,11 +214,14 @@ pub fn slerp_vec3(a: DVec3, b: DVec3, t: f64) -> DVec3 {
 }
 
 /// 使用指定算法插值一个数值。
+///
+/// 根据 algo 分发到线性/Hermite/Lagrange 三条求值路径。
 pub fn interpolate(
     algo: InterpolationType,
     points: &[SamplePoint],
     t: f64,
 ) -> f64 {
+    // 空/单点边界：无点返回 0，单点直接取其值
     if points.is_empty() {
         return 0.0;
     }
@@ -207,6 +234,7 @@ pub fn interpolate(
             // 找到包围区间
             let (i0, i1) = find_bracket(points, t);
             let dt = points[i1].time - points[i0].time;
+            // 归一化参数 frac = (t - x0) / (x1 - x0)，区间退化时取 0
             let frac = if dt.abs() > 1e-15 {
                 (t - points[i0].time) / dt
             } else {
@@ -215,6 +243,7 @@ pub fn interpolate(
             lerp(points[i0].value, points[i1].value, frac)
         }
         InterpolationType::Hermite => {
+            // Hermite：把端点导数乘以区间长度换算为切线向量再插值
             let (i0, i1) = find_bracket(points, t);
             let dt = points[i1].time - points[i0].time;
             let frac = if dt.abs() > 1e-15 {
@@ -232,14 +261,17 @@ pub fn interpolate(
 
 /// 查找时间 t 的包围索引。
 fn find_bracket(points: &[SamplePoint], t: f64) -> (usize, usize) {
+    // t 不越过首点 → 取最前一对索引
     if t <= points[0].time {
         return (0, 1.min(points.len() - 1));
     }
     let last = points.len() - 1;
+    // t 越过末点 → 取最后一段
     if t >= points[last].time {
         return (last.saturating_sub(1), last);
     }
 
+    // 线性扫描首个满足 x_i <= t <= x_{i+1} 的区间
     for i in 0..last {
         if t >= points[i].time && t <= points[i + 1].time {
             return (i, i + 1);

@@ -23,6 +23,10 @@ use super::system_wiring::gpu_cache_eviction_system;
 pub struct CesiumPipelinePlugin;
 
 impl Plugin for CesiumPipelinePlugin {
+    /// 初始化 GPU handle 缓存与逐出统计资源，并在 Update 挂载逐出系统。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用
     fn build(&self, app: &mut App) {
         app.init_resource::<BevyGpuHandleCache>()
             .init_resource::<PipelineEvictionStats>()

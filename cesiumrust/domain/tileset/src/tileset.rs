@@ -1,6 +1,7 @@
 //! 3D Tileset 定义与 tileset.json 解析。
 //!
-//! 镜像 CesiumJS `Scene/Cesium3DTileset.js`
+//! 提供瓦片集根结构的 serde 反序列化、瓦片统计与 URI 收集，
+//! 以及带内存/SSE 预算的运行时状态。
 
 use crate::tile::Tile;
 use serde::{Deserialize, Serialize};
@@ -13,6 +14,7 @@ use std::collections::HashMap;
 #[serde(rename_all = "camelCase")]
 pub struct TilesetAsset {
     /// 3D Tiles 版本（例如 "1.0" 或 "1.1"）。
+    // 必填字段，决定规范解析路径
     pub version: String,
 
     /// 用于缓存刷新的可选瓦片集版本。
@@ -38,8 +40,6 @@ pub struct PropertyStats {
 }
 
 /// 从 tileset.json 解析出的根瓦片集结构。
-///
-/// 镜像 CesiumJS `Cesium3DTileset`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TilesetJson {
@@ -72,26 +72,31 @@ pub struct TilesetJson {
 impl TilesetJson {
     /// 从 JSON 字符串解析瓦片集。
     pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
+        // 直接将 JSON 文本反序列化为根结构
         serde_json::from_str(json)
     }
 
     /// 从 JSON 字节解析瓦片集。
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, serde_json::Error> {
+        // 从字节切片的 UTF-8 JSON 反序列化
         serde_json::from_slice(bytes)
     }
 
     /// 将瓦片集序列化为 JSON 字符串。
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        // 以美化缩进格式序列化回 JSON 字符串
         serde_json::to_string_pretty(self)
     }
 
     /// 返回瓦片集中瓦片的总数（包括根）。
     pub fn tile_count(&self) -> usize {
+        // 总数 = 根自身 + 其所有后代
         1 + self.root.descendant_count()
     }
 
     /// 返回瓦片集中所有内容 URI。
     pub fn all_content_uris(&self) -> Vec<String> {
+        // 从根起递归收集，返回去重前的完整 URI 列表
         let mut uris = Vec::new();
         collect_content_uris(&self.root, &mut uris);
         uris
@@ -99,12 +104,14 @@ impl TilesetJson {
 
     /// 返回瓦片集中最大的几何误差。
     pub fn max_geometric_error(&self) -> f64 {
+        // 取瓦片集根误差与子树最大误差的较大者
         self.geometric_error.max(find_max_geometric_error(&self.root))
     }
 }
 
 /// 从瓦片树递归收集所有内容 URI。
 fn collect_content_uris(tile: &Tile, uris: &mut Vec<String>) {
+    // 先收集本瓦片的内容 URI，再递归到子瓦片
     for uri in tile.content_uris() {
         uris.push(uri.to_string());
     }
@@ -115,6 +122,7 @@ fn collect_content_uris(tile: &Tile, uris: &mut Vec<String>) {
 
 /// 在瓦片树中递归查找最大的几何误差。
 fn find_max_geometric_error(tile: &Tile) -> f64 {
+    // 本瓦片误差与子树最大误差取大者
     let mut max_error = tile.geometric_error;
     for child in &tile.children {
         max_error = max_error.max(find_max_geometric_error(child));
@@ -148,6 +156,7 @@ pub struct TilesetState {
 }
 
 impl Default for TilesetState {
+    /// 默认状态：SSE 阈值 16，内存上限 512 MB，计数归零，空基础路径。
     fn default() -> Self {
         Self {
             maximum_screen_space_error: 16.0,
@@ -164,6 +173,7 @@ impl Default for TilesetState {
 impl TilesetState {
     /// 创建一个新的、带给定基础路径的瓦片集状态。
     pub fn new(base_path: impl Into<String>) -> Self {
+        // 仅覆盖基础路径，其余字段取默认值
         Self {
             base_path: base_path.into(),
             ..Default::default()
@@ -176,6 +186,7 @@ impl TilesetState {
         if uri.starts_with("http://") || uri.starts_with("https://") || self.base_path.is_empty() {
             return uri.to_string();
         }
+        // 否则以基础路径 + '/' + 相对路径拼接
         format!("{}/{}", self.base_path.trim_end_matches('/'), uri)
     }
 }
@@ -226,6 +237,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证 tileset.json 基本字段反序列化。
     fn test_parse_tileset_json() {
         let json = create_sample_tileset_json();
         let tileset = TilesetJson::from_json(json).unwrap();
@@ -236,6 +248,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证瓦片总数统计（根+后代）。
     fn test_tile_count() {
         let json = create_sample_tileset_json();
         let tileset = TilesetJson::from_json(json).unwrap();
@@ -245,6 +258,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证递归收集所有内容 URI。
     fn test_all_content_uris() {
         let json = create_sample_tileset_json();
         let tileset = TilesetJson::from_json(json).unwrap();
@@ -257,6 +271,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证最大几何误差取根与子树的最大值。
     fn test_max_geometric_error() {
         let json = create_sample_tileset_json();
         let tileset = TilesetJson::from_json(json).unwrap();
@@ -265,6 +280,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证根瓦片属性与细化模式解析。
     fn test_root_tile_properties() {
         let json = create_sample_tileset_json();
         let tileset = TilesetJson::from_json(json).unwrap();
@@ -276,6 +292,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证 region/sphere 包围体的 serde 解析。
     fn test_bounding_volume_parsing() {
         let json = create_sample_tileset_json();
         let tileset = TilesetJson::from_json(json).unwrap();
@@ -291,6 +308,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证相对 URI 拼接与绝对 URL 直接透传。
     fn test_tileset_state_resolve_uri() {
         let state = TilesetState::new("https://example.com/tilesets");
 
@@ -305,6 +323,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证序列化往返保持关键字段一致。
     fn test_tileset_serde_roundtrip() {
         let json = create_sample_tileset_json();
         let tileset = TilesetJson::from_json(json).unwrap();
@@ -317,6 +336,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证 properties 字段反序列化为属性统计。
     fn test_tileset_with_properties() {
         let json = r#"{
             "asset": { "version": "1.0" },
@@ -337,6 +357,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证 extras 字段作为任意 JSON 保留。
     fn test_tileset_with_extras() {
         let json = r#"{
             "asset": { "version": "1.0" },

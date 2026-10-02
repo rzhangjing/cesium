@@ -1,4 +1,4 @@
-//! Matrix 与 Quaternion 规格测试 - 移植自 Core/Matrix2Spec、Matrix3Spec、Matrix4Spec、QuaternionSpec
+//! Matrix 与 Quaternion 规格测试 - 参考自 Core/Matrix2Spec、Matrix3Spec、Matrix4Spec、QuaternionSpec
 //! 覆盖范围：DMat2/DMat3/DMat4 运算、DQuat 旋转、Transforms 集成。
 
 use cesium_geospatial::transforms::{HeadingPitchRoll, TranslationRotationScale};

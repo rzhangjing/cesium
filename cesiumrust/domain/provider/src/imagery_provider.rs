@@ -1,12 +1,9 @@
 //! 用于基于瓦片的地图服务的影像提供者。
 //!
-//! 映射到 CesiumJS 影像提供者：
-//! - `UrlTemplateImageryProvider`
-//! - `WebMapTileServiceImageryProvider` (WMTS)
-//! - `WebMapServiceImageryProvider` (WMS)
-//! - `TileMapServiceImageryProvider` (TMS)
-//! - `OpenStreetMapImageryProvider`
-//! - `BingMapsImageryProvider`
+//! 统一描述各类瓦片地图服务后端，按模板或协议生成瓦片 URL：
+//! - URL 模板、WMTS、WMS、TMS
+//! - OpenStreetMap、Bing Maps、ArcGIS MapServer
+//! - Mapbox、Ion、Google Earth Enterprise 等
 
 use std::collections::HashMap;
 
@@ -40,7 +37,7 @@ pub enum SubdomainStrategy {
 
 /// 一个从模板生成瓦片 URL 的影像提供者。
 ///
-/// 映射到 CesiumJS `UrlTemplateImageryProvider`
+/// 支持在 URL 模板中按 {x}/{y}/{z} 等占位符展开为实际地址。
 #[derive(Debug, Clone)]
 pub struct UrlTemplateImageryProvider {
     /// 带有占位符的 URL 模板：{x}, {y}, {z}, {s}, {reverseY}。
@@ -126,7 +123,7 @@ impl UrlTemplateImageryProvider {
 
 /// 一个 WMTS（Web Map Tile Service）影像提供者。
 ///
-/// 映射到 CesiumJS `WebMapTileServiceImageryProvider`
+/// 依据标准 WMTS 图层/矩阵集参数拼接瓦片请求。
 #[derive(Debug, Clone)]
 pub struct WmtsImageryProvider {
     /// WMTS 服务的基础 URL。
@@ -227,7 +224,7 @@ impl WmtsImageryProvider {
 
 /// 一个 WMS（Web Map Service）影像提供者。
 ///
-/// 映射到 CesiumJS `WebMapServiceImageryProvider`
+/// 以 GetMap 请求按包围盒与层级获取地图影像。
 #[derive(Debug, Clone)]
 pub struct WmsImageryProvider {
     /// WMS 服务的基础 URL。
@@ -304,7 +301,7 @@ impl WmsImageryProvider {
 
 /// 一个 TMS（Tile Map Service）影像提供者。
 ///
-/// 映射到 CesiumJS `TileMapServiceImageryProvider`
+/// 按 TMS 约定（y 轴向上）拼接瓦片地址。
 #[derive(Debug, Clone)]
 pub struct TmsImageryProvider {
     /// TMS 服务的基础 URL。
@@ -346,7 +343,7 @@ impl TmsImageryProvider {
 
 /// OpenStreetMap 影像提供者。
 ///
-/// 映射到 CesiumJS `OpenStreetMapImageryProvider`
+/// 从 OSM 瓦片服务端按标准缩放方案获取底图。
 #[derive(Debug, Clone)]
 pub struct OpenStreetMapImageryProvider {
     /// 基础 URL。
@@ -358,6 +355,7 @@ pub struct OpenStreetMapImageryProvider {
 }
 
 impl Default for OpenStreetMapImageryProvider {
+    /// 默认使用 OSM 官方瓦片服务器，最大层级 19。
     fn default() -> Self {
         Self {
             url: "https://tile.openstreetmap.org".to_string(),
@@ -382,7 +380,7 @@ impl OpenStreetMapImageryProvider {
 
 /// Bing Maps 影像提供者。
 ///
-/// 映射到 CesiumJS `BingMapsImageryProvider`
+/// 按 Bing 影像样式与子域名轮询策略获取瓦片。
 #[derive(Debug, Clone)]
 pub struct BingMapsImageryProvider {
     /// Bing Maps 密钥。
@@ -465,7 +463,7 @@ impl BingMapsImageryProvider {
 
 /// 带有裁剪方案的统一影像提供者描述符。
 ///
-/// 映射到 CesiumJS `ImageryProvider` 基础接口
+/// 聚合各后端类型及其瓦片方案、尺寸与能力标志。
 #[derive(Debug, Clone)]
 pub struct ImageryProviderDescriptor {
     /// 提供者类型。
@@ -582,7 +580,8 @@ impl ImageryProviderDescriptor {
 }
 
 /// 时间动态影像区间。
-/// 映射到 CesiumJS 时间动态影像支持
+///
+/// 由起始时间与对应的 URL 参数构成。
 #[derive(Debug, Clone)]
 pub struct TimeDynamicInterval {
     /// 起始时间（自 epoch 起的秒数）。
@@ -595,7 +594,9 @@ pub struct TimeDynamicInterval {
 
 /// 时间动态影像提供者。
 ///
-/// 映射到 CesiumJS `TimeDynamicImagery`
+/// 一组时间区间与其对应影像参数的映射。
+///
+/// 根据时刻定位命中的区间索引。
 #[derive(Debug, Clone)]
 pub struct TimeDynamicImagery {
     /// 带有相关 URL 的时间区间。
@@ -644,6 +645,7 @@ impl TimeDynamicImagery {
 }
 
 impl Default for TimeDynamicImagery {
+    /// 默认等价于调用 new()，初始不含任何时间区间。
     fn default() -> Self {
         Self::new()
     }
@@ -651,7 +653,7 @@ impl Default for TimeDynamicImagery {
 
 /// WMS GetFeatureInfo 请求构建器。
 ///
-/// 映射到 CesiumJS WMS GetFeatureInfo 支持
+/// 按像素坐标反算经纬度并拼接要素查询参数。
 #[derive(Debug, Clone)]
 pub struct WmsGetFeatureInfo {
     /// WMS 服务的基础 URL。
@@ -725,7 +727,7 @@ impl WmsGetFeatureInfo {
 
 /// ArcGIS MapServer 影像提供者。
 ///
-/// 映射到 CesiumJS `Scene/ArcGISMapServerImageryProvider.js`。
+/// 按 MapServer 导出接口拼接瓦片 URL，支持图层与图像格式参数。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArcGisMapServerImageryProvider {
     /// ArcGIS MapServer 的基础 URL。
@@ -785,7 +787,7 @@ impl ArcGisMapServerImageryProvider {
 
 /// Mapbox 影像提供者。
 ///
-/// 映射到 CesiumJS `Scene/MapboxImageryProvider.js`。
+/// 按 Mapbox 瓦片 API 模板拼接影像 URL。
 #[derive(Debug, Clone, PartialEq)]
 pub struct MapboxImageryProvider {
     /// 地图 ID（例如 "mapbox.satellite"）。
@@ -827,7 +829,7 @@ impl MapboxImageryProvider {
 
 /// Mapbox Style 影像提供者（使用 Mapbox Styles API）。
 ///
-/// 映射到 CesiumJS `Scene/MapboxStyleImageryProvider.js`。
+/// 基于 Styles API，按样式 ID 与缩放层级动态拼接瓦片 URL。
 #[derive(Debug, Clone, PartialEq)]
 pub struct MapboxStyleImageryProvider {
     /// 样式 ID（例如 "mapbox/streets-v11"）。
@@ -869,7 +871,7 @@ impl MapboxStyleImageryProvider {
 
 /// 单瓦片影像提供者（在整个 globe 上显示一张图像）。
 ///
-/// 映射到 CesiumJS `Scene/SingleTileImageryProvider.js`。
+/// 将单张图像按给定矩形投影覆盖整个地球。
 #[derive(Debug, Clone, PartialEq)]
 pub struct SingleTileImageryProvider {
     /// 图像的 URL。
@@ -908,7 +910,7 @@ impl SingleTileImageryProvider {
 
 /// 一个调试用的提供者，在每个瓦片上绘制瓦片坐标。
 ///
-/// 映射到 CesiumJS `Scene/TileCoordinatesImageryProvider.js`。
+/// 用于调试：按层级与 x/y 生成瓦片坐标文本覆盖层。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TileCoordinatesImageryProvider {
     /// 瓦片宽度（以像素计）。
@@ -922,6 +924,7 @@ pub struct TileCoordinatesImageryProvider {
 }
 
 impl Default for TileCoordinatesImageryProvider {
+    /// 默认 256×256 瓦片，半透明黑底配黄色坐标文本。
     fn default() -> Self {
         Self {
             tile_width: 256,
@@ -950,7 +953,7 @@ impl TileCoordinatesImageryProvider {
 
 /// Cesium Ion 影像提供者。
 ///
-/// 映射到 CesiumJS `Scene/IonImageryProvider.js`。
+/// 通过 Ion 资产端点解析出实际的瓦片服务地址。
 #[derive(Debug, Clone, PartialEq)]
 pub struct IonImageryProvider {
     /// Ion 资产 ID。
@@ -993,7 +996,7 @@ impl IonImageryProvider {
 
 /// Google Earth Enterprise 影像提供者。
 ///
-/// 映射到 CesiumJS `Scene/GoogleEarthEnterpriseImageryProvider.js`
+/// 通过 GEE query 接口按 x/y/z 请求影像瓦片与数据库元数据
 #[derive(Debug, Clone, PartialEq)]
 pub struct GoogleEarthEnterpriseImageryProvider {
     /// Google Earth Enterprise 服务器的基础 URL。
@@ -1048,7 +1051,7 @@ impl GoogleEarthEnterpriseImageryProvider {
 
 /// Google Earth Enterprise Maps 影像提供者。
 ///
-/// 映射到 CesiumJS `Scene/GoogleEarthEnterpriseMapsProvider.js`
+/// 通过 GEE Maps 接口以三层索引（layer/tile）拼接栅格瓦片 URL
 #[derive(Debug, Clone, PartialEq)]
 pub struct GoogleEarthEnterpriseMapsProvider {
     /// Google Earth Enterprise Maps 服务器的基础 URL。

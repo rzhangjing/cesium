@@ -1,5 +1,5 @@
 //! GeometryPipeline 扩展规范 —— 来自
-//! Core/GeometryPipelineSpec.js 的额外 A 类测试，覆盖 computeNormal、computeTangentAndBitangent、
+//! Core/GeometryPipelineSpec 的额外 A 类测试，覆盖 computeNormal、computeTangentAndBitangent、
 //! fitToUnsignedShortIndices、splitLongitude、compressVertices 边界情形。
 
 use cesium_geospatial::geometry::{

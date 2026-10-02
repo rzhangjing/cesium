@@ -2,8 +2,6 @@
 //!
 //! 实现屏幕空间误差（SSE）计算与瓦片遍历，
 //! 以选择要渲染哪些瓦片。
-//!
-//! 镜像 CesiumJS `Scene/Cesium3DTilesetTraversal.js`
 
 use crate::tile::{Tile, TileRefine};
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -43,13 +41,13 @@ impl CameraState {
     /// 为给定的几何误差和距离计算屏幕空间误差。
     ///
     /// SSE = (geometricError * viewportHeight) / (distance * 2 * tan(fovY / 2))
-    ///
-    /// 映射到 CesiumJS `Cesium3DTileset._computeScreenSpaceError`
     pub fn compute_screen_space_error(&self, geometric_error: f64, distance: f64) -> f64 {
+        // 零距离（相机在瓦片内）时误差视为无穷大，强制细化
         if distance <= 0.0 {
             return f64::MAX;
         }
 
+        // 分母中的 2*tan(fovY/2) 为视锥纵向半张角的正切项
         let sse_denominator = 2.0 * (self.fov_y / 2.0).tan();
         (geometric_error * self.viewport_height) / (distance * sse_denominator)
     }
@@ -96,6 +94,7 @@ pub struct LodSelectionContext {
 }
 
 impl Default for LodSelectionContext {
+    /// 默认上下文：最大 SSE 为 16.0，启用视锥剔除，不跳过 LOD。
     fn default() -> Self {
         Self {
             maximum_screen_space_error: 16.0,
@@ -111,6 +110,7 @@ pub fn compute_distance_to_tile(
     tile: &Tile,
     ellipsoid: &Ellipsoid,
 ) -> f64 {
+    // 距离取相机位置到瓦片包围体的最短距离
     tile.bounding_volume.distance_to(camera.position, ellipsoid)
 }
 
@@ -120,6 +120,7 @@ pub fn compute_tile_sse(
     tile: &Tile,
     ellipsoid: &Ellipsoid,
 ) -> f64 {
+    // 先算相机距离，再结合瓦片几何误差得出 SSE
     let distance = compute_distance_to_tile(camera, tile, ellipsoid);
     camera.compute_screen_space_error(tile.geometric_error, distance)
 }
@@ -132,6 +133,7 @@ pub fn should_refine_tile(
     max_sse: f64,
     has_children: bool,
 ) -> bool {
+    // 仅当 SSE 超阈值且存在子瓦片时才细化
     has_children && sse > max_sse
 }
 
@@ -156,6 +158,7 @@ pub fn select_tiles(
     context: &LodSelectionContext,
     ellipsoid: &Ellipsoid,
 ) -> Vec<SelectedTile> {
+    // 从根开始自上而下递归遍历，初始父级细化模式为 Replace
     let mut selected = Vec::new();
     select_tiles_recursive(
         root,
@@ -243,6 +246,7 @@ fn select_tiles_recursive(
 /// 根据瓦片在树中的路径获取它。
 pub fn get_tile_by_path<'a>(root: &'a Tile, path: &[usize]) -> Option<&'a Tile> {
     let mut current = root;
+    // 逐层按索引下钻，任一索引越界即视为路径无效
     for &index in path {
         current = current.children.get(index)?;
     }
@@ -306,6 +310,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证 SSE 公式的计算结果与手算一致。
     fn test_screen_space_error_computation() {
         let camera = create_test_camera();
 
@@ -317,6 +322,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证几何误差越大 SSE 越大。
     fn test_sse_increases_with_geometric_error() {
         let camera = create_test_camera();
 
@@ -327,6 +333,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证相机越近 SSE 越大。
     fn test_sse_increases_with_proximity() {
         let camera = create_test_camera();
 
@@ -337,6 +344,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证细化判定：需同时满足 SSE 超阈值与有子瓦片。
     fn test_should_refine_tile() {
         assert!(should_refine_tile(20.0, 16.0, true)); // SSE > 阈值，有子瓦片
         assert!(!should_refine_tile(10.0, 16.0, true)); // SSE < 阈值
@@ -344,6 +352,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证低误差时直接渲染根瓦片不细化。
     fn test_select_tiles_no_refinement() {
         let root = create_test_tile(10.0, false); // 低误差，无子瓦片
         let camera = create_test_camera();

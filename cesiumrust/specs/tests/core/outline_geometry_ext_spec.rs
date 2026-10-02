@@ -1,6 +1,6 @@
 //! 轮廓几何体扩展规格测试 - 来自
-//! Core/BoxOutlineGeometrySpec.js、Core/SphereOutlineGeometrySpec.js、
-//! Core/CylinderOutlineGeometrySpec.js 的额外 A 类测试
+//! Core/BoxOutlineGeometrySpec、Core/SphereOutlineGeometrySpec、
+//! Core/CylinderOutlineGeometrySpec 的额外 A 类测试
 
 use cesium_geospatial::geometry::{
     box_outline_geometry, cylinder_outline_geometry, ellipsoid_outline_geometry,
@@ -10,7 +10,7 @@ use glam::DVec3;
 
 const EPSILON10: f64 = 1e-10;
 
-// ─── BoxOutlineGeometry 扩展（来自 BoxOutlineGeometrySpec.js） ─────────────
+// ─── BoxOutlineGeometry 扩展（来自 BoxOutlineGeometrySpec） ─────────────
 
 #[test]
 fn box_outline_degenerate_min_equals_max() {
@@ -128,7 +128,7 @@ fn sphere_outline_radius_scales_positions() {
     assert!((geo.bounding_sphere.radius - radius).abs() < EPSILON10);
 }
 
-// ─── CylinderOutlineGeometry 扩展（来自 CylinderOutlineGeometrySpec.js） ──
+// ─── CylinderOutlineGeometry 扩展（来自 CylinderOutlineGeometrySpec） ──
 
 #[test]
 fn cylinder_outline_degenerate_length_zero() {
@@ -186,7 +186,7 @@ fn cylinder_outline_bounding_sphere() {
     assert!(geo.bounding_sphere.center.length() < EPSILON10);
 }
 
-// ─── PlaneOutlineGeometry 扩展（来自 PlaneOutlineGeometrySpec.js） ────────
+// ─── PlaneOutlineGeometry 扩展（来自 PlaneOutlineGeometrySpec） ────────
 
 #[test]
 fn plane_outline_bounding_sphere() {
@@ -259,7 +259,7 @@ fn all_outline_geometries_use_lines_primitive() {
     }
 }
 
-// ─── BoxOutlineGeometry 补充（来自 BoxOutlineGeometrySpec.js） ───────────
+// ─── BoxOutlineGeometry 补充（来自 BoxOutlineGeometrySpec） ───────────
 
 #[test]
 fn box_outline_from_dimensions_detail() {
@@ -277,7 +277,7 @@ fn box_outline_from_dimensions_detail() {
     }
 }
 
-// ─── CylinderOutlineGeometry 补充（来自 CylinderOutlineGeometrySpec.js） ──
+// ─── CylinderOutlineGeometry 补充（来自 CylinderOutlineGeometrySpec） ──
 
 #[test]
 fn cylinder_outline_computes_positions_detail() {

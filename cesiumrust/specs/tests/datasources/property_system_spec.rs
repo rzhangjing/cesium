@@ -1,9 +1,9 @@
-//! 忠实移植自 CesiumJS DataSources 属性规范：
-//! - ConstantPropertySpec.js (10 it())
-//! - SampledPropertySpec.js (36 it())
-//! - TimeIntervalCollectionPropertySpec.js (8 it())
-//! - CompositePropertySpec.js (7 it())
-//! - CallbackPropertySpec.js (8 it())
+//! 对齐实现自 CesiumJS DataSources 属性规范：
+//! - ConstantPropertySpec (10 it())
+//! - SampledPropertySpec (36 it())
+//! - TimeIntervalCollectionPropertySpec (8 it())
+//! - CompositePropertySpec (7 it())
+//! - CallbackPropertySpec (8 it())
 //!
 //! A 类测试（纯逻辑，无 DOM/事件）：约 35 个测试
 
@@ -21,7 +21,7 @@ fn jd(day: f64, seconds: f64) -> JulianDate {
 }
 
 // ===========================================================================
-// ConstantProperty（源自 ConstantPropertySpec.js）
+// ConstantProperty（源自 ConstantPropertySpec）
 // ===========================================================================
 
 #[test]
@@ -94,7 +94,7 @@ fn constant_property_set_value_changes_value() {
 }
 
 // ===========================================================================
-// SampledProperty（源自 SampledPropertySpec.js）
+// SampledProperty（源自 SampledPropertySpec）
 // ===========================================================================
 
 #[test]
@@ -484,7 +484,7 @@ fn sampled_property_single_sample_returns_undefined_for_interpolation() {
 }
 
 // ===========================================================================
-// TimeIntervalCollectionProperty（源自 TimeIntervalCollectionPropertySpec.js）
+// TimeIntervalCollectionProperty（源自 TimeIntervalCollectionPropertySpec）
 // ===========================================================================
 
 #[test]
@@ -621,7 +621,7 @@ fn tic_property_equals_works_for_complex_type_intervals() {
 }
 
 // ===========================================================================
-// CompositeProperty（源自 CompositePropertySpec.js）
+// CompositeProperty（源自 CompositePropertySpec）
 // ===========================================================================
 
 #[test]
@@ -739,7 +739,7 @@ fn composite_property_equals_works() {
 }
 
 // ===========================================================================
-// CallbackProperty (from CallbackPropertySpec.js)
+// CallbackProperty (from CallbackPropertySpec)
 // ===========================================================================
 
 #[test]

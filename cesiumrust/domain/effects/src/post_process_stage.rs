@@ -1,9 +1,7 @@
 //! 后处理阶段系统。
 //!
-//! 映射到 CesiumJS：
-//! - `Scene/PostProcessStage.js` —— 单个后处理阶段
-//! - `Scene/PostProcessStageCollection.js` —— 有序集合
-//! - `Scene/PostProcessStageLibrary.js` —— 内置阶段（FXAA、AO、Bloom）
+//! 涵盖单个后处理阶段、有序阶段集合，以及内置阶段
+//! （FXAA 抗锯齿、AO 环境光遮蔽、Bloom 泛光、自动曝光）。
 //!
 //! 领域层——纯 Rust，f64 精度。
 
@@ -12,8 +10,6 @@ use std::collections::HashMap;
 // ─── PostProcessStage ───────────────────────────────────────────────────────
 
 /// 如何采样输入颜色 texture。
-///
-/// 映射到 CesiumJS `PostProcessStageSampleMode`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SampleMode {
     /// 最近邻采样。
@@ -55,8 +51,6 @@ pub enum UniformValue {
 }
 
 /// 单个后处理阶段。
-///
-/// 映射到 CesiumJS `PostProcessStage`。
 #[derive(Debug, Clone)]
 pub struct PostProcessStage {
     /// 本阶段的唯一名称。
@@ -177,19 +171,16 @@ impl PostProcessStageComposite {
 
 /// 创建一个 FXAA（快速近似抗锯齿）阶段。
 ///
-/// 映射到 CesiumJS `PostProcessStageLibrary.createFXAAStage()`。
-///
 /// # M5-E1 实现说明
 /// 运行时的 shader 是自实现的 WGSL，位于
 /// `adapters/bevy-render/shaders/fxaa.wgsl`——一个 FXAA 3.11 的翻译，
 /// **仅含 quality preset 12**（`FXAA_QUALITY_PS=5`、`P0=1.0, P1=1.5, P2=2.0,
 /// P3=4.0, P4=12.0`），绿色通道作为亮度 + 提前退出。
 ///
-/// 蓝图：`cesium-rs/crates/cesium-shaders/shaders/FXAA3_11.glsl` L102-108
-/// （preset 12 的 define）+ L261-650（核心算法）；接口封装
-/// `packages/engine/Source/Shaders/PostProcessStages/FXAA.glsl` L1-21。
+/// 蓝图参照 FXAA 3.11 的 preset 12 define 与核心算法段，接口封装
+/// 保持单 pass、绿通道亮度、提前退出与边缘搜索展开。
 ///
-/// 下方的三个 quality 参数在 CesiumJS GLSL（FXAA.glsl L5-7）和我们的
+/// 下方的三个 quality 参数在参考实现与我们的
 /// WGSL 中均为**编译期 `const`**——而非运行时 uniform。它们在此
 /// 以 `f64` 记录，供领域侧自省 / 半位断言使用。
 /// 参见 `docs/deviations.md#dev-017`。
@@ -204,7 +195,7 @@ pub fn create_fxaa_stage() -> PostProcessStage {
     );
     stage.enabled = false; // 默认禁用（通过 CESIUM_ENABLE_POSTPROCESS 门控启用）
     stage.sample_mode = SampleMode::Linear;
-    // CesiumJS FXAA.glsl L5-7 的 quality 参数（上游为编译期常量；
+    // quality 参数（参考实现中为编译期常量；
     // 在此以 f64 镜像，以便领域侧描述子可自省/可测试）。
     stage.set_uniform("fxaaQualitySubpix", UniformValue::Float(0.5));
     stage.set_uniform("fxaaQualityEdgeThreshold", UniformValue::Float(0.125));
@@ -213,8 +204,6 @@ pub fn create_fxaa_stage() -> PostProcessStage {
 }
 
 /// 创建一个 Bloom 复合阶段。
-///
-/// 映射到 CesiumJS `PostProcessStageLibrary.createBloomStage()`。
 pub fn create_bloom_composite() -> PostProcessStageComposite {
     let mut composite = PostProcessStageComposite::new("czm_bloom");
     composite.enabled = false;
@@ -241,18 +230,14 @@ pub fn create_bloom_composite() -> PostProcessStageComposite {
 
 /// 创建一个环境光遮蔽（Ambient Occlusion）复合阶段。
 ///
-/// 映射到 CesiumJS `PostProcessStageLibrary.createAmbientOcclusionStage()`
-/// （`PostProcessStageLibrary.js` L496）/ `isAmbientOcclusionSupported`（L599）。
-///
 /// # M5-E2 实现说明
 /// 运行时的 shader 是自实现的 WGSL，位于
 /// `adapters/bevy-render/shaders/ao.wgsl`——一个**半球 16 样本 SSAO**
 /// 核（`fragment_generate`）+ 一个 **4×4 box blur + modulate** pass
 /// （`fragment_blur_modulate`），由 Bevy 的 `DepthPrepass` + `NormalPrepass` 供数。
 ///
-/// 蓝图（语义）：`packages/engine/Source/Shaders/PostProcessStages/
-/// AmbientOcclusionGenerate.glsl` L1-144（HBAO ray-march）+
-/// `AmbientOcclusionModulate.glsl` L1-11。结构/API 参考：
+/// 蓝图（语义）：生成 pass 参照 HBAO ray-march 的遮蔽因子累积，
+/// 调制 pass 参照 box blur 后的颜色相乘；结构/API 参考：
 /// `bevy_pbr-0.15.3/src/ssao/{mod.rs,ssao.wgsl}`。
 ///
 /// 偏差：CesiumJS AO 是一个 HBAO ray-march（directionCount × stepCount）；
@@ -297,8 +282,6 @@ pub fn create_ambient_occlusion_composite() -> PostProcessStageComposite {
 }
 
 /// 创建一个自动曝光阶段。
-///
-/// 映射到 CesiumJS `PostProcessStageLibrary.createAutoExposureStage()`。
 pub fn create_auto_exposure_stage() -> PostProcessStage {
     let mut stage = PostProcessStage::new("czm_auto_exposure", "// Auto exposure histogram");
     stage.enabled = false;
@@ -308,8 +291,6 @@ pub fn create_auto_exposure_stage() -> PostProcessStage {
 // ─── Tonemapper ─────────────────────────────────────────────────────────────
 
 /// 用于 HDR → LDR 转换的色调映射器选择。
-///
-/// 映射到 CesiumJS `Tonemapper`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tonemapper {
     /// PBR Neutral 色调映射器（CesiumJS 默认）。
@@ -372,6 +353,7 @@ pub struct PostProcessStageCollection {
 }
 
 impl Default for PostProcessStageCollection {
+    /// 默认集合：内置阶段均按默认（禁用）状态构造。
     fn default() -> Self {
         Self::new()
     }
@@ -485,6 +467,7 @@ impl PostProcessStageCollection {
         order
     }
 
+    /// 重建阶段名称到索引的映射表，供按名查找使用。
     fn rebuild_indices(&mut self) {
         self.stage_names.clear();
         for (i, stage) in self.stages.iter().enumerate() {

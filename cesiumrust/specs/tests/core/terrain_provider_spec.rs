@@ -1,5 +1,5 @@
-//! Core/CesiumTerrainProviderSpec.js、EllipsoidTerrainProviderSpec.js、
-//! HeightmapTerrainProviderSpec.js、VRTheWorldTerrainProviderSpec.js
+//! Core/CesiumTerrainProviderSpec、EllipsoidTerrainProviderSpec、
+//! HeightmapTerrainProviderSpec、VRTheWorldTerrainProviderSpec
 //! → Rust 集成测试
 
 use cesium_provider::terrain_provider::{

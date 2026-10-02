@@ -1,4 +1,4 @@
-//! Scene/SkyAtmosphereSpec.js、SunSpec.js、MoonSpec.js → Rust 集成测试
+//! Scene/SkyAtmosphereSpec、SunSpec、MoonSpec → Rust 集成测试
 
 use cesium_atmosphere::{
     compute_sun_position_eci, compute_moon_position_eci,

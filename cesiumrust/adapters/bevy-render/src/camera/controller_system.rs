@@ -84,6 +84,7 @@ pub fn camera_controller_system(
             enable_zoom: true,
             enable_collision_detection: enable_collision,
         };
+        // 组装领域控制器：椭球固定为 WGS84，仅携带配置。
         let ctrl = CameraController {
             config,
             ellipsoid: Ellipsoid::WGS84,

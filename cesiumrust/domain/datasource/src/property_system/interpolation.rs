@@ -1,10 +1,9 @@
 //! 采样属性的插值算法。
 //!
-//! 映射到 CesiumJS：
-//! - `Core/LinearApproximation.js`
-//! - `Core/LagrangePolynomialApproximation.js`
-//! - `Core/HermitePolynomialApproximation.js`
-//! - `DataSources/ExtrapolationType.js`
+//! 本模块提供采样属性求值所用的三类插值算法（线性 `LinearApproximation`、
+//! 拉格朗日多项式 `LagrangePolynomialApproximation`、埃尔米特多项式
+//! `HermitePolynomialApproximation`）以及外推类型枚举 `ExtrapolationType`，
+//! 供 `SampledProperty` 在离散样本之间构造连续值。
 //!
 //! 所有算法都在打包的 `f64` 表上操作，与 CesiumJS 完全一致：
 //! - `x_table`：自变量值（时间，以秒计），递增顺序。
@@ -13,9 +12,8 @@
 
 use cesium_geospatial::math_utils::factorial;
 
-/// 决定当查询超出可用数据边界时，插值的结果如何被外推。
-///
-/// 映射到 CesiumJS `DataSources/ExtrapolationType.js`。
+/// 决定当查询时间超出可用样本数据边界时，插值结果如何被外推：
+/// 不外推、保持端值，或沿首/末段趋势继续外推。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ExtrapolationType {
     /// 不进行外推；在样本范围之外的值为 undefined。
@@ -99,13 +97,14 @@ pub trait InterpolationAlgorithm: Send + Sync {
     }
 }
 
-/// 线性插值。
-///
-/// 映射到 CesiumJS `Core/LinearApproximation.js`。
+/// 线性插值算法：仅用相邻两个样本构造一次多项式。它恒定需要 2 个
+/// 数据点，且不支持导数输入输出，因此是最廉价、最常用的插值方式，
+/// 适合样本足够密集、只需分段线性近似的场景。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct LinearApproximation;
 
 impl InterpolationAlgorithm for LinearApproximation {
+    /// 返回算法名 `Linear`。
     fn name(&self) -> &'static str {
         "Linear"
     }
@@ -116,6 +115,8 @@ impl InterpolationAlgorithm for LinearApproximation {
         2
     }
 
+    /// 在恰好两个样本之间对每个分量做线性插值，返回 `y_stride` 个
+    /// 插值分量；调用方须保证 `x_table` 长度为 2 且两点不相等。
     fn interpolate_order_zero(
         &self,
         x: f64,
@@ -147,21 +148,25 @@ impl InterpolationAlgorithm for LinearApproximation {
     }
 }
 
-/// Lagrange 多项式插值。
-///
-/// 映射到 CesiumJS `Core/LagrangePolynomialApproximation.js`。
+/// Lagrange 多项式插值：用全部样本点构造通过它们的低次多项式，
+/// 所需数据点为次数加一（至少 2），不支持导数，精度高于线性但
+/// 随点数增多可能振荡（龙格现象）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct LagrangePolynomialApproximation;
 
 impl InterpolationAlgorithm for LagrangePolynomialApproximation {
+    /// 返回算法名 `Lagrange`。
     fn name(&self) -> &'static str {
         "Lagrange"
     }
 
+    /// 返回次数加一与 2 的较大者，即构造该次数多项式所需的样本点数。
     fn get_required_data_points(&self, degree: usize, _input_order: usize) -> usize {
         (degree + 1).max(2)
     }
 
+    /// 按定义式累加各基函数的贡献：对每个样本 i 计算其 Lagrange 基
+    /// 函数在 x 处的取值，再乘以对应分量累入结果。
     fn interpolate_order_zero(
         &self,
         x: f64,
@@ -169,17 +174,21 @@ impl InterpolationAlgorithm for LagrangePolynomialApproximation {
         y_table: &[f64],
         y_stride: usize,
     ) -> Vec<f64> {
+        // 结果向量按分量累加各 Lagrange 基函数的贡献。
         let mut result = vec![0.0; y_stride];
         let length = x_table.len();
 
+        // 外层遍历每个样本，构造对应的基函数并累加。
         for i in 0..length {
             let mut coefficient = 1.0;
+            // 内层连乘 (x - xj)/(xi - xj)，跳过 j == i 的自身项。
             for j in 0..length {
                 if j != i {
                     let diff_x = x_table[i] - x_table[j];
                     coefficient *= (x - x_table[j]) / diff_x;
                 }
             }
+            // 把该基函数系数乘到每个分量上，累入对应结果槽。
             for j in 0..y_stride {
                 result[j] += coefficient * y_table[i * y_stride + j];
             }
@@ -188,26 +197,30 @@ impl InterpolationAlgorithm for LagrangePolynomialApproximation {
     }
 }
 
-/// Hermite 多项式插值（支持导数的
-/// 差商）。
-///
-/// 映射到 CesiumJS `Core/HermitePolynomialApproximation.js`。
+/// Hermite 多项式插值：在差商表中同时利用函数值与导数值，是三种类
+/// 型中唯一支持导数输入/输出的算法，可用更少样本达到更高精度，
+/// 常用于位置连同速度一起采样的轨迹插值。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct HermitePolynomialApproximation;
 
 impl InterpolationAlgorithm for HermitePolynomialApproximation {
+    /// 返回算法名 `Hermite`。
     fn name(&self) -> &'static str {
         "Hermite"
     }
 
+    /// 按输入阶数折算所需点数：(次数+1)/(输入阶+1)，且至少为 2。
     fn get_required_data_points(&self, degree: usize, input_order: usize) -> usize {
         ((degree + 1) / (input_order + 1)).max(2)
     }
 
+    /// Hermite 是唯一支持导数输入/输出的内置算法，恒返回 true。
     fn supports_derivatives(&self) -> bool {
         true
     }
 
+    /// 零阶求值：先构建各分量的差商表，再沿 Newton 形式累加系数项；
+    /// 当相邻 x 相同（重复样本）时改从导数槽取系数并除以阶乘。
     fn interpolate_order_zero(
         &self,
         x: f64,
@@ -274,6 +287,8 @@ impl InterpolationAlgorithm for HermitePolynomialApproximation {
         result
     }
 
+    /// 带导数的求值：构造含导数条目的 zIndices 与差商系数表，再对
+    /// 每个输出阶 d 累加 Newton 项，得到值与各阶导数。
     fn interpolate(
         &self,
         x: f64,
@@ -297,8 +312,10 @@ impl InterpolationAlgorithm for HermitePolynomialApproximation {
             }
         }
 
+        // 差商表按三角数 tmp 展开为一维打包缓冲，逐分量存放。
         let tmp = z_len * (z_len + 1) / 2;
         let mut coefficients = vec![0.0f64; y_stride * tmp];
+        // 计算各阶差商系数，并得到最高非零差商阶用于截断累加。
         let highest_non_zero_coef = fill_coefficient_list(
             &mut coefficients,
             &z_indices,
@@ -308,6 +325,7 @@ impl InterpolationAlgorithm for HermitePolynomialApproximation {
             input_order,
         );
 
+        // 输出阶上限取最高非零差商阶与 output_order 的较小者。
         let loop_stop = highest_non_zero_coef.min(output_order as isize);
         if loop_stop < 0 {
             return result;
@@ -344,6 +362,8 @@ fn row_offset(i: usize, z_len: usize) -> usize {
     signed as usize
 }
 
+/// 填充 Hermite `interpolate` 所需的一维打包差商系数表，逐分量、
+/// 逐阶计算差商，返回最高非零差商的阶（用于截断累加）。
 fn fill_coefficient_list(
     coefficients: &mut [f64],
     z_indices: &[usize],
@@ -356,9 +376,11 @@ fn fill_coefficient_list(
     let z_len = z_indices.len();
     let tmp = z_len * (z_len + 1) / 2;
 
+    // 逐分量填充：dim_one 为该分量在一维缓冲中的起始偏移。
     for s in 0..y_stride {
         let dim_one = s * tmp;
 
+        // 零阶差商即函数值本身，直接取样本对应槽。
         for j in 0..z_len {
             let index = z_indices[j] * y_stride * (input_order + 1) + s;
             coefficients[dim_one + j] = y_table[index];
@@ -477,18 +499,22 @@ impl InterpolationAlgorithmKind {
 }
 
 impl InterpolationAlgorithm for InterpolationAlgorithmKind {
+    /// 委托底层算法返回类型名。
     fn name(&self) -> &'static str {
         self.algorithm().name()
     }
 
+    /// 委托底层算法计算所需数据点数量。
     fn get_required_data_points(&self, degree: usize, input_order: usize) -> usize {
         self.algorithm().get_required_data_points(degree, input_order)
     }
 
+    /// 委托底层算法判断是否支持导数。
     fn supports_derivatives(&self) -> bool {
         self.algorithm().supports_derivatives()
     }
 
+    /// 委托底层算法做零阶插值。
     fn interpolate_order_zero(
         &self,
         x: f64,
@@ -500,6 +526,7 @@ impl InterpolationAlgorithm for InterpolationAlgorithmKind {
             .interpolate_order_zero(x, x_table, y_table, y_stride)
     }
 
+    /// 委托底层算法做带导数的插值。
     fn interpolate(
         &self,
         x: f64,
@@ -520,6 +547,8 @@ mod tests {
 
     const EPS: f64 = 1e-12;
 
+    /// 验证外推类型与数值编码 (NONE=0/HOLD=1/EXTRAPOLATE=2)
+    /// 的双向往返，以及默认值为 None。
     #[test]
     fn test_extrapolation_type_roundtrip() {
         assert_eq!(ExtrapolationType::None.to_u32(), 0);
@@ -531,6 +560,7 @@ mod tests {
         assert_eq!(ExtrapolationType::default(), ExtrapolationType::None);
     }
 
+    /// 验证线性算法无论次数/输入阶如何都只需 2 个数据点。
     #[test]
     fn test_linear_required_data_points() {
         assert_eq!(LinearApproximation.get_required_data_points(1, 0), 2);
@@ -538,6 +568,8 @@ mod tests {
         assert_eq!(LinearApproximation.get_required_data_points(9, 2), 2);
     }
 
+    /// 验证线性插值在中点命中：对 y=2x+1 的两个分量分别插值，
+    /// x=5 处应得 (11, 9)。
     #[test]
     fn test_linear_interpolate_midpoint() {
         // y = 2x + 1，在 x = 0 与 x = 10 处采样（每个样本两个分量）。
@@ -548,6 +580,8 @@ mod tests {
         assert!((result[1] - 9.0).abs() < EPS);
     }
 
+    /// 验证线性插值在采样节点上精确：x 取两端点时应原样返回
+    /// 对应的 y 值。
     #[test]
     fn test_linear_interpolate_at_nodes() {
         let x_table = [-4.0, 2.0];
@@ -558,6 +592,7 @@ mod tests {
         assert!((r1[0] - 7.0).abs() < EPS);
     }
 
+    /// 验证负的相对 x（距最后一样本的秒数，可为负）仍满足线性公式。
     #[test]
     fn test_linear_negative_x_extrapolates() {
         // xTable 值是相对的（距最后一个样本的秒数）且可能
@@ -568,6 +603,7 @@ mod tests {
         assert!((result[0] - 50.0).abs() < EPS);
     }
 
+    /// 验证 Lagrange 所需点数等于次数加一且下限为 2。
     #[test]
     fn test_lagrange_required_data_points() {
         assert_eq!(LagrangePolynomialApproximation.get_required_data_points(0, 0), 2);
@@ -576,6 +612,8 @@ mod tests {
         assert_eq!(LagrangePolynomialApproximation.get_required_data_points(7, 0), 8);
     }
 
+    /// 验证 Lagrange 对二次多项式精确：用三个采样点重建 y=x²-2x+3，
+    /// 在多个内部 x 处插值与解析值一致。
     #[test]
     fn test_lagrange_quadratic_exact() {
         // y = x^2 - 2x + 3，在 x = -1、0、2 处采样。
@@ -593,6 +631,8 @@ mod tests {
         }
     }
 
+    /// 验证 Lagrange 多分量插值：p=x、q=x³ 两分量共用一张表，在
+    /// x=1.5 处分别插出 1.5 与 3.375。
     #[test]
     fn test_lagrange_multi_component() {
         // 两个分量：p = x、q = x^3，在 x = 0、1、2、3 处。
@@ -604,6 +644,8 @@ mod tests {
         assert!((result[1] - 3.375).abs() < EPS);
     }
 
+    /// 验证 Hermite 所需点数随输入阶数下降：无导数时为次数加一，
+    /// 带一阶导数时约减半。
     #[test]
     fn test_hermite_required_data_points() {
         assert_eq!(HermitePolynomialApproximation.get_required_data_points(1, 0), 2);
@@ -614,6 +656,8 @@ mod tests {
         assert_eq!(HermitePolynomialApproximation.get_required_data_points(0, 0), 2);
     }
 
+    /// 验证 Hermite 零阶在互异点且无导数时等价于多项式插值：对四点
+    /// 三次式精确重建。
     #[test]
     fn test_hermite_order_zero_matches_lagrange() {
         // 对于互异的点且无导数时，Hermite 零阶就是
@@ -633,6 +677,8 @@ mod tests {
         }
     }
 
+    /// 验证 Hermite 零阶处理全相等样本：最高非零差商收缩为 0，结果
+    /// 恒为该常量。
     #[test]
     fn test_hermite_order_zero_constant_data() {
         // 全相等的样本：highestNonZeroCoef 收缩为 0。
@@ -643,6 +689,8 @@ mod tests {
         assert!((result[0] - 5.0).abs() < EPS);
     }
 
+    /// 验证经典三次 Hermite：f(t)=t³ 于 [0,1] 连同端点导数采样，在
+    /// t=0.5 同时插出值 0.125 与导数 0.75。
     #[test]
     fn test_hermite_with_derivatives_cubic() {
         // 经典的三次 Hermite：f(t) = t^3 于 [0, 1]。
@@ -665,6 +713,8 @@ mod tests {
         );
     }
 
+    /// 验证 Hermite 带导数插值在二次函数 f(x)=x² 上于各节点及中点
+    /// 都精确重建值与导数。
     #[test]
     fn test_hermite_with_derivatives_at_nodes() {
         let x_table = [-1.0, 2.0];
@@ -678,6 +728,8 @@ mod tests {
         }
     }
 
+    /// 验证 Hermite 三点带导数可精确到五次：f(x)=x⁵-x 连同导数采样，
+    /// 六个 z-index 足以覆盖五次多项式。
     #[test]
     fn test_hermite_three_points_with_derivatives() {
         // f(x) = x^5 - x，在 -1、0、1 处连同导数采样。
@@ -696,6 +748,8 @@ mod tests {
         assert!((result[1] - df(0.5)).abs() < 1e-9, "got {}", result[1]);
     }
 
+    /// 验证算法枚举的分发与名字：三类算法名字、导数支持标志、名字解析
+    /// 与默认值都与底层实现一致。
     #[test]
     fn test_kind_dispatch_and_names() {
         assert_eq!(InterpolationAlgorithmKind::Linear.name(), "Linear");
@@ -715,6 +769,8 @@ mod tests {
         );
     }
 
+    /// 验证非 Hermite 枚举的 interpolate 回退到零阶并把导数输出填零：
+    /// 值正确、二槽为 0.0。
     #[test]
     fn test_kind_interpolate_fallback_zero_fills_derivatives() {
         // 非 Hermite 算法回退到零阶并填充零。

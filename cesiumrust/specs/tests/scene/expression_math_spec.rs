@@ -1,6 +1,6 @@
 //! Expression 数学函数测试。
 //!
-//! 移植自 CesiumJS ExpressionSpec.js 的数学函数 A 类测试：
+//! 参考自 CesiumJS ExpressionSpec 的数学函数 A 类测试：
 //! 三角、取整、指数、插值、HSL 颜色。
 
 use cesium_tileset::styling::Expression;

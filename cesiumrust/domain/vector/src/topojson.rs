@@ -1,11 +1,13 @@
 //! TopoJSON 解码器。
 //!
 //! 实现基于拓扑的几何编码的 TopoJSON 规范。
-//! 映射到 CesiumJS `ThirdParty/topojson.js`
+//! TopoJSON 以共享弧段与量化增量编码压缩几何，本模块负责解码重建绝对坐标。
 
 use glam::DVec2;
 
 /// 一个 TopoJSON 拓扑对象。
+///
+/// 拓扑由若干命名几何对象、共享弧段列表与可选的量化变换组成。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Topology {
     /// 命名的几何对象。
@@ -19,6 +21,8 @@ pub struct Topology {
 }
 
 /// 量化变换。
+///
+/// 将量化后的整数网格坐标经仿射变换还原为真实经纬度：p = q * scale + translate。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Transform {
     /// 缩放因子 [sx, sy]。
@@ -30,6 +34,7 @@ pub struct Transform {
 impl Transform {
     /// 将变换应用于一个量化坐标。
     pub fn apply(&self, x: f64, y: f64) -> DVec2 {
+        // 先按对应轴缩放再叠加平移偏移，得到解量化后的绝对坐标
         DVec2::new(
             x * self.scale[0] + self.translate[0],
             y * self.scale[1] + self.translate[1],
@@ -38,6 +43,8 @@ impl Transform {
 }
 
 /// 一个命名的 TopoJSON 对象。
+///
+/// 对象将可读名称绑定到一个几何，对应 TopoJSON objects 表中的一条记录。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TopoObject {
     /// 对象名称。
@@ -47,6 +54,8 @@ pub struct TopoObject {
 }
 
 /// TopoJSON 几何类型。
+///
+/// 线与面类几何以弧索引（而非显式坐标）引用拓扑中共享的弧段，反向弧以取反索引表示。
 #[derive(Debug, Clone, PartialEq)]
 pub enum TopoGeometry {
     /// 一个点。
@@ -67,6 +76,7 @@ pub enum TopoGeometry {
 
 /// 将拓扑中的弧解码为绝对坐标。
 pub fn decode_arc(topology: &Topology, arc_index: usize) -> Vec<DVec2> {
+    // 越界保护：索引超出弧段数量时返回空
     if arc_index >= topology.arcs.len() {
         return Vec::new();
     }
@@ -75,15 +85,17 @@ pub fn decode_arc(topology: &Topology, arc_index: usize) -> Vec<DVec2> {
     let mut result = Vec::with_capacity(arc.len());
 
     if let Some(transform) = &topology.transform {
-        // 带变换的增量编码
+        // 带变换的增量编码：逐点累加前一点的偏移得到绝对量化值，再解量化
         let mut x = 0.0f64;
         let mut y = 0.0f64;
         for point in arc {
+            // 弧内存储的是相对上一拐点的增量
             x += point.x;
             y += point.y;
             result.push(transform.apply(x, y));
         }
     } else {
+        // 无变换时弧段已为绝对坐标，直接拷贝
         result.clone_from(arc);
     }
 
@@ -92,6 +104,7 @@ pub fn decode_arc(topology: &Topology, arc_index: usize) -> Vec<DVec2> {
 
 /// 解码一条反向的弧。
 pub fn decode_arc_reversed(topology: &Topology, arc_index: usize) -> Vec<DVec2> {
+    // 先正向解码再将顶点顺序反转（共享边界时避免重复解码变换）
     let mut arc = decode_arc(topology, arc_index);
     arc.reverse();
     arc
@@ -99,10 +112,11 @@ pub fn decode_arc_reversed(topology: &Topology, arc_index: usize) -> Vec<DVec2> 
 
 /// 将线串从弧索引解析为坐标。
 pub fn resolve_linestring(topology: &Topology, arc_indices: &[usize]) -> Vec<DVec2> {
+    // 依次解码每段弧并拼接；相邻弧首尾共享一个顶点，拼接时需去重
     let mut coords = Vec::new();
     for (i, &arc_idx) in arc_indices.iter().enumerate() {
         let arc = if arc_idx & (1 << 31) != 0 {
-            // 反向的弧（按位取反）
+            // 高位为 1 表示反向弧：按位取反得到真实索引后反向解码
             decode_arc_reversed(topology, !arc_idx)
         } else {
             decode_arc(topology, arc_idx)
@@ -117,6 +131,7 @@ pub fn resolve_linestring(topology: &Topology, arc_indices: &[usize]) -> Vec<DVe
 
 /// 将多边形从环弧索引解析为坐标。
 pub fn resolve_polygon(topology: &Topology, rings: &[Vec<usize>]) -> Vec<Vec<DVec2>> {
+    // 每个环本质是一条闭合线串，复用 resolve_linestring 逐环解码
     rings
         .iter()
         .map(|ring| resolve_linestring(topology, ring))
@@ -125,21 +140,25 @@ pub fn resolve_polygon(topology: &Topology, rings: &[Vec<usize>]) -> Vec<Vec<DVe
 
 /// 计算一个环的面积（用于确定绕序方向）。
 pub fn ring_area(ring: &[DVec2]) -> f64 {
+    // 少于三个点无法围成面，面积为 0
     if ring.len() < 3 {
         return 0.0;
     }
 
+    // 鞋带公式（shoelace）：逐边累加叉积，符号反映绕序方向
     let mut area = 0.0;
     for i in 0..ring.len() {
         let j = (i + 1) % ring.len();
         area += ring[i].x * ring[j].y;
         area -= ring[j].x * ring[i].y;
     }
+    // 除以 2 得到有符号面积：正为逆时针，负为顺时针
     area / 2.0
 }
 
 /// 若环为顺时针（TopoJSON 中的外环）则返回 true。
 pub fn is_clockwise(ring: &[DVec2]) -> bool {
+    // TopoJSON 约定外环为顺时针，即有符号面积为负
     ring_area(ring) < 0.0
 }
 

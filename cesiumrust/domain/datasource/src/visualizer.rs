@@ -1,9 +1,8 @@
 //! Visualizer：管理实体到几何的映射与批处理。
 //!
-//! 映射到 CesiumJS `DataSources/GeometryVisualizer.js`、`DataSources/Visualizer.js`
-//!
 //! 该 visualizer 跟踪来自 EntityCollection 的实体，将其图形属性
-//! 转换为几何实例，并管理静态/动态批处理。
+//! 转换为几何实例，并以脏标志与时间比较控制缓存的重建：仅在脏或时间
+//! 变化时重新求值，否则整体跳过以节省开销。
 
 use std::collections::HashMap;
 
@@ -14,7 +13,8 @@ use crate::geometry_updater::{update_entity_geometry, EntityGeometry, GeometryIn
 
 /// 一个为实体集合管理几何生成的 visualizer。
 ///
-/// 映射到 CesiumJS `DataSources/GeometryVisualizer.js`
+/// 以实体 id 为键缓存各自的几何，并记录上次更新时间与脏标志；更新时
+/// 先丢弃已不存在的实体，再对需重建项调用 `update_entity_geometry` 回写缓存。
 #[derive(Debug)]
 pub struct GeometryVisualizer {
     /// 每个实体 ID 缓存的几何。
@@ -52,6 +52,7 @@ impl GeometryVisualizer {
     ///
     /// 返回被更新的实体数量。
     pub fn update(&mut self, entities: &EntityCollection, time: f64) -> usize {
+        // 时间是否变化与脏标志一起决定是否需重算。
         let time_changed = (time - self.last_time).abs() > f64::EPSILON;
         self.last_time = time;
 
@@ -67,6 +68,7 @@ impl GeometryVisualizer {
 
         // 更新或添加实体
         for entity in entities.values() {
+            // 脏、时间变化或缓存缺失任一成立时都需重建。
             let needs_update = self.dirty
                 || time_changed
                 || !self.geometry_cache.contains_key(&entity.id);
@@ -78,6 +80,7 @@ impl GeometryVisualizer {
             }
         }
 
+        // 本轮重建完毕，清除脏标志。
         self.dirty = false;
         updated
     }
@@ -133,6 +136,7 @@ impl GeometryVisualizer {
 
     /// 清除所有缓存的几何。
     pub fn clear(&mut self) {
+        // 清空缓存并置脏，下次更新将全量重建。
         self.geometry_cache.clear();
         self.dirty = true;
     }
@@ -141,7 +145,8 @@ impl GeometryVisualizer {
 /// 一个静态几何批次，将多个几何实例
 /// 合并为单个批次以高效渲染。
 ///
-/// 映射到 CesiumJS `DataSources/StaticGeometryColorBatch.js`
+/// 把若乾实体的填充与轮廓实例汇集到两个向量中，便于一次性提交绘制；
+/// 支持累加、计数、判空与清空，本身不参与逐帧的脏判定。
 #[derive(Debug, Default)]
 pub struct StaticGeometryBatch {
     /// 批量处理的填充实例。
@@ -158,6 +163,7 @@ impl StaticGeometryBatch {
 
     /// 向批次添加几何实例。
     pub fn add(&mut self, geometry: &EntityGeometry) {
+        // 分别并入该实体几何的填充与轮廓实例。
         self.fill_instances.extend(geometry.fill_instances.iter().cloned());
         self.outline_instances.extend(geometry.outline_instances.iter().cloned());
     }
@@ -182,7 +188,8 @@ impl StaticGeometryBatch {
 /// 一个动态几何更新器，对于具有时间动态属性的
 /// 实体，每帧重新生成几何。
 ///
-/// 映射到 CesiumJS `DataSources/DynamicGeometryUpdater.js`
+/// 只跟踪一组被标记为动态的实体 id，更新时逐个从集合取回实体并以其
+/// 当前时刻重新生成几何，返回 id 与几何的配对列表供上层重建图元。
 #[derive(Debug)]
 pub struct DynamicGeometryUpdater {
     /// 具有动态（随时间变化）几何的实体 ID。
@@ -202,6 +209,7 @@ impl DynamicGeometryUpdater {
 
     /// 将一个实体注册为动态。
     pub fn add_entity(&mut self, entity_id: &str) {
+        // 去重：仅当尚未登记时才追加。
         if !self.dynamic_entities.contains(&entity_id.to_string()) {
             self.dynamic_entities.push(entity_id.to_string());
         }
@@ -214,6 +222,7 @@ impl DynamicGeometryUpdater {
 
     /// 在给定时间处为所有被跟踪的实体更新动态几何。
     pub fn update(&self, entities: &EntityCollection, time: f64) -> Vec<(String, EntityGeometry)> {
+        // 逐个取回动态实体并以当前时刻重建几何，集成为 id-几何配对。
         self.dynamic_entities
             .iter()
             .filter_map(|id| {
@@ -260,6 +269,8 @@ mod tests {
         collection
     }
 
+    /// 验证首次更新：两个实体均新建几何，updated 为 2 且实体计数为 2。
+    /// 初始脏标志保证首轮必全部构建。
     #[test]
     fn test_visualizer_update() {
         let mut viz = GeometryVisualizer::wgs84();
@@ -271,6 +282,7 @@ mod tests {
         assert!(viz.instance_count() >= 2);
     }
 
+    /// 验证无变化短路：同一时间且非脏时第二次更新返回 0，不重算。
     #[test]
     fn test_visualizer_no_change() {
         let mut viz = GeometryVisualizer::wgs84();
@@ -281,6 +293,7 @@ mod tests {
         assert_eq!(updated, 0); // 无变化
     }
 
+    /// 验证时间变化触发重算：时间从 0 变到 1 时两个实体全部更新。
     #[test]
     fn test_visualizer_time_change() {
         let mut viz = GeometryVisualizer::wgs84();
@@ -291,6 +304,7 @@ mod tests {
         assert_eq!(updated, 2); // 时间变化，全部更新
     }
 
+    /// 验证实体移除：标脏后更新，缓存中已不存在的 box-1 被丢弃，实体降为 1。
     #[test]
     fn test_visualizer_entity_removal() {
         let mut viz = GeometryVisualizer::wgs84();
@@ -305,6 +319,7 @@ mod tests {
         assert_eq!(viz.entity_count(), 1);
     }
 
+    /// 验证按 id 取几何：可取回 box-1 的缓存几何，其填充实例数为 1。
     #[test]
     fn test_visualizer_get_geometry() {
         let mut viz = GeometryVisualizer::wgs84();
@@ -315,6 +330,7 @@ mod tests {
         assert_eq!(geo.fill_instances.len(), 1);
     }
 
+    /// 验证聚合查询：all_fill_instances 汇总跨实体的填充实例，共 2 个。
     #[test]
     fn test_visualizer_all_instances() {
         let mut viz = GeometryVisualizer::wgs84();
@@ -325,6 +341,7 @@ mod tests {
         assert_eq!(fills.len(), 2);
     }
 
+    /// 验证静态批次：空几何不增项，累加真实填充实例后批次非空且长为 2。
     #[test]
     fn test_static_batch() {
         let mut batch = StaticGeometryBatch::new();
@@ -349,6 +366,7 @@ mod tests {
         assert_eq!(batch.len(), 2);
     }
 
+    /// 验证动态更新器：注册的 box-1 在更新时回一个 id-几何配对，含 1 个填充实例。
     #[test]
     fn test_dynamic_updater() {
         let mut dynamic = DynamicGeometryUpdater::new(Ellipsoid::WGS84);
@@ -363,6 +381,7 @@ mod tests {
         assert_eq!(results[0].1.fill_instances.len(), 1);
     }
 
+    /// 验证动态注册/移除：注册两个实体后移除一个，计数降为 1。
     #[test]
     fn test_dynamic_updater_remove() {
         let mut dynamic = DynamicGeometryUpdater::new(Ellipsoid::WGS84);
@@ -374,6 +393,7 @@ mod tests {
         assert_eq!(dynamic.entity_count(), 1);
     }
 
+    /// 验证清空：clear 后实体与实例计数均归零，并重新置脏。
     #[test]
     fn test_visualizer_clear() {
         let mut viz = GeometryVisualizer::wgs84();

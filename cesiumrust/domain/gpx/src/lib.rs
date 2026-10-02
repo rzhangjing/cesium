@@ -1,8 +1,6 @@
 //! cesium-gpx：GPX（GPS Exchange Format）解析器。
 //!
-//! 领域层 —— 纯 Rust，f64 精度。
-//!
-//! CesiumJS 映射：`DataSources/GpxDataSource.js`
+//! 领域层 —— 纯 Rust，f64 精度。提供 GPX 文档的解析与到通用 [`DataSource`] 的转换。
 
 pub mod parser;
 

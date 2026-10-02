@@ -1,9 +1,7 @@
 //! cesium-scene-mode：场景模式与形态变换。
 //!
-//! 领域层 —— 纯 Rust，f64 精度。
-//!
-//! CesiumJS 映射：
-//! - `Scene/SceneMode.js` → scene_mode
+//! 领域层 —— 纯 Rust，f64 精度。提供 [`SceneMode`]、形态变换状态 [`MorphState`] 与
+//! 2D/3D/Columbus View 之间的投影换算。
 
 pub mod scene_mode;
 

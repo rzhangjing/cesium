@@ -1,10 +1,10 @@
 //! 几何生成器（Ellipse/Corridor/Wall/Polyline/CoplanarPolygon/Frustum）
 //! + Simon1994PlanetaryPositions + IauOrientation → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Core/EllipseGeometry.js、Core/CorridorGeometry.js、Core/WallGeometry.js
-//! - Core/PolylineGeometry.js、Core/CoplanarPolygonGeometry.js
-//! - Core/Simon1994PlanetaryPositions.js、Core/Iau2000Orientation.js
+//! 参考 CesiumJS：
+//! - Core/EllipseGeometry、Core/CorridorGeometry、Core/WallGeometry
+//! - Core/PolylineGeometry、Core/CoplanarPolygonGeometry
+//! - Core/Simon1994PlanetaryPositions、Core/Iau2000Orientation
 //!
 //! A 类测试：顶点/索引数、包围球、行星位置。
 //! C 类已省略：throws、pack/unpack、offsetAttribute（GPU 特有）。

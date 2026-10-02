@@ -69,10 +69,15 @@ pub enum TerrainScheme {
 /// 从本地目录读取 heightmap-1.0 瓦片的离线地形获取器。
 #[derive(Debug, Clone)]
 pub struct FileTerrainFetcher {
+    /// 磁盘上存放瓦片的根目录。
     root: PathBuf,
+    /// 行序约定（TMS 还是 Geographic）。
     scheme: TerrainScheme,
+    /// 严格离线：为真时不回退到网络。
     strict_offline: bool,
+    /// 所提供服务的最深瓦片层级。
     maximum_level: u32,
+    /// 覆盖的地理矩形（缺省为全球）。
     rectangle: Rectangle,
 }
 
@@ -165,6 +170,7 @@ impl FileTerrainFetcher {
     /// 解析瓦片 `(x, y, level)` 的磁盘路径，当 [`TerrainScheme::Tms`]
     /// 处于激活时应用 TMS 的 y 翻转。
     fn tile_path(&self, x: u32, y: u32, level: u32) -> PathBuf {
+        // TMS 将地理 y 翻转为磁盘 y（(1<<level)-1-y）；Geographic 那么直接用。
         let disk_y = match self.scheme {
             TerrainScheme::Tms => (1u32 << level).saturating_sub(1).saturating_sub(y),
             TerrainScheme::Geographic => y,
@@ -178,6 +184,8 @@ impl FileTerrainFetcher {
     /// 读取并解码一个 heightmap-1.0 瓦片为 [`GeometryData`]。
     fn read_tile(&self, x: u32, y: u32, level: u32) -> PortResult<GeometryData> {
         let path = self.tile_path(x, y, level);
+        // 区分“文件不存在”与真正的 IO 错误，分别映射为
+        // NotFound 与 Network 错误，以便上层区别对待。
         let bytes = std::fs::read(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 PortError::NotFound(format!(
@@ -197,14 +205,22 @@ impl FileTerrainFetcher {
 }
 
 impl TerrainProvider for FileTerrainFetcher {
+    /// 本提供器覆盖的地理矩形边界。
     fn rectangle(&self) -> Rectangle {
         self.rectangle
     }
 
+    /// 可请求的最深瓦片层级；超过此层级的请求会被拒绝。
     fn maximum_level(&self) -> u32 {
         self.maximum_level
     }
 
+    /// 异步请求一个地形瓦片的几何。
+    ///
+    /// - `x`/`y`/`level`：瓦片的列、行（地理空标）与层级。
+    /// 返回一个解析为 [`GeometryData`] 的 future；若 `level` 超过
+    /// [`maximum_level`](Self::maximum_level) 则返回 [`PortError::NotFound`]。
+    /// 由于是本地磁盘读取，future 在首次 poll 时就已完成。
     fn request_tile_geometry<'a>(
         &'a self,
         x: u32,
@@ -224,7 +240,9 @@ impl TerrainProvider for FileTerrainFetcher {
         Box::pin(async move { result })
     }
 
+    /// 报告一个瓦片是否可用：层级不超限且对应磁盘文件存在。
     fn get_availability(&self, x: u32, y: u32, level: u32) -> bool {
+        // 超出最深层级直接判为不可用。
         if level > self.maximum_level {
             return false;
         }
@@ -248,6 +266,7 @@ fn decode_heightmap(bytes: &[u8]) -> PortResult<GeometryData> {
     let grid = HEIGHTMAP_GRID_SIZE;
     let last = (grid - 1) as f64;
     let mut positions: Vec<[f64; 3]> = Vec::with_capacity(grid * grid);
+    // 行优先遍历 65×65 网格，逐单元读一个 u16-LE 高度并反量化到米。
     for row in 0..grid {
         for col in 0..grid {
             let i = (row * grid + col) * 2;
@@ -264,6 +283,8 @@ fn decode_heightmap(bytes: &[u8]) -> PortResult<GeometryData> {
     let mut indices: Vec<u32> = Vec::with_capacity((grid - 1) * (grid - 1) * 6);
     for row in 0..(grid - 1) {
         for col in 0..(grid - 1) {
+            // 一个单元的四角 a(左上)/b(右上)/c(左下)/d(右下)，
+            // 沿对角线 a-d…拆为两个三角形 (a,c,b) 与 (b,c,d)。
             let a = (row * grid + col) as u32;
             let b = a + 1;
             let c = a + grid as u32;
@@ -294,6 +315,7 @@ fn sphere_from_positions(positions: &[[f64; 3]]) -> BoundingSphere {
             radius: 0.0,
         };
     }
+    // 累加逐轴 AABB 的 min/max；包围球中心取对角中点。
     let mut min = [f64::MAX; 3];
     let mut max = [f64::MIN; 3];
     for p in positions {
@@ -312,6 +334,7 @@ fn sphere_from_positions(positions: &[[f64; 3]]) -> BoundingSphere {
         (min[2] + max[2]) * 0.5,
     ];
     let mut radius_sq = 0.0f64;
+    // 取到中心距离最大的点：半径平方取各顶点距离平方的最大值。
     for p in positions {
         let dx = p[0] - center[0];
         let dy = p[1] - center[1];
@@ -541,6 +564,7 @@ mod tests {
         assert!(matches!(err, PortError::Decode(_)));
     }
 
+    /// 空输入：包围球回退到原点、半径 0。
     #[test]
     fn test_sphere_from_positions_empty() {
         let s = sphere_from_positions(&[]);
@@ -550,6 +574,7 @@ mod tests {
 
     // --- tile_path / TMS 翻转 ------------------------------------------------
 
+    /// TMS 方案下磁盘 y 应等于 (1<<level)-1-y_geo。
     #[test]
     fn test_tile_path_tms_flips_y() {
         let dir = unique_temp_dir("tile-path-tms");
@@ -562,6 +587,7 @@ mod tests {
         assert_eq!(path, dir.join("2").join("1").join("0.terrain"));
     }
 
+    /// Geographic 方案不做 y 翻转：磁盘 y == 地理 y。
     #[test]
     fn test_tile_path_geographic_no_flip() {
         let dir = unique_temp_dir("tile-path-geo");
@@ -574,6 +600,7 @@ mod tests {
 
     // --- STRICT_OFFLINE panic ------------------------------------------------
 
+    /// 严格离线 + https URL 应 panic（契约禁网络回退）。
     #[test]
     #[should_panic(expected = "STRICT_OFFLINE violation")]
     fn test_from_layer_url_strict_panics_on_https() {
@@ -584,6 +611,7 @@ mod tests {
         );
     }
 
+    /// 严格离线 + http URL 也应 panic。
     #[test]
     #[should_panic(expected = "STRICT_OFFLINE violation")]
     fn test_from_layer_url_strict_panics_on_http() {
@@ -594,6 +622,7 @@ mod tests {
         );
     }
 
+    /// 严格离线下 file:// URL 应正常加载。
     #[test]
     fn test_from_layer_url_strict_allows_file() {
         let dir = unique_temp_dir("from-url-ok");
@@ -615,6 +644,7 @@ mod tests {
         assert!(fetcher.root().join("layer.json").is_file());
     }
 
+    /// 非严格模式下，https layer URL 应被拒绝为一个错误（而非 panic）。
     #[test]
     fn test_from_layer_url_not_strict_rejects_https_with_error() {
         // 不开 STRICT_OFFLINE 时，https URL 仍会被拒绝（无 HTTP
@@ -660,6 +690,7 @@ mod tests {
         assert!(matches!(err, PortError::NotFound(_)));
     }
 
+    /// 本地 fixture 中存在的瓦片应报告为可用，不存在的为不可用。
     #[test]
     fn test_get_availability() {
         let dir = unique_temp_dir("availability");

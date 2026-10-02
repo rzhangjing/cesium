@@ -209,7 +209,8 @@ pub fn decode_quantized_mesh(
     })
 }
 
-/// 从缓冲区读取边缘索引。
+/// 从缓冲区读取一段边缘索引：先读一个 u32 计数，再按
+/// `bytes_per_index`（2 或 4）逐个读出顶点索引。
 fn read_edge_indices(
     buffer: &[u8],
     pos: &mut usize,
@@ -219,6 +220,7 @@ fn read_edge_indices(
     let mut indices = Vec::with_capacity(count);
 
     for _ in 0..count {
+        // 宽度由顶点数决定：>65536 个顶点时用 4 字节索引。
         let idx = if bytes_per_index == 4 {
             read_u32(buffer, pos)
         } else {
@@ -255,6 +257,7 @@ fn high_water_mark_decode(indices: &mut [u32]) {
 
     for idx in indices.iter_mut() {
         let code = *idx;
+        // 真实索引 = 当前高水位 - 存储的偏移；偏移 0 意味着引入新顶点。
         *idx = highest - code;
         if code == 0 {
             highest += 1;
@@ -264,12 +267,14 @@ fn high_water_mark_decode(indices: &mut [u32]) {
 
 // 读取二进制数据的辅助函数（小端序）
 
+/// 从小端字节流当前位置读一个 u16，并将游标前移 2 字节。
 fn read_u16(buffer: &[u8], pos: &mut usize) -> u16 {
     let value = u16::from_le_bytes([buffer[*pos], buffer[*pos + 1]]);
     *pos += 2;
     value
 }
 
+/// 从小端字节流当前位置读一个 u32，并将游标前移 4 字节。
 fn read_u32(buffer: &[u8], pos: &mut usize) -> u32 {
     let value = u32::from_le_bytes([
         buffer[*pos],
@@ -281,6 +286,7 @@ fn read_u32(buffer: &[u8], pos: &mut usize) -> u32 {
     value
 }
 
+/// 从小端字节流当前位置读一个 f32，并将游标前移 4 字节。
 fn read_f32(buffer: &[u8], pos: &mut usize) -> f32 {
     let value = f32::from_le_bytes([
         buffer[*pos],
@@ -292,6 +298,7 @@ fn read_f32(buffer: &[u8], pos: &mut usize) -> f32 {
     value
 }
 
+/// 从小端字节流当前位置读一个 f64，并将游标前移 8 字节。
 fn read_f64(buffer: &[u8], pos: &mut usize) -> f64 {
     let value = f64::from_le_bytes([
         buffer[*pos],
@@ -307,6 +314,7 @@ fn read_f64(buffer: &[u8], pos: &mut usize) -> f64 {
     value
 }
 
+/// 连续读三个 f64 组装为一个笛卡尔坐标 [`DVec3`]（逐分量前进游标）。
 fn read_cartesian3(buffer: &[u8], pos: &mut usize) -> DVec3 {
     let x = read_f64(buffer, pos);
     let y = read_f64(buffer, pos);
@@ -318,6 +326,7 @@ fn read_cartesian3(buffer: &[u8], pos: &mut usize) -> DVec3 {
 mod tests {
     use super::*;
 
+    /// 验证 zigzag + 前缀和编码的逐元素解码（小值往返）。
     #[test]
     fn test_zigzag_delta_decode() {
         // 测试 zigzag 编码：0 -> 0, 1 -> -1, 2 -> 1, 3 -> -2, 4 -> 2

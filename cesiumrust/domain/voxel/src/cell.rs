@@ -1,12 +1,15 @@
 //! 体素单元元数据访问。
 //!
-//! 映射到 CesiumJS `Scene/VoxelCell.js`。
+//! 提供一个体素单元的空间定位（瓦片/采样索引、有向包围盒）与按名称访问的
+//! 多类型元数据属性集合。
 
 use std::collections::HashMap;
 
 use crate::shape::OrientedBoundingBox;
 
 /// 体素单元的元数据值类型。
+///
+/// 以枚举封装各分类型的标量与向量属性，便于统一存储与按需解包。
 #[derive(Debug, Clone, PartialEq)]
 pub enum VoxelMetadataValue {
     /// 单个 f32 值。
@@ -27,7 +30,7 @@ pub enum VoxelMetadataValue {
 
 /// 来自体素图元的单元，提供对元数据和空间信息的访问。
 ///
-/// 映射到 CesiumJS `VoxelCell`。
+/// 瓦片与采样索引定位单元，包围盒描述其空间范围，元数据表携带属性值。
 #[derive(Debug, Clone)]
 pub struct VoxelCell {
     /// 包含此单元的瓦片索引。
@@ -58,6 +61,7 @@ impl VoxelCell {
         metadata: HashMap<String, VoxelMetadataValue>,
         obb: OrientedBoundingBox,
     ) -> Self {
+        // 直接采用调用方提供的元数据表与包围盒，适用于从拾取结果重建
         Self {
             tile_index,
             sample_index,
@@ -83,11 +87,13 @@ impl VoxelCell {
 
     /// 检查单元是否具有给定名称的属性。
     pub fn has_property(&self, name: &str) -> bool {
+        // 仅判断键是否存在，不区分值的类型
         self.metadata.contains_key(name)
     }
 
     /// 获取所有属性名称。
     pub fn get_names(&self) -> Vec<&str> {
+        // 以借用形式返回键列表，避免拷贝字符串
         self.metadata.keys().map(|s| s.as_str()).collect()
     }
 
@@ -98,6 +104,7 @@ impl VoxelCell {
 
     /// 获取浮点属性值。
     pub fn get_float(&self, name: &str) -> Option<f64> {
+        // Float 与 Double 均可读作 f64，其余类型返回 None
         match self.metadata.get(name) {
             Some(VoxelMetadataValue::Float(v)) => Some(*v as f64),
             Some(VoxelMetadataValue::Double(v)) => Some(*v),
@@ -107,6 +114,7 @@ impl VoxelCell {
 
     /// 获取整数属性值。
     pub fn get_int(&self, name: &str) -> Option<i64> {
+        // Int 与 Uint 均提升为 i64，其余类型返回 None
         match self.metadata.get(name) {
             Some(VoxelMetadataValue::Int(v)) => Some(*v as i64),
             Some(VoxelMetadataValue::Uint(v)) => Some(*v as i64),
@@ -116,11 +124,13 @@ impl VoxelCell {
 
     /// 设置属性值。
     pub fn set_property(&mut self, name: String, value: VoxelMetadataValue) {
+        // 同名键会被新值覆盖
         self.metadata.insert(name, value);
     }
 
     /// 获取元数据属性数量。
     pub fn property_count(&self) -> usize {
+        // 返回内部 HashMap 的键数量
         self.metadata.len()
     }
 
@@ -132,6 +142,7 @@ impl VoxelCell {
         padded_dim_x: u32,
         padded_dim_y: u32,
     ) -> (u32, u32, u32) {
+        // 采样索引按行主序展平：先除片层面积得 z，再依次解出 y、x
         let slice_size = padded_dim_x * padded_dim_y;
         let z = sample_index / slice_size;
         let index_in_slice = sample_index - z * slice_size;

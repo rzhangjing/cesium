@@ -1,5 +1,4 @@
 //! GregorianDate - 日历日期表示。
-//! 映射到 CesiumJS `Core/GregorianDate.js`
 
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +6,7 @@ use serde::{Deserialize, Serialize};
 const DAYS_IN_MONTH: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 /// 若给定年份是闰年则返回 true。
-/// 映射到 CesiumJS `isLeapYear`
+/// 遵循“四年一闰、百年不闰、四百年再闰”规则。
 pub fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
@@ -22,7 +21,6 @@ pub fn days_in_month(year: i32, month: u32) -> u32 {
 }
 
 /// 格里高利历（公历）中的一个日历日期。
-/// 映射到 CesiumJS `GregorianDate`
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct GregorianDate {
     /// 年（1-9999）。
@@ -45,9 +43,8 @@ pub struct GregorianDate {
 
 impl GregorianDate {
     /// 创建一个经过校验的新 GregorianDate。
-    /// 映射到 CesiumJS `new GregorianDate(year, month, day, hour, minute, second, millisecond, isLeapSecond)`
     ///
-    /// 校验仅在 debug 下生效（对应 CesiumJS DeveloperError 行为）。
+    /// 校验仅在 debug 下生效（越界会触发 debug_assert 失败）。
     // deferred.md #13: debug_assert 范围校验 (year/month/day/millisecond) 触发 manual_range_contains，风格问题。
     #[allow(clippy::too_many_arguments, clippy::manual_range_contains)]
     pub fn new(
@@ -60,7 +57,7 @@ impl GregorianDate {
         millisecond: f64,
         is_leap_second: bool,
     ) -> Self {
-        // 仅 debug 下的校验（对应 CesiumJS `//>>includeStart('debug')` 代码块）
+        // 仅 debug 下生效的范围校验
         debug_assert!(year >= 1 && year <= 9999, "Year must be in range [1, 9999], got {year}");
         debug_assert!(month >= 1 && month <= 12, "Month must be in range [1, 12], got {month}");
         debug_assert!(day >= 1 && day <= 31, "Day must be in range [1, 31], got {day}");
@@ -92,7 +89,7 @@ impl GregorianDate {
 
 impl Default for GregorianDate {
     /// 构造最小日期（1 年 1 月 1 日，午夜）。
-    /// 映射到使用全部默认值的 CesiumJS `new GregorianDate()`。
+    /// 各分量取类型默认值：年月日为 1，时间部分归零。
     fn default() -> Self {
         Self {
             year: 1,

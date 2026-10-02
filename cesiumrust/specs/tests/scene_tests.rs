@@ -1,4 +1,4 @@
-//! Scene 规格测试 - 移植自 packages/engine/Specs/Scene/
+//! Scene 规格测试 - 参考自 Specs/Scene/
 //! 覆盖范围：Tileset、Imagery、Material、Particles、Camera、Primitives 等。
 
 mod scene {

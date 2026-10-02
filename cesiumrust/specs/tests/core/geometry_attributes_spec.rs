@@ -1,6 +1,6 @@
-//! 详细几何属性规格 - 移植自 Core/WallGeometrySpec.js、
-//! Core/CorridorGeometrySpec.js、Core/EllipseGeometrySpec.js、
-//! Core/PolylineGeometrySpec.js
+//! 详细几何属性规格 - 参考自 Core/WallGeometrySpec、
+//! Core/CorridorGeometrySpec、Core/EllipseGeometrySpec、
+//! Core/PolylineGeometrySpec
 //!
 //! 测试数学属性：高度、宽度、法线、表面上的位置。
 
@@ -18,7 +18,7 @@ fn wgs84() -> Ellipsoid {
     Ellipsoid::WGS84
 }
 
-// ─── WallGeometry（来自 WallGeometrySpec.js）───────────────────────────────
+// ─── WallGeometry（来自 WallGeometrySpec）───────────────────────────────
 
 #[test]
 fn wall_creates_positions_relative_to_ellipsoid() {
@@ -151,7 +151,7 @@ fn wall_from_constant_heights() {
     }
 }
 
-// ─── CorridorGeometry（来自 CorridorGeometrySpec.js）──────────────────────
+// ─── CorridorGeometry（来自 CorridorGeometrySpec）──────────────────────
 
 #[test]
 fn corridor_computes_positions_mitered() {
@@ -270,7 +270,7 @@ fn corridor_corner_types_produce_different_geometry() {
     );
 }
 
-// ─── EllipseGeometry（来自 EllipseGeometrySpec.js）──────────────────────
+// ─── EllipseGeometry（来自 EllipseGeometrySpec）──────────────────────
 
 #[test]
 fn ellipse_computes_positions() {
@@ -360,7 +360,7 @@ fn ellipse_outline_produces_lines() {
     assert_eq!(geo.indices.len() % 2, 0, "outline indices should be line pairs");
 }
 
-// ─── PolylineGeometry（来自 PolylineGeometrySpec.js）─────────────────────
+// ─── PolylineGeometry（来自 PolylineGeometrySpec）─────────────────────
 
 #[test]
 fn polyline_computes_positions() {

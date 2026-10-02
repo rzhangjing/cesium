@@ -1,16 +1,12 @@
 //! 缓存系统：LRU 缓存、瓦片集缓存、引用计数资源缓存。
 //!
-//! 映射到 CesiumJS：
-//! - `Scene/Cesium3DTilesetCache.js` → TilesetCache
-//! - `Scene/ResourceCache.js` → ResourceCache
-//! - `Scene/ResourceCacheStatistics.js` → CacheStatistics
+//! 提供 LRU 缓存基元、瓦片集缓存 [`TilesetCache`]、引用计数资源缓存
+//! [`ResourceCache`] 及其命中统计 [`CacheStatistics`]。
 
 use std::collections::HashMap;
 use std::hash::Hash;
 
-/// 缓存统计跟踪。
-///
-/// 映射到 CesiumJS `ResourceCacheStatistics.js`。
+/// 缓存统计跟踪：命中/未命中/驱逐次数的累计计数。
 #[derive(Debug, Clone, Default)]
 pub struct CacheStatistics {
     /// 缓存命中次数。
@@ -61,6 +57,7 @@ impl CacheStatistics {
 
     /// 以 [0, 1]  fraction 返回命中率。
     pub fn hit_rate(&self) -> f64 {
+        // 命中率 = 命中 / (命中 + 未命中)；无样本时回退 0.0，避免除零。
         let total = self.hits + self.misses;
         if total == 0 {
             return 0.0;
@@ -75,6 +72,7 @@ impl CacheStatistics {
 
     /// 添加几何字节。
     pub fn add_geometry(&mut self, bytes: u64) {
+        // 累计几何字节并刷新历史峰值，用于内存预算调参。
         self.geometry_byte_length += bytes;
         self.total_bytes += bytes;
         self.peak_bytes = self.peak_bytes.max(self.total_bytes);
@@ -118,6 +116,7 @@ pub struct LruCache<K: Eq + Hash + Clone, V: Clone> {
 impl<K: Eq + Hash + Clone, V: Clone> LruCache<K, V> {
     /// 创建一个具有给定容量的新 LRU 缓存。
     pub fn new(capacity: usize) -> Self {
+        // 容量下限钳到 1，确保逐出逻辑始终有可缓存槽位。
         Self {
             capacity: capacity.max(1),
             entries: HashMap::new(),
@@ -143,6 +142,7 @@ impl<K: Eq + Hash + Clone, V: Clone> LruCache<K, V> {
 
     /// 按键获取值（并将其标记为最近使用）。
     pub fn get(&mut self, key: &K) -> Option<&V> {
+        // 命中计入统计并把键移到 order 尾部标记为最近使用。
         if self.entries.contains_key(key) {
             self.stats.record_hit();
             // 移到最近
@@ -157,6 +157,7 @@ impl<K: Eq + Hash + Clone, V: Clone> LruCache<K, V> {
 
     /// 获取值但不更新访问顺序。
     pub fn peek(&self, key: &K) -> Option<&V> {
+        // 只读探查：不计入命中统计、也不改变 LRU 访问顺序。
         self.entries.get(key)
     }
 
@@ -184,6 +185,7 @@ impl<K: Eq + Hash + Clone, V: Clone> LruCache<K, V> {
 
     /// 从缓存中移除一个键。
     pub fn remove(&mut self, key: &K) -> Option<V> {
+        // 同步从访问顺序中剔除该键，避免遗留陈旧键。
         self.order.retain(|k| k != key);
         let value = self.entries.remove(key);
         self.stats.entry_count = self.entries.len();
@@ -197,6 +199,7 @@ impl<K: Eq + Hash + Clone, V: Clone> LruCache<K, V> {
 
     /// 逐出最近最少使用的条目。
     fn evict_lru(&mut self) -> Option<(K, V)> {
+        // order 尾部为最近使用，首部即最近最少使用，逐出取首部键。
         if let Some(lru_key) = self.order.first().cloned() {
             self.order.remove(0);
             let value = self.entries.remove(&lru_key);
@@ -235,7 +238,6 @@ pub struct TileCacheEntry {
 
 /// 基于哨兵（sentinel）的 LRU 逐出的瓦片集缓存。
 ///
-/// 映射到 CesiumJS `Cesium3DTilesetCache.js`。
 /// 瓦片分为两组：
 /// - 未触用（逐出候选，按 LRU 顺序）
 /// - 本帧已触用（受保护不被逐出）
@@ -254,6 +256,7 @@ pub struct TilesetCache {
 }
 
 impl Default for TilesetCache {
+    /// 返回缺省瓦片集缓存：空瓦片表、上限 512 MB。
     fn default() -> Self {
         Self {
             tiles: Vec::new(),
@@ -277,6 +280,7 @@ impl TilesetCache {
     /// 为新帧重置缓存。
     /// 所有瓦片都成为逐出候选。
     pub fn reset(&mut self) {
+        // 帧起始清空触用标记：本帧未再 touch 的瓦片随即重获逐出资格。
         for tile in &mut self.tiles {
             tile.touched = false;
         }
@@ -284,6 +288,7 @@ impl TilesetCache {
 
     /// 触用一个瓦片（标记为本帧已用）。
     pub fn touch(&mut self, tile_id: u64, frame_number: u64) {
+        // 命中本帧瓦片则刷新其触用帧；未命中仅计入统计，不新建条目。
         if let Some(tile) = self.tiles.iter_mut().find(|t| t.tile_id == tile_id) {
             tile.touched = true;
             tile.last_touched_frame = frame_number;
@@ -295,10 +300,12 @@ impl TilesetCache {
 
     /// 向缓存添加一个瓦片。
     pub fn add(&mut self, tile_id: u64, size_bytes: u64, frame_number: u64) {
+        // 重复瓦片直接跳过，避免同一 tile_id 多次计入内存总量。
         if self.tiles.iter().any(|t| t.tile_id == tile_id) {
             return; // 已缓存
         }
 
+        // 新瓦片默认本帧已触用，受保护不被本轮逐出。
         self.tiles.push(TileCacheEntry {
             tile_id,
             size_bytes,
@@ -312,6 +319,7 @@ impl TilesetCache {
 
     /// 从缓存中移除特定瓦片。
     pub fn remove(&mut self, tile_id: u64) -> Option<TileCacheEntry> {
+        // 移除并回收字节，saturating 防止内存总量下溢。
         if let Some(idx) = self.tiles.iter().position(|t| t.tile_id == tile_id) {
             let tile = self.tiles.remove(idx);
             self.total_memory_bytes = self.total_memory_bytes.saturating_sub(tile.size_bytes);
@@ -392,7 +400,6 @@ pub struct RefCountedEntry<V: Clone> {
 
 /// 引用计数的资源缓存。
 ///
-/// 映射到 CesiumJS `ResourceCache.js`。
 /// 资源被共享并引用计数；当引用计数降为零时
 /// 将其移除。
 #[derive(Debug, Clone)]
@@ -404,6 +411,7 @@ pub struct ResourceCache<K: Eq + Hash + Clone, V: Clone> {
 }
 
 impl<K: Eq + Hash + Clone, V: Clone> Default for ResourceCache<K, V> {
+    /// 返回空资源缓存：无条目、零统计。
     fn default() -> Self {
         Self {
             entries: HashMap::new(),
@@ -420,6 +428,7 @@ impl<K: Eq + Hash + Clone, V: Clone> ResourceCache<K, V> {
 
     /// 从缓存获取资源（引用计数加一）。
     pub fn get(&mut self, key: &K) -> Option<&V> {
+        // 取用即增引用，防止共享资源在使用期间被 release 归零移除。
         if let Some(entry) = self.entries.get_mut(key) {
             entry.reference_count += 1;
             self.stats.record_hit();
@@ -456,6 +465,7 @@ impl<K: Eq + Hash + Clone, V: Clone> ResourceCache<K, V> {
     pub fn release(&mut self, key: &K) -> bool {
         if let Some(entry) = self.entries.get_mut(key) {
             entry.reference_count = entry.reference_count.saturating_sub(1);
+            // 引用递减到 0 时真正淘汰条目并回收其字节占用。
             if entry.reference_count == 0 {
                 let size = entry.size_bytes;
                 self.entries.remove(key);

@@ -1,5 +1,4 @@
 //! EllipsoidalOccluder - 针对椭球的地平线剔除。
-//! 映射到 CesiumJS `Core/EllipsoidalOccluder.js`
 
 use crate::bounding::BoundingSphere;
 use crate::ellipsoid::{normalize_cartesian3, Ellipsoid};
@@ -12,9 +11,13 @@ use glam::DVec3;
 /// 映射到 CesiumJS `EllipsoidalOccluder`
 #[derive(Debug, Clone)]
 pub struct EllipsoidalOccluder {
+    /// 作为遮挡体（地平线基准）的参考椭球。
     ellipsoid: Ellipsoid,
+    /// 相机在地心固定系下的原始位置。
     camera_position: DVec3,
+    /// 相机位置经椭球缩放后的单位空间坐标（使椭球变为单位球）。
     camera_position_in_scaled_space: DVec3,
+    /// 缩放空间中相机到地平线（limb）距离的平方，用于视域判断。
     distance_to_limb_in_scaled_space_squared: f64,
 }
 
@@ -97,6 +100,8 @@ impl EllipsoidalOccluder {
         let (cv, vh_magnitude_squared);
 
         if let Some(mh) = minimum_height {
+            // 仅当最小高度为负且未超过最短半轴时，才用 (radius+mh) 重新缩放相机向量；
+            // 否则沿用以完整椭球为准的既有缩放空间值。
             if mh < 0.0 && ellipsoid.minimum_radius() > -mh {
                 let radii = ellipsoid.radii();
                 let cp = self.camera_position;
@@ -207,6 +212,7 @@ impl EllipsoidalOccluder {
 
         // 若包围球中心离遮挡体中心太近，
         // 那么试图对它进行地平线剔除就没有意义。
+        // 阈值取最短半轴的 0.1 倍：过小中心无法稳定地定义剔除方向。
         if bs.center.length() < 0.1 * ellipsoid.minimum_radius() {
             return None;
         }
@@ -227,6 +233,7 @@ fn is_scaled_space_point_visible(
     let cv = camera_position_in_scaled_space;
     let vh_magnitude_squared = distance_to_limb_in_scaled_space_squared;
     let vt = occludee_scaled_space_position - cv;
+    // vt_dot_vc 为被遮挡点相对相机的向量与相机位置向量的点积取负，正表示朝相机一侧。
     let vt_dot_vc = -vt.dot(cv);
 
     // 若 vhMagnitudeSquared < 0，则我们位于椭球表面之下，
@@ -252,6 +259,7 @@ fn compute_horizon_culling_point_from_positions(
     let mut result_magnitude = 0.0_f64;
 
     for &position in positions {
+        // 逐位置求其地平线模长，取最大者作为剔除点半径；任一为负（方向相反）则整体不可计算。
         let candidate_magnitude =
             compute_magnitude(ellipsoid, position, scaled_space_direction_to_point);
         if candidate_magnitude < 0.0 {
@@ -277,6 +285,7 @@ fn compute_horizon_culling_point_from_vertices(
     let mut result_magnitude = 0.0_f64;
 
     let mut i = 0;
+    // 按 stride 遍历顶点缓冲，每三个分量叠加 center 还原为世界坐标后求模长。
     while i + 2 < vertices.len() {
         let position = DVec3::new(
             vertices[i] + center.x,
@@ -305,6 +314,7 @@ fn compute_magnitude(
 ) -> f64 {
     let scaled_space_position = ellipsoid.transform_position_to_scaled_space(position);
     let mut magnitude_squared = scaled_space_position.length_squared();
+    // 先取到地心的实际模长与单位方向，随后再将表面下的点抬升到单位球面。
     let mut magnitude = magnitude_squared.sqrt();
     let direction = scaled_space_position / magnitude;
 
@@ -314,6 +324,7 @@ fn compute_magnitude(
 
     let cos_alpha = direction.dot(scaled_space_direction_to_point);
     let sin_alpha = direction.cross(scaled_space_direction_to_point).length();
+    // cos_beta/sin_beta 为从单位球心到该点切线的夹角分量；由余弦定理合成地平线交点的模长倒数。
     let cos_beta = 1.0 / magnitude;
     let sin_beta = (magnitude_squared - 1.0).sqrt() * cos_beta;
 
@@ -334,6 +345,8 @@ fn magnitude_to_point(scaled_space_direction_to_point: DVec3, result_magnitude: 
 
 /// 将方向变换到缩放空间并归一化。
 /// 若方向为零则返回 None。
+///
+/// 缩放空间将椭球映为单位球，因此方向向量需按半径逐轴缩放后再归一化，后续角度计算才能用单位球几何。
 fn compute_scaled_space_direction_to_point(
     ellipsoid: &Ellipsoid,
     direction_to_point: DVec3,
@@ -347,6 +360,8 @@ fn compute_scaled_space_direction_to_point(
 }
 
 /// 根据最小高度返回一个可能被缩小的椭球。
+///
+/// 当最小高度为负且未超过最短半轴时，以各半轴均减去该深度构造缩小椭球；否则原样返回。
 fn get_possibly_shrunk_ellipsoid(ellipsoid: &Ellipsoid, minimum_height: Option<f64>) -> Ellipsoid {
     if let Some(mh) = minimum_height {
         if mh < 0.0 && ellipsoid.minimum_radius() > -mh {

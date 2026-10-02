@@ -1,10 +1,10 @@
 //! DataSourceDisplay + GeometryVisualizer + StaticGeometryBatch + DynamicGeometryUpdater 测试。
 //!
-//! 对应 CesiumJS：
-//! - DataSources/DataSourceDisplaySpec.js
-//! - DataSources/GeometryVisualizerSpec.js
-//! - DataSources/StaticGeometryColorBatchSpec.js
-//! - DataSources/DynamicGeometryUpdaterSpec.js
+//! 参考 CesiumJS：
+//! - DataSources/DataSourceDisplaySpec
+//! - DataSources/GeometryVisualizerSpec
+//! - DataSources/StaticGeometryColorBatchSpec
+//! - DataSources/DynamicGeometryUpdaterSpec
 //!
 //! A 类测试：显示协调、几何缓存、图元同步、批处理。
 

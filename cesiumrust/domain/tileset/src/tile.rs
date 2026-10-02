@@ -1,13 +1,13 @@
 //! 3D Tile 节点定义。
 //!
-//! 镜像 CesiumJS `Scene/Cesium3DTile.js`
+//! 对应 `Scene/Cesium3DTile`
 
 use crate::bounding_volume::BoundingVolume;
 use serde::{Deserialize, Serialize};
 
 /// 瓦片的 refinement 策略。
 ///
-/// 镜像 CesiumJS `Scene/Cesium3DTileRefine.js`
+/// 对应 `Scene/Cesium3DTileRefine`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum TileRefine {
@@ -20,7 +20,7 @@ pub enum TileRefine {
 
 /// 瓦片内容的加载状态。
 ///
-/// 镜像 CesiumJS `Scene/Cesium3DTileContentState.js`
+/// 对应 `Scene/Cesium3DTileContentState`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TileContentState {
     /// 尚未请求内容。
@@ -70,7 +70,7 @@ pub struct TileContent {
 
 /// 3D Tiles 树结构中的一个节点。
 ///
-/// 镜像 CesiumJS `Cesium3DTile`
+/// 对应 `Cesium3DTile`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Tile {

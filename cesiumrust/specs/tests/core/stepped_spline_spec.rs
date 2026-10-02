@@ -1,6 +1,6 @@
-//! SteppedSplineSpec.js → Rust 集成测试
+//! SteppedSplineSpec → Rust 集成测试
 //!
-//! 原始：packages/engine/Specs/Core/SteppedSplineSpec.js（10 个 it()）
+//! 原始：Specs/Core/SteppedSplineSpec（10 个 it()）
 //! 移植的 A 类：3 个（evaluate_number、evaluate_cartesian3、evaluate_midpoint）
 //! 省略的 C 类：5 个（构造函数 throws ×3、evaluate throws ×2）
 //! 省略：2 个四元数测试（Rust 的 SteppedSpline 仅支持 DVec3；受类型系统限制）

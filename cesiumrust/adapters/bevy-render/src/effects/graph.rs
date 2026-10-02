@@ -9,7 +9,7 @@
 //! - 门控 OFF → **不注册任何渲染图节点** → v0 基线零差异（PSNR=∞）
 //! - 门控 ON → pass-through 节点插入 `Core3d` 中 `EndMainPass` 与
 //!   `Tonemapping` 之间，证明像素中性的基础设施。Daniel H2 链顺序
-//!   （上游 CesiumJS 一致性）：`EndMainPass → PassThrough → AmbientOcclusion →
+//!   （标准后处理链一致性）：`EndMainPass → PassThrough → AmbientOcclusion →
 //!   Tonemapping → Fxaa → EndMainPassPostProcessing`——AO 在 tonemapping 之前（HDR
 //!   场景），FXAA 最后（最终 LDR 图像）。
 //!
@@ -141,6 +141,12 @@ pub struct PassThroughPipeline {
 }
 
 impl FromWorld for PassThroughPipeline {
+    /// 从 render world 构建管线：创建纹理 bind group layout（一张可
+    /// 过滤纹理 + 一个过滤采样器）与共享采样器，两者都带
+    /// `cesium_` 前缀标签以便调试归属。
+    ///
+    /// # 参数
+    /// - `render_world`：提供 `RenderDevice` 的渲染子 world
     fn from_world(render_world: &mut World) -> Self {
         let render_device = render_world.resource::<RenderDevice>();
 
@@ -179,6 +185,14 @@ pub struct PassThroughPipelineKey {
 impl SpecializedRenderPipeline for PassThroughPipeline {
     type Key = PassThroughPipelineKey;
 
+    /// 按输出纹理格式（HDR vs LDR）特化管线：全屏顶点着色 + 单一
+    /// pass-through 片元，写入 `key.texture_format` 指定的目标。
+    ///
+    /// # 参数
+    /// - `key`：仅携带目标 `texture_format` 的特化 key
+    ///
+    /// # 返回
+    /// 完整的 `RenderPipelineDescriptor`。
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
         RenderPipelineDescriptor {
             label: Some("cesium_pass_through_pipeline".into()),
@@ -207,10 +221,12 @@ impl SpecializedRenderPipeline for PassThroughPipeline {
 
 /// cesiumrust 的 pass-through `ViewNode`——本代码库中首个此类节点。
 ///
-/// 语义（对应 CesiumJS `PassThrough.glsl`）：采样输入纹理
+/// 语义（经典 pass-through 约定）：采样输入纹理
 /// 并原样写入输出。构造上即像素中性。
 #[derive(Default)]
 pub struct PassThroughNode {
+    /// 缓存的纹理 bind group，按输入 `TextureViewId` 键控；视图变化时
+    /// 重建，避免每帧重复创建 GPU 资源。
     cached_texture_bind_group: Mutex<Option<(TextureViewId, BindGroup)>>,
 }
 
@@ -221,6 +237,16 @@ impl ViewNode for PassThroughNode {
         &'static CesiumPassThrough,
     );
 
+    /// 视图节点的执行入口：若启用则把 `ViewTarget` 的当前主纹理原样
+    /// 采样并写入同一目标（依赖已缓存的 bind group），实现像素中性。
+    /// 未启用时直接返回 `Ok`，将渲染图完全交给 Bevy 默认链。
+    ///
+    /// # 参数
+    /// - `_graph`：渲染图上下文（本节点无需自定义 scoping）
+    /// - `render_context`：wgpu 命令编码器与管线/provider 访问入口
+    /// - `(target, pipeline_handle, pass_through)`：视图查询元组，分别为
+    ///   目标纹理、特化后的管线句柄与本节点的启用状态组件
+    /// - `world`：供取用 `RenderDevice` 等资源的世界
     fn run(
         &self,
         _graph: &mut RenderGraphContext,
@@ -491,7 +517,7 @@ pub fn create_post_process_texture(
 ///
 /// M5-E1：还注册 FXAA 节点（[`super::fxaa::register_fxaa_node`]）。
 /// M5-E2：还注册 SSAO 节点（[`super::ao::register_ao_node`]）并
-/// 接线**单一线性链**（Daniel H2，上游 CesiumJS 一致性）
+/// 接线**单一线性链**（Daniel H2，标准后处理链一致性）
 /// `EndMainPass → PassThrough → AmbientOcclusion → Tonemapping → Fxaa →
 /// EndMainPassPostProcessing`——AO 在 tonemapping 之前（HDR
 /// 场景），FXAA 最后（最终 LDR 图像）。
@@ -585,10 +611,10 @@ pub fn register_render_graph_render_world(render_app: &mut bevy::app::SubApp) {
             CesiumPostProcessLabel::PassThrough,
         );
 
-    // 统一线性链（Daniel H2——上游 CesiumJS 一致性）。CesiumJS 先运行
+    // 统一线性链（Daniel H2——标准后处理链一致性）。约定先运行
     // AO（在 HDR 场景上），然后 Bloom / AutoExposure / Tonemapping，然后
-    // FXAA 最后（在最终 LDR 图像上）：PostProcessStageCollection.js L799-834。
-    // 此前的链把 AO 放在 Tonemapping *之后* 却声称"与 CesiumJS 一致"
+    // FXAA 最后（在最终 LDR 图像上），这是标准链的固定顺序。
+    // 此前的链把 AO 放在 Tonemapping *之后* 却声称与标准链一致
     // ——一个错误说法。已重排使 AO 先于 Tonemapping，且 FXAA 是最后一个
     // cesium 节点：
     //   EndMainPass → PassThrough → AmbientOcclusion → Tonemapping → Fxaa → EndMainPassPostProcessing
@@ -645,15 +671,27 @@ pub fn register_m6_render_graph(app: &mut App) {
 /// 总是一致。保持私有：[`wire_m6_edges`] 是可测试的面。
 #[derive(Clone, Copy, Debug)]
 struct M6Gates {
+    /// 全景穹顶 pass 是否启用。
     panorama: bool,
+    /// 裁切平面 pass 是否启用。
     clipping: bool,
+    /// 基于图像的光照（IBL）pass 是否启用。
     ibl: bool,
+    /// 有序透射（OIT）pass 是否启用。
     oit: bool,
+    /// 云层 pass 是否启用。
     clouds: bool,
+    /// 分屏对比 pass 是否启用。
     split: bool,
 }
 
 impl M6Gates {
+    /// 从环境变量逐阶段读取门控开关，聚合为一组布尔。
+    /// 每阶段各自调用对应的 `*_gate_enabled()`，因此在 `build`
+    /// 与 `finish` 两阶段重复读取仍保持一致。
+    ///
+    /// # 返回
+    /// 填满了六个阶段开关的 `M6Gates`。
     fn from_env() -> Self {
         Self {
             panorama: crate::effects::panorama::panorama_gate_enabled(),
@@ -665,6 +703,11 @@ impl M6Gates {
         }
     }
 
+    /// 任一阶段门控为 ON 时返回 `true`；用于判断是否需要接线
+    /// 任何 M6 后处理图节点（全 OFF 时直接跳过、保持基线）。
+    ///
+    /// # 返回
+    /// 六个门控中是否存在至少一个启用项。
     fn any(self) -> bool {
         self.panorama
             || self.clipping
@@ -776,10 +819,20 @@ pub fn register_m6_render_graph_render_world(render_app: &mut bevy::app::SubApp)
 pub struct M6WaveARenderGraphPlugin;
 
 impl bevy::app::Plugin for M6WaveARenderGraphPlugin {
+    /// 插件主-world 半：注册 WGSL shader、`ExtractComponentPlugin` 与处于
+    /// ON 的各 M6 门控对应的主-world 前置 pass 系统。
+    ///
+    /// # 参数
+    /// - `app`：主 App（此阶段总是存在，无需子 app 检查）
     fn build(&self, app: &mut App) {
         register_m6_render_graph_main_world(app);
     }
 
+    /// 插件渲染-world 半：向 `RenderApp` 子 app 注册后处理图节点与连线。
+    /// 无头（无 `RenderApp`）时优雅降级为直接返回。
+    ///
+    /// # 参数
+    /// - `app`：主 App，从中取 `RenderApp` 子 app；缺失则跳过
     fn finish(&self, app: &mut App) {
         // 无头 `MinimalPlugins`（以及任何无 `RenderPlugin` 的 app）没有
         // `RenderApp` 子 app——优雅降级而非 panic。
@@ -826,7 +879,7 @@ impl bevy::app::Plugin for M6WaveARenderGraphPlugin {
 /// ——所以 Robin 的 #72 H2 链
 /// `PassThrough → AmbientOcclusion → Tonemapping → Fxaa →
 /// EndMainPassPostProcessing`（AO 在 tonemapping 之前的 HDR 上，FXAA 最后
-/// 在 LDR 上；上游 CesiumJS `PostProcessStageCollection.js` 一致性）被逐字
+/// 在 LDR 上；标准后处理链一致性）被逐字
 /// 保留——门控 OFF 时为 `Node3d::Tonemapping`（Bevy 自身对 `EndMainPass` 的默认
 /// 后继）。
 ///

@@ -1,5 +1,6 @@
 //! 瓦片影像关联。
-//! 映射到 CesiumJS `Scene/TileImagery.js`
+//!
+//! 记录某个瓦片上各图层影像的矩形范围与 UV 映射，供混合时取样定位。
 
 use cesium_geospatial::rectangle::Rectangle;
 use serde::{Deserialize, Serialize};

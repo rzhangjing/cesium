@@ -1,7 +1,7 @@
-//! Core/TransformsSpec.js → Rust 集成测试（忠实移植）。
+//! Core/TransformsSpec → Rust 集成测试（对齐实现）。
 //!
-//! 同时保留 `HeadingPitchRollSpec.js`、
-//! `HeadingPitchRangeSpec.js` 和 `TranslationRotationScaleSpec.js` 的现有移植版本。
+//! 同时保留 `HeadingPitchRollSpec`、
+//! `HeadingPitchRangeSpec` 和 `TranslationRotationScaleSpec` 的现有移植版本。
 //!
 //! ## 平台适配（均有文档说明，而非静默放宽）
 //!
@@ -51,7 +51,7 @@ use std::f64::consts::PI;
 
 use LocalFrameAxis::*;
 
-// === 对应 CesiumJS Matrix4 静态方法的本地辅助函数 ===
+// === 参考 CesiumJS Matrix4 静态方法的本地辅助函数 ===
 
 /// 对应 `Matrix4.inverseTransformation`（`[R^T | -R^T * t]`），供
 /// basisTo2D / ellipsoidTo2DModelMatrix 规范使用。
@@ -84,7 +84,7 @@ fn enu_column(enu: &DMat4, axis: LocalFrameAxis) -> DVec4 {
     }
 }
 
-// === HeadingPitchRoll (HeadingPitchRollSpec.js) ===
+// === HeadingPitchRoll (HeadingPitchRollSpec) ===
 
 #[test]
 fn test_hpr_new() {
@@ -130,7 +130,7 @@ fn test_hpr_to_quaternion_pitch_90() {
     assert_approx!(q.w, (PI / 4.0).cos(), epsilon::EPSILON10);
 }
 
-// === HeadingPitchRange (HeadingPitchRangeSpec.js) ===
+// === HeadingPitchRange (HeadingPitchRangeSpec) ===
 
 #[test]
 fn test_hpr_range_new() {
@@ -140,7 +140,7 @@ fn test_hpr_range_new() {
     assert_approx!(hpr_range.range, 1000.0, epsilon::EPSILON15);
 }
 
-// === TranslationRotationScale (TranslationRotationScaleSpec.js) ===
+// === TranslationRotationScale (TranslationRotationScaleSpec) ===
 
 #[test]
 fn test_trs_new() {

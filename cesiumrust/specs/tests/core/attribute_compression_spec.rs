@@ -1,4 +1,4 @@
-//! 移植自 `packages/engine/Specs/Core/AttributeCompressionSpec.js`（66 个 it()，31 个 A 类）
+//! 参考自 `Specs/Core/AttributeCompressionSpec`（66 个 it()，31 个 A 类）
 //!
 //! 省略 35 个 throws 测试（C 类：Rust 类型系统强制输入合法）。
 

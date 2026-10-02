@@ -1,4 +1,4 @@
-//! Entity 操作规范 - 移植自 DataSources/EntitySpec.js
+//! Entity 操作规范 - 参考自 DataSources/EntitySpec
 //!
 //! 测试 Entity 构建方法、has_graphics、is_available、add_property、
 //! remove_property 以及 merge 操作。

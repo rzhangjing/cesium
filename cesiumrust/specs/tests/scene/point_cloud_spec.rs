@@ -1,9 +1,9 @@
 //! Scene/PointCloud + PointCloudShading → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/PointCloud.js
-//! - Scene/PointCloudShading.js
-//! - Scene/PointCloudEyeDomeLighting.js
+//! 参考 CesiumJS：
+//! - Scene/PointCloud
+//! - Scene/PointCloudShading
+//! - Scene/PointCloudEyeDomeLighting
 //!
 //! A 类测试：PointCloudShading 默认值/衰减/EDL、
 //! QuantizedPositions 反量化、PointCloud from_feature_table。

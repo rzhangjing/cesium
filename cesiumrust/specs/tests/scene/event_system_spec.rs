@@ -1,5 +1,5 @@
 //! 事件系统规范
-//! 移植自 CesiumJS Core/Event.js
+//! 参考自 CesiumJS Core/Event
 //!
 //! A 类测试：add/remove/raise/clear/number_of_listeners/多监听器/
 //! SimpleEvent/类型化参数

@@ -1,11 +1,11 @@
 //! Scene/B3dmParser + PntsParser + I3dmParser + CmptParser → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/B3dmParser.js
-//! - Scene/PntsParser.js
-//! - Scene/I3dmParser.js
-//! - Scene/Composite3DTileContent.js
-//! - Core/getMagic.js
+//! 参考 CesiumJS：
+//! - Scene/B3dmParser
+//! - Scene/PntsParser
+//! - Scene/I3dmParser
+//! - Scene/Composite3DTileContent
+//! - Core/getMagic
 //!
 //! A 类测试：detect_content_type、parse_b3dm/pnts/i3dm/cmpt 头解析、
 //! 错误处理（无效 magic、version、buffer 过小），DecodedTile 枚举。

@@ -1,6 +1,6 @@
 //! 地球表面渲染与地形交互。
 //!
-//! 映射到 CesiumJS `Scene/Globe.js`：
+//! 涵盖以下方面：
 //! - 地球表面属性
 //! - 针对地形的深度测试
 //! - 高程查询
@@ -65,7 +65,7 @@ impl NearFarScalar {
 
 /// 地球渲染配置。
 ///
-/// 映射到 CesiumJS `Scene/Globe.js`
+/// 聚合地表渲染开关、深度测试、半透明、大气偏移等一整套可调参数。
 #[derive(Debug, Clone)]
 pub struct GlobeConfig {
     /// 是否显示地球。
@@ -147,6 +147,7 @@ pub struct GlobeConfig {
 }
 
 impl Default for GlobeConfig {
+    /// 默认：显示地球、不对地形做深度测试、不启用半透明，其余取常见默认色调偏移。
     fn default() -> Self {
         let min_radius = Ellipsoid::WGS84.minimum_radius();
         Self {
@@ -343,6 +344,7 @@ impl GlobeSurface {
 }
 
 impl Default for GlobeSurface {
+    /// 默认地表：直接委托 [`GlobeSurface::new`] 构造带默认配置的实例。
     fn default() -> Self {
         Self::new()
     }
@@ -350,7 +352,7 @@ impl Default for GlobeSurface {
 
 /// 地球半透明设置。
 ///
-/// 映射到 CesiumJS `GlobeTranslucency.js`
+/// 分别控制正/背面的 alpha，用于透视地球看到内部或背面地形的效果。
 #[derive(Debug, Clone)]
 pub struct GlobeTranslucency {
     /// 是否启用半透明。
@@ -362,6 +364,7 @@ pub struct GlobeTranslucency {
 }
 
 impl Default for GlobeTranslucency {
+    /// 默认：不启用半透明，正/背面 alpha 均为 1.0（完全不透明）。
     fn default() -> Self {
         Self {
             enabled: false,

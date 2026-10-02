@@ -60,6 +60,7 @@ pub struct PostProcessConfig {
 }
 
 impl Default for PostProcessConfig {
+    /// 默认：开雾与色调映射，其余阶段关闭；高度雾衰减 0.001。
     fn default() -> Self {
         Self {
             fog_enabled: true,
@@ -82,6 +83,10 @@ impl Default for PostProcessConfig {
 }
 
 impl PostProcessConfig {
+    /// 把适配层配置映射为领域层 [`PostProcessPipeline`]（逐子配置 clone）。
+    ///
+    /// # 返回
+    /// 填齐五个子配置的渲染管线。
     pub fn to_pipeline(&self) -> PostProcessPipeline {
         PostProcessPipeline {
             bloom: self.bloom.clone(),
@@ -92,6 +97,10 @@ impl PostProcessConfig {
         }
     }
 
+    /// 汇总当前启用的后处理阶段列表（按固定顺序）。
+    ///
+    /// # 返回
+    /// 已启用阶段的有序列表（AO/Blorm/雾/校色/色调映射）。
     pub fn enabled_stages(&self) -> Vec<PostProcessStageType> {
         let mut stages = Vec::new();
 
@@ -114,16 +123,30 @@ impl PostProcessConfig {
         stages
     }
 
+    /// 计算给定高度处的高度雾强度（指数衰减）。
+    ///
+    /// # 参数
+    /// - `height`：相对基准的高度（米）
+    ///
+    /// # 返回
+    /// 未启用时返回 0；否则返回 [0,1] 的雾强度。
     pub fn compute_height_fog(&self, height: f64) -> f64 {
         if !self.height_fog_enabled {
             return 0.0;
         }
+        // 相对高度（不低于基准）代入指数衰减公式。
         let relative_height = height - self.height_fog_base;
         let fog = 1.0 - (-self.height_fog_falloff * relative_height.max(0.0)).exp();
         fog.clamp(0.0, 1.0)
     }
 }
 
+/// 雾系统：根据相机距离与高度混合清屏色（未启用时直接返回）。
+///
+/// # 参数
+/// - `config`：后处理配置
+/// - `clear_color`：清屏色（可写）
+/// - `camera_query`：单 3D 相机变换
 pub fn fog_system(
     config: Res<PostProcessConfig>,
     mut clear_color: ResMut<ClearColor>,
@@ -159,6 +182,10 @@ pub fn fog_system(
     }
 }
 
+/// Bloom 系统占位（当前无操作，辉光在 render-graph 节点中处理）。
+///
+/// # 参数
+/// - `_config`：后处理配置（未使用）
 pub fn bloom_system(
     _config: Res<PostProcessConfig>,
 ) {
@@ -262,16 +289,30 @@ pub fn fxaa_msaa_linkage_system(
     }
 }
 
+/// 颜色校正系统占位（当前无操作，预留接口）。
+///
+/// # 参数
+/// - `_config`：后处理配置（未使用）
 pub fn color_correction_system(
     _config: Res<PostProcessConfig>,
 ) {
 }
 
+/// 色调映射系统占位（当前由相机 bundle 处理，预留接口）。
+///
+/// # 参数
+/// - `_config`：后处理配置（未使用）
 pub fn tone_mapping_system(
     _config: Res<PostProcessConfig>,
 ) {
 }
 
+/// 统一后处理入口：把雾逻辑折入本系统并混合清屏色。
+///
+/// # 参数
+/// - `config`：后处理配置
+/// - `clear_color`：清屏色（可写）
+/// - `camera_query`：单 3D 相机变换
 pub fn post_process_system(
     config: Res<PostProcessConfig>,
     mut clear_color: ResMut<ClearColor>,
@@ -313,6 +354,10 @@ pub fn post_process_system(
 pub struct CesiumEffectsPlugin;
 
 impl Plugin for CesiumEffectsPlugin {
+    /// 注册 [`PostProcessConfig`]，并按环境变量门控挂载雾/FXAA/AO 等系统。
+    ///
+    /// # 参数
+    /// - `app`：待配置的 Bevy App
     fn build(&self, app: &mut App) {
         app.init_resource::<PostProcessConfig>();
 

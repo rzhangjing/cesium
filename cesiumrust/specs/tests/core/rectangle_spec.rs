@@ -1,6 +1,6 @@
-//! Core/RectangleSpec.js → Rust 集成测试（忠实移植）。
+//! Core/RectangleSpec → Rust 集成测试（对齐实现）。
 //!
-//! 忠实移植原始 CesiumJS `packages/engine/Specs/Core/RectangleSpec.js`
+//! 对齐实现原始 CesiumJS `Specs/Core/RectangleSpec`
 //!（112 个 `it()` 用例，包含 `createPackableSpecs` 块）。参考值逐字使用，
 //! 以便 Rust 实现针对与 CesiumJS 完全相同的基准真值进行验证。
 //!

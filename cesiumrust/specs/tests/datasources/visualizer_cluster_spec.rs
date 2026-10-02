@@ -1,4 +1,4 @@
-//! Visualizer 与 Cluster 规范 - 移植自 DataSources/GeometryVisualizerSpec、EntityClusterSpec、EntityViewSpec
+//! Visualizer 与 Cluster 规范 - 参考自 DataSources/GeometryVisualizerSpec、EntityClusterSpec、EntityViewSpec
 //! 覆盖：GeometryVisualizer、StaticGeometryBatch、EntityCluster、EntityView
 
 use cesium_datasource::cluster::{EntityCluster, EntityClusterOptions, EntityView};

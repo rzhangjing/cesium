@@ -54,6 +54,12 @@ pub struct ImageryPendingLoads {
     pub ready_backlog: VecDeque<(ImageryKey, ImageryTaskResult)>,
 }
 
+/// 把瓦片 URL 模板中的 {z}/{x}/{y} 占位符替换为实际坐标。
+///
+/// # 参数
+/// - `template`：含占位符的 URL 模板
+/// - `x`/`y`/`level`：瓦片坐标与层级
+/// - `_scheme`：蒹片方案（未使用，保留签名一致）
 fn build_imagery_url(template: &str, x: u32, y: u32, level: u32, _scheme: &TilingScheme) -> String {
     template
         .replace("{z}", &level.to_string())
@@ -61,6 +67,11 @@ fn build_imagery_url(template: &str, x: u32, y: u32, level: u32, _scheme: &Tilin
         .replace("{y}", &y.to_string())
 }
 
+/// 返回指定瓦片对应的地理矩形（委托蒹片方案）。
+///
+/// # 参数
+/// - `x`/`y`/`level`：瓦片坐标与层级
+/// - `scheme`：切片方案
 fn tile_rectangle(x: u32, y: u32, level: u32, scheme: &TilingScheme) -> Rectangle {
     scheme.tile_to_rectangle(x, y, level)
 }
@@ -81,6 +92,12 @@ fn fetch_and_decode_image(url: &str, use_pipeline: bool) -> ImageryTaskResult {
     Ok((rgba.into_raw(), width, height))
 }
 
+/// 请求系统：根据可见地形瓦片与图层计算所需的 imagery 瓦片请求并入队。
+///
+/// # 参数
+/// - `imagery_manager`：影像图层管理器
+/// - `terrain_query`：所有地形瓦片（决定覆盖范围）
+/// - `pending`：待加载集合（可写，幂等地追加 Queued）
 pub fn imagery_tile_request_system(
     imagery_manager: Res<ImageryLayerManager>,
     terrain_query: Query<&CesiumTerrainTile>,
@@ -122,6 +139,16 @@ pub fn imagery_tile_request_system(
     }
 }
 
+/// 加载系统：将入队瓦片分派到后台 worker、非阻塞轮询完成项，并在帧内按
+/// 预算上传纹理（三 Pass：分派/轮询/上传）。
+///
+/// # 参数
+/// - `_commands`：实体命令（当前未用）
+/// - `images`：纹理资源（可写，Pass 3 上传）
+/// - `imagery_manager`：影像图层管理器（提供 URL 模板）
+/// - `pending`：待加载集合（可写）
+/// - `cache`：已上传纹理缓存（可写）
+/// - `stats`：加载统计（可写）
 pub fn imagery_tile_load_system(
     _commands: Commands,
     mut images: ResMut<Assets<Image>>,

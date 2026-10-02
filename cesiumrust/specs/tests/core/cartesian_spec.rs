@@ -1,4 +1,4 @@
-//! Core/Cartesian3Spec.js、Cartesian2Spec.js、Cartesian4Spec.js → Rust 集成测试
+//! Core/Cartesian3Spec、Cartesian2Spec、Cartesian4Spec → Rust 集成测试
 //! 在 CesiumRust 中，Cartesian3 = glam::DVec3、Cartesian2 = glam::DVec2、Cartesian4 = glam::DVec4
 //! 这些测试验证地理空间领域所使用的向量运算。
 

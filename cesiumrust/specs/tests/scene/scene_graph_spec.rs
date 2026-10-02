@@ -1,4 +1,4 @@
-//! Scene/SceneSpec.js、SceneTransformsSpec.js → Rust 集成测试
+//! Scene/SceneSpec、SceneTransformsSpec → Rust 集成测试
 
 use cesium_scene::{
     SceneGraph, SceneNode, DrawCommand, RenderPass, FrameStatistics,

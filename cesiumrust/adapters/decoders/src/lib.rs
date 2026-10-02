@@ -19,9 +19,17 @@ pub use quantized_mesh_decoder::{decode_quantized_mesh, QuantizedMeshError};
 
 use cesium_ports_driven::{DecodedImage, Decoder, PortError, PortResult};
 
+/// [`Decoder`] port 契约的适配器实现：将各二进制解码
+/// 任务委派给同 crate 内的具体解码器模块。本身无状态，
+/// 因此可作为共享单例注册到依赖注入容器。
 pub struct DecoderImpl;
 
 impl Decoder for DecoderImpl {
+    /// 解码 Draco 压缩网格为 [`GeometryData`](cesium_geospatial::GeometryData)。
+    ///
+    /// 仅在启用 `draco` feature 时真正解码；否则返回一个
+    /// 描述“尚未实现”的 [`PortError::Decode`]，以便上层优雅降级。
+    /// `_data` 为 Draco 字节流（当前仅在不启用 feature 时被忽略）。
     fn decode_draco(&self, _data: &[u8]) -> PortResult<cesium_geospatial::GeometryData> {
         #[cfg(feature = "draco")]
         {
@@ -35,10 +43,14 @@ impl Decoder for DecoderImpl {
         }
     }
 
+    /// 将编码图像字节（PNG/JPEG/WebP）解码为 RGBA 的 [`DecodedImage`]。
+    /// `data` 为原始文件字节；解码失败时返回 [`PortError::Decode`]。
     fn decode_image(&self, data: &[u8]) -> PortResult<DecodedImage> {
         image_decoder::decode_image(data)
     }
 
+    /// 解压一个 gzip 流。`data` 为压缩字节，返回解压后的原始
+    /// 字节；输入非合法 gzip 时返回 [`PortError::Decode`]。
     fn decode_gzip(&self, data: &[u8]) -> PortResult<Vec<u8>> {
         gzip_decoder::decode_gzip(data)
     }
@@ -47,32 +59,38 @@ impl Decoder for DecoderImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // 测试依赖：手工用 flate2/image 编码出待解码的输入字节。
     use flate2::write::GzEncoder;
     use flate2::Compression;
     use image::ImageEncoder;
     use std::io::Write;
 
+    /// 验证一张 4×4 RGBA PNG 能被解码出正确的尺寸与通道数。
     #[test]
     fn test_decode_png() {
         let png_data = create_test_png();
         let decoder = DecoderImpl;
         let result = decoder.decode_image(&png_data).unwrap();
+        // 解码后应保留原始的 4×4 尺寸与 4 通道 RGBA。
         assert_eq!(result.width, 4);
         assert_eq!(result.height, 4);
         assert_eq!(result.channels, 4);
         assert_eq!(result.data.len(), 4 * 4 * 4);
     }
 
+    /// 验证一张 4×4 JPEG 能被解码；解码器统一输出 RGBA 四通道。
     #[test]
     fn test_decode_jpeg() {
         let jpeg_data = create_test_jpeg();
         let decoder = DecoderImpl;
         let result = decoder.decode_image(&jpeg_data).unwrap();
+        // JPEG 虽为 RGB 存储，但解码后提升为 RGBA。
         assert_eq!(result.width, 4);
         assert_eq!(result.height, 4);
         assert_eq!(result.channels, 4);
     }
 
+    /// gzip 压缩→解压往返：输出应与原始字节逐字相等。
     #[test]
     fn test_decode_gzip_roundtrip() {
         let original = b"Hello, quantized mesh! This is test data for gzip roundtrip verification.";
@@ -82,9 +100,11 @@ mod tests {
 
         let decoder = DecoderImpl;
         let decompressed = decoder.decode_gzip(&compressed).unwrap();
+        // 解压后字节应与未压缩前的原文完全一致。
         assert_eq!(decompressed, original);
     }
 
+    /// 空输入的 gzip 往返：解压结果也应为空。
     #[test]
     fn test_decode_gzip_empty() {
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
@@ -93,13 +113,16 @@ mod tests {
 
         let decoder = DecoderImpl;
         let decompressed = decoder.decode_gzip(&compressed).unwrap();
+        // 空流解压后仍为空，不报错。
         assert!(decompressed.is_empty());
     }
 
+    /// 根据文件头魔数字识别 3D 瓦片内容类型（b3dm/i3dm/pnts/cmpt/glb）。
     #[test]
     fn test_content_type_detection() {
         use cesium_tileset::content_decoder::{detect_content_type, TileContentType};
 
+        // 前 4 字节魔数字与各自容器头部匹配。
         assert!(matches!(
             detect_content_type(b"b3dm data here..."),
             TileContentType::Batched3DModel
@@ -120,24 +143,29 @@ mod tests {
             detect_content_type(b"glTF data here..."),
             TileContentType::GltfBinary
         ));
+        // 无法识别的头部回退到 Unknown。
         assert!(matches!(
             detect_content_type(b"xxxx data here..."),
             TileContentType::Unknown
         ));
     }
 
+    /// 未启用 `draco` feature 时，decode_draco 应返回一个“尚未实现”错误。
     #[test]
     fn test_draco_stub() {
         let decoder = DecoderImpl;
         let result = decoder.decode_draco(b"fake draco data");
+        // 无论是否启用 feature，无效数据都应报错而非 panic。
         assert!(result.is_err());
         let err = result.unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("not yet implemented"));
     }
 
+    /// 用逐像素递推的 RGBA 值构造一张 4×4 PNG，供解码测试使用。
     fn create_test_png() -> Vec<u8> {
         let mut pixels = Vec::with_capacity(4 * 4 * 4);
+        // 逐像素递推一组 RGBA：透明度固定为 255（不透明）。
         for i in 0..16 {
             let v = (i * 16) as u8;
             pixels.extend_from_slice(&[v, 255 - v, v, 255]);
@@ -145,6 +173,7 @@ mod tests {
         let mut buf = Vec::new();
         {
             let encoder = image::codecs::png::PngEncoder::new(&mut buf);
+            // 以 RGBA8 布局写入 4×4 图像到内存缓冲。
             encoder
                 .write_image(
                     &pixels,
@@ -157,8 +186,10 @@ mod tests {
         buf
     }
 
+    /// 用逐像素递推的 RGB 值构造一张 4×4 JPEG（质量 90），供解码测试使用。
     fn create_test_jpeg() -> Vec<u8> {
         let mut pixels = Vec::with_capacity(4 * 4 * 3);
+        // 逐像素递推一组 RGB（JPEG 无透明通道）。
         for i in 0..16 {
             let v = (i * 16) as u8;
             pixels.extend_from_slice(&[v, 128, 255 - v]);
@@ -166,6 +197,7 @@ mod tests {
         let mut buf = Vec::new();
         {
             let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 90);
+            // 以 RGB8 布局、质量 90 写入 4×4 图像。
             encoder
                 .write_image(
                     &pixels,

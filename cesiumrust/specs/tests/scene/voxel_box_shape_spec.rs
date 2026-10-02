@@ -1,4 +1,4 @@
-//! VoxelBoxShape 测试，移植自 CesiumJS VoxelBoxShapeSpec.js
+//! VoxelBoxShape 测试，参考自 CesiumJS VoxelBoxShapeSpec
 //! 测试：constructs、update(modelMatrix/bounds/visibility)、computeOBBForTile
 
 use cesium_voxel::{VoxelBoxShape, VoxelShape};
@@ -36,7 +36,7 @@ fn assert_mat3_eq(a: DMat3, b: DMat3, msg: &str) {
 
 #[test]
 fn test_constructs() {
-    // 移植自: "constructs"
+    // 参考自: "constructs"
     let shape = VoxelBoxShape::new();
     assert_eq!(shape.shape_transform(), DMat4::IDENTITY);
 }
@@ -47,7 +47,7 @@ fn test_constructs() {
 
 #[test]
 fn test_update_with_model_matrix() {
-    // 移植自: "update works with model matrix"
+    // 参考自: "update works with model matrix"
     let mut shape = VoxelBoxShape::new();
 
     let translation = DVec3::new(1.0, 2.0, 3.0);
@@ -93,7 +93,7 @@ fn test_update_with_model_matrix() {
 
 #[test]
 fn test_update_with_non_default_bounds() {
-    // 移植自: "update works with non-default minimum and maximum bounds"
+    // 参考自: "update works with non-default minimum and maximum bounds"
     let mut shape = VoxelBoxShape::new();
 
     let translation = DVec3::new(1.0, 2.0, 3.0);
@@ -146,7 +146,7 @@ fn test_update_with_non_default_bounds() {
 
 #[test]
 fn test_update_invisible_zero_scale_two_or_more() {
-    // 移植自: "update is invisible with zero scale for two or more components"
+    // 参考自: "update is invisible with zero scale for two or more components"
     let mut shape = VoxelBoxShape::new();
     let translation = DVec3::new(1.0, 2.0, 3.0);
     let rotation = DQuat::IDENTITY;
@@ -201,7 +201,7 @@ fn test_update_invisible_zero_scale_single() {
 
 #[test]
 fn test_update_visible_zero_bounds_one_component() {
-    // 移植自: "update is visible with zero bounds for one component"
+    // 参考自: "update is visible with zero bounds for one component"
     let mut shape = VoxelBoxShape::new();
     let model_matrix = DMat4::IDENTITY;
     let clip_min = DVec3::new(-1.0, -1.0, -1.0);
@@ -246,7 +246,7 @@ fn test_update_visible_zero_bounds_one_component() {
 
 #[test]
 fn test_update_invisible_zero_bounds_two_or_more() {
-    // 移植自: "update is invisible with zero bounds for two or more components"
+    // 参考自: "update is invisible with zero bounds for two or more components"
     let mut shape = VoxelBoxShape::new();
     let model_matrix = DMat4::IDENTITY;
 
@@ -283,7 +283,7 @@ fn test_update_invisible_zero_bounds_two_or_more() {
 
 #[test]
 fn test_update_invisible_min_exceeds_max() {
-    // 移植自: "update is invisible when minimum bounds exceed maximum bounds"
+    // 参考自: "update is invisible when minimum bounds exceed maximum bounds"
     let mut shape = VoxelBoxShape::new();
     let model_matrix = DMat4::IDENTITY;
     let clip_min = DVec3::new(-1.0, -1.0, -1.0);
@@ -329,7 +329,7 @@ fn test_update_invisible_min_exceeds_max() {
 
 #[test]
 fn test_compute_obb_for_tile_root() {
-    // 移植自: "computeOrientedBoundingBoxForTile works for root tile"
+    // 参考自: "computeOrientedBoundingBoxForTile works for root tile"
     let mut shape = VoxelBoxShape::new();
     let model_matrix = DMat4::IDENTITY;
     shape.update(model_matrix, default_min(), default_max(), None, None);
@@ -343,7 +343,7 @@ fn test_compute_obb_for_tile_root() {
 
 #[test]
 fn test_compute_obb_for_tile_children() {
-    // 移植自: "computeOrientedBoundingBoxForTile works for children of root tile"
+    // 参考自: "computeOrientedBoundingBoxForTile works for children of root tile"
     let mut shape = VoxelBoxShape::new();
     let model_matrix = DMat4::IDENTITY;
     shape.update(model_matrix, default_min(), default_max(), None, None);

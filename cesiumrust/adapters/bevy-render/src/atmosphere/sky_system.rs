@@ -13,6 +13,7 @@ use crate::entity::time_system::AnimationClock;
 
 #[derive(Resource, Debug, Clone)]
 pub struct SkyAtmosphere {
+    /// 是否启用天空/大气渲染。
     pub enabled: bool,
     /// 为 `true` 时，天空由 GPU 单次散射 dome
     /// （`sky_atmosphere.wgsl`）渲染，而非 CPU 的 `ClearColor` 近似。
@@ -23,10 +24,12 @@ pub struct SkyAtmosphere {
     /// 已经关闭。在运行时将其设为 `false` 会回退到 M5-C 之前的
     /// `ClearColor` 路径，并拆掉任何活动的 dome——这正是单元测试使用的逃生舱。
     pub dome: bool,
+    /// 领域层大气参数（散射系数/尺度高等）。
     pub atmosphere_params: AtmosphereParameters,
 }
 
 impl Default for SkyAtmosphere {
+    /// 默认：启用天空与 dome，使用领域层默认大气参数。
     fn default() -> Self {
         Self {
             enabled: true,
@@ -73,6 +76,16 @@ pub fn sky_dome_setup(
     );
 }
 
+/// 逐帧计算天空颜色：dome 开启时刷新太阳方向 uniform，否则回退到 CPU ClearColor 近似。
+///
+/// # 参数
+/// - `clock`：动画时钟（缺失则返回）
+/// - `lighting`：光照参数（提供太阳方向）
+/// - `sky`：天空/大气资源
+/// - `clear_color`：背景清屏色（CPU 路径下写入）
+/// - `camera_query`：主相机变换（提供视线方向）
+/// - `dome_query`：dome 材质引用
+/// - `materials`：dome 材质资源（可写，可能不存在）
 pub fn sky_system(
     clock: Option<Res<AnimationClock>>,
     lighting: Res<LightingParams>,
@@ -82,6 +95,7 @@ pub fn sky_system(
     dome_query: Query<&MeshMaterial3d<SkyDomeMaterial>, With<SkyDome>>,
     mut materials: Option<ResMut<Assets<SkyDomeMaterial>>>,
 ) {
+    // 无时钟则无法确定时间；未启用天空则不处理。
     let clock = match clock {
         Some(c) => c,
         None => return,
@@ -90,17 +104,21 @@ pub fn sky_system(
         return;
     }
 
+    // 取儒略日（当前未用于 CPU 路径，保留以备扩展）。
     let jd = clock.current_time();
     let julian_date = jd.total_days();
 
+    // 从光照参数拿到太阳方向（f32→f64）。
     let sun_dir = DVec3::new(
         lighting.sun_direction.x as f64,
         lighting.sun_direction.y as f64,
         lighting.sun_direction.z as f64,
     );
 
+    // 太阳高度角（z 分量）用于地平线霞光。
     let sun_elevation = sun_dir.z;
 
+    // 以主相机前方作为视线方向；无相机时退化为看太阳。
     let view_dir = if let Ok(cam_transform) = camera_query.get_single() {
         DVec3::new(
             cam_transform.forward().x as f64,
@@ -145,12 +163,14 @@ mod tests {
     use super::*;
 
     #[test]
+    /// 默认天空资源应处于启用状态。
     fn test_sky_atmosphere_default() {
         let sky = SkyAtmosphere::default();
         assert!(sky.enabled);
     }
 
     #[test]
+    /// 显式传入 enabled=false 时应为禁用。
     fn test_sky_atmosphere_disabled() {
         let sky = SkyAtmosphere {
             enabled: false,
@@ -160,6 +180,7 @@ mod tests {
     }
 
     #[test]
+    /// 白天仰视应得到非全黑的天空色。
     fn test_compute_sky_color_blue() {
         let params = AtmosphereParameters::default();
         let view = DVec3::new(0.0, 0.0, 1.0);
@@ -169,12 +190,14 @@ mod tests {
     }
 
     #[test]
+    /// 日落时霞光应以红色为主。
     fn test_horizon_glow_sunset() {
         let color = compute_horizon_glow(-0.1);
         assert!(color[0] > color[2], "Red should dominate at sunset");
     }
 
     #[test]
+    /// 正午时霞光应以蓝色为主。
     fn test_horizon_glow_noon() {
         use std::f64::consts::PI;
         let color = compute_horizon_glow(PI / 2.0);

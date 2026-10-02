@@ -1,15 +1,15 @@
 //! 近地大气与天空渲染。
 //!
-//! 映射到 CesiumJS 大气效果：
-//! - `Scene/SkyAtmosphere.js`
-//! - `Scene/SkyBox.js`
-//! - 近地大气（从地表观察）
+//! 覆盖三类天空效果：
+//! - 天空大气散射与着色（[`SkyAtmosphereConfig`]）
+//! - 恒星背景的天空盒（[`SkyBoxConfig`]）
+//! - 从地表观察的近地大气参数与 [`GlobeLighting`] 光照模型
 
 use glam::DVec3;
 
 /// 天空大气配置。
 ///
-/// 映射到 CesiumJS `Scene/SkyAtmosphere.js`
+/// 控制大气层的可见性与色调偏移，并以每位置半径界定散射壳层的外沿。
 #[derive(Debug, Clone)]
 pub struct SkyAtmosphereConfig {
     /// 是否显示天空大气。
@@ -25,6 +25,7 @@ pub struct SkyAtmosphereConfig {
 }
 
 impl Default for SkyAtmosphereConfig {
+    /// 默认：显示大气、三个色调偏移均为 0，大气半径取地球半径 + 60km。
     fn default() -> Self {
         Self {
             show: true,
@@ -38,7 +39,7 @@ impl Default for SkyAtmosphereConfig {
 
 /// 用于恒星渲染的天空盒配置。
 ///
-/// 映射到 CesiumJS `Scene/SkyBox.js`
+/// 以立方体贴图六面源贴图包裹场景，半径极大以模拟无限远的恒星背景。
 #[derive(Debug, Clone)]
 pub struct SkyBoxConfig {
     /// 是否显示天空盒。
@@ -50,6 +51,7 @@ pub struct SkyBoxConfig {
 }
 
 impl Default for SkyBoxConfig {
+    /// 默认：显示天空盒、暂无面源贴图，恒星球半径取极大值 1e15 以近似无限远。
     fn default() -> Self {
         Self {
             show: true,
@@ -75,6 +77,8 @@ pub struct GroundAtmosphere {
 }
 
 impl Default for GroundAtmosphere {
+    /// 默认：采用标准中纬度大气参数——蓝天 Rayleigh 散射、常见 Mie 系数与
+    /// 8000m 标高、太阳强度 20.0，作为天空色计算的基线。
     fn default() -> Self {
         Self {
             // 标准 Rayleigh 散射（蓝天）
@@ -174,7 +178,7 @@ impl GroundAtmosphere {
 
 /// 地球渲染的光照配置。
 ///
-/// 映射到 CesiumJS 地球光照
+/// 描述太阳方向/颜色、环境光、昼夜终止线与水面镜面等参数，供漫反射与高光计算取用。
 #[derive(Debug, Clone)]
 pub struct GlobeLighting {
     /// 是否启用光照。
@@ -192,6 +196,7 @@ pub struct GlobeLighting {
 }
 
 impl Default for GlobeLighting {
+    /// 默认：关闭光照（保留恒等明暗），太阳沿 +X、暖白色，环境光微蓝，展示昼夜线、镜面强度 0.5。
     fn default() -> Self {
         Self {
             enabled: false,

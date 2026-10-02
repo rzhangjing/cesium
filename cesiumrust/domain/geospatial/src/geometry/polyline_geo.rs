@@ -1,9 +1,13 @@
 //! 折线几何 - 沿大地线弧宽度恒定的带状体。
 //!
-//! 对 CesiumJS `PolylineGeometry.js` 的忠实适配。CesiumJS 使用
+//! 完整版使用
 //! GPU 端展开（prevPosition/nextPosition/expandAndWidth 属性）；
 //! 这里我们在世界空间中生成一个由 CPU 展开的三角带条状体，
 //! 可直接用 Bevy 的标准网格管线渲染。
+//!
+//! 处理流程：先逐坐标去重，再沿大地线按粒度细分成弧点列；在每个弧点处沿
+//! 法线与切线的叉积（左方向）向两侧各展半宽，得到左右两列顶点，最后将相邻
+//! 四边形剖为两个三角形形成长条三角形带。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -29,6 +33,7 @@ pub struct PolylineOptions {
 }
 
 impl Default for PolylineOptions {
+    /// 默认选项：空位置、宽 1 米、粒度 1°、WGS84 椭球。
     fn default() -> Self {
         Self {
             positions: Vec::new(),
@@ -43,11 +48,19 @@ impl Default for PolylineOptions {
 ///
 /// 带状体位于椭球表面上，以大地线弧为中心，
 /// 宽度为指定值。法线从椭球向外。
+///
+/// # 参数
+/// - `options`：折线选项（位置/宽度/粒度/椭球）。
+/// - `vf`：顶点格式，决定是否附带法线、切线、副切线与 UV。
+///
+/// # 返回
+/// [`GeometryData`]：三角形带表示的条状体；位置不足两个或宽度非正时返回空几何。
 pub fn polyline_geometry(options: &PolylineOptions, vf: VertexFormat) -> GeometryData {
     let ellipsoid = &options.ellipsoid;
     let width = options.width;
 
     // 去除重复项。
+    // 相邻位置逐坐标比较 epsilon 去重，以免产生零长段。
     let mut positions: Vec<DVec3> = options.positions.clone();
     positions.dedup_by(|a, b| {
         (a.x - b.x).abs() <= EPSILON10
@@ -56,10 +69,11 @@ pub fn polyline_geometry(options: &PolylineOptions, vf: VertexFormat) -> Geometr
     });
 
     if positions.len() < 2 || width <= 0.0 {
+        // 退化保护：不足两点或宽度非正均无法生成条状体。
         return empty_geometry();
     }
 
-    // 细分为大地线弧。
+    // 细分为大地线弧：在相邻控制点间按角度粒度插入大地线中间点。
     let opts = ArcOptions {
         positions: &positions,
         heights: None,
@@ -76,20 +90,22 @@ pub fn polyline_geometry(options: &PolylineOptions, vf: VertexFormat) -> Geometr
     let half_width = width / 2.0;
 
     // 对每个弧点，计算垂直（左）方向并
-    // 偏移以得到左/右边缘顶点。
+    // 偏移以得到左/右边缘顶点。顶点成对存储（先右后左）。
     let mut pos_out: Vec<[f64; 3]> = Vec::with_capacity(n * 2);
     let mut normals_out: Option<Vec<[f64; 3]>> = if vf.normal { Some(Vec::with_capacity(n * 2)) } else { None };
     let mut tangents_out: Option<Vec<[f64; 3]>> = if vf.tangent { Some(Vec::with_capacity(n * 2)) } else { None };
     let mut bitangents_out: Option<Vec<[f64; 3]>> = if vf.bitangent { Some(Vec::with_capacity(n * 2)) } else { None };
     let mut st_out: Option<Vec<[f64; 2]>> = if vf.st { Some(Vec::with_capacity(n * 2)) } else { None };
 
+    // UV：s 沿弧点序号递增，t 固定区分右（0）/左（1）两侧。
     let st_s = if n > 1 { 1.0 / (n - 1) as f64 } else { 1.0 };
 
     for i in 0..n {
+        // 逐弧点取当地法线（球心处无定义时回退为 Z）。
         let p = arc[i];
         let normal = ellipsoid.geodetic_surface_normal(p).unwrap_or(DVec3::Z);
 
-        // 沿弧的切线方向。
+        // 沿弧的切线方向：首/尾用单侧差分，中间用中心差分。
         let tangent = if i == 0 {
             (arc[1] - arc[0]).normalize_or(DVec3::X)
         } else if i == n - 1 {
@@ -99,6 +115,7 @@ pub fn polyline_geometry(options: &PolylineOptions, vf: VertexFormat) -> Geometr
         };
 
         // 左方向：cross(normal, tangent) 给出切平面内的垂直方向。
+        // 沿左方向两侧各偏半宽，得到断面的右、左两个顶点。
         let left = normal.cross(tangent).normalize_or(DVec3::Y);
 
         let right_pt = p - left * half_width;
@@ -128,7 +145,7 @@ pub fn polyline_geometry(options: &PolylineOptions, vf: VertexFormat) -> Geometr
         }
     }
 
-    // 三角剖分：相邻顶点对之间的每个四边形。
+    // 三角剖分：相邻顶点对之间的每个四边形拆为两个三角形。
     let mut indices: Vec<u32> = Vec::with_capacity((n - 1) * 6);
     for i in 0..n - 1 {
         let r0 = (i * 2) as u32;
@@ -140,6 +157,7 @@ pub fn polyline_geometry(options: &PolylineOptions, vf: VertexFormat) -> Geometr
         indices.extend_from_slice(&[l1, r0, r1]);
     }
 
+    // 由全部输出顶点计算包围球，供后续裁剪/拾取使用。
     let bounding_sphere = BoundingSphere::from_points(
         &pos_out.iter().map(|p| DVec3::new(p[0], p[1], p[2])).collect::<Vec<_>>(),
     );
@@ -156,6 +174,7 @@ pub fn polyline_geometry(options: &PolylineOptions, vf: VertexFormat) -> Geometr
     }
 }
 
+/// 构造一个空的几何数据（无顶点、无索引），用于退化输入的回退。
 fn empty_geometry() -> GeometryData {
     GeometryData {
         positions: Vec::new(),
@@ -190,6 +209,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证基本折线生成非空三角形带且顶点成对、各属性均就位。
     fn test_polyline_basic() {
         let geo = polyline_geometry(&polyline_opts(), VertexFormat::ALL);
         assert!(!geo.positions.is_empty());
@@ -204,6 +224,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证顶点数与索引数满足 2×弧点数 与 6×(弧点数-1) 的关系。
     fn test_polyline_vertex_count() {
         let geo = polyline_geometry(&polyline_opts(), VertexFormat::POSITION_ONLY);
         let n_verts = geo.positions.len();
@@ -213,6 +234,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证位置不足两个时退化为空几何。
     fn test_polyline_too_few_positions() {
         let ell = Ellipsoid::WGS84;
         let opts = PolylineOptions {
@@ -225,6 +247,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证宽度为 0 时退化为空几何。
     fn test_polyline_zero_width() {
         let ell = Ellipsoid::WGS84;
         let positions = vec![
@@ -241,6 +264,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证所有顶点法线大致指向外侧（与位置点积为正）。
     fn test_polyline_normals_outward() {
         let ell = Ellipsoid::WGS84;
         let geo = polyline_geometry(&polyline_opts(), VertexFormat::ALL);

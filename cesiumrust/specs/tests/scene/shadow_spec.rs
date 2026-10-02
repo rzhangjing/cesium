@@ -1,4 +1,4 @@
-//! Shadow 规范 - 移植自 Scene/ShadowMapSpec
+//! Shadow 规范 - 参考自 Scene/ShadowMapSpec
 //! 覆盖：ShadowMapConfig、ShadowMap、ShadowLightType、ShadowMapType、
 //! ShadowCascade, ShadowBias, OceanSurface, GerstnerWave, OceanConfig
 

@@ -1,5 +1,4 @@
 //! Cartographic - 由经度、纬度和高度定义的位置。
-//! 映射到 CesiumJS `Core/Cartographic.js`
 
 use crate::ellipsoid::Ellipsoid;
 use crate::math_utils;
@@ -79,6 +78,7 @@ impl std::fmt::Display for Cartographic {
 }
 
 impl Default for Cartographic {
+    /// 默认构造等价于 `Cartographic::ZERO`（经度、纬度、高度均为 0）。
     fn default() -> Self {
         Self::ZERO
     }

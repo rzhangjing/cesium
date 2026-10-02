@@ -1,9 +1,10 @@
 //! DataSourceDisplay：实体可视化的中央协调器。
 //!
-//! 映射到 CesiumJS `DataSources/DataSourceDisplay.js`
-//!
 //! 为一组数据源协调所有 visualizer（geometry、billboard、label、point、model、path），
-//! 并在每帧更新它们。
+//! 并在每帧更新它们：几何交给 `GeometryVisualizer` 增量重建，billboard、label、
+//! point 则先清空再依据实体图形逐帧同步为对应的图元集合；坐标统一经所选椭球
+//! 从弧度经纬高转换到直角位置。`MultiDataSourceDisplay` 在其上再聚合多个数据源
+//! 的实体后统一驱动一次更新。
 
 use cesium_geospatial::Ellipsoid;
 
@@ -17,7 +18,8 @@ use crate::visualizer::GeometryVisualizer;
 
 /// 所有数据源的显示状态。
 ///
-/// 映射到 CesiumJS `DataSources/DataSourceDisplay.js`
+/// 聚合一个几何 visualizer 与 billboard/label/point 三张图元集合，持有用于坐标
+/// 转换的椭球；`initialized` 与 `last_time` 共同决定本帧是否需要重新同步图元。
 #[derive(Debug)]
 pub struct DataSourceDisplay {
     /// 几何 visualizer。
@@ -38,6 +40,9 @@ pub struct DataSourceDisplay {
 
 impl DataSourceDisplay {
     /// 创建新的数据源显示。
+    ///
+    /// 以传入椭球初始化几何 visualizer，并建立空的 billboard/label/point
+    /// 集合；初始为未初始化、上次时间置 0，首次 update 必触发同步。
     pub fn new(ellipsoid: Ellipsoid) -> Self {
         Self {
             geometry_visualizer: GeometryVisualizer::new(ellipsoid),
@@ -70,20 +75,27 @@ impl DataSourceDisplay {
             self.initialized = true;
         }
 
+        // 记录本次时间，供下一帧判断是否需要重新同步。
         self.last_time = time;
     }
 
     /// 将 billboard、label 和 point 集合与实体图形同步。
+    ///
+    /// 先清空三张图元集合，再逐实体跳过隐藏项、把弧度位置转直角坐标，
+    /// 并按实体携带的图形类型逐项求值其属性（缺省回退）后加入对应集合。
     fn sync_primitives(&mut self, entities: &EntityCollection, time: f64) {
+        // 先清空三张集合，避免残留上一帧的图元。
         self.billboards.clear();
         self.labels.clear();
         self.points.clear();
 
+        // 逐实体处理，整体隐藏的实体直接跳过。
         for entity in entities.values() {
             if !entity.show {
                 continue;
             }
 
+            // 把弧度位置经椭球转到直角坐标，无位置时回退为原点。
             let position = entity
                 .position
                 .get_value(time)
@@ -184,15 +196,20 @@ impl DataSourceDisplay {
     }
 
     /// 将显示标记为需要完全重建。
+    ///
+    /// 同时标脏几何 visualizer 并置 initialized 为假，使下一帧无论时间是否
+    /// 变化都会重新同步全部图元。
     pub fn mark_dirty(&mut self) {
         self.geometry_visualizer.mark_dirty();
+        // 复位初始化标志，强制下一帧重新同步全部图元。
         self.initialized = false;
     }
 }
 
 /// 管理多个数据源的数据源显示。
 ///
-/// 映射到 CesiumJS `DataSources/DataSourceDisplay.js`（多数据源版本）
+/// 在单个 `DataSourceDisplay` 之上维护一组 `DataSource`，更新时先把各源的实体
+/// 合并到一个临时集合再统一驱动底层显示；增删数据源都会标脏以触发重建。
 #[derive(Debug)]
 pub struct MultiDataSourceDisplay {
     /// 底层显示。
@@ -216,12 +233,16 @@ impl MultiDataSourceDisplay {
     }
 
     /// 添加一个数据源。
+    ///
+    /// 追入到源列表末尾并标脏底层显示，以便下次更新重算。
     pub fn add_data_source(&mut self, source: DataSource) {
         self.sources.push(source);
         self.display.mark_dirty();
     }
 
     /// 按名称移除一个数据源。
+    ///
+    /// 找到首个同名源则标脏并移除、返回该源；无匹配时返回 `None`。
     pub fn remove_data_source(&mut self, name: &str) -> Option<DataSource> {
         if let Some(idx) = self.sources.iter().position(|s| s.name == name) {
             self.display.mark_dirty();
@@ -232,6 +253,9 @@ impl MultiDataSourceDisplay {
     }
 
     /// 在给定时间处更新所有数据源。
+    ///
+    /// 把各源的实体克隆合并到一个临时集合，再统一驱动底层显示在该时刻
+    /// 更新，从而将多个数据源聚合为一份视图。
     pub fn update(&mut self, time: f64) {
         // 合并来自所有数据源的实体
         let mut merged = EntityCollection::new();
@@ -240,6 +264,7 @@ impl MultiDataSourceDisplay {
                 merged.add(entity.clone());
             }
         }
+        // 用合并后的临时集合驱动底层显示在该时刻更新。
         self.display.update(&merged, time);
     }
 
@@ -308,6 +333,7 @@ mod tests {
         collection
     }
 
+    /// 验证主更新流程：四类实体各生成一项，几何/广告牌/标签/点计数均为 1。
     #[test]
     fn test_data_source_display_update() {
         let mut display = DataSourceDisplay::wgs84();
@@ -321,6 +347,7 @@ mod tests {
         assert_eq!(display.point_count(), 1);
     }
 
+    /// 验证几何提取：按 id 取回 box-1 的几何，其填充实例数为 1。
     #[test]
     fn test_data_source_display_geometry() {
         let mut display = DataSourceDisplay::wgs84();
@@ -332,6 +359,7 @@ mod tests {
         assert_eq!(geo.fill_instances.len(), 1);
     }
 
+    /// 验证隐藏实体：show=false 的广告牌实体不会同步出任何图元，计数为 0。
     #[test]
     fn test_data_source_display_hidden_entity() {
         let mut display = DataSourceDisplay::wgs84();
@@ -350,6 +378,8 @@ mod tests {
         assert_eq!(display.billboard_count(), 0);
     }
 
+    /// 验证多源聚合：两个源各含一个实体，合并更新后底层只呈现一个几何与
+    /// 一个点。
     #[test]
     fn test_multi_data_source_display() {
         let mut multi = MultiDataSourceDisplay::wgs84();
@@ -383,6 +413,7 @@ mod tests {
         assert_eq!(multi.display().point_count(), 1);
     }
 
+    /// 验证按名移除：移除已存在的临时源后计数归零并返回 Some。
     #[test]
     fn test_multi_data_source_remove() {
         let mut multi = MultiDataSourceDisplay::wgs84();
@@ -394,6 +425,7 @@ mod tests {
         assert_eq!(multi.source_count(), 0);
     }
 
+    /// 验证标脏重建：mark_dirty 后以相同时间再次更新，几何实例数保持不变。
     #[test]
     fn test_display_mark_dirty() {
         let mut display = DataSourceDisplay::wgs84();

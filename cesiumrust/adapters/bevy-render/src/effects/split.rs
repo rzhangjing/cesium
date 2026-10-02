@@ -9,7 +9,7 @@
 //! 一个绘制可见分隔线的真正屏幕空间渲染节点。
 //!
 //! # 节点绘制（与不绘制）什么
-//! 上游 CesiumJS 通过*逐图元丢弃*来分屏：标记为
+//! 原生分屏方案通过*逐图元丢弃*来实现：标记为
 //! `SplitDirection.LEFT` 的影像 / 图元只在 `Scene.splitPosition` 左侧渲染，
 //! `RIGHT` 只在右侧，所以两半展示两套不同的图层状态。
 //! 那条忠实路径是一次*材质 shader* 注入
@@ -102,6 +102,7 @@ pub struct SplitConfig {
 }
 
 impl Default for SplitConfig {
+    /// 默认关闭分屏，分隔线位于屏幕中线（0.5），且未处于拖拽中。
     fn default() -> Self {
         Self {
             enabled: false,
@@ -234,6 +235,7 @@ mod split_uniform {
 }
 
 impl Default for SplitUniform {
+    /// 均匀体默认：分隔线像素位置与宽度均为 0，颜色为不透明白。
     fn default() -> Self {
         Self {
             split_position_px: 0.0,
@@ -275,6 +277,14 @@ pub struct SplitPipeline {
 }
 
 impl FromWorld for SplitPipeline {
+    /// 从 render-world 构建分屏 pass 的设备资源：为源颜色纹理与分隔线
+    /// 均匀体分别创建 bind group 布局，并准备一个线性过滤采样器。
+    ///
+    /// # 参数
+    /// - `render_world`：提供 `RenderDevice` 的渲染世界。
+    ///
+    /// # 返回
+    /// 装配好的 [`SplitPipeline`] 资源。
     fn from_world(render_world: &mut World) -> Self {
         let render_device = render_world.resource::<RenderDevice>();
 
@@ -327,6 +337,19 @@ impl ViewNode for SplitNode {
         &'static ViewSplitUniform,
     );
 
+    /// 运行分屏 pass：将源颜色 pass-through 拷贝到目标，并沿分隔线位置
+    /// 叠加一条可见的竖直分隔线。
+    ///
+    /// # 参数
+    /// - `_graph`：渲染图上下文（本节点无子 pass）。
+    /// - `render_context`：当前 pass 的 GPU 命令记录器。
+    /// - `target`：视图的渲染目标（后处理读写）。
+    /// - `pipeline_handle`：该视图缓存的分屏 pipeline ID。
+    /// - `split`：相机级分屏开关；`split_uniform`：本帧分隔线参数。
+    /// - `world`：提供 pipeline/texture 资源的 render-world。
+    ///
+    /// # 返回
+    /// 成功提交命令则为 `Ok(())`；pipeline 尚未就绪时返回错误。
     fn run(
         &self,
         _graph: &mut RenderGraphContext,

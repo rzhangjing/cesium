@@ -1,16 +1,13 @@
 //! 用于选择性禁用渲染的裁剪平面。
 //!
-//! 映射到 CesiumJS：
-//! - `Scene/ClippingPlane.js` —— 单个裁剪平面
-//! - `Scene/ClippingPlaneCollection.js` —— 带 union/intersection 模式的集合
+//! 单个裁剪平面由法线与距离定义；集合支持 union（任一平面之外即裁剪）
+//! 与 intersection（仅在全部平面之外才裁剪）两种模式，并带边缘光带。
 //!
 //! 领域层——纯 Rust，f64 精度。
 
 use glam::{DMat3, DMat4, DVec3};
 
 /// 由一个法线与距离定义的单裁剪平面。
-///
-/// 映射到 CesiumJS `ClippingPlane`。
 ///
 /// 平面方程为：dot(normal, point) + distance = 0
 /// 位于正侧（dot + distance > 0）的点被保留。
@@ -110,8 +107,6 @@ pub enum Intersect {
 }
 
 /// 裁剪平面的集合。
-///
-/// 映射到 CesiumJS `ClippingPlaneCollection`。
 #[derive(Debug, Clone)]
 pub struct ClippingPlaneCollection {
     /// 各裁剪平面。
@@ -130,7 +125,9 @@ pub struct ClippingPlaneCollection {
 }
 
 impl Default for ClippingPlaneCollection {
+    /// 默认启用、无平面、单位变换、intersection 模式、无边缘光带。
     fn default() -> Self {
+        // 空集合且未烘焙任何平面，模型阵列为中性单位阵
         Self {
             planes: Vec::new(),
             enabled: true,
@@ -202,8 +199,6 @@ impl ClippingPlaneCollection {
     /// 符号编码裁剪模式：
     /// - 正 = union 模式
     /// - 负 = intersection 模式
-    ///
-    /// 映射到 CesiumJS `clippingPlanesState`。
     pub fn clipping_planes_state(&self) -> i32 {
         let count = self.planes.len() as i32;
         if self.union_clipping_regions {
@@ -283,8 +278,6 @@ impl ClippingPlaneCollection {
 
     /// 测试一个包围球与裁剪平面的相交。
     ///
-    /// 映射到 CesiumJS `ClippingPlaneCollection.prototype.computeIntersectionWithBoundingVolume`。
-    ///
     /// # 参数
     /// * `center` - 球心（世界空间）
     /// * `radius` - 球半径
@@ -299,7 +292,7 @@ impl ClippingPlaneCollection {
         let inverse = self.model_matrix.inverse();
         let local_center = inverse.transform_point3(center);
 
-        // 依据裁剪模式初始化（与 CesiumJS 一致）：
+        // 依据裁剪模式初始化：
         // - Union 模式：从 INSIDE 开始；若任一平面在
         //   其负侧包含了球，则整个球被裁剪 → OUTSIDE。
         // - Intersection 模式：从 OUTSIDE 开始；若任一平面
@@ -381,9 +374,9 @@ impl ClippingPlaneCollection {
 
     /// 返回由 [`Self::model_matrix`] 变换到世界空间的平面。
     ///
-    /// 这是 CesiumJS 逐片元
+    /// 这是逐片元 GPU 变换
     /// `czm_transformPlane(plane, clippingPlanesMatrix)`
-    /// （`ModelClippingPlanesStageFS.glsl` L14/L35）的 CPU 侧等价物：集合的
+    /// 的 CPU 侧等价物：集合的
     /// `model_matrix` 在 CPU 上被一次性烘焙进平面，而非每个片元都在 GPU 上
     /// 变换每个平面。两者符号等价——世界点 `p` 位于 `world_planes()[i]`
     /// 之内，当且仅当 `model_matrix.inverse() * p` 位于 `planes[i]` 之内——
@@ -775,9 +768,9 @@ mod tests {
 
     // ─── M6.2 CPU 参考交叉校验 ────────────────────────────────
     //
-    // 独立地对 union / intersection 裁剪判定做暴力参考实现，直接依据上游
-    // CesiumJS 语义（`ClippingPlaneCollection.js` 的 `unionIntersectFunction` =
-    // `v === OUTSIDE`、`defaultIntersectFunction` = `v === INSIDE`）书写，而非
+    // 独立地对 union / intersection 裁剪判定做暴力参考实现，直接依据
+    // 裁剪集合的并/交语义（`unionIntersectFunction` = `v === OUTSIDE`、
+    // `defaultIntersectFunction` = `v === INSIDE`）书写，而非
     // 复用生产代码路径。它们守护 `is_clipped` / `intersect_bounding_sphere`
     // 免于静默的语义漂移，并钉住 M6.2 bevy-render 适配器所依赖的、CPU 侧
     // `world_planes()` 烘焙不变式——该适配器预先变换平面，而非逐片元做

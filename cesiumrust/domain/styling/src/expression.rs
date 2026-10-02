@@ -1,11 +1,9 @@
 //! 顶层 `Expression`：把 3D Tiles Styling 语言的源字符串解析为运行时
 //! AST，并针对可选的 feature 求值。
 //!
-//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs` L3051-3179
-//! （`Expression` 结构体 + `try_new`/`new`/`expression`/`runtime_ast`/`evaluate`/
-//! `evaluate_color`/`get_variables`），它是上游
-//! `packages/engine/Source/Scene/Expression.js`（`Expression` 构造函数
-//! 与原型）的 Rust 移植。
+//! 本模块实现 `Expression` 结构体及其 `try_new`/`new`/`expression`/`runtime_ast`/
+//! `evaluate`/`evaluate_color`/`get_variables` 等方法，构成 styling 引擎面向
+//! 调用方的顶层求值入口（源串 → 预处理 → AST → 对 feature 解释求值）。
 //!
 //! # 偏离（依赖 + 延后的 codegen）
 //!
@@ -31,8 +29,11 @@ use crate::variables::{remove_backslashes, replace_defines, replace_variables};
 /// 应用于 `Cesium3DTileset` 的样式表达式。对以 3D Tiles Styling 语言定义的
 /// 表达式求值。实现 `StyleExpression` 接口。
 pub struct Expression {
+    /// 预处理后的表达式源字符串（去反斜杠/替换变量与 defines 之后）。
     expression_string: String,
+    /// 已构建的运行时 AST 根节点，求值时从此递归。
     runtime_ast: Node,
+    /// 去重后的变量名列表，在构造时一次性计算，供 `get_variables` O(1) 返回。
     variables: Vec<String>,
 }
 
@@ -133,6 +134,7 @@ mod tests {
     use crate::ast::ExpressionNodeType;
     use std::collections::HashMap;
 
+    /// 带属性映射的最小测试 feature。
     struct TestFeature {
         props: HashMap<String, Value>,
     }
@@ -141,6 +143,7 @@ mod tests {
             self.props.get(name).cloned()
         }
     }
+    /// 从 (键, 值) 对列表构造一个 TestFeature。
     fn feature(pairs: &[(&str, Value)]) -> TestFeature {
         TestFeature {
             props: pairs
@@ -157,18 +160,21 @@ mod tests {
             .evaluate(None)
             .unwrap_or_else(|e| panic!("eval {src:?}: {e}"))
     }
+    /// 带 feature 解析并求值一个源字符串。
     fn eval_with(src: &str, f: &dyn ExpressionFeature) -> Value {
         Expression::try_new(src, None)
             .unwrap()
             .evaluate(Some(f))
             .unwrap_or_else(|e| panic!("eval {src:?}: {e}"))
     }
+    /// 求值并断言结果为数字，否则 panic。
     fn num(src: &str) -> f64 {
         match eval(src) {
             Value::Number(n) => n,
             other => panic!("{src:?} not a number: {other}"),
         }
     }
+    /// 求值并断言结果为布尔，否则 panic。
     fn bool_(src: &str) -> bool {
         match eval(src) {
             Value::Boolean(b) => b,
@@ -187,6 +193,7 @@ mod tests {
         assert_eq!(num("1 + 1"), 2.0);
     }
 
+    /// 验证 NaN 不等于自身（!== 为 true，=== 为 false）。
     #[test]
     fn quirk_nan_not_equal_to_itself() {
         assert!(bool_("NaN !== NaN"));
@@ -195,6 +202,7 @@ mod tests {
         assert!(bool_("(0 / 0) !== (0 / 0)"));
     }
 
+    /// 验证 `round` 半值向 +∞ 取整的 JS 怪癖（-0.5 -> 0）。
     #[test]
     fn quirk_round_half_towards_positive_infinity() {
         // Math.round(-0.5) == 0（不是 -1）；Math.round(0.5) == 1。
@@ -204,6 +212,7 @@ mod tests {
         assert_eq!(num("round(-1.5)"), -1.0);
     }
 
+    /// 验证 `min`/`max` 遇 NaN 会传播（不同于 Rust f64::min/max）。
     #[test]
     fn quirk_min_max_nan_propagation() {
         // Math.min(NaN, 1) == NaN（NaN 会传播，不同于 Rust f64::min）。

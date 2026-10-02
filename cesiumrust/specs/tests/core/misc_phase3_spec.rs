@@ -1,9 +1,9 @@
-//! Phase 3 杂项规格测试 - 移植自：
-//! - packages/engine/Specs/Core/ConstantSplineSpec.js（14 个 it()）
-//! - packages/engine/Specs/Core/QueueSpec.js（9 个 it()）
-//! - packages/engine/Specs/Core/VerticalExaggerationSpec.js（8 个 it()）
-//! - packages/engine/Specs/Core/srgbToLinearSpec.js（4 个 it()）
-//! - packages/engine/Specs/Core/WireframeIndexGeneratorSpec.js（9 个 it()）
+//! Phase 3 杂项规格测试 - 参考自：
+//! - Specs/Core/ConstantSplineSpec（14 个 it()）
+//! - Specs/Core/QueueSpec（9 个 it()）
+//! - Specs/Core/VerticalExaggerationSpec（8 个 it()）
+//! - Specs/Core/srgbToLinearSpec（4 个 it()）
+//! - Specs/Core/WireframeIndexGeneratorSpec（9 个 it()）
 //!
 //! A 类测试：33 个（ConstantSpline 5 + Queue 8 + VerticalExaggeration 8 + srgbToLinear 4 + Wireframe 8）
 

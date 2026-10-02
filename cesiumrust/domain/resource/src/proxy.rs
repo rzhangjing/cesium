@@ -1,9 +1,8 @@
 //! 带可信服务器集成的代理 URL 重写。
 //!
-//! 映射到 CesiumJS `Core/DefaultProxy.js` 以及
-//! `Resource.prototype.getUrlComponent(query, proxy)` 和
-//! `Resource.prototype.fetch`（`_Implementations.loadAndExecuteScript` /
-//! `loadWithXhr` 代理分支）中的代理逻辑。
+//! 提供 [`DefaultProxy`] 将资源 URL 前置代理地址，以及
+//! [`ProxyPolicy`] 依据可信服务器注册表决定是否代理的
+//! 逻辑，等价于资源 URL 组件构造时的代理分支处理。
 //!
 //! [`DefaultProxy`] 会在资源 URL 前拼上一个代理 URL，以便
 //! 将跨源请求路由到一个同源服务器。当配置了
@@ -19,14 +18,8 @@ use crate::trusted_servers::TrustedServers;
 /// 一个简单的代理，它将所需的资源 URL 作为唯一的查询
 /// 参数拼接到代理基础 URL 之后。
 ///
-/// 映射到 CesiumJS `DefaultProxy`：
-/// ```js
-/// function DefaultProxy(proxy) { this.proxy = proxy; }
-/// DefaultProxy.prototype.getURL = function(resource) {
-///   var prefix = this.proxy.indexOf('?') === -1 ? '?' : '';
-///   return this.proxy + prefix + resource;
-/// };
-/// ```
+/// 拼接规则：若代理基础 URL 不含 `?` 则插入 `?` 分隔符，
+/// 否则直接拼接资源 URL。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefaultProxy {
     /// 代理基础 URL（例如 `/proxy/` 或 `https://proxy.example.com/?url=`）。
@@ -37,7 +30,7 @@ impl DefaultProxy {
     /// 从给定的代理基础 URL 创建一个新代理。
     ///
     /// # Panic
-    /// 若 `proxy_url` 为空则 panic（对应 CesiumJS 的 `Check.typeOf.string`）。
+    /// 若 `proxy_url` 为空则 panic（拒绝空代理地址）。
     pub fn new(proxy_url: impl Into<String>) -> Self {
         let url = proxy_url.into();
         assert!(!url.is_empty(), "DefaultProxy: proxy URL must not be empty");
@@ -54,8 +47,6 @@ impl DefaultProxy {
     /// 若代理 URL 已包含 `?`，则直接拼接资源（假设代理
     /// 期望该 URL 作为最后一个查询参数
     /// 值）。否则插入一个 `?` 分隔符。
-    ///
-    /// 映射到 `DefaultProxy.prototype.getURL`。
     pub fn get_url(&self, resource_url: &str) -> String {
         let prefix = if self.proxy_url.contains('?') { "" } else { "?" };
         format!("{}{}{}", self.proxy_url, prefix, resource_url)
@@ -65,13 +56,8 @@ impl DefaultProxy {
 /// 一个代理策略，根据可信服务器注册表
 /// 决定是否代理某个给定 URL。
 ///
-/// 映射到 CesiumJS `Resource.prototype.getUrlComponent(query, proxy)`，其中
-/// 仅当资源的服务器不在 `TrustedServers` 中时才应用代理：
-/// ```js
-/// if (proxy && !TrustedServers.isTrusted(url)) {
-///   url = proxy.getURL(url);
-/// }
-/// ```
+/// 核心规则：仅当配置了代理 **且** 目标服务器不在
+/// `TrustedServers` 中时才应用代理——可信服务器直连。
 ///
 /// 该策略封装了这一决策，使调用方无需知道
 /// 可信服务器的检查。
@@ -167,8 +153,8 @@ impl ProxyPolicy {
     /// 应用代理，并额外透传应拼接到 *原始*（代理前）
     /// URL 上的附加查询参数。
     ///
-    /// 这支持 CesiumJS 的模式：`Resource.queryParameters` 在
-    /// 代理包裹 URL 之前拼接：
+    /// 用于支持“先把查询参数拼到原始 URL，再整体交给
+    /// 代理包裹”的模式：
     /// ```text
     /// proxy.getURL(baseUrl + "?" + queryString)
     /// ```
@@ -185,6 +171,7 @@ impl ProxyPolicy {
 }
 
 impl Default for ProxyPolicy {
+    /// 默认策略：不启用任何代理（直连）。
     fn default() -> Self {
         Self::no_proxy()
     }

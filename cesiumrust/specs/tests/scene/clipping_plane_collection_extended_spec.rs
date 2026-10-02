@@ -1,5 +1,5 @@
 //! ClippingPlaneCollection 扩展 specs — transform、状态、边缘情形
-//! 另从 CesiumJS Scene/ClippingPlaneCollectionSpec.js 移植
+//! 另从 CesiumJS Scene/ClippingPlaneCollectionSpec 移植
 
 use cesium_effects::{ClippingPlane, ClippingPlaneCollection, Intersect};
 use glam::{DMat4, DVec3};

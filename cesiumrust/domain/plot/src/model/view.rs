@@ -43,6 +43,7 @@ pub struct ViewContext {
 }
 
 impl Default for ViewContext {
+    /// 全零的缺省上下文：各度量均为 0.0（表示尚未由桥接层填充）。
     fn default() -> Self {
         Self {
             mode: ViewMode::default(),

@@ -77,9 +77,13 @@ pub struct CameraState {
 /// 并递增一个内部 generation 计数器，以便 Bevy 桥接能区分“一个命令
 /// 已发出”与“空闲”。
 pub struct CameraControlImpl {
+    /// 受控的领域相机（位置/朝向权威）。
     camera: Camera,
+    /// 几何计算所依据的参考椭球。
     ellipsoid: Ellipsoid,
+    /// 至多一个活动飞行；空闲时为 `None`。
     flight: Option<CameraFlight>,
+    /// 命令计数器；每次端口调用递增，供桥接区分“已发命”与“空闲”。
     generation: u64,
 }
 
@@ -203,6 +207,7 @@ impl CameraControlImpl {
 }
 
 impl Default for CameraControlImpl {
+    /// 默认：以 WGS84 椭球与默认 home 位姿（俯视地表）构造控制器。
     fn default() -> Self {
         let ellipsoid = Ellipsoid::WGS84;
         let position = Camera::default_home_position(&ellipsoid);
@@ -212,6 +217,7 @@ impl Default for CameraControlImpl {
 }
 
 impl CameraControl for CameraControlImpl {
+    /// 将相机瞬移到指定制图位置与 heading/pitch/roll，并取消任何活动飞行。
     fn set_view(&mut self, position: Cartographic, heading: f64, pitch: f64, roll: f64) {
         // `compute_set_view` 将相机置于 (lon, lat) 上方 `height` 处，并按
         // heading/pitch 定向；roll 绕视线方向施加。
@@ -223,6 +229,7 @@ impl CameraControl for CameraControlImpl {
         self.generation += 1;
     }
 
+    /// 启动一段到目的地的飞行动画（由后续 `update` 逐帧推进）。
     fn fly_to(
         &mut self,
         destination: Cartographic,
@@ -257,6 +264,7 @@ impl CameraControl for CameraControlImpl {
         self.generation += 1;
     }
 
+    /// 将相机定位到以给定 heading/pitch/range 环视目标点。
     fn look_at(&mut self, target: Cartographic, heading: f64, pitch: f64, range: f64) {
         let target_ecef = self.ellipsoid.cartographic_to_cartesian(&target);
         let up = target_ecef.normalize();
@@ -275,16 +283,19 @@ impl CameraControl for CameraControlImpl {
         self.generation += 1;
     }
 
+    /// 沿视线向前缩放（`amount` 缺省时取默认步长）。
     fn zoom_in(&mut self, amount: Option<f64>) {
         let meters = amount.unwrap_or_else(|| self.default_zoom_step());
         self.zoom_by_meters(meters.abs());
     }
 
+    /// 沿视线向后缩放（`amount` 缺省时取默认步长）。
     fn zoom_out(&mut self, amount: Option<f64>) {
         let meters = amount.unwrap_or_else(|| self.default_zoom_step());
         self.zoom_by_meters(-meters.abs());
     }
 
+    /// 飞回默认 home 位姿。
     fn home(&mut self) {
         let dest = Camera::default_home_position(&self.ellipsoid);
         let distance = (dest - self.camera.position).length();
@@ -360,11 +371,14 @@ fn compute_heading_pitch_roll(position: DVec3, direction: DVec3, up: DVec3) -> (
 /// 可以直接 `port.fly_to(...)`（需将 trait 纳入作用域）。
 #[derive(Resource)]
 pub struct CameraControlPort {
+    /// 被包装的实际控制器实现。
     control: CameraControlImpl,
+    /// 桥接上次观察到的 generation，用于判断是否有新命令。
     last_gen: u64,
 }
 
 impl Default for CameraControlPort {
+    /// 默认：包一个 [`CameraControlImpl::default`] 并同步 last_gen。
     fn default() -> Self {
         let control = CameraControlImpl::default();
         Self {
@@ -395,10 +409,12 @@ impl CameraControlPort {
 }
 
 impl CameraControl for CameraControlPort {
+    /// 转发到内部控制器的 `set_view`。
     fn set_view(&mut self, position: Cartographic, heading: f64, pitch: f64, roll: f64) {
         self.control.set_view(position, heading, pitch, roll);
     }
 
+    /// 转发到内部控制器的 `fly_to`。
     fn fly_to(
         &mut self,
         destination: Cartographic,
@@ -411,18 +427,22 @@ impl CameraControl for CameraControlPort {
             .fly_to(destination, heading, pitch, roll, duration_secs);
     }
 
+    /// 转发到内部控制器的 `look_at`。
     fn look_at(&mut self, target: Cartographic, heading: f64, pitch: f64, range: f64) {
         self.control.look_at(target, heading, pitch, range);
     }
 
+    /// 转发到内部控制器的 `zoom_in`。
     fn zoom_in(&mut self, amount: Option<f64>) {
         self.control.zoom_in(amount);
     }
 
+    /// 转发到内部控制器的 `zoom_out`。
     fn zoom_out(&mut self, amount: Option<f64>) {
         self.control.zoom_out(amount);
     }
 
+    /// 转发到内部控制器的 `home`。
     fn home(&mut self) {
         self.control.home();
     }

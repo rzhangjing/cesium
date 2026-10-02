@@ -1,7 +1,7 @@
 //! Scene/SceneMode + 变形 → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/SceneMode.js（模式枚举、getMorphTime）
+//! 参考 CesiumJS：
+//! - Scene/SceneMode（模式枚举、getMorphTime）
 //! - Scene/SceneMode 变形过渡
 //!
 //! A 类测试：模式属性、变形状态机、smoothstep、

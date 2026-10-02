@@ -1,11 +1,9 @@
 //! 材质装配：Fabric 模板 -> GLSL 着色器源码 + uniforms。
 //!
-//! 对 CesiumJS `Scene/Material.js` 中构造流水线的忠实移植：
-//! `initializeMaterial`、`createMethodDefinition`、
-//! `createUniforms`/`createUniform`、`createSubMaterials`、`replaceToken`、
-//! `getNumberOfTokens` 以及 `isTranslucent`。
+//! 构造流水线依次涉及以下阶段：材质初始化、方法定义生成、uniform
+//! 与子材质创建、token 替换与计数，以及半透明性判定。
 //!
-//! 领域层生成与 CesiumJS 相同的 GLSL `czm_getMaterial` 着色器源码及
+//! 领域层生成完整的 GLSL `czm_getMaterial` 着色器源码及
 //! uniform 簿记；随后由渲染适配器负责将该源码翻译为目标着色语言。
 
 use crate::cache::CachedMaterial;
@@ -17,9 +15,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// 用于为匿名材质类型生成 GUID 的计数器。
-/// 映射到 `Material.js` 中的 `createGuid()`。
+/// 每次自增产出一个唯一的 `material-<hex>` 类型名。
 static GUID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// 基于自增计数器生成一个匿名的材质 GUID 类型名。
 fn create_guid() -> String {
     let n = GUID_COUNTER.fetch_add(1, Ordering::Relaxed);
     format!("material-{:016x}", n)
@@ -27,43 +26,40 @@ fn create_guid() -> String {
 
 /// 构造 [`Material`] 的选项。
 ///
-/// 映射到 CesiumJS `Material` 构造函数的 `options` 对象
-/// （`{ strict, translucent, fabric, count }`）。其中 `count` 成员是内部的
-/// （一个共享的重命名计数器），改为以 `&mut usize` 的形式在构建函数间传递。
+/// 对应材质构造函数的输入对象（`{ strict, translucent, fabric, count }`）。
+/// 其中 `count` 成员是内部的一个共享重命名计数器，改为以 `&mut usize`
+/// 的形式在构建函数间传递。
 #[derive(Debug, Clone, Default)]
 pub struct MaterialOptions {
     /// 为 `true` 时，未使用的 uniforms / channels / 子材质会报错。
-    /// 映射到 `options.strict`。
     pub strict: bool,
-    /// 显式的半透明覆盖。映射到 `options.translucent`。
+    /// 显式的半透明覆盖，强制材质为或不透明。
     ///
     /// 领域层仅支持布尔形式；内置材质所使用的函数形式由
     /// [`TranslucentSpec`] 承载。
     pub translucent: Option<bool>,
-    /// Fabric 模板。映射到 `options.fabric`。
+    /// Fabric 模板，材质描述的来源。
     pub fabric: FabricTemplate,
 }
 
 /// 一个已构造的 Fabric 材质。
 ///
-/// 映射到一个 CesiumJS `Material` 实例。[`Material::shader_source`] 是
-/// 完整装配好的 GLSL（子材质函数前置，uniforms 重命名为唯一 id）。
-/// 子材质以嵌套 [`Material`] 的形式保留，使其 uniform 值可单独寻址，
-/// 对应 `material.materials`。
+/// [`Material::shader_source`] 是完整装配好的 GLSL（子材质函数前置，
+/// uniforms 重命名为唯一 id）。子材质以嵌套 [`Material`] 的形式保留，
+/// 使其 uniform 值可单独寻址。
 #[derive(Debug, Clone)]
 pub struct Material {
+    /// 材质类型名（匿名为 GUID）。
     type_name: String,
+    /// 装配完成的 GLSL 着色器源码。
     shader_source: String,
     /// 以原始（Fabric）名称为键的公开 uniform 值。
-    /// 映射到 `material.uniforms`。
     uniforms: BTreeMap<String, UniformValue>,
-    /// 以 Fabric 名称为键的子材质。映射到 `material.materials`。
+    /// 以 Fabric 名称为键的子材质。
     materials: BTreeMap<String, Material>,
-    /// 该材质自身解析后的半透明性（在 `initializeMaterial` 末尾被推入
-    /// `_translucentFunctions` 的值）。
+    /// 该材质自身解析后的半透明性规格（在材质初始化末尾确定的值）。
     own_translucent: Option<TranslucentSpec>,
     /// 重命名后（着色器）uniform id -> 原始（Fabric）uniform id。
-    /// 映射到 `material._uniforms` 的键/取值器。
     uniform_bindings: BTreeMap<String, String>,
 }
 
@@ -73,7 +69,7 @@ impl Material {
         &self.type_name
     }
 
-    /// 装配好的 GLSL 着色器源码。映射到 `material.shaderSource`。
+    /// 装配好的 GLSL 着色器源码。
     pub fn shader_source(&self) -> &str {
         &self.shader_source
     }
@@ -100,10 +96,10 @@ impl Material {
 
     /// 该材质（及其所有子材质）是否半透明。
     ///
-    /// 映射到 `Material.prototype.isTranslucent`：CesiumJS 将
-    /// `_translucentFunctions` 上的每个函数做 AND 运算，该集合是本材质
-    /// 自身的规则加上所有后代的规则展平后的结果。
+    /// 将本材质自身的规则与所有后代材质的规则做 AND 运算：
+    /// 只有当材质及其全部后代都可保持不透明时，整体才判为不透明。
     pub fn is_translucent(&self) -> bool {
+        // 自身无规则时保守视为半透明（true）
         let own = self
             .own_translucent
             .as_ref()
@@ -120,6 +116,7 @@ impl Material {
         out
     }
 
+    /// 递归收集本材质及子材质的重命名后 uniform id 到当前值的映射。
     fn collect_shader_uniforms(&self, out: &mut BTreeMap<String, UniformValue>) {
         for (renamed, original) in &self.uniform_bindings {
             if let Some(value) = self.uniforms.get(original) {
@@ -139,6 +136,7 @@ impl Material {
         out
     }
 
+    /// 递归收集本材质及子材质中所有纹理（sampler2D/samplerCube）uniform。
     fn collect_texture_uniforms(&self, out: &mut BTreeMap<String, UniformValue>) {
         for (name, value) in &self.uniforms {
             if matches!(
@@ -156,9 +154,9 @@ impl Material {
 
 /// 从 Fabric 模板构建一个 [`Material`]。
 ///
-/// 这是材质缓存使用的顶层入口。它返回材质，以及收集到其
-/// `_translucentFunctions` 上的半透明函数数量（自身 + 后代），父材质需要
-/// 该数量来计算其 `defaultTranslucent`。
+/// 这是材质缓存使用的顶层入口。它返回材质，以及收集到的
+/// 半透明规则数量（自身 + 后代），父材质需要
+/// 该数量来计算其默认半透明性。
 pub(crate) fn build_material(
     fabric: FabricTemplate,
     strict: bool,
@@ -166,10 +164,10 @@ pub(crate) fn build_material(
     cache: &HashMap<String, CachedMaterial>,
     count: &mut usize,
 ) -> Result<(Material, usize), MaterialError> {
-    // `result._template = clone(options.fabric)` —— 我们已拥有该克隆。
+    // 模板已从原始 fabric 选项深拷贝而来，此处直接接管该所有权
     let mut template = fabric;
 
-    // `result.type = template.type ?? createGuid()`
+    // 材质类型名：优先用模板的 type，缺失时生成一个 GUID
     let type_name = template.type_name.clone().unwrap_or_else(create_guid);
 
     // 缓存合并：基于已存储的模板构建（用户优先）。
@@ -181,14 +179,14 @@ pub(crate) fn build_material(
         None
     };
 
-    // `checkForTemplateErrors`
+    // 校验模板结构错误（source/components 互斥、uniform 与子材质命名冲突）
     template.validate()?;
 
-    // `createMethodDefinition`
+    // 从 source 或 components 生成 czm_getMaterial 方法体
     let mut shader_source = String::new();
     create_method_definition(&template, &mut shader_source);
 
-    // `createUniforms`
+    // 处理并绑定模板声明的每个 uniform
     let mut uniforms = BTreeMap::new();
     let mut uniform_bindings = BTreeMap::new();
     create_uniforms(
@@ -200,7 +198,7 @@ pub(crate) fn build_material(
         count,
     )?;
 
-    // `createSubMaterials`
+    // 递归构建子材质并将其源码拼接进父材质
     let mut materials = BTreeMap::new();
     let mut sub_translucent_count = 0usize;
     create_sub_materials(
@@ -213,15 +211,14 @@ pub(crate) fn build_material(
         &mut sub_translucent_count,
     )?;
 
-    // 解析半透明性：
-    //   defaultTranslucent = _translucentFunctions.length === 0 ? true : undefined
-    //   translucent = cached ?? defaultTranslucent
-    //   translucent = options.translucent ?? translucent
+    // 解析半透明性，优先级：显式 options.translucent > 缓存 > 默认值
+    //（无任何半透明规则时默认为 Always，否则默认不确定）
     let default_translucent = if sub_translucent_count == 0 {
         Some(TranslucentSpec::Always)
     } else {
         None
     };
+    // 将布尔覆盖映射为 Always/Never，再按优先级链依次回退
     let resolved = options_translucent
         .map(|b| {
             if b {
@@ -232,6 +229,7 @@ pub(crate) fn build_material(
         })
         .or(cached_translucent)
         .or(default_translucent);
+    // 本材质自身贡献一个半透明规则（仅当 resolved 存在时）
     let own_count = usize::from(resolved.is_some());
 
     Ok((
@@ -248,6 +246,7 @@ pub(crate) fn build_material(
 }
 
 /// `isMaterialFused`：某分量表达式是否引用了任何子材质？
+/// 只要表达式的文本包含任一子材质 id，即视为发生了融合。
 fn is_material_fused(component_expr: &str, materials: &BTreeMap<String, FabricTemplate>) -> bool {
     materials
         .keys()
@@ -256,37 +255,44 @@ fn is_material_fused(component_expr: &str, materials: &BTreeMap<String, FabricTe
 
 /// `createMethodDefinition`：从 `source` 或 `components` 构建 `czm_getMaterial` 函数体。
 fn create_method_definition(template: &FabricTemplate, shader_source: &mut String) {
+    // 若提供自定义 source，则逐字发出并提前返回
     if let Some(source) = &template.source {
         shader_source.push_str(source);
         shader_source.push('\n');
         return;
     }
 
+    // 否则生成标准的 czm_getMaterial 函数骨架（先取默认材质）
     shader_source
         .push_str("czm_material czm_getMaterial(czm_materialInput materialInput)\n{\n");
     shader_source.push_str("czm_material material = czm_getDefaultMaterial(materialInput);\n");
 
     if let Some(components) = &template.components {
+        // 是否含子材质决定了 diffuse/emission 是否需要融合判定
         let is_multi_material = !template.materials.is_empty();
         for (component, expr) in components.iter() {
             if component == "diffuse" || component == "emission" {
+                // 融合：表达式引用了子材质时直接使用，否则套 gamma 校正
                 let is_fusion = is_multi_material && is_material_fused(expr, &template.materials);
                 let component_source = if is_fusion {
                     expr.to_string()
                 } else {
                     format!("czm_gammaCorrect({})", expr)
                 };
-                // 注意换行符前的尾随空格（CesiumJS 对 diffuse/emission/alpha 发出
-                // `material.<c> = <src>; \n`）。
+                // 注意换行符前的尾随空格：diffuse/emission/alpha 分量发出
+                // `material.<c> = <src>; \n`（分号后带一个空格）。
                 shader_source.push_str(&format!("material.{} = {}; \n", component, component_source));
             } else if component == "alpha" {
+                // alpha 分量不做 gamma 校正，但同样保留尾随空格
                 shader_source.push_str(&format!("material.alpha = {}; \n", expr));
             } else {
+                // 其余分量（specular/shininess/normal）使用无尾随空格的标准赋值
                 shader_source.push_str(&format!("material.{} = {};\n", component, expr));
             }
         }
     }
 
+    // 函数体以返回装配好的 material 结束
     shader_source.push_str("return material;\n}\n");
 }
 
@@ -299,11 +305,12 @@ fn create_uniforms(
     bindings: &mut BTreeMap<String, String>,
     count: &mut usize,
 ) -> Result<(), MaterialError> {
-    // 在一个可增长的副本上操作，以便我们能动态添加 `<image>Dimensions` uniform
-    // （正如 CesiumJS 会修改 `material._template.uniforms`）。
+    // 在一个可增长的副本上操作，以便我们能动态添加 `<image>Dimensions`
+    // uniform（模板声明的 uniforms 会因此被扩充）。
     let mut all_uniforms = template.uniforms.clone();
     let ids: Vec<String> = template.uniforms.keys().cloned().collect();
     let mut processed = HashSet::new();
+    // 逐个处理已声明的 uniform（固定为快照的键列表，避免遍历时修改）
     for id in ids {
         create_uniform(
             &id,
@@ -331,10 +338,12 @@ fn create_uniform(
     count: &mut usize,
     processed: &mut HashSet<String>,
 ) -> Result<(), MaterialError> {
+    // 去重：同一 uniform 只处理一次（避免 Dimensions 递归时重复处理）
     if !processed.insert(uniform_id.to_string()) {
         return Ok(());
     }
 
+    // 取出 uniform 值（缺失即为非法），并推断其 GLSL 类型
     let uniform_value = all_uniforms
         .get(uniform_id)
         .cloned()
@@ -350,6 +359,7 @@ fn create_uniform(
             _ => unreachable!("glsl_type() reported channels for a non-Channels value"),
         };
         let replaced = replace_token(shader_source, uniform_id, &channels_str, false);
+        // strict 下若源码中无任何替换发生，则视为未使用的 channels
         if replaced == 0 && strict {
             return Err(MaterialError::StrictUnusedChannels {
                 uniform: uniform_id.to_string(),
@@ -358,8 +368,8 @@ fn create_uniform(
         return Ok(());
     }
 
-    // WebGL 无法在 GLSL 中查询纹理尺寸，因此当源码使用它时，CesiumJS 会创建一个
-    // 配套的 `<image>Dimensions` ivec3 uniform。
+    // WebGL 无法在 GLSL 中查询纹理尺寸，因此当源码使用纹理时，需创建一个
+    // 配套的 `<image>Dimensions` ivec3 uniform 来显式传入尺寸。
     if uniform_type == "sampler2D" {
         let dims_name = format!("{}Dimensions", uniform_id);
         if get_number_of_tokens(shader_source, &dims_name) > 0 {
@@ -411,12 +421,13 @@ fn create_sub_materials(
     sub_translucent_count: &mut usize,
 ) -> Result<(), MaterialError> {
     for (sub_id, sub_template) in &template.materials {
-        // 构造子材质（子材质没有 options.translucent）。
+        // 递归构造子材质（子材质没有 options.translucent）
         let (mut sub_material, sub_count) =
             build_material(sub_template.clone(), strict, None, cache, count)?;
+        // 累加子材质及其后代的半透明规则数
         *sub_translucent_count += sub_count;
 
-        // 使子材质的 czm_getMaterial 唯一。
+        // 将子材质的 czm_getMaterial 重命名为唯一的方法名
         let new_method_name = format!("czm_getMaterial_{}", *count);
         *count += 1;
         replace_token(
@@ -426,12 +437,12 @@ fn create_sub_materials(
             true,
         );
 
-        // 前置子材质的源码。
+        // 将子材质的源码前置到父源码之前（保证方法先定义后调用）
         let sub_source = std::mem::take(&mut sub_material.shader_source);
         let parent_source = std::mem::take(shader_source);
         *shader_source = sub_source + &parent_source;
 
-        // 将每个材质 id 替换为一个 czm_getMaterial 方法调用。
+        // 将每个子材质 id 替换为一次对新方法名的调用，并传入 materialInput
         let method_call = format!("{}(materialInput)", new_method_name);
         let replaced = replace_token(shader_source, sub_id, &method_call, true);
         if replaced == 0 && strict {
@@ -443,12 +454,11 @@ fn create_sub_materials(
     Ok(())
 }
 
-/// `replaceToken`：将 `source` 中独立出现的 `token` 替换为
-/// `new_token`，返回替换次数。
+/// 将 `source` 中独立出现的 `token` 替换为 `new_token`，返回替换次数。
 ///
 /// 独立出现是指其前面不是单词字符（当 `exclude_period` 为 true 时前面也
-/// 不能是点号）且后面不是单词字符。对 CesiumJS 正则
-/// `([\w.])?token([\w])?` 的字节级忠实移植（当 `exclude_period` 为 false
+/// 不能是点号）且后面不是单词字符。此判定等价于按正则
+/// `([\w.])?token([\w])?` 做字节级匹配（当 `exclude_period` 为 false
 /// 时，前缀字符类中去掉 `.`）。
 pub(crate) fn replace_token(
     source: &mut String,
@@ -497,18 +507,19 @@ pub(crate) fn replace_token(
     count
 }
 
-/// `getNumberOfTokens`：统计独立出现的次数而不修改源码。
-/// CesiumJS 将其实现为 `replaceToken(material, token, token, ...)`。
+/// 统计 `token` 独立出现的次数而不修改源码。
+/// 实现上复用 [`replace_token`]，将 token 原地替换为自身以触发计数。
 fn get_number_of_tokens(source: &mut String, token: &str) -> usize {
     replace_token(source, token, token, true)
 }
 
+/// 判断字节是否为单词字符（字母、数字或下划线）。
 fn is_word_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
 
-/// 测试源码是否已包含带灵活空白的 `uniform <type> <id> ;`。忠实于 CesiumJS
-/// 的子串正则 `uniform\s+<type>\s+<id>\s*;`。
+/// 测试源码是否已包含带灵活空白的 `uniform <type> <id> ;`，等价于
+/// 子串正则 `uniform\s+<type>\s+<id>\s*;` 的匹配。
 fn has_uniform_declaration(source: &str, uniform_type: &str, uniform_id: &str) -> bool {
     let bytes = source.as_bytes();
     let n = bytes.len();
@@ -517,6 +528,8 @@ fn has_uniform_declaration(source: &str, uniform_type: &str, uniform_id: &str) -
     let id_bytes = uniform_id.as_bytes();
 
     let mut i = 0usize;
+    // 逐字节扫描：匹配 `uniform` 关键字后依次跳过空白、匹配类型、
+    // 跳过空白、匹配 id、跳过空白，最后要求紧跟分号
     while i + kw.len() <= n {
         if &bytes[i..i + kw.len()] == kw {
             let mut j = i + kw.len();
@@ -560,6 +573,7 @@ mod tests {
             .expect("material should build")
     }
 
+    // Color 类型：验证 color uniform 声明、唯一重命名与 gamma 校正后的 diffuse/alpha
     #[test]
     fn test_color_material_shader() {
         let m = build(r#"{"type": "Color"}"#);
@@ -581,6 +595,7 @@ mod tests {
         );
     }
 
+    // 默认 Color 的 alpha=0.5，应判为半透明
     #[test]
     fn test_color_material_translucency() {
         // 默认 Color 的 alpha 为 0.5 -> 半透明。
@@ -588,12 +603,14 @@ mod tests {
         assert!(m.is_translucent());
     }
 
+    // 显式传入 alpha=1.0 应覆盖为不透明
     #[test]
     fn test_color_material_opaque_override() {
         let m = build(r#"{"type": "Color", "uniforms": {"color": {"red": 1.0, "green": 0.0, "blue": 0.0, "alpha": 1.0}}}"#);
         assert!(!m.is_translucent());
     }
 
+    // Checkerboard 的两个颜色 uniform 均应被声明并重命名
     #[test]
     fn test_checkerboard_renames_both_colors() {
         let m = build(r#"{"type": "Checkerboard"}"#);
@@ -609,6 +626,7 @@ mod tests {
         assert!(m.is_translucent());
     }
 
+    // Image 类型的纹理与 repeat uniform 均应绑定
     #[test]
     fn test_image_material_texture_and_repeat() {
         let m = build(r#"{"type": "Image"}"#);
@@ -627,6 +645,7 @@ mod tests {
         assert!(m.texture_uniforms().contains_key("image"));
     }
 
+    // channels token 应被文本替换且不作为真正 uniform 保留
     #[test]
     fn test_diffuse_map_channels_substitution() {
         let m = build(r#"{"type": "DiffuseMap"}"#);
@@ -642,6 +661,7 @@ mod tests {
         assert!(!m.is_translucent());
     }
 
+    // BumpMap 使用 imageDimensions，应自动生成配套的 ivec3 uniform
     #[test]
     fn test_bump_map_auto_dimensions_uniform() {
         let m = build(r#"{"type": "BumpMap"}"#);
@@ -652,6 +672,7 @@ mod tests {
         assert!(!m.is_translucent());
     }
 
+    // 无 type 的自定义 components 应获得 GUID 类型名
     #[test]
     fn test_custom_components_material_gets_guid_type() {
         let m = build(r#"{"components": {"diffuse": "vec3(1.0)", "alpha": "0.5"}}"#);
@@ -661,6 +682,7 @@ mod tests {
         assert!(src.contains("material.alpha = 0.5; \n"));
     }
 
+    // 自定义 source 应逐字发出并带尾随换行
     #[test]
     fn test_custom_source_material() {
         let src = "czm_material czm_getMaterial(czm_materialInput materialInput)\n{\n  czm_material m = czm_getDefaultMaterial(materialInput);\n  m.diffuse = vec3(0.5);\n  return m;\n}";
@@ -671,6 +693,7 @@ mod tests {
         assert!(m.shader_source().ends_with('\n'));
     }
 
+    // 子材质应被重命名、前置源码并替换为方法调用
     #[test]
     fn test_sub_material_composition() {
         // 一个将 Color 子材质融合进其 diffuse 的父材质。
@@ -697,6 +720,7 @@ mod tests {
         assert!(src.contains("material.diffuse = czm_getMaterial_"));
     }
 
+    // 子材质的半透明性应传播到父材质
     #[test]
     fn test_sub_material_translucency_propagates() {
         // 父材质默认不透明，但 Color 子材质（alpha 0.5）
@@ -710,6 +734,7 @@ mod tests {
         assert!(m.is_translucent());
     }
 
+    // strict 下未被使用的 uniform 应报错
     #[test]
     fn test_strict_unused_uniform_errors() {
         let template = FabricTemplate::from_json_str(
@@ -726,6 +751,7 @@ mod tests {
         ));
     }
 
+    // strict 下未被使用的 channels 应报错
     #[test]
     fn test_strict_unused_channels_errors() {
         let template = FabricTemplate::from_json_str(
@@ -742,6 +768,7 @@ mod tests {
         ));
     }
 
+    // token 替换的词边界判定：点号前缀与大小写不应误匹配
     #[test]
     fn test_replace_token_boundaries() {
         // 替换 `color` 时不得影响 `lightColor`（大小写），且
@@ -760,6 +787,7 @@ mod tests {
         assert_eq!(s2, "vec3 color_0 = color_0.rgb;");
     }
 
+    // exclude_period=false 时应允许点号前缀（channels 替换）
     #[test]
     fn test_replace_token_period_allowed_for_channels() {
         let mut s = "texture(image, st).channels".to_string();
@@ -768,6 +796,7 @@ mod tests {
         assert_eq!(s, "texture(image, st).rgb");
     }
 
+    // shader_uniforms 应展平包含子材质重命名后的 uniform
     #[test]
     fn test_shader_uniforms_flattened() {
         let m = build(

@@ -30,6 +30,7 @@ macro_rules! id_newtype {
         }
 
         impl fmt::Display for $name {
+            /// 渲染为 `类型名#计数`（例如 `ElementId#7`）。
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "{}#{}", stringify!($name), self.0)
             }

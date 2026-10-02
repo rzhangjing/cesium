@@ -1,5 +1,5 @@
 //! Fabric 材质系统规范
-//! 移植自 CesiumJS Scene/MaterialSpec.js
+//! 参考自 CesiumJS Scene/MaterialSpec
 
 use cesium_material::{
     uniform_value_from_json, BUILTIN_MATERIAL_TYPES, FabricTemplate,

@@ -1,4 +1,4 @@
-//! GeometryUpdater 规范 - 移植自 DataSources/*GeometryUpdaterSpec.js
+//! GeometryUpdater 规范 - 参考自 DataSources/*GeometryUpdaterSpec
 //! 覆盖：update_box/cylinder/ellipse/corridor/rectangle/wall/ellipsoid/polyline_graphics
 
 use cesium_datasource::geometry_updater::{

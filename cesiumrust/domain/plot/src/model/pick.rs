@@ -67,11 +67,13 @@ mod ordering {
     pub struct F64(pub f64);
     impl Eq for F64 {}
     impl PartialOrd for F64 {
+        /// 委派给全序 `cmp`（总返回 `Some`）。
         fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
             Some(self.cmp(other))
         }
     }
     impl Ord for F64 {
+        /// 按值比较；NaN（不可比）归为 `Equal` 以保持确定性。
         fn cmp(&self, other: &Self) -> std::cmp::Ordering {
             self.0.partial_cmp(&other.0).unwrap_or(std::cmp::Ordering::Equal)
         }

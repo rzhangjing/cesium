@@ -1,4 +1,4 @@
-//! 移植自 CesiumJS SimplePolylineGeometrySpec.js 的测试
+//! 参考自 CesiumJS SimplePolylineGeometrySpec 的测试
 //! A 类测试：7 个（带 positions/colors/arcType 的 createGeometry 变体）
 //! C 类省略：3 个（throws — Rust 中为编译期类型安全）
 
@@ -21,7 +21,7 @@ fn approx_eq(a: f64, b: f64, eps: f64) -> bool {
 
 #[test]
 fn constructor_computes_all_vertex_attributes() {
-    // 移植自："constructor computes all vertex attributes"
+    // 参考自："constructor computes all vertex attributes"
     let positions = vec![
         DVec3::new(1.0, 0.0, 0.0),
         DVec3::new(0.0, 1.0, 0.0),
@@ -83,7 +83,7 @@ fn constructor_computes_all_vertex_attributes() {
 
 #[test]
 fn constructor_computes_all_vertex_attributes_for_rhumb_lines() {
-    // 移植自："constructor computes all vertex attributes for rhumb lines"
+    // 参考自："constructor computes all vertex attributes for rhumb lines"
     // UNIT_SPHERE 上的 Cartesian3.fromDegreesArray([30, 30, 30, 60, 60, 60])
     let ellipsoid = Ellipsoid::UNIT_SPHERE;
     let positions = vec![
@@ -124,7 +124,7 @@ fn constructor_computes_all_vertex_attributes_for_rhumb_lines() {
 
 #[test]
 fn constructor_computes_per_segment_colors() {
-    // 移植自："constructor computes per segment colors"
+    // 参考自："constructor computes per segment colors"
     let positions = vec![
         DVec3::new(1.0, 0.0, 0.0),
         DVec3::new(0.0, 1.0, 0.0),
@@ -158,7 +158,7 @@ fn constructor_computes_per_segment_colors() {
 
 #[test]
 fn constructor_computes_per_vertex_colors() {
-    // 移植自："constructor computes per vertex colors"
+    // 参考自："constructor computes per vertex colors"
     let positions = vec![
         DVec3::new(1.0, 0.0, 0.0),
         DVec3::new(0.0, 1.0, 0.0),
@@ -194,7 +194,7 @@ fn constructor_computes_per_vertex_colors() {
 
 #[test]
 fn constructor_computes_all_vertex_attributes_no_subdivision() {
-    // 移植自："constructor computes all vertex attributes, no subdivision"
+    // 参考自："constructor computes all vertex attributes, no subdivision"
     let positions = vec![
         DVec3::new(0.0, 0.0, 0.0),
         DVec3::new(1.0, 0.0, 0.0),
@@ -235,7 +235,7 @@ fn constructor_computes_all_vertex_attributes_no_subdivision() {
 
 #[test]
 fn constructor_computes_per_segment_colors_no_subdivision() {
-    // 移植自："constructor computes per segment colors, no subdivision"
+    // 参考自："constructor computes per segment colors, no subdivision"
     let positions = vec![
         DVec3::new(0.0, 0.0, 0.0),
         DVec3::new(1.0, 0.0, 0.0),
@@ -269,7 +269,7 @@ fn constructor_computes_per_segment_colors_no_subdivision() {
 
 #[test]
 fn constructor_computes_per_vertex_colors_no_subdivision() {
-    // 移植自："constructor computes per vertex colors, no subdivision"
+    // 参考自："constructor computes per vertex colors, no subdivision"
     let positions = vec![
         DVec3::new(0.0, 0.0, 0.0),
         DVec3::new(1.0, 0.0, 0.0),

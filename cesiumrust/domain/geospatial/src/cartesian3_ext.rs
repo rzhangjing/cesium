@@ -1,5 +1,5 @@
-//! Cartesian3 的 CesiumJS 扩展函数。
-//! 映射到 CesiumJS `Core/Cartesian3.js` 中超越基础向量运算的静态方法。
+//! Cartesian3 的扩展函数。
+//! 提供超越基础向量运算的静态方法。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -18,6 +18,7 @@ pub fn from_spherical(spherical: &Spherical) -> DVec3 {
     let clock = spherical.clock;
     let cone = spherical.cone;
     let magnitude = spherical.magnitude;
+    // radial 为向赤道平面（xy）的投影长度；z 由 cone 的余弦给出。
     let radial = magnitude * cone.sin();
     DVec3::new(
         radial * clock.cos(),
@@ -29,6 +30,7 @@ pub fn from_spherical(spherical: &Spherical) -> DVec3 {
 /// 返回与给定的 Cartesian 最正交的轴。
 /// 映射到 CesiumJS `Cartesian3.mostOrthogonalAxis`
 pub fn most_orthogonal_axis(cartesian: DVec3) -> DVec3 {
+    // 先归一化并取各分量绝对值，最小的那个分量对应的轴即为最正交轴。
     let f = cartesian.normalize_or_zero();
     let f = DVec3::new(f.x.abs(), f.y.abs(), f.z.abs());
 
@@ -48,6 +50,7 @@ pub fn most_orthogonal_axis(cartesian: DVec3) -> DVec3 {
 /// 将向量 a 投影到向量 b 上。
 /// 映射到 CesiumJS `Cartesian3.projectVector`
 pub fn project_vector(a: DVec3, b: DVec3) -> DVec3 {
+    // 标量投影系数 (a·b)/(b·b)，再乘以 b 得到 a 在 b 方向上的投影向量。
     let scalar = a.dot(b) / b.dot(b);
     b * scalar
 }
@@ -116,6 +119,7 @@ pub fn from_radians(
 ) -> DVec3 {
     let radii_squared = ellipsoid.radii_squared();
 
+    // n 为大地法线方向（单位）；k 为经半径平方缩放后的同方向向量。
     let cos_latitude = latitude.cos();
     let mut n = DVec3::new(
         cos_latitude * longitude.cos(),

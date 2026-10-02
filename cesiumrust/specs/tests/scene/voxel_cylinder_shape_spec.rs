@@ -1,4 +1,4 @@
-//! VoxelCylinderShape 测试，移植自 CesiumJS VoxelCylinderShapeSpec.js
+//! VoxelCylinderShape 测试，参考自 CesiumJS VoxelCylinderShapeSpec
 //! 测试：constructs、update(modelMatrix/nonDefaultBounds/cross180)、computeOBBForTile
 
 use cesium_voxel::{VoxelCylinderShape, VoxelShape};
@@ -47,7 +47,7 @@ fn assert_mat3_eq(a: DMat3, b: DMat3, msg: &str) {
 
 #[test]
 fn test_constructs() {
-    // 移植自："constructs"
+    // 参考自："constructs"
     let shape = VoxelCylinderShape::new();
     assert_eq!(shape.shape_transform(), DMat4::IDENTITY);
 }
@@ -58,7 +58,7 @@ fn test_constructs() {
 
 #[test]
 fn test_update_with_model_matrix() {
-    // 移植自："update works with model matrix"
+    // 参考自："update works with model matrix"
     let mut shape = VoxelCylinderShape::new();
 
     let translation = DVec3::new(1.0, 2.0, 3.0);
@@ -120,7 +120,7 @@ fn test_update_with_model_matrix() {
 
 #[test]
 fn test_update_with_non_default_bounds() {
-    // 移植自："update works with non-default minimum and maximum bounds"
+    // 参考自："update works with non-default minimum and maximum bounds"
     let mut shape = VoxelCylinderShape::new();
 
     let translation = DVec3::new(1.0, 2.0, 3.0);
@@ -203,7 +203,7 @@ fn test_update_with_non_default_bounds() {
 
 #[test]
 fn test_update_cross_180_meridian() {
-    // 移植自："update works with minimum and maximum bounds that cross the 180th meridian"
+    // 参考自："update works with minimum and maximum bounds that cross the 180th meridian"
     let mut shape = VoxelCylinderShape::new();
 
     let translation = DVec3::ZERO;
@@ -267,7 +267,7 @@ fn test_update_cross_180_meridian() {
 
 #[test]
 fn test_compute_obb_for_tile() {
-    // 移植自："computeOrientedBoundingBoxForTile returns oriented bounding box for a specified tile"
+    // 参考自："computeOrientedBoundingBoxForTile returns oriented bounding box for a specified tile"
     let mut shape = VoxelCylinderShape::new();
 
     let translation = DVec3::new(1.0, 2.0, 3.0);

@@ -22,7 +22,9 @@ use super::{FetchResult, NetworkBackend};
 /// 线程安全：ureq 的 `Agent` 内部就是 `Send + Sync`，并跨线程管理
 /// 自己的连接池。
 pub struct UreqBackend {
+    /// ureq 客户端 Agent（自带 `Send + Sync` 与跨线程 keep-alive 连接池）。
     agent: ureq::Agent,
+    /// 单次请求的超时时长。
     timeout: Duration,
 }
 
@@ -51,12 +53,15 @@ impl UreqBackend {
 }
 
 impl Default for UreqBackend {
+    /// 默认构造（等价于 [`UreqBackend::new`]，10 s 超时）。
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl NetworkBackend for UreqBackend {
+    /// 同步 GET 一个 URL，按结果分类为 [`FetchResult`]：成功读取为 `Ok`，
+    /// 404 为 `Permanent`，其余状态码/传输错误为 `Transient`。
     fn fetch(&self, url: &str) -> FetchResult {
         match self.agent.get(url).call() {
             Ok(resp) => {
@@ -86,10 +91,12 @@ impl NetworkBackend for UreqBackend {
         }
     }
 
+    /// 后端名称标识（固定为 `"ureq"`）。
     fn name(&self) -> &str {
         "ureq"
     }
 
+    /// 当前生效的请求超时时长。
     fn timeout(&self) -> Duration {
         self.timeout
     }

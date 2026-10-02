@@ -1,5 +1,9 @@
 //! 射线、平面以及相交测试。
-//! 映射到 CesiumJS `Core/Ray.js`, `Core/Plane.js`, `Core/IntersectionTests.js`, `Core/Intersections2D.js`
+//!
+//! 本模块定义由起点与方向构成的 [`Ray`]、由单位法线与距离构成的 [`Plane`]，
+//! 以及一组射线/线段与椭球、平面、包围球、三角形、包围盒的相交测试。
+//! 相交结果多以沿射线的参数距离 `t` 给出，再由 [`Ray::point_at`] 还原为空间点；
+//! 平行、共面或交点位于射线后方等情形统一返回 `None`。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -32,6 +36,11 @@ pub struct Ray {
 }
 
 impl Ray {
+    /// 由起点与方向构造一条射线。
+    ///
+    /// # 参数
+    /// - `origin`：射线起点。
+    /// - `direction`：射线方向；构造时自动归一化为单位向量。
     pub fn new(origin: DVec3, direction: DVec3) -> Self {
         Self {
             origin,
@@ -81,7 +90,7 @@ impl Plane {
     ///
     /// 忠实于 CesiumJS：法线**原样**存储（不重新归一化）；
     /// 调用方必须提供单位长度的法线。仅在 debug 下进行的归一化检查
-    /// 对应 CesiumJS 的 `DeveloperError`（在 release 构建中被剥离）。
+    /// 即 `DeveloperError`（在 release 构建中被剥离）。
     /// 映射到 `new Plane(normal, distance)`
     pub fn new(normal: DVec3, distance: f64) -> Self {
         debug_assert!(
@@ -126,13 +135,14 @@ impl Plane {
     /// 将一点投影到平面上。
     /// 映射到 `Plane.projectPointOntoPlane`
     pub fn project_point_onto_plane(&self, point: DVec3) -> DVec3 {
+        // 沿法线去掉点到平面的带符号距离，即得垂足。
         let dist = self.point_distance(point);
         point - self.normal * dist
     }
 
     /// 用给定的变换矩阵变换该平面。
     ///
-    /// 忠实移植：将“平面作为 Cartesian4”乘以变换的逆转置，
+    /// 做法：将“平面作为 Cartesian4”乘以变换的逆转置，
     /// 然后重新归一化为 Hessian 标准式。
     /// 映射到 `Plane.transform`
     pub fn transform(&self, transform: &DMat4) -> Self {
@@ -151,14 +161,15 @@ impl Plane {
 
 /// 计算射线与椭球的相交。
 /// 返回沿射线的 (t0, t1) 参数，若不相交则返回 None。
-/// 映射到 `IntersectionTests.rayEllipsoid`
 pub fn ray_ellipsoid(ray: &Ray, ellipsoid: &Ellipsoid) -> Option<(f64, f64)> {
     ellipsoid.intersection(ray.origin, ray.direction)
 }
 
 /// 计算射线与平面的相交。
 /// 返回交点，若平行则返回 None。
-/// 映射到 `IntersectionTests.rayPlane`
+///
+/// 先求方向在法线上的投影作为分母，接近零则视为射线与平面平行而不解。
+/// 解出的参数 `t` 为负表示交点在射线反向延长线上，同样返回 None。
 pub fn ray_plane(ray: &Ray, plane: &Plane) -> Option<DVec3> {
     let denominator = plane.normal.dot(ray.direction);
     if denominator.abs() < EPSILON15 {
@@ -173,9 +184,12 @@ pub fn ray_plane(ray: &Ray, plane: &Plane) -> Option<DVec3> {
 
 /// 计算线段与平面的相交。
 /// 返回交点，若线段未穿过平面则返回 None。
-/// 映射到 `IntersectionTests.lineSegmentPlane`
+///
+/// 将线段视为参数 `t∈[0,1]` 的插值，仅当交点落在此区间内才返回，
+/// 否则说明线段与平面平行或未跨越平面。
 pub fn line_segment_plane(p0: DVec3, p1: DVec3, plane: &Plane) -> Option<DVec3> {
     let difference = p1 - p0;
+    // 方向在法线上的投影接近零表示线段与平面平行。
     let n = plane.normal.dot(difference);
     if n.abs() < EPSILON6 {
         return None;
@@ -190,7 +204,9 @@ pub fn line_segment_plane(p0: DVec3, p1: DVec3, plane: &Plane) -> Option<DVec3> 
 /// 计算射线与包围球的相交。
 /// 返回沿射线的参数距离区间 (start, stop)，
 /// 若不相交则返回 None。
-/// 映射到 `IntersectionTests.raySphere`
+///
+/// 将射线代入球面方程得到关于 `t` 的一元二次方程，判别式为负时无实交点；
+/// 取两根后过滤掉位于射线后方（负值）的部分，起点被钳制到不小于 0。
 pub fn ray_sphere(ray: &Ray, sphere: &BoundingSphere) -> Option<(f64, f64)> {
     let origin = ray.origin;
     let direction = ray.direction;
@@ -199,11 +215,13 @@ pub fn ray_sphere(ray: &Ray, sphere: &BoundingSphere) -> Option<(f64, f64)> {
 
     let diff = origin - center;
 
+    // 构造关于射线参数 t 的二次方程 a·t² + b·t + c = 0 的系数。
     let a = direction.dot(direction);
     let b = 2.0 * direction.dot(diff);
     let c = diff.dot(diff) - radius_squared;
 
     let det = b * b - 4.0 * a * c;
+    // 判别式为负表示射线与球无实交点。
     if det < 0.0 {
         return None;
     }
@@ -234,7 +252,14 @@ pub fn ray_sphere(ray: &Ray, sphere: &BoundingSphere) -> Option<(f64, f64)> {
 /// 将射线与三角形的相交计算为参数距离。
 /// 返回沿射线的参数距离 `t`，或 None。
 /// 当三角形位于射线后方时，结果可能为负。
-/// 映射到 `IntersectionTests.rayTriangleParametric`
+///
+/// 采用 Möller–Trumbore 思路：以边向量与方向的叉乘构造行列式，用重心
+/// 坐标 (u, v) 判断交点是否落在三角形内；`cull_back_faces` 为真时忽略背面。
+///
+/// # 参数
+/// - `ray`：待测射线。
+/// - `p0`/`p1`/`p2`：三角形三个顶点。
+/// - `cull_back_faces`：为真时剔除背面相交。
 pub fn ray_triangle_parametric(
     ray: &Ray,
     p0: DVec3,
@@ -252,6 +277,7 @@ pub fn ray_triangle_parametric(
     let det = edge0.dot(p);
 
     if cull_back_faces {
+        // 背面剔除：行列式小于容差表示从背面射入或平行，直接排除。
         if det < EPSILON6 {
             return None;
         }
@@ -293,7 +319,9 @@ pub fn ray_triangle_parametric(
 
 /// 计算射线与三角形的相交（Möller–Trumbore 算法）。
 /// 返回交点，或 None。
-/// 映射到 `IntersectionTests.rayTriangle`
+///
+/// 内部复用 [`ray_triangle_parametric`] 得参数 `t`，仅当 `t≥0`（交点在射线
+/// 前方）时才沿射线还原为具体交点坐标。
 pub fn ray_triangle(
     ray: &Ray,
     v0: DVec3,
@@ -310,7 +338,9 @@ pub fn ray_triangle(
 
 /// 计算线段与三角形的相交。
 /// 返回交点，或 None。
-/// 映射到 `IntersectionTests.lineSegmentTriangle`
+///
+/// 以线段起点为射线原点、线段方向为射线方向，解出参数 `t` 后限定其不超过
+/// 线段长度，从而只保留位于线段范围内的交点。
 pub fn line_segment_triangle(
     v0: DVec3,
     v1: DVec3,
@@ -340,7 +370,9 @@ pub struct TrianglePlaneIntersectionResult {
 
 /// 计算三角形与平面的相交。
 /// 返回所得子三角形的位置和索引，若不相交则返回 None。
-/// 映射到 `IntersectionTests.trianglePlaneIntersection`
+///
+/// 先统计位于平面后方的顶点数（只能为 1 或 2 才会相交）：1 个在后时拆为
+/// 三个子三角形，2 个在后时拆为三个；0 或 3 个在后则三角形完整地在一侧，不相交。
 pub fn triangle_plane_intersection(
     p0: DVec3,
     p1: DVec3,
@@ -416,7 +448,9 @@ pub fn triangle_plane_intersection(
 
 /// 计算射线与方向包围盒的相交。
 /// 返回沿射线的距离，或 None。
-/// 映射到 `IntersectionTests.rayOrientedBoundingBox`
+///
+/// 先把射线原点与方向变换到 OBB 的局部轴空间，再用 slab 法逐轴裁剪
+/// 单位立方体 [-1,1]³ 的参数区间，交集为空或完全在后方时返回 None。
 pub fn ray_obb(ray: &Ray, obb: &OrientedBoundingBox) -> Option<f64> {
     let offset = ray.origin - obb.center;
 
@@ -425,6 +459,7 @@ pub fn ray_obb(ray: &Ray, obb: &OrientedBoundingBox) -> Option<f64> {
     let w = obb.half_axes.z_axis;
 
     // 将射线变换到 OBB 局部空间
+    // 非单位半轴需除以长度平方得到对偶基向量，才能正确投影到局部坐标。
     let inv_u = if u.length_squared() > 0.0 { u / u.length_squared() } else { DVec3::ZERO };
     let inv_v = if v.length_squared() > 0.0 { v / v.length_squared() } else { DVec3::ZERO };
     let inv_w = if w.length_squared() > 0.0 { w / w.length_squared() } else { DVec3::ZERO };
@@ -441,6 +476,7 @@ pub fn ray_obb(ray: &Ray, obb: &OrientedBoundingBox) -> Option<f64> {
     );
 
     // 针对单位立方体 [-1, 1]^3 的 slab 法
+    // 逐轴将相交区间与 slab 区间求交，t_min>t_max 即区间为空表示不相交。
     let mut t_min = f64::NEG_INFINITY;
     let mut t_max = f64::INFINITY;
 
@@ -476,7 +512,8 @@ pub fn ray_obb(ray: &Ray, obb: &OrientedBoundingBox) -> Option<f64> {
 
 /// 计算射线与轴对齐包围盒的相交。
 /// 返回沿射线的距离，或 None。
-/// 映射到 `IntersectionTests.rayAxisAlignedBoundingBox`
+///
+/// 同 slab 法，但坐标已对齐世界轴，无需变换；逐轴维护相交区间 [t_min, t_max]。
 pub fn ray_aabb(ray: &Ray, aabb: &AxisAlignedBoundingBox) -> Option<f64> {
     let mut t_min = f64::NEG_INFINITY;
     let mut t_max = f64::INFINITY;
@@ -517,7 +554,13 @@ pub fn ray_aabb(ray: &Ray, aabb: &AxisAlignedBoundingBox) -> Option<f64> {
 // 映射到 CesiumJS `Intersections2D`
 
 /// 计算三角形内某点的重心坐标。
-/// 映射到 `Intersections2D.computeBarycentricCoordinates`
+///
+/// # 参数
+/// - `point_x`/`point_y`：待求点的 2D 坐标。
+/// - `x1,y1,x2,y2,x3,y3`：三角形三个顶点的 2D 坐标。
+///
+/// # 返回
+/// 三元组 (u, v, w)，满足 u+v+w=1；点在三角形内时三者均在 [0,1]。
 #[allow(clippy::too_many_arguments)]
 pub fn compute_barycentric_coordinates(
     point_x: f64,
@@ -547,7 +590,11 @@ pub fn compute_barycentric_coordinates(
 /// 返回一个扁平的 Vec<f64>，其中：
 /// - 值 0、1、2 是原始顶点索引
 /// - 值 -1 表示一个新的插值顶点，其后跟着 (from_idx, to_idx, ratio)
-/// 映射到 `Intersections2D.clipTriangleAtAxisAlignedThreshold`
+///
+/// # 参数
+/// - `threshold`：分割阈值。
+/// - `keep_above`：为真保留阈值上方，否则保留下方。
+/// - `u0`/`u1`/`u2`：三角形三顶点在分割轴上的坐标。
 pub fn clip_triangle_at_axis_aligned_threshold(
     threshold: f64,
     keep_above: bool,
@@ -572,6 +619,7 @@ pub fn clip_triangle_at_axis_aligned_threshold(
 
     let num_behind = (u0_behind as u8) + (u1_behind as u8) + (u2_behind as u8);
 
+    // 恰有一个顶点在后：切下一个三角形，剩四边形拆为两个；两个在后对称处理。
     if num_behind == 1 {
         if u0_behind {
             let u01_ratio = (threshold - u0) / (u1 - u0);
@@ -638,7 +686,13 @@ pub fn clip_triangle_at_axis_aligned_threshold(
 
 /// 计算两条 2D 线段的交点。
 /// 若相交则返回 Some((x, y))，若平行/共线/不相交则返回 None。
-/// 映射到 `Intersections2D.computeLineSegmentLineSegmentIntersection`
+///
+/// # 参数
+/// - `x00,y00,x01,y01`：第一条线段的两个端点。
+/// - `x10,y10,x11,y11`：第二条线段的两个端点。
+///
+/// 用两条线段的方向行列式作分母，为零则平行；否则求出两个线性参数 ua、ub，
+/// 仅当二者均落在 [0,1] 内时交点才同时位于两条线段上。
 #[allow(clippy::too_many_arguments)]
 pub fn compute_line_segment_line_segment_intersection(
     x00: f64,
@@ -675,6 +729,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// 射线正向穿过 XY 平面时应在原点相交。
     fn test_ray_plane_intersection() {
         let ray = Ray::new(DVec3::new(0.0, 0.0, 5.0), DVec3::new(0.0, 0.0, -1.0));
         let plane = Plane::from_point_normal(DVec3::ZERO, DVec3::new(0.0, 0.0, 1.0));
@@ -683,6 +738,7 @@ mod tests {
     }
 
     #[test]
+    /// 射线与平面平行时无交点。
     fn test_ray_plane_parallel() {
         let ray = Ray::new(DVec3::new(0.0, 0.0, 5.0), DVec3::new(1.0, 0.0, 0.0));
         let plane = Plane::from_point_normal(DVec3::ZERO, DVec3::new(0.0, 0.0, 1.0));
@@ -690,6 +746,7 @@ mod tests {
     }
 
     #[test]
+    /// 射线射入包围球应返回区间 (4, 6)。
     fn test_ray_sphere_hit() {
         let ray = Ray::new(DVec3::new(0.0, 0.0, 5.0), DVec3::new(0.0, 0.0, -1.0));
         let sphere = BoundingSphere::new(DVec3::ZERO, 1.0);
@@ -699,6 +756,7 @@ mod tests {
     }
 
     #[test]
+    /// 射线偏离球心足够远时不与球相交。
     fn test_ray_sphere_miss() {
         let ray = Ray::new(DVec3::new(0.0, 5.0, 5.0), DVec3::new(0.0, 0.0, -1.0));
         let sphere = BoundingSphere::new(DVec3::ZERO, 1.0);
@@ -706,6 +764,7 @@ mod tests {
     }
 
     #[test]
+    /// 射线射入三角形平面区域应落在 z=0 上。
     fn test_ray_triangle_hit() {
         let ray = Ray::new(DVec3::new(0.25, 0.25, 1.0), DVec3::new(0.0, 0.0, -1.0));
         let v0 = DVec3::new(0.0, 0.0, 0.0);
@@ -716,6 +775,7 @@ mod tests {
     }
 
     #[test]
+    /// 射线避开三角形范围时不相交。
     fn test_ray_triangle_miss() {
         let ray = Ray::new(DVec3::new(2.0, 2.0, 1.0), DVec3::new(0.0, 0.0, -1.0));
         let v0 = DVec3::new(0.0, 0.0, 0.0);
@@ -725,6 +785,7 @@ mod tests {
     }
 
     #[test]
+    /// 射线与轴对齐包围盒相交时应返回前沿距离 4。
     fn test_ray_aabb_hit() {
         let ray = Ray::new(DVec3::new(0.0, 0.0, 5.0), DVec3::new(0.0, 0.0, -1.0));
         let aabb = AxisAlignedBoundingBox::new(DVec3::new(-1.0, -1.0, -1.0), DVec3::new(1.0, 1.0, 1.0));
@@ -733,6 +794,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证重心坐标计算 (0.5, 0.25, 0.25)。
     fn test_barycentric_coordinates() {
         let (u, v, w) = compute_barycentric_coordinates(0.25, 0.25, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0);
         assert!((u - 0.5).abs() < 1e-10);

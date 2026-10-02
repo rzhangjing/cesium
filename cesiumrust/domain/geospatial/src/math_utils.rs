@@ -1,5 +1,5 @@
-//! 数学工具 —— 映射到 CesiumJS `Core/Math.js`（CesiumMath）
-//! 在整个 geospatial 领域中使用的常量和辅助函数。
+//! 数学工具 —— 角度、数值常量与辅助函数，
+//! 在整个 geospatial 领域中被广泛使用。
 
 use std::f64::consts::PI;
 

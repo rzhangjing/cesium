@@ -1,4 +1,4 @@
-//! 移植自 `packages/engine/Specs/Core/ColorSpec.js`（98 个 it()，约 58 个 A 类）
+//! 参考自 `Specs/Core/ColorSpec`（98 个 it()，约 58 个 A 类）
 //!
 //! 省略 40 个 throws 测试（C 类：Rust 类型系统强制输入合法）。
 //! 省略 fromRandom 测试（B 类：随机行为）。

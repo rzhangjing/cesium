@@ -1,4 +1,4 @@
-//! Renderer/RenderStateSpec.js、ClearCommandSpec.js、ComputeCommandSpec.js、PassStateSpec.js
+//! Renderer/RenderStateSpec、ClearCommandSpec、ComputeCommandSpec、PassStateSpec
 //! → Rust 集成测试
 
 use cesium_scene::{

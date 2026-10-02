@@ -1,11 +1,11 @@
 //! Scene/Model/CustomShader → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/Model/CustomShader.js
-//! - Scene/Model/CustomShaderMode.js
-//! - Scene/Model/CustomShaderTranslucencyMode.js
-//! - Scene/Model/UniformType.js
-//! - Scene/Model/VaryingType.js
+//! 参考 CesiumJS：
+//! - Scene/Model/CustomShader
+//! - Scene/Model/CustomShaderMode
+//! - Scene/Model/CustomShaderTranslucencyMode
+//! - Scene/Model/UniformType
+//! - Scene/Model/VaryingType
 //!
 //! A 类测试：UniformType/VaryingType glsl_type/component_count、
 //! CustomShader 创建/uniforms/varyings/validate/parse_variables/generate_declarations。

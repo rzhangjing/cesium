@@ -1,5 +1,5 @@
-//! Stereographic（球面投影）规格测试 - 移植自：
-//! - packages/engine/Specs/Core/StereographicSpec.js（15 个 it()）
+//! Stereographic（球面投影）规格测试 - 参考自：
+//! - Specs/Core/StereographicSpec（15 个 it()）
 //!
 //! A 类测试：12 个（跳过 3 个 clone/result 参数类测试）
 

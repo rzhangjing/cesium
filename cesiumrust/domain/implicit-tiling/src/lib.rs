@@ -8,8 +8,8 @@
 //!
 //! 领域层 —— 纯 Rust，f64 精度。
 //!
-//! CesiumJS 映射：
-//! - `Scene/Implicit3DTileContent.js` → implicit_tiling
+//! 子模块：
+//! - [`implicit_tiling`]：隐式切分坐标、Morton 索引编解码与可用性位流
 
 pub mod implicit_tiling;
 

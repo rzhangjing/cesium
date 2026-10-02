@@ -1,4 +1,4 @@
-//! Scene/QuadtreePrimitiveSpec.js、QuadtreeTileSpec.js → Rust 集成测试
+//! Scene/QuadtreePrimitiveSpec、QuadtreeTileSpec → Rust 集成测试
 
 use cesium_quadtree::{
     QuadtreeConfig, QuadtreePrimitive, QuadtreeTile, TileState, TraversalResult,

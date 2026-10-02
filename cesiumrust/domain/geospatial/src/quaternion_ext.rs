@@ -1,7 +1,10 @@
-//! 四元数扩展函数 —— glam 中未包含的 CesiumJS 特定算法。
+//! 四元数扩展函数 —— glam 未提供的额外四元数算法。
 //!
-//! 映射到 CesiumJS `Core/Quaternion.js` 的扩展方法：
+//! 实现以下四元数扩展方法：
 //! computeAxis、computeAngle、log、exp、computeInnerQuadrangle、squad、fastSlerp、fastSquad
+//!
+//! 这些方法共同支撑平滑的旋转插值：log/exp 建立单位四元数与李代数（纯虚向量）间的双射，
+//! computeInnerQuadrangle 求 squad 的控制点，而 fastSlerp/fastSquad 用多项式逼近换取速度。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -12,6 +15,8 @@ use crate::math_utils;
 
 /// 计算一个四元数的归一化旋转轴。
 /// 映射到 `Quaternion.computeAxis`。
+///
+/// 当 w 接近 ±1（旋转角趋于 0 或 2π）时轴未定义，回退为 +X 轴；否则用 1/√(1-w²) 缩放虚部。
 pub fn compute_axis(quaternion: DQuat) -> DVec3 {
     let w = quaternion.w;
     if (w - 1.0).abs() < math_utils::EPSILON6 || (w + 1.0).abs() < math_utils::EPSILON6 {
@@ -28,6 +33,8 @@ pub fn compute_axis(quaternion: DQuat) -> DVec3 {
 
 /// 计算给定的四元数的旋转角度。
 /// 映射到 `Quaternion.computeAngle`。
+///
+/// w 接近 1 时角度为 0；否则返回 2·acos(w)（对应单位四元数的完整旋转角）。
 pub fn compute_angle(quaternion: DQuat) -> f64 {
     if (quaternion.w - 1.0).abs() < math_utils::EPSILON6 {
         return 0.0;
@@ -38,6 +45,8 @@ pub fn compute_angle(quaternion: DQuat) -> f64 {
 /// 对数四元数函数。
 /// 映射到 `Quaternion.log`。
 /// 返回对数的 Cartesian3（向量部分）。
+///
+/// 以 θ=acos(w) 为旋转半角，将虚部按 θ/sinθ 缩放；θ=0 时缩放因子取 0 以避免除零。
 pub fn quaternion_log(quaternion: DQuat) -> DVec3 {
     let theta = math_utils::acos_clamped(quaternion.w);
     let mut theta_over_sin_theta = 0.0;
@@ -56,6 +65,8 @@ pub fn quaternion_log(quaternion: DQuat) -> DVec3 {
 /// 指数四元数函数。
 /// 映射到 `Quaternion.exp`。
 /// 接受一个 Cartesian3（纯虚四元数）并返回一个单位四元数。
+///
+/// 与 [`quaternion_log`] 互逆：以 θ=|v| 为模长，虚部按 sinθ/θ 缩放，实部为 cosθ。
 pub fn quaternion_exp(cartesian: DVec3) -> DQuat {
     let theta = cartesian.length();
     let mut sin_theta_over_theta = 0.0;
@@ -75,6 +86,8 @@ pub fn quaternion_exp(cartesian: DVec3) -> DQuat {
 /// 计算一个内部四边形点。
 /// 它将计算能保证 squad 曲线为 C¹ 的四元数。
 /// 映射到 `Quaternion.computeInnerQuadrangle`。
+///
+/// 以 q1 为参考将 q0、q2 取对数、求和缩放后回指数，得到控制点 s1，保证拼接处一阶连续。
 pub fn compute_inner_quadrangle(q0: DQuat, q1: DQuat, q2: DQuat) -> DQuat {
     let q_inv = q1.conjugate();
 
@@ -93,6 +106,8 @@ pub fn compute_inner_quadrangle(q0: DQuat, q1: DQuat, q2: DQuat) -> DQuat {
 
 /// 使用给定的四元数计算在 t 处的线性插值或外推。
 /// 映射到 `Quaternion.lerp`。
+///
+/// 按 (1-t) 与 t 分别缩放 start、end 后逐分量相加；不做归一化，仅用于 slerp 退化分支的回退。
 pub fn quaternion_lerp(start: DQuat, end: DQuat, t: f64) -> DQuat {
     let scaled_end = DQuat::from_xyzw(
         end.x * t,
@@ -148,6 +163,8 @@ pub fn cesium_slerp(start: DQuat, end: DQuat, t: f64) -> DQuat {
 
 /// 计算四元数之间的球面四边形插值。
 /// 映射到 `Quaternion.squad`。
+///
+/// 由两组 slerp 结果再做一次带 2t(1-t) 参数的 slerp，得到经过 q0、q1 且以 s0、s1 为切向控制点的平滑插值。
 pub fn squad(q0: DQuat, q1: DQuat, s0: DQuat, s1: DQuat, t: f64) -> DQuat {
     let slerp0 = cesium_slerp(q0, q1, t);
     let slerp1 = cesium_slerp(s0, s1, t);
@@ -155,9 +172,11 @@ pub fn squad(q0: DQuat, q1: DQuat, s0: DQuat, s1: DQuat, t: f64) -> DQuat {
 }
 
 // fastSlerp 多项式逼近的常量
+// 用于修正第 8 项系数，使 cos 的多项式逼近精度达 10⁻⁶。
 const OPMU: f64 = 1.90110745351730037;
 
 /// 为 fastSlerp 预计算的 u 和 v 数组。
+/// 前 7 项由整数序列算出，第 8 项用逼近常数 OPMU 修正以保证精度。
 fn fast_slerp_coefficients() -> ([f64; 8], [f64; 8]) {
     let mut u = [0.0f64; 8];
     let mut v = [0.0f64; 8];
@@ -184,6 +203,7 @@ pub fn fast_slerp(start: DQuat, end: DQuat, t: f64) -> DQuat {
     let mut x = start.x * end.x + start.y * end.y + start.z * end.z + start.w * end.w;
 
     let sign;
+    // 点积为负时翻转 end 符号（q 与 -q 表示同一旋转），保证取锐角分支。
     if x >= 0.0 {
         sign = 1.0;
     } else {
@@ -199,6 +219,7 @@ pub fn fast_slerp(start: DQuat, end: DQuat, t: f64) -> DQuat {
     let mut b_t = [0.0f64; 8];
     let mut b_d = [0.0f64; 8];
 
+    // 用 u/v 系数与 (x-1) 构造 Horner 多项式的逐项因子，分别对应 t 与 d=1-t。
     for i in 0..8 {
         b_t[i] = (u[i] * sqr_t - v[i]) * xm1;
         b_d[i] = (u[i] * sqr_d - v[i]) * xm1;
@@ -254,6 +275,8 @@ pub fn fast_squad(q0: DQuat, q1: DQuat, s0: DQuat, s1: DQuat, t: f64) -> DQuat {
 /// 从给定的旋转矩阵（Matrix3）计算一个 Quaternion。
 /// 映射到 `Quaternion.fromRotationMatrix`。
 /// 使用标准的 Shepperd 方法，并采用正确的符号约定。
+///
+/// 根据矩阵的迹与各对角元选最大者作为主元分支，避免开方出现数值不稳定；四个分支分别以 w/x/y/z 为主。
 pub fn from_rotation_matrix(matrix: &DMat3) -> DQuat {
     let m00 = matrix.x_axis.x;
     let m01 = matrix.y_axis.x;
@@ -300,6 +323,8 @@ pub fn from_rotation_matrix(matrix: &DMat3) -> DQuat {
 
 /// 检查两个四元数是否在一个 epsilon 范围内相等。
 /// 映射到 `Quaternion.equalsEpsilon`。
+///
+/// 四个分量均在 ±epsilon 内则视为相等（不处理 q 与 -q 同旋转的情况）。
 pub fn equals_epsilon(left: DQuat, right: DQuat, epsilon: f64) -> bool {
     (left.x - right.x).abs() <= epsilon
         && (left.y - right.y).abs() <= epsilon

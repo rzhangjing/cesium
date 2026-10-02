@@ -1,4 +1,4 @@
-//! Scene/Vector3DTileContentSpec.js → Rust integration tests
+//! Scene/Vector3DTileContentSpec → Rust integration tests
 
 use cesium_vector::{WktGeometry, parse_wkt, to_wkt, MvtGeometryType};
 use glam::DVec2;

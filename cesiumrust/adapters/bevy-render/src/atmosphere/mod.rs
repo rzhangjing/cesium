@@ -12,9 +12,14 @@ pub use sky_system::{sky_dome_setup, sky_system, SkyAtmosphere};
 
 use bevy::prelude::*;
 
+/// 大气子模块聚合：天体光照、天空 dome 与散射系统的插件入口。
 pub struct CesiumAtmospherePlugin;
 
 impl Plugin for CesiumAtmospherePlugin {
+    /// 注册 dome 着色器与相关资源（无头安全地守卫材质注册），并链式挂载光照/dome/天空系统。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用
     fn build(&self, app: &mut App) {
         // 无头安全的内嵌 WGSL 注册。一个裸的 `load_internal_asset!`
         // 会解引用 `Assets<Shader>` 并在 `MinimalPlugins` 下 panic——这一

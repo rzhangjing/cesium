@@ -4,6 +4,9 @@
 //! 参数化图元（矩形 / 圆 / 椭圆 / 弧 / 路径）通过纯函数
 //! [`cesium_plot::geom::sample`] 采样；在球面视图下，环还会沿大圆加密度，
 //! 使弯曲的边界紧贴球体而非切出一条弦。
+//!
+//! 本模块只负责“几何→顶点环”的纯采样，不涉及相机或 ECS，
+//! 因此渲染与拾取可共享同一套剖分结果以保证两者完全一致。
 
 use cesium_plot::geo::GeoPoint;
 use cesium_plot::geom::sample::{
@@ -15,6 +18,13 @@ use cesium_plot::model::ViewMode;
 
 /// 针对*填充面*类几何的闭合边界环（外环 + 洞），对非面几何返回 `None`。
 /// 球面会沿大圆加密度。
+///
+/// # 参数
+/// - `geo`：待采样的几何（面类）。
+/// - `mode`：视图模式（Globe 时沿大圆加密）。
+///
+/// # 返回
+/// `(外环, 洞环列表)`；非面或外环不足 3 点时 `None`。
 pub fn face_rings(geo: &Geometry, mode: ViewMode) -> Option<(Vec<GeoPoint>, Vec<Vec<GeoPoint>>)> {
     let (outer, holes) = match geo {
         Geometry::Polygon(p) => (p.outer.clone(), p.holes.clone()),
@@ -41,6 +51,14 @@ pub fn face_rings(geo: &Geometry, mode: ViewMode) -> Option<(Vec<GeoPoint>, Vec<
 /// 针对*线状*几何（多段线、弧或路径）的单条开放笔触（顶点链），
 /// 对点 / 图标 / 标签几何返回 `None`。球面笔触会沿大圆加密度，
 /// 使长线沿着球体行进（计划 §6）。
+///
+/// # 参数
+/// - `geo`：待采样的线状几何。
+/// - `mode`：视图模式（Globe 时沿大圆加密）。
+///
+/// # 返回
+/// 开放顶点链；非线状或不足 2 点时 `None`。
+/// 返回的链与渲染、拾取共享，以保证两者剖分完全一致。
 pub fn stroke_positions(geo: &Geometry, mode: ViewMode) -> Option<Vec<GeoPoint>> {
     let pts = match geo {
         Geometry::Polyline(pl) => pl.positions.clone(),
@@ -80,6 +98,7 @@ mod tests {
     use super::*;
     use cesium_plot::model::geometry::{Circle, Path, Polyline, Rectangle};
 
+    /// 圆面应采样为 DEFAULT_SEGMENTS 个顶点的闭合外环，无洞。
     #[test]
     fn circle_becomes_a_face_ring() {
         let geo = Geometry::Circle(Circle {
@@ -91,6 +110,7 @@ mod tests {
         assert!(holes.is_empty());
     }
 
+    /// 矩形面应恰好是四角外环。
     #[test]
     fn rectangle_is_a_four_corner_face() {
         let geo = Geometry::Rectangle(Rectangle {
@@ -103,6 +123,7 @@ mod tests {
         assert_eq!(outer.len(), 4);
     }
 
+    /// 多段线应作为笔触而非面：face_rings 返回 None，stroke 返回顶点。
     #[test]
     fn polyline_is_a_stroke_not_a_face() {
         let geo = Geometry::Polyline(Polyline {
@@ -112,6 +133,7 @@ mod tests {
         assert_eq!(stroke_positions(&geo, ViewMode::Flat).unwrap().len(), 2);
     }
 
+    /// 路径拼接时共享的连接顶点应去重（相邻段不重复相接点）。
     #[test]
     fn path_dedups_shared_joins() {
         let geo = Geometry::Path(Path {
@@ -131,6 +153,7 @@ mod tests {
         assert_eq!(stroke.len(), 3, "{stroke:?}");
     }
 
+    /// Globe 模式下长线应沿大圆加密，比 Flat 多出中间顶点。
     #[test]
     fn globe_strokes_are_densified() {
         let geo = Geometry::Polyline(Polyline {

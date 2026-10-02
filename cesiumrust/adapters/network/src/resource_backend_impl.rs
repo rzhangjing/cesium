@@ -160,11 +160,14 @@ where
 /// future。仅当工作线程未发送就丢弃了发送端时才会 panic（这需要闭包
 /// 内部出现 `std::mem::forget` 类的误用 —— 视为 bug，而非可恢复状态）。
 struct BlockedOnRecv<T> {
+    /// 待接收的工作线程回传值接收端；首次 poll 时被 `take` 消费。
     rx: Option<mpsc::Receiver<T>>,
 }
 
 impl<T: Send + 'static> Future for BlockedOnRecv<T> {
     type Output = T;
+    /// 阻塞式单次 poll：`take` 出接收端并在 `recv()` 上同步阻塞直至
+    /// 工作线程回传结果，因此首次 poll 即返回 `Ready`。
     fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<T> {
         let rx = self
             .rx
@@ -228,9 +231,13 @@ type UrlRegistry = Arc<Mutex<HashMap<u64, String>>>;
 /// 持有，与 pipeline 自己的 `PipelineResourceBackend<TileKey>`（使用
 /// `(u32, u32, u32)` 键）并存。
 pub struct NetworkResourceBackend {
+    /// 包装的 pipeline 资源后端，提供热/冷缓存层级与在途去重。
     inner: PipelineResourceBackend<u64>,
+    /// 数值 `u64` 资源键 ↔ 实际 URL 的双向注册表。
     registry: UrlRegistry,
+    /// 累计发起的获取次数（单调递增，供统计）。
     fetch_count: AtomicU64,
+    /// 后端可用性标志，供 [`ResourceBackend::is_available`] 读取。
     available: AtomicBool,
 }
 
@@ -311,12 +318,14 @@ impl NetworkResourceBackend {
 }
 
 impl Default for NetworkResourceBackend {
+    /// 默认构造（等价于 [`NetworkResourceBackend::new`]）。
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl ResourceBackend<u64> for NetworkResourceBackend {
+    /// 请求一个资源键的字节流，委托给内部 pipeline 后端（含缓存与去重）。
     fn request_stream<'a>(
         &'a self,
         key: u64,
@@ -325,22 +334,27 @@ impl ResourceBackend<u64> for NetworkResourceBackend {
         self.inner.request_stream(key, priority)
     }
 
+    /// 取消一个在途请求，按数值键委托给内部后端。
     fn cancel(&self, key: &u64) {
         self.inner.cancel(key);
     }
 
+    /// 查询一个键当前所在的缓存层级（热/冷/未缓存）。
     fn cache_tier(&self, key: &u64) -> CacheTier {
         self.inner.cache_tier(key)
     }
 
+    /// 返回后端的运行时统计快照。
     fn stats(&self) -> ResourceStats {
         self.inner.stats()
     }
 
+    /// 返回后端的可读名称标识。
     fn name(&self) -> &str {
         self.inner.name()
     }
 
+    /// 后端是否可用：本地 `available` 标志为真且内部后端亦可用。
     fn is_available(&self) -> bool {
         self.available.load(Ordering::Relaxed) && self.inner.is_available()
     }

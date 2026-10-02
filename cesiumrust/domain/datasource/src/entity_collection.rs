@@ -1,13 +1,16 @@
 //! 实体集合管理。
 //!
-//! 映射到 CesiumJS `DataSources/EntityCollection.js`
+//! `EntityCollection` 以 id 为键存一组实体，提供增删改查与按事件变更的能力；
+//! `DataSource` 则在集合之上封装一个命名数据源的实体、加载状态与时钟设置，
+//! 作为 CZML/GeoJSON 等解析结果的统一承载体。
 
 use crate::entity::Entity;
 use std::collections::HashMap;
 
 /// 一个支持基于 ID 查找的实体集合。
 ///
-/// 映射到 CesiumJS `DataSources/EntityCollection.js`
+/// 内部以 id 为键维护实体，新增时若 id 已存在则覆盖；集合保留插入顺序以外
+/// 的语义弱，主要供逐帧遍历与按 id 快速取回，并预留事件暂停/恢复接口。
 #[derive(Debug, Default)]
 pub struct EntityCollection {
     /// 按 ID 索引的实体。
@@ -148,7 +151,8 @@ impl EntityCollection {
 
 /// 一个提供实体的数据源。
 ///
-/// 映射到 CesiumJS `DataSources/DataSource.js`
+/// 封装一个命名数据源的实体集合、加载标志，以及可选的时钟起止与倍率；
+/// 各具体解析器（CZML、GeoJSON 等）最终都将结果汇总为一个 `DataSource`。
 #[derive(Debug)]
 pub struct DataSource {
     /// 此数据源的名称。
@@ -160,9 +164,11 @@ pub struct DataSource {
     /// 数据源是否已加载。
     pub loaded: bool,
 
-    /// 时钟设置（若为时间动态）。
+    /// 时钟起始时刻（若为时间动态）。
     pub clock_start: Option<f64>,
+    /// 时钟停止时刻，标记动画区间右端。
     pub clock_stop: Option<f64>,
+    /// 时钟当前时刻，供数据源指定初始播放位置。
     pub clock_current: Option<f64>,
 }
 

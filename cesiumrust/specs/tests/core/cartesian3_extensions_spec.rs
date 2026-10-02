@@ -1,4 +1,4 @@
-//! Core/Cartesian3Spec.js（CesiumJS 特有扩展）→ Rust 集成测试
+//! Core/Cartesian3Spec（CesiumJS 特有扩展）→ Rust 集成测试
 //! 覆盖：fromSpherical、mostOrthogonalAxis、projectVector、midpoint、
 //! equalsEpsilon、pack/unpack、fromDegrees、fromRadians、fromDegreesArray、
 //! fromRadiansArray、fromDegreesArrayHeights、fromRadiansArrayHeights

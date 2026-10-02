@@ -1,5 +1,5 @@
 //! Morphing/Camera 扩展规范 - SceneMorph 模式过渡 + CameraFlight 扩展
-//! 移植自 Scene/SceneSpec.js 变形 + Scene/CameraSpec.js 飞行（A 类）
+//! 参考自 Scene/SceneSpec 变形 + Scene/CameraSpec 飞行（A 类）
 
 use cesium_interaction::{SceneMorph, CameraFlight, FlightOptions, compute_look_at};
 use cesium_camera::{Camera, SceneMode};

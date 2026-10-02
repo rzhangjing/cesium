@@ -1,4 +1,4 @@
-//! Scene/AxisSpec.js → Rust 集成测试
+//! Scene/AxisSpec → Rust 集成测试
 //!
 //! 原始：6 it() → 6 A 类（坐标轴转换矩阵）
 //! 测试：y_up_to_z_up(1) + y_up_to_x_up(1) + z_up_to_x_up(1) +

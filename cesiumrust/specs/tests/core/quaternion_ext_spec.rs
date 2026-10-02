@@ -1,4 +1,4 @@
-//! Quaternion 扩展函数的测试 - 移植自 QuaternionSpec.js
+//! Quaternion 扩展函数的测试 - 参考自 QuaternionSpec
 //!
 //! 原始：124 个 it() → 12 个 A 类（CesiumJS 特有：computeAxis/computeAngle/log/exp/squad/fastSlerp/fastSquad）
 //! B 类（glam 代理：fromAxisAngle/slerp/dot/multiply/conjugate/normalize/inverse 等）已被覆盖。

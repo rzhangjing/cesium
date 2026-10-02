@@ -1,5 +1,5 @@
-//! 插值算法规范 - 移植自 Core/LinearApproximationSpec.js、
-//! Core/LagrangePolynomialApproximationSpec.js、Core/HermitePolynomialApproximationSpec.js
+//! 插值算法规范 - 参考自 Core/LinearApproximationSpec、
+//! Core/LagrangePolynomialApproximationSpec、Core/HermitePolynomialApproximationSpec
 //!
 //! 测试 SampledProperty 使用的底层插值算法。
 

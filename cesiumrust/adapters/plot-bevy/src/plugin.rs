@@ -28,7 +28,11 @@ use crate::ui::{plot_toolbar, toolbar_click_system};
 pub struct CesiumPlotBridgePlugin;
 
 impl Plugin for CesiumPlotBridgePlugin {
+    /// 接线标绘叠加层：一次性初始化所有桥接资源、注册事件流，
+    /// 并把 Startup/Update 阶段所需系统接入应用调度。
     fn build(&self, app: &mut App) {
+        // 初始化叠加层所需的全部 Bevy 资源（视图上下文、文档、过滤器、选择、
+        // 交互、历史、拖拽、吸附、拾取缓存、同步状态等）。
         app.init_resource::<PlotViewCtx>()
             .init_resource::<PlotInputCapture>()
             .init_resource::<PlotDocument>()
@@ -45,12 +49,16 @@ impl Plugin for CesiumPlotBridgePlugin {
             .init_resource::<crate::sync::PlotShapeCache>()
             .init_resource::<crate::ui::PlotToolbarRoot>()
             .init_resource::<PanelRootEntity>()
+            // 注册叠加层向外广播的事件流（悬停/选择变更、右键菜单、工具切换、绘制完成）。
             .add_event::<PlotHoverChanged>()
             .add_event::<PlotSelectionChanged>()
             .add_event::<PlotContextMenu>()
             .add_event::<PlotSetTool>()
             .add_event::<PlotDrawFinished>()
+            // Startup：构建工具栏与右侧属性面板的根实体。
             .add_systems(Startup, (plot_toolbar, panel_startup))
+            // Update：每帧按序运行同步→拾取→交互→绘制预览→编辑→拖拽→
+            // 工具栏/面板点击与同步等系统。
             .add_systems(
                 Update,
                 (

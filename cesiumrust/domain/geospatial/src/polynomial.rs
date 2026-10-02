@@ -1,9 +1,16 @@
 //! 多项式求根算法。
-//! 映射到 CesiumJS `Core/QuadraticRealPolynomial.js`、`Core/CubicRealPolynomial.js`、
-//! `Core/QuarticRealPolynomial.js`
+//!
+//! 本模块提供二次、三次、四次实系数多项式的判别式与全部实数根求解，
+//! 结果均以升序返回。为抑制浮点抵消误差，求根过程在关键加减处引入
+//! [`add_with_cancellation_check`] 的容差判定，并对退化情形（首项系数为零、
+//! 缺项等）逐一降阶到更低次的解析公式。
+//!
+//! - 二次：直接使用判别式与稳定的二次求根公式。
+//! - 三次：先处理各类缺项退化，一般情形用 Cardano/三角法求实根。
+//! - 四次：按各项符号组合选择 Ferrari（[`quartic_original`]）或 Neumark
+//!   （[`quartic_neumark`]）分解，两者都归结为一个辅助三次方程再解二次。
 
-// 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
-// 或本文件在其里程碑被重写时重新审视
+// 遗留的技术债说明；在后续 lint-cleanup 或本文件被重写时重新审视
 #![allow(clippy::ptr_arg, clippy::manual_range_patterns)]
 use crate::math_utils::{sign, EPSILON14, EPSILON15};
 
@@ -12,6 +19,13 @@ use crate::math_utils::{sign, EPSILON14, EPSILON15};
 /// 相加两个值并带抵消检查。
 /// 若 left 和 right 符号相反，且结果相对于较大的操作数小到可忽略，
 /// 则返回 0.0。
+///
+/// # 参数
+/// - `left`/`right`：待相加的两个量。
+/// - `tolerance`：相对容差，比值小于它即视为发生灾难性抵消。
+///
+/// # 返回
+/// 常规和；当符号相反且和相对较大操作数可忽略时返回 `0.0`。
 fn add_with_cancellation_check(left: f64, right: f64, tolerance: f64) -> f64 {
     let difference = left + right;
     if sign(left) != sign(right)
@@ -27,14 +41,24 @@ fn add_with_cancellation_check(left: f64, right: f64, tolerance: f64) -> f64 {
 // =============================================================================
 
 /// 提供二次方程的判别式：b² - 4ac。
-/// 映射到 `QuadraticRealPolynomial.computeDiscriminant`
+///
+/// # 参数
+/// - `a`/`b`/`c`：二次多项式 ax² + bx + c 的系数。
+///
+/// # 返回
+/// 判别式 Δ = b² - 4ac；Δ>0 两实根，Δ=0 重根，Δ<0 无实根。
 pub fn quadratic_discriminant(a: f64, b: f64, c: f64) -> f64 {
     b * b - 4.0 * a * c
 }
 
 /// 提供二次多项式 ax² + bx + c = 0 的实数根。
 /// 以升序返回根。
-/// 映射到 `QuadraticRealPolynomial.computeRealRoots`
+///
+/// # 参数
+/// - `a`/`b`/`c`：二次多项式系数。
+///
+/// # 返回
+/// 升序实根数组；退化为首项为零时降阶为线性/常数，判别式为负时为空。
 pub fn quadratic_real_roots(a: f64, b: f64, c: f64) -> Vec<f64> {
     if a == 0.0 {
         if b == 0.0 {
@@ -97,7 +121,12 @@ pub fn quadratic_real_roots(a: f64, b: f64, c: f64) -> Vec<f64> {
 // =============================================================================
 
 /// 提供三次方程的判别式。
-/// 映射到 `CubicRealPolynomial.computeDiscriminant`
+///
+/// # 参数
+/// - `a`/`b`/`c`/`d`：三次多项式 ax³ + bx² + cx + d 的系数。
+///
+/// # 返回
+/// 三次判别式；为正表示三个不同实根，为负表示一个实根，为零表示重根。
 pub fn cubic_discriminant(a: f64, b: f64, c: f64, d: f64) -> f64 {
     let a2 = a * a;
     let b2 = b * b;
@@ -108,6 +137,16 @@ pub fn cubic_discriminant(a: f64, b: f64, c: f64, d: f64) -> f64 {
 }
 
 /// 内部的三次方程求根器（一般情况）。
+///
+/// 假定首项系数非零且已排除各类缺项退化，需处理完整的一般三次式。
+/// 基于判别式符号分支：负判别式时用 Cardano 立方根公式得单一实根；
+/// 非负时用三角法（casus irreducibilis）同时得到三个实根并排序。
+///
+/// # 参数
+/// - `a`/`b`/`c`/`d`：三次多项式系数（a 非零）。
+///
+/// # 返回
+/// 升序实根数组；判别式为负时含 1 个根，否则含 3 个根。
 fn cubic_compute_real_roots_internal(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
     let big_a = a;
     let big_b = b / 3.0;
@@ -124,6 +163,7 @@ fn cubic_compute_real_roots_internal(a: f64, b: f64, c: f64, d: f64) -> Vec<f64>
 
     let discriminant = 4.0 * delta1 * delta3 - delta2 * delta2;
 
+    // 判别式为负：仅一个实根，走 Cardano 立方根分支。
     if discriminant < 0.0 {
         let a_bar: f64;
         let c_bar: f64;
@@ -216,7 +256,13 @@ fn cubic_compute_real_roots_internal(a: f64, b: f64, c: f64, d: f64) -> Vec<f64>
 
 /// 提供三次多项式 ax³ + bx² + cx + d = 0 的实数根。
 /// 以升序返回根。
-/// 映射到 `CubicRealPolynomial.computeRealRoots`
+///
+/// # 参数
+/// - `a`/`b`/`c`/`d`：三次多项式系数。
+///
+/// # 返回
+/// 升序实根数组；首项为零降阶为二次，各类缺项先行解析化简，
+/// 其余一般情形交由 [`cubic_compute_real_roots_internal`] 求解。
 pub fn cubic_real_roots(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
     if a == 0.0 {
         // 二次：b * x^2 + c * x + d = 0。
@@ -277,7 +323,12 @@ pub fn cubic_real_roots(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
 // =============================================================================
 
 /// 提供四次方程的判别式。
-/// 映射到 `QuarticRealPolynomial.computeDiscriminant`
+///
+/// # 参数
+/// - `a`/`b`/`c`/`d`/`e`：四次多项式 ax⁴ + bx³ + cx² + dx + e 的系数。
+///
+/// # 返回
+/// 四次判别式；为零表示存在重根，符号可用于判断实根个数。
 pub fn quartic_discriminant(a: f64, b: f64, c: f64, d: f64, e: f64) -> f64 {
     let a2 = a * a;
     let a3 = a2 * a;
@@ -301,6 +352,12 @@ pub fn quartic_discriminant(a: f64, b: f64, c: f64, d: f64, e: f64) -> f64 {
 }
 
 /// 将两个已排序的根数组合并为一个已排序的数组。
+///
+/// # 参数
+/// - `roots1`/`roots2`：各自内部升序、长度为 0/1/2 的根数组。
+///
+/// # 返回
+/// 合并后的升序数组；利用两组根区间的包含/不相交关系避免全排序。
 fn merge_roots(roots1: &mut Vec<f64>, roots2: &mut Vec<f64>) -> Vec<f64> {
     if roots1.is_empty() {
         return roots2.clone();
@@ -330,6 +387,15 @@ fn merge_roots(roots1: &mut Vec<f64>, roots2: &mut Vec<f64>) -> Vec<f64> {
 }
 
 /// 原始的四次方程求解器（Ferrari 方法的变体）。
+///
+/// 先将四次式降为缺三次项的形式 y⁴ + p y² + q y + r，再借助辅助三次方程
+/// 求出分解量 h²，把四次式拆成两个二次式求解；两个二次的根最后统一平移回原变量。
+///
+/// # 参数
+/// - `a3`/`a2`/`a1`/`a0`：已除以首项系数后的归一化系数。
+///
+/// # 返回
+/// 升序实根数组；辅助三次无正分解时可能无实根。
 fn quartic_original(a3: f64, a2: f64, a1: f64, a0: f64) -> Vec<f64> {
     let a3_squared = a3 * a3;
 
@@ -339,6 +405,7 @@ fn quartic_original(a3: f64, a2: f64, a1: f64, a0: f64) -> Vec<f64> {
         - (3.0 * a3_squared * a3_squared) / 256.0;
 
     // 求以下方程的根：h^6 + 2p h^4 + (p^2 - 4r) h^2 - q^2 = 0
+    // 这是一个关于 h^2 的三次方程，取其最大实根作为分解量。
     let cubic_roots = cubic_real_roots(1.0, 2.0 * p, p * p - 4.0 * r, -q * q);
 
     if !cubic_roots.is_empty() {
@@ -398,6 +465,15 @@ fn quartic_original(a3: f64, a2: f64, a1: f64, a0: f64) -> Vec<f64> {
 }
 
 /// Neumark 的四次方程求解器。
+///
+/// 与 Ferrari 方法同属将四次因式分解为两个二次的策略，但选择辅助三次方程
+/// 的根 y 后采用不同的平方根配对（g1/h1 与 g2/h2），以在数值上避免小量除以小量。
+///
+/// # 参数
+/// - `a3`/`a2`/`a1`/`a0`：已归一化的四次式系数。
+///
+/// # 返回
+/// 升序实根数组；两个二次因子无实根时为空。
 fn quartic_neumark(a3: f64, a2: f64, a1: f64, a0: f64) -> Vec<f64> {
     let a1_squared = a1 * a1;
     let a2_squared = a2 * a2;
@@ -484,7 +560,13 @@ fn quartic_neumark(a3: f64, a2: f64, a1: f64, a0: f64) -> Vec<f64> {
 
 /// 提供四次多项式 ax⁴ + bx³ + cx² + dx + e = 0 的实数根。
 /// 以升序返回根。
-/// 映射到 `QuarticRealPolynomial.computeRealRoots`
+///
+/// # 参数
+/// - `a`/`b`/`c`/`d`/`e`：四次多项式系数。
+///
+/// # 返回
+/// 升序实根数组；首项接近零时降阶为三次，否则按归一化系数的符号组合
+/// 选取 Ferrari 或 Neumark 分解以保证数值稳定性。
 pub fn quartic_real_roots(a: f64, b: f64, c: f64, d: f64, e: f64) -> Vec<f64> {
     if a.abs() < EPSILON15 {
         return cubic_real_roots(b, c, d, e);
@@ -500,6 +582,7 @@ pub fn quartic_real_roots(a: f64, b: f64, c: f64, d: f64, e: f64) -> Vec<f64> {
     k += if a1 < 0.0 { k + 1 } else { k };
     k += if a0 < 0.0 { k + 1 } else { k };
 
+    // k 编码了四个归一化系数的符号模式，据此选择数值更稳定的分解法。
     match k {
         0 => quartic_original(a3, a2, a1, a0),
         1 | 2 => quartic_neumark(a3, a2, a1, a0),

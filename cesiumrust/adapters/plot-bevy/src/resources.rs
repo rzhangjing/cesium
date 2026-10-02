@@ -37,6 +37,7 @@ pub struct PlotViewCtx {
 }
 
 impl Default for PlotViewCtx {
+    /// 默认视图上下文：当前模式、缩放与各屏幕维度均从 0/默认起步。
     fn default() -> Self {
         Self {
             mode: PlotViewMode::default(),
@@ -76,6 +77,7 @@ pub struct PlotDocument {
 }
 
 impl Default for PlotDocument {
+    /// 默认创建一个空文档且 `dirty=true`，以便首帧就触发一次完整协调。
     fn default() -> Self {
         Self {
             doc: Document::default(),
@@ -101,6 +103,7 @@ impl PlotDocument {
 pub struct PlotFilters(pub Filters);
 
 impl Default for PlotFilters {
+    /// 默认总开关为启用（空文档下什么都不绘制，不影响窗口基线）。
     fn default() -> Self {
         Self(Filters::enabled())
     }
@@ -108,12 +111,14 @@ impl Default for PlotFilters {
 
 impl std::ops::Deref for PlotFilters {
     type Target = Filters;
+    /// 只读透传到内部 [`Filters`]。
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
 impl std::ops::DerefMut for PlotFilters {
+    /// 可变透传到内部 [`Filters`]。
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
@@ -222,12 +227,14 @@ pub struct PlotSnap(pub SnapConfig);
 
 impl std::ops::Deref for PlotSnap {
     type Target = SnapConfig;
+    /// 只读透传到内部 [`SnapConfig`]。
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
 impl std::ops::DerefMut for PlotSnap {
+    /// 可变透传到内部 [`SnapConfig`]。
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }

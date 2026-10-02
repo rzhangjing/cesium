@@ -1,4 +1,4 @@
-//! Scene/AttributeTypeSpec.js → Rust 集成测试
+//! Scene/AttributeTypeSpec → Rust 集成测试
 //!
 //! 原始：7 it() → 4 A 类（3 C 类：throws）
 //! 测试：getMathType(1) + getGlslType(1) + getNumberOfComponents(1) +

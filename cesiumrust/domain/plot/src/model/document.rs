@@ -7,6 +7,12 @@
 //! 索引与 `Group.parent` 字段永不偏离 `roots` / `members`
 //! 向量 —— 后续的命令层（`ops`，M6）驱动这些方法并为
 //! 撤销记录逆操作。
+//!
+//! ## 为何采用扁平表 + 父索引
+//! 树结构以三张按 id 索引的扁平表（`layers`/`groups`/`elements`）存储，
+//! 另用一个 `#[serde(skip)]` 的 `parents` 映像在运行时维护向上遍历。序列化
+//! 只保存表本身，加载后需 [`Document::rebuild_parents`] 重建父索引；这避免了把
+//! 冗余且易偏离的反向边写入磁盘。
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -21,7 +27,8 @@ use super::ids::{ElementId, GroupId, LayerId};
 use super::layer::Layer;
 use super::node::Node;
 
-/// 一个节点在树中的位置。
+/// 一个节点在树中的位置。图层根节点下直接挂组或元素，
+/// 因此父引用只能是这两种之一。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ParentRef {
     Layer(LayerId),
@@ -29,6 +36,8 @@ enum ParentRef {
 }
 
 /// 一个新构建、尚未放置的元素（其 `id` 已铸造）。
+///
+/// 将新铸造的 id 与其 `Element` 绑定传递，直到它被显式放入某个图层或组。
 pub struct NewElement {
     pub id: ElementId,
     pub element: Element,
@@ -39,7 +48,9 @@ pub struct NewElement {
 pub struct Document {
     /// 按插入顺序排列的图层（绘制顺序由 `Layer::order` 解析）。
     layers: Vec<Layer>,
+    /// 按 id 索引的组集合（与 `layers`/`elements` 一起构成扁平表）。
     groups: BTreeMap<GroupId, Group>,
+    /// 按 id 索引的元素集合；叶子图元的唯一事实源。
     elements: BTreeMap<ElementId, Element>,
     /// node -> 父节点，与每次树变更保持同步。
     #[serde(skip)]
@@ -59,6 +70,7 @@ impl Document {
         doc
     }
 
+    /// 从单调计数器铸造下一个原始 id 值（三种 id 类型共享同一序列）。
     fn alloc(&mut self) -> u64 {
         let v = self.next_id;
         self.next_id += 1;
@@ -74,14 +86,17 @@ impl Document {
         id
     }
 
+    /// 按 id 取得一个不可变图层引用；不存在时返回 `None`。
     pub fn layer(&self, id: LayerId) -> Option<&Layer> {
         self.layers.iter().find(|l| l.id == id)
     }
 
+    /// 按 id 取得一个可变图层引用；不存在时返回 `None`。
     pub fn layer_mut(&mut self, id: LayerId) -> Option<&mut Layer> {
         self.layers.iter_mut().find(|l| l.id == id)
     }
 
+    /// 返回按插入顺序排列的全部图层的切片视图。
     pub fn layers(&self) -> &[Layer] {
         &self.layers
     }
@@ -93,10 +108,12 @@ impl Document {
         v
     }
 
+    /// 设置新内容落入的活动图层；传 `None` 可清空当前活动选择。
     pub fn set_active_layer(&mut self, id: Option<LayerId>) {
         self.active_layer = id;
     }
 
+    /// 读取当前活动图层 id（若尚未选择则为 `None`）。
     pub fn active_layer(&self) -> Option<LayerId> {
         self.active_layer
     }
@@ -182,6 +199,7 @@ impl Document {
 
     /// 将一个元素放入某组的 members。
     pub fn add_element_to_group(&mut self, group: GroupId, ne: NewElement) -> Option<ElementId> {
+        // 组不存在则直接 `None`（元素被丢弃，id 仍被消耗）。
         let g = self.groups.get_mut(&group)?;
         g.members.push(Node::Element(ne.id));
         self.parents
@@ -190,18 +208,22 @@ impl Document {
         Some(ne.id)
     }
 
+    /// 按 id 取得一个不可变元素引用；不存在时返回 `None`。
     pub fn element(&self, id: ElementId) -> Option<&Element> {
         self.elements.get(&id)
     }
 
+    /// 按 id 取得一个可变元素引用；不存在时返回 `None`。
     pub fn element_mut(&mut self, id: ElementId) -> Option<&mut Element> {
         self.elements.get_mut(&id)
     }
 
+    /// 以任意顺序迭代文档中的全部元素引用。
     pub fn elements(&self) -> impl Iterator<Item = &Element> {
         self.elements.values()
     }
 
+    /// 以升序迭代全部元素 id（`BTreeMap` 保证按键排序）。
     pub fn element_ids(&self) -> impl Iterator<Item = ElementId> + '_ {
         self.elements.keys().copied()
     }
@@ -243,10 +265,12 @@ impl Document {
         }
     }
 
+    /// 按 id 取得一个不可变组引用；不存在时返回 `None`。
     pub fn group(&self, id: GroupId) -> Option<&Group> {
         self.groups.get(&id)
     }
 
+    /// 按 id 取得一个可变组引用；不存在时返回 `None`。
     pub fn group_mut(&mut self, id: GroupId) -> Option<&mut Group> {
         self.groups.get_mut(&id)
     }
@@ -257,6 +281,7 @@ impl Document {
     /// 加上从图层根下到元素的组链（最外层在前）。对孤立节点
     /// 返回 `None`（在合法树中不应发生）。
     pub fn element_context(&self, id: ElementId) -> Option<(LayerId, Vec<GroupId>)> {
+        // 自元素起沿父链上行，途经的组依次入列，最后反转得到由外到内的链。
         let mut groups = Vec::new();
         let mut cur = Node::Element(id);
         // 防止损坏的环：以节点数为上限。
@@ -277,6 +302,7 @@ impl Document {
 
     /// 一个组所属的图层。
     pub fn group_layer(&self, id: GroupId) -> Option<LayerId> {
+        // 沿父链逐层向上，直到遇到图层根节点；组数 +1 为循环上限防环。
         let mut cur = Node::Group(id);
         for _ in 0..(self.groups.len() + 1) {
             match self.parents.get(&cur)? {
@@ -289,6 +315,7 @@ impl Document {
 
     /// 某组下的所有元素 id（递归）。
     pub fn group_members_recursive(&self, id: GroupId) -> Vec<ElementId> {
+        // 显式栈展开嵌套组，避免递归深度上限；元素收集、子组入栈。
         let mut out = Vec::new();
         let mut stack = vec![id];
         while let Some(g) = stack.pop() {
@@ -316,6 +343,10 @@ impl Document {
         out
     }
 
+    /// 递归收集一个节点子树下的叶子元素 id 到 `out`（按树序）。
+    ///
+    /// 元素直接入队；组则递归展开其成员，从而将一个图层根下的
+    /// 任意嵌套深度拉平为一个绘制序列。
     fn collect_draw(&self, node: Node, out: &mut Vec<ElementId>) {
         match node {
             Node::Element(e) => out.push(e),
@@ -350,6 +381,7 @@ impl Document {
                 Some((layer_order, el.style.z_order, id.raw(), id))
             })
             .collect();
+        // 依次按图层 order、z_order、id 稳定排序，靠后者绘制时胜出。
         keyed.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
         keyed.into_iter().map(|(_, _, _, id)| id).collect()
     }
@@ -365,10 +397,12 @@ impl Document {
         (!acc.is_empty()).then_some(acc)
     }
 
+    /// 当图层、元素与组均为空时返回 `true`（一个完全空白的文档）。
     pub fn is_empty(&self) -> bool {
         self.layers.is_empty() && self.elements.is_empty() && self.groups.is_empty()
     }
 
+    /// 返回文档中叶子元素的总数。
     pub fn element_count(&self) -> usize {
         self.elements.len()
     }
@@ -378,6 +412,7 @@ impl Document {
     /// 本方法，之后任何向上遍历（`element_context`、
     /// `group_layer`、`flatten_draw_order`）才能返回正确结果。
     pub fn rebuild_parents(&mut self) {
+        // 先从 roots/members 收集全部 (node, parent) 对，再一次性写入索引，避免边读边写。
         let mut refs: Vec<(Node, ParentRef)> = Vec::new();
         for layer in &self.layers {
             for node in &layer.roots {
@@ -438,10 +473,13 @@ mod tests {
     use super::*;
     use crate::geo::GeoPoint;
 
+    /// 构造一个地面高度为 0 的点几何，供各测试快速搭建元素。
     fn point_geo(lon: f64, lat: f64) -> Geometry {
         Geometry::Point(GeoPoint::surface(lon, lat))
     }
 
+    /// 默认图层应为活动图层，且能容纳新加入的元素：验证计数、
+    /// 上下文回测与按 id 取回三者一致。
     #[test]
     fn default_layer_is_active_and_holds_elements() {
         let mut doc = Document::with_default_layer();
@@ -453,6 +491,8 @@ mod tests {
         assert!(doc.element(id).is_some());
     }
 
+    /// 排序应先看图层 order、再看元素 z_order、最后看 id；
+    /// 验证后层元素无论何时加入都先于前层绘制。
     #[test]
     fn draw_order_sorted_honours_layer_then_z_then_id() {
         let mut doc = Document::default();
@@ -480,6 +520,7 @@ mod tests {
         assert_eq!(order.last(), Some(&e_high));
     }
 
+    /// 图层/组/元素三种 id 共享同一计数器，故必须互不碰撞。
     #[test]
     fn ids_are_unique_across_kinds() {
         let mut doc = Document::default();
@@ -490,6 +531,7 @@ mod tests {
         assert_eq!(set.len(), 3, "layer/group/element ids must not collide");
     }
 
+    /// 嵌套组中元素的上下文应沿链向上遍历，返回图层与由外到内的组链。
     #[test]
     fn nested_group_context_walks_chain() {
         let mut doc = Document::default();
@@ -507,6 +549,7 @@ mod tests {
         assert_eq!(doc.group_members_recursive(outer), vec![e]);
     }
 
+    /// 删除元素应同时从父组成员向量与元素表中分离它，不留悬空引用。
     #[test]
     fn remove_element_detaches_from_group_and_table() {
         let mut doc = Document::default();
@@ -521,6 +564,7 @@ mod tests {
         assert!(doc.group(g).unwrap().members.is_empty());
     }
 
+    /// 拉平绘制序应尊重图层 order 并递归展开组：后层组内的元素先于前层绘制。
     #[test]
     fn flatten_respects_layer_order_and_group_expansion() {
         let mut doc = Document::default();
@@ -538,6 +582,8 @@ mod tests {
         assert_eq!(flat, vec![id1, id2], "group in back layer draws before front layer");
     }
 
+    /// 图层可见/可编辑/可选/不透明度/order 等标志的设置与聚焦应往返一致，
+    /// 越界不透明度会被钳制而非 panic。
     #[test]
     fn layer_flags_and_focus_round_trip() {
         let mut doc = Document::default();
@@ -572,6 +618,7 @@ mod tests {
         assert_eq!(doc.layer(a).unwrap().opacity, 0.0);
     }
 
+    /// 移除一个图层应级联删除其子树内的全部组与元素，并清空图层表。
     #[test]
     fn remove_layer_cascades_subtree() {
         let mut doc = Document::with_default_layer();
@@ -586,6 +633,7 @@ mod tests {
         assert!(doc.layers().is_empty());
     }
 
+    /// 文档包围盒应为所有元素包围盒的并集（跨折线与点）。
     #[test]
     fn bounds_union_over_elements() {
         let mut doc = Document::with_default_layer();
@@ -600,6 +648,7 @@ mod tests {
         assert_eq!((bb.west_deg, bb.south_deg, bb.east_deg, bb.north_deg), (-10.0, -20.0, 30.0, 40.0));
     }
 
+    /// 反序列化后父索引为空（serde skip），重建后向上遍历应恢复。
     #[test]
     fn rebuild_parents_restores_walks_after_deserialise() {
         let mut doc = Document::default();

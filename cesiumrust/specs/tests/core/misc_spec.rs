@@ -1,4 +1,4 @@
-//! Core/EventSpec.js、ResourceSpec.js、RequestSchedulerSpec.js、ColorSpec.js
+//! Core/EventSpec、ResourceSpec、RequestSchedulerSpec、ColorSpec
 //! 及其他工具类规格 → Rust 集成测试
 
 use cesium_event::{Event, SimpleEvent};

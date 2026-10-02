@@ -1,6 +1,6 @@
 //! 用于视觉效果（火焰、烟雾、降雪等）的粒子系统。
 //!
-//! 映射到 CesiumJS `Scene/ParticleSystem.js`：
+//! 涵盖以下要素：
 //! - 粒子发射器（point、cone、box、sphere）
 //! - 粒子生命周期（出生、更新、死亡）
 //! - 粒子受力（重力、阻力、风）
@@ -175,8 +175,6 @@ impl ParticleForce {
 }
 
 /// 在系统寿命内特定时刻发生的一批粒子爆发。
-///
-/// 映射到 CesiumJS `Scene/ParticleBurst.js`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParticleBurst {
     /// 爆发发生的时刻，以系统启动后的秒数计。
@@ -258,7 +256,9 @@ pub struct ParticleSystemConfig {
 }
 
 impl Default for ParticleSystemConfig {
+    /// 默认点发射器、10 粒/秒、带向下重力、最多 1000 粒且循环。
     fn default() -> Self {
+        // 中性预设：白色起始、全透明结束，保留重力作为常见默认力
         Self {
             emitter_shape: EmitterShape::Point,
             emission_rate: 10.0,
@@ -539,6 +539,7 @@ impl ParticleSystem {
                 (self.emitter_position + dir * *radius, dir)
             }
             EmitterShape::Circle { radius } => {
+                // 圆盘内均匀取点（XZ 平面），方向沿用发射器朝向
                 let theta = rng.range(0.0, std::f64::consts::TAU);
                 let r = rng.range(0.0, *radius);
 
@@ -590,16 +591,19 @@ impl ParticleSystem {
 /// 用于粒子发射的简单确定性 RNG。
 #[derive(Debug, Clone)]
 struct SimpleRng {
+    /// xorshift64 的内部状态字。
     state: u64,
 }
 
 impl SimpleRng {
+    /// 以给定种子初始化状态（混入两个大常数避免零周期）。
     fn new(seed: u64) -> Self {
         Self {
             state: seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407),
         }
     }
 
+    /// 产生下一个 [0, 1) 浮点随机数。
     fn next(&mut self) -> f64 {
         // xorshift64
         self.state ^= self.state << 13;
@@ -610,7 +614,9 @@ impl SimpleRng {
         (self.state >> 11) as f64 / ((1u64 << 53) as f64)
     }
 
+    /// 在 [min, max] 区间取一个样本（基于克隆副本，不改变自身状态）。
     fn range(&self, min: f64, max: f64) -> f64 {
+        // 克隆后推进，保证同一发射器内多次取样互相独立
         let mut rng = self.clone();
         min + rng.next() * (max - min)
     }

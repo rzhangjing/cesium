@@ -1,7 +1,7 @@
-//! 近似算法规格测试 - 移植自：
-//! - packages/engine/Specs/Core/LinearApproximationSpec.js（7 个 it()）
-//! - packages/engine/Specs/Core/LagrangePolynomialApproximationSpec.js（3 个 it()）
-//! - packages/engine/Specs/Core/HermitePolynomialApproximationSpec.js（4 个 it()）
+//! 近似算法规格测试 - 参考自：
+//! - Specs/Core/LinearApproximationSpec（7 个 it()）
+//! - Specs/Core/LagrangePolynomialApproximationSpec（3 个 it()）
+//! - Specs/Core/HermitePolynomialApproximationSpec（4 个 it()）
 //!
 //! A 类测试：11 个（跳过"result 参数"模式测试）
 

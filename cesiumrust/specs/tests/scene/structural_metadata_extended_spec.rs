@@ -1,4 +1,4 @@
-//! StructuralMetadata 扩展规范 - 移植自 MetadataClassPropertySpec.js + PropertyTableSpec.js
+//! StructuralMetadata 扩展规范 - 参考自 MetadataClassPropertySpec + PropertyTableSpec
 //! 测试：MetadataClassProperty 细节、MetadataClass、MetadataEnum、PropertyTable get/set、
 //! PropertyTexture, PropertyAttribute, StructuralMetadata
 

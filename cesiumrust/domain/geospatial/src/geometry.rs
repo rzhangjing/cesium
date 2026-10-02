@@ -1,5 +1,4 @@
-//! 几何生成 - 所有程序化几何类型。
-//! 映射到 CesiumJS `Core/*Geometry.js`（20+ 个文件）、`Core/PolygonPipeline.js`、`Core/PolylinePipeline.js`
+//! 几何生成 - 所有程序化几何类型（包围体、椭圆、走廊、围墙、折线等多种几何）。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -122,6 +121,7 @@ impl VertexFormat {
 }
 
 impl Default for VertexFormat {
+    /// 默认顶点格式等价于 `ALL`（启用全部属性）。
     fn default() -> Self {
         Self::ALL
     }
@@ -177,6 +177,18 @@ pub struct PolygonHierarchy {
 
 /// 生成一个椭球几何。
 /// 映射到 `EllipsoidGeometry` / `Workers/createEllipsoidGeometry`
+///
+/// `radii` 为三轴半径（米）；`stacks` 为余纬度方向的分层数；
+/// `slices` 为经度方向的切片数；`vf` 指定要生成哪些顶点属性。
+///
+/// # 参数
+/// - `radii`：三轴半径（米），控制椭球形状。
+/// - `stacks`：余纬度方向分层数，越大极点附近越平滑。
+/// - `slices`：经度方向切片数，越大赤道附近越平滑。
+/// - `vf`：顶点格式，控制是否额外生成法线与 UV。
+///
+/// # 返回
+/// 一个以三角形填充、法线朝外的 `GeometryData`。
 pub fn ellipsoid_geometry(
     radii: DVec3,
     stacks: u32,
@@ -187,16 +199,19 @@ pub fn ellipsoid_geometry(
     let mut normals = if vf.normal { Some(Vec::new()) } else { None };
     let mut tex_coords = if vf.st { Some(Vec::new()) } else { None };
 
+    // 逐层（stack）扫描余纬度 phi：0（北极）到 PI（南极），共 stacks+1 条纬圈。
     for i in 0..=stacks {
         let phi = std::f64::consts::PI * i as f64 / stacks as f64;
         let sin_phi = phi.sin();
         let cos_phi = phi.cos();
 
+        // 逐片（slice）扫描经度 theta：绕一圈 0..2PI，共 slices+1 条经线。
         for j in 0..=slices {
             let theta = 2.0 * std::f64::consts::PI * j as f64 / slices as f64;
             let sin_theta = theta.sin();
             let cos_theta = theta.cos();
 
+            // 单位球面点 (x,y,z)，再沿各轴乘以半径得到椭球顶点。
             let x = cos_theta * sin_phi;
             let y = sin_theta * sin_phi;
             let z = cos_phi;
@@ -215,6 +230,7 @@ pub fn ellipsoid_geometry(
         }
     }
 
+    // 逐四边形单元发射两个三角形；顶点行宽为 slices+1，故下一行偏移 slices+1。
     let mut indices = Vec::new();
     for i in 0..stacks {
         for j in 0..slices {
@@ -246,17 +262,28 @@ pub fn ellipsoid_geometry(
 
 /// 生成一个球体几何。
 /// 映射到 `SphereGeometry`
+///
+/// 球体是三轴半径相等的椭球特例，直接复用 `ellipsoid_geometry`。
+/// 包围球半径与传入 `radius` 一致，无需额外计算。
 pub fn sphere_geometry(radius: f64, stacks: u32, slices: u32, vf: VertexFormat) -> GeometryData {
     ellipsoid_geometry(DVec3::splat(radius), stacks, slices, vf)
 }
 
 /// 生成一个盒子几何。
 /// 映射到 `BoxGeometry` / `Workers/createBoxGeometry`
+///
+/// `minimum`/`maximum` 为轴对齐盒子的两个对角顶点；每个面使用独立
+/// 顶点以便拥有逐面法线，因此共 24 个顶点、6 个面。
+///
+/// # 参数
+/// - `minimum`：盒子各轴最小坐标角点。
+/// - `maximum`：盒子各轴最大坐标角点。
+/// - `vf`：顶点格式，控制逐面法线与 UV 的生成。
 pub fn box_geometry(minimum: DVec3, maximum: DVec3, vf: VertexFormat) -> GeometryData {
     let size = maximum - minimum;
     let center = (minimum + maximum) * 0.5;
 
-    // 6 个面，每个面 4 个顶点 = 24 个顶点
+    // 6 个面，每个面 4 个顶点 = 24 个顶点；角点用 ±1 符号表示，再映射到盒面。
     let corners = [
         // +X 面
         [1.0, -1.0, -1.0], [1.0, 1.0, -1.0], [1.0, 1.0, 1.0], [1.0, -1.0, 1.0],
@@ -272,6 +299,7 @@ pub fn box_geometry(minimum: DVec3, maximum: DVec3, vf: VertexFormat) -> Geometr
         [-1.0, -1.0, -1.0], [-1.0, 1.0, -1.0], [1.0, 1.0, -1.0], [1.0, -1.0, -1.0],
     ];
 
+    // 每个面共享一个朝外的常法线（与该面 4 个顶点相同）。
     let face_normals = [
         [1.0, 0.0, 0.0], [-1.0, 0.0, 0.0],
         [0.0, 1.0, 0.0], [0.0, -1.0, 0.0],
@@ -322,6 +350,16 @@ pub fn box_geometry(minimum: DVec3, maximum: DVec3, vf: VertexFormat) -> Geometr
 
 /// 生成一个圆柱几何。
 /// 映射到 `CylinderGeometry`
+///
+/// `length` 为沿 Z 轴的总长（米）；`top_radius`/`bottom_radius` 为两端
+/// 半径；`slices` 为周向离散段数。本实现仅生成侧壁，未封顶底。
+///
+/// # 参数
+/// - `length`：沿轴总长（米），上下各占一半。
+/// - `top_radius`：顶端半径（米）。
+/// - `bottom_radius`：底端半径（米）；与顶端不等时为圆台。
+/// - `slices`：周向段数，控制侧面平滑度。
+/// - `vf`：顶点格式。
 pub fn cylinder_geometry(
     length: f64,
     top_radius: f64,
@@ -335,12 +373,13 @@ pub fn cylinder_geometry(
     let mut tex_coords = if vf.st { Some(Vec::new()) } else { None };
 
     // 侧面顶点
+    // 侧面顶点：沿每片经线成对发射底/顶顶点，法线无 z 分量（垂直侧面）。
     for i in 0..=slices {
         let theta = 2.0 * std::f64::consts::PI * i as f64 / slices as f64;
         let cos_t = theta.cos();
         let sin_t = theta.sin();
 
-        // 底部顶点
+        // 底部顶点（z = -half_length，半径按 bottom_radius 缩）
         positions.push([cos_t * bottom_radius, sin_t * bottom_radius, -half_length]);
         if let Some(ref mut n) = normals_vec {
             n.push([cos_t, sin_t, 0.0]);
@@ -349,7 +388,7 @@ pub fn cylinder_geometry(
             st.push([i as f64 / slices as f64, 0.0]);
         }
 
-        // 顶部顶点
+        // 顶部顶点（z = +half_length，半径按 top_radius 缩）
         positions.push([cos_t * top_radius, sin_t * top_radius, half_length]);
         if let Some(ref mut n) = normals_vec {
             n.push([cos_t, sin_t, 0.0]);
@@ -359,6 +398,7 @@ pub fn cylinder_geometry(
         }
     }
 
+    // 侧面索引：相邻两列的四个顶点构成两个三角形，形成围成一圈的侧壁。
     let mut indices = Vec::new();
     for i in 0..slices {
         let base = i * 2;
@@ -387,6 +427,16 @@ pub fn cylinder_geometry(
 
 /// 在椭球表面上生成一个矩形几何。
 /// 映射到 `RectangleGeometry` / `Workers/createRectangleGeometry`
+///
+/// `rect` 为经纬矩形；`granularity` 为采样间隔（弧度）；`height` 为椭球
+/// 上方高度（米）。返回以 (cols*rows) 网格采样、逐面三角化的几何。
+///
+/// # 参数
+/// - `rect`：经纬范围矩形。
+/// - `ellipsoid`：投影所依据的椭球。
+/// - `granularity`：网格采样间隔（弧度）。
+/// - `height`：距椭球面的高度（米）。
+/// - `vf`：顶点格式。
 pub fn rectangle_geometry(
     rect: &Rectangle,
     ellipsoid: &Ellipsoid,
@@ -396,6 +446,7 @@ pub fn rectangle_geometry(
 ) -> GeometryData {
     let width = rect.width();
     let h = rect.height();
+    // 按 granularity（弧度间距）将矩形离散化为网格，至少 1 行/列，+1 为端点。
     let cols = ((width / granularity).ceil() as u32).max(1) + 1;
     let rows = ((h / granularity).ceil() as u32).max(1) + 1;
 
@@ -403,6 +454,7 @@ pub fn rectangle_geometry(
     let mut normals_vec = if vf.normal { Some(Vec::new()) } else { None };
     let mut tex_coords = if vf.st { Some(Vec::new()) } else { None };
 
+    // 逐行逐列在经纬网格上采样，将每个 (lon,lat,height) 大地坐标投影为椭球面笛卡尔点。
     for row in 0..rows {
         let lat = rect.south + h * row as f64 / (rows - 1) as f64;
         for col in 0..cols {
@@ -421,6 +473,7 @@ pub fn rectangle_geometry(
         }
     }
 
+    // 逐网格单元发射两个三角形；行宽为 cols，下一行索引偏移 cols。
     let mut indices = Vec::new();
     for row in 0..(rows - 1) {
         for col in 0..(cols - 1) {
@@ -453,6 +506,16 @@ pub fn rectangle_geometry(
 
 /// 在椭球上生成一个圆形几何。
 /// 映射到 `CircleGeometry`
+///
+/// 以 `center` 为圆心、`radius`（米）为地面半径，在椭球面上用
+/// 扇形网格（中心点 + `segments` 个周向点）近似一个圆盘。
+///
+/// # 参数
+/// - `center`：圆心的笛卡尔坐标。
+/// - `radius`：地面半径（米）。
+/// - `ellipsoid`：承载圆的椭球。
+/// - `segments`：周向段数，越大越接近真圆。
+/// - `vf`：顶点格式。
 pub fn circle_geometry(
     center: DVec3,
     radius: f64,
@@ -464,6 +527,7 @@ pub fn circle_geometry(
     let height = center_carto.map(|c| c.height).unwrap_or(0.0);
     let center_carto = center_carto.unwrap_or_default();
 
+    // 预留中心顶点 + segments 个环绕顶点的空间。
     let mut positions = Vec::with_capacity(segments as usize + 1);
     let mut normals_vec = if vf.normal { Some(Vec::new()) } else { None };
 
@@ -474,7 +538,7 @@ pub fn circle_geometry(
         n.push([normal.x, normal.y, normal.z]);
     }
 
-    // 环绕顶点
+    // 环绕顶点：沿周向均分角度，将半径投影为经纬偏移后回到椭球面。
     for i in 0..=segments {
         let angle = 2.0 * std::f64::consts::PI * i as f64 / segments as f64;
         // 近似：沿表面以米为单位的偏移
@@ -495,6 +559,7 @@ pub fn circle_geometry(
         }
     }
 
+    // 扇形三角化：每个环绕段与中心点（索引 0）构成一个三角形。
     let mut indices = Vec::new();
     for i in 0..segments {
         indices.push(0);
@@ -519,6 +584,12 @@ pub fn circle_geometry(
 
 /// 生成一个平面几何（XY 平面中的单位四边形）。
 /// 映射到 `PlaneGeometry`
+///
+/// 顶点固定在 z=0 平面、边长为 1 并以原点为中心；包围球半径为
+/// 对角线一半（√2/2）。
+///
+/// # 参数
+/// - `vf`：顶点格式，控制是否生成法线与 UV。
 pub fn plane_geometry(vf: VertexFormat) -> GeometryData {
     let positions = vec![
         [-0.5, -0.5, 0.0],
@@ -526,6 +597,7 @@ pub fn plane_geometry(vf: VertexFormat) -> GeometryData {
         [0.5, 0.5, 0.0],
         [-0.5, 0.5, 0.0],
     ];
+    // 平面面向 +Z；法线均为 (0,0,1)，UV 与四角一一对应。
     let normals_vec = if vf.normal {
         Some(vec![[0.0, 0.0, 1.0]; 4])
     } else {
@@ -552,6 +624,11 @@ pub fn plane_geometry(vf: VertexFormat) -> GeometryData {
 
 /// 生成一个盒子轮廓几何（12 条边作为线段）。
 /// 映射到 `BoxOutlineGeometry`
+///
+/// 仅使用 8 个角点与 24 个索引（每边两个端点）描述线框，无面法线。
+///
+/// # 参数
+/// - `minimum`/`maximum`：轴对齐盒子的两个对角顶点。
 pub fn box_outline_geometry(minimum: DVec3, maximum: DVec3) -> GeometryData {
     let size = maximum - minimum;
     let center = (minimum + maximum) * 0.5;
@@ -594,6 +671,9 @@ pub fn box_outline_geometry(minimum: DVec3, maximum: DVec3) -> GeometryData {
 
 /// 在椭球上生成一个椭球轮廓几何（3 个大圆）。
 /// 映射到 `EllipsoidOutlineGeometry`
+///
+/// 沿赤道（XY）、子午线（XZ）与侧向（YZ）三个大圆发射线段，
+/// 用作线框式轮廓，不生成面。
 pub fn ellipsoid_outline_geometry(radii: DVec3, stacks: u32, slices: u32) -> GeometryData {
     let mut positions: Vec<[f64; 3]> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
@@ -609,7 +689,7 @@ pub fn ellipsoid_outline_geometry(radii: DVec3, stacks: u32, slices: u32) -> Geo
         }
     }
 
-    // XZ 圆。
+    // XZ 圆（子午线）：固定 y=0，沿 phi 扫一圈。
     let base = positions.len() as u32;
     for i in 0..=stacks {
         let phi = 2.0 * std::f64::consts::PI * i as f64 / stacks as f64;
@@ -620,7 +700,7 @@ pub fn ellipsoid_outline_geometry(radii: DVec3, stacks: u32, slices: u32) -> Geo
         }
     }
 
-    // YZ 圆。
+    // YZ 圆（侧向）：固定 x=0，沿 phi 扫一圈。
     let base = positions.len() as u32;
     for i in 0..=stacks {
         let phi = 2.0 * std::f64::consts::PI * i as f64 / stacks as f64;
@@ -631,6 +711,7 @@ pub fn ellipsoid_outline_geometry(radii: DVec3, stacks: u32, slices: u32) -> Geo
         }
     }
 
+    // 每对相邻顶点构成一条线段（索引成对），包围球半径取最大轴半径。
     let max_r = radii.x.max(radii.y).max(radii.z);
     let bs = BoundingSphere::new(DVec3::ZERO, max_r);
 
@@ -648,6 +729,15 @@ pub fn ellipsoid_outline_geometry(radii: DVec3, stacks: u32, slices: u32) -> Geo
 
 /// 在椭球表面上生成一个圆形轮廓几何。
 /// 映射到 `CircleOutlineGeometry`
+///
+/// 沿周向按 `granularity`（弧度）采样闭合成环；若中心无法
+/// 转为大地坐标则回退为空线集。
+///
+/// # 参数
+/// - `center`：圆心笛卡尔坐标。
+/// - `radius`：地面半径（米）。
+/// - `ellipsoid`：参考椭球。
+/// - `granularity`：采样角间距（弧度）。
 pub fn circle_outline_geometry(
     center: DVec3,
     radius: f64,
@@ -702,6 +792,13 @@ pub fn circle_outline_geometry(
 
 /// 在椭球表面上生成一个矩形轮廓几何。
 /// 映射到 `RectangleOutlineGeometry`
+///
+/// 沿南/东/北/西四条边各自按 `granularity` 采样为线段，不填充内部。
+///
+/// # 参数
+/// - `rect`：经纬范围矩形。
+/// - `ellipsoid`：参考椭球。
+/// - `granularity`：采样角间距（弧度）。
 pub fn rectangle_outline_geometry(
     rect: &Rectangle,
     ellipsoid: &Ellipsoid,
@@ -710,6 +807,7 @@ pub fn rectangle_outline_geometry(
     let mut positions: Vec<[f64; 3]> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
 
+    // 将一条边 (lon0,lat0)->(lon1,lat1) 按 granularity 采样为顶点序列与线段索引。
     let add_edge = |positions: &mut Vec<[f64; 3]>, indices: &mut Vec<u32>,
                     lon0: f64, lat0: f64, lon1: f64, lat1: f64| {
         let angular_dist = ((lat1 - lat0).powi(2) + (lon1 - lon0).powi(2)).sqrt();
@@ -756,6 +854,13 @@ pub fn rectangle_outline_geometry(
 
 /// 生成一个圆柱轮廓几何。
 /// 映射到 `CylinderOutlineGeometry`
+///
+/// 包含底部圆、顶部圆，以及最多 16 条等间隔的垂直侧棱。
+///
+/// # 参数
+/// - `length`：沿轴总长（米）。
+/// - `top_radius`/`bottom_radius`：两端半径（米）。
+/// - `slices`：周向段数。
 pub fn cylinder_outline_geometry(
     length: f64,
     top_radius: f64,
@@ -817,6 +922,8 @@ pub fn cylinder_outline_geometry(
 
 /// 生成一个平面轮廓几何（单位四边形各边）。
 /// 映射到 `PlaneOutlineGeometry`
+///
+/// 四个角点依次首尾相连，共 8 个索引（4 条边）。无面与法线。
 pub fn plane_outline_geometry() -> GeometryData {
     let positions = vec![
         [-0.5, -0.5, 0.0],
@@ -838,6 +945,7 @@ pub fn plane_outline_geometry() -> GeometryData {
     }
 }
 
+/// 返回一个不含任何顶点/索引的空线集几何，用作退化输入的回退。
 fn empty_lines() -> GeometryData {
     GeometryData {
         positions: Vec::new(),
@@ -857,12 +965,21 @@ fn empty_lines() -> GeometryData {
 
 /// 以给定的细分粒度在两个位置之间生成一段弧（大圆）。
 /// 映射到 `PolylinePipeline.generateArc`
+///
+/// 将每段相邻顶点在大地坐标上按 `granularity`（弧度）细分，再回到
+/// 笛卡尔，以保证沿线贴合椭球曲面。
+///
+/// # 参数
+/// - `positions`：折线控制点（笛卡尔）。
+/// - `granularity`：最大插值角间距（弧度）。
+/// - `ellipsoid`：用于大地↔笛卡尔往返的椭球。
 pub fn generate_arc(positions: &[DVec3], granularity: f64, ellipsoid: &Ellipsoid) -> Vec<DVec3> {
     if positions.len() < 2 {
         return positions.to_vec();
     }
 
     let mut result = Vec::new();
+    // 逐段处理相邻顶点对，按大地距离与 granularity 决定中间插值点数。
     for i in 0..positions.len() - 1 {
         let start = positions[i];
         let end = positions[i + 1];
@@ -871,12 +988,14 @@ pub fn generate_arc(positions: &[DVec3], granularity: f64, ellipsoid: &Ellipsoid
         let end_carto = ellipsoid.cartesian_to_cartographic(end);
 
         if let (Some(sc), Some(ec)) = (start_carto, end_carto) {
+            // 用经纬差近似角距离，据此估算细分段数（至少 1）。
             let angular_distance = ((ec.latitude - sc.latitude).powi(2)
                 + (ec.longitude - sc.longitude).powi(2))
             .sqrt();
             let num_segments = ((angular_distance / granularity).ceil() as usize).max(1);
 
             for j in 0..num_segments {
+                // 在大地坐标上对 (lon,lat,height) 线性插值，再回到笛卡尔。
                 let t = j as f64 / num_segments as f64;
                 let lon = math_utils::lerp(sc.longitude, ec.longitude, t);
                 let lat = math_utils::lerp(sc.latitude, ec.latitude, t);
@@ -895,6 +1014,9 @@ pub fn generate_arc(positions: &[DVec3], granularity: f64, ellipsoid: &Ellipsoid
 /// 使用 earcut 算法对一个 2D 多边形进行三角剖分。
 /// `holes` 是 `positions` 中各洞起始索引的数组。
 /// 映射到 `PolygonPipeline.triangulate`
+///
+/// 少于 3 个顶点时返回空；否则将 [f64;2] 顶点交给 earcut，返回
+/// 三角形索引列表。
 pub fn triangulate_polygon(positions: &[DVec2], holes: &[u32]) -> Vec<u32> {
     let n = positions.len();
     if n < 3 {
@@ -910,11 +1032,14 @@ pub fn triangulate_polygon(positions: &[DVec2], holes: &[u32]) -> Vec<u32> {
 
 /// 计算一个 2D 多边形的带符号面积。
 /// 映射到 `PolygonPipeline.computeArea2D`
+///
+/// 采用鞋带公式；逆时针为正、顺时针为负，少于 3 顶点时为 0。
 pub fn compute_area2d(positions: &[DVec2]) -> f64 {
     let n = positions.len();
     if n < 3 {
         return 0.0;
     }
+    // 面积累加（鞋带公式）：逐项叠加 x_i*y_j - x_j*y_i，最后乘 0.5。
     let mut area = 0.0;
     for i in 0..n {
         let j = (i + 1) % n;
@@ -926,6 +1051,8 @@ pub fn compute_area2d(positions: &[DVec2]) -> f64 {
 
 /// 计算一个 2D 多边形的绕序。
 /// 映射到 `PolygonPipeline.computeWindingOrder2D`
+///
+/// 以带符号面积的正负判定：面积 > 0 为逆时针，否则为顺时针。
 pub fn compute_winding_order(positions: &[DVec2]) -> WindingOrder {
     if compute_area2d(positions) > 0.0 {
         WindingOrder::CounterClockwise
@@ -937,7 +1064,9 @@ pub fn compute_winding_order(positions: &[DVec2]) -> WindingOrder {
 /// 多边形的绕序。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindingOrder {
+    /// 顺时针（带符号面积为负）。
     Clockwise,
+    /// 逆时针（带符号面积为正）。
     CounterClockwise,
 }
 
@@ -947,6 +1076,9 @@ pub enum WindingOrder {
 
 /// 为三角形几何计算逐顶点法线。
 /// 映射到 `GeometryPipeline.computeNormal`
+///
+/// 先算每个三角形的叉积面法线，再逐顶点累加所邻接的面法线并
+/// 归一化；非三角形或空索引时直接返回。
 pub fn compute_normal(geo: &mut GeometryData) {
     if geo.primitive_type != PrimitiveType::Triangles || geo.indices.is_empty() {
         return;
@@ -983,7 +1115,7 @@ pub fn compute_normal(geo: &mut GeometryData) {
         vertex_normals[i2] += fnormal;
     }
 
-    // 归一化。
+    // 归一化。每个顶点法线除以长度，退化时退回 +Z。
     let normals: Vec<[f64; 3]> = vertex_normals
         .iter()
         .map(|n| {
@@ -999,6 +1131,11 @@ pub fn compute_normal(geo: &mut GeometryData) {
 /// 映射到 `GeometryPipeline.computeTangentAndBitangent`
 ///
 /// 基于 Eric Lengyel 的《Computing Tangent Space Basis Vectors for an Arbitrary Mesh》。
+///
+/// # 参数
+/// - `geo`：就地写入切线/副切线的几何；需已具备 UV。
+///
+/// 若缺法线则先调用 `compute_normal`；缺 UV 时直接返回。
 pub fn compute_tangent_and_bitangent(geo: &mut GeometryData) {
     if geo.primitive_type != PrimitiveType::Triangles || geo.indices.is_empty() {
         return;
@@ -1019,6 +1156,7 @@ pub fn compute_tangent_and_bitangent(geo: &mut GeometryData) {
     let num_vertices = geo.positions.len();
     let num_triangles = geo.indices.len() / 3;
 
+    // 逐三角形累加：tan1 收集切线方向 sdir，tan2 收集副切线方向 tdir。
     let mut tan1: Vec<DVec3> = vec![DVec3::ZERO; num_vertices];
     let mut tan2: Vec<DVec3> = vec![DVec3::ZERO; num_vertices];
 
@@ -1035,6 +1173,7 @@ pub fn compute_tangent_and_bitangent(geo: &mut GeometryData) {
         let w1 = DVec2::from(tex_coords[i1]);
         let w2 = DVec2::from(tex_coords[i2]);
 
+        // 三角形两条边的笛卡尔分量差（x1,x2,y1,y2,z1,z2）。
         let x1 = v1.x - v0.x;
         let x2 = v2.x - v0.x;
         let y1 = v1.y - v0.y;
@@ -1042,14 +1181,17 @@ pub fn compute_tangent_and_bitangent(geo: &mut GeometryData) {
         let z1 = v1.z - v0.z;
         let z2 = v2.z - v0.z;
 
+        // 对应的 UV 增量（s1,s2,t1,t2），用于求解纹理空间到世界空间的变换。
         let s1 = w1.x - w0.x;
         let s2 = w2.x - w0.x;
         let t1 = w1.y - w0.y;
         let t2 = w2.y - w0.y;
 
+        // UV 三角形的面积分母；接近 0 时视为退化，取 r=0 避免除零。
         let denom = s1 * t2 - s2 * t1;
         let r = if denom.abs() > 1e-10 { 1.0 / denom } else { 0.0 };
 
+        // sdir 沿 +U 方向、tdir 沿 +V 方向的梯度（除以 UV 面积）。
         let sdir = DVec3::new(
             (t2 * x1 - t1 * x2) * r,
             (t2 * y1 - t1 * y2) * r,
@@ -1092,12 +1234,15 @@ pub fn compute_tangent_and_bitangent(geo: &mut GeometryData) {
 
 /// 将三角形索引转换为线索引（线框）。
 /// 映射到 `GeometryPipeline.toWireframe`
+///
+/// 每个三角形展开为三条边（共 6 个索引），并将拓扑改为 `Lines`。
 pub fn to_wireframe(geo: &mut GeometryData) {
     if geo.primitive_type != PrimitiveType::Triangles || geo.indices.is_empty() {
         return;
     }
 
     let num_triangles = geo.indices.len() / 3;
+    // 每个三角形展开为 3 条边，预留 num_triangles*6 个索引空间。
     let mut lines: Vec<u32> = Vec::with_capacity(num_triangles * 6);
 
     for tri in 0..num_triangles {
@@ -1115,6 +1260,15 @@ pub fn to_wireframe(geo: &mut GeometryData) {
 /// 使用 GeographicProjection 将 3D 位置投影到 2D。
 /// 返回 (position3d, position2d) 数组。
 /// 映射到 `GeometryPipeline.projectTo2D`
+///
+/// 保留原始 3D 坐标的同时，为每个点计算对应的 2D 地图投影坐标（以
+/// 经线方向为 x、纬线方向为 y），供贴地几何使用。
+///
+/// # 参数
+/// - `positions`：待投影的 [f64;3] 顶点数组。
+/// - `ellipsoid`：参考椭球，同时用于构造地理投影。
+///
+/// 返回 (原始3d, 投影2d) 两个同长数组。
 pub fn project_to_2d(
     positions: &[[f64; 3]],
     ellipsoid: &Ellipsoid,
@@ -1122,6 +1276,7 @@ pub fn project_to_2d(
     use crate::projection::MapProjection;
     let projection = crate::projection::GeographicProjection::new(ellipsoid.clone());
     let pos3d = positions.to_vec();
+    // pos2d 与 pos3d 同序；无法转大地坐标的点（如中心）置为 (0,0,0)。
     let mut pos2d: Vec<[f64; 3]> = Vec::with_capacity(positions.len());
 
     for p in positions {
@@ -1142,7 +1297,10 @@ pub fn project_to_2d(
 
 /// 将一个 f64 值编码为高/低两个 f32 部分，用于 GPU 精度。
 /// 映射到 `EncodedCartesian3.encode`
+///
+/// 将 high（首位）与 low（残差）两个 f32 相加可近似还原原值。
 pub fn encode_f64_to_f32_pair(value: f64) -> (f32, f32) {
+    // 将高/低两个 f32 相加近似还原原值；high 取首位，low 取残差。
     let high = value as f32;
     let low = (value - high as f64) as f32;
     (high, low)
@@ -1150,9 +1308,17 @@ pub fn encode_f64_to_f32_pair(value: f64) -> (f32, f32) {
 
 /// 将一个位置属性（[f64;3] 数组）编码为高/低 f32 对。
 /// 映射到 `GeometryPipeline.encodeAttribute`
+///
+/// 逐顶点调用 `encode_f64_to_f32_pair`，得到 high/low 两个平行数组。
+///
+/// # 参数
+/// - `positions`：待编码的 [f64;3] 顶点数组。
+///
+/// 返回 (high, low)，两者与输入同长。
 pub fn encode_attribute(
     positions: &[[f64; 3]],
 ) -> (Vec<[f32; 3]>, Vec<[f32; 3]>) {
+    // 逐顶点将 x/y/z 三分量各自拆为 high/low，打包为两个 [f32;3] 数组。
     let mut high: Vec<[f32; 3]> = Vec::with_capacity(positions.len());
     let mut low: Vec<[f32; 3]> = Vec::with_capacity(positions.len());
 
@@ -1169,10 +1335,17 @@ pub fn encode_attribute(
 
 /// 用一个模型矩阵变换几何的位置和法线。
 /// 映射到 `GeometryPipeline.transformToWorldCoordinates`
+///
+/// 位置用完整 4x4 变换，法线用 3x3 逆转置以保持垂直性；变换后重算包围球。
+///
+/// # 参数
+/// - `geo`：就地修改的几何（位置、法线、包围球）。
+/// - `model_matrix`：将局部坐标变换到世界坐标的 4x4 矩阵。
 pub fn transform_to_world_coordinates(
     geo: &mut GeometryData,
     model_matrix: &glam::DMat4,
 ) {
+    // 法线矩阵为模型矩阵 3x3 部分的逆转置；不可逆时退回原 3x3。
     let normal_matrix = {
         let m3 = glam::DMat3::from_cols(
             model_matrix.x_axis.truncate(),
@@ -1218,13 +1391,20 @@ pub fn transform_to_world_coordinates(
     }
 }
 
-/// 使用八面体编码压缩顶点法线，并与纹理坐标一起打包。
+/// 用八面体编码压缩顶点法线，并与纹理坐标一起打包。
 /// 映射到 `GeometryPipeline.compressVertices`
+///
+/// 需存在法线；无 ST 时每顶点输出一个 u32（八面体 xy），有 ST 时额外
+/// 输出一个打包的 ST u32。缺法线时返回 None。
+///
+/// # 参数
+/// - `geo`：包含法线（必需）与可选 ST 的几何。
 pub fn compress_vertices(geo: &GeometryData) -> Option<Vec<u32>> {
     let normals = geo.normals.as_ref()?;
     let num_vertices = normals.len();
 
     // 打包压缩后的法线（每顶点 2 个 u16）+ 可选的 ST（每顶点 2 个 u16）
+    // 无 ST 时每顶点 2 个 u16（一个 u32），有 ST 时 4 个 u16（两个 u32）。
     let has_st = geo.tex_coords.is_some();
     let components_per_vertex = if has_st { 4 } else { 2 };
     let mut compressed: Vec<u32> = Vec::with_capacity(num_vertices * components_per_vertex / 2 + 1);
@@ -1257,6 +1437,13 @@ pub fn compress_vertices(geo: &GeometryData) -> Option<Vec<u32>> {
 
 /// 为向量属性（例如法线可视化）创建线段。
 /// 映射到 `GeometryPipeline.createLineSegmentsForVectors`
+///
+/// 从每个位置出发，沿对应向量延伸 `length` 长度，成对发射顶点构成线段。
+///
+/// # 参数
+/// - `positions`：线段起点数组。
+/// - `vectors`：与起点一一对应的方向向量。
+/// - `length`：统一的线段延伸长度。
 pub fn create_line_segments_for_vectors(
     positions: &[[f64; 3]],
     vectors: &[[f64; 3]],
@@ -1283,6 +1470,7 @@ pub fn create_line_segments_for_vectors(
     for p in positions {
         center += DVec3::from(*p);
     }
+    // 先取顶点均值作为中心，再取最大顶点距离平方作为半径基准。
     if !positions.is_empty() {
         center /= positions.len() as f64;
     }
@@ -1309,6 +1497,11 @@ pub fn create_line_segments_for_vectors(
 
 /// 重新排序几何的索引和属性，以优化顶点前置缓存。
 /// 映射到 `GeometryPipeline.reorderForPreVertexCache`
+///
+/// 按索引首次出现顺序重新编号顶点，丢弃未引用顶点，并同步压缩各属性数组。
+///
+/// # 参数
+/// - `geo`：就地修改的几何；空索引时直接返回。
 pub fn reorder_for_pre_vertex_cache(geo: &mut GeometryData) {
     if geo.indices.is_empty() {
         return;
@@ -1329,6 +1522,7 @@ pub fn reorder_for_pre_vertex_cache(geo: &mut GeometryData) {
         }
     }
 
+    // 未被任何索引引用的顶点会被丢弃，因此属性数组与索引同步压缩。
     // 重映射索引
     let new_indices: Vec<u32> = geo.indices.iter().map(|&idx| {
         remap[idx as usize].unwrap_or(0)
@@ -1357,7 +1551,13 @@ pub fn reorder_for_pre_vertex_cache(geo: &mut GeometryData) {
 
 /// 将几何拆分为多个能容纳在 u16 索引（最多 65536 个顶点）内的几何。
 /// 映射到 `GeometryPipeline.fitToUnsignedShortIndices`
+///
+/// # 参数
+/// - `geo`：顶点数可能超过 65536 的几何。
+///
+/// 返回一组拆分后的几何，每个都不超过 u16 索引上限。
 pub fn fit_to_unsigned_short_indices(geo: &GeometryData) -> Vec<GeometryData> {
+    // 以每个图元的顶点数（三角形 3、线 2）为步长扫描原索引，累积到当前批次。
     const MAX_VERTICES: usize = 65536;
     let num_vertices = geo.positions.len();
 
@@ -1444,12 +1644,19 @@ pub fn fit_to_unsigned_short_indices(geo: &GeometryData) -> Vec<GeometryData> {
 /// 拆分穿越国际日期变更线（经度 ±π）的几何。
 /// 返回拆分后的几何（西/东两半）。
 /// 映射到 `GeometryPipeline.splitLongitude`
+///
+/// 这是简化版：按三角形多数投票分到东/西两侧，未在 IDL 处插值。
+///
+/// # 参数
+/// - `geo`：待拆分的三角形几何。
+/// - `ellipsoid`：用于将顶点回转为大地坐标的椭球。
 pub fn split_longitude(geo: &GeometryData, ellipsoid: &Ellipsoid) -> Vec<GeometryData> {
     if geo.positions.is_empty() || geo.primitive_type != PrimitiveType::Triangles {
         return vec![geo.clone()];
     }
 
     // 将位置转换为测绘坐标，并检查是否有穿越 IDL 的
+    // 同时逐顶点标记是否到达远东西两侧（|lon| > 90°）。
     let cartos: Vec<Option<crate::cartographic::Cartographic>> = geo.positions.iter()
         .map(|p| ellipsoid.cartesian_to_cartographic(DVec3::from(*p)))
         .collect();
@@ -1591,6 +1798,10 @@ pub fn split_longitude(geo: &GeometryData, ellipsoid: &Ellipsoid) -> Vec<Geometr
 /// 仅当每个输入几何都有非空索引列表时才合并索引；否则结果没有索引。
 ///
 /// 映射到 CesiumJS `GeometryPipeline.combineInstances` / `combineGeometries`。
+/// 仅当这些几何都共享某个可选属性时才合并；否则丢弃该属性。
+///
+/// # 参数
+/// - `geometries`：待合并的几何列表（至少一个，且图元类型一致）。
 pub fn combine_geometries(geometries: &[GeometryData]) -> GeometryData {
     assert!(
         !geometries.is_empty(),
@@ -1613,12 +1824,14 @@ pub fn combine_geometries(geometries: &[GeometryData]) -> GeometryData {
     }
 
     // 合并位置。
+    // 位置始终存在，直接将各几何的顶点拼接为一个长数组。
     let mut positions: Vec<[f64; 3]> = Vec::new();
     for geo in geometries {
         positions.extend_from_slice(&geo.positions);
     }
 
     // 仅当某个可选属性存在于所有几何中时才合并它。
+    // 否则若任一几何缺该属性，结果中就不保留它（避免长度不一致）。
     let all_have = |f: fn(&GeometryData) -> &Option<Vec<[f64; 3]>>| -> bool {
         geometries.iter().all(|g| f(g).is_some())
     };
@@ -1633,6 +1846,7 @@ pub fn combine_geometries(geometries: &[GeometryData]) -> GeometryData {
         None
     };
 
+    // 切线/副切线合并与法线同构：均依赖 `all_have` 判定后拼接。
     let tangents = if all_have(|g| &g.tangents) {
         let mut v = Vec::new();
         for geo in geometries {
@@ -1653,6 +1867,7 @@ pub fn combine_geometries(geometries: &[GeometryData]) -> GeometryData {
         None
     };
 
+    // 纹理坐标为 [f64;2]，类型不同于法线，故单独用 all 判定。
     let tex_coords = if geometries.iter().all(|g| g.tex_coords.is_some()) {
         let mut v = Vec::new();
         for geo in geometries {
@@ -1663,7 +1878,7 @@ pub fn combine_geometries(geometries: &[GeometryData]) -> GeometryData {
         None
     };
 
-    // 按每个几何的顶点偏移合并索引列表。
+    // 逐几何扫描：将当前几何的索引加上已累计的顶点偏移，再接到目标。
     let indices = if have_indices {
         let mut dest: Vec<u32> = Vec::new();
         let mut offset: u32 = 0;
@@ -1679,6 +1894,7 @@ pub fn combine_geometries(geometries: &[GeometryData]) -> GeometryData {
     };
 
     // 创建一个包含所有几何的包围球。
+    // 逐个合并相邻包围球，得到能容纳全部输入的球体。
     let mut bounding_sphere = geometries[0].bounding_sphere.clone();
     for geo in &geometries[1..] {
         bounding_sphere = bounding_sphere.union(&geo.bounding_sphere);
@@ -1700,6 +1916,7 @@ pub fn combine_geometries(geometries: &[GeometryData]) -> GeometryData {
 mod tests {
     use super::*;
 
+    /// 验证椭球几何的顶点数为 (stacks+1)*(slices+1)，索引数为 stacks*slices*6。
     #[test]
     fn test_ellipsoid_geometry_vertex_count() {
         let geo = ellipsoid_geometry(DVec3::splat(1.0), 16, 32, VertexFormat::ALL);
@@ -1711,6 +1928,7 @@ mod tests {
         assert_eq!(geo.indices.len(), 16 * 32 * 6);
     }
 
+    /// 验证球体几何复用椭球生成器且包围球半径等于传入半径。
     #[test]
     fn test_sphere_geometry() {
         let geo = sphere_geometry(5.0, 8, 16, VertexFormat::POSITION_ONLY);
@@ -1719,6 +1937,7 @@ mod tests {
         assert!((geo.bounding_sphere.radius - 5.0).abs() < 1e-10);
     }
 
+    /// 验证盒子几何恰有 24 个顶点与 36 个索引（6 面各自独立）。
     #[test]
     fn test_box_geometry() {
         let geo = box_geometry(DVec3::new(-1.0, -1.0, -1.0), DVec3::new(1.0, 1.0, 1.0), VertexFormat::ALL);
@@ -1726,6 +1945,7 @@ mod tests {
         assert_eq!(geo.indices.len(), 36); // 6 个面 * 2 个三角形 * 3
     }
 
+    /// 验证平面几何为 4 顶点、6 索引的单位四边形。
     #[test]
     fn test_plane_geometry() {
         let geo = plane_geometry(VertexFormat::ALL);
@@ -1733,6 +1953,7 @@ mod tests {
         assert_eq!(geo.indices.len(), 6);
     }
 
+    /// 验证矩形几何按 granularity 细分产生多于 4 个顶点且带法线。
     #[test]
     fn test_rectangle_geometry() {
         let rect = Rectangle::from_degrees(-10.0, -10.0, 10.0, 10.0);
@@ -1741,6 +1962,7 @@ mod tests {
         assert!(geo.normals.is_some());
     }
 
+    /// 验证大圆弧细分在两点之间插入了中间点。
     #[test]
     fn test_generate_arc() {
         let ellipsoid = Ellipsoid::WGS84;
@@ -1750,6 +1972,7 @@ mod tests {
         assert!(arc.len() > 2); // 应包含中间点
     }
 
+    /// 验证四边形经 earcut 三角剖分后得到 2 个三角形（6 索引）。
     #[test]
     fn test_triangulate_polygon() {
         let positions = vec![
@@ -1762,6 +1985,7 @@ mod tests {
         assert_eq!(indices.len(), 6); // 一个四边形对应 2 个三角形
     }
 
+    /// 验证单位正方形的带符号面积为 1.0。
     #[test]
     fn test_compute_area2d() {
         let positions = vec![
@@ -1774,6 +1998,7 @@ mod tests {
         assert!((area - 1.0).abs() < 1e-10);
     }
 
+    /// 验证给定顶点序的多边形被判定为逆时针绕序。
     #[test]
     fn test_winding_order() {
         let ccw = vec![
@@ -1784,6 +2009,7 @@ mod tests {
         assert_eq!(compute_winding_order(&ccw), WindingOrder::CounterClockwise);
     }
 
+    /// 验证盒子轮廓几何有 8 角点与 12 条边（24 索引），拓扑为线。
     #[test]
     fn test_box_outline() {
         let geo = box_outline_geometry(DVec3::new(-1.0, -1.0, -1.0), DVec3::new(1.0, 1.0, 1.0));
@@ -1792,6 +2018,7 @@ mod tests {
         assert_eq!(geo.primitive_type, PrimitiveType::Lines);
     }
 
+    /// 验证椭球轮廓几何由三个大圆组成且索引成对（线集）。
     #[test]
     fn test_ellipsoid_outline() {
         let geo = ellipsoid_outline_geometry(DVec3::new(1.0, 2.0, 3.0), 16, 32);
@@ -1800,6 +2027,7 @@ mod tests {
         assert_eq!(geo.primitive_type, PrimitiveType::Lines);
     }
 
+    /// 验证圆形轮廓几何生成非空顶点且索引成对并闭合成环。
     #[test]
     fn test_circle_outline() {
         let ell = Ellipsoid::WGS84;
@@ -1810,6 +2038,7 @@ mod tests {
         assert_eq!(geo.primitive_type, PrimitiveType::Lines);
     }
 
+    /// 验证矩形轮廓几何沿四条边采样为线集。
     #[test]
     fn test_rectangle_outline() {
         let ell = Ellipsoid::WGS84;
@@ -1820,6 +2049,7 @@ mod tests {
         assert_eq!(geo.primitive_type, PrimitiveType::Lines);
     }
 
+    /// 验证圆柱轮廓几何含顶/底圆与垂直边，拓扑为线。
     #[test]
     fn test_cylinder_outline() {
         let geo = cylinder_outline_geometry(2.0, 1.0, 1.0, 16);
@@ -1828,6 +2058,7 @@ mod tests {
         assert_eq!(geo.primitive_type, PrimitiveType::Lines);
     }
 
+    /// 验证平面轮廓几何为 4 顶点、4 条边（8 索引）。
     #[test]
     fn test_plane_outline() {
         let geo = plane_outline_geometry();
@@ -1836,6 +2067,7 @@ mod tests {
         assert_eq!(geo.primitive_type, PrimitiveType::Lines);
     }
 
+    /// 验证 compute_normal 为逐顶点生成单位长度法线。
     #[test]
     fn test_compute_normal() {
         let mut geo = box_geometry(DVec3::new(-1.0, -1.0, -1.0), DVec3::new(1.0, 1.0, 1.0), VertexFormat::POSITION_ONLY);
@@ -1851,6 +2083,7 @@ mod tests {
         }
     }
 
+    /// 验证切线/副切线计算产出与顶点数相同的数组。
     #[test]
     fn test_compute_tangent_and_bitangent() {
         let mut geo = box_geometry(DVec3::new(-1.0, -1.0, -1.0), DVec3::new(1.0, 1.0, 1.0), VertexFormat::ALL);
@@ -1863,6 +2096,7 @@ mod tests {
         assert_eq!(tangents.len(), geo.positions.len());
     }
 
+    /// 验证三角索引转线框后每个三角形生成 3 条边（6 索引）。
     #[test]
     fn test_to_wireframe() {
         let mut geo = box_geometry(DVec3::new(-1.0, -1.0, -1.0), DVec3::new(1.0, 1.0, 1.0), VertexFormat::POSITION_ONLY);

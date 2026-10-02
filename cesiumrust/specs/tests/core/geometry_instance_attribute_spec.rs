@@ -1,5 +1,5 @@
-//! Core/GeometryInstanceAttributeSpec.js + ColorGeometryInstanceAttributeSpec.js
-//! + ShowGeometryInstanceAttributeSpec.js + DistanceDisplayConditionGeometryInstanceAttributeSpec.js
+//! Core/GeometryInstanceAttributeSpec + ColorGeometryInstanceAttributeSpec
+//! + ShowGeometryInstanceAttributeSpec + DistanceDisplayConditionGeometryInstanceAttributeSpec
 //! → Rust 集成测试（仅 A 类）
 
 use cesium_geospatial::attribute_compression::ComponentDatatype;

@@ -1,4 +1,4 @@
-//! 移植自 CesiumJS EllipsoidGeometrySpec/SphereGeometrySpec/BoxGeometrySpec/
+//! 参考自 CesiumJS EllipsoidGeometrySpec/SphereGeometrySpec/BoxGeometrySpec/
 //! CylinderGeometrySpec/RectangleOutlineGeometrySpec + GeometryPipeline 扩展。
 //!
 //! 针对几何生成器的数学属性验证测试。

@@ -78,17 +78,23 @@ pub enum NetworkError {
 /// 为 OFF（默认）时运行 M8.3 前的直接-ureq 路径，以保持 v0
 /// 基线逐字节一致。
 pub struct HttpTileFetcher {
+    /// 共享的 ureq HTTP 客户端实例，负责连接池与 keep-alive。
     agent: ureq::Agent,
+    /// 预留的基地址（当前直接-ureq 路径未使用，故 `dead_code`）。
     #[allow(dead_code)]
     base_url: String,
+    /// 随每个请求发送的额外请求头键值对。
     headers: HashMap<String, String>,
     /// 每服务器在途计数（限速门控）。M8.3：`tokio::sync::Mutex`
     /// → `std::sync::Mutex`（在 spawn 出的 std::thread 内阻塞等待；
     /// 因为整个限速循环都运行在 [`spawn_blocking_fetch`] 内部，
     /// 所以绝不会阻塞轮询上下文）。
     active_requests: Arc<StdMutex<HashMap<String, usize>>>,
+    /// 单个服务器允许同时在途的最大请求数（限速门控阈值）。
     max_requests_per_server: usize,
+    /// 瞬时错误时的重试次数。
     retry_count: u32,
+    /// 已取消 URL 集合，供在途任务轮询以提前中断。
     cancelled: Arc<StdMutex<HashSet<String>>>,
     /// M8.3 网络 `ResourceBackend` —— 仅当
     /// [`resource_fetch_backend_enabled()`] 返回 `true` 时才使用。在所有
@@ -306,6 +312,11 @@ impl HttpTileFetcher {
 }
 
 impl TileFetcher for HttpTileFetcher {
+    /// 经由 HTTP 获取一个瓦片的原始字节。
+    ///
+    /// 在 `spawn_blocking` 出的 std 线程上执行带限速与重试的阻塞获取，
+    /// 返回一个解析为 [`Vec<u8>`] 的 boxed future；`priority` 仅在启用
+    /// [`NetworkResourceBackend`] 路径时影响调度优先级。
     fn fetch<'a>(
         &'a self,
         url: &'a str,
@@ -392,6 +403,8 @@ impl TileFetcher for HttpTileFetcher {
         })
     }
 
+    /// 取消一个在途获取：将 `url` 登记到 `cancelled` 集合，供飞行中
+    /// 的任务在下一次轮询时提前中断。
     fn cancel(&self, url: &str) {
         let mut set = self.cancelled.lock().unwrap();
         set.insert(url.to_string());
@@ -461,6 +474,7 @@ fn classify_ureq_error(err: ureq::Error) -> FetchFailure {
 
 /// 一个用于测试的 mock 瓦片获取器，返回预定义数据。
 pub struct MockTileFetcher {
+    /// URL → 预定义字节响应的映射表，命中时直接返回。
     responses: HashMap<String, Vec<u8>>,
 }
 
@@ -480,12 +494,15 @@ impl MockTileFetcher {
 }
 
 impl Default for MockTileFetcher {
+    /// 默认构造一个空响应的 mock 获取器（等价于 [`MockTileFetcher::new`]）。
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl TileFetcher for MockTileFetcher {
+    /// 同步地从预定义表返回 `url` 对应的字节；未命中则
+    /// [`PortError::NotFound`]。future 首次 poll 即完成。
     fn fetch<'a>(
         &'a self,
         url: &'a str,
@@ -500,6 +517,7 @@ impl TileFetcher for MockTileFetcher {
         Box::pin(async move { result })
     }
 
+    /// mock 获取器为同步一次性完成，无可取消项，故为空实现。
     fn cancel(&self, _url: &str) {
         // mock 获取器不需要取消
     }

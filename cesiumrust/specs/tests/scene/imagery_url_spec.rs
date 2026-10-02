@@ -1,10 +1,10 @@
 //! 影像提供者 URL 生成规范测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/UrlTemplateImageryProviderSpec.js
-//! - Scene/WebMapTileServiceImageryProviderSpec.js
-//! - Scene/TileMapServiceImageryProviderSpec.js
-//! - Scene/OpenStreetMapImageryProviderSpec.js
+//! 参考 CesiumJS：
+//! - Scene/UrlTemplateImageryProviderSpec
+//! - Scene/WebMapTileServiceImageryProviderSpec
+//! - Scene/TileMapServiceImageryProviderSpec
+//! - Scene/OpenStreetMapImageryProviderSpec
 //!
 //! A 类测试：URL 模板替换、KVP/REST URL 生成、反向 Y。
 

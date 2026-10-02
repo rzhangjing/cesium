@@ -1,6 +1,6 @@
 //! 与顺序无关透明度（Order-Independent Transparency，OIT）。
 //!
-//! 映射到 CesiumJS `Scene/OIT.js`：
+//! 涵盖以下能力模型：
 //! - 加权混合 OIT（累加 + revealage）
 //! - 半透明多 pass 支持
 //! - MRT（多渲染目标）支持检测
@@ -10,8 +10,6 @@
 use glam::DVec4;
 
 /// 用于 OIT 合成的混合等式。
-///
-/// 映射到 CesiumJS `BlendEquation`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BlendEquation {
     /// 源 + 目标。
@@ -28,8 +26,6 @@ pub enum BlendEquation {
 }
 
 /// 用于 OIT 的混合函数。
-///
-/// 映射到 CesiumJS `BlendFunction`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BlendFunction {
     /// 零。
@@ -104,8 +100,6 @@ pub enum OitMode {
 }
 
 /// OIT 配置与状态。
-///
-/// 映射到 CesiumJS `OIT`。
 #[derive(Debug, Clone)]
 pub struct OitConfig {
     /// 使用的 OIT 模式。
@@ -123,7 +117,9 @@ pub struct OitConfig {
 }
 
 impl Default for OitConfig {
+    /// 默认无 OIT、单采样、非 HDR、加法混合且源/目标均为 1。
     fn default() -> Self {
+        // 退化为标准 alpha 混合的中性配置
         Self {
             mode: OitMode::None,
             num_samples: 1,
@@ -138,6 +134,7 @@ impl Default for OitConfig {
 impl OitConfig {
     /// 基于设备能力创建 OIT 配置。
     pub fn from_capabilities(caps: &OitCapabilities) -> Self {
+        // 优先选 MRT，其次多 pass 回退，否则不启用 OIT
         let mode = if caps.translucent_mrt_supported() {
             OitMode::WeightedBlendedMrt
         } else if caps.translucent_multipass_supported() {

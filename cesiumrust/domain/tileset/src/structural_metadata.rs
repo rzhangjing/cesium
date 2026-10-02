@@ -1,13 +1,13 @@
 //! EXT_structural_metadata 扩展的结构化元数据。
 //!
-//! 镜像 CesiumJS：
-//! - `Scene/PropertyTable.js`
-//! - `Scene/PropertyTexture.js`
-//! - `Scene/PropertyAttribute.js`
-//! - `Scene/StructuralMetadata.js`
-//! - `Scene/MetadataClass.js`
-//! - `Scene/MetadataClassProperty.js`
-//! - `Scene/MetadataEnum.js`
+//! 对应：
+//! - `Scene/PropertyTable`
+//! - `Scene/PropertyTexture`
+//! - `Scene/PropertyAttribute`
+//! - `Scene/StructuralMetadata`
+//! - `Scene/MetadataClass`
+//! - `Scene/MetadataClassProperty`
+//! - `Scene/MetadataEnum`
 
 use std::collections::HashMap;
 
@@ -308,7 +308,7 @@ impl MetadataEnum {
 
 /// 包含逐 feature 元数据的属性表。
 ///
-/// 映射到 CesiumJS `Scene/PropertyTable.js`。
+/// 对应 `Scene/PropertyTable`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropertyTable {
     /// 表名。
@@ -373,7 +373,7 @@ impl PropertyTable {
 
 /// 存储于纹理中的属性。
 ///
-/// 映射到 CesiumJS `Scene/PropertyTexture.js`。
+/// 对应 `Scene/PropertyTexture`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropertyTexture {
     /// 纹理名。
@@ -428,7 +428,7 @@ impl PropertyTexture {
 
 /// 作为自定义属性存储的逐顶点属性。
 ///
-/// 映射到 CesiumJS `Scene/PropertyAttribute.js`。
+/// 对应 `Scene/PropertyAttribute`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropertyAttribute {
     /// 属性名。
@@ -479,7 +479,7 @@ impl PropertyAttribute {
 
 /// 一个瓦片/模型中所有结构化元数据的容器。
 ///
-/// 映射到 CesiumJS `Scene/StructuralMetadata.js`。
+/// 对应 `Scene/StructuralMetadata`。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct StructuralMetadata {
     /// 属性表。

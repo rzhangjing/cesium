@@ -1,6 +1,8 @@
 //! PropertyBag - 一个动态键值属性容器。
 //!
-//! 映射到 CesiumJS `DataSources/PropertyBag.js`
+//! 它以有序的属性名列表配合一张按名称索引的属性表，保存一组动态属性；
+//! 求值时逐属性取回当前时刻的计算值并组装为键值映射，常用于承载实体的
+//! 自定义扩展属性（如描述、示例等）。
 
 use crate::property_system::property::{ConstantProperty, DynProperty};
 use crate::property_system::value::PropertyValue;
@@ -10,7 +12,9 @@ use std::sync::Arc;
 
 /// 一个属性，其值是属性名到其他属性计算值之间的键值映射。
 ///
-/// 映射到 CesiumJS `DataSources/PropertyBag.js`
+/// 属性名以 `property_names` 保序，实际值存放在 `properties` 表中；
+/// 两者共同决定容器的内容与遍历顺序，克隆时深拷贝整份名称与映射，
+/// 求值则按名称逐个取回其当前时刻的计算值。
 #[derive(Clone)]
 pub struct PropertyBag {
     /// 有序的属性名。
@@ -216,12 +220,14 @@ impl PropertyBag {
 }
 
 impl Default for PropertyBag {
+    /// 构造一个不含任何属性的空容器。
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl std::fmt::Debug for PropertyBag {
+    /// 仅输出属性名列表，避免递归打印潜在自引用的属性值。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PropertyBag")
             .field("property_names", &self.property_names)

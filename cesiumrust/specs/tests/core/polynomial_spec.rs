@@ -1,8 +1,8 @@
-//! QuadraticRealPolynomialSpec.js + CubicRealPolynomialSpec.js + QuarticRealPolynomialSpec.js
+//! QuadraticRealPolynomialSpec + CubicRealPolynomialSpec + QuarticRealPolynomialSpec
 //! → Rust integration tests
 //!
-//! Original: QuadraticRealPolynomialSpec.js (18 it()), CubicRealPolynomialSpec.js (14 it()),
-//!           QuarticRealPolynomialSpec.js (21 it())
+//! Original: QuadraticRealPolynomialSpec (18 it()), CubicRealPolynomialSpec (14 it()),
+//!           QuarticRealPolynomialSpec (21 it())
 //! A-class ported: 12 + 6 + 11 = 29
 //! C-class omitted: 6 + 8 + 10 = 24 (throws)
 

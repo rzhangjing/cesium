@@ -37,6 +37,10 @@ const BUTTONS: &[(&str, DrawKind)] = &[
 
 /// spawn 工具栏（一个 Startup 系统）。按钮位于左上角；最后一个是一个
 /// 回到 idle 的特殊取消按钮。
+///
+/// # 参数
+/// - `commands`：spawn 根节点与逐按钮实体的 ECS 命令。
+/// - `root_res`：记录已 spawn 根节点的资源，避免重复创建。
 pub fn plot_toolbar(mut commands: Commands, mut root_res: ResMut<PlotToolbarRoot>) {
     let root = commands
         .spawn((
@@ -101,6 +105,10 @@ pub fn plot_toolbar(mut commands: Commands, mut root_res: ResMut<PlotToolbarRoot
 
 /// 将被按下的工具栏按钮转为一个 [`PlotSetTool`] 事件（Bevy 0.15 没有
 /// `Interaction::Clicked`，因此按下沿就是触发器）。
+///
+/// # 参数
+/// - `interactions`：携带 [`ToolButton`] 且状态变化的按钮查询。
+/// - `tool_events`：向 FSM 发布所选工具的写出器。
 pub(crate) fn toolbar_click_system(
     interactions: Query<(&Interaction, &ToolButton), Changed<Interaction>>,
     mut tool_events: EventWriter<PlotSetTool>,

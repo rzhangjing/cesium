@@ -1,4 +1,4 @@
-//! TrustedServers 规格测试 - 移植自 packages/engine/Specs/Core/TrustedServersSpec.js
+//! TrustedServers 规格测试 - 参考自 Specs/Core/TrustedServersSpec
 //!
 //! A 类测试：8 个（纯逻辑，无浏览器/DOM）
 

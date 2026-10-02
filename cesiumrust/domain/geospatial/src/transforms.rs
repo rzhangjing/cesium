@@ -1,5 +1,4 @@
 //! 坐标变换 —— ENU 参考系、HeadingPitchRoll、ICRF。
-//! 映射到 CesiumJS `Core/Transforms.js`, `Core/HeadingPitchRoll.js`, `Core/HeadingPitchRange.js`, `Core/TranslationRotationScale.js`
 
 use crate::ellipsoid::Ellipsoid;
 use crate::math_utils;
@@ -20,12 +19,14 @@ pub struct HeadingPitchRoll {
 }
 
 impl Default for HeadingPitchRoll {
+    /// 默认构造：航向/俯仰/翻滚均为 0。
     fn default() -> Self {
         Self { heading: 0.0, pitch: 0.0, roll: 0.0 }
     }
 }
 
 impl HeadingPitchRoll {
+    /// 由航向/俯仰/翻滚（弧度）直接构造。
     pub fn new(heading: f64, pitch: f64, roll: f64) -> Self {
         Self { heading, pitch, roll }
     }
@@ -73,7 +74,9 @@ impl HeadingPitchRoll {
     /// 以相对/绝对 epsilon 容差进行比较。
     /// 映射到 `HeadingPitchRoll.equalsEpsilon`
     pub fn equals_epsilon(&self, other: &Self, relative_epsilon: f64) -> bool {
+        /// 单分量比较：绝对差或相对差任一小于阈值即视为相等。
         fn eq_eps(left: f64, right: f64, rel_eps: f64) -> bool {
+            // 先取绝对差，再判断是否落在绝对或相对阈值内。
             let abs_diff = (left - right).abs();
             abs_diff <= rel_eps || abs_diff <= rel_eps * left.abs().max(right.abs())
         }
@@ -84,6 +87,7 @@ impl HeadingPitchRoll {
 }
 
 impl std::fmt::Display for HeadingPitchRoll {
+    /// 以 `(heading, pitch, roll)` 弧度三元组格式化输出。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({}, {}, {})", self.heading, self.pitch, self.roll)
     }
@@ -102,12 +106,14 @@ pub struct HeadingPitchRange {
 }
 
 impl Default for HeadingPitchRange {
+    /// 默认构造：航向/俯仰/距离均为 0。
     fn default() -> Self {
         Self { heading: 0.0, pitch: 0.0, range: 0.0 }
     }
 }
 
 impl HeadingPitchRange {
+    /// 由航向/俯仰（弧度）与距离（米）构造。
     pub fn new(heading: f64, pitch: f64, range: f64) -> Self {
         Self { heading, pitch, range }
     }
@@ -126,6 +132,7 @@ pub struct TranslationRotationScale {
 }
 
 impl Default for TranslationRotationScale {
+    /// 默认构造：平移为零、旋转为单位四元数、缩放为 1。
     fn default() -> Self {
         Self {
             translation: DVec3::ZERO,
@@ -136,6 +143,7 @@ impl Default for TranslationRotationScale {
 }
 
 impl TranslationRotationScale {
+    /// 由平移/旋转/缩放分量直接构造。
     pub fn new(translation: DVec3, rotation: DQuat, scale: DVec3) -> Self {
         Self { translation, rotation, scale }
     }
@@ -258,7 +266,7 @@ fn vec3_equals_epsilon(left: DVec3, right: DVec3, epsilon: f64) -> bool {
 /// `first_axis` 与 `second_axis` 决定哪些大地测量方向映射到矩阵的
 /// X 和 Y 列；Z 列是右手的第三轴（`first × second`）。
 ///
-/// 对 CesiumJS 生成函数的忠实移植：
+/// 参考系生成器的分支处理：
 /// - 在椭球中心：使用退化的局部参考系。
 /// - 在极点（x 和 y 都约为 0）：使用退化参考系，每个
 ///   非 east/west 轴都乘以 `sign(z)`。
@@ -306,6 +314,7 @@ pub fn local_frame_to_fixed_frame(
             .expect("origin must not be at the center of the ellipsoid");
         let east = crate::ellipsoid::normalize_cartesian3(DVec3::new(-origin.y, origin.x, 0.0));
         let north = up.cross(east);
+        // down/west/south 分别为 up/east/north 的反向。
         let down = -up;
         let west = -east;
         let south = -north;
@@ -316,6 +325,7 @@ pub fn local_frame_to_fixed_frame(
         )
     };
 
+    // 将三个局部轴作为前三列（齐次第 4 分量为 0），origin 作为第四列，拼成局部到 fixed 的变换矩阵。
     DMat4::from_cols(
         first.extend(0.0),
         second.extend(0.0),
@@ -364,9 +374,9 @@ pub fn heading_pitch_roll_to_fixed_frame(
 /// 映射到带自定义 `fixedFrameTransform` 的
 /// `Transforms.headingPitchRollToFixedFrame`。
 ///
-/// 忠实移植：先构建局部参考系到 fixed 的矩阵，再乘以
-/// 航向/俯仰/翻滚的旋转矩阵（作为刚体变换），对应
-/// CesiumJS 的 `Matrix4.multiply(fixedFrame, hprMatrix)`。
+/// 算法：先构建局部参考系到 fixed 的矩阵，再乘以
+/// 航向/俯仰/翻滚的旋转矩阵（作为刚体变换），即
+/// `Matrix4.multiply(fixedFrame, hprMatrix)`。
 pub fn heading_pitch_roll_to_fixed_frame_with_local_frame(
     hpr: &HeadingPitchRoll,
     origin: DVec3,
@@ -374,6 +384,7 @@ pub fn heading_pitch_roll_to_fixed_frame_with_local_frame(
     first_axis: LocalFrameAxis,
     second_axis: LocalFrameAxis,
 ) -> DMat4 {
+    // 航向/俯仰/翻滚仅影响旋转部分，平移分量为零；最后左乘局部参考系矩阵。
     let fixed_frame = local_frame_to_fixed_frame(first_axis, second_axis, origin, ellipsoid);
     let hpr_rotation = DMat3::from_quat(hpr.to_quaternion());
     let hpr_matrix = DMat4::from_cols(
@@ -428,6 +439,7 @@ pub fn compute_icrf_to_fixed_matrix(julian_date_seconds: f64) -> Option<DMat3> {
     // 简化的地球自转：GMST 近似
     // 完整实现应使用 IAU 2006/2000A 岁差-章动
     let days_since_j2000 = julian_date_seconds / 86400.0 - 2451545.0;
+    // GMST 近似公式：以 J2000 起算的恒星时角，再归一到 [0, 2π)。
     let gmst = math_utils::zero_to_two_pi(
         math_utils::to_radians(280.46061837 + 360.98564736629 * days_since_j2000),
     );
@@ -446,6 +458,7 @@ pub fn compute_icrf_to_fixed_matrix(julian_date_seconds: f64) -> Option<DMat3> {
 /// 计算从 fixed 参考系到 ICRF（惯性系）的旋转矩阵。
 /// 映射到 `Transforms.computeFixedToIcrfMatrix`
 pub fn compute_fixed_to_icrf_matrix(julian_date_seconds: f64) -> Option<DMat3> {
+    // 旋转矩阵为正交阵，逆变换即为其转置。
     compute_icrf_to_fixed_matrix(julian_date_seconds).map(|m| m.transpose())
 }
 
@@ -467,8 +480,8 @@ pub fn look_at(eye: DVec3, target: DVec3, up: DVec3) -> DMat4 {
 /// 由位置和速度（飞行方向）计算旋转矩阵。
 /// 映射到 `Transforms.rotationMatrixFromPositionVelocity`
 ///
-/// 所得矩阵的各列为 `[velocity, right, up]`，对应 CesiumJS 的实现，
-/// 后者赋值 `result[0..2]=velocity, result[3..5]=right,
+/// 所得矩阵的各列为 `[velocity, right, up]`，
+/// 即 `result[0..2]=velocity, result[3..5]=right,
 /// result[6..8]=up`（列主序存储）。
 pub fn rotation_matrix_from_position_velocity(
     position: DVec3,

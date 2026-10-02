@@ -1,5 +1,5 @@
 //! PostProcess + Geocoder + Panorama 规范
-//! 移植自 CesiumJS Scene/PostProcessStageLibrarySpec.js + Core/GeocoderServiceSpec.js + Scene/PanoramaSpec.js
+//! 参考自 CesiumJS Scene/PostProcessStageLibrarySpec + Core/GeocoderServiceSpec + Scene/PanoramaSpec
 
 use cesium_effects::{
     AmbientOcclusionConfig, BloomConfig, ColorCorrectionConfig, CubeMapPanorama, FogConfig,

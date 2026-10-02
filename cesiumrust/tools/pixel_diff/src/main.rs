@@ -17,9 +17,11 @@
 
 use std::process;
 
+/// 程序入口：解析参数、加载两张图、比对并按需输出 JSON/文本，最后以 PASS/FAIL 决定退出码。
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
+    // 无参数或请求帮助时，向 stderr 打印用法（空参视为错误 exit 2）。
     if args.is_empty() || args.contains(&"--help".to_owned()) || args.contains(&"-h".to_owned()) {
         eprintln!(
             "Usage: pixel_diff <baseline.png> <candidate.png> [--threshold <dB>] [--json]\n\
@@ -45,6 +47,7 @@ fn main() {
     let mut json_output = false;
 
     let mut i = 0;
+    // 逐 token 扫描：--threshold 消费下一个值作参数，--json 置位，其余归为位置参数。
     while i < args.len() {
         match args[i].as_str() {
             "--threshold" => {
@@ -71,6 +74,7 @@ fn main() {
         i += 1;
     }
 
+    // 位置参数必须恰为两张图（baseline + candidate），否则报错退出。
     if positional.len() != 2 {
         eprintln!("error: expected exactly 2 image paths, got {}", positional.len());
         process::exit(2);
@@ -105,6 +109,7 @@ fn main() {
     };
 
     // 输出
+    // 根据 --json 选择结构化 JSON 输出或人类可读摘要。
     if json_output {
         println!("{}", pixel_diff::metrics_to_json(&metrics));
     } else {
@@ -112,5 +117,6 @@ fn main() {
     }
 
     // 退出码
+    // PASS 返回 0，FAIL 返回 1，供回归门判定。
     process::exit(if metrics.pass { 0 } else { 1 });
 }

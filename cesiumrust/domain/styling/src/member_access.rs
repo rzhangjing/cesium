@@ -1,10 +1,8 @@
 //! 成员访问求值（`.x`/`.r`、`[0]`、`feature.properties.name`）。
 //!
-//! 移植自 `cesium-rs/crates/cesium-scene/src/expression.rs` L2187-2207 中
-//! `Node::evaluate` 的 `Member` 分支，它是上游
-//! `packages/engine/Source/Scene/Expression.js`（`_evaluateMemberAccess`）的
-//! Rust 移植。底层原语（`vector_component`、`member_access`）已在 `ast.rs`
-//! （M7-A）中；本模块提供在求值时遍历一个 `Member` 节点的编排。
+//! 本模块实现 `Node::evaluate` 的 `Member` 分支：在求值时遍历一个 `Member`
+//! 节点的编排。底层原语（`vector_component`、`member_access`）已在 `ast.rs`
+//! （M7-A）中。
 //!
 //! 解析顺序（忠于 blueprint）：
 //! 1. `feature.<name>` → 一次 feature 属性查找（`check_feature` +
@@ -27,18 +25,22 @@ pub fn evaluate_member(
     feature: Option<&dyn ExpressionFeature>,
 ) -> Result<Value, RuntimeError> {
     let left_node = node.left.as_ref().unwrap();
+    // 情形 1：基数是 `feature` 关键字，直接走一次 feature 属性查找。
     if check_feature(left_node) {
         let name = node.right.as_ref().unwrap().evaluate(feature)?;
         return Ok(get_feature_property(feature, &name.string_conversion()));
     }
+    // 情形 2：先求值 object；若为 undefined/null 则短路返回 undefined。
     let property = left_node.evaluate(feature)?;
     if !property.is_defined() {
         return Ok(Value::Undefined);
     }
+    // 情形 3：向量/颜色分量访问（.x/.r/[0] 等），命中则直接返回分量。
     let member = node.right.as_ref().unwrap().evaluate(feature)?;
     if let Some(component) = vector_component(&property, &member) {
         return Ok(component);
     }
+    // 情形 4：其余一律走通用数组/字符串成员访问。
     Ok(member_access(&property, &member))
 }
 
@@ -69,6 +71,7 @@ mod tests {
         )
     }
 
+    /// 验证 `vector_component` 能从 vec4 取到 `.r` 分量，而索引越界回 undefined。
     #[test]
     fn vector_component_dot_access() {
         // 在一个由 vec4 承载的字面颜色节点上取 color.r。
@@ -93,6 +96,7 @@ mod tests {
         assert_eq!(member_access(&v4, &Value::Number(0.0)), Value::Undefined);
     }
 
+    /// 验证 `feature.<name>` 经 Member 节点解析为属性值，缺失属性回 undefined。
     #[test]
     fn feature_property_lookup() {
         let mut props = HashMap::new();
@@ -134,6 +138,7 @@ mod tests {
         let _ = literal_number_node(0.0);
     }
 
+    /// 验证基数为 null 时成员访问短路为 undefined（JS nullish 语义）。
     #[test]
     fn nullish_base_short_circuits_to_undefined() {
         // Object 求值为 null（一个 LiteralNull 节点）-> undefined 成员。

@@ -1,5 +1,5 @@
 //! 动画组件扩展规范 - format_date/format_time/multiplier_string/shuttle ring
-//! 移植自 Widgets/Animation/AnimationViewModelSpec.js（A 类格式化/逻辑）
+//! 参考自 Widgets/Animation/AnimationViewModelSpec（A 类格式化/逻辑）
 
 use cesium_widgets::animation::{
     AnimationViewModel, ShuttleRing, DEFAULT_SHUTTLE_RING_TICKS,

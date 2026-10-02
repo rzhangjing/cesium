@@ -1,5 +1,5 @@
-//! Scene/CameraSpec.js → Rust 集成测试（setView 变体 + 坐标变换）
-//! 移植自：packages/engine/Specs/Scene/CameraSpec.js
+//! Scene/CameraSpec → Rust 集成测试（setView 变体 + 坐标变换）
+//! 参考自：Specs/Scene/CameraSpec
 //! A 类纯数学测试：setView HPR 往返、direction/up、坐标变换、
 //! distanceToBoundingSphere
 

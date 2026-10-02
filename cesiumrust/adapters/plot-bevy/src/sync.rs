@@ -52,8 +52,11 @@ pub const OVERLAY_LAYER: usize = 3;
 /// 内容、投影或选择变化时触发，而非每个空闲帧。
 #[derive(Resource, Default)]
 pub struct SyncState {
+    /// 上次同步时阅视文档的 revision，用于判定内容是否变化。
     last_revision: u64,
+    /// 上次同步的视图模式（2D/3D），变化时强制重建。
     last_mode: cesium_plot::model::ViewMode,
+    /// 上次同步的选择集，变化时需重新高亮因此触发重建。
     last_selection: BTreeSet<ElementId>,
     /// 上次运行更新循环的相机位姿 + 视口签名（性能 A2：让完全静止帧
     /// 可以整体跳过它）。
@@ -68,11 +71,17 @@ pub struct SyncState {
 /// 会将每个可见元素布局完全相同，因此重写它们的 transform / mesh 是多余的。
 #[derive(Clone, Copy, PartialEq)]
 struct ViewSig {
+    /// 视图模式（Globe/Flat），影响所有投影。
     mode: cesium_plot::model::ViewMode,
+    /// 激活相机平移分量（位姿签名的一部分）。
     translation: [f32; 3],
+    /// 激活相机旋转四元数（位姿签名的一部分）。
     rotation: [f32; 4],
+    /// 焦距（像素），决定透视缩放的投影尺度。
     focal_px: f64,
+    /// 主窗口屏幕尺寸（逻辑像素）。
     screen: [f32; 2],
+    /// 平面地图缩放（每世界单位像素数）。
     zoom: f32,
 }
 
@@ -83,9 +92,13 @@ struct ViewSig {
 /// 因此移动的相机只复用它们并仅重新投影 / 重新 ribbon（现已缓存的）坐标。
 #[derive(Resource, Default)]
 pub struct PlotShapeCache {
+    /// 缓存所属的文档 revision，与当前不符时整体刷新。
     revision: u64,
+    /// 缓存所属的视图模式（为 `None` 表示尚未填充）。
     mode: Option<cesium_plot::model::ViewMode>,
+    /// 以元素为键缓存的描边加密 / 采样顶点链。
     strokes: HashMap<ElementId, Vec<GeoPoint>>,
+    /// 以元素为键缓存的面外环 + 孔环顶点链。
     faces: HashMap<ElementId, (Vec<GeoPoint>, Vec<Vec<GeoPoint>>)>,
 }
 
@@ -93,6 +106,20 @@ pub struct PlotShapeCache {
 const SELECTED_TINT: [f32; 3] = [1.0, 0.85, 0.0];
 
 /// 主视图同步系统（参见模块文档）。
+///
+/// # 参数
+/// - `commands`：ECS 命令器，用于 spawn/despawn 叠加实体。
+/// - `ctx`：视图上下文（模式、缩放、屏幕尺寸）。
+/// - `plot_doc`：场景文档及其 revision / dirty 标记。
+/// - `filters`：可见性开关，参与 eval_visibility。
+/// - `visuals`：元素→实体注册表（协调权威）。
+/// - `state`：上次同步的 revision/模式/选择/视图签名。
+/// - `shapes_cache`：相机无关的描边/面剖分缓存。
+/// - `meshes`/`materials`：网格与材质资产。
+/// - `cams`：相机查询，用于选取激活相机并采集度量。
+/// - `transforms`/`nodes`：billboard 与标签的位置写回。
+/// - `roots`/`bound`：共享 UI 根节点及其目标相机。
+/// - `selection`：当前选择集（可选），驱动高亮重建。
 #[allow(clippy::too_many_arguments)]
 pub fn sync_visuals(
     mut commands: Commands,
@@ -113,6 +140,7 @@ pub fn sync_visuals(
 ) {
     // 1. 激活相机 + 投影度量。优先选择投影匹配模式的 `is_active` 相机
     //    （透视球体 / 正交平面），回退到任意激活相机。
+    // exact 记录投影与当前模式完全匹配的相机；fallback 则任意可用相机。
     let mut exact: Option<Entity> = None;
     let mut fallback: Option<Entity> = None;
     for (e, c, _gt, p) in cams.iter() {
@@ -156,7 +184,7 @@ pub fn sync_visuals(
         cam_pos: ct.translation(),
     };
 
-    // 2. 纯可见性评估。
+    // 2. 纯可见性评估。将十维可见性折叠为本帧可见集。
     let ppw_rep = match ctx.mode {
         cesium_plot::model::ViewMode::Flat => metrics.pixels_per_world,
         cesium_plot::model::ViewMode::Globe => metrics.pixels_per_world_at(Vec3::ZERO),
@@ -208,7 +236,7 @@ pub fn sync_visuals(
         shapes_cache.mode = Some(ctx.mode);
     }
 
-    // 3a. 销毁离开可见集的元素。
+    // 3a. 销毁离开可见集的元素。先从注册表抹除再 despawn实体。
     let gone: Vec<(ElementId, crate::resources::VisualEntry)> = visuals
         .entries
         .iter()
@@ -245,7 +273,7 @@ pub fn sync_visuals(
     let mut root: Option<Entity> = roots.iter().next();
     let mut root_bound = root.and_then(|r| bound.get(r).ok().map(|t| t.0));
 
-    // 4. 逐元素绘制 + 每帧几何更新。
+    // 4. 逐元素绘制 + 每帧几何更新。按几何类型分发到对应的 update。
     for id in &visible {
         let Some(element) = plot_doc.doc.element(*id) else {
             continue;
@@ -356,6 +384,10 @@ pub fn sync_visuals(
 
 /// Billboard 屏幕尺寸（px）：点的直径用于点元素，图标框尺寸用于图标元素
 /// （未设置图标样式时默认 32 px）。
+///
+/// # 参数
+/// - `style`：元素样式，提供 point_size / icon.size_px。
+/// - `geometry`：元素几何，区分点与图标。
 fn billboard_size_px(style: &Style, geometry: &Geometry) -> f64 {
     match geometry {
         Geometry::Icon(_) => style.icon.map(|i| i.size_px as f64).unwrap_or(32.0),
@@ -365,6 +397,13 @@ fn billboard_size_px(style: &Style, geometry: &Geometry) -> f64 {
 
 /// 地理坐标的叠加层世界位置（平面地图中固定 z 提升以超过底图；
 /// 球体中为椭球表面）。
+///
+/// # 参数
+/// - `metrics`：投影度量（模式决定否提升 z）。
+/// - `geo`：待投影的地理坐标。
+///
+/// # 返回
+/// 叠加层世界空间坐标（平面模式固定 z 抬升）。
 fn overlay_world(metrics: &ViewMetrics, geo: GeoPoint) -> Vec3 {
     let mut w = metrics.project(geo);
     if matches!(metrics.mode, cesium_plot::model::ViewMode::Flat) {
@@ -374,6 +413,13 @@ fn overlay_world(metrics: &ViewMetrics, geo: GeoPoint) -> Vec3 {
 }
 
 /// 一个无光照、混合材质，使用元素的有效颜色绘制，或当元素被当前选中时使用选择高亮（alpha 保持不变）。
+///
+/// # 参数
+/// - `style`：元素样式，提供有效颜色。
+/// - `selected`：是否应用选择高亮。
+///
+/// # 返回
+/// 一个无光照、混合 alpha 的 [`StandardMaterial`]。
 fn overlay_material(style: &Style, selected: bool) -> StandardMaterial {
     let c = style.effective_color();
     let rgb = if selected {
@@ -391,6 +437,8 @@ fn overlay_material(style: &Style, selected: bool) -> StandardMaterial {
 
 /// XY 平面中的单位 quad（范围 `[-0.5, 0.5]`），正面朝 +Z，因此由
 /// [`billboard_scale`] 缩放的面向相机的 billboard 在屏幕上量为 `size_px`。
+///
+/// 无需参数：直接构造并返回一个固定的 4 顶点 / 2 三角形网格。
 fn build_unit_quad() -> Mesh {
     let positions = [[-0.5, -0.5, 0.0], [0.5, -0.5, 0.0], [0.5, 0.5, 0.0], [-0.5, 0.5, 0.0]];
     let uvs = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
@@ -403,7 +451,10 @@ fn build_unit_quad() -> Mesh {
     mesh
 }
 
-/// 共享的单位 quad 句柄，首次使用时创建。
+/// 共享的单位 quad 句柄，首次使用时创建并缓存在 visuals 中。
+///
+/// # 参数
+/// - `visuals`/`meshes`：缓存宿主与网格资产。
 fn ensure_quad(
     visuals: &mut PlotVisuals,
     meshes: &mut Assets<Mesh>,
@@ -418,6 +469,16 @@ fn ensure_quad(
 
 /// 为单个点 / 图标元素创建或更新面向相机的 billboard 并写入其本帧
 /// transform（位置、旋转、恒定像素缩放）。
+///
+/// # 参数
+/// - `commands`/`visuals`/`meshes`/`materials`：实体与资产写入端。
+/// - `transforms`：可变 Transform 查询，用于复用已存在的 billboard。
+/// - `id`：目标元素 id（作注册表键）。
+/// - `geo`：元素的地理坐标。
+/// - `size_px`：billboard 的屏幕尺寸（像素）。
+/// - `metrics`：投影度量，决定世界位置与缩放。
+/// - `rot`：相机旋转，使 quad 面向相机。
+/// - `style`/`selected`：颜色来源与是否高亮。
 #[allow(clippy::too_many_arguments)]
 fn update_billboard(
     commands: &mut Commands,
@@ -463,6 +524,14 @@ fn update_billboard(
 
 /// 创建或更新多段线的 ribbon 网格并重写其本帧顶点，
 /// 以便描边在每个深度 / 缩放下保持恒定像素宽度。
+///
+/// # 参数
+/// - `commands`/`visuals`/`meshes`/`materials`：实体与资产写入端。
+/// - `id`：目标元素 id。
+/// - `positions`：已加密 / 采样的描边地理顶点链（来自缓存）。
+/// - `metrics`：投影度量，决定 ribbon 半宽与顶点世界坐标。
+/// - `rot`：相机旋转，给出 ribbon 的法线方向。
+/// - `style`/`selected`：线宽 / 颜色来源与是否高亮。
 #[allow(clippy::too_many_arguments)]
 fn update_polyline(
     commands: &mut Commands,
@@ -514,6 +583,11 @@ fn update_polyline(
 }
 
 /// 用给定的 ribbon 顶点 + 索引覆写网格的几何。
+///
+/// # 参数
+/// - `mesh`：待覆写的目标网格。
+/// - `positions`： ribbon 顶点世界坐标。
+/// - `indices`：三角形索引列表。
 fn write_ribbon(mesh: &mut Mesh, positions: &[[f32; 3]], indices: &[u32]) {
     let n = positions.len();
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions.to_vec());
@@ -524,6 +598,9 @@ fn write_ribbon(mesh: &mut Mesh, positions: &[[f32; 3]], indices: &[u32]) {
 
 /// 面材质：无光照、混合、双面（耳切三角剖分投影到球面后的绕序
 /// 在世界空间中不保证 CCW）。
+///
+/// # 参数
+/// - `color`：面的最终 RGBA（已乘不透明度 / 高亮）。
 fn face_material(color: Rgba) -> StandardMaterial {
     StandardMaterial {
         base_color: Color::srgba(color[0], color[1], color[2], color[3]),
@@ -535,6 +612,12 @@ fn face_material(color: Rgba) -> StandardMaterial {
 }
 
 /// 填充颜色（样式 fill 乘以不透明度），或为 `None` 表示纯轮廓面。
+///
+/// # 参数
+/// - `style`：元素样式，提供 fill 与 opacity。
+///
+/// # 返回
+/// 填充 RGBA，若样式无 fill 则 `None`（纯轮廓面）。
 fn fill_color(style: &Style) -> Option<Rgba> {
     style.fill.map(|f| {
         let mut c = f;
@@ -545,6 +628,12 @@ fn fill_color(style: &Style) -> Option<Rgba> {
 
 /// The outline colour + screen width: an explicit outline wins, else the base
 /// (effective) colour at the line width.
+///
+/// # 参数
+/// - `style`：元素样式，提供 outline 颜色/宽或回退到有效色。
+///
+/// # 返回
+/// 一个 `(RGBA 颜色, 屏幕像素宽)` 元组，用于绘制面轮廓 ribbon。
 fn outline_style(style: &Style) -> (Rgba, f64) {
     match style.outline {
         Some(o) => {
@@ -557,6 +646,13 @@ fn outline_style(style: &Style) -> (Rgba, f64) {
 }
 
 /// `selected` 时用选择高亮绘制 `c`（保持 alpha）。
+///
+/// # 参数
+/// - `c`：原始 RGBA 颜色。
+/// - `selected`：是否替换为高亮 RGB。
+///
+/// # 返回
+/// 高亮或原始 RGBA（alpha 始终保留）。
 fn tinted(c: Rgba, selected: bool) -> Rgba {
     if selected {
         [SELECTED_TINT[0], SELECTED_TINT[1], SELECTED_TINT[2], c[3]]
@@ -568,6 +664,11 @@ fn tinted(c: Rgba, selected: bool) -> Rgba {
 /// 剖分一个面（外环 + 孔）并构建其填充世界空间网格。
 /// 连接性在经纬度中计算（对于简单面是有效平面），
 /// 顶点然后通过激活模式投影以便同一网格在 2D 和 3D 中都正确。
+///
+/// # 参数
+/// - `outer`：外环地理顶点序列。
+/// - `holes`：孔环列表（均为地理顶点序列）。
+/// - `metrics`：投影度量，将经纬度顶点映为世界坐标。
 fn build_face_mesh(
     outer: &[GeoPoint],
     holes: &[Vec<GeoPoint>],
@@ -601,6 +702,15 @@ fn build_face_mesh(
 
 /// 构建闭合环轮廓 ribbon（外部 + 每个孔）作为一个合并的
 /// 三角带集，在每个顶点深度处屏幕宽 `width_px`。
+///
+/// # 参数
+/// - `outer`/`holes`：待轮廓化的面外环与孔环。
+/// - `metrics`：投影度量，决定顶点世界坐标与半宽。
+/// - `rot`：相机旋转，给出 ribbon 法线。
+/// - `width_px`：轮廓的屏幕像素宽。
+///
+/// # 返回
+/// 合并后的 `(顶点世界坐标, 三角形索引)`，供写入轮廓网格。
 fn build_face_outline(
     outer: &[GeoPoint],
     holes: &[Vec<GeoPoint>],
@@ -631,6 +741,13 @@ fn build_face_outline(
 
 /// 创建或更新一个填充面：静态三角填充（仅在元素 / 模式 / 选择变化时重建）
 /// 加上每帧重写的屏幕恒定宽轮廓描边。
+///
+/// # 参数
+/// - `commands`/`visuals`/`meshes`/`materials`：实体与资产写入端。
+/// - `id`：目标元素 id。
+/// - `outer`/`holes`：面外环与孔环地理顶点（来自缓存）。
+/// - `metrics`/`rot`：投影度量与相机旋转。
+/// - `style`/`selected`：填充/轮廓颜色来源与是否高亮。
 #[allow(clippy::too_many_arguments)]
 fn update_face(
     commands: &mut Commands,
@@ -702,6 +819,14 @@ fn update_face(
 
 /// 创建或更新一个标签文本节点并从投影锚点写入其绝对屏幕位置
 /// （粘附到激活相机的视口）。
+///
+/// # 参数
+/// - `commands`/`visuals`：实体与注册表写入端。
+/// - `nodes`：可变 Node 查询，用于回写标签屏幕位置。
+/// - `id`/`lg`：目标元素 id 与其标签几何（锚点/文本/偏移）。
+/// - `style`：字体/颜色等样式来源。
+/// - `metrics`/`cam`/`ct`：投影度量与相机（世界→屏幕）。
+/// - `root`：共享 UI 根节点，新标签挂到其下。
 #[allow(clippy::too_many_arguments)]
 fn update_label(
     commands: &mut Commands,
@@ -730,6 +855,10 @@ fn update_label(
 }
 
 /// 销毁视觉条目的所有实体（网格、面填充 / 轮廓、标签）。
+///
+/// # 参数
+/// - `commands`：ECS 命令器。
+/// - `entry`：待销毁的视觉条目（持有各类实体句柄）。
 fn despawn_entry(commands: &mut Commands, entry: &crate::resources::VisualEntry) {
     if let Some(m) = entry.mesh {
         commands.entity(m).despawn();
@@ -758,6 +887,7 @@ mod tests {
 
     /// 一个 headless 应用，只包含桥接资源、同步系统和一个激活的透视相机。
     /// 返回应用和相机实体，以便测试可以重新指向其投影。
+    /// 用于验证不依赖真实窗口的同步行为。
     fn globe_app() -> (App, Entity) {
         let mut app = App::new();
         app.init_resource::<Assets<Mesh>>()
@@ -794,6 +924,7 @@ mod tests {
     }
 
     /// 两个点、一条多段线和一个标签——四种 M2 图元类型。
+    /// 返回所属图层 id，供后续隐藏/断言使用。
     fn seed(doc: &mut Document) -> LayerId {
         let layer = doc.new_layer("L");
         let p1 = doc.make_element("a", Geometry::Point(GeoPoint::surface(0.0, 0.0)));
@@ -825,6 +956,7 @@ mod tests {
     }
 
     /// 通过权威注册表统计活跃网格 / 标签实体数量。
+    /// 返回 `(网格数, 标签数)`，用于协调断言。
     fn counts(app: &App) -> (usize, usize) {
         let v = app.world().resource::<PlotVisuals>();
         let meshes = v.entries.values().filter(|e| e.mesh.is_some()).count();
@@ -833,6 +965,7 @@ mod tests {
     }
 
     /// 统计活跃面填充 + 轮廓实体数量（M4 多边形面）。
+    /// 返回 `(填充数, 轮廓数)`，用于验证面拆分为两部分实体。
     fn face_counts(app: &App) -> (usize, usize) {
         let v = app.world().resource::<PlotVisuals>();
         let fills = v.entries.values().filter(|e| e.fill.is_some()).count();
@@ -841,6 +974,7 @@ mod tests {
     }
 
     /// 一个多边形、一个矩形和一个圆——三种 M4 填充面类型。
+    /// 均挂到名为 "F" 的新图层，供面计数/隐藏测试使用。
     fn seed_faces(doc: &mut Document) {
         let layer = doc.new_layer("F");
         let poly = doc.make_element(
@@ -876,6 +1010,7 @@ mod tests {
         doc.add_element_to_layer(layer, circle);
     }
 
+    /// 空文档下同步应不绘制任何实体（网格与标签均为 0）。
     #[test]
     fn empty_document_draws_nothing() {
         let (mut app, _cam) = globe_app();
@@ -883,6 +1018,7 @@ mod tests {
         assert_eq!(counts(&app), (0, 0));
     }
 
+    /// 两种点 + 一条多段线 + 一个标签应各自被协调为对应的实体。
     #[test]
     fn points_line_and_label_are_reconciled() {
         let (mut app, _cam) = globe_app();
@@ -896,6 +1032,7 @@ mod tests {
         assert_eq!(counts(&app), (3, 1));
     }
 
+    /// 隐藏整个图层后，其所有元素实体都应被销毁并从注册表丢弃。
     #[test]
     fn hidden_layer_despawns_its_element() {
         let (mut app, _cam) = globe_app();
@@ -917,6 +1054,7 @@ mod tests {
         assert_eq!(counts(&app), (0, 0));
     }
 
+    /// 从 Globe 切到 Flat 应强制在平面空间中完全重建（可见集不变）。
     #[test]
     fn switching_to_flat_rebuilds_everything() {
         let (mut app, cam) = globe_app();
@@ -949,6 +1087,7 @@ mod tests {
         assert_eq!(counts(&app), (3, 1), "same visible set, rebuilt flat");
     }
 
+    /// 三种填充面应各得到一个填充网格加一个轮廓描边（不携带 billboard）。
     #[test]
     fn faces_get_a_fill_and_an_outline() {
         let (mut app, _cam) = globe_app();
@@ -964,6 +1103,7 @@ mod tests {
         assert_eq!(counts(&app), (0, 0));
     }
 
+    /// 隐藏面图层应同时销毁其填充与轮廓实体。
     #[test]
     fn hiding_a_face_layer_despawns_fill_and_outline() {
         let (mut app, _cam) = globe_app();

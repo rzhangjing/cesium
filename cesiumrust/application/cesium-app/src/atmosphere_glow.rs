@@ -17,6 +17,10 @@ use crate::orbit_camera::OrbitState;
 pub struct AtmosphereGlowPlugin;
 
 impl Plugin for AtmosphereGlowPlugin {
+    /// 插件装配入口：启动时生成大气壳层，每帧按距离渐淡。
+    ///
+    /// # 参数
+    /// - `app`：Bevy 应用。
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_atmosphere)
             .add_systems(Update, fade_atmosphere_with_distance);
@@ -26,6 +30,7 @@ impl Plugin for AtmosphereGlowPlugin {
 /// 每个壳层的基础叠加 alpha，在 camera 远离时恢复。
 #[derive(Component)]
 struct AtmosphereShell {
+    /// 该壳层在未渐淡时的基准叠加 alpha。
     base_alpha: f32,
 }
 
@@ -36,6 +41,7 @@ fn glow_fade(distance: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// 生成多层向外阶梯的半透明球壳，构成大气边缘的蓝色辉光。
 fn setup_atmosphere(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,

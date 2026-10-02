@@ -1,5 +1,4 @@
 //! AttributeCompression —— 八面体编码、纹理坐标压缩、zigzag 解码。
-//! 映射到 CesiumJS `Core/AttributeCompression.js`
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -163,6 +162,7 @@ pub fn decompress_texture_coordinates(compressed: f64) -> DVec2 {
     )
 }
 
+/// ZigZag 解码：将无符号整数还原为有符号整数（最低位为符号位）。
 fn zig_zag_decode(value: u16) -> i32 {
     let v = value as i32;
     (v >> 1) ^ -(v & 1)
@@ -192,8 +192,6 @@ pub fn zig_zag_delta_decode(u_buffer: &mut [u16], v_buffer: &mut [u16], mut heig
 
 /// WebGL 分量数据类型。分量是内建类型，
 /// 它们构成属性，属性又构成顶点。
-///
-/// 映射到 CesiumJS `Core/ComponentDatatype.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ComponentDatatype {
     /// 8 位有符号字节 (gl.BYTE = 0x1400)
@@ -296,8 +294,6 @@ impl ComponentDatatype {
 }
 
 /// 几何索引的索引数据类型。
-///
-/// 映射到 CesiumJS `Core/IndexDatatype.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IndexDatatype {
     /// 8 位无符号字节 (gl.UNSIGNED_BYTE = 0x1401)

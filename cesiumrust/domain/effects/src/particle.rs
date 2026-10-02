@@ -1,13 +1,8 @@
 //! 粒子系统：发射器、粒子、爆发与系统生命周期。
 //!
-//! 映射到 CesiumJS：
-//! - `Scene/ParticleSystem.js`
-//! - `Scene/Particle.js`
-//! - `Scene/ParticleBurst.js`
-//! - `Scene/BoxEmitter.js`
-//! - `Scene/CircleEmitter.js`
-//! - `Scene/SphereEmitter.js`
-//! - `Scene/ConeEmitter.js`
+//! 支持盒/圆/球/圆锥四类发射器的确定性伪随机播种发射，
+//! 逐粒子推进位置、寿命、颜色与缩放插值，并统一管理爆发触发、
+//! 循环寿命与系统重置。
 
 use glam::DVec3;
 use std::f64::consts::PI;
@@ -44,7 +39,9 @@ pub enum ParticleEmitter {
 }
 
 impl Default for ParticleEmitter {
+    /// 默认发射器为半径 0.5 的圆形发射器。
     fn default() -> Self {
+        // 圆形发射器最通用，作为系统默认形状
         Self::Circle { radius: 0.5 }
     }
 }
@@ -56,6 +53,7 @@ impl ParticleEmitter {
     pub fn emit(&self, seed: f64) -> (DVec3, DVec3) {
         match self {
             Self::Box { dimensions } => {
+                // 盒内均匀取点，速度沿位置方向向外辐射
                 let half = *dimensions * 0.5;
                 let x = lerp_signed(-half.x, half.x, frac(seed * 7.13));
                 let y = lerp_signed(-half.y, half.y, frac(seed * 3.77));
@@ -69,6 +67,7 @@ impl ParticleEmitter {
                 (pos, vel)
             }
             Self::Circle { radius } => {
+                // 圆盘内极坐标取点，速度沿 +Z
                 let theta = frac(seed * 6.28) * TWO_PI;
                 let rad = frac(seed * 2.17) * radius;
                 let x = rad * theta.cos();
@@ -76,6 +75,7 @@ impl ParticleEmitter {
                 (DVec3::new(x, y, 0.0), DVec3::Z)
             }
             Self::Sphere { radius } => {
+                // 球内球坐标取点，速度沿位置向外
                 let theta = frac(seed * 4.31) * TWO_PI;
                 let phi = frac(seed * 2.79) * PI;
                 let rad = frac(seed * 1.53) * radius;
@@ -91,6 +91,7 @@ impl ParticleEmitter {
                 (pos, vel)
             }
             Self::Cone { angle } => {
+                // 圆锥底面取点，速度由顶点指向底面
                 let cone_radius = angle.tan();
                 let theta = frac(seed * 5.47) * TWO_PI;
                 let rad = frac(seed * 3.23) * cone_radius;
@@ -151,6 +152,7 @@ impl Particle {
 
     /// 获取归一化年龄 [0, 1]。
     pub fn normalized_age(&self) -> f64 {
+        // 零/负寿命视为已到期；否则 age/life 限到 [0,1]
         if self.life <= 0.0 {
             return 1.0;
         }
@@ -289,7 +291,9 @@ pub struct ParticleSystem {
 }
 
 impl Default for ParticleSystem {
+    /// 默认可见、循环、每秒 5 粒、寿命近乎无限。
     fn default() -> Self {
+        // 各颜色/缩放/速度/寿命取中性默认值，变换矩阵为单位阵
         Self {
             show: true,
             loop: true,
@@ -466,15 +470,21 @@ impl ParticleSystem {
 // 辅助函数
 // ============================================================================
 
+/// 在 [a, b] 间按 t∈[0,1] 线性插值（允许越界外推）。
 fn lerp_signed(a: f64, b: f64, t: f64) -> f64 {
+    // 支持 t 超界时的有符号外推，用于确定性伪随机采样
     a + (b - a) * t
 }
 
+/// 取 x 的小数部分 [0, 1)。
 fn frac(x: f64) -> f64 {
+    // 用 floor 提取小数位，作为伪随机归一化手段
     x - x.floor()
 }
 
+/// 构造 4x4 列主序单位矩阵。
 fn identity_matrix() -> [f64; 16] {
+    // 对角为 1、其余为 0 的中性变换
     [
         1.0, 0.0, 0.0, 0.0,
         0.0, 1.0, 0.0, 0.0,

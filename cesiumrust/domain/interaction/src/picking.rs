@@ -1,9 +1,7 @@
 //! 屏幕空间拾取：将屏幕坐标转换为世界射线。
 //!
-//! 映射到 CesiumJS `Scene/Scene.js` 的拾取方法：
-//! - `Scene.pick`
-//! - `Scene.drillPick`
-//! - `Camera.getPickRay`
+//! 提供屏幕空间拾取能力：从窗口坐标生成拾取射线，
+//! 并支持逐层穿透拾取与椭球求交。
 
 use cesium_camera::Camera;
 use cesium_geospatial::ellipsoid::Ellipsoid;

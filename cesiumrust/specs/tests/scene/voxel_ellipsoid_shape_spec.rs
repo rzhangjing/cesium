@@ -1,4 +1,4 @@
-//! VoxelEllipsoidShape 测试，移植自 CesiumJS VoxelEllipsoidShapeSpec.js
+//! VoxelEllipsoidShape 测试，参考自 CesiumJS VoxelEllipsoidShapeSpec
 //! 测试：constructs、update 可见性、OBB 有效性、compute_obb_for_tile
 
 use cesium_voxel::{VoxelEllipsoidShape, VoxelShape};
@@ -21,7 +21,7 @@ fn ellipsoid_default_max() -> DVec3 {
 
 #[test]
 fn test_constructs() {
-    // 移植自："constructs"
+    // 参考自："constructs"
     let shape = VoxelEllipsoidShape::new();
     assert_eq!(shape.shape_transform(), DMat4::IDENTITY);
 }
@@ -32,7 +32,7 @@ fn test_constructs() {
 
 #[test]
 fn test_update_with_model_matrix() {
-    // 移植自："update works with model matrix"（部分——可见性 + OBB 有效性）
+    // 参考自："update works with model matrix"（部分——可见性 + OBB 有效性）
     let mut shape = VoxelEllipsoidShape::new();
 
     let translation = DVec3::new(1.0, 2.0, 3.0);
@@ -88,7 +88,7 @@ fn test_update_invisible_clipped_away() {
 
 #[test]
 fn test_compute_obb_for_tile() {
-    // 移植自："computeOrientedBoundingBoxForTile returns oriented bounding box"
+    // 参考自："computeOrientedBoundingBoxForTile returns oriented bounding box"
     // 使用单位球 + 高度边界 [-0.5, 0.0]
     let mut shape = VoxelEllipsoidShape::with_radii(DVec3::ONE);
 

@@ -1,5 +1,5 @@
-//! DataSources/PropertySpec.js、ConstantPropertySpec.js、SampledPropertySpec.js、
-//! CompositePropertySpec.js、CallbackPropertySpec.js、ReferencePropertySpec.js
+//! DataSources/PropertySpec、ConstantPropertySpec、SampledPropertySpec、
+//! CompositePropertySpec、CallbackPropertySpec、ReferencePropertySpec
 //! → Rust 集成测试
 
 use cesium_datasource::property::{Color, Property};

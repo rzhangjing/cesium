@@ -1,6 +1,6 @@
 //! DataSourceClock + CustomDataSource 的测试
-//! - DataSourceClockSpec.js：5 个 it() → 4 个 A 类（1 个 C 类：throws 已省略）
-//! - CustomDataSourceSpec.js：6 个 it() → 2 个 A 类（4 个 C 类：events 已省略）
+//! - DataSourceClockSpec：5 个 it() → 4 个 A 类（1 个 C 类：throws 已省略）
+//! - CustomDataSourceSpec：6 个 it() → 2 个 A 类（4 个 C 类：events 已省略）
 
 use cesium_datasource::custom_data_source::CustomDataSource;
 use cesium_datasource::datasource_clock::DataSourceClock;

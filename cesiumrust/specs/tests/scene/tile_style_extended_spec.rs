@@ -1,5 +1,5 @@
-//! TileStyle / StyleExpression 扩展规范 - 移植自 Cesium3DTileStyleSpec.js
-//! 和 ExpressionSpec.js
+//! TileStyle / StyleExpression 扩展规范 - 参考自 Cesium3DTileStyleSpec
+//! 和 ExpressionSpec
 //!
 //! 测试所有比较运算符、算术运算符、内置函数、
 //! CSS/hex 颜色解析、属性引用、真值性、条件语句、

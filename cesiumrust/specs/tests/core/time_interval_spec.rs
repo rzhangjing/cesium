@@ -1,4 +1,4 @@
-//! Core/TimeIntervalSpec.js → Rust integration tests
+//! Core/TimeIntervalSpec → Rust integration tests
 //! 35 original it() blocks. JS-specific tests (undefined params, data field, result param) skipped.
 //! Ported: constructor, fromIso8601, toIso8601, isEmpty, contains, equals, clone, intersect
 

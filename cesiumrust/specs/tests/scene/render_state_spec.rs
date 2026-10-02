@@ -1,5 +1,5 @@
 //! RenderState / ClearCommand / ComputeCommand / Texture / Framebuffer / TextureAtlas 规范
-//! 移植自 CesiumJS Renderer/RenderState.js + ClearCommand.js + Texture.js + TextureAtlas.js
+//! 参考自 CesiumJS Renderer/RenderState + ClearCommand + Texture + TextureAtlas
 //!
 //! A 类测试：RenderState 预设、ClearCommand 变体、ComputeCommand uniform、
 //! PassState 默认值、Texture 构造/mipmap、Framebuffer 附件、

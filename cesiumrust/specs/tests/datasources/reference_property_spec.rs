@@ -1,4 +1,4 @@
-//! CesiumJS DataSources/ReferencePropertySpec.js A 类测试的忠实移植。
+//! CesiumJS DataSources/ReferencePropertySpec A 类测试的对齐实现。
 //!
 //! 原始：24 个 it() 测试。A 类（纯逻辑，无事件/spy）：10 个测试。
 //! 基于事件的测试（definitionChanged 追踪）属 B 类。
@@ -24,7 +24,7 @@ fn names(v: &[&str]) -> Vec<String> {
 
 #[test]
 fn reference_property_constructor_sets_expected_values() {
-    // 移植自："constructor sets expected values"
+    // 参考自："constructor sets expected values"
     let resolver = Arc::new(MapPropertyResolver::new());
     let property = ReferenceProperty::new(
         resolver,
@@ -45,7 +45,7 @@ fn reference_property_constructor_sets_expected_values() {
 
 #[test]
 fn reference_property_from_string_sets_expected_values() {
-    // 移植自："fromString sets expected values"
+    // 参考自："fromString sets expected values"
     let resolver = Arc::new(MapPropertyResolver::new());
     let property = ReferenceProperty::from_string(resolver, "testId#foo.bar.baz");
 
@@ -58,7 +58,7 @@ fn reference_property_from_string_sets_expected_values() {
 
 #[test]
 fn reference_property_from_string_works_with_escaped_values() {
-    // 移植自："fromString works with escaped values"
+    // 参考自："fromString works with escaped values"
     let resolver = Arc::new(MapPropertyResolver::new());
     let property = ReferenceProperty::from_string(
         resolver,
@@ -82,7 +82,7 @@ fn reference_property_from_string_works_with_escaped_values() {
 
 #[test]
 fn reference_property_get_value_returns_undefined_if_target_not_resolved() {
-    // 移植自："getValue returns undefined if target entity can not be resolved"
+    // 参考自："getValue returns undefined if target entity can not be resolved"
     let resolver = Arc::new(MapPropertyResolver::new());
     let property = ReferenceProperty::from_string(resolver, "testId#foo.bar");
     let time = jd(2451545.0, 0.0);
@@ -92,7 +92,7 @@ fn reference_property_get_value_returns_undefined_if_target_not_resolved() {
 
 #[test]
 fn reference_property_get_value_returns_undefined_if_property_not_resolved() {
-    // 移植自："getValue returns undefined if target property can not be resolved"
+    // 参考自："getValue returns undefined if target property can not be resolved"
     // 在 "testId#billboard" 注册属性，但查询 "testId#billboard.scale"
     let mut r = MapPropertyResolver::new();
     r.insert(
@@ -109,7 +109,7 @@ fn reference_property_get_value_returns_undefined_if_property_not_resolved() {
 
 #[test]
 fn reference_property_is_constant_true_when_unresolved() {
-    // 移植自："isConstant returns true when target entity does not exist"
+    // 参考自："isConstant returns true when target entity does not exist"
     let resolver = Arc::new(MapPropertyResolver::new());
     let property = ReferenceProperty::from_string(resolver, "nonExistent#foo");
 
@@ -118,7 +118,7 @@ fn reference_property_is_constant_true_when_unresolved() {
 
 #[test]
 fn reference_property_properly_tracks_resolved_property() {
-    // 移植自："properly tracks resolved property"（A 类子集：getValue/isConstant）
+    // 参考自："properly tracks resolved property"（A 类子集：getValue/isConstant）
     let mut resolver = MapPropertyResolver::new();
     resolver.insert(
         "testId",
@@ -156,7 +156,7 @@ fn reference_property_resolved_property_none_when_unresolvable() {
 
 #[test]
 fn reference_property_equals_works() {
-    // 移植自："equals works"
+    // 参考自："equals works"
     let resolver1 = Arc::new(MapPropertyResolver::new());
     let resolver2 = Arc::new(MapPropertyResolver::new());
 
@@ -187,7 +187,7 @@ fn reference_property_equals_works() {
 
 #[test]
 fn reference_property_reference_frame_delegates_to_resolved() {
-    // 移植自："works with position properties"（A 类子集：referenceFrame）
+    // 参考自："works with position properties"（A 类子集：referenceFrame）
     use cesium_datasource::property_system::{ConstantPositionProperty, ReferenceFrame};
     use glam::DVec3;
 

@@ -1,4 +1,4 @@
-//! Core/JulianDateSpec.js → Rust integration tests
+//! Core/JulianDateSpec → Rust integration tests
 //! 162 original it() blocks. JS-specific tests (undefined params, Date type checks) skipped.
 //! Ported: constructor, fromIso8601, toIso8601, toDate, arithmetic, comparison, computeTaiMinusUtc
 

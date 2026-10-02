@@ -1,11 +1,9 @@
 //! 瓦片替换队列：基于 LRU 的瓦片管理。
 //!
-//! 镜像 CesiumJS `Scene/TileReplacementQueue.js`。
-//!
 //! 一个待替换瓦片的优先队列，必要时为新瓦片腾出空间。
-//! 该队列实现为带帧边界标记的双链表。
+//! 该队列实现为带帧边界标记的双链表，按最近使用情况排序。
 
-// 遗留的 CesiumJS 移植风格债务（deferred.md #18）；在 M13 lint-cleanup 或本文件在其里程碑被重写时重新审视
+// 遗留的 原实现 移植风格债务（deferred.md #18）；在 M13 lint-cleanup 或本文件在其里程碑被重写时重新审视
 #![allow(dead_code)]
 use std::collections::HashMap;
 
@@ -15,9 +13,13 @@ pub type TileId = u64;
 /// 双链表中的内部节点。
 #[derive(Debug, Clone)]
 struct QueueNode {
+    /// 本节点对应的瓦片唯一标识。
     tile_id: TileId,
+    /// 是否可被卸载（仅木瓦片且未渲染时为 true）。
     eligible_for_unloading: bool,
+    /// 前驱节点 ID（双链表）。
     prev: Option<TileId>,
+    /// 后继节点 ID（双链表）。
     next: Option<TileId>,
 }
 
@@ -28,7 +30,7 @@ struct QueueNode {
 /// （`last_before_start_of_frame`）。修剪时，从尾部直到（并包括）
 /// 该标记的瓦片可被移除（若符合条件）。
 ///
-/// 映射到 CesiumJS `TileReplacementQueue`。
+/// 对应 `TileReplacementQueue`。
 #[derive(Debug)]
 pub struct TileReplacementQueue {
     /// 从瓦片 ID 到节点的映射。
@@ -224,7 +226,7 @@ impl TileReplacementQueue {
     }
 
     /// 将节点从链表和 map 中完全移除。递减 count。
-    /// 忠于 CesiumJS 的 `remove` 函数。
+    /// 忠于 原实现 的 `remove` 函数。
     fn remove_node(&mut self, item_id: TileId) {
         let (prev, next) = {
             let node = &self.nodes[&item_id];
@@ -260,6 +262,7 @@ impl TileReplacementQueue {
 }
 
 impl Default for TileReplacementQueue {
+    /// 默认构造一个空队列（与 [`Self::new`] 一致）。
     fn default() -> Self {
         Self::new()
     }

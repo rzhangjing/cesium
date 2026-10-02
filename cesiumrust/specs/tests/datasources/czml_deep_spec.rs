@@ -1,5 +1,5 @@
 //! CZML 深度规范 - 详细属性解析、边缘情形、对象格式
-//! 移植自 DataSources/CzmlDataSourceSpec.js（更深层的 A 类路径）
+//! 参考自 DataSources/CzmlDataSourceSpec（更深层的 A 类路径）
 
 use cesium_datasource::{parse_czml, Property};
 

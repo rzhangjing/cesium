@@ -18,7 +18,9 @@ use super::{FetchResult, NetworkBackend};
 /// 内部为从工作线程发起的阻塞调用创建一个单线程的 tokio 运行时。这
 /// 并非流水线的主运行时。
 pub struct ReqwestBackend {
+    /// reqwest 阻塞式 HTTP 客户端（内部包裹一个单线程 tokio 运行时）。
     client: reqwest::blocking::Client,
+    /// 单次请求的超时时长。
     timeout: Duration,
 }
 
@@ -46,12 +48,15 @@ impl ReqwestBackend {
 }
 
 impl Default for ReqwestBackend {
+    /// 默认构造（等价于 [`ReqwestBackend::new`]，10 s 超时）。
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl NetworkBackend for ReqwestBackend {
+    /// 同步 GET 一个 URL，按结果分类为 [`FetchResult`]：404 为
+    /// `Permanent`，非2xx/传输错误为 `Transient`，成功读取为 `Ok`。
     fn fetch(&self, url: &str) -> FetchResult {
         match self.client.get(url).send() {
             Ok(resp) => {
@@ -68,6 +73,8 @@ impl NetworkBackend for ReqwestBackend {
                 }
             }
             Err(e) => {
+                // 超时/连接失败归为 `Transient`（可重试）；其余请求级错误同样
+                // 保守地归为瞬时，避免因一次抖动就永久丢弃瓦片。
                 if e.is_timeout() || e.is_connect() {
                     FetchResult::Transient(format!("transport: {e}"))
                 } else {
@@ -77,10 +84,12 @@ impl NetworkBackend for ReqwestBackend {
         }
     }
 
+    /// 后端名称标识（固定为 `"reqwest"`）。
     fn name(&self) -> &str {
         "reqwest"
     }
 
+    /// 当前生效的请求超时时长。
     fn timeout(&self) -> Duration {
         self.timeout
     }

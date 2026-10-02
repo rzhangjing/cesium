@@ -1,4 +1,4 @@
-//! Scene/TweenCollectionSpec.js → Rust 集成测试
+//! Scene/TweenCollectionSpec → Rust 集成测试
 //!
 //! 原始：25 it() → 11 A 类（14 C 类：throws/callbacks-spy）
 //! A 类：add(2) + add_zero_duration(1) + cancelTween(1) + remove(1) +

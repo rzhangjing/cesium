@@ -1,5 +1,5 @@
-//! AssociativeArray 规格测试 - 移植自：
-//! - packages/engine/Specs/Core/AssociativeArraySpec.js（5 个 it()）
+//! AssociativeArray 规格测试 - 参考自：
+//! - Specs/Core/AssociativeArraySpec（5 个 it()）
 //!
 //! A 类测试：2 个（跳过 3 个 JS 特有的 `throws`/undefined-key 测试）
 

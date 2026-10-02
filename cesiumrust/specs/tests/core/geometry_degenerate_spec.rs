@@ -1,5 +1,5 @@
-//! 几何退化情形 - 移植自 CesiumJS Core/CylinderGeometrySpec.js、
-//! Core/EllipsoidGeometrySpec.js、Core/BoxGeometrySpec.js
+//! 几何退化情形 - 参考自 CesiumJS Core/CylinderGeometrySpec、
+//! Core/EllipsoidGeometrySpec、Core/BoxGeometrySpec
 //!
 //! 测试应产生最小/空几何的退化输入。
 
@@ -11,7 +11,7 @@ use glam::DVec3;
 
 const EPSILON10: f64 = 1e-10;
 
-// ─── CylinderGeometry 退化情形（来自 CylinderGeometrySpec.js）────────
+// ─── CylinderGeometry 退化情形（来自 CylinderGeometrySpec）────────
 
 #[test]
 fn cylinder_degenerate_length_zero() {
@@ -82,7 +82,7 @@ fn cylinder_large_slice_count() {
     assert_eq!(geo.primitive_type, PrimitiveType::Triangles);
 }
 
-// ─── EllipsoidGeometry 退化情形（来自 EllipsoidGeometrySpec.js）─────
+// ─── EllipsoidGeometry 退化情形（来自 EllipsoidGeometrySpec）─────
 
 #[test]
 fn ellipsoid_degenerate_zero_x_radius() {
@@ -153,7 +153,7 @@ fn ellipsoid_non_uniform_bounding_sphere() {
     assert!((geo.bounding_sphere.radius - 3.0).abs() < EPSILON10);
 }
 
-// ─── BoxGeometry 退化情形（来自 BoxGeometrySpec.js）─────────────────
+// ─── BoxGeometry 退化情形（来自 BoxGeometrySpec）─────────────────
 
 #[test]
 fn box_degenerate_flat_in_x() {

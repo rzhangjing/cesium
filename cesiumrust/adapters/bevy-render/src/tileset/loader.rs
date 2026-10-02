@@ -1,3 +1,8 @@
+//! 3D Tiles 瓦片集加载：异步下载并解析根 tileset.json。
+//!
+//! [`tileset_load_system`] 为每个未加载的 root 分派一次后台 fetch（跑在
+//! [`IoTaskPool`] 上，帧线程从不阻塞），并由 [`poll_tileset_fetches`] 逐帧
+//! 收获已完成的解析结果，写入 [`LoadedTileset`] 资源。
 use std::collections::HashMap;
 
 use bevy::prelude::*;
@@ -9,16 +14,23 @@ use crate::components::{CesiumTilesetRoot, TilesetLoadingState};
 use crate::pipeline;
 use crate::resources::TileLoadStats;
 
+/// 已加载的瓦片集资源（根 JSON、领域状态与根实体）。
 #[derive(Resource, Default)]
 pub struct LoadedTileset {
+    /// 解析后的 tileset.json（未就绪为 None）。
     pub tileset_json: Option<TilesetJson>,
+    /// 领域层瓦片集状态（持有 base 路径等）。
     pub state: TilesetState,
+    /// 来源 URL。
     pub url: String,
+    /// 对应的根实体。
     pub root_entity: Option<Entity>,
 }
 
+/// 飞行中的 fetch 集合资源（按 URL 去重）。
 #[derive(Resource, Default)]
 pub struct TilesetFetchState {
+    /// URL → 待处理 fetch 请求。
     pub pending_urls: HashMap<String, TilesetFetchRequest>,
 }
 
@@ -29,6 +41,14 @@ pub struct TilesetFetchRequest {
     pub task: Task<Result<TilesetJson, String>>,
 }
 
+/// 主加载系统：收获已完成的 fetch，并为新出现的未加载 root 分派后台下载。
+///
+/// # 参数
+/// - `commands`：实体命令（插入 Loading 状态）
+/// - `tileset_query`：所有瓦片集 root
+/// - `loaded`：已加载瓦片集资源（可写）
+/// - `fetch_state`：飞行中 fetch 集合（可写）
+/// - `stats`：加载统计（可写）
 pub fn tileset_load_system(
     mut commands: Commands,
     tileset_query: Query<(Entity, &CesiumTilesetRoot)>,
@@ -141,6 +161,10 @@ fn fetch_tileset_json(url: &str, use_pipeline: bool) -> Result<TilesetJson, Stri
     TilesetJson::from_json(&json_str).map_err(|e| format!("JSON parse error: {}", e))
 }
 
+/// 初始化瓦片集加载插件：注册相关资源。
+///
+/// # 参数
+/// - `app`：Bevy 应用
 pub fn tileset_load_plugin(app: &mut App) {
     app.init_resource::<LoadedTileset>()
         .init_resource::<TilesetFetchState>();
@@ -151,6 +175,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// 应能从内联 JSON 字符串解析出瓦片集字段。
     fn test_fetch_tileset_json_from_string() {
         let json = r#"{
             "asset": { "version": "1.0" },
@@ -168,6 +193,7 @@ mod tests {
     }
 
     #[test]
+    /// 默认已加载瓦片集应为空（无 JSON/实体、URL 为空）。
     fn test_loaded_tileset_defaults() {
         let loaded = LoadedTileset::default();
         assert!(loaded.tileset_json.is_none());
@@ -176,6 +202,7 @@ mod tests {
     }
 
     #[test]
+    /// 应从 URL 去掉最后一段得到 base 路径。
     fn test_tileset_state_base_path() {
         let url = "https://example.com/tiles/tileset.json";
         let base_path = url.rsplit_once('/').map(|(base, _)| base.to_string()).unwrap();

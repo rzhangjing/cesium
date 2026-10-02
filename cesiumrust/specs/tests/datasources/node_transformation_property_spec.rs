@@ -1,4 +1,4 @@
-//! NodeTransformationProperty 的测试 - 移植自 NodeTransformationPropertySpec.js
+//! NodeTransformationProperty 的测试 - 参考自 NodeTransformationPropertySpec
 //!
 //! 原始：7 个 it() → 5 个 A 类（2 个 C 类：result-param/definitionChanged 已省略）
 

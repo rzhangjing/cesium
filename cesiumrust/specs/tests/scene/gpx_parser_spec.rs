@@ -1,5 +1,5 @@
 //! GPX 解析器规范
-//! 移植自 CesiumJS DataSources/GpxDataSourceSpec.js
+//! 参考自 CesiumJS DataSources/GpxDataSourceSpec
 
 use cesium_gpx::parser::{
     gpx_to_datasource, parse_gpx_simple, GpxDocument, GpxRoutePoint, GpxTrackPoint, GpxWaypoint,

@@ -1,8 +1,8 @@
 //! Scene/ImageryLayer 混合 → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/ImageryLayer.js（混合、颜色调整、alpha）
-//! - Scene/ImageryLayerCollection.js（图层合成）
+//! 参考 CesiumJS：
+//! - Scene/ImageryLayer（混合、颜色调整、alpha）
+//! - Scene/ImageryLayerCollection（图层合成）
 //!
 //! A 类测试：compute_effective_alpha、apply_color_adjustments、
 //! blend_pixel（Standard/Additive/Multiplicative）、composite_layers、

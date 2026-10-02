@@ -1,12 +1,8 @@
 //! 用于 3D Tiles 元数据与自定义着色器的 AttributeType 枚举。
-//!
-//! 映射到 CesiumJS `Scene/AttributeType.js`
 
-// 遗留 CesiumJS 移植风格债（deferred.md #18）；将在 M13 lint 清理，或本文件在其所属里程碑被重写时重新审视
+// 遗留移植风格债（deferred.md #18）；将在 M13 lint 清理，或本文件在其所属里程碑被重写时重新审视
 #![allow(clippy::should_implement_trait)]
 /// 描述元数据与自定义着色器属性类型的枚举。
-///
-/// 映射到 CesiumJS `Scene/AttributeType.js`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AttributeType {
     /// 单个标量值。
@@ -28,7 +24,8 @@ pub enum AttributeType {
 impl AttributeType {
     /// 获取该属性类型的 GLSL 类型字符串。
     ///
-    /// 映射到 CesiumJS `AttributeType.getGlslType`。
+    /// 标量返回 `float`，向量/矩阵按维度返回对应的 `vecN`/`matN`。
+    /// 结果用于拼接自定义着色器中的类型声明。
     pub fn get_glsl_type(&self) -> &'static str {
         match self {
             AttributeType::Scalar => "float",
@@ -43,7 +40,8 @@ impl AttributeType {
 
     /// 获取该属性类型的分量数量。
     ///
-    /// 映射到 CesiumJS `AttributeType.getNumberOfComponents`。
+    /// 标量为 1，`vecN` 为 N，`matN` 为 N²。
+    /// 反映底层数据打包时连续存储的分量总数。
     pub fn get_number_of_components(&self) -> usize {
         match self {
             AttributeType::Scalar => 1,
@@ -59,7 +57,8 @@ impl AttributeType {
     /// 获取该类型所需的属性位置数量。
     /// 矩阵需要多个位置（每行一个）。
     ///
-    /// 映射到 CesiumJS `AttributeType.getAttributeLocationCount`。
+    /// 标量与向量各占 1 个位置，`matN` 按行数占 N 个位置，
+    /// 因 GLSL 中矩阵 attribute 的每一行需独立的位置槽。
     pub fn get_attribute_location_count(&self) -> usize {
         match self {
             AttributeType::Scalar => 1,
@@ -74,7 +73,8 @@ impl AttributeType {
 
     /// 获取该属性类型的数学类型名称。
     ///
-    /// 映射到 CesiumJS `AttributeType.getMathType`。
+    /// 返回对应的数学类型名（如 `Cartesian3`、`Matrix4`），
+    /// 供样式求值与属性转换按名分派。
     pub fn get_math_type_name(&self) -> &'static str {
         match self {
             AttributeType::Scalar => "Number",

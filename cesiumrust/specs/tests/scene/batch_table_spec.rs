@@ -1,9 +1,9 @@
 //! Scene/Cesium3DTileBatchTable + FeatureTable → Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/Cesium3DTileFeatureTable.js
-//! - Scene/Cesium3DTileBatchTable.js
-//! - Scene/BatchTableHierarchy.js
+//! 参考 CesiumJS：
+//! - Scene/Cesium3DTileFeatureTable
+//! - Scene/Cesium3DTileBatchTable
+//! - Scene/BatchTableHierarchy
 //!
 //! A 类测试：ComponentType/AccessorType 解析、FeatureTable 全局/二进制
 //! 属性、BatchTable JSON/二进制 get/set、BatchTableHierarchy class/parent/property。

@@ -1,5 +1,5 @@
 //! 相机扩展规格 — flyTo、矩形相机、2D 模式、视锥、拾取射线
-//! 移植自：packages/engine/Specs/Scene/CameraSpec.js
+//! 参考自：Specs/Scene/CameraSpec
 //! A 类纯数学测试
 
 use cesium_camera::{Camera, EasingFunction, Frustum, SceneMode};

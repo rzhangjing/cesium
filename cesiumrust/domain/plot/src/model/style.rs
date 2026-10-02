@@ -88,6 +88,7 @@ pub struct Style {
 }
 
 impl Default for Style {
+    /// 一组面向默认蓝的初值：线宽 2px、半透明填充、带绘光文本，且默认开启地形深度测试。
     fn default() -> Self {
         Self {
             color: [0.16, 0.50, 0.86, 1.0],

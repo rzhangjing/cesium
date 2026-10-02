@@ -2,7 +2,7 @@
 //! CPU 侧 f32 镜像（M5-C）。
 //!
 //! # 这是什么
-//! CesiumJS 将天空渲染为 `Scene/SkyAtmosphere.js`：一个环绕地球的大球，
+//! 上游将天空渲染为 `Scene/SkyAtmosphere`：一个环绕地球的大球，
 //! 由逐像素单次散射积分着色
 //! （`czm_computeScattering` + `czm_computeAtmosphereColor`）。本模块是其
 //! cesiumrust 对应物：
@@ -139,7 +139,7 @@ pub const MODE_CLOSED_FORM: u32 = 1;
 
 /// Rayleigh 相位归一化 `3/(16*pi)`。
 ///
-/// 在蓝图（`computeAtmosphereColor.glsl` L33，那里写作
+/// 在蓝图（`computeAtmosphereColor` L33，那里写作
 /// `3.0/50.2654824574`）与领域（`scattering.rs` L82）中相同——两者唯一
 /// 达成一致的相位常数。
 ///
@@ -157,7 +157,7 @@ pub const RAYLEIGH_PHASE_K: f32 = (3.0_f64 / (16.0 * std::f64::consts::PI)) as f
 pub const MIE_PHASE_K_DOMAIN: f32 = (1.0_f64 / (4.0 * std::f64::consts::PI)) as f32;
 
 /// Mie 相位归一化 `3/(8*pi)`——**蓝图**值
-/// （`computeAtmosphereColor.glsl` L35，那里写作 `3.0/25.1327412287`）。
+/// （`computeAtmosphereColor` L35，那里写作 `3.0/25.1327412287`）。
 /// 恰好是 [`MIE_PHASE_K_DOMAIN`] 的 1.5 倍；形状相同，归一化不同。
 /// 保留它是为着色器可切换到忠于蓝图的输出。写作 f64
 /// 表达式；与 `sky_atmosphere.wgsl` L196 逐位相等。
@@ -167,10 +167,10 @@ pub const MIE_PHASE_K_BLUEPRINT: f32 = (3.0_f64 / (8.0 * std::f64::consts::PI)) 
 /// （`sky_atmosphere.wgsl` D1），以 `sin(elevation)` 为单位。
 pub const HORIZON_SPLIT_SHARPNESS: f32 = 8.0;
 
-/// `computeScattering.glsl` L26 的 `PRIMARY_STEPS_MAX`。
+/// `computeScattering` L26 的 `PRIMARY_STEPS_MAX`。
 pub const PRIMARY_STEPS_MAX: u32 = 16;
 
-/// `computeScattering.glsl` L27 的 `LIGHT_STEPS_MAX`。
+/// `computeScattering` L27 的 `LIGHT_STEPS_MAX`。
 pub const LIGHT_STEPS_MAX: u32 = 4;
 
 /// 平方 epsilon，低于它太阳方向 uniform 不被重新推送，从而
@@ -244,6 +244,7 @@ mod sky_params {
     }
 
     impl Default for SkyAtmosphereParams {
+        /// 默认：从领域 [`AtmosphereParameters::default`] 导出 uniform 镜像。
         fn default() -> Self {
             Self::from_domain(&AtmosphereParameters::default())
         }
@@ -322,6 +323,7 @@ pub struct SkyDomeMaterial {
 }
 
 impl Material for SkyDomeMaterial {
+    /// 指向已注册的 `sky_atmosphere.wgsl` 片元着色器 handle。
     fn fragment_shader() -> ShaderRef {
         ShaderRef::Handle(SKY_ATMOSPHERE_SHADER_HANDLE)
     }
@@ -461,7 +463,7 @@ pub fn update_sun_direction(
 // ---------------------------------------------------------------------------
 
 /// `sky_atmosphere.wgsl::approximate_tanh` 的镜像（蓝图
-/// `approximateTanh.glsl` L7-10）。
+/// `approximateTanh` L7-10）。
 #[inline]
 pub fn approximate_tanh_f32(x: f32) -> f32 {
     let x2 = x * x;
@@ -471,7 +473,7 @@ pub fn approximate_tanh_f32(x: f32) -> f32 {
 }
 
 /// `sky_atmosphere.wgsl::ray_sphere_interval` 的镜像（蓝图
-/// `raySphereIntersectionInterval.glsl` L1-37），球以原点为中心。
+/// `raySphereIntersectionInterval` L1-37），球以原点为中心。
 /// 返回 `(start, stop)`；`stop <= start` 表示“无交点”。
 pub fn ray_sphere_interval_f32(origin: Vec3, direction: Vec3, radius: f32) -> (f32, f32) {
     let oc = origin;
@@ -497,7 +499,7 @@ pub fn ray_sphere_interval_f32(origin: Vec3, direction: Vec3, radius: f32) -> (f
 }
 
 /// `sky_atmosphere.wgsl::rayleigh_phase` 的镜像（蓝图
-/// `computeAtmosphereColor.glsl` L33 ≡ 领域 `scattering.rs` L81-83）。
+/// `computeAtmosphereColor` L33 ≡ 领域 `scattering.rs` L81-83）。
 #[inline]
 pub fn rayleigh_phase_f32(cos_theta: f32) -> f32 {
     let cos_sq = cos_theta * cos_theta;
@@ -506,7 +508,7 @@ pub fn rayleigh_phase_f32(cos_theta: f32) -> f32 {
 }
 
 /// `sky_atmosphere.wgsl::mie_phase` 的镜像（蓝图
-/// `computeAtmosphereColor.glsl` L35 ≡ 领域 `scattering.rs` L90-95）。
+/// `computeAtmosphereColor` L35 ≡ 领域 `scattering.rs` L90-95）。
 ///
 /// `k` 是归一化常数；传 [`MIE_PHASE_K_DOMAIN`] 以求领域一致，或传
 /// [`MIE_PHASE_K_BLUEPRINT`] 以求蓝图一致。每个乘积都分别绑定，所以
@@ -529,7 +531,7 @@ pub fn mie_phase_f32(cos_theta: f32, g: f32, k: f32) -> f32 {
 }
 
 /// `sky_atmosphere.wgsl::horizon_split_weight` 的镜像（蓝图
-/// `computeScattering.glsl` L50-53 的 D1 重写）。
+/// `computeScattering` L50-53 的 D1 重写）。
 #[inline]
 pub fn horizon_split_weight_f32(sin_elevation: f32) -> f32 {
     let sharpened = sin_elevation * HORIZON_SPLIT_SHARPNESS;
@@ -592,7 +594,7 @@ pub fn closed_form_sky_color_f32(view_direction: Vec3, params: &SkyAtmospherePar
 /// 一次主 ray march 产生的累加器。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScatteringMarch {
-    /// `rayleighAccumulation`（`computeScattering.glsl` L77/L136），render unit。
+    /// `rayleighAccumulation`（`computeScattering` L77/L136），render unit。
     pub rayleigh_accumulation: Vec3,
     /// `mieAccumulation`（L78/L137），render unit。
     pub mie_accumulation: Vec3,
@@ -611,9 +613,9 @@ pub struct ScatteringMarch {
 /// 一条射线的最终着色天空。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SkyShading {
-    /// 前向散射辐亮度（`computeAtmosphereColor.glsl` L41），按曝光缩放。
+    /// 前向散射辐亮度（`computeAtmosphereColor` L41），按曝光缩放。
     pub radiance: Vec3,
-    /// 逐通道透射率（`computeScattering.glsl` L148 的 D3 重写）。
+    /// 逐通道透射率（`computeScattering` L148 的 D3 重写）。
     /// 逐通道计算是因为物理如此要求，但只有其均值到达帧缓冲
     /// ——见 [`SkyShading::alpha`]。
     pub transmittance: Vec3,
@@ -627,7 +629,7 @@ pub struct SkyShading {
 }
 
 /// `sky_atmosphere.wgsl::march_single_scattering` 的镜像
-/// （`computeScattering.glsl` L83-141，应用了 D1/D2/D5 重写）。
+/// （`computeScattering` L83-141，应用了 D1/D2/D5 重写）。
 ///
 /// 当射线未命中大气时返回 `None`（L39-44），此时
 /// 着色器发出一个完全透明的片元。
@@ -768,7 +770,7 @@ pub fn march_single_scattering_f32(
 }
 
 /// 整个 `sky_atmosphere.wgsl` mode-0 片元主体的镜像：march、应用
-/// 相位函数与太阳强度（蓝图 `computeAtmosphereColor.glsl` L33-41），
+/// 相位函数与太阳强度（蓝图 `computeAtmosphereColor` L33-41），
 /// 然后导出 D3 透射率。
 ///
 /// `exposure` 是 Bevy 的 `view.exposure`。
@@ -786,7 +788,7 @@ pub fn shade_sky_f32(
     let rayleigh_color = betas * march.rayleigh_accumulation;
     let mie_color = march.mie_accumulation * params.mie_coefficient;
 
-    // computeAtmosphereColor.glsl L33-41.
+    // 前向散射组合，对应着色器相位/强度段 L33-41.
     let cos_theta = ray_direction.dot(params.sun_direction);
     let rayleigh_p = rayleigh_phase_f32(cos_theta);
     let mie_p = mie_phase_f32(cos_theta, params.mie_anisotropy, params.mie_phase_k);
@@ -890,7 +892,7 @@ mod tests {
     const FROZEN_SUN_DIRECTION: [f64; 3] = [0.174_508_36, -0.903_425_27, -0.391_624_33];
 
     /// `orbit_camera` 的距离边界，在此重述是因为适配层
-    /// 无法导入应用层（DDD）。来源：
+    /// 无法导入应用层（DDD）。真值取自：
     /// `application/cesium-app/src/orbit_camera.rs`。
     const ORBIT_MAX_DISTANCE: f32 = 20.0;
     /// `main.rs` 的透视远平面。
@@ -1160,7 +1162,7 @@ mod tests {
     }
 
     /// D6：领域用 `1/(4*pi)` 归一化 Henyey-Greenstein 相位，
-    /// 蓝图（`computeAtmosphereColor.glsl` L35）用 `3/(8*pi)`。形状
+    /// 蓝图（`computeAtmosphereColor` L35）用 `3/(8*pi)`。形状
     /// 相同，恰好相差 1.5 倍；着色器两者都暴露并默认取
     /// 领域值。
     #[test]
@@ -1185,7 +1187,7 @@ mod tests {
         println!("mie_phase f32-mirror vs f64 domain: worst rel err {worst:.3e}");
 
         // 而 Rayleigh 相位与领域*以及*蓝图完全
-        // 一致（scattering.rs L82 == computeAtmosphereColor.glsl L33），逐位相同
+        // 一致（scattering.rs L82 == computeAtmosphereColor 着色器 L33），逐位相同
         for degree in 0..=180 {
             let cos_theta = f64::from(degree).to_radians().cos();
             let expected = cesium_atmosphere::scattering::rayleigh_phase(cos_theta);
@@ -1194,7 +1196,7 @@ mod tests {
         }
     }
 
-    /// B2（`approximateTanh.glsl` L7-10）：奇函数、饱和到 `[-1, 1]`，且
+    /// B2（`approximateTanh` L7-10）：奇函数、饱和到 `[-1, 1]`，且
     /// 跟随 `tanh` 达约 2e-2 —— 这些都是 B1 对它的全部需求，因为它只把
     /// 它当作一个 0..1 权重使用。
     #[test]
@@ -1227,7 +1229,7 @@ mod tests {
         assert!(sin_elevation_at_f32(Vec3::ZERO, up).abs() < 1.0e-9, "a degenerate origin has no zenith");
     }
 
-    /// B4（`raySphereIntersectionInterval.glsl` L1-37），以原点为中心：着色器
+    /// B4（`raySphereIntersectionInterval` L1-37），以原点为中心：着色器
     /// 分支所依据的四种几何情形。
     #[test]
     fn ray_sphere_interval_covers_every_geometric_case() {
@@ -1269,7 +1271,7 @@ mod tests {
     fn a_degenerate_direction_returns_the_empty_interval_instead_of_nan() {
         let outer = gpu_params().outer_radius;
 
-        /// 蓝图 B4（`raySphereIntersectionInterval.glsl`）原样写就，
+        /// 蓝图 B4（`raySphereIntersectionInterval`）原样写就，
         /// 即本函数在 `D9` 守卫之前是什么。
         fn unguarded(origin: Vec3, direction: Vec3, radius: f32) -> (f32, f32) {
             let oc = origin;

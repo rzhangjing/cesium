@@ -1,6 +1,6 @@
-//! Core/TerrainEncodingSpec.js → Rust 集成测试
+//! Core/TerrainEncodingSpec → Rust 集成测试
 //!
-//! 对 CesiumJS `Specs/Core/TerrainEncodingSpec.js`（19 个 `it()` 用例）的忠实移植。
+//! 对 CesiumJS `Specs/Core/TerrainEncodingSpec`（19 个 `it()` 用例）的对齐实现。
 //!
 //! ## 平台适配
 //! - JS 的 `clones with result` 变体（写入调用方提供的对象）被

@@ -1,4 +1,4 @@
-//! Clock 规格 - 移植自 packages/engine/Specs/Core/ClockSpec.js
+//! Clock 规格 - 参考自 Specs/Core/ClockSpec
 //! 27 个原始 it() 块 → 已移植 16 个 A 类测试
 //! 跳过 11 个 C 类：1 throws + 2 events(onStop) + 8 SYSTEM_CLOCK 模式（jasmine.clock 模拟）
 

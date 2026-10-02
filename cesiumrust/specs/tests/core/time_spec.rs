@@ -1,4 +1,4 @@
-//! Core/JulianDateSpec.js、ClockSpec.js、TimeIntervalSpec.js → Rust 集成测试
+//! Core/JulianDateSpec、ClockSpec、TimeIntervalSpec → Rust 集成测试
 //! 针对 cesium_time crate 的测试
 
 use cesium_time::{JulianDate, GregorianDate, TimeInterval, Clock, ClockRange, ClockStep};

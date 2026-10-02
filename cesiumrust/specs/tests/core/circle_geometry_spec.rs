@@ -1,4 +1,4 @@
-//! CircleGeometry 规格 - 移植自 Core/CircleGeometrySpec.js
+//! CircleGeometry 规格 - 参考自 Core/CircleGeometrySpec
 //!
 //! 测试椭球面上的圆几何生成。
 
@@ -9,7 +9,7 @@ use glam::DVec3;
 const EPSILON10: f64 = 1e-10;
 const EPSILON7: f64 = 1e-7;
 
-// ─── CircleGeometry（来自 CircleGeometrySpec.js）──────────────────────────────
+// ─── CircleGeometry（来自 CircleGeometrySpec）──────────────────────────────
 
 #[test]
 fn circle_geometry_throws_without_center() {

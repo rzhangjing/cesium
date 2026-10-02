@@ -1,5 +1,4 @@
 //! 包围体 - BoundingSphere、OrientedBoundingBox、AxisAlignedBoundingBox。
-//! 映射到 CesiumJS `Core/BoundingSphere.js`, `Core/OrientedBoundingBox.js`, `Core/AxisAlignedBoundingBox.js`
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -24,6 +23,11 @@ pub struct BoundingSphere {
 }
 
 impl BoundingSphere {
+    /// 由中心与半径直接构造包围球。
+    ///
+    /// # 参数
+    /// - `center`：球心（笛卡尔，米）。
+    /// - `radius`：半径（米）。
     pub fn new(center: DVec3, radius: f64) -> Self {
         Self { center, radius }
     }
@@ -146,6 +150,11 @@ impl BoundingSphere {
     /// 由以扁平数组存储的点（X, Y, Z 顺序）计算紧贴包围球，
     /// 可选带相对中心和 stride。
     /// 映射到 `BoundingSphere.fromVertices`
+    ///
+    /// # 参数
+    /// - `vertices`：扁平顶点数组，按 (X,Y,Z) 交错。
+    /// - `center`：顶点坐标的参考中心偏移。
+    /// - `stride`：相邻顶点间的元素个数（至少 3）。
     pub fn from_vertices(vertices: &[f64], center: DVec3, stride: usize) -> Self {
         debug_assert!(stride >= 3, "stride must be at least 3");
         if vertices.is_empty() {
@@ -207,6 +216,10 @@ impl BoundingSphere {
 
     /// 由编码的（高/低）扁平数组计算紧贴包围球。
     /// 映射到 `BoundingSphere.fromEncodedCartesianVertices`
+    ///
+    /// # 参数
+    /// - `positions_high`：高位分量的扁平数组。
+    /// - `positions_low`：低位分量的扁平数组；两者相加还原完整坐标。
     pub fn from_encoded_cartesian_vertices(positions_high: &[f64], positions_low: &[f64]) -> Self {
         if positions_high.len() != positions_low.len() || positions_high.is_empty() {
             return Self {
@@ -267,12 +280,25 @@ impl BoundingSphere {
 
     /// 由 2D 投影下的矩形计算包围球。
     /// 映射到 `BoundingSphere.fromRectangle2D`
+    ///
+    /// # 参数
+    /// - `rectangle`：经纬矩形。
+    /// - `projection`：将矩形投到 2D 的地图投影。
     pub fn from_rectangle_2d(rectangle: &Rectangle, projection: &dyn MapProjection) -> Self {
         Self::from_rectangle_with_heights_2d(rectangle, projection, 0.0, 0.0)
     }
 
     /// 由 2D 投影下的矩形计算包围球，并考虑最小和最大高度。
     /// 映射到 `BoundingSphere.fromRectangleWithHeights2D`
+    ///
+    /// # 参数
+    /// - `rectangle`：经纬矩形，取其西南/东北角作投影范围。
+    /// - `projection`：将矩形投到平面的地图投影。
+    /// - `minimum_height`：底面高度（米）。
+    /// - `maximum_height`：顶面高度（米）。
+    ///
+    /// # 返回
+    /// 覆盖投影后 3D 长方体对角线一半的包围球。
     pub fn from_rectangle_with_heights_2d(
         rectangle: &Rectangle,
         projection: &dyn MapProjection,
@@ -303,6 +329,11 @@ impl BoundingSphere {
 
     /// 使用采样的点在 3D 中由矩形计算包围球。
     /// 映射到 `BoundingSphere.fromRectangle3D`
+    ///
+    /// # 参数
+    /// - `rectangle`：经纬矩形。
+    /// - `ellipsoid`：采样所依据的椭球。
+    /// - `surface_height`：矩形面距椭球的高度（米）。
     pub fn from_rectangle_3d(
         rectangle: &Rectangle,
         ellipsoid: &crate::ellipsoid::Ellipsoid,
@@ -314,6 +345,9 @@ impl BoundingSphere {
 
     /// 由轴对齐盒子的角点计算包围球。
     /// 映射到 `BoundingSphere.fromCornerPoints`
+    ///
+    /// # 参数
+    /// - `corner`/`opposite_corner`：轴对齐盒子的两个对角顶点。
     pub fn from_corner_points(corner: DVec3, opposite_corner: DVec3) -> Self {
         let center = (corner + opposite_corner) * 0.5;
         let radius = center.distance(opposite_corner);
@@ -322,6 +356,12 @@ impl BoundingSphere {
 
     /// 创建一个涵盖椭球的包围球。
     /// 映射到 `BoundingSphere.fromEllipsoid`
+    ///
+    /// # 参数
+    /// - `ellipsoid`：目标椭球；球心在原点，半径取其最大半径。
+    ///
+    /// # 返回
+    /// 一个足以包含整个椭球的包围球。
     pub fn from_ellipsoid(ellipsoid: &crate::ellipsoid::Ellipsoid) -> Self {
         Self {
             center: DVec3::ZERO,
@@ -331,6 +371,9 @@ impl BoundingSphere {
 
     /// 计算紧贴包围所提供的一组包围球的包围球。
     /// 映射到 `BoundingSphere.fromBoundingSpheres`
+    ///
+    /// # 参数
+    /// - `spheres`：待统一包围的球列表；空列表退化为零球。
     pub fn from_bounding_spheres(spheres: &[BoundingSphere]) -> Self {
         if spheres.is_empty() {
             return Self {
@@ -358,6 +401,9 @@ impl BoundingSphere {
 
     /// 计算紧贴包围一个仿射变换的包围球。
     /// 映射到 `BoundingSphere.fromTransformation`
+    ///
+    /// # 参数
+    /// - `transformation`：4x4 仿射变换；取其平移作为球心、缩放长度一半作为半径。
     pub fn from_transformation(transformation: &glam::DMat4) -> Self {
         let center = transformation.w_axis.truncate();
         let scale = DVec3::new(
@@ -371,6 +417,12 @@ impl BoundingSphere {
 
     /// 计算从球上最近点到某个点的距离。
     /// （非平方的便捷封装；CesiumJS 暴露的是 `distanceSquaredTo`。）
+    ///
+    /// # 参数
+    /// - `point`：目标点。
+    ///
+    /// # 返回
+    /// 点到球面的最短距离；点在球内时为 0。
     pub fn distance_to(&self, point: DVec3) -> f64 {
         let dist = (point - self.center).length();
         (dist - self.radius).max(0.0)
@@ -378,6 +430,12 @@ impl BoundingSphere {
 
     /// 计算从球上最近点到某个点的估计距离平方。
     /// 映射到 `BoundingSphere.distanceSquaredTo`
+    ///
+    /// # 参数
+    /// - `cartesian`：目标点。
+    ///
+    /// # 返回
+    /// 点到球面最短距离的平方；点在球内时为 0。
     pub fn distance_squared_to(&self, cartesian: DVec3) -> f64 {
         let distance = (self.center - cartesian).length() - self.radius;
         if distance <= 0.0 {
@@ -388,12 +446,21 @@ impl BoundingSphere {
     }
 
     /// 判断某个点是否在球内。
+    ///
+    /// # 参数
+    /// - `point`：待检测的点。
+    ///
+    /// # 返回
+    /// 若点到球心的距离不超过半径则返回 `true`。
     pub fn contains(&self, point: DVec3) -> bool {
         (point - self.center).length_squared() <= self.radius * self.radius
     }
 
     /// 计算同时包含两个球的包围球。
     /// 映射到 `BoundingSphere.union`
+    ///
+    /// # 参数
+    /// - `other`：与本球合并的另一个球；返回能同时容纳两者的最小球。
     pub fn union(&self, other: &Self) -> Self {
         let left_center = self.center;
         let left_radius = self.radius;
@@ -427,6 +494,9 @@ impl BoundingSphere {
 
     /// 扩大该球以包含所提供的点。
     /// 映射到 `BoundingSphere.expand`
+    ///
+    /// # 参数
+    /// - `point`：需被包含的点；若球心不变得只扩大半径。
     pub fn expand(&self, point: DVec3) -> Self {
         let radius = (point - self.center).length();
         Self {
@@ -437,6 +507,10 @@ impl BoundingSphere {
 
     /// 判断球位于平面的哪一侧。
     /// 映射到 `BoundingSphere.intersectPlane`
+    ///
+    /// # 参数
+    /// - `normal`：平面单位法线（约定朝内）。
+    /// - `distance`：平面常量项，满足 `dot(normal, x) + distance = 0`。
     pub fn intersect_plane(&self, normal: DVec3, distance: f64) -> Intersect {
         let distance_to_plane = normal.dot(self.center) + distance;
 
@@ -451,6 +525,9 @@ impl BoundingSphere {
 
     /// 将一个 4x4 仿射变换矩阵应用于该球。
     /// 映射到 `BoundingSphere.transform`
+    ///
+    /// # 参数
+    /// - `matrix`：4x4 仿射变换；新半径为原半径乘以最大轴缩放。
     pub fn transform(&self, matrix: &glam::DMat4) -> Self {
         let center = matrix.transform_point3(self.center);
         let scale_x = matrix.x_axis.truncate().length();
@@ -465,6 +542,9 @@ impl BoundingSphere {
 
     /// 应用一个 4x4 变换矩阵，假设无缩放。
     /// 映射到 `BoundingSphere.transformWithoutScale`
+    ///
+    /// # 参数
+    /// - `matrix`：仅含旋转/平移（无缩放）的 4x4 变换，半径保持不变。
     pub fn transform_without_scale(&self, matrix: &glam::DMat4) -> Self {
         Self {
             center: matrix.transform_point3(self.center),
@@ -474,6 +554,10 @@ impl BoundingSphere {
 
     /// 计算沿某方向从某个位置出发的最近和最远距离。
     /// 映射到 `BoundingSphere.computePlaneDistances`
+    ///
+    /// # 参数
+    /// - `position`：观测起点。
+    /// - `direction`：沿射线的单位方向；返回该方向上最近/最远距离区间。
     pub fn compute_plane_distances(&self, position: DVec3, direction: DVec3) -> Interval {
         let to_center = self.center - position;
         let mag = direction.dot(to_center);
@@ -485,6 +569,9 @@ impl BoundingSphere {
 
     /// 计算球的体积。
     /// 映射到 `BoundingSphere.prototype.volume`
+    ///
+    /// # 返回
+    /// 按 `(4/3)·π·r³` 计算的球体积（立方米）。
     pub fn volume(&self) -> f64 {
         let radius = self.radius;
         (4.0 / 3.0) * std::f64::consts::PI * radius * radius * radius
@@ -502,6 +589,11 @@ pub struct Interval {
 }
 
 impl Interval {
+    /// 由起始/终止值构造一个数值区间。
+    ///
+    /// # 参数
+    /// - `start`：起始（最小）值。
+    /// - `stop`：终止（最大）值。
     pub fn new(start: f64, stop: f64) -> Self {
         Self { start, stop }
     }
@@ -518,6 +610,7 @@ pub struct OrientedBoundingBox {
 }
 
 impl Default for OrientedBoundingBox {
+    /// 默认 OBB：中心在原点、半轴均为零矩阵。
     fn default() -> Self {
         Self {
             center: DVec3::ZERO,
@@ -527,11 +620,21 @@ impl Default for OrientedBoundingBox {
 }
 
 impl OrientedBoundingBox {
+    /// 由中心与半轴矩阵直接构造 OBB。
+    ///
+    /// # 参数
+    /// - `center`：盒子中心。
+    /// - `half_axes`：三列分别为三个朝向轴乘以各自半长。
     pub fn new(center: DVec3, half_axes: DMat3) -> Self {
         Self { center, half_axes }
     }
 
     /// 由中心、方向轴和半长创建一个 OBB。
+    ///
+    /// # 参数
+    /// - `center`：盒子中心。
+    /// - `u_axis`/`v_axis`/`w_axis`：三个相互垂直的朝向轴。
+    /// - `half_u`/`half_v`/`half_w`：沿对应轴的半长（米）。
     pub fn from_axes_half_lengths(
         center: DVec3,
         u_axis: DVec3,
@@ -551,6 +654,9 @@ impl OrientedBoundingBox {
 
     /// 计算从 OBB 上最近点到某个点的距离。
     /// 映射到 `OrientedBoundingBox.distanceTo`
+    ///
+    /// # 参数
+    /// - `point`：目标点；返回其到盒子表面的最短距离（内部为 0）。
     pub fn distance_to(&self, point: DVec3) -> f64 {
         let offset = point - self.center;
 
@@ -575,6 +681,8 @@ impl OrientedBoundingBox {
     }
 
     /// 将该 OBB 转换为一个包围球。
+    ///
+    /// 球心与盒子中心重合，半径取三个半轴长度中的最大值。
     pub fn to_bounding_sphere(&self) -> BoundingSphere {
         let radius = self.half_axes.x_axis.length().max(
             self.half_axes.y_axis.length().max(self.half_axes.z_axis.length()),
@@ -586,6 +694,10 @@ impl OrientedBoundingBox {
     }
 
     /// 判断该 OBB 与一个平面的相交情况。
+    ///
+    /// # 参数
+    /// - `normal`：平面单位法线（朝内）。
+    /// - `distance`：平面常量项；有效半径为三半轴在法线上投影绝对值之和。
     pub fn intersect_plane(&self, normal: DVec3, distance: f64) -> Intersect {
         let u = self.half_axes.x_axis;
         let v = self.half_axes.y_axis;
@@ -695,7 +807,7 @@ impl OrientedBoundingBox {
     /// 切平面对齐；更宽的矩形使用一个绕 Z 轴旋转的平面。映射到 `OrientedBoundingBox.fromRectangle`
     ///
     /// # Panic
-    /// 对应 CesiumJS 仅在 debug 下进行的 `DeveloperError` 检查（通过 `debug_assert!`）：
+    /// 仅在 debug 下进行的 `DeveloperError` 检查（通过 `debug_assert!`）：
     /// `rectangle.width` 必须在 `[0, 2*PI]` 内，`rectangle.height` 在 `[0, PI]` 内，且
     /// 椭球必须是旋转椭球（`radii.x == radii.y`）。
     pub fn from_rectangle(
@@ -886,6 +998,9 @@ impl OrientedBoundingBox {
 
     /// 计算一个包围仿射变换的 OrientedBoundingBox。
     /// 映射到 `OrientedBoundingBox.fromTransformation`
+    ///
+    /// # 参数
+    /// - `transformation`：4x4 仿射变换；平移列作中心，三个缩放列之半作半轴。
     pub fn from_transformation(transformation: &DMat4) -> Self {
         let center = transformation.w_axis.truncate();
         let half_axes = DMat3::from_cols(
@@ -899,8 +1014,11 @@ impl OrientedBoundingBox {
     /// 计算从盒子中最近的点到某个点的估计距离平方。
     /// 若点位于盒子内部则返回 0。
     ///
-    /// 忠实移植了 CesiumJS 中退化轴的处理（一条/两条/三条零长度半轴）。
+    /// 这里处理退化轴的情况（一条/两条/三条零长度半轴）。
     /// 映射到 `OrientedBoundingBox.distanceSquaredTo`
+    ///
+    /// # 参数
+    /// - `cartesian`：目标点；返回其到盒子最近点的估计距离平方（内部为 0）。
     pub fn distance_squared_to(&self, cartesian: DVec3) -> f64 {
         // 参见 Geometric Tools for Computer Graphics 10.4.2
         let offset = cartesian - self.center;
@@ -1032,6 +1150,13 @@ impl OrientedBoundingBox {
 
     /// 计算沿 `direction`、从 `position` 到与包围盒相交的各平面的最近和最远距离。
     /// 映射到 `OrientedBoundingBox.computePlaneDistances`
+    ///
+    /// # 参数
+    /// - `position`：观测起点。
+    /// - `direction`：射线单位方向；对 8 个角点投影取最小/最大值。
+    ///
+    /// # 返回
+    /// 该方向上盒子投影的最近/最远距离区间。
     pub fn compute_plane_distances(&self, position: DVec3, direction: DVec3) -> Interval {
         let mut min_dist = f64::INFINITY;
         let mut max_dist = f64::NEG_INFINITY;
@@ -1066,6 +1191,10 @@ impl OrientedBoundingBox {
     /// 计算盒子的八个角点，按以下顺序排列：
     /// `(-X,-Y,-Z), (-X,-Y,+Z), (-X,+Y,-Z), (-X,+Y,+Z), (+X,-Y,-Z), (+X,-Y,+Z), (+X,+Y,-Z), (+X,+Y,+Z)`。
     /// 映射到 `OrientedBoundingBox.computeCorners`
+    ///
+    /// # 返回
+    /// 八个角点数组，每个角点为 `center ± 半轴` 的一种组合，
+    /// 符号按 (X, Y, Z) 位顺序排列。
     pub fn compute_corners(&self) -> [DVec3; 8] {
         let center = self.center;
         let x_axis = self.half_axes.x_axis;
@@ -1099,8 +1228,15 @@ impl OrientedBoundingBox {
 }
 
 /// 为椭球在某个点处构建切平面标架 `(origin, x_axis, y_axis, z_axis)`，
-/// 对应 CesiumJS `EllipsoidTangentPlane`（原点投影到大地水准面，
-/// 坐标轴取自 East-North-Up 标架）。
+/// 即原点投影到大地水准面，
+/// 坐标轴取自 East-North-Up 标架。
+///
+/// # 参数
+/// - `origin`：待投影到椭球表面的点。
+/// - `ellipsoid`：参考椭球。
+///
+/// # 返回
+/// 四元组：切平面原点与东/北/天三个单位轴（已截去齐次分量）。
 fn tangent_plane_frame(origin: DVec3, ellipsoid: &Ellipsoid) -> (DVec3, DVec3, DVec3, DVec3) {
     let origin = ellipsoid
         .scale_to_geodetic_surface(origin)
@@ -1113,7 +1249,15 @@ fn tangent_plane_frame(origin: DVec3, ellipsoid: &Ellipsoid) -> (DVec3, DVec3, D
 }
 
 /// 沿平面法线将一个 3D 点投影到切平面上，返回局部 2D 坐标。
-/// 对应 CesiumJS `EllipsoidTangentPlane.projectPointToNearestOnPlane`。
+///
+/// # 参数
+/// - `origin`：切平面原点。
+/// - `x_axis`/`y_axis`：平面内的两个基向量。
+/// - `normal`：沿其投影射线的平面法线。
+/// - `cartesian`：待投影的 3D 点。
+///
+/// # 返回
+/// 点在平面局部 (x, y) 坐标系中的坐标。
 fn project_to_nearest(
     origin: DVec3,
     x_axis: DVec3,
@@ -1134,7 +1278,15 @@ fn project_to_nearest(
 }
 
 /// 由一个平面的原点/坐标轴以及局部 min/max 范围构建一个 OrientedBoundingBox。
-/// 对应 CesiumJS `fromPlaneExtents`。
+///
+/// # 参数
+/// - `plane_origin`/`plane_x_axis`/`plane_y_axis`/`plane_z_axis`：盒子坐标系的原点与三轴。
+/// - `minimum_x`/`maximum_x`：局部 X 方向的 extent。
+/// - `minimum_y`/`maximum_y`：局部 Y 方向的 extent。
+/// - `minimum_z`/`maximum_z`：局部 Z 方向的 extent。
+///
+/// # 返回
+/// 中心与半轴由上述范围决定的 OBB。
 #[allow(clippy::too_many_arguments)]
 fn from_plane_extents(
     plane_origin: DVec3,
@@ -1179,6 +1331,10 @@ fn from_plane_extents(
 // 及其辅助函数 `computeFrobeniusNorm`、`offDiagonalFrobeniusNorm`、`shurDecomposition`。
 // 扁平索引 `[col * 3 + row]` 与 CesiumJS `Matrix3.getElementIndex(col, row)` 一致。
 
+/// 计算 3x3 矩阵的 Frobenius 范数（所有元素平方和的平方根）。
+///
+/// # 参数
+/// - `m`：列主序扁平的 9 元素矩阵。
 #[inline]
 fn frobenius_norm(m: &[f64; 9]) -> f64 {
     let mut norm = 0.0;
@@ -1192,6 +1348,14 @@ fn frobenius_norm(m: &[f64; 9]) -> f64 {
 const EIGEN_COL_VAL: [usize; 3] = [2, 2, 1];
 const EIGEN_ROW_VAL: [usize; 3] = [1, 0, 0];
 
+/// 计算 3x3 矩阵非对角元素部分的 Frobenius 范数，
+/// 用于 Jacobi 迭代判断收敛（非对角项趋于 0 即对角化完成）。
+///
+/// # 参数
+/// - `m`：列主序扁平的 3x3 对称矩阵。
+///
+/// # 返回
+/// `sqrt(2 · Σ offdiag²)`，仅累加三对非对角元素。
 #[inline]
 fn off_diagonal_frobenius_norm(m: &[f64; 9]) -> f64 {
     let mut norm = 0.0;
@@ -1204,6 +1368,12 @@ fn off_diagonal_frobenius_norm(m: &[f64; 9]) -> f64 {
 
 /// 2x2 对称 Schur 分解（Golub & Van Loan 8.4.2）。返回用于削减 `matrix`
 /// 中最大非对角项的 Jacobi 旋转矩阵。
+///
+/// # 参数
+/// - `matrix`：列主序的 3x3 对称矩阵。
+///
+/// # 返回
+/// 施加了所选 (p, q) 平面 Givens 旋转的单位矩阵（9 元素扁平）。
 fn shur_decomposition(matrix: &[f64; 9]) -> [f64; 9] {
     let tolerance = math_utils::EPSILON15;
 
@@ -1251,6 +1421,12 @@ fn shur_decomposition(matrix: &[f64; 9]) -> [f64; 9] {
 /// 计算一个对称 3x3 矩阵的特征分解，返回 `(unitary, diagonal)`，
 /// 使得 `matrix = unitary * diagonal * unitary^T`。
 /// 映射到 `Matrix3.computeEigenDecomposition`。
+///
+/// # 参数
+/// - `matrix`：待分解的对称 3x3 矩阵。
+///
+/// # 返回
+/// `(unitary, diagonal)`：特征向量矩阵与对角特征值矩阵，最多 10 轮 Jacobi 扫描。
 fn compute_eigen_decomposition(matrix: DMat3) -> (DMat3, DMat3) {
     let tolerance = EPSILON20;
     let max_sweeps = 10;
@@ -1397,6 +1573,11 @@ pub struct BoundingRectangle {
 }
 
 impl BoundingRectangle {
+    /// 由左下角与宽高构造一个包围矩形。
+    ///
+    /// # 参数
+    /// - `x`/`y`：矩形左下角坐标。
+    /// - `width`/`height`：矩形的宽与高。
     pub fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
         Self {
             x,

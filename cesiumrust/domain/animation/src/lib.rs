@@ -2,11 +2,9 @@
 //!
 //! Domain 层 - 纯 Rust，f64 精度。
 //!
-//! CesiumJS 映射：
-//! - `Core/HermitePolynomialApproximation.js` → interpolation
-//! - `Core/LagrangePolynomialApproximation.js` → interpolation
-//! - `Widgets/Timeline/Timeline.js` → timeline
-//! - `Widgets/Animation/AnimationViewModel.js` → timeline
+//! 提供四类能力：多项式插值算法（Hermite/Lagrange/线性）、
+//! 参数化样条曲线求值、时间轴播放控制，以及属性补间动画与缓动函数。
+//! 各子模块相互独立，统一由本 crate 门面再导出公共类型。
 
 pub mod interpolation;
 pub mod spline;

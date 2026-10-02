@@ -1,6 +1,6 @@
-//! Core/BoundingSphereSpec.js → Rust 集成测试
+//! Core/BoundingSphereSpec → Rust 集成测试
 //!
-//! 忠实移植 CesiumJS `Specs/Core/BoundingSphereSpec.js`（94 个 `it()` 用例）。
+//! 对齐实现 CesiumJS `Specs/Core/BoundingSphereSpec`（94 个 `it()` 用例）。
 //!
 //! ## 平台适配
 //! - JS result-parameter 变体（`clone(result)`、`fromPoints(p, result)`、

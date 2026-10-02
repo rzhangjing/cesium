@@ -1,4 +1,4 @@
-//! 移植自 CesiumJS `Core/EllipseGeometrySpec.js`（扩展的 A 类测试）。
+//! 参考自 CesiumJS `Core/EllipseGeometrySpec`（扩展的 A 类测试）。
 //!
 //! 测试：位置、全部属性、纹理坐标、旋转、高度、
 //! 边界情形、圆的特例、包围球、轮廓。

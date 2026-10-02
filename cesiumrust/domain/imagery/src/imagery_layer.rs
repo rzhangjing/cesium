@@ -1,5 +1,7 @@
 //! 影像图层配置。
-//! 映射到 CesiumJS `Scene/ImageryLayer.js`
+//!
+//! 描述单个影像图层的可见性、透明度、混合模式、裁剪范围与瓦片加载等参数，
+//! 是图层集合中最小的可配置单元。
 
 use cesium_geospatial::rectangle::Rectangle;
 use serde::{Deserialize, Serialize};
@@ -79,22 +81,27 @@ pub struct ImageryLayer {
     pub tile_height: u32,
 }
 
+/// serde 缺省：图层不透明度默认 1.0（完全不透明）。
 fn default_alpha() -> f64 {
     1.0
 }
 
+/// serde 缺省：各类强度/比例因子的单位值 1.0。
 fn default_one() -> f64 {
     1.0
 }
 
+/// serde 缺省：布尔开关默认开启。
 fn default_true() -> bool {
     true
 }
 
+/// serde 缺省：最大详细层级默认 25 级。
 fn default_max_level() -> u32 {
     25
 }
 
+/// serde 缺省：瓦片边长默认 256 像素。
 fn default_tile_size() -> u32 {
     256
 }
@@ -206,6 +213,7 @@ impl ImageryLayer {
 }
 
 impl Default for ImageryLayer {
+    /// 默认图层：序号 0、覆盖整幅 [`Rectangle::MAX_VALUE`] 范围。
     fn default() -> Self {
         Self::new(0, Rectangle::MAX_VALUE)
     }

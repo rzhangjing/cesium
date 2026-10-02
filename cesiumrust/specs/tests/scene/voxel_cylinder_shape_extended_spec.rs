@@ -1,5 +1,5 @@
 //! VoxelCylinderShape 扩展测试 — 采样、边界、可见性边缘情形
-//! 另从 CesiumJS VoxelCylinderShapeSpec.js 移植
+//! 另从 CesiumJS VoxelCylinderShapeSpec 移植
 
 use cesium_voxel::{VoxelCylinderShape, VoxelShape};
 use glam::{DMat4, DQuat, DVec3};

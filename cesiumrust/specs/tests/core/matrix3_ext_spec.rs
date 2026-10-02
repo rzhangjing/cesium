@@ -1,5 +1,5 @@
 //! Matrix3 扩展函数测试。
-//! 对应 CesiumJS `Specs/Core/Matrix3Spec.js` + `Matrix2Spec.js` A 类测试。
+//! 参考 CesiumJS `Specs/Core/Matrix3Spec` + `Matrix2Spec` A 类测试。
 
 use cesium_geospatial::matrix3_ext as m3;
 use cesium_geospatial::math_utils;

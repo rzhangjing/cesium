@@ -9,8 +9,8 @@
 //! # 链上位置（由 graph.rs 拥有）
 //! `EndMainPass → PassThrough → AmbientOcclusion → Tonemapping → Fxaa → EndMainPassPostProcessing`
 //! AO 在 tonemapping **之前**作用于 HDR 场景色，FXAA 在 tonemapping **之后**
-//! 作用于最终 LDR 图像 —— 与上游 CesiumJS 的
-//! `PostProcessStageCollection` 顺序一致（AO → … → Tonemapping → … → FXAA 最后）。
+//! 作用于最终 LDR 图像 —— 采用业界标准的后处理顺序
+//!（AO → … → Tonemapping → … → FXAA 最后），使 AO 在 HDR 域、抗锯齿在 LDR 域生效。
 //!
 //! # 输入：DepthPrepass + NormalPrepass
 //! SSAO 需要视图空间深度 + 法线。一旦相机携带 [`DepthPrepass`] +
@@ -18,11 +18,11 @@
 //! [`ViewPrepassTextures`] 暴露它们。它们在此由 [`setup_ao_prepass`] 在适配层启用
 //! —— **不在**应用层相机 bundle（orbit_camera.rs 因 M5-E2 红线而超出范围）。
 //!
-//! # 蓝图
-//! - `packages/engine/Source/Shaders/PostProcessStages/AmbientOcclusionGenerate.glsl` L1-144
-//! - `packages/engine/Source/Shaders/PostProcessStages/AmbientOcclusionModulate.glsl` L1-11
-//! - `packages/engine/Source/Scene/PostProcessStageLibrary.js` L496 / L599
-//! - `bevy_pbr-0.15.3/src/ssao/mod.rs` L224-323 (SsaoNode) / L682-772 (prepass binding)
+//! # 设计要点
+//! - 遮蔽生成 pass：读取视图空间深度与法线，对每像素做半球 16 采样
+//!   估算遮蔽因子，再经 4×4 盒模糊降噪。
+//! - 遮蔽调制 pass：将遮蔽因子与场景颜色相乘得到变暗效果。
+//! - 节点 / 资源 / 系统注册沿用 FXAA 的模式；prepass 绑定复用 Bevy PBR 的做法。
 //!
 //! # 偏差
 //! WGSL 重写；半球核 SSAO（非 CesiumJS 的 HBAO 射线行进）。参见
@@ -83,6 +83,7 @@ pub struct CesiumAmbientOcclusion {
 }
 
 impl Default for CesiumAmbientOcclusion {
+    /// 默认启用：相机上的 AO pass 默认开启。
     fn default() -> Self {
         Self { enabled: true }
     }
@@ -118,6 +119,14 @@ pub struct AoPipeline {
 }
 
 impl FromWorld for AoPipeline {
+    /// 从 render-world 构建 AO 的设备资源：为生成 pass（深度 + 法线 +
+    /// 采样器 + view uniform）与调制 pass 分别创建 bind group 布局。
+    ///
+    /// # 参数
+    /// - `render_world`：提供 `RenderDevice` 的渲染世界。
+    ///
+    /// # 返回
+    /// 装配好的 [`AoPipeline`] 资源。
     fn from_world(render_world: &mut World) -> Self {
         let render_device = render_world.resource::<RenderDevice>();
 
@@ -202,6 +211,20 @@ impl ViewNode for AoNode {
         &'static ViewUniformOffset,
     );
 
+    /// 运行 SSAO 生成 pass：若相机 AO 未启用则直接返回；否则读取深度与
+    /// 法线 prepass，逐像素半球采样并将遮蔽结果输出到遮蔽纹理。
+    ///
+    /// # 参数
+    /// - `_graph`：渲染图上下文（本节点无子 pass）。
+    /// - `render_context`：当前 pass 的 GPU 命令记录器。
+    /// - `view_entity`/`target`：视图实体与其渲染目标。
+    /// - `pipeline_ids`：该视图缓存的生成/调制 pipeline ID。
+    /// - `ao`：相机级 AO 开关；`prepass`：深度/法线 prepass 纹理。
+    /// - `view_uniform_offset`：本视图在 view uniform buffer 中的偏移。
+    /// - `world`：提供 pipeline/texture 资源的 render-world。
+    ///
+    /// # 返回
+    /// 成功提交命令则为 `Ok(())`；前置资源未就绪时返回错误。
     fn run(
         &self,
         _graph: &mut RenderGraphContext,

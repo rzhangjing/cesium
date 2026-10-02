@@ -1,6 +1,4 @@
-//! 核心工具函数。
-//! 映射到 CesiumJS `Core/binarySearch.js`、`Core/barycentricCoordinates.js`、
-//! `Core/pointInsideTriangle.js`、`Core/subdivideArray.js`
+//! 核心工具函数（二分查找、重心坐标、三角形内点判定、数组细分）。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
 // 或本文件在其里程碑被重写时重新审视
@@ -130,6 +128,8 @@ pub fn subdivide_array<T: Clone>(array: &[T], number_of_arrays: usize) -> Vec<Ve
 
     let mut result: Vec<Vec<T>> = Vec::with_capacity(number_of_arrays);
     let mut i = 0;
+    // 每一轮按“剩余元素向上取整均分到剩余子数组”计算切片长度，
+    // 使各子数组长度尽量均衡。
     for _ in 0..number_of_arrays {
         let remaining = length - i;
         let remaining_arrays = number_of_arrays - result.len();
@@ -144,7 +144,6 @@ pub fn subdivide_array<T: Clone>(array: &[T], number_of_arrays: usize) -> Vec<Ve
 }
 
 /// 使用稳定排序（归并排序语义）就地排序数组。
-/// 映射到 CesiumJS `Core/mergeSort.js`
 ///
 /// 比较器返回一个 Ordering：若 a 应排在 b 之前则为 Less。
 pub fn merge_sort<T, F>(array: &mut [T], comparator: F)

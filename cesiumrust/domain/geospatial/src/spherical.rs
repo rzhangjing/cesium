@@ -1,5 +1,4 @@
 //! 球坐标。
-//! 映射到 CesiumJS `Core/Spherical.js`
 
 use glam::DVec3;
 
@@ -16,12 +15,14 @@ pub struct Spherical {
 }
 
 impl Default for Spherical {
+    /// 默认值：clock=0、cone=0、magnitude=1。
     fn default() -> Self {
         Self { clock: 0.0, cone: 0.0, magnitude: 1.0 }
     }
 }
 
 impl Spherical {
+    /// 由 clock、cone、magnitude 三个分量直接构造球坐标。
     pub fn new(clock: f64, cone: f64, magnitude: f64) -> Self {
         Self { clock, cone, magnitude }
     }
@@ -66,6 +67,7 @@ impl Spherical {
 }
 
 impl std::fmt::Display for Spherical {
+    /// 以 `(clock, cone, magnitude)` 形式格式化输出。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({}, {}, {})", self.clock, self.cone, self.magnitude)
     }

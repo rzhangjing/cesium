@@ -54,7 +54,7 @@ pub struct MaterialAnimationTime {
     /// 自启动以来累积的增量秒（遗留的墙钟字段）。
     pub time: f32,
     /// 镜像 CesiumJS `czm_frameNumber` 的单调帧计数器
-    /// （Water.glsl L18：`time = czm_frameNumber * animationSpeed`）。
+    /// （水面着色器：`time = czm_frameNumber * animationSpeed`）。
     /// DEVIATION：Water 动画现按*帧*推进（匹配 CesiumJS），
     /// 而非按累积秒；参见 docs/deviations.md#dev-019。
     /// 在 FIXED_TIME（`delta_secs() == 0.0`）下冻结 —— 见 [`advance_animation`]。
@@ -70,7 +70,7 @@ pub struct MaterialAnimationTime {
 /// `extra_c.z` 以 `frame_number as f32` 写入。f32 仅在不超过 2^24
 /// （16_777_216 ≈ 3.2 天 @ 60 fps）时才能精确表示每个整数；超过该值后
 /// 计数器在 f32 中停止推进、Water 动画冻结，而 `u32` 本身在约 2.3 年后回绕。
-/// Water.glsl 仅通过 `fract()` 消费 `time`（czm_get_water_noise 将 `time`
+/// 水面着色器仅通过 `fract()` 消费 `time`（czm_get_water_noise 将 `time`
 /// 乘以采样方向后对 UV 取 `fract`），因此可见运动是周期性的，计数器可以对
 /// 一个远低于 2^24 的周期取模。2^20（1_048_576 ≈ 4.8 小时 @ 60 fps）
 /// 使 `extra_c.z` 保持精确可表示，并将回绕限制为一次难以察觉的相位跳变。
@@ -104,7 +104,9 @@ fn advance_animation(anim: &mut MaterialAnimationTime, delta_secs: f32) -> u32 {
 /// 绕过 `apply_fabric_materials` —— 的 Water 材质也会被纳入。
 #[derive(Resource, Default)]
 pub struct WaterMaterialHandles {
+    /// 当前帧缓存的水材质 handle 列表（逐帧写入动画 uniform 的目标）。
     handles: Vec<Handle<FabricMaterial>>,
+    /// 上次构建缓存时观察到的 `Assets<FabricMaterial>::len()`，用于判断是否需重建。
     known_len: usize,
 }
 
@@ -117,7 +119,9 @@ pub struct WaterMaterialHandles {
 /// 相同的 handle。非默认配置（showcase 的 Calm/Rough 预设）仍按实体生成。
 #[derive(Resource, Default)]
 pub struct SharedWaterTextures {
+    /// 共享的水法线贴图 handle（首个默认配置水体实体生成，后续复用）。
     normal_map: Option<Handle<Image>>,
+    /// 共享的水镜面贴图 handle（与法线贴图同生命周期）。
     specular_map: Option<Handle<Image>>,
 }
 
@@ -129,6 +133,10 @@ pub struct SharedWaterTextures {
 pub struct CesiumMaterialPlugin;
 
 impl Plugin for CesiumMaterialPlugin {
+    /// 注册 Fabric 材质插件与动画/缓存资源，并接入材质应用与逐帧动画系统。
+    ///
+    /// # 参数
+    /// - `app`：待初始化的 Bevy 应用。
     fn build(&self, app: &mut App) {
         app.add_plugins(FabricMaterialPlugin)
             .init_resource::<MaterialAnimationTime>()
@@ -256,7 +264,7 @@ fn update_material_uniforms(
     let frame_number = advance_animation(&mut animation_time, time.delta_secs());
 
     // Daniel M5：`extra_c.z` 现承载一个按帧的计数器，镜像 CesiumJS 的
-    // `czm_frameNumber`（Water.glsl L18 `time = czm_frameNumber * animationSpeed`），
+    // `czm_frameNumber`（水面着色器 `time = czm_frameNumber * animationSpeed`），
     // 而非累积秒。因此 Water 动画依赖帧率（60 fps 推进波形的速度是 30 fps 的两倍）。
     // 任何 Water 基线捕获都必须锁定帧索引，而非墙钟时间 —— 见 specs/scripts/v2_water.toml
     // 与 docs/deviations.md#dev-003 / #dev-019 中的说明。

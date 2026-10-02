@@ -1,5 +1,4 @@
 //! S2Cell - S2 几何库的单元（cell）表示。
-//! 映射到 CesiumJS `Core/S2Cell.js`
 //!
 //! 基于 S2 C++ 参考实现：https://github.com/google/s2geometry
 
@@ -29,7 +28,9 @@ const S2_POSITION_TO_ORIENTATION_MASK: [u32; 4] = [S2_SWAP_MASK, 0, 0, S2_SWAP_M
 
 /// 查找表（懒生成）
 struct LookupTables {
+    /// 由 (ij, 方向) 索引到 (position, 子方向) 的预计算表，共 1024 个条目。
     positions: Vec<u32>, // 1024 个条目
+    /// 由 (position, 方向) 索引到 (ij, 子方向) 的预计算表，共 1024 个条目。
     ij: Vec<u32>,        // 1024 个条目
 }
 
@@ -46,6 +47,9 @@ static LOOKUP_TABLES: std::sync::LazyLock<LookupTables> = std::sync::LazyLock::n
     LookupTables { positions, ij }
 });
 
+/// 递归生成一个 4 叉层的 S2 希尔伯特索引查找表。
+///
+/// 逐层将 (i,j) 按方向表 `S2_POSITION_TO_IJ` 拆成 4 个子单元，直到 `S2_LOOKUP_BITS` 层写入双向映射。
 fn generate_lookup_cell(
     level: u32,
     i: u32,
@@ -79,7 +83,9 @@ fn generate_lookup_cell(
 /// 映射到 CesiumJS `Core/S2Cell`
 #[derive(Debug, Clone, PartialEq)]
 pub struct S2Cell {
+    /// 单元的 64 位 S2 cell ID（含面、层级与希尔伯特位置）。
     cell_id: u128,
+    /// 单元所在的层级（0–30），由 cell_id 推导。
     level: u32,
 }
 
@@ -239,15 +245,18 @@ fn lsb(cell_id: u128) -> u128 {
     cell_id & (!cell_id + 1)
 }
 
+/// 返回给定层级的最低有效位（用于判定 cell 边界）。
 fn lsb_for_level(level: u32) -> u128 {
     1u128 << (2 * (S2_MAX_LEVEL - level))
 }
 
+/// 计算 cell 在单位球上的中心点坐标。
 fn get_s2_center(cell_id: u128, level: u32) -> DVec3 {
     let (face, si, ti) = convert_cell_id_to_face_siti(cell_id, level);
     convert_face_siti_to_xyz(face, si, ti)
 }
 
+/// 按逆时针顺序计算 cell 的第 index 个顶点坐标。
 fn get_s2_vertex(cell_id: u128, level: u32, index: u32) -> DVec3 {
     let (face, i, j) = convert_cell_id_to_face_ij(cell_id);
     let uv = convert_ij_level_to_bound_uv(i, j, level);
@@ -257,6 +266,7 @@ fn get_s2_vertex(cell_id: u128, level: u32, index: u32) -> DVec3 {
     convert_face_uv_to_xyz(face, uv[0][u_idx as usize], uv[1][y as usize])
 }
 
+/// 将 cell ID 转为 (面, si, ti)，对非叶子单元修正中心位置奇偶。
 fn convert_cell_id_to_face_siti(cell_id: u128, level: u32) -> (u32, u32, u32) {
     let (face, i, j) = convert_cell_id_to_face_ij(cell_id);
     let is_leaf = level == 30;
@@ -267,6 +277,7 @@ fn convert_cell_id_to_face_siti(cell_id: u128, level: u32) -> (u32, u32, u32) {
     (face, si, ti)
 }
 
+/// 将 cell ID 沿希尔伯特位链逐段查表，解出 (面, i, j)。
 fn convert_cell_id_to_face_ij(cell_id: u128) -> (u32, u32, u32) {
     let tables = &LOOKUP_TABLES;
     let face = (cell_id >> S2_POSITION_BITS) as u32;
@@ -297,6 +308,7 @@ fn convert_cell_id_to_face_ij(cell_id: u128) -> (u32, u32, u32) {
     (face, i, j)
 }
 
+/// 由面与 (si,ti) 坐标经 st→uv→xyz 变换得到球面点。
 fn convert_face_siti_to_xyz(face: u32, si: u32, ti: u32) -> DVec3 {
     let s = convert_siti_to_st(si);
     let t = convert_siti_to_st(ti);
@@ -305,6 +317,7 @@ fn convert_face_siti_to_xyz(face: u32, si: u32, ti: u32) -> DVec3 {
     convert_face_uv_to_xyz(face, u, v)
 }
 
+/// 将六个面各自的 (u,v) 映射到对应的球面坐标轴排列。
 fn convert_face_uv_to_xyz(face: u32, u: f64, v: f64) -> DVec3 {
     match face {
         0 => DVec3::new(1.0, u, v),
@@ -325,10 +338,12 @@ fn convert_st_to_uv(s: f64) -> f64 {
     }
 }
 
+/// 将 siti 整数坐标归一化为 0–1 的 st 值。
 fn convert_siti_to_st(si: u32) -> f64 {
     (1.0 / S2_MAX_SITI as f64) * si as f64
 }
 
+/// 由 (i,j,level) 求 cell 在 uv 空间的边界区间（u 与 v 各自的 low/high）。
 fn convert_ij_level_to_bound_uv(i: u32, j: u32, level: u32) -> [[f64; 2]; 2] {
     let cell_size = get_size_ij(level);
     let mut result = [[0.0f64; 2]; 2];
@@ -346,10 +361,12 @@ fn convert_ij_level_to_bound_uv(i: u32, j: u32, level: u32) -> [[f64; 2]; 2] {
     result
 }
 
+/// 返回给定层级下单个 cell 在 ij 空间的整数边长。
 fn get_size_ij(level: u32) -> u32 {
     1u32 << (S2_MAX_LEVEL - level)
 }
 
+/// 将 ij 整数坐标归一化为 0–1 的 st 下界值。
 fn convert_ij_to_st_minimum(i: u32) -> f64 {
     (1.0 / S2_LIMIT_IJ as f64) * i as f64
 }

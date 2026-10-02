@@ -1,6 +1,6 @@
 //! CompositeEntityCollection - 以非破坏方式组合多个 EntityCollection。
 //!
-//! 映射到 CesiumJS `DataSources/CompositeEntityCollection.js`
+//! 组合集合自身不拥有子集合的实体，仅在查询与遍历时把它们视作一个整体。
 
 use crate::entity::Entity;
 use crate::entity_collection::EntityCollection;
@@ -9,7 +9,8 @@ use crate::entity_collection::EntityCollection;
 /// 单个集合。若相同 ID 的 Entity 存在于多个集合中，
 /// 会被非破坏地合并为一个新实体。
 ///
-/// 映射到 CesiumJS `DataSources/CompositeEntityCollection.js`
+/// 合并只影响对外视图，不修改任何原始子集合；从组合中
+/// 解绑某子集合即停止采纳它贡献的实体。
 #[derive(Debug, Default)]
 pub struct CompositeEntityCollection {
     /// 有序的集合列表。

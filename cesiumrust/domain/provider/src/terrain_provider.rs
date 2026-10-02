@@ -1,10 +1,10 @@
 //! 面向高程数据服务的地形提供者。
 //!
-//! 映射到 CesiumJS 地形提供者：
-//! - `CesiumTerrainProvider`（quantized-mesh）
-//! - `EllipsoidTerrainProvider`（平坦）
-//! - `VRTheWorldTerrainProvider`
-//! - 自定义高程图提供者
+//! 提供多种地形后端的统一描述符与采样工具：
+//! - Cesium quantized-mesh 地形
+//! - 平坦椭球地形
+//! - 高程图地形
+//! - VRTheWorld 地形
 
 /// 地形提供者的可用性策略。
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -25,7 +25,8 @@ pub enum AvailabilityStrategy {
 
 /// 一个 Cesium 地形提供者（quantized-mesh 格式）。
 ///
-/// 映射到 CesiumJS `CesiumTerrainProvider`
+/// 从 Ion 或自定义端点获取 quantized-mesh 瓦片，
+/// 依据 layer.json 声明的最大层级与可用性发起请求。
 #[derive(Debug, Clone)]
 pub struct CesiumTerrainProvider {
     /// 地形服务的基础 URL。
@@ -109,7 +110,7 @@ impl CesiumTerrainProvider {
 
 /// 一个椭球地形提供者（平坦，无高程）。
 ///
-/// 映射到 CesiumJS `EllipsoidTerrainProvider`
+/// 始终返回零高程，适用于无地形数据时的占位场景。
 #[derive(Debug, Clone, Default)]
 pub struct EllipsoidTerrainProvider;
 
@@ -127,7 +128,7 @@ impl EllipsoidTerrainProvider {
 
 /// 一个高程图地形提供者。
 ///
-/// 映射到 CesiumJS `HeightmapTerrainProvider`
+/// 以规则网格高度采样提供服务端高程数据。
 #[derive(Debug, Clone)]
 pub struct HeightmapTerrainProvider {
     /// 高程图服务的基础 URL。
@@ -184,7 +185,7 @@ impl HeightmapTerrainProvider {
 
 /// VRTheWorld 地形提供者。
 ///
-/// 映射到 CesiumJS `VRTheWorldTerrainProvider`
+/// 从 VRTheWorld 高程服务端按瓦片获取地形数据。
 #[derive(Debug, Clone)]
 pub struct VrTheWorldTerrainProvider {
     /// VRTheWorld 服务的基础 URL。
@@ -282,7 +283,7 @@ fn extract_json_number(json: &str, key: &str) -> Option<f64> {
 
 /// 一个集成了裁剪方案的统一地形提供者。
 ///
-/// 映射到 CesiumJS `TerrainProvider` 接口
+/// 枚举各具体后端，便于上层统一分发请求。
 #[derive(Debug, Clone)]
 pub enum TerrainProviderKind {
     /// Cesium 地形（quantized-mesh）。
@@ -297,7 +298,7 @@ pub enum TerrainProviderKind {
 
 /// 带裁剪方案与可用性的地形提供者描述符。
 ///
-/// 映射到 CesiumJS `TerrainProvider` 基础接口
+/// 聚合提供者类型、裁剪方案、最大层级与法线/水掩膜能力标志。
 #[derive(Debug, Clone)]
 pub struct TerrainProviderDescriptor {
     /// 提供者类型。
@@ -399,7 +400,7 @@ pub struct HeightmapSampleParams<'a> {
 
 /// 使用双线性插值在某个位置采样地形高度。
 ///
-/// 映射到 CesiumJS `sampleTerrain` / `sampleTerrainMostDetailed`
+/// 定位包围该点的四个采样，按经纬权重插值得到高程。
 pub fn sample_height_bilinear(
     params: &HeightmapSampleParams<'_>,
     longitude: f64,
@@ -410,6 +411,7 @@ pub fn sample_height_bilinear(
     let grid_height = params.grid_height;
 
     if heightmap.len() < grid_width * grid_height {
+        // 数据不足以覆盖整张网格时放弃采样。
         return None;
     }
 
@@ -426,11 +428,13 @@ pub fn sample_height_bilinear(
     let fy = (params.tile_north - latitude) / (params.tile_north - params.tile_south)
         * (grid_height - 1) as f64;
 
+    // 取左下角整数采样并钳制，保证 x1/y1 不越界。
     let x0 = (fx as usize).min(grid_width - 2);
     let y0 = (fy as usize).min(grid_height - 2);
     let x1 = x0 + 1;
     let y1 = y0 + 1;
 
+    // tx/ty 为落在单元内的小数位置，作为插值权重。
     let tx = fx - x0 as f64;
     let ty = fy - y0 as f64;
 
@@ -480,6 +484,7 @@ pub fn sample_height_quantized(
     let vertex_count = params.vertex_count;
 
     if quantized_vertices.len() < vertex_count * 3 {
+        // 顶点数据须容纳 u/v/h 三段，否则放弃。
         return None;
     }
 
@@ -489,6 +494,7 @@ pub fn sample_height_quantized(
     let v_query = ((latitude - params.tile_south) / (params.tile_north - params.tile_south)
         * 32767.0) as u16;
 
+    // 以最近顶点的高程作为采样结果。
     let mut best_dist = u32::MAX;
     let mut best_height = 0u16;
 
@@ -497,6 +503,7 @@ pub fn sample_height_quantized(
         let v = quantized_vertices[vertex_count + i];
         let h = quantized_vertices[vertex_count * 2 + i];
 
+        // 用曼哈顿距离比较 u/v 偏差，逐顶点取最近者。
         let du = (u as i32 - u_query as i32).unsigned_abs();
         let dv = (v as i32 - v_query as i32).unsigned_abs();
         let dist = du + dv;
@@ -508,6 +515,7 @@ pub fn sample_height_quantized(
     }
 
     // 反量化高程
+    // 将量化高度线性还原回 [min,max] 区间。
     let t = best_height as f64 / 32767.0;
     Some(params.min_height + t * (params.max_height - params.min_height))
 }
@@ -518,7 +526,7 @@ pub fn sample_height_quantized(
 
 /// ArcGIS 地形提供者（ImageServer 或 ElevationService）。
 ///
-/// 映射到 CesiumJS `ArcGISTerrainProvider`（尚未见于 CesiumJS，但为常见模式）。
+/// 按瓦片坐标拼接服务 URL，用于常见的 ArcGIS 高程服务模式。
 #[derive(Debug, Clone)]
 pub struct ArcGisTerrainProvider {
     /// ArcGIS 地形服务的基础 URL。
@@ -556,6 +564,7 @@ impl ArcGisTerrainProvider {
 
     /// 获取给定坐标的瓦片 URL。
     pub fn get_tile_url(&self, level: u32, x: u32, y: u32) -> String {
+        // 按 {url}/tile/{level}/{y}/{x} 约定拼接瓦片地址。
         format!(
             "{}/tile/{}/{}/{}",
             self.url.trim_end_matches('/'),
@@ -568,7 +577,7 @@ impl ArcGisTerrainProvider {
 
 /// Google Earth Enterprise 地形提供者。
 ///
-/// 映射到 CesiumJS `Scene/GoogleEarthEnterpriseTerrainProvider.js`
+/// 基于 GEE 元数据的 quadkey 瓦片方案获取地形。
 #[derive(Debug, Clone, PartialEq)]
 pub struct GoogleEarthEnterpriseTerrainProvider {
     /// Google Earth Enterprise 服务器的基础 URL。

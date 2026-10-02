@@ -13,16 +13,19 @@ use bevy::prelude::*;
 ///
 /// Original: `dynamic_globe.rs:1824-1859` (逐字节保留).
 pub fn build_mip_chain(base: Vec<u8>, width: u32, height: u32) -> (Vec<u8>, u32) {
+    // 从基础层出发，逐级折半生成 mip，追加到同一 data 块尾部。
     let mut data = base;
     let mut levels = 1u32;
     let (mut cw, mut ch) = (width, height);
     let mut src_off = 0usize;
+    // 当前层尺寸缩到 1×1 前持续细分。
     while cw > 1 || ch > 1 {
         let nw = (cw / 2).max(1);
         let nh = (ch / 2).max(1);
         let mut mip = vec![0u8; (nw * nh * 4) as usize];
         for ry in 0..nh {
             for rx in 0..nw {
+                // 目标 mip 每像素 = 源 2×2 邻域的平均。
                 let mut acc = [0u32; 4];
                 for dy in 0..2u32 {
                     for dx in 0..2u32 {
@@ -62,6 +65,7 @@ pub fn make_image(
     height: u32,
     levels: u32,
 ) -> Handle<Image> {
+    // 基础层占据 data 前 width*height*4 字节，其余为 mip 链。
     let base_len = (width * height * 4) as usize;
     let mut img = Image::new(
         bevy::render::render_resource::Extent3d {
@@ -76,6 +80,7 @@ pub fn make_image(
     );
     img.data = data;
     img.texture_descriptor.mip_level_count = levels;
+    // 装配三线性 mipmap + 8x 各向异性采样器。
     img.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
         mag_filter: ImageFilterMode::Linear,
         min_filter: ImageFilterMode::Linear,
@@ -99,8 +104,10 @@ pub fn smoothness_stats(rgba: &image::RgbaImage) -> (f64, u32, u32, u32, u32) {
     let mut acc_g: u64 = 0;
     let mut acc_b: u64 = 0;
     let mut x = 0;
+    // 水平每隔 8px、垂直每隔 8 行做稀疏采样。
     while x + 4 < w {
         for y in (0..h).step_by(8) {
+            // 比较相隔 4px 的像素对，累加 RGB 绝对差。
             let p = rgba.get_pixel(x, y).0;
             let q = rgba.get_pixel(x + 4, y).0;
             let d = ((p[0] as i32 - q[0] as i32).abs()
@@ -117,6 +124,7 @@ pub fn smoothness_stats(rgba: &image::RgbaImage) -> (f64, u32, u32, u32, u32) {
         }
         x += 8;
     }
+    // 无采样点时返回哨兵值（视为最不平滑）。
     if count == 0 {
         return (f64::MAX, u32::MAX, 0, 0, 0);
     }
@@ -135,10 +143,12 @@ pub fn smoothness_stats(rgba: &image::RgbaImage) -> (f64, u32, u32, u32, u32) {
 /// Original: `dynamic_globe.rs:1811-1819` (逐字节保留).
 pub fn is_placeholder_tile(rgba: &image::RgbaImage) -> (bool, f64, u32) {
     let (w, h) = rgba.dimensions();
+    // 过小图像统计不可靠，直接判定非占位图。
     if w < 16 || h < 16 {
         return (false, f64::MAX, u32::MAX);
     }
     let (avg, maxd, r, _g, b) = smoothness_stats(rgba);
+    // 占位图特征：平滑、明亮、偏冷色调。
     let bright = (r + b) / 2 > 170;
     let cool = b >= r;
     (avg < 1.5 && maxd <= 12 && bright && cool, avg, maxd)

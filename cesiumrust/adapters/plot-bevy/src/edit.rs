@@ -38,6 +38,13 @@ const DRAG_THRESHOLD_PX: f32 = 4.0;
 const NUDGE_DEG: f64 = 0.05;
 
 /// 为每个仍存在于层中的已选 id 构建移除命令。
+///
+/// # 参数
+/// - `doc`：文档，用于查找元素及其所属层。
+/// - `ids`：待删除的元素 id 集合。
+///
+/// # 返回
+/// 一个包含所有 RemoveElement 步的 composite（可撤销恢复）。
 pub fn delete_commands(doc: &Document, ids: impl IntoIterator<Item = ElementId>) -> PlotCommand {
     let steps: Vec<PlotCommand> = ids
         .into_iter()
@@ -56,6 +63,12 @@ pub fn delete_commands(doc: &Document, ids: impl IntoIterator<Item = ElementId>)
 /// 为每个已选元素构建新增命令，将其几何 / 样式 /
 /// 属性克隆到新分配的 id 上并放入同一层。名称追加
 /// “副本”后缀以在面板中区分复制元素（M7）。
+///
+/// # 参数
+/// - `doc`：可变文档，用于铸造新元素 id。
+/// - `ids`：待复制的已选元素 id。
+/// # 返回
+/// 包含所有 AddElement 步的 composite。
 pub fn duplicate_commands(doc: &mut Document, ids: &[ElementId]) -> PlotCommand {
     let mut steps = Vec::new();
     for &id in ids {
@@ -84,6 +97,14 @@ pub fn duplicate_commands(doc: &mut Document, ids: &[ElementId]) -> PlotCommand 
 
 /// 构建移动命令：将每个可编辑的已选元素平移
 /// `(dlon, dlat)` 度，折叠为一个 composite（一步撤销）。
+///
+/// # 参数
+/// - `doc`：文档（不可编辑元素被跳过）。
+/// - `ids`：已选元素 id。
+/// - `dlon`/`dlat`：经纬度平移量。
+///
+/// # 返回
+/// 一个包含各 UpdateGeometry 步的 composite（一步撤销）。
 pub fn translate_commands(doc: &Document, ids: &[ElementId], dlon: f64, dlat: f64) -> PlotCommand {
     let steps: Vec<PlotCommand> = ids
         .iter()
@@ -124,6 +145,10 @@ pub struct PlotDrag {
 }
 
 /// 将命令应用到文档并记录（跳过空 composite）。
+///
+/// # 参数
+/// - `plot_doc`/`history`：目标文档与命令栈。
+/// - `command`：待提交的 [`PlotCommand`]。
 fn commit(plot_doc: &mut PlotDocument, history: &mut PlotHistory, command: PlotCommand) {
     if matches!(&command, PlotCommand::Composite { steps } if steps.is_empty()) {
         return;
@@ -136,6 +161,10 @@ fn commit(plot_doc: &mut PlotDocument, history: &mut PlotHistory, command: PlotC
 /// 提交路径的公开入口，以便 M7 面板能将样式和
 /// 几何编辑路由到键盘 / 拖拽系统使用的同一撤销记录管线
 /// （一次面板编辑 == 一步撤销）。
+///
+/// # 参数
+/// - `plot_doc`/`history`：目标文档与命令栈。
+/// - `command`：待提交的 [`PlotCommand`]。
 pub fn apply_command(plot_doc: &mut PlotDocument, history: &mut PlotHistory, command: PlotCommand) {
     commit(plot_doc, history, command);
 }
@@ -144,6 +173,11 @@ pub fn apply_command(plot_doc: &mut PlotDocument, history: &mut PlotHistory, com
 /// 捕获 before/after 以使编辑可撤销。
 /// 已携带目标样式的元素被跳过，因此空操作产生
 /// 空 composite（[`apply_command`] 会丢弃它而不记录）。
+///
+/// # 参数
+/// - `doc`：文档，提供当前样式。
+/// - `ids`：已选元素 id。
+/// - `mutate`：将旧样式映射为新样式的闭包。
 pub fn style_command(
     doc: &Document,
     ids: &[ElementId],
@@ -169,6 +203,11 @@ pub fn style_command(
 }
 
 /// 移除不再存在于文档中的选择 id（撤销新增后）。
+///
+/// # 参数
+/// - `selection`：待修剪的选择集。
+/// - `doc`：当前文档（判断元素是否仍存在）。
+/// - `events`：修剪发生时发送选择变更事件。
 fn prune_selection(
     selection: &mut PlotSelection,
     doc: &Document,
@@ -184,6 +223,13 @@ fn prune_selection(
 }
 
 /// 键盘编辑系统（参见模块文档）。
+///
+/// # 参数
+/// - `plot_doc`/`history`：可撤销编辑的文档与命令栈。
+/// - `selection`：当前选择集（热键作用目标）。
+/// - `interaction`：交互 FSM，绘制期间热键属于它。
+/// - `keys`：键盘输入状态。
+/// - `selection_events`：选择变化时广播。
 pub fn edit_system(
     mut plot_doc: ResMut<PlotDocument>,
     mut history: ResMut<PlotHistory>,
@@ -269,6 +315,13 @@ pub fn edit_system(
 }
 
 /// 指针拖拽移动系统（参见模块文档）。
+///
+/// # 参数
+/// - `drag`：拖拽状态机（active/armed/位移/快照）。
+/// - `capture`：输入捕获门控（拖拽期间暂停相机）。
+/// - `plot_doc`/`history`：实时平移目标与命令栈。
+/// - `selection`/`interaction`/`hover`：拖拽发起所需状态。
+/// - `ctx`/`windows`/`cams`/`mouse`/`keys`：屏幕→地理投影所需输入。
 #[allow(clippy::too_many_arguments)]
 pub fn drag_move_system(
     mut drag: ResMut<PlotDrag>,
@@ -352,6 +405,10 @@ pub fn drag_move_system(
 }
 
 /// 将已完成的拖拽折叠为单条记录的移动命令（无移动则为空操作）。
+///
+/// # 参数
+/// - `plot_doc`/`history`：目标文档与命令栈。
+/// - `drag`：拖拽状态（未 armed 则直接返回）。
 fn end_drag(plot_doc: &mut PlotDocument, history: &mut PlotHistory, drag: &mut PlotDrag) {
     if !drag.armed {
         return;
@@ -379,6 +436,10 @@ fn end_drag(plot_doc: &mut PlotDocument, history: &mut PlotHistory, drag: &mut P
 
 /// 为视图模式选择激活相机（先匹配投影类型，否则任选
 /// 一个激活的）——与拾取 / 同步系统使用相同的规则。
+///
+/// # 参数
+/// - `cams`：相机查询（Camera + GlobalTransform + Projection）。
+/// - `mode`：当前视图模式，决定优先匹配哪种投影。
 fn active_cam<'q>(
     cams: &'q Query<(&Camera, &GlobalTransform, &Projection)>,
     mode: ViewMode,
@@ -407,10 +468,12 @@ mod tests {
     use cesium_plot::model::geometry::Polyline;
     use cesium_plot::model::{Document, Element};
 
+    /// 构造一个地理点（表面高度）的测试简写。
     fn p(lon: f64, lat: f64) -> GeoPoint {
         GeoPoint::surface(lon, lat)
     }
 
+    /// 构造一个含单条双顶点多段线的默认层文档，返回其 id。
     fn line_doc() -> (Document, ElementId) {
         let mut doc = Document::with_default_layer();
         let layer = doc.active_layer().unwrap();
@@ -425,6 +488,7 @@ mod tests {
         (doc, id)
     }
 
+    /// 删除命令应移除元素，逆命令可撤销恢复它。
     #[test]
     fn delete_command_removes_then_undo_restores() {
         let (mut doc, id) = line_doc();
@@ -436,6 +500,7 @@ mod tests {
         assert!(doc.element(id).is_some(), "undo re-adds the element");
     }
 
+    /// 复制命令应铸造一个新 id 并克隆几何，逆命令移除副本。
     #[test]
     fn duplicate_command_adds_a_new_id() {
         let (mut doc, id) = line_doc();
@@ -453,6 +518,7 @@ mod tests {
         assert_eq!(doc.element_count(), 1);
     }
 
+    /// 平移命令应移动所有顶点，逆命令回到原位。
     #[test]
     fn translate_command_moves_and_undoes() {
         let (mut doc, id) = line_doc();
@@ -465,6 +531,7 @@ mod tests {
         assert_eq!((back[0].lon_deg, back[0].lat_deg), (0.0, 0.0));
     }
 
+    /// 不可编辑的已选元素应被平移命令跳过（产生空 composite）。
     #[test]
     fn translate_skips_ineditable_elements() {
         let (mut doc, id) = line_doc();
@@ -476,6 +543,7 @@ mod tests {
         );
     }
 
+    /// 历史栈应能回放复制命令：应用后计数增长，撤销后回落。
     #[test]
     fn history_roundtrips_a_duplicate() {
         use cesium_plot::ops::HistoryStack;
@@ -489,6 +557,7 @@ mod tests {
         assert_eq!(doc.element_count(), 1);
     }
 
+    /// armed 拖拽结束时应将移动折叠为单条可撤销命令。
     #[test]
     fn end_drag_records_a_single_move_when_armed() {
         let (doc, id) = line_doc();
@@ -520,6 +589,7 @@ mod tests {
         assert_eq!((g[0].lon_deg, g[0].lat_deg), (0.0, 0.0));
     }
 
+    /// 未 armed 的拖拽（仅按下未超阈值）应是空操作，不入栈。
     #[test]
     fn end_drag_is_a_noop_when_not_armed() {
         let (doc, _id) = line_doc();
@@ -538,6 +608,7 @@ mod tests {
         assert!(!history.0.can_undo());
     }
 
+    /// 元素的 `cloned()` 快照应与文档中的后续修改彼此独立。
     #[test]
     fn a_moved_snapshot_is_independent() {
         let (mut doc, id) = line_doc();

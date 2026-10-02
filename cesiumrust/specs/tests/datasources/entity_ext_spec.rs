@@ -1,4 +1,4 @@
-//! 移植自 CesiumJS EntitySpec.js 的测试（13 个 A 类测试）
+//! 参考自 CesiumJS EntitySpec 的测试（13 个 A 类测试）
 //! - constructor/isAvailable/merge/computeModelMatrix/addProperty/removeProperty
 
 use cesium_datasource::entity::Entity;

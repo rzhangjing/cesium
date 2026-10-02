@@ -1,4 +1,4 @@
-//! Scene/VoxelBoxShapeSpec.js、VoxelCylinderShapeSpec.js、VoxelEllipsoidShapeSpec.js
+//! Scene/VoxelBoxShapeSpec、VoxelCylinderShapeSpec、VoxelEllipsoidShapeSpec
 //! → Rust 集成测试
 
 use cesium_voxel::{VoxelShapeType, VoxelBoxShape, VoxelCylinderShape, VoxelEllipsoidShape};

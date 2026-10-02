@@ -1,7 +1,7 @@
-//! 裁剪与云规范 - 移植自 Scene/ClippingPlaneSpec, ClippingPlaneCollectionSpec, CloudCollectionSpec
+//! 裁剪与云规范 - 参考自 Scene/ClippingPlaneSpec, ClippingPlaneCollectionSpec, CloudCollectionSpec
 //! 覆盖：ClippingPlane, ClippingPlaneCollection, CloudCollection, CumulusCloud, CloudType
-//! ClippingPlaneSpec.js：3 个 A 类（共 5；1 callback=C, 1 result-param=C）
-//! ClippingPlaneCollectionSpec.js：7 个 A 类（共 28；3 events=C, 18 WebGL=C）
+//! ClippingPlaneSpec：3 个 A 类（共 5；1 callback=C, 1 result-param=C）
+//! ClippingPlaneCollectionSpec：7 个 A 类（共 28；3 events=C, 18 WebGL=C）
 
 use cesium_effects::{ClippingPlane, ClippingPlaneCollection, CloudCollection, CloudType};
 use glam::{DMat4, DVec3};
@@ -58,11 +58,11 @@ fn cloud_type_default() {
     assert_eq!(CloudType::default(), CloudType::Cumulus);
 }
 
-// ─── ClippingPlane：忠实移植自 ClippingPlaneSpec.js ──────────────────
+// ─── ClippingPlane：对齐实现自 ClippingPlaneSpec ──────────────────
 
 #[test]
 fn clipping_plane_constructs() {
-    // 移植自: ClippingPlaneSpec "constructs"
+    // 参考自: ClippingPlaneSpec "constructs"
     let normal = DVec3::X;
     let distance = 1.0;
     let plane = ClippingPlane::new(normal, distance);
@@ -72,7 +72,7 @@ fn clipping_plane_constructs() {
 
 #[test]
 fn clipping_plane_works_with_plane_math() {
-    // 移植自: ClippingPlaneSpec "works with Plane math"
+    // 参考自: ClippingPlaneSpec "works with Plane math"
     let normal = DVec3::new(1.0, 2.0, 3.0).normalize();
     let clipping_plane = ClippingPlane::new(normal, 12.34);
 
@@ -114,11 +114,11 @@ fn clipping_plane_works_with_plane_math() {
     );
 }
 
-// ─── ClippingPlaneCollection：忠实移植自 ClippingPlaneCollectionSpec.js ───
+// ─── ClippingPlaneCollection：对齐实现自 ClippingPlaneCollectionSpec ───
 
 #[test]
 fn clipping_collection_default_constructor() {
-    // 移植自: ClippingPlaneCollectionSpec "default constructor"
+    // 参考自: ClippingPlaneCollectionSpec "default constructor"
     let collection = ClippingPlaneCollection::default();
     assert!(collection.is_empty());
     assert!(collection.enabled);
@@ -130,7 +130,7 @@ fn clipping_collection_default_constructor() {
 
 #[test]
 fn clipping_collection_get_at_index() {
-    // 移植自: ClippingPlaneCollectionSpec "gets the plane at an index"
+    // 参考自: ClippingPlaneCollectionSpec "gets the plane at an index"
     let planes = vec![
         ClippingPlane::new(DVec3::X, 1.0),
         ClippingPlane::new(DVec3::Y, 2.0),
@@ -150,7 +150,7 @@ fn clipping_collection_get_at_index() {
 
 #[test]
 fn clipping_collection_remove_first_occurrence() {
-    // 移植自: ClippingPlaneCollectionSpec "remove removes the first occurrence"
+    // 参考自: ClippingPlaneCollectionSpec "remove removes the first occurrence"
     let planes = vec![
         ClippingPlane::new(DVec3::X, 1.0),
         ClippingPlane::new(DVec3::Y, 2.0),
@@ -172,7 +172,7 @@ fn clipping_collection_remove_first_occurrence() {
 
 #[test]
 fn clipping_collection_remove_all() {
-    // 移植自: ClippingPlaneCollectionSpec "removeAll removes all"
+    // 参考自: ClippingPlaneCollectionSpec "removeAll removes all"
     let planes = vec![
         ClippingPlane::new(DVec3::X, 1.0),
         ClippingPlane::new(DVec3::Y, 2.0),
@@ -186,7 +186,7 @@ fn clipping_collection_remove_all() {
 
 #[test]
 fn clipping_collection_clipping_planes_state() {
-    // 移植自: ClippingPlaneCollectionSpec behavior
+    // 参考自: ClippingPlaneCollectionSpec behavior
     let mut collection = ClippingPlaneCollection::with_planes(vec![
         ClippingPlane::new(DVec3::X, 1.0),
         ClippingPlane::new(DVec3::Y, 2.0),

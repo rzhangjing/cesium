@@ -4,18 +4,18 @@
 //! 两个 MRT 渲染目标（Rgba16Float 累积 + R8Unorm revealage）以及一个
 //! 全屏合成 pass。
 //!
-//! # 蓝图
-//! - `packages/engine/Source/Scene/OIT.js` L1-947 (28KB main implementation)
-//!   - L30-34: capability detection (drawBuffers && colorBufferFloat && depthTexture && floatBlend)
-//!   - L137-156: updateTextures (accumulation RGBA FLOAT + revealage RGBA FLOAT)
-//!   - L164-226: updateFramebuffers (MRT 2-attachment FBO)
-//!   - L408-417: translucentMRTBlend (RGB additive, Alpha multiplicative)
-//!   - L487-492: mrtShaderSource (Ci*wzi → FragData_0, ai*wzi → FragData_1)
-//!   - L786-828: executeTranslucentCommandsSortedMRT
-//!   - L872-874: composite execution
-//! - `packages/engine/Source/Shaders/CompositeOITFS.glsl` L1-32 (901B composite)
-//! - `packages/engine/Source/Shaders/Builtin/Functions/alphaWeight.glsl` L4-11
-//! - `domain/effects/src/oit.rs` L1-366 (CPU reference: compute_weight, accumulate, composite)
+//! # 设计要点
+//! - 能力探测：需同时支持多渲染目标输出、浮点颜色缓冲、深度纹理与
+//!   浮点混合，任一缺失即关闭该效果（不 panic）。
+//! - 纹理更新：累积缓冲用 RGBA 浮点存加权颜色，revealage 用 RGBA 浮点
+//!   存加权不透明度衰减。
+//! - 帧缓冲：两个 attachment 组成 MRT 目标，逐视图按视口尺寸重建。
+//! - 混合状态：RGB 通道加法累加、Alpha 通道连乘衰减。
+//! - 逐片元输出：颜色乘权重写入 0 号 attachment，alpha 乘权重写入 1 号。
+//! - 半透明命令按深度排序后逐条渲染进 MRT 目标。
+//! - 合成 pass：读取累积与 revealage，按 revealage 与场景颜色混合出最终色。
+//! - 权重函数：由 alpha 与深度导出单调衰减的混合权重。
+//! - CPU 参考实现见领域层（compute_weight / accumulate / composite）。
 //!
 //! # 架构
 //! - `OitNode`：运行 MRT 累积 pass 的 ViewNode（读取场景颜色 + 深度，
@@ -121,6 +121,7 @@ pub struct CesiumOit {
 }
 
 impl Default for CesiumOit {
+    /// 默认启用：相机上的 OIT pass 默认开启。
     fn default() -> Self {
         Self { enabled: true }
     }
@@ -151,6 +152,8 @@ pub struct OitConfig {
 }
 
 impl Default for OitConfig {
+    /// 保守默认：OIT 关闭、模式为 None、开启深度测试与写入、
+    /// 累积清空为全 0、revealage 清空为 1.0（完全可写）。
     fn default() -> Self {
         Self {
             enabled: false,
@@ -164,6 +167,13 @@ impl Default for OitConfig {
 }
 
 impl OitConfig {
+    /// 从领域层配置构建适配器侧的 OIT 资源。
+    ///
+    /// # 参数
+    /// - `config`：领域层的 OIT 配置（决定启用与混合模式）。
+    ///
+    /// # 返回
+    /// 对应的适配器 `OitConfig`；深度清值采用与设备无关的固定默认。
     pub fn from_domain(config: &DomainOitConfig) -> Self {
         Self {
             enabled: config.is_active(),
@@ -183,6 +193,10 @@ impl OitConfig {
 pub struct OITPlugin;
 
 impl Plugin for OITPlugin {
+    /// 注册 OIT 配置资源；渲染图节点在各自系统里按需装配。
+    ///
+    /// # 参数
+    /// - `app`：待初始化的 Bevy 应用。
     fn build(&self, app: &mut App) {
         app.init_resource::<OitConfig>();
     }
@@ -204,6 +218,14 @@ pub struct OitPipeline {
 }
 
 impl FromWorld for OitPipeline {
+    /// 从 render-world 构建设备资源：创建累积与合成 pass 的 bind group
+    /// layout，并准备好点采样与线性采样两个采样器。
+    ///
+    /// # 参数
+    /// - `render_world`：提供 `RenderDevice` 等的渲染世界。
+    ///
+    /// # 返回
+    /// 装配好的 [`OitPipeline`] 资源。
     fn from_world(render_world: &mut World) -> Self {
         let render_device = render_world.resource::<RenderDevice>();
 
@@ -359,6 +381,21 @@ impl ViewNode for OitNode {
         &'static ViewUniformOffset,
     );
 
+    /// 运行 MRT 累积 pass：若该视图的 OIT 未启用则直接返回；否则读取
+    /// 深度 prepass 与场景颜色，将半透明图元以加权混合逐条累加进
+    /// 累积与 revealage 两个 attachment。
+    ///
+    /// # 参数
+    /// - `_graph`：渲染图上下文（本节点无需读写子 pass）。
+    /// - `render_context`：当前 pass 的 GPU 命令记录器。
+    /// - `entity`/`target`：视图实体与其渲染目标。
+    /// - `pipeline_handle`：该视图缓存的累积 pipeline ID。
+    /// - `oit`：相机级 OIT 开关；`prepass`：深度/颜色 prepass 纹理。
+    /// - `view_uniform_offset`：本视图在 view uniform buffer 中的偏移。
+    /// - `world`：提供 pipeline/oit/texture 资源的 render-world。
+    ///
+    /// # 返回
+    /// 成功提交命令则为 `Ok(())`；pipeline 尚未就绪时返回错误。
     fn run(
         &self,
         _graph: &mut RenderGraphContext,
@@ -374,10 +411,12 @@ impl ViewNode for OitNode {
         let oit_pipeline = world.resource::<OitPipeline>();
         let texture_cache = world.resource::<OitTextureCache>();
 
+        // pipeline 尚未编译就绪时跳过本帧（下帧重试）。
         let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_handle.pipeline_id) else {
             return Ok(());
         };
 
+        // 深度 prepass 不可用时无法做深度加权，直接跳过。
         let Some(depth_view) = prepass.depth_view() else {
             return Ok(());
         };
@@ -483,6 +522,19 @@ impl ViewNode for OitCompositeNode {
         &'static CesiumOit,
     );
 
+    /// 运行全屏合成 pass：若 OIT 未启用则直接返回；否则读取不透明颜色、
+    /// 累积与 revealage 纹理，将它们混合为最终颜色写回目标。
+    ///
+    /// # 参数
+    /// - `_graph`：渲染图上下文（合成 pass 无需子 pass）。
+    /// - `render_context`：当前 pass 的 GPU 命令记录器。
+    /// - `entity`/`target`：视图实体与其渲染目标。
+    /// - `pipeline_handle`：该视图缓存的合成 pipeline ID。
+    /// - `oit`：相机级 OIT 开关。
+    /// - `world`：提供 pipeline/oit/texture 资源的 render-world。
+    ///
+    /// # 返回
+    /// 成功提交命令则为 `Ok(())`；pipeline 尚未就绪时返回错误。
     fn run(
         &self,
         _graph: &mut RenderGraphContext,
@@ -498,13 +550,14 @@ impl ViewNode for OitCompositeNode {
         let oit_pipeline = world.resource::<OitPipeline>();
         let texture_cache = world.resource::<OitTextureCache>();
 
+        // 合成 pipeline 尚未就绪时跳过（下帧重试）。
         let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_handle.pipeline_id) else {
             return Ok(());
         };
 
         let post_process = target.post_process_write();
         let source = post_process.source; // 不透明场景
-        let destination = post_process.destination;
+        let destination = post_process.destination; // 混合结果写回此处
 
         // 获取 OIT 纹理视图。
         let cache = texture_cache.cache.lock().unwrap();
@@ -564,15 +617,14 @@ impl OitCapabilitiesResource {
     /// 探测渲染设备对 OIT MRT 的支持。
     ///
     /// wgpu/WebGPU 中唯一可靠的运行时判别依据是
-    /// `max_color_attachments >= 2`（对应上游 `context.drawBuffers`）。
+    /// `max_color_attachments >= 2`（多渲染目标输出能力的等价物）。
     /// 浮点混合和 color-buffer-float 在 WebGPU 中由核心保证
     ///（不存在运行时查询 API）；深度纹理同理。
     ///
-    /// 对应 OIT.js L30-34：
-    /// ```js
-    /// extensionsSupported = colorBufferFloat && depthTexture && floatBlend;
-    /// _translucentMRTSupport = drawBuffers && extensionsSupported;
-    /// ```
+    /// 能力判定规则：浮点颜色缓冲、深度纹理、浮点混合三者齐备记为
+    /// `extensions_supported`；再与多渲染目标输出（`max_color_attachments >= 2`）
+    /// 相与，得到是否支持半透明 MRT 累积的结论。任一前置缺失都会
+    /// 使探测结果为不支持，从而门控关闭该效果。
     pub fn probe(render_device: &RenderDevice) -> Self {
         let limits = render_device.limits();
         let max_ca = limits.max_color_attachments;

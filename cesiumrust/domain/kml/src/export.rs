@@ -1,6 +1,8 @@
 //! KML 导出功能。
 //!
-//! 映射到 CesiumJS `DataSources/exportKml.js`。
+//! 将内存中的实体、样式与几何序列化为符合 OGC KML 2.2 规范的 XML 文本。
+//! 支持点、线（LineString）、面（Polygon）、模型（glTF 引用）四类几何，
+//! 以及图标、线、面、标注四种样式与外部文件（KMZ）的组织。
 
 use std::collections::HashMap;
 
@@ -26,6 +28,7 @@ pub struct KmlExportOptions {
 }
 
 impl Default for KmlExportOptions {
+    /// 返回导出选项的默认值：文档名为 "Cesium Export"，KML 版本 2.2，导出模型与图像。
     fn default() -> Self {
         Self {
             name: "Cesium Export".to_string(),
@@ -66,13 +69,14 @@ pub struct KmlExporter {
     namespaces: Vec<(String, String)>,
     /// 样式定义。
     styles: Vec<KmlExportStyle>,
-    /// 地标。
+    /// 已添加的地标集合。
     placemarks: Vec<KmlExportPlacemark>,
 }
 
 impl KmlExporter {
     /// 使用默认选项创建一个新导出器。
     pub fn new() -> Self {
+        // 预置 KML/gx/atom 三个标准命名空间声明
         Self {
             options: KmlExportOptions::default(),
             namespaces: vec![
@@ -87,6 +91,7 @@ impl KmlExporter {
 
     /// 使用自定义选项创建。
     pub fn with_options(options: KmlExportOptions) -> Self {
+        // 复用 new() 的命名空间与空容器，仅替换选项
         Self {
             options,
             ..Self::new()
@@ -95,11 +100,13 @@ impl KmlExporter {
 
     /// 添加一个样式定义。
     pub fn add_style(&mut self, style: KmlExportStyle) {
+        // 样式追加到 Document 级样式表
         self.styles.push(style);
     }
 
     /// 添加一个地标。
     pub fn add_placemark(&mut self, placemark: KmlExportPlacemark) {
+        // 地标追加到文档末尾
         self.placemarks.push(placemark);
     }
 
@@ -146,6 +153,7 @@ impl KmlExporter {
 
     /// 导出为 KmlExportResult。
     pub fn export(&self) -> KmlExportResult {
+        // 当前仅生成 KML 文本，外部文件与 KMZ 留空
         KmlExportResult {
             kml: self.to_kml(),
             external_files: HashMap::new(),
@@ -155,6 +163,7 @@ impl KmlExporter {
 }
 
 impl Default for KmlExporter {
+    /// 以默认选项构造导出器，等价于 [`KmlExporter::new`]。
     fn default() -> Self {
         Self::new()
     }
@@ -197,6 +206,7 @@ impl KmlExportStyle {
         let mut kml = format!("{}<Style id=\"{}\">\n", pad, self.id);
 
         if let Some(ref icon) = self.icon_style {
+            // 图标样式：输出颜色、缩放与可选的 Icon href
             kml.push_str(&format!("{}  <IconStyle>\n", pad));
             kml.push_str(&format!("{}    <color>{}</color>\n", pad, icon.color));
             kml.push_str(&format!("{}    <scale>{}</scale>\n", pad, icon.scale));
@@ -207,6 +217,7 @@ impl KmlExportStyle {
         }
 
         if let Some(ref line) = self.line_style {
+            // 线样式：输出颜色与宽度
             kml.push_str(&format!("{}  <LineStyle>\n", pad));
             kml.push_str(&format!("{}    <color>{}</color>\n", pad, line.color));
             kml.push_str(&format!("{}    <width>{}</width>\n", pad, line.width));
@@ -214,6 +225,7 @@ impl KmlExportStyle {
         }
 
         if let Some(ref poly) = self.poly_style {
+            // 面样式：填充与轮廓以 0/1 布尔输出
             kml.push_str(&format!("{}  <PolyStyle>\n", pad));
             kml.push_str(&format!("{}    <color>{}</color>\n", pad, poly.color));
             kml.push_str(&format!("{}    <fill>{}</fill>\n", pad, if poly.fill { 1 } else { 0 }));
@@ -222,6 +234,7 @@ impl KmlExportStyle {
         }
 
         if let Some(ref label) = self.label_style {
+            // 标注样式：输出颜色与缩放
             kml.push_str(&format!("{}  <LabelStyle>\n", pad));
             kml.push_str(&format!("{}    <color>{}</color>\n", pad, label.color));
             kml.push_str(&format!("{}    <scale>{}</scale>\n", pad, label.scale));
@@ -304,6 +317,7 @@ impl KmlExportPlacemark {
     /// 为此地标生成 KML。
     pub fn to_kml(&self, indent: usize) -> String {
         let pad = " ".repeat(indent);
+        // 地标：名称/描述经 XML 转义，可选 styleUrl 引用，几何递归缩进 2 空格
         let mut kml = format!("{}<Placemark>\n", pad);
         kml.push_str(&format!("{}  <name>{}</name>\n", pad, escape_xml(&self.name)));
 
@@ -366,12 +380,14 @@ impl KmlExportGeometry {
         let pad = " ".repeat(indent);
         match self {
             Self::Point { coordinates } => {
+                // 点：将坐标序列写入单个 <coordinates>
                 let mut kml = format!("{}<Point>\n", pad);
                 kml.push_str(&format!("{}  <coordinates>{}</coordinates>\n", pad, format_coordinates(coordinates)));
                 kml.push_str(&format!("{}</Point>\n", pad));
                 kml
             }
             Self::LineString { coordinates, tessellate } => {
+                // 线：tessellate 为真时输出沿地形细分标记
                 let mut kml = format!("{}<LineString>\n", pad);
                 if *tessellate {
                     kml.push_str(&format!("{}  <tessellate>1</tessellate>\n", pad));
@@ -381,6 +397,7 @@ impl KmlExportGeometry {
                 kml
             }
             Self::Polygon { outer_boundary, inner_boundaries } => {
+                // 面：外边界包于 outerBoundaryIs 的 LinearRing，内边界（空洞）逐个包于 innerBoundaryIs
                 let mut kml = format!("{}<Polygon>\n", pad);
                 kml.push_str(&format!("{}  <outerBoundaryIs>\n", pad));
                 kml.push_str(&format!("{}    <LinearRing>\n", pad));
@@ -400,6 +417,7 @@ impl KmlExportGeometry {
                 kml
             }
             Self::Model { href, location, heading, tilt, roll, scale } => {
+                // 模型：分别输出 Location（位置）、Orientation（朝向角）、Scale（缩放）与 Link（href）
                 let mut kml = format!("{}<Model>\n", pad);
                 kml.push_str(&format!("{}  <Location>\n", pad));
                 kml.push_str(&format!("{}    <longitude>{}</longitude>\n", pad, location[0]));
@@ -428,6 +446,7 @@ impl KmlExportGeometry {
 
 /// 将坐标格式化为 KML 坐标字符串。
 fn format_coordinates(coords: &[[f64; 3]]) -> String {
+    // 每个点格式化为 "经度,纬度,高度"，点之间以空格分隔（KML 坐标约定）
     coords
         .iter()
         .map(|c| format!("{},{},{}", c[0], c[1], c[2]))
@@ -437,6 +456,7 @@ fn format_coordinates(coords: &[[f64; 3]]) -> String {
 
 /// 转义 XML 特殊字符。
 fn escape_xml(s: &str) -> String {
+    // 依次替换 XML 五个保留字符，注意 & 必须最先替换以避免二次转义
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -446,6 +466,7 @@ fn escape_xml(s: &str) -> String {
 
 /// 将 RGBA 颜色转换为 KML 颜色格式（aabbggrr）。
 pub fn rgba_to_kml_color(r: f64, g: f64, b: f64, a: f64) -> String {
+    // KML 采用 aabbggrr 逆序：alpha、蓝、绿、红各占一个字节，分量 [0,1] 映射到 [0,255]
     format!(
         "{:02x}{:02x}{:02x}{:02x}",
         (a * 255.0) as u8,

@@ -1,4 +1,4 @@
-//! DataSources/CzmlDataSourceSpec.js → Rust 集成测试
+//! DataSources/CzmlDataSourceSpec → Rust 集成测试
 
 use cesium_datasource::czml::parse_czml;
 

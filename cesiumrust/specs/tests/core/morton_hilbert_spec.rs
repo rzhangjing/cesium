@@ -1,5 +1,5 @@
-//! 移植自 `packages/engine/Specs/Core/MortonOrderSpec.js`（16 个 it()，6 个 A 类）
-//! 以及 `packages/engine/Specs/Core/HilbertOrderSpec.js`（8 个 it()，2 个 A 类）
+//! 参考自 `Specs/Core/MortonOrderSpec`（16 个 it()，6 个 A 类）
+//! 以及 `Specs/Core/HilbertOrderSpec`（8 个 it()，2 个 A 类）
 //!
 //! 省略 B 类（针对 undefined/越界的 throws）测试，因为 Rust 的类型系统
 //! 会在编译期强制输入合法。

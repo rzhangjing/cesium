@@ -1,5 +1,5 @@
 //! PostProcessStage/Composite/Collection 规范
-//! 移植自 CesiumJS Scene/PostProcessStageSpec.js + PostProcessStageCollectionSpec.js
+//! 参考自 CesiumJS Scene/PostProcessStageSpec + PostProcessStageCollectionSpec
 
 use cesium_effects::{
     create_ambient_occlusion_composite, create_auto_exposure_stage, create_bloom_composite,

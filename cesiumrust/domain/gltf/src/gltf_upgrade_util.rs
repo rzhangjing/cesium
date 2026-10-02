@@ -1,11 +1,10 @@
 //! glTF 1.0 → 2.0 升级链共享的底层辅助函数。
 //!
-//! 镜像 CesiumJS `packages/engine/Source/Scene/GltfPipeline/`：
-//! `ForEach.js`、`addToArray.js`、`addExtensionsUsed.js`、
-//! `addExtensionsRequired.js`、`removeExtensionsUsed.js`、
-//! `removeExtensionsRequired.js`、`removeExtension.js`、`usesExtension.js`、
-//! `numberOfComponentsForType.js`、`getAccessorByteStride.js`，以及来自
-//! `Core/WebGLConstants.js` 的数值常量。
+//! 镜像 glTF 升级管线（GltfPipeline）的一组底层辅助：遍历、数组追加、
+//! 扩展的增删查（addExtensionsUsed / addExtensionsRequired /
+//! removeExtensionsUsed / removeExtensionsRequired / removeExtension /
+//! usesExtension），以及类型分量数与 accessor 字节 stride 的计算，
+//! 并附 WebGL 数值常量。
 //!
 //! 升级作用于原始 [`serde_json::Value`] 而非强类型的
 //! [`crate::gltf_model::GltfModel`]：glTF 1.0 将其顶层集合
@@ -20,7 +19,7 @@ use std::collections::HashMap;
 
 /// WebGL / glTF 数值常量。
 ///
-/// 真实来源：`packages/engine/Source/Core/WebGLConstants.js`。这是完整
+/// 这些常量取自上游 WebGL 枚举定义。这是完整
 /// 常量枚举的忠实镜像；仅引用了 glTF 1.0 → 2.0 升级路径
 /// 所使用的那部分子集，因此加 `#[allow(dead_code)]`。
 #[allow(dead_code)]
@@ -75,7 +74,7 @@ pub(crate) mod webgl {
     pub const ELEMENT_ARRAY_BUFFER: u64 = 0x8893;
 }
 
-/// `numberOfComponentsForType.js`：每个元素的标量分量数。
+/// 每种 glTF 类型每个元素的标量分量数。
 pub(crate) fn number_of_components_for_type(gl_type: &str) -> usize {
     match gl_type {
         "SCALAR" => 1,
@@ -98,7 +97,7 @@ pub(crate) fn component_size_in_bytes(component_type: u64) -> usize {
     }
 }
 
-/// `getAccessorByteStride.js`：accessor 的字节 stride。
+/// 计算 accessor 的字节 stride。
 ///
 /// 当 `bufferView.byteStride` 存在且为正时使用它，否则
 /// 计算 `componentSize * numberOfComponentsForType`。
@@ -127,7 +126,7 @@ pub(crate) fn index_into<'a>(gltf: &'a Value, collection: &str, index: u64) -> O
     }
 }
 
-/// `addToArray.js`：追加 `element`，返回其索引。当设置了 `check_dup` 时，
+/// 追加 `element`，返回其索引。当设置了 `check_dup` 时，
 /// 返回已存在的相等元素的索引而非追加。
 pub(crate) fn add_to_array(arr: &mut Vec<Value>, element: Value, check_dup: bool) -> usize {
     if check_dup {
@@ -139,7 +138,7 @@ pub(crate) fn add_to_array(arr: &mut Vec<Value>, element: Value, check_dup: bool
     arr.len() - 1
 }
 
-/// `objectToArray.js`（updateVersion.js L291）：将一个对象键集合
+/// 将一个对象键集合
 /// 转换为数组，在缺失时从键赋值 `name`，并
 /// 返回 `id -> array index` 映射。
 pub(crate) fn object_to_array(obj: Map<String, Value>) -> (Vec<Value>, HashMap<String, usize>) {
@@ -158,7 +157,7 @@ pub(crate) fn object_to_array(obj: Map<String, Value>) -> (Vec<Value>, HashMap<S
     (arr, mapping)
 }
 
-/// `usesExtension.js`：`extensionsUsed` 是否包含 `extension`。
+/// `extensionsUsed` 是否包含 `extension`。
 pub(crate) fn uses_extension(gltf: &Value, extension: &str) -> bool {
     gltf
         .get("extensionsUsed")
@@ -167,7 +166,7 @@ pub(crate) fn uses_extension(gltf: &Value, extension: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// `addExtensionsUsed.js`：将 `extension` 加入 `extensionsUsed`（去重）。
+/// 将 `extension` 加入 `extensionsUsed`（去重）。
 pub(crate) fn add_extensions_used(gltf: &mut Value, extension: &str) {
     let Some(obj) = gltf.as_object_mut() else { return };
     let slot = obj
@@ -178,7 +177,7 @@ pub(crate) fn add_extensions_used(gltf: &mut Value, extension: &str) {
     }
 }
 
-/// `addExtensionsRequired.js`：将 `extension` 加入 `extensionsRequired`
+/// 将 `extension` 加入 `extensionsRequired`
 /// （去重）以及 `extensionsUsed`。
 pub(crate) fn add_extensions_required(gltf: &mut Value, extension: &str) {
     if let Some(obj) = gltf.as_object_mut() {
@@ -192,7 +191,7 @@ pub(crate) fn add_extensions_required(gltf: &mut Value, extension: &str) {
     add_extensions_used(gltf, extension);
 }
 
-/// `removeExtensionsRequired.js`：从 `extensionsRequired` 剪辑掉 `extension`，
+/// 从 `extensionsRequired` 剪辑掉 `extension`，
 /// 当数组变空时删除它。
 pub(crate) fn remove_extensions_required(gltf: &mut Value, extension: &str) {
     let Some(obj) = gltf.as_object_mut() else { return };
@@ -208,7 +207,7 @@ pub(crate) fn remove_extensions_required(gltf: &mut Value, extension: &str) {
     }
 }
 
-/// `removeExtensionsUsed.js`：从 `extensionsUsed`（以及
+/// 从 `extensionsUsed`（以及
 /// `extensionsRequired`）剪辑掉 `extension`，当数组变空时删除它。
 pub(crate) fn remove_extensions_used(gltf: &mut Value, extension: &str) {
     let Some(obj) = gltf.as_object_mut() else { return };
@@ -230,7 +229,7 @@ pub(crate) fn remove_extensions_used(gltf: &mut Value, extension: &str) {
     }
 }
 
-/// `removeExtension.js`：从 `extensionsUsed` /
+/// 从 `extensionsUsed` /
 /// `extensionsRequired` 以及树中每个 `extensions` 对象中移除 `extension`。也
 /// 镜像了 `CESIUM_RTC` technique-uniform 语义修正。
 pub(crate) fn remove_extension(gltf: &mut Value, extension: &str) {
@@ -241,7 +240,7 @@ pub(crate) fn remove_extension(gltf: &mut Value, extension: &str) {
     remove_extension_and_traverse(gltf, extension);
 }
 
-/// `removeCesiumRTC`（removeExtension.js L23）：将 `CESIUM_RTC_MODELVIEW`
+/// 将 `CESIUM_RTC_MODELVIEW`
 /// technique uniform 语义重写为 `MODELVIEW`。
 fn remove_cesium_rtc(gltf: &mut Value) {
     for_each_technique(gltf, &mut |technique| {
@@ -257,7 +256,7 @@ fn remove_cesium_rtc(gltf: &mut Value) {
     });
 }
 
-/// `removeExtensionAndTraverse`（removeExtension.js L33）：递归地从树中
+/// 递归地从树中
 /// 每个普通对象删除 `extensions[extension]`。
 fn remove_extension_and_traverse(value: &mut Value, extension: &str) {
     match value {
@@ -329,7 +328,7 @@ pub(crate) fn for_each_material(gltf: &mut Value, f: &mut impl FnMut(&mut Value)
     for_each_top_level_mut(gltf, "materials", &mut |item, _i| f(item));
 }
 
-/// `srgbToLinear`（updateVersion.js L1019）：将一个 sRGB RGBA 颜色转换为
+/// 将一个 sRGB RGBA 颜色转换为
 /// 线性空间（alpha 逐字保留）。
 pub(crate) fn srgb_to_linear(srgb: &[f64]) -> Vec<f64> {
     let mut linear = vec![0.0f64; srgb.len()];
@@ -347,12 +346,12 @@ pub(crate) fn srgb_to_linear(srgb: &[f64]) -> Vec<f64> {
     linear
 }
 
-/// `isVec4`（updateVersion.js L1015）：一个恰好包含四个数字的 JSON 数组。
+/// 判断一个 JSON 数组是否恰好包含四个数字。
 pub(crate) fn is_vec4(value: &Value) -> bool {
     value.as_array().map(|a| a.len() == 4).unwrap_or(false)
 }
 
-/// `isTexture`（updateVersion.js L1011）：一个带有已定义 `index` 的对象。
+/// 判断一个对象是否带有已定义的 `index`。
 pub(crate) fn is_texture(value: &Value) -> bool {
     value.get("index").is_some()
 }

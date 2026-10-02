@@ -1,5 +1,5 @@
 //! 几何工具规格测试 - generate_arc/triangulate_polygon/compute_area2d/winding_order
-//! 移植自 Core/GeometryPipelineSpec.js + Core/PolygonPipelineSpec.js（A 类工具路径）
+//! 参考自 Core/GeometryPipelineSpec + Core/PolygonPipelineSpec（A 类工具路径）
 
 use cesium_geospatial::geometry::{
     compute_area2d, compute_winding_order, generate_arc, triangulate_polygon, WindingOrder,

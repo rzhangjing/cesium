@@ -1,4 +1,4 @@
-//! Widgets/InfoBoxSpec.js, SelectionIndicatorSpec.js, i18n
+//! Widgets/InfoBoxSpec, SelectionIndicatorSpec, i18n
 //! → Rust integration tests
 
 use cesium_widgets::{InfoBoxViewModel, SelectionIndicatorViewModel, Locale, I18n};

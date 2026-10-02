@@ -43,6 +43,7 @@ pub struct GpuTileHandles {
 /// `EvictionPolicy<TileKey>` 契约。见 [`BevyGpuHandleCache::as_eviction_policy`]。
 #[derive(Resource)]
 pub struct BevyGpuHandleCache {
+    /// 被包装的 core 层 FIFO GPU handle 缓存（同时作为逐出策略）。
     inner: GpuCache<TileKey, GpuTileHandles>,
 }
 
@@ -135,6 +136,7 @@ impl BevyGpuHandleCache {
 }
 
 impl Default for BevyGpuHandleCache {
+    /// 默认：转发到 [`BevyGpuHandleCache::with_defaults`] 的默认容量/zoom。
     fn default() -> Self {
         Self::with_defaults()
     }

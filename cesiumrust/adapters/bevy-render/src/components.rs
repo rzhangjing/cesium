@@ -12,59 +12,86 @@ pub struct CesiumGlobe;
 /// 地形瓦片实体的组件。
 #[derive(Component)]
 pub struct CesiumTerrainTile {
+    /// 瓦片列号 x。
     pub x: u32,
+    /// 瓦片行号 y。
     pub y: u32,
+    /// 瓦片层级（细节级别）。
     pub level: u32,
 }
 
 /// 3D Tiles 瓦片集根实体的组件。
 #[derive(Component)]
 pub struct CesiumTilesetRoot {
+    /// tileset.json 的 URL。
     pub url: String,
+    /// 当前加载状态。
     pub loading_state: TilesetLoadingState,
 }
 
 /// 瓦片集的加载状态。
 pub enum TilesetLoadingState {
+    /// 尚未开始加载。
     NotLoaded,
+    /// 正在加载。
     Loading,
+    /// 已就绪可渲染。
     Ready,
+    /// 加载失败（附错误信息）。
     Failed(String),
 }
 
 /// 单个 3D Tiles 瓦片实体的组件。
 #[derive(Component)]
 pub struct CesiumTileNode {
+    /// 从根到本瓦片的子索引路径。
     pub path: Vec<usize>,
+    /// 当前屏幕空间误差（驱动 LOD 选择）。
     pub screen_space_error: f64,
+    /// 几何误差（瓦片精度）。
     pub geometric_error: f64,
+    /// 内容加载状态。
     pub state: TileContentState,
+    /// 包围球中心（世界坐标）。
     pub bounding_sphere_center: Option<glam::DVec3>,
+    /// 包围球半径。
     pub bounding_sphere_radius: Option<f64>,
 }
 
+/// 瓦片内容的加载生命周期状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TileContentState {
+    /// 未加载。
     Unloaded,
+    /// 加载中。
     Loading,
+    /// 已就绪。
     Ready,
+    /// 加载失败。
     Failed,
+    /// 已被子瓦片细化替代。
     Refined,
 }
 
 /// 已加载瓦片内容的组件（mesh + texture）。
 #[derive(Component)]
 pub struct TileContent {
+    /// 网格句柄（未就绪时为 None）。
     pub mesh_handle: Option<Handle<Mesh>>,
+    /// 材质句柄（未就绪时为 None）。
     pub material_handle: Option<Handle<StandardMaterial>>,
+    /// 是否含批量表（batch table，用于样式/拾取）。
     pub has_batch_table: bool,
 }
 
 /// 影像图层实体的组件（地球的子节点）。
 #[derive(Component)]
 pub struct CesiumImageryLayer {
+    /// 图层序号（叠放顺序）。
     pub layer_index: u32,
+    /// 不透明度 [0,1]。
     pub opacity: f32,
+    /// 是否可见。
     pub visible: bool,
 }
 
@@ -73,6 +100,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// 地形瓦片组件应能按字段构造并读回。
     fn test_cesium_terrain_tile_defaults() {
         let tile = CesiumTerrainTile {
             x: 0,
@@ -85,6 +113,7 @@ mod tests {
     }
 
     #[test]
+    /// 根组件应保存 URL 并默认处于 NotLoaded 状态。
     fn test_tileset_loading_states() {
         let root = CesiumTilesetRoot {
             url: "https://example.com/tileset.json".into(),
@@ -98,6 +127,7 @@ mod tests {
     }
 
     #[test]
+    /// 瓦片节点组件应保存路径/误差/包围球等字段。
     fn test_cesium_tile_node() {
         let node = CesiumTileNode {
             path: vec![0, 2, 1],
@@ -119,6 +149,7 @@ mod tests {
     }
 
     #[test]
+    /// 内容状态枚举变体应可匹配区分。
     fn test_tile_content_states() {
         assert!(matches!(TileContentState::Unloaded, TileContentState::Unloaded));
         assert!(matches!(TileContentState::Refined, TileContentState::Refined));
@@ -126,6 +157,7 @@ mod tests {
     }
 
     #[test]
+    /// 影像图层组件应保存序号/不透明度/可见性。
     fn test_imagery_layer() {
         let layer = CesiumImageryLayer {
             layer_index: 2,

@@ -1,5 +1,5 @@
 //! VoxelBoxShape 扩展测试 — 采样、边界、OBB 边缘情形
-//! 另从 CesiumJS VoxelBoxShapeSpec.js 移植
+//! 另从 CesiumJS VoxelBoxShapeSpec 移植
 
 use cesium_voxel::{VoxelBoxShape, VoxelShape};
 use glam::{DMat3, DMat4, DQuat, DVec3};

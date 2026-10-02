@@ -8,6 +8,8 @@
 use cesium_geospatial::GeometryData;
 use cesium_ports_driven::{PortError, PortResult};
 
+/// 解码一段 Draco 压缩网格。目前为未实现的占位：始终返回
+/// 一个 [`PortError::Decode`]，直到接入真正的 Draco 后端。
 pub fn decode_draco(_data: &[u8]) -> PortResult<GeometryData> {
     Err(PortError::Decode(
         "Draco decoding not yet implemented".to_string(),

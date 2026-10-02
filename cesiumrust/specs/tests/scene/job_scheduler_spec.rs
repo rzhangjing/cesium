@@ -1,4 +1,4 @@
-//! Scene/JobSchedulerSpec.js → Rust 集成测试
+//! Scene/JobSchedulerSpec → Rust 集成测试
 //!
 //! 原始：11 个 it() → 10 个 A 类（1 个 C 类：throws）
 //! 测试：constructs(1) + executes(1) + disable(1) + different_types(1) +

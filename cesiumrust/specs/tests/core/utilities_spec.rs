@@ -1,10 +1,10 @@
-//! 移植自多个 Core Specs：
-//! - binarySearchSpec.js（8 个 it()，5 个 A 类）
-//! - barycentricCoordinatesSpec.js（13 个 it()，9 个 A 类）
-//! - pointInsideTriangleSpec.js（10 个 it()，6 个 A 类）
-//! - RaySpec.js（10 个 it()，5 个 A 类）
-//! - SphericalSpec.js（12 个 it()，8 个 A 类）
-//! - subdivideArraySpec.js（5 个 it()，3 个 A 类）
+//! 参考自多个 Core Specs：
+//! - binarySearchSpec（8 个 it()，5 个 A 类）
+//! - barycentricCoordinatesSpec（13 个 it()，9 个 A 类）
+//! - pointInsideTriangleSpec（10 个 it()，6 个 A 类）
+//! - RaySpec（10 个 it()，5 个 A 类）
+//! - SphericalSpec（12 个 it()，8 个 A 类）
+//! - subdivideArraySpec（5 个 it()，3 个 A 类）
 //!
 //! throws 测试省略（C 类：Rust 类型系统强制输入合法）。
 //! result 参数变体已合并（Rust 所有权返回惯用法）。

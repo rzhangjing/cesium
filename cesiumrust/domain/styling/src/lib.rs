@@ -8,11 +8,11 @@
 //!
 //! Domain 层 —— 纯 Rust，f64 精度。
 //!
-//! CesiumJS 映射：
-//! - `Scene/Cesium3DTileStyle.js` → tile_style
-//! - `Scene/Expression.js` → tile_style（legacy 仅 AST）+ ast/value/tokenizer/js_math（M7-A jsep 引擎基础层）
-//! - `Scene/ClassificationPrimitive.js` → classification
-//! - `Scene/ClassificationType.js` → classification
+//! 模块职责：
+//! - tile_style：3D Tiles 样式与遗留表达式 AST
+//! - ast / value / tokenizer / js_math：M7-A jsep 表达式引擎基础层
+//! - parser / coerce / literal / member_access / runtime：M7-B 解析与求值核心
+//! - classification：分类图元与分类类型
 
 pub mod ast;
 pub mod classification;
@@ -36,7 +36,7 @@ pub use tile_style::{
     ArithmeticOp, CompareOp, PropertyValue, StyleExpression, TileStyle,
 };
 
-// M7-A：jsep 1.3.8 表达式引擎基础层（Scene/Expression.js 移植）。
+// M7-A：jsep 1.3.8 表达式引擎基础层。
 // tokenizer + value + js_math + ast。M7-B 添加 Pratt 解析器（parser）、
 // 预处理（variables）、求值核心（coerce/literal/member_access/
 // runtime）、正则支持（regex）与顶层 Expression（expression）。

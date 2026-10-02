@@ -1,20 +1,15 @@
 //! 高级 3D Tiles 遍历策略。
 //!
-//! 镜像 CesiumJS：
-//! - `Scene/Cesium3DTilesetTraversal.js`
-//! - `Scene/Cesium3DTilesetSkipTraversal.js`
-//! - `Scene/Cesium3DTilesetMostDetailedTraversal.js`
-//! - `Scene/Cesium3DTilesetBaseTraversal.js`
+//! 提供基础、跳过（skip）与最详细三种遍历策略，配合内存
+//! 调整的屏幕空间误差与优先级排序，输出选中瓦片与加载请求。
 
-// 遗留的 CesiumJS 移植风格债务（deferred.md #18）；在 M13 lint-cleanup 或本文件在其里程碑被重写时重新审视
+// 遗留的 原实现 移植风格债务（deferred.md #18）；在 M13 lint-cleanup 或本文件在其里程碑被重写时重新审视
 #![allow(clippy::field_reassign_with_default)]
 use crate::lod_selection::{CameraState, LodSelectionContext, SelectedTile, TileSelectionResult};
 use crate::tile::{Tile, TileRefine};
 use cesium_geospatial::ellipsoid::Ellipsoid;
 
 /// 遍历策略选择。
-///
-/// 映射到 CesiumJS 的遍历类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TraversalStrategy {
     /// 基础遍历：简单的自上而下、基于 SSE 的细化。
@@ -27,8 +22,6 @@ pub enum TraversalStrategy {
 }
 
 /// 瓦片加载请求的优先级。
-///
-/// 映射到 CesiumJS 的瓦片优先级计算。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TilePriority {
     /// 到相机的距离（越小优先级越高）。
@@ -49,12 +42,14 @@ impl TilePriority {
 }
 
 impl PartialOrd for TilePriority {
+    /// 按数值优先级比较（委托给 [`Ord::cmp`]）。
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for TilePriority {
+    /// 按计算出的数值优先级排序，小者优先。
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.value()
             .partial_cmp(&other.value())
@@ -74,8 +69,6 @@ pub struct TileRequest {
 }
 
 /// 内存调整的屏幕空间误差计算。
-///
-/// 映射到 CesiumJS `Cesium3DTileset.memoryAdjustedScreenSpaceError`
 #[derive(Debug, Clone)]
 pub struct MemoryAdjustedSse {
     /// 基准最大屏幕空间误差。
@@ -146,6 +139,7 @@ pub struct TraversalContext {
 }
 
 impl Default for TraversalContext {
+    /// 默认：Base 策略、预加载祖先、内存上限 512 MB、每帧不限。
     fn default() -> Self {
         Self {
             lod_context: LodSelectionContext::default(),
@@ -181,8 +175,11 @@ pub fn traverse(
     ellipsoid: &Ellipsoid,
 ) -> TraversalResult {
     match context.strategy {
+        // Base：标准 SSE 细化选择
         TraversalStrategy::Base => traverse_base(root, camera, context, ellipsoid),
+        // Skip：允许跳级、父兄共渲
         TraversalStrategy::Skip => traverse_skip(root, camera, context, ellipsoid),
+        // MostDetailed：强制下钻至最深内容
         TraversalStrategy::MostDetailed => {
             traverse_most_detailed(root, camera, context, ellipsoid)
         }
@@ -197,13 +194,16 @@ fn traverse_base(
     ellipsoid: &Ellipsoid,
 ) -> TraversalResult {
     let mut result = TraversalResult::default();
+    // 取内存调整后的有效 SSE 作为本次选择的阈值
     let effective_sse = context.memory_sse.adjusted_sse();
 
     let mut ctx = context.lod_context.clone();
+    // 覆盖 LOD 上下文的 SSE 上限为有效值
     ctx.maximum_screen_space_error = effective_sse;
 
     result.selected_tiles =
         crate::lod_selection::select_tiles(root, camera, &ctx, ellipsoid);
+    // 基础遍历不区分访问与选中：选中数即访问数
     result.visited_count = result.selected_tiles.len();
 
     // 为选中的瓦片生成加载请求
@@ -223,8 +223,6 @@ fn traverse_base(
 
 /// 跳过遍历：允许跳过树中的某些层级。
 ///
-/// 映射到 CesiumJS `Cesium3DTilesetSkipTraversal.selectTiles`
-///
 /// 与基础遍历的关键区别：
 /// - 可同时渲染父瓦片与子瓦片
 /// - 子瓦片尚未加载时跳过中间层级
@@ -236,8 +234,10 @@ fn traverse_skip(
     ellipsoid: &Ellipsoid,
 ) -> TraversalResult {
     let mut result = TraversalResult::default();
+    // 取内存调整后的有效 SSE 阈值
     let effective_sse = context.memory_sse.adjusted_sse();
 
+    // 从根开始递归，初始父细化为 Replace、空路径、深度 0
     traverse_skip_recursive(
         root,
         camera,
@@ -250,7 +250,7 @@ fn traverse_skip(
         &mut result,
     );
 
-    // 按优先级排序请求
+    // 按优先级排序请求（祖先/近者靠先）
     result.requested_tiles.sort_by_key(|a| a.priority);
 
     result
@@ -272,8 +272,10 @@ fn traverse_skip_recursive(
     result.visited_count += 1;
     result.max_depth = result.max_depth.max(depth);
 
+    // 计算到相机的距离与本瓦片在当前距离下的 SSE
     let distance = tile.bounding_volume.distance_to(camera.position, ellipsoid);
     let sse = camera.compute_screen_space_error(tile.geometric_error, distance);
+    // 细化模式：本瓦片未声明时继承父级
     let refine_mode = tile.effective_refine(parent_refine);
     let has_children = !tile.children.is_empty();
 
@@ -335,10 +337,12 @@ fn traverse_skip_recursive(
     // 带跳过逻辑地遍历子瓦片
     // 跳过遍历：向前看 2 层（descendantSelectionDepth = 2）
     let mut any_child_rendered = false;
+    // 逐个处理子瓦片，按需跳级到孙瓦片
     for (i, child) in tile.children.iter().enumerate() {
         let mut child_path = path.to_vec();
         child_path.push(i);
 
+        // 先算子瓦片距离与 SSE，判断是否需要继续下钻
         let child_distance =
             child.bounding_volume.distance_to(camera.position, ellipsoid);
         let child_sse =
@@ -359,6 +363,7 @@ fn traverse_skip_recursive(
             }
 
             for (j, grandchild) in child.children.iter().enumerate() {
+                // 直接以深度+2 递归到孙瓦片，跳过中间的子瓦片细化
                 let mut gc_path = child_path.clone();
                 gc_path.push(j);
                 traverse_skip_recursive(
@@ -404,8 +409,6 @@ fn traverse_skip_recursive(
 
 /// 最详细遍历：总是细化到可用的最深内容。
 ///
-/// 映射到 CesiumJS `Cesium3DTilesetMostDetailedTraversal.selectTiles`
-///
 /// 该遍历用于拾取及其他需要最详细瓦片（无论 SSE 如何）的操作。
 fn traverse_most_detailed(
     root: &Tile,
@@ -415,6 +418,7 @@ fn traverse_most_detailed(
 ) -> TraversalResult {
     let mut result = TraversalResult::default();
 
+    // 最详细策略忽略 SSE 与内存预算，无需读取 context 参数
     traverse_most_detailed_recursive(
         root,
         camera,
@@ -458,6 +462,7 @@ fn traverse_most_detailed_recursive(
             });
         }
 
+        // 逐个递归下钻到子瓦片（无视 SSE 阈值）
         for (i, child) in tile.children.iter().enumerate() {
             let mut child_path = path.to_vec();
             child_path.push(i);
@@ -479,6 +484,7 @@ fn traverse_most_detailed_recursive(
             screen_space_error: sse,
             distance_to_camera: distance,
         });
+        // 同时登记一个非祖先的加载请求
         result.requested_tiles.push(TileRequest {
             path: path.to_vec(),
             priority: TilePriority {
@@ -491,13 +497,12 @@ fn traverse_most_detailed_recursive(
 }
 
 /// 按到相机的距离对子瓦片排序（最远优先，用于基于栈的遍历）。
-///
-/// 映射到 CesiumJS `Cesium3DTilesetTraversal.sortChildrenByDistanceToCamera`
 pub fn sort_children_by_distance(
     children: &[(usize, &Tile)],
     camera: &CameraState,
     ellipsoid: &Ellipsoid,
 ) -> Vec<usize> {
+    // 先计算每个子瓦片到相机的距离，保留其原始索引
     let mut indexed: Vec<(usize, f64)> = children
         .iter()
         .map(|(i, tile)| {
@@ -512,17 +517,17 @@ pub fn sort_children_by_distance(
 }
 
 /// 检查瓦片是否可被遍历（有子瓦片且 SSE 超过阈值）。
-///
-/// 映射到 CesiumJS `Cesium3DTilesetTraversal.canTraverse`
 pub fn can_traverse(
     tile: &Tile,
     sse: f64,
     max_sse: f64,
     has_implicit_content: bool,
 ) -> bool {
+    // 无子且无隐式内容则无可细化对象，直接不可遍历
     if tile.children.is_empty() && !has_implicit_content {
         return false;
     }
+    // 仅当 SSE 超过阈值才需要继续细化
     sse > max_sse
 }
 
@@ -533,6 +538,7 @@ mod tests {
     use crate::tile::TileContent;
     use glam::DVec3;
 
+    /// 构造测试相机：位于 z=1000 朝 -z 看，45° 张角、视口高 1080。
     fn create_camera() -> CameraState {
         CameraState::new(
             DVec3::new(0.0, 0.0, 1000.0),
@@ -543,6 +549,7 @@ mod tests {
         )
     }
 
+    /// 构造带球体包围与 REPLACE 细化的内部瓦片（含子瓦片列表）。
     fn create_tile(geometric_error: f64, uri: &str, children: Vec<Tile>) -> Tile {
         Tile {
             bounding_volume: BoundingVolume::from_sphere(DVec3::ZERO, 100.0),
@@ -561,16 +568,19 @@ mod tests {
         }
     }
 
+    /// 构造无子瓦片的叶瓦片（内部委托 create_tile 传空子列表）。
     fn create_leaf_tile(geometric_error: f64, uri: &str) -> Tile {
         create_tile(geometric_error, uri, vec![])
     }
 
-    #[test]
+/// 默认遍历策略应为 Base（基础的自上而下 SSE 细化）。
+#[test]
     fn test_traversal_strategy_default() {
         assert_eq!(TraversalStrategy::default(), TraversalStrategy::Base);
     }
 
-    #[test]
+/// 祖先瓦片即便距离更远，也应比叶子瓦片拥有更高加载优先级（数值更小）。
+#[test]
     fn test_tile_priority_ordering() {
         let p1 = TilePriority {
             distance: 100.0,
@@ -586,20 +596,23 @@ mod tests {
         assert!(p1.value() < p2.value());
     }
 
-    #[test]
+/// 内存远低于上限时，SSE 阈值保持基准值不变。
+#[test]
     fn test_memory_adjusted_sse_under_limit() {
         let mas = MemoryAdjustedSse::new(16.0, 1000);
         assert_eq!(mas.adjusted_sse(), 16.0);
     }
 
-    #[test]
+/// 恰好在 50% 使用率的边界上仍使用基准 SSE（阈值为闭区间上界）。
+#[test]
     fn test_memory_adjusted_sse_half_usage() {
         let mut mas = MemoryAdjustedSse::new(16.0, 1000);
         mas.current_memory_bytes = 500; // 50%
         assert_eq!(mas.adjusted_sse(), 16.0);
     }
 
-    #[test]
+/// 50-100% 区间线性提高 SSE：应高于基准但低于两倍基准。
+#[test]
     fn test_memory_adjusted_sse_high_usage() {
         let mut mas = MemoryAdjustedSse::new(16.0, 1000);
         mas.current_memory_bytes = 750; // 75%
@@ -608,7 +621,8 @@ mod tests {
         assert!(sse < 32.0);
     }
 
-    #[test]
+/// 超过 100% 时激进提高 SSE，并报告已越限。
+#[test]
     fn test_memory_adjusted_sse_over_limit() {
         let mut mas = MemoryAdjustedSse::new(16.0, 1000);
         mas.current_memory_bytes = 1500; // 150%
@@ -617,8 +631,10 @@ mod tests {
         assert!(mas.is_over_limit());
     }
 
-    #[test]
+/// 基础遍历应能选中至少一个瓦片（根几何误差大于 SSE 阈值时细化到子瓦片）。
+#[test]
     fn test_base_traversal() {
+        // 根几何误差 1000，两个子叶瓦片误差 10
         let root = create_tile(
             1000.0,
             "root.b3dm",
@@ -628,21 +644,25 @@ mod tests {
             ],
         );
         let camera = create_camera();
+        // 使用默认 Base 策略与内存调整 SSE
         let context = TraversalContext::default();
 
         let result = traverse(&root, &camera, &context, &Ellipsoid::WGS84);
+        // 根误差远大于阈值，应细化并选中子叶瓦片
         assert!(!result.selected_tiles.is_empty());
     }
 
-    #[test]
+/// 跳过遍历允许跳级，应访问多个层级并选中非空瓦片集。
+#[test]
     fn test_skip_traversal() {
-        // 创建一个 3 层树
+        // 创建一个 3 层树：根(1000)->子(100)->孙(1)
         let grandchild = create_leaf_tile(1.0, "gc.b3dm");
         let child = create_tile(100.0, "child.b3dm", vec![grandchild]);
         let root = create_tile(1000.0, "root.b3dm", vec![child]);
 
         let camera = create_camera();
         let mut context = TraversalContext::default();
+        // 切换为 Skip 策略以启用跳级逻辑
         context.strategy = TraversalStrategy::Skip;
 
         let result = traverse(&root, &camera, &context, &Ellipsoid::WGS84);
@@ -651,15 +671,17 @@ mod tests {
         assert!(result.visited_count > 0);
     }
 
-    #[test]
+/// 最详细遍历无视 SSE 一直细化到最深叶瓦片，应选中路径 [0,0] 且最大深度为 2。
+#[test]
     fn test_most_detailed_traversal() {
-        // 创建一个 3 层树
+        // 创建一个 3 层树：最深层误差为 0（表示可用最深内容）
         let grandchild = create_leaf_tile(0.0, "gc.b3dm");
         let child = create_tile(50.0, "child.b3dm", vec![grandchild]);
         let root = create_tile(1000.0, "root.b3dm", vec![child]);
 
         let camera = create_camera();
         let mut context = TraversalContext::default();
+        // 切换为 MostDetailed 策略：无视 SSE 一直下钻
         context.strategy = TraversalStrategy::MostDetailed;
 
         let result = traverse(&root, &camera, &context, &Ellipsoid::WGS84);
@@ -669,14 +691,18 @@ mod tests {
         assert_eq!(result.max_depth, 2);
     }
 
-    #[test]
+/// ADD 细化下最详细遍历应同时选中父瓦片与子瓦片（两者叠加渲染）。
+#[test]
     fn test_most_detailed_add_refinement() {
+        // 子叶瓦片误差 0，根误差 100
         let child = create_leaf_tile(0.0, "child.b3dm");
         let mut root = create_tile(100.0, "root.b3dm", vec![child]);
+        // 手动改为 ADD 细化（默认创建为 REPLACE）
         root.refine = Some(TileRefine::Add);
 
         let camera = create_camera();
         let mut context = TraversalContext::default();
+        // 策略：最详细下钻
         context.strategy = TraversalStrategy::MostDetailed;
 
         let result = traverse(&root, &camera, &context, &Ellipsoid::WGS84);
@@ -686,8 +712,10 @@ mod tests {
         assert!(result.selected_tiles.iter().any(|t| t.path == vec![0]));
     }
 
-    #[test]
+/// 按距离降序排序子瓦片：离相机更远者在前（供栈式遍历优先压入近者）。
+#[test]
     fn test_sort_children_by_distance() {
+        // child0 位于原点（离相机 z=1000 约 1000）
         let child0 = Tile {
             bounding_volume: BoundingVolume::from_sphere(DVec3::new(0.0, 0.0, 0.0), 10.0),
             geometric_error: 10.0,
@@ -699,6 +727,7 @@ mod tests {
             viewer_request_volume: None,
             extras: None,
         };
+        // child1 位于 z=500（离相机较近）
         let child1 = Tile {
             bounding_volume: BoundingVolume::from_sphere(DVec3::new(0.0, 0.0, 500.0), 10.0),
             geometric_error: 10.0,
@@ -712,6 +741,7 @@ mod tests {
         };
 
         let camera = create_camera();
+        // 传入 (索引, 引用) 对，排序后返回重排索引序列
         let children = vec![(0, &child0), (1, &child1)];
         let sorted = sort_children_by_distance(&children, &camera, &Ellipsoid::WGS84);
 
@@ -722,32 +752,44 @@ mod tests {
         assert_eq!(sorted[1], 1);
     }
 
-    #[test]
+/// 有子瓦片且 SSE 超阈时可遍历；叶瓦片仅在有隐式内容时才可继续遍历。
+#[test]
     fn test_can_traverse() {
+        // 内部瓦片：有子且 SSE(20)>阈值(16) 可遍历；SSE(10)<=阈值不可
         let tile = create_tile(100.0, "test.b3dm", vec![create_leaf_tile(10.0, "c.b3dm")]);
         assert!(can_traverse(&tile, 20.0, 16.0, false));
         assert!(!can_traverse(&tile, 10.0, 16.0, false));
 
+        // 叶瓦片：无子时默认不可遍历
         let leaf = create_leaf_tile(10.0, "leaf.b3dm");
         assert!(!can_traverse(&leaf, 100.0, 16.0, false));
         // 有隐式内容时，即使无子瓦片也可遍历
         assert!(can_traverse(&leaf, 100.0, 16.0, true));
     }
 
-    #[test]
+/// 默认遍历上下文：Base 策略、预加载祖先、后代限制 20。
+#[test]
     fn test_traversal_context_default() {
         let ctx = TraversalContext::default();
+        // 默认策略为 Base
         assert_eq!(ctx.strategy, TraversalStrategy::Base);
+        // 默认预加载祖先
         assert!(ctx.preload_ancestors);
+        // 默认后代加载限制 20
         assert_eq!(ctx.loading_descendant_limit, 20);
     }
 
-    #[test]
+/// 默认遍历结果应为空（未选中/未请求、计数归零）。
+#[test]
     fn test_traversal_result_default() {
         let result = TraversalResult::default();
+        // 初始无选中瓦片
         assert!(result.selected_tiles.is_empty());
+        // 初始无加载请求
         assert!(result.requested_tiles.is_empty());
+        // 访问计数归零
         assert_eq!(result.visited_count, 0);
+        // 深度归零
         assert_eq!(result.max_depth, 0);
     }
 }

@@ -1,4 +1,4 @@
-//! PostProcess 规范 - 移植自 Scene/PostProcessStageSpec、PostProcessStageCollectionSpec
+//! PostProcess 规范 - 参考自 Scene/PostProcessStageSpec、PostProcessStageCollectionSpec
 //! 覆盖：PostProcessStage、PostProcessStageComposite、PostProcessStageCollection、
 //! Tonemapper, SampleMode, UniformValue
 

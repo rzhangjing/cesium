@@ -1,4 +1,4 @@
-//! 地形高度采样 specs - 移植自 Core/sampleTerrain*.js
+//! 地形高度采样 specs - 参考自 Core/sampleTerrain*
 //!
 //! 测试双线性插值与量化网格高度采样。
 

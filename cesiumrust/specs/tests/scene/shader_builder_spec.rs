@@ -1,5 +1,5 @@
 //! ShaderBuilder / ShaderSource / ShaderProgram / ShaderCache 规范
-//! 移植自 CesiumJS Renderer/ShaderBuilder.js + ShaderSource.js + ShaderCache.js
+//! 参考自 CesiumJS Renderer/ShaderBuilder + ShaderSource + ShaderCache
 //!
 //! A 类测试：ShaderSource 构造/追加/合并、ShaderBuilder
 //! uniforms/structs/functions/defines/build、ShaderProgram 生命周期、ShaderCache 去重

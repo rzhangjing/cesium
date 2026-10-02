@@ -1,6 +1,7 @@
 //! 时间轴（Timeline）widget 模型。
 //!
-//! 映射到 CesiumJS `Timeline/Timeline.js`。
+//! 提供时间轴的可见区间、当前时间、轨道与高亮区间等纯领域数据，
+//! 并含根据跳度与宽度选取合适刻度、按刻度格式化标签的辅助逻辑。
 
 /// 以秒表示的时间轴刻度（tic scale）。
 pub const TIMELINE_TIC_SCALES: &[f64] = &[
@@ -200,6 +201,7 @@ pub struct Timeline {
 }
 
 impl Default for Timeline {
+    /// 默认跨度一天（0~86400 秒）、无轨道与高亮、时间轴可见。
     fn default() -> Self {
         Self {
             start_time: 0.0,

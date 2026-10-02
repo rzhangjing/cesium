@@ -1,7 +1,5 @@
-//! 映射到 CesiumJS `Core/DoublyLinkedList.js`
-//!
 //! 一个双向链表。节点通过 `Rc<RefCell<_>>` 共享，以便调用方
-//! 可以持有节点的句柄（对应 CesiumJS 的对象引用）并按标识
+//! 可以持有节点的句柄（共享所有权语义）并按标识
 //! 进行比较。
 
 // 遗留的 CesiumJS 移植风格技术债（deferred.md #18）；在 M13 lint-cleanup
@@ -22,12 +20,16 @@ pub struct DoublyLinkedListNode<T> {
 
 /// 一个双向链表。
 pub struct DoublyLinkedList<T> {
+    /// 首节点引用，空表时为 None。
     head: Option<NodeRef<T>>,
+    /// 尾节点引用，空表时为 None。
     tail: Option<NodeRef<T>>,
+    /// 当前链表中的节点数量。
     length: usize,
 }
 
 impl<T> Default for DoublyLinkedList<T> {
+    /// 默认构造一个空链表。
     fn default() -> Self {
         Self::new()
     }
@@ -80,7 +82,7 @@ impl<T> DoublyLinkedList<T> {
     }
 
     /// 从链表中移除给定节点。若 `node` 为 `None` 则不做任何事
-    /// （对应 CesiumJS `remove(undefined)`）。
+    /// （把 `None` 视作空操作）。
     pub fn remove(&mut self, node: Option<&NodeRef<T>>) {
         if let Some(node) = node {
             remove_node(self, node);
@@ -116,6 +118,9 @@ impl<T> DoublyLinkedList<T> {
     }
 }
 
+/// 从链表中解除对指定节点的链接（不回收内存，由调用方持有）。
+///
+/// 根据该节点是否有前驱/后继，分四种情形重新接回相邻节点并更新 head/tail。
 fn remove_node<T>(list: &mut DoublyLinkedList<T>, node: &NodeRef<T>) {
     let previous = node.borrow().previous.clone();
     let next = node.borrow().next.clone();

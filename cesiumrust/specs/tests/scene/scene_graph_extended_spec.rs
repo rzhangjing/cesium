@@ -1,8 +1,8 @@
-//! Scene/SceneSpec.js（扩展）→ Rust 集成测试。
+//! Scene/SceneSpec（扩展）→ Rust 集成测试。
 //!
-//! 对应 CesiumJS：
-//! - Scene/Scene.js（场景图遍历、世界变换）
-//! - Scene/Primitive.js（可渲染集合）
+//! 参考 CesiumJS：
+//! - Scene/Scene（场景图遍历、世界变换）
+//! - Scene/Primitive（可渲染集合）
 //!
 //! A 类测试：世界变换传播、仅遍历可见、
 //! 收集可渲染项、连同后代移除、世界包围球、

@@ -1,3 +1,8 @@
+//! 3D Tiles 遍历系统：每帧从相机做 LOD 遍历，得出应渲染的瓦片集。
+//!
+//! [`tileset_traversal_system`] 把相机转为 ECEF 米并调用领域层 `traverse`；
+//! [`TileSelection`] 采逐帧 diff（begin_frame/finish_frame）仅对变化部分
+//! 产 load/unload 队列，避免无限重载。
 use bevy::prelude::*;
 use cesium_geospatial::ellipsoid::Ellipsoid;
 use cesium_tileset::lod_selection::{
@@ -8,15 +13,21 @@ use cesium_tileset::traversal::{TraversalContext, TraversalStrategy};
 use super::loader::LoadedTileset;
 use crate::resources::METERS_PER_RENDER_UNIT;
 
+/// 本帧瓦片选择结果（以路径索引表示瓦片）。
 #[derive(Resource, Default)]
 pub struct TileSelection {
+    /// 需新加载的瓦片路径列表。
     pub tiles_to_load: Vec<Vec<usize>>,
+    /// 需卸载的瓦片路径列表。
     pub tiles_to_unload: Vec<Vec<usize>>,
+    /// 本帧完整选中集。
     pub selected_tiles: Vec<SelectedTile>,
+    /// 帧计数（递增）。
     pub frame_number: u64,
 }
 
 impl TileSelection {
+    /// 清空三个逐帧队列（不改 frame_number）。
     pub fn clear(&mut self) {
         self.tiles_to_load.clear();
         self.tiles_to_unload.clear();
@@ -64,12 +75,20 @@ impl TileSelection {
     }
 }
 
+/// 遍历主系统：组装上下文并调用领域 traverse，写入 [`TileSelection`]。
+///
+/// # 参数
+/// - `camera_query`：相机、全局变换与投影
+/// - `window_query`：窗口（提供视口高度）
+/// - `loaded`：已加载瓦片集（可选，缺失则返回）
+/// - `selection`：选择结果（可写）
 pub fn tileset_traversal_system(
     camera_query: Query<(&Camera, &GlobalTransform, &Projection)>,
     window_query: Query<&Window>,
     loaded: Option<Res<LoadedTileset>>,
     mut selection: ResMut<TileSelection>,
 ) {
+    // 无已加载瓦片集时无法遍历。
     let loaded = match loaded {
         Some(l) => l,
         None => return,
@@ -89,6 +108,7 @@ pub fn tileset_traversal_system(
         None => return,
     };
 
+    // 组装遍历上下文：开启视锥剔除与 SSE 阈值。
     let ctx = TraversalContext {
         lod_context: LodSelectionContext {
             maximum_screen_space_error: loaded.state.maximum_screen_space_error,
@@ -100,6 +120,7 @@ pub fn tileset_traversal_system(
     };
 
     let ellipsoid = Ellipsoid::WGS84;
+    // 执行领域层递归遍历，回填本帧选择集。
     let result = cesium_tileset::traversal::traverse(
         &tileset_json.root,
         &camera_state,
@@ -107,13 +128,23 @@ pub fn tileset_traversal_system(
         &ellipsoid,
     );
 
+    // 用遍历结果与上帧快照做 diff，填充 load/unload。
     selection.finish_frame(&prev_tiles, result.selected_tiles);
 }
 
+/// 从相机与窗口提取领域层所需的 [`CameraState`]（位置转 ECEF 米）。
+///
+/// # 参数
+/// - `camera_query`：相机查询
+/// - `window_query`：窗口查询
+///
+/// # 返回
+/// 成功时返回相机状态，无单相机/窗口时返回 `None`。
 fn get_camera_state(
     camera_query: &Query<(&Camera, &GlobalTransform, &Projection)>,
     window_query: &Query<&Window>,
 ) -> Option<CameraState> {
+    // 取视口像素高度与单相机/窗口，任一缺失则提前退出。
     let window = window_query.get_single().ok()?;
     let (_camera, transform, projection) = camera_query.get_single().ok()?;
 
@@ -128,6 +159,7 @@ fn get_camera_state(
         t.z as f64 * METERS_PER_RENDER_UNIT,
     );
 
+    // 相机前向与上方向（f32→f64），供视锥与距离计算。
     let forward = transform.forward();
     let direction = glam::DVec3::new(
         forward.x as f64,
@@ -138,11 +170,13 @@ fn get_camera_state(
     let up = transform.up();
     let up_dir = glam::DVec3::new(up.x as f64, up.y as f64, up.z as f64);
 
+    // 垂直视场角（仅透视投影有效，否则用默认 45°）。
     let fov_y = match projection {
         Projection::Perspective(persp) => persp.fov as f64,
         _ => std::f64::consts::FRAC_PI_4,
     };
 
+    // 汇总为领域相机状态。
     Some(CameraState::new(position, direction, up_dir, fov_y, viewport_height))
 }
 
@@ -152,6 +186,7 @@ mod tests {
     use cesium_tileset::tileset::TilesetJson;
     use glam::DVec3;
 
+    /// 构造一个带根子节点的测试瓦片集 JSON。
     fn create_test_tileset() -> TilesetJson {
         let json = r#"{
             "asset": { "version": "1.0" },
@@ -178,6 +213,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证带子节点的瓦片集正确解析。
     fn test_parse_tileset_with_children() {
         let tileset = create_test_tileset();
         assert_eq!(tileset.root.children.len(), 2);
@@ -185,6 +221,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证 clear 会清空选择与加载队列。
     fn test_tile_selection_clear() {
         let mut selection = TileSelection::default();
         selection.selected_tiles.push(SelectedTile {
@@ -198,6 +235,7 @@ mod tests {
         assert!(selection.tiles_to_load.is_empty());
     }
 
+    /// 构造一个仅用于测试的选中瓦片（固定 SSE/距离）。
     fn selected(path: Vec<usize>) -> SelectedTile {
         SelectedTile {
             path,
@@ -250,6 +288,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证相机状态能算出合理的屏幕空间误差。
     fn test_camera_state_computes_sse() {
         let camera = CameraState::new(
             DVec3::new(0.0, 0.0, 1000.0),

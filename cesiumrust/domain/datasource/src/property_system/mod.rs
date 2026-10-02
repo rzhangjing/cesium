@@ -1,9 +1,9 @@
 //! 完整的、与 CesiumJS 兼容的 Property 系统。
 //!
-//! 映射到 CesiumJS `DataSources/Property.js` 及其约 25 个具体
-//! 实现（ConstantProperty、SampledProperty、
-//! TimeIntervalCollectionProperty、CompositeProperty、CallbackProperty、
-//! ReferenceProperty、PositionProperty 家族、MaterialProperty 家族……）。
+//! 它围绕一个统一的属性 trait 组织约 25 个具体实现（ConstantProperty、
+//! SampledProperty、TimeIntervalCollectionProperty、CompositeProperty、
+//! CallbackProperty、ReferenceProperty、PositionProperty 家族、
+//! MaterialProperty 家族……）。
 //!
 //! 与遗留的 `property` 模块（为兼容 GeoJSON/CZML 解析器
 //! 而保留的简单枚举）不同，本模块实现了完整的

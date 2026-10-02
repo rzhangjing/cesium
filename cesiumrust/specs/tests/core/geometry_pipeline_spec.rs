@@ -1,4 +1,4 @@
-//! GeometryPipeline 规格测试 - 移植自 Core/GeometryPipelineSpec.js
+//! GeometryPipeline 规格测试 - 参考自 Core/GeometryPipelineSpec
 //! A 类测试：toWireframe、computeNormal、computeTangentAndBitangent、
 //! projectTo2D、encodeAttribute、transformToWorldCoordinates、compressVertices、
 //! reorderForPreVertexCache、fitToUnsignedShortIndices、splitLongitude、

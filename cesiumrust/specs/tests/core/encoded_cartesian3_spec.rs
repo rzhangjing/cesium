@@ -1,4 +1,4 @@
-//! 移植自 `packages/engine/Specs/Core/EncodedCartesian3Spec.js`（13 个 it()，5 个 A 类）
+//! 参考自 `Specs/Core/EncodedCartesian3Spec`（13 个 it()，5 个 A 类）
 //!
 //! 省略 8 个 throws 测试（C 类：Rust 类型系统强制输入合法）。
 

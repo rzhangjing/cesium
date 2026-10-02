@@ -2,20 +2,17 @@
 //!
 //! 领域层——纯 Rust，f64 精度。
 //!
-//! CesiumJS 映射：
-//! - `Scene/PostProcessStageLibrary.js` → post_process
-//! - `Scene/PostProcessStage.js` → post_process_stage
-//! - `Scene/PostProcessStageCollection.js` → post_process_stage
-//! - `Scene/OIT.js` → oit
-//! - `Scene/ImageBasedLighting.js` → ibl
-//! - `Scene/ClippingPlaneCollection.js` → clipping
-//! - `Scene/ParticleSystem.js` → particles
-//! - `Scene/CumulusCloud.js` → cloud
-//! - `Scene/CloudCollection.js` → cloud
-//! - `Scene/EquirectangularPanorama.js` → panorama
-//! - `Scene/CubeMapPanorama.js` → panorama
-//! - `Core/GeocoderService.js` → geocoder
-//! - `Scene/SplitDirection.js` → split
+//! 模块划分：
+//! - `post_process`：后处理管线与各效果配置（AO/泛光/雾/色调映射/颜色校正）
+//! - `post_process_stage`：后处理阶段、阶段集合与复合体的组装模型
+//! - `oit`：顺序无关透明（OIT）混合方程与能力配置
+//! - `ibl`：基于图像的照明（球谐/重要性采样/预滤波等）
+//! - `clipping`：裁剪平面与裁剪平面集合的求交
+//! - `particles`：粒子系统与发射器形状/力场配置
+//! - `cloud`：积云实体与云集合的批量管理
+//! - `panorama`：等矩形与立方体贴图全景投影
+//! - `geocoder`：地名搜索服务接口与结果模型
+//! - `split`：分割方向（左右对比视图）枚举
 
 pub mod clipping;
 pub mod cloud;

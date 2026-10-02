@@ -1,7 +1,12 @@
 //! 视锥剔除与可见性判定。
 //!
-//! 映射到 CesiumJS `Scene/Scene.js` 的剔除逻辑与
-//! `Core/CullingVolume.js`
+//! 本模块提供三类能力：
+//! - 以 [`CullingContext`] 承载一帧的剔除体与相机位置；
+//! - 以 [`CullResult`] 表达包围球与视锥的相交关系；
+//! - 以 [`cull_scene`] 遍历场景图逐节点判定可见性并计算距离。
+//!
+//! 剔除仅做保守判定：只要包围球与任一视锥平面相交即视为可见，
+//! 宁可多画不可漏画，交由后续精确裁剪处理边界情况。
 
 use cesium_geospatial::bounding::BoundingSphere;
 use cesium_geospatial::frustum::{CullingVolume, PerspectiveFrustum};
@@ -49,6 +54,7 @@ impl CullingContext {
         direction: DVec3,
         up: DVec3,
     ) -> Self {
+        // 由相机位置、朝向与 up 向量推出六面剔除体，再连同位置组装为上下文
         let culling_volume = frustum.compute_culling_volume(position, direction, up);
         Self {
             culling_volume,
@@ -59,9 +65,11 @@ impl CullingContext {
 
     /// 测试一个包围球与视锥的关系。
     pub fn test_bounding_sphere(&self, sphere: &BoundingSphere) -> CullResult {
+        // 剔除关闭时一律视为完全在内，保持调用方无需分支判断
         if !self.enabled {
             return CullResult::Inside;
         }
+        // 将几何求交的三态枚举映射为领域内的剔除结论
         match self.culling_volume.visibility(sphere) {
             Intersect::Outside => CullResult::Outside,
             Intersect::Intersecting => CullResult::Intersecting,
@@ -71,6 +79,7 @@ impl CullingContext {
 
     /// 计算从相机到包围球的距离。
     pub fn distance_to(&self, sphere: &BoundingSphere) -> f64 {
+        // 以球心距减去半径得到球面最近距离，负值（相机在球内）钳制为 0
         let dist = self.camera_position.distance(sphere.center) - sphere.radius;
         dist.max(0.0)
     }
@@ -79,16 +88,16 @@ impl CullingContext {
 /// 一个节点的可见性判定结果。
 #[derive(Debug, Clone)]
 pub struct VisibilityResult {
-    /// 节点 ID。
+    /// 被判定节点的唯一 ID。
     pub node_id: NodeId,
 
-    /// 节点是否可见。
+    /// 节点是否至少部分可见（等于 cull_result.is_visible()）。
     pub visible: bool,
 
-    /// 到相机的距离（用于排序）。
+    /// 到相机最近面的距离（单位同世界坐标，用于排序）。
     pub distance: f64,
 
-    /// 剔除结果。
+    /// 与视锥的原始相交结果（Outside/Intersecting/Inside）。
     pub cull_result: CullResult,
 }
 
@@ -101,6 +110,7 @@ pub fn cull_scene(
 ) -> Vec<VisibilityResult> {
     let mut results = Vec::new();
 
+    // 深度优先遍历整棵场景图，逐节点跑一次剔除并累积结果
     scene.traverse(|node| {
         let result = cull_node(node, context);
         results.push(result);
@@ -137,16 +147,19 @@ fn cull_node(node: &SceneNode, context: &CullingContext) -> VisibilityResult {
 
 /// 按距离对可见性结果排序（从前到后）。
 pub fn sort_front_to_back(results: &mut [VisibilityResult]) {
+    // 不透明物体先画近的，可尽早写入深度以剔除后续被遮挡者
     results.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
 }
 
 /// 按距离对可见性结果排序（从后到前），用于透明渲染。
 pub fn sort_back_to_front(results: &mut [VisibilityResult]) {
+    // 透明物体需先画远的再画近的，才能正确叠加颜色混合
     results.sort_by(|a, b| b.distance.partial_cmp(&a.distance).unwrap_or(std::cmp::Ordering::Equal));
 }
 
 /// 过滤结果，仅保留可见节点。
 pub fn filter_visible(results: Vec<VisibilityResult>) -> Vec<VisibilityResult> {
+    // 丢弃完全在视锥之外的项，得到真正参与绘制的候选集
     results.into_iter().filter(|r| r.visible).collect()
 }
 
@@ -157,10 +170,12 @@ mod tests {
     use std::f64::consts::FRAC_PI_4;
 
     fn create_test_frustum() -> PerspectiveFrustum {
+        // 45° 视场、16:9 宽高比、近裁剪 0.1、远裁剪 10000 的常用透视参数
         PerspectiveFrustum::new(FRAC_PI_4, 16.0 / 9.0, 0.1, 10000.0)
     }
 
     fn create_test_context() -> CullingContext {
+        // 相机置于原点朝 -Z 看向，构造一个标准右手坐标下的剔除上下文
         let frustum = create_test_frustum();
         CullingContext::from_perspective_frustum(
             &frustum,
@@ -172,6 +187,7 @@ mod tests {
 
     #[test]
     fn test_cull_result_visibility() {
+        // Inside 与 Intersecting 均属至少部分可见，仅 Outside 不可见
         assert!(CullResult::Inside.is_visible());
         assert!(CullResult::Intersecting.is_visible());
         assert!(!CullResult::Outside.is_visible());
@@ -182,6 +198,7 @@ mod tests {
         let context = create_test_context();
 
         // 相机前方的球体
+        // -Z 位于看向方向内且落在远裁剪之前，应判为可见
         let sphere = BoundingSphere::new(DVec3::new(0.0, 0.0, -100.0), 10.0);
         let result = context.test_bounding_sphere(&sphere);
         assert!(result.is_visible());
@@ -192,6 +209,7 @@ mod tests {
         let context = create_test_context();
 
         // 相机后方的球体
+        // +Z 位于看向（-Z）的反向，应被近裁剪面剔除
         let sphere = BoundingSphere::new(DVec3::new(0.0, 0.0, 100.0), 10.0);
         let result = context.test_bounding_sphere(&sphere);
         assert!(!result.is_visible());
@@ -201,6 +219,7 @@ mod tests {
     fn test_distance_calculation() {
         let context = create_test_context();
 
+        // 球心距相机 100、半径 10，最近面距离应为 90
         let sphere = BoundingSphere::new(DVec3::new(0.0, 0.0, -100.0), 10.0);
         let distance = context.distance_to(&sphere);
         assert!((distance - 90.0).abs() < 1e-10); // 100 - 10 = 90
@@ -220,11 +239,13 @@ mod tests {
             .with_bounding_volume(BoundingSphere::new(DVec3::new(0.0, 0.0, 100.0), 10.0));
         scene.add_node(hidden_node);
 
+        // 世界变换需先更新，包围球才能落入正确的世界坐标供剔除使用
         scene.update_world_transforms();
 
         let context = create_test_context();
         let results = cull_scene(&scene, &context);
 
+        // 两个节点均被遍历到，但只有前方那个通过可见性过滤
         assert_eq!(results.len(), 2);
 
         let visible_results = filter_visible(results);
@@ -256,6 +277,7 @@ mod tests {
 
         sort_front_to_back(&mut results);
 
+        // 从前到后排序：按距离升序 50(节点2) < 100(节点1) < 200(节点3)
         assert_eq!(results[0].node_id, 2);
         assert_eq!(results[1].node_id, 1);
         assert_eq!(results[2].node_id, 3);
@@ -280,6 +302,7 @@ mod tests {
 
         sort_back_to_front(&mut results);
 
+        // 从后到前排序：远的(100)排在近的(50)之前
         assert_eq!(results[0].node_id, 1);
         assert_eq!(results[1].node_id, 2);
     }
@@ -290,6 +313,7 @@ mod tests {
         context.enabled = false;
 
         // 即使禁用到除后，相机后方的球体也应当“可见”
+        // enabled=false 短路了剔除体求交，test_bounding_sphere 无条件返回 Inside
         let sphere = BoundingSphere::new(DVec3::new(0.0, 0.0, 100.0), 10.0);
         let result = context.test_bounding_sphere(&sphere);
         assert!(result.is_visible());

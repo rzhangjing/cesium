@@ -1,4 +1,4 @@
-//! 移植自 `packages/engine/Specs/Core/EllipsoidGeodesicSpec.js`（22 个 it()，14 个 A 类）
+//! 参考自 `Specs/Core/EllipsoidGeodesicSpec`（22 个 it()，14 个 A 类）
 //!
 //! 省略 8 个 throws 测试（C 类：Rust 类型系统强制构造合法）。
 //! 2 个 result 参数测试被合并到其“返回所有权”对应的测试中。

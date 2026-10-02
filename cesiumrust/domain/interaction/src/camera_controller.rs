@@ -1,6 +1,6 @@
 //! 用于环绕、平移与缩放交互的相机控制器。
 //!
-//! 映射到 CesiumJS `Scene/ScreenSpaceCameraController.js`
+//! 消费适配器提供的像素/角度增量，按配置的敏感度与开关驱动相机。
 
 use cesium_camera::Camera;
 use cesium_geospatial::ellipsoid::Ellipsoid;
@@ -32,6 +32,7 @@ pub struct CameraControllerConfig {
 }
 
 impl Default for CameraControllerConfig {
+    /// 默认控制器配置：启用全部交互，速度因子为 1.0。
     fn default() -> Self {
         Self {
             minimum_zoom_distance: 1.0,
@@ -49,7 +50,7 @@ impl Default for CameraControllerConfig {
 
 /// 处理用户输入并更新相机的控制器。
 ///
-/// 映射到 CesiumJS `ScreenSpaceCameraController`
+/// 保存配置与输入状态，将手势增量换算为相机运动。
 #[derive(Debug, Clone)]
 pub struct CameraController {
     /// 配置。
@@ -202,8 +203,7 @@ impl CameraController {
     /// 绕椭球中心旋转（自转）相机：位置与
     /// 朝向一同旋转，因此地球看起来在观察者下方转动。
     ///
-    /// 映射到 CesiumJS `rotate3D`/`spin3D` — 蓝图 L1963-1968
-    /// （先 `camera.rotate_right(delta_phi)`，再 `camera.rotate_up(delta_theta)`）。
+    /// 自转分两步：先 `camera.rotate_right(delta_phi)`，再 `camera.rotate_up(delta_theta)`。
     /// 像素→弧度的缩放是适配器的职责；本方法
     /// 接受带符号的角度（以弧度计）。
     ///
@@ -224,8 +224,7 @@ impl CameraController {
     /// 原地环视：旋转朝向（direction/up）而
     /// 不移动位置。
     ///
-    /// 映射到 CesiumJS `look3D` — 蓝图 L2814-2851（先水平
-    /// `camera.look_left(angle)`，再绕 right 轴垂直 `look`）。
+    /// 环视分两步：先水平 `camera.look_left(angle)`，再绕 right 轴垂直 `look`。
     ///
     /// # 参数
     /// * `camera` - 要更新的相机
@@ -243,7 +242,7 @@ impl CameraController {
 
     /// 绕自身视线方向扭转（滚动）相机。
     ///
-    /// 映射到 CesiumJS `twist2D` — 蓝图 L1178（`camera.twist_right(theta)`）。
+    /// 翻滚直接施加 `camera.twist_right(theta)`（正值 = 顺时针）。
     ///
     /// # 参数
     /// * `camera` - 要更新的相机
@@ -270,7 +269,7 @@ impl CameraController {
     // | 拖拽（手指一同平移） | 中点 Δ（px） | [`Self::pan`] |
     //
     // 根据 M2.6 手势模型，双指 **旋转映射到 spin**（
-    // 地球在观察者下方转动），而非 CesiumJS 的 `twist2D` 滚动；
+    // 地球在观察者下方转动），而非把旋转当作滚转（翻滚）；
     // 滚动映射仍可通过 [`Self::twist`] +
     // `pinch_twist_pixels` 为偏好它的应用保留。
     //
@@ -330,8 +329,8 @@ impl CameraController {
     /// [`InertiaController::maintain`] 返回的衰减运动驱动相应的
     /// 相机运动。
     ///
-    /// 这是 CesiumJS `maintainInertia`（蓝图 L796-875）的
-    /// 领域级整合：存储的像素运动按
+    /// 这是惯性维持的领域级整合：每一步中，
+    /// 存储的像素运动按
     /// [`crate::inertia::decay`] 指数函数收窄，并馈入 `spin`/`zoom`/`pan`/
     /// `tilt`。`scale` 将像素增量转换为弧度（用于 spin/tilt）或
     /// 米（用于 zoom/pan）；在此提供它可将像素→世界的
@@ -633,7 +632,7 @@ mod tests {
 
     /// 推进一步双指手势的单帧。聚合器在一帧的首个
     /// `pinch_move` 上播种 `start`，在第二个上延长 `end`
-    /// （复现 CesiumJS 的逐帧捻合），因此喂入帧的起始对
+    /// （复现逐帧捻合的采样方式），因此喂入帧的起始对
     /// `(a1,a2)` 与结束对 `(b1,b2)` 会产生 `metrics(b) - metrics(a)` 的逐帧增量。
     fn pinch_frame(
         agg: &mut CameraEventAggregator,

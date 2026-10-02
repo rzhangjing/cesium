@@ -36,6 +36,7 @@ impl DrawKind {
     /// 仍能构成此几何的最少草稿顶点数。
     #[inline]
     pub fn min_points(self) -> usize {
+        // 各几何类型仍能成立的最少顶点数在此集中定义。
         match self {
             DrawKind::Point => 1,
             DrawKind::Polyline => 2,
@@ -48,6 +49,7 @@ impl DrawKind {
     /// 或由手势完成的开放式类型（折线 / 多边形）则为 `None`。
     #[inline]
     pub fn fixed_points(self) -> Option<usize> {
+        // 固定点击数的类型自动完成；开放式手势返回 None。
         match self {
             DrawKind::Point => Some(1),
             DrawKind::Rectangle | DrawKind::Circle => Some(2),
@@ -63,15 +65,19 @@ pub fn commit_draft(kind: DrawKind, draft: &[GeoPoint]) -> Option<Geometry> {
         return None;
     }
     match kind {
+        // 点：单次点击即落点。
         DrawKind::Point => Some(Geometry::Point(draft[0])),
+        // 折线：草稿顶点原样保留为位置序列。
         DrawKind::Polyline => Some(Geometry::Polyline(Polyline {
             positions: draft.to_vec(),
         })),
+        // 多边形：外环取草稿，孔洞留空待后续编辑。
         DrawKind::Polygon => Some(Geometry::Polygon(Polygon {
             outer: draft.to_vec(),
             holes: Vec::new(),
         })),
         DrawKind::Rectangle => {
+            // 矩形：由两对角求经纬包围盒，自动纠正顺序。
             let (a, b) = (draft[0], draft[1]);
             Some(Geometry::Rectangle(Rectangle {
                 west: a.lon_deg.min(b.lon_deg),
@@ -81,6 +87,7 @@ pub fn commit_draft(kind: DrawKind, draft: &[GeoPoint]) -> Option<Geometry> {
             }))
         }
         DrawKind::Circle => {
+            // 圆：中心到半径点的大圆距离即半径；零距离视为退化。
             let center = draft[0];
             let radius_m = center.surface_distance(draft[1]);
             if radius_m <= 0.0 {
@@ -98,43 +105,60 @@ pub fn commit_draft(kind: DrawKind, draft: &[GeoPoint]) -> Option<Geometry> {
 pub enum PlotCommand {
     /// 向一个图层插入一个完成的元素。
     AddElement {
+        /// 新元素落入的目标图层 id。
         layer: LayerId,
+        /// 要插入的完整新元素（装箱以控制枚举尺寸）。
         element: Box<Element>,
     },
     /// 按 id 删除一个元素（保留完整元素以便操作可逆）。
     RemoveElement {
+        /// 被删除元素的完整副本，供 undo 原样恢复。
         element: Box<Element>,
+        /// 元素原先所在的图层 id（恢复时回写到此）。
         layer: LayerId,
     },
     /// 替换一个元素的几何（移动 / 顶点编辑 / 旋转 / 缩放
     /// 的结果）。两侧都保留，以便 undo 恢复之前的形状。
     UpdateGeometry {
+        /// 被编辑元素的 id。
         id: ElementId,
+        /// 变换前的几何，供 undo 回退。
         before: Box<Geometry>,
+        /// 变换后的几何，应用时写入。
         after: Box<Geometry>,
     },
     /// 替换一个元素的整个样式包（属性面板编辑）。
     SetStyle {
+        /// 目标元素 id。
         id: ElementId,
+        /// 编辑前的样式快照。
         before: Box<Style>,
+        /// 编辑后的新样式。
         after: Box<Style>,
     },
     /// 翻转一个元素的手动可见性开关（图层 / 面板眼睛按钮）。
     SetVisibilityFlag {
+        /// 目标元素 id。
         id: ElementId,
+        /// 翻转前的可见性标志。
         before: bool,
+        /// 翻转后的可见性标志。
         after: bool,
     },
     /// 替换一个元素的自由形式业务属性（敌我 / 番号 / 状态 …）。
     /// 两个 map 都保留，以便 undo 恢复之前的元数据；agent 层
     /// （M-agent）为 `SetAttributes` 合并发出此命令。
     SetAttributes {
+        /// 目标元素 id。
         id: ElementId,
+        /// 合并前的完整属性映射。
         before: Map<String, Value>,
+        /// 合并后的完整属性映射。
         after: Map<String, Value>,
     },
     /// 作为单个 undo 步骤应用的一组命令（多选编辑）。
     Composite {
+        /// 依次应用的子命令列表，整体计为一个 undo 步骤。
         steps: Vec<PlotCommand>,
     },
 }
@@ -142,7 +166,9 @@ pub enum PlotCommand {
 impl PlotCommand {
     /// 通过此命令变更 `doc`。
     pub fn apply(&self, doc: &mut Document) {
+        // 应用即纯函数式地改写文档；每种命令只对应一处最小变更。
         match self {
+            // 追加：重建 NewElement 后落入目标图层。
             PlotCommand::AddElement { layer, element } => {
                 let ne = NewElement {
                     id: element.id,
@@ -150,29 +176,35 @@ impl PlotCommand {
                 };
                 doc.add_element_to_layer(*layer, ne);
             }
+            // 移除：按 id 从树与表中摘除元素。
             PlotCommand::RemoveElement { element, .. } => {
                 doc.remove_element(element.id);
             }
+            // 几何替换：写入 after 形状（set_geometry 会刷新包围盒）。
             PlotCommand::UpdateGeometry { id, after, .. } => {
                 if let Some(e) = doc.element_mut(*id) {
                     e.set_geometry((**after).clone());
                 }
             }
+            // 样式替换：整包覆盖为 after。
             PlotCommand::SetStyle { id, after, .. } => {
                 if let Some(e) = doc.element_mut(*id) {
                     e.style = (**after).clone();
                 }
             }
+            // 可见性：改写元素的手动可见标志。
             PlotCommand::SetVisibilityFlag { id, after, .. } => {
                 if let Some(e) = doc.element_mut(*id) {
                     e.flags.visible_manual = *after;
                 }
             }
+            // 属性：整表替换为 after 映射。
             PlotCommand::SetAttributes { id, after, .. } => {
                 if let Some(e) = doc.element_mut(*id) {
                     e.attributes = after.clone();
                 }
             }
+            // 复合：按顺序依次应用每个子命令。
             PlotCommand::Composite { steps } => {
                 for s in steps {
                     s.apply(doc);
@@ -184,30 +216,37 @@ impl PlotCommand {
     /// 精确逆转此命令的命令（undo）。重新添加一个元素
     /// 会复用其 id，因此 redo / undo 配对是稳定的。
     pub fn inverse(&self) -> PlotCommand {
+        // 逐变体构造逆命令：增删互逆，其余将 before/after 互换。
         match self {
+            // 追加的逆 = 移除（携带完整元素供回恢复）。
             PlotCommand::AddElement { layer, element } => PlotCommand::RemoveElement {
                 element: element.clone(),
                 layer: *layer,
             },
+            // 移除的逆 = 原样重新追加到同一图层。
             PlotCommand::RemoveElement { element, layer } => PlotCommand::AddElement {
                 layer: *layer,
                 element: element.clone(),
             },
+            // 几何的逆 = before/after 互换。
             PlotCommand::UpdateGeometry { id, before, after } => PlotCommand::UpdateGeometry {
                 id: *id,
                 before: after.clone(),
                 after: before.clone(),
             },
+            // 样式的逆 = before/after 互换。
             PlotCommand::SetStyle { id, before, after } => PlotCommand::SetStyle {
                 id: *id,
                 before: after.clone(),
                 after: before.clone(),
             },
+            // 可见性的逆 = 标志互换。
             PlotCommand::SetVisibilityFlag { id, before, after } => PlotCommand::SetVisibilityFlag {
                 id: *id,
                 before: *after,
                 after: *before,
             },
+            // 属性的逆 = 两个映射互换。
             PlotCommand::SetAttributes { id, before, after } => PlotCommand::SetAttributes {
                 id: *id,
                 before: after.clone(),
@@ -225,12 +264,15 @@ impl PlotCommand {
     /// 保留 id `0`（无需调和）。
     pub fn target(&self) -> ElementId {
         match self {
+            // 增删都以其携带元素的 id 为目标。
             PlotCommand::AddElement { element, .. } => element.id,
             PlotCommand::RemoveElement { element, .. } => element.id,
+            // 其余命令直接携带目标 id。
             PlotCommand::UpdateGeometry { id, .. } => *id,
             PlotCommand::SetStyle { id, .. } => *id,
             PlotCommand::SetVisibilityFlag { id, .. } => *id,
             PlotCommand::SetAttributes { id, .. } => *id,
+            // 复合取首个叶子的目标；空组回退到保留 id 0。
             PlotCommand::Composite { steps } => {
                 steps.first().map(PlotCommand::target).unwrap_or(ElementId(0))
             }

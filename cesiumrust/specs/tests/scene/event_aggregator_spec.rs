@@ -1,4 +1,4 @@
-//! CameraEventAggregator 规范 - 移植自 CameraEventAggregatorSpec.js
+//! CameraEventAggregator 规范 - 参考自 CameraEventAggregatorSpec
 //!
 //! 测试事件聚合：按钮按下/抬起、拖拽移动、滚轮事件、
 //! 帧重置、多按钮状态、移动查询。

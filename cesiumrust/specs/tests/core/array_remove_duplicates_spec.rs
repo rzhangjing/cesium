@@ -1,4 +1,4 @@
-//! Core/arrayRemoveDuplicatesSpec.js → Rust 集成测试
+//! Core/arrayRemoveDuplicatesSpec → Rust 集成测试
 //! 25 个原始 it() 块 → 移植 21 个 A 类测试
 //!
 //! 跳过的 C 类测试：

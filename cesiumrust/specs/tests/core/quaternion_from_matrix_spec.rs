@@ -1,5 +1,5 @@
 //! Quaternion fromRotationMatrix / fromHeadingPitchRoll / lerp / slerp / equalsEpsilon 测试。
-//! 对应 CesiumJS `Specs/Core/QuaternionSpec.js` A 类测试（扩展覆盖）。
+//! 参考 CesiumJS `Specs/Core/QuaternionSpec` A 类测试（扩展覆盖）。
 
 use cesium_geospatial::math_utils;
 use cesium_geospatial::quaternion_ext as qext;

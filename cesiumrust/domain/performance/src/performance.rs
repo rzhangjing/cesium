@@ -1,9 +1,6 @@
 //! 性能优化：帧率控制、请求调度、内存管理。
 //!
-//! 映射到 CesiumJS 性能特性：
-//! - `Scene/FrameRateController.js`（目标 FPS）
-//! - 请求调度与限流
-//! - 内存预算管理
+//! 覆盖帧率控制（目标 FPS）、请求调度与限流、内存预算管理。
 
 use std::collections::VecDeque;
 use std::time::Instant;
@@ -24,6 +21,7 @@ pub struct FrameRateConfig {
 }
 
 impl Default for FrameRateConfig {
+    /// 返回缺省帧率配置：目标 60 FPS、启用 vsync。
     fn default() -> Self {
         Self {
             target_fps: 60.0,
@@ -86,6 +84,7 @@ impl FrameRateController {
 
     /// 返回平均帧时间。
     pub fn average_frame_time(&self) -> f64 {
+        // 历史为空时回退目标帧时；否则取滑动窗口内帧时的算术平均。
         if self.frame_history.is_empty() {
             return 1.0 / self.config.target_fps;
         }
@@ -95,6 +94,7 @@ impl FrameRateController {
 
     /// 返回当前 FPS。
     pub fn current_fps(&self) -> f64 {
+        // 瞬时 FPS 由平均帧时取倒数得到，比单帧抖动更平滑。
         1.0 / self.average_frame_time()
     }
 
@@ -105,6 +105,7 @@ impl FrameRateController {
 
     /// 如果本帧应当渲染则返回 true。
     pub fn should_render(&mut self) -> bool {
+        // 非按需渲染恒为真；按需模式消费一次请求标志后即复位。
         if !self.config.render_on_demand {
             return true;
         }
@@ -162,6 +163,7 @@ pub struct RequestScheduler {
 }
 
 impl Default for RequestScheduler {
+    /// 返回缺省调度器：6 个并发（对齐浏览器每域名连接限制）。
     fn default() -> Self {
         Self::new(6) // 默认：6 个并发（浏览器每域名限制）
     }
@@ -254,6 +256,7 @@ pub struct MemoryBudget {
 }
 
 impl Default for MemoryBudget {
+    /// 返回缺省内存预算：纹理/几何各 512 MB、启用自动逐出。
     fn default() -> Self {
         Self {
             max_texture_bytes: 512 * 1024 * 1024,  // 512 MB
@@ -314,6 +317,7 @@ impl MemoryTracker {
 
     /// 检查是否超出预算。
     pub fn is_over_budget(&self, budget: &MemoryBudget) -> bool {
+        // 任一维度（纹理/几何/瓦片数）超阈即判定超预算。
         self.texture_bytes > budget.max_texture_bytes
             || self.geometry_bytes > budget.max_geometry_bytes
             || self.tile_cache_count > budget.max_tile_cache_entries
@@ -321,6 +325,7 @@ impl MemoryTracker {
 
     /// 返回为降到预算内需逐出的字节数。
     pub fn bytes_to_evict(&self, budget: &MemoryBudget) -> u64 {
+        // 逐类计算超出预算的字节数并求和，saturating 避免下溢。
         let texture_over = self.texture_bytes.saturating_sub(budget.max_texture_bytes);
         let geometry_over = self.geometry_bytes.saturating_sub(budget.max_geometry_bytes);
         texture_over + geometry_over

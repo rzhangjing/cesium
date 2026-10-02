@@ -1,11 +1,7 @@
 //! cesium-atmosphere：大气与天体领域模型
 //!
-//! 映射到 CesiumJS：
-//! - `Scene/SkyAtmosphere.js`
-//! - `Scene/SkyBox.js`
-//! - `Scene/Sun.js`
-//! - `Scene/Moon.js`
-//! - `Core/Simon1994PlanetaryPositions.js`
+//! 涵盖天空大气散射、天空盒、太阳与月亮等天体渲染的领域模型，
+//! 以及基于简化行星理论的太阳/月亮位置计算。
 //!
 //! # 特性
 //! - 太阳/月亮位置计算（简化的 VSOP87/月球理论）

@@ -1,4 +1,4 @@
-//! Core/PolygonGeometryLibrarySpec.js → Rust 集成测试
+//! Core/PolygonGeometryLibrarySpec → Rust 集成测试
 //! 16 个原始 it() 块 → 已移植 16 个 A 类测试
 //!
 //! 所有测试均为 A 类（纯计算几何）。

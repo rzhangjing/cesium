@@ -1,5 +1,4 @@
 //! Morton 序（Z 序曲线）与 Hilbert 序的辅助函数。
-//! 映射到 CesiumJS `Core/MortonOrder.js` 和 `Core/HilbertOrder.js`
 
 // =============================================================================
 // MortonOrder

@@ -1,5 +1,5 @@
-//! 二进制格式 specs - 移植自 GltfLoaderSpec.js（GLB 解析），
-//! Batched3DModel3DTileContentSpec.js（B3DM 解析）
+//! 二进制格式 specs - 参考自 GltfLoaderSpec（GLB 解析），
+//! Batched3DModel3DTileContentSpec（B3DM 解析）
 //!
 //! 测试 GLB 头部校验、chunk 解析、B3DM 头部/要素表解析。
 

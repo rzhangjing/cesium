@@ -1,15 +1,21 @@
 //! 线框索引生成器。
-//! 映射到 CesiumJS `Core/WireframeIndexGenerator.js`
 
 /// 用于几何渲染的图元类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimitiveType {
+    /// 点集。
     Points,
+    /// 独立线段。
     Lines,
+    /// 闭合线段环。
     LineLoop,
+    /// 连续线段带。
     LineStrip,
+    /// 独立三角形。
     Triangles,
+    /// 三角形带（共享相邻边）。
     TriangleStrip,
+    /// 三角形扇（共享中心顶点）。
     TriangleFan,
 }
 
@@ -37,6 +43,8 @@ impl PrimitiveType {
 }
 
 /// 返回对于给定的图元类型和索引数量，将生成多少个线框索引。
+///
+/// 三角形每面 3 索引变 6；带/扇形为首边 2 + 每三角形 4；其余类型不变。
 pub fn get_wireframe_indices_count(primitive_type: PrimitiveType, index_count: usize) -> usize {
     match primitive_type {
         PrimitiveType::Triangles => {
@@ -56,6 +64,9 @@ pub fn get_wireframe_indices_count(primitive_type: PrimitiveType, index_count: u
 }
 
 /// 为给定的图元类型创建线框索引。
+///
+/// # 返回
+/// 三角形类图元返回线段对索引列；非三角形类型返回 None。
 ///
 /// 对于非三角形图元类型返回 None。
 /// 若提供了 `indices`，则将其作为源索引；

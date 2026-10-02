@@ -1,13 +1,12 @@
 //! DataSourceClock - 与 DataSource 关联的时钟设置。
 //!
-//! 映射到 CesiumJS `DataSources/DataSourceClock.js`
+//! 它记录数据源自带的时间轴：起始/停止时刻、当前时刻、倍率与步进方式。
 
 use cesium_time::{Clock, ClockOptions, ClockRange, ClockStep, JulianDate};
 
-/// 与 DataSource 关联的时钟设置。提供与 CesiumJS DataSourceClock
-/// 相匹配的合并/克隆/取值语义。
+/// 与 DataSource 关联的时钟设置，提供合并、克隆与逐字段取值的语义。
 ///
-/// 映射到 CesiumJS `DataSources/DataSourceClock.js`
+/// 数据源在加载时用它覆盖全局时钟的默认区间，使动画从自带时间轴起播。
 #[derive(Debug, Clone, Default)]
 pub struct DataSourceClock {
     /// 时钟的起始时间。

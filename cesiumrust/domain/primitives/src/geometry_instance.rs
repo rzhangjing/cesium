@@ -1,17 +1,14 @@
 //! 几何实例与外观系统。
 //!
-//! 映射到 CesiumJS：
-//! - `Scene/GeometryInstance.js`
-//! - `Scene/Appearance.js`
-//! - `Scene/MaterialAppearance.js`
-//! - `Scene/PerInstanceColorAppearance.js`
+//! 定义携带变换与属性的 [`GeometryInstance`]，以及描述其渲染方式的
+//! [`Appearance`]、材质 [`MaterialType`] 与绘制状态 [`RenderState`]。
 
 use cesium_geospatial::bounding::BoundingSphere;
 use glam::{DMat4, DVec3};
 
 /// 一个带变换与属性的几何实例。
 ///
-/// 映射到 CesiumJS `Scene/GeometryInstance.js`
+/// 记录几何类型、模型矩阵与逐实例属性（如颜色），供基本体合批与绘制使用。
 #[derive(Debug, Clone)]
 pub struct GeometryInstance {
     /// 唯一标识符。
@@ -145,11 +142,13 @@ impl GeometryType {
                 bottom_radius,
                 height,
             } => {
+                // 包围半径 = sqrt(max(顶/底半径)² + (高/2)²)。
                 let max_radius = top_radius.max(*bottom_radius);
                 let half_height = height / 2.0;
                 BoundingSphere::new(DVec3::ZERO, (max_radius * max_radius + half_height * half_height).sqrt())
             }
             Self::Ellipsoid { radii } => {
+                // 取三轴最大半径作为外接球半径。
                 BoundingSphere::new(DVec3::ZERO, radii.x.max(radii.y).max(radii.z))
             }
             Self::Rectangle {
@@ -170,6 +169,7 @@ impl GeometryType {
                 )
             }
             Self::Polygon { positions } | Self::Polyline { positions, .. } => {
+                // 将各地理坐标转 ECEF 后求形心与最远点距离。
                 if positions.is_empty() {
                     return BoundingSphere::new(DVec3::ZERO, 0.0);
                 }
@@ -209,6 +209,7 @@ impl GeometryType {
 
     /// 返回该几何的顶点数估算值。
     pub fn estimated_vertex_count(&self) -> u32 {
+        // 各图元取代表性网格密度估算值，供合批预算参考。
         match self {
             Self::Box { .. } => 24,
             Self::Sphere { .. } => 1024,
@@ -225,7 +226,7 @@ impl GeometryType {
 
 /// Appearance 定义几何如何渲染。
 ///
-/// 映射到 CesiumJS `Scene/Appearance.js`
+/// 聚合透明度、双面、平面明暗、材质与绘制状态，决定实例的着色方式。
 #[derive(Debug, Clone)]
 pub struct Appearance {
     /// 外观是否为半透明。
@@ -241,6 +242,7 @@ pub struct Appearance {
 }
 
 impl Default for Appearance {
+    /// 返回缺省外观：不透明、单面、光滑着色、白色颜色材质。
     fn default() -> Self {
         Self {
             translucent: false,
@@ -337,6 +339,7 @@ pub struct RenderState {
 }
 
 impl Default for RenderState {
+    /// 返回缺省绘制状态：启用深度测试与写入、关闭混合、背面剔除。
     fn default() -> Self {
         Self {
             depth_test: true,

@@ -1,4 +1,4 @@
-//! Scene/CameraSpec.js → Rust integration tests
+//! Scene/CameraSpec → Rust integration tests
 
 use cesium_camera::{SceneMode, EasingFunction};
 

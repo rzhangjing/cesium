@@ -1,4 +1,4 @@
-//! Core 规格测试 - 移植自 packages/engine/Specs/Core/
+//! Core 规格测试 - 参考自 Specs/Core/
 //! 覆盖范围：Math、Cartesian、Ellipsoid、Time、Spline、Geometry、Bounding 等。
 
 mod core {

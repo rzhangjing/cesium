@@ -1,9 +1,9 @@
 //! 材质属性扩展规范 - 动态值、isConstant、详细 equals
 //!
-//! 移植自：GridMaterialPropertySpec.js、CheckerboardMaterialPropertySpec.js、
-//! StripeMaterialPropertySpec.js、ImageMaterialPropertySpec.js、
-//! PolylineDashMaterialPropertySpec.js、PolylineGlowMaterialPropertySpec.js、
-//! PolylineOutlineMaterialPropertySpec.js、CompositeMaterialPropertySpec.js
+//! 参考自：GridMaterialPropertySpec、CheckerboardMaterialPropertySpec、
+//! StripeMaterialPropertySpec、ImageMaterialPropertySpec、
+//! PolylineDashMaterialPropertySpec、PolylineGlowMaterialPropertySpec、
+//! PolylineOutlineMaterialPropertySpec、CompositeMaterialPropertySpec
 //!
 //! A 类测试：dynamic values(7) + isConstant(7) + equals_detailed(3) +
 //!                composite(3) + constructor_options(2) = 22

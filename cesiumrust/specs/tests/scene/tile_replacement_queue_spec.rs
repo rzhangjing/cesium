@@ -1,5 +1,5 @@
 //! TileReplacementQueue specs - 基于 LRU 的瓦片管理
-//! 移植自 Scene/TileReplacementQueueSpec.js（7 个 A 类测试）
+//! 参考自 Scene/TileReplacementQueueSpec（7 个 A 类测试）
 
 use cesium_tileset::tile_replacement_queue::TileReplacementQueue;
 
@@ -72,7 +72,7 @@ fn adjusts_properly_when_all_tiles_moved_to_head() {
 
 #[test]
 fn does_not_remove_tile_not_eligible_for_unloading() {
-    // 移植自 CesiumJS： markTileRendered(one, two, notEligible, three)
+    // 参考自 CesiumJS： markTileRendered(one, two, notEligible, three)
     // 裁剪后仅 notEligible 保留（不合格的瓦片被跳过，并非阻塞项）
     let mut queue = TileReplacementQueue::new();
     queue.mark_tile_rendered(1, true);
@@ -90,7 +90,7 @@ fn does_not_remove_tile_not_eligible_for_unloading() {
 
 #[test]
 fn does_not_remove_transitioning_tile_at_end_of_last_render_frame() {
-    // 移植自 CesiumJS： notEligible is the marker (head at markStartOfRenderFrame)
+    // 参考自 CesiumJS： notEligible is the marker (head at markStartOfRenderFrame)
     // 裁剪处理到 marker 为止的所有瓦片；marker 本身不合格 → 保留
     let mut queue = TileReplacementQueue::new();
     queue.mark_tile_rendered(1, true);
@@ -108,7 +108,7 @@ fn does_not_remove_transitioning_tile_at_end_of_last_render_frame() {
 
 #[test]
 fn removes_two_tiles_not_used_last_render_frame() {
-    // 移植自 CesiumJS： notEligible at tail, one/two in middle, three/four current frame
+    // 参考自 CesiumJS： notEligible at tail, one/two in middle, three/four current frame
     let mut queue = TileReplacementQueue::new();
     queue.mark_tile_rendered(99, false); // 不合格，在 tail
     queue.mark_tile_rendered(1, true);

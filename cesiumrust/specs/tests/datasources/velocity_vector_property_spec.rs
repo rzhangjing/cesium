@@ -1,4 +1,4 @@
-//! DataSources/VelocityVectorPropertySpec.js → Rust 集成测试
+//! DataSources/VelocityVectorPropertySpec → Rust 集成测试
 //! 覆盖：构造、isConstant、getValue（归一化/非归一化）、
 //! equals、position 变化
 

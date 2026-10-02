@@ -1,5 +1,5 @@
 //! ScreenSpaceCameraController 扩展规格 — 旋转、观察、平移、扭曲
-//! 移植自：packages/engine/Specs/Scene/ScreenSpaceCameraControllerSpec.js
+//! 参考自：Specs/Scene/ScreenSpaceCameraControllerSpec
 //! A 类纯数学测试
 
 use cesium_interaction::camera_controller::{CameraController, CameraControllerConfig};

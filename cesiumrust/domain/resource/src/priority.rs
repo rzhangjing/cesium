@@ -1,17 +1,15 @@
 //! 用于请求调度的可插拔优先级函数。
 //!
-//! 映射到 CesiumJS `Request.priorityFunction` / `RequestScheduler` 的优先级
-//! 堆排序，以及 `Cesium3DTileset`、`QuadtreePrimitive` 和
-//! `GlobeSurfaceTileProvider` 中使用的 `priorityFunction` 回调模式。
+//! 覆盖调度器优先级堆的排序依据，以及瓦片集/四叉树/地形
+//! 提供者中常见的逐请求优先级回调模式。
 //!
-//! 在 CesiumJS 中，优先级函数是每个 `Request` 上的一个回调，
-//! 返回一个数值优先级（越低 = 优先级越高）。调度器使用一个按此值
-//! 排序的最小堆来决定将哪些待定请求提升。
+//! 优先级函数为每个请求返回一个数值优先级（越低 = 优先级
+//! 越高）。调度器使用一个按此值排序的最小堆来决定将哪些待定请求提升。
 //!
 //! 本模块提供：
 //! - 一个用于可插拔优先级计算的 [`PriorityFunction`] trait。
 //! - 一个基于屏幕空间误差距离（SSED）的默认实现 [`SsedPriority`]
-//!   —— 与 CesiumJS 用于 3D Tiles 和地形请求优先级排序的度量相同。
+//!   —— 与 3D Tiles 和地形请求优先级排序所用的度量相同。
 //! - 一个使用简单距离衰减的替代方案 [`DistanceDecayPriority`]。
 //! - 一个组合多个优先级信号的 [`CompositePriority`]。
 //!
@@ -22,15 +20,10 @@ use std::fmt::Debug;
 /// 用于计算请求优先级的 trait。
 ///
 /// 调度器每帧为每个待定/被限流的请求调用一次本函数，
-/// 以决定提升顺序。值越低 = 优先级越高（匹配
-/// CesiumJS `RequestScheduler` 的最小堆语义）。
+/// 以决定提升顺序。值越低 = 优先级越高（匹配最小堆语义）。
 ///
-/// 映射到 CesiumJS `request.priorityFunction`：
-/// ```js
-/// request.priorityFunction = function() {
-///   return tile.priority; // computed from SSE/distance
-/// };
-/// ```
+/// 典型用法：为每个请求挂上一个闭包，依据 SSE/距离实时
+/// 计算并返回其当前优先级。
 pub trait PriorityFunction: Send + Sync + Debug {
     /// 为以 `key` 标识的请求计算优先级。
     ///
@@ -63,7 +56,7 @@ pub struct PriorityKey {
     pub center_z: f64,
 
     /// 此瓦片的几何误差（米，用于 SSE 计算）。
-    /// 映射到 CesiumJS `tile._geometricError` / `tileset._maximumScreenSpaceError`。
+    /// 表示瓦片在自身层级下残留的最大投影误差。
     pub geometric_error: f64,
 
     /// 额外的用户自定义权重乘子（默认 1.0）。
@@ -130,7 +123,7 @@ pub struct FrameContext {
     /// 最大屏幕空间误差阈值（像素）。
     /// SSE 高于此值的瓦片会被细化；低于此值则足够。
     ///
-    /// 映射到 CesiumJS `Cesium3DTileset.maximumScreenSpaceError`（默认 16）。
+    /// 典型默认值为 16 像素，在质量与请求量之间权衡。
     pub maximum_screen_space_error: f64,
 
     /// 当前帧索引（单调递增，用于过期启发式）。
@@ -189,8 +182,8 @@ impl FrameContext {
 
     /// 计算在给定距离处一个瓦片的屏幕空间误差。
     ///
-    /// 映射到 CesiumJS `Cesium3DTileset.prototype._computeScreenSpaceError`：
-    /// ```js
+    /// 公式：
+    /// ```text
     /// sse = (geometricError * screenHeight) / (distance * 2 * tan(fovY / 2))
     /// ```
     ///
@@ -209,6 +202,7 @@ impl FrameContext {
 }
 
 impl Default for FrameContext {
+    /// 默认帧上下文，等价于 [`FrameContext::new`]。
     fn default() -> Self {
         Self::new()
     }
@@ -218,7 +212,7 @@ impl Default for FrameContext {
 
 /// 基于屏幕空间误差距离（SSED）的默认优先级函数。
 ///
-/// 这是 CesiumJS 用于 3D Tiles 和地形瓦片优先级排序的
+/// 这是 3D Tiles 与地形瓦片优先级排序所用的
 /// 同一度量：屏幕空间误差越高（即视觉影响更大的细化）的瓦片
 /// 获得越高优先级（数值越低）。
 ///
@@ -231,8 +225,7 @@ impl Default for FrameContext {
 /// - 若 `computedSSE < maximumSSE`：priority > 0（瓦片已经足够，
 ///   但我们仍为未来的相机移动加载它；SSE 越低 = 优先级越低）
 ///
-/// 映射到 CesiumJS `QuadtreePrimitive._prioritizeTiles` 和
-/// `Cesium3DTileset._processScreenSpaceError`。
+/// 该度量同时服务于四叉树瓦片排序与瓦片集的 SSE 处理。
 #[derive(Debug, Clone)]
 pub struct SsedPriority {
     /// 应用于计算出的优先级的乘子（默认 1.0）。
@@ -252,12 +245,14 @@ impl SsedPriority {
 }
 
 impl Default for SsedPriority {
+    /// 默认 SSED 优先级，scale 为 1.0。
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl PriorityFunction for SsedPriority {
+    /// 依据 SSE 超出阈值的程度计算优先级，再乘以 scale 与权重。
     fn compute_priority(&self, key: &PriorityKey, context: &FrameContext) -> f64 {
         // 计算从相机到瓦片中心的距离。
         let distance = context.distance_to(key.center_x, key.center_y, key.center_z);
@@ -279,6 +274,7 @@ impl PriorityFunction for SsedPriority {
         priority * self.scale * key.weight
     }
 
+    /// 返回本优先级函数的诊断名称。
     fn name(&self) -> &str {
         "SSED"
     }
@@ -294,8 +290,8 @@ impl PriorityFunction for SsedPriority {
 /// 所有瓦片都有相同的误差），但靠近相机的程度
 /// 决定了视觉重要性。
 ///
-/// 映射到某些 CesiumJS 影像提供者中使用的更简单的优先级启发式
-/// （例如 `ImageryLayer._createImagerySSEPriorityFunction`）。
+/// 适用于几何误差无区分度的影像层：以单纯的距离衰减
+/// 作为更轻量的优先级启发式。
 #[derive(Debug, Clone)]
 pub struct DistanceDecayPriority {
     /// 用于归一化的参考距离（在此距离处 priority = 1.0）。
@@ -318,12 +314,14 @@ impl DistanceDecayPriority {
 }
 
 impl Default for DistanceDecayPriority {
+    /// 默认距离衰减优先级，参考距离 1e7 米。
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl PriorityFunction for DistanceDecayPriority {
+    /// 以 distance/reference_distance 归一化后乘以权重。
     fn compute_priority(&self, key: &PriorityKey, context: &FrameContext) -> f64 {
         let distance = context.distance_to(key.center_x, key.center_y, key.center_z);
         let normalized = if self.reference_distance > 0.0 {
@@ -334,6 +332,7 @@ impl PriorityFunction for DistanceDecayPriority {
         normalized * key.weight
     }
 
+    /// 返回本优先级函数的诊断名称。
     fn name(&self) -> &str {
         "DistanceDecay"
     }
@@ -352,6 +351,7 @@ impl PriorityFunction for DistanceDecayPriority {
 /// 距离衰减（用于空间局部性）及自定义启发式相结合。
 #[derive(Debug)]
 pub struct CompositePriority {
+    /// 组成部分列表，每项为 (权重, 优先级函数)。
     components: Vec<(f64, Box<dyn PriorityFunction>)>,
 }
 
@@ -381,12 +381,14 @@ impl CompositePriority {
 }
 
 impl Default for CompositePriority {
+    /// 默认空的复合优先级。
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl PriorityFunction for CompositePriority {
+    /// 返回各组成部分优先级的加权和；空复合体返回 0。
     fn compute_priority(&self, key: &PriorityKey, context: &FrameContext) -> f64 {
         if self.components.is_empty() {
             return 0.0;
@@ -397,6 +399,7 @@ impl PriorityFunction for CompositePriority {
             .sum()
     }
 
+    /// 返回本优先级函数的诊断名称。
     fn name(&self) -> &str {
         "Composite"
     }
@@ -410,6 +413,7 @@ impl PriorityFunction for CompositePriority {
 /// （堆内的 FIFO 顺序）。
 #[derive(Debug, Clone)]
 pub struct StaticPriority {
+    /// 总是返回的固定优先级值。
     value: f64,
 }
 
@@ -421,10 +425,12 @@ impl StaticPriority {
 }
 
 impl PriorityFunction for StaticPriority {
+    /// 忽略 key/context，恒定返回固定值。
     fn compute_priority(&self, _key: &PriorityKey, _context: &FrameContext) -> f64 {
         self.value
     }
 
+    /// 返回本优先级函数的诊断名称。
     fn name(&self) -> &str {
         "Static"
     }

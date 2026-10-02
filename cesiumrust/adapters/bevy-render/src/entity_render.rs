@@ -1,7 +1,10 @@
 //! 实体可视化渲染。
 //!
 //! 将领域 Entity 图形转换为 Bevy mesh 与材质。
-//! 对应 CesiumJS `DataSources/GeometryVisualizer.js`
+//!
+//! 设计要点：polyline 沿线生成扁平带（每点左右两顶点），polygon 用
+//! 质心扇形三角化；位置均为弧度制测绘学坐标经椭球转 ECEF。高度
+//! 与宽度使用粗略启发式换算，仅面向展示而非像素精度。
 
 use bevy::prelude::*;
 use cesium_datasource::entity::{Entity, PolygonGraphics, PolylineGraphics};
@@ -16,7 +19,10 @@ pub struct EntityVisual {
     pub entity_id: String,
 }
 
-/// 将领域 Color 转换为 Bevy Color。
+/// 将领域 Color 转换为 Bevy Color（逐通道 f64→f32）。
+///
+/// # 参数
+/// - `color`：领域 RGBA 颜色
 pub fn domain_color_to_bevy(color: &Color) -> bevy::prelude::Color {
     bevy::prelude::Color::srgba(
         color.red as f32,
@@ -26,7 +32,11 @@ pub fn domain_color_to_bevy(color: &Color) -> bevy::prelude::Color {
     )
 }
 
-/// 在时刻 0 解析一个颜色属性。
+/// 在时刻 0 解析一个颜色属性（无值时回退默认）。
+///
+/// # 参数
+/// - `prop`：颜色属性
+/// - `default`：无值时的默认颜色
 fn resolve_color(prop: &Property<Color>, default: Color) -> Color {
     prop.get_value(0.0).copied().unwrap_or(default)
 }
@@ -34,6 +44,14 @@ fn resolve_color(prop: &Property<Color>, default: Color) -> Color {
 /// 从椭球上的位置创建一条 polyline mesh。
 ///
 /// 沿线以给定宽度生成一条 triangle strip。
+///
+/// # 参数
+/// - `polyline`：折线图形（位置/宽度属性）
+/// - `ellipsoid`：参考椭球
+/// - `time`：取值时刻（秒）
+///
+/// # 返回
+/// 顶点不足 2 个时返回 `None`；否则返回带状 mesh。
 pub fn create_polyline_mesh(
     polyline: &PolylineGraphics,
     ellipsoid: &Ellipsoid,
@@ -110,6 +128,14 @@ pub fn create_polyline_mesh(
 /// 从椭球上的位置创建一个 polygon mesh。
 ///
 /// 对凸多边形使用简单的扇形三角剖分。
+///
+/// # 参数
+/// - `polygon`：多边形图形（位置/高度属性）
+/// - `ellipsoid`：参考椭球
+/// - `time`：取值时刻（秒）
+///
+/// # 返回
+/// 顶点不足 3 个时返回 `None`；否则返回扇形三角化的 mesh。
 pub fn create_polygon_mesh(
     polygon: &PolygonGraphics,
     ellipsoid: &Ellipsoid,
@@ -169,7 +195,11 @@ pub fn create_polygon_mesh(
     Some(mesh)
 }
 
-/// 从实体图形创建一个 Bevy 材质。
+/// 从实体图形创建一个 Bevy 材质（依次尝试 point/polyline/polygon 颜色）。
+///
+/// # 参数
+/// - `entity`：领域实体
+/// - `_time`：取值时刻（当前固定解析时刻 0）
 pub fn create_entity_material(entity: &Entity, _time: f64) -> StandardMaterial {
     // 尝试从不同图形类型获取颜色
     let color = if let Some(ref point) = entity.point {
@@ -189,6 +219,14 @@ pub fn create_entity_material(entity: &Entity, _time: f64) -> StandardMaterial {
 }
 
 /// 将实体的位置转换为椭球上的一个 Bevy Transform。
+///
+/// # 参数
+/// - `entity`：领域实体
+/// - `ellipsoid`：参考椭球
+/// - `time`：取值时刻（秒）
+///
+/// # 返回
+/// 无位置属性时返回 `None`；否则返回 ECEF 平移的 Transform。
 pub fn entity_position_to_transform(
     entity: &Entity,
     ellipsoid: &Ellipsoid,
@@ -208,6 +246,7 @@ mod tests {
     use cesium_datasource::property::Property;
 
     #[test]
+    /// 验证领域颜色逐通道转为 Bevy Srgba。
     fn test_domain_color_to_bevy() {
         let color = Color::new(1.0, 0.5, 0.25, 1.0);
         let bevy_color = domain_color_to_bevy(&color);
@@ -221,6 +260,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证折线 mesh 含位置与法线属性。
     fn test_create_polyline_mesh() {
         let polyline = PolylineGraphics {
             positions: Property::Constant(vec![
@@ -241,6 +281,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证多边形 mesh 顶点数为质心+环顶点。
     fn test_create_polygon_mesh() {
         let polygon = PolygonGraphics {
             positions: Property::Constant(vec![
@@ -264,6 +305,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证实体 point 颜色用于创建材质。
     fn test_create_entity_material() {
         let entity = Entity::new("test")
             .with_point(PointGraphics {
@@ -279,6 +321,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证经纬 (0,0) 处位置落在 X 轴上（赤道本初子午线交点）。
     fn test_entity_position_to_transform() {
         let entity = Entity::new("test")
             .with_position(0.0, 0.0, 0.0); // lon=0, lat=0, h=0
@@ -294,6 +337,7 @@ mod tests {
     }
 
     #[test]
+    /// 验证单点折线不生成 mesh。
     fn test_polyline_too_few_points() {
         let polyline = PolylineGraphics {
             positions: Property::Constant(vec![[0.0, 0.0, 0.0]]),

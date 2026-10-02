@@ -2,11 +2,8 @@
 //!
 //! 领域层 - 纯 Rust，f64 精度。
 //!
-//! CesiumJS 映射：
-//! - `Scene/Globe.js` → surface
-//! - `Scene/SkyAtmosphere.js` → atmosphere
-//! - `Scene/SkyBox.js` → atmosphere
-//! - 地球光照（Globe lighting）→ atmosphere
+//! 分为两个子模块：[`surface`] 负责地球表面渲染与地形交互，[`atmosphere`] 负责
+//! 天空大气散射、天空盒与光照。
 
 pub mod atmosphere;
 pub mod surface;

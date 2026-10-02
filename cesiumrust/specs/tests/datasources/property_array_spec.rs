@@ -1,5 +1,5 @@
 //! PropertyArray 与 PositionPropertyArray 的测试
-//! 移植自 PropertyArraySpec.js（10 个 it()）+ PositionPropertyArraySpec.js（11 个 it()）
+//! 参考自 PropertyArraySpec（10 个 it()）+ PositionPropertyArraySpec（11 个 it()）
 //!
 //! A 类：7 + 7 = 14 个测试（C 类：events/spy/result-param 已省略）
 

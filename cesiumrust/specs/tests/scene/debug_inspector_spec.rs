@@ -1,5 +1,5 @@
 //! DebugInspector / PerformanceOverlay / TilesetInspector 规范
-//! 移植自 CesiumJS Scene/DebugInspector.js
+//! 参考自 CesiumJS Scene/DebugInspector
 //!
 //! A 类测试：启用/禁用、瓦片记录、帧统计、摘要、
 //! 性能叠加层 history/fps/average、tileset inspector 选中/取消选中

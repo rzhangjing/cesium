@@ -1,8 +1,4 @@
-//! GeometryInstanceAttribute 家族。
-//! 映射到 CesiumJS `Core/GeometryInstanceAttribute.js`、
-//! `Core/ColorGeometryInstanceAttribute.js`、
-//! `Core/ShowGeometryInstanceAttribute.js`、
-//! `Core/DistanceDisplayConditionGeometryInstanceAttribute.js`
+//! GeometryInstanceAttribute 家族（颜色/显示/距离显示条件等逐实例属性）。
 
 use crate::attribute_compression::ComponentDatatype;
 use crate::color::Color;

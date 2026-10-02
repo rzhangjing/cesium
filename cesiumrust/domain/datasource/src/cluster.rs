@@ -1,8 +1,7 @@
 //! 实体聚类与实体视图（相机跟随）。
 //!
-//! 映射到 CesiumJS：
-//! - `DataSources/EntityCluster.js`
-//! - `DataSources/EntityView.js`
+//! 本模块提供两块能力：按屏幕邻近度把相邻实体聚合为簇的聚类引擎，
+//! 以及让相机跟随、追踪或注视某个实体的实体视图。
 
 // 遗留 CesiumJS 移植的风格技术债（deferred.md #18）；在 M13 lint 清理
 // 或本文件在其里程碑被重写时重新审视
@@ -38,7 +37,7 @@ impl Cluster {
 
 /// 实体聚类的配置。
 ///
-/// 映射到 CesiumJS `DataSources/EntityCluster.js`
+/// 描述聚类是否启用、聚合的像素半径与成簇所需的最少实体数。
 #[derive(Debug, Clone)]
 pub struct EntityClusterOptions {
     /// 是否启用聚类。
@@ -50,6 +49,7 @@ pub struct EntityClusterOptions {
 }
 
 impl Default for EntityClusterOptions {
+    /// 默认启用聚类，像素半径 80，成簇最少 2 个实体。
     fn default() -> Self {
         Self {
             enabled: true,
@@ -65,7 +65,7 @@ impl Default for EntityClusterOptions {
 /// 在本领域实现中，我们在地图空间中使用一个简单的基于网格的空间哈希，
 /// 作为屏幕空间聚类的近似。
 ///
-/// 映射到 CesiumJS `DataSources/EntityCluster.js`
+/// 簇心取成员均值，仅当网格桶内成员数达到阈值才成簇。
 #[derive(Debug)]
 pub struct EntityCluster {
     /// 聚类选项。
@@ -181,6 +181,7 @@ impl EntityCluster {
 }
 
 impl Default for EntityCluster {
+    /// 以默认选项构造一个空的聚类引擎。
     fn default() -> Self {
         Self::new()
     }
@@ -200,7 +201,7 @@ pub enum EntityViewMode {
 
 /// 实体视图：使相机跟随/追踪一个实体。
 ///
-/// 映射到 CesiumJS `DataSources/EntityView.js`
+/// 依据所选模式在每帧计算相机目标位姿，使视角稳定锁定到实体。
 #[derive(Debug, Clone)]
 pub struct EntityView {
     /// 被跟随的实体 ID。

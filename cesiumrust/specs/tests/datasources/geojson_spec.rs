@@ -1,4 +1,4 @@
-//! DataSources/GeoJsonDataSourceSpec.js → Rust integration tests
+//! DataSources/GeoJsonDataSourceSpec → Rust integration tests
 
 use cesium_datasource::geojson::{parse_geojson, GeoJsonOptions};
 

@@ -1,4 +1,4 @@
-//! CesiumJS `Matrix2.js` 的忠实移植 —— 2×2 矩阵，以列主序 `[f64; 4]` 表示。
+//! Matrix2 扩展 —— 2×2 矩阵，以列主序 `[f64; 4]` 表示。
 //!
 //! 布局（列主序）：`[col0row0, col0row1, col1row0, col1row1]`
 //! 即 index = column * 2 + row。

@@ -1,7 +1,7 @@
 //! 太阳与月亮位置计算。
 //!
-//! 映射到 CesiumJS `Core/Simon1994PlanetaryPositions.js`
-//! 基于儒略日期，计算太阳与月亮在 ECEF 坐标中的
+//! 基于简化行星理论（VSOP87/月球坐标），
+//! 以儒略日期为输入计算太阳与月亮在 ECEF 坐标中的
 //! 近似位置。
 
 use glam::DVec3;

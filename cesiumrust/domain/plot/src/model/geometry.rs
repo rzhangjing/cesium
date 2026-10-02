@@ -17,11 +17,16 @@ pub type Ring = Vec<GeoPoint>;
 /// 标签相对于其锚点坐标的位置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum LabelAnchor {
+    /// 中心对齐（缺省）。
     #[default]
     Center,
+    /// 锚点在文本左侧。
     Left,
+    /// 锚点在文本右侧。
     Right,
+    /// 锚点在文本上方。
     Top,
+    /// 锚点在文本下方。
     Bottom,
 }
 
@@ -50,29 +55,38 @@ pub struct LabelGeometry {
 /// 一条由 >= 2 个顶点连接而成的开放线。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Polyline {
+    /// 有序顶点序列（至少 2 个）。
     pub positions: Vec<GeoPoint>,
 }
 
 /// 一个简单多边形：一个外环 + 可选的孔。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Polygon {
+    /// 外边界环。
     pub outer: Ring,
+    /// 内部孔环集合（可为空）。
     pub holes: Vec<Ring>,
 }
 
 /// 一个经/纬度轴对齐的矩形。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Rectangle {
+    /// 西边界经度（度）。
     pub west: f64,
+    /// 南边界纬度（度）。
     pub south: f64,
+    /// 东边界经度（度）。
     pub east: f64,
+    /// 北边界纬度（度）。
     pub north: f64,
 }
 
 /// 一个地面圆：中心 + 以米为单位的半径（稍后采样）。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Circle {
+    /// 圆心（地理点）。
     pub center: GeoPoint,
+    /// 半径（米）。
     pub radius_m: f64,
 }
 
@@ -80,30 +94,40 @@ pub struct Circle {
 /// 顺时针）。稍后采样。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Ellipse {
+    /// 椭圆中心（地理点）。
     pub center: GeoPoint,
+    /// 长半轴（米）。
     pub semi_major_m: f64,
+    /// 短半轴（米）。
     pub semi_minor_m: f64,
+    /// 长轴方位角（度，自北顺时针）。
     pub rotation_deg: f64,
 }
 
 /// 经过三点的圆弧：起点 → （途经）中心 → 终点。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Arc3 {
+    /// 弧起点。
     pub start: GeoPoint,
+    /// 弧途经的中点（控制点）。
     pub center: GeoPoint,
+    /// 弧终点。
     pub end: GeoPoint,
 }
 
 /// [`Path`] 的一个段（混合的基本体片段拼接在一起）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PathSegment {
+    /// 一段直线（顶点环）。
     Line(Ring),
+    /// 一段三点圆弧。
     Arc(Arc3),
 }
 
 /// 由混合直线 / 圆弧段构成的复合路径。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Path {
+    /// 依次拼接的段序列。
     pub segments: Vec<PathSegment>,
 }
 

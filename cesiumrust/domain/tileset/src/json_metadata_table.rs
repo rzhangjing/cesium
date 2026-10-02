@@ -1,15 +1,16 @@
 //! JsonMetadataTable - 基于 JSON 的 3D Tiles 元数据表。
 //!
-//! 镜像 CesiumJS `Scene/JsonMetadataTable.js`
+//! 以 JSON 值数组直接存放逐 feature 的属性，适用于小型元数据。
 
 use serde_json::Value;
 use std::collections::HashMap;
 
 /// 由 JSON 值支撑的元数据表。
-/// 镜像 CesiumJS `Scene/JsonMetadataTable.js`
 #[derive(Debug, Clone)]
 pub struct JsonMetadataTable {
+    /// 表中 feature 的总数量。
     count: usize,
+    /// 属性 ID → 逐 feature 值数组的映射。
     properties: HashMap<String, Vec<Value>>,
 }
 

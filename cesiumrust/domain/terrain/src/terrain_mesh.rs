@@ -1,5 +1,5 @@
 //! 地形网格表示。
-//! 映射到 CesiumJS `Core/TerrainMesh.js`
+//! 存放地形数据处理后、可直接用于渲染的顶点/索引网格及其包围体。
 
 use cesium_geospatial::bounding::BoundingSphere;
 use serde::{Deserialize, Serialize};
@@ -7,45 +7,54 @@ use serde::{Deserialize, Serialize};
 /// 表示地形几何的网格。
 ///
 /// 这是地形数据处理的输出 - 可直接用于渲染的实际 3D 位置。
-///
-/// 映射到 CesiumJS `TerrainMesh`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerrainMesh {
     /// ECEF 坐标中的顶点位置，每顶点 [x, y, z]
+    ///
+    /// 与 indices 一一对应，构成网格的几何骨架。
     pub positions: Vec<[f64; 3]>,
 
     /// 顶点法线（可选），每顶点 [x, y, z]
+    ///
+    /// 为 None 时可由 compute_normals 惰性生成。
     pub normals: Option<Vec<[f64; 3]>>,
 
     /// 纹理坐标，每顶点 [u, v]
+    ///
+    /// 缺省时由采样阶段按需补算。
     pub tex_coords: Option<Vec<[f64; 2]>>,
 
-    /// 三角形索引
+    /// 三角形索引，每三个一组构成一个面。
+    ///
+    /// 索引指向 [`positions`](Self::positions) 中的顶点。
     pub indices: Vec<u32>,
 
-    /// 网格中的最小高度
+    /// 网格中的最小高度（大地水准面以上，单位：米）。
     pub minimum_height: f64,
 
-    /// 网格中的最大高度
+    /// 网格中的最大高度（大地水准面以上，单位：米）。
     pub maximum_height: f64,
 
-    /// 网格的包围球
+    /// 网格的包围球，用于可见性与细分判定。
     pub bounding_sphere: BoundingSphere,
 }
 
 impl TerrainMesh {
     /// 返回网格中的顶点数。
     pub fn vertex_count(&self) -> usize {
+        // 顶点数即位置数组长度。
         self.positions.len()
     }
 
     /// 返回网格中的三角形数。
     pub fn triangle_count(&self) -> usize {
+        // 每个三角形占用三个索引。
         self.indices.len() / 3
     }
 
     /// 若不存在，则从三角形面计算顶点法线。
     pub fn compute_normals(&mut self) {
+        // 已有法线则直接复用，避免重算。
         if self.normals.is_some() {
             return;
         }
@@ -71,7 +80,7 @@ impl TerrainMesh {
             let p1 = self.positions[i1];
             let p2 = self.positions[i2];
 
-            // 计算面法线
+            // 面法线由两条边向量的叉积得到。
             let e1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
             let e2 = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
 
@@ -81,7 +90,7 @@ impl TerrainMesh {
                 e1[0] * e2[1] - e1[1] * e2[0],
             ];
 
-            // 累加
+            // 将面法线累加到共享该面的各顶点。
             for &idx in tri {
                 let idx = idx as usize;
                 normals[idx][0] += normal[0];
@@ -90,7 +99,7 @@ impl TerrainMesh {
             }
         }
 
-        // 归一化
+        // 归一化：面法线累加后需除以其长度得到单位法线。
         for normal in normals.iter_mut() {
             let len = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
             if len > 0.0 {
@@ -105,7 +114,9 @@ impl TerrainMesh {
 }
 
 impl Default for TerrainMesh {
+    /// 返回一个空网格：无顶点/索引，包围球退化为原点零半径。
     fn default() -> Self {
+        // 高度区间与包围球均置零，供后续细分时重新计算。
         Self {
             positions: Vec::new(),
             normals: None,
