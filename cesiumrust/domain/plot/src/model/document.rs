@@ -65,7 +65,7 @@ impl Document {
     /// 创建一个带单个默认、活动图层的空文档。
     pub fn with_default_layer() -> Self {
         let mut doc = Self::default();
-        let id = doc.new_layer("默认层");
+        let id = doc.new_layer("Default layer");
         doc.active_layer = Some(id);
         doc
     }

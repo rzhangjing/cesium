@@ -26,13 +26,16 @@ pub struct PlotToolbarRoot {
 }
 
 /// 每个按钮的标签 + 工具，按显示顺序排列。
-const BUTTONS: &[(&str, DrawKind)] = &[
-    ("点", DrawKind::Point),
-    ("线", DrawKind::Polyline),
-    ("面", DrawKind::Polygon),
-    ("矩形", DrawKind::Rectangle),
-    ("圆", DrawKind::Circle),
-    ("取消", /* 哨兵 */ DrawKind::Point),
+///
+/// 仅用 ASCII：内置的 FiraSans 没有 CJK 字形，中文标签会渲染成豆腐块；
+/// 直接携带 [`PlotTool`] 也消除了旧代码里靠"取消"字符串比较的哨兵逻辑。
+const BUTTONS: &[(&str, PlotTool)] = &[
+    ("Point", PlotTool::Draw(DrawKind::Point)),
+    ("Line", PlotTool::Draw(DrawKind::Polyline)),
+    ("Area", PlotTool::Draw(DrawKind::Polygon)),
+    ("Rect", PlotTool::Draw(DrawKind::Rectangle)),
+    ("Circle", PlotTool::Draw(DrawKind::Circle)),
+    ("Clear", PlotTool::Idle),
 ];
 
 /// spawn 工具栏（一个 Startup 系统）。按钮位于左上角；最后一个是一个
@@ -59,12 +62,8 @@ pub fn plot_toolbar(mut commands: Commands, mut root_res: ResMut<PlotToolbarRoot
         .id();
     root_res.root = Some(root);
 
-    for (label, kind) in BUTTONS {
-        let tool = if *label == "取消" {
-            PlotTool::Idle
-        } else {
-            PlotTool::Draw(*kind)
-        };
+    for (label, tool) in BUTTONS {
+        let tool = *tool;
         commands.entity(root).with_children(|c| {
             c.spawn((
                 ToolButton(tool),

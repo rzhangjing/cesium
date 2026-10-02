@@ -46,10 +46,11 @@ const WORLD_W: f32 = std::f32::consts::TAU; // 2π，x 方向的完整 360° 周
 const LAT_MAX: f32 = std::f32::consts::FRAC_PI_2; // π/2，y 方向 ±90°
 
 /// 缩放（每世界单位的像素）限制。`ZOOM_MIN` 使整个世界加边距
-/// 落在超大基础 quad 内，因此不显示空白边缘；`ZOOM_MAX` 是一个
-/// 合理性上限。
+/// 落在超大基础 quad 内，因此不显示空白边缘；`ZOOM_MAX` 的上限取得
+/// 足够高，使 `tile_zoom_for` 能抵达最细瓦片级别 `TILE_Z_MAX`（=19），
+/// 从而允许一直放大到 Bing 影像的最高分辨率（而非停在 ~7 级）。
 const ZOOM_MIN: f32 = 110.0;
-const ZOOM_MAX: f32 = 8000.0;
+const ZOOM_MAX: f32 = 20_000_000.0;
 // 默认值使地图在垂直方向上填满画面（窗口高度 ≈ π·zoom），而非
 // 作为一条小带子漂浮在空白边距中。
 const ZOOM_DEFAULT: f32 = 240.0;
@@ -1114,6 +1115,15 @@ fn map2d_worker(job_rx: Arc<Mutex<mpsc::Receiver<(u32, u32, u32)>>>, tx: mpsc::S
         if let Some(data) = bytes {
             if let Ok(img) = image::load_from_memory(&data) {
                 let rgba = img.to_rgba8();
+                // 与 3D 地球路径（globe_pipeline）保持一致：丢弃 Bing 那种
+                // 平滑、明亮、冷色调的"无影像"占位图。若不在此过滤，拖动时
+                // 会以难看的纯色块铺在平面上（正是用户看到的蓝色小块）。
+                // 跳过发送即可：该键留在在途集不再重试，回退逻辑
+                // （最近已缓存祖先 / 隐藏占位）自然接管。
+                let (is_ph, _, _) = crate::globe_textures::is_placeholder_tile(&rgba);
+                if is_ph {
+                    continue;
+                }
                 let (width, height) = rgba.dimensions();
                 let _ = tx.send(Map2dTileImg {
                     x,

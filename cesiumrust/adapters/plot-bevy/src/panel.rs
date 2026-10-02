@@ -134,24 +134,26 @@ fn next_opacity(cur: f32) -> f32 {
 
 /// 几何类型的按钮标签（类型筛选行）。
 ///
+/// 仅用 ASCII：内置的 FiraSans 没有 CJK 字形。
+///
 /// # 参数
-/// - `kind`：几何类型枚举，返回其中文显示名。
+/// - `kind`：几何类型枚举，返回其显示名。
 ///
 /// # 返回
-/// 与类型对应的静态中文标签字符串。
+/// 与类型对应的静态标签字符串。
 pub fn kind_label(kind: GeometryKind) -> &'static str {
     match kind {
-        GeometryKind::Point => "点",
-        GeometryKind::Icon => "图标",
-        GeometryKind::Label => "文字",
-        GeometryKind::Line => "线",
-        GeometryKind::Polygon => "面",
-        GeometryKind::Rectangle => "矩形",
-        GeometryKind::Circle => "圆",
-        GeometryKind::Ellipse => "椭圆",
-        GeometryKind::Arc => "弧",
-        GeometryKind::Path => "路径",
-        GeometryKind::Composite => "组合",
+        GeometryKind::Point => "Point",
+        GeometryKind::Icon => "Icon",
+        GeometryKind::Label => "Label",
+        GeometryKind::Line => "Line",
+        GeometryKind::Polygon => "Area",
+        GeometryKind::Rectangle => "Rect",
+        GeometryKind::Circle => "Circle",
+        GeometryKind::Ellipse => "Ellipse",
+        GeometryKind::Arc => "Arc",
+        GeometryKind::Path => "Path",
+        GeometryKind::Composite => "Group",
     }
 }
 
@@ -218,7 +220,7 @@ pub fn apply_panel_action(
         }
         PanelAction::AddLayer => {
             let n = plot_doc.doc.layers().len() + 1;
-            let id = plot_doc.doc.new_layer(format!("图层 {n}"));
+            let id = plot_doc.doc.new_layer(format!("Layer {n}"));
             plot_doc.doc.focus_layer(id);
             plot_doc.mark_dirty();
         }
@@ -508,14 +510,14 @@ pub(crate) fn panel_sync_system(
         .unwrap_or(true);
 
     commands.entity(root).with_children(|col| {
-        col.spawn(section_title("标绘面板 · Plot"));
-        col.spawn(button(PanelAction::ToggleOverlay, on_off(overlay_on, "总显隐 ON", "总显隐 OFF")));
+        col.spawn(section_title("Plot Panel"));
+        col.spawn(button(PanelAction::ToggleOverlay, on_off(overlay_on, "Overlay ON", "Overlay OFF")));
         col.spawn(button(
             PanelAction::ToggleOnlySelected,
-            on_off(focus_on, "仅选中 ON", "仅选中 OFF"),
+            on_off(focus_on, "Selected ON", "Selected OFF"),
         ));
 
-        col.spawn(section_title("类型 Type"));
+        col.spawn(section_title("Type"));
         col.spawn(
             Node {
                 flex_direction: FlexDirection::Row,
@@ -531,7 +533,7 @@ pub(crate) fn panel_sync_system(
             }
         });
 
-        col.spawn(section_title("图层 Layers"));
+        col.spawn(section_title("Layers"));
         col.spawn(
             Node {
                 flex_direction: FlexDirection::Column,
@@ -552,33 +554,30 @@ pub(crate) fn panel_sync_system(
                     },
                 )
                 .with_children(|r| {
-                    let tag = if *active { "▶" } else { "  " };
-                    r.spawn(label(format!(
-                        "{tag}{name} · {:.0}%",
-                        opacity * 100.0
-                    )));
+                    let tag = if *active { ">" } else { " " };
+                    r.spawn(label(format!("{tag}{name}  {:.0}%", opacity * 100.0)));
                     r.spawn(button(
                         PanelAction::ToggleLayerVisible(*id),
-                        on_off(*visible, "👁", "－"),
+                        on_off(*visible, "Vis", "Hid"),
                     ));
                     r.spawn(button(
                         PanelAction::ToggleLayerLock(*id),
-                        on_off(*editable, "开", "锁"),
+                        on_off(*editable, "Edit", "Lock"),
                     ));
                     r.spawn(button(
                         PanelAction::ToggleLayerSelectable(*id),
-                        on_off(*selectable, "选", "－"),
+                        on_off(*selectable, "Sel", "Off"),
                     ));
-                    r.spawn(button(PanelAction::FocusLayer(*id), "置"));
-                    r.spawn(button(PanelAction::NudgeLayer(*id, 1), "↑"));
-                    r.spawn(button(PanelAction::NudgeLayer(*id, -1), "↓"));
-                    r.spawn(button(PanelAction::CycleLayerOpacity(*id), "透"));
+                    r.spawn(button(PanelAction::FocusLayer(*id), "Act"));
+                    r.spawn(button(PanelAction::NudgeLayer(*id, 1), "Up"));
+                    r.spawn(button(PanelAction::NudgeLayer(*id, -1), "Dn"));
+                    r.spawn(button(PanelAction::CycleLayerOpacity(*id), "Opa"));
                 });
             }
-            list.spawn(button(PanelAction::AddLayer, "＋新建层"));
+            list.spawn(button(PanelAction::AddLayer, "+ New layer"));
         });
 
-        col.spawn(section_title(format!("样式 Style (选中 {sel_count})")));
+        col.spawn(section_title(format!("Style ({sel_count} sel)")));
         col.spawn(
             Node {
                 flex_direction: FlexDirection::Row,
@@ -600,10 +599,10 @@ pub(crate) fn panel_sync_system(
             },
         )
         .with_children(|row| {
-            row.spawn(button(PanelAction::AdjustWidth(1.0), "粗+"));
-            row.spawn(button(PanelAction::AdjustWidth(-1.0), "细-"));
-            row.spawn(button(PanelAction::ToggleFill, "填充"));
-            row.spawn(button(PanelAction::ToggleDepthTest, "深度"));
+            row.spawn(button(PanelAction::AdjustWidth(1.0), "Wide+"));
+            row.spawn(button(PanelAction::AdjustWidth(-1.0), "Thin-"));
+            row.spawn(button(PanelAction::ToggleFill, "Fill"));
+            row.spawn(button(PanelAction::ToggleDepthTest, "Depth"));
             row.spawn(button(PanelAction::ToggleShowFlat, "2D"));
             row.spawn(button(PanelAction::ToggleShowGlobe, "3D"));
         });
@@ -615,11 +614,11 @@ pub(crate) fn panel_sync_system(
             },
         )
         .with_children(|row| {
-            row.spawn(button(PanelAction::DeleteSelection, "删除"));
-            row.spawn(button(PanelAction::DuplicateSelection, "复制"));
+            row.spawn(button(PanelAction::DeleteSelection, "Delete"));
+            row.spawn(button(PanelAction::DuplicateSelection, "Copy"));
             row.spawn(button(
                 PanelAction::ToggleSelectionVisible,
-                on_off(sel_visible, "隐", "显"),
+                on_off(sel_visible, "Hide", "Show"),
             ));
         });
     });

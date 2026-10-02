@@ -174,7 +174,7 @@ pub fn commit_geometry(
     let layer: LayerId = match plot_doc.doc.active_layer() {
         Some(l) => l,
         None => {
-            let l = plot_doc.doc.new_layer("默认层");
+            let l = plot_doc.doc.new_layer("Default layer");
             plot_doc.doc.set_active_layer(Some(l));
             l
         }
