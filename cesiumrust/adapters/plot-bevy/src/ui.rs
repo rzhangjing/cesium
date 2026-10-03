@@ -65,6 +65,10 @@ pub fn plot_toolbar(mut commands: Commands, mut root_res: ResMut<PlotToolbarRoot
     for (label, tool) in BUTTONS {
         let tool = *tool;
         commands.entity(root).with_children(|c| {
+            // 标签作为按钮的**子节点**，由按钮自身的 flex（justify/align
+            // Center）居中。旧实现把标签作为按钮的**兄弟节点** + Absolute(0,0)，
+            // 绝对定位相对的是工具栏根而非按钮，导致 6 个标签全部堆叠在
+            // 左上角——看起来就像乱码。
             c.spawn((
                 ToolButton(tool),
                 Button,
@@ -76,28 +80,17 @@ pub fn plot_toolbar(mut commands: Commands, mut root_res: ResMut<PlotToolbarRoot
                     ..default()
                 },
                 BackgroundColor(Color::srgba(0.2, 0.4, 0.7, 1.0)),
-            ));
-            c.spawn((
-                Text::new(*label),
-                TextFont {
-                    font_size: 14.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(1.0, 1.0, 1.0)),
-                Node {
-                    // 通过把标签与按钮同父到一个相对定位的行单元格，
-                    // 将标签叠加在按钮上。
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(0.0),
-                    top: Val::Px(0.0),
-                    width: Val::Px(48.0),
-                    height: Val::Px(28.0),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                GlobalZIndex(2001),
-            ));
+            ))
+            .with_children(|b| {
+                b.spawn((
+                    Text::new(*label),
+                    TextFont {
+                        font_size: 14.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(1.0, 1.0, 1.0)),
+                ));
+            });
         });
     }
 }
